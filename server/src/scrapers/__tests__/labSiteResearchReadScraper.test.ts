@@ -196,3 +196,34 @@ describe('LabSiteResearchReadScraper', () => {
     expect(emitted.some((observation) => observation.field === 'researchSummary')).toBe(true);
   });
 });
+
+describe('a page the parser cannot read (#5296)', () => {
+  it('is counted and skipped, and the run reads the next row', async () => {
+    const emitted: ObservationInput[] = [];
+    const nested = `<html><body><main>${'<div>'.repeat(6000)}<p>deep</p>${'</div>'.repeat(6000)}</main></body></html>`;
+    const second = {
+      ...LAB,
+      _id: 'entity-second',
+      slug: 'second-lab',
+      websiteUrl: 'https://example.org/lab/second/',
+    };
+    const scraper = new LabSiteResearchReadScraper({
+      fetchPage: async (url: string) => ({
+        url,
+        html: url === LAB.websiteUrl ? nested : HOME_HTML,
+      }),
+      labFinder: async () => [LAB, second],
+      identityCorpusLoader: async () => identityCorpus,
+      canonicalizerLoader: async () => canonicalizer,
+    });
+    const result = await scraper.run({
+      options: { only: [], limit: 5 },
+      log: () => {},
+      emit: async (observations: ObservationInput[]) => {
+        emitted.push(...observations);
+      },
+    } as unknown as ScraperContext);
+    expect(result.notes).toMatch(/1 unparseable/);
+    expect(emitted.some((observation) => observation.entityKey === 'second-lab')).toBe(true);
+  });
+});

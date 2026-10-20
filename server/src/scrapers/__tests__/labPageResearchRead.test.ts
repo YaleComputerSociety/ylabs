@@ -6,6 +6,8 @@ import {
 import {
   cleanResearchPassage,
   joinResearchPassages,
+  MAX_PASSAGE_CANDIDATES,
+  MAX_READ_HTML_CHARS,
   MAX_RESEARCH_TEXT_CHARS,
   readKeywordListItems,
   readLabPage,
@@ -396,5 +398,27 @@ describe('readLabPage', () => {
       researchText: '',
       topics: [],
     });
+  });
+});
+
+describe('a very large page (#5296)', () => {
+  const paragraph = (i: number) =>
+    `<p>We study glacier hydrology at site ${i} across thaw seasons in alpine catchments.</p>`;
+
+  it('reads a bounded number of passages from a page with thousands of paragraphs', () => {
+    const html = `<html><body><main>${Array.from({ length: 20000 }, (_, i) => paragraph(i)).join('')}</main></body></html>`;
+    const started = Date.now();
+    const passages = readLabPageResearchPassages(html, { pageUrl: PAGE, entityType: 'LAB' });
+    expect(passages.length).toBeLessThanOrEqual(MAX_PASSAGE_CANDIDATES);
+    expect(passages[0].text).toBe(
+      'We study glacier hydrology at site 0 across thaw seasons in alpine catchments.',
+    );
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
+
+  it('reads nothing past the page size it parses', () => {
+    const filler = `<div>${'x'.repeat(MAX_READ_HTML_CHARS)}</div>`;
+    const html = `<html><body><main>${filler}${paragraph(1)}</main></body></html>`;
+    expect(readLabPageResearchPassages(html, { pageUrl: PAGE, entityType: 'LAB' })).toEqual([]);
   });
 });

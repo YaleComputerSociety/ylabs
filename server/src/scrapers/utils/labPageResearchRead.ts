@@ -86,6 +86,12 @@ export interface LabPageRead {
 }
 
 export const MAX_RESEARCH_TEXT_CHARS = 8000;
+// A listing page can carry tens of thousands of paragraphs, and reading them all held the
+// event loop for seconds, long enough for the database driver's monitor to drop the run's
+// connection (#5296); the stored text keeps at most MAX_RESEARCH_TEXT_CHARS in page order.
+export const MAX_READ_HTML_CHARS = 2_000_000;
+export const MAX_PASSAGE_CANDIDATES = 120;
+const PASSAGE_TEXT_BUDGET_CHARS = 3 * MAX_RESEARCH_TEXT_CHARS;
 const MIN_PASSAGE_CHARS = 60;
 const MAX_TOPICS = 12;
 // One approved term a page mentions once is how a passing "popular in orthopedics" became a
@@ -128,8 +134,27 @@ function isHeading(node: AnyNode): node is Element {
   return node.type === 'tag' && /^h[1-6]$/i.test((node as Element).tagName);
 }
 
+export function boundedHtml(html: string): string {
+  return html.length > MAX_READ_HTML_CHARS ? html.slice(0, MAX_READ_HTML_CHARS) : html;
+}
+
+class PassageBudget {
+  private count = 0;
+  private chars = 0;
+
+  get spent(): boolean {
+    return this.count >= MAX_PASSAGE_CANDIDATES || this.chars >= PASSAGE_TEXT_BUDGET_CHARS;
+  }
+
+  take(passage: LabPageResearchPassage, into: LabPageResearchPassage[]): void {
+    this.count += 1;
+    this.chars += passage.text.length;
+    into.push(passage);
+  }
+}
+
 function loadReadablePage(html: string, pageUrl: string): cheerio.CheerioAPI {
-  const $ = cheerio.load(html);
+  const $ = cheerio.load(boundedHtml(html));
   $(CHROME_SELECTOR).remove();
   removeProfilePublicityRegions($);
   removeRelatedEntityTeaserCards($, pageUrl);
@@ -137,7 +162,7 @@ function loadReadablePage(html: string, pageUrl: string): cheerio.CheerioAPI {
 }
 
 function nameCandidates(html: string): Array<{ value: string; from: LabPageNameSource }> {
-  const $ = cheerio.load(html);
+  const $ = cheerio.load(boundedHtml(html));
   const candidates: Array<{ value: string; from: LabPageNameSource }> = [];
   const siteName = collapse($('meta[property="og:site_name"]').attr('content'));
   if (siteName) candidates.push({ value: siteName, from: 'og:site_name' });
@@ -399,15 +424,20 @@ function sectionBody($: cheerio.CheerioAPI, heading: Element): AnyNode[] {
 
 function researchSectionPassages(
   $: cheerio.CheerioAPI,
+  budget: PassageBudget,
   entityType?: string,
 ): LabPageResearchPassage[] {
   const passages: LabPageResearchPassage[] = [];
   for (const heading of $(HEADING_SELECTOR).toArray() as Element[]) {
+    if (budget.spent) break;
     const label = headingKey($(heading).text());
     if (!RESEARCH_SECTION_HEADING_RE.test(label)) continue;
     for (const block of blockTexts($, sectionBody($, heading))) {
+      if (budget.spent) break;
       const cleaned = cleanResearchPassage(block.text, entityType, block.shape);
-      if (cleaned) passages.push({ origin: 'research-section', heading: label, text: cleaned });
+      if (cleaned) {
+        budget.take({ origin: 'research-section', heading: label, text: cleaned }, passages);
+      }
     }
   }
   return passages;
@@ -423,7 +453,11 @@ function paragraphWithItsList($: cheerio.CheerioAPI, paragraph: AnyNode): Sectio
   return items ? { text: `${text} ${items}`, shape: 'list' } : { text, shape: 'prose' };
 }
 
-function mainContentPassages($: cheerio.CheerioAPI, entityType?: string): LabPageResearchPassage[] {
+function mainContentPassages(
+  $: cheerio.CheerioAPI,
+  budget: PassageBudget,
+  entityType?: string,
+): LabPageResearchPassage[] {
   const roots = $(MAIN_CONTENT_SELECTOR)
     .toArray()
     .filter((root) => collapse($(root).text()).length >= MIN_LEAF_BLOCK_CHARS);
@@ -431,23 +465,25 @@ function mainContentPassages($: cheerio.CheerioAPI, entityType?: string): LabPag
   const passages: LabPageResearchPassage[] = [];
   for (const root of scope) {
     for (const paragraph of $(root).find('p').toArray()) {
+      if (budget.spent) break;
       const block = paragraphWithItsList($, paragraph);
       const cleaned = cleanResearchPassage(block.text, entityType, block.shape);
-      if (cleaned) passages.push({ origin: 'main-content', text: cleaned });
+      if (cleaned) budget.take({ origin: 'main-content', text: cleaned }, passages);
     }
     for (const block of $(root).find('div, section, td, span').toArray()) {
+      if (budget.spent) break;
       if ($(block).children(BLOCK_CHILD_SELECTOR).length > 0) continue;
       const text = collapse(extractElementTextWithBlockSeparators(block));
       if (text.length < MIN_LEAF_BLOCK_CHARS) continue;
       const cleaned = cleanResearchPassage(text, entityType);
-      if (cleaned) passages.push({ origin: 'main-content', text: cleaned });
+      if (cleaned) budget.take({ origin: 'main-content', text: cleaned }, passages);
     }
   }
   return passages;
 }
 
 function structuredDataDescriptions(html: string): string[] {
-  const $ = cheerio.load(html);
+  const $ = cheerio.load(boundedHtml(html));
   const descriptions: string[] = [];
   const visit = (node: unknown): void => {
     if (!node || typeof node !== 'object') return;
@@ -479,7 +515,7 @@ function structuredDataPassages(html: string, entityType?: string): LabPageResea
 }
 
 function metaDescriptionPassages(html: string, entityType?: string): LabPageResearchPassage[] {
-  const $ = cheerio.load(html);
+  const $ = cheerio.load(boundedHtml(html));
   const values = [
     $('meta[property="og:description"]').attr('content'),
     $('meta[name="description"]').attr('content'),
@@ -515,9 +551,10 @@ export function readLabPageResearchPassages(
 ): LabPageResearchPassage[] {
   if (!html) return [];
   const $ = loadReadablePage(html, context.pageUrl);
+  const budget = new PassageBudget();
   return withoutRepeatedPassages([
-    ...researchSectionPassages($, context.entityType),
-    ...mainContentPassages($, context.entityType),
+    ...researchSectionPassages($, budget, context.entityType),
+    ...mainContentPassages($, budget, context.entityType),
     ...structuredDataPassages(html, context.entityType),
     ...metaDescriptionPassages(html, context.entityType),
   ]);
@@ -540,7 +577,7 @@ const MAX_KEYWORD_LIST_CHARS = 1200;
 
 export function readKeywordListItems(html: string): string[] {
   if (!html) return [];
-  const $ = cheerio.load(html);
+  const $ = cheerio.load(boundedHtml(html));
   const items: string[] = [];
   for (const heading of $(HEADING_SELECTOR).toArray() as Element[]) {
     if (!KEYWORD_LIST_HEADING_RE.test(headingKey($(heading).text()))) continue;
@@ -595,7 +632,7 @@ export function readLabPageTopics(
     admissibleResearchAreas(canonicalizer, areas, departments as string[]);
   const keywordList = admitted(readKeywordListItems(html));
   const labeled = admitted(
-    canonicalizer.matchCanonicalResearchAreas(extractLabeledResearchAreaItems(html)),
+    canonicalizer.matchCanonicalResearchAreas(extractLabeledResearchAreaItems(boundedHtml(html))),
   );
   const fromProse = admitted(
     canonicalizer.deriveResearchAreasFromText(topicScanText(researchText)),

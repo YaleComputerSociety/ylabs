@@ -82,6 +82,8 @@ function defaultFetchPage(url: string): Promise<FetchedDescriptionPage | null> {
   return fetchDescriptionPageWithTlsFallback(url, fetchPageOnce);
 }
 
+const yieldToEventLoop = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));
+
 function splitAtSentenceBoundary(text: string, maxChars: number): string[] {
   if (text.length <= maxChars) return [text];
   const pieces: string[] = [];
@@ -367,22 +369,38 @@ export class LabSiteResearchReadScraper implements IScraper {
       this.identityCorpusLoader(),
       this.canonicalizerLoader(),
     ]);
-    const counts = { read: 0, unreadable: 0, refused: 0, withText: 0, empty: 0, named: 0 };
+    const counts = {
+      read: 0,
+      unreadable: 0,
+      unparseable: 0,
+      refused: 0,
+      withText: 0,
+      empty: 0,
+      named: 0,
+    };
     let observationCount = 0;
     for (const lab of candidates) {
+      await yieldToEventLoop();
       const primary = await this.fetchFirstReadablePage(lab, identityCorpus, ctx.log);
       if (!primary) {
         counts.unreadable += 1;
         continue;
       }
       const crawled = await this.fetchResearchSubpages(lab, primary, identityCorpus, ctx.log);
-      const outcome = labSiteResearchReadObservations({
-        lab,
-        primary,
-        crawled,
-        identityCorpus,
-        canonicalizer,
-      });
+      let outcome: LabSiteResearchReadOutcome;
+      try {
+        outcome = labSiteResearchReadObservations({
+          lab,
+          primary,
+          crawled,
+          identityCorpus,
+          canonicalizer,
+        });
+      } catch (error) {
+        counts.unparseable += 1;
+        ctx.log(`[${lab.slug || 'candidate'}] page could not be read: ${sanitizeLogValue(error)}`);
+        continue;
+      }
       counts.read += 1;
       if (outcome.refusal) {
         counts.refused += 1;
@@ -400,7 +418,7 @@ export class LabSiteResearchReadScraper implements IScraper {
       entitiesObserved: counts.withText + counts.empty,
       notes:
         `Read ${counts.read} of ${candidates.length} research homes: ${counts.withText} stated research text, ` +
-        `${counts.empty} stated none, ${counts.refused} refused, ${counts.unreadable} unreadable, ${counts.named} named.`,
+        `${counts.empty} stated none, ${counts.refused} refused, ${counts.unreadable} unreadable, ${counts.unparseable} unparseable, ${counts.named} named.`,
     };
   }
 }
