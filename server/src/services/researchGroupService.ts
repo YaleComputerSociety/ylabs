@@ -1334,7 +1334,6 @@ const TOPIC_MATCH_ATTRIBUTES = [
   'researchAreas',
   'departments',
   'studentSearchTerms',
-  'methods',
   'orgAffiliationLabels',
   'school',
 ];

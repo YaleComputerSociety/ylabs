@@ -116,36 +116,6 @@ describe('researchEntityDto', () => {
     expect(dto.displayName).toBe('Yale Center for Customer Insights');
   });
 
-  it('drops methods already shown as research areas so a term never appears in both lists', () => {
-    const dto = toPublicResearchEntityDto({
-      id: 'entity-methods',
-      slug: 'psych-neuro-lab',
-      name: 'Neuro Lab',
-      kind: 'lab',
-      researchAreas: ['Neuroimaging', 'Neuropsychology'],
-      methods: [
-        'Behavioral Experiments',
-        'Computational Modeling',
-        'Neuroimaging',
-        'neuropsychology',
-      ],
-    });
-    expect(dto.researchAreas).toEqual(['Neuroimaging', 'Neuropsychology']);
-    expect(dto.methods).toEqual(['Behavioral Experiments', 'Computational Modeling']);
-  });
-
-  it('de-duplicates methods case-insensitively within the served list', () => {
-    const dto = toPublicResearchEntityDto({
-      id: 'entity-methods-dupe',
-      slug: 'dupe-lab',
-      name: 'Dupe Lab',
-      kind: 'lab',
-      researchAreas: [],
-      methods: ['Flow Cytometry', 'flow cytometry', 'RNA sequencing'],
-    });
-    expect(dto.methods).toEqual(['Flow Cytometry', 'RNA sequencing']);
-  });
-
   it('fails a first-person source-bio shortDescription closed in the served DTO (#1077)', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-first-person',
@@ -1939,7 +1909,7 @@ describe('researchEntityDto', () => {
     expect(dto).not.toHaveProperty('qualitySummary');
   });
 
-  it('includes methods when present on the served entity', () => {
+  it('serves no methods even when the stored row still carries them', () => {
     const dto = toPublicResearchEntityDto({
       slug: 'methods-lab',
       name: 'Methods Lab',
@@ -1947,7 +1917,7 @@ describe('researchEntityDto', () => {
       methods: ['CRISPR-Cas9 Gene Editing', 'Single-cell RNA sequencing'],
     });
 
-    expect(dto.methods).toEqual(['CRISPR-Cas9 Gene Editing', 'Single-cell RNA sequencing']);
+    expect(dto).not.toHaveProperty('methods');
   });
 
   it('omits methods when the entity has none', () => {
@@ -2163,7 +2133,6 @@ describe('a source is credited only for a field the row serves (#3922)', () => {
   const ALL_LABELS = [
     'Research summary',
     'Topics',
-    'Methods',
     'Research website',
     'Department',
     'School',

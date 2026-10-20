@@ -177,6 +177,21 @@ describe('center-director takes over from center-director-llm (#5296)', { timeou
     ]);
   });
 
+  it('writes a technical director beside the faculty director as a non-lead staff edge', async () => {
+    await codeLaneReads(
+      directorCard(FIRST, 'Faculty Director') + directorCard(SECOND, 'Technical Director'),
+    );
+    expect(await currentLeads()).toEqual([`${FIRST}|center-director`]);
+    const second = (await Researcher.findOne({ displayName: SECOND }).lean()) as any;
+    const staff = (await RoleAssignment.find({
+      'target.id': await centerId(),
+      personId: second._id,
+    }).lean()) as any[];
+    expect(staff.map((edge) => [edge.role, edge.rosterProvenance?.sourceName])).toEqual([
+      ['STAFF', 'center-director'],
+    ]);
+  });
+
   it('writes the director the page states as its own lead edge', async () => {
     await codeLaneReads(directorCard(FIRST));
     expect(await currentLeads()).toEqual([`${FIRST}|center-director`]);

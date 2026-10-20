@@ -18,6 +18,7 @@ import {
 import type { ObservationInput } from './types';
 
 export const CENTER_DIRECTOR_SOURCE_NAME = 'center-director';
+export const INFERRED_STAFF_DIRECTORS_FIELD = 'inferredStaffDirectors';
 
 export type DirectorReadRole = 'director' | 'co-director';
 

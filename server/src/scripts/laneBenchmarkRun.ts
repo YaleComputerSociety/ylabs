@@ -34,6 +34,7 @@ export const BENCHMARKABLE_LANES: ReadonlySet<string> = new Set([
   'center-director-llm',
   'center-director',
   'center-affiliation-roster',
+  'lab-site-research-read',
   'research-area-source-extractor',
   'nih-reporter',
   'nsf-award-search',
