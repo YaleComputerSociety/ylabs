@@ -74,6 +74,8 @@ Working memory holds roughly four to seven chunks (Miller's Law, and the more mo
 
 - Anything a student needs in order to compare two labs must be visible on both cards at once.
 If they have to open both and remember the first, the comparison surface is the fix, not a better card.
+The dashboard Compare dialog (`ResearchHomeComparison.tsx`) is that surface, and it leads with the two facts students compare on: undergraduate evidence (the hosting status, advised undergraduates, and the cited quote, labelled exactly as the detail page labels it) and how to get involved, resolved through the detail page's own `resolveResearchDetailActionLinks` so the two surfaces cannot offer different ways in (#5106).
+It has no commitment or pay row, because those facts were retired rather than left unfilled (#3088).
 - **Hick's Law**: decision time grows with the number and complexity of options.
 Every filter added to the rail costs every student a little, and pays back only the students who use it.
 - Before adding a facet, check NN/g's test (`nngroup.com/articles/filters-vs-facets/`): faceted navigation costs interface work *and* metadata on every row forever, so confirm the dimension is one students actually sort by.
