@@ -552,11 +552,10 @@ const DecisionSummary = ({
     Boolean(applyPageUrl) ||
     showsProfileButton ||
     offersOfficialPage;
-  const directoryFallbackCandidate =
-    !wayInWithheld && (Boolean(piMailtoHref) || !hasActionablePath);
-  const needsDirectoryFallback = !leadCardLinksProfile && directoryFallbackCandidate;
+  const needsDirectoryFallback = !wayInWithheld && !leadCardLinksProfile && !hasActionablePath;
   const showGetInvolvedBlock = getInvolvedHasOwnAction || needsDirectoryFallback;
-  const pageListsContacts = getInvolvedHasOwnAction || directoryFallbackCandidate;
+  const pageListsContacts =
+    getInvolvedHasOwnAction || (!wayInWithheld && (Boolean(piMailtoHref) || !hasActionablePath));
   const activityCheckUrl = actionLinks.activityCheckUrl;
   const renderedContact: ReachOutRenderedContact = piMailtoHref
     ? 'leadCardEmail'

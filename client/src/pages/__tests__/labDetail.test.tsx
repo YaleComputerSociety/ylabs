@@ -728,6 +728,37 @@ describe('LabDetail page', () => {
     ).toBeNull();
   });
 
+  it('lets the reach-out line stand alone when the lead card email is the only way in', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: '',
+        sourceUrls: [],
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.faculty',
+            fname: 'Jordan',
+            lname: 'Researcher',
+            displayName: 'Jordan Researcher',
+            email: 'jordan.researcher@example.test',
+            primary_department: 'Neurology',
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByRole('link', { name: /^Email Jordan Researcher at / })).toBeTruthy();
+    expect(screen.getByText(/at the address on their card/)).toBeTruthy();
+    expect(screen.queryByText(/does not have a direct link/)).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
+  });
+
   it('renders a Yale Directory fallback instead of a dead end when no website, profile, or email exists', async () => {
     renderLabDetail({
       ...basePayload,

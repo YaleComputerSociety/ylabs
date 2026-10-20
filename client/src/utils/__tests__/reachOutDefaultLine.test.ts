@@ -12,6 +12,13 @@ describe('reachOutDiscipline (#5297)', () => {
     expect(reachOutDiscipline({ entityType: 'LAB' }, 'Social Sciences')).toBe('lab');
   });
 
+  it('keeps lab wording for any group-shaped research whatever its department', () => {
+    for (const entityType of ['CENTER', 'INSTITUTE', 'INITIATIVE', 'FACULTY_PROJECT', undefined]) {
+      expect(reachOutDiscipline({ entityType }, 'Social Sciences')).toBe('lab');
+      expect(reachOutDiscipline({ entityType }, 'Humanities & Arts')).toBe('lab');
+    }
+  });
+
   it('reads social science and economics from the first department category', () => {
     expect(reachOutDiscipline({ entityType: 'FACULTY_RESEARCH' }, 'Social Sciences')).toBe(
       'socialScience',

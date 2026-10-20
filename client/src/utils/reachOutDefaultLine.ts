@@ -13,14 +13,13 @@ export interface ReachOutEntity {
 
 const SOCIAL_SCIENCE_CATEGORIES = new Set(['Social Sciences', 'Economics']);
 const HUMANITIES_CATEGORY = 'Humanities & Arts';
-const LAB_SHAPED_ENTITY_TYPES = new Set(['LAB', 'CORE_FACILITY']);
 
 export const reachOutDiscipline = (
   entity: ReachOutEntity,
   firstDepartmentCategory?: string | null,
 ): ReachOutDiscipline => {
   if (isCreativePracticeEntity(entity)) return 'humanities';
-  if (LAB_SHAPED_ENTITY_TYPES.has(entity.entityType || '')) return 'lab';
+  if (!isFacultyResearchEntity(entity)) return 'lab';
   if (firstDepartmentCategory === HUMANITIES_CATEGORY) return 'humanities';
   if (firstDepartmentCategory && SOCIAL_SCIENCE_CATEGORIES.has(firstDepartmentCategory)) {
     return 'socialScience';
