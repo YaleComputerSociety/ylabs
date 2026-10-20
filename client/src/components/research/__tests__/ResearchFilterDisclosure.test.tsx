@@ -63,9 +63,7 @@ describe('ResearchFilterDisclosure', () => {
     expect(props.onHostsUndergradsChange).toHaveBeenCalledWith(true);
 
     rerender(<ResearchFilterDisclosure {...props} selectedHostsUndergrads />);
-    expect(
-      screen.getByRole('checkbox', { name: 'Hosted undergrads (7)' }),
-    ).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Hosted undergrads (7)' })).toBeChecked();
     fireEvent.click(screen.getByRole('button', { name: 'Remove Undergraduates: Hosted before' }));
     expect(props.onHostsUndergradsChange).toHaveBeenCalledWith(false);
   });
@@ -91,9 +89,7 @@ describe('ResearchFilterDisclosure', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
     const dialog = screen.getByRole('dialog', { name: 'Research filters' });
-    expect(
-      within(dialog).getByRole('checkbox', { name: 'Hosted undergrads (0)' }),
-    ).toBeDisabled();
+    expect(within(dialog).getByRole('checkbox', { name: 'Hosted undergrads (0)' })).toBeDisabled();
     await waitFor(() => expect(within(dialog).getByLabelText('Filter by type')).toHaveFocus());
   });
 

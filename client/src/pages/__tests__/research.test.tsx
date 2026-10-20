@@ -1066,9 +1066,7 @@ describe('Research page', () => {
     });
 
     fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
-    fireEvent.click(
-      screen.getByRole('checkbox', { name: 'Hosted undergrads (3)' }),
-    );
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Hosted undergrads (3)' }));
     await waitFor(() => {
       expect(lastSearchBody()).toEqual(
         expect.objectContaining({ filters: { hostsUndergrads: true }, page: 1 }),
@@ -3572,9 +3570,7 @@ describe('Research degraded search notice', () => {
 
     await screen.findByRole('heading', { name: 'AI Safety Lab' });
     fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
-    fireEvent.click(
-      screen.getByRole('checkbox', { name: 'Hosted undergrads (3)' }),
-    );
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Hosted undergrads (3)' }));
 
     const notice = await screen.findByRole('region', { name: degradedNoticeName });
     expect(screen.queryByRole('heading', { name: 'AI Safety Lab' })).toBeNull();
