@@ -352,15 +352,6 @@ const SOURCES: SourceSeed[] = [
     cadence: 'weekly',
   },
   {
-    name: 'lab-site-research-read',
-    displayName: 'Lab site research read (deterministic)',
-    description:
-      "Reads a research home's own site with code through the same URL guards as lab-microsite-description-llm, and stores what the page says: its research text as researchSummary passages the description writer reads at materialization, its topics from approved taxonomy terms and labelled keyword lists, and its stated name. It writes no description, card or methods. It replaced lab-microsite-description-llm in the sweep on 2026-10-19 (#5296).",
-    baseUrl: '',
-    defaultWeight: 0.6,
-    cadence: 'weekly',
-  },
-  {
     name: 'official-profile-pi-backfill',
     displayName: 'Official profile PI backfill',
     description:

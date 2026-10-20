@@ -63,8 +63,12 @@ const runLane = async (lab: Partial<CandidateDescriptionLab>) => {
 };
 
 describe('methods read from the stored description are not credited to a page that lacks them (#4048)', () => {
-  it('reads none from the stored description, since the lane emits no methods (#5296)', async () => {
-    expect(await runLane({ fullDescriptionSourceUrl: DESCRIPTION_PAGE })).toEqual([]);
+  it('credits them to the page the stored description is credited to', async () => {
+    const methods = await runLane({ fullDescriptionSourceUrl: DESCRIPTION_PAGE });
+
+    expect(methods).toHaveLength(1);
+    expect(methods[0].sourceUrl).toBe(DESCRIPTION_PAGE);
+    expect(methods[0].value).toEqual(['two-photon imaging', 'single-nucleus sequencing']);
   });
 
   it('never credits them to the title-only page just fetched', async () => {

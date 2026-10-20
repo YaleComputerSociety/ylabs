@@ -1,7 +1,6 @@
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { setPreGroundingRefusalCutoffForTesting } from '../../scrapers/descriptionExtractionGrounding';
 
 vi.mock('../../services/meiliSyncService', async () => {
   const actual = await vi.importActual<typeof import('../../services/meiliSyncService')>(
@@ -43,9 +42,6 @@ import {
   fullDescriptionObservationFilter,
   type FullDescriptionObservationLike,
 } from '../grantCorpusSynthesisCore';
-
-beforeAll(() => setPreGroundingRefusalCutoffForTesting(new Date(0)));
-afterAll(() => setPreGroundingRefusalCutoffForTesting(null));
 
 const SLUG = 'grant-corpus-lane-fixture';
 

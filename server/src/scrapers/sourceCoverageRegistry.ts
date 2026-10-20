@@ -83,16 +83,7 @@ export const sourceCoverageRegistry = {
     evidenceCategories: ['TOPICS'],
     defaultConfidence: 'MEDIUM',
     notes:
-      "Deterministic research-statement text of the row's own cited research pages, contact-redacted and capped, stored as a researchPageText observation plus a content hash and never projected onto the row, served or indexed. research-topics:derive reads it to cache quoted topics, which the materializer applies as the research-page-topics-derived candidate for researchAreas, outranking lab-site-research-read, ysm-mesh-keyword and ysm-faculty-directory lists (#5296, #5396). Its researchPageText (lab site plus official profiles) coexists with lab-site-research-read's researchSummary (lab site) for now; unifying the two stores is a follow-up.",
-  },
-  'lab-site-research-read': {
-    priority: 1,
-    tier: 'PRIMARY_OFFICIAL',
-    artifactTypes: ['Observation'],
-    evidenceCategories: ['ENTITY_IDENTITY', 'LAB_WEBSITE', 'TOPICS'],
-    defaultConfidence: 'MEDIUM',
-    notes:
-      "Reads a research home's own site with code and stores its research text as researchSummary evidence for the description writer, approved-taxonomy and labelled-list topics, and a stated name; never emits access, route, opportunity, description, card or methods evidence.",
+      "Deterministic research-statement text of the row's own cited research pages, contact-redacted and capped, stored as a researchPageText observation plus a content hash and never projected onto the row, served or indexed. research-topics:derive reads it to cache quoted topics, which the materializer applies as the research-page-topics-derived candidate for researchAreas, outranking ysm-mesh-keyword and ysm-faculty-directory lists, and lab-site-research-read lists once that held lane (#5418) re-lands (#5296, #5396).",
   },
   'lab-site-declared-lead-llm': {
     priority: 1,

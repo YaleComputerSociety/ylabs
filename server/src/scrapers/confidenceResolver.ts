@@ -120,7 +120,7 @@ const FALLBACK_ONLY_SOURCES_BY_FIELD: Readonly<Record<string, ReadonlySet<string
 // row's subject, so a list quoted from the row's own pages wins `researchAreas` over them
 // while they stay stored as evidence and still win when no quoted list exists (#5396). The
 // code lane's approved-taxonomy list also gives way to a derived list (owner decision on
-// #5419), and still beats model-lane topics through the topic hand-off where none exists.
+// #5419); that lane (#5418) is held, so the name is inert until it re-lands.
 const OUTRANKED_SOURCES_BY_FIELD: Readonly<
   Record<string, { by: ReadonlySet<string>; outranked: ReadonlySet<string> }>
 > = {
@@ -203,7 +203,6 @@ const SYNTHESIZED_NAME_SOURCES = new Set([
 // The lab's own site: authoritative for its self-identified brand.
 export const MICROSITE_NAME_SOURCES = new Set([
   'lab-microsite-description-llm',
-  'lab-site-research-read',
   'lab-microsite-undergrad-llm',
 ]);
 

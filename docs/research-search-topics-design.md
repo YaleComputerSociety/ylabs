@@ -136,10 +136,10 @@ Rules:
 
 ### 2. Resolver precedence
 
-A page-quoted list outranks `lab-site-research-read`, `ysm-mesh-keyword` and `ysm-faculty-directory` lists for `researchAreas`, in the same way a graduate-track list already ranks below every other list (#4028); the code lane is included by owner decision on #5419.
+A page-quoted list outranks `ysm-mesh-keyword` and `ysm-faculty-directory` lists for `researchAreas`, in the same way a graduate-track list already ranks below every other list (#4028).
+By owner decision on #5419 it also outranks `lab-site-research-read` lists; that lane (#5418) is held for the owner's final batch, so the rule names a source that is absent until it re-lands.
 Those lists stay stored as evidence and can corroborate a topic, but no longer win the field where a derived list exists.
-Where none exists, `lab-site-research-read` topics still replace `lab-microsite-description-llm` topics through the topic hand-off (#5418).
-The derived list is added after that hand-off, so the hand-off never drops it.
+When #5418 re-lands, its topic hand-off must screen the observations before the derived candidate is appended to the resolver's input, so the hand-off can never drop the derived list.
 Topic canonicalization to `TaxonomyTerm` keeps working, and must not reorder the first topic.
 
 ### 3. A judged relevance benchmark
