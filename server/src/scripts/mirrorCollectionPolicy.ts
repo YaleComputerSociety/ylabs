@@ -7,6 +7,8 @@
 // and a copied gate scorecard presents one environment's promotion verdict as
 // the other's, because a promotion replaces the whole collection. A lane
 // benchmark and its scorecards are the same kind of environment-local history.
+// A research-topics derivation is a paid model reading of this environment's
+// stored page text, so a refresh that cleared it would buy every reading again.
 export const NEVER_COPY_COLLECTIONS = [
   'accounts',
   'research_plans',
@@ -22,6 +24,7 @@ export const NEVER_COPY_COLLECTIONS = [
   'engine_benchmark_snapshots',
   'weekly_sweep_runs',
   'login_signal_tallies',
+  'research_topics_derivations',
 ];
 
 // The Development refresh clears every collection the Beta mirror does not
@@ -42,6 +45,7 @@ export const PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS = [
   'engine_benchmark_snapshots',
   'weekly_sweep_runs',
   'login_signal_tallies',
+  'research_topics_derivations',
 ];
 
 // A lease is state rather than history: it expires and is taken over, so a

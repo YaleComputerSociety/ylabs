@@ -30,6 +30,7 @@ import { isPlaceholderEntityName } from '../utils/researchHomeNameIdentityAuthor
 import { containsHtmlTagMarkup } from '../utils/descriptionHygiene';
 import { isSourcePageNarrationDescription } from '../utils/researchEntityDescriptionText';
 import { YALE_FELLOWSHIP_DATABASE_SOURCE } from './fellowshipSourcePrecedence';
+import { PAGE_QUOTED_RESEARCH_TOPICS_SOURCE } from './utils/pageQuotedResearchTopics';
 
 export interface ResolverObservation {
   field: string;
@@ -113,6 +114,20 @@ const FALLBACK_ONLY_SOURCES_BY_FIELD: Readonly<Record<string, ReadonlySet<string
   researchAreas: new Set(['bbs-research-track']),
   pastUndergradAdvisees: new Set(['lab-microsite-undergrad-llm']),
   sourceUrl: new Set([YALE_FELLOWSHIP_DATABASE_SOURCE]),
+};
+// A list a source outranks whenever the named source states the field, whatever the
+// weights say. MeSH and medical-school directory lists copy index headings that name no
+// row's subject, so a list quoted from the row's own pages wins `researchAreas` over them
+// while they stay stored as evidence and still win when no quoted list exists (#5396). The
+// code lane's approved-taxonomy list also gives way to a derived list (owner decision on
+// #5419); that lane (#5418) is held, so the name is inert until it re-lands.
+const OUTRANKED_SOURCES_BY_FIELD: Readonly<
+  Record<string, { by: ReadonlySet<string>; outranked: ReadonlySet<string> }>
+> = {
+  researchAreas: {
+    by: new Set([PAGE_QUOTED_RESEARCH_TOPICS_SOURCE]),
+    outranked: new Set(['lab-site-research-read', 'ysm-mesh-keyword', 'ysm-faculty-directory']),
+  },
 };
 const PROSE_EXTENSION_BONUS = 1.25;
 
@@ -327,13 +342,34 @@ export function sourceRanksOnlyAsFieldFallback(field: string, sourceName: unknow
 
 function demoteFallbackOnlyGroups(
   field: string,
-  groups: Array<{ sources: Set<string>; demoted?: boolean }>,
+  groups: Array<{ sources: Set<string>; demoted?: boolean; fallbackOnly?: boolean }>,
 ): void {
   if (!FALLBACK_ONLY_SOURCES_BY_FIELD[field]) return;
   if (groups.every((group) => isFallbackOnlyGroup(field, group))) return;
   for (const group of groups) {
-    if (isFallbackOnlyGroup(field, group)) group.demoted = true;
+    if (!isFallbackOnlyGroup(field, group)) continue;
+    group.demoted = true;
+    group.fallbackOnly = true;
   }
+}
+
+function demoteOutrankedSourceGroups(
+  field: string,
+  groups: Array<{ sources: Set<string>; demoted?: boolean }>,
+): void {
+  const rule = OUTRANKED_SOURCES_BY_FIELD[field];
+  if (!rule) return;
+  if (!groups.some((group) => hasSourceIn(group, rule.by))) return;
+  for (const group of groups) {
+    if (group.sources.size === 0) continue;
+    if ([...group.sources].every((source) => rule.outranked.has(source))) group.demoted = true;
+  }
+}
+
+// A fallback-only list ranks below every other list, demoted ones included (#4028).
+function demotionRank(group: { demoted?: boolean; fallbackOnly?: boolean }): number {
+  if (!group.demoted) return 0;
+  return group.fallbackOnly ? 2 : 1;
 }
 
 function preferExtractedProseGroups<T extends { sources: Set<string> }>(
@@ -712,6 +748,7 @@ interface RankedGroup {
   weight: number;
   sources: Set<string>;
   demoted?: boolean;
+  fallbackOnly?: boolean;
 }
 
 function rankFieldGroups(
@@ -766,10 +803,9 @@ function rankFieldGroups(
   demoteUndergradSignalProseGroups(field, rankable, descriptionKind);
   demoteUnusableProseGroups(field, rankable, descriptionKind);
   demoteFallbackOnlyGroups(field, rankable);
+  demoteOutrankedSourceGroups(field, rankable);
   preferWrittenDescriptionGroups(field, rankable);
-  return rankable.sort(
-    (a, b) => Number(a.demoted ?? false) - Number(b.demoted ?? false) || b.weight - a.weight,
-  );
+  return rankable.sort((a, b) => demotionRank(a) - demotionRank(b) || b.weight - a.weight);
 }
 
 /**

@@ -164,6 +164,17 @@ const SOURCES: SourceSeed[] = [
     cadence: 'event',
   },
   {
+    // Not a scraper either: the materializer applies a cached model reading of a row's
+    // stored research page text (#5296), and seeds the name so that provenance resolves.
+    name: 'research-page-topics-derived',
+    displayName: 'Research page topics (derived)',
+    description:
+      "Research topics a model quoted from a research entity's stored research page text: the raw reading is cached by input hash by research-topics:derive, and the quote check and filters run at materialization. A topic survives only when its quote is on the stored page text it names and its words are on the row's stored pages. Never an observation; outranks MeSH and medical-school directory lists for researchAreas.",
+    baseUrl: '',
+    defaultWeight: 0.85,
+    cadence: 'event',
+  },
+  {
     name: 'manual-admin-edit',
     displayName: 'Manual admin edit',
     description: 'Authoritative override applied when an admin edits an entity in the dashboard.',
@@ -224,6 +235,15 @@ const SOURCES: SourceSeed[] = [
     baseUrl: '',
     defaultWeight: 0.7,
     cadence: 'monthly',
+  },
+  {
+    name: 'research-page-text',
+    displayName: 'Research page text',
+    description:
+      "Reads a research entity's own cited research pages with code and stores each page's research statement as researchPageText: site chrome, navigation, contact blocks, publicity regions, other units' teaser cards and sections headed as publications, a bibliography, a CV or contact details are left out, publication, CV and contact lines are dropped wherever they sit, contact details are redacted, and the text is capped near 16 KB per row. No model reads the pages in this lane; research-topics:derive reads the stored text at materialization. Never served and never indexed. Manual-only and out of the sweep.",
+    baseUrl: '',
+    defaultWeight: 0.85,
+    cadence: 'weekly',
   },
   {
     name: 'center-member-profile-research',
