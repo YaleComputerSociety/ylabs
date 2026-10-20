@@ -336,9 +336,16 @@ describe('ResearchFilterDisclosure', () => {
 
     expect(screen.getByRole('button', { name: 'Filters, 1 active' })).toBeTruthy();
     const chip = screen.getByRole('button', { name: 'Remove Type: Core facility' });
-    expect(chip.textContent).toContain('Type: Core facility');
+    expect(chip.textContent).toBe('Core facility');
     fireEvent.click(chip);
     expect(props.onEntityTypeChange).toHaveBeenCalledWith('');
+  });
+
+  it('shows only the value on a chip beside the trigger so it fits a phone strip', () => {
+    renderFilters({ selectedHostsUndergrads: true });
+
+    const chip = screen.getByRole('button', { name: 'Remove Undergraduates: Hosted before' });
+    expect(chip.textContent).toBe('Hosted undergrads');
   });
 
   it('hides non-positive facets unless selected', () => {

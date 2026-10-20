@@ -371,6 +371,9 @@ const ResearchFilterDisclosure = ({
           <ActiveFilterChip
             axis="Type"
             value={researchEntityTypeFilterLabel(selectedEntityType)}
+            visibleLabel={
+              besideTrigger ? researchEntityTypeFilterLabel(selectedEntityType) : undefined
+            }
             onRemove={() => onEntityTypeChange('')}
           />
         )}
@@ -378,6 +381,7 @@ const ResearchFilterDisclosure = ({
           <ActiveFilterChip
             axis="School"
             value={selectedSchool}
+            visibleLabel={besideTrigger ? selectedSchool : undefined}
             onRemove={() => onSchoolChange('')}
           />
         )}
@@ -385,6 +389,7 @@ const ResearchFilterDisclosure = ({
           <ActiveFilterChip
             axis="Department"
             value={departmentLabel(selectedDepartment)}
+            visibleLabel={besideTrigger ? departmentLabel(selectedDepartment) : undefined}
             onRemove={() => onDepartmentChange('')}
           />
         )}
@@ -392,6 +397,7 @@ const ResearchFilterDisclosure = ({
           <ActiveFilterChip
             axis="Undergraduates"
             value={HOSTED_UNDERGRADUATES_CHIP_VALUE}
+            visibleLabel={besideTrigger ? HOSTED_UNDERGRADUATES_LABEL : undefined}
             onRemove={() => onHostsUndergradsChange?.(false)}
           />
         )}
