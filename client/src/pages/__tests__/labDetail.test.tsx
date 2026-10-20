@@ -2597,7 +2597,7 @@ describe('LabDetail page', () => {
     expect(summaryCard.textContent).not.toContain('Jordan Researcher');
     expect(rail.textContent).toContain('Jordan Researcher');
     expect(rail.className).toContain('md:self-start');
-    expect(rail.className).not.toContain('shadow-yr-raised');
+    expect(rail.className).toContain('md:shadow-none');
     expect(body.textContent).toContain('Affiliated with');
   });
 

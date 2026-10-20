@@ -102,8 +102,9 @@ The `/research` programs handoff renders `invisible` with the same copy while a 
 - A detail page loads into a skeleton that shares the loaded page's container classes, never a bare spinner in a narrower box.
 `ResearchProfileSkeleton` exports the profile's page, grid and column classes, and `labDetail.tsx` uses the same constants, because a reused container that changes width scored 0.093 at 1440px (#4268).
 The profile body is a page-level grid from those constants: from `md` up, the summary card and the evidence and lead rail share the first row.
-The rail is an unboxed sidebar at its natural height, with no border, background, or shadow, because two boxed cards side by side are read as a pair and any height difference between them looks like a defect.
+From `md` up the rail is an unboxed sidebar at its natural height, with no border, background, or shadow, because two boxed cards side by side are read as a pair and any height difference between them looks like a defect.
 Stretching both to one height left an empty tinted block beside a long summary, and a sticky rail was rejected.
+Below `md` the rail keeps its card, because stacked between the summary card and the full-width sections it reads as its own block.
 "How to get involved" sits at the bottom of the summary card rather than in the rail, so the main action follows the description it acts on.
 The team, affiliations, similar research, and sources sit below in a full-width second row, so a tall rail never squeezes them into a narrow column.
 The rail used to sit inside the summary card, so a short summary left a large empty area in the card beside a tall rail.
