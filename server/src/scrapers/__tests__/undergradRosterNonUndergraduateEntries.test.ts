@@ -166,6 +166,149 @@ describe('visiting, summer-program and other-school undergraduates', () => {
   });
 });
 
+const profileCard = (name: string, title: string, bio: string): string => `
+  <article class="profile-grid-item" aria-label="${name}'s Profile">
+    <div class="profile-grid-item__name-container"><span class="profile-grid-item__name">${name}</span></div>
+    <div class="profile-grid-item__title-container"><p class="profile-grid-item__title">${title}</p></div>
+    <div class="profile-grid-item__bio-container"><div class="profile-grid-item__bio">${bio}</div></div>
+  </article>`;
+
+const profileGrid = (label: string, cards: string): string =>
+  body(`<section class="organization-member-listing" aria-label="${label}">${cards}</section>`);
+
+describe('other-school entries the derivation measurement found (#5416)', () => {
+  it('reads a bracketed school after a year where the section brackets each home school', () => {
+    expect(
+      listed(
+        body(`<h2>Undergraduate Students:</h2>
+          <p>Avery Quill, 2016-2017 (Yale)</p><p>Harper Wren, 2015-2017 (Yale)</p><p>Jordan Alder, 2014-2015 (Yale)</p>
+          <p>Rowan Thistle, 2016 (U. of Elsewhere). Current position: founder</p>
+          <p>Ellis Juniper, 2016, (U. of Fixture)</p>`),
+        config({ currentSectionLabels: [], pastSectionLabels: ['Undergraduate Students:'] }),
+      ),
+    ).toEqual(['Avery Quill:past', 'Harper Wren:past', 'Jordan Alder:past']);
+  });
+
+  it('reads a table column of schools as each undergraduate home school', () => {
+    expect(
+      listed(
+        body(`<h2>Undergraduate Students</h2><table>
+          <tr><td>Avery Quill</td><td>Jan.2014 - May.2015</td><td>Yale University</td></tr>
+          <tr><td>Rowan Thistle</td><td>Aug.2010 - May.2012 / Presidential Undergraduate Research Award</td><td>Elsewhere Institute of Technology</td></tr>
+          <tr><td>Ellis Juniper</td><td>Aug.2008 - May.2009</td><td>Elsewhere Institute of Technology</td></tr>
+        </table>`),
+        config({
+          template: 'yalesites-directory',
+          currentSectionLabels: ['Undergraduate Students'],
+        }),
+      ),
+    ).toEqual(['Avery Quill:past']);
+  });
+
+  it('withholds a former member who left to finish an undergraduate degree elsewhere', () => {
+    expect(
+      listed(
+        body(`<h2>Former Members</h2><ul>
+          <li>Rowan Thistle (2025, undergraduate researcher) (subsequent position: finishing up at University of Elsewhere undergrad)</li>
+          <li>Avery Quill (2024) (Yale undergraduate; subsequent position: biotechnology company)</li>
+        </ul>`),
+        config({ currentSectionLabels: [] }),
+      ),
+    ).toEqual(['Avery Quill:past']);
+  });
+
+  it('withholds an undergraduate whose own title names another school in brackets', () => {
+    expect(
+      listed(
+        body(`<h2>Alumni</h2><table>
+          <tr><th>Name</th><th>Position</th><th>Years</th></tr>
+          <tr><td>Rowan Thistle</td><td>Undergraduate Student (Elsewhere University, Dept of Chemistry)</td><td>2019-2021</td></tr>
+          <tr><td>Avery Quill</td><td>Undergraduate Student (Environmental Studies)</td><td>2019-2021</td></tr>
+        </table>`),
+        config({ currentSectionLabels: [], pastSectionLabels: ['Alumni'] }),
+      ),
+    ).toEqual(['Avery Quill:past']);
+  });
+
+  it('withholds a summer undergraduate, but not a Yale undergraduate who researched over the summer', () => {
+    expect(
+      listed(
+        profileGrid(
+          'Former Lab Members',
+          profileCard('Rowan Thistle', 'Summer Undergraduate 2025', '') +
+            profileCard('Avery Quill', 'Undergraduate Researcher 2025 Summer', ''),
+        ),
+        config({
+          template: 'profile-grid',
+          currency: 'section-label',
+          currentSectionLabels: [],
+          pastSectionLabels: ['Former Lab Members'],
+        }),
+      ),
+    ).toEqual(['Avery Quill:past']);
+  });
+
+  it("reads a profile card's biography for a bachelor's degree from another school", () => {
+    expect(
+      listed(
+        profileGrid(
+          'Our Team',
+          profileCard(
+            'Rowan Thistle',
+            'Undergraduate Research Assistant (2023-2024)',
+            '<p>Education &amp; Training: B.S. in Psychology from Elsewhere University (2024)</p>',
+          ) +
+            profileCard(
+              'Avery Quill',
+              'Undergraduate Research Assistant',
+              '<p>Avery is a Yale College junior majoring in Psychology.</p>',
+            ),
+        ),
+        config({
+          template: 'profile-grid',
+          currency: 'section-label',
+          currentSectionLabels: ['Our Team'],
+        }),
+      ),
+    ).toEqual(['Avery Quill:current']);
+  });
+});
+
+describe('undergraduates whose class year has passed (#5416)', () => {
+  it('lists a profile card whose biography gives a passed class year as past', () => {
+    expect(
+      listed(
+        profileGrid(
+          'Undergraduate Students',
+          profileCard(
+            'Rowan Thistle',
+            '',
+            '<p>Rowan is a class of 2025 Yale College student.</p>',
+          ) +
+            profileCard('Avery Quill', '', '<p>Avery is a class of 2028 Yale College student.</p>'),
+        ),
+        config({
+          template: 'profile-grid',
+          currency: 'section-label',
+          currentSectionLabels: ['Undergraduate Students'],
+        }),
+      ),
+    ).toEqual(['Rowan Thistle:past', 'Avery Quill:current']);
+  });
+
+  it('reads a class year bulleted under a name heading as that person’s own', () => {
+    expect(
+      listed(
+        body(`<h2>Undergraduate Students</h2>
+          <h3>Rowan Thistle</h3><ul><li>Biomedical Engineering (Class of 2023)</li></ul>
+          <p><strong>Hometown:</strong> Harbor Vale, CT</p>
+          <h3>Avery Quill</h3><ul><li>Biomedical Engineering (Class of 2028)</li></ul>`),
+        config({ currentSectionLabels: ['Undergraduate Students'] }),
+      ),
+    ).toEqual(['Rowan Thistle:past', 'Avery Quill:current']);
+  });
+});
+
 describe('pages that belong to another lab or institution', () => {
   const team = (title: string, main: string): string =>
     `<html><head><title>${title}</title></head><body><nav><a href="/">${title.replace(/ - .*$/, '')}</a></nav><main>${main}</main></body></html>`;
