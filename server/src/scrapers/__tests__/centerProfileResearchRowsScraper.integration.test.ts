@@ -59,9 +59,9 @@ const MEMBERS: Member[] = [
     netid: 'zz0001',
   },
   {
-    key: 'lector',
+    key: 'trainee',
     displayName: 'Casey Fixture',
-    title: 'Senior Lector in Synthetic Languages',
+    title: 'Postdoctoral Associate in Synthetic Studies',
     netid: 'zz0002',
   },
   { key: 'no-netid', displayName: 'Drew Fixture', title: 'Professor of Synthetic Studies' },

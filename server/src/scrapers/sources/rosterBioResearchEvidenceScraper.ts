@@ -2,6 +2,8 @@ import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
+import { LEAD_ROLE_CANONICAL_VALUES } from '../../models/canonicalRoleMapping';
+import { PERSONAL_RESEARCH_ROW_TYPES } from '../utils/centerMemberProfileResearch';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import {
   DEFAULT_DEPT_CONFIGS,
@@ -81,21 +83,25 @@ export async function loadRosterBioPeople(): Promise<RosterBioPerson[]> {
 // (a merge, a retirement, a wrong-person refusal) that a new mint must not undo.
 export async function loadRosterBioCoveredIdentities(): Promise<RosterBioCoveredIdentities> {
   const entities = (await ResearchEntity.find({})
-    .select('_id slug name websiteUrl sourceUrls archived')
+    .select('_id slug name websiteUrl sourceUrls archived entityType')
     .lean()) as Array<Record<string, any>>;
   const urls = new Set<string>();
   const slugs = new Set<string>();
   const personNames = new Set<string>();
-  const liveIds = new Set<string>();
+  const personalRowIds = new Set<string>();
   for (const entity of entities) {
     slugs.add(entity.slug);
+    if (PERSONAL_RESEARCH_ROW_TYPES.includes(entity.entityType)) {
+      personalRowIds.add(String(entity._id));
+    }
     for (const url of [entity.websiteUrl, ...(entity.sourceUrls || [])]) {
       if (url) urls.add(normalizeRosterBioUrl(url));
     }
-    if (entity.archived === true) continue;
-    liveIds.add(String(entity._id));
     const nameKey = rosterBioPersonNameKey(entity.name);
-    if (nameKey) personNames.add(nameKey);
+    if (!nameKey) continue;
+    if (entity.archived !== true || PERSONAL_RESEARCH_ROW_TYPES.includes(entity.entityType)) {
+      personNames.add(nameKey);
+    }
   }
   const piKeys = (await Observation.find({ field: 'inferredPiUserKey', superseded: false })
     .select('entityKey value')
@@ -106,12 +112,15 @@ export async function loadRosterBioCoveredIdentities(): Promise<RosterBioCovered
       personKeys.add(row.value);
     }
   }
-  const leadEdges = (await RoleAssignment.find({ state: { $ne: 'HISTORICAL' } })
+  // A person's research is already listed only through a row they lead. A membership of a
+  // center, institute or someone else's lab is an affiliation rather than their own row,
+  // and an ended lead of an archived row is a past decision about them (#5407).
+  const leadEdges = (await RoleAssignment.find({ role: { $in: [...LEAD_ROLE_CANONICAL_VALUES] } })
     .select('personId target')
     .lean()) as Array<{ personId?: unknown; target?: { id?: unknown } }>;
   const leading = new Set(
     leadEdges
-      .filter((edge) => liveIds.has(String(edge.target?.id)))
+      .filter((edge) => personalRowIds.has(String(edge.target?.id)))
       .map((edge) => String(edge.personId)),
   );
   const researchers = (await Researcher.find({ archived: { $ne: true } })

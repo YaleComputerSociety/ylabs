@@ -5,6 +5,18 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-20: The Directory Lists Research People Lead At Yale; Hosting A Student Is A Signal (#5407)
+
+y/labs is a directory of research at Yale, so a person gets a row when they lead research at Yale now, and whether they could host a student is a signal rather than a gate.
+This applies the 2026-08-25 "Simple Directory First" decision to the lanes that mint faculty-research rows from profile text (`roster-bio-research-evidence`, `center-profile-research-rows`).
+The test has three parts: the profile states research the person does now, the research happens at Yale, and it is the person's own program rather than work inside someone else's lab, which shows through that lab's membership.
+A title is evidence for those parts, never the rule, so the lector exclusion added in #5391 is withdrawn.
+A person counts as already listed only through a lead edge, in any state, to a `LAB` or `FACULTY_RESEARCH_AREA` row, live or archived, or through an archived personal row in their name.
+A center, institute or initiative membership is an affiliation, not a listing: before this, such memberships covered 42 of the 43 people a lead-only rule would add, and the biography lane planned 1 row.
+Measured on Development on 2026-10-20, the corrected rule plans 42 rows with no duplicate of an existing or archived row, and an independent grader accepted 11, rejected 19 and was unsure of 12.
+A wording predicate that required an active-research sentence was tried and withdrawn: it dropped 4 accepted people and 3 already-approved rows while keeping 5 rejected ones, because the rejected people differ by appointment and program, not by phrasing.
+That difference is visible only by reading the profile, so it stays an operator judgement on each batch, and both lanes stay manual-only.
+
 ## 2026-10-19: An Advisory Seat Is Not Center Membership
 
 The owner decided on 2026-10-19 that a seat on a center's advisory committee or scientific advisory board is not membership of that center.
