@@ -147,6 +147,9 @@ const EXCLUDED_BETA_COLLECTIONS = [
   'observation_reference_repair_audits',
   // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy (#5092).
   'research_plans',
+  // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy: each entry
+  // is a paid model reading of the environment's own stored page text (#5396).
+  'research_topics_derivations',
   'review_decisions',
   'scrape_job_locks',
   'scrape_snapshots',

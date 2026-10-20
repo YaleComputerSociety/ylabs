@@ -1583,6 +1583,93 @@ describe('researchAreas from a graduate-track roster rank below a row-own list',
   });
 });
 
+describe('researchAreas quoted from the row own pages outrank MeSH and directory lists (#5396)', () => {
+  const now = new Date('2026-10-19T00:00:00Z');
+  const quotedAreas = ['Kelp forests', 'Marine heatwaves', 'Marine ecology'];
+  const meshAreas = ['Ecosystem', 'Climate Change'];
+  const directoryAreas = ['Oceans and Seas'];
+  const trackAreas = ['Ecology and Evolutionary Biology'];
+  const quoted = {
+    field: 'researchAreas',
+    value: quotedAreas,
+    sourceName: 'research-page-topics-derived',
+    confidence: 0.5,
+    observedAt: new Date('2026-06-01T00:00:00Z'),
+  };
+  const mesh = {
+    field: 'researchAreas',
+    value: meshAreas,
+    sourceName: 'ysm-mesh-keyword',
+    confidence: 0.95,
+    observedAt: now,
+  };
+  const directory = {
+    field: 'researchAreas',
+    value: directoryAreas,
+    sourceName: 'ysm-faculty-directory',
+    confidence: 0.95,
+    observedAt: now,
+  };
+  const track = {
+    field: 'researchAreas',
+    value: trackAreas,
+    sourceName: 'bbs-research-track',
+    confidence: 0.95,
+    observedAt: now,
+  };
+
+  it('serves the quoted list over newer, heavier MeSH and directory lists', () => {
+    const resolved = resolveField('researchAreas', [mesh, directory, quoted], { now });
+    expect(resolved?.value).toEqual(quotedAreas);
+    expect(resolved?.contributingSources).toEqual(['research-page-topics-derived']);
+    expect(resolved?.hasConflict).toBe(false);
+  });
+
+  it('keeps the MeSH and directory lists ranked as stored evidence', () => {
+    const ranked = resolveFieldRanked('researchAreas', [mesh, directory, quoted], { now });
+    expect(ranked.map((entry) => entry.value)).toEqual([quotedAreas, meshAreas, directoryAreas]);
+  });
+
+  it('still ranks a graduate-track list below every other list', () => {
+    const ranked = resolveFieldRanked('researchAreas', [track, mesh, directory, quoted], { now });
+    expect(ranked.map((entry) => entry.value)).toEqual([
+      quotedAreas,
+      meshAreas,
+      directoryAreas,
+      trackAreas,
+    ]);
+  });
+
+  it('leaves MeSH to win when no quoted list exists', () => {
+    const resolved = resolveField('researchAreas', [mesh, track], { now });
+    expect(resolved?.value).toEqual(meshAreas);
+  });
+
+  it('does not demote a list another source also states', () => {
+    const corroborated = {
+      field: 'researchAreas',
+      value: meshAreas,
+      sourceName: 'lab-microsite-description-llm',
+      confidence: 0.6,
+      observedAt: now,
+    };
+    const resolved = resolveField('researchAreas', [mesh, corroborated, quoted], { now });
+    expect(resolved?.value).toEqual(meshAreas);
+  });
+
+  it('leaves other fields from the MeSH lane to weight', () => {
+    const resolved = resolveField(
+      'methods',
+      [
+        { ...mesh, field: 'methods' },
+        { ...quoted, field: 'methods' },
+      ],
+      { now },
+    );
+    expect(resolved?.value).toEqual(meshAreas);
+  });
+});
+
 describe('pastUndergradAdvisees from lab roster alumni rank below a fellowship history (#4430)', () => {
   const now = new Date('2026-10-03T00:00:00Z');
   const rosterAlumni = {

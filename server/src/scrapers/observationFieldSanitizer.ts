@@ -62,6 +62,7 @@ import {
   isExternalScholarlyPlatformLinkLabelName,
 } from '../utils/researchHomeNameIdentityAuthority';
 import { isResearchSectionLabel } from './researchAreaLabels';
+import { RESEARCH_PAGE_TEXT_FIELD, researchPageTextEntries } from './utils/researchPageText';
 import {
   boundedObservedFellowshipProse,
   OBSERVED_FELLOWSHIP_PROSE_FIELDS,
@@ -307,6 +308,14 @@ export function sanitizeObservationField(
   }
   if (isResearchEntity && METHOD_LIST_FIELDS.has(field)) {
     return sanitizeMethodListField(value);
+  }
+  if (isResearchEntity && field === RESEARCH_PAGE_TEXT_FIELD) {
+    return accepted(
+      researchPageTextEntries(value).map((entry) => ({
+        url: entry.url,
+        text: redactDirectContactInfo(entry.text),
+      })),
+    );
   }
   if (typeof value !== 'string') return accepted(value);
   if (entityType === 'fellowship' && OBSERVED_FELLOWSHIP_PROSE_FIELDS.has(field)) {

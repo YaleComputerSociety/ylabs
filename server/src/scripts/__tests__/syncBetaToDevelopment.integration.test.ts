@@ -194,6 +194,9 @@ async function seedTarget(targetDb: Db): Promise<void> {
   await targetDb
     .collection('login_signal_tallies')
     .insertOne({ date: '2026-10-04', undergrad_usable_major: 1 });
+  await targetDb
+    .collection('research_topics_derivations')
+    .insertOne({ inputHash: 'example-input-hash', topics: ['Kelp forests'] });
   await targetDb.collection('scrape_snapshots').insertOne({ runId: 'stale-development-run' });
   await targetDb
     .collection('scrape_job_locks')

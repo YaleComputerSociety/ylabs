@@ -42,6 +42,16 @@ export const fieldProvenanceSchema = new mongoose.Schema(
       max: 1,
       required: false,
     },
+    // Set only by a materialize-time derivation (#5296): the input hash it read and the
+    // contract that judged it, so a stale derived value can be told from a standing one.
+    derivationInputHash: {
+      type: String,
+      required: false,
+    },
+    derivationContract: {
+      type: String,
+      required: false,
+    },
   },
   { _id: false },
 );

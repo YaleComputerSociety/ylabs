@@ -61,6 +61,8 @@ const OPERATOR_TOOLS: Record<string, string> = {
   'production:promote-beta-copy': 'promotion tooling, run as part of the release process',
   'research-plans:retarget-merged':
     'promotion tooling, run by the remote phase in each serving environment after a copy (#5208)',
+  'research-topics:derive':
+    'buys a cached model reading of stored page text, a paid step an operator scopes and confirms (#5296); the engine applies the reading at materialization',
   'model-refactor:validators':
     'applies declared collection validators, a reviewed schema operation',
 };

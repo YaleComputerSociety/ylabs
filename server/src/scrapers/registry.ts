@@ -44,6 +44,7 @@ import { DirectoryAliasResolutionScraper } from './sources/directoryAliasResolut
 import { RosterBioResearchEvidenceScraper } from './sources/rosterBioResearchEvidenceScraper';
 import { CenterMemberProfileResearchScraper } from './sources/centerMemberProfileResearchScraper';
 import { CenterProfileResearchRowsScraper } from './sources/centerProfileResearchRowsScraper';
+import { ResearchPageTextScraper } from './sources/researchPageTextScraper';
 
 export function buildOrchestrator(): ScraperOrchestrator {
   const o = new ScraperOrchestrator();
@@ -94,5 +95,6 @@ export function buildOrchestrator(): ScraperOrchestrator {
   o.register(new RosterBioResearchEvidenceScraper());
   o.register(new CenterMemberProfileResearchScraper());
   o.register(new CenterProfileResearchRowsScraper());
+  o.register(new ResearchPageTextScraper());
   return o;
 }

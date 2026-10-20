@@ -17,7 +17,17 @@ import {
 import mongoose from 'mongoose';
 import { Observation, ObservedEntityType } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
-import { DERIVED_RESEARCH_AREA_SOURCE_NAME } from '../models/fieldProvenanceBacking';
+import {
+  DERIVED_RESEARCH_AREA_SOURCE_NAME,
+  RESEARCH_PAGE_TOPICS_DERIVED_SOURCE_NAME,
+} from '../models/fieldProvenanceBacking';
+import {
+  derivedResearchAreaProvenance,
+  researchPageTopicsStateFor,
+  storedDerivedResearchAreasAreStale,
+  type DerivedResearchAreaCandidate,
+} from './researchPageTopicsDerivation';
+import { RESEARCH_PAGE_TEXT_FIELD } from './utils/researchPageText';
 import {
   archivedEntityUpdate,
   PROGRAM_GATE_DERIVED_FIELDS,
@@ -1537,6 +1547,7 @@ async function resolveResearchAreasOverAdmissibleObservations(input: {
   manualValues: Record<string, unknown>;
   materializationObs: MaterializerObservationLike[];
   canonicalizeResearchAreas: ResearchAreaCanonicalizationStep;
+  derivedResearchAreas?: DerivedResearchAreaCandidate;
 }): Promise<boolean> {
   const { set, entityDoc } = input;
   const departments = set.departments ?? entityDoc?.departments;
@@ -1565,11 +1576,9 @@ async function resolveResearchAreasOverAdmissibleObservations(input: {
     departments,
   );
   input.confidenceByField.researchAreas = resolved.confidence;
-  const provenance = fieldProvenanceForResolvedObservation(
-    'researchAreas',
-    resolved,
-    input.materializationObs,
-  );
+  const provenance =
+    fieldProvenanceForResolvedObservation('researchAreas', resolved, input.materializationObs) ??
+    derivedResearchAreaProvenanceFor('researchAreas', resolved, input.derivedResearchAreas);
   if (provenance) set['fieldProvenance.researchAreas'] = provenance;
   else delete set['fieldProvenance.researchAreas'];
   return true;
@@ -1867,6 +1876,12 @@ export function shouldIgnoreObservationForEntityMaterialization(
   observation: MaterializerObservationLike,
 ): boolean {
   if (observation.field && MATERIALIZER_MANAGED_FIELDS.has(observation.field)) {
+    return true;
+  }
+  if (
+    isResearchEntityObservationType(entityType) &&
+    isObservationOnlyResearchEntityField(observation.field)
+  ) {
     return true;
   }
   if (entityType === 'user' && observation.field === OFFICIAL_PROFILE_PUBLICATIONS_FIELD) {
@@ -2554,6 +2569,65 @@ export function clearedWebsiteUrlIsWorthWriting(
 function comparableObservationValue(value: unknown): string {
   if (typeof value === 'string') return value.trim().toLowerCase();
   return JSON.stringify(value);
+}
+
+/**
+ * Page text is stored for materialize-time readers (#5296), not served, so no field on the
+ * row ever carries it and neither the public DTO nor the search index can reach it.
+ */
+function isObservationOnlyResearchEntityField(field: string | undefined): boolean {
+  return field === RESEARCH_PAGE_TEXT_FIELD;
+}
+
+function derivedResearchAreaProvenanceFor(
+  field: string,
+  resolved: ResolvedField,
+  candidate: DerivedResearchAreaCandidate | undefined,
+): Record<string, unknown> | null {
+  if (field !== 'researchAreas' || !candidate) return null;
+  if (!resolved.contributingSources.includes(candidate.sourceName)) return null;
+  if (comparableObservationValue(resolved.value) !== comparableObservationValue(candidate.value)) {
+    return null;
+  }
+  return derivedResearchAreaProvenance(candidate);
+}
+
+function resolverObservationOfDerivedCandidate(
+  candidate: DerivedResearchAreaCandidate,
+): ResolverObservation {
+  return {
+    field: candidate.field,
+    value: candidate.value,
+    sourceName: candidate.sourceName,
+    confidence: candidate.confidence,
+    observedAt: candidate.observedAt,
+  };
+}
+
+const storedResearchAreasProvenance = (entityDoc: any): unknown =>
+  objectRecord(entityDoc?.fieldProvenance).researchAreas;
+
+/**
+ * A stored list credited to a page-topics derivation, and not shown stale, is backed by
+ * that derivation even when no observation states it, so the unbacked-list union never
+ * extends or replaces it.
+ */
+function storedResearchAreasCreditedToStandingDerivation(
+  entityDoc: any,
+  storedDerivationStale: boolean,
+): boolean {
+  const sourceName = objectRecord(storedResearchAreasProvenance(entityDoc)).sourceName;
+  return sourceName === RESEARCH_PAGE_TOPICS_DERIVED_SOURCE_NAME && !storedDerivationStale;
+}
+
+function clearStaleResearchPageTopicsProvenance(
+  set: Record<string, unknown>,
+  unset: Record<string, ''>,
+  storedDerivationStale: boolean,
+): void {
+  if (!storedDerivationStale) return;
+  if (DERIVED_RESEARCH_AREA_PROVENANCE_PATH in set) return;
+  unset[DERIVED_RESEARCH_AREA_PROVENANCE_PATH] = '';
 }
 
 function fieldProvenanceForResolvedObservation(
@@ -7584,6 +7658,8 @@ export interface ProjectFromLogInput {
   entityDoc: any;
   materializationObs: any[];
   resolverObs: ResolverObservation[];
+  derivedResearchAreas?: DerivedResearchAreaCandidate;
+  storedDerivedResearchAreasStale?: boolean;
   fullDescriptionShellGated: boolean;
   undergradEvidenceQuoteWithdrawnBy?: ReadonlySet<string>;
   fellowshipFieldsAssertedAbsent?: ReadonlyMap<string, ReadonlySet<string>>;
@@ -9146,7 +9222,9 @@ export async function projectFromLog(
     set[field] = projectedValue;
     confidenceByField[field] = r.confidence;
     if (isResearchEntityObservationType(entityType)) {
-      const provenance = fieldProvenanceForResolvedObservation(field, r, materializationObs);
+      const provenance =
+        fieldProvenanceForResolvedObservation(field, r, materializationObs) ??
+        derivedResearchAreaProvenanceFor(field, r, input.derivedResearchAreas);
       if (provenance) set[`fieldProvenance.${field}`] = provenance;
     }
     if (r.hasConflict) conflicts++;
@@ -9607,6 +9685,7 @@ export async function projectFromLog(
         manualValues,
         materializationObs,
         canonicalizeResearchAreas,
+        derivedResearchAreas: input.derivedResearchAreas,
       });
     }
     // Derive again if canonicalization emptied the list, because the first attempt
@@ -9675,6 +9754,11 @@ export async function projectFromLog(
       fieldsWritten += Number('researchAreas' in set) - Number(plannedResearchAreasBefore);
     }
     reconcileDerivedResearchAreaProvenance(set, unset, entityDoc);
+    clearStaleResearchPageTopicsProvenance(
+      set,
+      unset,
+      input.storedDerivedResearchAreasStale === true,
+    );
     // The detail-page official-profile CTA reads only entity.sourceUrls, so a
     // lead's official profile page must land there or the way-in disappears
     // even though it is a known source (issue #613).
@@ -11131,13 +11215,25 @@ export async function materializeEntity(
     );
   }
 
-  const resolverObs: ResolverObservation[] = collectivePageScreened.map((o: any) => ({
-    field: o.field,
-    value: o.value,
-    sourceName: o.sourceName,
-    confidence: o.confidence,
-    observedAt: o.observedAt,
-  }));
+  // Read off `obs`, because the set the projection reads has already dropped the page text.
+  const researchPageTopics = isResearchEntityObservationType(entityType)
+    ? await researchPageTopicsStateFor(obs)
+    : {};
+  const derivedResearchAreas = researchPageTopics.candidate;
+  const storedDerivedResearchAreasStale = storedDerivedResearchAreasAreStale(
+    storedResearchAreasProvenance(entityDoc),
+    researchPageTopics,
+  );
+  const resolverObs: ResolverObservation[] = [
+    ...collectivePageScreened.map((o: any) => ({
+      field: o.field,
+      value: o.value,
+      sourceName: o.sourceName,
+      confidence: o.confidence,
+      observedAt: o.observedAt,
+    })),
+    ...(derivedResearchAreas ? [resolverObservationOfDerivedCandidate(derivedResearchAreas)] : []),
+  ];
 
   // A refusal removes one VALUE from consideration, never the field, so whatever
   // rivals remain still resolve normally and a field whose every candidate is
@@ -11250,6 +11346,7 @@ export async function materializeEntity(
   const researchAreasHaveNoLiveEvidence =
     isResearchEntityObservationType(entityType) &&
     readRowUnderOwnIdentity &&
+    !storedResearchAreasCreditedToStandingDerivation(entityDoc, storedDerivedResearchAreasStale) &&
     (await storedResearchAreasHaveNoLiveEvidence({
       entityDoc,
       mergedInRows,
@@ -11258,7 +11355,8 @@ export async function materializeEntity(
     }));
   const storedResearchAreasEvidenceRetired =
     researchAreasHaveNoLiveEvidence &&
-    (storedResearchAreasCameFromAPersonProfileOnAnOrganizationRow(entityDoc) ||
+    (storedDerivedResearchAreasStale ||
+      storedResearchAreasCameFromAPersonProfileOnAnOrganizationRow(entityDoc) ||
       storedFieldIsCreditedToACoursePage(entityDoc, 'researchAreas') ||
       (await storedResearchAreasSourceRetiredItsClaim(entityDoc, mergedInRows)));
 
@@ -11273,6 +11371,8 @@ export async function materializeEntity(
     // set the resolver itself read: a walk over the unscreened set can adopt a value this
     // row refuses, which the #3438 clear then blanks over an admissible rival (#3884).
     resolverObs: refusalScreen.kept,
+    derivedResearchAreas,
+    storedDerivedResearchAreasStale,
     fullDescriptionShellGated,
     undergradEvidenceQuoteWithdrawnBy,
     fellowshipFieldsAssertedAbsent: fellowshipAbsentByField,

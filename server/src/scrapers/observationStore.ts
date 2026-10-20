@@ -956,6 +956,9 @@ export const LATEST_WINS_FINGERPRINT_FIELDS = new Set<string>([
   // A member page's identity evidence changes whenever the page adds or reorders a
   // Yale link, and two active readings conflict, which blinds identity resolution (#3802).
   'profileIdentityEvidence',
+  // One reading of a row's research pages per run, so a changed or cleared page retires
+  // the text a derivation was computed from instead of standing beside it (#5396).
+  'researchPageText',
 ]);
 
 /**
