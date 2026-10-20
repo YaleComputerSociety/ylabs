@@ -112,6 +112,7 @@ import {
 } from '../utils/researchAnalytics';
 import { captureClientError } from '../utils/errorTracking';
 import { undergradInvitationFromEntity } from '../utils/undergradInvitation';
+import { reachOutDefaultLine, type ReachOutRenderedContact } from '../utils/reachOutDefaultLine';
 
 const FIRST_RESEARCH_PLAN_SAVE_KEY = 'yale-research.firstResearchPlanSave.v1';
 const YALE_DIRECTORY_URL = 'https://directory.yale.edu/';
@@ -475,7 +476,7 @@ const DecisionSummary = ({
   leadProfilesLinkedInline?: boolean;
   rosterListsUndergraduates?: boolean;
 }) => {
-  const { departments, departmentPillEligibleLabels } = useConfig();
+  const { departments, departmentPillEligibleLabels, getDepartmentByName } = useConfig();
   const topics = detailTopics(group, 5);
   const description = sanitizeResearchEntityCopy(detailDescription(group), group);
   useEffect(() => {
@@ -557,6 +558,27 @@ const DecisionSummary = ({
   const showGetInvolvedBlock = getInvolvedHasOwnAction || needsDirectoryFallback;
   const pageListsContacts = getInvolvedHasOwnAction || directoryFallbackCandidate;
   const activityCheckUrl = actionLinks.activityCheckUrl;
+  const renderedContact: ReachOutRenderedContact = piMailtoHref
+    ? 'leadCardEmail'
+    : leadCardLinksProfile
+      ? 'leadCardProfile'
+      : getInvolvedHasOwnAction
+        ? 'pageAction'
+        : needsDirectoryFallback
+          ? 'directorySearch'
+          : 'officialPages';
+  const firstDepartment =
+    typeof group.departments?.[0] === 'string'
+      ? getDepartmentByName(group.departments[0])
+      : undefined;
+  const reachOutLine = offersOrgEngagementPage
+    ? undefined
+    : reachOutDefaultLine({
+        entity: group,
+        firstDepartmentCategory:
+          firstDepartment?.primaryCategory || firstDepartment?.categories?.[0],
+        renderedContact,
+      });
   const outboundNoteId = useId();
   const joinLinkLeavesWebsite =
     Boolean(joinPageLinkUrl) && !isSameActionHost(joinPageLinkUrl, websiteUrl);
@@ -651,13 +673,10 @@ const DecisionSummary = ({
             <p className="text-xs font-semibold uppercase tracking-wider text-muted">
               How to get involved
             </p>
-            {!showGetInvolvedBlock ? (
-              <p className="mt-1 text-sm leading-relaxed text-ink">
-                {leadCardLinksProfile
-                  ? 'Reach out to the lead listed above to introduce yourself and ask whether there is a way to take part.'
-                  : 'Use the official pages listed below to find a contact, then email to introduce yourself.'}
-              </p>
-            ) : showsWebsiteCta ? (
+            {reachOutLine && (
+              <p className="mt-1 max-w-[68ch] text-sm leading-relaxed text-ink">{reachOutLine}</p>
+            )}
+            {!showGetInvolvedBlock ? null : showsWebsiteCta ? (
               <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                 <a
                   href={websiteUrl}

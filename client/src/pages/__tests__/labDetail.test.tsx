@@ -1535,7 +1535,7 @@ describe('LabDetail page', () => {
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     expect(screen.getByRole('link', { name: /^Email Jordan Researcher at / })).toBeTruthy();
-    expect(screen.getByText(/Reach out to the lead listed above/)).toBeTruthy();
+    expect(screen.getByText(/at the address on their card/)).toBeTruthy();
     expect(
       screen.getByRole('link', { name: 'New to research? How to reach out' }).getAttribute('href'),
     ).toBe('/getting-started');
@@ -1612,7 +1612,7 @@ describe('LabDetail page', () => {
         .some((link) => link.getAttribute('href') === LEAD_CARD_PROFILE_URL),
     ).toBe(true);
     expect(screen.queryByRole('link', { name: 'Open the official page' })).toBeNull();
-    expect(screen.getByText(/Reach out to the lead listed above/)).toBeTruthy();
+    expect(screen.getByText(/through the official profile on their card/)).toBeTruthy();
     expect(
       screen.getByRole('link', { name: 'New to research? How to reach out' }).getAttribute('href'),
     ).toBe('/getting-started');
@@ -3426,7 +3426,7 @@ describe('LabDetail display name unification', () => {
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     expect(screen.queryByRole('link', { name: 'Visit research website' })).toBeNull();
-    expect(screen.getByText(/Reach out to the lead listed above/)).toBeTruthy();
+    expect(screen.getByText(/through the official profile on their card/)).toBeTruthy();
     expect(
       screen.getByRole('link', { name: 'New to research? How to reach out' }).getAttribute('href'),
     ).toBe('/getting-started');

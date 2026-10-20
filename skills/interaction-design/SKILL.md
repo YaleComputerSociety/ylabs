@@ -124,6 +124,7 @@ Below that a student stays in flow; above it they start context-switching.
 - A spinner needs a show-delay of roughly 150 to 300ms and a minimum display of 300 to 500ms, or a fast response makes it flash.
 - The **peak-end rule** says an experience is judged by its best moment and its last one, not its average.
 The last moment in this product is usually the contact step, so that is the moment worth over-investing in.
+The detail page's reach-out default line is that investment: one discipline-aware sentence opening "How to get involved" that tells a student emailing the lead is normal and what to put in the email, pointing at the contact the page already renders rather than adding a route (#5297, rules in `docs/product-context.md` CTA Vocabulary).
 
 ## 8. Questions this product has not answered
 
