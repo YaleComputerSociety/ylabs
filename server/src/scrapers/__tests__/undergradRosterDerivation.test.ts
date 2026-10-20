@@ -468,6 +468,55 @@ describe('derived roster observations and serving (#5278, #5413)', () => {
     expect(entityHasHostedUndergraduates({ rosterEnrichment: after })).toBe(false);
   });
 
+  const rerunDerivedRow = async (
+    fetchPage: (url: string) => Promise<string>,
+  ): Promise<ObservationInput[]> => {
+    const emitted: ObservationInput[] = [];
+    const scraper = new OfficialResearchHomeRosterScraper(
+      [],
+      fetchPage,
+      createUndergradRosterDeriver(async () => [candidate({ hasDerivedRoster: true })], 0, []),
+    );
+    await scraper.run({
+      options: { dryRun: false, useCache: false, release: false, referenceDate: observedAt },
+      emit: async (observations: ObservationInput[]) => {
+        emitted.push(...observations);
+      },
+      log: () => {},
+    } as unknown as ScraperContext);
+    return emitted;
+  };
+
+  it('keeps a served derived roster and its hosting claim when every page read fails', async () => {
+    const [snapshot] = await runScraper();
+    const before = rosterEnrichmentWithRetainedSuccessfulSnapshot(snapshot.value);
+    const emitted = await rerunDerivedRow(async () => {
+      throw new Error('timeout');
+    });
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0].value).toMatchObject({ state: 'failed', configOrigin: 'derived' });
+    const after = rosterEnrichmentWithRetainedSuccessfulSnapshot(emitted[0].value, before);
+    delete process.env[DERIVED_UNDERGRAD_ROSTERS_SERVE_ENV];
+    expect(servableRosterSnapshot(after)).not.toBeNull();
+    expect(entityHasHostedUndergraduates({ rosterEnrichment: after })).toBe(true);
+  });
+
+  it('withdraws a derived roster when one page loads without it and another fails', async () => {
+    const [snapshot] = await runScraper();
+    const before = rosterEnrichmentWithRetainedSuccessfulSnapshot(snapshot.value);
+    const emitted = await rerunDerivedRow(
+      readFrom({
+        'https://examplelab.example.org/people': rosterPage({ People: ['Avery Sample'] }),
+      }),
+    );
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0].value).toMatchObject({ state: 'withheld', configOrigin: 'derived' });
+    const after = rosterEnrichmentWithRetainedSuccessfulSnapshot(emitted[0].value, before);
+    delete process.env[DERIVED_UNDERGRAD_ROSTERS_SERVE_ENV];
+    expect(servableRosterSnapshot(after)).toBeNull();
+    expect(entityHasHostedUndergraduates({ rosterEnrichment: after })).toBe(false);
+  });
+
   it('never keeps a derived roster behind a failed allowlist read', async () => {
     const [snapshot] = await runScraper();
     const stored = rosterEnrichmentWithRetainedSuccessfulSnapshot(snapshot.value);

@@ -77,7 +77,8 @@ export function hasPastUndergradAdvisees(value: unknown): boolean {
  *
  * A served derived roster counts as well (#5413). The lane attempts every live row with a
  * website, not only rows that already carry this flag (#5375), and withdraws a derived roster
- * it no longer finds, so a roster cannot keep the flag alive after its page stops naming anyone.
+ * whose pages load but no longer yield it, so a roster cannot keep the flag alive after its page
+ * stops naming anyone; a read that fails on every page keeps the last successful roster.
  */
 export function entityHasHostedUndergraduates(entity: {
   pastUndergradAdvisees?: unknown;
