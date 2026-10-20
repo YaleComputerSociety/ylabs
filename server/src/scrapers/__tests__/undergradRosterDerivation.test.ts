@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { deniedRosterKeyDigest } from '../rosterStrikeDigests';
 import {
   createUndergradRosterDeriver,
   deriveUndergradRosterForCandidate,
@@ -336,7 +337,7 @@ describe('createUndergradRosterDeriver (#5278)', () => {
         candidate(),
       ],
       0,
-      ['denied-lab'],
+      [deniedRosterKeyDigest('denied-lab')],
     );
     const run = await derive({
       staticKeys: new Set(['static-lab']),
@@ -351,12 +352,26 @@ describe('createUndergradRosterDeriver (#5278)', () => {
     expect(run.outcomes.map((outcome) => outcome.researchEntityKey)).toEqual(['example-lab']);
   });
 
+  it('denies a row by the digest of its key, never by the plaintext key', async () => {
+    const derive = createUndergradRosterDeriver(
+      async () => [candidate({ researchEntityKey: 'denied-lab' })],
+      0,
+      ['denied-lab'],
+    );
+    const run = await derive({
+      staticKeys: new Set(),
+      observedAt,
+      fetchPage: async () => rosterPage({ 'Undergraduate Researchers': ['Avery Sample'] }),
+    });
+    expect(run.ownerDenied).toBe(0);
+  });
+
   it('withdraws a recorded derived roster once the owner denies the row', async () => {
     const reads: string[] = [];
     const derive = createUndergradRosterDeriver(
       async () => [candidate({ researchEntityKey: 'denied-lab', hasDerivedRoster: true })],
       0,
-      ['denied-lab'],
+      [deniedRosterKeyDigest('denied-lab')],
     );
     const run = await derive({
       staticKeys: new Set(),
@@ -445,7 +460,7 @@ describe('derived roster observations and serving (#5278)', () => {
     const derive = createUndergradRosterDeriver(
       async () => [candidate({ hasDerivedRoster: true })],
       0,
-      ['example-lab'],
+      [deniedRosterKeyDigest('example-lab')],
     );
     const scraper = new OfficialResearchHomeRosterScraper(
       [],

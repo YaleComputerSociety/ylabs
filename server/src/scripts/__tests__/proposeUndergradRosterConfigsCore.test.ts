@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { withheldNameDigest } from '../../scrapers/rosterStrikeDigests';
 import {
   isProposableSectionLabel,
   labSitePageLinks,
@@ -148,6 +149,17 @@ describe('review sheet and config source', () => {
         '  },',
       ].join('\n'),
     );
+  });
+
+  it('emits an owner-refused name as its digest and never as the name', () => {
+    const source = officialRosterConfigSource([
+      { ...proposal!.config, withheldNames: ['Ellis Juniper'] },
+    ]);
+
+    expect(source).toContain(
+      `    withheldNameDigests: ${JSON.stringify([withheldNameDigest('Ellis Juniper')])},`,
+    );
+    expect(source).not.toMatch(/Ellis|Juniper|withheldNames/);
   });
 });
 

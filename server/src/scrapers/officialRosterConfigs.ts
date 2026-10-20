@@ -1,6 +1,8 @@
 import type { OfficialRosterConfig } from './sources/officialResearchHomeRosterScraper';
 
-export const OWNER_DENIED_ROSTER_KEYS: readonly string[] = [];
+export const OWNER_DENIED_ROSTER_KEY_DIGESTS: readonly string[] = [
+  '6bc1363377f227c7085dfb9d493afd535ab18fc53fca08a4690f55530ca4cb3f',
+];
 
 // Every entry past the first four was approved lab by lab by the owner after a check of its
 // listed names against the page (#5039); add an entry only through that review.
@@ -321,32 +323,35 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     url: 'https://jacob-lab.yale.edu/jacob-lab',
     template: 'heading-list',
     currentSectionLabels: ['Undergraduate Students:'],
-    withheldNames: ['Krishna Chatpar', 'Benjamin Eng'],
+    withheldNameDigests: [
+      '2d758400dd035ae7abc8302fbecedec00ea6a514914cc17a494727f281839138',
+      'f423f2bcd1540e00578a27904d678adf8ba228f635454095f0e132c65fec43ea',
+    ],
   },
   {
     researchEntityKey: 'dept-chemical-environmental-engineering-shu-hu',
     url: 'https://lightcatalysis.yale.edu/abous-us/',
     template: 'heading-list',
     currentSectionLabels: ['Undergraduate Students and Summer Researchers'],
-    withheldNames: [
-      'Chang Qiu',
-      'Jiaye Chen',
-      'Yulin Liu',
-      'Zhenya Luo',
-      'Dawei Xi',
-      'Yijie Xu',
-      'Yu Chen',
-      'Shuyu Dong',
-      'Yuzi Luo',
-      'Zuyang Ye',
-      'Daniel Raynor',
-      'Sheng Li',
-      'Xi Chen',
-      'Roxie Trachtenberg',
-      'Michael Adeyi',
-      'Christine Oberhausen',
-      'Daniel King',
-      'Ian Billinge',
+    withheldNameDigests: [
+      '68a9268b7332e1f092175948c0a4dcfe8dadecf4ceb797113a7045d20d973f03',
+      '8ff3939809aa309227b6751ffc6064bfe711b3bc5c10514b0ee312651b740ed8',
+      '8b6a81fff11681650e221969bdfb8be564dc885d985e88bd2dcc28391fede833',
+      '8df2e69d41fcabb29c3e1688ef64dbbc6078a2c21e2370e4ec9f12635226c7b0',
+      '5ec1119674eb9d2e48acf0af103e44a7cd8f47ce6e7c4e630af7cb551d50a10b',
+      'e0bd6b25a250551148fb3d52e661085194062c3b8422d718c361f23b1d58a5f7',
+      '3240e85b3b21233be2d348a2caf991d8ab6075be1f21326f29581ae0a787dbd3',
+      '0870555fe12948a134326809863f3e5bee67d1d09ea55b959a74fc2c3ea58da4',
+      'ecb844fd0582c0c64007299202a2ebea97350814cc81319e0a4ad23d78f9cfb4',
+      'c98b5f15073e669c5e55b5a94c996ee9c5e27446ae82f909b76b9d65542292f5',
+      'e90247f241d2806a84c0ff3f72a035f30d16d9b44bcfb964cad21a0c26eb834f',
+      '7c6af093dd03dd86370a64db60d2a7bb02d486df780b03e00d336491c8c43509',
+      '39ee5864c5ede5e2389f5f3854fc2f838dac101bdd47048eaf50de63330a4630',
+      '12944e0c69502b861f594308c36126cc7e01ca6c4d83b00d9f09a1b7d9233cd7',
+      '6e2d54d25655467bc0f114ea88546331d7125c63fc847317efc524d50517eee2',
+      'c949b97164dcb7e613121e2fe70ceb5e1b1a11db52aecdb2313049fbeef6e7cc',
+      '97695c444b9a97b931c8347b3715f07e46377651db91d9bf09d4d641051775ac',
+      'e6b5f9ac5fc169cc48a41c67dff87e83cfc41e8fdd50d1268c7231f3cbd96971',
     ],
   },
   {
@@ -354,11 +359,11 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     url: 'https://maruyama-lab.yale.edu/people',
     template: 'yalesites-directory',
     currentSectionLabels: ['Undergraduate Students'],
-    withheldNames: [
-      'Chris Hilgenberg',
-      'Aleks Cianciara',
-      'Minghui (Maggie) Wu',
-      'Benjamin Broerman',
+    withheldNameDigests: [
+      'd5b22b345a0edc30104f5658a55ad41e695d1f0cce7b9c6f5b145798d64770b0',
+      '132b2cfc1c3841582551be9d73047d04b92ccce8a1b506f4f8c218b8a0c218a9',
+      '5554b6b97d207af74a4af677b6067e077143d77c9440696376d913317be95969',
+      'eccc97b95b8ae68ad3350b0999d0b2b21d2fc8872cb972d14e7ddbb68f2c1755',
     ],
   },
   {
@@ -366,13 +371,13 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     url: 'https://kimlab.yale.edu/people/past-group-members',
     template: 'yalesites-directory',
     currentSectionLabels: ['Undergraduate Students'],
-    withheldNames: [
-      'Tyler Cromey',
-      'Kyoung Eun Park',
-      'Elizabeth West',
-      'Varun Gandhi',
-      'Annie Park',
-      'Joseph Ross',
+    withheldNameDigests: [
+      '8c14aecada0c485eba88d714a50fac55f8ef9f3af3575b1b6d2f37495ff5498e',
+      '3618a0718ae98bb4192c969360e27feba8a0514105381f759f6acbce0aeefd09',
+      'b49123aca5873860811cf96839882878eed2a467fa9d4f06322318a9e9b2ae8a',
+      '114ddf584833d30b3a3f3cee7d1d8f6949afc789e548006f68d6c9c584f3e59e',
+      '7b33012ca71f998ad767df41af5e59b188297f30eea6aa25c5f461da8f3562f0',
+      'f57eddf61ca8ef03aa855b0c9d9b9c7bfa1adb3d80837e5318096a33cf4b1531',
     ],
   },
   {
@@ -390,13 +395,13 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     template: 'heading-list',
     currentSectionLabels: ['PhD Students', 'Postgraduate Associates', 'Undergraduate Associates'],
     pastSectionLabels: ['Alumni'],
-    withheldNames: [
-      'Mackenzie Bender',
-      'Jaspreet Kohli',
-      'Monisha Chakder',
-      'Victor Miranda',
-      'Lucas Yang',
-      'Dana Kalina',
+    withheldNameDigests: [
+      'f335f022265e086e7e73c6bbf537717b63d5f6a6eece3d6d91bcc1171dff4585',
+      '5d49d4ec6ebbb323c26da2603e5efd0f8486cc814b298852e3f3dc7fe163c4df',
+      '4fa1319f9903458d76b40f2db5c05984f2d8138a31d2ccae8344bb80a5d2bb13',
+      'b849468f1e1d856a739953e15d26f643f7d90973492ef38bb7061b9034267f04',
+      'cf03e83d41bd7f8f33c06b010bd6f42fce9afd52cee848475ee409f9c7690da3',
+      'b3ab10773615fe15a2b5e99af5abc76ab8695c88fd201478c4719a6c23c8f3f6',
     ],
   },
   {
@@ -405,7 +410,7 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     template: 'heading-list',
     currentSectionLabels: [],
     pastSectionLabels: ['Undergraduate Students'],
-    withheldNames: ['Next Position'],
+    withheldNameDigests: ['886b2ff28646992b748494ed92d06557ee4662825fe51def714ac23faf89a5bb'],
   },
   {
     researchEntityKey: 'ysm-faculty-krysten-bold',
@@ -413,14 +418,17 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     template: 'profile-grid',
     currency: 'section-label',
     currentSectionLabels: ['Our Team'],
-    withheldNames: ['Julia Majewski', 'Taylor Richitelli'],
+    withheldNameDigests: [
+      '5581435133c7b9c6561a54f4822cb26c791683905d4ee3cc8b05a344adc8b1c4',
+      '306eec6d67f98399ffacf2301bba134f8bf5c58383140c94543cb6bff0e62dfc',
+    ],
   },
   {
     researchEntityKey: 'ysm-faculty-michael-koelle',
     url: 'https://koellelab.yale.edu/people',
     template: 'heading-list',
     currentSectionLabels: ['Graduate Students', 'Undergraduate Students'],
-    withheldNames: ['Científico Latino'],
+    withheldNameDigests: ['a85cc90e287667af020b6d94e0baa832fd4a2bcbcee489e5be864b69dceecc67'],
     pastNames: ['Kimberly Wei'],
   },
   {
@@ -436,7 +444,11 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     template: 'heading-list',
     currentSectionLabels: ['Graduate Students', 'Undergraduate Students'],
     pastSectionLabels: ['Undergraduate and Visiting Students'],
-    withheldNames: ['Amber Sheu', 'Jacob Newman', 'Diego Olivieri'],
+    withheldNameDigests: [
+      '4f03a3c5d72c19f80a3ad4369c051b0eb3d23715a797fc6cdf7c23f7b137963d',
+      'e4bc4678b7556a024ed7266d0021116782befce891df174b3fbbee48cea7e02e',
+      'a276f026f8de491836cc7a883b36f887c1d6d9a7b4b14d705a5dfb7413e56188',
+    ],
   },
   {
     researchEntityKey: 'ysm-faculty-wu-min',
@@ -453,7 +465,10 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     template: 'heading-list',
     currentSectionLabels: ['Members'],
     pastSectionLabels: ['Alumni'],
-    withheldNames: ['Kristine Xu', 'Tina Savvaides'],
+    withheldNameDigests: [
+      '4523d16fea745c58e713903b08aa554c09688181d639c3268ee3bd7140e1e254',
+      '6eef04ce2ce25bb48b773b94d4b231104e98ad26b0d676d6073e677fe77bf201',
+    ],
   },
   {
     researchEntityKey: 'ysm-wu',
@@ -486,7 +501,7 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     currency: 'section-label',
     currentSectionLabels: [],
     pastSectionLabels: ['Former Lab Members'],
-    withheldNames: ['Kiley Pickens'],
+    withheldNameDigests: ['ee77d407a26feee572e66e61b74352a44de023398a9a3e50c27713d134507128'],
   },
   {
     researchEntityKey: 'ysm-faculty-christina-cipriano',
@@ -508,7 +523,10 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     template: 'heading-list',
     currentSectionLabels: [],
     pastSectionLabels: ['Lab Alumni'],
-    withheldNames: ['Kaela Dockray', 'Madison Sakheim'],
+    withheldNameDigests: [
+      '2f0fb15c5e6d83263a350aae93dc98ebc49cd025c8f856c3eb5788cd10f603d2',
+      '673ba2616288c9ca6b2f103ab17cba5b77d2db910362315152465af94d9d3160',
+    ],
   },
   {
     researchEntityKey: 'ysm-faculty-scott-strobel',
@@ -523,18 +541,18 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     template: 'heading-list',
     currentSectionLabels: [],
     pastSectionLabels: ['Undergraduate Students.'],
-    withheldNames: [
-      'Adam Bildersee',
-      'Quantitative Trading',
-      'Ava Carroll',
-      'Peb Reu',
-      'Hope Anderson',
-      'Isabel Burger',
-      'Karah Edmonds',
-      'Mattia Mahmoud',
-      'Megan Ayers',
-      'Terukimi Hayashi',
-      'Nuclear Engineer',
+    withheldNameDigests: [
+      '0c946114215cdfc3cf0c4f2e8dea4b6d2e5571ea18806cf20bb681b3da3db040',
+      'ba766075c1223b9bef8c8b261abbfbd8cad79d4861a7ba886dd299889d776cef',
+      '1c64df39e5584452f5e7bffb11c361d0dc24993d0a03a9a4b58dcf42d0dc78ed',
+      '92c514c85d8e8de4db20ca97c8c0fdd2a44a0ca5d39a7a547c406e4eab353a82',
+      'be0069c3d2e923bd35ae8280f92c5565ff91dea7c89503164abe7e1bf3b90d70',
+      '8644bb0c68ad25ca2810114b52054ab6ffea2f87dad38d518a2c626316c50389',
+      'c30be7888b69e86949cd3e824051163c2e4bf69693e2816552fe1e6a0b9d89b5',
+      '80e84b10711ef6904126046d78c3ac83e1a8feb693291823c7477d64119ab768',
+      'df5bae1666691d3ea5051aa9ae2c8285c4c796556843d50a28668d077af6b5c7',
+      '8a2b0ab1ed0b9b8e75f2dc151ab1166dcd2dce78abddd3a95d089ae82194bbd0',
+      '020b105f4f31b32230f0d66a2527e583913a6c0f303dffbba3c63f42909f6f9c',
     ],
   },
   {
@@ -565,7 +583,10 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     currentSectionLabels: ['Meet the Team'],
     pastSectionLabels: ['Former Lab Members'],
 
-    withheldNames: ['Eman El-gohary', 'Juan Martinez Villalobos'],
+    withheldNameDigests: [
+      'a933040c31efcaf960b6ad92252358b31b296b3f753b2d90f046041dbcd2872d',
+      '63edbf73686d880d4f86aef6fe2f828951ddc12f471ad9820e9966e50ce4e6d5',
+    ],
   },
   {
     researchEntityKey: 'bbs-chantal-vogels',
@@ -580,7 +601,7 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     currentSectionLabels: [],
     pastSectionLabels: ['Undergraduates'],
 
-    withheldNames: ['Frederick Cordova'],
+    withheldNameDigests: ['f097b35b0cabdff871c203878a2272283d633f0608adec47fb1d931c76960241'],
   },
   {
     researchEntityKey: 'bbs-josien-van-wolfswinkel',
@@ -624,7 +645,10 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     template: 'heading-list',
     currentSectionLabels: [],
     pastSectionLabels: ['Alumni:'],
-    withheldNames: ['Skylar McDermott', 'Edward Schildnecht'],
+    withheldNameDigests: [
+      '41555fd3dc8611c6e7b148d00bc3f19db594af8271c2fd2f8a40298af4ef45bf',
+      'dfd3c3da7447eeeb07c022903051f38fe51effa772f3490285b69b20a74f2740',
+    ],
   },
   {
     researchEntityKey: 'dept-physics-david-moore',
@@ -694,7 +718,7 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     currentSectionLabels: ['Members'],
     pastSectionLabels: ['Alumni'],
 
-    withheldNames: ['Zian Zhao'],
+    withheldNameDigests: ['d2a3d875f2e45486b9b731f5320d6548230d863493ff89f419e4344e15b15d50'],
   },
   {
     researchEntityKey: 'faculty-research-area-peijun-guo',
@@ -723,7 +747,10 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     currentSectionLabels: [],
     pastSectionLabels: ['Alumni'],
 
-    withheldNames: ['Abigail Moran', 'Google Scholar Page'],
+    withheldNameDigests: [
+      '23d41e2929e7b78d806513c5a000f477ff4d2a55387a262ba1b7cc8ee0f9a534',
+      '541707c7392f705c3c7fdefbdcb9e3937a62ebb86302b5add5ad02defeedd515',
+    ],
   },
   {
     researchEntityKey: 'nsf-pi-67d8928e50621bcef434a4a7',
@@ -732,7 +759,7 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     currentSectionLabels: ['Undergraduate researchers'],
     pastSectionLabels: ['Alumni'],
 
-    withheldNames: ['Beth Reed'],
+    withheldNameDigests: ['83a64a863bf737432b91e56026a7b44431520e10e805bad2de3bbef71c6e3bd8'],
   },
   {
     researchEntityKey: 'pfefferle-lab-ldp2',
@@ -748,16 +775,16 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     currentSectionLabels: [],
     pastSectionLabels: ['former students and postdocs'],
 
-    withheldNames: [
-      'Alex Johnson',
-      'Ellen Oordt',
-      'Isabel Acevedo',
-      'Jack Hatajik',
-      'Joey Jaros',
-      'Koa Reiz',
-      'Meri Raughley',
-      'Naeem Aziz',
-      'Stanley Tan',
+    withheldNameDigests: [
+      '5c4ec0d43a101c4ea1e2dad44eb51b178d7d34a074e9d6b4d98ca41ca8a488b1',
+      '1318784ef967919a3ee089e68f67a44ee5ee145fcdfaaa50bc5996f144c6dd1b',
+      'ff614f4814f347b7cb979d26283c04bb7616d9312db0747b521dc620f1826acb',
+      'b759775fd4b6a7e73088622d21f2dd80690b5d58103482a6dd2c0fb60905a90f',
+      '030e4f71aa2f7161e78a84e298a2267db777d614fe7c5451fc86c09f5d1a8d84',
+      '066535b5dbdb4d79dabd939f4e6aa3b10f400637d53c79c1b7e2398e3ee04bfc',
+      '6a856ecb8dcffa5404817e28a989bb4cc228114eb5891dbf4f250978b25d2578',
+      'aea5aabd3fdfea1afde8373ee2767bfa9fbe58572ec9ce10da396820da0fcea9',
+      'da77e093854352ca2383371b5b0d26e9fceccc55706124a09e6d89515c4478b1',
     ],
   },
   {
@@ -767,7 +794,10 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     currentSectionLabels: [],
     pastSectionLabels: ['Alumni'],
 
-    withheldNames: ['Harry Hwang', 'Liliana Brutovski'],
+    withheldNameDigests: [
+      '020c7c5551205ffb7b8cd0ff711a2fd1f1d6e429713834dd26e694c2a075f33e',
+      'f15f45d8c526c64050c56271512c43811376d404bcd5b4527d9e204352e8bc92',
+    ],
   },
   {
     researchEntityKey: 'ysm-faculty-anthony-koleske',
@@ -811,7 +841,11 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     currentSectionLabels: [],
     pastSectionLabels: ['People & Alumni', 'Lab Alumni'],
 
-    withheldNames: ['Adnan Alladin', 'Camila Garcia', 'Isabel Romov'],
+    withheldNameDigests: [
+      '11752ee9b529d74dbd91c0ab766a971ae24a4c7d952995ec6e5d462db46c7cf0',
+      'c75f22d8ef9e79d8fcb30e5ed5d545b13805794573b1d45900a6a085a53608b9',
+      'e4b05ec0a9c4581f9fa771d1621ccb98a3afb64a8204cf57bec2ec0da4f59ac3',
+    ],
   },
   {
     researchEntityKey: 'ysm-faculty-daryl-klein',
@@ -860,7 +894,10 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     currentSectionLabels: ['Current Lab Members'],
     pastSectionLabels: ['Lab Alumni'],
 
-    withheldNames: ['Nicole Constante', 'Rhea Kaw'],
+    withheldNameDigests: [
+      '661760d28a02867f680fa89e446838810a0a2fc9a5b178eac4a8fd4b20f051bd',
+      '9b27b01974cf620a84095a86895bb41187dc27459fe71f50c48a4d25d6b259bc',
+    ],
   },
   {
     researchEntityKey: 'ysm-faculty-julien-berro',
@@ -869,7 +906,12 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     currentSectionLabels: [],
     pastSectionLabels: ['Former Berro lab members'],
 
-    withheldNames: ['Caitlin Anderson', 'Katherine Barrs', 'Sabina Haque', 'Stephanie Warnken'],
+    withheldNameDigests: [
+      'f372805df45d92e8461950ad0c0bf87e46f77047605a1b9c272f43e45974adb1',
+      'dd49af43ceea46b3a3aa49e52be7c25fcf79bef2011148c5ff54fdea27455c0a',
+      'd78fec46cf932f06c32f1db047617907016069973b0be5d53e68dc70214331d3',
+      'ea5dacf8b39bc8452312d8e6611df040d4358838e091536aa218c81f5eb80a0b',
+    ],
   },
   {
     researchEntityKey: 'ysm-faculty-karim-ibrahim',
@@ -879,7 +921,7 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     currentSectionLabels: [],
     pastSectionLabels: ['Undergraduate Students', 'Summer Research Students'],
 
-    withheldNames: ['Paula Enriquez'],
+    withheldNameDigests: ['2f18678b89722653020f5ff400bd352f0e3934d3c2177240ee45f3d0d860424e'],
   },
   {
     researchEntityKey: 'ysm-faculty-karla-neugebauer',
@@ -887,7 +929,7 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     template: 'heading-list',
     currentSectionLabels: [],
     pastSectionLabels: ['ALUMNI'],
-    withheldNames: ['Ethan Brown'],
+    withheldNameDigests: ['294b0532136483a69f5ac8c144df73e1628a1995b674cf9496a0b7d5a05f1cd6'],
   },
   {
     researchEntityKey: 'ysm-faculty-kim-blenman',
@@ -896,7 +938,11 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     currentSectionLabels: ['STUDENTS'],
     pastSectionLabels: ['ALUMNI'],
 
-    withheldNames: ['Angie Yoedzer', 'Heng-Le Chen', 'Rei Enn Lim'],
+    withheldNameDigests: [
+      'bd38b36d598f0e68ceb71485a2fbbd4cab31a8231735b39d36996320ec9d9302',
+      '8fc434a2e148e57dda8d41b3dfbeeaf0bc660348cf48ad6604ac4635947b0ef1',
+      'b08c5b8ae37cb93550b13f3364a37505f67409fb3200aa46b369da6b6f0d22f9',
+    ],
   },
   {
     researchEntityKey: 'ysm-faculty-liang-liang',
@@ -904,7 +950,10 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     template: 'heading-list',
     currentSectionLabels: ['Members'],
 
-    withheldNames: ['Wenxi Wu', 'Wenxin Hu'],
+    withheldNameDigests: [
+      '0e535545100731d3036fd0f709516e232a816615fe2b3b04a1166e53be5de8c9',
+      '1830fc3d6bb74c3db4785b4749bc1983239a10696c6dd8a778c38d861d6325b5',
+    ],
   },
   {
     researchEntityKey: 'ysm-faculty-lydia-grmai',
@@ -919,7 +968,10 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     template: 'heading-list',
     currentSectionLabels: ['Our Team.'],
 
-    withheldNames: ['Dayna Freeman', 'Victoria Hart-Derrick'],
+    withheldNameDigests: [
+      'fa7a25dd4999287044c8e31522a30372ccb1c6a1704f5e5a5bbcb82aedc85be9',
+      'd246761ca79e84538a0d5eb3d13d86ba277197f0dc20857f6d824abc6ca177c2',
+    ],
   },
   {
     researchEntityKey: 'ysm-faculty-moitrayee-bhattacharyya',
@@ -947,7 +999,7 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     template: 'heading-list',
     currentSectionLabels: [],
     pastSectionLabels: ['Lab Alumni'],
-    withheldNames: ['Isaac Kaba'],
+    withheldNameDigests: ['12a1513117eb3496643d4470f3e348649387fc91ce9b3561814678cced1ae06a'],
   },
   {
     researchEntityKey: 'ysm-faculty-shelli-feder',
@@ -983,7 +1035,10 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     currentSectionLabels: [],
     pastSectionLabels: ['Former Lab Members'],
 
-    withheldNames: ['Anisha Jain', 'Michael Kosover'],
+    withheldNameDigests: [
+      '98e6a4b683ce73fdf648158649d3df036bb1e1db4ab6826abc3948ba901ad386',
+      'fdaab8ec192f8faf2c93cad90996ee23f5e25eddaf7e8f6870f36bc9d10336f3',
+    ],
   },
   {
     researchEntityKey: 'ysm-glazer',
@@ -1175,13 +1230,13 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     template: 'heading-list',
     currentSectionLabels: ['Undergraduate students'],
     pastSectionLabels: ['Post Baccalaureate and Undergraduate Research Project Students'],
-    withheldNames: [
-      'George Iskander',
-      'Jeremy Tanlimco',
-      'Laura Zhou',
-      'Sami Hakani',
-      'Shivam Raval',
-      'William Eckner',
+    withheldNameDigests: [
+      '556149d4de525cd4bc78c08eb88bf3b8203432ffde2866c5d0daecd0c6d8e23d',
+      '479f6aa4996be9464aecf9320b3f6149df52bcc8b25e6efdb9895f2f1e012e14',
+      '136789ee17298664dd51564f2369a65e31023ecf222ca8c85889052cb585b9f3',
+      'f18c1b4360755c5c7c9f2b32bea107931725b3f899d0f0e292ff85c8d06735a4',
+      '1635864113bab4cb3e3e93b874d32fb5528091d9147b785bfdf36fd48eb33b16',
+      'e762e996b585f12f21cd9049141693cf5b550905ab968d8878f6bde16589325e',
     ],
   },
   {
@@ -1190,7 +1245,7 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     template: 'heading-list',
     currentSectionLabels: [],
     pastSectionLabels: ['Previous Members'],
-    withheldNames: ['Junhui Shi'],
+    withheldNameDigests: ['01f4583cc68acded9dd026d4f67e0542ccfa498f14c1b41cccc99ddb344bbb38'],
   },
   {
     researchEntityKey: 'dept-psych-dylan-gee',
@@ -1237,7 +1292,7 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     url: 'https://www.simonqueenborough.info/people.html',
     template: 'heading-list',
     currentSectionLabels: ['Undergraduate students'],
-    withheldNames: ['John Boudouris'],
+    withheldNameDigests: ['aff33bfbde41874fb5cecaa255b426bd6437be197c068e217b398f9233551a6f'],
   },
   {
     researchEntityKey: 'ysm-faculty-aldo-salazar',
@@ -1279,7 +1334,7 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     currentSectionLabels: [],
     pastSectionLabels: ['Undergraduates:'],
 
-    withheldNames: ['Barret Zimmermann'],
+    withheldNameDigests: ['24d5e05adad468d5cac23d43ec8b1d5f96612e07d1539d57766c76d5bad89e52'],
   },
   {
     researchEntityKey: 'faculty-research-area-yu-he',
