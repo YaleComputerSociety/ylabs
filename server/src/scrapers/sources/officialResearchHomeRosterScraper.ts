@@ -970,7 +970,7 @@ const DATED_YEAR_FORM = new RegExp(
 const yearDatesTheListing = (descriptor: string): boolean => DATED_YEAR_FORM.test(descriptor);
 
 const BIO_CLASS_YEAR =
-  /\b(?:class of|graduating(?:\s+in)?|(?:expected|anticipated)\s+graduation(?:\s+in)?|graduat\w*\s+from\s+Yale(?:\s+College)?\s+in)\s+((?:19|20)\d{2})\b/gi;
+  /\b(?:class of|graduating(?:\s+in)?|expected\s+graduation(?:\s+in)?|graduated\s+from\s+Yale(?:\s+College)?\s+in)\s+((?:19|20)\d{2})\b(?!\s+from\s+(?!Yale\b))/gi;
 
 /**
  * "A class of 2025 Yale College student" or "a Yale College senior graduating in 2022" on a

@@ -344,6 +344,46 @@ describe('undergraduates whose class year has passed (#5416)', () => {
     ).toEqual(['Rowan Thistle:past', 'Avery Quill:current', 'Harper Wren:current']);
   });
 
+  it('reads an expected graduation and a Yale graduation but not another school', () => {
+    expect(
+      listed(
+        profileGrid(
+          'Fellows and Associates',
+          profileCard(
+            'Rowan Thistle',
+            '',
+            '<p>Rowan studied chemistry, with expected graduation in 2023.</p>',
+          ) +
+            profileCard(
+              'Avery Quill',
+              '',
+              '<p>Avery graduated from Yale College in 2024 with a degree in history.</p>',
+            ) +
+            profileCard(
+              'Harper Wren',
+              '',
+              '<p>Harper is a Yale College junior, graduating in 2022 from a preparatory academy.</p>',
+            ) +
+            profileCard(
+              'Sage Moraine',
+              '',
+              '<p>Sage is a Yale College student, expected graduation 2029.</p>',
+            ),
+        ),
+        config({
+          template: 'profile-grid',
+          currency: 'section-label',
+          currentSectionLabels: ['Fellows and Associates'],
+        }),
+      ),
+    ).toEqual([
+      'Rowan Thistle:past',
+      'Avery Quill:past',
+      'Harper Wren:current',
+      'Sage Moraine:current',
+    ]);
+  });
+
   it('lists a profile card whose biography gives a passed class year as past', () => {
     expect(
       listed(
