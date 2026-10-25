@@ -1556,6 +1556,84 @@ export const correctResearchSearchQuerySpelling = (query: string): CorrectedSear
     SPELLING_PROTECTED_QUERY_TERMS,
   );
 
+const personNameWords = (value: string): string[] =>
+  foldLatinDiacritics(value.toLowerCase())
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word.length >= 2 && !isPersonNameParticleOrSuffixToken(word));
+
+/**
+ * The faculty member a person-name query names on a row they belong to but do not lead,
+ * so the card can say why a lab matched. Every query word must be a word of that one
+ * member's name, which keeps a topic word or a lone surname from claiming a member.
+ */
+export const matchedLabMemberName = (
+  query: string,
+  names: { leadProfessorNames: string[]; professorNames: string[] },
+): string | undefined => {
+  const queryWords = personNameWords(query);
+  if (queryWords.length < 2) return undefined;
+  const leads = new Set(names.leadProfessorNames.map((name) => personNameWords(name).join(' ')));
+  return names.professorNames.find((name) => {
+    const nameWords = personNameWords(name);
+    if (leads.has(nameWords.join(' '))) return false;
+    return queryWords.every((word) => nameWords.includes(word));
+  });
+};
+
+const MATCHABLE_LAB_MEMBER_ROLES = new Set(['core-faculty', 'affiliated']);
+
+const presentedLabMemberNames = (
+  entity: Record<string, any>,
+  rosterEntries: ResearchEntityRosterEntry[],
+  now: Date,
+): { leadProfessorNames: string[]; professorNames: string[] } => {
+  const members = publicResearchEntityDetailRosterMembers(entity, rosterEntries, now);
+  return {
+    leadProfessorNames: publicLeadMemberNames(members),
+    professorNames: members
+      .filter((member) =>
+        isFreshVerifiedOfficialRosterRow(member.row, now, entity.rosterEnrichment),
+      )
+      .slice(0, MAX_PUBLIC_ROSTER_MEMBERS)
+      .filter((member) => MATCHABLE_LAB_MEMBER_ROLES.has(member.role))
+      .map(memberDisplayName)
+      .filter(Boolean),
+  };
+};
+
+interface MatchedLabMemberNameRead {
+  byEntityId: Map<string, string>;
+  unavailable: boolean;
+}
+
+async function optionalMatchedLabMemberNames(
+  query: string,
+  entities: Array<Record<string, any>>,
+): Promise<MatchedLabMemberNameRead> {
+  const byEntityId = new Map<string, string>();
+  if (entities.length === 0 || personNameWords(query).length < 2) {
+    return { byEntityId, unavailable: false };
+  }
+  try {
+    const rosterByEntityId = await getResearchEntityRosterByEntityId(
+      entities.map((entity) => entity._id),
+    );
+    const now = new Date();
+    for (const entity of entities) {
+      const entityId = researchGroupDocumentId(entity._id);
+      const entries = rosterByEntityId.get(entityId);
+      if (!entityId || !entries?.length) continue;
+      const matched = matchedLabMemberName(query, presentedLabMemberNames(entity, entries, now));
+      if (matched) byEntityId.set(entityId, matched);
+    }
+  } catch (error) {
+    // A failed member read must degrade the page, not fail it (#3668).
+    console.error('Search matched-member read failed:', sanitizeLogValue(error));
+    return { byEntityId: new Map(), unavailable: true };
+  }
+  return { byEntityId, unavailable: false };
+}
+
 /**
  * Meilisearch query for ResearchEntity: keyword-only when no query, hybrid
  * (semanticRatio 0.8) for a non-empty query only when the `default` embedder
@@ -2397,6 +2475,10 @@ async function searchResearchGroupsForQuery(
     visibleEntities as Array<Record<string, any>>,
     { withEmeritusWayIn: true },
   );
+  const matchedMemberNameRead = await optionalMatchedLabMemberNames(
+    query,
+    visibleEntities as Array<Record<string, any>>,
+  );
   const normalizedHits = orderedHits.flatMap((hit: any) => {
     const id = hit.id || hit._id;
     const entityId = researchGroupDocumentId(id);
@@ -2426,11 +2508,12 @@ async function searchResearchGroupsForQuery(
       page: safePage,
       pageSize: safePageSize,
       facetDistribution: facetDistribution ?? requestedFacetDistribution,
-      degraded: degraded || leadMemberNameRead.unavailable,
+      degraded: degraded || leadMemberNameRead.unavailable || matchedMemberNameRead.unavailable,
     },
     {
       includeOperatorFields: safeOptions.includeNonPublic,
       ...leadMemberNameAliasOptions(leadMemberNameRead),
+      matchedMemberNameByEntityId: matchedMemberNameRead.byEntityId,
     },
   );
 }

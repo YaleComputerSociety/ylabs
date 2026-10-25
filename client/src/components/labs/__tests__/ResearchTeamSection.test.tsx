@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import ResearchTeamSection from '../ResearchTeamSection';
 import type { LabMember, LabRosterDisclosure } from '../../../types/labDetail';
@@ -273,5 +273,44 @@ describe('ResearchTeamSection', () => {
       'href',
       'https://alumnilab.yale.edu/alumni',
     );
+  });
+
+  it('highlights only the member whose whole name the search named', () => {
+    render(
+      <ResearchTeamSection
+        members={[member(2, 'core-faculty'), member(12, 'core-faculty')]}
+        roster={roster()}
+        highlightedMemberName="Fixture Scholar 1"
+      />,
+    );
+    expect(
+      screen.getByText('Fixture Scholar 12').closest('li')?.getAttribute('aria-current'),
+    ).toBeNull();
+
+    cleanup();
+    render(
+      <ResearchTeamSection
+        members={[member(2, 'core-faculty'), member(3, 'core-faculty')]}
+        roster={roster()}
+        highlightedMemberName="Fixture Scholar 2"
+      />,
+    );
+    expect(screen.getByText('Fixture Scholar 2').closest('li')?.getAttribute('aria-current')).toBe(
+      'true',
+    );
+    expect(
+      screen.getByText('Fixture Scholar 3').closest('li')?.getAttribute('aria-current'),
+    ).toBeNull();
+  });
+
+  it('highlights nobody for a member value with no name in it', () => {
+    render(
+      <ResearchTeamSection
+        members={[member(2, 'core-faculty'), member(3, 'core-faculty')]}
+        roster={roster()}
+        highlightedMemberName=" -- "
+      />,
+    );
+    expect(document.querySelector('[aria-current="true"]')).toBeNull();
   });
 });

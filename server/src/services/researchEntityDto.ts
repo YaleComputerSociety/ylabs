@@ -807,6 +807,7 @@ function derivePublicResearchEntityDto(
  */
 export interface ResearchEntitySearchAliasOptions extends PublicResearchEntityDtoOptions {
   leadMemberNamesByEntityId?: ReadonlyMap<string, readonly string[]>;
+  matchedMemberNameByEntityId?: ReadonlyMap<string, string>;
   identityLeadDirectorEntityIds?: ReadonlySet<string>;
   leadMemberNamesUnavailable?: boolean;
   emeritusWayInByEntityId?: ReadonlyMap<
@@ -869,6 +870,7 @@ export function addResearchEntitySearchAliases<T extends { hits: Record<string, 
 } {
   const {
     leadMemberNamesByEntityId,
+    matchedMemberNameByEntityId,
     identityLeadDirectorEntityIds,
     leadMemberNamesUnavailable,
     emeritusWayInByEntityId,
@@ -882,13 +884,23 @@ export function addResearchEntitySearchAliases<T extends { hits: Record<string, 
       const servedHit = identityLeadDirectorEntityIds?.has(hitKey)
         ? { ...hit, [IDENTITY_LEAD_DIRECTS_ORGANIZATION]: true }
         : hit;
-      return toPublicResearchEntityDto(
-        {
-          ...researchEntityListServedSource(servedHit, leadMemberNames, leadMemberNamesUnavailable),
-          ...servedEmeritusWayInFlags(emeritusWayInByEntityId?.get(hitKey)),
-        },
-        { ...listOptions, leadMemberNames },
-      );
+      const leadName = leadMemberNames?.[0];
+      const matchedMemberName = matchedMemberNameByEntityId?.get(hitKey);
+      return {
+        ...toPublicResearchEntityDto(
+          {
+            ...researchEntityListServedSource(
+              servedHit,
+              leadMemberNames,
+              leadMemberNamesUnavailable,
+            ),
+            ...servedEmeritusWayInFlags(emeritusWayInByEntityId?.get(hitKey)),
+          },
+          { ...listOptions, leadMemberNames },
+        ),
+        ...(leadName ? { leadName } : {}),
+        ...(matchedMemberName ? { matchedMemberName } : {}),
+      };
     }),
   );
   const { hits: _hits, ...rest } = result;
