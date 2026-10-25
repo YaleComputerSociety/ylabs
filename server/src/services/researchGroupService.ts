@@ -45,8 +45,6 @@ import {
   MESH_DESCRIPTOR_ONLY_TERMS_FIELD,
   readResearchEntitySearchEmbedderState,
   RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME,
-  fetchResearchEntitySearchMemberNames,
-  type ResearchEntitySearchMemberNameMap,
 } from './researchEntitySearchIndexService';
 import { meshDescriptorWordKeys } from '../scrapers/utils/meshNonSubjectDescriptors';
 import { getResearchSearchQueryVector } from './researchSearchQueryEmbedding';
@@ -1582,41 +1580,58 @@ export const matchedLabMemberName = (
   });
 };
 
-async function withPublicMemberNames(
+const MATCHABLE_LAB_MEMBER_ROLES = new Set(['core-faculty', 'affiliated']);
+
+const presentedLabMemberNames = (
+  entity: Record<string, any>,
+  rosterEntries: ResearchEntityRosterEntry[],
+  now: Date,
+): { leadProfessorNames: string[]; professorNames: string[] } => {
+  const members = publicResearchEntityDetailRosterMembers(entity, rosterEntries, now);
+  return {
+    leadProfessorNames: publicLeadMemberNames(members),
+    professorNames: members
+      .filter((member) =>
+        isFreshVerifiedOfficialRosterRow(member.row, now, entity.rosterEnrichment),
+      )
+      .slice(0, MAX_PUBLIC_ROSTER_MEMBERS)
+      .filter((member) => MATCHABLE_LAB_MEMBER_ROLES.has(member.role))
+      .map(memberDisplayName)
+      .filter(Boolean),
+  };
+};
+
+interface MatchedLabMemberNameRead {
+  byEntityId: Map<string, string>;
+  unavailable: boolean;
+}
+
+async function optionalMatchedLabMemberNames(
   query: string,
-  result: ResearchGroupSearchResult,
-  fetchMemberNames: (
-    entities: any[],
-  ) => Promise<ResearchEntitySearchMemberNameMap> = fetchResearchEntitySearchMemberNames,
-): Promise<ResearchGroupSearchResult> {
-  if (result.researchEntities.length === 0) return result;
-  const isPersonNameQuery = personNameWords(query).length >= 2;
-  let storedRows: Array<{ _id: unknown; slug: string }>;
-  let memberNames: ResearchEntitySearchMemberNameMap;
+  entities: Array<Record<string, any>>,
+): Promise<MatchedLabMemberNameRead> {
+  const byEntityId = new Map<string, string>();
+  if (entities.length === 0 || personNameWords(query).length < 2) {
+    return { byEntityId, unavailable: false };
+  }
   try {
-    storedRows = (await ResearchEntity.find({
-      slug: { $in: result.researchEntities.map((entity) => entity.slug) },
-    }).lean()) as Array<{ _id: unknown; slug: string }>;
-    memberNames = await fetchMemberNames(storedRows);
+    const rosterByEntityId = await getResearchEntityRosterByEntityId(
+      entities.map((entity) => entity._id),
+    );
+    const now = new Date();
+    for (const entity of entities) {
+      const entityId = researchGroupDocumentId(entity._id);
+      const entries = rosterByEntityId.get(entityId);
+      if (!entityId || !entries?.length) continue;
+      const matched = matchedLabMemberName(query, presentedLabMemberNames(entity, entries, now));
+      if (matched) byEntityId.set(entityId, matched);
+    }
   } catch (error) {
     // A failed member read must degrade the page, not fail it (#3668).
-    console.error('Search member-name read failed:', sanitizeLogValue(error));
-    return { ...result, degraded: true };
+    console.error('Search matched-member read failed:', sanitizeLogValue(error));
+    return { byEntityId: new Map(), unavailable: true };
   }
-  const storedIdBySlug = new Map(storedRows.map((row) => [row.slug, String(row._id)]));
-  return {
-    ...result,
-    researchEntities: result.researchEntities.map((entity) => {
-      const names = memberNames.get(storedIdBySlug.get(entity.slug) ?? '');
-      const leadName = names?.leadProfessorNames[0];
-      const matched = names && isPersonNameQuery ? matchedLabMemberName(query, names) : undefined;
-      return {
-        ...entity,
-        ...(leadName ? { leadName } : {}),
-        ...(matched ? { matchedMemberName: matched } : {}),
-      };
-    }),
-  };
+  return { byEntityId, unavailable: false };
 }
 
 /**
@@ -1637,16 +1652,13 @@ export async function searchResearchGroupsViaMeili(
       ? { query, corrections: [] }
       : correctResearchSearchQuerySpelling(query);
   const studentFilters = await resolveStudentFiltersAgainstCorpus(filters, options);
-  const searched = await withPublicMemberNames(
+  const searched = await searchResearchGroupsForQuery(
     spelling.query,
-    await searchResearchGroupsForQuery(
-      spelling.query,
-      studentFilters.filters,
-      page,
-      pageSize,
-      sort,
-      options,
-    ),
+    studentFilters.filters,
+    page,
+    pageSize,
+    sort,
+    options,
   );
   const result = studentFilters.applied
     ? { ...searched, appliedFilters: studentFilters.applied }
@@ -2463,6 +2475,10 @@ async function searchResearchGroupsForQuery(
     visibleEntities as Array<Record<string, any>>,
     { withEmeritusWayIn: true },
   );
+  const matchedMemberNameRead = await optionalMatchedLabMemberNames(
+    query,
+    visibleEntities as Array<Record<string, any>>,
+  );
   const normalizedHits = orderedHits.flatMap((hit: any) => {
     const id = hit.id || hit._id;
     const entityId = researchGroupDocumentId(id);
@@ -2492,11 +2508,12 @@ async function searchResearchGroupsForQuery(
       page: safePage,
       pageSize: safePageSize,
       facetDistribution: facetDistribution ?? requestedFacetDistribution,
-      degraded: degraded || leadMemberNameRead.unavailable,
+      degraded: degraded || leadMemberNameRead.unavailable || matchedMemberNameRead.unavailable,
     },
     {
       includeOperatorFields: safeOptions.includeNonPublic,
       ...leadMemberNameAliasOptions(leadMemberNameRead),
+      matchedMemberNameByEntityId: matchedMemberNameRead.byEntityId,
     },
   );
 }

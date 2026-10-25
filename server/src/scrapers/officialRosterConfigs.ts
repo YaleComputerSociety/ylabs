@@ -13,12 +13,6 @@ export const OFFICIAL_ROSTER_CONFIGS: OfficialRosterConfig[] = [
     currentSectionLabels: ['Current Members'],
   },
   {
-    researchEntityKey: 'ysm-mcpartland',
-    url: 'https://medicine.yale.edu/lab/mcpartland/people/',
-    currency: 'section-label',
-    currentSectionLabels: ['People'],
-  },
-  {
     researchEntityKey: 'ysm-haeny',
     url: 'https://medicine.yale.edu/lab/haeny/people/',
     currentSectionLabels: ['Postdoctoral Fellows', 'Lab Manager'],

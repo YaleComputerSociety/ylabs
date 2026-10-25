@@ -240,15 +240,14 @@ function TeamMemberGroup({
 }) {
   const groupedMembers = members.filter((member) => member.role === role);
   if (groupedMembers.length === 0) return null;
+  const highlightedKey = memberNameKey(highlightedMemberName);
   return (
     <div>
       <h3 className="mb-2 text-sm font-semibold text-ink">{label}</h3>
       <ul className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
         {groupedMembers.map((member) => {
           const name = displayName(member);
-          const isHighlighted =
-            Boolean(highlightedMemberName) &&
-            memberNameKey(name).startsWith(memberNameKey(highlightedMemberName));
+          const isHighlighted = Boolean(highlightedKey) && memberNameKey(name) === highlightedKey;
           const profileUrl = safeHttpUrl(member.rosterEvidence?.profileUrl);
           const content = (
             <>
@@ -308,10 +307,8 @@ export default function ResearchTeamSection({
 }) {
   const undergraduates = roster.undergraduates ?? [];
   const listsCurrentUndergraduates = undergraduates.some((member) => member.status === 'current');
-  const leadNameKeys = new Set(leadPersonNames.map(memberNameKey));
   const teamMembers = members
     .filter((member) => Boolean(member.rosterEvidence))
-    .filter((member) => !leadNameKeys.has(memberNameKey(displayName(member))))
     .filter((member) => !(listsCurrentUndergraduates && member.role === 'undergrad'))
     .slice(0, MAX_PRESENTED_TEAM_MEMBERS);
   if (teamMembers.length === 0 && undergraduates.length === 0 && undergraduateLines.length === 0) {
