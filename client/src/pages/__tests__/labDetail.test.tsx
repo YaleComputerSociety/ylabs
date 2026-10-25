@@ -728,6 +728,37 @@ describe('LabDetail page', () => {
     ).toBeNull();
   });
 
+  it('lets the reach-out line stand alone when the lead card email is the only way in', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: '',
+        sourceUrls: [],
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.faculty',
+            fname: 'Jordan',
+            lname: 'Researcher',
+            displayName: 'Jordan Researcher',
+            email: 'jordan.researcher@example.test',
+            primary_department: 'Neurology',
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getByRole('link', { name: /^Email Jordan Researcher at / })).toBeTruthy();
+    expect(screen.getByText(/at the address on their card/)).toBeTruthy();
+    expect(screen.queryByText(/does not have a direct link/)).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
+  });
+
   it('renders a Yale Directory fallback instead of a dead end when no website, profile, or email exists', async () => {
     renderLabDetail({
       ...basePayload,
@@ -1535,7 +1566,7 @@ describe('LabDetail page', () => {
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     expect(screen.getByRole('link', { name: /^Email Jordan Researcher at / })).toBeTruthy();
-    expect(screen.getByText(/Reach out to the lead listed above/)).toBeTruthy();
+    expect(screen.getByText(/at the address on their card/)).toBeTruthy();
     expect(
       screen.getByRole('link', { name: 'New to research? How to reach out' }).getAttribute('href'),
     ).toBe('/getting-started');
@@ -1612,7 +1643,7 @@ describe('LabDetail page', () => {
         .some((link) => link.getAttribute('href') === LEAD_CARD_PROFILE_URL),
     ).toBe(true);
     expect(screen.queryByRole('link', { name: 'Open the official page' })).toBeNull();
-    expect(screen.getByText(/Reach out to the lead listed above/)).toBeTruthy();
+    expect(screen.getByText(/through the official profile on their card/)).toBeTruthy();
     expect(
       screen.getByRole('link', { name: 'New to research? How to reach out' }).getAttribute('href'),
     ).toBe('/getting-started');
@@ -3442,7 +3473,7 @@ describe('LabDetail display name unification', () => {
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     expect(screen.queryByRole('link', { name: 'Visit research website' })).toBeNull();
-    expect(screen.getByText(/Reach out to the lead listed above/)).toBeTruthy();
+    expect(screen.getByText(/through the official profile on their card/)).toBeTruthy();
     expect(
       screen.getByRole('link', { name: 'New to research? How to reach out' }).getAttribute('href'),
     ).toBe('/getting-started');
