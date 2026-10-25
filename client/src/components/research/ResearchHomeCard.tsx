@@ -350,7 +350,10 @@ const ResearchHomeCard = ({
           <p className="rounded-control bg-brand-soft px-2 py-1 text-xs font-medium leading-relaxed text-brand">
             Matched a lab member:{' '}
             <Link
-              to={`/research/${safeRouteSegment(singleLinkedEntity.slug)}?member=${encodeURIComponent(matchedMemberName)}`}
+              to={{
+                pathname: `/research/${safeRouteSegment(singleLinkedEntity.slug)}`,
+                search: `?member=${encodeURIComponent(matchedMemberName)}`,
+              }}
               state={profileOpenState}
               className="yr-link yr-focus-ring rounded-control font-semibold"
               onClick={(event) => {
