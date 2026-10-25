@@ -351,22 +351,22 @@ describe('undergraduates whose class year has passed (#5416)', () => {
           'Fellows and Associates',
           profileCard(
             'Rowan Thistle',
-            '',
+            'Undergraduate Researcher',
             '<p>Rowan studied chemistry, with expected graduation in 2023.</p>',
           ) +
             profileCard(
               'Avery Quill',
-              '',
+              'Undergraduate Researcher',
               '<p>Avery graduated from Yale College in 2024 with a degree in history.</p>',
             ) +
             profileCard(
               'Harper Wren',
-              '',
+              'Undergraduate Researcher',
               '<p>Harper is a Yale College junior, graduating in 2022 from a preparatory academy.</p>',
             ) +
             profileCard(
               'Sage Moraine',
-              '',
+              'Undergraduate Researcher',
               '<p>Sage is a Yale College student, expected graduation 2029.</p>',
             ),
         ),
