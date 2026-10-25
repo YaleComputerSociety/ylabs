@@ -45,6 +45,8 @@ import {
   MESH_DESCRIPTOR_ONLY_TERMS_FIELD,
   readResearchEntitySearchEmbedderState,
   RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME,
+  fetchResearchEntitySearchMemberNames,
+  type ResearchEntitySearchMemberNameMap,
 } from './researchEntitySearchIndexService';
 import { meshDescriptorWordKeys } from '../scrapers/utils/meshNonSubjectDescriptors';
 import { getResearchSearchQueryVector } from './researchSearchQueryEmbedding';
@@ -1556,6 +1558,67 @@ export const correctResearchSearchQuerySpelling = (query: string): CorrectedSear
     SPELLING_PROTECTED_QUERY_TERMS,
   );
 
+const personNameWords = (value: string): string[] =>
+  foldLatinDiacritics(value.toLowerCase())
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word.length >= 2 && !isPersonNameParticleOrSuffixToken(word));
+
+/**
+ * The faculty member a person-name query names on a row they belong to but do not lead,
+ * so the card can say why a lab matched. Every query word must be a word of that one
+ * member's name, which keeps a topic word or a lone surname from claiming a member.
+ */
+export const matchedLabMemberName = (
+  query: string,
+  names: { leadProfessorNames: string[]; professorNames: string[] },
+): string | undefined => {
+  const queryWords = personNameWords(query);
+  if (queryWords.length < 2) return undefined;
+  const leads = new Set(names.leadProfessorNames.map((name) => personNameWords(name).join(' ')));
+  return names.professorNames.find((name) => {
+    const nameWords = personNameWords(name);
+    if (leads.has(nameWords.join(' '))) return false;
+    return queryWords.every((word) => nameWords.includes(word));
+  });
+};
+
+async function withPublicMemberNames(
+  query: string,
+  result: ResearchGroupSearchResult,
+  fetchMemberNames: (
+    entities: any[],
+  ) => Promise<ResearchEntitySearchMemberNameMap> = fetchResearchEntitySearchMemberNames,
+): Promise<ResearchGroupSearchResult> {
+  if (result.researchEntities.length === 0) return result;
+  const isPersonNameQuery = personNameWords(query).length >= 2;
+  let storedRows: Array<{ _id: unknown; slug: string }>;
+  let memberNames: ResearchEntitySearchMemberNameMap;
+  try {
+    storedRows = (await ResearchEntity.find({
+      slug: { $in: result.researchEntities.map((entity) => entity.slug) },
+    }).lean()) as Array<{ _id: unknown; slug: string }>;
+    memberNames = await fetchMemberNames(storedRows);
+  } catch (error) {
+    // A failed member read must degrade the page, not fail it (#3668).
+    console.error('Search member-name read failed:', sanitizeLogValue(error));
+    return { ...result, degraded: true };
+  }
+  const storedIdBySlug = new Map(storedRows.map((row) => [row.slug, String(row._id)]));
+  return {
+    ...result,
+    researchEntities: result.researchEntities.map((entity) => {
+      const names = memberNames.get(storedIdBySlug.get(entity.slug) ?? '');
+      const leadName = names?.leadProfessorNames[0];
+      const matched = names && isPersonNameQuery ? matchedLabMemberName(query, names) : undefined;
+      return {
+        ...entity,
+        ...(leadName ? { leadName } : {}),
+        ...(matched ? { matchedMemberName: matched } : {}),
+      };
+    }),
+  };
+}
+
 /**
  * Meilisearch query for ResearchEntity: keyword-only when no query, hybrid
  * (semanticRatio 0.8) for a non-empty query only when the `default` embedder
@@ -1574,13 +1637,16 @@ export async function searchResearchGroupsViaMeili(
       ? { query, corrections: [] }
       : correctResearchSearchQuerySpelling(query);
   const studentFilters = await resolveStudentFiltersAgainstCorpus(filters, options);
-  const searched = await searchResearchGroupsForQuery(
+  const searched = await withPublicMemberNames(
     spelling.query,
-    studentFilters.filters,
-    page,
-    pageSize,
-    sort,
-    options,
+    await searchResearchGroupsForQuery(
+      spelling.query,
+      studentFilters.filters,
+      page,
+      pageSize,
+      sort,
+      options,
+    ),
   );
   const result = studentFilters.applied
     ? { ...searched, appliedFilters: studentFilters.applied }

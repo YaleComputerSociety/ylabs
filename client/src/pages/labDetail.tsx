@@ -957,6 +957,7 @@ const LabDetail = () => {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const location = useLocation();
+  const highlightedMemberName = new URLSearchParams(location.search).get('member') || undefined;
   const locationStateRef = useRef<unknown>(location.state);
   useEffect(() => {
     locationStateRef.current = location.state;
@@ -1353,6 +1354,7 @@ const LabDetail = () => {
                 roster={roster}
                 undergraduateLines={undergraduateMembers.memberLines}
                 leadPersonNames={leadPersonNames}
+                highlightedMemberName={highlightedMemberName}
               />
 
               <FellowshipRecipientsSection recipients={group.fellowshipRecipients} />

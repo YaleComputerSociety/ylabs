@@ -5,6 +5,17 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-21: A Lab Member Is Found Through The Lab, And Every Card Names Its Lead
+
+A person whose research happens in someone else's lab is found through that lab rather than through a row of their own.
+A name search returns the lab, its card says "Matched a lab member: <name>", and the link opens the lab page scrolled to that member and highlighted.
+A person who leads their own research keeps their own row and is marked on the labs they only belong to; a lead is never marked on a row they lead.
+The match needs every query word to be a word of one non-lead faculty member's name on that row, so a topic word or a lone surname claims nobody.
+Search result cards also name their lead again: the card read the lead from `contactName`, which the public result never carries, so on Development 0 of 80 browse and search cards named a lead before this change.
+The lead name served is the public display name from the row's lead edges, the same one the detail page shows, never contact data.
+Both are computed for the returned page only, at about 73 ms per page measured from a laptop against Development, and a failed member read degrades the page rather than failing it (#3668).
+The owner chose this model after seeing it working on Development (#5426).
+
 ## 2026-10-20: The Directory Lists Research People Lead At Yale; Hosting A Student Is A Signal (#5407)
 
 y/labs is a directory of research at Yale, so a person gets a row when they lead research at Yale now, and whether they could host a student is a signal rather than a gate.

@@ -814,4 +814,38 @@ describe('ResearchHomeCard compact browse card', () => {
         'It combines recordings, imaging, and models to test theories of circuit plasticity in fixture systems.',
     );
   });
+
+  it('names the lead and the matched lab member, linking to the member on the lab page', () => {
+    const home = researchHome();
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          home={{
+            ...home,
+            entities: [
+              {
+                ...home.entities[0],
+                leadName: 'Fixture Lead',
+                matchedMemberName: 'Fixture Member',
+              },
+            ],
+          }}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText('Fixture Lead')).toBeTruthy();
+    expect(screen.getByText(/Matched a lab member:/)).toBeTruthy();
+    expect(screen.getByRole('link', { name: 'Fixture Member' }).getAttribute('href')).toBe(
+      '/research/example-research-home?member=Fixture%20Member',
+    );
+  });
+
+  it('shows no matched-member line when the search did not name a member', () => {
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard home={researchHome()} />
+      </MemoryRouter>,
+    );
+    expect(screen.queryByText(/Matched a lab member:/)).toBeNull();
+  });
 });

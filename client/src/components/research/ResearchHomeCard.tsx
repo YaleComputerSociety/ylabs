@@ -138,6 +138,10 @@ const ResearchHomeCard = ({
     home.entities.length === 1 && primaryLinkedEntity && homeEntities.length === 1
       ? primaryLinkedEntity
       : null;
+  const matchedMemberName =
+    singleLinkedEntity && home.entities.length === 1
+      ? home.entities[0].matchedMemberName
+      : undefined;
   const wayInBadges = home.wayInBadges?.length
     ? home.wayInBadges
     : buildWayInBadgesFromEntity(home.entities[0]);
@@ -183,8 +187,10 @@ const ResearchHomeCard = ({
   const isCardClickable = Boolean(primaryProfileUrl || onSelect);
   const primaryEvidenceUrl = safeHttpUrl(home.evidence[0]?.url);
   const showEvidenceFooter = !isCompact && Boolean(primaryEvidenceUrl);
-  const leadEntity = home.entities.find((entity) => (entity.contactName || '').trim());
-  const leadName = leadEntity?.contactName?.trim();
+  const leadEntity =
+    home.entities.find((entity) => (entity.contactName || '').trim()) ??
+    home.entities.find((entity) => (entity.leadName || '').trim());
+  const leadName = (leadEntity?.contactName || leadEntity?.leadName)?.trim();
   const leadProfileLink = principalInvestigatorLinkFromResearchEntity(leadEntity);
   const contactRole = servedContactRole(leadEntity?.contactRole);
   const leadRole =
@@ -337,6 +343,24 @@ const ResearchHomeCard = ({
             ) : (
               <span>{leadName}</span>
             )}
+          </p>
+        )}
+
+        {matchedMemberName && singleLinkedEntity && (
+          <p className="rounded-control bg-brand-soft px-2 py-1 text-xs font-medium leading-relaxed text-brand">
+            Matched a lab member:{' '}
+            <Link
+              to={`/research/${safeRouteSegment(singleLinkedEntity.slug)}?member=${encodeURIComponent(matchedMemberName)}`}
+              state={profileOpenState}
+              className="yr-link yr-focus-ring rounded-control font-semibold"
+              onClick={(event) => {
+                event.stopPropagation();
+                rememberOpenedProfile(singleLinkedEntity.slug);
+                onOpen?.(home);
+              }}
+            >
+              {matchedMemberName}
+            </Link>
           </p>
         )}
 

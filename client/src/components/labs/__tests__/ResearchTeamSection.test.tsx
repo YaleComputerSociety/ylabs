@@ -274,4 +274,25 @@ describe('ResearchTeamSection', () => {
       'https://alumnilab.yale.edu/alumni',
     );
   });
+
+  it('highlights the member a search named and lists a lead only once', () => {
+    const lead = {
+      ...member(1, 'core-faculty'),
+      user: { ...member(1).user, displayName: 'Fixture Lead' },
+    };
+    render(
+      <ResearchTeamSection
+        members={[lead, member(2, 'core-faculty'), member(3, 'core-faculty')]}
+        roster={roster()}
+        leadPersonNames={['Fixture Lead']}
+        highlightedMemberName="Fixture Scholar 2"
+      />,
+    );
+    expect(screen.queryByText('Fixture Lead')).toBeNull();
+    const highlighted = screen.getByText('Fixture Scholar 2').closest('li');
+    expect(highlighted?.getAttribute('aria-current')).toBe('true');
+    expect(
+      screen.getByText('Fixture Scholar 3').closest('li')?.getAttribute('aria-current'),
+    ).toBeNull();
+  });
 });

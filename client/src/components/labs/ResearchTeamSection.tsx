@@ -217,12 +217,26 @@ function UndergraduateMemberLineRow({
   );
 }
 
+const memberNameKey = (value: string | undefined): string =>
+  (value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+const scrollHighlightedMemberIntoView = (node: HTMLLIElement | null) => {
+  node?.scrollIntoView?.({ block: 'center' });
+};
+
 function TeamMemberGroup({
   group: { role, label },
   members,
+  highlightedMemberName,
 }: {
   group: TeamGroup;
   members: LabMember[];
+  highlightedMemberName?: string;
 }) {
   const groupedMembers = members.filter((member) => member.role === role);
   if (groupedMembers.length === 0) return null;
@@ -232,6 +246,9 @@ function TeamMemberGroup({
       <ul className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
         {groupedMembers.map((member) => {
           const name = displayName(member);
+          const isHighlighted =
+            Boolean(highlightedMemberName) &&
+            memberNameKey(name).startsWith(memberNameKey(highlightedMemberName));
           const profileUrl = safeHttpUrl(member.rosterEvidence?.profileUrl);
           const content = (
             <>
@@ -246,7 +263,14 @@ function TeamMemberGroup({
           return (
             <li
               key={`${member.user.publicKey || name}-${member.role}`}
-              className="min-w-0 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-sm"
+              ref={isHighlighted ? scrollHighlightedMemberIntoView : undefined}
+              data-highlighted-member={isHighlighted || undefined}
+              aria-current={isHighlighted ? 'true' : undefined}
+              className={`min-w-0 rounded-card border px-3 py-2 text-sm ${
+                isHighlighted
+                  ? 'border-[var(--yr-gold)] bg-gold-soft'
+                  : 'border-[var(--yr-line)] bg-[var(--yr-panel)]'
+              }`}
             >
               {profileUrl ? (
                 <a
@@ -274,16 +298,20 @@ export default function ResearchTeamSection({
   roster,
   undergraduateLines = [],
   leadPersonNames = [],
+  highlightedMemberName,
 }: {
   members: LabMember[];
   roster: LabRosterDisclosure;
   undergraduateLines?: UndergraduateMemberLine[];
   leadPersonNames?: readonly string[];
+  highlightedMemberName?: string;
 }) {
   const undergraduates = roster.undergraduates ?? [];
   const listsCurrentUndergraduates = undergraduates.some((member) => member.status === 'current');
+  const leadNameKeys = new Set(leadPersonNames.map(memberNameKey));
   const teamMembers = members
     .filter((member) => Boolean(member.rosterEvidence))
+    .filter((member) => !leadNameKeys.has(memberNameKey(displayName(member))))
     .filter((member) => !(listsCurrentUndergraduates && member.role === 'undergrad'))
     .slice(0, MAX_PRESENTED_TEAM_MEMBERS);
   if (teamMembers.length === 0 && undergraduates.length === 0 && undergraduateLines.length === 0) {
@@ -342,7 +370,12 @@ export default function ResearchTeamSection({
           />
         ))}
         {OTHER_GROUPS.map((group) => (
-          <TeamMemberGroup key={group.role} group={group} members={teamMembers} />
+          <TeamMemberGroup
+            key={group.role}
+            group={group}
+            members={teamMembers}
+            highlightedMemberName={highlightedMemberName}
+          />
         ))}
         {(teamMembers.length > 0 || undergraduates.length > 0) && (
           <p className="text-xs leading-relaxed text-muted">
