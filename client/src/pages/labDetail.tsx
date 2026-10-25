@@ -111,6 +111,7 @@ import {
   trackResearchEventOnce,
 } from '../utils/researchAnalytics';
 import { captureClientError } from '../utils/errorTracking';
+import { linkedMemberName } from '../utils/linkedMember';
 import { undergradInvitationFromEntity } from '../utils/undergradInvitation';
 import { reachOutDefaultLine, type ReachOutRenderedContact } from '../utils/reachOutDefaultLine';
 
@@ -957,7 +958,7 @@ const LabDetail = () => {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const highlightedMemberName = new URLSearchParams(location.search).get('member') || undefined;
+  const highlightedMemberName = linkedMemberName(location.search);
   const locationStateRef = useRef<unknown>(location.state);
   useEffect(() => {
     locationStateRef.current = location.state;

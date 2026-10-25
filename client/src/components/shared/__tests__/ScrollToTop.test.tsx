@@ -30,6 +30,15 @@ const SchoolFilterLink = () => {
   );
 };
 
+const MatchedMemberLink = () => {
+  const navigate = useNavigate();
+  return (
+    <button type="button" onClick={() => void navigate('/research/profile?member=Sample+Member')}>
+      Open matched member
+    </button>
+  );
+};
+
 const BackButton = () => {
   const navigate = useNavigate();
   return (
@@ -97,6 +106,47 @@ describe('ScrollToTop', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Forward' }));
     expect(scrollContainer.scrollTop).toBe(800);
+  });
+
+  it('keeps a linked member in view once the destination page scrolls to them', () => {
+    const pendingFrames = new Map<number, FrameRequestCallback>();
+    let nextFrameId = 0;
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      nextFrameId += 1;
+      pendingFrames.set(nextFrameId, callback);
+      return nextFrameId;
+    });
+    vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((frameId) => {
+      pendingFrames.delete(frameId);
+    });
+    const flushFrames = () => {
+      for (let frame = 0; frame < 10; frame += 1) {
+        const callbacks = [...pendingFrames.values()];
+        pendingFrames.clear();
+        callbacks.forEach((callback) => callback(performance.now()));
+      }
+    };
+    render(
+      <MemoryRouter initialEntries={['/research']}>
+        <ScrollToTop />
+        <div data-scroll-container>
+          <Routes>
+            <Route path="/research" element={<MatchedMemberLink />} />
+            <Route path="/research/profile" element={<p>Lab page</p>} />
+          </Routes>
+        </div>
+      </MemoryRouter>,
+    );
+
+    const scrollContainer = document.querySelector<HTMLElement>('[data-scroll-container]')!;
+    scrollContainerTo(scrollContainer, 1500);
+    fireEvent.click(screen.getByRole('button', { name: 'Open matched member' }));
+    expect(scrollContainer.scrollTop).toBe(0);
+
+    scrollContainerTo(scrollContainer, 900);
+    act(flushFrames);
+
+    expect(scrollContainer.scrollTop).toBe(900);
   });
 
   it('leaves the scroll position to the page when only the query string changes', () => {
