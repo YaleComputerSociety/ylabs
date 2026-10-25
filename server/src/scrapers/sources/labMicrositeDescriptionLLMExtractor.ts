@@ -484,7 +484,7 @@ export function isRejectedDescriptionSourceUrl(value: unknown): boolean {
   }
 }
 
-function isRefusedDescriptionLaneSourceUrl(value: unknown): boolean {
+export function isRefusedDescriptionLaneSourceUrl(value: unknown): boolean {
   return isRejectedDescriptionSourceUrl(value) || isPostingPageUrl(value) || isCoursePageUrl(value);
 }
 

@@ -24,6 +24,10 @@ export {
 } from './laneBenchmark';
 export { LaneScorecardSnapshot, LANE_SCORECARD_SNAPSHOT_COLLECTION } from './laneScorecardSnapshot';
 export {
+  ResearchTopicsDerivation,
+  RESEARCH_TOPICS_DERIVATION_COLLECTION,
+} from './researchTopicsDerivation';
+export {
   EngineBenchmark,
   EngineBenchmarkRow,
   ENGINE_BENCHMARK_COLLECTION,

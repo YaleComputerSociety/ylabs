@@ -35,6 +35,16 @@ export const sourceCoverageRegistry = {
     notes:
       "Not a crawl: the materializer infers chips from a row's own stored name and description through the canonical research-area vocabulary, and records this name so the serve-time coherence guard has provenance to reconcile against. LOW because no page named the facet, only the subject.",
   },
+  'research-page-topics-derived': {
+    priority: 0,
+    tier: 'DERIVED_OFFICIAL',
+    artifactTypes: ['ResearchEntity'],
+    evidenceCategories: ['TOPICS'],
+    defaultConfidence: 'MEDIUM',
+    producesModelText: true,
+    notes:
+      "Not a crawl: the materializer applies the cached reading research-topics:derive made of the row's stored researchPageText, keyed by input hash, so changed or cleared text stops applying on the next resolve. Recorded as fieldProvenance only, never as an observation (#5296, #5396).",
+  },
   'manual-admin-edit': {
     priority: 0,
     tier: 'MANUAL_OVERRIDE',
@@ -65,6 +75,15 @@ export const sourceCoverageRegistry = {
     producesModelText: true,
     notes:
       "Official microsite description extraction for research focus, questions, methods, and conservative areas only; must not create access, route, or opportunity evidence. Where the site declares itself a laboratory it also emits that record's branded name and its entityType/kind, so a person-scoped row cannot keep a faculty-research type while carrying a lab's name.",
+  },
+  'research-page-text': {
+    priority: 1,
+    tier: 'PRIMARY_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['TOPICS'],
+    defaultConfidence: 'MEDIUM',
+    notes:
+      "Deterministic research-statement text of the row's own cited research pages, contact-redacted and capped, stored as a researchPageText observation plus a content hash and never projected onto the row, served or indexed. research-topics:derive reads it to cache quoted topics, which the materializer applies as the research-page-topics-derived candidate for researchAreas, outranking ysm-mesh-keyword and ysm-faculty-directory lists, and lab-site-research-read lists once that held lane (#5418) re-lands (#5296, #5396).",
   },
   'lab-site-declared-lead-llm': {
     priority: 1,

@@ -257,7 +257,7 @@ const AMBIGUOUS_SINGLE_WORD_AREA_KEYS = new Set(
  * canonical phrase only matches on whole-word boundaries when tested with
  * `includes`, never as a substring of a longer token.
  */
-function textScanForm(raw: unknown): string {
+export function textScanForm(raw: unknown): string {
   if (typeof raw !== 'string') return ' ';
   const normalized = raw
     .normalize('NFKD')

@@ -61,9 +61,11 @@ export const COVERAGE_SYNTHESIS_PROMPT = withSynthesisFidelityRules(
   loadPrompt('coverageSynthesis.md'),
 );
 export const LAB_SITE_DECLARED_LEAD_PROMPT = loadPrompt('labSiteDeclaredLead.md');
+export const RESEARCH_PAGE_TOPICS_PROMPT = loadPrompt('researchPageTopics.md');
 
 export const CARD_SYNTHESIS_PROMPT_HASH = hashPrompt(CARD_SYNTHESIS_PROMPT);
 export const LAB_SITE_DECLARED_LEAD_PROMPT_HASH = hashPrompt(LAB_SITE_DECLARED_LEAD_PROMPT);
 export const DESCRIPTION_EXTRACTION_PROMPT_HASH = hashPrompt(DESCRIPTION_EXTRACTION_PROMPT);
 export const UNDERGRAD_EXTRACTION_PROMPT_HASH = hashPrompt(UNDERGRAD_EXTRACTION_PROMPT);
 export const COVERAGE_SYNTHESIS_PROMPT_HASH = hashPrompt(COVERAGE_SYNTHESIS_PROMPT);
+export const RESEARCH_PAGE_TOPICS_PROMPT_HASH = hashPrompt(RESEARCH_PAGE_TOPICS_PROMPT);
