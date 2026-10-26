@@ -130,7 +130,7 @@ const COMBINED_BACHELORS_MASTERS_STUDENT =
 
 /** "Undergraduate Research Contact": the person students contact, not an undergraduate. */
 const UNDERGRADUATE_SERVICE_ROLE =
-  /\bundergraduate\s+(?:(?:research|studies)\s+)?(?:contact|coordinator|advisor|adviser|liaison|program\s+manager|director)s?\b/i;
+  /\bundergraduate\s+(?:(?:research|studies|program)\s+){0,2}(?:contact|coordinator|advisor|adviser|liaison|program\s+manager|director)s?\b/i;
 
 export function mapOfficialRosterRole(
   titleValue: unknown,
@@ -345,10 +345,11 @@ function readRosterTableRows($: cheerio.CheerioAPI, table: cheerio.Cheerio<any>)
       : -1;
   return rows.map((cells, rowIndex) => {
     const text = texts[rowIndex];
-    const personColumn =
+    const personColumnFound =
       !text[nameColumn] && namesHaveNoLabelledColumn
         ? cells.findIndex((lines) => looksLikeListedPersonName(lines[0] ?? ''))
         : nameColumn;
+    const personColumn = personColumnFound >= 0 ? personColumnFound : nameColumn;
     const nameLines = cells[personColumn] ?? [];
     const splitsNameFromRole = personColumn !== nameColumn || nameLines.length > 1;
     const name = splitsNameFromRole
@@ -1630,6 +1631,7 @@ function extractListedUndergraduates(
   const pastNames = new Set((config.pastNames ?? []).map(normalizedLabel));
   let undergraduateWithheldCount = 0;
   const page = pageRoleEvidence(sections);
+  const roleEvidence = ownLineOnly ? NO_PAGE_ROLE_EVIDENCE : page;
   const listedInAnotherCurrentRole = namesListedInAnotherCurrentRole(sections, page);
   const pastWithNextPosition = new Set<string>();
   const groupedLabels = new Set<string>();
@@ -1651,7 +1653,7 @@ function extractListedUndergraduates(
             entry,
             ownLineOnly ? withoutSectionLabel(section) : section,
             statusOf(entry) === 'past',
-            page,
+            roleEvidence,
           ) === 'undergrad',
       )
       .map((entry) => {
@@ -1783,6 +1785,10 @@ const sectionListsAnUndergraduate = (section: RosterSection): boolean =>
   );
 
 const UNDERGRADUATE_ROLE_LINE = /\bundergrad/i;
+const UNDERGRADUATE_PERSON_ROLE_LINE =
+  /\b(?:students?|researchers?|assistants?|interns?|scholars?|fellows?)\b|\bclass of (?:19|20)\d{2}\b|['’‘]\d{2}\b|^undergrad(?:uate)?$/i;
+const NOT_A_PERSON_ROLE_LINE =
+  /\b(?:opportunit\w*|courses?|programs?|admissions?|curriculum|join\w*|prospective|apply\w*)\b/i;
 const GROUP_HEADING_LINE =
   /^[^,:;]*\b(?:undergraduates|undergrads|students|researchers|assistants|scholars|interns|members|associates)\s*:?$/i;
 
@@ -1790,6 +1796,9 @@ const GROUP_HEADING_LINE =
 const isUndergraduateRoleLine = (line: string): boolean =>
   line.length <= DESCRIPTOR_LINE_MAX &&
   UNDERGRADUATE_ROLE_LINE.test(line) &&
+  UNDERGRADUATE_PERSON_ROLE_LINE.test(line) &&
+  !NOT_A_PERSON_ROLE_LINE.test(line) &&
+  !UNDERGRADUATE_SERVICE_ROLE.test(line) &&
   !GROUP_HEADING_LINE.test(line) &&
   !FIRST_PERSON_LINE.test(line) &&
   !looksLikeListedPersonName(line);
@@ -1939,6 +1948,8 @@ export interface UndergraduateSectionCandidate {
 
 const withoutSectionLabel = (section: RosterSection): RosterSection => ({ ...section, label: '' });
 
+const NO_PAGE_ROLE_EVIDENCE: PageRoleEvidence = { undergraduateTitles: new Set() };
+
 export function undergraduateSectionCandidates(
   html: string,
   template: OfficialRosterTemplate,
@@ -1955,7 +1966,9 @@ export function undergraduateSectionCandidates(
       (entry) => entryRoleOnPage(entry, section, past, page) === 'undergrad',
     ).length;
     const undergraduateEntriesByOwnLine = people.filter(
-      (entry) => entryRoleOnPage(entry, withoutSectionLabel(section), past, page) === 'undergrad',
+      (entry) =>
+        entryRoleOnPage(entry, withoutSectionLabel(section), past, NO_PAGE_ROLE_EVIDENCE) ===
+        'undergrad',
     ).length;
     if (undergraduateEntries === 0 && undergraduateEntriesByOwnLine === 0) continue;
     if (!section.label && undergraduateEntriesByOwnLine === 0) continue;

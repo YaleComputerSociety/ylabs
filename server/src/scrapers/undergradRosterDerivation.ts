@@ -370,10 +370,11 @@ const NOT_A_YALE_UNDERGRADUATE_GROUP_LABEL =
  * Undergrads, High School"). It is publishable only where the extractor read every listed
  * undergraduate from a named sub-group of it; otherwise the list would be a guess.
  */
+const namesAGroupOtherThanYaleUndergraduates = (label: string): boolean =>
+  NOT_A_YALE_UNDERGRADUATE_GROUP_LABEL.test(label);
+
 export function sectionLabelMixesOtherGroups(label: string): boolean {
-  return (
-    sectionLabelCombinesGraduateLevels(label) || NOT_A_YALE_UNDERGRADUATE_GROUP_LABEL.test(label)
-  );
+  return sectionLabelCombinesGraduateLevels(label) || namesAGroupOtherThanYaleUndergraduates(label);
 }
 
 /**
@@ -392,10 +393,10 @@ export function derivedRosterWithheldReason(
   if (!derivedRosterPageBelongsToRow(config.url, websiteUrl)) return 'page-not-this-row';
   const labels = [...config.currentSectionLabels, ...(config.pastSectionLabels ?? [])];
   const separated = new Set(roster.subgroupedSectionLabels ?? []);
-  if (
-    !config.undergraduatesByOwnLine &&
-    labels.some((label) => !separated.has(label) && sectionLabelMixesOtherGroups(label))
-  ) {
+  const mixesOtherGroups = config.undergraduatesByOwnLine
+    ? namesAGroupOtherThanYaleUndergraduates
+    : sectionLabelMixesOtherGroups;
+  if (labels.some((label) => !separated.has(label) && mixesOtherGroups(label))) {
     return 'combined-section-label';
   }
   if (currentUndergraduateCount(roster) > DERIVED_ROSTER_MAX_UNDERGRADUATES)

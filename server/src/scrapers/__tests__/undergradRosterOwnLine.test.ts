@@ -113,7 +113,33 @@ describe('a page with no undergraduate section (#5433)', () => {
     ).toEqual([]);
   });
 
-  it('skips the mixed-heading publish check for an own-line roster only', () => {
+  it('does not count a title another section heading gives its people in own-line mode', () => {
+    expect(
+      listed(
+        body(`<h2>Undergraduate Research</h2><h3>Avery Quill</h3><p>Summer Researcher</p>
+          <h2>Lab Members</h2><h3>Rowan Thistle</h3><p>Summer Researcher</p>
+          <h3>Harper Wren</h3><p>Undergraduate Researcher</p>`),
+        config({ currentSectionLabels: ['Lab Members'], undergraduatesByOwnLine: true }),
+      ),
+    ).toEqual(['Harper Wren:current']);
+  });
+
+  it('still withholds an own-line roster listed under a visiting or program heading', () => {
+    const roster = extractOfficialResearchHomeRoster(
+      people,
+      config({ currentSectionLabels: ['Visiting Researcher'], undergraduatesByOwnLine: true }),
+      observedAt,
+    );
+    expect(
+      derivedRosterWithheldReason(
+        config({ currentSectionLabels: ['Visiting Researcher'], undergraduatesByOwnLine: true }),
+        roster,
+        'https://fixturelab.yale.edu/',
+      ),
+    ).toBe('combined-section-label');
+  });
+
+  it('skips the mixed-level publish check for an own-line roster only', () => {
     const roster = extractOfficialResearchHomeRoster(
       people,
       config({ currentSectionLabels: ['Graduate and Undergraduate Students'] }),
@@ -153,11 +179,23 @@ describe('a name on one line and the role on the next (#5433)', () => {
       ),
     ).toEqual(['no-undergraduate-section']);
   });
+
+  it('never reads an undergraduate program title as the role', () => {
+    expect(
+      proposed(
+        lines(
+          'Rowan Thistle<br/>Undergraduate Program Director<br/>Harper Wren<br/>Undergraduate Program Coordinator',
+        ),
+      ),
+    ).toEqual(['no-undergraduate-section']);
+  });
 });
 
 describe('people who serve undergraduates or visit for a summer (#5433)', () => {
   it('reads an undergraduate research contact as not an undergraduate', () => {
     expect(mapOfficialRosterRole('Undergraduate Research Contact', '')).toBeNull();
+    expect(mapOfficialRosterRole('Undergraduate Program Director', '')).not.toBe('undergrad');
+    expect(mapOfficialRosterRole('Undergraduate Program Coordinator', '')).not.toBe('undergrad');
     expect(mapOfficialRosterRole('Undergraduate Research Assistant', '')).toBe('undergrad');
   });
 
