@@ -266,3 +266,56 @@ describe('people who serve undergraduates or visit for a summer (#5433)', () => 
     ).toBe(false);
   });
 });
+
+describe('sections and lines graded wrong on the first own-line run (#5433)', () => {
+  it('never reads a publications or teaching section as a roster', () => {
+    expect(
+      proposed(
+        body(`<h2>Publications</h2><h3>Avery Quill</h3><p>Undergraduate, Fixture Journal 2024</p>
+          <h2>Teaching</h2><h3>Rowan Thistle</h3><p>Undergraduate seminar, Fall 2021</p>`),
+      ),
+    ).toEqual(['no-undergraduate-section']);
+  });
+
+  it('withholds an undergraduate visitor and a table captioned for visitors', () => {
+    expect(
+      listedEntryIsFromAnotherSchool(
+        { name: 'Avery Quill', title: '(undergraduate visitor, Summer 2026)', years: '' },
+        false,
+      ),
+    ).toBe(true);
+    expect(
+      listed(
+        body(`<h2>People</h2><table><caption>Former Lab Visitor</caption><tbody>
+          <tr><td><img alt="" /></td><td><a>Avery Quill</a><br />Undergraduate Researcher</td></tr>
+        </tbody></table>`),
+        config({ undergraduatesByOwnLine: true }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('reads a short opportunities line as no person, but keeps a Yale program line', () => {
+    expect(
+      listed(
+        body(`<h2>People</h2>
+          <h3>Avery Quill</h3><p>Undergraduate Research Assistant Opportunities</p>
+          <h3>Harper Wren</h3><p>- Undergrad at Yale from Yale fixture program</p>`),
+        config({ undergraduatesByOwnLine: true }),
+      ),
+    ).toEqual(['Harper Wren:current']);
+  });
+
+  it("reads an inline biography's bachelor's degree from another school", () => {
+    expect(
+      listedEntryIsFromAnotherSchool(
+        {
+          name: 'Avery Quill',
+          title:
+            'Avery joined the Department of Fixtures at Yale in 2020 and the group in 2022. Avery earned a B.S. degree in Physics from the Elsewhere Institute of Science.',
+          years: '',
+        },
+        false,
+      ),
+    ).toBe(true);
+  });
+});
