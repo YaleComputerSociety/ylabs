@@ -1786,7 +1786,7 @@ const sectionListsAnUndergraduate = (section: RosterSection): boolean =>
 
 const UNDERGRADUATE_ROLE_LINE = /\bundergrad/i;
 const UNDERGRADUATE_PERSON_ROLE_LINE =
-  /\b(?:students?|researchers?|assistants?|interns?|scholars?|fellows?)\b|\bclass of (?:19|20)\d{2}\b|['’‘]\d{2}\b|^undergrad(?:uate)?$/i;
+  /\b(?:students?|researchers?|assistants?|interns?|scholars?|fellows?)\b|\bclass of (?:19|20)\d{2}\b|['’‘]\d{2}\b|^undergrad(?:uate)?\b\s*(?:[,;(|]|$)/i;
 const NOT_A_PERSON_ROLE_LINE =
   /\b(?:opportunit\w*|courses?|programs?|admissions?|curriculum|join\w*|prospective|apply\w*)\b/i;
 const GROUP_HEADING_LINE =
@@ -1828,7 +1828,10 @@ function readNameThenRoleLineSections($: cheerio.CheerioAPI): RosterSection[] {
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
     const level = headingLevels.get(line);
-    if (level !== undefined && !looksLikeListedPersonName(line)) {
+    if (
+      level !== undefined &&
+      (GROUP_HEADING_LINE.test(line) || !looksLikeListedPersonName(line))
+    ) {
       section = openSection(trail, line, level);
       sections.push(section);
       continue;
