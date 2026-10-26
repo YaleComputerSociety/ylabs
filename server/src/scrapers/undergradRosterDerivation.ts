@@ -46,6 +46,13 @@ const NOT_A_ROSTER_LABEL =
 const PLURAL_ROSTER_LABEL =
   /\b(?:people|students|researchers|assistants|associates|undergrads|undergraduates|members|scholars|interns|team|alumni|alumnae)\b/i;
 
+/**
+ * Any section of people may hold an undergraduate who says so on their own line, so the
+ * heading only has to be short and not one that names something other than a roster.
+ */
+const isOwnLineSectionLabel = (label: string): boolean =>
+  label.length <= 80 && !NOT_A_ROSTER_LABEL.test(label);
+
 export function isProposableSectionLabel(label: string, template: string): boolean {
   if (label.length > 80 || NOT_A_ROSTER_LABEL.test(label)) return false;
   return template !== 'heading-list' || PLURAL_ROSTER_LABEL.test(label);
@@ -218,9 +225,20 @@ export function proposeUndergradRosterConfig(
   const ownershipRefusal = pageOwnershipRefusal(html, researchEntityKey, url);
   if (ownershipRefusal) return { kind: ownershipRefusal };
   const template = detectOfficialRosterTemplate(html);
-  const candidates = undergraduateSectionCandidates(html, template).filter((candidate) =>
-    isProposableSectionLabel(candidate.label, template),
+  const allCandidates = undergraduateSectionCandidates(html, template);
+  const sectionCandidates = allCandidates.filter(
+    (candidate) =>
+      candidate.label &&
+      candidate.undergraduateEntries > 0 &&
+      isProposableSectionLabel(candidate.label, template),
   );
+  const undergraduatesByOwnLine = sectionCandidates.length === 0;
+  const candidates = undergraduatesByOwnLine
+    ? allCandidates.filter(
+        (candidate) =>
+          candidate.undergraduateEntriesByOwnLine > 0 && isOwnLineSectionLabel(candidate.label),
+      )
+    : sectionCandidates;
   if (candidates.length === 0) return { kind: 'no-undergraduate-section' };
   const config: OfficialRosterConfig = {
     researchEntityKey,
@@ -229,6 +247,7 @@ export function proposeUndergradRosterConfig(
     ...(template === 'profile-grid' ? { currency: 'section-label' as const } : {}),
     currentSectionLabels: candidates.filter((c) => !c.past).map((c) => c.label),
     pastSectionLabels: candidates.filter((c) => c.past).map((c) => c.label),
+    ...(undergraduatesByOwnLine ? { undergraduatesByOwnLine: true } : {}),
   };
   const roster = extractOfficialResearchHomeRoster(html, config, observedAt);
   const current = roster.undergraduates.filter((member) => member.status === 'current');
@@ -351,10 +370,11 @@ const NOT_A_YALE_UNDERGRADUATE_GROUP_LABEL =
  * Undergrads, High School"). It is publishable only where the extractor read every listed
  * undergraduate from a named sub-group of it; otherwise the list would be a guess.
  */
+const namesAGroupOtherThanYaleUndergraduates = (label: string): boolean =>
+  NOT_A_YALE_UNDERGRADUATE_GROUP_LABEL.test(label);
+
 export function sectionLabelMixesOtherGroups(label: string): boolean {
-  return (
-    sectionLabelCombinesGraduateLevels(label) || NOT_A_YALE_UNDERGRADUATE_GROUP_LABEL.test(label)
-  );
+  return sectionLabelCombinesGraduateLevels(label) || namesAGroupOtherThanYaleUndergraduates(label);
 }
 
 /**
@@ -373,7 +393,10 @@ export function derivedRosterWithheldReason(
   if (!derivedRosterPageBelongsToRow(config.url, websiteUrl)) return 'page-not-this-row';
   const labels = [...config.currentSectionLabels, ...(config.pastSectionLabels ?? [])];
   const separated = new Set(roster.subgroupedSectionLabels ?? []);
-  if (labels.some((label) => !separated.has(label) && sectionLabelMixesOtherGroups(label))) {
+  const mixesOtherGroups = config.undergraduatesByOwnLine
+    ? namesAGroupOtherThanYaleUndergraduates
+    : sectionLabelMixesOtherGroups;
+  if (labels.some((label) => !separated.has(label) && mixesOtherGroups(label))) {
     return 'combined-section-label';
   }
   if (currentUndergraduateCount(roster) > DERIVED_ROSTER_MAX_UNDERGRADUATES)
