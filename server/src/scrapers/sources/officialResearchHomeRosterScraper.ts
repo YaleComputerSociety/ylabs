@@ -11,6 +11,8 @@ import { RESEARCH_ENTITY_SLUG_OBSERVATION_FIELD } from '../entityMaterializer';
 import axios from 'axios';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
+import type { AnyNode } from 'domhandler';
+import { extractElementTextWithLineBreaks } from '../utils/htmlText';
 import { createHash } from 'crypto';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { getCached, setCached } from '../snapshotCache';
@@ -48,6 +50,11 @@ export interface OfficialRosterConfig {
   withheldNameDigests?: string[];
   pastNames?: string[];
   alumniPageUrl?: string;
+  /**
+   * The page has no section for undergraduates, so a listed person counts only when their
+   * own line, caption or biography says they are one; a section heading never does (#5433).
+   */
+  undergraduatesByOwnLine?: boolean;
 }
 
 export interface OfficialRosterUndergraduate {
@@ -121,6 +128,10 @@ const stableKey = (value: string): string =>
 const COMBINED_BACHELORS_MASTERS_STUDENT =
   /\b(?:undergrad(?:uate)?|B\.?\s?[AS]\.?)\s*\/\s*(?:master['’]?s|M\.?\s?[AS]\.?)\s+(?:student|candidate)\b/iu;
 
+/** "Undergraduate Research Contact": the person students contact, not an undergraduate. */
+const UNDERGRADUATE_SERVICE_ROLE =
+  /\bundergraduate\s+(?:(?:research|studies)\s+)?(?:contact|coordinator|advisor|adviser|liaison|program\s+manager|director)s?\b/i;
+
 export function mapOfficialRosterRole(
   titleValue: unknown,
   sectionValue: unknown,
@@ -141,6 +152,7 @@ export function mapOfficialRosterRole(
     /\b(?:director|dean|directors) of undergraduate (?:studies|education|research)\b|\bfor (?:yale )?(?:undergraduates?|undergrads?)\b/g,
     ' ',
   );
+  const servesUndergraduates = UNDERGRADUATE_SERVICE_ROLE.test(evidence);
   if (/\b(postdocs?|post docs?|post doctoral|postdoctoral)\b/.test(evidence)) return 'postdoc';
   if (
     /\b(graduate student|phd student|phd candidate|ph d student|ph d candidate|doctoral student|doctoral candidate|master s student|masters student|predoctoral)\b/.test(
@@ -149,7 +161,8 @@ export function mapOfficialRosterRole(
   ) {
     return 'grad-student';
   }
-  if (/\b(undergraduates?|undergrads?)\b/.test(evidence)) return 'undergrad';
+  if (!servesUndergraduates && /\b(undergraduates?|undergrads?)\b/.test(evidence))
+    return 'undergrad';
   if (
     /\b(lab manager|laboratory manager|research assistant|research associate|research scientist|postgraduate associate|post graduate associate|technician|coordinator|data manager|staff|administrative assistant|executive assistant|administrators?|office manager|program manager|business manager|operations manager|director of operations)\b/.test(
       evidence,
@@ -302,7 +315,7 @@ function readRosterTableRows($: cheerio.CheerioAPI, table: cheerio.Cheerio<any>)
   const headers = tableHeaderCells($, table);
   const headerRowIsData = headers.length > 0 && table.find('tr').first().find('th').length === 0;
   const nameColumn = tableColumnIndex(headers, /\b(member|name)\b/, 0);
-  const group = tableGroupLabel($, table, nameColumn);
+  const group = tableGroupLabel($, table, nameColumn) ?? tableCaptionGroupLabel($, table);
   const positionColumn = tableColumnIndex(
     headers.map((header) => (/\bcurrent\b/.test(header) ? '' : header)),
     /\b(position|role|title)\b/,
@@ -321,24 +334,68 @@ function readRosterTableRows($: cheerio.CheerioAPI, table: cheerio.Cheerio<any>)
       $(row)
         .find('td')
         .toArray()
-        .map((cell) => normalizedText($(cell).text())),
+        .map((cell) => cellLines(cell)),
     )
     .filter((cells) => cells.length > 0);
+  const namesHaveNoLabelledColumn = headers.every((header) => !/\b(member|name)\b/.test(header));
+  const texts = rows.map((cells) => cells.map((lines) => lines.join(' ')));
   const schoolColumn =
     headers.length === 0
-      ? schoolColumnIndex(rows, [nameColumn, positionColumn, departureColumn])
+      ? schoolColumnIndex(texts, [nameColumn, positionColumn, departureColumn])
       : -1;
-  return rows.map((cells) => ({
-    name: cells[nameColumn] || (headers.length === 0 ? cells.find(Boolean) || '' : ''),
-    position: positionColumn >= 0 ? cells[positionColumn] || '' : '',
-    departure:
-      departureColumn >= 0
-        ? cells[departureColumn] || ''
-        : cells.find((cell, index) => index !== nameColumn && /\b(?:19|20)\d{2}\b/.test(cell)) ||
-          '',
-    ...(group ? { group } : {}),
-    ...(schoolColumn >= 0 && cells[schoolColumn] ? { school: cells[schoolColumn] } : {}),
-  }));
+  return rows.map((cells, rowIndex) => {
+    const text = texts[rowIndex];
+    const personColumn =
+      !text[nameColumn] && namesHaveNoLabelledColumn
+        ? cells.findIndex((lines) => looksLikeListedPersonName(lines[0] ?? ''))
+        : nameColumn;
+    const nameLines = cells[personColumn] ?? [];
+    const splitsNameFromRole = personColumn !== nameColumn || nameLines.length > 1;
+    const name = splitsNameFromRole
+      ? (nameLines[0] ?? '')
+      : text[nameColumn] || (headers.length === 0 ? text.find(Boolean) || '' : '');
+    const position =
+      positionColumn >= 0
+        ? text[positionColumn] || ''
+        : splitsNameFromRole
+          ? nameLines.slice(1).join(' ')
+          : headers.length === 0
+            ? text.find(
+                (cell, index) =>
+                  index !== personColumn &&
+                  cell.length <= DESCRIPTOR_LINE_MAX &&
+                  mapOfficialRosterRole(cell, '') !== null,
+              ) || ''
+            : '';
+    return {
+      name,
+      position,
+      departure:
+        departureColumn >= 0
+          ? text[departureColumn] || ''
+          : text.find((cell, index) => index !== personColumn && /\b(?:19|20)\d{2}\b/.test(cell)) ||
+            '',
+      ...(group ? { group } : {}),
+      ...(schoolColumn >= 0 && text[schoolColumn] ? { school: text[schoolColumn] } : {}),
+    };
+  });
+}
+
+/** The lines of a table cell, split where the page breaks them ("Name<br>Undergraduate Student"). */
+const cellLines = (cell: AnyNode): string[] =>
+  extractElementTextWithLineBreaks(cell)
+    .split('\n')
+    .map((line) => normalizedText(line))
+    .filter(Boolean);
+
+/** A table captioned "Undergraduate Students" names the group every row in it belongs to. */
+function tableCaptionGroupLabel(
+  $: cheerio.CheerioAPI,
+  table: cheerio.Cheerio<any>,
+): string | undefined {
+  const label = normalizedText(table.children('caption').first().text());
+  if (!label || label.length > 80 || looksLikeListedPersonName(label)) return undefined;
+  return label;
 }
 
 const WHOLE_SCHOOL_NAME =
@@ -498,7 +555,8 @@ export function looksLikeListedPersonName(value: string): boolean {
   );
 }
 
-const ENTRY_NAME_BOUNDARY = /\s*(?:[(,:;|]|\s[–—-]\s|\s[–—-](?=\p{Lu}))/u;
+const ENTRY_NAME_BOUNDARY =
+  /\s*(?:[(,:;|]|\s[–—-]\s|\s[–—-](?=\p{Lu}))|\s+(?=[Cc]lass of (?:19|20)\d{2}\b|['’‘]\d{2}\b)/u;
 
 const LEADING_NICKNAMED_NAME = /^\p{Lu}[\p{L}'’.-]*\s+\(\p{Lu}[\p{L}'’.-]*\)\s+(?=\p{Lu})/u;
 
@@ -1306,7 +1364,7 @@ function sectionBracketsNameHomeSchool(entries: ListedPersonEntry[]): boolean {
 
 /** The owner lists Yale undergraduates only (2026-10-16). */
 const SUMMER_RESEARCH_PROGRAM =
-  /\bsummer (?:undergrad\w* )?research (?:experience|program)\b|\bSURE\b/i;
+  /\bsummer (?:undergrad\w* )?research (?:experience|program)\b|\bSURE\b|\bprogram\b[^.;|]{0,40}\bundergrad\w*[^.;]{0,40}\|\s*summer\s+(?:19|20)\d{2}\b/i;
 
 const HOMETOWN_WITH_STATE =
   /\bfrom\s+(?!(?:\p{Lu}[\p{L}.'’-]*\s+){0,3}(?:University|College|Institute|School)\b)\p{Lu}[\p{L}.'’-]*(?:\s+\p{Lu}[\p{L}.'’-]*){0,2},\s*[A-Z]{2}\b/gu;
@@ -1500,10 +1558,19 @@ function entryRoleOnPage(
   withinPastSection: boolean,
   page: PageRoleEvidence,
 ): OfficialRosterRole | null {
-  return notAnUndergraduateIfDoctor(
+  const role = notAnUndergraduateIfDoctor(
     entry,
     entryRoleOnPageFromLine(entry, section, withinPastSection, page),
   );
+  if (role !== 'undergrad') return role;
+  const ownText = `${entry.title} ${entry.years}`.trim();
+  if (UNDERGRADUATE_SERVICE_ROLE.test(ownText)) return null;
+  const headingNamesUndergraduates = mapOfficialRosterRole('', section.label) === 'undergrad';
+  return !headingNamesUndergraduates &&
+    !entry.group &&
+    (GROUP_HEADING_LINE.test(ownText) || FIRST_PERSON_LINE.test(ownText))
+    ? null
+    : role;
 }
 
 function entryRoleOnPageFromLine(
@@ -1558,6 +1625,7 @@ function extractListedUndergraduates(
   ]);
   const undergraduates: OfficialRosterUndergraduate[] = [];
   const seen = new Set<string>();
+  const ownLineOnly = config.undergraduatesByOwnLine === true;
   const withheldNameDigests = new Set(config.withheldNameDigests ?? []);
   const pastNames = new Set((config.pastNames ?? []).map(normalizedLabel));
   let undergraduateWithheldCount = 0;
@@ -1573,12 +1641,21 @@ function extractListedUndergraduates(
     const otherInstitutionSection =
       namesAnotherInstitution(section.label) || namesAnotherInstitution(section.caption ?? '');
     const bracketsNameHomeSchool = sectionBracketsNameHomeSchool(entries);
-    const sectionStatus = section.withinPastSection ? 'past' : labelStatus;
+    const pageSectionStatus = section.withinPastSection ? 'past' : labelStatus;
+    const statusOf = (entry: ListedPersonEntry): 'current' | 'past' =>
+      entry.group && isPastSectionLabel(entry.group) ? 'past' : pageSectionStatus;
     return entries
       .filter(
-        (entry) => entryRoleOnPage(entry, section, sectionStatus === 'past', page) === 'undergrad',
+        (entry) =>
+          entryRoleOnPage(
+            entry,
+            ownLineOnly ? withoutSectionLabel(section) : section,
+            statusOf(entry) === 'past',
+            page,
+          ) === 'undergrad',
       )
       .map((entry) => {
+        const sectionStatus = statusOf(entry);
         const homeSchool = bracketsNameHomeSchool ? bracketedAffiliation(entry) : undefined;
         const fromAnotherSchool =
           (otherInstitutionSection && !entry.group) ||
@@ -1592,13 +1669,22 @@ function extractListedUndergraduates(
         return { section, entry, sectionStatus, fromAnotherSchool, name };
       });
   });
-  const namesListedFromAnotherSchool = new Set(
+  const namesWithheldInEveryListing = new Set(
     undergraduateListings
       .filter((listing) => listing.fromAnotherSchool)
       .map((listing) => normalizedLabel(listing.name)),
   );
+  for (const section of sections) {
+    for (const entry of listedPersonEntries(section)) {
+      if (UNDERGRADUATE_SERVICE_ROLE.test(`${entry.title} ${entry.years}`)) {
+        namesWithheldInEveryListing.add(
+          normalizedLabel(displayCase(withoutRepeatedName(withoutRosterChrome(entry.name)))),
+        );
+      }
+    }
+  }
   for (const { section, entry, sectionStatus, name } of undergraduateListings) {
-    if (namesListedFromAnotherSchool.has(normalizedLabel(name))) {
+    if (namesWithheldInEveryListing.has(normalizedLabel(name))) {
       undergraduateWithheldCount += 1;
       continue;
     }
@@ -1671,12 +1757,80 @@ function readRosterSections(
   $: cheerio.CheerioAPI,
   template: OfficialRosterTemplate,
 ): RosterSection[] {
+  const sections = readTemplateRosterSections($, template);
+  return sections.some(sectionListsAnUndergraduate)
+    ? sections
+    : [...sections, ...readNameThenRoleLineSections($)];
+}
+
+function readTemplateRosterSections(
+  $: cheerio.CheerioAPI,
+  template: OfficialRosterTemplate,
+): RosterSection[] {
   if (template === 'yalesites-directory') return readYaleSitesDirectorySections($);
   if (template === 'heading-list') return readHeadingListSections($);
   const pastSections = readHeadingListSections($).filter(
     (section) => section.withinPastSection || isPastSectionLabel(section.label),
   );
   return [...readProfileGridSections($), ...pastSections];
+}
+
+const sectionListsAnUndergraduate = (section: RosterSection): boolean =>
+  listedPersonEntries(section).some(
+    (entry) =>
+      mapOfficialRosterRole(`${entry.title} ${entry.years}`, entry.group ?? section.label) ===
+      'undergrad',
+  );
+
+const UNDERGRADUATE_ROLE_LINE = /\bundergrad/i;
+const GROUP_HEADING_LINE =
+  /^[^,:;]*\b(?:undergraduates|undergrads|students|researchers|assistants|scholars|interns|members|associates)\s*:?$/i;
+
+/** "Undergraduate Student" names this person's role; "Undergraduates" opens the next group. */
+const isUndergraduateRoleLine = (line: string): boolean =>
+  line.length <= DESCRIPTOR_LINE_MAX &&
+  UNDERGRADUATE_ROLE_LINE.test(line) &&
+  !GROUP_HEADING_LINE.test(line) &&
+  !FIRST_PERSON_LINE.test(line) &&
+  !looksLikeListedPersonName(line);
+
+/**
+ * Pages whose markup none of the templates reads still set a person's name on one line and
+ * their role on the next ("Avery Quill" then "Undergraduate Student"). Read only where no
+ * template found an undergraduate, so a page a template reads is never read twice (#5433).
+ */
+function readNameThenRoleLineSections($: cheerio.CheerioAPI): RosterSection[] {
+  const root = ($('main').length > 0 ? $('main').first() : $('body').first()).clone();
+  root.find('script, style, nav, header, footer, aside').remove();
+  const headingLevels = new Map<string, number>();
+  for (const heading of root.find('h1, h2, h3, h4, h5, h6').toArray()) {
+    const text = normalizedText($(heading).text());
+    const tagName = (heading as { tagName?: string }).tagName || 'h6';
+    if (text && !headingLevels.has(text)) headingLevels.set(text, headingLevel(tagName));
+  }
+  const node = root.get(0);
+  const lines = (node ? extractElementTextWithLineBreaks(node) : '')
+    .split('\n')
+    .map((line) => normalizedText(line))
+    .filter(Boolean);
+  const trail: HeadingTrailEntry[] = [];
+  let section = openSection(trail, pageTitleLabel($), 0);
+  const sections = [section];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const level = headingLevels.get(line);
+    if (level !== undefined && !looksLikeListedPersonName(line)) {
+      section = openSection(trail, line, level);
+      sections.push(section);
+      continue;
+    }
+    const next = lines[index + 1] ?? '';
+    if (looksLikeListedPersonName(line) && isUndergraduateRoleLine(next)) {
+      section.listItems.push({ name: line, title: next, years: next, profileHref: '' });
+      index += 1;
+    }
+  }
+  return sections.filter(sectionListsPeople);
 }
 
 const sectionListsPeople = (section: RosterSection): boolean =>
@@ -1779,7 +1933,11 @@ export interface UndergraduateSectionCandidate {
   label: string;
   past: boolean;
   undergraduateEntries: number;
+  /** Entries that are undergraduates by their own line, caption or biography alone. */
+  undergraduateEntriesByOwnLine: number;
 }
+
+const withoutSectionLabel = (section: RosterSection): RosterSection => ({ ...section, label: '' });
 
 export function undergraduateSectionCandidates(
   html: string,
@@ -1789,19 +1947,27 @@ export function undergraduateSectionCandidates(
   const sections = readRosterSections(cheerio.load(html), template);
   const page = pageRoleEvidence(sections);
   for (const section of sections) {
-    const undergraduateEntries = listedPersonEntries(section).filter(
-      (entry) =>
-        entryRoleOnPage(entry, section, sectionIsPast(section), page) === 'undergrad' &&
-        looksLikeListedPersonName(entry.name),
+    const people = listedPersonEntries(section).filter((entry) =>
+      looksLikeListedPersonName(entry.name),
+    );
+    const past = sectionIsPast(section);
+    const undergraduateEntries = people.filter(
+      (entry) => entryRoleOnPage(entry, section, past, page) === 'undergrad',
     ).length;
-    if (!section.label || undergraduateEntries === 0) continue;
+    const undergraduateEntriesByOwnLine = people.filter(
+      (entry) => entryRoleOnPage(entry, withoutSectionLabel(section), past, page) === 'undergrad',
+    ).length;
+    if (undergraduateEntries === 0 && undergraduateEntriesByOwnLine === 0) continue;
+    if (!section.label && undergraduateEntriesByOwnLine === 0) continue;
     const key = normalizedLabel(section.label);
     const existing = byLabel.get(key);
-    const past = isPastSectionLabel(section.label) || section.withinPastSection;
+    const labelPast = isPastSectionLabel(section.label) || section.withinPastSection;
     byLabel.set(key, {
       label: section.label,
-      past: existing ? existing.past && past : past,
+      past: existing ? existing.past && labelPast : labelPast,
       undergraduateEntries: (existing?.undergraduateEntries ?? 0) + undergraduateEntries,
+      undergraduateEntriesByOwnLine:
+        (existing?.undergraduateEntriesByOwnLine ?? 0) + undergraduateEntriesByOwnLine,
     });
   }
   return [...byLabel.values()];
