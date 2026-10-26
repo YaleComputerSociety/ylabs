@@ -374,8 +374,10 @@ function readRosterTableRows($: cheerio.CheerioAPI, table: cheerio.Cheerio<any>)
       departure:
         departureColumn >= 0
           ? text[departureColumn] || ''
-          : text.find((cell, index) => index !== personColumn && /\b(?:19|20)\d{2}\b/.test(cell)) ||
-            '',
+          : [
+              splitsNameFromRole ? nameLines.slice(1).join(' ') : '',
+              ...text.filter((_, index) => index !== personColumn),
+            ].find((cell) => WRITTEN_YEAR.test(cell)) || '',
       ...(group ? { group } : {}),
       ...(schoolColumn >= 0 && text[schoolColumn] ? { school: text[schoolColumn] } : {}),
     };
@@ -977,6 +979,7 @@ const YEAR_RANGE_PATTERN = new RegExp(
 );
 const SINGLE_YEAR_PATTERN = new RegExp(`\\b(${YEAR})\\b`, 'g');
 const CLASS_YEAR_PATTERN = /(?:^|\s)['’‘](\d{2})\b/g;
+const WRITTEN_YEAR = new RegExp(`\\b${YEAR}\\b|(?:^|\\s)['’‘]\\d{2}\\b`);
 
 function yearSpan(value: string): { startYear?: number; endYear?: number; ongoing: boolean } {
   const range = YEAR_RANGE_PATTERN.exec(value);

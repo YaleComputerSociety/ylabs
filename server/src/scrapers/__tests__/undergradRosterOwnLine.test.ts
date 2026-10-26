@@ -66,6 +66,33 @@ describe('tables a roster page captions by group (#5433)', () => {
     ).toEqual(['Avery Quill:past']);
   });
 
+  it('dates a row by the class year written under the name in the same cell', () => {
+    expect(
+      listed(
+        body(
+          captioned(
+            'Undergraduate Students',
+            row('Avery Quill', 'Undergraduate Student, Class of 2019') +
+              row('Harper Wren', 'Undergraduate Student, Class of 2028'),
+          ),
+        ),
+        config(),
+      ),
+    ).toEqual(['Avery Quill:past', 'Harper Wren:current']);
+  });
+
+  it('dates a row by a short class year in its role cell in a table with no header row', () => {
+    expect(
+      listed(
+        body(`<h2>People</h2><table>
+          <tr><td><p>Avery Quill</p></td><td><p>Undergraduate '19</p></td><td><p>203.555.0100</p></td></tr>
+          <tr><td><p>Harper Wren</p></td><td><p>Undergraduate '28</p></td><td><p>203.555.0101</p></td></tr>
+        </table>`),
+        config({ undergraduatesByOwnLine: true }),
+      ),
+    ).toEqual(['Avery Quill:past', 'Harper Wren:current']);
+  });
+
   it('takes the role from its own cell in a table with no header row', () => {
     expect(
       listed(
