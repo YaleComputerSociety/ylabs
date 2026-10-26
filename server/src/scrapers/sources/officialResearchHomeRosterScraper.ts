@@ -1582,7 +1582,7 @@ function entryRoleOnPage(
     (GROUP_HEADING_LINE.test(ownText) ||
       FIRST_PERSON_LINE.test(ownText) ||
       (ownText.length <= DESCRIPTOR_LINE_MAX &&
-        NOT_A_PERSON_ROLE_LINE.test(ownText) &&
+        OPPORTUNITY_OR_PROGRAM_LINE.test(ownText) &&
         !/\bYale\b/i.test(ownText)))
     ? null
     : role;
@@ -1803,6 +1803,8 @@ const UNDERGRADUATE_PERSON_ROLE_LINE =
   /\b(?:students?|researchers?|assistants?|interns?|scholars?|fellows?)\b|\bclass of (?:19|20)\d{2}\b|['’‘]\d{2}\b|^undergrad(?:uate)?\b\s*(?:[,;(|]|$)/i;
 const NOT_A_PERSON_ROLE_LINE =
   /\b(?:opportunit\w*|courses?|programs?|admissions?|curriculum|join\w*|prospective|apply\w*)\b/i;
+const OPPORTUNITY_OR_PROGRAM_LINE =
+  /\b(?:opportunit\w*|programs?|admissions?|prospective|apply(?:ing)?|applications?)\b/i;
 const GROUP_HEADING_LINE =
   /^[^,:;]*\b(?:undergraduates|undergrads|students|researchers|assistants|scholars|interns|members|associates)\s*:?$/i;
 

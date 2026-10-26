@@ -151,6 +151,17 @@ describe('a page with no undergraduate section (#5433)', () => {
     ).toEqual(['Harper Wren:current']);
   });
 
+  it('keeps an ordinary role line that names an applied major or a join year', () => {
+    expect(
+      listed(
+        body(`<h2>People</h2>
+          <h3>Avery Quill</h3><p>Undergraduate Student, Applied Mathematics</p>
+          <h3>Harper Wren</h3><p>Undergraduate Researcher, joined 2024</p>`),
+        config({ undergraduatesByOwnLine: true }),
+      ),
+    ).toEqual(['Avery Quill:current', 'Harper Wren:current']);
+  });
+
   it('does not count a title a topic heading such as "Undergraduate Research" gives its people', () => {
     expect(
       proposed(
