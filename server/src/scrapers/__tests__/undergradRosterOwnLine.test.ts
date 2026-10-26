@@ -151,6 +151,15 @@ describe('a page with no undergraduate section (#5433)', () => {
     ).toEqual(['Harper Wren:current']);
   });
 
+  it('does not count a title a topic heading such as "Undergraduate Research" gives its people', () => {
+    expect(
+      proposed(
+        body(`<h2>Undergraduate Research</h2><h3>Avery Quill</h3><p>Summer Researcher</p>
+          <h2>Lab Members</h2><h3>Rowan Thistle</h3><p>Summer Researcher</p>`),
+      ),
+    ).toEqual(['no-undergraduate-section']);
+  });
+
   it('still withholds an own-line roster listed under a visiting or program heading', () => {
     const roster = extractOfficialResearchHomeRoster(
       people,

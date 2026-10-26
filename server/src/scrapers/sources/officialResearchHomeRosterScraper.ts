@@ -1534,7 +1534,9 @@ function pageRoleEvidence(sections: RosterSection[]): PageRoleEvidence {
   for (const section of sections) {
     if (sectionIsPast(section)) continue;
     const label = captionRoleLabel(section) ?? section.label;
-    if (mapOfficialRosterRole(label, '') !== 'undergrad') continue;
+    if (!COLLECTIVE_ROLE_NOUN.test(label) || mapOfficialRosterRole(label, '') !== 'undergrad') {
+      continue;
+    }
     for (const entry of listedPersonEntries(section)) {
       const title = ownTitleKey(entry);
       if (
