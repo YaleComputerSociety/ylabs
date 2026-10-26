@@ -42,7 +42,7 @@ export type UndergradRosterProposalOutcome =
   | { kind: 'no-listed-undergraduate'; rosterState: string };
 
 const NOT_A_ROSTER_LABEL =
-  /\b(?:opportunit\w*|join\w*|prospective|apply\w*|interested|openings?|positions?|how to)\b/i;
+  /\b(?:opportunit\w*|join\w*|prospective|apply\w*|interested|openings?|positions?|how to|publications?|papers|teaching|courses?|news|events?|seminars?|talks|press)\b/i;
 const PLURAL_ROSTER_LABEL =
   /\b(?:people|students|researchers|assistants|associates|undergrads|undergraduates|members|scholars|interns|team|alumni|alumnae)\b/i;
 

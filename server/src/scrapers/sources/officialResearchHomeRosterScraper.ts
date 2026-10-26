@@ -1230,7 +1230,7 @@ const ANOTHER_SCHOOL_EVIDENCE = [
     `${SCHOOL_KNOWN_BY_ONE_NAME.source}(?:\\s+\\p{Lu}[\\p{L}'’-]*){0,3}\\s+(?:Undergrad\\w*|Summer|REU)\\b`,
     'u',
   ),
-  /\bvisiting\b/i,
+  /\bvisit(?:ing|ors?)\b/i,
   /\bhigh school\b/i,
   new RegExp(
     `\\b(?:${GRADUATE_OR_PROFESSIONAL_STUDENT}student|undergraduate|undergrad|major|intern)\\s+(?:at|from)\\s+(?!Yale\\b)\\p{Lu}`,
@@ -1308,7 +1308,7 @@ const BIO_STANDING_AT_ANOTHER_SCHOOL = new RegExp(
   'u',
 );
 const BIO_BACHELORS_FROM_ANOTHER_SCHOOL = new RegExp(
-  `${BACHELORS_DEGREES}\\.?(?:\\s+(?:in|of)\\s+[^;()]{1,60}?)?\\s+(?:from|at)\\s+(?:the\\s+)?${NAMED_SCHOOL_OTHER_THAN_YALE}`,
+  `${BACHELORS_DEGREES}\\.?(?:\\s+degree)?(?:\\s+(?:in|of)\\s+[^;()]{1,60}?)?\\s+(?:from|at)\\s+(?:the\\s+)?${NAMED_SCHOOL_OTHER_THAN_YALE}`,
   'u',
 );
 const BIO_VISITOR = /\bvisit(?:ed|s|ing)\s+(?:the\s+|our\s+)?(?:lab|group)\s+from\b/i;
@@ -1379,6 +1379,9 @@ const withoutHometown = (text: string): string => text.replace(HOMETOWN_WITH_STA
 const withSeparatedGluedWords = (text: string): string =>
   text.replace(/(\p{Ll})(\p{Lu})/gu, '$1 $2');
 
+/** A person's own line this long is their biography, set inline rather than in its own paragraph. */
+const BIO_LENGTH_OWN_LINE = 120;
+
 /** The owner lists Yale undergraduates only (2026-10-16). */
 export function listedEntryIsFromAnotherSchool(
   entry: { name?: string; title: string; years: string; bio?: string },
@@ -1397,6 +1400,7 @@ export function listedEntryIsFromAnotherSchool(
     return true;
   }
   if (entry.bio && bioNamesAnotherSchool(entry.bio)) return true;
+  if (ownText.length > BIO_LENGTH_OWN_LINE && bioNamesAnotherSchool(ownText)) return true;
   if (/\(\s*Yale[^)]*\)/i.test(ownText) || /\bYale College\b/i.test(ownText)) return false;
   return (
     ANOTHER_SCHOOL_EVIDENCE.some((pattern) => pattern.test(ownText)) ||
@@ -1436,7 +1440,8 @@ function namesListedInAnotherCurrentRole(
   return names;
 }
 
-const NOT_A_YALE_COLLEGE_GROUP = /\bpost[- ]?(?:grad|bac|doc)\w*|\bprograms?\b/i;
+const NOT_A_YALE_COLLEGE_GROUP =
+  /\bpost[- ]?(?:grad|bac|doc)\w*|\bprograms?\b|\bvisit(?:ing|ors?)\b|\bhigh school\b/i;
 
 /**
  * A person a section places in a sub-group takes their role from that group, never from
@@ -1574,7 +1579,11 @@ function entryRoleOnPage(
   const headingNamesUndergraduates = mapOfficialRosterRole('', section.label) === 'undergrad';
   return !headingNamesUndergraduates &&
     !entry.group &&
-    (GROUP_HEADING_LINE.test(ownText) || FIRST_PERSON_LINE.test(ownText))
+    (GROUP_HEADING_LINE.test(ownText) ||
+      FIRST_PERSON_LINE.test(ownText) ||
+      (ownText.length <= DESCRIPTOR_LINE_MAX &&
+        OPPORTUNITY_OR_PROGRAM_LINE.test(ownText) &&
+        !/\bYale\b/i.test(ownText)))
     ? null
     : role;
 }
@@ -1794,6 +1803,8 @@ const UNDERGRADUATE_PERSON_ROLE_LINE =
   /\b(?:students?|researchers?|assistants?|interns?|scholars?|fellows?)\b|\bclass of (?:19|20)\d{2}\b|['’‘]\d{2}\b|^undergrad(?:uate)?\b\s*(?:[,;(|]|$)/i;
 const NOT_A_PERSON_ROLE_LINE =
   /\b(?:opportunit\w*|courses?|programs?|admissions?|curriculum|join\w*|prospective|apply\w*)\b/i;
+const OPPORTUNITY_OR_PROGRAM_LINE =
+  /\b(?:opportunit\w*|programs?|admissions?|prospective|apply(?:ing)?|applications?)\b/i;
 const GROUP_HEADING_LINE =
   /^[^,:;]*\b(?:undergraduates|undergrads|students|researchers|assistants|scholars|interns|members|associates)\s*:?$/i;
 
