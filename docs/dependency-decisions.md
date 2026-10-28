@@ -125,6 +125,7 @@ The `server` `resolutions` pinned `path-to-regexp` to 0.1.13, the patched releas
 Express 5 routes through `router` 2, which depends on `path-to-regexp` 8, so the pin would have forced a matcher the router was never written for, and it is removed rather than moved.
 `@types/express` moves to 5 with it, and the copies that `@types/passport`, `@types/passport-strategy`, and `@types/cookie-session` pull through their `*` ranges are deduplicated onto the same release, so one Express type surface is installed.
 The `qs` pin stays, because Express 5 and `body-parser` 2 both still resolve it.
+On 2026-10-28 the pin moved from 6.16.0 to the patch release 6.16.1 for GHSA-6pq8-jhm2-2vcw, which the CI dependency audit reported against 6.7.0 to 6.16.0 (#5437).
 The behaviour this upgrade had to keep, and where each rule now lives, is recorded in `skills/auth-security/SKILL.md` under the Express 5 request contract.
 
 ## 2026-10-02: The lint toolchain moves to ESLint 10 (#4375)
