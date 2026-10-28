@@ -118,9 +118,11 @@ const collapseRefusalWhitespace = (value: string): string => value.replace(/\s+/
  */
 const stableRecordKey = (entry: object): string =>
   JSON.stringify(
-    Object.keys(entry)
-      .sort()
-      .map((key) => [key, (entry as Record<string, unknown>)[key] ?? null]),
+    Object.entries(entry)
+      .filter(
+        ([key, fieldValue]) => key !== '_id' && fieldValue !== null && fieldValue !== undefined,
+      )
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0)),
   );
 
 export function fieldValueRefusalKey(field: string, value: unknown): string {

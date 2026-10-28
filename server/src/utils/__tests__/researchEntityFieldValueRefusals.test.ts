@@ -4,6 +4,7 @@
  * second is the one that would turn it back into `manuallyLockedFields` with extra
  * steps.
  */
+import mongoose from 'mongoose';
 import { describe, expect, it } from 'vitest';
 import {
   fieldValueRefusalKey,
@@ -367,6 +368,21 @@ describe('a refused list of records (#5433)', () => {
         { year: 2024, programName: 'Fixture Fellowship', count: 1 },
       ]),
     ).toBe(false);
+  });
+
+  it('keys a stored entry with a subdocument id and no year equal to the refusal and the observation', () => {
+    const storedEntry = [
+      { _id: new mongoose.Types.ObjectId(), programName: 'Lab roster alumni', count: 1 },
+    ];
+    const observedEntry = [{ programName: 'Lab roster alumni', count: 1 }];
+    expect(fieldValueRefusalKey('pastUndergradAdvisees', storedEntry)).toBe(
+      fieldValueRefusalKey('pastUndergradAdvisees', refused),
+    );
+    expect(fieldValueRefusalKey('pastUndergradAdvisees', observedEntry)).toBe(
+      fieldValueRefusalKey('pastUndergradAdvisees', refused),
+    );
+    expect(valueIsRefused(refusals, 'pastUndergradAdvisees', storedEntry)).toBe(true);
+    expect(valueIsRefused(refusals, 'pastUndergradAdvisees', observedEntry)).toBe(true);
   });
 
   it('keeps keying a list of strings as before', () => {
