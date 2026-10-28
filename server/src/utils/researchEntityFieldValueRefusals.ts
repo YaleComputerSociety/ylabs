@@ -111,9 +111,27 @@ export function foldDefaultDocumentLeaf(key: string): string {
  */
 const collapseRefusalWhitespace = (value: string): string => value.replace(/\s+/g, ' ').trim();
 
+/**
+ * A list of records, such as a past-advisee list, keys each record by its own fields in a
+ * fixed order: read as text every record is "[object Object]", so a refusal of one list
+ * would match any other list of the same length on that row.
+ */
+const stableRecordKey = (entry: object): string =>
+  JSON.stringify(
+    Object.keys(entry)
+      .sort()
+      .map((key) => [key, (entry as Record<string, unknown>)[key] ?? null]),
+  );
+
 export function fieldValueRefusalKey(field: string, value: unknown): string {
   if (Array.isArray(value)) {
-    return JSON.stringify(value.map((entry) => collapseRefusalWhitespace(String(entry))));
+    return JSON.stringify(
+      value.map((entry) =>
+        entry !== null && typeof entry === 'object'
+          ? stableRecordKey(entry)
+          : collapseRefusalWhitespace(String(entry)),
+      ),
+    );
   }
   if (value === null || value === undefined) return '';
   if (typeof value !== 'string') return JSON.stringify(value);

@@ -336,3 +336,42 @@ describe('planFieldValueRefusal sourceName', () => {
     expect('sourceName' in refusal).toBe(false);
   });
 });
+
+describe('a refused list of records (#5433)', () => {
+  const refused = [{ year: null, programName: 'Lab roster alumni', count: 1 }];
+  const update = planFieldValueRefusal(
+    {},
+    {
+      field: 'pastUndergradAdvisees',
+      value: refused,
+      rule: 'operator_judgement',
+      refusedBy: 'test',
+      note: 'the cited page names no undergraduate',
+    },
+  );
+  const refusals = { pastUndergradAdvisees: update['fieldValueRefusals.pastUndergradAdvisees'] };
+
+  it('keys each record by its fields, not as "[object Object]"', () => {
+    expect(fieldValueRefusalKey('pastUndergradAdvisees', refused)).not.toContain('object Object');
+    expect(
+      fieldValueRefusalKey('pastUndergradAdvisees', [
+        { count: 1, programName: 'Lab roster alumni', year: null },
+      ]),
+    ).toBe(fieldValueRefusalKey('pastUndergradAdvisees', refused));
+  });
+
+  it('refuses the same list and leaves a different list of the same length open', () => {
+    expect(valueIsRefused(refusals, 'pastUndergradAdvisees', refused)).toBe(true);
+    expect(
+      valueIsRefused(refusals, 'pastUndergradAdvisees', [
+        { year: 2024, programName: 'Fixture Fellowship', count: 1 },
+      ]),
+    ).toBe(false);
+  });
+
+  it('keeps keying a list of strings as before', () => {
+    expect(fieldValueRefusalKey('researchAreas', ['  Fixture  topic ', 'Other'])).toBe(
+      JSON.stringify(['Fixture topic', 'Other']),
+    );
+  });
+});
