@@ -27,6 +27,7 @@
  *     --field=websiteUrl --value=<url> --rule=wrong_owner --note='why'
  *   Pass --source-name=<lane> when a lane emitted the refused value, so the refusal
  *   divides by lane and that lane's precision has a denominator.
+ *   Name a stored list of records with --value-json='[{"count":1}]' instead of --value.
  *   yarn --cwd server research-entity:refuse-field-value --slug=<slug> \
  *     --field=websiteUrl --value=<url> --rule=wrong_owner --apply \
  *     --confirm-field-value-refusal
@@ -66,7 +67,7 @@ const SCRIPT_NAME = 'research-entity:refuse-field-value';
 export interface RefuseFieldValueArgs {
   slug: string;
   field: string;
-  value: string;
+  value: unknown;
   rule: FieldValueRefusalRule;
   sourceName?: string;
   note: string;
@@ -97,7 +98,9 @@ export function parseRefuseFieldValueArgs(argv: string[]): RefuseFieldValueArgs 
     else if (arg.startsWith('--slug=')) args.slug = arg.slice('--slug='.length).trim();
     else if (arg.startsWith('--field=')) args.field = arg.slice('--field='.length).trim();
     else if (arg.startsWith('--value=')) args.value = arg.slice('--value='.length).trim();
-    else if (arg.startsWith('--note=')) args.note = arg.slice('--note='.length).trim();
+    else if (arg.startsWith('--value-json=')) {
+      args.value = parseValueJson(arg.slice('--value-json='.length));
+    } else if (arg.startsWith('--note=')) args.note = arg.slice('--note='.length).trim();
     else if (arg.startsWith('--decided-by='))
       args.decidedBy = arg.slice('--decided-by='.length).trim();
     else if (arg.startsWith('--evidence-url='))
@@ -110,10 +113,21 @@ export function parseRefuseFieldValueArgs(argv: string[]): RefuseFieldValueArgs 
   return args;
 }
 
+/** A stored list or number is named as JSON, so the refusal keys it the way the row stores it. */
+function parseValueJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error('--value-json must be valid JSON.');
+  }
+}
+
 export function assertRefuseFieldValueArgs(args: RefuseFieldValueArgs): void {
   if (!args.slug) throw new Error('--slug is required: a refusal is a judgement about one row.');
   if (!args.field) throw new Error('--field is required.');
-  if (!args.value) throw new Error('--value is required: a refusal names the value it refuses.');
+  if (args.value === '' || args.value === undefined || args.value === null) {
+    throw new Error('--value is required: a refusal names the value it refuses.');
+  }
   if (args.withdraw && !args.note) {
     throw new Error('--note is required when withdrawing: a withdrawal records why.');
   }
