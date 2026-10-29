@@ -304,6 +304,21 @@ describe('LabSiteUndergradInvitationScraper', () => {
     );
     expect(emitted).toEqual([expect.objectContaining({ entityKey: 'moved-lab', value: null })]);
   });
+  it("refuses an invitation on a linked page of another university's lab site", async () => {
+    const { emitted } = await run(
+      {
+        'https://moved.example.com/': html('We study cells.', '<a href="/join">Join us</a>').replace(
+          '</main>',
+          '</main><footer>Department of Bioengineering, University of Pennsylvania, Philadelphia</footer>',
+        ),
+        'https://moved.example.com/join': html(
+          'We are actively recruiting undergraduate researchers to join our lab.',
+        ),
+      },
+      [lab('moved-lab', 'https://moved.example.com/')],
+    );
+    expect(emitted).toEqual([expect.objectContaining({ entityKey: 'moved-lab', value: null })]);
+  });
 });
 
 describe('scopedCrawlUrls', () => {

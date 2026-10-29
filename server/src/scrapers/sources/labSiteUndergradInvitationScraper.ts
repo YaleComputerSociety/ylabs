@@ -131,10 +131,9 @@ export function strongestInvitationOnPages(
   lab: CandidateLab,
   now: Date,
 ): ServedUndergradInvitation | null {
+  if (pages[0]?.belongsToAnotherInstitution) return null;
   let best: ServedUndergradInvitation | null = null;
-  const inScope = new Set<PromptSourcePage>(pagesWithinEntityScope(pages));
-  for (const page of pages) {
-    if (!inScope.has(page)) continue;
+  for (const page of pagesWithinEntityScope(pages)) {
     if (page.belongsToAnotherInstitution || quotePageIsAboutAnotherEntity(page.url, lab)) continue;
     const found = extractUndergradInvitation(page.text, now);
     if (!found) continue;
