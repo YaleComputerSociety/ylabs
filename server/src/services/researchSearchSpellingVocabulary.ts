@@ -43,9 +43,12 @@ let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
 const SERVED_TIERS = new Set<unknown>(publicStudentVisibilityTiers);
 
+// `memberNames` only guards a typed name against respelling: a student's name
+// never becomes a correction target, so it is not in the name fields (#5442).
 const RESEARCH_SEARCH_SPELLING_PERSON_NAME_FIELDS = [
   'leadProfessorNames',
   'professorNames',
+  'memberNames',
 ] as const;
 
 const toVocabularyDocument = (hit: Record<string, unknown>): SearchVocabularyDocument => ({
@@ -68,6 +71,7 @@ export const loadResearchSearchSpellingVocabulary = async (
       offset,
       attributesToRetrieve: [
         ...RESEARCH_SEARCH_SPELLING_NAME_FIELDS,
+        'memberNames',
         ...RESEARCH_SEARCH_SPELLING_BODY_FIELDS,
         'studentVisibilityTier',
       ],

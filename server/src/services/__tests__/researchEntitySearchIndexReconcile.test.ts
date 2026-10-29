@@ -20,16 +20,28 @@ const row = (hexSuffix: string, name: string) => ({
 const servedDocument = (source: ReturnType<typeof row>) =>
   JSON.parse(JSON.stringify(buildResearchEntitySearchIndexDocument(source)));
 
-function fakeIndex(initial: Record<string, any>[], options: { embedder?: boolean } = {}) {
+function fakeIndex(
+  initial: Record<string, any>[],
+  options: { embedder?: boolean; settings?: Record<string, any> } = {},
+) {
   const stored = new Map(initial.map((doc) => [String(doc.id), doc]));
   const added: Record<string, any>[][] = [];
   const deleted: string[][] = [];
+  const settingsUpdates: Record<string, any>[] = [];
+  let settings = options.settings ?? getResearchEntitySearchIndexSettings();
   let taskUid = 0;
   return {
     stored,
     added,
     deleted,
+    settingsUpdates,
     tasks: { waitForTask: async () => ({ status: 'succeeded' }) },
+    getSettings: async () => settings,
+    updateSettings: async (next: Record<string, any>) => {
+      settingsUpdates.push(next);
+      settings = next;
+      return { taskUid: (taskUid += 1) };
+    },
     getEmbedders: async () => (options.embedder === false ? {} : { default: { source: 'openAi' } }),
     getDocuments: async ({ limit, offset }: { limit: number; offset: number }) => ({
       results: [...stored.values()].slice(offset, offset + limit),
@@ -92,6 +104,33 @@ describe('reconcileResearchEntitySearchIndex', () => {
         .sort(),
     ).toEqual(['synthetic-002', 'synthetic-003']);
     expect(index.deleted).toEqual([[String(orphan._id)]]);
+  });
+
+  it('applies drifted settings in place before writing, and leaves matching settings alone', async () => {
+    const expected = getResearchEntitySearchIndexSettings();
+    const drifted = fakeIndex(indexedBefore(), {
+      settings: {
+        ...expected,
+        searchableAttributes: expected.searchableAttributes.filter(
+          (attribute) => attribute !== 'memberNames',
+        ),
+      },
+    });
+    await run(drifted, rows, true);
+    expect(drifted.settingsUpdates).toEqual([expected]);
+
+    const matching = fakeIndex(indexedBefore());
+    await run(matching, rows, true);
+    expect(matching.settingsUpdates).toEqual([]);
+  });
+
+  it('changes no settings on a dry run', async () => {
+    const expected = getResearchEntitySearchIndexSettings();
+    const index = fakeIndex(indexedBefore(), {
+      settings: { ...expected, searchableAttributes: ['name'] },
+    });
+    await run(index, rows, false);
+    expect(index.settingsUpdates).toEqual([]);
   });
 
   it('finds nothing to write on a second run', async () => {

@@ -42,7 +42,7 @@ Use the one that matches the environment.
 | Environment         | Command                                            | Notes                                                                                                                                               |
 | ------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Development (local) | `yarn development:search:sync`                     | The default. Wraps `meili:sync-research-entities --apply`: diffs every corpus document against the live index, upserts only the ones that differ, and deletes index documents with no live row. |
-| Development (local) | `yarn development:search:rebuild`                  | Only for a settings, embedder, or document-shape change. Wraps `meili:rebuild-research-entities --clear --confirm-meili-rebuild`, which re-embeds every document. |
+| Development (local) | `yarn development:search:rebuild`                  | Only for an embedder or `documentTemplate` change. Wraps `meili:rebuild-research-entities --clear --confirm-meili-rebuild`, which re-embeds every document. |
 | Beta                | `node scripts/reindex-search-index.mjs beta`       | Run from the Beta Render shell or as a one-off job (see below). Dry run. Add `--apply` to write: it reconciles incrementally when the live index matches the code and rebuilds otherwise; add `--full` to force the rebuild. |
 | Production          | `node scripts/reindex-search-index.mjs production` | Run from the Production Render shell. Dry run. Add `--apply` to write, with the same mode choice and `--full` flag. Run Beta first.                 |
 
@@ -55,13 +55,14 @@ A stale index is a data difference, and the sync writes only that difference.
 Meilisearch re-embeds a document only when its rendered `documentTemplate` changes, so a row whose only change is a timestamp, a tier, or a rank costs no embedding call.
 The replacing rebuild builds every document into a fresh `_next` index, which has no vectors, so every rebuild re-embeds the whole corpus.
 Measured on 2026-10-12 (#5023): Development had 23 replacing rebuilds in nine days; one sync of a 4,224-document index after a sweep upserted 4,081 documents and deleted 4 in 25 seconds, and the next run upserted none.
-The sync refuses when the index has no stored embedder, when the corpus yields no documents, or when it would delete more than a fifth of the index, and it never changes index settings.
-Run the rebuild only when the settings, the embedder, or the shape of an index document changed.
+The sync refuses when the index has no stored embedder, when the corpus yields no documents, or when it would delete more than a fifth of the index.
+Before it writes, it applies any drifted index settings in place; the settings hold no embedder, so a new searchable attribute costs no embedding call (#5442).
+Run the rebuild only when the embedder or its `documentTemplate` changed.
 
 ### Beta and Production choose between a reconcile and a rebuild (#5107)
 
 `reindex:meili --confirm` compares the live prefixed index with what the code would build before it writes anything, and prints the decision as `reindexMode`.
-When the live index exists and its settings and embedder match the code, it runs the same reconcile as `development:search:sync`: it upserts only the documents whose canonical JSON differs and deletes the ones with no live row, so unchanged documents keep their vectors.
+When the live index exists and its embedder matches the code, it runs the same reconcile as `development:search:sync`: it applies any drifted settings in place, upserts only the documents whose canonical JSON differs, and deletes the ones with no live row, so unchanged documents keep their vectors.
 Otherwise it runs the replacing rebuild, and `--full` forces the rebuild.
 `compareResearchEntitySearchIndexToCode` decides: the settings compare key by key against `getResearchEntitySearchIndexSettings`, with attribute sets as sorted lists because Meilisearch returns them sorted, and the embedder compares by source, model, and document template, because Meilisearch redacts its stored key.
 A changed document shape needs no rebuild, because `addDocuments` replaces a whole document and the diff reaches every document whose shape changed.

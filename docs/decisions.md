@@ -5,6 +5,13 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-29: Students And Postdocs On A Lab's Roster Are Name-Searchable (#5442)
+
+The owner extended the 2026-10-21 decision below to every researcher a lab's official roster lists: postdocs, graduate students and undergraduates, current and past, are found through their lab by name, and staff are not.
+They are indexed in `memberNames`, apart from `professorNames`, so faculty-name ranking and the embedding text are unchanged.
+The card's matched-member line names the role the lab page lists them under, and the lab page highlights them, as it does a faculty member.
+The same whole-name rule applies, so a lone given name or surname matches nobody.
+
 ## 2026-10-21: A Lab Member Is Found Through The Lab, And Every Card Names Its Lead
 
 A person whose research happens in someone else's lab is found through that lab rather than through a row of their own.

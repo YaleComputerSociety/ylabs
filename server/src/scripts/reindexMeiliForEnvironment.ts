@@ -54,10 +54,18 @@ export function chooseReindexMode(args: {
   if (!comparison.indexExists) {
     return { mode: 'full', reason: 'the live index does not exist', drift: comparison.drift };
   }
-  if (comparison.drift.length > 0) {
+  const rebuildDrift = comparison.drift.filter((item) => !item.startsWith('settings:'));
+  if (rebuildDrift.length > 0) {
     return {
       mode: 'full',
       reason: `the live index differs from the code: ${comparison.drift.join(', ')}`,
+      drift: comparison.drift,
+    };
+  }
+  if (comparison.drift.length > 0) {
+    return {
+      mode: 'incremental',
+      reason: `the live embedder matches the code, so the reconcile applies the drifted settings in place: ${comparison.drift.join(', ')}`,
       drift: comparison.drift,
     };
   }

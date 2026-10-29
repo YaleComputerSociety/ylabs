@@ -1480,6 +1480,78 @@ describe('fetchResearchEntitySearchMemberNames canonical roster projection', () 
     expect(fields?.professorNames).toEqual(['Lead Professor', 'Core Faculty Member']);
   });
 
+  it('indexes the postdocs, graduate students and undergraduates the lab page lists, never staff', async () => {
+    const entityId = new mongoose.Types.ObjectId();
+    const now = Date.now();
+    const rosterUrl = 'https://example.org/lab/people';
+    const rosterEnrichment = {
+      state: 'current',
+      sourceUrl: rosterUrl,
+      observedAt: new Date(now - 60 * 1000),
+      freshnessExpiresAt: new Date(now + 30 * 24 * 60 * 60 * 1000),
+      memberKeys: ['postdoc-key', 'graduate-key', 'staff-key'],
+      undergraduates: [
+        { name: 'Synthetic Current Undergrad', status: 'current' },
+        { name: 'Synthetic Past Undergrad', status: 'past' },
+      ],
+    };
+    const seedRosterMember = async (displayName: string, role: string, membershipKey: string) => {
+      const person = await Researcher.create({
+        displayName,
+        profileLinks: [],
+        status: 'ACTIVE',
+        archived: false,
+      });
+      await RoleAssignment.create({
+        personId: person._id,
+        target: { kind: 'RESEARCH_ENTITY', id: entityId },
+        role,
+        state: 'CURRENT',
+        confidence: 0.9,
+        rosterProvenance: {
+          sourceName: 'official-research-home-roster',
+          evidenceStatus: 'verified',
+          membershipKey,
+          sourceUrl: rosterUrl,
+          observedAt: new Date(now),
+          freshnessExpiresAt: new Date(now + 30 * 24 * 60 * 60 * 1000),
+        },
+      });
+    };
+    await seedMember(entityId, 'Lead Professor', 'PI');
+    await seedRosterMember('Synthetic Postdoc', 'POSTDOC', 'postdoc-key');
+    await seedRosterMember('Synthetic Graduate', 'GRADUATE_STUDENT', 'graduate-key');
+    await seedRosterMember('Synthetic Staffer', 'STAFF', 'staff-key');
+    await seedMember(entityId, 'Synthetic Unlisted Graduate', 'GRADUATE_STUDENT');
+
+    const fields = (
+      await fetchResearchEntitySearchMemberNames([{ _id: entityId, rosterEnrichment }])
+    ).get(entityId.toString());
+
+    expect(fields?.professorNames).toEqual(['Lead Professor']);
+    expect([...(fields?.memberNames ?? [])].sort()).toEqual([
+      'Synthetic Current Undergrad',
+      'Synthetic Graduate',
+      'Synthetic Past Undergrad',
+      'Synthetic Postdoc',
+    ]);
+  });
+
+  it('indexes the undergraduates a lab page lists even when no role edge exists', async () => {
+    const entityId = new mongoose.Types.ObjectId();
+    const rosterEnrichment = {
+      state: 'current',
+      freshnessExpiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      undergraduates: [{ name: 'Synthetic Listed Undergrad', status: 'current' }],
+    };
+
+    const fields = (
+      await fetchResearchEntitySearchMemberNames([{ _id: entityId, rosterEnrichment }])
+    ).get(entityId.toString());
+
+    expect(fields?.memberNames).toEqual(['Synthetic Listed Undergrad']);
+  });
+
   it('indexes no member whose listed name is a lab rather than a person (#4360)', async () => {
     const entityId = new mongoose.Types.ObjectId();
     await seedMember(entityId, 'Quillon Lab', 'CORE_FACULTY', 'UNKNOWN');

@@ -840,6 +840,28 @@ describe('ResearchHomeCard compact browse card', () => {
     );
   });
 
+  it('says which role a matched member holds on the lab page', () => {
+    const home = researchHome();
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          home={{
+            ...home,
+            entities: [
+              {
+                ...home.entities[0],
+                matchedMemberName: 'Fixture Student',
+                matchedMemberRole: 'undergrad',
+              },
+            ],
+          }}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole('link', { name: 'Fixture Student' })).toBeTruthy();
+    expect(screen.getByText(/Undergraduate/)).toBeTruthy();
+  });
+
   it('shows no matched-member line when the search did not name a member', () => {
     render(
       <MemoryRouter>

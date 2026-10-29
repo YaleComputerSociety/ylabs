@@ -65,6 +65,9 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'displayName',
     'leadProfessorNames',
     'professorNames',
+    // Kept out of `professorNames` so faculty-name ranking and the embedding
+    // template are unchanged (#5442).
+    'memberNames',
     'researchAreas',
     'methods',
     'studentSearchTerms',
@@ -174,6 +177,7 @@ export interface ResearchEntitySearchIndexRebuildResult {
 export interface ResearchEntitySearchMemberNameFields {
   leadProfessorNames: string[];
   professorNames: string[];
+  memberNames: string[];
 }
 
 export type ResearchEntitySearchMemberNameMap = Map<string, ResearchEntitySearchMemberNameFields>;
@@ -224,7 +228,11 @@ const SEARCH_INDEX_DIRECT_CONTACT_FIELDS = [
   'phone',
 ] as const;
 
-const SEARCH_INDEX_PERSON_NAME_FIELDS = ['leadProfessorNames', 'professorNames'] as const;
+const SEARCH_INDEX_PERSON_NAME_FIELDS = [
+  'leadProfessorNames',
+  'professorNames',
+  'memberNames',
+] as const;
 
 const LEAD_PROFESSOR_MEMBER_ROLES = new Set([
   'pi',
@@ -234,6 +242,13 @@ const LEAD_PROFESSOR_MEMBER_ROLES = new Set([
   'principal_investigator',
   'lead',
   'faculty_lead',
+]);
+
+const SEARCHABLE_STUDENT_MEMBER_ROLES: ReadonlySet<string> = new Set([
+  'postdoc',
+  'grad-student',
+  'undergrad',
+  'past-undergrad',
 ]);
 
 const SEARCHABLE_PROFESSOR_MEMBER_ROLES = new Set([
@@ -403,6 +418,7 @@ export function buildStudentSearchTerms(doc: any): string[] {
 const emptyMemberNameFields = (): ResearchEntitySearchMemberNameFields => ({
   leadProfessorNames: [],
   professorNames: [],
+  memberNames: [],
 });
 
 export async function fetchResearchEntitySearchMemberNames(
@@ -416,25 +432,35 @@ export async function fetchResearchEntitySearchMemberNames(
   if (entityById.size === 0) return new Map();
 
   const rosterByEntityId = await getResearchEntityRosterByEntityId(Array.from(entityById.keys()));
-  const { publicResearchEntityDetailMemberNames } = await import('./researchGroupService');
+  const { publicResearchEntityDetailMemberNames, presentedLabMembers } =
+    await import('./researchGroupService');
   const now = new Date();
   const byEntityId: ResearchEntitySearchMemberNameMap = new Map();
-
-  for (const [entityId, roster] of rosterByEntityId) {
-    const entity = entityById.get(entityId);
-    if (!entity) continue;
-    for (const member of publicResearchEntityDetailMemberNames(entity, roster, now)) {
-      if (!SEARCHABLE_PROFESSOR_MEMBER_ROLES.has(member.role)) continue;
-
-      const name = cleanPersonName(member.name);
-      if (!name || namesAResearchGroupRatherThanAPerson(name)) continue;
-
-      const fields = byEntityId.get(entityId) || emptyMemberNameFields();
+  const addName = (entityId: string, name: string, role: 'lead' | 'faculty' | 'student') => {
+    const fields = byEntityId.get(entityId) || emptyMemberNameFields();
+    if (role === 'student') {
+      fields.memberNames = uniquePersonNames([...fields.memberNames, name]);
+    } else {
       fields.professorNames = uniquePersonNames([...fields.professorNames, name]);
-      if (LEAD_PROFESSOR_MEMBER_ROLES.has(member.role)) {
+      if (role === 'lead') {
         fields.leadProfessorNames = uniquePersonNames([...fields.leadProfessorNames, name]);
       }
-      byEntityId.set(entityId, fields);
+    }
+    byEntityId.set(entityId, fields);
+  };
+
+  for (const [entityId, entity] of entityById) {
+    const rosterEntries = rosterByEntityId.get(entityId) ?? [];
+    for (const member of publicResearchEntityDetailMemberNames(entity, rosterEntries, now)) {
+      if (!SEARCHABLE_PROFESSOR_MEMBER_ROLES.has(member.role)) continue;
+      const name = cleanPersonName(member.name);
+      if (!name || namesAResearchGroupRatherThanAPerson(name)) continue;
+      addName(entityId, name, LEAD_PROFESSOR_MEMBER_ROLES.has(member.role) ? 'lead' : 'faculty');
+    }
+    for (const member of presentedLabMembers(entity, rosterEntries, now).members) {
+      if (!SEARCHABLE_STUDENT_MEMBER_ROLES.has(member.role)) continue;
+      const name = cleanPersonName(member.name);
+      if (name && !namesAResearchGroupRatherThanAPerson(name)) addName(entityId, name, 'student');
     }
   }
 
@@ -586,6 +612,7 @@ export function buildResearchEntitySearchIndexDocument(
   if (memberNames) {
     out.leadProfessorNames = memberNames.leadProfessorNames;
     out.professorNames = memberNames.professorNames;
+    out.memberNames = memberNames.memberNames;
   }
   sanitizeResearchEntityIndexDocument(out);
 
@@ -1305,8 +1332,9 @@ async function buildEveryCorpusIndexDocument(
 /**
  * Brings the live index in line with the corpus by writing only the difference, so a stale
  * Development index costs embeddings for the rows that changed rather than for all of them.
- * A settings, embedder, or document-shape change still needs the replacing rebuild, because
- * this never touches index settings (#5023).
+ * Drifted index settings are applied in place first: they hold no embedder, so a new searchable
+ * field costs no re-embedding. An embedder or document-template change still needs the
+ * replacing rebuild (#5023).
  */
 export async function reconcileResearchEntitySearchIndex(
   options: ResearchEntitySearchIndexReconcileOptions = {},
@@ -1355,6 +1383,9 @@ export async function reconcileResearchEntitySearchIndex(
   }
 
   if (options.apply) {
+    if (researchEntitySearchIndexSettingsDrift(await index.getSettings()).length > 0) {
+      await applyResearchEntitySearchIndexSettings(index);
+    }
     let upsertedSoFar = 0;
     try {
       for (let start = 0; start < changed.length; start += pageSize) {
