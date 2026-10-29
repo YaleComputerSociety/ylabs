@@ -65,13 +65,14 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'displayName',
     'leadProfessorNames',
     'professorNames',
-    // Kept out of `professorNames` so faculty-name ranking and the embedding
-    // template are unchanged (#5442).
-    'memberNames',
     'researchAreas',
     'methods',
     'studentSearchTerms',
     'departments',
+    // Kept out of `professorNames` so faculty-name ranking and the embedding
+    // template are unchanged, and below the topic fields so a lone given name on
+    // a roster cannot outrank a topic match (#5442).
+    'memberNames',
     // Searchable but deliberately absent from `filterableAttributes`: a center,
     // hospital, or program a source listed beside an appointment should stay
     // findable by name without becoming a department facet value (#2194).

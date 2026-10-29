@@ -1951,6 +1951,28 @@ describe('searchResearchGroupsViaMeili', () => {
       ).toBe(true);
     });
 
+    it('counts a roster member name only for a whole-name query (#5442)', () => {
+      const rosterMember = (spans: Array<[number, number]>) => ({
+        researchAreas: ['Synthetic Topic'],
+        memberNames: ['Quill Vexmoor'],
+        _matchesPosition: {
+          memberNames: spans.map(([start, length]) => ({ start, length, indices: [0] })),
+        },
+      });
+      expect(keywordLegTopHitIsNameMatch([rosterMember([[0, 5]])], ['quill'])).toBe(false);
+      expect(
+        keywordLegTopHitIsNameMatch(
+          [
+            rosterMember([
+              [0, 5],
+              [6, 7],
+            ]),
+          ],
+          ['quill', 'vexmoor'],
+        ),
+      ).toBe(true);
+    });
+
     it('matches a typed accented name against the same accented name in a lead', () => {
       const query = normalizeResearchSearchQuery('Jösef Fixtüre');
       expect(

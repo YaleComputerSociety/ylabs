@@ -1270,8 +1270,9 @@ export const fuseKeywordAndSemanticRankings = <T>(
 };
 
 const PERSON_FIELD_ATTRIBUTES = ['leadProfessorNames', 'professorNames'];
-const PERSON_QUERY_FIELD_ATTRIBUTES = [...PERSON_FIELD_ATTRIBUTES, 'memberNames'];
-const PERSON_NAME_ATTRIBUTES = [...PERSON_QUERY_FIELD_ATTRIBUTES, 'name', 'displayName'];
+const WHOLE_NAME_PERSON_FIELD_ATTRIBUTES = [...PERSON_FIELD_ATTRIBUTES, 'memberNames'];
+const TITLE_ATTRIBUTES = ['name', 'displayName'];
+const PERSON_NAME_ATTRIBUTES = [...WHOLE_NAME_PERSON_FIELD_ATTRIBUTES, ...TITLE_ATTRIBUTES];
 
 // A query is a person search only when every one of its words is matched inside a
 // person's name on the best keyword hit. The semantic neighbours of a name
@@ -1354,8 +1355,12 @@ export const keywordLegTopHitIsNameMatch = (
       tokens.some((token) => spans.wholeWords.has(token))
     );
   };
-  if (matchesNamesIn(PERSON_QUERY_FIELD_ATTRIBUTES)) return true;
-  if (!matchesNamesIn(PERSON_NAME_ATTRIBUTES)) return false;
+  // A student is matched only by a whole name (#5442), so a lone topic word that is
+  // some roster member's given name or surname never turns a query into a person search.
+  const personFields =
+    tokens.length < 2 ? PERSON_FIELD_ATTRIBUTES : WHOLE_NAME_PERSON_FIELD_ATTRIBUTES;
+  if (matchesNamesIn(personFields)) return true;
+  if (!matchesNamesIn([...personFields, ...TITLE_ATTRIBUTES])) return false;
   const matchedAttributes = new Set(
     Object.keys(top._matchesPosition ?? {}).map((attribute) => attribute.split('.')[0]),
   );
