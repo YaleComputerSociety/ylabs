@@ -40,6 +40,22 @@ describe("a lab page named for the row's own compound surname (#5433)", () => {
     expect(outcome.kind).toBe('proposed');
   });
 
+  it('matches a title surname with its particle to a compound-surname key', () => {
+    const html = page(
+      'People | Dal Quill Lab',
+      `<h2>People</h2><h3>Avery Dal Quill</h3><p>Principal Investigator</p>
+       <h3>Harper Wren</h3><p>Undergraduate Researcher, Yale College, class of 2028</p>`,
+    );
+    expect(
+      proposeUndergradRosterConfig(
+        html,
+        'ysm-faculty-avery-dalquill',
+        'https://dalquilllab.com/people',
+        observedAt,
+      ).kind,
+    ).toBe('proposed');
+  });
+
   it("still refuses a lab named after a shorter surname inside the row person's", () => {
     const html = page(
       'People | Quillan Lab',

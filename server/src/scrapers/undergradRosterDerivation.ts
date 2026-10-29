@@ -113,7 +113,7 @@ const pageText = ($: cheerio.CheerioAPI): string => {
 };
 
 /**
- * The lab a page names itself after: a single capitalized word before "Lab" or "Group" in
+ * The lab a page names itself after: a capitalized surname, with its particle ("van", "Dal") when it has one, before "Lab" or "Group" in
  * its title or first heading, or the name its host is built on (ishizukalab.org). It counts
  * only when the page also lists a person by that name, so "The Uplift Lab" names no one.
  */
@@ -124,10 +124,11 @@ function namedLabOwners($: cheerio.CheerioAPI, url: string, listedNames: string[
   const owners: string[] = [];
   const titles = `${$('title').first().text()} | ${$('h1').first().text()}`;
   for (const match of titles.matchAll(
-    /\b(\p{Lu}\p{Ll}[\p{L}'’-]*)\s+(?:Lab|Laboratory|Group)\b/gu,
+    /\b(?:(van|von|de|del|della|der|den|di|da|dal|du|le|la)\s+)?(\p{Lu}\p{Ll}[\p{L}'’-]*)\s+(?:Lab|Laboratory|Group)\b/giu,
   )) {
-    const owner = lettersOnly(match[1]);
-    if (owner && surnames.has(owner)) owners.push(owner);
+    const owner = lettersOnly(match[2]);
+    if (!owner || !surnames.has(owner)) continue;
+    owners.push(match[1] ? lettersOnly(`${match[1]}${match[2]}`) : owner);
   }
   try {
     const parsed = new URL(url);
