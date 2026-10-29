@@ -290,6 +290,20 @@ describe('LabSiteUndergradInvitationScraper', () => {
     await scraper.run(runContext([]));
     expect(fetched.filter((url) => url.endsWith('/lab/one'))).toHaveLength(1);
   });
+  it("refuses an invitation on a page that presents itself as another university's lab", async () => {
+    const { emitted } = await run(
+      {
+        'https://moved.example.com/': html(
+          'We welcome applications from talented undergraduate, graduate, and postdoctoral scholars.',
+        ).replace(
+          '</main>',
+          '</main><footer>Department of Bioengineering, University of Pennsylvania, Philadelphia</footer>',
+        ),
+      },
+      [lab('moved-lab', 'https://moved.example.com/')],
+    );
+    expect(emitted).toEqual([expect.objectContaining({ entityKey: 'moved-lab', value: null })]);
+  });
 });
 
 describe('scopedCrawlUrls', () => {
