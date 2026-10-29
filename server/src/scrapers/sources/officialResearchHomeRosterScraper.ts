@@ -1802,25 +1802,19 @@ const BIOGRAPHY_SENTENCE_START =
   /^(?:he|she|they|\p{Lu}[\p{Ll}'’-]+(?:\s+\(\p{Lu}[\p{Ll}'’-]+\))?)\s+(?:is|was|joined|has|works|worked|studies|studied|received|earned|completed|graduated|plans|hails|comes)\b/iu;
 const BIOGRAPHY_MIN_LENGTH = 40;
 
-/**
- * A biography paragraph set under a person's name reads as an entry of its own ("Avery is
- * an undergraduate student (class of 2026) at Yale" splits at its first bracket into a
- * "name" that is no one), so it is folded back into the person above it as their biography,
- * where the Yale, other-school, visitor and class-year rules read it (#5433).
- */
 const BIOGRAPHY_VERB =
   /\s+(?:is|was|joined|has|works|worked|studies|studied|received|earned|completed|graduated|plans|hails|comes)\b/;
+
+const opensWithNameOrPronoun = (rest: string, firstName: string): boolean => {
+  const lead = /^\p{L}+/u.exec(rest)?.[0] ?? '';
+  return lead === firstName || /^(?:he|she|they)$/i.test(lead);
+};
 
 /**
  * A card read without its own separators runs the name into what follows it ("Avery
  * QuillAvery is a junior"), and a biography often opens with the full name ("Avery Quill
  * is a junior"); either way the person's name is the part before the join.
  */
-const opensWithNameOrPronoun = (rest: string, firstName: string): boolean => {
-  const lead = /^\p{L}+/u.exec(rest)?.[0] ?? '';
-  return lead === firstName || /^(?:he|she|they)$/i.test(lead);
-};
-
 function biographyCut(text: string): number | undefined {
   const firstName = text.split(/\s+/)[0];
   const gluedCuts = [...text.matchAll(/\p{Ll}(?=\p{Lu})/gu)]
@@ -1847,6 +1841,12 @@ function withNameSplitFromBiography(entry: ListedPersonEntry): ListedPersonEntry
   };
 }
 
+/**
+ * A biography paragraph set under a person's name reads as an entry of its own ("Avery is
+ * an undergraduate student (class of 2026) at Yale" splits at its first bracket into a
+ * "name" that is no one), so it is folded back into the person above it as their biography,
+ * where the Yale, other-school, visitor and class-year rules read it (#5433).
+ */
 function withBiographiesFolded(section: RosterSection): RosterSection {
   const listItems: ListedPersonEntry[] = [];
   for (const read of section.listItems) {
