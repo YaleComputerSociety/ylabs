@@ -414,4 +414,5 @@ export const sanitizeFacultyResearchCopy = (
 
 export const HOSTED_UNDERGRADUATES_LABEL = 'Hosted undergrads';
 export const HOSTED_UNDERGRADUATES_CHIP_VALUE = 'Hosted before';
+export const WELCOMES_UNDERGRADUATES_CHIP_VALUE = 'Welcomes now';
 export const NO_HOSTED_UNDERGRADUATE_EVIDENCE_NOTE = 'Missing evidence is not proof there is none.';

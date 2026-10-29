@@ -327,6 +327,41 @@ describe('researchEntitySearchIndexService', () => {
     expect(staleFalse?.hasUndergradHostingEvidence).toBe(true);
   });
 
+  it('indexes the welcomes-undergraduates field from the predicate that serves the badge', () => {
+    const row = (undergradInvitation: unknown) =>
+      buildResearchEntitySearchIndexDocument({
+        _id: 'entity-invitation',
+        slug: 'invitation-lab',
+        name: 'Invitation Lab',
+        archived: false,
+        websiteUrl: 'https://invitation.example.edu/',
+        undergradInvitation,
+      });
+
+    expect(
+      row({
+        level: 'actively_hiring',
+        quote: 'We are actively recruiting undergraduate researchers.',
+        sourceUrl: 'https://invitation.example.edu/join',
+      })?.welcomesUndergrads,
+    ).toBe(true);
+    expect(
+      row({
+        level: 'welcomes_undergrads',
+        quote: 'We welcome undergraduates.',
+        sourceUrl: 'https://invitation.example.edu/',
+      })?.welcomesUndergrads,
+    ).toBe(true);
+    expect(
+      row({
+        level: 'welcomes_undergrads',
+        quote: ' ',
+        sourceUrl: 'https://invitation.example.edu/',
+      })?.welcomesUndergrads,
+    ).toBe(false);
+    expect(row(undefined)?.welcomesUndergrads).toBe(false);
+  });
+
   it('indexes a row whose official roster lists undergraduates as hosting, without the roster (#5232)', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-official-roster',

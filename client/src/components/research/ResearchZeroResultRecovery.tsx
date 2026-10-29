@@ -3,6 +3,7 @@ import ActiveFilterChip from './ActiveFilterChip';
 import ResearchProgramsHandoff from './ResearchProgramsHandoff';
 import {
   HOSTED_UNDERGRADUATES_CHIP_VALUE,
+  WELCOMES_UNDERGRADUATES_CHIP_VALUE,
   researchEntityTypeFilterLabel,
 } from '../../utils/researchEntityCopy';
 
@@ -13,11 +14,13 @@ interface ResearchZeroResultRecoveryProps {
   selectedSchool: string;
   selectedDepartment: string;
   selectedHostsUndergrads?: boolean;
+  selectedWelcomesUndergrads?: boolean;
   departmentLabel: (value: string) => string;
   onRemoveEntityType: () => void;
   onRemoveSchool: () => void;
   onRemoveDepartment: () => void;
   onRemoveHostsUndergrads?: () => void;
+  onRemoveWelcomesUndergrads?: () => void;
   onClearAllFilters: () => void;
   relaxedQuery: string | null;
   onRelaxQuery: () => void;
@@ -35,11 +38,13 @@ const ResearchZeroResultRecovery = ({
   selectedSchool,
   selectedDepartment,
   selectedHostsUndergrads = false,
+  selectedWelcomesUndergrads = false,
   departmentLabel,
   onRemoveEntityType,
   onRemoveSchool,
   onRemoveDepartment,
   onRemoveHostsUndergrads,
+  onRemoveWelcomesUndergrads,
   onClearAllFilters,
   relaxedQuery,
   onRelaxQuery,
@@ -89,6 +94,13 @@ const ResearchZeroResultRecovery = ({
               axis="Undergraduates"
               value={HOSTED_UNDERGRADUATES_CHIP_VALUE}
               onRemove={onRemoveHostsUndergrads}
+            />
+          )}
+          {selectedWelcomesUndergrads && onRemoveWelcomesUndergrads && (
+            <ActiveFilterChip
+              axis="Undergraduates"
+              value={WELCOMES_UNDERGRADUATES_CHIP_VALUE}
+              onRemove={onRemoveWelcomesUndergrads}
             />
           )}
         </div>

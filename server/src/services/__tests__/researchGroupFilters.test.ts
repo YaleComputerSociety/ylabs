@@ -157,6 +157,28 @@ describe('buildResearchGroupFilterString', () => {
       );
     });
   });
+
+  describe('welcomesUndergrads filter', () => {
+    it('true filters on the served invitation badge field', () => {
+      expect(buildResearchGroupFilterString({ welcomesUndergrads: true })).toBe(
+        'archived = false AND welcomesUndergrads = true',
+      );
+    });
+
+    it('false or unset adds no clause', () => {
+      expect(buildResearchGroupFilterString({ welcomesUndergrads: false })).toBe(
+        'archived = false',
+      );
+    });
+
+    it('combines with the hosted-undergraduates filter via AND', () => {
+      expect(
+        buildResearchGroupFilterString({ hostsUndergrads: true, welcomesUndergrads: true }),
+      ).toBe(
+        'archived = false AND hasUndergradHostingEvidence = true AND welcomesUndergrads = true',
+      );
+    });
+  });
 });
 
 describe('candidateMatchesStudentFilters', () => {
@@ -197,6 +219,24 @@ describe('candidateMatchesStudentFilters', () => {
     const withoutEvidence = { ...candidate, hasUndergradHostingEvidence: false };
     expect(candidateMatchesStudentFilters(withoutEvidence, {})).toBe(true);
     expect(candidateMatchesStudentFilters(withoutEvidence, { hostsUndergrads: true })).toBe(false);
+  });
+
+  it('reads the welcomes-undergraduates flag only when that filter is on', () => {
+    expect(candidateMatchesStudentFilters(candidate, {})).toBe(true);
+    expect(candidateMatchesStudentFilters(candidate, { welcomesUndergrads: true })).toBe(false);
+    expect(
+      candidateMatchesStudentFilters(
+        { ...candidate, welcomesUndergrads: true },
+        { welcomesUndergrads: true },
+      ),
+    ).toBe(true);
+    expect(
+      candidateMatchesStudentFilters(
+        candidate,
+        { welcomesUndergrads: true },
+        { excludeField: 'welcomesUndergrads' },
+      ),
+    ).toBe(true);
   });
 
   it('drops only the excluded field, so a facet can be counted disjunctively', () => {

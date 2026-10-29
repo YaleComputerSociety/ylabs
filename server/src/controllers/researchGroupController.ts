@@ -85,6 +85,10 @@ const parseFilters = (raw: unknown): ResearchGroupFilterInput => {
     filters.hostsUndergrads = true;
   }
 
+  if (r.welcomesUndergrads === true) {
+    filters.welcomesUndergrads = true;
+  }
+
   return filters;
 };
 

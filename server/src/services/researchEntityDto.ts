@@ -532,6 +532,10 @@ export function publicUndergradInvitation(
   };
 }
 
+export const entityWelcomesUndergraduates = (
+  group: Parameters<typeof quotePageIsAboutAnotherEntity>[1] & { undergradInvitation?: unknown },
+): boolean => publicUndergradInvitation(group.undergradInvitation, group) !== undefined;
+
 const OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS = [
   'shortDescription',
   'fullDescription',

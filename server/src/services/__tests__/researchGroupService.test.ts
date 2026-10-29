@@ -1380,7 +1380,13 @@ describe('searchResearchGroupsViaMeili', () => {
       'artificial intelligence machine learning deep learning ai',
       expect.objectContaining({
         attributesToSearchOn: ['studentSearchTerms', 'researchAreas', 'departments'],
-        facets: ['schools', 'departments', 'entityType', 'hasUndergradHostingEvidence'],
+        facets: [
+          'schools',
+          'departments',
+          'entityType',
+          'hasUndergradHostingEvidence',
+          'welcomesUndergrads',
+        ],
       }),
     );
     expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('hybrid');
@@ -2424,6 +2430,7 @@ describe('searchResearchGroupsViaMeili', () => {
       'departments',
       'researchAreas',
       'hasUndergradHostingEvidence',
+      'welcomesUndergrads',
       'meshDescriptorOnlyTerms',
     ];
     expect(poolParams.attributesToRetrieve).toEqual(candidateFields);
@@ -2839,6 +2846,7 @@ describe('searchResearchGroupsViaMeili', () => {
       },
       entityType: { LAB: 2, FACULTY_RESEARCH_AREA: 1 },
       hostsUndergrads: { true: 0 },
+      welcomesUndergrads: { true: 0 },
     });
   });
 
