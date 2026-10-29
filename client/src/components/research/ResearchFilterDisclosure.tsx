@@ -90,7 +90,7 @@ const UndergraduateToggle = ({
   const noEvidence = count === 0 && !checked;
   return (
     <div className="min-w-0">
-      <label className="flex min-h-11 min-w-0 items-start gap-3 text-sm font-medium text-ink">
+      <label className="flex min-h-11 min-w-0 items-center gap-3 text-sm font-medium text-ink">
         <input
           ref={inputRef}
           type="checkbox"
@@ -98,7 +98,7 @@ const UndergraduateToggle = ({
           disabled={noEvidence}
           aria-describedby={noEvidence ? noteId : undefined}
           onChange={(event) => onChange?.(event.target.checked)}
-          className="yr-focus-ring mt-0.5 h-5 w-5 shrink-0 rounded-control border-[var(--yr-line-strong)] accent-brand disabled:cursor-not-allowed"
+          className="yr-focus-ring h-5 w-5 shrink-0 rounded-control border-[var(--yr-line-strong)] accent-brand disabled:cursor-not-allowed"
         />
         <span className={`min-w-0 ${noEvidence ? 'text-muted' : ''}`}>
           {label}
@@ -106,7 +106,7 @@ const UndergraduateToggle = ({
         </span>
       </label>
       {noEvidence && (
-        <p id={noteId} className="ml-8 text-xs leading-relaxed text-muted">
+        <p id={noteId} className="-mt-2 mb-1 ml-8 text-xs leading-relaxed text-muted">
           {NO_HOSTED_UNDERGRADUATE_EVIDENCE_NOTE}
         </p>
       )}
@@ -198,11 +198,9 @@ const ResearchFilterDisclosure = ({
     Boolean(onHostsUndergradsChange) &&
     (hostsUndergradsCount !== undefined || selectedHostsUndergrads);
   const welcomesUndergradsCount = servedTrueCount(facetDistribution.welcomesUndergrads);
-  const noUndergraduateInvitationEvidence =
-    welcomesUndergradsCount === 0 && !selectedWelcomesUndergrads;
   const showWelcomesUndergrads =
     Boolean(onWelcomesUndergradsChange) &&
-    (welcomesUndergradsCount !== undefined || selectedWelcomesUndergrads);
+    (Boolean(welcomesUndergradsCount) || selectedWelcomesUndergrads);
   const activeCount =
     Number(Boolean(selectedEntityType)) +
     Number(Boolean(selectedSchool)) +
@@ -225,9 +223,7 @@ const ResearchFilterDisclosure = ({
       Boolean(field),
   );
   const firstVisibleField = visibleFields.find(
-    (field) =>
-      (field !== 'hostsUndergrads' || !noHostedUndergraduateEvidence) &&
-      (field !== 'welcomesUndergrads' || !noUndergraduateInvitationEvidence),
+    (field) => field !== 'hostsUndergrads' || !noHostedUndergraduateEvidence,
   );
   const visibleFacetKey = visibleFields.join(':');
 
@@ -318,26 +314,32 @@ const ResearchFilterDisclosure = ({
   const filterFields = (
     <fieldset className="min-w-0 border-0 p-0">
       <legend className="sr-only">Narrow research results</legend>
-      <div className="min-w-0 space-y-4">
-        {showWelcomesUndergrads && (
-          <UndergraduateToggle
-            label={WELCOMES_UNDERGRADS_LABEL}
-            count={welcomesUndergradsCount}
-            countSuffix={facetCountSuffix(welcomesUndergradsCount)}
-            checked={selectedWelcomesUndergrads}
-            inputRef={firstVisibleField === 'welcomesUndergrads' ? setFirstFieldNode : undefined}
-            onChange={onWelcomesUndergradsChange}
-          />
-        )}
-        {showHostsUndergrads && (
-          <UndergraduateToggle
-            label={HOSTED_UNDERGRADUATES_LABEL}
-            count={hostsUndergradsCount}
-            countSuffix={facetCountSuffix(hostsUndergradsCount)}
-            checked={selectedHostsUndergrads}
-            inputRef={firstVisibleField === 'hostsUndergrads' ? setFirstFieldNode : undefined}
-            onChange={onHostsUndergradsChange}
-          />
+      <div className={`min-w-0 ${isSidebar ? 'space-y-3' : 'space-y-4'}`}>
+        {(showWelcomesUndergrads || showHostsUndergrads) && (
+          <div className="min-w-0">
+            {showWelcomesUndergrads && (
+              <UndergraduateToggle
+                label={WELCOMES_UNDERGRADS_LABEL}
+                count={welcomesUndergradsCount}
+                countSuffix={facetCountSuffix(welcomesUndergradsCount)}
+                checked={selectedWelcomesUndergrads}
+                inputRef={
+                  firstVisibleField === 'welcomesUndergrads' ? setFirstFieldNode : undefined
+                }
+                onChange={onWelcomesUndergradsChange}
+              />
+            )}
+            {showHostsUndergrads && (
+              <UndergraduateToggle
+                label={HOSTED_UNDERGRADUATES_LABEL}
+                count={hostsUndergradsCount}
+                countSuffix={facetCountSuffix(hostsUndergradsCount)}
+                checked={selectedHostsUndergrads}
+                inputRef={firstVisibleField === 'hostsUndergrads' ? setFirstFieldNode : undefined}
+                onChange={onHostsUndergradsChange}
+              />
+            )}
+          </div>
         )}
         {showEntityType && (
           <label className={selectFieldLabelClassName}>

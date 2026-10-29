@@ -13,6 +13,7 @@ The filter computes nothing: it repeats the invitation badge of #5288, which quo
 Both steps of the badge count, "Actively hiring" and "Welcomes undergrads", because hiring is the stronger step of the same scale.
 The `welcomesUndergrads` index field is derived from `publicUndergradInvitation`, the predicate that decides whether the badge is served, when the index document is built, so the filter and the badge cannot disagree.
 Hosting in the past and welcoming now stay separate filters, because the owner treats them as different questions; with both on, a row must satisfy both.
+The toggle is hidden when no result carries the badge, unlike the hosted toggle's disabled zero state, because reaching out is the default for every Yale lab and "Welcomes undergrads (0)" would read as no lab taking undergraduates.
 Measured on Development on 2026-10-29 through the search route, 79 served rows carry an invitation badge, 19 "Actively hiring" and 60 "Welcomes undergrads", and none of them is an emeritus row whose way in is withheld.
 An emeritus row whose way in is withheld drops the badge at serve time, which the index cannot see, so such a row would match the filter without showing its badge; there are none today.
 

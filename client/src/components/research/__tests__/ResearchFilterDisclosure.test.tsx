@@ -90,12 +90,17 @@ describe('ResearchFilterDisclosure', () => {
     expect(props.onWelcomesUndergradsChange).toHaveBeenCalledWith(false);
   });
 
-  it('disables the welcomes-undergraduates filter at zero with the missing-evidence note', () => {
-    renderFilters({ variant: 'sidebar', facetDistribution: { welcomesUndergrads: { true: 0 } } });
+  it('hides the welcomes-undergraduates filter at zero unless it is already applied', () => {
+    const { props, rerender } = renderFilters({
+      variant: 'sidebar',
+      facetDistribution: { welcomesUndergrads: { true: 0 }, hostsUndergrads: { true: 3 } },
+    });
 
-    const toggle = screen.getByRole('checkbox', { name: 'Welcomes undergrads (0)' });
-    expect(toggle).toBeDisabled();
-    expect(toggle).toHaveAccessibleDescription('Missing evidence is not proof there is none.');
+    expect(screen.queryByRole('checkbox', { name: /^Welcomes undergrads/ })).toBeNull();
+    expect(screen.getByRole('checkbox', { name: 'Hosted undergrads (3)' })).toBeEnabled();
+
+    rerender(<ResearchFilterDisclosure {...props} selectedWelcomesUndergrads />);
+    expect(screen.getByRole('checkbox', { name: 'Welcomes undergrads (0)' })).toBeChecked();
   });
 
   it('shows the hosted-undergraduates filter at zero with a note that missing evidence is not absence', () => {
