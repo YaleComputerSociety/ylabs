@@ -88,15 +88,23 @@ const keyNameTokens = (researchEntityKey: string): string[] =>
         .filter((token) => token.length >= 2)
     : [];
 
+const ownerIsKeyPerson = (owner: string, nameTokens: string[]): boolean =>
+  nameTokens.some((token) => (token.length <= 3 ? owner === token : owner.includes(token)));
+
+const SURNAME_PARTICLE = /^(?:van|von|de|der|den|del|della|di|da|du|le|la|ter|ten|st|dos|das)+$/;
+
 /**
  * A compound surname is one token in a key ("vandijk") and only its last word in a title
- * ("van Dijk Lab" names "dijk"), so either may contain the other.
+ * ("van Dijk Lab" names "dijk"), so the title's owner may also be the key token less its
+ * particle.
  */
-const ownerIsKeyPerson = (owner: string, nameTokens: string[]): boolean =>
-  nameTokens.some((token) =>
-    token.length <= 3
-      ? owner === token
-      : owner.includes(token) || (owner.length >= 4 && token.includes(owner)),
+const labOwnerIsKeyPerson = (owner: string, nameTokens: string[]): boolean =>
+  ownerIsKeyPerson(owner, nameTokens) ||
+  nameTokens.some(
+    (token) =>
+      owner.length >= 4 &&
+      token.endsWith(owner) &&
+      SURNAME_PARTICLE.test(token.slice(0, -owner.length)),
   );
 
 const pageText = ($: cheerio.CheerioAPI): string => {
@@ -140,11 +148,11 @@ function namedLabOwners($: cheerio.CheerioAPI, url: string, listedNames: string[
 const OTHER_UNIVERSITY =
   /\b(?:University of (?:the )?\p{Lu}[\p{L}-]*|\p{Lu}[\p{L}-]*\s+University|UPenn)\b/gu;
 
-const isOnYaleHost = (url: string): boolean => {
+const isOnYaleHost = (url: string, unparsedIsYale = true): boolean => {
   try {
     return /(?:^|\.)yale\.edu$/i.test(new URL(url).hostname);
   } catch {
-    return true;
+    return unparsedIsYale;
   }
 };
 
@@ -221,20 +229,23 @@ export function pageOwnershipRefusal(
     return 'page-of-another-lab';
   }
   const owners = namedLabOwners($, url, listedPersonNames(html, template));
-  return owners.length > 0 && !owners.some((owner) => ownerIsKeyPerson(owner, nameTokens))
+  return owners.length > 0 && !owners.some((owner) => labOwnerIsKeyPerson(owner, nameTokens))
     ? 'page-of-another-lab'
     : undefined;
 }
 
 /**
- * Whether the page is the own page of the person a person-keyed row is named after: their
- * first and last name on one listed line, or both in the page's title or first heading, which
- * a shared first name alone never satisfies.
+ * Whether the page is the own Yale page of the person a person-keyed row is named after:
+ * their first and last name on one listed line, or both in the page's title or first
+ * heading, which a shared first name alone never satisfies, and Yale's host or Yale named
+ * on that same line or title, since the page of a lab the person led elsewhere names them
+ * too.
  */
-function pageIsRowPersons(
+function pageIsRowPersonsYalePage(
   html: string,
   template: OfficialRosterTemplate,
   researchEntityKey: string,
+  url: string,
 ): boolean {
   const tokens = keyNameTokens(researchEntityKey);
   if (tokens.length < 2) return false;
@@ -247,18 +258,15 @@ function pageIsRowPersons(
       .split(/[\s-]+/)
       .map(lettersOnly)
       .filter(Boolean);
+  const onYaleHost = isOnYaleHost(url, false);
+  const placesAtYale = (text: string): boolean => onYaleHost || /\bYale\b/.test(text);
   const $ = cheerio.load(html);
-  if (namesBoth(words(`${$('title').first().text()} ${$('h1').first().text()}`))) return true;
-  return listedPersonLines(html, template).some((line) => namesBoth(words(line.name)));
+  const title = `${$('title').first().text()} ${$('h1').first().text()}`;
+  if (namesBoth(words(title)) && placesAtYale(title)) return true;
+  return listedPersonLines(html, template).some(
+    (line) => namesBoth(words(line.name)) && placesAtYale(line.ownLine),
+  );
 }
-
-const isStrictlyOnYaleHost = (url: string): boolean => {
-  try {
-    return /(?:^|\.)yale\.edu$/i.test(new URL(url).hostname);
-  } catch {
-    return false;
-  }
-};
 
 export function proposeUndergradRosterConfig(
   html: string,
@@ -311,9 +319,7 @@ export function proposeUndergradRosterConfig(
       otherCurrentMembers: roster.members.filter((member) => member.role !== 'undergrad').length,
       undergraduateWithheldCount: roster.undergraduateWithheldCount,
       rosterState: roster.state,
-      listsRowPerson:
-        pageIsRowPersons(html, template, researchEntityKey) &&
-        (isStrictlyOnYaleHost(url) || /\bYale\b/.test(pageText(cheerio.load(html)))),
+      listsRowPerson: pageIsRowPersonsYalePage(html, template, researchEntityKey, url),
     },
   };
 }
