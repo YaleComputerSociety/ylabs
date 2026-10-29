@@ -13,7 +13,10 @@
  */
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
-import { type OfficialRosterUndergraduateStatus } from '../models/storedVocabularies';
+import {
+  type OfficialRosterUndergraduateStatus,
+  undergradInvitationLevels,
+} from '../models/storedVocabularies';
 import { publicStudentVisibilityTiers, StudentVisibilityTier } from '../models/studentVisibility';
 import { partitionStudentVisibilityReasons } from './studentVisibilityTier';
 import {
@@ -44,6 +47,7 @@ import {
   isResearchEntitySearchEmbedderConfigured,
   MESH_DESCRIPTOR_ONLY_TERMS_FIELD,
   readResearchEntitySearchEmbedderState,
+  readResearchEntitySearchFilterableAttributes,
   RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME,
 } from './researchEntitySearchIndexService';
 import { meshDescriptorWordKeys } from '../scrapers/utils/meshNonSubjectDescriptors';
@@ -74,6 +78,7 @@ import {
   buildResearchGroupFilterString,
   candidateMatchesStudentFilters,
   HOSTS_UNDERGRADS_INDEX_FIELD,
+  WELCOMES_UNDERGRADS_INDEX_FIELD,
   ResearchGroupFilterInput,
   tallyCandidateFacetDistribution,
   visibilityScopeOnly,
@@ -97,6 +102,7 @@ import {
   addResearchEntitySearchAliases,
   detailServedSource,
   publicResearchEntityId,
+  entityWelcomesUndergraduates,
   publicSourceLinkHealthArray,
   toPublicResearchEntitySummaryDto,
   type PublicResearchEntityDto,
@@ -615,6 +621,7 @@ const RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES = [
   'departments',
   'researchAreas',
   HOSTS_UNDERGRADS_INDEX_FIELD,
+  WELCOMES_UNDERGRADS_INDEX_FIELD,
   MESH_DESCRIPTOR_ONLY_TERMS_FIELD,
 ];
 const MAX_FILTER_VALUE_LENGTH = 120;
@@ -935,6 +942,7 @@ const sanitizeResearchGroupSearchFilters = (
   departments: boundedResearchFilterValues(filters.departments),
   researchAreas: boundedResearchFilterValues(filters.researchAreas),
   hostsUndergrads: filters.hostsUndergrads === true ? true : undefined,
+  welcomesUndergrads: filters.welcomesUndergrads === true ? true : undefined,
   studentVisibilityTier: boundedResearchFilterValues(filters.studentVisibilityTier),
 });
 
@@ -999,6 +1007,9 @@ const mongoFilterFromResearchFilters = (
   if (filters.researchAreas?.length) mongoFilter.researchAreas = { $in: filters.researchAreas };
   if (filters.hostsUndergrads === true) {
     mongoFilter.hasUndergradHostingEvidence = true;
+  }
+  if (filters.welcomesUndergrads === true) {
+    mongoFilter['undergradInvitation.level'] = { $in: [...undergradInvitationLevels] };
   }
 
   return mongoFilter;
@@ -1523,6 +1534,7 @@ export const RESEARCH_ENTITY_SEARCH_FACET_FIELDS = [
   'departments',
   'entityType',
   HOSTS_UNDERGRADS_INDEX_FIELD,
+  WELCOMES_UNDERGRADS_INDEX_FIELD,
 ];
 
 // A toggle needs no disjunctive query: with it on, its own count under the other
@@ -1536,7 +1548,39 @@ const POOL_TALLIED_RESEARCH_FACETS: ReadonlyArray<{
     indexField: meiliField,
   })),
   { filterKey: 'hostsUndergrads', indexField: HOSTS_UNDERGRADS_INDEX_FIELD },
+  { filterKey: 'welcomesUndergrads', indexField: WELCOMES_UNDERGRADS_INDEX_FIELD },
 ];
+
+const TOGGLE_FILTERS_AHEAD_OF_INDEX: ReadonlyArray<{
+  filterKey: 'welcomesUndergrads';
+  indexField: string;
+}> = [{ filterKey: 'welcomesUndergrads', indexField: WELCOMES_UNDERGRADS_INDEX_FIELD }];
+
+const liveIndexFilterability = async (
+  meiliIndex: Awaited<ReturnType<typeof getMeiliSearchIndex>>,
+): Promise<(field: string) => boolean> => {
+  const filterable = await readResearchEntitySearchFilterableAttributes(
+    withMeiliAvailabilityGuard(meiliIndex, 'optional'),
+  );
+  return (field) => filterable === null || filterable.has(field);
+};
+
+export const withoutUnfilterableToggles = (
+  filters: ResearchGroupFilterInput,
+  isFilterable: (field: string) => boolean,
+): { filters: ResearchGroupFilterInput; dropped?: AppliedStudentFilters } => {
+  const unfilterable = TOGGLE_FILTERS_AHEAD_OF_INDEX.filter(
+    ({ filterKey, indexField }) => filters[filterKey] === true && !isFilterable(indexField),
+  );
+  if (unfilterable.length === 0) return { filters };
+  const kept: ResearchGroupFilterInput = { ...filters };
+  const dropped: AppliedStudentFilters = {};
+  for (const { filterKey } of unfilterable) {
+    kept[filterKey] = undefined;
+    dropped[filterKey] = false;
+  }
+  return { filters: kept, dropped };
+};
 
 const SPELLING_PROTECTED_QUERY_TERMS: ReadonlySet<string> = new Set(
   [
@@ -1691,6 +1735,12 @@ export async function searchResearchGroupsViaMeili(
       ? { query, corrections: [] }
       : correctResearchSearchQuerySpelling(query);
   const studentFilters = await resolveStudentFiltersAgainstCorpus(filters, options);
+  const droppedToggleFilters = answersFromMongoBrowse(spelling.query, options)
+    ? undefined
+    : withoutUnfilterableToggles(
+        studentFilters.filters,
+        await liveIndexFilterability(await getMeiliSearchIndex('researchentities')),
+      ).dropped;
   const searched = await searchResearchGroupsForQuery(
     spelling.query,
     studentFilters.filters,
@@ -1699,9 +1749,11 @@ export async function searchResearchGroupsViaMeili(
     sort,
     options,
   );
-  const result = studentFilters.applied
-    ? { ...searched, appliedFilters: studentFilters.applied }
-    : searched;
+  const appliedFilters =
+    studentFilters.applied || droppedToggleFilters
+      ? { ...studentFilters.applied, ...droppedToggleFilters }
+      : undefined;
+  const result = appliedFilters ? { ...searched, appliedFilters } : searched;
   if (spelling.corrections.length === 0) return result;
   return {
     ...result,
@@ -1731,6 +1783,9 @@ const resolveStudentFiltersAgainstCorpus = async (
   });
 };
 
+const answersFromMongoBrowse = (query: string, options: ResearchGroupSearchOptions): boolean =>
+  options.lowQualityFirst === true && normalizeResearchSearchQuery(query).raw === '';
+
 async function searchResearchGroupsForQuery(
   query: string,
   filters: ResearchGroupFilterInput,
@@ -1742,7 +1797,11 @@ async function searchResearchGroupsForQuery(
   // Same reason as `getResearchGroupDetail`: a browse hit carries research-area chips too, and
   // a script that reads browse must see the chips a student sees (#3817).
   await warmServedResearchAreaVocabulary();
-  const safeFilters = sanitizeResearchGroupSearchFilters(filters || {});
+  const meiliIndex = await getMeiliSearchIndex('researchentities');
+  const liveFilterable = await liveIndexFilterability(meiliIndex);
+  const sanitizedFilters = sanitizeResearchGroupSearchFilters(filters || {});
+  const safeFilters = withoutUnfilterableToggles(sanitizedFilters, liveFilterable).filters;
+  const facetFields = RESEARCH_ENTITY_SEARCH_FACET_FIELDS.filter(liveFilterable);
   const safeOptions = sanitizeResearchGroupSearchOptions(options);
   const safePageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(pageSize) || 24));
   const safePage = Math.min(
@@ -1801,12 +1860,15 @@ async function searchResearchGroupsForQuery(
       { includeOperatorFields: safeOptions.includeNonPublic },
     );
   }
-  if (isBrowseAllQuery && safeOptions.lowQualityFirst) {
+  if (answersFromMongoBrowse(query, safeOptions)) {
     const candidates = withServablePublicResearchEntities(
       (await ResearchEntity.find(
-        mongoFilterFromResearchFilters(safeFilters, safeOptions.includeNonPublic),
+        mongoFilterFromResearchFilters(sanitizedFilters, safeOptions.includeNonPublic),
       ).lean()) as any[],
       safeOptions.includeNonPublic,
+    ).filter(
+      (entity) =>
+        sanitizedFilters.welcomesUndergrads !== true || entityWelcomesUndergraduates(entity),
     );
     const candidatesWithQuality = await withQualitySummaries(candidates as any[]);
     const filteredCandidates = candidatesWithQuality
@@ -1866,13 +1928,12 @@ async function searchResearchGroupsForQuery(
     limit: safePageSize,
     offset,
     attributesToRetrieve: RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES,
-    ...(safeOptions.includeFacets ? { facets: RESEARCH_ENTITY_SEARCH_FACET_FIELDS } : {}),
+    ...(safeOptions.includeFacets ? { facets: facetFields } : {}),
   };
   if (sortConfig.length > 0) {
     searchParams.sort = sortConfig;
   }
 
-  const meiliIndex = await getMeiliSearchIndex('researchentities');
   const index = withMeiliAvailabilityGuard(meiliIndex);
   // A companion query's failure degrades only its own response, so it must not open
   // the breaker that answers every search after it with a 503 (#5347).
@@ -2365,6 +2426,7 @@ async function searchResearchGroupsForQuery(
       schools,
       researchAreas,
       [HOSTS_UNDERGRADS_INDEX_FIELD]: hostingEvidence,
+      [WELCOMES_UNDERGRADS_INDEX_FIELD]: invitationEvidence,
       ...rest
     } = rawDistribution;
     const cleanedResearchAreas = sanitizeResearchAreaFacetDistribution(researchAreas);
@@ -2373,6 +2435,7 @@ async function searchResearchGroupsForQuery(
       ...(cleanedResearchAreas ? { researchAreas: cleanedResearchAreas } : {}),
       ...(schools ? { school: schools } : {}),
       ...(hostingEvidence ? { hostsUndergrads: { true: hostingEvidence.true ?? 0 } } : {}),
+      ...(invitationEvidence ? { welcomesUndergrads: { true: invitationEvidence.true ?? 0 } } : {}),
     };
   };
 
@@ -2480,7 +2543,7 @@ async function searchResearchGroupsForQuery(
     : reorderedPool;
   const facetsTalliedOverPool = POOL_TALLIED_RESEARCH_FACETS.filter(
     ({ indexField }) =>
-      RESEARCH_ENTITY_SEARCH_FACET_FIELDS.includes(indexField) ||
+      facetFields.includes(indexField) ||
       activeDisjunctiveFacets.some(({ meiliField }) => meiliField === indexField),
   );
   const rawServedFacetDistribution = paginateHybridPoolLocally

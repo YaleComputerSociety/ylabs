@@ -13,7 +13,9 @@ type VocabularyFilterKey = (typeof VOCABULARY_FIELDS)[number]['filterKey'];
 
 export type ResearchFilterVocabulary = Record<VocabularyFilterKey, ReadonlyMap<string, string>>;
 
-export type AppliedStudentFilters = Partial<Record<VocabularyFilterKey, string[]>>;
+export type AppliedStudentFilters = Partial<Record<VocabularyFilterKey, string[]>> & {
+  welcomesUndergrads?: false;
+};
 
 const vocabularyKey = (value: string): string => value.trim().toLowerCase();
 

@@ -93,6 +93,7 @@ export const RESEARCH_FILTER_KINDS = [
   'research_area',
   'research_type',
   'hosts_undergrads',
+  'welcomes_undergrads',
   'current_availability',
   'compensation',
   'eligible_student_levels',

@@ -16,6 +16,7 @@ const everyFilterSet: Required<ResearchGroupFilterInput> = {
   departments: ['department-value'],
   researchAreas: ['topic-value'],
   hostsUndergrads: true,
+  welcomesUndergrads: true,
   studentVisibilityTier: ['tier-value'],
 };
 
@@ -41,6 +42,7 @@ describe('search filter fields against the index settings', () => {
         'departments',
         'researchAreas',
         'hasUndergradHostingEvidence',
+        'welcomesUndergrads',
         'studentVisibilityTier',
       ]),
     );

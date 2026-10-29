@@ -85,6 +85,7 @@ type ResearchSearchFilters = PathwaySearchFilters & {
   entityType?: string[];
   school?: string[];
   hostsUndergrads?: boolean;
+  welcomesUndergrads?: boolean;
 };
 
 type ResearchQualityFilter = 'description-issue' | 'missing-lead' | 'profile-fallback';
@@ -122,6 +123,11 @@ const HOSTS_UNDERGRADS_PARAM = 'undergrad';
 
 const readHostsUndergradsParam = (params: URLSearchParams): boolean =>
   params.get(HOSTS_UNDERGRADS_PARAM) === '1';
+
+const WELCOMES_UNDERGRADS_PARAM = 'welcomes';
+
+const readWelcomesUndergradsParam = (params: URLSearchParams): boolean =>
+  params.get(WELCOMES_UNDERGRADS_PARAM) === '1';
 
 const readEntityTypeParam = (params: URLSearchParams): string => {
   const value = (params.get('type') || '').trim();
@@ -161,7 +167,7 @@ interface ActiveResearchSearchRequest {
 
 interface ResearchFilterAnalyticsChange {
   operation: 'apply' | 'remove';
-  filter: 'school' | 'department' | 'research_type' | 'hosts_undergrads';
+  filter: 'school' | 'department' | 'research_type' | 'hosts_undergrads' | 'welcomes_undergrads';
 }
 
 interface ResearchPageSnapshot {
@@ -178,6 +184,7 @@ interface ResearchPageSnapshot {
   selectedSchool: string;
   selectedDepartment: string;
   selectedHostsUndergrads: boolean;
+  selectedWelcomesUndergrads: boolean;
   sortBy: ResearchSortField;
   sortOrder: 'asc' | 'desc';
   facetDistribution: Record<string, Record<string, number>>;
@@ -472,6 +479,9 @@ const Research = () => {
   const [selectedHostsUndergrads, setSelectedHostsUndergrads] = useState(
     () => restoredSnapshot?.selectedHostsUndergrads ?? readHostsUndergradsParam(searchParams),
   );
+  const [selectedWelcomesUndergrads, setSelectedWelcomesUndergrads] = useState(
+    () => restoredSnapshot?.selectedWelcomesUndergrads ?? readWelcomesUndergradsParam(searchParams),
+  );
   const [sortBy, setSortBy] = useState<ResearchSortField>(
     () => snapshotForThisPage?.sortBy ?? 'relevance',
   );
@@ -613,6 +623,7 @@ const Research = () => {
       school?: string;
       department?: string;
       hostsUndergrads?: boolean;
+      welcomesUndergrads?: boolean;
     },
     options: { replace?: boolean; markPending?: boolean } = {},
   ) => {
@@ -625,6 +636,7 @@ const Research = () => {
     if (nextState.school?.trim()) params.set('school', nextState.school.trim());
     if (nextState.department?.trim()) params.set('department', nextState.department.trim());
     if (nextState.hostsUndergrads) params.set(HOSTS_UNDERGRADS_PARAM, '1');
+    if (nextState.welcomesUndergrads) params.set(WELCOMES_UNDERGRADS_PARAM, '1');
 
     if (isAdmin) {
       if (nextState.showWeakest) params.set('weak', '1');
@@ -818,6 +830,7 @@ const Research = () => {
           school: filters.school?.[0],
           department: options.departmentSearch ? undefined : filters.departments?.[0],
           hostsUndergrads: filters.hostsUndergrads === true,
+          welcomesUndergrads: filters.welcomesUndergrads === true,
           showWeakest: showWeakestProfilesFirst,
           quality: qualityFilters,
           trustTiers: trustTierFilters,
@@ -854,14 +867,18 @@ const Research = () => {
           : (filters.departments?.[0] ?? '');
         const entityType = filters.entityType?.[0] ?? '';
         const hostsUndergrads = filters.hostsUndergrads === true;
+        const welcomesUndergrads =
+          filters.welcomesUndergrads === true && appliedFilters.welcomesUndergrads !== false;
         const appliedStudentFilters: ResearchSearchFilters = {
           ...(entityType ? { entityType: [entityType] } : {}),
           ...(school ? { school: [school] } : {}),
           ...(department ? { departments: [department] } : {}),
           ...(hostsUndergrads ? { hostsUndergrads: true } : {}),
+          ...(welcomesUndergrads ? { welcomesUndergrads: true } : {}),
         };
         setSelectedSchool(school);
         setSelectedDepartment(department);
+        setSelectedWelcomesUndergrads(welcomesUndergrads);
         if (!trimmed && !hasStructuredFilters(appliedStudentFilters)) {
           writeResearchSearchParams(
             {
@@ -883,6 +900,7 @@ const Research = () => {
             school,
             department,
             hostsUndergrads,
+            welcomesUndergrads,
             showWeakest: showWeakestProfilesFirst,
             quality: qualityFilters,
             trustTiers: trustTierFilters,
@@ -1045,11 +1063,13 @@ const Research = () => {
     department = selectedDepartment,
     entityType = selectedEntityType,
     hostsUndergrads = selectedHostsUndergrads,
+    welcomesUndergrads = selectedWelcomesUndergrads,
   ): ResearchSearchFilters => ({
     ...(entityType ? { entityType: [entityType] } : {}),
     ...(school ? { school: [school] } : {}),
     ...(department ? { departments: [department] } : {}),
     ...(hostsUndergrads ? { hostsUndergrads: true } : {}),
+    ...(welcomesUndergrads ? { welcomesUndergrads: true } : {}),
   });
 
   const activeSearchKeepsTypedSpelling = (text: string): boolean =>
@@ -1063,7 +1083,8 @@ const Research = () => {
       !selectedEntityType &&
       !selectedSchool &&
       !selectedDepartment &&
-      !selectedHostsUndergrads
+      !selectedHostsUndergrads &&
+      !selectedWelcomesUndergrads
     ) {
       setShowEmptySearchHint(true);
       searchInputRef.current?.focus();
@@ -1088,6 +1109,7 @@ const Research = () => {
     setSelectedSchool('');
     setSelectedDepartment('');
     setSelectedHostsUndergrads(false);
+    setSelectedWelcomesUndergrads(false);
     setFacetDistribution({});
     setGroupedResults(emptyGroupedResults(''));
     setSearchResultResearchEntities([]);
@@ -1148,6 +1170,9 @@ const Research = () => {
       searchParams.has(HOSTS_UNDERGRADS_PARAM) && !readHostsUndergradsParam(searchParams)
         ? HOSTS_UNDERGRADS_PARAM
         : null,
+      searchParams.has(WELCOMES_UNDERGRADS_PARAM) && !readWelcomesUndergradsParam(searchParams)
+        ? WELCOMES_UNDERGRADS_PARAM
+        : null,
     ].filter((key): key is string => key !== null);
     if (unreadableFilterParams.length > 0) {
       const readableParams = new URLSearchParams(searchParams);
@@ -1161,6 +1186,7 @@ const Research = () => {
     const urlSchool = searchParams.get('school') || '';
     const urlDepartment = searchParams.get('department') || '';
     const urlHostsUndergrads = readHostsUndergradsParam(searchParams);
+    const urlWelcomesUndergrads = readWelcomesUndergradsParam(searchParams);
     const urlQualityFilters = urlQualityFiltersKey
       ? (urlQualityFiltersKey.split(',') as ResearchQualityFilter[])
       : [];
@@ -1205,6 +1231,10 @@ const Research = () => {
       setSelectedHostsUndergrads(urlHostsUndergrads);
       return;
     }
+    if (selectedWelcomesUndergrads !== urlWelcomesUndergrads) {
+      setSelectedWelcomesUndergrads(urlWelcomesUndergrads);
+      return;
+    }
     // Key order matches `studentSearchFilters` because the reconcile below
     // compares these objects with `JSON.stringify`.
     const studentFilters: ResearchSearchFilters = {
@@ -1212,6 +1242,7 @@ const Research = () => {
       ...(urlSchool ? { school: [urlSchool] } : {}),
       ...(urlDepartment ? { departments: [urlDepartment] } : {}),
       ...(urlHostsUndergrads ? { hostsUndergrads: true } : {}),
+      ...(urlWelcomesUndergrads ? { welcomesUndergrads: true } : {}),
     };
 
     if (awaitingDepartmentConfig || awaitingAdminScope) return;
@@ -1321,6 +1352,7 @@ const Research = () => {
     selectedSchool,
     selectedDepartment,
     selectedHostsUndergrads,
+    selectedWelcomesUndergrads,
     departmentSearch,
     hasSubmittedSearch,
     submittedQuery,
@@ -1344,6 +1376,7 @@ const Research = () => {
       selectedSchool,
       selectedDepartment,
       selectedHostsUndergrads,
+      selectedWelcomesUndergrads,
       sortBy,
       sortOrder,
       facetDistribution,
@@ -1380,6 +1413,7 @@ const Research = () => {
     selectedSchool,
     selectedDepartment,
     selectedHostsUndergrads,
+    selectedWelcomesUndergrads,
     sortBy,
     sortOrder,
     facetDistribution,
@@ -1517,7 +1551,8 @@ const Research = () => {
     Number(Boolean(selectedEntityType)) +
     Number(Boolean(selectedSchool)) +
     Number(Boolean(selectedDepartment)) +
-    Number(selectedHostsUndergrads);
+    Number(selectedHostsUndergrads) +
+    Number(selectedWelcomesUndergrads);
   const hasStudentFacetSelection = activeStudentFilterCount > 0;
   const hasSubmittableChange = query.trim().length > 0 && query.trim() !== submittedQuery;
   const searchDisabled = searchLoading && !hasSubmittableChange;
@@ -1535,11 +1570,13 @@ const Research = () => {
     department?: string;
     entityType?: string;
     hostsUndergrads?: boolean;
+    welcomesUndergrads?: boolean;
   }) => {
     const school = next.school ?? selectedSchool;
     const department = next.department ?? selectedDepartment;
     const entityType = next.entityType ?? selectedEntityType;
     const hostsUndergrads = next.hostsUndergrads ?? selectedHostsUndergrads;
+    const welcomesUndergrads = next.welcomesUndergrads ?? selectedWelcomesUndergrads;
     const filterChanges: ResearchFilterAnalyticsChange[] = [];
     if (entityType !== selectedEntityType) {
       filterChanges.push({ operation: entityType ? 'apply' : 'remove', filter: 'research_type' });
@@ -1556,12 +1593,25 @@ const Research = () => {
         filter: 'hosts_undergrads',
       });
     }
+    if (welcomesUndergrads !== selectedWelcomesUndergrads) {
+      filterChanges.push({
+        operation: welcomesUndergrads ? 'apply' : 'remove',
+        filter: 'welcomes_undergrads',
+      });
+    }
     if (filterChanges.length > 0) scrollViewportToTop();
     setSelectedEntityType(entityType);
     setSelectedSchool(school);
     setSelectedDepartment(department);
     setSelectedHostsUndergrads(hostsUndergrads);
-    const filters = studentSearchFilters(school, department, entityType, hostsUndergrads);
+    setSelectedWelcomesUndergrads(welcomesUndergrads);
+    const filters = studentSearchFilters(
+      school,
+      department,
+      entityType,
+      hostsUndergrads,
+      welcomesUndergrads,
+    );
     if (departmentSearch && !department) {
       void runSearch(departmentSearch.label, {
         searchQuery: '',
@@ -1721,6 +1771,7 @@ const Research = () => {
     selectedSchool,
     selectedDepartment,
     selectedHostsUndergrads,
+    selectedWelcomesUndergrads,
     isApplying: searchLoading,
     hasFacetError,
     departmentLabel: departmentFacetLabel,
@@ -1728,8 +1779,16 @@ const Research = () => {
     onSchoolChange: (school: string) => applyStudentFilters({ school }),
     onDepartmentChange: (department: string) => applyStudentFilters({ department }),
     onHostsUndergradsChange: (hostsUndergrads: boolean) => applyStudentFilters({ hostsUndergrads }),
+    onWelcomesUndergradsChange: (welcomesUndergrads: boolean) =>
+      applyStudentFilters({ welcomesUndergrads }),
     onClearAll: () =>
-      applyStudentFilters({ school: '', department: '', entityType: '', hostsUndergrads: false }),
+      applyStudentFilters({
+        school: '',
+        department: '',
+        entityType: '',
+        hostsUndergrads: false,
+        welcomesUndergrads: false,
+      }),
     resultCount: hasFacetError ? undefined : Math.max(searchTotal, activeClusters.length),
     resultCountPending: searchLoading,
     onShowResults: scrollToResults,
@@ -2220,12 +2279,16 @@ const Research = () => {
                       selectedSchool={selectedSchool}
                       selectedDepartment={selectedDepartment}
                       selectedHostsUndergrads={selectedHostsUndergrads}
+                      selectedWelcomesUndergrads={selectedWelcomesUndergrads}
                       departmentLabel={departmentFacetLabel}
                       onRemoveEntityType={() => applyStudentFilters({ entityType: '' })}
                       onRemoveSchool={() => applyStudentFilters({ school: '' })}
                       onRemoveDepartment={() => applyStudentFilters({ department: '' })}
                       onRemoveHostsUndergrads={() =>
                         applyStudentFilters({ hostsUndergrads: false })
+                      }
+                      onRemoveWelcomesUndergrads={() =>
+                        applyStudentFilters({ welcomesUndergrads: false })
                       }
                       onClearAllFilters={researchFilterProps.onClearAll}
                       relaxedQuery={relaxedQuerySuggestion}

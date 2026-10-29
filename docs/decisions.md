@@ -5,6 +5,18 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-10-29: Browse Can Filter To Research Whose Lab Page Welcomes Undergraduates (#5441)
+
+The owner asked on 2026-10-29 for a "Welcomes undergrads" filter beside "Hosted undergrads".
+This supersedes the 2026-10-02 rule that no browse filter offers a way in, for this one filter.
+The filter computes nothing: it repeats the invitation badge of #5288, which quotes what a lab's own page states, so it is held to the same evidence rule as the badge.
+Both steps of the badge count, "Actively hiring" and "Welcomes undergrads", because hiring is the stronger step of the same scale.
+The `welcomesUndergrads` index field is derived from `publicUndergradInvitation`, the predicate that decides whether the badge is served, when the index document is built, so the filter and the badge cannot disagree.
+Hosting in the past and welcoming now stay separate filters, because the owner treats them as different questions; with both on, a row must satisfy both.
+The toggle is hidden when no result carries the badge, unlike the hosted toggle's disabled zero state, because reaching out is the default for every Yale lab and "Welcomes undergrads (0)" would read as no lab taking undergraduates.
+Measured on Development on 2026-10-29 through the search route, 79 served rows carry an invitation badge, 19 "Actively hiring" and 60 "Welcomes undergrads", and none of them is an emeritus row whose way in is withheld.
+An emeritus row whose way in is withheld drops the badge at serve time, which the index cannot see, so such a row would match the filter without showing its badge; there are none today.
+
 ## 2026-10-29: Students And Postdocs On A Lab's Roster Are Name-Searchable (#5442)
 
 The owner extended the 2026-10-21 decision below to every researcher a lab's official roster lists: postdocs, graduate students and undergraduates, current and past, are found through their lab by name, and staff are not.

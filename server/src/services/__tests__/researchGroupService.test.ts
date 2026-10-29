@@ -1380,7 +1380,13 @@ describe('searchResearchGroupsViaMeili', () => {
       'artificial intelligence machine learning deep learning ai',
       expect.objectContaining({
         attributesToSearchOn: ['studentSearchTerms', 'researchAreas', 'departments'],
-        facets: ['schools', 'departments', 'entityType', 'hasUndergradHostingEvidence'],
+        facets: [
+          'schools',
+          'departments',
+          'entityType',
+          'hasUndergradHostingEvidence',
+          'welcomesUndergrads',
+        ],
       }),
     );
     expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('hybrid');
@@ -2424,6 +2430,7 @@ describe('searchResearchGroupsViaMeili', () => {
       'departments',
       'researchAreas',
       'hasUndergradHostingEvidence',
+      'welcomesUndergrads',
       'meshDescriptorOnlyTerms',
     ];
     expect(poolParams.attributesToRetrieve).toEqual(candidateFields);
@@ -2839,6 +2846,7 @@ describe('searchResearchGroupsViaMeili', () => {
       },
       entityType: { LAB: 2, FACULTY_RESEARCH_AREA: 1 },
       hostsUndergrads: { true: 0 },
+      welcomesUndergrads: { true: 0 },
     });
   });
 
@@ -3604,6 +3612,51 @@ describe('searchResearchGroupsViaMeili', () => {
       }),
     ]);
     expect(result.facetDistribution).toEqual({});
+  });
+
+  it('keeps only rows whose invitation badge is served when weakest-first browse welcomes undergraduates', async () => {
+    const invitation = (quote: string) => ({
+      level: 'welcomes_undergrads',
+      quote,
+      sourceUrl: 'https://invitation.example.edu/join',
+    });
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: '67d8928150621bcef434a1e1',
+          slug: 'quoted-lab',
+          name: 'Quoted Lab',
+          websiteUrl: 'https://invitation.example.edu/',
+          undergradInvitation: invitation('We welcome undergraduates.'),
+          sourceUrls: [],
+          departments: [],
+          researchAreas: [],
+        },
+        {
+          _id: '67d8928150621bcef434a1e2',
+          slug: 'unquoted-lab',
+          name: 'Unquoted Lab',
+          websiteUrl: 'https://invitation.example.edu/',
+          undergradInvitation: invitation(' '),
+          sourceUrls: [],
+          departments: [],
+          researchAreas: [],
+        },
+      ]),
+    );
+
+    const result = await searchResearchGroupsViaMeili(
+      '',
+      { welcomesUndergrads: true },
+      1,
+      10,
+      {},
+      { includeNonPublic: true, lowQualityFirst: true },
+    );
+
+    expect(mocks.search).not.toHaveBeenCalled();
+    expect(result.researchEntities.map((entity) => entity._id)).toEqual(['quoted-lab']);
+    expect(result.appliedFilters).toBeUndefined();
   });
 });
 

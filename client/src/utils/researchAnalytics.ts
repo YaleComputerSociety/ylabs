@@ -44,7 +44,8 @@ export type ResearchJourneyPayload =
         | 'admin_trust'
         | 'research_area'
         | 'research_type'
-        | 'hosts_undergrads';
+        | 'hosts_undergrads'
+        | 'welcomes_undergrads';
     }
   | { operation: 'save' | 'remove'; surface: ResearchSaveSurface }
   | { entityCountBucket: '1' | '2' | '3-4' | '5+' }

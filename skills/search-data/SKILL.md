@@ -175,8 +175,17 @@ A request past that depth is answered with an empty page flagged `depthLimited: 
 That depth-limited page runs no search, so it reports no `estimatedTotalHits` at all instead of inventing one, and the client leaves the total it is already displaying untouched.
 Facets are sent once per result set: page 1 (or an explicit `includeFacets: true`) includes `facetDistribution`, later pages omit the key entirely and skip the facet queries, and an absent key means "unchanged" to the client rather than "no facet values".
 Because absence carries that meaning, every search path that was asked for facets must return the key, including the paths that run no Meilisearch query at all (unsearchable query, low-quality-first browse), which return an empty distribution.
-The distribution carries `school`, `departments`, `entityType`, and `hostsUndergrads` (`{ true: n }`, from the `hasUndergradHostingEvidence` index field), the facets the filter rail reads.
+The distribution carries `school`, `departments`, `entityType`, `hostsUndergrads` (`{ true: n }`, from the `hasUndergradHostingEvidence` index field), and `welcomesUndergrads` (`{ true: n }`, from the `welcomesUndergrads` index field), the facets the filter rail reads.
 `hasUndergradHostingEvidence` is derived from `entityHasHostedUndergraduates` when the index document is built, not copied from the stored flag, so the filter and facet read the predicate the served badge reads (#5123).
+`welcomesUndergrads` is derived the same way from `entityWelcomesUndergraduates`, the predicate that serves the invitation badge, and counts both "Actively hiring" and "Welcomes undergrads" (#5441).
+
+### An index behind the code still answers (#5441)
+
+Meilisearch refuses a whole search that names an attribute the index has not declared filterable, and a deploy lands before the reindex that declares a new one.
+Search therefore reads the live index's filterable attributes through `readResearchEntitySearchFilterableAttributes`, cached for five minutes, and asks only for facets the index declares.
+A requested toggle filter the index cannot apply is dropped and reported as `appliedFilters.<filter>: false`, and the client unchecks it and rewrites the URL, so the page never shows unfiltered rows under a filter chip.
+If the attributes cannot be read, search assumes the code's settings.
+Adding a filterable attribute still needs the replacing rebuild before the filter appears, because the reconciling sync never touches index settings.
 
 ### A filter value nothing holds is dropped, not answered empty (#5146)
 

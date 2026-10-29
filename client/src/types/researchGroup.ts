@@ -186,7 +186,11 @@ export interface ResearchGroupSearchResponse {
   queryCorrection?: ResearchSearchQueryCorrection;
   // Set when the server changed a school or department filter value: it maps a value
   // to the spelling the corpus holds and drops one no row holds.
-  appliedFilters?: { school?: string[]; departments?: string[] };
+  appliedFilters?: {
+    school?: string[];
+    departments?: string[];
+    welcomesUndergrads?: false;
+  };
 }
 
 export interface ResearchSearchQueryCorrection {

@@ -137,6 +137,7 @@ describe('syncEntity transform', () => {
       sortTitleQualifier: 'bio)',
       browseTiebreakKey: researchEntityBrowseTiebreakKey('rg-id-42'),
       hasUndergradHostingEvidence: false,
+      welcomesUndergrads: false,
     });
     expect(docs[0]).not.toHaveProperty('_id');
     expect(docs[0]).not.toHaveProperty('__v');
@@ -235,6 +236,7 @@ describe('syncEntities', () => {
         sortTitleQualifier: '',
         browseTiebreakKey: researchEntityBrowseTiebreakKey('a'),
         hasUndergradHostingEvidence: false,
+        welcomesUndergrads: false,
       },
       {
         id: 'b',
@@ -243,6 +245,7 @@ describe('syncEntities', () => {
         sortTitleQualifier: '',
         browseTiebreakKey: researchEntityBrowseTiebreakKey('b'),
         hasUndergradHostingEvidence: false,
+        welcomesUndergrads: false,
       },
     ]);
   });

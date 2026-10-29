@@ -33,6 +33,7 @@ import { sanitizeMethodChipLabel } from '../utils/researchAreaLabelHygiene';
 import { decideServedResearchAreas } from '../utils/servedResearchAreaGuards';
 import { meshDescriptorOnlyTerms } from '../scrapers/utils/meshNonSubjectDescriptors';
 import { entityHasHostedUndergraduates } from './hostedUndergraduates';
+import { entityWelcomesUndergraduates } from './researchEntityDto';
 import {
   isSyntheticResearchHomeMetadataDescription,
   revoiceFirstPersonResearchLead,
@@ -91,6 +92,7 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'departments',
     'researchAreas',
     'hasUndergradHostingEvidence',
+    'welcomesUndergrads',
     'studentVisibilityTier',
   ],
   sortableAttributes: [
@@ -609,6 +611,7 @@ export function buildResearchEntitySearchIndexDocument(
     // `hostsUndergrads` filter and facet read the predicate the served badge reads
     // even when a writer changed its inputs without recomputing the flag (#5123).
     hasUndergradHostingEvidence: entityHasHostedUndergraduates(doc),
+    welcomesUndergrads: entityWelcomesUndergraduates(doc),
   };
   if (memberNames) {
     out.leadProfessorNames = memberNames.leadProfessorNames;
@@ -786,6 +789,53 @@ export async function readResearchEntitySearchEmbedderState(
   embedderStateCache = state;
   embedderStateCacheAt = now;
   return state;
+}
+
+let filterableAttributesCache: ReadonlySet<string> | null = null;
+let filterableAttributesCacheAt = 0;
+let filterableAttributesCacheTtlMs = RESEARCH_ENTITY_SEARCH_EMBEDDER_CHECK_CACHE_TTL_MS;
+
+export const invalidateResearchEntitySearchFilterableAttributesCache = (): void => {
+  filterableAttributesCache = null;
+  filterableAttributesCacheAt = 0;
+};
+
+interface ResearchEntitySearchFilterableIndexLike {
+  getFilterableAttributes?: () => Promise<unknown>;
+}
+
+/**
+ * The attributes the live index can filter and facet on, or `null` when they cannot be
+ * read. A deploy lands before the reindex that declares a new filterable attribute, and
+ * Meilisearch refuses a whole search that names an undeclared one, so search asks only
+ * for what this returns.
+ */
+export async function readResearchEntitySearchFilterableAttributes(
+  index: ResearchEntitySearchFilterableIndexLike,
+): Promise<ReadonlySet<string> | null> {
+  const now = Date.now();
+  if (now - filterableAttributesCacheAt < filterableAttributesCacheTtlMs) {
+    return filterableAttributesCache;
+  }
+  try {
+    const attributes =
+      typeof index.getFilterableAttributes === 'function'
+        ? await index.getFilterableAttributes()
+        : null;
+    filterableAttributesCache = Array.isArray(attributes)
+      ? new Set(attributes.filter((value): value is string => typeof value === 'string'))
+      : null;
+    filterableAttributesCacheTtlMs = RESEARCH_ENTITY_SEARCH_EMBEDDER_CHECK_CACHE_TTL_MS;
+  } catch (error) {
+    console.error(
+      'ResearchEntity Meilisearch filterable-attribute check failed:',
+      sanitizeLogValue(error),
+    );
+    filterableAttributesCache = null;
+    filterableAttributesCacheTtlMs = RESEARCH_ENTITY_SEARCH_EMBEDDER_UNKNOWN_CACHE_TTL_MS;
+  }
+  filterableAttributesCacheAt = now;
+  return filterableAttributesCache;
 }
 
 export async function isResearchEntitySearchEmbedderConfigured(
@@ -993,6 +1043,7 @@ async function applyResearchEntitySearchIndexSettings(index: any): Promise<void>
     'updateSettings',
     MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
   );
+  invalidateResearchEntitySearchFilterableAttributesCache();
 }
 
 async function addEveryResearchEntityDocument(

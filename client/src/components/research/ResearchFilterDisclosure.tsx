@@ -6,9 +6,11 @@ import {
   HOSTED_UNDERGRADUATES_CHIP_VALUE,
   HOSTED_UNDERGRADUATES_LABEL,
   NO_HOSTED_UNDERGRADUATE_EVIDENCE_NOTE,
+  WELCOMES_UNDERGRADUATES_CHIP_VALUE,
   isKnownResearchEntityType,
   researchEntityTypeFilterLabel,
 } from '../../utils/researchEntityCopy';
+import { WELCOMES_UNDERGRADS_LABEL } from '../../utils/undergradInvitation';
 import useMediaQuery from '../../hooks/useMediaQuery';
 
 type FacetDistribution = Record<string, Record<string, number>>;
@@ -25,6 +27,7 @@ interface ResearchFilterDisclosureProps {
   selectedSchool: string;
   selectedDepartment: string;
   selectedHostsUndergrads?: boolean;
+  selectedWelcomesUndergrads?: boolean;
   isApplying: boolean;
   hasFacetError: boolean;
   departmentLabel: (value: string) => string;
@@ -32,6 +35,7 @@ interface ResearchFilterDisclosureProps {
   onSchoolChange: (value: string) => void;
   onDepartmentChange: (value: string) => void;
   onHostsUndergradsChange?: (value: boolean) => void;
+  onWelcomesUndergradsChange?: (value: boolean) => void;
   onClearAll: () => void;
   variant?: 'popover' | 'sidebar';
   isOpen?: boolean;
@@ -62,12 +66,61 @@ const withSelectedOption = (options: FacetOption[], selected: string): FacetOpti
   return [{ value: selected }, ...options];
 };
 
+const servedTrueCount = (facet: Record<string, number> | undefined): number | undefined =>
+  Number.isFinite(facet?.true) ? facet?.true : undefined;
+
+interface UndergraduateToggleProps {
+  label: string;
+  count: number | undefined;
+  countSuffix: string;
+  checked: boolean;
+  inputRef?: (node: HTMLElement | null) => void;
+  onChange?: (value: boolean) => void;
+}
+
+const UndergraduateToggle = ({
+  label,
+  count,
+  countSuffix,
+  checked,
+  inputRef,
+  onChange,
+}: UndergraduateToggleProps) => {
+  const noteId = useId();
+  const noEvidence = count === 0 && !checked;
+  return (
+    <div className="min-w-0">
+      <label className="flex min-h-11 min-w-0 items-center gap-3 text-sm font-medium text-ink">
+        <input
+          ref={inputRef}
+          type="checkbox"
+          checked={checked}
+          disabled={noEvidence}
+          aria-describedby={noEvidence ? noteId : undefined}
+          onChange={(event) => onChange?.(event.target.checked)}
+          className="yr-focus-ring h-5 w-5 shrink-0 rounded-control border-[var(--yr-line-strong)] accent-brand disabled:cursor-not-allowed"
+        />
+        <span className={`min-w-0 ${noEvidence ? 'text-muted' : ''}`}>
+          {label}
+          {countSuffix}
+        </span>
+      </label>
+      {noEvidence && (
+        <p id={noteId} className="-mt-2 mb-1 ml-8 text-xs leading-relaxed text-muted">
+          {NO_HOSTED_UNDERGRADUATE_EVIDENCE_NOTE}
+        </p>
+      )}
+    </div>
+  );
+};
+
 const ResearchFilterDisclosure = ({
   facetDistribution,
   selectedEntityType,
   selectedSchool,
   selectedDepartment,
   selectedHostsUndergrads = false,
+  selectedWelcomesUndergrads = false,
   isApplying,
   hasFacetError,
   departmentLabel,
@@ -75,6 +128,7 @@ const ResearchFilterDisclosure = ({
   onSchoolChange,
   onDepartmentChange,
   onHostsUndergradsChange,
+  onWelcomesUndergradsChange,
   onClearAll,
   variant = 'popover',
   isOpen: controlledIsOpen,
@@ -106,7 +160,6 @@ const ResearchFilterDisclosure = ({
     firstFieldRef.current = node;
   }, []);
   const panelId = useId();
-  const hostsUndergradsNoteId = useId();
 
   const positiveEntityTypes = useMemo(
     () =>
@@ -139,29 +192,35 @@ const ResearchFilterDisclosure = ({
   const showEntityType = positiveEntityTypes.length > 0 || Boolean(selectedEntityType);
   const showSchool = positiveSchools.length > 0 || Boolean(selectedSchool);
   const showDepartment = positiveDepartments.length > 0 || Boolean(selectedDepartment);
-  const servedHostsUndergradsCount = facetDistribution.hostsUndergrads?.true;
-  const hostsUndergradsCount = Number.isFinite(servedHostsUndergradsCount)
-    ? servedHostsUndergradsCount
-    : undefined;
+  const hostsUndergradsCount = servedTrueCount(facetDistribution.hostsUndergrads);
   const noHostedUndergraduateEvidence = hostsUndergradsCount === 0 && !selectedHostsUndergrads;
   const showHostsUndergrads =
     Boolean(onHostsUndergradsChange) &&
     (hostsUndergradsCount !== undefined || selectedHostsUndergrads);
+  const welcomesUndergradsCount = servedTrueCount(facetDistribution.welcomesUndergrads);
+  const showWelcomesUndergrads =
+    Boolean(onWelcomesUndergradsChange) &&
+    (Boolean(welcomesUndergradsCount) || selectedWelcomesUndergrads);
   const activeCount =
     Number(Boolean(selectedEntityType)) +
     Number(Boolean(selectedSchool)) +
     Number(Boolean(selectedDepartment)) +
-    Number(selectedHostsUndergrads);
+    Number(selectedHostsUndergrads) +
+    Number(selectedWelcomesUndergrads);
   const triggerCount = activeCount + operatorActiveCount;
   const visibleFields = (
     [
+      showWelcomesUndergrads && 'welcomesUndergrads',
       showHostsUndergrads && 'hostsUndergrads',
       showEntityType && 'entityType',
       showSchool && 'school',
       showDepartment && 'department',
     ] as const
-  ).filter((field): field is 'entityType' | 'school' | 'department' | 'hostsUndergrads' =>
-    Boolean(field),
+  ).filter(
+    (
+      field,
+    ): field is 'entityType' | 'school' | 'department' | 'hostsUndergrads' | 'welcomesUndergrads' =>
+      Boolean(field),
   );
   const firstVisibleField = visibleFields.find(
     (field) => field !== 'hostsUndergrads' || !noHostedUndergraduateEvidence,
@@ -255,28 +314,30 @@ const ResearchFilterDisclosure = ({
   const filterFields = (
     <fieldset className="min-w-0 border-0 p-0">
       <legend className="sr-only">Narrow research results</legend>
-      <div className="min-w-0 space-y-4">
-        {showHostsUndergrads && (
+      <div className={`min-w-0 ${isSidebar ? 'space-y-3' : 'space-y-4'}`}>
+        {(showWelcomesUndergrads || showHostsUndergrads) && (
           <div className="min-w-0">
-            <label className="flex min-h-11 min-w-0 items-start gap-3 text-sm font-medium text-ink">
-              <input
-                ref={firstVisibleField === 'hostsUndergrads' ? setFirstFieldNode : undefined}
-                type="checkbox"
-                checked={selectedHostsUndergrads}
-                disabled={noHostedUndergraduateEvidence}
-                aria-describedby={noHostedUndergraduateEvidence ? hostsUndergradsNoteId : undefined}
-                onChange={(event) => onHostsUndergradsChange?.(event.target.checked)}
-                className="yr-focus-ring mt-0.5 h-5 w-5 shrink-0 rounded-control border-[var(--yr-line-strong)] accent-brand disabled:cursor-not-allowed"
+            {showWelcomesUndergrads && (
+              <UndergraduateToggle
+                label={WELCOMES_UNDERGRADS_LABEL}
+                count={welcomesUndergradsCount}
+                countSuffix={facetCountSuffix(welcomesUndergradsCount)}
+                checked={selectedWelcomesUndergrads}
+                inputRef={
+                  firstVisibleField === 'welcomesUndergrads' ? setFirstFieldNode : undefined
+                }
+                onChange={onWelcomesUndergradsChange}
               />
-              <span className={`min-w-0 ${noHostedUndergraduateEvidence ? 'text-muted' : ''}`}>
-                {HOSTED_UNDERGRADUATES_LABEL}
-                {facetCountSuffix(hostsUndergradsCount)}
-              </span>
-            </label>
-            {noHostedUndergraduateEvidence && (
-              <p id={hostsUndergradsNoteId} className="ml-8 text-xs leading-relaxed text-muted">
-                {NO_HOSTED_UNDERGRADUATE_EVIDENCE_NOTE}
-              </p>
+            )}
+            {showHostsUndergrads && (
+              <UndergraduateToggle
+                label={HOSTED_UNDERGRADUATES_LABEL}
+                count={hostsUndergradsCount}
+                countSuffix={facetCountSuffix(hostsUndergradsCount)}
+                checked={selectedHostsUndergrads}
+                inputRef={firstVisibleField === 'hostsUndergrads' ? setFirstFieldNode : undefined}
+                onChange={onHostsUndergradsChange}
+              />
             )}
           </div>
         )}
@@ -399,6 +460,14 @@ const ResearchFilterDisclosure = ({
             value={HOSTED_UNDERGRADUATES_CHIP_VALUE}
             visibleLabel={besideTrigger ? HOSTED_UNDERGRADUATES_LABEL : undefined}
             onRemove={() => onHostsUndergradsChange?.(false)}
+          />
+        )}
+        {selectedWelcomesUndergrads && (
+          <ActiveFilterChip
+            axis="Undergraduates"
+            value={WELCOMES_UNDERGRADUATES_CHIP_VALUE}
+            visibleLabel={besideTrigger ? WELCOMES_UNDERGRADS_LABEL : undefined}
+            onRemove={() => onWelcomesUndergradsChange?.(false)}
           />
         )}
         {besideTrigger && (

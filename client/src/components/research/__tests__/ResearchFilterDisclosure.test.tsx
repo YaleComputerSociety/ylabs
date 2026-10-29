@@ -26,6 +26,7 @@ const renderFilters = (
     onSchoolChange: vi.fn(),
     onDepartmentChange: vi.fn(),
     onHostsUndergradsChange: vi.fn(),
+    onWelcomesUndergradsChange: vi.fn(),
     onClearAll: vi.fn(),
     ...overrides,
   };
@@ -66,6 +67,40 @@ describe('ResearchFilterDisclosure', () => {
     expect(screen.getByRole('checkbox', { name: 'Hosted undergrads (7)' })).toBeChecked();
     fireEvent.click(screen.getByRole('button', { name: 'Remove Undergraduates: Hosted before' }));
     expect(props.onHostsUndergradsChange).toHaveBeenCalledWith(false);
+  });
+
+  it('offers the welcomes-undergraduates filter with its count, and a chip that removes it', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    const { props, rerender } = renderFilters({
+      variant: 'sidebar',
+      facetDistribution: {
+        hostsUndergrads: { true: 7 },
+        welcomesUndergrads: { true: 4 },
+      },
+    });
+
+    const toggle = screen.getByRole('checkbox', { name: 'Welcomes undergrads (4)' });
+    fireEvent.click(toggle);
+    expect(props.onWelcomesUndergradsChange).toHaveBeenCalledWith(true);
+
+    rerender(<ResearchFilterDisclosure {...props} selectedWelcomesUndergrads />);
+    expect(screen.getByRole('checkbox', { name: 'Welcomes undergrads (4)' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Hosted undergrads (7)' })).not.toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Undergraduates: Welcomes now' }));
+    expect(props.onWelcomesUndergradsChange).toHaveBeenCalledWith(false);
+  });
+
+  it('hides the welcomes-undergraduates filter at zero unless it is already applied', () => {
+    const { props, rerender } = renderFilters({
+      variant: 'sidebar',
+      facetDistribution: { welcomesUndergrads: { true: 0 }, hostsUndergrads: { true: 3 } },
+    });
+
+    expect(screen.queryByRole('checkbox', { name: /^Welcomes undergrads/ })).toBeNull();
+    expect(screen.getByRole('checkbox', { name: 'Hosted undergrads (3)' })).toBeEnabled();
+
+    rerender(<ResearchFilterDisclosure {...props} selectedWelcomesUndergrads />);
+    expect(screen.getByRole('checkbox', { name: 'Welcomes undergrads (0)' })).toBeChecked();
   });
 
   it('shows the hosted-undergraduates filter at zero with a note that missing evidence is not absence', () => {
