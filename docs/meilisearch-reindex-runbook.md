@@ -43,7 +43,7 @@ Use the one that matches the environment.
 | ------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Development (local) | `yarn development:search:sync`                     | The default. Wraps `meili:sync-research-entities --apply`: diffs every corpus document against the live index, upserts only the ones that differ, and deletes index documents with no live row. |
 | Development (local) | `yarn development:search:rebuild`                  | Only for an embedder or `documentTemplate` change. Wraps `meili:rebuild-research-entities --clear --confirm-meili-rebuild`, which re-embeds every document. |
-| Beta                | `node scripts/reindex-search-index.mjs beta`       | Run from the Beta Render shell or as a one-off job (see below). Dry run. Add `--apply` to write: it reconciles incrementally when the live index matches the code and rebuilds otherwise; add `--full` to force the rebuild. |
+| Beta                | `node scripts/reindex-search-index.mjs beta`       | Run from the Beta Render shell or as a one-off job (see below). Dry run. Add `--apply` to write: it reconciles incrementally when the live index's embedder matches the code and rebuilds otherwise; add `--full` to force the rebuild. |
 | Production          | `node scripts/reindex-search-index.mjs production` | Run from the Production Render shell. Dry run. Add `--apply` to write, with the same mode choice and `--full` flag. Run Beta first.                 |
 
 `reindex:meili`'s own error text points at "the development sweep search-sync stage" for local rebuilds.
