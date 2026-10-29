@@ -2,6 +2,7 @@ import * as cheerio from 'cheerio';
 import { ResearchEntity } from '../models/researchEntity';
 import {
   detectOfficialRosterTemplate,
+  type OfficialRosterTemplate,
   extractOfficialResearchHomeRoster,
   listedPersonLines,
   listedPersonNames,
@@ -28,6 +29,8 @@ export interface UndergradRosterProposal {
   otherCurrentMembers: number;
   undergraduateWithheldCount: number;
   rosterState: string;
+  /** The page is the row person's own by first and last name and is a Yale page (#5433). */
+  listsRowPerson: boolean;
 }
 
 export type UndergradRosterProposalOutcome =
@@ -88,13 +91,29 @@ const keyNameTokens = (researchEntityKey: string): string[] =>
 const ownerIsKeyPerson = (owner: string, nameTokens: string[]): boolean =>
   nameTokens.some((token) => (token.length <= 3 ? owner === token : owner.includes(token)));
 
+const SURNAME_PARTICLE = /^(?:van|von|de|der|den|del|della|di|da|du|le|la|ter|ten|st|dos|das)+$/;
+
+/**
+ * A compound surname is one token in a key ("vandijk") and only its last word in a title
+ * ("van Dijk Lab" names "dijk"), so the title's owner may also be the key token less its
+ * particle.
+ */
+const labOwnerIsKeyPerson = (owner: string, nameTokens: string[]): boolean =>
+  ownerIsKeyPerson(owner, nameTokens) ||
+  nameTokens.some(
+    (token) =>
+      owner.length >= 4 &&
+      token.endsWith(owner) &&
+      SURNAME_PARTICLE.test(token.slice(0, -owner.length)),
+  );
+
 const pageText = ($: cheerio.CheerioAPI): string => {
   $('script, style, noscript').remove();
   return $('body').text().replace(/\s+/g, ' ');
 };
 
 /**
- * The lab a page names itself after: a single capitalized word before "Lab" or "Group" in
+ * The lab a page names itself after: a capitalized surname, with its particle ("van", "Dal") when it has one, before "Lab" or "Group" in
  * its title or first heading, or the name its host is built on (ishizukalab.org). It counts
  * only when the page also lists a person by that name, so "The Uplift Lab" names no one.
  */
@@ -105,10 +124,11 @@ function namedLabOwners($: cheerio.CheerioAPI, url: string, listedNames: string[
   const owners: string[] = [];
   const titles = `${$('title').first().text()} | ${$('h1').first().text()}`;
   for (const match of titles.matchAll(
-    /\b(\p{Lu}\p{Ll}[\p{L}'’-]*)\s+(?:Lab|Laboratory|Group)\b/gu,
+    /\b(?:(van|von|de|del|della|der|den|di|da|dal|du|le|la)\s+)?(\p{Lu}\p{Ll}[\p{L}'’-]*)\s+(?:Lab|Laboratory|Group)\b/giu,
   )) {
-    const owner = lettersOnly(match[1]);
-    if (owner && surnames.has(owner)) owners.push(owner);
+    const owner = lettersOnly(match[2]);
+    if (!owner || !surnames.has(owner)) continue;
+    owners.push(match[1] ? lettersOnly(`${match[1]}${match[2]}`) : owner);
   }
   try {
     const parsed = new URL(url);
@@ -129,11 +149,11 @@ function namedLabOwners($: cheerio.CheerioAPI, url: string, listedNames: string[
 const OTHER_UNIVERSITY =
   /\b(?:University of (?:the )?\p{Lu}[\p{L}-]*|\p{Lu}[\p{L}-]*\s+University|UPenn)\b/gu;
 
-const isOnYaleHost = (url: string): boolean => {
+const isOnYaleHost = (url: string, unparsedIsYale = true): boolean => {
   try {
     return /(?:^|\.)yale\.edu$/i.test(new URL(url).hostname);
   } catch {
-    return true;
+    return unparsedIsYale;
   }
 };
 
@@ -210,9 +230,43 @@ export function pageOwnershipRefusal(
     return 'page-of-another-lab';
   }
   const owners = namedLabOwners($, url, listedPersonNames(html, template));
-  return owners.length > 0 && !owners.some((owner) => ownerIsKeyPerson(owner, nameTokens))
+  return owners.length > 0 && !owners.some((owner) => labOwnerIsKeyPerson(owner, nameTokens))
     ? 'page-of-another-lab'
     : undefined;
+}
+
+/**
+ * Whether the page is the own Yale page of the person a person-keyed row is named after:
+ * their first and last name on one listed line, or both in the page's title or first
+ * heading, which a shared first name alone never satisfies, and Yale's host or Yale named
+ * on that same line or title, since the page of a lab the person led elsewhere names them
+ * too.
+ */
+function pageIsRowPersonsYalePage(
+  html: string,
+  template: OfficialRosterTemplate,
+  researchEntityKey: string,
+  url: string,
+): boolean {
+  const tokens = keyNameTokens(researchEntityKey);
+  if (tokens.length < 2) return false;
+  const [first, last] = [tokens[0], tokens[tokens.length - 1]];
+  const namesBoth = (words: string[]): boolean =>
+    words.some((w) => ownerIsKeyPerson(w, [first])) &&
+    words.some((w) => ownerIsKeyPerson(w, [last]));
+  const words = (text: string): string[] =>
+    text
+      .split(/[\s-]+/)
+      .map(lettersOnly)
+      .filter(Boolean);
+  const onYaleHost = isOnYaleHost(url, false);
+  const placesAtYale = (text: string): boolean => onYaleHost || /\bYale\b/.test(text);
+  const $ = cheerio.load(html);
+  const title = `${$('title').first().text()} ${$('h1').first().text()}`;
+  if (namesBoth(words(title)) && placesAtYale(title)) return true;
+  return listedPersonLines(html, template).some(
+    (line) => namesBoth(words(line.name)) && placesAtYale(line.ownLine),
+  );
 }
 
 export function proposeUndergradRosterConfig(
@@ -266,6 +320,7 @@ export function proposeUndergradRosterConfig(
       otherCurrentMembers: roster.members.filter((member) => member.role !== 'undergrad').length,
       undergraduateWithheldCount: roster.undergraduateWithheldCount,
       rosterState: roster.state,
+      listsRowPerson: pageIsRowPersonsYalePage(html, template, researchEntityKey, url),
     },
   };
 }
@@ -388,9 +443,13 @@ export function derivedRosterWithheldReason(
   config: OfficialRosterConfig,
   roster: ExtractedOfficialRoster,
   websiteUrl: string,
+  pageListsRowPerson = false,
 ): DerivedRosterWithheldReason | null {
-  if (!websiteUrl) return 'no-website';
-  if (!derivedRosterPageBelongsToRow(config.url, websiteUrl)) return 'page-not-this-row';
+  if (!websiteUrl) {
+    if (!pageListsRowPerson) return 'no-website';
+  } else if (!derivedRosterPageBelongsToRow(config.url, websiteUrl)) {
+    return 'page-not-this-row';
+  }
   const labels = [...config.currentSectionLabels, ...(config.pastSectionLabels ?? [])];
   const separated = new Set(roster.subgroupedSectionLabels ?? []);
   const mixesOtherGroups = config.undergraduatesByOwnLine
@@ -466,6 +525,7 @@ export async function deriveUndergradRosterForCandidate(
       outcome.proposal.config,
       outcome.roster,
       candidate.websiteUrl,
+      outcome.proposal.listsRowPerson,
     );
     if (reason) {
       if (!refused || size > refused.size) refused = { reason, url, size };

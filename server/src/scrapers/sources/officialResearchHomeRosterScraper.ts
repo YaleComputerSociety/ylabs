@@ -1477,10 +1477,17 @@ function withoutNextPositionAfterName<T extends { name?: string; years: string }
   return role && role !== 'undergrad' && role !== 'affiliate' ? { ...entry, years: '' } : entry;
 }
 
-const YALE_UNDERGRADUATE_STANDING =
-  '(?:undergraduate|undergrad|first[- ]year|sophomore|junior|senior)';
+const YALE_STUDENT_STANDING = '(?:undergraduate|undergrad|first[- ]year|sophomore)';
+const YALE_CLASS_STANDING = '(?:junior|senior)';
+const YALE_UNDERGRADUATE_STANDING = `(?:${YALE_STUDENT_STANDING}|${YALE_CLASS_STANDING})`;
+const NOT_A_GRADUATE_DEGREE =
+  "Ph\\.?\\s?D|PhD|graduate|doctoral|master['’]?s?|M\\.?D|MD|postdoc\\w*|medical|law";
+const NOT_A_STAFF_TITLE =
+  '(?:scien|lectur|facult|associat|fellow|research|professor|instruct|engineer|manag|staff|direct|scholar|investigat|editor|analyst|speciali|officer|administrat|coordinat|technic|member|advis|consult)\\w*';
+const wordsBeforeYale = (excluded: string): string =>
+  `(?:\\s+(?!(?:${excluded})\\b)[\\p{L}&,-]+){0,6}?`;
 const BIO_YALE_UNDERGRADUATE = new RegExp(
-  `\\b(?:is|was|am)\\s+(?:currently\\s+)?an?\\s+(?:current\\s+|rising\\s+)?(?:Yale\\s+(?:College\\s+)?${YALE_UNDERGRADUATE_STANDING}\\b|${YALE_UNDERGRADUATE_STANDING}(?:\\s+(?:student|researcher))?\\s*,?\\s+(?:in|at)\\s+(?:Yale\\b|(?:${RESIDENTIAL_COLLEGE_NAMES})\\s+College\\b)|(?:[\\p{L}-]+\\s+){1,4}major\\s+at\\s+Yale\\b)`,
+  `\\b(?:is|was|am)\\s+(?:currently\\s+)?an?\\s+(?:current\\s+|rising\\s+)?(?:Yale\\s+(?:College\\s+)?${YALE_UNDERGRADUATE_STANDING}\\b|(?:${YALE_STUDENT_STANDING}(?:\\s+(?:student|researcher))?${wordsBeforeYale(NOT_A_GRADUATE_DEGREE)}|${YALE_CLASS_STANDING}(?:\\s+student(?:\\s+researcher)?)?${wordsBeforeYale(`${NOT_A_GRADUATE_DEGREE}|${NOT_A_STAFF_TITLE}`)})\\s*,?\\s+(?:in|at)\\s+(?:Yale\\b|(?:${RESIDENTIAL_COLLEGE_NAMES})\\s+College\\b)|(?:[\\p{L}-]+\\s+){1,4}major\\s+at\\s+Yale\\b)`,
   'iu',
 );
 const BIO_RESIDENTIAL_COLLEGE = new RegExp(`\\b(?:${RESIDENTIAL_COLLEGE_NAMES}) College\\b`);
@@ -1588,6 +1595,10 @@ function entryRoleOnPage(
     : role;
 }
 
+/** A title a Yale undergraduate also holds, so a biography saying they are one decides. */
+const STUDENT_ASSISTANT_TITLE =
+  /\b(?:research|lab(?:oratory)?)\s+(?:assistant|aide)s?\b|\bintern\b/i;
+
 function entryRoleOnPageFromLine(
   entry: ListedPersonEntry,
   section: RosterSection,
@@ -1596,6 +1607,14 @@ function entryRoleOnPageFromLine(
 ): OfficialRosterRole | null {
   const own = withoutNextPositionAfterName(entry, withinPastSection);
   const labelRole = listedEntryRoleInSection(own, section.label, withinPastSection);
+  if (
+    labelRole === 'staff' &&
+    STUDENT_ASSISTANT_TITLE.test(`${own.title} ${own.years}`) &&
+    (bioStatesYaleUndergraduate(entry.bio) ||
+      bioStatesYaleUndergraduate(`${own.title} ${own.years}`))
+  ) {
+    return 'undergrad';
+  }
   if (labelRole && labelRole !== 'affiliate') return labelRole;
   if (own.group || ownLineNamesAnotherLevel(own)) return labelRole;
   const caption = captionRoleLabel(section);
@@ -1773,10 +1792,80 @@ function readRosterSections(
   $: cheerio.CheerioAPI,
   template: OfficialRosterTemplate,
 ): RosterSection[] {
-  const sections = readTemplateRosterSections($, template);
+  const sections = readTemplateRosterSections($, template).map(withBiographiesFolded);
   return sections.some(sectionListsAnUndergraduate)
     ? sections
     : [...sections, ...readNameThenRoleLineSections($)];
+}
+
+const BIOGRAPHY_SENTENCE_START =
+  /^(?:he|she|they|\p{Lu}[\p{Ll}'’-]+(?:\s+\(\p{Lu}[\p{Ll}'’-]+\))?)\s+(?:is|was|joined|has|works|worked|studies|studied|received|earned|completed|graduated|plans|hails|comes)\b/iu;
+const BIOGRAPHY_MIN_LENGTH = 40;
+
+const BIOGRAPHY_VERB =
+  /\s+(?:is|was|joined|has|works|worked|studies|studied|received|earned|completed|graduated|plans|hails|comes)\b/;
+
+const opensWithNameOrPronoun = (rest: string, firstName: string): boolean => {
+  const lead = /^\p{L}+/u.exec(rest)?.[0] ?? '';
+  return lead === firstName || /^(?:he|she|they)$/i.test(lead);
+};
+
+/**
+ * A card read without its own separators runs the name into what follows it ("Avery
+ * QuillAvery is a junior"), and a biography often opens with the full name ("Avery Quill
+ * is a junior"); either way the person's name is the part before the join.
+ */
+function biographyCut(text: string): number | undefined {
+  const firstName = text.split(/\s+/)[0];
+  const gluedCuts = [...text.matchAll(/\p{Ll}(?=\p{Lu})/gu)]
+    .map((match) => match.index + 1)
+    .filter((index) => opensWithNameOrPronoun(text.slice(index), firstName));
+  const verb = BIOGRAPHY_VERB.exec(text);
+  return [...gluedCuts, verb ? verb.index : -1]
+    .filter((index) => index > 0)
+    .sort((a, b) => a - b)
+    .find((index) => looksLikeListedPersonName(text.slice(0, index)));
+}
+
+function withNameSplitFromBiography(entry: ListedPersonEntry): ListedPersonEntry {
+  if (looksLikeListedPersonName(entry.name)) return entry;
+  const cut = biographyCut(entry.name);
+  if (cut === undefined) return entry;
+  const rest = normalizedText(`${entry.name.slice(cut)}${entry.years}`);
+  if (!BIOGRAPHY_SENTENCE_START.test(rest) && !BIOGRAPHY_VERB.test(` ${rest}`)) return entry;
+  return {
+    ...entry,
+    name: entry.name.slice(0, cut).trim(),
+    years: '',
+    bio: `${rest} ${entry.bio ?? ''}`.trim().slice(0, BIO_MAX_LENGTH),
+  };
+}
+
+/**
+ * A biography paragraph set under a person's name reads as an entry of its own ("Avery is
+ * an undergraduate student (class of 2026) at Yale" splits at its first bracket into a
+ * "name" that is no one), so it is folded back into the person above it as their biography,
+ * where the Yale, other-school, visitor and class-year rules read it (#5433).
+ */
+function withBiographiesFolded(section: RosterSection): RosterSection {
+  const listItems: ListedPersonEntry[] = [];
+  for (const read of section.listItems) {
+    const entry = withNameSplitFromBiography(read);
+    const text = normalizedText(`${entry.name}${entry.years}`);
+    const person = listItems[listItems.length - 1];
+    if (
+      person &&
+      looksLikeListedPersonName(person.name) &&
+      !looksLikeListedPersonName(entry.name) &&
+      text.length >= BIOGRAPHY_MIN_LENGTH &&
+      BIOGRAPHY_SENTENCE_START.test(text)
+    ) {
+      person.bio = `${person.bio ?? ''} ${text}`.trim().slice(0, BIO_MAX_LENGTH);
+      continue;
+    }
+    listItems.push(entry);
+  }
+  return { ...section, listItems };
 }
 
 function readTemplateRosterSections(
