@@ -2,6 +2,7 @@ import * as cheerio from 'cheerio';
 import { ResearchEntity } from '../models/researchEntity';
 import {
   detectOfficialRosterTemplate,
+  type OfficialRosterTemplate,
   extractOfficialResearchHomeRoster,
   listedPersonLines,
   listedPersonNames,
@@ -28,6 +29,8 @@ export interface UndergradRosterProposal {
   otherCurrentMembers: number;
   undergraduateWithheldCount: number;
   rosterState: string;
+  /** The page is the row person's own by first and last name and is a Yale page (#5433). */
+  listsRowPerson: boolean;
 }
 
 export type UndergradRosterProposalOutcome =
@@ -85,8 +88,16 @@ const keyNameTokens = (researchEntityKey: string): string[] =>
         .filter((token) => token.length >= 2)
     : [];
 
+/**
+ * A compound surname is one token in a key ("vandijk") and only its last word in a title
+ * ("van Dijk Lab" names "dijk"), so either may contain the other.
+ */
 const ownerIsKeyPerson = (owner: string, nameTokens: string[]): boolean =>
-  nameTokens.some((token) => (token.length <= 3 ? owner === token : owner.includes(token)));
+  nameTokens.some((token) =>
+    token.length <= 3
+      ? owner === token
+      : owner.includes(token) || (owner.length >= 4 && token.includes(owner)),
+  );
 
 const pageText = ($: cheerio.CheerioAPI): string => {
   $('script, style, noscript').remove();
@@ -215,6 +226,40 @@ export function pageOwnershipRefusal(
     : undefined;
 }
 
+/**
+ * Whether the page is the own page of the person a person-keyed row is named after: their
+ * first and last name on one listed line, or both in the page's title or first heading, which
+ * a shared first name alone never satisfies.
+ */
+function pageIsRowPersons(
+  html: string,
+  template: OfficialRosterTemplate,
+  researchEntityKey: string,
+): boolean {
+  const tokens = keyNameTokens(researchEntityKey);
+  if (tokens.length < 2) return false;
+  const [first, last] = [tokens[0], tokens[tokens.length - 1]];
+  const namesBoth = (words: string[]): boolean =>
+    words.some((w) => ownerIsKeyPerson(w, [first])) &&
+    words.some((w) => ownerIsKeyPerson(w, [last]));
+  const words = (text: string): string[] =>
+    text
+      .split(/[\s-]+/)
+      .map(lettersOnly)
+      .filter(Boolean);
+  const $ = cheerio.load(html);
+  if (namesBoth(words(`${$('title').first().text()} ${$('h1').first().text()}`))) return true;
+  return listedPersonLines(html, template).some((line) => namesBoth(words(line.name)));
+}
+
+const isStrictlyOnYaleHost = (url: string): boolean => {
+  try {
+    return /(?:^|\.)yale\.edu$/i.test(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+};
+
 export function proposeUndergradRosterConfig(
   html: string,
   researchEntityKey: string,
@@ -266,6 +311,9 @@ export function proposeUndergradRosterConfig(
       otherCurrentMembers: roster.members.filter((member) => member.role !== 'undergrad').length,
       undergraduateWithheldCount: roster.undergraduateWithheldCount,
       rosterState: roster.state,
+      listsRowPerson:
+        pageIsRowPersons(html, template, researchEntityKey) &&
+        (isStrictlyOnYaleHost(url) || /\bYale\b/.test(pageText(cheerio.load(html)))),
     },
   };
 }
@@ -388,9 +436,13 @@ export function derivedRosterWithheldReason(
   config: OfficialRosterConfig,
   roster: ExtractedOfficialRoster,
   websiteUrl: string,
+  pageListsRowPerson = false,
 ): DerivedRosterWithheldReason | null {
-  if (!websiteUrl) return 'no-website';
-  if (!derivedRosterPageBelongsToRow(config.url, websiteUrl)) return 'page-not-this-row';
+  if (!websiteUrl) {
+    if (!pageListsRowPerson) return 'no-website';
+  } else if (!derivedRosterPageBelongsToRow(config.url, websiteUrl)) {
+    return 'page-not-this-row';
+  }
   const labels = [...config.currentSectionLabels, ...(config.pastSectionLabels ?? [])];
   const separated = new Set(roster.subgroupedSectionLabels ?? []);
   const mixesOtherGroups = config.undergraduatesByOwnLine
@@ -466,6 +518,7 @@ export async function deriveUndergradRosterForCandidate(
       outcome.proposal.config,
       outcome.roster,
       candidate.websiteUrl,
+      outcome.proposal.listsRowPerson,
     );
     if (reason) {
       if (!refused || size > refused.size) refused = { reason, url, size };
