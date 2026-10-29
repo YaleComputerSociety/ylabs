@@ -307,7 +307,10 @@ describe('LabSiteUndergradInvitationScraper', () => {
   it("refuses an invitation on a linked page of another university's lab site", async () => {
     const { emitted } = await run(
       {
-        'https://moved.example.com/': html('We study cells.', '<a href="/join">Join us</a>').replace(
+        'https://moved.example.com/': html(
+          'We study cells.',
+          '<a href="/join">Join us</a>',
+        ).replace(
           '</main>',
           '</main><footer>Department of Bioengineering, University of Pennsylvania, Philadelphia</footer>',
         ),
