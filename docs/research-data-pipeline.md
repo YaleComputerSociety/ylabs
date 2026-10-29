@@ -1931,6 +1931,10 @@ A lead `RoleAssignment` that resolves to a `Researcher` counts as attached lead 
 The `official-research-home-roster` source acquires non-lead current membership only from an allowlisted official page and explicitly configured current section.
 Each config names its page template: `profile-grid` (the medicine.yale.edu member grid), `yalesites-directory` (YaleSites `directory-listing-card` collections) or `heading-list` (a heading over a plain list of "Name (years)" lines).
 Each materialized row requires a source-specific official profile identity, an honestly mapped role, an observation date, and a bounded refresh-expiry date.
+A person's own listed title decides their role (`mapOfficialRosterRole`); the section heading decides only when the title names no role and the heading names exactly one, so a professor under "Postdocs and Research Scientists" stays faculty and a blank line under "Faculty & Staff" is withheld rather than guessed (#5446).
+A "Principal Investigator", "Instructor" or "Lecturer" title is faculty, and so is a visiting or adjunct professor, because at Yale either can be the lab head's own appointment; faculty under an affiliated-faculty heading, and a visiting scholar, are affiliates.
+A collaborators section and an alumni, former, past or previous section never yield current members, even when a config names them as current.
+A role change re-keys the membership, because `membershipKey` includes the role.
 A `profile-grid` page must also carry a recent publish date; the other two templates publish none, so their currency is the configured section label itself, held to the same refresh window (#5039).
 The member's listed title travels on the edge as `rosterProvenance.listingTitle`, and the detail card shows it when the person's own record has no title.
 Names alone never resolve a `Researcher` or merge membership rows.

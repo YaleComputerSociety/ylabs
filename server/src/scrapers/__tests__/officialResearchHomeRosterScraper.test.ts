@@ -59,6 +59,77 @@ describe('official research-home roster acquisition', () => {
     expect(roster.members.map((member) => member.name)).not.toContain('Former Scholar');
   });
 
+  it("lets a person's own title decide over the section heading", () => {
+    expect(
+      mapOfficialRosterRole('Assistant Professor', 'Postdocs and Associate Research Scientists'),
+    ).toBe('core-faculty');
+    expect(
+      mapOfficialRosterRole(
+        'Associate Research Scientist',
+        'Postdocs and Associate Research Scientists',
+      ),
+    ).toBe('staff');
+    expect(mapOfficialRosterRole('Professor of Cell Biology', 'Faculty & Staff')).toBe(
+      'core-faculty',
+    );
+    expect(mapOfficialRosterRole('Principal Investigator', 'Faculty & Staff')).toBe('core-faculty');
+    expect(mapOfficialRosterRole('Principal Investigator', 'Lab Members')).toBe('core-faculty');
+    expect(mapOfficialRosterRole('Instructor of Medicine', 'Lab Members')).toBe('core-faculty');
+  });
+
+  it('reads a heading only when the title names no role and the heading names exactly one', () => {
+    expect(mapOfficialRosterRole('', 'Postdoctoral Fellows')).toBe('postdoc');
+    expect(mapOfficialRosterRole('Research Assistant', 'Undergraduate Researchers')).toBe(
+      'undergrad',
+    );
+    expect(mapOfficialRosterRole('Research Assistant', 'Graduate Students')).toBe('grad-student');
+    expect(mapOfficialRosterRole('', 'Faculty & Staff')).toBeNull();
+    expect(mapOfficialRosterRole('', 'Undergraduate Students and Staff')).toBe('undergrad');
+    expect(mapOfficialRosterRole('Research Associate', 'Faculty & Staff')).toBe('staff');
+  });
+
+  it('labels affiliated-heading faculty and visitors as affiliates, never a visiting or adjunct professor', () => {
+    expect(mapOfficialRosterRole('Assistant Professor', 'Affiliated Faculty')).toBe('affiliate');
+    expect(mapOfficialRosterRole('Assistant Professor', 'Faculty')).toBe('core-faculty');
+    expect(mapOfficialRosterRole('Visiting Professor', 'People')).toBe('core-faculty');
+    expect(mapOfficialRosterRole('Professor Adjunct of Psychiatry', 'Lab Members')).toBe(
+      'core-faculty',
+    );
+    expect(mapOfficialRosterRole('Visiting Scholar', 'Lab Members')).toBe('affiliate');
+    expect(mapOfficialRosterRole('', 'Students and Visiting Scholars')).toBe('affiliate');
+  });
+
+  it('does not read a predoctoral program job as a student role', () => {
+    expect(
+      mapOfficialRosterRole(
+        'Assistant Professor; Predoctoral Fellowship Site Coordinator',
+        'Lab Members',
+      ),
+    ).toBe('core-faculty');
+    expect(mapOfficialRosterRole('Predoctoral Fellow', 'Lab Members')).toBe('grad-student');
+  });
+
+  it('never reads collaborators or former members as current members, even when configured', () => {
+    const sectioned = (label: string, body: string) => `
+      <section class="organization-member-listing" aria-label="${label}">
+        <h2>${label}</h2>${body}
+      </section>`;
+    const html = `
+      <html><head><meta property="publish-date" content="7/22/2025" /></head><body>
+        ${sectioned('Lab Members', card('Member Fixture', 'Postdoctoral Associate', '/lab/fixture/profile/member-fixture/'))}
+        ${sectioned('Collaborators', card('Collaborator Fixture', 'Professor of Medicine', '/lab/fixture/profile/collaborator-fixture/'))}
+        ${sectioned('Former Members', card('Former Fixture', 'Graduate Student', '/lab/fixture/profile/former-fixture/'))}
+      </body></html>`;
+
+    const roster = extractOfficialResearchHomeRoster(
+      html,
+      { ...config, currentSectionLabels: ['Lab Members', 'Collaborators', 'Former Members'] },
+      new Date('2026-07-14T00:00:00Z'),
+    );
+
+    expect(roster.members.map((member) => member.name)).toEqual(['Member Fixture']);
+  });
+
   it('maps supported roles and refuses ambiguous titles', () => {
     expect(mapOfficialRosterRole('Postdoctoral Associate', 'Current Members')).toBe('postdoc');
     expect(mapOfficialRosterRole('Research Assistant 2', 'Current Members')).toBe('staff');
