@@ -589,7 +589,7 @@ It then compares the operator's live deploy with the `beta` head on GitHub and r
 6. Deploys the operator service at the `beta` head when its live build is older, and waits until that deploy is live, before writing anything; a deploy that fails, is canceled or times out stops the promotion with Beta untouched.
 Then it applies the mirror and stops unless it reports `"status": "applied"`.
 7. Starts a Render one-off job on the Beta operator service running `yarn --cwd server promote:remote-phase --environment beta --confirm-beta-backup`, and polls it every 20 seconds for up to 4 hours.
-That job verifies the database names, re-gates visibility, runs strict data quality, the integrity gate, and the trust contract, updates the Beta index (a reconcile of the changed documents when its settings and embedder match the code, otherwise a full rebuild; `--full-search-rebuild` forces the rebuild), and runs `beta:readiness`, stopping at the first step that fails.
+That job verifies the database names, re-gates visibility, runs strict data quality, the integrity gate, and the trust contract, updates the Beta index (a reconcile of the changed documents, applying any drifted settings in place, when its embedder matches the code, otherwise a full rebuild; `--full-search-rebuild` forces the rebuild), and runs `beta:readiness`, stopping at the first step that fails.
 The trust contract runs with `--fail-on-public-visibility-violation`, so it fails only when a student can see a row that should not be shown; the held rows in `operator_review` are a standing queue the strict mode would fail on every mirror (#5007).
 
 ### What `yarn promote:production` does
@@ -601,7 +601,7 @@ A draft does not hold the data copy, because `docs/release-process.md` copies da
 4. Checks the Production operator service, which must deploy `main`, and reports whether its live build is behind the `main` head.
 5. Requires the operator to type `production`; it never accepts `--yes`.
 6. Deploys the operator service at the `main` head when its build is older, waiting until it is live and stopping before any write if it is not, then applies with `CONFIRM_LANE_A_COPY=true` and `CONFIRM_PROD_SCRAPE=true`, whose staged swap rolls a failed copy back.
-7. Starts a one-off job on the Production operator service running `promote:remote-phase --environment production`, which verifies the names, re-gates visibility, updates the Production index with `CONFIRM_PROD_SCRAPE=true` (a reconcile when its settings and embedder match the code, otherwise a full rebuild), and runs the Production smoke.
+7. Starts a one-off job on the Production operator service running `promote:remote-phase --environment production`, which verifies the names, re-gates visibility, updates the Production index with `CONFIRM_PROD_SCRAPE=true` (a reconcile when its embedder matches the code, otherwise a full rebuild), and runs the Production smoke.
 It refuses when `PFR3_MEILI_RESTORE_POINT` is not set; pass the restore point taken before this promotion as `--meili-restore-point <dump-uid>` and the start command carries it to the job, so the operator service's environment never needs a per-promotion edit ([Taking the Production restore point](#taking-the-production-restore-point)).
 8. Prints the remaining step from `docs/release-process.md`: mark the `main` promotion pull request ready and merge it.
 
@@ -873,7 +873,7 @@ SCRAPER_ENV=beta   yarn --cwd server launch:trust-contract   --collection=all   
 
 Create and verify the required Beta Meilisearch restore point or export.
 Then update the Beta search index after the gate, never before it, because the gate writes the tiers the index carries.
-The command reconciles only the changed documents when the live index's settings and embedder match the code and rebuilds otherwise; add `--full` to force the rebuild.
+The command reconciles only the changed documents, applying any drifted settings in place, when the live index's embedder matches the code and rebuilds otherwise; add `--full` to force the rebuild.
 Follow [the reindex runbook](meilisearch-reindex-runbook.md), which owns the command, the required variables, and how to confirm the rebuilt count:
 
 ```bash
@@ -1007,7 +1007,7 @@ Stop if the command does not print `"status": "applied"` or if any post-copy cou
 ## Phase 5: Production Search and Smoke Gate - Run in the Production Render Shell
 
 The current accepted-Beta copy replaces complete allowlisted MongoDB collections.
-The search step reads every promoted row and every indexed document, so a reconcile is complete after a whole-collection copy, and it falls back to a full rebuild when the live index's settings or embedder differ from the code (#5107).
+The search step reads every promoted row and every indexed document, so a reconcile is complete after a whole-collection copy, and it falls back to a full rebuild when the live index's embedder differs from the code (#5107), while drifted settings are applied in place (#5442).
 
 Run all commands in this phase from the Production Render shell.
 First verify the Production environment without printing credentials:

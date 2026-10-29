@@ -807,7 +807,7 @@ function derivePublicResearchEntityDto(
  */
 export interface ResearchEntitySearchAliasOptions extends PublicResearchEntityDtoOptions {
   leadMemberNamesByEntityId?: ReadonlyMap<string, readonly string[]>;
-  matchedMemberNameByEntityId?: ReadonlyMap<string, string>;
+  matchedMemberNameByEntityId?: ReadonlyMap<string, { name: string; role: string }>;
   identityLeadDirectorEntityIds?: ReadonlySet<string>;
   leadMemberNamesUnavailable?: boolean;
   emeritusWayInByEntityId?: ReadonlyMap<
@@ -885,7 +885,7 @@ export function addResearchEntitySearchAliases<T extends { hits: Record<string, 
         ? { ...hit, [IDENTITY_LEAD_DIRECTS_ORGANIZATION]: true }
         : hit;
       const leadName = leadMemberNames?.[0];
-      const matchedMemberName = matchedMemberNameByEntityId?.get(hitKey);
+      const matchedMember = matchedMemberNameByEntityId?.get(hitKey);
       return {
         ...toPublicResearchEntityDto(
           {
@@ -899,7 +899,9 @@ export function addResearchEntitySearchAliases<T extends { hits: Record<string, 
           { ...listOptions, leadMemberNames },
         ),
         ...(leadName ? { leadName } : {}),
-        ...(matchedMemberName ? { matchedMemberName } : {}),
+        ...(matchedMember
+          ? { matchedMemberName: matchedMember.name, matchedMemberRole: matchedMember.role }
+          : {}),
       };
     }),
   );

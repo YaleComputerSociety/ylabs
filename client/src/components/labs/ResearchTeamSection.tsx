@@ -64,10 +64,44 @@ const byYearThenLastName = (
   );
 };
 
-function UndergraduateLine({ member }: { member: LabRosterUndergraduate }) {
+const memberNameKey = (value: string | undefined): string =>
+  (value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+const scrollHighlightedMemberIntoView = (node: HTMLLIElement | null) => {
+  node?.scrollIntoView?.({ block: 'center' });
+};
+
+const highlightedCardClassName = (isHighlighted: boolean): string =>
+  isHighlighted
+    ? 'border-[var(--yr-gold)] bg-gold-soft'
+    : 'border-[var(--yr-line)] bg-[var(--yr-panel)]';
+
+const highlightedItemProps = (isHighlighted: boolean) => ({
+  ref: isHighlighted ? scrollHighlightedMemberIntoView : undefined,
+  'data-highlighted-member': isHighlighted || undefined,
+  'aria-current': isHighlighted ? ('true' as const) : undefined,
+});
+
+function UndergraduateLine({
+  member,
+  isHighlighted = false,
+}: {
+  member: LabRosterUndergraduate;
+  isHighlighted?: boolean;
+}) {
   const years = undergraduateYears(member);
   return (
-    <li className="flex min-w-0 items-baseline justify-between gap-3 text-sm leading-relaxed">
+    <li
+      {...highlightedItemProps(isHighlighted)}
+      className={`flex min-w-0 items-baseline justify-between gap-3 text-sm leading-relaxed ${
+        isHighlighted ? '-mx-2 rounded-control bg-gold-soft px-2 ring-1 ring-[var(--yr-gold)]' : ''
+      }`}
+    >
       <span className="min-w-0 font-medium text-ink">{member.name}</span>
       {years && <span className="shrink-0 text-xs tabular-nums text-muted">{years}</span>}
     </li>
@@ -77,13 +111,20 @@ function UndergraduateLine({ member }: { member: LabRosterUndergraduate }) {
 function UndergraduateCard({
   member,
   profileUrl,
+  isHighlighted = false,
 }: {
   member: LabRosterUndergraduate;
   profileUrl: string;
+  isHighlighted?: boolean;
 }) {
   const years = undergraduateYears(member);
   return (
-    <li className="min-w-0 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] px-3 py-2 text-sm">
+    <li
+      {...highlightedItemProps(isHighlighted)}
+      className={`min-w-0 rounded-card border px-3 py-2 text-sm ${highlightedCardClassName(
+        isHighlighted,
+      )}`}
+    >
       <a
         href={profileUrl}
         target="_blank"
@@ -102,12 +143,19 @@ function UndergraduateCard({
 
 function UndergraduateResearchers({
   undergraduates,
+  highlightedMemberName,
 }: {
   undergraduates: LabRosterUndergraduate[];
+  highlightedMemberName?: string;
 }) {
-  const [showAllPast, setShowAllPast] = useState(false);
+  const highlightedKey = memberNameKey(highlightedMemberName);
+  const isHighlighted = (member: LabRosterUndergraduate) =>
+    Boolean(highlightedKey) && memberNameKey(member.name) === highlightedKey;
   const current = undergraduates.filter((member) => member.status === 'current');
   const past = undergraduates.filter((member) => member.status === 'past').sort(byYearThenLastName);
+  const [showAllPast, setShowAllPast] = useState(
+    () => past.findIndex(isHighlighted) >= PAST_UNDERGRADUATES_SHOWN_FIRST,
+  );
   const shownPast = showAllPast ? past : past.slice(0, PAST_UNDERGRADUATES_SHOWN_FIRST);
   const withProfile = current.flatMap((member) => {
     const profileUrl = safeHttpUrl(member.profileUrl);
@@ -128,14 +176,23 @@ function UndergraduateResearchers({
       {withProfile.length > 0 && (
         <ul className="mb-2 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2">
           {withProfile.map(({ member, profileUrl }) => (
-            <UndergraduateCard key={member.name} member={member} profileUrl={profileUrl} />
+            <UndergraduateCard
+              key={member.name}
+              member={member}
+              profileUrl={profileUrl}
+              isHighlighted={isHighlighted(member)}
+            />
           ))}
         </ul>
       )}
       {withoutProfile.length > 0 && (
         <ul className="grid min-w-0 grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
           {withoutProfile.map((member) => (
-            <UndergraduateLine key={member.name} member={member} />
+            <UndergraduateLine
+              key={member.name}
+              member={member}
+              isHighlighted={isHighlighted(member)}
+            />
           ))}
         </ul>
       )}
@@ -155,7 +212,11 @@ function UndergraduateResearchers({
             className="grid min-w-0 grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2"
           >
             {shownPast.map((member) => (
-              <UndergraduateLine key={member.name} member={member} />
+              <UndergraduateLine
+                key={member.name}
+                member={member}
+                isHighlighted={isHighlighted(member)}
+              />
             ))}
           </ul>
           {past.length > PAST_UNDERGRADUATES_SHOWN_FIRST && (
@@ -217,18 +278,6 @@ function UndergraduateMemberLineRow({
   );
 }
 
-const memberNameKey = (value: string | undefined): string =>
-  (value || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-
-const scrollHighlightedMemberIntoView = (node: HTMLLIElement | null) => {
-  node?.scrollIntoView?.({ block: 'center' });
-};
-
 function TeamMemberGroup({
   group: { role, label },
   members,
@@ -262,14 +311,10 @@ function TeamMemberGroup({
           return (
             <li
               key={`${member.user.publicKey || name}-${member.role}`}
-              ref={isHighlighted ? scrollHighlightedMemberIntoView : undefined}
-              data-highlighted-member={isHighlighted || undefined}
-              aria-current={isHighlighted ? 'true' : undefined}
-              className={`min-w-0 rounded-card border px-3 py-2 text-sm ${
-                isHighlighted
-                  ? 'border-[var(--yr-gold)] bg-gold-soft'
-                  : 'border-[var(--yr-line)] bg-[var(--yr-panel)]'
-              }`}
+              {...highlightedItemProps(isHighlighted)}
+              className={`min-w-0 rounded-card border px-3 py-2 text-sm ${highlightedCardClassName(
+                isHighlighted,
+              )}`}
             >
               {profileUrl ? (
                 <a
@@ -357,8 +402,17 @@ export default function ResearchTeamSection({
             leadPersonNames={leadPersonNames}
           />
         ))}
-        <TeamMemberGroup group={UNDERGRADUATE_GROUP} members={teamMembers} />
-        {undergraduates.length > 0 && <UndergraduateResearchers undergraduates={undergraduates} />}
+        <TeamMemberGroup
+          group={UNDERGRADUATE_GROUP}
+          members={teamMembers}
+          highlightedMemberName={highlightedMemberName}
+        />
+        {undergraduates.length > 0 && (
+          <UndergraduateResearchers
+            undergraduates={undergraduates}
+            highlightedMemberName={highlightedMemberName}
+          />
+        )}
         {pastUndergraduateLines.map((line) => (
           <UndergraduateMemberLineRow
             key={line.status}

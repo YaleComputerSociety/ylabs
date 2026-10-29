@@ -30,6 +30,12 @@ const ROSTER_FACULTY = {
   firstName: 'Casey',
   lastName: 'Fernhollow',
 };
+const ROSTER_POSTDOC = {
+  displayName: 'Emery Thistlecombe',
+  firstName: 'Emery',
+  lastName: 'Thistlecombe',
+};
+const LISTED_UNDERGRADUATE = 'Sloane Brackenridge';
 const UNLISTED_FACULTY = {
   displayName: 'Jordan Marrowind',
   firstName: 'Jordan',
@@ -84,6 +90,7 @@ describe('a person-name search names the lab member the lab page lists', () => {
     entityId = new mongoose.Types.ObjectId();
     const observedAt = new Date();
     const membershipKey = 'fixture-roster-membership';
+    const postdocMembershipKey = 'fixture-roster-postdoc-membership';
     await db.collection('research_entities').insertOne({
       _id: entityId,
       slug: SLUG,
@@ -111,7 +118,9 @@ describe('a person-name search names the lab member the lab page lists', () => {
         state: 'current',
         observedAt,
         sourceUrl: ROSTER_URL,
-        memberKeys: [membershipKey],
+        memberKeys: [membershipKey, postdocMembershipKey],
+        freshnessExpiresAt: new Date(observedAt.getTime() + 30 * 24 * 60 * 60 * 1000),
+        undergraduates: [{ name: LISTED_UNDERGRADUATE, status: 'current' }],
       },
     });
     await seedPerson(LEAD, 'PI', { source: { name: 'fixture-faculty', url: SOURCE_URL } });
@@ -122,6 +131,17 @@ describe('a person-name search names the lab member the lab page lists', () => {
         sourceUrl: ROSTER_URL,
         evidenceStatus: 'verified',
         membershipKey,
+        observedAt,
+        freshnessExpiresAt: new Date(observedAt.getTime() + 30 * 24 * 60 * 60 * 1000),
+      },
+    });
+    await seedPerson(ROSTER_POSTDOC, 'POSTDOC', {
+      source: { name: 'official-research-home-roster', url: ROSTER_URL },
+      rosterProvenance: {
+        sourceName: 'official-research-home-roster',
+        sourceUrl: ROSTER_URL,
+        evidenceStatus: 'verified',
+        membershipKey: postdocMembershipKey,
         observedAt,
         freshnessExpiresAt: new Date(observedAt.getTime() + 30 * 24 * 60 * 60 * 1000),
       },
@@ -146,7 +166,20 @@ describe('a person-name search names the lab member the lab page lists', () => {
   it('names a member the team section lists, alongside the lead', async () => {
     const card = await cardFor(ROSTER_FACULTY.displayName);
     expect(card?.matchedMemberName).toBe(ROSTER_FACULTY.displayName);
+    expect(card?.matchedMemberRole).toBe('core-faculty');
     expect(card?.leadName).toBe(LEAD.displayName);
+  }, 60000);
+
+  it('names a postdoc the team section lists, with the postdoc role', async () => {
+    const card = await cardFor(ROSTER_POSTDOC.displayName);
+    expect(card?.matchedMemberName).toBe(ROSTER_POSTDOC.displayName);
+    expect(card?.matchedMemberRole).toBe('postdoc');
+  }, 60000);
+
+  it('names an undergraduate the lab page lists, with the undergraduate role', async () => {
+    const card = await cardFor(LISTED_UNDERGRADUATE);
+    expect(card?.matchedMemberName).toBe(LISTED_UNDERGRADUATE);
+    expect(card?.matchedMemberRole).toBe('undergrad');
   }, 60000);
 
   it('names nobody for a member the lab page does not list', async () => {

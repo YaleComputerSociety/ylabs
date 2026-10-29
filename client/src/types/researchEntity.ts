@@ -32,8 +32,12 @@ export interface ResearchEntityQualitySummary {
 export type StudentVisibilityTier =
   'student_ready' | 'limited_but_safe' | 'operator_review' | 'suppressed';
 
+export type MatchedLabMemberRole =
+  'core-faculty' | 'affiliated' | 'postdoc' | 'grad-student' | 'undergrad' | 'past-undergrad';
+
 export interface ResearchEntity extends ResearchEntityBacking {
   matchedMemberName?: string;
+  matchedMemberRole?: MatchedLabMemberRole;
   leadName?: string;
   /** Whether public lead identity evidence is safe to display or requires review. */
   leadIdentityStatus?: 'verified' | 'under_review';

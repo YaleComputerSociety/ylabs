@@ -303,6 +303,47 @@ describe('ResearchTeamSection', () => {
     ).toBeNull();
   });
 
+  it('highlights a listed current undergraduate the search named', () => {
+    render(
+      <ResearchTeamSection
+        members={[]}
+        roster={roster({
+          status: 'current',
+          undergraduates: [
+            { name: 'Fixture Undergrad One', status: 'current' },
+            { name: 'Fixture Undergrad Two', status: 'current' },
+          ],
+        })}
+        highlightedMemberName="fixture undergrad two"
+      />,
+    );
+    expect(
+      screen.getByText('Fixture Undergrad Two').closest('li')?.getAttribute('aria-current'),
+    ).toBe('true');
+    expect(
+      screen.getByText('Fixture Undergrad One').closest('li')?.getAttribute('aria-current'),
+    ).toBeNull();
+  });
+
+  it('opens the past list when the named undergraduate sits past its first rows', () => {
+    const past = Array.from({ length: 12 }, (_, index) => ({
+      name: `Fixture Alumnus ${String.fromCharCode(65 + index)}`,
+      status: 'past' as const,
+      endYear: 2020 - index,
+    }));
+    render(
+      <ResearchTeamSection
+        members={[]}
+        roster={roster({ status: 'current', undergraduates: past })}
+        highlightedMemberName="Fixture Alumnus L"
+      />,
+    );
+    expect(screen.getByText('Fixture Alumnus L').closest('li')?.getAttribute('aria-current')).toBe(
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'Show fewer' })).toBeTruthy();
+  });
+
   it('highlights nobody for a member value with no name in it', () => {
     render(
       <ResearchTeamSection

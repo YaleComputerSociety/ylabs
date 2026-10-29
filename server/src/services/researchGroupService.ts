@@ -1270,7 +1270,9 @@ export const fuseKeywordAndSemanticRankings = <T>(
 };
 
 const PERSON_FIELD_ATTRIBUTES = ['leadProfessorNames', 'professorNames'];
-const PERSON_NAME_ATTRIBUTES = [...PERSON_FIELD_ATTRIBUTES, 'name', 'displayName'];
+const WHOLE_NAME_PERSON_FIELD_ATTRIBUTES = [...PERSON_FIELD_ATTRIBUTES, 'memberNames'];
+const TITLE_ATTRIBUTES = ['name', 'displayName'];
+const PERSON_NAME_ATTRIBUTES = [...WHOLE_NAME_PERSON_FIELD_ATTRIBUTES, ...TITLE_ATTRIBUTES];
 
 // A query is a person search only when every one of its words is matched inside a
 // person's name on the best keyword hit. The semantic neighbours of a name
@@ -1353,8 +1355,12 @@ export const keywordLegTopHitIsNameMatch = (
       tokens.some((token) => spans.wholeWords.has(token))
     );
   };
-  if (matchesNamesIn(PERSON_FIELD_ATTRIBUTES)) return true;
-  if (!matchesNamesIn(PERSON_NAME_ATTRIBUTES)) return false;
+  // A student is matched only by a whole name (#5442), so a lone topic word that is
+  // some roster member's given name or surname never turns a query into a person search.
+  const personFields =
+    tokens.length < 2 ? PERSON_FIELD_ATTRIBUTES : WHOLE_NAME_PERSON_FIELD_ATTRIBUTES;
+  if (matchesNamesIn(personFields)) return true;
+  if (!matchesNamesIn([...personFields, ...TITLE_ATTRIBUTES])) return false;
   const matchedAttributes = new Set(
     Object.keys(top._matchesPosition ?? {}).map((attribute) => attribute.split('.')[0]),
   );
@@ -1566,43 +1572,76 @@ const personNameWords = (value: string): string[] =>
  * so the card can say why a lab matched. Every query word must be a word of that one
  * member's name, which keeps a topic word or a lone surname from claiming a member.
  */
-export const matchedLabMemberName = (
+export type MatchedLabMemberRole =
+  'core-faculty' | 'affiliated' | 'postdoc' | 'grad-student' | 'undergrad' | 'past-undergrad';
+
+export interface MatchedLabMember {
+  name: string;
+  role: MatchedLabMemberRole;
+}
+
+export const matchedLabMember = (
   query: string,
-  names: { leadProfessorNames: string[]; professorNames: string[] },
-): string | undefined => {
+  names: { leadProfessorNames: string[]; members: MatchedLabMember[] },
+): MatchedLabMember | undefined => {
   const queryWords = personNameWords(query);
   if (queryWords.length < 2) return undefined;
   const leads = new Set(names.leadProfessorNames.map((name) => personNameWords(name).join(' ')));
-  return names.professorNames.find((name) => {
-    const nameWords = personNameWords(name);
+  return names.members.find((member) => {
+    const nameWords = personNameWords(member.name);
     if (leads.has(nameWords.join(' '))) return false;
     return queryWords.every((word) => nameWords.includes(word));
   });
 };
 
-const MATCHABLE_LAB_MEMBER_ROLES = new Set(['core-faculty', 'affiliated']);
+export const matchedLabMemberName = (
+  query: string,
+  names: { leadProfessorNames: string[]; professorNames: string[] },
+): string | undefined =>
+  matchedLabMember(query, {
+    leadProfessorNames: names.leadProfessorNames,
+    members: names.professorNames.map((name) => ({ name, role: 'core-faculty' as const })),
+  })?.name;
 
-const presentedLabMemberNames = (
+const MATCHABLE_LAB_MEMBER_ROLES: ReadonlySet<string> = new Set([
+  'core-faculty',
+  'affiliated',
+  'postdoc',
+  'grad-student',
+  'undergrad',
+]);
+
+export const presentedLabMembers = (
   entity: Record<string, any>,
   rosterEntries: ResearchEntityRosterEntry[],
   now: Date,
-): { leadProfessorNames: string[]; professorNames: string[] } => {
+): { leadProfessorNames: string[]; members: MatchedLabMember[] } => {
   const members = publicResearchEntityDetailRosterMembers(entity, rosterEntries, now);
+  const rosterMembers = members
+    .filter((member) => isFreshVerifiedOfficialRosterRow(member.row, now, entity.rosterEnrichment))
+    .slice(0, MAX_PUBLIC_ROSTER_MEMBERS)
+    .filter((member) => MATCHABLE_LAB_MEMBER_ROLES.has(member.role))
+    .map((member) => ({
+      name: memberDisplayName(member),
+      role: member.role as MatchedLabMemberRole,
+    }))
+    .filter((member) => Boolean(member.name));
+  const listedUndergraduates = publicRosterUndergraduates(entity.rosterEnrichment, now).map(
+    (undergraduate) => ({
+      name: undergraduate.name,
+      role: (undergraduate.status === 'past'
+        ? 'past-undergrad'
+        : 'undergrad') as MatchedLabMemberRole,
+    }),
+  );
   return {
     leadProfessorNames: publicLeadMemberNames(members),
-    professorNames: members
-      .filter((member) =>
-        isFreshVerifiedOfficialRosterRow(member.row, now, entity.rosterEnrichment),
-      )
-      .slice(0, MAX_PUBLIC_ROSTER_MEMBERS)
-      .filter((member) => MATCHABLE_LAB_MEMBER_ROLES.has(member.role))
-      .map(memberDisplayName)
-      .filter(Boolean),
+    members: [...rosterMembers, ...listedUndergraduates],
   };
 };
 
 interface MatchedLabMemberNameRead {
-  byEntityId: Map<string, string>;
+  byEntityId: Map<string, MatchedLabMember>;
   unavailable: boolean;
 }
 
@@ -1610,7 +1649,7 @@ async function optionalMatchedLabMemberNames(
   query: string,
   entities: Array<Record<string, any>>,
 ): Promise<MatchedLabMemberNameRead> {
-  const byEntityId = new Map<string, string>();
+  const byEntityId = new Map<string, MatchedLabMember>();
   if (entities.length === 0 || personNameWords(query).length < 2) {
     return { byEntityId, unavailable: false };
   }
@@ -1621,9 +1660,9 @@ async function optionalMatchedLabMemberNames(
     const now = new Date();
     for (const entity of entities) {
       const entityId = researchGroupDocumentId(entity._id);
-      const entries = rosterByEntityId.get(entityId);
-      if (!entityId || !entries?.length) continue;
-      const matched = matchedLabMemberName(query, presentedLabMemberNames(entity, entries, now));
+      if (!entityId) continue;
+      const entries = rosterByEntityId.get(entityId) ?? [];
+      const matched = matchedLabMember(query, presentedLabMembers(entity, entries, now));
       if (matched) byEntityId.set(entityId, matched);
     }
   } catch (error) {

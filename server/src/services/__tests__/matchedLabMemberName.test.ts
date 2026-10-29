@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { matchedLabMemberName } from '../researchGroupService';
+import { matchedLabMember, matchedLabMemberName } from '../researchGroupService';
 
 const names = {
   leadProfessorNames: ['Robin Fixture'],
@@ -25,5 +25,30 @@ describe('matchedLabMemberName', () => {
 
   it('does not join words across two members', () => {
     expect(matchedLabMemberName('Casey Sample', names)).toBeUndefined();
+  });
+});
+
+describe('matchedLabMember', () => {
+  const members = {
+    leadProfessorNames: ['Robin Fixture'],
+    members: [
+      { name: 'Casey Example', role: 'core-faculty' as const },
+      { name: 'Avery Postdoc-Sample', role: 'postdoc' as const },
+      { name: 'Morgan Undergrad', role: 'undergrad' as const },
+      { name: 'Riley Alumna', role: 'past-undergrad' as const },
+    ],
+  };
+
+  it('names a student or postdoc with the role the lab page lists them under', () => {
+    expect(matchedLabMember('Morgan Undergrad', members)).toEqual({
+      name: 'Morgan Undergrad',
+      role: 'undergrad',
+    });
+    expect(matchedLabMember('riley alumna', members)?.role).toBe('past-undergrad');
+    expect(matchedLabMember('Avery Postdoc Sample', members)?.role).toBe('postdoc');
+  });
+
+  it('still needs a whole name for a student', () => {
+    expect(matchedLabMember('Morgan', members)).toBeUndefined();
   });
 });

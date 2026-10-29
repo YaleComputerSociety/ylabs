@@ -30,6 +30,7 @@ import {
   rememberOpenedResearchResult,
   researchResultsReturnState,
 } from '../../utils/researchResultsReturn';
+import type { MatchedLabMemberRole } from '../../types/researchEntity';
 
 interface ResearchHomeCardProps {
   home: ResearchCluster;
@@ -48,6 +49,15 @@ const isInteractiveElement = (target: EventTarget | null): boolean =>
   target instanceof HTMLElement && Boolean(target.closest('a, button'));
 
 const DEFAULT_CONTACT_ROLE = 'Principal investigator';
+
+const MATCHED_MEMBER_ROLE_LABELS: Record<MatchedLabMemberRole, string> = {
+  'core-faculty': 'Faculty',
+  affiliated: 'Affiliated faculty',
+  postdoc: 'Postdoc',
+  'grad-student': 'Graduate student',
+  undergrad: 'Undergraduate',
+  'past-undergrad': 'Past undergraduate',
+};
 
 const servedContactRole = (role?: string): string => (role || '').trim() || DEFAULT_CONTACT_ROLE;
 
@@ -138,10 +148,12 @@ const ResearchHomeCard = ({
     home.entities.length === 1 && primaryLinkedEntity && homeEntities.length === 1
       ? primaryLinkedEntity
       : null;
-  const matchedMemberName =
-    singleLinkedEntity && home.entities.length === 1
-      ? home.entities[0].matchedMemberName
-      : undefined;
+  const matchedMember =
+    singleLinkedEntity && home.entities.length === 1 ? home.entities[0] : undefined;
+  const matchedMemberName = matchedMember?.matchedMemberName;
+  const matchedMemberRoleLabel = matchedMember?.matchedMemberRole
+    ? MATCHED_MEMBER_ROLE_LABELS[matchedMember.matchedMemberRole]
+    : undefined;
   const wayInBadges = home.wayInBadges?.length
     ? home.wayInBadges
     : buildWayInBadgesFromEntity(home.entities[0]);
@@ -364,6 +376,9 @@ const ResearchHomeCard = ({
             >
               {matchedMemberName}
             </Link>
+            {matchedMemberRoleLabel && (
+              <span className="font-normal"> · {matchedMemberRoleLabel}</span>
+            )}
           </p>
         )}
 
