@@ -154,6 +154,14 @@ const withoutProgramServiceWording = (text: string): string =>
     .replace(
       /\bpredoctoral (?:fellowship|training|internship|program)(?: \w+)? (?:coordinator|director|chair)\b/g,
       ' ',
+    )
+    .replace(
+      /\b(?:to|for|of) (?:the )?(?:professors?|faculty|principal investigators?|instructors?|lecturers?|visitors?|visiting \w+)\b/g,
+      ' ',
+    )
+    .replace(
+      /\b(?:faculty|visiting \w+) (?:affairs|support|development|services|relations|programs?)\b/g,
+      ' ',
     );
 
 const STUDENT_ROLES: ReadonlySet<OfficialRosterRole | undefined> = new Set([

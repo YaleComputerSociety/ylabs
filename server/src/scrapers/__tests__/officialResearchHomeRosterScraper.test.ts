@@ -77,7 +77,7 @@ describe('official research-home roster acquisition', () => {
     expect(mapOfficialRosterRole('Instructor of Medicine', 'Lab Members')).toBe('core-faculty');
   });
 
-  it('reads a heading only when the title names no role and the heading names exactly one', () => {
+  it('reads a heading only when the title names no role and the heading names one role or leads with a student role', () => {
     expect(mapOfficialRosterRole('', 'Postdoctoral Fellows')).toBe('postdoc');
     expect(mapOfficialRosterRole('Research Assistant', 'Undergraduate Researchers')).toBe(
       'undergrad',
@@ -97,6 +97,22 @@ describe('official research-home roster acquisition', () => {
     );
     expect(mapOfficialRosterRole('Visiting Scholar', 'Lab Members')).toBe('affiliate');
     expect(mapOfficialRosterRole('', 'Students and Visiting Scholars')).toBe('affiliate');
+  });
+
+  it("does not read the faculty or visitors a staff title serves as the person's own role", () => {
+    expect(
+      mapOfficialRosterRole('Administrative Assistant to Professor Example', 'Lab Members'),
+    ).toBe('staff');
+    expect(mapOfficialRosterRole('Lab Manager for the Principal Investigator', 'People')).toBe(
+      'staff',
+    );
+    expect(mapOfficialRosterRole('Program Manager, Faculty Development', 'People')).toBe('staff');
+    expect(mapOfficialRosterRole('Coordinator, Faculty Affairs', 'People')).toBe('staff');
+    expect(mapOfficialRosterRole('Coordinator, Visiting Scholars Program', 'People')).toBe('staff');
+    expect(mapOfficialRosterRole('Postdoctoral Fellow for Professor Example', 'People')).toBe(
+      'postdoc',
+    );
+    expect(mapOfficialRosterRole('Professor of Medicine', 'People')).toBe('core-faculty');
   });
 
   it('does not read a predoctoral program job as a student role', () => {
