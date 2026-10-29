@@ -866,8 +866,7 @@ const Research = () => {
           ? (appliedFilters.departments[0] ?? '')
           : (filters.departments?.[0] ?? '');
         const entityType = filters.entityType?.[0] ?? '';
-        const hostsUndergrads =
-          filters.hostsUndergrads === true && appliedFilters.hostsUndergrads !== false;
+        const hostsUndergrads = filters.hostsUndergrads === true;
         const welcomesUndergrads =
           filters.welcomesUndergrads === true && appliedFilters.welcomesUndergrads !== false;
         const appliedStudentFilters: ResearchSearchFilters = {
@@ -879,7 +878,6 @@ const Research = () => {
         };
         setSelectedSchool(school);
         setSelectedDepartment(department);
-        setSelectedHostsUndergrads(hostsUndergrads);
         setSelectedWelcomesUndergrads(welcomesUndergrads);
         if (!trimmed && !hasStructuredFilters(appliedStudentFilters)) {
           writeResearchSearchParams(

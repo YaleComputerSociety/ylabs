@@ -189,7 +189,6 @@ export interface ResearchGroupSearchResponse {
   appliedFilters?: {
     school?: string[];
     departments?: string[];
-    hostsUndergrads?: false;
     welcomesUndergrads?: false;
   };
 }

@@ -102,6 +102,7 @@ import {
   addResearchEntitySearchAliases,
   detailServedSource,
   publicResearchEntityId,
+  entityWelcomesUndergraduates,
   publicSourceLinkHealthArray,
   toPublicResearchEntitySummaryDto,
   type PublicResearchEntityDto,
@@ -1551,12 +1552,9 @@ const POOL_TALLIED_RESEARCH_FACETS: ReadonlyArray<{
 ];
 
 const TOGGLE_FILTERS_AHEAD_OF_INDEX: ReadonlyArray<{
-  filterKey: 'hostsUndergrads' | 'welcomesUndergrads';
+  filterKey: 'welcomesUndergrads';
   indexField: string;
-}> = [
-  { filterKey: 'hostsUndergrads', indexField: HOSTS_UNDERGRADS_INDEX_FIELD },
-  { filterKey: 'welcomesUndergrads', indexField: WELCOMES_UNDERGRADS_INDEX_FIELD },
-];
+}> = [{ filterKey: 'welcomesUndergrads', indexField: WELCOMES_UNDERGRADS_INDEX_FIELD }];
 
 const liveIndexFilterability = async (
   meiliIndex: Awaited<ReturnType<typeof getMeiliSearchIndex>>,
@@ -1737,10 +1735,12 @@ export async function searchResearchGroupsViaMeili(
       ? { query, corrections: [] }
       : correctResearchSearchQuerySpelling(query);
   const studentFilters = await resolveStudentFiltersAgainstCorpus(filters, options);
-  const droppedToggleFilters = withoutUnfilterableToggles(
-    studentFilters.filters,
-    await liveIndexFilterability(await getMeiliSearchIndex('researchentities')),
-  ).dropped;
+  const droppedToggleFilters = answersFromMongoBrowse(spelling.query, options)
+    ? undefined
+    : withoutUnfilterableToggles(
+        studentFilters.filters,
+        await liveIndexFilterability(await getMeiliSearchIndex('researchentities')),
+      ).dropped;
   const searched = await searchResearchGroupsForQuery(
     spelling.query,
     studentFilters.filters,
@@ -1783,6 +1783,9 @@ const resolveStudentFiltersAgainstCorpus = async (
   });
 };
 
+const answersFromMongoBrowse = (query: string, options: ResearchGroupSearchOptions): boolean =>
+  options.lowQualityFirst === true && normalizeResearchSearchQuery(query).raw === '';
+
 async function searchResearchGroupsForQuery(
   query: string,
   filters: ResearchGroupFilterInput,
@@ -1796,10 +1799,8 @@ async function searchResearchGroupsForQuery(
   await warmServedResearchAreaVocabulary();
   const meiliIndex = await getMeiliSearchIndex('researchentities');
   const liveFilterable = await liveIndexFilterability(meiliIndex);
-  const safeFilters = withoutUnfilterableToggles(
-    sanitizeResearchGroupSearchFilters(filters || {}),
-    liveFilterable,
-  ).filters;
+  const sanitizedFilters = sanitizeResearchGroupSearchFilters(filters || {});
+  const safeFilters = withoutUnfilterableToggles(sanitizedFilters, liveFilterable).filters;
   const facetFields = RESEARCH_ENTITY_SEARCH_FACET_FIELDS.filter(liveFilterable);
   const safeOptions = sanitizeResearchGroupSearchOptions(options);
   const safePageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(pageSize) || 24));
@@ -1859,12 +1860,15 @@ async function searchResearchGroupsForQuery(
       { includeOperatorFields: safeOptions.includeNonPublic },
     );
   }
-  if (isBrowseAllQuery && safeOptions.lowQualityFirst) {
+  if (answersFromMongoBrowse(query, safeOptions)) {
     const candidates = withServablePublicResearchEntities(
       (await ResearchEntity.find(
-        mongoFilterFromResearchFilters(safeFilters, safeOptions.includeNonPublic),
+        mongoFilterFromResearchFilters(sanitizedFilters, safeOptions.includeNonPublic),
       ).lean()) as any[],
       safeOptions.includeNonPublic,
+    ).filter(
+      (entity) =>
+        sanitizedFilters.welcomesUndergrads !== true || entityWelcomesUndergraduates(entity),
     );
     const candidatesWithQuality = await withQualitySummaries(candidates as any[]);
     const filteredCandidates = candidatesWithQuality
