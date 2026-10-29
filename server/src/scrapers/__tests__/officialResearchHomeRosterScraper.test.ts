@@ -1685,6 +1685,9 @@ describe('undergraduates the roster used to miss (#5296)', () => {
     expect(mapOfficialRosterRole('Undergraduate/Master’s student', '')).toBe('undergrad');
     expect(mapOfficialRosterRole('B.S./M.S. student', '')).toBe('undergrad');
     expect(mapOfficialRosterRole('Graduate Student', '')).toBe('grad-student');
+    expect(mapOfficialRosterRole('BS/MS Student', 'Faculty & Staff')).toBe('undergrad');
+    expect(mapOfficialRosterRole('BS/MS Student', 'Faculty, Staff and Students')).toBe('undergrad');
+    expect(mapOfficialRosterRole('BS/MS Student', 'Graduate Students')).toBe('grad-student');
     const html = main(`<h2>Alumni</h2><ul>
       <li>Harper Wren, Undergraduate/Master’s student, now consultant at Example Co</li>
       <li>Avery Quill, Yale MD-PhD Student, BA/MS Elsewhere University</li>

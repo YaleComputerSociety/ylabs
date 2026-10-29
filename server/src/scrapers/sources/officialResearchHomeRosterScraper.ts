@@ -200,9 +200,14 @@ export function mapOfficialRosterRole(
 ): OfficialRosterRole | null {
   const raw = `${String(sectionValue ?? '')} ${String(titleValue ?? '')}`;
   if (COMBINED_BACHELORS_MASTERS_STUDENT.test(raw)) {
+    const withoutCombinedPhrase = (value: unknown) =>
+      String(value ?? '').replace(
+        new RegExp(COMBINED_BACHELORS_MASTERS_STUDENT.source, 'giu'),
+        ' ',
+      );
     const otherRole = mapOfficialRosterRole(
-      raw.replace(new RegExp(COMBINED_BACHELORS_MASTERS_STUDENT.source, 'giu'), ' '),
-      '',
+      withoutCombinedPhrase(titleValue),
+      withoutCombinedPhrase(sectionValue),
     );
     return otherRole === 'postdoc' || otherRole === 'grad-student' || otherRole === 'core-faculty'
       ? otherRole
