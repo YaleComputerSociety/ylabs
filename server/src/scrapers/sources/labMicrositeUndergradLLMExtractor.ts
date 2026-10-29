@@ -656,7 +656,7 @@ export function isAtOwnSiteRoot(url: string): boolean {
  * that lives at `/southasia` on a shared host, can link into a sibling program's section of the
  * same host, and a quote from there describes that program rather than this one (#3764).
  */
-export function pagesWithinEntityScope(pages: readonly PromptSourcePage[]): PromptSourcePage[] {
+export function pagesWithinEntityScope<T extends PromptSourcePage>(pages: readonly T[]): T[] {
   const home = pages[0] ? sectionPrefix(pages[0].url) : null;
   if (!home || !home.prefix) return [...pages];
   return pages.filter((page, index) => {

@@ -290,6 +290,38 @@ describe('LabSiteUndergradInvitationScraper', () => {
     await scraper.run(runContext([]));
     expect(fetched.filter((url) => url.endsWith('/lab/one'))).toHaveLength(1);
   });
+  it("refuses an invitation on a page that presents itself as another university's lab", async () => {
+    const { emitted } = await run(
+      {
+        'https://moved.example.com/': html(
+          'We welcome applications from talented undergraduate, graduate, and postdoctoral scholars.',
+        ).replace(
+          '</main>',
+          '</main><footer>Department of Bioengineering, University of Pennsylvania, Philadelphia</footer>',
+        ),
+      },
+      [lab('moved-lab', 'https://moved.example.com/')],
+    );
+    expect(emitted).toEqual([expect.objectContaining({ entityKey: 'moved-lab', value: null })]);
+  });
+  it("refuses an invitation on a linked page of another university's lab site", async () => {
+    const { emitted } = await run(
+      {
+        'https://moved.example.com/': html(
+          'We study cells.',
+          '<a href="/join">Join us</a>',
+        ).replace(
+          '</main>',
+          '</main><footer>Department of Bioengineering, University of Pennsylvania, Philadelphia</footer>',
+        ),
+        'https://moved.example.com/join': html(
+          'We are actively recruiting undergraduate researchers to join our lab.',
+        ),
+      },
+      [lab('moved-lab', 'https://moved.example.com/')],
+    );
+    expect(emitted).toEqual([expect.objectContaining({ entityKey: 'moved-lab', value: null })]);
+  });
 });
 
 describe('scopedCrawlUrls', () => {

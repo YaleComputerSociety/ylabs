@@ -16,6 +16,7 @@ import {
   defaultFetchPage,
   discoverSubPageUrls,
   isAtOwnSiteRoot,
+  namesNonYaleInstitution,
   PAGE_CHROME_SELECTOR,
   pagesWithinEntityScope,
   selectLabsToProcess,
@@ -51,12 +52,16 @@ interface CrawlPlan {
   linked: Set<string>;
 }
 
-interface ReadPage extends PromptSourcePage {
+export interface InvitationSourcePage extends PromptSourcePage {
+  belongsToAnotherInstitution?: boolean;
+}
+
+interface ReadPage extends InvitationSourcePage {
   crawl: CrawlPlan;
 }
 
 interface LabPagesRead {
-  pages: PromptSourcePage[];
+  pages: InvitationSourcePage[];
   complete: boolean;
 }
 
@@ -111,14 +116,25 @@ function pageText(html: string): string {
   );
 }
 
+const sourcePage = ({
+  url,
+  text,
+  belongsToAnotherInstitution,
+}: ReadPage): InvitationSourcePage => ({
+  url,
+  text,
+  belongsToAnotherInstitution,
+});
+
 export function strongestInvitationOnPages(
-  pages: readonly PromptSourcePage[],
+  pages: readonly InvitationSourcePage[],
   lab: CandidateLab,
   now: Date,
 ): ServedUndergradInvitation | null {
+  if (pages[0]?.belongsToAnotherInstitution) return null;
   let best: ServedUndergradInvitation | null = null;
   for (const page of pagesWithinEntityScope(pages)) {
-    if (quotePageIsAboutAnotherEntity(page.url, lab)) continue;
+    if (page.belongsToAnotherInstitution || quotePageIsAboutAnotherEntity(page.url, lab)) continue;
     const found = extractUndergradInvitation(page.text, now);
     if (!found) continue;
     const candidate = { ...found, sourceUrl: page.url };
@@ -212,7 +228,14 @@ export class LabSiteUndergradInvitationScraper implements IScraper {
     if (cached) return cached;
     const pending = this.fetchPage(url).then((page) =>
       page
-        ? { url: page.url, text: pageText(page.html), crawl: scopedCrawlUrls(page.html, page.url) }
+        ? {
+            url: page.url,
+            text: pageText(page.html),
+            belongsToAnotherInstitution: namesNonYaleInstitution(
+              blockLinesWithout(page.html, 'script, style, noscript, svg, iframe'),
+            ),
+            crawl: scopedCrawlUrls(page.html, page.url),
+          }
         : null,
     );
     this.pageCache.set(key, pending);
@@ -222,12 +245,12 @@ export class LabSiteUndergradInvitationScraper implements IScraper {
   private async readLabPages(lab: CandidateLab): Promise<LabPagesRead | null> {
     const home = await this.readOnce(lab.websiteUrl);
     if (!home) return null;
-    const pages: PromptSourcePage[] = [{ url: home.url, text: home.text }];
+    const pages: InvitationSourcePage[] = [sourcePage(home)];
     const { urls, linked } = home.crawl;
     let complete = true;
     for (const url of urls) {
       const page = await this.readOnce(url);
-      if (page) pages.push({ url: page.url, text: page.text });
+      if (page) pages.push(sourcePage(page));
       else if (linked.has(url)) complete = false;
     }
     return { pages, complete };
