@@ -132,15 +132,82 @@ const COMBINED_BACHELORS_MASTERS_STUDENT =
 const UNDERGRADUATE_SERVICE_ROLE =
   /\bundergraduate\s+(?:(?:research|studies|program)\s+){0,2}(?:contact|coordinator|advisor|adviser|liaison|program\s+manager|director)s?\b/i;
 
+const POSTDOC_ROLE = /\b(postdocs?|post docs?|post doctoral|postdoctoral)\b/;
+const GRADUATE_STUDENT_ROLE =
+  /\b(graduate students?|phd students?|phd candidates?|ph d students?|ph d candidates?|doctoral students?|doctoral candidates?|master s students?|masters students?|predoctoral)\b/;
+const UNDERGRADUATE_ROLE = /\b(undergraduates?|undergrads?)\b/;
+const VISITOR_ROLE = /\b(visitors?|visiting)\b/;
+const FACULTY_ROLE = /\b(professors?|faculty|principal investigators?|instructors?|lecturers?)\b/;
+const STAFF_ROLE =
+  /\b(lab manager|laboratory manager|research scientists?|postgraduate associates?|post graduate associates?|technicians?|coordinators?|data manager|staff|administrative assistant|executive assistant|administrators?|office manager|program manager|business manager|operations manager|director of operations)\b/;
+const GENERIC_STAFF_ROLE = /\b(research assistant|research associate)\b/;
+const GENERIC_AFFILIATE_ROLE = /\b(member|affiliate|fellow)\b/;
+const AFFILIATED_FACULTY_SECTION =
+  /\b(affiliated|associated|adjunct|visiting|external|collaborating)\s+(faculty|investigators?|members?)\b/;
+
+const withoutProgramServiceWording = (text: string): string =>
+  text
+    .replace(
+      /\b(?:director|dean|directors) of undergraduate (?:studies|education|research)\b|\bfor (?:yale )?(?:undergraduates?|undergrads?)\b/g,
+      ' ',
+    )
+    .replace(
+      /\bpredoctoral (?:fellowship|training|internship|program)(?: \w+)? (?:coordinator|director|chair)\b/g,
+      ' ',
+    )
+    .replace(
+      /\b(?:to|for|of) (?:the )?(?:professors?|faculty|principal investigators?|instructors?|lecturers?|visitors?|visiting \w+)\b/g,
+      ' ',
+    )
+    .replace(
+      /\b(?:faculty|visiting \w+) (?:affairs|support|development|services|relations|programs?)\b/g,
+      ' ',
+    );
+
+const STUDENT_ROLES: ReadonlySet<OfficialRosterRole | undefined> = new Set([
+  'postdoc',
+  'grad-student',
+  'undergrad',
+]);
+
+/** Every role a text names, most specific first; a person's own title names at most a few. */
+function rolesNamedIn(text: string): OfficialRosterRole[] {
+  const evidence = withoutProgramServiceWording(text);
+  const roles: OfficialRosterRole[] = [];
+  if (POSTDOC_ROLE.test(evidence)) roles.push('postdoc');
+  if (GRADUATE_STUDENT_ROLE.test(evidence)) roles.push('grad-student');
+  if (!UNDERGRADUATE_SERVICE_ROLE.test(evidence) && UNDERGRADUATE_ROLE.test(evidence)) {
+    roles.push('undergrad');
+  }
+  if (FACULTY_ROLE.test(evidence)) roles.push('core-faculty');
+  if (VISITOR_ROLE.test(evidence)) roles.push('affiliate');
+  if (STAFF_ROLE.test(evidence)) roles.push('staff');
+  return roles;
+}
+
+/**
+ * A person's own title decides their role; the section heading decides only for a title
+ * that names no role, and only when it names one role or leads with a student role, so an
+ * "Assistant Professor" under "Postdocs and Research Scientists" stays faculty, a blank line
+ * under "Undergraduate Students and Staff" is still an undergraduate, and a blank line under
+ * "Faculty & Staff" is withheld rather than guessed. Faculty under an "Affiliated Faculty"
+ * heading are affiliates, but a visiting or adjunct title is not: at Yale either can be the
+ * lab head's own appointment.
+ */
 export function mapOfficialRosterRole(
   titleValue: unknown,
   sectionValue: unknown,
 ): OfficialRosterRole | null {
   const raw = `${String(sectionValue ?? '')} ${String(titleValue ?? '')}`;
   if (COMBINED_BACHELORS_MASTERS_STUDENT.test(raw)) {
+    const withoutCombinedPhrase = (value: unknown) =>
+      String(value ?? '').replace(
+        new RegExp(COMBINED_BACHELORS_MASTERS_STUDENT.source, 'giu'),
+        ' ',
+      );
     const otherRole = mapOfficialRosterRole(
-      raw.replace(new RegExp(COMBINED_BACHELORS_MASTERS_STUDENT.source, 'giu'), ' '),
-      '',
+      withoutCombinedPhrase(titleValue),
+      withoutCombinedPhrase(sectionValue),
     );
     return otherRole === 'postdoc' || otherRole === 'grad-student' || otherRole === 'core-faculty'
       ? otherRole
@@ -148,31 +215,15 @@ export function mapOfficialRosterRole(
   }
   const title = normalizedLabel(titleValue);
   const section = normalizedLabel(sectionValue);
-  const evidence = `${section} ${title}`.replace(
-    /\b(?:director|dean|directors) of undergraduate (?:studies|education|research)\b|\bfor (?:yale )?(?:undergraduates?|undergrads?)\b/g,
-    ' ',
-  );
-  const servesUndergraduates = UNDERGRADUATE_SERVICE_ROLE.test(evidence);
-  if (/\b(postdocs?|post docs?|post doctoral|postdoctoral)\b/.test(evidence)) return 'postdoc';
-  if (
-    /\b(graduate student|phd student|phd candidate|ph d student|ph d candidate|doctoral student|doctoral candidate|master s student|masters student|predoctoral)\b/.test(
-      evidence,
-    )
-  ) {
-    return 'grad-student';
-  }
-  if (!servesUndergraduates && /\b(undergraduates?|undergrads?)\b/.test(evidence))
-    return 'undergrad';
-  if (
-    /\b(lab manager|laboratory manager|research assistant|research associate|research scientist|postgraduate associate|post graduate associate|technician|coordinator|data manager|staff|administrative assistant|executive assistant|administrators?|office manager|program manager|business manager|operations manager|director of operations)\b/.test(
-      evidence,
-    )
-  ) {
-    return 'staff';
-  }
-  if (/\b(professor|faculty)\b/.test(evidence)) return 'core-faculty';
-  if (/\b(member|affiliate|fellow|visitor|visiting)\b/.test(evidence)) return 'affiliate';
-  return null;
+  const sectionRoles = rolesNamedIn(section);
+  const sectionRole =
+    sectionRoles.length === 1 || STUDENT_ROLES.has(sectionRoles[0]) ? sectionRoles[0] : null;
+  const role =
+    rolesNamedIn(title)[0] ??
+    sectionRole ??
+    (GENERIC_STAFF_ROLE.test(title) ? 'staff' : null) ??
+    (GENERIC_AFFILIATE_ROLE.test(title) ? 'affiliate' : null);
+  return role === 'core-faculty' && AFFILIATED_FACULTY_SECTION.test(section) ? 'affiliate' : role;
 }
 
 interface RosterCard {
@@ -2100,6 +2151,14 @@ function publishDateIsRecent(sourcePublishedAt: Date | undefined, observedAt: Da
   return publishAgeDays >= -2 && publishAgeDays <= OFFICIAL_ROSTER_MAX_PUBLISH_AGE_DAYS;
 }
 
+const COLLABORATOR_SECTION_LABEL = /\b(?:collaborators?|collaborating)\b/i;
+
+/** Collaborators and alumni are not the lab's current members, whatever a config accepts. */
+const sectionListsCurrentMembers = (section: RosterSection): boolean =>
+  !section.withinPastSection &&
+  !isPastSectionLabel(section.label) &&
+  !COLLABORATOR_SECTION_LABEL.test(section.label);
+
 export function extractOfficialResearchHomeRoster(
   html: string,
   config: OfficialRosterConfig,
@@ -2143,6 +2202,7 @@ export function extractOfficialResearchHomeRoster(
     const label = normalizedLabel(section.label);
     if (!acceptedLabels.has(label)) continue;
     matchedLabels.add(label);
+    if (!sectionListsCurrentMembers(section)) continue;
     for (const card of section.cards) {
       if (candidates.length >= OFFICIAL_ROSTER_MAX_MEMBERS_PER_ENTITY) {
         withheldCount += 1;
