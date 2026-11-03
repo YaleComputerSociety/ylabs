@@ -336,7 +336,8 @@ export function normalizeInitialSpacing(name: string | undefined | null): string
  * Best-effort split of a normalized name into { first, last }.
  *
  * Handles single-word names (returns first only), suffixes like "Jr." / "III"
- * (treats them as part of the last name), and hyphenated last names. This is a
+ * (treats them as part of the last name), and hyphenated last names. A trailing
+ * credential list is dropped first, so a degree is never read as the surname. This is a
  * heuristic — production user records should rely on authoritative sources
  * (CAS / Yalies) rather than these splits.
  */
