@@ -136,7 +136,7 @@ A projected next-cycle estimate always names its year (`formatProjectedProgramDa
 - Sticky sidebars must never hide content below the fold on short viewports.
 - The `/research` sticky filter bar is one row below the sidebar breakpoint: the Filters trigger, then the active chips and "Clear all filters" in their own horizontally scrolling strip, because wrapped chips made the bar 156px of a 664px phone screen (#5305).
 - The wide-layout `/research` sidebar carries no active-filter chips, because each of its controls already shows its own state, and "Clear all filters" sits in its header row beside the active count: a chip row, a clear-all row and the "Search with the selected filters." helper line, which the wide layout now hides, made it 717px of a 590px sidebar at 1280x720 with one filter on (#5449).
-The student-journey smoke checks the sidebar fits with a filter active as well as while browsing.
+The student-journey smoke checks the sidebar fits for a signed-in student and for a guest, with a filter active as well as while browsing.
 The student-journey smoke fails when the bar is taller than 72px at 390x664 with a filter active, or when the active chip runs past the strip's edge and hides its remove control.
 - Public pages paint before the session check answers, so UI that mounts only for a resolved session must not land above content that is already painted.
 Reserve its slot when every viewer needs it, or place it where nothing follows it.

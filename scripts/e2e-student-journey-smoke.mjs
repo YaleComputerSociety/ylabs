@@ -316,9 +316,7 @@ const assertWideSidebarFits = async (visitorContext, visitor) => {
       await hostedToggle.check();
       await laptopPage.waitForURL(/[?&]undergrad=1/, { timeout: 20000 });
       await settleResearchPage(laptopPage);
-      await sidebar
-        .getByRole('button', { name: 'Clear all filters' })
-        .waitFor({ timeout: 20000 });
+      await sidebar.getByRole('button', { name: 'Clear all filters' }).waitFor({ timeout: 20000 });
       await assertSidebarFits('with a filter active');
     }
   } finally {
