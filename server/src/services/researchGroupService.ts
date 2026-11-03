@@ -3251,7 +3251,8 @@ export const currentResearchEntityMemberFilter = (researchEntityId: unknown) => 
 const MAX_PUBLIC_DETAIL_MEMBERS = 100;
 const MAX_PUBLIC_DETAIL_ACCESS_SIGNALS = 50;
 const MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION = 50;
-const MAX_PUBLIC_DETAIL_RELATIONSHIP_QUERY_LIMIT = 51;
+const MAX_PUBLIC_DETAIL_RELATIONSHIP_QUERY_LIMIT = 1000;
+const PAGE_LEAD_OWN_RESEARCH_CANDIDATE_SLACK = 5;
 // `rosterEnrichment` is here because the lead-name derivation these rails now run
 // reads it to decide whether an official-roster row is still fresh, and that check
 // fails CLOSED on a field it cannot see. Unprojected, it would silently drop every
@@ -3355,6 +3356,146 @@ const publicRelationshipForResearchDetail = (
   lastObservedAt: relationship.lastObservedAt,
 });
 
+const relationshipTargetId = (relationship: any): unknown => relationship.targetResearchEntityId;
+const relationshipSourceId = (relationship: any): unknown => relationship.sourceResearchEntityId;
+
+const servedEntitySortName = (entity: Record<string, any>): string =>
+  String(entity.displayName || entity.name || '');
+
+// Edge write order (`updatedAt`) must never decide which linked rows a capped page
+// serves: a re-scrape that only refreshed an edge would rotate other rows off it (#5207).
+const rankServableRelationships = (
+  relationships: readonly any[],
+  endpointId: (relationship: any) => unknown,
+  servableEntitiesByInternalId: ReadonlyMap<string, Record<string, any>>,
+): any[] =>
+  relationships
+    .map((relationship) => ({
+      relationship,
+      entity: servableEntitiesByInternalId.get(researchGroupDocumentId(endpointId(relationship))),
+    }))
+    .filter((candidate): candidate is { relationship: any; entity: Record<string, any> } =>
+      Boolean(candidate.entity),
+    )
+    .sort(
+      (left, right) =>
+        (Number(right.relationship.confidence) || 0) -
+          (Number(left.relationship.confidence) || 0) ||
+        servedEntitySortName(left.entity).localeCompare(servedEntitySortName(right.entity), 'en', {
+          sensitivity: 'base',
+        }) ||
+        String(left.entity.slug || '').localeCompare(String(right.entity.slug || '')) ||
+        String(left.relationship._id || '').localeCompare(String(right.relationship._id || '')),
+    )
+    .map(({ relationship }) => relationship);
+
+const relationshipsReachingFirstDistinctEndpoints = (
+  rankedRelationships: readonly any[],
+  endpointId: (relationship: any) => unknown,
+  limit: number,
+): any[] => {
+  const endpoints = new Set<string>();
+  return rankedRelationships.filter((relationship) => {
+    const endpoint = researchGroupDocumentId(endpointId(relationship));
+    if (endpoints.has(endpoint)) return true;
+    if (endpoints.size >= limit) return false;
+    endpoints.add(endpoint);
+    return true;
+  });
+};
+
+const distinctEndpointIdsInOrder = (
+  relationships: readonly any[],
+  endpointId: (relationship: any) => unknown,
+): string[] =>
+  Array.from(
+    new Set(relationships.map((relationship) => researchGroupDocumentId(endpointId(relationship)))),
+  );
+
+const RELATED_ENTITY_RANKING_PROJECTION = '_id slug name displayName studentVisibilityTier';
+
+const tierEligibleRankingEntities = async (
+  entityIds: readonly string[],
+): Promise<Map<string, Record<string, any>>> => {
+  if (entityIds.length === 0) return new Map();
+  const entities = (await ResearchEntity.find({
+    _id: { $in: entityIds },
+    archived: { $ne: true },
+    studentVisibilityTier: { $in: publicStudentVisibilityTiers },
+  })
+    .select(RELATED_ENTITY_RANKING_PROJECTION)
+    .lean()) as any[];
+  return new Map(
+    entities
+      .filter((entity) => publicStudentVisibilityTiers.includes(entity.studentVisibilityTier))
+      .map((entity) => [researchGroupDocumentId(entity._id), entity]),
+  );
+};
+
+type ServableEndpointRead = {
+  entitiesByInternalId: Map<string, Record<string, any>>;
+  uncheckedEndpointCount: number;
+};
+
+const servableEntitiesById = async (
+  entityIds: readonly string[],
+): Promise<Map<string, Record<string, any>>> => {
+  if (entityIds.length === 0) return new Map();
+  const entities = (await ResearchEntity.find({
+    _id: { $in: entityIds },
+    archived: { $ne: true },
+    studentVisibilityTier: { $in: publicStudentVisibilityTiers },
+  })
+    .select(PUBLIC_RELATED_ENTITY_PROJECTION)
+    .lean()) as any[];
+  return new Map(
+    withServablePublicResearchEntities(
+      entities.filter((entity) =>
+        publicStudentVisibilityTiers.includes(entity.studentVisibilityTier),
+      ),
+      false,
+    ).map((entity) => [researchGroupDocumentId(entity._id), entity]),
+  );
+};
+
+const firstServableEndpointsInRankOrderPerDirection = async (
+  directions: readonly { rankedEndpointIds: readonly string[]; limit: number }[],
+): Promise<ServableEndpointRead[]> => {
+  const servableVerdicts = new Map<string, Record<string, any> | null>();
+  const states = directions.map(() => ({
+    entitiesByInternalId: new Map<string, Record<string, any>>(),
+    checked: 0,
+  }));
+  const needsMore = (index: number) =>
+    states[index].checked < directions[index].rankedEndpointIds.length &&
+    states[index].entitiesByInternalId.size < directions[index].limit;
+  while (directions.some((_, index) => needsMore(index))) {
+    const batches = directions.map(({ rankedEndpointIds, limit }, index) =>
+      needsMore(index)
+        ? rankedEndpointIds.slice(states[index].checked, states[index].checked + limit)
+        : [],
+    );
+    const unknownIds = Array.from(
+      new Set(batches.flat().filter((endpointId) => !servableVerdicts.has(endpointId))),
+    );
+    const servableById = await servableEntitiesById(unknownIds);
+    for (const endpointId of unknownIds) {
+      servableVerdicts.set(endpointId, servableById.get(endpointId) ?? null);
+    }
+    batches.forEach((batch, index) => {
+      states[index].checked += batch.length;
+      for (const endpointId of batch) {
+        const entity = servableVerdicts.get(endpointId);
+        if (entity) states[index].entitiesByInternalId.set(endpointId, entity);
+      }
+    });
+  }
+  return states.map(({ entitiesByInternalId, checked }, index) => ({
+    entitiesByInternalId,
+    uncheckedEndpointCount: directions[index].rankedEndpointIds.length - checked,
+  }));
+};
+
 export async function listResearchEntityRelationshipPayload(
   entityId: unknown,
   { pageLeadPersonIds = [] }: { pageLeadPersonIds?: readonly string[] } = {},
@@ -3385,61 +3526,96 @@ export async function listResearchEntityRelationshipPayload(
       archived: { $ne: true },
       sourceResearchEntityId: safeEntityId,
     })
-      .sort({ confidence: -1, updatedAt: -1 })
+      .sort({ confidence: -1, _id: 1 })
       .limit(MAX_PUBLIC_DETAIL_RELATIONSHIP_QUERY_LIMIT)
       .lean(),
     ResearchEntityRelationship.find({
       archived: { $ne: true },
       targetResearchEntityId: safeEntityId,
     })
-      .sort({ confidence: -1, updatedAt: -1 })
+      .sort({ confidence: -1, _id: 1 })
       .limit(MAX_PUBLIC_DETAIL_RELATIONSHIP_QUERY_LIMIT)
       .lean(),
   ])) as [any[], any[]];
-  const relatedRelationshipsAll = relatedRelationshipsQueried.filter(
+  const relatedRelationshipCandidates = relatedRelationshipsQueried.filter(
     relatesTwoDistinctResearchEntities,
   );
-  const affiliatedRelationshipsAll = affiliatedRelationshipsQueried.filter(
+  const affiliatedRelationshipCandidates = affiliatedRelationshipsQueried.filter(
     relatesTwoDistinctResearchEntities,
-  );
-  const relatedRelationships = relatedRelationshipsAll.slice(
-    0,
-    MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION,
-  );
-  const affiliatedRelationships = affiliatedRelationshipsAll.slice(
-    0,
-    MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION,
-  );
-  const relatedEntityIds = relatedRelationships.map(
-    (relationship) => relationship.targetResearchEntityId,
-  );
-  const affiliatedEntityIds = affiliatedRelationships.map(
-    (relationship) => relationship.sourceResearchEntityId,
   );
   const entityIds = Array.from(
     new Set(
-      [...relatedEntityIds, ...affiliatedEntityIds]
+      [
+        ...relatedRelationshipCandidates.map(relationshipTargetId),
+        ...affiliatedRelationshipCandidates.map(relationshipSourceId),
+      ]
         .map(normalizeResearchGroupObjectId)
         .filter((id): id is string => Boolean(id)),
     ),
   );
 
-  const relatedEntities =
-    entityIds.length > 0
-      ? await ResearchEntity.find({
-          _id: { $in: entityIds },
-          archived: { $ne: true },
-          studentVisibilityTier: { $in: publicStudentVisibilityTiers },
-        })
-          .select(PUBLIC_RELATED_ENTITY_PROJECTION)
-          .lean()
-      : [];
-  const publicRelatedEntities = withServablePublicResearchEntities(
-    (relatedEntities as any[]).filter((entity) =>
-      publicStudentVisibilityTiers.includes(entity.studentVisibilityTier),
-    ),
-    false,
+  const rankingEntitiesByInternalId = await tierEligibleRankingEntities(entityIds);
+  const rankedRelatedCandidates = rankServableRelationships(
+    relatedRelationshipCandidates,
+    relationshipTargetId,
+    rankingEntitiesByInternalId,
   );
+  const rankedAffiliatedCandidates = rankServableRelationships(
+    affiliatedRelationshipCandidates,
+    relationshipSourceId,
+    rankingEntitiesByInternalId,
+  );
+  const [relatedServableRead, affiliatedServableRead] =
+    await firstServableEndpointsInRankOrderPerDirection([
+      {
+        rankedEndpointIds: distinctEndpointIdsInOrder(
+          rankedRelatedCandidates,
+          relationshipTargetId,
+        ),
+        limit:
+          MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION + PAGE_LEAD_OWN_RESEARCH_CANDIDATE_SLACK,
+      },
+      {
+        rankedEndpointIds: distinctEndpointIdsInOrder(
+          rankedAffiliatedCandidates,
+          relationshipSourceId,
+        ),
+        limit: MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION,
+      },
+    ]);
+  const servableEntitiesByInternalId = new Map([
+    ...relatedServableRead.entitiesByInternalId,
+    ...affiliatedServableRead.entitiesByInternalId,
+  ]);
+  const rankedRelated = rankedRelatedCandidates.filter((relationship) =>
+    relatedServableRead.entitiesByInternalId.has(
+      researchGroupDocumentId(relationshipTargetId(relationship)),
+    ),
+  );
+  const rankedAffiliated = rankedAffiliatedCandidates.filter((relationship) =>
+    affiliatedServableRead.entitiesByInternalId.has(
+      researchGroupDocumentId(relationshipSourceId(relationship)),
+    ),
+  );
+  const relatedWindow = relationshipsReachingFirstDistinctEndpoints(
+    rankedRelated,
+    relationshipTargetId,
+    MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION + PAGE_LEAD_OWN_RESEARCH_CANDIDATE_SLACK,
+  );
+  const affiliatedRelationships = relationshipsReachingFirstDistinctEndpoints(
+    rankedAffiliated,
+    relationshipSourceId,
+    MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION,
+  );
+  const windowEntityIds = new Set(
+    [
+      ...relatedWindow.map(relationshipTargetId),
+      ...affiliatedRelationships.map(relationshipSourceId),
+    ].map(researchGroupDocumentId),
+  );
+  const publicRelatedEntities = [...servableEntitiesByInternalId.entries()]
+    .filter(([internalId]) => windowEntityIds.has(internalId))
+    .map(([, entity]) => entity);
 
   const relatedLeadNameRead = await optionalPublicLeadMemberNames(publicRelatedEntities);
   const publicEntitiesByInternalId = new Map(
@@ -3472,20 +3648,33 @@ export async function listResearchEntityRelationshipPayload(
       )
       .map((relatedEntity) => researchGroupDocumentId(relatedEntity._id)),
   );
-  const servedRelatedRelationships = relatedRelationships.filter(
-    (relationship) =>
-      !pageLeadOwnFacultyResearchIds.has(
-        researchGroupDocumentId(relationship.targetResearchEntityId),
-      ),
+  const servedRelatedRelationships = relationshipsReachingFirstDistinctEndpoints(
+    relatedWindow.filter(
+      (relationship) =>
+        !pageLeadOwnFacultyResearchIds.has(
+          researchGroupDocumentId(relationshipTargetId(relationship)),
+        ),
+    ),
+    relationshipTargetId,
+    MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION,
   );
   const relatedResearchEntities = dedupePublicResearchEntitiesInOrder(
-    servedRelatedRelationships.map((relationship) => relationship.targetResearchEntityId),
+    servedRelatedRelationships.map(relationshipTargetId),
     publicEntitiesByInternalId,
   );
   const affiliatedResearchEntities = dedupePublicResearchEntitiesInOrder(
-    affiliatedEntityIds,
+    affiliatedRelationships.map(relationshipSourceId),
     publicEntitiesByInternalId,
   );
+  const relatedTruncated =
+    relatedServableRead.uncheckedEndpointCount > 0 ||
+    distinctEndpointIdsInOrder(rankedRelated, relationshipTargetId).filter(
+      (endpointId) => !pageLeadOwnFacultyResearchIds.has(endpointId),
+    ).length > relatedResearchEntities.length;
+  const affiliatedTruncated =
+    affiliatedServableRead.uncheckedEndpointCount > 0 ||
+    distinctEndpointIdsInOrder(rankedAffiliated, relationshipSourceId).length >
+      affiliatedResearchEntities.length;
 
   return {
     entityRelationships: servedRelatedRelationships
@@ -3502,7 +3691,7 @@ export async function listResearchEntityRelationshipPayload(
     relatedResearchEntities,
     relatedResearchEntitiesMeta: {
       returned: relatedResearchEntities.length,
-      truncated: relatedRelationshipsAll.length > relatedRelationships.length,
+      truncated: relatedTruncated,
     },
     affiliatedRelationships: affiliatedRelationships
       .map((relationship) => ({
@@ -3518,7 +3707,7 @@ export async function listResearchEntityRelationshipPayload(
     affiliatedResearchEntities,
     affiliatedResearchEntitiesMeta: {
       returned: affiliatedResearchEntities.length,
-      truncated: affiliatedRelationshipsAll.length > affiliatedRelationships.length,
+      truncated: affiliatedTruncated,
     },
     pageLeadOwnResearchEntityKeys: Array.from(pageLeadOwnFacultyResearchIds).flatMap(
       (internalId) => {

@@ -5221,7 +5221,7 @@ describe('listResearchEntityRelationshipPayload', () => {
       )
       .mockReturnValueOnce(queryResult([]));
     const entityQuery = queryResult(
-      relatedIds.slice(0, 50).map((id, index) => ({
+      relatedIds.map((id, index) => ({
         _id: id,
         slug: `entity-${index}`,
         name: `Entity ${index}`,
@@ -5252,6 +5252,91 @@ describe('listResearchEntityRelationshipPayload', () => {
     expect(encoded).not.toContain('operator only');
     expect(encoded).not.toContain('@example.edu');
     expect(Buffer.byteLength(encoded)).toBeLessThan(25_000);
+  });
+
+  it('spends the related cap on servable rows, not on held rows ranked ahead of them (#5207)', async () => {
+    const currentEntityId = '67d8928150621bcef434a1d5';
+    const heldIds = Array.from(
+      { length: 30 },
+      (_, index) => `67d8928150621bcef435${String(index).padStart(4, '0')}`,
+    );
+    const servableIds = Array.from(
+      { length: 60 },
+      (_, index) => `67d8928150621bcef436${String(index).padStart(4, '0')}`,
+    );
+    mocks.researchEntityRelationshipFind
+      .mockReturnValueOnce(
+        queryResult(
+          [...heldIds, ...servableIds].map((id, index) => ({
+            _id: `rel-${String(index).padStart(3, '0')}`,
+            sourceResearchEntityId: currentEntityId,
+            targetResearchEntityId: id,
+            relationshipType: 'MEMBER_RESEARCH_AREA',
+            confidence: 0.9,
+          })),
+        ),
+      )
+      .mockReturnValueOnce(queryResult([]));
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult(
+        servableIds.map((id, index) => ({
+          _id: id,
+          slug: `synthetic-member-${String(index).padStart(2, '0')}`,
+          name: `Synthetic Member ${String(index).padStart(2, '0')}`,
+          kind: 'lab',
+          entityType: 'LAB',
+          studentVisibilityTier: 'student_ready',
+          archived: false,
+          ...validPublicDescriptions,
+        })),
+      ),
+    );
+
+    const result = await listResearchEntityRelationshipPayload(currentEntityId);
+
+    expect(result.relatedResearchEntities).toHaveLength(50);
+    expect(result.relatedResearchEntitiesMeta).toEqual({ returned: 50, truncated: true });
+  });
+
+  it('serves the same capped related rows whatever order the edges were written in (#5207)', async () => {
+    const currentEntityId = '67d8928150621bcef434a1d5';
+    const targetIds = Array.from(
+      { length: 70 },
+      (_, index) => `67d8928150621bcef437${String(index).padStart(4, '0')}`,
+    );
+    const edges = targetIds.map((id, index) => ({
+      _id: `rel-${String(index).padStart(3, '0')}`,
+      sourceResearchEntityId: currentEntityId,
+      targetResearchEntityId: id,
+      relationshipType: 'MEMBER_RESEARCH_AREA',
+      confidence: 0.8,
+    }));
+    const entities = targetIds.map((id, index) => ({
+      _id: id,
+      slug: `synthetic-unit-${String(69 - index).padStart(2, '0')}`,
+      name: `Synthetic Unit ${String(69 - index).padStart(2, '0')}`,
+      kind: 'lab',
+      entityType: 'LAB',
+      studentVisibilityTier: 'student_ready',
+      archived: false,
+      ...validPublicDescriptions,
+    }));
+    const servedSlugsFor = async (orderedEdges: typeof edges) => {
+      mocks.researchEntityRelationshipFind
+        .mockReturnValueOnce(queryResult(orderedEdges))
+        .mockReturnValueOnce(queryResult([]));
+      mocks.researchEntityFind.mockReturnValue(queryResult(entities));
+      const result = await listResearchEntityRelationshipPayload(currentEntityId);
+      return result.relatedResearchEntities.map((entity) => entity.slug);
+    };
+
+    const writtenOrder = await servedSlugsFor(edges);
+    const refreshedOrder = await servedSlugsFor([...edges.slice(60), ...edges.slice(0, 60)]);
+
+    expect(writtenOrder).toHaveLength(50);
+    expect(refreshedOrder).toEqual(writtenOrder);
+    expect(writtenOrder[0]).toBe('synthetic-unit-00');
+    expect(writtenOrder[49]).toBe('synthetic-unit-49');
   });
 
   it('dedupes a related entity reached by multiple relationships to a single card', async () => {
