@@ -5,6 +5,15 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-11-03: Actively Hiring Rows Lead The Welcomes Filter Instead Of Having Their Own (#5456)
+
+The owner asked on 2026-11-03 whether "Actively hiring" should be its own filter, and chose to list those rows first under "Welcomes undergrads" instead.
+A separate filter would often answer almost nothing: 19 of about 3,800 served rows on Development carried the hiring badge that day.
+The wide sidebar also had 9px of room left at 1280x720 (#5449).
+With the welcomes filter on and no sort the student chose, browse sorts on `undergradInvitationRank` (2 hiring, 1 welcomes, 0 neither, derived from the served badge) before the browse rank, and a text search moves hiring rows ahead within the pool that already cleared the relevance threshold, keeping relevance order inside each step.
+A search with no embedder, which Meilisearch paginates itself, keeps plain relevance order.
+A graded sample of the 19 hiring quotes against their pages on 2026-11-03 found 15 current, 1 whose page no longer carries the language, 1 on a page last updated in 2024, 1 uncertain on a site whose news ends in 2024, and 1 beside a passed apply-by date for a future term, which the 2026-10-18 rule already treats as an active opening.
+
 ## 2026-10-29: Browse Can Filter To Research Whose Lab Page Welcomes Undergraduates (#5441)
 
 The owner asked on 2026-10-29 for a "Welcomes undergrads" filter beside "Hosted undergrads".

@@ -178,14 +178,15 @@ Because absence carries that meaning, every search path that was asked for facet
 The distribution carries `school`, `departments`, `entityType`, `hostsUndergrads` (`{ true: n }`, from the `hasUndergradHostingEvidence` index field), and `welcomesUndergrads` (`{ true: n }`, from the `welcomesUndergrads` index field), the facets the filter rail reads.
 `hasUndergradHostingEvidence` is derived from `entityHasHostedUndergraduates` when the index document is built, not copied from the stored flag, so the filter and facet read the predicate the served badge reads (#5123).
 `welcomesUndergrads` is derived the same way from `entityWelcomesUndergraduates`, the predicate that serves the invitation badge, and counts both "Actively hiring" and "Welcomes undergrads" (#5441).
+With that filter on and no student-chosen sort, browse sorts on `undergradInvitationRank` first and a thresholded text search moves hiring rows ahead within its pool, so "Actively hiring" leads without a filter of its own (#5456).
 
 ### An index behind the code still answers (#5441)
 
 Meilisearch refuses a whole search that names an attribute the index has not declared filterable, and a deploy lands before the reindex that declares a new one.
-Search therefore reads the live index's filterable attributes through `readResearchEntitySearchFilterableAttributes`, cached for five minutes, and asks only for facets the index declares.
+Search therefore reads the live index's filterable and sortable attributes through `readResearchEntitySearchFilterableAttributes` and `readResearchEntitySearchSortableAttributes`, each cached for five minutes, and asks only for facets and sorts the index declares.
 A requested toggle filter the index cannot apply is dropped and reported as `appliedFilters.<filter>: false`, and the client unchecks it and rewrites the URL, so the page never shows unfiltered rows under a filter chip.
 If the attributes cannot be read, search assumes the code's settings.
-Adding a filterable attribute still needs the replacing rebuild before the filter appears, because the reconciling sync never touches index settings.
+Adding a filterable or sortable attribute still needs the replacing rebuild before the filter or sort applies, because the reconciling sync never touches index settings.
 
 ### A filter value nothing holds is dropped, not answered empty (#5146)
 

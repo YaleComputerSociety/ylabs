@@ -33,7 +33,7 @@ import { sanitizeMethodChipLabel } from '../utils/researchAreaLabelHygiene';
 import { decideServedResearchAreas } from '../utils/servedResearchAreaGuards';
 import { meshDescriptorOnlyTerms } from '../scrapers/utils/meshNonSubjectDescriptors';
 import { entityHasHostedUndergraduates } from './hostedUndergraduates';
-import { entityWelcomesUndergraduates } from './researchEntityDto';
+import { entityWelcomesUndergraduates, servedUndergradInvitationLevel } from './researchEntityDto';
 import {
   isSyntheticResearchHomeMetadataDescription,
   revoiceFirstPersonResearchLead,
@@ -104,6 +104,7 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'sortTitleQualifier',
     'createdAt',
     'updatedAt',
+    'undergradInvitationRank',
   ],
   displayedAttributes: ['*'],
   // `exactness` and `typo` precede `attribute` (Meili's default puts `attribute`
@@ -594,6 +595,16 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
   }
 };
 
+export const UNDERGRAD_INVITATION_RANK_FIELD = 'undergradInvitationRank';
+
+const UNDERGRAD_INVITATION_RANK_BY_LEVEL: Record<string, number> = {
+  actively_hiring: 2,
+  welcomes_undergrads: 1,
+};
+
+export const undergradInvitationRank = (level: string | undefined): number =>
+  (level && UNDERGRAD_INVITATION_RANK_BY_LEVEL[level]) || 0;
+
 export function buildResearchEntitySearchIndexDocument(
   doc: any,
   memberNames?: ResearchEntitySearchMemberNameFields,
@@ -612,6 +623,7 @@ export function buildResearchEntitySearchIndexDocument(
     // even when a writer changed its inputs without recomputing the flag (#5123).
     hasUndergradHostingEvidence: entityHasHostedUndergraduates(doc),
     welcomesUndergrads: entityWelcomesUndergraduates(doc),
+    undergradInvitationRank: undergradInvitationRank(servedUndergradInvitationLevel(doc)),
   };
   if (memberNames) {
     out.leadProfessorNames = memberNames.leadProfessorNames;
@@ -791,52 +803,63 @@ export async function readResearchEntitySearchEmbedderState(
   return state;
 }
 
-let filterableAttributesCache: ReadonlySet<string> | null = null;
-let filterableAttributesCacheAt = 0;
-let filterableAttributesCacheTtlMs = RESEARCH_ENTITY_SEARCH_EMBEDDER_CHECK_CACHE_TTL_MS;
+type LiveIndexAttributeMethod = 'getFilterableAttributes' | 'getSortableAttributes';
 
-export const invalidateResearchEntitySearchFilterableAttributesCache = (): void => {
-  filterableAttributesCache = null;
-  filterableAttributesCacheAt = 0;
-};
-
-interface ResearchEntitySearchFilterableIndexLike {
-  getFilterableAttributes?: () => Promise<unknown>;
-}
+type ResearchEntitySearchAttributeIndexLike = Partial<
+  Record<LiveIndexAttributeMethod, () => Promise<unknown>>
+>;
 
 /**
- * The attributes the live index can filter and facet on, or `null` when they cannot be
- * read. A deploy lands before the reindex that declares a new filterable attribute, and
- * Meilisearch refuses a whole search that names an undeclared one, so search asks only
- * for what this returns.
+ * Reads, and caches, one attribute list of the live index, or `null` when it cannot be
+ * read. A deploy lands before the reindex that declares a new filterable or sortable
+ * attribute, and Meilisearch refuses a whole search that names an undeclared one, so
+ * search asks only for what this returns.
  */
-export async function readResearchEntitySearchFilterableAttributes(
-  index: ResearchEntitySearchFilterableIndexLike,
-): Promise<ReadonlySet<string> | null> {
-  const now = Date.now();
-  if (now - filterableAttributesCacheAt < filterableAttributesCacheTtlMs) {
-    return filterableAttributesCache;
-  }
-  try {
-    const attributes =
-      typeof index.getFilterableAttributes === 'function'
-        ? await index.getFilterableAttributes()
-        : null;
-    filterableAttributesCache = Array.isArray(attributes)
-      ? new Set(attributes.filter((value): value is string => typeof value === 'string'))
-      : null;
-    filterableAttributesCacheTtlMs = RESEARCH_ENTITY_SEARCH_EMBEDDER_CHECK_CACHE_TTL_MS;
-  } catch (error) {
-    console.error(
-      'ResearchEntity Meilisearch filterable-attribute check failed:',
-      sanitizeLogValue(error),
-    );
-    filterableAttributesCache = null;
-    filterableAttributesCacheTtlMs = RESEARCH_ENTITY_SEARCH_EMBEDDER_UNKNOWN_CACHE_TTL_MS;
-  }
-  filterableAttributesCacheAt = now;
-  return filterableAttributesCache;
-}
+const createLiveIndexAttributeReader = (method: LiveIndexAttributeMethod) => {
+  let cache: ReadonlySet<string> | null = null;
+  let cachedAt = 0;
+  let ttlMs = RESEARCH_ENTITY_SEARCH_EMBEDDER_CHECK_CACHE_TTL_MS;
+  return {
+    invalidate: (): void => {
+      cache = null;
+      cachedAt = 0;
+    },
+    read: async (
+      index: ResearchEntitySearchAttributeIndexLike,
+    ): Promise<ReadonlySet<string> | null> => {
+      const now = Date.now();
+      if (now - cachedAt < ttlMs) return cache;
+      try {
+        const read = index[method];
+        const attributes = typeof read === 'function' ? await read.call(index) : null;
+        cache = Array.isArray(attributes)
+          ? new Set(attributes.filter((value): value is string => typeof value === 'string'))
+          : null;
+        ttlMs = RESEARCH_ENTITY_SEARCH_EMBEDDER_CHECK_CACHE_TTL_MS;
+      } catch (error) {
+        console.error(
+          `ResearchEntity Meilisearch ${method} check failed:`,
+          sanitizeLogValue(error),
+        );
+        cache = null;
+        ttlMs = RESEARCH_ENTITY_SEARCH_EMBEDDER_UNKNOWN_CACHE_TTL_MS;
+      }
+      cachedAt = now;
+      return cache;
+    },
+  };
+};
+
+const liveFilterableAttributes = createLiveIndexAttributeReader('getFilterableAttributes');
+const liveSortableAttributes = createLiveIndexAttributeReader('getSortableAttributes');
+
+export const readResearchEntitySearchFilterableAttributes = liveFilterableAttributes.read;
+export const readResearchEntitySearchSortableAttributes = liveSortableAttributes.read;
+
+export const invalidateResearchEntitySearchIndexAttributesCache = (): void => {
+  liveFilterableAttributes.invalidate();
+  liveSortableAttributes.invalidate();
+};
 
 export async function isResearchEntitySearchEmbedderConfigured(
   index: ResearchEntitySearchIndexLike,
@@ -1043,7 +1066,7 @@ async function applyResearchEntitySearchIndexSettings(index: any): Promise<void>
     'updateSettings',
     MEILI_SETTINGS_TASK_WAIT_TIMEOUT_MS,
   );
-  invalidateResearchEntitySearchFilterableAttributesCache();
+  invalidateResearchEntitySearchIndexAttributesCache();
 }
 
 async function addEveryResearchEntityDocument(

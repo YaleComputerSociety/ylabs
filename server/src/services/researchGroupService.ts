@@ -48,6 +48,8 @@ import {
   MESH_DESCRIPTOR_ONLY_TERMS_FIELD,
   readResearchEntitySearchEmbedderState,
   readResearchEntitySearchFilterableAttributes,
+  readResearchEntitySearchSortableAttributes,
+  UNDERGRAD_INVITATION_RANK_FIELD,
   RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME,
 } from './researchEntitySearchIndexService';
 import { meshDescriptorWordKeys } from '../scrapers/utils/meshNonSubjectDescriptors';
@@ -622,6 +624,7 @@ const RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES = [
   'researchAreas',
   HOSTS_UNDERGRADS_INDEX_FIELD,
   WELCOMES_UNDERGRADS_INDEX_FIELD,
+  UNDERGRAD_INVITATION_RANK_FIELD,
   MESH_DESCRIPTOR_ONLY_TERMS_FIELD,
 ];
 const MAX_FILTER_VALUE_LENGTH = 120;
@@ -1088,11 +1091,14 @@ export const meiliSortEntries = (
 /**
  * An index whose settings predate a sortable attribute rejects the whole query, so
  * until `reindex:meili` pushes the settings the title sort falls back to the stored
- * `name` rather than to no order at all. The browse tiebreak degrades first and
- * alone, back to `lastObservedAt`, so an index that already sorts on
- * `browseRankScore` keeps it.
+ * `name` rather than to no order at all. The `undergradInvitationRank` lead is
+ * dropped first and alone, then the browse tiebreak degrades alone, back to
+ * `lastObservedAt`, so an index that already sorts on `browseRankScore` keeps it.
  */
 const withoutNotYetIndexedSortAttributes = (sortEntries: string[]): string[] => {
+  if (sortEntries.some((entry) => entry.startsWith(`${UNDERGRAD_INVITATION_RANK_FIELD}:`))) {
+    return sortEntries.filter((entry) => !entry.startsWith(`${UNDERGRAD_INVITATION_RANK_FIELD}:`));
+  }
   if (sortEntries.some((entry) => entry.startsWith(`${BROWSE_TIEBREAK_KEY_ATTRIBUTE}:`))) {
     return sortEntries.map((entry) =>
       entry.startsWith(`${BROWSE_TIEBREAK_KEY_ATTRIBUTE}:`) ? 'lastObservedAt:desc' : entry,
@@ -1556,6 +1562,26 @@ const TOGGLE_FILTERS_AHEAD_OF_INDEX: ReadonlyArray<{
   indexField: string;
 }> = [{ filterKey: 'welcomesUndergrads', indexField: WELCOMES_UNDERGRADS_INDEX_FIELD }];
 
+const liveIndexSortability = async (
+  meiliIndex: Awaited<ReturnType<typeof getMeiliSearchIndex>>,
+): Promise<(field: string) => boolean> => {
+  const sortable = await readResearchEntitySearchSortableAttributes(
+    withMeiliAvailabilityGuard(meiliIndex, 'optional'),
+  );
+  return (field) => sortable === null || sortable.has(field);
+};
+
+export const withHiringRowsFirst = <T extends Record<string, unknown>>(hits: T[]): T[] => {
+  const rank = (hit: T) => {
+    const value = hit[UNDERGRAD_INVITATION_RANK_FIELD];
+    return typeof value === 'number' ? value : 0;
+  };
+  return hits
+    .map((hit, position) => ({ hit, position }))
+    .sort((a, b) => rank(b.hit) - rank(a.hit) || a.position - b.position)
+    .map(({ hit }) => hit);
+};
+
 const liveIndexFilterability = async (
   meiliIndex: Awaited<ReturnType<typeof getMeiliSearchIndex>>,
 ): Promise<(field: string) => boolean> => {
@@ -1802,6 +1828,10 @@ async function searchResearchGroupsForQuery(
   const sanitizedFilters = sanitizeResearchGroupSearchFilters(filters || {});
   const safeFilters = withoutUnfilterableToggles(sanitizedFilters, liveFilterable).filters;
   const facetFields = RESEARCH_ENTITY_SEARCH_FACET_FIELDS.filter(liveFilterable);
+  const ordersHiringFirst =
+    safeFilters.welcomesUndergrads === true &&
+    !sort.sortBy &&
+    (await liveIndexSortability(meiliIndex))(UNDERGRAD_INVITATION_RANK_FIELD);
   const safeOptions = sanitizeResearchGroupSearchOptions(options);
   const safePageSize = Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(pageSize) || 24));
   const safePage = Math.min(
@@ -1908,6 +1938,7 @@ async function searchResearchGroupsForQuery(
     const order = sort.sortOrder === 'asc' ? 'asc' : 'desc';
     sortConfig.push(...meiliSortEntries(sort.sortBy, order));
   } else if (isBrowseAllQuery) {
+    if (ordersHiringFirst) sortConfig.push(`${UNDERGRAD_INVITATION_RANK_FIELD}:desc`);
     // Default browse: surface the most complete, best-documented research first
     // (services/researchEntityBrowseRank.ts), then break ties on a fixed per-row
     // key. `lastObservedAt` was the tiebreak, but a sweep stamps nearly every row
@@ -2529,11 +2560,15 @@ async function searchResearchGroupsForQuery(
     ? appendUnlistedHits(candidatePoolHead.hits, deepCandidatePoolOrder.hits)
     : candidatePoolHead.hits;
   const droppedCoincidentalHits = (deepCandidatePoolOrder ?? candidatePoolHead).dropped;
-  const servedPool = paginateHybridPoolLocally
+  const filteredPool = paginateHybridPoolLocally
     ? reorderedPool.filter((hit: Record<string, unknown>) =>
         candidateMatchesStudentFilters(hit, safeFilters),
       )
     : reorderedPool;
+  const servedPool =
+    paginateHybridPoolLocally && ordersHiringFirst
+      ? withHiringRowsFirst(filteredPool)
+      : filteredPool;
   // The reorder helpers run across the whole fixed candidate pool so the ordering
   // is stable, then the requested page window is sliced locally. Non-thresholded
   // queries already come back pre-paginated from Meilisearch, so they are used
