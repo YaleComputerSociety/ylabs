@@ -362,6 +362,22 @@ function tableGroupLabel(
   return looksLikeListedPersonName(label) ? undefined : label;
 }
 
+const DATE_RANGE_CELL = /^(?:(?:19|20)\d{2}|[-–—]|to|present|current|now)$/i;
+
+/**
+ * A row that sets a date range across cells ("2025 | - | 2025") reads as one range, so a
+ * finished range is past and an open one current, rather than whatever its first year says.
+ */
+function splitDateRange(cells: string[], personColumn: number): string {
+  const start = cells.findIndex(
+    (cell, index) => index !== personColumn && /^(?:19|20)\d{2}$/.test(cell),
+  );
+  if (start < 0) return '';
+  let end = start;
+  while (end + 1 < cells.length && DATE_RANGE_CELL.test(cells[end + 1])) end += 1;
+  return end > start ? cells.slice(start, end + 1).join(' ') : '';
+}
+
 function readRosterTableRows($: cheerio.CheerioAPI, table: cheerio.Cheerio<any>): RosterTableRow[] {
   const headers = tableHeaderCells($, table);
   const headerRowIsData = headers.length > 0 && table.find('tr').first().find('th').length === 0;
@@ -425,10 +441,12 @@ function readRosterTableRows($: cheerio.CheerioAPI, table: cheerio.Cheerio<any>)
       departure:
         departureColumn >= 0
           ? text[departureColumn] || ''
-          : [
+          : splitDateRange(text, personColumn) ||
+            [
               splitsNameFromRole ? nameLines.slice(1).join(' ') : '',
               ...text.filter((_, index) => index !== personColumn),
-            ].find((cell) => WRITTEN_YEAR.test(cell)) || '',
+            ].find((cell) => WRITTEN_YEAR.test(cell)) ||
+            '',
       ...(group ? { group } : {}),
       ...(schoolColumn >= 0 && text[schoolColumn] ? { school: text[schoolColumn] } : {}),
     };
@@ -850,7 +868,7 @@ function readHeadingListSections($: cheerio.CheerioAPI): RosterSection[] {
       if (/^h[1-6]$/.test(tagName)) {
         const text = normalizedText(node.text());
         const level = headingLevel(tagName);
-        if (!text && section && level > section.level) return;
+        if (!text && section) return;
         bareNameParagraph = undefined;
         const leadName = listItemEntry(leadingLineText($, node)).name;
         const opensDeeperHeadings = headingLevel(nextHeadingTagName(node)) > level;
@@ -1235,6 +1253,12 @@ function listedEntryRoleFromOwnLine(
     CLASS_STANDING.test(ownText);
   const undergraduate = undergraduateRole || BACHELORS_DEGREE.test(ownText);
   const postUndergraduate = POST_UNDERGRADUATE_ROLE.test(ownText) && !undergraduateRole;
+  const headingRole = mapOfficialRosterRole('', sectionLabel);
+  const degreeHeldUnderAnotherHeading =
+    !undergraduateRole &&
+    !/\bstudents?\b/i.test(sectionLabel) &&
+    (headingRole === 'staff' || POST_UNDERGRADUATE_ROLE.test(sectionLabel));
+  if (degreeHeldUnderAnotherHeading) return headingRole ?? null;
   if (undergraduate && !graduate && !postUndergraduate) return 'undergrad';
   if (graduate || POST_UNDERGRADUATE_ROLE.test(ownText)) return null;
   return mapOfficialRosterRole(entry.title, sectionLabel);
@@ -1446,13 +1470,15 @@ export function listedEntryIsFromAnotherSchool(
   if (
     SUMMER_RESEARCH_PROGRAM.test(ownText) &&
     !YALE_COLLEGE_CLASS_EVIDENCE.test(ownText) &&
-    !/\bYale\s*,?\s*['’‘]\d{2}\b/.test(ownText)
+    !/\bYale\s*,?\s*['’‘]\d{2}\b/.test(ownText) &&
+    !/\bYale\s+undergrad\w*\b/i.test(ownText)
   ) {
     return true;
   }
   if (entry.bio && bioNamesAnotherSchool(entry.bio)) return true;
   if (ownText.length > BIO_LENGTH_OWN_LINE && bioNamesAnotherSchool(ownText)) return true;
-  if (/\(\s*Yale[^)]*\)/i.test(ownText) || /\bYale College\b/i.test(ownText)) return false;
+  if (/\(\s*Yale[^)]*\)/i.test(ownText) || /\bYale (?:College|undergrad\w*)\b/i.test(ownText))
+    return false;
   return (
     ANOTHER_SCHOOL_EVIDENCE.some((pattern) => pattern.test(ownText)) ||
     namesAnotherSchoolBeforeUndergraduateRole(ownText, withoutRosterChrome(entry.name ?? '')) ||
