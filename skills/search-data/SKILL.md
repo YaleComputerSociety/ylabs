@@ -186,7 +186,7 @@ Meilisearch refuses a whole search that names an attribute the index has not dec
 Search therefore reads the live index's filterable and sortable attributes through `readResearchEntitySearchFilterableAttributes` and `readResearchEntitySearchSortableAttributes`, each cached for five minutes, and asks only for facets and sorts the index declares.
 A requested toggle filter the index cannot apply is dropped and reported as `appliedFilters.<filter>: false`, and the client unchecks it and rewrites the URL, so the page never shows unfiltered rows under a filter chip.
 If the attributes cannot be read, search assumes the code's settings.
-Adding a filterable attribute still needs the replacing rebuild before the filter appears, because the reconciling sync never touches index settings.
+Adding a filterable or sortable attribute still needs the replacing rebuild before the filter or sort applies, because the reconciling sync never touches index settings.
 
 ### A filter value nothing holds is dropped, not answered empty (#5146)
 

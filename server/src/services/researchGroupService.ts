@@ -1091,9 +1091,9 @@ export const meiliSortEntries = (
 /**
  * An index whose settings predate a sortable attribute rejects the whole query, so
  * until `reindex:meili` pushes the settings the title sort falls back to the stored
- * `name` rather than to no order at all. The browse tiebreak degrades first and
- * alone, back to `lastObservedAt`, so an index that already sorts on
- * `browseRankScore` keeps it.
+ * `name` rather than to no order at all. The `undergradInvitationRank` lead is
+ * dropped first and alone, then the browse tiebreak degrades alone, back to
+ * `lastObservedAt`, so an index that already sorts on `browseRankScore` keeps it.
  */
 const withoutNotYetIndexedSortAttributes = (sortEntries: string[]): string[] => {
   if (sortEntries.some((entry) => entry.startsWith(`${UNDERGRAD_INVITATION_RANK_FIELD}:`))) {
