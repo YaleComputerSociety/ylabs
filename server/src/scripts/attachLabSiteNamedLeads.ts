@@ -139,7 +139,9 @@ export async function runLabSiteNamedLeadAttachment(options: {
     archived: { $ne: true },
     studentVisibilityReasons: 'missing_lead',
   })
-    .select('_id slug name entityType website websiteUrl sourceUrls studentVisibilityReasons')
+    .select(
+      '_id slug name displayName entityType website websiteUrl sourceUrls studentVisibilityReasons',
+    )
     .lean()) as any[];
 
   const eponymous = entities.filter((entity) => corroboratedResearchHome(entity));

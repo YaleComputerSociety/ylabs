@@ -150,6 +150,39 @@ describe('planning an attachment from the research home itself', () => {
     });
   });
 
+  it('reads the claimed surname from the display name when the row has no name yet', () => {
+    const outcome = plan({ entity: entity({ name: '', displayName: 'Quimby Lab' }) });
+    expect(outcome).toMatchObject({ plan: { eponym: 'quimby', personId: 'person-quimby' } });
+  });
+
+  it('matches a surname-first profile slug, which a last-token reading takes for the given name', () => {
+    const outcome = plan({
+      pages: [{ url: HOME, html: '' }, peoplePage('quimby-robin')],
+      owners: [owner({ profileUrl: 'https://medicine.yale.edu/profile/quimby-robin/' })],
+    });
+    expect(outcome).toMatchObject({ plan: { eponym: 'quimby', personId: 'person-quimby' } });
+  });
+
+  it('never lets a surname-first slug claim a lab named after the given name', () => {
+    const outcome = plan({
+      entity: entity({
+        slug: 'ysm-robin',
+        name: 'Robin Lab',
+        websiteUrl: 'https://medicine.yale.edu/lab/robin/',
+        sourceUrls: ['https://medicine.yale.edu/lab/robin/'],
+      }),
+      pages: [
+        { url: 'https://medicine.yale.edu/lab/robin/', html: '' },
+        {
+          url: 'https://medicine.yale.edu/lab/robin/people/',
+          html: '<a href="/profile/quimby-robin/">x</a>',
+        },
+      ],
+      owners: [owner({ profileUrl: 'https://medicine.yale.edu/profile/quimby-robin/' })],
+    });
+    expect(outcome).toMatchObject({ refusal: { reason: 'profile_owner_not_in_corpus' } });
+  });
+
   it('records the page the matching person was found on, not the last page read', () => {
     const outcome = plan({
       pages: [
