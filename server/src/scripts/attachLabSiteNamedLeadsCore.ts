@@ -173,12 +173,12 @@ export function namesTheClaimedEponym(value: unknown, spellings: EponymSpellings
 /**
  * Yale profile slugs are given-name first ("robin-quimby") but not always: a profile
  * may be surname first ("quimby-robin"), and reading only the last token then takes the
- * given name for the surname (#5454). A two-token slug is read both ways here; the owner
- * check that follows still requires the profile owner's own display name to carry the
- * claimed surname, so reading the slug both ways never admits a different person.
+ * given name for the surname (#5454). A two-token slug is read reversed only when no slug
+ * on the site matches given-name first, so a member whose given name is the surname never
+ * competes with the lead's own profile; the owner check that follows still requires the
+ * profile owner's display name to carry the claimed surname.
  */
-function slugNamesTheClaimedEponym(slug: string, spellings: EponymSpellings): boolean {
-  if (namesTheClaimedEponym(slug, spellings)) return true;
+function reversedSlugNamesTheClaimedEponym(slug: string, spellings: EponymSpellings): boolean {
   const tokens = slug.split('-').filter(Boolean);
   return tokens.length === 2 && namesTheClaimedEponym(`${tokens[1]}-${tokens[0]}`, spellings);
 }
@@ -234,14 +234,21 @@ export function planLabSiteNamedLeadAttachment(input: {
   if (!home) return refuse('name_claims_no_eponym');
 
   const homeHost = hostnameOf(home.researchHomeUrl);
-  const slugPages = new Map<string, string>();
+  const givenNameFirstSlugPages = new Map<string, string>();
+  const surnameFirstSlugPages = new Map<string, string>();
   for (const page of input.pages) {
     if (!isWithinResearchHomeSubtree(page.url, home.researchHomeUrl)) continue;
     for (const slug of personSlugsOnSite(page.html)) {
-      if (!slugNamesTheClaimedEponym(slug, home.spellings)) continue;
-      if (!slugPages.has(slug)) slugPages.set(slug, page.url);
+      const readings = namesTheClaimedEponym(slug, home.spellings)
+        ? givenNameFirstSlugPages
+        : reversedSlugNamesTheClaimedEponym(slug, home.spellings)
+          ? surnameFirstSlugPages
+          : null;
+      if (readings && !readings.has(slug)) readings.set(slug, page.url);
     }
   }
+  const slugPages =
+    givenNameFirstSlugPages.size > 0 ? givenNameFirstSlugPages : surnameFirstSlugPages;
   const matchingSlugs = [...slugPages.keys()];
   if (matchingSlugs.length === 0) return refuse('site_names_no_matching_person');
   if (matchingSlugs.length > 1) return refuse('site_names_several_matching_people');

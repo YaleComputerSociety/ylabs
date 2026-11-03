@@ -163,6 +163,11 @@ describe('planning an attachment from the research home itself', () => {
     expect(outcome).toMatchObject({ plan: { eponym: 'quimby', personId: 'person-quimby' } });
   });
 
+  it('never lets a member whose given name is the surname compete with the lead given-name first', () => {
+    const outcome = plan({ pages: [peoplePage('robin-quimby', 'quimby-alex')] });
+    expect(outcome).toMatchObject({ plan: { eponym: 'quimby', personId: 'person-quimby' } });
+  });
+
   it('never lets a surname-first slug claim a lab named after the given name', () => {
     const outcome = plan({
       entity: entity({
