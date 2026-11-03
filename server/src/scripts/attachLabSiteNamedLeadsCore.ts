@@ -42,7 +42,17 @@ export type LabSiteNamedLeadRefusalReason = (typeof LAB_SITE_NAMED_LEAD_REFUSAL_
 export interface LabSiteNamedLeadEntity extends FraLeadCandidateEntity {
   websiteUrl?: unknown;
   website?: unknown;
+  displayName?: unknown;
 }
+
+/**
+ * The title the row claims: its `name`, or its `displayName` when the name is empty.
+ * A bare `<Surname> Lab` is named after its lead, so a row whose wrong lead was
+ * detached and whose lead-derived name was refused has no `name` until a lead is
+ * attached; reading only `name` left this lane unable to attach one (#5454).
+ */
+const claimedTitle = (entity: LabSiteNamedLeadEntity): unknown =>
+  String(entity.name ?? '').trim() ? entity.name : entity.displayName;
 
 /** A living researcher reachable through one official Yale profile URL. */
 export interface OfficialProfileOwner {
@@ -123,12 +133,13 @@ export function corroboratedResearchHome(
   entity: LabSiteNamedLeadEntity,
 ): { researchHomeUrl: string; eponym: string; spellings: EponymSpellings } | null {
   for (const url of researchHomeUrlCandidates(entity)) {
-    const [eponym] = corroboratedLabNameEponyms(entity.name, url);
+    const title = claimedTitle(entity);
+    const [eponym] = corroboratedLabNameEponyms(title, url);
     if (!eponym) continue;
     // A nobiliary particle is spelled apart in a display name and joined in a URL
     // path, so "De Camilli Lab" at `/lab/decamilli/` corroborates on `decamilli`
     // while the person page's slug reduces to `camilli` (#2285).
-    const candidates = eponymousLabNameSurnameCandidates(entity.name);
+    const candidates = eponymousLabNameSurnameCandidates(title);
     const [bare = '', joined = ''] = candidates;
     const particle = joined.endsWith(bare) ? joined.slice(0, joined.length - bare.length) : '';
     return {
@@ -157,6 +168,19 @@ export function namesTheClaimedEponym(value: unknown, spellings: EponymSpellings
   if (core === spellings.corroborated) return true;
   if (!spellings.alternates.includes(core)) return false;
   return spellings.particle.length > 0 && personNameTokens(value).includes(spellings.particle);
+}
+
+/**
+ * Yale profile slugs are given-name first ("robin-quimby") but not always: a profile
+ * may be surname first ("quimby-robin"), and reading only the last token then takes the
+ * given name for the surname (#5454). A two-token slug is read reversed only when no slug
+ * on the site matches given-name first, so a member whose given name is the surname never
+ * competes with the lead's own profile; the owner check that follows still requires the
+ * profile owner's display name to carry the claimed surname.
+ */
+function reversedSlugNamesTheClaimedEponym(slug: string, spellings: EponymSpellings): boolean {
+  const tokens = slug.split('-').filter(Boolean);
+  return tokens.length === 2 && namesTheClaimedEponym(`${tokens[1]}-${tokens[0]}`, spellings);
 }
 
 export interface LabSitePage {
@@ -210,14 +234,21 @@ export function planLabSiteNamedLeadAttachment(input: {
   if (!home) return refuse('name_claims_no_eponym');
 
   const homeHost = hostnameOf(home.researchHomeUrl);
-  const slugPages = new Map<string, string>();
+  const givenNameFirstSlugPages = new Map<string, string>();
+  const surnameFirstSlugPages = new Map<string, string>();
   for (const page of input.pages) {
     if (!isWithinResearchHomeSubtree(page.url, home.researchHomeUrl)) continue;
     for (const slug of personSlugsOnSite(page.html)) {
-      if (!namesTheClaimedEponym(slug, home.spellings)) continue;
-      if (!slugPages.has(slug)) slugPages.set(slug, page.url);
+      const readings = namesTheClaimedEponym(slug, home.spellings)
+        ? givenNameFirstSlugPages
+        : reversedSlugNamesTheClaimedEponym(slug, home.spellings)
+          ? surnameFirstSlugPages
+          : null;
+      if (readings && !readings.has(slug)) readings.set(slug, page.url);
     }
   }
+  const slugPages =
+    givenNameFirstSlugPages.size > 0 ? givenNameFirstSlugPages : surnameFirstSlugPages;
   const matchingSlugs = [...slugPages.keys()];
   if (matchingSlugs.length === 0) return refuse('site_names_no_matching_person');
   if (matchingSlugs.length > 1) return refuse('site_names_several_matching_people');

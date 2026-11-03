@@ -1380,6 +1380,9 @@ A research home that is a file at the host root strips to no directory at all, s
 Two narrower rules keep the corroboration from certifying itself.
 A person profile or faculty-directory page is never admitted as the research home (`isPersonProfileOrDirectoryUrl`): `/profile/<forename>-<surname>/` corroborates the row's eponym on its own path and its own canonical self-link is then the single eponym-surnamed person the site "names", so the lane would mint a lead from a page that never states who leads the lab.
 And the bare core of a particle surname is somebody else's whole surname, so the apart spelling is accepted only when the particle appears in the candidate's name too: "Van Dyke Lab" at `/lab/vandyke/` matches `mary-van-dyke` and refuses `bob-dyke`.
+The claimed title is the row's `name`, or its `displayName` when `name` is empty: a bare `<Surname> Lab` is named after its lead, so a row whose wrong lead was detached and whose lead-derived name was refused has no `name` until this lane attaches one (#5454).
+A two-token profile slug is also read surname first, because some Yale profiles are (`/profile/<surname>-<forename>/`) and a last-token reading takes the given name for the surname.
+That reversed reading counts only when no slug on the site matches given-name first, so a member whose given name is the surname never competes with the lead's own profile, and the owner check still requires the profile owner's own display name to carry the claimed surname.
 
 ### Lab-microsite LLM extraction
 
