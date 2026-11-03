@@ -3432,39 +3432,68 @@ const tierEligibleRankingEntities = async (
   );
 };
 
-const firstServableEndpointsInRankOrder = async (
-  rankedEndpointIds: readonly string[],
-  limit: number,
-): Promise<{
+type ServableEndpointRead = {
   entitiesByInternalId: Map<string, Record<string, any>>;
   uncheckedEndpointCount: number;
-}> => {
-  const entitiesByInternalId = new Map<string, Record<string, any>>();
-  let checked = 0;
-  while (checked < rankedEndpointIds.length && entitiesByInternalId.size < limit) {
-    const batch = rankedEndpointIds.slice(checked, checked + limit);
-    checked += batch.length;
-    const entities = (await ResearchEntity.find({
-      _id: { $in: batch },
-      archived: { $ne: true },
-      studentVisibilityTier: { $in: publicStudentVisibilityTiers },
-    })
-      .select(PUBLIC_RELATED_ENTITY_PROJECTION)
-      .lean()) as any[];
-    const servableById = new Map(
-      withServablePublicResearchEntities(
-        entities.filter((entity) =>
-          publicStudentVisibilityTiers.includes(entity.studentVisibilityTier),
-        ),
-        false,
-      ).map((entity) => [researchGroupDocumentId(entity._id), entity]),
+};
+
+const servableEntitiesById = async (
+  entityIds: readonly string[],
+): Promise<Map<string, Record<string, any>>> => {
+  if (entityIds.length === 0) return new Map();
+  const entities = (await ResearchEntity.find({
+    _id: { $in: entityIds },
+    archived: { $ne: true },
+    studentVisibilityTier: { $in: publicStudentVisibilityTiers },
+  })
+    .select(PUBLIC_RELATED_ENTITY_PROJECTION)
+    .lean()) as any[];
+  return new Map(
+    withServablePublicResearchEntities(
+      entities.filter((entity) =>
+        publicStudentVisibilityTiers.includes(entity.studentVisibilityTier),
+      ),
+      false,
+    ).map((entity) => [researchGroupDocumentId(entity._id), entity]),
+  );
+};
+
+const firstServableEndpointsInRankOrderPerDirection = async (
+  directions: readonly { rankedEndpointIds: readonly string[]; limit: number }[],
+): Promise<ServableEndpointRead[]> => {
+  const servableVerdicts = new Map<string, Record<string, any> | null>();
+  const states = directions.map(() => ({
+    entitiesByInternalId: new Map<string, Record<string, any>>(),
+    checked: 0,
+  }));
+  const needsMore = (index: number) =>
+    states[index].checked < directions[index].rankedEndpointIds.length &&
+    states[index].entitiesByInternalId.size < directions[index].limit;
+  while (directions.some((_, index) => needsMore(index))) {
+    const batches = directions.map(({ rankedEndpointIds, limit }, index) =>
+      needsMore(index)
+        ? rankedEndpointIds.slice(states[index].checked, states[index].checked + limit)
+        : [],
     );
-    for (const endpointId of batch) {
-      const entity = servableById.get(endpointId);
-      if (entity) entitiesByInternalId.set(endpointId, entity);
+    const unknownIds = Array.from(
+      new Set(batches.flat().filter((endpointId) => !servableVerdicts.has(endpointId))),
+    );
+    const servableById = await servableEntitiesById(unknownIds);
+    for (const endpointId of unknownIds) {
+      servableVerdicts.set(endpointId, servableById.get(endpointId) ?? null);
     }
+    batches.forEach((batch, index) => {
+      states[index].checked += batch.length;
+      for (const endpointId of batch) {
+        const entity = servableVerdicts.get(endpointId);
+        if (entity) states[index].entitiesByInternalId.set(endpointId, entity);
+      }
+    });
   }
-  return { entitiesByInternalId, uncheckedEndpointCount: rankedEndpointIds.length - checked };
+  return states.map(({ entitiesByInternalId, checked }, index) => ({
+    entitiesByInternalId,
+    uncheckedEndpointCount: directions[index].rankedEndpointIds.length - checked,
+  }));
 };
 
 export async function listResearchEntityRelationshipPayload(
@@ -3536,16 +3565,20 @@ export async function listResearchEntityRelationshipPayload(
     relationshipSourceId,
     rankingEntitiesByInternalId,
   );
-  const [relatedServableRead, affiliatedServableRead] = await Promise.all([
-    firstServableEndpointsInRankOrder(
-      distinctEndpointIdsInOrder(rankedRelatedCandidates, relationshipTargetId),
-      MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION + PAGE_LEAD_OWN_RESEARCH_CANDIDATE_SLACK,
-    ),
-    firstServableEndpointsInRankOrder(
-      distinctEndpointIdsInOrder(rankedAffiliatedCandidates, relationshipSourceId),
-      MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION,
-    ),
-  ]);
+  const [relatedServableRead, affiliatedServableRead] =
+    await firstServableEndpointsInRankOrderPerDirection([
+      {
+        rankedEndpointIds: distinctEndpointIdsInOrder(rankedRelatedCandidates, relationshipTargetId),
+        limit: MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION + PAGE_LEAD_OWN_RESEARCH_CANDIDATE_SLACK,
+      },
+      {
+        rankedEndpointIds: distinctEndpointIdsInOrder(
+          rankedAffiliatedCandidates,
+          relationshipSourceId,
+        ),
+        limit: MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION,
+      },
+    ]);
   const servableEntitiesByInternalId = new Map([
     ...relatedServableRead.entitiesByInternalId,
     ...affiliatedServableRead.entitiesByInternalId,
