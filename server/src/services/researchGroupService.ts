@@ -3442,7 +3442,7 @@ const firstServableEndpointsInRankOrder = async (
   const entitiesByInternalId = new Map<string, Record<string, any>>();
   let checked = 0;
   while (checked < rankedEndpointIds.length && entitiesByInternalId.size < limit) {
-    const batch = rankedEndpointIds.slice(checked, checked + limit - entitiesByInternalId.size);
+    const batch = rankedEndpointIds.slice(checked, checked + limit);
     checked += batch.length;
     const entities = (await ResearchEntity.find({
       _id: { $in: batch },
@@ -3536,14 +3536,16 @@ export async function listResearchEntityRelationshipPayload(
     relationshipSourceId,
     rankingEntitiesByInternalId,
   );
-  const relatedServableRead = await firstServableEndpointsInRankOrder(
-    distinctEndpointIdsInOrder(rankedRelatedCandidates, relationshipTargetId),
-    MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION + PAGE_LEAD_OWN_RESEARCH_CANDIDATE_SLACK,
-  );
-  const affiliatedServableRead = await firstServableEndpointsInRankOrder(
-    distinctEndpointIdsInOrder(rankedAffiliatedCandidates, relationshipSourceId),
-    MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION,
-  );
+  const [relatedServableRead, affiliatedServableRead] = await Promise.all([
+    firstServableEndpointsInRankOrder(
+      distinctEndpointIdsInOrder(rankedRelatedCandidates, relationshipTargetId),
+      MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION + PAGE_LEAD_OWN_RESEARCH_CANDIDATE_SLACK,
+    ),
+    firstServableEndpointsInRankOrder(
+      distinctEndpointIdsInOrder(rankedAffiliatedCandidates, relationshipSourceId),
+      MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION,
+    ),
+  ]);
   const servableEntitiesByInternalId = new Map([
     ...relatedServableRead.entitiesByInternalId,
     ...affiliatedServableRead.entitiesByInternalId,
@@ -3629,9 +3631,9 @@ export async function listResearchEntityRelationshipPayload(
   );
   const relatedTruncated =
     relatedServableRead.uncheckedEndpointCount > 0 ||
-    distinctEndpointIdsInOrder(rankedRelated, relationshipTargetId).length -
-      pageLeadOwnFacultyResearchIds.size >
-      relatedResearchEntities.length;
+    distinctEndpointIdsInOrder(rankedRelated, relationshipTargetId).filter(
+      (endpointId) => !pageLeadOwnFacultyResearchIds.has(endpointId),
+    ).length > relatedResearchEntities.length;
   const affiliatedTruncated =
     affiliatedServableRead.uncheckedEndpointCount > 0 ||
     distinctEndpointIdsInOrder(rankedAffiliated, relationshipSourceId).length >
