@@ -77,7 +77,12 @@ describe('rerunSourceProblems', () => {
     const [problem] = rerunSourceProblems(['lab-microsite-description-llm'], false);
     expect(problem).toMatch(/lab-microsite-description-llm is held/);
     expect(problem).toMatch(/#5020/);
-    expect(rerunSourceProblems(['lab-microsite-description-llm'], true)).toEqual([]);
+  });
+
+  it('refuses the held description lane even with the override, because it is manual-only (#5455)', () => {
+    const problems = rerunSourceProblems(['lab-microsite-description-llm'], true);
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatch(/lab-microsite-description-llm is manual-only/);
   });
 
   it('refuses a held writer lane even with the override, because the sweep never runs it', () => {
