@@ -514,6 +514,16 @@ describe('splitName', () => {
   it('splits two-word name', () => {
     expect(splitName('Samuel Kortum')).toEqual({ first: 'Samuel', last: 'Kortum' });
   });
+  it('never stores a credential the normalizer does not list as the surname (#5412)', () => {
+    expect(splitName('Avery Sloan, MD, MPH, FACEP')).toEqual({ first: 'Avery', last: 'Sloan' });
+    expect(splitName('Avery Sloan, BS')).toEqual({ first: 'Avery', last: 'Sloan' });
+    expect(splitName('Avery Sloan, MSN, APRN')).toEqual({ first: 'Avery', last: 'Sloan' });
+    expect(splitName('Avery Sloan, MD MHS')).toEqual({ first: 'Avery', last: 'Sloan' });
+  });
+  it('keeps an all-caps surname and an inverted directory name intact (#5412)', () => {
+    expect(splitName('Avery Quinn LI')).toEqual({ first: 'Avery Quinn', last: 'LI' });
+    expect(splitName('SLOAN, AVERY')).toEqual({ first: 'SLOAN,', last: 'AVERY' });
+  });
   it('keeps suffix with last name', () => {
     expect(splitName('John Doe Jr.')).toEqual({ first: 'John', last: 'Doe Jr.' });
   });

@@ -6,7 +6,10 @@
  * external data (names, emails, URLs).
  */
 import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatCharacters';
-import { stripPersonNameCaptionWrapper } from '../../utils/personNameHygiene';
+import {
+  stripPersonNameCaptionWrapper,
+  stripPersonNameCredentialList,
+} from '../../utils/personNameHygiene';
 
 export const SLUG_MAX_LENGTH = 100;
 
@@ -338,7 +341,7 @@ export function normalizeInitialSpacing(name: string | undefined | null): string
  * (CAS / Yalies) rather than these splits.
  */
 export function splitName(name: string): { first: string; last: string } {
-  const tokens = normalizeName(name).split(/\s+/).filter(Boolean);
+  const tokens = stripPersonNameCredentialList(normalizeName(name)).split(/\s+/).filter(Boolean);
   if (tokens.length === 0) return { first: '', last: '' };
   if (tokens.length === 1) return { first: tokens[0], last: '' };
   // pull off trailing suffix tokens like "Jr.", "Sr.", "II", "III", "IV"
