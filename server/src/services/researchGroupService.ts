@@ -3568,8 +3568,12 @@ export async function listResearchEntityRelationshipPayload(
   const [relatedServableRead, affiliatedServableRead] =
     await firstServableEndpointsInRankOrderPerDirection([
       {
-        rankedEndpointIds: distinctEndpointIdsInOrder(rankedRelatedCandidates, relationshipTargetId),
-        limit: MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION + PAGE_LEAD_OWN_RESEARCH_CANDIDATE_SLACK,
+        rankedEndpointIds: distinctEndpointIdsInOrder(
+          rankedRelatedCandidates,
+          relationshipTargetId,
+        ),
+        limit:
+          MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION + PAGE_LEAD_OWN_RESEARCH_CANDIDATE_SLACK,
       },
       {
         rankedEndpointIds: distinctEndpointIdsInOrder(
