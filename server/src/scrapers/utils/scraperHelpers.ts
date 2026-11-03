@@ -6,7 +6,10 @@
  * external data (names, emails, URLs).
  */
 import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatCharacters';
-import { stripPersonNameCaptionWrapper } from '../../utils/personNameHygiene';
+import {
+  stripPersonNameCaptionWrapper,
+  stripPersonNameCredentialList,
+} from '../../utils/personNameHygiene';
 
 export const SLUG_MAX_LENGTH = 100;
 
@@ -333,12 +336,13 @@ export function normalizeInitialSpacing(name: string | undefined | null): string
  * Best-effort split of a normalized name into { first, last }.
  *
  * Handles single-word names (returns first only), suffixes like "Jr." / "III"
- * (treats them as part of the last name), and hyphenated last names. This is a
+ * (treats them as part of the last name), and hyphenated last names. A trailing
+ * credential list is dropped first, so a degree is never read as the surname. This is a
  * heuristic — production user records should rely on authoritative sources
  * (CAS / Yalies) rather than these splits.
  */
 export function splitName(name: string): { first: string; last: string } {
-  const tokens = normalizeName(name).split(/\s+/).filter(Boolean);
+  const tokens = stripPersonNameCredentialList(normalizeName(name)).split(/\s+/).filter(Boolean);
   if (tokens.length === 0) return { first: '', last: '' };
   if (tokens.length === 1) return { first: tokens[0], last: '' };
   // pull off trailing suffix tokens like "Jr.", "Sr.", "II", "III", "IV"
