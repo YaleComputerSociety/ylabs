@@ -1556,13 +1556,10 @@ const Research = () => {
   const hasStudentFacetSelection = activeStudentFilterCount > 0;
   const hasSubmittableChange = query.trim().length > 0 && query.trim() !== submittedQuery;
   const searchDisabled = searchLoading && !hasSubmittableChange;
-  const searchHelpText = query.trim()
-    ? ''
-    : hasStudentFacetSelection
-      ? 'Search with the selected filters.'
-      : showEmptySearchHint
-        ? 'Type a topic, professor, or lab to search.'
-        : '';
+  const searchHelpText =
+    !query.trim() && !hasStudentFacetSelection && showEmptySearchHint
+      ? 'Type a topic, professor, or lab to search.'
+      : '';
   const departmentFacetLabel = (department: string) =>
     getUniqueDepartmentLabels([department], departments)[0] || department;
   const applyStudentFilters = (next: {
