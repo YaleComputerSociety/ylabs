@@ -532,9 +532,17 @@ export function publicUndergradInvitation(
   };
 }
 
-export const entityWelcomesUndergraduates = (
-  group: Parameters<typeof quotePageIsAboutAnotherEntity>[1] & { undergradInvitation?: unknown },
-): boolean => publicUndergradInvitation(group.undergradInvitation, group) !== undefined;
+type UndergradInvitationHolder = Parameters<typeof quotePageIsAboutAnotherEntity>[1] & {
+  undergradInvitation?: unknown;
+};
+
+export const servedUndergradInvitationLevel = (
+  group: UndergradInvitationHolder,
+): UndergradInvitationLevel | undefined =>
+  publicUndergradInvitation(group.undergradInvitation, group)?.level;
+
+export const entityWelcomesUndergraduates = (group: UndergradInvitationHolder): boolean =>
+  servedUndergradInvitationLevel(group) !== undefined;
 
 const OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS = [
   'shortDescription',

@@ -1308,6 +1308,47 @@ describe('searchResearchGroupsViaMeili', () => {
     ]);
   });
 
+  it('lists actively hiring rows first when browse is filtered to rows that welcome undergraduates', async () => {
+    mocks.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+
+    await searchResearchGroupsViaMeili('', { welcomesUndergrads: true }, 1, 24);
+
+    expect(mocks.search.mock.calls[0][1].sort).toEqual([
+      'undergradInvitationRank:desc',
+      'browseRankScore:desc',
+      'browseTiebreakKey:asc',
+    ]);
+  });
+
+  it('never overrides a sort the student chose with the hiring order', async () => {
+    mocks.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+
+    await searchResearchGroupsViaMeili('', { welcomesUndergrads: true }, 1, 24, {
+      sortBy: 'name',
+      sortOrder: 'asc',
+    });
+
+    for (const [, params] of mocks.search.mock.calls) {
+      expect(params.sort ?? []).not.toContain('undergradInvitationRank:desc');
+    }
+  });
+
+  it('keeps the browse order when the hiring rank is not yet sortable', async () => {
+    mocks.search
+      .mockRejectedValueOnce({
+        code: 'invalid_search_sort',
+        message: 'Attribute `undergradInvitationRank` is not sortable.',
+      })
+      .mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
+
+    await searchResearchGroupsViaMeili('', { welcomesUndergrads: true }, 1, 24);
+
+    expect(mocks.search.mock.calls[1][1].sort).toEqual([
+      'browseRankScore:desc',
+      'browseTiebreakKey:asc',
+    ]);
+  });
+
   it('keeps the browse rank when only the tiebreak key is not yet sortable', async () => {
     mocks.search
       .mockRejectedValueOnce({
@@ -2431,6 +2472,7 @@ describe('searchResearchGroupsViaMeili', () => {
       'researchAreas',
       'hasUndergradHostingEvidence',
       'welcomesUndergrads',
+      'undergradInvitationRank',
       'meshDescriptorOnlyTerms',
     ];
     expect(poolParams.attributesToRetrieve).toEqual(candidateFields);

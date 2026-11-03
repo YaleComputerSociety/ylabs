@@ -360,6 +360,27 @@ describe('researchEntitySearchIndexService', () => {
       })?.welcomesUndergrads,
     ).toBe(false);
     expect(row(undefined)?.welcomesUndergrads).toBe(false);
+    expect(
+      row({
+        level: 'actively_hiring',
+        quote: 'We are actively recruiting undergraduate researchers.',
+        sourceUrl: 'https://invitation.example.edu/join',
+      })?.undergradInvitationRank,
+    ).toBe(2);
+    expect(
+      row({
+        level: 'welcomes_undergrads',
+        quote: 'We welcome undergraduates.',
+        sourceUrl: 'https://invitation.example.edu/',
+      })?.undergradInvitationRank,
+    ).toBe(1);
+    expect(
+      row({
+        level: 'actively_hiring',
+        quote: ' ',
+        sourceUrl: 'https://invitation.example.edu/',
+      })?.undergradInvitationRank,
+    ).toBe(0);
   });
 
   it('indexes a row whose official roster lists undergraduates as hosting, without the roster (#5232)', () => {
