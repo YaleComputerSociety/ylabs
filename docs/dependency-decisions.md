@@ -164,6 +164,7 @@ The root `resolutions` once forced 5.0.12 onto every consumer, which included th
 `minimatch` 3 calls `brace-expansion` as a CommonJS default function and 5.x exports only named bindings, so any brace glob crashed ESLint with `expand is not a function`.
 
 The root override is now keyed by the declared range, `brace-expansion@npm:^1.1.7` to 1.1.21 and `brace-expansion@npm:^5.0.5` to 5.0.12, so each consumer gets a patched release of the major it was written for.
+On 2026-11-03 (#5451) `minimatch` 11.0.4 declares `brace-expansion@^5.0.12`, which cannot resolve below the patched floor, so the `^5.0.5` key matched no descriptor and was removed.
 The `server` and `client` pins stay unscoped, because both resolve only `minimatch` 10.
 `scripts/security-preflight.test.mjs` pins both halves: every locked `brace-expansion` in the three lockfiles must be on the patched floor of its own major, and the `minimatch` ESLint loads must match a brace set.
 A new parent that declares a range neither key covers resolves unpinned, and the first of those guards fails if the version it locks is not patched.
