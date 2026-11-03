@@ -73,6 +73,11 @@ const NOT_A_SOURCE_NAME: ReadonlyArray<{ literal: string; reason: string }> = [
     literal: 'applications',
     reason: 'a Mongo collection name in cleanupLegacyMongoCollections, not an observation source',
   },
+  {
+    literal: 'offline-scoring',
+    reason:
+      'the default score-origin label on search rerank cache entries in seedSearchRerankCacheCore, not an observation source',
+  },
 ];
 
 export function collectAuthoredSourceNames(): string[] {

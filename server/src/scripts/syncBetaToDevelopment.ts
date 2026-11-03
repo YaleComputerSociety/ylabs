@@ -151,6 +151,9 @@ const EXCLUDED_BETA_COLLECTIONS = [
   // is a paid model reading of the environment's own stored page text (#5396).
   'research_topics_derivations',
   'review_decisions',
+  // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy: each
+  // environment seeds its own rerank scores (#5448).
+  'search_rerank_cache',
   'scrape_job_locks',
   'scrape_snapshots',
   'source_documents',
