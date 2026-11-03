@@ -1563,6 +1563,11 @@ const Research = () => {
       : showEmptySearchHint
         ? 'Type a topic, professor, or lab to search.'
         : '';
+  const searchHelpVisibilityClass = !searchHelpText
+    ? 'hidden'
+    : hasStudentFacetSelection
+      ? 'xl:hidden'
+      : '';
   const departmentFacetLabel = (department: string) =>
     getUniqueDepartmentLabels([department], departments)[0] || department;
   const applyStudentFilters = (next: {
@@ -1979,7 +1984,7 @@ const Research = () => {
               <p
                 id="research-search-help"
                 aria-live="polite"
-                className={`mt-2 text-sm text-muted xl:text-xs ${searchHelpText ? '' : 'hidden'}`}
+                className={`mt-2 text-sm text-muted xl:text-xs ${searchHelpVisibilityClass}`}
               >
                 {searchHelpText}
               </p>
@@ -2034,7 +2039,7 @@ const Research = () => {
             )}
             <div
               aria-hidden={isAuthLoading || undefined}
-              className={`mt-3 grid rounded-card border border-line-brand bg-brand-soft px-3 py-2 text-sm leading-relaxed text-brand-navy sm:mt-4 ${isAuthLoading ? 'invisible' : ''} ${isAuthLoading || isAuthenticated ? 'xl:hidden' : ''}`}
+              className={`mt-3 grid rounded-card border border-line-brand bg-brand-soft px-3 py-2 text-sm leading-relaxed text-brand-navy sm:mt-4 xl:hidden ${isAuthLoading ? 'invisible' : ''}`}
             >
               <p
                 aria-hidden={isAuthenticated || undefined}

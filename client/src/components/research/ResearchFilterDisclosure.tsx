@@ -485,12 +485,21 @@ const ResearchFilterDisclosure = ({
   if (isSidebar) {
     return (
       <section aria-label="Research filters" aria-busy={isApplying} className="min-w-0 max-w-full">
-        <div className="flex min-w-0 items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
           <h2 className="text-base font-semibold text-ink">Research filters</h2>
           {activeCount > 0 && (
-            <span className="min-w-5 rounded-full bg-[var(--yr-blue)] px-1.5 py-0.5 text-center text-xs font-semibold text-white">
-              {activeCount}
-            </span>
+            <>
+              <span className="min-w-5 rounded-full bg-[var(--yr-blue)] px-1.5 py-0.5 text-center text-xs font-semibold text-white">
+                {activeCount}
+              </span>
+              <button
+                type="button"
+                onClick={onClearAll}
+                className="yr-focus-ring -my-2.5 ml-auto inline-flex min-h-11 shrink-0 items-center rounded-control px-2 text-sm font-semibold text-muted hover:text-ink"
+              >
+                Clear all filters
+              </button>
+            </>
           )}
         </div>
         {isApplying && (
@@ -501,9 +510,7 @@ const ResearchFilterDisclosure = ({
         <div className="mt-4 min-w-0 space-y-4">
           {facetCountWarning}
           {filterFields}
-          {clearAllButton}
         </div>
-        {activeChips(false)}
       </section>
     );
   }

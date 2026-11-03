@@ -268,54 +268,71 @@ await step('signed-in student reaches the research browse home', async () => {
 });
 await screenshot('01-browse-home');
 
+const assertWideSidebarFits = async (visitorContext, visitor) => {
+  const laptopPage = await visitorContext.newPage();
+  try {
+    const sidebar = laptopPage.locator('header', {
+      has: laptopPage.getByRole('heading', {
+        level: 1,
+        name: 'Find Yale research that fits you.',
+      }),
+    });
+    const assertSidebarFits = async (state) => {
+      const { scrollHeight, clientHeight } = await sidebar.evaluate((element) => ({
+        scrollHeight: element.scrollHeight,
+        clientHeight: element.clientHeight,
+      }));
+      const { width, height } = laptopPage.viewportSize();
+      assert(
+        scrollHeight <= clientHeight,
+        `The sticky research sidebar overflows for ${visitor} ${state} at ${width}x${height}: ${scrollHeight}px of content in ${clientHeight}px.`,
+      );
+    };
+    for (const height of [800, 720]) {
+      await laptopPage.setViewportSize({ width: 1280, height });
+      await laptopPage.goto(`${baseUrl}/research`, { waitUntil: 'domcontentloaded' });
+      await settleResearchPage(laptopPage);
+      for (const axis of ['type', 'school', 'department']) {
+        await sidebar.getByLabel(`Filter by ${axis}`).waitFor({ timeout: 20000 });
+      }
+      const hostedToggle = sidebar.getByRole('checkbox', {
+        name: /^Hosted undergrads \([1-9][\d,]*\)$/,
+      });
+      await hostedToggle.waitFor({ timeout: 20000 });
+      await assertSidebarFits('while browsing');
+      await sidebar.getByLabel(SEARCH_INPUT_LABEL).fill(SMOKE_SEARCH_TOKEN);
+      await assertSidebarFits('with a query typed');
+      await sidebar.getByRole('button', { name: 'Search', exact: true }).click();
+      await laptopPage
+        .locator(SEARCH_RESULTS_SELECTOR)
+        .getByRole('status')
+        .filter({ hasText: /results? for '.+'/i })
+        .first()
+        .waitFor({ timeout: 20000 });
+      await settleResearchPage(laptopPage);
+      await assertSidebarFits('after a search');
+      await laptopPage.goto(`${baseUrl}/research`, { waitUntil: 'domcontentloaded' });
+      await settleResearchPage(laptopPage);
+      await hostedToggle.check();
+      await laptopPage.waitForURL(/[?&]undergrad=1/, { timeout: 20000 });
+      await settleResearchPage(laptopPage);
+      await sidebar.getByRole('button', { name: 'Clear all filters' }).waitFor({ timeout: 20000 });
+      await assertSidebarFits('with a filter active');
+    }
+  } finally {
+    await laptopPage.close();
+  }
+};
+
 await step(
   'the wide-screen research sidebar fits every filter without its own scrollbar',
   async () => {
-    const laptopPage = await context.newPage();
+    await assertWideSidebarFits(context, 'a signed-in student');
+    const guestContext = await browser.newContext({ deviceScaleFactor: 1 });
     try {
-      const sidebar = laptopPage.locator('header', {
-        has: laptopPage.getByRole('heading', {
-          level: 1,
-          name: 'Find Yale research that fits you.',
-        }),
-      });
-      const assertSidebarFits = async (state) => {
-        const { scrollHeight, clientHeight } = await sidebar.evaluate((element) => ({
-          scrollHeight: element.scrollHeight,
-          clientHeight: element.clientHeight,
-        }));
-        const { width, height } = laptopPage.viewportSize();
-        assert(
-          scrollHeight <= clientHeight,
-          `The sticky research sidebar overflows ${state} at ${width}x${height}: ${scrollHeight}px of content in ${clientHeight}px.`,
-        );
-      };
-      for (const height of [800, 720]) {
-        await laptopPage.setViewportSize({ width: 1280, height });
-        await laptopPage.goto(`${baseUrl}/research`, { waitUntil: 'domcontentloaded' });
-        await settleResearchPage(laptopPage);
-        for (const axis of ['type', 'school', 'department']) {
-          await sidebar.getByLabel(`Filter by ${axis}`).waitFor({ timeout: 20000 });
-        }
-        const hostedToggle = sidebar.getByRole('checkbox', {
-          name: /^Hosted undergrads \([1-9][\d,]*\)$/,
-        });
-        await hostedToggle.waitFor({ timeout: 20000 });
-        await assertSidebarFits('while browsing');
-        await sidebar.getByLabel(SEARCH_INPUT_LABEL).fill(SMOKE_SEARCH_TOKEN);
-        await assertSidebarFits('with a query typed');
-        await sidebar.getByRole('button', { name: 'Search', exact: true }).click();
-        await laptopPage
-          .locator(SEARCH_RESULTS_SELECTOR)
-          .getByRole('status')
-          .filter({ hasText: /results? for '.+'/i })
-          .first()
-          .waitFor({ timeout: 20000 });
-        await settleResearchPage(laptopPage);
-        await assertSidebarFits('after a search');
-      }
+      await assertWideSidebarFits(guestContext, 'a guest');
     } finally {
-      await laptopPage.close();
+      await guestContext.close();
     }
   },
 );

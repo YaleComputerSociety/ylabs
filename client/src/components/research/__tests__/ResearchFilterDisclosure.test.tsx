@@ -46,7 +46,7 @@ describe('ResearchFilterDisclosure', () => {
     expect(screen.queryByText('No additional filters can narrow these results.')).toBeNull();
   });
 
-  it('offers the hosted-undergraduates filter with the count it returns, and a chip that removes it', () => {
+  it('offers the hosted-undergraduates filter with the count it returns, and unchecks it', () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
     const { props, rerender } = renderFilters({
       variant: 'sidebar',
@@ -64,12 +64,13 @@ describe('ResearchFilterDisclosure', () => {
     expect(props.onHostsUndergradsChange).toHaveBeenCalledWith(true);
 
     rerender(<ResearchFilterDisclosure {...props} selectedHostsUndergrads />);
-    expect(screen.getByRole('checkbox', { name: 'Hosted undergrads (7)' })).toBeChecked();
-    fireEvent.click(screen.getByRole('button', { name: 'Remove Undergraduates: Hosted before' }));
+    const checked = screen.getByRole('checkbox', { name: 'Hosted undergrads (7)' });
+    expect(checked).toBeChecked();
+    fireEvent.click(checked);
     expect(props.onHostsUndergradsChange).toHaveBeenCalledWith(false);
   });
 
-  it('offers the welcomes-undergraduates filter with its count, and a chip that removes it', () => {
+  it('offers the welcomes-undergraduates filter with its count, and unchecks it', () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
     const { props, rerender } = renderFilters({
       variant: 'sidebar',
@@ -84,9 +85,10 @@ describe('ResearchFilterDisclosure', () => {
     expect(props.onWelcomesUndergradsChange).toHaveBeenCalledWith(true);
 
     rerender(<ResearchFilterDisclosure {...props} selectedWelcomesUndergrads />);
-    expect(screen.getByRole('checkbox', { name: 'Welcomes undergrads (4)' })).toBeChecked();
+    const checked = screen.getByRole('checkbox', { name: 'Welcomes undergrads (4)' });
+    expect(checked).toBeChecked();
     expect(screen.getByRole('checkbox', { name: 'Hosted undergrads (7)' })).not.toBeChecked();
-    fireEvent.click(screen.getByRole('button', { name: 'Remove Undergraduates: Welcomes now' }));
+    fireEvent.click(checked);
     expect(props.onWelcomesUndergradsChange).toHaveBeenCalledWith(false);
   });
 
@@ -239,7 +241,30 @@ describe('ResearchFilterDisclosure', () => {
     expect(screen.getByRole('heading', { name: 'Research filters', level: 2 })).toBeTruthy();
     expect(screen.getByLabelText('Filter by school')).toBeTruthy();
     expect(screen.getByLabelText('Filter by department')).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Remove School: Yale College' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Remove School: Yale College' })).toBeNull();
+    expect(screen.getByLabelText('Filter by school')).toHaveValue('Yale College');
+  });
+
+  it('clears every filter from the sidebar header instead of a row of its own', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    const { props } = renderFilters({ variant: 'sidebar', selectedSchool: 'Yale College' });
+
+    const header = screen.getByRole('heading', {
+      name: 'Research filters',
+      level: 2,
+    }).parentElement;
+    const clearAll = screen.getByRole('button', { name: 'Clear all filters' });
+    expect(header).toContainElement(clearAll);
+    fireEvent.click(clearAll);
+    expect(props.onClearAll).toHaveBeenCalled();
+  });
+
+  it('keeps the active-filter chips beside the collapsed popover trigger', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    const { props } = renderFilters({ selectedWelcomesUndergrads: true });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Undergraduates: Welcomes now' }));
+    expect(props.onWelcomesUndergradsChange).toHaveBeenCalledWith(false);
   });
 
   // The current-availability, compensation and eligible-student-levels filter

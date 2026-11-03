@@ -136,12 +136,14 @@ A projected next-cycle estimate always names its year (`formatProjectedProgramDa
 - Sticky sidebars must never hide content below the fold on short viewports.
 - The `/research` sticky filter bar is one row below the sidebar breakpoint: the Filters trigger, then the active chips and "Clear all filters" in their own horizontally scrolling strip, because wrapped chips made the bar 156px of a 664px phone screen (#5305).
 The student-journey smoke fails when the bar is taller than 72px at 390x664 with a filter active, or when the active chip runs past the strip's edge and hides its remove control.
+- The wide-layout `/research` sidebar carries no active-filter chips, because each of its controls already shows its own state, and "Clear all filters" sits in its header row beside the active count: a chip row, a clear-all row and the "Search with the selected filters." helper line, which the wide layout now hides, made it 717px of a 590px sidebar at 1280x720 with one filter on (#5449).
+The student-journey smoke checks the sidebar fits for a signed-in student and for a guest, with a filter active as well as while browsing.
 - Public pages paint before the session check answers, so UI that mounts only for a resolved session must not land above content that is already painted.
 Reserve its slot when every viewer needs it, or place it where nothing follows it.
 The `/research` operator controls sit at the bottom of the wide-layout sidebar, and inside the closed "Filters" panel on narrower layouts, for this reason.
 On narrower layouts the "Filters" trigger badge counts the active operator controls too, so a reordered or filtered list is never silent.
 Copy that differs by persona shares one slot: the `/research` guest notice and its signed-in counterpart are stacked in the same grid cell with the inactive one `invisible`, so the slot is as tall as the longer copy for every viewer and the session answer never resizes it (#4222).
-On the wide layout that slot is the last thing in the sticky sidebar and shows only to a known guest, because the sidebar must fit a 1280x720 viewport without its own scrollbar and nothing sits below the slot for a late answer to move.
+The wide layout shows neither notice, because the sidebar must fit a 1280x720 viewport without its own scrollbar and the guest copy alone cost about 100px of it; a guest there signs in from the navbar (owner decision, 2026-11-03, #5449).
 The student-journey smoke holds the session check until browse has painted, counts only the layout shifts after it answers for an admin and for a signed-in student at 1280, 768, and 375px, and fails at a CLS of 0.1; first-paint shifts are excluded because their size depends on frame timing, which once doubled the total (#4169).
 - `main` is at least as tall as `[data-scroll-container]` (`min-h-full`), so the footer starts below the fold on every route and a lazy route's chunk and data arriving never push it out of view.
 The footer shift this removed scored 0.094 on `/about` at 1440px and 0.159 at 375px; the smoke fails when a lazy route paints the footer inside the viewport while it loads.
