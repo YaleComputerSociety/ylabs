@@ -9,6 +9,8 @@
 // benchmark and its scorecards are the same kind of environment-local history.
 // A research-topics derivation is a paid model reading of this environment's
 // stored page text, so a refresh that cleared it would buy every reading again.
+// A search rerank cache pairs this environment's student queries with its rows and
+// is seeded per environment, so a copy would serve one corpus's scores on another's ids.
 export const NEVER_COPY_COLLECTIONS = [
   'accounts',
   'research_plans',
@@ -25,6 +27,7 @@ export const NEVER_COPY_COLLECTIONS = [
   'weekly_sweep_runs',
   'login_signal_tallies',
   'research_topics_derivations',
+  'search_rerank_cache',
 ];
 
 // The Development refresh clears every collection the Beta mirror does not
@@ -46,6 +49,7 @@ export const PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS = [
   'weekly_sweep_runs',
   'login_signal_tallies',
   'research_topics_derivations',
+  'search_rerank_cache',
 ];
 
 // A lease is state rather than history: it expires and is taken over, so a

@@ -319,6 +319,7 @@ describe('Beta to Development sync guards', () => {
       'login_signal_tallies',
       'research_plans',
       'research_topics_derivations',
+      'search_rerank_cache',
       'weekly_sweep_runs',
     ]);
     expect(EPHEMERAL_ENVIRONMENT_LOCAL_COLLECTIONS).toEqual(['scrape_job_locks']);

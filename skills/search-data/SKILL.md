@@ -611,6 +611,15 @@ That is an index settings change, so it reaches search only after the settings a
 The synonym was not the whole defect: index-time `studentSearchTerms` tagged rows with the computer-vision cluster from a bare "CV" in prose ("Download CV", "his CV lists over 100 publications"), 9 of the 12 such rows on Development.
 A bare `cv` now triggers only when the same field also carries vision vocabulary (`CV_CORROBORATING_CONTEXT_PATTERN`), never a department or title elsewhere on the row and never a lone generic word such as `imaging`, `visual`, or `detection`, which none of those 9 did and a lab abbreviating its field ("Our CV group builds algorithms for object detection") does; the phrases `computer vision` and `computational vision` trigger on their own (#3853).
 
+### A cached relevance score reorders the top 30 of a past query (#5448)
+
+Behind `SEARCH_RERANK_CACHE_ENABLED=true`, a text search whose pool is paginated locally reads `search_rerank_cache` for its key (`searchRerankCacheQueryKey`: the typed query tokenized as search reads it, before spelling correction, plus the student-chosen filters in a fixed order) and reorders the first 30 rows of the filtered fused pool by cached score, unscored rows at the neutral 1.5 and the fused order as the tiebreak (`applyCachedRerank` in `services/searchRerankCache.ts`).
+It runs before the page is sliced, so pages agree and totals and facets are unchanged.
+A missing entry, a failed read, a name query (`keywordLegTopHitIsNameMatch`), an explicit sort and a Meilisearch-paged search are served exactly as without the flag, and with the flag unset the collection is never read.
+Scores are produced offline and written by `research-search:seed-rerank-cache`, dry run by default, Development unless `--environment` names Beta or Production; the collection is environment-local and never committed, because it pairs real student queries with rows.
+Re-seed after a corpus-wide change; a stale entry only reorders rows search already returned.
+`docs/search-rerank-cache.md` is the full contract.
+
 ### "More like this" ranks on meaning, not on a shared name
 
 The detail page's similar-research rail is `listSimilarResearchEntities`, which asks Meilisearch's `searchSimilarDocuments` for the 40 nearest stored vectors and serves the first six that pass the live serve gate.

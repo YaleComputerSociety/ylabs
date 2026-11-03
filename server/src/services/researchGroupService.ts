@@ -52,6 +52,11 @@ import {
 } from './researchEntitySearchIndexService';
 import { meshDescriptorWordKeys } from '../scrapers/utils/meshNonSubjectDescriptors';
 import { getResearchSearchQueryVector } from './researchSearchQueryEmbedding';
+import {
+  applyCachedRerank,
+  cachedSearchRerankScores,
+  isSearchRerankCacheEnabled,
+} from './searchRerankCache';
 import { servedCitationUrl } from './servedCitationPolicy';
 import { withoutLeadGuardedCopy } from './servedResearchEntityCard';
 import { isPublicHttpUrl } from '../utils/urlSafety';
@@ -946,6 +951,71 @@ const sanitizeResearchGroupSearchFilters = (
   studentVisibilityTier: boundedResearchFilterValues(filters.studentVisibilityTier),
 });
 
+const SEARCH_RERANK_CACHE_FILTER_LISTS = [
+  'kind',
+  'entityType',
+  'school',
+  'departments',
+  'researchAreas',
+] as const;
+const SEARCH_RERANK_CACHE_FILTER_TOGGLES = ['hostsUndergrads', 'welcomesUndergrads'] as const;
+
+export type SearchRerankCacheFilters = Pick<
+  ResearchGroupFilterInput,
+  | (typeof SEARCH_RERANK_CACHE_FILTER_LISTS)[number]
+  | (typeof SEARCH_RERANK_CACHE_FILTER_TOGGLES)[number]
+>;
+
+const collapsedLowercase = (value: string): string =>
+  value.toLowerCase().replace(/\s+/g, ' ').trim();
+
+/**
+ * The filters a student chose, in a fixed key order with each list sorted, so the same
+ * choice made in any order is the same cache entry. The visibility tier is an operator
+ * scope rather than a student choice, so it never splits an entry.
+ */
+export const searchRerankCacheFilters = (
+  filters: ResearchGroupFilterInput = {},
+): SearchRerankCacheFilters => {
+  const safeFilters = sanitizeResearchGroupSearchFilters(filters || {});
+  const chosen: SearchRerankCacheFilters = {};
+  for (const key of SEARCH_RERANK_CACHE_FILTER_LISTS) {
+    const values = safeFilters[key] ?? [];
+    if (values.length > 0) chosen[key] = [...values].sort((a, b) => a.localeCompare(b));
+  }
+  for (const key of SEARCH_RERANK_CACHE_FILTER_TOGGLES) {
+    if (safeFilters[key] === true) chosen[key] = true;
+  }
+  return chosen;
+};
+
+/**
+ * The cache key for one typed query under the student's filters. It reads the query the
+ * way search tokenizes it, so two spellings search treats alike share an entry, and it is
+ * taken before spelling correction, so a seeder keys a logged query exactly as typed.
+ * `research-search:seed-rerank-cache` must key entries with this function.
+ */
+export const searchRerankCacheQueryKey = (
+  query: unknown,
+  filters: ResearchGroupFilterInput = {},
+): string => {
+  const normalized = normalizeResearchSearchQuery(query);
+  const queryText =
+    normalized.tokens.length > 0 ? normalized.tokens.join(' ') : collapsedLowercase(normalized.raw);
+  const chosen = searchRerankCacheFilters(filters);
+  const keyedFilters = [
+    ...SEARCH_RERANK_CACHE_FILTER_LISTS.flatMap((key) =>
+      chosen[key]
+        ? [[key, [...new Set(chosen[key]!.map(collapsedLowercase))].sort()] as const]
+        : [],
+    ),
+    ...SEARCH_RERANK_CACHE_FILTER_TOGGLES.flatMap((key) =>
+      chosen[key] ? [[key, true] as const] : [],
+    ),
+  ];
+  return JSON.stringify([queryText, keyedFilters]);
+};
+
 const sanitizeResearchGroupSearchOptions = (
   options: ResearchGroupSearchOptions = {},
 ): ResearchGroupSearchOptions => {
@@ -1741,6 +1811,10 @@ export async function searchResearchGroupsViaMeili(
         studentFilters.filters,
         await liveIndexFilterability(await getMeiliSearchIndex('researchentities')),
       ).dropped;
+  const rerankQueryKey =
+    isSearchRerankCacheEnabled() && normalizeResearchSearchQuery(query).raw !== ''
+      ? searchRerankCacheQueryKey(query, filters)
+      : undefined;
   const searched = await searchResearchGroupsForQuery(
     spelling.query,
     studentFilters.filters,
@@ -1748,6 +1822,7 @@ export async function searchResearchGroupsViaMeili(
     pageSize,
     sort,
     options,
+    rerankQueryKey,
   );
   const appliedFilters =
     studentFilters.applied || droppedToggleFilters
@@ -1793,6 +1868,7 @@ async function searchResearchGroupsForQuery(
   pageSize: number,
   sort: ResearchGroupSearchSort = {},
   options: ResearchGroupSearchOptions = {},
+  rerankQueryKey?: string,
 ): Promise<ResearchGroupSearchResult> {
   // Same reason as `getResearchGroupDetail`: a browse hit carries research-area chips too, and
   // a script that reads browse must see the chips a student sees (#3817).
@@ -2193,6 +2269,12 @@ async function searchResearchGroupsForQuery(
   const runsHybridLegs =
     Boolean(finalSearchParams.hybrid) && finalSearchParams.rankingScoreThreshold !== undefined;
   const runsSemanticLeg = runsHybridLegs && !sort.sortBy;
+  // Only a locally paginated pool can be reordered before it is paged, so every page of
+  // one search reads the same order; a sorted or pre-paginated search is served as is.
+  const rerankScoresLookup =
+    rerankQueryKey && paginateHybridPoolLocally && runsSemanticLeg
+      ? cachedSearchRerankScores(rerankQueryKey)
+      : null;
   const keywordLegParams = (matchingStrategy?: string): Record<string, any> => ({
     filter: candidatePoolFilterString,
     ...(finalSearchParams.sort ? { sort: finalSearchParams.sort } : {}),
@@ -2473,10 +2555,12 @@ async function searchResearchGroupsForQuery(
       keywordLegHits: dropCoincidentalTypoOnlyHits(deepKeywordLegRawHits).hits,
     };
   })();
-  const withholdSemanticOnlyRows =
-    fuseRankings &&
+  const keywordLegTopHitNamesTheQuery =
     keywordLegTopHit !== null &&
     keywordLegTopHitIsNameMatch([keywordLegTopHit.hit], normalizedQuery.tokens);
+  const withholdSemanticOnlyRows = fuseRankings && keywordLegTopHitNamesTheQuery;
+  const rerankScores =
+    rerankScoresLookup && !keywordLegTopHitNamesTheQuery ? await rerankScoresLookup : null;
   const orderCandidatePool = (
     poolHits: any[],
     matchedKeywordLegHits: any[],
@@ -2538,8 +2622,9 @@ async function searchResearchGroupsForQuery(
   // is stable, then the requested page window is sliced locally. Non-thresholded
   // queries already come back pre-paginated from Meilisearch, so they are used
   // as-is. See #1064.
+  const rerankedPool = rerankScores ? applyCachedRerank(servedPool, rerankScores) : servedPool;
   const orderedHits = paginateHybridPoolLocally
-    ? servedPool.slice(offset, offset + safePageSize)
+    ? rerankedPool.slice(offset, offset + safePageSize)
     : reorderedPool;
   const facetsTalliedOverPool = POOL_TALLIED_RESEARCH_FACETS.filter(
     ({ indexField }) =>
