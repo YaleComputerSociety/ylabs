@@ -164,6 +164,7 @@ A language model may help only later, at materialization, and then under three r
 
 Four lanes called a model on 2026-10-18: `lab-microsite-undergrad-llm` (manual-only), `center-director-llm`, `center-affiliation-llm` and `lab-microsite-description-llm` (weekly sweep).
 Each is replaced one at a time and measured on a frozen page set against the lane it replaces before that lane is retired; #5296 holds the order.
+Since 2026-11-03 (#5455) all four are manual-only, so the weekly sweep runs no model-calling lane; `lab-microsite-description-llm` runs only by hand until the final description batch.
 
 The first replacement is the hosted-undergraduates badge.
 A reviewed official roster that lists an undergraduate now counts as hosting evidence (#5233), the extractor reads every undergraduate section and refuses non-Yale students (#5292, #5341), and 36 rosters the record-only derivation (#5294) built were checked against their pages and added to the allowlist (#5337, #5356), which holds 173 labs.

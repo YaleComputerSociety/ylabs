@@ -41,6 +41,7 @@ The fellowship engine writes `Fellowship` records for `/programs` and runs the c
 `validateScraperSweepManifest` asserts every registered orchestrator source is in exactly one engine, with the exception of the sources in `MANUAL_ONLY_SWEEP_SOURCES`, which stay registered, seeded and runnable by hand (`scrape run --source <name>`) but out of both automated manifests.
 The validator also refuses a manual-only name that is no longer registered, so the list cannot go stale.
 The sweep manifests and `MANUAL_ONLY_SWEEP_SOURCES` are the only run switch.
+No model-calling lane is in either manifest: every registered `-llm` lane is manual-only, and `runScraperSweep.test.ts` fails if one is swept (#5455).
 `Source.enabled` is not one: it means "not retired", and `scrape:seed-sources` re-derives it as `!isRetiredSourceName(name)` on every apply, create and update alike, so a stored `enabled: false` on a live source is drift the next seed apply corrects (#4025).
 Before #4025 two sweep sources were seeded `enabled: false` and ran in every sweep anyway, because nothing that dispatches reads the flag, while the barren-streak guard exempted them for reading disabled.
 `scrapers/__tests__/seedSourcesEnabledFlag.test.ts` fails if any sweep-listed or manual-only source would be seeded disabled, or if any seed's `enabled` differs from "not retired".

@@ -142,6 +142,19 @@ describe('runScraperSweep', () => {
     }
   });
 
+  it('keeps every model-calling lane out of the sweep (#5455)', () => {
+    const registeredNames = buildOrchestrator()
+      .list()
+      .map((source) => source.name);
+    const modelLanes = registeredNames.filter((name) => name.endsWith('-llm'));
+    expect(modelLanes).toContain('lab-microsite-description-llm');
+    for (const name of modelLanes) expect(MANUAL_ONLY_SWEEP_SOURCES).toContain(name);
+    for (const mode of ['development-full', 'fellowship-development-full'] as const) {
+      const swept = sweepSourcesForMode(mode).map((source) => source.name);
+      expect(swept.filter((name) => name.endsWith('-llm'))).toEqual([]);
+    }
+  });
+
   it('never hands a manual-only source to the development-full preflight canary', () => {
     const preflightCandidates = sweepSourcesForMode('development-full').map(
       (source) => source.name,
