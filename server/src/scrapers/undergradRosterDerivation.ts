@@ -329,6 +329,19 @@ const PEOPLE_PAGE_LEAF =
   /(?:^|[-_])(?:people|team|members|personnel|group|lab-members|our-lab|who-we-are)(?:[-_]\d+)?$/i;
 const ALUMNI_PAGE_LEAF =
   /(?:^|[-_])(?:alumni|alumnae|former|past-members|previous-members)(?:[-_]\d+)?$/i;
+const PEOPLE_LINK_LABEL =
+  /^(?:(?:our|the|meet\s+the|lab|group)\s+)?(?:people|team|members|lab\s+members|group\s+members|personnel|who\s+we\s+are)$/i;
+const ALUMNI_LINK_LABEL =
+  /^(?:(?:lab|group)\s+)?(?:alumni|alumnae|former\s+members|past\s+members)$/i;
+const ABOUT_PAGE = /^about(?:[-_\s]+us)?$/i;
+
+const anchorLabel = (inner: string): string =>
+  inner
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;|&#160;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/\s+/g, ' ')
+    .trim();
 
 const hostWithoutWww = (url: URL): string => url.hostname.toLowerCase().replace(/^www\./, '');
 
@@ -340,6 +353,7 @@ const sectionRoot = (url: URL): string => {
 export interface LabSitePageLinks {
   peoplePages: string[];
   alumniPages: string[];
+  aboutPages: string[];
 }
 
 /**
@@ -352,13 +366,17 @@ export function labSitePageLinks(html: string, siteUrl: string): LabSitePageLink
   try {
     site = new URL(siteUrl);
   } catch {
-    return { peoplePages: [], alumniPages: [] };
+    return { peoplePages: [], alumniPages: [], aboutPages: [] };
   }
   const root = sectionRoot(site);
   const peoplePages = new Set<string>();
   const alumniPages = new Set<string>();
-  const hrefs = Array.from(html.matchAll(/<a\b[^>]*\bhref\s*=\s*["']([^"'#]+)["']/gi), (m) => m[1]);
-  for (const href of hrefs) {
+  const aboutPages = new Set<string>();
+  const anchors = Array.from(
+    html.matchAll(/<a\b[^>]*\bhref\s*=\s*["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi),
+    (m) => ({ href: m[1], label: anchorLabel(m[2]) }),
+  );
+  for (const { href, label } of anchors) {
     let link: URL;
     try {
       link = new URL(href, site);
@@ -371,14 +389,22 @@ export function labSitePageLinks(html: string, siteUrl: string): LabSitePageLink
     const leaf = path.slice(path.lastIndexOf('/') + 1);
     link.hash = '';
     link.search = '';
-    if (ALUMNI_PAGE_LEAF.test(leaf)) alumniPages.add(link.toString());
-    else if (PEOPLE_PAGE_LEAF.test(leaf)) peoplePages.add(link.toString());
+    if (ALUMNI_PAGE_LEAF.test(leaf) || ALUMNI_LINK_LABEL.test(label))
+      alumniPages.add(link.toString());
+    else if (PEOPLE_PAGE_LEAF.test(leaf) || PEOPLE_LINK_LABEL.test(label))
+      peoplePages.add(link.toString());
+    else if (ABOUT_PAGE.test(leaf) || ABOUT_PAGE.test(label)) aboutPages.add(link.toString());
   }
-  return { peoplePages: [...peoplePages].slice(0, 3), alumniPages: [...alumniPages].slice(0, 2) };
+  for (const page of [...peoplePages, ...alumniPages]) aboutPages.delete(page);
+  return {
+    peoplePages: [...peoplePages].slice(0, 3),
+    alumniPages: [...alumniPages].slice(0, 2),
+    aboutPages: peoplePages.size ? [] : [...aboutPages].slice(0, 1),
+  };
 }
 
 export const DERIVED_ROSTER_MAX_UNDERGRADUATES = 60;
-export const DERIVED_ROSTER_MAX_PAGES = 4;
+export const DERIVED_ROSTER_MAX_PAGES = 7;
 
 export type DerivedRosterWithheldReason =
   | 'no-website'
@@ -513,7 +539,8 @@ export async function deriveUndergradRosterForCandidate(
     readAnyPage = true;
     if (url === candidate.websiteUrl) {
       const links = labSitePageLinks(html, url);
-      pages.push(...links.peoplePages.filter((link) => !pages.includes(link)));
+      const linked = [...links.peoplePages, ...links.alumniPages, ...links.aboutPages];
+      pages.push(...linked.filter((link) => !pages.includes(link)));
     }
     const outcome = proposeUndergradRosterConfig(html, key, url, observedAt);
     if (outcome.kind !== 'proposed') {

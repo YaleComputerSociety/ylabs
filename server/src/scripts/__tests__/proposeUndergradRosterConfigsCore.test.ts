@@ -175,6 +175,7 @@ describe('labSitePageLinks', () => {
     expect(labSitePageLinks(html, 'https://medicine.yale.edu/lab/fixture/')).toEqual({
       peoplePages: ['https://medicine.yale.edu/lab/fixture/people/'],
       alumniPages: ['https://medicine.yale.edu/lab/fixture/alumni'],
+      aboutPages: [],
     });
   });
 
