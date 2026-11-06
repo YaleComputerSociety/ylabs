@@ -1874,7 +1874,9 @@ async function optionalMoreTopicResults({
     hostsUndergrads: undefined,
     welcomesUndergrads: undefined,
   };
-  const shownIds = new Set(filtered.researchEntities.map((entity) => researchGroupDocumentId(entity._id)));
+  const shownIds = new Set(
+    filtered.researchEntities.map((entity) => researchGroupDocumentId(entity._id)),
+  );
   try {
     const { result } = await searchResearchGroupsForQuery(
       searchQuery,
