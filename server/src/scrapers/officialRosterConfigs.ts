@@ -2,7 +2,21 @@ import type { OfficialRosterConfig } from './sources/officialResearchHomeRosterS
 
 export const OWNER_DENIED_ROSTER_KEY_DIGESTS: readonly string[] = [
   '6bc1363377f227c7085dfb9d493afd535ab18fc53fca08a4690f55530ca4cb3f',
+  'faa0bcf5a1032e98e7df5c381252ac4172a12cb556151411fd1ddb07a2b9a20e',
 ];
+
+export const OWNER_STRUCK_DERIVED_ROSTER_NAME_DIGESTS: Readonly<Record<string, readonly string[]>> =
+  {
+    '1739fda2d31cf85f8b7fcc11fb34b1646d24575cc645c53927f4cd7b89139c89': [
+      '7591391f0d2bc081d920c033489c02d938182a091301304cce4faab4f80fbfa1',
+    ],
+    '55cc94179aea437a612642e16356b3e5de7876c971bf8b71b448fbe9f2e545ab': [
+      '7d10e1730669a79d4fe8c46e87a053bfb639df88021d4419cae8dcba01b85c93',
+    ],
+    '021188e78ef49965e3fafe5ca8c6f1dbc822f770cad754559a1fe118de176f15': [
+      '482f461a4dd2a16da8e433acf6ddde85612eb193fc2ee8b6efc81c850a6812a3',
+    ],
+  };
 
 // Every entry past the first four was approved lab by lab by the owner after a check of its
 // listed names against the page (#5039); add an entry only through that review.
