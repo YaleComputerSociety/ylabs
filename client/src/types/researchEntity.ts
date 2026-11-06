@@ -68,6 +68,7 @@ export interface NormalizedResearchEntitySearchResponse extends Omit<
 > {
   researchEntities: ResearchEntity[];
   hits: ResearchEntity[];
+  moreTopicResults: ResearchEntity[];
 }
 
 export interface ResearchEntityDetailPayload extends Omit<
@@ -128,10 +129,15 @@ export function normalizeResearchEntitySearchResponse(
         : []
   ).map(normalizeResearchEntity);
 
+  const moreTopicResults = Array.isArray(response.moreTopicResults)
+    ? response.moreTopicResults.map(normalizeResearchEntity)
+    : [];
+
   return {
     ...response,
     hits: researchEntities,
     researchEntities,
+    moreTopicResults,
     estimatedTotalHits: response.estimatedTotalHits ?? researchEntities.length,
     page: response.page ?? 1,
     pageSize: response.pageSize ?? researchEntities.length,

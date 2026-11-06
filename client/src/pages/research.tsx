@@ -21,6 +21,9 @@ import SearchSpellingNotice from '../components/shared/SearchSpellingNotice';
 import ResearchStickyFilterBar from '../components/research/ResearchStickyFilterBar';
 import ResearchZeroResultRecovery from '../components/research/ResearchZeroResultRecovery';
 import ResearchProgramsHandoff from '../components/research/ResearchProgramsHandoff';
+import ResearchMoreTopicResults, {
+  type MoreTopicResultsAccessFilter,
+} from '../components/research/ResearchMoreTopicResults';
 import { queryCarriesProgramsIntent } from '../utils/researchProgramsHandoff';
 import ResearchSortDropdown, {
   ResearchSortField,
@@ -156,7 +159,27 @@ interface ResearchEntitySearchPage {
   degraded?: boolean;
   queryCorrection?: ResearchSearchQueryCorrection;
   appliedFilters?: ResearchEntitySearchResponse['appliedFilters'];
+  moreTopicResults?: ResearchEntity[];
 }
+
+interface MoreTopicResults {
+  researchEntities: ResearchEntity[];
+  accessFilter: MoreTopicResultsAccessFilter;
+}
+
+const moreTopicResultsFor = (
+  researchEntities: ResearchEntity[],
+  filters: ResearchSearchFilters,
+): MoreTopicResults | null => {
+  if (researchEntities.length === 0) return null;
+  if (filters.hostsUndergrads === true) {
+    return { researchEntities, accessFilter: 'hostsUndergrads' };
+  }
+  if (filters.welcomesUndergrads === true) {
+    return { researchEntities, accessFilter: 'welcomesUndergrads' };
+  }
+  return null;
+};
 
 interface ActiveResearchSearchRequest {
   submittedText: string;
@@ -191,6 +214,7 @@ interface ResearchPageSnapshot {
   browseFacetDistribution: Record<string, Record<string, number>>;
   groupedResults: GroupedResearchResults;
   searchResultResearchEntities: ResearchEntity[];
+  moreTopicResults: MoreTopicResults | null;
   searchPage: number;
   searchTotal: number;
   searchExhausted: boolean;
@@ -268,6 +292,7 @@ const searchResearchEntities = async (
     degraded: normalized.degraded === true,
     queryCorrection: normalized.queryCorrection,
     appliedFilters: normalized.appliedFilters,
+    moreTopicResults: normalized.moreTopicResults,
   };
 };
 
@@ -509,6 +534,9 @@ const Research = () => {
   const [searchResultResearchEntities, setSearchResultResearchEntities] = useState<
     ResearchEntity[]
   >(() => restoredSnapshot?.searchResultResearchEntities ?? []);
+  const [moreTopicResults, setMoreTopicResults] = useState<MoreTopicResults | null>(
+    () => restoredSnapshot?.moreTopicResults ?? null,
+  );
   const [searchPage, setSearchPage] = useState(() => restoredSnapshot?.searchPage ?? 1);
   const [searchTotal, setSearchTotal] = useState(() => restoredSnapshot?.searchTotal ?? 0);
   const [searchExhausted, setSearchExhausted] = useState(
@@ -793,6 +821,7 @@ const Research = () => {
     setSearchExhausted(false);
     if (!options.preserveResults) {
       setSearchResultResearchEntities([]);
+      setMoreTopicResults(null);
     }
     setActiveSearchRequest({
       submittedText: trimmed,
@@ -914,6 +943,9 @@ const Research = () => {
       setSearchDegraded(researchEntitiesPage.degraded === true);
       setQueryCorrection(researchEntitiesPage.queryCorrection ?? null);
       setSearchResultResearchEntities(researchEntities);
+      setMoreTopicResults(
+        moreTopicResultsFor(researchEntitiesPage.moreTopicResults ?? [], filters),
+      );
       setSearchTotal(researchEntitiesPage.estimatedTotalHits);
       if (researchEntitiesPage.facetDistribution) {
         setFacetDistribution(researchEntitiesPage.facetDistribution);
@@ -958,6 +990,7 @@ const Research = () => {
         // Rows kept on screen while filters applied answer the previous request, so
         // leaving them under the new filters would show results those filters exclude.
         setSearchResultResearchEntities([]);
+        setMoreTopicResults(null);
         setGroupedResults(emptyGroupedResults(resultQueryLabel));
         void trackResearchEvent({
           eventType: 'research_search',
@@ -1113,6 +1146,7 @@ const Research = () => {
     setFacetDistribution({});
     setGroupedResults(emptyGroupedResults(''));
     setSearchResultResearchEntities([]);
+    setMoreTopicResults(null);
     setSearchPage(1);
     setSearchTotal(0);
     setSearchExhausted(true);
@@ -1321,6 +1355,7 @@ const Research = () => {
     setDepartmentSearch(null);
     setGroupedResults(emptyGroupedResults(''));
     setSearchResultResearchEntities([]);
+    setMoreTopicResults(null);
     setSearchPage(1);
     setSearchTotal(0);
     setSearchExhausted(true);
@@ -1383,6 +1418,7 @@ const Research = () => {
       browseFacetDistribution,
       groupedResults,
       searchResultResearchEntities,
+      moreTopicResults,
       searchPage: lastLoadedPage(searchPage, isLoadingMore),
       searchTotal,
       searchExhausted,
@@ -1420,6 +1456,7 @@ const Research = () => {
     browseFacetDistribution,
     groupedResults,
     searchResultResearchEntities,
+    moreTopicResults,
     searchPage,
     searchTotal,
     searchExhausted,
@@ -1522,6 +1559,10 @@ const Research = () => {
   const activeClusters = useMemo(
     () => clustersForEntities(searchResultResearchEntities),
     [clustersForEntities, searchResultResearchEntities],
+  );
+  const moreTopicClusters = useMemo(
+    () => clustersForEntities(moreTopicResults?.researchEntities ?? []),
+    [clustersForEntities, moreTopicResults],
   );
   const programsHandoffApplies =
     Boolean(programsHandoffQuery) && queryCarriesProgramsIntent(programsHandoffQuery);
@@ -2303,6 +2344,18 @@ const Research = () => {
                     />
                   )}
                 </section>
+                {moreTopicResults && (
+                  <div
+                    aria-busy={isApplyingFilters}
+                    className={`transition-opacity ${isApplyingFilters ? 'opacity-50' : ''}`}
+                  >
+                    <ResearchMoreTopicResults
+                      clusters={moreTopicClusters}
+                      accessFilter={moreTopicResults.accessFilter}
+                      onSelect={exploreHome}
+                    />
+                  </div>
+                )}
               </section>
             )}
           </div>
