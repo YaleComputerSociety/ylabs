@@ -42,7 +42,7 @@ import { isLabRosterCitationUrl } from '../scrapers/undergradRosterEvidence';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
 import { Signal } from '../models/signal';
 import { getMeiliSearchIndex } from '../utils/meiliClient';
-import { withMeiliAvailabilityGuard } from '../utils/meiliAvailability';
+import { type MeiliCallRole, withMeiliAvailabilityGuard } from '../utils/meiliAvailability';
 import {
   isResearchEntitySearchEmbedderConfigured,
   MESH_DESCRIPTOR_ONLY_TERMS_FIELD,
@@ -573,6 +573,7 @@ export interface ResearchGroupSearchResult {
   degraded?: boolean;
   queryCorrection?: ResearchSearchQueryCorrection;
   appliedFilters?: AppliedStudentFilters;
+  moreTopicResults?: PublicResearchEntityDto[];
 }
 
 const MAX_PAGE_SIZE = 100;
@@ -1813,6 +1814,95 @@ async function optionalMatchedLabMemberNames(
   return { byEntityId, unavailable: false };
 }
 
+interface ResearchQuerySearchContext {
+  rerankQueryKey?: string;
+  meiliCallRole?: MeiliCallRole;
+}
+
+interface SearchedResearchQuery {
+  result: ResearchGroupSearchResult;
+  answeredAsNameSearch: boolean;
+}
+
+const MORE_TOPIC_RESULTS_ACCESS_TOGGLES = ['hostsUndergrads', 'welcomesUndergrads'] as const;
+type MoreTopicResultsAccessToggle = (typeof MORE_TOPIC_RESULTS_ACCESS_TOGGLES)[number];
+const MORE_TOPIC_RESULTS_BELOW_FILTERED_TOTAL = 10;
+const MORE_TOPIC_RESULTS_LIMIT = 10;
+const MORE_TOPIC_RESULTS_CANDIDATES_BEYOND_SHOWN = 2 * MORE_TOPIC_RESULTS_LIMIT;
+
+const carriesAccessToggleEvidence = (
+  entity: PublicResearchEntityDto,
+  toggle: MoreTopicResultsAccessToggle,
+): boolean =>
+  toggle === 'hostsUndergrads'
+    ? entity.hasUndergradHostingEvidence === true
+    : entity.undergradInvitation !== undefined && entity.undergradInvitation !== null;
+
+interface MoreTopicResultsRequest {
+  searchQuery: string;
+  typedQuery: string;
+  filters: ResearchGroupFilterInput;
+  filtered: ResearchGroupSearchResult;
+  answeredAsNameSearch: boolean;
+  sort: ResearchGroupSearchSort;
+  options: ResearchGroupSearchOptions;
+}
+
+async function optionalMoreTopicResults({
+  searchQuery,
+  typedQuery,
+  filters,
+  filtered,
+  answeredAsNameSearch,
+  sort,
+  options,
+}: MoreTopicResultsRequest): Promise<PublicResearchEntityDto[]> {
+  const appliedAccessToggles = MORE_TOPIC_RESULTS_ACCESS_TOGGLES.filter(
+    (toggle) => filters[toggle] === true,
+  );
+  const filteredPageIsThinTopicPage =
+    appliedAccessToggles.length > 0 &&
+    !answeredAsNameSearch &&
+    !sort.sortBy &&
+    filtered.page === 1 &&
+    filtered.estimatedTotalHits < MORE_TOPIC_RESULTS_BELOW_FILTERED_TOTAL &&
+    normalizeResearchSearchQuery(searchQuery).raw !== '' &&
+    options.lowQualityFirst !== true;
+  if (!filteredPageIsThinTopicPage) return [];
+  const withoutAccessToggles: ResearchGroupFilterInput = {
+    ...filters,
+    hostsUndergrads: undefined,
+    welcomesUndergrads: undefined,
+  };
+  const shownIds = new Set(filtered.researchEntities.map((entity) => String(entity._id)));
+  try {
+    const { result } = await searchResearchGroupsForQuery(
+      searchQuery,
+      withoutAccessToggles,
+      1,
+      MORE_TOPIC_RESULTS_CANDIDATES_BEYOND_SHOWN + filtered.researchEntities.length,
+      {},
+      { ...options, includeFacets: false },
+      {
+        rerankQueryKey:
+          isSearchRerankCacheEnabled() && normalizeResearchSearchQuery(typedQuery).raw !== ''
+            ? searchRerankCacheQueryKey(typedQuery, withoutAccessToggles)
+            : undefined,
+        meiliCallRole: 'optional',
+      },
+    );
+    return result.researchEntities
+      .filter((entity) => !shownIds.has(String(entity._id)))
+      .filter((entity) =>
+        appliedAccessToggles.every((toggle) => !carriesAccessToggleEvidence(entity, toggle)),
+      )
+      .slice(0, MORE_TOPIC_RESULTS_LIMIT);
+  } catch (error) {
+    console.error('More topic results read failed:', sanitizeLogValue(error));
+    return [];
+  }
+}
+
 /**
  * Meilisearch query for ResearchEntity: keyword-only when no query, hybrid
  * (semanticRatio 0.8) for a non-empty query only when the `default` embedder
@@ -1831,30 +1921,42 @@ export async function searchResearchGroupsViaMeili(
       ? { query, corrections: [] }
       : correctResearchSearchQuerySpelling(query);
   const studentFilters = await resolveStudentFiltersAgainstCorpus(filters, options);
-  const droppedToggleFilters = answersFromMongoBrowse(spelling.query, options)
-    ? undefined
+  const filterableToggles = answersFromMongoBrowse(spelling.query, options)
+    ? { filters: studentFilters.filters, dropped: undefined }
     : withoutUnfilterableToggles(
         studentFilters.filters,
         await liveIndexFilterability(await getMeiliSearchIndex('researchentities')),
-      ).dropped;
+      );
+  const droppedToggleFilters = filterableToggles.dropped;
   const rerankQueryKey =
     isSearchRerankCacheEnabled() && normalizeResearchSearchQuery(query).raw !== ''
       ? searchRerankCacheQueryKey(query, filters)
       : undefined;
-  const searched = await searchResearchGroupsForQuery(
+  const { result: searched, answeredAsNameSearch } = await searchResearchGroupsForQuery(
     spelling.query,
     studentFilters.filters,
     page,
     pageSize,
     sort,
     options,
-    rerankQueryKey,
+    { rerankQueryKey },
   );
   const appliedFilters =
     studentFilters.applied || droppedToggleFilters
       ? { ...studentFilters.applied, ...droppedToggleFilters }
       : undefined;
-  const result = appliedFilters ? { ...searched, appliedFilters } : searched;
+  const moreTopicResults = await optionalMoreTopicResults({
+    searchQuery: spelling.query,
+    typedQuery: query,
+    filters: filterableToggles.filters,
+    filtered: searched,
+    answeredAsNameSearch,
+    sort,
+    options,
+  });
+  const withAppliedFilters = appliedFilters ? { ...searched, appliedFilters } : searched;
+  const result =
+    moreTopicResults.length > 0 ? { ...withAppliedFilters, moreTopicResults } : withAppliedFilters;
   if (spelling.corrections.length === 0) return result;
   return {
     ...result,
@@ -1894,8 +1996,8 @@ async function searchResearchGroupsForQuery(
   pageSize: number,
   sort: ResearchGroupSearchSort = {},
   options: ResearchGroupSearchOptions = {},
-  rerankQueryKey?: string,
-): Promise<ResearchGroupSearchResult> {
+  { rerankQueryKey, meiliCallRole = 'required' }: ResearchQuerySearchContext = {},
+): Promise<SearchedResearchQuery> {
   // Same reason as `getResearchGroupDetail`: a browse hit carries research-area chips too, and
   // a script that reads browse must see the chips a student sees (#3817).
   await warmServedResearchAreaVocabulary();
@@ -1954,17 +2056,20 @@ async function searchResearchGroupsForQuery(
   const requestedFacetDistribution: Record<string, Record<string, number>> | undefined =
     safeOptions.includeFacets ? {} : undefined;
   if (isUnsearchableQuery) {
-    return addResearchEntitySearchAliases(
-      {
-        hits: [],
-        estimatedTotalHits: 0,
-        page: safePage,
-        pageSize: safePageSize,
-        facetDistribution: requestedFacetDistribution,
-        degraded: false,
-      },
-      { includeOperatorFields: safeOptions.includeNonPublic },
-    );
+    return {
+      result: addResearchEntitySearchAliases(
+        {
+          hits: [],
+          estimatedTotalHits: 0,
+          page: safePage,
+          pageSize: safePageSize,
+          facetDistribution: requestedFacetDistribution,
+          degraded: false,
+        },
+        { includeOperatorFields: safeOptions.includeNonPublic },
+      ),
+      answeredAsNameSearch: false,
+    };
   }
   if (answersFromMongoBrowse(query, safeOptions)) {
     const candidates = withServablePublicResearchEntities(
@@ -1990,23 +2095,26 @@ async function searchResearchGroupsForQuery(
     const leadMemberNameRead = await optionalPublicLeadMemberNames(pageEntities, {
       withEmeritusWayIn: true,
     });
-    return addResearchEntitySearchAliases(
-      {
-        hits: pageEntities.map((entity) => ({
-          ...entity,
-          _id: researchGroupDocumentId(entity._id),
-        })),
-        estimatedTotalHits: filteredCandidates.length,
-        page: safePage,
-        pageSize: safePageSize,
-        facetDistribution: requestedFacetDistribution,
-        degraded: leadMemberNameRead.unavailable,
-      },
-      {
-        includeOperatorFields: safeOptions.includeNonPublic,
-        ...leadMemberNameAliasOptions(leadMemberNameRead),
-      },
-    );
+    return {
+      result: addResearchEntitySearchAliases(
+        {
+          hits: pageEntities.map((entity) => ({
+            ...entity,
+            _id: researchGroupDocumentId(entity._id),
+          })),
+          estimatedTotalHits: filteredCandidates.length,
+          page: safePage,
+          pageSize: safePageSize,
+          facetDistribution: requestedFacetDistribution,
+          degraded: leadMemberNameRead.unavailable,
+        },
+        {
+          includeOperatorFields: safeOptions.includeNonPublic,
+          ...leadMemberNameAliasOptions(leadMemberNameRead),
+        },
+      ),
+      answeredAsNameSearch: false,
+    };
   }
 
   const sortConfig: string[] = [];
@@ -2041,7 +2149,7 @@ async function searchResearchGroupsForQuery(
     searchParams.sort = sortConfig;
   }
 
-  const index = withMeiliAvailabilityGuard(meiliIndex);
+  const index = withMeiliAvailabilityGuard(meiliIndex, meiliCallRole);
   // A companion query's failure degrades only its own response, so it must not open
   // the breaker that answers every search after it with a 503 (#5347).
   const optionalIndex = withMeiliAvailabilityGuard(meiliIndex, 'optional');
@@ -2723,21 +2831,24 @@ async function searchResearchGroupsForQuery(
     paginateHybridPoolLocally ? servedPool.length : meiliTotalHits,
   );
 
-  return addResearchEntitySearchAliases(
-    {
-      hits: normalizedHits,
-      estimatedTotalHits: adjustedTotalHits,
-      page: safePage,
-      pageSize: safePageSize,
-      facetDistribution: facetDistribution ?? requestedFacetDistribution,
-      degraded: degraded || leadMemberNameRead.unavailable || matchedMemberNameRead.unavailable,
-    },
-    {
-      includeOperatorFields: safeOptions.includeNonPublic,
-      ...leadMemberNameAliasOptions(leadMemberNameRead),
-      matchedMemberNameByEntityId: matchedMemberNameRead.byEntityId,
-    },
-  );
+  return {
+    result: addResearchEntitySearchAliases(
+      {
+        hits: normalizedHits,
+        estimatedTotalHits: adjustedTotalHits,
+        page: safePage,
+        pageSize: safePageSize,
+        facetDistribution: facetDistribution ?? requestedFacetDistribution,
+        degraded: degraded || leadMemberNameRead.unavailable || matchedMemberNameRead.unavailable,
+      },
+      {
+        includeOperatorFields: safeOptions.includeNonPublic,
+        ...leadMemberNameAliasOptions(leadMemberNameRead),
+        matchedMemberNameByEntityId: matchedMemberNameRead.byEntityId,
+      },
+    ),
+    answeredAsNameSearch: keywordLegTopHitNamesTheQuery,
+  };
 }
 
 const MAX_PUBLIC_MEMBER_PROFILE_URLS = 20;

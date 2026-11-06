@@ -1127,6 +1127,88 @@ describe('Research page', () => {
     });
   });
 
+  describe('more research on a thin access-filtered topic page (#5464)', () => {
+    const syntheticMoreEntity = (index: number) => ({
+      _id: `synthetic-more-${index}`,
+      slug: `synthetic-optics-group-${index}`,
+      name: `Synthetic Optics Group ${index}`,
+      displayName: `Synthetic Optics Group ${index}`,
+      kind: 'lab',
+      fullDescription: `Studies synthetic optical systems in setting ${index}.`,
+      websiteUrl: '',
+      departments: ['Physics'],
+      researchAreas: ['Optics'],
+      school: 'Faculty of Arts and Sciences',
+      sourceUrls: [`https://example.yale.edu/synthetic-optics-${index}`],
+    });
+
+    const renderFilteredSearch = (search: string, moreTopicResults?: unknown[]) => {
+      mockSearchResponses((url) => {
+        if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+        return researchSearchResponse(
+          [researchEntity],
+          moreTopicResults ? { moreTopicResults } : {},
+        );
+      });
+      render(
+        <MemoryRouter initialEntries={[`/research?${search}`]}>
+          <ConfigContext.Provider
+            value={{ ...defaultConfigContext, isLoading: false, isLoaded: true, departments }}
+          >
+            <Research />
+          </ConfigContext.Provider>
+        </MemoryRouter>,
+      );
+    };
+
+    it('lists the extra rows below the filtered results under the hosting note, keeping the filtered count', async () => {
+      renderFilteredSearch('q=optics&undergrad=1', [
+        syntheticMoreEntity(1),
+        syntheticMoreEntity(2),
+      ]);
+
+      const section = await screen.findByRole('region', { name: 'More research on this topic' });
+      const filteredCard = screen.getByRole('heading', { name: 'AI Safety Lab' });
+
+      expect(
+        filteredCard.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(
+        within(section).getByText(
+          "These don't list undergraduate researchers yet. Many still take students; reach out to ask.",
+        ),
+      ).toBeTruthy();
+      expect(
+        within(section)
+          .getAllByRole('heading', { level: 3 })
+          .map((heading) => heading.textContent),
+      ).toEqual(['Synthetic Optics Group 1', 'Synthetic Optics Group 2']);
+      expect(within(section).queryByRole('heading', { name: 'AI Safety Lab' })).toBeNull();
+      expect(screen.getByRole('status').textContent).toMatch(/^1 result for /);
+    });
+
+    it('words the note for the welcomes filter', async () => {
+      renderFilteredSearch('q=optics&welcomes=1', [syntheticMoreEntity(1)]);
+
+      const section = await screen.findByRole('region', { name: 'More research on this topic' });
+
+      expect(
+        within(section).getByText(
+          "These don't say they welcome undergraduates yet. Many still take students; reach out to ask.",
+        ),
+      ).toBeTruthy();
+    });
+
+    it('shows no extra section when the response carries none', async () => {
+      renderFilteredSearch('q=optics&undergrad=1');
+
+      await screen.findByRole('heading', { name: 'AI Safety Lab' });
+
+      expect(screen.queryByRole('region', { name: 'More research on this topic' })).toBeNull();
+      expect(screen.queryByText(/Many still take students/)).toBeNull();
+    });
+  });
+
   it('unchecks a welcomes-undergraduates filter the search index cannot apply yet', async () => {
     mockSearchResponses((url) => {
       if (url !== '/research/search') return unexpectedSearchEndpoint(url);

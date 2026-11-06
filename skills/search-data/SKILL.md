@@ -211,6 +211,18 @@ A browse card is the `forList` DTO, which omits the detail-only `fullDescription
 It likewise sets `faceting.maxValuesPerFacet` (see `RESEARCH_ENTITY_SEARCH_MAX_VALUES_PER_FACET`) well above the Meilisearch default of 100 so long-tail department facet values stay selectable instead of being silently dropped.
 An alias query that keeps its shorthand restricts `attributesToSearchOn` to topic fields that actually exist in `searchableAttributes`; a missing attribute now degrades in place on the Meili path instead of falling back to the slow Mongo scan.
 
+### A thin access-filtered topic page lists more research on the topic (#5464)
+
+The hosting and welcomes filters are gates the corpus cannot fill: on 41 benchmark topic queries with the hosting filter on, 14 returned fewer than 10 rows.
+So when a page-1 topic search has `hostsUndergrads` or `welcomesUndergrads` applied and its filtered total is under 10, `searchResearchGroupsViaMeili` runs the same search again without those two filters and returns up to 10 of its rows as `moreTopicResults`.
+That read goes through `searchResearchGroupsForQuery` itself, so ranking, the visibility scope, every other filter and the public DTO are the unfiltered search's own; only the rerank cache key drops the two toggles.
+It drops every row the filtered page shows and every row carrying the evidence of an applied toggle, so the section's note ("These don't list undergraduate researchers yet") stays true and the section never repeats a badge the filter selected for.
+The filtered `researchEntities`, total and facet counts are untouched, so the filter's numbers still describe only the rows that pass it.
+A name search, an explicit sort, an empty query, page 2 onwards, an admin weakest-first browse, and a toggle the live index cannot filter on add nothing.
+The read is fail-soft and runs its Meilisearch calls as `optional`, so its failure drops only the field and never opens the availability breaker (#5347).
+`/research` renders the field below the filtered results under "More research on this topic" (`ResearchMoreTopicResults`), with the hosting note when that filter is on and a welcomes-worded note otherwise.
+`moreTopicResultsBelowThinAccessFilter.integration.test.ts` pins every rule above.
+
 ### An alias query is only as narrow as its own shorthand (#2733)
 
 `TOPIC_ALIAS_QUERY_ATTRIBUTES` exists because a two-letter alias matching inside prose returns noise: `ml` is also millilitres and `cv` is also a curriculum vitae, which is why `freeTextGuarded` and the `disableOnWords` typo guard exist.

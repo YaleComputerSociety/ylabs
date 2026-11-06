@@ -191,6 +191,7 @@ export interface ResearchGroupSearchResponse {
     departments?: string[];
     welcomesUndergrads?: false;
   };
+  moreTopicResults?: ResearchEntity[];
 }
 
 export interface ResearchSearchQueryCorrection {
