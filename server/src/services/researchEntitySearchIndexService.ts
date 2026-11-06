@@ -650,6 +650,11 @@ export function buildResearchEntitySearchIndexDocument(
       if (out.displayName) out.displayName = servedTitle;
     }
   }
+  // The embedder's documentTemplate renders `doc.name` unguarded, so one document
+  // without it fails the whole addDocuments batch and every replacing rebuild (#5468).
+  out.name = [out.name, out.displayName, out.slug, id].find(
+    (value): value is string => typeof value === 'string' && value.trim().length > 0,
+  );
   out.sortTitle = researchEntitySortTitle(out);
   out.sortTitleQualifier = researchEntitySortTitleQualifier(out);
   out.browseTiebreakKey = researchEntityBrowseTiebreakKey(id);

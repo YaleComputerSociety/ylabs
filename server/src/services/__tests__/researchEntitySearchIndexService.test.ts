@@ -307,6 +307,40 @@ describe('researchEntitySearchIndexService', () => {
     expect(doc).not.toHaveProperty('undergraduateEligibleStudentLevels');
   });
 
+  it('gives a document whose name was refused the field the embedder template renders (#5468)', () => {
+    const refusedName = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-refused-name',
+      slug: 'refused-name-lab',
+      displayName: 'Synthetic Display Lab',
+      archived: false,
+    });
+    const bare = buildResearchEntitySearchIndexDocument({
+      _id: 'entity-bare',
+      slug: 'bare-row',
+      archived: false,
+    });
+
+    expect(refusedName?.name).toBe('Synthetic Display Lab');
+    expect(bare?.name).toBe('bare-row');
+  });
+
+  it('carries every field the embedder template renders without a guard (#5468)', () => {
+    const template: string = (buildResearchEntitySearchEmbedderConfig('sk-test') as any).default
+      .documentTemplate;
+    const guarded = new Set(
+      [...template.matchAll(/\{%\s*if doc\.(\w+)\s*%\}/g)].map((match) => match[1]),
+    );
+    const unguarded = [...template.matchAll(/\{\{\s*doc\.(\w+)\s*\}\}/g)]
+      .map((match) => match[1])
+      .filter((field) => !guarded.has(field));
+    const doc = buildResearchEntitySearchIndexDocument({ _id: 'entity-minimal', archived: false });
+
+    expect(unguarded.length).toBeGreaterThan(0);
+    for (const field of unguarded) {
+      expect(typeof doc?.[field] === 'string' && doc[field].length > 0).toBe(true);
+    }
+  });
+
   it('derives the hosted-undergraduates field from the badge predicate, not the stored flag (#5123)', () => {
     const staleTrue = buildResearchEntitySearchIndexDocument({
       _id: 'entity-stale-true',
