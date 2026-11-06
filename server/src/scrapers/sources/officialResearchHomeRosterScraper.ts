@@ -1231,12 +1231,16 @@ export function listedEntryRole(
   );
 }
 
+const TEACHES_OR_MENTORS_UNDERGRADUATES =
+  /\b(?:teach|mentor)(?:es|s|ing)?\s+(?:both\s+)?undergrad\w*/i;
+
 function listedEntryRoleFromOwnLine(
   entry: { name?: string; title: string; years: string },
   sectionLabel: string,
   withinPastSection: boolean,
 ): OfficialRosterRole | null {
   const ownText = beforeLaterOrPlanned(`${entry.title} ${ownLineBeforeDestination(entry)}`);
+  if (TEACHES_OR_MENTORS_UNDERGRADUATES.test(ownText)) return null;
   const ownRole = mapOfficialRosterRole(ownText, '');
   if (ownRole && ownRole !== 'affiliate') return ownRole;
   const yaleCollege = YALE_COLLEGE_CLASS_EVIDENCE.exec(ownText);
@@ -1299,6 +1303,9 @@ function namesAnotherSchoolBeforeUndergraduateRole(text: string, name: string): 
 
 export const SCHOOL_KNOWN_BY_ONE_NAME =
   /\b(?:Cornell|Harvard|Stanford|Princeton|Dartmouth|Caltech|UPenn|Northwestern|Johns Hopkins|MIT)\b/u;
+
+const STILL_AN_UNDERGRADUATE_ELSEWHERE_NOW =
+  /\b[Cc]urrent\s+[Pp]osition\s*:?\s*[Uu]ndergrad\w*(?:\s+[Ss]tudent)?\s*,\s*(?!Yale\b)\p{Lu}/u;
 
 const ANOTHER_SCHOOL_EVIDENCE = [
   new RegExp(
@@ -1467,6 +1474,7 @@ export function listedEntryIsFromAnotherSchool(
   );
   if (YALE_NUS.test(ownText)) return true;
   if (stillAnUndergraduateElsewhere(`${entry.title} ${entry.years}`)) return true;
+  if (STILL_AN_UNDERGRADUATE_ELSEWHERE_NOW.test(`${entry.title} ${entry.years}`)) return true;
   if (
     SUMMER_RESEARCH_PROGRAM.test(ownText) &&
     !YALE_COLLEGE_CLASS_EVIDENCE.test(ownText) &&
