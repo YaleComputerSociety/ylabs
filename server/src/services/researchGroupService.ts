@@ -1874,7 +1874,7 @@ async function optionalMoreTopicResults({
     hostsUndergrads: undefined,
     welcomesUndergrads: undefined,
   };
-  const shownIds = new Set(filtered.researchEntities.map((entity) => String(entity._id)));
+  const shownIds = new Set(filtered.researchEntities.map((entity) => researchGroupDocumentId(entity._id)));
   try {
     const { result } = await searchResearchGroupsForQuery(
       searchQuery,
@@ -1892,7 +1892,7 @@ async function optionalMoreTopicResults({
       },
     );
     return result.researchEntities
-      .filter((entity) => !shownIds.has(String(entity._id)))
+      .filter((entity) => !shownIds.has(researchGroupDocumentId(entity._id)))
       .filter((entity) =>
         appliedAccessToggles.every((toggle) => !carriesAccessToggleEvidence(entity, toggle)),
       )
