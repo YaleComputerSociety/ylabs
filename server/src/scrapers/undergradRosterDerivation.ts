@@ -16,8 +16,11 @@ import {
   type OfficialRosterConfig,
   type OfficialRosterUndergraduate,
 } from './sources/officialResearchHomeRosterScraper';
-import { OWNER_DENIED_ROSTER_KEY_DIGESTS } from './officialRosterConfigs';
-import { deniedRosterKeyDigest } from './rosterStrikeDigests';
+import {
+  OWNER_DENIED_ROSTER_KEY_DIGESTS,
+  OWNER_STRUCK_DERIVED_ROSTER_NAME_DIGESTS,
+} from './officialRosterConfigs';
+import { deniedRosterKeyDigest, withheldNameDigest } from './rosterStrikeDigests';
 import { rosterSnippetNamesAnUndergraduate } from './undergradQuoteRelevance';
 
 export interface UndergradRosterProposal {
@@ -520,8 +523,12 @@ export async function deriveUndergradRosterForCandidate(
   candidate: DerivedRosterCandidate,
   readPage: (url: string) => Promise<string>,
   observedAt: Date,
+  struckNameDigests: Readonly<
+    Record<string, readonly string[]>
+  > = OWNER_STRUCK_DERIVED_ROSTER_NAME_DIGESTS,
 ): Promise<DerivedRosterOutcome> {
   const key = candidate.researchEntityKey;
+  const struck = new Set(struckNameDigests[deniedRosterKeyDigest(key)] ?? []);
   const pages = [...new Set([...candidate.citedUrls, candidate.websiteUrl].filter(Boolean))];
   let passed: { config: OfficialRosterConfig; roster: ExtractedOfficialRoster } | undefined;
   let refused: { reason: DerivedRosterWithheldReason; url: string; size: number } | undefined;
@@ -546,6 +553,12 @@ export async function deriveUndergradRosterForCandidate(
     if (outcome.kind !== 'proposed') {
       lastOutcome = outcome.kind;
       continue;
+    }
+    if (struck.size) {
+      outcome.proposal.config.withheldNameDigests = [...struck];
+      outcome.roster.undergraduates = outcome.roster.undergraduates.filter(
+        (member) => !struck.has(withheldNameDigest(member.name)),
+      );
     }
     const size = undergraduateCount(outcome.roster);
     const reason = derivedRosterWithheldReason(
