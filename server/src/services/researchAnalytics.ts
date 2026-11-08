@@ -126,6 +126,9 @@ const ANALYTICS_DEDUPE_KEY_RE = /^[A-Za-z0-9:_-]{1,160}$/;
 /** Allowed coarse categories for a contact-route click. Never the address. */
 export const CONTACT_METHODS = ['email', 'phone', 'website', 'directory', 'other'] as const;
 
+/** Where on the research detail page a contact route was clicked. Never the address. */
+export const CONTACT_ROUTE_SURFACES = ['lead_card', 'reach_out'] as const;
+
 /** Allowed coarse categories for a source-link click. */
 export const SOURCE_CATEGORIES = [
   'coursetable',
@@ -240,6 +243,8 @@ export const sanitizeResearchPayload = (
     case AnalyticsEventType.CONTACT_ROUTE_CLICK: {
       const method = oneOf(input.contactMethod ?? input.method, CONTACT_METHODS) ?? 'other';
       out.contactMethod = method;
+      const surface = oneOf(input.surface, CONTACT_ROUTE_SURFACES);
+      if (surface) out.surface = surface;
       break;
     }
     case AnalyticsEventType.SOURCE_LINK_CLICK: {

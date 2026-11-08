@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import axios from '../axios';
 import {
+  CONTACT_ROUTE_SURFACES,
   flushResearchAnalytics,
+  readContactRouteSurface,
   researchCountBucket,
   researchResultCountBucket,
   resetResearchAnalyticsDedupeForTests,
@@ -193,5 +195,14 @@ describe('research journey analytics client', () => {
       '51+',
     ]);
     expect([1, 2, 4, 5].map(researchCountBucket)).toEqual(['1', '2', '3-4', '5+']);
+  });
+
+  it('mirrors the server contact-route surfaces and reads only those', () => {
+    expect(CONTACT_ROUTE_SURFACES).toEqual(['lead_card', 'reach_out']);
+    expect(readContactRouteSurface('lead_card')).toBe('lead_card');
+    expect(readContactRouteSurface('reach_out')).toBe('reach_out');
+    for (const value of ['mailto:fixture@example.test', '', null, undefined, 'LEAD_CARD']) {
+      expect(readContactRouteSurface(value)).toBeUndefined();
+    }
   });
 });

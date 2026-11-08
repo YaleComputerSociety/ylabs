@@ -801,6 +801,44 @@ describe('LabDetail page', () => {
     expect(reachOutLine().textContent).not.toMatch(/mailto:/i);
   });
 
+  it('records an email click in the reach-out line with the reach_out surface and no address', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: '',
+        sourceUrls: [],
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.faculty',
+            fname: 'Jordan',
+            lname: 'Researcher',
+            displayName: 'Jordan Researcher',
+            email: 'jordan.researcher@example.test',
+            primary_department: 'Neurology',
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+    fireEvent.click(
+      within(reachOutLine()).getByRole('link', { name: 'jordan.researcher@example.test' }),
+    );
+    await flushResearchAnalytics();
+
+    const events = mockedAxios.post.mock.calls.flatMap(
+      ([, body]) =>
+        (body as { events?: Array<{ eventType: string; payload?: unknown }> })?.events ?? [],
+    );
+    const contact = events.find((event) => event.eventType === 'contact_route_click');
+    expect(contact?.payload).toEqual({ contactMethod: 'email', surface: 'reach_out' });
+    expect(JSON.stringify(events)).not.toContain('jordan.researcher@example.test');
+  });
+
   it('renders a Yale Directory fallback instead of a dead end when no website, profile, or email exists', async () => {
     renderLabDetail({
       ...basePayload,
@@ -1951,12 +1989,14 @@ describe('LabDetail page', () => {
     const events = mockedAxios.post.mock.calls
       .flatMap(([, body]) => (body as { events?: unknown[] })?.events ?? [])
       .filter(
-        (event): event is { eventType: string; payload?: { contactMethod?: string } } =>
+        (
+          event,
+        ): event is { eventType: string; payload?: { contactMethod?: string; surface?: string } } =>
           typeof event === 'object' && event !== null,
       );
     const contact = events.find((event) => event.eventType === 'contact_route_click');
     expect(contact).toBeDefined();
-    expect(contact?.payload?.contactMethod).toBe('email');
+    expect(contact?.payload).toEqual({ contactMethod: 'email', surface: 'lead_card' });
     // The destination never leaves the client: the analytics contract forbids retaining it.
     expect(JSON.stringify(events)).not.toContain('jordan.researcher@example.test');
   });
