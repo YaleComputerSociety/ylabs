@@ -304,7 +304,9 @@ describe('ResearchHomeCard', () => {
     render(
       <MemoryRouter>
         <ResearchHomeCard
-          home={researchHome({ wayInBadges: ['Undergrad evidence', 'Welcomes undergrads, recruiting now'] })}
+          home={researchHome({
+            wayInBadges: ['Undergrad evidence', 'Welcomes undergrads, recruiting now'],
+          })}
         />
       </MemoryRouter>,
     );
