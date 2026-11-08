@@ -88,6 +88,16 @@ describe('searchTopicAliases source of truth', () => {
     expect(RESEARCH_ENTITY_MEILI_SYNONYMS.ir).toBeUndefined();
   });
 
+  it('widens an aerospace word one way to the fields the corpus uses for that work (#5512)', () => {
+    for (const studentWord of ['supersonic', 'hypersonic', 'aerospace', 'sonic boom', 'rockets']) {
+      expect(RESEARCH_ENTITY_MEILI_SYNONYMS[studentWord]).toEqual(
+        expect.arrayContaining(['fluid dynamics', 'combustion', 'propulsion']),
+      );
+    }
+    expect(RESEARCH_ENTITY_MEILI_SYNONYMS['fluid dynamics'] ?? []).not.toContain('supersonic');
+    expect(RESEARCH_ENTITY_MEILI_SYNONYMS.combustion ?? []).not.toContain('rockets');
+  });
+
   it('makes a free-text-guarded shorthand a one-way synonym, so no topic expands to "cv" (#3797)', () => {
     expect(RESEARCH_ENTITY_MEILI_SYNONYMS.cv).toEqual(
       expect.arrayContaining(['computer vision', 'computational vision']),
