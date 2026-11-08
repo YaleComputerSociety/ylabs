@@ -708,6 +708,31 @@ describe('Programs page', () => {
     expect(searchInput).toHaveFocus();
   });
 
+  it('offers a keyboard-reachable clear button that empties the search and returns focus to it', async () => {
+    const setQueryString = vi.fn();
+    renderPage([baseFellowship({ id: 'open', title: 'Open Fellowship' })], {
+      queryString: 'summer',
+      setQueryString,
+    });
+
+    const searchInput = screen.getByLabelText('Search programs and fellowships');
+    searchInput.focus();
+    await userEvent.tab();
+    const clear = screen.getByRole('button', { name: 'Clear search' });
+    expect(clear).toHaveFocus();
+
+    await userEvent.keyboard('{Enter}');
+
+    expect(setQueryString).toHaveBeenCalledWith('');
+    expect(searchInput).toHaveFocus();
+  });
+
+  it('shows no clear button while the program search is empty', () => {
+    renderPage([baseFellowship({ id: 'open', title: 'Open Fellowship' })]);
+
+    expect(screen.queryByRole('button', { name: 'Clear search' })).toBeNull();
+  });
+
   it('clears the subject filter along with every other program filter from Clear all', async () => {
     const resetProgramFilters = vi.fn();
     const setSelectedStudentVisibilityTier = vi.fn();

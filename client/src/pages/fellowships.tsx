@@ -43,6 +43,10 @@ import { getFellowshipCycleStatus, type FellowshipCycleCategory } from '../utils
 import { createFellowship } from '../utils/createFellowship';
 import { scrollViewportToTop } from '../utils/scrollViewportToTop';
 import SearchSpellingNotice from '../components/shared/SearchSpellingNotice';
+import SearchClearButton, {
+  SEARCH_INPUT_CLEAR_BUTTON_PADDING,
+  SEARCH_INPUT_NATIVE_CANCEL_HIDDEN,
+} from '../components/shared/SearchClearButton';
 import {
   programKindLabel,
   entryModeLabel,
@@ -509,6 +513,7 @@ const Fellowships = () => {
       onPlanRestored: reloadWatchedProgramStages,
     });
   const capturingPlanIdsRef = useRef(new Set<string>());
+  const programSearchInputRef = useRef<HTMLInputElement>(null);
   const {
     selectedItem: selectedFellowship,
     isDetailModalOpen: isModalOpen,
@@ -950,14 +955,25 @@ const Fellowships = () => {
                 >
                   Search programs and fellowships
                 </label>
-                <input
-                  id="program-search"
-                  type="search"
-                  value={queryString}
-                  onChange={(e) => setQueryString(e.target.value)}
-                  placeholder="Topic, program, or funder"
-                  className="min-h-[44px] w-full rounded-card border border-[var(--yr-line-control)] bg-[var(--yr-panel)] px-3 text-base text-ink-soft focus:border-transparent yr-focus-ring"
-                />
+                <div className="relative flex min-w-0">
+                  <input
+                    id="program-search"
+                    ref={programSearchInputRef}
+                    type="search"
+                    value={queryString}
+                    onChange={(e) => setQueryString(e.target.value)}
+                    placeholder="Topic, program, or funder"
+                    className={`min-h-[44px] w-full min-w-0 rounded-card border border-[var(--yr-line-control)] bg-[var(--yr-panel)] px-3 text-base text-ink-soft focus:border-transparent yr-focus-ring ${SEARCH_INPUT_NATIVE_CANCEL_HIDDEN} ${queryString ? SEARCH_INPUT_CLEAR_BUTTON_PADDING : ''}`}
+                  />
+                  {queryString && (
+                    <SearchClearButton
+                      onClear={() => {
+                        setQueryString('');
+                        programSearchInputRef.current?.focus();
+                      }}
+                    />
+                  )}
+                </div>
                 {queryCorrection && queryCorrection.originalQuery === queryString.trim() && (
                   <div className="mt-2">
                     <SearchSpellingNotice
