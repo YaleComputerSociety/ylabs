@@ -72,6 +72,43 @@ describe('research analytics event emission', () => {
     expect(JSON.stringify(events[0])).not.toContain('fixture-mentor@yale.edu');
   });
 
+  it.each(['lead_card', 'reach_out'] as const)(
+    'keeps the %s surface of a contact-route click and nothing else',
+    async (surface) => {
+      const events: LogEventParams[] = [];
+
+      await emitResearchEvent(
+        {
+          eventType: AnalyticsEventType.CONTACT_ROUTE_CLICK,
+          entityType: 'research_entity',
+          entityId: '507f1f77bcf86cd799439011',
+          user,
+          payload: {
+            contactMethod: 'email',
+            surface,
+            href: 'mailto:fixture-mentor@yale.edu',
+          },
+        },
+        async (event) => {
+          events.push(event);
+          return 'recorded' as const;
+        },
+      );
+
+      expect(events[0].metadata).toEqual({ contactMethod: 'email', surface });
+      expect(JSON.stringify(events[0])).not.toContain('fixture-mentor');
+    },
+  );
+
+  it('drops a contact-route surface outside the allowlist', () => {
+    expect(
+      sanitizeResearchPayload(AnalyticsEventType.CONTACT_ROUTE_CLICK, {
+        contactMethod: 'email',
+        surface: 'fixture-mentor@yale.edu',
+      }),
+    ).toEqual({ contactMethod: 'email' });
+  });
+
   it('stores only source category and hostname for source-link clicks', async () => {
     const events: LogEventParams[] = [];
 

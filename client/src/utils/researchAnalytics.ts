@@ -3,6 +3,15 @@ import { getApiBaseUrl } from './apiBaseUrl';
 
 export type LegacyResearchEventType = 'ways_in_click' | 'contact_route_click' | 'source_link_click';
 
+export const CONTACT_ROUTE_SURFACES = ['lead_card', 'reach_out'] as const;
+export type ContactRouteSurface = (typeof CONTACT_ROUTE_SURFACES)[number];
+export const CONTACT_ROUTE_SURFACE_ATTRIBUTE = 'data-contact-route-surface';
+
+export const readContactRouteSurface = (value: unknown): ContactRouteSurface | undefined =>
+  (CONTACT_ROUTE_SURFACES as readonly unknown[]).includes(value)
+    ? (value as ContactRouteSurface)
+    : undefined;
+
 export const RESEARCH_JOURNEY_EVENT_TYPES = [
   'research_search',
   'research_results_view',

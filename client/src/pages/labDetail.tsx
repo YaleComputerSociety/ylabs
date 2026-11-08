@@ -104,7 +104,9 @@ import { leadRoleFamily, leadSectionHeading } from '../utils/leadRoleDisplay';
 import UserContext from '../contexts/UserContext';
 import EntityCorrectionReportPanel from '../components/research/EntityCorrectionReportPanel';
 import {
+  CONTACT_ROUTE_SURFACE_ATTRIBUTE,
   createResearchAnalyticsInteractionId,
+  readContactRouteSurface,
   readResearchProfileOpenSource,
   researchProfileOpenState,
   trackResearchEvent,
@@ -707,6 +709,7 @@ const DecisionSummary = ({
                 {reachOutLine.contactLinkText && reachOutContactLink ? (
                   <a
                     href={reachOutContactLink.href}
+                    {...{ [CONTACT_ROUTE_SURFACE_ATTRIBUTE]: 'reach_out' }}
                     {...(reachOutContactLink.opensNewTab
                       ? {
                           target: '_blank',
@@ -1235,11 +1238,14 @@ const LabDetail = () => {
     // email returned early and recorded nothing. The href itself is never sent, only the coarse
     // method, because the analytics contract forbids retaining a contact destination.
     if (typeof href === 'string' && /^mailto:/i.test(href.trim())) {
+      const surface = readContactRouteSurface(
+        anchor?.getAttribute(CONTACT_ROUTE_SURFACE_ATTRIBUTE),
+      );
       void trackResearchEvent({
         eventType: 'contact_route_click',
         entityType: 'research_entity',
         entityId: group._id,
-        payload: { contactMethod: 'email' },
+        payload: { contactMethod: 'email', ...(surface ? { surface } : {}) },
         dedupeKey: createResearchAnalyticsInteractionId('contact'),
       });
       return;
