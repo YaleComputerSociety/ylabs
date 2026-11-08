@@ -153,4 +153,46 @@ describe('CombinedFilterDropdown', () => {
 
     expect(screen.queryByTestId('filter-sheet-backdrop')).toBeNull();
   });
+  it('opens the panel above a trigger near the bottom of a short window, capped to fit', async () => {
+    const innerHeight = window.innerHeight;
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 768 });
+    const rect = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockReturnValue({
+        top: 636,
+        bottom: 680,
+        left: 0,
+        right: 100,
+        width: 100,
+        height: 44,
+        x: 0,
+        y: 636,
+        toJSON: () => ({}),
+      });
+    try {
+      render(
+        <CombinedFilterDropdown
+          tabs={[
+            {
+              key: 'department',
+              label: 'Department',
+              options: ['Physics'],
+              selected: [],
+              setSelected: vi.fn(),
+            },
+          ]}
+        />,
+      );
+
+      await userEvent.click(screen.getByRole('button', { name: 'Filters' }));
+
+      const panel = screen.getByText('Physics').closest('[data-placement]') as HTMLElement;
+      expect(panel.dataset.placement).toBe('above');
+      expect(panel).toHaveClass('bottom-full');
+      expect(panel.style.maxHeight).toBe(`${636 - 4 - 8}px`);
+    } finally {
+      rect.mockRestore();
+      Object.defineProperty(window, 'innerHeight', { configurable: true, value: innerHeight });
+    }
+  });
 });

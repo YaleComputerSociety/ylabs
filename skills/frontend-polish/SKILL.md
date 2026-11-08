@@ -81,8 +81,10 @@ Use `client/src/hooks/useRovingTabs.ts` for the selected tab and arrow, Home, an
 A strip that can outgrow a 320px viewport scrolls in its own `overflow-x-auto` region so the page never scrolls sideways.
 A tab strip inside a fixed-width popover wraps instead, because a scrolled strip there cuts a tab at the edge: the `/programs` filter tabs were clipped at 340px until they wrapped, and the student-journey smoke fails when a tab runs past the popover.
 A facet's options are ordered so no field leads by accident: the `/programs` subjects are alphabetical (`programSubjectFilterOptions`), because the taxonomy order opened on AI, Data Science, and Computer Vision and a humanities or social-science student read the list as not for them.
-In the `/programs` sheet a facet of 12 or fewer options lays out in two columns from `sm` up, so the whole facet shows at 1280x800, and the option list grows with the window rather than sitting in a fixed 220px box; on a phone the sheet body scrolls in the space left under the tabs, with no inner scroll box.
+In the `/programs` sheet a facet of 12 or fewer options lays out in two columns from `sm` up, so the whole facet shows at 1280x800, and the option list never has its own scroll box: the panel body below the tabs is the one scroll region, on a phone and on a laptop alike.
 The `/programs` filter rail is sticky at `xl` and sits above the results (`relative z-10`), so the popover is never painted under a result card.
+An anchored popover fits the visible part of `[data-scroll-container]` rather than relying on `scrollIntoView`, which a sticky rail defeats: `client/src/hooks/useViewportFitPlacement.ts` measures the room above and below the trigger on open, resize, and scroll, opens below when there is room and flips above when there is not, and caps the panel to that room.
+Before it, the `/programs` Filters panel ended at 1102px of an 800px window and 1070px of a 768px one (#5476).
 
 ## Content, loading, and errors
 

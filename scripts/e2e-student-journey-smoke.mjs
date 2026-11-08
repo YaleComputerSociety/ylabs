@@ -1641,6 +1641,7 @@ const lastOptionPlacement = (dialog) =>
 await step('a short program facet shows in full and the filter popover paints on top', async () => {
   for (const viewport of [
     { width: 1280, height: 800 },
+    { width: 1366, height: 768 },
     { width: 390, height: 844 },
   ]) {
     await withSyntheticBrowsePage(
@@ -1659,6 +1660,15 @@ await step('a short program facet shows in full and the filter popover paints on
           .click();
         const dialog = syntheticPage.getByRole('dialog', { name: 'Program filters' });
         await dialog.waitFor({ timeout: 20000 });
+        const opened = await dialog.evaluate((element) => {
+          const box = element.getBoundingClientRect();
+          return { top: box.top, bottom: box.bottom, viewportHeight: window.innerHeight };
+        });
+        record('program filter popover on open', { width: viewport.width, ...opened });
+        assert(
+          opened.top >= 0 && opened.bottom <= opened.viewportHeight + 1,
+          `The program filter popover opens past the window at ${viewport.width}x${viewport.height}: ${Math.round(opened.top)} to ${Math.round(opened.bottom)}px.`,
+        );
         await dialog.getByRole('button', { name: 'Subject', exact: true }).click();
         await dialog.getByText(SYNTHETIC_SHORT_FACET.at(-1), { exact: true }).waitFor();
         const subject = await lastOptionPlacement(dialog);
