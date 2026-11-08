@@ -58,13 +58,17 @@ describe('resolveFundYearOfStudy phrasing shapes', () => {
       ),
     ).toEqual({ kind: 'prose', values: ['Sophomore', 'Junior'] });
     expect(
-      read('Undergraduates are eligible. Seniors, graduate students, or visiting students are not eligible.'),
+      read(
+        'Undergraduates are eligible. Seniors, graduate students, or visiting students are not eligible.',
+      ),
     ).toEqual({ kind: 'prose', values: ['First-Year Student', 'Sophomore', 'Junior'] });
   });
 
   it('does not carry a negation across a clause that is not part of the subject list', () => {
     expect(
-      read('Juniors and seniors are eligible. Seniors, while graduate students are not eligible, may apply.'),
+      read(
+        'Juniors and seniors are eligible. Seniors, while graduate students are not eligible, may apply.',
+      ),
     ).toEqual({ kind: 'prose', values: ['Junior', 'Senior'] });
   });
 
