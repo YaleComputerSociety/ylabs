@@ -476,6 +476,19 @@ describe('ResearchFilterDisclosure', () => {
     expect(document.activeElement).toBe(department);
   });
 
+  it('holds a typed letter whose keypress arrives after the keydown task has finished', async () => {
+    const { props } = renderFilters({ variant: 'sidebar' });
+    const department = screen.getByLabelText('Filter by department') as HTMLSelectElement;
+
+    fireEvent.keyDown(department, { key: 'n' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fireEvent.keyPress(department, { key: 'n', code: 'KeyN', charCode: 110 });
+    fireEvent.change(department, { target: { value: 'Neuroscience' } });
+
+    expect(props.onDepartmentChange).not.toHaveBeenCalled();
+    expect(department.value).toBe('Neuroscience');
+  });
+
   it('applies a typed department when the student tabs away, and drops it on Escape', () => {
     const { props } = renderFilters({ variant: 'sidebar' });
     const school = screen.getByLabelText('Filter by school') as HTMLSelectElement;

@@ -165,6 +165,12 @@ const ConfirmedFilterSelect = ({
     setDraft(next);
     if (next !== value) onConfirm(next);
   };
+  const markKeyboardStepPending = () => {
+    keyboardStepPendingRef.current = true;
+    window.setTimeout(() => {
+      keyboardStepPendingRef.current = false;
+    }, 0);
+  };
   return (
     <select
       ref={selectRef}
@@ -181,11 +187,10 @@ const ConfirmedFilterSelect = ({
           setDraft(value);
           return;
         }
-        if (!keyStepsAClosedSelect(event.key)) return;
-        keyboardStepPendingRef.current = true;
-        window.setTimeout(() => {
-          keyboardStepPendingRef.current = false;
-        }, 0);
+        if (keyStepsAClosedSelect(event.key)) markKeyboardStepPending();
+      }}
+      onKeyPress={(event) => {
+        if (event.key.length === 1) markKeyboardStepPending();
       }}
       onChange={(event) => {
         if (keyboardStepPendingRef.current) setDraft(event.target.value);
