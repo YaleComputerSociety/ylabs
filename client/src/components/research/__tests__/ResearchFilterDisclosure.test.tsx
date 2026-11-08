@@ -542,6 +542,35 @@ describe('ResearchFilterDisclosure', () => {
     expect(props.onEntityTypeChange).not.toHaveBeenCalled();
   });
 
+  it.each([
+    {
+      viewport: 'a tablet, by a press outside the panel',
+      wide: true,
+      dismiss: () => fireEvent.mouseDown(document.body),
+    },
+    {
+      viewport: 'a phone, by a press on the backdrop',
+      wide: false,
+      dismiss: () => fireEvent.mouseDown(screen.getByTestId('research-filter-backdrop')),
+    },
+  ])('applies a typed department when the sheet is dismissed on $viewport', ({ wide, dismiss }) => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: wide }) as typeof window.matchMedia;
+    const { props } = renderFilters();
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    const department = screen.getByLabelText('Filter by department') as HTMLSelectElement;
+    department.focus();
+
+    fireEvent.keyDown(department, { key: 'n' });
+    fireEvent.change(department, { target: { value: 'Neuroscience' } });
+    expect(props.onDepartmentChange).not.toHaveBeenCalled();
+
+    dismiss();
+
+    expect(screen.queryByRole('dialog', { name: 'Research filters' })).toBeNull();
+    expect(props.onDepartmentChange).toHaveBeenCalledTimes(1);
+    expect(props.onDepartmentChange).toHaveBeenCalledWith('Neuroscience');
+  });
+
   it('hides non-positive facets unless selected', () => {
     renderFilters({
       facetDistribution: {
