@@ -524,6 +524,26 @@ describe('ResearchFilterDisclosure', () => {
     await waitFor(() => expect(searchSelect).toHaveFocus());
   });
 
+  it('shows the applied value when the list opens over a typed choice, so picking that choice applies it', async () => {
+    const { props } = renderFilters({ variant: 'sidebar' });
+    const department = screen.getByLabelText('Filter by department') as HTMLSelectElement;
+
+    fireEvent.keyDown(department, { key: 'n' });
+    fireEvent.change(department, { target: { value: 'Neuroscience' } });
+    fireEvent.mouseDown(department);
+    expect(department.value).toBe('');
+
+    fireEvent.keyDown(department, { key: 'n' });
+    fireEvent.change(department, { target: { value: 'Neuroscience' } });
+    fireEvent.keyDown(department, { key: 'ArrowDown', altKey: true });
+    expect(department.value).toBe('');
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fireEvent.change(department, { target: { value: 'Neuroscience' } });
+    expect(props.onDepartmentChange).toHaveBeenCalledTimes(1);
+    expect(props.onDepartmentChange).toHaveBeenCalledWith('Neuroscience');
+  });
+
   it('keeps the applied value when the student tabs away from a typed choice or presses Escape', () => {
     const { props } = renderFilters({ variant: 'sidebar' });
     const school = screen.getByLabelText('Filter by school') as HTMLSelectElement;

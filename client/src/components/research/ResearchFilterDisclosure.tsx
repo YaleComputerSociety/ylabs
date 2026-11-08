@@ -137,6 +137,9 @@ const KEYS_THAT_STEP_A_CLOSED_SELECT = new Set([
 const keyStepsAClosedSelect = (key: string): boolean =>
   key.length === 1 || KEYS_THAT_STEP_A_CLOSED_SELECT.has(key);
 
+const keyOpensASelectList = ({ key, altKey }: { key: string; altKey: boolean }): boolean =>
+  key === 'F4' || (altKey && (key === 'ArrowDown' || key === 'ArrowUp'));
+
 // Applying a filter from the browse view starts a search, and the page renders the
 // search view's own filter controls, so the select the student was on is replaced. The
 // replacement is found by its label once that render has landed.
@@ -163,7 +166,9 @@ interface ConfirmedFilterSelectProps {
 // filter per keystroke ran a search for "Early Modern Studies" while a student typed
 // "Ec". Keyboard steps only move the draft and Enter applies it. Leaving the field keeps
 // the applied value, because an apply on blur from the browse view replaced the filter
-// controls under the student's pending Tab or click. A pick from the open list applies.
+// controls under the student's pending Tab or click. A pick from the open list applies,
+// so opening the list drops the draft: picking the option the draft showed must still
+// differ from the select's value, or the browser fires no change.
 const ConfirmedFilterSelect = ({
   value,
   onConfirm,
@@ -212,6 +217,10 @@ const ConfirmedFilterSelect = ({
           setDraft(value);
           return;
         }
+        if (keyOpensASelectList(event)) {
+          setDraft(value);
+          return;
+        }
         if (keyStepsAClosedSelect(event.key)) markKeyboardStepPending();
       }}
       onKeyPress={(event) => {
@@ -221,9 +230,8 @@ const ConfirmedFilterSelect = ({
         if (keyboardStepPendingRef.current) setDraft(event.target.value);
         else confirm(event.target.value);
       }}
-      onBlur={() => {
-        if (draft !== value) setDraft(value);
-      }}
+      onMouseDown={() => setDraft(value)}
+      onBlur={() => setDraft(value)}
       className={className}
     >
       {children}
