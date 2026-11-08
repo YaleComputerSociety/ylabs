@@ -172,9 +172,13 @@ const ConfirmedFilterSelect = ({
   children,
 }: ConfirmedFilterSelectProps) => {
   const [draft, setDraft] = useState(value);
+  const [draftSourceValue, setDraftSourceValue] = useState(value);
+  if (draftSourceValue !== value) {
+    setDraftSourceValue(value);
+    setDraft(value);
+  }
   const keyboardStepPendingRef = useRef(false);
   const selectNodeRef = useRef<HTMLSelectElement | null>(null);
-  useEffect(() => setDraft(value), [value]);
   const confirm = (next: string) => {
     setDraft(next);
     if (next === value) return;
