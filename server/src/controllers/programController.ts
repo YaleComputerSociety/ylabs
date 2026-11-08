@@ -162,6 +162,7 @@ export const searchProgramsController = async (request: Request, response: Respo
     totalPages: result.totalPages,
     ...(result.queryCorrection ? { queryCorrection: result.queryCorrection } : {}),
     ...(result.queryMatch ? { queryMatch: result.queryMatch } : {}),
+    ...(result.closeMatchesFrom !== undefined ? { closeMatchesFrom: result.closeMatchesFrom } : {}),
   });
 };
 

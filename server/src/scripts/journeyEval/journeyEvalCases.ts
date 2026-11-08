@@ -15,6 +15,7 @@ import {
   normalizeResearchSearchQuery,
 } from '../../services/researchGroupService';
 import { meshDescriptorWordKeys } from '../../scrapers/utils/meshNonSubjectDescriptors';
+import { isEnglishDictionaryWord } from '../../services/englishDictionaryWords';
 import {
   attributeTopicDrops,
   buildInconclusiveInvariant,
@@ -31,6 +32,7 @@ import {
   checkNoRepeatedRowsAcrossPages,
   checkNotDegraded,
   checkPersonNameWordsAreNotRespelled,
+  checkDictionaryWordsAreNotRespelled,
   checkQueryRelevance,
   checkSimilarRailRanksSharedNamesLast,
   checkSortOrdering,
@@ -1150,6 +1152,34 @@ const similarRailRanksTopicsAboveNames: JourneyCase = {
   },
 };
 
+const DICTIONARY_WORD_QUERIES = [
+  'CPSC 381 intro to machine learning',
+  'intro biology lab',
+  'bran fermentation',
+  'paid summer research',
+];
+
+const queryWords = (query: string): string[] => query.toLowerCase().match(/[a-z]+/g) ?? [];
+
+const dictionaryWordsAreNotRespelled: JourneyCase = {
+  id: 'dictionary-words-are-not-respelled',
+  title: 'A real English word a student types is searched as typed',
+  run: async (context) => {
+    const observations = [];
+    for (const query of DICTIONARY_WORD_QUERIES) {
+      const result = await context.browse({ query, pageSize: 1 });
+      const corrected = result.queryCorrection?.correctedQuery;
+      const correctedWords = new Set(queryWords(corrected ?? query));
+      observations.push({
+        respelledDictionaryWords: queryWords(query).filter(
+          (word) => isEnglishDictionaryWord(word) && !correctedWords.has(word),
+        ),
+      });
+    }
+    return { invariants: [checkDictionaryWordsAreNotRespelled(observations)], rates: [] };
+  },
+};
+
 export const journeyCases: readonly JourneyCase[] = [
   coldBrowseCardContract,
   topicDropAttribution,
@@ -1168,5 +1198,6 @@ export const journeyCases: readonly JourneyCase[] = [
   unmatchedWordKeepsTopicResults,
   meshDescriptorRanksBelowOwnEvidence,
   personNameLookupReachesThePerson,
+  dictionaryWordsAreNotRespelled,
   similarRailRanksTopicsAboveNames,
 ];

@@ -752,6 +752,29 @@ export function checkPersonNameWordsAreNotRespelled(
   return buildInvariant(id, title, respelled.length === 0, detail);
 }
 
+export interface DictionaryWordQueryObservation {
+  respelledDictionaryWords: readonly string[];
+}
+
+export function checkDictionaryWordsAreNotRespelled(
+  observations: readonly DictionaryWordQueryObservation[],
+): InvariantResult {
+  const id = 'dictionary-words-are-not-respelled';
+  const title =
+    'A real English word in a query is searched as typed, never spelling-corrected to a corpus word';
+  const respelled = observations.flatMap((observation) => observation.respelledDictionaryWords);
+  const detail = { queried: observations.length, respelledWords: respelled.length };
+  if (observations.length === 0) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'No query was sent, so a zero respelled count would be a green signal over an empty population',
+      detail,
+    );
+  }
+  return buildInvariant(id, title, respelled.length === 0, detail);
+}
+
 export interface SimilarRailObservation {
   viewedSharesNames: boolean;
   cardsShareAName: readonly boolean[];

@@ -30,7 +30,7 @@ import {
   NOT_STATED_LABEL,
   PROGRAM_CONTACT_IS_NOT_YOUR_MENTOR_NOTE,
 } from '../../utils/programBoard';
-import { buildSafeProgramLinks } from '../../utils/programLinks';
+import { buildSafeProgramLinks, programSourceLinkLabel } from '../../utils/programLinks';
 import {
   isLikelyUnavailableSourceLink,
   labelizeResearchDetailValue,
@@ -880,7 +880,7 @@ const FellowshipModal = ({
                         rel="noopener noreferrer"
                         className="yr-link yr-focus-ring inline-flex min-h-[44px] items-center rounded-control"
                       >
-                        {sourceLabel || 'Official source'}
+                        {programSourceLinkLabel(fellowship.sourceName, sourceHref, sourceLabel)}
                       </a>
                     ) : (
                       <span className="text-muted">{sourceLabel}</span>

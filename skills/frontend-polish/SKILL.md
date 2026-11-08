@@ -132,6 +132,8 @@ A projected next-cycle estimate always names its year (`formatProjectedProgramDa
 - Empty states say what the surface is for and offer the next action.
 - A program that requires a mentor first answers "Yes, line up your own mentor before applying", and when its source application text carries a labelled award contact with a value (an award, program, grant, or fellowship manager, contact, coordinator, or administrator label, optionally "/Faculty Mentor", followed by a colon and a value), the modal adds `PROGRAM_CONTACT_IS_NOT_YOUR_MENTOR_NOTE`, because a student read the award's named contact as an assigned mentor.
 - An outbound action names the place it opens and says it leaves y/labs: the research detail "How to get involved" actions carry the external-link icon and a visible note, linked by `aria-describedby`, naming the site they open, and a not-yet-open program's action reads "See the official program page" rather than promising to track a date (#5306).
+- A link label names the place the link opens.
+A program's "Source:" link names the discovering office only when the link is on that office's own host, and otherwise shows the host it opens (`programSourceLinkLabel` in `client/src/utils/programLinks.ts`), because `sourceName` is the lane that found the row, and about 180 of 537 Development rows had linked a department or college page under an office's name (#5480).
 - Every route sets a meaningful page title.
 - Never render placeholder or half-finished content to real users.
 

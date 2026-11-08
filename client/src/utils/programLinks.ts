@@ -144,3 +144,28 @@ export const buildSafeProgramLinks = (
   if (filtered.length > MAX_RENDERED_PROGRAM_LINKS) return [];
   return filtered;
 };
+
+// Changing a program lane's `sourceName` requires updating this map.
+const PROGRAM_SOURCE_OFFICE_HOSTS: Readonly<Record<string, string>> = {
+  'yale-college-fellowships-office': 'funding.yale.edu',
+  'student-grants-database': 'yale.communityforce.com',
+};
+
+const linkHost = (href: string): string | null => {
+  try {
+    return new URL(href).hostname.replace(/^www\./i, '').toLowerCase();
+  } catch {
+    return null;
+  }
+};
+
+export const programSourceLinkLabel = (
+  sourceName: string | undefined,
+  href: string,
+  officeLabel: string,
+): string => {
+  const host = linkHost(href);
+  if (!host) return officeLabel || 'Official source';
+  const officeHost = sourceName ? PROGRAM_SOURCE_OFFICE_HOSTS[sourceName.trim()] : undefined;
+  return officeLabel && officeHost === host ? officeLabel : host;
+};
