@@ -633,11 +633,11 @@ describe('FellowshipModal', () => {
       sourceUrl: 'https://programs.example.edu/award',
     });
 
-    const provenance = screen.getByRole('link', { name: 'Example Programs Office' });
+    const provenance = screen.getByRole('link', { name: 'programs.example.edu' });
     expect(provenance.className).toContain('min-h-[44px]');
   });
 
-  it('falls back to the specific source page and shows legible provenance (#692)', () => {
+  it('falls back to the specific source page and labels it by the site it opens (#692, #5480)', () => {
     const specificSource =
       'https://engineering.yale.edu/academic-study/departments/computer-science/undergraduate-study/research-internship-program';
     renderModal({
@@ -647,8 +647,22 @@ describe('FellowshipModal', () => {
     });
 
     expect(screen.getByRole('link', { name: /Apply now/ })).toHaveAttribute('href', specificSource);
-    const provenance = screen.getByRole('link', { name: 'Yale College Fellowships Office' });
+    expect(screen.queryByRole('link', { name: 'Yale College Fellowships Office' })).toBeNull();
+    const provenance = screen.getByRole('link', { name: 'engineering.yale.edu' });
     expect(provenance).toHaveAttribute('href', specificSource);
+  });
+
+  it('names the office only when the source link is on that office own site (#5480)', () => {
+    const officeSource = 'https://funding.yale.edu/fixture-award';
+    renderModal({
+      sourceName: 'yale-college-fellowships-office',
+      sourceUrl: officeSource,
+    });
+
+    expect(screen.getByRole('link', { name: 'Yale College Fellowships Office' })).toHaveAttribute(
+      'href',
+      officeSource,
+    );
   });
 
   it('renders the official-source link when link health is healthy (#1022)', () => {
@@ -659,10 +673,7 @@ describe('FellowshipModal', () => {
       sourceLinkHealth: { url: source, healthStatus: 'HEALTHY' },
     });
 
-    expect(screen.getByRole('link', { name: 'Yale Women Faculty Forum' })).toHaveAttribute(
-      'href',
-      source,
-    );
+    expect(screen.getByRole('link', { name: 'wff.yale.edu' })).toHaveAttribute('href', source);
   });
 
   it('drops the official-source link when the stored source url is known dead (#1022)', () => {
