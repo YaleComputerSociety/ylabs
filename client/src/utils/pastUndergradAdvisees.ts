@@ -16,6 +16,22 @@ const adviseeYearRange = (entries: PastAdviseeEntry[]): string | null => {
     : `${years[0]}–${years[years.length - 1]}`;
 };
 
+// Mirrors the adviser-list program names in server/src/scrapers/sources/undergradFellowshipRecipientScraper.ts; change both together.
+const ADVISED_WORK_PLURALS: ReadonlyArray<[singular: string, plural: string]> = [
+  ['senior essay', 'senior essays'],
+  ['senior thesis', 'senior theses'],
+];
+
+const programLine = (program: string, total: number): string => {
+  const work = ADVISED_WORK_PLURALS.find(([singular]) =>
+    program.toLowerCase().endsWith(` ${singular}`),
+  );
+  if (!work) return `Mentored ${total} ${program} ${total === 1 ? 'recipient' : 'recipients'}`;
+  const [singular, plural] = work;
+  const named = total === 1 ? program : `${program.slice(0, -singular.length)}${plural}`;
+  return `Advised ${total} ${named}`;
+};
+
 const adviseeTotal = (entries: PastAdviseeEntry[]): number =>
   entries.reduce((sum, entry) => sum + (entry?.count ?? 1), 0);
 
@@ -56,12 +72,7 @@ export const formatPastAdvisees = (
   for (const [program, programEntries] of byProgram) {
     const total = adviseeTotal(programEntries);
     if (total <= 0) continue;
-    lines.push(
-      withYearRange(
-        `Mentored ${total} ${program} ${total === 1 ? 'recipient' : 'recipients'}`,
-        programEntries,
-      ),
-    );
+    lines.push(withYearRange(programLine(program, total), programEntries));
   }
   return lines;
 };

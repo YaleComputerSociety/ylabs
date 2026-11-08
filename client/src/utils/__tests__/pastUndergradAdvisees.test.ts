@@ -15,6 +15,24 @@ describe('formatPastAdvisees', () => {
     ).toEqual(['Mentored 1 Fixture Scholars II recipient (2025)']);
   });
 
+  it('names advised senior essays and theses by the work rather than as recipients', () => {
+    expect(
+      formatPastAdvisees({
+        pastUndergradAdvisees: [
+          { programName: 'Cognitive Science senior essay', year: 2024, count: 2 },
+          { programName: 'Cognitive Science senior essay', year: 2011, count: 1 },
+          { programName: 'Earth and Planetary Sciences senior thesis', year: 2025, count: 2 },
+          { programName: 'Earth and Planetary Sciences senior thesis', year: 2026, count: 1 },
+          { programName: 'Fixture Lab senior thesis', year: 2020, count: 1 },
+        ],
+      }),
+    ).toEqual([
+      'Advised 3 Cognitive Science senior essays (2011\u20132024)',
+      'Advised 3 Earth and Planetary Sciences senior theses (2025\u20132026)',
+      'Advised 1 Fixture Lab senior thesis (2020)',
+    ]);
+  });
+
   it('keeps one line per program with its own year range', () => {
     expect(
       formatPastAdvisees({
