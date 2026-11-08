@@ -184,6 +184,21 @@ describe('splitAdviserCell', () => {
     ]);
   });
 
+  it('keeps an adviser followed by a credential or a department name', () => {
+    expect(splitAdviserCell('Morgan Fennick, PhD')).toEqual({
+      names: ['Morgan Fennick'],
+      outsideAdvisersSkipped: 0,
+    });
+    expect(splitAdviserCell('Morgan Fennick, Psychology')).toEqual({
+      names: ['Morgan Fennick'],
+      outsideAdvisersSkipped: 0,
+    });
+    expect(splitAdviserCell('Dana Westerly, PhD, Example State University')).toEqual({
+      names: [],
+      outsideAdvisersSkipped: 1,
+    });
+  });
+
   it('reads placeholders as no adviser', () => {
     for (const placeholder of ['', 'TBD', 'N/A', '\u2014', '-', 'None']) {
       expect(splitAdviserCell(placeholder).names).toEqual([]);
@@ -235,7 +250,7 @@ describe('adviser list page parsers', () => {
     ]);
   });
 
-  it('prefers the lab the table of contents names and falls back to its surname alone', () => {
+  it('prefers the lab the table of contents names and refuses a lab surname no author carries', () => {
     expect(parseStarsAuthorListBooklet(TOC_BOOKLET, 2021)).toEqual([
       {
         advisorName: 'Casey Fenwick',
@@ -249,14 +264,6 @@ describe('adviser list page parsers', () => {
         year: 2021,
         sourceDepartments: [
           'Department of Computer Science, Yale University, New Haven, CT, 06520',
-        ],
-      },
-      {
-        advisorName: 'Okonkwo',
-        year: 2021,
-        advisorSurnameOnly: true,
-        sourceDepartments: [
-          'Department of Ecology and Evolutionary Biology, Yale University, New Haven CT',
         ],
       },
     ]);
@@ -406,7 +413,6 @@ describe('adviser pair matching', () => {
       advisorResolution,
       ownerDepartments,
       ownerToGroupSlug,
-      surnameOnlyAdvisorResolver: async () => ({ status: 'absent' }),
     });
     return { scraper, advisorResolution, ownerDepartments };
   };
@@ -554,7 +560,7 @@ describe('adviser pair matching', () => {
     for (const student of STUDENT_NAMES) expect(stored).not.toContain(student);
   });
 
-  it('matches a lab surname only to the one researcher whose department agrees', async () => {
+  it('never resolves a lab surname that no listed author carries', async () => {
     const booklet: ProgramConfig = {
       programKey: 'fixture-booklet',
       programName: 'Fixture booklet',
@@ -562,28 +568,27 @@ describe('adviser pair matching', () => {
       extractor: starsSymposiumBookletExtractor,
       hostingRule: 'lab-science-program',
     };
-    const surnameOnlyAdvisorResolver = vi.fn(
-      async (surname: string, departments: readonly string[]) =>
-        surname === 'Okonkwo' && departments.some((line) => /Ecology/.test(line))
-          ? ({ status: 'matched', match: researcher('r-okonkwo', 'Ada Okonkwo') } as const)
-          : ({ status: 'ambiguous' } as const),
-    );
+    const advisorResolution = vi.fn(async (name: string) => {
+      const known = RESEARCHERS[name];
+      return known
+        ? ({ status: 'matched', match: known.match } as const)
+        : ({ status: 'absent' } as const);
+    });
     const scraper = new UndergradFellowshipRecipientScraper([booklet], {
       fetchPage: async () => TOC_BOOKLET,
-      advisorResolution: async () => ({ status: 'absent' }),
-      surnameOnlyAdvisorResolver,
+      advisorResolution,
       ownerDepartments: async () => ({
         departments: ['Ecology & Evolutionary Biology'],
         affiliations: [],
       }),
       ownerToGroupSlug: async (owner) => `lead-row-${String(owner._id)}`,
     });
-    const { result, emitted } = await runScraper(scraper);
+    const { result } = await runScraper(scraper);
 
-    expect(surnameOnlyAdvisorResolver).toHaveBeenCalledWith('Okonkwo', [
-      'Department of Ecology and Evolutionary Biology, Yale University, New Haven CT',
+    expect(advisorResolution.mock.calls.map(([name]) => name)).toEqual([
+      'Casey Fenwick',
+      'Brian Robotson',
     ]);
-    expect(emitted.map((o) => o.entityKey)).toContain('lead-row-r-okonkwo');
-    expect(result.notes).toContain('fixture-booklet{parsed=3 matched=1 ambiguous=0 no-match=2');
+    expect(result.notes).toContain('fixture-booklet{parsed=2 ');
   });
 });

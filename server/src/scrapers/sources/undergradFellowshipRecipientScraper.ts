@@ -78,7 +78,6 @@ import {
 } from '../../utils/tempArtifactRoots';
 import { getCached, setCached } from '../snapshotCache';
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
-import { SURNAME_FETCH_LIMIT, surnameFetchRegex, surnamesCompatible } from '../utils/piNameMatch';
 import {
   LAB_SCIENCE_ADVISER_DEPARTMENTS,
   adviserPairCountsTowardHosting,
@@ -159,7 +158,6 @@ export interface FellowshipRecipient {
   reviewNote?: string;
   /** Year of the award (4-digit). Inferred from the listing or the URL. */
   year: number;
-  advisorSurnameOnly?: boolean;
   sourceDepartments?: string[];
 }
 
@@ -582,7 +580,6 @@ const adviserPairsToRecipients = (
     advisorName: pair.advisorName,
     year: pair.year,
     sourceUrl,
-    ...(pair.advisorSurnameOnly ? { advisorSurnameOnly: true } : {}),
     ...(pair.sourceDepartments ? { sourceDepartments: pair.sourceDepartments } : {}),
   }));
 
@@ -766,6 +763,7 @@ export const DEFAULT_PROGRAM_CONFIGS: ProgramConfig[] = [
     extractor: manualUploadStub,
     manualUploadRequired: true,
     skipReason: 'Mellon Mays Yale fellow names not publicly published',
+    hostingRule: 'lab-science-adviser-department',
   },
 ];
 
@@ -824,7 +822,7 @@ export function aggregateAdviseesByAdvisor(
     const advisorOrcid = normalizeOrcid(r.advisorOrcid);
     if (!cleaned && !advisorOrcid) continue;
     const { last } = splitName(cleaned);
-    if (!last && !advisorOrcid && !r.advisorSurnameOnly) continue;
+    if (!last && !advisorOrcid) continue;
     // Canonical key is the slugified normalized name — collapses
     // "Dr. Sandy Chang" and "Sandy Chang" into one row.
     const key = advisorOrcid ? `orcid:${advisorOrcid}` : slugify(cleaned);
@@ -985,15 +983,6 @@ export const ADVISER_PAIR_REFUSALS: readonly AdviserPairRefusal[] = [
   'no-lead-row',
 ];
 
-export type SurnameOnlyAdvisorResolution =
-  | { status: 'matched'; match: UserMatch }
-  | { status: 'absent' | 'ambiguous' | 'department-mismatch' };
-
-export type SurnameOnlyAdvisorResolver = (
-  surname: string,
-  sourceDepartments: readonly string[],
-) => Promise<SurnameOnlyAdvisorResolution>;
-
 const LEAD_ROLES = ['PI', 'CO_PI', 'DIRECTOR', 'CO_DIRECTOR'] as const;
 const OWN_RESEARCH_ROW_TYPES = ['LAB', 'FACULTY_RESEARCH_AREA'];
 
@@ -1082,33 +1071,6 @@ export async function leadRowDepartmentsForOwner(owner: UserMatch): Promise<Advi
   };
 }
 
-export const defaultSurnameOnlyAdvisorResolver: SurnameOnlyAdvisorResolver = async (
-  surname,
-  sourceDepartments,
-) => {
-  const surnameRe = surnameFetchRegex(surname);
-  if (!surnameRe) return { status: 'absent' };
-  const fetched: any[] = await Researcher.find({ displayName: surnameRe, archived: { $ne: true } })
-    .select('_id displayName profile identifiers')
-    .limit(SURNAME_FETCH_LIMIT)
-    .lean();
-  if (fetched.length >= SURNAME_FETCH_LIMIT) return { status: 'ambiguous' };
-  const candidates = fetched.filter((researcher) =>
-    surnamesCompatible(surname, splitName(String(researcher.displayName || '')).last),
-  );
-  if (candidates.length === 0) return { status: 'absent' };
-  const compatible: UserMatch[] = [];
-  for (const researcher of candidates) {
-    const match = researcherToUserMatch(researcher, await netidForAdvisorResearcher(researcher));
-    const { departments, affiliations } = await leadRowDepartmentsForOwner(match);
-    if (departmentsAgree(sourceDepartments, [...departments, ...affiliations])) {
-      compatible.push(match);
-    }
-  }
-  if (compatible.length === 1) return { status: 'matched', match: compatible[0] };
-  return { status: compatible.length > 1 ? 'ambiguous' : 'department-mismatch' };
-};
-
 /**
  * Pure: build the ResearchGroup observation list for one matched advisor.
  *
@@ -1184,7 +1146,6 @@ export interface UndergradFellowshipScraperDeps {
   pdfTextExtractor?: (body: Buffer) => Promise<string>;
   advisorResolution?: AdvisorResolutionResolver;
   ownerDepartments?: (owner: UserMatch) => Promise<AdvisorDepartments>;
-  surnameOnlyAdvisorResolver?: SurnameOnlyAdvisorResolver;
 }
 
 type AdviserPairVerdict = { slug: string } | { refusal: AdviserPairRefusal };
@@ -1245,7 +1206,6 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
   private readonly pdfTextExtractor: (body: Buffer) => Promise<string>;
   private readonly advisorResolution: AdvisorResolutionResolver;
   private readonly ownerDepartments: (owner: UserMatch) => Promise<AdvisorDepartments>;
-  private readonly surnameOnlyAdvisorResolver: SurnameOnlyAdvisorResolver;
 
   /**
    * Configs are injectable for testing; default to the v1 six-program set.
@@ -1267,8 +1227,6 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
           }
         : defaultAdvisorResolution);
     this.ownerDepartments = deps.ownerDepartments ?? leadRowDepartmentsForOwner;
-    this.surnameOnlyAdvisorResolver =
-      deps.surnameOnlyAdvisorResolver ?? defaultSurnameOnlyAdvisorResolver;
     this.ownerToGroupSlug = deps.ownerToGroupSlug ?? existingLeadRowSlugForOwner;
     this.defaultManualRecipientCsvDir =
       deps.defaultManualRecipientCsvDir ?? DEFAULT_ACCEPTED_FELLOWSHIP_RECIPIENT_CSV_DIR;
@@ -1533,33 +1491,14 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
     const sourceDepartments = recipient.sourceDepartments ?? config.adviserDepartments;
     const advisorName = normalizeName(recipient.advisorName);
     const advisorOrcid = normalizeOrcid(recipient.advisorOrcid);
-    let match: UserMatch;
-    if (recipient.advisorSurnameOnly) {
-      if (!sourceDepartments || sourceDepartments.length === 0) {
-        return { refusal: 'department-mismatch' };
-      }
-      const surnameDepartments = sourceDepartments;
-      const resolution = await cachedLookup(
-        caches.resolutions,
-        `surname:${advisorName.toLowerCase()}|${surnameDepartments.join('|')}`,
-        async (): Promise<AdvisorResolution | SurnameOnlyAdvisorResolution> =>
-          this.surnameOnlyAdvisorResolver(advisorName, surnameDepartments),
-      );
-      if (resolution.status === 'department-mismatch') return { refusal: 'department-mismatch' };
-      if (resolution.status === 'ambiguous') return { refusal: 'ambiguous' };
-      if (resolution.status !== 'matched' || !resolution.match) return { refusal: 'no-match' };
-      match = resolution.match;
-    } else {
-      const resolution = await cachedLookup(
-        caches.resolutions,
-        advisorOrcid ? `orcid:${advisorOrcid}` : `name:${slugify(advisorName)}`,
-        async (): Promise<AdvisorResolution | SurnameOnlyAdvisorResolution> =>
-          this.advisorResolution(advisorName || advisorOrcid, advisorOrcid || undefined),
-      );
-      if (resolution.status === 'ambiguous') return { refusal: 'ambiguous' };
-      if (resolution.status !== 'matched' || !resolution.match) return { refusal: 'no-match' };
-      match = resolution.match;
-    }
+    const resolution = await cachedLookup(
+      caches.resolutions,
+      advisorOrcid ? `orcid:${advisorOrcid}` : `name:${slugify(advisorName)}`,
+      () => this.advisorResolution(advisorName || advisorOrcid, advisorOrcid || undefined),
+    );
+    if (resolution.status === 'ambiguous') return { refusal: 'ambiguous' };
+    if (resolution.status !== 'matched' || !resolution.match) return { refusal: 'no-match' };
+    const match = resolution.match;
 
     const ownerKey = String(match._id);
     if (sourceDepartments || config.hostingRule === 'lab-science-adviser-department') {
@@ -1585,7 +1524,7 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
 }
 
 interface AdviserPairCaches {
-  resolutions: Map<string, Promise<AdvisorResolution | SurnameOnlyAdvisorResolution>>;
+  resolutions: Map<string, Promise<AdvisorResolution>>;
   departments: Map<string, Promise<AdvisorDepartments>>;
   slugs: Map<string, Promise<string | null>>;
 }

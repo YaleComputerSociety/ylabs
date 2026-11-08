@@ -4,7 +4,6 @@ import { normalizeName, splitName } from './scraperHelpers';
 export interface AdviserListPair {
   advisorName: string;
   year: number;
-  advisorSurnameOnly?: boolean;
   sourceDepartments?: string[];
 }
 
@@ -68,12 +67,17 @@ export function splitAdviserCell(cell: string): AdviserCellNames {
   let previousNameIndex = -1;
   for (const segment of segments) {
     const cleaned = cleanAdviserName(segment);
+    if (!cleaned) continue;
     if (looksLikePersonName(cleaned)) {
       names.push(cleaned);
       previousNameIndex = names.length - 1;
       continue;
     }
-    if (previousNameIndex >= 0 && !YALE_AFFILIATION.test(segment)) {
+    if (
+      previousNameIndex >= 0 &&
+      INSTITUTION_WORD.test(segment) &&
+      !YALE_AFFILIATION.test(segment)
+    ) {
       names.splice(previousNameIndex, 1);
       outsideAdvisersSkipped += 1;
     }
@@ -233,7 +237,7 @@ function surnameKey(name: string): string {
  * author carrying the Research Scholar affiliation and the faculty lead is read as the last
  * other author, the booklet's convention; where the 2021 table of contents names the lab
  * ("Student, Surname lab") the author with that surname is taken instead, and a lab surname
- * no author carries is matched on the surname alone.
+ * no author carries yields no pair.
  */
 export function parseStarsAuthorListBooklet(text: string, year: number): AdviserListPair[] {
   const tokens = bookletTokens(text);
@@ -272,28 +276,14 @@ export function parseStarsAuthorListBooklet(text: string, year: number): Adviser
       ? others.find((author) => surnameKey(cleanAdviserName(author.name)) === labSurname)
       : undefined;
     const lead = labAuthor ?? (labSurname ? undefined : others[others.length - 1]);
-    const sourceDepartmentsFor = (author: BookletAuthor | undefined): string[] =>
-      (author?.marks ?? [])
-        .filter((mark) => mark !== scholarMark)
-        .map((mark) => affiliations.get(mark))
-        .filter((line): line is string => Boolean(line));
-    if (lead) {
-      const advisorName = cleanAdviserName(lead.name.split(',')[0]);
-      if (!looksLikePersonName(advisorName)) return;
-      pairs.push({ advisorName, year, sourceDepartments: sourceDepartmentsFor(lead) });
-      return;
-    }
-    if (labSurname && labLabel) {
-      const nonStudentDepartments = [
-        ...new Set(others.flatMap((author) => sourceDepartmentsFor(author))),
-      ];
-      pairs.push({
-        advisorName: labLabel,
-        year,
-        advisorSurnameOnly: true,
-        sourceDepartments: nonStudentDepartments,
-      });
-    }
+    if (!lead) return;
+    const advisorName = cleanAdviserName(lead.name.split(',')[0]);
+    if (!looksLikePersonName(advisorName)) return;
+    const sourceDepartments = lead.marks
+      .filter((mark) => mark !== scholarMark)
+      .map((mark) => affiliations.get(mark))
+      .filter((line): line is string => Boolean(line));
+    pairs.push({ advisorName, year, sourceDepartments });
   });
   return pairs;
 }
