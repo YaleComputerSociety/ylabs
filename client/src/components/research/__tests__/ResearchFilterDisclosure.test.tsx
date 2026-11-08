@@ -445,6 +445,55 @@ describe('ResearchFilterDisclosure', () => {
     expect(chip.textContent).toBe('Hosted undergrads');
   });
 
+  it('applies a department picked from the open list at once', () => {
+    const { props } = renderFilters({ variant: 'sidebar' });
+
+    fireEvent.change(screen.getByLabelText('Filter by department'), {
+      target: { value: 'Neuroscience' },
+    });
+
+    expect(props.onDepartmentChange).toHaveBeenCalledWith('Neuroscience');
+  });
+
+  it('waits for Enter before applying a department reached by typing, and keeps focus', async () => {
+    const { props } = renderFilters({ variant: 'sidebar' });
+    const department = screen.getByLabelText('Filter by department') as HTMLSelectElement;
+    department.focus();
+
+    fireEvent.keyDown(department, { key: 'n' });
+    fireEvent.change(department, { target: { value: 'Neuroscience' } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fireEvent.keyDown(department, { key: 'ArrowUp' });
+    fireEvent.change(department, { target: { value: 'Computer Science' } });
+
+    expect(props.onDepartmentChange).not.toHaveBeenCalled();
+    expect(department.value).toBe('Computer Science');
+
+    fireEvent.keyDown(department, { key: 'Enter' });
+
+    expect(props.onDepartmentChange).toHaveBeenCalledTimes(1);
+    expect(props.onDepartmentChange).toHaveBeenCalledWith('Computer Science');
+    expect(document.activeElement).toBe(department);
+  });
+
+  it('applies a typed department when the student tabs away, and drops it on Escape', () => {
+    const { props } = renderFilters({ variant: 'sidebar' });
+    const school = screen.getByLabelText('Filter by school') as HTMLSelectElement;
+
+    fireEvent.keyDown(school, { key: 'y' });
+    fireEvent.change(school, { target: { value: 'Yale College' } });
+    fireEvent.blur(school);
+    expect(props.onSchoolChange).toHaveBeenCalledWith('Yale College');
+
+    const type = screen.getByLabelText('Filter by type') as HTMLSelectElement;
+    fireEvent.keyDown(type, { key: 'l' });
+    fireEvent.change(type, { target: { value: 'LAB' } });
+    fireEvent.keyDown(type, { key: 'Escape' });
+    fireEvent.blur(type);
+    expect(type.value).toBe('');
+    expect(props.onEntityTypeChange).not.toHaveBeenCalled();
+  });
+
   it('hides non-positive facets unless selected', () => {
     renderFilters({
       facetDistribution: {
