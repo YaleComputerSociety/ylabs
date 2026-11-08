@@ -1,7 +1,7 @@
 import type { UndergradInvitation, UndergradInvitationLevel } from '../types/researchGroup';
 import { safeHttpUrl } from './url';
 
-export const ACTIVELY_HIRING_LABEL = 'Actively hiring';
+export const ACTIVELY_HIRING_LABEL = 'Welcomes undergrads, recruiting now';
 export const WELCOMES_UNDERGRADS_LABEL = 'Welcomes undergrads';
 
 export const UNDERGRAD_INVITATION_LABELS: Record<UndergradInvitationLevel, string> = {
