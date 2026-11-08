@@ -903,7 +903,7 @@ const Fellowships = () => {
             <div className="flex flex-col gap-2 border-l border-[var(--yr-line)] pl-0 sm:flex-row lg:flex-col lg:pl-5">
               <Link
                 to="/dashboard?tab=programs"
-                className="yr-pressable inline-flex min-h-[44px] items-center justify-center rounded-card border border-line-brand bg-brand-soft px-4 text-sm font-semibold text-brand transition-colors hover:bg-panel yr-focus-ring"
+                className="yr-pressable inline-flex min-h-[44px] items-center justify-center rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] px-4 text-sm font-semibold text-ink-soft transition-colors hover:border-[var(--yr-line-strong)] hover:bg-[var(--yr-panel-muted)] yr-focus-ring"
               >
                 Watched programs
               </Link>
@@ -943,7 +943,7 @@ const Fellowships = () => {
                   type="search"
                   value={queryString}
                   onChange={(e) => setQueryString(e.target.value)}
-                  placeholder="Try a topic, program, deadline, or funding source"
+                  placeholder="Topic, program, or funder"
                   className="min-h-[44px] w-full rounded-card border border-[var(--yr-line-control)] bg-[var(--yr-panel)] px-3 text-base text-ink-soft focus:border-transparent yr-focus-ring"
                 />
                 {queryCorrection && queryCorrection.originalQuery === queryString.trim() && (
