@@ -77,6 +77,8 @@ The `/research` box hides `::-webkit-search-cancel-button` and renders a 44px "C
 - A filter sheet that covers the results ends in a button naming what it leaves, "Show N results", which closes the sheet, returns focus to its trigger, and scrolls the results section into view, because the student cannot see the results change behind the scrim.
 `ResearchFilterDisclosure` takes the count as `resultCount` and swaps the label to "Updating results…" in the same grid cell while `resultCountPending` is set.
 - Session-dependent banners such as the watched-deadline notice sit after the `/research` search form, so the search box is the first stop in the page's own focus order.
+- Every tab stop on a result card goes somewhere new.
+A `/research` card titled with its own lead renders the lead's name as text, because the title link and a lead link read the same name twice and doubled the Tab presses per card; a lead who is a different person from the title keeps the link (#5500).
 - Reflect meaningful state in the URL where it aids sharing and back-button behavior.
 - Buttons that trigger async work show pending state and cannot be double-submitted.
 - A control that switches between panels is a tablist, not a row of plain buttons.

@@ -487,6 +487,58 @@ describe('ResearchHomeCard', () => {
     expect(screen.queryByRole('link', { name: 'Fixture Researcher' })).toBeNull();
   });
 
+  it('gives a card titled with its own lead one tab stop, not the same name twice', () => {
+    const { container } = render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          home={researchHome({
+            label: 'Fixture Scholar',
+            peopleCount: 1,
+            entities: [
+              {
+                ...researchHome().entities[0],
+                name: 'Fixture Scholar',
+                kind: 'individual',
+                contactName: 'Fixture  Scholár',
+                contactRole: 'Principal investigator',
+                sourceUrls: ['https://medicine.yale.edu/profile/fixture-scholar/'],
+              },
+            ],
+          })}
+          variant="compact"
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getAllByRole('link').map((link) => link.textContent)).toEqual([
+      'Fixture Scholar',
+    ]);
+    expect(container.textContent).toContain('Principal Investigator: Fixture  Scholár');
+  });
+
+  it('keeps the link on a lead who is not the person the card is titled with', () => {
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          home={researchHome({
+            peopleCount: 1,
+            entities: [
+              {
+                ...researchHome().entities[0],
+                contactName: 'Fixture Scholar',
+                contactRole: 'Principal investigator',
+                sourceUrls: ['https://medicine.yale.edu/profile/fixture-scholar/'],
+              },
+            ],
+          })}
+          variant="compact"
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('link', { name: 'Fixture Scholar' })).toBeTruthy();
+  });
+
   it('links principal investigators to official profile sources when no Yale email is present', () => {
     render(
       <MemoryRouter>
