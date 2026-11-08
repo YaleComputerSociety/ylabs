@@ -113,7 +113,7 @@ import {
 import { captureClientError } from '../utils/errorTracking';
 import { linkedMemberName } from '../utils/linkedMember';
 import { undergradInvitationFromEntity } from '../utils/undergradInvitation';
-import { reachOutDefaultLine, type ReachOutRenderedContact } from '../utils/reachOutDefaultLine';
+import { reachOutLineParts, type ReachOutRenderedContact } from '../utils/reachOutDefaultLine';
 
 const FIRST_RESEARCH_PLAN_SAVE_KEY = 'yale-research.firstResearchPlanSave.v1';
 const YALE_DIRECTORY_URL = 'https://directory.yale.edu/';
@@ -577,12 +577,19 @@ const DecisionSummary = ({
       : undefined;
   const reachOutLine = offersOrgEngagementPage
     ? undefined
-    : reachOutDefaultLine({
+    : reachOutLineParts({
         entity: group,
         firstDepartmentCategory:
           firstDepartment?.primaryCategory || firstDepartment?.categories?.[0],
         renderedContact,
+        leadEmail: piEmail,
       });
+  const reachOutContactLink =
+    renderedContact === 'leadCardEmail' && piMailtoHref
+      ? { href: piMailtoHref, opensNewTab: false }
+      : renderedContact === 'leadCardProfile' && leadCardProfileUrl
+        ? { href: leadCardProfileUrl, opensNewTab: true }
+        : undefined;
   const outboundNoteId = useId();
   const joinLinkLeavesWebsite =
     Boolean(joinPageLinkUrl) && !isSameActionHost(joinPageLinkUrl, websiteUrl);
@@ -696,7 +703,27 @@ const DecisionSummary = ({
               How to get involved
             </p>
             {reachOutLine && (
-              <p className="mt-1 max-w-[68ch] text-sm leading-relaxed text-ink">{reachOutLine}</p>
+              <p className="mt-1 max-w-[68ch] text-sm leading-relaxed text-ink">
+                {reachOutLine.lead}
+                {reachOutLine.contactLinkText && reachOutContactLink ? (
+                  <a
+                    href={reachOutContactLink.href}
+                    {...(reachOutContactLink.opensNewTab
+                      ? {
+                          target: '_blank',
+                          rel: EXTERNAL_LINK_REL,
+                          'aria-label': `${reachOutLine.contactLinkText} (opens in a new tab)`,
+                        }
+                      : {})}
+                    className="yr-link yr-focus-ring -my-1.5 inline-block rounded-control py-1.5 underline wrap-anywhere"
+                  >
+                    {reachOutLine.contactLinkText}
+                  </a>
+                ) : (
+                  reachOutLine.contactLinkText
+                )}
+                {reachOutLine.rest}
+              </p>
             )}
             {!showGetInvolvedBlock ? null : showsWebsiteCta ? (
               <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { reachOutDefaultLine, reachOutDiscipline } from '../reachOutDefaultLine';
+import {
+  reachOutDefaultLine,
+  reachOutDiscipline,
+  reachOutLineParts,
+  reachOutLineText,
+} from '../reachOutDefaultLine';
 
 const ROW_CLAIMS = /\b(open|hiring|accepting|will reply|take students)\b/i;
 
@@ -39,16 +44,30 @@ describe('reachOutDiscipline (#5297)', () => {
 });
 
 describe('reachOutDefaultLine (#5297)', () => {
-  it('points a lab at the email on the lead card', () => {
+  it('names the lead email in the line itself, so it reads the same wherever the card sits', () => {
     expect(
-      reachOutDefaultLine({
+      reachOutLineParts({
         entity: { entityType: 'LAB' },
         firstDepartmentCategory: 'Life Sciences',
         renderedContact: 'leadCardEmail',
+        leadEmail: ' lead@example.test ',
       }),
-    ).toBe(
-      'Most undergraduates get started by emailing the lead at the address on their card: name one project from this page and any related coursework, and ask if they have room for an undergraduate this term or next.',
-    );
+    ).toEqual({
+      lead: 'Most undergraduates get started by emailing the lead at ',
+      contactLinkText: 'lead@example.test',
+      rest: ': name one project from this page and any related coursework, and ask if they have room for an undergraduate this term or next.',
+    });
+  });
+
+  it('links the official profile in the line rather than pointing at the card', () => {
+    const parts = reachOutLineParts({
+      entity: { entityType: 'FACULTY_RESEARCH' },
+      firstDepartmentCategory: 'Computing & AI',
+      renderedContact: 'leadCardProfile',
+    });
+    expect(parts.lead).toBe('Most undergraduates get started by emailing the professor through ');
+    expect(parts.contactLinkText).toBe('their official profile');
+    expect(reachOutLineText(parts)).not.toMatch(/on their card|below|above/);
   });
 
   it('never says address when the card shows only a profile', () => {
@@ -57,7 +76,7 @@ describe('reachOutDefaultLine (#5297)', () => {
       firstDepartmentCategory: 'Computing & AI',
       renderedContact: 'leadCardProfile',
     });
-    expect(line).toContain('the professor through the official profile on their card');
+    expect(line).toContain('the professor through their official profile');
     expect(line).not.toMatch(/address/);
   });
 
@@ -78,7 +97,7 @@ describe('reachOutDefaultLine (#5297)', () => {
       renderedContact: 'leadCardProfile',
     });
     expect(line).toBe(
-      'Most undergraduates get started by emailing the professor through the official profile on their card, or by going to their office hours: name a topic from this page and ask whether they would advise a senior essay or independent study on it.',
+      'Most undergraduates get started by emailing the professor through their official profile, or by going to their office hours: name a topic from this page and ask whether they would advise a senior essay or independent study on it.',
     );
     expect(line).not.toMatch(/room for an undergraduate|this term or next/);
   });

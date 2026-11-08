@@ -35,6 +35,12 @@ const mockedAxios = axios as unknown as {
   post: ReturnType<typeof vi.fn>;
 };
 
+const reachOutLine = () =>
+  screen.getByText(
+    (_, element) =>
+      element?.tagName === 'P' &&
+      (element.textContent ?? '').startsWith('Most undergraduates get started'),
+  );
 const PILL_ELIGIBLE_LABELS = ['Example Studies'];
 
 const DEFAULT_SLUG = 'sample-research-profile';
@@ -754,7 +760,11 @@ describe('LabDetail page', () => {
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     expect(screen.getByRole('link', { name: /^Email Jordan Researcher at / })).toBeTruthy();
-    expect(screen.getByText(/at the address on their card/)).toBeTruthy();
+    expect(
+      within(reachOutLine())
+        .getByRole('link', { name: 'jordan.researcher@example.test' })
+        .getAttribute('href'),
+    ).toBe('mailto:jordan.researcher@example.test');
     expect(screen.queryByText(/does not have a direct link/)).toBeNull();
     expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
   });
@@ -1566,7 +1576,11 @@ describe('LabDetail page', () => {
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     expect(screen.getByRole('link', { name: /^Email Jordan Researcher at / })).toBeTruthy();
-    expect(screen.getByText(/at the address on their card/)).toBeTruthy();
+    expect(
+      within(reachOutLine())
+        .getByRole('link', { name: 'jordan.researcher@example.test' })
+        .getAttribute('href'),
+    ).toBe('mailto:jordan.researcher@example.test');
     expect(
       screen.getByRole('link', { name: 'New to research? How to reach out' }).getAttribute('href'),
     ).toBe('/getting-started');
@@ -1643,7 +1657,11 @@ describe('LabDetail page', () => {
         .some((link) => link.getAttribute('href') === LEAD_CARD_PROFILE_URL),
     ).toBe(true);
     expect(screen.queryByRole('link', { name: 'Open the official page' })).toBeNull();
-    expect(screen.getByText(/through the official profile on their card/)).toBeTruthy();
+    expect(
+      within(reachOutLine()).getByRole('link', {
+        name: 'their official profile (opens in a new tab)',
+      }),
+    ).toBeTruthy();
     expect(
       screen.getByRole('link', { name: 'New to research? How to reach out' }).getAttribute('href'),
     ).toBe('/getting-started');
@@ -1680,6 +1698,7 @@ describe('LabDetail page', () => {
         .getAllByRole('link')
         .map((link) => [link.textContent, link.getAttribute('href')]),
     ).toEqual([
+      ['their official profile', LEAD_CARD_PROFILE_URL],
       ['Visit research website', RESEARCH_WEBSITE_URL],
       ['See how to join', JOIN_PAGE_URL],
       ['New to research? How to reach out', '/getting-started'],
@@ -3473,7 +3492,11 @@ describe('LabDetail display name unification', () => {
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     expect(screen.queryByRole('link', { name: 'Visit research website' })).toBeNull();
-    expect(screen.getByText(/through the official profile on their card/)).toBeTruthy();
+    expect(
+      within(reachOutLine()).getByRole('link', {
+        name: 'their official profile (opens in a new tab)',
+      }),
+    ).toBeTruthy();
     expect(
       screen.getByRole('link', { name: 'New to research? How to reach out' }).getAttribute('href'),
     ).toBe('/getting-started');
