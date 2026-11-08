@@ -304,7 +304,7 @@ describe('ResearchHomeCard', () => {
     render(
       <MemoryRouter>
         <ResearchHomeCard
-          home={researchHome({ wayInBadges: ['Undergrad evidence', 'Actively hiring'] })}
+          home={researchHome({ wayInBadges: ['Undergrad evidence', 'Welcomes undergrads, recruiting now'] })}
         />
       </MemoryRouter>,
     );
@@ -313,7 +313,7 @@ describe('ResearchHomeCard', () => {
     const checked = Array.from(signals.querySelectorAll('span.font-semibold')).map(
       (node) => node.textContent,
     );
-    expect(checked).toEqual(['Actively hiring', 'Hosted undergrads']);
+    expect(checked).toEqual(['Welcomes undergrads, recruiting now', 'Hosted undergrads']);
   });
 
   it('keeps student project evidence a pill even when it is the only signal', () => {

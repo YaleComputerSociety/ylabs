@@ -5,6 +5,13 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-11-08: The Stronger Invitation Badge Reads "Welcomes Undergrads, Recruiting Now" (#5484)
+
+The `actively_hiring` invitation level is labelled "Welcomes undergrads, recruiting now" rather than "Actively hiring".
+Under the "Welcomes undergrads" filter, which lists that level first (#5456), two of six students in the 2026-11-08 browser-only simulated round read cards badged only "Actively hiring" as a mismatch with the filter and as paid work.
+The owner chose the new label on 2026-11-08 so both levels start with the filter's own words, and "recruiting" describes an opening the lab's page states without implying pay.
+The stored level, the filter label, the facet and the ranking are unchanged; only `ACTIVELY_HIRING_LABEL` in `client/src/utils/undergradInvitation.ts` moved, and the entries below keep the label they were written under.
+
 ## 2026-11-08: A Named Undergraduate Research Adviser Counts As Hosting Only In A Lab Science (#5473)
 
 The owner decided on 2026-11-08 that a public page naming a faculty adviser beside an undergraduate's research project counts toward "Has hosted undergraduates" only for lab-based sciences.

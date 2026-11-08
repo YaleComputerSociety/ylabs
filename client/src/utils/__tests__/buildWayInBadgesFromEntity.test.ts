@@ -38,7 +38,7 @@ describe('buildWayInBadgesFromEntity', () => {
           },
         }),
       ),
-    ).toEqual(['Actively hiring', 'Undergrad evidence']);
+    ).toEqual(['Welcomes undergrads, recruiting now', 'Undergrad evidence']);
     expect(
       buildWayInBadgesFromEntity(
         entity({

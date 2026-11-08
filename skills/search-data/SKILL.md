@@ -178,8 +178,8 @@ Facets are sent once per result set: page 1 (or an explicit `includeFacets: true
 Because absence carries that meaning, every search path that was asked for facets must return the key, including the paths that run no Meilisearch query at all (unsearchable query, low-quality-first browse), which return an empty distribution.
 The distribution carries `school`, `departments`, `entityType`, `hostsUndergrads` (`{ true: n }`, from the `hasUndergradHostingEvidence` index field), and `welcomesUndergrads` (`{ true: n }`, from the `welcomesUndergrads` index field), the facets the filter rail reads.
 `hasUndergradHostingEvidence` is derived from `entityHasHostedUndergraduates` when the index document is built, not copied from the stored flag, so the filter and facet read the predicate the served badge reads (#5123).
-`welcomesUndergrads` is derived the same way from `entityWelcomesUndergraduates`, the predicate that serves the invitation badge, and counts both "Actively hiring" and "Welcomes undergrads" (#5441).
-With that filter on and no student-chosen sort, browse sorts on `undergradInvitationRank` first and a thresholded text search moves hiring rows ahead within its pool, so "Actively hiring" leads without a filter of its own (#5456).
+`welcomesUndergrads` is derived the same way from `entityWelcomesUndergraduates`, the predicate that serves the invitation badge, and counts both levels, "Welcomes undergrads, recruiting now" (`actively_hiring`) and "Welcomes undergrads" (#5441).
+With that filter on and no student-chosen sort, browse sorts on `undergradInvitationRank` first and a thresholded text search moves hiring rows ahead within its pool, so the recruiting-now rows lead without a filter of its own (#5456).
 
 ### An index behind the code still answers (#5441)
 
