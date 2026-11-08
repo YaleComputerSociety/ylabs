@@ -1560,6 +1560,99 @@ await step('a research profile keeps its layout when the profile arrives', async
   }
 });
 
+const FILTER_LAYOUT_DESCRIPTIONS = [
+  'Synthetic research entity for the filter layout smoke.',
+  'Synthetic research entity for the filter layout smoke, with a longer description that wraps onto several lines on a narrow card so that rows in the same grid differ in height.',
+  'Synthetic research entity for the filter layout smoke, with a description long enough to wrap onto two lines.',
+];
+const filterLayoutEntity = (index) => ({
+  ...syntheticLayoutEntity(index),
+  fullDescription: FILTER_LAYOUT_DESCRIPTIONS[index % FILTER_LAYOUT_DESCRIPTIONS.length],
+  departments: [index % 2 === 0 ? 'Computer Science' : 'History'],
+});
+const FILTERED_DEPARTMENT_INDICES = [0, 2, 4, 6, 8, 10];
+
+await step('applying a department filter keeps the result cards in place', async () => {
+  for (const viewport of [
+    { width: 375, height: 812 },
+    { width: 1280, height: 800 },
+    { width: 1440, height: 900 },
+  ]) {
+    await withSyntheticBrowsePage(viewport, async (syntheticPage) => {
+      let releaseFiltered;
+      const filteredReleased = new Promise((resolve) => {
+        releaseFiltered = resolve;
+      });
+      await syntheticPage.route('**/api/research/search**', async (route) => {
+        const filtered = Boolean(route.request().postDataJSON()?.filters?.departments?.length);
+        if (filtered) await filteredReleased;
+        const indices = filtered
+          ? FILTERED_DEPARTMENT_INDICES
+          : Array.from({ length: 12 }, (_, index) => index);
+        await route.fulfill({
+          json: {
+            researchEntities: indices.map(filterLayoutEntity),
+            estimatedTotalHits: indices.length,
+            page: 1,
+            pageSize: 24,
+            facetDistribution: {
+              departments: filtered
+                ? { 'Computer Science': 6 }
+                : { 'Computer Science': 6, History: 6 },
+            },
+          },
+        });
+      });
+      await syntheticPage.goto(`${baseUrl}/research?q=layout`, { waitUntil: 'domcontentloaded' });
+      await syntheticPage
+        .getByRole('link', { name: 'Layout Fixture 11' })
+        .waitFor({ state: 'visible', timeout: 20000 });
+      let department = syntheticPage.getByLabel('Filter by department');
+      if (!(await department.isVisible())) {
+        await syntheticPage.getByRole('button', { name: /^Filters/ }).click();
+        department = syntheticPage.getByLabel('Filter by department');
+      }
+      await syntheticPage.evaluate(() => {
+        window.__filterShifts = [];
+        new PerformanceObserver((list) => {
+          for (const entry of list.getEntries()) {
+            if (entry.hadRecentInput) continue;
+            window.__filterShifts.push({
+              value: entry.value,
+              sources: entry.sources.map((source) => {
+                const node = source.node;
+                const element = node?.nodeType === 1 ? node : node?.parentElement;
+                return element
+                  ? `${element.tagName.toLowerCase()}.${String(element.className).slice(0, 60)}`
+                  : 'unknown';
+              }),
+            });
+          }
+        }).observe({ type: 'layout-shift' });
+      });
+      await department.selectOption('Computer Science');
+      await syntheticPage.waitForTimeout(500);
+      releaseFiltered();
+      await syntheticPage
+        .getByRole('link', { name: 'Layout Fixture 1', exact: true })
+        .waitFor({ state: 'detached', timeout: 20000 });
+      await syntheticPage.waitForTimeout(1000);
+      const shifts = await syntheticPage.evaluate(() => window.__filterShifts);
+      const total = shifts.reduce((sum, shift) => sum + shift.value, 0);
+      const largest = [...shifts].sort((a, b) => b.value - a.value)[0];
+      record('research department filter layout shift', {
+        width: viewport.width,
+        contentLayoutShift: Number(total.toFixed(4)),
+        largestShiftSources: largest?.sources ?? [],
+      });
+      assert(
+        total < LOADED_CONTENT_SHIFT_BUDGET,
+        `Applying a department filter at ${viewport.width}px shifted the page by ${total.toFixed(3)} when the filtered results arrived (budget ${LOADED_CONTENT_SHIFT_BUDGET}); largest shift ${largest?.value.toFixed(3)}: ${largest?.sources.join(', ')}.`,
+      );
+    });
+  }
+});
+
 const INTERNAL_PROGRAM_FACET_NAMES = [
   'Journey',
   'Program Kind',
