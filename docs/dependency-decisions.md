@@ -4,6 +4,14 @@ Standing decisions about dependency advisories and version pins, so a Dependabot
 The gate is moderate and above: `yarn security:audit:production` plus the recursive audits in `.github/workflows/ci.yml`.
 A low advisory below that gate is a judgement call, and the ones we have judged are recorded here.
 
+## 2026-11-08: Search spell correction reads an English word list from `an-array-of-english-words` (#5493)
+
+The server depends on `an-array-of-english-words` 2.0.0, pinned exactly, so the corrector can tell a real word from a typo: it rewrote "intro" to "into" because the corpus never uses "intro".
+The owner chose an MIT-licensed word list over a hand-kept list of course shorthand on 2026-11-08.
+It is MIT licensed, has no dependencies and no install scripts, and is one 3.4MB JSON array of about 275,000 lowercase words.
+`server/src/services/englishDictionaryWords.ts` reads it once on first use through `createRequire`, so the tsup bundle stays small and the file is read from `node_modules` at runtime, and keeps it as one string plus a `Uint32Array` of offsets, about 4MB of heap where a `Set` measured about 24MB.
+Replacing it means keeping `isEnglishDictionaryWord` and its lowercase ASCII contract.
+
 ## 2026-10-04: The `passport-cas` git pin is replaced by an in-repo CAS 1.0 strategy (#4036)
 
 The server installed `passport-cas` from a 2020 git commit, held up by `server` `resolutions` that forced `uuid`, `xml2js`, and `underscore` across majors for it alone, and by the only entry in `approvedGitRepositories`.
