@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
-  reachOutDefaultLine,
   reachOutDiscipline,
   reachOutLineParts,
-  reachOutLineText,
+  type ReachOutContact,
 } from '../reachOutDefaultLine';
+
+const lineText = (options: Parameters<typeof reachOutLineParts>[0]): string => {
+  const { lead, contactLinkText = '', rest } = reachOutLineParts(options);
+  return `${lead}${contactLinkText}${rest}`;
+};
 
 const ROW_CLAIMS = /\b(open|hiring|accepting|will reply|take students)\b/i;
 
@@ -43,14 +47,13 @@ describe('reachOutDiscipline (#5297)', () => {
   });
 });
 
-describe('reachOutDefaultLine (#5297)', () => {
+describe('reachOutLineParts (#5297, #5487)', () => {
   it('names the lead email in the line itself, so it reads the same wherever the card sits', () => {
     expect(
       reachOutLineParts({
         entity: { entityType: 'LAB' },
         firstDepartmentCategory: 'Life Sciences',
-        renderedContact: 'leadCardEmail',
-        leadEmail: ' lead@example.test ',
+        contact: { kind: 'leadCardEmail', email: 'lead@example.test' },
       }),
     ).toEqual({
       lead: 'Most undergraduates get started by emailing the lead at ',
@@ -63,38 +66,38 @@ describe('reachOutDefaultLine (#5297)', () => {
     const parts = reachOutLineParts({
       entity: { entityType: 'FACULTY_RESEARCH' },
       firstDepartmentCategory: 'Computing & AI',
-      renderedContact: 'leadCardProfile',
+      contact: { kind: 'leadCardProfile' },
     });
     expect(parts.lead).toBe('Most undergraduates get started by emailing the professor through ');
     expect(parts.contactLinkText).toBe('their official profile');
-    expect(reachOutLineText(parts)).not.toMatch(/on their card|below|above/);
+    expect(`${parts.lead}${parts.contactLinkText}${parts.rest}`).not.toMatch(/on their card|below|above/);
   });
 
   it('never says address when the card shows only a profile', () => {
-    const line = reachOutDefaultLine({
+    const line = lineText({
       entity: { entityType: 'FACULTY_RESEARCH' },
       firstDepartmentCategory: 'Computing & AI',
-      renderedContact: 'leadCardProfile',
+      contact: { kind: 'leadCardProfile' },
     });
     expect(line).toContain('the professor through their official profile');
     expect(line).not.toMatch(/address/);
   });
 
   it('never says official profile when the card shows an email', () => {
-    const line = reachOutDefaultLine({
+    const line = lineText({
       entity: { entityType: 'FACULTY_RESEARCH' },
       firstDepartmentCategory: 'Economics',
-      renderedContact: 'leadCardEmail',
+      contact: { kind: 'leadCardEmail', email: 'lead@example.test' },
     });
     expect(line).not.toMatch(/official profile/);
     expect(line).toContain('research-assistant or data work');
   });
 
   it('gives humanities rows essay and office-hours wording, never lab wording', () => {
-    const line = reachOutDefaultLine({
+    const line = lineText({
       entity: { entityType: 'FACULTY_RESEARCH' },
       firstDepartmentCategory: 'Humanities & Arts',
-      renderedContact: 'leadCardProfile',
+      contact: { kind: 'leadCardProfile' },
     });
     expect(line).toBe(
       'Most undergraduates get started by emailing the professor through their official profile, or by going to their office hours: name a topic from this page and ask whether they would advise a senior essay or independent study on it.',
@@ -103,29 +106,29 @@ describe('reachOutDefaultLine (#5297)', () => {
   });
 
   it('never gives a lab senior-essay wording', () => {
-    const line = reachOutDefaultLine({
+    const line = lineText({
       entity: { entityType: 'LAB' },
-      renderedContact: 'pageAction',
+      contact: { kind: 'pageAction' },
     });
     expect(line).not.toMatch(/senior essay/);
     expect(line).toContain('through the link below');
   });
 
   it('makes no claim about the row and uses no em dash in any variant', () => {
-    const contacts = [
-      'leadCardEmail',
-      'leadCardProfile',
-      'pageAction',
-      'directorySearch',
-      'officialPages',
-    ] as const;
+    const contacts: ReachOutContact[] = [
+      { kind: 'leadCardEmail', email: 'lead@example.test' },
+      { kind: 'leadCardProfile' },
+      { kind: 'pageAction' },
+      { kind: 'directorySearch' },
+      { kind: 'officialPages' },
+    ];
     const categories = [undefined, 'Social Sciences', 'Humanities & Arts'];
-    for (const renderedContact of contacts) {
+    for (const contact of contacts) {
       for (const firstDepartmentCategory of categories) {
-        const line = reachOutDefaultLine({
+        const line = lineText({
           entity: { entityType: 'FACULTY_RESEARCH' },
           firstDepartmentCategory,
-          renderedContact,
+          contact,
         });
         expect(line).not.toMatch(ROW_CLAIMS);
         expect(line).not.toContain('—');

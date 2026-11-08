@@ -113,7 +113,7 @@ import {
 import { captureClientError } from '../utils/errorTracking';
 import { linkedMemberName } from '../utils/linkedMember';
 import { undergradInvitationFromEntity } from '../utils/undergradInvitation';
-import { reachOutLineParts, type ReachOutRenderedContact } from '../utils/reachOutDefaultLine';
+import { reachOutLineParts, type ReachOutContact } from '../utils/reachOutDefaultLine';
 
 const FIRST_RESEARCH_PLAN_SAVE_KEY = 'yale-research.firstResearchPlanSave.v1';
 const YALE_DIRECTORY_URL = 'https://directory.yale.edu/';
@@ -562,15 +562,15 @@ const DecisionSummary = ({
   const pageListsContacts =
     getInvolvedHasOwnAction || (!wayInWithheld && (Boolean(piMailtoHref) || !hasActionablePath));
   const activityCheckUrl = actionLinks.activityCheckUrl;
-  const renderedContact: ReachOutRenderedContact = piMailtoHref
-    ? 'leadCardEmail'
+  const reachOutContact: ReachOutContact = piMailtoHref
+    ? { kind: 'leadCardEmail', email: piMailtoHref.replace(/^mailto:/i, '').split('?')[0] }
     : leadCardLinksProfile
-      ? 'leadCardProfile'
+      ? { kind: 'leadCardProfile' }
       : getInvolvedHasOwnAction
-        ? 'pageAction'
+        ? { kind: 'pageAction' }
         : needsDirectoryFallback
-          ? 'directorySearch'
-          : 'officialPages';
+          ? { kind: 'directorySearch' }
+          : { kind: 'officialPages' };
   const firstDepartment =
     typeof group.departments?.[0] === 'string'
       ? getDepartmentByName(group.departments[0])
@@ -581,13 +581,12 @@ const DecisionSummary = ({
         entity: group,
         firstDepartmentCategory:
           firstDepartment?.primaryCategory || firstDepartment?.categories?.[0],
-        renderedContact,
-        leadEmail: piEmail,
+        contact: reachOutContact,
       });
   const reachOutContactLink =
-    renderedContact === 'leadCardEmail' && piMailtoHref
+    reachOutContact.kind === 'leadCardEmail'
       ? { href: piMailtoHref, opensNewTab: false }
-      : renderedContact === 'leadCardProfile' && leadCardProfileUrl
+      : reachOutContact.kind === 'leadCardProfile' && leadCardProfileUrl
         ? { href: leadCardProfileUrl, opensNewTab: true }
         : undefined;
   const outboundNoteId = useId();

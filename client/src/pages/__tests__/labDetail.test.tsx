@@ -769,6 +769,38 @@ describe('LabDetail page', () => {
     expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
   });
 
+  it('shows the same sanitized address in the reach-out line as its href, whatever the stored casing', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: '',
+        sourceUrls: [],
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.faculty',
+            fname: 'Jordan',
+            lname: 'Researcher',
+            displayName: 'Jordan Researcher',
+            email: 'MAILTO:Jordan.Researcher@Example.test',
+            primary_department: 'Neurology',
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const lineLink = within(reachOutLine()).getByRole('link', {
+      name: 'jordan.researcher@example.test',
+    });
+    expect(lineLink.getAttribute('href')).toBe('mailto:jordan.researcher@example.test');
+    expect(reachOutLine().textContent).not.toMatch(/mailto:/i);
+  });
+
   it('renders a Yale Directory fallback instead of a dead end when no website, profile, or email exists', async () => {
     renderLabDetail({
       ...basePayload,
