@@ -1653,6 +1653,75 @@ await step('applying a department filter keeps the result cards in place', async
   }
 });
 
+const TYPED_DEPARTMENT_FACETS = { 'Computer Science': 4, Neuroscience: 3, Nutrition: 2 };
+
+await step(
+  'typing in the department filter applies nothing until Enter and keeps focus',
+  async () => {
+    for (const viewport of [
+      { width: 375, height: 812 },
+      { width: 1280, height: 800 },
+    ]) {
+      for (const url of ['/research?q=layout', '/research']) {
+        await withSyntheticBrowsePage(viewport, async (syntheticPage) => {
+          const departmentRequests = [];
+          await syntheticPage.route('**/api/research/search**', async (route) => {
+            const departments = route.request().postDataJSON()?.filters?.departments ?? [];
+            if (departments.length > 0) departmentRequests.push(departments[0]);
+            await route.fulfill({
+              json: {
+                researchEntities: Array.from({ length: 3 }, (_, index) =>
+                  syntheticLayoutEntity(index),
+                ),
+                estimatedTotalHits: 3,
+                page: 1,
+                pageSize: 24,
+                facetDistribution: { departments: TYPED_DEPARTMENT_FACETS },
+              },
+            });
+          });
+          await syntheticPage.goto(`${baseUrl}${url}`, { waitUntil: 'domcontentloaded' });
+          const department = syntheticPage.getByLabel('Filter by department');
+          const trigger = syntheticPage.getByRole('button', { name: /^Filters/ });
+          await department.or(trigger).first().waitFor({ state: 'visible', timeout: 20000 });
+          if (!(await department.isVisible())) await trigger.click();
+          await department.waitFor({ state: 'visible', timeout: 20000 });
+          await department.focus();
+          await syntheticPage.keyboard.type('nu', { delay: 200 });
+          await syntheticPage.waitForTimeout(600);
+          const appliedWhileTyping = [...departmentRequests];
+          const shownWhileTyping = await department.inputValue();
+          await syntheticPage.keyboard.press('Enter');
+          await syntheticPage.waitForTimeout(800);
+          const focusedLabel = await syntheticPage.evaluate(() =>
+            document.activeElement?.getAttribute('aria-label'),
+          );
+          record('typed department filter', {
+            width: viewport.width,
+            url,
+            appliedWhileTyping,
+            shownWhileTyping,
+            appliedOnEnter: departmentRequests.at(-1),
+            focusedLabel,
+          });
+          assert(
+            appliedWhileTyping.length === 0,
+            `Typing in the department filter on ${url} at ${viewport.width}px applied ${appliedWhileTyping.join(', ')} before Enter.`,
+          );
+          assert(
+            shownWhileTyping === 'Nutrition' && departmentRequests.at(-1) === 'Nutrition',
+            `Typing "nu" then Enter on ${url} at ${viewport.width}px showed ${shownWhileTyping} and applied ${departmentRequests.at(-1)}, not Nutrition.`,
+          );
+          assert(
+            focusedLabel === 'Filter by department',
+            `Applying a typed department on ${url} at ${viewport.width}px left focus on ${focusedLabel ?? 'the page body'}, not the department filter.`,
+          );
+        });
+      }
+    }
+  },
+);
+
 const INTERNAL_PROGRAM_FACET_NAMES = [
   'Journey',
   'Program Kind',

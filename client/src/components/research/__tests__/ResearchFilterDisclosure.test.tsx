@@ -489,6 +489,41 @@ describe('ResearchFilterDisclosure', () => {
     expect(department.value).toBe('Neuroscience');
   });
 
+  it('puts focus back on the department select when applying it swaps in a new filter bar', async () => {
+    const SwappingFilters = () => {
+      const [department, setDepartment] = useState('');
+      return (
+        <ResearchFilterDisclosure
+          key={department ? 'search-view' : 'browse-view'}
+          variant="sidebar"
+          facetDistribution={{ departments: { 'Computer Science': 5, Neuroscience: 3 } }}
+          selectedEntityType=""
+          selectedSchool=""
+          selectedDepartment={department}
+          isApplying={false}
+          hasFacetError={false}
+          departmentLabel={(value) => value}
+          onEntityTypeChange={vi.fn()}
+          onSchoolChange={vi.fn()}
+          onDepartmentChange={setDepartment}
+          onClearAll={vi.fn()}
+        />
+      );
+    };
+    render(<SwappingFilters />);
+    const browseSelect = screen.getByLabelText('Filter by department') as HTMLSelectElement;
+    browseSelect.focus();
+
+    fireEvent.keyDown(browseSelect, { key: 'n' });
+    fireEvent.change(browseSelect, { target: { value: 'Neuroscience' } });
+    fireEvent.keyDown(browseSelect, { key: 'Enter' });
+
+    const searchSelect = screen.getByLabelText('Filter by department');
+    expect(searchSelect).not.toBe(browseSelect);
+    expect(searchSelect).toHaveValue('Neuroscience');
+    await waitFor(() => expect(searchSelect).toHaveFocus());
+  });
+
   it('applies a typed department when the student tabs away, and drops it on Escape', () => {
     const { props } = renderFilters({ variant: 'sidebar' });
     const school = screen.getByLabelText('Filter by school') as HTMLSelectElement;

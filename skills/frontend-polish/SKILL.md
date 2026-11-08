@@ -75,6 +75,8 @@ It stops at the first pointer press, because a click gives the browser its own s
 The `/research` box hides `::-webkit-search-cancel-button` and renders a 44px "Clear search" button inside the field that empties the query and returns focus to the box (#5497).
 - A native select that runs work on change waits for the student to confirm a keyboard choice, because a closed select fires `change` on every typed letter and arrow key.
 The `/research` Type, School and Department filters use `ConfirmedFilterSelect` in `ResearchFilterDisclosure.tsx`: typing or arrowing moves only the shown value, Enter or leaving the field applies it, Escape restores the applied value, and a pick from the open list applies at once (#5489).
+Applying one from the browse view starts a search, which renders the search view's own filter controls, so focus is put back on the same-labelled select once that render lands, and the filter panel's open-focus effect leaves focus alone when it is already inside the panel.
+The student-journey smoke types two letters slowly into a closed Department select at 375 and 1280px, with and without a query, and fails when a filter applies before Enter or focus leaves the select.
 - Disabled controls explain why they are disabled, near the control, rather than looking broken.
 - A filter sheet that covers the results ends in a button naming what it leaves, "Show N results", which closes the sheet, returns focus to its trigger, and scrolls the results section into view, because the student cannot see the results change behind the scrim.
 `ResearchFilterDisclosure` takes the count as `resultCount` and swaps the label to "Updating results…" in the same grid cell while `resultCountPending` is set.

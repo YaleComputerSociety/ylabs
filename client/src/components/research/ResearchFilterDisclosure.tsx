@@ -137,6 +137,19 @@ const KEYS_THAT_STEP_A_CLOSED_SELECT = new Set([
 const keyStepsAClosedSelect = (key: string): boolean =>
   key.length === 1 || KEYS_THAT_STEP_A_CLOSED_SELECT.has(key);
 
+// Applying a filter from the browse view starts a search, and the page renders the
+// search view's own filter controls, so the select the student was on is replaced. The
+// replacement is found by its label once that render has landed.
+const refocusFilterSelectAfterRender = (ariaLabel: string) => {
+  window.setTimeout(() => {
+    const active = document.activeElement;
+    if (active && active !== document.body) return;
+    document
+      .querySelector<HTMLSelectElement>(`select[aria-label="${CSS.escape(ariaLabel)}"]`)
+      ?.focus();
+  }, 0);
+};
+
 interface ConfirmedFilterSelectProps {
   value: string;
   onConfirm: (value: string) => void;
@@ -160,10 +173,14 @@ const ConfirmedFilterSelect = ({
 }: ConfirmedFilterSelectProps) => {
   const [draft, setDraft] = useState(value);
   const keyboardStepPendingRef = useRef(false);
+  const selectNodeRef = useRef<HTMLSelectElement | null>(null);
   useEffect(() => setDraft(value), [value]);
   const confirm = (next: string) => {
     setDraft(next);
-    if (next !== value) onConfirm(next);
+    if (next === value) return;
+    const hadFocus = document.activeElement === selectNodeRef.current;
+    onConfirm(next);
+    if (hadFocus) refocusFilterSelectAfterRender(ariaLabel);
   };
   const markKeyboardStepPending = () => {
     keyboardStepPendingRef.current = true;
@@ -173,7 +190,10 @@ const ConfirmedFilterSelect = ({
   };
   return (
     <select
-      ref={selectRef}
+      ref={(node) => {
+        selectNodeRef.current = node;
+        selectRef?.(node);
+      }}
       aria-label={ariaLabel}
       value={draft}
       onKeyDown={(event) => {
@@ -341,12 +361,6 @@ const ResearchFilterDisclosure = ({
     },
     [setIsOpen],
   );
-
-  useEffect(() => {
-    if (isSidebar || !isOpen) return;
-    const timeout = window.setTimeout(focusFirstControl, 0);
-    return () => window.clearTimeout(timeout);
-  }, [focusFirstControl, isOpen, isSidebar]);
 
   useEffect(() => {
     if (isSidebar || !isOpen) return;
