@@ -51,6 +51,23 @@ describe('resolveFundYearOfStudy phrasing shapes', () => {
     ).toEqual({ kind: 'prose', values: ['Sophomore', 'Junior'] });
   });
 
+  it('reads a negated predicate after a list of excluded students as excluding every listed year', () => {
+    expect(
+      read(
+        'Rising juniors and seniors are eligible to apply. Graduating seniors, graduate students, and visiting students are not eligible.',
+      ),
+    ).toEqual({ kind: 'prose', values: ['Sophomore', 'Junior'] });
+    expect(
+      read('Undergraduates are eligible. Seniors, graduate students, or visiting students are not eligible.'),
+    ).toEqual({ kind: 'prose', values: ['First-Year Student', 'Sophomore', 'Junior'] });
+  });
+
+  it('does not carry a negation across a clause that is not part of the subject list', () => {
+    expect(
+      read('Juniors and seniors are eligible. Seniors, while graduate students are not eligible, may apply.'),
+    ).toEqual({ kind: 'prose', values: ['Junior', 'Senior'] });
+  });
+
   it('reads a trailing relative clause as a condition on the students, not an exclusion of the years', () => {
     expect(
       read(

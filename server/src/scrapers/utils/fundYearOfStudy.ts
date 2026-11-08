@@ -203,6 +203,12 @@ const IMMEDIATE_NEGATION = new RegExp(
 
 const NEGATED_LATER_IN_CLAUSE = new RegExp(`^[^,;()]{0,80}?${NEGATED_PREDICATE.source}`);
 
+const LISTED_SUBJECT = `(?:\\w+\\s+){0,3}?${PERSON_HEAD_SOURCE}\\b`;
+
+const REST_OF_SUBJECT_LIST = new RegExp(
+  `^(?:\\s*,\\s*${LISTED_SUBJECT})*\\s*,?\\s+(?:and|or)\\s+${LISTED_SUBJECT}`,
+);
+
 const QUALIFIER = /\b(?:after|unless|until|before|following|once|if|when|to be used)\b/;
 
 const CONDITIONAL_OPENING = /^\W*(?:if|when|unless)\b/;
@@ -275,9 +281,10 @@ function negationOf(before: string, after: string): 'blanket' | 'qualified' | nu
   if (RELATIVE_CLAUSE_AFTER.test(after)) {
     return NEGATED_PREDICATE_AFTER_RELATIVE_CLAUSE.test(after) ? 'qualified' : null;
   }
-  const immediate = after.match(IMMEDIATE_NEGATION);
+  const predicate = after.replace(REST_OF_SUBJECT_LIST, '');
+  const immediate = predicate.match(IMMEDIATE_NEGATION);
   if (immediate) {
-    return QUALIFIER.test(after.slice(immediate[0].length)) ? 'qualified' : 'blanket';
+    return QUALIFIER.test(predicate.slice(immediate[0].length)) ? 'qualified' : 'blanket';
   }
   return NEGATED_LATER_IN_CLAUSE.test(after) ? 'qualified' : null;
 }
