@@ -691,6 +691,11 @@ const COLLECTIVE_ROLE_NOUN =
  * names no group and no person ("Research interests", a pet's name, an empty heading) is
  * a caption within the section rather than a new one.
  */
+const captionsAGroupAfterADescribedPerson = (previous: ListedPersonEntry, line: string): boolean =>
+  Boolean(descriptorAfterName(previous).replace(/[\s,;:]/g, '')) &&
+  COLLECTIVE_ROLE_NOUN.test(line) &&
+  !SINGULAR_ROLE_NOUN.test(line);
+
 const isRosterSectionLabel = (text: string): boolean =>
   COLLECTIVE_ROLE_NOUN.test(text) ||
   isPastSectionLabel(text) ||
@@ -1007,7 +1012,11 @@ function readHeadingListSections($: cheerio.CheerioAPI): RosterSection[] {
         } else if (index === 0 ? leadIsName : looksLikeListedPersonName(entry.name)) {
           section.listItems.push(entry);
           entryCells.set(entry, cell);
-        } else if (previousSharesCell && line.length <= DESCRIPTOR_LINE_MAX) {
+        } else if (
+          previousSharesCell &&
+          line.length <= DESCRIPTOR_LINE_MAX &&
+          !captionsAGroupAfterADescribedPerson(previous, line)
+        ) {
           previous.years = `${previous.years} ${line}`.trim();
         } else if (previousSharesCell && PROFILE_FIELD_LINE.test(line)) {
           previous.years = `${previous.years} ${line}`.trim();
@@ -2041,8 +2050,21 @@ function readNameThenRoleLineSections($: cheerio.CheerioAPI): RosterSection[] {
     }
     const next = lines[index + 1] ?? '';
     if (looksLikeListedPersonName(line) && isUndergraduateRoleLine(next)) {
-      section.listItems.push({ name: line, title: next, years: next, profileHref: '' });
-      index += 1;
+      const following = lines[index + 2] ?? '';
+      const biography =
+        following.length >= BIOGRAPHY_MIN_LENGTH &&
+        BIOGRAPHY_SENTENCE_START.test(following) &&
+        !looksLikeListedPersonName(following)
+          ? following.slice(0, BIO_MAX_LENGTH)
+          : undefined;
+      section.listItems.push({
+        name: line,
+        title: next,
+        years: next,
+        profileHref: '',
+        ...(biography ? { bio: biography } : {}),
+      });
+      index += biography ? 2 : 1;
     }
   }
   return sections.filter(sectionListsPeople);
