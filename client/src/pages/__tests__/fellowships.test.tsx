@@ -1013,6 +1013,18 @@ describe('Programs page', () => {
     expect(screen.getByText(/due in the next 2 weeks/i)).toBeTruthy();
   });
 
+  it('styles the watched programs link as a plain link and keeps the search placeholder short', async () => {
+    renderPage([]);
+
+    const watched = await screen.findByRole('link', { name: 'Watched programs' });
+    expect(watched).not.toHaveClass('bg-brand-soft');
+    expect(watched).toHaveClass('bg-[var(--yr-panel)]');
+    expect(screen.getByLabelText('Search programs and fellowships')).toHaveAttribute(
+      'placeholder',
+      'Topic, program, or funder',
+    );
+  });
+
   it('shows the first-watch callout pointing to the Watched programs tab', async () => {
     mockedAxios.put.mockResolvedValue({ data: {} });
     renderPage([

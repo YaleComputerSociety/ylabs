@@ -841,11 +841,7 @@ const FellowshipModal = ({
                       target="_blank"
                       rel="noopener noreferrer"
                       onClick={() => trackFellowshipApplyClick(fellowship.id)}
-                      className={`inline-flex min-h-[44px] items-center rounded-control px-6 py-2.5 text-sm font-medium text-white transition-colors yr-focus-ring ${
-                        applicationStatus.isApplicationWindowOpen
-                          ? 'bg-brand hover:bg-brand-navy'
-                          : 'bg-muted hover:bg-ink-soft'
-                      }`}
+                      className="yr-pressable inline-flex min-h-[44px] items-center rounded-control bg-brand px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-navy yr-focus-ring"
                     >
                       {applicationStatus.isApplicationWindowOpen
                         ? 'Apply now'
