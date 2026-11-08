@@ -259,6 +259,43 @@ describe('ResearchFilterDisclosure', () => {
     expect(props.onClearAll).toHaveBeenCalled();
   });
 
+  it('keeps focus on the sidebar heading after clearing every filter from its header', async () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    const { props, rerender } = renderFilters({
+      variant: 'sidebar',
+      selectedSchool: 'Yale College',
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear all filters' }));
+    rerender(<ResearchFilterDisclosure {...props} selectedSchool="" />);
+
+    expect(screen.queryByRole('button', { name: 'Clear all filters' })).toBeNull();
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Research filters', level: 2 })).toHaveFocus(),
+    );
+  });
+
+  it('moves focus to the Filters trigger after clearing every filter beside the chips', async () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    const { props, rerender } = renderFilters({ selectedSchool: 'Yale College' });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Clear all filters' }));
+    rerender(<ResearchFilterDisclosure {...props} selectedSchool="" />);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Filters' })).toHaveFocus());
+  });
+
+  it('keeps focus inside the open filter panel after clearing every filter there', async () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    const { props, rerender } = renderFilters({ selectedSchool: 'Yale College', isOpen: true });
+    const dialog = screen.getByRole('dialog', { name: 'Research filters' });
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Clear all filters' }));
+    rerender(<ResearchFilterDisclosure {...props} selectedSchool="" isOpen />);
+
+    await waitFor(() => expect(dialog).toContainElement(document.activeElement as HTMLElement));
+  });
+
   it('keeps the active-filter chips beside the collapsed popover trigger', () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
     const { props } = renderFilters({ selectedWelcomesUndergrads: true });
