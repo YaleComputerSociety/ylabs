@@ -5,6 +5,18 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-11-08: A Named Undergraduate Research Adviser Counts As Hosting Only In A Lab Science (#5473)
+
+The owner decided on 2026-11-08 that a public page naming a faculty adviser beside an undergraduate's research project counts toward "Has hosted undergraduates" only for lab-based sciences.
+A humanities or social-science essay adviser is not evidence that a student was in the lab, so that pair sets no hosting evidence; it may feed the separate supervision claim from #3593, which this decision does not change.
+Earth and Planetary Sciences senior theses and STARS II symposium booklets count for every adviser they name.
+Cognitive Science senior essays count only when the matched adviser's own department is a lab science, named in `LAB_SCIENCE_ADVISER_DEPARTMENTS` (`server/src/scrapers/utils/labScienceAdviserRule.ts`): psychology, psychiatry, neuroscience, neurobiology, neurology, computer science and a few engineering and imaging units, and not linguistics or philosophy.
+The researcher's primary department decides when there is one, so a primary-Linguistics adviser whose row also lists Computer Science does not count; all of the adviser's departments are read only when no primary is recorded.
+For that page the department check accepts Cognitive Science or any department on the same list, because most of its advisers' rows name their home department rather than the program; identity is still guarded by requiring exactly one matching researcher.
+A pair the rule refuses is counted as `not-lab-science` in the `undergrad-fellowships-recipients` run notes rather than dropped silently.
+The lane stores a per-year count under the program name and no student name for these pages.
+A scoped Development dry run on 2026-11-08 read 634 adviser pairs, matched 290 of them to 92 existing lead rows, and 60 of those rows (36 faculty research profiles, 24 labs) carried no hosting evidence yet; a 15-pair page-checked sample across the three sources and a further 10-pair Cognitive Science sample were correct on every pair.
+
 ## 2026-11-03: Actively Hiring Rows Lead The Welcomes Filter Instead Of Having Their Own (#5456)
 
 The owner asked on 2026-11-03 whether "Actively hiring" should be its own filter, and chose to list those rows first under "Welcomes undergrads" instead.
