@@ -7,24 +7,16 @@
 import { useState, useRef, useEffect } from 'react';
 import VennDiagramToggle from '../navbar/VennDiagramToggle';
 import { CheckIcon, ChevronDownIcon, CloseIcon, TagIcon } from './icons';
-import { scrollBehavior } from '../../utils/scrollBehavior';
+import useMediaQuery from '../../hooks/useMediaQuery';
+import useViewportFitPlacement from '../../hooks/useViewportFitPlacement';
 
 export type FilterMode = 'intersection' | 'union';
 
-/**
- * The 31rem keeps the list's end inside a 1280x800 window while the `/programs` filter
- * rail is sticky, because a sticky rail cannot scroll an overflowing popover into view.
- */
-const OPTION_LIST_CLASS_NAME =
-  'space-y-1 pt-1 max-h-[max(13.75rem,calc(100dvh-31rem))] overflow-y-auto';
+const OPTION_LIST_CLASS_NAME = 'space-y-1 pt-1';
 export const TWO_COLUMN_OPTION_LIST_MAX_OPTIONS = 12;
 
-const optionListClassName = (mobileSheet: boolean, twoColumn: boolean) =>
-  [
-    OPTION_LIST_CLASS_NAME,
-    mobileSheet && 'max-sm:max-h-none max-sm:overflow-visible',
-    twoColumn && 'sm:grid sm:grid-cols-2 sm:gap-1 sm:space-y-0',
-  ]
+const optionListClassName = (twoColumn: boolean) =>
+  [OPTION_LIST_CLASS_NAME, twoColumn && 'sm:grid sm:grid-cols-2 sm:gap-1 sm:space-y-0']
     .filter(Boolean)
     .join(' ');
 
@@ -63,6 +55,9 @@ const CombinedFilterDropdown = ({
   const dropdownRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
+  const isDesktop = useMediaQuery('(min-width: 640px)');
+  const placement = useViewportFitPlacement(triggerRef, isOpen, !mobileSheet || isDesktop);
+  const opensAbove = placement.side === 'above';
 
   const getFocusableElements = () => {
     const desktop = window.matchMedia?.('(min-width: 640px)').matches ?? false;
@@ -106,13 +101,6 @@ const CombinedFilterDropdown = ({
       getFocusableElements()[0]?.focus();
     }, 0);
   }, [isOpen, mobileSheet]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const desktop = window.matchMedia?.('(min-width: 640px)').matches ?? false;
-    if (mobileSheet && !desktop) return;
-    dialogRef.current?.scrollIntoView?.({ block: 'nearest', behavior: scrollBehavior() });
-  }, [isOpen, activeTabKey, mobileSheet]);
 
   const totalFilters = tabs.reduce((sum, tab) => sum + tab.selected.length, 0);
   const activeTab = tabs.find((t) => t.key === activeTabKey) || tabs[0];
@@ -196,14 +184,22 @@ const CombinedFilterDropdown = ({
               first.focus();
             }
           }}
+          data-placement={placement.side}
+          style={placement.maxHeight === undefined ? undefined : { maxHeight: placement.maxHeight }}
           className={
             mobileSheet
-              ? 'fixed inset-x-0 bottom-0 z-50 flex max-h-[85dvh] w-full flex-col overflow-hidden rounded-t-overlay border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-overlay sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-0 sm:top-full sm:mt-1 sm:w-[26rem] sm:block sm:max-w-[calc(100vw-2rem)] sm:rounded-overlay'
-              : 'absolute left-0 top-full z-50 mt-1 w-[calc(100vw-2rem)] max-w-[340px] overflow-hidden rounded-overlay border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-overlay'
+              ? `fixed inset-x-0 bottom-0 z-50 flex max-h-[85dvh] w-full flex-col overflow-hidden rounded-t-overlay border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-overlay sm:absolute sm:inset-x-auto sm:left-0 sm:w-[26rem] sm:max-w-[calc(100vw-2rem)] sm:rounded-overlay ${
+                  opensAbove
+                    ? 'sm:top-auto sm:bottom-full sm:mb-1'
+                    : 'sm:bottom-auto sm:top-full sm:mt-1'
+                }`
+              : `absolute left-0 z-50 flex w-[calc(100vw-2rem)] max-w-[340px] flex-col overflow-hidden rounded-overlay border border-[var(--yr-line)] bg-[var(--yr-panel)] shadow-yr-overlay ${
+                  opensAbove ? 'bottom-full mb-1' : 'top-full mt-1'
+                }`
           }
         >
           {mobileSheet && (
-            <div className="flex items-center justify-between border-b border-[var(--yr-line)] px-3 py-2 sm:hidden">
+            <div className="flex shrink-0 items-center justify-between border-b border-[var(--yr-line)] px-3 py-2 sm:hidden">
               <h2 className="text-base font-semibold text-ink">Filters</h2>
               <button
                 type="button"
@@ -216,7 +212,7 @@ const CombinedFilterDropdown = ({
               </button>
             </div>
           )}
-          <div className="flex flex-wrap border-b border-[var(--yr-line)] bg-[var(--yr-panel-muted)]">
+          <div className="flex shrink-0 flex-wrap border-b border-[var(--yr-line)] bg-[var(--yr-panel-muted)]">
             {tabs.map((tab) => (
               <button
                 key={tab.key}
@@ -245,7 +241,7 @@ const CombinedFilterDropdown = ({
             ))}
           </div>
 
-          <div className={mobileSheet ? 'min-h-0 overflow-y-auto p-3 sm:overflow-visible' : 'p-3'}>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
             {activeTab.filterMode && activeTab.setFilterMode && activeTab.selected.length >= 2 && (
               <div className="mb-3">
                 <VennDiagramToggle mode={activeTab.filterMode} setMode={activeTab.setFilterMode} />
@@ -274,7 +270,7 @@ const CombinedFilterDropdown = ({
 
             {activeTab.note && <p className="mb-2 text-xs text-muted">{activeTab.note}</p>}
 
-            <fieldset className={optionListClassName(mobileSheet, twoColumnOptions)}>
+            <fieldset className={optionListClassName(twoColumnOptions)}>
               <legend className="sr-only">{activeTab.label} filters</legend>
               {getFilteredOptions(activeTab).map((option) => {
                 const isSelected = activeTab.selected.includes(option);
@@ -334,7 +330,7 @@ const CombinedFilterDropdown = ({
           </div>
 
           {totalFilters > 0 && (
-            <div className="border-t border-[var(--yr-line)] px-3 py-2 bg-[var(--yr-panel-muted)]">
+            <div className="shrink-0 border-t border-[var(--yr-line)] px-3 py-2 bg-[var(--yr-panel-muted)]">
               <button
                 onClick={handleClearAll}
                 className="w-full text-sm text-muted hover:text-ink py-1.5 rounded-card hover:bg-[var(--yr-panel-muted)] transition-colors yr-focus-ring"
