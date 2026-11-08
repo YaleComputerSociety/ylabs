@@ -117,12 +117,14 @@ const renderFellowships = ({
   quickFilter = null,
   resultsRankedByRelevance = false,
   resultsMissOneWord = false,
+  resultsCloseMatchesFrom = null,
   sortBy = 'default',
 }: {
   fellowships: Fellowship[];
   quickFilter?: FellowshipQuickFilter;
   resultsRankedByRelevance?: boolean;
   resultsMissOneWord?: boolean;
+  resultsCloseMatchesFrom?: number | null;
   sortBy?: string;
 }) =>
   render(
@@ -142,6 +144,7 @@ const renderFellowships = ({
             quickFilter,
             resultsRankedByRelevance,
             resultsMissOneWord,
+            resultsCloseMatchesFrom,
             sortBy,
             setQueryString: vi.fn(),
             refreshFellowships: vi.fn(),
@@ -203,6 +206,25 @@ describe('Fellowships grouping', () => {
     expect(screen.queryByRole('region', { name: 'Best matches' })).toBeNull();
   });
 
+  it('lists close matches in their own section below a thin every-word result', () => {
+    renderFellowships({
+      fellowships: searchMatches(),
+      resultsRankedByRelevance: true,
+      resultsCloseMatchesFrom: 1,
+    });
+
+    expect(titlesIn('Best matches')).toEqual(['Best Match Award']);
+    expect(titlesIn('Close matches')).toEqual(['Weaker Match Award']);
+    expect(titlesIn('Archive / review')).toEqual(['Retained Match Record']);
+    expect(screen.queryByText('No program mentions every word you typed.')).toBeNull();
+    const sections = screen
+      .getAllByRole('region')
+      .map((region) => region.getAttribute('aria-labelledby'));
+    expect(sections.indexOf('program-section-bestMatches')).toBeLessThan(
+      sections.indexOf('program-section-closeMatches'),
+    );
+  });
+
   it('still says no program carries every word when the results are sorted by deadline', () => {
     renderFellowships({
       fellowships: searchMatches(),
@@ -214,6 +236,33 @@ describe('Fellowships grouping', () => {
     expect(screen.getByText('No program mentions every word you typed.')).toBeTruthy();
     expect(screen.queryByRole('region', { name: 'Close matches' })).toBeNull();
     expect(titlesIn('Due in the next 2 weeks')).toEqual(['Weaker Match Award']);
+  });
+
+  it('says some programs miss a word when close matches are sorted by deadline', () => {
+    renderFellowships({
+      fellowships: searchMatches(),
+      resultsRankedByRelevance: true,
+      resultsCloseMatchesFrom: 1,
+      sortBy: 'deadline',
+    });
+
+    expect(
+      screen.getByText('Some of these programs mention all but one of the words you typed.'),
+    ).toBeTruthy();
+    expect(screen.queryByText('No program mentions every word you typed.')).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Close matches' })).toBeNull();
+  });
+
+  it('adds no close-match notice under the default sort, which lists them apart', () => {
+    renderFellowships({
+      fellowships: searchMatches(),
+      resultsRankedByRelevance: true,
+      resultsCloseMatchesFrom: 1,
+    });
+
+    expect(
+      screen.queryByText('Some of these programs mention all but one of the words you typed.'),
+    ).toBeNull();
   });
 
   it('groups the same programs by deadline when they answer no search', () => {
