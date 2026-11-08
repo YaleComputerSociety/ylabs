@@ -123,6 +123,122 @@ export const focusResearchFiltersEntry = () => {
   }, 0);
 };
 
+const KEYS_THAT_STEP_A_CLOSED_SELECT = new Set([
+  'ArrowUp',
+  'ArrowDown',
+  'ArrowLeft',
+  'ArrowRight',
+  'Home',
+  'End',
+  'PageUp',
+  'PageDown',
+]);
+
+const keyStepsAClosedSelect = (key: string): boolean =>
+  key.length === 1 || KEYS_THAT_STEP_A_CLOSED_SELECT.has(key);
+
+const keyOpensASelectList = ({ key, altKey }: { key: string; altKey: boolean }): boolean =>
+  key === 'F4' || (altKey && (key === 'ArrowDown' || key === 'ArrowUp'));
+
+// Applying a filter from the browse view starts a search, and the page renders the
+// search view's own filter controls, so the select the student was on is replaced. The
+// replacement is found by its label once that render has landed.
+const refocusFilterSelectAfterRender = (ariaLabel: string) => {
+  window.setTimeout(() => {
+    const active = document.activeElement;
+    if (active && active !== document.body) return;
+    document
+      .querySelector<HTMLSelectElement>(`select[aria-label="${CSS.escape(ariaLabel)}"]`)
+      ?.focus();
+  }, 0);
+};
+
+interface ConfirmedFilterSelectProps {
+  value: string;
+  onConfirm: (value: string) => void;
+  ariaLabel: string;
+  className: string;
+  selectRef?: (node: HTMLElement | null) => void;
+  children: ReactNode;
+}
+
+// A closed select changes its value on every typed letter or arrow key, and applying a
+// filter per keystroke ran a search for "Early Modern Studies" while a student typed
+// "Ec". Keyboard steps only move the draft and Enter applies it. Leaving the field keeps
+// the applied value, because an apply on blur from the browse view replaced the filter
+// controls under the student's pending Tab or click. A pick from the open list applies,
+// so opening the list drops the draft: picking the option the draft showed must still
+// differ from the select's value, or the browser fires no change.
+const ConfirmedFilterSelect = ({
+  value,
+  onConfirm,
+  ariaLabel,
+  className,
+  selectRef,
+  children,
+}: ConfirmedFilterSelectProps) => {
+  const [draft, setDraft] = useState(value);
+  const [draftSourceValue, setDraftSourceValue] = useState(value);
+  if (draftSourceValue !== value) {
+    setDraftSourceValue(value);
+    setDraft(value);
+  }
+  const keyboardStepPendingRef = useRef(false);
+  const selectNodeRef = useRef<HTMLSelectElement | null>(null);
+  const confirm = (next: string) => {
+    setDraft(next);
+    if (next === value) return;
+    const hadFocus = document.activeElement === selectNodeRef.current;
+    onConfirm(next);
+    if (hadFocus) refocusFilterSelectAfterRender(ariaLabel);
+  };
+  const markKeyboardStepPending = () => {
+    keyboardStepPendingRef.current = true;
+    window.setTimeout(() => {
+      keyboardStepPendingRef.current = false;
+    }, 0);
+  };
+  return (
+    <select
+      ref={(node) => {
+        selectNodeRef.current = node;
+        selectRef?.(node);
+      }}
+      aria-label={ariaLabel}
+      value={draft}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' && draft !== value) {
+          event.preventDefault();
+          confirm(draft);
+          return;
+        }
+        if (event.key === 'Escape' && draft !== value) {
+          event.stopPropagation();
+          setDraft(value);
+          return;
+        }
+        if (keyOpensASelectList(event)) {
+          setDraft(value);
+          return;
+        }
+        if (keyStepsAClosedSelect(event.key)) markKeyboardStepPending();
+      }}
+      onKeyPress={(event) => {
+        if (event.key.length === 1) markKeyboardStepPending();
+      }}
+      onChange={(event) => {
+        if (keyboardStepPendingRef.current) setDraft(event.target.value);
+        else confirm(event.target.value);
+      }}
+      onMouseDown={() => setDraft(value)}
+      onBlur={() => setDraft(value)}
+      className={className}
+    >
+      {children}
+    </select>
+  );
+};
+
 const ResearchFilterDisclosure = ({
   facetDistribution,
   selectedEntityType,
@@ -261,12 +377,6 @@ const ResearchFilterDisclosure = ({
 
   useEffect(() => {
     if (isSidebar || !isOpen) return;
-    const timeout = window.setTimeout(focusFirstControl, 0);
-    return () => window.clearTimeout(timeout);
-  }, [focusFirstControl, isOpen, isSidebar]);
-
-  useEffect(() => {
-    if (isSidebar || !isOpen) return;
     const timeout = window.setTimeout(() => {
       if (!panelRef.current?.contains(document.activeElement)) focusFirstControl();
     }, 0);
@@ -353,11 +463,11 @@ const ResearchFilterDisclosure = ({
         {showEntityType && (
           <label className={selectFieldLabelClassName}>
             Type
-            <select
-              ref={firstVisibleField === 'entityType' ? setFirstFieldNode : undefined}
-              aria-label="Filter by type"
+            <ConfirmedFilterSelect
+              selectRef={firstVisibleField === 'entityType' ? setFirstFieldNode : undefined}
+              ariaLabel="Filter by type"
               value={selectedEntityType}
-              onChange={(event) => onEntityTypeChange(event.target.value)}
+              onConfirm={onEntityTypeChange}
               className={selectClassName}
             >
               <option value="">All types</option>
@@ -367,17 +477,17 @@ const ResearchFilterDisclosure = ({
                   {facetCountSuffix(option.count)}
                 </option>
               ))}
-            </select>
+            </ConfirmedFilterSelect>
           </label>
         )}
         {showSchool && (
           <label className={selectFieldLabelClassName}>
             School
-            <select
-              ref={firstVisibleField === 'school' ? setFirstFieldNode : undefined}
-              aria-label="Filter by school"
+            <ConfirmedFilterSelect
+              selectRef={firstVisibleField === 'school' ? setFirstFieldNode : undefined}
+              ariaLabel="Filter by school"
               value={selectedSchool}
-              onChange={(event) => onSchoolChange(event.target.value)}
+              onConfirm={onSchoolChange}
               className={selectClassName}
             >
               <option value="">All schools</option>
@@ -387,17 +497,17 @@ const ResearchFilterDisclosure = ({
                   {facetCountSuffix(option.count)}
                 </option>
               ))}
-            </select>
+            </ConfirmedFilterSelect>
           </label>
         )}
         {showDepartment && (
           <label className={selectFieldLabelClassName}>
             Department
-            <select
-              ref={firstVisibleField === 'department' ? setFirstFieldNode : undefined}
-              aria-label="Filter by department"
+            <ConfirmedFilterSelect
+              selectRef={firstVisibleField === 'department' ? setFirstFieldNode : undefined}
+              ariaLabel="Filter by department"
               value={selectedDepartment}
-              onChange={(event) => onDepartmentChange(event.target.value)}
+              onConfirm={onDepartmentChange}
               className={selectClassName}
             >
               <option value="">All departments</option>
@@ -407,7 +517,7 @@ const ResearchFilterDisclosure = ({
                   {facetCountSuffix(option.count)}
                 </option>
               ))}
-            </select>
+            </ConfirmedFilterSelect>
           </label>
         )}
         {visibleFields.length === 0 && (

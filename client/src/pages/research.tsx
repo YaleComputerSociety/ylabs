@@ -2074,14 +2074,12 @@ const Research = () => {
               </div>
             )}
 
-            {hasSubmittedSearch && isWideFilterLayout && (
+            {isWideFilterLayout && (
               <div className="mt-6 border-t border-[var(--yr-line)] pt-6 xl:mt-4 xl:pt-4">
-                <ResearchFilterDisclosure variant="sidebar" {...researchFilterProps} />
-              </div>
-            )}
-            {!hasSubmittedSearch && isWideFilterLayout && (
-              <div className="mt-6 border-t border-[var(--yr-line)] pt-6 xl:mt-4 xl:pt-4">
-                <ResearchFilterDisclosure variant="sidebar" {...browseFilterProps} />
+                <ResearchFilterDisclosure
+                  variant="sidebar"
+                  {...(hasSubmittedSearch ? researchFilterProps : browseFilterProps)}
+                />
               </div>
             )}
             {!hasSubmittedSearch && isWideFilterLayout && isAdmin && (

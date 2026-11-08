@@ -445,6 +445,124 @@ describe('ResearchFilterDisclosure', () => {
     expect(chip.textContent).toBe('Hosted undergrads');
   });
 
+  it('applies a department picked from the open list at once', () => {
+    const { props } = renderFilters({ variant: 'sidebar' });
+
+    fireEvent.change(screen.getByLabelText('Filter by department'), {
+      target: { value: 'Neuroscience' },
+    });
+
+    expect(props.onDepartmentChange).toHaveBeenCalledWith('Neuroscience');
+  });
+
+  it('waits for Enter before applying a department reached by typing, and keeps focus', async () => {
+    const { props } = renderFilters({ variant: 'sidebar' });
+    const department = screen.getByLabelText('Filter by department') as HTMLSelectElement;
+    department.focus();
+
+    fireEvent.keyDown(department, { key: 'n' });
+    fireEvent.change(department, { target: { value: 'Neuroscience' } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fireEvent.keyDown(department, { key: 'ArrowUp' });
+    fireEvent.change(department, { target: { value: 'Computer Science' } });
+
+    expect(props.onDepartmentChange).not.toHaveBeenCalled();
+    expect(department.value).toBe('Computer Science');
+
+    fireEvent.keyDown(department, { key: 'Enter' });
+
+    expect(props.onDepartmentChange).toHaveBeenCalledTimes(1);
+    expect(props.onDepartmentChange).toHaveBeenCalledWith('Computer Science');
+    expect(document.activeElement).toBe(department);
+  });
+
+  it('holds a typed letter whose keypress arrives after the keydown task has finished', async () => {
+    const { props } = renderFilters({ variant: 'sidebar' });
+    const department = screen.getByLabelText('Filter by department') as HTMLSelectElement;
+
+    fireEvent.keyDown(department, { key: 'n' });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fireEvent.keyPress(department, { key: 'n', code: 'KeyN', charCode: 110 });
+    fireEvent.change(department, { target: { value: 'Neuroscience' } });
+
+    expect(props.onDepartmentChange).not.toHaveBeenCalled();
+    expect(department.value).toBe('Neuroscience');
+  });
+
+  it('puts focus back on the department select when applying it swaps in a new filter bar', async () => {
+    const SwappingFilters = () => {
+      const [department, setDepartment] = useState('');
+      return (
+        <ResearchFilterDisclosure
+          key={department ? 'search-view' : 'browse-view'}
+          variant="sidebar"
+          facetDistribution={{ departments: { 'Computer Science': 5, Neuroscience: 3 } }}
+          selectedEntityType=""
+          selectedSchool=""
+          selectedDepartment={department}
+          isApplying={false}
+          hasFacetError={false}
+          departmentLabel={(value) => value}
+          onEntityTypeChange={vi.fn()}
+          onSchoolChange={vi.fn()}
+          onDepartmentChange={setDepartment}
+          onClearAll={vi.fn()}
+        />
+      );
+    };
+    render(<SwappingFilters />);
+    const browseSelect = screen.getByLabelText('Filter by department') as HTMLSelectElement;
+    browseSelect.focus();
+
+    fireEvent.keyDown(browseSelect, { key: 'n' });
+    fireEvent.change(browseSelect, { target: { value: 'Neuroscience' } });
+    fireEvent.keyDown(browseSelect, { key: 'Enter' });
+
+    const searchSelect = screen.getByLabelText('Filter by department');
+    expect(searchSelect).not.toBe(browseSelect);
+    expect(searchSelect).toHaveValue('Neuroscience');
+    await waitFor(() => expect(searchSelect).toHaveFocus());
+  });
+
+  it('shows the applied value when the list opens over a typed choice, so picking that choice applies it', async () => {
+    const { props } = renderFilters({ variant: 'sidebar' });
+    const department = screen.getByLabelText('Filter by department') as HTMLSelectElement;
+
+    fireEvent.keyDown(department, { key: 'n' });
+    fireEvent.change(department, { target: { value: 'Neuroscience' } });
+    fireEvent.mouseDown(department);
+    expect(department.value).toBe('');
+
+    fireEvent.keyDown(department, { key: 'n' });
+    fireEvent.change(department, { target: { value: 'Neuroscience' } });
+    fireEvent.keyDown(department, { key: 'ArrowDown', altKey: true });
+    expect(department.value).toBe('');
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    fireEvent.change(department, { target: { value: 'Neuroscience' } });
+    expect(props.onDepartmentChange).toHaveBeenCalledTimes(1);
+    expect(props.onDepartmentChange).toHaveBeenCalledWith('Neuroscience');
+  });
+
+  it('keeps the applied value when the student tabs away from a typed choice or presses Escape', () => {
+    const { props } = renderFilters({ variant: 'sidebar' });
+    const school = screen.getByLabelText('Filter by school') as HTMLSelectElement;
+
+    fireEvent.keyDown(school, { key: 'y' });
+    fireEvent.change(school, { target: { value: 'Yale College' } });
+    fireEvent.blur(school);
+    expect(school.value).toBe('');
+    expect(props.onSchoolChange).not.toHaveBeenCalled();
+
+    const type = screen.getByLabelText('Filter by type') as HTMLSelectElement;
+    fireEvent.keyDown(type, { key: 'l' });
+    fireEvent.change(type, { target: { value: 'LAB' } });
+    fireEvent.keyDown(type, { key: 'Escape' });
+    fireEvent.blur(type);
+    expect(type.value).toBe('');
+    expect(props.onEntityTypeChange).not.toHaveBeenCalled();
+  });
+
   it('hides non-positive facets unless selected', () => {
     renderFilters({
       facetDistribution: {
