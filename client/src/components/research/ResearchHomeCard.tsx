@@ -86,6 +86,20 @@ const UNDERGRAD_ACCESS_SIGNALS = new Set([
 
 const accessSignalLabel = (label: string): string => ACCESS_SIGNAL_LABELS[label] ?? label;
 
+const personNameKey = (value: string): string =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter((token) => token.length > 1)
+    .join(' ');
+
+const titleNamesTheLead = (title: string, leadName: string): boolean => {
+  const leadKey = personNameKey(leadName);
+  return leadKey.length > 0 && leadKey === personNameKey(title);
+};
+
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const titleAlreadyNamesKind = (title: string, kind: string): boolean =>
@@ -334,7 +348,9 @@ const ResearchHomeCard = ({
         {leadName && (
           <p className="text-xs font-medium leading-relaxed text-muted">
             {leadRole}:{' '}
-            {leadProfileLink?.external ? (
+            {titleNamesTheLead(home.label, leadName) ? (
+              <span>{leadName}</span>
+            ) : leadProfileLink?.external ? (
               <a
                 href={leadProfileLink.href}
                 target="_blank"
