@@ -161,8 +161,9 @@ interface ConfirmedFilterSelectProps {
 
 // A closed select changes its value on every typed letter or arrow key, and applying a
 // filter per keystroke ran a search for "Early Modern Studies" while a student typed
-// "Ec". Keyboard steps only move the draft; Enter or leaving the field applies it, and a
-// pick from the open list applies at once.
+// "Ec". Keyboard steps only move the draft and Enter applies it. Leaving the field keeps
+// the applied value, because an apply on blur from the browse view replaced the filter
+// controls under the student's pending Tab or click. A pick from the open list applies.
 const ConfirmedFilterSelect = ({
   value,
   onConfirm,
@@ -221,7 +222,7 @@ const ConfirmedFilterSelect = ({
         else confirm(event.target.value);
       }}
       onBlur={() => {
-        if (draft !== value) confirm(draft);
+        if (draft !== value) setDraft(value);
       }}
       className={className}
     >

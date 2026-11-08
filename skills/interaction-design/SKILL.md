@@ -91,6 +91,8 @@ Shneiderman's fourth rule asks for dialogs that yield closure: a beginning, a mi
 Saving that silently succeeds leaves the task open, and the Zeigarnik effect means an unresolved task keeps costing attention.
 - Shneiderman's sixth rule and Nielsen's third: give an obvious way back.
 Every filter is reversible, and the reversal has to be as reachable as the application.
+A filter applies only when the student commits to it: a pick from an open list, or Enter after typing or arrowing on a closed select.
+Enter applies; leaving the field keeps the applied value, so a keyboard student tabbing past a filter never starts a search they did not ask for (#5489).
 - **No dead ends.**
 Every surface, including an empty result set and an error, offers a next step.
 `ResearchZeroResultRecovery` is this principle implemented; treat it as the pattern rather than the exception.

@@ -1722,6 +1722,75 @@ await step(
   },
 );
 
+await step('leaving the department filter with a typed choice applies nothing', async () => {
+  for (const viewport of [
+    { width: 375, height: 812 },
+    { width: 1280, height: 800 },
+  ]) {
+    for (const leave of ['tab', 'close']) {
+      if (leave === 'close' && viewport.width >= 1280) continue;
+      await withSyntheticBrowsePage(viewport, async (syntheticPage) => {
+        const departmentRequests = [];
+        await syntheticPage.route('**/api/research/search**', async (route) => {
+          const departments = route.request().postDataJSON()?.filters?.departments ?? [];
+          if (departments.length > 0) departmentRequests.push(departments[0]);
+          await route.fulfill({
+            json: {
+              researchEntities: Array.from({ length: 3 }, (_, index) =>
+                syntheticLayoutEntity(index),
+              ),
+              estimatedTotalHits: 3,
+              page: 1,
+              pageSize: 24,
+              facetDistribution: { departments: TYPED_DEPARTMENT_FACETS },
+            },
+          });
+        });
+        await syntheticPage.goto(`${baseUrl}/research`, { waitUntil: 'domcontentloaded' });
+        const department = syntheticPage.getByLabel('Filter by department');
+        const trigger = syntheticPage.getByRole('button', { name: /^Filters/ });
+        await department.or(trigger).first().waitFor({ state: 'visible', timeout: 20000 });
+        if (!(await department.isVisible())) await trigger.click();
+        await department.waitFor({ state: 'visible', timeout: 20000 });
+        await department.focus();
+        await syntheticPage.keyboard.type('nu', { delay: 200 });
+        if (leave === 'tab') {
+          await syntheticPage.keyboard.press('Tab');
+        } else {
+          await syntheticPage.getByRole('button', { name: 'Close filters' }).click();
+        }
+        await syntheticPage.waitForTimeout(800);
+        const panelOpen = await syntheticPage
+          .getByRole('dialog', { name: 'Research filters' })
+          .isVisible()
+          .catch(() => false);
+        const shownAfterLeaving = (await department.isVisible())
+          ? await department.inputValue()
+          : '';
+        record('department filter left with a typed choice', {
+          width: viewport.width,
+          leave,
+          applied: departmentRequests,
+          shownAfterLeaving,
+          panelOpen,
+        });
+        assert(
+          departmentRequests.length === 0,
+          `Leaving the department filter by ${leave} at ${viewport.width}px applied ${departmentRequests.join(', ')}.`,
+        );
+        assert(
+          shownAfterLeaving === '',
+          `Leaving the department filter by ${leave} at ${viewport.width}px left it showing ${shownAfterLeaving} instead of the applied value.`,
+        );
+        assert(
+          leave !== 'close' || !panelOpen,
+          `Closing the filter panel at ${viewport.width}px with a typed choice pending left the panel open.`,
+        );
+      });
+    }
+  }
+});
+
 const INTERNAL_PROGRAM_FACET_NAMES = [
   'Journey',
   'Program Kind',

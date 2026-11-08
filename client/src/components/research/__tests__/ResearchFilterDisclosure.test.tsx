@@ -524,14 +524,15 @@ describe('ResearchFilterDisclosure', () => {
     await waitFor(() => expect(searchSelect).toHaveFocus());
   });
 
-  it('applies a typed department when the student tabs away, and drops it on Escape', () => {
+  it('keeps the applied value when the student tabs away from a typed choice or presses Escape', () => {
     const { props } = renderFilters({ variant: 'sidebar' });
     const school = screen.getByLabelText('Filter by school') as HTMLSelectElement;
 
     fireEvent.keyDown(school, { key: 'y' });
     fireEvent.change(school, { target: { value: 'Yale College' } });
     fireEvent.blur(school);
-    expect(props.onSchoolChange).toHaveBeenCalledWith('Yale College');
+    expect(school.value).toBe('');
+    expect(props.onSchoolChange).not.toHaveBeenCalled();
 
     const type = screen.getByLabelText('Filter by type') as HTMLSelectElement;
     fireEvent.keyDown(type, { key: 'l' });
