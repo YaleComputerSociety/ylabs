@@ -835,6 +835,8 @@ const Fellowships = () => {
   const showSearchRanking = resultsRankedByRelevance && sortBy === 'default';
   const resultsAreCloseMatches = resultsRankedByRelevance && resultsMissOneWord;
   const showCloseMatches = showSearchRanking && resultsMissOneWord;
+  const closeMatchesMixedIntoSort =
+    resultsRankedByRelevance && !showSearchRanking && resultsCloseMatchesFrom !== null;
   const noResults = fellowships.length === 0 && !isLoading;
   const isFirstLoadPending = isLoading && fellowships.length === 0;
   const chooseQuickFilter = (value: FellowshipQuickFilter) => {
@@ -1098,6 +1100,17 @@ const Fellowships = () => {
                   >
                     <span className="font-semibold">No program mentions every word you typed.</span>{' '}
                     Try fewer words, or look through the close matches below.
+                  </p>
+                )}
+                {closeMatchesMixedIntoSort && (
+                  <p
+                    role="status"
+                    className="mb-4 rounded-card border border-line-brand bg-brand-soft px-4 py-3 text-sm text-brand-navy"
+                  >
+                    <span className="font-semibold">
+                      Some of these programs mention all but one of the words you typed.
+                    </span>{' '}
+                    Sort by Recommended to see them listed apart as close matches.
                   </p>
                 )}
                 {(showCloseMatches

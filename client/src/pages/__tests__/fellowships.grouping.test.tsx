@@ -238,6 +238,33 @@ describe('Fellowships grouping', () => {
     expect(titlesIn('Due in the next 2 weeks')).toEqual(['Weaker Match Award']);
   });
 
+  it('says some programs miss a word when close matches are sorted by deadline', () => {
+    renderFellowships({
+      fellowships: searchMatches(),
+      resultsRankedByRelevance: true,
+      resultsCloseMatchesFrom: 1,
+      sortBy: 'deadline',
+    });
+
+    expect(
+      screen.getByText('Some of these programs mention all but one of the words you typed.'),
+    ).toBeTruthy();
+    expect(screen.queryByText('No program mentions every word you typed.')).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Close matches' })).toBeNull();
+  });
+
+  it('adds no close-match notice under the default sort, which lists them apart', () => {
+    renderFellowships({
+      fellowships: searchMatches(),
+      resultsRankedByRelevance: true,
+      resultsCloseMatchesFrom: 1,
+    });
+
+    expect(
+      screen.queryByText('Some of these programs mention all but one of the words you typed.'),
+    ).toBeNull();
+  });
+
   it('groups the same programs by deadline when they answer no search', () => {
     renderFellowships({ fellowships: searchMatches() });
 
