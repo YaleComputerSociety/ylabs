@@ -113,6 +113,10 @@ The rail used to sit inside the summary card, so a short summary left a large em
 A lead email in that rail stays on one line, truncating with the full address in its accessible name and `title`, because a wrapped address read as broken.
 Loading copy takes the loaded copy's shape and a control whose label swaps while it loads stacks both labels in one grid cell, because at 375px a two-line loading summary and a narrower "Searching…" button moved the `/research` results when a search resolved (#4796).
 The student-journey smoke holds the research search and the profile request until their loading states paint, then fails at a content shift of 0.01 or more, a handoff link under 44px, or a profile loading state under half the viewport.
+- Applying a filter keeps the previous results on screen, dimmed, until the filtered first page lands, and that page then mounts as a new result set keyed on its request (`searchResultSetId` in `pages/research.tsx`), never reconciled card by card into the old grid.
+Reconciling moved every card that belonged to both sets into a new place, and a Department filter scored a layout shift of 0.36 to 0.57 at 1280 to 1440px; a fresh set inserts new nodes, which score nothing, and measured 0.002.
+Later pages of the same search append to the set without remounting it.
+The student-journey smoke holds the filtered search, releases it, and fails at a shift of 0.01 or more at 375, 1280, and 1440px.
 - A fetch keyed on a selection, filter, or search must never let an older response overwrite a newer one.
 Take a ticket from `client/src/hooks/useLatestRequest.ts`, pass its `signal`, and gate every state write, including the one in `finally`, on `isCurrent()`.
 Clear state that belongs to the previous selection in the same handler that changes it, and reset the page or offset in the same state update as the filter change, never in a later effect.

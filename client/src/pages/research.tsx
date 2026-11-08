@@ -563,6 +563,7 @@ const Research = () => {
   const [searchLoading, setSearchLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [isApplyingFilters, setIsApplyingFilters] = useState(false);
+  const [searchResultSetId, setSearchResultSetId] = useState(0);
   const [defaultSearchLoading, setDefaultSearchLoading] = useState(false);
   const [hasFacetError, setHasFacetError] = useState(
     () => restoredSnapshot?.hasFacetError ?? false,
@@ -942,6 +943,7 @@ const Research = () => {
       setHasFacetError(false);
       setSearchDegraded(researchEntitiesPage.degraded === true);
       setQueryCorrection(researchEntitiesPage.queryCorrection ?? null);
+      setSearchResultSetId(requestId);
       setSearchResultResearchEntities(researchEntities);
       setMoreTopicResults(
         moreTopicResultsFor(researchEntitiesPage.moreTopicResults ?? [], filters),
@@ -2289,6 +2291,7 @@ const Research = () => {
                   ) : activeClusters.length > 0 ? (
                     <>
                       <div
+                        key={searchResultSetId}
                         aria-busy={isApplyingFilters}
                         className={`grid gap-5 transition-opacity ${
                           isApplyingFilters ? 'opacity-50' : ''
@@ -2346,6 +2349,7 @@ const Research = () => {
                 </section>
                 {moreTopicResults && (
                   <div
+                    key={searchResultSetId}
                     aria-busy={isApplyingFilters}
                     className={`transition-opacity ${isApplyingFilters ? 'opacity-50' : ''}`}
                   >
