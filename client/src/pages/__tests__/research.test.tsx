@@ -599,6 +599,56 @@ describe('Research page', () => {
     expect(screen.getByTestId('location').textContent).toBe('/research?q=quantum+materials');
   });
 
+  it('offers a keyboard-reachable clear button that empties the search and returns focus to it', async () => {
+    mockSearchResponses((url, body) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse(
+        body.q === 'quantum materials'
+          ? [
+              {
+                ...researchEntity,
+                _id: 'quantum-materials-1',
+                slug: 'quantum-materials-example',
+                name: 'Quantum Materials Example',
+                displayName: 'Quantum Materials Example',
+                researchAreas: ['Quantum materials'],
+              },
+            ]
+          : [researchEntity],
+      );
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/research?q=quantum+materials']}>
+        <ConfigContext.Provider
+          value={{
+            ...defaultConfigContext,
+            isLoading: false,
+            isLoaded: true,
+            departments,
+            departmentCategories: ['Computing & AI', 'Humanities & Arts', 'Life Sciences'],
+          }}
+        >
+          <LocationDisplay />
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('heading', { name: 'Quantum Materials Example' });
+    const clear = screen.getByRole('button', { name: 'Clear search' });
+    expect(clear.tabIndex).toBe(0);
+
+    fireEvent.click(clear);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location').textContent).toBe('/research');
+      expect(screen.getByLabelText('Search y/labs')).toHaveValue('');
+    });
+    expect(screen.getByLabelText('Search y/labs')).toHaveFocus();
+    expect(screen.queryByRole('button', { name: 'Clear search' })).toBeNull();
+  });
+
   it('returns the brand logo to a clean research home instead of rerunning the search', async () => {
     mockSearchResponses((url, body) => {
       if (url !== '/research/search') return unexpectedSearchEndpoint(url);

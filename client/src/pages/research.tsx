@@ -67,6 +67,7 @@ import {
   trackResearchEvent,
   trackResearchResultsView,
 } from '../utils/researchAnalytics';
+import { CloseIcon } from '../components/shared/icons';
 
 interface DepartmentResearchHomeConfig {
   abbreviation?: string;
@@ -1986,23 +1987,40 @@ const Research = () => {
                 Search y/labs
               </label>
               <div className="flex flex-row gap-2 xl:flex-col">
-                <input
-                  id="research-search"
-                  ref={searchInputRef}
-                  type="search"
-                  value={query}
-                  onChange={(event) => {
-                    const nextQuery = event.target.value;
-                    setQuery(nextQuery);
-                    setShowEmptySearchHint(false);
-                    if (!nextQuery.trim() && hasSubmittedSearch) {
-                      clearSearchText();
-                    }
-                  }}
-                  aria-describedby="research-search-context research-search-help"
-                  placeholder={searchPlaceholder}
-                  className="yr-focus-ring min-h-12 min-w-0 flex-1 overflow-hidden text-ellipsis rounded-card border border-[var(--yr-line-control)] bg-[var(--yr-panel)] px-4 text-base text-ink placeholder:text-muted focus:border-[var(--yr-blue)] sm:min-h-14 xl:min-h-11"
-                />
+                <div className="relative flex min-w-0 flex-1">
+                  <input
+                    id="research-search"
+                    ref={searchInputRef}
+                    type="search"
+                    value={query}
+                    onChange={(event) => {
+                      const nextQuery = event.target.value;
+                      setQuery(nextQuery);
+                      setShowEmptySearchHint(false);
+                      if (!nextQuery.trim() && hasSubmittedSearch) {
+                        clearSearchText();
+                      }
+                    }}
+                    aria-describedby="research-search-context research-search-help"
+                    placeholder={searchPlaceholder}
+                    className={`yr-focus-ring min-h-12 w-full min-w-0 overflow-hidden text-ellipsis rounded-card border border-[var(--yr-line-control)] bg-[var(--yr-panel)] px-4 text-base text-ink placeholder:text-muted focus:border-[var(--yr-blue)] sm:min-h-14 xl:min-h-11 [&::-webkit-search-cancel-button]:hidden ${query ? 'pr-12' : ''}`}
+                  />
+                  {query && (
+                    <button
+                      type="button"
+                      aria-label="Clear search"
+                      onClick={() => {
+                        setQuery('');
+                        setShowEmptySearchHint(false);
+                        if (hasSubmittedSearch) clearSearchText();
+                        searchInputRef.current?.focus();
+                      }}
+                      className="yr-focus-ring yr-pressable absolute right-1 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-control text-muted hover:text-ink"
+                    >
+                      <CloseIcon size={18} />
+                    </button>
+                  )}
+                </div>
                 <button
                   type="submit"
                   className="yr-focus-ring yr-pressable min-h-12 shrink-0 rounded-control bg-[var(--yr-blue)] px-5 text-sm font-semibold text-white hover:bg-brand-navy disabled:bg-line disabled:text-ink-soft sm:min-h-14 sm:px-6 xl:min-h-11"
