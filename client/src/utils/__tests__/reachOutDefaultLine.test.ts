@@ -70,7 +70,9 @@ describe('reachOutLineParts (#5297, #5487)', () => {
     });
     expect(parts.lead).toBe('Most undergraduates get started by emailing the professor through ');
     expect(parts.contactLinkText).toBe('their official profile');
-    expect(`${parts.lead}${parts.contactLinkText}${parts.rest}`).not.toMatch(/on their card|below|above/);
+    expect(`${parts.lead}${parts.contactLinkText}${parts.rest}`).not.toMatch(
+      /on their card|below|above/,
+    );
   });
 
   it('never says address when the card shows only a profile', () => {
