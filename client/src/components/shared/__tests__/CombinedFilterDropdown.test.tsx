@@ -156,19 +156,17 @@ describe('CombinedFilterDropdown', () => {
   it('opens the panel above a trigger near the bottom of a short window, capped to fit', async () => {
     const innerHeight = window.innerHeight;
     Object.defineProperty(window, 'innerHeight', { configurable: true, value: 768 });
-    const rect = vi
-      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
-      .mockReturnValue({
-        top: 636,
-        bottom: 680,
-        left: 0,
-        right: 100,
-        width: 100,
-        height: 44,
-        x: 0,
-        y: 636,
-        toJSON: () => ({}),
-      });
+    const rect = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      top: 636,
+      bottom: 680,
+      left: 0,
+      right: 100,
+      width: 100,
+      height: 44,
+      x: 0,
+      y: 636,
+      toJSON: () => ({}),
+    });
     try {
       render(
         <CombinedFilterDropdown
