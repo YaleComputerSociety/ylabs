@@ -69,7 +69,10 @@ import {
   trackResearchEvent,
   trackResearchResultsView,
 } from '../utils/researchAnalytics';
-import { CloseIcon } from '../components/shared/icons';
+import SearchClearButton, {
+  SEARCH_INPUT_CLEAR_BUTTON_PADDING,
+  SEARCH_INPUT_NATIVE_CANCEL_HIDDEN,
+} from '../components/shared/SearchClearButton';
 
 interface DepartmentResearchHomeConfig {
   abbreviation?: string;
@@ -2005,22 +2008,17 @@ const Research = () => {
                     }}
                     aria-describedby="research-search-context research-search-help"
                     placeholder={searchPlaceholder}
-                    className={`yr-focus-ring min-h-12 w-full min-w-0 overflow-hidden text-ellipsis rounded-card border border-[var(--yr-line-control)] bg-[var(--yr-panel)] px-4 text-base text-ink placeholder:text-muted focus:border-[var(--yr-blue)] sm:min-h-14 xl:min-h-11 [&::-webkit-search-cancel-button]:hidden ${query ? 'pr-12' : ''}`}
+                    className={`yr-focus-ring min-h-12 w-full min-w-0 overflow-hidden text-ellipsis rounded-card border border-[var(--yr-line-control)] bg-[var(--yr-panel)] px-4 text-base text-ink placeholder:text-muted focus:border-[var(--yr-blue)] sm:min-h-14 xl:min-h-11 ${SEARCH_INPUT_NATIVE_CANCEL_HIDDEN} ${query ? SEARCH_INPUT_CLEAR_BUTTON_PADDING : ''}`}
                   />
                   {query && (
-                    <button
-                      type="button"
-                      aria-label="Clear search"
-                      onClick={() => {
+                    <SearchClearButton
+                      onClear={() => {
                         setQuery('');
                         setShowEmptySearchHint(false);
                         if (hasSubmittedSearch) clearSearchText();
                         searchInputRef.current?.focus();
                       }}
-                      className="yr-focus-ring yr-pressable absolute right-1 top-1/2 inline-flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-control text-muted hover:text-ink"
-                    >
-                      <CloseIcon size={18} />
-                    </button>
+                    />
                   )}
                 </div>
                 <button
