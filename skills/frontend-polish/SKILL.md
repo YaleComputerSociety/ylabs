@@ -71,6 +71,8 @@ Instead, `ScrollToTop` moves focus to `#main-content` at the moment a page-scrol
 It stops at the first pointer press, because a click gives the browser its own scroll origin and the keys then belong to whichever inner panel was clicked.
 - Every tab stop on a result card goes somewhere new.
 A `/research` card titled with its own lead renders the lead's name as text, because the title link and a lead link read the same name twice and doubled the Tab presses per card; a lead who is a different person from the title keeps the link (#5500).
+- A search field's clear control is a real button in the tab order, never the native `type="search"` cancel button, which is drawn inside the input and never takes focus.
+The `/research` box hides `::-webkit-search-cancel-button` and renders a 44px "Clear search" button inside the field that empties the query and returns focus to the box (#5497).
 - Disabled controls explain why they are disabled, near the control, rather than looking broken.
 - A filter sheet that covers the results ends in a button naming what it leaves, "Show N results", which closes the sheet, returns focus to its trigger, and scrolls the results section into view, because the student cannot see the results change behind the scrim.
 `ResearchFilterDisclosure` takes the count as `resultCount` and swaps the label to "Updating results…" in the same grid cell while `resultCountPending` is set.

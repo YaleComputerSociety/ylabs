@@ -5,6 +5,10 @@ export type ReachOutDiscipline = 'lab' | 'socialScience' | 'humanities';
 export type ReachOutRenderedContact =
   'leadCardEmail' | 'leadCardProfile' | 'pageAction' | 'directorySearch' | 'officialPages';
 
+export type ReachOutContact =
+  | { kind: 'leadCardEmail'; email: string }
+  | { kind: Exclude<ReachOutRenderedContact, 'leadCardEmail'> };
+
 export interface ReachOutEntity {
   entityType?: string | null;
   kind?: string | null;
@@ -27,13 +31,22 @@ export const reachOutDiscipline = (
   return 'lab';
 };
 
-const ROUTE_CLAUSES: Record<ReachOutRenderedContact, string> = {
-  leadCardEmail: 'at the address on their card',
-  leadCardProfile: 'through the official profile on their card',
-  pageAction: 'through the link below',
-  directorySearch: 'after finding their address in the Yale Directory below',
-  officialPages: 'through the official pages listed below',
+interface ReachOutRoute {
+  prefix: string;
+  contactLinkText?: string;
+}
+
+const ROUTES: Record<Exclude<ReachOutRenderedContact, 'leadCardEmail'>, ReachOutRoute> = {
+  leadCardProfile: { prefix: 'through ', contactLinkText: 'their official profile' },
+  pageAction: { prefix: 'through the link below' },
+  directorySearch: { prefix: 'after finding their address in the Yale Directory below' },
+  officialPages: { prefix: 'through the official pages listed below' },
 };
+
+const reachOutRoute = (contact: ReachOutContact): ReachOutRoute =>
+  contact.kind === 'leadCardEmail'
+    ? { prefix: 'at ', contactLinkText: contact.email }
+    : ROUTES[contact.kind];
 
 const leadNoun = (entity: ReachOutEntity, discipline: ReachOutDiscipline): string =>
   discipline !== 'lab' || isFacultyResearchEntity(entity) ? 'the professor' : 'the lead';
@@ -46,18 +59,27 @@ const ASK_CLAUSES: Record<ReachOutDiscipline, string> = {
     'name a topic from this page and ask whether they would advise a senior essay or independent study on it.',
 };
 
-export const reachOutDefaultLine = ({
+export interface ReachOutLineParts {
+  lead: string;
+  contactLinkText?: string;
+  rest: string;
+}
+
+export const reachOutLineParts = ({
   entity,
   firstDepartmentCategory,
-  renderedContact,
+  contact,
 }: {
   entity: ReachOutEntity;
   firstDepartmentCategory?: string | null;
-  renderedContact: ReachOutRenderedContact;
-}): string => {
+  contact: ReachOutContact;
+}): ReachOutLineParts => {
   const discipline = reachOutDiscipline(entity, firstDepartmentCategory);
   const officeHours = discipline === 'humanities' ? ', or by going to their office hours' : '';
-  return `Most undergraduates get started by emailing ${leadNoun(entity, discipline)} ${
-    ROUTE_CLAUSES[renderedContact]
-  }${officeHours}: ${ASK_CLAUSES[discipline]}`;
+  const route = reachOutRoute(contact);
+  return {
+    lead: `Most undergraduates get started by emailing ${leadNoun(entity, discipline)} ${route.prefix}`,
+    ...(route.contactLinkText ? { contactLinkText: route.contactLinkText } : {}),
+    rest: `${officeHours}: ${ASK_CLAUSES[discipline]}`,
+  };
 };

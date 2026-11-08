@@ -19,6 +19,7 @@ import { cannotOwnResearchHome } from '../../utils/leadRoleDisplay';
 import { orcidRecordUrlFromMemberUser } from '../../utils/principalInvestigatorLinks';
 import { ExternalLinkIcon, MailIcon } from '../shared/icons';
 import { personInitials } from '../../utils/personInitials';
+import { CONTACT_ROUTE_SURFACE_ATTRIBUTE } from '../../utils/researchAnalytics';
 
 interface LabMembersListProps {
   members: LabMember[];
@@ -243,6 +244,7 @@ const LabMemberCard = ({
         {resolvedEmailHref && (
           <a
             href={resolvedEmailHref}
+            {...(LEAD_ROLES.has(role) ? { [CONTACT_ROUTE_SURFACE_ATTRIBUTE]: 'lead_card' } : {})}
             aria-label={`Email ${fullName} at ${emailAddress}`}
             title={emailAddress}
             className="yr-focus-ring yr-pressable inline-flex min-h-11 max-w-full items-center gap-2 self-start rounded-control text-sm font-medium text-brand underline-offset-4 hover:underline"

@@ -251,10 +251,10 @@ describe('LabHeader signal-only header', () => {
         }}
       />,
     );
-    expect(container.textContent).toContain('Actively hiring');
+    expect(container.textContent).toContain('Welcomes undergrads, recruiting now');
 
     const { container: without } = render(<LabHeader group={baseGroup} />);
-    expect(without.textContent).not.toContain('Actively hiring');
+    expect(without.textContent).not.toContain('Welcomes undergrads, recruiting now');
     expect(without.textContent).not.toContain('Welcomes undergrads');
   });
 });

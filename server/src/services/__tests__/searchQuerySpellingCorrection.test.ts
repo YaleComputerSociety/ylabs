@@ -114,8 +114,17 @@ describe('correctSearchQuerySpelling', () => {
   });
 
   it('leaves words of three letters or fewer alone', () => {
-    expect(correct('bran').query).toBe('brain');
+    expect(correct('brakn').query).toBe('brain');
     expect(correct('brn').corrections).toEqual([]);
+  });
+
+  it('never rewrites a real English word that no served row carries', () => {
+    expect(correct('intro to machine learning')).toEqual({
+      query: 'intro to machine learning',
+      corrections: [],
+    });
+    expect(correct('bran').corrections).toEqual([]);
+    expect(correct('imunology').query).toBe('immunology');
   });
 
   it('leaves a word alone when no corpus word is close enough', () => {

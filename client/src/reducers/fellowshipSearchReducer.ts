@@ -57,6 +57,7 @@ export interface FellowshipSearchState extends StudentProgramFilters {
   queryCorrection: ProgramSearchQueryCorrection | null;
   resultsRankedByRelevance: boolean;
   resultsMissOneWord: boolean;
+  resultsCloseMatchesFrom: number | null;
   selectedStudentVisibilityTier: StudentVisibilityTier[];
   sortBy: string;
   sortOrder: number;
@@ -115,6 +116,7 @@ export type FellowshipSearchAction =
         append: boolean;
         queryCorrection?: ProgramSearchQueryCorrection | null;
         missOneWord?: boolean;
+        closeMatchesFrom?: number | null;
         rankedByRelevance?: boolean;
       };
     }
@@ -132,6 +134,7 @@ export const createInitialFellowshipSearchState = (
   queryCorrection: null,
   resultsRankedByRelevance: false,
   resultsMissOneWord: false,
+  resultsCloseMatchesFrom: null,
   ...createEmptyStudentProgramFilters(),
   selectedStudentVisibilityTier: [],
   sortBy: 'default',
@@ -287,6 +290,7 @@ export function fellowshipSearchReducer(
         queryCorrection,
         rankedByRelevance,
         missOneWord,
+        closeMatchesFrom,
       } = action.payload;
       const nextFellowships = append ? [...state.fellowships, ...fellowships] : fellowships;
       const nextTotal = total !== undefined ? total : nextFellowships.length;
@@ -302,6 +306,11 @@ export function fellowshipSearchReducer(
           ? state.resultsRankedByRelevance
           : rankedByRelevance === true,
         resultsMissOneWord: append ? state.resultsMissOneWord : missOneWord === true,
+        resultsCloseMatchesFrom: append
+          ? state.resultsCloseMatchesFrom
+          : typeof closeMatchesFrom === 'number'
+            ? closeMatchesFrom
+            : null,
       };
     }
 
@@ -315,6 +324,7 @@ export function fellowshipSearchReducer(
         loadError: true,
         queryCorrection: null,
         resultsMissOneWord: false,
+        resultsCloseMatchesFrom: null,
       };
 
     case 'LOAD_MORE_FAILURE':

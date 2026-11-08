@@ -35,6 +35,12 @@ const mockedAxios = axios as unknown as {
   post: ReturnType<typeof vi.fn>;
 };
 
+const reachOutLine = () =>
+  screen.getByText(
+    (_, element) =>
+      element?.tagName === 'P' &&
+      (element.textContent ?? '').startsWith('Most undergraduates get started'),
+  );
 const PILL_ELIGIBLE_LABELS = ['Example Studies'];
 
 const DEFAULT_SLUG = 'sample-research-profile';
@@ -754,9 +760,83 @@ describe('LabDetail page', () => {
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     expect(screen.getByRole('link', { name: /^Email Jordan Researcher at / })).toBeTruthy();
-    expect(screen.getByText(/at the address on their card/)).toBeTruthy();
+    expect(
+      within(reachOutLine())
+        .getByRole('link', { name: 'jordan.researcher@example.test' })
+        .getAttribute('href'),
+    ).toBe('mailto:jordan.researcher@example.test');
     expect(screen.queryByText(/does not have a direct link/)).toBeNull();
     expect(screen.queryByRole('link', { name: 'Search the Yale Directory' })).toBeNull();
+  });
+
+  it('shows the same sanitized address in the reach-out line as its href, whatever the stored casing', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: '',
+        sourceUrls: [],
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.faculty',
+            fname: 'Jordan',
+            lname: 'Researcher',
+            displayName: 'Jordan Researcher',
+            email: 'MAILTO:Jordan.Researcher@Example.test',
+            primary_department: 'Neurology',
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const lineLink = within(reachOutLine()).getByRole('link', {
+      name: 'jordan.researcher@example.test',
+    });
+    expect(lineLink.getAttribute('href')).toBe('mailto:jordan.researcher@example.test');
+    expect(reachOutLine().textContent).not.toMatch(/mailto:/i);
+  });
+
+  it('records an email click in the reach-out line with the reach_out surface and no address', async () => {
+    renderLabDetail({
+      ...basePayload,
+      group: {
+        ...basePayload.group,
+        websiteUrl: '',
+        sourceUrls: [],
+      },
+      members: [
+        {
+          role: 'pi',
+          user: {
+            netid: 'fixture.faculty',
+            fname: 'Jordan',
+            lname: 'Researcher',
+            displayName: 'Jordan Researcher',
+            email: 'jordan.researcher@example.test',
+            primary_department: 'Neurology',
+          },
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+    fireEvent.click(
+      within(reachOutLine()).getByRole('link', { name: 'jordan.researcher@example.test' }),
+    );
+    await flushResearchAnalytics();
+
+    const events = mockedAxios.post.mock.calls.flatMap(
+      ([, body]) =>
+        (body as { events?: Array<{ eventType: string; payload?: unknown }> })?.events ?? [],
+    );
+    const contact = events.find((event) => event.eventType === 'contact_route_click');
+    expect(contact?.payload).toEqual({ contactMethod: 'email', surface: 'reach_out' });
+    expect(JSON.stringify(events)).not.toContain('jordan.researcher@example.test');
   });
 
   it('renders a Yale Directory fallback instead of a dead end when no website, profile, or email exists', async () => {
@@ -1566,7 +1646,11 @@ describe('LabDetail page', () => {
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     expect(screen.getByRole('link', { name: /^Email Jordan Researcher at / })).toBeTruthy();
-    expect(screen.getByText(/at the address on their card/)).toBeTruthy();
+    expect(
+      within(reachOutLine())
+        .getByRole('link', { name: 'jordan.researcher@example.test' })
+        .getAttribute('href'),
+    ).toBe('mailto:jordan.researcher@example.test');
     expect(
       screen.getByRole('link', { name: 'New to research? How to reach out' }).getAttribute('href'),
     ).toBe('/getting-started');
@@ -1643,7 +1727,11 @@ describe('LabDetail page', () => {
         .some((link) => link.getAttribute('href') === LEAD_CARD_PROFILE_URL),
     ).toBe(true);
     expect(screen.queryByRole('link', { name: 'Open the official page' })).toBeNull();
-    expect(screen.getByText(/through the official profile on their card/)).toBeTruthy();
+    expect(
+      within(reachOutLine()).getByRole('link', {
+        name: 'their official profile (opens in a new tab)',
+      }),
+    ).toBeTruthy();
     expect(
       screen.getByRole('link', { name: 'New to research? How to reach out' }).getAttribute('href'),
     ).toBe('/getting-started');
@@ -1680,6 +1768,7 @@ describe('LabDetail page', () => {
         .getAllByRole('link')
         .map((link) => [link.textContent, link.getAttribute('href')]),
     ).toEqual([
+      ['their official profile', LEAD_CARD_PROFILE_URL],
       ['Visit research website', RESEARCH_WEBSITE_URL],
       ['See how to join', JOIN_PAGE_URL],
       ['New to research? How to reach out', '/getting-started'],
@@ -1900,12 +1989,14 @@ describe('LabDetail page', () => {
     const events = mockedAxios.post.mock.calls
       .flatMap(([, body]) => (body as { events?: unknown[] })?.events ?? [])
       .filter(
-        (event): event is { eventType: string; payload?: { contactMethod?: string } } =>
+        (
+          event,
+        ): event is { eventType: string; payload?: { contactMethod?: string; surface?: string } } =>
           typeof event === 'object' && event !== null,
       );
     const contact = events.find((event) => event.eventType === 'contact_route_click');
     expect(contact).toBeDefined();
-    expect(contact?.payload?.contactMethod).toBe('email');
+    expect(contact?.payload).toEqual({ contactMethod: 'email', surface: 'lead_card' });
     // The destination never leaves the client: the analytics contract forbids retaining it.
     expect(JSON.stringify(events)).not.toContain('jordan.researcher@example.test');
   });
@@ -3473,7 +3564,11 @@ describe('LabDetail display name unification', () => {
     await screen.findByText(DEFAULT_ENTITY_NAME);
 
     expect(screen.queryByRole('link', { name: 'Visit research website' })).toBeNull();
-    expect(screen.getByText(/through the official profile on their card/)).toBeTruthy();
+    expect(
+      within(reachOutLine()).getByRole('link', {
+        name: 'their official profile (opens in a new tab)',
+      }),
+    ).toBeTruthy();
     expect(
       screen.getByRole('link', { name: 'New to research? How to reach out' }).getAttribute('href'),
     ).toBe('/getting-started');
