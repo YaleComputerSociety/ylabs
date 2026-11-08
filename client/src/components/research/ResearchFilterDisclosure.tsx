@@ -114,6 +114,15 @@ const UndergraduateToggle = ({
   );
 };
 
+// Clearing every filter removes the control the student pressed, and with no query the
+// page swaps to the browse view, which mounts a new filter bar, so the target is looked
+// up after that render rather than held as a ref.
+export const focusResearchFiltersEntry = () => {
+  window.setTimeout(() => {
+    document.querySelector<HTMLElement>('[data-research-filters-entry]')?.focus();
+  }, 0);
+};
+
 const ResearchFilterDisclosure = ({
   facetDistribution,
   selectedEntityType,
@@ -411,7 +420,12 @@ const ResearchFilterDisclosure = ({
   const clearAllButton = activeCount > 0 && (
     <button
       type="button"
-      onClick={onClearAll}
+      onClick={() => {
+        onClearAll();
+        window.setTimeout(() => {
+          if (panelRef.current?.isConnected) focusFirstControl();
+        }, 0);
+      }}
       className="yr-focus-ring inline-flex min-h-11 w-full items-center justify-center rounded-card border border-[var(--yr-line-strong)] px-3 text-sm font-semibold text-ink-soft hover:bg-[var(--yr-panel-muted)]"
     >
       Clear all filters
@@ -473,7 +487,10 @@ const ResearchFilterDisclosure = ({
         {besideTrigger && (
           <button
             type="button"
-            onClick={onClearAll}
+            onClick={() => {
+              onClearAll();
+              focusResearchFiltersEntry();
+            }}
             className="yr-focus-ring inline-flex min-h-11 shrink-0 items-center rounded-control px-2 text-sm font-semibold text-muted hover:text-ink"
           >
             Clear all filters
@@ -486,7 +503,13 @@ const ResearchFilterDisclosure = ({
     return (
       <section aria-label="Research filters" aria-busy={isApplying} className="min-w-0 max-w-full">
         <div className="flex min-w-0 items-center gap-3">
-          <h2 className="text-base font-semibold text-ink">Research filters</h2>
+          <h2
+            data-research-filters-entry=""
+            tabIndex={-1}
+            className="yr-focus-ring -mx-1 rounded-control px-1 text-base font-semibold text-ink"
+          >
+            Research filters
+          </h2>
           {activeCount > 0 && (
             <>
               <span className="min-w-5 rounded-full bg-[var(--yr-blue)] px-1.5 py-0.5 text-center text-xs font-semibold text-white">
@@ -494,7 +517,10 @@ const ResearchFilterDisclosure = ({
               </span>
               <button
                 type="button"
-                onClick={onClearAll}
+                onClick={() => {
+                  onClearAll();
+                  focusResearchFiltersEntry();
+                }}
                 className="yr-focus-ring -my-2.5 ml-auto inline-flex min-h-11 shrink-0 items-center rounded-control px-2 text-sm font-semibold text-muted hover:text-ink"
               >
                 Clear all filters
@@ -520,6 +546,7 @@ const ResearchFilterDisclosure = ({
       <div className="relative min-w-0 max-w-full shrink-0">
         <button
           ref={triggerRef}
+          data-research-filters-entry=""
           type="button"
           aria-expanded={isOpen}
           aria-haspopup="dialog"

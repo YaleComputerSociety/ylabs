@@ -69,6 +69,8 @@ The student-journey smoke asserts the document never outgrows the window.
 - Never move focus on the initial document load, so the first Tab reaches the skip link and a screen reader starts where the browser puts it.
 Instead, `ScrollToTop` moves focus to `#main-content` at the moment a page-scroll key (PageDown, PageUp, Space, the vertical arrows, Home, End) is pressed while nothing holds focus, so the browser's own scroll for that key lands in `[data-scroll-container]`.
 It stops at the first pointer press, because a click gives the browser its own scroll origin and the keys then belong to whichever inner panel was clicked.
+- A control that removes itself hands focus somewhere the student can carry on from, never to the document body.
+"Clear all filters" on `/research` moves focus to the "Research filters" heading in the wide sidebar and to the Filters trigger in the narrow bar through `focusResearchFiltersEntry`, which looks the target up after the render because clearing with no query swaps to the browse view and mounts a new filter bar; inside the open filter panel it stays in the panel (#5496).
 - A search field's clear control is a real button in the tab order, never the native `type="search"` cancel button, which is drawn inside the input and never takes focus.
 The `/research` box hides `::-webkit-search-cancel-button` and renders a 44px "Clear search" button inside the field that empties the query and returns focus to the box (#5497).
 - Disabled controls explain why they are disabled, near the control, rather than looking broken.

@@ -15,7 +15,9 @@ import { Link, useLocation, useSearchParams } from 'react-router-dom';
 
 import { isResearchHomeResetState } from '../components/researchHomeNavigation';
 import ResearchHomeCard from '../components/research/ResearchHomeCard';
-import ResearchFilterDisclosure from '../components/research/ResearchFilterDisclosure';
+import ResearchFilterDisclosure, {
+  focusResearchFiltersEntry,
+} from '../components/research/ResearchFilterDisclosure';
 import ResearchSearchDegradedNotice from '../components/research/ResearchSearchDegradedNotice';
 import SearchSpellingNotice from '../components/shared/SearchSpellingNotice';
 import ResearchStickyFilterBar from '../components/research/ResearchStickyFilterBar';
@@ -2357,7 +2359,10 @@ const Research = () => {
                       onRemoveWelcomesUndergrads={() =>
                         applyStudentFilters({ welcomesUndergrads: false })
                       }
-                      onClearAllFilters={researchFilterProps.onClearAll}
+                      onClearAllFilters={() => {
+                        researchFilterProps.onClearAll();
+                        focusResearchFiltersEntry();
+                      }}
                       relaxedQuery={relaxedQuerySuggestion}
                       onRelaxQuery={retryRelaxedQuery}
                       onBrowseAll={browseAllResearchHomes}
