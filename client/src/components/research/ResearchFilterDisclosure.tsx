@@ -360,10 +360,6 @@ const ResearchFilterDisclosure = ({
 
   const closeFilters = useCallback(
     (restoreFocus = true) => {
-      const focusedInPanel = document.activeElement;
-      if (focusedInPanel instanceof HTMLElement && panelRef.current?.contains(focusedInPanel)) {
-        focusedInPanel.blur();
-      }
       setIsOpen(false);
       if (restoreFocus) window.setTimeout(() => triggerRef.current?.focus(), 0);
     },
