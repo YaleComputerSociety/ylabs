@@ -469,19 +469,7 @@ export function resolveFundYearOfStudy(
   prose: FundEligibilityProse[],
   filter: string[],
 ): FundYearOfStudyResolution {
-  const evidence: Record<GroupRole, LevelEvidence> = {
-    base: new LevelEvidence(),
-    additive: new LevelEvidence(),
-    excluded: new LevelEvidence(),
-  };
-  let anyLevel = false;
-
-  for (const { text, isEligibilitySection } of prose) {
-    for (const sentence of sentencesOf(text)) {
-      if (!CONDITIONAL_OPENING.test(sentence) && ANY_LEVEL.test(sentence)) anyLevel = true;
-      for (const group of groupsIn(sentence, isEligibilitySection)) evidence[group.role].add(group);
-    }
-  }
+  const { evidence, anyLevel } = levelEvidenceOf(prose);
 
   if (Object.values(evidence).some((roleEvidence) => roleEvidence.hasUnmapped())) {
     return { kind: 'unreconcilable' };
@@ -504,16 +492,41 @@ export function resolveFundYearOfStudy(
   return values.length > 0 ? { kind: 'prose', values } : { kind: 'unreconcilable' };
 }
 
+function levelEvidenceOf(prose: FundEligibilityProse[]): {
+  evidence: Record<GroupRole, LevelEvidence>;
+  anyLevel: boolean;
+} {
+  const evidence: Record<GroupRole, LevelEvidence> = {
+    base: new LevelEvidence(),
+    additive: new LevelEvidence(),
+    excluded: new LevelEvidence(),
+  };
+  let anyLevel = false;
+
+  for (const { text, isEligibilitySection } of prose) {
+    for (const sentence of sentencesOf(text)) {
+      if (!CONDITIONAL_OPENING.test(sentence) && ANY_LEVEL.test(sentence)) anyLevel = true;
+      for (const group of groupsIn(sentence, isEligibilitySection)) evidence[group.role].add(group);
+    }
+  }
+  return { evidence, anyLevel };
+}
+
+/**
+ * A program page has no filter to stand in for the main audience, so an exception read
+ * alone ("recent graduates may also be considered") would be served as the whole
+ * audience. Such a page states no year of study.
+ */
 export function programPageYearOfStudy(page: {
   eligibility?: string;
   description?: string;
 }): YearOfStudy[] {
-  const resolution = resolveFundYearOfStudy(
-    [
-      { text: page.eligibility ?? '', isEligibilitySection: true },
-      { text: page.description ?? '', isEligibilitySection: false },
-    ],
-    [],
-  );
+  const prose: FundEligibilityProse[] = [
+    { text: page.eligibility ?? '', isEligibilitySection: true },
+    { text: page.description ?? '', isEligibilitySection: false },
+  ];
+  const { evidence, anyLevel } = levelEvidenceOf(prose);
+  if (!anyLevel && evidence.base.isEmpty) return [];
+  const resolution = resolveFundYearOfStudy(prose, []);
   return resolution.kind === 'prose' ? resolution.values : [];
 }
