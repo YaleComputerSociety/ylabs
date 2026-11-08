@@ -1,4 +1,5 @@
 import { foldLatinDiacritics } from '../utils/latinDiacritics';
+import { isEnglishDictionaryWord } from './englishDictionaryWords';
 
 export interface SearchVocabularyDocument {
   nameText: readonly unknown[];
@@ -160,6 +161,9 @@ const correctWord = (
     return null;
   }
   if (vocabulary.documentFrequency.has(word)) return null;
+  // A real English word is never a typo to fix, even when no served row uses it:
+  // "intro" became "into" and "paid" became "pain".
+  if (isEnglishDictionaryWord(word)) return null;
   const maxEdits = allowedSpellingEdits(word.length);
   if (maxEdits === 0) return null;
   if (isNearAPersonName(vocabulary.personNameWords, word)) return null;

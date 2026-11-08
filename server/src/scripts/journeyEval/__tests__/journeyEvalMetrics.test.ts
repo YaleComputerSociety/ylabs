@@ -7,6 +7,7 @@ import {
   checkFacetAgreement,
   checkMeshDescriptorOnlyRowsRankBelowOwnEvidence,
   checkPersonNameWordsAreNotRespelled,
+  checkDictionaryWordsAreNotRespelled,
   checkQueryVariantServesTheBaseline,
   checkSimilarRailRanksSharedNamesLast,
   checkNoRepeatedRowsAcrossPages,
@@ -648,6 +649,30 @@ describe('checkPersonNameWordsAreNotRespelled', () => {
 
   it('is inconclusive when no person name was queried', () => {
     expect(checkPersonNameWordsAreNotRespelled([]).status).toBe('inconclusive');
+  });
+});
+
+describe('checkDictionaryWordsAreNotRespelled', () => {
+  it('passes when every dictionary word was searched as typed', () => {
+    expect(
+      checkDictionaryWordsAreNotRespelled([
+        { respelledDictionaryWords: [] },
+        { respelledDictionaryWords: [] },
+      ]).status,
+    ).toBe('pass');
+  });
+
+  it('fails and counts the words when a dictionary word was respelled', () => {
+    const result = checkDictionaryWordsAreNotRespelled([
+      { respelledDictionaryWords: ['intro'] },
+      { respelledDictionaryWords: [] },
+    ]);
+    expect(result.status).toBe('fail');
+    expect(result.detail).toMatchObject({ queried: 2, respelledWords: 1 });
+  });
+
+  it('is inconclusive when no query was sent', () => {
+    expect(checkDictionaryWordsAreNotRespelled([]).status).toBe('inconclusive');
   });
 });
 
