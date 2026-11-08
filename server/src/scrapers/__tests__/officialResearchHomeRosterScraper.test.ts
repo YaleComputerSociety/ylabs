@@ -1268,7 +1268,7 @@ describe('round-five roster rules (#5245)', () => {
       }
     });
 
-    it('leaves out a section headed by another campus of another university', () => {
+    it("keeps the past undergraduates of the lab's own earlier university (owner rule 2026-11-08)", () => {
       const html = `<html><body><main><h3>Undergraduate Students</h3><ul><li>Avery Quill</li></ul>
         <h3>Fixture Lab UW-Elsewhere Alumni</h3><ul><li>Harper Wren, Undergraduate Researcher</li></ul>
       </main></body></html>`;
@@ -1277,7 +1277,7 @@ describe('round-five roster rules (#5245)', () => {
           html,
           headingConfig(['Undergraduate Students'], ['Fixture Lab UW-Elsewhere Alumni']),
         ),
-      ).toEqual(['Avery Quill:current']);
+      ).toEqual(['Avery Quill:current', 'Harper Wren:past']);
     });
   });
 

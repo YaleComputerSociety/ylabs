@@ -1385,6 +1385,10 @@ const BIO_ENROLLMENT_AT_ANOTHER_SCHOOL = new RegExp(
   `\\b(?:is|am)\\s+(?:currently\\s+)?an?\\s+(?:[\\p{L}-]+\\s+){0,6}?(?:freshman|sophomore|junior|senior|first[- ]year|second[- ]year|undergraduate|undergrad|student)\\b[^.;]{0,100}?\\b(?:at|from|in)\\s+(?:the\\s+)?${NAMED_SCHOOL_OTHER_THAN_YALE}`,
   'u',
 );
+const BIO_DEGREE_IN_PROGRESS_AT_ANOTHER_SCHOOL = new RegExp(
+  `\\b(?:completing|pursuing|finishing|earning|working\\s+(?:on|towards?))\\s+(?:her|his|their|an?)\\s+(?:undergraduate|bachelor['’]?s|B\\.?\\s?[AS]\\.?)(?:\\s+(?:degree|studies))?(?:\\s+in\\s+[^.;]{1,80}?)?\\s+(?:at|from)\\s+(?:the\\s+)?${NAMED_SCHOOL_OTHER_THAN_YALE}`,
+  'u',
+);
 const BIO_STANDING_AT_ANOTHER_SCHOOL = new RegExp(
   `\\b(?:freshman|sophomore|junior|senior|first[- ]year|second[- ]year|undergraduate|undergrad|student|major)\\s+(?:(?:at|from|in)\\s+(?:the\\s+)?${NAMED_SCHOOL_OTHER_THAN_YALE}|at\\s+(?!(?:${RESIDENTIAL_COLLEGE_NAMES})\\b)(?!Yale\\b)\\p{Lu}[\\p{L}'’-]+)`,
   'u',
@@ -1410,6 +1414,7 @@ function bioNamesAnotherSchool(bio: string): boolean {
       (sentence) =>
         !YALE_ENROLLMENT.test(sentence) &&
         (BIO_ENROLLMENT_AT_ANOTHER_SCHOOL.test(sentence) ||
+          BIO_DEGREE_IN_PROGRESS_AT_ANOTHER_SCHOOL.test(sentence) ||
           BIO_STANDING_AT_ANOTHER_SCHOOL.test(sentence) ||
           BIO_VISITOR.test(sentence)),
     );
@@ -1427,6 +1432,11 @@ const OTHER_SCHOOLS_LABEL =
 
 const namesAnotherInstitution = (label: string): boolean =>
   ANOTHER_INSTITUTION_LABEL.test(label) || OTHER_SCHOOLS_LABEL.test(label);
+
+const namesThisLabAtAnEarlierInstitution = (label: string): boolean =>
+  ANOTHER_INSTITUTION_LABEL.test(label) &&
+  !OTHER_SCHOOLS_LABEL.test(label) &&
+  /\b(?:lab|laboratory|group)\b/i.test(label);
 
 const bracketedAffiliation = (entry: ListedPersonEntry): string | undefined => {
   const match = /^\s*,?\s*(?:(?:19|20)\d{2}(?:\s*[-–]\s*(?:19|20)\d{2})?\s*,?\s*)?\(([^)]+)\)/.exec(
@@ -1760,6 +1770,7 @@ function extractListedUndergraduates(
     const entries = listedPersonEntries(section);
     const otherInstitutionSection =
       namesAnotherInstitution(section.label) || namesAnotherInstitution(section.caption ?? '');
+    const thisLabsEarlierHome = namesThisLabAtAnEarlierInstitution(section.label);
     const bracketsNameHomeSchool = sectionBracketsNameHomeSchool(entries);
     const pageSectionStatus = section.withinPastSection ? 'past' : labelStatus;
     const statusOf = (entry: ListedPersonEntry): 'current' | 'past' =>
@@ -1778,7 +1789,9 @@ function extractListedUndergraduates(
         const sectionStatus = statusOf(entry);
         const homeSchool = bracketsNameHomeSchool ? bracketedAffiliation(entry) : undefined;
         const fromAnotherSchool =
-          (otherInstitutionSection && !entry.group) ||
+          (otherInstitutionSection &&
+            !entry.group &&
+            !(thisLabsEarlierHome && sectionStatus === 'past')) ||
           Boolean(entry.school && !namesYaleCollege(entry.school)) ||
           Boolean(homeSchool && !namesYaleCollege(homeSchool)) ||
           listedEntryIsFromAnotherSchool(
