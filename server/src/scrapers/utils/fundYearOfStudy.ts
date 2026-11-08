@@ -80,8 +80,11 @@ const TERM_PATTERNS: TermPattern[] = [
   { pattern: /^graduate affiliates?$/, term: UNMAPPED, standsAlone: true },
   { pattern: /^rising (?:first years?|freshm[ae]n)$/, term: UNMAPPED, standsAlone: true },
   { pattern: /^rising sophomores$/, term: year('First-Year Student'), standsAlone: true },
+  { pattern: /^rising sophomore$/, term: year('First-Year Student'), standsAlone: false },
   { pattern: /^rising juniors$/, term: year('Sophomore'), standsAlone: true },
+  { pattern: /^rising junior$/, term: year('Sophomore'), standsAlone: false },
   { pattern: /^rising seniors$/, term: year('Junior'), standsAlone: true },
+  { pattern: /^rising senior$/, term: year('Junior'), standsAlone: false },
   { pattern: /^(?:first years|freshmen)$/, term: year('First-Year Student'), standsAlone: true },
   { pattern: /^(?:first year|freshman)$/, term: year('First-Year Student'), standsAlone: false },
   { pattern: /^second years$/, term: year('Sophomore'), standsAlone: true },
@@ -120,7 +123,7 @@ const TERM_PATTERNS: TermPattern[] = [
 ];
 
 const TERM_SOURCE =
-  "graduate affiliates?(?! network)|rising (?:first years?|freshm[ae]n|sophomores|juniors|seniors)|recent (?:graduates|alumni)|first years?|second years?|third years?|fourth years?|freshm[ae]n|sophomores?|juniors?|seniors?|undergraduates?|undergrads?|yale college|college|graduate(?!s)|professional(?: school)?|master(?:'s|s)?(?: degree| level)?|doctoral|phd|law(?: school)?|jd|medical(?: school)?|md|alumni|alumnae|alums";
+  "graduate affiliates?(?! network)|rising (?:first years?|freshm[ae]n|sophomores?|juniors?|seniors?)|recent (?:graduates|alumni)|first years?|second years?|third years?|fourth years?|freshm[ae]n|sophomores?|juniors?|seniors?|undergraduates?|undergrads?|yale college|college|graduate(?!s)|professional(?: school)?|master(?:'s|s)?(?: degree| level)?|doctoral|phd|law(?: school)?|jd|medical(?: school)?|md|alumni|alumnae|alums";
 
 const CONNECTOR_SOURCE =
   '(?:\\s*(?:,|&|/|\\band/or\\b|\\band\\b|\\bor\\b|\\bthrough\\b)\\s*)+|\\s+';
@@ -164,6 +167,9 @@ const SENTENCE_OPENING_FOR = /^\W*for\b(?:\W+\w+){0,3}?\W*$/;
 const ADMISSION_AFTER =
   /^\W*(?:\w+\W+){0,5}?(?:(?:are|is)\s+(?:also\s+|only\s+)?(?:eligible|invited|welcome)|may (?:also |only )?apply|can (?:also |only )?apply)\b/;
 
+const ADMISSION_AFTER_HOME_INSTITUTION =
+  /^\s+from\s[^,;.]{0,60}?\b(?:are|is)\s+(?:also\s+|only\s+)?eligible\b/;
+
 const QUANTIFIED_COMPLETE =
   /\b(?:any|all|every)\s+(?:(?:current|currently|enrolled|yale|university|college)\s+)*$/;
 
@@ -201,16 +207,34 @@ const QUALIFIER = /\b(?:after|unless|until|before|following|once|if|when|to be u
 
 const CONDITIONAL_OPENING = /^\W*(?:if|when|unless)\b/;
 
+const RISING_YEAR = '(?:sophomores?|juniors?|seniors?)';
+
+// "Rising juniors and seniors" means rising juniors and rising seniors, so the class year
+// each word names moves up one; reading "seniors" bare admitted a year the page excludes.
+const RISING_YEAR_LIST = new RegExp(
+  `\\brising (${RISING_YEAR}(?:(?:\\s*,\\s*(?:(?:and|or)\\s+)?|\\s+(?:and|or)\\s+|\\s*[&/]\\s*)${RISING_YEAR})+)\\b`,
+  'g',
+);
+
+const RISING_YEAR_WORD = new RegExp(`\\b${RISING_YEAR}\\b`, 'g');
+
+const distributeRising = (text: string): string =>
+  text.replace(RISING_YEAR_LIST, (_match, years: string) =>
+    years.replace(RISING_YEAR_WORD, (word) => `rising ${word}`),
+  );
+
 function normalizeProse(text: string): string {
-  return text
-    .replace(/[‘’ʼ]/g, "'")
-    .replace(/\bPh\.?\s?D\.?(?=\W|$)/gi, 'PhD')
-    .replace(/\bJ\.D\.(?=\W|$)/g, 'JD')
-    .replace(/\bM\.D\.(?=\W|$)/g, 'MD')
-    .replace(/(?<=\w)-(?=\w)/g, ' ')
-    .replace(/\s+/g, ' ')
-    .toLowerCase()
-    .replace(/\bstudents (?:of|in|at|from) yale college\b/g, 'yale college students');
+  return distributeRising(
+    text
+      .replace(/[‘’ʼ]/g, "'")
+      .replace(/\bPh\.?\s?D\.?(?=\W|$)/gi, 'PhD')
+      .replace(/\bJ\.D\.(?=\W|$)/g, 'JD')
+      .replace(/\bM\.D\.(?=\W|$)/g, 'MD')
+      .replace(/(?<=\w)-(?=\w)/g, ' ')
+      .replace(/\s+/g, ' ')
+      .toLowerCase()
+      .replace(/\bstudents (?:of|in|at|from) yale college\b/g, 'yale college students'),
+  );
 }
 
 function sentencesOf(text: string): string[] {
@@ -263,7 +287,8 @@ function isExplicitlyCued(before: string, after: string): boolean {
     ELIGIBILITY_CUE.test(before) ||
     SUPPORT_CUE.test(before) ||
     SENTENCE_OPENING_FOR.test(before) ||
-    ADMISSION_AFTER.test(after)
+    ADMISSION_AFTER.test(after) ||
+    ADMISSION_AFTER_HOME_INSTITUTION.test(after)
   );
 }
 
@@ -328,6 +353,9 @@ function termsOfPhrase(phrase: string): LevelTerm[] {
   });
 }
 
+const namesYearStudents = (phrase: string): boolean =>
+  ENDS_IN_PERSON_HEAD.test(phrase) && yearWordCount(phrase) > 0;
+
 function groupsIn(sentence: string, isEligibilitySection: boolean): LevelGroup[] {
   if (CONDITIONAL_OPENING.test(sentence)) return [];
   const groups: LevelGroup[] = [];
@@ -348,7 +376,7 @@ function groupsIn(sentence: string, isEligibilitySection: boolean): LevelGroup[]
     const cued =
       Boolean(negation) ||
       isAdmissionCued(before, after, isEligibilitySection) ||
-      (quantifiedAfter && DIRECTLY_AFTER_FOR.test(before));
+      ((quantifiedAfter || namesYearStudents(phrase)) && DIRECTLY_AFTER_FOR.test(before));
     if (!cued) continue;
     phrases.push(phrase);
     groups.push({
@@ -467,4 +495,18 @@ export function resolveFundYearOfStudy(
   const admitted = [...base, ...evidence.additive.values(filterValues)];
   const values = inVocabularyOrder(admitted.filter((value) => !excluded.has(value)));
   return values.length > 0 ? { kind: 'prose', values } : { kind: 'unreconcilable' };
+}
+
+export function programPageYearOfStudy(page: {
+  eligibility?: string;
+  description?: string;
+}): YearOfStudy[] {
+  const resolution = resolveFundYearOfStudy(
+    [
+      { text: page.eligibility ?? '', isEligibilitySection: true },
+      { text: page.description ?? '', isEligibilitySection: false },
+    ],
+    [],
+  );
+  return resolution.kind === 'prose' ? resolution.values : [];
 }
