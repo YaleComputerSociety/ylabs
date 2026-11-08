@@ -171,6 +171,35 @@ describe('parseHealthSciencesProgramPage', () => {
     expect(candidate?.description).not.toContain('Fixture Person');
   });
 
+  it('reads the year of study a program blurb names and emits it as an observation', () => {
+    const html = `
+      <main>
+        <h1>Fixture Child Health Summer Internship</h1>
+        <p>An eight-week summer internship for rising junior and senior undergraduate students is offered by a Yale research center each year.</p>
+        <p>Interns join a research group and present a poster at the end of the summer.</p>
+      </main>
+    `;
+    const candidate = parseHealthSciencesProgramPage(html, surfUrl, 'Yale', referenceDate);
+    expect(candidate?.yearOfStudy).toEqual(['Sophomore', 'Junior']);
+    expect(
+      candidateToObservations(candidate!).find((item) => item.field === 'yearOfStudy')?.value,
+    ).toEqual(['Sophomore', 'Junior']);
+  });
+
+  it('states no year of study when the only named level is an exception to an unnamed main audience', () => {
+    const html = `
+      <main>
+        <h1>Fixture Enrichment Summer Research Program</h1>
+        <p>A six-week summer research program for undergraduate students enrolled at another institution.</p>
+        <h2>Eligibility</h2>
+        <p>Applicants must be currently enrolled in an undergraduate degree granting institution. Recent graduates pursuing a research master's degree may also be considered.</p>
+      </main>
+    `;
+    const candidate = parseHealthSciencesProgramPage(html, surfUrl, 'Yale', referenceDate);
+    expect(candidate).toBeDefined();
+    expect(candidate?.yearOfStudy).toEqual([]);
+  });
+
   it('returns undefined for a page with no undergraduate summer-research signal', () => {
     const candidate = parseHealthSciencesProgramPage(
       '<main><h1>Department Directory</h1><p>Faculty office hours and contact list.</p></main>',

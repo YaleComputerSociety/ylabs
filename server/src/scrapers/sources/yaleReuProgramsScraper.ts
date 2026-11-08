@@ -17,6 +17,7 @@
  * link, never fetched or cited as a source.
  */
 import axios from 'axios';
+import { programPageYearOfStudy } from '../utils/fundYearOfStudy';
 import crypto from 'crypto';
 import * as cheerio from 'cheerio';
 import { getCached, setCached } from '../snapshotCache';
@@ -90,6 +91,7 @@ export interface ReuProgramCandidate {
   links: Array<{ label: string; url: string }>;
   deadline?: Date;
   contactOffice?: string;
+  yearOfStudy: string[];
   termOfAward: string[];
   purpose: string[];
   isAcceptingApplications: boolean;
@@ -308,6 +310,7 @@ export function parseReuProgramPage(
     deadline,
     contactOffice: hostingOffice || undefined,
     termOfAward,
+    yearOfStudy: programPageYearOfStudy({ eligibility, description }),
     purpose: ['Research'],
     isAcceptingApplications,
     reviewRequired: !deadline,
@@ -383,6 +386,7 @@ export function candidateToObservations(candidate: ReuProgramCandidate): Observa
     observation('deadline', candidate.deadline, candidate),
     observation('contactOffice', candidate.contactOffice, candidate),
     observation('termOfAward', candidate.termOfAward, candidate),
+    observation('yearOfStudy', candidate.yearOfStudy, candidate),
     observation('purpose', candidate.purpose, candidate),
     observation('isAcceptingApplications', candidate.isAcceptingApplications, candidate),
     observation('reviewRequired', candidate.reviewRequired, candidate),
