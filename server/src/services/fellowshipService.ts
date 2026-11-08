@@ -1073,6 +1073,7 @@ export const searchFellowships = async (params: {
     totalPages: Math.ceil(orderedIds.length / pageSize),
     ...(queryCorrection ? { queryCorrection } : {}),
     ...(ranked.missingOneWord ? { queryMatch: 'allButOneWord' as const } : {}),
+    ...(ranked.closeMatchesFrom !== null ? { closeMatchesFrom: ranked.closeMatchesFrom } : {}),
   };
 };
 

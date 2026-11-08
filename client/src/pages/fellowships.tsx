@@ -234,7 +234,7 @@ const trustTierFilterOptions: Array<{ value: StudentVisibilityTier; label: strin
   { value: 'suppressed', label: 'Suppressed' },
 ];
 
-type ProgramDisplaySection = ProgramBoardSection | 'bestMatches';
+type ProgramDisplaySection = ProgramBoardSection | 'bestMatches' | 'closeMatches';
 
 const boardSections: Array<{
   key: ProgramDisplaySection;
@@ -291,13 +291,17 @@ const searchResultSections: typeof boardSections = [
   ...boardSections.filter((section) => section.key === 'archive'),
 ];
 
+const CLOSE_MATCHES_DESCRIPTION =
+  'Each of these programs mentions all but one of the words you typed, closest match first.';
+
 const closeMatchSections: typeof boardSections = [
-  {
-    key: 'bestMatches',
-    title: 'Close matches',
-    description:
-      'Each of these programs mentions all but one of the words you typed, closest match first.',
-  },
+  { key: 'bestMatches', title: 'Close matches', description: CLOSE_MATCHES_DESCRIPTION },
+  ...boardSections.filter((section) => section.key === 'archive'),
+];
+
+const searchResultWithCloseMatchSections: typeof boardSections = [
+  ...searchResultSections.filter((section) => section.key === 'bestMatches'),
+  { key: 'closeMatches', title: 'Close matches', description: CLOSE_MATCHES_DESCRIPTION },
   ...boardSections.filter((section) => section.key === 'archive'),
 ];
 
@@ -430,6 +434,7 @@ const Fellowships = () => {
     queryCorrection,
     resultsRankedByRelevance,
     resultsMissOneWord,
+    resultsCloseMatchesFrom,
     searchTypedSpelling,
     fellowships,
     isLoading,
@@ -756,13 +761,18 @@ const Fellowships = () => {
     for (const key of PROGRAM_BOARD_SECTIONS) {
       byKey[key] = toBrowsable(boardGroups[key].filter(matchesQuickFilter));
     }
-    byKey.bestMatches = toBrowsable(
-      fellowships.filter(
-        (f) => programBoardSectionOf(f, cycleOf.get(f)!) !== 'archive' && matchesQuickFilter(f),
-      ),
+    const ranked = fellowships.filter(
+      (f) => programBoardSectionOf(f, cycleOf.get(f)!) !== 'archive' && matchesQuickFilter(f),
     );
+    const closeMatchIds = new Set(
+      resultsCloseMatchesFrom === null
+        ? []
+        : fellowships.slice(resultsCloseMatchesFrom).map((f) => f.id),
+    );
+    byKey.bestMatches = toBrowsable(ranked.filter((f) => !closeMatchIds.has(f.id)));
+    byKey.closeMatches = toBrowsable(ranked.filter((f) => closeMatchIds.has(f.id)));
     return byKey;
-  }, [boardGroups, cycleOf, fellowships, quickFilter]);
+  }, [boardGroups, cycleOf, fellowships, quickFilter, resultsCloseMatchesFrom]);
 
   const watchProgram = (programId: string) => {
     if (!localStorage.getItem(FIRST_PROGRAM_SAVE_KEY)) {
@@ -1093,7 +1103,9 @@ const Fellowships = () => {
                 {(showCloseMatches
                   ? closeMatchSections
                   : showSearchRanking
-                    ? searchResultSections
+                    ? resultsCloseMatchesFrom === null
+                      ? searchResultSections
+                      : searchResultWithCloseMatchSections
                     : boardSections
                 ).map((section) =>
                   boardItems[section.key].length > 0 ? (

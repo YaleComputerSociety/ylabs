@@ -80,15 +80,18 @@ describe('rankProgramSearch ranked programs', () => {
     ]);
   });
 
-  it('prefers programs that carry every word over those missing one', () => {
+  it('ranks programs that carry every word above those missing one', () => {
     const catalog = [
       program('History Research Grant', 'Research in history.'),
       program('Humanities Research Fellowship', 'Research in history and the humanities.'),
     ];
 
-    expect(titles(rankedPrograms('history humanities research', catalog))).toEqual([
+    const ranked = rankProgramSearch('history humanities research', catalog);
+    expect(titles(ranked.programs)).toEqual([
       'Humanities Research Fellowship',
+      'History Research Grant',
     ]);
+    expect(ranked.closeMatchesFrom).toBe(1);
   });
 
   it('widens a typed topic to its subject only when no program names the topic', () => {
@@ -176,6 +179,7 @@ describe('rankProgramSearch', () => {
     expect(rankProgramSearch('history humanities research', catalog)).toEqual({
       programs: [catalog[0]],
       missingOneWord: true,
+      closeMatchesFrom: null,
     });
   });
 
@@ -187,7 +191,45 @@ describe('rankProgramSearch', () => {
     expect(rankProgramSearch('quantum origami', catalog)).toEqual({
       programs: [],
       missingOneWord: false,
+      closeMatchesFrom: null,
     });
+  });
+});
+
+describe('rankProgramSearch close matches below a thin every-word result', () => {
+  const seniorEssayGrant = (college: string) =>
+    program(
+      `${college} College Senior Research Grant`,
+      'Funds a senior research project or senior essay.',
+    );
+  const everyWord = program('Regional Studies Travel Grant', 'Supports a senior essay in history.');
+  const grants = ['Harbor', 'Ridge', 'Meadow', 'Summit', 'Willow', 'Cedar'].map(seniorEssayGrant);
+
+  it('lists programs missing one word below fewer than five that carry every word', () => {
+    const ranked = rankProgramSearch('history senior essay', [everyWord, ...grants]);
+
+    expect(ranked.programs[0]).toBe(everyWord);
+    expect(ranked.closeMatchesFrom).toBe(1);
+    expect(ranked.programs.slice(1)).toEqual(expect.arrayContaining(grants));
+    expect(ranked.programs).toHaveLength(1 + grants.length);
+    expect(ranked.missingOneWord).toBe(false);
+  });
+
+  it('keeps the every-word rule once five programs carry every word', () => {
+    const fiveEveryWord = ['North', 'South', 'East', 'West', 'Central'].map((name) =>
+      program(`${name} History Senior Essay Grant`, 'Funds a history senior essay.'),
+    );
+    const ranked = rankProgramSearch('history senior essay', [...fiveEveryWord, ...grants]);
+
+    expect(ranked.programs).toEqual(fiveEveryWord);
+    expect(ranked.closeMatchesFrom).toBeNull();
+  });
+
+  it('never lists close matches for a query under three words', () => {
+    const ranked = rankProgramSearch('history essay', [everyWord, ...grants]);
+
+    expect(ranked.programs).toEqual([everyWord]);
+    expect(ranked.closeMatchesFrom).toBeNull();
   });
 });
 

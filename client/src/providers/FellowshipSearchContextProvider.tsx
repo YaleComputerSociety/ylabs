@@ -81,6 +81,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     queryCorrection,
     resultsRankedByRelevance,
     resultsMissOneWord,
+    resultsCloseMatchesFrom,
     selectedProgramCategory,
     selectedProgramKind,
     selectedEntryMode,
@@ -357,6 +358,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
       let reportedTotal = Infinity;
       let queryCorrection = null;
       let missOneWord = false;
+      let closeMatchesFrom: number | null = null;
 
       while (collected.length < reportedTotal) {
         const response = await axios.get(
@@ -370,6 +372,10 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
         if (currentPage === 1) {
           queryCorrection = response.data.queryCorrection ?? null;
           missOneWord = response.data.queryMatch === 'allButOneWord';
+          closeMatchesFrom =
+            typeof response.data.closeMatchesFrom === 'number'
+              ? response.data.closeMatchesFrom
+              : null;
         }
         reportedTotal =
           typeof response.data.total === 'number' ? response.data.total : collected.length;
@@ -377,11 +383,11 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
         currentPage += 1;
       }
 
-      return { collected, reportedTotal, queryCorrection, missOneWord };
+      return { collected, reportedTotal, queryCorrection, missOneWord, closeMatchesFrom };
     };
 
     accumulate()
-      .then(({ collected, reportedTotal, queryCorrection, missOneWord }) => {
+      .then(({ collected, reportedTotal, queryCorrection, missOneWord, closeMatchesFrom }) => {
         if (loadRequestIdRef.current !== requestId) return;
         dispatch({
           type: 'SEARCH_SUCCESS',
@@ -393,6 +399,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
             queryCorrection,
             rankedByRelevance,
             missOneWord,
+            closeMatchesFrom,
           },
         });
       })
@@ -503,6 +510,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
         queryCorrection,
         resultsRankedByRelevance,
         resultsMissOneWord,
+        resultsCloseMatchesFrom,
         searchTypedSpelling,
         selectedProgramCategory,
         setSelectedProgramCategory,

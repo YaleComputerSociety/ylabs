@@ -117,12 +117,14 @@ const renderFellowships = ({
   quickFilter = null,
   resultsRankedByRelevance = false,
   resultsMissOneWord = false,
+  resultsCloseMatchesFrom = null,
   sortBy = 'default',
 }: {
   fellowships: Fellowship[];
   quickFilter?: FellowshipQuickFilter;
   resultsRankedByRelevance?: boolean;
   resultsMissOneWord?: boolean;
+  resultsCloseMatchesFrom?: number | null;
   sortBy?: string;
 }) =>
   render(
@@ -142,6 +144,7 @@ const renderFellowships = ({
             quickFilter,
             resultsRankedByRelevance,
             resultsMissOneWord,
+            resultsCloseMatchesFrom,
             sortBy,
             setQueryString: vi.fn(),
             refreshFellowships: vi.fn(),
@@ -201,6 +204,25 @@ describe('Fellowships grouping', () => {
     expect(screen.getByText('No program mentions every word you typed.')).toBeTruthy();
     expect(titlesIn('Close matches')).toEqual(['Best Match Award', 'Weaker Match Award']);
     expect(screen.queryByRole('region', { name: 'Best matches' })).toBeNull();
+  });
+
+  it('lists close matches in their own section below a thin every-word result', () => {
+    renderFellowships({
+      fellowships: searchMatches(),
+      resultsRankedByRelevance: true,
+      resultsCloseMatchesFrom: 1,
+    });
+
+    expect(titlesIn('Best matches')).toEqual(['Best Match Award']);
+    expect(titlesIn('Close matches')).toEqual(['Weaker Match Award']);
+    expect(titlesIn('Archive / review')).toEqual(['Retained Match Record']);
+    expect(screen.queryByText('No program mentions every word you typed.')).toBeNull();
+    const sections = screen
+      .getAllByRole('region')
+      .map((region) => region.getAttribute('aria-labelledby'));
+    expect(sections.indexOf('program-section-bestMatches')).toBeLessThan(
+      sections.indexOf('program-section-closeMatches'),
+    );
   });
 
   it('still says no program carries every word when the results are sorted by deadline', () => {
