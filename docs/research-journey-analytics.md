@@ -40,6 +40,18 @@ No row of it was ever stored in any database, so #4985 removed the enum value, t
 Source review, profile open, results view, filter, save, compare, and plan events never count as access conversion.
 `outreach_outcome` remains a separate self-reported outcome and is not inferred from any click.
 
+## Email Clicks
+
+A click on an email address on the research detail page records `contact_route_click`, not a `research_source_review`.
+It is one of the three legacy research events (`ways_in_click`, `contact_route_click`, `source_link_click`) the batch route still accepts beside the journey taxonomy, and `RESEARCH_EVENT_TYPES` in `server/src/services/researchAnalytics.ts` lists all of them.
+Its allowlisted payload is `contactMethod` (one of `CONTACT_METHODS`, `email` for a `mailto:` link) and an optional `surface`, one of `CONTACT_ROUTE_SURFACES`.
+The `surface` is `lead_card` for the email on a lead's card and `reach_out` for the email in the "How to get involved" reach-out line.
+A click from anywhere else, including a program's contact on `/programs`, carries no `surface`, and a value outside the allowlist is dropped rather than stored.
+The page records it from one capture-phase click handler on the whole detail page, which reads the surface from the anchor's `data-contact-route-surface` attribute, so a new email link is counted without any wiring and names its surface only if it sets that attribute.
+The payload never carries the address, the `mailto:` href, or a host, only the method and the surface.
+Before #3459 the detail page recorded nothing for an email click, and rows before the `surface` field have no `surface`, so a lead-card versus reach-out split starts when it shipped.
+An email click is a contact attempt, not a source inspection, so it is not counted among the admin funnel's source inspections, and like every click it is never an access conversion.
+
 ## Privacy And Reliability
 
 Everything in this section describes `analytics_events`, the first-party instrument.

@@ -15,6 +15,7 @@ export interface FellowshipSearchContextType {
   queryCorrection: ProgramSearchQueryCorrection | null;
   resultsRankedByRelevance: boolean;
   resultsMissOneWord: boolean;
+  resultsCloseMatchesFrom: number | null;
   searchTypedSpelling: () => void;
 
   selectedYearOfStudy: string[];
@@ -79,6 +80,7 @@ export const defaultFellowshipSearchContext: FellowshipSearchContextType = {
   queryCorrection: null,
   resultsRankedByRelevance: false,
   resultsMissOneWord: false,
+  resultsCloseMatchesFrom: null,
   searchTypedSpelling: () => {},
   selectedYearOfStudy: [],
   selectedProgramCategory: [],

@@ -74,6 +74,18 @@ describe('parseReuProgramPage', () => {
     expect(candidate?.termOfAward).toContain('Summer');
   });
 
+  it('reads rising years from the program prose as the admitted year of study', () => {
+    const html = `
+      <main>
+        <h1>Fixture Summer Undergraduate Research in Environmental Science</h1>
+        <p>A ten-week NSF REU summer research program in environmental science at Yale.</p>
+        <p>Rising juniors and seniors from 4-year colleges and universities are eligible to apply.</p>
+      </main>
+    `;
+    const candidate = parseReuProgramPage(html, mathUrl, 'Yale', referenceDate);
+    expect(candidate?.yearOfStudy).toEqual(['Sophomore', 'Junior']);
+  });
+
   it('extracts a summer research program that does not use the REU acronym', () => {
     const candidate = parseReuProgramPage(
       mathSummerHtml,

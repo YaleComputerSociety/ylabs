@@ -71,6 +71,8 @@ Instead, `ScrollToTop` moves focus to `#main-content` at the moment a page-scrol
 It stops at the first pointer press, because a click gives the browser its own scroll origin and the keys then belong to whichever inner panel was clicked.
 - A control that removes itself hands focus somewhere the student can carry on from, never to the document body.
 "Clear all filters" on `/research` moves focus to the "Research filters" heading in the wide sidebar and to the Filters trigger in the narrow bar through `focusResearchFiltersEntry`, which looks the target up after the render because clearing with no query swaps to the browse view and mounts a new filter bar; inside the open filter panel it stays in the panel (#5496).
+- A search field's clear control is a real button in the tab order, never the native `type="search"` cancel button, which is drawn inside the input and never takes focus.
+The `/research` box hides `::-webkit-search-cancel-button` and renders a 44px "Clear search" button inside the field that empties the query and returns focus to the box (#5497).
 - Disabled controls explain why they are disabled, near the control, rather than looking broken.
 - A filter sheet that covers the results ends in a button naming what it leaves, "Show N results", which closes the sheet, returns focus to its trigger, and scrolls the results section into view, because the student cannot see the results change behind the scrim.
 `ResearchFilterDisclosure` takes the count as `resultCount` and swaps the label to "Updating results…" in the same grid cell while `resultCountPending` is set.
@@ -134,6 +136,8 @@ A projected next-cycle estimate always names its year (`formatProjectedProgramDa
 - Empty states say what the surface is for and offer the next action.
 - A program that requires a mentor first answers "Yes, line up your own mentor before applying", and when its source application text carries a labelled award contact with a value (an award, program, grant, or fellowship manager, contact, coordinator, or administrator label, optionally "/Faculty Mentor", followed by a colon and a value), the modal adds `PROGRAM_CONTACT_IS_NOT_YOUR_MENTOR_NOTE`, because a student read the award's named contact as an assigned mentor.
 - An outbound action names the place it opens and says it leaves y/labs: the research detail "How to get involved" actions carry the external-link icon and a visible note, linked by `aria-describedby`, naming the site they open, and a not-yet-open program's action reads "See the official program page" rather than promising to track a date (#5306).
+- A link label names the place the link opens.
+A program's "Source:" link names the discovering office only when the link is on that office's own host, and otherwise shows the host it opens (`programSourceLinkLabel` in `client/src/utils/programLinks.ts`), because `sourceName` is the lane that found the row, and about 180 of 537 Development rows had linked a department or college page under an office's name (#5480).
 - Every route sets a meaningful page title.
 - Never render placeholder or half-finished content to real users.
 

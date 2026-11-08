@@ -216,14 +216,19 @@ const byRelevance = <T>(a: ScoredProgram<T>, b: ScoredProgram<T>): number =>
 export interface RankedProgramSearch<T> {
   programs: T[];
   missingOneWord: boolean;
+  closeMatchesFrom: number | null;
 }
+
+export const THIN_EVERY_WORD_RESULT_COUNT = 5;
 
 export const rankProgramSearch = <T extends Record<string, unknown>>(
   query: string,
   programs: readonly T[],
 ): RankedProgramSearch<T> => {
   const contentWords = programQueryContentWords(query);
-  if (contentWords.length === 0) return { programs: [], missingOneWord: false };
+  if (contentWords.length === 0) {
+    return { programs: [], missingOneWord: false, closeMatchesFrom: null };
+  }
   const umbrella = umbrellaSubjectPhrases(contentWords);
   const score = (subjectPhrasesToMatch: string[][]) =>
     programs
@@ -235,11 +240,23 @@ export const rankProgramSearch = <T extends Record<string, unknown>>(
   }
   const missingOneWord =
     scored.length > 0 && scored.every((entry) => entry.kind === 'allButOneWord');
-  const strongest = missingOneWord
-    ? scored
-    : scored.filter((entry) => entry.kind !== 'allButOneWord');
+  if (missingOneWord) {
+    return {
+      programs: scored.sort(byRelevance).map((entry) => entry.program),
+      missingOneWord,
+      closeMatchesFrom: null,
+    };
+  }
+  const strongest = scored.filter((entry) => entry.kind !== 'allButOneWord').sort(byRelevance);
+  const closeMatches = scored.filter((entry) => entry.kind === 'allButOneWord').sort(byRelevance);
+  const everyWordCount = strongest.filter((entry) => entry.kind === 'allWords').length;
+  const listsCloseMatches =
+    closeMatches.length > 0 && everyWordCount < THIN_EVERY_WORD_RESULT_COUNT;
   return {
-    programs: strongest.sort(byRelevance).map((entry) => entry.program),
+    programs: [...strongest, ...(listsCloseMatches ? closeMatches : [])].map(
+      (entry) => entry.program,
+    ),
     missingOneWord,
+    closeMatchesFrom: listsCloseMatches ? strongest.length : null,
   };
 };

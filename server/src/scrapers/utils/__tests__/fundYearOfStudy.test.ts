@@ -5,6 +5,73 @@ const read = (text: string, filter: string[] = []) =>
   resolveFundYearOfStudy([{ text, isEligibilitySection: true }], filter);
 
 describe('resolveFundYearOfStudy phrasing shapes', () => {
+  it('carries rising across a list of years, so each named year moves up one', () => {
+    expect(read('Open to rising juniors and seniors.')).toEqual({
+      kind: 'prose',
+      values: ['Sophomore', 'Junior'],
+    });
+    expect(read('Open to rising sophomores, juniors, and seniors.')).toEqual({
+      kind: 'prose',
+      values: ['First-Year Student', 'Sophomore', 'Junior'],
+    });
+  });
+
+  it('reads a singular rising year before a student noun', () => {
+    expect(read('The internship is for rising junior and senior undergraduate students.')).toEqual({
+      kind: 'prose',
+      values: ['Sophomore', 'Junior'],
+    });
+  });
+
+  it('reads a program blurb that names its students after for, outside an eligibility section', () => {
+    expect(
+      resolveFundYearOfStudy(
+        [
+          {
+            text: 'A summer internship for rising junior and senior undergraduate students is offered each year.',
+            isEligibilitySection: false,
+          },
+        ],
+        [],
+      ),
+    ).toEqual({ kind: 'prose', values: ['Sophomore', 'Junior'] });
+  });
+
+  it('reads an admission predicate that follows a longer description of the students', () => {
+    expect(
+      resolveFundYearOfStudy(
+        [
+          {
+            text: 'Rising juniors and seniors from 4-year colleges and universities are eligible to apply.',
+            isEligibilitySection: false,
+          },
+        ],
+        [],
+      ),
+    ).toEqual({ kind: 'prose', values: ['Sophomore', 'Junior'] });
+  });
+
+  it('reads a negated predicate after a list of excluded students as excluding every listed year', () => {
+    expect(
+      read(
+        'Rising juniors and seniors are eligible to apply. Graduating seniors, graduate students, and visiting students are not eligible.',
+      ),
+    ).toEqual({ kind: 'prose', values: ['Sophomore', 'Junior'] });
+    expect(
+      read(
+        'Undergraduates are eligible. Seniors, graduate students, or visiting students are not eligible.',
+      ),
+    ).toEqual({ kind: 'prose', values: ['First-Year Student', 'Sophomore', 'Junior'] });
+  });
+
+  it('does not carry a negation across a clause that is not part of the subject list', () => {
+    expect(
+      read(
+        'Juniors and seniors are eligible. Seniors, while graduate students are not eligible, may apply.',
+      ),
+    ).toEqual({ kind: 'prose', values: ['Junior', 'Senior'] });
+  });
+
   it('reads a trailing relative clause as a condition on the students, not an exclusion of the years', () => {
     expect(
       read(
