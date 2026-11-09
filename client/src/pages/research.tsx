@@ -1605,17 +1605,9 @@ const Research = () => {
   const hasStudentFacetSelection = activeStudentFilterCount > 0;
   const hasSubmittableChange = query.trim().length > 0 && query.trim() !== submittedQuery;
   const searchDisabled = searchLoading && !hasSubmittableChange;
-  const searchHelpText = query.trim()
-    ? ''
-    : hasStudentFacetSelection
-      ? 'Search with the selected filters.'
-      : showEmptySearchHint
-        ? 'Type a topic, professor, or lab to search.'
-        : '';
-  const searchHelpVisibilityClass = !searchHelpText
-    ? 'hidden'
-    : hasStudentFacetSelection
-      ? 'xl:hidden'
+  const searchHelpText =
+    !query.trim() && !hasStudentFacetSelection && showEmptySearchHint
+      ? 'Type a topic, professor, or lab to search.'
       : '';
   const departmentFacetLabel = (department: string) =>
     getUniqueDepartmentLabels([department], departments)[0] || department;
@@ -2045,7 +2037,7 @@ const Research = () => {
               <p
                 id="research-search-help"
                 aria-live="polite"
-                className={`mt-2 text-sm text-muted xl:text-xs ${searchHelpVisibilityClass}`}
+                className={`mt-2 text-sm text-muted xl:text-xs ${searchHelpText ? '' : 'hidden'}`}
               >
                 {searchHelpText}
               </p>
