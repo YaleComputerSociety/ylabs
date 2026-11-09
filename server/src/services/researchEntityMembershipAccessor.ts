@@ -10,7 +10,10 @@ import {
   type RoleAssignmentRole,
   type RoleAssignmentRosterProvenance,
 } from '../models/roleAssignment';
-import { LEGACY_ROLE_BY_CANONICAL } from '../models/canonicalRoleMapping';
+import {
+  LEAD_ROLE_CANONICAL_VALUES,
+  LEGACY_ROLE_BY_CANONICAL,
+} from '../models/canonicalRoleMapping';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { servableOrcid } from '../utils/orcid';
 import { isInadmissiblePersonWebsiteUrl } from '../utils/researchHomeWebsiteUrl';
@@ -119,12 +122,7 @@ const buildRosterEntry = (
   };
 };
 
-const LEAD_CANONICAL_ROLES: ReadonlySet<RoleAssignmentRole> = new Set([
-  'PI',
-  'CO_PI',
-  'DIRECTOR',
-  'CO_DIRECTOR',
-]);
+const LEAD_CANONICAL_ROLES: ReadonlySet<RoleAssignmentRole> = new Set(LEAD_ROLE_CANONICAL_VALUES);
 
 const canonicalRolePriority = (role: RoleAssignmentRole): number => {
   const index = roleAssignmentRoles.indexOf(role);
