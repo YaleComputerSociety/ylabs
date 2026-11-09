@@ -10,7 +10,10 @@ import {
   type RoleAssignmentRole,
   type RoleAssignmentRosterProvenance,
 } from '../models/roleAssignment';
-import { LEGACY_ROLE_BY_CANONICAL } from '../models/canonicalRoleMapping';
+import {
+  LEAD_ROLE_CANONICAL_VALUES,
+  LEGACY_ROLE_BY_CANONICAL,
+} from '../models/canonicalRoleMapping';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { servableOrcid } from '../utils/orcid';
 import { isInadmissiblePersonWebsiteUrl } from '../utils/researchHomeWebsiteUrl';
@@ -119,6 +122,8 @@ const buildRosterEntry = (
   };
 };
 
+const LEAD_CANONICAL_ROLES: ReadonlySet<RoleAssignmentRole> = new Set(LEAD_ROLE_CANONICAL_VALUES);
+
 const canonicalRolePriority = (role: RoleAssignmentRole): number => {
   const index = roleAssignmentRoles.indexOf(role);
   return index === -1 ? roleAssignmentRoles.length : index;
@@ -129,8 +134,13 @@ const collapseRosterEntriesByPerson = (
 ): ResearchEntityRosterEntry[] => {
   const bestByPerson = new Map<string, ResearchEntityRosterEntry>();
   const order: string[] = [];
+  // `UNKNOWN` is the materializer's normal state and the gate and detail page read it
+  // as current (#3745), so a live lead must not lose to a `CURRENT` roster line for the
+  // same person: that dropped a lab's own lead whenever its roster listed them (#5518).
+  const isLiveLead = (entry: ResearchEntityRosterEntry): boolean =>
+    entry.state !== 'HISTORICAL' && LEAD_CANONICAL_ROLES.has(entry.roleCanonical);
   const statePrecedence = (entry: ResearchEntityRosterEntry): number =>
-    entry.isCurrentMember ? 0 : entry.state === 'HISTORICAL' ? 2 : 1;
+    entry.isCurrentMember || isLiveLead(entry) ? 0 : entry.state === 'HISTORICAL' ? 2 : 1;
   const outranks = (
     candidate: ResearchEntityRosterEntry,
     incumbent: ResearchEntityRosterEntry,

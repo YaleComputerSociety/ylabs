@@ -220,6 +220,64 @@ describe('getResearchEntityRoster display profile projection', () => {
     expect(roster[0].role).toBe('pi');
   });
 
+  it("keeps a lab's own lead when its official roster also lists them as current faculty", async () => {
+    const entityId = new mongoose.Types.ObjectId();
+    const person = await Researcher.create({
+      displayName: 'Roster Listed Lead',
+      profileLinks: [],
+      status: 'ACTIVE',
+      archived: false,
+    });
+    await RoleAssignment.create({
+      personId: person._id,
+      target: { kind: 'RESEARCH_ENTITY', id: entityId },
+      role: 'CORE_FACULTY',
+      state: 'CURRENT',
+      confidence: 0.9,
+    });
+    await RoleAssignment.create({
+      personId: person._id,
+      target: { kind: 'RESEARCH_ENTITY', id: entityId },
+      role: 'PI',
+      state: 'UNKNOWN',
+      confidence: 0.9,
+    });
+
+    const roster = await getResearchEntityRoster(entityId);
+
+    expect(roster).toHaveLength(1);
+    expect(roster[0].roleCanonical).toBe('PI');
+  });
+
+  it('still prefers a current roster line over an unconfirmed non-lead record for the same person', async () => {
+    const entityId = new mongoose.Types.ObjectId();
+    const person = await Researcher.create({
+      displayName: 'Roster Listed Postdoc',
+      profileLinks: [],
+      status: 'ACTIVE',
+      archived: false,
+    });
+    await RoleAssignment.create({
+      personId: person._id,
+      target: { kind: 'RESEARCH_ENTITY', id: entityId },
+      role: 'STAFF',
+      state: 'UNKNOWN',
+      confidence: 0.6,
+    });
+    await RoleAssignment.create({
+      personId: person._id,
+      target: { kind: 'RESEARCH_ENTITY', id: entityId },
+      role: 'POSTDOC',
+      state: 'CURRENT',
+      confidence: 0.9,
+    });
+
+    const roster = await getResearchEntityRoster(entityId);
+
+    expect(roster).toHaveLength(1);
+    expect(roster[0].roleCanonical).toBe('POSTDOC');
+  });
+
   it('surfaces a live lead over a historical assignment for the same person', async () => {
     const entityId = new mongoose.Types.ObjectId();
     const account = await Account.create({
