@@ -511,6 +511,10 @@ An entity with more than one lead assignment, a merged survivor, and a tombstone
 In an apply run a row marks its own id and slug, and a fold marks its canonical, before anything is written.
 From then on every answer about a marked row reads live, and so does every "no document" answer after a create in the chunk.
 A prefetch that fails falls back to per-row reads.
+`MATERIALIZE_CONCURRENCY` (default 1, capped at 16) lets a chunk materialize several rows at once (#5521).
+Only a row that updates its own live, unmerged, already-stored research entity, is not a `dept-*` key, and is the only row in the chunk naming that entity runs in parallel; every other row runs afterwards, sequentially, in its original order.
+The rule exists because the other rows write or read another row: a create can be adopted by a sibling's identity lookup, a `dept-*` shell folds into its canonical, a merged survivor reads its losers, and two rows naming one entity race on the same document, which the apply-parity test reproduces as a lost write when the rule is removed.
+Measured in a dry run on 300 sampled Development rows from a laptop, concurrency 4, 8 and 16 gave 28.8, 33.9 and 39.3 rows per second against 10.7 sequentially, with identical plans.
 Dry-run projections were measured identical, apart from the wall-clock `lastObservedAt` and confidence decay of at most 1.5e-6, on 600 sampled Development rows from three lanes.
 
 The consequence is a stable failure mode rather than a transient one.

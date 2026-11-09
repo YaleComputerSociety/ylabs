@@ -190,6 +190,7 @@ None of these is a secret, and none belongs on a web service.
 | -------- | ------- |
 | `SCRAPER_FIELD_RETRACTION`, `SCRAPER_FACULTY_DEPARTURE_DETECTION`, `SCRAPER_YSM_LAB_DELISTING_DETECTION`, `C4_LOSSLESS_INGEST`, `C4_RESOLVE_AT_MINT_ENTITIES` | Scraper and materializer behaviour switches |
 | `SCRAPER_PER_HOST_CONCURRENCY`, `SCRAPER_ROSTER_LANE_CONCURRENCY` | Fetch pacing |
+| `MATERIALIZE_CONCURRENCY` | How many independent rows a materialize chunk writes at once; unset or invalid means 1, capped at 16 |
 | `SCRAPER_HTTP_CACHE`, `SCRAPER_HTTP_CACHE_DIR`, `SCRAPER_HTTP_CACHE_MAX_MB`, `XDG_CACHE_HOME` | The HTTP validator cache and the host-slot broker |
 | `SCRAPER_MACHINE_HOST_SLOTS`, `SCRAPER_MACHINE_HOST_SLOT_DIR`, `SCRAPER_HOST_SLOT_ACQUIRE_TIMEOUT_MS`, `SCRAPER_HOST_SLOT_BROKER` | Machine-wide host-slot sharing; the sweep sets `SCRAPER_HOST_SLOT_BROKER` for its children |
 | `SCRAPER_SWEEP_PAGE_REUSE`, `SCRAPER_SWEEP_PAGE_REUSE_MAX_MB` | Sweep page reuse; the sweep sets `SCRAPER_SWEEP_PAGE_REUSE` for its children |

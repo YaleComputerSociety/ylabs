@@ -29,6 +29,9 @@ import {
   materializationReadScopeFilter,
   materializeEntity,
   materializeObservedEntitiesInChunks,
+  materializationConcurrencyFromEnv,
+  MAX_MATERIALIZATION_CONCURRENCY,
+  partitionChunkForConcurrency,
   type ObservedEntityOutcome,
   type ObservedEntityRow,
 } from '../entityMaterializer';
@@ -308,4 +311,126 @@ describe('chunked materialization reads per chunk and projects what row-by-row d
     prefetch.markTouched('example-id-lab');
     expect(prefetch.observationsForKey('researchEntity', 'example-id-lab').hit).toBe(false);
   }, 120000);
+
+  const seedIndependentLabs = async (count: number): Promise<ObservedEntityRow[]> => {
+    const sharedLead = await Researcher.create({ displayName: 'Shared Lead', archived: false });
+    const rows: ObservedEntityRow[] = [];
+    for (let index = 0; index < count; index += 1) {
+      const slug = `example-plain-lab-${index}`;
+      const lab = await ResearchEntity.create({
+        slug,
+        name: `Example Plain Lab ${index}`,
+        kind: 'lab',
+        archived: false,
+      });
+      await seedObservation({ entityKey: slug }, 'name', `Example Plain Lab ${index} Renamed`);
+      await seedObservation({ entityId: lab._id }, 'researchAreas', [`Topic ${index}`]);
+      await seedObservation(
+        { entityKey: slug },
+        'websiteUrl',
+        `https://example-plain-lab-${index}.yale.edu/`,
+      );
+      await leadRole(lab._id, sharedLead._id);
+      rows.push({ entityType: 'researchEntity', entityKey: slug });
+    }
+    await ResearchEntity.create({
+      slug: 'dept-example-shell',
+      name: 'Example Shell Lab',
+      kind: 'lab',
+      archived: false,
+    });
+    await seedObservation({ entityKey: 'dept-example-shell' }, 'name', 'Example Shell Lab');
+    rows.push({ entityType: 'researchEntity', entityKey: 'dept-example-shell' });
+    return rows;
+  };
+
+  const resetCorpus = async () => {
+    const db = mongoose.connection.db;
+    for (const name of ['observations', 'research_entities', 'role_assignments', 'researchers']) {
+      await db?.collection(name).deleteMany({});
+    }
+  };
+
+  const byKey = (outcomes: Array<{ row: ObservedEntityRow; value: unknown }>) =>
+    outcomes
+      .map(({ row, value }) => ({ key: `${row.entityKey ?? ''}|${row.entityId ?? ''}`, value }))
+      .sort((left, right) => left.key.localeCompare(right.key));
+
+  it('runs in parallel only rows that update their own live, unmerged, stored entity (#5521)', async () => {
+    const rows = [...(await seedCorpus()), ...(await seedIndependentLabs(3))];
+    const prefetch = await MaterializationChunkPrefetch.load({
+      entityType: 'researchEntity',
+      rows,
+      readScopeFilter: materializationReadScopeFilter(),
+      entityDocs: { model: ResearchEntity, keyField: 'slug' },
+    });
+
+    const { independent, sequential } = partitionChunkForConcurrency(rows, prefetch);
+
+    expect(independent.map((row) => row.entityKey)).toEqual([
+      'example-id-lab',
+      'example-plain-lab-0',
+      'example-plain-lab-1',
+      'example-plain-lab-2',
+    ]);
+    expect(sequential).toEqual(rows.filter((row) => !independent.includes(row)));
+    expect(partitionChunkForConcurrency(rows, undefined)).toEqual({
+      independent: [],
+      sequential: rows,
+    });
+  }, 120000);
+
+  it('plans the same projection in a dry run at any concurrency (#5521)', async () => {
+    const rows = [...(await seedCorpus()), ...(await seedIndependentLabs(6))];
+    const collect = async (concurrency: number) => {
+      const outcomes: Array<{ row: ObservedEntityRow; value: unknown }> = [];
+      await materializeObservedEntitiesInChunks(
+        rows,
+        { dryRun: true },
+        (row, outcome) => {
+          outcomes.push({ row, value: comparable('result' in outcome ? outcome.result : outcome) });
+        },
+        100,
+        concurrency,
+      );
+      return byKey(outcomes);
+    };
+
+    const sequential = await collect(1);
+    expect(sequential).toHaveLength(rows.length);
+    expect(await collect(4)).toEqual(sequential);
+  }, 120000);
+
+  it('writes the same corpus at concurrency 4 as sequentially in an apply run (#5521)', async () => {
+    const seed = async () => [...(await seedCorpus()), ...(await seedIndependentLabs(6))];
+    const apply = async (concurrency: number) => {
+      await resetCorpus();
+      const rows = await seed();
+      const errors: unknown[] = [];
+      await materializeObservedEntitiesInChunks(
+        rows,
+        {},
+        (_row, outcome) => {
+          if ('error' in outcome) errors.push(outcome.error);
+        },
+        100,
+        concurrency,
+      );
+      expect(errors).toEqual([]);
+      return projectCorpus();
+    };
+
+    const sequential = await apply(1);
+    expect(await apply(4)).toEqual(sequential);
+  }, 120000);
+
+  it('reads concurrency from MATERIALIZE_CONCURRENCY, defaulting to sequential', () => {
+    expect(materializationConcurrencyFromEnv(undefined)).toBe(1);
+    expect(materializationConcurrencyFromEnv('')).toBe(1);
+    expect(materializationConcurrencyFromEnv('0')).toBe(1);
+    expect(materializationConcurrencyFromEnv('-3')).toBe(1);
+    expect(materializationConcurrencyFromEnv('many')).toBe(1);
+    expect(materializationConcurrencyFromEnv(' 8 ')).toBe(8);
+    expect(materializationConcurrencyFromEnv('999')).toBe(MAX_MATERIALIZATION_CONCURRENCY);
+  });
 });

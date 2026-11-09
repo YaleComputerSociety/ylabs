@@ -138,6 +138,7 @@ import {
 } from './confidenceResolver';
 import {
   MaterializationChunkPrefetch,
+  prefetchObjectIdString,
   type MaterializationReadSource,
 } from './materializationChunkPrefetch';
 import {
@@ -12005,11 +12006,115 @@ async function loadChunkPrefetch(
   }
 }
 
+export const MATERIALIZATION_CONCURRENCY_ENV = 'MATERIALIZE_CONCURRENCY';
+export const MAX_MATERIALIZATION_CONCURRENCY = 16;
+
+export function materializationConcurrencyFromEnv(
+  value: string | undefined = process.env[MATERIALIZATION_CONCURRENCY_ENV],
+): number {
+  const parsed = Number.parseInt(String(value ?? '').trim(), 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return 1;
+  return Math.min(parsed, MAX_MATERIALIZATION_CONCURRENCY);
+}
+
+export interface ChunkConcurrencyPartition {
+  independent: ObservedEntityRow[];
+  sequential: ObservedEntityRow[];
+}
+
+function storedResearchEntityIdWritableAlone(
+  row: ObservedEntityRow,
+  chunkPrefetch: MaterializationReadSource,
+): string | undefined {
+  if (!isResearchEntityObservationType(row.entityType) || isDeptRosterKey(row.entityKey)) {
+    return undefined;
+  }
+  const lookup = row.entityId
+    ? chunkPrefetch.entityDocForId(row.entityType, row.entityId)
+    : row.entityKey
+      ? chunkPrefetch.entityDocForKey(row.entityType, row.entityKey)
+      : undefined;
+  if (!lookup?.hit || !lookup.value) return undefined;
+  const doc = lookup.value as { _id?: unknown; archived?: unknown; canonicalGroupId?: unknown };
+  if (doc.archived === true || doc.canonicalGroupId) return undefined;
+  const id = prefetchObjectIdString(doc._id);
+  if (!id || !chunkPrefetch.hasNoMergedInRows(id)) return undefined;
+  return id;
+}
+
+/**
+ * Only a row that updates its own live, unmerged, already-stored research entity may run
+ * beside others: a create can be adopted by a sibling's identity lookup, a `dept-*` key can
+ * fold into another row, and a merged survivor reads its losers, so each of those writes or
+ * reads another row and stays in the original sequential order (#5521).
+ */
+export function partitionChunkForConcurrency(
+  chunk: readonly ObservedEntityRow[],
+  chunkPrefetch: MaterializationReadSource | undefined,
+): ChunkConcurrencyPartition {
+  if (!chunkPrefetch) return { independent: [], sequential: [...chunk] };
+  const idByRow = new Map<ObservedEntityRow, string>();
+  const rowsById = new Map<string, number>();
+  for (const row of chunk) {
+    const id = storedResearchEntityIdWritableAlone(row, chunkPrefetch);
+    if (!id) continue;
+    idByRow.set(row, id);
+    rowsById.set(id, (rowsById.get(id) ?? 0) + 1);
+  }
+  const independent: ObservedEntityRow[] = [];
+  const sequential: ObservedEntityRow[] = [];
+  for (const row of chunk) {
+    const id = idByRow.get(row);
+    if (id && rowsById.get(id) === 1) independent.push(row);
+    else sequential.push(row);
+  }
+  return { independent, sequential };
+}
+
+async function materializeChunkRow(
+  row: ObservedEntityRow,
+  options: MaterializeOptions,
+  chunkPrefetch: MaterializationReadSource | undefined,
+  onRow: (row: ObservedEntityRow, outcome: ObservedEntityOutcome) => void,
+): Promise<void> {
+  let outcome: ObservedEntityOutcome;
+  try {
+    outcome = {
+      result: await materializeEntity(
+        row.entityType,
+        { entityId: row.entityId, entityKey: row.entityKey },
+        chunkPrefetch ? { ...options, chunkPrefetch } : options,
+      ),
+    };
+  } catch (error) {
+    outcome = { error };
+  }
+  recordScrapeRunProgress();
+  onRow(row, outcome);
+}
+
+async function runWithConcurrency<T>(
+  items: readonly T[],
+  concurrency: number,
+  work: (item: T) => Promise<void>,
+): Promise<void> {
+  let next = 0;
+  const lanes = Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (next < items.length) {
+      const item = items[next];
+      next += 1;
+      await work(item);
+    }
+  });
+  await Promise.all(lanes);
+}
+
 export async function materializeObservedEntitiesInChunks(
   rows: readonly ObservedEntityRow[],
   options: MaterializeOptions,
   onRow: (row: ObservedEntityRow, outcome: ObservedEntityOutcome) => void,
   chunkSize: number = MATERIALIZATION_CHUNK_SIZE,
+  concurrency: number = materializationConcurrencyFromEnv(),
 ): Promise<void> {
   let start = 0;
   while (start < rows.length) {
@@ -12020,21 +12125,14 @@ export async function materializeObservedEntitiesInChunks(
     }
     const chunk = rows.slice(start, end);
     const chunkPrefetch = await loadChunkPrefetch(entityType, chunk);
-    for (const row of chunk) {
-      let outcome: ObservedEntityOutcome;
-      try {
-        outcome = {
-          result: await materializeEntity(
-            row.entityType,
-            { entityId: row.entityId, entityKey: row.entityKey },
-            chunkPrefetch ? { ...options, chunkPrefetch } : options,
-          ),
-        };
-      } catch (error) {
-        outcome = { error };
-      }
-      recordScrapeRunProgress();
-      onRow(row, outcome);
+    if (concurrency <= 1) {
+      for (const row of chunk) await materializeChunkRow(row, options, chunkPrefetch, onRow);
+    } else {
+      const { independent, sequential } = partitionChunkForConcurrency(chunk, chunkPrefetch);
+      await runWithConcurrency(independent, concurrency, (row) =>
+        materializeChunkRow(row, options, chunkPrefetch, onRow),
+      );
+      for (const row of sequential) await materializeChunkRow(row, options, chunkPrefetch, onRow);
     }
     start = end;
   }
