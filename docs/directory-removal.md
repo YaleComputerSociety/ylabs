@@ -14,7 +14,8 @@ Entries are recorded on Development with `yarn --cwd server directory-removal:re
 ## What a removal withholds
 
 The serving layer reads the list through `server/src/services/directoryRemovalServing.ts`, refreshed at most every five minutes.
-It finds the removed researchers by matching every live researcher against the identity digests, and keeps their current names in memory only.
+It finds the removed researchers by matching every live researcher's identifiers and display name against the digests, so a name entry removes a namesake researcher's role edges too, and it keeps their current names in memory only.
+A stale snapshot keeps serving while a background reload replaces it, so only the first load blocks a request.
 
 - Role edges: every serve path reads its roster through `servedRoster` or `servedRosterByEntityId`, which drop a removed person's edges.
   That covers detail members, card lead names, similar and related cards, saved research, and the search index's `leadProfessorNames`, `professorNames` and `memberNames`.

@@ -72,6 +72,23 @@ const idKey = (value: unknown): string => (value == null ? '' : String(value));
 const nameLabels = (names: ReadonlyArray<string | undefined>): Set<string> =>
   new Set(names.map((name) => normalizedRosterLabel(name)).filter((label) => label.includes(' ')));
 
+const NAME_VERDICT_CACHE_LIMIT = 50_000;
+
+function memoizedByLabel(
+  isWithheld: (name: unknown, label: string) => boolean,
+): (name: unknown) => boolean {
+  const verdicts = new Map<string, boolean>();
+  return (name) => {
+    const label = normalizedRosterLabel(name);
+    const cached = verdicts.get(label);
+    if (cached !== undefined) return cached;
+    if (verdicts.size >= NAME_VERDICT_CACHE_LIMIT) verdicts.clear();
+    const verdict = isWithheld(name, label);
+    verdicts.set(label, verdict);
+    return verdict;
+  };
+}
+
 export function buildDirectoryRemovalServing(
   matcher: DirectoryRemovalMatcher,
   people: {
@@ -102,8 +119,9 @@ export function buildDirectoryRemovalServing(
   }
   const removedIds = new Set(people.removed.map((person) => idKey(person._id)));
   const removedLabels = nameLabels(people.removed.map((person) => person.displayName));
-  const isWithheldName = (name: unknown) =>
-    removedLabels.has(normalizedRosterLabel(name)) || matcher.isRemovedName(name);
+  const isWithheldName = memoizedByLabel(
+    (name, label) => removedLabels.has(label) || matcher.isRemovedName(name),
+  );
   return {
     state: 'active',
     withholdsEveryName: false,
@@ -200,7 +218,11 @@ async function peopleFor(matcher: DirectoryRemovalMatcher) {
   const people = await Researcher.find({ archived: { $ne: true } })
     .select('_id displayName identifiers profileLinks.url')
     .lean();
-  return { removed: people.filter((person: any) => matcher.isRemovedPerson(person)) as any[] };
+  return {
+    removed: people.filter(
+      (person: any) => matcher.isRemovedPerson(person) || matcher.isRemovedName(person.displayName),
+    ) as any[],
+  };
 }
 
 export async function loadDirectoryRemovalServing(
@@ -228,7 +250,16 @@ export function currentDirectoryRemovalServing(): DirectoryRemovalServing {
 export async function freshDirectoryRemovalServing(
   now: number = Date.now(),
 ): Promise<DirectoryRemovalServing> {
-  if (snapshot && now - snapshot.loadedAt < SERVING_REFRESH_MS) return snapshot.serving;
+  if (!snapshot) return reloadDirectoryRemovalServing(now);
+  if (now - snapshot.loadedAt >= SERVING_REFRESH_MS) {
+    reloadDirectoryRemovalServing(now).catch((error) =>
+      console.error('Directory removal list could not be refreshed:', sanitizeLogValue(error)),
+    );
+  }
+  return snapshot.serving;
+}
+
+function reloadDirectoryRemovalServing(now: number): Promise<DirectoryRemovalServing> {
   if (!pendingLoad) {
     pendingLoad = loadDirectoryRemovalServing()
       .then((serving) => {

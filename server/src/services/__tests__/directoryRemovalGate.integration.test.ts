@@ -18,6 +18,7 @@ import { ResearchEntity } from '../../models/researchEntity';
 import { directoryRemovalDigest } from '../../utils/directoryRemovalDigest';
 import {
   DIRECTORY_REMOVAL_GATE_REFUSAL,
+  freshDirectoryRemovalServing,
   setDirectoryRemovalServingForTest,
 } from '../directoryRemovalServing';
 import { runStudentVisibilityGate } from '../studentVisibilityGateService';
@@ -177,6 +178,29 @@ describe('the gate suppresses a row whose every lead asked to be removed (#4160)
     const restored = await persisted(SOLE_LEAD_SLUG);
     expect(restored.studentVisibilityReasons).not.toContain(RESEARCHER_REMOVED_REASON);
     expect(restored.studentVisibilityTier).toBe('student_ready');
+  }, 60000);
+
+  it('suppresses the sole-lead row when the lead is recorded by name only', async () => {
+    await mongoose.connection.db!.collection('directory_removals').insertOne({
+      digest: directoryRemovalDigest(KEY, 'name', 'Robin Quill'),
+      kind: 'name',
+      recordedAt: new Date(),
+    });
+    await runStudentVisibilityGate({ collection: 'research', mode: 'apply' });
+    const sole = await persisted(SOLE_LEAD_SLUG);
+    expect(sole.studentVisibilityTier).toBe('suppressed');
+    expect(sole.studentVisibilityReasons).toContain(RESEARCHER_REMOVED_REASON);
+    expect((await persisted(CO_LED_SLUG)).studentVisibilityTier).not.toBe('suppressed');
+  }, 60000);
+
+  it('keeps serving the last snapshot while an expired one reloads in the background', async () => {
+    const expired = 5 * 60_000;
+    expect((await freshDirectoryRemovalServing(0)).state).toBe('inert');
+    await recordRemoval();
+    expect((await freshDirectoryRemovalServing(expired)).state).toBe('inert');
+    await vi.waitFor(async () =>
+      expect((await freshDirectoryRemovalServing(expired)).state).toBe('active'),
+    );
   }, 60000);
 
   it('refuses to run while entries exist and no key is configured', async () => {
