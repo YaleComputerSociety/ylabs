@@ -3,8 +3,7 @@
  *
  * Reverse-looks-up Yale faculty who have actually mentored undergraduate
  * researchers by harvesting publicly published recipient lists that name a
- * faculty mentor (STARS II symposium booklets and the CogSci and EPS senior
- * essay adviser pages).
+ * faculty mentor (STARS II symposium booklets).
  *
  * Each {student, program, year, advisor} pair feeds the matched advisor's
  * ResearchGroup as a `pastUndergradAdvisees` entry, which the access materializer
@@ -41,7 +40,7 @@
  *     emitted) so a smoke run with `--limit 50` exercises the full pipeline
  *     without producing 1000s of observations
  *   - ctx.options.only — filters to a subset of programKeys, e.g.
- *     `--only stars-ii,cogsci-senior-essays`
+ *     `--only stars-ii`
  *   - ctx.options.manualRecipientCsvDir — optional directory containing
  *     `<programKey>.csv` files for otherwise manual-upload-required programs.
  *     When no CSV is present, the scraper also looks for `<programKey>.pdf`

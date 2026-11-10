@@ -32,7 +32,7 @@ A source is served only after the owner has read a side-by-side sample of its id
 An email binds only when the researcher who holds it carries the name the list prints, because a project card's contact email can belong to someone else in the group; a name binds only when no second live researcher could carry it, and a list that names no department, or an interdisciplinary program such as Cognitive Science, must agree with the departments its advisers come from.
 A list of who is open to undergraduates now refuses a name-only match to a researcher whose title holds only emeritus appointments, because an active professor the database does not hold can share a name with an emeritus one whose row lists the same department.
 The Cognitive Science senior essays and EPS senior theses move from the fellowship-recipient lane, where they counted as hosted, to this lane's mentors lists.
-The fellowship lane keeps reading them until a separate change withdraws what it already stored, because that lane emits only for rows it matches and silence retracts nothing.
+The fellowship lane no longer reads them, and because that lane emits only for rows it matches and silence retracts nothing, the entries it already stored are dropped on every resolve (#5591).
 Measured on Development on 2026-11-10, 65 rows store a `pastUndergradAdvisees` entry from those two programs and 63 of them store nothing else, so dropping the configs alone would leave 63 rows hosted on a mentors page with no lane able to reach the value again.
 The common-surname and duplicate-record guard of the name resolver refuses the most prolific CS advisers, which a department tie-break or a researcher merge would recover.
 
