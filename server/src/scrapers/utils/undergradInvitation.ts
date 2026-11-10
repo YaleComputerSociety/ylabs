@@ -119,6 +119,101 @@ function termEnd(groups: Record<string, string | undefined>): Date {
   return new Date(Date.UTC(endYear, 5, 30));
 }
 
+const MONTH_PATTERN =
+  '(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
+
+const STATED_LAST_UPDATED = new RegExp(
+  String.raw`\blast\s+(?:updated|modified|revised)(?:\s+on)?\s*[:\-\u2013]?\s*(?:` +
+    String.raw`(?<monthName>${MONTH_PATTERN})\.?\s+(?:(?<monthDay>\d{1,2}),?\s+)?(?<monthNameYear>20\d\d)` +
+    String.raw`|(?<dayFirst>\d{1,2})\s+(?<dayFirstMonth>${MONTH_PATTERN})\.?,?\s+(?<dayFirstYear>20\d\d)` +
+    String.raw`|(?<numericMonth>\d{1,2})\/(?<numericDay>\d{1,2})\/(?<numericYear>20\d\d)` +
+    String.raw`|(?<isoYear>20\d\d)-(?<isoMonth>\d\d)-(?<isoDay>\d\d))`,
+  'gi',
+);
+
+const STATED_UPDATED_ON_FULL_DATE = new RegExp(
+  String.raw`\bupdated(?:\s+on)?\s*[:\-\u2013]?\s*` +
+    String.raw`(?<monthName>${MONTH_PATTERN})\.?\s+(?<monthDay>\d{1,2}),?\s+(?<monthNameYear>20\d\d)`,
+  'gi',
+);
+
+const monthIndex = (name: string): number =>
+  MONTHS.findIndex((month) => month.startsWith(name.toLowerCase().slice(0, 3)));
+
+const statedDate = (year: number, month: number, day?: number): Date | null => {
+  if (month < 0 || month > 11) return null;
+  return new Date(Date.UTC(year, day ? month : month + 1, day ?? 0));
+};
+
+function lastUpdatedFromMatch(groups: Record<string, string | undefined>): Date | null {
+  if (groups.monthName && groups.monthNameYear) {
+    const day = groups.monthDay ? Number(groups.monthDay) : undefined;
+    return statedDate(Number(groups.monthNameYear), monthIndex(groups.monthName), day);
+  }
+  if (groups.dayFirstMonth && groups.dayFirstYear) {
+    return statedDate(
+      Number(groups.dayFirstYear),
+      monthIndex(groups.dayFirstMonth),
+      Number(groups.dayFirst),
+    );
+  }
+  if (groups.numericYear) {
+    return statedDate(
+      Number(groups.numericYear),
+      Number(groups.numericMonth) - 1,
+      Number(groups.numericDay),
+    );
+  }
+  if (groups.isoYear) {
+    return statedDate(Number(groups.isoYear), Number(groups.isoMonth) - 1, Number(groups.isoDay));
+  }
+  return null;
+}
+
+/**
+ * The latest date a page states it was last updated, read only from an explicit "last
+ * updated", "last modified" or "last revised" phrase, or a bare "Updated" followed at once
+ * by a full date, the footer Yale's web template prints. A month without a day reads as
+ * that month's last day, so a page is never called older than it says.
+ */
+export function statedPageLastUpdated(pageText: string | null | undefined): Date | null {
+  let latest: Date | null = null;
+  const text = pageText ?? '';
+  const matches = [
+    ...text.matchAll(STATED_LAST_UPDATED),
+    ...text.matchAll(STATED_UPDATED_ON_FULL_DATE),
+  ];
+  for (const match of matches) {
+    const date = lastUpdatedFromMatch(match.groups ?? {});
+    if (date && !Number.isNaN(date.getTime()) && (!latest || date > latest)) latest = date;
+  }
+  return latest;
+}
+
+export const STALE_OPENING_AFTER_MONTHS = 18;
+
+const pageIsStaleForAnOpening = (lastUpdated: Date, now: Date): boolean => {
+  const cutoff = new Date(now);
+  cutoff.setUTCMonth(cutoff.getUTCMonth() - STALE_OPENING_AFTER_MONTHS);
+  return lastUpdated < cutoff;
+};
+
+/**
+ * An opening that names no term, on a page that says it was last updated more than
+ * eighteen months ago, is probably filled, but the page still invites undergraduates, so
+ * it reads as a welcome (owner decision, 2026-11-10, #5524).
+ */
+export function withStaleOpeningDowngraded(
+  found: UndergradInvitation | null,
+  lastUpdated: Date | null,
+  now: Date,
+): UndergradInvitation | null {
+  if (found?.level !== 'actively_hiring' || !lastUpdated) return found;
+  if (!pageIsStaleForAnOpening(lastUpdated, now)) return found;
+  if (new RegExp(STATED_TERM.source, 'i').test(found.quote)) return found;
+  return { ...found, level: 'welcomes_undergrads' };
+}
+
 export function statedTermIsPast(sentence: string, now: Date): boolean {
   const terms = Array.from(sentence.matchAll(STATED_TERM));
   return (

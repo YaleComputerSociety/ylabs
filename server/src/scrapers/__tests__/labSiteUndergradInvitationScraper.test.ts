@@ -55,6 +55,43 @@ async function run(
 }
 
 describe('LabSiteUndergradInvitationScraper', () => {
+  it('reads an undated opening on a page whose footer says it is long out of date as a welcome', async () => {
+    const stale = (body: string) =>
+      `<html><body><main><p>${body}</p></main><footer>Page last updated: September 17, 2024</footer></body></html>`;
+    const { emitted } = await run(
+      {
+        'https://stale.example.edu/': stale(
+          'We are actively recruiting undergraduate researchers to join our lab.',
+        ),
+      },
+      [lab('stale-lab', 'https://stale.example.edu/')],
+    );
+    expect(emitted).toEqual([
+      expect.objectContaining({
+        entityKey: 'stale-lab',
+        value: expect.objectContaining({ level: 'welcomes_undergrads' }),
+      }),
+    ]);
+  });
+
+  it('keeps an opening on a fresh page ahead of a stale page of the same lab', async () => {
+    const { emitted } = await run(
+      {
+        'https://mixed.example.edu/': `<html><body><main><a href="/join">Join us</a><p>We are actively recruiting undergraduate researchers.</p></main><footer>Last updated 2024-01-10</footer></body></html>`,
+        'https://mixed.example.edu/join': `<html><body><main><p>We have openings for undergraduate researchers this year.</p></main><footer>Last updated 2026-09-01</footer></body></html>`,
+      },
+      [lab('mixed-lab', 'https://mixed.example.edu/')],
+    );
+    expect(emitted).toEqual([
+      expect.objectContaining({
+        value: expect.objectContaining({
+          level: 'actively_hiring',
+          sourceUrl: 'https://mixed.example.edu/join',
+        }),
+      }),
+    ]);
+  });
+
   it('reads an invitation from a linked join page and cites that page', async () => {
     const { emitted } = await run(
       {

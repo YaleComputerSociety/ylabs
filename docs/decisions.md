@@ -5,6 +5,14 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-11-10: A Stale Hiring Line Reads As A Welcome (#5524)
+
+The owner decided on 2026-11-10 that an undated "we are recruiting undergraduates" line on a page that has not been updated in over 18 months shows "Welcomes undergrads" rather than the stronger "recruiting now" badge.
+The opening is probably filled, but the page still invites students, and a standing welcome does not expire the way an opening does, so welcome lines are untouched.
+The age is the page's own stated "last updated" date, the only page-age signal measured to be both present and honest: across the 79 served invitation pages on Development on 2026-11-08, the HTTP `Last-Modified` header was the fetch date on all 43 pages that sent it, and 35 of the 38 copyright years were the current year.
+A line that names a future term stays an active opening.
+A dry run over the 83 Development rows holding an invitation on 2026-11-10 planned one downgrade under this rule, the page a graded sample had flagged as last updated in September 2024.
+
 ## 2026-11-08: The Stronger Invitation Badge Reads "Welcomes Undergrads, Recruiting Now" (#5484)
 
 The `actively_hiring` invitation level is labelled "Welcomes undergrads, recruiting now" rather than "Actively hiring".

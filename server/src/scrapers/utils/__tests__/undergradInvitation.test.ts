@@ -2,11 +2,93 @@ import { describe, expect, it } from 'vitest';
 import {
   classifyInvitationSentence,
   extractUndergradInvitation,
+  statedPageLastUpdated,
   statedTermIsPast,
+  withStaleOpeningDowngraded,
 } from '../undergradInvitation';
 
 const NOW = new Date('2026-10-18T12:00:00Z');
 const level = (text: string) => extractUndergradInvitation(text, NOW)?.level ?? null;
+
+describe('statedPageLastUpdated', () => {
+  it.each([
+    ['Page last updated: September 17, 2024', '2024-09-17'],
+    ['Last modified 3 March 2025', '2025-03-03'],
+    ['Last revised 06/30/2023', '2023-06-30'],
+    ['last updated on 2024-11-02', '2024-11-02'],
+    ['Last Updated: Sept. 2024', '2024-09-30'],
+    ['Updated September 17, 2024', '2024-09-17'],
+  ])('reads %s', (text, iso) => {
+    expect(statedPageLastUpdated(`Lab news\n${text}\nContact`)?.toISOString().slice(0, 10)).toBe(
+      iso,
+    );
+  });
+
+  it('keeps the latest of several stated dates', () => {
+    expect(
+      statedPageLastUpdated('Last updated May 2021. Page last updated: January 5, 2026.')
+        ?.toISOString()
+        .slice(0, 10),
+    ).toBe('2026-01-05');
+  });
+
+  it.each([
+    ['a copyright year', '© 2021 The Lab'],
+    ['a dated news item', 'Updated: our paper appeared in March 2022'],
+    ['a bare year', 'Last updated 2023'],
+    ['a bare "Updated" with only a month', 'Updated March 2022'],
+    ['no date', 'Join us'],
+  ])('reads nothing from %s', (_label, text) => {
+    expect(statedPageLastUpdated(text)).toBeNull();
+  });
+});
+
+describe('withStaleOpeningDowngraded', () => {
+  const opening = (quote: string) => ({ level: 'actively_hiring' as const, quote });
+  const monthsBefore = (months: number) => {
+    const date = new Date(NOW);
+    date.setUTCMonth(date.getUTCMonth() - months);
+    return date;
+  };
+
+  it('reads an undated opening on a page last updated over eighteen months ago as a welcome', () => {
+    expect(
+      withStaleOpeningDowngraded(
+        opening('We are currently recruiting undergraduate researchers.'),
+        monthsBefore(19),
+        NOW,
+      )?.level,
+    ).toBe('welcomes_undergrads');
+  });
+
+  it.each([
+    ['a page updated within eighteen months', monthsBefore(17)],
+    ['a page with no stated date', null],
+  ])('keeps the opening on %s', (_label, lastUpdated) => {
+    expect(
+      withStaleOpeningDowngraded(
+        opening('We are currently recruiting undergraduate researchers.'),
+        lastUpdated,
+        NOW,
+      )?.level,
+    ).toBe('actively_hiring');
+  });
+
+  it('keeps an opening that names its own term, whatever the page age', () => {
+    expect(
+      withStaleOpeningDowngraded(
+        opening('Undergraduate positions are available for Spring 2027.'),
+        monthsBefore(30),
+        NOW,
+      )?.level,
+    ).toBe('actively_hiring');
+  });
+
+  it('leaves a welcome as it is', () => {
+    const welcome = { level: 'welcomes_undergrads' as const, quote: 'We welcome undergraduates.' };
+    expect(withStaleOpeningDowngraded(welcome, monthsBefore(40), NOW)).toBe(welcome);
+  });
+});
 
 describe('extractUndergradInvitation', () => {
   it.each([
