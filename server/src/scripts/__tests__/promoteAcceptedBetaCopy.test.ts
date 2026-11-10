@@ -14,6 +14,7 @@ import {
   promotionCollectionNamesForOptions,
   writePromotionOutput,
 } from '../promoteAcceptedBetaCopy';
+import { evaluateStagedSwapHeadroom } from '../stagedSwapHeadroom';
 
 const baseEnv = {
   BETA_MONGODBURL: 'mongodb+srv://user:pass@beta.example.test/Beta',
@@ -700,5 +701,19 @@ describe('promotion rollback guards (#4149)', () => {
     expect(() =>
       assertSafeOptions(parsePromotionOptions(['--rollback', '41_1760000000000'], { ...baseEnv })),
     ).toThrow('--rollback is checked by assertSafeRollbackOptions');
+  });
+});
+
+describe('staged swap headroom refusal', () => {
+  it('names only a remedy the refused operation can act on', () => {
+    const verdict = evaluateStagedSwapHeadroom({
+      usedMb: 500,
+      stagingMb: 10,
+      config: { clusterQuotaMb: 512, minHeadroomMb: 50 },
+      label: 'Beta to Development sync',
+    });
+    expect(verdict.ok).toBe(false);
+    expect(verdict.message).toContain('Free space first.');
+    expect(verdict.message).not.toContain('--include-observations');
   });
 });

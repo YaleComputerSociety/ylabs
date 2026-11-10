@@ -30,7 +30,6 @@ import {
 } from './stagedCollectionSwap';
 import {
   assertStagedSwapHeadroom,
-  collectionFootprintMb,
   collectionsFootprintMb,
   measureStagedSwapHeadroom,
   type StagedSwapHeadroomVerdict,
@@ -59,6 +58,8 @@ const PROMOTION_STAGING_PREFIX = '__prod_promote_staging_';
 const PROMOTION_BACKUP_PREFIX = '__prod_promote_backup_';
 export const PROMOTION_PREVIOUS_GENERATION_PREFIX = '__prod_promote_prev_';
 const ROLLBACK_STAGING_PREFIX = '__prod_rollback_staging_';
+const PROMOTION_HEADROOM_REMEDY = 'Free space first, or drop --include-observations.';
+const OPT_IN_COLLECTION_NAMES = new Set(['observations', 'scrape_runs']);
 
 const COPY_COLLECTIONS: PromotionCollection[] = [
   { name: 'research_entities', category: 'research-discovery' },
@@ -678,6 +679,7 @@ export async function applyCopy(
         ...storage,
         stagingMb: await promotionStagingMb(betaDb, collections),
         label: 'Beta to Production promotion',
+        remedy: PROMOTION_HEADROOM_REMEDY,
       });
     },
     stage: (collection, operationId) =>
@@ -754,6 +756,15 @@ export async function planPromotionRollback(
       `No retained Production generation ${operationId} exists (retained generations: ${available}).`,
     );
   }
+  const retainedCollections = new Set(generation.collections.map((row) => row.collection));
+  const missing = COPY_COLLECTIONS.map((collection) => collection.name).filter(
+    (name) => !OPT_IN_COLLECTION_NAMES.has(name) && !retainedCollections.has(name),
+  );
+  if (missing.length > 0) {
+    throw new Error(
+      `Refusing to roll back to ${operationId}: the retained generation is incomplete and lacks ${missing.join(', ')}, so restoring it would mix generations.`,
+    );
+  }
   const collections: RollbackCollectionPlan[] = [];
   for (const { collection, retainedName, count } of generation.collections) {
     const liveCount = (await stagedSwapCollectionExists(productionDb, collection))
@@ -762,6 +773,13 @@ export async function planPromotionRollback(
     collections.push({ collection, retainedName, retainedCount: count, liveCount });
   }
   return { operationId, collections };
+}
+
+function rollbackStagingMb(productionDb: Db, plan: RollbackPlan): Promise<number> {
+  return collectionsFootprintMb(
+    productionDb,
+    plan.collections.map((row) => row.retainedName),
+  );
 }
 
 async function stageRetainedCollection(
@@ -799,13 +817,9 @@ export async function applyPromotionRollback(
     retainedPrefix: PROMOTION_PREVIOUS_GENERATION_PREFIX,
     label: 'Production promotion rollback',
     preflight: async () => {
-      let stagingMb = 0;
-      for (const row of plan.collections) {
-        stagingMb += await collectionFootprintMb(productionDb, row.retainedName);
-      }
       await assertStagedSwapHeadroom({
         ...storage,
-        stagingMb,
+        stagingMb: await rollbackStagingMb(productionDb, plan),
         label: 'Production promotion rollback',
       });
     },
@@ -833,8 +847,9 @@ async function promotionStorageReport(
   storage: PromotionStorage,
   stagingMb: number,
   label: string,
+  remedy?: string,
 ): Promise<StagedSwapHeadroomVerdict> {
-  return measureStagedSwapHeadroom({ ...storage, stagingMb, label });
+  return measureStagedSwapHeadroom({ ...storage, stagingMb, label, remedy });
 }
 
 async function runRollback(options: PromotionOptions): Promise<void> {
@@ -851,10 +866,7 @@ async function runRollback(options: PromotionOptions): Promise<void> {
     const operationId = options.rollbackOperationId!;
     const storage: PromotionStorage = { client: productionClient };
     const plan = await planPromotionRollback(productionDb, operationId);
-    let stagingMb = 0;
-    for (const row of plan.collections) {
-      stagingMb += await collectionFootprintMb(productionDb, row.retainedName);
-    }
+    const stagingMb = await rollbackStagingMb(productionDb, plan);
     const report = {
       mode: options.mode,
       action: 'rollback',
@@ -929,6 +941,7 @@ async function main() {
         storage,
         await promotionStagingMb(betaDb, promotionCollectionsForOptions(options)),
         'Beta to Production promotion',
+        PROMOTION_HEADROOM_REMEDY,
       ),
     };
     console.log(JSON.stringify(report, null, 2));

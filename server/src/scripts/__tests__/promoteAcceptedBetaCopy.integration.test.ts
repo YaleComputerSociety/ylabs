@@ -343,6 +343,25 @@ describe('Beta to Production promotion retention and rollback (#4149)', () => {
     );
   });
 
+  it('refuses a rollback to a generation that lost a collection, so Production never mixes generations', async () => {
+    await freshDatabases();
+    const promoted = await promote();
+    await productionDb.collection(`__prod_promote_prev_${promoted.operationId}_researchers`).drop();
+
+    await expect(planPromotionRollback(productionDb, promoted.operationId)).rejects.toThrow(
+      'the retained generation is incomplete and lacks researchers',
+    );
+    await expect(
+      applyPromotionRollback(productionDb, promoted.operationId, {
+        client: client!,
+        requiredDatabaseNames: [],
+      }),
+    ).rejects.toThrow('lacks researchers');
+    expect(
+      await productionDb.collection('research_entities').findOne({ slug: 'example-person-lab' }),
+    ).not.toBeNull();
+  });
+
   it('refuses before writing when the cluster would be left below the headroom', async () => {
     await freshDatabases();
     await expect(
@@ -351,7 +370,9 @@ describe('Beta to Production promotion retention and rollback (#4149)', () => {
         requiredDatabaseNames: [],
         config: { clusterQuotaMb: 1, minHeadroomMb: 1 },
       }),
-    ).rejects.toThrow('Beta to Production promotion refused before writing');
+    ).rejects.toThrow(
+      /Beta to Production promotion refused before writing.*drop --include-observations/,
+    );
 
     expect(
       await productionDb

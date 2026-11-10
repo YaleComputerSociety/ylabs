@@ -65,6 +65,7 @@ export function evaluateStagedSwapHeadroom(input: {
   databases?: DatabaseStorage[];
   config: StorageHeadroomConfig;
   label: string;
+  remedy?: string;
 }): StagedSwapHeadroomVerdict {
   const headroomAfterStagingMb = input.config.clusterQuotaMb - input.usedMb - input.stagingMb;
   const ok = headroomAfterStagingMb >= input.config.minHeadroomMb;
@@ -79,12 +80,12 @@ export function evaluateStagedSwapHeadroom(input: {
     databases: input.databases ?? [],
     message: ok
       ? `${input.label}: ${figures}; at least ${input.config.minHeadroomMb} MB required`
-      : `${input.label} refused before writing: ${figures}, below the ${input.config.minHeadroomMb} MB every environment on the shared cluster needs (#4149). Free space first, or drop --include-observations.`,
+      : `${input.label} refused before writing: ${figures}, below the ${input.config.minHeadroomMb} MB every environment on the shared cluster needs (#4149). ${input.remedy ?? 'Free space first.'}`,
   };
 }
 
 export async function measureStagedSwapHeadroom(
-  input: SwapStorage & { stagingMb: number; label: string },
+  input: SwapStorage & { stagingMb: number; label: string; remedy?: string },
 ): Promise<StagedSwapHeadroomVerdict> {
   const storage = await measureClusterStorageFromDb(input.client.db(), (name) =>
     input.client.db(name),
@@ -95,6 +96,7 @@ export async function measureStagedSwapHeadroom(
     databases: storage.databases,
     config: input.config ?? resolveStorageHeadroomConfig(),
     label: input.label,
+    remedy: input.remedy,
   });
   const listed = new Set(storage.databases.map((database) => database.name));
   const unseen = (input.requiredDatabaseNames ?? SHARED_CLUSTER_DATABASE_NAMES).filter(
