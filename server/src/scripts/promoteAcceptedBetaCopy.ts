@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
 import { assertNoNeverCopyCollections } from './mirrorCollectionPolicy';
+import { assertCopyCarriesEveryDirectoryRemoval } from './directoryRemovalCopyGuard';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   assertDatabaseCopyPair,
@@ -67,6 +68,7 @@ const COPY_COLLECTIONS: PromotionCollection[] = [
   { name: 'researchers', category: 'research-discovery' },
   { name: 'role_assignments', category: 'research-discovery' },
   { name: 'signals', category: 'research-discovery' },
+  { name: 'directory_removals', category: 'research-discovery' },
   { name: 'sources', category: 'source-audit' },
   { name: 'scrape_runs', category: 'source-audit' },
   { name: 'observations', category: 'source-audit' },
@@ -530,6 +532,10 @@ async function syncIndexes(
   collectionName: string,
   targetCollectionName: string = collectionName,
 ) {
+  const sourceExists = await betaDb
+    .listCollections({ name: collectionName }, { nameOnly: true })
+    .hasNext();
+  if (!sourceExists) return;
   const source = betaDb.collection(collectionName);
   const target = productionDb.collection(targetCollectionName);
   const indexes = await source.indexes();
@@ -660,6 +666,11 @@ export async function applyCopy(
   if (accountReferenceBlockers.length > 0) {
     throw new Error(`Apply mode blocked: ${accountReferenceBlockers.join(' ')}`);
   }
+  await assertCopyCarriesEveryDirectoryRemoval(
+    betaDb,
+    productionDb,
+    'Beta to Production promotion',
+  );
   const collections = promotionCollectionsForOptions(options);
   const plan = await buildPlan(betaDb, productionDb, collections);
   const retiring = Boolean(options.retireScrapeRunsActor);

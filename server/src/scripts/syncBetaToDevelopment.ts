@@ -24,6 +24,8 @@ import {
   type DevelopmentArchiveCarryReport,
 } from './archivedTombstoneMirror';
 import { DATABASE_COPY_PAIRS, parseMongoTarget } from './databaseCopyPairs';
+import { DIRECTORY_REMOVAL_COLLECTION } from '../models/directoryRemoval';
+import { assertCopyCarriesEveryDirectoryRemoval } from './directoryRemovalCopyGuard';
 
 export { parseMongoTarget };
 
@@ -61,6 +63,7 @@ const BASE_COPY_COLLECTIONS: SyncCollection[] = [
   { name: 'signals', category: 'research-discovery' },
   { name: 'researchers', category: 'identity-spine' },
   { name: 'role_assignments', category: 'identity-spine' },
+  { name: 'directory_removals', category: 'identity-spine' },
   { name: 'sources', category: 'source-audit' },
   { name: 'scrape_runs', category: 'source-audit' },
   { name: 'observations', category: 'source-audit' },
@@ -417,6 +420,10 @@ async function syncIndexes(
   sourceCollectionName: string,
   stagingCollectionName: string,
 ): Promise<void> {
+  const sourceExists = await betaDb
+    .listCollections({ name: sourceCollectionName }, { nameOnly: true })
+    .hasNext();
+  if (!sourceExists) return;
   const indexes = await betaDb.collection(sourceCollectionName).indexes();
   const secondaryIndexes = indexes.filter((index) => index.name !== '_id_');
   if (secondaryIndexes.length === 0) return;
@@ -518,6 +525,9 @@ export async function applySync(
 ): Promise<void> {
   const { blockers } = await syncAccountReferences(sourceDb, collections);
   if (blockers.length > 0) throw new Error(`Sync blocked: ${blockers.join(' ')}`);
+  if (collections.some((collection) => collection.name === DIRECTORY_REMOVAL_COLLECTION)) {
+    await assertCopyCarriesEveryDirectoryRemoval(sourceDb, targetDb, 'Collection sync');
+  }
   await applyStagedCollectionSwap({
     targetDb,
     collections,
