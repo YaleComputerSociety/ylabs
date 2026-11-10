@@ -183,6 +183,12 @@ describe('server-side session revocation and expiry', () => {
   it('refuses a session older than the lifetime even though the cookie is still presented', async () => {
     await signIn(baseUrl);
     const now = Date.now();
+    await mongoose.connection.db
+      ?.collection('accounts')
+      .updateOne(
+        { netid: CAS_NETID },
+        { $set: { createdAt: new Date(now - SESSION_LIFETIME_MS - 60 * 60_000) } },
+      );
 
     const live = signedInPrincipalCookie(now - 60_000);
     expect((await get(`${baseUrl}${AUTHENTICATED_ROUTE}`, live)).status).toBe(200);

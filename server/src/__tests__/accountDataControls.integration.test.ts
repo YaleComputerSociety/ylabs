@@ -332,6 +332,12 @@ describe('a signed-in student can export and delete their account data (#4156)',
 
   it('refuses a deletion from a session whose sign-in was not recent', async () => {
     await signInBothAccounts();
+    await db()
+      .collection('accounts')
+      .updateOne(
+        { netid: OWNER_NETID },
+        { $set: { createdAt: new Date(Date.now() - 60 * 60 * 1000) } },
+      );
     const stale = staleSignInCookie(Date.now() - 11 * 60 * 1000);
     expect((await request(`${baseUrl}${AUTHENTICATED_ROUTE}`, { cookie: stale })).status).toBe(200);
 
@@ -374,6 +380,8 @@ describe('a signed-in student can export and delete their account data (#4156)',
       analyticsEvents: 3,
       correctionReports: 1,
       adminGrants: 1,
+      adminAuditEvents: 0,
+      adminGrantActions: 0,
     });
     expect(body.postHog).toBe('skipped_not_configured');
     expect(body.auditSubjectHash).toBe('recorded');
@@ -501,6 +509,8 @@ describe('a signed-in student can export and delete their account data (#4156)',
       analyticsEvents: 0,
       correctionReports: 0,
       adminGrants: 0,
+      adminAuditEvents: 0,
+      adminGrantActions: 0,
     });
 
     postHogStatus = 202;
@@ -513,12 +523,161 @@ describe('a signed-in student can export and delete their account data (#4156)',
       analyticsEvents: 0,
       correctionReports: 0,
       adminGrants: 0,
+      adminAuditEvents: 0,
+      adminGrantActions: 0,
     });
     const tallied = await db()
       .collection('deleted_account_event_tallies')
       .aggregate([{ $group: { _id: null, total: { $sum: '$count' } } }])
       .toArray();
     expect(tallied[0].total).toBe(3);
+  });
+
+  it('finds rows stored under a differently cased netid in export, residue and deletion', async () => {
+    const { deleteAccountData, readAccountDataResidue } =
+      await import('../services/accountDataService');
+    const { cookie, owner } = await signInBothAccounts();
+    const storedCase = OWNER_NETID.toUpperCase();
+    await db()
+      .collection('analytics_events')
+      .updateMany({ netid: OWNER_NETID }, { $set: { netid: storedCase } });
+    await db()
+      .collection('entitycorrectionreports')
+      .updateMany({ 'reporter.netId': OWNER_NETID }, { $set: { 'reporter.netId': storedCase } });
+
+    const exported = JSON.parse((await request(`${baseUrl}/api/users/me/export`, { cookie })).body);
+    expect(exported.analyticsEvents).toHaveLength(3);
+    expect(exported.correctionReports).toHaveLength(1);
+    expect(await readAccountDataResidue(OWNER_NETID)).toMatchObject({
+      analyticsEvents: 3,
+      correctionReports: 1,
+    });
+
+    await deleteAccountData(OWNER_NETID, { requester: 'account_holder' });
+
+    expect(await db().collection('analytics_events').countDocuments({ netid: storedCase })).toBe(0);
+    const report = await db()
+      .collection('entitycorrectionreports')
+      .findOne({ researchEntityId: owner.entityId });
+    expect(report?.reporter.netId).toBe(`deleted-${String(report?._id)}`);
+    expect(await db().collection('analytics_events').countDocuments({ netid: OTHER_NETID })).toBe(
+      3,
+    );
+  });
+
+  it('counts each event once when two deletions of one account run at the same time', async () => {
+    const { deleteAccountData } = await import('../services/accountDataService');
+    await signInBothAccounts();
+
+    const results = await Promise.all([
+      deleteAccountData(OWNER_NETID, { requester: 'account_holder' }),
+      deleteAccountData(OWNER_NETID, { requester: 'operator' }),
+    ]);
+
+    expect(results.reduce((sum, result) => sum + result.deleted.analyticsEvents, 0)).toBe(3);
+    const tallied = await db()
+      .collection('deleted_account_event_tallies')
+      .aggregate([{ $group: { _id: null, total: { $sum: '$count' } } }])
+      .toArray();
+    expect(tallied[0].total).toBe(3);
+  });
+
+  it('never revives a session minted before the account was deleted and created again', async () => {
+    const { cookie } = await signInBothAccounts();
+    const deleted = await request(`${baseUrl}/api/users/me`, {
+      cookie,
+      method: 'DELETE',
+      json: { confirm: 'delete my data' },
+    });
+    expect(deleted.status).toBe(200);
+    const forgotten = staleSignInCookie(Date.now() - 60 * 1000);
+
+    const freshCookie = await signIn(baseUrl);
+
+    expect(
+      (await request(`${baseUrl}${AUTHENTICATED_ROUTE}`, { cookie: freshCookie })).status,
+    ).toBe(200);
+    expect((await request(`${baseUrl}${AUTHENTICATED_ROUTE}`, { cookie: forgotten })).status).toBe(
+      401,
+    );
+  });
+
+  it('keeps a maintainer audit trail and grant history but replaces their netid in it', async () => {
+    const { deleteAccountData, readAccountDataResidue } =
+      await import('../services/accountDataService');
+    const { cookie } = await signInBothAccounts();
+    const grantedAt = new Date('2026-09-01T00:00:00Z');
+    await db()
+      .collection('admin_grants')
+      .insertOne({
+        netid: OTHER_NETID,
+        status: 'active',
+        source: 'manual',
+        grantedBy: OWNER_NETID,
+        grantedAt,
+        history: [
+          { action: 'granted', actorNetid: OWNER_NETID, at: grantedAt },
+          { action: 'note', actorNetid: 'synthgrantor', at: grantedAt },
+        ],
+      });
+    await db()
+      .collection('admin_audit_events')
+      .insertMany([
+        {
+          actorNetid: OWNER_NETID,
+          action: 'admin_grant.grant',
+          targetType: 'adminGrant',
+          targetId: OTHER_NETID,
+          timestamp: grantedAt,
+        },
+        {
+          actorNetid: 'synthgrantor',
+          action: 'account.sessions_revoke',
+          targetType: 'account',
+          targetId: OWNER_NETID.toUpperCase(),
+          timestamp: grantedAt,
+        },
+      ]);
+
+    const exported = JSON.parse((await request(`${baseUrl}/api/users/me/export`, { cookie })).body);
+    expect(exported.adminAuditEvents).toEqual([
+      {
+        role: 'actor',
+        action: 'admin_grant.grant',
+        targetType: 'adminGrant',
+        timestamp: grantedAt.toISOString(),
+      },
+      {
+        role: 'subject',
+        action: 'account.sessions_revoke',
+        targetType: 'account',
+        timestamp: grantedAt.toISOString(),
+      },
+    ]);
+    expect(exported.adminGrantActions).toEqual([
+      { action: 'granted', at: grantedAt.toISOString() },
+    ]);
+
+    const result = await deleteAccountData(OWNER_NETID, { requester: 'account_holder' });
+
+    expect(result.deleted.adminAuditEvents).toBe(2);
+    expect(result.deleted.adminGrantActions).toBe(1);
+    expect(await readAccountDataResidue(OWNER_NETID)).toMatchObject({
+      adminAuditEvents: 0,
+      adminGrantActions: 0,
+    });
+    const otherGrant = await db().collection('admin_grants').findOne({ netid: OTHER_NETID });
+    expect(otherGrant?.status).toBe('active');
+    expect(otherGrant?.grantedBy).toBe('deleted-account');
+    expect(otherGrant?.history.map((entry: any) => entry.actorNetid)).toEqual([
+      'deleted-account',
+      'synthgrantor',
+    ]);
+    const storedAudit = JSON.stringify(
+      await db().collection('admin_audit_events').find({}).toArray(),
+    ).toLowerCase();
+    expect(storedAudit).not.toContain(OWNER_NETID);
+    expect(await db().collection('admin_audit_events').countDocuments()).toBe(3);
   });
 
   it('refuses to delete an account the directory still references', async () => {

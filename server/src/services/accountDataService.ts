@@ -17,6 +17,7 @@ import { EntityCorrectionReport } from '../models/entityCorrectionReport';
 import { ResearchPlan } from '../models/researchPlan';
 import { CORPUS_ACCOUNT_ID_REFERENCE_FIELDS } from '../scripts/corpusAccountReferences';
 import { ConflictError, NotFoundError } from '../utils/errors';
+import { escapeRegex } from '../utils/regex';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { revokeAccountSessions } from './accountService';
 import { clearAdminGrantCache } from './adminGrantService';
@@ -30,10 +31,12 @@ export const ACCOUNT_DELETION_AUDIT_HMAC_KEY_MIN_LENGTH = 32;
 export const ACCOUNT_DATA_DELETION_CONFIRM_PHRASE = 'delete my data';
 export const ANALYTICS_EVENT_DELETION_BATCH_SIZE = 500;
 export const DELETED_ACCOUNT_REPORTER_TOMBSTONE_PREFIX = 'deleted-';
+export const DELETED_ACCOUNT_ADMIN_ACTOR_TOMBSTONE = 'deleted-account';
 
 const OTHER_EVENT_TYPE = 'other';
 const KNOWN_EVENT_TYPES = new Set<string>(Object.values(AnalyticsEventType));
 const NETID_INPUT_RE = /^[A-Za-z0-9]{2,12}$/;
+const NETID_ADMIN_AUDIT_TARGET_TYPES = ['adminGrant', 'account'];
 
 export type AccountDeletionRequester = 'account_holder' | 'operator';
 
@@ -55,6 +58,8 @@ export interface AccountDataResidue {
   analyticsEvents: number;
   correctionReports: number;
   adminGrants: number;
+  adminAuditEvents: number;
+  adminGrantActions: number;
 }
 
 export interface AccountDataDeletionResult {
@@ -83,14 +88,31 @@ const requireNetid = (value: unknown): string => {
   return netid;
 };
 
+const storedNetidMatch = (netid: string) => ({
+  $regex: `^${escapeRegex(netid)}$`,
+  $options: 'i',
+});
+
+const analyticsEventsOf = (netid: string) => ({ netid: storedNetidMatch(netid) });
+const correctionReportsOf = (netid: string) => ({ 'reporter.netId': storedNetidMatch(netid) });
+
+const adminAuditEventsActedBy = (netid: string) => ({ actorNetid: netid });
+const adminAuditEventsTargeting = (netid: string) => ({
+  targetType: { $in: NETID_ADMIN_AUDIT_TARGET_TYPES },
+  targetId: storedNetidMatch(netid),
+});
+const adminAuditEventsOf = (netid: string) => ({
+  $or: [adminAuditEventsActedBy(netid), adminAuditEventsTargeting(netid)],
+});
+const adminGrantsActedOnBy = (netid: string) => ({
+  netid: { $ne: netid },
+  $or: [{ grantedBy: netid }, { revokedBy: netid }, { 'history.actorNetid': netid }],
+});
+
 const auditHmacKey = (env: NodeJS.ProcessEnv): string | null => {
   const key = String(env.ACCOUNT_DELETION_AUDIT_HMAC_KEY || '').trim();
   return key.length >= ACCOUNT_DELETION_AUDIT_HMAC_KEY_MIN_LENGTH ? key : null;
 };
-
-export const isAccountDeletionAuditHashConfigured = (
-  env: NodeJS.ProcessEnv = process.env,
-): boolean => auditHmacKey(env) !== null;
 
 /**
  * The audit row records that an account was deleted without recording whose (#4156). A
@@ -158,6 +180,18 @@ const exportedAdminGrant = (grant: Record<string, any>) => ({
   revokedAt: grant.revokedAt ?? null,
 });
 
+const exportedAdminAuditEvent = (netid: string) => (event: Record<string, any>) => ({
+  role: event.actorNetid === netid ? 'actor' : 'subject',
+  action: event.action,
+  targetType: event.targetType ?? null,
+  timestamp: event.timestamp ?? null,
+});
+
+const exportedAdminGrantActions = (netid: string) => (grant: Record<string, any>) =>
+  (Array.isArray(grant.history) ? grant.history : [])
+    .filter((entry: Record<string, any>) => entry?.actorNetid === netid)
+    .map((entry: Record<string, any>) => ({ action: entry.action, at: entry.at ?? null }));
+
 /**
  * Yields one JSON document in pieces, so an account with thousands of analytics events
  * is streamed from a cursor rather than held in memory.
@@ -170,13 +204,15 @@ export async function* accountDataExportChunks(
   const account = (await Account.findOne({ netid }).lean()) as Record<string, any> | null;
   if (!account) throw new NotFoundError('Account not found');
 
-  const [plans, reports, grants] = await Promise.all([
+  const [plans, reports, grants, auditEvents, grantsActedOn] = await Promise.all([
     ResearchPlan.find({ accountId: account._id })
       .select('+privateNotes +checklist +deadlines')
       .sort({ createdAt: 1 })
       .lean(),
-    EntityCorrectionReport.find({ 'reporter.netId': netid }).sort({ createdAt: 1 }).lean(),
+    EntityCorrectionReport.find(correctionReportsOf(netid)).sort({ createdAt: 1 }).lean(),
     AdminGrant.find({ netid }).sort({ grantedAt: 1 }).lean(),
+    AdminAuditEvent.find(adminAuditEventsOf(netid)).sort({ timestamp: 1, _id: 1 }).lean(),
+    AdminGrant.find(adminGrantsActedOnBy(netid)).select('history').lean(),
   ]);
 
   yield `{"scopeVersion":${ACCOUNT_DATA_EXPORT_SCOPE_VERSION},"generatedAt":${JSON.stringify(now.toISOString())}`;
@@ -184,9 +220,11 @@ export async function* accountDataExportChunks(
   yield `,"researchPlans":${JSON.stringify((plans as Record<string, any>[]).map(exportedResearchPlan))}`;
   yield `,"correctionReports":${JSON.stringify((reports as Record<string, any>[]).map(exportedCorrectionReport))}`;
   yield `,"adminGrants":${JSON.stringify((grants as Record<string, any>[]).map(exportedAdminGrant))}`;
+  yield `,"adminAuditEvents":${JSON.stringify((auditEvents as Record<string, any>[]).map(exportedAdminAuditEvent(netid)))}`;
+  yield `,"adminGrantActions":${JSON.stringify((grantsActedOn as Record<string, any>[]).flatMap(exportedAdminGrantActions(netid)))}`;
   yield ',"analyticsEvents":[';
   let first = true;
-  for await (const event of AnalyticsEvent.find({ netid })
+  for await (const event of AnalyticsEvent.find(analyticsEventsOf(netid))
     .sort({ timestamp: 1, _id: 1 })
     .lean()
     .cursor()) {
@@ -201,11 +239,20 @@ export const readAccountDataResidue = async (netidInput: unknown): Promise<Accou
   const account = (await Account.findOne({ netid }).select('_id').lean()) as {
     _id: mongoose.Types.ObjectId;
   } | null;
-  const [researchPlans, analyticsEvents, correctionReports, adminGrants] = await Promise.all([
+  const [
+    researchPlans,
+    analyticsEvents,
+    correctionReports,
+    adminGrants,
+    adminAuditEvents,
+    adminGrantActions,
+  ] = await Promise.all([
     account ? ResearchPlan.countDocuments({ accountId: account._id }) : Promise.resolve(0),
-    AnalyticsEvent.countDocuments({ netid }),
-    EntityCorrectionReport.countDocuments({ 'reporter.netId': netid }),
+    AnalyticsEvent.countDocuments(analyticsEventsOf(netid)),
+    EntityCorrectionReport.countDocuments(correctionReportsOf(netid)),
     AdminGrant.countDocuments({ netid }),
+    AdminAuditEvent.countDocuments(adminAuditEventsOf(netid)),
+    AdminGrant.countDocuments(adminGrantsActedOnBy(netid)),
   ]);
   return {
     account: account ? 1 : 0,
@@ -213,6 +260,8 @@ export const readAccountDataResidue = async (netidInput: unknown): Promise<Accou
     analyticsEvents,
     correctionReports,
     adminGrants,
+    adminAuditEvents,
+    adminGrantActions,
   };
 };
 
@@ -241,6 +290,8 @@ const tallyMonth = (timestamp: unknown, now: Date): string => {
 const tallyEventType = (eventType: unknown): string =>
   typeof eventType === 'string' && KNOWN_EVENT_TYPES.has(eventType) ? eventType : OTHER_EVENT_TYPE;
 
+class AnalyticsEventBatchChangedError extends Error {}
+
 /**
  * Folds the events into month-and-type counts and deletes them in the same transaction, a
  * batch at a time, so a retry after a failure never counts an event twice and never
@@ -249,7 +300,7 @@ const tallyEventType = (eventType: unknown): string =>
 const foldAndDeleteAnalyticsEvents = async (netid: string, now: Date): Promise<number> => {
   let deleted = 0;
   for (;;) {
-    const batch = (await AnalyticsEvent.find({ netid })
+    const batch = (await AnalyticsEvent.find(analyticsEventsOf(netid))
       .select('_id eventType timestamp')
       .limit(ANALYTICS_EVENT_DELETION_BATCH_SIZE)
       .lean()) as Array<{ _id: mongoose.Types.ObjectId; eventType?: unknown; timestamp?: unknown }>;
@@ -265,22 +316,28 @@ const foldAndDeleteAnalyticsEvents = async (netid: string, now: Date): Promise<n
       counts.set(key, entry);
     }
 
-    await mongoose.connection.transaction(async (session) => {
-      await DeletedAccountEventTally.bulkWrite(
-        [...counts.values()].map(({ month, eventType, count }) => ({
-          updateOne: {
-            filter: { month, eventType },
-            update: { $inc: { count } },
-            upsert: true,
-          },
-        })),
-        { session },
-      );
-      await AnalyticsEvent.deleteMany(
-        { _id: { $in: batch.map((event) => event._id) } },
-        { session },
-      );
-    });
+    try {
+      await mongoose.connection.transaction(async (session) => {
+        const { deletedCount } = await AnalyticsEvent.deleteMany(
+          { _id: { $in: batch.map((event) => event._id) } },
+          { session },
+        );
+        if (deletedCount !== batch.length) throw new AnalyticsEventBatchChangedError();
+        await DeletedAccountEventTally.bulkWrite(
+          [...counts.values()].map(({ month, eventType, count }) => ({
+            updateOne: {
+              filter: { month, eventType },
+              update: { $inc: { count } },
+              upsert: true,
+            },
+          })),
+          { session },
+        );
+      });
+    } catch (error) {
+      if (error instanceof AnalyticsEventBatchChangedError) continue;
+      throw error;
+    }
     deleted += batch.length;
   }
 };
@@ -291,7 +348,7 @@ const foldAndDeleteAnalyticsEvents = async (netid: string, now: Date): Promise<n
  * entity, category and reporter satisfiable while two tombstoned reports are unreviewed.
  */
 const tombstoneCorrectionReports = async (netid: string): Promise<number> => {
-  const reports = (await EntityCorrectionReport.find({ 'reporter.netId': netid })
+  const reports = (await EntityCorrectionReport.find(correctionReportsOf(netid))
     .select('_id')
     .lean()) as Array<{ _id: mongoose.Types.ObjectId }>;
   if (reports.length === 0) return 0;
@@ -314,6 +371,38 @@ const tombstoneCorrectionReports = async (netid: string): Promise<number> => {
     })),
   );
   return reports.length;
+};
+
+const tombstoneAdminAuditEvents = async (netid: string): Promise<number> => {
+  const [acted, targeted] = await Promise.all([
+    AdminAuditEvent.updateMany(adminAuditEventsActedBy(netid), {
+      $set: { actorNetid: DELETED_ACCOUNT_ADMIN_ACTOR_TOMBSTONE },
+    }),
+    AdminAuditEvent.updateMany(adminAuditEventsTargeting(netid), {
+      $set: { targetId: DELETED_ACCOUNT_ADMIN_ACTOR_TOMBSTONE },
+    }),
+  ]);
+  return acted.modifiedCount + targeted.modifiedCount;
+};
+
+const tombstoneAdminGrantActions = async (netid: string): Promise<number> => {
+  const grants = (await AdminGrant.find(adminGrantsActedOnBy(netid))
+    .select('_id')
+    .lean()) as Array<{
+    _id: mongoose.Types.ObjectId;
+  }>;
+  if (grants.length === 0) return 0;
+  const tombstone = DELETED_ACCOUNT_ADMIN_ACTOR_TOMBSTONE;
+  await Promise.all([
+    AdminGrant.updateMany({ grantedBy: netid }, { $set: { grantedBy: tombstone } }),
+    AdminGrant.updateMany({ revokedBy: netid }, { $set: { revokedBy: tombstone } }),
+    AdminGrant.updateMany(
+      { 'history.actorNetid': netid },
+      { $set: { 'history.$[entry].actorNetid': tombstone } },
+      { arrayFilters: [{ 'entry.actorNetid': netid }] },
+    ),
+  ]);
+  return grants.length;
 };
 
 const recordDeletionAudit = async (
@@ -374,6 +463,8 @@ export const deleteAccountData = async (
   const correctionReports = await tombstoneCorrectionReports(netid);
   const adminGrants = (await AdminGrant.deleteMany({ netid })).deletedCount;
   if (adminGrants > 0) clearAdminGrantCache();
+  const adminAuditEvents = await tombstoneAdminAuditEvents(netid);
+  const adminGrantActions = await tombstoneAdminGrantActions(netid);
   const postHog = await deletePostHogPerson(account?.productAnalyticsId, env);
   const accountDeleted = account ? (await Account.deleteOne({ _id: account._id })).deletedCount : 0;
 
@@ -386,6 +477,8 @@ export const deleteAccountData = async (
       analyticsEvents,
       correctionReports,
       adminGrants,
+      adminAuditEvents,
+      adminGrantActions,
     },
     postHog,
   };

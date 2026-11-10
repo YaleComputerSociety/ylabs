@@ -30,11 +30,17 @@ export const storedSessionClaim = (stored: unknown): SessionClaim | null => {
   return { sessionId, issuedAt, sessionVersion: sessionVersion as number };
 };
 
+const accountCreatedAtMs = (value: unknown): number => {
+  const ms = value instanceof Date ? value.getTime() : Number.NaN;
+  return Number.isFinite(ms) ? ms : Number.NEGATIVE_INFINITY;
+};
+
 export const isSessionClaimLive = (
   claim: SessionClaim,
-  accountSessionVersion: unknown,
+  account: { sessionVersion: unknown; createdAt?: unknown },
   now = Date.now(),
 ): boolean =>
-  claim.sessionVersion === normalizedSessionVersion(accountSessionVersion) &&
+  claim.sessionVersion === normalizedSessionVersion(account.sessionVersion) &&
+  claim.issuedAt >= accountCreatedAtMs(account.createdAt) &&
   claim.issuedAt <= now + SESSION_CLOCK_SKEW_MS &&
   now - claim.issuedAt < SESSION_LIFETIME_MS;

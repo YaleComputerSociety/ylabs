@@ -36,9 +36,6 @@ export const postHogPersonDeletionConfig = (
   return { apiKey, projectId };
 };
 
-export const isPostHogPersonDeletionConfigured = (env: NodeJS.ProcessEnv = process.env): boolean =>
-  postHogPersonDeletionConfig(env) !== null;
-
 export const postHogPersonBulkDeleteUrl = (projectId: string): string =>
   `${POSTHOG_PRIVATE_API_ORIGIN}/api/projects/${encodeURIComponent(projectId)}/persons/bulk_delete/`;
 

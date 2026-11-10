@@ -7,7 +7,8 @@
  * the netid, which is also how a finished deletion is verified, since every count must read
  * zero afterwards. Output carries counts only, never the netid.
  *
- * Accounts are environment-local, so it acts on one environment per run.
+ * Accounts are environment-local, so it acts on one environment per run, and it reads that
+ * environment's own deletion keys, so a Production run never borrows Development's.
  */
 import dotenv from 'dotenv';
 import path from 'path';
@@ -31,11 +32,17 @@ export const DELETE_CONFIRM_FLAG = '--confirm-delete-account-data';
 
 export type DeleteAccountDataEnvironment = 'development' | 'beta' | 'production';
 
-const MONGO_URL_ENV_VARS: Record<DeleteAccountDataEnvironment, string> = {
-  development: 'MONGODBURL',
-  beta: 'BETA_MONGODBURL',
-  production: 'PRODUCTION_MONGODBURL',
+const ENVIRONMENT_VARIABLE_PREFIXES: Record<DeleteAccountDataEnvironment, string> = {
+  development: '',
+  beta: 'BETA_',
+  production: 'PRODUCTION_',
 };
+
+export const ACCOUNT_DELETION_KEY_VARIABLES = [
+  'POSTHOG_PERSONAL_API_KEY',
+  'POSTHOG_PROJECT_ID',
+  'ACCOUNT_DELETION_AUDIT_HMAC_KEY',
+] as const;
 
 export interface DeleteAccountDataArgs {
   environment: DeleteAccountDataEnvironment;
@@ -91,7 +98,7 @@ export function resolveDeleteAccountDataMongoUrl(
   environment: DeleteAccountDataEnvironment,
   env: NodeJS.ProcessEnv = process.env,
 ): string {
-  const variable = MONGO_URL_ENV_VARS[environment];
+  const variable = `${ENVIRONMENT_VARIABLE_PREFIXES[environment]}MONGODBURL`;
   const value = env[variable]?.trim();
   if (!value) {
     throw new Error(
@@ -99,6 +106,16 @@ export function resolveDeleteAccountDataMongoUrl(
     );
   }
   return value;
+}
+
+export function resolveDeleteAccountDataServiceEnv(
+  environment: DeleteAccountDataEnvironment,
+  env: NodeJS.ProcessEnv = process.env,
+): NodeJS.ProcessEnv {
+  const prefix = ENVIRONMENT_VARIABLE_PREFIXES[environment];
+  return Object.fromEntries(
+    ACCOUNT_DELETION_KEY_VARIABLES.map((variable) => [variable, env[`${prefix}${variable}`]]),
+  );
 }
 
 async function main(): Promise<void> {
@@ -110,7 +127,10 @@ async function main(): Promise<void> {
   try {
     const before = await readAccountDataResidue(args.netid);
     const deletion = args.apply
-      ? await deleteAccountData(args.netid, { requester: 'operator' })
+      ? await deleteAccountData(args.netid, {
+          requester: 'operator',
+          env: resolveDeleteAccountDataServiceEnv(args.environment),
+        })
       : null;
     const after = args.apply ? await readAccountDataResidue(args.netid) : null;
     console.log(

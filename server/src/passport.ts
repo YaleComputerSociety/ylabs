@@ -557,7 +557,7 @@ passport.deserializeUser(async (stored: unknown, done) => {
       return;
     }
     const account = await withMongoReconnect(() => validateAccount(principal.netId));
-    if (!account || account.archived || !isSessionClaimLive(claim, account.sessionVersion)) {
+    if (!account || account.archived || !isSessionClaimLive(claim, account)) {
       done(null, null);
       return;
     }

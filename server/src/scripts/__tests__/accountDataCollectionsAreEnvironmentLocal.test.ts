@@ -1,10 +1,14 @@
-import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { DELETED_ACCOUNT_EVENT_TALLY_COLLECTION } from '../../models/deletedAccountEventTally';
 import {
   NEVER_COPY_COLLECTIONS,
   PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS,
 } from '../mirrorCollectionPolicy';
+import {
+  promotionCollectionNamesForOptions,
+  type PromotionOptions,
+} from '../promoteAcceptedBetaCopy';
+import { betaToDevelopmentCollectionNames } from '../syncBetaToDevelopment';
 
 const ACCOUNT_DATA_COLLECTIONS = [
   'accounts',
@@ -16,35 +20,25 @@ const ACCOUNT_DATA_COLLECTIONS = [
   DELETED_ACCOUNT_EVENT_TALLY_COLLECTION,
 ];
 
-const sourceBlock = (file: string, start: string, end: string): string => {
-  const source = fs.readFileSync(new URL(`../${file}`, import.meta.url).pathname, 'utf8');
-  const from = source.indexOf(start);
-  const to = source.indexOf(end, from);
-  expect(from).toBeGreaterThan(-1);
-  expect(to).toBeGreaterThan(from);
-  return source.slice(from, to);
-};
+const widestPromotion = {
+  includeObservations: true,
+  includeScrapeRuns: true,
+} as PromotionOptions;
 
 describe('a deleted account stays deleted across promotion and sync (#4156)', () => {
   it('copies none of the collections an account deletion writes during a promotion', () => {
-    const copyBlock = sourceBlock(
-      'promoteAcceptedBetaCopy.ts',
-      'const COPY_COLLECTIONS',
-      'export interface PromotionOptions',
-    );
+    const copied = promotionCollectionNamesForOptions(widestPromotion);
+    expect(copied.length).toBeGreaterThan(0);
     for (const collection of ACCOUNT_DATA_COLLECTIONS) {
-      expect(copyBlock).not.toContain(`'${collection}'`);
+      expect(copied).not.toContain(collection);
     }
   });
 
   it('copies none of them during a Beta and Development sync', () => {
-    const copyBlock = sourceBlock(
-      'syncBetaToDevelopment.ts',
-      'const BASE_COPY_COLLECTIONS',
-      'const EXCLUDED_BETA_COLLECTIONS',
-    );
+    const copied = betaToDevelopmentCollectionNames(true);
+    expect(copied.length).toBeGreaterThan(0);
     for (const collection of ACCOUNT_DATA_COLLECTIONS) {
-      expect(copyBlock).not.toContain(`'${collection}'`);
+      expect(copied).not.toContain(collection);
     }
   });
 

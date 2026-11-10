@@ -3,6 +3,7 @@ import {
   DELETE_CONFIRM_FLAG,
   parseDeleteAccountDataArgs,
   resolveDeleteAccountDataMongoUrl,
+  resolveDeleteAccountDataServiceEnv,
 } from '../deleteAccountData';
 
 describe('accounts:delete-account-data arguments (#4156)', () => {
@@ -44,5 +45,31 @@ describe('accounts:delete-account-data arguments (#4156)', () => {
     expect(() => resolveDeleteAccountDataMongoUrl('production', {})).toThrow(
       'PRODUCTION_MONGODBURL',
     );
+  });
+
+  it('hands the deletion only the target environment keys, never the local ones', () => {
+    const operatorEnv = {
+      POSTHOG_PERSONAL_API_KEY: 'phx_development_key',
+      POSTHOG_PROJECT_ID: '111',
+      ACCOUNT_DELETION_AUDIT_HMAC_KEY: 'development-audit-key',
+      PRODUCTION_POSTHOG_PERSONAL_API_KEY: 'phx_production_key',
+      PRODUCTION_POSTHOG_PROJECT_ID: '222',
+      PRODUCTION_ACCOUNT_DELETION_AUDIT_HMAC_KEY: 'production-audit-key',
+    };
+    expect(resolveDeleteAccountDataServiceEnv('production', operatorEnv)).toEqual({
+      POSTHOG_PERSONAL_API_KEY: 'phx_production_key',
+      POSTHOG_PROJECT_ID: '222',
+      ACCOUNT_DELETION_AUDIT_HMAC_KEY: 'production-audit-key',
+    });
+    expect(resolveDeleteAccountDataServiceEnv('beta', operatorEnv)).toEqual({
+      POSTHOG_PERSONAL_API_KEY: undefined,
+      POSTHOG_PROJECT_ID: undefined,
+      ACCOUNT_DELETION_AUDIT_HMAC_KEY: undefined,
+    });
+    expect(resolveDeleteAccountDataServiceEnv('development', operatorEnv)).toEqual({
+      POSTHOG_PERSONAL_API_KEY: 'phx_development_key',
+      POSTHOG_PROJECT_ID: '111',
+      ACCOUNT_DELETION_AUDIT_HMAC_KEY: 'development-audit-key',
+    });
   });
 });
