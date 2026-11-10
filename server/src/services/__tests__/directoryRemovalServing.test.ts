@@ -4,7 +4,9 @@ import { buildDirectoryRemovalMatcher } from '../directoryRemovalMatcher';
 import {
   WITHHELD_PERSON_PHRASE,
   buildDirectoryRemovalServing,
+  currentDirectoryRemovalServing,
   redactWithheldNamesDeep,
+  setDirectoryRemovalServingForTest,
   rosterWithoutWithheldPeople,
 } from '../directoryRemovalServing';
 
@@ -102,5 +104,22 @@ describe('served payload helpers', () => {
       },
       quotes: [`Ask ${WITHHELD_PERSON_PHRASE} first.`],
     });
+  });
+});
+
+describe('before the first load', () => {
+  it('withholds every name on a deployed runtime and changes nothing locally', () => {
+    setDirectoryRemovalServingForTest(undefined);
+    const deployed = currentDirectoryRemovalServing({
+      NODE_ENV: 'production',
+      SERVER_BASE_URL: 'https://example.invalid',
+    });
+    expect(deployed.withholdsEveryName).toBe(true);
+    expect(deployed.isWithheldPersonId('anyone')).toBe(true);
+    const local = currentDirectoryRemovalServing({
+      NODE_ENV: 'development',
+      SERVER_BASE_URL: 'http://localhost:4000',
+    });
+    expect(local.state).toBe('inert');
   });
 });

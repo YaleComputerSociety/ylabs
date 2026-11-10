@@ -2,6 +2,7 @@ import { Researcher } from '../models/researcher';
 import { ResearchEntity } from '../models/researchEntity';
 import { normalizedRosterLabel } from '../scrapers/rosterStrikeDigests';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { requiresDeployedRuntimeSecurity } from '../utils/environment';
 import {
   getResearchEntityRoster,
   getResearchEntityRosterByEntityId,
@@ -218,11 +219,7 @@ async function peopleFor(matcher: DirectoryRemovalMatcher) {
   const people = await Researcher.find({ archived: { $ne: true } })
     .select('_id displayName identifiers profileLinks.url')
     .lean();
-  return {
-    removed: people.filter(
-      (person: any) => matcher.isRemovedPerson(person) || matcher.isRemovedName(person.displayName),
-    ) as any[],
-  };
+  return { removed: people.filter((person: any) => matcher.isRemovedPerson(person)) as any[] };
 }
 
 export async function loadDirectoryRemovalServing(
@@ -243,8 +240,16 @@ export async function loadDirectoryRemovalServing(
   }
 }
 
-export function currentDirectoryRemovalServing(): DirectoryRemovalServing {
-  return snapshot?.serving ?? INERT_SERVING;
+const NOT_YET_LOADED_SERVING = buildDirectoryRemovalServing(
+  { state: 'withholding_every_name', isRemovedPerson: () => true, isRemovedName: () => true },
+  { removed: [] },
+);
+
+export function currentDirectoryRemovalServing(
+  env: NodeJS.ProcessEnv = process.env,
+): DirectoryRemovalServing {
+  if (snapshot) return snapshot.serving;
+  return requiresDeployedRuntimeSecurity(env) ? NOT_YET_LOADED_SERVING : INERT_SERVING;
 }
 
 export async function freshDirectoryRemovalServing(
