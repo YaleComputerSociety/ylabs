@@ -1747,11 +1747,13 @@ const memberMatchesQuery = (query: string, memberName: string): boolean => {
   );
 };
 
+const isWholeNameQuery = (query: string): boolean => allPersonNameWords(query).length >= 2;
+
 export const matchedLabMember = (
   query: string,
   names: { leadProfessorNames: string[]; members: MatchedLabMember[] },
 ): MatchedLabMember | undefined => {
-  if (allPersonNameWords(query).length < 2) return undefined;
+  if (!isWholeNameQuery(query)) return undefined;
   const leads = new Set(names.leadProfessorNames.map((name) => personNameWords(name).join(' ')));
   return names.members.find((member) => {
     if (leads.has(personNameWords(member.name).join(' '))) return false;
@@ -1815,7 +1817,7 @@ async function optionalMatchedLabMemberNames(
   entities: Array<Record<string, any>>,
 ): Promise<MatchedLabMemberNameRead> {
   const byEntityId = new Map<string, MatchedLabMember>();
-  if (entities.length === 0 || personNameWords(query).length < 2) {
+  if (entities.length === 0 || !isWholeNameQuery(query)) {
     return { byEntityId, unavailable: false };
   }
   try {
