@@ -12,6 +12,13 @@ It is MIT licensed, has no dependencies and no install scripts, and is one 3.4MB
 `server/src/services/englishDictionaryWords.ts` reads it once on first use through `createRequire`, so the tsup bundle stays small and the file is read from `node_modules` at runtime, and keeps it as one string plus a `Uint32Array` of offsets, about 4MB of heap where a `Set` measured about 24MB.
 Replacing it means keeping `isEnglishDictionaryWord` and its lowercase ASCII contract.
 
+## 2026-11-10: The server moves to Mongoose 9.11 and MongoDB driver 7.7 (supersedes #5564)
+
+`server` moves `mongoose` and its resolution to 9.11.4 for its prototype-pollution fixes, and its direct `mongodb` dependency from `~7.6` to `~7.7`, the line Mongoose 9.11 pins.
+The 2026-10-02 rule below still holds: the direct driver tracks the line Mongoose pins, so one shipped driver is installed and `connection.db` is the same `Db` type the scripts import.
+Leaving it on `~7.6` installed two copies, which is the type breakage Dependabot's #5564 hit.
+`mongodb-memory-server` still pins its own driver 7.5, development-only as before.
+
 ## 2026-10-04: The `passport-cas` git pin is replaced by an in-repo CAS 1.0 strategy (#4036)
 
 The server installed `passport-cas` from a 2020 git commit, held up by `server` `resolutions` that forced `uuid`, `xml2js`, and `underscore` across majors for it alone, and by the only entry in `approvedGitRepositories`.
