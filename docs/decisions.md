@@ -40,7 +40,7 @@ The safe configuration is pinned by tests rather than by review.
 The same test fails if a person property other than the bucketed `user_type` or an identify event is sent, and `client/src/__tests__/posthogUsageGuard.test.ts` refuses a committed `phc_` key.
 `server/src/middleware/__tests__/securityHeaders.test.ts` pins the exact `connect-src` and `script-src` with PostHog on, and refuses a non-US, look-alike, port or path host, Beta, and local development.
 Turning PostHog on is an operational step and not part of the merge: the owner sets `VITE_POSTHOG_KEY` and `VITE_POSTHOG_HOST` on the Production web service only and redeploys.
-The privacy notice still has to name PostHog, the data it receives and its retention, which is tracked on #4157, and PostHog's retention is set no longer than the 1,095-day TTL on `analytics_events`.
+The `/privacy` page (#4157) names PostHog, the data it receives and its retention, and PostHog's retention is set no longer than the 1,095-day TTL on `analytics_events`.
 
 ## 2026-11-10: A Stale Hiring Line Reads As A Welcome (#5524)
 

@@ -6,10 +6,11 @@ import { useContext } from 'react';
 
 import SignInButton from '../components/SignInButton';
 import UserContext from '../contexts/UserContext';
-import { Navigate, useLocation } from 'react-router-dom';
+import { Link, Navigate, useLocation } from 'react-router-dom';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import Wordmark from '../components/Wordmark';
 import { normalizeReturnPath } from '../utils/returnPath';
+import { PRIVACY_PATH } from '../utils/privacyNotice';
 
 const Login = () => {
   const { isLoading, isAuthenticated, user, authError, checkContext } = useContext(UserContext);
@@ -98,6 +99,11 @@ const Login = () => {
           <div className="yr-muted-surface mt-5 rounded-card p-3">
             <p className="text-xs font-semibold text-muted">
               Authentication is handled by Yale CAS. y/labs does not ask for your password.
+            </p>
+            <p className="mt-2 text-xs text-muted">
+              <Link to={PRIVACY_PATH} className="yr-link yr-focus-ring rounded-control">
+                What y/labs collects when you sign in
+              </Link>
             </p>
           </div>
           {authError && (
