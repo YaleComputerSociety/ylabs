@@ -21,10 +21,17 @@
  */
 import { Researcher } from '../../models/researcher';
 import { ResearchEntity } from '../../models/researchEntity';
+import { leadTitlesAreAllEmeritus } from '../../services/emeritusLeadWayIn';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { researcherNetid } from '../../utils/researcherIdentity';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { departmentsAgree } from '../utils/labScienceAdviserRule';
+import {
+  givenNamesCouldNameOnePerson,
+  surnameFetchRegex,
+  surnamesCompatible,
+} from '../utils/piNameMatch';
+import { splitName } from '../utils/scraperHelpers';
 import {
   aggregateMentoringEntries,
   yibsSuresFellowListings,
@@ -42,6 +49,7 @@ import {
   tobinProjectUrls,
   undergradMentoringSources,
   wuTsaiFellowListings,
+  UNDERGRAD_MENTORING_SOURCE_KIND,
   type MentorListing,
   type UndergradMentoringEntry,
   type UndergradMentoringSource,
@@ -61,7 +69,8 @@ export const UNDERGRAD_MENTORING_FIELD = 'undergradMentoring';
 /** Advising more than this many academic years back is not read, so counts stay recent. */
 export const MENTORING_LOOKBACK_YEARS = 5;
 
-export type MentorRefusal = 'no-match' | 'ambiguous' | 'department-mismatch' | 'no-lead-row';
+export type MentorRefusal =
+  'no-match' | 'ambiguous' | 'department-mismatch' | 'emeritus-on-current-list' | 'no-lead-row';
 
 export type MentorResolution =
   | { status: 'matched'; slug: string; researcherName?: string; matchedBy?: 'email' | 'name' }
@@ -97,6 +106,7 @@ interface SourceRead {
 interface MentorSourceConfig {
   source: UndergradMentoringSource;
   landingUrl: string;
+  departmentScope?: readonly string[];
   read: (fetchText: MentorFetchText, now: Date) => Promise<SourceRead>;
 }
 
@@ -151,6 +161,77 @@ const recentOnly =
     };
   };
 
+const COMPUTING_ADVISER_DEPARTMENTS = [
+  'Computer Science',
+  'Electrical & Computer Engineering',
+  'Electrical Engineering',
+  'Statistics & Data Science',
+  'Applied Mathematics',
+  'Mathematics',
+  'Applied Physics',
+  'Physics',
+  'Mechanical Engineering & Materials Science',
+  'Biomedical Engineering',
+  'Biomedical Informatics & Data Science',
+  'Biostatistics',
+  'Radiology & Biomedical Imaging',
+  'Economics',
+  'Linguistics',
+  'Psychology',
+  'Cognitive Science',
+  'Neuroscience',
+  'Management',
+] as const;
+
+const NEUROSCIENCE_ADVISER_DEPARTMENTS = [
+  'Psychology',
+  'Psychiatry',
+  'Neuroscience',
+  'Neurology',
+  'Neurobiology',
+  'Neurosurgery',
+  'Child Study Center',
+  'Cellular & Molecular Physiology',
+  'Comparative Medicine',
+  'Pharmacology',
+  'Ophthalmology & Visual Science',
+  'Radiology & Biomedical Imaging',
+  'Biomedical Engineering',
+  'Computer Science',
+  'Electrical & Computer Engineering',
+  'Statistics & Data Science',
+  'Linguistics',
+  'Cognitive Science',
+  'Philosophy',
+  'Molecular Biophysics & Biochemistry',
+  'Genetics',
+] as const;
+
+const ECONOMIC_POLICY_ADVISER_DEPARTMENTS = [
+  'Economics',
+  'Management',
+  'Law',
+  'Political Science',
+  'Sociology',
+  'Global Affairs',
+  'Public Health',
+  'Health Policy',
+  'Statistics & Data Science',
+  'School of the Environment',
+] as const;
+
+const ENVIRONMENTAL_ADVISER_DEPARTMENTS = [
+  'Ecology & Evolutionary Biology',
+  'Earth & Planetary Sciences',
+  'School of the Environment',
+  'Molecular, Cellular & Developmental Biology',
+  'Chemical & Environmental Engineering',
+  'Environmental Health Sciences',
+  'Anthropology',
+  'Peabody Museum',
+  'Economics',
+] as const;
+
 const TOBIN_LANDING = 'https://economics.yale.edu/undergraduate/tobin-ra';
 const ECONOMICS_SITEMAP = 'https://economics.yale.edu/sitemap.xml';
 const PSYCHOLOGY_PAGE = 'https://psychology.yale.edu/undergraduate/research-opportunities';
@@ -159,16 +240,19 @@ export const MENTOR_SOURCE_CONFIGS: readonly MentorSourceConfig[] = [
   {
     source: 'cs-senior-projects',
     landingUrl: 'https://zoo.cs.yale.edu/classes/cpsc4900/',
+    departmentScope: COMPUTING_ADVISER_DEPARTMENTS,
     read: csArchive('cs-senior-projects', 'https://zoo.cs.yale.edu/classes/cpsc4900/'),
   },
   {
     source: 'cs-directed-research',
     landingUrl: 'https://zoo.cs.yale.edu/classes/cs290/',
+    departmentScope: COMPUTING_ADVISER_DEPARTMENTS,
     read: csArchive('cs-directed-research', 'https://zoo.cs.yale.edu/classes/cs290/'),
   },
   {
     source: 'tobin-research-assistantships',
     landingUrl: TOBIN_LANDING,
+    departmentScope: ECONOMIC_POLICY_ADVISER_DEPARTMENTS,
     read: async (fetchText, now) => {
       const index = await fetchText(ECONOMICS_SITEMAP);
       if (index === null) return { listings: [], complete: false };
@@ -222,6 +306,7 @@ export const MENTOR_SOURCE_CONFIGS: readonly MentorSourceConfig[] = [
   {
     source: 'wu-tsai-undergraduate-fellows',
     landingUrl: 'https://wti.yale.edu/humans/undergrads',
+    departmentScope: NEUROSCIENCE_ADVISER_DEPARTMENTS,
     read: async (fetchText, now) => {
       const read = await singlePage('https://wti.yale.edu/humans/undergrads', wuTsaiFellowListings)(
         fetchText,
@@ -265,23 +350,29 @@ export const MENTOR_SOURCE_CONFIGS: readonly MentorSourceConfig[] = [
         'https://german.yale.edu/programs/undergraduate-program/majoring-german/recent-senior-essays',
         germanSeniorEssayListings,
       ],
-      [
-        'yibs-summer-research-fellows',
-        'https://yibs.yale.edu/people/past_sures_fellows',
-        yibsSuresFellowListings,
-      ],
     ] as const
   ).map(([source, url, extract]) => ({
     source,
     landingUrl: url,
     read: recentOnly(singlePage(url, extract)),
   })),
+  {
+    source: 'yibs-summer-research-fellows',
+    landingUrl: 'https://yibs.yale.edu/people/past_sures_fellows',
+    departmentScope: ENVIRONMENTAL_ADVISER_DEPARTMENTS,
+    read: recentOnly(
+      singlePage('https://yibs.yale.edu/people/past_sures_fellows', yibsSuresFellowListings),
+    ),
+  },
 ];
 
 const listingKey = (listing: MentorListing): string =>
-  listing.adviserEmail
-    ? `email:${listing.adviserEmail}`
-    : `name:${listing.adviserName.toLowerCase()}|${(listing.department ?? '').toLowerCase()}`;
+  [
+    listing.adviserEmail ? `email:${listing.adviserEmail}` : '',
+    `name:${listing.adviserName.toLowerCase()}`,
+    (listing.department ?? '').toLowerCase(),
+    (listing.departmentScope ?? []).join(',').toLowerCase(),
+  ].join('|');
 
 async function researcherForEmail(email: string): Promise<UserMatch | null> {
   const researcher: any = await Researcher.findOne({
@@ -293,8 +384,38 @@ async function researcherForEmail(email: string): Promise<UserMatch | null> {
   return researcher ? researcherToUserMatch(researcher, researcherNetid(researcher)) : null;
 }
 
+/** The listed name and the matched researcher's name could be one person. */
+export function listedNameAgrees(listedName: string, owner: Pick<UserMatch, 'fname' | 'lname'>) {
+  const { first, last } = splitName(listedName);
+  if (!last || !owner.lname || !surnamesCompatible(last, owner.lname)) return false;
+  return !first || !owner.fname || givenNamesCouldNameOnePerson(first, owner.fname);
+}
+
+async function liveNamesakeCount(listedName: string): Promise<number> {
+  const { first, last } = splitName(listedName);
+  const surnameRe = surnameFetchRegex(last);
+  if (!surnameRe || !first) return 0;
+  const candidates: Array<{ displayName?: string }> = await Researcher.find(
+    { displayName: surnameRe, archived: { $ne: true } },
+    { displayName: 1 },
+  ).lean();
+  return candidates.filter((candidate) => {
+    const parsed = splitName(candidate.displayName ?? '');
+    return (
+      surnamesCompatible(last, parsed.last) && givenNamesCouldNameOnePerson(first, parsed.first)
+    );
+  }).length;
+}
+
+/**
+ * An email binds only when the researcher who holds it carries the name the list prints,
+ * because a project card's contact email can belong to someone else in the group. A name
+ * alone binds only when no second live researcher could carry it, and only inside the
+ * departments the list states or plausibly draws from.
+ */
 export const defaultMentorResolver: MentorResolver = async (listing) => {
-  let owner = listing.adviserEmail ? await researcherForEmail(listing.adviserEmail) : null;
+  const byEmail = listing.adviserEmail ? await researcherForEmail(listing.adviserEmail) : null;
+  let owner = byEmail && listedNameAgrees(listing.adviserName, byEmail) ? byEmail : null;
   const matchedByEmail = Boolean(owner);
   if (!owner) {
     const resolution = await defaultAdvisorResolution(listing.adviserName);
@@ -302,11 +423,21 @@ export const defaultMentorResolver: MentorResolver = async (listing) => {
     if (resolution.status !== 'matched' || !resolution.match) {
       return { status: 'refused', reason: 'no-match' };
     }
+    if ((await liveNamesakeCount(listing.adviserName)) > 1) {
+      return { status: 'refused', reason: 'ambiguous' };
+    }
     owner = resolution.match;
   }
-  if (!matchedByEmail && listing.department) {
+  if (!matchedByEmail && UNDERGRAD_MENTORING_SOURCE_KIND[listing.source] === 'open') {
+    const held: any = await Researcher.findById(owner._id).select('profile.title').lean();
+    if (leadTitlesAreAllEmeritus([held?.profile?.title])) {
+      return { status: 'refused', reason: 'emeritus-on-current-list' };
+    }
+  }
+  const scope = listing.department ? [listing.department] : (listing.departmentScope ?? []);
+  if (!matchedByEmail && scope.length > 0) {
     const own = await leadRowDepartmentsForOwner(owner);
-    if (!departmentsAgree([listing.department], [...own.departments, ...own.affiliations])) {
+    if (!departmentsAgree(scope, [...own.departments, ...own.affiliations])) {
       return { status: 'refused', reason: 'department-mismatch' };
     }
   }
@@ -377,7 +508,11 @@ export async function planMentorMatches(input: {
     if (read.complete) completeSources.add(config.source);
     else partialFailures.push(`${config.source}: not every page could be read`);
     stats.listings = read.listings.length;
-    for (const listing of read.listings) {
+    for (const raw of read.listings) {
+      const listing =
+        config.departmentScope && !raw.department
+          ? { ...raw, departmentScope: config.departmentScope }
+          : raw;
       const key = listingKey(listing);
       if (!resolutions.has(key)) resolutions.set(key, input.resolveMentor(listing));
       const resolution = await resolutions.get(key)!;
