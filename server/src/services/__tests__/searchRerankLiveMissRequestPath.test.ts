@@ -72,6 +72,8 @@ const CLIENT = { ipKey: 'ip:198.51.100.23', sessionKey: 'anonymous:synthetic-ses
 let rowIds = ALL_ROW_IDS;
 let nameQueryTopHit = false;
 let keywordLegEmpty = false;
+let topHitMatches: Record<string, unknown> | null = null;
+let matchPositionReadFails = false;
 
 const indexHit = (id: string, position: number) => ({
   id,
@@ -96,19 +98,22 @@ const serveIndex = () => {
     if (params.limit === 0 && params.facets) return { hits: [], facetDistribution: {} };
     if (keywordLegEmpty && !params.hybrid) return { hits: [], estimatedTotalHits: 0 };
     if (params.showMatchesPosition) {
+      if (matchPositionReadFails) throw new Error('synthetic match-position outage');
       const top = hits[0];
       return {
         hits: [
-          nameQueryTopHit
-            ? {
-                ...top,
-                _matchesPosition: {
-                  leadProfessorNames: [
-                    { start: 6, length: SYNTHETIC_SURNAME.length, indices: [0] },
-                  ],
-                },
-              }
-            : top,
+          topHitMatches
+            ? { ...top, _matchesPosition: topHitMatches }
+            : nameQueryTopHit
+              ? {
+                  ...top,
+                  _matchesPosition: {
+                    leadProfessorNames: [
+                      { start: 6, length: SYNTHETIC_SURNAME.length, indices: [0] },
+                    ],
+                  },
+                }
+              : top,
         ],
       };
     }
@@ -187,6 +192,8 @@ beforeEach(() => {
   rowIds = ALL_ROW_IDS;
   nameQueryTopHit = false;
   keywordLegEmpty = false;
+  topHitMatches = null;
+  matchPositionReadFails = false;
   mocks.search.mockReset();
   serveIndex();
   mocks.searchSimilarDocuments.mockReset();
@@ -315,6 +322,18 @@ describe('with the live-miss job on', () => {
     releaseJob();
   });
 
+  it('still enqueues a topic query whose title match is shared by a topic field', async () => {
+    liveMissOn();
+    topHitMatches = {
+      name: [{ start: 0, length: 9, indices: [0] }],
+      researchAreas: [{ start: 0, length: 7, indices: [0] }],
+    };
+
+    await search();
+
+    expect(await enqueuedKeys()).toEqual([searchRerankCacheQueryKey(QUERY, {})]);
+  });
+
   it('enqueues once for many searches of the same new query', async () => {
     liveMissOn();
 
@@ -415,6 +434,29 @@ describe('with the live-miss job on', () => {
     it('a name query', async () => {
       nameQueryTopHit = true;
       await search(SYNTHETIC_SURNAME.toLowerCase());
+      expect(await enqueuedKeys()).toEqual([]);
+    });
+
+    it('a name-shaped query the name guard does not take, such as a misspelled surname', async () => {
+      topHitMatches = { leadProfessorNames: [{ start: 6, length: 12, indices: [0] }] };
+      await search('quilfeather');
+      expect(await enqueuedKeys()).toEqual([]);
+    });
+
+    it('a query matched only as a prefix of a row title and in no topic field', async () => {
+      topHitMatches = { name: [{ start: 0, length: 9, indices: [0] }] };
+      await search('synthet');
+      expect(await enqueuedKeys()).toEqual([]);
+    });
+
+    it('a query whose best keyword hit could not be checked for a name match', async () => {
+      matchPositionReadFails = true;
+      await search();
+      expect(await enqueuedKeys()).toEqual([]);
+    });
+
+    it('a query shorter than four letters, such as a two-letter acronym', async () => {
+      await search('un');
       expect(await enqueuedKeys()).toEqual([]);
     });
 

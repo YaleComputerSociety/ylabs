@@ -38,6 +38,8 @@ export type SearchRerankLiveMissGate =
   | 'eligible'
   | 'meili-paged'
   | 'name-query'
+  | 'name-shaped'
+  | 'too-short'
   | 'no-query-tokens'
   | 'no-keyword-row'
   | 'too-few-candidates';

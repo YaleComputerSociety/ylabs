@@ -1476,6 +1476,29 @@ export const keywordLegTopHitIsNameMatch = (
   return !TOPIC_MATCH_ATTRIBUTES.some((attribute) => matchedAttributes.has(attribute));
 };
 
+// Skipping a background rerank only costs its gain, while reranking a name search
+// demotes the person it named, so the live-miss gate is looser than the serving
+// name guard above: any keyword match inside a person's name on the best hit, or a
+// title match no topic field shares, keeps the query out. Measured on the #5549
+// shadow replay, where name-shaped queries whose person no row names were the
+// largest losses.
+export const keywordLegTopHitTouchesAPersonName = (keywordLegHits: any[]): boolean => {
+  const top = keywordLegHits[0];
+  if (!top) return false;
+  const matchedAttributes = new Set(
+    Object.keys(top._matchesPosition ?? {}).map((attribute) => attribute.split('.')[0]),
+  );
+  if (WHOLE_NAME_PERSON_FIELD_ATTRIBUTES.some((attribute) => matchedAttributes.has(attribute))) {
+    return true;
+  }
+  return (
+    TITLE_ATTRIBUTES.some((attribute) => matchedAttributes.has(attribute)) &&
+    !TOPIC_MATCH_ATTRIBUTES.some((attribute) => matchedAttributes.has(attribute))
+  );
+};
+
+const LIVE_MISS_MIN_QUERY_CHARACTERS = 4;
+
 const hitMatchRestsOnMeshDescriptor = (hit: any, queryWordKeys: readonly string[]): boolean => {
   const descriptorOnlyTerms = hit?.[MESH_DESCRIPTOR_ONLY_TERMS_FIELD];
   if (!Array.isArray(descriptorOnlyTerms) || descriptorOnlyTerms.length === 0) return false;
@@ -2839,11 +2862,17 @@ async function searchResearchGroupsForQuery(
       ? 'name-query'
       : normalizedQuery.tokens.length === 0
         ? 'no-query-tokens'
-        : servesNoKeywordRow(keywordLeg.rawHits)
-          ? 'no-keyword-row'
-          : servedPool.length < 2
-            ? 'too-few-candidates'
-            : 'eligible';
+        : normalizedQuery.tokens.join('').length < LIVE_MISS_MIN_QUERY_CHARACTERS
+          ? 'too-short'
+          : servesNoKeywordRow(keywordLeg.rawHits)
+            ? 'no-keyword-row'
+            : keywordLegTopHit !== null &&
+                (keywordLegTopHit.failed ||
+                  keywordLegTopHitTouchesAPersonName([keywordLegTopHit.hit]))
+              ? 'name-shaped'
+              : servedPool.length < 2
+                ? 'too-few-candidates'
+                : 'eligible';
   if (
     rerankLiveMiss &&
     rerankQueryKey &&

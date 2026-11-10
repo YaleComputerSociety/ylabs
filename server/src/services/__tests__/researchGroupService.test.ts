@@ -106,6 +106,7 @@ import {
   orderCandidatesByKeywordLeg,
   fuseKeywordAndSemanticRankings,
   keywordLegTopHitIsNameMatch,
+  keywordLegTopHitTouchesAPersonName,
   SEMANTIC_LEG_SIZE,
   currentResearchEntityMemberFilter,
   dedupeSameNameLeadMembers,
@@ -1972,6 +1973,29 @@ describe('searchResearchGroupsViaMeili', () => {
     it('reads no deeper than the semantic leg size', () => {
       const semantic = Array.from({ length: SEMANTIC_LEG_SIZE + 5 }, (_, i) => hit(`s${i}`));
       expect(fuseKeywordAndSemanticRankings([], semantic)).toHaveLength(SEMANTIC_LEG_SIZE);
+    });
+  });
+
+  describe('keywordLegTopHitTouchesAPersonName (#5549)', () => {
+    const hit = (matches: Record<string, unknown>) => ({ _matchesPosition: matches });
+    const span = [{ start: 0, length: 4, indices: [0] }];
+
+    it('is true for any match inside a lead, professor or member name, typo or not', () => {
+      expect(keywordLegTopHitTouchesAPersonName([hit({ leadProfessorNames: span })])).toBe(true);
+      expect(keywordLegTopHitTouchesAPersonName([hit({ professorNames: span })])).toBe(true);
+      expect(keywordLegTopHitTouchesAPersonName([hit({ memberNames: span })])).toBe(true);
+    });
+
+    it('is true for a title match no topic field shares, and false when one does', () => {
+      expect(keywordLegTopHitTouchesAPersonName([hit({ name: span })])).toBe(true);
+      expect(keywordLegTopHitTouchesAPersonName([hit({ name: span, researchAreas: span })])).toBe(
+        false,
+      );
+    });
+
+    it('is false for a topic-only match or no hit', () => {
+      expect(keywordLegTopHitTouchesAPersonName([hit({ researchAreas: span })])).toBe(false);
+      expect(keywordLegTopHitTouchesAPersonName([])).toBe(false);
     });
   });
 
