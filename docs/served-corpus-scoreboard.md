@@ -127,6 +127,10 @@ baseline was exported through a length cap, so these fields cannot be byte-compa
   27 still-served rows were compared on the prefix only and are NOT counted as changed
 ```
 
+That count can fall to zero without anything being wrong: measured on Development on 2026-11-10, all 31 rows the 2026-08-31 artifact holds at 700 characters had been rewritten and differed from it within their first 100 characters, so each one is a real change and none needs the prefix (#5579).
+The self-check therefore does not ask for at least one prefix row.
+It refuses the run when a counted change's served text only continues a capped baseline value, because that is the row the cap-aware comparison exists to exclude and finding one means the comparison did not run.
+
 **Keep the 2026-08-31 artifact.** Its per-row hand-read verdicts are the only classified sample this product has and the cap does not touch them: a human read the served card, not the export. What is limited is only its use as a byte-comparison source, and only past 700 characters. Do not "fix" it by discarding or regenerating the file.
 
 ## The corpus-wide reachable split
