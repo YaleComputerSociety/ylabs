@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { departmentsAgree } from '../labScienceAdviserRule';
 import {
   academicYearEndIn,
   aggregateMentoringEntries,
@@ -284,13 +285,47 @@ describe('humanities essay and summer research lists', () => {
     ]);
   });
 
-  it('reads the YIBS adviser name before the title that follows it', () => {
+  it('reads English advisers one line at a time when a paragraph holds two essays', () => {
+    const html = `<h2>2024-2025</h2>
+      <p>Student, One, “A Synthetic Essay,” advised by Avery Synthetic<br />Student, Two, “Another Essay,” advised by Blair Invented</p>`;
+    const listings = englishAdvisedByListings(
+      html,
+      'https://english.example.edu/',
+      'english-senior-essays',
+    );
+    expect(listings.map((listing) => listing.adviserName)).toEqual([
+      'Avery Synthetic',
+      'Blair Invented',
+    ]);
+    expect(studentFree(listings)).not.toMatch(/Student|Essay/);
+  });
+
+  it('reads the YIBS adviser name and the department or school their title states', () => {
     const html = `<div class="field-collection-item-field-person-info">
       <p>Student One, SURES fellow 2024</p>
-      <p><strong>Advisor :</strong> Avery Synthetic, <em>Professor of Ecology</em></p></div>`;
-    expect(yibsSuresFellowListings(html, 'https://yibs.example.edu/')).toEqual([
-      expect.objectContaining({ adviserName: 'Avery Synthetic', year: 2024 }),
+      <p><strong>Advisor :</strong> Avery Synthetic, <em>Associate Professor of</em><a href="#"> Ecology &amp; Evolutionary Biology</a> <a href="#">Yale School of the Environment</a></p>
+      <p><strong>Fellow quote:</strong> “A student sentence, with a comma”</p></div>`;
+    const listings = yibsSuresFellowListings(html, 'https://yibs.example.edu/');
+    expect(listings).toEqual([
+      expect.objectContaining({
+        adviserName: 'Avery Synthetic',
+        department: 'Ecology & Evolutionary Biology School of the Environment',
+        year: 2024,
+      }),
     ]);
+    const department = listings[0].department ?? '';
+    expect(departmentsAgree([department], ['Ecology and Evolutionary Biology'])).toBe(true);
+    expect(departmentsAgree([department], ['School of the Environment'])).toBe(true);
+    expect(departmentsAgree([department], ['English'])).toBe(false);
+    expect(studentFree(listings)).not.toMatch(/student|Fellow/);
+  });
+
+  it('leaves a YIBS adviser with no stated title without a department', () => {
+    const html = `<div class="field-collection-item-field-person-info">
+      <p>SURES fellow 2023</p><p><strong>Advisor:</strong> Blair Invented</p></div>`;
+    const [listing] = yibsSuresFellowListings(html, 'https://yibs.example.edu/');
+    expect(listing).toEqual(expect.objectContaining({ adviserName: 'Blair Invented', year: 2023 }));
+    expect(listing.department).toBeUndefined();
   });
 });
 

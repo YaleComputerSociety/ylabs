@@ -408,6 +408,13 @@ export function academicYearEndIn(text: string): number | undefined {
 
 const ADVISED_BY = /\badvised\s+by\s+(.+?)\s*[.;]?\s*$/i;
 
+function paragraphLines(paragraphHtml: string): string[] {
+  return paragraphHtml
+    .split(/<br\s*\/?>/i)
+    .map((line) => cheerio.load(`<p>${line}</p>`)('p').text().replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+}
+
 /**
  * An English senior essay or Creative Writing project page: a heading per academic year,
  * then one paragraph per essay ending "advised by <adviser>".
@@ -422,17 +429,20 @@ export function englishAdvisedByListings(
   let year: number | undefined;
   $('h2, h3, p').each((_index, element) => {
     const node = $(element);
-    const text = node.text().replace(/\s+/g, ' ').trim();
     if (node.is('h2, h3')) {
+      const text = node.text().replace(/\s+/g, ' ').trim();
       year = /\b(?:19|20)\d\d\s*[-\u2013]\s*(?:19|20)?\d\d\b/.test(text)
         ? academicYearEndIn(text)
         : year;
       return;
     }
-    const adviser = ADVISED_BY.exec(text)?.[1];
-    if (!adviser || year === undefined) return;
-    for (const adviserName of splitAdviserNames(adviser)) {
-      listings.push({ source, adviserName, department: 'English', year, sourceUrl: url });
+    if (year === undefined) return;
+    for (const line of paragraphLines(node.html() ?? '')) {
+      const adviser = ADVISED_BY.exec(line)?.[1];
+      if (!adviser) continue;
+      for (const adviserName of splitAdviserNames(adviser)) {
+        listings.push({ source, adviserName, department: 'English', year, sourceUrl: url });
+      }
     }
   });
   return listings;
@@ -478,11 +488,7 @@ export function germanSeniorEssayListings(html: string, url: string): MentorList
       year = Number(bold);
       return;
     }
-    const html = node.html() ?? '';
-    const lines = html
-      .split(/<br\s*\/?>/i)
-      .map((line) => cheerio.load(`<p>${line}</p>`)('p').text().replace(/\s+/g, ' ').trim());
-    const adviser = lines
+    const adviser = paragraphLines(node.html() ?? '')
       .map((line) => /^Advis(?:e|o)rs?\s*:\s*(.+)$/i.exec(line)?.[1])
       .find((value): value is string => Boolean(value));
     if (!adviser) return;
@@ -499,26 +505,52 @@ export function germanSeniorEssayListings(html: string, url: string): MentorList
   return listings;
 }
 
+const ACADEMIC_RANK_PREFIX =
+  /^.*?\b(?:professor|lecturer|scientist|instructor|curator)\s+(?:of|in)\s+/i;
+
+function departmentFromAdviserTitle(title: string): string | undefined {
+  const units = title
+    .split(',')
+    .map((segment) =>
+      segment
+        .replace(ACADEMIC_RANK_PREFIX, '')
+        .replace(/\bYale\b/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim(),
+    )
+    .filter(Boolean);
+  return units.length > 0 ? units.join('; ') : undefined;
+}
+
 /**
- * YIBS past SURES fellows: one block per fellow whose text names "Advisor : <name>, <title>".
- * Only the name before the first comma is the adviser.
+ * YIBS past SURES fellows: one block per fellow with a paragraph "Advisor: <name>, <title>".
+ * The name is the text before the first comma; the title after it states the adviser's
+ * department or school, which the match must agree with.
  */
 export function yibsSuresFellowListings(html: string, url: string): MentorListing[] {
   const $ = cheerio.load(html);
   const listings: MentorListing[] = [];
   $('.field-collection-item-field-person-info').each((_index, element) => {
-    const text = $(element).text().replace(/\s+/g, ' ').trim();
-    const year = yearIn(text);
-    for (const match of text.matchAll(/Advis(?:e|o)rs?\s*:\s*([^,;(]+)/gi)) {
-      for (const adviserName of splitAdviserNames(match[1])) {
-        listings.push({
-          source: 'yibs-summer-research-fellows',
-          adviserName,
-          year,
-          sourceUrl: url,
-        });
+    const block = $(element);
+    const year = yearIn(block.text().replace(/\s+/g, ' '));
+    block.find('p').each((_lineIndex, paragraph) => {
+      const text = $(paragraph).text().replace(/\s+/g, ' ').trim();
+      const adviserLine = /^Advis(?:e|o)rs?\s*:\s*(.+)$/i.exec(text)?.[1];
+      if (!adviserLine) return;
+      for (const clause of adviserLine.split(';')) {
+        const [names, ...title] = clause.split(',');
+        const department = departmentFromAdviserTitle(title.join(','));
+        for (const adviserName of splitAdviserNames(names.replace(/\(.*$/, ''))) {
+          listings.push({
+            source: 'yibs-summer-research-fellows',
+            adviserName,
+            ...(department ? { department } : {}),
+            year,
+            sourceUrl: url,
+          });
+        }
       }
-    }
+    });
   });
   return listings;
 }
