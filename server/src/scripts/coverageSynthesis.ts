@@ -6,7 +6,6 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { Observation } from '../models/observation';
-import { ScrapeRun } from '../models/scrapeRun';
 import {
   appendObservations,
   getSourceByName,
@@ -17,27 +16,26 @@ import { resetDescriptionOwnershipCitersCache } from '../scrapers/descriptionOwn
 import {
   defaultMaterializerCardSynthesizer,
   materializeEntity,
-  materializationReadScopeFilter,
 } from '../scrapers/entityMaterializer';
 import { mapWithConcurrency } from '../scrapers/utils/mapWithConcurrency';
 import { appendSynthesizedDescription } from './synthesizedDescriptionObservation';
 import {
   COVERAGE_CONFIDENCE,
+  COVERAGE_SYNTHESIS_MODEL,
   WRITTEN_DESCRIPTION_SOURCE_NAME,
   adoptedWrittenBodyStillSupported,
   defaultCoverageSynthesisLLM,
   coverageSynthesisDecision,
   countCoverageSynthesisRefusals,
-  type CoverageObservationLike,
   type CoverageSynthesisDecision,
   type CoverageSynthesisRefusal,
   type CoverageSynthesisResult,
   type SynthesizeCoverageInput,
 } from '../scrapers/coverageSynthesis';
+import { COVERAGE_SYNTHESIS_PROMPT } from '../scrapers/prompts';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
-  WRITER_EVIDENCE_FIELDS,
   assertCoverageSynthesisApplyAllowed,
   buildWriterEvidenceSnippetsWithMergedInFill,
   parseCoverageSynthesisArgs,
@@ -45,7 +43,6 @@ import {
   liveWrittenBody,
   reinstateStepFor,
   storedWriterEvidenceHash,
-  writerEvidenceHash,
   writerStoredHashFor,
   writerObservationAnchors,
   writerWritesAfterBodyAttempt,
@@ -53,14 +50,33 @@ import {
   writtenBodyCardRepairFilter,
   type ReinstateStep,
   type WriterStep,
-  INGEST_VERIFIED_EXTRACTION_SOURCE,
-  PAGE_GROUNDING_VERIFIED_SINCE,
-  ingestVerifiedRunIds,
-  markIngestVerifiedObservations,
+  carriedOverWrites,
+  assertWriterCacheModeAllowed,
+  coverageSynthesisModeOf,
   deferSearchIndexWritesWhenSkipping,
-  synthesizeWithWriterModel,
   writerModelClientFor,
+  type CoverageSynthesisMode,
 } from './coverageSynthesisCore';
+import {
+  loadIngestVerifiedRunIds,
+  loadWriterEntitiesBySlug,
+  loadWriterObservations,
+  loadWriterRowEvidence,
+  parseWriterEvidenceFile,
+  readJsonInputFile,
+  readSlugsFile,
+  writerEvidenceFileOf,
+  type WriterRowEvidence,
+} from './coverageSynthesisEvidence';
+import { runDerivationImport, runWriterEvaluation } from './coverageSynthesisEvaluate';
+import {
+  mongoWrittenDescriptionDerivationStore,
+  parseImportedWriterDrafts,
+  resolveWrittenDescription,
+  writerInputHash,
+  writerModelThroughCache,
+  type WrittenDescriptionStep,
+} from './writtenDescriptionDerivationCore';
 import { regateRematerializedEntities } from './rematerializeResearchEntities';
 import { listResearchEntityMergedInRowsBySurvivor } from '../services/researchEntityCanonicalTombstone';
 
@@ -76,7 +92,9 @@ const ENTITY_READ_CHUNK = 200;
 export interface CoverageEntityReport {
   slug: string;
   snippets: number;
-  step?: WriterStep | ReinstateStep | 'fullDescription-locked';
+  step?: WriterStep | WrittenDescriptionStep | ReinstateStep | 'fullDescription-locked';
+  modelCalled?: boolean;
+  inputHash?: string;
   synthesized: boolean;
   written: boolean;
   retired?: number;
@@ -274,13 +292,141 @@ async function rederiveWrittenBodyCards(
   if (errors > 0) process.exitCode = 1;
 }
 
+type ReadOnlyMode = Exclude<CoverageSynthesisMode, 'write' | 'print-writer-prompt'>;
+
+function namedSlugs(args: ReturnType<typeof parseCoverageSynthesisArgs>): string[] {
+  return [...new Set([...args.slugs, ...(args.slugsFile ? readSlugsFile(args.slugsFile) : [])])];
+}
+
+async function rowEvidenceFor(
+  args: ReturnType<typeof parseCoverageSynthesisArgs>,
+  slugs: string[],
+): Promise<{ rows: WriterRowEvidence[]; missingSlugs: string[]; evidenceNow: Date }> {
+  if (args.evidenceFile) {
+    const file = parseWriterEvidenceFile(readJsonInputFile(args.evidenceFile, '--evidence-file'));
+    const wanted = new Set(slugs);
+    const rows = slugs.length > 0 ? file.rows.filter((row) => wanted.has(row.slug)) : file.rows;
+    const present = new Set(rows.map((row) => row.slug));
+    return {
+      rows,
+      missingSlugs: slugs.filter((slug) => !present.has(slug)),
+      evidenceNow: new Date(file.capturedAt),
+    };
+  }
+  const entities = await loadWriterEntitiesBySlug(slugs);
+  const rows = await loadWriterRowEvidence(entities, await loadIngestVerifiedRunIds());
+  const present = new Set(rows.map((row) => row.slug));
+  return {
+    rows,
+    missingSlugs: slugs.filter((slug) => !present.has(slug)),
+    evidenceNow: new Date(),
+  };
+}
+
+function writeJsonReport(output: string, flag: string, value: unknown): void {
+  fs.writeFileSync(resolveSafeJsonReportOutputPath(output, flag), JSON.stringify(value, null, 2));
+}
+
+async function runReadOnlyMode(
+  mode: ReadOnlyMode,
+  args: ReturnType<typeof parseCoverageSynthesisArgs>,
+  dbLabel: string,
+): Promise<void> {
+  if (mode === 'capture-evidence') {
+    const slugs = namedSlugs(args);
+    const { rows, missingSlugs, evidenceNow } = await rowEvidenceFor(args, slugs);
+    writeJsonReport(
+      args.captureEvidence as string,
+      '--capture-evidence',
+      writerEvidenceFileOf(rows, evidenceNow, dbLabel),
+    );
+    console.log(
+      JSON.stringify({ mode, db: dbLabel, captured: rows.length, missingSlugs }, null, 2),
+    );
+    return;
+  }
+  if (!args.output)
+    throw new Error(`research-entity:coverage-synthesis --${mode} requires --output`);
+  const store = mongoWrittenDescriptionDerivationStore;
+  if (mode === 'import-derivations') {
+    const drafts = parseImportedWriterDrafts(
+      readJsonInputFile(args.importDerivations as string, '--import-derivations'),
+    );
+    const { rows, evidenceNow } = await rowEvidenceFor(args, [
+      ...new Set(drafts.map((draft) => draft.slug)),
+    ]);
+    const report = await runDerivationImport({
+      rows,
+      drafts,
+      store,
+      evidenceNow,
+      validateOnly: args.validateOnly,
+    });
+    writeJsonReport(args.output, '--output', { mode, db: dbLabel, ...report });
+    console.log(
+      JSON.stringify(
+        { mode, db: dbLabel, byOutcome: report.byOutcome, stored: report.stored },
+        null,
+        2,
+      ),
+    );
+    return;
+  }
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey)
+    throw new Error('research-entity:coverage-synthesis --evaluate requires OPENAI_API_KEY');
+  const { rows, missingSlugs, evidenceNow } = await rowEvidenceFor(args, namedSlugs(args));
+  const report = await runWriterEvaluation({
+    rows,
+    missingSlugs,
+    store,
+    drafting: writerModelThroughCache({
+      callLLM: defaultCoverageSynthesisLLM(
+        apiKey,
+        COVERAGE_SYNTHESIS_MODEL,
+        undefined,
+        'coverage-synthesis-evaluate',
+      ),
+      store,
+    }),
+    evidenceNow,
+    concurrency: args.concurrency,
+    log: (message) => console.error(message),
+  });
+  writeJsonReport(args.output, '--output', {
+    generatedAt: new Date().toISOString(),
+    mode,
+    db: dbLabel,
+    evidence: args.evidenceFile ? 'evidence-file' : 'live',
+    ...report,
+  });
+  console.log(
+    JSON.stringify(
+      { mode, db: dbLabel, modelCalls: report.modelCalls, byStep: report.byStep },
+      null,
+      2,
+    ),
+  );
+}
+
 async function main() {
   const args = parseCoverageSynthesisArgs(process.argv.slice(2));
+  const mode = coverageSynthesisModeOf(args);
+  if (mode === 'print-writer-prompt') {
+    process.stdout.write(`${COVERAGE_SYNTHESIS_PROMPT}\n`);
+    return;
+  }
   const guard = assertScriptApplyAllowed({
     apply: args.apply,
     scriptName: 'research-entity:coverage-synthesis',
     mongoUrl: process.env.MONGODBURL,
   });
+  if (mode !== 'write') {
+    assertWriterCacheModeAllowed(mode, guard.dbLabel);
+    await initializeConnections();
+    await runReadOnlyMode(mode, args, guard.dbLabel);
+    return;
+  }
   assertCoverageSynthesisApplyAllowed(args, guard.dbLabel);
 
   deferSearchIndexWritesWhenSkipping(args);
@@ -289,24 +435,13 @@ async function main() {
     apiKey: process.env.OPENAI_API_KEY,
     create: defaultCoverageSynthesisLLM,
   });
+  const store = mongoWrittenDescriptionDerivationStore;
+  const drafting = callLLM ? writerModelThroughCache({ callLLM, store }) : null;
 
   await initializeConnections();
 
   const entities = await loadTargetEntities(args);
-  const verifiedRunIds = ingestVerifiedRunIds(
-    (await ScrapeRun.find({
-      sourceName: INGEST_VERIFIED_EXTRACTION_SOURCE,
-      startedAt: { $gte: PAGE_GROUNDING_VERIFIED_SINCE },
-      invalidated: { $ne: true },
-    })
-      .select('_id sourceName startedAt invalidated')
-      .lean()) as Array<{
-      _id: unknown;
-      sourceName?: unknown;
-      startedAt?: unknown;
-      invalidated?: unknown;
-    }>,
-  );
+  const verifiedRunIds = await loadIngestVerifiedRunIds();
   if (args.rederiveCards) {
     await rederiveWrittenBodyCards(entities, args, guard.dbLabel);
     return;
@@ -355,35 +490,13 @@ async function main() {
       return;
     }
     const anchors = writerObservationAnchors({ entityKey: entity.slug, entityId: entity._id });
-    const observations = (await Observation.find({
-      entityType: 'researchEntity',
-      ...materializationReadScopeFilter(),
-      field: { $in: WRITER_EVIDENCE_FIELDS },
-      $or: anchors,
-    })
-      .select('field value sourceUrl sourceName confidence observedAt scrapeRunId')
-      .lean()) as unknown as Array<CoverageObservationLike & { observedAt?: Date }>;
-
+    const observations = await loadWriterObservations(anchors, verifiedRunIds);
     const mergedInAnchors = (mergedInBySurvivor.get(String(entity._id)) ?? []).flatMap((row) =>
       writerObservationAnchors({ entityKey: row.slug, entityId: row._id }),
     );
-    const loadMergedInObservations = async () =>
-      mergedInAnchors.length > 0
-        ? markIngestVerifiedObservations(
-            (await Observation.find({
-              entityType: 'researchEntity',
-              ...materializationReadScopeFilter(),
-              field: { $in: WRITER_EVIDENCE_FIELDS },
-              $or: mergedInAnchors,
-            })
-              .select('field value sourceUrl sourceName confidence observedAt scrapeRunId')
-              .lean()) as unknown as Array<CoverageObservationLike & { observedAt?: Date }>,
-            verifiedRunIds,
-          )
-        : [];
     const snippets = await buildWriterEvidenceSnippetsWithMergedInFill(
-      markIngestVerifiedObservations(observations, verifiedRunIds),
-      loadMergedInObservations,
+      observations,
+      () => loadWriterObservations(mergedInAnchors, verifiedRunIds),
       entity.recentGrants,
       {
         websiteUrl: entity.websiteUrl,
@@ -432,46 +545,64 @@ async function main() {
       }
       return;
     }
-    const freshHash = writerEvidenceHash(snippets);
-    const step = planWriterStep({
-      snippets,
-      storedHash: writerStoredHashFor(args, storedWriterEvidenceHash(observations, SOURCE_NAME)),
-      freshHash,
-    });
-    report.step = step;
-    if (step === 'evidence-unchanged') return;
+    const storedHash = writerStoredHashFor(
+      args,
+      storedWriterEvidenceHash(observations, SOURCE_NAME),
+    );
+    const planned = planWriterStep({ snippets, storedHash, freshHash: writerInputHash(snippets) });
+    report.step = planned;
+    if (planned === 'evidence-unchanged') return;
 
     let decision: CoverageSynthesisDecision | null = null;
-    if (step === 'synthesize') {
+    let derivationInputHash: string | undefined;
+    let carriedOver = false;
+    if (planned === 'synthesize') {
       try {
-        decision = await synthesizeWithWriterModel({
-          step,
-          callLLM,
-          synthesize: (writerModel) =>
-            synthesizeDecisionIntoCoverageReport(report, {
-              snippets,
-              entityName: typeof entity.name === 'string' ? entity.name : '',
-              entityType: entity.entityType,
-              researchAreas: entity.researchAreas,
-              callLLM: writerModel,
-            }),
+        const resolution = await resolveWrittenDescription({
+          snippets,
+          entityName: typeof entity.name === 'string' ? entity.name : '',
+          entityType: entity.entityType,
+          researchAreas: entity.researchAreas,
+          previousInputHash: storedHash,
+          store,
+          drafting,
         });
+        report.step = resolution.step;
+        report.modelCalled = resolution.modelCalled;
+        report.inputHash = resolution.inputHash;
+        decision = resolution.decision;
+        derivationInputHash = resolution.derivationInputHash;
+        carriedOver =
+          resolution.step === 'carried-over-unchanged' ||
+          resolution.step === 'carried-over-prompt-change';
+        if (decision?.result) {
+          report.synthesized = true;
+          report.description = decision.result.description;
+          report.sourceUrls = decision.result.sourceUrls;
+        } else if (decision?.refusal) {
+          report.synthesisRefusal = decision.refusal;
+        }
       } catch (error) {
         entityErrors += 1;
         console.error(`[coverage-synthesis] ${entity.slug}: ${sanitizeLogValue(error)}`);
         return;
       }
+      if (!decision) return;
     }
     if (!args.apply || !context) return;
     try {
-      let writes = writerWritesFor(step, decision, {
-        adoptedBodyStillSupported: adoptedWrittenBodyStillSupported({
-          body: liveWrittenBody(observations, SOURCE_NAME),
-          snippets,
-          researchAreas: entity.researchAreas,
-          entityType: entity.entityType,
+      const liveBody = liveWrittenBody(observations, SOURCE_NAME);
+      let writes = carriedOverWrites(
+        writerWritesFor(planned, decision, {
+          adoptedBodyStillSupported: adoptedWrittenBodyStillSupported({
+            body: liveBody,
+            snippets,
+            researchAreas: entity.researchAreas,
+            entityType: entity.entityType,
+          }),
         }),
-      });
+        { carriedOver, liveBody, description: decision?.result?.description },
+      );
       let changed = false;
       if (writes.writeBody && decision?.result) {
         const stored = await appendSynthesizedDescription(
@@ -508,13 +639,13 @@ async function main() {
       }
       const materializedId = changed ? await materializeWrittenRow(entity) : undefined;
       if (materializedId) materializedEntityIds.push(materializedId);
-      if (writes.recordHash) {
+      if (writes.recordHash && derivationInputHash && derivationInputHash !== storedHash) {
         await appendObservations(
           [
             contentHashObservation(
               { entityType: 'researchEntity', entityKey: entity.slug },
               decision?.result?.sourceUrls[0] ?? '',
-              freshHash,
+              derivationInputHash,
             ),
           ],
           context,
@@ -543,8 +674,11 @@ async function main() {
     db: guard.dbLabel,
     scope: args.slugs.length > 0 ? 'slugs' : args.all ? 'all-live' : `first-${args.limit}`,
     scanned: reports.length,
-    llmCalls: args.apply ? countBy('synthesize') : 0,
-    plannedLlmCalls: countBy('synthesize'),
+    llmCalls: reports.filter((entry) => entry.modelCalled).length,
+    plannedLlmCalls: countBy('planned'),
+    cacheHits: countBy('cache-hit'),
+    carriedOverUnchanged: countBy('carried-over-unchanged'),
+    carriedOverPromptChange: countBy('carried-over-prompt-change'),
     evidenceUnchanged: countBy('evidence-unchanged'),
     reinstated: countBy('reinstated'),
     reinstateRefused: countBy('reinstate-refused'),

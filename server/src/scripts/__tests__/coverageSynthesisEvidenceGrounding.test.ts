@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
-  WRITER_CONTRACT_VERSION,
   buildWriterEvidenceSnippets,
   buildWriterEvidenceSnippetsWithMergedInFill,
   eligibleWriterGrants,
   orderWriterEvidence,
   writerEvidenceRank,
 } from '../coverageSynthesisCore';
+import { WRITER_CONTRACT_VERSION } from '../writtenDescriptionDerivationCore';
 import {
   coverageSynthesisDecision,
   isPastCareerClauseSentence,
@@ -81,7 +81,7 @@ describe('writer evidence is text on a fetched page (#4867)', () => {
   });
 
   it('re-judges every row under the new contract', () => {
-    expect(WRITER_CONTRACT_VERSION).toBe('written-description-4915-v2');
+    expect(WRITER_CONTRACT_VERSION).toBe('written-description-5537-v1');
   });
 });
 
@@ -107,20 +107,20 @@ describe('writer evidence order (#4867)', () => {
     );
     const ordered = orderWriterEvidence([other, profile, site], 'https://marsh.example.edu/');
     expect(ordered.map((obs) => obs.value)).toEqual([site.value, profile.value, other.value]);
-    expect(writerEvidenceRank(site, 'https://marsh.example.edu/')).toBe(0);
-    expect(writerEvidenceRank({ sourceName: 'nih-reporter', sourceUrl: '' })).toBe(3);
+    expect(writerEvidenceRank(site, 'https://marsh.example.edu/')).toBe(1);
+    expect(writerEvidenceRank({ sourceName: 'nih-reporter', sourceUrl: '' })).toBe(4);
   });
 
   it('treats only pages under a shared-host site path as the row site', () => {
     const websiteUrl = 'https://medicine.yale.edu/lab/marsh/';
     const rank = (sourceUrl: string, sourceName = 'yale-research-official') =>
       writerEvidenceRank({ sourceName, sourceUrl }, websiteUrl);
-    expect(rank('https://medicine.yale.edu/lab/marsh/research/')).toBe(0);
-    expect(rank('https://medicine.yale.edu/lab/marsh')).toBe(0);
-    expect(rank('https://medicine.yale.edu/lab/marshland/')).toBe(2);
-    expect(rank('https://medicine.yale.edu/lab/reef/')).toBe(2);
-    expect(rank('https://medicine.yale.edu/news/story/')).toBe(2);
-    expect(rank('https://medicine.yale.edu/profile/someone/')).toBe(1);
+    expect(rank('https://medicine.yale.edu/lab/marsh/research/')).toBe(1);
+    expect(rank('https://medicine.yale.edu/lab/marsh')).toBe(1);
+    expect(rank('https://medicine.yale.edu/lab/marshland/')).toBe(3);
+    expect(rank('https://medicine.yale.edu/lab/reef/')).toBe(3);
+    expect(rank('https://medicine.yale.edu/news/story/')).toBe(3);
+    expect(rank('https://medicine.yale.edu/profile/someone/')).toBe(2);
   });
 
   it('does not rank a page as the row site because its lane reads lab sites', () => {
@@ -129,7 +129,7 @@ describe('writer evidence order (#4867)', () => {
         { sourceName: 'yse-centers-index', sourceUrl: 'https://center.example.edu/' },
         'https://marsh.example.edu/',
       ),
-    ).toBe(2);
+    ).toBe(3);
   });
 });
 

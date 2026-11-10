@@ -322,6 +322,7 @@ describe('Beta to Development sync guards', () => {
       'research_topics_derivations',
       'search_rerank_cache',
       'weekly_sweep_runs',
+      'written_description_derivations',
     ]);
     expect(EPHEMERAL_ENVIRONMENT_LOCAL_COLLECTIONS).toEqual(['scrape_job_locks']);
   });
@@ -452,6 +453,33 @@ describe('Beta to Development sync guards', () => {
     expect(
       localNonMirrorCollectionNames(['accounts', 'research_entities'], ['research_entities']),
     ).toEqual([]);
+  });
+
+  it('classifies the writer cache exactly as the topic-derivation cache (#5537)', () => {
+    const listsNaming = (name: string) =>
+      [
+        ['never-copy', NEVER_COPY_COLLECTIONS],
+        ['preserved', PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS],
+        ['ephemeral', EPHEMERAL_ENVIRONMENT_LOCAL_COLLECTIONS],
+        [
+          'excluded-from-beta',
+          buildBetaToDevelopmentSummary(parseBetaToDevelopmentOptions([], baseEnv), [])
+            .excludedOperationalCollections,
+        ],
+      ]
+        .filter(([, list]) => (list as readonly string[]).includes(name))
+        .map(([label]) => label);
+    expect(listsNaming('written_description_derivations')).toEqual(
+      listsNaming('research_topics_derivations'),
+    );
+    expect(listsNaming('written_description_derivations')).toEqual([
+      'never-copy',
+      'preserved',
+      'excluded-from-beta',
+    ]);
+    expect(
+      collectionsForOptions({ includeObservations: true }).map(({ name }) => name),
+    ).not.toContain('written_description_derivations');
   });
 
   it('never copies research plans and never clears them from the target (#5092)', () => {

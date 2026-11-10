@@ -10,6 +10,7 @@ export const MODEL_CALLERS = [
   'card-synthesis',
   'center-affiliation-llm',
   'center-director-llm',
+  'coverage-synthesis-evaluate',
   'coverage-synthesis-llm',
   'description-prompt-ab-harness',
   'description-rewrite-backfill',

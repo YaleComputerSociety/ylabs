@@ -24,7 +24,22 @@ import {
 import { isRejectedDescriptionSourceUrl } from './sources/labMicrositeDescriptionLLMExtractor';
 import { COVERAGE_SYNTHESIS_PROMPT } from './prompts';
 import { WRITTEN_DESCRIPTION_SOURCE_NAME } from './confidenceResolver';
-import { postChatCompletion } from '../utils/modelClient';
+import { postChatCompletion, type ModelCaller } from '../utils/modelClient';
+import {
+  RESEARCH_PAGE_TEXT_FIELD,
+  RESEARCH_PAGE_TEXT_SOURCE,
+  researchPageTextEntries,
+  truncateAtSentenceBoundary,
+} from './utils/researchPageText';
+import { isResearchPageHeadingLine } from './utils/writerEvidenceText';
+import {
+  coversResearchPage,
+  hasFirstPerson,
+  hasFusedPageHeading,
+  hasGreetingText,
+  ungroundedContentTerms,
+  type WrittenDescriptionEvidence,
+} from './utils/writtenDescriptionChecks';
 
 export { WRITTEN_DESCRIPTION_SOURCE_NAME };
 
@@ -66,6 +81,8 @@ export interface CoverageObservationLike {
   sourceName?: string;
   confidence?: number;
   scrapeRunId?: unknown;
+  observedAt?: Date | string;
+  superseded?: boolean;
   /**
    * The lane that wrote this value checked it against the page it fetched before storing
    * it (owner decision on #4867). Derived by `markIngestVerifiedObservations`, never by
@@ -135,25 +152,86 @@ export function writerEvidenceTextOf(value: string): string {
   return researchStatementSentences(value, { activityAnchors: true }).join(' ').trim();
 }
 
+function researchPageTextLines(text: string): string[] {
+  return text
+    .split(/\n+/)
+    .map((line) => withoutProfileTemplateWidgets(line))
+    .filter(Boolean)
+    .flatMap((line) => {
+      const pieces: string[] = [];
+      let rest = line;
+      while (rest.length > MAX_COVERAGE_SNIPPET_CHARS) {
+        const piece = truncateAtSentenceBoundary(rest, MAX_COVERAGE_SNIPPET_CHARS);
+        if (!piece) break;
+        pieces.push(piece);
+        rest = rest.slice(piece.length).trim();
+      }
+      return rest ? [...pieces, rest] : pieces;
+    });
+}
+
+export function researchPageTextSnippetTexts(text: string): string[] {
+  const chunks: string[][] = [];
+  let current: string[] = [];
+  let length = 0;
+  const close = () => {
+    if (current.length === 0) return;
+    const carried =
+      current.length > 1 && isResearchPageHeadingLine(current[current.length - 1])
+        ? current.pop()
+        : undefined;
+    chunks.push(current);
+    current = carried ? [carried] : [];
+    length = carried ? carried.length : 0;
+  };
+  for (const line of researchPageTextLines(text)) {
+    if (current.length > 0 && length + 1 + line.length > MAX_COVERAGE_SNIPPET_CHARS) close();
+    current.push(line);
+    length += (current.length > 1 ? 1 : 0) + line.length;
+  }
+  if (current.length > 0) chunks.push(current);
+  return chunks.map((lines) => lines.join('\n'));
+}
+
+function researchPageTextSnippets(obs: CoverageObservationLike): CoverageSnippet[] {
+  if (obs.sourceName !== RESEARCH_PAGE_TEXT_SOURCE) return [];
+  return researchPageTextEntries(obs.value).flatMap((page) =>
+    isRejectedDescriptionSourceUrl(page.url)
+      ? []
+      : researchPageTextSnippetTexts(redactDirectContactInfo(page.text)).map((text) => ({
+          text: writerEvidenceTextOf(text),
+          sourceUrl: page.url,
+          sourceName: RESEARCH_PAGE_TEXT_SOURCE,
+        })),
+  );
+}
+
 export function gatherCoverageSnippets(
   observations: CoverageObservationLike[],
   storedPageText?: StoredPageTextLookup,
 ): CoverageSnippet[] {
   const seen = new Set<string>();
   const snippets: CoverageSnippet[] = [];
+  const keep = (snippet: CoverageSnippet): boolean => {
+    if (snippet.text.length < 20) return false;
+    const key = snippet.text.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    snippets.push(snippet);
+    return snippets.length >= MAX_COVERAGE_SNIPPETS;
+  };
   for (const obs of observations) {
+    if (obs.field === RESEARCH_PAGE_TEXT_FIELD) {
+      if (researchPageTextSnippets(obs).some(keep)) break;
+      continue;
+    }
     if (!COVERAGE_SNIPPET_FIELDS.has(obs.field)) continue;
     if (!isWriterEvidenceObservation(obs, storedPageText)) continue;
     if (isRejectedDescriptionSourceUrl(obs.sourceUrl)) continue;
     const raw = writerEvidenceTextOf(withoutProfileTemplateWidgets(textValue(obs.value)));
     if (!raw) continue;
     const clean = redactDirectContactInfo(raw).slice(0, MAX_COVERAGE_SNIPPET_CHARS).trim();
-    if (clean.length < 20) continue;
-    const key = clean.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    snippets.push({ text: clean, sourceUrl: obs.sourceUrl, sourceName: obs.sourceName });
-    if (snippets.length >= MAX_COVERAGE_SNIPPETS) break;
+    if (keep({ text: clean, sourceUrl: obs.sourceUrl, sourceName: obs.sourceName })) break;
   }
   return snippets;
 }
@@ -196,7 +274,12 @@ export type CoverageSynthesisRefusal =
   | 'unsupported-method-clause'
   | 'past-framed-restatement'
   | 'source-narration'
-  | 'over-length';
+  | 'over-length'
+  | 'ungrounded-content-term'
+  | 'missing-research-page-coverage'
+  | 'first-person'
+  | 'fused-page-heading'
+  | 'greeting-text';
 
 /**
  * The verbs a synthesized body uses of its subject. Shared with the two internal
@@ -412,6 +495,17 @@ export function judgeWrittenDescription(input: {
   if (wordCount(description) > MAX_WRITTEN_DESCRIPTION_WORDS) return refuse('over-length');
   if (!currentOnly) return refuse('past-framed-restatement');
   if (!methodChecked) return refuse('unsupported-method-clause');
+  const evidence: WrittenDescriptionEvidence[] = input.snippets.map((snippet) => ({
+    text: snippet.text,
+    isResearchPageText: snippet.sourceName === RESEARCH_PAGE_TEXT_SOURCE,
+  }));
+  if (ungroundedContentTerms(description, evidence).length > 0) {
+    return refuse('ungrounded-content-term');
+  }
+  if (!coversResearchPage(description, evidence)) return refuse('missing-research-page-coverage');
+  if (hasFirstPerson(description)) return refuse('first-person');
+  if (hasFusedPageHeading(description, evidence)) return refuse('fused-page-heading');
+  if (hasGreetingText(description)) return refuse('greeting-text');
   return { description, refusal: null };
 }
 
@@ -554,19 +648,33 @@ export async function synthesizeCoverageDescription(
   return (await coverageSynthesisDecision(input)).result;
 }
 
+export function coverageSynthesisUserMessage(input: {
+  snippets: readonly CoverageSnippet[];
+  entityName: string;
+  today: Date;
+}): string {
+  const safeName = redactDirectContactInfo(input.entityName).slice(0, 240);
+  const snippetBlock = input.snippets
+    .map((snippet, index) => `[${index}] (${snippet.sourceName ?? 'source'}) ${snippet.text}`)
+    .join('\n')
+    .slice(0, MAX_CARD_SOURCE_CHARS * 2);
+  return [
+    `TODAY: ${input.today.toISOString().slice(0, 10)}`,
+    `Research entity: ${safeName}`,
+    'EVIDENCE SNIPPETS:',
+    snippetBlock,
+  ].join('\n\n');
+}
+
 export function defaultCoverageSynthesisLLM(
   apiKey: string,
   model: string = COVERAGE_SYNTHESIS_MODEL,
   now: () => Date = () => new Date(),
+  caller: ModelCaller = 'coverage-synthesis-llm',
 ): CoverageSynthesisLLMFn {
   return async ({ snippets, entityName }) => {
-    const safeName = redactDirectContactInfo(entityName).slice(0, 240);
-    const snippetBlock = snippets
-      .map((snippet, index) => `[${index}] (${snippet.sourceName ?? 'source'}) ${snippet.text}`)
-      .join('\n')
-      .slice(0, MAX_CARD_SOURCE_CHARS * 2);
     const response = await postChatCompletion({
-      caller: 'coverage-synthesis-llm',
+      caller,
       apiKey: apiKey,
       timeoutMs: 30_000,
       body: {
@@ -577,12 +685,7 @@ export function defaultCoverageSynthesisLLM(
           { role: 'system', content: COVERAGE_SYNTHESIS_PROMPT },
           {
             role: 'user',
-            content: [
-              `TODAY: ${now().toISOString().slice(0, 10)}`,
-              `Research entity: ${safeName}`,
-              'EVIDENCE SNIPPETS:',
-              snippetBlock,
-            ].join('\n\n'),
+            content: coverageSynthesisUserMessage({ snippets, entityName, today: now() }),
           },
         ],
       },

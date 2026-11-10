@@ -120,7 +120,7 @@ const PROFILE_PAGE_TEXT = [
 const SYNTHESIZED_RESEARCH =
   'Investigates how mucosal immune cells restrain inflammation in the human intestine, using organoid co-culture and single-cell sequencing to map the signals that keep the epithelial barrier intact, and studies how the same regulatory circuits fail in inflammatory bowel disease.';
 
-const PRONOUN_LED_SYNTHESIS = `Her laboratory investigates how mucosal immune cells restrain inflammation in the human intestine, using organoid co-culture and single-cell sequencing to map the epithelial barrier signals. Her group has published widely on inflammatory bowel disease relapse in the intestine.`;
+const PRONOUN_LED_SYNTHESIS = `Her laboratory investigates how mucosal immune cells restrain inflammation in the human intestine, using organoid co-culture and single-cell sequencing to map the epithelial barrier signals. Her group also predicts which patients relapse in inflammatory bowel disease.`;
 
 /**
  * Thirteen words, so it clears the synthesizer's 12-word floor, and repairing the

@@ -5,11 +5,11 @@ import {
   parseCoverageSynthesisArgs,
   planWriterStep,
   storedWriterEvidenceHash,
-  writerEvidenceHash,
   writerWritesAfterBodyAttempt,
   writerWritesFor,
   writtenBodyCardRepairFilter,
 } from '../coverageSynthesisCore';
+import { writerInputHash } from '../writtenDescriptionDerivationCore';
 
 const LAB =
   'The laboratory develops single-cell sequencing methods for immune cell differentiation.';
@@ -38,7 +38,7 @@ describe('the writer lane runs over every live row (#4788)', () => {
     const forward = buildWriterEvidenceSnippets([a, b], undefined);
     const reversed = buildWriterEvidenceSnippets([b, a], undefined);
     expect(forward.map((snippet) => snippet.text)).toEqual([PROFILE, LAB]);
-    expect(writerEvidenceHash(forward)).toBe(writerEvidenceHash(reversed));
+    expect(writerInputHash(forward)).toBe(writerInputHash(reversed));
   });
 
   it('changes the hash when the evidence changes', () => {
@@ -53,7 +53,7 @@ describe('the writer lane runs over every live row (#4788)', () => {
       ],
       undefined,
     );
-    expect(writerEvidenceHash(before)).not.toBe(writerEvidenceHash(after));
+    expect(writerInputHash(before)).not.toBe(writerInputHash(after));
   });
 
   it("ignores the writer's own body when hashing, so writing it never re-triggers a call", () => {
@@ -62,17 +62,17 @@ describe('the writer lane runs over every live row (#4788)', () => {
       ...evidence,
       observation('Develops single-cell sequencing methods.', 'coverage-synthesis-llm', 0.5),
     ];
-    expect(writerEvidenceHash(buildWriterEvidenceSnippets(withOwnBody, undefined))).toBe(
-      writerEvidenceHash(buildWriterEvidenceSnippets(evidence, undefined)),
+    expect(writerInputHash(buildWriterEvidenceSnippets(withOwnBody, undefined))).toBe(
+      writerInputHash(buildWriterEvidenceSnippets(evidence, undefined)),
     );
   });
 
-  it('calls the model only when the evidence or the prompt changed', () => {
+  it('skips a row only when its evidence is unchanged', () => {
     const snippets = buildWriterEvidenceSnippets(
       [observation(LAB, 'ysm-atoz-index', 0.82)],
       undefined,
     );
-    const freshHash = writerEvidenceHash(snippets);
+    const freshHash = writerInputHash(snippets);
     expect(planWriterStep({ snippets, storedHash: freshHash, freshHash })).toBe(
       'evidence-unchanged',
     );

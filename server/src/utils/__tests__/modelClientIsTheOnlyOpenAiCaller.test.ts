@@ -50,6 +50,19 @@ const defaultModelCalls: Array<[ModelCaller, () => Promise<unknown>]> = [
       } as Parameters<ReturnType<typeof defaultCoverageSynthesisLLM>>[0]),
   ],
   [
+    'coverage-synthesis-evaluate',
+    () =>
+      defaultCoverageSynthesisLLM(
+        API_KEY,
+        'gpt-5-mini',
+        undefined,
+        'coverage-synthesis-evaluate',
+      )({
+        entityName: 'Synthetic Folding Lab',
+        snippets: [{ text: 'Studies protein folding.' }],
+      } as Parameters<ReturnType<typeof defaultCoverageSynthesisLLM>>[0]),
+  ],
+  [
     'lab-description-synthesis',
     () =>
       defaultLabDescriptionSynthesizer({

@@ -1,14 +1,10 @@
-import {
-  SOURCE_CONTENT_HASH_FIELD,
-  computeVersionedContentHash,
-} from '../scrapers/contentHashGate';
+import { SOURCE_CONTENT_HASH_FIELD } from '../scrapers/contentHashGate';
 import {
   SEARCH_INDEX_WRITES_DEFERRED,
   SEARCH_INDEX_WRITES_VARIABLE,
 } from '../utils/searchIndexWrites';
 import {
   COVERAGE_SNIPPET_FIELDS,
-  COVERAGE_SYNTHESIS_MODEL,
   MAX_COVERAGE_SNIPPETS,
   gatherCoverageSnippets,
   isCoverageSynthesisLlmFailure,
@@ -17,7 +13,11 @@ import {
   type CoverageSynthesisDecision,
   type StoredPageTextLookup,
 } from '../scrapers/coverageSynthesis';
-import { COVERAGE_SYNTHESIS_PROMPT_HASH } from '../scrapers/prompts';
+import { currentResearchPageTextObservation } from '../scrapers/researchPageTopicsDerivation';
+import {
+  RESEARCH_PAGE_TEXT_FIELD,
+  RESEARCH_PAGE_TEXT_SOURCE,
+} from '../scrapers/utils/researchPageText';
 import { getSourceCoverage } from '../scrapers/sourceCoverageRegistry';
 import { refusedResolverObservations } from '../utils/researchEntityFieldValueRefusals';
 import { fullDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
@@ -35,6 +35,13 @@ export interface CoverageSynthesisArgs {
   skipIndexSync: boolean;
   ignoreEvidenceHash: boolean;
   reinstateRetiredBodies: boolean;
+  evaluate: boolean;
+  validateOnly: boolean;
+  printWriterPrompt: boolean;
+  slugsFile?: string;
+  captureEvidence?: string;
+  evidenceFile?: string;
+  importDerivations?: string;
   output?: string;
 }
 
@@ -42,11 +49,27 @@ export const DEFAULT_COVERAGE_SYNTHESIS_LIMIT = 25;
 export const DEFAULT_COVERAGE_SYNTHESIS_CONCURRENCY = 4;
 const MAX_COVERAGE_SYNTHESIS_CONCURRENCY = 8;
 
-/**
- * Folded into the evidence hash beside the prompt hash, so a change to the code-side
- * refusal arms re-judges every row once, the way a prompt edit already does.
- */
-export const WRITER_CONTRACT_VERSION = 'written-description-4915-v2';
+const VALUE_FLAGS = {
+  '--limit': 'limit',
+  '--concurrency': 'concurrency',
+  '--slugs': 'slugs',
+  '--slugs-file': 'slugsFile',
+  '--capture-evidence': 'captureEvidence',
+  '--evidence-file': 'evidenceFile',
+  '--import-derivations': 'importDerivations',
+  '--output': 'output',
+} as const;
+
+type ValueFlag = keyof typeof VALUE_FLAGS;
+
+const isValueFlag = (token: string): token is ValueFlag => Object.hasOwn(VALUE_FLAGS, token);
+
+export function parseSlugList(value: string): string[] {
+  return value
+    .split(/[\s,]+/)
+    .map((slug) => slug.trim())
+    .filter(Boolean);
+}
 
 export function parseCoverageSynthesisArgs(argv: string[]): CoverageSynthesisArgs {
   const args: CoverageSynthesisArgs = {
@@ -60,9 +83,31 @@ export function parseCoverageSynthesisArgs(argv: string[]): CoverageSynthesisArg
     skipIndexSync: false,
     ignoreEvidenceHash: false,
     reinstateRetiredBodies: false,
+    evaluate: false,
+    validateOnly: false,
+    printWriterPrompt: false,
   };
-  for (const token of argv) {
-    if (token === '--apply') args.apply = true;
+  const setValue = (flag: ValueFlag, value: string) => {
+    const key = VALUE_FLAGS[flag];
+    if (key === 'limit') args.limit = Number(value);
+    else if (key === 'concurrency') args.concurrency = Number(value);
+    else if (key === 'slugs') args.slugs = parseSlugList(value);
+    else args[key] = value;
+  };
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index];
+    const equals = token.indexOf('=');
+    const flag = equals > 0 ? token.slice(0, equals) : token;
+    if (isValueFlag(flag)) {
+      if (equals > 0) setValue(flag, token.slice(equals + 1));
+      else {
+        const value = argv[index + 1];
+        if (value === undefined || value.startsWith('--'))
+          throw new Error(`${flag} requires a value`);
+        setValue(flag, value);
+        index += 1;
+      }
+    } else if (token === '--apply') args.apply = true;
     else if (token === '--dry-run') args.apply = false;
     else if (token === '--confirm-coverage-synthesis') args.confirm = true;
     else if (token === '--all') args.all = true;
@@ -70,16 +115,9 @@ export function parseCoverageSynthesisArgs(argv: string[]): CoverageSynthesisArg
     else if (token === '--skip-index-sync') args.skipIndexSync = true;
     else if (token === '--ignore-evidence-hash') args.ignoreEvidenceHash = true;
     else if (token === '--reinstate-retired-bodies') args.reinstateRetiredBodies = true;
-    else if (token.startsWith('--limit=')) args.limit = Number(token.slice('--limit='.length));
-    else if (token.startsWith('--concurrency=')) {
-      args.concurrency = Number(token.slice('--concurrency='.length));
-    } else if (token.startsWith('--slugs=')) {
-      args.slugs = token
-        .slice('--slugs='.length)
-        .split(',')
-        .map((slug) => slug.trim())
-        .filter(Boolean);
-    } else if (token.startsWith('--output=')) args.output = token.slice('--output='.length);
+    else if (token === '--evaluate') args.evaluate = true;
+    else if (token === '--validate-only') args.validateOnly = true;
+    else if (token === '--print-writer-prompt') args.printWriterPrompt = true;
   }
   if (!Number.isFinite(args.limit) || args.limit <= 0)
     args.limit = DEFAULT_COVERAGE_SYNTHESIS_LIMIT;
@@ -88,6 +126,76 @@ export function parseCoverageSynthesisArgs(argv: string[]): CoverageSynthesisArg
   }
   args.concurrency = Math.min(MAX_COVERAGE_SYNTHESIS_CONCURRENCY, Math.floor(args.concurrency));
   return args;
+}
+
+export type CoverageSynthesisMode =
+  'print-writer-prompt' | 'capture-evidence' | 'import-derivations' | 'evaluate' | 'write';
+
+export function coverageSynthesisModeOf(args: CoverageSynthesisArgs): CoverageSynthesisMode {
+  if (args.printWriterPrompt) return 'print-writer-prompt';
+  const readOnlyModes = [
+    args.captureEvidence ? 'capture-evidence' : null,
+    args.importDerivations ? 'import-derivations' : null,
+    args.evaluate ? 'evaluate' : null,
+  ].filter((mode): mode is Exclude<CoverageSynthesisMode, 'write' | 'print-writer-prompt'> =>
+    Boolean(mode),
+  );
+  if (readOnlyModes.length > 1) {
+    throw new Error(
+      `research-entity:coverage-synthesis: choose one of ${readOnlyModes.join(', ')}`,
+    );
+  }
+  if (args.validateOnly && readOnlyModes[0] !== 'import-derivations') {
+    throw new Error(
+      'research-entity:coverage-synthesis --validate-only requires --import-derivations',
+    );
+  }
+  if (args.evidenceFile && !['evaluate', 'import-derivations'].includes(readOnlyModes[0] ?? '')) {
+    throw new Error(
+      'research-entity:coverage-synthesis --evidence-file is read only by --evaluate or --import-derivations',
+    );
+  }
+  const mode = readOnlyModes[0];
+  if (!mode) {
+    if (args.slugsFile) {
+      throw new Error(
+        'research-entity:coverage-synthesis --slugs-file is read only by --evaluate or --capture-evidence',
+      );
+    }
+    return 'write';
+  }
+  const refused = [
+    args.apply ? '--apply' : null,
+    args.all ? '--all' : null,
+    args.rederiveCards ? '--rederive-cards' : null,
+    args.reinstateRetiredBodies ? '--reinstate-retired-bodies' : null,
+  ].filter(Boolean);
+  if (refused.length > 0) {
+    throw new Error(
+      `research-entity:coverage-synthesis --${mode} is refused with ${refused.join(', ')}`,
+    );
+  }
+  const named = args.slugs.length > 0 || Boolean(args.slugsFile);
+  if (mode === 'evaluate' && !named && !args.evidenceFile) {
+    throw new Error(
+      'research-entity:coverage-synthesis --evaluate requires --slugs, --slugs-file or --evidence-file',
+    );
+  }
+  if (mode === 'capture-evidence' && !named) {
+    throw new Error(
+      'research-entity:coverage-synthesis --capture-evidence requires --slugs or --slugs-file',
+    );
+  }
+  return mode;
+}
+
+export function assertWriterCacheModeAllowed(mode: CoverageSynthesisMode, dbLabel: string): void {
+  if (mode !== 'evaluate' && mode !== 'import-derivations') return;
+  if (!/\/development$/i.test(dbLabel)) {
+    throw new Error(
+      `research-entity:coverage-synthesis --${mode} is restricted to a Development database (got ${dbLabel})`,
+    );
+  }
 }
 
 /**
@@ -146,7 +254,7 @@ export function assertCoverageSynthesisApplyAllowed(
 const observationText = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
 
-export type WriterEvidenceRank = 0 | 1 | 2 | 3;
+export type WriterEvidenceRank = 0 | 1 | 2 | 3 | 4;
 
 const urlHostAndPath = (value: unknown): { host: string; path: string } | undefined => {
   try {
@@ -181,29 +289,36 @@ export function isGrantEvidenceSource(sourceName: unknown): boolean {
   );
 }
 
+export const isResearchPageTextEvidence = (
+  obs: Pick<CoverageObservationLike, 'sourceName'> & { field?: string },
+): boolean =>
+  obs.field === RESEARCH_PAGE_TEXT_FIELD && obs.sourceName === RESEARCH_PAGE_TEXT_SOURCE;
+
 /**
- * Which kind of page a piece of evidence is (#4867): 0 the row's own research site, 1 an
- * official profile, 2 any other page, 3 a grant record. The row's own site is decided by
- * the cited URL rather than the lane, because a lane that reads many kinds of page
- * cannot say which one a value came from, and many Yale sites are paths on a shared
- * host, so a person page on that host is a profile before it is the site.
+ * Which kind of page a piece of evidence is (#4867, #5537): 0 the research text of the
+ * row's own pages, 1 the row's own research site, 2 an official profile, 3 any other page,
+ * 4 a grant record. The row's own site is decided by the cited URL rather than the lane,
+ * because a lane that reads many kinds of page cannot say which one a value came from, and
+ * many Yale sites are paths on a shared host, so a person page on that host is a profile
+ * before it is the site.
  */
 export function writerEvidenceRank(
-  obs: Pick<CoverageObservationLike, 'sourceName' | 'sourceUrl'>,
+  obs: Pick<CoverageObservationLike, 'sourceName' | 'sourceUrl'> & { field?: string },
   websiteUrl?: unknown,
 ): WriterEvidenceRank {
-  if (isGrantEvidenceSource(obs.sourceName)) return 3;
-  if (isOfficialYalePersonPageUrl(obs.sourceUrl)) return 1;
-  if (isOnOwnResearchSite(obs.sourceUrl, websiteUrl)) return 0;
-  if (hasCategory(obs.sourceName, 'OFFICIAL_PROFILE')) return 1;
-  return 2;
+  if (isResearchPageTextEvidence(obs)) return 0;
+  if (isGrantEvidenceSource(obs.sourceName)) return 4;
+  if (isOfficialYalePersonPageUrl(obs.sourceUrl)) return 2;
+  if (isOnOwnResearchSite(obs.sourceUrl, websiteUrl)) return 1;
+  if (hasCategory(obs.sourceName, 'OFFICIAL_PROFILE')) return 2;
+  return 3;
 }
 
 /**
- * The row's own site, then its official profile, then other pages, grants last; within
- * a rank strongest first, then a total order on the remaining keys, so the same evidence
- * always yields the same snippet list and therefore the same hash whatever order the
- * database returned it in.
+ * The row's own research page text, then its own site, then its official profile, then
+ * other pages, grants last; within a rank strongest first, then a total order on the
+ * remaining keys, so the same evidence always yields the same snippet list and therefore
+ * the same hash whatever order the database returned it in.
  */
 export function orderWriterEvidence(
   observations: readonly CoverageObservationLike[],
@@ -217,6 +332,15 @@ export function orderWriterEvidence(
       a.field.localeCompare(b.field) ||
       observationText(a.value).localeCompare(observationText(b.value)),
   );
+}
+
+export function withOnlyCurrentResearchPageText<T extends CoverageObservationLike>(
+  observations: readonly T[],
+): T[] {
+  const current = currentResearchPageTextObservation(
+    observations.filter((obs) => obs.field === RESEARCH_PAGE_TEXT_FIELD),
+  );
+  return observations.filter((obs) => obs.field !== RESEARCH_PAGE_TEXT_FIELD || obs === current);
 }
 
 export const WRITER_GRANT_RECENCY_YEARS = 5;
@@ -276,7 +400,10 @@ export function buildWriterEvidenceSnippets(
   recentGrants: unknown,
   options: WriterEvidenceOptions = {},
 ): CoverageSnippet[] {
-  const admissible = refusedResolverObservations(observations, options.fieldValueRefusals).kept;
+  const admissible = refusedResolverObservations(
+    withOnlyCurrentResearchPageText(observations),
+    options.fieldValueRefusals,
+  ).kept;
   const ordered = orderWriterEvidence(admissible, options.websiteUrl);
   const pageObservations = ordered.filter((obs) => !isGrantEvidenceSource(obs.sourceName));
   const fromPages = gatherCoverageSnippets(pageObservations, options.storedPageText);
@@ -315,15 +442,6 @@ export async function buildWriterEvidenceSnippetsWithMergedInFill(
   const mergedInObservations = await loadMergedInObservations();
   if (mergedInObservations.length === 0) return own;
   return buildWriterEvidenceSnippets(mergedInObservations, recentGrants, options);
-}
-
-export function writerEvidenceHash(snippets: readonly CoverageSnippet[]): string {
-  return computeVersionedContentHash(
-    snippets.map((snippet) => snippet.text).join('\n'),
-    COVERAGE_SYNTHESIS_PROMPT_HASH,
-    COVERAGE_SYNTHESIS_MODEL,
-    WRITER_CONTRACT_VERSION,
-  );
 }
 
 export type WriterStep = 'no-evidence' | 'evidence-unchanged' | 'synthesize';
@@ -369,15 +487,6 @@ export function deferSearchIndexWritesWhenSkipping(
   if (args.skipIndexSync) env[SEARCH_INDEX_WRITES_VARIABLE] = SEARCH_INDEX_WRITES_DEFERRED;
 }
 
-export async function synthesizeWithWriterModel<C, T>(input: {
-  step: WriterStep;
-  callLLM: C | null;
-  synthesize: (callLLM: C) => Promise<T>;
-}): Promise<T | null> {
-  if (input.step !== 'synthesize' || input.callLLM === null) return null;
-  return input.synthesize(input.callLLM);
-}
-
 export interface WriterWrites {
   writeBody: boolean;
   retireBody: boolean;
@@ -413,6 +522,17 @@ export function writerWritesFor(
   };
 }
 
+export function carriedOverWrites(
+  writes: WriterWrites,
+  carry: { carriedOver: boolean; liveBody: string | undefined; description: string | undefined },
+): WriterWrites {
+  if (!carry.carriedOver || !writes.writeBody) return writes;
+  const same =
+    (carry.liveBody ?? '').replace(/\s+/g, ' ').trim() ===
+    (carry.description ?? '').replace(/\s+/g, ' ').trim();
+  return same ? { ...writes, writeBody: false } : writes;
+}
+
 /**
  * A body the store refused leaves the row judged against evidence it no longer reflects,
  * so the prior written body is retired and no hash is recorded: the next run judges the
@@ -428,6 +548,7 @@ export function writerWritesAfterBodyAttempt(
 
 export const WRITER_EVIDENCE_FIELDS: readonly string[] = [
   ...COVERAGE_SNIPPET_FIELDS,
+  RESEARCH_PAGE_TEXT_FIELD,
   SOURCE_CONTENT_HASH_FIELD,
 ];
 

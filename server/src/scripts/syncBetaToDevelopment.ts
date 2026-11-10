@@ -167,6 +167,9 @@ const EXCLUDED_BETA_COLLECTIONS = [
   'student_trackings',
   'visibility_release_queue_items',
   'weekly_sweep_runs',
+  // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy: each entry
+  // is a paid draft of the description writer over this environment's evidence (#5537).
+  'written_description_derivations',
 ];
 
 export function replaceMongoDatabaseName(value: string, databaseName: string): string {
