@@ -25,6 +25,7 @@ import { Researcher } from '../../models/researcher';
 import { ResearchEntity } from '../../models/researchEntity';
 import { RoleAssignment } from '../../models/roleAssignment';
 import { MaterializationChunkPrefetch } from '../materializationChunkPrefetch';
+import { listResearchEntityMergedInRowsBySurvivor } from '../../services/researchEntityCanonicalTombstone';
 import {
   materializationReadScopeFilter,
   materializeEntity,
@@ -411,6 +412,129 @@ describe('chunked materialization reads per chunk and projects what row-by-row d
 
   it('writes the same corpus at concurrency 4 as sequentially in an apply run (#5521)', async () => {
     const seed = async () => [...(await seedCorpus()), ...(await seedIndependentLabs(6))];
+    const apply = async (concurrency: number) => {
+      await resetCorpus();
+      const rows = await seed();
+      const errors: unknown[] = [];
+      await materializeObservedEntitiesInChunks(
+        rows,
+        {},
+        (_row, outcome) => {
+          if ('error' in outcome) errors.push(outcome.error);
+        },
+        100,
+        concurrency,
+      );
+      expect(errors).toEqual([]);
+      return projectCorpus();
+    };
+
+    const sequential = await apply(1);
+    expect(await apply(4)).toEqual(sequential);
+  }, 120000);
+
+  const seedMergedSurvivors = async (count: number, hops = 1): Promise<ObservedEntityRow[]> => {
+    const rows: ObservedEntityRow[] = [];
+    for (let index = 0; index < count; index += 1) {
+      const slug = `example-merged-survivor-${index}`;
+      const survivor = await ResearchEntity.create({
+        slug,
+        name: `Example Merged Survivor ${index}`,
+        kind: 'lab',
+        archived: false,
+      });
+      let mergedInto = survivor._id;
+      for (let hop = 0; hop < hops; hop += 1) {
+        const loserSlug = `${slug}-loser-${hop}`;
+        const loser = await ResearchEntity.create({
+          slug: loserSlug,
+          name: `Example Merged Loser ${index}.${hop}`,
+          kind: 'lab',
+          archived: true,
+          canonicalGroupId: mergedInto,
+        });
+        await seedObservation({ entityKey: loserSlug }, 'researchAreas', [`Loser Topic ${index}`], {
+          sourceName: 'dept-faculty-roster',
+        });
+        mergedInto = loser._id;
+      }
+      await seedObservation(
+        { entityKey: slug },
+        'name',
+        `Example Merged Survivor ${index} Renamed`,
+      );
+      await seedObservation({ entityId: survivor._id }, 'researchAreas', [
+        `Survivor Topic ${index}`,
+      ]);
+      rows.push({ entityType: 'researchEntity', entityKey: slug });
+    }
+    return rows;
+  };
+
+  const partitionWithMergeGroups = async (rows: ObservedEntityRow[]) => {
+    const prefetch = await MaterializationChunkPrefetch.load({
+      entityType: 'researchEntity',
+      rows,
+      readScopeFilter: materializationReadScopeFilter(),
+      entityDocs: { model: ResearchEntity, keyField: 'slug' },
+    });
+    const survivors = await ResearchEntity.find({ slug: /^example-merged-survivor-\d+$/ })
+      .select('_id')
+      .lean();
+    const mergeGroups = await listResearchEntityMergedInRowsBySurvivor(
+      survivors.map((row) => String(row._id)),
+    );
+    return partitionChunkForConcurrency(rows, prefetch, mergeGroups);
+  };
+
+  it('runs a merged survivor in parallel once its merge group is known and no sibling names it (#5555)', async () => {
+    const rows = [...(await seedMergedSurvivors(2, 2)), ...(await seedIndependentLabs(2))];
+    const { independent, sequential } = await partitionWithMergeGroups(rows);
+    expect(independent.map((row) => row.entityKey)).toEqual([
+      'example-merged-survivor-0',
+      'example-merged-survivor-1',
+      'example-plain-lab-0',
+      'example-plain-lab-1',
+    ]);
+    expect(sequential.every((row) => String(row.entityKey).startsWith('dept-'))).toBe(true);
+  }, 120000);
+
+  it('keeps a merged survivor sequential when a sibling row is keyed by any row merged into it (#5555)', async () => {
+    const survivors = await seedMergedSurvivors(2, 2);
+    const loserKeyed: ObservedEntityRow = {
+      entityType: 'researchEntity',
+      entityKey: 'example-merged-survivor-0-loser-1',
+    };
+    const loser = await ResearchEntity.findOne({ slug: 'example-merged-survivor-1-loser-0' })
+      .select('_id')
+      .lean();
+    const loserIdAnchored: ObservedEntityRow = {
+      entityType: 'researchEntity',
+      entityId: String(loser?._id),
+    };
+    const rows = [...survivors, loserKeyed, loserIdAnchored];
+    const { independent, sequential } = await partitionWithMergeGroups(rows);
+    expect(independent).toEqual([]);
+    expect(sequential).toEqual(rows);
+  }, 120000);
+
+  it('keeps a merged survivor sequential when its merge group was not loaded (#5555)', async () => {
+    const rows = await seedMergedSurvivors(1);
+    const prefetch = await MaterializationChunkPrefetch.load({
+      entityType: 'researchEntity',
+      rows,
+      readScopeFilter: materializationReadScopeFilter(),
+      entityDocs: { model: ResearchEntity, keyField: 'slug' },
+    });
+    expect(partitionChunkForConcurrency(rows, prefetch).independent).toEqual([]);
+  }, 120000);
+
+  it('writes the same corpus at concurrency 4 as sequentially with merged survivors in the chunk (#5555)', async () => {
+    const seed = async () => [
+      ...(await seedCorpus()),
+      ...(await seedMergedSurvivors(4, 2)),
+      ...(await seedIndependentLabs(4)),
+    ];
     const apply = async (concurrency: number) => {
       await resetCorpus();
       const rows = await seed();
