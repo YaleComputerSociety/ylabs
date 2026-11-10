@@ -870,7 +870,8 @@ export const deleteFellowship = async (id: any) => {
 };
 
 // A program that states no value for a facet is unknown rather than excluded, so a facet
-// filter keeps it and the page says the official page decides (#5130, #5235).
+// filter keeps it and the page says the official page decides (#5130, #5235), except for
+// the stated-only facets in PROGRAM_STATED_ONLY_FACET_FIELDS (#5533).
 const facetNotStated = (field: string) => ({ [field]: { $in: [null, []] } });
 
 const programFacetFilterClause = (field: string, values: readonly string[]) =>
