@@ -1,12 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  MENTOR_SOURCE_CONFIGS,
-  UNDERGRAD_MENTORING_FIELD,
-  UndergradMentorListScraper,
+  UNDERGRAD_LIST_SOURCE_CONFIGS,
+  UNDERGRAD_LIST_EVIDENCE_FIELD,
+  OfficialUndergradListScraper,
   type MentorResolver,
-} from '../sources/undergradMentorListScraper';
+} from '../sources/officialUndergradListScraper';
 import type { ObservationInput, ScraperContext } from '../types';
-import type { MentorListing, UndergradMentoringEntry } from '../utils/undergradMentoring';
+import {
+  UNDERGRAD_EVIDENCE_SIGNAL,
+  type MentorListing,
+  type UndergradListEntry,
+} from '../utils/officialUndergradLists';
 
 const NOW = new Date('2026-11-10T12:00:00Z');
 
@@ -14,7 +18,7 @@ function context(emitted: ObservationInput[], only?: string[]): ScraperContext {
   return {
     scrapeRunId: 'run',
     sourceId: 'source',
-    sourceName: 'undergrad-mentor-list',
+    sourceName: 'official-undergrad-lists',
     sourceWeight: 0.8,
     options: { dryRun: true, useCache: false, release: false, referenceDate: NOW, only },
     emit: async (obs) => {
@@ -45,14 +49,14 @@ const resolveBy =
 async function run(options: {
   reads: Record<string, { listings: MentorListing[]; complete: boolean } | Error>;
   resolve: MentorResolver;
-  stored?: Map<string, UndergradMentoringEntry[]>;
+  stored?: Map<string, UndergradListEntry[]>;
   only?: string[];
 }) {
   const emitted: ObservationInput[] = [];
-  const scraper = new UndergradMentorListScraper({
+  const scraper = new OfficialUndergradListScraper({
     fetchText: async () => null,
     resolveMentor: options.resolve,
-    storedMentoringFinder: async () => options.stored ?? new Map(),
+    storedListEvidenceFinder: async () => options.stored ?? new Map(),
     sources: Object.entries(options.reads).map(([source, read]) => ({
       source: source as MentorListing['source'],
       landingUrl: `https://example.edu/${source}`,
@@ -66,7 +70,7 @@ async function run(options: {
   return { emitted, result };
 }
 
-describe('UndergradMentorListScraper', () => {
+describe('OfficialUndergradListScraper', () => {
   it("rebuilds each matched row's list across sources, citing each source's landing page", async () => {
     const { emitted } = await run({
       reads: {
@@ -88,7 +92,7 @@ describe('UndergradMentorListScraper', () => {
     expect(emitted).toEqual([
       expect.objectContaining({
         entityKey: 'synthetic-lab',
-        field: UNDERGRAD_MENTORING_FIELD,
+        field: UNDERGRAD_LIST_EVIDENCE_FIELD,
         value: [
           {
             source: 'cs-senior-projects',
@@ -133,7 +137,7 @@ describe('UndergradMentorListScraper', () => {
   });
 
   it('keeps the entries of a source it could not read completely', async () => {
-    const storedEntry: UndergradMentoringEntry = {
+    const storedEntry: UndergradListEntry = {
       source: 'tobin-research-assistantships',
       kind: 'advised',
       count: 3,
@@ -152,14 +156,14 @@ describe('UndergradMentorListScraper', () => {
       stored: new Map([['synthetic-lab', [storedEntry]]]),
     });
 
-    expect((emitted[0].value as UndergradMentoringEntry[]).map((entry) => entry.source)).toEqual([
+    expect((emitted[0].value as UndergradListEntry[]).map((entry) => entry.source)).toEqual([
       'cs-senior-projects',
       'tobin-research-assistantships',
     ]);
   });
 
   it('carries the entries of a source the run was not asked to read', async () => {
-    const storedEntry: UndergradMentoringEntry = {
+    const storedEntry: UndergradListEntry = {
       source: 'wu-tsai-undergraduate-fellows',
       kind: 'advised',
       count: 1,
@@ -203,13 +207,13 @@ describe('UndergradMentorListScraper', () => {
       expect.objectContaining({
         entityKey: 'former-lab',
         value: null,
-        assertsNoValueFor: [UNDERGRAD_MENTORING_FIELD],
+        assertsNoValueFor: [UNDERGRAD_LIST_EVIDENCE_FIELD],
       }),
     ]);
   });
 
   it('reads a CS archive as complete when a linked term page is gone, but not when it failed', async () => {
-    const archive = MENTOR_SOURCE_CONFIGS.find(
+    const archive = UNDERGRAD_LIST_SOURCE_CONFIGS.find(
       (config) => config.source === 'cs-directed-research',
     )!;
     const index =
@@ -227,6 +231,37 @@ describe('UndergradMentorListScraper', () => {
       listings: [expect.objectContaining({ adviserName: 'Avery Synthetic', year: 2026 })],
     });
     expect(failed.complete).toBe(false);
+  });
+
+  it('reads every configured list, each feeding exactly one undergraduate signal', () => {
+    const sources = UNDERGRAD_LIST_SOURCE_CONFIGS.map((config) => config.source);
+    expect(new Set(sources).size).toBe(sources.length);
+    expect(new Set(sources.map((source) => UNDERGRAD_EVIDENCE_SIGNAL[source]))).toEqual(
+      new Set(['mentors', 'hosted', 'welcomes']),
+    );
+  });
+
+  it('reads Cognitive Science essay advisers under the departments the program draws on, and never the student', async () => {
+    const essays = UNDERGRAD_LIST_SOURCE_CONFIGS.find(
+      (config) => config.source === 'cognitive-science-senior-essays',
+    )!;
+    const page = `<h2>Class of 2025</h2><table>
+      <thead><tr><th>Student</th><th>Senior Project Title</th><th>Advisor</th></tr></thead>
+      <tbody>
+        <tr><td>Quill Ashgrove</td><td>Memory For Edible Things</td><td>Morgan Fennick</td></tr>
+        <tr><td>Wren Halloway</td><td>Two Advisers At Once</td><td>Dr. Morgan Fennick and Prof. Jordan Pellow</td></tr>
+      </tbody></table>`;
+
+    const read = await essays.read(async () => page, NOW);
+
+    expect(read.complete).toBe(true);
+    expect(read.listings.map((listing) => listing.adviserName)).toEqual([
+      'Morgan Fennick',
+      'Morgan Fennick',
+      'Jordan Pellow',
+    ]);
+    expect(essays.departmentScope).toContain('Psychology');
+    expect(JSON.stringify(read.listings)).not.toMatch(/Quill|Wren|Edible|Advisers At Once/);
   });
 
   it('keeps going when one source throws, and records it', async () => {

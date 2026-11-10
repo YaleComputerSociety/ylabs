@@ -29,7 +29,7 @@ export type DescriptionGroundingVerdict = (typeof descriptionGroundingVerdicts)[
 
 export const undergradInvitationLevels = ['actively_hiring', 'welcomes_undergrads'] as const;
 
-export const undergradMentoringSources = [
+export const undergradListSources = [
   'cs-senior-projects',
   'cs-directed-research',
   'tobin-research-assistantships',
@@ -42,11 +42,38 @@ export const undergradMentoringSources = [
   'political-science-senior-essay-prizes',
   'german-senior-essays',
   'yibs-summer-research-fellows',
+  'cognitive-science-senior-essays',
+  'eps-senior-theses',
 ] as const;
-export type UndergradMentoringSource = (typeof undergradMentoringSources)[number];
+export type UndergradListSource = (typeof undergradListSources)[number];
 
-export const undergradMentoringKinds = ['advised', 'open'] as const;
-export type UndergradMentoringKind = (typeof undergradMentoringKinds)[number];
+export type UndergradEvidenceSignal = 'mentors' | 'hosted' | 'welcomes';
+
+/**
+ * Which one undergraduate tag each list feeds, decided by what the list says the
+ * undergraduate did (owner ruling on #5362, 2026-11-10): advised on the student's own work
+ * is mentors, worked inside the professor's research is hosted, open now is welcomes.
+ * Changing a row here also requires the #5362 hosted and welcomes lanes to agree.
+ */
+export const UNDERGRAD_EVIDENCE_SIGNAL: Record<UndergradListSource, UndergradEvidenceSignal> = {
+  'cs-senior-projects': 'mentors',
+  'cs-directed-research': 'mentors',
+  'economics-senior-essay-advisers': 'mentors',
+  'english-senior-essays': 'mentors',
+  'english-creative-writing-projects': 'mentors',
+  'political-science-senior-essay-prizes': 'mentors',
+  'german-senior-essays': 'mentors',
+  'cognitive-science-senior-essays': 'mentors',
+  'eps-senior-theses': 'mentors',
+  'tobin-research-assistantships': 'hosted',
+  'wu-tsai-undergraduate-fellows': 'hosted',
+  'yibs-summer-research-fellows': 'hosted',
+  'psychology-research-opportunities': 'welcomes',
+  'physics-open-research-opportunities': 'welcomes',
+};
+
+export const undergradListEntryKinds = ['advised', 'open'] as const;
+export type UndergradListEntryKind = (typeof undergradListEntryKinds)[number];
 export type UndergradInvitationLevel = (typeof undergradInvitationLevels)[number];
 
 export const labSiteLeadVerdicts = ['CONFIRMED', 'CONTRADICTED', 'UNSTATED'] as const;

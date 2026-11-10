@@ -43,7 +43,7 @@ import {
 import { disambiguateCollidingResearchEntityNames } from '../utils/researchEntityDisplayNameDisambiguation';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import { entityHasHostedUndergraduates } from './hostedUndergraduates';
-import { publicUndergradMentoring } from './undergradMentoringServing';
+import { publicUndergradListEvidence } from './undergradListEvidenceServing';
 import { RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE } from '../scrapers/undergradEvidenceQuoteValidation';
 import { quotePageIsAboutAnotherEntity } from '../scrapers/undergradQuoteRelevance';
 import { quoteListsPeopleWithTheirContactDetails } from '../scrapers/contactInstructionQuoteAdmission';
@@ -554,7 +554,7 @@ const OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS = [
   'schools',
   'currentUndergradCount',
   'undergradInvitation',
-  'undergradMentoring',
+  'undergradListEvidence',
   'pastUndergradAdvisees',
   'fellowshipRecipients',
   'recentGrants',
@@ -707,9 +707,9 @@ function derivePublicResearchEntityDto(
         dto[field] = String(served[field] || '');
         continue;
       }
-      if (field === 'undergradMentoring') {
-        const mentoring = publicUndergradMentoring(group[field], { wayInWithheld });
-        if (mentoring.length > 0) dto[field] = mentoring;
+      if (field === 'undergradListEvidence') {
+        const evidence = publicUndergradListEvidence(group[field], { wayInWithheld });
+        if (evidence.length > 0) dto[field] = evidence;
         continue;
       }
       if (field === 'undergradInvitation') {

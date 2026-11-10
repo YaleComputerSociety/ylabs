@@ -95,14 +95,14 @@ export const sourceCoverageRegistry = {
     notes:
       "Reads a lab site for the lead it declares for itself, so a website harvested from another person's profile lab-website slot is re-homed to the researcher who runs the lab; emits websiteUrl, sourceUrls, and a branded name only, never access, route, or opportunity evidence.",
   },
-  'undergrad-mentor-list': {
+  'official-undergrad-lists': {
     priority: 2,
     tier: 'PRIMARY_OFFICIAL',
     artifactTypes: ['Observation'],
     evidenceCategories: ['OFFICIAL_PROFILE', 'UNDERGRAD_ROLE_LANGUAGE'],
     defaultConfidence: 'MEDIUM',
     notes:
-      'Reads official Yale adviser and mentor lists and attaches each named professor to the row they already lead as `undergradMentoring`. A Yale email matches exactly; a name matches only when exactly one researcher carries it and, where the list states a department, that researcher agrees with it. Student names, project titles and topics are never read into an observation.',
+      'Reads official Yale lists that name professors beside undergraduates (mentors, hosted or welcomes, one signal per list) and attaches each named professor to the row they already lead as `undergradListEvidence`. A Yale email matches exactly; a name matches only when exactly one researcher carries it and, where the list states a department, that researcher agrees with it. Student names, project titles and topics are never read into an observation.',
   },
   'roster-bio-research-evidence': {
     priority: 2,

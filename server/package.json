@@ -116,7 +116,7 @@
     "research-entity:audit-cross-domain-areas": "tsx src/scripts/auditCrossDomainAreaCollisions.ts",
     "research-entity:collapse-citation-mirrors": "tsx src/scripts/collapseMirroredPersonPageCitations.ts",
     "research-entity:audit-citation-mirrors": "tsx src/scripts/auditPersonPageCitationMirrors.ts",
-    "research-entity:mentoring-review-sample": "tsx src/scripts/undergradMentoringReviewSample.ts",
+    "research-entity:undergrad-list-review-sample": "tsx src/scripts/officialUndergradListReviewSample.ts",
     "research-entity:served-scoreboard": "tsx src/scripts/servedCorpusScoreboard.ts",
     "research-entity:dump-action-link-inputs": "tsx src/scripts/dumpResearchDetailActionLinkInputs.ts",
     "research-entity:audit-served-card-residuals": "tsx src/scripts/servedCardResidualAudit.ts",

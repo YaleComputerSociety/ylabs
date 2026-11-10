@@ -18,19 +18,21 @@ A student finds faculty who take undergraduates through one "Works with undergra
 None of the three is a row gate, and every one is derived from observations a deterministic lane wrote.
 Fellowship programs that publish no recipient list naming a mentor are not configured: STARS Summer, Dean's Research, Tetelman and Mellon Mays were checked once on 2026-11-10, had none, and credited 0 served rows, so their configs were retired.
 
-## 2026-11-10: Mentoring Undergraduates Is Its Own Signal (#5551)
+## 2026-11-10: Mentoring Undergraduates Is Its Own Signal, Read From One List Field (#5551, #5362)
 
-The owner decided on 2026-11-10 that a professor named as the adviser or mentor of a specific undergraduate is its own signal, "Mentors undergrads", separate from "Has hosted undergraduates" and from a lab page's invitation, because y/labs is also used to find a thesis adviser or a mentor for a student's own project.
-Every undergraduate signal exists to tell a student which professors are receptive to mentoring them.
-A list counts when it names the professor as adviser or mentor of a specific undergraduate's work, or lists them as open to advising undergraduates now; a summer or fellowship placement in the professor's own Yale lab is hosted rather than mentoring, under the #5362 entry above.
+The owner decided on 2026-11-10 that a professor named as the adviser of a specific undergraduate's own work is its own signal, "Mentors undergrads", separate from "Has hosted undergraduates" and from "Welcomes undergrads", because y/labs is also used to find a thesis adviser or a mentor for a student's own project.
+Every undergraduate signal exists to tell a student which professors are receptive to mentoring them, and each official list feeds exactly one of the three, decided by what the list says the undergraduate did (owner ruling on #5362): advising the student's own essay, thesis, project, directed research or prize essay is mentors; working inside the professor's research, including a research-assistant placement and a summer or fellowship placement in the professor's own Yale lab, is hosted, counted once; a list of who is taking undergraduates now is welcomes.
+This supersedes the first version of this entry, which placed summer programs under mentoring.
+`UNDERGRAD_EVIDENCE_SIGNAL` in `server/src/models/storedVocabularies.ts` records the one signal each list feeds, and changing it requires the hosted and welcomes derivations of #5362 to agree.
+One deterministic lane, `official-undergrad-lists`, reads every list into one stored field, `undergradListEvidence`, through one identity resolver and one owner-review gate, and each signal's derivation reads only the entries of its own lists.
 A program director, committee member, general faculty pool, center-wide trainee list, graduate-student or postdoc mentor, or mentor at another institution does not count.
-The tag attaches only to a row the professor already leads: mentoring alone does not pass the directory test, so it never creates a row.
+An entry attaches only to a row the professor already leads: a list alone does not pass the directory test, so it never creates a row.
 Only the adviser is read from a list; student names, titles and topics are never stored.
 A source is served only after the owner has read a side-by-side sample of its identity matches, because an agent check of a sample is not a precision review.
-An email binds only when the researcher who holds it carries the name the list prints, because a project card's contact email can belong to someone else in the group; a name binds only when no second live researcher could carry it, and a list that names no department must agree with the departments its advisers come from.
+An email binds only when the researcher who holds it carries the name the list prints, because a project card's contact email can belong to someone else in the group; a name binds only when no second live researcher could carry it, and a list that names no department, or an interdisciplinary program such as Cognitive Science, must agree with the departments its advisers come from.
 A list of who is open to undergraduates now refuses a name-only match to a researcher whose title holds only emeritus appointments, because an active professor the database does not hold can share a name with an emeritus one whose row lists the same department.
-Measured on Development on 2026-11-10 over twelve sources with those guards, 1,282 of 1,825 listings within the last five academic years matched exactly one researcher who leads a row, and the faculty research profiles that almost never carried an undergraduate signal are most of the rows they reach.
-The common-surname and duplicate-record guard of the name resolver refuses the most prolific CS advisers, 211 listings across 37 names, which a department tie-break or a researcher merge would recover.
+The Cognitive Science senior essays and EPS senior theses move from the fellowship-recipient lane, where they counted as hosted, to this lane's mentors lists; #5362 removes them from that lane with or after this change, so no row is left with neither.
+The common-surname and duplicate-record guard of the name resolver refuses the most prolific CS advisers, which a department tie-break or a researcher merge would recover.
 
 ## 2026-11-10: The Program Region Filter Returns Only Programs That Name The Region (#5533)
 
