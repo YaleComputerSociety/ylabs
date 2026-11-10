@@ -242,6 +242,7 @@ export interface SynthesizeCoverageInput {
   entityType?: ResearchEntityType;
   researchAreas?: unknown;
   callLLM: CoverageSynthesisLLMFn;
+  coverageWriterChecks?: boolean;
 }
 
 export interface CoverageSynthesisResult {
@@ -458,6 +459,7 @@ export function judgeWrittenDescription(input: {
   researchAreas?: unknown;
   entityType?: ResearchEntityType;
   citedSnippetCount: number;
+  coverageWriterChecks?: boolean;
 }): WrittenDescriptionJudgement {
   const refuse = (refusal: CoverageSynthesisRefusal): WrittenDescriptionJudgement => ({
     description: null,
@@ -495,6 +497,7 @@ export function judgeWrittenDescription(input: {
   if (wordCount(description) > MAX_WRITTEN_DESCRIPTION_WORDS) return refuse('over-length');
   if (!currentOnly) return refuse('past-framed-restatement');
   if (!methodChecked) return refuse('unsupported-method-clause');
+  if (!input.coverageWriterChecks) return { description, refusal: null };
   const evidence: WrittenDescriptionEvidence[] = input.snippets.map((snippet) => ({
     text: snippet.text,
     isResearchPageText: snippet.sourceName === RESEARCH_PAGE_TEXT_SOURCE,
@@ -586,6 +589,7 @@ export async function coverageSynthesisDecision(
     researchAreas: input.researchAreas,
     entityType: input.entityType,
     citedSnippetCount: usedSnippetIndexes.length,
+    coverageWriterChecks: input.coverageWriterChecks,
   });
   if (judged.refusal || !judged.description) {
     return refuse(judged.refusal ?? 'empty-description');

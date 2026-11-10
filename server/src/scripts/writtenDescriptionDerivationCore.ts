@@ -271,7 +271,11 @@ export function judgeWriterDraft(
   subject: WrittenDescriptionSubject,
   rawOutput: CoverageSynthesisLLMResult,
 ): Promise<CoverageSynthesisDecision> {
-  return coverageSynthesisDecision({ ...subject, callLLM: async () => rawOutput });
+  return coverageSynthesisDecision({
+    ...subject,
+    callLLM: async () => rawOutput,
+    coverageWriterChecks: true,
+  });
 }
 
 /**
@@ -345,6 +349,7 @@ export async function resolveWrittenDescription(
   let modelCalled = false;
   const decision = await coverageSynthesisDecision({
     ...subject,
+    coverageWriterChecks: true,
     callLLM: (args) =>
       drafting.draft(args, () => {
         modelCalled = true;

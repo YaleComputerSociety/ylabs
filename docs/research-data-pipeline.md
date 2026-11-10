@@ -1324,7 +1324,7 @@ Since #5537 three more checks run on every draft, cached or fresh, after the old
 Grounding refuses a body with a specific term, not a function word and not generic research vocabulary, that shares no inflectional stem with any evidence word (`ungrounded-content-term`).
 Coverage refuses a body that, when the row has research page text, names none of its section headings and none of its most frequent specific terms (`missing-research-page-coverage`).
 Hygiene refuses first person (`first-person`), a page heading run into the next sentence (`fused-page-heading`) and welcome or greeting text (`greeting-text`).
-These arms also judge an adopted body through `adoptedWrittenBodyStillSupported` and the FRA profile synthesis lane, which share `judgeWrittenDescription`.
+They run only for this writer (`coverageWriterChecks` on `judgeWrittenDescription`): the adopted-body check `adoptedWrittenBodyStillSupported` and the FRA profile synthesis lane, which share that judge, are unchanged.
 In apply mode each changed row is materialized, the touched rows are regated through `regateRematerializedEntities`, which also re-syncs their search documents, and the report counts `written`, `observationDropped`, `retired` and `adopted`.
 Read `adopted`, not `written`, for what students now see.
 `--evaluate --slugs=<list>` (or `--slugs-file <file>`, or `--evidence-file <file>`) is the A/B mode: it runs the named rows through the cache and the model under the `coverage-synthesis-evaluate` caller, writes no observation, runs no materialize, regate or index sync, and writes a JSON report to `--output` with each row's snippets, step, final description, refusal reasons and `inputHash`.

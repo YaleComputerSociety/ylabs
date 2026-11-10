@@ -158,7 +158,7 @@ describe('synthesizeCoverageDescription', () => {
    * predicate. It also opens with "Develops", one of SYNTHESIS_CARD_LEAD_PATTERN's
    * verbs, which is the shape this prompt asks for and so the shape that arm gated on.
    */
-  it('clears the declared overlap floor below the card bar, leaving unsupported terms to the term check (#3201, #5537)', async () => {
+  it('accepts a grounded body between the declared overlap floor and the card bar (#3201)', async () => {
     const decision = await coverageSynthesisDecision({
       snippets: SNIPPETS,
       entityName: 'Immunology Lab',
@@ -168,19 +168,8 @@ describe('synthesizeCoverageDescription', () => {
         usedSnippetIndexes: [0, 1],
       }),
     });
-    expect(decision.refusal).toBe('ungrounded-content-term');
-
-    const grounded = await coverageSynthesisDecision({
-      snippets: SNIPPETS,
-      entityName: 'Immunology Lab',
-      callLLM: stub({
-        fullDescription:
-          'Develops single-cell sequencing methods to study gene regulatory networks in immune cells. The group applies CRISPR screens and machine learning to transcription factor activity during differentiation, and builds computational models of these networks.',
-        usedSnippetIndexes: [0, 1],
-      }),
-    });
-    expect(grounded.refusal).toBeNull();
-    expect(grounded.result).not.toBeNull();
+    expect(decision.refusal).toBeNull();
+    expect(decision.result).not.toBeNull();
   });
 
   it('still refuses a body that misses the declared overlap floor, naming that arm (#3201)', async () => {
@@ -206,7 +195,7 @@ describe('synthesizeCoverageDescription', () => {
       },
     ];
     const body =
-      'The entity studies melanocytic and non-melanocytic neoplasms, granulomatous disorders and infectious skin diseases such as borreliosis, within multidisciplinary melanoma care.';
+      'The entity studies melanocytic and non-melanocytic neoplasms and other skin conditions, including granulomatous disorders and infectious diseases such as borreliosis, and participates in multidisciplinary melanoma care.';
     const decision = await coverageSynthesisDecision({
       snippets: DERM,
       entityName: 'Dermatology',

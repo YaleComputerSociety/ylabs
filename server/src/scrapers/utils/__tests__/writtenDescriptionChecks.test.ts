@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  adoptedWrittenBodyStillSupported,
   coverageSynthesisDecision,
   type CoverageSnippet,
   type CoverageSynthesisRefusal,
@@ -40,6 +41,7 @@ const decide = async (fullDescription: string): Promise<CoverageSynthesisRefusal
       snippets: SNIPPETS,
       entityName: 'Reef Lab',
       callLLM: async () => ({ fullDescription, usedSnippetIndexes: [0] }),
+      coverageWriterChecks: true,
     })
   ).refusal;
 
@@ -141,7 +143,31 @@ describe('hygiene (#5537)', () => {
         fullDescription: `Welcome to the coral reef lab. ${GOOD}`,
         usedSnippetIndexes: [0],
       }),
+      coverageWriterChecks: true,
     });
     expect(decision.refusal).toBe('greeting-text');
+  });
+});
+
+describe('the five checks belong to the coverage writer only (#5537)', () => {
+  const firstPerson = GOOD.replace(/^Studies/, 'We study');
+
+  it('leaves the shared judge and the adopted-body check as they were', async () => {
+    const shared = await coverageSynthesisDecision({
+      snippets: SNIPPETS,
+      entityName: 'Reef Lab',
+      callLLM: async () => ({ fullDescription: firstPerson, usedSnippetIndexes: [0] }),
+    });
+    expect(shared.refusal).not.toBe('first-person');
+    expect(await decide(firstPerson)).toBe('first-person');
+    expect(adoptedWrittenBodyStillSupported({ body: GOOD, snippets: SNIPPETS })).toBe(
+      (
+        await coverageSynthesisDecision({
+          snippets: SNIPPETS,
+          entityName: 'Reef Lab',
+          callLLM: async () => ({ fullDescription: GOOD, usedSnippetIndexes: [0] }),
+        })
+      ).refusal === null,
+    );
   });
 });
