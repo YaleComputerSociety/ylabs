@@ -1,6 +1,8 @@
 import axios from './axios';
 import { buildApiUrl } from './apiBaseUrl';
 import { rememberSignedIn } from './lastKnownSession';
+import { stopProductAnalytics } from './productAnalytics';
+import { setResearchAnalyticsEnabled } from './researchAnalytics';
 
 export const ACCOUNT_DATA_CONTROLS_FLAG = 'accountDataControls';
 export const ACCOUNT_DATA_DELETION_CONFIRM_PHRASE = 'delete my data';
@@ -37,7 +39,17 @@ export const downloadAccountData = async (): Promise<void> => {
   }
 };
 
+/**
+ * Analytics stop before the request rather than after it: an event PostHog queued after its
+ * person deletion would recreate that person, and nothing in y/labs could find it again.
+ */
+const stopAnalyticsForDeletion = (): void => {
+  setResearchAnalyticsEnabled(false);
+  stopProductAnalytics();
+};
+
 export const deleteAccountData = async (): Promise<AccountDataDeletionOutcome> => {
+  stopAnalyticsForDeletion();
   try {
     await axios.delete('/users/me', {
       data: { confirm: ACCOUNT_DATA_DELETION_CONFIRM_PHRASE },
@@ -61,12 +73,20 @@ export const reauthenticateForDeletionUrl = (): string => {
  */
 export const leaveAfterAccountDeletion = (): void => {
   rememberSignedIn(false);
-  sessionStorage.setItem(ACCOUNT_DELETED_NOTICE_KEY, '1');
+  try {
+    sessionStorage.setItem(ACCOUNT_DELETED_NOTICE_KEY, '1');
+  } catch {
+    // The notice is a courtesy; a browser that refuses storage still leaves signed out.
+  }
   window.location.replace('/');
 };
 
 export const takeAccountDeletedNotice = (): boolean => {
-  const pending = sessionStorage.getItem(ACCOUNT_DELETED_NOTICE_KEY) === '1';
-  if (pending) sessionStorage.removeItem(ACCOUNT_DELETED_NOTICE_KEY);
-  return pending;
+  try {
+    const pending = sessionStorage.getItem(ACCOUNT_DELETED_NOTICE_KEY) === '1';
+    if (pending) sessionStorage.removeItem(ACCOUNT_DELETED_NOTICE_KEY);
+    return pending;
+  } catch {
+    return false;
+  }
 };
