@@ -29,6 +29,33 @@ describe('stripPersonNameCaptionWrapper', () => {
 });
 
 describe('stripPersonNameCredentialList', () => {
+  it.each([
+    'Avery Sloan, MD, MBBCh',
+    'Avery Sloan, PhD, MEd',
+    'Avery Sloan, DPM, MPH, MSc, DSc',
+    'Avery Sloan, MD, MMSc',
+    'Avery Sloan, PhD, BMSc',
+    'Avery Sloan, PhD, MRSB, CSci',
+    'Avery Sloan, MD, DipABLM',
+    'Avery Sloan, PhD, P.Eng.',
+    'Avery Sloan, ScM',
+    'Avery Sloan, MBBCh, MBA, MBChB',
+    'Avery Sloan, MBBS, Dtm&H',
+    'Avery Sloan, MBBS, PhD, DTM&H',
+    'Avery Sloan, MD, PhD, Dabr',
+    'Avery Sloan, MD, PhD, Facmg',
+    'Avery Sloan, MD, MHS-Med',
+  ])('strips a mixed-case or title-cased degree run from %s (#5463)', (value) => {
+    expect(stripPersonNameCredentialList(value)).toBe('Avery Sloan');
+  });
+
+  it.each(['Nguyen, Bao', 'NGUYEN, BAO', 'Sloan, Med', 'Avery Sloan, Jr.', 'JANE SMITH, MBBS'])(
+    'keeps a given name or suffix that shares a spelling with a degree in %s (#5463)',
+    (value) => {
+      expect(stripPersonNameCredentialList(value)).toBe(value);
+    },
+  );
+
   it('drops a trailing post-nominal credential list after a comma', () => {
     expect(stripPersonNameCredentialList('Ada Byron, PhD, MMath')).toBe('Ada Byron');
     expect(stripPersonNameCredentialList('Ada Byron, DrPH, MSN')).toBe('Ada Byron');
@@ -151,17 +178,13 @@ describe('sanitizePersonName', () => {
     expect(sanitizePersonName('Bonitz Moore Atr-BC, LPC, Iecmh-E, Heather')).toBe(
       'Bonitz Moore Atr-BC, LPC, Iecmh-E, Heather',
     );
-    expect(sanitizePersonName('Theddeus Iheanacho, MBBS, DTM&H')).toBe(
-      'Theddeus Iheanacho, MBBS, DTM&H',
-    );
+    expect(sanitizePersonName('Avery Sloan, MBBS, FRCS&C')).toBe('Avery Sloan, MBBS, FRCS&C');
   });
 
   it('does not mangle a declined credential run just because the name is shouty', () => {
     expect(sanitizePersonName('JANE SMITH, MBBS')).toBe('Jane Smith, MBBS');
     expect(sanitizePersonName('ROBIN QUILL, LCSW')).toBe('Robin Quill, LCSW');
-    expect(sanitizePersonName('THEDDEUS IHEANACHO, MBBS, DTM&H')).toBe(
-      'Theddeus Iheanacho, MBBS, DTM&H',
-    );
+    expect(sanitizePersonName('AVERY SLOAN, MBBS, FRCS&C')).toBe('Avery Sloan, MBBS, FRCS&C');
   });
 
   it('lowercases a shouting surname particle', () => {

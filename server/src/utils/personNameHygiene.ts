@@ -120,6 +120,24 @@ const POST_NOMINAL_TOKEN = [
   'm\\.?\\s?s',
   'm\\.?\\s?a',
   'p\\.?\\s?a\\.?-c',
+  'm\\.?\\s?m\\.?\\s?sc',
+  'm\\.?\\s?ed',
+  'm\\.?\\s?b\\.?\\s?b\\.?\\s?ch',
+  'm\\.?\\s?b\\.?\\s?ch\\.?\\s?b',
+  'm\\.?\\s?h\\.?\\s?s-med',
+  'm\\.?\\s?sci',
+  'b\\.?\\s?m\\.?\\s?sc',
+  'b\\.?\\s?sc',
+  'd\\.?\\s?sc',
+  'sc\\.?\\s?m',
+  'c\\.?\\s?sci',
+  'p\\.?\\s?eng',
+  'd\\.?\\s?p\\.?\\s?m',
+  'd\\.?\\s?t\\.?\\s?m\\s?&\\s?h',
+  'dip\\.?\\s?ablm',
+  'dabr',
+  'facmg',
+  'mrsb',
 ].join('|');
 
 /**
@@ -152,6 +170,10 @@ const TRAILING_CREDENTIAL_LIST_RE = new RegExp(
 );
 
 const AMBIGUOUS_BARE_POST_NOMINALS = new Set(['MA', 'MS', 'RN', 'DO', 'JD']);
+
+// "MEd" is a degree but "Med" is also a given name, so only a title-cased lone token
+// is held back here; its interior capital is what marks the degree spelling.
+const TITLE_CASED_AMBIGUOUS_BARE_POST_NOMINALS = new Set(['MED']);
 
 /**
  * `nee` and `aka` are themselves real name elements - Ga "Nee", Japanese "Aka" - so
@@ -244,6 +266,12 @@ function strippedListedCredentialRun(trimmed: string): string | undefined {
   // so an ambiguous token has to be all-caps to read as a credential.
   const bare = match[0].replace(/^,/, '').replace(/[.,&\s]/g, '');
   if (AMBIGUOUS_BARE_POST_NOMINALS.has(bare.toUpperCase()) && bare !== bare.toUpperCase()) {
+    return undefined;
+  }
+  if (
+    TITLE_CASED_AMBIGUOUS_BARE_POST_NOMINALS.has(bare.toUpperCase()) &&
+    /^[A-Z][a-z]+$/.test(bare)
+  ) {
     return undefined;
   }
   return (
