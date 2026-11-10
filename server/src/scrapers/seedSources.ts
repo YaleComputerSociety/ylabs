@@ -560,7 +560,7 @@ const SOURCES: SourceSeed[] = [
     name: 'undergrad-fellowships-recipients',
     displayName: 'Yale undergrad fellowship recipient lists',
     description:
-      "Past STARS / Bass / Dean's Research / Tetelman / Mellon Mays / etc. recipient lists; reverse-lookup faculty advisors.",
+      'STARS II symposium booklets and the CogSci and EPS adviser pages; reverse-lookup faculty advisors.',
     baseUrl: '',
     defaultWeight: 0.85,
     cadence: 'monthly',
