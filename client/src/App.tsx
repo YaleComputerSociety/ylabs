@@ -18,6 +18,7 @@ import UIContextProvider from './providers/UIContextProvider';
 import ScrollToTop from './components/shared/ScrollToTop';
 import HttpStatusNotifier from './components/HttpStatusNotifier';
 import LoadingSpinner from './components/shared/LoadingSpinner';
+import { PRIVACY_PATH } from './utils/privacyNotice';
 
 // Only `/research` is eager among content pages: it is the entry point of the
 // student journey and the target of the root redirect, so it must not cost a
@@ -27,6 +28,7 @@ const ResearchDetail = lazy(() => import('./pages/labDetail'));
 const Login = lazy(() => import('./pages/login'));
 const About = lazy(() => import('./pages/about'));
 const GettingStarted = lazy(() => import('./pages/gettingStarted'));
+const Privacy = lazy(() => import('./pages/privacy'));
 const Dashboard = lazy(() => import('./pages/dashboard'));
 const LoginError = lazy(() => import('./pages/loginError'));
 const Analytics = lazy(() => import('./pages/analytics'));
@@ -109,6 +111,7 @@ const App = () => {
                           path="/getting-started"
                           element={<PublicRoute Component={GettingStarted} />}
                         />
+                        <Route path={PRIVACY_PATH} element={<PublicRoute Component={Privacy} />} />
                         <Route
                           path="/account"
                           element={<PrivateRoute Component={RetiredAccountRedirect} />}

@@ -73,6 +73,9 @@ On the server, `logEvent` never throws either, so an analytics outage cannot blo
 `POST /analytics/research/batch` counts only `recorded` events in its `accepted` total, and logs event types and counts for rejected and `unstored` events, so a storage failure reads as a gap rather than as a delivered batch (#3638).
 
 The analytics collection uses the existing 1,095-day TTL index in `server/src/models/analytics.ts`.
+The student-facing statement of what is collected, who receives it and how long it is kept is the `/privacy` page (`client/src/pages/privacy.tsx`, #4157).
+Changing what is recorded, its retention, who can read it, or which third party receives it also requires updating that page.
+`server/src/middleware/__tests__/privacyNoticeDisclosures.test.ts` fails when the Content-Security-Policy allows a third-party origin that `PRIVACY_NOTICE_DISCLOSED_ORIGINS` in `client/src/utils/privacyNotice.ts` does not name.
 Beta continues to suppress real student analytics through `shouldSuppressBetaAnalyticsEvent`, while allowing fixture and admin validation.
 The endpoint remains first-party, authenticated, private, and covered by the existing analytics access controls.
 
