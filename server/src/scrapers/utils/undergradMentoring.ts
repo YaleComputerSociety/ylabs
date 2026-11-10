@@ -44,6 +44,11 @@ export const UNDERGRAD_MENTORING_SOURCE_KIND: Record<
   'psychology-research-opportunities': 'open',
   'wu-tsai-undergraduate-fellows': 'advised',
   'physics-open-research-opportunities': 'open',
+  'english-senior-essays': 'advised',
+  'english-creative-writing-projects': 'advised',
+  'political-science-senior-essay-prizes': 'advised',
+  'german-senior-essays': 'advised',
+  'yibs-summer-research-fellows': 'advised',
 };
 
 const HONORIFIC = /^(?:prof(?:essor)?\.?|dr\.?|mr\.?|ms\.?|mrs\.?)\s+/i;
@@ -389,6 +394,131 @@ export function physicsOpenOpportunityListings(html: string, url: string): Mento
       department: 'Physics',
       sourceUrl: url,
     });
+  });
+  return listings;
+}
+
+/** The end year of a heading such as "2024-2025", "2024-25" or "Prize Winners 2023-24". */
+export function academicYearEndIn(text: string): number | undefined {
+  const range = /\b((?:19|20)\d\d)\s*[-\u2013]\s*((?:19|20)?\d\d)\b/.exec(text);
+  if (range)
+    return range[2].length === 2 ? Number(range[1].slice(0, 2) + range[2]) : Number(range[2]);
+  return yearIn(text);
+}
+
+const ADVISED_BY = /\badvised\s+by\s+(.+?)\s*[.;]?\s*$/i;
+
+/**
+ * An English senior essay or Creative Writing project page: a heading per academic year,
+ * then one paragraph per essay ending "advised by <adviser>".
+ */
+export function englishAdvisedByListings(
+  html: string,
+  url: string,
+  source: UndergradMentoringSource,
+): MentorListing[] {
+  const $ = cheerio.load(html);
+  const listings: MentorListing[] = [];
+  let year: number | undefined;
+  $('h2, h3, p').each((_index, element) => {
+    const node = $(element);
+    const text = node.text().replace(/\s+/g, ' ').trim();
+    if (node.is('h2, h3')) {
+      year = /\b(?:19|20)\d\d\s*[-\u2013]\s*(?:19|20)?\d\d\b/.test(text)
+        ? academicYearEndIn(text)
+        : year;
+      return;
+    }
+    const adviser = ADVISED_BY.exec(text)?.[1];
+    if (!adviser || year === undefined) return;
+    for (const adviserName of splitAdviserNames(adviser)) {
+      listings.push({ source, adviserName, department: 'English', year, sourceUrl: url });
+    }
+  });
+  return listings;
+}
+
+/** Political Science senior essay prizes: each winner's line names "(advisor <name>)". */
+export function politicalScienceEssayPrizeListings(html: string, url: string): MentorListing[] {
+  const $ = cheerio.load(html);
+  const listings: MentorListing[] = [];
+  let year: number | undefined;
+  $('h2, h3, li, p').each((_index, element) => {
+    const node = $(element);
+    const text = node.text().replace(/\s+/g, ' ').trim();
+    if (node.is('h2, h3')) {
+      year = academicYearEndIn(text) ?? year;
+      return;
+    }
+    if (node.is('p') && node.parents('li').length > 0) return;
+    for (const match of text.matchAll(/\(\s*advis(?:e|o)rs?:?\s+([^)]+)\)/gi)) {
+      for (const adviserName of splitAdviserNames(match[1])) {
+        listings.push({
+          source: 'political-science-senior-essay-prizes',
+          adviserName,
+          department: 'Political Science',
+          year,
+          sourceUrl: url,
+        });
+      }
+    }
+  });
+  return listings;
+}
+
+/** German recent senior essays: year in bold, then each essay ending "Advisor: <name>". */
+export function germanSeniorEssayListings(html: string, url: string): MentorListing[] {
+  const $ = cheerio.load(html);
+  const listings: MentorListing[] = [];
+  let year: number | undefined;
+  $('p').each((_index, element) => {
+    const node = $(element);
+    const bold = node.find('strong').first().text().trim();
+    if (/^(?:19|20)\d\d$/.test(bold) && node.text().trim() === bold) {
+      year = Number(bold);
+      return;
+    }
+    const html = node.html() ?? '';
+    const lines = html
+      .split(/<br\s*\/?>/i)
+      .map((line) => cheerio.load(`<p>${line}</p>`)('p').text().replace(/\s+/g, ' ').trim());
+    const adviser = lines
+      .map((line) => /^Advis(?:e|o)rs?\s*:\s*(.+)$/i.exec(line)?.[1])
+      .find((value): value is string => Boolean(value));
+    if (!adviser) return;
+    for (const adviserName of splitAdviserNames(adviser)) {
+      listings.push({
+        source: 'german-senior-essays',
+        adviserName,
+        department: 'German',
+        year,
+        sourceUrl: url,
+      });
+    }
+  });
+  return listings;
+}
+
+/**
+ * YIBS past SURES fellows: one block per fellow whose text names "Advisor : <name>, <title>".
+ * Only the name before the first comma is the adviser.
+ */
+export function yibsSuresFellowListings(html: string, url: string): MentorListing[] {
+  const $ = cheerio.load(html);
+  const listings: MentorListing[] = [];
+  $('.field-collection-item-field-person-info').each((_index, element) => {
+    const text = $(element).text().replace(/\s+/g, ' ').trim();
+    const year = yearIn(text);
+    for (const match of text.matchAll(/Advis(?:e|o)rs?\s*:\s*([^,;(]+)/gi)) {
+      for (const adviserName of splitAdviserNames(match[1])) {
+        listings.push({
+          source: 'yibs-summer-research-fellows',
+          adviserName,
+          year,
+          sourceUrl: url,
+        });
+      }
+    }
   });
   return listings;
 }

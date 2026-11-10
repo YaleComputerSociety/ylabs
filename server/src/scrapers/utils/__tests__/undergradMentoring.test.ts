@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  academicYearEndIn,
   aggregateMentoringEntries,
+  englishAdvisedByListings,
+  germanSeniorEssayListings,
+  politicalScienceEssayPrizeListings,
+  yibsSuresFellowListings,
   cleanAdviserName,
   csArchiveTermListings,
   csArchiveTermUrls,
@@ -215,6 +220,76 @@ describe('Physics open research opportunities', () => {
     expect(listings.map((listing) => [listing.adviserName, listing.adviserEmail])).toEqual([
       ['Casey Fictional', 'casey.fictional@yale.edu'],
       ['Dana Madeup', 'dana.madeup@yale.edu'],
+    ]);
+  });
+});
+
+describe('humanities essay and summer research lists', () => {
+  it('reads the end year of an academic-year heading', () => {
+    expect(academicYearEndIn('2024-2025')).toBe(2025);
+    expect(academicYearEndIn('Senior Essay Prize Winners 2023-24')).toBe(2024);
+    expect(academicYearEndIn('Spring 2026')).toBe(2026);
+  });
+
+  it('reads English "advised by" lines under their academic year, and no student or title', () => {
+    const html = `<h2>2024-2025</h2>
+      <p>Student, One, “A Synthetic Essay,” advised by Avery Synthetic</p>
+      <p>Student, Two, “Another Essay,” advised by Blair Invented and Casey Fictional.</p>
+      <h2>2023-2024</h2><p>Student, Three, “Older Essay,” advised by Dana Madeup</p>
+      <p>A paragraph with no adviser</p>`;
+    const listings = englishAdvisedByListings(
+      html,
+      'https://english.example.edu/',
+      'english-senior-essays',
+    );
+    expect(
+      listings.map((listing) => [listing.adviserName, listing.year, listing.department]),
+    ).toEqual([
+      ['Avery Synthetic', 2025, 'English'],
+      ['Blair Invented', 2025, 'English'],
+      ['Casey Fictional', 2025, 'English'],
+      ['Dana Madeup', 2024, 'English'],
+    ]);
+    expect(studentFree(listings)).not.toMatch(/Student|Essay/);
+  });
+
+  it('reads every "(advisor <name>)" in a Political Science prize line', () => {
+    const html = `<h3>Senior Essay Prize Winners 2023-24</h3><ul>
+      <li>Student One: A Title (advisor Avery Synthetic): A Named Prize</li>
+      <li>Student Two: Title (advisor Blair Invented) Student Three: Title (advisor Casey Fictional): Prize</li></ul>`;
+    expect(
+      politicalScienceEssayPrizeListings(html, 'https://polisci.example.edu/').map((listing) => [
+        listing.adviserName,
+        listing.year,
+      ]),
+    ).toEqual([
+      ['Avery Synthetic', 2024],
+      ['Blair Invented', 2024],
+      ['Casey Fictional', 2024],
+    ]);
+  });
+
+  it('reads the German adviser line of each essay under its bold year', () => {
+    const html = `<p><strong>2024</strong></p>
+      <p>“A Synthetic Title”<br />Student One<br />Advisor: Professor Avery Synthetic</p>
+      <p><strong>2023</strong></p><p>“Title”<br />Student Two<br />Advisor : Blair Invented</p>`;
+    expect(
+      germanSeniorEssayListings(html, 'https://german.example.edu/').map((listing) => [
+        listing.adviserName,
+        listing.year,
+      ]),
+    ).toEqual([
+      ['Avery Synthetic', 2024],
+      ['Blair Invented', 2023],
+    ]);
+  });
+
+  it('reads the YIBS adviser name before the title that follows it', () => {
+    const html = `<div class="field-collection-item-field-person-info">
+      <p>Student One, SURES fellow 2024</p>
+      <p><strong>Advisor :</strong> Avery Synthetic, <em>Professor of Ecology</em></p></div>`;
+    expect(yibsSuresFellowListings(html, 'https://yibs.example.edu/')).toEqual([
+      expect.objectContaining({ adviserName: 'Avery Synthetic', year: 2024 }),
     ]);
   });
 });
