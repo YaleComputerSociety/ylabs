@@ -7,6 +7,8 @@
  *   - Watched programs: the programs and fellowships an account is watching
  *     (canonical ResearchPlan PROGRAM targets), with deadline, accepting status,
  *     and eligibility.
+ * Below the tabs, a "Your data" section offers account export and deletion when
+ * the accountDataControls release flag is on.
  * There is no faculty self-edit surface and no faculty/student branching; public
  * profiles are source-derived and admin-curated.
  */
