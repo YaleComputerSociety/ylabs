@@ -515,7 +515,11 @@ async function findOrCreateNameOnlyResearcherId(
   }
 }
 
-function nameOnlyResolutionName(displayName: string): string {
+/**
+ * The person key name-only resolution serializes on. Department-roster shells share it so two
+ * spellings of one person never materialize at once either (#5555); changing it changes both.
+ */
+export function nameOnlyResolutionName(displayName: string): string {
   return canonicalPersonName(sanitizePersonName(displayName) ?? displayName);
 }
 

@@ -411,6 +411,7 @@ import {
   archiveSupersededCanonicalRoleAssignments,
   identifiedResearcherHoldsDisplayName,
   materializeCanonicalMembership,
+  nameOnlyResolutionName,
   writeCanonicalMembership,
   type CanonicalMembershipOutcome,
   type CanonicalMemberFacts,
@@ -12182,6 +12183,11 @@ export function materializationConcurrencyFromEnv(
 export interface ChunkConcurrencyPartition {
   independent: ObservedEntityRow[];
   sequential: ObservedEntityRow[];
+  /**
+   * The sequential rows that are department-roster shells safe to run beside each other,
+   * each with the person its fold is keyed on. Absent rows run strictly in order.
+   */
+  deptShellPersonByRow?: ReadonlyMap<ObservedEntityRow, string>;
 }
 
 /** Every archived row merged into each live survivor, keyed by the survivor's id. */
@@ -12236,13 +12242,119 @@ function storedResearchEntityWritableAlone(
   return { id: stored.id, groupKeys: [...ownKeys, ...mergedInKeys] };
 }
 
+function storedDocumentIdFor(
+  row: ObservedEntityRow,
+  chunkPrefetch: MaterializationReadSource,
+): string | undefined {
+  if (!isResearchEntityObservationType(row.entityType)) return undefined;
+  const lookup = row.entityId
+    ? chunkPrefetch.entityDocForId(row.entityType, row.entityId)
+    : row.entityKey
+      ? chunkPrefetch.entityDocForKey(row.entityType, row.entityKey)
+      : undefined;
+  if (!lookup?.hit || !lookup.value) return undefined;
+  return prefetchObjectIdString((lookup.value as { _id?: unknown })._id);
+}
+
+/** Every id and key a row names: its own identifiers and the stored row they resolve to. */
 function rowReferenceKeys(
   row: ObservedEntityRow,
-  writable: StoredRowWritableAlone | undefined,
+  chunkPrefetch: MaterializationReadSource,
 ): Set<string> {
   return new Set(
-    [row.entityId, row.entityKey, writable?.id].filter((key): key is string => Boolean(key)),
+    [row.entityId, row.entityKey, storedDocumentIdFor(row, chunkPrefetch)].filter(
+      (key): key is string => Boolean(key),
+    ),
   );
+}
+
+const deptShellPersonKey = (value: unknown): string => {
+  const personName = personNameFromDeptRosterEntityName(value);
+  return personName ? nameOnlyResolutionName(personName).toLowerCase() : '';
+};
+
+/**
+ * A department-roster shell writes itself and then folds into the research row its person
+ * already leads, so its only cross-row effect is keyed on that person. It may run beside
+ * other shells when it is live and unmerged, no other row in the chunk names it, and every
+ * name its observations assert is the stored person, so the person its fold reads cannot
+ * change while it runs (#5555).
+ */
+function deptShellPersonWritableBesideShells(
+  row: ObservedEntityRow,
+  chunkPrefetch: MaterializationReadSource,
+  rowsReferencingKey: ReadonlyMap<string, number>,
+): string | undefined {
+  if (!isResearchEntityObservationType(row.entityType) || !isDeptRosterKey(row.entityKey)) {
+    return undefined;
+  }
+  const lookup = row.entityId
+    ? chunkPrefetch.entityDocForId(row.entityType, row.entityId)
+    : chunkPrefetch.entityDocForKey(row.entityType, String(row.entityKey));
+  if (!lookup.hit || !lookup.value) return undefined;
+  const doc = lookup.value as {
+    _id?: unknown;
+    slug?: unknown;
+    name?: unknown;
+    archived?: unknown;
+    canonicalGroupId?: unknown;
+  };
+  if (doc.archived === true || doc.canonicalGroupId) return undefined;
+  const id = prefetchObjectIdString(doc._id);
+  if (!id || !chunkPrefetch.hasNoMergedInRows(id)) return undefined;
+  const ownReferences = rowReferenceKeys(row, chunkPrefetch);
+  const ownKeys = [id, textValue(doc.slug), row.entityId, row.entityKey].filter(
+    (key): key is string => Boolean(key),
+  );
+  const namedBySibling = ownKeys.some(
+    (key) => (rowsReferencingKey.get(key) ?? 0) - (ownReferences.has(key) ? 1 : 0) > 0,
+  );
+  if (namedBySibling) return undefined;
+  const person = deptShellPersonKey(doc.name);
+  if (!person) return undefined;
+  const observations = row.entityId
+    ? chunkPrefetch.observationsForId(row.entityType, row.entityId)
+    : chunkPrefetch.observationsForKey(row.entityType, String(row.entityKey));
+  if (!observations.hit) return undefined;
+  const assertsAnotherPerson = observations.value.some(
+    (observation: any) =>
+      observation?.field === 'name' && deptShellPersonKey(observation.value) !== person,
+  );
+  return assertsAnotherPerson ? undefined : person;
+}
+
+/**
+ * Runs the chunk's sequential rows in their original order, except that a run of
+ * consecutive department-roster shells for different people runs at once. A shell for a
+ * person already in the current run starts the next run, so two shells of one person never
+ * overlap and every shell keeps its order against every row that stays strictly sequential.
+ */
+export async function runSequentialRowsWithDeptShellSpans(
+  sequential: readonly ObservedEntityRow[],
+  deptShellPersonByRow: ReadonlyMap<ObservedEntityRow, string> | undefined,
+  concurrency: number,
+  work: (row: ObservedEntityRow) => Promise<void>,
+): Promise<void> {
+  let span: ObservedEntityRow[] = [];
+  let spanPeople = new Set<string>();
+  const flush = async () => {
+    if (span.length === 1) await work(span[0]);
+    else if (span.length > 1) await runWithConcurrency(span, concurrency, work);
+    span = [];
+    spanPeople = new Set();
+  };
+  for (const row of sequential) {
+    const person = deptShellPersonByRow?.get(row);
+    if (!person) {
+      await flush();
+      await work(row);
+      continue;
+    }
+    if (spanPeople.has(person)) await flush();
+    span.push(row);
+    spanPeople.add(person);
+  }
+  await flush();
 }
 
 /**
@@ -12292,7 +12404,7 @@ export function partitionChunkForConcurrency(
   for (const row of chunk) {
     const writable = storedResearchEntityWritableAlone(row, chunkPrefetch, mergeGroups);
     if (writable) writableByRow.set(row, writable);
-    for (const key of rowReferenceKeys(row, writable)) {
+    for (const key of rowReferenceKeys(row, chunkPrefetch)) {
       rowsReferencingKey.set(key, (rowsReferencingKey.get(key) ?? 0) + 1);
     }
   }
@@ -12300,7 +12412,7 @@ export function partitionChunkForConcurrency(
   const sequential: ObservedEntityRow[] = [];
   for (const row of chunk) {
     const writable = writableByRow.get(row);
-    const ownReferences = rowReferenceKeys(row, writable);
+    const ownReferences = rowReferenceKeys(row, chunkPrefetch);
     const namedByNoSibling =
       writable !== undefined &&
       writable.groupKeys.every(
@@ -12309,7 +12421,16 @@ export function partitionChunkForConcurrency(
     if (namedByNoSibling) independent.push(row);
     else sequential.push(row);
   }
-  return { independent, sequential };
+  const deptShellPersonByRow = new Map<ObservedEntityRow, string>();
+  for (const row of sequential) {
+    const person = deptShellPersonWritableBesideShells(row, chunkPrefetch, rowsReferencingKey);
+    if (person) deptShellPersonByRow.set(row, person);
+  }
+  return {
+    independent,
+    sequential,
+    ...(deptShellPersonByRow.size > 0 ? { deptShellPersonByRow } : {}),
+  };
 }
 
 async function materializeChunkRow(
@@ -12372,15 +12493,20 @@ export async function materializeObservedEntitiesInChunks(
       const mergeGroups = chunkPrefetch
         ? await loadChunkMergeGroups(chunk, chunkPrefetch)
         : undefined;
-      const { independent, sequential } = partitionChunkForConcurrency(
+      const { independent, sequential, deptShellPersonByRow } = partitionChunkForConcurrency(
         chunk,
         chunkPrefetch,
         mergeGroups,
       );
-      await runWithConcurrency(independent, concurrency, (row) =>
-        materializeChunkRow(row, options, chunkPrefetch, onRow),
+      const work = (row: ObservedEntityRow) =>
+        materializeChunkRow(row, options, chunkPrefetch, onRow);
+      await runWithConcurrency(independent, concurrency, work);
+      await runSequentialRowsWithDeptShellSpans(
+        sequential,
+        deptShellPersonByRow,
+        concurrency,
+        work,
       );
-      for (const row of sequential) await materializeChunkRow(row, options, chunkPrefetch, onRow);
     }
     start = end;
   }

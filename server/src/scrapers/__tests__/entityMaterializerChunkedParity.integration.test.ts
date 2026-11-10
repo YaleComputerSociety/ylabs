@@ -34,6 +34,7 @@ import {
   materializationConcurrencyFromEnv,
   MAX_MATERIALIZATION_CONCURRENCY,
   partitionChunkForConcurrency,
+  runSequentialRowsWithDeptShellSpans,
   type ObservedEntityOutcome,
   type ObservedEntityRow,
 } from '../entityMaterializer';
@@ -555,6 +556,221 @@ describe('chunked materialization reads per chunk and projects what row-by-row d
     const sequential = await apply(1);
     expect(await apply(4)).toEqual(sequential);
   }, 120000);
+
+  const seedDeptShell = async (
+    slug: string,
+    storedName: string,
+    observedName: string,
+    department: string,
+  ): Promise<ObservedEntityRow> => {
+    await ResearchEntity.create({ slug, name: storedName, kind: 'individual', archived: false });
+    await seedObservation({ entityKey: slug }, 'name', observedName, {
+      sourceName: 'dept-faculty-roster',
+      confidence: 0.7,
+    });
+    await seedObservation({ entityKey: slug }, 'departments', [department], {
+      sourceName: 'dept-faculty-roster',
+      confidence: 0.7,
+    });
+    return { entityType: 'researchEntity', entityKey: slug };
+  };
+
+  const seedLedLab = async (person: string, slug: string) => {
+    const lab = await ResearchEntity.create({
+      slug,
+      name: `${person} Lab`,
+      kind: 'lab',
+      studentVisibilityTier: 'student_ready',
+      archived: false,
+    });
+    const lead = await Researcher.create({ displayName: person, archived: false });
+    await leadRole(lab._id, lead._id);
+  };
+
+  const partitionDeptChunk = async (rows: ObservedEntityRow[]) => {
+    const prefetch = await MaterializationChunkPrefetch.load({
+      entityType: 'researchEntity',
+      rows,
+      readScopeFilter: materializationReadScopeFilter(),
+      entityDocs: { model: ResearchEntity, keyField: 'slug' },
+    });
+    return partitionChunkForConcurrency(rows, prefetch);
+  };
+
+  it('lets live department-roster shells run beside each other, keyed on the person their fold reads (#5555)', async () => {
+    const first = await seedDeptShell(
+      'dept-chemistry-pat-example',
+      'Pat Example Faculty Research',
+      'Pat Example Faculty Research',
+      'Chemistry',
+    );
+    const second = await seedDeptShell(
+      'dept-physics-lee-sample',
+      'Lee Sample Faculty Research',
+      'Lee Sample Faculty Research',
+      'Physics',
+    );
+    const { sequential, deptShellPersonByRow } = await partitionDeptChunk([first, second]);
+    expect(sequential).toEqual([first, second]);
+    expect(deptShellPersonByRow?.get(first)).toBeTruthy();
+    expect(deptShellPersonByRow?.get(second)).toBeTruthy();
+    expect(deptShellPersonByRow?.get(first)).not.toBe(deptShellPersonByRow?.get(second));
+  }, 120000);
+
+  it('keys a noisy and a clean spelling of one person to the same department-roster person (#5555)', async () => {
+    const clean = await seedDeptShell(
+      'dept-chemistry-pat-example',
+      'Pat Example Faculty Research',
+      'Pat Example Faculty Research',
+      'Chemistry',
+    );
+    const noisy = await seedDeptShell(
+      'dept-physics-photo-of-pat-example',
+      'Photo of PAT EXAMPLE, PhD.',
+      'Photo of PAT EXAMPLE, PhD.',
+      'Physics',
+    );
+    const { deptShellPersonByRow } = await partitionDeptChunk([clean, noisy]);
+    expect(deptShellPersonByRow?.get(clean)).toBeTruthy();
+    expect(deptShellPersonByRow?.get(noisy)).toBe(deptShellPersonByRow?.get(clean));
+  }, 120000);
+
+  it('keeps a department-roster shell strictly sequential when a sibling names it or its observations name another person (#5555)', async () => {
+    const named = await seedDeptShell(
+      'dept-chemistry-pat-example',
+      'Pat Example Faculty Research',
+      'Pat Example Faculty Research',
+      'Chemistry',
+    );
+    const stored = await ResearchEntity.findOne({ slug: 'dept-chemistry-pat-example' })
+      .select('_id')
+      .lean();
+    const idAnchored: ObservedEntityRow = {
+      entityType: 'researchEntity',
+      entityId: String(stored?._id),
+    };
+    const renamed = await seedDeptShell(
+      'dept-physics-lee-sample',
+      'Lee Sample Faculty Research',
+      'Robin Other Faculty Research',
+      'Physics',
+    );
+    const { deptShellPersonByRow } = await partitionDeptChunk([named, idAnchored, renamed]);
+    expect([...(deptShellPersonByRow?.keys() ?? [])]).toEqual([]);
+  }, 120000);
+
+  it('overlaps only consecutive department-roster shells of different people, in order against every other row (#5555)', async () => {
+    const row = (entityKey: string): ObservedEntityRow => ({
+      entityType: 'researchEntity',
+      entityKey,
+    });
+    const [a, b, c, x, d, e] = ['a', 'b', 'c', 'x', 'd', 'e'].map(row);
+    const people = new Map([
+      [a, 'one'],
+      [b, 'two'],
+      [c, 'one'],
+      [d, 'three'],
+      [e, 'four'],
+    ]);
+    const events: string[] = [];
+    let active = 0;
+    const overlaps = new Set<string>();
+    const running = new Set<string>();
+    await runSequentialRowsWithDeptShellSpans([a, b, c, x, d, e], people, 4, async (current) => {
+      const key = String(current.entityKey);
+      for (const other of running) overlaps.add([other, key].sort().join(''));
+      running.add(key);
+      active += 1;
+      events.push(`start:${key}`);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      events.push(`end:${key}`);
+      active -= 1;
+      running.delete(key);
+    });
+    expect(active).toBe(0);
+    expect([...overlaps].sort()).toEqual(['ab', 'de']);
+    expect(events.indexOf('start:c')).toBeGreaterThan(events.indexOf('end:a'));
+    expect(events.indexOf('start:x')).toBeGreaterThan(events.indexOf('end:c'));
+    expect(events.indexOf('start:d')).toBeGreaterThan(events.indexOf('end:x'));
+  });
+
+  it('writes the same corpus at concurrency 4 as sequentially with department-roster shells that fold (#5555)', async () => {
+    const seed = async () => {
+      await seedLedLab('Pat Example', 'pat-example-lab');
+      await seedLedLab('Lee Sample', 'lee-sample-lab');
+      return [
+        ...(await seedCorpus()),
+        await seedDeptShell(
+          'dept-chemistry-lee-sample',
+          'Lee Sample Faculty Research',
+          'Lee Sample Faculty Research',
+          'Chemistry',
+        ),
+        await seedDeptShell(
+          'dept-chemistry-pat-example',
+          'Pat Example Faculty Research',
+          'Pat Example Faculty Research',
+          'Chemistry',
+        ),
+        await seedDeptShell(
+          'dept-chemistry-robin-unled',
+          'Robin Unled Faculty Research',
+          'Robin Unled Faculty Research',
+          'Chemistry',
+        ),
+        await seedDeptShell(
+          'dept-physics-pat-example',
+          'Pat Example Faculty Research',
+          'Pat Example Faculty Research',
+          'Physics',
+        ),
+        await seedDeptShell(
+          'dept-physics-photo-of-pat-example',
+          'Photo of PAT EXAMPLE, PhD.',
+          'Photo of PAT EXAMPLE, PhD.',
+          'Biology',
+        ),
+        ...(await seedIndependentLabs(3)),
+      ];
+    };
+    const apply = async (concurrency: number) => {
+      await resetCorpus();
+      const rows = await seed();
+      const errors: unknown[] = [];
+      await materializeObservedEntitiesInChunks(
+        rows,
+        {},
+        (_row, outcome) => {
+          if ('error' in outcome) errors.push(outcome.error);
+        },
+        100,
+        concurrency,
+      );
+      expect(errors).toEqual([]);
+      const edges = (await RoleAssignment.find({ archived: { $ne: true } })
+        .select('personId target.id role')
+        .lean()) as Array<{ target?: { id?: unknown }; role?: unknown }>;
+      const slugById = new Map(
+        (
+          (await ResearchEntity.find({}).select('slug').lean()) as Array<{
+            _id: unknown;
+            slug?: string;
+          }>
+        ).map((row) => [String(row._id), row.slug]),
+      );
+      return {
+        corpus: await projectCorpus(),
+        edges: edges.map((edge) => `${slugById.get(String(edge.target?.id))}|${edge.role}`).sort(),
+      };
+    };
+
+    const sequential = await apply(1);
+    const folded = (sequential.corpus as Array<{ slug: string; archived?: boolean }>).filter(
+      (row) => row.slug.startsWith('dept-') && row.archived,
+    );
+    expect(folded.length).toBeGreaterThan(0);
+    expect(await apply(4)).toEqual(sequential);
+  }, 180000);
 
   it('reads concurrency from MATERIALIZE_CONCURRENCY, defaulting to 8 and falling back to sequential on an invalid value', () => {
     expect(materializationConcurrencyFromEnv(undefined)).toBe(DEFAULT_MATERIALIZATION_CONCURRENCY);
