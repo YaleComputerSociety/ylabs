@@ -35,7 +35,7 @@ If the maintainer is unreachable, nobody can roll back, rotate a secret, or reac
 | `200`, but pages fail or misbehave | A code regression, or a configuration change that did not fail boot, such as a wrong `VITE_APP_SERVER` or `TRUSTED_PROXY_CIDRS`. | Sentry by release, and whether the problem started at the latest deploy. |
 | A burst of empty replies during a deploy | Expected only for a request still running 20 seconds after `SIGTERM`. The server drains for 20 seconds, under Render's 30-second kill, then cuts what is left and logs `requests were still in flight` (`server/src/serverShutdown.ts`). | Nothing, unless it recurs outside a deploy. |
 
-Boot refuses, with a message naming the variable, when any of these is wrong: `MONGODBURL`, `SESSION_SECRET` (shorter than 32 characters or weak), `TRUSTED_PROXY_CIDRS` (empty, or an entry wider than IPv4 `/8`, IPv6 `/29`, or IPv4-mapped `/104`), `SSOBASEURL` and `SERVER_BASE_URL` (not plain public HTTPS), `MEILISEARCH_HOST`, and `MEILISEARCH_INDEX_PREFIX`.
+Boot refuses, with a message naming the variable, when any of these is wrong: `MONGODBURL`, `SESSION_SECRET` (shorter than 32 characters or weak), `SESSION_SECRET_PREVIOUS` when set (equal to `SESSION_SECRET`, or weak), `TRUSTED_PROXY_CIDRS` (empty, or an entry wider than IPv4 `/8`, IPv6 `/29`, or IPv4-mapped `/104`), `SSOBASEURL` and `SERVER_BASE_URL` (not plain public HTTPS), `MEILISEARCH_HOST`, and `MEILISEARCH_INDEX_PREFIX`.
 
 ### Decide
 
