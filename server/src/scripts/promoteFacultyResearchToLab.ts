@@ -182,7 +182,7 @@ const ORGANIZATION_NOUN_ENDING_RE =
   /\b(?:lab|labs|laboratory|laboratories|group|center|centre|institute|program)$/i;
 
 const PERSON_NAME_SEGMENT_RE =
-  /^(?:dr\.?\s+)?([A-Z][a-z'-]+)(?:\s+[A-Z]\.?)*\s+([A-Z][A-Za-z'-]+)(?:,?\s+(?:M\.?D\.?|Ph\.?D\.?|MD|PhD))*$/;
+  /^(?:dr\.?\s+)?([A-Z][a-z'-]+)(?:\s+[A-Z]\.?)*\s+([A-Z][A-Za-z'-]+)(?:,?\s+(?:M\.?D\.?|Ph\.?D\.?))*$/;
 
 /**
  * Whether a title segment is another known researcher's name: the site is then that

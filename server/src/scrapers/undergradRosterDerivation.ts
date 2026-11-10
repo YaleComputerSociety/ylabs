@@ -94,7 +94,7 @@ const keyNameTokens = (researchEntityKey: string): string[] =>
 const ownerIsKeyPerson = (owner: string, nameTokens: string[]): boolean =>
   nameTokens.some((token) => (token.length <= 3 ? owner === token : owner.includes(token)));
 
-const SURNAME_PARTICLE = /^(?:van|von|de|der|den|del|della|di|da|du|le|la|ter|ten|st|dos|das)+$/;
+const SURNAME_PARTICLE = /^(?:van|von|de|der|den|del|di|da|du|le|la|ter|ten|st|dos|das)+$/;
 
 /**
  * A compound surname is one token in a key ("vandijk") and only its last word in a title
