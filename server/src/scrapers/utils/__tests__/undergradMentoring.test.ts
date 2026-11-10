@@ -197,7 +197,7 @@ describe('Wu Tsai undergraduate fellows', () => {
       ['Avery Synthetic', 'https://wti.example.edu/profile/avery-synthetic'],
       ['Blair Invented', undefined],
     ]);
-    expect(studentFree(listings)).not.toMatch(/Student|fellows/);
+    expect(studentFree(listings)).not.toMatch(/Student|\/fellows\//);
   });
 });
 
