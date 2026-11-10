@@ -91,6 +91,7 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 // The SDK flushes on its own timers, so a fixed sleep raced the session-replay batch under CI
 // load (#5570). Wait for what the assertion needs, with a ceiling well inside the test timeout.
 const WAIT_FOR_SDK = { timeout: 15000, interval: 50 } as const;
+const LATE_BATCH_SETTLE_MS = 2500;
 
 const sentEventNames = () => new Set(sentEvents().map((event) => event.event));
 
@@ -185,6 +186,7 @@ describe('PostHog payload through the real SDK', () => {
     await vi.waitFor(() => {
       expect(everythingSent()).toContain('/research/person/[redacted]');
     }, WAIT_FOR_SDK);
+    await wait(LATE_BATCH_SETTLE_MS);
     return sentEvents();
   };
 
@@ -298,7 +300,7 @@ describe('PostHog payload through the real SDK', () => {
       { key: freshSessionKey(), host: POSTHOG_INGEST_ORIGIN },
       freshPostHog,
     );
-    await wait(500);
+    await vi.waitFor(() => expect(sentEvents().length).toBeGreaterThan(0), WAIT_FOR_SDK);
     productAnalytics.stopProductAnalytics();
     await wait(4000);
     const sentBeforeStop = sentEvents().length;
