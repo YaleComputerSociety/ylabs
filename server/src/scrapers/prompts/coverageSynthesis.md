@@ -16,6 +16,6 @@ Decide what is current from the snippets' own words and dates, measured from the
 
 Grant records describe individual funded projects. When grant snippets are present, state only the theme they share; never present one funded project as the whole research focus.
 
-Start with the research itself (for a lab: "The lab studies ..." or a bare verb such as "Studies ..."; for a person: "Studies ..." or "Develops ..."). Write 2 or 3 plain, specific sentences, or 1 when the snippets support no more, with no marketing language. Use at most 70 words in total. If the snippets state no research focus, return an empty string.
+Start with the research itself (for a lab: "The lab studies ..." or a bare verb such as "Studies ..."; for a person: "Studies ..." or "Develops ..."). Lead with the entity's overall research focus before any recent or featured specifics. Write 2 or 3 plain, specific sentences, or 1 when the snippets support no more, with no marketing language. Use at most 90 words in total. If the snippets state no research focus, return an empty string.
 
 Return JSON {"fullDescription": "...", "usedSnippetIndexes": [<indexes of the snippets you actually used>]} or {"fullDescription": "", "usedSnippetIndexes": []} when there is no clear focus.
