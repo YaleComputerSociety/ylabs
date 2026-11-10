@@ -6,13 +6,14 @@
  * named professor's list entries to the research row they already lead as
  * `undergradListEvidence`. Mentoring is its own signal, separate from hosting.
  *
- * Deterministic: every source is read by an HTML, XML or CSV parser in
+ * Deterministic: every source is read by an HTML or CSV parser in
  * `utils/officialUndergradLists.ts`, with no model call. Only the adviser is read; no student
  * name, project title or topic is stored.
  *
- * Identity fails closed. A Yale email on the list matches the researcher who holds it; a
- * name matches only when exactly one researcher carries it, and, where the list states a
- * department, only when that researcher's own rows agree with it. An adviser who leads no
+ * Identity fails closed. A Yale email, or a Tobin sponsor's profile link, matches the
+ * researcher who holds it only when they carry the listed name; a name matches only when
+ * exactly one researcher carries it, and, where the list states a department, only when
+ * that researcher's own rows agree with it. An adviser who leads no
  * row is counted and skipped: mentoring alone never creates a row (owner, 2026-11-10).
  *
  * Every run rebuilds each row's whole list, so an entry withdraws when its source stops
