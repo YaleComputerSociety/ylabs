@@ -47,8 +47,9 @@ const Privacy = () => {
           <p className={BODY_CLASS}>
             y/labs keeps no record of who you are or what you looked at. It does set one cookie,
             which carries only a random id used to limit how fast one browser can send requests, and
-            your browser keeps a few y/labs settings, such as display preferences and whether you
-            were last signed in. Two things still leave your browser:
+            your browser keeps a few y/labs notes to itself: whether you were last signed in, which
+            first-save tips you have seen, and where to return after signing out. Two things still
+            leave your browser:
           </p>
           <ul className={LIST_CLASS}>
             <li>
