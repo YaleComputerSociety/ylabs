@@ -23,14 +23,6 @@ export interface DirectoryRemovalMintGuard {
   readonly refusals: number;
 }
 
-const holdsStableKey = (person: DirectoryRemovalPerson): boolean =>
-  Boolean(
-    person.identifiers?.netid ||
-    person.identifiers?.email ||
-    person.identifiers?.orcid ||
-    (person.profileLinks ?? []).some((link) => Boolean(link?.url)),
-  );
-
 export function createDirectoryRemovalMintGuard(
   matcher: DirectoryRemovalMatcher,
 ): DirectoryRemovalMintGuard {
@@ -43,9 +35,7 @@ export function createDirectoryRemovalMintGuard(
       return active && matcher.isRemovedPerson(person);
     },
     refusesPerson(person) {
-      if (!active || !person) return false;
-      if (matcher.isRemovedPerson(person)) return true;
-      return !holdsStableKey(person) && matcher.isRemovedName(person.displayName);
+      return active && Boolean(person) && matcher.isRemovedPerson(person);
     },
     recordRefusal() {
       refusals += 1;

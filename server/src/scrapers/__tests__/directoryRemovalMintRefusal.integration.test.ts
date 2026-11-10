@@ -307,15 +307,15 @@ describe(
         return { write, refusals: guard.refusals };
       };
 
-      it('mints no name-only researcher whose name is on the list', async () => {
+      it('still mints and attaches a keyless researcher whose name matches a name entry', async () => {
         await recordRemoval('name', 'Emery Synthetic');
 
         const { write, refusals } = await writeUnderGuard({ displayName: 'Emery Synthetic' });
 
-        expect(write.outcome).toBe('removed_by_request');
-        expect(refusals).toBe(1);
-        expect(await Researcher.countDocuments({})).toBe(0);
-        expect(await RoleAssignment.countDocuments({})).toBe(0);
+        expect(write.outcome).not.toBe('removed_by_request');
+        expect(refusals).toBe(0);
+        expect(await Researcher.countDocuments({})).toBe(1);
+        expect(await RoleAssignment.countDocuments({})).toBe(1);
       });
 
       it('mints a namesake listed with a profile url of their own', async () => {

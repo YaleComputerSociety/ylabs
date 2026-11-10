@@ -53,12 +53,11 @@ describe('createDirectoryRemovalMintGuard', () => {
     }
   });
 
-  it('matches a name entry only against a person who carries no stable key', () => {
+  it('never refuses a researcher on a name entry, keyed or keyless', () => {
     const guard = guardFor([digest('name', 'Synthetic Removed Person')]);
-    expect(guard.refusesPerson({ displayName: 'Synthetic Removed Person' })).toBe(true);
+    expect(guard.refusesPerson({ displayName: 'Synthetic Removed Person' })).toBe(false);
     expect(guard.refusesPerson(removed)).toBe(false);
     expect(guard.refusesIdentifiedPerson({ displayName: 'Synthetic Removed Person' })).toBe(false);
-    expect(guard.refusesPerson({ displayName: 'synthetic removed person' })).toBe(true);
   });
 
   it('counts each recorded refusal', () => {
