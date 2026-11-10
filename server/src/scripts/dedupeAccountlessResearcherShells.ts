@@ -56,7 +56,16 @@ export interface ResearcherDedupeStageDelta {
 export interface DedupeAccountlessResearcherShellsArgs {
   apply: boolean;
   confirmDedupeAccountlessResearcherShells: boolean;
+  onlyShellIds?: string[];
   output?: string;
+}
+
+function parseOnlyShellId(value: string): string {
+  const id = value.trim();
+  if (!/^[0-9a-f]{24}$/i.test(id)) {
+    throw new Error(`--only-shell expects a 24-character researcher id, got "${value}"`);
+  }
+  return id.toLowerCase();
 }
 
 export function parseDedupeAccountlessResearcherShellsArgs(
@@ -84,6 +93,13 @@ export function parseDedupeAccountlessResearcherShellsArgs(
     }
     if (arg.startsWith('--confirm-dedupe-accountless-researcher-shells=')) {
       throw new Error('--confirm-dedupe-accountless-researcher-shells does not accept a value');
+    }
+    if (arg.startsWith('--only-shell=')) {
+      args.onlyShellIds = [
+        ...(args.onlyShellIds ?? []),
+        parseOnlyShellId(arg.slice('--only-shell='.length)),
+      ];
+      continue;
     }
     if (arg.startsWith('--output=')) {
       args.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length));
@@ -121,6 +137,7 @@ export interface AttributeUnionTotals {
 
 export interface DedupeAccountlessResearcherShellsResult {
   mode: 'apply' | 'dry-run';
+  onlyShellsNotPlanned?: string[];
   directoryIdentifiedResearchers: number;
   shellResearchers: number;
   netidBackedShellResearchers: number;
@@ -160,6 +177,22 @@ const LIVE_ROSTER_EDGE_FILTER = {
   state: { $ne: 'HISTORICAL' },
   'target.kind': 'RESEARCH_ENTITY',
 };
+
+/**
+ * Keeps only the planned merges whose shell was named, so one reviewed fold can be applied
+ * while the rest of the plan waits for review. Returns the named shells the plan did not
+ * merge, because a scoped run that silently applies nothing reads as done.
+ */
+export function scopeMergesToShells(
+  mergeTargetByShellId: Map<string, string>,
+  onlyShellIds: ReadonlyArray<string>,
+): string[] {
+  const wanted = new Set(onlyShellIds);
+  for (const shellId of [...mergeTargetByShellId.keys()]) {
+    if (!wanted.has(shellId)) mergeTargetByShellId.delete(shellId);
+  }
+  return [...wanted].filter((shellId) => !mergeTargetByShellId.has(shellId));
+}
 
 async function loadRosterIdentityCandidates(
   RoleAssignment: mongoose.mongo.Collection,
@@ -351,6 +384,7 @@ async function planAliasTwinFoldsFor(
 
 export async function dedupeAccountlessResearcherShells(options: {
   apply: boolean;
+  onlyShellIds?: ReadonlyArray<string>;
 }): Promise<DedupeAccountlessResearcherShellsResult> {
   const Researcher = mongoose.connection.collection('researchers');
   const RoleAssignment = mongoose.connection.collection('role_assignments');
@@ -511,6 +545,9 @@ export async function dedupeAccountlessResearcherShells(options: {
   for (const [shellId, survivorId] of clusterPlan.foldTargetById) {
     mergeTargetByShellId.set(shellId, survivorId);
   }
+  const onlyShellsNotPlanned = options.onlyShellIds
+    ? scopeMergesToShells(mergeTargetByShellId, options.onlyShellIds)
+    : undefined;
 
   const shellObjectIds = Array.from(mergeTargetByShellId.keys()).map(
     (id) => new mongoose.Types.ObjectId(id),
@@ -774,6 +811,7 @@ export async function dedupeAccountlessResearcherShells(options: {
 
   return {
     mode: options.apply ? 'apply' : 'dry-run',
+    ...(onlyShellsNotPlanned ? { onlyShellsNotPlanned } : {}),
     directoryIdentifiedResearchers: researcherIdentities.length - foldableShells.length,
     shellResearchers: foldableShells.length,
     netidBackedShellResearchers,
@@ -818,7 +856,10 @@ async function main() {
   });
 
   await initializeConnections();
-  const result = await dedupeAccountlessResearcherShells({ apply: args.apply });
+  const result = await dedupeAccountlessResearcherShells({
+    apply: args.apply,
+    ...(args.onlyShellIds ? { onlyShellIds: args.onlyShellIds } : {}),
+  });
 
   const { merges, ...summary } = result;
   const report = {
