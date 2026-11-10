@@ -311,6 +311,7 @@ describe('Beta to Development sync guards', () => {
       'accounts',
       'analytics_events',
       'corpus_quality_snapshots',
+      'deleted_account_event_tallies',
       'engine_benchmark_rows',
       'engine_benchmark_snapshots',
       'engine_benchmarks',

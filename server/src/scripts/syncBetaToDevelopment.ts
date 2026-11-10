@@ -131,6 +131,9 @@ const EXCLUDED_BETA_COLLECTIONS = [
   // copying a quality measurement both misdates the target's history and loses
   // it, because a sync replaces the whole collection.
   'corpus_quality_snapshots',
+  // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy: each row
+  // counts this environment's own account deletions (#4156).
+  'deleted_account_event_tallies',
   'entitycorrectionreports',
   'evidence_claims',
   // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy: a

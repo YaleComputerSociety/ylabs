@@ -67,7 +67,9 @@ type DeploymentEnv = Partial<Record<DeploymentEnvKey, string | undefined>> & {
   [key: string]: string | undefined;
 };
 
-export const RELEASE_FEATURE_FLAGS: readonly string[] = [];
+export const ACCOUNT_DATA_CONTROLS_FLAG = 'accountDataControls';
+
+export const RELEASE_FEATURE_FLAGS: readonly string[] = [ACCOUNT_DATA_CONTROLS_FLAG];
 
 const featureFlagEnvKey = (flag: string): string =>
   `FEATURE_${flag.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toUpperCase()}`;
@@ -77,6 +79,11 @@ export const buildFeatureFlags = (
   flags: readonly string[] = RELEASE_FEATURE_FLAGS,
 ): Record<string, boolean> =>
   Object.fromEntries(flags.map((flag) => [flag, env[featureFlagEnvKey(flag)] === 'true']));
+
+export const isReleaseFeatureEnabled = (
+  flag: string,
+  env: DeploymentEnv = process.env,
+): boolean => buildFeatureFlags(env)[flag] === true;
 
 export const buildDeploymentFingerprint = (
   env: DeploymentEnv = process.env,

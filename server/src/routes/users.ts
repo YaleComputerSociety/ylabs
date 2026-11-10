@@ -1,10 +1,11 @@
 /**
- * User routes for favorites, fellowships, and profile updates.
+ * User routes for saved research, watched programs, and the account holder's own data.
  */
 import { Router, Request, Response, NextFunction } from 'express';
 import { isAuthenticated, validateObjectId, validateResearchEntityId } from '../middleware/index';
 import { writeLimit } from '../middleware/rateLimiters';
 import * as userController from '../controllers/userController';
+import * as accountDataController from '../controllers/accountDataController';
 
 const router = Router();
 
@@ -62,6 +63,20 @@ router.put(
   isAuthenticated,
   validateResearchEntityId('entityId'),
   userController.updateSavedResearchEntityPlan,
+);
+
+router.get(
+  '/me/export',
+  isAuthenticated,
+  accountDataController.requireAccountDataControls,
+  accountDataController.exportAccountData,
+);
+router.delete(
+  '/me',
+  writeLimit,
+  isAuthenticated,
+  accountDataController.requireAccountDataControls,
+  accountDataController.deleteOwnAccountData,
 );
 
 export default router;

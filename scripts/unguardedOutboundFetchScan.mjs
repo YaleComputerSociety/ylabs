@@ -26,6 +26,14 @@ export const REVIEWED_OUTBOUND_FETCHES = new Map([
         'asks the operator-configured SSOBASEURL /validate endpoint, which deployed runtimes require to be public https; only the encoded query string varies and redirects are refused',
     },
   ],
+  [
+    'server/src/services/posthogPersonDeletionService.ts',
+    {
+      calls: 1,
+      reason:
+        'asks the fixed PostHog US private API origin to delete one person; only a digits-only project id from the environment varies in the path, and redirects are refused',
+    },
+  ],
 ]);
 
 const SOURCE_FILE = /\.(?:ts|mts|cts|js|mjs|cjs)$/;

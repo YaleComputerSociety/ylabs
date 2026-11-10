@@ -12,7 +12,8 @@
 // A search rerank cache pairs this environment's student queries with its rows and
 // is seeded per environment, so a copy would serve one corpus's scores on another's ids.
 // A model call usage entry records this environment's own paid calls, so a copy would
-// bill one environment's spend to another.
+// bill one environment's spend to another. A deleted-account event tally counts this
+// environment's own deletions, so a copy would attribute them to another (#4156).
 export const NEVER_COPY_COLLECTIONS = [
   'accounts',
   'research_plans',
@@ -28,6 +29,7 @@ export const NEVER_COPY_COLLECTIONS = [
   'engine_benchmark_snapshots',
   'weekly_sweep_runs',
   'login_signal_tallies',
+  'deleted_account_event_tallies',
   'research_topics_derivations',
   'search_rerank_cache',
   'model_call_usages',
@@ -51,6 +53,7 @@ export const PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS = [
   'engine_benchmark_snapshots',
   'weekly_sweep_runs',
   'login_signal_tallies',
+  'deleted_account_event_tallies',
   'research_topics_derivations',
   'search_rerank_cache',
   'model_call_usages',

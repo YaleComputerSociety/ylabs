@@ -209,6 +209,36 @@ Treating unknown as enabled would post a guest's first browse impression to `/an
 `/login` applies it too, and once a session check succeeds (for example after Retry connection) it sends the user to that path, falling back to the role default only when the path is empty.
 Any `401` dispatches `HTTP_AUTH_REQUIRED_EVENT` (`client/src/utils/httpStatusEvents.ts`), and `UserContextProvider` answers it by signing the client out, so a login link raised by an expired session reaches the CAS sign-in instead of bouncing off `/login` back to the page that failed.
 
+## Account data export and deletion (#4156)
+
+A signed-in account can download, and delete, everything y/labs holds keyed to it.
+`server/src/services/accountDataService.ts` is the one service for both, used by the self-serve routes and by `yarn --cwd server accounts:delete-account-data`, so an emailed request and a signed-in one remove exactly the same rows.
+Both routes sit behind the `accountDataControls` release flag (`FEATURE_ACCOUNT_DATA_CONTROLS`) and answer `404` while it is off.
+
+- `GET /api/users/me/export` streams one JSON attachment from a cursor: the account, every research plan with `privateNotes`, `checklist` and `deadlines` explicitly selected, the account's correction reports, its admin grants, and every analytics event, plus `scopeVersion` and `generatedAt`.
+A field added to an exported collection is not exported until an allowlist in the service names it, and a scope change bumps `ACCOUNT_DATA_EXPORT_SCOPE_VERSION`.
+- `DELETE /api/users/me` requires the body `{ "confirm": "delete my data" }` and a session minted by a sign-in less than 10 minutes old, read from the signed claim's `issuedAt` (`ACCOUNT_DELETION_RECENT_SIGN_IN_MS`); an older session answers `403` with `RECENT_SIGN_IN_REQUIRED` and the client sends the student through CAS again.
+It runs under `writeLimit` and the global origin guard, and on success it ends the cookie session and returns per-collection counts.
+
+The deletion order is the contract, and every step is safe to repeat:
+
+1. Refuse with `409` (`DELETION_BLOCKED`) if a corpus field in `CORPUS_ACCOUNT_ID_REFERENCE_FIELDS` holds the account `_id`, rather than leave a dangling id.
+2. `revokeAccountSessions`, so another tab stops writing events.
+3. Delete every `research_plans` row for the account, bypassing the restore window.
+4. Fold the netid's `analytics_events` into `deleted_account_event_tallies` (UTC month, event type and count, nothing else) and delete them, one transaction per batch, so raw search text is gone and a retry never double-counts.
+5. Keep each correction report and replace its `reporter` with a tombstone whose `netId` is `deleted-<reportId>`, with empty email and name; the report is evidence about a public row.
+6. Delete the netid's `admin_grants`, so a maintainer who deletes their account loses the grant with it.
+7. Ask PostHog to delete the person keyed on `productAnalyticsId`, with events and recordings.
+Unconfigured, this is skipped and reported as `skipped_not_configured`; configured and failing, the deletion stops here, because the account row holds the only copy of that id.
+8. Delete the account last, so any failure above leaves an account the holder can sign in to and retry from.
+9. Append one `admin_audit_events` row, `account.self_delete` or `account.operator_delete`, whose `targetId` is an HMAC-SHA256 of the netid under `ACCOUNT_DELETION_AUDIT_HMAC_KEY`, never the netid.
+Without the key the row carries no subject.
+
+Every collection it touches is environment-local and never promoted or synced, so a deletion is durable in its environment and reaches no other; `server/src/scripts/__tests__/accountDataCollectionsAreEnvironmentLocal.test.ts` pins that.
+A student with accounts in two environments deletes each one there.
+The operator script is dry-run by default and prints the per-collection residue for one netid, which is also the verification after a deletion: every count must read zero.
+`server/src/__tests__/accountDataControls.integration.test.ts` drives export, the refusals, the deletion, the PostHog call and the retry through the mounted app with synthetic accounts.
+
 ## Validation middleware
 
 Exported from `server/src/middleware/`:
@@ -472,6 +502,8 @@ Rotating a leaked secret is owned by `docs/incident-runbook.md`.
 | `GATE_SCORECARD_MAX_AGE_HOURS` | No | Max age before a gate scorecard is stale. |
 | `GATE_REFRESH_INTERVAL_MINUTES` | No | Positive value enables in-process gate refresh. |
 | `GATE_REFRESH_SKIP_HEAVY` | No | Skips heavy gate refresh work when `true`. |
+| `POSTHOG_PERSONAL_API_KEY`, `POSTHOG_PROJECT_ID` | No | A `phx_` personal key with `person:write` and the digits-only project id; set, an account deletion asks PostHog to delete the person, unset it skips PostHog and says so (#4156). |
+| `ACCOUNT_DELETION_AUDIT_HMAC_KEY` | No | At least 32 characters; keys the netid hash on an account-deletion audit row, which otherwise carries no subject (#4156). |
 
 ### Client
 
