@@ -1,8 +1,8 @@
 import axios from 'axios';
+import { BenchmarkReplayNetworkError } from '../../scrapers/snapshotBenchmarkMode';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   FROZEN_MODEL_RESPONSE_HEADER,
-  flushModelUsageRecords,
   isModelEndpointUrl,
   type ModelUsageRecord,
   postChatCompletion,
@@ -37,12 +37,10 @@ describe('postChatCompletion', () => {
       recorded.push(record);
     });
     post.mockReset();
-    delete process.env.OPENAI_BASE_URL;
   });
 
   afterEach(() => {
     restoreDefaultModelUsageSink();
-    delete process.env.OPENAI_BASE_URL;
   });
 
   it('sends the same request every call site used to send by hand', async () => {
@@ -72,7 +70,6 @@ describe('postChatCompletion', () => {
       timeoutMs: 1,
       body: { model: 'gpt-5-mini' },
     });
-    await flushModelUsageRecords();
 
     expect(recorded).toEqual([
       expect.objectContaining({
@@ -99,7 +96,6 @@ describe('postChatCompletion', () => {
         body: { model: 'gpt-5-mini' },
       }),
     ).rejects.toThrow('timeout');
-    await flushModelUsageRecords();
 
     expect(recorded).toEqual([
       expect.objectContaining({ succeeded: false, promptTokens: 0, completionTokens: 0 }),
@@ -118,7 +114,6 @@ describe('postChatCompletion', () => {
       timeoutMs: 1,
       body: { model: 'gpt-5-mini' },
     });
-    await flushModelUsageRecords();
 
     expect(recorded).toEqual([]);
   });
@@ -137,7 +132,6 @@ describe('postChatCompletion', () => {
         body: { model: 'gpt-5-mini' },
       }),
     ).resolves.toBe(chatResponse);
-    await expect(flushModelUsageRecords()).resolves.toBeUndefined();
   });
 
   it('records nothing when usage recording is switched off', async () => {
@@ -150,13 +144,57 @@ describe('postChatCompletion', () => {
       timeoutMs: 1,
       body: { model: 'gpt-5-mini' },
     });
-    await flushModelUsageRecords();
 
     expect(recorded).toEqual([]);
   });
 
-  it('posts to a configured base URL and treats only that host as the model endpoint', async () => {
-    process.env.OPENAI_BASE_URL = 'https://gateway.example.test/v1/';
+  it('records nothing for a request a benchmark replay refused before it left the process', async () => {
+    post.mockRejectedValue(new BenchmarkReplayNetworkError());
+
+    await expect(
+      postChatCompletion({
+        caller: 'card-synthesis',
+        apiKey: 'sk-test',
+        timeoutMs: 1,
+        body: { model: 'gpt-5-mini' },
+      }),
+    ).rejects.toBeInstanceOf(BenchmarkReplayNetworkError);
+
+    expect(recorded).toEqual([]);
+  });
+
+  it('holds the call until its usage record is written', async () => {
+    post.mockResolvedValue(chatResponse);
+    let releaseWrite: () => void = () => undefined;
+    const writes: ModelUsageRecord[] = [];
+    setModelUsageSink(
+      (record) =>
+        new Promise<void>((resolve) => {
+          releaseWrite = () => {
+            writes.push(record);
+            resolve();
+          };
+        }),
+    );
+
+    let settled = false;
+    const call = postChatCompletion({
+      caller: 'card-synthesis',
+      apiKey: 'sk-test',
+      timeoutMs: 1,
+      body: { model: 'gpt-5-mini' },
+    }).then(() => {
+      settled = true;
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(settled).toBe(false);
+
+    releaseWrite();
+    await call;
+    expect(writes).toHaveLength(1);
+  });
+
+  it('posts embeddings to the OpenAI endpoint and treats only that host as the model endpoint', async () => {
     post.mockResolvedValue({ data: { data: [{ embedding: [0.1] }] }, headers: {} });
 
     await postEmbedding({
@@ -166,8 +204,8 @@ describe('postChatCompletion', () => {
       body: { model: 'text-embedding-3-small', input: 'protein folding' },
     });
 
-    expect(post.mock.calls[0][0]).toBe('https://gateway.example.test/v1/embeddings');
-    expect(isModelEndpointUrl('https://gateway.example.test/v1/chat/completions')).toBe(true);
-    expect(isModelEndpointUrl('https://api.openai.com/v1/chat/completions')).toBe(false);
+    expect(post.mock.calls[0][0]).toBe('https://api.openai.com/v1/embeddings');
+    expect(isModelEndpointUrl('https://api.openai.com/v1/chat/completions')).toBe(true);
+    expect(isModelEndpointUrl('https://gateway.example.test/v1/chat/completions')).toBe(false);
   });
 });

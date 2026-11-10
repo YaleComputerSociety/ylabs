@@ -27,7 +27,12 @@ const modelCallUsageSchema = new mongoose.Schema(
   { timestamps: false, versionKey: false },
 );
 
-modelCallUsageSchema.index({ calledAt: 1, caller: 1 });
+export const MODEL_CALL_USAGE_RETENTION_SECONDS = 365 * 24 * 60 * 60;
+
+modelCallUsageSchema.index(
+  { calledAt: 1 },
+  { expireAfterSeconds: MODEL_CALL_USAGE_RETENTION_SECONDS },
+);
 
 export const ModelCallUsage = mongoose.model(
   'ModelCallUsage',

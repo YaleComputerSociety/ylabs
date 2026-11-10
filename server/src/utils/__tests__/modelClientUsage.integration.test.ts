@@ -4,7 +4,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ModelCallUsage } from '../../models/modelCallUsage';
 import { readModelUsageReport } from '../../scripts/modelUsageReportCore';
-import { flushModelUsageRecords, postChatCompletion } from '../modelClient';
+import { postChatCompletion } from '../modelClient';
 
 vi.mock('axios', () => ({ default: { post: vi.fn() } }));
 
@@ -41,7 +41,6 @@ describe('model call usage on a connected database', () => {
         body: { model: 'gpt-5-mini' },
       });
     }
-    await flushModelUsageRecords();
 
     expect(await ModelCallUsage.countDocuments()).toBe(3);
     const report = await readModelUsageReport(new Date(Date.now() - 60_000));

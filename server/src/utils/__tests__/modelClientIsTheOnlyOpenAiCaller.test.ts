@@ -1,34 +1,113 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import axios from 'axios';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { defaultCoverageSynthesisLLM } from '../../scrapers/coverageSynthesis';
+import { defaultCallLLM as defaultUndergradCallLLM } from '../../scrapers/sources/labMicrositeUndergradLLMExtractor';
+import { defaultResearchTopicsModel } from '../../scripts/deriveResearchTopicsCore';
+import { defaultLabDescriptionSynthesizer } from '../../scripts/labDescriptionSynthesis';
+import {
+  clearResearchSearchQueryEmbeddingCache,
+  getResearchSearchQueryVector,
+} from '../../services/researchSearchQueryEmbedding';
+import { defaultCardSynthesisLLM } from '../groundedCardSynthesis';
+import {
+  type ModelCaller,
+  type ModelUsageRecord,
+  restoreDefaultModelUsageSink,
+  setModelUsageSink,
+} from '../modelClient';
 
-const SERVER_SRC = path.resolve(__dirname, '../..');
-const CLIENT_FILE = path.join('utils', 'modelClient.ts');
-const OPENAI_HOST = /api\.openai\.com/;
+vi.mock('axios', () => ({ default: { post: vi.fn() } }));
 
-function productionSourceFiles(directory: string): string[] {
-  return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-    const fullPath = path.join(directory, entry.name);
-    if (entry.isDirectory())
-      return entry.name === '__tests__' ? [] : productionSourceFiles(fullPath);
-    return entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts') ? [fullPath] : [];
+const post = vi.mocked(axios.post);
+const API_KEY = 'sk-synthetic-test-key';
+
+const openAiResponse = {
+  data: {
+    choices: [{ message: { content: '{}' } }],
+    data: [{ embedding: [0.25, 0.5] }],
+    usage: { prompt_tokens: 10, completion_tokens: 2 },
+  },
+  headers: {},
+};
+
+const defaultModelCalls: Array<[ModelCaller, () => Promise<unknown>]> = [
+  [
+    'card-synthesis',
+    () =>
+      defaultCardSynthesisLLM({
+        model: 'gpt-5-mini',
+        apiKey: API_KEY,
+        fullDescription: 'Studies protein folding.',
+        entityName: 'Synthetic Folding Lab',
+      }),
+  ],
+  [
+    'coverage-synthesis-llm',
+    () =>
+      defaultCoverageSynthesisLLM(API_KEY)({
+        entityName: 'Synthetic Folding Lab',
+        snippets: [{ text: 'Studies protein folding.' }],
+      } as Parameters<ReturnType<typeof defaultCoverageSynthesisLLM>>[0]),
+  ],
+  [
+    'lab-description-synthesis',
+    () =>
+      defaultLabDescriptionSynthesizer({
+        name: 'Synthetic Folding Lab',
+        sourceText: 'Studies protein folding.',
+      }),
+  ],
+  [
+    'research-topics-derivation',
+    () =>
+      defaultResearchTopicsModel(API_KEY)({
+        model: 'gpt-5-mini',
+        pages: [{ url: 'https://example.test/research', text: 'Studies protein folding.' }],
+      } as Parameters<ReturnType<typeof defaultResearchTopicsModel>>[0]),
+  ],
+  [
+    'lab-microsite-undergrad-llm',
+    () =>
+      defaultUndergradCallLLM({
+        model: 'gpt-5-mini',
+        systemPrompt: 'system',
+        userPrompt: 'user',
+        apiKey: API_KEY,
+        responseFormat: { type: 'json_object' },
+      }),
+  ],
+  ['research-search-query-embedding', () => getResearchSearchQueryVector('protein folding')],
+];
+
+describe('default model calls reach OpenAI only through the shared client', () => {
+  let recorded: ModelUsageRecord[];
+  const originalApiKey = process.env.OPENAI_API_KEY;
+
+  beforeEach(() => {
+    recorded = [];
+    setModelUsageSink(async (record) => {
+      recorded.push(record);
+    });
+    post.mockReset();
+    post.mockResolvedValue(openAiResponse);
+    process.env.OPENAI_API_KEY = API_KEY;
+    clearResearchSearchQueryEmbeddingCache();
   });
-}
 
-describe('the shared model client', () => {
-  it('is the only production module that names the OpenAI host', () => {
-    const offenders = productionSourceFiles(SERVER_SRC)
-      .map((file) => path.relative(SERVER_SRC, file))
-      .filter((relative) => relative !== CLIENT_FILE)
-      .filter((relative) =>
-        OPENAI_HOST.test(fs.readFileSync(path.join(SERVER_SRC, relative), 'utf8')),
-      );
-    expect(offenders).toEqual([]);
+  afterEach(() => {
+    restoreDefaultModelUsageSink();
+    if (originalApiKey === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = originalApiKey;
   });
 
-  it('names the OpenAI host itself, so the scan above is not vacuous', () => {
-    expect(OPENAI_HOST.test(fs.readFileSync(path.join(SERVER_SRC, CLIENT_FILE), 'utf8'))).toBe(
-      true,
-    );
-  });
+  it.each(defaultModelCalls)(
+    'leaves one usage record under %s for each OpenAI request',
+    async (caller, call) => {
+      await call().catch(() => undefined);
+
+      expect(post).toHaveBeenCalledTimes(1);
+      expect(post.mock.calls[0][0]).toMatch(/^https:\/\/api\.openai\.com\/v1\//);
+      expect(recorded.map((record) => record.caller)).toEqual([caller]);
+    },
+  );
 });

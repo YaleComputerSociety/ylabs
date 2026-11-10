@@ -2,7 +2,7 @@ import axios, { type AxiosResponse } from 'axios';
 import mongoose from 'mongoose';
 import { ModelCallUsage } from '../models/modelCallUsage';
 
-export const DEFAULT_OPENAI_BASE_URL = 'https://api.openai.com/v1';
+const OPENAI_BASE_URL = 'https://api.openai.com/v1';
 
 export const FROZEN_MODEL_RESPONSE_HEADER = 'x-ylabs-frozen-model-response';
 
@@ -55,7 +55,6 @@ const storeInDatabaseWhenConnected: ModelUsageSink = async (record) => {
 };
 
 let usageSink: ModelUsageSink | null = storeInDatabaseWhenConnected;
-const pendingUsageWrites = new Set<Promise<void>>();
 
 export function setModelUsageSink(sink: ModelUsageSink | null): void {
   usageSink = sink;
@@ -65,17 +64,8 @@ export function restoreDefaultModelUsageSink(): void {
   usageSink = storeInDatabaseWhenConnected;
 }
 
-export async function flushModelUsageRecords(): Promise<void> {
-  await Promise.all([...pendingUsageWrites]);
-}
-
-export function openAiBaseUrl(): string {
-  const configured = String(process.env.OPENAI_BASE_URL || '').trim();
-  return (configured || DEFAULT_OPENAI_BASE_URL).replace(/\/+$/, '');
-}
-
 export function isModelEndpointUrl(url: unknown): boolean {
-  return typeof url === 'string' && url.startsWith(`${openAiBaseUrl()}/`);
+  return typeof url === 'string' && url.startsWith(`${OPENAI_BASE_URL}/`);
 }
 
 const tokenCount = (value: unknown): number => {
@@ -109,13 +99,13 @@ function usageRecord(
   };
 }
 
-function recordUsage(record: ModelUsageRecord): void {
+const neverLeftTheProcess = (error: unknown): boolean =>
+  error instanceof Error && error.name === 'BenchmarkReplayNetworkError';
+
+async function recordUsage(record: ModelUsageRecord): Promise<void> {
   const sink = usageSink;
   if (!sink) return;
-  const write = sink(record)
-    .catch(() => undefined)
-    .finally(() => pendingUsageWrites.delete(write));
-  pendingUsageWrites.add(write);
+  await sink(record).catch(() => undefined);
 }
 
 async function postModelRequest(
@@ -123,19 +113,22 @@ async function postModelRequest(
   request: ModelRequest,
 ): Promise<AxiosResponse> {
   const startedAt = Date.now();
-  let response: AxiosResponse | undefined;
+  let response: AxiosResponse;
   try {
-    const delivered = await axios.post(`${openAiBaseUrl()}/${endpoint}`, request.body, {
+    response = await axios.post(`${OPENAI_BASE_URL}/${endpoint}`, request.body, {
       headers: { Authorization: `Bearer ${request.apiKey}`, 'Content-Type': 'application/json' },
       timeout: request.timeoutMs,
     });
-    response = delivered;
-    return delivered;
-  } finally {
-    if (!responseWasFrozen(response)) {
-      recordUsage(usageRecord(request, endpoint, startedAt, response));
+  } catch (error) {
+    if (!neverLeftTheProcess(error)) {
+      await recordUsage(usageRecord(request, endpoint, startedAt, undefined));
     }
+    throw error;
   }
+  if (!responseWasFrozen(response)) {
+    await recordUsage(usageRecord(request, endpoint, startedAt, response));
+  }
+  return response;
 }
 
 export function postChatCompletion(request: ModelRequest): Promise<AxiosResponse> {
