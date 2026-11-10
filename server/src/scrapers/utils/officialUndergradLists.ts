@@ -60,9 +60,6 @@ export const UNDERGRAD_LIST_SOURCE_KIND: Record<UndergradListSource, UndergradLi
   'eps-senior-theses': 'advised',
 };
 
-export const isMentorListSource = (source: UndergradListSource): boolean =>
-  UNDERGRAD_EVIDENCE_SIGNAL[source] === 'mentors';
-
 const HONORIFIC = /^(?:prof(?:essor)?\.?|dr\.?|mr\.?|ms\.?|mrs\.?)\s+/i;
 const TRAILING_CREDENTIAL = /,?\s+(?:ph\.?\s?d\.?|m\.?d\.?|jr\.?|sr\.?)$/i;
 const NAME_SEPARATOR = /\s*(?:,|;|\/|&|\band\b)\s*/i;

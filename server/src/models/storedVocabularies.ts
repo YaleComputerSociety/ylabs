@@ -58,7 +58,6 @@ export type UndergradEvidenceSignal = 'mentors' | 'hosted' | 'welcomes';
 export const UNDERGRAD_EVIDENCE_SIGNAL: Record<UndergradListSource, UndergradEvidenceSignal> = {
   'cs-senior-projects': 'mentors',
   'cs-directed-research': 'mentors',
-  'economics-senior-essay-advisers': 'mentors',
   'english-senior-essays': 'mentors',
   'english-creative-writing-projects': 'mentors',
   'political-science-senior-essay-prizes': 'mentors',
@@ -68,6 +67,7 @@ export const UNDERGRAD_EVIDENCE_SIGNAL: Record<UndergradListSource, UndergradEvi
   'tobin-research-assistantships': 'hosted',
   'wu-tsai-undergraduate-fellows': 'hosted',
   'yibs-summer-research-fellows': 'hosted',
+  'economics-senior-essay-advisers': 'welcomes',
   'psychology-research-opportunities': 'welcomes',
   'physics-open-research-opportunities': 'welcomes',
 };

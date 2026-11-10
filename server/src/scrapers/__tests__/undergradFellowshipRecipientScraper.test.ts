@@ -331,26 +331,13 @@ describe('buildObservationsForAdvisor', () => {
 // ---------------------------------------------------------------------------
 
 describe('DEFAULT_PROGRAM_CONFIGS', () => {
-  it('keeps only programs that publish a recipient or adviser list (#5362)', () => {
-    const keys = DEFAULT_PROGRAM_CONFIGS.map((c) => c.programKey).sort();
-    expect(keys).toEqual(['cogsci-senior-essays', 'eps-senior-theses', 'stars-ii'].sort());
-    for (const retired of ['stars-summer', 'deans-research', 'tetelman', 'mellon-mays']) {
-      expect(keys).not.toContain(retired);
-    }
+  it('keeps only the program whose list is read as hosting, not mentoring (#5362)', () => {
+    expect(DEFAULT_PROGRAM_CONFIGS.map((c) => c.programKey)).toEqual(['stars-ii']);
   });
 
-  it('applies the 2026-11-08 lab-science rule to every adviser page', () => {
+  it('applies the 2026-11-08 lab-science rule to the STARS II booklets', () => {
     const byKey = new Map(DEFAULT_PROGRAM_CONFIGS.map((c) => [c.programKey, c]));
     expect(byKey.get('stars-ii')?.hostingRule).toBe('lab-science-program');
-    expect(byKey.get('eps-senior-theses')?.hostingRule).toBe('lab-science-program');
-    expect(byKey.get('eps-senior-theses')?.adviserDepartments).toContain(
-      'Earth and Planetary Sciences',
-    );
-    expect(byKey.get('cogsci-senior-essays')?.hostingRule).toBe('lab-science-adviser-department');
-    expect(byKey.get('cogsci-senior-essays')?.adviserDepartments).toEqual(
-      expect.arrayContaining(['Cognitive Science', 'Psychology', 'Computer Science']),
-    );
-    expect(byKey.get('cogsci-senior-essays')?.adviserDepartments).not.toContain('Linguistics');
     expect(manualPdfInputsFor(byKey.get('stars-ii')!).map((input) => input.fileKey)).toEqual(
       expect.arrayContaining(['stars-ii-2025', 'stars-ii-2024', 'stars-ii-2021', 'stars-ii-2019']),
     );

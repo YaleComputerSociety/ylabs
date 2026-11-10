@@ -31,7 +31,8 @@ Only the adviser is read from a list; student names, titles and topics are never
 A source is served only after the owner has read a side-by-side sample of its identity matches, because an agent check of a sample is not a precision review.
 An email binds only when the researcher who holds it carries the name the list prints, because a project card's contact email can belong to someone else in the group; a name binds only when no second live researcher could carry it, and a list that names no department, or an interdisciplinary program such as Cognitive Science, must agree with the departments its advisers come from.
 A list of who is open to undergraduates now refuses a name-only match to a researcher whose title holds only emeritus appointments, because an active professor the database does not hold can share a name with an emeritus one whose row lists the same department.
-The Cognitive Science senior essays and EPS senior theses move from the fellowship-recipient lane, where they counted as hosted, to this lane's mentors lists; #5362 removes them from that lane with or after this change, so no row is left with neither.
+The Cognitive Science senior essays and EPS senior theses move from the fellowship-recipient lane, where they counted as hosted, to this lane's mentors lists, and this change removes them from that lane, so each page feeds one signal.
+The Economics senior essay advisers page names who is available to advise this year and no student, so it is a list of who is taking undergraduates now and feeds welcomes, not mentors.
 The common-surname and duplicate-record guard of the name resolver refuses the most prolific CS advisers, which a department tie-break or a researcher merge would recover.
 
 ## 2026-11-10: The Program Region Filter Returns Only Programs That Name The Region (#5533)

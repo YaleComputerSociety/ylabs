@@ -34,7 +34,6 @@ import {
 import { splitName } from '../utils/scraperHelpers';
 import {
   aggregateListEntries,
-  splitAdviserNames,
   yibsSuresFellowListings,
   politicalScienceEssayPrizeListings,
   germanSeniorEssayListings,
@@ -57,10 +56,12 @@ import {
 } from '../utils/officialUndergradLists';
 import { fetchPageWithPolicy, HttpStatusError } from '../utils/httpFetch';
 import {
+  parseSeniorEssayAdviserTables,
+  parseSeniorThesisAdviserParagraphs,
+  type AdviserListPair,
+} from '../utils/undergradAdviserLists';
+import {
   defaultAdvisorResolution,
-  seniorEssayAdviserTableExtractor,
-  seniorThesisAdviserParagraphExtractor,
-  type FellowshipRecipient,
   existingLeadRowSlugForOwner,
   leadRowDepartmentsForOwner,
   researcherToUserMatch,
@@ -257,25 +258,20 @@ const COGNITIVE_SCIENCE_ADVISER_DEPARTMENTS = [
 const COGNITIVE_SCIENCE_ESSAYS = 'https://cogsci.yale.edu/research/past-senior-essays';
 const EPS_THESES = 'https://earth.yale.edu/recent-alumni-and-senior-theses';
 
-/** A fellowship-lane recipient row read as a mentor listing: the adviser only, never the student. */
-function fellowshipRecipientsAsMentorListings(
+function adviserPairsAsMentorListings(
   source: UndergradListSource,
-  department: string | undefined,
-  recipients: readonly FellowshipRecipient[],
+  pairs: readonly AdviserListPair[],
   pageUrl: string,
 ): MentorListing[] {
-  return recipients.flatMap((recipient) =>
-    splitAdviserNames(recipient.advisorName).map((adviserName) => ({
-      source,
-      adviserName,
-      ...((recipient.sourceDepartments?.[0] ?? department)
-        ? { department: recipient.sourceDepartments?.[0] ?? department }
-        : {}),
-      year: recipient.year,
-      sourceUrl: pageUrl,
-    })),
-  );
+  return pairs.map((pair) => ({
+    source,
+    adviserName: pair.advisorName,
+    year: pair.year,
+    sourceUrl: pageUrl,
+  }));
 }
+
+const EPS_ADVISER_DEPARTMENTS = ['Earth and Planetary Sciences', 'Geology and Geophysics'] as const;
 
 const TOBIN_LANDING = 'https://economics.yale.edu/undergraduate/tobin-ra';
 const ECONOMICS_SITEMAP = 'https://economics.yale.edu/sitemap.xml';
@@ -407,10 +403,9 @@ export const UNDERGRAD_LIST_SOURCE_CONFIGS: readonly MentorSourceConfig[] = [
     departmentScope: COGNITIVE_SCIENCE_ADVISER_DEPARTMENTS,
     read: recentOnly(
       singlePage(COGNITIVE_SCIENCE_ESSAYS, (html, pageUrl) =>
-        fellowshipRecipientsAsMentorListings(
+        adviserPairsAsMentorListings(
           'cognitive-science-senior-essays',
-          undefined,
-          seniorEssayAdviserTableExtractor(html, { pageUrl }),
+          parseSeniorEssayAdviserTables(html).pairs,
           pageUrl,
         ),
       ),
@@ -419,12 +414,12 @@ export const UNDERGRAD_LIST_SOURCE_CONFIGS: readonly MentorSourceConfig[] = [
   {
     source: 'eps-senior-theses',
     landingUrl: EPS_THESES,
+    departmentScope: EPS_ADVISER_DEPARTMENTS,
     read: recentOnly(
       singlePage(EPS_THESES, (html, pageUrl) =>
-        fellowshipRecipientsAsMentorListings(
+        adviserPairsAsMentorListings(
           'eps-senior-theses',
-          'Earth & Planetary Sciences',
-          seniorThesisAdviserParagraphExtractor(html, { pageUrl }),
+          parseSeniorThesisAdviserParagraphs(html).pairs,
           pageUrl,
         ),
       ),

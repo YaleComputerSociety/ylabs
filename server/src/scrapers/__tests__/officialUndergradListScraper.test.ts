@@ -233,11 +233,41 @@ describe('OfficialUndergradListScraper', () => {
     expect(failed.complete).toBe(false);
   });
 
-  it('reads every configured list, each feeding exactly one undergraduate signal', () => {
-    const sources = UNDERGRAD_LIST_SOURCE_CONFIGS.map((config) => config.source);
-    expect(new Set(sources).size).toBe(sources.length);
-    expect(new Set(sources.map((source) => UNDERGRAD_EVIDENCE_SIGNAL[source]))).toEqual(
-      new Set(['mentors', 'hosted', 'welcomes']),
+  it('feeds each list the one signal the #5362 ruling assigns by what the undergraduate did', () => {
+    const advisedOwnWork = [
+      'cs-senior-projects',
+      'cs-directed-research',
+      'english-senior-essays',
+      'english-creative-writing-projects',
+      'political-science-senior-essay-prizes',
+      'german-senior-essays',
+      'cognitive-science-senior-essays',
+      'eps-senior-theses',
+    ];
+    const workedInsideResearch = [
+      'tobin-research-assistantships',
+      'wu-tsai-undergraduate-fellows',
+      'yibs-summer-research-fellows',
+    ];
+    const takingUndergraduatesNow = [
+      'economics-senior-essay-advisers',
+      'psychology-research-opportunities',
+      'physics-open-research-opportunities',
+    ];
+    const signalOf = Object.fromEntries(
+      UNDERGRAD_LIST_SOURCE_CONFIGS.map((config) => [
+        config.source,
+        UNDERGRAD_EVIDENCE_SIGNAL[config.source],
+      ]),
+    );
+
+    expect(signalOf).toEqual({
+      ...Object.fromEntries(advisedOwnWork.map((source) => [source, 'mentors'])),
+      ...Object.fromEntries(workedInsideResearch.map((source) => [source, 'hosted'])),
+      ...Object.fromEntries(takingUndergraduatesNow.map((source) => [source, 'welcomes'])),
+    });
+    expect(UNDERGRAD_LIST_SOURCE_CONFIGS).toHaveLength(
+      advisedOwnWork.length + workedInsideResearch.length + takingUndergraduatesNow.length,
     );
   });
 
@@ -260,7 +290,6 @@ describe('OfficialUndergradListScraper', () => {
       'Morgan Fennick',
       'Jordan Pellow',
     ]);
-    expect(essays.departmentScope).toContain('Psychology');
     expect(JSON.stringify(read.listings)).not.toMatch(/Quill|Wren|Edible|Advisers At Once/);
   });
 

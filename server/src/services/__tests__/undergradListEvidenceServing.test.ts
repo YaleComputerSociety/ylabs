@@ -47,7 +47,7 @@ describe('publicUndergradListEvidence', () => {
       ]),
     ).toEqual([
       ['cs-senior-projects', 'mentors'],
-      ['economics-senior-essay-advisers', 'mentors'],
+      ['economics-senior-essay-advisers', 'welcomes'],
       ['tobin-research-assistantships', 'hosted'],
     ]);
   });
@@ -63,9 +63,8 @@ describe('publicUndergradListEvidence', () => {
       publicUndergradListEvidence(stored, {
         reviewedSources: reviewed,
         wayInWithheld: true,
-        signal: 'mentors',
-      }).map((entry) => entry.kind),
-    ).toEqual(['advised']);
+      }).map((entry) => entry.source),
+    ).toEqual(['cs-senior-projects', 'tobin-research-assistantships']);
   });
 
   it('drops an unknown source, an unknown kind, a non-public URL and a bad count', () => {
