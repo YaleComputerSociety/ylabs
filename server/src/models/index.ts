@@ -5,6 +5,7 @@ export { AdminGrant } from './adminGrant';
 export { AdminAuditEvent } from './adminAuditEvent';
 export { EntityCorrectionReport } from './entityCorrectionReport';
 export { Fellowship } from './fellowship';
+export { DirectoryRemoval, DIRECTORY_REMOVAL_COLLECTION } from './directoryRemoval';
 export { AnalyticsEvent, AnalyticsEventType, RESEARCH_ENTITY_TYPES } from './analytics';
 export { ResearchArea, ResearchField, fieldColorKeys } from './researchArea';
 export { Department, DepartmentCategory, categoryColorKeys } from './department';

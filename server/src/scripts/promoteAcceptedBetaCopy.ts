@@ -5,6 +5,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
 import { assertNoNeverCopyCollections } from './mirrorCollectionPolicy';
+import {
+  assertCopyCarriesEveryDirectoryRemoval,
+  directoryRemovalCopyBlockers,
+} from './directoryRemovalCopyGuard';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   assertDatabaseCopyPair,
@@ -59,6 +63,7 @@ const PROMOTION_BACKUP_PREFIX = '__prod_promote_backup_';
 export const PROMOTION_PREVIOUS_GENERATION_PREFIX = '__prod_promote_prev_';
 const ROLLBACK_STAGING_PREFIX = '__prod_rollback_staging_';
 const PROMOTION_HEADROOM_REMEDY = 'Free space first, or drop --include-observations.';
+const PROMOTION_LABEL = 'Beta to Production promotion';
 const OPT_IN_COLLECTION_NAMES = new Set(['observations', 'scrape_runs']);
 
 const COPY_COLLECTIONS: PromotionCollection[] = [
@@ -67,6 +72,7 @@ const COPY_COLLECTIONS: PromotionCollection[] = [
   { name: 'researchers', category: 'research-discovery' },
   { name: 'role_assignments', category: 'research-discovery' },
   { name: 'signals', category: 'research-discovery' },
+  { name: 'directory_removals', category: 'research-discovery' },
   { name: 'sources', category: 'source-audit' },
   { name: 'scrape_runs', category: 'source-audit' },
   { name: 'observations', category: 'source-audit' },
@@ -385,6 +391,7 @@ export function buildPromotionSummary(
   plan: CollectionPlan[],
   blockedAccountReferences: CorpusAccountReference[],
   productionObservationCount = 0,
+  directoryRemovalBlockers: string[] = [],
 ): PromotionSummary {
   const collectionCategories = COLLECTION_CATEGORY_ORDER.flatMap((category) => {
     const rows = plan.filter((row) => row.category === category);
@@ -410,6 +417,7 @@ export function buildPromotionSummary(
     ...emptySourceBlockers,
     ...auditTrailBlockers,
     ...retireBlockers,
+    ...directoryRemovalBlockers,
   ];
 
   return {
@@ -530,6 +538,10 @@ async function syncIndexes(
   collectionName: string,
   targetCollectionName: string = collectionName,
 ) {
+  const sourceExists = await betaDb
+    .listCollections({ name: collectionName }, { nameOnly: true })
+    .hasNext();
+  if (!sourceExists) return;
   const source = betaDb.collection(collectionName);
   const target = productionDb.collection(targetCollectionName);
   const indexes = await source.indexes();
@@ -660,6 +672,7 @@ export async function applyCopy(
   if (accountReferenceBlockers.length > 0) {
     throw new Error(`Apply mode blocked: ${accountReferenceBlockers.join(' ')}`);
   }
+  await assertCopyCarriesEveryDirectoryRemoval(betaDb, productionDb, PROMOTION_LABEL);
   const collections = promotionCollectionsForOptions(options);
   const plan = await buildPlan(betaDb, productionDb, collections);
   const retiring = Boolean(options.retireScrapeRunsActor);
@@ -931,6 +944,7 @@ async function main() {
       plan,
       blockedAccountReferences,
       productionObservationCount,
+      await directoryRemovalCopyBlockers(betaDb, productionDb, PROMOTION_LABEL),
     );
 
     const storage: PromotionStorage = { client: productionClient };
