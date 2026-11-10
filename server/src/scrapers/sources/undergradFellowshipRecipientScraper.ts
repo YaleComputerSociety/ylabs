@@ -2,9 +2,9 @@
  * UndergradFellowshipRecipientScraper
  *
  * Reverse-looks-up Yale faculty who have actually mentored undergraduate
- * researchers by harvesting publicly published recipient lists for each of the
- * major Yale undergrad research fellowship programs (STARS, Dean's Research,
- * Tetelman, Mellon Mays, etc.).
+ * researchers by harvesting publicly published recipient lists that name a
+ * faculty mentor (STARS II symposium booklets and the CogSci and EPS senior
+ * essay adviser pages).
  *
  * Each {student, program, year, advisor} pair feeds the matched advisor's
  * ResearchGroup as a `pastUndergradAdvisees` entry, which the access materializer
@@ -243,9 +243,8 @@ export interface UserMatch {
 // ---------------------------------------------------------------------------
 // Per-program extractor stubs
 //
-// All active v1 programs require a manual upload: their recipient lists are either
-// PDF-only (STARS II symposium booklets), behind an admin contact (Mellon Mays,
-// Tetelman, Dean's Research), or simply never published. Each stub throws a
+// A program whose recipient list is PDF-only (STARS II symposium booklets)
+// requires a manual upload. Each stub throws a
 // clear, identical-shaped error so the
 // orchestrator records `manual-upload-required` for that program and continues.
 //
