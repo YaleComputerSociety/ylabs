@@ -59,7 +59,8 @@ Each manual-only source records its reason next to its name in `scrapers/manualO
   Only an agent has checked the sampled roles, which is not a recorded review, so it returns to the research sweep when a person reviews the sample and records it with `--sampled-precision-reviewed-by`.
 - `undergrad-research-posting` can never acquire today, because its only configured page never existed and no official public Yale page publishes postings in the shape it reads, so its page list is empty (#3550).
   Development holds 5 runs for it, all `failure` with 0 observations, so every sweep failed it on the barren-streak guard below (#3553).
-  It returns to the research sweep when a real page is configured, and #3551 tracks a possible replacement source.
+  It returns to the research sweep when a real page is configured.
+  The one candidate page, the Tobin RA board, lists filled projects rather than open postings, so the `tobin-ra-projects` lane reads it as hosted-undergraduate evidence instead (#3551).
 - `roster-bio-research-evidence` mints new faculty-research rows from roster biographies, and an agent check of a sample is not a precision review.
   The owner reviewed a 20-row dry-run sample on 2026-10-05 and reviews a sample of the rows the first Development run produces; it joins the research sweep only after a person records that review.
 - `lab-microsite-undergrad-llm` stays manual-only for runtime rather than precision, by owner decision on 2026-10-11 (#3569, #3636).

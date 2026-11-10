@@ -121,7 +121,7 @@ Three lanes stay out, each for a reason a capture cannot remove:
 
 - `directory-alias-resolution` loads the whole Yale directory and takes its alias keys and the set of already-resolvable aliases from the live observation log and corpus, so its output is a function of the corpus rather than of a page scope, and a capture of it would freeze the whole directory.
 - `ysm-mesh-keyword` planned nothing on a `--limit` scope of 3 or 12, because `--limit` bounds the keyword index it walks rather than the faculty it attributes, so no small scope reaches a planned value; it needs an `--only` scope keyed by faculty before it can be benchmarked.
-- `undergrad-research-posting` is manual-only with an empty page list (`manualOnlySweepSources.ts`), so it has no pages to freeze until #3551 gives it some.
+- `undergrad-research-posting` is manual-only with an empty page list (`manualOnlySweepSources.ts`), so it has no pages to freeze until a real page is configured.
 
 A replay is compared only once it has resolved something from the frozen input.
 One that served none of its frozen pages, or a rendered lane that served none of its frozen renders, is reported as unscored rather than scored, because it measured a path that never engaged.
