@@ -902,7 +902,7 @@ export async function netidForAdvisorResearcher(researcher: {
   return researcherNetid(researcher);
 }
 
-function researcherToUserMatch(researcher: any, netid: string): UserMatch {
+export function researcherToUserMatch(researcher: any, netid: string): UserMatch {
   const displayName =
     typeof researcher.displayName === 'string' ? researcher.displayName.trim() : '';
   const { first, last } = splitName(displayName);

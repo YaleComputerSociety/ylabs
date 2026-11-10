@@ -43,6 +43,7 @@ import {
 import { disambiguateCollidingResearchEntityNames } from '../utils/researchEntityDisplayNameDisambiguation';
 import { isPublicHttpUrl } from '../utils/urlSafety';
 import { entityHasHostedUndergraduates } from './hostedUndergraduates';
+import { publicUndergradMentoring } from './undergradMentoringServing';
 import { RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE } from '../scrapers/undergradEvidenceQuoteValidation';
 import { quotePageIsAboutAnotherEntity } from '../scrapers/undergradQuoteRelevance';
 import { quoteListsPeopleWithTheirContactDetails } from '../scrapers/contactInstructionQuoteAdmission';
@@ -553,6 +554,7 @@ const OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS = [
   'schools',
   'currentUndergradCount',
   'undergradInvitation',
+  'undergradMentoring',
   'pastUndergradAdvisees',
   'fellowshipRecipients',
   'recentGrants',
@@ -703,6 +705,11 @@ function derivePublicResearchEntityDto(
         // when the two echo each other the body is the half to keep, consistent
         // with the sibling guard in `observationStore`.
         dto[field] = String(served[field] || '');
+        continue;
+      }
+      if (field === 'undergradMentoring') {
+        const mentoring = publicUndergradMentoring(group[field], { wayInWithheld });
+        if (mentoring.length > 0) dto[field] = mentoring;
         continue;
       }
       if (field === 'undergradInvitation') {
