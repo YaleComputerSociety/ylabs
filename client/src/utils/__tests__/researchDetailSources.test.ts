@@ -2285,6 +2285,7 @@ describe('slug-derived labels keep acronym casing', () => {
 describe('Sources rows use the spelling a student can open (#3957)', () => {
   const HTTPS_PAGE = 'https://alias.example.yale.edu/~fixture/';
   const HTTP_PAGE = 'http://alias.example.yale.edu/~fixture/';
+  const STORED_ROW_URL = 'https://alias.example.yale.edu/~fixture';
 
   it('serves the plain-HTTP spelling for a source whose https certificate fails', () => {
     const sources = buildResearchDetailSources({
@@ -2294,7 +2295,8 @@ describe('Sources rows use the spelling a student can open (#3957)', () => {
         { url: HTTP_PAGE, healthStatus: 'HEALTHY', httpStatusCode: 200 },
       ],
     });
-    const row = sources.find((source) => source.url.startsWith('https://alias.example'));
+    const row = sources.find((source) => source.url === STORED_ROW_URL);
+    expect(row).toBeDefined();
     expect(row?.servedUrl).toBe(HTTP_PAGE);
   });
 
@@ -2303,8 +2305,8 @@ describe('Sources rows use the spelling a student can open (#3957)', () => {
       group: { name: 'Fixture Research', sourceUrls: [HTTPS_PAGE] },
       sourceLinkHealth: [{ url: HTTPS_PAGE, healthStatus: 'UNKNOWN', tlsVerificationFailed: true }],
     });
-    const row = sources.find((source) => source.url.startsWith('https://alias.example'));
+    const row = sources.find((source) => source.url === STORED_ROW_URL);
     expect(row).toBeDefined();
-    expect(row?.servedUrl).toBe('https://alias.example.yale.edu/~fixture');
+    expect(row?.servedUrl).toBe(STORED_ROW_URL);
   });
 });
