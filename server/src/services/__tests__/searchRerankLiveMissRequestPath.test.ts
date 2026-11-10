@@ -73,6 +73,7 @@ let rowIds = ALL_ROW_IDS;
 let nameQueryTopHit = false;
 let keywordLegEmpty = false;
 let topHitMatches: Record<string, unknown> | null = null;
+let matchPositionReadFails = false;
 
 const indexHit = (id: string, position: number) => ({
   id,
@@ -97,6 +98,7 @@ const serveIndex = () => {
     if (params.limit === 0 && params.facets) return { hits: [], facetDistribution: {} };
     if (keywordLegEmpty && !params.hybrid) return { hits: [], estimatedTotalHits: 0 };
     if (params.showMatchesPosition) {
+      if (matchPositionReadFails) throw new Error('synthetic match-position outage');
       const top = hits[0];
       return {
         hits: [
@@ -191,6 +193,7 @@ beforeEach(() => {
   nameQueryTopHit = false;
   keywordLegEmpty = false;
   topHitMatches = null;
+  matchPositionReadFails = false;
   mocks.search.mockReset();
   serveIndex();
   mocks.searchSimilarDocuments.mockReset();
@@ -443,6 +446,12 @@ describe('with the live-miss job on', () => {
     it('a query matched only as a prefix of a row title and in no topic field', async () => {
       topHitMatches = { name: [{ start: 0, length: 9, indices: [0] }] };
       await search('synthet');
+      expect(await enqueuedKeys()).toEqual([]);
+    });
+
+    it('a query whose best keyword hit could not be checked for a name match', async () => {
+      matchPositionReadFails = true;
+      await search();
       expect(await enqueuedKeys()).toEqual([]);
     });
 

@@ -2861,7 +2861,8 @@ async function searchResearchGroupsForQuery(
           : servesNoKeywordRow(keywordLeg.rawHits)
             ? 'no-keyword-row'
             : keywordLegTopHit !== null &&
-                keywordLegTopHitTouchesAPersonName([keywordLegTopHit.hit])
+                (keywordLegTopHit.failed ||
+                  keywordLegTopHitTouchesAPersonName([keywordLegTopHit.hit]))
               ? 'name-shaped'
               : servedPool.length < 2
                 ? 'too-few-candidates'
