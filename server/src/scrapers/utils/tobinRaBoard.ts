@@ -91,36 +91,29 @@ export interface TobinRaAdviseeYear {
   count: number;
 }
 
-export function filledProjectYearsBySponsor(
+export function filledProjectYearsBy(
   projects: readonly TobinRaProject[],
+  keyForSponsor: (sponsorProfileUrl: string) => string | null = (sponsorProfileUrl) =>
+    sponsorProfileUrl,
 ): Map<string, TobinRaAdviseeYear[]> {
-  const countsBySponsor = new Map<string, Map<number, number>>();
+  const countsByKey = new Map<string, Map<number, number>>();
   for (const project of projects) {
     if (!project.filled || project.year === null) continue;
-    for (const sponsorUrl of project.sponsorProfileUrls) {
-      const byYear = countsBySponsor.get(sponsorUrl) ?? new Map<number, number>();
+    const keys = new Set(
+      project.sponsorProfileUrls.map(keyForSponsor).filter((key): key is string => Boolean(key)),
+    );
+    for (const key of keys) {
+      const byYear = countsByKey.get(key) ?? new Map<number, number>();
       byYear.set(project.year, (byYear.get(project.year) ?? 0) + 1);
-      countsBySponsor.set(sponsorUrl, byYear);
+      countsByKey.set(key, byYear);
     }
   }
   return new Map(
-    [...countsBySponsor].map(([sponsorUrl, byYear]) => [
-      sponsorUrl,
+    [...countsByKey].map(([key, byYear]) => [
+      key,
       [...byYear]
         .sort(([left], [right]) => right - left)
         .map(([year, count]) => ({ year, programName: TOBIN_RA_PROGRAM_NAME, count })),
     ]),
   );
-}
-
-export function mergeAdviseeYears(
-  lists: ReadonlyArray<readonly TobinRaAdviseeYear[]>,
-): TobinRaAdviseeYear[] {
-  const byYear = new Map<number, number>();
-  for (const list of lists) {
-    for (const entry of list) byYear.set(entry.year, (byYear.get(entry.year) ?? 0) + entry.count);
-  }
-  return [...byYear]
-    .sort(([left], [right]) => right - left)
-    .map(([year, count]) => ({ year, programName: TOBIN_RA_PROGRAM_NAME, count }));
 }

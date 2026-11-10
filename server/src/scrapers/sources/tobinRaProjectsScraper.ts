@@ -5,13 +5,7 @@ import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { getCached, setCached } from '../snapshotCache';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
-import {
-  filledProjectYearsBySponsor,
-  mergeAdviseeYears,
-  parseTobinRaBoard,
-  TOBIN_RA_BOARD_URL,
-  type TobinRaAdviseeYear,
-} from '../utils/tobinRaBoard';
+import { filledProjectYearsBy, parseTobinRaBoard, TOBIN_RA_BOARD_URL } from '../utils/tobinRaBoard';
 import {
   buildObservationsForAdvisor,
   existingLeadRowSlugForOwner,
@@ -61,14 +55,15 @@ const profileUrlVariants = (url: string): string[] => [
 
 /** A sponsor resolves only by an exact profile URL on a live researcher, never by name. */
 export const defaultSponsorRowSlug: SponsorRowResolver = async (sponsorProfileUrl) => {
-  const researcher: any = await Researcher.findOne({
+  const holders: any[] = await Researcher.find({
     archived: { $ne: true },
     'profileLinks.url': { $in: profileUrlVariants(sponsorProfileUrl) },
   })
     .select('_id displayName profile identifiers')
+    .limit(2)
     .lean();
-  if (!researcher) return null;
-  return existingLeadRowSlugForOwner(researcherToUserMatch(researcher, ''));
+  if (holders.length !== 1) return null;
+  return existingLeadRowSlugForOwner(researcherToUserMatch(holders[0], ''));
 };
 
 /**
@@ -101,23 +96,22 @@ export class TobinRaProjectsScraper implements IScraper {
       throw new Error('Tobin RA board listed no project blocks; refusing to treat it as empty.');
     }
 
-    const yearsBySponsor = filledProjectYearsBySponsor(board.projects);
-    const yearsByRow = new Map<string, TobinRaAdviseeYear[][]>();
-    let unmatchedSponsors = 0;
-    for (const [sponsorUrl, years] of yearsBySponsor) {
-      const slug = await this.sponsorRowSlug(sponsorUrl);
-      if (!slug) {
-        unmatchedSponsors += 1;
-        continue;
-      }
-      yearsByRow.set(slug, [...(yearsByRow.get(slug) ?? []), years]);
+    const yearsBySponsor = filledProjectYearsBy(board.projects);
+    const rowSlugBySponsor = new Map<string, string | null>();
+    for (const sponsorUrl of yearsBySponsor.keys()) {
+      rowSlugBySponsor.set(sponsorUrl, await this.sponsorRowSlug(sponsorUrl));
     }
+    const unmatchedSponsors = [...rowSlugBySponsor.values()].filter((slug) => !slug).length;
+    const yearsByRow = filledProjectYearsBy(
+      board.projects,
+      (sponsorUrl) => rowSlugBySponsor.get(sponsorUrl) ?? null,
+    );
 
     let observationCount = 0;
-    for (const [slug, lists] of yearsByRow) {
+    for (const [slug, years] of yearsByRow) {
       const observations: ObservationInput[] = buildObservationsForAdvisor(
         slug,
-        mergeAdviseeYears(lists),
+        years,
         TOBIN_RA_BOARD_URL,
       );
       await ctx.emit(observations);

@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { TobinRaProjectsScraper } from '../sources/tobinRaProjectsScraper';
 import type { ObservationInput, ScraperContext } from '../types';
 import {
-  filledProjectYearsBySponsor,
+  filledProjectYearsBy,
   parseTobinRaBoard,
   TOBIN_RA_BOARD_URL,
   TOBIN_RA_PROGRAM_NAME,
@@ -149,7 +149,7 @@ describe('Tobin RA board parser (#3551)', () => {
   });
 
   it('counts only filled projects with a year and a linked sponsor, per year', () => {
-    const years = filledProjectYearsBySponsor(parseTobinRaBoard(SAMPLE_BOARD).projects);
+    const years = filledProjectYearsBy(parseTobinRaBoard(SAMPLE_BOARD).projects);
 
     expect(years.get(sponsorUrl('synthetic-sponsor-a'))).toEqual([
       { year: 2026, programName: TOBIN_RA_PROGRAM_NAME, count: 2 },
@@ -171,7 +171,7 @@ describe('TobinRaProjectsScraper (#3551)', () => {
       { year: 2024, programName: TOBIN_RA_PROGRAM_NAME, count: 1 },
     ]);
     expect(adviseesFor(emitted, 'synthetic-row-shared')).toEqual([
-      { year: 2025, programName: TOBIN_RA_PROGRAM_NAME, count: 2 },
+      { year: 2025, programName: TOBIN_RA_PROGRAM_NAME, count: 1 },
     ]);
     expect(emitted.every((obs) => obs.sourceUrl === TOBIN_RA_BOARD_URL)).toBe(true);
     expect(emitted.some((obs) => obs.field === 'undergradInvitation')).toBe(false);
