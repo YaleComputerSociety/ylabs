@@ -195,7 +195,7 @@ Passport auth routes mount separately via `passportRoutes` before the main route
 | `/research`       | `researchGroups.ts` | Varies, with public search and detail.              |
 | `/programs`       | `programs.ts`       | Varies; current Programs and Fellowships surface.   |
 | `/fellowships`    | `fellowships.ts`    | Auth; legacy, with `/api/programs` as successor.    |
-| `/users`          | `users.ts`          | Auth required.                                      |
+| `/users`          | `users.ts`          | Auth required; includes the directory removal request ([docs/directory-removal-requests.md](../../docs/directory-removal-requests.md)). |
 | `/analytics`      | `analytics.ts`      | Admin.                                              |
 | `/config`         | `config.ts`         | Public.                                             |
 | `/admin`          | `admin.ts`          | Admin.                                              |

@@ -154,6 +154,8 @@ A denylist leaks every field added to the model later, and a raw document leaks 
 The correction-report routes are the worked example (#4011): `POST /api/research/:slug/report` and `GET /api/research/:slug/reports/mine` return `toReporterCorrectionReport` from `entityCorrectionReportService.ts`, which keeps only `_id`, `category`, `status`, `note`, `reviewerNote`, and `createdAt`.
 The reviewer's netid (`reviewedBy`, `reviewHistory`), the reporter snapshot, and entity bookkeeping stay on the admin queue alone.
 Adding a field to the reporter panel means adding it to that allowlist, and `server/src/__tests__/correctionReportReporterProjection.integration.test.ts` pins the exact key set through the mounted routes.
+The directory removal request routes follow the same rule (#4160): `GET` and `POST /api/users/directoryRemovalRequest` return only `eligible` and the caller's own `{ status, createdAt }`, never the deciding admin or the matched researcher, and a caller y/labs does not list learns nothing about anyone else.
+`server/src/__tests__/directoryRemovalRequests.integration.test.ts` pins this; the channel is described in `docs/directory-removal-requests.md`.
 
 ## Admin audit log
 

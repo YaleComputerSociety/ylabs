@@ -5,6 +5,7 @@ import useDocumentTitle from '../hooks/useDocumentTitle';
 import { ACCOUNT_DATA_CONTROLS_FLAG } from '../utils/accountData';
 import { PRIVACY_CONTACT_EMAIL, PRIVACY_CONTACT_MAILTO } from '../utils/privacyContact';
 import { EXTERNAL_LINK_REL } from '../utils/url';
+import DirectoryRemovalRequestSentence from '../components/privacy/DirectoryRemovalRequestSentence';
 import {
   ACTIVITY_RECORD_RETENTION_DAYS_LABEL,
   PRIVACY_PAGE_TITLE,
@@ -77,6 +78,10 @@ const Privacy = () => {
             y/labs looks you up on Yalies and stores your netid, email address, first and last name,
             and your role at Yale, such as student or faculty. Your saved research, plans, stages
             and notes are stored with your account until you delete them or delete your account.
+          </p>
+          <p className={BODY_CLASS}>
+            If you ask to be removed from y/labs, the request stores only your netid, the listing it
+            matched and the request status.
           </p>
           <p className={BODY_CLASS}>
             Signing in adds your account to the same y/labs cookie, which keeps you signed in for up
@@ -192,6 +197,7 @@ const Privacy = () => {
             . Issues there are public, so do not include personal details in one; send anything
             about your own data to {PRIVACY_CONTACT_EMAIL}.
           </p>
+          <DirectoryRemovalRequestSentence className={BODY_CLASS} />
         </Section>
       </article>
     </div>

@@ -15,6 +15,8 @@
 // bill one environment's spend to another. A deleted-account event tally counts this
 // environment's own deletions, so a copy would attribute them to another, and a pending
 // cross-environment deletion request belongs to the environment that recorded it (#4156).
+// A directory removal request is a private request made in this environment, so a
+// promotion must neither carry one away nor overwrite it.
 export const NEVER_COPY_COLLECTIONS = [
   'accounts',
   'research_plans',
@@ -35,6 +37,7 @@ export const NEVER_COPY_COLLECTIONS = [
   'research_topics_derivations',
   'search_rerank_cache',
   'model_call_usages',
+  'directory_removal_requests',
 ];
 
 // The Development refresh clears every collection the Beta mirror does not
@@ -60,6 +63,7 @@ export const PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS = [
   'research_topics_derivations',
   'search_rerank_cache',
   'model_call_usages',
+  'directory_removal_requests',
 ];
 
 // A lease is state rather than history: it expires and is taken over, so a

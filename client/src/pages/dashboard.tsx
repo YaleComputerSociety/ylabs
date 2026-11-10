@@ -15,6 +15,7 @@
 import { useCallback, useContext, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import AccountDataControls from '../components/accounts/AccountDataControls';
+import DirectoryRemovalRequest from '../components/accounts/DirectoryRemovalRequest';
 import PlanningOverview from '../components/accounts/PlanningOverview';
 import ProgramWatch from '../components/accounts/ProgramWatch';
 import SavedResearchPlans from '../components/accounts/SavedResearchPlans';
@@ -172,6 +173,7 @@ const Dashboard = () => {
             onDeleteIntentConsumed={clearDeleteIntent}
           />
         )}
+        <DirectoryRemovalRequest />
       </div>
     </div>
   );

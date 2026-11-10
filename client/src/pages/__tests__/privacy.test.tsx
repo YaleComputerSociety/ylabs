@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import ConfigContext, { defaultConfigContext } from '../../contexts/ConfigContext';
 import Privacy from '../privacy';
 import { PRIVACY_CONTACT_EMAIL, PRIVACY_CONTACT_MAILTO } from '../../utils/privacyContact';
-import { PRIVACY_QUESTIONS_URL } from '../../utils/privacyNotice';
+import { DIRECTORY_REMOVAL_REQUEST_EMAIL, PRIVACY_QUESTIONS_URL } from '../../utils/privacyNotice';
 import { expectNoAxeViolations } from '../../testUtils/axe';
 
 afterEach(() => {
@@ -68,6 +68,20 @@ describe('Privacy', () => {
     expect(text).toContain('enter your Yale password again');
     expect(text).toContain('a maintainer deletes that account too');
     expect(screen.getByRole('link', { name: PRIVACY_CONTACT_EMAIL })).toBeTruthy();
+  });
+
+  it('ships no removal address until one is named, and says what a removal request stores', () => {
+    renderPrivacy();
+
+    expect(DIRECTORY_REMOVAL_REQUEST_EMAIL).toBeUndefined();
+    const text = document.body.textContent ?? '';
+    expect(text).toContain(
+      'If y/labs lists you and you would like to be removed, sign in and use Remove me on your dashboard.',
+    );
+    expect(text).not.toContain('from the address Yale publishes for you');
+    expect(text).toContain(
+      'the request stores only your netid, the listing it matched and the request status.',
+    );
   });
 
   it('has no serious or critical accessibility violations', async () => {

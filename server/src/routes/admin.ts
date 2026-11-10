@@ -27,6 +27,10 @@ import {
   listAdminEntityCorrectionReports,
   reviewAdminEntityCorrectionReport,
 } from '../controllers/entityCorrectionReportController';
+import {
+  decideAdminDirectoryRemovalRequest,
+  listAdminDirectoryRemovalRequests,
+} from '../controllers/directoryRemovalRequestController';
 import { buildSafeSearchRegex, escapeRegex } from '../utils/regex';
 import {
   AdminGrantValidationError,
@@ -404,6 +408,14 @@ router.put(
   writeLimit,
   validateObjectId('id'),
   reviewAdminEntityCorrectionReport,
+);
+
+router.get('/directory-removal-requests', listAdminDirectoryRemovalRequests);
+router.put(
+  '/directory-removal-requests/:id',
+  writeLimit,
+  validateObjectId('id'),
+  decideAdminDirectoryRemovalRequest,
 );
 
 router.get(

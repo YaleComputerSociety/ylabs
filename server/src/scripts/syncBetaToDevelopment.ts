@@ -130,6 +130,9 @@ const EXCLUDED_BETA_COLLECTIONS = [
   // still present on the source blocks apply.
   'canonical_aliases',
   'research_entity_redirects',
+  // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy: a removal
+  // request is a private request made in the environment that holds it (#4160).
+  'directory_removal_requests',
   // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy:
   // copying a quality measurement both misdates the target's history and loses
   // it, because a sync replaces the whole collection.

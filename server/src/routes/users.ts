@@ -10,6 +10,10 @@ import {
   issueAccountDeletionCsrfToken,
   requireAccountDeletionCsrfToken,
 } from '../middleware/accountDeletionCsrf';
+import {
+  getOwnDirectoryRemovalRequest,
+  submitOwnDirectoryRemovalRequest,
+} from '../controllers/directoryRemovalRequestController';
 
 const router = Router();
 
@@ -88,6 +92,13 @@ router.delete(
   accountDataController.requireAccountDataControls,
   requireAccountDeletionCsrfToken,
   accountDataController.deleteOwnAccountData,
+);
+router.get('/directoryRemovalRequest', isAuthenticated, getOwnDirectoryRemovalRequest);
+router.post(
+  '/directoryRemovalRequest',
+  writeLimit,
+  isAuthenticated,
+  submitOwnDirectoryRemovalRequest,
 );
 
 export default router;
