@@ -301,10 +301,7 @@ export const UNDERGRAD_LIST_SOURCE_CONFIGS: readonly MentorSourceConfig[] = [
       const html = await fetchText(TOBIN_RA_BOARD_URL);
       if (!html) return { listings: [], complete: false };
       const board = tobinBoardListings(html, TOBIN_RA_BOARD_URL);
-      return {
-        listings: board.listings,
-        complete: board.projectBlocks > 0 && board.filledProjectsWithoutSponsors === 0,
-      };
+      return { listings: board.listings, complete: board.projectBlocks > 0 };
     },
   },
   {

@@ -251,6 +251,15 @@ describe('OfficialUndergradListScraper', () => {
     expect(read.listings.map((listing) => listing.year)).toEqual([2026, 2012]);
     expect(failed.complete).toBe(false);
     expect(empty.complete).toBe(false);
+
+    const sponsorless = `<article class="node-teaser--opportunity"><dl>
+      <div><dt>Position filled</dt></div><div><dt>Semester</dt><dd>2025 Fall</dd></div></dl></article>`;
+    const withSponsorlessCard = await tobin.read(
+      async () => `<main>${filledProject(2026)}${sponsorless}</main>`,
+      NOW,
+    );
+    expect(withSponsorlessCard.complete).toBe(true);
+    expect(withSponsorlessCard.listings.map((listing) => listing.year)).toEqual([2026]);
   });
 
   it('feeds each list the one signal the #5362 ruling assigns by what the undergraduate did', () => {
