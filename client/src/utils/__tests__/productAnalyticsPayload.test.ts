@@ -88,6 +88,23 @@ const freshPostHog = async () => {
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// The SDK flushes on its own timers, so a fixed sleep raced the session-replay batch under CI
+// load (#5570). Wait for what the assertion needs, with a ceiling well inside the test timeout.
+const WAIT_FOR_SDK = { timeout: 15000, interval: 50 } as const;
+
+const sentEventNames = () => new Set(sentEvents().map((event) => event.event));
+
+const untilRemoteConfigLoaded = () =>
+  vi.waitFor(() => {
+    expect(sent.some((request) => new URL(request.url).pathname.includes('config'))).toBe(true);
+  }, WAIT_FOR_SDK);
+
+const untilSent = (eventNames: readonly string[]) =>
+  vi.waitFor(() => {
+    const names = sentEventNames();
+    for (const name of eventNames) expect(names).toContain(name);
+  }, WAIT_FOR_SDK);
+
 beforeEach(async () => {
   vi.resetModules();
   productAnalytics = await import('../productAnalytics');
@@ -139,7 +156,7 @@ describe('PostHog payload through the real SDK', () => {
         freshPostHog,
       ),
     ).toBe(true);
-    await wait(500);
+    await untilRemoteConfigLoaded();
     interact();
     productAnalytics.captureJourneyEvent({
       eventType: 'research_search',
@@ -158,7 +175,16 @@ describe('PostHog payload through the real SDK', () => {
       payload: { source: 'search' },
     });
     window.history.pushState({}, '', `/research/person/${SYNTHETIC_NETID}?q=${SYNTHETIC_QUERY}`);
-    await wait(4500);
+    await untilSent([
+      '$pageview',
+      '$autocapture',
+      '$snapshot',
+      'research_search',
+      'research_profile_open',
+    ]);
+    await vi.waitFor(() => {
+      expect(everythingSent()).toContain('/research/person/[redacted]');
+    }, WAIT_FOR_SDK);
     return sentEvents();
   };
 
@@ -248,7 +274,7 @@ describe('PostHog payload through the real SDK', () => {
       { key: freshSessionKey(), host: POSTHOG_INGEST_ORIGIN },
       freshPostHog,
     );
-    await wait(4500);
+    await untilSent(['research_compare']);
 
     expect(sentEvents().map((event) => event.event)).toContain('research_compare');
   }, 20000);
