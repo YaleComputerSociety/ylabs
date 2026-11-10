@@ -5,6 +5,7 @@ import {
   entityOfficialPersonProfileDestinations,
   isLikelyOfficialPersonProfileUrl,
   normalizeOfficialProfileDestination,
+  officialProfileDestinationStoredPattern,
   officialProfileUrlFromRosterEntry,
 } from '../leadProfileIdentity';
 
@@ -691,5 +692,36 @@ describe('detectProfileIdentityRisk on a category segment after a person slug', 
         leadMembers: [{ user: { displayName: 'Jane Fixture' } }],
       }),
     ).toBe(false);
+  });
+});
+
+describe('officialProfileDestinationStoredPattern on a host whose query names the person (#4500)', () => {
+  const pattern = officialProfileDestinationStoredPattern(
+    'https://scholar.google.com/citations?user=AbC123_x',
+  );
+
+  it('matches the same Scholar user however the stored query is ordered', () => {
+    expect(pattern?.test('https://scholar.google.com/citations?user=AbC123_x')).toBe(true);
+    expect(pattern?.test('https://scholar.google.com/citations?hl=en&user=AbC123_x')).toBe(true);
+    expect(pattern?.test('https://scholar.google.com/citations?user=AbC123_x&hl=en')).toBe(true);
+  });
+
+  it('does not match a different Scholar user or a different-case id', () => {
+    expect(pattern?.test('https://scholar.google.com/citations?user=Zz999_y')).toBe(false);
+    expect(pattern?.test('https://scholar.google.com/citations?user=abc123_x')).toBe(false);
+    expect(pattern?.test('https://scholar.google.com/citations?user=AbC123_xy')).toBe(false);
+  });
+
+  it('identifies nobody when the Scholar URL carries no user', () => {
+    expect(
+      officialProfileDestinationStoredPattern('https://scholar.google.com/citations'),
+    ).toBeNull();
+  });
+
+  it('still ignores the query on a Yale profile', () => {
+    const yale = officialProfileDestinationStoredPattern(
+      'https://fixture.yale.edu/people/avery-synthetic',
+    );
+    expect(yale?.test('https://fixture.yale.edu/people/avery-synthetic?utm_source=x')).toBe(true);
   });
 });
