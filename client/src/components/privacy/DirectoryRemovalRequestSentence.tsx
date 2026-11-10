@@ -1,7 +1,6 @@
 import { Link } from 'react-router-dom';
 import { DIRECTORY_REMOVAL_REQUEST_EMAIL } from '../../utils/privacyNotice';
-
-const INLINE_LINK_CLASS = 'yr-link yr-focus-ring -my-1.5 inline-block rounded-control py-1.5';
+import RemovalRequestEmailLink, { PRIVACY_INLINE_LINK_CLASS } from './RemovalRequestEmailLink';
 
 const DirectoryRemovalRequestSentence = ({
   email = DIRECTORY_REMOVAL_REQUEST_EMAIL,
@@ -12,16 +11,13 @@ const DirectoryRemovalRequestSentence = ({
 }) => (
   <p className={className}>
     If y/labs lists you and you would like to be removed, sign in and use Remove me on{' '}
-    <Link to="/dashboard" className={INLINE_LINK_CLASS}>
+    <Link to="/dashboard" className={PRIVACY_INLINE_LINK_CLASS}>
       your dashboard
     </Link>
     {email ? (
       <>
-        , or email{' '}
-        <a href={`mailto:${email}`} className={INLINE_LINK_CLASS}>
-          {email}
-        </a>{' '}
-        from the address Yale publishes for you.
+        , or email <RemovalRequestEmailLink email={email} /> from the address Yale publishes for
+        you.
       </>
     ) : (
       '.'

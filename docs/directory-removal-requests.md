@@ -9,7 +9,7 @@ The removal itself, the record every serve, gate, index and mint path reads, is 
 A signed-in person whose CAS netid matches a live `Researcher.identifiers.netid` sees "Remove me from y/labs" on `/dashboard`.
 Anyone else sees nothing there, and `/privacy` tells a listed person where to go.
 Below the button, a pending request reads "We'll stop showing you within 7 days. You can ask to be listed again at any time." and an accepted one reads "Your request was accepted. You will stop appearing on y/labs within 7 days."
-A declined request reads "We could not confirm this request. You can send it again." and keeps the button; once `DIRECTORY_REMOVAL_REQUEST_EMAIL` in `client/src/utils/privacyNotice.ts` names an address, it adds "or email us from the address Yale publishes for you".
+A declined request reads "We could not confirm this request. You can send it again." and keeps the button; once `DIRECTORY_REMOVAL_REQUEST_EMAIL` in `client/src/utils/privacyNotice.ts` names an address, it adds "or email <address> from the address Yale publishes for you", with the address as the same mailto link `/privacy` renders (`client/src/components/privacy/RemovalRequestEmailLink.tsx`).
 If the eligibility check fails, the section stays hidden, and the server logs a fixed line with only the error name and code, never the netid or the original error.
 
 A request is a row in `directory_removal_requests` (`server/src/models/directoryRemovalRequest.ts`).

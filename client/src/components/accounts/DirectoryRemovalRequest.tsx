@@ -3,6 +3,7 @@ import axios from '../../utils/axios';
 import useLatestRequest from '../../hooks/useLatestRequest';
 import useLoadEffect from '../../hooks/useLoadEffect';
 import { DIRECTORY_REMOVAL_REQUEST_EMAIL } from '../../utils/privacyNotice';
+import RemovalRequestEmailLink from '../privacy/RemovalRequestEmailLink';
 
 export const DIRECTORY_REMOVAL_REQUEST_PATH = '/users/directoryRemovalRequest';
 export const REMOVE_ME_LABEL = 'Remove me from y/labs';
@@ -10,10 +11,15 @@ export const REMOVAL_REQUESTED_MESSAGE =
   "We'll stop showing you within 7 days. You can ask to be listed again at any time.";
 export const REMOVAL_ACCEPTED_MESSAGE =
   'Your request was accepted. You will stop appearing on y/labs within 7 days.';
-export const removalDeclinedMessage = (email: string | undefined): string =>
-  email
-    ? 'We could not confirm this request. You can send it again, or email us from the address Yale publishes for you.'
-    : 'We could not confirm this request. You can send it again.';
+const RemovalDeclinedMessage = ({ email }: { email: string | undefined }) =>
+  email ? (
+    <>
+      We could not confirm this request. You can send it again, or email{' '}
+      <RemovalRequestEmailLink email={email} /> from the address Yale publishes for you.
+    </>
+  ) : (
+    <>We could not confirm this request. You can send it again.</>
+  );
 const SUBMIT_ERROR = 'Your request could not be sent. Please try again.';
 
 type RequestStatus = 'pending' | 'accepted' | 'declined';
@@ -99,7 +105,7 @@ const DirectoryRemovalRequest = ({
         <>
           {status === 'declined' && (
             <p className="mb-4 text-base leading-relaxed text-ink-soft">
-              {removalDeclinedMessage(email)}
+              <RemovalDeclinedMessage email={email} />
             </p>
           )}
           <div className="flex flex-wrap items-center gap-3">

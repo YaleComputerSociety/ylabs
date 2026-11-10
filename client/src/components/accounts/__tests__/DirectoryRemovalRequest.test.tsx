@@ -116,7 +116,8 @@ describe('DirectoryRemovalRequest', () => {
     expect(container.textContent).toContain(
       'We could not confirm this request. You can send it again.',
     );
-    expect(container.textContent).not.toContain('email us');
+    expect(container.textContent).not.toContain('email');
+    expect(screen.queryByRole('link')).toBeNull();
     fireEvent.click(button);
     expect((await screen.findByRole('status')).textContent).toBe(REMOVAL_REQUESTED_MESSAGE);
     expect(container.textContent).not.toContain('We could not confirm');
@@ -128,8 +129,12 @@ describe('DirectoryRemovalRequest', () => {
 
     expect(await screen.findByRole('button', { name: REMOVE_ME_LABEL })).toBeTruthy();
     expect(container.textContent).toContain(
-      'We could not confirm this request. You can send it again, or email us from the address Yale publishes for you.',
+      'We could not confirm this request. You can send it again, or email removals@example.edu from the address Yale publishes for you.',
     );
+    const link = screen.getByRole('link', { name: 'removals@example.edu' });
+    expect(link.getAttribute('href')).toBe('mailto:removals@example.edu');
+    expect(link.className).toContain('yr-focus-ring');
+    await expectNoAxeViolations(container);
   });
 
   it('says so when the request cannot be sent and keeps the button', async () => {
