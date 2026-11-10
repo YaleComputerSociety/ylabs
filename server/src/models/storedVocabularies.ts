@@ -28,6 +28,25 @@ export const descriptionGroundingVerdicts = [
 export type DescriptionGroundingVerdict = (typeof descriptionGroundingVerdicts)[number];
 
 export const undergradInvitationLevels = ['actively_hiring', 'welcomes_undergrads'] as const;
+
+export const undergradMentoringSources = [
+  'cs-senior-projects',
+  'cs-directed-research',
+  'tobin-research-assistantships',
+  'economics-senior-essay-advisers',
+  'psychology-research-opportunities',
+  'wu-tsai-undergraduate-fellows',
+  'physics-open-research-opportunities',
+  'english-senior-essays',
+  'english-creative-writing-projects',
+  'political-science-senior-essay-prizes',
+  'german-senior-essays',
+  'yibs-summer-research-fellows',
+] as const;
+export type UndergradMentoringSource = (typeof undergradMentoringSources)[number];
+
+export const undergradMentoringKinds = ['advised', 'open'] as const;
+export type UndergradMentoringKind = (typeof undergradMentoringKinds)[number];
 export type UndergradInvitationLevel = (typeof undergradInvitationLevels)[number];
 
 export const labSiteLeadVerdicts = ['CONFIRMED', 'CONTRADICTED', 'UNSTATED'] as const;

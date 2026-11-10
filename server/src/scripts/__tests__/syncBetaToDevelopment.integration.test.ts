@@ -265,11 +265,18 @@ describe('Beta to Development mirror against MongoDB', () => {
     );
     expect(summary.includesObservations).toBe(false);
 
-    await applySync(sourceDb, targetDb, collections, clearedCollectionNames, async () => {
-      const after = await buildPlan(sourceDb, targetDb, collections);
-      const mismatches = after.filter((row) => row.sourceCopyCount !== row.targetCount);
-      expect(mismatches).toEqual([]);
-    });
+    await applySync(
+      sourceDb,
+      targetDb,
+      collections,
+      clearedCollectionNames,
+      async () => undefined,
+      async () => {
+        const after = await buildPlan(sourceDb, targetDb, collections);
+        const mismatches = after.filter((row) => row.sourceCopyCount !== row.targetCount);
+        expect(mismatches).toEqual([]);
+      },
+    );
   });
 
   afterAll(async () => {

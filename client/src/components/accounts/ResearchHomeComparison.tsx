@@ -28,6 +28,7 @@ import {
   isSuppressedResearchWebsiteCtaUrl,
   isUnreachableResearchWebsiteCtaUrl,
   normalizeSourceUrl,
+  servedLinkUrl,
 } from '../../utils/researchDetailSources';
 import {
   isIdentifierRecordUrl,
@@ -133,7 +134,7 @@ const officialLinks = (
   const seen = new Set<string>();
   const usedLabels = new Set<string>();
   for (const candidate of candidates) {
-    const href = safeHttpUrl(candidate);
+    const href = safeHttpUrl(servedLinkUrl(candidate, entity.sourceLinkHealth) || candidate);
     if (!href) continue;
     if (
       isSuppressedResearchWebsiteCtaUrl(href) ||
@@ -178,12 +179,13 @@ const involvementLinks = (
     add(actions.activityCheckUrl, 'Open the official page');
   } else {
     if (actions.offersOrgEngagementPage)
-      add(context.officialSource?.url, 'See how to get involved');
+      add(context.officialSource?.servedUrl, 'See how to get involved');
     if (actions.offersApplyPage) add(context.applyPageUrl, 'See how to get involved');
     if (actions.showsWebsiteCta) add(actions.websiteCtaUrl, researchWebsiteCtaLabel(entity));
     if (actions.offersJoinLinkBesideWebsite) add(context.applyPageUrl, 'See how to join');
     if (actions.showsProfileButton) add(actions.leadCardProfileUrl, 'Open official profile');
-    if (actions.offersOfficialPage) add(context.officialSource?.url, 'Open the official page');
+    if (actions.offersOfficialPage)
+      add(context.officialSource?.servedUrl, 'Open the official page');
   }
   if (links.length === 0 && actions.leadCardLinksProfile) {
     add(actions.leadCardProfileUrl, 'Open official profile');
@@ -215,7 +217,7 @@ const UndergraduateEvidenceCell = ({ entity }: { entity: ResearchEntity }) => {
             &ldquo;{boundedQuote(quote.quote)}&rdquo;
           </blockquote>
           <a
-            href={quote.sourceUrl}
+            href={servedLinkUrl(quote.sourceUrl, entity.sourceLinkHealth) || quote.sourceUrl}
             target="_blank"
             rel={EXTERNAL_LINK_REL}
             aria-label={`Quoted from ${quote.sourceHost} (opens in a new tab)`}

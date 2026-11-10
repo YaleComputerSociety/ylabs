@@ -238,6 +238,9 @@ export interface ProductionPromotionReport {
   accountReferenceBlockersClear?: boolean;
   applyBlockers?: string[];
   collections?: CollectionCounts[];
+  previousGenerations?: Array<{ operationId: string }>;
+  storageHeadroom?: { ok: boolean; message: string };
+  applied?: { operationId?: string; rollbackCommand?: string };
 }
 
 export function productionPlanProblems(report: ProductionPromotionReport): string[] {
@@ -254,6 +257,11 @@ export function productionPlanProblems(report: ProductionPromotionReport): strin
   if (report.includesObservations) problems.push('plan would promote observations');
   if (report.includesScrapeRuns) problems.push('plan would promote scrape_runs');
   if (!report.collections?.length) problems.push('promotion plan lists no collections');
+  if (!report.storageHeadroom) {
+    problems.push('promotion plan reports no cluster storage headroom');
+  } else if (!report.storageHeadroom.ok) {
+    problems.push(report.storageHeadroom.message);
+  }
   return problems;
 }
 
@@ -261,8 +269,23 @@ export function formatProductionPlan(report: ProductionPromotionReport): string 
   return [
     `Beta -> Production promotion plan ${report.datasetVersion ?? ''} (${report.sourceDatabase ?? '?'} -> ${report.targetDatabase ?? '?'})`,
     '  Accounts are environment-local and not promoted; Production keeps its own sign-ins.',
+    `  Retained previous generation: ${formatPreviousGenerations(report.previousGenerations)}; the apply keeps what it replaces as the only rollback point (#4149).`,
+    ...(report.storageHeadroom ? [`  Storage: ${report.storageHeadroom.message}`] : []),
     formatCollectionTable(report.collections ?? []),
   ].join('\n');
+}
+
+function formatPreviousGenerations(generations: ProductionPromotionReport['previousGenerations']) {
+  if (!generations?.length) return 'none';
+  return generations.map((generation) => generation.operationId).join(', ');
+}
+
+export function formatProductionApplied(report: ProductionPromotionReport | undefined): string {
+  const rollbackCommand = report?.applied?.rollbackCommand;
+  if (!rollbackCommand) {
+    return 'Production MongoDB promoted; the apply report names no retained generation.';
+  }
+  return `Production MongoDB promoted. To restore what it replaced: ${rollbackCommand} (dry-run first, then --apply with CONFIRM_PROD_SCRAPE=true).`;
 }
 
 export interface PullRequestHoldState {

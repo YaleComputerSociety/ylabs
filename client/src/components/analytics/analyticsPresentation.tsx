@@ -3,6 +3,7 @@ import { ReactNode, useId } from 'react';
 export const AUDIT_ACTION_LABELS: Record<string, string> = {
   'admin_grant.grant': 'Admin granted',
   'admin_grant.revoke': 'Admin revoked',
+  'account.sessions_revoke': 'Sessions ended',
   'profile.update': 'Profile edited',
   'department.create': 'Department created',
   'department.update': 'Department edited',

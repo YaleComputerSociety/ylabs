@@ -24,6 +24,7 @@ import {
   weeklyRunCoverage,
   weeklyRunLabel,
   type MirrorReport,
+  formatProductionApplied,
   type ProductionPromotionReport,
   type PromotionTarget,
   type PullRequestHoldState,
@@ -405,7 +406,15 @@ export async function runPromoteProduction(
       `production:promote-beta-copy --apply exited ${applyExit}; its staged swap rolls back a failed copy`,
     ]);
   }
-  deps.log('Production MongoDB promoted.');
+  let appliedReport: ProductionPromotionReport | undefined;
+  try {
+    appliedReport = deps.readJson(
+      path.join(deps.workDir, 'production-promotion-apply.json'),
+    ) as ProductionPromotionReport;
+  } catch {
+    appliedReport = undefined;
+  }
+  deps.log(formatProductionApplied(appliedReport));
 
   if (args.skipRemotePhase) {
     deps.log(

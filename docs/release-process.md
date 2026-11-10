@@ -197,12 +197,19 @@ Run the steps in this order.
 The order is not cosmetic and two of the orderings are the opposite of what seems natural.
 `yarn promote:production` runs steps 1 to 5 in this order and then prints step 6; `docs/data-refresh-runbook.md` ("One-Command Promotion") owns what it checks.
 
-1. **Dry-run the copy.** `yarn --cwd server production:promote-beta-copy --dataset-version prod-promote-YYYY-MM-DD-lane-a-beta-copy`. Dry-run is the default. Read the per-collection plan before doing anything else. The script refuses unless `BETA_MONGODBURL` names the database `Beta` and `PRODUCTION_MONGODBURL` names `Prod`, both on remote hosts, and `yarn --cwd server database:verify-names --pair beta-to-production` runs the same check without connecting (#4150).
+1. **Dry-run the copy.** `yarn --cwd server production:promote-beta-copy --dataset-version prod-promote-YYYY-MM-DD-lane-a-beta-copy`. Dry-run is the default. Read the per-collection plan before doing anything else, along with `storageHeadroom`, which must read `ok`, and `previousGenerations`, the generation the apply will replace as its rollback point (#4149). The script refuses unless `BETA_MONGODBURL` names the database `Beta` and `PRODUCTION_MONGODBURL` names `Prod`, both on remote hosts, and `yarn --cwd server database:verify-names --pair beta-to-production` runs the same check without connecting (#4150).
 2. **Check for a collection that would copy nothing over existing documents.** Apply is blocked when `sourceCopyCount` is 0 and `targetCount` is above 0, because `copyCollection` deletes the whole target before inserting. Treat that blocker as a stop, not an obstacle.
 3. **Copy the data, before deploying the code.** The copy never touches Production's retired collections, so the currently deployed code keeps reading `users`, `entry_pathways`, `access_signals`, `contact_routes` and `research_entity_members` throughout. Data-first therefore has no broken window. Code-first has one: the current model reads `signals`, `accounts`, `researchers` and `role_assignments`, and a Production that has not received them yet cannot serve the visibility gate, browse ranking, login or person pages.
 4. **Re-point saved plans, then re-gate visibility.** The remote phase first runs `yarn --cwd server research-plans:retarget-merged --apply --confirm-research-plan-retarget`, which moves each Production plan saved on a merged research entity to its live survivor; plans are environment-local, so the merge Development recorded cannot carry them (#5208). Then `yarn --cwd server student-visibility:gate --collection=all --apply --confirm-student-visibility-apply --max-apply=100000`. Apply mode throws without `--max-apply`, and refuses to write without `--confirm-student-visibility-apply`. Freshly copied rows do not carry a usable tier until a gate pass runs, so skipping this leaves part of the corpus stuck at `operator_review` and invisible.
 5. **Update the search index, after the gate and not before.** `SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true yarn --cwd server reindex:meili --confirm`. When the live index's embedder matches the code it reconciles only the changed documents, applying any drifted settings in place (#5442), and otherwise it runs the full rebuild described below; `--full` forces the rebuild (#5107). Run it inside the Production Render shell because the private Meilisearch is not reachable from a laptop. `CONFIRM_PROD_SCRAPE=true` is not optional: the write guard refuses the rebuild without it, and it fires after the preflight and the index reconcile plan have already printed, so a run without it reads as working and stops at the last moment. Prefer `node scripts/reindex-search-index.mjs production --apply`, which reports every missing variable at once before anything starts. The gate writes tiers, so an index built before the gate carries pre-gate tiers. The rebuild applies the full settings object first, including `pagination.maxTotalHits`, so it also repairs an index left at Meilisearch's 1000-hit default. It builds into a fresh `prod_researchentities_next` index and swaps it in atomically once every document is confirmed, so student search keeps serving the previous index throughout and a failed rebuild changes nothing; the swap only protects against an incomplete rebuild and deletes the previous copy, so the restore point in `docs/data-refresh-runbook.md` is still required, the instance needs disk headroom for two copies, and the shell needs `OPENAI_API_KEY`, because a rebuild that cannot recreate the stored embedder is refused (#4151).
 6. **Then reconcile and merge `main`**, which deploys the code.
+
+Build any declared index the target is missing, on Beta after the Development copy and on Production after this one.
+Indexes are no longer built on connect, and the copy moves documents rather than index definitions, so an index declared since the target's last build stays missing until someone builds it.
+An environment-local collection that is never copied, such as the `model_call_usages` TTL index on `calledAt` (`docs/model-usage.md`), is in the same position.
+Run `yarn --cwd server db:build-indexes` against the target first; it is a dry run by default and lists `missingByCollection` and `undeclaredByCollection`.
+Apply with `--apply` only when it plans additions alone. It never drops an index, but a unique index on a large collection, or a TTL index whose window already covers stored documents, changes data and needs its own decision.
+`yarn promote:production` does not run this step.
 
 The gate refuses to apply when too many lead-requiring entities resolve no lead, and it throws rather than writing a partial result.
 That is the intended behaviour, and it is why the gate must follow a complete copy: a copy that stopped after `research_entities` but before `role_assignments` would make every row read as leadless.
@@ -227,6 +234,19 @@ A reviewer stamp records the reviewer's netid in `studentVisibilityReviewedByNet
 `--include-observations` flips the observation default.
 `--include-scrape-runs` flips the run-history default, which is off: a promoted `scrape_runs` is Development's history under Production's name (#2589).
 It reads like a completeness option and is not one: when the source is empty it deletes the target and copies nothing back.
+
+### Seed the search rerank cache after the copy and the reindex
+
+The rerank cache (`search_rerank_cache`, `docs/search-rerank-cache.md`) is environment-local, so a promotion never copies it and the target serves today's fused order until it is seeded.
+The owner approved serving it on Beta and Production after a promotion (#5448), so seed each target once its copy and reindex are done, and before turning the flag on.
+
+1. Seed Beta after the Development-to-Beta copy and reindex: `yarn --cwd server research-search:seed-rerank-cache --environment=beta --input=<seed.json>` as a dry run, then again with `--apply --confirm-search-rerank-cache-seed --index-version=<marker>`.
+2. Seed Production the same way after its copy and reindex, with `--environment=production`, `SCRAPER_ENV=production` and `CONFIRM_PROD_SCRAPE=true`.
+3. Use the seed file the Development cache was built from, and seed only when the promoted corpus is the one it was scored on; the dry run's `unresolvedSlugs` must read 0, because a slug the target does not carry is a row the scores cannot name.
+4. Then set `SEARCH_RERANK_CACHE_ENABLED=true` on that environment's web service and redeploy it; with the flag unset, search never reads the collection.
+5. Verify by searching a seeded query on the deployed site and comparing its top results with Development's served order for the same query.
+
+`yarn promote:production` does not run these steps, and they are safe to skip: an unseeded or disabled cache changes nothing a student sees.
 
 ### The reindex step needs Render's outbound ranges on the Atlas access list
 
@@ -301,5 +321,6 @@ Record the monitor's provider here when it is created.
 To roll back, prefer the Render dashboard rollback to the previous deploy.
 Otherwise revert the promotion merge on `main` with `git revert -m 1 <merge-commit>` through a pull request, and Render redeploys automatically.
 A revert removes everything that promotion carried, so a hotfix on `main` is usually the better fix forward.
-Neither moves a document: a code rollback is not a data rollback, and no Production restore point exists (#4148).
+Neither moves a document: a code rollback is not a data rollback.
+The data rollback is `production:promote-beta-copy --rollback <operationId>`, which restores the collections the last promotion replaced (#4149); no off-cluster restore point exists (#4148).
 [The incident runbook](./incident-runbook.md) owns the full procedure for a site outage, bad data that reached students, and a leaked credential.

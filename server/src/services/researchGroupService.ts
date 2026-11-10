@@ -712,6 +712,12 @@ const STUDENT_QUERY_STOP_WORDS = new Set([
   'best',
   'some',
   'any',
+  // Frame words, not subjects: the corpus carries "topic" only inside MeSH "X as
+  // Topic" headings and names no field with "not", yet once #5193 drops a word no
+  // row matches they were left as the whole search and served a hundred rows (#5532).
+  'not',
+  'topic',
+  'topics',
   // Question-frame verbs only. `studies`, `work`, and `working` are deliberately
   // absent: the corpus carries them as real field names (192 researchAreas and 11
   // departments contain "studies", including African Studies and Film & Media

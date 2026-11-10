@@ -38,6 +38,7 @@ import {
 import { buildAdminOperatorBoard } from '../services/adminOperatorBoardService';
 import { listAdminAuditEvents } from '../services/adminAuditService';
 import { adminAuditMutationLogger } from '../middleware/adminAuditLogger';
+import { revokeAccountSessions } from '../services/accountService';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { publicHttpUrl } from '../utils/urlSafety';
 
@@ -353,6 +354,17 @@ router.post(
       answerAdminGrantError(error, res, next);
     }
   },
+);
+
+router.post(
+  '/accounts/:netid/sessions/revoke',
+  writeLimit,
+  validateNetid('netid'),
+  asyncHandler(async (req: Request, res: Response) => {
+    const revoked = await revokeAccountSessions(req.params.netid);
+    if (!revoked) return res.status(404).json({ error: 'Account not found' });
+    res.json({ revoked: true });
+  }),
 );
 
 const MAX_ADMIN_AUDIT_FILTER_LENGTH = 128;

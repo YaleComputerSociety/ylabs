@@ -3,7 +3,9 @@ import { officialProfileIdentityUrlKey } from '../scrapers/utils/officialProfile
 import { observedPersonNameAgreesWith } from '../scrapers/utils/personNameAgreement';
 import { surnamesCompatible } from '../scrapers/utils/piNameMatch';
 import { splitName } from '../scrapers/utils/scraperHelpers';
+import { canonicalPersonName } from '../scrapers/utils/personNameCasing';
 import { titleResearchOwnership } from '../scrapers/utils/titleResearchOwnership';
+import { sanitizePersonName } from '../utils/personNameHygiene';
 import { researcherHoldsDirectoryIdentity } from '../utils/researcherIdentity';
 
 export function normalizeResearcherName(value: unknown): string | undefined {
@@ -748,6 +750,42 @@ function clusterKeys(
   return [...pageKeys, ...(department ? [`name::${name}::${department}`] : []), ...rowKeys];
 }
 
+const isNameOnlyMember = (member: AccountlessClusterMember): boolean =>
+  !bareNetid(member.netid) && !cleanOrcid(member.orcid);
+
+function sanitizedResearcherName(displayName: unknown): string | undefined {
+  if (typeof displayName !== 'string') return undefined;
+  return normalizeResearcherName(canonicalPersonName(sanitizePersonName(displayName) ?? ''));
+}
+
+/**
+ * Pairs each name-only record whose stored name carries scraped furniture with the one
+ * name-only record whose stored name is the cleaned form, the same equivalence the
+ * membership materializer's adoption treats as one person (#2951, #5539). Records sharing an
+ * identical clean name stay apart, because nothing tells two same-named people apart.
+ */
+function noisySpellingJoins(
+  members: ReadonlyArray<AccountlessClusterMember>,
+  namesHeldElsewhere: ReadonlySet<string>,
+): Array<[string, string]> {
+  const nameOnly = members.filter(isNameOnlyMember);
+  const cleanHoldersByName = new Map<string, string[]>();
+  for (const member of nameOnly) {
+    const stored = normalizeResearcherName(member.displayName);
+    if (!stored || sanitizedResearcherName(member.displayName) !== stored) continue;
+    cleanHoldersByName.set(stored, [...(cleanHoldersByName.get(stored) ?? []), member.id]);
+  }
+  const joins: Array<[string, string]> = [];
+  for (const member of nameOnly) {
+    const stored = normalizeResearcherName(member.displayName);
+    const cleaned = sanitizedResearcherName(member.displayName);
+    if (!stored || !cleaned || cleaned === stored || namesHeldElsewhere.has(cleaned)) continue;
+    const holders = cleanHoldersByName.get(cleaned) ?? [];
+    if (holders.length === 1) joins.push([member.id, holders[0]]);
+  }
+  return joins;
+}
+
 function distinctNonEmpty(values: ReadonlyArray<string | undefined>): number {
   return new Set(values.filter((value): value is string => Boolean(value))).size;
 }
@@ -847,6 +885,9 @@ export function planAccountlessClusterFolds(
       if (first) parent.set(find(member.id), find(first));
       else firstByKey.set(key, member.id);
     }
+  }
+  for (const [noisyId, cleanId] of noisySpellingJoins(members, heldElsewhere.names)) {
+    parent.set(find(noisyId), find(cleanId));
   }
 
   const groupsByRoot = new Map<string, AccountlessClusterMember[]>();

@@ -25,7 +25,7 @@ import {
   resolveDecisionProfileUrl,
   resolveOutreachApplySource,
   resolveOutreachOfficialSource,
-  servedResearchWebsiteUrl,
+  servedLinkUrl,
   ResearchDetailSource,
 } from '../researchDetailSources';
 
@@ -34,6 +34,7 @@ const makeSource = (
   overrides: Partial<ResearchDetailSource> = {},
 ): ResearchDetailSource => ({
   url,
+  servedUrl: url,
   label: 'Official source',
   contexts: ['Profile source'],
   isLikelyUnavailable: false,
@@ -2167,13 +2168,13 @@ describe('a contribution naming a mirror of a cited page (#3341)', () => {
   });
 });
 
-describe('servedResearchWebsiteUrl (#4080)', () => {
+describe('servedLinkUrl (#4080)', () => {
   const HTTPS = 'https://dept.example.yale.edu/~fixture/';
   const HTTP = 'http://dept.example.yale.edu/~fixture/';
 
   it('offers the working plain-HTTP spelling when the https certificate fails', () => {
     expect(
-      servedResearchWebsiteUrl(HTTPS, [
+      servedLinkUrl(HTTPS, [
         { url: HTTPS, healthStatus: 'UNKNOWN', tlsVerificationFailed: true },
         { url: HTTP, healthStatus: 'HEALTHY', httpStatusCode: 200 },
       ]),
@@ -2182,21 +2183,19 @@ describe('servedResearchWebsiteUrl (#4080)', () => {
 
   it('keeps the https url when the plain-HTTP spelling is not verified reachable', () => {
     expect(
-      servedResearchWebsiteUrl(HTTPS, [
+      servedLinkUrl(HTTPS, [
         { url: HTTPS, healthStatus: 'UNKNOWN', tlsVerificationFailed: true },
         { url: HTTP, healthStatus: 'UNKNOWN' },
       ]),
     ).toBe(HTTPS);
     expect(
-      servedResearchWebsiteUrl(HTTPS, [
-        { url: HTTPS, healthStatus: 'UNKNOWN', tlsVerificationFailed: true },
-      ]),
+      servedLinkUrl(HTTPS, [{ url: HTTPS, healthStatus: 'UNKNOWN', tlsVerificationFailed: true }]),
     ).toBe(HTTPS);
   });
 
   it('keeps the https url when its certificate verified', () => {
     expect(
-      servedResearchWebsiteUrl(HTTPS, [
+      servedLinkUrl(HTTPS, [
         { url: HTTPS, healthStatus: 'HEALTHY' },
         { url: HTTP, healthStatus: 'HEALTHY' },
       ]),
@@ -2224,20 +2223,20 @@ describe('servedResearchWebsiteUrl (#4080)', () => {
   });
 
   it('never downgrades on the strength of a plain-HTTP verdict alone', () => {
-    expect(servedResearchWebsiteUrl(HTTPS, [{ url: HTTP, healthStatus: 'HEALTHY' }])).toBe(HTTPS);
+    expect(servedLinkUrl(HTTPS, [{ url: HTTP, healthStatus: 'HEALTHY' }])).toBe(HTTPS);
     expect(
       findSourceLinkHealthEntry([{ url: HTTP, healthStatus: 'HEALTHY' }], HTTPS),
     ).toBeUndefined();
   });
 });
 
-describe('servedResearchWebsiteUrl https landing (#4649)', () => {
+describe('servedLinkUrl https landing (#4649)', () => {
   const HTTP = 'http://faculty.example.yale.edu/FixturePerson/';
   const LANDING = 'https://faculty.example.yale.edu/fixtureperson/';
 
   it('offers the https page the host redirected a reachable http website to', () => {
     expect(
-      servedResearchWebsiteUrl(HTTP, [
+      servedLinkUrl(HTTP, [
         { url: HTTP, healthStatus: 'HEALTHY', httpStatusCode: 200, httpsLandingUrl: LANDING },
       ]),
     ).toBe(LANDING);
@@ -2245,15 +2244,13 @@ describe('servedResearchWebsiteUrl https landing (#4649)', () => {
 
   it('keeps the http url when its verdict is not HEALTHY', () => {
     expect(
-      servedResearchWebsiteUrl(HTTP, [
-        { url: HTTP, healthStatus: 'UNKNOWN', httpsLandingUrl: LANDING },
-      ]),
+      servedLinkUrl(HTTP, [{ url: HTTP, healthStatus: 'UNKNOWN', httpsLandingUrl: LANDING }]),
     ).toBe(HTTP);
   });
 
   it('keeps the http url when the host never redirected it to https', () => {
     expect(
-      servedResearchWebsiteUrl(HTTP, [
+      servedLinkUrl(HTTP, [
         { url: HTTP, healthStatus: 'HEALTHY' },
         { url: 'https://faculty.example.yale.edu/FixturePerson/', healthStatus: 'HEALTHY' },
       ]),
@@ -2262,7 +2259,7 @@ describe('servedResearchWebsiteUrl https landing (#4649)', () => {
 
   it('never reads a landing recorded on another spelling of the link', () => {
     expect(
-      servedResearchWebsiteUrl(HTTP, [
+      servedLinkUrl(HTTP, [
         {
           url: 'https://faculty.example.yale.edu/FixturePerson/',
           healthStatus: 'HEALTHY',
@@ -2282,5 +2279,34 @@ describe('slug-derived labels keep acronym casing', () => {
 
   it('keeps ordinary words title-cased', () => {
     expect(labelizeResearchDetailValue('CURRENT_UNDERGRADS')).toBe('Current Undergrads');
+  });
+});
+
+describe('Sources rows use the spelling a student can open (#3957)', () => {
+  const HTTPS_PAGE = 'https://alias.example.yale.edu/~fixture/';
+  const HTTP_PAGE = 'http://alias.example.yale.edu/~fixture/';
+  const STORED_ROW_URL = 'https://alias.example.yale.edu/~fixture';
+
+  it('serves the plain-HTTP spelling for a source whose https certificate fails', () => {
+    const sources = buildResearchDetailSources({
+      group: { name: 'Fixture Research', sourceUrls: [HTTPS_PAGE] },
+      sourceLinkHealth: [
+        { url: HTTPS_PAGE, healthStatus: 'UNKNOWN', tlsVerificationFailed: true },
+        { url: HTTP_PAGE, healthStatus: 'HEALTHY', httpStatusCode: 200 },
+      ],
+    });
+    const row = sources.find((source) => source.url === STORED_ROW_URL);
+    expect(row).toBeDefined();
+    expect(row?.servedUrl).toBe(HTTP_PAGE);
+  });
+
+  it('keeps the stored spelling when no working alternative is verified', () => {
+    const sources = buildResearchDetailSources({
+      group: { name: 'Fixture Research', sourceUrls: [HTTPS_PAGE] },
+      sourceLinkHealth: [{ url: HTTPS_PAGE, healthStatus: 'UNKNOWN', tlsVerificationFailed: true }],
+    });
+    const row = sources.find((source) => source.url === STORED_ROW_URL);
+    expect(row).toBeDefined();
+    expect(row?.servedUrl).toBe(STORED_ROW_URL);
   });
 });

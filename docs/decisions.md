@@ -5,6 +5,28 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-11-10: Mentoring Undergraduates Is Its Own Signal (#5551)
+
+The owner decided on 2026-11-10 that a professor named as the adviser or mentor of a specific undergraduate is its own signal, "Mentors undergrads", separate from "Has hosted undergraduates" and from a lab page's invitation, because y/labs is also used to find a thesis adviser or a mentor for a student's own project.
+Every undergraduate signal exists to tell a student which professors are receptive to mentoring them.
+A list counts when it names the professor as adviser or mentor of a specific undergraduate's work, or lists them as open to advising undergraduates now; a summer program counts only when it names the professor as mentor of a specific undergraduate placed in their Yale lab, whether or not the student is at Yale.
+A program director, committee member, general faculty pool, center-wide trainee list, graduate-student or postdoc mentor, or mentor at another institution does not count.
+The tag attaches only to a row the professor already leads: mentoring alone does not pass the directory test, so it never creates a row.
+Only the adviser is read from a list; student names, titles and topics are never stored.
+A source is served only after the owner has read a side-by-side sample of its identity matches, because an agent check of a sample is not a precision review.
+Measured on Development on 2026-11-10 over the first seven sources, 1,186 of 1,557 listings matched exactly one researcher who leads a row, and the faculty research profiles that almost never carried an undergraduate signal are most of the rows they reach.
+The common-surname and duplicate-record guard of the name resolver refuses the most prolific CS advisers, 211 listings across 37 names, which a department tie-break or a researcher merge would recover.
+
+## 2026-11-10: The Program Region Filter Returns Only Programs That Name The Region (#5533)
+
+This partly reverses #5235 for one facet: the region filter on `/programs` and the fellowships browse now returns only programs that state the chosen region.
+Decision (owner, 2026-11-10): region is stated-only because 142 of the 173 served programs on Development (82%) state no region, so under #5235 every region option returned 146 to 155 programs of which only 4 to 13 named that region, and the filter barely narrowed.
+Year of study, term, purpose and citizenship keep #5235 unchanged: a program that states no value stays under the filter, and the citizenship options still say "or not stated".
+Region was the outlier because the other facets are stated far more often (21 to 39 of 173 programs state none), and because a missing region rarely means "any region".
+The region tab says it shows only programs that name the region, and its options carry no "or not stated" wording; the result total is the same query, so the count matches what is served.
+The stated-only set is `PROGRAM_STATED_ONLY_FACET_FIELDS` in `server/src/utils/programFacetFilters.ts`, which both `searchFellowships` and the `journey:eval` filter-agreement cases read, so the invariant fails a not-stated row under region and a stated-different row under any filter.
+The cases also report the share of served rows that state no value per field as rates that never gate, so a facet drifting toward mostly not-stated is visible before it hollows out another filter.
+
 ## 2026-11-10: PostHog Records Production Students' Clicks And Waits, Masked (#5492)
 
 This reverses the third-party half of the 2026-10-04 entry (#4754) for PostHog only; the Google Analytics tag stays removed and `client/src/__tests__/noGoogleAnalyticsGuard.test.ts` still fails if it returns.
@@ -30,7 +52,7 @@ The safe configuration is pinned by tests rather than by review.
 The same test fails if a person property other than the bucketed `user_type` or an identify event is sent, and `client/src/__tests__/posthogUsageGuard.test.ts` refuses a committed `phc_` key.
 `server/src/middleware/__tests__/securityHeaders.test.ts` pins the exact `connect-src` and `script-src` with PostHog on, and refuses a non-US, look-alike, port or path host, Beta, and local development.
 Turning PostHog on is an operational step and not part of the merge: the owner sets `VITE_POSTHOG_KEY` and `VITE_POSTHOG_HOST` on the Production web service only and redeploys.
-The privacy notice still has to name PostHog, the data it receives and its retention, which is tracked on #4157, and PostHog's retention is set no longer than the 1,095-day TTL on `analytics_events`.
+The `/privacy` page (#4157) names PostHog, the data it receives and its retention, and PostHog's retention is set no longer than the 1,095-day TTL on `analytics_events`.
 
 ## 2026-11-10: A Stale Hiring Line Reads As A Welcome (#5524)
 

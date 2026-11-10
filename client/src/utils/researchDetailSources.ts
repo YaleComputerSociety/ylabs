@@ -76,6 +76,8 @@ export interface BuildResearchDetailSourcesInput {
 
 export interface ResearchDetailSource {
   url: string;
+  /** The spelling a student is sent to, from `servedLinkUrl`; `url` stays the dedupe key. */
+  servedUrl: string;
   label: string;
   contexts: string[];
   healthStatus?: string;
@@ -1320,14 +1322,16 @@ export const findSourceLinkHealthEntry = (
 };
 
 /**
- * The spelling of a research website a student should be sent to. When the `https:`
+ * The spelling of a stored link a student should be sent to. When the `https:`
  * spelling fails certificate verification and its plain-HTTP spelling is verified
  * reachable, the working spelling is offered, so a click lands on the page instead of
- * a browser security warning. When a plain-HTTP website is verified reachable and its
+ * a browser security warning. When a plain-HTTP link is verified reachable and its
  * own host redirected it to the same page over `https:`, that landing is offered
- * (#4649). Otherwise the stored URL is returned unchanged.
+ * (#4649). Otherwise the stored URL is returned unchanged. Every link built from a
+ * stored URL goes through this, the research website CTA and the Sources rows alike
+ * (#3957).
  */
-export const servedResearchWebsiteUrl = (
+export const servedLinkUrl = (
   url: string | null | undefined,
   sourceLinkHealth: DetailSourceLinkHealth[] = [],
 ): string | undefined => {
@@ -1587,6 +1591,7 @@ export const buildResearchDetailSources = ({
           ? 'Research website'
           : personProfileRoleLabelForSource(normalized) || sourceLabelForUrl(normalized),
       contexts,
+      servedUrl: normalized,
       isLikelyUnavailable: false,
       isPrivateNetworkOnly: false,
       ...(attributionOnly ? { isAttributionOnly: true } : {}),
@@ -1637,6 +1642,7 @@ export const buildResearchDetailSources = ({
           : {}),
         isLikelyUnavailable: isLikelyUnavailableSourceLink(health),
         isPrivateNetworkOnly: isPrivateNetworkOnlySourceLink(health),
+        servedUrl: servedLinkUrl(source.url, sourceLinkHealth) || source.url,
       };
     })
     .sort(

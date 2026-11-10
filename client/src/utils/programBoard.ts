@@ -87,6 +87,8 @@ export const NOT_STATED_LABEL = 'Not stated. Check the official page.';
 export const PROGRAM_FACET_NOT_STATED_NOTE =
   'Programs that do not state this are included. Check the official page.';
 
+export const PROGRAM_REGION_FILTER_NOTE = 'Shows only programs that name this region.';
+
 const CITIZENSHIP_FILTER_OPTION_LABELS: Record<string, string> = {
   [US_CITIZENS_ELIGIBLE]: 'Open to U.S. citizens, or not stated',
   [NON_US_CITIZENS_ELIGIBLE]: 'Open to non-U.S. citizens, or not stated',

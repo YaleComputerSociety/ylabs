@@ -100,6 +100,7 @@ describe('Beta to Development sync guards', () => {
         development.db,
         [{ name: 'research_entities', category: 'research-discovery' }],
         ['scrape_snapshots'],
+        async () => undefined,
         async () => {
           throw new Error('verification failed');
         },
@@ -191,6 +192,7 @@ describe('Beta to Development sync guards', () => {
         { name: 'signals', category: 'research-discovery' },
       ],
       [],
+      async () => undefined,
       async () => undefined,
     );
 
@@ -437,6 +439,7 @@ describe('Beta to Development sync guards', () => {
         {} as Db,
         [{ name: 'researchers', category: 'identity-spine' }],
         [],
+        async () => undefined,
         async () => undefined,
       ),
     ).rejects.toThrow(

@@ -45,6 +45,24 @@ The report prints the old capture's `supersededPlannedObservationCount` beside t
 A benchmark already recaptured under a new id before this existed is linked with `--mark-successor-of=<old-id> --id=<existing-id>`, which captures nothing and refuses a successor with a different lane or scope, a successor that already supersedes another benchmark, and a successor the old benchmark already descends from, because that would close a cycle and neither would replay.
 Capture fetches live pages and makes live model calls, so recapture only when no Development sweep is running.
 
+### Retiring a benchmark the lane no longer reaches
+
+A benchmark whose scope the lane no longer targets cannot be recaptured, because the successor would plan nothing and the recapture refuses it.
+Retire it instead, with the reason in the record:
+
+```bash
+yarn --cwd server lane:benchmark-capture --retire --id=<benchmark-id> --reason=<why the lane no longer reaches it>
+yarn --cwd server lane:benchmark-capture --retire --id=<benchmark-id> --reason=<why> --apply --confirm-lane-benchmark-capture
+```
+
+The command captures and links nothing: it sets `retiredAt` and `retiredReason` on that one benchmark and changes none of its pages, labels or replay history.
+An unnamed `lane:scorecard` run leaves a retired benchmark out and lists it under `retired` with its reason, and the analytics panel leaves it out too.
+`--benchmark=<id>` still replays it.
+`--retire` takes only `--id` and a `--reason` of at least 20 characters, and refuses a benchmark that is already retired or that has a successor, because a superseded benchmark is already out of the unnamed run.
+
+A benchmark of a manual-only lane is not retired.
+The model-calling lanes left the weekly sweep in #5457 but stay registered and runnable by hand, so their benchmarks still measure them; recapturing one makes live model calls, which is a decision for the lane's owner rather than routine upkeep.
+
 Only lanes whose output is a function of the pages they fetch and the model answers they receive can be benchmarked, and `BENCHMARKABLE_LANES` in `server/src/scripts/laneBenchmarkRun.ts` lists them.
 Pages are frozen at `getCached`, at `fetchPageWithPolicy`, and at the Scrapling renderer.
 A `fetchPageWithPolicy` fetch that failed with an HTTP status is frozen as that status, so a sub-page that answered 404 at capture answers 404 on replay rather than counting as a miss.

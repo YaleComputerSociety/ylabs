@@ -16,6 +16,7 @@ const LAB_SITE = 'https://medicine.example.edu/lab/fixture/';
 
 const source = (url: string): ResearchDetailSource => ({
   url,
+  servedUrl: url,
   label: 'Official source',
   contexts: ['Profile source'],
   isLikelyUnavailable: false,

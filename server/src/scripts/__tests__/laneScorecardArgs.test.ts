@@ -74,4 +74,28 @@ describe('benchmarksToReplay', () => {
     expect(replay.map((b) => b.benchmarkId)).toEqual(['lane-a-v1']);
     expect(superseded).toEqual([]);
   });
+  it('leaves a retired benchmark out of an unnamed run and lists it with its reason (#4776)', () => {
+    const withRetired = [
+      ...benchmarks,
+      {
+        benchmarkId: 'lane-c-v1',
+        retiredAt: new Date('2026-11-10T00:00:00Z'),
+        retiredReason: 'the lane no longer targets this scope',
+      },
+    ];
+    const { replay, retired } = benchmarksToReplay(withRetired);
+    expect(replay.map((b) => b.benchmarkId)).toEqual(['lane-a-v3', 'lane-b-v1']);
+    expect(retired).toEqual([
+      { benchmarkId: 'lane-c-v1', reason: 'the lane no longer targets this scope' },
+    ]);
+  });
+
+  it('still replays a retired benchmark that is named explicitly', () => {
+    const withRetired = [
+      { benchmarkId: 'lane-c-v1', retiredAt: new Date(), retiredReason: 'gone' },
+    ];
+    const { replay, retired } = benchmarksToReplay(withRetired, 'lane-c-v1');
+    expect(replay.map((b) => b.benchmarkId)).toEqual(['lane-c-v1']);
+    expect(retired).toEqual([]);
+  });
 });

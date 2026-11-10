@@ -55,7 +55,8 @@ A Render service is therefore a deployed runtime whatever `NODE_ENV` says, unles
 | Variable | Required | What breaks without it | Secret |
 | -------- | -------- | ---------------------- | ------ |
 | `MONGODBURL` | Yes | Boot fails: `initializeConnections` throws `MONGODBURL is required` and the process exits 1. It must name the environment's own database, which `yarn --cwd server database:verify-names --serving <beta\|production>` checks without connecting. | Yes |
-| `SESSION_SECRET` | Yes | Boot fails in `server/src/app.ts` when it is shorter than 32 characters, has fewer than 8 distinct characters, or contains a weak word such as `secret` or `production`. Changing it signs every user out (#4484). | Yes |
+| `SESSION_SECRET` | Yes | Boot fails in `server/src/app.ts` when it is shorter than 32 characters, has fewer than 8 distinct characters, or contains a weak word such as `secret` or `production`. Changing it alone signs every user out; see `SESSION_SECRET_PREVIOUS` for a rotation that does not. | Yes |
+| `SESSION_SECRET_PREVIOUS` | No | Set only during a routine rotation, to the secret being replaced: `server/src/utils/sessionSigningKeys.ts` adds it as a verify-only key, so older cookies keep working and are re-signed with `SESSION_SECRET`. Unset, nothing changes. Boot fails when it equals `SESSION_SECRET` or is weak on a deployed runtime. Remove it 30 days after the rotation, and never set it to a leaked secret (`docs/incident-runbook.md`). | Yes |
 | `TRUSTED_PROXY_CIDRS` | Yes | Boot fails when it is empty, and an entry wider than IPv4 `/8`, IPv6 `/29`, or IPv4-mapped `/104` refuses startup (`server/src/utils/trustedProxyCidrs.ts`). A wrong but valid list puts callers in the wrong rate-limit bucket instead of failing. | No |
 | `SSOBASEURL` | Yes | Boot fails unless it is an HTTPS URL with no credentials, query, fragment, or private host. | No |
 | `SERVER_BASE_URL` | Yes | The same checks. It is also the CAS callback base, so a wrong value breaks login. | No |
@@ -193,7 +194,7 @@ None of these is a secret, and none belongs on a web service.
 | -------- | ------- |
 | `SCRAPER_FIELD_RETRACTION`, `SCRAPER_FACULTY_DEPARTURE_DETECTION`, `SCRAPER_YSM_LAB_DELISTING_DETECTION`, `C4_LOSSLESS_INGEST`, `C4_RESOLVE_AT_MINT_ENTITIES` | Scraper and materializer behaviour switches |
 | `SCRAPER_PER_HOST_CONCURRENCY`, `SCRAPER_ROSTER_LANE_CONCURRENCY` | Fetch pacing |
-| `MATERIALIZE_CONCURRENCY` | How many independent rows a materialize chunk writes at once; unset or invalid means 1, capped at 16 |
+| `MATERIALIZE_CONCURRENCY` | How many independent rows a materialize chunk writes at once; unset means 8, `1` is sequential, invalid means 1, capped at 16 |
 | `SCRAPER_HTTP_CACHE`, `SCRAPER_HTTP_CACHE_DIR`, `SCRAPER_HTTP_CACHE_MAX_MB`, `XDG_CACHE_HOME` | The HTTP validator cache and the host-slot broker |
 | `SCRAPER_MACHINE_HOST_SLOTS`, `SCRAPER_MACHINE_HOST_SLOT_DIR`, `SCRAPER_HOST_SLOT_ACQUIRE_TIMEOUT_MS`, `SCRAPER_HOST_SLOT_BROKER` | Machine-wide host-slot sharing; the sweep sets `SCRAPER_HOST_SLOT_BROKER` for its children |
 | `SCRAPER_SWEEP_PAGE_REUSE`, `SCRAPER_SWEEP_PAGE_REUSE_MAX_MB` | Sweep page reuse; the sweep sets `SCRAPER_SWEEP_PAGE_REUSE` for its children |

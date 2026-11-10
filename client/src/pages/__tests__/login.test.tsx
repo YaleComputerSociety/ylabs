@@ -75,6 +75,16 @@ afterEach(() => {
 });
 
 describe('Login', () => {
+  it('links the privacy notice from the signed-out CAS gate (#4157)', () => {
+    renderLogin();
+
+    expect(
+      screen
+        .getByRole('link', { name: 'What y/labs collects when you sign in' })
+        .getAttribute('href'),
+    ).toBe('/privacy');
+  });
+
   it('uses the default y/labs context for unknown retired surfaces', () => {
     renderLogin('/old-research-entry');
 

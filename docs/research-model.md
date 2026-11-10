@@ -226,7 +226,8 @@ The role still decides the archive section, and each card states whether a mento
 An award amount is served as whole dollars with a sign and separators ("Up to $500", "Maximum award of $7,500"), and the stored string is untouched (`formatServedAwardAmount`, #5205).
 A card also states a citizenship restriction when the program has one, and the detail view answers citizenship in one line, saying "not stated" rather than nothing when the program states none (#5130).
 The detail view says "not stated" for a missing year of study the same way (#5235).
-Every facet filter (year, term, purpose, region, citizenship) keeps a program that states no value for that facet, because unknown is not ineligible, and the filter says so (#5235).
+The year, term, purpose and citizenship filters keep a program that states no value for that facet, because unknown is not ineligible, and the filter says so (#5235).
+The region filter is the exception and returns only programs that name the chosen region, because 82% of programs state none, so keeping them meant the filter barely narrowed (#5533, `docs/decisions.md` 2026-11-10).
 A program text's condition on international students' home country is shown under the citizenship answer (`programCitizenshipCondition`, #5235).
 Days left count New York calendar days, so a deadline later today reads "Due today" (#5158).
 When a program's own text ties exactly one date to the deadline and the served deadline's month and day appear nowhere in the text, the detail view says so and points to the official page, because the reader cannot tell which cycle each was written in (`programTextDeadlineConflict`, #5158).

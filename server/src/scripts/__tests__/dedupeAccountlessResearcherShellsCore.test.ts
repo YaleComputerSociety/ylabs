@@ -560,6 +560,53 @@ describe('planAccountlessClusterFolds', () => {
     ...over,
   });
 
+  describe('a noisy spelling of a name-only record', () => {
+    const noisy = 'Photo of SAM FIXTURE, PhD.';
+
+    it('folds into the one name-only record whose stored name it sanitizes to', () => {
+      const plan = planAccountlessClusterFolds(
+        [member('1', { displayName: noisy }), member('2', { liveRoleEdges: 1 })],
+        [],
+      );
+      expect(plan.foldTargetById.get('1'.padStart(24, '0'))).toBe('2'.padStart(24, '0'));
+      expect(plan.foldedGroups).toBe(1);
+    });
+
+    it('leaves two records with identical clean names apart when nothing else joins them', () => {
+      const plan = planAccountlessClusterFolds([member('1'), member('2')], []);
+      expect(plan.foldTargetById.size).toBe(0);
+    });
+
+    it('joins nobody when two name-only records hold the clean name it sanitizes to', () => {
+      const plan = planAccountlessClusterFolds(
+        [member('1', { displayName: noisy }), member('2'), member('3')],
+        [],
+      );
+      expect(plan.foldTargetById.size).toBe(0);
+    });
+
+    it('joins nobody when either record carries a netid or an ORCID', () => {
+      const withNetid = planAccountlessClusterFolds(
+        [member('1', { displayName: noisy, netid: 'abc123' }), member('2')],
+        [],
+      );
+      const withOrcid = planAccountlessClusterFolds(
+        [member('1', { displayName: noisy }), member('2', { orcid: '0000-0000-0000-0001' })],
+        [],
+      );
+      expect(withNetid.foldTargetById.size).toBe(0);
+      expect(withOrcid.foldTargetById.size).toBe(0);
+    });
+
+    it('joins nobody when a record outside the group also holds the clean name', () => {
+      const plan = planAccountlessClusterFolds(
+        [member('1', { displayName: noisy }), member('2')],
+        [{ displayName: 'Sam Fixture' }],
+      );
+      expect(plan.foldTargetById.size).toBe(0);
+    });
+  });
+
   it('folds copies sharing a verified page into the copy with the most live edges', () => {
     const plan = planAccountlessClusterFolds(
       [
