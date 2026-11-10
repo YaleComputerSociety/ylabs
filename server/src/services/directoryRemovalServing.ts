@@ -94,6 +94,7 @@ export function buildDirectoryRemovalServing(
   matcher: DirectoryRemovalMatcher,
   people: {
     removed: ReadonlyArray<{ _id: unknown; displayName?: string }>;
+    keptResearcherNames?: ReadonlyArray<string | undefined>;
     everyKnownName?: ReadonlyArray<string | undefined>;
   },
 ): DirectoryRemovalServing {
@@ -120,8 +121,13 @@ export function buildDirectoryRemovalServing(
   }
   const removedIds = new Set(people.removed.map((person) => idKey(person._id)));
   const removedLabels = nameLabels(people.removed.map((person) => person.displayName));
+  const keptResearcherLabels = nameLabels(people.keptResearcherNames ?? []);
   const isWithheldName = memoizedByLabel(
     (name, label) => removedLabels.has(label) || matcher.isRemovedName(name),
+  );
+  const isWithheldNonResearcherName = memoizedByLabel(
+    (name, label) =>
+      removedLabels.has(label) || (!keptResearcherLabels.has(label) && matcher.isRemovedName(name)),
   );
   return {
     state: 'active',
@@ -129,7 +135,7 @@ export function buildDirectoryRemovalServing(
     isWithheldPersonId: (personId) => removedIds.has(idKey(personId)),
     isWithheldName,
     redactWithheldNames: (text) =>
-      text ? replacedSpans(text, withheldNameSpans(text, isWithheldName)) : text,
+      text ? replacedSpans(text, withheldNameSpans(text, isWithheldNonResearcherName)) : text,
   };
 }
 
@@ -219,7 +225,14 @@ async function peopleFor(matcher: DirectoryRemovalMatcher) {
   const people = await Researcher.find({ archived: { $ne: true } })
     .select('_id displayName identifiers profileLinks.url')
     .lean();
-  return { removed: people.filter((person: any) => matcher.isRemovedPerson(person)) as any[] };
+  const removed = people.filter((person: any) => matcher.isRemovedPerson(person)) as any[];
+  const removedSet = new Set(removed);
+  return {
+    removed,
+    keptResearcherNames: people
+      .filter((person) => !removedSet.has(person))
+      .map((person: any) => person.displayName),
+  };
 }
 
 export async function loadDirectoryRemovalServing(

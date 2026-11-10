@@ -49,6 +49,18 @@ describe('buildDirectoryRemovalServing', () => {
     );
   });
 
+  it("never rewrites a live researcher's name in prose for a name entry, but still withholds it on a roster", () => {
+    const serving = buildDirectoryRemovalServing(
+      buildDirectoryRemovalMatcher({
+        key: KEY,
+        activeDigests: [directoryRemovalDigest(KEY, 'name', 'Odile Marchetti')!],
+      }),
+      { removed: [], keptResearcherNames: ['Odile Marchetti'] },
+    );
+    expect(serving.isWithheldName('Odile Marchetti')).toBe(true);
+    expect(serving.redactWithheldNames('Led by Odile Marchetti.')).toBe('Led by Odile Marchetti.');
+  });
+
   it('withholds every listed name while failing closed', () => {
     const serving = buildDirectoryRemovalServing(
       { state: 'withholding_every_name', isRemovedPerson: () => true, isRemovedName: () => true },

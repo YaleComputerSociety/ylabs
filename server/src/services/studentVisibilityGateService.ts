@@ -346,11 +346,7 @@ export async function researchEntityIdsWithGateAttachedLead(
 ): Promise<Set<string>> {
   const attached = new Set<string>();
   if (entityIds.length === 0) return attached;
-  const [serving, rawRoster] = await Promise.all([
-    directoryRemovalServingForGate(),
-    getResearchEntityRosterByEntityId([...entityIds]),
-  ]);
-  const roster = rosterWithoutWithheldPeople(rawRoster, serving);
+  const roster = await getResearchEntityRosterByEntityId([...entityIds]);
   for (const [entityId, entries] of roster) {
     const leadMembers = studentVisibilityGateLeadRows(entries);
     if (researchEntityLeadStateForMembers(leadMembers) === 'lead_attached') {

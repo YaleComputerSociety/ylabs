@@ -19,6 +19,7 @@ import { directoryRemovalDigest } from '../../utils/directoryRemovalDigest';
 import {
   DIRECTORY_REMOVAL_GATE_REFUSAL,
   freshDirectoryRemovalServing,
+  servedRoster,
   setDirectoryRemovalServingForTest,
 } from '../directoryRemovalServing';
 import { runStudentVisibilityGate } from '../studentVisibilityGateService';
@@ -200,11 +201,14 @@ describe('the gate suppresses a row whose every lead asked to be removed (#4160)
     const sole = await persisted(SOLE_LEAD_SLUG);
     expect(sole.studentVisibilityReasons).not.toContain(RESEARCHER_REMOVED_REASON);
     expect(sole.studentVisibilityTier).toBe('student_ready');
-    expect(
-      await mongoose.connection
-        .db!.collection('role_assignments')
-        .countDocuments({ archived: false }),
-    ).toBe(3);
+    const soleEntity = await ResearchEntity.findOne({ slug: SOLE_LEAD_SLUG }).lean();
+    const servedPersonIds = (await servedRoster(soleEntity!._id)).map((entry) =>
+      String(entry.personId),
+    );
+    expect(servedPersonIds).toEqual([String(personIdsByNetid.get('zz9101'))]);
+    const serving = await freshDirectoryRemovalServing();
+    expect(serving.state).toBe('active');
+    expect(serving.redactWithheldNames('Led by Robin Quill.')).toBe('Led by Robin Quill.');
   }, 60000);
 
   it('refuses to run while entries exist and no key is configured', async () => {
