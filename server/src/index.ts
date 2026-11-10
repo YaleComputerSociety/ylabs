@@ -16,6 +16,10 @@ import { registerGracefulShutdown } from './serverShutdown';
 import { worktreePortConflict } from './utils/worktreePortGuard';
 import { resolveServerPackageRoot } from './utils/serverPackageRoot';
 import path from 'node:path';
+import {
+  directoryRemovalServingStateMessage,
+  freshDirectoryRemovalServing,
+} from './services/directoryRemovalServing';
 
 dotenv.config({ quiet: true });
 initializeErrorTracking();
@@ -53,6 +57,8 @@ const startApp = async () => {
         sanitizeLogValue(error),
       ),
     );
+
+    console.log(directoryRemovalServingStateMessage(await freshDirectoryRemovalServing()));
 
     // Express 5 hands a listen failure such as EADDRINUSE to this callback instead
     // of leaving it uncaught, so the process must exit here to stay fail-fast.

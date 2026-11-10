@@ -24,11 +24,12 @@ import {
   RoleAssignment,
   roleAssignmentReattachWrite,
 } from '../models/roleAssignment';
+import { type ResearchEntityRosterEntry } from './researchEntityMembershipAccessor';
 import {
-  getResearchEntityRoster,
-  getResearchEntityRosterByEntityId,
-  type ResearchEntityRosterEntry,
-} from './researchEntityMembershipAccessor';
+  currentDirectoryRemovalServing,
+  servedRoster,
+  servedRosterByEntityId,
+} from './directoryRemovalServing';
 import {
   LEAD_ROLE_CANONICAL_VALUES,
   LEAD_ROLE_LEGACY_LABELS,
@@ -244,7 +245,7 @@ export const optionalPublicLeadMemberNames = async (
   const emeritusCandidates: EmeritusWayInCandidate[] = [];
   const now = new Date();
   try {
-    const rosterByEntityId = await getResearchEntityRosterByEntityId(
+    const rosterByEntityId = await servedRosterByEntityId(
       entities.map((entity) => entity._id),
       { peopleHoldingCanonicalRoles: PUBLIC_LEAD_CANONICAL_ROLES },
     );
@@ -345,7 +346,7 @@ async function resolveEmeritusWayInDecisions(
       .map((candidate) => candidate.entity._id);
     const rosterByEntityId =
       needsRoster.length > 0
-        ? await getResearchEntityRosterByEntityId(needsRoster)
+        ? await servedRosterByEntityId(needsRoster)
         : new Map<string, ResearchEntityRosterEntry[]>();
     for (const candidate of emeritusLed) {
       const key = researchGroupDocumentId(candidate.entity._id);
@@ -1112,7 +1113,7 @@ const mongoFilterFromResearchFilters = (
 
 export const leadMembersForEntities = async (entityIds: any[]): Promise<Map<string, any[]>> => {
   if (entityIds.length === 0) return new Map();
-  const rosterByEntityId = await getResearchEntityRosterByEntityId(entityIds);
+  const rosterByEntityId = await servedRosterByEntityId(entityIds);
   const byEntityId = new Map<string, any[]>();
   for (const [key, roster] of rosterByEntityId) {
     const leads = roster.filter((member) => LEAD_ROLE_LEGACY_LABELS.has(member.role));
@@ -1842,9 +1843,7 @@ async function optionalMatchedLabMemberNames(
     return { byEntityId, unavailable: false };
   }
   try {
-    const rosterByEntityId = await getResearchEntityRosterByEntityId(
-      entities.map((entity) => entity._id),
-    );
+    const rosterByEntityId = await servedRosterByEntityId(entities.map((entity) => entity._id));
     const now = new Date();
     for (const entity of entities) {
       const entityId = researchGroupDocumentId(entity._id);
@@ -3402,11 +3401,14 @@ export function publicRosterUndergraduates(
   if (!snapshot) return [];
   const freshnessExpiresAt = new Date(snapshot?.freshnessExpiresAt || 0).getTime();
   const currentIsFresh = Number.isFinite(freshnessExpiresAt) && freshnessExpiresAt >= now.getTime();
+  const serving = currentDirectoryRemovalServing();
   return snapshot.undergraduates
     .map(publicRosterUndergraduate)
     .filter(
       (member: PublicRosterUndergraduate | null): member is PublicRosterUndergraduate =>
-        Boolean(member) && (member!.status === 'past' || currentIsFresh),
+        Boolean(member) &&
+        (member!.status === 'past' || currentIsFresh) &&
+        !serving.isWithheldName(member!.name),
     )
     .slice(0, MAX_PUBLIC_ROSTER_UNDERGRADUATES);
 }
@@ -4697,7 +4699,7 @@ export async function getResearchGroupDetail(
     withheldBy.push('deceased_lead');
   }
 
-  const rosterEntries = await getResearchEntityRoster((group as any)._id);
+  const rosterEntries = await servedRoster((group as any)._id);
   const canonicalMembers = canonicalPublicDetailMembers(
     group as Record<string, any>,
     rosterEntries,

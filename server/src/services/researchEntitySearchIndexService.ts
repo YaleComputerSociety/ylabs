@@ -1,6 +1,10 @@
 import { ResearchEntity } from '../models/researchEntity';
 import { asResearchEntityType, type ResearchEntityType } from '../models/researchAccessTypes';
-import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
+import {
+  freshDirectoryRemovalServing,
+  redactWithheldNamesDeep,
+  servedRosterByEntityId,
+} from './directoryRemovalServing';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizePersonName } from '../utils/personNameHygiene';
 import {
@@ -435,7 +439,7 @@ export async function fetchResearchEntitySearchMemberNames(
   }
   if (entityById.size === 0) return new Map();
 
-  const rosterByEntityId = await getResearchEntityRosterByEntityId(Array.from(entityById.keys()));
+  const rosterByEntityId = await servedRosterByEntityId(Array.from(entityById.keys()));
   const { publicResearchEntityDetailMemberNames, presentedLabMembers } =
     await import('./researchGroupService');
   const now = new Date();
@@ -707,8 +711,14 @@ export async function buildResearchEntitySearchIndexDocumentsWithMemberNames(
     entities: any[],
   ) => Promise<ResearchEntitySearchMemberNameMap> = fetchResearchEntitySearchMemberNames,
 ): Promise<Record<string, any>[]> {
-  const memberNamesByEntityId = await fetchMemberNames(docs);
-  return buildResearchEntitySearchIndexDocuments(docs, memberNamesByEntityId);
+  const [serving, memberNamesByEntityId] = await Promise.all([
+    freshDirectoryRemovalServing(),
+    fetchMemberNames(docs),
+  ]);
+  return redactWithheldNamesDeep(
+    buildResearchEntitySearchIndexDocuments(docs, memberNamesByEntityId),
+    serving,
+  );
 }
 
 async function fetchResearchEntityPage(page: number, pageSize: number): Promise<any[]> {

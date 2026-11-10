@@ -14,6 +14,7 @@ import dotenv from 'dotenv';
 import * as path from 'path';
 import { readFile } from 'fs/promises';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
+import { refreshDirectoryRemovalsBeforeServing } from './middleware/directoryRemovalFreshness';
 import { securityHeaders } from './middleware/securityHeaders';
 import { createClientStaticAssets } from './middleware/clientStaticAssets';
 import { sanitizeMongo } from './middleware/sanitizeMongo';
@@ -248,6 +249,7 @@ const app = express()
   .use('/api', firstContactLimiter)
   .use('/api', observeFirstContactVolume)
   .use('/api', globalLimiter)
+  .use('/api', refreshDirectoryRemovalsBeforeServing)
   .use('/api', passportRoutes)
   .use('/api', routes);
 

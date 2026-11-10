@@ -5,6 +5,7 @@ import {
 } from './researchGroupService';
 import { servedResearchEntityTitle } from '../utils/servedResearchEntityTitle';
 import type { PageShellHead } from '../utils/pageShellHead';
+import { redactWithheldNamesDeep } from './directoryRemovalServing';
 
 export const PAGE_SHELL_LOOKUP_TIMEOUT_MS = 1500;
 export const PAGE_SHELL_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -218,7 +219,7 @@ const readServedResearchEntity = async (
   slug: string,
 ): Promise<ServedResearchShellFields | null> => {
   const detail = await getResearchGroupDetail(slug);
-  return detail ? detail.researchEntity : null;
+  return detail ? redactWithheldNamesDeep(detail.researchEntity) : null;
 };
 
 export const defaultPageShellMetadataDependencies: PageShellMetadataDependencies = {
