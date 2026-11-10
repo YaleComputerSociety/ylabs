@@ -158,10 +158,7 @@ async function main() {
     }
     if (
       removalGuard.refusesPerson(matches[0]) ||
-      removalGuard.refusesPerson({
-        displayName: plan.personName,
-        profileLinks: [{ url: plan.profileUrl }],
-      })
+      removalGuard.refusesPerson({ profileLinks: [{ url: plan.profileUrl }] })
     ) {
       removalGuard.recordRefusal();
       continue;

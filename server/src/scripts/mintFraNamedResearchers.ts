@@ -98,10 +98,7 @@ async function main() {
     });
     if (existingRole > 0) continue;
     if (
-      removalGuard.refusesPerson({
-        displayName: plan.personName,
-        profileLinks: [{ url: plan.profileUrl }],
-      })
+      removalGuard.refusesPerson({ profileLinks: [{ url: plan.profileUrl }] })
     ) {
       removalGuard.recordRefusal();
       continue;

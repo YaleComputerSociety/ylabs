@@ -35,7 +35,6 @@ describe('createDirectoryRemovalMintGuard', () => {
     const guard = guardFor([]);
     expect(guard.active).toBe(false);
     expect(guard.refusesPerson(removed)).toBe(false);
-    expect(guard.refusesIdentifiedPerson(removed)).toBe(false);
     expect(guard.refusals).toBe(0);
   });
 
@@ -46,7 +45,6 @@ describe('createDirectoryRemovalMintGuard', () => {
     ]) {
       const guard = guardFor([entry]);
       expect(guard.refusesPerson(removed)).toBe(true);
-      expect(guard.refusesIdentifiedPerson(removed)).toBe(true);
       expect(
         guard.refusesPerson({ ...removed, identifiers: { netid: 'zz9002' }, profileLinks: [] }),
       ).toBe(false);
@@ -57,7 +55,6 @@ describe('createDirectoryRemovalMintGuard', () => {
     const guard = guardFor([digest('name', 'Synthetic Removed Person')]);
     expect(guard.refusesPerson({ displayName: 'Synthetic Removed Person' })).toBe(false);
     expect(guard.refusesPerson(removed)).toBe(false);
-    expect(guard.refusesIdentifiedPerson({ displayName: 'Synthetic Removed Person' })).toBe(false);
   });
 
   it('counts each recorded refusal', () => {

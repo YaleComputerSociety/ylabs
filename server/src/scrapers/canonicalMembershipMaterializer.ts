@@ -391,7 +391,6 @@ async function mintResearcherForIdentityNetid(
 type ResearcherResolution = mongoose.Types.ObjectId | undefined | typeof REMOVED_BY_REQUEST;
 
 const listedDirectoryRemovalPerson = (identity: CanonicalMemberIdentity, profileUrl?: string) => ({
-  displayName: trimmed(identity.displayName),
   identifiers: {
     netid: trimmed(identity.netid),
     email: trimmed(identity.email),
@@ -402,9 +401,7 @@ const listedDirectoryRemovalPerson = (identity: CanonicalMemberIdentity, profile
 
 async function resolveOrCreateResearcherId(
   identity: CanonicalMemberIdentity,
-  guard: DirectoryRemovalMintGuard,
-  profileUrl?: string,
-): Promise<ResearcherResolution> {
+): Promise<mongoose.Types.ObjectId | undefined> {
   if (identityIsOrganizationalMailbox(identity)) return undefined;
   const displayName = canonicalPersonName(trimmed(identity.displayName));
   const orcid = normalizedOrcid(identity.orcid);
@@ -449,9 +446,6 @@ async function resolveOrCreateResearcherId(
   }
 
   if (!displayName) return undefined;
-  if (guard.refusesPerson({ ...listedDirectoryRemovalPerson(identity, profileUrl), displayName })) {
-    return REMOVED_BY_REQUEST;
-  }
   return resolveOrCreateNameOnlyResearcherId(displayName);
 }
 
@@ -592,13 +586,13 @@ export async function resolveOrCreateResearcherIdUnlessRemoved(
   guard: DirectoryRemovalMintGuard,
   profileUrl?: string,
 ): Promise<ResearcherResolution> {
-  if (guard.refusesIdentifiedPerson(listedDirectoryRemovalPerson(identity, profileUrl))) {
+  if (guard.refusesPerson(listedDirectoryRemovalPerson(identity, profileUrl))) {
     return REMOVED_BY_REQUEST;
   }
   const personId =
     (await liveResearcherId(identity.resolvedPersonId)) ??
-    (await resolveOrCreateResearcherId(identity, guard, profileUrl));
-  if (personId === REMOVED_BY_REQUEST || !personId) return personId;
+    (await resolveOrCreateResearcherId(identity));
+  if (!personId) return undefined;
   return (await researcherIsRemovedByRequest(guard, personId, profileUrl))
     ? REMOVED_BY_REQUEST
     : personId;

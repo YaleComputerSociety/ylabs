@@ -3740,7 +3740,7 @@ async function facultyResearchProfileMintIsRemovedByRequest(
   const statesARemovedLead = observations.some(
     (observation) =>
       observation.field === 'inferredPiUserKey' &&
-      guard.refusesIdentifiedPerson(inferredLeadKeyPerson(observation)),
+      guard.refusesPerson(inferredLeadKeyPerson(observation)),
   );
   let removed = statesARemovedLead;
   if (!removed) {
@@ -7490,7 +7490,6 @@ async function materializeUserIdentityToResearcher(
     const mintGuard = await currentDirectoryRemovalMintGuard();
     if (
       mintGuard.refusesPerson({
-        displayName,
         identifiers: {
           netid: resolvedNetid,
           email: mintedEmail ?? normalizedAccountEmail(resolved.email?.value),

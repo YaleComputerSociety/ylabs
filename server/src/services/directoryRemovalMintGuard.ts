@@ -17,7 +17,6 @@ export const REMOVED_BY_REQUEST = 'removed_by_request' as const;
  */
 export interface DirectoryRemovalMintGuard {
   readonly active: boolean;
-  refusesIdentifiedPerson(person: DirectoryRemovalPerson | null | undefined): boolean;
   refusesPerson(person: DirectoryRemovalPerson | null | undefined): boolean;
   recordRefusal(): void;
   readonly refusals: number;
@@ -31,9 +30,6 @@ export function createDirectoryRemovalMintGuard(
   let refusals = 0;
   return {
     active,
-    refusesIdentifiedPerson(person) {
-      return active && matcher.isRemovedPerson(person);
-    },
     refusesPerson(person) {
       return active && Boolean(person) && matcher.isRemovedPerson(person);
     },
@@ -85,7 +81,7 @@ export async function researcherIsRemovedByRequest(
 ): Promise<boolean> {
   if (!guard.active || !researcherId) return false;
   const researcher = await Researcher.findById(researcherId)
-    .select('displayName identifiers profileLinks')
+    .select('identifiers profileLinks')
     .lean<DirectoryRemovalPerson | null>();
   if (!researcher || !listedProfileUrl) return guard.refusesPerson(researcher);
   return guard.refusesPerson({
