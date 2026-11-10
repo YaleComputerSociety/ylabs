@@ -7,6 +7,7 @@ import { mapWithConcurrency, resolveSourceConcurrency } from '../utils/mapWithCo
 import { quotePageIsAboutAnotherEntity } from '../undergradQuoteRelevance';
 import {
   extractUndergradInvitation,
+  statedPageLastUpdated,
   strongerInvitation,
   type UndergradInvitation,
 } from '../utils/undergradInvitation';
@@ -54,6 +55,7 @@ interface CrawlPlan {
 
 export interface InvitationSourcePage extends PromptSourcePage {
   belongsToAnotherInstitution?: boolean;
+  lastUpdated?: Date | null;
 }
 
 interface ReadPage extends InvitationSourcePage {
@@ -120,10 +122,12 @@ const sourcePage = ({
   url,
   text,
   belongsToAnotherInstitution,
+  lastUpdated,
 }: ReadPage): InvitationSourcePage => ({
   url,
   text,
   belongsToAnotherInstitution,
+  lastUpdated,
 });
 
 export function strongestInvitationOnPages(
@@ -135,7 +139,7 @@ export function strongestInvitationOnPages(
   let best: ServedUndergradInvitation | null = null;
   for (const page of pagesWithinEntityScope(pages)) {
     if (page.belongsToAnotherInstitution || quotePageIsAboutAnotherEntity(page.url, lab)) continue;
-    const found = extractUndergradInvitation(page.text, now);
+    const found = extractUndergradInvitation(page.text, now, page.lastUpdated ?? null);
     if (!found) continue;
     const candidate = { ...found, sourceUrl: page.url };
     if (strongerInvitation(best, candidate) === candidate) best = candidate;
@@ -226,18 +230,17 @@ export class LabSiteUndergradInvitationScraper implements IScraper {
     const key = withoutHash(url);
     const cached = this.pageCache.get(key);
     if (cached) return cached;
-    const pending = this.fetchPage(url).then((page) =>
-      page
-        ? {
-            url: page.url,
-            text: pageText(page.html),
-            belongsToAnotherInstitution: namesNonYaleInstitution(
-              blockLinesWithout(page.html, 'script, style, noscript, svg, iframe'),
-            ),
-            crawl: scopedCrawlUrls(page.html, page.url),
-          }
-        : null,
-    );
+    const pending = this.fetchPage(url).then((page) => {
+      if (!page) return null;
+      const textWithChrome = blockLinesWithout(page.html, 'script, style, noscript, svg, iframe');
+      return {
+        url: page.url,
+        text: pageText(page.html),
+        belongsToAnotherInstitution: namesNonYaleInstitution(textWithChrome),
+        lastUpdated: statedPageLastUpdated(textWithChrome),
+        crawl: scopedCrawlUrls(page.html, page.url),
+      };
+    });
     this.pageCache.set(key, pending);
     return pending;
   }
