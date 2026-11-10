@@ -306,10 +306,10 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
       'ysm-faculty-directory',
       PROFILE_DESCRIPTION_CONFIDENCE,
     );
-    const body = SYNTHESIZED_RESEARCH.replace(/\.$/, ', with an emphasis on predictive tools.');
+    const body = SYNTHESIZED_RESEARCH.replace(/\.$/, ', with an emphasis on colitis.');
     expect(
       ungroundedContentTerms(body, [{ text: PROFILE_PAGE_TEXT, isResearchPageText: false }]),
-    ).toEqual(['emphasis', 'predictive', 'tools']);
+    ).toEqual(['colitis']);
 
     const report = await runLane(stubLLM(body));
 

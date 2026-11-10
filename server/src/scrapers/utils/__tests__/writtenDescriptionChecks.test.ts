@@ -55,16 +55,16 @@ describe('grounding: every specific term is in the evidence (#5537)', () => {
     ).toEqual([]);
   });
 
-  it('names the terms no evidence word supports', () => {
+  it('names the specific terms no evidence word supports', () => {
     expect(
-      ungroundedContentTerms('Studies coral reefs and ocean acidification.', pageEvidence),
-    ).toEqual(['ocean', 'acidification']);
+      ungroundedContentTerms('Studies coral reefs and Symbiodinium in Belize.', pageEvidence),
+    ).toEqual(['symbiodinium', 'belize']);
   });
 
   it('refuses such a body as ungrounded-content-term', async () => {
     expect(await decide(GOOD)).toBeNull();
     expect(
-      await decide(`${GOOD} The lab also studies how ocean acidification slows reef recovery.`),
+      await decide(`${GOOD} The lab also studies how Symbiodinium loss slows reef recovery.`),
     ).toBe('ungrounded-content-term');
   });
 });

@@ -226,7 +226,7 @@ describe('writer evaluate and import modes against MongoDB (#5537)', () => {
     expect(imported.rows[0]).toMatchObject({
       outcome: 'refused',
       refusalReasons: ['ungrounded-content-term'],
-      refusalDetails: { ungroundedTerms: ['malaria', 'transmission'] },
+      refusalDetails: { ungroundedTerms: ['malaria'] },
     });
 
     const evaluated = await runWriterEvaluation({
@@ -237,7 +237,7 @@ describe('writer evaluate and import modes against MongoDB (#5537)', () => {
     });
     expect(evaluated.rows[0]).toMatchObject({
       step: 'refused',
-      refusalDetails: { ungroundedTerms: ['malaria', 'transmission'] },
+      refusalDetails: { ungroundedTerms: ['malaria'] },
     });
   });
 

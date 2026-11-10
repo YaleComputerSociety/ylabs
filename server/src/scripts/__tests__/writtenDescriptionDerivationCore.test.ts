@@ -276,7 +276,7 @@ describe('imported drafts (#5537)', () => {
     const verdict = await judgeImportedWriterDraft(subject, {
       slug: 'reef-lab',
       writer: 'claude-agent:1',
-      fullDescription: `${GOOD} It also models ocean acidification.`,
+      fullDescription: `${GOOD} It also models Symbiodinium bleaching.`,
       usedSnippetIndexes: [0],
     });
     expect(verdict.outcome).toBe('refused');

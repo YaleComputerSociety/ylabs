@@ -3,6 +3,7 @@ import {
   foldWriterTextForms,
   researchPageHeadings,
   writerContentTerms,
+  writerSpecificTerms,
   writerWordTokens,
 } from './writerEvidenceText';
 
@@ -47,12 +48,35 @@ export function americanSpellingOf(word: string): string {
 
 const MIN_COMPOUND_PART_CHARS = 3;
 
+/** "BRCA" names the family the evidence's "BRCA1" and "BRCA2" are numbered members of. */
+const numberedMemberOf = (symbol: string, word: string): boolean =>
+  word.length > symbol.length &&
+  word.startsWith(symbol) &&
+  /^\d+[a-z]?$/.test(word.slice(symbol.length));
+
 /** "development" and "developmental", "emotion" and "emotional": the same topic, one a modifier. */
 function relationalAdjectivePairs(word: string): string[] {
   const noun = word.match(/^(.{3,}(?:ment|ion))(?:al|ally)$/)?.[1];
   if (noun) return [noun, `${noun}s`];
   return /(?:ment|ion)s?$/.test(word) ? [`${word.replace(/s$/, '')}al`] : [];
 }
+const CLASSICAL_PLURALS: ReadonlyArray<[RegExp, string]> = [
+  [/omata$|omas$/, 'oma'],
+  [/oses$/, 'osis'],
+  [/itides$/, 'itis'],
+  [/emias$/, 'emia'],
+  [/(path|scop|graph|metr|ectom)ies$/, '$1y'],
+  [/cocci$/, 'coccus'],
+];
+
+/** The singular of a classical plural ("carcinomas", "neuroses"), which the inflection rules leave alone. */
+function classicalSingularOf(word: string): string {
+  for (const [pattern, singular] of CLASSICAL_PLURALS) {
+    if (pattern.test(word)) return word.replace(pattern, singular);
+  }
+  return word;
+}
+
 const DERIVED_STATE_NOUN = /^(.{4,})hood$/;
 
 const acronymOf = (words: readonly string[]): string => words.map((word) => word[0]).join('');
@@ -105,7 +129,7 @@ function evidenceVocabulary(evidence: readonly WrittenDescriptionEvidence[]): Ev
   const joined = new Set<string>();
   const acronyms = new Set<string>();
   for (const entry of evidence) {
-    const tokens = writerWordTokens(entry.text).map(americanSpellingOf);
+    const tokens = writerWordTokens(entry.text).map(americanSpellingOf).map(classicalSingularOf);
     for (const token of tokens) words.add(token);
     for (let index = 0; index + 1 < tokens.length; index += 1) {
       const parts = tokens.slice(index, index + 3);
@@ -128,7 +152,13 @@ function isGroundedTerm(
 ): boolean {
   if (abbreviations.definedInBody.has(term)) return true;
   if (abbreviations.writtenUpperCase.has(term) && vocabulary.acronyms.has(term)) return true;
-  const spelled = americanSpellingOf(term);
+  if (
+    abbreviations.writtenUpperCase.has(term) &&
+    vocabulary.words.some((word) => numberedMemberOf(term, word))
+  ) {
+    return true;
+  }
+  const spelled = classicalSingularOf(americanSpellingOf(term));
   if (hasWordSharingStem(spelled, vocabulary.words)) return true;
   if (hasWordSharingStem(spelled, vocabulary.joinedNeighbours)) return true;
   const stateNoun = spelled.match(DERIVED_STATE_NOUN);
@@ -145,19 +175,9 @@ export function ungroundedContentTerms(
     definedInBody: abbreviationsDefinedIn(description),
     writtenUpperCase: upperCaseAbbreviationsIn(description),
   };
-  return [
-    ...new Set(
-      writerContentTerms(withoutGenericNominalPhrases(description)).filter(
-        (term) => !isGroundedTerm(term, vocabulary, abbreviations),
-      ),
-    ),
-  ];
-}
-
-const GENERIC_NOMINAL_PHRASE = /\b(?:selection|choice|use|variety|range)\s+of\b/gi;
-
-function withoutGenericNominalPhrases(text: string): string {
-  return foldWriterTextForms(text).replace(GENERIC_NOMINAL_PHRASE, ' ');
+  return writerSpecificTerms(description)
+    .map(({ term }) => term)
+    .filter((term) => !isGroundedTerm(term, vocabulary, abbreviations));
 }
 
 export const RESEARCH_PAGE_FREQUENT_TERM_COUNT = 5;

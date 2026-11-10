@@ -177,8 +177,8 @@ const GENERIC_RESEARCH_WORDS = [
   'advances',
   'advancing',
   'aims',
-  'analyse',
   'analyses',
+  'analyse',
   'analyze',
   'analyzes',
   'applies',
@@ -188,9 +188,6 @@ const GENERIC_RESEARCH_WORDS = [
   'approaches',
   'area',
   'areas',
-  'assist',
-  'assisting',
-  'assists',
   'based',
   'broad',
   'build',
@@ -205,9 +202,6 @@ const GENERIC_RESEARCH_WORDS = [
   'conducts',
   'contribute',
   'contributes',
-  'cover',
-  'covering',
-  'covers',
   'current',
   'currently',
   'design',
@@ -264,23 +258,13 @@ const GENERIC_RESEARCH_WORDS = [
   'methods',
   'multiple',
   'novel',
-  'offer',
-  'offering',
-  'offers',
   'ongoing',
   'particular',
   'particularly',
-  'perform',
-  'performing',
-  'performs',
-  'plus',
   'program',
   'programs',
   'project',
   'projects',
-  'provide',
-  'provides',
-  'providing',
   'question',
   'questions',
   'range',
@@ -296,10 +280,6 @@ const GENERIC_RESEARCH_WORDS = [
   'seek',
   'seeks',
   'several',
-  'shape',
-  'shaped',
-  'shapes',
-  'shaping',
   'span',
   'spanning',
   'spans',
@@ -310,15 +290,11 @@ const GENERIC_RESEARCH_WORDS = [
   'support',
   'supports',
   'team',
-  'technique',
-  'techniques',
   'topic',
   'topics',
   'understand',
   'understanding',
   'university',
-  'used',
-  'uses',
   'using',
   'various',
   'work',
@@ -346,4 +322,125 @@ export function writerContentTerms(text: string): string[] {
     (word) =>
       word.length >= MIN_CONTENT_TERM_CHARS && /[a-z]/.test(word) && !NON_CONTENT_WORDS.has(word),
   );
+}
+
+const SPECIFIC_SUFFIX_CLASSES: ReadonlyArray<{ kind: string; suffixes: readonly string[] }> = [
+  {
+    kind: 'condition',
+    suffixes: [
+      'itis',
+      'itides',
+      'oma',
+      'omas',
+      'omata',
+      'osis',
+      'oses',
+      'emia',
+      'emias',
+      'aemia',
+      'pathy',
+      'pathies',
+      'iasis',
+      'algia',
+      'plasia',
+      'penia',
+      'uria',
+      'ia',
+    ],
+  },
+  {
+    kind: 'technique',
+    suffixes: [
+      'scopy',
+      'scopies',
+      'graphy',
+      'graphies',
+      'metry',
+      'metries',
+      'omics',
+      'omic',
+      'ectomy',
+      'ectomies',
+      'otomy',
+      'plasty',
+      'genesis',
+      'genetics',
+    ],
+  },
+  {
+    kind: 'drug',
+    suffixes: [
+      'mab',
+      'nib',
+      'parib',
+      'ciclib',
+      'sertib',
+      'platin',
+      'cycline',
+      'mycin',
+      'cillin',
+      'vir',
+      'azole',
+      'olol',
+      'pril',
+      'sartan',
+      'statin',
+      'oxacin',
+    ],
+  },
+  {
+    kind: 'organism',
+    suffixes: ['virus', 'viruses', 'phage', 'phages', 'coccus', 'cocci', 'bacter', 'myces', 'fish'],
+  },
+];
+
+export const MIN_SUFFIX_CLASS_WORD_CHARS = 6;
+
+const SENTENCE_OPENING = /(?:^|[.!?]["')\]]?\s+|[:;]\s+|\(\s*)$/;
+
+export type SpecificTermKind =
+  'acronym' | 'proper-noun' | 'condition' | 'technique' | 'drug' | 'organism';
+
+export interface SpecificTerm {
+  term: string;
+  kind: SpecificTermKind;
+}
+
+function suffixClassOf(word: string): SpecificTermKind | undefined {
+  if (word.length < MIN_SUFFIX_CLASS_WORD_CHARS) return undefined;
+  for (const { kind, suffixes } of SPECIFIC_SUFFIX_CLASSES) {
+    if (suffixes.some((suffix) => word.endsWith(suffix) && word.length > suffix.length)) {
+      return kind as SpecificTermKind;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * The words of a text that name something specific enough to be invented: an acronym or a
+ * mixed letter-and-digit symbol, a capitalized word that does not open a sentence, or a
+ * word whose suffix marks a condition, a technique or an organism. Every other word is
+ * ordinary vocabulary a faithful paraphrase is free to choose.
+ */
+export function writerSpecificTerms(text: string): SpecificTerm[] {
+  const folded = foldWriterTextForms(text);
+  const terms = new Map<string, SpecificTermKind>();
+  for (const match of folded.matchAll(/[A-Za-z0-9]+/g)) {
+    const word = match[0];
+    const term = word.toLowerCase();
+    if (!/[a-z]/i.test(word) || terms.has(term)) continue;
+    const upperCount = (word.match(/[A-Z]/g) ?? []).length;
+    if (upperCount >= 2 || (/\d/.test(word) && word.length >= 2)) {
+      terms.set(term, 'acronym');
+      continue;
+    }
+    const opensSentence = SENTENCE_OPENING.test(folded.slice(0, match.index));
+    if (/^[A-Z]/.test(word) && word.length >= 3 && !opensSentence && word !== 'I') {
+      terms.set(term, 'proper-noun');
+      continue;
+    }
+    const kind = suffixClassOf(term);
+    if (kind) terms.set(term, kind);
+  }
+  return [...terms].map(([term, kind]) => ({ term, kind }));
 }

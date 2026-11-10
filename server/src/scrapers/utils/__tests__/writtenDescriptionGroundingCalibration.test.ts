@@ -14,9 +14,11 @@ interface PilotDraft {
   snippets: Array<{ text: string; sourceName: string }>;
 }
 
-const PILOT_DRAFTS = JSON.parse(
-  fs.readFileSync(path.join(__dirname, 'fixtures', 'writerGroundingPilotDrafts.json'), 'utf8'),
-) as PilotDraft[];
+const readDrafts = (file: string): PilotDraft[] =>
+  JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', file), 'utf8')) as PilotDraft[];
+
+const PILOT_DRAFTS = readDrafts('writerGroundingPilotDrafts.json');
+const CALIBRATION_DRAFTS = readDrafts('writerGroundingCalibrationDrafts.json');
 
 const evidenceOf = (snippets: PilotDraft['snippets']): WrittenDescriptionEvidence[] =>
   snippets.map((snippet) => ({
@@ -49,6 +51,15 @@ describe('accepted set: the five pilot drafts are grounded (#5537)', () => {
   );
 });
 
+describe('accepted set: the calibration drafts are grounded (#5537)', () => {
+  it.each(CALIBRATION_DRAFTS.map((draft) => [draft.label, draft] as const))(
+    'grounds every specific term of the %s draft',
+    (_label, draft) => {
+      expect(ungroundedContentTerms(draft.fullDescription, evidenceOf(draft.snippets))).toEqual([]);
+    },
+  );
+});
+
 const PLANTED: ReadonlyArray<readonly [string, string, string]> = [
   ['household economics profile', 'It also studies malaria transmission.', 'malaria'],
   ['emotion and stress psychophysiology lab', 'The lab also uses zebrafish.', 'zebrafish'],
@@ -62,10 +73,10 @@ const INVENTED_FORMS: ReadonlyArray<readonly [string, string]> = [
   ['It also models tumourigenesis.', 'tumourigenesis'],
   ['It also uses optogenetics (OPTO).', 'optogenetics'],
   ['It also studies Parkinsonism.', 'parkinsonism'],
-  ['It also runs XYZQ assays on retinal tissue.', 'retinal'],
+  ['It also runs XYZQ assays on retinal tissue.', 'xyzq'],
 ];
 
-const EXISTING_REFUSALS: ReadonlyArray<readonly [string, string, string, string]> = [
+const ORDINARY_WORD_REFUSALS: ReadonlyArray<readonly [string, string, string, string]> = [
   [
     'the #3201 body that clears the overlap floor',
     'The laboratory develops single-cell sequencing methods and computational models of gene regulatory networks controlling immune cell differentiation. Recent projects apply CRISPR screens and machine learning to predict transcription factor activity in immune cells.',
@@ -90,6 +101,14 @@ const EXISTING_REFUSALS: ReadonlyArray<readonly [string, string, string, string]
     'Investigates how mucosal immune cells restrain inflammation. Her group has published widely on inflammatory bowel disease relapse.',
     'bowel',
   ],
+];
+
+const SPECIFIC_PLANTS: ReadonlyArray<readonly [string, string]> = [
+  ['It also studies sarcoidosis.', 'sarcoidosis'],
+  ['It also uses fluoroscopy.', 'fluoroscopy'],
+  ['It also studies Plasmodium falciparum.', 'plasmodium'],
+  ['It also tests trastuzumab.', 'trastuzumab'],
+  ['It also builds a GRNX atlas.', 'grnx'],
 ];
 
 describe('refused set: invented terms are still refused (#5537)', () => {
@@ -128,9 +147,25 @@ describe('refused set: invented terms are still refused (#5537)', () => {
     },
   );
 
-  it.each(EXISTING_REFUSALS)('still refuses %s', (_label, evidence, body, term) => {
-    expect(ungroundedContentTerms(body, on(evidence))).toContain(term);
+  it.each(
+    CALIBRATION_DRAFTS.flatMap((draft) =>
+      SPECIFIC_PLANTS.map((plant) => [draft.label, ...plant] as const),
+    ),
+  )('refuses, in the %s calibration draft, the planted "%s"', (label, sentence, term) => {
+    const draft = CALIBRATION_DRAFTS.find((entry) => entry.label === label)!;
+    expect(
+      ungroundedContentTerms(`${draft.fullDescription} ${sentence}`, evidenceOf(draft.snippets)),
+    ).toContain(term);
   });
+});
+
+describe('ordinary words are no longer checked (owner decision, #5537)', () => {
+  it.each(ORDINARY_WORD_REFUSALS)(
+    'no longer refuses %s, whose only unsupported word was ordinary',
+    (_label, evidence, body, term) => {
+      expect(ungroundedContentTerms(body, on(evidence))).not.toContain(term);
+    },
+  );
 });
 
 describe('what the matcher normalizes (#5537)', () => {
@@ -180,12 +215,9 @@ describe('what the matcher normalizes (#5537)', () => {
         on('next generation sequencing quality data analysis'),
       ),
     ).toEqual([]);
-    expect(
-      ungroundedContentTerms(
-        'Analyses ngsq data.',
-        on('next generation sequencing quality data analysis'),
-      ),
-    ).toEqual(['ngsq']);
+    expect(ungroundedContentTerms('Analyses ngsq data.', on('unrelated evidence text'))).toEqual(
+      [],
+    );
   });
 
   it('ignores e.g. and including, and matches other inflections', () => {
@@ -204,14 +236,35 @@ describe('what the matcher normalizes (#5537)', () => {
     expect(ungroundedContentTerms('Studies early childhood.', on('early child years'))).toEqual([]);
   });
 
-  it('does not join unrelated neighbours or derive across meaning', () => {
-    expect(ungroundedContentTerms('Counts rates.', on('accurate statistics'))).toEqual([
-      'counts',
-      'rates',
+  it('checks a capitalized word only away from a sentence opening, and a symbol family one way', () => {
+    expect(ungroundedContentTerms('Studies reefs in Belize.', on('reefs'))).toEqual(['belize']);
+    expect(ungroundedContentTerms('Coastal reefs recover. Belize too.', on('reefs'))).toEqual([]);
+    expect(
+      ungroundedContentTerms('Studies BRCA mutations.', on('BRCA1 or BRCA2 mutations')),
+    ).toEqual([]);
+    expect(ungroundedContentTerms('Studies BRCA1 mutations.', on('BRCA mutations'))).toEqual([
+      'brca1',
     ]);
-    expect(ungroundedContentTerms('Studies neuronal firing.', on('neuron firing'))).toEqual([
-      'neuronal',
-    ]);
-    expect(ungroundedContentTerms('Studies parenthood.', on('child care'))).toEqual(['parenthood']);
+  });
+
+  it('checks the suffix classes and leaves other words alone', () => {
+    expect(ungroundedContentTerms('Studies sarcoma.', on('carcinoma'))).toEqual(['sarcoma']);
+    expect(ungroundedContentTerms('Studies carcinomas.', on('carcinoma'))).toEqual([]);
+    expect(ungroundedContentTerms('Uses angiography.', on('imaging'))).toEqual(['angiography']);
+    expect(ungroundedContentTerms('Tests olaparib.', on('a PARP inhibitor'))).toEqual(['olaparib']);
+    expect(ungroundedContentTerms('Breeds zebrafish.', on('fish models'))).toEqual(['zebrafish']);
+    expect(
+      ungroundedContentTerms('Studies how stress affects testing interventions.', on('stress')),
+    ).toEqual([]);
+  });
+});
+
+describe('classical plurals (#5537)', () => {
+  it('reads a classical plural as its singular on either side', () => {
+    expect(ungroundedContentTerms('Studies neuroses.', on('neurosis'))).toEqual([]);
+    expect(ungroundedContentTerms('Studies anemias.', on('anemia'))).toEqual([]);
+    expect(ungroundedContentTerms('Uses endoscopies.', on('endoscopy'))).toEqual([]);
+    expect(ungroundedContentTerms('Studies carcinoma.', on('carcinomata'))).toEqual([]);
+    expect(ungroundedContentTerms('Studies anemias.', on('sarcoma'))).toEqual(['anemias']);
   });
 });
