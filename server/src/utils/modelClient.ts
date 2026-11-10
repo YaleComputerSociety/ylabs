@@ -47,6 +47,7 @@ export interface ModelRequest {
   apiKey: string;
   body: Record<string, unknown>;
   timeoutMs: number;
+  usageWrite?: 'awaited' | 'background';
 }
 
 const storeInDatabaseWhenConnected: ModelUsageSink = async (record) => {
@@ -102,10 +103,11 @@ function usageRecord(
 const neverLeftTheProcess = (error: unknown): boolean =>
   error instanceof Error && error.name === 'BenchmarkReplayNetworkError';
 
-async function recordUsage(record: ModelUsageRecord): Promise<void> {
+async function recordUsage(request: ModelRequest, record: ModelUsageRecord): Promise<void> {
   const sink = usageSink;
   if (!sink) return;
-  await sink(record).catch(() => undefined);
+  const write = sink(record).catch(() => undefined);
+  if (request.usageWrite !== 'background') await write;
 }
 
 async function postModelRequest(
@@ -121,12 +123,12 @@ async function postModelRequest(
     });
   } catch (error) {
     if (!neverLeftTheProcess(error)) {
-      await recordUsage(usageRecord(request, endpoint, startedAt, undefined));
+      await recordUsage(request, usageRecord(request, endpoint, startedAt, undefined));
     }
     throw error;
   }
   if (!responseWasFrozen(response)) {
-    await recordUsage(usageRecord(request, endpoint, startedAt, response));
+    await recordUsage(request, usageRecord(request, endpoint, startedAt, response));
   }
   return response;
 }

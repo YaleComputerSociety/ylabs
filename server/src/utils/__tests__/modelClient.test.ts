@@ -194,6 +194,28 @@ describe('postChatCompletion', () => {
     expect(writes).toHaveLength(1);
   });
 
+  it('returns a background-recorded call without waiting for its usage write', async () => {
+    post.mockResolvedValue(chatResponse);
+    let releaseWrite: () => void = () => undefined;
+    setModelUsageSink(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseWrite = resolve;
+        }),
+    );
+
+    await expect(
+      postEmbedding({
+        caller: 'research-search-query-embedding',
+        apiKey: 'sk-test',
+        timeoutMs: 1,
+        usageWrite: 'background',
+        body: { model: 'text-embedding-3-small', input: 'protein folding' },
+      }),
+    ).resolves.toBe(chatResponse);
+    releaseWrite();
+  });
+
   it('posts embeddings to the OpenAI endpoint and treats only that host as the model endpoint', async () => {
     post.mockResolvedValue({ data: { data: [{ embedding: [0.1] }] }, headers: {} });
 

@@ -25,6 +25,7 @@ A model missing from that table is reported as `unpriced` rather than counted as
 - A request a benchmark replay refuses because it has no frozen response is not recorded either, because it never left the process.
 - `scrape:canary` is write-free by construction, so it switches recording off with `setModelUsageSink(null)`, and its model calls are not in the report.
 - The record is written before the call returns, so a script that disconnects right after its last call still keeps it.
+  The search query embedding is the exception: it passes `usageWrite: 'background'`, because a student's search must not wait on a usage insert.
 - A process with no open database connection records nothing, and a write that fails is dropped without failing the call it describes.
 - Meilisearch's own embedder calls OpenAI with the key it was configured with, during an index rebuild and for a hybrid search that arrives without a vector. Those calls never pass through this client, so the report does not include them.
 

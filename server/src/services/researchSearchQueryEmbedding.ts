@@ -59,6 +59,7 @@ const requestQueryVector = async (queryText: string, apiKey: string): Promise<nu
     caller: 'research-search-query-embedding',
     apiKey,
     timeoutMs: EMBEDDING_REQUEST_TIMEOUT_MS,
+    usageWrite: 'background',
     body: { model: RESEARCH_ENTITY_SEARCH_EMBEDDER_MODEL, input: queryText },
   });
   const vector = response.data?.data?.[0]?.embedding;
