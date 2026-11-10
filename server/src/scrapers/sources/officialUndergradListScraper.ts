@@ -612,7 +612,8 @@ export class OfficialUndergradListScraper implements IScraper {
   constructor(deps: OfficialUndergradListDeps = {}) {
     this.fetchText = deps.fetchText ?? defaultMentorFetchText;
     this.resolveMentor = deps.resolveMentor ?? defaultMentorResolver;
-    this.storedListEvidenceFinder = deps.storedListEvidenceFinder ?? defaultStoredListEvidenceFinder;
+    this.storedListEvidenceFinder =
+      deps.storedListEvidenceFinder ?? defaultStoredListEvidenceFinder;
     this.sources = deps.sources ?? UNDERGRAD_LIST_SOURCE_CONFIGS;
   }
 
@@ -646,8 +647,7 @@ export class OfficialUndergradListScraper implements IScraper {
         (entry) => !completeSources.has(entry.source),
       );
       const entries = [...fresh, ...carried].sort(
-        (a, b) =>
-          undergradListSources.indexOf(a.source) - undergradListSources.indexOf(b.source),
+        (a, b) => undergradListSources.indexOf(a.source) - undergradListSources.indexOf(b.source),
       );
       const previous = stored.get(slug);
       if (entries.length === 0) {
