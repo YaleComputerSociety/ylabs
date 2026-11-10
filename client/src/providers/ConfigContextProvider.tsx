@@ -48,6 +48,13 @@ const departmentColorKeyToTailwind: Record<number, string> = {
   8: 'bg-indigo-200',
 };
 
+const enabledFeatureFlags = (value: unknown): Record<string, boolean> =>
+  value && typeof value === 'object'
+    ? Object.fromEntries(
+        Object.entries(value as Record<string, unknown>).map(([flag, on]) => [flag, on === true]),
+      )
+    : {};
+
 interface ConfigContextProviderProps {
   children: ReactNode;
 }
@@ -64,6 +71,7 @@ const ConfigContextProvider: FC<ConfigContextProviderProps> = ({ children }) => 
     departments,
     departmentCategories,
     departmentPillEligibleLabels,
+    features,
   } = state;
 
   const fetchConfig = useCallback(async () => {
@@ -78,6 +86,7 @@ const ConfigContextProvider: FC<ConfigContextProviderProps> = ({ children }) => 
       const deptList: DepartmentConfig[] = data?.departments?.list || [];
       const deptCategories = data?.departments?.categories || [];
       const deptPillEligibleLabels = data?.departments?.pillEligibleLabels || [];
+      const featureFlags = enabledFeatureFlags(data?.features);
 
       if (areas.length === 0 || deptList.length === 0) {
         console.warn('Config loaded but data may be incomplete.', {
@@ -95,6 +104,7 @@ const ConfigContextProvider: FC<ConfigContextProviderProps> = ({ children }) => 
           departments: deptList,
           departmentCategories: deptCategories,
           departmentPillEligibleLabels: deptPillEligibleLabels,
+          features: featureFlags,
         },
       });
     } catch {
@@ -211,6 +221,7 @@ const ConfigContextProvider: FC<ConfigContextProviderProps> = ({ children }) => 
     departments,
     departmentCategories,
     departmentPillEligibleLabels,
+    features,
     getResearchAreaByName,
     getColorForResearchArea,
     getDepartmentByAbbr,
