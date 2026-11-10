@@ -48,6 +48,8 @@ const OPERATOR_TOOLS: Record<string, string> = {
     'expires archived research plans that still hold a student’s private text, an operator decision about stored personal data per environment (#4163)',
   'observations:nonfetching-lane-gone-pages':
     'a one-time backfill for lanes that never run again or read no page, so no lane or sweep stage can re-derive it (#4862)',
+  'directory-removal:record':
+    "records or withdraws one person's directory removal request, an operator judgement about one person that no lane can derive (#4160)",
   'db:build-indexes': 'builds declared indexes, a reviewed schema operation',
   'meili:rebuild-research-entities':
     're-embeds the whole index after a settings, embedder, or document-shape change, an infrastructure operation; the sweep stage is the incremental sync (#5023)',
