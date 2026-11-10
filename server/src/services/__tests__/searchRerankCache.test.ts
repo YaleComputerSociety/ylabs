@@ -9,8 +9,8 @@ vi.mock('../../models/searchRerankCache', () => ({
 import {
   SEARCH_RERANK_MEMO_TTL_MS,
   applyCachedRerank,
-  cachedSearchRerankScores,
   isSearchRerankCacheEnabled,
+  lookupSearchRerankCacheEntry,
   resetSearchRerankCacheMemo,
 } from '../searchRerankCache';
 import { searchRerankCacheFilters, searchRerankCacheQueryKey } from '../researchGroupService';
@@ -138,7 +138,10 @@ describe('isSearchRerankCacheEnabled', () => {
   });
 });
 
-describe('cachedSearchRerankScores', () => {
+describe('lookupSearchRerankCacheEntry', () => {
+  const cachedScores = async (queryKey: string, now?: () => number) =>
+    (await lookupSearchRerankCacheEntry(queryKey, now))?.scores ?? null;
+
   const lookupResolving = (value: unknown) => {
     const query: any = { lean: async () => value };
     query.select = () => query;
@@ -163,9 +166,9 @@ describe('cachedSearchRerankScores', () => {
     let now = 1_000;
     const clock = () => now;
 
-    const first = await cachedSearchRerankScores('key', clock);
+    const first = await cachedScores('key', clock);
     now += SEARCH_RERANK_MEMO_TTL_MS - 1;
-    const second = await cachedSearchRerankScores('key', clock);
+    const second = await cachedScores('key', clock);
 
     expect(first).toEqual(
       new Map([
@@ -178,15 +181,15 @@ describe('cachedSearchRerankScores', () => {
     expect(mocks.findOne).toHaveBeenCalledWith({ queryKey: 'key' });
 
     now += 2;
-    await cachedSearchRerankScores('key', clock);
+    await cachedScores('key', clock);
     expect(mocks.findOne).toHaveBeenCalledTimes(2);
   });
 
   it('remembers a query with no entry as null', async () => {
     mocks.findOne.mockReturnValue(lookupResolving(null));
 
-    expect(await cachedSearchRerankScores('missing')).toBeNull();
-    expect(await cachedSearchRerankScores('missing')).toBeNull();
+    expect(await cachedScores('missing')).toBeNull();
+    expect(await cachedScores('missing')).toBeNull();
     expect(mocks.findOne).toHaveBeenCalledTimes(1);
   });
 
@@ -198,9 +201,27 @@ describe('cachedSearchRerankScores', () => {
       }),
     });
 
-    expect(await cachedSearchRerankScores('key')).toBeNull();
-    expect(await cachedSearchRerankScores('key')).toBeNull();
+    expect(await cachedScores('key')).toBeNull();
+    expect(await cachedScores('key')).toBeNull();
     expect(mocks.findOne).toHaveBeenCalledTimes(2);
     consoleError.mockRestore();
+  });
+
+  it('serves a live-miss entry only while the live-miss job is switched on', async () => {
+    mocks.findOne.mockReturnValue(
+      lookupResolving({
+        source: 'live-miss',
+        indexVersion: 'async-gpt-5-mini-2026-11-01',
+        scores: [{ entityId: 'row-1', score: 3 }],
+      }),
+    );
+
+    vi.stubEnv('SEARCH_RERANK_LIVE_MISS_ENABLED', '');
+    expect(await cachedScores('key')).toBeNull();
+
+    resetSearchRerankCacheMemo();
+    vi.stubEnv('SEARCH_RERANK_LIVE_MISS_ENABLED', 'true');
+    expect(await cachedScores('key')).toEqual(new Map([['row-1', 3]]));
+    vi.unstubAllEnvs();
   });
 });
