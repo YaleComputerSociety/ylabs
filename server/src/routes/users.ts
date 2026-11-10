@@ -6,6 +6,10 @@ import { isAuthenticated, validateObjectId, validateResearchEntityId } from '../
 import { writeLimit } from '../middleware/rateLimiters';
 import * as userController from '../controllers/userController';
 import * as accountDataController from '../controllers/accountDataController';
+import {
+  issueAccountDeletionCsrfToken,
+  requireAccountDeletionCsrfToken,
+} from '../middleware/accountDeletionCsrf';
 
 const router = Router();
 
@@ -71,11 +75,18 @@ router.get(
   accountDataController.requireAccountDataControls,
   accountDataController.exportAccountData,
 );
+router.get(
+  '/me/deletion-csrf-token',
+  isAuthenticated,
+  accountDataController.requireAccountDataControls,
+  issueAccountDeletionCsrfToken,
+);
 router.delete(
   '/me',
   writeLimit,
   isAuthenticated,
   accountDataController.requireAccountDataControls,
+  requireAccountDeletionCsrfToken,
   accountDataController.deleteOwnAccountData,
 );
 

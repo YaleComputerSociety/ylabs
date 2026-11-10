@@ -49,6 +49,10 @@ export {
   DeletedAccountEventTally,
   DELETED_ACCOUNT_EVENT_TALLY_COLLECTION,
 } from './deletedAccountEventTally';
+export {
+  AccountDeletionRequest,
+  ACCOUNT_DELETION_REQUEST_COLLECTION,
+} from './accountDeletionRequest';
 export * from './researchAccessTypes';
 export * from './sourceCoverageTypes';
 export * from './modelPrimitives';

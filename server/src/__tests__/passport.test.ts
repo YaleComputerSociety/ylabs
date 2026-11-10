@@ -661,6 +661,7 @@ describe('auth environment guards', () => {
     await expect(
       new Promise<{ error: unknown; principal: unknown }>((resolve) => {
         serializer(
+          {},
           { netId: ' AbC123 ', userType: 'graduate', userConfirmed: true, profileVerified: false },
           (error: unknown, principal: unknown) => resolve({ error, principal }),
         );
@@ -680,8 +681,10 @@ describe('auth environment guards', () => {
     });
 
     const malformed = await new Promise<{ error: unknown; principal: unknown }>((resolve) => {
-      serializer({ netId: { toString: () => 'abc123' } }, (error: unknown, principal: unknown) =>
-        resolve({ error, principal }),
+      serializer(
+        {},
+        { netId: { toString: () => 'abc123' } },
+        (error: unknown, principal: unknown) => resolve({ error, principal }),
       );
     });
 

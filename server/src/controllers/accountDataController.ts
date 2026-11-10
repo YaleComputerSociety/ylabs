@@ -61,15 +61,16 @@ export const exportAccountData = async (
 };
 
 /**
- * The cookie session carries the time of the sign-in that minted it, so a deletion can
- * insist that sign-in was recent: a stolen or forgotten long-lived cookie cannot erase an
+ * A deletion needs the holder's password, not just their cookie: the session records when a
+ * CAS sign-in made with `renew=true` last confirmed fresh credentials, and only one within the
+ * window counts. A stolen or forgotten cookie, or a silent single sign-on, cannot erase an
  * account (#4156).
  */
-const signedInRecently = (request: Request, now = Date.now()): boolean => {
+const confirmedCredentialsRecently = (request: Request, now = Date.now()): boolean => {
   const session = request.session as { passport?: { user?: unknown } } | null | undefined;
-  const claim = storedSessionClaim(session?.passport?.user);
-  if (!claim) return false;
-  const age = now - claim.issuedAt;
+  const confirmedAt = storedSessionClaim(session?.passport?.user)?.credentialsConfirmedAt;
+  if (confirmedAt === undefined) return false;
+  const age = now - confirmedAt;
   return age >= -60_000 && age <= ACCOUNT_DELETION_RECENT_SIGN_IN_MS;
 };
 
@@ -96,9 +97,9 @@ export const deleteOwnAccountData = async (
     });
     return;
   }
-  if (!signedInRecently(request)) {
+  if (!confirmedCredentialsRecently(request)) {
     response.status(403).json({
-      error: 'Sign in again with Yale CAS to delete your data.',
+      error: 'Confirm with your Yale password to delete your data.',
       code: RECENT_SIGN_IN_REQUIRED_CODE,
     });
     return;
@@ -110,6 +111,7 @@ export const deleteOwnAccountData = async (
       deleted: true,
       counts: result.deleted,
       postHog: result.postHog,
+      otherEnvironments: result.otherEnvironments,
       auditSubjectHash: result.auditSubjectHash,
     });
   } catch (error) {

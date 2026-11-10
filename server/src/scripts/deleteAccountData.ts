@@ -8,16 +8,21 @@
  * zero afterwards. Output carries counts only, never the netid.
  *
  * Accounts are environment-local, so it acts on one environment per run, and it reads that
- * environment's own deletion keys, so a Production run never borrows Development's.
+ * environment's own deletion keys, so a Production run never borrows Development's. A
+ * deletion records a request for the other environments; `--process-pending-from <source>`
+ * then deletes those people in `--environment`, one run per target, and marks it done on the
+ * source's request, which also writes the source database.
  */
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
-import { connectScriptMongo } from '../db/connections';
+import { connectScriptMongo, createScriptMongoConnection } from '../db/connections';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { processPendingDeletionRequests } from '../services/accountDeletionRequestProcessor';
 import {
+  ACCOUNT_DELETION_AUDIT_HMAC_KEY_MIN_LENGTH,
   deleteAccountData,
   normalizeAccountNetid,
   readAccountDataResidue,
@@ -29,6 +34,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 export const SCRIPT_NAME = 'accounts:delete-account-data';
 export const DELETE_CONFIRM_FLAG = '--confirm-delete-account-data';
+export const PENDING_FROM_FLAG = '--process-pending-from';
 
 export type DeleteAccountDataEnvironment = 'development' | 'beta' | 'production';
 
@@ -47,6 +53,7 @@ export const ACCOUNT_DELETION_KEY_VARIABLES = [
 export interface DeleteAccountDataArgs {
   environment: DeleteAccountDataEnvironment;
   netid: string;
+  pendingFrom: DeleteAccountDataEnvironment | null;
   apply: boolean;
   confirm: boolean;
 }
@@ -66,6 +73,7 @@ export function parseDeleteAccountDataArgs(argv: string[]): DeleteAccountDataArg
   const args = {
     environment: 'development',
     netid: '',
+    pendingFrom: null,
     apply: false,
     confirm: false,
   } as DeleteAccountDataArgs;
@@ -85,9 +93,19 @@ export function parseDeleteAccountDataArgs(argv: string[]): DeleteAccountDataArg
     } else if (arg === '--netid') {
       args.netid = parseNetid(argv[index + 1]);
       index += 1;
+    } else if (arg.startsWith(`${PENDING_FROM_FLAG}=`)) {
+      args.pendingFrom = parseEnvironment(arg.slice(PENDING_FROM_FLAG.length + 1));
+    } else if (arg === PENDING_FROM_FLAG) {
+      args.pendingFrom = parseEnvironment(argv[index + 1]);
+      index += 1;
     } else throw new Error(`Unknown ${SCRIPT_NAME} argument: ${arg.split('=')[0]}`);
   }
-  if (!args.netid) throw new Error('--netid is required');
+  if (Boolean(args.netid) === Boolean(args.pendingFrom)) {
+    throw new Error(`Give exactly one of --netid or ${PENDING_FROM_FLAG}`);
+  }
+  if (args.pendingFrom === args.environment) {
+    throw new Error(`${PENDING_FROM_FLAG} must name a different environment than --environment`);
+  }
   if (args.apply && !args.confirm) {
     throw new Error(`${DELETE_CONFIRM_FLAG} is required when --apply is set.`);
   }
@@ -118,6 +136,46 @@ export function resolveDeleteAccountDataServiceEnv(
   );
 }
 
+async function deleteOneNetid(args: DeleteAccountDataArgs): Promise<Record<string, unknown>> {
+  const before = await readAccountDataResidue(args.netid);
+  const deletion = args.apply
+    ? await deleteAccountData(args.netid, {
+        requester: 'operator',
+        env: resolveDeleteAccountDataServiceEnv(args.environment),
+        environment: args.environment,
+      })
+    : null;
+  const after = args.apply ? await readAccountDataResidue(args.netid) : null;
+  return { residueBefore: before, deletion, residueAfter: after };
+}
+
+async function processPendingFrom(
+  args: DeleteAccountDataArgs,
+  source: DeleteAccountDataEnvironment,
+): Promise<Record<string, unknown>> {
+  const sourceKey = resolveDeleteAccountDataServiceEnv(source).ACCOUNT_DELETION_AUDIT_HMAC_KEY;
+  if (!sourceKey || sourceKey.trim().length < ACCOUNT_DELETION_AUDIT_HMAC_KEY_MIN_LENGTH) {
+    throw new Error(
+      `The ${source} ACCOUNT_DELETION_AUDIT_HMAC_KEY is required to match its pending requests.`,
+    );
+  }
+  const sourceUrl = resolveDeleteAccountDataMongoUrl(source);
+  assertScriptApplyAllowed({ apply: args.apply, scriptName: SCRIPT_NAME, mongoUrl: sourceUrl });
+  const sourceConnection = await createScriptMongoConnection(sourceUrl);
+  try {
+    const summary = await processPendingDeletionRequests({
+      sourceDb: sourceConnection.db!,
+      sourceKey: sourceKey.trim(),
+      target: args.environment,
+      targetServiceEnv: resolveDeleteAccountDataServiceEnv(args.environment),
+      apply: args.apply,
+    });
+    return { pendingFrom: source, pendingRequests: summary };
+  } finally {
+    await sourceConnection.close();
+  }
+}
+
 async function main(): Promise<void> {
   const args = parseDeleteAccountDataArgs(process.argv.slice(2));
   const mongoUrl = resolveDeleteAccountDataMongoUrl(args.environment);
@@ -125,23 +183,16 @@ async function main(): Promise<void> {
 
   await connectScriptMongo(mongoUrl);
   try {
-    const before = await readAccountDataResidue(args.netid);
-    const deletion = args.apply
-      ? await deleteAccountData(args.netid, {
-          requester: 'operator',
-          env: resolveDeleteAccountDataServiceEnv(args.environment),
-        })
-      : null;
-    const after = args.apply ? await readAccountDataResidue(args.netid) : null;
+    const outcome = args.pendingFrom
+      ? await processPendingFrom(args, args.pendingFrom)
+      : await deleteOneNetid(args);
     console.log(
       JSON.stringify({
         script: SCRIPT_NAME,
         environment: args.environment,
         db: guard.dbLabel,
         mode: args.apply ? 'apply' : 'dry-run',
-        residueBefore: before,
-        deletion,
-        residueAfter: after,
+        ...outcome,
       }),
     );
   } finally {

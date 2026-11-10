@@ -114,6 +114,9 @@ export interface BetaToDevelopmentSummary {
 }
 
 const EXCLUDED_BETA_COLLECTIONS = [
+  // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy: a pending
+  // cross-environment deletion request belongs to the environment that recorded it (#4156).
+  'account_deletion_requests',
   // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy (#5088).
   'accounts',
   'admin_access_review_projection_state',
@@ -132,7 +135,7 @@ const EXCLUDED_BETA_COLLECTIONS = [
   // it, because a sync replaces the whole collection.
   'corpus_quality_snapshots',
   // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy: each row
-  // counts this environment's own account deletions (#4156).
+  // counts or requests this environment's own account deletions (#4156).
   'deleted_account_event_tallies',
   'entitycorrectionreports',
   'evidence_claims',

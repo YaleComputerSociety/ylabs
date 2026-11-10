@@ -24,24 +24,41 @@ vi.mock('../services/analyticsService', () => ({
   logEvent: vi.fn(async () => 'skipped'),
 }));
 
+vi.mock('../middleware/csrfOriginGuard', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../middleware/csrfOriginGuard')>();
+  return {
+    ...actual,
+    csrfOriginGuard: (...[allowed, options]: Parameters<typeof actual.csrfOriginGuard>) =>
+      actual.csrfOriginGuard(allowed, { ...options, allowUnsafeOriginBypass: false }),
+  };
+});
+
+const TRUSTED_ORIGIN = 'https://yalelabs.io';
+const casLogins: Array<{ renew: boolean }> = [];
+const casValidations: Array<{ renew: boolean }> = [];
+
 type FakeCas = { baseUrl: string; close: () => Promise<void> };
 
 const startFakeCas = async (): Promise<FakeCas> => {
-  const serviceUrlByTicket = new Map<string, string>();
+  const issued = new Map<string, { service: string; renew: boolean }>();
   const server = http.createServer((req, res) => {
     const requested = new URL(req.url ?? '/', 'http://cas.invalid');
     const service = requested.searchParams.get('service') ?? '';
+    const renew = requested.searchParams.get('renew') === 'true';
     if (requested.pathname === '/cas/login') {
-      const ticket = `ST-account-data-${serviceUrlByTicket.size + 1}`;
-      serviceUrlByTicket.set(ticket, service);
+      const ticket = `ST-account-data-${issued.size + 1}`;
+      issued.set(ticket, { service, renew });
+      casLogins.push({ renew });
       res.writeHead(200, { 'content-type': 'text/plain' });
       res.end(ticket);
       return;
     }
     if (requested.pathname === '/cas/validate') {
-      const ticket = requested.searchParams.get('ticket') ?? '';
+      const ticket = issued.get(requested.searchParams.get('ticket') ?? '');
+      casValidations.push({ renew });
+      const accepted = ticket?.service === service && (!renew || ticket.renew);
       res.writeHead(200, { 'content-type': 'text/plain' });
-      res.end(serviceUrlByTicket.get(ticket) === service ? `yes\n${OWNER_NETID}\n` : 'no\n');
+      res.end(accepted ? `yes\n${OWNER_NETID}\n` : 'no\n');
       return;
     }
     res.writeHead(404);
@@ -83,10 +100,26 @@ type Hop = { status: number; location: string; cookie: string; body: string; hea
 
 const request = async (
   url: string,
-  { cookie = '', method = 'GET', json }: { cookie?: string; method?: string; json?: unknown } = {},
+  {
+    cookie = '',
+    method = 'GET',
+    json,
+    origin = TRUSTED_ORIGIN,
+    referer,
+    extraHeaders = {},
+  }: {
+    cookie?: string;
+    method?: string;
+    json?: unknown;
+    origin?: string | null;
+    referer?: string;
+    extraHeaders?: Record<string, string>;
+  } = {},
 ): Promise<Hop> => {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { ...extraHeaders };
   if (cookie) headers.cookie = cookie;
+  if (origin && method !== 'GET') headers.origin = origin;
+  if (referer) headers.referer = referer;
   if (json !== undefined) headers['content-type'] = 'application/json';
   const response = await fetch(url, {
     method,
@@ -103,8 +136,11 @@ const request = async (
   };
 };
 
-const signIn = async (baseUrl: string): Promise<string> => {
-  const started = await request(`${baseUrl}/api/cas`);
+const signIn = async (
+  baseUrl: string,
+  { confirmCredentials = false }: { confirmCredentials?: boolean } = {},
+): Promise<string> => {
+  const started = await request(`${baseUrl}/api/cas${confirmCredentials ? '?reauth=1' : ''}`);
   const ticket = (await request(started.location)).body;
   const service = new URL(started.location).searchParams.get('service') ?? '';
   const separator = service.includes('?') ? '&' : '?';
@@ -115,7 +151,7 @@ const signIn = async (baseUrl: string): Promise<string> => {
   return completed.cookie;
 };
 
-const staleSignInCookie = (issuedAt: number): string =>
+const staleSignInCookie = (issuedAt: number, credentialsConfirmedAt?: number): string =>
   sessionCookieHeader({
     passport: {
       user: {
@@ -124,6 +160,7 @@ const staleSignInCookie = (issuedAt: number): string =>
         sessionId: 'c'.repeat(32),
         issuedAt,
         sessionVersion: 0,
+        ...(credentialsConfirmedAt === undefined ? {} : { credentialsConfirmedAt }),
       },
     },
   });
@@ -249,6 +286,7 @@ describe('a signed-in student can export and delete their account data (#4156)',
       'admin_grants',
       'admin_audit_events',
       'deleted_account_event_tallies',
+      'account_deletion_requests',
     ]) {
       await db().collection(name).deleteMany({});
     }
@@ -259,10 +297,11 @@ describe('a signed-in student can export and delete their account data (#4156)',
     delete process.env.POSTHOG_PERSONAL_API_KEY;
     delete process.env.POSTHOG_PROJECT_ID;
     delete process.env.ACCOUNT_DELETION_AUDIT_HMAC_KEY;
+    delete process.env.MONGODBURL;
   });
 
-  const signInBothAccounts = async () => {
-    const cookie = await signIn(baseUrl);
+  const signInBothAccounts = async ({ confirmCredentials = true } = {}) => {
+    const cookie = await signIn(baseUrl, { confirmCredentials });
     await db()
       .collection('accounts')
       .updateOne({ netid: OWNER_NETID }, { $set: { productAnalyticsId: OWNER_ANALYTICS_ID } });
@@ -280,16 +319,40 @@ describe('a signed-in student can export and delete their account data (#4156)',
     return { cookie, owner, other };
   };
 
+  const deletionCsrfToken = async (cookie: string) => {
+    const issued = await request(`${baseUrl}/api/users/me/deletion-csrf-token`, { cookie });
+    return {
+      cookie: issued.cookie || cookie,
+      token: issued.status === 200 ? String(JSON.parse(issued.body).csrfToken) : '',
+    };
+  };
+
+  const deleteOwnData = async (
+    cookie: string,
+    json: unknown = { confirm: 'delete my data' },
+    {
+      origin,
+      referer,
+      withToken = true,
+    }: { origin?: string | null; referer?: string; withToken?: boolean } = {},
+  ) => {
+    const issued = withToken ? await deletionCsrfToken(cookie) : { cookie, token: '' };
+    return request(`${baseUrl}/api/users/me`, {
+      cookie: issued.cookie,
+      method: 'DELETE',
+      json,
+      origin,
+      referer,
+      extraHeaders: issued.token ? { 'x-csrf-token': issued.token } : {},
+    });
+  };
+
   it('answers 404 on both routes while the release flag is off', async () => {
     const { cookie } = await signInBothAccounts();
     process.env[FLAG_ENV] = 'false';
 
     expect((await request(`${baseUrl}/api/users/me/export`, { cookie })).status).toBe(404);
-    const refused = await request(`${baseUrl}/api/users/me`, {
-      cookie,
-      method: 'DELETE',
-      json: { confirm: 'delete my data' },
-    });
+    const refused = await deleteOwnData(cookie, { confirm: 'delete my data' });
     expect(refused.status).toBe(404);
     expect(await db().collection('accounts').countDocuments({ netid: OWNER_NETID })).toBe(1);
   });
@@ -322,18 +385,14 @@ describe('a signed-in student can export and delete their account data (#4156)',
   it('refuses a deletion without the typed phrase', async () => {
     const { cookie } = await signInBothAccounts();
 
-    const refused = await request(`${baseUrl}/api/users/me`, {
-      cookie,
-      method: 'DELETE',
-      json: { confirm: 'delete' },
-    });
+    const refused = await deleteOwnData(cookie, { confirm: 'delete' });
 
     expect(refused.status).toBe(400);
     expect(JSON.parse(refused.body).code).toBe('CONFIRMATION_REQUIRED');
     expect(await db().collection('accounts').countDocuments({ netid: OWNER_NETID })).toBe(1);
   });
 
-  it('refuses a deletion from a session whose sign-in was not recent', async () => {
+  it('refuses a deletion whose password confirmation is older than the window', async () => {
     await signInBothAccounts();
     await db()
       .collection('accounts')
@@ -341,20 +400,209 @@ describe('a signed-in student can export and delete their account data (#4156)',
         { netid: OWNER_NETID },
         { $set: { createdAt: new Date(Date.now() - 60 * 60 * 1000) } },
       );
-    const stale = staleSignInCookie(Date.now() - 11 * 60 * 1000);
+    const elevenMinutesAgo = Date.now() - 11 * 60 * 1000;
+    const stale = staleSignInCookie(elevenMinutesAgo, elevenMinutesAgo);
     expect((await request(`${baseUrl}${AUTHENTICATED_ROUTE}`, { cookie: stale })).status).toBe(200);
 
-    const refused = await request(`${baseUrl}/api/users/me`, {
-      cookie: stale,
-      method: 'DELETE',
-      json: { confirm: 'delete my data' },
-    });
+    const refused = await deleteOwnData(stale, { confirm: 'delete my data' });
 
     expect(refused.status).toBe(403);
     expect(JSON.parse(refused.body).code).toBe('RECENT_SIGN_IN_REQUIRED');
     expect(await db().collection('analytics_events').countDocuments({ netid: OWNER_NETID })).toBe(
       3,
     );
+  });
+
+  it('refuses a deletion from a single sign-on session that never re-entered a password', async () => {
+    const { cookie } = await signInBothAccounts({ confirmCredentials: false });
+
+    const refused = await deleteOwnData(cookie, { confirm: 'delete my data' });
+
+    expect(refused.status).toBe(403);
+    expect(JSON.parse(refused.body).code).toBe('RECENT_SIGN_IN_REQUIRED');
+    expect(await db().collection('accounts').countDocuments({ netid: OWNER_NETID })).toBe(1);
+  });
+
+  it('asks CAS to renew credentials at login and at validation when deletion needs a password', async () => {
+    casLogins.length = 0;
+    casValidations.length = 0;
+    await signIn(baseUrl);
+    await signIn(baseUrl, { confirmCredentials: true });
+
+    expect(casLogins).toEqual([{ renew: false }, { renew: true }]);
+    expect(casValidations).toEqual([{ renew: false }, { renew: true }]);
+  });
+
+  it('refuses a cross-origin deletion without the token through the origin guard', async () => {
+    const { cookie } = await signInBothAccounts();
+
+    expect(
+      (
+        await deleteOwnData(cookie, undefined, {
+          origin: 'https://attacker.example',
+          withToken: false,
+        })
+      ).status,
+    ).toBe(403);
+    for (const refused of [
+      await deleteOwnData(cookie, undefined, {
+        origin: null,
+        referer: 'https://attacker.example/page',
+        withToken: false,
+      }),
+      await deleteOwnData(cookie, undefined, { origin: null, withToken: false }),
+    ]) {
+      expect(refused.status).toBe(403);
+      expect(JSON.parse(refused.body).error).toBe('Cross-site request blocked');
+    }
+    expect(await db().collection('accounts').countDocuments({ netid: OWNER_NETID })).toBe(1);
+    expect(await db().collection('analytics_events').countDocuments({ netid: OWNER_NETID })).toBe(
+      3,
+    );
+  });
+
+  it("refuses a same-origin deletion without this session's token, and accepts it with one", async () => {
+    const { cookie } = await signInBothAccounts();
+    const otherSession = await deletionCsrfToken(
+      await signIn(baseUrl, { confirmCredentials: true }),
+    );
+
+    const withoutToken = await deleteOwnData(cookie, undefined, { withToken: false });
+    expect(withoutToken.status).toBe(403);
+    expect(JSON.parse(withoutToken.body).code).toBe('CSRF_TOKEN_REQUIRED');
+    const ownSession = await deletionCsrfToken(cookie);
+    const borrowedToken = await request(`${baseUrl}/api/users/me`, {
+      cookie: ownSession.cookie,
+      method: 'DELETE',
+      json: { confirm: 'delete my data' },
+      extraHeaders: { 'x-csrf-token': otherSession.token },
+    });
+    expect(borrowedToken.status).toBe(403);
+    expect(JSON.parse(borrowedToken.body).code).toBe('CSRF_TOKEN_REQUIRED');
+    expect(await db().collection('accounts').countDocuments({ netid: OWNER_NETID })).toBe(1);
+
+    const accepted = await request(`${baseUrl}/api/users/me`, {
+      cookie: ownSession.cookie,
+      method: 'DELETE',
+      json: { confirm: 'delete my data' },
+      extraHeaders: { 'x-csrf-token': ownSession.token },
+    });
+
+    expect(accepted.status).toBe(200);
+    expect(await db().collection('accounts').countDocuments({ netid: OWNER_NETID })).toBe(0);
+  });
+
+  it('records a pending deletion for every other environment, keyed by the hash alone', async () => {
+    const { cookie } = await signInBothAccounts();
+    process.env.ACCOUNT_DELETION_AUDIT_HMAC_KEY = AUDIT_HMAC_KEY;
+    process.env.MONGODBURL = 'mongodb://127.0.0.1:1/Prod';
+
+    const deleted = await deleteOwnData(cookie, { confirm: 'delete my data' });
+
+    expect(deleted.status).toBe(200);
+    expect(JSON.parse(deleted.body).otherEnvironments).toBe('requested');
+    const requests = await db().collection('account_deletion_requests').find({}).toArray();
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      subjectHash: createHmac('sha256', AUDIT_HMAC_KEY).update(OWNER_NETID).digest('hex'),
+      sourceEnvironment: 'production',
+      requester: 'account_holder',
+      pendingEnvironments: ['development', 'beta'],
+      completedEnvironments: [],
+    });
+    expect(JSON.stringify(requests).toLowerCase()).not.toContain(OWNER_NETID);
+  });
+
+  it('records no cross-environment request without the hash key, and says so', async () => {
+    const { cookie } = await signInBothAccounts();
+    process.env.MONGODBURL = 'mongodb://127.0.0.1:1/Prod';
+
+    const deleted = await deleteOwnData(cookie, { confirm: 'delete my data' });
+
+    expect(JSON.parse(deleted.body).otherEnvironments).toBe('skipped_not_configured');
+    expect(await db().collection('account_deletion_requests').countDocuments()).toBe(0);
+  });
+
+  it('lets the operator carry a pending request into another environment and mark it done', async () => {
+    const { processPendingDeletionRequests } =
+      await import('../services/accountDeletionRequestProcessor');
+    await signInBothAccounts();
+    const sourceDb = mongoose.connection.getClient().db('synthetic_deletion_source');
+    await sourceDb.collection('account_deletion_requests').deleteMany({});
+    const sourceKey = 'synthetic-source-key-0123456789abcdef0123';
+    const subjectHash = createHmac('sha256', sourceKey).update(OWNER_NETID).digest('hex');
+    await sourceDb.collection('account_deletion_requests').insertMany([
+      {
+        subjectHash,
+        sourceEnvironment: 'production',
+        requester: 'account_holder',
+        requestedAt: new Date(),
+        pendingEnvironments: ['development', 'beta'],
+        completedEnvironments: [],
+      },
+      {
+        subjectHash: 'f'.repeat(64),
+        sourceEnvironment: 'production',
+        requester: 'operator',
+        requestedAt: new Date(),
+        pendingEnvironments: ['beta'],
+        completedEnvironments: [],
+      },
+    ]);
+
+    const dryRun = await processPendingDeletionRequests({
+      sourceDb,
+      sourceKey,
+      target: 'beta',
+      targetServiceEnv: {},
+      apply: false,
+    });
+    expect(dryRun).toEqual({ pending: 2, matched: 1, deleted: 0, markedDone: 0 });
+    expect(await db().collection('accounts').countDocuments({ netid: OWNER_NETID })).toBe(1);
+
+    const applied = await processPendingDeletionRequests({
+      sourceDb,
+      sourceKey,
+      target: 'beta',
+      targetServiceEnv: {},
+      apply: true,
+    });
+
+    expect(applied).toEqual({ pending: 2, matched: 1, deleted: 1, markedDone: 2 });
+    expect(await db().collection('accounts').countDocuments({ netid: OWNER_NETID })).toBe(0);
+    expect(await db().collection('analytics_events').countDocuments({ netid: OWNER_NETID })).toBe(
+      0,
+    );
+    expect(await db().collection('accounts').countDocuments({ netid: OTHER_NETID })).toBe(1);
+    expect(await db().collection('account_deletion_requests').countDocuments()).toBe(0);
+    const carried = await sourceDb
+      .collection('account_deletion_requests')
+      .find({}, { projection: { _id: 0, pendingEnvironments: 1, completedEnvironments: 1 } })
+      .sort({ requester: 1 })
+      .toArray();
+    expect(carried).toEqual([
+      {
+        pendingEnvironments: ['development'],
+        completedEnvironments: [
+          { environment: 'beta', completedAt: expect.any(Date), matched: true },
+        ],
+      },
+      {
+        pendingEnvironments: [],
+        completedEnvironments: [
+          { environment: 'beta', completedAt: expect.any(Date), matched: false },
+        ],
+      },
+    ]);
+    expect(
+      await processPendingDeletionRequests({
+        sourceDb,
+        sourceKey,
+        target: 'beta',
+        targetServiceEnv: {},
+        apply: true,
+      }),
+    ).toEqual({ pending: 0, matched: 0, deleted: 0, markedDone: 0 });
   });
 
   it('deletes every in-scope row, keeps only counts and tombstoned reports, and ends the session', async () => {
@@ -369,11 +617,7 @@ describe('a signed-in student can export and delete their account data (#4156)',
     });
     process.env.ACCOUNT_DELETION_AUDIT_HMAC_KEY = AUDIT_HMAC_KEY;
 
-    const deleted = await request(`${baseUrl}/api/users/me`, {
-      cookie,
-      method: 'DELETE',
-      json: { confirm: 'delete my data' },
-    });
+    const deleted = await deleteOwnData(cookie, { confirm: 'delete my data' });
 
     expect(deleted.status).toBe(200);
     const body = JSON.parse(deleted.body);
@@ -383,8 +627,6 @@ describe('a signed-in student can export and delete their account data (#4156)',
       analyticsEvents: 3,
       correctionReports: 1,
       adminGrants: 1,
-      adminAuditEvents: 0,
-      adminGrantActions: 0,
     });
     expect(body.postHog).toBe('skipped_not_configured');
     expect(body.auditSubjectHash).toBe('recorded');
@@ -465,11 +707,7 @@ describe('a signed-in student can export and delete their account data (#4156)',
       return nativeFetch(input, init);
     }) as typeof fetch;
 
-    const deleted = await request(`${baseUrl}/api/users/me`, {
-      cookie,
-      method: 'DELETE',
-      json: { confirm: 'delete my data' },
-    });
+    const deleted = await deleteOwnData(cookie, { confirm: 'delete my data' });
 
     expect(deleted.status).toBe(200);
     expect(JSON.parse(deleted.body).postHog).toBe('requested');
@@ -512,8 +750,6 @@ describe('a signed-in student can export and delete their account data (#4156)',
       analyticsEvents: 0,
       correctionReports: 0,
       adminGrants: 0,
-      adminAuditEvents: 0,
-      adminGrantActions: 0,
     });
 
     postHogStatus = 202;
@@ -526,8 +762,6 @@ describe('a signed-in student can export and delete their account data (#4156)',
       analyticsEvents: 0,
       correctionReports: 0,
       adminGrants: 0,
-      adminAuditEvents: 0,
-      adminGrantActions: 0,
     });
     const tallied = await db()
       .collection('deleted_account_event_tallies')
@@ -587,11 +821,7 @@ describe('a signed-in student can export and delete their account data (#4156)',
 
   it('never revives a session minted before the account was deleted and created again', async () => {
     const { cookie } = await signInBothAccounts();
-    const deleted = await request(`${baseUrl}/api/users/me`, {
-      cookie,
-      method: 'DELETE',
-      json: { confirm: 'delete my data' },
-    });
+    const deleted = await deleteOwnData(cookie, { confirm: 'delete my data' });
     expect(deleted.status).toBe(200);
     const forgotten = staleSignInCookie(Date.now() - 60 * 1000);
 
@@ -605,9 +835,8 @@ describe('a signed-in student can export and delete their account data (#4156)',
     );
   });
 
-  it('keeps a maintainer audit trail and grant history but replaces their netid in it', async () => {
-    const { deleteAccountData, readAccountDataResidue } =
-      await import('../services/accountDataService');
+  it('exports a maintainer audit trail and leaves the append-only audit log and grant history untouched', async () => {
+    const { deleteAccountData } = await import('../services/accountDataService');
     const { cookie } = await signInBothAccounts();
     const grantedAt = new Date('2026-09-01T00:00:00Z');
     await db()
@@ -661,37 +890,27 @@ describe('a signed-in student can export and delete their account data (#4156)',
       { action: 'granted', at: grantedAt.toISOString() },
     ]);
 
+    const auditBefore = await db().collection('admin_audit_events').find({}).toArray();
     const result = await deleteAccountData(OWNER_NETID, { requester: 'account_holder' });
 
-    expect(result.deleted.adminAuditEvents).toBe(2);
-    expect(result.deleted.adminGrantActions).toBe(1);
-    expect(await readAccountDataResidue(OWNER_NETID)).toMatchObject({
-      adminAuditEvents: 0,
-      adminGrantActions: 0,
-    });
+    expect(result.deleted).not.toHaveProperty('adminAuditEvents');
     const otherGrant = await db().collection('admin_grants').findOne({ netid: OTHER_NETID });
     expect(otherGrant?.status).toBe('active');
-    expect(otherGrant?.grantedBy).toBe('deleted-account');
+    expect(otherGrant?.grantedBy).toBe(OWNER_NETID);
     expect(otherGrant?.history.map((entry: any) => entry.actorNetid)).toEqual([
-      'deleted-account',
+      OWNER_NETID,
       'synthgrantor',
     ]);
-    const storedAudit = JSON.stringify(
-      await db().collection('admin_audit_events').find({}).toArray(),
-    ).toLowerCase();
-    expect(storedAudit).not.toContain(OWNER_NETID);
-    expect(await db().collection('admin_audit_events').countDocuments()).toBe(3);
+    const auditAfter = await db().collection('admin_audit_events').find({}).toArray();
+    expect(auditAfter.slice(0, auditBefore.length)).toEqual(auditBefore);
+    expect(auditAfter).toHaveLength(auditBefore.length + 1);
   });
 
   it('refuses to delete an account the directory still references', async () => {
     const { cookie, owner } = await signInBothAccounts();
     await db().collection('researchers').insertOne({ accountId: owner.accountId });
 
-    const refused = await request(`${baseUrl}/api/users/me`, {
-      cookie,
-      method: 'DELETE',
-      json: { confirm: 'delete my data' },
-    });
+    const refused = await deleteOwnData(cookie, { confirm: 'delete my data' });
 
     expect(refused.status).toBe(409);
     expect(JSON.parse(refused.body).code).toBe('DELETION_BLOCKED');

@@ -21,6 +21,12 @@ import { escapeRegex } from '../utils/regex';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { revokeAccountSessions } from './accountService';
 import { clearAdminGrantCache } from './adminGrantService';
+import type { AccountDeletionEnvironment } from '../models/accountDeletionRequest';
+import {
+  type CrossEnvironmentDeletionOutcome,
+  recordCrossEnvironmentDeletionRequest,
+  servingDeletionEnvironment,
+} from './accountDeletionRequestService';
 import {
   deletePostHogPerson,
   type PostHogPersonDeletionOutcome,
@@ -31,7 +37,6 @@ export const ACCOUNT_DELETION_AUDIT_HMAC_KEY_MIN_LENGTH = 32;
 export const ACCOUNT_DATA_DELETION_CONFIRM_PHRASE = 'delete my data';
 export const ANALYTICS_EVENT_DELETION_BATCH_SIZE = 500;
 export const DELETED_ACCOUNT_REPORTER_TOMBSTONE_PREFIX = 'deleted-';
-export const DELETED_ACCOUNT_ADMIN_ACTOR_TOMBSTONE = 'deleted-account';
 
 const OTHER_EVENT_TYPE = 'other';
 const KNOWN_EVENT_TYPES = new Set<string>(Object.values(AnalyticsEventType));
@@ -58,14 +63,13 @@ export interface AccountDataResidue {
   analyticsEvents: number;
   correctionReports: number;
   adminGrants: number;
-  adminAuditEvents: number;
-  adminGrantActions: number;
 }
 
 export interface AccountDataDeletionResult {
   accountFound: boolean;
   deleted: AccountDataResidue;
   postHog: PostHogPersonDeletionOutcome;
+  otherEnvironments: CrossEnvironmentDeletionOutcome;
   auditSubjectHash: AuditSubjectHashOutcome;
 }
 
@@ -239,20 +243,11 @@ export const readAccountDataResidue = async (netidInput: unknown): Promise<Accou
   const account = (await Account.findOne({ netid }).select('_id').lean()) as {
     _id: mongoose.Types.ObjectId;
   } | null;
-  const [
-    researchPlans,
-    analyticsEvents,
-    correctionReports,
-    adminGrants,
-    adminAuditEvents,
-    adminGrantActions,
-  ] = await Promise.all([
+  const [researchPlans, analyticsEvents, correctionReports, adminGrants] = await Promise.all([
     account ? ResearchPlan.countDocuments({ accountId: account._id }) : Promise.resolve(0),
     AnalyticsEvent.countDocuments(analyticsEventsOf(netid)),
     EntityCorrectionReport.countDocuments(correctionReportsOf(netid)),
     AdminGrant.countDocuments({ netid }),
-    AdminAuditEvent.countDocuments(adminAuditEventsOf(netid)),
-    AdminGrant.countDocuments(adminGrantsActedOnBy(netid)),
   ]);
   return {
     account: account ? 1 : 0,
@@ -260,8 +255,6 @@ export const readAccountDataResidue = async (netidInput: unknown): Promise<Accou
     analyticsEvents,
     correctionReports,
     adminGrants,
-    adminAuditEvents,
-    adminGrantActions,
   };
 };
 
@@ -373,38 +366,6 @@ const tombstoneCorrectionReports = async (netid: string): Promise<number> => {
   return reports.length;
 };
 
-const tombstoneAdminAuditEvents = async (netid: string): Promise<number> => {
-  const [acted, targeted] = await Promise.all([
-    AdminAuditEvent.updateMany(adminAuditEventsActedBy(netid), {
-      $set: { actorNetid: DELETED_ACCOUNT_ADMIN_ACTOR_TOMBSTONE },
-    }),
-    AdminAuditEvent.updateMany(adminAuditEventsTargeting(netid), {
-      $set: { targetId: DELETED_ACCOUNT_ADMIN_ACTOR_TOMBSTONE },
-    }),
-  ]);
-  return acted.modifiedCount + targeted.modifiedCount;
-};
-
-const tombstoneAdminGrantActions = async (netid: string): Promise<number> => {
-  const grants = (await AdminGrant.find(adminGrantsActedOnBy(netid))
-    .select('_id')
-    .lean()) as Array<{
-    _id: mongoose.Types.ObjectId;
-  }>;
-  if (grants.length === 0) return 0;
-  const tombstone = DELETED_ACCOUNT_ADMIN_ACTOR_TOMBSTONE;
-  await Promise.all([
-    AdminGrant.updateMany({ grantedBy: netid }, { $set: { grantedBy: tombstone } }),
-    AdminGrant.updateMany({ revokedBy: netid }, { $set: { revokedBy: tombstone } }),
-    AdminGrant.updateMany(
-      { 'history.actorNetid': netid },
-      { $set: { 'history.$[entry].actorNetid': tombstone } },
-      { arrayFilters: [{ 'entry.actorNetid': netid }] },
-    ),
-  ]);
-  return grants.length;
-};
-
 const recordDeletionAudit = async (
   requester: AccountDeletionRequester,
   subjectHash: string | null,
@@ -420,6 +381,7 @@ const recordDeletionAudit = async (
       metadata: {
         deleted: result.deleted,
         postHog: result.postHog,
+        otherEnvironments: result.otherEnvironments,
         subjectHash: subjectHash ? 'hmac-sha256' : 'not_configured',
       },
       timestamp: new Date(),
@@ -434,7 +396,8 @@ const recordDeletionAudit = async (
  * stops writing events, and the account goes last, so a failure part way leaves an
  * account the holder can sign in to and retry from; every step is safe to repeat. PostHog
  * is asked before the account goes because the account holds the only copy of the id it
- * knows the student by.
+ * knows the student by. The request that carries the deletion to the other environments is
+ * recorded before the account goes too, so a failure there is retried rather than lost.
  */
 export const deleteAccountData = async (
   netidInput: unknown,
@@ -442,7 +405,15 @@ export const deleteAccountData = async (
     requester,
     env = process.env,
     now = new Date(),
-  }: { requester: AccountDeletionRequester; env?: NodeJS.ProcessEnv; now?: Date },
+    environment = servingDeletionEnvironment(),
+    requestOtherEnvironments = true,
+  }: {
+    requester: AccountDeletionRequester;
+    env?: NodeJS.ProcessEnv;
+    now?: Date;
+    environment?: AccountDeletionEnvironment | null;
+    requestOtherEnvironments?: boolean;
+  },
 ): Promise<AccountDataDeletionResult> => {
   const netid = requireNetid(netidInput);
   const account = (await Account.findOne({ netid }).select('_id productAnalyticsId').lean()) as {
@@ -463,12 +434,18 @@ export const deleteAccountData = async (
   const correctionReports = await tombstoneCorrectionReports(netid);
   const adminGrants = (await AdminGrant.deleteMany({ netid })).deletedCount;
   if (adminGrants > 0) clearAdminGrantCache();
-  const adminAuditEvents = await tombstoneAdminAuditEvents(netid);
-  const adminGrantActions = await tombstoneAdminGrantActions(netid);
   const postHog = await deletePostHogPerson(account?.productAnalyticsId, env);
+  const subjectHash = accountDeletionAuditSubjectHash(netid, env);
+  const otherEnvironments = requestOtherEnvironments
+    ? await recordCrossEnvironmentDeletionRequest({
+        subjectHash,
+        sourceEnvironment: environment,
+        requester,
+        now,
+      })
+    : 'not_requested';
   const accountDeleted = account ? (await Account.deleteOne({ _id: account._id })).deletedCount : 0;
 
-  const subjectHash = accountDeletionAuditSubjectHash(netid, env);
   const result = {
     accountFound: Boolean(account),
     deleted: {
@@ -477,10 +454,9 @@ export const deleteAccountData = async (
       analyticsEvents,
       correctionReports,
       adminGrants,
-      adminAuditEvents,
-      adminGrantActions,
     },
     postHog,
+    otherEnvironments,
   };
   await recordDeletionAudit(requester, subjectHash, result);
   return { ...result, auditSubjectHash: subjectHash ? 'recorded' : 'skipped_not_configured' };

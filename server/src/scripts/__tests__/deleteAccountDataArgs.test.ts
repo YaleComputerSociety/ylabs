@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DELETE_CONFIRM_FLAG,
+  PENDING_FROM_FLAG,
   parseDeleteAccountDataArgs,
   resolveDeleteAccountDataMongoUrl,
   resolveDeleteAccountDataServiceEnv,
@@ -11,6 +12,7 @@ describe('accounts:delete-account-data arguments (#4156)', () => {
     expect(parseDeleteAccountDataArgs(['--netid=abc123'])).toEqual({
       environment: 'development',
       netid: 'abc123',
+      pendingFrom: null,
       apply: false,
       confirm: false,
     });
@@ -28,11 +30,35 @@ describe('accounts:delete-account-data arguments (#4156)', () => {
         '--apply',
         DELETE_CONFIRM_FLAG,
       ]),
-    ).toEqual({ environment: 'production', netid: 'abc123', apply: true, confirm: true });
+    ).toEqual({
+      environment: 'production',
+      netid: 'abc123',
+      pendingFrom: null,
+      apply: true,
+      confirm: true,
+    });
+  });
+
+  it("processes another environment's pending requests instead of one netid", () => {
+    expect(
+      parseDeleteAccountDataArgs(['--environment=beta', `${PENDING_FROM_FLAG}=production`]),
+    ).toEqual({
+      environment: 'beta',
+      netid: '',
+      pendingFrom: 'production',
+      apply: false,
+      confirm: false,
+    });
+    expect(() =>
+      parseDeleteAccountDataArgs(['--environment=beta', PENDING_FROM_FLAG, 'beta']),
+    ).toThrow('different environment');
+    expect(() =>
+      parseDeleteAccountDataArgs(['--netid=abc123', `${PENDING_FROM_FLAG}=production`]),
+    ).toThrow('exactly one');
   });
 
   it('requires a netid and refuses one that is not a Yale netid', () => {
-    expect(() => parseDeleteAccountDataArgs([])).toThrow('--netid is required');
+    expect(() => parseDeleteAccountDataArgs([])).toThrow('Give exactly one of --netid');
     expect(() => parseDeleteAccountDataArgs(['--netid=someone@example.invalid'])).toThrow(
       'Yale netid',
     );
