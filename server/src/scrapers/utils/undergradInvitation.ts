@@ -203,15 +203,16 @@ const pageIsStaleForAnOpening = (lastUpdated: Date, now: Date): boolean => {
  * eighteen months ago, is probably filled, but the page still invites undergraduates, so
  * it reads as a welcome (owner decision, 2026-11-10, #5524).
  */
-export function withStaleOpeningDowngraded(
-  found: UndergradInvitation | null,
+function levelOnPageLastUpdated(
+  level: UndergradInvitationLevel,
+  statedText: string,
   lastUpdated: Date | null,
   now: Date,
-): UndergradInvitation | null {
-  if (found?.level !== 'actively_hiring' || !lastUpdated) return found;
-  if (!pageIsStaleForAnOpening(lastUpdated, now)) return found;
-  if (new RegExp(STATED_TERM.source, 'i').test(found.quote)) return found;
-  return { ...found, level: 'welcomes_undergrads' };
+): UndergradInvitationLevel {
+  if (level !== 'actively_hiring' || !lastUpdated) return level;
+  if (!pageIsStaleForAnOpening(lastUpdated, now)) return level;
+  if (statedText.search(STATED_TERM) >= 0) return level;
+  return 'welcomes_undergrads';
 }
 
 export function statedTermIsPast(sentence: string, now: Date): boolean {
@@ -358,6 +359,7 @@ export function strongerInvitation(
 export function extractUndergradInvitation(
   pageText: string | null | undefined,
   now: Date,
+  lastUpdated: Date | null = null,
 ): UndergradInvitation | null {
   const found = candidates(pageText ?? '');
   let best: UndergradInvitation | null = null;
@@ -369,9 +371,10 @@ export function extractUndergradInvitation(
     if (!namesAudience && !headedByAudience) continue;
     const level = classifyInvitationSentence(sentence, now, precedingText);
     if (!level) continue;
+    const quote = spacedAfterColons(namesAudience ? sentence : `${heading} ${sentence}`);
     best = strongerInvitation(best, {
-      level,
-      quote: spacedAfterColons(namesAudience ? sentence : `${heading} ${sentence}`),
+      level: levelOnPageLastUpdated(level, `${precedingText} ${quote}`, lastUpdated, now),
+      quote,
     });
   }
   return best;

@@ -4,7 +4,6 @@ import {
   extractUndergradInvitation,
   statedPageLastUpdated,
   statedTermIsPast,
-  withStaleOpeningDowngraded,
 } from '../undergradInvitation';
 
 const NOW = new Date('2026-10-18T12:00:00Z');
@@ -43,50 +42,56 @@ describe('statedPageLastUpdated', () => {
   });
 });
 
-describe('withStaleOpeningDowngraded', () => {
-  const opening = (quote: string) => ({ level: 'actively_hiring' as const, quote });
+describe('extractUndergradInvitation on a page with a stated last-updated date', () => {
   const monthsBefore = (months: number) => {
     const date = new Date(NOW);
     date.setUTCMonth(date.getUTCMonth() - months);
     return date;
   };
+  const levelOnPage = (text: string, lastUpdated: Date | null) =>
+    extractUndergradInvitation(text, NOW, lastUpdated)?.level ?? null;
+  const undatedOpening = 'We are currently recruiting undergraduate researchers.';
 
   it('reads an undated opening on a page last updated over eighteen months ago as a welcome', () => {
-    expect(
-      withStaleOpeningDowngraded(
-        opening('We are currently recruiting undergraduate researchers.'),
-        monthsBefore(19),
-        NOW,
-      )?.level,
-    ).toBe('welcomes_undergrads');
+    expect(levelOnPage(undatedOpening, monthsBefore(19))).toBe('welcomes_undergrads');
   });
 
   it.each([
     ['a page updated within eighteen months', monthsBefore(17)],
     ['a page with no stated date', null],
   ])('keeps the opening on %s', (_label, lastUpdated) => {
-    expect(
-      withStaleOpeningDowngraded(
-        opening('We are currently recruiting undergraduate researchers.'),
-        lastUpdated,
-        NOW,
-      )?.level,
-    ).toBe('actively_hiring');
+    expect(levelOnPage(undatedOpening, lastUpdated)).toBe('actively_hiring');
   });
 
   it('keeps an opening that names its own term, whatever the page age', () => {
     expect(
-      withStaleOpeningDowngraded(
-        opening('Undergraduate positions are available for Spring 2027.'),
-        monthsBefore(30),
+      levelOnPage('Undergraduate positions are available for Spring 2027.', monthsBefore(30)),
+    ).toBe('actively_hiring');
+  });
+
+  it('keeps a future-term opening on a stale page that also carries a shorter undated one', () => {
+    expect(
+      extractUndergradInvitation(
+        `${undatedOpening} Undergraduate positions are available for Spring 2027 in our lab.`,
         NOW,
-      )?.level,
+        monthsBefore(25),
+      ),
+    ).toEqual({
+      level: 'actively_hiring',
+      quote: 'Undergraduate positions are available for Spring 2027 in our lab.',
+    });
+  });
+
+  it('keeps an opening whose term sits in the heading above it', () => {
+    expect(
+      levelOnPage('Spring 2027\nUndergraduate positions are available.', monthsBefore(25)),
     ).toBe('actively_hiring');
   });
 
   it('leaves a welcome as it is', () => {
-    const welcome = { level: 'welcomes_undergrads' as const, quote: 'We welcome undergraduates.' };
-    expect(withStaleOpeningDowngraded(welcome, monthsBefore(40), NOW)).toBe(welcome);
+    expect(levelOnPage('We welcome undergraduates to contact us.', monthsBefore(40))).toBe(
+      'welcomes_undergrads',
+    );
   });
 });
 

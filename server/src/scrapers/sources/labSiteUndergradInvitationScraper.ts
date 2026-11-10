@@ -10,7 +10,6 @@ import {
   statedPageLastUpdated,
   strongerInvitation,
   type UndergradInvitation,
-  withStaleOpeningDowngraded,
 } from '../utils/undergradInvitation';
 import {
   candidateCrawlUrls,
@@ -140,11 +139,7 @@ export function strongestInvitationOnPages(
   let best: ServedUndergradInvitation | null = null;
   for (const page of pagesWithinEntityScope(pages)) {
     if (page.belongsToAnotherInstitution || quotePageIsAboutAnotherEntity(page.url, lab)) continue;
-    const found = withStaleOpeningDowngraded(
-      extractUndergradInvitation(page.text, now),
-      page.lastUpdated ?? null,
-      now,
-    );
+    const found = extractUndergradInvitation(page.text, now, page.lastUpdated ?? null);
     if (!found) continue;
     const candidate = { ...found, sourceUrl: page.url };
     if (strongerInvitation(best, candidate) === candidate) best = candidate;
