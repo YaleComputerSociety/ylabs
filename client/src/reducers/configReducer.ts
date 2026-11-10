@@ -16,6 +16,7 @@ export interface ConfigState {
   departments: DepartmentConfig[];
   departmentCategories: string[];
   departmentPillEligibleLabels: string[];
+  features: Record<string, boolean>;
 }
 
 export interface ConfigPayload {
@@ -25,6 +26,7 @@ export interface ConfigPayload {
   departments: DepartmentConfig[];
   departmentCategories: string[];
   departmentPillEligibleLabels: string[];
+  features: Record<string, boolean>;
 }
 
 export type ConfigAction =
@@ -42,6 +44,7 @@ export const createInitialConfigState = (overrides: Partial<ConfigState> = {}): 
   departments: [],
   departmentCategories: [],
   departmentPillEligibleLabels: [],
+  features: {},
   ...overrides,
 });
 
@@ -62,6 +65,7 @@ export function configReducer(state: ConfigState, action: ConfigAction): ConfigS
         departments: action.payload.departments,
         departmentCategories: action.payload.departmentCategories,
         departmentPillEligibleLabels: action.payload.departmentPillEligibleLabels,
+        features: action.payload.features,
       };
 
     case 'FETCH_FAILURE':

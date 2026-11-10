@@ -152,7 +152,7 @@ Release feature flags live in `RELEASE_FEATURE_FLAGS` in `server/src/services/co
 To add one:
 
 1. Add the camelCase flag name to `RELEASE_FEATURE_FLAGS`.
-2. Read `features.<flagName>` from the config payload at the point of use.
+2. Read `features.<flagName>` from the config payload at the point of use; in the client that is `features` on `ConfigContext`, which holds `true` only for a flag the server served as `true`.
 3. Set the matching environment variable in the Render environment groups.
 
 The environment variable name is the flag name upper-snake-cased with a `FEATURE_` prefix, so `newBrowseRanking` reads `FEATURE_NEW_BROWSE_RANKING`.

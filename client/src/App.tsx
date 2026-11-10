@@ -17,6 +17,7 @@ import FellowshipSearchContextProvider from './providers/FellowshipSearchContext
 import UIContextProvider from './providers/UIContextProvider';
 import ScrollToTop from './components/shared/ScrollToTop';
 import HttpStatusNotifier from './components/HttpStatusNotifier';
+import AccountDeletedNotice from './components/AccountDeletedNotice';
 import LoadingSpinner from './components/shared/LoadingSpinner';
 import { PRIVACY_PATH } from './utils/privacyNotice';
 
@@ -76,6 +77,7 @@ const App = () => {
                 data-scroll-container
               >
                 <HttpStatusNotifier />
+                <AccountDeletedNotice />
                 <main
                   id="main-content"
                   tabIndex={-1}

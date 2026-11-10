@@ -38,6 +38,8 @@ export interface ConfigContextType {
   departmentCategories: string[];
   departmentPillEligibleLabels: string[];
 
+  features: Record<string, boolean>;
+
   getResearchAreaByName: (name: string) => ResearchAreaConfig | undefined;
   getColorForResearchArea: (name: string) => { bg: string; text: string; border: string };
   getDepartmentByAbbr: (abbr: string) => DepartmentConfig | undefined;
@@ -58,6 +60,7 @@ export const defaultConfigContext: ConfigContextType = {
   departments: [],
   departmentCategories: [],
   departmentPillEligibleLabels: [],
+  features: {},
   getResearchAreaByName: () => undefined,
   getColorForResearchArea: () => ({
     bg: 'bg-panel-muted',
