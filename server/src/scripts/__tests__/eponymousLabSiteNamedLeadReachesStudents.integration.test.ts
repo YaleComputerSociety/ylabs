@@ -14,11 +14,16 @@ vi.mock('../../services/meiliSyncService', () => ({
   deleteFromIndex: meiliMocks.deleteFromIndex,
 }));
 
+import { DirectoryRemoval } from '../../models/directoryRemoval';
 import { ResearchEntity } from '../../models/researchEntity';
 import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
 import { getResearchGroupDetail } from '../../services/researchGroupService';
 import { runStudentVisibilityGate } from '../../services/studentVisibilityGateService';
+import {
+  DIRECTORY_REMOVAL_KEY_ENV,
+  directoryRemovalDigest,
+} from '../../utils/directoryRemovalDigest';
 import { runLabSiteNamedLeadAttachment } from '../attachLabSiteNamedLeads';
 
 const SLUG = 'synthetic-eponymous-neonatal-lab';
@@ -77,6 +82,7 @@ describe("an eponymous lab's own site supplies the lead it was held for (#1930)"
       'observations',
       'visibility_release_queue_items',
       'signals',
+      'directory_removals',
     ]) {
       await db.collection(name).deleteMany({});
     }
@@ -220,5 +226,26 @@ describe("an eponymous lab's own site supplies the lead it was held for (#1930)"
     expect(report.planned).toBe(0);
     expect((report.refusedByReason as Record<string, number>).prior_lead_edge_was_retired).toBe(1);
     expect(await servedLeadNames()).toEqual([]);
+  }, 60000);
+
+  it('attaches no lead who asked to be removed from the directory, and counts the refusal', async () => {
+    const key = 'synthetic-directory-removal-key-0123456789';
+    vi.stubEnv(DIRECTORY_REMOVAL_KEY_ENV, key);
+    try {
+      await DirectoryRemoval.create({
+        digest: directoryRemovalDigest(key, 'profile_url', PROFILE_URL),
+        kind: 'profile_url',
+        recordedAt: new Date(),
+      });
+
+      const report = await runLabSiteNamedLeadAttachment({ apply: true, maxApply: 5, readPages });
+
+      expect(report.planned).toBe(0);
+      expect(report.created).toBe(0);
+      expect((report.refusedByReason as Record<string, number>).removed_by_request).toBe(1);
+      expect(await RoleAssignment.countDocuments({ 'target.id': entityId })).toBe(0);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   }, 60000);
 });

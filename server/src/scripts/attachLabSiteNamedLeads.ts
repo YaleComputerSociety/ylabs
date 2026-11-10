@@ -35,6 +35,7 @@ import { MAX_PEOPLE_SUBPAGES, peopleSubpageUrls } from '../scrapers/utils/labSit
 import { HostRateLimiter, fetchPageWithPolicy } from '../scrapers/utils/httpFetch';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { loadDirectoryRemovalMintGuard } from '../services/directoryRemovalMintGuard';
 import { leadWouldUnblock } from './attachFraNamedLeadsCore';
 import {
   corroboratedResearchHome,
@@ -135,6 +136,7 @@ export async function runLabSiteNamedLeadAttachment(options: {
   readPages?: (researchHomeUrl: string) => Promise<LabSitePage[]>;
 }): Promise<Record<string, unknown>> {
   const readPages = options.readPages ?? readResearchHome;
+  const removalGuard = await loadDirectoryRemovalMintGuard();
   const entities = (await ResearchEntity.find({
     archived: { $ne: true },
     studentVisibilityReasons: 'missing_lead',
@@ -169,11 +171,13 @@ export async function runLabSiteNamedLeadAttachment(options: {
   }
 
   const officialProfileOwners: OfficialProfileOwner[] = [];
+  const researchersById = new Map<string, any>();
   for (const researcher of (await Researcher.find({ archived: { $ne: true } })
-    .select('_id displayName profileLinks')
+    .select('_id displayName identifiers profileLinks')
     .lean()) as any[]) {
     const personId = serializedDocumentId(researcher._id);
     if (!personId) continue;
+    researchersById.set(personId, researcher);
     for (const link of researcher.profileLinks || []) {
       if (link?.kind !== 'YALE_OFFICIAL' || typeof link?.url !== 'string') continue;
       officialProfileOwners.push({
@@ -219,6 +223,11 @@ export async function runLabSiteNamedLeadAttachment(options: {
     });
     if ('refusal' in outcome) {
       refusals.push(outcome.refusal);
+      continue;
+    }
+    if (removalGuard.refusesPerson(researchersById.get(outcome.plan.personId))) {
+      removalGuard.recordRefusal();
+      refusals.push({ reason: 'removed_by_request', researchHomeUrl: home.researchHomeUrl });
       continue;
     }
     planned.push({ ...outcome.plan, entityId, slug: String(entity.slug || '') });

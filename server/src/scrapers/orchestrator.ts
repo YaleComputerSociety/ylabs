@@ -11,6 +11,7 @@ import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeErrorForLog, sanitizeLogValue } from '../utils/logSanitizer';
 import { onInterrupt } from './interruptCleanup';
 import { appendObservations, getSourceByName } from './observationStore';
+import { directoryRemovalObservationRun } from './directoryRemovalObservationGuard';
 import { currentProcessCodeSha } from './scrapeRunCodeIdentity';
 import type { ReturnedScrapeRunStatus } from './sourceCrawlStamp';
 import { currentScrapeRunOwner, startScrapeRunHeartbeat } from './scrapeRunLiveness';
@@ -137,6 +138,7 @@ export class ScraperOrchestrator {
       ? (options.explainLimit ?? DEFAULT_EXPLAIN_LIMIT)
       : Infinity;
     const scrapeRunId = serializedDocumentId(run._id) || '';
+    const directoryRemoval = directoryRemovalObservationRun();
 
     const ctx: ScraperContext = {
       scrapeRunId,
@@ -153,7 +155,11 @@ export class ScraperOrchestrator {
           sourceName: source.name,
           sourceWeight: source.defaultWeight,
           dryRun: options.dryRun,
+          directoryRemovalGuard: directoryRemoval.guard,
         });
+        if (res.removedByRequest) {
+          reportedMetrics.removedByRequest = directoryRemoval.removedByRequest();
+        }
         if (options.dryRun && (options.dbReview || options.explain)) {
           const room = explainLimit - previewObservations.length;
           if (room > 0) {
@@ -168,7 +174,9 @@ export class ScraperOrchestrator {
           }
         }
         recordScrapeRunProgress();
-        observationCount += options.dryRun ? inputs.length : res.inserted;
+        observationCount += options.dryRun
+          ? inputs.length - (res.removedByRequest ?? 0)
+          : res.inserted;
         for (const o of inputs) {
           const key = `${o.entityType}:${o.entityId || o.entityKey || ''}`;
           observedEntityKeys.add(key);

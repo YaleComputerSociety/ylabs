@@ -8,6 +8,7 @@ import { ResearchEntity } from '../models/researchEntity';
 import { Researcher } from '../models/researcher';
 import { RoleAssignment } from '../models/roleAssignment';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { loadDirectoryRemovalMintGuard } from '../services/directoryRemovalMintGuard';
 import { serializedDocumentId } from '../utils/idSerialization';
 import {
   applyStudentVisibilityGatePlans,
@@ -57,6 +58,7 @@ async function main() {
     mongoUrl: process.env.MONGODBURL,
   });
   await initializeConnections();
+  const removalGuard = await loadDirectoryRemovalMintGuard();
 
   const researchers = await Researcher.find({ archived: { $ne: true } })
     .select('displayName profileLinks')
@@ -95,6 +97,15 @@ async function main() {
       archived: { $ne: true },
     });
     if (existingRole > 0) continue;
+    if (
+      removalGuard.refusesPerson({
+        displayName: plan.personName,
+        profileLinks: [{ url: plan.profileUrl }],
+      })
+    ) {
+      removalGuard.recordRefusal();
+      continue;
+    }
     planned.push({
       entityId,
       personName: plan.personName,
@@ -166,6 +177,7 @@ async function main() {
     existingResearchers: displayNames.length,
     claimedProfileUrls: claimedProfileKeys.size,
     plannedMints: planned.length,
+    refusedAsRemovedByRequest: removalGuard.refusals,
     minted,
     attached,
     promotedToStudentReady: promoted,

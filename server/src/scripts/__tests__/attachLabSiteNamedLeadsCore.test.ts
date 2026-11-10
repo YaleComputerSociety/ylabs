@@ -356,6 +356,7 @@ describe('planning an attachment from the research home itself', () => {
       profile_owner_not_in_corpus: 0,
       profile_owner_is_ambiguous: 0,
       prior_lead_edge_was_retired: 1,
+      removed_by_request: 0,
     });
   });
 });

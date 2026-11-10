@@ -8,6 +8,7 @@ import { ResearchEntity } from '../models/researchEntity';
 import { Researcher } from '../models/researcher';
 import { RoleAssignment } from '../models/roleAssignment';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { loadDirectoryRemovalMintGuard } from '../services/directoryRemovalMintGuard';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { fetchPublicHttpUrl } from '../scrapers/utils/httpFetch';
 import {
@@ -97,9 +98,10 @@ async function main() {
     mongoUrl: process.env.MONGODBURL,
   });
   await initializeConnections();
+  const removalGuard = await loadDirectoryRemovalMintGuard();
 
   const researchers = (await Researcher.find({ archived: { $ne: true } })
-    .select('_id displayName profileLinks')
+    .select('_id displayName identifiers profileLinks')
     .lean()) as any[];
   const researchersByName = new Map<string, any[]>();
   const claimedProfileKeys = new Set<string>();
@@ -152,6 +154,16 @@ async function main() {
     const matches = researchersByName.get(comparableName(plan.personName)) ?? [];
     if (matches.length > 1) {
       refusedByAmbiguousResearcher.push(entityId);
+      continue;
+    }
+    if (
+      removalGuard.refusesPerson(matches[0]) ||
+      removalGuard.refusesPerson({
+        displayName: plan.personName,
+        profileLinks: [{ url: plan.profileUrl }],
+      })
+    ) {
+      removalGuard.recordRefusal();
       continue;
     }
     planned.push({
@@ -245,6 +257,7 @@ async function main() {
     plannedMints: planned.filter((row) => !row.existingResearcherId).length,
     plannedAttachmentsToExisting: planned.filter((row) => row.existingResearcherId).length,
     refusedByAmbiguousResearcher: refusedByAmbiguousResearcher.length,
+    refusedAsRemovedByRequest: removalGuard.refusals,
     minted,
     attachedToExisting,
     promotedToStudentReady: promoted,

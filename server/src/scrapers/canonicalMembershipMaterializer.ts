@@ -21,6 +21,12 @@ import { sanitizePersonName } from '../utils/personNameHygiene';
 import { escapeRegex } from '../utils/regex';
 import { canonicalPersonName } from './utils/personNameCasing';
 import { looksLikeYaleNetid } from '../utils/yaleNetid';
+import {
+  currentDirectoryRemovalMintGuard,
+  REMOVED_BY_REQUEST,
+  researcherIsRemovedByRequest,
+  type DirectoryRemovalMintGuard,
+} from '../services/directoryRemovalMintGuard';
 
 const toObjectId = (value: unknown): mongoose.Types.ObjectId | undefined => {
   if (value instanceof mongoose.Types.ObjectId) return value;
@@ -382,9 +388,12 @@ async function mintResearcherForIdentityNetid(
   }
 }
 
+type ResearcherResolution = mongoose.Types.ObjectId | undefined | typeof REMOVED_BY_REQUEST;
+
 async function resolveOrCreateResearcherId(
   identity: CanonicalMemberIdentity,
-): Promise<mongoose.Types.ObjectId | undefined> {
+  guard?: DirectoryRemovalMintGuard,
+): Promise<ResearcherResolution> {
   if (identityIsOrganizationalMailbox(identity)) return undefined;
   const displayName = canonicalPersonName(trimmed(identity.displayName));
   const orcid = normalizedOrcid(identity.orcid);
@@ -429,6 +438,7 @@ async function resolveOrCreateResearcherId(
   }
 
   if (!displayName) return undefined;
+  if (guard?.refusesName(displayName)) return REMOVED_BY_REQUEST;
   return resolveOrCreateNameOnlyResearcherId(displayName);
 }
 
@@ -564,10 +574,39 @@ export async function identifiedResearcherHoldsDisplayName(displayName: unknown)
   return Boolean(namesake);
 }
 
+const listedDirectoryRemovalPerson = (identity: CanonicalMemberIdentity, profileUrl?: string) => ({
+  displayName: trimmed(identity.displayName),
+  identifiers: {
+    netid: trimmed(identity.netid),
+    email: trimmed(identity.email),
+    orcid: trimmed(identity.orcid),
+  },
+  profileLinks: profileUrl ? [{ url: profileUrl }] : [],
+});
+
+export async function resolveOrCreateResearcherIdUnlessRemoved(
+  identity: CanonicalMemberIdentity,
+  guard: DirectoryRemovalMintGuard,
+  profileUrl?: string,
+): Promise<ResearcherResolution> {
+  if (guard.refusesIdentifiedPerson(listedDirectoryRemovalPerson(identity, profileUrl))) {
+    return REMOVED_BY_REQUEST;
+  }
+  const personId =
+    (await liveResearcherId(identity.resolvedPersonId)) ??
+    (await resolveOrCreateResearcherId(identity, guard));
+  if (personId === REMOVED_BY_REQUEST || !personId) return personId;
+  return (await researcherIsRemovedByRequest(guard, personId)) ? REMOVED_BY_REQUEST : personId;
+}
+
 export async function resolveOrCreateResearcherIdForIdentity(
   identity: CanonicalMemberIdentity,
 ): Promise<mongoose.Types.ObjectId | undefined> {
-  return resolveOrCreateResearcherId(identity);
+  const resolution = await resolveOrCreateResearcherIdUnlessRemoved(
+    identity,
+    await currentDirectoryRemovalMintGuard(),
+  );
+  return resolution === REMOVED_BY_REQUEST ? undefined : resolution;
 }
 
 export async function resolveCanonicalResearcherId(
@@ -613,7 +652,8 @@ export type CanonicalMembershipOutcome =
   | 'refused-organizational-mailbox'
   | 'refused-person'
   | 'refused-upsert-shape'
-  | 'refused-duplicate-key';
+  | 'refused-duplicate-key'
+  | typeof REMOVED_BY_REQUEST;
 
 /**
  * The fields a membership write governs, compared through a pre-image because
@@ -679,11 +719,18 @@ export async function writeCanonicalMembership(
     ? 'CANONICAL_SOURCE_REFERENCE'
     : undefined;
   const reviewStatus = reviewStatusForLegacyMembership(facts, state, resolution);
+  const guard = await currentDirectoryRemovalMintGuard();
 
   try {
-    const personId =
-      (await liveResearcherId(identity.resolvedPersonId)) ??
-      (await resolveOrCreateResearcherId(identity));
+    const personId = await resolveOrCreateResearcherIdUnlessRemoved(
+      identity,
+      guard,
+      trimmed(facts.rosterProvenance?.profileUrl) || undefined,
+    );
+    if (personId === REMOVED_BY_REQUEST) {
+      guard.recordRefusal();
+      return refused(REMOVED_BY_REQUEST);
+    }
     if (!personId) return refused('refused-person');
 
     const upsert = buildCanonicalRoleAssignmentUpsert(personId, entityObjectId, facts.legacyRole, {
@@ -761,6 +808,11 @@ export async function adoptUnprovenancedRoleAssignments(
 ): Promise<number> {
   const entityObjectId = toObjectId(researchEntityId);
   if (!entityObjectId || !trimmed(adoption.sourceName)) return 0;
+  const guard = await currentDirectoryRemovalMintGuard();
+  if (await researcherIsRemovedByRequest(guard, adoption.personId)) {
+    guard.recordRefusal();
+    return 0;
+  }
   const edges = (await RoleAssignment.find({
     personId: adoption.personId,
     'target.kind': 'RESEARCH_ENTITY',

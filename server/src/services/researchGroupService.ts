@@ -35,7 +35,8 @@ import {
 } from '../models/canonicalRoleMapping';
 import { Researcher, type ResearcherProfileLink } from '../models/researcher';
 import { Department, DepartmentCategory } from '../models/department';
-import { resolveOrCreateResearcherIdForIdentity } from '../scrapers/canonicalMembershipMaterializer';
+import { resolveOrCreateResearcherIdUnlessRemoved } from '../scrapers/canonicalMembershipMaterializer';
+import { currentDirectoryRemovalMintGuard, REMOVED_BY_REQUEST } from './directoryRemovalMintGuard';
 import { judgeReDerivedAccessSignals } from '../scrapers/accessMaterializer';
 import { isProgrammePageAdmittedAsJoinRoute } from '../scrapers/undergradJoinPageAdmission';
 import { isLabRosterCitationUrl } from '../scrapers/undergradRosterEvidence';
@@ -457,6 +458,7 @@ function ownerDisplayName(owner: OwnerLike, kind: 'lab' | 'individual'): string 
 export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
   group: any;
   created: boolean;
+  refused?: typeof REMOVED_BY_REQUEST;
 }> {
   if (!owner._id && !owner.netid) {
     throw new Error('findOrCreateForOwner requires owner._id or owner.netid');
@@ -464,11 +466,15 @@ export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
 
   const ownerDisplayNameValue =
     [owner.fname, owner.lname].filter(Boolean).join(' ').trim() || undefined;
-  const ownerPersonId = await resolveOrCreateResearcherIdForIdentity({
-    netid: owner.netid,
-    displayName: ownerDisplayNameValue,
-    hasCanonicalSourceReference: true,
-  });
+  const guard = await currentDirectoryRemovalMintGuard();
+  const ownerPersonId = await resolveOrCreateResearcherIdUnlessRemoved(
+    { netid: owner.netid, displayName: ownerDisplayNameValue, hasCanonicalSourceReference: true },
+    guard,
+  );
+  if (ownerPersonId === REMOVED_BY_REQUEST) {
+    guard.recordRefusal();
+    return { group: null, created: false, refused: REMOVED_BY_REQUEST };
+  }
   if (ownerPersonId) {
     const existingLeadAssignment = await RoleAssignment.findOne({
       personId: ownerPersonId,

@@ -186,6 +186,13 @@ import {
 import { isSweepStageEnabledByDefault } from '../scripts/sweepStageFlags';
 import { recomputeBrowseRankForEntities } from '../services/researchEntityBrowseRankService';
 import {
+  currentDirectoryRemovalMintGuard,
+  loadDirectoryRemovalMintGuard,
+  REMOVED_BY_REQUEST,
+  researcherIsRemovedByRequest,
+  withDirectoryRemovalMintGuard,
+} from '../services/directoryRemovalMintGuard';
+import {
   materializeAccessForResearchGroup,
   type AccessObservation,
   type AccessSignalChangePlan,
@@ -3650,6 +3657,7 @@ async function materializeRosterMember(
     conflicts: plan.conflicts,
     created: outcome === 'created' || (!existing && outcome === 'updated'),
     resolved,
+    ...(outcome === REMOVED_BY_REQUEST ? { skipped: REMOVED_BY_REQUEST } : {}),
   };
 }
 
@@ -3706,6 +3714,49 @@ export async function planInferredPiMembership(
     if (facts) leads.push(facts);
   }
   return leads;
+}
+
+const inferredLeadKeyPerson = (observation: MaterializerObservationLike) => {
+  const lookupValue = userLookupValueForInferredPiUserKey(observation.value);
+  return {
+    identifiers: lookupValue.includes('@') ? { email: lookupValue } : { netid: lookupValue },
+    profileLinks: observation.sourceUrl ? [{ url: observation.sourceUrl }] : [],
+  };
+};
+
+/**
+ * A faculty research profile is one person's own row, so it is not minted for a person
+ * removed from the directory (#4160): neither the identity its inferred lead key states nor
+ * the researcher that key resolves to may be on the list. Read only while the list holds
+ * entries, so an empty list costs no lookup.
+ */
+async function facultyResearchProfileMintIsRemovedByRequest(
+  insert: Record<string, unknown>,
+  observations: MaterializerObservationLike[],
+): Promise<boolean> {
+  if (insert.entityType !== 'FACULTY_RESEARCH_AREA') return false;
+  const guard = await currentDirectoryRemovalMintGuard();
+  if (!guard.active) return false;
+  const statesARemovedLead = observations.some(
+    (observation) =>
+      observation.field === 'inferredPiUserKey' &&
+      guard.refusesIdentifiedPerson(inferredLeadKeyPerson(observation)),
+  );
+  let removed = statesARemovedLead;
+  if (!removed) {
+    const leads = await planInferredPiMembership(
+      new mongoose.Types.ObjectId().toString(),
+      observations,
+    );
+    for (const lead of leads) {
+      if (await researcherIsRemovedByRequest(guard, lead.personId)) {
+        removed = true;
+        break;
+      }
+    }
+  }
+  if (removed) guard.recordRefusal();
+  return removed;
 }
 
 export async function materializeInferredPiMembership(
@@ -4486,7 +4537,7 @@ export interface InferredDirectorMaterializationResult {
   removedDuplicates: number;
   userId?: string;
   role?: string;
-  skipped?: 'no-observation' | 'unresolved-user' | 'name-mismatch';
+  skipped?: 'no-observation' | 'unresolved-user' | 'name-mismatch' | typeof REMOVED_BY_REQUEST;
 }
 
 /**
@@ -4606,7 +4657,7 @@ export async function materializeInferredDirectorMembership(
     hasCanonicalSourceReference: true,
     ...(directorPersonId ? { resolvedPersonId: directorPersonId } : {}),
   };
-  await materializeCanonicalMembership(
+  const directorOutcome = await materializeCanonicalMembership(
     researchEntityId,
     {
       legacyRole: role,
@@ -4623,6 +4674,7 @@ export async function materializeInferredDirectorMembership(
     },
     directorIdentity,
   );
+  if (directorOutcome === REMOVED_BY_REQUEST) return { ...empty, skipped: REMOVED_BY_REQUEST };
 
   const supersededPersonId =
     directorPersonId ?? (await resolveCanonicalResearcherId(directorIdentity));
@@ -4999,7 +5051,11 @@ export async function syncProfileBackedFacultyResearchAreaMemberFromIdentity(
   created: boolean;
   researchEntityId?: string;
   userId?: string;
-  skipped?: 'not-faculty-research-area' | 'lead-edge-held' | 'user-not-resolved';
+  skipped?:
+    | 'not-faculty-research-area'
+    | 'lead-edge-held'
+    | 'user-not-resolved'
+    | typeof REMOVED_BY_REQUEST;
 }> {
   const observedEntityType = textValue(identity.entityType);
   const observedKey = textValue(identity.entityKey);
@@ -5063,6 +5119,9 @@ export async function syncProfileBackedFacultyResearchAreaMemberFromIdentity(
     },
   );
 
+  if (outcome === REMOVED_BY_REQUEST) {
+    return { synced: false, created: false, researchEntityId, skipped: REMOVED_BY_REQUEST };
+  }
   return {
     synced: !outcome.startsWith('refused-'),
     created: outcome === 'created',
@@ -7427,6 +7486,23 @@ async function materializeUserIdentityToResearcher(
     // netid the resolver would not follow is the same graft by another route.
     if (resolvedNetid && (await Researcher.exists({ 'identifiers.netid': resolvedNetid }))) {
       return skipped('resolved-netid-already-claimed');
+    }
+    const mintGuard = await currentDirectoryRemovalMintGuard();
+    if (
+      mintGuard.refusesPerson({
+        displayName,
+        identifiers: {
+          netid: resolvedNetid,
+          email: mintedEmail ?? normalizedAccountEmail(resolved.email?.value),
+          orcid,
+        },
+        profileLinks: Object.values(profileUrls ?? {})
+          .filter((url): url is string => typeof url === 'string')
+          .map((url) => ({ url })),
+      })
+    ) {
+      mintGuard.recordRefusal();
+      return skipped(REMOVED_BY_REQUEST);
     }
     if (options.dryRun) {
       return skipped('dry-run-would-mint-researcher');
@@ -10691,6 +10767,16 @@ export async function materializeEntity(
   identifier: { entityId?: string; entityKey?: string },
   options: MaterializeOptions = {},
 ): Promise<MaterializeResult> {
+  return withDirectoryRemovalMintGuard(() =>
+    materializeEntityUnderRemovalGuard(entityType, identifier, options),
+  );
+}
+
+async function materializeEntityUnderRemovalGuard(
+  entityType: ObservedEntityType,
+  identifier: { entityId?: string; entityKey?: string },
+  options: MaterializeOptions,
+): Promise<MaterializeResult> {
   // Structural, not a convention: a projection derived with locks ignored reaching
   // the write below is exactly the silent unfreeze that re-opening a lock is a
   // separate reviewed operation to prevent (#2612).
@@ -11600,6 +11686,21 @@ export async function materializeEntity(
         skipped: 'missing-required-fields',
       };
     }
+    if (
+      isResearchEntityObservationType(entityType) &&
+      (await facultyResearchProfileMintIsRemovedByRequest(insert, materializationObs))
+    ) {
+      return {
+        entityType,
+        entityId: undefined,
+        entityKey: identifier.entityKey,
+        fieldsWritten: 0,
+        conflicts: 0,
+        created: false,
+        resolved,
+        skipped: REMOVED_BY_REQUEST,
+      };
+    }
     let created_;
     let didCreate = true;
     if (isResearchEntityObservationType(entityType)) {
@@ -12286,10 +12387,7 @@ export async function materializeObservedEntitiesInChunks(
   }
 }
 
-export async function materializeFromRun(
-  scrapeRunId: string,
-  options: MaterializeOptions = {},
-): Promise<{
+interface MaterializeFromRunCounts {
   materialized: number;
   created: number;
   updated: number;
@@ -12298,7 +12396,29 @@ export async function materializeFromRun(
   errors: number;
   indexSyncFailures: number;
   postMaterializationMetrics: Required<ReportPostMaterializationMetrics>;
-}> {
+}
+
+export async function materializeFromRun(
+  scrapeRunId: string,
+  options: MaterializeOptions = {},
+): Promise<MaterializeFromRunCounts & { removedByRequest: number }> {
+  const guard = await loadDirectoryRemovalMintGuard();
+  const counts = await withDirectoryRemovalMintGuard(
+    () => materializeFromRunUnderRemovalGuard(scrapeRunId, options),
+    guard,
+  );
+  if (guard.refusals > 0) {
+    console.info(
+      `[directory-removal] refused ${guard.refusals} mint or attachment(s) for people removed from the directory by request`,
+    );
+  }
+  return { ...counts, removedByRequest: guard.refusals };
+}
+
+async function materializeFromRunUnderRemovalGuard(
+  scrapeRunId: string,
+  options: MaterializeOptions,
+): Promise<MaterializeFromRunCounts> {
   const runObjectId = toMaterializerObjectId(scrapeRunId);
   if (!runObjectId) {
     return {

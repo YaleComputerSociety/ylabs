@@ -35,6 +35,7 @@ export const LAB_SITE_NAMED_LEAD_REFUSAL_REASONS = [
   'profile_owner_not_in_corpus',
   'profile_owner_is_ambiguous',
   'prior_lead_edge_was_retired',
+  'removed_by_request',
 ] as const;
 
 export type LabSiteNamedLeadRefusalReason = (typeof LAB_SITE_NAMED_LEAD_REFUSAL_REASONS)[number];
