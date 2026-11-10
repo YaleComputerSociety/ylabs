@@ -21,6 +21,8 @@ export interface MentorListing {
   adviserEmail?: string;
   adviserProfileUrl?: string;
   department?: string;
+  /** Departments the list's advisers plausibly sit in, for a list that names no department. */
+  departmentScope?: readonly string[];
   year?: number;
   sourceUrl: string;
 }
@@ -329,6 +331,14 @@ export function wuTsaiFellowListings(html: string, url: string): MentorListing[]
   return listings;
 }
 
+const TITLE_AFTER_NAME =
+  /\s+(?:(?:Assistant|Associate|Adjunct|Visiting|Senior|Distinguished|Emeritus|Emerita|Research)\s+)*(?:Professor|Lecturer|Scientist|Instructor|Director|Chair)\b.*$/;
+
+/** A card heading that prints the title after the name, cut at the first academic rank. */
+export function nameBeforeTitle(heading: string): string {
+  return cleanAdviserName(heading.replace(TITLE_AFTER_NAME, ''));
+}
+
 const emailNameTokens = (email: string | undefined): Set<string> =>
   new Set(
     (email?.split('@')[0] ?? '')
@@ -384,7 +394,7 @@ export function physicsOpenOpportunityListings(html: string, url: string): Mento
         /[a-z0-9._%+-]+@(?:[a-z0-9-]+\.)*yale\.edu/i.exec(cardText)?.[0],
     );
     const heading = link.text().replace(/\s+/g, ' ').trim();
-    const adviserName = nameFromHeadingAndEmail(heading, adviserEmail) || cleanAdviserName(heading);
+    const adviserName = nameFromHeadingAndEmail(heading, adviserEmail) || nameBeforeTitle(heading);
     if (!PLAUSIBLE_NAME.test(adviserName) || !adviserName.includes(' ')) return;
     listings.push({
       source: 'physics-open-research-opportunities',

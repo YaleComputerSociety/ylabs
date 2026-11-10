@@ -52,6 +52,20 @@ vi.mock('axios', async (importOriginal) => {
   return { ...actual, default: axios };
 });
 
+const pendingTallyWrites = vi.hoisted(() => [] as Promise<void>[]);
+
+vi.mock('../services/loginSignalTallyService', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/loginSignalTallyService')>();
+  return {
+    ...actual,
+    recordLoginSignal: (...args: Parameters<typeof actual.recordLoginSignal>) => {
+      const write = actual.recordLoginSignal(...args);
+      pendingTallyWrites.push(write);
+      return write;
+    },
+  };
+});
+
 vi.mock('../services/analyticsService', () => ({
   logEvent: vi.fn(async () => 'skipped'),
 }));
@@ -200,13 +214,11 @@ describe('a CAS login measures signal coverage without storing any student value
             rows.reduce((total, row) => total + Number(row[bucket] ?? 0), 0),
           ]),
         );
-      await vi.waitFor(async () => {
-        const rows = await db.collection('login_signal_tallies').find({}).toArray();
-        expect(sumBuckets(rows)).toMatchObject({
-          undergrad_usable_major: 2,
-          grad_with_curriculum: 1,
-        });
-      });
+      expect(pendingTallyWrites).toHaveLength(3);
+      await Promise.all(pendingTallyWrites);
+      expect(
+        sumBuckets(await db.collection('login_signal_tallies').find({}).toArray()),
+      ).toMatchObject({ undergrad_usable_major: 2, grad_with_curriculum: 1 });
       const collections = await db.listCollections().toArray();
       for (const { name } of collections) {
         const documents = await db.collection(name).find({}).toArray();

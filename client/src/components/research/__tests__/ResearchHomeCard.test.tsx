@@ -487,7 +487,7 @@ describe('ResearchHomeCard', () => {
     expect(screen.queryByRole('link', { name: 'Fixture Researcher' })).toBeNull();
   });
 
-  it('gives a card titled with its own lead one tab stop, not the same name twice', () => {
+  it('links a lead to their Yale profile even when the card is titled with their name', () => {
     const { container } = render(
       <MemoryRouter>
         <ResearchHomeCard
@@ -510,9 +510,9 @@ describe('ResearchHomeCard', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getAllByRole('link').map((link) => link.textContent)).toEqual([
-      'Fixture Scholar',
-    ]);
+    expect(screen.getByRole('link', { name: 'Fixture Scholár' }).getAttribute('href')).toBe(
+      'https://medicine.yale.edu/profile/fixture-scholar/',
+    );
     expect(container.textContent).toContain('Principal Investigator: Fixture  Scholár');
   });
 
