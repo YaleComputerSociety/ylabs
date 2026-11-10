@@ -10,7 +10,7 @@ import {
   resolveDecisionProfileUrl,
   resolveOutreachApplySource,
   resolveOutreachOfficialSource,
-  servedResearchWebsiteUrl,
+  servedLinkUrl,
   vettedJoinPageUrls,
 } from './researchDetailSources';
 import { safeHttpUrl } from './url';
@@ -187,7 +187,7 @@ export function resolveResearchDetailActionLinkContext({
     !isSuppressedResearchWebsiteCtaUrl(group.websiteUrl) &&
     !isRefusedResearchWebsitePageUrl(group.websiteUrl, group.entityType) &&
     !isUnreachableResearchWebsiteCtaUrl(group.websiteUrl, group.sourceLinkHealth as never)
-      ? servedResearchWebsiteUrl(group.websiteUrl, group.sourceLinkHealth as never)
+      ? servedLinkUrl(group.websiteUrl, group.sourceLinkHealth as never)
       : undefined;
   const isPrimaryWebsiteLikelyUnavailable = isLikelyUnavailableSourceLink(
     findSourceLinkHealthEntry(group.sourceLinkHealth as never, primaryWebsiteUrl),

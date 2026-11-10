@@ -73,7 +73,7 @@ import {
   ResearchDetailSource,
   resolveDecisionProfileUrl,
   resolveOutreachApplySource,
-  servedResearchWebsiteUrl,
+  servedLinkUrl,
   resolveOutreachOfficialSource,
   vettedJoinPageUrls,
   ACCESS_SIGNAL_SOURCE_CONTEXTS,
@@ -679,7 +679,10 @@ const DecisionSummary = ({
               <figcaption className="mt-2 pl-4.5 text-sm text-muted">
                 Quoted from{' '}
                 <a
-                  href={invitation.sourceUrl}
+                  href={
+                    servedLinkUrl(invitation.sourceUrl, group.sourceLinkHealth) ||
+                    invitation.sourceUrl
+                  }
                   aria-label={`${invitation.sourceHost} (opens in a new tab)`}
                   target="_blank"
                   rel={EXTERNAL_LINK_REL}
@@ -761,7 +764,7 @@ const DecisionSummary = ({
                 </p>
                 <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                   <a
-                    href={officialSource.url}
+                    href={officialSource.servedUrl}
                     target="_blank"
                     rel={EXTERNAL_LINK_REL}
                     className="yr-pressable inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
@@ -789,7 +792,7 @@ const DecisionSummary = ({
             ) : showsProfileButton ? (
               <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                 <a
-                  href={profileUrl}
+                  href={servedLinkUrl(profileUrl, group.sourceLinkHealth) || profileUrl}
                   target="_blank"
                   rel={EXTERNAL_LINK_REL}
                   className="yr-pressable inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
@@ -802,7 +805,7 @@ const DecisionSummary = ({
             ) : offersOfficialPage && officialSource ? (
               <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                 <a
-                  href={officialSource.url}
+                  href={officialSource.servedUrl}
                   target="_blank"
                   rel={EXTERNAL_LINK_REL}
                   className="yr-pressable inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
@@ -921,7 +924,7 @@ const SourcesSection = ({
       </div>
       <div className="divide-y divide-line">
         {sources.map((source) => {
-          const sourceUrl = safeHttpUrl(source.url);
+          const sourceUrl = safeHttpUrl(source.servedUrl);
           return (
             <article key={source.url} className="px-4 py-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -1158,7 +1161,7 @@ const LabDetail = () => {
     !isSuppressedResearchWebsiteCtaUrl(group.websiteUrl) &&
     !isRefusedResearchWebsitePageUrl(group.websiteUrl, group.entityType) &&
     !isUnreachableResearchWebsiteCtaUrl(group.websiteUrl, group.sourceLinkHealth)
-      ? servedResearchWebsiteUrl(group.websiteUrl, group.sourceLinkHealth)
+      ? servedLinkUrl(group.websiteUrl, group.sourceLinkHealth)
       : undefined;
   const primaryWebsiteHealth = findSourceLinkHealthEntry(group.sourceLinkHealth, primaryWebsiteUrl);
   const isPrimaryWebsiteLikelyUnavailable = isLikelyUnavailableSourceLink(primaryWebsiteHealth);

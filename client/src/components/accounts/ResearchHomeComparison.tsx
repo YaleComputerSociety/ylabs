@@ -28,6 +28,7 @@ import {
   isSuppressedResearchWebsiteCtaUrl,
   isUnreachableResearchWebsiteCtaUrl,
   normalizeSourceUrl,
+  servedLinkUrl,
 } from '../../utils/researchDetailSources';
 import {
   isIdentifierRecordUrl,
@@ -133,7 +134,7 @@ const officialLinks = (
   const seen = new Set<string>();
   const usedLabels = new Set<string>();
   for (const candidate of candidates) {
-    const href = safeHttpUrl(candidate);
+    const href = safeHttpUrl(servedLinkUrl(candidate, entity.sourceLinkHealth) || candidate);
     if (!href) continue;
     if (
       isSuppressedResearchWebsiteCtaUrl(href) ||
@@ -171,7 +172,7 @@ const involvementLinks = (
   const actions = resolveResearchDetailActionLinks(context);
   const links: InvolvementLink[] = [];
   const add = (href: string | undefined, label: string) => {
-    const safe = safeHttpUrl(href);
+    const safe = safeHttpUrl(servedLinkUrl(href, entity.sourceLinkHealth) || href);
     if (safe && !links.some((link) => link.href === safe)) links.push({ href: safe, label });
   };
   if (context.wayInWithheld) {
