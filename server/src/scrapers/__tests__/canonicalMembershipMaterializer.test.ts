@@ -522,6 +522,42 @@ describe('canonical membership materialization (integration)', () => {
     expect(roster[0].name).toBe('Eta Seven');
   });
 
+  it('resolves a noisy spelling onto a stored clean name-only researcher instead of minting a second one', async () => {
+    const id = entityId();
+    const stored = await Researcher.create({
+      displayName: 'Theta Eight',
+      profileLinks: [],
+      archived: false,
+    });
+    await materializeCanonicalMembership(
+      id,
+      {
+        legacyRole: 'staff',
+        displayName: 'Photo of THETA EIGHT, PhD.',
+        isCurrentMember: true,
+        confidence: 0.5,
+      },
+      { displayName: 'Photo of THETA EIGHT, PhD.' },
+    );
+    expect(await Researcher.countDocuments({})).toBe(1);
+    const assignment = await RoleAssignment.findOne({}).lean<WithObjectId<RoleAssignmentRecord>>();
+    expect(String(assignment?.personId)).toBe(String(stored._id));
+  });
+
+  it('reaches one researcher whichever spelling of a new name-only person arrives first', async () => {
+    for (const [first, second] of [
+      ['Iota Nine', 'Photo of Iota Nine.'],
+      ['Photo of Kappa Ten.', 'Kappa Ten'],
+    ]) {
+      const firstId = await resolveOrCreateResearcherIdForIdentity({ displayName: first });
+      const secondId = await resolveOrCreateResearcherIdForIdentity({ displayName: second });
+      expect(String(secondId)).toBe(String(firstId));
+    }
+    expect(await Researcher.countDocuments({})).toBe(2);
+    const names = (await Researcher.find({}).lean<ResearcherRecord[]>()).map((r) => r.displayName);
+    expect(names.sort()).toEqual(['Iota Nine', 'Kappa Ten']);
+  });
+
   it('creates only one name-only researcher when the same identity resolves concurrently', async () => {
     const identity = { displayName: 'Concurrent Name-Only Person' };
     const ids = await Promise.all(

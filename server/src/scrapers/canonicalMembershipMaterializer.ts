@@ -498,9 +498,19 @@ async function findOrCreateNameOnlyResearcherId(
   }
 }
 
+function nameOnlyResolutionName(displayName: string): string {
+  return canonicalPersonName(sanitizePersonName(displayName) ?? displayName);
+}
+
+/**
+ * Resolves on the sanitized name, the same form adoption compares stored names against, so
+ * a noisy spelling of a stored clean name reaches that researcher instead of minting a
+ * second one (#5539), and every spelling of one person shares one lock.
+ */
 async function resolveOrCreateNameOnlyResearcherId(
-  displayName: string,
+  incomingDisplayName: string,
 ): Promise<mongoose.Types.ObjectId | undefined> {
+  const displayName = nameOnlyResolutionName(incomingDisplayName);
   const previous = nameOnlyResolutionLocks.get(displayName) ?? Promise.resolve(undefined);
   const current = previous
     .catch(() => undefined)
