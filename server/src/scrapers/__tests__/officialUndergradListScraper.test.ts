@@ -243,6 +243,7 @@ describe('OfficialUndergradListScraper', () => {
       'german-senior-essays',
       'cognitive-science-senior-essays',
       'eps-senior-theses',
+      'economics-senior-essay-advisers',
     ];
     const workedInsideResearch = [
       'tobin-research-assistantships',
@@ -250,7 +251,6 @@ describe('OfficialUndergradListScraper', () => {
       'yibs-summer-research-fellows',
     ];
     const takingUndergraduatesNow = [
-      'economics-senior-essay-advisers',
       'psychology-research-opportunities',
       'physics-open-research-opportunities',
     ];
