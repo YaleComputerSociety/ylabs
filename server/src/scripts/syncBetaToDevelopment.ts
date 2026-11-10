@@ -17,6 +17,7 @@ import {
   type CorpusAccountReference,
 } from './corpusAccountReferences';
 import { applyStagedCollectionSwap, mirroredValidationOptions } from './stagedCollectionSwap';
+import { assertStagedSwapHeadroom, collectionsFootprintMb } from './stagedSwapHeadroom';
 import {
   carriedRowCount,
   carryDevelopmentArchive,
@@ -511,6 +512,7 @@ export async function applySync(
   targetDb: Db,
   collections: SyncCollection[],
   clearedCollectionNames: string[],
+  preflight: () => Promise<void>,
   verify: () => Promise<void>,
   afterCutover?: (backups: ReadonlyMap<string, string>) => Promise<void>,
 ): Promise<void> {
@@ -524,8 +526,27 @@ export async function applySync(
     label: 'Beta to Development sync',
     stage: (collection, operationId) => copyCollection(sourceDb, targetDb, collection, operationId),
     afterCutover,
+    preflight,
     verify,
   });
+}
+
+export function syncHeadroomPreflight(input: {
+  sourceDb: Db;
+  targetClient: MongoClient;
+  collections: readonly SyncCollection[];
+  label: string;
+}): () => Promise<void> {
+  return async () => {
+    await assertStagedSwapHeadroom({
+      client: input.targetClient,
+      stagingMb: await collectionsFootprintMb(
+        input.sourceDb,
+        input.collections.map((collection) => collection.name),
+      ),
+      label: input.label,
+    });
+  };
 }
 
 async function main(): Promise<void> {
@@ -584,6 +605,12 @@ async function main(): Promise<void> {
       developmentDb,
       collections,
       clearedDevelopmentCollections,
+      syncHeadroomPreflight({
+        sourceDb: betaDb,
+        targetClient: developmentClient,
+        collections,
+        label: 'Beta to Development sync',
+      }),
       async () => {
         after = await buildPlan(betaDb, developmentDb, collections);
         const mismatches = syncCountMismatches(after, archiveCarry);

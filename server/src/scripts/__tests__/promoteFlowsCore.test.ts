@@ -49,6 +49,7 @@ const productionPlan = {
   includesObservations: false,
   includesScrapeRuns: false,
   collections: [{ name: 'research_entities', sourceCopyCount: 100, targetCount: 90 }],
+  storageHeadroom: { ok: true, message: 'Beta to Production promotion: enough headroom' },
 };
 
 interface Harness {
@@ -193,7 +194,17 @@ function productionDeps(
   return {
     ...baseDeps(
       harness,
-      { 'production-promotion-plan.json': productionPlan },
+      {
+        'production-promotion-plan.json': productionPlan,
+        'production-promotion-apply.json': {
+          ...productionPlan,
+          applied: {
+            operationId: '41_1760000000000',
+            rollbackCommand:
+              'yarn --cwd server production:promote-beta-copy --rollback 41_1760000000000',
+          },
+        },
+      },
       answer,
       renderFetch(harness, 'crn-prod1', 'main', { finalStatus, liveCommit, deployFinalStatus }),
     ),
@@ -378,6 +389,9 @@ describe('promote:production', () => {
       startCommand: 'yarn --cwd server promote:remote-phase --environment production',
     });
     expect(harness.logs.join('\n')).toContain('merge it (docs/release-process.md step 6)');
+    expect(harness.logs.join('\n')).toContain(
+      'To restore what it replaced: yarn --cwd server production:promote-beta-copy --rollback 41_1760000000000',
+    );
   });
 
   it('writes nothing on a yes instead of the target name', async () => {
@@ -424,6 +438,18 @@ describe('promote:production', () => {
     expect(await runPromoteProduction([], deps)).toBe(1);
     expect(harness.errors).toEqual(['refused: apply blockers: empty source accounts']);
     expect(harness.prompts).toEqual([]);
+  });
+
+  it('refuses a plan that would leave the shared cluster below its storage headroom', async () => {
+    const harness = newHarness();
+    const deps = productionDeps(harness);
+    deps.readJson = () => ({
+      ...productionPlan,
+      storageHeadroom: { ok: false, message: 'promotion refused before writing: no headroom' },
+    });
+    expect(await runPromoteProduction([], deps)).toBe(1);
+    expect(harness.errors).toEqual(['refused: promotion refused before writing: no headroom']);
+    expect(harness.yarnCalls.some((call) => call.args.includes('--apply'))).toBe(false);
   });
 });
 

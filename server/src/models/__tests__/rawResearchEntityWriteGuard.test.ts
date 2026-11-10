@@ -85,9 +85,9 @@ const REVIEWED_RAW_RESEARCH_ENTITY_WRITERS: Record<
       'copies one stored research-entity document onto the faculty research profile key it is ported to, and restores the prior document verbatim when the merge defers, so every field and provenance entry is one the model already accepted and strict mode cannot silently drop a field the current schema no longer declares',
   },
   'scripts/promoteAcceptedBetaCopy.ts': {
-    sites: 2,
+    sites: 3,
     reason:
-      'copies whole collections from the accepted Beta copy into staging, so every document is one the model already accepted',
+      'copies whole collections from the accepted Beta copy, or from the retained previous Production generation on rollback, into staging, so every document is one the model already accepted',
   },
   'scripts/repairGluedSentenceBoundaries.ts': {
     sites: 1,
@@ -131,9 +131,9 @@ const REVIEWED_RAW_RESEARCH_ENTITY_WRITERS: Record<
       'unsets fields retired from the schema, which strict mode would silently drop from a model update',
   },
   'scripts/stagedCollectionSwap.ts': {
-    sites: 5,
+    sites: 6,
     reason:
-      'swaps a staged collection into place by rename, so the documents it installs are copies the model already accepted',
+      'swaps a staged collection into place by rename and keeps the replaced collection as the retained previous generation by rename, so every document it moves is a copy the model already accepted',
   },
   'scripts/syncBetaToDevelopment.ts': {
     sites: 2,

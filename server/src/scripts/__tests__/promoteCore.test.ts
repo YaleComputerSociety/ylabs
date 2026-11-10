@@ -240,6 +240,7 @@ describe('plan checks', () => {
       'apply blockers: empty source accounts',
       'plan would promote observations',
       'plan would promote scrape_runs',
+      'promotion plan reports no cluster storage headroom',
     ]);
   });
 

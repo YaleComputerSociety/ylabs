@@ -15,11 +15,14 @@ import { assertNoPreservedCollectionsCleared } from './mirrorCollectionPolicy';
  * 1. stage every collection under a temporary name in the TARGET database
  * 2. rename each live collection to a backup, then rename staging into place
  * 3. run `afterCutover`, which may read the backups, then `verify`
- * 4. only then drop the backups
+ * 4. only then drop the backups, or, with `retainedPrefix`, keep them as the one
+ *    previous generation and drop any older one (#4149)
  *
  * A failure at any point before `verify` passes rolls every collection back to
  * its pre-run state. A failure after it passes is rethrown untouched, because
  * the new data is already the verified truth and reverting would discard it.
+ * Verify proves the swap is complete, not that it is correct, which is why the
+ * promotion retains the generation it replaced instead of dropping it.
  *
  * `syncBetaToDevelopment` and `promoteAcceptedBetaCopy` both use this rather
  * than keeping a copy each: the invariants here (non-loss, cross-collection
@@ -47,6 +50,64 @@ export interface StagedCollectionSwapArgs<T extends StagedSwapCollection> {
   clearedCollectionNames?: readonly string[];
   /** Used only in the AggregateError raised when rollback itself fails. */
   label?: string;
+  /** Runs before anything is staged; a throw leaves the target untouched. */
+  preflight: () => Promise<void>;
+  retainedPrefix?: string;
+}
+
+export interface RetainedCollection {
+  collection: string;
+  retainedName: string;
+  count: number;
+}
+
+export interface RetainedGeneration {
+  operationId: string;
+  collections: RetainedCollection[];
+}
+
+export interface StagedCollectionSwapResult {
+  operationId: string;
+  retained?: RetainedGeneration;
+  droppedGenerations: string[];
+}
+
+const OPERATION_ID_PATTERN = /^\d+_\d+$/;
+
+export function isStagedSwapOperationId(value: string): boolean {
+  return OPERATION_ID_PATTERN.test(value);
+}
+
+export function retainedCollectionName(
+  retainedPrefix: string,
+  operationId: string,
+  collectionName: string,
+): string {
+  return `${retainedPrefix}${operationId}_${collectionName}`;
+}
+
+export async function listRetainedGenerations(
+  db: Db,
+  retainedPrefix: string,
+): Promise<RetainedGeneration[]> {
+  const generations = new Map<string, RetainedCollection[]>();
+  const listed = await db.listCollections({}, { nameOnly: true }).toArray();
+  for (const { name } of listed) {
+    if (!name.startsWith(retainedPrefix)) continue;
+    const match = /^(\d+_\d+)_(.+)$/.exec(name.slice(retainedPrefix.length));
+    if (!match) continue;
+    const [, operationId, collection] = match;
+    const count = await db.collection(name).countDocuments({});
+    const entries = generations.get(operationId) ?? [];
+    entries.push({ collection, retainedName: name, count });
+    generations.set(operationId, entries);
+  }
+  return [...generations.entries()]
+    .map(([operationId, collections]) => ({
+      operationId,
+      collections: collections.sort((a, b) => a.collection.localeCompare(b.collection)),
+    }))
+    .sort((a, b) => a.operationId.localeCompare(b.operationId));
 }
 
 export function stagedSwapCollectionExists(db: Db, collectionName: string): Promise<boolean> {
@@ -94,7 +155,7 @@ export function stagedSwapOperationId(): string {
 
 export async function applyStagedCollectionSwap<T extends StagedSwapCollection>(
   args: StagedCollectionSwapArgs<T>,
-): Promise<void> {
+): Promise<StagedCollectionSwapResult> {
   const { targetDb, collections, backupPrefix, stage, verify } = args;
   const clearedCollectionNames = args.clearedCollectionNames ?? [];
   assertNoPreservedCollectionsCleared(clearedCollectionNames);
@@ -104,7 +165,10 @@ export async function applyStagedCollectionSwap<T extends StagedSwapCollection>(
   const staged = new Map<string, string>();
   const backups = new Map<string, string>();
   const replaced: string[] = [];
+  const absentBefore: string[] = [];
   let cutoverVerified = false;
+
+  await args.preflight();
 
   try {
     for (const collection of collections) {
@@ -117,6 +181,8 @@ export async function applyStagedCollectionSwap<T extends StagedSwapCollection>(
       if (await stagedSwapCollectionExists(targetDb, targetName)) {
         await targetDb.collection(targetName).rename(backupName);
         backups.set(targetName, backupName);
+      } else {
+        absentBefore.push(targetName);
       }
       await targetDb.collection(staged.get(targetName)!).rename(targetName);
       replaced.push(targetName);
@@ -133,11 +199,24 @@ export async function applyStagedCollectionSwap<T extends StagedSwapCollection>(
     await verify();
     cutoverVerified = true;
 
+    if (args.retainedPrefix) {
+      return {
+        operationId,
+        ...(await retainGeneration(
+          targetDb,
+          args.retainedPrefix,
+          operationId,
+          backups,
+          absentBefore,
+        )),
+      };
+    }
     for (const backupName of backups.values()) {
       if (await stagedSwapCollectionExists(targetDb, backupName)) {
         await targetDb.collection(backupName).drop();
       }
     }
+    return { operationId, droppedGenerations: [] };
   } catch (error) {
     if (cutoverVerified) {
       throw error;
@@ -175,4 +254,51 @@ export async function applyStagedCollectionSwap<T extends StagedSwapCollection>(
       }
     }
   }
+}
+
+/**
+ * A collection the swap created rather than replaced is retained as an empty
+ * collection, so a rollback restores "no rows" without needing a manifest.
+ * Older generations are dropped only once this one is complete, so exactly one
+ * previous generation exists at rest and a failure here never loses the last.
+ */
+async function retainGeneration(
+  targetDb: Db,
+  retainedPrefix: string,
+  operationId: string,
+  backups: ReadonlyMap<string, string>,
+  absentBefore: readonly string[],
+): Promise<{ retained: RetainedGeneration; droppedGenerations: string[] }> {
+  const collections: RetainedCollection[] = [];
+  for (const [collection, backupName] of backups) {
+    const retainedName = retainedCollectionName(retainedPrefix, operationId, collection);
+    await targetDb.collection(backupName).rename(retainedName);
+    collections.push({
+      collection,
+      retainedName,
+      count: await targetDb.collection(retainedName).countDocuments({}),
+    });
+  }
+  for (const collection of absentBefore) {
+    const retainedName = retainedCollectionName(retainedPrefix, operationId, collection);
+    await targetDb.createCollection(retainedName);
+    collections.push({ collection, retainedName, count: 0 });
+  }
+
+  const droppedGenerations: string[] = [];
+  for (const generation of await listRetainedGenerations(targetDb, retainedPrefix)) {
+    if (generation.operationId === operationId) continue;
+    for (const { retainedName } of generation.collections) {
+      await targetDb.collection(retainedName).drop();
+    }
+    droppedGenerations.push(generation.operationId);
+  }
+
+  return {
+    retained: {
+      operationId,
+      collections: collections.sort((a, b) => a.collection.localeCompare(b.collection)),
+    },
+    droppedGenerations,
+  };
 }

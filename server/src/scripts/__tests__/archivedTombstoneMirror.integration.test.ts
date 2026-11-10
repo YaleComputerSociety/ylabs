@@ -80,9 +80,16 @@ async function syncDevelopmentToBeta(development: Db, beta: Db): Promise<void> {
     await archivedResearchEntityIds(development),
     await mergedFromBySurvivorAtCopyTime(development),
   );
-  await applySync(development, beta, collections, [], async () => {
-    expect(syncCountMismatches(await buildPlan(development, beta, collections))).toEqual([]);
-  });
+  await applySync(
+    development,
+    beta,
+    collections,
+    [],
+    async () => undefined,
+    async () => {
+      expect(syncCountMismatches(await buildPlan(development, beta, collections))).toEqual([]);
+    },
+  );
 }
 
 async function syncBetaToDevelopment(
@@ -96,6 +103,7 @@ async function syncBetaToDevelopment(
     development,
     collections,
     [],
+    async () => undefined,
     async () => {
       expect(syncCountMismatches(await buildPlan(beta, development, collections), carry)).toEqual(
         [],
