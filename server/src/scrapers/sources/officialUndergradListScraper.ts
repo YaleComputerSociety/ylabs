@@ -300,7 +300,10 @@ export const UNDERGRAD_LIST_SOURCE_CONFIGS: readonly MentorSourceConfig[] = [
       const html = await fetchText(TOBIN_RA_BOARD_URL);
       if (!html) return { listings: [], complete: false };
       const board = tobinBoardListings(html, TOBIN_RA_BOARD_URL);
-      return { listings: board.listings, complete: board.projectBlocks > 0 };
+      return {
+        listings: board.listings,
+        complete: board.projectBlocks > 0 && board.filledProjectsWithoutSponsors === 0,
+      };
     },
   },
   {
@@ -439,6 +442,10 @@ const profileUrlVariants = (url: string): string[] => {
   return [bare, `${bare}/`, http, `${http}/`];
 };
 
+const PROFILE_LINK_SOURCES: ReadonlySet<UndergradListSource> = new Set([
+  'tobin-research-assistantships',
+]);
+
 /** The one live researcher whose profile links include this exact page, or none. */
 async function soleResearcherForProfileUrl(url: string): Promise<UserMatch | null> {
   const holders: any[] = await Researcher.find({
@@ -477,11 +484,11 @@ async function liveNamesakeCount(listedName: string): Promise<number> {
 }
 
 /**
- * An email or a profile link binds only when the researcher who holds it carries the name the
- * list prints, because a project card's contact email can belong to someone else in the group,
- * and a profile link binds only when exactly one live researcher holds it. A name alone binds
- * only when no second live researcher could carry it, and only inside the departments the list
- * states or plausibly draws from.
+ * An email or a Tobin sponsor's profile link binds only when the researcher who holds it
+ * carries the name the list prints, because a project card's contact email can belong to
+ * someone else in the group, and a profile link binds only when exactly one live researcher
+ * holds it. A name alone binds only when no second live researcher could carry it, and only
+ * inside the departments the list states or plausibly draws from.
  */
 export const defaultMentorResolver: MentorResolver = async (listing) => {
   const agrees = (candidate: UserMatch | null) =>
@@ -490,7 +497,7 @@ export const defaultMentorResolver: MentorResolver = async (listing) => {
     listing.adviserEmail ? await researcherForEmail(listing.adviserEmail) : null,
   );
   const byProfile =
-    !byEmail && listing.adviserProfileUrl
+    !byEmail && listing.adviserProfileUrl && PROFILE_LINK_SOURCES.has(listing.source)
       ? agrees(await soleResearcherForProfileUrl(listing.adviserProfileUrl))
       : null;
   let owner = byEmail ?? byProfile;

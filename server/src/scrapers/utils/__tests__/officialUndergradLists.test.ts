@@ -147,14 +147,22 @@ describe('Tobin RA board', () => {
   ].join('')}</main>`;
   const url = 'https://economics.example.edu/undergraduate/tobin-ra';
 
-  it('lists each linked sponsor of every filled project in every semester', () => {
-    const { listings, projectBlocks } = tobinBoardListings(board, url);
+  it('lists each sponsor of every filled project in every semester, dated or not', () => {
+    const { listings, projectBlocks, filledProjectsWithoutSponsors } = tobinBoardListings(
+      board,
+      url,
+    );
     expect(projectBlocks).toBe(6);
-    expect(listings.map((listing) => [listing.adviserName, listing.year])).toEqual([
-      ['Avery Synthetic', 2026],
-      ['Avery Synthetic', 2018],
-      ['Blair Invented', 2025],
-      ['Casey Fictional', 2025],
+    expect(filledProjectsWithoutSponsors).toBe(0);
+    expect(
+      listings.map((listing) => [listing.adviserName, listing.year, listing.adviserProfileUrl]),
+    ).toEqual([
+      ['Avery Synthetic', 2026, 'https://economics.example.edu/people/avery-synthetic'],
+      ['Avery Synthetic', 2018, 'https://economics.example.edu/people/avery-synthetic'],
+      ['Blair Invented', 2025, 'https://economics.example.edu/people/blair-invented'],
+      ['Casey Fictional', 2025, 'https://economics.example.edu/people/casey-fictional'],
+      ['Emery Unlinked', 2026, undefined],
+      ['Finley Undated', undefined, 'https://economics.example.edu/people/finley-undated'],
     ]);
     expect(listings[0]).toEqual({
       source: 'tobin-research-assistantships',
@@ -181,7 +189,23 @@ describe('Tobin RA board', () => {
         latestYear: 2025,
       }),
     ]);
-    expect(aggregateListEntries(listings, () => url)[0].count).toBe(3);
+    expect(aggregateListEntries(listings, () => url)[0].count).toBe(5);
+  });
+
+  it('reads a single sponsor under the singular label and counts a sponsorless filled card', () => {
+    const singular = board.replace(/Faculty Sponsor\(s\)/g, 'Faculty Sponsor');
+    expect(tobinBoardListings(singular, url).listings).toHaveLength(6);
+    const sponsorless = project({
+      href: '/undergraduate/tobin-ra/2026/03/none',
+      sponsors: [],
+      semester: '2026 Fall',
+      filled: true,
+    });
+    expect(tobinBoardListings(`<main>${sponsorless}</main>`, url)).toEqual({
+      listings: [],
+      projectBlocks: 1,
+      filledProjectsWithoutSponsors: 1,
+    });
   });
 });
 

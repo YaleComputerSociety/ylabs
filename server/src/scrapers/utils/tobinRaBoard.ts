@@ -3,7 +3,7 @@ import * as cheerio from 'cheerio';
 export const TOBIN_RA_BOARD_URL = 'https://economics.yale.edu/undergraduate/tobin-ra';
 
 const PROJECT_BLOCK_SELECTOR = 'article.node-teaser--opportunity';
-const SPONSOR_LABEL = /^faculty sponsor\(s\)?$/i;
+const SPONSOR_LABEL = /^faculty sponsors?(?:\(s\))?$/i;
 const SEMESTER_LABEL = /^semester$/i;
 const FILLED_LABEL = /^position filled$/i;
 const AWARD_LABEL = /^award$/i;
@@ -19,6 +19,7 @@ export interface TobinRaProject {
   year: number | null;
   filled: boolean;
   sponsors: TobinRaSponsor[];
+  unlinkedSponsorText: string;
 }
 
 export interface TobinRaBoardRead {
@@ -69,22 +70,21 @@ export function parseTobinRaBoard(html: string, pageUrl = TOBIN_RA_BOARD_URL): T
     const semesterText = semester.length ? labelText(semester.nextUntil('dt').text()) : '';
     const yearMatch = semesterText.match(SEMESTER_YEAR);
     const sponsorsByUrl = new Map<string, TobinRaSponsor>();
-    labelled(SPONSOR_LABEL)
-      .nextUntil('dt')
-      .find('a[href]')
-      .each((_, anchor) => {
-        const profileUrl = absoluteUrl($(anchor).attr('href') ?? '', pageUrl);
-        const name = labelText($(anchor).text());
-        if (profileUrl && name && !sponsorsByUrl.has(profileUrl)) {
-          sponsorsByUrl.set(profileUrl, { name, profileUrl });
-        }
-      });
+    const sponsorEntries = labelled(SPONSOR_LABEL).nextUntil('dt');
+    sponsorEntries.find('a[href]').each((_, anchor) => {
+      const profileUrl = absoluteUrl($(anchor).attr('href') ?? '', pageUrl);
+      const name = labelText($(anchor).text());
+      if (profileUrl && name && !sponsorsByUrl.has(profileUrl)) {
+        sponsorsByUrl.set(profileUrl, { name, profileUrl });
+      }
+    });
     const heading = block.find('.node-teaser__heading a[href]').first().attr('href');
     projects.push({
       projectUrl: heading ? absoluteUrl(heading, pageUrl) : null,
       year: yearMatch ? Number(yearMatch[1]) : null,
       filled: labelled(FILLED_LABEL).length > 0,
       sponsors: [...sponsorsByUrl.values()],
+      unlinkedSponsorText: labelText(sponsorEntries.clone().find('a').remove().end().text()),
     });
   });
   return { projectBlocks: blocks.length, projects };

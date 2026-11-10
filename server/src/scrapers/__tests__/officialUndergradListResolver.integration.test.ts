@@ -227,5 +227,11 @@ describe('defaultMentorResolver identity guards', () => {
         ),
       ).resolves.toEqual({ status: 'refused', reason: 'department-mismatch' });
     });
+
+    it('ignores a profile link on a list other than the Tobin board', async () => {
+      await expect(
+        defaultMentorResolver(sponsorListing({ source: 'physics-open-research-opportunities' })),
+      ).resolves.toEqual({ status: 'refused', reason: 'department-mismatch' });
+    });
   });
 });

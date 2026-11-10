@@ -143,7 +143,8 @@ export function csArchiveTermListings(
 /**
  * The faculty sponsors of every filled project on the Tobin RA board, one listing per
  * sponsor. The award section names the students and is removed before the board is read,
- * so only sponsor names and profile links leave here; every semester on the board counts.
+ * so only sponsor names and profile links leave here; every semester on the board counts,
+ * and a project whose semester prints no year still counts, undated.
  */
 export function tobinBoardListings(
   html: string,
@@ -151,24 +152,32 @@ export function tobinBoardListings(
 ): {
   listings: MentorListing[];
   projectBlocks: number;
+  filledProjectsWithoutSponsors: number;
 } {
   const board = parseTobinRaBoard(html, url);
+  let filledProjectsWithoutSponsors = 0;
   const listings = board.projects.flatMap((project, index) => {
-    if (!project.filled || project.year === null) return [];
-    const itemKey = project.projectUrl ?? `${project.year}#${index}`;
-    return project.sponsors
-      .map((sponsor) => ({ ...sponsor, name: cleanAdviserName(sponsor.name) }))
-      .filter((sponsor) => PLAUSIBLE_NAME.test(sponsor.name))
-      .map((sponsor): MentorListing => ({
-        source: 'tobin-research-assistantships',
-        adviserName: sponsor.name,
-        adviserProfileUrl: sponsor.profileUrl,
-        year: project.year ?? undefined,
-        itemKey,
-        sourceUrl: url,
-      }));
+    if (!project.filled) return [];
+    const itemKey = project.projectUrl ?? `${project.year ?? 'undated'}#${index}`;
+    const linked = project.sponsors
+      .map((sponsor) => ({ name: cleanAdviserName(sponsor.name), profileUrl: sponsor.profileUrl }))
+      .filter((sponsor) => PLAUSIBLE_NAME.test(sponsor.name));
+    const linkedNames = new Set(linked.map((sponsor) => sponsor.name.toLowerCase()));
+    const unlinked = splitAdviserNames(project.unlinkedSponsorText)
+      .filter((name) => !linkedNames.has(name.toLowerCase()))
+      .map((name) => ({ name, profileUrl: undefined }));
+    const sponsors = [...linked, ...unlinked];
+    if (sponsors.length === 0) filledProjectsWithoutSponsors += 1;
+    return sponsors.map((sponsor): MentorListing => ({
+      source: 'tobin-research-assistantships',
+      adviserName: sponsor.name,
+      adviserProfileUrl: sponsor.profileUrl,
+      year: project.year ?? undefined,
+      itemKey,
+      sourceUrl: url,
+    }));
   });
-  return { listings, projectBlocks: board.projectBlocks };
+  return { listings, projectBlocks: board.projectBlocks, filledProjectsWithoutSponsors };
 }
 
 /** The Economics directory of faculty available to advise senior essays. */
