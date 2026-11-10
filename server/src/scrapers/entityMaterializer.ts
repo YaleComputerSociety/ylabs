@@ -2952,6 +2952,7 @@ async function liveLeadsOfEntitiesAtWebsite(
 type ProfileUrlHolderForListing = {
   holder: any | null;
   holderEdgeToEnd: any | null;
+  vetoedHolders?: any[];
   urlNamesAnotherSiteLead?: boolean;
 };
 
@@ -2991,7 +2992,23 @@ async function profileUrlHolderForListing(
     SHARED_PROFILE_URL_HOLDER_LIMIT + 1,
   );
   if (holders.length > 1) {
-    return { holder: holderTheListedNameLeaves(holders, listedName), holderEdgeToEnd: null };
+    const holder = holderTheListedNameLeaves(holders, listedName);
+    if (!holder) return { holder: null, holderEdgeToEnd: null };
+    const otherListings = await listingsSharingProfileUrl(
+      textValue(resolved.profileUrl?.value),
+      scope,
+    );
+    const listedElsewhere = (candidate: any) =>
+      otherListings.some((entry) =>
+        entry.names.some((name) => observedPersonNameAgreesWith(candidate.displayName, name)),
+      );
+    return {
+      holder,
+      holderEdgeToEnd: null,
+      vetoedHolders: holders.filter(
+        (candidate) => String(candidate._id) !== String(holder._id) && !listedElsewhere(candidate),
+      ),
+    };
   }
   const holder = holders[0] ?? null;
   if (!holder || observedPersonNameAgreesWith(holder.displayName, listedName)) {
@@ -3025,6 +3042,7 @@ export type RosterMemberIdentity = (
   | { researcher: null; unresolved: RosterMemberUnresolvedReason }
 ) & {
   misattributedProfileUrlHolderId?: mongoose.Types.ObjectId;
+  vetoedProfileUrlHolderIds?: mongoose.Types.ObjectId[];
   profileUrlNamesAnotherSiteLead?: boolean;
 };
 
@@ -3077,11 +3095,15 @@ export async function resolveRosterMemberIdentity(
 ): Promise<RosterMemberIdentity> {
   const byProfileUrl = await profileUrlHolderForListing(resolved, listedName, scope);
   const misattributedProfileUrlHolderId = toMaterializerObjectId(byProfileUrl.holderEdgeToEnd?._id);
+  const vetoedProfileUrlHolderIds = (byProfileUrl.vetoedHolders ?? [])
+    .map((vetoed) => toMaterializerObjectId(vetoed?._id))
+    .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
   if (byProfileUrl.holder) {
     return {
       researcher: byProfileUrl.holder,
       basis: 'profile-url',
       ...(misattributedProfileUrlHolderId ? { misattributedProfileUrlHolderId } : {}),
+      ...(vetoedProfileUrlHolderIds.length > 0 ? { vetoedProfileUrlHolderIds } : {}),
     };
   }
   const identity = await resolveRosterMemberIdentityFromEvidence(resolved, listedName);
@@ -3516,6 +3538,14 @@ async function materializeRosterMember(
       plan,
       identity.misattributedProfileUrlHolderId,
     );
+  }
+  // An edge the lane gave a holder the listed name vetoed carries this listing's source and
+  // membership key on this entity, and nothing else asserts it, so the read ends it rather
+  // than leaving another person served under this listing (#5582).
+  if (!options.dryRun) {
+    for (const vetoedHolderId of identity.vetoedProfileUrlHolderIds ?? []) {
+      await endMisattributedProfileUrlHolderEdges(researchEntityId, plan, vetoedHolderId);
+    }
   }
   if (await listingWouldMintANamesake(plan, identity)) {
     return {
