@@ -532,13 +532,18 @@ export function slugContradictionShape(
   if (surname.length >= MIN_NAMESAKE_SURNAME_LETTERS && tokens.includes(surname)) {
     return namesakeGivenNameCouldBeTheLead(tokens, surname, leadDisplayName) ? '' : 'NAMESAKE';
   }
-  const first = escapeForRegExp(tokens[0]);
-  const last = escapeForRegExp(tokens[tokens.length - 1]);
-  const named = new RegExp(`(?:^| )${first}(?: [a-z0-9]{1,12}){0,3} ${last}(?= |$)`, 'g');
-  for (const match of visibleText.matchAll(named)) {
-    const start = Math.max(0, (match.index ?? 0) - LEAD_ROLE_WINDOW_CHARS);
-    const end = (match.index ?? 0) + match[0].length + LEAD_ROLE_WINDOW_CHARS;
-    if (LEAD_ROLE_PHRASE.test(visibleText.slice(start, end))) return 'NAMED_AS_LEAD';
+  // A profile slug can be surname first (`roe-jane`) while the page prints the name
+  // given name first, so a two-token slug is looked for in both orders (#5542).
+  const orders = tokens.length === 2 ? [tokens, [tokens[1], tokens[0]]] : [tokens];
+  for (const order of orders) {
+    const first = escapeForRegExp(order[0]);
+    const last = escapeForRegExp(order[order.length - 1]);
+    const named = new RegExp(`(?:^| )${first}(?: [a-z0-9]{1,12}){0,3} ${last}(?= |$)`, 'g');
+    for (const match of visibleText.matchAll(named)) {
+      const start = Math.max(0, (match.index ?? 0) - LEAD_ROLE_WINDOW_CHARS);
+      const end = (match.index ?? 0) + match[0].length + LEAD_ROLE_WINDOW_CHARS;
+      if (LEAD_ROLE_PHRASE.test(visibleText.slice(start, end))) return 'NAMED_AS_LEAD';
+    }
   }
   return '';
 }

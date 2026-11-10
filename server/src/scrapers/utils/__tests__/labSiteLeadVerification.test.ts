@@ -719,3 +719,16 @@ describe('slugContradictionShape (#4916)', () => {
     expect(alias.contradictedBy).toBeUndefined();
   });
 });
+
+describe('a surname-first profile slug named as the lead', () => {
+  it('reads a two-token slug in both orders against the page text', () => {
+    const text = 'our team principal investigator robin qu and members';
+    expect(slugContradictionShape('qu-robin', 'Avery Qu', text)).toBe('NAMED_AS_LEAD');
+    expect(slugContradictionShape('robin-qu', 'Avery Qu', text)).toBe('NAMED_AS_LEAD');
+  });
+
+  it('still reads a same-surname member not named as a lead as no contradiction', () => {
+    const text = 'graduate students robin qu and others';
+    expect(slugContradictionShape('qu-robin', 'Avery Qu', text)).toBe('');
+  });
+});
