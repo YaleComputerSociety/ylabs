@@ -21,6 +21,7 @@ describe('defaultMentorResolver identity guards', () => {
     twinB: new mongoose.Types.ObjectId(),
     humanist: new mongoose.Types.ObjectId(),
     emeritus: new mongoose.Types.ObjectId(),
+    sponsor: new mongoose.Types.ObjectId(),
   };
   const rows = {
     avery: new mongoose.Types.ObjectId(),
@@ -28,7 +29,9 @@ describe('defaultMentorResolver identity guards', () => {
     twinA: new mongoose.Types.ObjectId(),
     humanist: new mongoose.Types.ObjectId(),
     emeritus: new mongoose.Types.ObjectId(),
+    sponsor: new mongoose.Types.ObjectId(),
   };
+  const SPONSOR_PROFILE = 'https://economics.example.edu/people/gale-placeholder';
 
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
@@ -67,6 +70,12 @@ describe('defaultMentorResolver identity guards', () => {
         profile: { title: 'Professor Emeritus of Anesthesiology' },
         archived: false,
       },
+      {
+        _id: ids.sponsor,
+        displayName: 'Gale Placeholder',
+        profileLinks: [{ url: `${SPONSOR_PROFILE}/` }],
+        archived: false,
+      },
     ]);
     const row = (id: mongoose.Types.ObjectId, slug: string, departments: string[]) => ({
       _id: id,
@@ -83,6 +92,7 @@ describe('defaultMentorResolver identity guards', () => {
         row(rows.twinA, 'twin-row', ['Psychology']),
         row(rows.humanist, 'humanist-row', ['English']),
         row(rows.emeritus, 'emeritus-row', ['Anesthesiology', 'Psychology']),
+        row(rows.sponsor, 'sponsor-row', ['Economics']),
       ]);
     const lead = (personId: mongoose.Types.ObjectId, id: mongoose.Types.ObjectId) => ({
       personId,
@@ -99,6 +109,7 @@ describe('defaultMentorResolver identity guards', () => {
         lead(ids.twinA, rows.twinA),
         lead(ids.humanist, rows.humanist),
         lead(ids.emeritus, rows.emeritus),
+        lead(ids.sponsor, rows.sponsor),
       ]);
   });
 
@@ -179,5 +190,42 @@ describe('defaultMentorResolver identity guards', () => {
         }),
       ),
     ).resolves.toEqual({ status: 'refused', reason: 'department-mismatch' });
+  });
+
+  describe('profile links', () => {
+    const sponsorListing = (overrides: Partial<MentorListing> = {}) =>
+      listing({
+        source: 'tobin-research-assistantships',
+        adviserName: 'Gale Placeholder',
+        adviserProfileUrl: SPONSOR_PROFILE,
+        departmentScope: ['Physics'],
+        ...overrides,
+      });
+
+    it('binds the one live researcher who holds the linked profile and carries the name', async () => {
+      await expect(defaultMentorResolver(sponsorListing())).resolves.toMatchObject({
+        status: 'matched',
+        slug: 'sponsor-row',
+        matchedBy: 'profile',
+      });
+    });
+
+    it('does not bind a profile link that two live researchers hold', async () => {
+      await mongoose.connection
+        .db!.collection('researchers')
+        .insertOne({ displayName: 'G. Placeholder', profileLinks: [{ url: SPONSOR_PROFILE }] });
+      await expect(defaultMentorResolver(sponsorListing())).resolves.toEqual({
+        status: 'refused',
+        reason: 'ambiguous',
+      });
+    });
+
+    it('does not bind a profile link whose holder carries a different name', async () => {
+      await expect(
+        defaultMentorResolver(
+          sponsorListing({ adviserName: 'Avery Synthetic', departmentScope: ['Economics'] }),
+        ),
+      ).resolves.toEqual({ status: 'refused', reason: 'department-mismatch' });
+    });
   });
 });

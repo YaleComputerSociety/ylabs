@@ -14,6 +14,7 @@ import {
   type UndergradListEntryKind,
   type UndergradListSource,
 } from '../../models/storedVocabularies';
+import { parseTobinRaBoard, TOBIN_RA_BOARD_URL } from './tobinRaBoard';
 
 export {
   UNDERGRAD_EVIDENCE_SIGNAL,
@@ -32,6 +33,8 @@ export interface MentorListing {
   /** Departments the list's advisers plausibly sit in, for a list that names no department. */
   departmentScope?: readonly string[];
   year?: number;
+  /** One listed item, so co-advisers who resolve to one row count it once. */
+  itemKey?: string;
   sourceUrl: string;
 }
 
@@ -137,52 +140,35 @@ export function csArchiveTermListings(
   return listings;
 }
 
-/** Tobin RA project pages, listed in the Economics sitemap under `/tobin-ra/<year>/`. */
-export function tobinProjectUrls(sitemapXml: string): string[] {
-  return Array.from(
-    sitemapXml.matchAll(/<loc>\s*([^<\s]+\/undergraduate\/tobin-ra\/\d{4}\/[^<\s]+)\s*<\/loc>/g),
-    (match) => match[1].replace(/^http:\/\//, 'https://'),
-  );
-}
-
-/** Child sitemaps of a sitemap index, so the project pages can be found on every page. */
-export function sitemapIndexUrls(sitemapXml: string): string[] {
-  if (!/<sitemapindex\b/i.test(sitemapXml)) return [];
-  return Array.from(sitemapXml.matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/g), (match) =>
-    match[1].replace(/^http:\/\//, 'https://').replace(/&amp;/g, '&'),
-  );
-}
-
-const asideValue = ($: cheerio.CheerioAPI, label: RegExp) =>
-  $('.node__aside-label')
-    .filter((_index, element) => label.test($(element).text().trim()))
-    .first()
-    .parent();
-
-/** The faculty sponsors of one Tobin project; the "Award" field names the student and is skipped. */
-export function tobinProjectListings(html: string, url: string): MentorListing[] {
-  const $ = cheerio.load(html);
-  const semester = asideValue($, /^semester$/i).text();
-  const year = yearIn(semester) ?? yearIn(url);
-  const sponsors = asideValue($, /^faculty sponsors?(?:\(s\))?$/i);
-  const listings: MentorListing[] = [];
-  sponsors.find('.node-teaser--person').each((_index, element) => {
-    const teaser = $(element);
-    const adviserName = cleanAdviserName(teaser.find('.node-teaser__heading').first().text());
-    if (!PLAUSIBLE_NAME.test(adviserName)) return;
-    listings.push({
-      source: 'tobin-research-assistantships',
-      adviserName,
-      adviserEmail: yaleEmail(teaser.find('a[href^="mailto:"]').first().attr('href')),
-      adviserProfileUrl: absoluteUrl(
-        teaser.find('.node-teaser__heading a[href]').first().attr('href'),
-        url,
-      ),
-      year,
-      sourceUrl: url,
-    });
+/**
+ * The faculty sponsors of every filled project on the Tobin RA board, one listing per
+ * sponsor. The award section names the students and is removed before the board is read,
+ * so only sponsor names and profile links leave here; every semester on the board counts.
+ */
+export function tobinBoardListings(
+  html: string,
+  url: string = TOBIN_RA_BOARD_URL,
+): {
+  listings: MentorListing[];
+  projectBlocks: number;
+} {
+  const board = parseTobinRaBoard(html, url);
+  const listings = board.projects.flatMap((project, index) => {
+    if (!project.filled || project.year === null) return [];
+    const itemKey = project.projectUrl ?? `${project.year}#${index}`;
+    return project.sponsors
+      .map((sponsor) => ({ ...sponsor, name: cleanAdviserName(sponsor.name) }))
+      .filter((sponsor) => PLAUSIBLE_NAME.test(sponsor.name))
+      .map((sponsor): MentorListing => ({
+        source: 'tobin-research-assistantships',
+        adviserName: sponsor.name,
+        adviserProfileUrl: sponsor.profileUrl,
+        year: project.year ?? undefined,
+        itemKey,
+        sourceUrl: url,
+      }));
   });
-  return listings;
+  return { listings, projectBlocks: board.projectBlocks };
 }
 
 /** The Economics directory of faculty available to advise senior essays. */
@@ -584,6 +570,16 @@ export function yibsSuresFellowListings(html: string, url: string): MentorListin
  * One entry per source for a row: how many undergraduates the lists name for it and the
  * latest year, or for a list of who is open now, that it lists them.
  */
+function distinctItems(listings: readonly MentorListing[]): MentorListing[] {
+  const seen = new Set<string>();
+  return listings.filter((listing) => {
+    if (!listing.itemKey) return true;
+    if (seen.has(listing.itemKey)) return false;
+    seen.add(listing.itemKey);
+    return true;
+  });
+}
+
 export function aggregateListEntries(
   listings: readonly MentorListing[],
   sourceUrlFor: (source: UndergradListSource) => string,
@@ -595,7 +591,7 @@ export function aggregateListEntries(
   return undergradListSources
     .filter((source) => bySource.has(source))
     .map((source) => {
-      const entries = bySource.get(source) ?? [];
+      const entries = distinctItems(bySource.get(source) ?? []);
       const kind = UNDERGRAD_LIST_SOURCE_KIND[source];
       const years = entries.map((entry) => entry.year).filter((year): year is number => !!year);
       return {

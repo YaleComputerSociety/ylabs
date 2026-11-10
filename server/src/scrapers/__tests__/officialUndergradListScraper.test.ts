@@ -233,6 +233,26 @@ describe('OfficialUndergradListScraper', () => {
     expect(failed.complete).toBe(false);
   });
 
+  it('reads every semester of the Tobin board, and is incomplete when the board is unreadable', async () => {
+    const tobin = UNDERGRAD_LIST_SOURCE_CONFIGS.find(
+      (config) => config.source === 'tobin-research-assistantships',
+    )!;
+    const filledProject = (year: number) => `<article class="node-teaser--opportunity">
+      <div class="node-teaser__heading"><a href="/undergraduate/tobin-ra/${year}/01/p"><span>P</span></a></div>
+      <dl><div><dt>Faculty Sponsor(s)</dt><dd><a href="/people/avery-synthetic">Avery Synthetic</a></dd></div>
+      <div><dt>Position filled</dt></div><div><dt>Semester</dt><dd>${year} Spring</dd></div></dl></article>`;
+    const board = `<main>${filledProject(2026)}${filledProject(2012)}</main>`;
+
+    const read = await tobin.read(async () => board, NOW);
+    const failed = await tobin.read(async () => null, NOW);
+    const empty = await tobin.read(async () => '<main></main>', NOW);
+
+    expect(read.complete).toBe(true);
+    expect(read.listings.map((listing) => listing.year)).toEqual([2026, 2012]);
+    expect(failed.complete).toBe(false);
+    expect(empty.complete).toBe(false);
+  });
+
   it('feeds each list the one signal the #5362 ruling assigns by what the undergraduate did', () => {
     const advisedOwnWork = [
       'cs-senior-projects',

@@ -17,10 +17,8 @@ import {
   parseCsv,
   physicsOpenOpportunityListings,
   psychologyResearchSheetListings,
-  sitemapIndexUrls,
   splitAdviserNames,
-  tobinProjectListings,
-  tobinProjectUrls,
+  tobinBoardListings,
   wuTsaiFellowListings,
 } from '../officialUndergradLists';
 
@@ -82,45 +80,108 @@ describe('CS course archives', () => {
   });
 });
 
-describe('Tobin RA projects', () => {
-  it('finds project pages in a sitemap and its children in a sitemap index', () => {
-    const sitemap = `<urlset><url><loc>http://economics.example.edu/undergraduate/tobin-ra/2026/01/a-project</loc></url>
-      <url><loc>http://economics.example.edu/undergraduate/tobin-ra</loc></url></urlset>`;
-    expect(tobinProjectUrls(sitemap)).toEqual([
-      'https://economics.example.edu/undergraduate/tobin-ra/2026/01/a-project',
+describe('Tobin RA board', () => {
+  const AWARDEES = ['Synthetic Awardee One', 'Synthetic Awardee Two'];
+  const project = (input: {
+    href: string;
+    sponsors: Array<{ name: string; slug?: string }>;
+    semester: string;
+    filled: boolean;
+    award?: string;
+  }) => `<article class="node-teaser node-teaser--opportunity">
+      <div class="node-teaser__heading"><a href="${input.href}"><span>Synthetic project</span></a></div>
+      <dl><div><dt>Faculty Sponsor(s)</dt><dd>${input.sponsors
+        .map((sponsor) =>
+          sponsor.slug ? `<a href="/people/${sponsor.slug}">${sponsor.name}</a>` : sponsor.name,
+        )
+        .join(', ')}</dd></div></dl>
+      <dl>${input.filled ? '<div><dt>Position filled</dt></div>' : ''}
+        <div><dt>Semester</dt><dd> ${input.semester} </dd></div>
+        ${input.award ? `<div><dt>Award</dt><dd> ${input.award} </dd></div>` : ''}</dl>
+    </article>`;
+  const board = `<main>${[
+    project({
+      href: '/undergraduate/tobin-ra/2026/03/one',
+      sponsors: [{ name: 'Avery Synthetic', slug: 'avery-synthetic' }],
+      semester: '2026 Fall',
+      filled: true,
+      award: AWARDEES[0],
+    }),
+    project({
+      href: '/undergraduate/tobin-ra/2018/01/two',
+      sponsors: [{ name: 'Avery Synthetic', slug: 'avery-synthetic' }],
+      semester: '2018 Spring',
+      filled: true,
+      award: AWARDEES[1],
+    }),
+    project({
+      href: '/undergraduate/tobin-ra/2025/09/three',
+      sponsors: [
+        { name: 'Blair Invented', slug: 'blair-invented' },
+        { name: 'Casey Fictional', slug: 'casey-fictional' },
+      ],
+      semester: '2025 Fall',
+      filled: true,
+      award: AWARDEES.join(', '),
+    }),
+    project({
+      href: '/undergraduate/tobin-ra/2026/03/open',
+      sponsors: [{ name: 'Drew Madeup', slug: 'drew-madeup' }],
+      semester: '2026 Fall',
+      filled: false,
+    }),
+    project({
+      href: '/undergraduate/tobin-ra/2026/03/unlinked',
+      sponsors: [{ name: 'Emery Unlinked' }],
+      semester: '2026 Fall',
+      filled: true,
+      award: AWARDEES[0],
+    }),
+    project({
+      href: '/undergraduate/tobin-ra/undated',
+      sponsors: [{ name: 'Finley Undated', slug: 'finley-undated' }],
+      semester: 'Summer',
+      filled: true,
+      award: AWARDEES[1],
+    }),
+  ].join('')}</main>`;
+  const url = 'https://economics.example.edu/undergraduate/tobin-ra';
+
+  it('lists each linked sponsor of every filled project in every semester', () => {
+    const { listings, projectBlocks } = tobinBoardListings(board, url);
+    expect(projectBlocks).toBe(6);
+    expect(listings.map((listing) => [listing.adviserName, listing.year])).toEqual([
+      ['Avery Synthetic', 2026],
+      ['Avery Synthetic', 2018],
+      ['Blair Invented', 2025],
+      ['Casey Fictional', 2025],
     ]);
-    expect(
-      sitemapIndexUrls(
-        '<sitemapindex><sitemap><loc>http://e.example.edu/s.xml?page=1</loc></sitemap></sitemapindex>',
-      ),
-    ).toEqual(['https://e.example.edu/s.xml?page=1']);
+    expect(listings[0]).toEqual({
+      source: 'tobin-research-assistantships',
+      adviserName: 'Avery Synthetic',
+      adviserProfileUrl: 'https://economics.example.edu/people/avery-synthetic',
+      year: 2026,
+      itemKey: 'https://economics.example.edu/undergraduate/tobin-ra/2026/03/one',
+      sourceUrl: url,
+    });
   });
 
-  it('reads the faculty sponsors with their email, the semester, and never the award', () => {
-    const project = `<main><aside>
-      <div class="node__related-events"><div class="node__aside-label">Faculty Sponsor(s)</div>
-        <article class="node-teaser node-teaser--person"><header>
-          <div class="node-teaser__heading"><a href="/people/avery-synthetic"><span>Avery Synthetic</span></a></div>
-          <div class="node-teaser__email"><a href="mailto:Avery.Synthetic@yale.edu">avery.synthetic@yale.edu</a></div>
-        </header></article></div>
-      <div class="node__semester"><div class="node__aside-label">Semester</div> 2026 Spring</div>
-      <div class="node__award"><div class="node__aside-label">Award</div> Student Awardee</div>
-    </aside></main>`;
-    const listings = tobinProjectListings(
-      project,
-      'https://economics.example.edu/undergraduate/tobin-ra/2026/01/a-project',
-    );
-    expect(listings).toEqual([
-      {
+  it('never reads an awardee name into a listing', () => {
+    const serialized = studentFree(tobinBoardListings(board, url));
+    for (const name of AWARDEES) expect(serialized).not.toContain(name);
+  });
+
+  it('counts a project once on a row that both of its co-sponsors resolve to', () => {
+    const { listings } = tobinBoardListings(board, url);
+    const coSponsored = listings.filter((listing) => listing.year === 2025);
+    expect(aggregateListEntries(coSponsored, () => url)).toEqual([
+      expect.objectContaining({
         source: 'tobin-research-assistantships',
-        adviserName: 'Avery Synthetic',
-        adviserEmail: 'avery.synthetic@yale.edu',
-        adviserProfileUrl: 'https://economics.example.edu/people/avery-synthetic',
-        year: 2026,
-        sourceUrl: 'https://economics.example.edu/undergraduate/tobin-ra/2026/01/a-project',
-      },
+        count: 1,
+        latestYear: 2025,
+      }),
     ]);
-    expect(studentFree(listings)).not.toMatch(/Awardee/);
+    expect(aggregateListEntries(listings, () => url)[0].count).toBe(3);
   });
 });
 
