@@ -7,6 +7,7 @@ import {
   contributionLabelIsServed,
 } from './servedFieldContributionLabels';
 import { isPersonScopedResearchEntityShape } from '../models/storedVocabularies';
+import { isYaleHostname } from './yaleHost';
 
 const URL_MAXLENGTH = 2048;
 
@@ -518,7 +519,7 @@ export function isDepartmentRosterProvenanceUrl(value: unknown): boolean {
   const url = parseHttpUrl(value);
   if (!url) return false;
   const host = url.hostname.replace(/^www\./i, '').toLowerCase();
-  if (!host.endsWith('yale.edu')) return false;
+  if (!isYaleHostname(host)) return false;
   const pathname = url.pathname.toLowerCase().replace(/\/+$/, '');
   return (
     DIRECTORY_LOADER_SEGMENT_PATH.test(pathname) ||
@@ -1792,7 +1793,7 @@ export function isDepartmentProgrammePageUrl(value: unknown): boolean {
   const url = parseHttpUrl(value);
   if (!url) return false;
   const host = url.hostname.replace(/^www\./i, '').toLowerCase();
-  if (!host.endsWith('yale.edu')) return false;
+  if (!isYaleHostname(host)) return false;
   const segments = url.pathname.toLowerCase().split('/').filter(Boolean);
   if (segments.length < 2) return false;
   if (segments.some((segment) => SCOPED_RESEARCH_PROGRAMME_SEGMENT.test(segment))) return true;

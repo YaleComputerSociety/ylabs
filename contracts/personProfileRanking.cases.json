@@ -115,6 +115,11 @@
       "name": "declines to label a non-Yale personal site",
       "url": "https://a-researcher.example.com/about",
       "expect": null
+    },
+    {
+      "name": "declines to label a lookalike host that only ends in yale.edu",
+      "url": "https://notyale.edu/people/a-researcher",
+      "expect": null
     }
   ],
   "crossSchool": [

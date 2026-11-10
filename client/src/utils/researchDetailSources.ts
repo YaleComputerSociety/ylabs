@@ -13,6 +13,7 @@ import {
 import { acronymCasing } from './displayText';
 import { safeHttpUrl } from './url';
 import { isCorroboratedPersonPageUrl } from './yalePersonPagePrefix';
+import { isYaleHostname } from './yaleHost';
 
 interface DetailSourceGroup {
   name?: string;
@@ -257,7 +258,7 @@ export const isDepartmentRosterProvenanceUrl = (url?: string | null): boolean =>
     const parsed = new URL(normalized);
     const host = parsed.hostname.replace(/^www\./, '');
     const path = parsed.pathname.toLowerCase().replace(/\/+$/, '');
-    if (!host.endsWith('yale.edu')) return false;
+    if (!isYaleHostname(host)) return false;
 
     return (
       DIRECTORY_LOADER_SEGMENT_PATH.test(path) ||
@@ -419,7 +420,7 @@ export const isLikelyOfficialPersonProfileUrl = (url?: string | null): boolean =
   try {
     const parsed = new URL(normalized);
     const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
-    if (!host.endsWith('yale.edu')) return false;
+    if (!isYaleHostname(host)) return false;
     const match = parsed.pathname.replace(/\/+$/, '').match(OFFICIAL_PERSON_PROFILE_PATH);
     return Boolean(match) && !namesAPageRatherThanAPerson(match![1]);
   } catch {
@@ -487,7 +488,7 @@ export const officialProfileMirrorKey = (url?: string | null): string | null => 
   try {
     const parsed = new URL(normalized);
     const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
-    if (!host.endsWith('yale.edu')) return null;
+    if (!isYaleHostname(host)) return null;
     const leaf = personPageLeaf(normalized, parsed.pathname.replace(/\/+$/, ''));
     return leaf ? `${host}\u0000${leaf}` : null;
   } catch {
@@ -1407,7 +1408,7 @@ export const sourceLabelForUrl = (url: string): string => {
     if (nihProjectId) {
       return `NIH RePORTER project ${decodeURIComponent(nihProjectId).toUpperCase()}`;
     }
-    if (host.endsWith('yale.edu')) {
+    if (isYaleHostname(host)) {
       return titleFromPath(parsed.pathname);
     }
     return `${host} source`;

@@ -1253,8 +1253,10 @@ const LabDetail = () => {
     const sourceUrl = safeHttpUrl(href);
     if (!sourceUrl) return;
     const sourceText = `${anchor?.textContent || ''} ${sourceUrl}`.toLowerCase();
+    const sourceHost = new URL(sourceUrl).hostname.toLowerCase();
+    const isDoiLink = sourceHost === 'doi.org' || sourceHost.endsWith('.doi.org');
     const sourceCategory =
-      sourceText.includes('publication') || sourceText.includes('doi.org')
+      sourceText.includes('publication') || isDoiLink
         ? 'publication'
         : sourceText.includes('orcid')
           ? 'orcid'

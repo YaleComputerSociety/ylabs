@@ -1163,8 +1163,7 @@ export function isStudiesTemplateGlueMalformed(text: string): boolean {
   );
 }
 
-const leadingPageChromePattern =
-  /^(?:(?:Bio Website|Bio|Website|Home|Overview|Profile)\s+)+(?=[A-Z])/;
+const leadingPageChromePattern = /^(?:(?:Bio|Website|Home|Overview|Profile)\s+)+(?=[A-Z])/;
 
 /**
  * Strip a leading page-navigation label (`Bio`, `Bio Website`, `Website`,

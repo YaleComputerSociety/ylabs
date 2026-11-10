@@ -614,7 +614,7 @@ const PERSON_NAME_PARTICLES = new Set([
 
 const PERSON_NAME_GENERATIONAL_SUFFIXES = new Set(['jr', 'sr', 'ii', 'iii', 'iv', 'v']);
 
-const PERSON_NAME_WORD_RE = /^\p{Lu}[\p{L}'’]*(?:[-'’]\p{Lu}?[\p{L}'’]*)*\.?$/u;
+const PERSON_NAME_WORD_RE = /^\p{Lu}[\p{L}'’-]*\.?$/u;
 
 const PERSON_NAME_INITIAL_RE = /^\p{Lu}\.?$/u;
 
