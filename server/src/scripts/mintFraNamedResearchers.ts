@@ -97,9 +97,7 @@ async function main() {
       archived: { $ne: true },
     });
     if (existingRole > 0) continue;
-    if (
-      removalGuard.refusesPerson({ profileLinks: [{ url: plan.profileUrl }] })
-    ) {
+    if (removalGuard.refusesPerson({ profileLinks: [{ url: plan.profileUrl }] })) {
       removalGuard.recordRefusal();
       continue;
     }
