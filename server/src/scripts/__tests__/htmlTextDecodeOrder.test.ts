@@ -15,7 +15,7 @@ describe('HTML text extraction decodes each entity once (#5527)', () => {
 
 describe('HTML text extraction drops script blocks with a spaced end tag (#5527)', () => {
   it('removes a script whose end tag carries whitespace', () => {
-    const text = extractVisibleText('<body>Ada<script>leak()</script >Lee</body>');
+    const text = extractVisibleText('<body>Ada<script>leak()</script foo>Lee</body>');
     expect(text).not.toContain('leak');
     expect(text).toContain('Ada');
     expect(text).toContain('Lee');

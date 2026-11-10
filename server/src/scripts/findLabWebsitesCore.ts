@@ -603,10 +603,10 @@ export function siteRootCandidate(url: string): string | null {
  */
 export function extractVisibleText(html: string): string {
   return html
-    .replace(/<head[\s\S]*?<\/head\s*>/gi, ' ')
-    .replace(/<script[\s\S]*?<\/script\s*>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style\s*>/gi, ' ')
-    .replace(/<noscript[\s\S]*?<\/noscript\s*>/gi, ' ')
+    .replace(/<head[\s\S]*?<\/head\b[^>]*>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script\b[^>]*>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style\b[^>]*>/gi, ' ')
+    .replace(/<noscript[\s\S]*?<\/noscript\b[^>]*>/gi, ' ')
     .replace(/<[^>]*>/g, ' ')
     .replace(/&nbsp;/gi, ' ')
     .replace(/&amp;/gi, '&')
