@@ -9,12 +9,11 @@ export const ACCOUNT_DATA_DELETE_INTENT_VALUE = 'delete';
 export const ACCOUNT_DELETED_NOTICE_KEY = 'accountDataDeletedNotice';
 
 export type AccountDataDeletionOutcome =
-  'deleted' | 'recent_sign_in_required' | 'blocked' | 'confirmation_required' | 'failed';
+  'deleted' | 'recent_sign_in_required' | 'blocked' | 'failed';
 
 const ERROR_CODE_OUTCOMES: Record<string, AccountDataDeletionOutcome> = {
   RECENT_SIGN_IN_REQUIRED: 'recent_sign_in_required',
   DELETION_BLOCKED: 'blocked',
-  CONFIRMATION_REQUIRED: 'confirmation_required',
 };
 
 export const isDeletionConfirmPhrase = (value: string): boolean =>

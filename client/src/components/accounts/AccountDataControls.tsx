@@ -102,11 +102,10 @@ const DeletionOutcomeNotice = ({ outcome }: { outcome: AccountDataDeletionOutcom
       </p>
     );
   }
-  if (outcome === 'failed' || outcome === 'confirmation_required') {
+  if (outcome === 'failed') {
     return (
       <p role="alert" className="mt-4 text-sm text-red-700">
-        Deletion did not finish. Sign in again and try again; anything already removed stays
-        removed.
+        Deletion did not finish. Please try again; anything already removed stays removed.
       </p>
     );
   }
