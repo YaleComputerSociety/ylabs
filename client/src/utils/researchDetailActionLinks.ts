@@ -42,7 +42,7 @@ export interface ResearchDetailActionLinkContext {
   hasLeadCard: boolean;
   profileNeedsOwnButton: boolean;
   preferOrgEngagementOutreach: boolean;
-  officialSource?: { url: string } | null;
+  officialSource?: { url: string; servedUrl: string } | null;
   hasApplyPage: boolean;
   applyPageUrl?: string;
   wayInWithheld?: boolean;
@@ -75,9 +75,9 @@ function resolveWithheldWayInActionLinks(
   const activityCheckUrl =
     (websiteUrl && !websiteRepeatsLeadCard ? websiteUrl : undefined) ||
     (leadCardLinksProfile ? undefined : profileUrl) ||
-    (officialSource?.url &&
-    !(hasLeadCard && isSameActionDestination(officialSource.url, profileUrl))
-      ? officialSource.url
+    (officialSource?.servedUrl &&
+    !(hasLeadCard && isSameActionDestination(officialSource.servedUrl, profileUrl))
+      ? officialSource.servedUrl
       : undefined);
   return {
     leadCardProfileUrl: profileUrl,
@@ -252,14 +252,14 @@ export function resolveResearchDetailActionLinkContext({
     );
   return {
     websiteUrl: officialWebsiteUrl,
-    profileUrl: decisionProfileUrl,
+    profileUrl: servedLinkUrl(decisionProfileUrl, group.sourceLinkHealth as never),
     hasLeadCard: Boolean(singlePrincipalInvestigator),
     profileNeedsOwnButton:
       Boolean(decisionProfileUrl) && !singlePrincipalInvestigator && !leadProfilesLinkedInline,
     preferOrgEngagementOutreach,
     officialSource: outreachOfficialSource,
     hasApplyPage: Boolean(outreachApplySource),
-    ...(outreachApplySource ? { applyPageUrl: outreachApplySource.url } : {}),
+    ...(outreachApplySource ? { applyPageUrl: outreachApplySource.servedUrl } : {}),
     wayInWithheld: group.wayInWithheld === true,
   };
 }

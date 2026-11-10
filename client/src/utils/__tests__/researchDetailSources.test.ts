@@ -2304,6 +2304,7 @@ describe('Sources rows use the spelling a student can open (#3957)', () => {
       sourceLinkHealth: [{ url: HTTPS_PAGE, healthStatus: 'UNKNOWN', tlsVerificationFailed: true }],
     });
     const row = sources.find((source) => source.url.startsWith('https://alias.example'));
-    expect(row?.servedUrl).toBe(row?.url);
+    expect(row).toBeDefined();
+    expect(row?.servedUrl).toBe('https://alias.example.yale.edu/~fixture');
   });
 });

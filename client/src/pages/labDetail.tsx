@@ -543,8 +543,10 @@ const DecisionSummary = ({
    */
   const leadCardLinksProfile = actionLinks.leadCardLinksProfile;
   const offersOrgEngagementPage = actionLinks.offersOrgEngagementPage;
-  const applyPageUrl = actionLinks.offersApplyPage ? applySource?.url : undefined;
-  const joinPageLinkUrl = actionLinks.offersJoinLinkBesideWebsite ? applySource?.url : undefined;
+  const applyPageUrl = actionLinks.offersApplyPage ? applySource?.servedUrl : undefined;
+  const joinPageLinkUrl = actionLinks.offersJoinLinkBesideWebsite
+    ? applySource?.servedUrl
+    : undefined;
   const showsProfileButton = actionLinks.showsProfileButton;
   /**
    * A generic official page beside a lead card that already links the profile is a
@@ -792,7 +794,7 @@ const DecisionSummary = ({
             ) : showsProfileButton ? (
               <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
                 <a
-                  href={servedLinkUrl(profileUrl, group.sourceLinkHealth) || profileUrl}
+                  href={profileUrl}
                   target="_blank"
                   rel={EXTERNAL_LINK_REL}
                   className="yr-pressable inline-flex min-h-11 items-center justify-center gap-2 rounded-control bg-brand px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-navy yr-focus-ring"
@@ -1346,7 +1348,7 @@ const LabDetail = () => {
           <div className={researchProfileBodyGridClassName}>
             <DecisionSummary
               group={group}
-              profileUrl={decisionProfileUrl}
+              profileUrl={servedLinkUrl(decisionProfileUrl, group.sourceLinkHealth)}
               websiteUrl={officialWebsiteUrl}
               officialSource={outreachOfficialSource}
               applySource={outreachApplySource}
