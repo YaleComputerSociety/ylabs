@@ -31,7 +31,11 @@ describe('directoryRemovalDigest', () => {
 
   it('keeps the query that identifies a profile, so two people on one host stay apart', () => {
     const scholar = (user: string) =>
-      directoryRemovalDigest(KEY, 'profile_url', `https://scholar.google.com/citations?user=${user}`);
+      directoryRemovalDigest(
+        KEY,
+        'profile_url',
+        `https://scholar.google.com/citations?user=${user}`,
+      );
     expect(scholar('SYNTHETIC1')).not.toBe(scholar('SYNTHETIC2'));
     expect(
       directoryRemovalDigest(

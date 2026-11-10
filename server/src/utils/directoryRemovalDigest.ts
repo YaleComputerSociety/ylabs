@@ -56,9 +56,7 @@ export function directoryRemovalDigest(
 
 export class DirectoryRemovalKeyError extends Error {}
 
-export function readDirectoryRemovalKey(
-  env: NodeJS.ProcessEnv = process.env,
-): string | undefined {
+export function readDirectoryRemovalKey(env: NodeJS.ProcessEnv = process.env): string | undefined {
   const key = (env[DIRECTORY_REMOVAL_KEY_ENV] ?? '').trim();
   if (!key) return undefined;
   if (key.length < MIN_DIRECTORY_REMOVAL_KEY_LENGTH) {

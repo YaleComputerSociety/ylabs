@@ -140,7 +140,7 @@ It is done when the data operation has run against Development and the result ha
 Beta and Production receive whole-collection copies, so a repair applied to Development reaches them through promotion.
 Running the same repair three times is redundant and multiplies the number of writes against a student-facing database.
 - Do not open an issue to track a promotion, and do not hold a fix's issue open waiting for one.
-Promotion is not per-fix work: `promoteAcceptedBetaCopy` replaces twelve whole collections at once (fourteen with `--include-observations` and `--include-scrape-runs`), so a single promotion delivers every pending fix together.
+Promotion is not per-fix work: `promoteAcceptedBetaCopy` replaces thirteen whole collections at once (fifteen with `--include-observations` and `--include-scrape-runs`), so a single promotion delivers every pending fix together.
 An issue per fix implies a queue of operations that does not exist, and the tracker fills with entries nobody can act on individually.
 - What is undelivered is a property of the environments, so read it rather than file it.
 Close a stored-data issue when Development is fixed and verified.
