@@ -168,6 +168,18 @@ const SERVED_PERSON_NAME_LIST_FIELDS = [
   'leadMemberNames',
 ];
 
+function memberPersonNames(person: unknown): string[] {
+  if (!person || typeof person !== 'object') return [];
+  const fields = person as Record<string, unknown>;
+  const names = ['displayName', 'name']
+    .map((field) => fields[field])
+    .filter((name): name is string => typeof name === 'string');
+  if (typeof fields.fname === 'string' && typeof fields.lname === 'string') {
+    names.push(`${fields.fname} ${fields.lname}`);
+  }
+  return names;
+}
+
 function servedPersonNames(record: Record<string, unknown>): string[] {
   const names: string[] = [];
   for (const field of SERVED_PERSON_NAME_FIELDS) {
@@ -179,12 +191,7 @@ function servedPersonNames(record: Record<string, unknown>): string[] {
   }
   if (Array.isArray(record.members)) {
     for (const member of record.members as Array<Record<string, unknown>>) {
-      for (const field of ['displayName', 'name']) {
-        if (typeof member?.[field] === 'string') names.push(member[field] as string);
-      }
-      if (typeof member?.fname === 'string' && typeof member?.lname === 'string') {
-        names.push(`${member.fname} ${member.lname}`);
-      }
+      names.push(...memberPersonNames(member), ...memberPersonNames(member?.user));
     }
   }
   return names;

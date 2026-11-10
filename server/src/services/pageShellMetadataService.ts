@@ -219,7 +219,7 @@ const readServedResearchEntity = async (
   slug: string,
 ): Promise<ServedResearchShellFields | null> => {
   const detail = await getResearchGroupDetail(slug);
-  return detail ? redactWithheldNamesDeep(detail.researchEntity) : null;
+  return detail ? redactWithheldNamesDeep(detail).researchEntity : null;
 };
 
 export const defaultPageShellMetadataDependencies: PageShellMetadataDependencies = {

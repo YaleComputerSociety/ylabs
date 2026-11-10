@@ -177,9 +177,22 @@ describe('a recorded directory removal reaches every served surface (#4160)', ()
     expect(body).toContain(KEPT_STUDENT);
     const detail = JSON.parse(body);
     expect(detail.researchEntity.fullDescription).toContain('a researcher');
-    expect(detail.members.map((member: any) => member.displayName ?? member.name)).not.toContain(
-      REMOVED_LEAD,
-    );
+    expect(detail.members.map((member: any) => member.user?.displayName)).toEqual([KEPT_LEAD]);
+  }, 30000);
+
+  it('keeps a name-entry name on the detail page of the researcher who carries it', async () => {
+    const ownDescription = `Led by ${KEPT_LEAD}, the lab studies how synthetic tissues repair after injury.`;
+    await mongoose.connection
+      .db!.collection('research_entities')
+      .updateOne({ _id: entityId }, { $set: { fullDescription: ownDescription } });
+    await mongoose.connection.db!.collection('directory_removals').insertOne({
+      digest: directoryRemovalDigest(KEY, 'name', KEPT_LEAD),
+      kind: 'name',
+      recordedAt: new Date(),
+    });
+    const detail = JSON.parse(await detailBody());
+    expect(detail.members.map((member: any) => member.user?.displayName)).toContain(KEPT_LEAD);
+    expect(detail.researchEntity.fullDescription).toBe(ownDescription);
   }, 30000);
 
   it('keeps removed names out of the search document', async () => {

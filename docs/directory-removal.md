@@ -17,7 +17,8 @@ Entries are recorded on Development with `yarn --cwd server directory-removal:re
 The serving layer reads the list through `server/src/services/directoryRemovalServing.ts`, refreshed at most every five minutes.
 It finds the removed researchers by matching every live researcher's identifiers against the identity digests, and keeps their current names in memory only.
 A name entry never matches a researcher, so it never ends a namesake researcher's role edges or suppresses their row.
-It applies to embedded roster names and to prose, and in prose it skips a name only inside a payload object that itself serves that name as a lead or member (`withServedPeopleOf` in `directoryRemovalServing.ts`), so a faculty namesake's own row keeps its text while every other row is redacted.
+It applies to embedded roster names and to prose, and in prose it skips a name only inside a payload object that itself serves that name as a lead or member (`withServedPeopleOf` in `directoryRemovalServing.ts`), so a faculty namesake's own detail page and share metadata keep their text while every other row is redacted.
+A card names only its first lead, so a namesake who is a later co-lead has that name redacted from the card's prose.
 A stale snapshot keeps serving while a background reload replaces it, so only the first load blocks a request.
 Until that first load completes, a deployed runtime withholds every role edge and listed undergraduate rather than serve unfiltered.
 

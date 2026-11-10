@@ -53,7 +53,12 @@ describe('buildDirectoryRemovalServing', () => {
     const serving = activeServing([directoryRemovalDigest(KEY, 'name', 'Odile Marchetti')!]);
     const payload = {
       ownRow: {
-        members: [{ displayName: 'Odile Marchetti', role: 'pi' }],
+        members: [
+          {
+            role: 'pi',
+            user: { fname: 'Odile', lname: 'Marchetti', displayName: 'Odile Marchetti' },
+          },
+        ],
         researchEntity: { fullDescription: 'Led by Odile Marchetti.' },
       },
       unrelatedRow: {
