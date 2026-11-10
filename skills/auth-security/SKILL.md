@@ -443,6 +443,7 @@ Rotating a leaked secret is owned by `docs/incident-runbook.md`.
 | `FIRST_CONTACT_RATE_LIMIT_MAX` | No | Per-IP cookie-less request ceiling per 15 minutes for `firstContactLimiter`; defaults to 300 and is floored at 50, so a too-small value cannot lock out a NATed cohort. |
 | `YALIES_API_KEY` | No | API key for yalies.io. |
 | `OPENAI_API_KEY` | No | OpenAI key for Meilisearch embedder config and LLM extractors. |
+| `OPENAI_BASE_URL` | No | OpenAI-compatible endpoint for `utils/modelClient.ts`; defaults to `https://api.openai.com/v1` (`docs/model-usage.md`). |
 | `RESEARCH_SEARCH_EMBEDDING_MAX_PER_MINUTE` | No | Search query-embedding calls a one-minute window may hold across all callers; defaults to 600 and is floored at 60. |
 | `RESEARCH_SEARCH_EMBEDDING_MAX_PER_CLIENT_PER_MINUTE` | No | Same window, per client address; defaults to 120 and is floored at 10. |
 | `RESEARCH_SEARCH_EMBEDDING_COOLDOWN_MS` | No | How long the query-embedding breaker stays open after an upstream rejection or repeated failures; defaults to 60000 and is floored at 1000. |

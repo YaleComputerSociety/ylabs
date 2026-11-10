@@ -65,6 +65,7 @@ A Render service is therefore a deployed runtime whatever `NODE_ENV` says, unles
 | `MEILISEARCH_API_KEY` | No; legacy | The fallback for either Meilisearch role, which logs one warning per role. Remove it from the web service once the scoped key is live. | Yes |
 | `MEILISEARCH_WRITE_API_KEY` | Yes | The environment's document-sync key (`ylabs-<prefix>-web-docsync`), which can only add and delete documents in its own index, for live sync after edits and gate changes. Never the reindex key, which lives on the operator service. | Yes |
 | `OPENAI_API_KEY` | No | Search query embedding is skipped and search serves its keyword leg only. | Yes |
+| `OPENAI_BASE_URL` | No | Unset uses `https://api.openai.com/v1`. Set only to route model calls through an OpenAI-compatible endpoint (`docs/model-usage.md`). | No |
 | `YALIES_API_KEY` | No | Login still works, but classification falls back to the `userType` a previous login stored, or `unknown`. | Yes |
 | `SENTRY_DSN` | No | No server error reports. | Treat as secret, because it lets anyone post events into the project |
 | `SENTRY_ENVIRONMENT` | No | Reports are labelled with `NODE_ENV`, or `development`. | No |

@@ -45,7 +45,6 @@
  *
  * Read-only against Mongo. Writes nothing but its report.
  */
-import axios from 'axios';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import mongoose from 'mongoose';
@@ -73,6 +72,7 @@ import { openAiChatSampling } from '../utils/openAiChatSampling';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { fetchPublicHttpUrl } from '../scrapers/utils/httpFetch';
 import { connectScriptMongo } from '../db/connections';
+import { postChatCompletion } from '../utils/modelClient';
 
 dotenv.config({ quiet: true });
 
@@ -404,9 +404,11 @@ async function callArm(
       : input.entityKind === 'person'
         ? `Record: ${labName}. This record is an INDIVIDUAL PERSON, not an organization.`
         : `Record: ${labName}. This record is an ORGANIZATION (a lab, center, institute, or similar).`;
-  const response = await axios.post(
-    'https://api.openai.com/v1/chat/completions',
-    {
+  const response = await postChatCompletion({
+    caller: 'description-prompt-ab-harness',
+    apiKey: input.apiKey,
+    timeoutMs: 60_000,
+    body: {
       model: input.model,
       response_format: { type: 'json_object' },
       messages: [
@@ -423,11 +425,7 @@ async function callArm(
       ],
       ...openAiChatSampling(input.model),
     },
-    {
-      headers: { Authorization: `Bearer ${input.apiKey}`, 'Content-Type': 'application/json' },
-      timeout: 60_000,
-    },
-  );
+  });
   const content = response.data?.choices?.[0]?.message?.content;
   if (typeof content !== 'string' || !content) throw new Error('LLM returned empty content');
   return JSON.parse(content) as AbExtraction;

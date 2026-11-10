@@ -317,6 +317,7 @@ describe('Beta to Development sync guards', () => {
       'lane_benchmarks',
       'lane_scorecard_snapshots',
       'login_signal_tallies',
+      'model_call_usages',
       'research_plans',
       'research_topics_derivations',
       'search_rerank_cache',

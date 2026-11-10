@@ -1,5 +1,4 @@
 import type { ResearchEntityType } from '../models/researchAccessTypes';
-import axios from 'axios';
 import { redactDirectContactInfo } from './contactRedaction';
 import { openAiChatSampling } from './openAiChatSampling';
 import {
@@ -24,6 +23,7 @@ import { isBiographyRatherThanResearch } from './biographyRatherThanResearch';
 import { CARD_SYNTHESIS_PROMPT, CARD_SYNTHESIS_PROMPT_HASH } from '../scrapers/prompts';
 import { withoutUnsupportedMethodClauses } from './methodClauseSupport';
 import { browseCardIsCutMidSentence, browseCardSummary } from './browseCardSummary';
+import { postChatCompletion } from './modelClient';
 
 export const CARD_SYNTHESIS_MODEL = 'gpt-5-mini';
 export const MIN_CARD_GROUNDING = 0.9;
@@ -713,9 +713,11 @@ export { CARD_SYNTHESIS_PROMPT_HASH };
 export const defaultCardSynthesisLLM: CardSynthesisLLMFn = async (input) => {
   const safeName = redactDirectContactInfo(input.entityName).slice(0, MAX_CARD_NAME_CHARS);
   const safeSource = redactDirectContactInfo(input.fullDescription).slice(0, MAX_CARD_SOURCE_CHARS);
-  const response = await axios.post(
-    'https://api.openai.com/v1/chat/completions',
-    {
+  const response = await postChatCompletion({
+    caller: 'card-synthesis',
+    apiKey: input.apiKey,
+    timeoutMs: 30_000,
+    body: {
       model: input.model,
       response_format: { type: 'json_object' },
       ...openAiChatSampling(input.model),
@@ -733,11 +735,7 @@ export const defaultCardSynthesisLLM: CardSynthesisLLMFn = async (input) => {
         },
       ],
     },
-    {
-      headers: { Authorization: `Bearer ${input.apiKey}`, 'Content-Type': 'application/json' },
-      timeout: 30_000,
-    },
-  );
+  });
   const content = response.data?.choices?.[0]?.message?.content;
   if (!content || typeof content !== 'string') return '';
   const parsed = JSON.parse(content) as { shortDescription?: unknown };

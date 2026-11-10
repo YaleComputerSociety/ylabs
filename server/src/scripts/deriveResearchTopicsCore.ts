@@ -1,4 +1,3 @@
-import axios from 'axios';
 import { openAiChatSampling } from '../utils/openAiChatSampling';
 import { RESEARCH_PAGE_TOPICS_PROMPT } from '../scrapers/prompts';
 import {
@@ -19,6 +18,7 @@ import {
 } from '../scrapers/utils/researchPageText';
 import { mapWithConcurrency } from '../scrapers/utils/mapWithConcurrency';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { postChatCompletion } from '../utils/modelClient';
 
 export const DEFAULT_DERIVE_RESEARCH_TOPICS_LIMIT = 100;
 export const DEFAULT_DERIVE_RESEARCH_TOPICS_CONCURRENCY = 4;
@@ -110,9 +110,11 @@ export function researchTopicsUserMessage(pages: readonly ResearchPageTextEntry[
 
 export function defaultResearchTopicsModel(apiKey: string): ResearchTopicsModelFn {
   return async (input) => {
-    const response = await axios.post(
-      'https://api.openai.com/v1/chat/completions',
-      {
+    const response = await postChatCompletion({
+      caller: 'research-topics-derivation',
+      apiKey: apiKey,
+      timeoutMs: MODEL_TIMEOUT_MS,
+      body: {
         model: input.model,
         response_format: { type: 'json_object' },
         messages: [
@@ -121,11 +123,7 @@ export function defaultResearchTopicsModel(apiKey: string): ResearchTopicsModelF
         ],
         ...openAiChatSampling(input.model),
       },
-      {
-        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        timeout: MODEL_TIMEOUT_MS,
-      },
-    );
+    });
     const content = response.data?.choices?.[0]?.message?.content;
     if (!content || typeof content !== 'string') throw new Error('model returned empty content');
     return parsePageQuotedTopicExtraction(JSON.parse(content));

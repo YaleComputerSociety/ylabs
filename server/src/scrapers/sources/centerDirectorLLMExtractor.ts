@@ -26,7 +26,6 @@
  * only the single top director; co-directors and multi-leader rosters are out
  * of scope for this source.
  */
-import axios from 'axios';
 import { LEAD_ROLE_CANONICAL_VALUES } from '../../models/canonicalRoleMapping';
 import mongoose from 'mongoose';
 import * as cheerio from 'cheerio';
@@ -55,6 +54,7 @@ import {
   resolveSourceConcurrency,
 } from '../utils/mapWithConcurrency';
 import { fetchPageWithPolicy } from '../utils/httpFetch';
+import { postChatCompletion } from '../../utils/modelClient';
 
 export const CENTER_DIRECTOR_LLM_SOURCE_NAME = 'center-director-llm';
 const SOURCE_KEY = CENTER_DIRECTOR_LLM_SOURCE_NAME;
@@ -341,9 +341,11 @@ async function defaultCallLLM(input: {
   const safeCenterName = redactDirectContactInfo(input.centerName).slice(0, 240);
   const safeSourceUrl = redactDirectContactInfo(input.sourceUrl).slice(0, 2048);
   const safePageText = redactDirectContactInfo(input.pageText).slice(0, MAX_PROMPT_CHARS);
-  const response = await axios.post(
-    'https://api.openai.com/v1/chat/completions',
-    {
+  const response = await postChatCompletion({
+    caller: 'center-director-llm',
+    apiKey: input.apiKey,
+    timeoutMs: 40_000,
+    body: {
       model: input.model,
       response_format: { type: 'json_object' },
       messages: [
@@ -368,14 +370,7 @@ async function defaultCallLLM(input: {
       ],
       ...openAiChatSampling(input.model),
     },
-    {
-      headers: {
-        Authorization: `Bearer ${input.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      timeout: 40_000,
-    },
-  );
+  });
   const content = response.data?.choices?.[0]?.message?.content;
   if (!content || typeof content !== 'string') throw new Error('LLM returned empty content');
   const parsed = JSON.parse(content) as Partial<CenterDirectorExtraction>;

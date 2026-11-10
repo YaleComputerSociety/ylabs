@@ -1,6 +1,6 @@
-import axios from 'axios';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { usableOpenAiApiKey } from '../utils/openAiApiKey';
+import { postEmbedding } from '../utils/modelClient';
 import { RESEARCH_ENTITY_SEARCH_EMBEDDER_MODEL } from './researchEntitySearchIndexService';
 import {
   recordResearchSearchQueryEmbeddingFailure,
@@ -19,7 +19,6 @@ import {
 // pays none. Verified rank-equivalent against Meilisearch's own embedding on the
 // Development index: identical totalHits on 6 of 6 sampled queries and identical
 // top-24 sets, with the only order divergence past rank 60. See #3149.
-const OPENAI_EMBEDDINGS_URL = 'https://api.openai.com/v1/embeddings';
 // Healthy calls measured 175 ms at p50 and 1.1 s at worst over 30 queries, and a
 // stalled upstream costs every waiting search the whole bound (#4192).
 export const EMBEDDING_REQUEST_TIMEOUT_MS = 2_000;
@@ -56,14 +55,12 @@ const isUpstreamRejection = (error: unknown): boolean => {
 };
 
 const requestQueryVector = async (queryText: string, apiKey: string): Promise<number[] | null> => {
-  const response = await axios.post(
-    OPENAI_EMBEDDINGS_URL,
-    { model: RESEARCH_ENTITY_SEARCH_EMBEDDER_MODEL, input: queryText },
-    {
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      timeout: EMBEDDING_REQUEST_TIMEOUT_MS,
-    },
-  );
+  const response = await postEmbedding({
+    caller: 'research-search-query-embedding',
+    apiKey,
+    timeoutMs: EMBEDDING_REQUEST_TIMEOUT_MS,
+    body: { model: RESEARCH_ENTITY_SEARCH_EMBEDDER_MODEL, input: queryText },
+  });
   const vector = response.data?.data?.[0]?.embedding;
   return isVector(vector) ? vector : null;
 };

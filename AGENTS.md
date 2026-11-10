@@ -151,6 +151,7 @@ A dry run applies no patch, so it reports `resolvedByGate: null` with a note rat
 - Is the corpus getting better over time? Read the Corpus Quality panel on `/analytics`, or take a measurement with `yarn --cwd server corpus:snapshot`, documented in `docs/corpus-quality-panel.md`.
 - Is a served description accurate and useful to a student? A count cannot say, so grade a fresh sample against the cited pages, documented in `docs/description-graded-sample.md`.
 Do not answer a coverage or quality question with a throwaway script when a stored measurement already exists.
+- What do model calls cost, and which lane spends it? Read `yarn --cwd server model-usage:report`, documented in `docs/model-usage.md`.
 - Is one lane getting better? Replay it on its frozen benchmark with `yarn --cwd server lane:scorecard`, documented in `docs/lane-scorecard.md`.
 The other instruments move when the corpus moves; this one moves only when lane code does.
 - What browse actually serves is a third question, and `yarn --cwd server journey:eval` answers it through the real search route, documented in `server/src/scripts/journeyEval/README.md`.

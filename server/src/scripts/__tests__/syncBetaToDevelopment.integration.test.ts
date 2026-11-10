@@ -200,6 +200,9 @@ async function seedTarget(targetDb: Db): Promise<void> {
   await targetDb
     .collection('search_rerank_cache')
     .insertOne({ queryKey: 'example-query-key', scores: [{ entityId: 'example', score: 3 }] });
+  await targetDb
+    .collection('model_call_usages')
+    .insertOne({ caller: 'card-synthesis', model: 'gpt-5-mini', promptTokens: 10 });
   await targetDb.collection('scrape_snapshots').insertOne({ runId: 'stale-development-run' });
   await targetDb
     .collection('scrape_job_locks')

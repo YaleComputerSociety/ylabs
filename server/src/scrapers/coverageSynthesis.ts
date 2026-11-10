@@ -1,5 +1,4 @@
 import type { ResearchEntityType } from '../models/researchAccessTypes';
-import axios from 'axios';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { openAiChatSampling } from '../utils/openAiChatSampling';
 import {
@@ -25,6 +24,7 @@ import {
 import { isRejectedDescriptionSourceUrl } from './sources/labMicrositeDescriptionLLMExtractor';
 import { COVERAGE_SYNTHESIS_PROMPT } from './prompts';
 import { WRITTEN_DESCRIPTION_SOURCE_NAME } from './confidenceResolver';
+import { postChatCompletion } from '../utils/modelClient';
 
 export { WRITTEN_DESCRIPTION_SOURCE_NAME };
 
@@ -565,9 +565,11 @@ export function defaultCoverageSynthesisLLM(
       .map((snippet, index) => `[${index}] (${snippet.sourceName ?? 'source'}) ${snippet.text}`)
       .join('\n')
       .slice(0, MAX_CARD_SOURCE_CHARS * 2);
-    const response = await axios.post(
-      'https://api.openai.com/v1/chat/completions',
-      {
+    const response = await postChatCompletion({
+      caller: 'coverage-synthesis-llm',
+      apiKey: apiKey,
+      timeoutMs: 30_000,
+      body: {
         model,
         response_format: { type: 'json_object' },
         ...openAiChatSampling(model),
@@ -584,11 +586,7 @@ export function defaultCoverageSynthesisLLM(
           },
         ],
       },
-      {
-        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        timeout: 30_000,
-      },
-    );
+    });
     const content = response.data?.choices?.[0]?.message?.content;
     if (!content || typeof content !== 'string')
       return { fullDescription: '', usedSnippetIndexes: [] };

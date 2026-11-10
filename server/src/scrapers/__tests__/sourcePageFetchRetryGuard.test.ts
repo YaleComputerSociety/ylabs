@@ -6,13 +6,6 @@ const SOURCES_DIR = path.resolve(__dirname, '../sources');
 const AXIOS_CALL = /\baxios(?:\.(?:get|post|put|head|request))?\(/g;
 const RETRY_WRAPPER = /retryOnRetryableStatus\(\s*\(\)\s*=>\s*$/;
 
-const MODEL_ENDPOINT_CALLS: Record<string, number> = {
-  'centerAffiliationLLMExtractor.ts': 1,
-  'centerDirectorLLMExtractor.ts': 1,
-  'labMicrositeDescriptionLLMExtractor.ts': 1,
-  'labMicrositeUndergradLLMExtractor.ts': 1,
-};
-
 function unwrappedAxiosCalls(source: string): number {
   let count = 0;
   for (const match of source.matchAll(AXIOS_CALL)) {
@@ -36,7 +29,7 @@ describe('source lane page fetches retry a throttled refusal', () => {
       const unwrapped = unwrappedAxiosCalls(fs.readFileSync(path.join(SOURCES_DIR, name), 'utf8'));
       if (unwrapped > 0) offenders[name] = unwrapped;
     }
-    expect(offenders).toEqual(MODEL_ENDPOINT_CALLS);
+    expect(offenders).toEqual({});
   });
 
   it('recognises a wrapped call and flags a bare one', () => {
