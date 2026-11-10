@@ -188,7 +188,6 @@ describe('runSearchRerankLiveMissJob', () => {
     ['not JSON', async () => 'scores: 0 3 1 2'],
     ['no scores object', async () => JSON.stringify({ ranking: [0, 1, 2, 3] })],
     ['a missing candidate', modelScores({ 0: 1, 1: 3, 2: 0 })],
-    ['an unknown candidate', modelScores({ 0: 1, 1: 3, 2: 0, 3: 2, 4: 1 })],
     ['a score above 3', modelScores({ 0: 1, 1: 4, 2: 0, 3: 2 })],
     ['a negative score', modelScores({ 0: 1, 1: -1, 2: 0, 3: 2 })],
     ['a fractional score', modelScores({ 0: 1, 1: 2.5, 2: 0, 3: 2 })],
@@ -199,6 +198,16 @@ describe('runSearchRerankLiveMissJob', () => {
 
     expect(outcome).toEqual({ status: 'malformed-output' });
     expect(mocks.cacheUpdateOne).not.toHaveBeenCalled();
+  });
+
+  it('ignores a candidate id outside the window and keeps the in-window scores', async () => {
+    const outcome = await runJob({
+      mode: 'serve',
+      model: modelScores({ 0: 1, 1: 3, 2: 0, 3: 2, 4: 1 }),
+    });
+
+    expect(outcome.status).not.toBe('malformed-output');
+    expect(outcome.entry?.scores.map((row) => row.score)).toEqual([1, 3, 0, 2]);
   });
 
   it('writes nothing when the model call fails', async () => {
@@ -302,8 +311,48 @@ describe('runSearchRerankLiveMissJob', () => {
 });
 
 describe('parseSearchRerankLiveMissScores', () => {
-  it('returns the scores in candidate order', () => {
-    expect(parseSearchRerankLiveMissScores('{"scores":{"1":0,"0":3}}', 2)).toEqual([3, 0]);
+  const scoresFor = (ids: number[]) =>
+    JSON.stringify({ scores: Object.fromEntries(ids.map((id) => [String(id), id % 4])) });
+  const range = (count: number) => Array.from({ length: count }, (_v, index) => index);
+
+  it('returns each scored candidate by its index', () => {
+    expect(parseSearchRerankLiveMissScores('{"scores":{"1":0,"0":3}}', 2)).toEqual(
+      new Map([
+        [1, 0],
+        [0, 3],
+      ]),
+    );
+  });
+
+  it('keeps an answer that scores 29 of 30 candidates and stores only those 29', () => {
+    const scored = parseSearchRerankLiveMissScores(
+      scoresFor(range(30).filter((id) => id !== 17)),
+      30,
+    );
+
+    expect(scored?.size).toBe(29);
+    expect(scored?.has(17)).toBe(false);
+  });
+
+  it('keeps an answer that scores 27 of 30 candidates', () => {
+    expect(parseSearchRerankLiveMissScores(scoresFor(range(27)), 30)?.size).toBe(27);
+  });
+
+  it('rejects an answer that scores 20 of 30 candidates', () => {
+    expect(parseSearchRerankLiveMissScores(scoresFor(range(20)), 30)).toBeNull();
+  });
+
+  it('ignores out-of-window and non-integer ids rather than rejecting the answer', () => {
+    const content = JSON.stringify({
+      scores: {
+        ...Object.fromEntries(range(30).map((id) => [String(id), 2])),
+        '30': 3,
+        '1.5': 1,
+        x: 0,
+      },
+    });
+
+    expect(parseSearchRerankLiveMissScores(content, 30)?.size).toBe(30);
   });
 });
 

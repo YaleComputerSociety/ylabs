@@ -636,6 +636,7 @@ Scores are produced offline and written by `research-search:seed-rerank-cache`, 
 Re-seed after a corpus-wide change; a stale entry only reorders rows search already returned.
 Behind `SEARCH_RERANK_LIVE_MISS_ENABLED=true` (off by default, independent of the serve flag) a miss is served in today's order and queues one in-process `gpt-5-mini` job for its key (`services/searchRerankLiveMiss.ts`, `services/searchRerankLiveMissJob.ts`, caller `search-rerank-live-miss`, #5549).
 `SEARCH_RERANK_LIVE_MISS_MODE` defaults to `shadow`, whose entries are never served; a `live-miss` entry is served only while the live-miss flag is on, and a seeded `full-` or served entry is never replaced.
+Its USD 1.00 daily ceiling counts the `search-rerank-live-miss` caller's spend only, read from `model_call_usages`, and a reply that scores at least 27 of 30 candidates is kept with only the scored rows stored.
 The eligibility gate reads the served result through the existing predicates (`keywordLegTopHitIsNameMatch`, empty `normalizeResearchSearchQuery` tokens, `servesNoKeywordRow`, fewer than 2 candidates), so do not add a lexical one beside it.
 `docs/search-rerank-cache.md` is the full contract.
 

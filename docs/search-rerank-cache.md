@@ -104,13 +104,16 @@ All of these are in-process, so they hold per server instance; the web service r
   Over a cap the search is served normally and nothing is queued.
 - Before each model call the job reads today's spend for its caller from `model_call_usages` (UTC day, priced by `modelPricing.ts`).
   At USD 1.00 the queue drops what is pending and queues nothing until the next UTC day.
+  The ceiling counts this caller's spend only, not every caller's, so a scraper or description run that spends on the same day never stops the job, and the job's own spend can never exceed it.
   An unreadable log, or no database connection, skips the call rather than spending blind.
 
 ### The job
 
 `runSearchRerankLiveMissJob` in `server/src/services/searchRerankLiveMissJob.ts` re-runs the same search for the key through `searchResearchGroupsForRerankCandidates`, public visibility scope, spelling correction and filter resolution as the route applies them, and no cached reorder.
 It sends the top 30 to `gpt-5-mini` through the shared model client under caller `search-rerank-live-miss`, with the prompt in `server/src/scrapers/prompts/searchRerankLiveMiss.md` (the rerank prompt measured in the #5549 cost pilot).
-The reply must score every candidate exactly once with an integer from 0 to 3; anything else writes nothing.
+The reply must give at least 27 of every 30 candidates (all but a tenth, rounded down) an integer score from 0 to 3; ids outside the candidate window and non-integer ids are ignored, and a reply below that bar writes nothing.
+Only the scored candidates are stored, and an unscored candidate reads as the neutral 1.5 on the serve path, as any unscored row does.
+The bar is measured: a strict every-candidate rule threw away 61 of 320 real answers in the review pilot, 46 of them for missing one id of 30 (#5549).
 The entry is upserted with `source` `live-miss` or `shadow` and `indexVersion` `async-gpt-5-mini-<YYYY-MM-DD>`, and the upsert filter excludes a `full-` entry, so a seeded entry that lands while the model is scoring still wins.
 Every outcome is logged as `[search-rerank-live-miss] job <status>`, never with the query text.
 

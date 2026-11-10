@@ -129,10 +129,19 @@ export function defaultSearchRerankLiveMissModel(apiKey: string): SearchRerankLi
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+const minimumScoredCandidates = (candidateCount: number): number =>
+  candidateCount - Math.floor(candidateCount / 10);
+
+const isRerankScore = (score: unknown): score is number =>
+  typeof score === 'number' &&
+  Number.isInteger(score) &&
+  score >= SEARCH_RERANK_MIN_SCORE &&
+  score <= SEARCH_RERANK_MAX_SCORE;
+
 export function parseSearchRerankLiveMissScores(
   content: unknown,
   candidateCount: number,
-): number[] | null {
+): Map<number, number> | null {
   if (typeof content !== 'string') return null;
   let parsed: unknown;
   try {
@@ -141,23 +150,14 @@ export function parseSearchRerankLiveMissScores(
     return null;
   }
   if (!isPlainObject(parsed) || !isPlainObject(parsed.scores)) return null;
-  const scores = parsed.scores;
-  const expectedIds = Array.from({ length: candidateCount }, (_value, index) => String(index));
-  if (Object.keys(scores).length !== candidateCount) return null;
-  const ordered: number[] = [];
-  for (const id of expectedIds) {
-    const score = scores[id];
-    if (
-      typeof score !== 'number' ||
-      !Number.isInteger(score) ||
-      score < SEARCH_RERANK_MIN_SCORE ||
-      score > SEARCH_RERANK_MAX_SCORE
-    ) {
-      return null;
-    }
-    ordered.push(score);
+  const scored = new Map<number, number>();
+  for (const [id, score] of Object.entries(parsed.scores)) {
+    if (!/^(0|[1-9][0-9]*)$/.test(id)) continue;
+    const index = Number(id);
+    if (index >= candidateCount || !isRerankScore(score)) continue;
+    scored.set(index, score);
   }
-  return ordered;
+  return scored.size >= minimumScoredCandidates(candidateCount) ? scored : null;
 }
 
 export async function searchRerankLiveMissSpendTodayUsd(now: Date): Promise<number> {
@@ -278,10 +278,10 @@ export async function runSearchRerankLiveMissJob(
     queryKey,
     queryText,
     filters,
-    scores: candidates.map((candidate, index) => ({
-      entityId: candidate.entityId,
-      score: scores[index],
-    })),
+    scores: candidates.flatMap((candidate, index) => {
+      const score = scores.get(index);
+      return score === undefined ? [] : [{ entityId: candidate.entityId, score }];
+    }),
     scoredAt,
     indexVersion: `async-${SEARCH_RERANK_LIVE_MISS_MODEL}-${utcDate(scoredAt)}`,
     source: mode === 'shadow' ? SEARCH_RERANK_SHADOW_SOURCE : SEARCH_RERANK_LIVE_MISS_SOURCE,
