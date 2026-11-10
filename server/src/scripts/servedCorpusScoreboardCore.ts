@@ -556,13 +556,6 @@ export function assertCollectionSetUnchanged(
 }
 
 /**
- * Every figure this command prints is checked against its own population first.
- * Three measurement errors in this area in one hour all failed toward a
- * confident wrong number rather than toward an error, so a subset that exceeds
- * its population, or a partition whose parts do not sum to the whole, throws
- * before anything is printed.
- */
-/**
  * A capped field can legitimately show no prefix row at all: once every baseline value at
  * the cap has been rewritten, each one differs inside the cap and is a real change (#5579).
  * What must never happen is a counted change whose served text merely continues the capped
@@ -583,6 +576,13 @@ function countedPrefixChanges(
     ).length;
 }
 
+/**
+ * Every figure this command prints is checked against its own population first.
+ * Three measurement errors in this area in one hour all failed toward a
+ * confident wrong number rather than toward an error, so a subset that exceeds
+ * its population, or a partition whose parts do not sum to the whole, throws
+ * before anything is printed.
+ */
 export function assertServedCorpusScoreboardConsistent(scoreboard: ServedCorpusScoreboard): void {
   const label = `${scoreboard.environment}/${scoreboard.databaseName}`;
   const { corpus, baseline } = scoreboard;
