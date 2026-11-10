@@ -7,7 +7,8 @@ let productAnalytics: ProductAnalyticsModule;
 
 const SYNTHETIC_KEY = 'phc_syntheticTestKey0000000000000000000000';
 let sessionKeyIndex = 0;
-const freshSessionKey = () => `phc_syntheticSessionKey${String(++sessionKeyIndex).padStart(20, '0')}`;
+const freshSessionKey = () =>
+  `phc_syntheticSessionKey${String(++sessionKeyIndex).padStart(20, '0')}`;
 const SYNTHETIC_NETID = 'zq9999';
 const SYNTHETIC_QUERY = 'syntheticquerytext';
 const SYNTHETIC_NOTE = 'synthetic private plan note';
