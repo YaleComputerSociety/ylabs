@@ -674,7 +674,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     expect(enriched?.identifiers?.netid).toBeUndefined();
   });
 
-  it('clamps a directory title beyond the profile bound instead of failing the run', async () => {
+  it('refuses a directory title beyond the stored bound instead of failing the run (#5594)', async () => {
     const longTitle =
       'Professor of Physics and Astronomy and Adjunct Professor of Applied Mathematics '.repeat(8);
     const enrichTarget = await attachedResearcher('longtitle1', 'Terry Titleholder');
@@ -686,7 +686,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     expect(result.skipped).toBeUndefined();
 
     const enriched = await enrichedResearcher(enrichTarget._id);
-    expect(enriched?.profile?.title).toBe(longTitle.slice(0, 400).trim());
+    expect(enriched?.profile?.title).toBeUndefined();
   });
 
   it('strips invisible format characters a stored observation carries into a title (#2874)', async () => {

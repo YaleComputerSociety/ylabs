@@ -353,11 +353,7 @@ import {
   observationBelongsToMergedRow,
 } from './mergedRowEvidenceIdentity';
 import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacters';
-import {
-  isPageHeadingTitle,
-  isTruncatedPersonTitle,
-  stripTitleFieldLabel,
-} from '../utils/titleHygiene';
+import { servablePersonTitle, stripTitleFieldLabel } from '../utils/titleHygiene';
 import type { ReportPostMaterializationMetrics } from './runReport';
 import { withoutUnsupportedMethodClauses } from '../utils/methodClauseSupport';
 import { isModelTextSource } from './sourceCoverageRegistry';
@@ -1959,7 +1955,7 @@ export function shouldIgnoreObservationForEntityMaterialization(
     entityType === 'user' &&
     observation.field === 'title' &&
     typeof observation.value === 'string' &&
-    (isTruncatedPersonTitle(observation.value) || isPageHeadingTitle(observation.value))
+    !servablePersonTitle(observation.value)
   ) {
     return true;
   }
@@ -7887,7 +7883,7 @@ async function materializeUserIdentityToResearcher(
   }
   researcher.profile = researcher.profile || {};
   for (const [key, value, confidence] of [
-    ['title', title, resolvedConfidence('title')],
+    ['title', servablePersonTitle(title), resolvedConfidence('title')],
     ['primaryDepartment', primaryDepartment, resolvedConfidence('primaryDepartment')],
     ['imageUrl', imageUrl, resolvedConfidence('imageUrl')],
     ['websiteUrl', websiteUrl, resolvedConfidence('websiteUrl', 'website')],
@@ -7899,9 +7895,12 @@ async function materializeUserIdentityToResearcher(
       fieldsWritten += 1;
     }
   }
-  if (!title && isPageHeadingTitle(researcher.profile.title)) {
-    researcher.profile.title = undefined;
-    fieldsWritten += 1;
+  if (!servablePersonTitle(title) && researcher.profile.title) {
+    const storedTitle = servablePersonTitle(researcher.profile.title);
+    if (storedTitle !== researcher.profile.title) {
+      researcher.profile.title = storedTitle;
+      fieldsWritten += 1;
+    }
   }
   if (
     isInadmissiblePersonWebsiteUrl(researcher.profile.websiteUrl) ||
