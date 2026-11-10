@@ -3,7 +3,9 @@ export const PRIVACY_PAGE_TITLE = 'Privacy';
 export const PRIVACY_LINK_LABEL = 'Privacy';
 export const PRIVACY_QUESTIONS_URL = 'https://github.com/YaleComputerSociety/ylabs/issues';
 export const ACTIVITY_RECORD_RETENTION_DAYS = 1095;
-export const ACTIVITY_RECORD_RETENTION_DAYS_LABEL = ACTIVITY_RECORD_RETENTION_DAYS.toLocaleString('en-US');
+export const ACTIVITY_RECORD_RETENTION_DAYS_LABEL = new Intl.NumberFormat('en-US').format(
+  ACTIVITY_RECORD_RETENTION_DAYS,
+);
 export const SESSION_COOKIE_LIFETIME_DAYS = 30;
 
 // Every third-party origin the page loads from or sends to must be named here and on the
