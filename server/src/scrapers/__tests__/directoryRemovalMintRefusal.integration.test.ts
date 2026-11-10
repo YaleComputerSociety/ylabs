@@ -265,6 +265,15 @@ describe(
       expect(await ResearchEntity.countDocuments({ slug: PROFILE_SLUG })).toBe(0);
     });
 
+    it('mints no faculty research profile for a lead removed before the lane runs', async () => {
+      await recordRemoval('email', 'gray.synthetic@example.edu');
+
+      await materializeFromRun(await appendFacultyResearchProfileObservations());
+
+      expect(await Observation.countDocuments({ entityKey: PROFILE_SLUG })).toBe(0);
+      expect(await ResearchEntity.countDocuments({ slug: PROFILE_SLUG })).toBe(0);
+    });
+
     it('refuses the whole run when entries exist and no key is configured', async () => {
       await recordRemoval('profile_url', REMOVED.profileUrl!);
       vi.stubEnv(DIRECTORY_REMOVAL_KEY_ENV, '');
@@ -307,6 +316,19 @@ describe(
         expect(refusals).toBe(1);
         expect(await Researcher.countDocuments({})).toBe(0);
         expect(await RoleAssignment.countDocuments({})).toBe(0);
+      });
+
+      it('mints a namesake listed with a profile url of their own', async () => {
+        await recordRemoval('name', 'Emery Synthetic');
+
+        const { write, refusals } = await writeUnderGuard(
+          { displayName: 'Emery Synthetic' },
+          member('Emery').profileUrl,
+        );
+
+        expect(write.outcome).toBe('created');
+        expect(refusals).toBe(0);
+        expect(await Researcher.countDocuments({})).toBe(1);
       });
 
       it('attaches no edge to an existing researcher whose netid is on the list', async () => {

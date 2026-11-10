@@ -19,7 +19,6 @@ export interface DirectoryRemovalMintGuard {
   readonly active: boolean;
   refusesIdentifiedPerson(person: DirectoryRemovalPerson | null | undefined): boolean;
   refusesPerson(person: DirectoryRemovalPerson | null | undefined): boolean;
-  refusesName(name: unknown): boolean;
   recordRefusal(): void;
   readonly refusals: number;
 }
@@ -47,9 +46,6 @@ export function createDirectoryRemovalMintGuard(
       if (!active || !person) return false;
       if (matcher.isRemovedPerson(person)) return true;
       return !holdsStableKey(person) && matcher.isRemovedName(person.displayName);
-    },
-    refusesName(name) {
-      return active && matcher.isRemovedName(name);
     },
     recordRefusal() {
       refusals += 1;
@@ -95,10 +91,15 @@ export async function currentDirectoryRemovalMintGuard(): Promise<DirectoryRemov
 export async function researcherIsRemovedByRequest(
   guard: DirectoryRemovalMintGuard,
   researcherId: mongoose.Types.ObjectId | string | undefined,
+  listedProfileUrl?: string,
 ): Promise<boolean> {
   if (!guard.active || !researcherId) return false;
   const researcher = await Researcher.findById(researcherId)
     .select('displayName identifiers profileLinks')
     .lean<DirectoryRemovalPerson | null>();
-  return guard.refusesPerson(researcher);
+  if (!researcher || !listedProfileUrl) return guard.refusesPerson(researcher);
+  return guard.refusesPerson({
+    ...researcher,
+    profileLinks: [...(researcher.profileLinks ?? []), { url: listedProfileUrl }],
+  });
 }

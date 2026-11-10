@@ -390,9 +390,20 @@ async function mintResearcherForIdentityNetid(
 
 type ResearcherResolution = mongoose.Types.ObjectId | undefined | typeof REMOVED_BY_REQUEST;
 
+const listedDirectoryRemovalPerson = (identity: CanonicalMemberIdentity, profileUrl?: string) => ({
+  displayName: trimmed(identity.displayName),
+  identifiers: {
+    netid: trimmed(identity.netid),
+    email: trimmed(identity.email),
+    orcid: trimmed(identity.orcid),
+  },
+  profileLinks: profileUrl ? [{ url: profileUrl }] : [],
+});
+
 async function resolveOrCreateResearcherId(
   identity: CanonicalMemberIdentity,
-  guard?: DirectoryRemovalMintGuard,
+  guard: DirectoryRemovalMintGuard,
+  profileUrl?: string,
 ): Promise<ResearcherResolution> {
   if (identityIsOrganizationalMailbox(identity)) return undefined;
   const displayName = canonicalPersonName(trimmed(identity.displayName));
@@ -438,7 +449,9 @@ async function resolveOrCreateResearcherId(
   }
 
   if (!displayName) return undefined;
-  if (guard?.refusesName(displayName)) return REMOVED_BY_REQUEST;
+  if (guard.refusesPerson({ ...listedDirectoryRemovalPerson(identity, profileUrl), displayName })) {
+    return REMOVED_BY_REQUEST;
+  }
   return resolveOrCreateNameOnlyResearcherId(displayName);
 }
 
@@ -574,16 +587,6 @@ export async function identifiedResearcherHoldsDisplayName(displayName: unknown)
   return Boolean(namesake);
 }
 
-const listedDirectoryRemovalPerson = (identity: CanonicalMemberIdentity, profileUrl?: string) => ({
-  displayName: trimmed(identity.displayName),
-  identifiers: {
-    netid: trimmed(identity.netid),
-    email: trimmed(identity.email),
-    orcid: trimmed(identity.orcid),
-  },
-  profileLinks: profileUrl ? [{ url: profileUrl }] : [],
-});
-
 export async function resolveOrCreateResearcherIdUnlessRemoved(
   identity: CanonicalMemberIdentity,
   guard: DirectoryRemovalMintGuard,
@@ -594,9 +597,11 @@ export async function resolveOrCreateResearcherIdUnlessRemoved(
   }
   const personId =
     (await liveResearcherId(identity.resolvedPersonId)) ??
-    (await resolveOrCreateResearcherId(identity, guard));
+    (await resolveOrCreateResearcherId(identity, guard, profileUrl));
   if (personId === REMOVED_BY_REQUEST || !personId) return personId;
-  return (await researcherIsRemovedByRequest(guard, personId)) ? REMOVED_BY_REQUEST : personId;
+  return (await researcherIsRemovedByRequest(guard, personId, profileUrl))
+    ? REMOVED_BY_REQUEST
+    : personId;
 }
 
 export async function resolveOrCreateResearcherIdForIdentity(

@@ -409,8 +409,8 @@ interface AppendContext {
 async function withoutRemovedPeople(
   inputs: ObservationInput[],
   ctx: AppendContext,
-): Promise<{ kept: ObservationInput[]; removed: number }> {
-  if (!batchMayNameARemovablePerson(inputs)) return { kept: inputs, removed: 0 };
+): Promise<{ kept: ObservationInput[]; refused: ObservationInput[] }> {
+  if (!batchMayNameARemovablePerson(inputs)) return { kept: inputs, refused: [] };
   const guard = await (ctx.directoryRemovalGuard ?? loadDirectoryRemovalObservationGuard)();
   return guard.withoutRemovedPeople(inputs);
 }
@@ -590,12 +590,17 @@ export async function appendObservations(
   inputs: ObservationInput[],
   ctx: AppendContext,
   opts: { loadActiveProse?: ActiveProseLoader; judgeDescriptionCard?: DescriptionCardJudge } = {},
-): Promise<{ inserted: number; skipped: number; superseded: number; removedByRequest?: number }> {
+): Promise<{
+  inserted: number;
+  skipped: number;
+  superseded: number;
+  refusedByRequest?: ObservationInput[];
+}> {
   if (inputs.length === 0) return { inserted: 0, skipped: 0, superseded: 0 };
   const removal = await withoutRemovedPeople(inputs, ctx);
-  const removedByRequest = removal.removed > 0 ? { removedByRequest: removal.removed } : {};
+  const refusedByRequest = removal.refused.length > 0 ? { refusedByRequest: removal.refused } : {};
   if (removal.kept.length === 0) {
-    return { inserted: 0, skipped: 0, superseded: 0, ...removedByRequest };
+    return { inserted: 0, skipped: 0, superseded: 0, ...refusedByRequest };
   }
   const loadActiveProse = opts.loadActiveProse ?? loadActiveProseValue;
 
@@ -797,7 +802,7 @@ export async function appendObservations(
     selfDefeatingCardGuarded +
     cardRegressionGuarded.observations;
   if (keptInputs.length === 0) {
-    return { inserted: 0, skipped: skippedCount, superseded: 0, ...removedByRequest };
+    return { inserted: 0, skipped: skippedCount, superseded: 0, ...refusedByRequest };
   }
 
   const docs = keptInputs.map((obs) => {
@@ -834,7 +839,7 @@ export async function appendObservations(
   });
 
   if (ctx.dryRun) {
-    return { inserted: 0, skipped: docs.length + skippedCount, superseded: 0, ...removedByRequest };
+    return { inserted: 0, skipped: docs.length + skippedCount, superseded: 0, ...refusedByRequest };
   }
 
   if (docs.some(writesOwnershipGuardedDescriptionField)) resetDescriptionOwnershipCitersCache();
@@ -892,7 +897,7 @@ export async function appendObservations(
         ).modifiedCount || 0
       : 0;
 
-  return { inserted: landed.length, skipped: skippedCount, superseded, ...removedByRequest };
+  return { inserted: landed.length, skipped: skippedCount, superseded, ...refusedByRequest };
 }
 
 export interface RetireObservationsResult {

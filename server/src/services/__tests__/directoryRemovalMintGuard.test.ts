@@ -36,7 +36,6 @@ describe('createDirectoryRemovalMintGuard', () => {
     expect(guard.active).toBe(false);
     expect(guard.refusesPerson(removed)).toBe(false);
     expect(guard.refusesIdentifiedPerson(removed)).toBe(false);
-    expect(guard.refusesName(removed.displayName)).toBe(false);
     expect(guard.refusals).toBe(0);
   });
 
@@ -59,7 +58,7 @@ describe('createDirectoryRemovalMintGuard', () => {
     expect(guard.refusesPerson({ displayName: 'Synthetic Removed Person' })).toBe(true);
     expect(guard.refusesPerson(removed)).toBe(false);
     expect(guard.refusesIdentifiedPerson({ displayName: 'Synthetic Removed Person' })).toBe(false);
-    expect(guard.refusesName('synthetic removed person')).toBe(true);
+    expect(guard.refusesPerson({ displayName: 'synthetic removed person' })).toBe(true);
   });
 
   it('counts each recorded refusal', () => {

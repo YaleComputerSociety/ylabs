@@ -156,6 +156,36 @@ describe(
       expect(await memberObservations('Blair')).toBeGreaterThan(0);
     });
 
+    it('leaves a removed member out of a dry run preview and its entity count', async () => {
+      const preview = async () => {
+        const orchestrator = new ScraperOrchestrator();
+        orchestrator.register(
+          new CentersInstitutesScraper([config], null, async () => JSON.stringify(ROSTER)),
+        );
+        const { runId, explainedObservations } = await orchestrator.run(SOURCE_NAME, {
+          dryRun: true,
+          explain: true,
+          useCache: false,
+          release: false,
+          ignoreWorkPlanner: true,
+        });
+        const run = await ScrapeRun.findById(runId).lean<{ entitiesObserved?: number }>();
+        return { explained: explainedObservations ?? [], entitiesObserved: run?.entitiesObserved };
+      };
+      const namesRemovedMember = (obs: Record<string, unknown>) =>
+        obs.entityType === 'researchGroupMember' &&
+        String(obs.entityKey).endsWith(':casey-synthetic');
+      const unfiltered = await preview();
+      await recordRemoval('profile_url', REMOVED.profileUrl!);
+
+      const filtered = await preview();
+
+      expect(unfiltered.explained.some(namesRemovedMember)).toBe(true);
+      expect(filtered.explained.length).toBeGreaterThan(0);
+      expect(filtered.explained.some(namesRemovedMember)).toBe(false);
+      expect(filtered.entitiesObserved).toBeLessThan(unfiltered.entitiesObserved!);
+    });
+
     it('keeps a member matched only by a removed name', async () => {
       await recordRemoval('name', 'Emery Synthetic');
 
@@ -202,6 +232,33 @@ describe(
       expect(
         await Observation.countDocuments({ entityType: 'user', entityKey: 'netid:zz9202' }),
       ).toBe(1);
+    });
+
+    it("drops every field of a removed person's own faculty research profile", async () => {
+      await recordRemoval('netid', 'zz9201');
+      const profileRow = (entityKey: string, field: string, value: unknown): ObservationInput => ({
+        entityType: 'researchEntity',
+        entityKey,
+        field,
+        value,
+        sourceUrl: `https://example.edu/profile/${entityKey}`,
+      });
+      const profile = (entityKey: string, piKey: string) => [
+        profileRow(entityKey, 'name', 'Synthetic Faculty Research'),
+        profileRow(entityKey, 'entityType', 'FACULTY_RESEARCH_AREA'),
+        profileRow(entityKey, 'inferredPiUserKey', piKey),
+      ];
+
+      const { removedByRequest } = await appendUnderOneRun([
+        [
+          ...profile('synthetic-removed-profile', 'netid:zz9201'),
+          ...profile('synthetic-kept-profile', 'netid:zz9202'),
+        ],
+      ]);
+
+      expect(removedByRequest).toBe(3);
+      expect(await Observation.countDocuments({ entityKey: 'synthetic-removed-profile' })).toBe(0);
+      expect(await Observation.countDocuments({ entityKey: 'synthetic-kept-profile' })).toBe(3);
     });
 
     it('drops only the row fields that point at a removed person', async () => {

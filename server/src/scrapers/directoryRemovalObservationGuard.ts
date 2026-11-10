@@ -103,6 +103,10 @@ const subjectNodes = (obs: ObservationInput): string[] => [
 const isPersonSubject = (obs: ObservationInput) => PERSON_SUBJECT_TYPES.has(obs.entityType);
 const isRowPointer = (obs: ObservationInput) =>
   ROW_SUBJECT_TYPES.has(obs.entityType) && ROW_POINTER_FIELDS.has(obs.field);
+const declaresAFacultyResearchProfile = (obs: ObservationInput) =>
+  ROW_SUBJECT_TYPES.has(obs.entityType) &&
+  obs.field === 'entityType' &&
+  obs.value === 'FACULTY_RESEARCH_AREA';
 
 export function batchMayNameARemovablePerson(inputs: readonly ObservationInput[]): boolean {
   return inputs.some((obs) => isPersonSubject(obs) || isRowPointer(obs));
@@ -113,7 +117,7 @@ export interface DirectoryRemovalObservationGuard {
   readonly removedByRequest: number;
   withoutRemovedPeople(
     inputs: readonly ObservationInput[],
-  ): Promise<{ kept: ObservationInput[]; removed: number }>;
+  ): Promise<{ kept: ObservationInput[]; refused: ObservationInput[] }>;
 }
 
 export function createDirectoryRemovalObservationGuard(
@@ -216,19 +220,32 @@ export function createDirectoryRemovalObservationGuard(
       return removedByRequest;
     },
     async withoutRemovedPeople(inputs) {
-      if (!active) return { kept: [...inputs], removed: 0 };
+      if (!active) return { kept: [...inputs], refused: [] };
       const removedNodes = await removedPersonSubjectNodes(inputs.filter(isPersonSubject));
-      const kept: ObservationInput[] = [];
-      let removed = 0;
+      const profileRowNodes = new Set(
+        inputs.filter(declaresAFacultyResearchProfile).flatMap(subjectNodes),
+      );
+      const refusedPointers = new Set<ObservationInput>();
+      const removedProfileRowNodes = new Set<string>();
       for (const obs of inputs) {
-        const refused = isPersonSubject(obs)
-          ? subjectNodes(obs).some((node) => removedNodes.has(node))
-          : isRowPointer(obs) && (await rowPointerNamesARemovedPerson(obs));
-        if (refused) removed += 1;
-        else kept.push(obs);
+        if (!isRowPointer(obs) || !(await rowPointerNamesARemovedPerson(obs))) continue;
+        refusedPointers.add(obs);
+        const nodes = subjectNodes(obs);
+        if (nodes.some((node) => profileRowNodes.has(node))) {
+          for (const node of nodes) removedProfileRowNodes.add(node);
+        }
       }
-      removedByRequest += removed;
-      return { kept, removed };
+      const kept: ObservationInput[] = [];
+      const refused: ObservationInput[] = [];
+      for (const obs of inputs) {
+        const isRefused = isPersonSubject(obs)
+          ? subjectNodes(obs).some((node) => removedNodes.has(node))
+          : refusedPointers.has(obs) ||
+            subjectNodes(obs).some((node) => removedProfileRowNodes.has(node));
+        (isRefused ? refused : kept).push(obs);
+      }
+      removedByRequest += refused.length;
+      return { kept, refused };
     },
   };
 }
