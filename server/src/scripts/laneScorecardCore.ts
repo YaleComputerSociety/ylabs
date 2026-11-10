@@ -660,14 +660,30 @@ export function goldRegressions(
 
 /**
  * The benchmarks a scorecard replays. A recaptured benchmark replaces the one it supersedes,
- * so an unnamed run replays only the successor; naming a superseded benchmark still replays it.
+ * so an unnamed run replays only the successor, and a retired benchmark, whose scope its lane
+ * no longer reaches, is left out with its reason. Naming either one still replays it.
  */
-export function benchmarksToReplay<T extends { benchmarkId: string; supersedes?: string | null }>(
+export function benchmarksToReplay<
+  T extends {
+    benchmarkId: string;
+    supersedes?: string | null;
+    retiredAt?: Date | null;
+    retiredReason?: string | null;
+  },
+>(
   benchmarks: readonly T[],
   requestedId?: string,
-): { replay: T[]; superseded: Array<{ benchmarkId: string; supersededBy: string }> } {
+): {
+  replay: T[];
+  superseded: Array<{ benchmarkId: string; supersededBy: string }>;
+  retired: Array<{ benchmarkId: string; reason: string }>;
+} {
   if (requestedId) {
-    return { replay: benchmarks.filter((b) => b.benchmarkId === requestedId), superseded: [] };
+    return {
+      replay: benchmarks.filter((b) => b.benchmarkId === requestedId),
+      superseded: [],
+      retired: [],
+    };
   }
   const successorOf = new Map<string, string>();
   for (const benchmark of benchmarks) {
@@ -675,10 +691,13 @@ export function benchmarksToReplay<T extends { benchmarkId: string; supersedes?:
   }
   const replay: T[] = [];
   const superseded: Array<{ benchmarkId: string; supersededBy: string }> = [];
+  const retired: Array<{ benchmarkId: string; reason: string }> = [];
   for (const benchmark of benchmarks) {
     const supersededBy = successorOf.get(benchmark.benchmarkId);
     if (supersededBy) superseded.push({ benchmarkId: benchmark.benchmarkId, supersededBy });
-    else replay.push(benchmark);
+    else if (benchmark.retiredAt) {
+      retired.push({ benchmarkId: benchmark.benchmarkId, reason: benchmark.retiredReason ?? '' });
+    } else replay.push(benchmark);
   }
-  return { replay, superseded };
+  return { replay, superseded, retired };
 }
