@@ -1,4 +1,3 @@
-import axios from 'axios';
 import {
   assessResearchEntityDescriptionQuality,
   fullDescriptionQuality,
@@ -9,6 +8,7 @@ import { openAiChatSampling } from '../utils/openAiChatSampling';
 import { withSynthesisFidelityRules } from '../scrapers/prompts';
 import { classifyFullDescription, sanitizeDescriptionText } from './backfillDescriptionQualityCore';
 import { stripFacultyResearchAreaNameTemplateSuffix } from '../utils/researchEntityDescriptionText';
+import { postChatCompletion } from '../utils/modelClient';
 
 export const SYNTHESIS_MODEL = 'gpt-5-mini';
 export const SYNTHESIS_INPUT_USD_PER_1K = 0.00025;
@@ -215,9 +215,11 @@ export const defaultLabDescriptionSynthesizer: LabDescriptionSynthesizer = async
   const safeSource = redactDirectContactInfo(input.sourceText).slice(0, MAX_SOURCE_CHARS);
   const subjectLabel = isPerson ? 'Researcher' : 'Research home';
   const fullDescriptionScope = isPerson ? "this researcher's research" : 'the research';
-  const response = await axios.post(
-    'https://api.openai.com/v1/chat/completions',
-    {
+  const response = await postChatCompletion({
+    caller: 'lab-description-synthesis',
+    apiKey: apiKey,
+    timeoutMs: 40_000,
+    body: {
       model: SYNTHESIS_MODEL,
       response_format: { type: 'json_object' },
       ...openAiChatSampling(SYNTHESIS_MODEL),
@@ -235,11 +237,7 @@ export const defaultLabDescriptionSynthesizer: LabDescriptionSynthesizer = async
         },
       ],
     },
-    {
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      timeout: 40_000,
-    },
-  );
+  });
   const content = response.data?.choices?.[0]?.message?.content;
   const parsed = content ? JSON.parse(content) : {};
   const rawUsage = response.data?.usage;

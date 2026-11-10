@@ -11,6 +11,8 @@
 // stored page text, so a refresh that cleared it would buy every reading again.
 // A search rerank cache pairs this environment's student queries with its rows and
 // is seeded per environment, so a copy would serve one corpus's scores on another's ids.
+// A model call usage entry records this environment's own paid calls, so a copy would
+// bill one environment's spend to another.
 export const NEVER_COPY_COLLECTIONS = [
   'accounts',
   'research_plans',
@@ -28,6 +30,7 @@ export const NEVER_COPY_COLLECTIONS = [
   'login_signal_tallies',
   'research_topics_derivations',
   'search_rerank_cache',
+  'model_call_usages',
 ];
 
 // The Development refresh clears every collection the Beta mirror does not
@@ -50,6 +53,7 @@ export const PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS = [
   'login_signal_tallies',
   'research_topics_derivations',
   'search_rerank_cache',
+  'model_call_usages',
 ];
 
 // A lease is state rather than history: it expires and is taken over, so a

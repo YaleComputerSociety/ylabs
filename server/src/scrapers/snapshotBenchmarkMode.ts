@@ -20,6 +20,7 @@
  */
 import axios, { type AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
 import crypto from 'crypto';
+import { FROZEN_MODEL_RESPONSE_HEADER, isModelEndpointUrl } from '../utils/modelClient';
 
 export interface CapturedPage {
   sourceName: string;
@@ -44,8 +45,6 @@ export class BenchmarkReplayNetworkError extends Error {
 }
 
 export const MODEL_RESPONSE_NAMESPACE = 'model-chat-completion';
-
-const MODEL_ENDPOINT_PREFIX = 'https://api.openai.com/';
 
 interface CaptureMode {
   kind: 'capture';
@@ -86,7 +85,7 @@ const canonicalJson = (value: unknown): string =>
 const isModelRequest = (config: InternalAxiosRequestConfig): boolean =>
   (config.method ?? 'get').toLowerCase() === 'post' &&
   typeof config.url === 'string' &&
-  config.url.startsWith(MODEL_ENDPOINT_PREFIX);
+  isModelEndpointUrl(config.url);
 
 export function modelRequestKey(url: string, body: unknown): string {
   const parsed = typeof body === 'string' ? JSON.parse(body) : body;
@@ -174,7 +173,7 @@ function serveFrozenModelResponse(
     data: payload,
     status: 200,
     statusText: 'OK',
-    headers: {},
+    headers: { [FROZEN_MODEL_RESPONSE_HEADER]: 'true' },
     config,
   });
   return config;

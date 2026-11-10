@@ -27,7 +27,6 @@
  * I/O is fully injectable (`fetchPage`, `callLLM`, `userFinder`) so the
  * runtime can be exercised in tests without ever touching the network.
  */
-import axios from 'axios';
 import mongoose, { type QueryFilter } from 'mongoose';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { fetchPageWithPolicy } from '../utils/httpFetch';
@@ -119,6 +118,7 @@ import {
   mapWithConcurrency,
   resolveSourceConcurrency,
 } from '../utils/mapWithConcurrency';
+import { postChatCompletion } from '../../utils/modelClient';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 10_000;
@@ -1535,9 +1535,7 @@ export const defaultFetchPage: FetchPageFn = async (url) => {
 };
 
 /** Default LLM caller: hits OpenAI's chat-completions endpoint with the
- *  structured-output JSON schema. We use axios (rather than the openai SDK)
- *  to keep dependencies lean — the response contract is a simple
- *  `choices[0].message.content` JSON string. */
+ *  structured-output JSON schema through the shared model client. */
 export type CallLLMFn = (input: {
   model: string;
   systemPrompt: string;
@@ -1559,9 +1557,11 @@ export const defaultCallLLM: CallLLMFn = async ({
   apiKey,
   responseFormat,
 }) => {
-  const res = await axios.post(
-    'https://api.openai.com/v1/chat/completions',
-    {
+  const res = await postChatCompletion({
+    caller: 'lab-microsite-undergrad-llm',
+    apiKey: apiKey,
+    timeoutMs: 60_000,
+    body: {
       model,
       messages: [
         { role: 'system', content: systemPrompt },
@@ -1570,14 +1570,7 @@ export const defaultCallLLM: CallLLMFn = async ({
       response_format: responseFormat,
       ...openAiChatSampling(model),
     },
-    {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      timeout: 60_000,
-    },
-  );
+  });
   const content = res.data?.choices?.[0]?.message?.content;
   if (!content || typeof content !== 'string') {
     throw new Error('LLM returned empty content');

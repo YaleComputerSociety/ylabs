@@ -257,4 +257,4 @@ Use `docs/data-refresh-runbook.md` for the canonical commands.
 | Yale CAS SSO   | Authentication                                         | `passport.ts`                                  |
 | Yalies API     | Student, faculty and staff lookup at login             | `yaliesService.ts`                             |
 | Meilisearch    | Hybrid search                                          | `meiliClient.ts`                               |
-| OpenAI         | Embeddings via Meilisearch embedder and LLM extractors | Meilisearch/index setup and scraper extractors |
+| OpenAI         | Embeddings via Meilisearch embedder and LLM extractors | `utils/modelClient.ts` (every server call, usage in `docs/model-usage.md`) and Meilisearch/index setup |

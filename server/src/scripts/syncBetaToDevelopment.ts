@@ -144,6 +144,9 @@ const EXCLUDED_BETA_COLLECTIONS = [
   // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy: a copied login
   // tally attributes one environment's sign-ins to another.
   'login_signal_tallies',
+  // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy: each entry is
+  // a paid call this environment made (#5523).
+  'model_call_usages',
   'observation_reference_repair_audits',
   // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy (#5092).
   'research_plans',

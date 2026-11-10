@@ -1,4 +1,3 @@
-import axios from 'axios';
 import { fetchPageWithPolicy } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
 import mongoose from 'mongoose';
@@ -156,6 +155,7 @@ import {
   isRelatedEntityTeaserTextOnPage,
   removeRelatedEntityTeaserCards,
 } from '../../utils/relatedEntityTeaserCards';
+import { postChatCompletion } from '../../utils/modelClient';
 
 const SOURCE_KEY = 'lab-microsite-description-llm';
 export const DEFAULT_MODEL = 'gpt-5-mini';
@@ -2065,9 +2065,11 @@ async function defaultCallLLM(input: {
   const safeLabName = redactDirectContactInfo(input.labName).slice(0, 240);
   const safeSourceUrl = redactDirectContactInfo(input.sourceUrl).slice(0, 2048);
   const safePageText = redactDirectContactInfo(input.pageText).slice(0, MAX_PROMPT_CHARS);
-  const response = await axios.post(
-    'https://api.openai.com/v1/chat/completions',
-    {
+  const response = await postChatCompletion({
+    caller: 'lab-microsite-description-llm',
+    apiKey: input.apiKey,
+    timeoutMs: 30_000,
+    body: {
       model: input.model,
       response_format: { type: 'json_object' },
       messages: [
@@ -2090,14 +2092,7 @@ async function defaultCallLLM(input: {
       ],
       ...openAiChatSampling(input.model),
     },
-    {
-      headers: {
-        Authorization: `Bearer ${input.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      timeout: 30_000,
-    },
-  );
+  });
   const content = response.data?.choices?.[0]?.message?.content;
   if (!content || typeof content !== 'string') throw new Error('LLM returned empty content');
   return JSON.parse(content) as DescriptionExtraction;

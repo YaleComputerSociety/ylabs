@@ -28,6 +28,7 @@ export {
   RESEARCH_TOPICS_DERIVATION_COLLECTION,
 } from './researchTopicsDerivation';
 export { SearchRerankCache, SEARCH_RERANK_CACHE_COLLECTION } from './searchRerankCache';
+export { ModelCallUsage, MODEL_CALL_USAGE_COLLECTION } from './modelCallUsage';
 export {
   EngineBenchmark,
   EngineBenchmarkRow,

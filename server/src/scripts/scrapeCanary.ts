@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { installMongoWriteRefusal } from '../scrapers/utils/mongoWriteRefusal';
 import { connectScriptMongo } from '../db/connections';
+import { setModelUsageSink } from '../utils/modelClient';
 
 export interface ScrapeCanaryCliOptions {
   sourceName: string;
@@ -48,6 +49,7 @@ async function main(): Promise<number> {
   dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
   const options = parseScrapeCanaryArgs(process.argv.slice(2));
   const refusal = installMongoWriteRefusal(mongoose);
+  setModelUsageSink(null);
 
   const [
     { buildOrchestrator },

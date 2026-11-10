@@ -116,6 +116,7 @@ import {
   type CardSynthesisLLMFn,
 } from '../utils/groundedCardSynthesis';
 import { planStudentVisibilityGate } from '../services/studentVisibilityGateService';
+import { postChatCompletion } from '../utils/modelClient';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -288,9 +289,11 @@ const defaultRewriter: DescriptionRewriter = async ({ name, sourceText }) => {
     0,
     MAX_REWRITE_PROMPT_SOURCE_CHARS,
   );
-  const response = await axios.post(
-    'https://api.openai.com/v1/chat/completions',
-    {
+  const response = await postChatCompletion({
+    caller: 'description-rewrite-backfill',
+    apiKey: apiKey,
+    timeoutMs: 40000,
+    body: {
       model: SYNTHESIS_MODEL,
       response_format: { type: 'json_object' },
       ...openAiChatSampling(SYNTHESIS_MODEL),
@@ -312,11 +315,7 @@ const defaultRewriter: DescriptionRewriter = async ({ name, sourceText }) => {
         },
       ],
     },
-    {
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      timeout: 40000,
-    },
-  );
+  });
   const content = response.data?.choices?.[0]?.message?.content;
   const parsed = content ? JSON.parse(content) : {};
   return {

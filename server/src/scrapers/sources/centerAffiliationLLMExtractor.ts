@@ -15,7 +15,6 @@
  * names therefore never create an entity or an edge. We deliberately do not emit
  * ResearchGroupMember rows here (those would persist name-only rows from LLM output).
  */
-import axios from 'axios';
 import mongoose from 'mongoose';
 import * as cheerio from 'cheerio';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
@@ -46,6 +45,7 @@ import {
   centerMemberRelationshipObservationsForEntityKey,
 } from './centersInstitutesScraper';
 import { fetchPageWithPolicy } from '../utils/httpFetch';
+import { postChatCompletion } from '../../utils/modelClient';
 
 const SOURCE_KEY = CENTER_AFFILIATION_LLM_SOURCE_NAME;
 const AFFILIATION_READ_ROLE = 'affiliated';
@@ -252,9 +252,11 @@ async function defaultCallLLM(input: {
   const safeCenterName = redactDirectContactInfo(input.centerName).slice(0, 240);
   const safeSourceUrl = redactDirectContactInfo(input.sourceUrl).slice(0, 2048);
   const safePageText = redactDirectContactInfo(input.pageText).slice(0, MAX_PROMPT_CHARS);
-  const response = await axios.post(
-    'https://api.openai.com/v1/chat/completions',
-    {
+  const response = await postChatCompletion({
+    caller: 'center-affiliation-llm',
+    apiKey: input.apiKey,
+    timeoutMs: 40_000,
+    body: {
       model: input.model,
       response_format: { type: 'json_object' },
       messages: [
@@ -279,14 +281,7 @@ async function defaultCallLLM(input: {
       ],
       ...openAiChatSampling(input.model),
     },
-    {
-      headers: {
-        Authorization: `Bearer ${input.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      timeout: 40_000,
-    },
-  );
+  });
   const choice = response.data?.choices?.[0];
   if (choice?.finish_reason === 'length') throw new Error('LLM output was cut off');
   const content = choice?.message?.content;
