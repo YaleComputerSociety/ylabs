@@ -68,7 +68,7 @@ const ROLE_MARKER =
 
 export function visibleTextFromHtml(html: string): string {
   return html
-    .replace(/<(script|style|noscript)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, ' ')
+    .replace(/<(script|style|noscript)\b[^>]*>[\s\S]*?<\/\1\b[^>]*>/gi, ' ')
     .replace(/<[^>]+>/g, ' ')
     .replace(/&nbsp;/gi, ' ')
     .replace(/&#39;|&apos;/gi, "'")
