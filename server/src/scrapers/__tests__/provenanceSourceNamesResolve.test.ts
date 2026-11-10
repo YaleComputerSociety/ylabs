@@ -78,6 +78,16 @@ const NOT_A_SOURCE_NAME: ReadonlyArray<{ literal: string; reason: string }> = [
     reason:
       'the default score-origin label on search rerank cache entries in seedSearchRerankCacheCore, not an observation source',
   },
+  {
+    literal: 'shadow',
+    reason:
+      'the score-origin label on unserved shadow-mode search rerank cache entries in searchRerankCache, not an observation source',
+  },
+  {
+    literal: 'live-miss',
+    reason:
+      'the score-origin label on search rerank cache entries written by the live-miss job in searchRerankCache, not an observation source',
+  },
 ];
 
 export function collectAuthoredSourceNames(): string[] {
