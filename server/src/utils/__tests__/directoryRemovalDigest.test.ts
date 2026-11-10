@@ -72,12 +72,21 @@ describe('directoryRemovalDigest', () => {
 });
 
 describe('readDirectoryRemovalKey', () => {
-  it('reads the key and leaves it unset when none is given', () => {
+  it('reads the key inline or from a file and leaves it unset when neither is given', () => {
     expect(readDirectoryRemovalKey({ DIRECTORY_REMOVAL_KEY: ` ${KEY} ` })).toBe(KEY);
+    expect(
+      readDirectoryRemovalKey({ DIRECTORY_REMOVAL_KEY_FILE: '/synthetic/key' }, (path) => {
+        expect(path).toBe('/synthetic/key');
+        return `${KEY}\n`;
+      }),
+    ).toBe(KEY);
     expect(readDirectoryRemovalKey({})).toBeUndefined();
   });
 
-  it('refuses a weak key', () => {
+  it('refuses an ambiguous or weak key', () => {
+    expect(() =>
+      readDirectoryRemovalKey({ DIRECTORY_REMOVAL_KEY: KEY, DIRECTORY_REMOVAL_KEY_FILE: '/x' }),
+    ).toThrow(DirectoryRemovalKeyError);
     expect(() => readDirectoryRemovalKey({ DIRECTORY_REMOVAL_KEY: 'short' })).toThrow(
       DirectoryRemovalKeyError,
     );
