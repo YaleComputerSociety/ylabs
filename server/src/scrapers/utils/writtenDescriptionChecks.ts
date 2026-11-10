@@ -14,19 +14,150 @@ export interface WrittenDescriptionEvidence {
 const hasWordSharingStem = (term: string, words: readonly string[]): boolean =>
   words.some((word) => sharesAnInflectionalStem(term, word));
 
+const BRITISH_SPELLINGS: ReadonlyArray<[RegExp, string]> = [
+  [/our(s|ed|ing|al|ally)?$/, 'or$1'],
+  [/is(e|es|ed|ing|ation|ations)$/, 'iz$1'],
+  [/ys(e|es|ed|ing)$/, 'yz$1'],
+  [/tre(s)?$/, 'ter$1'],
+  [/ogue(s)?$/, 'og$1'],
+  [/amme(s)?$/, 'am$1'],
+  [/ll(ed|ing|er|ers)$/, 'l$1'],
+  [/aemi(a|as|c)$/, 'emi$1'],
+  [/^haem/, 'hem'],
+  [/^paed/, 'ped'],
+  [/^orthopaed/, 'orthoped'],
+  [/^gynaec/, 'gynec'],
+  [/^oesoph/, 'esoph'],
+  [/^oestr/, 'estr'],
+  [/^oedem/, 'edem'],
+  [/^foet/, 'fet'],
+];
+
+/**
+ * One spelling for a word that British and American English spell differently, applied to
+ * both sides, so "behaviour" and "behavior" are one word and two different words stay two.
+ */
+export function americanSpellingOf(word: string): string {
+  let spelled = word;
+  for (const [pattern, replacement] of BRITISH_SPELLINGS) {
+    spelled = spelled.replace(pattern, replacement);
+  }
+  return spelled;
+}
+
+const MIN_COMPOUND_PART_CHARS = 3;
+
+/** "development" and "developmental", "emotion" and "emotional": the same topic, one a modifier. */
+function relationalAdjectivePairs(word: string): string[] {
+  const noun = word.match(/^(.{3,}(?:ment|ion))(?:al|ally)$/)?.[1];
+  if (noun) return [noun, `${noun}s`];
+  return /(?:ment|ion)s?$/.test(word) ? [`${word.replace(/s$/, '')}al`] : [];
+}
+const DERIVED_STATE_NOUN = /^(.{4,})hood$/;
+
+const acronymOf = (words: readonly string[]): string => words.map((word) => word[0]).join('');
+
+function acronymsOf(words: readonly string[], maxWords = 6): Set<string> {
+  const acronyms = new Set<string>();
+  for (let start = 0; start < words.length; start += 1) {
+    for (let length = 2; length <= maxWords && start + length <= words.length; length += 1) {
+      acronyms.add(acronymOf(words.slice(start, start + length)));
+    }
+  }
+  return acronyms;
+}
+
+const PARENTHESIZED_ABBREVIATION = /((?:[A-Za-z][\w-]*\s+){1,6})\(([A-Za-z]{2,10})\)/g;
+
+/** An abbreviation the body defines by spelling it out right before it in parentheses. */
+function abbreviationsDefinedIn(text: string): Set<string> {
+  const defined = new Set<string>();
+  for (const match of foldWriterTextForms(text).matchAll(PARENTHESIZED_ABBREVIATION)) {
+    const abbreviation = match[2].toLowerCase();
+    const words = writerWordTokens(match[1]);
+    for (let length = 2; length <= words.length; length += 1) {
+      if (acronymOf(words.slice(-length)) === abbreviation) defined.add(abbreviation);
+    }
+  }
+  return defined;
+}
+
+/**
+ * An evidence acronym grounds only a term the body writes in capitals, because any
+ * four-letter word is the initials of some run of evidence words.
+ */
+function upperCaseAbbreviationsIn(text: string): Set<string> {
+  return new Set(
+    (foldWriterTextForms(text).match(/\b[A-Z][A-Z0-9]{1,9}\b/g) ?? []).map((word) =>
+      word.toLowerCase(),
+    ),
+  );
+}
+
+interface EvidenceVocabulary {
+  words: string[];
+  joinedNeighbours: string[];
+  acronyms: Set<string>;
+}
+
+function evidenceVocabulary(evidence: readonly WrittenDescriptionEvidence[]): EvidenceVocabulary {
+  const words = new Set<string>();
+  const joined = new Set<string>();
+  const acronyms = new Set<string>();
+  for (const entry of evidence) {
+    const tokens = writerWordTokens(entry.text).map(americanSpellingOf);
+    for (const token of tokens) words.add(token);
+    for (let index = 0; index + 1 < tokens.length; index += 1) {
+      const parts = tokens.slice(index, index + 3);
+      if (parts[0].length < MIN_COMPOUND_PART_CHARS) continue;
+      for (let length = 2; length <= parts.length; length += 1) {
+        if (parts.slice(0, length).every((part) => part.length >= MIN_COMPOUND_PART_CHARS)) {
+          joined.add(parts.slice(0, length).join(''));
+        }
+      }
+    }
+    for (const acronym of acronymsOf(tokens)) acronyms.add(acronym);
+  }
+  return { words: [...words], joinedNeighbours: [...joined], acronyms };
+}
+
+function isGroundedTerm(
+  term: string,
+  vocabulary: EvidenceVocabulary,
+  abbreviations: { definedInBody: ReadonlySet<string>; writtenUpperCase: ReadonlySet<string> },
+): boolean {
+  if (abbreviations.definedInBody.has(term)) return true;
+  if (abbreviations.writtenUpperCase.has(term) && vocabulary.acronyms.has(term)) return true;
+  const spelled = americanSpellingOf(term);
+  if (hasWordSharingStem(spelled, vocabulary.words)) return true;
+  if (hasWordSharingStem(spelled, vocabulary.joinedNeighbours)) return true;
+  const stateNoun = spelled.match(DERIVED_STATE_NOUN);
+  if (stateNoun && hasWordSharingStem(stateNoun[1], vocabulary.words)) return true;
+  return relationalAdjectivePairs(spelled).some((form) => vocabulary.words.includes(form));
+}
+
 export function ungroundedContentTerms(
   description: string,
   evidence: readonly WrittenDescriptionEvidence[],
 ): string[] {
-  const evidenceWords = [...new Set(evidence.flatMap((entry) => writerWordTokens(entry.text)))];
-  const evidenceCompact = evidence.map((entry) => writerWordTokens(entry.text).join('')).join(' ');
+  const vocabulary = evidenceVocabulary(evidence);
+  const abbreviations = {
+    definedInBody: abbreviationsDefinedIn(description),
+    writtenUpperCase: upperCaseAbbreviationsIn(description),
+  };
   return [
     ...new Set(
-      writerContentTerms(description).filter(
-        (term) => !hasWordSharingStem(term, evidenceWords) && !evidenceCompact.includes(term),
+      writerContentTerms(withoutGenericNominalPhrases(description)).filter(
+        (term) => !isGroundedTerm(term, vocabulary, abbreviations),
       ),
     ),
   ];
+}
+
+const GENERIC_NOMINAL_PHRASE = /\b(?:selection|choice|use|variety|range)\s+of\b/gi;
+
+function withoutGenericNominalPhrases(text: string): string {
+  return foldWriterTextForms(text).replace(GENERIC_NOMINAL_PHRASE, ' ');
 }
 
 export const RESEARCH_PAGE_FREQUENT_TERM_COUNT = 5;

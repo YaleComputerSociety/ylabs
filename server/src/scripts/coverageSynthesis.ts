@@ -29,6 +29,7 @@ import {
   countCoverageSynthesisRefusals,
   type CoverageSynthesisDecision,
   type CoverageSynthesisRefusal,
+  type CoverageSynthesisRefusalDetails,
   type CoverageSynthesisResult,
   type SynthesizeCoverageInput,
 } from '../scrapers/coverageSynthesis';
@@ -103,6 +104,7 @@ export interface CoverageEntityReport {
   description?: string;
   sourceUrls?: string[];
   synthesisRefusal?: CoverageSynthesisRefusal;
+  refusalDetails?: CoverageSynthesisRefusalDetails;
 }
 
 export async function synthesizeIntoCoverageReport(
@@ -582,6 +584,7 @@ async function main() {
         } else if (decision?.refusal) {
           report.synthesisRefusal = decision.refusal;
         }
+        if (resolution.refusalDetails) report.refusalDetails = resolution.refusalDetails;
       } catch (error) {
         entityErrors += 1;
         console.error(`[coverage-synthesis] ${entity.slug}: ${sanitizeLogValue(error)}`);

@@ -10,6 +10,7 @@ import {
   type CoverageSynthesisLLMFn,
   type CoverageSynthesisLLMResult,
   type CoverageSynthesisRefusal,
+  type CoverageSynthesisRefusalDetails,
 } from '../scrapers/coverageSynthesis';
 import { COVERAGE_SYNTHESIS_PROMPT_HASH } from '../scrapers/prompts';
 import { RESEARCH_PAGE_TEXT_SOURCE } from '../scrapers/utils/researchPageText';
@@ -258,6 +259,7 @@ export interface WrittenDescriptionResolution {
   decision: CoverageSynthesisDecision | null;
   modelCalled: boolean;
   refusalReasons: CoverageSynthesisRefusal[];
+  refusalDetails?: CoverageSynthesisRefusalDetails;
 }
 
 export interface WrittenDescriptionSubject {
@@ -303,19 +305,30 @@ export async function resolveWrittenDescription(
   }
   const inputHash = writerInputHash(input.snippets, inputs.model);
   const refusalReasons: CoverageSynthesisRefusal[] = [];
+  const ungroundedTerms = new Set<string>();
+  const judged = (decision: CoverageSynthesisDecision) => {
+    if (decision.refusal) refusalReasons.push(decision.refusal);
+    for (const term of decision.refusalDetails?.ungroundedTerms ?? []) ungroundedTerms.add(term);
+  };
+  const details = (): Pick<WrittenDescriptionResolution, 'refusalDetails'> =>
+    ungroundedTerms.size > 0 ? { refusalDetails: { ungroundedTerms: [...ungroundedTerms] } } : {};
   const settled = (
     step: WrittenDescriptionStep,
     decision: CoverageSynthesisDecision,
     derivation: StoredWrittenDescriptionDerivation,
-  ): WrittenDescriptionResolution => ({
-    step,
-    inputHash,
-    derivationInputHash: derivation.inputHash,
-    writer: derivation.writer,
-    decision,
-    modelCalled: false,
-    refusalReasons: decision.refusal ? [...refusalReasons, decision.refusal] : refusalReasons,
-  });
+  ): WrittenDescriptionResolution => {
+    judged(decision);
+    return {
+      step,
+      inputHash,
+      derivationInputHash: derivation.inputHash,
+      writer: derivation.writer,
+      decision,
+      modelCalled: false,
+      refusalReasons,
+      ...details(),
+    };
+  };
 
   const cached = await input.store.find(inputHash);
   if (cached) {
@@ -324,7 +337,7 @@ export async function resolveWrittenDescription(
       return settled(decision.result ? 'cache-hit' : 'refused', decision, cached);
     }
     if (decision.result) return settled('carried-over-prompt-change', decision, cached);
-    if (decision.refusal) refusalReasons.push(decision.refusal);
+    judged(decision);
   } else if (input.previousInputHash && input.previousInputHash !== inputHash) {
     const previous = await input.store.find(input.previousInputHash);
     const current = writerEvidenceFingerprint(input.snippets);
@@ -338,13 +351,20 @@ export async function resolveWrittenDescription(
         ),
       });
       if (decision.result) return settled('carried-over-unchanged', decision, previous);
-      if (decision.refusal) refusalReasons.push(decision.refusal);
+      judged(decision);
     }
   }
 
   const drafting = input.drafting;
   if (!drafting) {
-    return { step: 'planned', inputHash, decision: null, modelCalled: false, refusalReasons };
+    return {
+      step: 'planned',
+      inputHash,
+      decision: null,
+      modelCalled: false,
+      refusalReasons,
+      ...details(),
+    };
   }
   let modelCalled = false;
   const decision = await coverageSynthesisDecision({
@@ -355,6 +375,7 @@ export async function resolveWrittenDescription(
         modelCalled = true;
       }),
   });
+  judged(decision);
   return {
     step: decision.result ? 'synthesized' : 'refused',
     inputHash,
@@ -362,7 +383,8 @@ export async function resolveWrittenDescription(
     writer: inputs.writer,
     decision,
     modelCalled,
-    refusalReasons: decision.refusal ? [...refusalReasons, decision.refusal] : refusalReasons,
+    refusalReasons,
+    ...details(),
   };
 }
 

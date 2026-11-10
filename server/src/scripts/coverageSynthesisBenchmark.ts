@@ -4,6 +4,7 @@ import {
   defaultCoverageSynthesisLLM,
   type CoverageSynthesisLLMFn,
   type CoverageSynthesisRefusal,
+  type CoverageSynthesisRefusalDetails,
 } from '../scrapers/coverageSynthesis';
 import {
   benchmarkCacheRead,
@@ -36,6 +37,7 @@ export interface WriterBenchmarkRow {
   slug: string;
   step: WriterEvaluationRow['step'];
   refusalReasons: CoverageSynthesisRefusal[];
+  refusalDetails?: CoverageSynthesisRefusalDetails;
   inputHash?: string;
 }
 
@@ -144,6 +146,7 @@ export async function runWriterBenchmarkDry(spec: {
       slug: row.slug,
       step: row.step,
       refusalReasons: row.refusalReasons,
+      ...(row.refusalDetails ? { refusalDetails: row.refusalDetails } : {}),
       ...(row.inputHash ? { inputHash: row.inputHash } : {}),
     })),
   };

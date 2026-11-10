@@ -439,11 +439,17 @@ export function hasInternalVocabulary(value: unknown): boolean {
 export interface CoverageSynthesisDecision {
   result: CoverageSynthesisResult | null;
   refusal: CoverageSynthesisRefusal | null;
+  refusalDetails?: CoverageSynthesisRefusalDetails;
 }
 
 export interface WrittenDescriptionJudgement {
   description: string | null;
   refusal: CoverageSynthesisRefusal | null;
+  refusalDetails?: CoverageSynthesisRefusalDetails;
+}
+
+export interface CoverageSynthesisRefusalDetails {
+  ungroundedTerms: string[];
 }
 
 /**
@@ -502,8 +508,13 @@ export function judgeWrittenDescription(input: {
     text: snippet.text,
     isResearchPageText: snippet.sourceName === RESEARCH_PAGE_TEXT_SOURCE,
   }));
-  if (ungroundedContentTerms(description, evidence).length > 0) {
-    return refuse('ungrounded-content-term');
+  const ungroundedTerms = ungroundedContentTerms(description, evidence);
+  if (ungroundedTerms.length > 0) {
+    return {
+      description: null,
+      refusal: 'ungrounded-content-term',
+      refusalDetails: { ungroundedTerms },
+    };
   }
   if (!coversResearchPage(description, evidence)) return refuse('missing-research-page-coverage');
   if (hasFirstPerson(description)) return refuse('first-person');
@@ -592,7 +603,10 @@ export async function coverageSynthesisDecision(
     coverageWriterChecks: input.coverageWriterChecks,
   });
   if (judged.refusal || !judged.description) {
-    return refuse(judged.refusal ?? 'empty-description');
+    return {
+      ...refuse(judged.refusal ?? 'empty-description'),
+      ...(judged.refusalDetails ? { refusalDetails: judged.refusalDetails } : {}),
+    };
   }
   const { description } = judged;
 

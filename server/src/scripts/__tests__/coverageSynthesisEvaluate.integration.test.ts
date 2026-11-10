@@ -207,6 +207,40 @@ describe('writer evaluate and import modes against MongoDB (#5537)', () => {
     expect(await WrittenDescriptionDerivation.countDocuments()).toBe(0);
   });
 
+  it('lists the offending terms of an ungrounded refusal in the import and evaluate reports', async () => {
+    const invented = `${GOOD} It also studies malaria transmission.`;
+    const imported = await runDerivationImport({
+      rows: await loadRows(),
+      drafts: [
+        {
+          slug: SLUG,
+          writer: 'claude-agent:1',
+          fullDescription: invented,
+          usedSnippetIndexes: [0],
+        },
+      ],
+      store,
+      evidenceNow: new Date(),
+      validateOnly: true,
+    });
+    expect(imported.rows[0]).toMatchObject({
+      outcome: 'refused',
+      refusalReasons: ['ungrounded-content-term'],
+      refusalDetails: { ungroundedTerms: ['malaria', 'transmission'] },
+    });
+
+    const evaluated = await runWriterEvaluation({
+      rows: await loadRows(),
+      store,
+      drafting: writerModelThroughCache({ callLLM: modelReturning(invented), store }),
+      evidenceNow: new Date(),
+    });
+    expect(evaluated.rows[0]).toMatchObject({
+      step: 'refused',
+      refusalDetails: { ungroundedTerms: ['malaria', 'transmission'] },
+    });
+  });
+
   it('validates without writing anything when asked to validate only', async () => {
     const observationsBefore = await Observation.countDocuments();
     const report = await runDerivationImport({

@@ -2,7 +2,10 @@ import {
   WRITTEN_DESCRIPTION_SOURCE_NAME,
   type CoverageSnippet,
 } from '../scrapers/coverageSynthesis';
-import type { CoverageSynthesisRefusal } from '../scrapers/coverageSynthesis';
+import type {
+  CoverageSynthesisRefusal,
+  CoverageSynthesisRefusalDetails,
+} from '../scrapers/coverageSynthesis';
 import { mapWithConcurrency } from '../scrapers/utils/mapWithConcurrency';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { storedWriterEvidenceHash } from './coverageSynthesisCore';
@@ -43,6 +46,7 @@ export interface WriterEvaluationRow {
   modelCalled: boolean;
   description: string | null;
   refusalReasons: CoverageSynthesisRefusal[];
+  refusalDetails?: CoverageSynthesisRefusalDetails;
 }
 
 export interface WriterEvaluationReport {
@@ -115,6 +119,7 @@ export async function runWriterEvaluation(input: {
       entry.modelCalled = resolution.modelCalled;
       entry.description = resolution.decision?.result?.description ?? null;
       entry.refusalReasons = resolution.refusalReasons;
+      if (resolution.refusalDetails) entry.refusalDetails = resolution.refusalDetails;
     } catch (error) {
       entry.step = 'error';
       log(`[coverage-synthesis] ${row.slug}: ${sanitizeLogValue(error)}`);
@@ -137,6 +142,7 @@ export interface DerivationImportRow {
   existingWriter?: string;
   description: string | null;
   refusalReasons: CoverageSynthesisRefusal[];
+  refusalDetails?: CoverageSynthesisRefusalDetails;
 }
 
 export interface DerivationImportReport {
@@ -182,6 +188,7 @@ export async function runDerivationImport(input: {
     report.inputHash = verdict.inputHash;
     report.description = verdict.decision?.result?.description ?? null;
     report.refusalReasons = verdict.decision?.refusal ? [verdict.decision.refusal] : [];
+    if (verdict.decision?.refusalDetails) report.refusalDetails = verdict.decision.refusalDetails;
     if (verdict.outcome !== 'accepted' || !verdict.record || input.validateOnly) continue;
     const existing = await input.store.find(verdict.record.inputHash);
     if (existing) {
