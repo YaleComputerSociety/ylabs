@@ -587,12 +587,16 @@ export function checkQueryRelevance(
   return buildInvariant(id, title, score.relevant >= minRelevant, { ...score, minRelevant });
 }
 
-export function checkExpectedNoResults(query: string, servedTotal: number): InvariantResult {
+export function checkExpectedNoResults(
+  query: string,
+  servedTotal: number,
+  searchedWords: readonly string[],
+): InvariantResult {
   return buildInvariant(
     `query-returns-nothing:${query}`,
     `A search for "${query}" legitimately returns nothing rather than erroring`,
     servedTotal === 0,
-    { query, served: servedTotal },
+    { query, served: servedTotal, searchedWords: [...searchedWords] },
   );
 }
 

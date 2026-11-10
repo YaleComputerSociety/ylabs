@@ -222,6 +222,16 @@ describe('searchResearchGroupsViaMeili', () => {
     });
   });
 
+  it('treats topic and negation frame words as filler so an unmatched word is not replaced by them', () => {
+    expect(normalizeResearchSearchQuery('qzxjvmw not a research topic')).toMatchObject({
+      query: 'qzxjvmw',
+      tokens: ['qzxjvmw'],
+    });
+    expect(normalizeResearchSearchQuery('topics in medieval history')).toMatchObject({
+      tokens: ['medieval', 'history'],
+    });
+  });
+
   it('folds accented letters instead of splitting the word apart at them', () => {
     expect(normalizeResearchSearchQuery('Pâtisserie Chimique Münchner')).toMatchObject({
       query: 'patisserie chimique munchner',

@@ -729,7 +729,13 @@ const topicQueryRelevance: JourneyCase = {
       );
 
       if (judgement.expectNoResults) {
-        invariants.push(checkExpectedNoResults(judgement.query, servedTotal));
+        invariants.push(
+          checkExpectedNoResults(
+            judgement.query,
+            servedTotal,
+            normalizeResearchSearchQuery(judgement.query).tokens,
+          ),
+        );
         continue;
       }
 

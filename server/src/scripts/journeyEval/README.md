@@ -151,6 +151,7 @@ A served card counts as relevant when any supplied matcher hits, compared case-i
 The case reports `precisionAtK` and the rank of the first relevant result, and asserts `relevant >= minRelevant`.
 
 Set `expectNoResults` instead of a matcher to judge the zero-result path, which keeps a legitimately empty search distinguishable from a broken one.
+Its evidence records the words the query normalizes to (`searchedWords`), so a failure shows whether filler stripping left the wrong words as the whole search (#5532).
 
 Two rules the format enforces, both rejected at parse time rather than producing a misleading score: a judgement must assert something, so one with neither `expectNoResults` nor a matcher is an error; and `minRelevant` must lie within `0..topK`, so a floor that can never be met is an error.
 A query that returns nothing to judge is inconclusive rather than passing, and a missing judgements file makes the whole case inconclusive, because a retrieval score over an empty query set is a green signal that means nothing.
