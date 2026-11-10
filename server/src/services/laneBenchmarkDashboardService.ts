@@ -83,11 +83,15 @@ async function getEngineBenchmarkDashboard(): Promise<EngineBenchmarkDashboard> 
 
 export async function getLaneBenchmarkDashboard(): Promise<LaneBenchmarkDashboard> {
   const stored = (await LaneBenchmark.find({})
-    .select('benchmarkId sourceName supersedes unfrozenRequestCount codeSha')
+    .select(
+      'benchmarkId sourceName supersedes retiredAt retiredReason unfrozenRequestCount codeSha',
+    )
     .lean()) as unknown as Array<{
     benchmarkId: string;
     sourceName?: string;
     supersedes?: string;
+    retiredAt?: Date;
+    retiredReason?: string;
     unfrozenRequestCount?: number;
     codeSha?: string;
   }>;

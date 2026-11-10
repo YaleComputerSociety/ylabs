@@ -100,6 +100,8 @@ interface StoredBenchmark {
   codeSha?: string;
   capturedAt?: Date;
   supersedes?: string;
+  retiredAt?: Date;
+  retiredReason?: string;
 }
 
 /**
@@ -204,7 +206,11 @@ async function main(): Promise<void> {
   if (options.benchmarkId && stored.length === 0) {
     throw new Error(`No benchmark ${options.benchmarkId}`);
   }
-  const { replay: benchmarks, superseded } = benchmarksToReplay(stored, options.benchmarkId);
+  const {
+    replay: benchmarks,
+    superseded,
+    retired,
+  } = benchmarksToReplay(stored, options.benchmarkId);
 
   const codeSha = currentCodeSha();
   const databaseName = mongoose.connection.db?.databaseName ?? 'unknown';
@@ -289,6 +295,7 @@ async function main(): Promise<void> {
     benchmarks: results.length,
     stored: options.dryRun ? 0 : results.length,
     superseded,
+    retired,
     unscored,
     regressions,
     results,
