@@ -1721,17 +1721,43 @@ export interface MatchedLabMember {
   role: MatchedLabMemberRole;
 }
 
+const allPersonNameWords = (value: string): string[] =>
+  foldLatinDiacritics(value.toLowerCase())
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word.length >= 2);
+
+/**
+ * A two-letter given name can also be a surname particle ("Le", "Da"), and dropping it
+ * left a whole-name query one word long, which matches nobody. The raw words are read
+ * instead only when the dropped word opens the member's own name, so a surname-only
+ * query such as "de Souza" still claims nobody.
+ */
+const memberMatchesQuery = (query: string, memberName: string): boolean => {
+  const queryWords = personNameWords(query);
+  const nameWords = personNameWords(memberName);
+  if (queryWords.length >= 2) return queryWords.every((word) => nameWords.includes(word));
+  const rawQueryWords = allPersonNameWords(query);
+  const rawNameWords = allPersonNameWords(memberName);
+  return (
+    rawQueryWords.length >= 2 &&
+    rawNameWords.length > 0 &&
+    rawQueryWords[0] === rawNameWords[0] &&
+    !personNameWords(rawNameWords[0]).length &&
+    rawQueryWords.every((word) => rawNameWords.includes(word))
+  );
+};
+
+const isWholeNameQuery = (query: string): boolean => allPersonNameWords(query).length >= 2;
+
 export const matchedLabMember = (
   query: string,
   names: { leadProfessorNames: string[]; members: MatchedLabMember[] },
 ): MatchedLabMember | undefined => {
-  const queryWords = personNameWords(query);
-  if (queryWords.length < 2) return undefined;
+  if (!isWholeNameQuery(query)) return undefined;
   const leads = new Set(names.leadProfessorNames.map((name) => personNameWords(name).join(' ')));
   return names.members.find((member) => {
-    const nameWords = personNameWords(member.name);
-    if (leads.has(nameWords.join(' '))) return false;
-    return queryWords.every((word) => nameWords.includes(word));
+    if (leads.has(personNameWords(member.name).join(' '))) return false;
+    return memberMatchesQuery(query, member.name);
   });
 };
 
@@ -1791,7 +1817,7 @@ async function optionalMatchedLabMemberNames(
   entities: Array<Record<string, any>>,
 ): Promise<MatchedLabMemberNameRead> {
   const byEntityId = new Map<string, MatchedLabMember>();
-  if (entities.length === 0 || personNameWords(query).length < 2) {
+  if (entities.length === 0 || !isWholeNameQuery(query)) {
     return { byEntityId, unavailable: false };
   }
   try {

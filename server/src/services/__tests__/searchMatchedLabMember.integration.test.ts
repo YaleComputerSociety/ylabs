@@ -36,6 +36,7 @@ const ROSTER_POSTDOC = {
   lastName: 'Thistlecombe',
 };
 const LISTED_UNDERGRADUATE = 'Sloane Brackenridge';
+const LISTED_PARTICLE_GIVEN_NAME_UNDERGRADUATE = 'Da Wrenfield';
 const UNLISTED_FACULTY = {
   displayName: 'Jordan Marrowind',
   firstName: 'Jordan',
@@ -120,7 +121,10 @@ describe('a person-name search names the lab member the lab page lists', () => {
         sourceUrl: ROSTER_URL,
         memberKeys: [membershipKey, postdocMembershipKey],
         freshnessExpiresAt: new Date(observedAt.getTime() + 30 * 24 * 60 * 60 * 1000),
-        undergraduates: [{ name: LISTED_UNDERGRADUATE, status: 'current' }],
+        undergraduates: [
+          { name: LISTED_UNDERGRADUATE, status: 'current' },
+          { name: LISTED_PARTICLE_GIVEN_NAME_UNDERGRADUATE, status: 'current' },
+        ],
       },
     });
     await seedPerson(LEAD, 'PI', { source: { name: 'fixture-faculty', url: SOURCE_URL } });
@@ -179,6 +183,12 @@ describe('a person-name search names the lab member the lab page lists', () => {
   it('names an undergraduate the lab page lists, with the undergraduate role', async () => {
     const card = await cardFor(LISTED_UNDERGRADUATE);
     expect(card?.matchedMemberName).toBe(LISTED_UNDERGRADUATE);
+    expect(card?.matchedMemberRole).toBe('undergrad');
+  }, 60000);
+
+  it('names a member whose two-letter given name also reads as a surname particle', async () => {
+    const card = await cardFor(LISTED_PARTICLE_GIVEN_NAME_UNDERGRADUATE);
+    expect(card?.matchedMemberName).toBe(LISTED_PARTICLE_GIVEN_NAME_UNDERGRADUATE);
     expect(card?.matchedMemberRole).toBe('undergrad');
   }, 60000);
 

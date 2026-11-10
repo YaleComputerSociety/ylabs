@@ -52,3 +52,29 @@ describe('matchedLabMember', () => {
     expect(matchedLabMember('Morgan', members)).toBeUndefined();
   });
 });
+
+describe('matchedLabMember with a two-letter given name that is also a surname particle', () => {
+  const members = {
+    leadProfessorNames: ['Robin Fixture'],
+    members: [
+      { name: 'Da Quillon', role: 'postdoc' as const },
+      { name: 'Maria de Fixturo', role: 'grad-student' as const },
+    ],
+  };
+
+  it('matches the whole name of a member whose given name reads as a particle', () => {
+    expect(matchedLabMember('Da Quillon', members)).toEqual({
+      name: 'Da Quillon',
+      role: 'postdoc',
+    });
+  });
+
+  it('still refuses a surname-only query that opens with a particle', () => {
+    expect(matchedLabMember('de Fixturo', members)).toBeUndefined();
+    expect(matchedLabMember('Maria Fixturo', members)?.role).toBe('grad-student');
+  });
+
+  it('still refuses a lone given name', () => {
+    expect(matchedLabMember('Da', members)).toBeUndefined();
+  });
+});
