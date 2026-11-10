@@ -1777,11 +1777,13 @@ The scheme is kept in the backfill's candidate key, so `http:` and `https:` spel
 Merging them let the `http:` result stand for the `https:` link a student is sent to, and the carry-forward then wrote that `HEALTHY` back under the `https:` spelling.
 Lookups rank a same-scheme verdict first; the other spelling's verdict stands in otherwise, except that a plain-HTTP verdict saying the link works never speaks for an `https:` URL, while a plain-HTTP `404` still says the page is gone.
 A fresh certificate failure replaces a stored `HEALTHY` for the same `https:` URL rather than being preserved under it, because it contradicts that verdict; a stored `UNAVAILABLE` still stands.
-When an `https:` probe fails verification and no plain-HTTP spelling is already a candidate, the pass probes that spelling too, and serve time (`servedResearchWebsiteUrl`) offers it only when it is verified `HEALTHY`; otherwise the stored URL is linked unchanged.
+When an `https:` probe fails verification and no plain-HTTP spelling is already a candidate, the pass probes that spelling too, and serve time (`servedLinkUrl`) offers it only when it is verified `HEALTHY`; otherwise the stored URL is linked unchanged.
+Every student-facing link built from a stored URL on the detail and compare pages goes through that one helper, from the research website CTA to the Sources rows, the official-page and lead-profile links, and the undergraduate invitation source (#3957).
+Browse cards and program pages are exempt, because their data carries no link health with a certificate result.
 
 The reverse direction runs on the host's own redirect rather than on a guess (#4649).
 When a plain-HTTP probe comes back `HEALTHY` after its host redirected it to `https:` on the same host, the same path and the same query string, apart from `www.`, letter case and a trailing slash, the entry records that landing as `httpsLandingUrl`.
-Serve time offers the landing in place of the stored `http:` website, so a student lands on the page the server canonically answers on.
+Serve time offers the landing in place of the stored `http:` link, so a student lands on the page the server canonically answers on.
 An `https:` spelling that merely answers `200` beside a plain-HTTP site that never redirects is not adopted, because a shared host can answer `https:` with a different site.
 The stored `websiteUrl` keeps recording what the source published, so this is derivation from link-health evidence and writes no field.
 `--http-websites-only` scopes a pass to rows whose `websiteUrl` or `website` is plain HTTP, which is how a landing is recorded without waiting for the sweep's seven-day re-probe window.
