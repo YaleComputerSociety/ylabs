@@ -1,8 +1,8 @@
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { defaultMentorResolver, listedNameAgrees } from '../sources/undergradMentorListScraper';
-import type { MentorListing } from '../utils/undergradMentoring';
+import { defaultMentorResolver, listedNameAgrees } from '../sources/officialUndergradListScraper';
+import type { MentorListing } from '../utils/officialUndergradLists';
 
 describe('listedNameAgrees', () => {
   it('accepts the same person and refuses a different surname or given name', () => {

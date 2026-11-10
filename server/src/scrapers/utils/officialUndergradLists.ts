@@ -8,15 +8,23 @@
 import * as cheerio from 'cheerio';
 import { isTag, isText, type AnyNode, type Element } from 'domhandler';
 import {
-  undergradMentoringSources,
-  type UndergradMentoringKind,
-  type UndergradMentoringSource,
+  UNDERGRAD_EVIDENCE_SIGNAL,
+  type UndergradEvidenceSignal,
+  undergradListSources,
+  type UndergradListEntryKind,
+  type UndergradListSource,
 } from '../../models/storedVocabularies';
 
-export { undergradMentoringSources, type UndergradMentoringKind, type UndergradMentoringSource };
+export {
+  UNDERGRAD_EVIDENCE_SIGNAL,
+  undergradListSources,
+  type UndergradEvidenceSignal,
+  type UndergradListEntryKind,
+  type UndergradListSource,
+};
 
 export interface MentorListing {
-  source: UndergradMentoringSource;
+  source: UndergradListSource;
   adviserName: string;
   adviserEmail?: string;
   adviserProfileUrl?: string;
@@ -27,18 +35,15 @@ export interface MentorListing {
   sourceUrl: string;
 }
 
-export interface UndergradMentoringEntry {
-  source: UndergradMentoringSource;
-  kind: UndergradMentoringKind;
+export interface UndergradListEntry {
+  source: UndergradListSource;
+  kind: UndergradListEntryKind;
   count?: number;
   latestYear?: number;
   sourceUrl: string;
 }
 
-export const UNDERGRAD_MENTORING_SOURCE_KIND: Record<
-  UndergradMentoringSource,
-  UndergradMentoringKind
-> = {
+export const UNDERGRAD_LIST_SOURCE_KIND: Record<UndergradListSource, UndergradListEntryKind> = {
   'cs-senior-projects': 'advised',
   'cs-directed-research': 'advised',
   'tobin-research-assistantships': 'advised',
@@ -51,6 +56,8 @@ export const UNDERGRAD_MENTORING_SOURCE_KIND: Record<
   'political-science-senior-essay-prizes': 'advised',
   'german-senior-essays': 'advised',
   'yibs-summer-research-fellows': 'advised',
+  'cognitive-science-senior-essays': 'advised',
+  'eps-senior-theses': 'advised',
 };
 
 const HONORIFIC = /^(?:prof(?:essor)?\.?|dr\.?|mr\.?|ms\.?|mrs\.?)\s+/i;
@@ -112,7 +119,7 @@ export function csArchiveTermUrls(indexHtml: string, indexUrl: string): string[]
 export function csArchiveTermListings(
   html: string,
   url: string,
-  source: UndergradMentoringSource,
+  source: UndergradListSource,
 ): MentorListing[] {
   const $ = cheerio.load(html);
   const year = yearIn($('h2').first().text()) ?? yearIn($('title').text());
@@ -432,7 +439,7 @@ function paragraphLines(paragraphHtml: string): string[] {
 export function englishAdvisedByListings(
   html: string,
   url: string,
-  source: UndergradMentoringSource,
+  source: UndergradListSource,
 ): MentorListing[] {
   const $ = cheerio.load(html);
   const listings: MentorListing[] = [];
@@ -577,19 +584,19 @@ export function yibsSuresFellowListings(html: string, url: string): MentorListin
  * One entry per source for a row: how many undergraduates the lists name for it and the
  * latest year, or for a list of who is open now, that it lists them.
  */
-export function aggregateMentoringEntries(
+export function aggregateListEntries(
   listings: readonly MentorListing[],
-  sourceUrlFor: (source: UndergradMentoringSource) => string,
-): UndergradMentoringEntry[] {
-  const bySource = new Map<UndergradMentoringSource, MentorListing[]>();
+  sourceUrlFor: (source: UndergradListSource) => string,
+): UndergradListEntry[] {
+  const bySource = new Map<UndergradListSource, MentorListing[]>();
   for (const listing of listings) {
     bySource.set(listing.source, [...(bySource.get(listing.source) ?? []), listing]);
   }
-  return undergradMentoringSources
+  return undergradListSources
     .filter((source) => bySource.has(source))
     .map((source) => {
       const entries = bySource.get(source) ?? [];
-      const kind = UNDERGRAD_MENTORING_SOURCE_KIND[source];
+      const kind = UNDERGRAD_LIST_SOURCE_KIND[source];
       const years = entries.map((entry) => entry.year).filter((year): year is number => !!year);
       return {
         source,

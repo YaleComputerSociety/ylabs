@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { departmentsAgree } from '../labScienceAdviserRule';
 import {
   academicYearEndIn,
-  aggregateMentoringEntries,
+  aggregateListEntries,
   englishAdvisedByListings,
   germanSeniorEssayListings,
   politicalScienceEssayPrizeListings,
@@ -22,7 +22,7 @@ import {
   tobinProjectListings,
   tobinProjectUrls,
   wuTsaiFellowListings,
-} from '../undergradMentoring';
+} from '../officialUndergradLists';
 
 const studentFree = (value: unknown) => JSON.stringify(value);
 
@@ -346,11 +346,11 @@ describe('humanities essay and summer research lists', () => {
   });
 });
 
-describe('aggregateMentoringEntries', () => {
+describe('aggregateListEntries', () => {
   it('counts advising per source with its latest year, and lists openness without a count', () => {
     const url = (source: string) => `https://example.edu/${source}`;
     expect(
-      aggregateMentoringEntries(
+      aggregateListEntries(
         [
           { source: 'cs-senior-projects', adviserName: 'A B', year: 2024, sourceUrl: 'x' },
           { source: 'cs-senior-projects', adviserName: 'A B', year: 2026, sourceUrl: 'x' },

@@ -1,5 +1,5 @@
 /**
- * Read-only: reads the official adviser lists the `undergrad-mentor-list` lane reads,
+ * Read-only: reads the official adviser lists the `official-undergrad-lists` lane reads,
  * resolves each listed adviser exactly as the lane does, and writes a side-by-side sample
  * per source for the owner to grade before that source is served (#5551).
  *
@@ -18,9 +18,9 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   defaultMentorFetchText,
   defaultMentorResolver,
-  MENTOR_SOURCE_CONFIGS,
+  UNDERGRAD_LIST_SOURCE_CONFIGS,
   planMentorMatches,
-} from '../scrapers/sources/undergradMentorListScraper';
+} from '../scrapers/sources/officialUndergradListScraper';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -63,7 +63,7 @@ async function main() {
   const options = parseReviewSampleArgs(process.argv.slice(2));
   await initializeConnections();
   const plan = await planMentorMatches({
-    sources: MENTOR_SOURCE_CONFIGS,
+    sources: UNDERGRAD_LIST_SOURCE_CONFIGS,
     only: options.only,
     fetchText: defaultMentorFetchText,
     resolveMentor: defaultMentorResolver,

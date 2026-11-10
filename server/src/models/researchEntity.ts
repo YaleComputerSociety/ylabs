@@ -28,8 +28,8 @@ import {
   labSiteVerificationStates,
   sourceLinkHealthStatuses,
   undergradInvitationLevels,
-  undergradMentoringKinds,
-  undergradMentoringSources,
+  undergradListEntryKinds,
+  undergradListSources,
   officialRosterConfigOrigins,
   officialRosterUndergraduateStatuses,
 } from './storedVocabularies';
@@ -328,12 +328,12 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       ),
       default: undefined,
     },
-    undergradMentoring: {
+    undergradListEvidence: {
       type: [
         new mongoose.Schema(
           {
-            source: { type: String, enum: undergradMentoringSources, required: true },
-            kind: { type: String, enum: undergradMentoringKinds, required: true },
+            source: { type: String, enum: undergradListSources, required: true },
+            kind: { type: String, enum: undergradListEntryKinds, required: true },
             count: { type: Number },
             latestYear: { type: Number },
             sourceUrl: { type: String, required: true },

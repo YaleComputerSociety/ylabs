@@ -219,10 +219,10 @@ const SOURCES: SourceSeed[] = [
     cadence: 'nightly',
   },
   {
-    name: 'undergrad-mentor-list',
-    displayName: 'Official undergraduate adviser and mentor lists',
+    name: 'official-undergrad-lists',
+    displayName: 'Official undergraduate lists',
     description:
-      'Deterministic read of official Yale lists that name a faculty member as the adviser or mentor of a specific undergraduate, or as open to advising undergraduates now: the CS senior project and directed research archives, Tobin RA projects, the Economics senior essay advisers, the Psychology research sheet, Wu Tsai undergraduate fellows, the Physics open-opportunities list, the English senior essay and Creative Writing project lists, the Political Science essay prizes, the German senior essays and the YIBS summer research fellows. Only the adviser is read, an adviser is attached only to a row they already lead, and no student data is stored (#5551). Manual-only until the owner reviews a sample of its matches.',
+      "Deterministic read of official Yale lists that name a faculty member beside a specific undergraduate or as taking undergraduates now, each list feeding exactly one undergraduate signal (mentors, hosted or welcomes) into `undergradListEvidence` (#5551, #5362). Only the adviser is read, an entry attaches only to a row the person already leads, and no student data is stored. Manual-only until the owner reviews a sample of each list's matches.",
     baseUrl: '',
     defaultWeight: 0.8,
     cadence: 'monthly',
