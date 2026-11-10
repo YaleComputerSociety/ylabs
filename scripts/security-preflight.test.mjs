@@ -2245,7 +2245,6 @@ test('session secret validation trims before enforcing deployed length', () => {
     source,
     /if \(sessionSecret\.length < MIN_SESSION_SECRET_LENGTH \|\| isWeakSessionSecret\(sessionSecret\)\)/,
   );
-  assert.match(source, /keys: \[sessionSecret\]/);
   assert.doesNotMatch(source, /process\.env\.SESSION_SECRET\.length < 32/);
   assert.doesNotMatch(source, /keys: \[process\.env\.SESSION_SECRET \?\? ''\]/);
 });

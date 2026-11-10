@@ -37,6 +37,11 @@ export const ADMIN_AUDIT_ROUTES: Record<string, AdminAuditRouteDescriptor> = {
     targetType: 'adminGrant',
     targetId: paramId('netid'),
   },
+  'POST /accounts/:netid/sessions/revoke': {
+    action: 'account.sessions_revoke',
+    targetType: 'account',
+    targetId: paramId('netid'),
+  },
   'POST /departments': {
     action: 'department.create',
     targetType: 'department',

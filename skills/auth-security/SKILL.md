@@ -72,7 +72,10 @@ The Passport `regenerate` shim stays a no-op because there is no stored session 
 A missing `sessionVersion` on an older `Account` reads as `0`; the field needs no index because it is read only through the `netid` lookup.
 Cookies issued before this change carry no claim, so the deploy that shipped it signed everyone out once.
 `server/src/__tests__/sessionRevocation.integration.test.ts` drives sign-in, sign-out, replay, expiry, and id rotation through the mounted app against a stub CAS and an in-memory Mongo.
-Key rotation with an overlap window is not implemented: one `SESSION_SECRET` signs every cookie, so changing it still signs everyone out.
+An admin can end one account's sessions on every device from "End Sessions" on `/analytics`, which calls `POST /api/admin/accounts/:netid/sessions/revoke`; that route calls `revokeAccountSessions`, answers `404` when no account holds the netid, and is audited as `account.sessions_revoke` (#4484).
+The signing secret rotates with an overlap window (#4484): `SESSION_SECRET_PREVIOUS`, when set, is a verify-only second key (`server/src/utils/sessionSigningKeys.ts`), so cookie-session signs with `SESSION_SECRET`, still accepts a cookie signed with the previous secret, and re-signs it with the current one on its next response.
+The overlap is bounded by the 30-day server-side lifetime, after which no older cookie can pass `deserializeUser`; `docs/incident-runbook.md` has the steps, and a leaked secret is rotated with no overlap.
+`server/src/__tests__/sessionSecretRotation.integration.test.ts` drives sign-in under a rotating configuration and pins the acceptance, the re-signing and the refusal of an unrelated secret.
 
 ### The two legs of `GET /api/cas`
 
@@ -442,6 +445,7 @@ Rotating a leaked secret is owned by `docs/incident-runbook.md`.
 |----------|----------|---------|
 | `MONGODBURL` | Yes | MongoDB connection string. |
 | `SESSION_SECRET` | Yes | Cookie session signing key. |
+| `SESSION_SECRET_PREVIOUS` | No | Verify-only previous signing key during a routine rotation; unset otherwise (#4484). |
 | `AUTH_DEBUG` | No | Enables verbose auth tracing when `true`. |
 | `SSOBASEURL` | Yes | Yale CAS URL. |
 | `SERVER_BASE_URL` | Yes | Public server URL for CAS callbacks. |
