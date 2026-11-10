@@ -43,22 +43,37 @@ export function applyCachedRerank<T extends RerankCandidate>(
   return [...reorderedHead, ...candidates.slice(windowSize)];
 }
 
+export const SEARCH_RERANK_SHADOW_SOURCE = 'shadow';
+export const SEARCH_RERANK_SEEDED_INDEX_VERSION_PREFIX = 'full-';
+
+export type SearchRerankEntryKind = 'absent' | 'seeded' | 'shadow' | 'served';
+
+export interface SearchRerankCacheLookup {
+  scores: SearchRerankScores | null;
+  kind: SearchRerankEntryKind;
+  scoredAt: Date | null;
+}
+
 interface MemoEntry {
   expiresAt: number;
-  scores: SearchRerankScores | null;
+  lookup: SearchRerankCacheLookup;
 }
 
 const memo = new Map<string, MemoEntry>();
 
 export const resetSearchRerankCacheMemo = (): void => memo.clear();
 
-const remember = (queryKey: string, scores: SearchRerankScores | null, now: number): void => {
+export const forgetSearchRerankCacheKey = (queryKey: string): void => {
+  memo.delete(queryKey);
+};
+
+const remember = (queryKey: string, lookup: SearchRerankCacheLookup, now: number): void => {
   memo.delete(queryKey);
   if (memo.size >= SEARCH_RERANK_MEMO_MAX_ENTRIES) {
     const oldestKey = memo.keys().next().value;
     if (oldestKey !== undefined) memo.delete(oldestKey);
   }
-  memo.set(queryKey, { expiresAt: now + SEARCH_RERANK_MEMO_TTL_MS, scores });
+  memo.set(queryKey, { expiresAt: now + SEARCH_RERANK_MEMO_TTL_MS, lookup });
 };
 
 const scoresFromEntry = (entry: unknown): SearchRerankScores | null => {
@@ -75,27 +90,57 @@ const scoresFromEntry = (entry: unknown): SearchRerankScores | null => {
   return byId.size > 0 ? byId : null;
 };
 
+export const searchRerankEntryKind = (entry: unknown): SearchRerankEntryKind => {
+  if (!entry || typeof entry !== 'object') return 'absent';
+  const { source, indexVersion } = entry as { source?: unknown; indexVersion?: unknown };
+  if (
+    typeof indexVersion === 'string' &&
+    indexVersion.startsWith(SEARCH_RERANK_SEEDED_INDEX_VERSION_PREFIX)
+  ) {
+    return 'seeded';
+  }
+  return source === SEARCH_RERANK_SHADOW_SOURCE ? 'shadow' : 'served';
+};
+
+const lookupFromEntry = (entry: unknown): SearchRerankCacheLookup => {
+  const kind = searchRerankEntryKind(entry);
+  const scoredAt = (entry as { scoredAt?: unknown } | null)?.scoredAt;
+  return {
+    scores: kind === 'absent' || kind === 'shadow' ? null : scoresFromEntry(entry),
+    kind,
+    scoredAt: scoredAt instanceof Date ? scoredAt : null,
+  };
+};
+
 /**
- * Resolves to null for a query with no entry and for a failed read, both of which serve the
- * search's own order. An absent entry is remembered for the TTL, so the pages of one search
- * cost one read; a failed read is not, so the next request tries again.
+ * Resolves to null for a failed read, which serves the search's own order. A shadow entry
+ * is written by the live-miss job's shadow mode and never carries servable scores. An absent
+ * entry is remembered for the TTL, so the pages of one search cost one read; a failed read
+ * is not, so the next request tries again.
  */
-export async function cachedSearchRerankScores(
+export async function lookupSearchRerankCacheEntry(
   queryKey: string,
   now: () => number = Date.now,
-): Promise<SearchRerankScores | null> {
+): Promise<SearchRerankCacheLookup | null> {
   const remembered = memo.get(queryKey);
-  if (remembered && remembered.expiresAt > now()) return remembered.scores;
+  if (remembered && remembered.expiresAt > now()) return remembered.lookup;
   try {
     const entry = await SearchRerankCache.findOne({ queryKey })
-      .select('scores')
+      .select('scores source indexVersion scoredAt')
       .maxTimeMS(SEARCH_RERANK_LOOKUP_MAX_TIME_MS)
       .lean();
-    const scores = scoresFromEntry(entry);
-    remember(queryKey, scores, now());
-    return scores;
+    const lookup = lookupFromEntry(entry);
+    remember(queryKey, lookup, now());
+    return lookup;
   } catch (error) {
     console.error('Search rerank cache read failed; serving fused order:', sanitizeLogValue(error));
     return null;
   }
+}
+
+export async function cachedSearchRerankScores(
+  queryKey: string,
+  now: () => number = Date.now,
+): Promise<SearchRerankScores | null> {
+  return (await lookupSearchRerankCacheEntry(queryKey, now))?.scores ?? null;
 }

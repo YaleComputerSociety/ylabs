@@ -461,6 +461,7 @@ describe('researchGroupController', () => {
         embeddingSpendKey: expect.any(String),
         correctSpelling: true,
         resolveFilterValues: true,
+        rerankLiveMissClient: { ipKey: expect.any(String), sessionKey: expect.any(String) },
       },
     );
   });
@@ -503,6 +504,7 @@ describe('researchGroupController', () => {
         embeddingSpendKey: expect.any(String),
         correctSpelling: true,
         resolveFilterValues: true,
+        rerankLiveMissClient: { ipKey: expect.any(String), sessionKey: expect.any(String) },
       },
     );
   });
@@ -567,6 +569,7 @@ describe('researchGroupController', () => {
         embeddingSpendKey: expect.any(String),
         correctSpelling: true,
         resolveFilterValues: true,
+        rerankLiveMissClient: { ipKey: expect.any(String), sessionKey: expect.any(String) },
       },
     );
   });

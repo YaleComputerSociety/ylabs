@@ -1,7 +1,7 @@
 # Search rerank cache
 
 The search rerank cache reorders the top results of a research text search by relevance scores produced offline, one entry per past query (#5448).
-No model is called at query time.
+No model is called while a search is answered; the optional live-miss job below scores a missed query in the background.
 The measurement that motivated it, and the decision to score in an agent session rather than through a per-search model API, are recorded on #5448.
 
 ## What it stores
@@ -55,4 +55,78 @@ A row that has since left the top 30 is simply not reordered, and a new row in t
 ## Coverage
 
 A fixed cache covers past queries only.
-A new query falls back to the fused order.
+A new query falls back to the fused order, unless the live-miss job below is on, which scores it for the next search.
+
+## Live-miss job (#5549)
+
+A text search whose key has no entry can score itself in the background, so the next search for that key, by anyone, is a hit.
+The request never waits for the model: the search is served in today's fused order and one in-process job is queued for the key.
+It is off by default and has its own switch, independent of `SEARCH_RERANK_CACHE_ENABLED`.
+
+### Flags
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `SEARCH_RERANK_LIVE_MISS_ENABLED` | unset (off) | Only `true` queues jobs. Unset, search reads the collection exactly as the serve flag alone decides and queues nothing. |
+| `SEARCH_RERANK_LIVE_MISS_MODE` | `shadow` | `shadow` writes entries with `source: 'shadow'`, which search never serves. Only `serve` writes `source: 'live-miss'`, which search serves when `SEARCH_RERANK_CACHE_ENABLED=true`. |
+| `SEARCH_RERANK_LIVE_MISS_STALE_BEFORE` | unset | An ISO date. A live-miss or shadow entry scored before it is stale: it is still served and is refreshed in the background. Unset, no entry is stale. |
+| `SEARCH_RERANK_CACHE_COLLECTION` | `search_rerank_cache` | The collection the serve path, the seeder and the job all use. Only `search_rerank_cache` or `search_rerank_cache_<suffix>` is accepted; anything else fails at startup. A bench names its own, so it never reads or writes the environment's cache. |
+
+With the job on and the serve flag off, search reads the entry only to learn whether it is a miss, and never reorders by it.
+A shadow entry is never served under either flag, so a shadow week can run with the serve flag on or off.
+
+### What queues a job
+
+A job is queued only for a search the cache would serve today: a non-empty text query whose pool is paginated locally, with no explicit sort, from a request that reached the search route.
+The served result decides the rest (`rerankLiveMissGate` in `searchResearchGroupsForQuery`), reusing the predicates search already has rather than a new lexical rule:
+
+- a name query (`keywordLegTopHitIsNameMatch`) is never queued;
+- a query whose normalized tokens are empty (`normalizeResearchSearchQuery`) is never queued;
+- a query whose keyword leg served no row (`servesNoKeywordRow`) is never queued, which is the nonsense-query case;
+- a pool with fewer than 2 candidates is never queued;
+- a query over 100 characters or 10 words is never queued.
+
+A request the rate limiter refused never reaches search, and a search whose semantic leg the embedding budget declined is paged by Meilisearch, so neither queues a job.
+An in-process caller (`journey:eval`, the relevance scripts) passes no request client and never queues one.
+
+An existing entry decides too.
+A seeded entry, one whose `indexVersion` starts with `full-`, is never replaced, however stale.
+Shadow mode replaces only a missing, or stale shadow, entry, so it never stops a served entry from serving.
+Serve mode replaces a missing entry, a shadow entry, and a stale served one.
+
+### Limits
+
+All of these are in-process, so they hold per server instance; the web service runs one instance.
+
+- The queue holds 500 pending jobs and drops the oldest first.
+- One job runs at a time, and a key already pending or running is not queued again, so ten searches for one new query cost one call.
+- One address (`getPeerIpKey`) queues at most 20 jobs per hour, and one session (`getRateLimitKey`: the netid, else the cookie's anonymous id) at most 60 per UTC day.
+  The anonymous id lives in the caller's cookie, so the address cap is the real bound for a caller who discards cookies.
+  Over a cap the search is served normally and nothing is queued.
+- Before each model call the job reads today's spend for its caller from `model_call_usages` (UTC day, priced by `modelPricing.ts`).
+  At USD 1.00 the queue drops what is pending and queues nothing until the next UTC day.
+  An unreadable log, or no database connection, skips the call rather than spending blind.
+
+### The job
+
+`runSearchRerankLiveMissJob` in `server/src/services/searchRerankLiveMissJob.ts` re-runs the same search for the key through `searchResearchGroupsForRerankCandidates`, public visibility scope, spelling correction and filter resolution as the route applies them, and no cached reorder.
+It sends the top 30 to `gpt-5-mini` through the shared model client under caller `search-rerank-live-miss`, with the prompt in `server/src/scrapers/prompts/searchRerankLiveMiss.md` (the rerank prompt measured in the #5549 cost pilot).
+The reply must score every candidate exactly once with an integer from 0 to 3; anything else writes nothing.
+The entry is upserted with `source` `live-miss` or `shadow` and `indexVersion` `async-gpt-5-mini-<YYYY-MM-DD>`, and the upsert filter excludes a `full-` entry, so a seeded entry that lands while the model is scoring still wins.
+Every outcome is logged as `[search-rerank-live-miss] job <status>`, never with the query text.
+
+### Running it on a bench
+
+The job is exported so a bench can run search, then the job, then search, with no timing race:
+
+```ts
+runSearchRerankLiveMissJob(
+  { query, filters },
+  { write?: boolean, mode?: 'shadow' | 'serve', now?, model?, readSpendTodayUsd? },
+): Promise<{ status, entry? }>
+```
+
+It returns the entry it scored, and with `write: false` it neither reads nor writes the cache.
+Set `SEARCH_RERANK_CACHE_COLLECTION=search_rerank_cache_<bench>` before the server code is imported, so the bench never touches the environment's `search_rerank_cache`.
+`setSearchRerankLiveMissRunner` in `searchRerankLiveMiss.ts` replaces the queued runner, and `searchRerankLiveMissIdle` resolves once the queue is empty.
+Spend is read from `model_call_usages` for caller `search-rerank-live-miss`, so `yarn --cwd server model-usage:report` shows a bench's calls under that name.

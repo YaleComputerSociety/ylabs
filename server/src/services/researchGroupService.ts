@@ -56,9 +56,18 @@ import { meshDescriptorWordKeys } from '../scrapers/utils/meshNonSubjectDescript
 import { getResearchSearchQueryVector } from './researchSearchQueryEmbedding';
 import {
   applyCachedRerank,
-  cachedSearchRerankScores,
   isSearchRerankCacheEnabled,
+  lookupSearchRerankCacheEntry,
 } from './searchRerankCache';
+import {
+  enqueueSearchRerankLiveMiss,
+  isSearchRerankLiveMissEnabled,
+  searchRerankLiveMissMode,
+  searchRerankLiveMissStaleBefore,
+  searchRerankLiveMissWantsEntry,
+  type SearchRerankLiveMissClient,
+  type SearchRerankLiveMissGate,
+} from './searchRerankLiveMiss';
 import { servedCitationUrl } from './servedCitationPolicy';
 import { withoutLeadGuardedCopy } from './servedResearchEntityCard';
 import { isPublicHttpUrl } from '../utils/urlSafety';
@@ -557,6 +566,7 @@ export interface ResearchGroupSearchOptions {
   embeddingSpendKey?: string;
   correctSpelling?: boolean;
   resolveFilterValues?: boolean;
+  rerankLiveMissClient?: SearchRerankLiveMissClient;
 }
 
 export interface ResearchSearchQueryCorrection {
@@ -1846,15 +1856,26 @@ async function optionalMatchedLabMemberNames(
   return { byEntityId, unavailable: false };
 }
 
+interface RerankLiveMissOrigin {
+  typedQuery: string;
+  filters: ResearchGroupFilterInput;
+  client: SearchRerankLiveMissClient;
+}
+
 interface ResearchQuerySearchContext {
   rerankQueryKey?: string;
   meiliCallRole?: MeiliCallRole;
+  rerankLiveMiss?: RerankLiveMissOrigin;
 }
 
 interface SearchedResearchQuery {
   result: ResearchGroupSearchResult;
   answeredAsNameSearch: boolean;
+  rerankLiveMissGate?: SearchRerankLiveMissGate;
 }
+
+const readsSearchRerankCache = (): boolean =>
+  isSearchRerankCacheEnabled() || isSearchRerankLiveMissEnabled();
 
 const MORE_TOPIC_RESULTS_ACCESS_TOGGLES = ['hostsUndergrads', 'welcomesUndergrads'] as const;
 type MoreTopicResultsAccessToggle = (typeof MORE_TOPIC_RESULTS_ACCESS_TOGGLES)[number];
@@ -1963,8 +1984,12 @@ export async function searchResearchGroupsViaMeili(
       );
   const droppedToggleFilters = filterableToggles.dropped;
   const rerankQueryKey =
-    isSearchRerankCacheEnabled() && normalizeResearchSearchQuery(query).raw !== ''
+    readsSearchRerankCache() && normalizeResearchSearchQuery(query).raw !== ''
       ? searchRerankCacheQueryKey(query, filters)
+      : undefined;
+  const rerankLiveMiss =
+    rerankQueryKey && options.rerankLiveMissClient && isSearchRerankLiveMissEnabled()
+      ? { typedQuery: query, filters, client: options.rerankLiveMissClient }
       : undefined;
   const { result: searched, answeredAsNameSearch } = await searchResearchGroupsForQuery(
     spelling.query,
@@ -1973,7 +1998,7 @@ export async function searchResearchGroupsViaMeili(
     pageSize,
     sort,
     options,
-    { rerankQueryKey },
+    { rerankQueryKey, rerankLiveMiss },
   );
   const appliedFilters =
     studentFilters.applied || droppedToggleFilters
@@ -2030,7 +2055,7 @@ async function searchResearchGroupsForQuery(
   pageSize: number,
   sort: ResearchGroupSearchSort = {},
   options: ResearchGroupSearchOptions = {},
-  { rerankQueryKey, meiliCallRole = 'required' }: ResearchQuerySearchContext = {},
+  { rerankQueryKey, meiliCallRole = 'required', rerankLiveMiss }: ResearchQuerySearchContext = {},
 ): Promise<SearchedResearchQuery> {
   // Same reason as `getResearchGroupDetail`: a browse hit carries research-area chips too, and
   // a script that reads browse must see the chips a student sees (#3817).
@@ -2444,9 +2469,9 @@ async function searchResearchGroupsForQuery(
   const runsSemanticLeg = runsHybridLegs && !sort.sortBy;
   // Only a locally paginated pool can be reordered before it is paged, so every page of
   // one search reads the same order; a sorted or pre-paginated search is served as is.
-  const rerankScoresLookup =
+  const rerankEntryLookup =
     rerankQueryKey && paginateHybridPoolLocally && runsSemanticLeg
-      ? cachedSearchRerankScores(rerankQueryKey)
+      ? lookupSearchRerankCacheEntry(rerankQueryKey)
       : null;
   const keywordLegParams = (matchingStrategy?: string): Record<string, any> => ({
     filter: candidatePoolFilterString,
@@ -2732,8 +2757,9 @@ async function searchResearchGroupsForQuery(
     keywordLegTopHit !== null &&
     keywordLegTopHitIsNameMatch([keywordLegTopHit.hit], normalizedQuery.tokens);
   const withholdSemanticOnlyRows = fuseRankings && keywordLegTopHitNamesTheQuery;
-  const rerankScores =
-    rerankScoresLookup && !keywordLegTopHitNamesTheQuery ? await rerankScoresLookup : null;
+  const rerankEntry =
+    rerankEntryLookup && !keywordLegTopHitNamesTheQuery ? await rerankEntryLookup : null;
+  const rerankScores = isSearchRerankCacheEnabled() ? (rerankEntry?.scores ?? null) : null;
   const orderCandidatePool = (
     poolHits: any[],
     matchedKeywordLegHits: any[],
@@ -2800,6 +2826,39 @@ async function searchResearchGroupsForQuery(
   // queries already come back pre-paginated from Meilisearch, so they are used
   // as-is. See #1064.
   const rerankedPool = rerankScores ? applyCachedRerank(servedPool, rerankScores) : servedPool;
+  const rerankLiveMissGate: SearchRerankLiveMissGate = !(
+    paginateHybridPoolLocally && runsSemanticLeg
+  )
+    ? 'meili-paged'
+    : keywordLegTopHitNamesTheQuery
+      ? 'name-query'
+      : normalizedQuery.tokens.length === 0
+        ? 'no-query-tokens'
+        : servesNoKeywordRow(keywordLeg.rawHits)
+          ? 'no-keyword-row'
+          : servedPool.length < 2
+            ? 'too-few-candidates'
+            : 'eligible';
+  if (
+    rerankLiveMiss &&
+    rerankQueryKey &&
+    rerankEntry &&
+    rerankLiveMissGate === 'eligible' &&
+    searchRerankLiveMissWantsEntry(
+      rerankEntry,
+      searchRerankLiveMissMode(),
+      searchRerankLiveMissStaleBefore(),
+    )
+  ) {
+    enqueueSearchRerankLiveMiss(
+      {
+        queryKey: rerankQueryKey,
+        query: rerankLiveMiss.typedQuery,
+        filters: searchRerankCacheFilters(rerankLiveMiss.filters),
+      },
+      rerankLiveMiss.client,
+    );
+  }
   const orderedHits = paginateHybridPoolLocally
     ? rerankedPool.slice(offset, offset + safePageSize)
     : reorderedPool;
@@ -2882,6 +2941,39 @@ async function searchResearchGroupsForQuery(
       },
     ),
     answeredAsNameSearch: keywordLegTopHitNamesTheQuery,
+    rerankLiveMissGate,
+  };
+}
+
+export interface SearchRerankCandidates {
+  researchEntities: PublicResearchEntityDto[];
+  rerankLiveMissGate: SearchRerankLiveMissGate | 'unsearchable';
+}
+
+export async function searchResearchGroupsForRerankCandidates(
+  query: string,
+  filters: ResearchGroupFilterInput,
+  limit: number,
+): Promise<SearchRerankCandidates> {
+  const publicFilters: ResearchGroupFilterInput = {
+    ...filters,
+    studentVisibilityTier: [...publicStudentVisibilityTiers],
+  };
+  const options: ResearchGroupSearchOptions = { includeFacets: false };
+  const spelling = correctResearchSearchQuerySpelling(query);
+  const studentFilters = await resolveStudentFiltersAgainstCorpus(publicFilters, options);
+  const { result, rerankLiveMissGate } = await searchResearchGroupsForQuery(
+    spelling.query,
+    studentFilters.filters,
+    1,
+    limit,
+    {},
+    options,
+    { meiliCallRole: 'optional' },
+  );
+  return {
+    researchEntities: result.researchEntities,
+    rerankLiveMissGate: rerankLiveMissGate ?? 'unsearchable',
   };
 }
 
