@@ -164,7 +164,7 @@ No other system may receive the ID: error reports, logs and `analytics_events` c
 
 - The owner sets `VITE_POSTHOG_KEY` and `VITE_POSTHOG_HOST` on the Production web service only and redeploys, because the client reads them at build time; Beta and local `.env` files leave both unset.
 - The PostHog project must have "Discard client IP data" on, because the SDK's `ip` option no longer has any effect, and its data retention must be no longer than the 1,095-day TTL on `analytics_events`.
-- The privacy notice must name PostHog, what it receives and its retention before students rely on it (#4157).
+- The `/privacy` page names PostHog, what it receives, the IP discard and the retention cap (#4157), so both project settings above must be on before the key is set, or the page is wrong.
 - Automated browsers are not measured: the SDK drops events from a `navigator.webdriver` session, so the end-to-end smoke never reaches PostHog.
 
 ### Guards

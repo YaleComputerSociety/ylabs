@@ -2,6 +2,7 @@ import { readFileSync } from 'fs';
 import path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { POSTHOG_ASSETS_ORIGIN, POSTHOG_INGEST_ORIGIN } from '../../utils/posthogConfig';
 import { buildContentSecurityPolicy } from '../securityHeaders';
 
 const PRIVACY_NOTICE_SOURCE = path.resolve(
@@ -63,6 +64,14 @@ describe('privacy notice disclosures (#4157)', () => {
 
     expect(disclosed.length).toBeGreaterThan(0);
     expect(undisclosed).toEqual([]);
+  });
+
+  it('names the PostHog origins the Production policy opens', () => {
+    const disclosed = disclosedOrigins();
+
+    for (const origin of [POSTHOG_INGEST_ORIGIN, POSTHOG_ASSETS_ORIGIN]) {
+      expect(disclosed.some((entry) => isCoveredBy(hostOf(origin), entry))).toBe(true);
+    }
   });
 
   it('fails for an origin the notice does not name', () => {
