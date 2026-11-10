@@ -1386,6 +1386,8 @@ The claimed title is the row's `name`, or its `displayName` when `name` is empty
 A two-token profile slug is also read surname first, because some Yale profiles are (`/profile/<surname>-<forename>/`) and a last-token reading takes the given name for the surname.
 That reversed reading counts only when no slug on the site matches given-name first, so a member whose given name is the surname never competes with the lead's own profile, and the owner check still requires the profile owner's own display name to carry the claimed surname.
 
+Reversing a merge that folded two different people's rows is a documented operator procedure, not a lane: `docs/research-entity-pi-dedupe-runbook.md` ("Reversing a wrong merge", #5454, #5544).
+
 ### Lab-microsite LLM extraction
 
 | Scraper | Data |

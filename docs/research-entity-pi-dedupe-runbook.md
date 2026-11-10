@@ -299,6 +299,28 @@ The redirect supersedes the archived-tombstone resurrection guard for the redire
 Ambiguous, non-eponymous same-PI clusters are never auto-selected here and continue to rely on the manual review workflow and the gate's existing `duplicate_risk` suppress-in-place fallback.
 That fallback is not unconditional suppression: when such a cluster is also joined by a shared-URL duplicate group and every member is held, the gate withdraws the duplicate reasons from one member so the cluster keeps a student-visible card - see [`student-ready-definition.md`](student-ready-definition.md) for the reconciliation rule.
 
+## Reversing a wrong merge
+
+A merge can fold rows that belong to two different people, for example two `<Surname> Lab` rows for different faculty who share a surname (#5454).
+There is no unmerge tool; reversing one is an operator judgement about those rows, and these steps are the procedure.
+Snapshot every row you will touch before each step, and run each step against Development only.
+
+1. Detach the wrong lead from the survivor: archive that one `RoleAssignment` with `reviewStatus: 'DISPUTED'` and a `reviewNotes` entry that records the decision, which keeps every later scrape from re-attaching it.
+Refuse any value derived from the wrong lead, such as a lead-derived `name`, with `research-entity:refuse-field-value --rule=operator_judgement --decided-by`.
+2. Break the redirect first: `$unset` the `canonicalGroupId` on each archived row of the other person, and `$pull` those rows from the survivor's `mergedFrom`.
+Until this is done, every refresh re-derives the other person's evidence into the survivor, and every weekly run feeds it fresh copies, so the steps below would not hold.
+3. Supersede the residue: mark the remaining live observations about the other person that are filed under the survivor as `superseded: true` with a `rollback` reason, then `$pull` any stray `sourceUrls` or `departments` they left.
+Query both identity forms, `entityKey` and `entityId`, of the survivor and of every merged row.
+4. Let the lanes finish: attach the right lead through `research-entity:attach-lab-site-named-leads` where the lab's own site names them, re-gate the survivor, and let `research-entity:dedupe-by-pi` fold the right person's own row in once the guards no longer refuse it.
+5. Restore the detached person when their own evidence passes the directory test (a current Yale appointment, at Yale, and their own research program, read from official sources):
+snapshot the row, set `archived: false` on that one row only, run `research-entity:rematerialize --slugs=<slug> --apply --confirm-rematerialize`, and confirm that a second run plans no change.
+The flag has to be set by hand because `materializeEntity` skips every archived research row (`skipped: 'archived-research-entity'`), so neither a rematerialize nor a fresh scrape can re-activate it.
+Only the lifecycle flag is written; every field is then derived from the row's own evidence, so nothing needs a lock.
+6. Check the stored tier with `student-visibility:gate --apply` for the touched rows, run `yarn development:search:sync`, and re-read the served detail pages and a search for each person's name.
+
+Every archive records an `archivedReason`, because `archivedEntityUpdate` requires one.
+If unmerges become common, that reason is how an engine pass could automate step 5: it would find rows archived only by a merge whose redirect was later broken.
+
 ## Deleting inert merge residue
 
 `research-entity:cleanup-archived` physically deletes an archived row, and every arm of its plan is fail-closed.
