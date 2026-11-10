@@ -1,6 +1,7 @@
 /**
  * Service layer for fellowship CRUD, search, and filter operations.
  */
+import { PROGRAM_STATED_ONLY_FACET_FIELDS } from '../utils/programFacetFilters';
 import { correctProgramSearchQuerySpelling } from './programSearchSpellingVocabulary';
 import { PROGRAM_SEARCH_FIELDS, rankProgramSearch } from './programSearchRelevance';
 import { NotFoundError, ObjectIdError } from '../utils/errors';
@@ -872,6 +873,11 @@ export const deleteFellowship = async (id: any) => {
 // filter keeps it and the page says the official page decides (#5130, #5235).
 const facetNotStated = (field: string) => ({ [field]: { $in: [null, []] } });
 
+const programFacetFilterClause = (field: string, values: readonly string[]) =>
+  PROGRAM_STATED_ONLY_FACET_FIELDS.has(field)
+    ? { [field]: { $in: values } }
+    : { $or: [{ [field]: { $in: values } }, facetNotStated(field)] };
+
 export const searchFellowships = async (params: {
   query?: string;
   page?: number;
@@ -989,10 +995,7 @@ export const searchFellowships = async (params: {
     ['citizenshipStatus', safeCitizenshipStatus],
   ] as const) {
     if (values.length === 0) continue;
-    filter.$and = [
-      ...(filter.$and ?? []),
-      { $or: [{ [field]: { $in: values } }, facetNotStated(field)] },
-    ];
+    filter.$and = [...(filter.$and ?? []), programFacetFilterClause(field, values)];
   }
   if (safeProgramCategory.length > 0) {
     filter.programCategory = { $in: safeProgramCategory };

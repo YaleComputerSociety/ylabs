@@ -29,6 +29,10 @@ import {
   type ServedRowGateObservation,
 } from './journeyEvalProgramMetrics';
 import { attributeProgramServedFields } from './programServedFieldAttribution';
+import {
+  PROGRAM_STATED_ONLY_FACET_FIELDS,
+  programFacetValueNotStated,
+} from '../../utils/programFacetFilters';
 
 export type ProgramFilters = Record<string, string[]>;
 
@@ -83,6 +87,24 @@ export const CLIENT_PROGRAM_PAGE_SIZE = 250;
 export const MAX_PROGRAM_SEARCH_PAGE = 1000;
 export const MAX_PROGRAM_SEARCH_PAGE_SIZE = 250;
 const TEXT_QUERY_TOTAL_PROBE = 'research';
+
+// The facet filters that keep a program stating no value (#5235); region is stated-only by
+// the owner's 2026-11-10 decision (#5533), so its not-stated rows fail the invariant.
+export const NOT_STATED_KEEPING_FILTER_FIELDS = [
+  'yearOfStudy',
+  'termOfAward',
+  'purpose',
+  'globalRegions',
+  'citizenshipStatus',
+].filter((field) => !PROGRAM_STATED_ONLY_FACET_FIELDS.has(field));
+
+export const NOT_STATED_SHARE_FIELDS = [
+  'yearOfStudy',
+  'termOfAward',
+  'purpose',
+  'globalRegions',
+  'citizenshipStatus',
+] as const;
 
 export const CORPUS_DERIVED_FILTER_FIELDS = [
   'programCategory',
@@ -378,6 +400,19 @@ const textQueryTotalIsStable = (surface: ProgramSurface): ProgramJourneyCase => 
   },
 });
 
+export const notStatedShareRates = (
+  surface: ProgramSurface,
+  rows: ReadonlyArray<Record<string, unknown>>,
+): RateResult[] =>
+  NOT_STATED_SHARE_FIELDS.map((field) =>
+    buildRate(
+      `${surface.id}-served-rows-not-stating-${field}`,
+      `Served ${surface.label} rows that state no ${field}`,
+      rows.filter((row) => programFacetValueNotStated(row[field])).length,
+      rows.length,
+    ),
+  );
+
 const filterOptionsAgreeWithFilteredBrowse = (surface: ProgramSurface): ProgramJourneyCase => ({
   id: `${surface.id}-filter-options-agree-with-filtered-browse`,
   title: `Each filter option the ${surface.label} browse offers returns rows that carry it`,
@@ -403,6 +438,9 @@ const filterOptionsAgreeWithFilteredBrowse = (surface: ProgramSurface): ProgramJ
           servedOnFirstPage: rows.length,
           servedCarryingValue: rows.filter((row) => rowCarriesFilterValue(row, field, value))
             .length,
+          servedNotStatingField: rows.filter((row) => programFacetValueNotStated(row[field]))
+            .length,
+          notStatedKeptByFilter: NOT_STATED_KEEPING_FILTER_FIELDS.includes(field),
         });
       }
     }
@@ -413,6 +451,7 @@ const filterOptionsAgreeWithFilteredBrowse = (surface: ProgramSurface): ProgramJ
       );
       subjectTotals.push(typeof result.total === 'number' ? result.total : 0);
     }
+    const coldBrowse = await walkProgramBrowseLikeTheClient(context, surfaceRequest(surface, {}));
     const corpusAfter = await context.readCorpusFingerprint();
 
     const topByField = fields.flatMap((field) =>
@@ -445,6 +484,7 @@ const filterOptionsAgreeWithFilteredBrowse = (surface: ProgramSurface): ProgramJ
           subjectTotals.filter((total) => total > 0).length,
           subjectTotals.length,
         ),
+        ...notStatedShareRates(surface, coldBrowse.rows),
       ],
       notes: {
         optionsChecked: observations.length,

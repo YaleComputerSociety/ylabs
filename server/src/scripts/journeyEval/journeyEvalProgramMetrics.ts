@@ -53,6 +53,8 @@ export interface FilterOptionObservation {
   filteredTotal: number;
   servedOnFirstPage: number;
   servedCarryingValue: number;
+  servedNotStatingField: number;
+  notStatedKeptByFilter: boolean;
 }
 
 export function checkOfferedOptionsServeARow(
@@ -93,7 +95,8 @@ export function checkFilteredRowsCarryValue(
   observations: readonly FilterOptionObservation[],
 ): InvariantResult {
   const id = `${surface}-filtered-browse-honors-the-filter`;
-  const title = 'Every row a filtered browse serves carries the chosen filter value';
+  const title =
+    'Every row a filtered browse serves carries the chosen value, or states none where the filter keeps not-stated rows';
   const served = observations.reduce((sum, observation) => sum + observation.servedOnFirstPage, 0);
   if (served === 0) {
     return buildInconclusiveInvariant(
@@ -104,8 +107,14 @@ export function checkFilteredRowsCarryValue(
     );
   }
   const mismatchesByField: Record<string, number> = {};
+  const notStatedKeptByField: Record<string, number> = {};
   for (const observation of observations) {
-    const mismatched = observation.servedOnFirstPage - observation.servedCarryingValue;
+    const notStatedKept = observation.notStatedKeptByFilter ? observation.servedNotStatingField : 0;
+    if (notStatedKept > 0)
+      notStatedKeptByField[observation.field] =
+        (notStatedKeptByField[observation.field] ?? 0) + notStatedKept;
+    const mismatched =
+      observation.servedOnFirstPage - observation.servedCarryingValue - notStatedKept;
     if (mismatched > 0)
       mismatchesByField[observation.field] =
         (mismatchesByField[observation.field] ?? 0) + mismatched;
@@ -116,6 +125,7 @@ export function checkFilteredRowsCarryValue(
     rowsChecked: served,
     mismatches,
     mismatchesByField,
+    notStatedKeptByField,
   });
 }
 

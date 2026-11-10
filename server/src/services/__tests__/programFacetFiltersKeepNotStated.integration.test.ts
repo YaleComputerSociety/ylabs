@@ -55,12 +55,17 @@ describe('every program facet filter keeps programs that state no value (#5235)'
     ['yearOfStudy', 'Sophomore'],
     ['termOfAward', 'Summer'],
     ['purpose', 'Research'],
-    ['globalRegions', 'Asia'],
   ])('keeps the not-stated program and drops the other value under %s', async (field, value) => {
     expect(titles(await searchFellowships({ [field]: [value] }))).toEqual([
       'Fixture Matching Grant',
       'Fixture Not Stated Grant',
     ]);
+  });
+
+  it('returns only programs that state the chosen region, so the total counts them alone (#5533)', async () => {
+    const result = await searchFellowships({ globalRegions: ['Asia'] });
+    expect(titles(result)).toEqual(['Fixture Matching Grant']);
+    expect(result.total).toBe(1);
   });
 
   it('applies two facet filters together', async () => {

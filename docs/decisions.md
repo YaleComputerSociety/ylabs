@@ -5,6 +5,16 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-11-10: The Program Region Filter Returns Only Programs That Name The Region (#5533)
+
+This partly reverses #5235 for one facet: the region filter on `/programs` and the fellowships browse now returns only programs that state the chosen region.
+Decision (owner, 2026-11-10): region is stated-only because 142 of the 173 served programs on Development (82%) state no region, so under #5235 every region option returned 146 to 155 programs of which only 4 to 13 named that region, and the filter barely narrowed.
+Year of study, term, purpose and citizenship keep #5235 unchanged: a program that states no value stays under the filter, and the citizenship options still say "or not stated".
+Region was the outlier because the other facets are stated far more often (21 to 39 of 173 programs state none), and because a missing region rarely means "any region".
+The region tab says it shows only programs that name the region, and its options carry no "or not stated" wording; the result total is the same query, so the count matches what is served.
+The stated-only set is `PROGRAM_STATED_ONLY_FACET_FIELDS` in `server/src/utils/programFacetFilters.ts`, which both `searchFellowships` and the `journey:eval` filter-agreement cases read, so the invariant fails a not-stated row under region and a stated-different row under any filter.
+The cases also report the share of served rows that state no value per field as rates that never gate, so a facet drifting toward mostly not-stated is visible before it hollows out another filter.
+
 ## 2026-11-10: PostHog Records Production Students' Clicks And Waits, Masked (#5492)
 
 This reverses the third-party half of the 2026-10-04 entry (#4754) for PostHog only; the Google Analytics tag stays removed and `client/src/__tests__/noGoogleAnalyticsGuard.test.ts` still fails if it returns.

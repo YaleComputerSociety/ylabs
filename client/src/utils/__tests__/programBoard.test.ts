@@ -5,6 +5,8 @@ import {
   programBoardSectionOf,
   citizenshipFilterOptionLabel,
   programCardFacts,
+  PROGRAM_FACET_NOT_STATED_NOTE,
+  PROGRAM_REGION_FILTER_NOTE,
 } from '../programBoard';
 import { getFellowshipCycleStatus } from '../fellowshipCycle';
 import { createFellowship } from '../createFellowship';
@@ -134,5 +136,13 @@ describe('citizenshipFilterOptionLabel says the option keeps not-stated programs
     expect(citizenshipFilterOptionLabel('U.S. citizens are eligible')).toBe(
       'Open to U.S. citizens, or not stated',
     );
+  });
+});
+
+describe('the region filter note says it returns only programs that name the region (#5533)', () => {
+  it('never tells a student that not-stated programs are included under region', () => {
+    expect(PROGRAM_REGION_FILTER_NOTE).not.toMatch(/not state|included/i);
+    expect(PROGRAM_REGION_FILTER_NOTE).toMatch(/only programs that name this region/i);
+    expect(PROGRAM_FACET_NOT_STATED_NOTE).toMatch(/do not state this are included/i);
   });
 });
