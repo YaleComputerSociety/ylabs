@@ -334,6 +334,7 @@ import {
 } from '../utils/descriptionHygiene';
 import { cleanPublicProfileBio } from '../services/profileService';
 import { buildResearchEntityPublicDescriptionRepresentation } from '../services/researchEntityPublicDescription';
+import { withoutAdviseeProgramsMovedToMentors } from '../services/hostedUndergraduates';
 import { servedResearchEntityCopy } from '../services/servedResearchEntityCard';
 import { isKnownDeadSourceUrl } from '../services/sourceLinkHealth';
 import {
@@ -2046,6 +2047,9 @@ export function materializedFieldValue(
 ): unknown {
   if (isResearchEntityObservationType(entityType) && field === 'sourceUrls') {
     return sanitizeResearchEntitySourceUrlsForMaterialization(value, entityIdentity);
+  }
+  if (isResearchEntityObservationType(entityType) && field === 'pastUndergradAdvisees') {
+    return withoutAdviseeProgramsMovedToMentors(value);
   }
   if (isResearchEntityObservationType(entityType) && field === 'kind') {
     if (typeof value === 'string' && researchGroupKinds.includes(value as any)) return value;

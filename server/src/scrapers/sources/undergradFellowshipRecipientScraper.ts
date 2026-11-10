@@ -79,7 +79,6 @@ import {
 import { getCached, setCached } from '../snapshotCache';
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
 import {
-  LAB_SCIENCE_ADVISER_DEPARTMENTS,
   adviserPairCountsTowardHosting,
   departmentsAgree,
   type UndergradHostingRule,
@@ -704,22 +703,6 @@ export const DEFAULT_PROGRAM_CONFIGS: ProgramConfig[] = [
     pdfExtractor: starsSymposiumBookletExtractor,
     manualUploadRequired: true,
     skipReason: 'STARS II symposium abstracts published as PDF only',
-    hostingRule: 'lab-science-program',
-  },
-  {
-    programKey: 'cogsci-senior-essays',
-    programName: 'Cognitive Science senior essay',
-    urls: ['https://cogsci.yale.edu/research/past-senior-essays'],
-    extractor: seniorEssayAdviserTableExtractor,
-    adviserDepartments: ['Cognitive Science', ...LAB_SCIENCE_ADVISER_DEPARTMENTS],
-    hostingRule: 'lab-science-adviser-department',
-  },
-  {
-    programKey: 'eps-senior-theses',
-    programName: 'Earth and Planetary Sciences senior thesis',
-    urls: ['https://earth.yale.edu/recent-alumni-and-senior-theses'],
-    extractor: seniorThesisAdviserParagraphExtractor,
-    adviserDepartments: ['Earth and Planetary Sciences', 'Geology and Geophysics'],
     hostingRule: 'lab-science-program',
   },
 ];
