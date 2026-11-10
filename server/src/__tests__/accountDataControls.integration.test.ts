@@ -34,9 +34,8 @@ const startFakeCas = async (): Promise<FakeCas> => {
     if (requested.pathname === '/cas/login') {
       const ticket = `ST-account-data-${serviceUrlByTicket.size + 1}`;
       serviceUrlByTicket.set(ticket, service);
-      const separator = service.includes('?') ? '&' : '?';
-      res.writeHead(302, { location: `${service}${separator}ticket=${ticket}` });
-      res.end();
+      res.writeHead(200, { 'content-type': 'text/plain' });
+      res.end(ticket);
       return;
     }
     if (requested.pathname === '/cas/validate') {
@@ -106,8 +105,12 @@ const request = async (
 
 const signIn = async (baseUrl: string): Promise<string> => {
   const started = await request(`${baseUrl}/api/cas`);
-  const atCas = await request(started.location);
-  const completed = await request(atCas.location, { cookie: started.cookie });
+  const ticket = (await request(started.location)).body;
+  const service = new URL(started.location).searchParams.get('service') ?? '';
+  const separator = service.includes('?') ? '&' : '?';
+  const completed = await request(`${service}${separator}ticket=${ticket}`, {
+    cookie: started.cookie,
+  });
   expect(completed.status).toBe(302);
   return completed.cookie;
 };
