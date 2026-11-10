@@ -20,6 +20,7 @@ import {
   type SearchRerankCacheFilters,
 } from './researchGroupService';
 import {
+  SEARCH_RERANK_LIVE_MISS_SOURCE,
   SEARCH_RERANK_SEEDED_INDEX_VERSION_PREFIX,
   SEARCH_RERANK_SHADOW_SOURCE,
   SEARCH_RERANK_WINDOW,
@@ -31,14 +32,12 @@ import {
   SEARCH_RERANK_LIVE_MISS_DAILY_SPEND_CEILING_USD,
   searchRerankLiveMissMode,
   searchRerankLiveMissQueryFits,
-  searchRerankLiveMissStaleBefore,
   searchRerankLiveMissWantsEntry,
   type SearchRerankLiveMissJobStatus,
   type SearchRerankLiveMissMode,
 } from './searchRerankLiveMiss';
 
 export const SEARCH_RERANK_LIVE_MISS_MODEL = 'gpt-5-mini';
-export const SEARCH_RERANK_LIVE_MISS_SOURCE = 'live-miss';
 export const SEARCH_RERANK_LIVE_MISS_TIMEOUT_MS = 60_000;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -75,7 +74,6 @@ export interface SearchRerankLiveMissJobInput {
 }
 
 export interface RunSearchRerankLiveMissJobOptions {
-  write?: boolean;
   mode?: SearchRerankLiveMissMode;
   now?: () => Date;
   model?: SearchRerankLiveMissModel;
@@ -227,7 +225,6 @@ export async function runSearchRerankLiveMissJob(
   input: SearchRerankLiveMissJobInput,
   options: RunSearchRerankLiveMissJobOptions = {},
 ): Promise<SearchRerankLiveMissJobOutcome> {
-  const write = options.write !== false;
   const mode = options.mode ?? searchRerankLiveMissMode();
   const now = options.now ?? (() => new Date());
   const filters = searchRerankCacheFilters(input.filters ?? {});
@@ -235,21 +232,11 @@ export async function runSearchRerankLiveMissJob(
   const queryText = input.query.trim();
   if (!searchRerankLiveMissQueryFits(queryText)) return { status: 'ineligible' };
 
-  if (write) {
-    const existing = await SearchRerankCache.findOne({ queryKey })
-      .select('source indexVersion scoredAt')
-      .lean();
-    const scoredAt = (existing as { scoredAt?: unknown } | null)?.scoredAt;
-    const wanted = searchRerankLiveMissWantsEntry(
-      {
-        kind: searchRerankEntryKind(existing),
-        scores: null,
-        scoredAt: scoredAt instanceof Date ? scoredAt : null,
-      },
-      mode,
-      searchRerankLiveMissStaleBefore(),
-    );
-    if (!wanted) return { status: 'not-wanted' };
+  const existing = await SearchRerankCache.findOne({ queryKey })
+    .select('source indexVersion')
+    .lean();
+  if (!searchRerankLiveMissWantsEntry(searchRerankEntryKind(existing), mode)) {
+    return { status: 'not-wanted' };
   }
 
   const searched = await searchResearchGroupsForRerankCandidates(
@@ -299,8 +286,6 @@ export async function runSearchRerankLiveMissJob(
     indexVersion: `async-${SEARCH_RERANK_LIVE_MISS_MODEL}-${utcDate(scoredAt)}`,
     source: mode === 'shadow' ? SEARCH_RERANK_SHADOW_SOURCE : SEARCH_RERANK_LIVE_MISS_SOURCE,
   };
-  if (!write) return { status: 'scored', entry };
-
   const replaceable =
     mode === 'shadow'
       ? { queryKey, source: SEARCH_RERANK_SHADOW_SOURCE, indexVersion: NOT_SEEDED_INDEX_VERSION }

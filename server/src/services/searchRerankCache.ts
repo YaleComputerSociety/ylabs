@@ -1,5 +1,6 @@
 import { SearchRerankCache } from '../models/searchRerankCache';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { isSearchRerankLiveMissEnabled } from './searchRerankLiveMiss';
 
 export const SEARCH_RERANK_WINDOW = 30;
 export const SEARCH_RERANK_NEUTRAL_SCORE = 1.5;
@@ -44,6 +45,7 @@ export function applyCachedRerank<T extends RerankCandidate>(
 }
 
 export const SEARCH_RERANK_SHADOW_SOURCE = 'shadow';
+export const SEARCH_RERANK_LIVE_MISS_SOURCE = 'live-miss';
 export const SEARCH_RERANK_SEEDED_INDEX_VERSION_PREFIX = 'full-';
 
 export type SearchRerankEntryKind = 'absent' | 'seeded' | 'shadow' | 'served';
@@ -51,7 +53,6 @@ export type SearchRerankEntryKind = 'absent' | 'seeded' | 'shadow' | 'served';
 export interface SearchRerankCacheLookup {
   scores: SearchRerankScores | null;
   kind: SearchRerankEntryKind;
-  scoredAt: Date | null;
 }
 
 interface MemoEntry {
@@ -102,13 +103,18 @@ export const searchRerankEntryKind = (entry: unknown): SearchRerankEntryKind => 
   return source === SEARCH_RERANK_SHADOW_SOURCE ? 'shadow' : 'served';
 };
 
+const servesScores = (entry: unknown, kind: SearchRerankEntryKind): boolean => {
+  if (kind === 'absent' || kind === 'shadow') return false;
+  if (kind === 'seeded') return true;
+  const { source } = entry as { source?: unknown };
+  return source !== SEARCH_RERANK_LIVE_MISS_SOURCE || isSearchRerankLiveMissEnabled();
+};
+
 const lookupFromEntry = (entry: unknown): SearchRerankCacheLookup => {
   const kind = searchRerankEntryKind(entry);
-  const scoredAt = (entry as { scoredAt?: unknown } | null)?.scoredAt;
   return {
-    scores: kind === 'absent' || kind === 'shadow' ? null : scoresFromEntry(entry),
+    scores: servesScores(entry, kind) ? scoresFromEntry(entry) : null,
     kind,
-    scoredAt: scoredAt instanceof Date ? scoredAt : null,
   };
 };
 
@@ -126,7 +132,7 @@ export async function lookupSearchRerankCacheEntry(
   if (remembered && remembered.expiresAt > now()) return remembered.lookup;
   try {
     const entry = await SearchRerankCache.findOne({ queryKey })
-      .select('scores source indexVersion scoredAt')
+      .select('scores source indexVersion')
       .maxTimeMS(SEARCH_RERANK_LOOKUP_MAX_TIME_MS)
       .lean();
     const lookup = lookupFromEntry(entry);
@@ -136,11 +142,4 @@ export async function lookupSearchRerankCacheEntry(
     console.error('Search rerank cache read failed; serving fused order:', sanitizeLogValue(error));
     return null;
   }
-}
-
-export async function cachedSearchRerankScores(
-  queryKey: string,
-  now: () => number = Date.now,
-): Promise<SearchRerankScores | null> {
-  return (await lookupSearchRerankCacheEntry(queryKey, now))?.scores ?? null;
 }

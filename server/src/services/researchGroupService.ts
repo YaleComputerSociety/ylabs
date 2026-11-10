@@ -63,7 +63,6 @@ import {
   enqueueSearchRerankLiveMiss,
   isSearchRerankLiveMissEnabled,
   searchRerankLiveMissMode,
-  searchRerankLiveMissStaleBefore,
   searchRerankLiveMissWantsEntry,
   type SearchRerankLiveMissClient,
   type SearchRerankLiveMissGate,
@@ -2844,11 +2843,7 @@ async function searchResearchGroupsForQuery(
     rerankQueryKey &&
     rerankEntry &&
     rerankLiveMissGate === 'eligible' &&
-    searchRerankLiveMissWantsEntry(
-      rerankEntry,
-      searchRerankLiveMissMode(),
-      searchRerankLiveMissStaleBefore(),
-    )
+    searchRerankLiveMissWantsEntry(rerankEntry.kind, searchRerankLiveMissMode())
   ) {
     enqueueSearchRerankLiveMiss(
       {

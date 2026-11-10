@@ -184,19 +184,6 @@ describe('runSearchRerankLiveMissJob', () => {
     expect(model).not.toHaveBeenCalled();
   });
 
-  it('refreshes a served entry scored before the stale-before date', async () => {
-    vi.stubEnv('SEARCH_RERANK_LIVE_MISS_STALE_BEFORE', '2026-11-05');
-    mocks.cacheFindOne.mockImplementation(() =>
-      queryResult({
-        source: 'live-miss',
-        indexVersion: 'async-gpt-5-mini-2026-11-01',
-        scoredAt: new Date('2026-11-01T00:00:00Z'),
-      }),
-    );
-
-    expect((await runJob({ mode: 'serve' })).status).toBe('written');
-  });
-
   it.each([
     ['not JSON', async () => 'scores: 0 3 1 2'],
     ['no scores object', async () => JSON.stringify({ ranking: [0, 1, 2, 3] })],
@@ -274,19 +261,11 @@ describe('runSearchRerankLiveMissJob', () => {
     expect(mocks.searchCandidates).not.toHaveBeenCalled();
   });
 
-  it('returns the entry without reading or writing the cache when told not to write', async () => {
-    const outcome = await runJob({ write: false, mode: 'serve' });
-
-    expect(outcome.status).toBe('scored');
-    expect(outcome.entry?.scores).toHaveLength(CANDIDATE_COUNT);
-    expect(mocks.cacheFindOne).not.toHaveBeenCalled();
-    expect(mocks.cacheUpdateOne).not.toHaveBeenCalled();
-  });
-
   it('forgets the remembered miss so the next search reads the new entry', async () => {
     const queryKey = searchRerankCacheQueryKey(QUERY, {});
     expect((await lookupSearchRerankCacheEntry(queryKey))?.kind).toBe('absent');
 
+    vi.stubEnv('SEARCH_RERANK_LIVE_MISS_ENABLED', 'true');
     await runJob({ mode: 'serve' });
     mocks.cacheFindOne.mockImplementation(() =>
       queryResult({

@@ -67,9 +67,8 @@ It is off by default and has its own switch, independent of `SEARCH_RERANK_CACHE
 
 | Variable | Default | Effect |
 | --- | --- | --- |
-| `SEARCH_RERANK_LIVE_MISS_ENABLED` | unset (off) | Only `true` queues jobs. Unset, search reads the collection exactly as the serve flag alone decides and queues nothing. |
-| `SEARCH_RERANK_LIVE_MISS_MODE` | `shadow` | `shadow` writes entries with `source: 'shadow'`, which search never serves. Only `serve` writes `source: 'live-miss'`, which search serves when `SEARCH_RERANK_CACHE_ENABLED=true`. |
-| `SEARCH_RERANK_LIVE_MISS_STALE_BEFORE` | unset | An ISO date. A live-miss or shadow entry scored before it is stale: it is still served and is refreshed in the background. Unset, no entry is stale. |
+| `SEARCH_RERANK_LIVE_MISS_ENABLED` | unset (off) | Only `true` queues jobs and serves `live-miss` entries. Unset, search queues nothing and serves no `live-miss` entry, so turning it off withdraws what the job wrote; seeded entries are still served as the serve flag decides. |
+| `SEARCH_RERANK_LIVE_MISS_MODE` | `shadow` | `shadow` writes entries with `source: 'shadow'`, which search never serves. Only `serve` writes `source: 'live-miss'`, which search serves when both `SEARCH_RERANK_CACHE_ENABLED=true` and `SEARCH_RERANK_LIVE_MISS_ENABLED=true`. |
 | `SEARCH_RERANK_CACHE_COLLECTION` | `search_rerank_cache` | The collection the serve path, the seeder and the job all use. Only `search_rerank_cache` or `search_rerank_cache_<suffix>` is accepted; anything else fails at startup. A bench names its own, so it never reads or writes the environment's cache. |
 
 With the job on and the serve flag off, search reads the entry only to learn whether it is a miss, and never reorders by it.
@@ -90,9 +89,9 @@ A request the rate limiter refused never reaches search, and a search whose sema
 An in-process caller (`journey:eval`, the relevance scripts) passes no request client and never queues one.
 
 An existing entry decides too.
-A seeded entry, one whose `indexVersion` starts with `full-`, is never replaced, however stale.
-Shadow mode replaces only a missing, or stale shadow, entry, so it never stops a served entry from serving.
-Serve mode replaces a missing entry, a shadow entry, and a stale served one.
+A seeded entry, one whose `indexVersion` starts with `full-`, is never replaced.
+A served entry is never replaced either, so a key is scored at most once.
+Shadow mode fills only a missing entry, and serve mode fills a missing entry or replaces a shadow one.
 
 ### Limits
 
@@ -122,11 +121,11 @@ The job is exported so a bench can run search, then the job, then search, with n
 ```ts
 runSearchRerankLiveMissJob(
   { query, filters },
-  { write?: boolean, mode?: 'shadow' | 'serve', now?, model?, readSpendTodayUsd? },
+  { mode?: 'shadow' | 'serve', now?, model?, readSpendTodayUsd? },
 ): Promise<{ status, entry? }>
 ```
 
-It returns the entry it scored, and with `write: false` it neither reads nor writes the cache.
+It returns the entry it scored and writes it to the configured collection.
 Set `SEARCH_RERANK_CACHE_COLLECTION=search_rerank_cache_<bench>` before the server code is imported, so the bench never touches the environment's `search_rerank_cache`.
 `setSearchRerankLiveMissRunner` in `searchRerankLiveMiss.ts` replaces the queued runner, and `searchRerankLiveMissIdle` resolves once the queue is empty.
 Spend is read from `model_call_usages` for caller `search-rerank-live-miss`, so `yarn --cwd server model-usage:report` shows a bench's calls under that name.

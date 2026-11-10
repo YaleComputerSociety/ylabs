@@ -9,7 +9,6 @@ import {
   searchRerankLiveMissIdle,
   searchRerankLiveMissMode,
   searchRerankLiveMissQueueSnapshot,
-  searchRerankLiveMissStaleBefore,
   searchRerankLiveMissWantsEntry,
   setSearchRerankLiveMissClock,
   setSearchRerankLiveMissRunner,
@@ -80,67 +79,28 @@ describe('live-miss configuration', () => {
     expect(searchRerankLiveMissMode({ SEARCH_RERANK_LIVE_MISS_MODE: 'SERVE' })).toBe('shadow');
     expect(searchRerankLiveMissMode({ SEARCH_RERANK_LIVE_MISS_MODE: 'serve' })).toBe('serve');
   });
-
-  it('reads a stale-before date only when one parses', () => {
-    expect(searchRerankLiveMissStaleBefore({})).toBeNull();
-    expect(
-      searchRerankLiveMissStaleBefore({ SEARCH_RERANK_LIVE_MISS_STALE_BEFORE: 'soon' }),
-    ).toBeNull();
-    expect(
-      searchRerankLiveMissStaleBefore({ SEARCH_RERANK_LIVE_MISS_STALE_BEFORE: '2026-11-10' }),
-    ).toEqual(new Date('2026-11-10'));
-  });
 });
 
 describe('which cache entries a live-miss job may replace', () => {
-  const staleBefore = new Date('2026-11-10T00:00:00Z');
-  const before = new Date('2026-11-09T00:00:00Z');
-  const after = new Date('2026-11-10T06:00:00Z');
-  const lookup = (kind: 'absent' | 'seeded' | 'shadow' | 'served', scoredAt: Date | null) => ({
-    kind,
-    scoredAt,
-    scores: null,
-  });
-
-  it('never replaces a seeded full- entry, however stale', () => {
+  it('never replaces a seeded full- entry', () => {
     for (const mode of ['shadow', 'serve'] as const) {
-      expect(searchRerankLiveMissWantsEntry(lookup('seeded', before), mode, staleBefore)).toBe(
-        false,
-      );
+      expect(searchRerankLiveMissWantsEntry('seeded', mode)).toBe(false);
     }
   });
 
   it('fills a miss in either mode', () => {
-    expect(searchRerankLiveMissWantsEntry(lookup('absent', null), 'shadow', null)).toBe(true);
-    expect(searchRerankLiveMissWantsEntry(lookup('absent', null), 'serve', null)).toBe(true);
+    expect(searchRerankLiveMissWantsEntry('absent', 'shadow')).toBe(true);
+    expect(searchRerankLiveMissWantsEntry('absent', 'serve')).toBe(true);
   });
 
-  it('never replaces a served entry from shadow mode', () => {
-    expect(searchRerankLiveMissWantsEntry(lookup('served', before), 'shadow', staleBefore)).toBe(
-      false,
-    );
-  });
-
-  it('refreshes a stale served entry and keeps a fresh one in serve mode', () => {
-    expect(searchRerankLiveMissWantsEntry(lookup('served', before), 'serve', staleBefore)).toBe(
-      true,
-    );
-    expect(searchRerankLiveMissWantsEntry(lookup('served', after), 'serve', staleBefore)).toBe(
-      false,
-    );
-    expect(searchRerankLiveMissWantsEntry(lookup('served', before), 'serve', null)).toBe(false);
+  it('never replaces a served entry', () => {
+    expect(searchRerankLiveMissWantsEntry('served', 'shadow')).toBe(false);
+    expect(searchRerankLiveMissWantsEntry('served', 'serve')).toBe(false);
   });
 
   it('promotes a shadow entry to a served one only in serve mode', () => {
-    expect(searchRerankLiveMissWantsEntry(lookup('shadow', after), 'serve', staleBefore)).toBe(
-      true,
-    );
-    expect(searchRerankLiveMissWantsEntry(lookup('shadow', after), 'shadow', staleBefore)).toBe(
-      false,
-    );
-    expect(searchRerankLiveMissWantsEntry(lookup('shadow', before), 'shadow', staleBefore)).toBe(
-      true,
-    );
+    expect(searchRerankLiveMissWantsEntry('shadow', 'serve')).toBe(true);
+    expect(searchRerankLiveMissWantsEntry('shadow', 'shadow')).toBe(false);
   });
 });
 

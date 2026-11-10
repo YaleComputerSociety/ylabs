@@ -1,5 +1,5 @@
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import type { SearchRerankCacheLookup } from './searchRerankCache';
+import type { SearchRerankEntryKind } from './searchRerankCache';
 import type { ResearchGroupFilterInput } from './researchGroupFilters';
 
 export const SEARCH_RERANK_LIVE_MISS_CALLER = 'search-rerank-live-miss';
@@ -23,15 +23,6 @@ export const searchRerankLiveMissMode = (
   env: NodeJS.ProcessEnv = process.env,
 ): SearchRerankLiveMissMode => (env.SEARCH_RERANK_LIVE_MISS_MODE === 'serve' ? 'serve' : 'shadow');
 
-export const searchRerankLiveMissStaleBefore = (
-  env: NodeJS.ProcessEnv = process.env,
-): Date | null => {
-  const raw = String(env.SEARCH_RERANK_LIVE_MISS_STALE_BEFORE ?? '').trim();
-  if (!raw) return null;
-  const parsed = new Date(raw);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-};
-
 export interface SearchRerankLiveMissClient {
   ipKey: string;
   sessionKey: string;
@@ -51,23 +42,18 @@ export type SearchRerankLiveMissGate =
   | 'no-keyword-row'
   | 'too-few-candidates';
 
-const isStale = (scoredAt: Date | null, staleBefore: Date | null): boolean =>
-  staleBefore !== null && (scoredAt === null || scoredAt.getTime() < staleBefore.getTime());
-
 export function searchRerankLiveMissWantsEntry(
-  lookup: SearchRerankCacheLookup,
+  kind: SearchRerankEntryKind,
   mode: SearchRerankLiveMissMode,
-  staleBefore: Date | null,
 ): boolean {
-  switch (lookup.kind) {
+  switch (kind) {
     case 'absent':
       return true;
     case 'seeded':
+    case 'served':
       return false;
     case 'shadow':
-      return mode === 'serve' || isStale(lookup.scoredAt, staleBefore);
-    case 'served':
-      return mode === 'serve' && isStale(lookup.scoredAt, staleBefore);
+      return mode === 'serve';
   }
 }
 
@@ -82,7 +68,6 @@ export const searchRerankLiveMissQueryFits = (query: string): boolean => {
 
 export type SearchRerankLiveMissJobStatus =
   | 'written'
-  | 'scored'
   | 'kept-existing'
   | 'not-wanted'
   | 'ineligible'

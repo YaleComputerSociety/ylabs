@@ -252,6 +252,35 @@ describe('with SEARCH_RERANK_LIVE_MISS_ENABLED unset', () => {
   });
 });
 
+describe('with the live-miss job switched off after serving', () => {
+  it('stops serving its entries while still serving a seeded one', async () => {
+    const today = await todaysResponse();
+    vi.stubEnv('SEARCH_RERANK_CACHE_ENABLED', 'true');
+    mocks.rerankFindOne.mockImplementation(() =>
+      queryResult({
+        source: 'live-miss',
+        indexVersion: 'async-gpt-5-mini-2026-11-01',
+        scoredAt: new Date('2026-11-01T00:00:00Z'),
+        scores: [{ entityId: rowId(25), score: 3 }],
+      }),
+    );
+
+    expect(JSON.stringify(await search())).toBe(today);
+
+    resetSearchRerankCacheMemo();
+    mocks.rerankFindOne.mockImplementation(() =>
+      queryResult({
+        source: 'offline-scoring',
+        indexVersion: 'full-v2-2026-11-10',
+        scoredAt: new Date('2026-11-10T00:00:00Z'),
+        scores: [{ entityId: rowId(25), score: 3 }],
+      }),
+    );
+
+    expect(servedIdsOf(await search())[0]).toBe(rowId(25));
+  });
+});
+
 describe('with the live-miss job on', () => {
   it("serves today's order on a miss and enqueues one job for the key", async () => {
     const today = await todaysResponse();
@@ -336,7 +365,6 @@ describe('with the live-miss job on', () => {
 
   it('never enqueues over a seeded full- entry', async () => {
     vi.stubEnv('SEARCH_RERANK_CACHE_ENABLED', 'true');
-    vi.stubEnv('SEARCH_RERANK_LIVE_MISS_STALE_BEFORE', '2030-01-01');
     liveMissOn('serve');
     mocks.rerankFindOne.mockImplementation(() =>
       queryResult({
@@ -353,9 +381,8 @@ describe('with the live-miss job on', () => {
     expect(await enqueuedKeys()).toEqual([]);
   });
 
-  it('serves a stale live-miss entry and refreshes it in the background', async () => {
+  it('serves a live-miss entry and never enqueues over it', async () => {
     vi.stubEnv('SEARCH_RERANK_CACHE_ENABLED', 'true');
-    vi.stubEnv('SEARCH_RERANK_LIVE_MISS_STALE_BEFORE', '2026-11-05');
     liveMissOn('serve');
     mocks.rerankFindOne.mockImplementation(() =>
       queryResult({
@@ -369,7 +396,7 @@ describe('with the live-miss job on', () => {
     const result = await search();
 
     expect(servedIdsOf(result)[0]).toBe(rowId(25));
-    expect(await enqueuedKeys()).toHaveLength(1);
+    expect(await enqueuedKeys()).toEqual([]);
   });
 
   describe('never enqueues', () => {
