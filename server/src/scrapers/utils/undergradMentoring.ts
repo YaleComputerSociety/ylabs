@@ -532,7 +532,15 @@ export function yibsSuresFellowListings(html: string, url: string): MentorListin
   const listings: MentorListing[] = [];
   $('.field-collection-item-field-person-info').each((_index, element) => {
     const block = $(element);
-    const year = yearIn(block.text().replace(/\s+/g, ' '));
+    const separatedText = block
+      .find('*')
+      .addBack()
+      .contents()
+      .filter((_nodeIndex, node) => node.type === 'text')
+      .map((_nodeIndex, node) => $(node).text())
+      .get()
+      .join(' ');
+    const year = yearIn(separatedText);
     block.find('p').each((_lineIndex, paragraph) => {
       const text = $(paragraph).text().replace(/\s+/g, ' ').trim();
       const adviserLine = /^Advis(?:e|o)rs?\s*:\s*(.+)$/i.exec(text)?.[1];
