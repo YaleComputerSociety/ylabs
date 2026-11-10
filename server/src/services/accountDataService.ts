@@ -108,7 +108,7 @@ const adminAuditEventsTargeting = (netid: string) => ({
 const adminAuditEventsOf = (netid: string) => ({
   $or: [adminAuditEventsActedBy(netid), adminAuditEventsTargeting(netid)],
 });
-const activeAdminGrantsOf = (netid: string) => ({ netid, status: 'active' });
+const activeAdminGrantsOf = (netid: string) => ({ netid, status: 'active' as const });
 const adminGrantsActedOnBy = (netid: string) => ({
   netid: { $ne: netid },
   $or: [{ grantedBy: netid }, { revokedBy: netid }, { 'history.actorNetid': netid }],
