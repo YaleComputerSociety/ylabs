@@ -61,6 +61,7 @@ import {
   programBoardSectionOf,
   PROGRAM_BOARD_SECTIONS,
   PROGRAM_FACET_NOT_STATED_NOTE,
+  PROGRAM_REGION_FILTER_NOTE,
   type ProgramBoardSection,
   type ProgramBoardSummary,
 } from '../utils/programBoard';
@@ -642,7 +643,7 @@ const Fellowships = () => {
       options: filterOptions.globalRegions,
       selected: selectedRegions,
       setSelected: setSelectedRegions,
-      note: PROGRAM_FACET_NOT_STATED_NOTE,
+      note: PROGRAM_REGION_FILTER_NOTE,
     },
     {
       key: 'citizenship',

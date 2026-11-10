@@ -223,3 +223,84 @@ describe('studentProgramSearchQuery', () => {
     });
   });
 });
+
+describe('programs-filter-options-agree-with-filtered-browse under #5235 and the stated-only region (#5533)', () => {
+  const facetRows: Array<Record<string, unknown>> = [
+    { _id: 'row-stated', yearOfStudy: ['Junior'], globalRegions: ['Asia'] },
+    { _id: 'row-not-stated', yearOfStudy: [], globalRegions: [] },
+    { _id: 'row-other', yearOfStudy: ['Senior'], globalRegions: ['Europe'] },
+  ];
+  const keepsNotStated = (field: string) => field !== 'globalRegions';
+  const servedUnder = (
+    request: ProgramBrowseRequest,
+    keeps: (field: string) => boolean,
+  ): Array<Record<string, unknown>> =>
+    facetRows.filter((row) =>
+      Object.entries(request.filters ?? {}).every(([field, values]) => {
+        const stated = row[field];
+        if (Array.isArray(stated) && stated.length === 0) return keeps(field);
+        return values.some((value) => rowCarriesFilterValue(row, field, value));
+      }),
+    );
+  const contextServing = (
+    serve: (request: ProgramBrowseRequest) => Array<Record<string, unknown>>,
+  ): ProgramJourneyContext => ({
+    ...fakeContext(facetRows),
+    readFilterOptions: async () => ({ yearOfStudy: ['Junior'], globalRegions: ['Asia'] }),
+    browseAsStudent: async (request) => {
+      const results = serve(request);
+      return { results, total: results.length, page: 1, pageSize: 100, totalPages: 1 };
+    },
+  });
+  const runCase = async (context: ProgramJourneyContext) => {
+    const journeyCase = programSurfaceCases(PROGRAMS_SURFACE).find(
+      (candidate) => candidate.id === 'programs-filter-options-agree-with-filtered-browse',
+    )!;
+    return journeyCase.run(context);
+  };
+  const honorsFilter = (outcome: Awaited<ReturnType<typeof runCase>>) =>
+    outcome.invariants.find(
+      (invariant) => invariant.id === 'programs-filtered-browse-honors-the-filter',
+    );
+
+  it('passes when the year filter keeps a not-stated row and the region filter drops it', async () => {
+    const outcome = await runCase(
+      contextServing((request) => servedUnder(request, keepsNotStated)),
+    );
+
+    expect(honorsFilter(outcome)?.status).toBe('pass');
+    expect(honorsFilter(outcome)?.detail.notStatedKeptByField).toEqual({ yearOfStudy: 1 });
+  });
+
+  it('fails when the region filter keeps a row that states no region', async () => {
+    const outcome = await runCase(contextServing((request) => servedUnder(request, () => true)));
+
+    expect(honorsFilter(outcome)?.status).toBe('fail');
+    expect(honorsFilter(outcome)?.detail.mismatchesByField).toEqual({ globalRegions: 1 });
+  });
+
+  it('fails when the year filter serves a row that states a different year', async () => {
+    const outcome = await runCase(
+      contextServing((request) =>
+        request.filters?.yearOfStudy ? facetRows : servedUnder(request, keepsNotStated),
+      ),
+    );
+
+    expect(honorsFilter(outcome)?.status).toBe('fail');
+    expect(honorsFilter(outcome)?.detail.mismatchesByField).toEqual({ yearOfStudy: 1 });
+  });
+
+  it('reports the share of served rows stating no value per field as rates that never gate', async () => {
+    const outcome = await runCase(
+      contextServing((request) => servedUnder(request, keepsNotStated)),
+    );
+    const regionShare = outcome.rates.find(
+      (rate) => rate.id === 'programs-served-rows-not-stating-globalRegions',
+    );
+
+    expect(regionShare).toMatchObject({ numerator: 1, denominator: 3 });
+    expect(outcome.invariants.some((invariant) => invariant.id.includes('not-stating'))).toBe(
+      false,
+    );
+  });
+});

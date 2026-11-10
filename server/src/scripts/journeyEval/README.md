@@ -189,6 +189,11 @@ Each surface runs the same seven cases, with ids prefixed by the surface:
   The client loads the whole result set before it sorts and groups locally, so a missing or repeated row is a card the student never sees or sees twice.
 - `<surface>-text-query-total-is-stable` walks `--pages` pages of a text query and asserts the same total and no repeats.
 - `<surface>-filter-options-agree-with-filtered-browse` reads the options `getProgramFilterOptions` offers, which is what `GET /api/programs/filters` returns, and asserts that every row a filtered browse serves carries the chosen value, checking the `--facet-values` highest-total options of each field.
+  A row that states no value for the field also passes under year, term, purpose and citizenship, because those filters keep a program that states none (#5235); under region it fails, because the region filter returns only programs that name the region (owner decision 2026-11-10, #5533).
+  Both sides read `PROGRAM_STATED_ONLY_FACET_FIELDS` in `server/src/utils/programFacetFilters.ts`, the set `searchFellowships` filters with, so the case never restates which facets keep not-stated rows; a row stating a different value fails under every filter.
+  Before #5533 the case counted the not-stated rows #5235 keeps as mismatches, 609 on `programs` and 418 on `fellowships`, and none of them stated a different value.
+  The case also walks the cold browse and reports, per facet, the share of served rows that state no value, as rates that never gate.
+  On 2026-11-10 that share on `programs` was 142 of 173 for region and 21 to 39 of 173 for the rest.
   On `programs` it also asserts that every offered option returns a row, because the options and the search share one visibility filter.
   On `fellowships` that is only a rate, because the options are computed over every program and an option can be legitimately empty inside one category.
 - `<surface>-sorted-browse-keeps-order` asserts that the default browse is ordered by the stored deadline, undated rows first, and that `sortBy=title` is ordered by the served title.

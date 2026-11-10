@@ -72,6 +72,8 @@ describe('checkOfferedOptionsServeARow', () => {
           filteredTotal: 0,
           servedOnFirstPage: 0,
           servedCarryingValue: 0,
+          servedNotStatingField: 0,
+          notStatedKeptByFilter: false,
         },
         {
           field: 'yearOfStudy',
@@ -79,6 +81,8 @@ describe('checkOfferedOptionsServeARow', () => {
           filteredTotal: 4,
           servedOnFirstPage: 4,
           servedCarryingValue: 4,
+          servedNotStatingField: 0,
+          notStatedKeptByFilter: false,
         },
       ],
       steadyCorpus,
@@ -105,11 +109,64 @@ describe('checkFilteredRowsCarryValue', () => {
         filteredTotal: 3,
         servedOnFirstPage: 3,
         servedCarryingValue: 2,
+        servedNotStatingField: 0,
+        notStatedKeptByFilter: false,
       },
     ]);
 
     expect(result.status).toBe('fail');
     expect(result.detail.mismatchesByField).toEqual({ programKind: 1 });
+  });
+
+  it('passes a not-stated row under a filter that keeps not-stated programs (#5235)', () => {
+    const result = checkFilteredRowsCarryValue('programs', [
+      {
+        field: 'yearOfStudy',
+        value: 'Junior',
+        filteredTotal: 3,
+        servedOnFirstPage: 3,
+        servedCarryingValue: 2,
+        servedNotStatingField: 1,
+        notStatedKeptByFilter: true,
+      },
+    ]);
+
+    expect(result.status).toBe('pass');
+    expect(result.detail.notStatedKeptByField).toEqual({ yearOfStudy: 1 });
+  });
+
+  it('still fails a row stating a different value under a filter that keeps not-stated programs', () => {
+    const result = checkFilteredRowsCarryValue('programs', [
+      {
+        field: 'yearOfStudy',
+        value: 'Junior',
+        filteredTotal: 4,
+        servedOnFirstPage: 4,
+        servedCarryingValue: 2,
+        servedNotStatingField: 1,
+        notStatedKeptByFilter: true,
+      },
+    ]);
+
+    expect(result.status).toBe('fail');
+    expect(result.detail.mismatchesByField).toEqual({ yearOfStudy: 1 });
+  });
+
+  it('fails a not-stated row under a stated-only filter such as region (#5533)', () => {
+    const result = checkFilteredRowsCarryValue('programs', [
+      {
+        field: 'globalRegions',
+        value: 'Asia',
+        filteredTotal: 2,
+        servedOnFirstPage: 2,
+        servedCarryingValue: 1,
+        servedNotStatingField: 1,
+        notStatedKeptByFilter: false,
+      },
+    ]);
+
+    expect(result.status).toBe('fail');
+    expect(result.detail.mismatchesByField).toEqual({ globalRegions: 1 });
   });
 
   it('is inconclusive when no filtered browse served a row', () => {
@@ -120,6 +177,8 @@ describe('checkFilteredRowsCarryValue', () => {
         filteredTotal: 0,
         servedOnFirstPage: 0,
         servedCarryingValue: 0,
+        servedNotStatingField: 0,
+        notStatedKeptByFilter: false,
       },
     ]);
 
