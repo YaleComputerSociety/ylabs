@@ -3,11 +3,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import DirectoryRemovalRequest, {
   DIRECTORY_REMOVAL_REQUEST_PATH,
+  REMOVAL_ACCEPTED_MESSAGE,
   REMOVAL_REQUESTED_MESSAGE,
   REMOVE_ME_LABEL,
 } from '../DirectoryRemovalRequest';
 import axios from '../../../utils/axios';
 import { expectNoAxeViolations } from '../../../testUtils/axe';
+import { DIRECTORY_REMOVAL_REQUEST_EMAIL } from '../../../utils/privacyNotice';
 
 vi.mock('../../../utils/axios', () => ({
   default: {
@@ -81,22 +83,53 @@ describe('DirectoryRemovalRequest', () => {
     expect(screen.queryByRole('button', { name: REMOVE_ME_LABEL })).toBeNull();
   });
 
-  it.each(['pending', 'accepted'] as const)(
-    'shows the confirmation while a request is %s',
-    async (status) => {
-      mockedAxios.get.mockResolvedValue(eligibility(true, status));
-      render(<DirectoryRemovalRequest />);
-
-      expect((await screen.findByRole('status')).textContent).toBe(REMOVAL_REQUESTED_MESSAGE);
-      expect(screen.queryByRole('button', { name: REMOVE_ME_LABEL })).toBeNull();
-    },
-  );
-
-  it('offers the button again after a declined request', async () => {
-    mockedAxios.get.mockResolvedValue(eligibility(true, 'declined'));
+  it('shows the pending confirmation while a request is pending', async () => {
+    mockedAxios.get.mockResolvedValue(eligibility(true, 'pending'));
     render(<DirectoryRemovalRequest />);
 
+    expect((await screen.findByRole('status')).textContent).toBe(REMOVAL_REQUESTED_MESSAGE);
+    expect(screen.queryByRole('button', { name: REMOVE_ME_LABEL })).toBeNull();
+  });
+
+  it('says an accepted request was accepted', async () => {
+    mockedAxios.get.mockResolvedValue(eligibility(true, 'accepted'));
+    render(<DirectoryRemovalRequest />);
+
+    expect((await screen.findByRole('status')).textContent).toBe(
+      'Your request was accepted. You will stop appearing on y/labs within 7 days.',
+    );
+    expect(REMOVAL_ACCEPTED_MESSAGE).toBe(
+      'Your request was accepted. You will stop appearing on y/labs within 7 days.',
+    );
+    expect(screen.queryByRole('button', { name: REMOVE_ME_LABEL })).toBeNull();
+  });
+
+  it('explains a declined request and offers it again while no address is named', async () => {
+    expect(DIRECTORY_REMOVAL_REQUEST_EMAIL).toBeUndefined();
+    mockedAxios.get.mockResolvedValue(eligibility(true, 'declined'));
+    mockedAxios.post.mockResolvedValue({
+      data: { request: { status: 'pending', createdAt: '2026-11-10T00:00:00Z' } },
+    });
+    const { container } = render(<DirectoryRemovalRequest />);
+
+    const button = await screen.findByRole('button', { name: REMOVE_ME_LABEL });
+    expect(container.textContent).toContain(
+      'We could not confirm this request. You can send it again.',
+    );
+    expect(container.textContent).not.toContain('email us');
+    fireEvent.click(button);
+    expect((await screen.findByRole('status')).textContent).toBe(REMOVAL_REQUESTED_MESSAGE);
+    expect(container.textContent).not.toContain('We could not confirm');
+  });
+
+  it('mentions the email route for a declined request once an address is named', async () => {
+    mockedAxios.get.mockResolvedValue(eligibility(true, 'declined'));
+    const { container } = render(<DirectoryRemovalRequest email="removals@example.edu" />);
+
     expect(await screen.findByRole('button', { name: REMOVE_ME_LABEL })).toBeTruthy();
+    expect(container.textContent).toContain(
+      'We could not confirm this request. You can send it again, or email us from the address Yale publishes for you.',
+    );
   });
 
   it('says so when the request cannot be sent and keeps the button', async () => {

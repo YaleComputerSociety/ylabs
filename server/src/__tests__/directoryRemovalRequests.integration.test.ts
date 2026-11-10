@@ -272,6 +272,34 @@ describe('directory removal requests', () => {
     expect(response.status).toBe(404);
   });
 
+  it('logs a failed eligibility check without the netid', async () => {
+    const consoleSpies = (['error', 'warn', 'log', 'info'] as const).map((method) =>
+      vi.spyOn(console, method).mockImplementation(() => undefined),
+    );
+    const findSpy = vi.spyOn(Researcher, 'find').mockImplementationOnce(() => {
+      throw Object.assign(new Error(`lookup failed for identifiers.netid ${LISTED_NETID}`), {
+        code: 'ESYNTHETIC',
+      });
+    });
+    try {
+      const own = await call('GET', '/api/users/directoryRemovalRequest');
+      expect(own.status).toBe(500);
+      expect(JSON.stringify(own.body)).not.toContain(LISTED_NETID);
+
+      const logged = consoleSpies
+        .flatMap((spy) => spy.mock.calls)
+        .map((args) => args.map((arg) => String(arg)).join(' '));
+      expect(logged).toContain('Directory removal eligibility check failed: Error code=ESYNTHETIC');
+      for (const line of logged) {
+        expect(line).not.toContain(LISTED_NETID);
+        expect(line).not.toContain('Synthetic Listed Person');
+      }
+    } finally {
+      findSpy.mockRestore();
+      for (const spy of consoleSpies) spy.mockRestore();
+    }
+  });
+
   it('refuses a non-admin on the admin routes', async () => {
     await call('POST', '/api/users/directoryRemovalRequest');
     const [row] = await DirectoryRemovalRequest.find({}).lean();

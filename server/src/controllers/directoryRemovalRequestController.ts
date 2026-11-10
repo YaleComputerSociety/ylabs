@@ -7,6 +7,14 @@ import {
   listDirectoryRemovalRequests,
 } from '../services/directoryRemovalRequestService';
 import { routeParam } from '../utils/routeParams';
+import { sanitizeLogValue } from '../utils/logSanitizer';
+
+export const eligibilityFailureLogLine = (error: unknown): string => {
+  const name = error instanceof Error ? error.name : typeof error;
+  const code = (error as { code?: unknown } | null)?.code;
+  const detail = code === undefined ? name : `${name} code=${String(code)}`;
+  return sanitizeLogValue(`Directory removal eligibility check failed: ${detail}`);
+};
 
 const sessionNetid = (request: Request): string => {
   const currentUser = request.user as { netId?: string; netid?: string } | undefined;
@@ -21,7 +29,11 @@ export const getOwnDirectoryRemovalRequest = async (
   try {
     response.json(await getOwnDirectoryRemovalEligibility(sessionNetid(request)));
   } catch (error) {
-    next(error);
+    // A driver message can quote the queried netid, so neither this log nor the error
+    // handler's report may carry the original error.
+    const logLine = eligibilityFailureLogLine(error);
+    console.error(logLine);
+    next(new Error(logLine));
   }
 };
 
