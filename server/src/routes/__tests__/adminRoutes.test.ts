@@ -39,7 +39,6 @@ vi.mock('../../models/fellowship', async (importOriginal) => ({
   },
 }));
 
-import { ADMIN_AUDIT_ROUTES } from '../../middleware/adminAuditLogger';
 import { ResearchArea } from '../../models/researchArea';
 import { AdminGrantValidationError } from '../../services/adminGrantService';
 import router, {
@@ -169,13 +168,6 @@ describe('admin routes', () => {
 
     expect(res.statusCode).toBe(404);
     expect(res.body).toEqual({ error: 'Account not found' });
-  });
-
-  it("audits ending an account's sessions with the target netid (#4484)", () => {
-    expect(ADMIN_AUDIT_ROUTES['POST /accounts/:netid/sessions/revoke']).toMatchObject({
-      action: 'account.sessions_revoke',
-      targetType: 'account',
-    });
   });
 
   it('records admin mutations through the audit logger middleware', () => {

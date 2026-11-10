@@ -10,7 +10,7 @@ type EndSessionsState =
   | { status: 'ended'; netid: string }
   | { status: 'error'; message: string };
 
-const NETID_SHAPE = /^[a-z0-9]{2,16}$/;
+const NETID_SHAPE = /^[a-z0-9]{2,12}$/;
 
 const EndAccountSessions = () => {
   const [netidInput, setNetidInput] = useState('');

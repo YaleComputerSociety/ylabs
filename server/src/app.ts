@@ -33,7 +33,11 @@ import {
   globalLimiter,
   observeFirstContactVolume,
 } from './middleware/rateLimiters';
-import { SESSION_SECRET_PREVIOUS_ENV, sessionSigningKeys } from './utils/sessionSigningKeys';
+import {
+  reissueSessionSignedWithPreviousKey,
+  SESSION_SECRET_PREVIOUS_ENV,
+  sessionSigningKeys,
+} from './utils/sessionSigningKeys';
 
 const clientDistPath = path.join(resolveServerPackageRoot(import.meta.url), '..', 'client', 'dist');
 const API_BODY_LIMIT = '64kb';
@@ -208,6 +212,7 @@ const app = express()
       sameSite: 'lax',
     }),
   )
+  .use(reissueSessionSignedWithPreviousKey(sessionCookieName(), sessionSecret))
   .use('/api', ensureAnonymousRateLimitId)
   // cookie-session is stateless and does not implement session.regenerate /
   // session.save, which Passport >= 0.6 calls during req.logIn (session-

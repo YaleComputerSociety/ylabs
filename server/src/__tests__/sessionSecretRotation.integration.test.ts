@@ -82,7 +82,7 @@ const resignedWith = (secret: string, cookieHeader: string): string => {
   )}`;
 };
 
-type Hop = { status: number; location: string; cookie: string };
+type Hop = { status: number; location: string; cookie: string; setCookies: string[] };
 
 const cookieHeaderFrom = (response: Response): string =>
   response.headers
@@ -98,6 +98,7 @@ const get = async (url: string, cookie = ''): Promise<Hop> => {
     status: response.status,
     location: response.headers.get('location') ?? '',
     cookie: cookieHeaderFrom(response),
+    setCookies: response.headers.getSetCookie(),
   };
 };
 
@@ -108,6 +109,13 @@ const signIn = async (baseUrl: string, cookie = ''): Promise<string> => {
   expect(completed.status).toBe(302);
   expect(completed.cookie).not.toBe('');
   return completed.cookie;
+};
+
+const signInAndSettle = async (baseUrl: string): Promise<string> => {
+  const signedIn = await signIn(baseUrl);
+  const firstAuthenticated = await get(`${baseUrl}${AUTHENTICATED_ROUTE}`, signedIn);
+  expect(firstAuthenticated.status).toBe(200);
+  return firstAuthenticated.cookie || signedIn;
 };
 
 describe('session signing secret rotation (#4484)', () => {
@@ -154,7 +162,7 @@ describe('session signing secret rotation (#4484)', () => {
   });
 
   it('keeps a session signed with the previous secret and re-signs it with the current one', async () => {
-    const signedIn = await signIn(baseUrl);
+    const signedIn = await signInAndSettle(baseUrl);
     const signedWithPrevious = resignedWith(OLD_SESSION_SECRET, signedIn);
 
     const overlap = await get(`${baseUrl}${AUTHENTICATED_ROUTE}`, signedWithPrevious);
@@ -165,6 +173,22 @@ describe('session signing secret rotation (#4484)', () => {
     expect(signatureOf(overlap.cookie)).toBe(
       signatureOf(resignedWith(NEW_SESSION_SECRET, reissuedValueSource)),
     );
+    const reissuedSignatureCookies = overlap.setCookies.filter((cookie) =>
+      cookie.startsWith(`${SESSION_COOKIE_NAME}.sig=`),
+    );
+    expect(reissuedSignatureCookies).toHaveLength(1);
+    expect(reissuedSignatureCookies[0]).toMatch(/; expires=/i);
+    expect(reissuedSignatureCookies[0]).toMatch(/; samesite=lax/i);
+    expect(reissuedSignatureCookies[0]).toMatch(/; httponly/i);
+  });
+
+  it('does not re-issue a session already signed with the current secret', async () => {
+    const signedIn = await signInAndSettle(baseUrl);
+
+    const current = await get(`${baseUrl}${AUTHENTICATED_ROUTE}`, signedIn);
+
+    expect(current.status).toBe(200);
+    expect(current.cookie).toBe('');
   });
 
   it('refuses a session signed with neither the current nor the previous secret', async () => {
