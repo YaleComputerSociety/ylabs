@@ -49,16 +49,36 @@ describe('buildDirectoryRemovalServing', () => {
     );
   });
 
-  it("never rewrites a live researcher's name in prose for a name entry, but still withholds it on a roster", () => {
-    const serving = buildDirectoryRemovalServing(
-      buildDirectoryRemovalMatcher({
-        key: KEY,
-        activeDigests: [directoryRemovalDigest(KEY, 'name', 'Odile Marchetti')!],
-      }),
-      { removed: [], keptResearcherNames: ['Odile Marchetti'] },
+  it('keeps a name-entry name only in the prose of the row that serves that person', () => {
+    const serving = activeServing([directoryRemovalDigest(KEY, 'name', 'Odile Marchetti')!]);
+    const payload = {
+      ownRow: {
+        members: [{ displayName: 'Odile Marchetti', role: 'pi' }],
+        researchEntity: { fullDescription: 'Led by Odile Marchetti.' },
+      },
+      unrelatedRow: {
+        leadName: 'Brisa Tallent',
+        fullDescription: 'Odile Marchetti built the imaging pipeline.',
+      },
+    };
+    expect(redactWithheldNamesDeep(payload, serving)).toEqual({
+      ownRow: payload.ownRow,
+      unrelatedRow: {
+        leadName: 'Brisa Tallent',
+        fullDescription: `${WITHHELD_PERSON_PHRASE} built the imaging pipeline.`,
+      },
+    });
+  });
+
+  it('still redacts a person removed by identifier even where a namesake is served', () => {
+    const serving = activeServing();
+    const payload = {
+      members: [{ displayName: 'Quillon Varrow' }],
+      fullDescription: 'Quillon Varrow leads the lab.',
+    };
+    expect(redactWithheldNamesDeep(payload, serving).fullDescription).toBe(
+      `${WITHHELD_PERSON_PHRASE} leads the lab.`,
     );
-    expect(serving.isWithheldName('Odile Marchetti')).toBe(true);
-    expect(serving.redactWithheldNames('Led by Odile Marchetti.')).toBe('Led by Odile Marchetti.');
   });
 
   it('withholds every listed name while failing closed', () => {

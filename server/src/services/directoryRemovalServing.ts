@@ -24,7 +24,7 @@ export interface DirectoryRemovalServing {
   withholdsEveryName: boolean;
   isWithheldPersonId(personId: unknown): boolean;
   isWithheldName(name: unknown): boolean;
-  redactWithheldNames(text: string): string;
+  redactWithheldNames(text: string, ownPeopleLabels?: ReadonlySet<string>): string;
 }
 
 const NAME_WINDOW_SIZES = [4, 3, 2];
@@ -94,7 +94,6 @@ export function buildDirectoryRemovalServing(
   matcher: DirectoryRemovalMatcher,
   people: {
     removed: ReadonlyArray<{ _id: unknown; displayName?: string }>;
-    keptResearcherNames?: ReadonlyArray<string | undefined>;
     everyKnownName?: ReadonlyArray<string | undefined>;
   },
 ): DirectoryRemovalServing {
@@ -121,21 +120,24 @@ export function buildDirectoryRemovalServing(
   }
   const removedIds = new Set(people.removed.map((person) => idKey(person._id)));
   const removedLabels = nameLabels(people.removed.map((person) => person.displayName));
-  const keptResearcherLabels = nameLabels(people.keptResearcherNames ?? []);
-  const isWithheldName = memoizedByLabel(
-    (name, label) => removedLabels.has(label) || matcher.isRemovedName(name),
-  );
-  const isWithheldNonResearcherName = memoizedByLabel(
-    (name, label) =>
-      removedLabels.has(label) || (!keptResearcherLabels.has(label) && matcher.isRemovedName(name)),
-  );
+  const isRemovedByIdentityName = (label: string) => removedLabels.has(label);
+  const isNameEntry = memoizedByLabel((name) => matcher.isRemovedName(name));
+  const isWithheldName = (name: unknown) =>
+    isRemovedByIdentityName(normalizedRosterLabel(name)) || isNameEntry(name);
   return {
     state: 'active',
     withholdsEveryName: false,
     isWithheldPersonId: (personId) => removedIds.has(idKey(personId)),
     isWithheldName,
-    redactWithheldNames: (text) =>
-      text ? replacedSpans(text, withheldNameSpans(text, isWithheldNonResearcherName)) : text,
+    redactWithheldNames: (text, ownPeopleLabels) => {
+      if (!text) return text;
+      const isWithheldHere = (name: string) => {
+        const label = normalizedRosterLabel(name);
+        if (isRemovedByIdentityName(label)) return true;
+        return !ownPeopleLabels?.has(label) && isNameEntry(name);
+      };
+      return replacedSpans(text, withheldNameSpans(text, isWithheldHere));
+    },
   };
 }
 
@@ -158,6 +160,47 @@ export function rosterWithoutWithheldPeople<T extends { personId?: unknown }>(
   return served;
 }
 
+const SERVED_PERSON_NAME_FIELDS = ['leadName', 'matchedMemberName'];
+const SERVED_PERSON_NAME_LIST_FIELDS = [
+  'leadProfessorNames',
+  'professorNames',
+  'memberNames',
+  'leadMemberNames',
+];
+
+function servedPersonNames(record: Record<string, unknown>): string[] {
+  const names: string[] = [];
+  for (const field of SERVED_PERSON_NAME_FIELDS) {
+    if (typeof record[field] === 'string') names.push(record[field] as string);
+  }
+  for (const field of SERVED_PERSON_NAME_LIST_FIELDS) {
+    const list = record[field];
+    if (Array.isArray(list)) names.push(...list.filter((name) => typeof name === 'string'));
+  }
+  if (Array.isArray(record.members)) {
+    for (const member of record.members as Array<Record<string, unknown>>) {
+      for (const field of ['displayName', 'name']) {
+        if (typeof member?.[field] === 'string') names.push(member[field] as string);
+      }
+      if (typeof member?.fname === 'string' && typeof member?.lname === 'string') {
+        names.push(`${member.fname} ${member.lname}`);
+      }
+    }
+  }
+  return names;
+}
+
+function withServedPeopleOf(
+  record: Record<string, unknown>,
+  inherited: ReadonlySet<string>,
+): ReadonlySet<string> {
+  const labels = servedPersonNames(record)
+    .map((name) => normalizedRosterLabel(name))
+    .filter((label) => label.includes(' '));
+  if (labels.length === 0) return inherited;
+  return new Set([...inherited, ...labels]);
+}
+
 const URL_LIKE = /^(https?:|mailto:|tel:)/i;
 const UNREDACTED_KEYS = new Set(['_id', 'id', 'slug', 'publicKey', 'url', 'sourceUrl']);
 
@@ -166,26 +209,32 @@ export function redactWithheldNamesDeep<T>(
   serving: DirectoryRemovalServing = currentDirectoryRemovalServing(),
 ): T {
   if (serving.state !== 'active' && serving.state !== 'withholding_every_name') return value;
-  const visit = (node: unknown, key?: string): unknown => {
+  const visit = (
+    node: unknown,
+    key: string | undefined,
+    ownPeople: ReadonlySet<string>,
+  ): unknown => {
     if (typeof node === 'string') {
       if ((key && UNREDACTED_KEYS.has(key)) || URL_LIKE.test(node)) return node;
-      return serving.redactWithheldNames(node);
+      return serving.redactWithheldNames(node, ownPeople);
     }
-    if (Array.isArray(node)) return node.map((item) => visit(item));
+    if (Array.isArray(node)) return node.map((item) => visit(item, undefined, ownPeople));
     if (node && typeof node === 'object' && typeof (node as any).toJSON === 'function') {
-      return visit((node as any).toJSON(), key);
+      return visit((node as any).toJSON(), key, ownPeople);
     }
     if (node && typeof node === 'object') {
+      const record = node as Record<string, unknown>;
+      const scoped = withServedPeopleOf(record, ownPeople);
       return Object.fromEntries(
-        Object.entries(node as Record<string, unknown>).map(([childKey, child]) => [
+        Object.entries(record).map(([childKey, child]) => [
           childKey,
-          visit(child, childKey),
+          visit(child, childKey, scoped),
         ]),
       );
     }
     return node;
   };
-  return visit(value) as T;
+  return visit(value, undefined, new Set()) as T;
 }
 
 const INERT_SERVING = buildDirectoryRemovalServing(
@@ -225,14 +274,7 @@ async function peopleFor(matcher: DirectoryRemovalMatcher) {
   const people = await Researcher.find({ archived: { $ne: true } })
     .select('_id displayName identifiers profileLinks.url')
     .lean();
-  const removed = people.filter((person: any) => matcher.isRemovedPerson(person)) as any[];
-  const removedSet = new Set(removed);
-  return {
-    removed,
-    keptResearcherNames: people
-      .filter((person) => !removedSet.has(person))
-      .map((person: any) => person.displayName),
-  };
+  return { removed: people.filter((person: any) => matcher.isRemovedPerson(person)) as any[] };
 }
 
 export async function loadDirectoryRemovalServing(

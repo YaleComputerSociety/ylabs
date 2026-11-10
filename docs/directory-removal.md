@@ -9,14 +9,15 @@ The design and the owner's answers to its open questions are recorded on that is
 A digest is taken over a normalized netid, email, ORCID, profile URL or name, under `DIRECTORY_REMOVAL_KEY` (`server/src/utils/directoryRemovalDigest.ts`).
 An identity entry withholds the researcher who carries that identifier.
 A name entry withholds that name wherever it appears as a name string, which is how an undergraduate on an embedded roster is removed.
-It also withholds a namesake's name on an embedded roster and in prose, but never a live researcher's own name, which only an identity entry withholds.
+It also withholds a namesake's name on an embedded roster and in prose, except in the prose of a row that serves that namesake as a lead or member, which is their own context; only an identity entry withholds a live researcher.
 Entries are recorded on Development with `yarn --cwd server directory-removal:record` and reach Beta and Production with the corpus they suppress; `docs/release-process.md` owns the copy rules.
 
 ## What a removal withholds
 
 The serving layer reads the list through `server/src/services/directoryRemovalServing.ts`, refreshed at most every five minutes.
 It finds the removed researchers by matching every live researcher's identifiers against the identity digests, and keeps their current names in memory only.
-A name entry never matches a researcher, so it never ends a namesake researcher's role edges, suppresses their row, or rewrites their name in prose; it applies only to embedded roster names and to prose names that no live researcher carries.
+A name entry never matches a researcher, so it never ends a namesake researcher's role edges or suppresses their row.
+It applies to embedded roster names and to prose, and in prose it skips a name only inside a payload object that itself serves that name as a lead or member (`withServedPeopleOf` in `directoryRemovalServing.ts`), so a faculty namesake's own row keeps its text while every other row is redacted.
 A stale snapshot keeps serving while a background reload replaces it, so only the first load blocks a request.
 Until that first load completes, a deployed runtime withholds every role edge and listed undergraduate rather than serve unfiltered.
 

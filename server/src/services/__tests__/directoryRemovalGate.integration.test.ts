@@ -19,6 +19,7 @@ import { directoryRemovalDigest } from '../../utils/directoryRemovalDigest';
 import {
   DIRECTORY_REMOVAL_GATE_REFUSAL,
   freshDirectoryRemovalServing,
+  redactWithheldNamesDeep,
   servedRoster,
   setDirectoryRemovalServingForTest,
 } from '../directoryRemovalServing';
@@ -208,7 +209,12 @@ describe('the gate suppresses a row whose every lead asked to be removed (#4160)
     expect(servedPersonIds).toEqual([String(personIdsByNetid.get('zz9101'))]);
     const serving = await freshDirectoryRemovalServing();
     expect(serving.state).toBe('active');
-    expect(serving.redactWithheldNames('Led by Robin Quill.')).toBe('Led by Robin Quill.');
+    const ownRow = redactWithheldNamesDeep(
+      { members: [{ displayName: 'Robin Quill' }], fullDescription: 'Led by Robin Quill.' },
+      serving,
+    );
+    expect(ownRow.fullDescription).toBe('Led by Robin Quill.');
+    expect(serving.redactWithheldNames('Led by Robin Quill.')).toBe('Led by a researcher.');
   }, 60000);
 
   it('refuses to run while entries exist and no key is configured', async () => {
