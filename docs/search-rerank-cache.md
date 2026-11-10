@@ -80,6 +80,8 @@ A job is queued only for a search the cache would serve today: a non-empty text 
 The served result decides the rest (`rerankLiveMissGate` in `searchResearchGroupsForQuery`), reusing the predicates search already has rather than a new lexical rule:
 
 - a name query (`keywordLegTopHitIsNameMatch`) is never queued;
+- a name-shaped query is never queued: the best keyword hit matched the query inside a lead, professor or member name, typo or prefix included, or in a row title that no topic field also matches (`keywordLegTopHitTouchesAPersonName`), which is looser than the serving name guard because skipping the job costs only its gain (#5549, where name-shaped queries whose person no row names were the largest losses);
+- a query under 4 letters once normalized, such as a two-letter acronym, is never queued;
 - a query whose normalized tokens are empty (`normalizeResearchSearchQuery`) is never queued;
 - a query whose keyword leg served no row (`servesNoKeywordRow`) is never queued, which is the nonsense-query case;
 - a pool with fewer than 2 candidates is never queued;
