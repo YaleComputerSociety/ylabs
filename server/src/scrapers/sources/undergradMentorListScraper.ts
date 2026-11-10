@@ -26,6 +26,12 @@ import { researcherNetid } from '../../utils/researcherIdentity';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { departmentsAgree } from '../utils/labScienceAdviserRule';
 import {
+  givenNamesCouldNameOnePerson,
+  surnameFetchRegex,
+  surnamesCompatible,
+} from '../utils/piNameMatch';
+import { splitName } from '../utils/scraperHelpers';
+import {
   aggregateMentoringEntries,
   yibsSuresFellowListings,
   politicalScienceEssayPrizeListings,
@@ -97,6 +103,7 @@ interface SourceRead {
 interface MentorSourceConfig {
   source: UndergradMentoringSource;
   landingUrl: string;
+  departmentScope?: readonly string[];
   read: (fetchText: MentorFetchText, now: Date) => Promise<SourceRead>;
 }
 
@@ -151,6 +158,52 @@ const recentOnly =
     };
   };
 
+const COMPUTING_ADVISER_DEPARTMENTS = [
+  'Computer Science',
+  'Electrical & Computer Engineering',
+  'Electrical Engineering',
+  'Statistics & Data Science',
+  'Applied Mathematics',
+  'Mathematics',
+  'Applied Physics',
+  'Physics',
+  'Mechanical Engineering & Materials Science',
+  'Biomedical Engineering',
+  'Biomedical Informatics & Data Science',
+  'Biostatistics',
+  'Radiology & Biomedical Imaging',
+  'Economics',
+  'Linguistics',
+  'Psychology',
+  'Cognitive Science',
+  'Neuroscience',
+  'Management',
+] as const;
+
+const NEUROSCIENCE_ADVISER_DEPARTMENTS = [
+  'Psychology',
+  'Psychiatry',
+  'Neuroscience',
+  'Neurology',
+  'Neurobiology',
+  'Neurosurgery',
+  'Child Study Center',
+  'Cellular & Molecular Physiology',
+  'Comparative Medicine',
+  'Pharmacology',
+  'Ophthalmology & Visual Science',
+  'Radiology & Biomedical Imaging',
+  'Biomedical Engineering',
+  'Computer Science',
+  'Electrical & Computer Engineering',
+  'Statistics & Data Science',
+  'Linguistics',
+  'Cognitive Science',
+  'Philosophy',
+  'Molecular Biophysics & Biochemistry',
+  'Genetics',
+] as const;
+
 const TOBIN_LANDING = 'https://economics.yale.edu/undergraduate/tobin-ra';
 const ECONOMICS_SITEMAP = 'https://economics.yale.edu/sitemap.xml';
 const PSYCHOLOGY_PAGE = 'https://psychology.yale.edu/undergraduate/research-opportunities';
@@ -159,11 +212,13 @@ export const MENTOR_SOURCE_CONFIGS: readonly MentorSourceConfig[] = [
   {
     source: 'cs-senior-projects',
     landingUrl: 'https://zoo.cs.yale.edu/classes/cpsc4900/',
+    departmentScope: COMPUTING_ADVISER_DEPARTMENTS,
     read: csArchive('cs-senior-projects', 'https://zoo.cs.yale.edu/classes/cpsc4900/'),
   },
   {
     source: 'cs-directed-research',
     landingUrl: 'https://zoo.cs.yale.edu/classes/cs290/',
+    departmentScope: COMPUTING_ADVISER_DEPARTMENTS,
     read: csArchive('cs-directed-research', 'https://zoo.cs.yale.edu/classes/cs290/'),
   },
   {
@@ -222,6 +277,7 @@ export const MENTOR_SOURCE_CONFIGS: readonly MentorSourceConfig[] = [
   {
     source: 'wu-tsai-undergraduate-fellows',
     landingUrl: 'https://wti.yale.edu/humans/undergrads',
+    departmentScope: NEUROSCIENCE_ADVISER_DEPARTMENTS,
     read: async (fetchText, now) => {
       const read = await singlePage('https://wti.yale.edu/humans/undergrads', wuTsaiFellowListings)(
         fetchText,
@@ -279,9 +335,12 @@ export const MENTOR_SOURCE_CONFIGS: readonly MentorSourceConfig[] = [
 ];
 
 const listingKey = (listing: MentorListing): string =>
-  listing.adviserEmail
-    ? `email:${listing.adviserEmail}`
-    : `name:${listing.adviserName.toLowerCase()}|${(listing.department ?? '').toLowerCase()}`;
+  [
+    listing.adviserEmail ? `email:${listing.adviserEmail}` : '',
+    `name:${listing.adviserName.toLowerCase()}`,
+    (listing.department ?? '').toLowerCase(),
+    (listing.departmentScope ?? []).join(',').toLowerCase(),
+  ].join('|');
 
 async function researcherForEmail(email: string): Promise<UserMatch | null> {
   const researcher: any = await Researcher.findOne({
@@ -293,8 +352,40 @@ async function researcherForEmail(email: string): Promise<UserMatch | null> {
   return researcher ? researcherToUserMatch(researcher, researcherNetid(researcher)) : null;
 }
 
+/** The listed name and the matched researcher's name could be one person. */
+export function listedNameAgrees(listedName: string, owner: Pick<UserMatch, 'fname' | 'lname'>) {
+  const { first, last } = splitName(listedName);
+  if (!last || !owner.lname || !surnamesCompatible(last, owner.lname)) return false;
+  return !first || !owner.fname || givenNamesCouldNameOnePerson(first, owner.fname);
+}
+
+async function liveNamesakeCount(listedName: string): Promise<number> {
+  const { first, last } = splitName(listedName);
+  const surnameRe = surnameFetchRegex(last);
+  if (!surnameRe || !first) return 0;
+  const candidates: Array<{ displayName?: string }> = await Researcher.find(
+    { displayName: surnameRe, archived: { $ne: true } },
+    { displayName: 1 },
+  )
+    .limit(50)
+    .lean();
+  return candidates.filter((candidate) => {
+    const parsed = splitName(candidate.displayName ?? '');
+    return (
+      surnamesCompatible(last, parsed.last) && givenNamesCouldNameOnePerson(first, parsed.first)
+    );
+  }).length;
+}
+
+/**
+ * An email binds only when the researcher who holds it carries the name the list prints,
+ * because a project card's contact email can belong to someone else in the group. A name
+ * alone binds only when no second live researcher could carry it, and only inside the
+ * departments the list states or plausibly draws from.
+ */
 export const defaultMentorResolver: MentorResolver = async (listing) => {
-  let owner = listing.adviserEmail ? await researcherForEmail(listing.adviserEmail) : null;
+  const byEmail = listing.adviserEmail ? await researcherForEmail(listing.adviserEmail) : null;
+  let owner = byEmail && listedNameAgrees(listing.adviserName, byEmail) ? byEmail : null;
   const matchedByEmail = Boolean(owner);
   if (!owner) {
     const resolution = await defaultAdvisorResolution(listing.adviserName);
@@ -302,11 +393,15 @@ export const defaultMentorResolver: MentorResolver = async (listing) => {
     if (resolution.status !== 'matched' || !resolution.match) {
       return { status: 'refused', reason: 'no-match' };
     }
+    if ((await liveNamesakeCount(listing.adviserName)) > 1) {
+      return { status: 'refused', reason: 'ambiguous' };
+    }
     owner = resolution.match;
   }
-  if (!matchedByEmail && listing.department) {
+  const scope = listing.department ? [listing.department] : (listing.departmentScope ?? []);
+  if (!matchedByEmail && scope.length > 0) {
     const own = await leadRowDepartmentsForOwner(owner);
-    if (!departmentsAgree([listing.department], [...own.departments, ...own.affiliations])) {
+    if (!departmentsAgree(scope, [...own.departments, ...own.affiliations])) {
       return { status: 'refused', reason: 'department-mismatch' };
     }
   }
@@ -377,7 +472,11 @@ export async function planMentorMatches(input: {
     if (read.complete) completeSources.add(config.source);
     else partialFailures.push(`${config.source}: not every page could be read`);
     stats.listings = read.listings.length;
-    for (const listing of read.listings) {
+    for (const raw of read.listings) {
+      const listing =
+        config.departmentScope && !raw.department
+          ? { ...raw, departmentScope: config.departmentScope }
+          : raw;
       const key = listingKey(listing);
       if (!resolutions.has(key)) resolutions.set(key, input.resolveMentor(listing));
       const resolution = await resolutions.get(key)!;

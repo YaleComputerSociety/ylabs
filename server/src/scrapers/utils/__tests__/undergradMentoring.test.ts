@@ -12,6 +12,7 @@ import {
   csArchiveTermUrls,
   economicsSeniorEssayAdviserListings,
   googleSheetCsvUrl,
+  nameBeforeTitle,
   nameFromHeadingAndEmail,
   parseCsv,
   physicsOpenOpportunityListings,
@@ -208,6 +209,22 @@ describe('Wu Tsai undergraduate fellows', () => {
 });
 
 describe('Physics open research opportunities', () => {
+  it('cuts a title printed after the name at the first academic rank', () => {
+    expect(nameBeforeTitle('Casey Fictional Associate Professor of Physics')).toBe(
+      'Casey Fictional',
+    );
+    expect(nameBeforeTitle('Dana Madeup')).toBe('Dana Madeup');
+  });
+
+  it("drops a card's email when it does not spell the card's name", () => {
+    const html = `<h2>Faculty with Open Research Opportunities</h2><ul>
+      <li class="custom-card"><h2 class="custom-card__heading"><a href="/people/x">Casey Fictional Associate Professor of Physics</a></h2>
+      <div class="custom-card__snippet"><p>Contact</p><p>dana.listed@yale.edu</p></div></li></ul>`;
+    const [listing] = physicsOpenOpportunityListings(html, 'https://physics.example.edu/');
+    expect(listing.adviserName).toBe('Casey Fictional');
+    expect(listing).not.toHaveProperty('adviserEmail');
+  });
+
   it('reads every card from the section heading to the next section, by email', () => {
     const card = (name: string, email: string) =>
       `<li class="custom-card"><h2 class="custom-card__heading"><a href="/people/x">${name}</a></h2>
