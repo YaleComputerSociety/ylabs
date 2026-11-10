@@ -43,6 +43,11 @@ import { resetDescriptionOwnershipCitersCache } from './descriptionOwnershipReso
 import { normalizeEvidenceUrl } from './utils/sharedEvidenceUrls';
 import { insertDocumentsIdempotently } from './observationInsert';
 import { retryTransientDatabaseWrite } from './utils/databaseWriteRetry';
+import {
+  batchMayNameARemovablePerson,
+  loadDirectoryRemovalObservationGuard,
+  type DirectoryRemovalObservationGuard,
+} from './directoryRemovalObservationGuard';
 
 export const QUALITY_GUARDED_PROSE_FIELDS = new Set(['fullDescription', 'shortDescription']);
 
@@ -398,6 +403,16 @@ interface AppendContext {
   sourceName: string;
   sourceWeight: number;
   dryRun: boolean;
+  directoryRemovalGuard?: () => Promise<DirectoryRemovalObservationGuard>;
+}
+
+async function withoutRemovedPeople(
+  inputs: ObservationInput[],
+  ctx: AppendContext,
+): Promise<{ kept: ObservationInput[]; refused: ObservationInput[] }> {
+  if (!batchMayNameARemovablePerson(inputs)) return { kept: inputs, refused: [] };
+  const guard = await (ctx.directoryRemovalGuard ?? loadDirectoryRemovalObservationGuard)();
+  return guard.withoutRemovedPeople(inputs);
 }
 
 /**
@@ -575,8 +590,18 @@ export async function appendObservations(
   inputs: ObservationInput[],
   ctx: AppendContext,
   opts: { loadActiveProse?: ActiveProseLoader; judgeDescriptionCard?: DescriptionCardJudge } = {},
-): Promise<{ inserted: number; skipped: number; superseded: number }> {
+): Promise<{
+  inserted: number;
+  skipped: number;
+  superseded: number;
+  refusedByRequest?: ObservationInput[];
+}> {
   if (inputs.length === 0) return { inserted: 0, skipped: 0, superseded: 0 };
+  const removal = await withoutRemovedPeople(inputs, ctx);
+  const refusedByRequest = removal.refused.length > 0 ? { refusedByRequest: removal.refused } : {};
+  if (removal.kept.length === 0) {
+    return { inserted: 0, skipped: 0, superseded: 0, ...refusedByRequest };
+  }
   const loadActiveProse = opts.loadActiveProse ?? loadActiveProseValue;
 
   // A deploy-target host names a build rather than a page, so an observation cited to
@@ -591,7 +616,7 @@ export async function appendObservations(
   // `labBrandedNameTypeBackfill`) still carry a stored `websiteUrl` through unchecked.
   const candidateInputs: ObservationInput[] = [];
   let rejectedUncitableHost = 0;
-  for (const obs of inputs) {
+  for (const obs of removal.kept) {
     if (isUncitableHostUrl(obs.sourceUrl)) rejectedUncitableHost += 1;
     else candidateInputs.push(obs);
   }
@@ -777,7 +802,7 @@ export async function appendObservations(
     selfDefeatingCardGuarded +
     cardRegressionGuarded.observations;
   if (keptInputs.length === 0) {
-    return { inserted: 0, skipped: skippedCount, superseded: 0 };
+    return { inserted: 0, skipped: skippedCount, superseded: 0, ...refusedByRequest };
   }
 
   const docs = keptInputs.map((obs) => {
@@ -814,7 +839,7 @@ export async function appendObservations(
   });
 
   if (ctx.dryRun) {
-    return { inserted: 0, skipped: docs.length + skippedCount, superseded: 0 };
+    return { inserted: 0, skipped: docs.length + skippedCount, superseded: 0, ...refusedByRequest };
   }
 
   if (docs.some(writesOwnershipGuardedDescriptionField)) resetDescriptionOwnershipCitersCache();
@@ -872,7 +897,7 @@ export async function appendObservations(
         ).modifiedCount || 0
       : 0;
 
-  return { inserted: landed.length, skipped: skippedCount, superseded };
+  return { inserted: landed.length, skipped: skippedCount, superseded, ...refusedByRequest };
 }
 
 export interface RetireObservationsResult {

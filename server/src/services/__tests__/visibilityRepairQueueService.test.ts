@@ -1891,6 +1891,47 @@ describe('visibilityRepairQueueService', () => {
     expect(deps.findActionEvidenceObservationIds).not.toHaveBeenCalled();
   });
 
+  it('attaches no PI who asked to be removed from the directory, and says why', async () => {
+    const deps = {
+      findOpenQueueItems: vi
+        .fn()
+        .mockResolvedValue([queueItem({ blockerReasons: ['missing_lead'] })]),
+      updateQueueItem: vi.fn().mockResolvedValue(undefined),
+      findResearchEntity: vi.fn().mockResolvedValue({
+        _id: 'entity-1',
+        name: 'Example Faculty Research',
+        websiteUrl: 'https://medicine.yale.edu/profile/example-faculty/',
+        sourceUrls: ['https://medicine.yale.edu/profile/example-faculty/'],
+      }),
+      updateResearchEntity: vi.fn(),
+      findResearchEntityMembers: vi.fn().mockResolvedValue([]),
+      findUserByProfileUrl: vi.fn().mockResolvedValue({
+        _id: '64a000000000000000000001',
+        fname: 'Example',
+        lname: 'Faculty',
+        profileUrls: { medicine: 'https://medicine.yale.edu/profile/example-faculty/' },
+      }),
+      isRemovedByRequest: vi.fn().mockResolvedValue(true),
+      upsertResearchEntityMember: vi.fn().mockResolvedValue(undefined),
+      findProgram: vi.fn(),
+      updateProgram: vi.fn(),
+      runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
+    };
+
+    const report = await runVisibilityRepairQueue(
+      { mode: 'apply', collection: 'research', stage: 'pi_identity', limit: 1 },
+      deps,
+    );
+
+    expect(deps.isRemovedByRequest).toHaveBeenCalledWith('64a000000000000000000001');
+    expect(deps.upsertResearchEntityMember).not.toHaveBeenCalled();
+    expect(report.attempts[0]).toMatchObject({
+      applied: false,
+      status: 'blocked',
+      remainingBlockers: expect.arrayContaining(['missing_lead', 'removed_by_request']),
+    });
+  });
+
   it('keeps duplicate-risk PI repairs blocked after attaching an exact PI member', async () => {
     const deps = {
       findOpenQueueItems: vi.fn().mockResolvedValue([

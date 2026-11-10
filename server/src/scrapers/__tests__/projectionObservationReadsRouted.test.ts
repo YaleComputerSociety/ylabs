@@ -63,7 +63,7 @@ const REVIEWED_UNROUTED_READS: ReadonlyArray<{ fn: string; reason: string }> = [
     reason: 'Run-level reconciliation over a whole scrape run, not a per-row projection read.',
   },
   {
-    fn: 'materializeFromRun',
+    fn: 'materializeFromRunUnderRemovalGuard',
     reason: 'The run driver enumerating which entities a run touched, before any row is projected.',
   },
 ];

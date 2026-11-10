@@ -8,6 +8,7 @@ import { ResearchEntity } from '../models/researchEntity';
 import { Researcher } from '../models/researcher';
 import { RoleAssignment } from '../models/roleAssignment';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { loadDirectoryRemovalMintGuard } from '../services/directoryRemovalMintGuard';
 import { serializedDocumentId } from '../utils/idSerialization';
 import {
   applyStudentVisibilityGatePlans,
@@ -61,9 +62,10 @@ async function main() {
     mongoUrl: process.env.MONGODBURL,
   });
   await initializeConnections();
+  const removalGuard = await loadDirectoryRemovalMintGuard();
 
   const researchers = await Researcher.find({ archived: { $ne: true } })
-    .select('_id displayName')
+    .select('_id displayName identifiers profileLinks')
     .lean();
   const byName = new Map<string, Array<FraLeadResearcher & { _id: unknown }>>();
   for (const researcher of researchers as any[]) {
@@ -105,6 +107,10 @@ async function main() {
       archived: { $ne: true },
     });
     if (existing > 0) continue;
+    if (removalGuard.refusesPerson(match as any)) {
+      removalGuard.recordRefusal();
+      continue;
+    }
     planned.push({
       entityId,
       personId,
@@ -161,6 +167,7 @@ async function main() {
     mode: args.apply ? 'apply' : 'dry-run',
     leadBlockedExamined: entities.length,
     refusedForWeakEvidence: nameOnlyRefused,
+    refusedAsRemovedByRequest: removalGuard.refusals,
     plannedAttachments: planned.length,
     plannedAttachmentsThatUnblock: unblocking.length,
     attached,

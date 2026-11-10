@@ -11,6 +11,7 @@ import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeErrorForLog, sanitizeLogValue } from '../utils/logSanitizer';
 import { onInterrupt } from './interruptCleanup';
 import { appendObservations, getSourceByName } from './observationStore';
+import { directoryRemovalObservationRun } from './directoryRemovalObservationGuard';
 import { currentProcessCodeSha } from './scrapeRunCodeIdentity';
 import type { ReturnedScrapeRunStatus } from './sourceCrawlStamp';
 import { currentScrapeRunOwner, startScrapeRunHeartbeat } from './scrapeRunLiveness';
@@ -137,6 +138,7 @@ export class ScraperOrchestrator {
       ? (options.explainLimit ?? DEFAULT_EXPLAIN_LIMIT)
       : Infinity;
     const scrapeRunId = serializedDocumentId(run._id) || '';
+    const directoryRemoval = directoryRemovalObservationRun();
 
     const ctx: ScraperContext = {
       scrapeRunId,
@@ -153,12 +155,18 @@ export class ScraperOrchestrator {
           sourceName: source.name,
           sourceWeight: source.defaultWeight,
           dryRun: options.dryRun,
+          directoryRemovalGuard: directoryRemoval.guard,
         });
+        const refused = new Set(res.refusedByRequest ?? []);
+        if (refused.size > 0) {
+          reportedMetrics.removedByRequest = directoryRemoval.removedByRequest();
+        }
+        const admitted = refused.size > 0 ? inputs.filter((obs) => !refused.has(obs)) : inputs;
         if (options.dryRun && (options.dbReview || options.explain)) {
           const room = explainLimit - previewObservations.length;
           if (room > 0) {
             previewObservations.push(
-              ...inputs.slice(0, room).map((obs) => ({
+              ...admitted.slice(0, room).map((obs) => ({
                 ...obs,
                 sourceName: source.name,
                 sourceId: source._id,
@@ -168,8 +176,8 @@ export class ScraperOrchestrator {
           }
         }
         recordScrapeRunProgress();
-        observationCount += options.dryRun ? inputs.length : res.inserted;
-        for (const o of inputs) {
+        observationCount += options.dryRun ? admitted.length : res.inserted;
+        for (const o of admitted) {
           const key = `${o.entityType}:${o.entityId || o.entityKey || ''}`;
           observedEntityKeys.add(key);
         }

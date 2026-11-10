@@ -1,3 +1,9 @@
+import {
+  currentDirectoryRemovalMintGuard,
+  REMOVED_BY_REQUEST,
+  researcherIsRemovedByRequest,
+  withDirectoryRemovalMintGuard,
+} from './directoryRemovalMintGuard';
 import { Fellowship } from '../models/fellowship';
 import { ResearchEntity } from '../models/researchEntity';
 import {
@@ -160,6 +166,7 @@ interface RepairDeps {
     userId: string,
     metadata: { sourceUrl: string; sourceName: string; confidence: number },
   ) => Promise<void>;
+  isRemovedByRequest?: (userId: string) => Promise<boolean>;
   updateResearchEntity: (id: string, patch: Record<string, unknown>) => Promise<void>;
   findProgram: (id: string) => Promise<Record<string, any> | null>;
   updateProgram: (id: string, patch: Record<string, unknown>) => Promise<void>;
@@ -1052,6 +1059,7 @@ async function findOfficialProfileUserMatch(
   const user = await deps.findUserByProfileUrl(profileUrls);
   const userId = idValue(user?._id);
   if (!user || !userId || !userNameMatchesEntity(user, entity)) return null;
+  if (await deps.isRemovedByRequest?.(userId)) return null;
 
   const sourceUrl =
     profileUrls.find((url) =>
@@ -1191,6 +1199,16 @@ async function attemptResearchRepair(
     }
 
     const userId = normalizeVisibilityRepairObjectId(user._id) || '';
+    if (await deps.isRemovedByRequest?.(userId)) {
+      return {
+        plan,
+        applied: false,
+        status: 'blocked',
+        patchSummary: [],
+        remainingBlockers: uniqueStrings([...plan.blockerReasons, REMOVED_BY_REQUEST]),
+        repairSource: sourceUrl,
+      };
+    }
     if (mode === 'apply') {
       await deps.upsertResearchEntityMember(plan.recordId, userId, {
         sourceUrl,
@@ -1574,6 +1592,12 @@ const defaultRepairDeps: RepairDeps = {
       .lean();
     return matches.length === 1 ? matches[0] : null;
   },
+  async isRemovedByRequest(userId) {
+    const guard = await currentDirectoryRemovalMintGuard();
+    const removed = await researcherIsRemovedByRequest(guard, toVisibilityRepairObjectId(userId));
+    if (removed) guard.recordRefusal();
+    return removed;
+  },
   async upsertResearchEntityMember(researchEntityId, userId, metadata) {
     const entityObjectId = toVisibilityRepairObjectId(researchEntityId);
     const personObjectId = toVisibilityRepairObjectId(userId);
@@ -1622,6 +1646,15 @@ const defaultRepairDeps: RepairDeps = {
 export async function runVisibilityRepairQueue(
   options: VisibilityRepairQueueOptions,
   deps: RepairDeps = defaultRepairDeps,
+): Promise<VisibilityRepairQueueReport> {
+  return withDirectoryRemovalMintGuard(() =>
+    runVisibilityRepairQueueUnderRemovalGuard(options, deps),
+  );
+}
+
+async function runVisibilityRepairQueueUnderRemovalGuard(
+  options: VisibilityRepairQueueOptions,
+  deps: RepairDeps,
 ): Promise<VisibilityRepairQueueReport> {
   const items = await deps.findOpenQueueItems(options);
   const allPlans = buildVisibilityRepairPlans(items);
