@@ -157,12 +157,6 @@ describe('PostHog payload through the real SDK', () => {
       entityId: 'entity0001',
       payload: { source: 'search' },
     });
-    window.dispatchEvent(
-      new ErrorEvent('error', {
-        message: `synthetic failure for ${SYNTHETIC_NETID}`,
-        error: new Error(`synthetic failure for ${SYNTHETIC_NETID}`),
-      }),
-    );
     window.history.pushState({}, '', `/research/person/${SYNTHETIC_NETID}?q=${SYNTHETIC_QUERY}`);
     await wait(4500);
     return sentEvents();
@@ -174,7 +168,6 @@ describe('PostHog payload through the real SDK', () => {
     expect(names).toContain('$pageview');
     expect(names).toContain('$autocapture');
     expect(names).toContain('$snapshot');
-    expect(names).toContain('$exception');
 
     const search = events.find((event) => event.event === 'research_search')!;
     expect(search.properties).toMatchObject({
@@ -195,7 +188,6 @@ describe('PostHog payload through the real SDK', () => {
     }
 
     const payload = everythingSent();
-    expect(payload).toContain('synthetic failure for [redacted]');
     expect(payload).toContain('"maskAllInputs":true');
     expect(payload).toContain('"maskTextSelector":"*"');
     expect(payload).toContain('/research/person/[redacted]');
@@ -383,6 +375,30 @@ describe('PostHog configuration', () => {
       },
     });
     expect(config().bootstrap).toBeUndefined();
+  });
+
+  it('redacts the netid and URL queries from a captured exception', () => {
+    const beforeSend = config().before_send as (event: unknown) => { properties: unknown } | null;
+    const sentException = beforeSend({
+      uuid: 'exception-1',
+      event: '$exception',
+      properties: {
+        $exception_list: [
+          {
+            type: 'Error',
+            value: `synthetic failure for ${SYNTHETIC_NETID}`,
+            stacktrace: {
+              frames: [{ filename: `https://yalelabs.io/research?q=${SYNTHETIC_QUERY}` }],
+            },
+          },
+        ],
+      },
+    });
+
+    const serialized = JSON.stringify(sentException);
+    expect(serialized).toContain('synthetic failure for [redacted]');
+    expect(serialized).not.toContain(SYNTHETIC_NETID);
+    expect(serialized).not.toContain(SYNTHETIC_QUERY);
   });
 
   it('drops network bodies and headers and strips queries and the netid from recorded requests', () => {
