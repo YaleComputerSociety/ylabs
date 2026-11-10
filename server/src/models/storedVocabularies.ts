@@ -37,6 +37,11 @@ export const undergradMentoringSources = [
   'psychology-research-opportunities',
   'wu-tsai-undergraduate-fellows',
   'physics-open-research-opportunities',
+  'english-senior-essays',
+  'english-creative-writing-projects',
+  'political-science-senior-essay-prizes',
+  'german-senior-essays',
+  'yibs-summer-research-fellows',
 ] as const;
 export type UndergradMentoringSource = (typeof undergradMentoringSources)[number];
 

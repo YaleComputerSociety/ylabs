@@ -27,6 +27,10 @@ import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '
 import { departmentsAgree } from '../utils/labScienceAdviserRule';
 import {
   aggregateMentoringEntries,
+  yibsSuresFellowListings,
+  politicalScienceEssayPrizeListings,
+  germanSeniorEssayListings,
+  englishAdvisedByListings,
   csArchiveTermListings,
   csArchiveTermUrls,
   economicsSeniorEssayAdviserListings,
@@ -137,6 +141,16 @@ const singlePage =
       : { listings: extract(html, url), complete: true };
   };
 
+const recentOnly =
+  (read: MentorSourceConfig['read']): MentorSourceConfig['read'] =>
+  async (fetchText, now) => {
+    const result = await read(fetchText, now);
+    return {
+      ...result,
+      listings: result.listings.filter((listing) => withinLookback(listing.year, now)),
+    };
+  };
+
 const TOBIN_LANDING = 'https://economics.yale.edu/undergraduate/tobin-ra';
 const ECONOMICS_SITEMAP = 'https://economics.yale.edu/sitemap.xml';
 const PSYCHOLOGY_PAGE = 'https://psychology.yale.edu/undergraduate/research-opportunities';
@@ -228,6 +242,40 @@ export const MENTOR_SOURCE_CONFIGS: readonly MentorSourceConfig[] = [
       physicsOpenOpportunityListings,
     ),
   },
+  ...(
+    [
+      [
+        'english-senior-essays',
+        'https://english.yale.edu/undergraduate/senior-essay/senior-essay-topics-2011-present',
+        (html: string, url: string) => englishAdvisedByListings(html, url, 'english-senior-essays'),
+      ],
+      [
+        'english-creative-writing-projects',
+        'https://english.yale.edu/undergraduate/creative-writing-concentration/cw-concentration-project-topics-2011-present',
+        (html: string, url: string) =>
+          englishAdvisedByListings(html, url, 'english-creative-writing-projects'),
+      ],
+      [
+        'political-science-senior-essay-prizes',
+        'https://politicalscience.yale.edu/prizes',
+        politicalScienceEssayPrizeListings,
+      ],
+      [
+        'german-senior-essays',
+        'https://german.yale.edu/programs/undergraduate-program/majoring-german/recent-senior-essays',
+        germanSeniorEssayListings,
+      ],
+      [
+        'yibs-summer-research-fellows',
+        'https://yibs.yale.edu/people/past_sures_fellows',
+        yibsSuresFellowListings,
+      ],
+    ] as const
+  ).map(([source, url, extract]) => ({
+    source,
+    landingUrl: url,
+    read: recentOnly(singlePage(url, extract)),
+  })),
 ];
 
 const listingKey = (listing: MentorListing): string =>
