@@ -234,6 +234,7 @@ A reviewer stamp records the reviewer's netid in `studentVisibilityReviewedByNet
 A directory removal (#4160) is recorded on Development and reaches Beta and Production with the promotion copy, because `directory_removals` is copied with the corpus it suppresses.
 A request that arrives on Production is a review item there; the admin who accepts it records the entry on Development with `yarn --cwd server directory-removal:record`, which is a dry run unless given `--apply` and reads the identifier from standard input only.
 An entry written only on Beta or Production would be erased by the next whole-collection copy, so every copy direction refuses to run while the target holds an active entry the source does not (`server/src/scripts/directoryRemovalCopyGuard.ts`).
+The dry run reports that refusal ahead of time: the promotion lists it in `applyBlockers`, and each sync lists it in `directoryRemovalBlockers`.
 The fix for that refusal is to record the entry on the source, never to delete it from the target.
 Each entry is an HMAC digest under `DIRECTORY_REMOVAL_KEY`, so every environment must hold the same key; an environment that holds entries but no key cannot tell a removed person from anyone else (`docs/deployment-inventory.md`).
 

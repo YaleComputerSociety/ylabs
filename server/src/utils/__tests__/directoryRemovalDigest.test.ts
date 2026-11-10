@@ -29,6 +29,25 @@ describe('directoryRemovalDigest', () => {
     );
   });
 
+  it('keeps the query that identifies a profile, so two people on one host stay apart', () => {
+    const scholar = (user: string) =>
+      directoryRemovalDigest(KEY, 'profile_url', `https://scholar.google.com/citations?user=${user}`);
+    expect(scholar('SYNTHETIC1')).not.toBe(scholar('SYNTHETIC2'));
+    expect(
+      directoryRemovalDigest(
+        KEY,
+        'profile_url',
+        'https://scholar.google.com/citations?hl=en&user=SYNTHETIC1',
+      ),
+    ).toBe(
+      directoryRemovalDigest(
+        KEY,
+        'profile_url',
+        'https://scholar.google.com/citations?user=SYNTHETIC1&hl=en',
+      ),
+    );
+  });
+
   it('keeps kinds apart, so a value removed as a name is not removed as a netid', () => {
     expect(directoryRemovalDigest(KEY, 'name', 'abc123')).not.toBe(
       directoryRemovalDigest(KEY, 'netid', 'abc123'),
@@ -49,21 +68,12 @@ describe('directoryRemovalDigest', () => {
 });
 
 describe('readDirectoryRemovalKey', () => {
-  it('reads the key inline or from a file and leaves it unset when neither is given', () => {
+  it('reads the key and leaves it unset when none is given', () => {
     expect(readDirectoryRemovalKey({ DIRECTORY_REMOVAL_KEY: ` ${KEY} ` })).toBe(KEY);
-    expect(
-      readDirectoryRemovalKey({ DIRECTORY_REMOVAL_KEY_FILE: '/synthetic/key' }, (path) => {
-        expect(path).toBe('/synthetic/key');
-        return `${KEY}\n`;
-      }),
-    ).toBe(KEY);
     expect(readDirectoryRemovalKey({})).toBeUndefined();
   });
 
-  it('refuses an ambiguous or weak key', () => {
-    expect(() =>
-      readDirectoryRemovalKey({ DIRECTORY_REMOVAL_KEY: KEY, DIRECTORY_REMOVAL_KEY_FILE: '/x' }),
-    ).toThrow(DirectoryRemovalKeyError);
+  it('refuses a weak key', () => {
     expect(() => readDirectoryRemovalKey({ DIRECTORY_REMOVAL_KEY: 'short' })).toThrow(
       DirectoryRemovalKeyError,
     );

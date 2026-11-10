@@ -1,9 +1,7 @@
 import { createHmac } from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import { normalizedRosterLabel } from '../scrapers/rosterStrikeDigests';
 
 export const DIRECTORY_REMOVAL_KEY_ENV = 'DIRECTORY_REMOVAL_KEY';
-export const DIRECTORY_REMOVAL_KEY_FILE_ENV = 'DIRECTORY_REMOVAL_KEY_FILE';
 export const MIN_DIRECTORY_REMOVAL_KEY_LENGTH = 32;
 
 export const directoryRemovalKinds = ['netid', 'email', 'orcid', 'profile_url', 'name'] as const;
@@ -22,7 +20,9 @@ function normalizedProfileUrl(value: string): string {
   }
   const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
   if (!host) return '';
-  return `${host}${parsed.pathname.replace(/\/+$/, '')}`;
+  parsed.searchParams.sort();
+  const query = parsed.searchParams.toString();
+  return `${host}${parsed.pathname.replace(/\/+$/, '')}${query ? `?${query}` : ''}`;
 }
 
 export function normalizedDirectoryRemovalValue(
@@ -58,16 +58,8 @@ export class DirectoryRemovalKeyError extends Error {}
 
 export function readDirectoryRemovalKey(
   env: NodeJS.ProcessEnv = process.env,
-  readFile: (path: string) => string = (path) => readFileSync(path, 'utf8'),
 ): string | undefined {
-  const inline = (env[DIRECTORY_REMOVAL_KEY_ENV] ?? '').trim();
-  const filePath = (env[DIRECTORY_REMOVAL_KEY_FILE_ENV] ?? '').trim();
-  if (inline && filePath) {
-    throw new DirectoryRemovalKeyError(
-      `Set only one of ${DIRECTORY_REMOVAL_KEY_ENV} and ${DIRECTORY_REMOVAL_KEY_FILE_ENV}.`,
-    );
-  }
-  const key = inline || (filePath ? readFile(filePath).trim() : '');
+  const key = (env[DIRECTORY_REMOVAL_KEY_ENV] ?? '').trim();
   if (!key) return undefined;
   if (key.length < MIN_DIRECTORY_REMOVAL_KEY_LENGTH) {
     throw new DirectoryRemovalKeyError(

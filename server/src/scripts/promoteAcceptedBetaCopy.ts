@@ -5,7 +5,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
 import { assertNoNeverCopyCollections } from './mirrorCollectionPolicy';
-import { assertCopyCarriesEveryDirectoryRemoval } from './directoryRemovalCopyGuard';
+import {
+  assertCopyCarriesEveryDirectoryRemoval,
+  directoryRemovalCopyBlockers,
+} from './directoryRemovalCopyGuard';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   assertDatabaseCopyPair,
@@ -60,6 +63,7 @@ const PROMOTION_BACKUP_PREFIX = '__prod_promote_backup_';
 export const PROMOTION_PREVIOUS_GENERATION_PREFIX = '__prod_promote_prev_';
 const ROLLBACK_STAGING_PREFIX = '__prod_rollback_staging_';
 const PROMOTION_HEADROOM_REMEDY = 'Free space first, or drop --include-observations.';
+const PROMOTION_LABEL = 'Beta to Production promotion';
 const OPT_IN_COLLECTION_NAMES = new Set(['observations', 'scrape_runs']);
 
 const COPY_COLLECTIONS: PromotionCollection[] = [
@@ -387,6 +391,7 @@ export function buildPromotionSummary(
   plan: CollectionPlan[],
   blockedAccountReferences: CorpusAccountReference[],
   productionObservationCount = 0,
+  directoryRemovalBlockers: string[] = [],
 ): PromotionSummary {
   const collectionCategories = COLLECTION_CATEGORY_ORDER.flatMap((category) => {
     const rows = plan.filter((row) => row.category === category);
@@ -412,6 +417,7 @@ export function buildPromotionSummary(
     ...emptySourceBlockers,
     ...auditTrailBlockers,
     ...retireBlockers,
+    ...directoryRemovalBlockers,
   ];
 
   return {
@@ -666,11 +672,7 @@ export async function applyCopy(
   if (accountReferenceBlockers.length > 0) {
     throw new Error(`Apply mode blocked: ${accountReferenceBlockers.join(' ')}`);
   }
-  await assertCopyCarriesEveryDirectoryRemoval(
-    betaDb,
-    productionDb,
-    'Beta to Production promotion',
-  );
+  await assertCopyCarriesEveryDirectoryRemoval(betaDb, productionDb, PROMOTION_LABEL);
   const collections = promotionCollectionsForOptions(options);
   const plan = await buildPlan(betaDb, productionDb, collections);
   const retiring = Boolean(options.retireScrapeRunsActor);
@@ -942,6 +944,7 @@ async function main() {
       plan,
       blockedAccountReferences,
       productionObservationCount,
+      await directoryRemovalCopyBlockers(betaDb, productionDb, PROMOTION_LABEL),
     );
 
     const storage: PromotionStorage = { client: productionClient };

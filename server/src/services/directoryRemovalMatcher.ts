@@ -99,23 +99,3 @@ export function assertDirectoryRemovalMatchable(matcher: DirectoryRemovalMatcher
     );
   }
 }
-
-const SERVE_CACHE_TTL_MS = 60_000;
-let cachedMatcher: { matcher: Promise<DirectoryRemovalMatcher>; loadedAt: number } | undefined;
-
-export function directoryRemovalMatcherForServing(
-  now: number = Date.now(),
-): Promise<DirectoryRemovalMatcher> {
-  if (!cachedMatcher || now - cachedMatcher.loadedAt >= SERVE_CACHE_TTL_MS) {
-    const matcher = loadDirectoryRemovalMatcher();
-    cachedMatcher = { matcher, loadedAt: now };
-    matcher.catch(() => {
-      if (cachedMatcher?.matcher === matcher) cachedMatcher = undefined;
-    });
-  }
-  return cachedMatcher.matcher;
-}
-
-export function resetDirectoryRemovalMatcherCache(): void {
-  cachedMatcher = undefined;
-}

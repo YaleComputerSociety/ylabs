@@ -19,17 +19,25 @@ export async function countTargetDirectoryRemovalsMissingFromSource(
   return [...targetActive].filter((digest) => !sourceAll.has(digest)).length;
 }
 
+export async function directoryRemovalCopyBlockers(
+  sourceDb: Db,
+  targetDb: Db,
+  label: string,
+): Promise<string[]> {
+  const missing = await countTargetDirectoryRemovalsMissingFromSource(sourceDb, targetDb);
+  if (missing === 0) return [];
+  return [
+    `${label} blocked: the target holds ${missing} active directory removal ${
+      missing === 1 ? 'entry' : 'entries'
+    } that the source does not, and the copy would restore those people. Record the removal on the source first (docs/release-process.md).`,
+  ];
+}
+
 export async function assertCopyCarriesEveryDirectoryRemoval(
   sourceDb: Db,
   targetDb: Db,
   label: string,
 ): Promise<void> {
-  const missing = await countTargetDirectoryRemovalsMissingFromSource(sourceDb, targetDb);
-  if (missing > 0) {
-    throw new Error(
-      `${label} blocked: the target holds ${missing} active directory removal ${
-        missing === 1 ? 'entry' : 'entries'
-      } that the source does not, and the copy would restore those people. Record the removal on the source first (docs/release-process.md).`,
-    );
-  }
+  const [blocker] = await directoryRemovalCopyBlockers(sourceDb, targetDb, label);
+  if (blocker) throw new Error(blocker);
 }

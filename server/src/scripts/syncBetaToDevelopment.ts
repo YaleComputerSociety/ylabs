@@ -25,7 +25,10 @@ import {
 } from './archivedTombstoneMirror';
 import { DATABASE_COPY_PAIRS, parseMongoTarget } from './databaseCopyPairs';
 import { DIRECTORY_REMOVAL_COLLECTION } from '../models/directoryRemoval';
-import { assertCopyCarriesEveryDirectoryRemoval } from './directoryRemovalCopyGuard';
+import {
+  assertCopyCarriesEveryDirectoryRemoval,
+  directoryRemovalCopyBlockers,
+} from './directoryRemovalCopyGuard';
 
 export { parseMongoTarget };
 
@@ -600,7 +603,15 @@ async function main(): Promise<void> {
 
     const accountReferences = await syncAccountReferences(betaDb, collections);
     if (options.mode === 'dry-run') {
-      const report = { ...summary, accountReferences };
+      const report = {
+        ...summary,
+        accountReferences,
+        directoryRemovalBlockers: await directoryRemovalCopyBlockers(
+          betaDb,
+          developmentDb,
+          'Beta to Development sync',
+        ),
+      };
       console.log(JSON.stringify(report, null, 2));
       writeOutput(report, options.output);
       return;

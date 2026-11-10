@@ -446,7 +446,7 @@ Rotating a leaked secret is owned by `docs/incident-runbook.md`.
 | `MONGODBURL` | Yes | MongoDB connection string. |
 | `SESSION_SECRET` | Yes | Cookie session signing key. |
 | `SESSION_SECRET_PREVIOUS` | No | Verify-only previous signing key during a routine rotation; unset otherwise (#4484). |
-| `DIRECTORY_REMOVAL_KEY` / `DIRECTORY_REMOVAL_KEY_FILE` | No | HMAC key for directory removal entries, shared by every environment; `docs/deployment-inventory.md` owns the keyless behaviour (#4160). |
+| `DIRECTORY_REMOVAL_KEY` | No | HMAC key for directory removal entries, shared by every environment; `docs/deployment-inventory.md` owns the keyless behaviour (#4160). |
 | `AUTH_DEBUG` | No | Enables verbose auth tracing when `true`. |
 | `SSOBASEURL` | Yes | Yale CAS URL. |
 | `SERVER_BASE_URL` | Yes | Public server URL for CAS callbacks. |
