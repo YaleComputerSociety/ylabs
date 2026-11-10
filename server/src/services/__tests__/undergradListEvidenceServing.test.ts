@@ -47,7 +47,7 @@ describe('publicUndergradListEvidence', () => {
       ]),
     ).toEqual([
       ['cs-senior-projects', 'mentors'],
-      ['economics-senior-essay-advisers', 'welcomes'],
+      ['economics-senior-essay-advisers', 'mentors'],
       ['tobin-research-assistantships', 'hosted'],
     ]);
   });
