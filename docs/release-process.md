@@ -164,6 +164,7 @@ Undeclared `FEATURE_` variables are ignored, so the served payload is always bou
 Flipping a flag needs no redeploy.
 It is an environment variable plus the five minute config cache.
 Because the flag is resolved on the server, it can gate API responses as well as UI.
+A route reads it with `isReleaseFeatureEnabled` from `configService.ts`; `accountDataControls` (#4156) gates the account data export and deletion routes that way and answers `404` while it is off.
 
 Retire a flag once it is fully on in production.
 Delete the registry entry, the branches that read it, and the Render variable.
