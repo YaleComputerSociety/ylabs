@@ -12006,12 +12006,15 @@ async function loadChunkPrefetch(
 
 export const MATERIALIZATION_CONCURRENCY_ENV = 'MATERIALIZE_CONCURRENCY';
 export const MAX_MATERIALIZATION_CONCURRENCY = 16;
+export const DEFAULT_MATERIALIZATION_CONCURRENCY = 8;
 
 export function materializationConcurrencyFromEnv(
   value: string | undefined = process.env[MATERIALIZATION_CONCURRENCY_ENV],
 ): number {
-  const parsed = Number.parseInt(String(value ?? '').trim(), 10);
-  if (!Number.isFinite(parsed) || parsed < 1) return 1;
+  const text = String(value ?? '').trim();
+  if (!text) return DEFAULT_MATERIALIZATION_CONCURRENCY;
+  const parsed = Number(text);
+  if (!Number.isInteger(parsed) || parsed < 1) return 1;
   return Math.min(parsed, MAX_MATERIALIZATION_CONCURRENCY);
 }
 
