@@ -443,6 +443,15 @@ export const sourceCoverageRegistry = {
     notes:
       'Official research.yale.edu directories for centers, institutes, cores, and infrastructure resources. Discovery-only; must not imply undergraduate access, contact routes, or posted openings without a more explicit source.',
   },
+  'tobin-ra-projects': {
+    priority: 4,
+    tier: 'DERIVED_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['PAST_UNDERGRADS'],
+    defaultConfidence: 'MEDIUM',
+    notes:
+      'Filled Tobin RA projects on the official Economics board are evidence that the sponsor hosted a Yale undergraduate research assistant; no student is named and no open position is asserted.',
+  },
   'undergrad-fellowships-recipients': {
     priority: 4,
     tier: 'DERIVED_OFFICIAL',

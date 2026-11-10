@@ -566,6 +566,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'monthly',
   },
   {
+    name: 'tobin-ra-projects',
+    displayName: 'Tobin Undergraduate Research Assistantships',
+    description:
+      'The Economics department Tobin RA project board, an archive of every semester. Each filled project pairs a Yale College student with a faculty sponsor, so it becomes a name-free pastUndergradAdvisees entry on the row the sponsor leads, matched by profile URL. The Award field, which names students, is removed before parsing. Asserts nothing about open projects (#3551).',
+    baseUrl: 'https://economics.yale.edu/undergraduate/tobin-ra',
+    defaultWeight: 0.85,
+    cadence: 'weekly',
+  },
+  {
     name: 'lab-microsite-undergrad-llm',
     displayName: 'Lab microsite LLM (undergrad signals)',
     description:

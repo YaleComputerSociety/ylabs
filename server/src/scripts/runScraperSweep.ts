@@ -151,6 +151,11 @@ export const RESEARCH_SWEEP_SOURCES: ScraperSweepSource[] = [
     phase: 'discovery-readers',
     readsRowsWrittenBy: ['dept-faculty-roster'],
   },
+  {
+    name: 'tobin-ra-projects',
+    phase: 'discovery-readers',
+    readsRowsWrittenBy: ['dept-faculty-roster'],
+  },
   { name: 'nih-reporter', phase: 'funding' },
   { name: 'nsf-award-search', phase: 'funding' },
   { name: 'neh-funded-projects', phase: 'funding' },

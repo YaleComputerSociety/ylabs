@@ -22,6 +22,7 @@ import { CrossrefGrantScraper } from './sources/crossrefGrantScraper';
 import { DoeOstiGrantScraper } from './sources/doeOstiGrantScraper';
 import { DoeScienceAwardScraper } from './sources/doeScienceAwardScraper';
 import { CentersInstitutesScraper } from './sources/centersInstitutesScraper';
+import { TobinRaProjectsScraper } from './sources/tobinRaProjectsScraper';
 import { UndergradFellowshipRecipientScraper } from './sources/undergradFellowshipRecipientScraper';
 import { YaleCollegeFellowshipsOfficeScraper } from './sources/yaleCollegeFellowshipsOfficeScraper';
 import { YaleReuProgramsScraper } from './sources/yaleReuProgramsScraper';
@@ -74,6 +75,7 @@ export function buildOrchestrator(): ScraperOrchestrator {
   o.register(new DoeScienceAwardScraper());
   o.register(new CentersInstitutesScraper());
   o.register(new UndergradFellowshipRecipientScraper());
+  o.register(new TobinRaProjectsScraper());
   o.register(new YaleCollegeFellowshipsOfficeScraper());
   o.register(new YaleReuProgramsScraper());
   o.register(new YaleHealthSciencesSummerProgramsScraper());
