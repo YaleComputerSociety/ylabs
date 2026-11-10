@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isYaleHostname } from '../yaleHost';
+import { hostnameIsWithin, isYaleHostname } from '../yaleHost';
 
 describe('isYaleHostname', () => {
   it.each(['yale.edu', 'medicine.yale.edu', 'Faculty.SOM.Yale.edu'])('accepts %s', (host) => {
@@ -12,4 +12,13 @@ describe('isYaleHostname', () => {
       expect(isYaleHostname(host)).toBe(false);
     },
   );
+});
+
+describe('hostnameIsWithin', () => {
+  it('accepts the domain and its subdomains only', () => {
+    expect(hostnameIsWithin('orcid.org', 'orcid.org')).toBe(true);
+    expect(hostnameIsWithin('sandbox.ORCID.org', 'orcid.org')).toBe(true);
+    expect(hostnameIsWithin('orcid.org.example.com', 'orcid.org')).toBe(false);
+    expect(hostnameIsWithin('notorcid.org', 'orcid.org')).toBe(false);
+  });
 });

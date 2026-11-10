@@ -234,8 +234,8 @@ export function visiblePageText(html: string): string {
 
 function pageText(html: string): string {
   return String(html ?? '')
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<script[\s\S]*?<\/script\s*>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style\s*>/gi, ' ')
     .replace(/<!--[\s\S]*?-->/g, ' ')
     .replace(/<[^>]+>/g, ' ');
 }

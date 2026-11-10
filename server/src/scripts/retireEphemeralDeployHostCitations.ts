@@ -99,7 +99,9 @@ export interface RetireDeployHostCitationsResult {
  * different rules.
  */
 function deployHostRegex(): { $regex: string; $options: string } {
-  const escaped = EPHEMERAL_DEPLOY_HOST_DOMAINS.map((domain) => domain.replace(/\./g, '\\.'));
+  const escaped = EPHEMERAL_DEPLOY_HOST_DOMAINS.map((domain) =>
+    domain.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),
+  );
   return { $regex: `(${escaped.join('|')})`, $options: 'i' };
 }
 

@@ -177,7 +177,7 @@ function bookletTokens(text: string): BookletToken[] {
     .filter((line) => line && !CREDENTIAL_ONLY.test(line.replace(/^[,;]\s*|[.,]$/g, '')))
     .map((line) =>
       SUPERSCRIPT_LINE.test(line)
-        ? { kind: 'marks' as const, marks: line.replace('*', '').split(',').map(Number) }
+        ? { kind: 'marks' as const, marks: line.replaceAll('*', '').split(',').map(Number) }
         : { kind: 'text' as const, text: line },
     );
 }

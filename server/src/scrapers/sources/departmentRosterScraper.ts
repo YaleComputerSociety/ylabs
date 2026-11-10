@@ -128,6 +128,7 @@ import { runWithBoundedConcurrency } from '../utils/boundedConcurrency';
 import { evidenceAssertsALab } from '../utils/labClaimEvidence';
 import { labNameStatedForPerson, statedLabNameClaimsAnotherPerson } from '../utils/statedLabName';
 import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
+import { hostnameIsWithin } from '../../utils/yaleHost';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
@@ -3508,7 +3509,7 @@ export function profileEnrichmentFromHtml(
       scholarCandidateProfileUrls.push(scholarUrl);
       return;
     }
-    if (parsed.hostname.toLowerCase().includes('orcid.org')) return;
+    if (hostnameIsWithin(parsed.hostname, 'orcid.org')) return;
     if (labUrl) return;
     if (normalizeUrlForDedupe(absolute) === normalizeUrlForDedupe(canonicalUrl)) return;
 
