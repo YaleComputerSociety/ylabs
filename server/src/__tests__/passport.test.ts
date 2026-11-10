@@ -299,6 +299,7 @@ describe('auth environment guards', () => {
           profileVerified: true,
           isAdmin: true,
         },
+        productAnalytics: false,
       });
     } finally {
       accountServiceMock.recordAccountLogin.mockReset();
@@ -348,6 +349,7 @@ describe('auth environment guards', () => {
           profileVerified: true,
           isAdmin: true,
         },
+        productAnalytics: false,
       });
     } finally {
       accountServiceMock.recordAccountLogin.mockReset();
@@ -390,6 +392,7 @@ describe('auth environment guards', () => {
           profileVerified: true,
           isAdmin: false,
         },
+        productAnalytics: false,
       });
     } finally {
       accountServiceMock.recordAccountLogin.mockReset();
@@ -596,6 +599,7 @@ describe('auth environment guards', () => {
         profileVerified: false,
         isAdmin: false,
       },
+      productAnalytics: false,
     });
   });
 
@@ -622,6 +626,7 @@ describe('auth environment guards', () => {
           profileVerified: false,
           isAdmin: false,
         },
+        productAnalytics: false,
       });
     }
   });

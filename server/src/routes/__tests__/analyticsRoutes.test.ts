@@ -14,6 +14,12 @@ const mocks = vi.hoisted(() => ({
   researchEntityExists: vi.fn(),
   getLaneBenchmarkDashboard: vi.fn(),
   hasActiveAdminGrant: vi.fn(),
+  findNetidForProductAnalyticsId: vi.fn(),
+}));
+
+vi.mock('../../services/productAnalyticsIdentityService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/productAnalyticsIdentityService')>()),
+  findNetidForProductAnalyticsId: mocks.findNetidForProductAnalyticsId,
 }));
 
 vi.mock('../../services/adminGrantService', async (importOriginal) => ({
@@ -181,6 +187,56 @@ describe('analytics routes', () => {
     expect(res.statusCode).toBe(500);
     expect(res.body).toEqual({ error: 'Internal server error' });
     expect(mocks.getLaneBenchmarkDashboard).not.toHaveBeenCalled();
+  });
+
+  const POSTHOG_ID_ROUTE = '/product-analytics-ids/:productAnalyticsId';
+  const SYNTHETIC_POSTHOG_ID = '3f2b6c1e-8d4a-4f0b-9c7e-2a1d5e6f7a8b';
+
+  it('refuses the PostHog ID lookup to a signed-out request and to a non-admin', async () => {
+    const signedOut = await dispatchRoute(POSTHOG_ID_ROUTE, {
+      params: { productAnalyticsId: SYNTHETIC_POSTHOG_ID },
+    });
+    mocks.hasActiveAdminGrant.mockResolvedValue(false);
+    const student = await dispatchRoute(POSTHOG_ID_ROUTE, {
+      user: { netId: 'test123' },
+      params: { productAnalyticsId: SYNTHETIC_POSTHOG_ID },
+    });
+
+    expect(signedOut.statusCode).toBe(401);
+    expect(student.statusCode).toBe(403);
+    expect(mocks.findNetidForProductAnalyticsId).not.toHaveBeenCalled();
+  });
+
+  it('resolves a PostHog ID to its netid for an admin, matching any letter case', async () => {
+    mocks.hasActiveAdminGrant.mockResolvedValue(true);
+    mocks.findNetidForProductAnalyticsId.mockResolvedValue('test456');
+
+    const res = await dispatchRoute(POSTHOG_ID_ROUTE, {
+      user: { netId: 'test123' },
+      params: { productAnalyticsId: ` ${SYNTHETIC_POSTHOG_ID.toUpperCase()} ` },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({ productAnalyticsId: SYNTHETIC_POSTHOG_ID, netid: 'test456' });
+    expect(mocks.findNetidForProductAnalyticsId).toHaveBeenCalledWith(SYNTHETIC_POSTHOG_ID);
+  });
+
+  it('answers 404 for an unknown PostHog ID and 400 for a malformed one', async () => {
+    mocks.hasActiveAdminGrant.mockResolvedValue(true);
+    mocks.findNetidForProductAnalyticsId.mockResolvedValue(null);
+
+    const unknown = await dispatchRoute(POSTHOG_ID_ROUTE, {
+      user: { netId: 'test123' },
+      params: { productAnalyticsId: SYNTHETIC_POSTHOG_ID },
+    });
+    const malformed = await dispatchRoute(POSTHOG_ID_ROUTE, {
+      user: { netId: 'test123' },
+      params: { productAnalyticsId: 'test456' },
+    });
+
+    expect(unknown.statusCode).toBe(404);
+    expect(malformed.statusCode).toBe(400);
+    expect(mocks.findNetidForProductAnalyticsId).toHaveBeenCalledTimes(1);
   });
 
   it('exposes the search-query analytics endpoint used by the analytics dashboard', () => {

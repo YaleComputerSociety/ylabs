@@ -18,6 +18,10 @@ const GOOGLE_ANALYTICS_MARKERS = [
   /\bG-[A-Z0-9]{10}\b/,
 ];
 
+// PostHog's session recorder lists analytics hosts, Google's among them, so that it never
+// records requests to them; that list names the hosts without loading or calling them.
+const RECORDER_NETWORK_DENY_LIST = /payloadHostDenyList:\[[^\]]*\]/g;
+
 const SCANNED_EXTENSIONS = /\.(?:html|js|mjs|css|json|txt|svg|webmanifest)$/;
 
 const filesUnder = (dir: string): string[] =>
@@ -50,6 +54,7 @@ const googleAnalyticsHits = (): string[] =>
     .filter((file) => SCANNED_EXTENSIONS.test(file))
     .flatMap((file) =>
       readFileSync(join(outDir, file), 'utf8')
+        .replace(RECORDER_NETWORK_DENY_LIST, '')
         .split('\n')
         .flatMap((line, index) =>
           GOOGLE_ANALYTICS_MARKERS.filter((marker) => marker.test(line)).map(
@@ -70,5 +75,28 @@ describe('the production client build ships no Google Analytics', () => {
 
   it('does not ship the GA bootstrap script', () => {
     expect(builtFiles).not.toContain('analytics.js');
+  });
+});
+
+const builtText = (file: string) => readFileSync(join(outDir, file), 'utf8');
+
+describe('the production client build loads PostHog only from the app bundle', () => {
+  it('has no third-party or inline-loader script tag in the entry document', () => {
+    const scriptTags = builtText('index.html').match(/<script\b[^>]*>/g) ?? [];
+
+    expect(scriptTags.length).toBeGreaterThan(0);
+    for (const tag of scriptTags) {
+      expect(tag).toMatch(/\ssrc="\/assets\/[^"]+\.js"/);
+    }
+    expect(builtText('index.html')).not.toMatch(/posthog/i);
+  });
+
+  it('bundles the PostHog build that cannot load an external script', () => {
+    const jsFiles = builtFiles.filter((file) => /\.js$/.test(file));
+
+    expect(jsFiles.some((file) => builtText(file).includes('us.i.posthog.com'))).toBe(true);
+    expect(jsFiles.filter((file) => builtText(file).includes('loadExternalDependency='))).toEqual(
+      [],
+    );
   });
 });

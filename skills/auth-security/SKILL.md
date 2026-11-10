@@ -420,6 +420,12 @@ Route any value that is not a literal through `sanitizeLogValue` in `server/src/
 A pin on a guard's own spelling fails on behaviour-preserving rewrites and passes when a new code path leaks, so a new guarantee is written as an input and its expected output.
 - Error reports to Sentry carry no user identity, cookie, header beyond the client `User-Agent`, body, query value, or local variable.
 The posture, including why every `dataCollection` category is set off explicitly and why Express's automatic capture is disabled, is owned by the Error Reporting section of `docs/research-journey-analytics.md`.
+- PostHog runs only in Production, for a signed-in session without an active admin grant, and is off by default everywhere else.
+`isProductAnalyticsAllowedForSession` in `server/src/utils/posthogConfig.ts` decides it from positive Production evidence (the `Prod` database, the `prod` search index prefix, a deployed runtime, `SCRAPER_ENV` not `beta`), and the same gate is the only thing that adds the two PostHog origins to `connect-src`.
+`GET /api/check` reports the decision as `productAnalytics` and, when it is true, returns `productAnalyticsId`.
+- `accounts.productAnalyticsId` is a random UUID and the only identity PostHog may receive; it may go to PostHog and to the admin-only lookup on `/analytics`, and nowhere else, so never add it to a log, an error report, an `analytics_events` row or a corpus record.
+A netid, email or name never goes to PostHog in any property.
+The client posture, its masking and its guards are owned by the Third-Party Measurement section of `docs/research-journey-analytics.md`.
 - `server/src/passport.ts` controls CAS auth and `Account` login (via `accountService`).
 - `server/src/db/connections.ts` controls database connections and migration mode.
 - `server/src/app.ts` controls CORS, rate limits, session settings, route mounting, and security middleware.
@@ -467,3 +473,4 @@ Rotating a leaked secret is owned by `docs/incident-runbook.md`.
 | Variable | Required | Purpose |
 |----------|----------|---------|
 | `VITE_APP_SERVER` | Yes | Backend API URL. |
+| `VITE_POSTHOG_KEY`, `VITE_POSTHOG_HOST` | Production only | PostHog project key and the US ingest host; unset means PostHog is fully off. |
