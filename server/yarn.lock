@@ -3227,41 +3227,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"mongodb@npm:~7.6.0":
-  version: 7.6.0
-  resolution: "mongodb@npm:7.6.0"
-  dependencies:
-    "@mongodb-js/saslprep": "npm:^1.4.11"
-    bson: "npm:^7.2.0"
-    mongodb-connection-string-url: "npm:^7.0.1"
-  peerDependencies:
-    "@aws-sdk/credential-providers": ^3.806.0
-    "@mongodb-js/zstd": ^7.0.0
-    gcp-metadata: ^7.0.1
-    kerberos: ^7.0.0
-    mongodb-client-encryption: ^7.2.0
-    snappy: ^7.3.2
-    socks: ^2.8.6
-  peerDependenciesMeta:
-    "@aws-sdk/credential-providers":
-      optional: true
-    "@mongodb-js/zstd":
-      optional: true
-    gcp-metadata:
-      optional: true
-    kerberos:
-      optional: true
-    mongodb-client-encryption:
-      optional: true
-    snappy:
-      optional: true
-    socks:
-      optional: true
-  checksum: 10c0/91f45d49aaa17af40b1dbd4f5eff85fd11f12c7df993cadbe51e96c31f40c74596b2d979f7eeebb376889a1397deb9081db10cbb0e8904853c80b1f2fcddf7d0
-  languageName: node
-  linkType: hard
-
-"mongodb@npm:~7.7":
+"mongodb@npm:~7.7, mongodb@npm:~7.7.0":
   version: 7.7.0
   resolution: "mongodb@npm:7.7.0"
   dependencies:
@@ -4101,7 +4067,7 @@ __metadata:
     express-rate-limit: "npm:^8.7.0"
     http-cache-semantics: "npm:^4.2.0"
     meilisearch: "npm:^0.62.0"
-    mongodb: "npm:~7.6.0"
+    mongodb: "npm:~7.7.0"
     mongodb-memory-server: "npm:^11.3.0"
     mongoose: "npm:^9.11.4"
     passport: "npm:^0.7.0"
