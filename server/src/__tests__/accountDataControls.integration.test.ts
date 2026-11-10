@@ -714,7 +714,11 @@ describe('a signed-in student can export and delete their account data (#4156)',
     expect(await db().collection('analytics_events').countDocuments({ netid: OWNER_NETID })).toBe(
       0,
     );
-    expect(await db().collection('admin_grants').countDocuments({ netid: OWNER_NETID })).toBe(0);
+    const ownGrant = await db().collection('admin_grants').findOne({ netid: OWNER_NETID });
+    expect(ownGrant).toMatchObject({ status: 'revoked', grantedBy: 'synthgrantor' });
+    expect(ownGrant?.history).toEqual([
+      expect.objectContaining({ action: 'revoked', actorNetid: 'accountholder' }),
+    ]);
 
     const report = await db()
       .collection('entitycorrectionreports')

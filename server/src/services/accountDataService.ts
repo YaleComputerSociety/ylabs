@@ -108,6 +108,7 @@ const adminAuditEventsTargeting = (netid: string) => ({
 const adminAuditEventsOf = (netid: string) => ({
   $or: [adminAuditEventsActedBy(netid), adminAuditEventsTargeting(netid)],
 });
+const activeAdminGrantsOf = (netid: string) => ({ netid, status: 'active' });
 const adminGrantsActedOnBy = (netid: string) => ({
   netid: { $ne: netid },
   $or: [{ grantedBy: netid }, { revokedBy: netid }, { 'history.actorNetid': netid }],
@@ -247,7 +248,7 @@ export const readAccountDataResidue = async (netidInput: unknown): Promise<Accou
     account ? ResearchPlan.countDocuments({ accountId: account._id }) : Promise.resolve(0),
     AnalyticsEvent.countDocuments(analyticsEventsOf(netid)),
     EntityCorrectionReport.countDocuments(correctionReportsOf(netid)),
-    AdminGrant.countDocuments({ netid }),
+    AdminGrant.countDocuments(activeAdminGrantsOf(netid)),
   ]);
   return {
     account: account ? 1 : 0,
@@ -366,6 +367,20 @@ const tombstoneCorrectionReports = async (netid: string): Promise<number> => {
   return reports.length;
 };
 
+const revokeAdminGrantsOnDeletion = async (
+  netid: string,
+  requester: AccountDeletionRequester,
+  now: Date,
+): Promise<number> => {
+  const actorNetid = AUDIT_ACTOR_LABELS[requester];
+  const note = 'Account deleted';
+  const { modifiedCount } = await AdminGrant.updateMany(activeAdminGrantsOf(netid), {
+    $set: { status: 'revoked', revokedBy: actorNetid, revokedAt: now, revokeNote: note },
+    $push: { history: { action: 'revoked', actorNetid, note, at: now } },
+  });
+  return modifiedCount;
+};
+
 const recordDeletionAudit = async (
   requester: AccountDeletionRequester,
   subjectHash: string | null,
@@ -432,7 +447,7 @@ export const deleteAccountData = async (
     : 0;
   const analyticsEvents = await foldAndDeleteAnalyticsEvents(netid, now);
   const correctionReports = await tombstoneCorrectionReports(netid);
-  const adminGrants = (await AdminGrant.deleteMany({ netid })).deletedCount;
+  const adminGrants = await revokeAdminGrantsOnDeletion(netid, requester, now);
   if (adminGrants > 0) clearAdminGrantCache();
   const postHog = await deletePostHogPerson(account?.productAnalyticsId, env);
   const subjectHash = accountDeletionAuditSubjectHash(netid, env);

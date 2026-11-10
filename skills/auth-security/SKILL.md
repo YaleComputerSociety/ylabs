@@ -232,8 +232,8 @@ The deletion order is the contract, and every step is safe to repeat:
 3. Delete every `research_plans` row for the account, bypassing the restore window.
 4. Fold the netid's `analytics_events` into `deleted_account_event_tallies` (UTC month, event type and count, nothing else) and delete them, one transaction per batch, so raw search text is gone and a retry never double-counts.
 5. Keep each correction report and replace its `reporter` with a tombstone whose `netId` is `deleted-<reportId>`, with empty email and name; the report is evidence about a public row.
-6. Delete the netid's `admin_grants`, so a maintainer who deletes their account loses the grant with it.
-`admin_audit_events` and the `grantedBy`, `revokedBy` and history entries on other accounts' grants are left exactly as they are, because the audit log is append-only; the export includes the rows that name the netid, but a deletion never rewrites them.
+6. Revoke the netid's active `admin_grants`, appending a `revoked` history entry, so a maintainer who deletes their account loses the grant with it while the grant row and its history stay.
+`admin_audit_events`, the earlier history on the netid's own grant, and the `grantedBy`, `revokedBy` and history entries on other accounts' grants are left exactly as they are, because the audit log is append-only; the export includes the rows that name the netid, but a deletion never rewrites them.
 7. Ask PostHog to delete the person keyed on `productAnalyticsId`, with events and recordings.
 Unconfigured, this is skipped and reported as `skipped_not_configured`; configured and failing, the deletion stops here, because the account row holds the only copy of that id.
 8. Record the deletion for every other environment, below, before the account goes, so a failure there is retried rather than lost.
