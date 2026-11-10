@@ -86,6 +86,7 @@ export type SearchRerankLiveMissEnqueueDecision =
   | 'joined-in-flight'
   | 'query-too-long'
   | 'stopped-for-the-day'
+  | 'failed-today'
   | 'ip-cap'
   | 'session-cap';
 
@@ -97,6 +98,8 @@ interface WindowCounter {
 interface SearchRerankLiveMissState {
   pending: SearchRerankLiveMissJobRequest[];
   inFlight: Set<string>;
+  failedDay: number;
+  failedToday: Set<string>;
   byIp: Map<string, WindowCounter>;
   bySession: Map<string, WindowCounter>;
   stoppedUntil: number;
@@ -106,6 +109,8 @@ interface SearchRerankLiveMissState {
 const freshState = (): SearchRerankLiveMissState => ({
   pending: [],
   inFlight: new Set(),
+  failedDay: 0,
+  failedToday: new Set(),
   byIp: new Map(),
   bySession: new Map(),
   stoppedUntil: 0,
@@ -168,6 +173,21 @@ const defaultRunner: SearchRerankLiveMissRunner = async (request) => {
   return runSearchRerankLiveMissJob(request);
 };
 
+const OUTCOMES_THAT_WOULD_REPEAT: ReadonlySet<SearchRerankLiveMissJobStatus> = new Set([
+  'ineligible',
+  'model-failed',
+  'malformed-output',
+]);
+
+const failedTodayFor = (queue: SearchRerankLiveMissState, now: number): Set<string> => {
+  const today = startOfUtcDay(now);
+  if (queue.failedDay !== today) {
+    queue.failedDay = today;
+    queue.failedToday = new Set();
+  }
+  return queue.failedToday;
+};
+
 const logOutcome = (status: string): void => {
   console.info(`[${SEARCH_RERANK_LIVE_MISS_CALLER}] job ${sanitizeLogValue(status)}`);
 };
@@ -183,8 +203,10 @@ async function drainQueue(queue: SearchRerankLiveMissState): Promise<void> {
       const { status } = await (runner ?? defaultRunner)(job);
       logOutcome(status);
       if (status === 'spend-ceiling') stopForTheDay(queue, clock());
+      if (OUTCOMES_THAT_WOULD_REPEAT.has(status)) failedTodayFor(queue, clock()).add(job.queryKey);
     } catch (error) {
       console.error(`[${SEARCH_RERANK_LIVE_MISS_CALLER}] job failed:`, sanitizeLogValue(error));
+      failedTodayFor(queue, clock()).add(job.queryKey);
     } finally {
       queue.inFlight.delete(job.queryKey);
     }
@@ -213,6 +235,7 @@ export function enqueueSearchRerankLiveMiss(
   const now = clock();
   if (state.stoppedUntil > now) return 'stopped-for-the-day';
   if (state.inFlight.has(request.queryKey)) return 'joined-in-flight';
+  if (failedTodayFor(state, now).has(request.queryKey)) return 'failed-today';
   const ipCounter = counterWithin(state.byIp, client.ipKey, now - (now % HOUR_MS));
   if (ipCounter.count >= SEARCH_RERANK_LIVE_MISS_MAX_PER_IP_PER_HOUR) return 'ip-cap';
   const sessionCounter = counterWithin(state.bySession, client.sessionKey, startOfUtcDay(now));

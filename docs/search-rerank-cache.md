@@ -104,7 +104,9 @@ All of these are in-process, so they hold per server instance; the web service r
   Over a cap the search is served normally and nothing is queued.
 - Before each model call the job reads today's spend for its caller from `model_call_usages` (UTC day, priced by `modelPricing.ts`).
   At USD 1.00 the queue drops what is pending and queues nothing until the next UTC day.
-  The ceiling counts this caller's spend only, not every caller's, so a scraper or description run that spends on the same day never stops the job, and the job's own spend can never exceed it.
+  The ceiling counts this caller's spend only, not every caller's, so a scraper or description run that spends on the same day never stops the job.
+  The check runs before each call against the spend recorded so far, and usage records are written without waiting, so the last call of the day can take the total past USD 1.00 by about one call's cost.
+- A key whose job ends ineligible, with a failed model call, with a reply below the scoring bar, or with an error is not queued again until the next UTC day, so a query the model keeps failing costs one call a day rather than one per student who searches it.
   An unreadable log, or no database connection, skips the call rather than spending blind.
 
 ### The job

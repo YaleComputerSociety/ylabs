@@ -265,6 +265,59 @@ describe('enqueueSearchRerankLiveMiss', () => {
     await searchRerankLiveMissIdle();
   });
 
+  it.each<SearchRerankLiveMissJobStatus>(['ineligible', 'model-failed', 'malformed-output'])(
+    'does not queue a key again the same UTC day after its job ends %s',
+    async (status) => {
+      const runner = vi.fn().mockResolvedValue({ status });
+      setSearchRerankLiveMissRunner(runner);
+
+      enqueueSearchRerankLiveMiss(job(1), client('ip:first', 'anonymous:first'));
+      await searchRerankLiveMissIdle();
+
+      expect(enqueueSearchRerankLiveMiss(job(1), client('ip:second', 'anonymous:second'))).toBe(
+        'failed-today',
+      );
+      expect(enqueueSearchRerankLiveMiss(job(2), client('ip:second', 'anonymous:second'))).toBe(
+        'enqueued',
+      );
+      await searchRerankLiveMissIdle();
+
+      now = Date.UTC(2026, 10, 11, 0, 0, 0);
+      expect(enqueueSearchRerankLiveMiss(job(1), client('ip:third', 'anonymous:third'))).toBe(
+        'enqueued',
+      );
+      await searchRerankLiveMissIdle();
+      expect(runner).toHaveBeenCalledTimes(3);
+    },
+  );
+
+  it('does not queue a key again the same UTC day after its job throws', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    setSearchRerankLiveMissRunner(vi.fn().mockRejectedValue(new Error('synthetic failure')));
+
+    enqueueSearchRerankLiveMiss(job(1), client('ip:first', 'anonymous:first'));
+    await searchRerankLiveMissIdle();
+
+    expect(enqueueSearchRerankLiveMiss(job(1), client('ip:second', 'anonymous:second'))).toBe(
+      'failed-today',
+    );
+  });
+
+  it.each<SearchRerankLiveMissJobStatus>(['written', 'no-api-key', 'spend-unreadable'])(
+    'queues a key again after its job ends %s',
+    async (status) => {
+      setSearchRerankLiveMissRunner(vi.fn().mockResolvedValue({ status }));
+
+      enqueueSearchRerankLiveMiss(job(1), client('ip:first', 'anonymous:first'));
+      await searchRerankLiveMissIdle();
+
+      expect(enqueueSearchRerankLiveMiss(job(1), client('ip:second', 'anonymous:second'))).toBe(
+        'enqueued',
+      );
+      await searchRerankLiveMissIdle();
+    },
+  );
+
   it('keeps draining after a job throws', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const runner = vi
