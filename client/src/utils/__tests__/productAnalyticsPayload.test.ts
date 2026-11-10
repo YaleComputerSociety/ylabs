@@ -7,8 +7,11 @@ let productAnalytics: ProductAnalyticsModule;
 
 const SYNTHETIC_KEY = 'phc_syntheticTestKey0000000000000000000000';
 let sessionKeyIndex = 0;
-const freshSessionKey = () =>
-  `phc_syntheticSessionKey${String(++sessionKeyIndex).padStart(20, '0')}`;
+let currentSessionKey = '';
+const freshSessionKey = () => {
+  currentSessionKey = `phc_syntheticSessionKey${String(++sessionKeyIndex).padStart(20, '0')}`;
+  return currentSessionKey;
+};
 const SYNTHETIC_NETID = 'zq9999';
 const SYNTHETIC_QUERY = 'syntheticquerytext';
 const SYNTHETIC_NOTE = 'synthetic private plan note';
@@ -68,11 +71,12 @@ const parseBody = (body: BodyInit | null | undefined): unknown => {
 
 const sentEvents = (): SentEvent[] =>
   sent
-    .filter((request) => request.url.startsWith(POSTHOG_INGEST_ORIGIN))
+    .filter((request) => new URL(request.url).origin === POSTHOG_INGEST_ORIGIN)
     .flatMap((request) => {
       const body = request.body as { batch?: SentEvent[] } | SentEvent[];
       return Array.isArray(body) ? body : (body?.batch ?? []);
-    });
+    })
+    .filter((event) => event.properties.token === currentSessionKey);
 
 const everythingSent = () => JSON.stringify(expandCompressedStrings(sent.map((r) => r.body)));
 
@@ -173,11 +177,13 @@ describe('PostHog payload through the real SDK', () => {
     expect(names).not.toContain('$set');
 
     expect(
-      sent.every(
-        (request) =>
-          request.url.startsWith(`${POSTHOG_INGEST_ORIGIN}/`) ||
-          request.url.startsWith(`${POSTHOG_ASSETS_ORIGIN}/array/`),
-      ),
+      sent.every((request) => {
+        const { origin, pathname } = new URL(request.url);
+        return (
+          origin === POSTHOG_INGEST_ORIGIN ||
+          (origin === POSTHOG_ASSETS_ORIGIN && pathname.startsWith('/array/'))
+        );
+      }),
     ).toBe(true);
     expect(document.querySelector('script[src*="posthog"]')).toBeNull();
     expect(window.localStorage.length).toBe(0);

@@ -78,11 +78,13 @@ describe('the production client build ships no Google Analytics', () => {
   });
 });
 
+const QUOTED_POSTHOG_DEFAULT_HOST = /[`'"]https:\/\/us\.i\.posthog\.com[`'"]/;
+
 const builtText = (file: string) => readFileSync(join(outDir, file), 'utf8');
 
 describe('the production client build loads PostHog only from the app bundle', () => {
   it('has no third-party or inline-loader script tag in the entry document', () => {
-    const scriptTags = builtText('index.html').match(/<script\b[^>]*>/g) ?? [];
+    const scriptTags = builtText('index.html').match(/<script\b[^>]*>/gi) ?? [];
 
     expect(scriptTags.length).toBeGreaterThan(0);
     for (const tag of scriptTags) {
@@ -94,7 +96,7 @@ describe('the production client build loads PostHog only from the app bundle', (
   it('bundles the PostHog build that cannot load an external script', () => {
     const jsFiles = builtFiles.filter((file) => /\.js$/.test(file));
 
-    expect(jsFiles.some((file) => builtText(file).includes('us.i.posthog.com'))).toBe(true);
+    expect(jsFiles.some((file) => QUOTED_POSTHOG_DEFAULT_HOST.test(builtText(file)))).toBe(true);
     expect(jsFiles.filter((file) => builtText(file).includes('loadExternalDependency='))).toEqual(
       [],
     );
