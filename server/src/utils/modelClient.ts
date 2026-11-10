@@ -2,7 +2,7 @@ import axios, { type AxiosResponse } from 'axios';
 import mongoose from 'mongoose';
 import { ModelCallUsage } from '../models/modelCallUsage';
 
-const OPENAI_BASE_URL = 'https://api.openai.com/v1';
+const MODEL_ENDPOINT_PREFIX = 'https://api.openai.com/v1/';
 
 export const FROZEN_MODEL_RESPONSE_HEADER = 'x-ylabs-frozen-model-response';
 
@@ -65,7 +65,7 @@ export function restoreDefaultModelUsageSink(): void {
 }
 
 export function isModelEndpointUrl(url: unknown): boolean {
-  return typeof url === 'string' && url.startsWith(`${OPENAI_BASE_URL}/`);
+  return typeof url === 'string' && url.startsWith(MODEL_ENDPOINT_PREFIX);
 }
 
 const tokenCount = (value: unknown): number => {
@@ -115,7 +115,7 @@ async function postModelRequest(
   const startedAt = Date.now();
   let response: AxiosResponse;
   try {
-    response = await axios.post(`${OPENAI_BASE_URL}/${endpoint}`, request.body, {
+    response = await axios.post(`https://api.openai.com/v1/${endpoint}`, request.body, {
       headers: { Authorization: `Bearer ${request.apiKey}`, 'Content-Type': 'application/json' },
       timeout: request.timeoutMs,
     });
