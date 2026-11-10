@@ -306,8 +306,8 @@ There is no unmerge tool; reversing one is an operator judgement about those row
 Snapshot every row you will touch before each step, and run each step against Development only.
 
 1. Detach the wrong lead from the survivor: archive that one `RoleAssignment` with `reviewStatus: 'DISPUTED'` and a `reviewNotes` entry that records the decision, which keeps every later scrape from re-attaching it.
-Refuse any value derived from the wrong lead, such as a lead-derived `name`, with `research-entity:refuse-field-value --rule=operator_judgement --decided-by`.
-2. Break the redirect first: `$unset` the `canonicalGroupId` on each archived row of the other person, and `$pull` those rows from the survivor's `mergedFrom`.
+Refuse any value derived from the wrong lead, such as a lead-derived `name`, with `research-entity:refuse-field-value --slug=<slug> --field=name --value=<value> --rule=operator_judgement --note='<why>' --decided-by='<who>' --apply --confirm-field-value-refusal`.
+2. Break the redirect before anything below: `$unset` the `canonicalGroupId` on each archived row of the other person, and `$pull` those rows from the survivor's `mergedFrom`.
 Until this is done, every refresh re-derives the other person's evidence into the survivor, and every weekly run feeds it fresh copies, so the steps below would not hold.
 3. Supersede the residue: mark the remaining live observations about the other person that are filed under the survivor as `superseded: true` with a `rollback` reason, then `$pull` any stray `sourceUrls` or `departments` they left.
 Query both identity forms, `entityKey` and `entityId`, of the survivor and of every merged row.
@@ -316,7 +316,7 @@ Query both identity forms, `entityKey` and `entityId`, of the survivor and of ev
 snapshot the row, set `archived: false` on that one row only, run `research-entity:rematerialize --slugs=<slug> --apply --confirm-rematerialize`, and confirm that a second run plans no change.
 The flag has to be set by hand because `materializeEntity` skips every archived research row (`skipped: 'archived-research-entity'`), so neither a rematerialize nor a fresh scrape can re-activate it.
 Only the lifecycle flag is written; every field is then derived from the row's own evidence, so nothing needs a lock.
-6. Check the stored tier with `student-visibility:gate --apply` for the touched rows, run `yarn development:search:sync`, and re-read the served detail pages and a search for each person's name.
+6. Check the stored tier for the touched rows with `student-visibility:gate --collection=research --record-id=<id> --apply --confirm-student-visibility-apply --max-apply=<n>`, repeating `--record-id` once per row, run `yarn development:search:sync`, and re-read the served detail pages and a search for each person's name.
 
 Every archive records an `archivedReason`, because `archivedEntityUpdate` requires one.
 If unmerges become common, that reason is how an engine pass could automate step 5: it would find rows archived only by a merge whose redirect was later broken.
