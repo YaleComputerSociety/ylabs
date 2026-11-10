@@ -155,6 +155,7 @@ import {
 } from '../services/meiliSyncService';
 import {
   listResearchEntityMergedInRows,
+  listResearchEntityMergedInRowsBySurvivor,
   resolveResearchEntityCanonicalByTombstone,
   type MergedInResearchEntityRow,
   type ResearchEntityTombstoneNode,
@@ -12053,10 +12054,19 @@ export interface ChunkConcurrencyPartition {
   sequential: ObservedEntityRow[];
 }
 
-function storedResearchEntityIdWritableAlone(
+/** Every archived row merged into each live survivor, keyed by the survivor's id. */
+export type ChunkMergeGroups = ReadonlyMap<string, ReadonlyArray<MergedInResearchEntityRow>>;
+
+interface StoredRowWritableAlone {
+  id: string;
+  /** The ids and keys of every row this one reads as its own: itself and its merged-in rows. */
+  groupKeys: string[];
+}
+
+function liveStoredResearchEntity(
   row: ObservedEntityRow,
   chunkPrefetch: MaterializationReadSource,
-): string | undefined {
+): { id: string; slug: string } | undefined {
   if (!isResearchEntityObservationType(row.entityType) || isDeptRosterKey(row.entityKey)) {
     return undefined;
   }
@@ -12066,37 +12076,107 @@ function storedResearchEntityIdWritableAlone(
       ? chunkPrefetch.entityDocForKey(row.entityType, row.entityKey)
       : undefined;
   if (!lookup?.hit || !lookup.value) return undefined;
-  const doc = lookup.value as { _id?: unknown; archived?: unknown; canonicalGroupId?: unknown };
+  const doc = lookup.value as {
+    _id?: unknown;
+    slug?: unknown;
+    archived?: unknown;
+    canonicalGroupId?: unknown;
+  };
   if (doc.archived === true || doc.canonicalGroupId) return undefined;
   const id = prefetchObjectIdString(doc._id);
-  if (!id || !chunkPrefetch.hasNoMergedInRows(id)) return undefined;
-  return id;
+  return id ? { id, slug: textValue(doc.slug) } : undefined;
+}
+
+function storedResearchEntityWritableAlone(
+  row: ObservedEntityRow,
+  chunkPrefetch: MaterializationReadSource,
+  mergeGroups: ChunkMergeGroups | undefined,
+): StoredRowWritableAlone | undefined {
+  const stored = liveStoredResearchEntity(row, chunkPrefetch);
+  if (!stored) return undefined;
+  const ownKeys = [stored.id, stored.slug].filter(Boolean);
+  if (chunkPrefetch.hasNoMergedInRows(stored.id)) return { id: stored.id, groupKeys: ownKeys };
+  const mergedIn = mergeGroups?.get(stored.id);
+  if (!mergedIn) return undefined;
+  const mergedInKeys = mergedIn.flatMap((member) =>
+    [prefetchObjectIdString(member._id), textValue(member.slug)].filter((key): key is string =>
+      Boolean(key),
+    ),
+  );
+  return { id: stored.id, groupKeys: [...ownKeys, ...mergedInKeys] };
+}
+
+function rowReferenceKeys(
+  row: ObservedEntityRow,
+  writable: StoredRowWritableAlone | undefined,
+): Set<string> {
+  return new Set(
+    [row.entityId, row.entityKey, writable?.id].filter((key): key is string => Boolean(key)),
+  );
 }
 
 /**
- * Only a row that updates its own live, unmerged, already-stored research entity may run
- * beside others: a create can be adopted by a sibling's identity lookup, a `dept-*` key can
- * fold into another row, and a merged survivor reads its losers, so each of those writes or
- * reads another row and stays in the original sequential order (#5521).
+ * The merge groups of the chunk's live survivors, loaded only when the chunk will run in
+ * parallel. A failed load returns nothing, which keeps every survivor sequential.
+ */
+async function loadChunkMergeGroups(
+  chunk: readonly ObservedEntityRow[],
+  chunkPrefetch: MaterializationReadSource,
+): Promise<ChunkMergeGroups | undefined> {
+  const survivorIds = [
+    ...new Set(
+      chunk
+        .map((row) => liveStoredResearchEntity(row, chunkPrefetch)?.id)
+        .filter((id): id is string => Boolean(id) && !chunkPrefetch.hasNoMergedInRows(id)),
+    ),
+  ];
+  if (survivorIds.length === 0) return undefined;
+  try {
+    return await listResearchEntityMergedInRowsBySurvivor(survivorIds);
+  } catch (error) {
+    console.warn(
+      'materializeFromRun: merge groups for a chunk failed to load; its survivors run sequentially:',
+      sanitizeLogValue(error),
+    );
+    return undefined;
+  }
+}
+
+/**
+ * Only a row that updates its own live, already-stored research entity may run beside
+ * others, and only when no other row in the chunk names any row it reads as its own: a
+ * create can be adopted by a sibling's identity lookup and a `dept-*` key can fold into
+ * another row, so both stay in the original sequential order (#5521). A merged survivor
+ * reads its merged-in rows' evidence but writes only itself, so it runs in parallel once its
+ * whole merge group is known and no sibling row is keyed by the survivor or by any row merged
+ * into it, because such a sibling resolves to the same survivor and writes it (#5555).
  */
 export function partitionChunkForConcurrency(
   chunk: readonly ObservedEntityRow[],
   chunkPrefetch: MaterializationReadSource | undefined,
+  mergeGroups?: ChunkMergeGroups,
 ): ChunkConcurrencyPartition {
   if (!chunkPrefetch) return { independent: [], sequential: [...chunk] };
-  const idByRow = new Map<ObservedEntityRow, string>();
-  const rowsById = new Map<string, number>();
+  const writableByRow = new Map<ObservedEntityRow, StoredRowWritableAlone>();
+  const rowsReferencingKey = new Map<string, number>();
   for (const row of chunk) {
-    const id = storedResearchEntityIdWritableAlone(row, chunkPrefetch);
-    if (!id) continue;
-    idByRow.set(row, id);
-    rowsById.set(id, (rowsById.get(id) ?? 0) + 1);
+    const writable = storedResearchEntityWritableAlone(row, chunkPrefetch, mergeGroups);
+    if (writable) writableByRow.set(row, writable);
+    for (const key of rowReferenceKeys(row, writable)) {
+      rowsReferencingKey.set(key, (rowsReferencingKey.get(key) ?? 0) + 1);
+    }
   }
   const independent: ObservedEntityRow[] = [];
   const sequential: ObservedEntityRow[] = [];
   for (const row of chunk) {
-    const id = idByRow.get(row);
-    if (id && rowsById.get(id) === 1) independent.push(row);
+    const writable = writableByRow.get(row);
+    const ownReferences = rowReferenceKeys(row, writable);
+    const namedByNoSibling =
+      writable !== undefined &&
+      writable.groupKeys.every(
+        (key) => (rowsReferencingKey.get(key) ?? 0) - (ownReferences.has(key) ? 1 : 0) === 0,
+      );
+    if (namedByNoSibling) independent.push(row);
     else sequential.push(row);
   }
   return { independent, sequential };
@@ -12159,7 +12239,14 @@ export async function materializeObservedEntitiesInChunks(
     if (concurrency <= 1) {
       for (const row of chunk) await materializeChunkRow(row, options, chunkPrefetch, onRow);
     } else {
-      const { independent, sequential } = partitionChunkForConcurrency(chunk, chunkPrefetch);
+      const mergeGroups = chunkPrefetch
+        ? await loadChunkMergeGroups(chunk, chunkPrefetch)
+        : undefined;
+      const { independent, sequential } = partitionChunkForConcurrency(
+        chunk,
+        chunkPrefetch,
+        mergeGroups,
+      );
       await runWithConcurrency(independent, concurrency, (row) =>
         materializeChunkRow(row, options, chunkPrefetch, onRow),
       );
