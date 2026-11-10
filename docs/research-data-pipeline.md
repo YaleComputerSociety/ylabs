@@ -158,6 +158,7 @@ The preflight has two checks, and either failing stops the sweep before any sour
 - **Storage headroom.** It sums `dataSize` plus `indexSize` from `dbStats` over every non-system database on the cluster, because Development, Beta and Production share one Atlas quota (see `data-refresh-runbook.md`), and fails when the quota minus that sum is under the required headroom.
   The quota defaults to 5120 MB (`SCRAPER_SWEEP_CLUSTER_QUOTA_MB`) and the headroom to 1024 MB (`SCRAPER_SWEEP_MIN_HEADROOM_MB`); the headroom is a starting figure, not a measured per-sweep growth.
   A measurement that cannot be taken, for example a credential without `listDatabases`, fails closed.
+  Every staged collection swap (promotion, its rollback, and both mirror directions) runs the same measurement with its staging footprint added, and refuses before writing (`data-refresh-runbook.md`, #4149).
 - **A write-free canary per source.** Each source still to run gets a `scrape:canary --source <name> --limit 5` child (`SCRAPER_SWEEP_CANARY_LIMIT`), eight at a time (`SCRAPER_SWEEP_CANARY_CONCURRENCY`), each killed after 150 s (`SCRAPER_SWEEP_CANARY_TIMEOUT_MS`).
   The canary runs the lane in process with a dry-run, uncached context whose `emit` only counts, so it opens no `ScrapeRun` and writes no observation, unlike `scrape run --dry-run`, which records a run row.
   A `--force-llm` sweep passes `--force-llm` to each canary too, so content-hash gated LLM lanes re-extract exactly as their real run will.

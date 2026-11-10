@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import type { Db } from 'mongodb';
 import type { Connection } from 'mongoose';
 import { runWithBoundedConcurrency } from '../scrapers/utils/boundedConcurrency';
 import {
@@ -34,9 +35,11 @@ function positiveNumber(raw: string | undefined, fallback: number, name: string)
   return value;
 }
 
-export function resolveSweepPreflightConfig(
+export type StorageHeadroomConfig = Pick<SweepPreflightConfig, 'clusterQuotaMb' | 'minHeadroomMb'>;
+
+export function resolveStorageHeadroomConfig(
   env: NodeJS.ProcessEnv = process.env,
-): SweepPreflightConfig {
+): StorageHeadroomConfig {
   return {
     clusterQuotaMb: positiveNumber(
       env.SCRAPER_SWEEP_CLUSTER_QUOTA_MB,
@@ -48,6 +51,14 @@ export function resolveSweepPreflightConfig(
       DEFAULT_MIN_STORAGE_HEADROOM_MB,
       'SCRAPER_SWEEP_MIN_HEADROOM_MB',
     ),
+  };
+}
+
+export function resolveSweepPreflightConfig(
+  env: NodeJS.ProcessEnv = process.env,
+): SweepPreflightConfig {
+  return {
+    ...resolveStorageHeadroomConfig(env),
     canaryLimit: Math.floor(
       positiveNumber(
         env.SCRAPER_SWEEP_CANARY_LIMIT,
@@ -84,6 +95,13 @@ export interface ClusterStorage {
 export async function measureClusterStorage(connection: Connection): Promise<ClusterStorage> {
   const db = connection.db;
   if (!db) throw new Error('the MongoDB connection is not open');
+  return measureClusterStorageFromDb(db, (name) => connection.useDb(name, { useCache: false }).db!);
+}
+
+export async function measureClusterStorageFromDb(
+  db: Db,
+  databaseNamed: (name: string) => Db,
+): Promise<ClusterStorage> {
   const listed = await db.admin().listDatabases({ nameOnly: true });
   const names = listed.databases
     .map((database) => database.name)
@@ -91,7 +109,7 @@ export async function measureClusterStorage(connection: Connection): Promise<Clu
     .sort();
   const databases: DatabaseStorage[] = [];
   for (const name of names) {
-    const stats = await connection.useDb(name, { useCache: false }).db!.command({ dbStats: 1 });
+    const stats = await databaseNamed(name).command({ dbStats: 1 });
     databases.push({
       name,
       dataSizeMb: Number(stats.dataSize ?? 0) / BYTES_PER_MB,

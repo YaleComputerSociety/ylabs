@@ -20,6 +20,7 @@ import {
   parseMongoTarget,
   syncAccountReferences,
   syncCountMismatches,
+  syncHeadroomPreflight,
 } from './syncBetaToDevelopment';
 
 const SERVER_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -131,7 +132,13 @@ async function main(): Promise<void> {
       writeOutput(report, options.output);
       return;
     }
-    await applySync(sourceDb, targetDb, collections, [], async () => {
+    const preflight = syncHeadroomPreflight({
+      sourceDb,
+      targetClient,
+      collections,
+      label: 'Development to Beta sync',
+    });
+    await applySync(sourceDb, targetDb, collections, [], preflight, async () => {
       after = await buildPlan(sourceDb, targetDb, collections);
       const mismatches = syncCountMismatches(after);
       if (mismatches.length) {

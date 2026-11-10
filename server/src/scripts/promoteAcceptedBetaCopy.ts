@@ -10,6 +10,7 @@ import {
   assertDatabaseCopyPair,
   assertDatabaseCopyPairUrls,
   parseMongoTarget,
+  PRODUCTION_DATABASE_NAME,
   type ResolvedDatabaseCopyPair,
 } from './databaseCopyPairs';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -20,9 +21,21 @@ import {
 } from './corpusAccountReferences';
 import {
   applyStagedCollectionSwap,
+  isStagedSwapOperationId,
+  listRetainedGenerations,
   mirroredValidationOptions,
   stagedSwapCollectionExists,
+  type RetainedGeneration,
+  type StagedCollectionSwapResult,
 } from './stagedCollectionSwap';
+import {
+  assertStagedSwapHeadroom,
+  collectionFootprintMb,
+  collectionsFootprintMb,
+  measureStagedSwapHeadroom,
+  type StagedSwapHeadroomVerdict,
+  type SwapStorage,
+} from './stagedSwapHeadroom';
 
 dotenv.config({ quiet: true });
 
@@ -44,6 +57,8 @@ const RETIRE_SCRAPE_RUNS_ACTION = 'promotion.retire_production_scrape_runs';
 
 const PROMOTION_STAGING_PREFIX = '__prod_promote_staging_';
 const PROMOTION_BACKUP_PREFIX = '__prod_promote_backup_';
+export const PROMOTION_PREVIOUS_GENERATION_PREFIX = '__prod_promote_prev_';
+const ROLLBACK_STAGING_PREFIX = '__prod_rollback_staging_';
 
 const COPY_COLLECTIONS: PromotionCollection[] = [
   { name: 'research_entities', category: 'research-discovery' },
@@ -71,8 +86,11 @@ export interface PromotionOptions {
   includeObservations: boolean;
   includeScrapeRuns: boolean;
   retireScrapeRunsActor: string;
+  rollbackOperationId?: string;
   output?: string;
 }
+
+export type PromotionStorage = SwapStorage;
 
 export interface CollectionPlan {
   name: string;
@@ -133,6 +151,7 @@ export function parsePromotionOptions(
   // trail #2513 filed, not audit history worth carrying (#2589).
   let includeScrapeRuns = false;
   let retireScrapeRunsActor = '';
+  let rollbackOperationId: string | undefined;
   let output: string | undefined;
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -176,6 +195,18 @@ export function parsePromotionOptions(
         '--retire-scrape-runs requires the operator netid as its value, for example --retire-scrape-runs=abc12',
       );
     }
+    if (arg.startsWith('--rollback=')) {
+      rollbackOperationId = arg.slice('--rollback='.length).trim();
+      if (!rollbackOperationId) throw new Error('--rollback requires an operation id');
+      continue;
+    }
+    if (arg === '--rollback') {
+      const next = argv[index + 1]?.trim();
+      if (!next || next.startsWith('--')) throw new Error('--rollback requires an operation id');
+      rollbackOperationId = next;
+      index += 1;
+      continue;
+    }
     if (arg.startsWith('--dataset-version=')) {
       datasetVersion = arg.slice('--dataset-version='.length).trim();
       if (!datasetVersion) throw new Error('--dataset-version requires a value');
@@ -213,13 +244,45 @@ export function parsePromotionOptions(
     includeObservations,
     includeScrapeRuns,
     retireScrapeRunsActor,
+    ...(rollbackOperationId ? { rollbackOperationId } : {}),
     output,
     confirmLane: env.CONFIRM_LANE_A_COPY === 'true',
     confirmProd: env.CONFIRM_PROD_SCRAPE === 'true',
   };
 }
 
+export function assertSafeRollbackOptions(options: PromotionOptions): void {
+  if (!options.productionUrl) throw new Error('PRODUCTION_MONGODBURL is required');
+  const target = parseMongoTarget(options.productionUrl);
+  if (target.local) {
+    throw new Error(
+      'Refusing to roll back: the Production MongoDB target must be remote, not localhost.',
+    );
+  }
+  if (target.database !== PRODUCTION_DATABASE_NAME) {
+    throw new Error(
+      `Refusing to roll back ${target.database}: a promotion rollback restores only the ${PRODUCTION_DATABASE_NAME} database.`,
+    );
+  }
+  if (!options.rollbackOperationId || !isStagedSwapOperationId(options.rollbackOperationId)) {
+    throw new Error(
+      '--rollback requires the operation id a promotion reported, for example 12345_1760000000000',
+    );
+  }
+  if (options.includeObservations || options.includeScrapeRuns || options.retireScrapeRunsActor) {
+    throw new Error(
+      '--rollback restores the retained generation as it stands and takes no copy options',
+    );
+  }
+  if (options.mode === 'apply' && !options.confirmProd) {
+    throw new Error('Rollback apply mode requires CONFIRM_PROD_SCRAPE=true');
+  }
+}
+
 export function assertSafeOptions(options: PromotionOptions): ResolvedDatabaseCopyPair {
+  if (options.rollbackOperationId) {
+    throw new Error('--rollback is checked by assertSafeRollbackOptions, not as a copy');
+  }
   if (!options.betaUrl) throw new Error('BETA_MONGODBURL is required');
   if (!options.productionUrl) throw new Error('PRODUCTION_MONGODBURL is required');
   if (options.betaUrl === options.productionUrl) {
@@ -584,7 +647,12 @@ async function recordScrapeRunsRetirement(
   });
 }
 
-export async function applyCopy(betaDb: Db, productionDb: Db, options: PromotionOptions) {
+export async function applyCopy(
+  betaDb: Db,
+  productionDb: Db,
+  options: PromotionOptions,
+  storage: PromotionStorage,
+): Promise<StagedCollectionSwapResult> {
   const accountReferenceBlockers = corpusAccountReferenceBlockers(
     await promotionAccountReferences(betaDb, options),
   );
@@ -598,12 +666,20 @@ export async function applyCopy(betaDb: Db, productionDb: Db, options: Promotion
     ? await productionDb.collection('scrape_runs').countDocuments({})
     : 0;
 
-  await applyStagedCollectionSwap({
+  const result = await applyStagedCollectionSwap({
     targetDb: productionDb,
     collections,
     clearedCollectionNames: retiring ? ['scrape_runs'] : [],
     backupPrefix: PROMOTION_BACKUP_PREFIX,
+    retainedPrefix: PROMOTION_PREVIOUS_GENERATION_PREFIX,
     label: 'Beta to Production promotion',
+    preflight: async () => {
+      await assertStagedSwapHeadroom({
+        ...storage,
+        stagingMb: await promotionStagingMb(betaDb, collections),
+        label: 'Beta to Production promotion',
+      });
+    },
     stage: (collection, operationId) =>
       stageCollection(betaDb, productionDb, collection, operationId),
     verify: async () => {
@@ -637,10 +713,188 @@ export async function applyCopy(betaDb: Db, productionDb: Db, options: Promotion
   if (retiring) {
     await recordScrapeRunsRetirement(productionDb, options, retiredCount);
   }
+  return result;
+}
+
+function promotionStagingMb(
+  betaDb: Db,
+  collections: readonly PromotionCollection[],
+): Promise<number> {
+  return collectionsFootprintMb(
+    betaDb,
+    collections.map((collection) => collection.name),
+  );
+}
+
+export function listPreviousPromotionGenerations(productionDb: Db): Promise<RetainedGeneration[]> {
+  return listRetainedGenerations(productionDb, PROMOTION_PREVIOUS_GENERATION_PREFIX);
+}
+
+export interface RollbackCollectionPlan {
+  collection: string;
+  retainedName: string;
+  retainedCount: number;
+  liveCount: number;
+}
+
+export interface RollbackPlan {
+  operationId: string;
+  collections: RollbackCollectionPlan[];
+}
+
+export async function planPromotionRollback(
+  productionDb: Db,
+  operationId: string,
+): Promise<RollbackPlan> {
+  const generations = await listPreviousPromotionGenerations(productionDb);
+  const generation = generations.find((candidate) => candidate.operationId === operationId);
+  if (!generation) {
+    const available = generations.map((candidate) => candidate.operationId).join(', ') || 'none';
+    throw new Error(
+      `No retained Production generation ${operationId} exists (retained generations: ${available}).`,
+    );
+  }
+  const collections: RollbackCollectionPlan[] = [];
+  for (const { collection, retainedName, count } of generation.collections) {
+    const liveCount = (await stagedSwapCollectionExists(productionDb, collection))
+      ? await productionDb.collection(collection).countDocuments({})
+      : 0;
+    collections.push({ collection, retainedName, retainedCount: count, liveCount });
+  }
+  return { operationId, collections };
+}
+
+async function stageRetainedCollection(
+  productionDb: Db,
+  row: RollbackCollectionPlan,
+  operationId: string,
+): Promise<string> {
+  const stagingName = `${ROLLBACK_STAGING_PREFIX}${operationId}_${row.collection}`;
+  if (await stagedSwapCollectionExists(productionDb, stagingName)) {
+    await productionDb.collection(stagingName).drop();
+  }
+  await productionDb.createCollection(
+    stagingName,
+    await mirroredValidationOptions(productionDb, productionDb, row.retainedName),
+  );
+  await productionDb
+    .collection(row.retainedName)
+    .aggregate([{ $merge: { into: stagingName, whenMatched: 'fail', whenNotMatched: 'insert' } }])
+    .toArray();
+  await syncIndexes(productionDb, productionDb, row.retainedName, stagingName);
+  return stagingName;
+}
+
+export async function applyPromotionRollback(
+  productionDb: Db,
+  operationId: string,
+  storage: PromotionStorage,
+): Promise<{ plan: RollbackPlan; result: StagedCollectionSwapResult }> {
+  const plan = await planPromotionRollback(productionDb, operationId);
+  const rows = new Map(plan.collections.map((row) => [row.collection, row]));
+  const result = await applyStagedCollectionSwap({
+    targetDb: productionDb,
+    collections: plan.collections.map((row) => ({ name: row.collection })),
+    backupPrefix: PROMOTION_BACKUP_PREFIX,
+    retainedPrefix: PROMOTION_PREVIOUS_GENERATION_PREFIX,
+    label: 'Production promotion rollback',
+    preflight: async () => {
+      let stagingMb = 0;
+      for (const row of plan.collections) {
+        stagingMb += await collectionFootprintMb(productionDb, row.retainedName);
+      }
+      await assertStagedSwapHeadroom({
+        ...storage,
+        stagingMb,
+        label: 'Production promotion rollback',
+      });
+    },
+    stage: (collection, swapOperationId) =>
+      stageRetainedCollection(productionDb, rows.get(collection.name)!, swapOperationId),
+    verify: async () => {
+      const mismatches: string[] = [];
+      for (const row of plan.collections) {
+        const actual = await productionDb.collection(row.collection).countDocuments({});
+        if (actual !== row.retainedCount) {
+          mismatches.push(
+            `${row.collection} restored ${actual} rows against ${row.retainedCount} retained.`,
+          );
+        }
+      }
+      if (mismatches.length > 0) {
+        throw new Error(`Rollback cutover verification failed: ${mismatches.join(' ')}`);
+      }
+    },
+  });
+  return { plan, result };
+}
+
+async function promotionStorageReport(
+  storage: PromotionStorage,
+  stagingMb: number,
+  label: string,
+): Promise<StagedSwapHeadroomVerdict> {
+  return measureStagedSwapHeadroom({ ...storage, stagingMb, label });
+}
+
+async function runRollback(options: PromotionOptions): Promise<void> {
+  assertSafeRollbackOptions(options);
+  const productionClient = new MongoClient(options.productionUrl);
+  try {
+    await productionClient.connect();
+    const productionDb = productionClient.db();
+    if (productionDb.databaseName !== PRODUCTION_DATABASE_NAME) {
+      throw new Error(
+        `Refusing to roll back ${productionDb.databaseName}: expected ${PRODUCTION_DATABASE_NAME}.`,
+      );
+    }
+    const operationId = options.rollbackOperationId!;
+    const storage: PromotionStorage = { client: productionClient };
+    const plan = await planPromotionRollback(productionDb, operationId);
+    let stagingMb = 0;
+    for (const row of plan.collections) {
+      stagingMb += await collectionFootprintMb(productionDb, row.retainedName);
+    }
+    const report = {
+      mode: options.mode,
+      action: 'rollback',
+      productionTarget: summarizeMongoUrl(options.productionUrl),
+      plan,
+      storageHeadroom: await promotionStorageReport(
+        storage,
+        stagingMb,
+        'Production promotion rollback',
+      ),
+      note: 'Accounts and research_plans are environment-local and never in a generation, so a rollback leaves every Production login and plan as it is (#5088).',
+    };
+    console.log(JSON.stringify(report, null, 2));
+    writePromotionOutput(report, options.output);
+    if (options.mode !== 'apply') return;
+
+    const { result } = await applyPromotionRollback(productionDb, operationId, storage);
+    console.log(
+      JSON.stringify(
+        {
+          status: 'rolled-back',
+          restoredGeneration: operationId,
+          retainedGeneration: result.retained,
+          droppedGenerations: result.droppedGenerations,
+        },
+        null,
+        2,
+      ),
+    );
+  } finally {
+    await productionClient.close();
+  }
 }
 
 async function main() {
   const options = parsePromotionOptions(process.argv.slice(2));
+  if (options.rollbackOperationId) {
+    await runRollback(options);
+    return;
+  }
   assertSafeOptions(options);
 
   const betaClient = new MongoClient(options.betaUrl);
@@ -667,24 +921,34 @@ async function main() {
       productionObservationCount,
     );
 
-    console.log(JSON.stringify(summary, null, 2));
-    writePromotionOutput(summary, options.output);
+    const storage: PromotionStorage = { client: productionClient };
+    const report = {
+      ...summary,
+      previousGenerations: await listPreviousPromotionGenerations(productionDb),
+      storageHeadroom: await promotionStorageReport(
+        storage,
+        await promotionStagingMb(betaDb, promotionCollectionsForOptions(options)),
+        'Beta to Production promotion',
+      ),
+    };
+    console.log(JSON.stringify(report, null, 2));
+    writePromotionOutput(report, options.output);
 
     if (options.mode === 'apply') {
       assertPromotionSummaryCanApply(summary);
-      await applyCopy(betaDb, productionDb, options);
+      const result = await applyCopy(betaDb, productionDb, options, storage);
       const after = await buildPlan(betaDb, productionDb, promotionCollectionsForOptions(options));
-      console.log(
-        JSON.stringify(
-          {
-            status: 'applied',
-            datasetVersion: options.datasetVersion,
-            collections: after,
-          },
-          null,
-          2,
-        ),
-      );
+      const applied = {
+        status: 'applied',
+        datasetVersion: options.datasetVersion,
+        collections: after,
+        operationId: result.operationId,
+        retainedGeneration: result.retained,
+        droppedGenerations: result.droppedGenerations,
+        rollbackCommand: `yarn --cwd server production:promote-beta-copy --rollback ${result.operationId}`,
+      };
+      console.log(JSON.stringify(applied, null, 2));
+      writePromotionOutput({ ...report, applied }, options.output);
     }
   } finally {
     await betaClient.close();

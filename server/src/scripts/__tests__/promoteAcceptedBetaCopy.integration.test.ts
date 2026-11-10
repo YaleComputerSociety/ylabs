@@ -2,7 +2,13 @@ import { MongoClient, ObjectId, type Db, type Document } from 'mongodb';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CANONICAL_MONGO_VALIDATORS } from '../canonicalMongoValidatorRegistry';
-import { applyCopy, type PromotionOptions } from '../promoteAcceptedBetaCopy';
+import {
+  applyCopy,
+  applyPromotionRollback,
+  listPreviousPromotionGenerations,
+  planPromotionRollback,
+  type PromotionOptions,
+} from '../promoteAcceptedBetaCopy';
 
 const betaLoginAccountId = new ObjectId('68e0000000000000000000a1');
 const productionLoginAccountId = new ObjectId('68e0000000000000000000a2');
@@ -131,7 +137,10 @@ describe('Beta to Production promotion against MongoDB', () => {
     productionDb = client.db('Prod_promotion_target');
     await seedBeta(betaDb);
     await seedProduction(productionDb);
-    await applyCopy(betaDb, productionDb, promotionOptions());
+    await applyCopy(betaDb, productionDb, promotionOptions(), {
+      client: client!,
+      requiredDatabaseNames: [],
+    });
   });
 
   afterAll(async () => {
@@ -201,14 +210,169 @@ describe('Beta to Production promotion with a corpus account reference', () => {
   });
 
   it('refuses the copy and leaves Production untouched', async () => {
-    await expect(applyCopy(betaDb, productionDb, promotionOptions())).rejects.toThrow(
-      '1 researchers row carries an account _id in accountId',
-    );
+    await expect(
+      applyCopy(betaDb, productionDb, promotionOptions(), {
+        client: client!,
+        requiredDatabaseNames: [],
+      }),
+    ).rejects.toThrow('1 researchers row carries an account _id in accountId');
     expect(
       await productionDb
         .collection('research_entities')
         .findOne({ slug: 'stale-production-entity' }),
     ).not.toBeNull();
     expect(await productionDb.collection('accounts').find({}).toArray()).toEqual([productionLogin]);
+  });
+});
+
+describe('Beta to Production promotion retention and rollback (#4149)', () => {
+  let memoryServer: MongoMemoryServer | undefined;
+  let client: MongoClient | undefined;
+  let betaDb: Db;
+  let productionDb: Db;
+
+  beforeAll(async () => {
+    memoryServer = await MongoMemoryServer.create({ binary: { version: '8.0.12' } });
+    client = new MongoClient(memoryServer.getUri());
+    await client.connect();
+  });
+
+  afterAll(async () => {
+    await client?.close();
+    await memoryServer?.stop();
+  });
+
+  let databaseSequence = 0;
+  async function freshDatabases(): Promise<void> {
+    databaseSequence += 1;
+    betaDb = client!.db(`Beta_retention_source_${databaseSequence}`);
+    productionDb = client!.db(`Prod_retention_target_${databaseSequence}`);
+    await seedBeta(betaDb);
+    await seedProduction(productionDb);
+  }
+
+  const promote = () =>
+    applyCopy(betaDb, productionDb, promotionOptions(), {
+      client: client!,
+      requiredDatabaseNames: [],
+    });
+  const pause = () => new Promise((resolve) => setTimeout(resolve, 2));
+
+  it("keeps exactly one previous generation after two promotions, holding the first promotion's result", async () => {
+    await freshDatabases();
+    const first = await promote();
+    await betaDb
+      .collection('research_entities')
+      .insertOne({ name: 'Second Lab', slug: 'second-lab' });
+    await pause();
+    const second = await promote();
+
+    const generations = await listPreviousPromotionGenerations(productionDb);
+    expect(generations.map((generation) => generation.operationId)).toEqual([second.operationId]);
+    expect(second.droppedGenerations).toEqual([first.operationId]);
+    const retainedEntities = generations[0].collections.find(
+      (entry) => entry.collection === 'research_entities',
+    )!;
+    expect(retainedEntities.retainedName).toBe(
+      `__prod_promote_prev_${second.operationId}_research_entities`,
+    );
+    const retainedSlugs = (
+      await productionDb.collection(retainedEntities.retainedName).find({}).toArray()
+    ).map((doc) => doc.slug);
+    expect(retainedSlugs).toEqual(['example-person-lab']);
+    expect(await productionDb.collection('research_entities').countDocuments({})).toBe(2);
+  });
+
+  it('rolls back to the retained generation and keeps an account created after the promotion', async () => {
+    await freshDatabases();
+    const promoted = await promote();
+    const lateAccountId = new ObjectId();
+    await productionDb.collection('accounts').insertOne({
+      _id: lateAccountId,
+      schemaVersion: 1,
+      netid: 'late01',
+      email: 'late.login@example.test',
+      status: 'ACTIVE',
+      archived: false,
+    });
+
+    const plan = await planPromotionRollback(productionDb, promoted.operationId);
+    expect(plan.collections.find((row) => row.collection === 'research_entities')).toMatchObject({
+      retainedCount: 1,
+      liveCount: 1,
+    });
+    await pause();
+    const { result } = await applyPromotionRollback(productionDb, promoted.operationId, {
+      client: client!,
+      requiredDatabaseNames: [],
+    });
+
+    expect(
+      await productionDb
+        .collection('research_entities')
+        .findOne({ slug: 'stale-production-entity' }),
+    ).not.toBeNull();
+    expect(
+      await productionDb.collection('research_entities').findOne({ slug: 'example-person-lab' }),
+    ).toBeNull();
+    expect(await productionDb.collection('researchers').countDocuments({})).toBe(0);
+    expect(
+      await productionDb.collection('accounts').findOne({ _id: lateAccountId }),
+    ).not.toBeNull();
+    expect(
+      await productionDb.collection('accounts').findOne({ _id: productionLoginAccountId }),
+    ).not.toBeNull();
+
+    const generations = await listPreviousPromotionGenerations(productionDb);
+    expect(generations.map((generation) => generation.operationId)).toEqual([result.operationId]);
+    const retainedEntities = generations[0].collections.find(
+      (entry) => entry.collection === 'research_entities',
+    )!;
+    expect(
+      (await productionDb.collection(retainedEntities.retainedName).find({}).toArray()).map(
+        (doc) => doc.slug,
+      ),
+    ).toEqual(['example-person-lab']);
+  });
+
+  it('refuses a rollback to a generation that is not retained', async () => {
+    await freshDatabases();
+    await promote();
+    await expect(planPromotionRollback(productionDb, '1_1')).rejects.toThrow(
+      'No retained Production generation 1_1 exists',
+    );
+  });
+
+  it('refuses before writing when the cluster would be left below the headroom', async () => {
+    await freshDatabases();
+    await expect(
+      applyCopy(betaDb, productionDb, promotionOptions(), {
+        client: client!,
+        requiredDatabaseNames: [],
+        config: { clusterQuotaMb: 1, minHeadroomMb: 1 },
+      }),
+    ).rejects.toThrow('Beta to Production promotion refused before writing');
+
+    expect(
+      await productionDb
+        .collection('research_entities')
+        .findOne({ slug: 'stale-production-entity' }),
+    ).not.toBeNull();
+    const names = (await productionDb.listCollections({}, { nameOnly: true }).toArray()).map(
+      (info) => info.name,
+    );
+    expect(names.filter((name) => name.startsWith('__prod_promote_'))).toEqual([]);
+  });
+
+  it('refuses before writing when the credential cannot see every database on the shared cluster', async () => {
+    await freshDatabases();
+    await expect(
+      applyCopy(betaDb, productionDb, promotionOptions(), { client: client! }),
+    ).rejects.toThrow('this credential cannot see Development, Beta, Prod');
+    expect(
+      await productionDb
+        .collection('research_entities')
+        .findOne({ slug: 'stale-production-entity' }),
+    ).not.toBeNull();
   });
 });

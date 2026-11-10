@@ -979,8 +979,34 @@ The promotion no longer requires an operator-supplied restore point, and no long
 `ATLAS_RESTORE_POINT` was the script's only rollback story and it was unverifiable: any non-empty string satisfied the check, so it recorded an operator's intention rather than a recoverable state (#2347).
 
 The rollback is now in the script.
-`promoteAcceptedBetaCopy` stages every collection under `__prod_promote_staging_*`, renames the live collections to `__prod_promote_backup_*`, swaps staging into place, verifies that each promoted collection holds the row count Beta offered, and only then drops the backups.
+`promoteAcceptedBetaCopy` stages every collection under `__prod_promote_staging_*`, renames the live collections to `__prod_promote_backup_*`, swaps staging into place, and verifies that each promoted collection holds the row count Beta offered.
 Any failure before that verification passes rolls every collection back to its pre-run state, which is asserted against a real mongod rather than a mocked driver.
+
+A count proves a promotion is complete, not that it is correct, so a verified promotion no longer drops what it replaced (#4149).
+It renames the backups to `__prod_promote_prev_<operationId>_<collection>` and keeps them as the one previous generation; a collection the promotion created rather than replaced is retained as an empty one, so a rollback restores no rows for it.
+Only once that generation is complete does it drop any older `__prod_promote_prev_*` generation, so exactly one exists at rest and a failed promotion never loses the last rollback point.
+The apply report names the `operationId`, the retained collections and their counts, and the rollback command; the dry-run lists the generation currently retained as `previousGenerations`.
+
+To restore the retained generation, dry-run first and read the plan's retained and live counts:
+
+```bash
+yarn --cwd server production:promote-beta-copy --rollback <operationId>
+CONFIRM_PROD_SCRAPE=true yarn --cwd server production:promote-beta-copy --rollback <operationId> --apply
+```
+
+The rollback needs only `PRODUCTION_MONGODBURL`, refuses any database but a remote `Prod`, and runs through the same staged swap: it copies the retained generation into staging inside Production, cuts over, and verifies that every collection holds the retained count.
+It is itself a retaining swap, so the generation it replaced becomes the new previous generation and a rollback can be undone the same way.
+Accounts and `research_plans` are environment-local and are never in a generation, so a rollback leaves every Production login and plan as it is, including ones created after the promotion (#5088).
+A rollback moves documents only: follow it with the visibility gate and the reindex from Phase 5, exactly as after a promotion.
+
+Every staged swap, the promotion, its rollback, and both mirror directions, first measures the cluster and refuses before writing when the quota minus current usage minus the staging footprint would fall below the headroom.
+It reuses the sweep's `SCRAPER_SWEEP_CLUSTER_QUOTA_MB` (5120) and `SCRAPER_SWEEP_MIN_HEADROOM_MB` (1024), and the staging footprint is each source collection's data plus index size from `$collStats`.
+It also refuses when the credential cannot list `Development`, `Beta` and `Prod`, because a database-scoped user lists only its own database and would undercount the shared quota, so run these with the cluster-wide maintenance credential.
+The dry-run reports the same measurement as `storageHeadroom`, and `yarn promote:production` refuses a plan whose `storageHeadroom` is not `ok`.
+
+Retaining a generation costs storage at rest: measured on 2026-11-10, the promoted collections without observations are about 115 MB, against about 3,034 MB used of the 5,120 MB quota across the cluster.
+A promotion briefly holds three copies of that footprint, live, staging and the older generation, until its cutover verifies.
+A promotion with `--include-observations` carries roughly 1.9 GB per copy and is refused by the headroom check rather than allowed to fill the cluster.
 
 An Atlas restore point is still worth having as defence against something outside this script, and Atlas Free provides no managed backups, so record one if your tier supports it.
 It is no longer a gate the command enforces.
@@ -1072,5 +1098,6 @@ The refresh is incomplete if any required artifact, restore point, or independen
 
 Local Development is disposable and can be reset from the accepted Beta snapshot or a new scrape.
 Beta recovery uses the recorded Beta backup or a fresh mirror from an accepted Development dataset.
-No Production restore point exists today, because the free Atlas cluster provides no backups and a successful promotion drops its own (#4148), so Production recovery is forward; [the incident runbook](./incident-runbook.md) owns it.
+The only in-cluster Production restore point is the generation the last promotion replaced, restored with `production:promote-beta-copy --rollback <operationId>` (#4149); it lives on the same cluster, so it is no defence against losing the cluster, and no off-cluster restore point exists (#4148).
+Production-owned rows outside the promoted collections have no second copy, so beyond that rollback Production recovery is forward; [the incident runbook](./incident-runbook.md) owns it.
 Never use a Development database copy as a Production rollback.
