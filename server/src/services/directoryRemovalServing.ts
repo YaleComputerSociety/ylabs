@@ -9,6 +9,7 @@ import {
   type ResearchEntityRosterScope,
 } from './researchEntityMembershipAccessor';
 import {
+  DirectoryRemovalUnavailableError,
   keylessDirectoryRemovalState,
   loadDirectoryRemovalMatcher,
   type DirectoryRemovalMatcher,
@@ -275,4 +276,15 @@ export function directoryRemovalServingStateMessage(serving: DirectoryRemovalSer
     case 'unfiltered_local':
       return '[directory-removal] removal entries exist but no key is configured, so this loopback development server serves names UNFILTERED.';
   }
+}
+
+export const DIRECTORY_REMOVAL_GATE_REFUSAL =
+  'Directory removal entries exist, but this process has no usable key, so it cannot tell a removed person from anyone else and a gate pass would publish their rows again. Point DIRECTORY_REMOVAL_KEY_FILE at a file holding the shared key (or set DIRECTORY_REMOVAL_KEY on a Render service) and run again.';
+
+export async function directoryRemovalServingForGate(): Promise<DirectoryRemovalServing> {
+  const serving = await freshDirectoryRemovalServing();
+  if (serving.state !== 'inert' && serving.state !== 'active') {
+    throw new DirectoryRemovalUnavailableError(DIRECTORY_REMOVAL_GATE_REFUSAL);
+  }
+  return serving;
 }

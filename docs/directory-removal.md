@@ -34,6 +34,22 @@ It finds the removed researchers by matching every live researcher against the i
 
 The server logs its state at startup.
 
+## The gate
+
+The student visibility gate reads the same served roster, so a row whose every lead is removed is held at `suppressed` with the reason `researcher_removed`, which outranks an operator override (`server/src/services/studentVisibilityTier.ts`).
+A removed co-lead or member leaves the row to the ordinary tests, which decide it on the people who remain.
+Nothing is locked: withdrawing the entry restores the row on the next gate pass.
+The gate refuses to run while entries exist and the process has no usable key, in every environment including a loopback development worktree, because a pass that cannot match would publish removed rows again.
+
+## Before the first entry
+
+Every process that runs the gate must hold the key before the first entry is recorded, or it stops at the gate.
+
+1. Give Development's operators the key through `DIRECTORY_REMOVAL_KEY_FILE`, a file outside the repository, because `scripts/new-agent-worktree.sh` copies `server/.env` into every agent worktree.
+2. Set `DIRECTORY_REMOVAL_KEY` on the Beta and Production web services, whose remote promotion phase runs the gate after every copy.
+3. Set `DIRECTORY_REMOVAL_KEY` on the `ylabs-scraper` sweep cron before it is re-enabled, because its gate stage refuses otherwise (`docs/deployment-inventory.md`).
+4. Then record the entry on Development, run the gate, and read the served detail page and search route.
+
 ## Known limits
 
 - Prose matching is by the person's current display name and by name digests over two to four word windows, so a spelling with a middle initial or a nickname is missed.

@@ -237,6 +237,7 @@ const HARD_BLOCKER_EMITTERS: Record<string, () => string[]> = {
         sourceUrls: ['https://reporter.nih.gov/project-details/10899610'],
       },
     }),
+  researcher_removed: () => researchReasons({ leadMembers: [], everyLeadRemovedByRequest: true }),
   permanently_closed: () =>
     researchReasons({ entity: { studentVisibilitySuppressionReason: 'permanently_closed' } }),
   lab_name_org_type_mismatch: () =>

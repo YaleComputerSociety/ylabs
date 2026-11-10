@@ -19,6 +19,10 @@ import {
 import { Observation, researchEntityObservationSubjects } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
+import {
+  directoryRemovalServingForGate,
+  rosterWithoutWithheldPeople,
+} from './directoryRemovalServing';
 import { researchEntityLeadStateForMembers } from './researchEntityQuality';
 import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
 import mongoose from 'mongoose';
@@ -153,6 +157,7 @@ export interface ResearchEntityGateRowInput {
   exactUrlDuplicateRisk: boolean;
   citationsSharedAcrossPersonRows: boolean;
   relatedEntityAccessPathCount: number;
+  everyLeadRemovedByRequest?: boolean;
 }
 
 export interface VisibilityQueueUpsert {
@@ -253,6 +258,7 @@ export const SUPPRESSION_REPAIR_REASONS: ReadonlySet<string> = new Set([
   'non_owner_grant_shell',
   'grant_only_no_current_yale_source',
   'permanently_closed',
+  'researcher_removed',
   'non_research_entity',
   'non_research_program',
   'not_undergraduate_relevant',
@@ -340,7 +346,11 @@ export async function researchEntityIdsWithGateAttachedLead(
 ): Promise<Set<string>> {
   const attached = new Set<string>();
   if (entityIds.length === 0) return attached;
-  const roster = await getResearchEntityRosterByEntityId([...entityIds]);
+  const [serving, rawRoster] = await Promise.all([
+    directoryRemovalServingForGate(),
+    getResearchEntityRosterByEntityId([...entityIds]),
+  ]);
+  const roster = rosterWithoutWithheldPeople(rawRoster, serving);
   for (const [entityId, entries] of roster) {
     const leadMembers = studentVisibilityGateLeadRows(entries);
     if (researchEntityLeadStateForMembers(leadMembers) === 'lead_attached') {
@@ -2026,7 +2036,8 @@ async function planResearchEntityGateUpdates(
       .lean(),
     entities as any[],
   );
-  const [rosterByEntityId, accessRows, alternateAccessPathCounts] = await Promise.all([
+  const [serving, rawRosterByEntityId, accessRows, alternateAccessPathCounts] = await Promise.all([
+    directoryRemovalServingForGate(),
     getResearchEntityRosterByEntityId(entityIds),
     Signal.aggregate([
       {
@@ -2053,11 +2064,24 @@ async function planResearchEntityGateUpdates(
 
   const buildGateLeadRows = (roster: Map<string, any[]>) =>
     Array.from(roster.values()).flatMap((entries) => studentVisibilityGateLeadRows(entries));
+  const rosterByEntityId = rosterWithoutWithheldPeople(rawRosterByEntityId, serving);
+  const everyLeadRemovedEntityIds = new Set(
+    [...rawRosterByEntityId]
+      .filter(
+        ([entityId, entries]) =>
+          studentVisibilityGateLeadRows(entries).length > 0 &&
+          studentVisibilityGateLeadRows(rosterByEntityId.get(entityId) ?? []).length === 0,
+      )
+      .map(([entityId]) => entityId),
+  );
 
   const leadRows = buildGateLeadRows(rosterByEntityId);
   const duplicateReferenceRosterByEntityId = needsDuplicateReferenceCorpus
-    ? await getResearchEntityRosterByEntityId(
-        duplicateReferenceEntities.map((entity: any) => entity._id),
+    ? rosterWithoutWithheldPeople(
+        await getResearchEntityRosterByEntityId(
+          duplicateReferenceEntities.map((entity: any) => entity._id),
+        ),
+        serving,
       )
     : rosterByEntityId;
   const duplicateReferenceLeadRows = needsDuplicateReferenceCorpus
@@ -2252,6 +2276,7 @@ async function planResearchEntityGateUpdates(
         exactUrlDuplicateRiskEntityIds.has(recordId),
       citationsSharedAcrossPersonRows: sharedCitationOnlyEntityIds.has(recordId),
       relatedEntityAccessPathCount: alternateAccessPathCounts.get(recordId) || 0,
+      everyLeadRemovedByRequest: everyLeadRemovedEntityIds.has(recordId),
     };
     const result = computeResearchEntityStudentVisibility({
       entity,

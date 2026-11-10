@@ -47,6 +47,7 @@ export const DECISION_BLOCKERS = new Set([
   'exact_url_duplicate_risk',
   'operator_override',
   'permanently_closed',
+  'researcher_removed',
   'inactive_at_yale',
   'non_research_entity',
   'research_infrastructure_only',

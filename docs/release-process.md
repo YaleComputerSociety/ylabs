@@ -236,7 +236,7 @@ A request that arrives on Production is a review item there; the admin who accep
 An entry written only on Beta or Production would be erased by the next whole-collection copy, so every copy direction refuses to run while the target holds an active entry the source does not (`server/src/scripts/directoryRemovalCopyGuard.ts`).
 The dry run reports that refusal ahead of time: the promotion lists it in `applyBlockers`, and each sync lists it in `directoryRemovalBlockers`.
 The fix for that refusal is to record the entry on the source, never to delete it from the target.
-Each entry is an HMAC digest under `DIRECTORY_REMOVAL_KEY`, so every environment must hold the same key; an environment that holds entries but no key cannot tell a removed person from anyone else (`docs/deployment-inventory.md`).
+Each entry is an HMAC digest under `DIRECTORY_REMOVAL_KEY`, so every environment must hold the same key, and the gate in the remote promotion phase refuses to run on an environment that holds entries without it (`docs/directory-removal.md`, "Before the first entry"); an environment that holds entries but no key cannot tell a removed person from anyone else (`docs/deployment-inventory.md`).
 
 `--include-observations` flips the observation default.
 `--include-scrape-runs` flips the run-history default, which is off: a promoted `scrape_runs` is Development's history under Production's name (#2589).

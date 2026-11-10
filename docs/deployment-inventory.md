@@ -147,6 +147,7 @@ A one-off job runs on the operator service's latest build with that service's cu
 | `MONGODBURL` | Yes, the `Development` database | The job refuses unless it names `Development`. | Yes |
 | `OPENAI_API_KEY` | Yes | The job refuses in its first second. Give it its own key so it can be spend-capped and rotated alone. | Yes |
 | `YALIES_API_KEY` | Yes | The job refuses in its first second. | Yes |
+| `DIRECTORY_REMOVAL_KEY` | Before the first removal entry | Unset while `directory_removals` holds an entry, the sweep fails at its gate stage, because the gate refuses to run when it cannot tell a removed person from anyone else (#4160, `docs/directory-removal.md`). It is the same value as every other environment's key. | Yes |
 | `SCRAPLING_RENDERER_ENABLED` | No | Defaults to `false`, so the rendered-fetch lanes fetch plainly. | No |
 | `SCRAPER_PER_HOST_CONCURRENCY` | No | Per-host pacing uses its defaults. | No |
 | `SWEEP_REPOSITORY_URL` | No | Leave it unset on Render; it overrides the repository the entrypoint clones. | No |
