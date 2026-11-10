@@ -90,7 +90,28 @@ export const createProductAnalyticsGate = () => {
   };
 };
 
-const PERSON_EVENTS = new Set(['$identify', '$create_alias', '$set', '$groupidentify']);
+const PERSON_EVENTS = new Set(['$identify', '$create_alias', '$groupidentify']);
+const PERSON_PROPERTY_EVENT = '$set';
+const USER_TYPE_BUCKETS = new Set([
+  'undergraduate',
+  'graduate',
+  'student',
+  'faculty',
+  'professor',
+  'staff',
+]);
+
+export const userTypeBucket = (userType: unknown): string => {
+  const normalized = typeof userType === 'string' ? userType.trim().toLowerCase() : '';
+  return USER_TYPE_BUCKETS.has(normalized) ? normalized : 'other';
+};
+
+const allowedPersonProperties = (value: unknown): Properties | undefined => {
+  const userType = (value as Properties | undefined)?.user_type;
+  return typeof userType === 'string' && userTypeBucket(userType) === userType
+    ? { user_type: userType }
+    : undefined;
+};
 const PERSON_PROPERTY_KEYS = ['$set', '$set_once', '$unset'];
 const TEXT_ATTRIBUTE_KEYS = new Set(TEXT_BEARING_ATTRIBUTES.map((name) => `attr__${name}`));
 const TEXT_ATTRIBUTE_IN_CHAIN = new RegExp(
@@ -144,6 +165,11 @@ export const buildPostHogConfig = ({
   const beforeSend = (event: CaptureResult | null): CaptureResult | null => {
     if (!event || !isOpen() || PERSON_EVENTS.has(event.event)) return null;
     if (event.event === '$snapshot') return event;
+    const personProperties =
+      event.event === PERSON_PROPERTY_EVENT && identifiedAs
+        ? allowedPersonProperties(event.$set ?? event.properties?.$set)
+        : undefined;
+    if (event.event === PERSON_PROPERTY_EVENT && !personProperties) return null;
     const sanitized: CaptureResult = {
       ...event,
       properties: redactValue(withoutElementText(event.properties)) as Properties,
@@ -151,6 +177,10 @@ export const buildPostHogConfig = ({
     delete sanitized.$set;
     delete sanitized.$set_once;
     delete sanitized.$unset;
+    if (personProperties) {
+      sanitized.$set = personProperties;
+      sanitized.properties.$set = personProperties;
+    }
     return sanitized;
   };
 
@@ -197,7 +227,11 @@ export const buildPostHogConfig = ({
     capture_dead_clicks: true,
     capture_heatmaps: true,
     capture_performance: { network_timing: true, web_vitals: true },
-    capture_exceptions: false,
+    capture_exceptions: {
+      capture_unhandled_errors: true,
+      capture_unhandled_rejections: true,
+      capture_console_errors: false,
+    },
     enable_recording_console_log: false,
     disable_session_recording: false,
     session_recording: {
@@ -229,6 +263,7 @@ export const loadPostHog = async (): Promise<PostHog> => {
     import('posthog-js/dist/lazy-recorder'),
     import('posthog-js/dist/dead-clicks-autocapture'),
     import('posthog-js/dist/web-vitals'),
+    import('posthog-js/dist/exception-autocapture'),
   ]);
   return posthog;
 };
@@ -237,7 +272,50 @@ type ProductAnalyticsSession = {
   allowed: boolean;
   netId?: string;
   distinctId?: string;
+  userType?: string;
 };
+
+export type JourneyEvent = {
+  eventType: string;
+  entityType?: string;
+  entityId?: string;
+  entityIds?: string[];
+  payload?: Record<string, unknown>;
+};
+
+const JOURNEY_EVENT_NAME = /^[a-z][a-z_]{2,40}$/;
+const JOURNEY_PROPERTY_KEY = /^[A-Za-z][A-Za-z0-9]{0,40}$/;
+const JOURNEY_PROPERTY_VALUE = /^[a-z0-9][a-z0-9_+-]{0,40}$/;
+const ENTITY_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,80}$/;
+const MAX_ENTITY_IDS = 50;
+const MAX_PENDING_JOURNEY_EVENTS = 50;
+
+export const journeyEventProperties = (event: JourneyEvent): Properties | null => {
+  if (!JOURNEY_EVENT_NAME.test(event.eventType)) return null;
+  const properties: Properties = {};
+  for (const [key, value] of Object.entries(event.payload ?? {})) {
+    if (
+      JOURNEY_PROPERTY_KEY.test(key) &&
+      typeof value === 'string' &&
+      JOURNEY_PROPERTY_VALUE.test(value)
+    ) {
+      properties[key] = value;
+    }
+  }
+  if (event.entityType && JOURNEY_PROPERTY_VALUE.test(event.entityType)) {
+    properties.entityType = event.entityType;
+  }
+  if (event.entityId && ENTITY_ID.test(event.entityId)) properties.entityId = event.entityId;
+  const entityIds = (event.entityIds ?? []).filter((id) => ENTITY_ID.test(id));
+  if (entityIds.length > 0) {
+    properties.entityIds = entityIds.slice(0, MAX_ENTITY_IDS);
+    properties.entityCount = entityIds.length;
+  }
+  return properties;
+};
+
+let productAnalyticsDeclined = false;
+let pendingJourneyEvents: { name: string; properties: Properties }[] = [];
 
 let running: {
   gate: ReturnType<typeof createProductAnalyticsGate>;
@@ -268,6 +346,12 @@ export const startProductAnalytics = (
           isOpen: gate.isOpen,
         }),
       );
+      if (opaqueProductAnalyticsId(session.distinctId)) {
+        instance.setPersonProperties({ user_type: userTypeBucket(session.userType) });
+      }
+      const queued = pendingJourneyEvents;
+      pendingJourneyEvents = [];
+      queued.forEach(({ name, properties }) => instance.capture(name, properties));
       return instance;
     })
     .catch(() => null);
@@ -275,7 +359,25 @@ export const startProductAnalytics = (
   return true;
 };
 
+export const captureJourneyEvent = (event: JourneyEvent): void => {
+  if (running && !running.gate.isOpen()) return;
+  const properties = journeyEventProperties(event);
+  if (!properties) return;
+  if (!running) {
+    if (!productAnalyticsDeclined && pendingJourneyEvents.length < MAX_PENDING_JOURNEY_EVENTS) {
+      pendingJourneyEvents.push({ name: event.eventType, properties });
+    }
+    return;
+  }
+  const { gate, posthog } = running;
+  void posthog.then((instance) => {
+    if (instance && gate.isOpen()) instance.capture(event.eventType, properties);
+  });
+};
+
 export const stopProductAnalytics = () => {
+  pendingJourneyEvents = [];
+  productAnalyticsDeclined = true;
   if (!running) return;
   const { gate, posthog } = running;
   gate.close();

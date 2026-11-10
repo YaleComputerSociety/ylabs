@@ -22,11 +22,12 @@ Only then does the CSP open `connect-src` to the two PostHog origins and `GET /a
 2. Identity: PostHog receives only an opaque per-account ID, `accounts.productAnalyticsId`, a random version 4 UUID the server assigns on the account's first Production session check that PostHog may measure.
 It is generated rather than derived, so nothing outside the database can reverse it, and accounts are environment-local, so the ID never leaves Production by promotion either.
 The admin-only "PostHog ID Lookup" on `/analytics` (`GET /api/analytics/product-analytics-ids/:id`) resolves it to a netid, so the owner can see who a recording belongs to while the netid stays in the database.
-No netid, email or name is sent in any property: the client redacts the signed-in netid from every URL and string it sends, strips every query string and fragment, and drops person properties.
+No netid, email or name is sent in any property: the client redacts the signed-in netid from every URL and string it sends, strips every query string and fragment, and allows one person property, a bucketed `user_type`.
+The owner also asked, on 2026-11-10, for named funnels and errors: every first-party journey event is sent to PostHog under its own name with only its bucketed enum payload and entity ids, and unhandled errors are captured with the same redaction.
 
 The safe configuration is pinned by tests rather than by review.
 `client/src/utils/__tests__/productAnalyticsPayload.test.ts` runs the real SDK against a capturing transport and fails if any typed value, page text, query, accessible label or the netid reaches an event or a recording, if a request or response body or header is recorded, or if anything is written to a cookie or browser storage.
-`client/src/__tests__/posthogUsageGuard.test.ts` fails if any module but `client/src/utils/productAnalytics.ts` imports the SDK, if it is imported eagerly, or if anything calls `identify`, `alias`, `register` or sets person properties, and it refuses a committed `phc_` key.
+The same test fails if a person property other than the bucketed `user_type` or an identify event is sent, and `client/src/__tests__/posthogUsageGuard.test.ts` refuses a committed `phc_` key.
 `server/src/middleware/__tests__/securityHeaders.test.ts` pins the exact `connect-src` and `script-src` with PostHog on, and refuses a non-US, look-alike, port or path host, Beta, and local development.
 Turning PostHog on is an operational step and not part of the merge: the owner sets `VITE_POSTHOG_KEY` and `VITE_POSTHOG_HOST` on the Production web service only and redeploys.
 The privacy notice still has to name PostHog, the data it receives and its retention, which is tracked on #4157, and PostHog's retention is set no longer than the 1,095-day TTL on `analytics_events`.

@@ -135,18 +135,23 @@ A session that ends, or a request the server answers with an authentication fail
 ### What it captures
 
 - Pageviews on every history change, page leaves, clicks through autocapture, rage clicks, dead clicks, heatmaps, web vitals, and session replay with network timing.
+- Every first-party journey event `trackResearchEvent` in `client/src/utils/researchAnalytics.ts` records is also sent to PostHog under the same name (`research_search`, `research_results_view`, `research_profile_open`, `research_source_review`, `contact_route_click`, `research_filter_change`, `research_save`, `research_compare`, `research_plan_update`, and the program events `fellowship_view`, `ways_in_click` and `source_link_click`), so search, profile open and outbound contact form named funnels.
+`journeyEventProperties` in `client/src/utils/productAnalytics.ts` forwards only payload values that are short lowercase enum or bucket tokens, plus the entity type and the entity ids the first-party event already carries, so a query, address, URL, name or note cannot pass even if a caller put one in a payload.
+An event emitted before the session check answers is held in memory and sent once PostHog starts, and discarded if it does not.
+- Unhandled errors and promise rejections as `$exception` events, with the same query and netid redaction as every other event; console errors are not captured.
 - Autocapture never captures an input value (`capture_value_css_selector_allowlist: []`), copied text, element text (`mask_all_text`), or a text-bearing attribute such as `aria-label`, `title`, `alt` or `placeholder`.
 - Replay masks every input (`maskAllInputs: true`) and all text (`maskTextSelector: '*'`), replaces text-bearing attributes with `*`, records no request or response body or header, and records no console output, structured data or cross-origin frame.
 - Every URL the SDK sends, in events, replay page metadata, element `href` attributes and network timing entries, loses its query string and fragment, so a search query or filter in `?q=` never leaves the page; the URL path is kept, so a recording shows which public research page was open.
 - The signed-in netid is redacted from every string the SDK sends, as a backstop for a path or attribute that carries one.
 - Nothing is written to a cookie, `localStorage` or `sessionStorage` (`persistence: 'memory'`), so a page reload starts a new recording.
 - A browser that sends Do Not Track is not measured (`respect_dnt: true`).
-- Exceptions, console logs, surveys, product tours, conversations, web experiments, site apps and feature flags are off, and their extensions are not bundled.
+- Console logs, surveys, product tours, conversations, web experiments, site apps and feature flags are off, and their extensions are not bundled.
 
 ### Identity
 
 PostHog receives `accounts.productAnalyticsId`, a random version 4 UUID that `ensureProductAnalyticsId` in `server/src/services/productAnalyticsIdentityService.ts` assigns on the account's first Production session check that PostHog may measure, and returns in `GET /api/check` as `productAnalyticsId`.
-The client passes it as the bootstrapped, identified distinct ID and never calls `identify`, so person profiles exist only for these IDs and carry no person properties: `before_send` drops `$set`, `$set_once` and person events.
+The client passes it as the bootstrapped, identified distinct ID and never calls `identify`, so person profiles exist only for these IDs.
+A profile carries one person property, `user_type`, bucketed to `undergraduate`, `graduate`, `student`, `faculty`, `professor`, `staff` or `other`; `before_send` drops every other `$set`, every `$set_once`, and every identify, alias and group event.
 An account the server cannot give an ID to is measured anonymously, with no person profile.
 The ID is generated, not derived from the netid or the account `_id`, so it cannot be reversed outside the database, and accounts are environment-local, so it exists only in Production.
 An admin resolves it to a netid with the "PostHog ID Lookup" on `/analytics`, backed by the admin-only `GET /api/analytics/product-analytics-ids/:productAnalyticsId`, so the netid itself never leaves y/labs.
@@ -162,7 +167,8 @@ No other system may receive the ID: error reports, logs and `analytics_events` c
 ### Guards
 
 - `client/src/utils/__tests__/productAnalyticsPayload.test.ts` runs the real SDK against a capturing transport and fails if a typed value, page text, query, accessible label or netid reaches an event or a recording, if a body or header is recorded, if anything reaches storage, or if events continue after the session ends.
-- `client/src/__tests__/posthogUsageGuard.test.ts` fails if another module imports the SDK, if it is imported eagerly, if anything calls `identify`, `alias`, `register` or sets person properties, or if a `phc_` key is committed.
+- `client/src/__tests__/posthogUsageGuard.test.ts` fails if a `phc_` project key is committed.
+- The payload test also fails if a person property other than the bucketed `user_type` is sent, if a journey event carries a value outside its bucketed enum, or if an identify event is sent.
 - `client/src/__tests__/noGoogleAnalyticsGuard.test.ts` runs a real production `vite build` and fails on any Google tag loader, measurement host, `gtag` call or measurement id, on a third-party script tag in the entry document, and on a bundled PostHog external script loader.
 - `client/src/__tests__/entryChunkGuard.test.ts` keeps `posthog-js` out of the entry chunk.
 - `server/src/middleware/__tests__/securityHeaders.test.ts` pins every directive literally, including the exact PostHog `connect-src`, and refuses a non-US, look-alike, port or path host, Beta and local development.

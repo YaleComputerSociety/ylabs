@@ -1,5 +1,6 @@
 import axios from './axios';
 import { getApiBaseUrl } from './apiBaseUrl';
+import { captureJourneyEvent } from './productAnalytics';
 
 export type LegacyResearchEventType = 'ways_in_click' | 'contact_route_click' | 'source_link_click';
 
@@ -244,7 +245,9 @@ export const setResearchAnalyticsEnabled = (enabled: boolean): void => {
 export const trackResearchEvent = async (params: TrackResearchEventParams): Promise<void> => {
   if (analyticsEnabled === false) return;
   bindUnloadFlush();
-  eventBuffer.push(buildOutgoingEvent(params));
+  const outgoing = buildOutgoingEvent(params);
+  eventBuffer.push(outgoing);
+  captureJourneyEvent(outgoing);
   if (eventBuffer.length >= RESEARCH_EVENT_MAX_BATCH) {
     await flushResearchAnalytics();
     return;

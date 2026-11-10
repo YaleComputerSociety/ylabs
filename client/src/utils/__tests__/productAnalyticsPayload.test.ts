@@ -134,13 +134,35 @@ describe('PostHog payload through the real SDK', () => {
   const recordSession = async (distinctId?: string) => {
     expect(
       productAnalytics.startProductAnalytics(
-        { allowed: true, netId: SYNTHETIC_NETID, distinctId },
+        { allowed: true, netId: SYNTHETIC_NETID, distinctId, userType: 'undergraduate' },
         { key: freshSessionKey(), host: POSTHOG_INGEST_ORIGIN },
         freshPostHog,
       ),
     ).toBe(true);
     await wait(500);
     interact();
+    productAnalytics.captureJourneyEvent({
+      eventType: 'research_search',
+      payload: {
+        outcome: 'results',
+        resultCountBucket: '6-20',
+        searchKind: 'query',
+        filterCountBucket: '0',
+        query: SYNTHETIC_QUERY.toUpperCase() + ' ' + SYNTHETIC_TYPED,
+      },
+    });
+    productAnalytics.captureJourneyEvent({
+      eventType: 'research_profile_open',
+      entityType: 'research_entity',
+      entityId: 'entity0001',
+      payload: { source: 'search' },
+    });
+    window.dispatchEvent(
+      new ErrorEvent('error', {
+        message: `synthetic failure for ${SYNTHETIC_NETID}`,
+        error: new Error(`synthetic failure for ${SYNTHETIC_NETID}`),
+      }),
+    );
     window.history.pushState({}, '', `/research/person/${SYNTHETIC_NETID}?q=${SYNTHETIC_QUERY}`);
     await wait(4500);
     return sentEvents();
@@ -152,8 +174,28 @@ describe('PostHog payload through the real SDK', () => {
     expect(names).toContain('$pageview');
     expect(names).toContain('$autocapture');
     expect(names).toContain('$snapshot');
+    expect(names).toContain('$exception');
+
+    const search = events.find((event) => event.event === 'research_search')!;
+    expect(search.properties).toMatchObject({
+      outcome: 'results',
+      resultCountBucket: '6-20',
+      searchKind: 'query',
+      filterCountBucket: '0',
+    });
+    expect(search.properties).not.toHaveProperty('query');
+    expect(
+      events.find((event) => event.event === 'research_profile_open')!.properties,
+    ).toMatchObject({ source: 'search', entityType: 'research_entity', entityId: 'entity0001' });
+
+    const personUpdates = events.filter((event) => event.event === '$set');
+    expect(personUpdates.length).toBeGreaterThan(0);
+    for (const update of personUpdates) {
+      expect(update.$set).toEqual({ user_type: 'undergraduate' });
+    }
 
     const payload = everythingSent();
+    expect(payload).toContain('synthetic failure for [redacted]');
     expect(payload).toContain('"maskAllInputs":true');
     expect(payload).toContain('"maskTextSelector":"*"');
     expect(payload).toContain('/research/person/[redacted]');
@@ -166,7 +208,9 @@ describe('PostHog payload through the real SDK', () => {
     expect(payload).not.toContain('requestBody');
     expect(payload).not.toContain('responseBody');
 
-    for (const event of events.filter((candidate) => candidate.event !== '$snapshot')) {
+    for (const event of events.filter(
+      (candidate) => candidate.event !== '$snapshot' && candidate.event !== '$set',
+    )) {
       expect(event.properties.distinct_id).toBe(SYNTHETIC_POSTHOG_ID);
       expect(event.properties.$process_person_profile).toBe(true);
       expect(event.$set).toBeUndefined();
@@ -174,7 +218,6 @@ describe('PostHog payload through the real SDK', () => {
       expect(event.properties.$el_text).toBeUndefined();
     }
     expect(names).not.toContain('$identify');
-    expect(names).not.toContain('$set');
 
     expect(
       sent.every((request) => {
@@ -199,8 +242,37 @@ describe('PostHog payload through the real SDK', () => {
       expect(event.properties.distinct_id).not.toBe('test123');
       expect(event.properties.$process_person_profile).toBe(false);
     }
+    expect(events.map((event) => event.event)).not.toContain('$set');
     expect(everythingSent()).not.toContain(SYNTHETIC_NETID);
   }, 20000);
+
+  it('delivers journey events emitted before the session check and drops them when PostHog is off', async () => {
+    productAnalytics.captureJourneyEvent({
+      eventType: 'research_compare',
+      payload: { entityCountBucket: '2' },
+    });
+    productAnalytics.startProductAnalytics(
+      { allowed: true, netId: SYNTHETIC_NETID },
+      { key: freshSessionKey(), host: POSTHOG_INGEST_ORIGIN },
+      freshPostHog,
+    );
+    await wait(4500);
+
+    expect(sentEvents().map((event) => event.event)).toContain('research_compare');
+  }, 20000);
+
+  it('never queues or sends a journey event once PostHog is declined', async () => {
+    const load = vi.fn();
+    productAnalytics.startProductAnalytics({ allowed: false }, null, load);
+    productAnalytics.captureJourneyEvent({
+      eventType: 'research_compare',
+      payload: { entityCountBucket: '2' },
+    });
+    await wait(200);
+
+    expect(load).not.toHaveBeenCalled();
+    expect(sent).toEqual([]);
+  });
 
   it('sends nothing once the session ends', async () => {
     productAnalytics.startProductAnalytics(
@@ -237,6 +309,40 @@ describe('PostHog payload through the real SDK', () => {
   });
 });
 
+describe('PostHog journey event properties', () => {
+  it('keeps only bucketed enum values and well-formed entity ids', () => {
+    expect(
+      productAnalytics.journeyEventProperties({
+        eventType: 'contact_route_click',
+        entityType: 'research_entity',
+        entityId: 'entity0001',
+        entityIds: ['entity0001', 'not an id', 'entity0002'],
+        payload: {
+          method: 'email',
+          surface: 'lead_card',
+          address: 'someone@example.test',
+          href: 'mailto:someone@example.test',
+          note: 'Free Text',
+        },
+      }),
+    ).toEqual({
+      method: 'email',
+      surface: 'lead_card',
+      entityType: 'research_entity',
+      entityId: 'entity0001',
+      entityIds: ['entity0001', 'entity0002'],
+      entityCount: 2,
+    });
+    expect(productAnalytics.journeyEventProperties({ eventType: 'Bad Name' })).toBeNull();
+  });
+
+  it('buckets the person property to a closed set of user types', () => {
+    expect(productAnalytics.userTypeBucket('Undergraduate')).toBe('undergraduate');
+    expect(productAnalytics.userTypeBucket('admin')).toBe('other');
+    expect(productAnalytics.userTypeBucket(SYNTHETIC_NETID)).toBe('other');
+  });
+});
+
 describe('PostHog configuration', () => {
   const config = () =>
     productAnalytics.buildPostHogConfig({
@@ -256,7 +362,14 @@ describe('PostHog configuration', () => {
         capture_copied_text: false,
         capture_value_css_selector_allowlist: [],
       },
-      capture_exceptions: false,
+      capture_exceptions: {
+        capture_unhandled_errors: true,
+        capture_unhandled_rejections: true,
+        capture_console_errors: false,
+      },
+      capture_pageview: 'history_change',
+      capture_pageleave: true,
+      capture_performance: { network_timing: true, web_vitals: true },
       enable_recording_console_log: false,
       disable_external_dependency_loading: true,
       disable_surveys: true,

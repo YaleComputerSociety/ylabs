@@ -35,6 +35,7 @@ const UserContextProvider = ({ children }: PropsWithChildren) => {
             data.auth === true && data.productAnalytics === true && data.user?.isAdmin !== true,
           netId: data.user?.netId,
           distinctId: data.productAnalyticsId,
+          userType: data.user?.userType,
         });
         if (data.auth) {
           dispatch({
