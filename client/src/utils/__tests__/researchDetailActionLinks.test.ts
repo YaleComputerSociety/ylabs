@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { resolveResearchDetailActionLinks } from '../researchDetailActionLinks';
+import {
+  resolveResearchDetailActionLinkContext,
+  resolveResearchDetailActionLinks,
+} from '../researchDetailActionLinks';
+import type { ResearchGroup } from '../../types/researchGroup';
 
 const PROFILE = 'https://medicine.yale.edu/profile/fixture-scholar/';
 const WEBSITE = 'https://medicine.yale.edu/lab/fixture/';
@@ -7,7 +11,7 @@ const base = {
   hasLeadCard: true,
   profileNeedsOwnButton: false,
   preferOrgEngagementOutreach: false,
-  officialSource: null as { url: string } | null,
+  officialSource: null as { url: string; servedUrl: string } | null,
   hasApplyPage: false,
 };
 
@@ -48,7 +52,10 @@ describe('resolveResearchDetailActionLinks (#3288)', () => {
       preferOrgEngagementOutreach: true,
       profileUrl: PROFILE,
       websiteUrl: WEBSITE,
-      officialSource: { url: 'https://example.yale.edu/get-involved' },
+      officialSource: {
+        url: 'https://example.yale.edu/get-involved',
+        servedUrl: 'https://example.yale.edu/get-involved',
+      },
     });
     expect(links.leadCardProfileUrl).toBe(PROFILE);
     expect(links.leadCardLinksProfile).toBe(true);
@@ -81,7 +88,10 @@ describe('resolveResearchDetailActionLinks (#3288)', () => {
       hasApplyPage: true,
       websiteUrl: WEBSITE,
       preferOrgEngagementOutreach: true,
-      officialSource: { url: 'https://org.example.test/get-involved' },
+      officialSource: {
+        url: 'https://org.example.test/get-involved',
+        servedUrl: 'https://org.example.test/get-involved',
+      },
     });
     expect(orgEngagement.offersJoinLinkBesideWebsite).toBe(false);
   });
@@ -142,7 +152,7 @@ describe('resolveResearchDetailActionLinks for a withheld way in (#4431)', () =>
       wayInWithheld: true,
       profileUrl: PROFILE,
       websiteUrl: WEBSITE,
-      officialSource: { url: JOIN },
+      officialSource: { url: JOIN, servedUrl: JOIN },
       hasApplyPage: true,
       preferOrgEngagementOutreach: true,
     });
@@ -161,13 +171,13 @@ describe('resolveResearchDetailActionLinks for a withheld way in (#4431)', () =>
 
   it('offers the official page only when no other action or lead card link applies', () => {
     expect(
-      resolveResearchDetailActionLinks({ ...base, officialSource: { url: JOIN } })
+      resolveResearchDetailActionLinks({ ...base, officialSource: { url: JOIN, servedUrl: JOIN } })
         .offersOfficialPage,
     ).toBe(true);
     expect(
       resolveResearchDetailActionLinks({
         ...base,
-        officialSource: { url: JOIN },
+        officialSource: { url: JOIN, servedUrl: JOIN },
         hasLeadCard: true,
         profileUrl: PROFILE,
       }).offersOfficialPage,
@@ -175,14 +185,14 @@ describe('resolveResearchDetailActionLinks for a withheld way in (#4431)', () =>
     expect(
       resolveResearchDetailActionLinks({
         ...base,
-        officialSource: { url: JOIN },
+        officialSource: { url: JOIN, servedUrl: JOIN },
         websiteUrl: WEBSITE,
       }).offersOfficialPage,
     ).toBe(false);
     expect(
       resolveResearchDetailActionLinks({
         ...base,
-        officialSource: { url: JOIN },
+        officialSource: { url: JOIN, servedUrl: JOIN },
         wayInWithheld: true,
       }).offersOfficialPage,
     ).toBe(false);
@@ -210,5 +220,38 @@ describe('resolveResearchDetailActionLinks for a withheld way in (#4431)', () =>
     expect(links.activityCheckUrl).toBe(PROFILE);
     expect(links.showsProfileButton).toBe(false);
     expect(links.profileOpenedAbove).toBe(true);
+  });
+});
+
+describe('action links use the spelling a student can open (#3957)', () => {
+  const HTTPS_PAGE = 'https://alias.example.yale.edu/lab/fixture/';
+  const HTTP_PAGE = 'http://alias.example.yale.edu/lab/fixture/';
+  const contextFor = (sourceLinkHealth: unknown[]) =>
+    resolveResearchDetailActionLinkContext({
+      group: {
+        name: 'Fixture Lab',
+        entityType: 'LAB',
+        sourceUrls: [HTTPS_PAGE],
+        wayInWithheld: true,
+        sourceLinkHealth,
+      } as unknown as ResearchGroup,
+      members: [],
+    });
+
+  it('sends the official-page link to the plain-HTTP spelling when the https certificate fails', () => {
+    const links = resolveResearchDetailActionLinks(
+      contextFor([
+        { url: HTTPS_PAGE, healthStatus: 'UNKNOWN', tlsVerificationFailed: true },
+        { url: HTTP_PAGE, healthStatus: 'HEALTHY', httpStatusCode: 200 },
+      ]),
+    );
+    expect(links.activityCheckUrl).toBe(HTTP_PAGE);
+  });
+
+  it('keeps the https spelling when the plain-HTTP spelling is not verified reachable', () => {
+    const links = resolveResearchDetailActionLinks(
+      contextFor([{ url: HTTPS_PAGE, healthStatus: 'UNKNOWN', tlsVerificationFailed: true }]),
+    );
+    expect(links.activityCheckUrl).toBe('https://alias.example.yale.edu/lab/fixture');
   });
 });
