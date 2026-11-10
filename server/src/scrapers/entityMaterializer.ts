@@ -511,6 +511,7 @@ import {
   LEAD_ROLE_LEGACY_LABELS,
   LEGACY_ROLE_BY_CANONICAL,
 } from '../models/canonicalRoleMapping';
+import { isYaleHostname } from '../utils/yaleHost';
 
 interface MaterializeOptions {
   dryRun?: boolean;
@@ -5464,10 +5465,7 @@ export function officialUserProfileUrlsFromObservations(
   ).filter((url) => {
     try {
       const parsed = new URL(url);
-      return (
-        parsed.hostname.toLowerCase().endsWith('yale.edu') &&
-        /\/(?:people|profile)\//i.test(parsed.pathname)
-      );
+      return isYaleHostname(parsed.hostname) && /\/(?:people|profile)\//i.test(parsed.pathname);
     } catch {
       return false;
     }
