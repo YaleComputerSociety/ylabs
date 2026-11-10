@@ -89,7 +89,9 @@ export class TobinRaProjectsScraper implements IScraper {
     try {
       html = await this.fetchHtml(TOBIN_RA_BOARD_URL, ctx.options.useCache);
     } catch (error) {
-      throw new Error(`Tobin RA board fetch failed: ${sanitizeLogValue(error)}`);
+      throw new Error(`Tobin RA board fetch failed: ${sanitizeLogValue(error)}`, {
+        cause: error,
+      });
     }
     const board = parseTobinRaBoard(html);
     if (board.projectBlocks === 0) {
