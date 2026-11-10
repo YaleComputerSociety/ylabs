@@ -34,6 +34,10 @@ import {
   type ResearchEventOutcome,
 } from '../services/researchAnalytics';
 import { routeParam } from '../utils/routeParams';
+import {
+  findNetidForProductAnalyticsId,
+  normalizeProductAnalyticsId,
+} from '../services/productAnalyticsIdentityService';
 
 const router = Router();
 const ANALYTICS_USER_SORTS: readonly AnalyticsUserSort[] = [
@@ -437,6 +441,25 @@ router.get(
     }
 
     response.status(200).json(analytics);
+  }),
+);
+
+router.get(
+  '/product-analytics-ids/:productAnalyticsId',
+  isAuthenticated,
+  isAdmin,
+  asyncHandler(async (request: Request, response: Response) => {
+    const productAnalyticsId = normalizeProductAnalyticsId(
+      routeParam(request, 'productAnalyticsId'),
+    );
+    if (!productAnalyticsId) throw invalidAnalyticsRequest();
+
+    const netid = await findNetidForProductAnalyticsId(productAnalyticsId);
+    if (!netid) {
+      return response.status(404).json({ error: 'No account holds this PostHog ID' });
+    }
+
+    response.status(200).json({ productAnalyticsId, netid });
   }),
 );
 

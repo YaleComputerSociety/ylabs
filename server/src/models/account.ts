@@ -7,6 +7,9 @@ import { looksLikeYaleNetid } from '../utils/yaleNetid';
 
 export const accountSchemaVersion = defineCanonicalSchemaVersion({ currentVersion: 1 });
 
+export const PRODUCT_ANALYTICS_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+
 export const accountStatuses = ['ACTIVE', 'DISABLED', 'UNKNOWN'] as const;
 export type AccountStatus = (typeof accountStatuses)[number];
 
@@ -36,6 +39,7 @@ export interface AccountRecord {
   archivedAt?: Date;
   mergedIntoAccountId?: mongoose.Types.ObjectId;
   sessionVersion?: number;
+  productAnalyticsId?: string;
 }
 
 export const accountProfileSchema = new mongoose.Schema<AccountProfile>(
@@ -107,6 +111,11 @@ export const accountSchema = new mongoose.Schema<AccountRecord>(
       type: Number,
       min: 0,
       default: 0,
+    },
+    productAnalyticsId: {
+      type: String,
+      required: false,
+      match: PRODUCT_ANALYTICS_ID_PATTERN,
     },
   },
   {

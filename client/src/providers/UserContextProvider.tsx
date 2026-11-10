@@ -10,6 +10,7 @@ import { createInitialUserState, userReducer } from '../reducers/userReducer';
 import { setResearchAnalyticsEnabled } from '../utils/researchAnalytics';
 import { rememberSignedIn } from '../utils/lastKnownSession';
 import { HTTP_AUTH_REQUIRED_EVENT } from '../utils/httpStatusEvents';
+import { startProductAnalytics, stopProductAnalytics } from '../utils/productAnalytics';
 
 const UserContextProvider = ({ children }: PropsWithChildren) => {
   const [state, dispatch] = useReducer(userReducer, undefined, createInitialUserState);
@@ -18,10 +19,24 @@ const UserContextProvider = ({ children }: PropsWithChildren) => {
   const checkContext = useCallback(() => {
     dispatch({ type: 'FETCH_START' });
     axios
-      .get<{ auth: boolean; user?: User }>('/check', { withCredentials: true })
+      .get<{
+        auth: boolean;
+        user?: User;
+        productAnalytics?: boolean;
+        productAnalyticsId?: string;
+      }>('/check', {
+        withCredentials: true,
+      })
       .then(({ data }) => {
         setResearchAnalyticsEnabled(data.auth === true);
         rememberSignedIn(data.auth === true);
+        startProductAnalytics({
+          allowed:
+            data.auth === true && data.productAnalytics === true && data.user?.isAdmin !== true,
+          netId: data.user?.netId,
+          distinctId: data.productAnalyticsId,
+          userType: data.user?.userType,
+        });
         if (data.auth) {
           dispatch({
             type: 'FETCH_SUCCESS',
@@ -37,6 +52,7 @@ const UserContextProvider = ({ children }: PropsWithChildren) => {
       .catch(() => {
         console.error('Auth check failed.');
         setResearchAnalyticsEnabled(false);
+        stopProductAnalytics();
         dispatch({
           type: 'FETCH_FAILURE',
           error: 'Unable to reach y/labs right now. Please try again in a moment.',
@@ -52,6 +68,7 @@ const UserContextProvider = ({ children }: PropsWithChildren) => {
     const onAuthRequired = () => {
       setResearchAnalyticsEnabled(false);
       rememberSignedIn(false);
+      stopProductAnalytics();
       dispatch({ type: 'LOGOUT' });
     };
     window.addEventListener(HTTP_AUTH_REQUIRED_EVENT, onAuthRequired);

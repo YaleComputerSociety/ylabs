@@ -38,6 +38,8 @@ import {
   reportableCasLoginError,
 } from './utils/casCallbackFailure';
 import { CasStrategy, presentedCasTicket } from './utils/casStrategy';
+import { isProductAnalyticsAllowedForSession } from './utils/posthogConfig';
+import { ensureProductAnalyticsId } from './services/productAnalyticsIdentityService';
 
 /**
  * Verbose auth tracing. These logs (per-request deserialization, the
@@ -780,17 +782,36 @@ router.use(async (req, res, next) => {
   next();
 });
 
+const productAnalyticsSessionFields = async (
+  user: AuthenticatedSessionUser,
+  req: express.Request,
+): Promise<{ productAnalytics: boolean; productAnalyticsId?: string }> => {
+  try {
+    const productAnalyticsId = await ensureProductAnalyticsId(user.netId);
+    return productAnalyticsId
+      ? { productAnalytics: true, productAnalyticsId }
+      : { productAnalytics: true };
+  } catch (error) {
+    captureServerError(
+      error instanceof Error ? error : new Error('product analytics id lookup failed'),
+      req,
+    );
+    return { productAnalytics: false };
+  }
+};
+
 router.get('/check', (req, res) => {
   setPrivateAuthResponseHeaders(res);
-  if (req.user) {
-    const user = publicAuthSessionUser(req.user);
-    if (user) {
-      return res.json({ auth: true, user });
-    }
-  } else {
-    return res.json({ auth: false });
+  if (!req.user) return res.json({ auth: false });
+  const user = publicAuthSessionUser(req.user);
+  if (!user) return res.json({ auth: false });
+  if (!isProductAnalyticsAllowedForSession(user)) {
+    return res.json({ auth: true, user, productAnalytics: false });
   }
-  return res.json({ auth: false });
+  void productAnalyticsSessionFields(user, req).then((fields) =>
+    res.json({ auth: true, user, ...fields }),
+  );
+  return undefined;
 });
 
 router.get('/cas', authLimiter, casLogin);

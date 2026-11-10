@@ -74,6 +74,7 @@ A Render service is therefore a deployed runtime whatever `NODE_ENV` says, unles
 | `RENDER_EXTERNAL_URL` | Set by Render | CORS trusts the service's own origin only through the allowlist, so a pull request preview, whose `onrender.com` origin is on no allowlist, renders a blank page. Only an exact `https` `onrender.com` origin with no port or path is trusted (`server/src/middleware/corsOrigin.ts`). Never set it by hand. | No |
 | `VITE_SENTRY_DSN` | No | The server reads it too: `server/src/middleware/securityHeaders.ts` opens `connect-src` to the Sentry ingest origin only when it is set, so without it the browser cannot deliver reports. | No; it ships in the client bundle by design |
 | `NODE_ENV` | Recommended, `production` | See "Deployed runtime" above. | No |
+| `VITE_POSTHOG_KEY`, `VITE_POSTHOG_HOST` | Production only; never on Beta | The server reads them too: `server/src/utils/posthogConfig.ts` opens `connect-src` to the PostHog US ingest and assets origins, and `GET /api/check` answers `productAnalytics: true` for a signed-in non-admin session, only when the key is a `phc_` project key, the host is exactly `https://us.i.posthog.com`, and the runtime is Production: deployed, `MONGODBURL` naming the `Prod` database, `MEILISEARCH_INDEX_PREFIX` set to `prod`, and `SCRAPER_ENV` not `beta`. Without them PostHog is fully off (`docs/research-journey-analytics.md`, Third-Party Measurement). | No; the project key ships in the client bundle by design |
 | `PORT` | Set by Render | Defaults to 4000. | No |
 | `FIRST_CONTACT_RATE_LIMIT_MAX` | No | Defaults to 300 per 15 minutes per address, floored at 50. Boot logs the effective value. | No |
 | `RESEARCH_SEARCH_EMBEDDING_MAX_PER_MINUTE` | No | Defaults to 600, floored at 60. | No |
@@ -104,8 +105,10 @@ A change needs a redeploy, not only a restart.
 | `VITE_SENTRY_DSN` | No | No browser error reports. | No; public in the bundle |
 | `VITE_SENTRY_ENVIRONMENT` | No | Falls back to the Vite `MODE`. | No |
 | `VITE_SENTRY_RELEASE` | No | Browser reports carry no release. | No |
+| `VITE_POSTHOG_KEY` | Production only; never on Beta | No browser product analytics or session replay; the client never loads the SDK. A Beta build that carried one would still be refused by the Beta server's gate and CSP. | No; public in the bundle |
+| `VITE_POSTHOG_HOST` | With `VITE_POSTHOG_KEY` | Must be exactly `https://us.i.posthog.com`; any other value turns PostHog off on both the client and the server. | No |
 
-`DEV` and `MODE` are Vite built-ins, not variables anyone sets.
+`DEV`, `PROD` and `MODE` are Vite built-ins, not variables anyone sets.
 
 ## Meilisearch Private Service Variables
 

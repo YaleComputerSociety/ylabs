@@ -5,6 +5,33 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-11-10: PostHog Records Production Students' Clicks And Waits, Masked (#5492)
+
+This reverses the third-party half of the 2026-10-04 entry (#4754) for PostHog only; the Google Analytics tag stays removed and `client/src/__tests__/noGoogleAnalyticsGuard.test.ts` still fails if it returns.
+Decision (owner, 2026-11-10): option B of #5492, the browser SDK on PostHog Cloud US, with autocapture and session replay on, because the question is where students click and where they wait, which `analytics_events` cannot show.
+The owner accepted the change in privacy posture, on the condition that all text and every input is masked in replay, no input value is captured, and no netid is sent.
+GA4 was removed for three failures, and each is answered here.
+It loaded from the initial document before anything else; `posthog-js` is bundled from npm, fetched only after the app mounts and the session check answers, and is the no-external build, so it cannot load a script from PostHog and `script-src` stays `'self'`.
+It sent a persistent identifier to Google for every visitor; PostHog runs only for a signed-in student, keeps nothing in a cookie or browser storage (`persistence: 'memory'`), and receives no IP address once the project's "Discard client IP data" setting is on.
+Nothing read what it collected; the owner reads PostHog's replays, heatmaps and dead-click reports.
+
+Two owner choices, made on 2026-11-10, define who is measured and how they are named.
+1. Production only: PostHog runs only in the Production deploy, and never in Beta, local development, CI, or a session holding an active admin grant.
+The server decides, from positive evidence that it is Production rather than from the key alone: `isProductionWebRuntime` in `server/src/utils/posthogConfig.ts` requires a deployed runtime whose `MONGODBURL` names the `Prod` database, whose `MEILISEARCH_INDEX_PREFIX` is `prod`, and whose `SCRAPER_ENV` is not `beta`.
+Only then does the CSP open `connect-src` to the two PostHog origins and `GET /api/check` answer `productAnalytics: true`, and the client also refuses to start outside a production build or without a `phc_` key and the exact US host.
+2. Identity: PostHog receives only an opaque per-account ID, `accounts.productAnalyticsId`, a random version 4 UUID the server assigns on the account's first Production session check that PostHog may measure.
+It is generated rather than derived, so nothing outside the database can reverse it, and accounts are environment-local, so the ID never leaves Production by promotion either.
+The admin-only "PostHog ID Lookup" on `/analytics` (`GET /api/analytics/product-analytics-ids/:id`) resolves it to a netid, so the owner can see who a recording belongs to while the netid stays in the database.
+No netid, email or name is sent in any property: the client redacts the signed-in netid from every URL and string it sends, strips every query string and fragment, and allows one person property, a bucketed `user_type`.
+The owner also asked, on 2026-11-10, for named funnels and errors: every first-party journey event is sent to PostHog under its own name with only its bucketed enum payload and entity ids, and unhandled errors are captured with the same redaction.
+
+The safe configuration is pinned by tests rather than by review.
+`client/src/utils/__tests__/productAnalyticsPayload.test.ts` runs the real SDK against a capturing transport and fails if any typed value, page text, query, accessible label or the netid reaches an event or a recording, if a request or response body or header is recorded, or if anything is written to a cookie or browser storage.
+The same test fails if a person property other than the bucketed `user_type` or an identify event is sent, and `client/src/__tests__/posthogUsageGuard.test.ts` refuses a committed `phc_` key.
+`server/src/middleware/__tests__/securityHeaders.test.ts` pins the exact `connect-src` and `script-src` with PostHog on, and refuses a non-US, look-alike, port or path host, Beta, and local development.
+Turning PostHog on is an operational step and not part of the merge: the owner sets `VITE_POSTHOG_KEY` and `VITE_POSTHOG_HOST` on the Production web service only and redeploys.
+The privacy notice still has to name PostHog, the data it receives and its retention, which is tracked on #4157, and PostHog's retention is set no longer than the 1,095-day TTL on `analytics_events`.
+
 ## 2026-11-10: A Stale Hiring Line Reads As A Welcome (#5524)
 
 The owner decided on 2026-11-10 that an undated "we are recruiting undergraduates" line on a page that has not been updated in over 18 months shows "Welcomes undergrads" rather than the stronger "recruiting now" badge.

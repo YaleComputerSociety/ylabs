@@ -39,6 +39,7 @@ import {
 } from '../reducers/analyticsReducer';
 import { SortOrder, UserActivitySort } from '../components/analytics/analyticsTypes';
 import ScrollableTableRegion from '../components/analytics/ScrollableTableRegion';
+import PostHogIdentityLookup from '../components/analytics/PostHogIdentityLookup';
 import {
   searchesThatReachedTheCorpus,
   summarizeSearchReviewQueue,
@@ -1041,6 +1042,8 @@ const Analytics = () => {
             </div>
           )}
         </section>
+
+        <PostHogIdentityLookup />
 
         <section className="mb-10">
           <div className="mb-4 flex flex-col gap-2 border-b border-line pb-2 md:flex-row md:items-end md:justify-between">

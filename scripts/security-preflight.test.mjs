@@ -5451,7 +5451,7 @@ test('auth callback, check, and logout responses are private no-store', () => {
   assert.match(passportSource, /const casLogin[\s\S]*setPrivateAuthResponseHeaders\(res\)/);
   assert.match(
     passportSource,
-    /router\.get\('\/check'[\s\S]*const user = publicAuthSessionUser\(req\.user\)[\s\S]*return res\.json\(\{ auth: true, user \}\)/,
+    /router\.get\('\/check'[\s\S]*const user = publicAuthSessionUser\(req\.user\)/,
   );
   assert.match(
     passportSource,
