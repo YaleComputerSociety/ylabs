@@ -131,7 +131,7 @@ const POST_NOMINAL_TOKEN = [
   'd\\.?\\s?sc',
   'sc\\.?\\s?m',
   'c\\.?\\s?sci',
-  'p\\.?\\s?eng',
+  'p\\.\\s?eng',
   'd\\.?\\s?p\\.?\\s?m',
   'd\\.?\\s?t\\.?\\s?m\\s?&\\s?h',
   'dip\\.?\\s?ablm',

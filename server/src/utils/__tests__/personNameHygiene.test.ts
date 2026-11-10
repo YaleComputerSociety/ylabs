@@ -35,6 +35,8 @@ describe('stripPersonNameCredentialList', () => {
     'Avery Sloan, DPM, MPH, MSc, DSc',
     'Avery Sloan, MD, MMSc',
     'Avery Sloan, PhD, BMSc',
+    'Avery Sloan, MD, BSc',
+    'Avery Sloan, PhD, Msci',
     'Avery Sloan, PhD, MRSB, CSci',
     'Avery Sloan, MD, DipABLM',
     'Avery Sloan, PhD, P.Eng.',
@@ -49,12 +51,17 @@ describe('stripPersonNameCredentialList', () => {
     expect(stripPersonNameCredentialList(value)).toBe('Avery Sloan');
   });
 
-  it.each(['Nguyen, Bao', 'NGUYEN, BAO', 'Sloan, Med', 'Avery Sloan, Jr.', 'JANE SMITH, MBBS'])(
-    'keeps a given name or suffix that shares a spelling with a degree in %s (#5463)',
-    (value) => {
-      expect(stripPersonNameCredentialList(value)).toBe(value);
-    },
-  );
+  it.each([
+    'Nguyen, Bao',
+    'NGUYEN, BAO',
+    'Sloan, Med',
+    'Sloan, Peng',
+    'SLOAN, PENG',
+    'Avery Sloan, Jr.',
+    'JANE SMITH, MBBS',
+  ])('keeps a given name or suffix that shares a spelling with a degree in %s (#5463)', (value) => {
+    expect(stripPersonNameCredentialList(value)).toBe(value);
+  });
 
   it('drops a trailing post-nominal credential list after a comma', () => {
     expect(stripPersonNameCredentialList('Ada Byron, PhD, MMath')).toBe('Ada Byron');
@@ -185,6 +192,7 @@ describe('sanitizePersonName', () => {
     expect(sanitizePersonName('JANE SMITH, MBBS')).toBe('Jane Smith, MBBS');
     expect(sanitizePersonName('ROBIN QUILL, LCSW')).toBe('Robin Quill, LCSW');
     expect(sanitizePersonName('AVERY SLOAN, MBBS, FRCS&C')).toBe('Avery Sloan, MBBS, FRCS&C');
+    expect(sanitizePersonName('SLOAN, PENG')).toBe('Sloan, Peng');
   });
 
   it('lowercases a shouting surname particle', () => {
