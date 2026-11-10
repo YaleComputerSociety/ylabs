@@ -152,10 +152,8 @@ export function tobinBoardListings(
 ): {
   listings: MentorListing[];
   projectBlocks: number;
-  filledProjectsWithoutSponsors: number;
 } {
   const board = parseTobinRaBoard(html, url);
-  let filledProjectsWithoutSponsors = 0;
   const listings = board.projects.flatMap((project, index) => {
     if (!project.filled) return [];
     const itemKey = project.projectUrl ?? `${project.year ?? 'undated'}#${index}`;
@@ -167,7 +165,6 @@ export function tobinBoardListings(
       .filter((name) => !linkedNames.has(name.toLowerCase()))
       .map((name) => ({ name, profileUrl: undefined }));
     const sponsors = [...linked, ...unlinked];
-    if (sponsors.length === 0) filledProjectsWithoutSponsors += 1;
     return sponsors.map((sponsor): MentorListing => ({
       source: 'tobin-research-assistantships',
       adviserName: sponsor.name,
@@ -177,7 +174,7 @@ export function tobinBoardListings(
       sourceUrl: url,
     }));
   });
-  return { listings, projectBlocks: board.projectBlocks, filledProjectsWithoutSponsors };
+  return { listings, projectBlocks: board.projectBlocks };
 }
 
 /** The Economics directory of faculty available to advise senior essays. */

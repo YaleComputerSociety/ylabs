@@ -148,12 +148,8 @@ describe('Tobin RA board', () => {
   const url = 'https://economics.example.edu/undergraduate/tobin-ra';
 
   it('lists each sponsor of every filled project in every semester, dated or not', () => {
-    const { listings, projectBlocks, filledProjectsWithoutSponsors } = tobinBoardListings(
-      board,
-      url,
-    );
+    const { listings, projectBlocks } = tobinBoardListings(board, url);
     expect(projectBlocks).toBe(6);
-    expect(filledProjectsWithoutSponsors).toBe(0);
     expect(
       listings.map((listing) => [listing.adviserName, listing.year, listing.adviserProfileUrl]),
     ).toEqual([
@@ -204,7 +200,6 @@ describe('Tobin RA board', () => {
     expect(tobinBoardListings(`<main>${sponsorless}</main>`, url)).toEqual({
       listings: [],
       projectBlocks: 1,
-      filledProjectsWithoutSponsors: 1,
     });
   });
 });
