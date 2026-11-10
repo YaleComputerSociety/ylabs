@@ -21,6 +21,7 @@
  */
 import { Researcher } from '../../models/researcher';
 import { ResearchEntity } from '../../models/researchEntity';
+import { leadTitlesAreAllEmeritus } from '../../services/emeritusLeadWayIn';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { researcherNetid } from '../../utils/researcherIdentity';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
@@ -48,6 +49,7 @@ import {
   tobinProjectUrls,
   undergradMentoringSources,
   wuTsaiFellowListings,
+  UNDERGRAD_MENTORING_SOURCE_KIND,
   type MentorListing,
   type UndergradMentoringEntry,
   type UndergradMentoringSource,
@@ -67,7 +69,8 @@ export const UNDERGRAD_MENTORING_FIELD = 'undergradMentoring';
 /** Advising more than this many academic years back is not read, so counts stay recent. */
 export const MENTORING_LOOKBACK_YEARS = 5;
 
-export type MentorRefusal = 'no-match' | 'ambiguous' | 'department-mismatch' | 'no-lead-row';
+export type MentorRefusal =
+  'no-match' | 'ambiguous' | 'department-mismatch' | 'emeritus-on-current-list' | 'no-lead-row';
 
 export type MentorResolution =
   | { status: 'matched'; slug: string; researcherName?: string; matchedBy?: 'email' | 'name' }
@@ -397,6 +400,12 @@ export const defaultMentorResolver: MentorResolver = async (listing) => {
       return { status: 'refused', reason: 'ambiguous' };
     }
     owner = resolution.match;
+  }
+  if (!matchedByEmail && UNDERGRAD_MENTORING_SOURCE_KIND[listing.source] === 'open') {
+    const held: any = await Researcher.findById(owner._id).select('profile.title').lean();
+    if (leadTitlesAreAllEmeritus([held?.profile?.title])) {
+      return { status: 'refused', reason: 'emeritus-on-current-list' };
+    }
   }
   const scope = listing.department ? [listing.department] : (listing.departmentScope ?? []);
   if (!matchedByEmail && scope.length > 0) {

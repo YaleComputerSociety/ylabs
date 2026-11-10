@@ -20,12 +20,14 @@ describe('defaultMentorResolver identity guards', () => {
     twinA: new mongoose.Types.ObjectId(),
     twinB: new mongoose.Types.ObjectId(),
     humanist: new mongoose.Types.ObjectId(),
+    emeritus: new mongoose.Types.ObjectId(),
   };
   const rows = {
     avery: new mongoose.Types.ObjectId(),
     contact: new mongoose.Types.ObjectId(),
     twinA: new mongoose.Types.ObjectId(),
     humanist: new mongoose.Types.ObjectId(),
+    emeritus: new mongoose.Types.ObjectId(),
   };
 
   beforeAll(async () => {
@@ -59,6 +61,12 @@ describe('defaultMentorResolver identity guards', () => {
       { _id: ids.twinA, displayName: 'Dana Madeup', archived: false },
       { _id: ids.twinB, displayName: 'D. Madeup', archived: false },
       { _id: ids.humanist, displayName: 'Emery Notreal', archived: false },
+      {
+        _id: ids.emeritus,
+        displayName: 'Finley Pretend',
+        profile: { title: 'Professor Emeritus of Anesthesiology' },
+        archived: false,
+      },
     ]);
     const row = (id: mongoose.Types.ObjectId, slug: string, departments: string[]) => ({
       _id: id,
@@ -74,6 +82,7 @@ describe('defaultMentorResolver identity guards', () => {
         row(rows.contact, 'contact-row', ['Physics']),
         row(rows.twinA, 'twin-row', ['Psychology']),
         row(rows.humanist, 'humanist-row', ['English']),
+        row(rows.emeritus, 'emeritus-row', ['Anesthesiology', 'Psychology']),
       ]);
     const lead = (personId: mongoose.Types.ObjectId, id: mongoose.Types.ObjectId) => ({
       personId,
@@ -89,6 +98,7 @@ describe('defaultMentorResolver identity guards', () => {
         lead(ids.contact, rows.contact),
         lead(ids.twinA, rows.twinA),
         lead(ids.humanist, rows.humanist),
+        lead(ids.emeritus, rows.emeritus),
       ]);
   });
 
@@ -123,6 +133,18 @@ describe('defaultMentorResolver identity guards', () => {
         }),
       ),
     ).resolves.toEqual({ status: 'refused', reason: 'ambiguous' });
+  });
+
+  it('refuses a name-only emeritus match on a list of who is open to undergraduates now', async () => {
+    await expect(
+      defaultMentorResolver(
+        listing({
+          source: 'psychology-research-opportunities',
+          adviserName: 'Finley Pretend',
+          department: 'Psychology Department',
+        }),
+      ),
+    ).resolves.toEqual({ status: 'refused', reason: 'emeritus-on-current-list' });
   });
 
   it("refuses a name-only match outside the departments a list's advisers come from", async () => {
