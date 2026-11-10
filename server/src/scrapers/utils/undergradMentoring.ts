@@ -6,6 +6,7 @@
  * name, project title or topic leaves these functions.
  */
 import * as cheerio from 'cheerio';
+import { isTag, isText, type AnyNode, type Element } from 'domhandler';
 import {
   undergradMentoringSources,
   type UndergradMentoringKind,
@@ -264,6 +265,26 @@ export function psychologyResearchSheetListings(csv: string, sheetUrl: string): 
   return listings;
 }
 
+const ADVISER_LABEL = /Advis(?:e|o)rs?:/i;
+
+function linksAfterAdviserLabel(nodes: AnyNode[]): Element[] {
+  const links: Element[] = [];
+  let textSoFar = '';
+  const visit = (node: AnyNode) => {
+    if (isText(node)) {
+      textSoFar += node.data;
+      return;
+    }
+    if (!isTag(node)) return;
+    if (node.tagName === 'a' && node.attribs.href && ADVISER_LABEL.test(textSoFar)) {
+      links.push(node);
+    }
+    node.children.forEach(visit);
+  };
+  nodes.forEach(visit);
+  return links;
+}
+
 /** Wu Tsai undergraduate fellows, grouped in sections headed by the summer they ran. */
 export function wuTsaiFellowListings(html: string, url: string): MentorListing[] {
   const $ = cheerio.load(html);
@@ -273,8 +294,8 @@ export function wuTsaiFellowListings(html: string, url: string): MentorListing[]
     const year = yearIn(item.find('[class*="accordion-item__"]').first().text());
     item.find('p').each((_paragraph, paragraph) => {
       const block = $(paragraph);
-      if (!/Advis(?:e|o)rs?:/i.test(block.text())) return;
-      const links = block.find('a[href]');
+      if (!ADVISER_LABEL.test(block.text())) return;
+      const links = linksAfterAdviserLabel(block.contents().toArray());
       if (links.length === 0) {
         const named = /Advis(?:e|o)rs?:\s*(.+)$/i.exec(block.text().replace(/\s+/g, ' '))?.[1];
         for (const adviserName of splitAdviserNames(named ?? '')) {
@@ -287,7 +308,7 @@ export function wuTsaiFellowListings(html: string, url: string): MentorListing[]
         }
         return;
       }
-      links.each((_link, link) => {
+      links.forEach((link) => {
         for (const adviserName of splitAdviserNames($(link).text())) {
           listings.push({
             source: 'wu-tsai-undergraduate-fellows',

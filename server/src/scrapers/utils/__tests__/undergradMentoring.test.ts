@@ -185,6 +185,20 @@ describe('Wu Tsai undergraduate fellows', () => {
     ]);
     expect(studentFree(listings)).not.toMatch(/Student|project title/);
   });
+
+  it('never reads a linked student name that comes before the adviser label', () => {
+    const html = `<div class="accordion-item"><div class="accordion-item__heading">Summer 2024</div>
+      <div class="accordion-item__content">
+        <p><a href="/fellows/student-one">Student One</a><br><strong>Advisor:</strong><a href="/profile/avery-synthetic">Avery Synthetic</a></p>
+        <p><a href="/fellows/student-two">Student Two</a><br>Advisor: Blair Invented</p>
+      </div></div>`;
+    const listings = wuTsaiFellowListings(html, 'https://wti.example.edu/humans/undergrads');
+    expect(listings.map((listing) => [listing.adviserName, listing.adviserProfileUrl])).toEqual([
+      ['Avery Synthetic', 'https://wti.example.edu/profile/avery-synthetic'],
+      ['Blair Invented', undefined],
+    ]);
+    expect(studentFree(listings)).not.toMatch(/Student|fellows/);
+  });
 });
 
 describe('Physics open research opportunities', () => {
