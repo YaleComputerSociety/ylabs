@@ -268,3 +268,14 @@ describe('classical plurals (#5537)', () => {
     expect(ungroundedContentTerms('Studies anemias.', on('sarcoma'))).toEqual(['anemias']);
   });
 });
+
+describe('the topic vocabulary is not a specificity list (owner option A, measured and reverted, #5537)', () => {
+  it('leaves served-topic words that are ordinary English unchecked', () => {
+    expect(
+      ungroundedContentTerms(
+        'Studies cultural performance, signal timing and tobacco cessation.',
+        on('unrelated evidence about coral reefs'),
+      ),
+    ).toEqual([]);
+  });
+});
