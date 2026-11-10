@@ -8,6 +8,7 @@ vi.mock('../researchAnalytics', () => ({ setResearchAnalyticsEnabled: analyticsM
 
 import {
   deleteAccountData,
+  downloadAccountData,
   isDeletionConfirmPhrase,
   takeAccountDeletedNotice,
   ACCOUNT_DELETED_NOTICE_KEY,
@@ -19,6 +20,28 @@ afterEach(() => {
 });
 
 describe('account data client (#4156)', () => {
+  it('keeps the export URL alive after the click so a deferred browser download still finds it', async () => {
+    vi.useFakeTimers();
+    try {
+      const createObjectURL = vi.fn(() => 'blob:export');
+      const revokeObjectURL = vi.fn();
+      vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL });
+      const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+      axiosMock.get.mockResolvedValue({ data: new Blob(['{}']) });
+
+      await downloadAccountData();
+
+      expect(click).toHaveBeenCalledTimes(1);
+      expect(revokeObjectURL).not.toHaveBeenCalled();
+      vi.runAllTimers();
+      expect(revokeObjectURL).toHaveBeenCalledWith('blob:export');
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+      vi.restoreAllMocks();
+    }
+  });
+
   it('sends the exact confirmation phrase and reports a deletion', async () => {
     axiosMock.delete.mockResolvedValue({ data: { deleted: true } });
 

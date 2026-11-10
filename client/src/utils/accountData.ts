@@ -9,6 +9,7 @@ export const ACCOUNT_DATA_DELETION_CONFIRM_PHRASE = 'delete my data';
 export const ACCOUNT_DATA_DELETE_INTENT_PARAM = 'data';
 export const ACCOUNT_DATA_DELETE_INTENT_VALUE = 'delete';
 export const ACCOUNT_DELETED_NOTICE_KEY = 'accountDataDeletedNotice';
+const EXPORT_URL_REVOKE_DELAY_MS = 30_000;
 
 export type AccountDataDeletionOutcome =
   'deleted' | 'recent_sign_in_required' | 'blocked' | 'failed';
@@ -35,7 +36,8 @@ export const downloadAccountData = async (): Promise<void> => {
     link.click();
     link.remove();
   } finally {
-    URL.revokeObjectURL(url);
+    // Safari and older Firefox start a blob download after click() returns, so revoking now can drop the file silently.
+    setTimeout(() => URL.revokeObjectURL(url), EXPORT_URL_REVOKE_DELAY_MS);
   }
 };
 
