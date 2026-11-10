@@ -1021,7 +1021,7 @@ describe('appendObservations', () => {
     expect(result).toEqual({ inserted: 1, skipped: 1, superseded: 0 });
   });
 
-  it('stores a chrome-stripped, contact-redacted description at ingest (#1375)', async () => {
+  it('stores a chrome-stripped description with its public contact at ingest (#1375, #5046)', async () => {
     const insertMany = vi
       .spyOn(Observation, 'insertMany')
       .mockResolvedValue([
@@ -1050,7 +1050,7 @@ describe('appendObservations', () => {
     const insertedDocs = insertMany.mock.calls[0][0] as any[];
     const storedDescription = String(insertedDocs[0].value);
     expect(storedDescription).not.toContain('Skip to main content');
-    expect(storedDescription).not.toContain('@');
+    expect(storedDescription).toContain('jdoe@example.edu');
     expect(storedDescription).toContain('studies X');
   });
 

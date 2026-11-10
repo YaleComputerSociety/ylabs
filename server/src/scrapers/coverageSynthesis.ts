@@ -1,5 +1,5 @@
 import type { ResearchEntityType } from '../models/researchAccessTypes';
-import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { redactContactsAbsentFrom, redactDirectContactInfo } from '../utils/contactRedaction';
 import { openAiChatSampling } from '../utils/openAiChatSampling';
 import {
   CARD_SYNTHESIS_MODEL,
@@ -198,7 +198,7 @@ function researchPageTextSnippets(obs: CoverageObservationLike): CoverageSnippet
   return researchPageTextEntries(obs.value).flatMap((page) =>
     isRejectedDescriptionSourceUrl(page.url)
       ? []
-      : researchPageTextSnippetTexts(redactDirectContactInfo(page.text)).map((text) => ({
+      : researchPageTextSnippetTexts(page.text).map((text) => ({
           text: writerEvidenceTextOf(text),
           sourceUrl: page.url,
           sourceName: RESEARCH_PAGE_TEXT_SOURCE,
@@ -230,7 +230,7 @@ export function gatherCoverageSnippets(
     if (isRejectedDescriptionSourceUrl(obs.sourceUrl)) continue;
     const raw = writerEvidenceTextOf(withoutProfileTemplateWidgets(textValue(obs.value)));
     if (!raw) continue;
-    const clean = redactDirectContactInfo(raw).slice(0, MAX_COVERAGE_SNIPPET_CHARS).trim();
+    const clean = raw.slice(0, MAX_COVERAGE_SNIPPET_CHARS).trim();
     if (keep({ text: clean, sourceUrl: obs.sourceUrl, sourceName: obs.sourceName })) break;
   }
   return snippets;
@@ -471,7 +471,10 @@ export function judgeWrittenDescription(input: {
     description: null,
     refusal,
   });
-  const drafted = redactDirectContactInfo(textValue(input.drafted));
+  const drafted = redactContactsAbsentFrom(
+    textValue(input.drafted),
+    input.snippets.map((snippet) => snippet.text),
+  );
   if (!drafted) return refuse('empty-description');
   const stripped = withoutUnsupportedSentences(drafted);
   if (!stripped.description) return refuse(stripped.refusal ?? 'past-career-clause');
@@ -555,8 +558,8 @@ export function adoptedWrittenBodyStillSupported(input: {
  * Fuse thin/alternate evidence snippets into one description via the LLM, then
  * FAIL CLOSED: the result is discarded unless its distinctive tokens are grounded
  * in the snippet corpus at `COVERAGE_MIN_OVERLAP`, it cites real snippets, and it
- * clears the description-quality bar. Contact data is redacted on the way in and
- * out, so a coverage description can never leak or invent PII.
+ * clears the description-quality bar. The contact details a public page publishes are
+ * kept on the way in and out (#5046), so the body states what its snippets state.
  *
  * Grounding is asked ONCE, by `cardGroundingScore` against `COVERAGE_MIN_OVERLAP`.
  * There used to be a second arm, `isUngroundedSynthesizedCard(description, corpus)`,

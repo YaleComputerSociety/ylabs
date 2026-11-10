@@ -214,14 +214,7 @@ export function getResearchEntitySearchIndexSettings() {
   };
 }
 
-const SEARCH_INDEX_TEXT_FIELDS = [
-  'name',
-  'displayName',
-  'summary',
-  'shortDescription',
-  'fullDescription',
-  'description',
-] as const;
+const SEARCH_INDEX_NAME_FIELDS = ['name', 'displayName'] as const;
 
 const SEARCH_INDEX_DIRECT_CONTACT_FIELDS = [
   'contactEmail',
@@ -516,7 +509,7 @@ const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
     if (derived) out[field] = derived;
   }
 
-  for (const field of SEARCH_INDEX_TEXT_FIELDS) {
+  for (const field of SEARCH_INDEX_NAME_FIELDS) {
     if (typeof out[field] === 'string') {
       out[field] = redactDirectContactInfo(out[field]);
     }

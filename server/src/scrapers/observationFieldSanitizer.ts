@@ -9,8 +9,7 @@
  * image caption or a post-nominal credential list into a person NAME or a roster
  * member name, a
  * section label into a research-area list, glued address/description residue into
- * an entity name, script/style furniture into a description, or a raw
- * email/phone into a stored description or quote, because the leak is caught here
+ * an entity name, or script/style furniture into a description, because the leak is caught here
  * for all sources at once rather than in each scraper.
  *
  * It is also where invisible Unicode format characters are stripped from scraped
@@ -278,9 +277,7 @@ function sanitizeMethodListField(value: unknown): SanitizedObservationField {
 }
 
 function sanitizeProseField(value: string): SanitizedObservationField {
-  const cleaned = withoutGluedLeadingHeading(
-    normalizeHygieneWhitespace(stripCatalogChrome(redactDirectContactInfo(value))),
-  );
+  const cleaned = withoutGluedLeadingHeading(normalizeHygieneWhitespace(stripCatalogChrome(value)));
   if (!cleaned) return rejected('prose-chrome-only');
   if (isContentlessResearchProjectsBoilerplateText(cleaned)) {
     return rejected('contentless-research-projects-boilerplate');

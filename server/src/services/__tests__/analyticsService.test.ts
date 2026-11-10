@@ -1167,6 +1167,22 @@ describe('logEvent', () => {
     vi.clearAllMocks();
   });
 
+  it('keeps redacting a public page contact a student pastes into a search (#5046)', async () => {
+    mocks.userFindOneAndUpdate.mockReturnValue({ catch: vi.fn() });
+
+    await logEvent({
+      eventType: AnalyticsEventType.RESEARCH_SEARCH,
+      netid: 'student123',
+      userType: 'undergraduate',
+      searchQuery: 'reef lab reef-lab@example.edu 203-555-0199',
+    });
+
+    const stored = JSON.stringify(mocks.analyticsCreate.mock.calls[0][0]);
+    expect(stored).toContain('reef lab [email redacted] [phone redacted]');
+    expect(stored).not.toContain('reef-lab@example.edu');
+    expect(stored).not.toContain('203-555-0199');
+  });
+
   it('redacts direct contact details before persisting analytics text and metadata', async () => {
     mocks.userFindOneAndUpdate.mockReturnValue({ catch: vi.fn() });
 
