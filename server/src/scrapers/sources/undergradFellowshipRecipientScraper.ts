@@ -41,18 +41,18 @@
  *     emitted) so a smoke run with `--limit 50` exercises the full pipeline
  *     without producing 1000s of observations
  *   - ctx.options.only — filters to a subset of programKeys, e.g.
- *     `--only stars-ii,deans-research`
+ *     `--only stars-ii,cogsci-senior-essays`
  *   - ctx.options.manualRecipientCsvDir — optional directory containing
  *     `<programKey>.csv` files for otherwise manual-upload-required programs.
  *     When no CSV is present, the scraper also looks for `<programKey>.pdf`
  *     in the accepted-input fellowship directory and extracts labelled rows.
  *
  * Most Yale fellowship programs do NOT publish recipient lists in scrapable
- * HTML — they're either symposium PDFs (STARS II), hidden behind admin email
- * contact (Mellon Mays, Tetelman, Dean's Research), or not published at all.
- * Configs for those programs are stubbed with `manualUploadRequired=true` and
- * a clear error from their extractor; an admin can drop a CSV, or a reviewed
- * PDF with labelled recipient/advisor text, into the system at a later stage.
+ * HTML. STARS II publishes symposium PDFs, so its config is stubbed with
+ * `manualUploadRequired=true` and a clear error from its extractor; an admin
+ * can drop a CSV, or a reviewed PDF with labelled recipient/advisor text, into
+ * the system at a later stage. A program that publishes no recipient list
+ * naming a mentor is not configured at all (docs/decisions.md, #5362).
  * The scraper architecture is
  * built so adding a new program — when a list does become available — is a
  * single config-row change.
@@ -1166,8 +1166,8 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
   private readonly ownerDepartments: (owner: UserMatch) => Promise<AdvisorDepartments>;
 
   /**
-   * Configs are injectable for testing; default to the v1 six-program set.
-   * Most defaults are stubs (`manualUploadRequired=true`) — see file header.
+   * Configs are injectable for testing; default to `DEFAULT_PROGRAM_CONFIGS`.
+   * The STARS II default is a stub (`manualUploadRequired=true`); see the file header.
    */
   constructor(
     private readonly configs: ProgramConfig[] = DEFAULT_PROGRAM_CONFIGS,
