@@ -235,6 +235,19 @@ A reviewer stamp records the reviewer's netid in `studentVisibilityReviewedByNet
 `--include-scrape-runs` flips the run-history default, which is off: a promoted `scrape_runs` is Development's history under Production's name (#2589).
 It reads like a completeness option and is not one: when the source is empty it deletes the target and copies nothing back.
 
+### Seed the search rerank cache after the copy and the reindex
+
+The rerank cache (`search_rerank_cache`, `docs/search-rerank-cache.md`) is environment-local, so a promotion never copies it and the target serves today's fused order until it is seeded.
+The owner approved serving it on Beta and Production after a promotion (#5448), so seed each target once its copy and reindex are done, and before turning the flag on.
+
+1. Seed Beta after the Development-to-Beta copy and reindex: `yarn --cwd server research-search:seed-rerank-cache --environment=beta --input=<seed.json>` as a dry run, then again with `--apply --confirm-search-rerank-cache-seed --index-version=<marker>`.
+2. Seed Production the same way after its copy and reindex, with `--environment=production`, `SCRAPER_ENV=production` and `CONFIRM_PROD_SCRAPE=true`.
+3. Use the seed file the Development cache was built from, and seed only when the promoted corpus is the one it was scored on; the dry run's `unresolvedSlugs` must read 0, because a slug the target does not carry is a row the scores cannot name.
+4. Then set `SEARCH_RERANK_CACHE_ENABLED=true` on that environment's web service and redeploy it; with the flag unset, search never reads the collection.
+5. Verify by searching a seeded query on the deployed site and comparing its top results with Development's served order for the same query.
+
+`yarn promote:production` does not run these steps, and they are safe to skip: an unseeded or disabled cache changes nothing a student sees.
+
 ### The reindex step needs Render's outbound ranges on the Atlas access list
 
 Step 5 runs inside a Render shell, so it reaches Atlas from Render's network rather than from a laptop.
