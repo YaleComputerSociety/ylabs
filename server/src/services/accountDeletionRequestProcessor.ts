@@ -1,19 +1,24 @@
 import type { Db } from 'mongodb';
 import mongoose from 'mongoose';
 import type { AccountDeletionEnvironment } from '../models/accountDeletionRequest';
-import { deleteAccountData } from './accountDataService';
+import { AccountDataDeletionBlockedError, deleteAccountData } from './accountDataService';
 import {
   markDeletionRequestDone,
   netidsBySubjectHash,
   pendingDeletionRequests,
 } from './accountDeletionRequestService';
+import { PostHogPersonDeletionError } from './posthogPersonDeletionService';
 
 export interface PendingDeletionProcessingSummary {
   pending: number;
   matched: number;
   deleted: number;
   markedDone: number;
+  failed: number;
 }
+
+const isRequestLocalFailure = (error: unknown): boolean =>
+  error instanceof AccountDataDeletionBlockedError || error instanceof PostHogPersonDeletionError;
 
 /**
  * Deletes, in the environment the default connection serves, every person a request in the
@@ -44,19 +49,26 @@ export const processPendingDeletionRequests = async ({
     matched: 0,
     deleted: 0,
     markedDone: 0,
+    failed: 0,
   };
   for (const request of requests) {
     const netid = byHash.get(request.subjectHash);
     if (netid) summary.matched += 1;
     if (!apply) continue;
     if (netid) {
-      await deleteAccountData(netid, {
-        requester: 'operator',
-        env: targetServiceEnv,
-        now,
-        environment: target,
-        requestOtherEnvironments: false,
-      });
+      try {
+        await deleteAccountData(netid, {
+          requester: 'operator',
+          env: targetServiceEnv,
+          now,
+          environment: target,
+          requestOtherEnvironments: false,
+        });
+      } catch (error) {
+        if (!isRequestLocalFailure(error)) throw error;
+        summary.failed += 1;
+        continue;
+      }
       summary.deleted += 1;
     }
     await markDeletionRequestDone(sourceDb, request._id, target, Boolean(netid), now);

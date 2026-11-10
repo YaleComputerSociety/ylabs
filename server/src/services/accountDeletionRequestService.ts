@@ -68,8 +68,10 @@ export const recordCrossEnvironmentDeletionRequest = async ({
         sourceEnvironment,
         requester,
         requestedAt: now,
-        pendingEnvironments: otherDeletionEnvironments(sourceEnvironment),
         completedEnvironments: [],
+      },
+      $addToSet: {
+        pendingEnvironments: { $each: otherDeletionEnvironments(sourceEnvironment) },
       },
     },
     { upsert: true },

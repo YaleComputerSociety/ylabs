@@ -557,7 +557,7 @@ describe('a signed-in student can export and delete their account data (#4156)',
       targetServiceEnv: {},
       apply: false,
     });
-    expect(dryRun).toEqual({ pending: 2, matched: 1, deleted: 0, markedDone: 0 });
+    expect(dryRun).toEqual({ pending: 2, matched: 1, deleted: 0, markedDone: 0, failed: 0 });
     expect(await db().collection('accounts').countDocuments({ netid: OWNER_NETID })).toBe(1);
 
     const applied = await processPendingDeletionRequests({
@@ -568,7 +568,7 @@ describe('a signed-in student can export and delete their account data (#4156)',
       apply: true,
     });
 
-    expect(applied).toEqual({ pending: 2, matched: 1, deleted: 1, markedDone: 2 });
+    expect(applied).toEqual({ pending: 2, matched: 1, deleted: 1, markedDone: 2, failed: 0 });
     expect(await db().collection('accounts').countDocuments({ netid: OWNER_NETID })).toBe(0);
     expect(await db().collection('analytics_events').countDocuments({ netid: OWNER_NETID })).toBe(
       0,
@@ -602,7 +602,83 @@ describe('a signed-in student can export and delete their account data (#4156)',
         targetServiceEnv: {},
         apply: true,
       }),
-    ).toEqual({ pending: 0, matched: 0, deleted: 0, markedDone: 0 });
+    ).toEqual({ pending: 0, matched: 0, deleted: 0, markedDone: 0, failed: 0 });
+  });
+
+  it('leaves a blocked request pending and still carries the requests behind it', async () => {
+    const { processPendingDeletionRequests } =
+      await import('../services/accountDeletionRequestProcessor');
+    const { owner } = await signInBothAccounts();
+    await db().collection('researchers').insertOne({ accountId: owner.accountId });
+    const sourceDb = mongoose.connection.getClient().db('synthetic_deletion_source');
+    await sourceDb.collection('account_deletion_requests').deleteMany({});
+    const sourceKey = 'synthetic-source-key-0123456789abcdef0123';
+    const hashOf = (netid: string) => createHmac('sha256', sourceKey).update(netid).digest('hex');
+    await sourceDb.collection('account_deletion_requests').insertMany([
+      {
+        subjectHash: hashOf(OWNER_NETID),
+        sourceEnvironment: 'production',
+        requester: 'account_holder',
+        requestedAt: new Date(1_000),
+        pendingEnvironments: ['beta'],
+        completedEnvironments: [],
+      },
+      {
+        subjectHash: hashOf(OTHER_NETID),
+        sourceEnvironment: 'production',
+        requester: 'account_holder',
+        requestedAt: new Date(2_000),
+        pendingEnvironments: ['beta'],
+        completedEnvironments: [],
+      },
+    ]);
+
+    const applied = await processPendingDeletionRequests({
+      sourceDb,
+      sourceKey,
+      target: 'beta',
+      targetServiceEnv: {},
+      apply: true,
+    });
+
+    expect(applied).toEqual({ pending: 2, matched: 2, deleted: 1, markedDone: 1, failed: 1 });
+    expect(await db().collection('accounts').countDocuments({ netid: OWNER_NETID })).toBe(1);
+    expect(await db().collection('accounts').countDocuments({ netid: OTHER_NETID })).toBe(0);
+    const remaining = await sourceDb
+      .collection('account_deletion_requests')
+      .find({ pendingEnvironments: 'beta' })
+      .toArray();
+    expect(remaining.map((request) => request.subjectHash)).toEqual([hashOf(OWNER_NETID)]);
+    await db().collection('researchers').deleteMany({});
+  });
+
+  it('puts an environment already carried back to pending when the person deletes again', async () => {
+    const { recordCrossEnvironmentDeletionRequest } =
+      await import('../services/accountDeletionRequestService');
+    const subjectHash = 'a'.repeat(64);
+    await recordCrossEnvironmentDeletionRequest({
+      subjectHash,
+      sourceEnvironment: 'production',
+      requester: 'account_holder',
+    });
+    await db()
+      .collection('account_deletion_requests')
+      .updateOne({ subjectHash }, {
+        $pull: { pendingEnvironments: 'beta' },
+        $push: {
+          completedEnvironments: { environment: 'beta', completedAt: new Date(), matched: true },
+        },
+      } as never);
+
+    await recordCrossEnvironmentDeletionRequest({
+      subjectHash,
+      sourceEnvironment: 'production',
+      requester: 'account_holder',
+    });
+
+    const requests = await db().collection('account_deletion_requests').find({}).toArray();
+    expect(requests).toHaveLength(1);
+    expect([...requests[0].pendingEnvironments].sort()).toEqual(['beta', 'development']);
   });
 
   it('deletes every in-scope row, keeps only counts and tombstoned reports, and ends the session', async () => {
