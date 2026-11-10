@@ -80,10 +80,8 @@ export const buildFeatureFlags = (
 ): Record<string, boolean> =>
   Object.fromEntries(flags.map((flag) => [flag, env[featureFlagEnvKey(flag)] === 'true']));
 
-export const isReleaseFeatureEnabled = (
-  flag: string,
-  env: DeploymentEnv = process.env,
-): boolean => buildFeatureFlags(env)[flag] === true;
+export const isReleaseFeatureEnabled = (flag: string, env: DeploymentEnv = process.env): boolean =>
+  buildFeatureFlags(env)[flag] === true;
 
 export const buildDeploymentFingerprint = (
   env: DeploymentEnv = process.env,
