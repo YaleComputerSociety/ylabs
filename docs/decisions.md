@@ -5,11 +5,24 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-11-10: Hosted, Welcomes And Mentors Each Take A Source Once, And Faculty Research Profiles Get All Three (#5362)
+
+The owner decided on 2026-11-10 that undergraduate evidence must reach faculty research profiles in every department, not only labs: on Development that day hosted evidence reached 289 of 710 served labs (41%) but 53 of 2,984 faculty research profiles (1.8%), and welcomes reached 69 labs (10%) but 9 profiles (0.3%).
+Each source entry feeds exactly one of three signals, decided by what the source says the undergraduate did.
+Hosted (in the past): the undergraduate worked inside the professor's research, as a roster or alumni entry, a research-assistant placement on the professor's project, or a summer or fellowship placement in the professor's own Yale lab.
+Welcomes (now): the professor or department says the professor is taking undergraduates now, such as an open research-opportunities list naming them.
+Mentors: the professor advised the undergraduate's own work, such as a senior essay, thesis or project, directed research, or a prize essay (#5551).
+A summer or fellowship placement in the professor's own Yale lab is hosted, once, and not also mentoring; this replaces the summer-program sentence of the #5551 entry below.
+The Cognitive Science senior essays and Earth and Planetary Sciences theses move from hosted to mentors, which on 2026-11-10 lowers hosted on faculty research profiles from 53 to about 22 until the new hosted sources land, since 31 of those 53 rested only on the two lists.
+A student finds faculty who take undergraduates through one "Works with undergraduates" browse control over the three signals, and each card still shows its own tag.
+None of the three is a row gate, and every one is derived from observations a deterministic lane wrote.
+Fellowship programs that publish no recipient list naming a mentor are not configured: STARS Summer, Dean's Research, Tetelman and Mellon Mays were checked once on 2026-11-10, had none, and credited 0 served rows, so their configs were retired.
+
 ## 2026-11-10: Mentoring Undergraduates Is Its Own Signal (#5551)
 
 The owner decided on 2026-11-10 that a professor named as the adviser or mentor of a specific undergraduate is its own signal, "Mentors undergrads", separate from "Has hosted undergraduates" and from a lab page's invitation, because y/labs is also used to find a thesis adviser or a mentor for a student's own project.
 Every undergraduate signal exists to tell a student which professors are receptive to mentoring them.
-A list counts when it names the professor as adviser or mentor of a specific undergraduate's work, or lists them as open to advising undergraduates now; a summer program counts only when it names the professor as mentor of a specific undergraduate placed in their Yale lab, whether or not the student is at Yale.
+A list counts when it names the professor as adviser or mentor of a specific undergraduate's work, or lists them as open to advising undergraduates now; a summer or fellowship placement in the professor's own Yale lab is hosted rather than mentoring, under the #5362 entry above.
 A program director, committee member, general faculty pool, center-wide trainee list, graduate-student or postdoc mentor, or mentor at another institution does not count.
 The tag attaches only to a row the professor already leads: mentoring alone does not pass the directory test, so it never creates a row.
 Only the adviser is read from a list; student names, titles and topics are never stored.

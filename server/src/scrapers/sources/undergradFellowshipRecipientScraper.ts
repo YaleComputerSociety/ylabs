@@ -723,48 +723,6 @@ export const DEFAULT_PROGRAM_CONFIGS: ProgramConfig[] = [
     adviserDepartments: ['Earth and Planetary Sciences', 'Geology and Geophysics'],
     hostingRule: 'lab-science-program',
   },
-  {
-    programKey: 'stars-summer',
-    programName: 'STARS Summer Research Program',
-    urls: [
-      'https://science.yalecollege.yale.edu/stem-fellowships/funding-stem-opportunities-yale/stars/stars-summer-research-program',
-    ],
-    extractor: manualUploadStub,
-    manualUploadRequired: true,
-    skipReason: 'STARS Summer recipient lists not publicly published; symposium booklets are PDFs',
-  },
-  {
-    programKey: 'deans-research',
-    programName: "Yale College Dean's Research Fellowship & Rosenfeld Science Scholars",
-    urls: [
-      'https://science.yalecollege.yale.edu/yale-undergraduate-research/fellowship-grants/yale-college-deans-research-fellowship',
-    ],
-    extractor: manualUploadStub,
-    manualUploadRequired: true,
-    skipReason: "Dean's Research / Rosenfeld recipient lists not published; contact program office",
-  },
-  {
-    programKey: 'tetelman',
-    programName: 'Alan S. Tetelman 1958 Fellowship for International Research in the Sciences',
-    urls: [
-      'https://science.yalecollege.yale.edu/yale-undergraduate-research/fellowship-grants/tetelman-fellowship-international-research-sciences',
-    ],
-    extractor: manualUploadStub,
-    manualUploadRequired: true,
-    skipReason:
-      'Tetelman recipient list not publicly published; only sample destinations are listed',
-  },
-  {
-    programKey: 'mellon-mays',
-    programName: 'Mellon Mays Undergraduate Fellowship (Yale)',
-    urls: [
-      'https://college.yale.edu/life-at-yale/student-faculty-awards/mellon-mays-undergraduate-fellowship-program',
-    ],
-    extractor: manualUploadStub,
-    manualUploadRequired: true,
-    skipReason: 'Mellon Mays Yale fellow names not publicly published',
-    hostingRule: 'lab-science-adviser-department',
-  },
 ];
 
 // ---------------------------------------------------------------------------

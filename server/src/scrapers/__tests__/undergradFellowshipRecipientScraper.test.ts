@@ -331,24 +331,12 @@ describe('buildObservationsForAdvisor', () => {
 // ---------------------------------------------------------------------------
 
 describe('DEFAULT_PROGRAM_CONFIGS', () => {
-  it('covers the fellowship programs and the two lab-science adviser pages', () => {
+  it('keeps only programs that publish a recipient or adviser list (#5362)', () => {
     const keys = DEFAULT_PROGRAM_CONFIGS.map((c) => c.programKey).sort();
-    expect(keys).toEqual(
-      [
-        'cogsci-senior-essays',
-        'deans-research',
-        'eps-senior-theses',
-        'mellon-mays',
-        'stars-ii',
-        'stars-summer',
-        'tetelman',
-      ].sort(),
-    );
-    const fellowships = DEFAULT_PROGRAM_CONFIGS.filter(
-      (c) => !['cogsci-senior-essays', 'eps-senior-theses'].includes(c.programKey),
-    );
-    expect(fellowships.every((c) => c.manualUploadRequired)).toBe(true);
-    expect(fellowships.every((c) => c.skipReason && c.skipReason.length > 0)).toBe(true);
+    expect(keys).toEqual(['cogsci-senior-essays', 'eps-senior-theses', 'stars-ii'].sort());
+    for (const retired of ['stars-summer', 'deans-research', 'tetelman', 'mellon-mays']) {
+      expect(keys).not.toContain(retired);
+    }
   });
 
   it('applies the 2026-11-08 lab-science rule to every adviser page', () => {
