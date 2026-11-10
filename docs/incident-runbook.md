@@ -147,15 +147,22 @@ Generate a new random secret in your own terminal, for example `openssl rand -ba
 
 #### `SESSION_SECRET`
 
-Set a new value on the leaking environment's web service and redeploy.
-One `SESSION_SECRET` signs every cookie, and there is no overlap window, so rotation signs every user in that environment out (#4484 tracks a rotation that does not).
-Accept that during an incident, because a leaked secret lets anyone mint a session for any account.
+A leaked secret lets anyone mint a session for any account, so rotate it with no overlap: set a new value on the leaking environment's web service, leave `SESSION_SECRET_PREVIOUS` unset, and redeploy.
+That signs every user in that environment out, which is the point during an incident.
 The new value must be at least 32 characters with at least 8 distinct characters, or boot refuses.
+
+A routine rotation, with no leak, keeps users signed in (#4484):
+
+1. On the web service, set `SESSION_SECRET_PREVIOUS` to the current `SESSION_SECRET`, set `SESSION_SECRET` to a new value, and redeploy.
+   New cookies are signed with the new secret, a cookie signed with the previous one is still accepted and is re-signed with the new one on its next response, and boot logs that the rotation overlap is active.
+2. After 30 days, remove `SESSION_SECRET_PREVIOUS` and redeploy.
+   Every session expires 30 days after sign-in on the server, so by then no cookie depends on the previous secret.
+
+Never use the overlap for a leaked secret: while `SESSION_SECRET_PREVIOUS` holds the leaked value, a cookie minted with it still signs in.
 
 A single leaked session cookie is different: rotate nothing.
 Every session carries the account's `sessionVersion`, and signing out increments it, which ends every session of that account on every device (`skills/auth-security/SKILL.md`, "Sessions are revocable and expire on the server").
-Ask the account holder to sign in and sign out once.
-No admin route can end another account's sessions yet (#4484), so if the holder cannot, the maintainer increments that one account's `sessionVersion` in Atlas.
+Ask the account holder to sign in and sign out once, or, if they cannot, end that one account's sessions from "End Sessions" on `/analytics` (`POST /api/admin/accounts/:netid/sessions/revoke`, recorded in the admin audit log as `account.sessions_revoke`).
 Every session also expires 30 days after sign-in regardless.
 `SMOKE_COOKIE` is such a cookie; sign that account out.
 

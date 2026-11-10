@@ -10,6 +10,8 @@ const ORIGINAL_ENV = { ...process.env };
 const STRONG_SESSION_SECRET = 'Zq7#Lm2$Wx9!Rt4%Kp8@Hv3^Nc6&Jb1*';
 const SESSION_COOKIE_NAME = 'session';
 const CAS_NETID = 'revoketest';
+const ADMIN_NETID = 'revokeadmin';
+let casNetidForNextLogin = CAS_NETID;
 const AUTHENTICATED_ROUTE = '/api/users/savedResearchEntityIds';
 
 vi.mock('../services/yaliesService', () => ({
@@ -38,7 +40,9 @@ const startFakeCas = async (): Promise<FakeCas> => {
     if (requested.pathname === '/cas/validate') {
       const ticket = requested.searchParams.get('ticket') ?? '';
       res.writeHead(200, { 'content-type': 'text/plain' });
-      res.end(serviceUrlByTicket.get(ticket) === service ? `yes\n${CAS_NETID}\n` : 'no\n');
+      res.end(
+        serviceUrlByTicket.get(ticket) === service ? `yes\n${casNetidForNextLogin}\n` : 'no\n',
+      );
       return;
     }
     if (requested.pathname === '/cas/logout') {
@@ -208,5 +212,42 @@ describe('server-side session revocation and expiry', () => {
     expect(firstId).toMatch(/^[0-9a-f]{32}$/);
     expect(secondId).toMatch(/^[0-9a-f]{32}$/);
     expect(secondId).not.toBe(firstId);
+  });
+
+  it("lets an admin end one account's sessions on every device, and audits it (#4484)", async () => {
+    const { grantAdminAccess } = await import('../services/adminGrantService');
+    await mongoose.connection.db?.collection('admin_grants').deleteMany({});
+    await mongoose.connection.db?.collection('admin_audit_events').deleteMany({});
+
+    const targetFirstDevice = await signIn(baseUrl);
+    const targetSecondDevice = await signIn(baseUrl);
+    casNetidForNextLogin = ADMIN_NETID;
+    try {
+      await grantAdminAccess({ netid: ADMIN_NETID, actorNetid: 'bootstrap', note: 'synthetic' });
+      const adminCookie = await signIn(baseUrl);
+
+      const response = await fetch(`${baseUrl}/api/admin/accounts/${CAS_NETID}/sessions/revoke`, {
+        method: 'POST',
+        headers: { cookie: adminCookie, 'content-type': 'application/json', origin: baseUrl },
+        body: '{}',
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ revoked: true });
+
+      expect((await get(`${baseUrl}${AUTHENTICATED_ROUTE}`, targetFirstDevice)).status).toBe(401);
+      expect((await get(`${baseUrl}${AUTHENTICATED_ROUTE}`, targetSecondDevice)).status).toBe(401);
+      expect((await get(`${baseUrl}${AUTHENTICATED_ROUTE}`, adminCookie)).status).toBe(200);
+
+      const audited = async () =>
+        mongoose.connection.db
+          ?.collection('admin_audit_events')
+          .findOne({ action: 'account.sessions_revoke', targetId: CAS_NETID });
+      for (let attempt = 0; attempt < 50 && !(await audited()); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      expect(await audited()).toMatchObject({ actorNetid: ADMIN_NETID, targetType: 'account' });
+    } finally {
+      casNetidForNextLogin = CAS_NETID;
+    }
   });
 });

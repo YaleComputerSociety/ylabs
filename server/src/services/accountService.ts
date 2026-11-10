@@ -67,10 +67,14 @@ export const validateAccount = async (netid: unknown): Promise<AccountRecordView
   return account ? toAccountView(account) : null;
 };
 
-export const revokeAccountSessions = async (netid: unknown): Promise<void> => {
+export const revokeAccountSessions = async (netid: unknown): Promise<boolean> => {
   const normalizedNetid = normalizeNetid(netid);
-  if (!normalizedNetid) return;
-  await Account.updateOne({ netid: normalizedNetid }, { $inc: { sessionVersion: 1 } });
+  if (!normalizedNetid) return false;
+  const result = await Account.updateOne(
+    { netid: normalizedNetid },
+    { $inc: { sessionVersion: 1 } },
+  );
+  return result.matchedCount > 0;
 };
 
 export const lastKnownAccountUserType = async (netid: unknown): Promise<string | undefined> => {

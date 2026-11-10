@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   getListingModel: vi.fn(),
   fellowshipFind: vi.fn(),
   listAdminAuditEvents: vi.fn(),
+  revokeAccountSessions: vi.fn(),
 }));
 
 vi.mock('../../services/adminAuditService', async (importOriginal) => ({
@@ -18,6 +19,11 @@ vi.mock('../../services/adminGrantService', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../services/adminGrantService')>()),
   grantAdminAccess: mocks.grantAdminAccess,
   revokeAdminAccess: mocks.revokeAdminAccess,
+}));
+
+vi.mock('../../services/accountService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/accountService')>()),
+  revokeAccountSessions: mocks.revokeAccountSessions,
 }));
 
 vi.mock('../../db/connections', async (importOriginal) => ({
@@ -33,6 +39,7 @@ vi.mock('../../models/fellowship', async (importOriginal) => ({
   },
 }));
 
+import { ADMIN_AUDIT_ROUTES } from '../../middleware/adminAuditLogger';
 import { ResearchArea } from '../../models/researchArea';
 import { AdminGrantValidationError } from '../../services/adminGrantService';
 import router, {
@@ -135,6 +142,40 @@ describe('admin routes', () => {
   it('exposes admin grant management routes for the analytics admin access section', () => {
     expect(routeByPath('/admin-grants')).toBeTruthy();
     expect(routeByPath('/admin-grants/:netid/revoke')).toBeTruthy();
+  });
+
+  it('ends every session of one account through its session version (#4484)', async () => {
+    mocks.revokeAccountSessions.mockResolvedValue(true);
+
+    const res = await invokeRouteHandler('/accounts/:netid/sessions/revoke', {
+      user: { netId: 'admin123' },
+      params: { netid: 'target123' },
+      body: {},
+    });
+
+    expect(mocks.revokeAccountSessions).toHaveBeenCalledWith('target123');
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({ revoked: true });
+  });
+
+  it('answers 404 when no account holds the netid whose sessions are to end (#4484)', async () => {
+    mocks.revokeAccountSessions.mockResolvedValue(false);
+
+    const res = await invokeRouteHandler('/accounts/:netid/sessions/revoke', {
+      user: { netId: 'admin123' },
+      params: { netid: 'missing123' },
+      body: {},
+    });
+
+    expect(res.statusCode).toBe(404);
+    expect(res.body).toEqual({ error: 'Account not found' });
+  });
+
+  it("audits ending an account's sessions with the target netid (#4484)", () => {
+    expect(ADMIN_AUDIT_ROUTES['POST /accounts/:netid/sessions/revoke']).toMatchObject({
+      action: 'account.sessions_revoke',
+      targetType: 'account',
+    });
   });
 
   it('records admin mutations through the audit logger middleware', () => {

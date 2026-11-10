@@ -2245,7 +2245,14 @@ test('session secret validation trims before enforcing deployed length', () => {
     source,
     /if \(sessionSecret\.length < MIN_SESSION_SECRET_LENGTH \|\| isWeakSessionSecret\(sessionSecret\)\)/,
   );
-  assert.match(source, /keys: \[sessionSecret\]/);
+  assert.match(source, /keys: sessionSigningKeyList/);
+  assert.match(source, /currentSecret: sessionSecret,/);
+  const signingKeysSource = fs.readFileSync(
+    new URL('../server/src/utils/sessionSigningKeys.ts', import.meta.url),
+    'utf8',
+  );
+  assert.match(signingKeysSource, /if \(!previous\) return \[currentSecret\];/);
+  assert.match(signingKeysSource, /return \[currentSecret, previous\];/);
   assert.doesNotMatch(source, /process\.env\.SESSION_SECRET\.length < 32/);
   assert.doesNotMatch(source, /keys: \[process\.env\.SESSION_SECRET \?\? ''\]/);
 });

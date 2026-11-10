@@ -33,6 +33,7 @@ import {
   globalLimiter,
   observeFirstContactVolume,
 } from './middleware/rateLimiters';
+import { SESSION_SECRET_PREVIOUS_ENV, sessionSigningKeys } from './utils/sessionSigningKeys';
 
 const clientDistPath = path.join(resolveServerPackageRoot(import.meta.url), '..', 'client', 'dist');
 const API_BODY_LIMIT = '64kb';
@@ -80,6 +81,20 @@ if (sessionSecret.length < MIN_SESSION_SECRET_LENGTH || isWeakSessionSecret(sess
       'SESSION_SECRET must be set to a high-entropy string of at least 32 characters.',
     );
   }
+}
+
+const sessionSigningKeyList = sessionSigningKeys({
+  currentSecret: sessionSecret,
+  previousSecret: process.env[SESSION_SECRET_PREVIOUS_ENV],
+  isAcceptableSecret: (value) =>
+    value.length >= MIN_SESSION_SECRET_LENGTH && !isWeakSessionSecret(value),
+  requireStrongSecrets: !allowsNonProductionSecurityBypass(),
+});
+
+if (sessionSigningKeyList.length > 1) {
+  console.info(
+    `[security] Session secret rotation overlap active: ${SESSION_SECRET_PREVIOUS_ENV} still verifies older cookies.`,
+  );
 }
 
 const bypassRuntimeSecurity = allowsNonProductionSecurityBypass();
@@ -183,7 +198,7 @@ const app = express()
   .use(
     cookieSession({
       name: sessionCookieName(),
-      keys: [sessionSecret],
+      keys: sessionSigningKeyList,
       // 30 days: long enough that students aren't silently logged out
       // mid-semester workflows, short enough to bound stale sessions.
       maxAge: SESSION_LIFETIME_MS,
