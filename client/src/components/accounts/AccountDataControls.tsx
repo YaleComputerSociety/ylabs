@@ -80,7 +80,8 @@ const DeletionOutcomeNotice = ({ outcome }: { outcome: AccountDataDeletionOutcom
     return (
       <div role="alert" className="mt-4 rounded-card border border-amber-200 bg-amber-50 p-4">
         <p className="text-sm text-amber-900">
-          To delete your data, sign in again with Yale CAS first. You will come back here to finish.
+          To delete your data, confirm it is you by entering your Yale password again. You will come
+          back here to finish.
         </p>
         <a
           href={reauthenticateForDeletionUrl()}
@@ -202,7 +203,9 @@ const DeleteAccountDataDialog = ({
                 your name, netid, and email are removed from them.
               </p>
               <p className="mt-3 text-sm text-ink-soft">
-                Signing in again later starts a new, empty account.
+                If you also signed in to another copy of y/labs, such as its beta site, a maintainer
+                deletes that account too, in a separate run. Signing in again later starts a new,
+                empty account.
               </p>
             </div>
           </div>

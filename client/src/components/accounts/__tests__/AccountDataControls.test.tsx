@@ -92,7 +92,10 @@ describe('Your data controls on the dashboard (#4156)', () => {
     const dialog = within(openDeleteDialog());
 
     expect(dialog.getByText(/cannot be undone/)).toBeTruthy();
-    expect(dialog.getByText('Signing in again later starts a new, empty account.')).toBeTruthy();
+    expect(dialog.getByText(/Signing in again later starts a new, empty account\./)).toBeTruthy();
+    expect(
+      dialog.getByText(/a\s+maintainer deletes that account too, in a separate run/),
+    ).toBeTruthy();
     expect(dialog.getByRole('button', { name: 'Download my data' })).toBeTruthy();
     const confirm = dialog.getByRole('button', { name: 'Delete my data' }) as HTMLButtonElement;
     expect(confirm.disabled).toBe(true);
@@ -133,6 +136,7 @@ describe('Your data controls on the dashboard (#4156)', () => {
     const href = new URL(link.getAttribute('href') ?? '', 'http://localhost');
     expect(href.pathname).toMatch(/\/api\/cas$/);
     expect(href.searchParams.get('redirect')).toBe('/dashboard?data=delete');
+    expect(href.searchParams.get('reauth')).toBe('1');
     expect(mocks.leaveAfterAccountDeletion).not.toHaveBeenCalled();
   });
 

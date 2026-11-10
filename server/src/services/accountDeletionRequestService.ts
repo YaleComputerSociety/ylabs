@@ -12,7 +12,6 @@ import type { Db } from 'mongodb';
 import mongoose from 'mongoose';
 import {
   AccountDeletionRequest,
-  ACCOUNT_DELETION_REQUEST_COLLECTION,
   accountDeletionEnvironments,
   type AccountDeletionEnvironment,
 } from '../models/accountDeletionRequest';
@@ -88,7 +87,7 @@ export const pendingDeletionRequests = async (
   target: AccountDeletionEnvironment,
 ): Promise<PendingRequest[]> =>
   (await sourceDb
-    .collection(ACCOUNT_DELETION_REQUEST_COLLECTION)
+    .collection('account_deletion_requests')
     .find({ pendingEnvironments: target }, { projection: { subjectHash: 1 } })
     .sort({ requestedAt: 1 })
     .toArray()) as unknown as PendingRequest[];
@@ -132,7 +131,7 @@ export const markDeletionRequestDone = async (
   now: Date = new Date(),
 ): Promise<void> => {
   await sourceDb
-    .collection(ACCOUNT_DELETION_REQUEST_COLLECTION)
+    .collection('account_deletion_requests')
     .updateOne({ _id: requestId, pendingEnvironments: target }, {
       $pull: { pendingEnvironments: target },
       $push: { completedEnvironments: { environment: target, completedAt: now, matched } },
