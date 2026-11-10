@@ -77,7 +77,8 @@ import { serializedDocumentId } from '../utils/idSerialization';
 import { assessResearchEntityDescriptionQuality } from '../utils/researchEntityDescriptionQuality';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
-import { redactContactsAbsentFrom, redactDirectContactInfo } from '../utils/contactRedaction';
+import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { redactContactsAbsentFrom } from '../utils/contactRedaction';
 
 function withContactsFromSourceOnly<
   T extends { fullDescription: string; shortDescription: string },

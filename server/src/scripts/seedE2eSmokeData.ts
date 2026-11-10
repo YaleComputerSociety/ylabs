@@ -36,6 +36,8 @@ interface SmokeEntitySeed {
   kind?: 'lab' | 'center';
   entityType?: 'LAB' | 'CENTER';
   studentVisibilityTier?: 'student_ready' | 'operator_review' | 'suppressed';
+  contactEmail?: string;
+  contactName?: string;
 }
 
 export const E2E_SMOKE_ENTITIES: SmokeEntitySeed[] = [
@@ -136,6 +138,8 @@ export const E2E_SMOKE_ENTITIES: SmokeEntitySeed[] = [
 
 export const E2E_SMOKE_CONTACT_EMAIL = 'quokka.coordinator@example.invalid';
 export const E2E_SMOKE_CONTACT_PHONE = '203-555-0147';
+export const E2E_SMOKE_CONTACT_FIELD_EMAIL = 'quokka.fieldcontact@example.invalid';
+export const E2E_SMOKE_DEPARTMENT_LABEL_EMAIL = 'quokka.department@example.invalid';
 
 export const E2E_SMOKE_CONTACT_ENTITY: SmokeEntitySeed = {
   slug: `${E2E_SMOKE_SLUG_PREFIX}quokka-burrow-acoustics-lab`,
@@ -145,9 +149,14 @@ export const E2E_SMOKE_CONTACT_ENTITY: SmokeEntitySeed = {
   fullDescription: `The Quokka Burrow Acoustics Lab records the vocalizations small marsupials make inside shared burrows and builds classifiers for them. Prospective students can write to ${E2E_SMOKE_CONTACT_EMAIL} or call ${E2E_SMOKE_CONTACT_PHONE} to ask about field recording work. Undergraduates help annotate recordings and evaluate acoustic models.`,
   researchAreas: ['bioacoustics', 'animal communication'],
   methods: ['acoustic recording', 'audio classification'],
-  departments: ['Department of Fictional Biology'],
+  departments: [
+    'Department of Fictional Biology',
+    `Fictional Biology ${E2E_SMOKE_DEPARTMENT_LABEL_EMAIL}`,
+  ],
   school: 'School of Invented Sciences',
   browseRankScore: 30,
+  contactEmail: E2E_SMOKE_CONTACT_FIELD_EMAIL,
+  contactName: 'Quokka Field Contact',
 };
 
 export const E2E_SMOKE_WITHHELD_ENTITIES: SmokeEntitySeed[] = [
@@ -204,6 +213,8 @@ function toEntityDocument(seed: SmokeEntitySeed): Record<string, unknown> {
     studentVisibilityTier: seed.studentVisibilityTier ?? 'student_ready',
     studentVisibilityComputedTier: seed.studentVisibilityTier ?? 'student_ready',
     studentVisibilityReasons: ['e2e-smoke-seed'],
+    ...(seed.contactEmail ? { contactEmail: seed.contactEmail } : {}),
+    ...(seed.contactName ? { contactName: seed.contactName } : {}),
   };
 }
 
