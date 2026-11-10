@@ -29,6 +29,7 @@ import {
   materializationReadScopeFilter,
   materializeEntity,
   materializeObservedEntitiesInChunks,
+  DEFAULT_MATERIALIZATION_CONCURRENCY,
   materializationConcurrencyFromEnv,
   MAX_MATERIALIZATION_CONCURRENCY,
   partitionChunkForConcurrency,
@@ -206,9 +207,15 @@ describe('chunked materialization reads per chunk and projects what row-by-row d
     }
     const chunkedCounts = countingQueries();
     const chunked: unknown[] = [];
-    await materializeObservedEntitiesInChunks(rows, { dryRun: true }, (_row, outcome) => {
-      chunked.push(comparable('result' in outcome ? outcome.result : outcome));
-    });
+    await materializeObservedEntitiesInChunks(
+      rows,
+      { dryRun: true },
+      (_row, outcome) => {
+        chunked.push(comparable('result' in outcome ? outcome.result : outcome));
+      },
+      100,
+      1,
+    );
     mongoose.set('debug', false);
 
     expect(chunked).toEqual(perRow);
@@ -259,6 +266,7 @@ describe('chunked materialization reads per chunk and projects what row-by-row d
         chunked.push(comparable('result' in outcome ? outcome.result : outcome));
       },
       2,
+      1,
     );
 
     expect(seen).toEqual(rows);
@@ -424,9 +432,12 @@ describe('chunked materialization reads per chunk and projects what row-by-row d
     expect(await apply(4)).toEqual(sequential);
   }, 120000);
 
-  it('reads concurrency from MATERIALIZE_CONCURRENCY, defaulting to sequential', () => {
-    expect(materializationConcurrencyFromEnv(undefined)).toBe(1);
-    expect(materializationConcurrencyFromEnv('')).toBe(1);
+  it('reads concurrency from MATERIALIZE_CONCURRENCY, defaulting to 8 and falling back to sequential on an invalid value', () => {
+    expect(materializationConcurrencyFromEnv(undefined)).toBe(DEFAULT_MATERIALIZATION_CONCURRENCY);
+    expect(materializationConcurrencyFromEnv('  ')).toBe(DEFAULT_MATERIALIZATION_CONCURRENCY);
+    expect(DEFAULT_MATERIALIZATION_CONCURRENCY).toBe(8);
+    expect(materializationConcurrencyFromEnv('1')).toBe(1);
+    expect(materializationConcurrencyFromEnv('2.5')).toBe(1);
     expect(materializationConcurrencyFromEnv('0')).toBe(1);
     expect(materializationConcurrencyFromEnv('-3')).toBe(1);
     expect(materializationConcurrencyFromEnv('many')).toBe(1);
