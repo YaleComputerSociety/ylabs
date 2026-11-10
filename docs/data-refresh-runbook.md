@@ -995,6 +995,7 @@ CONFIRM_PROD_SCRAPE=true yarn --cwd server production:promote-beta-copy --rollba
 ```
 
 The rollback needs only `PRODUCTION_MONGODBURL`, refuses any database but a remote `Prod`, and runs through the same staged swap: it copies the retained generation into staging inside Production, cuts over, and verifies that every collection holds the retained count.
+It refuses a generation that lacks any always-promoted collection, everything but `observations` and `scrape_runs`, and names the missing ones, because a partially retained generation would restore a mix of two promotions.
 It is itself a retaining swap, so the generation it replaced becomes the new previous generation and a rollback can be undone the same way.
 Accounts and `research_plans` are environment-local and are never in a generation, so a rollback leaves every Production login and plan as it is, including ones created after the promotion (#5088).
 A rollback moves documents only: follow it with the visibility gate and the reindex from Phase 5, exactly as after a promotion.
