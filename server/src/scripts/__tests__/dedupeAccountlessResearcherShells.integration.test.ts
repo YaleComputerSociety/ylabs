@@ -2,7 +2,10 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Researcher } from '../../models/researcher';
-import { dedupeAccountlessResearcherShells } from '../dedupeAccountlessResearcherShells';
+import {
+  dedupeAccountlessResearcherShells,
+  parseDedupeAccountlessResearcherShellsArgs,
+} from '../dedupeAccountlessResearcherShells';
 
 const canonicalId = new mongoose.Types.ObjectId();
 const shellId = new mongoose.Types.ObjectId();
@@ -361,6 +364,42 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
     expect(again.accountlessClusters.folds).toBe(0);
   });
 
+  it('applies only the named shell when the run is scoped with --only-shell', async () => {
+    const db = mongoose.connection.db!;
+    const pairs = ['Scoped Fixture', 'Unscoped Fixture'].map((displayName, index) => ({
+      canonical: new mongoose.Types.ObjectId(),
+      shell: new mongoose.Types.ObjectId(),
+      displayName,
+      email: `directory.scope${index}@example.test`,
+    }));
+    await db.collection('researchers').insertMany(
+      pairs.flatMap(({ canonical, shell, displayName, email }) => [
+        { _id: canonical, displayName, archived: false, identifiers: { email } },
+        { _id: shell, displayName, archived: false, identifiers: {} },
+      ]),
+    );
+    const [scoped, unscoped] = pairs;
+    const notPlanned = new mongoose.Types.ObjectId().toHexString();
+
+    const result = await dedupeAccountlessResearcherShells({
+      apply: true,
+      onlyShellIds: [scoped.shell.toHexString(), notPlanned],
+    });
+
+    expect(result.shellsMerged).toBe(1);
+    expect(result.onlyShellsNotPlanned).toEqual([notPlanned]);
+    expect((await db.collection('researchers').findOne({ _id: scoped.shell }))!.archived).toBe(
+      true,
+    );
+    expect((await db.collection('researchers').findOne({ _id: unscoped.shell }))!.archived).toBe(
+      false,
+    );
+
+    const unscopedRun = await dedupeAccountlessResearcherShells({ apply: false });
+    expect(unscopedRun.shellsMerged).toBe(1);
+    expect(unscopedRun.onlyShellsNotPlanned).toBeUndefined();
+  });
+
   it('folds a name-only shell into a netid-backed accountless canonical (FRA lead)', async () => {
     const netidCanonical = new mongoose.Types.ObjectId();
     const nameOnlyShell = new mongoose.Types.ObjectId();
@@ -575,5 +614,28 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
     const twin = await db.collection('researchers').findOne({ _id: conflictingTwin });
     expect(twin!.archived).toBe(false);
     expect((twin!.identifiers as { netid?: string }).netid).toBe('kl99');
+  });
+});
+
+describe('parseDedupeAccountlessResearcherShellsArgs --only-shell', () => {
+  it('collects every repeated --only-shell id, lower-cased', () => {
+    const first = 'AAAAAAAAAAAAAAAAAAAAAAAA';
+    const second = 'bbbbbbbbbbbbbbbbbbbbbbbb';
+    expect(
+      parseDedupeAccountlessResearcherShellsArgs([
+        `--only-shell=${first}`,
+        `--only-shell=${second}`,
+      ]).onlyShellIds,
+    ).toEqual([first.toLowerCase(), second]);
+  });
+
+  it('leaves the scope unset when no --only-shell is given', () => {
+    expect(parseDedupeAccountlessResearcherShellsArgs([]).onlyShellIds).toBeUndefined();
+  });
+
+  it('refuses a value that is not a researcher id', () => {
+    expect(() => parseDedupeAccountlessResearcherShellsArgs(['--only-shell=not-an-id'])).toThrow(
+      /24-character researcher id/,
+    );
   });
 });
