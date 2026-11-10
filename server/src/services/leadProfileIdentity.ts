@@ -123,6 +123,19 @@ const canonicalOfficialProfilePath = (host: string, path: string): string => {
 
 const YSM_ROOT_PROFILE_PATH = /^\/profile\/[a-z0-9-]+$/i;
 
+/**
+ * Hosts whose profile path is the same for everyone and whose query names the person, so
+ * dropping the query would let one URL match every holder of any link on that host (#4500).
+ */
+const IDENTITY_QUERY_PARAMETER_BY_HOST: Readonly<Record<string, string>> = {
+  'scholar.google.com': 'user',
+};
+
+const identityQueryPattern = (host: string, path: string, parameter: string, value: string) =>
+  new RegExp(
+    `^https?://(?:www\\.)?${escapeRegex(host)}${escapeRegex(path)}/*\\?(?:[^#]*&)?${escapeRegex(parameter)}=${escapeRegex(encodeURIComponent(value))}(?:[&#].*)?$`,
+  );
+
 export const officialProfileDestinationStoredPattern = (url?: string | null): RegExp | null => {
   let parsed: URL;
   try {
@@ -133,6 +146,13 @@ export const officialProfileDestinationStoredPattern = (url?: string | null): Re
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
   const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
   const path = canonicalOfficialProfilePath(host, parsed.pathname.replace(/\/+$/, ''));
+  const identityParameter = IDENTITY_QUERY_PARAMETER_BY_HOST[host];
+  if (identityParameter) {
+    const identityValue = parsed.searchParams.get(identityParameter);
+    return identityValue
+      ? identityQueryPattern(host, path, identityParameter, identityValue)
+      : null;
+  }
   const anySection =
     host === 'medicine.yale.edu' && YSM_ROOT_PROFILE_PATH.test(path) ? '(?:/[a-z0-9-]+)?' : '';
   return new RegExp(

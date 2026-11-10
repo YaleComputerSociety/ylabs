@@ -2798,21 +2798,44 @@ function normalizeMemberRole(value: unknown): string {
   return MEMBER_ROLES.has(role) ? role : '';
 }
 
-async function findUniqueResearcherForRosterMember(
+async function liveResearchersHoldingRosterProfileUrl(
   resolved: Record<string, ResolvedField>,
-): Promise<any | null> {
+  limit: number,
+): Promise<any[]> {
   const profileUrlPattern = officialProfileDestinationStoredPattern(
     textValue(resolved.profileUrl?.value),
   );
-  if (!profileUrlPattern) return null;
-  const researchers = await Researcher.find({
+  if (!profileUrlPattern) return [];
+  return Researcher.find({
     archived: { $ne: true },
     $or: [{ 'profileLinks.url': profileUrlPattern }, { 'profile.websiteUrl': profileUrlPattern }],
   })
     .select('_id displayName')
-    .limit(2)
+    .limit(limit)
     .lean();
+}
+
+async function findUniqueResearcherForRosterMember(
+  resolved: Record<string, ResolvedField>,
+): Promise<any | null> {
+  const researchers = await liveResearchersHoldingRosterProfileUrl(resolved, 2);
   return researchers.length === 1 ? researchers[0] : null;
+}
+
+const SHARED_PROFILE_URL_HOLDER_LIMIT = 10;
+
+/**
+ * A profile URL several researchers hold reaches every one of them, so the listed name
+ * vetoes the holders it disagrees with, as it vetoes every other candidate the evidence
+ * reached: exactly one agreeing holder is the member, and none or several resolve to
+ * nobody (#4500). More holders than the limit is a URL that identifies nobody.
+ */
+function holderTheListedNameLeaves(holders: readonly any[], listedName: string): any | null {
+  if (holders.length > SHARED_PROFILE_URL_HOLDER_LIMIT) return null;
+  const agreeing = holders.filter((holder) =>
+    observedPersonNameAgreesWith(holder.displayName, listedName),
+  );
+  return agreeing.length === 1 ? agreeing[0] : null;
 }
 
 const SHARED_PROFILE_URL_LISTING_LIMIT = 20;
@@ -2962,7 +2985,14 @@ async function profileUrlHolderForListing(
   listedName: string,
   scope: RosterListingScope,
 ): Promise<ProfileUrlHolderForListing> {
-  const holder = await findUniqueResearcherForRosterMember(resolved);
+  const holders = await liveResearchersHoldingRosterProfileUrl(
+    resolved,
+    SHARED_PROFILE_URL_HOLDER_LIMIT + 1,
+  );
+  if (holders.length > 1) {
+    return { holder: holderTheListedNameLeaves(holders, listedName), holderEdgeToEnd: null };
+  }
+  const holder = holders[0] ?? null;
   if (!holder || observedPersonNameAgreesWith(holder.displayName, listedName)) {
     return { holder, holderEdgeToEnd: null };
   }
