@@ -394,13 +394,12 @@ export function physicsOpenOpportunityListings(html: string, url: string): Mento
         /[a-z0-9._%+-]+@(?:[a-z0-9-]+\.)*yale\.edu/i.exec(cardText)?.[0],
     );
     const heading = link.text().replace(/\s+/g, ' ').trim();
-    const fromEmail = nameFromHeadingAndEmail(heading, adviserEmail);
-    const adviserName = fromEmail || nameBeforeTitle(heading);
+    const adviserName = nameFromHeadingAndEmail(heading, adviserEmail) || nameBeforeTitle(heading);
     if (!PLAUSIBLE_NAME.test(adviserName) || !adviserName.includes(' ')) return;
     listings.push({
       source: 'physics-open-research-opportunities',
       adviserName,
-      ...(fromEmail ? { adviserEmail } : {}),
+      adviserEmail,
       adviserProfileUrl: absoluteUrl(link.attr('href'), url),
       department: 'Physics',
       sourceUrl: url,

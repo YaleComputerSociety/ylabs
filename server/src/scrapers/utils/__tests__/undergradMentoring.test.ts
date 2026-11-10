@@ -216,13 +216,13 @@ describe('Physics open research opportunities', () => {
     expect(nameBeforeTitle('Dana Madeup')).toBe('Dana Madeup');
   });
 
-  it("drops a card's email when it does not spell the card's name", () => {
+  it("keeps a card's email that does not spell the card's name, cutting the name at the title", () => {
     const html = `<h2>Faculty with Open Research Opportunities</h2><ul>
       <li class="custom-card"><h2 class="custom-card__heading"><a href="/people/x">Casey Fictional Associate Professor of Physics</a></h2>
       <div class="custom-card__snippet"><p>Contact</p><p>dana.listed@yale.edu</p></div></li></ul>`;
     const [listing] = physicsOpenOpportunityListings(html, 'https://physics.example.edu/');
     expect(listing.adviserName).toBe('Casey Fictional');
-    expect(listing).not.toHaveProperty('adviserEmail');
+    expect(listing.adviserEmail).toBe('dana.listed@yale.edu');
   });
 
   it('reads every card from the section heading to the next section, by email', () => {

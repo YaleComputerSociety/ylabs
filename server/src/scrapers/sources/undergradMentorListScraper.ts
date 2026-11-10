@@ -207,6 +207,31 @@ const NEUROSCIENCE_ADVISER_DEPARTMENTS = [
   'Genetics',
 ] as const;
 
+const ECONOMIC_POLICY_ADVISER_DEPARTMENTS = [
+  'Economics',
+  'Management',
+  'Law',
+  'Political Science',
+  'Sociology',
+  'Global Affairs',
+  'Public Health',
+  'Health Policy',
+  'Statistics & Data Science',
+  'School of the Environment',
+] as const;
+
+const ENVIRONMENTAL_ADVISER_DEPARTMENTS = [
+  'Ecology & Evolutionary Biology',
+  'Earth & Planetary Sciences',
+  'School of the Environment',
+  'Molecular, Cellular & Developmental Biology',
+  'Chemical & Environmental Engineering',
+  'Environmental Health Sciences',
+  'Anthropology',
+  'Peabody Museum',
+  'Economics',
+] as const;
+
 const TOBIN_LANDING = 'https://economics.yale.edu/undergraduate/tobin-ra';
 const ECONOMICS_SITEMAP = 'https://economics.yale.edu/sitemap.xml';
 const PSYCHOLOGY_PAGE = 'https://psychology.yale.edu/undergraduate/research-opportunities';
@@ -227,6 +252,7 @@ export const MENTOR_SOURCE_CONFIGS: readonly MentorSourceConfig[] = [
   {
     source: 'tobin-research-assistantships',
     landingUrl: TOBIN_LANDING,
+    departmentScope: ECONOMIC_POLICY_ADVISER_DEPARTMENTS,
     read: async (fetchText, now) => {
       const index = await fetchText(ECONOMICS_SITEMAP);
       if (index === null) return { listings: [], complete: false };
@@ -324,17 +350,20 @@ export const MENTOR_SOURCE_CONFIGS: readonly MentorSourceConfig[] = [
         'https://german.yale.edu/programs/undergraduate-program/majoring-german/recent-senior-essays',
         germanSeniorEssayListings,
       ],
-      [
-        'yibs-summer-research-fellows',
-        'https://yibs.yale.edu/people/past_sures_fellows',
-        yibsSuresFellowListings,
-      ],
     ] as const
   ).map(([source, url, extract]) => ({
     source,
     landingUrl: url,
     read: recentOnly(singlePage(url, extract)),
   })),
+  {
+    source: 'yibs-summer-research-fellows',
+    landingUrl: 'https://yibs.yale.edu/people/past_sures_fellows',
+    departmentScope: ENVIRONMENTAL_ADVISER_DEPARTMENTS,
+    read: recentOnly(
+      singlePage('https://yibs.yale.edu/people/past_sures_fellows', yibsSuresFellowListings),
+    ),
+  },
 ];
 
 const listingKey = (listing: MentorListing): string =>
@@ -369,9 +398,7 @@ async function liveNamesakeCount(listedName: string): Promise<number> {
   const candidates: Array<{ displayName?: string }> = await Researcher.find(
     { displayName: surnameRe, archived: { $ne: true } },
     { displayName: 1 },
-  )
-    .limit(50)
-    .lean();
+  ).lean();
   return candidates.filter((candidate) => {
     const parsed = splitName(candidate.displayName ?? '');
     return (

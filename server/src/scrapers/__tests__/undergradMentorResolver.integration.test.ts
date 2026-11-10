@@ -135,6 +135,28 @@ describe('defaultMentorResolver identity guards', () => {
     ).resolves.toEqual({ status: 'refused', reason: 'ambiguous' });
   });
 
+  it('still refuses that name when many other live researchers share the surname', async () => {
+    const researchers = mongoose.connection.db!.collection('researchers');
+    await researchers.deleteOne({ _id: ids.twinB });
+    const letter = (n: number) => String.fromCharCode(97 + n);
+    await researchers.insertMany(
+      Array.from({ length: 60 }, (_unused, i) => ({
+        displayName: `Ab${letter(i % 26)}${letter(Math.floor(i / 26))} Madeup`,
+        archived: false,
+      })),
+    );
+    await researchers.insertOne({ _id: ids.twinB, displayName: 'D. Madeup', archived: false });
+    await expect(
+      defaultMentorResolver(
+        listing({
+          source: 'psychology-research-opportunities',
+          adviserName: 'Dana Madeup',
+          department: 'Psychology',
+        }),
+      ),
+    ).resolves.toEqual({ status: 'refused', reason: 'ambiguous' });
+  });
+
   it('refuses a name-only emeritus match on a list of who is open to undergraduates now', async () => {
     await expect(
       defaultMentorResolver(
