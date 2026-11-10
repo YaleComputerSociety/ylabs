@@ -2038,6 +2038,34 @@ function schemaEnumFallback(existingValue: unknown, allowed: readonly string[]):
     : undefined;
 }
 
+function statesOnlyAdviseesMovedToMentors(observation: ResolverObservation): boolean {
+  return (
+    observation.field === 'pastUndergradAdvisees' &&
+    Array.isArray(observation.value) &&
+    observation.value.length > 0 &&
+    withoutAdviseeProgramsMovedToMentors(observation.value).length === 0
+  );
+}
+
+function withoutObservedAdviseesMovedToMentors(
+  observations: ResolverObservation[],
+): ResolverObservation[] {
+  const anotherAdviseeObservationRemains = observations.some(
+    (observation) =>
+      observation.field === 'pastUndergradAdvisees' &&
+      !statesOnlyAdviseesMovedToMentors(observation),
+  );
+  return observations.flatMap((observation) => {
+    if (observation.field !== 'pastUndergradAdvisees' || !Array.isArray(observation.value)) {
+      return [observation];
+    }
+    if (statesOnlyAdviseesMovedToMentors(observation) && anotherAdviseeObservationRemains) {
+      return [];
+    }
+    return [{ ...observation, value: withoutAdviseeProgramsMovedToMentors(observation.value) }];
+  });
+}
+
 export function materializedFieldValue(
   entityType: ObservedEntityType,
   field: string,
@@ -11378,13 +11406,15 @@ async function materializeEntityUnderRemovalGuard(
     researchPageTopics,
   );
   const resolverObs: ResolverObservation[] = [
-    ...collectivePageScreened.map((o: any) => ({
-      field: o.field,
-      value: o.value,
-      sourceName: o.sourceName,
-      confidence: o.confidence,
-      observedAt: o.observedAt,
-    })),
+    ...withoutObservedAdviseesMovedToMentors(
+      collectivePageScreened.map((o: any) => ({
+        field: o.field,
+        value: o.value,
+        sourceName: o.sourceName,
+        confidence: o.confidence,
+        observedAt: o.observedAt,
+      })),
+    ),
     ...(derivedResearchAreas ? [resolverObservationOfDerivedCandidate(derivedResearchAreas)] : []),
   ];
 

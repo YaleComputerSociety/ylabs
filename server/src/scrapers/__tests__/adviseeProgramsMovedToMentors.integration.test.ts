@@ -27,8 +27,11 @@ import { Signal } from '../../models/signal';
 import { entityHasHostedUndergraduates } from '../../services/hostedUndergraduates';
 import { toPublicResearchEntityDto } from '../../services/researchEntityDto';
 import { materializeEntity } from '../entityMaterializer';
+import { ROSTER_ALUMNI_PROGRAM_NAME } from '../sources/labMicrositeUndergradLLMExtractor';
 
 const FELLOWSHIP_LANE = 'undergrad-fellowships-recipients';
+const LAB_ROSTER_LANE = 'lab-microsite-undergrad-llm';
+const ROSTER = 'https://syntheticdept.example.org/people/synthetic/alumni';
 const PAGE = 'https://syntheticdept.example.org/people/synthetic';
 const ESSAYS = 'https://syntheticdept.example.org/senior-essays';
 
@@ -50,6 +53,7 @@ const seed = (
   value: unknown,
   sourceName = 'synthetic-profile-lane',
   sourceUrl = PAGE,
+  confidence = 0.8,
 ) =>
   Observation.create({
     entityType: 'researchEntity',
@@ -59,7 +63,7 @@ const seed = (
     sourceId: new mongoose.Types.ObjectId(),
     sourceName,
     sourceUrl,
-    confidence: 0.8,
+    confidence,
     observedAt: new Date('2026-09-01T00:00:00Z'),
     superseded: false,
   });
@@ -125,6 +129,30 @@ describe('advisee entries from the pages moved to mentors are withdrawn on resol
       'signal:PAST_UNDERGRADS',
     );
     expect(entityHasHostedUndergraduates(row)).toBe(true);
+  }, 120000);
+
+  it('lets a lab roster alumni count fill the field when the fellowship lane states only moved pages', async () => {
+    const rosterAlumni = { programName: ROSTER_ALUMNI_PROGRAM_NAME, count: 3 };
+    await seedProfile('synthetic-roster-adviser', [MOVED_ESSAY]);
+    await seed(
+      'synthetic-roster-adviser',
+      'pastUndergradAdvisees',
+      [rosterAlumni],
+      LAB_ROSTER_LANE,
+      ROSTER,
+      0.5,
+    );
+    await resolve('synthetic-roster-adviser');
+
+    const row = await stored('synthetic-roster-adviser');
+    expect(row?.pastUndergradAdvisees).toEqual([expect.objectContaining(rosterAlumni)]);
+    expect(entityHasHostedUndergraduates(row)).toBe(true);
+    const signal = await Signal.findOne({
+      researchEntityId: row?._id,
+      derivationKey: 'signal:PAST_UNDERGRADS',
+      archived: { $ne: true },
+    }).lean<any>();
+    expect(signal?.source?.url).toBe(ROSTER);
   }, 120000);
 
   it('clears a moved entry a row already stored, and a second pass changes nothing', async () => {
