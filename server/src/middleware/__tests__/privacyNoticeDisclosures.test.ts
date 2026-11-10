@@ -1,16 +1,17 @@
-import { readFileSync } from 'fs';
-import path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import {
+  ACTIVITY_RECORD_RETENTION_DAYS,
+  ACTIVITY_RECORD_RETENTION_DAYS_LABEL,
+  PRIVACY_NOTICE_DISCLOSED_ORIGINS,
+  SESSION_COOKIE_LIFETIME_DAYS,
+} from '../../../../client/src/utils/privacyNotice';
+import { AnalyticsEvent } from '../../models/analytics';
 import { POSTHOG_ASSETS_ORIGIN, POSTHOG_INGEST_ORIGIN } from '../../utils/posthogConfig';
+import { SESSION_LIFETIME_MS } from '../../utils/sessionClaim';
 import { buildContentSecurityPolicy } from '../securityHeaders';
 
-const PRIVACY_NOTICE_SOURCE = path.resolve(
-  __dirname,
-  '../../../../client/src/utils/privacyNotice.ts',
-);
-
-const ANALYTICS_MODEL_SOURCE = path.resolve(__dirname, '../../models/analytics.ts');
+const MS_PER_DAY = 86_400_000;
 
 const FIRST_PARTY_HOSTS = new Set([
   'yalelabs.io',
@@ -19,13 +20,7 @@ const FIRST_PARTY_HOSTS = new Set([
   'ylabs-gr4v.onrender.com',
 ]);
 
-const disclosedOrigins = (): string[] => {
-  const source = readFileSync(PRIVACY_NOTICE_SOURCE, 'utf8');
-  const list = source.slice(source.indexOf('PRIVACY_NOTICE_DISCLOSED_ORIGINS'));
-  return [...list.slice(0, list.indexOf(']')).matchAll(/'(https:\/\/[^']+)'/g)].map(
-    (match) => match[1],
-  );
-};
+const disclosedOrigins = (): readonly string[] => PRIVACY_NOTICE_DISCLOSED_ORIGINS;
 
 const hostOf = (origin: string): string => origin.replace(/^https:\/\//, '').replace(/\/.*$/, '');
 
@@ -86,14 +81,16 @@ describe('privacy notice disclosures (#4157)', () => {
   });
 
   it('states the same activity retention as the analytics TTL index', () => {
-    const ttlSeconds = Number(
-      readFileSync(ANALYTICS_MODEL_SOURCE, 'utf8').match(/expireAfterSeconds:\s*(\d+)/)?.[1],
-    );
-    const statedDays = readFileSync(PRIVACY_NOTICE_SOURCE, 'utf8').match(
-      /ACTIVITY_RECORD_RETENTION_DAYS_LABEL = '([\d,]+)'/,
-    )?.[1];
+    const ttlSeconds = AnalyticsEvent.schema
+      .indexes()
+      .map(([, options]) => options?.expireAfterSeconds)
+      .filter((seconds): seconds is number => typeof seconds === 'number');
 
-    expect(ttlSeconds).toBeGreaterThan(0);
-    expect(Number(statedDays?.replace(/,/g, ''))).toBe(ttlSeconds / 86_400);
+    expect(ttlSeconds).toEqual([ACTIVITY_RECORD_RETENTION_DAYS * 86_400]);
+    expect(ACTIVITY_RECORD_RETENTION_DAYS_LABEL).toBe('1,095');
+  });
+
+  it('states the same cookie lifetime as the session cookie', () => {
+    expect(SESSION_COOKIE_LIFETIME_DAYS * MS_PER_DAY).toBe(SESSION_LIFETIME_MS);
   });
 });

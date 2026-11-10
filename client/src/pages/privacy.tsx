@@ -45,8 +45,10 @@ const Privacy = () => {
 
         <Section id="browsing" title="If you browse without signing in">
           <p className={BODY_CLASS}>
-            y/labs keeps no record of who you are or what you looked at. Two things still leave your
-            browser:
+            y/labs keeps no record of who you are or what you looked at. It does set one cookie,
+            which carries only a random id used to limit how fast one browser can send requests, and
+            your browser keeps a few y/labs settings, such as display preferences and whether you
+            were last signed in. Two things still leave your browser:
           </p>
           <ul className={LIST_CLASS}>
             <li>
@@ -69,8 +71,8 @@ const Privacy = () => {
             and notes are stored with your account until you delete them.
           </p>
           <p className={BODY_CLASS}>
-            y/labs sets one cookie, which keeps you signed in for up to{' '}
-            {SESSION_COOKIE_LIFETIME_DAYS} days.
+            Signing in adds your account to the same y/labs cookie, which keeps you signed in for up
+            to {SESSION_COOKIE_LIFETIME_DAYS} days.
           </p>
         </Section>
 

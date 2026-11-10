@@ -2,11 +2,12 @@ export const PRIVACY_PATH = '/privacy';
 export const PRIVACY_PAGE_TITLE = 'Privacy';
 export const PRIVACY_LINK_LABEL = 'Privacy';
 export const PRIVACY_QUESTIONS_URL = 'https://github.com/YaleComputerSociety/ylabs/issues';
-export const ACTIVITY_RECORD_RETENTION_DAYS_LABEL = '1,095';
+export const ACTIVITY_RECORD_RETENTION_DAYS = 1095;
+export const ACTIVITY_RECORD_RETENTION_DAYS_LABEL = ACTIVITY_RECORD_RETENTION_DAYS.toLocaleString('en-US');
 export const SESSION_COOKIE_LIFETIME_DAYS = 30;
 
 // Every third-party origin the page loads from or sends to must be named here and on the
-// page. `server/src/middleware/__tests__/privacyNoticeDisclosures.test.ts` reads this list
+// page. `server/src/middleware/__tests__/privacyNoticeDisclosures.test.ts` imports this list
 // and fails when the Content-Security-Policy allows an origin it does not cover.
 export const PRIVACY_NOTICE_DISCLOSED_ORIGINS = [
   'https://us.i.posthog.com',
