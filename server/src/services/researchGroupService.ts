@@ -180,6 +180,7 @@ import {
   type CorrectedSearchQuery,
 } from './searchQuerySpellingCorrection';
 import { getResearchSearchSpellingVocabulary } from './researchSearchSpellingVocabulary';
+import { replaceNicknameInQuery, resolveNicknameInNameQuery } from './nameQueryNicknames';
 import { foldLatinDiacritics } from '../utils/latinDiacritics';
 import {
   maxReachableResearchSearchPage,
@@ -955,6 +956,14 @@ export const normalizeResearchSearchQuery = (value: unknown): NormalizedResearch
       aliasExpansion !== null && !keepsShorthand && normalizedTerms.length === 1,
     aliasTerms: aliasExpansion ? normalizedTerms : null,
   };
+};
+
+export const expandNicknameInResearchNameQuery = (query: string): string => {
+  const expansion = resolveNicknameInNameQuery(
+    normalizeResearchSearchQuery(query).tokens,
+    getResearchSearchSpellingVocabulary(),
+  );
+  return expansion ? replaceNicknameInQuery(query, expansion) : query;
 };
 
 export const rewriteAcronymToPhrase = (query: string): string => {
@@ -2042,10 +2051,11 @@ export async function searchResearchGroupsViaMeili(
   sort: ResearchGroupSearchSort = {},
   options: ResearchGroupSearchOptions = {},
 ): Promise<ResearchGroupSearchResult> {
+  const nameQuery = expandNicknameInResearchNameQuery(query);
   const spelling =
     options.correctSpelling === false
-      ? { query, corrections: [] }
-      : correctResearchSearchQuerySpelling(query);
+      ? { query: nameQuery, corrections: [] }
+      : correctResearchSearchQuerySpelling(nameQuery);
   const searchQuery = rewriteAcronymToPhrase(spelling.query);
   const studentFilters = await resolveStudentFiltersAgainstCorpus(filters, options);
   const filterableToggles = answersFromMongoBrowse(searchQuery, options)
@@ -3063,7 +3073,7 @@ export async function searchResearchGroupsForRerankCandidates(
     studentVisibilityTier: [...publicStudentVisibilityTiers],
   };
   const options: ResearchGroupSearchOptions = { includeFacets: false };
-  const spelling = correctResearchSearchQuerySpelling(query);
+  const spelling = correctResearchSearchQuerySpelling(expandNicknameInResearchNameQuery(query));
   const studentFilters = await resolveStudentFiltersAgainstCorpus(publicFilters, options);
   const { result, rerankLiveMissGate, rerankCandidateFingerprints } =
     await searchResearchGroupsForQuery(

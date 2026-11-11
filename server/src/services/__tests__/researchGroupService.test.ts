@@ -137,6 +137,8 @@ import { invalidateResearchEntitySearchEmbedderCache } from '../researchEntitySe
 import { RESEARCH_SEARCH_MAX_REACHABLE_RECORDS } from '../researchSearchPagination';
 import { searchResearchGroups } from '../../controllers/researchGroupController';
 import { publicStudentVisibilityTiers } from '../../models/studentVisibility';
+import { setResearchSearchSpellingVocabularyForTests } from '../researchSearchSpellingVocabulary';
+import { buildSearchSpellingVocabulary } from '../searchQuerySpellingCorrection';
 
 // One fully chainable query double: the service composes find().sort().limit()
 // .select().lean() in different orders per call site, so every helper returns
@@ -1438,6 +1440,31 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(mocks.search.mock.calls[0][0]).toBe('artificial intelligence');
     for (const [, params] of mocks.search.mock.calls) {
       expect(params).not.toHaveProperty('attributesToSearchOn');
+    }
+  });
+
+  it('searches a short given name as the full given name a person with that surname carries (#5169)', async () => {
+    setResearchSearchSpellingVocabularyForTests(
+      buildSearchSpellingVocabulary([
+        {
+          nameText: [['Robert Quillfeather']],
+          personNameText: [['Robert Quillfeather']],
+          bodyText: ['art history'],
+          served: true,
+        },
+      ]),
+    );
+    mocks.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+
+    try {
+      await searchResearchGroupsViaMeili('bob quillfeather', {}, 1, 24);
+      expect(mocks.search.mock.calls[0][0]).toBe('robert quillfeather');
+
+      mocks.search.mockClear();
+      await searchResearchGroupsViaMeili('art history', {}, 1, 24);
+      expect(mocks.search.mock.calls[0][0]).toBe('art history');
+    } finally {
+      setResearchSearchSpellingVocabularyForTests(null);
     }
   });
 
