@@ -212,3 +212,114 @@ describe('ResearchPageTextScraper', () => {
     expect(source).not.toMatch(/openai|axios|callLLM|OPENAI_API_KEY|chat\/completions/i);
   });
 });
+
+describe('ResearchPageTextScraper reads only the row own pages (#5707)', () => {
+  const ctxOnly = () => makeContext().ctx;
+  const fetcherFor = (pages: Record<string, string>) =>
+    vi.fn(async (url: string) => (pages[url] ? { url, html: pages[url] } : null));
+  const labHome = (links: string) =>
+    `<html><body><h1>Tidepool Lab</h1><p>We study how coastal kelp forests recover after marine heatwaves. ${filler}</p>${links}</body></html>`;
+  const researchPage = `<html><body><h1>Research</h1><p>Projects on sea urchin grazing and reef acidification. ${filler}</p></body></html>`;
+
+  it("never reads the roster lane's configured department listing page a row cites", async () => {
+    const listing = 'https://economics.yale.edu/people-economics?person_type=2&interest=All';
+    const fetchPage = fetcherFor({ [HOME]: labHome(''), [listing]: researchPage });
+    const lane = new ResearchPageTextScraper({
+      fetchPage,
+      storedHashLoader: async () => undefined,
+    });
+    await lane.readCitedResearchPages({ ...row, sourceUrls: [HOME, listing] }, ctxOnly());
+    expect(fetchPage.mock.calls.map(([url]) => url)).toEqual([HOME]);
+  });
+
+  it('never reads a shared area-filtered directory page that does not name the row', async () => {
+    const shared = 'https://som.yale.edu/faculty-directory/finance';
+    const fetchPage = fetcherFor({ [HOME]: labHome(''), [shared]: researchPage });
+    const lane = new ResearchPageTextScraper({
+      fetchPage,
+      storedHashLoader: async () => undefined,
+    });
+    await lane.readCitedResearchPages(
+      { ...row, sourceUrls: [HOME, shared] },
+      ctxOnly(),
+      new Map([['https://som.yale.edu/faculty-directory/finance', 5]]),
+    );
+    expect(fetchPage.mock.calls.map(([url]) => url)).toEqual([HOME]);
+  });
+
+  it("never follows a shared host's section research link outside the home subtree", async () => {
+    const home = 'https://medicine.example.edu/lab/tidepool/';
+    const sectionResearch = 'https://medicine.example.edu/research/';
+    const ownResearch = 'https://medicine.example.edu/lab/tidepool/research/';
+    const fetchPage = fetcherFor({
+      [home]: labHome(
+        `<a href="${sectionResearch}">Research</a><a href="${ownResearch}">Research</a>`,
+      ),
+      [sectionResearch]: researchPage,
+      [ownResearch]: researchPage,
+    });
+    const lane = new ResearchPageTextScraper({
+      fetchPage,
+      storedHashLoader: async () => undefined,
+    });
+    await lane.readCitedResearchPages({ ...row, websiteUrl: home, sourceUrls: [home] }, ctxOnly());
+    expect(fetchPage.mock.calls.map(([url]) => url)).toEqual([home, ownResearch]);
+  });
+
+  it('still reads the own research page when shared research links fill the navigation first', async () => {
+    const home = 'https://medicine.example.edu/lab/tidepool/';
+    const schoolResearch = 'https://medicine.example.edu/research/';
+    const departmentResearch = 'https://medicine.example.edu/departments/marine/research/';
+    const ownResearch = 'https://medicine.example.edu/lab/tidepool/research/';
+    const fetchPage = fetcherFor({
+      [home]: labHome(
+        `<a href="${schoolResearch}">Research</a><a href="${departmentResearch}">Research</a><a href="${ownResearch}">Research</a>`,
+      ),
+      [schoolResearch]: researchPage,
+      [departmentResearch]: researchPage,
+      [ownResearch]: researchPage,
+    });
+    const lane = new ResearchPageTextScraper({
+      fetchPage,
+      storedHashLoader: async () => undefined,
+    });
+    await lane.readCitedResearchPages({ ...row, websiteUrl: home, sourceUrls: [home] }, ctxOnly());
+    expect(fetchPage.mock.calls.map(([url]) => url)).toEqual([home, ownResearch]);
+  });
+
+  it('roots a home page whose path ends in an index or home leaf at its folder', async () => {
+    const { researchSubPageIsWithinHome } = await import('../sources/researchPageTextScraper');
+    expect(
+      researchSubPageIsWithinHome(
+        'https://people.example.edu/~tidepool/research.html',
+        'https://people.example.edu/~tidepool/index.html',
+      ),
+    ).toBe(true);
+    expect(
+      researchSubPageIsWithinHome(
+        'https://people.example.edu/~tidepool/research',
+        'https://www.people.example.edu/~tidepool/home',
+      ),
+    ).toBe(true);
+    for (const leaf of ['home.html', 'welcome.htm', 'index.shtml', 'index.aspx', 'default.asp']) {
+      expect(
+        researchSubPageIsWithinHome(
+          'https://people.example.edu/~tidepool/research.html',
+          `https://people.example.edu/~tidepool/${leaf}`,
+        ),
+      ).toBe(true);
+    }
+    expect(
+      researchSubPageIsWithinHome(
+        'https://people.example.edu/research',
+        'https://people.example.edu/~tidepool/index.html',
+      ),
+    ).toBe(false);
+    expect(
+      researchSubPageIsWithinHome(
+        'https://other.example.edu/research',
+        'https://people.example.edu/',
+      ),
+    ).toBe(false);
+  });
+});

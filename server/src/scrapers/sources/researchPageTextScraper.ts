@@ -24,6 +24,12 @@ import {
   researchPageTextValue,
   type ResearchPageTextEntry,
 } from '../utils/researchPageText';
+import { normalizeEvidenceUrl } from '../utils/sharedEvidenceUrls';
+import { DEFAULT_DEPT_CONFIGS } from './departmentRosterScraper';
+import {
+  isSharedAreaFilteredDirectoryUrl,
+  loadEvidenceUrlCiterCounts,
+} from './researchAreaSourceExtractor';
 import {
   candidateDescriptionLabsFromDocs,
   fetchDescriptionPageWithTlsFallback,
@@ -39,6 +45,61 @@ const MAX_RESEARCH_SUBPAGES = 2;
 const DEFAULT_ROW_LIMIT = 100;
 const RESEARCH_PAGE_TEXT_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 const NO_MODEL = 'no-model';
+
+const CONFIGURED_DEPARTMENT_LISTING_PAGES: ReadonlySet<string> = new Set(
+  DEFAULT_DEPT_CONFIGS.flatMap((config) => [config.url, config.dataUrl])
+    .map((url) => normalizeEvidenceUrl(url))
+    .filter(Boolean),
+);
+
+/**
+ * A page that lists many people is nobody's research page, so a row citing one would store a
+ * department's research areas as its own (#5707): the roster lane's configured department
+ * listing pages, and the shared area-filtered directory pages the research-areas lane already
+ * refuses (#4030).
+ */
+export function isSharedListingCitation(
+  url: string,
+  row: Pick<CandidateDescriptionLab, 'slug' | 'name'> & { displayName?: string },
+  citerCounts: ReadonlyMap<string, number>,
+): boolean {
+  if (CONFIGURED_DEPARTMENT_LISTING_PAGES.has(normalizeEvidenceUrl(url))) return true;
+  return isSharedAreaFilteredDirectoryUrl(
+    url,
+    { slug: row.slug, name: row.name, displayName: row.displayName },
+    citerCounts,
+  );
+}
+
+async function loadConnectedEvidenceUrlCiterCounts(): Promise<ReadonlyMap<string, number>> {
+  if (mongoose.connection.readyState !== 1) return new Map();
+  return loadEvidenceUrlCiterCounts();
+}
+
+const HOME_PAGE_LEAF = /^(?:home|welcome|index|default)(?:\.(?:s?html?|php|aspx?))?$/i;
+
+/**
+ * Whether a research subpage sits inside the home page's own subtree, so a shared host's section
+ * or school "Research" link in the navigation is never read as the row's research (#5707), as
+ * the about-page crawl already requires (#2957). A home path ending in a home, welcome or index
+ * leaf is rooted at its folder, and the home URL is the one read after redirects.
+ */
+export function researchSubPageIsWithinHome(candidateUrl: string, homeUrl: string): boolean {
+  let candidate: URL;
+  let home: URL;
+  try {
+    candidate = new URL(candidateUrl);
+    home = new URL(homeUrl);
+  } catch {
+    return false;
+  }
+  const host = (url: URL) => url.hostname.replace(/^www\./i, '').toLowerCase();
+  if (host(candidate) !== host(home)) return false;
+  const segments = home.pathname.split('/').filter(Boolean);
+  if (segments.length > 0 && HOME_PAGE_LEAF.test(segments[segments.length - 1])) segments.pop();
+  const root = `/${segments.join('/')}${segments.length > 0 ? '/' : ''}`.toLowerCase();
+  return candidate.pathname.toLowerCase().startsWith(root);
+}
 
 export function normalizeResearchPageTextObjectId(value: unknown): string | undefined {
   if (typeof value === 'string') {
@@ -63,6 +124,7 @@ export interface ResearchPageTextScraperDeps {
   fetchPage?: FetchResearchPageFn;
   rowFinder?: ResearchPageTextRowFinderFn;
   storedHashLoader?: StoredContentHashLoaderFn;
+  citerCountsLoader?: () => Promise<ReadonlyMap<string, number>>;
 }
 
 async function fetchPageOnce(url: string): Promise<FetchedDescriptionPage | null> {
@@ -168,11 +230,13 @@ export class ResearchPageTextScraper implements IScraper {
   private readonly fetchPage: FetchResearchPageFn;
   private readonly rowFinder: ResearchPageTextRowFinderFn;
   private readonly storedHashLoader: StoredContentHashLoaderFn;
+  private readonly citerCountsLoader: () => Promise<ReadonlyMap<string, number>>;
 
   constructor(deps: ResearchPageTextScraperDeps = {}) {
     this.fetchPage = deps.fetchPage || defaultFetchPage;
     this.rowFinder = deps.rowFinder || defaultRowFinder;
     this.storedHashLoader = deps.storedHashLoader || loadStoredContentHash;
+    this.citerCountsLoader = deps.citerCountsLoader || loadConnectedEvidenceUrlCiterCounts;
   }
 
   private async tryFetch(url: string, row: CandidateDescriptionLab, ctx: ScraperContext) {
@@ -196,12 +260,16 @@ export class ResearchPageTextScraper implements IScraper {
   async readCitedResearchPages(
     row: CandidateDescriptionLab,
     ctx: ScraperContext,
+    citerCounts: ReadonlyMap<string, number> = new Map(),
   ): Promise<FetchedDescriptionPage[]> {
     const cited = uniqueStrings([
       row.websiteUrl,
       ...(row.sourceUrls ?? []),
       row.fullDescriptionSourceUrl,
-    ]).filter((url) => !isRefusedDescriptionLaneSourceUrl(url));
+    ]).filter(
+      (url) =>
+        !isRefusedDescriptionLaneSourceUrl(url) && !isSharedListingCitation(url, row, citerCounts),
+    );
     const labSiteUrl = cited.find((url) => !isPersonProfileUrl(url));
     const pages: FetchedDescriptionPage[] = [];
     const read = async (url: string): Promise<FetchedDescriptionPage | null> => {
@@ -215,10 +283,10 @@ export class ResearchPageTextScraper implements IScraper {
 
     const labSite = labSiteUrl ? await read(labSiteUrl) : null;
     if (labSite) {
-      const subpages = researchSubPageCrawlUrls(labSite.html, labSite.url, MAX_RESEARCH_SUBPAGES);
-      for (const url of subpages.filter(
-        (candidate) => !isRefusedDescriptionLaneSourceUrl(candidate),
-      )) {
+      const subpages = researchSubPageCrawlUrls(labSite.html, labSite.url, Number.POSITIVE_INFINITY)
+        .filter((candidate) => researchSubPageIsWithinHome(candidate, labSite.url))
+        .slice(0, MAX_RESEARCH_SUBPAGES);
+      for (const url of subpages) {
         await read(url);
       }
     }
@@ -236,8 +304,9 @@ export class ResearchPageTextScraper implements IScraper {
     row: CandidateDescriptionLab,
     ctx: ScraperContext,
     counts: LaneCounts,
+    citerCounts: ReadonlyMap<string, number>,
   ): Promise<ObservationInput[]> {
-    const fetched = await this.readCitedResearchPages(row, ctx);
+    const fetched = await this.readCitedResearchPages(row, ctx, citerCounts);
     if (fetched.length === 0) {
       counts.noReadablePage += 1;
       return [];
@@ -294,8 +363,9 @@ export class ResearchPageTextScraper implements IScraper {
       ctx.options.sourceConcurrency,
       DEFAULT_SOURCE_CONCURRENCY,
     );
+    const citerCounts = await this.citerCountsLoader();
     await mapWithConcurrency(rows, concurrency, async (row) => {
-      const observations = await this.readRow(row, ctx, counts);
+      const observations = await this.readRow(row, ctx, counts, citerCounts);
       if (observations.length === 0) return;
       await ctx.emit(observations);
       observationCount += observations.length;
