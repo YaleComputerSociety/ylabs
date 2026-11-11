@@ -159,6 +159,64 @@ const slugs = async () =>
     .map((row) => row.slug)
     .sort();
 
+const KEY_ONLY_LANE_KEY = 'varrow-tallent-optics-lab';
+
+async function runKeyOnlyLane(
+  extra: Array<Pick<ObservationInput, 'field' | 'value'>> = [],
+): Promise<void> {
+  await afterAMoment();
+  const scrapeRunId = new mongoose.Types.ObjectId();
+  await ScrapeRun.create({
+    _id: scrapeRunId,
+    sourceId: SOURCE_ID,
+    sourceName: SOURCE_NAME,
+    status: 'running',
+  });
+  const base = {
+    entityType: 'researchEntity' as const,
+    entityKey: KEY_ONLY_LANE_KEY,
+    sourceUrl: 'https://fixture-optics.example.edu/about',
+  };
+  await appendObservations(
+    [
+      { ...base, field: 'slug', value: KEY_ONLY_LANE_KEY },
+      { ...base, field: 'name', value: 'Synthetic Optics Lab' },
+      { ...base, field: 'entityType', value: 'LAB' },
+      ...extra.map((observation) => ({ ...base, ...observation })),
+    ],
+    {
+      scrapeRunId: String(scrapeRunId),
+      sourceId: String(SOURCE_ID),
+      sourceName: SOURCE_NAME,
+      sourceWeight: 0.8,
+      dryRun: false,
+    },
+  );
+  await materializeFromRun(String(scrapeRunId));
+}
+
+async function keyOnlyLaneRowRenamedForARemovedLead(
+  extra: Array<Pick<ObservationInput, 'field' | 'value'>> = [],
+) {
+  await runKeyOnlyLane(extra);
+  const row = await ResearchEntity.findOne({ slug: KEY_ONLY_LANE_KEY }).lean<any>();
+  const removed = await seedPerson(REMOVED_LEAD.name, REMOVED_NETID);
+  const kept = await seedPerson(KEPT_LEAD.name, 'zz9305');
+  await RoleAssignment.insertMany(
+    [removed._id, kept._id].map((personId) => ({
+      personId,
+      target: { kind: 'RESEARCH_ENTITY', id: row._id },
+      role: 'PI',
+      state: 'CURRENT',
+      confidence: 1,
+      reviewStatus: 'APPROVED',
+    })),
+  );
+  await recordRemovalOf(REMOVED_NETID);
+  await reslug(true);
+  return row;
+}
+
 describe('directory-removal:reslug renames a co-led row a removed lead names (#4160)', () => {
   let replSet: MongoMemoryReplSet;
   let server: Server;
@@ -356,58 +414,34 @@ describe('directory-removal:reslug renames a co-led row a removed lead names (#4
       timeout: 120000,
     },
     async () => {
-      const key = 'varrow-tallent-optics-lab';
-      const runKeyOnlyLane = async () => {
-        await afterAMoment();
-        const scrapeRunId = new mongoose.Types.ObjectId();
-        await ScrapeRun.create({
-          _id: scrapeRunId,
-          sourceId: SOURCE_ID,
-          sourceName: SOURCE_NAME,
-          status: 'running',
-        });
-        const base = {
-          entityType: 'researchEntity' as const,
-          entityKey: key,
-          sourceUrl: 'https://fixture-optics.example.edu/about',
-        };
-        await appendObservations(
-          [
-            { ...base, field: 'slug', value: key },
-            { ...base, field: 'name', value: 'Synthetic Optics Lab' },
-            { ...base, field: 'entityType', value: 'LAB' },
-          ],
-          {
-            scrapeRunId: String(scrapeRunId),
-            sourceId: String(SOURCE_ID),
-            sourceName: SOURCE_NAME,
-            sourceWeight: 0.8,
-            dryRun: false,
-          },
-        );
-        await materializeFromRun(String(scrapeRunId));
-      };
-      await runKeyOnlyLane();
-      const row = await ResearchEntity.findOne({ slug: key }).lean<any>();
-      const removed = await seedPerson(REMOVED_LEAD.name, REMOVED_NETID);
-      const kept = await seedPerson(KEPT_LEAD.name, 'zz9305');
-      await RoleAssignment.insertMany(
-        [removed._id, kept._id].map((personId) => ({
-          personId,
-          target: { kind: 'RESEARCH_ENTITY', id: row._id },
-          role: 'PI',
-          state: 'CURRENT',
-          confidence: 1,
-          reviewStatus: 'APPROVED',
-        })),
-      );
-      await recordRemovalOf(REMOVED_NETID);
-      await reslug(true);
+      await keyOnlyLaneRowRenamedForARemovedLead();
 
       await runKeyOnlyLane();
       await runKeyOnlyLane();
 
       expect(await slugs()).toEqual(['tallent-optics-lab']);
+    },
+  );
+
+  it(
+    'keeps taking the old lane key contact after fresh observations supersede the stamped ones',
+    {
+      timeout: 120000,
+    },
+    async () => {
+      const firstContact = 'optics-first-contact@yale.edu';
+      const laterContact = 'optics-later-contact@yale.edu';
+      const row = await keyOnlyLaneRowRenamedForARemovedLead([
+        { field: 'contactEmail', value: firstContact },
+      ]);
+      expect((await ResearchEntity.findById(row._id).lean<any>()).contactEmail).toBe(firstContact);
+
+      await runKeyOnlyLane([{ field: 'contactEmail', value: laterContact }]);
+      await runKeyOnlyLane([{ field: 'contactEmail', value: laterContact }]);
+
+      const renamed = await ResearchEntity.findById(row._id).lean<any>();
+      expect(renamed.slug).toBe('tallent-optics-lab');
+      expect(renamed.contactEmail).toBe(laterContact);
     },
   );
 

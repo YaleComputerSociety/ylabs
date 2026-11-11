@@ -104,6 +104,8 @@ A slug held by any live or archived row, or by any `mergedFrom` entry, takes a n
 The old slug goes into no `mergedFrom`, redirect or archived tombstone.
 A lane still emits the old key, so before renaming the row the command stamps the row's `entityId` onto every observation filed under the old key with no id.
 When no row holds a key, the materializer adopts the one live row that key's observations name by id (`server/src/scrapers/renamedResearchEntityAdoption.ts`), and a roster member filed under the old key attaches to that row the same way.
+A later lane pass files fresh old-key observations with no id, and those supersede the stamped ones, so adoption reads every stored observation of the key rather than only live ones.
+An adopted row reads the old key as its own: its contact observations count as the row's own contact evidence, a field the page stops stating is cleared, and official roster reconciliation archives departed members on it.
 The materializer never renames an existing row (`projectedSlugWouldRenameExistingResearchEntity`), so a later pass keeps the new slug.
 As a refusal rather than a lock, no pass may create a research row whose slug carries a removed researcher's full name, and that refusal counts as `removed_by_request`.
 A second apply finds nothing to rename.

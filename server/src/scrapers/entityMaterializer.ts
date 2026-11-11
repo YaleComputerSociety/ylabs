@@ -11031,9 +11031,11 @@ async function materializeEntityUnderRemovalGuard(
     obs,
     options.chunkPrefetch,
   );
+  let renamedFromKey: string | undefined;
   if (isResearchEntityObservationType(entityType) && !entityDoc && !identifier.entityId) {
     const renamed = await liveResearchEntityNamedByKeyObservations(identifier.entityKey);
     if (renamed?._id) entityDoc = await Model.findById(renamed._id).lean();
+    if (entityDoc) renamedFromKey = identifier.entityKey;
   }
   if (
     entityDoc?.archived === true &&
@@ -11266,7 +11268,11 @@ async function materializeEntityUnderRemovalGuard(
   let foreignContactWithheld = false;
   let siteSharedPageNames: ReadonlySet<string> = new Set<string>();
   if (isResearchEntityObservationType(entityType) && entityDoc) {
-    const rowKeyedObs = withoutForeignContactObservations(obs, entityDoc);
+    const rowKeyedObs = withoutForeignContactObservations(obs, {
+      _id: entityDoc._id,
+      slug: entityDoc.slug,
+      renamedFromKey,
+    });
     foreignContactWithheld = rowKeyedObs.length !== obs.length;
     obs = rowKeyedObs;
     if (obs.length === 0) {
@@ -11600,6 +11606,7 @@ async function materializeEntityUnderRemovalGuard(
   const readRowUnderOwnIdentity =
     Boolean(entityDoc) &&
     (mergedInKeys.length > 0 ||
+      Boolean(renamedFromKey) ||
       (Boolean(identifier.entityKey) &&
         identifier.entityKey ===
           textValue(entityType === 'fellowship' ? entityDoc?.sourceKey : entityDoc?.slug)) ||
@@ -12021,12 +12028,13 @@ async function reconcileOfficialRosterSnapshotsFromRun(
       snapshotObservation.value,
     ) as OfficialRosterSnapshotForReconciliation;
     if (!snapshotObservation.entityKey) continue;
-    const entity: any = await ResearchEntity.findOne({
-      slug: snapshotObservation.entityKey,
-      archived: { $ne: true },
-    })
-      .select('_id')
-      .lean();
+    const entity: any =
+      (await ResearchEntity.findOne({
+        slug: snapshotObservation.entityKey,
+        archived: { $ne: true },
+      })
+        .select('_id')
+        .lean()) ?? (await liveResearchEntityNamedByKeyObservations(snapshotObservation.entityKey));
     if (!entity?._id) continue;
     const filter = buildOfficialRosterArchiveFilter(materializerDocumentId(entity._id), snapshot);
     if (!filter) continue;
