@@ -631,7 +631,11 @@ describe('classifySourceLinkHealth soft 404 handling', () => {
         requestedUrl: 'https://lab.example.org/',
         finalUrl: 'https://www.example.edu/',
       }),
-    ).toEqual({ healthStatus: 'HEALTHY', httpStatusCode: 200 });
+    ).toEqual({
+      healthStatus: 'HEALTHY',
+      httpStatusCode: 200,
+      redirectLandingUrl: 'https://www.example.edu/',
+    });
   });
 });
 
