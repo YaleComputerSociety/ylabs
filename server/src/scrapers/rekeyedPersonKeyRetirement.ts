@@ -2,11 +2,7 @@ import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 import { ScrapeRun } from '../models/scrapeRun';
 import { serializedDocumentId } from '../utils/idSerialization';
-import {
-  materializationReadScopeFilter,
-  userKeyResearcherJoins,
-  type UserKeyResearcherJoins,
-} from './entityMaterializer';
+import type { UserKeyResearcherJoins } from './entityMaterializer';
 import { retireObservations } from './observationStore';
 import { runWithBoundedConcurrency } from './utils/boundedConcurrency';
 import {
@@ -33,7 +29,12 @@ const DIRECTORY_RECORD_SOURCES = ['yale-directory', 'yale-directory-csv'];
 const DIRECTORY_RECORD_FIELDS = ['fname', 'lname', 'primaryDepartment', 'secondaryDepartments'];
 const GOVERNING_RUN_STATUS = 'success';
 
-function liveScope(): Record<string, unknown> {
+// Loaded on first use so a lane module does not pull the whole engine into every graph
+// that imports it.
+const engine = () => import('./entityMaterializer');
+
+async function liveScope(): Promise<Record<string, unknown>> {
+  const { materializationReadScopeFilter } = await engine();
   return { ...materializationReadScopeFilter(), 'rollback.rolledBackAt': { $exists: false } };
 }
 
@@ -47,7 +48,7 @@ export async function loadLanePersonObservations(lane: string): Promise<LanePers
     sourceName: lane,
     entityType: 'user',
     entityKey: { $exists: true, $ne: '' },
-    ...liveScope(),
+    ...(await liveScope()),
   };
   const [rows, valued] = await Promise.all([
     Observation.find(filter, {
@@ -220,7 +221,8 @@ export type UserKeyJoinReader = (entityKey: string) => Promise<UserKeyResearcher
 
 export async function twinJoinVerdict(
   pair: Pick<RekeyPair, 'oldKey' | 'newKey'>,
-  readJoins: UserKeyJoinReader = (entityKey) => userKeyResearcherJoins(entityKey),
+  readJoins: UserKeyJoinReader = async (entityKey) =>
+    (await engine()).userKeyResearcherJoins(entityKey),
 ): Promise<TwinJoinVerdict> {
   const old = await readJoins(pair.oldKey);
   const reached = new Set([
