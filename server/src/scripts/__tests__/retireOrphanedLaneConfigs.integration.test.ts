@@ -171,9 +171,10 @@ describe('observations:retire-orphaned-lane-configs (#5807)', () => {
     });
     await Observation.create({
       entityType: 'researchEntity',
+      entityKey: 'dept-gone-lane-ash-kerr',
       entityId: rowId,
       field: 'name',
-      value: 'Kerr Lab',
+      value: 'name-value',
       sourceId: new mongoose.Types.ObjectId(),
       sourceName: 'official-profile-pi-backfill',
       confidence: 0.6,

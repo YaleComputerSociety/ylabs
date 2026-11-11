@@ -1949,8 +1949,15 @@ An apply refuses unless every named config is orphaned.
 An observation is attributed by evidence its run left: an entity key minted under the config's key namespace (`dept-<ns>-...`, `dept:<ns>:...`, longest namespace wins), or a run whose `--only` selected nothing but orphaned configs.
 A key that a current namespace also prefixes, such as `dept-<current>-<rest>` where `<current>-<rest>` starts with the orphaned namespace, is ambiguous, so only the run's `--only` can attribute it.
 An observation whose run recorded a `codeSha`, or that has no run, is held rather than retired, because a recorded commit missing from a stale clone is not proof the code never landed.
-An orphaned observation that is the only live evidence for its field on the row it backs is held by default and reported under `heldSoleEvidence` by row, field and value.
-For a list field such as `departments` the check is per item, because the field resolves as a union and an item no other observation states would drop out.
+Whether anything else backs an orphaned observation is the engine's answer, not a rule restated here.
+Each row an orphan backs, and each person key, is projected through `materializeEntity` twice with the stored values of the orphaned fields cleared, together with their provenance and confidence, once with the orphans and once without them.
+An orphan is retired only when the projection without the orphans still produces every item or value its field produces with them, compared as the engine outputs them and never against the orphan's raw value, so a list that only reorders counts as kept and a gained value is not a loss.
+A field that loses an item holds every orphan on it, because the engine's output cannot say which orphan stated the lost item.
+A row whose projection without the orphans still read retired evidence live cannot isolate the retirement, so its orphans are held.
+An orphan the engine would not produce without is held by default and reported under `heldSoleEvidence` by row, field and value with `basis: engine-would-not-produce`.
+`--retire-sole-evidence` skips these projections, since it retires regardless.
+Clearing the stored value matters because the engine lets a survivor's stored fill hold a field against its merged-in rows' evidence, so without it the stored value would stand in for evidence the engine no longer has.
+A field the projection plans nothing for with the orphans, such as `slug` or a person field the person projection does not plan, cannot be shown to be backed and is held.
 Each affected row is then projected through the engine without the observations still slated to go; a row that would serve a less complete field has that field's orphaned observations held (`basis: engine-projection`), then all of its orphaned observations, and an apply refuses if a row still would.
 The row is the live survivor the observation's key or id reaches, read with every row merged into it; a person observation's row is its own key.
 A hand check of the department values that only `seas` observations backed found the official engineering pages still list them, so a missing landed lane alone is not enough to retract a value with nothing else behind it.
