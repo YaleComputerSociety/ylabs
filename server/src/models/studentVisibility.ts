@@ -109,17 +109,27 @@ export const servesStudentVisibilityTier = (
 ): boolean => (tiers as readonly string[]).includes(effectiveStudentVisibilityTier(record));
 
 /**
- * The Mongo form of `servesStudentVisibilityTier` for a tier set that holds no operator
- * hold tier, which is every student-facing set. A set that does name a hold tier is an
- * operator view, which reads the stored tier as it always has.
+ * The Mongo form of `servesStudentVisibilityTier`. The plain clause covers every
+ * student-facing set; a set naming a hold tier is wrapped in `$and` so a caller that
+ * adds its own `$or` or appends to `$and` keeps both conditions.
  */
 export const servedStudentVisibilityTierFilter = (
   tiers: readonly StudentVisibilityTier[] = publicStudentVisibilityTiers,
 ): Record<string, unknown> => {
-  const tierClause = { studentVisibilityTier: { $in: [...tiers] } };
-  if (tiers.some(isHoldingOverrideTier)) return tierClause;
-  return {
-    ...tierClause,
+  const unheldStoredTierClause = {
+    studentVisibilityTier: { $in: [...tiers] },
     studentVisibilityOverrideTier: { $nin: [...holdingStudentVisibilityOverrideTiers] },
+  };
+  const requestedHoldTiers = tiers.filter(isHoldingOverrideTier);
+  if (requestedHoldTiers.length === 0) return unheldStoredTierClause;
+  return {
+    $and: [
+      {
+        $or: [
+          { studentVisibilityOverrideTier: { $in: requestedHoldTiers } },
+          unheldStoredTierClause,
+        ],
+      },
+    ],
   };
 };

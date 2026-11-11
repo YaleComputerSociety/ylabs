@@ -966,9 +966,10 @@ export const searchFellowships = async (params: {
   } else if (includeNonPublic && includeSuppressed) {
     // Admin/operator mode: keep all archived=false tiers in scope.
   } else if (includeNonPublic && includeOperatorReview) {
-    filter.studentVisibilityTier = {
-      $in: [...publicStudentVisibilityTiers, 'operator_review'],
-    };
+    Object.assign(
+      filter,
+      servedStudentVisibilityTierFilter([...publicStudentVisibilityTiers, 'operator_review']),
+    );
   } else {
     Object.assign(filter, servedStudentVisibilityTierFilter());
   }

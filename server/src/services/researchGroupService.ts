@@ -15,6 +15,7 @@ import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
 import { type OfficialRosterUndergraduateStatus } from '../models/storedVocabularies';
 import {
+  effectiveStudentVisibilityTier,
   isStudentVisibilityTier,
   publicStudentVisibilityTiers,
   servedStudentVisibilityTierFilter,
@@ -5033,7 +5034,7 @@ export async function getResearchGroupDetail(
   return {
     ...detail,
     operatorPreview: {
-      studentVisibilityTier: String((group as any).studentVisibilityTier ?? ''),
+      studentVisibilityTier: effectiveStudentVisibilityTier(group as any),
       ...operatorPreviewReasons((group as any).studentVisibilityReasons),
       studentVisibilitySuppressionReason:
         (group as any).studentVisibilitySuppressionReason || undefined,

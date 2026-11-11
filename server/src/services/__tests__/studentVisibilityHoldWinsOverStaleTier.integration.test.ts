@@ -7,7 +7,7 @@ import { getResearchGroupBySlug } from '../../controllers/researchGroupControlle
 import { ResearchEntity } from '../../models/researchEntity';
 import { runStudentVisibilityOverride } from '../../scripts/studentVisibilityOverride';
 import { parseStudentVisibilityOverrideArgs } from '../../scripts/studentVisibilityOverrideCore';
-import { readFellowship, readFellowships } from '../fellowshipService';
+import { readFellowship, readFellowships, searchFellowships } from '../fellowshipService';
 import { getResearchGroupDetail } from '../researchGroupService';
 import { buildResearchEntitySearchIndexDocument } from '../researchEntitySearchIndexService';
 import { runStudentVisibilityGate } from '../studentVisibilityGateService';
@@ -243,5 +243,54 @@ describe('an operator hold wins over a stale stored tier (#5783)', () => {
 
     await expect(readFellowship(String(programId))).rejects.toThrow('Fellowship not found');
     expect(await readFellowships([String(programId)])).toEqual([]);
+  });
+
+  it('lists a held row under its hold tier in operator views when the stored tier is stale', async () => {
+    const heldId = await seedServedPair();
+    await mongoose.connection
+      .db!.collection('research_entities')
+      .updateOne({ _id: heldId }, { $set: { studentVisibilityOverrideTier: 'operator_review' } });
+
+    const preview = (await getResearchGroupDetail(HELD, { includeWithheldForOperator: true }))
+      ?.operatorPreview;
+    expect(preview?.studentVisibilityTier).toBe('operator_review');
+
+    const reviewProgramId = new mongoose.Types.ObjectId();
+    const suppressedProgramId = new mongoose.Types.ObjectId();
+    await mongoose.connection.db!.collection('fellowships').insertMany([
+      {
+        _id: reviewProgramId,
+        title: 'Quasar Review Fellowship',
+        archived: false,
+        studentVisibilityTier: 'student_ready',
+        studentVisibilityOverrideTier: 'operator_review',
+      },
+      {
+        _id: suppressedProgramId,
+        title: 'Quasar Suppressed Fellowship',
+        archived: false,
+        studentVisibilityTier: 'operator_review',
+        studentVisibilityOverrideTier: 'suppressed',
+      },
+    ]);
+    const idsOf = (result: any) => result.fellowships.map((program: any) => String(program._id));
+
+    const reviewTierView = await searchFellowships({
+      includeNonPublic: true,
+      studentVisibilityTier: ['operator_review'],
+    });
+    expect(idsOf(reviewTierView)).toEqual([String(reviewProgramId)]);
+
+    const readyTierView = await searchFellowships({
+      includeNonPublic: true,
+      studentVisibilityTier: ['student_ready'],
+    });
+    expect(idsOf(readyTierView)).toEqual([]);
+
+    const reviewQueue = await searchFellowships({
+      includeNonPublic: true,
+      includeOperatorReview: true,
+    });
+    expect(idsOf(reviewQueue)).toEqual([String(reviewProgramId)]);
   });
 });

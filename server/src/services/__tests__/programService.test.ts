@@ -336,7 +336,17 @@ describe('program search service', () => {
     expect(mocks.find).toHaveBeenCalledWith(
       expect.objectContaining({
         archived: false,
-        studentVisibilityTier: { $in: ['student_ready', 'operator_review'] },
+        $and: [
+          {
+            $or: [
+              { studentVisibilityOverrideTier: { $in: ['operator_review'] } },
+              {
+                studentVisibilityTier: { $in: ['student_ready', 'operator_review'] },
+                studentVisibilityOverrideTier: { $nin: ['operator_review', 'suppressed'] },
+              },
+            ],
+          },
+        ],
       }),
     );
   });
@@ -350,7 +360,17 @@ describe('program search service', () => {
     expect(mocks.find).toHaveBeenCalledWith(
       expect.objectContaining({
         archived: false,
-        studentVisibilityTier: { $in: ['suppressed'] },
+        $and: [
+          {
+            $or: [
+              { studentVisibilityOverrideTier: { $in: ['suppressed'] } },
+              {
+                studentVisibilityTier: { $in: ['suppressed'] },
+                studentVisibilityOverrideTier: { $nin: ['operator_review', 'suppressed'] },
+              },
+            ],
+          },
+        ],
       }),
     );
   });

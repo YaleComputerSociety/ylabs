@@ -274,6 +274,7 @@ Write it with `yarn --cwd server student-visibility:override` rather than a dire
 - A hold (`operator_review` or `suppressed`) is also written to `studentVisibilityTier` and re-synced to the search index in the same call, so the row stops serving at once.
 - A release (`student_ready` or `limited_but_safe`) or a `--clear` writes the verdict only, and the served tier changes when `student-visibility:gate --apply --confirm-student-visibility-apply --record-id=<id>` re-decides the row, because a correctness floor can outrank a release.
 - Every serve path also reads a hold as the tier whatever the stored tier says, through `effectiveStudentVisibilityTier`, `servesStudentVisibilityTier` and `servedStudentVisibilityTierFilter` in `server/src/models/studentVisibility.ts`, so a rematerialize or any other writer that leaves the stored tier above a hold cannot serve the row (#5783).
+Operator views filtered by tier and the operator detail preview read the same effective tier, so a held row lists under its hold rather than under the stale stored tier.
 - A new serve path must read the tier through those helpers rather than comparing `studentVisibilityTier` alone.
 
 Before the tool existed, 16 live research rows on Development carried an override written by scripts or by hand, measured on 2026-11-11: 15 `suppressed` (6 for the strict-launch rule that no student route is verified, 3 `research_infrastructure_only`, 3 with no reason, 1 `permanently_closed`, and 2 trainee-fellowship shells) and 1 `operator_review` with no reason.

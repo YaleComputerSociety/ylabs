@@ -3676,7 +3676,17 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(mocks.researchEntityFind).toHaveBeenCalledWith({
       _id: { $in: [reviewEntityId] },
       archived: { $ne: true },
-      studentVisibilityTier: { $in: ['operator_review'] },
+      $and: [
+        {
+          $or: [
+            { studentVisibilityOverrideTier: { $in: ['operator_review'] } },
+            {
+              studentVisibilityTier: { $in: ['operator_review'] },
+              studentVisibilityOverrideTier: { $nin: ['operator_review', 'suppressed'] },
+            },
+          ],
+        },
+      ],
     });
     expect(result.researchEntities).toEqual([
       expect.objectContaining({ _id: 'review-lab', studentVisibilityTier: 'operator_review' }),
