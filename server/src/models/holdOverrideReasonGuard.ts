@@ -53,8 +53,7 @@ function fieldWrite(update: Record<string, unknown>, field: string): FieldWrite 
 }
 
 export type HoldReasonCheck =
-  | { verdict: 'allowed' }
-  | { verdict: 'refused_if_any_match'; filter: Record<string, unknown> };
+  { verdict: 'allowed' } | { verdict: 'refused_if_any_match'; filter: Record<string, unknown> };
 
 export function checkUpdateKeepsHoldReason(update: unknown): HoldReasonCheck {
   if (!update || typeof update !== 'object' || Array.isArray(update)) return { verdict: 'allowed' };

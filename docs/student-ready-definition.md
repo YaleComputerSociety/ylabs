@@ -284,7 +284,8 @@ Operator views filtered by tier and the operator detail preview read the same ef
 A hold (`suppressed` or `operator_review`) with no recorded reason cannot be re-decided by anyone, so no write path may produce one.
 
 - The model guard in `server/src/models/holdOverrideReasonGuard.ts` runs on every Mongoose write to `research_entities` and `fellowships`, update, save, insert, replace and bulk alike, and refuses a write that would leave a holding `studentVisibilityOverrideTier` with an empty `studentVisibilitySuppressionReason`.
-It judges only what the write changes: a write that touches neither field passes, so an existing reasonless hold still reads, serves its hold and accepts every other write.
+It judges only what the write changes: a write that touches neither field passes, and so does one that re-asserts the hold tier and empty reason a row already carries, as a materializer rewriting its whole resolved set does.
+So an existing reasonless hold still reads, serves its hold and accepts every other write.
 - The writers record a coded `code: evidence` reason.
 The release queue's suppression stage writes a `visibility_repair_queue:` entry naming the auto-suppressible blockers, keeps the row's other entries, and records an `admin_audit_events` row as `agent:visibility-repair-queue`.
 The admin fellowship editor refuses a hold whose `studentVisibilitySuppressionReason` is not one coded entry with a 400, and stamps the signed-in admin as the reviewer; its existing `fellowship.update` audit event still records the write.
