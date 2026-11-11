@@ -1,3 +1,4 @@
+import { titleOwnsResearch } from '../scrapers/utils/titleResearchOwnership';
 import { isNonResearchStaffTitle } from './nonResearchStaffTitle';
 import { isPageHeadingTitle } from './titleHygiene';
 import { isTraineeLevelTitle } from './traineeLevelTitle';
@@ -19,3 +20,12 @@ import { isTraineeLevelTitle } from './traineeLevelTitle';
  */
 export const cannotOwnResearchHome = (title?: string): boolean =>
   !isPageHeadingTitle(title) && (isTraineeLevelTitle(title) || isNonResearchStaffTitle(title));
+
+/**
+ * The positive half: a title that states an appointment which can own a research row, not
+ * merely one this predicate declines to refuse. Silence and a page heading state nothing, so
+ * neither counts. Used where a person's own evidence must outweigh a stored title another
+ * lane can get wrong (#5855).
+ */
+export const statesResearchOwningAppointment = (title?: string): boolean =>
+  !isPageHeadingTitle(title) && titleOwnsResearch(title) && !cannotOwnResearchHome(title);
