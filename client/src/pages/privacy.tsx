@@ -62,8 +62,11 @@ const Privacy = () => {
           </p>
           <ul className={LIST_CLASS}>
             <li>
-              The text of a research search is sent to OpenAI to turn it into a search vector. The
-              request carries the search text only, with no account or browser identifier.
+              The text of a research search is sent to OpenAI to turn it into a search vector, so
+              y/labs can find research that matches its meaning. When result reordering is turned
+              on, y/labs can also send that text to an OpenAI model, together with the public names
+              and descriptions of the research it found, to put the closest matches first. Neither
+              request carries your account or browser id, even when you are signed in.
             </li>
             <li>
               Fonts load from Google Fonts, and some photos load from Yale, Cloudinary and Yalies.
@@ -82,10 +85,12 @@ const Privacy = () => {
             with your account until you delete them or delete your account.
           </p>
           <p className={BODY_CLASS}>
-            Signing in adds your sign-in to the same session cookie, beside the random id, and keeps
-            you signed in for up to {SESSION_COOKIE_LIFETIME_DAYS} days. When you make a change that
-            needs it, such as deleting your data or asking to be removed, the cookie also holds a
-            random token that shows the request came from y/labs.
+            Signing in adds your netid and your role at Yale to the same session cookie, beside the
+            random id, along with a random sign-in id, the time you signed in, and a few account
+            flags, such as whether you are an administrator. It keeps you signed in for up to{' '}
+            {SESSION_COOKIE_LIFETIME_DAYS} days. When you make a change that needs it, such as
+            deleting your data or asking to be removed, the cookie also holds a random token that
+            shows the request came from y/labs.
           </p>
         </Section>
 
@@ -117,9 +122,12 @@ const Privacy = () => {
               bodies or headers.
             </li>
             <li>
-              Web addresses are sent without their search terms, and your netid is removed from
-              everything sent. PostHog knows you only by a random id that y/labs assigns, plus your
-              role at Yale.
+              Your netid is removed from the events y/labs sends, and PostHog knows you only by a
+              random id plus your role at Yale. Web addresses are sent without anything after the ?
+              or #, so search terms and filters are never sent, and search engines&apos; search
+              words are removed too. PostHog runs only once y/labs has given your account that
+              random id; without one, nothing is measured, so PostHog never assigns an id of its
+              own.
             </li>
             <li>
               PostHog stores nothing in your browser: no cookie and no local storage. It does not
@@ -200,9 +208,15 @@ const Privacy = () => {
 
         <Section id="listed" title="If y/labs lists you">
           <p className={BODY_CLASS}>
-            y/labs builds its directory from public Yale web pages, such as official profiles,
-            department and lab pages, and roster lists, and from public grant and publication
-            records. Maintainers refresh it from time to time, not on a fixed schedule.
+            y/labs builds its directory from public Yale web pages (official profiles, department
+            and lab pages, roster lists), from the Yalies directory, and from public grant records.
+            Maintainers refresh it from time to time, not on a fixed schedule.
+          </p>
+          <p className={BODY_CLASS}>
+            y/labs sends text from those public pages, including the names on them, to OpenAI to
+            write the descriptions, summaries and topics it shows, and to read lab and center
+            websites, including who leads or belongs to them. To build its search index, it also
+            sends each listing&apos;s name, people, departments, topics and description to OpenAI.
           </p>
           <p className={BODY_CLASS}>
             If something y/labs shows about you is wrong, sign in and use Report an issue with this
@@ -213,6 +227,10 @@ const Privacy = () => {
             If you ask to be removed from y/labs, the request stores only your netid, the listing it
             matched, the request status, when it was made and decided, and which maintainer decided
             it. A maintainer applies an accepted request within 7 days.
+          </p>
+          <p className={BODY_CLASS}>
+            The removal itself keeps only one-way keyed hashes of your netid, email, ORCID iD,
+            profile links and name, so y/labs can keep leaving you out.
           </p>
         </Section>
 

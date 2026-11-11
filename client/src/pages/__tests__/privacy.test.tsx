@@ -116,8 +116,9 @@ describe('Privacy', () => {
     expect(text).toContain('a random token that shows the request came from y/labs');
     expect(screen.getByRole('heading', { level: 2, name: 'If y/labs lists you' })).toBeTruthy();
     expect(text).toContain(
-      'y/labs builds its directory from public Yale web pages, such as official profiles, department and lab pages, and roster lists, and from public grant and publication records. Maintainers refresh it from time to time, not on a fixed schedule.',
+      'y/labs builds its directory from public Yale web pages (official profiles, department and lab pages, roster lists), from the Yalies directory, and from public grant records. Maintainers refresh it from time to time, not on a fixed schedule.',
     );
+    expect(text).not.toContain('publication records');
     expect(text).toContain('use Report an issue with this page on the listing');
     expect(text).toContain('A maintainer applies an accepted request within 7 days.');
     expect(text).toContain(
@@ -125,8 +126,49 @@ describe('Privacy', () => {
     );
     expect(text).not.toContain('keeps this data for no longer than');
     expect(text).toContain(
-      'Web addresses are sent without their search terms, and your netid is removed from everything sent.',
+      "Your netid is removed from the events y/labs sends, and PostHog knows you only by a random id plus your role at Yale. Web addresses are sent without anything after the ? or #, so search terms and filters are never sent, and search engines' search words are removed too.",
     );
+    expect(text).toContain(
+      'PostHog runs only once y/labs has given your account that random id; without one, nothing is measured, so PostHog never assigns an id of its own.',
+    );
+    expect(text).not.toContain('can still reach PostHog');
+    expect(text).not.toContain('removed from everything sent');
+  });
+
+  it('names what the signed-in session cookie holds', () => {
+    renderPrivacy();
+
+    const text = document.body.textContent ?? '';
+    expect(text).toContain(
+      'Signing in adds your netid and your role at Yale to the same session cookie, beside the random id,',
+    );
+    expect(text).toContain('keeps you signed in for up to 30 days');
+    expect(text).not.toContain('adds your sign-in to the same session cookie');
+  });
+
+  it('says a removal keeps only keyed hashes of each identifier it matches on', () => {
+    renderPrivacy();
+
+    expect(document.body.textContent).toContain(
+      'The removal itself keeps only one-way keyed hashes of your netid, email, ORCID iD, profile links and name, so y/labs can keep leaving you out.',
+    );
+  });
+
+  it('tells both students and listed people what reaches OpenAI', () => {
+    renderPrivacy();
+
+    const text = document.body.textContent ?? '';
+    expect(text).toContain(
+      'The text of a research search is sent to OpenAI to turn it into a search vector',
+    );
+    expect(text).toContain('When result reordering is turned on');
+    expect(text).toContain(
+      'Neither request carries your account or browser id, even when you are signed in.',
+    );
+    expect(text).toContain(
+      'y/labs sends text from those public pages, including the names on them, to OpenAI to write the descriptions, summaries and topics it shows, and to read lab and center websites, including who leads or belongs to them.',
+    );
+    expect(text).toContain('To build its search index, it also sends');
   });
 
   it('sends deletion to the mailbox when the server cannot delete, keeping the download', () => {
