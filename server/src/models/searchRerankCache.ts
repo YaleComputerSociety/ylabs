@@ -36,6 +36,7 @@ const rerankScoreSchema = new mongoose.Schema(
       min: SEARCH_RERANK_MIN_SCORE,
       max: SEARCH_RERANK_MAX_SCORE,
     },
+    textHash: { type: String, required: false },
   },
   { _id: false },
 );

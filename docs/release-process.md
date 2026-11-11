@@ -251,6 +251,7 @@ The owner approved serving it on Beta and Production after a promotion (#5448), 
 1. Seed Beta after the Development-to-Beta copy and reindex: `yarn --cwd server research-search:seed-rerank-cache --environment=beta --input=<seed.json>` as a dry run, then again with `--apply --confirm-search-rerank-cache-seed --index-version=<marker>`.
 2. Seed Production the same way after its copy and reindex, with `--environment=production`, `SCRAPER_ENV=production` and `CONFIRM_PROD_SCRAPE=true`.
 3. Use the seed file the Development cache was built from, and seed only when the promoted corpus is the one it was scored on; the dry run's `unresolvedSlugs` must read 0, because a slug the target does not carry is a row the scores cannot name.
+   Seeding after the reindex matters because each score stores a hash of its row read from the target's index; the dry run's `textHashes` must read `read-from-index` for hashes to be stored, which needs a shell whose `MEILISEARCH_INDEX_PREFIX` names the target, and `staleSeededEntries` reports how many existing seeds that index no longer matches.
 4. Then set `SEARCH_RERANK_CACHE_ENABLED=true` on that environment's web service and redeploy it; with the flag unset, search never reads the collection.
 5. Verify by searching a seeded query on the deployed site and comparing its top results with Development's served order for the same query.
 

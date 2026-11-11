@@ -25,7 +25,10 @@ import {
   SEARCH_RERANK_SHADOW_SOURCE,
   SEARCH_RERANK_WINDOW,
   forgetSearchRerankCacheKey,
+  searchRerankEntryIsStale,
   searchRerankEntryKind,
+  searchRerankScoredTextHashes,
+  type SearchRerankCandidateFingerprint,
 } from './searchRerankCache';
 import {
   SEARCH_RERANK_LIVE_MISS_CALLER,
@@ -62,7 +65,7 @@ export interface SearchRerankLiveMissEntry {
   queryKey: string;
   queryText: string;
   filters: SearchRerankCacheFilters;
-  scores: Array<{ entityId: string; score: number }>;
+  scores: Array<{ entityId: string; score: number; textHash?: string }>;
   scoredAt: Date;
   indexVersion: string;
   source: string;
@@ -233,9 +236,10 @@ export async function runSearchRerankLiveMissJob(
   if (!searchRerankLiveMissQueryFits(queryText)) return { status: 'ineligible' };
 
   const existing = await SearchRerankCache.findOne({ queryKey })
-    .select('source indexVersion')
+    .select('source indexVersion scores')
     .lean();
-  if (!searchRerankLiveMissWantsEntry(searchRerankEntryKind(existing), mode)) {
+  const existingKind = searchRerankEntryKind(existing);
+  if (!searchRerankLiveMissWantsEntry(existingKind, mode, () => true)) {
     return { status: 'not-wanted' };
   }
 
@@ -245,6 +249,15 @@ export async function runSearchRerankLiveMissJob(
     SEARCH_RERANK_WINDOW,
   );
   if (searched.rerankLiveMissGate !== 'eligible') return { status: 'ineligible' };
+  const servedCandidates = searched.candidateFingerprints;
+  const existingTextHashes = searchRerankScoredTextHashes(existing);
+  if (
+    !searchRerankLiveMissWantsEntry(existingKind, mode, () =>
+      searchRerankEntryIsStale(existingTextHashes, servedCandidates),
+    )
+  ) {
+    return { status: 'not-wanted' };
+  }
   const top = searched.researchEntities.slice(0, SEARCH_RERANK_WINDOW);
   if (top.length < 2) return { status: 'ineligible' };
 
@@ -274,13 +287,18 @@ export async function runSearchRerankLiveMissJob(
   if (!scores) return { status: 'malformed-output' };
 
   const scoredAt = now();
+  const textHashById = new Map(
+    servedCandidates.map((candidate) => [candidate.entityId, candidate.textHash]),
+  );
   const entry: SearchRerankLiveMissEntry = {
     queryKey,
     queryText,
     filters,
     scores: candidates.flatMap((candidate, index) => {
       const score = scores.get(index);
-      return score === undefined ? [] : [{ entityId: candidate.entityId, score }];
+      if (score === undefined) return [];
+      const textHash = textHashById.get(candidate.entityId);
+      return [{ entityId: candidate.entityId, score, ...(textHash ? { textHash } : {}) }];
     }),
     scoredAt,
     indexVersion: `async-${SEARCH_RERANK_LIVE_MISS_MODEL}-${utcDate(scoredAt)}`,
@@ -297,5 +315,19 @@ export async function runSearchRerankLiveMissJob(
     throw error;
   }
   forgetSearchRerankCacheKey(queryKey);
-  return { status: 'written', entry };
+  return {
+    status: writtenEntryIsStillStale(entry, servedCandidates) ? 'written-still-stale' : 'written',
+    entry,
+  };
 }
+
+/**
+ * An answer may leave up to a tenth of the window unscored, and a row search pools but
+ * cannot hydrate is never scored, so a fresh entry can already fail the candidate-set rule.
+ * Reporting it lets the queue hold the key for the rest of the UTC day instead of
+ * re-scoring it on every search.
+ */
+const writtenEntryIsStillStale = (
+  entry: SearchRerankLiveMissEntry,
+  servedCandidates: readonly SearchRerankCandidateFingerprint[],
+): boolean => searchRerankEntryIsStale(searchRerankScoredTextHashes(entry), servedCandidates);

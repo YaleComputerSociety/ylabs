@@ -12,6 +12,10 @@ import {
   isSearchRerankCacheEnabled,
   lookupSearchRerankCacheEntry,
   resetSearchRerankCacheMemo,
+  searchRerankCandidateFingerprints,
+  searchRerankCandidateTextHash,
+  searchRerankEntryIsStale,
+  searchRerankScoredTextHashes,
 } from '../searchRerankCache';
 import { searchRerankCacheFilters, searchRerankCacheQueryKey } from '../researchGroupService';
 
@@ -207,6 +211,29 @@ describe('lookupSearchRerankCacheEntry', () => {
     consoleError.mockRestore();
   });
 
+  it('carries each scored row and its stored hash, whether or not the entry is served', async () => {
+    mocks.findOne.mockReturnValue(
+      lookupResolving({
+        source: 'shadow',
+        indexVersion: 'async-gpt-5-mini-2026-11-01',
+        scores: [
+          { entityId: 'row-1', score: 3, textHash: 'aaaaaaaaaaaaaaaa' },
+          { entityId: 'row-2', score: 1 },
+        ],
+      }),
+    );
+
+    const lookup = await lookupSearchRerankCacheEntry('key');
+
+    expect(lookup?.scores).toBeNull();
+    expect(lookup?.scoredTextHashes).toEqual(
+      new Map([
+        ['row-1', 'aaaaaaaaaaaaaaaa'],
+        ['row-2', null],
+      ]),
+    );
+  });
+
   it('serves a live-miss entry only while the live-miss job is switched on', async () => {
     mocks.findOne.mockReturnValue(
       lookupResolving({
@@ -223,5 +250,106 @@ describe('lookupSearchRerankCacheEntry', () => {
     vi.stubEnv('SEARCH_RERANK_LIVE_MISS_ENABLED', 'true');
     expect(await cachedScores('key')).toEqual(new Map([['row-1', 3]]));
     vi.unstubAllEnvs();
+  });
+});
+
+const poolHit = (index: number, overrides: Record<string, unknown> = {}) => ({
+  id: `row-${index}`,
+  kind: 'lab',
+  entityType: 'lab',
+  departments: ['Synthetic Department', 'Another Synthetic Department'],
+  researchAreas: ['Coastal Ecology', 'Tidal Marsh'],
+  ...overrides,
+});
+
+describe('searchRerankCandidateTextHash', () => {
+  it('is a short stable hex hash that ignores list order', () => {
+    const hash = searchRerankCandidateTextHash(poolHit(0));
+
+    expect(hash).toMatch(/^[0-9a-f]{16}$/);
+    expect(
+      searchRerankCandidateTextHash(
+        poolHit(0, {
+          departments: ['Another Synthetic Department', 'Synthetic Department'],
+          researchAreas: ['Tidal Marsh', 'Coastal Ecology'],
+        }),
+      ),
+    ).toBe(hash);
+  });
+
+  it.each([
+    ['topics', { researchAreas: ['Coastal Ecology'] }],
+    ['departments', { departments: ['Synthetic Department'] }],
+    ['kind', { kind: 'center' }],
+    ['entity type', { entityType: 'center' }],
+  ])('changes when the %s change', (_label, overrides) => {
+    expect(searchRerankCandidateTextHash(poolHit(0, overrides))).not.toBe(
+      searchRerankCandidateTextHash(poolHit(0)),
+    );
+  });
+
+  it('ignores ranking and access fields the pool also carries', () => {
+    expect(
+      searchRerankCandidateTextHash(
+        poolHit(0, { _rankingScore: 0.4, schools: ['Synthetic School'], hostsUndergrads: true }),
+      ),
+    ).toBe(searchRerankCandidateTextHash(poolHit(0)));
+  });
+});
+
+describe('searchRerankEntryIsStale', () => {
+  const pool = (count: number) => Array.from({ length: count }, (_v, index) => poolHit(index));
+  const servedTop = (hits = pool(12)) => searchRerankCandidateFingerprints(hits, 10);
+  const scoredWithHashes = (hits: ReturnType<typeof poolHit>[]) =>
+    new Map(hits.map((hit) => [hit.id, searchRerankCandidateTextHash(hit)] as const));
+
+  it('is fresh when every served top-10 row is scored with its current hash', () => {
+    expect(searchRerankEntryIsStale(scoredWithHashes(pool(10)), servedTop())).toBe(false);
+  });
+
+  it('is stale when a scored top-10 row now hashes differently', () => {
+    const changed = pool(12);
+    changed[4] = poolHit(4, { researchAreas: ['Synthetic Rewritten Topic'] });
+
+    expect(searchRerankEntryIsStale(scoredWithHashes(pool(10)), servedTop(changed))).toBe(true);
+  });
+
+  it('ignores a changed row outside the served top 10', () => {
+    const changed = pool(12);
+    changed[11] = poolHit(11, { researchAreas: ['Synthetic Rewritten Topic'] });
+
+    expect(searchRerankEntryIsStale(scoredWithHashes(pool(12)), servedTop(changed))).toBe(false);
+  });
+
+  it('is fresh with two unscored top-10 rows and stale with three', () => {
+    const scoredAllBut = (unscored: number) => scoredWithHashes(pool(10).slice(0, 10 - unscored));
+
+    expect(searchRerankEntryIsStale(scoredAllBut(2), servedTop())).toBe(false);
+    expect(searchRerankEntryIsStale(scoredAllBut(3), servedTop())).toBe(true);
+  });
+
+  it('never calls a hashless legacy score changed, so only the candidate-set rule applies', () => {
+    const changed = pool(12).map((hit) => ({ ...hit, researchAreas: ['Synthetic New Topic'] }));
+    const legacy = searchRerankScoredTextHashes({
+      scores: pool(10).map((hit) => ({ entityId: hit.id, score: 2 })),
+    });
+
+    expect(searchRerankEntryIsStale(legacy, servedTop(changed))).toBe(false);
+    expect(
+      searchRerankEntryIsStale(
+        searchRerankScoredTextHashes({
+          scores: pool(7).map((hit) => ({ entityId: hit.id, score: 2 })),
+        }),
+        servedTop(),
+      ),
+    ).toBe(true);
+  });
+
+  it('reads hit ids keyed by _id as well as id', () => {
+    const hits = pool(10).map(({ id, ...rest }) => ({ _id: id, ...rest }));
+
+    expect(
+      searchRerankCandidateFingerprints(hits, 10).map((candidate) => candidate.entityId),
+    ).toEqual(pool(10).map((hit) => hit.id));
   });
 });

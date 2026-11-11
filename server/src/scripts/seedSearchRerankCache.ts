@@ -10,6 +10,10 @@
  * Dry run by default. An apply needs `--apply --confirm-search-rerank-cache-seed
  * --index-version=<marker>` and writes Development unless `--environment=beta` or
  * `--environment=production` names another target.
+ *
+ * Each score stores a hash of its row's searchable text, read from the target's own
+ * research index when this shell's `MEILISEARCH_INDEX_PREFIX` names that environment, and a
+ * dry run counts the seeded entries whose stored hashes no longer match the index.
  */
 import dotenv from 'dotenv';
 import fs from 'fs';
@@ -22,10 +26,12 @@ import { assertScriptApplyAllowed } from './scriptWriteGuards';
 import {
   SCRIPT_NAME,
   assertSeedSearchRerankCacheApplyAllowed,
+  configuredIndexTextHashReader,
   parseSeedInput,
   parseSeedSearchRerankCacheArgs,
   resolveSeedInputPath,
   resolveSeedMongoUrl,
+  seedIndexBelongsToEnvironment,
   seedSearchRerankCache,
 } from './seedSearchRerankCacheCore';
 
@@ -50,6 +56,9 @@ async function main(): Promise<void> {
       apply: args.apply,
       indexVersion: args.indexVersion,
       source: args.source,
+      readIndexTextHashes: seedIndexBelongsToEnvironment(args.environment)
+        ? configuredIndexTextHashReader
+        : 'index-of-another-environment',
     });
     console.log(
       JSON.stringify(

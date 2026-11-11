@@ -12,7 +12,8 @@ It reads the typed query the way search tokenizes it (lowercased, diacritics fol
 It adds only the student-chosen filters (`kind`, `entityType`, `school`, `departments`, `researchAreas`, `hostsUndergrads`, `welcomesUndergrads`), in a fixed key order with each list sorted and lowercased, so the same choice made in any order is one entry.
 The visibility tier is an operator scope and never splits an entry.
 
-Each document carries `queryText`, the stored `filters`, `scores` as `[{ entityId, score }]` with `entityId` the string form of the research entity `_id` and `score` from 0 to 3, `scoredAt`, `indexVersion` (a free-form corpus or index marker the seeder supplies), and `source`.
+Each document carries `queryText`, the stored `filters`, `scores` as `[{ entityId, score, textHash? }]` with `entityId` the string form of the research entity `_id` and `score` from 0 to 3, `scoredAt`, `indexVersion` (a free-form corpus or index marker the seeder supplies), and `source`.
+`textHash` is the row's searchable-text hash at scoring time (see Staleness); a score written before #5569 has none.
 
 ## How search reads it
 
@@ -34,10 +35,16 @@ These searches are served exactly as without the flag:
 The file must sit outside the repository, and the script refuses one inside it.
 It resolves each slug to a live research row, keys each entry with `searchRerankCacheQueryKey`, and refuses two entries that share a key.
 A dry run is the default and prints counts only: entries, scores, resolved scores, unresolved slugs, and entries left with no resolved score.
+It also prints the staleness of the seeded entries already in the target cache (see Staleness).
 It never prints a query or a slug.
 An apply needs `--apply --confirm-search-rerank-cache-seed --index-version=<marker>` and upserts one document per key, replacing that key's scores.
 It writes Development, and refuses any other database, unless `--environment=beta` or `--environment=production` names the target, which then reads `BETA_MONGODBURL` or `PRODUCTION_MONGODBURL`; Production still needs `SCRAPER_ENV=production` and `CONFIRM_PROD_SCRAPE=true`.
 `--source=<label>` records where the scores came from and defaults to `offline-scoring`.
+
+The seeder stores a `textHash` with each resolved score, read from the target environment's research-entity index through the fail-soft optional Meilisearch path.
+It reads the index only when this shell's `MEILISEARCH_INDEX_PREFIX` names the target (unset for Development, `beta`, `prod`), because a laptop seeding Beta or Production is normally configured for the Development index, and hashing one environment's rows against another's index would store wrong hashes.
+The report's `textHashes` says what happened: `read-from-index`, `index-unreachable` (the read failed, so no hash is stored and the seed still applies), or `index-of-another-environment` (the index was not read); `scoresWithTextHash` counts the scores that carry one.
+A seed without hashes is still served and still judged by the candidate-set rule, so seeding Beta or Production from a laptop degrades staleness detection rather than failing; run the seed from a shell whose prefix names the target, such as a Render shell on that environment, to store hashes.
 
 ## Environments and privacy
 
@@ -47,10 +54,29 @@ It is never committed to the repository, because it pairs real student queries w
 
 ## Staleness
 
-An entry records the `indexVersion` it was scored against.
-Re-seed after a corpus-wide change, including the final description batch, because a stale entry scores rows as they were.
-A stale entry can only reorder rows search already returned in its top 30: it never adds a row, hides a row, or changes a total.
-A row that has since left the top 30 is simply not reordered, and a new row in the top 30 takes the neutral score.
+Staleness is judged per entry, against the rows that entry scored (#5569).
+An index-wide marker was rejected because any routine sync moves it and would mark every entry stale; Mongo `updatedAt` was rejected because scrape runs touch it on rows whose searchable text does not change.
+
+Each stored score carries `textHash`, the first 16 hex characters of a SHA-1 over the row's `kind`, `entityType`, `departments` and `researchAreas`, with list fields sorted (`searchRerankCandidateTextHash` in `server/src/services/searchRerankCache.ts`).
+Those are the searchable fields every pool hit already carries (`RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES`), so search compares hashes with no extra database or Meilisearch read; the name and the descriptions are not retrieved for pool hits and so are not hashed.
+The live-miss job hashes the pool hits of the same re-run search it scores, and the seeder hashes the target index's documents, so the write and the comparison read the same fields.
+
+At lookup, an entry is stale when either holds over the served top 10, taken in the fused order before any cached reorder (the order the job would re-score):
+
+- a row it scored now hashes differently from its stored `textHash`; or
+- the candidate set moved: 3 or more of those 10 rows have no score in the entry.
+
+A score with no `textHash`, such as every score written before #5569, never counts as changed, so only the candidate-set rule applies to it and the change itself invalidates no existing seed.
+
+A stale entry is still served exactly as a fresh one, when serving is on.
+It can only reorder rows search already returned in its top 30: it never adds a row, hides a row, or changes a total.
+
+- A stale `live-miss` or `shadow` entry becomes eligible for the live-miss job only with `SEARCH_RERANK_LIVE_MISS_ENABLED=true`, under the same caps, ceiling and queue as a miss (see What queues a job).
+- A seeded `full-` entry is never replaced by the job, stale or not.
+  Its staleness is reported instead: the seed command's dry run prints `seededEntries`, `staleSeededEntries` (seeded entries with at least one stored hash that no longer matches the index, a row gone from the index included), and `seededEntriesWithoutTextHashes` (seeded entries carrying no hash, which the dry run cannot judge).
+  These are `null` when the index was not read.
+  A non-zero stale count means re-seed.
+- After a promotion, seed after the target's reindex (`docs/release-process.md`), so the stored hashes are read from the index that environment serves.
 
 ## Coverage
 
@@ -91,9 +117,10 @@ A request the rate limiter refused never reaches search, and a search whose sema
 An in-process caller (`journey:eval`, the relevance scripts) passes no request client and never queues one.
 
 An existing entry decides too.
-A seeded entry, one whose `indexVersion` starts with `full-`, is never replaced.
-A served entry is never replaced either, so a key is scored at most once.
-Shadow mode fills only a missing entry, and serve mode fills a missing entry or replaces a shadow one.
+A seeded entry, one whose `indexVersion` starts with `full-`, is never replaced, stale or not.
+A fresh served entry is never replaced, so a key whose rows do not change is scored once.
+Shadow mode fills a missing entry or replaces a stale shadow one, and never replaces a served entry; serve mode fills a missing entry, replaces a shadow one, or replaces a stale served one (`searchRerankLiveMissWantsEntry`).
+Staleness is computed only when it alone decides, from the served candidates search already holds (see Staleness).
 
 ### Limits
 
@@ -109,6 +136,7 @@ All of these are in-process, so they hold per server instance; the web service r
   The ceiling counts this caller's spend only, not every caller's, so a scraper or description run that spends on the same day never stops the job.
   The check runs before each call against the spend recorded so far, and usage records are written without waiting, so the last call of the day can take the total past USD 1.00 by about one call's cost.
 - A key whose job ends ineligible, with a failed model call, with a reply below the scoring bar, or with an error is not queued again until the next UTC day, so a query the model keeps failing costs one call a day rather than one per student who searches it.
+  So is a key whose freshly written entry already fails the candidate-set rule (`written-still-stale`): a reply may leave up to 3 of 30 candidates unscored and a pooled row that cannot be hydrated is never scored, so without the hold such a key would be re-scored on every search.
   An unreadable log, or no database connection, skips the call rather than spending blind.
 
 ### The job
@@ -118,6 +146,8 @@ It sends the top 30 to `gpt-5-mini` through the shared model client under caller
 The reply must give at least 27 of every 30 candidates (all but a tenth, rounded down) an integer score from 0 to 3; ids outside the candidate window and non-integer ids are ignored, and a reply below that bar writes nothing.
 Only the scored candidates are stored, and an unscored candidate reads as the neutral 1.5 on the serve path, as any unscored row does.
 The bar is measured: a strict every-candidate rule threw away 61 of 320 real answers in the review pilot, 46 of them for missing one id of 30 (#5549).
+Each stored score carries the `textHash` of its pool hit from that same search.
+Before scoring, the job re-reads the existing entry and applies the same rule search applies, against the re-run search's served top 10, so the search path and the job agree on what is stale.
 The entry is upserted with `source` `live-miss` or `shadow` and `indexVersion` `async-gpt-5-mini-<YYYY-MM-DD>`, and the upsert filter excludes a `full-` entry, so a seeded entry that lands while the model is scoring still wins.
 Every outcome is logged as `[search-rerank-live-miss] job <status>`, never with the query text.
 

@@ -34,7 +34,11 @@ import {
   searchRerankLiveMissSpendTodayUsd,
   searchRerankLiveMissUserPrompt,
 } from '../searchRerankLiveMissJob';
-import { lookupSearchRerankCacheEntry, resetSearchRerankCacheMemo } from '../searchRerankCache';
+import {
+  lookupSearchRerankCacheEntry,
+  resetSearchRerankCacheMemo,
+  searchRerankCandidateTextHash,
+} from '../searchRerankCache';
 
 const NOW = new Date('2026-11-10T15:30:00.000Z');
 const QUERY = 'tidal marsh ecology';
@@ -69,6 +73,29 @@ const storedRow = (index: number) => ({
     'This research studies tidal marsh dynamics, sediment transport, and shoreline restoration across field sites.',
 });
 
+const poolHit = (index: number, researchAreas = ['Coastal Ecology']) => ({
+  id: rowId(index),
+  kind: 'lab',
+  entityType: 'lab',
+  departments: ['Synthetic Department'],
+  researchAreas,
+});
+const textHashOf = (index: number, researchAreas?: string[]) =>
+  searchRerankCandidateTextHash(poolHit(index, researchAreas));
+const fingerprints = (count: number) =>
+  Array.from({ length: count }, (_v, index) => ({
+    entityId: rowId(index),
+    textHash: textHashOf(index),
+  }));
+const storedScores = (researchAreasOfRowOne?: string[]) =>
+  Array.from({ length: CANDIDATE_COUNT }, (_v, index) => ({
+    entityId: rowId(index),
+    score: 2,
+    textHash: index === 1 ? textHashOf(1, researchAreasOfRowOne) : textHashOf(index),
+  }));
+const STALE_SCORES = storedScores(['Synthetic Earlier Topic']);
+const FRESH_SCORES = storedScores();
+
 const modelScores = (scores: Record<string, unknown>) => async () =>
   JSON.stringify({ ranking: [], scores });
 const validScores = modelScores({ 0: 1, 1: 3, 2: 0, 3: 2 });
@@ -96,6 +123,7 @@ beforeEach(() => {
   mocks.searchCandidates.mockResolvedValue({
     researchEntities: Array.from({ length: CANDIDATE_COUNT }, (_v, index) => servedEntity(index)),
     rerankLiveMissGate: 'eligible',
+    candidateFingerprints: fingerprints(CANDIDATE_COUNT),
   });
   mocks.postChatCompletion.mockReset();
 });
@@ -116,10 +144,10 @@ describe('runSearchRerankLiveMissJob', () => {
       queryText: QUERY,
       filters: {},
       scores: [
-        { entityId: rowId(0), score: 1 },
-        { entityId: rowId(1), score: 3 },
-        { entityId: rowId(2), score: 0 },
-        { entityId: rowId(3), score: 2 },
+        { entityId: rowId(0), score: 1, textHash: textHashOf(0) },
+        { entityId: rowId(1), score: 3, textHash: textHashOf(1) },
+        { entityId: rowId(2), score: 0, textHash: textHashOf(2) },
+        { entityId: rowId(3), score: 2, textHash: textHashOf(3) },
       ],
       scoredAt: NOW,
       indexVersion: `async-${SEARCH_RERANK_LIVE_MISS_MODEL}-2026-11-10`,
@@ -253,12 +281,111 @@ describe('runSearchRerankLiveMissJob', () => {
       mocks.searchCandidates.mockResolvedValue({
         researchEntities: [servedEntity(0), servedEntity(1)],
         rerankLiveMissGate: gate,
+        candidateFingerprints: fingerprints(2),
       });
 
       expect((await runJob({ model })).status).toBe('ineligible');
       expect(model).not.toHaveBeenCalled();
     },
   );
+
+  describe('over an existing entry, judged by the rows it scored', () => {
+    const existing = (entry: Record<string, unknown>) =>
+      mocks.cacheFindOne.mockImplementation(() =>
+        queryResult({ scoredAt: new Date('2026-11-01T00:00:00Z'), ...entry }),
+      );
+    const liveMiss = { source: 'live-miss', indexVersion: 'async-gpt-5-mini-2026-11-01' };
+    const shadow = { source: 'shadow', indexVersion: 'async-gpt-5-mini-2026-11-01' };
+
+    it('re-scores a stale live-miss entry in serve mode, never over a full- entry', async () => {
+      existing({ ...liveMiss, scores: STALE_SCORES });
+
+      const outcome = await runJob({ mode: 'serve' });
+
+      expect(outcome.status).toBe('written');
+      expect(outcome.entry?.scores[1]).toEqual({
+        entityId: rowId(1),
+        score: 3,
+        textHash: textHashOf(1),
+      });
+      const [filter] = mocks.cacheUpdateOne.mock.calls[0];
+      expect(filter.source).toBeUndefined();
+      expect(String(filter.indexVersion.$not)).toBe(String(/^full-/));
+    });
+
+    it('leaves a fresh live-miss entry alone without calling the model', async () => {
+      const model = vi.fn(validScores);
+      existing({ ...liveMiss, scores: FRESH_SCORES });
+
+      expect((await runJob({ mode: 'serve', model })).status).toBe('not-wanted');
+      expect(model).not.toHaveBeenCalled();
+      expect(mocks.cacheUpdateOne).not.toHaveBeenCalled();
+    });
+
+    it('never replaces a stale live-miss entry from shadow mode, and never searches', async () => {
+      const model = vi.fn(validScores);
+      existing({ ...liveMiss, scores: STALE_SCORES });
+
+      expect((await runJob({ mode: 'shadow', model })).status).toBe('not-wanted');
+      expect(mocks.searchCandidates).not.toHaveBeenCalled();
+      expect(model).not.toHaveBeenCalled();
+    });
+
+    it('re-scores a stale shadow entry in shadow mode and keeps a fresh one', async () => {
+      existing({ ...shadow, scores: STALE_SCORES });
+      const stale = await runJob({ mode: 'shadow' });
+      expect(stale.status).toBe('written');
+      expect(mocks.cacheUpdateOne.mock.calls[0][0].source).toBe('shadow');
+
+      existing({ ...shadow, scores: FRESH_SCORES });
+      expect((await runJob({ mode: 'shadow' })).status).toBe('not-wanted');
+    });
+
+    it('never searches, calls the model or writes over a stale seeded full- entry', async () => {
+      const model = vi.fn(validScores);
+      existing({
+        source: 'offline-scoring',
+        indexVersion: 'full-v2-2026-11-10',
+        scores: STALE_SCORES,
+      });
+
+      for (const mode of ['shadow', 'serve'] as const) {
+        expect((await runJob({ mode, model })).status).toBe('not-wanted');
+      }
+      expect(mocks.searchCandidates).not.toHaveBeenCalled();
+      expect(model).not.toHaveBeenCalled();
+      expect(mocks.cacheUpdateOne).not.toHaveBeenCalled();
+    });
+
+    it('never calls a hashless legacy entry stale on the hash rule', async () => {
+      const model = vi.fn(validScores);
+      existing({
+        ...liveMiss,
+        scores: STALE_SCORES.map(({ entityId, score }) => ({ entityId, score })),
+      });
+
+      expect((await runJob({ mode: 'serve', model })).status).toBe('not-wanted');
+      expect(model).not.toHaveBeenCalled();
+    });
+
+    it('reports an entry that the candidate-set rule still calls stale once written', async () => {
+      mocks.searchCandidates.mockResolvedValue({
+        researchEntities: Array.from({ length: CANDIDATE_COUNT }, (_v, index) =>
+          servedEntity(index),
+        ),
+        rerankLiveMissGate: 'eligible',
+        candidateFingerprints: [...fingerprints(CANDIDATE_COUNT), ...fingerprints(7).slice(4)].map(
+          (candidate, index) =>
+            index < CANDIDATE_COUNT ? candidate : { ...candidate, entityId: rowId(100 + index) },
+        ),
+      });
+
+      const outcome = await runJob({ mode: 'serve' });
+
+      expect(outcome.status).toBe('written-still-stale');
+      expect(mocks.cacheUpdateOne).toHaveBeenCalledTimes(1);
+    });
+  });
 
   it('refuses a query over the length bound without searching', async () => {
     const outcome = await runSearchRerankLiveMissJob(
