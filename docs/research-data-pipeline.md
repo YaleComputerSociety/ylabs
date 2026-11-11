@@ -1274,6 +1274,7 @@ Every other rule names a condition a later reader can re-derive - a dead page ca
 `fieldLockProvenance.operator_decision` still has no writer and keeps none: a judgement recorded as a lock cannot be revisited and, as the 2026-09-24 census showed, carries no reason at all in practice.
 
 A person record refuses a value the same way (#5641): `Researcher.fieldValueRefusals` holds the same record at `websiteUrl`, `title`, `primaryDepartment`, `imageUrl`, `email` and `profileLink` (one link, by URL), keyed by the same `fieldValueRefusalKey`.
+That key keeps the query string for `profileLink` and `imageUrl`, because a query names the page there and every Google Scholar profile shares one host and path.
 `yarn --cwd server researcher:refuse-field-value --researcher=<id>` records or withdraws one, dry-run by default, and clears the stored value in the same write, because a person no identity resolves to is reached by nothing else.
 On every resolve the user materializer drops the person's refused values from the evidence of each identity that joins them before the resolver ranks it, and clears a stored refused value, so a rival still wins and a second resolve writes nothing.
 A refused email is not a join witness either, so an address refused as someone else's cannot join that identity to the person (owner decision 2026-11-11).
