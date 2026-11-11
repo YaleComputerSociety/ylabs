@@ -27,6 +27,23 @@ describe('buildWayInBadgesFromEntity', () => {
     ]);
   });
 
+  it('shows the mentors badge from served mentors list evidence, not hosted or welcomes lists (#5362)', () => {
+    const listEntry = (signal: 'hosted' | 'welcomes' | 'mentors') => ({
+      source: 'example-list',
+      signal,
+      kind: 'advised' as const,
+      sourceUrl: 'https://example.edu/list',
+    });
+    expect(
+      buildWayInBadgesFromEntity(entity({ undergradListEvidence: [listEntry('mentors')] })),
+    ).toEqual(['Mentors undergrads']);
+    expect(
+      buildWayInBadgesFromEntity(
+        entity({ undergradListEvidence: [listEntry('hosted'), listEntry('welcomes')] }),
+      ),
+    ).toEqual([]);
+  });
+
   /**
    * The badge must not re-derive hosting from raw fields: the server owns the one
    * predicate the browse filter and saved plans also read, so a field the server

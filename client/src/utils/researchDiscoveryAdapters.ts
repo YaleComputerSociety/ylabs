@@ -7,7 +7,7 @@ import {
   normalizeResearchMetadataLabels,
 } from './researchTextNormalization';
 import { getUniqueDepartmentLabels } from './departmentNames';
-import { researchEntityTitle } from './researchEntityCopy';
+import { MENTORS_UNDERGRADUATES_LABEL, researchEntityTitle } from './researchEntityCopy';
 import { safeHttpUrl } from './url';
 
 export interface EvidenceSourceRowData {
@@ -394,6 +394,9 @@ export const buildWayInBadgesFromEntity = (entity: ResearchEntity | undefined): 
   // cannot disagree with the `hostsUndergrads` browse filter or saved plans,
   // which read the same server predicate (#3593).
   if (entity.hasUndergradHostingEvidence === true) badges.push('Undergrad evidence');
+  if (entity.undergradListEvidence?.some((entry) => entry?.signal === 'mentors')) {
+    badges.push(MENTORS_UNDERGRADUATES_LABEL);
+  }
 
   return badges;
 };

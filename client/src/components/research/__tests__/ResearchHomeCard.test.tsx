@@ -318,6 +318,37 @@ describe('ResearchHomeCard', () => {
     expect(checked).toEqual(['Welcomes undergrads, recruiting now', 'Hosted undergrads']);
   });
 
+  it('tags a row that only mentors undergraduates, from its served list evidence (#5362)', () => {
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          home={researchHome({
+            wayInBadges: [],
+            entities: [
+              {
+                ...researchHome().entities[0],
+                undergradListEvidence: [
+                  {
+                    source: 'cs-senior-projects',
+                    signal: 'mentors',
+                    kind: 'advised',
+                    sourceUrl: 'https://example.edu/senior-projects',
+                  },
+                ],
+              },
+            ],
+          })}
+        />
+      </MemoryRouter>,
+    );
+
+    const signals = screen.getByLabelText('Ways to get involved');
+    const checked = Array.from(signals.querySelectorAll('span.font-semibold')).map(
+      (node) => node.textContent,
+    );
+    expect(checked).toEqual(['Mentors undergrads']);
+  });
+
   it('keeps student project evidence a pill even when it is the only signal', () => {
     render(
       <MemoryRouter>
