@@ -69,6 +69,11 @@ const REVIEWED_UNROUTED_READS: ReadonlyArray<{ fn: string; reason: string }> = [
       "Called only from the `user` materializer, so the benchmark never makes this read: it replays `researchEntity` rows only. It is a search by ORCID or photo URL value for every `user` observation asserting the holder's stored value, whose purpose is to find the pages that asserted it under other keys, so an entity-keyed source cannot answer it (#5693, #5737).",
   },
   {
+    fn: 'authoritativeDepartmentRosterRereads',
+    reason:
+      "Reads every `departmentRosterHealth` snapshot, a different entity type from the row being projected and keyed by department rather than by the row, so an entity-keyed source cannot answer it. It is made only when one of the row's roster appointments falls outside the currency window, to ask whether a later complete read of that department still lists the row (#5825). Before #5836 it passed this guard only because the preceding function's routed read sat within the proximity window, not because it was routed.",
+  },
+  {
     fn: 'reconcileOfficialRosterSnapshotsFromRun',
     reason: 'Run-level reconciliation over a whole scrape run, not a per-row projection read.',
   },
