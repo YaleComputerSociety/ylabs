@@ -1,4 +1,5 @@
 import * as cheerio from 'cheerio';
+import type { AnyNode } from 'domhandler';
 import { normalizeOfficialProfileDestination } from '../../services/leadProfileIdentity';
 import { isYaleProfileUrl } from '../yaleProfileDepartureEvidence';
 import { isLikelyPersonSpecificYaleEmail, splitName } from './scraperHelpers';
@@ -266,23 +267,38 @@ function slugNamesMember(url: string, memberName: string): boolean {
 }
 
 /**
+ * Links inside navigation, footers, and co-author or collaborator blocks never belong to the page
+ * subject. A profile showing one co-author card trips neither the repeated-label nor the
+ * other-person rule, because the card's name is plain text beside a lone "View Full Profile"
+ * (#5677). Only whole class segments count, and only below `<body>`, so a "collaboratory" class or
+ * a page-level body class taken from the URL path does not hide the subject's own links.
+ */
+const NON_SUBJECT_LINK_TAGS = 'nav, footer';
+const NON_SUBJECT_CLASS_SEGMENT = /(?:^|[-_])(?:co-?authors?|collaborators?)(?:$|[-_])/i;
+
+function sitsInNonSubjectLinkContainer($: cheerio.CheerioAPI, el: AnyNode): boolean {
+  return $(el)
+    .parentsUntil('body')
+    .addBack()
+    .toArray()
+    .some(
+      (node) =>
+        $(node).is(NON_SUBJECT_LINK_TAGS) ||
+        ($(node).attr('class') ?? '')
+          .split(/\s+/)
+          .some((token) => NON_SUBJECT_CLASS_SEGMENT.test(token)),
+    );
+}
+
+/**
  * Anchors the page subject could own, each pointing at a person-profile-shaped page and outside
- * navigation and footers. An anchor whose URL spells the member's full name counts whatever its
- * label, even in an aside ("Associated programs"). Otherwise it must sit outside asides and be
+ * navigation, footers, and co-author or collaborator blocks. An anchor whose URL spells the
+ * member's full name counts whatever its label, even in an aside ("Associated programs"). Otherwise it must sit outside asides and be
  * labelled either generically ("Profile", "Website") or with the member's own name: one labelled
  * with someone else's name or a publication title belongs to a co-author, colleague or
  * related-items block (#5592, #5677), and only one labelled with another person's name marks its
  * destination as that person's.
  */
-/**
- * Containers whose links never belong to the page subject: navigation, footers, and co-author or
- * collaborator blocks. A profile showing one co-author card trips neither the repeated-label nor
- * the other-person rule, because the card's name is plain text beside a lone "View Full Profile"
- * (#5677).
- */
-const NON_SUBJECT_LINK_CONTAINER =
-  'nav, footer, [class*="co-author"], [class*="coauthor"], [class*="collaborator"]';
-
 function subjectAnchorCandidates(
   $: cheerio.CheerioAPI,
   pageUrl: string,
@@ -292,7 +308,7 @@ function subjectAnchorCandidates(
   const otherPersonDestinations = new Set<string>();
   $('a[href]').each((_i, el) => {
     const url = absoluteHttpUrl($(el).attr('href'), pageUrl);
-    if (!url || !isYaleProfileUrl(url) || $(el).closest(NON_SUBJECT_LINK_CONTAINER).length > 0) {
+    if (!url || !isYaleProfileUrl(url) || sitsInNonSubjectLinkContainer($, el)) {
       return;
     }
     const destination = normalizeOfficialProfileDestination(url);

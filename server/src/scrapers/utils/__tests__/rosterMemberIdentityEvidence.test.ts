@@ -398,6 +398,16 @@ describe('extractRosterMemberIdentityEvidence ignores a lone co-author card (#56
       extractRosterMemberIdentityEvidence(html, page, 'Avery Synthetic').linkedProfileUrls,
     ).toContain('https://history.yale.edu/people/avery-synthetic');
   });
+
+  it('keeps own links on a page whose wrapper classes only mention collaborators in passing', () => {
+    const page = 'https://medicine.yale.edu/profile/avery-synthetic/';
+    const html = `<html><body class="path-our-team-collaborators page-node-type-collaborator">
+      <main><div class="education-collaboratory-team"><div class="node__contact-info">
+      <a href="https://history.yale.edu/people/avery-synthetic">Website</a></div></div></main></body></html>`;
+    expect(
+      extractRosterMemberIdentityEvidence(html, page, 'Avery Synthetic').linkedProfileUrls,
+    ).toContain('https://history.yale.edu/people/avery-synthetic');
+  });
 });
 
 describe('ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION (#5677)', () => {
