@@ -126,7 +126,10 @@ describe('Privacy', () => {
     );
     expect(text).not.toContain('keeps this data for no longer than');
     expect(text).toContain(
-      'Your netid is removed from the events y/labs sends, and PostHog knows you only by a random id plus your role at Yale. Web addresses are sent without their search terms, and if you arrive from a search engine, the words you searched for there are removed before anything reaches PostHog.',
+      "Your netid is removed from the events y/labs sends, and PostHog knows you only by a random id plus your role at Yale. Web addresses are sent without anything after the ? or #, so search terms and filters are never sent, and search engines' search words are removed too.",
+    );
+    expect(text).toContain(
+      'PostHog runs only once y/labs has given your account that random id; without one, nothing is measured, so PostHog never assigns an id of its own.',
     );
     expect(text).not.toContain('can still reach PostHog');
     expect(text).not.toContain('removed from everything sent');
