@@ -1056,6 +1056,8 @@ interface MaterializeResult {
   resolved: Record<string, ResolvedField>;
   postMaterializationMetrics?: ReportPostMaterializationMetrics;
   indexSyncFailed?: true;
+  /** Rows other than this one whose write this materialize made but whose index sync failed. */
+  otherIndexSyncFailedEntityIds?: string[];
   skipped?: string;
   plannedSet?: Record<string, unknown>;
   plannedUnset?: Record<string, ''>;
@@ -5016,7 +5018,7 @@ async function deptRosterShellFoldTarget(personName: string): Promise<any | null
  */
 export async function foldDeptRosterShellIntoCanonicalResearchEntity(
   shellEntityId: string,
-): Promise<{ folded: boolean; canonicalEntityId?: string }> {
+): Promise<{ folded: boolean; canonicalEntityId?: string; canonicalIndexSyncFailed?: true }> {
   const shell = await ResearchEntity.findById(shellEntityId)
     .select('_id slug name departments schools sourceUrls archived')
     .lean<{
@@ -5064,7 +5066,15 @@ export async function foldDeptRosterShellIntoCanonicalResearchEntity(
   });
   await deleteFromIndex('researchEntity', String(shell._id));
 
-  return { folded: true, canonicalEntityId: canonicalId };
+  const foldedCanonical = await ResearchEntity.findById(canonicalId).lean();
+  const canonicalIndexSynced =
+    !!foldedCanonical && (await syncEntity('researchEntity', foldedCanonical));
+
+  return {
+    folded: true,
+    canonicalEntityId: canonicalId,
+    ...(canonicalIndexSynced ? {} : { canonicalIndexSyncFailed: true as const }),
+  };
 }
 
 export async function syncProfileBackedFacultyResearchAreaMemberFromIdentity(
@@ -11782,6 +11792,7 @@ async function materializeEntityUnderRemovalGuard(
   }
 
   let indexStale = false;
+  const otherIndexSyncFailedEntityIds: string[] = [];
   if (isSyncableEntityType(entityType) && entityIdString && !entityScalarUnchanged) {
     const fresh = await Model.findById(entityIdString).lean();
     indexStale = !fresh || !(await syncEntity(entityType, fresh));
@@ -11865,6 +11876,9 @@ async function materializeEntityUnderRemovalGuard(
   ) {
     const fold = await foldDeptRosterShellIntoCanonicalResearchEntity(entityIdString);
     if (fold.folded) options.chunkPrefetch?.markTouched(fold.canonicalEntityId);
+    if (fold.canonicalIndexSyncFailed && fold.canonicalEntityId) {
+      otherIndexSyncFailedEntityIds.push(fold.canonicalEntityId);
+    }
   }
 
   return {
@@ -11878,6 +11892,7 @@ async function materializeEntityUnderRemovalGuard(
     postMaterializationMetrics,
     ...reportedProjectionOutcomes,
     ...(indexStale ? { indexSyncFailed: true as const } : {}),
+    ...(otherIndexSyncFailedEntityIds.length > 0 ? { otherIndexSyncFailedEntityIds } : {}),
     ...(entityScalarUnchanged ? { skipped: 'unchanged' as const } : {}),
   };
 }
@@ -12675,6 +12690,9 @@ async function materializeFromRunUnderRemovalGuard(
         if (res.indexSyncFailed) {
           if (res.entityId) staleIndexEntityIds.add(String(res.entityId));
           else staleIndexRowsWithoutId += 1;
+        }
+        for (const entityId of res.otherIndexSyncFailedEntityIds ?? []) {
+          staleIndexEntityIds.add(entityId);
         }
         if (res.unbackedResearchAreas) {
           unbackedResearchAreaOutcomes[res.unbackedResearchAreas] =
