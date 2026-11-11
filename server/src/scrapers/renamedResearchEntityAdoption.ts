@@ -7,8 +7,8 @@ import { currentDirectoryRemovalMintGuard } from '../services/directoryRemovalMi
 /**
  * The live row a lane key's own stored observations name by id, when no row holds the key
  * as its slug. A row renamed by `directory-removal:reslug` keeps no alias or redirect, so its
- * old key reaches it only through the `entityId` that migration stamps onto the key's
- * observations (#4160). Exactly one live row must be named, or nothing is adopted.
+ * old key reaches it only through the `entityId` that migration and ingest stamp onto the
+ * key's observations (#4160). Exactly one live row must be named, or nothing is adopted.
  */
 export async function liveResearchEntityNamedByKeyObservations(
   entityKey: string | undefined,
