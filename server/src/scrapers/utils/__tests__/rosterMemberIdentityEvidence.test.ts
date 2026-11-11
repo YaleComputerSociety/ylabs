@@ -1,6 +1,3 @@
-import { createHash } from 'crypto';
-import fs from 'fs';
-import path from 'path';
 import { describe, expect, it } from 'vitest';
 import {
   ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION,
@@ -336,20 +333,76 @@ describe('extractRosterMemberIdentityEvidence keeps the subject own links (#5677
   });
 });
 
+describe('extractRosterMemberIdentityEvidence keeps own links on every Yale profile shape (#5677)', () => {
+  const PAGE = 'https://center.yale.edu/people/avery-synthetic';
+
+  it.each([
+    'https://law.yale.edu/avery-synthetic',
+    'https://history.yale.edu/directory/avery-synthetic',
+    'https://divinity.yale.edu/faculty-and-research/yds-faculty/avery-synthetic',
+  ])('keeps a generically labelled own link to %s', (url) => {
+    const html = `<html><body><main><a href="${url}">Profile</a></main></body></html>`;
+    expect(
+      extractRosterMemberIdentityEvidence(html, PAGE, 'Avery Synthetic').linkedProfileUrls,
+    ).toEqual([PAGE, url]);
+  });
+});
+
 describe('ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION (#5677)', () => {
+  const PAGE = 'https://center.yale.edu/people/avery-synthetic';
+  const CORPUS: Array<{ html: string; memberName: string }> = [
+    {
+      memberName: 'Avery Synthetic',
+      html: `<html><head><script type="application/ld+json">${JSON.stringify({
+        '@type': 'Person',
+        name: 'Avery Synthetic',
+        email: 'avery.synthetic@yale.edu',
+        identifier: { propertyID: 'NetID', value: 'AS123' },
+      })}</script></head><body><main>
+        <a href="https://law.yale.edu/avery-synthetic">Profile</a>
+        <a href="https://divinity.yale.edu/faculty-and-research/yds-faculty/avery-synthetic">Avery Synthetic</a>
+        <a href="mailto:center.contact@yale.edu">Office</a>
+        <ul><li><a href="/profile/casey-coauthor/">Casey Coauthor</a>
+          <a href="/profile/casey-coauthor/">View Full Profile</a></li></ul>
+      </main></body></html>`,
+    },
+    {
+      memberName: 'Elizabeth Synthetic',
+      html: `<html><body><main>
+        <aside><a href="https://history.yale.edu/people/liz-synthetic">Yale Department of History</a></aside>
+        <a href="https://medicine.yale.edu/profile/blair-synthetic/">Blair Synthetic</a>
+      </main></body></html>`,
+    },
+  ];
   const PINNED = {
     version: 2,
-    sha256: '8146073890480d9202c62405bd0c1f3655a9972326099cd02986d1e28296e41f',
+    outputs: [
+      {
+        pageUrl: PAGE,
+        linkedProfileUrls: [
+          PAGE,
+          'https://law.yale.edu/avery-synthetic',
+          'https://divinity.yale.edu/faculty-and-research/yds-faculty/avery-synthetic',
+        ],
+        emails: ['avery.synthetic@yale.edu'],
+        netids: ['as123'],
+      },
+      {
+        pageUrl: PAGE,
+        linkedProfileUrls: [PAGE, 'https://history.yale.edu/people/liz-synthetic'],
+        emails: [],
+        netids: [],
+      },
+    ],
   };
 
-  it('is bumped whenever the extractor source changes', () => {
-    const source = fs
-      .readFileSync(path.join(__dirname, '..', 'rosterMemberIdentityEvidence.ts'), 'utf8')
-      .replace(/\r\n/g, '\n');
-    const sha256 = createHash('sha256').update(source).digest('hex');
+  it('is bumped whenever the extractor output on the fixture corpus changes', () => {
+    const outputs = CORPUS.map(({ html, memberName }) =>
+      extractRosterMemberIdentityEvidence(html, PAGE, memberName),
+    );
     expect(
-      { version: ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION, sha256 },
-      'The extractor changed: bump ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION so cached evidence from the old extractor is not served, then pin the new version and hash here.',
+      { version: ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION, outputs },
+      'The extractor output changed: bump ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION so cached evidence from the old extractor is not served, then pin the new version and outputs here.',
     ).toEqual(PINNED);
   });
 });

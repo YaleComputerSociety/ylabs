@@ -1,8 +1,6 @@
 import * as cheerio from 'cheerio';
-import {
-  isLikelyOfficialPersonProfileUrl,
-  normalizeOfficialProfileDestination,
-} from '../../services/leadProfileIdentity';
+import { normalizeOfficialProfileDestination } from '../../services/leadProfileIdentity';
+import { isYaleProfileUrl } from '../yaleProfileDepartureEvidence';
 import { isLikelyPersonSpecificYaleEmail } from './scraperHelpers';
 import { observedPersonNameAgreesWith } from './personNameAgreement';
 import { givenNamesEquivalent } from './piNameMatch';
@@ -12,8 +10,8 @@ export const ROSTER_MEMBER_IDENTITY_EVIDENCE_FIELD = 'profileIdentityEvidence';
 
 /**
  * Cached evidence is keyed on this, so changing what the extractor emits without bumping it
- * serves the old extractor's output for every cached page (#5677). A test pins it to this
- * file's content hash.
+ * serves the old extractor's output for every cached page (#5677). A test pins it to the
+ * extractor's output on a fixture corpus, so a change here or in a dependency fails until bumped.
  */
 export const ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION = 2;
 
@@ -232,9 +230,8 @@ function subjectAnchorCandidates(
   const otherPersonDestinations = new Set<string>();
   $('a[href]').each((_i, el) => {
     const url = absoluteHttpUrl($(el).attr('href'), pageUrl);
-    if (!url || $(el).closest('nav, footer').length > 0) return;
+    if (!url || !isYaleProfileUrl(url) || $(el).closest('nav, footer').length > 0) return;
     const destination = normalizeOfficialProfileDestination(url);
-    if (!destination || !isLikelyOfficialPersonProfileUrl(`https://${destination}`)) return;
     const label = anchorLabel($, el);
     if (slugNamesMember(url, memberName)) {
       candidates.push({ url, destination, label, kind: 'member-slug' });
