@@ -321,7 +321,7 @@ export function httpsLandingOf(
  * site. A page that moved to a host's root (a lab leaving a shared host for its own
  * domain) still counts, because the requested side named one page (#5638).
  */
-const isBareHostRoot = (url: URL): boolean => url.pathname.replace(/\/+$/, '') === '';
+const isBareHostRootKey = (identityKey: string): boolean => !identityKey.includes('/');
 
 export function redirectLandingOf(
   requestedUrl: string | undefined,
@@ -332,10 +332,10 @@ export function redirectLandingOf(
   if (!requested || !final) return undefined;
   if (final.protocol !== 'https:' && final.protocol !== 'http:') return undefined;
   if (final.search) return undefined;
-  if (isBareHostRoot(requested) && isBareHostRoot(final)) return undefined;
   const requestedKey = normalizeWebsiteUrlIdentityKey(requested.toString()).toLowerCase();
   const finalKey = normalizeWebsiteUrlIdentityKey(final.toString()).toLowerCase();
   if (!requestedKey || !finalKey || requestedKey === finalKey) return undefined;
+  if (isBareHostRootKey(requestedKey) && isBareHostRootKey(finalKey)) return undefined;
   return final.toString();
 }
 

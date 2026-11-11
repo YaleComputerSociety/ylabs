@@ -633,6 +633,30 @@ describe('classifySourceLinkHealth soft 404 handling', () => {
       }),
     ).toEqual({ healthStatus: 'HEALTHY', httpStatusCode: 200 });
   });
+
+  it.each([
+    ['http://lab.example.org/index.html', 'https://www.example.edu/'],
+    ['https://lab.example.org/', 'https://www.example.edu/index.aspx'],
+    ['https://lab.example.org/Default.aspx', 'https://www.example.edu/index.php'],
+  ])(
+    'records no redirect landing for a host root spelled with a default document (%s -> %s)',
+    (requestedUrl, finalUrl) => {
+      expect(classifySourceLinkHealth({ status: 200, requestedUrl, finalUrl })).toEqual({
+        healthStatus: 'HEALTHY',
+        httpStatusCode: 200,
+      });
+    },
+  );
+
+  it('still records a page that moved to another host root', () => {
+    expect(
+      classifySourceLinkHealth({
+        status: 200,
+        requestedUrl: 'https://www.example.edu/lab/index.html',
+        finalUrl: 'https://lab.example.org/',
+      }),
+    ).toMatchObject({ healthStatus: 'HEALTHY', redirectLandingUrl: 'https://lab.example.org/' });
+  });
 });
 
 describe('isStaleSourceLinkHealth', () => {
