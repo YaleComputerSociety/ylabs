@@ -7,6 +7,7 @@ import {
   buildVisibilityRepairPlans,
   classifyVisibilityRepairStage,
   normalizeVisibilityRepairObjectId,
+  repairQueueSuppressionReason,
   researchEntityLeadMembersFromRoster,
   RESOLVED_BY_GATE_DRY_RUN_NOTE,
   runVisibilityRepairQueue,
@@ -16,6 +17,7 @@ import {
 import type { ResearchEntityRosterEntry } from '../researchEntityMembershipAccessor';
 import { partitionResolvableQueueRecordIds } from '../studentVisibilityGateService';
 import { classifyRecoverabilityForRecordIds } from '../visibilityRecoverabilityService';
+import { normalizeOverrideReason } from '../../scripts/studentVisibilityOverrideCore';
 
 vi.mock('../visibilityRecoverabilityService', () => ({
   classifyRecoverabilityForRecordIds: vi.fn().mockResolvedValue({
@@ -2235,6 +2237,88 @@ describe('visibilityRepairQueueService', () => {
       expect.objectContaining({
         studentVisibilityOverrideTier: 'suppressed',
         studentVisibilitySuppressionReason: expect.stringContaining('archive_review'),
+      }),
+    );
+  });
+
+  it('records a coded reason, keeps the earlier entries, and audits a suppression it writes (#5856)', async () => {
+    const earlierReason = 'fixture_note: an operator recorded this earlier';
+    const deps = {
+      findOpenQueueItems: vi
+        .fn()
+        .mockResolvedValue([queueItem({ blockerReasons: ['inactive_at_yale', 'archive_review'] })]),
+      updateQueueItem: vi.fn().mockResolvedValue(undefined),
+      findResearchEntity: vi
+        .fn()
+        .mockResolvedValue({ studentVisibilitySuppressionReason: earlierReason }),
+      updateResearchEntity: vi.fn().mockResolvedValue(undefined),
+      findProgram: vi.fn(),
+      updateProgram: vi.fn(),
+      recordOverrideAudit: vi.fn().mockResolvedValue(undefined),
+      runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
+    };
+
+    await runVisibilityRepairQueue(
+      { mode: 'apply', collection: 'research', stage: 'suppression', suppressUnsafe: true },
+      deps,
+    );
+
+    const reason = repairQueueSuppressionReason(['inactive_at_yale', 'archive_review']);
+    expect(normalizeOverrideReason(reason)).toBe(reason);
+    expect(deps.updateResearchEntity).toHaveBeenCalledWith(
+      'entity-1',
+      expect.objectContaining({
+        studentVisibilityOverrideTier: 'suppressed',
+        studentVisibilitySuppressionReason: `${earlierReason}, ${reason}`,
+        studentVisibilityReviewedAt: expect.any(Date),
+      }),
+    );
+    expect(deps.recordOverrideAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorNetid: 'agent:visibility-repair-queue',
+        action: 'research_entity.visibility_override.set',
+        targetType: 'research_entity',
+        targetId: 'entity-1',
+        summary: expect.objectContaining({ note: reason, status: 'set' }),
+      }),
+    );
+  });
+
+  it('never writes a suppression without a reason, and a dry run writes and audits nothing', async () => {
+    const deps = {
+      findOpenQueueItems: vi
+        .fn()
+        .mockResolvedValue([
+          queueItem({ collection: 'programs', blockerReasons: ['not_undergraduate_relevant'] }),
+        ]),
+      updateQueueItem: vi.fn().mockResolvedValue(undefined),
+      findResearchEntity: vi.fn(),
+      updateResearchEntity: vi.fn(),
+      findProgram: vi.fn().mockResolvedValue(null),
+      updateProgram: vi.fn().mockResolvedValue(undefined),
+      recordOverrideAudit: vi.fn().mockResolvedValue(undefined),
+      runGate: vi.fn().mockResolvedValue({ counts: { resolved: 0 } }),
+    };
+
+    await runVisibilityRepairQueue(
+      { mode: 'dry-run', collection: 'programs', stage: 'suppression', suppressUnsafe: true },
+      deps,
+    );
+    expect(deps.updateProgram).not.toHaveBeenCalled();
+    expect(deps.recordOverrideAudit).not.toHaveBeenCalled();
+
+    await runVisibilityRepairQueue(
+      { mode: 'apply', collection: 'programs', stage: 'suppression', suppressUnsafe: true },
+      deps,
+    );
+    const [, patch] = deps.updateProgram.mock.calls[0];
+    expect(patch.studentVisibilitySuppressionReason).toBe(
+      repairQueueSuppressionReason(['not_undergraduate_relevant']),
+    );
+    expect(deps.recordOverrideAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'fellowship.visibility_override.set',
+        targetType: 'fellowship',
       }),
     );
   });

@@ -199,4 +199,56 @@ describe('student-visibility:override hides one row and its affiliated link (#56
     expect(again.decision).toMatchObject({ action: 'skip', reason: 'already_recorded' });
     expect(await AdminAuditEvent.countDocuments()).toBe(1);
   });
+
+  it('adds a reason to an existing reasonless hold, records the reviewer, and keeps the tier (#5856)', async () => {
+    const umbrellaId = await seed();
+    await mongoose.connection.db!.collection('research_entities').updateOne(
+      { _id: umbrellaId },
+      {
+        $set: {
+          studentVisibilityTier: 'suppressed',
+          studentVisibilityOverrideTier: 'suppressed',
+        },
+      },
+    );
+
+    const before = await runStudentVisibilityGate({ collection: 'research', mode: 'apply' });
+    expect(before.counts.holdsWithoutRecordedReason).toBe(1);
+    expect(await getResearchGroupDetail(UMBRELLA)).toBeFalsy();
+
+    const report: any = await runStudentVisibilityOverride(
+      argsFor(['--tier=suppressed', '--apply', '--confirm-student-visibility-override']),
+      devEnv(mongoUrl, { ALLOW_NON_PROD_SCRAPER_WRITES: 'true' }),
+    );
+
+    expect(report.decision.set).not.toHaveProperty('studentVisibilityTier');
+    const row = await ResearchEntity.findById(umbrellaId).lean<any>();
+    expect(row).toMatchObject({
+      studentVisibilityTier: 'suppressed',
+      studentVisibilityOverrideTier: 'suppressed',
+      studentVisibilitySuppressionReason: REASON,
+      studentVisibilityReviewedByNetid: 'fixtureop',
+    });
+    expect(row.studentVisibilityReviewedAt).toBeInstanceOf(Date);
+    expect(await AdminAuditEvent.countDocuments({ targetId: String(umbrellaId) })).toBe(1);
+
+    const after = await runStudentVisibilityGate({ collection: 'research', mode: 'dry-run' });
+    expect(after.counts.holdsWithoutRecordedReason).toBe(0);
+    const again: any = await runStudentVisibilityOverride(
+      argsFor(['--tier=suppressed', '--apply', '--confirm-student-visibility-override']),
+      devEnv(mongoUrl, { ALLOW_NON_PROD_SCRAPER_WRITES: 'true' }),
+    );
+    expect(again.decision).toMatchObject({ action: 'skip', reason: 'already_recorded' });
+  });
+
+  it('refuses a hold whose reason is empty before it reaches the row', () => {
+    expect(() =>
+      parseStudentVisibilityOverrideArgs([
+        `--slug=${UMBRELLA}`,
+        '--tier=operator_review',
+        '--reason=  ',
+        '--actor=fixtureop',
+      ]),
+    ).toThrow();
+  });
 });

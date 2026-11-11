@@ -4,7 +4,8 @@
 import { PROGRAM_STATED_ONLY_FACET_FIELDS } from '../utils/programFacetFilters';
 import { correctProgramSearchQuerySpelling } from './programSearchSpellingVocabulary';
 import { PROGRAM_SEARCH_FIELDS, rankProgramSearch } from './programSearchRelevance';
-import { NotFoundError, ObjectIdError } from '../utils/errors';
+import { BadRequestError, NotFoundError, ObjectIdError } from '../utils/errors';
+import { normalizeOverrideReason } from '../scripts/studentVisibilityOverrideCore';
 import {
   Fellowship,
   programCategories,
@@ -12,6 +13,7 @@ import {
   programKinds,
 } from '../models/fellowship';
 import {
+  isHoldingOverrideTier,
   isStudentVisibilityTier,
   publicStudentVisibilityTiers,
   servedStudentVisibilityTierFilter,
@@ -817,13 +819,49 @@ async function liftFellowshipVisibilityOverride(fellowship: { _id: unknown; sour
   );
 }
 
-export const updateFellowship = async (id: any, data: any) => {
+function holdOverrideReasonFromAdmin(data: any): string {
+  try {
+    return normalizeOverrideReason(
+      data?.studentVisibilitySuppressionReason,
+      'studentVisibilitySuppressionReason',
+    );
+  } catch (error) {
+    throw new BadRequestError(
+      `A holding studentVisibilityOverrideTier needs a reason: ${(error as Error).message}`,
+    );
+  }
+}
+
+function withRecordedHoldReview(
+  safeData: Record<string, any>,
+  data: any,
+  reviewerNetid: string | undefined,
+): Record<string, any> {
+  if (!isHoldingOverrideTier(safeData.studentVisibilityOverrideTier)) return safeData;
+  const reviewer = normalizeReviewerNetid(reviewerNetid);
+  return {
+    ...safeData,
+    studentVisibilitySuppressionReason: holdOverrideReasonFromAdmin(data),
+    studentVisibilityReviewedAt: new Date(),
+    ...(reviewer ? { studentVisibilityReviewedByNetid: reviewer } : {}),
+  };
+}
+
+export const updateFellowship = async (
+  id: any,
+  data: any,
+  options: { reviewerNetid?: string } = {},
+) => {
   const safeId = normalizeFellowshipObjectId(id);
   if (!safeId) throw new ObjectIdError('Did not receive expected id type ObjectId');
   const liftsOverride =
     data !== null && typeof data === 'object' && data.studentVisibilityOverrideTier === null;
 
-  const safeData = filterFellowshipUpdate(data);
+  const safeData = withRecordedHoldReview(
+    filterFellowshipUpdate(data),
+    data,
+    options.reviewerNetid,
+  );
   const restoring =
     safeData.archived === false &&
     (await Fellowship.exists({ _id: safeId, archived: true })) !== null;

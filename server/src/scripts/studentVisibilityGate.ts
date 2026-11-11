@@ -11,6 +11,7 @@ import {
   readStudentVisibilityGateIndexDrift,
   runStudentVisibilityGateForPlans,
   studentVisibilityGateIndexSyncBlocker,
+  studentVisibilityGateHoldsWithoutReasonWarning,
   studentVisibilityGateUnexplainedHeldBlocker,
   type StudentVisibilityGateCollection,
 } from '../services/studentVisibilityGateService';
@@ -180,6 +181,13 @@ async function main() {
     if (options.mode === 'apply') {
       throw new Error(`Refusing to apply student visibility gate: ${unexplainedHeldBlocker}`);
     }
+  }
+
+  const holdsWithoutReasonWarning = studentVisibilityGateHoldsWithoutReasonWarning(
+    report.counts.holdsWithoutRecordedReason,
+  );
+  if (holdsWithoutReasonWarning) {
+    console.warn(`[student-visibility:gate] ${sanitizeLogValue(holdsWithoutReasonWarning)}`);
   }
 
   const indexSync =

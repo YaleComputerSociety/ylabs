@@ -5,6 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { updateFellowship } from '../fellowshipService';
 
 const FUND_ID = new mongoose.Types.ObjectId('000000000000000000004289');
+const HOLD_REASON = 'fixture_hold: the synthetic fund is held for a fixture reason';
 const FUND_KEY = 'student-grants-database:fixture-summer-research-fellowship';
 
 const servableFund = {
@@ -89,11 +90,45 @@ describe('an operator lifts a fellowship visibility override in the admin editor
     expect(await liveOverrideObservations()).toBe(2);
   });
 
-  it('still sets an override an operator names', async () => {
-    await updateFellowship(FUND_ID.toHexString(), {
+  it('still sets an override an operator names, with the reason and the reviewer recorded', async () => {
+    await updateFellowship(
+      FUND_ID.toHexString(),
+      {
+        studentVisibilityOverrideTier: 'operator_review',
+        studentVisibilitySuppressionReason: HOLD_REASON,
+      },
+      { reviewerNetid: 'fixtureop' },
+    );
+
+    expect(await fund()).toMatchObject({
       studentVisibilityOverrideTier: 'operator_review',
+      studentVisibilitySuppressionReason: HOLD_REASON,
+      studentVisibilityReviewedByNetid: 'fixtureop',
+    });
+    expect((await fund())?.studentVisibilityReviewedAt).toBeInstanceOf(Date);
+  });
+
+  it('refuses a hold without a coded reason and leaves the row unchanged (#5856)', async () => {
+    for (const reason of [undefined, '', '   ', 'no code here']) {
+      await expect(
+        updateFellowship(FUND_ID.toHexString(), {
+          studentVisibilityOverrideTier: 'suppressed',
+          studentVisibilitySuppressionReason: reason,
+        }),
+      ).rejects.toMatchObject({ status: 400 });
+    }
+
+    expect(await fund()).toMatchObject({
+      studentVisibilityOverrideTier: 'suppressed',
+      studentVisibilitySuppressionReason: 'fixture operator note',
+    });
+  });
+
+  it('leaves a non-hold override needing no reason', async () => {
+    await updateFellowship(FUND_ID.toHexString(), {
+      studentVisibilityOverrideTier: 'limited_but_safe',
     });
 
-    expect((await fund())?.studentVisibilityOverrideTier).toBe('operator_review');
+    expect((await fund())?.studentVisibilityOverrideTier).toBe('limited_but_safe');
   });
 });

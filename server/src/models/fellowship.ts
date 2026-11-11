@@ -2,6 +2,7 @@
  * Mongoose schema and model for fellowship/funding opportunity records.
  */
 import mongoose from 'mongoose';
+import { registerHoldOverrideReasonGuard } from './holdOverrideReasonGuard';
 import { studentVisibilityFields } from './studentVisibility';
 import { sourceLinkHealthStatuses } from './storedVocabularies';
 
@@ -357,6 +358,8 @@ fellowshipSchema.index(
   { unique: true, partialFilterExpression: { sourceKey: { $type: 'string' } } },
 );
 fellowshipSchema.index({ sourceName: 1, sourceLastVerifiedAt: -1 });
+
+registerHoldOverrideReasonGuard(fellowshipSchema);
 
 export const Fellowship = mongoose.model('Fellowship', fellowshipSchema);
 

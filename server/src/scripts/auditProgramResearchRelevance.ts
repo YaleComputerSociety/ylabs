@@ -42,7 +42,8 @@ interface CliOptions {
   output?: string;
 }
 
-const NON_RESEARCH_SUPPRESSION_REASON = 'non_research_program';
+const NON_RESEARCH_SUPPRESSION_REASON =
+  'non_research_program: the program research relevance audit classified it as not research related';
 
 function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {

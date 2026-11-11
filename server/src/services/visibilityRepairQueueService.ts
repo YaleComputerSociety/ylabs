@@ -28,6 +28,12 @@ import {
   deriveShortDescriptionFromFullDescription,
 } from '../utils/researchEntityDescriptionQuality';
 import { buildResearchEntityQualitySummary } from './researchEntityQuality';
+import { recordAdminAuditEvent, type RecordAdminAuditEventInput } from './adminAuditService';
+import {
+  STUDENT_VISIBILITY_OVERRIDE_AUDIT_ACTIONS,
+  STUDENT_VISIBILITY_OVERRIDE_AUDIT_TARGET_TYPE,
+  withOverrideReasonEntry,
+} from '../scripts/studentVisibilityOverrideCore';
 import {
   repairStageForReasons,
   runStudentVisibilityGate,
@@ -170,6 +176,7 @@ interface RepairDeps {
   updateResearchEntity: (id: string, patch: Record<string, unknown>) => Promise<void>;
   findProgram: (id: string) => Promise<Record<string, any> | null>;
   updateProgram: (id: string, patch: Record<string, unknown>) => Promise<void>;
+  recordOverrideAudit?: (event: RecordAdminAuditEventInput) => Promise<void>;
   runGate: (
     collection: VisibilityReleaseQueueCollection,
     recordIds: string[],
@@ -240,6 +247,75 @@ export const QUEUE_AUTO_SUPPRESSIBLE_REASONS: ReadonlySet<string> = new Set([
   'research_infrastructure_only',
 ]);
 const suppressibleReasons = QUEUE_AUTO_SUPPRESSIBLE_REASONS;
+
+export const REPAIR_QUEUE_SUPPRESSION_REASON_CODE = 'visibility_repair_queue';
+export const REPAIR_QUEUE_AUDIT_ACTOR = 'agent:visibility-repair-queue';
+
+export function repairQueueSuppressionReason(blockerReasons: readonly string[]): string {
+  const suppressible = blockerReasons.filter((reason) => suppressibleReasons.has(reason));
+  return `${REPAIR_QUEUE_SUPPRESSION_REASON_CODE}: the release queue suppressed the row for ${suppressible.join('; ')}`;
+}
+
+const REPAIR_QUEUE_HOLD_AUDIT = {
+  research: {
+    action: STUDENT_VISIBILITY_OVERRIDE_AUDIT_ACTIONS.set,
+    targetType: STUDENT_VISIBILITY_OVERRIDE_AUDIT_TARGET_TYPE,
+  },
+  programs: { action: 'fellowship.visibility_override.set', targetType: 'fellowship' },
+} as const;
+
+function suppressionBlockedAttempt(plan: VisibilityRepairPlan): VisibilityRepairAttempt {
+  return {
+    plan,
+    applied: false,
+    status: 'blocked',
+    patchSummary: [],
+    remainingBlockers: plan.blockerReasons,
+    repairSource: '',
+  };
+}
+
+async function suppressNonLaunchRecord(
+  plan: VisibilityRepairPlan,
+  mode: VisibilityRepairMode,
+  deps: RepairDeps,
+): Promise<VisibilityRepairAttempt> {
+  if (!plan.blockerReasons.some((reason) => suppressibleReasons.has(reason))) {
+    return suppressionBlockedAttempt(plan);
+  }
+  const reason = repairQueueSuppressionReason(plan.blockerReasons);
+  if (mode === 'apply') {
+    const isResearch = plan.collection === 'research';
+    const stored = isResearch
+      ? await deps.findResearchEntity(plan.recordId)
+      : await deps.findProgram(plan.recordId);
+    const patch = {
+      studentVisibilityOverrideTier: 'suppressed',
+      studentVisibilitySuppressionReason: withOverrideReasonEntry(
+        stored?.studentVisibilitySuppressionReason,
+        reason,
+      ),
+      studentVisibilityReviewedAt: new Date(),
+    };
+    if (isResearch) await deps.updateResearchEntity(plan.recordId, patch);
+    else await deps.updateProgram(plan.recordId, patch);
+    await deps.recordOverrideAudit?.({
+      actorNetid: REPAIR_QUEUE_AUDIT_ACTOR,
+      ...REPAIR_QUEUE_HOLD_AUDIT[plan.collection],
+      targetId: plan.recordId,
+      summary: { fields: Object.keys(patch), note: reason, status: 'set' },
+      metadata: { script: 'visibility-repair-queue', queueItemId: plan.queueItemId },
+    });
+  }
+  return {
+    plan,
+    applied: true,
+    status: 'repaired',
+    patchSummary: ['set studentVisibilityOverrideTier=suppressed for non-launch record'],
+    remainingBlockers: [],
+    repairSource: 'visibility-release-queue',
+  };
+}
 
 const textValue = (value: unknown): string =>
   typeof value === 'string' ? value.replace(/\s+/g, ' ').trim() : '';
@@ -1131,30 +1207,7 @@ async function attemptResearchRepair(
   suppressUnsafe = false,
 ): Promise<VisibilityRepairAttempt> {
   if (suppressUnsafe && plan.repairStage === 'suppression') {
-    if (!plan.blockerReasons.some((reason) => suppressibleReasons.has(reason))) {
-      return {
-        plan,
-        applied: false,
-        status: 'blocked',
-        patchSummary: [],
-        remainingBlockers: plan.blockerReasons,
-        repairSource: '',
-      };
-    }
-    if (mode === 'apply') {
-      await deps.updateResearchEntity(plan.recordId, {
-        studentVisibilityOverrideTier: 'suppressed',
-        studentVisibilitySuppressionReason: plan.blockerReasons.join(', '),
-      });
-    }
-    return {
-      plan,
-      applied: true,
-      status: 'repaired',
-      patchSummary: ['set studentVisibilityOverrideTier=suppressed for non-launch record'],
-      remainingBlockers: [],
-      repairSource: 'visibility-release-queue',
-    };
+    return suppressNonLaunchRecord(plan, mode, deps);
   }
 
   if (plan.repairStage === 'pi_identity') {
@@ -1408,30 +1461,7 @@ async function attemptProgramRepair(
   suppressUnsafe = false,
 ): Promise<VisibilityRepairAttempt> {
   if (suppressUnsafe && plan.repairStage === 'suppression') {
-    if (!plan.blockerReasons.some((reason) => suppressibleReasons.has(reason))) {
-      return {
-        plan,
-        applied: false,
-        status: 'blocked',
-        patchSummary: [],
-        remainingBlockers: plan.blockerReasons,
-        repairSource: '',
-      };
-    }
-    if (mode === 'apply') {
-      await deps.updateProgram(plan.recordId, {
-        studentVisibilityOverrideTier: 'suppressed',
-        studentVisibilitySuppressionReason: plan.blockerReasons.join(', '),
-      });
-    }
-    return {
-      plan,
-      applied: true,
-      status: 'repaired',
-      patchSummary: ['set studentVisibilityOverrideTier=suppressed for non-launch record'],
-      remainingBlockers: [],
-      repairSource: 'visibility-release-queue',
-    };
+    return suppressNonLaunchRecord(plan, mode, deps);
   }
 
   if (plan.repairStage !== 'source_description') {
@@ -1638,6 +1668,7 @@ const defaultRepairDeps: RepairDeps = {
     if (!safeId) return;
     await Fellowship.updateOne({ _id: safeId }, { $set: patch });
   },
+  recordOverrideAudit: recordAdminAuditEvent,
   async runGate(collection, recordIds, mode) {
     return runStudentVisibilityGate({ collection, recordIds, mode });
   },

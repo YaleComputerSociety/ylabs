@@ -706,7 +706,9 @@ router.put(
   writeLimit,
   validateObjectId('id'),
   asyncHandler(async (req: Request, res: Response) => {
-    const fellowship = await updateFellowship(req.params.id, req.body?.data);
+    const fellowship = await updateFellowship(req.params.id, req.body?.data, {
+      reviewerNetid: currentActorNetid(req),
+    });
     res.json({ fellowship: adminFellowshipDto(fellowship) });
   }),
 );
