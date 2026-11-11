@@ -133,7 +133,7 @@ const canonicalOfficialProfilePath = (host: string, path: string): string => {
   return sectioned ? `/profile/${sectioned[1]}` : path;
 };
 
-const YSM_ROOT_PROFILE_PATH = /^\/profile\/[a-z0-9-]+$/i;
+const YSM_ROOT_PROFILE_PATH = /^\/profile\/([a-z0-9-]+)$/i;
 
 const YDS_PROFILE_PATH = /^\/profile\/([a-z0-9-]+)$/i;
 
@@ -176,12 +176,13 @@ const officialProfileDestinationPatternParts = (
       caseInsensitive: false,
     };
   }
-  const anySection =
-    host === 'medicine.yale.edu' && YSM_ROOT_PROFILE_PATH.test(path) ? '(?:/[A-Za-z0-9-]+)?' : '';
+  const ysmProfile = host === 'medicine.yale.edu' ? YSM_ROOT_PROFILE_PATH.exec(path) : null;
   const ydsProfile = host === 'divinity.yale.edu' ? YDS_PROFILE_PATH.exec(path) : null;
-  const pathPattern = ydsProfile
-    ? `(?:/profile|${anyCaseLiteral('/faculty-and-research/yds-faculty')})/${escapeRegex(ydsProfile[1])}`
-    : `${anySection}${escapeRegex(path)}`;
+  const pathPattern = ysmProfile
+    ? `(?:/[A-Za-z0-9-]+)?${anyCaseLiteral('/profile')}/${escapeRegex(ysmProfile[1])}`
+    : ydsProfile
+      ? `(?:/profile|${anyCaseLiteral('/faculty-and-research/yds-faculty')})/${escapeRegex(ydsProfile[1])}`
+      : escapeRegex(path);
   return { host, pathPattern: `${pathPattern}/*(?:[?#].*)?$`, caseInsensitive: true };
 };
 

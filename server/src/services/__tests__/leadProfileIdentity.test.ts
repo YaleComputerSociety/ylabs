@@ -805,6 +805,10 @@ describe('officialProfileDestinationIndexedPatterns', () => {
         'http://www.medicine.yale.edu/bbs/profile/synthetic-person',
       ],
       [
+        'https://medicine.yale.edu/profile/synthetic-person',
+        'https://medicine.yale.edu/bbs/Profile/synthetic-person',
+      ],
+      [
         'https://divinity.yale.edu/profile/synthetic-person',
         'https://divinity.yale.edu/Faculty-and-Research/YDS-Faculty/synthetic-person',
       ],

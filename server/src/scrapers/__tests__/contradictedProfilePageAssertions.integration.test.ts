@@ -293,6 +293,33 @@ describe('a page the directory gives to another netid stops speaking for the nam
     expect(planned.map((lead) => lead.personId)).toEqual([String(aliasTwin._id)]);
   });
 
+  it('does not read a listing page that states several addresses as one person page', async () => {
+    const { namesake } = await seedCorpus();
+    const listingPage = 'https://medicine.yale.edu/listing/synthetic-people/';
+    await observe('user', { entityKey: 'netid:listed-one' }, 'department-roster', listingPage, {
+      email: OWNER_ADDRESS,
+    });
+    await observe('user', { entityKey: 'netid:listed-two' }, 'department-roster', listingPage, {
+      email: 'listed.other5693@yale.edu',
+    });
+    await Researcher.updateOne(
+      { _id: namesake._id },
+      {
+        $push: {
+          profileLinks: {
+            kind: 'YALE_OFFICIAL',
+            purpose: 'PRIMARY_IDENTITY',
+            url: listingPage,
+            verifiedAt: new Date('2026-10-01T00:00:00Z'),
+          },
+        },
+      },
+    );
+
+    const plan = await planScreenedPageWithdrawal(`netid:${NAMESAKE_NETID}`, [SCHOOL_PAGE]);
+    expect(plan?.officialLinkUrls).toEqual([MEDICINE_PAGE]);
+  });
+
   it('withdraws nothing on a dry run', async () => {
     const { namesake } = await seedCorpus();
 

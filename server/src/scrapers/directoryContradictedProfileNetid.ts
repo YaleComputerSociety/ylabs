@@ -213,9 +213,9 @@ const directoryNetidsOf = (directory: DirectoryNetidsByAddress): Set<string> => 
 
 /**
  * The netids the Yale directory pairs with the email each person page states about itself,
- * keyed by `normalizeOfficialProfileDestination`. Only an observation read from the page itself
- * counts, so a roster listing that names many people is never read as one page's owner. A page
- * whose email the directory does not know has no entry and decides nothing (#5693).
+ * keyed by `normalizeOfficialProfileDestination`. A page that states more than one address, such
+ * as a roster listing that names many people, is never read as one page's owner. A page whose
+ * email the directory does not know has no entry and decides nothing (#5693).
  */
 export async function profilePageOwnerNetids(
   pageUrls: readonly unknown[],
@@ -242,14 +242,19 @@ export async function profilePageOwnerNetids(
   ).lean()) as Array<{ sourceUrl?: unknown; value?: unknown }>;
   if (statedEmails.length === 0) return none;
   const pairs = directory ?? (await loadDirectoryNetidsByAddress());
+  const addressesByPage = new Map<string, Set<string>>();
   for (const observation of statedEmails) {
     const destination = normalizeOfficialProfileDestination(String(observation.sourceUrl ?? ''));
-    if (!patterns.has(destination)) continue;
-    const netids = pairs.get(normalizedAddress(observation.value));
-    if (!netids || netids.size === 0) continue;
-    const bucket = owners.get(destination) ?? new Set<string>();
-    for (const netid of netids) bucket.add(netid);
-    owners.set(destination, bucket);
+    const address = normalizedAddress(observation.value);
+    if (!patterns.has(destination) || !address) continue;
+    const addresses = addressesByPage.get(destination) ?? new Set<string>();
+    addresses.add(address);
+    addressesByPage.set(destination, addresses);
+  }
+  for (const [destination, addresses] of addressesByPage) {
+    if (addresses.size !== 1) continue;
+    const netids = pairs.get([...addresses][0]);
+    if (netids && netids.size > 0) owners.set(destination, new Set(netids));
   }
   return {
     byPage: owners,
