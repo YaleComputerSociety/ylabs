@@ -220,3 +220,35 @@ describe("the served copy keeps laboratory where it is not the row's own (#4432)
     expect(served.fullDescription).not.toContain('research program');
   });
 });
+
+describe('a stored card that opens mid-sentence (#5685)', () => {
+  const fragmentCard = '” Studies in Fixture Reef Literature.';
+
+  it('never serves the fragment on any card surface; the card comes from the body or is absent', () => {
+    const row = facultyResearchRow({
+      fullDescription: `${twoSentenceBody} Reviewed the essay “A Fixture Reef Survey.” Studies in Fixture Reef Literature. March 2012.`,
+      shortDescription: fragmentCard,
+    });
+    const served = servedResearchEntityCopy(row);
+    const detailCard = servedResearchEntityCardDescription(served);
+    const judgedCard = servedResearchEntityCardWithoutLastResort(served);
+    const representation = buildResearchEntityPublicDescriptionRepresentation({ entity: row });
+
+    for (const card of [detailCard, judgedCard, representation.servedCard]) {
+      expect(card).not.toContain('Fixture Reef Literature');
+    }
+    expect(judgedCard === '' || judgedCard.includes('coral larvae')).toBe(true);
+  });
+
+  it('still serves a card that opens on an elision', () => {
+    const elisionCard =
+      '’90s reef survey data now anchor studies of how coral larvae settle on reefs.';
+    const row = facultyResearchRow({
+      fullDescription: twoSentenceBody,
+      shortDescription: elisionCard,
+    });
+    expect(servedResearchEntityCardWithoutLastResort(servedResearchEntityCopy(row))).toContain(
+      'reef survey data',
+    );
+  });
+});

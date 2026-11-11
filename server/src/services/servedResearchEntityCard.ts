@@ -55,7 +55,7 @@ import {
   storedShortPastRenderingPreferenceIsServable,
 } from '../utils/groundedCardSynthesis';
 import { buildResearchAreasCardSummary } from '../utils/researchEntityDescriptionQuality';
-import { withBalancedLeadingQuotation } from '../utils/cardLeadingQuotation';
+import { cardOpensMidSentence, withBalancedLeadingQuotation } from '../utils/cardLeadingQuotation';
 
 export const MAX_SERVED_RESEARCH_ENTITY_ARRAY_ITEMS = 100;
 export const MAX_SERVED_RESEARCH_ENTITY_TEXT_LENGTH = 5000;
@@ -361,6 +361,11 @@ function servedResearchEntityType(
  * absence. Every other step is shared, so the judged card and the served card can
  * now differ on that documented step alone (#3747).
  */
+const servableStoredCard = (served: Record<string, any>): string => {
+  const card = typeof served.shortDescription === 'string' ? served.shortDescription : '';
+  return cardOpensMidSentence(card) ? '' : card;
+};
+
 export function servedResearchEntityCardWithoutLastResort(
   served: Record<string, any>,
   entityType?: ResearchEntityType,
@@ -368,7 +373,7 @@ export function servedResearchEntityCardWithoutLastResort(
   const resolvedEntityType = servedResearchEntityType(served, entityType);
   return withBalancedLeadingQuotation(
     shortenCardLineToFitBrowseCard(
-      groundedShortDescriptionString(served.shortDescription || '', served, resolvedEntityType) ||
+      groundedShortDescriptionString(servableStoredCard(served), served, resolvedEntityType) ||
         resolveServedShortDescriptionOutcome({
           shortDescription: '',
           fullDescription: served.fullDescription,
@@ -396,7 +401,7 @@ export function servedResearchEntityCardDescription(
   const resolvedEntityType = servedResearchEntityType(served, entityType);
   return withBalancedLeadingQuotation(
     shortenCardLineToFitBrowseCard(
-      groundedShortDescriptionString(served.shortDescription || '', served, resolvedEntityType) ||
+      groundedShortDescriptionString(servableStoredCard(served), served, resolvedEntityType) ||
         servedShortDescriptionFallback(served, resolvedEntityType),
     ),
   );
