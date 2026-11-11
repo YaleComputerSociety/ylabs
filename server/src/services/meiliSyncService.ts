@@ -178,8 +178,9 @@ export const syncEntity = async (entityType: string, doc: any): Promise<boolean>
 };
 
 /**
- * Returns the number of documents whose Meilisearch task succeeded, and 0 when the
- * batch failed, including a batch the index accepted and then rejected (#3720).
+ * Returns the number of documents whose Meilisearch task succeeded, counting a row
+ * excluded from the index once its delete task succeeds, and 0 when the batch failed,
+ * including a batch the index accepted and then rejected (#3720).
  * Callers still get best-effort behaviour by ignoring the value, but one that reports
  * a resync has to read it: inferring success from the input length let a repair script
  * print "20 entities resynced" while the index kept serving the text the corpus no
@@ -201,20 +202,21 @@ export const syncEntities = async (entityType: string, docs: any[]): Promise<num
         'deleteDocuments',
       );
     }
+    const deletedCount = archivedIds.length;
     const liveDocs = docs.filter((doc) => !isArchivedRow(doc));
-    if (liveDocs.length === 0) return 0;
+    if (liveDocs.length === 0) return deletedCount;
     const meiliDocs = config.transformMany
       ? await config.transformMany(liveDocs)
       : (await Promise.all(liveDocs.map(config.transform))).filter(
           (meiliDoc): meiliDoc is Record<string, any> => meiliDoc !== null,
         );
-    if (meiliDocs.length === 0) return 0;
+    if (meiliDocs.length === 0) return deletedCount;
     await confirmDocumentTask(
       index,
       await index.addDocuments(meiliDocs, { primaryKey: config.primaryKey }),
       'addDocuments',
     );
-    return meiliDocs.length;
+    return deletedCount + meiliDocs.length;
   } catch (error) {
     console.error(`Failed to sync ${entityType} batch to Meilisearch:`, sanitizeLogValue(error));
     return 0;

@@ -84,6 +84,7 @@ import {
 } from '../scrapers/accessMaterializer';
 import { SCHOOL_PROFILE_HOSTS } from '../scrapers/orgUnitCanonicalization';
 import { unwrapMicrosoftSafeLinksUrl } from '../utils/safeLinksUrl';
+import { isExcludedFromSearchIndex } from './directoryRemovalReason';
 
 export type StudentVisibilityGateMode = 'dry-run' | 'apply';
 export type StudentVisibilityGateCollection = VisibilityReleaseQueueCollection | 'all';
@@ -1869,7 +1870,7 @@ export async function readStudentVisibilityGateIndexDrift(
   const storedRows = (await ResearchEntity.find({
     _id: { $in: plannedIds.map((id) => new mongoose.Types.ObjectId(id)) },
   })
-    .select('_id studentVisibilityTier')
+    .select('_id studentVisibilityTier archived studentVisibilityReasons')
     .lean()) as unknown as Array<{ _id: unknown; studentVisibilityTier?: string }>;
 
   const divergentTierRecordIds: string[] = [];
@@ -1877,6 +1878,10 @@ export async function readStudentVisibilityGateIndexDrift(
   for (const row of storedRows) {
     const recordId = studentVisibilityGateDocumentId(row._id);
     if (!recordId) continue;
+    if (isExcludedFromSearchIndex(row)) {
+      if (indexedTiers.has(recordId)) divergentTierRecordIds.push(recordId);
+      continue;
+    }
     if (!indexedTiers.has(recordId)) {
       missingFromIndex += 1;
       continue;

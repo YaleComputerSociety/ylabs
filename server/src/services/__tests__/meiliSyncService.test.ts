@@ -357,7 +357,7 @@ describe('an archived row leaves the index (#3449)', () => {
       { _id: archivedId, slug: 'archived-row', archived: true },
     ]);
     expect(mocks.deleteDocuments).toHaveBeenCalledWith([String(archivedId)]);
-    expect(written).toBe(1);
+    expect(written).toBe(2);
   });
 
   it('still deletes when every row in the batch is archived', async () => {
@@ -367,11 +367,11 @@ describe('an archived row leaves the index (#3449)', () => {
       { _id: a, slug: 'x', archived: true },
       { _id: b, slug: 'y', archived: true },
     ]);
-    // Returns 0 because nothing was indexed, but the deletes must still have happened:
-    // an all-archived batch is exactly the shape a dedupe pass produces.
+    // An all-archived batch is exactly the shape a dedupe pass produces, and a caller
+    // must be able to tell its confirmed deletes apart from a refused batch.
     expect(mocks.deleteDocuments).toHaveBeenCalledWith([String(a), String(b)]);
     expect(mocks.addDocuments).not.toHaveBeenCalled();
-    expect(written).toBe(0);
+    expect(written).toBe(2);
   });
 });
 
