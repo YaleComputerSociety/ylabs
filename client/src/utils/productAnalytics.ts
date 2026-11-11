@@ -50,6 +50,31 @@ const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$
 
 const URL_QUERY_OR_FRAGMENT = /((?:[a-z][a-z0-9+.-]*:)?\/[^\s"'<>?#]*)[?#][^\s"'<>]*/gi;
 
+// A URL-valued field loses its whole query and fragment even when it has no path, such as
+// a relative "?q=" link, which URL_QUERY_OR_FRAGMENT cannot see in free text (#5621).
+const URL_VALUE_KEYS = new Set([
+  'href',
+  'src',
+  'action',
+  'url',
+  'attr__href',
+  'attr__src',
+  'attr__action',
+  '$current_url',
+  '$referrer',
+  '$initial_current_url',
+  '$initial_referrer',
+  '$session_entry_url',
+  '$session_entry_referrer',
+  '$external_click_url',
+]);
+// posthog-js escapes a quote inside an elements-chain value but not a backslash, so once a
+// chain holds a backslash no value boundary can be trusted and the chain is dropped whole
+// (withoutElementText). Without one, every quote is a boundary and this match is exact (#5621).
+const URL_ATTRIBUTE_IN_CHAIN = /(?<![A-Za-z0-9_])((?:attr__)?(?:href|src|action))="([^"]*)"/g;
+const withoutUrlQuery = (value: string) => value.replace(/[?#][\s\S]*$/, '');
+const SEARCH_ENGINE_PROPERTY = /(?:^\$?|_)(?:ph_keyword|search_engine)$/;
+
 export const createRedactor = (netId?: string) => {
   const trimmedNetId = netId?.trim();
   const netIdPattern = trimmedNetId
@@ -57,27 +82,36 @@ export const createRedactor = (netId?: string) => {
     : null;
 
   const redactString = (value: string) => {
-    const withoutQueries = value.replace(URL_QUERY_OR_FRAGMENT, '$1');
+    const withoutQueries = value
+      .replace(
+        URL_ATTRIBUTE_IN_CHAIN,
+        (_match, name: string, url: string) => `${name}="${withoutUrlQuery(url)}"`,
+      )
+      .replace(URL_QUERY_OR_FRAGMENT, '$1');
     return netIdPattern
       ? withoutQueries.replace(netIdPattern, (_match, lead: string) => `${lead}${REDACTED}`)
       : withoutQueries;
   };
 
-  const redactValue = (value: unknown): unknown => {
-    if (typeof value === 'string') return redactString(value);
-    if (Array.isArray(value)) return value.map(redactValue);
+  const redactUrl = (value: string) => redactString(withoutUrlQuery(value));
+
+  const redactValue = (value: unknown, key?: string): unknown => {
+    if (typeof value === 'string') {
+      return key && URL_VALUE_KEYS.has(key.toLowerCase()) ? redactUrl(value) : redactString(value);
+    }
+    if (Array.isArray(value)) return value.map((entry) => redactValue(entry));
     if (value && typeof value === 'object') {
       return Object.fromEntries(
-        Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
-          redactString(key),
-          redactValue(entry),
+        Object.entries(value as Record<string, unknown>).map(([entryKey, entry]) => [
+          redactString(entryKey),
+          redactValue(entry, entryKey),
         ]),
       );
     }
     return value;
   };
 
-  return { redactString, redactValue };
+  return { redactString, redactUrl, redactValue };
 };
 
 export const createProductAnalyticsGate = () => {
@@ -132,10 +166,37 @@ const withoutElementText = (properties: Properties): Properties => {
       ),
     );
   }
+  if (typeof cleaned.$elements_chain === 'string' && cleaned.$elements_chain.includes('\\')) {
+    delete cleaned.$elements_chain;
+  }
   if (typeof cleaned.$elements_chain === 'string') {
     cleaned.$elements_chain = cleaned.$elements_chain
       .replace(TEXT_ATTRIBUTE_IN_CHAIN, '')
       .replace(/(^|[:"])text="(?:[^"\\]|\\.)*"/g, '$1');
+  }
+  return cleaned;
+};
+
+// posthog-js adds the plain search term from a search-engine referrer to every event,
+// with no URL around it for the query scrubber to find (#5621).
+const withoutSearchEngineKeyword = (properties: Properties): Properties => {
+  const cleaned: Properties = { ...properties };
+  Object.keys(cleaned)
+    .filter((key) => SEARCH_ENGINE_PROPERTY.test(key))
+    .forEach((key) => delete cleaned[key]);
+  return cleaned;
+};
+
+// An exception message is free text and can quote what a student typed, so only the
+// exception's type is sent, never its message (#5621).
+const withoutExceptionMessages = (properties: Properties): Properties => {
+  const cleaned: Properties = { ...properties };
+  delete cleaned.$exception_message;
+  if (Array.isArray(cleaned.$exception_list)) {
+    cleaned.$exception_list = cleaned.$exception_list.map((exception: Record<string, unknown>) => ({
+      ...exception,
+      value: typeof exception?.type === 'string' ? exception.type : 'Error',
+    }));
   }
   return cleaned;
 };
@@ -159,12 +220,17 @@ export const buildPostHogConfig = ({
   distinctId,
   isOpen,
 }: PostHogConfigInput): Partial<PostHogConfig> => {
-  const { redactString, redactValue } = createRedactor(netId);
+  const { redactString, redactUrl, redactValue } = createRedactor(netId);
   const identifiedAs = opaqueProductAnalyticsId(distinctId);
 
   const beforeSend = (event: CaptureResult | null): CaptureResult | null => {
     if (!event || !isOpen() || PERSON_EVENTS.has(event.event)) return null;
-    if (event.event === '$snapshot') return event;
+    if (event.event === '$snapshot') {
+      return {
+        ...event,
+        properties: redactValue(withoutSearchEngineKeyword(event.properties)) as Properties,
+      };
+    }
     const personProperties =
       event.event === PERSON_PROPERTY_EVENT && identifiedAs
         ? allowedPersonProperties(event.$set ?? event.properties?.$set)
@@ -172,7 +238,9 @@ export const buildPostHogConfig = ({
     if (event.event === PERSON_PROPERTY_EVENT && !personProperties) return null;
     const sanitized: CaptureResult = {
       ...event,
-      properties: redactValue(withoutElementText(event.properties)) as Properties,
+      properties: redactValue(
+        withoutExceptionMessages(withoutSearchEngineKeyword(withoutElementText(event.properties))),
+      ) as Properties,
     };
     delete sanitized.$set;
     delete sanitized.$set_once;
@@ -189,7 +257,7 @@ export const buildPostHogConfig = ({
   ): CapturedNetworkRequest | null => {
     const masked: CapturedNetworkRequest = {
       ...request,
-      name: redactString(String(request.name ?? '')),
+      name: redactUrl(String(request.name ?? '')),
     };
     delete masked.requestBody;
     delete masked.responseBody;
@@ -201,7 +269,7 @@ export const buildPostHogConfig = ({
   const maskAttribute = (name: string, value: string) => {
     const attribute = name.toLowerCase();
     if (TEXT_BEARING_ATTRIBUTES.includes(attribute)) return value ? '*' : value;
-    return redactString(value);
+    return URL_VALUE_KEYS.has(attribute) ? redactUrl(value) : redactString(value);
   };
 
   return {
@@ -244,6 +312,7 @@ export const buildPostHogConfig = ({
       collectFonts: false,
       maskAttributeFn: maskAttribute,
       maskCapturedNetworkRequestFn: maskCapturedNetworkRequest,
+      compress_events: false,
     },
     disable_external_dependency_loading: true,
     disable_surveys: true,
@@ -327,7 +396,7 @@ export const startProductAnalytics = (
   target: PostHogTarget | null = resolvePostHogTarget(readPostHogEnv()),
   load: () => Promise<PostHog> = loadPostHog,
 ): boolean => {
-  if (!session.allowed || !target) {
+  if (!session.allowed || !target || !opaqueProductAnalyticsId(session.distinctId)) {
     stopProductAnalytics();
     return false;
   }
@@ -346,9 +415,7 @@ export const startProductAnalytics = (
           isOpen: gate.isOpen,
         }),
       );
-      if (opaqueProductAnalyticsId(session.distinctId)) {
-        instance.setPersonProperties({ user_type: userTypeBucket(session.userType) });
-      }
+      instance.setPersonProperties({ user_type: userTypeBucket(session.userType) });
       const queued = pendingJourneyEvents;
       pendingJourneyEvents = [];
       queued.forEach(({ name, properties }) => instance.capture(name, properties));
