@@ -145,6 +145,9 @@ An event emitted before the session check answers is held in memory and sent onc
 - Autocapture never captures an input value (`capture_value_css_selector_allowlist: []`), copied text, element text (`mask_all_text`), or a text-bearing attribute such as `aria-label`, `title`, `alt` or `placeholder`.
 - Replay masks every input (`maskAllInputs: true`) and all text (`maskTextSelector: '*'`), replaces text-bearing attributes with `*`, records no request or response body or header, and records no console output, structured data or cross-origin frame.
 - Every URL the SDK sends, in events, replay page metadata, element `href` attributes and network timing entries, loses its query string and fragment, so a search query or filter in `?q=` never leaves the page; the URL path is kept, so a recording shows which public research page was open.
+- A URL-valued field (`href`, `src`, `action`, `$current_url`, the referrer and session-entry URLs, and the `href` entries of `$elements_chain`) loses its whole query and fragment even with no path, such as a relative `?q=` link (#5621).
+- `$snapshot` replay events go through the same `createRedactor` in `before_send` as every other event, with the SDK's replay compression off (`compress_events: false`) so the redactor sees the recorded DOM; this is defence in depth over the SDK's own `maskCapturedNetworkRequestFn` and `maskAttributeFn` hooks (#5621).
+- The search term posthog-js reads from a search-engine referrer (`ph_keyword`, `$session_entry_ph_keyword`) and the engine name (`$search_engine`, `$session_entry_search_engine`) are deleted from every event (#5621).
 - The signed-in netid is redacted from every string the SDK sends, as a backstop for a path or attribute that carries one.
 - Nothing is written to a cookie, `localStorage` or `sessionStorage` (`persistence: 'memory'`), so a page reload starts a new recording.
 - A browser that sends Do Not Track is not measured (`respect_dnt: true`).
@@ -155,7 +158,7 @@ An event emitted before the session check answers is held in memory and sent onc
 PostHog receives `accounts.productAnalyticsId`, a random version 4 UUID that `ensureProductAnalyticsId` in `server/src/services/productAnalyticsIdentityService.ts` assigns on the account's first Production session check that PostHog may measure, and returns in `GET /api/check` as `productAnalyticsId`.
 The client passes it as the bootstrapped, identified distinct ID and never calls `identify`, so person profiles exist only for these IDs.
 A profile carries one person property, `user_type`, bucketed to `undergraduate`, `graduate`, `student`, `faculty`, `professor`, `staff` or `other`; `before_send` drops every other `$set`, every `$set_once`, and every identify, alias and group event.
-An account the server cannot give an ID to is measured anonymously, with no person profile.
+An account the server cannot give an ID to is not measured at all: `GET /api/check` answers `productAnalytics: false` and the client starts PostHog only with a well-formed ID, so no session falls back to an SDK-assigned anonymous ID that account deletion could not find (#5621).
 The ID is generated, not derived from the netid or the account `_id`, so it cannot be reversed outside the database, and accounts are environment-local, so it exists only in Production.
 An admin resolves it to a netid with the "PostHog ID Lookup" on `/analytics`, backed by the admin-only `GET /api/analytics/product-analytics-ids/:productAnalyticsId`, so the netid itself never leaves y/labs.
 No other system may receive the ID: error reports, logs and `analytics_events` carry none.

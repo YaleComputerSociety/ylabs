@@ -802,7 +802,7 @@ const productAnalyticsSessionFields = async (
     const productAnalyticsId = await ensureProductAnalyticsId(user.netId);
     return productAnalyticsId
       ? { productAnalytics: true, productAnalyticsId }
-      : { productAnalytics: true };
+      : { productAnalytics: false };
   } catch (error) {
     captureServerError(
       error instanceof Error ? error : new Error('product analytics id lookup failed'),
