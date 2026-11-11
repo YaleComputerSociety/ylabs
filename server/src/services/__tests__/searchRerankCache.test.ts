@@ -44,6 +44,15 @@ describe('searchRerankCacheQueryKey', () => {
     );
   });
 
+  it('keys an acronym searched literally as the acronym, never as its phrase (#5169)', () => {
+    const literal = searchRerankCacheQueryKey('NLP', {}, { rewriteAcronym: false });
+    expect(literal).toBe(JSON.stringify(['nlp', []]));
+    expect(literal).not.toBe(searchRerankCacheQueryKey('NLP', {}));
+    expect(searchRerankCacheQueryKey('coastal ecology', {}, { rewriteAcronym: false })).toBe(
+      searchRerankCacheQueryKey('coastal ecology', {}),
+    );
+  });
+
   it('serializes the student filters in a stable order whatever order they were chosen in', () => {
     const chosen = searchRerankCacheQueryKey('ecology', {
       departments: ['Physics', 'Biology'],

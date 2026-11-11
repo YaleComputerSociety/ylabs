@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Research, { __resetResearchPageSnapshotForTests } from '../research';
 import HomeButton from '../../components/HomeButton';
 import axios from '../../utils/axios';
+import { expectNoAxeViolations } from '../../testUtils/axe';
 import ConfigContext, { defaultConfigContext } from '../../contexts/ConfigContext';
 import UserContext, { defaultUserContext } from '../../contexts/UserContext';
 import type { User } from '../../types/types';
@@ -72,6 +73,7 @@ const mockSearchResponses = (
       browseQuality?: string;
       qualityFilters?: string[];
       correctSpelling?: boolean;
+      rewriteAcronym?: boolean;
     },
   ) => unknown,
 ) => {
@@ -3906,5 +3908,97 @@ describe('Research spelling correction notice', () => {
       );
     });
     expect(document.body.textContent).not.toContain('Spelling corrected');
+  });
+});
+
+describe('Research acronym rewrite notice (#5169)', () => {
+  const languageEntity = {
+    ...researchEntity,
+    _id: 'language-1',
+    slug: 'synthetic-language-lab',
+    name: 'Synthetic Language Lab',
+    displayName: 'Synthetic Language Lab',
+  };
+  const literalEntity = {
+    ...researchEntity,
+    _id: 'literal-1',
+    slug: 'synthetic-acronym-lab',
+    name: 'Synthetic Acronym Lab',
+    displayName: 'Synthetic Acronym Lab',
+  };
+
+  const serveAcronymSearch = (searchRequests: Array<Record<string, unknown>>) =>
+    mockSearchResponses((url, body) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      searchRequests.push(body as Record<string, unknown>);
+      if (body.q !== 'NLP') return researchSearchResponse([languageEntity]);
+      if (body.rewriteAcronym === false) {
+        return researchSearchResponse([literalEntity], { estimatedTotalHits: 1 });
+      }
+      return researchSearchResponse([languageEntity], {
+        estimatedTotalHits: 1,
+        acronymRewrite: { originalQuery: 'NLP', rewrittenQuery: 'natural language processing' },
+      });
+    });
+
+  it('names the phrase searched and lets the student search the acronym as typed', async () => {
+    const searchRequests: Array<Record<string, unknown>> = [];
+    serveAcronymSearch(searchRequests);
+
+    renderResearch(departments, ['/research?q=NLP']);
+
+    expect(await screen.findByRole('heading', { name: 'Synthetic Language Lab' })).toBeTruthy();
+    expect(screen.getByRole('status').textContent).toContain(
+      "result for 'natural language processing'",
+    );
+    expect(document.body.textContent).toContain(
+      'Searching for natural language processing. Search instead for NLP',
+    );
+    expect(document.body.textContent).not.toContain('Spelling corrected');
+
+    fireEvent.click(screen.getByRole('button', { name: 'NLP' }));
+
+    expect(document.activeElement).toBe(screen.getByRole('status'));
+    expect(await screen.findByRole('heading', { name: 'Synthetic Acronym Lab' })).toBeTruthy();
+    expect(searchRequests.at(-1)).toEqual(
+      expect.objectContaining({ q: 'NLP', rewriteAcronym: false }),
+    );
+    expect(searchRequests.at(-1)).not.toHaveProperty('correctSpelling');
+    expect(screen.getByRole('status').textContent).toContain("result for 'NLP'");
+    expect(document.body.textContent).not.toContain('Searching for natural language processing');
+
+    fireEvent.click(screen.getByRole('combobox', { name: /Sort research/ }));
+    fireEvent.click(screen.getByRole('option', { name: 'Name' }));
+
+    await waitFor(() => {
+      expect(searchRequests.at(-1)).toEqual(
+        expect.objectContaining({ q: 'NLP', sortBy: 'name', rewriteAcronym: false }),
+      );
+    });
+    expect(document.body.textContent).not.toContain('Searching for natural language processing');
+  });
+
+  it('shows no rewrite notice for a search that was not rewritten', async () => {
+    const searchRequests: Array<Record<string, unknown>> = [];
+    serveAcronymSearch(searchRequests);
+
+    renderResearch(departments, ['/research?q=coastal%20ecology']);
+
+    expect(await screen.findByRole('heading', { name: 'Synthetic Language Lab' })).toBeTruthy();
+    expect(screen.getByRole('status').textContent).toContain("for 'coastal ecology'");
+    expect(document.body.textContent).not.toContain('Searching for');
+    expect(document.body.textContent).not.toContain('Search instead for');
+    expect(searchRequests.every((request) => !('rewriteAcronym' in request))).toBe(true);
+  });
+
+  it('has no blocking accessibility violations with the notice shown', async () => {
+    serveAcronymSearch([]);
+
+    renderResearch(departments, ['/research?q=NLP']);
+
+    expect(await screen.findByRole('heading', { name: 'Synthetic Language Lab' })).toBeTruthy();
+    const results = screen.getByRole('region', { name: 'Search results' });
+    expect(within(results).getByRole('button', { name: 'NLP' })).toBeTruthy();
+    await expectNoAxeViolations(results);
   });
 });

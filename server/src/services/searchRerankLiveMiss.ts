@@ -32,6 +32,7 @@ export interface SearchRerankLiveMissJobRequest {
   queryKey: string;
   query: string;
   filters: ResearchGroupFilterInput;
+  rewriteAcronym?: false;
 }
 
 export type SearchRerankLiveMissGate =

@@ -473,6 +473,7 @@ describe('researchGroupController', () => {
         includeFacets: true,
         embeddingSpendKey: expect.any(String),
         correctSpelling: true,
+        rewriteAcronym: true,
         resolveFilterValues: true,
         rerankLiveMissClient: { ipKey: expect.any(String), sessionKey: expect.any(String) },
       },
@@ -516,6 +517,7 @@ describe('researchGroupController', () => {
         includeFacets: true,
         embeddingSpendKey: expect.any(String),
         correctSpelling: true,
+        rewriteAcronym: true,
         resolveFilterValues: true,
         rerankLiveMissClient: { ipKey: expect.any(String), sessionKey: expect.any(String) },
       },
@@ -541,6 +543,28 @@ describe('researchGroupController', () => {
       24,
       {},
       expect.objectContaining({ correctSpelling: false }),
+    );
+  });
+
+  it('keeps a typed acronym literal when the student asks to search the acronym itself', async () => {
+    mocks.searchResearchGroupsViaMeili.mockResolvedValue({
+      researchEntities: [],
+      estimatedTotalHits: 0,
+      page: 1,
+      pageSize: 24,
+    });
+    const req = { body: { q: 'NLP', rewriteAcronym: false } } as any;
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+    await searchResearchGroups(req, res);
+
+    expect(mocks.searchResearchGroupsViaMeili).toHaveBeenCalledWith(
+      'NLP',
+      expect.any(Object),
+      1,
+      24,
+      {},
+      expect.objectContaining({ rewriteAcronym: false, correctSpelling: true }),
     );
   });
 
@@ -581,6 +605,7 @@ describe('researchGroupController', () => {
         includeFacets: true,
         embeddingSpendKey: expect.any(String),
         correctSpelling: true,
+        rewriteAcronym: true,
         resolveFilterValues: true,
         rerankLiveMissClient: { ipKey: expect.any(String), sessionKey: expect.any(String) },
       },
