@@ -172,7 +172,11 @@ describe('chunked materialization reads per chunk and projects what row-by-row d
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-    await Promise.all([Observation.init(), ResearchEntity.init(), RoleAssignment.init()]);
+    await Promise.all([
+      Observation.createIndexes(),
+      ResearchEntity.createIndexes(),
+      RoleAssignment.createIndexes(),
+    ]);
   });
 
   afterAll(async () => {

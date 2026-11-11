@@ -13,7 +13,7 @@ describe('two research rows materialized at once naming the same new lead mint o
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
-    await Promise.all([Researcher.init(), RoleAssignment.init()]);
+    await Promise.all([Researcher.createIndexes(), RoleAssignment.createIndexes()]);
   });
 
   afterAll(async () => {

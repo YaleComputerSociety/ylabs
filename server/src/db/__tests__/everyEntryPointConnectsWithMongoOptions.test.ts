@@ -31,6 +31,14 @@ const sourceFiles = (dir: string): string[] =>
     return isSource && !isTest ? [fullPath] : [];
   });
 
+// The test harness turns both settings off for every suite (#5722), which is the value
+// db/connections.ts enforces, so only that file shape is allowed; any other value or file is not.
+const TEST_HARNESS_DIRECTORY = `test${path.sep}`;
+const turnsSchemaMutationOffInTestHarness = (fileName: string, value: ts.Node | undefined) =>
+  fileName.startsWith(TEST_HARNESS_DIRECTORY) &&
+  value !== undefined &&
+  value.kind === ts.SyntaxKind.FalseKeyword;
+
 const isMongooseSpecifier = (node: ts.Node): boolean =>
   ts.isStringLiteral(node) && node.text === 'mongoose';
 
@@ -84,7 +92,8 @@ function unguardedMongoConnectSites(fileName: string, text: string): string[] {
           member === 'set' &&
           setting &&
           ts.isStringLiteral(setting) &&
-          SCHEMA_MUTATING_SETTINGS.has(setting.text)
+          SCHEMA_MUTATING_SETTINGS.has(setting.text) &&
+          !turnsSchemaMutationOffInTestHarness(fileName, node.arguments[1])
         ) {
           at(node, `sets mongoose ${setting.text} globally`);
         }
@@ -126,6 +135,27 @@ describe('every entry point connects with mongoOptions (#3932)', () => {
       'probe.ts:5 calls mongoose.createConnection',
       'probe.ts:6 sets mongoose autoIndex globally',
       'probe.ts:7 imports mongoose dynamically',
+    ]);
+  });
+
+  it('lets only the test harness turn the schema-mutating defaults off, and nothing else (#5722)', () => {
+    const harness = path.join('test', 'hermeticEnvironment.ts');
+    const source = [
+      "import mongoose from 'mongoose';",
+      "mongoose.set('autoIndex', false);",
+      "mongoose.set('autoCreate', false);",
+      "mongoose.set('autoIndex', true);",
+      'await mongoose.connect(url);',
+    ].join('\n');
+    expect(unguardedMongoConnectSites(harness, source)).toEqual([
+      `${harness}:4 sets mongoose autoIndex globally`,
+      `${harness}:5 calls mongoose.connect`,
+    ]);
+    expect(unguardedMongoConnectSites(path.join('scripts', 'probe.ts'), source)).toEqual([
+      `${path.join('scripts', 'probe.ts')}:2 sets mongoose autoIndex globally`,
+      `${path.join('scripts', 'probe.ts')}:3 sets mongoose autoCreate globally`,
+      `${path.join('scripts', 'probe.ts')}:4 sets mongoose autoIndex globally`,
+      `${path.join('scripts', 'probe.ts')}:5 calls mongoose.connect`,
     ]);
   });
 

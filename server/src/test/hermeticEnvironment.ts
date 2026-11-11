@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
+import mongoose from 'mongoose';
 import { vi } from 'vitest';
 import { applyMongoMemoryLaunchBudget } from './mongoMemoryLaunchBudget';
 
@@ -150,3 +151,14 @@ vi.mock('../utils/meiliClient', () => ({
 applyEnvironmentFence(process.env);
 
 applyMongoMemoryLaunchBudget();
+
+/**
+ * A suite left on mongoose's defaults ran a connection mode production never uses, and paid for
+ * it: connecting made every model its imports registered build its collection and indexes, so the
+ * one index a suite needed queued behind the whole corpus schema (#5709, #5722). A suite that
+ * relies on an index now builds it explicitly, so the reliance is visible in the suite. This sets
+ * mongoose directly rather than importing db/connections, because a module imported here is shared
+ * with every suite and would defeat a suite's own mock of that module.
+ */
+mongoose.set('autoIndex', false);
+mongoose.set('autoCreate', false);
