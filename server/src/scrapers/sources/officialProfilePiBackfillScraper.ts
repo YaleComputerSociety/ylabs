@@ -590,6 +590,7 @@ function visibleBioTarget(
   const target = userIdentityMatchEntity(user, nameMatchedUrls);
   return {
     ...target,
+    ...(user.orcid ? { storedOrcid: user.orcid } : {}),
     visibleBioProfileUrls: identitySafeVisibleBioProfileUrls(target, user, attachedUrls, evidence),
   };
 }
@@ -3127,10 +3128,35 @@ const letterTokens = (value: string): string[] =>
     .map((token) => token.replace(/\d+$/, ''))
     .filter((token) => /^[a-z]+$/.test(token));
 
-function initialsAgreeWithNetid(tokens: string[], netidLetters: string): boolean {
-  if (!netidLetters || tokens.length === 0) return false;
-  if (tokens[0][0] !== netidLetters[0]) return false;
-  return tokens.length === 1 || netidLetters.indexOf(tokens[tokens.length - 1][0], 1) > 0;
+const nameWordParts = (value: string): string[][] =>
+  value
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .split(/[\s._,]+/)
+    .map((word) =>
+      word
+        .split(/[-'\u2019]+/)
+        .map((part) => part.replace(/[^a-z]/g, ''))
+        .filter(Boolean),
+    )
+    .filter((parts) => parts.length > 0);
+
+/**
+ * Whether a netid's letters read as this name's initials: the given-name initial first, then
+ * the initial of any later name part. Every part of a hyphenated or spaced surname, a particle
+ * and a middle name each count, because a netid may take its surname letter from any of them.
+ */
+function initialsAgreeWithNetid(name: string, netidLetters: string): boolean {
+  const words = nameWordParts(name);
+  if (!netidLetters || words.length === 0) return false;
+  const [[given, ...givenRest], ...laterWords] = words;
+  if (given[0] !== netidLetters[0]) return false;
+  const laterInitials = [...givenRest, ...laterWords.flat()].map((part) => part[0]);
+  return (
+    laterInitials.length === 0 ||
+    laterInitials.some((initial) => netidLetters.indexOf(initial, 1) > 0)
+  );
 }
 
 /**
@@ -3154,6 +3180,7 @@ export interface VisibleBioNetidInitialsCheck {
   addressAgrees: boolean;
   directoryWitness: boolean;
   wholeNameAddressWitness: boolean;
+  orcidWitness: boolean;
   refused: boolean;
 }
 
@@ -3169,19 +3196,20 @@ export function visibleBioNetidInitialsCheck(
   identity: { displayName?: string; email?: string },
   person: Record<string, any>,
   directory: DirectoryNetidsByAddress | undefined,
+  orcidWitness = false,
 ): VisibleBioNetidInitialsCheck {
   const netid = textValue(person.netid).toLowerCase();
   const netidLetters = netid.match(/^[a-z]+/)?.[0] ?? '';
   const email = textValue(identity.email).toLowerCase();
   const localPart = email.split('@')[0] || '';
   const pageNameAgrees = initialsAgreeWithNetid(
-    letterTokens(normalizeName(textValue(identity.displayName))),
+    normalizeName(textValue(identity.displayName)),
     netidLetters,
   );
   const addressAgrees =
     !email ||
     (Boolean(netid) && localPart.includes(netid)) ||
-    initialsAgreeWithNetid(letterTokens(localPart), netidLetters);
+    initialsAgreeWithNetid(localPart.replace(/\d+/g, ''), netidLetters);
   const directoryWitness = directoryPairsAddressWithEntityNetid(email, person, directory);
   const wholeNameAddressWitness = addressLocalPartWhollyNamesPerson(
     email,
@@ -3192,8 +3220,51 @@ export function visibleBioNetidInitialsCheck(
     addressAgrees,
     directoryWitness,
     wholeNameAddressWitness,
-    refused: !pageNameAgrees && !addressAgrees && !directoryWitness && !wholeNameAddressWitness,
+    orcidWitness,
+    refused:
+      !pageNameAgrees &&
+      !addressAgrees &&
+      !directoryWitness &&
+      !wholeNameAddressWitness &&
+      !orcidWitness,
   };
+}
+
+/**
+ * Whether the page states the person's stored ORCID and some other page already asserted that
+ * ORCID about this person. An observation read from this same page is the page vouching for
+ * itself, so it never counts, and neither does a stored address, which can have been copied
+ * from this page (#5708).
+ */
+export async function orcidWitnessedByAnotherPage(
+  identity: { orcid?: string; canonicalUrl?: string },
+  person: Record<string, any>,
+  profileUrl: string,
+): Promise<boolean> {
+  const pageOrcid = normalizeOrcid(identity.orcid);
+  const netid = textValue(person.netid).toLowerCase();
+  if (!pageOrcid || !netid || normalizeOrcid(person.storedOrcid) !== pageOrcid) return false;
+  const researcherId = idValue(person._id);
+  const observations = (await Observation.find({
+    field: 'orcid',
+    superseded: { $ne: true },
+    'rollback.rolledBackAt': { $exists: false },
+    $or: [
+      { entityKey: `netid:${netid}` },
+      ...(mongoose.isValidObjectId(researcherId) ? [{ entityId: researcherId }] : []),
+    ],
+  })
+    .select('value sourceUrl')
+    .lean()) as Array<Record<string, unknown>>;
+  const thisPage = new Set(
+    [profileUrl, identity.canonicalUrl].map(normalizeOfficialProfileUrl).filter(Boolean),
+  );
+  return observations.some(
+    (observation) =>
+      normalizeOrcid(observation.value) === pageOrcid &&
+      Boolean(textValue(observation.sourceUrl)) &&
+      !thisPage.has(normalizeOfficialProfileUrl(observation.sourceUrl)),
+  );
 }
 
 function nameMatchesEntity(displayName: string, entity: Record<string, any>): boolean {
@@ -5371,7 +5442,8 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
             const unwitnessedNetidMismatch =
               !!identity &&
               !!visibleExistingUser &&
-              visibleBioNetidInitialsCheck(identity, entity, directoryNetidsByAddress).refused;
+              visibleBioNetidInitialsCheck(identity, entity, directoryNetidsByAddress).refused &&
+              !(await orcidWitnessedByAnotherPage(identity, entity, profileUrl));
             if (identity && unwitnessedNetidMismatch) {
               ctx.log('Refused an unwitnessed netid-initials mismatch', {
                 entityId: officialProfileDocumentId(entity._id),

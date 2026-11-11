@@ -321,6 +321,7 @@ describe('visible profile bio backfill selects by the person own official link (
       displayName: string,
       url: string,
       email: string,
+      orcid?: string,
     ) => {
       const entity = await ResearchEntity.create({
         slug: 'fixture-initials-lab',
@@ -331,7 +332,7 @@ describe('visible profile bio backfill selects by the person own official link (
       });
       const researcher = await Researcher.create({
         displayName,
-        identifiers: { netid, email },
+        identifiers: { netid, email, ...(orcid ? { orcid } : {}) },
         profileLinks: [officialLink(url)],
         status: 'ACTIVE',
         archived: false,
@@ -346,15 +347,84 @@ describe('visible profile bio backfill selects by the person own official link (
       });
     };
 
-    const emittedFrom = async (pageName: string, url: string, email: string) => {
+    const emittedFrom = async (pageName: string, url: string, email: string, orcid = '') => {
       const emitted: ObservationInput[] = [];
       await scraperReading(async (fetched) =>
-        personPageDeclaringAddress(fetched, pageName, email),
+        personPageDeclaringAddress(fetched, pageName, email).replace(
+          '</main>',
+          orcid ? `<a href="https://orcid.org/${orcid}">ORCID</a></main>` : '</main>',
+        ),
       ).run(visibleBioContext(emitted));
       return emitted;
     };
 
-    it('refuses identity fields without a witness', async () => {
+    const FIXTURE_ORCID = '0000-0002-5708-0019';
+    const OTHER_PAGE_URL = 'https://ysph.yale.edu/profile/devon-fixture/';
+
+    const seedOrcidObservation = async (netid: string, sourceUrl: string) =>
+      Observation.create({
+        entityType: 'user',
+        entityKey: `netid:${netid}`,
+        field: 'orcid',
+        value: FIXTURE_ORCID,
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: 'ysph-faculty-fixture',
+        sourceUrl,
+        confidence: 0.9,
+        observedAt: new Date('2026-11-01T00:00:00Z'),
+        superseded: false,
+      });
+
+    it('emits when the netid takes its initials from a hyphenated surname', async () => {
+      const hyphenNetid = 'aj5708';
+      const hyphenAddress = 'kestrel.fixture5708@yale.edu';
+      await seedNetidLead(hyphenNetid, 'Avery Jules-Fixture', RENAMED_PAGE_URL, hyphenAddress);
+
+      const emitted = await emittedFrom('Avery Jules-Fixture', RENAMED_PAGE_URL, hyphenAddress);
+
+      expect(emitted.filter((o) => o.field === 'email')).toEqual([
+        expect.objectContaining({ entityKey: `netid:${hyphenNetid}`, value: hyphenAddress }),
+      ]);
+    });
+
+    it('emits when another page already asserted the ORCID this page states', async () => {
+      await seedNetidLead(
+        UNRELATED_NETID,
+        'Devon Fixture',
+        RENAMED_PAGE_URL,
+        OTHER_ADDRESS,
+        FIXTURE_ORCID,
+      );
+      await seedOrcidObservation(UNRELATED_NETID, OTHER_PAGE_URL);
+
+      const emitted = await emittedFrom(
+        'Devon Fixture',
+        RENAMED_PAGE_URL,
+        OTHER_ADDRESS,
+        FIXTURE_ORCID,
+      );
+
+      expect(emitted.filter((o) => o.field === 'email')).toEqual([
+        expect.objectContaining({ entityKey: `netid:${UNRELATED_NETID}`, value: OTHER_ADDRESS }),
+      ]);
+    });
+
+    it('refuses when the only ORCID assertion was read from this same page', async () => {
+      await seedNetidLead(
+        UNRELATED_NETID,
+        'Devon Fixture',
+        RENAMED_PAGE_URL,
+        OTHER_ADDRESS,
+        FIXTURE_ORCID,
+      );
+      await seedOrcidObservation(UNRELATED_NETID, RENAMED_PAGE_URL);
+
+      await expect(
+        emittedFrom('Devon Fixture', RENAMED_PAGE_URL, OTHER_ADDRESS, FIXTURE_ORCID),
+      ).resolves.toEqual([]);
+    });
+
+    it('refuses identity fields without a witness, a stored address copied from the page included', async () => {
       await seedNetidLead(UNRELATED_NETID, 'Devon Fixture', RENAMED_PAGE_URL, OTHER_ADDRESS);
 
       await expect(emittedFrom('Devon Fixture', RENAMED_PAGE_URL, OTHER_ADDRESS)).resolves.toEqual(
