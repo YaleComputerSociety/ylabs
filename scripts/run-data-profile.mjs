@@ -11,7 +11,7 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 
 const LOCAL_PROFILE_DATABASE = 'ylabs_local';
 
-const PROFILES = {
+export const PROFILES = {
   local: {
     file: path.join(REPO_ROOT, 'server', '.env.local'),
     missingHint: 'Run yarn local:setup to create it.',

@@ -4,11 +4,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
+  PROFILES,
   SHELL_PRECEDENT_KEYS,
   assertWritesAllowed,
   childEnvironment,
   parseInvocation,
   parseMongoTarget,
+  run,
   shadowedValues,
   validateProfileValues,
 } from './run-data-profile.mjs';
@@ -178,4 +180,70 @@ test('server/.env keeps precedence over the shell for every other key', () => {
     'LOCAL_AUTH_BYPASS_NETID',
     'LOCAL_AUTH_BYPASS_USER_TYPE',
   ]);
+});
+
+const runDevelopmentProfileWithShell = (shellEnv) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-profile-run-'));
+  const dotEnvFile = path.join(dir, '.env');
+  const outputFile = path.join(dir, 'child-env.json');
+  fs.writeFileSync(
+    dotEnvFile,
+    [
+      'MONGODBURL=mongodb+srv://example.mongodb.net/Development',
+      'SCRAPER_ENV=development',
+      'PORT=4038',
+      'LOCAL_AUTH_BYPASS=true',
+      'LOCAL_AUTH_BYPASS_NETID=devadmin',
+      'LOCAL_AUTH_BYPASS_USER_TYPE=admin',
+      '',
+    ].join('\n'),
+  );
+  const reportedKeys = ['PORT', ...SHELL_PRECEDENT_KEYS];
+  const childScript = `require('fs').writeFileSync(${JSON.stringify(outputFile)}, JSON.stringify(Object.fromEntries(${JSON.stringify(reportedKeys)}.map((key) => [key, process.env[key] ?? null]))))`;
+  const originalFile = PROFILES.development.file;
+  const originalShell = Object.fromEntries([...reportedKeys].map((key) => [key, process.env[key]]));
+  const originalLog = console.log;
+  try {
+    PROFILES.development.file = dotEnvFile;
+    for (const key of reportedKeys) delete process.env[key];
+    Object.assign(process.env, shellEnv);
+    console.log = () => {};
+    const status = run(['development', '--', process.execPath, '-e', childScript]);
+    assert.equal(status, 0);
+    return JSON.parse(fs.readFileSync(outputFile, 'utf8'));
+  } finally {
+    console.log = originalLog;
+    PROFILES.development.file = originalFile;
+    for (const [key, value] of Object.entries(originalShell)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+};
+
+test('run hands the spawned command the shell bypass values over server/.env', () => {
+  assert.deepEqual(
+    runDevelopmentProfileWithShell({
+      PORT: '4000',
+      LOCAL_AUTH_BYPASS: 'false',
+      LOCAL_AUTH_BYPASS_NETID: 'devstudent',
+      LOCAL_AUTH_BYPASS_USER_TYPE: 'undergraduate',
+    }),
+    {
+      PORT: '4038',
+      LOCAL_AUTH_BYPASS: 'false',
+      LOCAL_AUTH_BYPASS_NETID: 'devstudent',
+      LOCAL_AUTH_BYPASS_USER_TYPE: 'undergraduate',
+    },
+  );
+});
+
+test('run still hands the spawned command the server/.env bypass values when the shell is silent', () => {
+  assert.deepEqual(runDevelopmentProfileWithShell({}), {
+    PORT: '4038',
+    LOCAL_AUTH_BYPASS: 'true',
+    LOCAL_AUTH_BYPASS_NETID: 'devadmin',
+    LOCAL_AUTH_BYPASS_USER_TYPE: 'admin',
+  });
 });
