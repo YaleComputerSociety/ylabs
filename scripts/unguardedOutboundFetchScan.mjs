@@ -70,10 +70,21 @@ const REGEX_PRECEDING_KEYWORDS = new Set([
   'await',
 ]);
 
+const POSTFIX_OPERATOR_CHARS = new Set(['!', '+', '-']);
+
+function closesPostfixOperand(source, cursor) {
+  const operator = source[cursor];
+  if (!POSTFIX_OPERATOR_CHARS.has(operator)) return false;
+  let operand = cursor - 1;
+  if (operator !== '!' && source[operand] === operator) operand -= 1;
+  return operand >= 0 && /[\w$)\]]/.test(source[operand]);
+}
+
 function slashStartsRegex(source, index) {
   let cursor = index - 1;
   while (cursor >= 0 && /\s/.test(source[cursor])) cursor -= 1;
   if (cursor < 0) return true;
+  if (closesPostfixOperand(source, cursor)) return false;
   if (REGEX_PRECEDING_PUNCTUATION.has(source[cursor])) return true;
   const word = /[A-Za-z_$][\w$]*$/.exec(source.slice(0, cursor + 1));
   return Boolean(word && REGEX_PRECEDING_KEYWORDS.has(word[0]));
