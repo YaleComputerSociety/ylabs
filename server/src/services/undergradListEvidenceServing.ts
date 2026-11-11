@@ -10,8 +10,22 @@ import { publicHttpUrl } from '../utils/urlSafety';
 
 // A source joins this set only after the owner has read a side-by-side sample of its
 // identity matches; an agent check is not that review (#5551, owner decision 2026-10-04).
+// The owner confirmed these on 2026-11-10; EPS and Tobin wait on their own reviews.
 export const OWNER_REVIEWED_UNDERGRAD_LIST_SOURCES: ReadonlySet<UndergradListSource> =
-  new Set<UndergradListSource>([]);
+  new Set<UndergradListSource>([
+    'cs-senior-projects',
+    'cs-directed-research',
+    'economics-senior-essay-advisers',
+    'psychology-research-opportunities',
+    'wu-tsai-undergraduate-fellows',
+    'physics-open-research-opportunities',
+    'english-senior-essays',
+    'english-creative-writing-projects',
+    'political-science-senior-essay-prizes',
+    'german-senior-essays',
+    'yibs-summer-research-fellows',
+    'cognitive-science-senior-essays',
+  ]);
 
 export interface PublicUndergradListEntry {
   source: UndergradListSource;
