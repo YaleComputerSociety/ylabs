@@ -128,6 +128,11 @@ const REVIEWED_UNROUTED_ENTITY_READS: ReadonlyArray<{ fn: string; reason: string
       "Called only from `liveResearchEntityNamesUserKeyAsLead`, the person-mint gate on the `user` materializer, so the benchmark never makes this read: it replays `researchEntity` rows only. It loads the survivor a merged-in loser resolves to and that survivor's own observations, a different row from any being projected.",
   },
   {
+    fn: 'mergedRedirectRefusedListings',
+    reason:
+      "Reads the name and type of the merged-in rows, which are DIFFERENT rows from the subject, to judge whether each one lists the person the survivor is named after (#5771). Same blocker as the fold: the capture does not freeze shells, so routing it would report a miss on every person survivor that has a merge and make those rows unattributable. An archived row's name and type no longer change, so the live answer is the frozen one.",
+  },
+  {
     fn: 'findEntityCandidatesByKey',
     reason:
       'Its slug read is routed through `liveEntityDocForKey`. The read still listed here searches by `websiteUrl` across the corpus, whose PURPOSE is to find rows the benchmark does not contain, so its answer set is not derivable from the frozen input. Permanent exemption.',

@@ -308,6 +308,15 @@ The redirect is written from the shared merge primitive (`applyResearchEntityDed
 This resolution works whether or not the shell row still exists, which makes the merge permanent and lets the shell be deleted safely.
 The redirect supersedes the archived-tombstone resurrection guard for the redirected case; the tombstone guard still covers pre-redirect merges whose shells are only archived.
 
+The redirect checks identity before it carries a person listing onto a person row (#5771).
+When both the merged-away row and the survivor are faculty research rows, the merged-away row's evidence is admitted only if its listed name agrees with the lead the survivor is named after (`listedPersonIsTheNamedLead`: the same name, an initial, a curated nickname pair, a shared given or middle name, or a joined or reordered spelling, and no prefix arm), or if the listing's netid or Yale email local part is that lead's netid, or one of its pages is that lead's own verified Yale official profile link.
+Another lead on the row never vouches for the listing, nor does a lead held only through grant co-PI listings (`grantCoPiListedPersonIds`, #5776).
+Name agreement with the title is read over every lead on the row before the grant co-PI leads are dropped, so a title that names a grant-only lead falls back to nobody rather than promoting the other lead in its place.
+A row whose title names no lead (a lab, a project, or a spelling the strict check misses) is named after its one remaining lead once grant co-PI leads are set aside, unless that lead shares a surname with the person in the row title, because a prefix-built listing must not vouch for itself through a lead it brought (`leadsTheRowIsNamedAfter`).
+A refused listing's observations stay filed under its own key, as an unresolvable chain leaves them: a materialize of that key returns `skipped: 'merge-redirect-identity-refused'`, and the survivor's own resolve leaves them out of `mergedSurvivorEvidence`, which counts them in `redirectRefusedObservations`.
+A stored field whose provenance names a refused listing's observation, and that no live observation now states, is cleared on that resolve, so a value the redirect already carried leaves with its evidence.
+The guard writes no new value and changes no `canonicalGroupId`, so a wrong merge still needs the unmerge below.
+
 Ambiguous, non-eponymous same-PI clusters are never auto-selected here and continue to rely on the manual review workflow and the gate's existing `duplicate_risk` suppress-in-place fallback.
 That fallback is not unconditional suppression: when such a cluster is also joined by a shared-URL duplicate group and every member is held, the gate withdraws the duplicate reasons from one member so the cluster keeps a student-visible card - see [`student-ready-definition.md`](student-ready-definition.md) for the reconciliation rule.
 

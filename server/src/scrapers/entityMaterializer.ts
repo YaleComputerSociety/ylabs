@@ -362,6 +362,14 @@ import {
   mergedRowEvidenceIdentity,
   observationBelongsToMergedRow,
 } from './mergedRowEvidenceIdentity';
+import { grantCoPiListedPersonIds } from './grantCoPiListing';
+import {
+  isPersonRow,
+  leadsTheRowIsNamedAfter,
+  mergedRedirectAdmission,
+  type MergedRedirectAdmission,
+  type MergedRedirectLead,
+} from './mergedRedirectIdentity';
 import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacters';
 import { servablePersonTitle, stripTitleFieldLabel } from '../utils/titleHygiene';
 import type { ReportPostMaterializationMetrics } from './runReport';
@@ -6700,6 +6708,8 @@ export interface MergedSurvivorEvidence {
   loserRosterAppointments: any[];
   survivorReadOnARoster: boolean;
   mergedInSourceUrlValues: string[];
+  redirectRefusedObservations: number;
+  fieldsBackedByRefusedListings: string[];
 }
 
 /**
@@ -6737,6 +6747,187 @@ function routedObservationsForKeysAndIds(
   return [...byId.values()];
 }
 
+function yaleNetidsListedBy(observations: readonly any[]): string[] {
+  const netids = new Set<string>();
+  for (const observation of observations) {
+    const value = textValue(observation.value).toLowerCase();
+    if (observation.field === 'inferredPiUserKey') {
+      const userKey = userEntityKeyForInferredPiUserKey(value);
+      if (userKey.startsWith('netid:')) netids.add(userKey.slice('netid:'.length));
+    } else if (observation.field === 'contactEmail' || observation.field === 'email') {
+      const local = value.match(YALE_EMAIL_PATTERN)?.[1];
+      if (local) netids.add(local);
+    }
+  }
+  return [...netids];
+}
+
+function profileDestinationsListedBy(observations: readonly any[]): string[] {
+  const pages = observations.flatMap((observation: any) => [
+    observation.sourceUrl,
+    ...(observation.field === 'sourceUrls'
+      ? Array.isArray(observation.value)
+        ? observation.value
+        : [observation.value]
+      : []),
+  ]);
+  return uniqueStrings(
+    pages
+      .map((page) => textValue(page))
+      .filter((page) => isLikelyOfficialPersonProfileUrl(page))
+      .map((page) => normalizeOfficialProfileDestination(page))
+      .filter(Boolean),
+  );
+}
+
+function verifiedPrimaryProfileDestinations(profileLinks: unknown): string[] {
+  return (Array.isArray(profileLinks) ? profileLinks : [])
+    .filter(
+      (link: any) =>
+        link?.kind === 'YALE_OFFICIAL' && link?.purpose === 'PRIMARY_IDENTITY' && link?.verifiedAt,
+    )
+    .map((link: any) => normalizeOfficialProfileDestination(textValue(link.url)))
+    .filter(Boolean);
+}
+
+const ROW_LEAD_OBSERVATION_FIELDS: ReadonlySet<string> = new Set([
+  'inferredPiUserId',
+  'inferredPiUserKey',
+]);
+
+async function namedLeadWitnessesOfRow(
+  survivor: { _id?: unknown; name?: unknown; entityType?: unknown; kind?: unknown },
+  ownLeadObservations: MaterializerObservationLike[],
+): Promise<MergedRedirectLead[]> {
+  const survivorId = survivor._id;
+  const edges = (await RoleAssignment.find({
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': survivorId,
+    role: { $in: SITE_LEAD_ROLES },
+    state: { $ne: 'HISTORICAL' },
+    archived: { $ne: true },
+  })
+    .select('personId rosterProvenance.sourceName')
+    .lean()) as Array<{ personId?: unknown; rosterProvenance?: { sourceName?: string } }>;
+  const edgeSourceNamesByPerson = new Map<string, Array<string | undefined>>();
+  for (const edge of edges) {
+    const personId = edge.personId ? String(edge.personId) : '';
+    if (!personId) continue;
+    edgeSourceNamesByPerson.set(personId, [
+      ...(edgeSourceNamesByPerson.get(personId) ?? []),
+      edge.rosterProvenance?.sourceName,
+    ]);
+  }
+  if (edgeSourceNamesByPerson.size === 0) return [];
+  const leads = (await Researcher.find({
+    _id: { $in: [...edgeSourceNamesByPerson.keys()] },
+    archived: { $ne: true },
+  })
+    .select('_id displayName identifiers.netid profileLinks')
+    .lean()) as any[];
+  const grantCoPiListed = grantCoPiListedPersonIds({
+    leadFacts: await planInferredPiMembership(String(survivorId), ownLeadObservations),
+    rowLeadPersonIds: edgeSourceNamesByPerson.keys(),
+    edgeSourceNamesByPerson,
+  });
+  return leadsTheRowIsNamedAfter(
+    survivor,
+    leads.map((lead) => ({
+      personId: String(lead._id),
+      displayName: lead.displayName,
+      netid: lead.identifiers?.netid,
+      profileDestinations: verifiedPrimaryProfileDestinations(lead.profileLinks),
+    })),
+    grantCoPiListed,
+  );
+}
+
+async function observationsFiledUnderSurvivor(
+  entityType: ObservedEntityType,
+  survivor: { _id?: unknown; slug?: unknown },
+  prefetch?: MaterializationReadSource,
+): Promise<any[]> {
+  const survivorId = toMaterializerObjectId(survivor._id);
+  const survivorSlug = textValue(survivor.slug);
+  const keys = survivorSlug ? [survivorSlug] : [];
+  const ids = survivorId ? [survivorId] : [];
+  if (keys.length === 0 && ids.length === 0) return [];
+  const read =
+    routedObservationsForKeysAndIds(entityType, keys, ids, prefetch) ??
+    (await Observation.find({
+      entityType,
+      ...materializationReadScopeFilter(),
+      $or: [{ entityKey: { $in: keys } }, { entityId: { $in: ids } }],
+    }).lean());
+  return partitionObservationsByInvalidatedRun(read, await invalidatedScrapeRunIds()).kept;
+}
+
+export interface MergedRedirectRefusals {
+  slugs: ReadonlySet<string>;
+  refuses: (observation: any) => boolean;
+  admissions: Partial<Record<MergedRedirectAdmission, number>>;
+}
+
+/**
+ * The merged-away person listings a person survivor refuses (#5771). A refused listing's
+ * observations stay filed under its own key, exactly as an unresolvable tombstone chain
+ * leaves them, so nothing about the merge itself is rewritten.
+ */
+export async function mergedRedirectRefusedListings(
+  survivor: { _id?: unknown; name?: unknown; entityType?: unknown; kind?: unknown },
+  mergedInRows: readonly MergedInResearchEntityRow[],
+  observations: readonly any[],
+): Promise<MergedRedirectRefusals> {
+  const admissions: Partial<Record<MergedRedirectAdmission, number>> = {};
+  const none = { slugs: new Set<string>(), refuses: () => false, admissions };
+  if (!isPersonRow(survivor) || mergedInRows.length === 0) return none;
+  const listings = (await ResearchEntity.find({ _id: { $in: mergedInRows.map((row) => row._id) } })
+    .select('_id slug name entityType kind')
+    .lean()) as any[];
+  const personListings = listings.filter((listing) => isPersonRow(listing));
+  if (personListings.length === 0) return none;
+  const listingIds = new Set(personListings.map((listing) => String(listing._id)));
+  const listingSlugs = new Set(personListings.map((listing) => textValue(listing.slug)));
+  const ownLeadObservations = observations.filter(
+    (observation: any) =>
+      ROW_LEAD_OBSERVATION_FIELDS.has(String(observation.field ?? '')) &&
+      !listingSlugs.has(textValue(observation.entityKey)) &&
+      !listingIds.has(normalizeMaterializerObjectId(observation.entityId) ?? ''),
+  );
+  const namedLeads = await namedLeadWitnessesOfRow(survivor, ownLeadObservations);
+  const refusedSlugs = new Set<string>();
+  const refusedIds = new Set<string>();
+  for (const listing of personListings) {
+    const slug = textValue(listing.slug);
+    const id = String(listing._id);
+    const filedUnderListing = observations.filter(
+      (observation: any) =>
+        (slug && textValue(observation.entityKey) === slug) ||
+        normalizeMaterializerObjectId(observation.entityId) === id,
+    );
+    const admission = mergedRedirectAdmission(survivor, namedLeads, {
+      slug,
+      name: listing.name,
+      entityType: listing.entityType,
+      kind: listing.kind,
+      netids: yaleNetidsListedBy(filedUnderListing),
+      pageDestinations: profileDestinationsListedBy(filedUnderListing),
+    });
+    admissions[admission] = (admissions[admission] ?? 0) + 1;
+    if (admission !== 'refused') continue;
+    if (slug) refusedSlugs.add(slug);
+    refusedIds.add(id);
+  }
+  if (refusedIds.size === 0) return none;
+  return {
+    slugs: refusedSlugs,
+    admissions,
+    refuses: (observation: any) =>
+      refusedSlugs.has(textValue(observation.entityKey)) ||
+      refusedIds.has(normalizeMaterializerObjectId(observation.entityId) ?? ''),
+  };
+}
+
 /**
  * Resolves a live survivor over its own observations plus those of every row whose
  * tombstone chain reaches it (#3560), so a survivor-key and a loser-key materialize
@@ -6746,20 +6937,22 @@ function routedObservationsForKeysAndIds(
 export async function mergedSurvivorEvidence(
   entityType: ObservedEntityType,
   survivor: { _id?: unknown; slug?: unknown; [field: string]: unknown },
-  loadedObservations: any[],
+  unscreenedLoadedObservations: any[],
   prefetch?: MaterializationReadSource,
 ): Promise<MergedSurvivorEvidence> {
   const survivorId = toMaterializerObjectId(survivor._id);
   const unmerged = {
-    observations: loadedObservations,
+    observations: unscreenedLoadedObservations,
     mergedInKeys: [],
     mergedInRows: [],
-    evidenceObservations: loadedObservations,
+    evidenceObservations: unscreenedLoadedObservations,
     survivorLaneOwnsWebsite: false,
     droppedLoserWebsiteValues: [],
     loserRosterAppointments: [],
     survivorReadOnARoster: false,
     mergedInSourceUrlValues: [],
+    redirectRefusedObservations: 0,
+    fieldsBackedByRefusedListings: [],
   };
   if (!survivorId) return unmerged;
   if (prefetch?.hasNoMergedInRows(survivorId)) return unmerged;
@@ -6769,7 +6962,9 @@ export async function mergedSurvivorEvidence(
   const survivorSlug = textValue(survivor.slug);
   const identity = mergedRowEvidenceIdentity({ _id: survivorId, slug: survivorSlug }, mergedInRows);
 
-  const alreadyIncluded = new Set(loadedObservations.map((observation) => String(observation._id)));
+  const alreadyIncluded = new Set(
+    unscreenedLoadedObservations.map((observation) => String(observation._id)),
+  );
   const candidateKeys = [...identity.entityKeys];
   const candidateIds = mergedInRows.map((row) => row._id);
   const candidates =
@@ -6784,7 +6979,23 @@ export async function mergedSurvivorEvidence(
       !alreadyIncluded.has(String(observation._id)) &&
       observationBelongsToMergedRow(identity, observation),
   );
-  const { kept } = partitionObservationsByInvalidatedRun(added, await invalidatedScrapeRunIds());
+  const { kept: unscreenedKept } = partitionObservationsByInvalidatedRun(
+    added,
+    await invalidatedScrapeRunIds(),
+  );
+  const refusedListings = await mergedRedirectRefusedListings(survivor, mergedInRows, [
+    ...unscreenedLoadedObservations,
+    ...unscreenedKept,
+  ]);
+  const loadedObservations = unscreenedLoadedObservations.filter(
+    (observation) => !refusedListings.refuses(observation),
+  );
+  const kept = unscreenedKept.filter((observation: any) => !refusedListings.refuses(observation));
+  const redirectRefusedObservations =
+    unscreenedLoadedObservations.length +
+    unscreenedKept.length -
+    loadedObservations.length -
+    kept.length;
 
   const loserOrigin = (observation: any) => mergedInMemberOf(identity, observation);
   const survivorIsLowTrustShell = isLowTrustAreaShellSlug(survivorSlug);
@@ -6910,9 +7121,15 @@ export async function mergedSurvivorEvidence(
     }
   }
   const backingLoserSlugByField = new Map<string, string>();
+  const fieldsBackedByRefusedListings: string[] = [];
   for (const [field, value] of Object.entries(storedSurvivor)) {
     if (CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS.includes(field)) continue;
     const backingLoserSlug = backingLoserSlugByObservationId.get(provenanceObservationId(field));
+    if (backingLoserSlug !== undefined && refusedListings.slugs.has(backingLoserSlug)) {
+      if (!SURVIVOR_OWNED_RESEARCH_ENTITY_FIELDS.has(field))
+        fieldsBackedByRefusedListings.push(field);
+      continue;
+    }
     if (backingLoserSlug !== undefined) {
       backingLoserSlugByField.set(field, backingLoserSlug);
       continue;
@@ -7017,6 +7234,8 @@ export async function mergedSurvivorEvidence(
     ),
     loserRosterAppointments,
     survivorReadOnARoster,
+    redirectRefusedObservations,
+    fieldsBackedByRefusedListings,
   };
 }
 
@@ -7053,16 +7272,7 @@ export function selectMergedInLeadProfileSourceUrls(
   leads: ReadonlyArray<{ profileLinks?: unknown }>,
 ): string[] {
   const verifiedPrimaryDestinations = new Set(
-    leads
-      .flatMap((lead) => (Array.isArray(lead.profileLinks) ? lead.profileLinks : []))
-      .filter(
-        (link: any) =>
-          link?.kind === 'YALE_OFFICIAL' &&
-          link?.purpose === 'PRIMARY_IDENTITY' &&
-          link?.verifiedAt,
-      )
-      .map((link: any) => normalizeOfficialProfileDestination(textValue(link.url)))
-      .filter(Boolean),
+    leads.flatMap((lead) => verifiedPrimaryProfileDestinations(lead.profileLinks)),
   );
   if (verifiedPrimaryDestinations.size === 0) return [];
   return mergedInSourceUrlValues.filter(
@@ -7092,7 +7302,7 @@ async function observationsMergedIntoLiveSurvivor(
     routedSurvivor?.hit
       ? routedSurvivor.value
       : await ResearchEntity.findOne({ ...lookup, archived: { $ne: true } })
-          .select('_id slug name fieldValueRefusals manuallyLockedFields')
+          .select('_id slug name entityType kind fieldValueRefusals manuallyLockedFields')
           .lean()
   ) as Parameters<typeof mergedSurvivorEvidence>[1] | null;
   if (!survivor) return [];
@@ -7371,7 +7581,7 @@ async function mergedSurvivorTakesLoserLeadAttribution(
   const canonical = await resolveResearchEntityCanonicalByTombstone(loser);
   if (!canonical) return false;
   const survivor = (await ResearchEntity.findOne({ _id: canonical._id, archived: { $ne: true } })
-    .select('_id slug name fieldValueRefusals manuallyLockedFields')
+    .select('_id slug name entityType kind fieldValueRefusals manuallyLockedFields')
     .lean()) as Parameters<typeof mergedSurvivorEvidence>[1] | null;
   if (!survivor) return false;
   const { kept: ownObservations } = partitionObservationsByInvalidatedRun(
@@ -8551,6 +8761,7 @@ export interface ProjectFromLogInput {
   undergradEvidenceQuoteWithdrawnBy?: ReadonlySet<string>;
   fellowshipFieldsAssertedAbsent?: ReadonlyMap<string, ReadonlySet<string>>;
   droppedLoserWebsiteValues?: readonly unknown[];
+  fieldsBackedByRefusedListings?: readonly string[];
   mergedInLeadProfileUrls?: readonly string[];
   laneWithdrawnWebsiteValues?: readonly unknown[];
   gonePageWithdrawnValuesByField?: ReadonlyMap<string, readonly unknown[]>;
@@ -10026,6 +10237,7 @@ export async function projectFromLog(
       ReadonlySet<string>
     >(),
     droppedLoserWebsiteValues = [],
+    fieldsBackedByRefusedListings = [],
     mergedInLeadProfileUrls = [],
     laneWithdrawnWebsiteValues = [],
     gonePageWithdrawnValuesByField = new Map<string, readonly unknown[]>(),
@@ -11205,6 +11417,17 @@ export async function projectFromLog(
       unset[field] = '';
       delete confidenceByField[field];
     }
+    for (const field of fieldsBackedByRefusedListings) {
+      if (manuallyLockedFields.includes(field)) continue;
+      if (field in set || field in unset) continue;
+      if (fieldsWithLiveObservation.has(field)) continue;
+      if (!isClearableStaleFieldValue((entityDoc as Record<string, unknown>)[field])) continue;
+      console.log(`[merge-redirect-identity] cleared a ${field} only a refused listing backed`);
+      delete set[`fieldProvenance.${field}`];
+      unset[field] = '';
+      unset[`fieldProvenance.${field}`] = '';
+      delete confidenceByField[field];
+    }
     for (const field of planGoneLanePageFieldClears({
       stored: entityDoc as Record<string, unknown>,
       staged: set,
@@ -11806,6 +12029,32 @@ async function materializeEntityUnderRemovalGuard(
     entityDoc.canonicalGroupId
   ) {
     const tombstoneCanonical = await resolveResearchEntityCanonicalByTombstone(entityDoc);
+    const refusedRedirect =
+      tombstoneCanonical &&
+      (await mergedRedirectRefusedListings(
+        tombstoneCanonical,
+        [entityDoc],
+        [
+          ...(await observationsFiledUnderSurvivor(
+            entityType,
+            tombstoneCanonical,
+            options.chunkPrefetch,
+          )),
+          ...obs,
+        ],
+      ));
+    if (refusedRedirect && obs.every((observation: any) => refusedRedirect.refuses(observation))) {
+      return {
+        entityType,
+        entityId: materializerDocumentId(entityDoc._id),
+        entityKey: identifier.entityKey,
+        fieldsWritten: 0,
+        conflicts: 0,
+        created: false,
+        resolved: {},
+        skipped: 'merge-redirect-identity-refused',
+      };
+    }
     if (tombstoneCanonical) {
       entityDoc = tombstoneCanonical;
       entityIdString = String(tombstoneCanonical._id);
@@ -11981,6 +12230,7 @@ async function materializeEntityUnderRemovalGuard(
   let mergedInRows: MergedSurvivorEvidence['mergedInRows'] = [];
   let researchAreaEvidenceObservations: any[] = obs;
   let droppedLoserWebsiteValues: unknown[] = [];
+  let fieldsBackedByRefusedListings: string[] = [];
   let mergedInLeadProfileUrls: string[] = [];
   let loserRosterReads: ResolverObservation[] = [];
   let survivorReadOnARoster = false;
@@ -11991,6 +12241,7 @@ async function materializeEntityUnderRemovalGuard(
     mergedInRows = merged.mergedInRows;
     researchAreaEvidenceObservations = merged.evidenceObservations;
     droppedLoserWebsiteValues = merged.droppedLoserWebsiteValues;
+    fieldsBackedByRefusedListings = merged.fieldsBackedByRefusedListings;
     mergedInLeadProfileUrls = await mergedInLeadProfileSourceUrls(
       entityDoc._id,
       merged.mergedInSourceUrlValues,
@@ -12413,6 +12664,7 @@ async function materializeEntityUnderRemovalGuard(
     undergradEvidenceQuoteWithdrawnBy,
     fellowshipFieldsAssertedAbsent: fellowshipAbsentByField,
     droppedLoserWebsiteValues,
+    fieldsBackedByRefusedListings,
     mergedInLeadProfileUrls,
     laneWithdrawnWebsiteValues: laneWebsiteWithdrawal.withdrawnValues,
     gonePageWithdrawnValuesByField: gonePageWithdrawal.withdrawnValuesByField,
