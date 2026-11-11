@@ -480,6 +480,14 @@ Start an address pattern with the non-address lookbehind `(?<![a-z0-9._%+-])` ra
   When a read states one or more emails for a subject, `appendObservations` supersedes the same lane's live email rows for that subject and page from earlier runs whose address the read no longer states.
   Rows of the same run never retire each other, so a page listing two addresses keeps both, and a read stating no email retires nothing, because silence is not absence (#2647).
   `observations:supersede-replaced-run-emails` is the dry-run-by-default backfill for rows stored before the rule.
+  A person key a lane re-keyed is the other supersession outside the fingerprint (#5817, `rekeyedPersonKeyPlan.ts`).
+  `dept-faculty-roster`, `ysm-faculty-directory` and `yse-faculty-directory` key a person `netid:<local>` when the read states a person-specific address and on a synthetic `dept:`, `ysm:` or `yse:` key when it does not, so gaining or losing the address writes the person under a new key.
+  At the end of its run each of those lanes retires the old key's live observations through `retireObservations` when every listing page the old key was read from was read again, completely, by this run, and a twin the run wrote on that listing names the same person page and the same normalized name, or states a netid whose directory record carries the old key's name and department.
+  It waits for the end of the run because a `netid:` key is shared across listings, so only the whole run can say the old key was written nowhere.
+  It refuses when one twin admits two old keys, one old key admits two twins, two people on the listing share the name, or the directory gives the name to two netids, and it holds a key whose twin does not reach, through `userKeyResearcherJoins`, the researcher the old key reaches today.
+  A same-name match with no shared page, a shared page under another name (a co-author card), and a read from an `--only` or `--limit` run that did not read the old key's listing all retire nothing.
+  The run notes and `metrics.rekeyedPersonKeys` count admitted, retired, held, refused and left-alone keys.
+  `observations:retire-rekeyed-person-keys` is the dry-run-by-default backfill over the same planner for keys stored before the rule; see "Retiring the person keys a lane re-keyed" below.
 - `observationFieldSanitizer.ts` - shared ingest-time extraction sanitizer applied by `observationStore.appendObservations` to every observation from every source, so no scraper (present or future) can leak page furniture into a stored field (#1375).
   It composes the existing hygiene utilities rather than restating their rules:
   - a `user` `title` runs through `sanitizePersonTitle` (rejected when it is nav/section furniture, or cut off at a dangling connective such as "Professor of", which the materializer also ignores so a complete title wins, #5109);
@@ -1986,6 +1994,22 @@ A field whose only evidence was retired keeps its stored value on a rematerializ
     DEV_WRITE_OWNER=<session> yarn --cwd server observations:retire-orphaned-lane-configs --configs=<same list> --apply --confirm-retire-orphaned-lane-configs --output=/tmp/<name>.json
 
 A second apply over the same list retires nothing.
+
+#### Retiring the person keys a lane re-keyed (#5817)
+
+`observations:retire-rekeyed-person-keys` (dry run by default) runs the lanes' own re-key planner over the stored reads and supersedes the planned old keys with a rollback reason; it never deletes.
+It takes `--lanes=<lane>,...` from `dept-faculty-roster`, `ysm-faculty-directory` and `yse-faculty-directory`.
+A listing page is governed by the newest run that wrote it, and only when that run succeeded with no `--limit` or `--offset`, because an older complete run cannot speak for a page a newer partial run rewrote.
+Each planned key is checked against the engine's researcher join and held when the twin does not reach and is not named by the researcher the old key reaches.
+The dry run then projects every twin key, limited to the fields the old key's observations assert, and every row that names an old key as `inferredPiUserKey`, through `projectRow` and `servedFieldChanges` from the #5807 instrument, with and without the planned observations.
+It prints counts by lane, pair kind and category only; `--detail-output <tmp path>.json` writes the per-key plan and every changed projection to a mode-0600 file.
+An apply refuses when the projection changed any twin or row unless `--accept-served-changes` is passed after review.
+
+    yarn --cwd server observations:retire-rekeyed-person-keys --lanes=dept-faculty-roster --detail-output=/tmp/<name>.json
+    DEV_WRITE_OWNER=<session> yarn --cwd server observations:retire-rekeyed-person-keys --lanes=<same list> --apply --confirm-retire-rekeyed-person-keys --detail-output=/tmp/<name>.json
+
+Superseding writes no researcher or row field, so re-derive the affected people with `observations:rematerialize-user-keys --keys-file=<twin keys> --passes=2` and the affected rows with `research-entity:rematerialize --slugs=... --only-fields=...`, dry run first.
+A second apply retires nothing.
 
 #### Press copy and publication lists are not a description (#4446)
 

@@ -44,6 +44,8 @@ import {
   normalizeName,
   splitName,
 } from '../utils/scraperHelpers';
+import { personNameKey } from '../rekeyedPersonKeyPlan';
+import { RekeyedPersonReads, settleRekeyedPersonReads } from '../rekeyedPersonKeyRetirement';
 import { asYaleNetid } from '../../utils/yaleNetid';
 import {
   mintsNoResearchEntityAsTeachingAppointment,
@@ -518,6 +520,13 @@ export class YseFacultyDirectoryScraper implements IScraper {
     ctx.log(`Parsed ${roster.length} faculty from directory`);
 
     const limited = limitOption ? roster.slice(0, limitOption) : roster;
+    const rekeyReads = new RekeyedPersonReads(SOURCE_KEY);
+    rekeyReads.recordLaneNames(
+      roster.map((entry) => {
+        const { first, last } = splitName(entry.name);
+        return { nameKey: personNameKey(first, last), identity: entry.slug };
+      }),
+    );
 
     let totalObs = 0;
     let facultyCount = 0;
@@ -545,6 +554,8 @@ export class YseFacultyDirectoryScraper implements IScraper {
       const profile = extractProfile(profileHtml, faculty);
       const { observations: userObs, entityKey } = facultyToUserObservations(profile);
       await ctx.emit(userObs);
+      rekeyReads.recordListingRead(profile.profileUrl, { complete: true });
+      rekeyReads.recordPerson(userObs);
       totalObs += userObs.length;
       facultyCount += 1;
 
@@ -569,6 +580,7 @@ export class YseFacultyDirectoryScraper implements IScraper {
       }
     }
 
+    const rekeyed = await settleRekeyedPersonReads(rekeyReads, ctx);
     ctx.log(
       `Emitted ${totalObs} observations across ${facultyCount} faculty / ${entityCount} entities ` +
         `(${labCount} with lab sites, ${withdrawnLabCount} whose linked lab site is known dead, ` +
@@ -578,7 +590,10 @@ export class YseFacultyDirectoryScraper implements IScraper {
     return {
       observationCount: totalObs,
       entitiesObserved: facultyCount + entityCount,
-      notes: `YSE faculty: ${facultyCount} researchers, ${entityCount} research homes (${labCount} labs, ${withdrawnLabCount} dead lab links withdrawn, ${areaCount} with areas)`,
+      notes:
+        `YSE faculty: ${facultyCount} researchers, ${entityCount} research homes (${labCount} labs, ${withdrawnLabCount} dead lab links withdrawn, ${areaCount} with areas)` +
+        (rekeyed.note ? `; ${rekeyed.note}` : ''),
+      ...(rekeyed.partialFailure ? { partialFailures: [rekeyed.partialFailure] } : {}),
     };
   }
 }

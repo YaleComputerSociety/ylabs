@@ -1050,6 +1050,14 @@ The write is conditioned on the review status the decision was read from, so a t
 
 `canonicalizeResearchAreas` fails open, returning an unrecognised input inside `values` as well as inside `unmatched`, so it is not a catalog-membership test; `matchCanonicalResearchAreas` is.
 
+### Re-keyed person keys are superseded, not retracted (#5817)
+
+`dept-faculty-roster`, `ysm-faculty-directory` and `yse-faculty-directory` key a person on `netid:<local>` when a read states a person-specific Yale address and on a synthetic `dept:`, `ysm:` or `yse:` key when it does not.
+A read that gains or loses the address writes the same person under a new key, and the old key's observations stayed live, so every reader of raw observations still saw them.
+A re-key is supersession rather than absence, because the lane still states every value under the newer key, so the two-read retraction rule below does not apply.
+`server/src/scrapers/rekeyedPersonKeyPlan.ts` decides which old keys a newer twin from the same listing replaced, and `rekeyedPersonKeyRetirement.ts` retires them through `retireObservations` at the end of the lane's run, holding any key whose twin does not reach the researcher the old key reaches.
+`observations:retire-rekeyed-person-keys` is the backfill over the same planner; `skills/scrapers/SKILL.md` records the admission, refusal and hold rules and the command.
+
 ### Field retraction: how the engine stops asserting a field a source dropped
 
 Observations are append-only and supersede on fingerprint, so a source could only ever change a field by asserting something new for it.

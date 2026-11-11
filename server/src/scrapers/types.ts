@@ -7,6 +7,7 @@ import type { HttpValidatorCacheStats } from './utils/httpValidatorCache';
 import type { SweepPageReuseStats } from './utils/sweepPageReuse';
 import type { ThrottleRetryStats } from './utils/throttleRetryStats';
 import type { DatabaseWriteRetryStats } from './utils/databaseWriteRetry';
+import type { RekeyedPersonKeyRunSummary } from './rekeyedPersonKeyRetirement';
 
 export interface ObservationInput {
   entityType: ObservedEntityType;
@@ -180,6 +181,7 @@ export interface ScraperMetrics<TFetchMode extends string = ScraperFetchMode> {
    */
   unitYields?: Record<string, number>;
   removedByRequest?: number;
+  rekeyedPersonKeys?: RekeyedPersonKeyRunSummary;
   descriptionSlotAttestation?: {
     vocabulary: number;
     empty: number;
