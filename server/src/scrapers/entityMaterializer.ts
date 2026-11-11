@@ -14,6 +14,7 @@ import {
   identityWithPersonPageUrls,
   withoutNamesakePersonPageDescriptions,
 } from './utils/namesakePersonPageDescriptions';
+import { withoutRefusedNonYaleMicrositeDescriptions } from './utils/nonYaleMicrositeDescriptionScreen';
 import { cachedCardFor } from './cardSynthesisDerivation';
 import { withoutModelCalls } from '../utils/modelClient';
 import {
@@ -13226,9 +13227,31 @@ async function materializeEntityUnderRemovalGuard(
     storedResearchAreasProvenance(entityDoc),
     researchPageTopics,
   );
+  const isPersonResearchEntityRow =
+    isResearchEntityObservationType(entityType) &&
+    isPersonResearchRow({ entityType: entityDoc?.entityType, kind: entityDoc?.kind });
+  const micrositeLeadName = isPersonResearchEntityRow
+    ? (options.nameIdentityAuthority?.leadPersonName ??
+      (await loadResearchEntityLeadPersonName(entityDoc?._id ?? entityIdString)))
+    : '';
+  const micrositeOwnershipScreened = isPersonResearchEntityRow
+    ? withoutRefusedNonYaleMicrositeDescriptions(
+        namesakeScreened,
+        micrositeLeadName ? [micrositeLeadName] : [],
+        obs,
+      )
+    : namesakeScreened;
+  if (micrositeOwnershipScreened.length < namesakeScreened.length) {
+    console.log(
+      `[description-microsite-ownership] ${entityType} ${entityIdString || identifier.entityKey || ''}: dropped ${
+        namesakeScreened.length - micrositeOwnershipScreened.length
+      } lab-site description candidate(s) citing a non-Yale page not confirmed as the lead's`,
+    );
+  }
+
   const resolverObs: ResolverObservation[] = [
     ...withoutObservedAdviseesMovedToMentors(
-      namesakeScreened.map((o: any) => ({
+      micrositeOwnershipScreened.map((o: any) => ({
         field: o.field,
         value: o.value,
         sourceName: o.sourceName,

@@ -1,4 +1,5 @@
 import { isPersonResearchRow } from '../utils/researchStatementPassage';
+import { withoutRefusedNonYaleMicrositeDescriptions } from '../scrapers/utils/nonYaleMicrositeDescriptionScreen';
 import { withoutNamesakePersonPageDescriptions } from '../scrapers/utils/namesakePersonPageDescriptions';
 import type { ResearchEntityIdentity } from '../scrapers/utils/personProfileEntityMatch';
 import { SOURCE_CONTENT_HASH_FIELD } from '../scrapers/contentHashGate';
@@ -498,6 +499,7 @@ export interface WriterEvidenceOptions {
   kind?: unknown;
   /** The row's own name, slug and committed citations, for the namesake screen (#5764). */
   identity?: { slug?: unknown; name?: unknown; sourceUrls?: unknown };
+  leadNames?: readonly (string | undefined | null)[];
 }
 
 const namesakeScreenIdentity = (
@@ -529,8 +531,15 @@ export function buildWriterEvidenceSnippets(
           namesakeScreenIdentity(options.identity),
         )
       : observations;
+  const ownedMicrositeEvidence = isPersonRow
+    ? withoutRefusedNonYaleMicrositeDescriptions(
+        ownPersonEvidence,
+        options.leadNames ?? [],
+        observations,
+      )
+    : ownPersonEvidence;
   const admissible = refusedResolverObservations(
-    withOnlyCurrentResearchPageText(ownPersonEvidence),
+    withOnlyCurrentResearchPageText(ownedMicrositeEvidence),
     options.fieldValueRefusals,
   ).kept;
   const ordered = orderWriterEvidence(admissible, options.websiteUrl);

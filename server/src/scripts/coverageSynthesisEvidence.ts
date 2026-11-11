@@ -7,6 +7,7 @@ import { materializationReadScopeFilter } from '../scrapers/entityMaterializer';
 import type { CoverageObservationLike, CoverageSnippet } from '../scrapers/coverageSynthesis';
 import { listResearchEntityMergedInRowsBySurvivor } from '../services/researchEntityCanonicalTombstone';
 import { containsAsciiControl } from '../utils/asciiControl';
+import { loadResearchEntityLeadPersonName } from '../utils/researchHomeNameIdentityRoster';
 import {
   INGEST_VERIFIED_EXTRACTION_SOURCE,
   PAGE_GROUNDING_VERIFIED_SINCE,
@@ -30,6 +31,7 @@ export interface WriterRowEvidence {
   entity: WriterEntityRow;
   observations: WriterObservation[];
   mergedInObservations: WriterObservation[];
+  leadNames?: string[];
 }
 
 export const WRITER_EVIDENCE_FILE_VERSION = 1;
@@ -80,6 +82,11 @@ export async function loadWriterEntitiesBySlug(
     .lean()) as WriterEntityRow[];
 }
 
+export async function writerLeadNames(entityId: unknown): Promise<string[]> {
+  const leadName = await loadResearchEntityLeadPersonName(entityId);
+  return leadName ? [leadName] : [];
+}
+
 export async function loadWriterRowEvidence(
   entities: readonly WriterEntityRow[],
   verifiedRunIds: ReadonlySet<string>,
@@ -98,6 +105,7 @@ export async function loadWriterRowEvidence(
       entity: { ...entity, _id: entity._id === undefined ? undefined : String(entity._id) },
       observations: await loadWriterObservations(anchors, verifiedRunIds),
       mergedInObservations: await loadWriterObservations(mergedInAnchors, verifiedRunIds),
+      leadNames: await writerLeadNames(entity._id),
     });
   }
   return rows;
@@ -110,6 +118,7 @@ export function snippetsFromRowEvidence(row: WriterRowEvidence, now: Date): Cove
     entityType: row.entity.entityType,
     kind: row.entity.kind,
     identity: row.entity,
+    leadNames: row.leadNames,
     now,
   };
   const own = buildWriterEvidenceSnippets(row.observations, row.entity.recentGrants, options);
@@ -153,6 +162,9 @@ export function parseWriterEvidenceFile(value: unknown): WriterEvidenceFile {
       entity: row.entity ?? { slug: row.slug },
       observations: (row.observations ?? []).map(revivedObservation),
       mergedInObservations: (row.mergedInObservations ?? []).map(revivedObservation),
+      ...(Array.isArray(row.leadNames)
+        ? { leadNames: row.leadNames.filter((name): name is string => typeof name === 'string') }
+        : {}),
     })),
   };
 }
