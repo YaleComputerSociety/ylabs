@@ -33,7 +33,7 @@ const reviewed = new Set([
 ]);
 
 describe('publicUndergradListEvidence', () => {
-  it('serves exactly the sources the owner confirmed on 2026-11-10, and never EPS or Tobin', () => {
+  it('serves exactly the sources the owner confirmed, and never EPS', () => {
     expect([...OWNER_REVIEWED_UNDERGRAD_LIST_SOURCES].sort()).toEqual(
       [
         'cs-senior-projects',
@@ -48,19 +48,19 @@ describe('publicUndergradListEvidence', () => {
         'german-senior-essays',
         'yibs-summer-research-fellows',
         'cognitive-science-senior-essays',
+        'tobin-research-assistantships',
       ].sort(),
     );
     expect(OWNER_REVIEWED_UNDERGRAD_LIST_SOURCES.has('eps-senior-theses')).toBe(false);
-    expect(OWNER_REVIEWED_UNDERGRAD_LIST_SOURCES.has('tobin-research-assistantships')).toBe(false);
   });
 
   it('serves nothing from a source the owner has not reviewed', () => {
     const unreviewed = [
       {
-        source: 'tobin-research-assistantships',
+        source: 'eps-senior-theses',
         kind: 'advised',
         count: 1,
-        sourceUrl: 'https://economics.example.edu/tobin',
+        sourceUrl: 'https://earth.example.edu/theses',
       },
     ];
     expect(publicUndergradListEvidence(unreviewed)).toEqual([]);
