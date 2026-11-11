@@ -351,17 +351,33 @@ describe('applyScraperEnvironmentGuards', () => {
       );
     });
 
-    it('refuses --apply together with --dry-run', () => {
-      expect(() =>
-        applyScraperEnvironmentGuards({
-          command: 'run',
-          options: { ...baseOptions, dryRun: true },
-          autoMaterialize: false,
-          apply: true,
-          mongoUrl: developmentUrl,
-          env: permitted,
-        }),
-      ).toThrow('scrape run was given both --apply and --dry-run; pass one.');
+    it('lets an explicit --dry-run win over --apply', () => {
+      const guarded = applyScraperEnvironmentGuards({
+        command: 'run',
+        options: { ...baseOptions, dryRun: true },
+        autoMaterialize: false,
+        apply: true,
+        mongoUrl: developmentUrl,
+        env: permitted,
+      });
+      expect(guarded.writes).toBe(false);
+      expect(guarded.options.dryRun).toBe(true);
+      expect(guarded.banner).toMatch(/^DRY RUN: nothing will be written \(--dry-run\)/);
+    });
+
+    it('names the snapshot cache writes a --use-cache dry run still makes', () => {
+      const guarded = applyScraperEnvironmentGuards({
+        command: 'run',
+        options: { ...baseOptions, dryRun: true, useCache: true },
+        autoMaterialize: false,
+        apply: false,
+        mongoUrl: developmentUrl,
+        env: unpermitted,
+      });
+      expect(guarded.writes).toBe(false);
+      expect(guarded.banner).toBe(
+        'DRY RUN: nothing will be written (--dry-run); observations and entities stay untouched, only the run bookkeeping row and --use-cache fetch snapshots are recorded',
+      );
     });
   });
 

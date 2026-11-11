@@ -151,13 +151,17 @@ function scraperRunBanner(input: {
   writes: boolean;
   databaseLabel: string;
   dryRunReason: string;
+  useCache: boolean;
 }): string {
   if (input.writes) {
     return `WILL WRITE to ${input.databaseLabel} (scrape ${input.command} --apply with the ${SCRAPER_WRITE_PERMISSION_ENV} permission)`;
   }
+  const recordedRows = input.useCache
+    ? 'the run bookkeeping row and --use-cache fetch snapshots are'
+    : 'the run bookkeeping row is';
   const bookkeeping =
     input.command === 'run'
-      ? '; observations and entities stay untouched, only the run bookkeeping row is recorded'
+      ? `; observations and entities stay untouched, only ${recordedRows} recorded`
       : '';
   return `DRY RUN: nothing will be written (${input.dryRunReason})${bookkeeping}`;
 }
@@ -184,10 +188,6 @@ export function applyScraperEnvironmentGuards(args: {
   const resolvedMongoUrl = args.mongoUrl ?? env.MONGODBURL;
   const dbLabel = summarizeMongoUrl(resolvedMongoUrl);
   const databaseLabel = resolveMongoDatabaseName(resolvedMongoUrl) ?? dbLabel;
-
-  if (args.apply && explicitDryRun) {
-    throw new Error(`scrape ${args.command} was given both --apply and --dry-run; pass one.`);
-  }
 
   if (isPromotionOnlyEnvironment(environment)) {
     const writeIntent =
@@ -230,6 +230,7 @@ export function applyScraperEnvironmentGuards(args: {
       writes,
       databaseLabel,
       dryRunReason: explicitDryRun ? '--dry-run' : 'no --apply',
+      useCache: options.useCache === true,
     }),
   };
 }
