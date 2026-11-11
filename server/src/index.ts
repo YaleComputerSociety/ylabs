@@ -12,6 +12,7 @@ import { sanitizeLogValue } from './utils/logSanitizer';
 import { captureStartupError, initializeErrorTracking } from './utils/errorTracking';
 import { describeFirstContactCeiling } from './middleware/rateLimiters';
 import { serverListenHost } from './utils/environment';
+import { localAuthBypassStartupNotice } from './passport';
 import { registerGracefulShutdown } from './serverShutdown';
 import { worktreePortConflict } from './utils/worktreePortGuard';
 import { resolveServerPackageRoot } from './utils/serverPackageRoot';
@@ -80,6 +81,8 @@ const startApp = async () => {
       // Log the effective value so an unset or fat-fingered env var is visible
       // rather than inferred from behaviour (#2319).
       console.log(`[rate-limit] ${describeFirstContactCeiling()}`);
+      const bypassNotice = localAuthBypassStartupNotice();
+      if (bypassNotice) console.warn(bypassNotice);
 
       startMongoKeepAlive();
 

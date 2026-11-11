@@ -130,7 +130,18 @@ Pass `?userType=admin|professor|faculty|graduate|unknown` for a different local 
 The copied `server/.env` that `scripts/new-agent-worktree.sh` writes sets `LOCAL_AUTH_BYPASS=true`, `LOCAL_AUTH_BYPASS_NETID=devadmin` and `LOCAL_AUTH_BYPASS_USER_TYPE=admin`, so every cookieless loopback request is the bootstrap admin by default.
 Admin authority comes from an active `AdminGrant` on the netid (`hasAdminAuthorityForUser`), never from `userType`.
 So an `x-dev-user-type: undergraduate` header alone does not make a student: the netid stays `devadmin`, which holds the grant, and the request keeps operator authority, including `operatorPreview` on withheld research rows (#5695).
-To test as a non-admin student, use one of these:
+A served check, meaning "what does a student see on this route", is read-only, so run it this way (#5781):
+
+1. Start the API with the bypass off: `LOCAL_AUTH_BYPASS=false yarn dev:server`.
+2. Confirm `GET /api/check` with no cookie returns `{"auth":false}` before any read.
+3. Read the route with no cookie.
+
+A cookieless request with the bypass off resolves no user, so the auth path writes no account, no admin grant and no analytics event, and the route serves the anonymous student view, which withholds every row outside `student_ready`.
+`server/src/__tests__/localStudentServedCheckWritesNothing.integration.test.ts` pins that against a real store, with the bypass-on run of the same requests as the control that proves the count can see a write.
+The test exercises `GET /api/check` and `GET /api/research/:slug`; `POST /api/research/search` records a site-search row only for a signed-in netid (`shouldRecordSiteSearch`), so an anonymous search records none either.
+When the API starts with the bypass on, it prints a `[auth] LOCAL_AUTH_BYPASS is on` warning (`localAuthBypassStartupNotice`).
+
+To test a signed-in student flow, which records a login, use one of these:
 
 - Run the API with the grant-less undergraduate dev-login netid as the bypass identity: `LOCAL_AUTH_BYPASS_NETID=test123 LOCAL_AUTH_BYPASS_USER_TYPE=undergraduate yarn dev:server`.
 - Turn the bypass off and sign in as the undergraduate: `LOCAL_AUTH_BYPASS=false yarn dev:server`, then open `/api/dev-login?userType=undergraduate`, which signs in `test123`.
@@ -140,6 +151,7 @@ To test as a non-admin student, use one of these:
 Before #5695 a shell `LOCAL_AUTH_BYPASS=false` was silently overridden by the file, so a "student" probe ran as the admin.
 Check the identity before trusting a result: `GET /api/check` reports `user.netId` and `user.isAdmin`, and the netid must hold no active `AdminGrant`.
 Every bypass or dev-login request records a login for its netid on the database the profile targets, and creates that account on first use, so reuse `test123` rather than inventing a new netid.
+The API server never takes the Development write lease (#5772), so these login writes run without it; that is one more reason a served check uses the write-free path above.
 
 ### Development affordances are scoped to the developer's own machine
 
