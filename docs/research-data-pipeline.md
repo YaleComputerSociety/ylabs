@@ -445,6 +445,11 @@ The contract now has six parts.
   The bounds can be raised with `--stale-after-minutes` and `--legacy-older-than-hours` but never lowered.
   Each write pins the `heartbeatAt` it read, so a run that beat after the plan was built is left alone, and `finishedAt` is set to the last sign of life rather than the time of the cleanup.
   `--apply` requires `--confirm-reconcile-stale-scrape-runs` and refuses any target that is not Development, because Beta and Production receive `scrape_runs` only through promotion.
+- **Every new run closes the dead runs before it records its own.**
+  `ScraperOrchestrator.run` calls `reapDeadScrapeRuns` (`server/src/scrapers/staleScrapeRunReaper.ts`) before it creates its `ScrapeRun`, with the same plan and the same status-only update as `scrape-runs:reconcile-stale --heartbeat-stale-only`: a heartbeat-stale row closes as `interrupted`, and a fresh heartbeat, a source lock held by anyone other than the caller, or a live owner process on this host keeps it.
+  The caller's own lock does not count, so re-running a source closes its own dead predecessor.
+  It writes only to Development, and a failed reap only warns, so it can never stop the run that called it.
+  The sweep stage below was the only automatic close, so while the scraper cron was suspended a CLI run killed after its last write read `running` for eight days, and a second one for twelve (#5628).
 - **The Development sweep reaps heartbeat-stale runs on every run.**
   Until this stage existed nothing scheduled the command, which is how the stuck rows accumulated.
   The first Development post-run stage, `stale-scrape-run-reap`, runs it with `--apply --heartbeat-stale-only --started-before <sweep start>`.

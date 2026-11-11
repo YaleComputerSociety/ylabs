@@ -15,6 +15,7 @@ import { directoryRemovalObservationRun } from './directoryRemovalObservationGua
 import { currentProcessCodeSha } from './scrapeRunCodeIdentity';
 import type { ReturnedScrapeRunStatus } from './sourceCrawlStamp';
 import { currentScrapeRunOwner, startScrapeRunHeartbeat } from './scrapeRunLiveness';
+import { reapDeadScrapeRuns } from './staleScrapeRunReaper';
 import {
   installAxiosScrapeRunProgress,
   recordScrapeRunProgress,
@@ -111,6 +112,15 @@ export class ScraperOrchestrator {
     if (!source) {
       throw new Error(`No Source row found with name "${name}". Run "yarn seed:sources" first.`);
     }
+
+    await reapDeadScrapeRuns({
+      detectedBy: 'orchestrator-run-start',
+      callerLockOwnerId: ownership.lockOwnerId,
+    }).catch((error) => {
+      console.warn(
+        `Could not close dead scrape runs before starting ${name}: ${sanitizeLogValue(error)}`,
+      );
+    });
 
     const startedAt = new Date();
     const run = await ScrapeRun.create({
