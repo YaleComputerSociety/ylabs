@@ -1,7 +1,8 @@
 import * as cheerio from 'cheerio';
 import { normalizeOfficialProfileDestination } from '../../services/leadProfileIdentity';
 import { isYaleProfileUrl } from '../yaleProfileDepartureEvidence';
-import { isLikelyPersonSpecificYaleEmail } from './scraperHelpers';
+import { isLikelyPersonSpecificYaleEmail, splitName } from './scraperHelpers';
+import { sanitizePersonName } from '../../utils/personNameHygiene';
 import { observedPersonNameAgreesWith } from './personNameAgreement';
 import { givenNamesEquivalent } from './piNameMatch';
 import { normalizedYaleNetid } from '../../utils/yaleNetid';
@@ -195,11 +196,15 @@ const nameTokens = (value: string): string[] =>
  * variant) and surname. A surname alone is not enough: a co-author card for a colleague who
  * shares a common surname would pass (#5677).
  */
+const GENERATIONAL_SUFFIX_TOKENS = new Set(['jr', 'sr', 'ii', 'iii', 'iv']);
+
 function slugNamesMember(url: string, memberName: string): boolean {
-  const memberTokens = nameTokens(memberName);
-  const surname = memberTokens[memberTokens.length - 1];
-  const given = memberTokens[0];
-  if (!surname || !given || memberTokens.length < 2) return false;
+  const { first, last } = splitName(sanitizePersonName(memberName) ?? memberName);
+  const surname = nameTokens(last)
+    .filter((token) => !GENERATIONAL_SUFFIX_TOKENS.has(token))
+    .pop();
+  const given = nameTokens(first)[0];
+  if (!surname || !given) return false;
   let slugTokens: string[];
   try {
     const segments = new URL(url).pathname.split('/').filter(Boolean);

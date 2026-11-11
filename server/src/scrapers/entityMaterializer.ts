@@ -3158,27 +3158,99 @@ async function liveResearchersHoldingNetid(netid: string): Promise<any[]> {
     .lean();
 }
 
-async function researchersNamedByIdentityEvidence(
+interface IdentityEvidenceWitnesses {
+  researcher: any;
+  urls: string[];
+  emails: string[];
+  netids: string[];
+}
+
+async function identityEvidenceWitnessesByResearcher(
   evidence: RosterMemberIdentityEvidence,
-): Promise<any[]> {
-  const named = new Map<string, any>();
-  const add = (researcher: any) => {
-    if (researcher?._id) named.set(String(researcher._id), researcher);
+): Promise<Map<string, IdentityEvidenceWitnesses>> {
+  const witnesses = new Map<string, IdentityEvidenceWitnesses>();
+  const witnessFor = (researcher: any): IdentityEvidenceWitnesses | null => {
+    if (!researcher?._id) return null;
+    const id = String(researcher._id);
+    const existing = witnesses.get(id) ?? { researcher, urls: [], emails: [], netids: [] };
+    witnesses.set(id, existing);
+    return existing;
   };
   const claimantsByUrl = await liveResearchersClaimingOfficialProfileUrls(
     evidence.linkedProfileUrls,
   );
-  for (const claimants of claimantsByUrl.values()) {
-    if (claimants.length === 1) add(claimants[0]);
+  for (const url of evidence.linkedProfileUrls) {
+    const claimants = claimantsByUrl.get(officialProfileIdentityUrlKey(url)) ?? [];
+    if (claimants.length === 1) witnessFor(claimants[0])?.urls.push(url);
   }
   for (const email of evidence.emails) {
     const claimant = await soleLiveResearcherClaimingEmail(email);
-    add(claimant?._id ? await liveResearcherById(claimant._id) : null);
+    witnessFor(claimant?._id ? await liveResearcherById(claimant._id) : null)?.emails.push(email);
   }
   for (const netid of evidence.netids) {
-    for (const researcher of await liveResearchersHoldingNetid(netid)) add(researcher);
+    for (const researcher of await liveResearchersHoldingNetid(netid)) {
+      witnessFor(researcher)?.netids.push(netid);
+    }
   }
-  return [...named.values()];
+  return witnesses;
+}
+
+/**
+ * A linked page or address names a candidate only while nothing says it belongs to someone
+ * else. A URL that spells a name names every namesake equally, so a candidate is dropped when
+ * the member's own page or address is one the Yale directory pairs with a different netid, and
+ * each link or address is dropped when the candidate refuses it or when that page's own stated
+ * email names a different netid (#5641, #5693, #5751).
+ */
+async function withoutContradictedIdentityWitnesses(
+  evidence: RosterMemberIdentityEvidence,
+  witnesses: Map<string, IdentityEvidenceWitnesses>,
+): Promise<any[]> {
+  if (witnesses.size === 0) return [];
+  const refusals = new Map(
+    (
+      (await Researcher.find({ _id: { $in: [...witnesses.values()].map((w) => w.researcher._id) } })
+        .select('_id fieldValueRefusals')
+        .lean()) as Array<{ _id: unknown; fieldValueRefusals?: unknown }>
+    ).map((row) => [String(row._id), row.fieldValueRefusals]),
+  );
+  const pageOwners = await profilePageOwnerNetids(
+    [evidence.pageUrl, ...evidence.linkedProfileUrls],
+    materializationReadScopeFilter(),
+  );
+  const directory = evidence.emails.length > 0 ? await loadDirectoryNetidsByAddress() : undefined;
+  const kept: any[] = [];
+  for (const [id, witness] of witnesses) {
+    const netid = textValue(witness.researcher?.identifiers?.netid).toLowerCase();
+    const refused = refusals.get(id);
+    const memberPageNamesSomeoneElse =
+      Boolean(netid) &&
+      (profilePageContradictsNetid(pageOwners, evidence.pageUrl, netid) ||
+        (directory !== undefined &&
+          evidence.emails.some((email) =>
+            directoryContradictsNetidForAddress(netid, email, directory),
+          )));
+    if (memberPageNamesSomeoneElse) continue;
+    const urls = witness.urls.filter(
+      (url) =>
+        !researcherRefusesValue(refused, 'profileLink', url) &&
+        !(netid && profilePageContradictsNetid(pageOwners, url, netid)),
+    );
+    const emails = witness.emails.filter(
+      (email) => !researcherRefusesValue(refused, 'email', email),
+    );
+    if (urls.length + emails.length + witness.netids.length > 0) kept.push(witness.researcher);
+  }
+  return kept;
+}
+
+async function researchersNamedByIdentityEvidence(
+  evidence: RosterMemberIdentityEvidence,
+): Promise<any[]> {
+  return withoutContradictedIdentityWitnesses(
+    evidence,
+    await identityEvidenceWitnessesByResearcher(evidence),
+  );
 }
 
 /**

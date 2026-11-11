@@ -309,6 +309,21 @@ describe('extractRosterMemberIdentityEvidence keeps the subject own links (#5677
     expect(urls.some((url) => url.includes('casey-coauthor'))).toBe(false);
   });
 
+  it('reads a credentialed or titled roster name as the member name in a URL', () => {
+    const html = `<html><body><main>
+      <p>For more, click <a href="https://italian.yale.edu/profile/avery-synthetic">here</a>.</p>
+    </main></body></html>`;
+    for (const listed of [
+      'Avery Synthetic, PhD',
+      'Dr. Avery Synthetic',
+      'Avery B. Synthetic Jr.',
+    ]) {
+      expect(extractRosterMemberIdentityEvidence(html, PAGE, listed).linkedProfileUrls).toContain(
+        'https://italian.yale.edu/profile/avery-synthetic',
+      );
+    }
+  });
+
   it('drops a colleague card that shares only the member surname', () => {
     const html = `<html><body><main><ul>
       <li><article><a href="/profile/blair-synthetic/"><span>Blair Synthetic</span></a>

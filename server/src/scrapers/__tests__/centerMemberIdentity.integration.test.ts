@@ -34,6 +34,8 @@ import { ScrapeRun } from '../../models/scrapeRun';
 import { dedupeAccountlessResearcherShells } from '../../scripts/dedupeAccountlessResearcherShells';
 import { getResearchGroupDetail } from '../../services/researchGroupService';
 import { materializeFromRun } from '../entityMaterializer';
+import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
+import { resetDirectoryNetidsByAddressCache } from '../directoryContradictedProfileNetid';
 import { appendObservations } from '../observationStore';
 import {
   CentersInstitutesScraper,
@@ -229,6 +231,20 @@ const servedNames = async (): Promise<string[]> => {
     .filter(Boolean);
 };
 
+const directoryPairs = (netid: string, email: string) =>
+  Observation.create({
+    entityType: 'user',
+    entityKey: `netid:${netid}`,
+    sourceId: new mongoose.Types.ObjectId(),
+    sourceName: 'yale-directory',
+    sourceUrl: 'https://directory.example.test/',
+    confidence: 0.95,
+    observedAt: LONG_AGO,
+    superseded: false,
+    field: 'email',
+    value: email,
+  });
+
 const seedCenter = () => runLane({}, []);
 
 describe(
@@ -250,6 +266,7 @@ describe(
 
     beforeEach(async () => {
       clearC4Flags();
+      resetDirectoryNetidsByAddressCache();
       const db = mongoose.connection.db;
       if (!db) throw new Error('no db');
       for (const name of [
@@ -369,6 +386,77 @@ describe(
       expect(await researchersNamed('Avery')).toBe(1);
       expect((await edgeById(averyEdge))?.rosterProvenance).toBeUndefined();
       expect(await liveEdgesOf(otherPerson)).toHaveLength(0);
+    });
+
+    it('does not join a same-name holder of a linked page when the member page address names another netid (#5751)', async () => {
+      const namesake = await accountHolder('Avery', {
+        officialUrl: officialProfileUrl('Avery'),
+        netid: 'nm77',
+      });
+      await directoryPairs('nm77', 'nm77@fixture.example.edu');
+      await directoryPairs('as77', 'avery.synthetic@yale.edu');
+
+      await runLane({
+        [centerProfileUrl('Avery')]: profilePage({
+          email: 'avery.synthetic@yale.edu',
+          links: [officialProfileUrl('Avery')],
+        }),
+      });
+
+      expect(await liveEdgesOf(namesake)).toHaveLength(0);
+    });
+
+    it('does not join the holder of a linked page whose own stated address names another netid (#5751)', async () => {
+      const holder = await accountHolder('Blair', {
+        officialUrl: officialProfileUrl('Blair'),
+        netid: 'bh77',
+      });
+      await directoryPairs('bh77', 'bh77@fixture.example.edu');
+      await directoryPairs('ot77', 'blair.other@yale.edu');
+      await Observation.create({
+        entityType: 'user',
+        entityKey: 'netid:ot77',
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: 'official-profile-pi-backfill',
+        sourceUrl: officialProfileUrl('Blair'),
+        confidence: 0.9,
+        observedAt: LONG_AGO,
+        superseded: false,
+        field: 'email',
+        value: 'blair.other@yale.edu',
+      });
+
+      await runLane({
+        [centerProfileUrl('Blair')]: profilePage({ canonical: officialProfileUrl('Blair') }),
+      });
+
+      expect(await liveEdgesOf(holder)).toHaveLength(0);
+    });
+
+    it('does not join a holder through a profile link the holder refuses (#5751)', async () => {
+      const holder = await accountHolder('Casey', { officialUrl: officialProfileUrl('Casey') });
+      await Researcher.updateOne(
+        { _id: holder },
+        {
+          $set: {
+            'fieldValueRefusals.profileLink': [
+              {
+                valueKey: fieldValueRefusalKey('profileLink', officialProfileUrl('Casey')),
+                rule: 'other_persons_page',
+                refusedBy: 'test',
+                refusedAt: LONG_AGO,
+                note: 'another person page',
+              },
+            ],
+          },
+        },
+      );
+
+      await runLane({
+        [centerProfileUrl('Casey')]: profilePage({ canonical: officialProfileUrl('Casey') }),
+      });
+
+      expect(await liveEdgesOf(holder)).toHaveLength(0);
     });
 
     it('resolves to nobody when the evidence reaches two agreeing people', async () => {
