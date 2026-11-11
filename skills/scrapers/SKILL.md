@@ -1907,6 +1907,40 @@ An apply must name what it retires with `--kinds` (`email`, `phantom`, `title`),
 It re-reads each cited page once, sequentially, through `officialProfilePageStatedFields`, and retires an observation only when the page now yields a different value or none; a failed read retires nothing on that page, and `--skip-host` defers a host-locked page without requesting it.
 It writes no researcher field, so a stored title re-derives at the next materialize.
 
+#### Retiring the output of a lane config that never landed (#5807)
+
+A lane config that ran from unlanded code leaves live observations that no run of current code reads again, so no lane supersedes or retracts them, and no other retire path is scoped to them.
+`observations:retire-orphaned-lane-configs` (dry run by default) supersedes them with a rollback reason and never deletes.
+It takes an explicit `--configs=<lane>:<config-id>,...` list, so a run names exactly what it judges.
+
+A config is orphaned only when it is absent from the code's current config set and no ref tip defines it.
+The ref scan reads every ref of the checkout's repository (branches local and remote, tags, `HEAD`) plus each `--git-dir`, and greps each tip's `server/src/scrapers` code for the id as a `deptKey`, `key` or `id` value, test files excluded.
+A config that is suspended, unread, or waiting on an unmerged branch is present in one of those places and retracts nothing, because "not run recently" is never the predicate.
+A git failure refuses rather than reading as absence.
+Run `git fetch --all --prune` first; to include closed pull request heads, pass a `git clone --mirror` of the repository as `--git-dir`.
+An apply refuses unless every named config is orphaned.
+
+An observation is attributed by evidence its run left: an entity key minted under the config's key namespace (`dept-<ns>-...`, `dept:<ns>:...`, longest namespace wins), or a run whose `--only` selected nothing but orphaned configs.
+A key that a current namespace also prefixes, such as `dept-<current>-<rest>` where `<current>-<rest>` starts with the orphaned namespace, is ambiguous, so only the run's `--only` can attribute it.
+An observation whose run recorded a `codeSha`, or that has no run, is held rather than retired, because a recorded commit missing from a stale clone is not proof the code never landed.
+An orphaned observation that is the only live evidence for its field on the row it backs is held by default and reported under `heldSoleEvidence` by row, field and value.
+For a list field such as `departments` the check is per item, because the field resolves as a union and an item no other observation states would drop out.
+Each affected row is then projected through the engine without the observations still slated to go; a row that would serve a less complete field has that field's orphaned observations held (`basis: engine-projection`), then all of its orphaned observations, and an apply refuses if a row still would.
+The row is the live survivor the observation's key or id reaches, read with every row merged into it; a person observation's row is its own key.
+A hand check of the department values that only `seas` observations backed found the official engineering pages still list them, so a missing landed lane alone is not enough to retract a value with nothing else behind it.
+`--retire-sole-evidence` is the reviewed opt-out for a later run, once a live lane backs those fields; without it the served diff never shows a field becoming less complete.
+
+The dry run projects every affected live row, and every affected person key, through `materializeEntity` twice with `writeOnlyFields` limited to the fields the retired observations assert: once with them and once with them excluded from the read scope.
+It reports the fields whose projection differs, which fields' stored provenance is credited to a retired observation, rows left with no live evidence of their own, and `rowsWithRetiredEvidenceReadLive` for a projection that read retired evidence through a live fallback it could not isolate.
+The output file lists `rematerializeSlugs` and the report names `rematerializeOnlyFields`.
+Superseding writes no row field, so a served value moves only at the next materialize of that row; take that step with `research-entity:rematerialize --slugs=... --only-fields=...` on the listed rows, dry run first.
+A field whose only evidence was retired keeps its stored value on a rematerialize, because the engine does not clear a field no observation speaks to.
+
+    yarn --cwd server observations:retire-orphaned-lane-configs --configs=<lane>:<id>,... --output=/tmp/<name>.json
+    DEV_WRITE_OWNER=<session> yarn --cwd server observations:retire-orphaned-lane-configs --configs=<same list> --apply --confirm-retire-orphaned-lane-configs --output=/tmp/<name>.json
+
+A second apply over the same list retires nothing.
+
 #### Press copy and publication lists are not a description (#4446)
 
 A clinician feature made of attributed quoted speech, book-jacket blurbs, a news announcement, and a body that opens on a citation all passed the description quality bar and served.
