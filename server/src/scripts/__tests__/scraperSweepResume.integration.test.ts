@@ -37,6 +37,13 @@ function commandFromArgs(args: string[]): string | undefined {
   return cwdIndex >= 0 ? args[cwdIndex + 2] : args[0];
 }
 
+// The sweep reads its own commit before every stage, and the default reader spawns
+// `git rev-parse` each time: 163 spawns took 9.9 s of one 18.7 s test, so the suite's
+// time was mostly process creation and full-suite load pushed tests past 30 s (#5670).
+// A fixed head keeps that work out of every test that does not exercise the commit check;
+// the tests that do pass their own reader, which overrides this one.
+const FIXTURE_HEAD_SHA = '0123456789abcdef0123456789abcdef01234567';
+
 describe('scraper sweep resume, logging, and gated prune end to end', () => {
   let mongod: MongoMemoryServer;
   let mongoUrl: string;
@@ -60,7 +67,8 @@ describe('scraper sweep resume, logging, and gated prune end to end', () => {
 
     const sweep = await import('../runScraperSweep');
     const checkpointModule = await import('../scraperSweepCheckpoint');
-    runScraperSweep = sweep.runScraperSweep;
+    runScraperSweep = (options, dependencies = {}) =>
+      sweep.runScraperSweep(options, { readHeadSha: () => FIXTURE_HEAD_SHA, ...dependencies });
     researchSweepSources = sweep.RESEARCH_SWEEP_SOURCES;
     checkpointPathForMode = checkpointModule.checkpointPathForMode;
     readSweepCheckpoint = checkpointModule.readSweepCheckpoint;
