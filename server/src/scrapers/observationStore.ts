@@ -48,6 +48,7 @@ import {
   loadDirectoryRemovalObservationGuard,
   type DirectoryRemovalObservationGuard,
 } from './directoryRemovalObservationGuard';
+import { withRenamedResearchEntityIds } from './renamedResearchEntityAdoption';
 
 export const QUALITY_GUARDED_PROSE_FIELDS = new Set(['fullDescription', 'shortDescription']);
 
@@ -597,7 +598,7 @@ export async function appendObservations(
   refusedByRequest?: ObservationInput[];
 }> {
   if (inputs.length === 0) return { inserted: 0, skipped: 0, superseded: 0 };
-  const removal = await withoutRemovedPeople(inputs, ctx);
+  const removal = await withoutRemovedPeople(await withRenamedResearchEntityIds(inputs), ctx);
   const refusedByRequest = removal.refused.length > 0 ? { refusedByRequest: removal.refused } : {};
   if (removal.kept.length === 0) {
     return { inserted: 0, skipped: 0, superseded: 0, ...refusedByRequest };

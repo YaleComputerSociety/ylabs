@@ -5240,12 +5240,16 @@ export async function resolveRelationshipTarget(
       entityKey: targetEntityKey,
       entityType: 'FACULTY_RESEARCH_AREA',
     })) as ResolvedRelationshipTargetRow | null;
-  const target = (await researchEntityModel
+  const target = ((await researchEntityModel
     .findOne(
       { slug: targetEntityKey, archived: { $ne: true } },
       { _id: 1, name: 1, slug: 1, entityType: 1 },
     )
-    .lean()) as ResolvedRelationshipTargetRow | null;
+    .lean()) ??
+    (await liveResearchEntityNamedByKeyObservations(
+      targetEntityKey,
+      '_id name slug entityType',
+    ))) as ResolvedRelationshipTargetRow | null;
   const namedTarget = canonicalFacultyResearchAreaTarget || target;
   return {
     canonicalFacultyResearchAreaTarget,
@@ -5388,9 +5392,11 @@ async function materializeResearchEntityRelationship(
   const researchEntityModel = deps.researchEntityModel || ResearchEntity;
   const relationshipModel = deps.relationshipModel || ResearchEntityRelationship;
 
-  const source = (await researchEntityModel
+  const source = ((await researchEntityModel
     .findOne({ slug: sourceEntityKey, archived: { $ne: true } }, { _id: 1 })
-    .lean()) as { _id?: unknown } | null;
+    .lean()) ?? (await liveResearchEntityNamedByKeyObservations(sourceEntityKey))) as {
+    _id?: unknown;
+  } | null;
   if (!source?._id) return skip('source-not-resolved');
 
   const { canonicalFacultyResearchAreaTarget, target, resolvedTarget } =

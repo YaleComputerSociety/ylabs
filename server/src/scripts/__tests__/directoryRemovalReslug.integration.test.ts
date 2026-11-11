@@ -424,6 +424,28 @@ describe('directory-removal:reslug renames a co-led row a removed lead names (#4
   );
 
   it(
+    'keeps the old lane key on the renamed row after its superseded observations are pruned',
+    {
+      timeout: 120000,
+    },
+    async () => {
+      const row = await keyOnlyLaneRowRenamedForARemovedLead();
+      await runKeyOnlyLane();
+
+      const liveOldKeyIds = await Observation.distinct('entityId', {
+        entityType: 'researchEntity',
+        entityKey: KEY_ONLY_LANE_KEY,
+        superseded: false,
+      });
+      expect(liveOldKeyIds.map(String)).toEqual([String(row._id)]);
+      await Observation.deleteMany({ superseded: true });
+      await runKeyOnlyLane();
+
+      expect(await slugs()).toEqual(['tallent-optics-lab']);
+    },
+  );
+
+  it(
     'keeps taking the old lane key contact after fresh observations supersede the stamped ones',
     {
       timeout: 120000,

@@ -30,8 +30,12 @@ describe('slugWithoutRemovedLead (#4160)', () => {
     expect(reslug('center-varrow-lab', ['Brisa Varrow'])).toBeUndefined();
   });
 
-  it('keeps a surname-only slug that also carries the removed given name elsewhere', () => {
-    expect(reslug('quillon-optics-varrow-lab')).toBeUndefined();
+  it('strips a given name and surname that are not adjacent', () => {
+    expect(reslug('quillon-optics-varrow-lab')).toBe('optics-lab');
+  });
+
+  it('keeps a given name a remaining lead shares and strips the surname', () => {
+    expect(reslug('quillon-tallent-varrow-lab', ['Quillon Tallent'])).toBe('quillon-tallent-lab');
   });
 
   it('falls back to the remaining surnames when stripping leaves nothing distinctive', () => {

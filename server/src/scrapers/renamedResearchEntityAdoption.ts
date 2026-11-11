@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { slugNamesPersonByFullName } from '../services/directoryRemovalSlugNames';
@@ -13,7 +14,7 @@ export async function liveResearchEntityNamedByKeyObservations(
   entityKey: string | undefined,
   select = '_id',
 ): Promise<Record<string, unknown> | null> {
-  if (!entityKey) return null;
+  if (!entityKey || mongoose.connection.readyState !== 1) return null;
   const ids = await Observation.distinct('entityId', {
     entityType: 'researchEntity',
     entityKey,
@@ -25,6 +26,71 @@ export async function liveResearchEntityNamedByKeyObservations(
     .limit(2)
     .lean<Array<Record<string, unknown>>>();
   return rows.length === 1 ? rows[0] : null;
+}
+
+interface KeyedInput {
+  entityType: string;
+  entityKey?: string;
+  entityId?: string;
+}
+
+const isKeyOnlyResearchEntityInput = (input: KeyedInput): boolean =>
+  input.entityType === 'researchEntity' && Boolean(input.entityKey) && !input.entityId;
+
+/**
+ * Stamps the renamed row's id onto a lane's fresh old-key observations at ingest, so the
+ * link from the old key to the row lives in the key's live observations rather than only in
+ * the ones `directory-removal:reslug` stamped, which the next pass supersedes and pruning can
+ * delete (#4160). A key some row holds as its slug is never touched.
+ */
+export async function withRenamedResearchEntityIds<T extends KeyedInput>(
+  inputs: readonly T[],
+): Promise<T[]> {
+  const keys = [
+    ...new Set(inputs.filter(isKeyOnlyResearchEntityInput).map((input) => input.entityKey!)),
+  ];
+  if (keys.length === 0 || mongoose.connection.readyState !== 1) return [...inputs];
+  const held = new Set(
+    (
+      await ResearchEntity.find({ slug: { $in: keys } })
+        .select('slug')
+        .lean<Array<{ slug: string }>>()
+    ).map((row) => row.slug),
+  );
+  const unheld = keys.filter((key) => !held.has(key));
+  if (unheld.length === 0) return [...inputs];
+  const named = await Observation.aggregate<{ _id: string; ids: unknown[] }>([
+    {
+      $match: { entityType: 'researchEntity', entityKey: { $in: unheld }, entityId: { $ne: null } },
+    },
+    { $group: { _id: '$entityKey', ids: { $addToSet: '$entityId' } } },
+  ]);
+  const namedIds = named.flatMap((group) => group.ids);
+  if (namedIds.length === 0) return [...inputs];
+  const live = new Set(
+    (
+      await ResearchEntity.find({ _id: { $in: namedIds }, archived: { $ne: true } })
+        .select('_id')
+        .lean<Array<{ _id: unknown }>>()
+    ).map((row) => String(row._id)),
+  );
+  const rowIdByKey = new Map<string, string>();
+  for (const group of named) {
+    const liveIds = [...new Set(group.ids.map(String))].filter((id) => live.has(id));
+    if (liveIds.length === 1) rowIdByKey.set(group._id, liveIds[0]);
+  }
+  return inputs.map((input) =>
+    isKeyOnlyResearchEntityInput(input) && rowIdByKey.has(input.entityKey!)
+      ? { ...input, entityId: rowIdByKey.get(input.entityKey!) }
+      : input,
+  );
+}
+
+export async function liveResearchEntityIdForLaneKey(entityKey: string): Promise<unknown> {
+  const held = await ResearchEntity.findOne({ slug: entityKey, archived: { $ne: true } })
+    .select('_id')
+    .lean<{ _id: unknown } | null>();
+  return held?._id ?? (await liveResearchEntityNamedByKeyObservations(entityKey))?._id ?? null;
 }
 
 export async function researchEntityMintSlugNamesARemovedResearcher(

@@ -51,7 +51,7 @@ export function slugNamesPersonByFullName(slug: unknown, name: unknown): boolean
   return fullNamePositions(slugTokens(slug), name).length > 0;
 }
 
-function surnameOnlyPositions(
+function scatteredNamePositions(
   slugTokenList: readonly string[],
   removedTokens: readonly string[],
   remainingLeadTokens: ReadonlyArray<readonly string[]>,
@@ -59,9 +59,11 @@ function surnameOnlyPositions(
   if (removedTokens.length < 2) return [];
   const given = removedTokens[0];
   const surname = removedTokens[removedTokens.length - 1];
-  if (slugTokenList.includes(given)) return [];
-  if (remainingLeadTokens.some((tokens) => tokens.includes(surname))) return [];
-  return slugTokenList.flatMap((token, index) => (token === surname ? [index] : []));
+  const sharedWithARemainingLead = (token: string) =>
+    remainingLeadTokens.some((tokens) => tokens.includes(token));
+  if (sharedWithARemainingLead(surname)) return [];
+  const strippable = new Set([surname, ...(sharedWithARemainingLead(given) ? [] : [given])]);
+  return slugTokenList.flatMap((token, index) => (strippable.has(token) ? [index] : []));
 }
 
 function boundedSlug(tokens: readonly string[]): string {
@@ -71,8 +73,10 @@ function boundedSlug(tokens: readonly string[]): string {
 /**
  * The slug a co-led row takes once one of its leads is removed from the directory (#4160):
  * the row's own tokens with the removed lead's name taken out, keeping the lane prefix in
- * place. A surname alone is taken out only when it is not also a remaining lead's name, and
- * when what is left says nothing distinctive the remaining leads' surnames stand in.
+ * place. Apart from an adjacent full name, the surname and given name are taken out wherever
+ * they stand, but only when the surname is not also a remaining lead's name, and the given
+ * name only when no remaining lead shares it. When what is left says nothing distinctive the
+ * remaining leads' surnames stand in.
  */
 export function slugWithoutRemovedLead(args: {
   slug: string;
@@ -90,7 +94,7 @@ export function slugWithoutRemovedLead(args: {
   const stripped = new Set(
     fullName.length > 0
       ? fullName
-      : surnameOnlyPositions(tokens, removedTokens, remainingLeadTokens),
+      : scatteredNamePositions(tokens, removedTokens, remainingLeadTokens),
   );
   if (stripped.size === 0) return undefined;
 

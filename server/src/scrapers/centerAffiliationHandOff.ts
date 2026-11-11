@@ -25,6 +25,7 @@ import {
   type CenterRosterRead,
   type CenterRosterRetirementDeps,
 } from './centerRosterRetirement';
+import { liveResearchEntityNamedByKeyObservations } from './renamedResearchEntityAdoption';
 
 export const CENTER_AFFILIATION_HAND_OFF_REASON =
   'center affiliation hand-off: the code lane read of this center does not list this center-affiliation-llm affiliation (#5296)';
@@ -326,9 +327,11 @@ export async function reconcileCenterAffiliationHandOffFromRun(
     indexSyncFailures: 0,
   };
   for (const centerKey of centerKeys) {
-    const center = (await ResearchEntity.findOne({ slug: centerKey, archived: { $ne: true } })
+    const center = ((await ResearchEntity.findOne({ slug: centerKey, archived: { $ne: true } })
       .select('_id')
-      .lean()) as { _id?: mongoose.Types.ObjectId } | null;
+      .lean()) ?? (await liveResearchEntityNamedByKeyObservations(centerKey))) as {
+      _id?: mongoose.Types.ObjectId;
+    } | null;
     if (!center?._id) continue;
     const llmClaims = await loadCenterAffiliationLlmClaims(
       centerKey,
