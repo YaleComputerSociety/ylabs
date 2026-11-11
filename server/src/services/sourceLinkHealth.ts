@@ -13,6 +13,7 @@ import {
   type SourceLinkHealthStatus,
 } from '../models/storedVocabularies';
 import { TLS_VERIFICATION_ERROR_CODES } from '../utils/tlsVerificationErrors';
+import { normalizeWebsiteUrlIdentityKey } from '../utils/websiteUrlIdentityKey';
 
 export { sourceLinkHealthStatuses, type SourceLinkHealthStatus };
 
@@ -56,6 +57,14 @@ export interface SourceLinkHealth {
    * spelling counts only when its own probe stayed on the page it asked for (#5639).
    */
   landedOnRequestedResource?: true;
+  /**
+   * The live page the host's own redirects landed on, when it names a different page
+   * identity than the requested URL (another host, another path, not just a scheme,
+   * `www.`, letter case, slash or default-document spelling). Set only on a `HEALTHY` verdict. It is
+   * the evidence the URL-identity dedupe and resolve-at-mint read to treat the two URLs
+   * as one page (#5638).
+   */
+  redirectLandingUrl?: string;
 }
 
 export interface SourceLinkProbeResult {
@@ -306,19 +315,34 @@ export function httpsLandingOf(
   return isSameResource(requested, final) ? final.toString() : undefined;
 }
 
+export function redirectLandingOf(
+  requestedUrl: string | undefined,
+  finalUrl: string | undefined,
+): string | undefined {
+  const requested = parseProbeUrl(requestedUrl);
+  const final = parseProbeUrl(finalUrl);
+  if (!requested || !final) return undefined;
+  if (final.protocol !== 'https:' && final.protocol !== 'http:') return undefined;
+  const requestedKey = normalizeWebsiteUrlIdentityKey(requested.toString()).toLowerCase();
+  const finalKey = normalizeWebsiteUrlIdentityKey(final.toString()).toLowerCase();
+  if (!requestedKey || !finalKey || requestedKey === finalKey) return undefined;
+  return final.toString();
+}
+
 export function classifySourceLinkHealth(probe: SourceLinkProbeResult): SourceLinkHealth {
   const verdict = classifyProbeOutcome(probe);
-  const httpsLandingUrl =
-    verdict.healthStatus === 'HEALTHY'
-      ? httpsLandingOf(probe.requestedUrl, probe.finalUrl)
-      : undefined;
-  const landed =
-    verdict.healthStatus === 'HEALTHY' &&
-    landedOnRequestedResource(probe.requestedUrl, probe.finalUrl);
-  const withLanding = httpsLandingUrl ? { ...verdict, httpsLandingUrl } : verdict;
-  const classified = landed
-    ? { ...withLanding, landedOnRequestedResource: true as const }
-    : withLanding;
+  const healthy = verdict.healthStatus === 'HEALTHY';
+  const httpsLandingUrl = healthy ? httpsLandingOf(probe.requestedUrl, probe.finalUrl) : undefined;
+  const redirectLandingUrl = healthy
+    ? redirectLandingOf(probe.requestedUrl, probe.finalUrl)
+    : undefined;
+  const landed = healthy && landedOnRequestedResource(probe.requestedUrl, probe.finalUrl);
+  const classified = {
+    ...verdict,
+    ...(httpsLandingUrl ? { httpsLandingUrl } : {}),
+    ...(redirectLandingUrl ? { redirectLandingUrl } : {}),
+    ...(landed ? { landedOnRequestedResource: true as const } : {}),
+  };
   const outcome =
     probe.errorCode && TLS_VERIFICATION_ERROR_CODES.has(probe.errorCode)
       ? { ...classified, tlsVerificationFailed: true }

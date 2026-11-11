@@ -1798,6 +1798,11 @@ Serve time offers the landing first, then the probed spelling, and otherwise the
 The stored `websiteUrl` keeps recording what the source published, so this is derivation from link-health evidence and writes no field.
 `--http-websites-only` scopes a pass to rows whose `websiteUrl` or `website` is plain HTTP, which is how a landing is recorded without waiting for the sweep's seven-day re-probe window.
 
+A `HEALTHY` probe whose host's own redirects land on a different page identity (another host or another path, not a scheme, `www.`, letter-case, trailing-slash or default-document respelling) records that landing as `redirectLandingUrl` (#5638).
+It is the only evidence a host or path alias is admitted on: the website-url dedupe lane groups a row under its `websiteUrl`'s recorded landing, and resolve-at-mint's `website-url` arm adds the keys a recorded redirect makes equivalent.
+Nothing is aliased by pattern, so a URL no probe has followed stays its own page, and every dedupe guard (lead-person clustering, the conflated-person refusal, never-demote) still decides the merge.
+The landing is recorded by the ordinary link-health pass, so it reaches the dedupe on the sweep after the probe that saw it.
+
 The resolved address has to be the one a student gets, not the one the probing machine gets.
 Yale answers its legacy departmental hosts with split-horizon DNS: the resolver on the Development scrape host returned RFC1918 space for `www.cs.yale.edu`, `ursula.chem.yale.edu`, `www.astro.yale.edu` and others, while public resolvers return routable `128.36.0.0/16` addresses and the pages load off campus (#3903).
 So the flag is recorded only after `classifyOffCampusAddressing` (`server/src/utils/publicDnsResolution.ts`) confirms the host against public DNS over HTTPS, which a network intercepting port 53 cannot answer in the public resolver's place.

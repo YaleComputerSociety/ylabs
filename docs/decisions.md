@@ -1654,6 +1654,7 @@ A stored column turns out to buy none of the prevention it was supposed to unloc
 
 `normalizeWebsiteUrlIdentityKey` drops only three things reversibly: the scheme, a leading `www.`, and a trailing slash.
 So the eight spellings that fold into a key can be enumerated and looked up against the stored `websiteUrl` directly.
+(#5638 adds a fourth, a trailing default document such as `index.aspx`, and the inverse enumerates those leaves too.)
 Measured on Development against the 101 entityKeys that actually reach the resolver, the enumeration finds all 32 folds a stored key would find and 0 that only a stored key would find.
 Corpus-wide the inverse recovers 1,756 of 1,763 live `websiteUrl` values; the 7 it cannot are 5 with a query string, 1 with a fragment, and 1 path-normalization case, and none of them is a resolver target.
 

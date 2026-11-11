@@ -225,16 +225,110 @@ describe('resolve-at-mint for entities (C4_RESOLVE_AT_MINT_ENTITIES)', () => {
 
   /**
    * A 302 counts as identity only if the chain ends on a public page, and the mint
-   * resolver never fetches, so it must never fold a redirect pair. The key encoder
-   * drops only the scheme, a leading `www.` and a trailing slash, so two paths that a
-   * redirect would join stay distinct keys and both rows mint. Default-on does not
-   * change this: it is the encoder's reach, not the flag, that bounds the fold.
+   * resolver never fetches, so it folds a redirect pair only on a verdict link health
+   * recorded (#5638). With none recorded, two paths a redirect would join stay distinct
+   * keys and both rows mint.
    */
   it('default ON: two URLs that only a redirect would join are not folded', async () => {
     await seedResearchEntity('smith-lab-a', 'Smith Lab', 'https://smithlab.example.edu/old-home');
     await materializeEntity('researchEntity', { entityKey: 'smith-lab-a' });
     await seedResearchEntity('smith-lab-b', 'Smith Lab', 'https://smithlab.example.edu/new-home');
     const second = await materializeEntity('researchEntity', { entityKey: 'smith-lab-b' });
+
+    expect(await ResearchEntity.countDocuments({})).toBe(2);
+    expect(second.created).toBe(true);
+  });
+
+  it('default ON: a trailing default document is the directory it sits in', async () => {
+    await seedResearchEntity('smith-lab-a', 'Smith Lab', 'https://med.example.edu/lab/smith/');
+    const first = await materializeEntity('researchEntity', { entityKey: 'smith-lab-a' });
+    await seedResearchEntity(
+      'smith-lab-b',
+      'Smith Lab',
+      'https://med.example.edu/lab/smith/index.aspx',
+    );
+    const second = await materializeEntity('researchEntity', { entityKey: 'smith-lab-b' });
+    const again = await materializeEntity('researchEntity', { entityKey: 'smith-lab-b' });
+
+    expect(await ResearchEntity.countDocuments({})).toBe(1);
+    expect(String(second.entityId)).toBe(String(first.entityId));
+    expect(String(again.entityId)).toBe(String(first.entityId));
+  });
+
+  it('default ON: a redirect link health recorded folds a lab that moved to its own host', async () => {
+    await seedResearchEntity('smith-lab-a', 'Smith Lab', 'https://smithlab.example.edu/');
+    const first = await materializeEntity('researchEntity', { entityKey: 'smith-lab-a' });
+    await ResearchEntity.updateOne(
+      { _id: first.entityId },
+      {
+        $set: {
+          sourceLinkHealth: [
+            {
+              url: 'http://www.example.edu/smithlab/',
+              healthStatus: 'HEALTHY',
+              httpStatusCode: 200,
+              redirectLandingUrl: 'https://smithlab.example.edu/',
+              checkedAt: new Date('2026-03-02T00:00:00Z'),
+            },
+          ],
+        },
+      },
+    );
+
+    await seedResearchEntity('smith-lab-b', 'Smith Lab', 'http://www.example.edu/smithlab/');
+    const second = await materializeEntity('researchEntity', { entityKey: 'smith-lab-b' });
+    const again = await materializeEntity('researchEntity', { entityKey: 'smith-lab-b' });
+
+    expect(await ResearchEntity.countDocuments({})).toBe(1);
+    expect(String(second.entityId)).toBe(String(first.entityId));
+    expect(String(again.entityId)).toBe(String(first.entityId));
+  });
+
+  it('default ON: a mint whose own URL is a recorded redirect target folds into the alias row', async () => {
+    await seedResearchEntity('smith-lab-a', 'Smith Lab', 'http://www.example.edu/smithlab/');
+    const first = await materializeEntity('researchEntity', { entityKey: 'smith-lab-a' });
+    await ResearchEntity.updateOne(
+      { _id: first.entityId },
+      {
+        $set: {
+          sourceLinkHealth: [
+            {
+              url: 'http://www.example.edu/smithlab/',
+              healthStatus: 'HEALTHY',
+              httpStatusCode: 200,
+              redirectLandingUrl: 'https://smithlab.example.edu/',
+            },
+          ],
+        },
+      },
+    );
+
+    await seedResearchEntity('smith-lab-b', 'Smith Lab', 'https://smithlab.example.edu/');
+    const second = await materializeEntity('researchEntity', { entityKey: 'smith-lab-b' });
+
+    expect(await ResearchEntity.countDocuments({})).toBe(1);
+    expect(String(second.entityId)).toBe(String(first.entityId));
+  });
+
+  it('default ON: two labs at different paths of one host still mint two rows', async () => {
+    await seedResearchEntity('lee-lab-a', 'Lee Lab', 'https://med.example.edu/lab/lee-a/');
+    const first = await materializeEntity('researchEntity', { entityKey: 'lee-lab-a' });
+    await ResearchEntity.updateOne(
+      { _id: first.entityId },
+      {
+        $set: {
+          sourceLinkHealth: [
+            {
+              url: 'https://med.example.edu/lab/lee-a/old/',
+              healthStatus: 'HEALTHY',
+              redirectLandingUrl: 'https://med.example.edu/lab/lee-a/',
+            },
+          ],
+        },
+      },
+    );
+    await seedResearchEntity('lee-lab-b', 'Lee Lab', 'https://med.example.edu/lab/lee-b/');
+    const second = await materializeEntity('researchEntity', { entityKey: 'lee-lab-b' });
 
     expect(await ResearchEntity.countDocuments({})).toBe(2);
     expect(second.created).toBe(true);

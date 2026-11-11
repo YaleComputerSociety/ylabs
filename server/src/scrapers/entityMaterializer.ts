@@ -31,6 +31,7 @@ import {
   withoutOverSharedPersonWebsiteObservations,
 } from './overSharedPersonWebsite';
 import { ResearchEntity } from '../models/researchEntity';
+import { websiteUrlIdentityKeyRedirectEquivalents } from '../services/websiteUrlRedirectLandings';
 import {
   DERIVED_RESEARCH_AREA_SOURCE_NAME,
   RESEARCH_PAGE_TOPICS_DERIVED_SOURCE_NAME,
@@ -10808,7 +10809,8 @@ async function findEntityCandidatesByKey(
   // URL on the row. Two candidates are enough: `resolveCanonical` only distinguishes
   // none, one, and more than one, and more than one is ambiguous either way.
   if (key.ns === 'website-url') {
-    const variants = websiteUrlIdentityKeyVariants(key.value);
+    const equivalentKeys = await websiteUrlIdentityKeyRedirectEquivalents(key.value);
+    const variants = [key.value, ...equivalentKeys].flatMap(websiteUrlIdentityKeyVariants);
     if (variants.length === 0) return [];
     const docs = (await ResearchEntity.find({
       websiteUrl: { $in: variants },

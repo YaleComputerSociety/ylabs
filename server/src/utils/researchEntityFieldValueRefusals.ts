@@ -31,6 +31,7 @@
  * be retired is the permanent veto this exists to avoid.
  */
 import { normalizeWebsiteUrlIdentityKey } from '../scripts/researchEntityPiDedupeCore';
+import { foldDefaultDocumentLeaf } from './websiteUrlIdentityKey';
 import { type ResearchHomeWebsiteUrlRefusal } from './researchHomeWebsiteUrl';
 
 /**
@@ -78,25 +79,7 @@ export const FIELD_VALUE_REFUSALS_PATH = 'fieldValueRefusals';
  */
 const URL_VALUED_FIELDS: ReadonlySet<string> = new Set(['websiteUrl', 'website']);
 
-/**
- * A default document is the directory it sits in, so `/lab/x/index.aspx` and `/lab/x/`
- * are one page and must be one refusal (#3191).
- *
- * Folded here rather than in `normalizeWebsiteUrlIdentityKey`, which is deliberate:
- * that key is load bearing for entity dedupe, and widening what counts as the same URL
- * there would change which rows merge. The refusal key is this module's to define.
- *
- * Measured honestly, this is prevention rather than repair. The shape occurred once in
- * 105 lock instances, and none of the 16 currently reachable values is a variant
- * spelling of an existing refusal. It is folded because a default document IS the
- * directory, not because the corpus is full of them: without it, that one row needed a
- * second refusal recorded by hand.
- */
-const DEFAULT_DOCUMENT_LEAF = /\/(?:index|default)\.(?:aspx?|html?|php|cfm)$/i;
-
-export function foldDefaultDocumentLeaf(key: string): string {
-  return key.replace(DEFAULT_DOCUMENT_LEAF, '');
-}
+export { foldDefaultDocumentLeaf };
 
 /**
  * Internal whitespace is collapsed for the same reason a trailing space is trimmed: one
