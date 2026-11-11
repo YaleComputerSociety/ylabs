@@ -49,9 +49,14 @@ describe('Privacy', () => {
   it('sends a private data request to the maintainer address, answered within 30 days', () => {
     renderPrivacy();
 
-    const link = screen.getByRole('link', { name: PRIVACY_CONTACT_EMAIL });
-    expect(link.getAttribute('href')).toBe(PRIVACY_CONTACT_MAILTO);
-    const paragraph = link.closest('p')?.textContent ?? '';
+    const links = screen.getAllByRole('link', { name: PRIVACY_CONTACT_EMAIL });
+    for (const mailbox of links) {
+      expect(mailbox.getAttribute('href')).toBe(PRIVACY_CONTACT_MAILTO);
+    }
+    const link = links.find((candidate) =>
+      candidate.closest('p')?.textContent?.includes('If you cannot sign in'),
+    );
+    const paragraph = link?.closest('p')?.textContent ?? '';
     expect(paragraph).toContain('If you cannot sign in');
     expect(paragraph).toContain('within 30 days');
     expect(paragraph).toContain('Do not send a request about your own data as a GitHub issue');
@@ -67,7 +72,54 @@ describe('Privacy', () => {
     expect(text).toContain('under Your data');
     expect(text).toContain('enter your Yale password again');
     expect(text).toContain('a maintainer deletes that account too');
-    expect(screen.getByRole('link', { name: PRIVACY_CONTACT_EMAIL })).toBeTruthy();
+    expect(text).toContain('you type “delete my data”');
+    expect(text).toContain('It usually takes effect at once');
+    expect(text).toContain(
+      'linked to an entry in the directory, y/labs tells you and you can email us',
+    );
+    expect(text).not.toContain('Deleting takes effect at once');
+    expect(text).toContain('names you only by a one-way hash of your netid');
+    expect(text).not.toContain('with nothing that identifies you');
+    expect(text).toContain('anything you typed in the note stays');
+    expect(text).toContain(
+      'If you were a y/labs administrator, your administrator access is revoked rather than deleted, and the records of administrator actions you took still name your netid.',
+    );
+    expect(screen.getAllByRole('link', { name: PRIVACY_CONTACT_EMAIL }).length).toBeGreaterThan(0);
+  });
+
+  it('tells a listed person how to ask to be removed, and says what a request stores', () => {
+    renderPrivacy();
+
+    const text = document.body.textContent ?? '';
+    expect(text).toContain(
+      'If y/labs lists you and you would like to be removed, sign in and use Remove me on your dashboard, or email ycs.maintenance.ylabs@gmail.com from the address Yale publishes for you.',
+    );
+    expect(text).toContain(
+      'If you ask to be removed from y/labs, the request stores only your netid, the listing it matched, the request status, when it was made and decided, and which maintainer decided it.',
+    );
+  });
+
+  it('describes the cookies, the stored sign-in fields, and what a listed person can do', () => {
+    renderPrivacy();
+
+    const text = document.body.textContent ?? '';
+    expect(text).toContain('It does set a session cookie and its signature');
+    expect(text).not.toContain('It does set one cookie');
+    expect(text).toContain('If you work at Yale, it also stores your job title and department.');
+    expect(text).toContain('a random token that shows the request came from y/labs');
+    expect(screen.getByRole('heading', { level: 2, name: 'If y/labs lists you' })).toBeTruthy();
+    expect(text).toContain(
+      'y/labs builds its directory from public Yale web pages, such as official profiles, department and lab pages, and roster lists, and from public grant and publication records. Maintainers refresh it from time to time, not on a fixed schedule.',
+    );
+    expect(text).toContain('use Report an issue with this page on the listing');
+    expect(text).toContain('A maintainer applies an accepted request within 7 days.');
+    expect(text).toContain(
+      'PostHog keeps session replays for 30 days and other events for 1 year.',
+    );
+    expect(text).not.toContain('keeps this data for no longer than');
+    expect(text).toContain(
+      'Web addresses are sent without their search terms, and your netid is removed from everything sent.',
+    );
   });
 
   it('has no serious or critical accessibility violations', async () => {

@@ -6,10 +6,11 @@ import { isAuthenticated, validateObjectId, validateResearchEntityId } from '../
 import { writeLimit } from '../middleware/rateLimiters';
 import * as userController from '../controllers/userController';
 import * as accountDataController from '../controllers/accountDataController';
+import { issueSessionCsrfToken, requireSessionCsrfToken } from '../middleware/sessionCsrfToken';
 import {
-  issueAccountDeletionCsrfToken,
-  requireAccountDeletionCsrfToken,
-} from '../middleware/accountDeletionCsrf';
+  getOwnDirectoryRemovalRequest,
+  submitOwnDirectoryRemovalRequest,
+} from '../controllers/directoryRemovalRequestController';
 
 const router = Router();
 
@@ -79,15 +80,24 @@ router.get(
   '/me/deletion-csrf-token',
   isAuthenticated,
   accountDataController.requireAccountDataControls,
-  issueAccountDeletionCsrfToken,
+  issueSessionCsrfToken,
 );
+router.get('/me/csrf-token', isAuthenticated, issueSessionCsrfToken);
 router.delete(
   '/me',
   writeLimit,
   isAuthenticated,
   accountDataController.requireAccountDataControls,
-  requireAccountDeletionCsrfToken,
+  requireSessionCsrfToken,
   accountDataController.deleteOwnAccountData,
+);
+router.get('/directoryRemovalRequest', isAuthenticated, getOwnDirectoryRemovalRequest);
+router.post(
+  '/directoryRemovalRequest',
+  writeLimit,
+  isAuthenticated,
+  requireSessionCsrfToken,
+  submitOwnDirectoryRemovalRequest,
 );
 
 export default router;

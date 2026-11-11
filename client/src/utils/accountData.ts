@@ -3,13 +3,13 @@ import { buildApiUrl } from './apiBaseUrl';
 import { rememberSignedIn } from './lastKnownSession';
 import { stopProductAnalytics } from './productAnalytics';
 import { setResearchAnalyticsEnabled } from './researchAnalytics';
+import { sessionCsrfHeaders } from './sessionCsrf';
 
 export const ACCOUNT_DATA_CONTROLS_FLAG = 'accountDataControls';
 export const ACCOUNT_DATA_DELETION_CONFIRM_PHRASE = 'delete my data';
 export const ACCOUNT_DATA_DELETE_INTENT_PARAM = 'data';
 export const ACCOUNT_DATA_DELETE_INTENT_VALUE = 'delete';
 export const ACCOUNT_DELETED_NOTICE_KEY = 'accountDataDeletedNotice';
-export const ACCOUNT_DELETION_CSRF_HEADER = 'X-CSRF-Token';
 const EXPORT_URL_REVOKE_DELAY_MS = 30_000;
 
 export type AccountDataDeletionOutcome =
@@ -54,12 +54,12 @@ const stopAnalyticsForDeletion = (): void => {
 export const deleteAccountData = async (): Promise<AccountDataDeletionOutcome> => {
   stopAnalyticsForDeletion();
   try {
-    const { data } = await axios.get<{ csrfToken?: unknown }>('/users/me/deletion-csrf-token', {
+    const headers = await sessionCsrfHeaders('/users/me/deletion-csrf-token', {
       skipAuthRequiredEvent: true,
     });
     await axios.delete('/users/me', {
       data: { confirm: ACCOUNT_DATA_DELETION_CONFIRM_PHRASE },
-      headers: { [ACCOUNT_DELETION_CSRF_HEADER]: String(data?.csrfToken ?? '') },
+      headers,
       skipAuthRequiredEvent: true,
     });
     return 'deleted';

@@ -154,6 +154,8 @@ A denylist leaks every field added to the model later, and a raw document leaks 
 The correction-report routes are the worked example (#4011): `POST /api/research/:slug/report` and `GET /api/research/:slug/reports/mine` return `toReporterCorrectionReport` from `entityCorrectionReportService.ts`, which keeps only `_id`, `category`, `status`, `note`, `reviewerNote`, and `createdAt`.
 The reviewer's netid (`reviewedBy`, `reviewHistory`), the reporter snapshot, and entity bookkeeping stay on the admin queue alone.
 Adding a field to the reporter panel means adding it to that allowlist, and `server/src/__tests__/correctionReportReporterProjection.integration.test.ts` pins the exact key set through the mounted routes.
+The directory removal request routes follow the same rule (#4160): `GET` and `POST /api/users/directoryRemovalRequest` return only `eligible` and the caller's own `{ status, createdAt }`, never the deciding admin or the matched researcher, and a caller y/labs does not list learns nothing about anyone else.
+`server/src/__tests__/directoryRemovalRequests.integration.test.ts` pins this; the channel is described in `docs/directory-removal-requests.md`.
 
 ## Admin audit log
 
@@ -219,7 +221,10 @@ Both routes sit behind the `accountDataControls` release flag (`FEATURE_ACCOUNT_
 A field added to an exported collection is not exported until an allowlist in the service names it, and a scope change bumps `ACCOUNT_DATA_EXPORT_SCOPE_VERSION`.
 - `DELETE /api/users/me` requires three things beyond the session cookie, so a cookie alone can never erase an account.
 The body must be `{ "confirm": "delete my data" }`.
-The `X-CSRF-Token` header must equal the synchronizer token `GET /api/users/me/deletion-csrf-token` stored in this cookie session (`server/src/middleware/accountDeletionCsrf.ts`), on top of the global `csrfOriginGuard`; another site can neither read the token through CORS nor forge it, and a missing or foreign token answers `403` with `CSRF_TOKEN_REQUIRED`.
+The `X-CSRF-Token` header must equal the synchronizer token `GET /api/users/me/deletion-csrf-token` stored in this cookie session (`server/src/middleware/sessionCsrfToken.ts`), on top of the global `csrfOriginGuard`; another site can neither read the token through CORS nor forge it, and a missing or foreign token answers `403` with `CSRF_TOKEN_REQUIRED`.
+The token is one per session, held in `req.session.csrfToken`, and is not specific to deletion: `GET /api/users/me/csrf-token` issues the same token to any signed-in caller, and `requireSessionCsrfToken` also guards `POST /api/users/directoryRemovalRequest` and `PUT /api/admin/directory-removal-requests/:id` (#4160).
+A new state-changing route that CodeQL flags as `js/missing-token-validation` takes `requireSessionCsrfToken` rather than a dismissal, and its client fetches the header through `sessionCsrfHeaders` in `client/src/utils/sessionCsrf.ts`.
+`server/src/__tests__/directoryRemovalRequestCsrf.integration.test.ts` drives the origin guard, a missing token, another session's token, and the right token through the mounted app.
 The session must hold a fresh password confirmation: a CAS sign-in started with `?reauth=1` sends `renew=true` to CAS both at `/login` and at `/validate` (`requestsCasReauthentication` in `server/src/utils/casStrategy.ts`), so CAS asks for the password and refuses a ticket issued from single sign-on, and only that sign-in stamps `credentialsConfirmedAt` on the signed session claim.
 A confirmation older than 10 minutes (`ACCOUNT_DELETION_RECENT_SIGN_IN_MS`), or a session that never had one, answers `403` with `RECENT_SIGN_IN_REQUIRED`, and the client sends the student through CAS with `reauth=1`.
 `reauth=1` rides inside our own URL, so it is part of the `service` both legs send and a callback cannot claim it for a ticket CAS issued without it.
