@@ -135,12 +135,9 @@ describe('planPersonSubjects', () => {
   });
 
   it('removes subjects only on a stable identifier, joining the entityId form through a shared row', () => {
-    expect(plan.subjects).toEqual({
-      user: { removed: 2, identity_evidence_only: 0 },
-      researchGroupMember: { removed: 0, identity_evidence_only: 1 },
-    });
-    expect(plan.verdictByNode.get('user|i|legacy-id-1')).toBe('removed');
-    expect(plan.verdictByNode.get('user|k|dept:other:removed')).toBeUndefined();
+    expect(plan.subjectsToDelete).toEqual({ user: 2, researchGroupMember: 0 });
+    expect(plan.removedNodes.has('user|i|legacy-id-1')).toBe(true);
+    expect(plan.removedNodes.has('user|k|dept:other:removed')).toBe(false);
     expect(plan.removedUserKeys).toEqual(new Set(['netid:zz9001', 'dept:synthetic:removed']));
   });
 
@@ -175,7 +172,6 @@ describe('planPersonSubjects', () => {
       personPlan: plan,
       subjectRows,
       pointerRows,
-      rosterRows: [],
       context,
     });
     expect(purge.observationIdsToDelete).toEqual([

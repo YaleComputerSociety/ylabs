@@ -1,7 +1,9 @@
 import {
+  PERSON_SUBJECT_TYPES,
   declaresAFacultyResearchProfile,
   groupPersonSubjects,
   isRowPointer,
+  joinSubjectIdentityForms,
   rowPointerClaims,
   rowPointerNamesARemovedUserKey,
   subjectNodes,
@@ -95,33 +97,6 @@ export function assertPurgeMatcherUsable(matcher: DirectoryRemovalMatcher): void
   }
 }
 
-export const PERSON_SUBJECT_TYPES = ['user', 'researchGroupMember'] as const;
-export type PersonSubjectType = (typeof PERSON_SUBJECT_TYPES)[number];
-
-export const PERSON_IDENTITY_FIELDS: Record<PersonSubjectType, readonly string[]> = {
-  user: ['netid', 'email', 'orcid', 'profileUrl', 'profileUrls'],
-  researchGroupMember: [
-    'netid',
-    'email',
-    'orcid',
-    'profileUrl',
-    'identityKey',
-    'membershipKey',
-    'member',
-    'profileIdentityEvidence',
-  ],
-};
-
-export const ROW_SUBJECT_TYPES = ['researchEntity', 'researchGroup'] as const;
-export const ROW_POINTER_FIELDS = [
-  'inferredPiUserKey',
-  'inferredPiUserId',
-  'inferredDirectorProfileUrl',
-  'contactEmail',
-] as const;
-export const ROSTER_ENRICHMENT_FIELD = 'rosterEnrichment';
-const PROFILE_IDENTITY_EVIDENCE_FIELD = 'profileIdentityEvidence';
-
 export interface ObservationRow {
   _id: string;
   entityType: string;
@@ -138,15 +113,6 @@ export interface ResearcherIdentityRow {
 }
 
 type IdentityForm = 'entityKey' | 'entityId' | 'both';
-
-const asString = (value: unknown): string | undefined =>
-  typeof value === 'string' && value.trim() ? value.trim() : undefined;
-
-const stringsIn = (value: unknown): string[] =>
-  (Array.isArray(value) ? value : [value]).flatMap((entry) => asString(entry) ?? []);
-
-const isPlainObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const asSubject = (row: ObservationRow): SubjectObservation => ({
   entityType: row.entityType as SubjectObservation['entityType'],
@@ -185,30 +151,16 @@ function claimMatches(context: ClaimContext, claim: IdentityClaim): boolean {
   return context.matcher.isRemovedPerson({ identifiers: { [claim.kind]: claim.value } });
 }
 
-function profileIdentityEvidenceClaims(value: unknown): IdentityClaim[] {
-  if (!isPlainObject(value)) return [];
-  return [
-    ...stringsIn(value.emails).map((email): IdentityClaim => ({ kind: 'email', value: email })),
-    ...stringsIn(value.netids).map((netid): IdentityClaim => ({ kind: 'netid', value: netid })),
-    ...[...stringsIn(value.linkedProfileUrls), ...stringsIn(value.pageUrl)].map(
-      (url): IdentityClaim => ({ kind: 'profile_url', value: url }),
-    ),
-  ];
-}
-
-type SubjectVerdict = 'removed' | 'identity_evidence_only';
-
 export interface PersonSubjectPlan {
-  verdictByNode: Map<string, SubjectVerdict>;
-  judgedSubjects: Record<PersonSubjectType, { keys: Set<string>; ids: Set<string> }>;
-  subjects: Record<PersonSubjectType, Record<SubjectVerdict, number>>;
+  removedNodes: Set<string>;
+  removedSubjects: Record<string, { keys: Set<string>; ids: Set<string> }>;
+  subjectsToDelete: Record<string, number>;
   removedUserKeys: Set<string>;
 }
 
 /**
  * Judges stored person subjects with the ingest guard's own grouping and claims, so a
- * subject is purged exactly when a lane would refuse to observe it. Roster identity
- * evidence can list someone other than the subject, so a match there is only counted.
+ * subject is purged exactly when a lane would refuse to observe it.
  */
 export function planPersonSubjects(args: {
   userKeys: readonly string[];
@@ -216,66 +168,42 @@ export function planPersonSubjects(args: {
   linkRows: readonly ObservationRow[];
   context: ClaimContext;
 }): PersonSubjectPlan {
-  const subjectRows = [...args.linkRows, ...args.identityRows].filter(
-    (row) => row.field !== PROFILE_IDENTITY_EVIDENCE_FIELD,
-  );
   const keyOnlyRows = args.userKeys.map((entityKey): SubjectObservation => ({
     entityType: 'user',
     entityKey,
     field: '',
     value: undefined,
   }));
-  const evidenceRows = args.identityRows.filter(
-    (row) => row.field === PROFILE_IDENTITY_EVIDENCE_FIELD,
-  );
   const groups = groupPersonSubjects([
     ...keyOnlyRows,
-    ...subjectRows.map(asSubject),
-    ...evidenceRows.map((row) => ({ ...asSubject(row), field: '' })),
+    ...[...args.linkRows, ...args.identityRows].map(asSubject),
   ]);
 
-  const verdictByRoot = new Map<string, SubjectVerdict>();
+  const removedRoots = new Set<string>();
   for (const [root, claims] of groups.claimsByRoot) {
-    if (claims.some((claim) => claimMatches(args.context, claim))) {
-      verdictByRoot.set(root, 'removed');
-    }
-  }
-  for (const row of evidenceRows) {
-    const [node] = subjectNodes(asSubject(row));
-    if (!node) continue;
-    const root = groups.find(node);
-    if (verdictByRoot.has(root)) continue;
-    if (
-      profileIdentityEvidenceClaims(row.value).some((claim) => claimMatches(args.context, claim))
-    ) {
-      verdictByRoot.set(root, 'identity_evidence_only');
-    }
+    if (claims.some((claim) => claimMatches(args.context, claim))) removedRoots.add(root);
   }
 
   const plan: PersonSubjectPlan = {
-    verdictByNode: new Map(),
-    judgedSubjects: {
-      user: { keys: new Set(), ids: new Set() },
-      researchGroupMember: { keys: new Set(), ids: new Set() },
-    },
-    subjects: {
-      user: { removed: 0, identity_evidence_only: 0 },
-      researchGroupMember: { removed: 0, identity_evidence_only: 0 },
-    },
+    removedNodes: new Set(),
+    removedSubjects: Object.fromEntries(
+      [...PERSON_SUBJECT_TYPES].map((type) => [
+        type,
+        { keys: new Set<string>(), ids: new Set<string>() },
+      ]),
+    ),
+    subjectsToDelete: Object.fromEntries([...PERSON_SUBJECT_TYPES].map((type) => [type, 0])),
     removedUserKeys: new Set(),
   };
-  for (const [root, verdict] of verdictByRoot) {
-    plan.subjects[root.split('|')[0] as PersonSubjectType][verdict] += 1;
-  }
+  for (const root of removedRoots) plan.subjectsToDelete[root.split('|')[0]] += 1;
   for (const node of groups.nodes) {
-    const verdict = verdictByRoot.get(groups.find(node));
-    if (!verdict) continue;
-    plan.verdictByNode.set(node, verdict);
+    if (!removedRoots.has(groups.find(node))) continue;
+    plan.removedNodes.add(node);
     const [entityType, form, ...rest] = node.split('|');
-    const bucket = plan.judgedSubjects[entityType as PersonSubjectType];
+    const bucket = plan.removedSubjects[entityType];
     (form === 'k' ? bucket.keys : bucket.ids).add(rest.join('|'));
     const userKey = userKeyOfNode(node);
-    if (verdict === 'removed' && userKey !== undefined) plan.removedUserKeys.add(userKey);
+    if (userKey !== undefined) plan.removedUserKeys.add(userKey);
   }
   return plan;
 }
@@ -293,17 +221,6 @@ export function rowPointerNamesRemovedPerson(
   );
 }
 
-export function rosterNamesRemovedPerson(row: ObservationRow, context: ClaimContext): boolean {
-  const undergraduates = isPlainObject(row.value) ? row.value.undergraduates : undefined;
-  return (Array.isArray(undergraduates) ? undergraduates : [])
-    .filter(isPlainObject)
-    .some((entry) =>
-      stringsIn(entry.profileUrl).some((url) =>
-        claimMatches(context, { kind: 'profile_url', value: url }),
-      ),
-    );
-}
-
 const increment = (counts: Record<string, number>, key: string) => {
   counts[key] = (counts[key] ?? 0) + 1;
 };
@@ -314,16 +231,12 @@ const identityFormOf = (row: ObservationRow): IdentityForm =>
 export interface PurgeReport {
   removalEntriesActive: number;
   removedResearchersMatched: number;
-  subjects: PersonSubjectPlan['subjects'];
+  subjectsToDelete: PersonSubjectPlan['subjectsToDelete'];
   toDelete: {
     observations: number;
     byEntityType: Record<string, number>;
     byIdentityForm: Record<IdentityForm, number>;
     byField: Record<string, Record<string, number>>;
-  };
-  leftInPlace: {
-    identityEvidenceOnlyObservations: Record<string, number>;
-    rosterEnrichmentObservationsListingThePerson: number;
   };
 }
 
@@ -338,22 +251,17 @@ export function planObservationPurge(args: {
   personPlan: PersonSubjectPlan;
   subjectRows: readonly ObservationRow[];
   pointerRows: readonly ObservationRow[];
-  rosterRows: readonly ObservationRow[];
   context: ClaimContext;
 }): PurgePlan {
   const report: PurgeReport = {
     removalEntriesActive: args.removalEntriesActive,
     removedResearchersMatched: args.context.removedResearcherIds.size,
-    subjects: args.personPlan.subjects,
+    subjectsToDelete: args.personPlan.subjectsToDelete,
     toDelete: {
       observations: 0,
       byEntityType: {},
       byIdentityForm: { entityKey: 0, entityId: 0, both: 0 },
       byField: {},
-    },
-    leftInPlace: {
-      identityEvidenceOnlyObservations: {},
-      rosterEnrichmentObservationsListingThePerson: 0,
     },
   };
   const ids = new Set<string>();
@@ -368,27 +276,15 @@ export function planObservationPurge(args: {
     increment(report.toDelete.byField[row.entityType], row.field);
   };
 
-  const seen = new Set<string>();
   for (const row of args.subjectRows) {
-    if (seen.has(row._id)) continue;
-    seen.add(row._id);
-    const verdict = subjectNodes(asSubject(row))
-      .map((node) => args.personPlan.verdictByNode.get(node))
-      .find(Boolean);
-    if (verdict === 'removed') markForDeletion(row);
-    else if (verdict === 'identity_evidence_only') {
-      increment(report.leftInPlace.identityEvidenceOnlyObservations, row.entityType);
+    if (subjectNodes(asSubject(row)).some((node) => args.personPlan.removedNodes.has(node))) {
+      markForDeletion(row);
     }
   }
   for (const row of args.pointerRows) {
     if (!rowPointerNamesRemovedPerson(row, args.context, args.personPlan.removedUserKeys)) continue;
     markForDeletion(row);
     for (const node of subjectNodes(asSubject(row))) rowNodesWithDeletedPointers.add(node);
-  }
-  for (const row of args.rosterRows) {
-    if (rosterNamesRemovedPerson(row, args.context)) {
-      report.leftInPlace.rosterEnrichmentObservationsListingThePerson += 1;
-    }
   }
   return { observationIdsToDelete: [...ids], rowNodesWithDeletedPointers, report };
 }
@@ -403,20 +299,7 @@ export function planFacultyProfileRowDeletion(args: {
   pointerNodes: ReadonlySet<string>;
   rowObservations: readonly ObservationRow[];
 }): { rowCount: number; observationIds: string[] } {
-  const parent = new Map<string, string>();
-  const find = (node: string): string => {
-    if (!parent.has(node)) parent.set(node, node);
-    let root = node;
-    while (parent.get(root) !== root) root = parent.get(root)!;
-    parent.set(node, root);
-    return root;
-  };
-  for (const node of args.pointerNodes) find(node);
-  for (const row of args.rowObservations) {
-    const [first, second] = subjectNodes(asSubject(row));
-    if (first) find(first);
-    if (first && second) parent.set(find(second), find(first));
-  }
+  const { find, nodes } = joinSubjectIdentityForms(args.rowObservations, args.pointerNodes);
   const pointerRoots = new Set([...args.pointerNodes].map(find));
   const profileRoots = new Set(
     args.rowObservations
@@ -424,7 +307,7 @@ export function planFacultyProfileRowDeletion(args: {
       .flatMap((row) => subjectNodes(asSubject(row)).map(find))
       .filter((root) => pointerRoots.has(root)),
   );
-  const rowNodes = new Set([...parent.keys()].filter((node) => profileRoots.has(find(node))));
+  const rowNodes = new Set(nodes().filter((node) => profileRoots.has(find(node))));
   const observationIds = args.rowObservations
     .filter((row) => subjectNodes(asSubject(row)).some((node) => rowNodes.has(node)))
     .map((row) => row._id);

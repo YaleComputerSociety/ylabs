@@ -14,9 +14,24 @@ import type { ObservationInput } from './types';
  * deleted. Only a stable identifier refuses an observation. A name alone never does, so a
  * namesake keeps every observation it had.
  */
-const PERSON_SUBJECT_TYPES: ReadonlySet<string> = new Set(['user', 'researchGroupMember']);
-const ROW_SUBJECT_TYPES: ReadonlySet<string> = new Set(['researchEntity', 'researchGroup']);
-const ROW_POINTER_FIELDS: ReadonlySet<string> = new Set([
+export const PERSON_IDENTITY_FIELDS: Readonly<Record<string, ReadonlySet<string>>> = {
+  user: new Set(['netid', 'email', 'orcid', 'profileUrl', 'profileUrls']),
+  researchGroupMember: new Set([
+    'netid',
+    'email',
+    'orcid',
+    'profileUrl',
+    'identityKey',
+    'membershipKey',
+    'member',
+  ]),
+};
+export const PERSON_SUBJECT_TYPES: ReadonlySet<string> = new Set(
+  Object.keys(PERSON_IDENTITY_FIELDS),
+);
+export const ROW_SUBJECT_TYPES: ReadonlySet<string> = new Set(['researchEntity', 'researchGroup']);
+export const FACULTY_RESEARCH_PROFILE_ENTITY_TYPE = 'FACULTY_RESEARCH_AREA';
+export const ROW_POINTER_FIELDS: ReadonlySet<string> = new Set([
   'inferredPiUserKey',
   'inferredPiUserId',
   'inferredDirectorProfileUrl',
@@ -59,13 +74,14 @@ function claimsFromPersonKey(key: string): IdentityClaim[] {
 }
 
 function claimsFromPersonField(entityType: string, field: string, value: unknown): IdentityClaim[] {
+  if (!PERSON_IDENTITY_FIELDS[entityType]?.has(field)) return [];
   if (field === 'netid' || field === 'email' || field === 'orcid') {
     return stringsIn(value).map((entry) => ({ kind: field, value: entry }));
   }
   if (field === 'profileUrl') {
     return stringsIn(value).map((url) => ({ kind: 'profile_url', value: url }));
   }
-  if (entityType === 'user' && field === 'profileUrls') {
+  if (field === 'profileUrls') {
     const links = isPlainObject(value) ? Object.entries(value) : [['', value] as const];
     return links.flatMap(([label, link]) =>
       stringsIn(link).flatMap((url): IdentityClaim[] => [
@@ -74,13 +90,10 @@ function claimsFromPersonField(entityType: string, field: string, value: unknown
       ]),
     );
   }
-  if (
-    entityType === 'researchGroupMember' &&
-    (field === 'identityKey' || field === 'membershipKey')
-  ) {
+  if (field === 'identityKey' || field === 'membershipKey') {
     return stringsIn(value).flatMap(claimsFromPersonKey);
   }
-  if (entityType === 'researchGroupMember' && field === 'member' && isPlainObject(value)) {
+  if (field === 'member' && isPlainObject(value)) {
     const userId = value.userId === undefined || value.userId === null ? '' : String(value.userId);
     return userId ? [{ kind: 'researcher_id', value: userId }] : [];
   }
@@ -112,7 +125,7 @@ export const isRowPointer = (obs: Pick<SubjectObservation, 'entityType' | 'field
 export const declaresAFacultyResearchProfile = (obs: SubjectObservation) =>
   ROW_SUBJECT_TYPES.has(obs.entityType) &&
   obs.field === 'entityType' &&
-  obs.value === 'FACULTY_RESEARCH_AREA';
+  obs.value === FACULTY_RESEARCH_PROFILE_ENTITY_TYPE;
 
 export interface PersonSubjectGroups {
   find(node: string): string;
@@ -125,11 +138,16 @@ export const userKeyOfNode = (node: string): string | undefined => {
   return entityType === 'user' && form === 'k' ? rest.join('|') : undefined;
 };
 
-/**
- * Joins a person's `entityKey` and `entityId` forms wherever one observation carries both,
- * and collects every stable identifier each joined subject states. Names are never claims.
- */
-export function groupPersonSubjects(people: readonly SubjectObservation[]): PersonSubjectGroups {
+export interface SubjectIdentityForms {
+  find(node: string): string;
+  nodes(): string[];
+}
+
+/** Joins a subject's `entityKey` and `entityId` forms wherever one observation carries both. */
+export function joinSubjectIdentityForms(
+  observations: readonly Omit<SubjectObservation, 'field' | 'value'>[],
+  seedNodes: Iterable<string> = [],
+): SubjectIdentityForms {
   const parent = new Map<string, string>();
   const find = (node: string): string => {
     if (!parent.has(node)) parent.set(node, node);
@@ -138,18 +156,28 @@ export function groupPersonSubjects(people: readonly SubjectObservation[]): Pers
     parent.set(node, root);
     return root;
   };
-  for (const obs of people) {
+  for (const node of seedNodes) find(node);
+  for (const obs of observations) {
     const [first, second] = subjectNodes(obs);
     if (first) find(first);
     if (first && second) parent.set(find(second), find(first));
   }
+  return { find, nodes: () => [...parent.keys()] };
+}
+
+/**
+ * Joins each person's identity forms and collects every stable identifier each joined
+ * subject states. Names are never claims.
+ */
+export function groupPersonSubjects(people: readonly SubjectObservation[]): PersonSubjectGroups {
+  const { find, nodes } = joinSubjectIdentityForms(people);
   const claimsByRoot = new Map<string, IdentityClaim[]>();
   const claimsFor = (node: string) => {
     const root = find(node);
     if (!claimsByRoot.has(root)) claimsByRoot.set(root, []);
     return claimsByRoot.get(root)!;
   };
-  for (const node of parent.keys()) {
+  for (const node of nodes()) {
     const userKey = userKeyOfNode(node);
     if (userKey !== undefined) claimsFor(node).push(...claimsFromPersonKey(userKey));
   }
@@ -157,7 +185,7 @@ export function groupPersonSubjects(people: readonly SubjectObservation[]): Pers
     const [node] = subjectNodes(obs);
     if (node) claimsFor(node).push(...claimsFromPersonField(obs.entityType, obs.field, obs.value));
   }
-  return { find, nodes: [...parent.keys()], claimsByRoot };
+  return { find, nodes: nodes(), claimsByRoot };
 }
 
 export function rowPointerNamesARemovedUserKey(

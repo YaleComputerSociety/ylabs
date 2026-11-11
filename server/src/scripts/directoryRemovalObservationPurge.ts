@@ -6,11 +6,13 @@ import {
   type DirectoryRemovalMatcher,
 } from '../services/directoryRemovalMatcher';
 import {
+  FACULTY_RESEARCH_PROFILE_ENTITY_TYPE,
   PERSON_IDENTITY_FIELDS,
   PERSON_SUBJECT_TYPES,
-  ROSTER_ENRICHMENT_FIELD,
   ROW_POINTER_FIELDS,
   ROW_SUBJECT_TYPES,
+} from '../scrapers/directoryRemovalObservationGuard';
+import {
   assertPurgeMatcherUsable,
   planFacultyProfileRowDeletion,
   planObservationPurge,
@@ -22,7 +24,6 @@ import {
 } from './directoryRemovalObservationPurgeCore';
 
 const DELETE_BATCH_SIZE = 500;
-const FACULTY_RESEARCH_PROFILE = 'FACULTY_RESEARCH_AREA';
 
 const idString = (value: unknown): string | undefined =>
   value === undefined || value === null ? undefined : String(value);
@@ -52,7 +53,7 @@ async function readRows(
   return docs.map((doc) => toObservationRow(doc as Record<string, unknown>));
 }
 
-function subjectClausesFor(entityTypes: readonly string[], nodes: Iterable<string>) {
+function subjectClausesFor(entityTypes: Iterable<string>, nodes: Iterable<string>) {
   const keys = new Set<string>();
   const ids = new Set<string>();
   for (const node of nodes) {
@@ -81,7 +82,7 @@ async function readRowSubjectObservations(
     }
     if (nodes.size === before) {
       const declarations = await readRows(
-        { $or: clauses, field: 'entityType', value: FACULTY_RESEARCH_PROFILE },
+        { $or: clauses, field: 'entityType', value: FACULTY_RESEARCH_PROFILE_ENTITY_TYPE },
         VALUE_PROJECTION,
       );
       const declared = new Map(declarations.map((row) => [row._id, row]));
@@ -128,7 +129,7 @@ export async function runDirectoryRemovalObservationPurge(args: {
     Observation.collection.distinct('entityKey', { entityType: 'user' }) as Promise<unknown[]>,
     readRows(
       {
-        $or: PERSON_SUBJECT_TYPES.map((entityType) => ({
+        $or: [...PERSON_SUBJECT_TYPES].map((entityType) => ({
           entityType,
           field: { $in: [...PERSON_IDENTITY_FIELDS[entityType]] },
         })),
@@ -152,20 +153,18 @@ export async function runDirectoryRemovalObservationPurge(args: {
     context,
   });
 
-  const subjectClauses = PERSON_SUBJECT_TYPES.flatMap((entityType) => {
-    const { keys, ids } = personPlan.judgedSubjects[entityType];
+  const subjectClauses = [...PERSON_SUBJECT_TYPES].flatMap((entityType) => {
+    const { keys, ids } = personPlan.removedSubjects[entityType];
     return [
       ...(keys.size ? [{ entityType, entityKey: { $in: [...keys] } }] : []),
       ...(ids.size ? [{ entityType, entityId: { $in: [...ids].map(asObjectIdWhenValid) } }] : []),
     ];
   });
-  const rowTypes = { $in: [...ROW_SUBJECT_TYPES] };
-  const [subjectRows, pointerRows, rosterRows] = await Promise.all([
+  const [subjectRows, pointerRows] = await Promise.all([
     subjectClauses.length ? readRows({ $or: subjectClauses }, SUBJECT_PROJECTION) : [],
-    readRows({ entityType: rowTypes, field: { $in: [...ROW_POINTER_FIELDS] } }, VALUE_PROJECTION),
     readRows(
-      { entityType: rowTypes, field: ROSTER_ENRICHMENT_FIELD },
-      { ...SUBJECT_PROJECTION, 'value.undergraduates.profileUrl': 1 },
+      { entityType: { $in: [...ROW_SUBJECT_TYPES] }, field: { $in: [...ROW_POINTER_FIELDS] } },
+      VALUE_PROJECTION,
     ),
   ]);
 
@@ -174,7 +173,6 @@ export async function runDirectoryRemovalObservationPurge(args: {
     personPlan,
     subjectRows,
     pointerRows,
-    rosterRows,
     context,
   });
   const pointerAndSubjectIds = new Set(plan.observationIdsToDelete);
@@ -187,8 +185,8 @@ export async function runDirectoryRemovalObservationPurge(args: {
   let deleted: number | null = null;
   let facultyResearchProfileRowObservationsDeleted: number | null = null;
   if (args.apply) {
-    const pointerAndSubjectDeleted = await deleteObservations(plan.observationIdsToDelete);
     facultyResearchProfileRowObservationsDeleted = await deleteObservations(profileRowIds);
+    const pointerAndSubjectDeleted = await deleteObservations(plan.observationIdsToDelete);
     deleted = pointerAndSubjectDeleted + facultyResearchProfileRowObservationsDeleted;
   }
   return {

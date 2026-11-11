@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DirectoryRemoval } from '../../models/directoryRemoval';
 import { Observation } from '../../models/observation';
 import { Researcher } from '../../models/researcher';
@@ -314,14 +314,7 @@ describe('runDirectoryRemovalObservationPurge', () => {
       researchEntity: 5,
     });
     expect(result.toDelete.byIdentityForm).toEqual({ entityKey: 14, entityId: 1, both: 1 });
-    expect(result.subjects).toEqual({
-      user: { removed: 4, identity_evidence_only: 0 },
-      researchGroupMember: { removed: 2, identity_evidence_only: 1 },
-    });
-    expect(result.leftInPlace).toEqual({
-      identityEvidenceOnlyObservations: { researchGroupMember: 1 },
-      rosterEnrichmentObservationsListingThePerson: 1,
-    });
+    expect(result.subjectsToDelete).toEqual({ user: 4, researchGroupMember: 2 });
     expect(result.facultyResearchProfileRowsToDelete).toBe(1);
     expect(result.facultyResearchProfileRowObservationsToDelete).toBe(2);
     expect(result.facultyResearchProfileRowObservationsDeleted).toBeNull();
@@ -429,6 +422,25 @@ describe('runDirectoryRemovalObservationPurge', () => {
     expect(rerun.deleted).toBe(0);
     expect(rerun.facultyResearchProfileRowObservationsDeleted).toBe(0);
     expect(rerun.facultyResearchProfileRowsToDelete).toBe(0);
+  });
+
+  it('finishes the purge on a rerun after an apply interrupted between delete batches', async () => {
+    const matcher = await loadDirectoryRemovalMatcher(KEYED_ENV);
+    const deleteMany = Observation.collection.deleteMany.bind(Observation.collection);
+    const interrupted = vi
+      .spyOn(Observation.collection, 'deleteMany')
+      .mockImplementationOnce(deleteMany)
+      .mockRejectedValueOnce(new Error('synthetic interruption'));
+    try {
+      await expect(runDirectoryRemovalObservationPurge({ matcher, apply: true })).rejects.toThrow(
+        'synthetic interruption',
+      );
+    } finally {
+      interrupted.mockRestore();
+    }
+
+    await runDirectoryRemovalObservationPurge({ matcher, apply: true });
+    expect(await remainingIds()).toEqual([...expectedKept].sort());
   });
 
   it('refuses when the key is missing or the list holds no active entry', async () => {

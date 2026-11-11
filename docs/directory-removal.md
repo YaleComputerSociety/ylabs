@@ -63,15 +63,15 @@ Promotion copies `observations` only with `--include-observations`, so a Develop
 Run it on Development first; the Beta and Production runs are approved by the owner at promotion time.
 It is a dry run unless given `--apply --confirm-directory-removal-observation-purge`, takes no identifier, matches every active entry in that environment's `directory_removals`, and refuses when the list is empty or no key is configured.
 `--environment=beta` and `--environment=production` read `BETA_MONGODBURL` and `PRODUCTION_MONGODBURL`, the database name must match the named environment, and a Production apply also needs `SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true`.
-It reports counts only: subjects by verdict, observations to delete by `entityType`, identity form and field, and what it left in place.
+It reports counts only: person subjects to delete by `entityType`, and observations to delete by `entityType`, identity form and field.
 
 It matches through the ingest guard's own rules (`server/src/scrapers/directoryRemovalObservationGuard.ts`), so it deletes exactly what a lane would now refuse to observe.
 A `user` or `researchGroupMember` subject is deleted in both identity forms when a stable identifier matches, and a research row's `inferredPiUserKey`, `inferredPiUserId`, `inferredDirectorProfileUrl` or `contactEmail` observation is deleted when its value points at the person.
 A name entry never matches a researcher or a person subject, so a name-only match is never deleted.
-Values that list several people, such as `rosterEnrichment` and `fellowshipRecipients`, are not rewritten; the report counts the roster observations that list the person by profile URL, and the person subjects whose only link is roster identity evidence that can name someone else.
+Values that list several people, such as `rosterEnrichment`, `fellowshipRecipients` and roster identity evidence, are neither deleted nor rewritten.
 It also deletes every stored observation of the removed person's own faculty research profile row, identified the way ingest refuses the whole row: the row declares `entityType: FACULTY_RESEARCH_AREA` and its stored lead pointer names the person, read across both identity forms of the row and never by name.
 Those deletions are reported apart, as `facultyResearchProfileRowsToDelete`, `facultyResearchProfileRowObservationsToDelete` and, on an apply, `facultyResearchProfileRowObservationsDeleted`.
-A second run deletes nothing, because the pointers that identified the row are gone.
+An apply deletes the row's other observations before the pointers that identify it, so a rerun after an interrupted apply still finds the row, and a second run after a complete apply deletes nothing.
 The removal entry has to stay after a purge, or the next sweep has nothing refusing the person.
 
 ## Known limits
