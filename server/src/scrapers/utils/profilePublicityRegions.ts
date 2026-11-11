@@ -17,6 +17,10 @@
  * the research's own home even when the region's own wrapper changes name. Both
  * subsection ids are matched as well, so a template that drops the wrapper still
  * fails closed rather than silently reopening the harvest.
+ *
+ * The one exception is the person's own related-links list inside the same wrapper
+ * (`isInProfileRelatedLinksList`): the roster lane reads its website button there
+ * and records any other entry as a refused candidate (#5819).
  */
 import type * as cheerio from 'cheerio';
 
@@ -38,6 +42,32 @@ export const PROFILE_PUBLICITY_REGION_SELECTOR = PROFILE_PUBLICITY_REGION_SELECT
 /** Whether the element sits inside a profile page's news or media publicity region. */
 export function isInProfilePublicityRegion(element: cheerio.Cheerio<any>): boolean {
   return element.closest(PROFILE_PUBLICITY_REGION_SELECTOR).length > 0;
+}
+
+const PROFILE_RELATED_LINKS_LIST_SELECTOR = [
+  '#links-related-links',
+  '[class*="profile-details-related-link-list"]',
+].join(', ');
+
+const PROFILE_NEWS_OR_MEDIA_LIST_SELECTOR = [
+  '#links-news',
+  '#links-media',
+  '[class*="profile-details-news-list"]',
+  '[class*="digital-asset-media-list"]',
+  '[class~="article-list"]',
+].join(', ');
+
+/**
+ * Whether the element sits in the person's own related-links list, which the same
+ * template renders inside the "News & Links" wrapper beside the news and media lists.
+ * The list holds the links the person chose to publish, such as their personal website
+ * button, so it is not publicity about them (#5819).
+ */
+export function isInProfileRelatedLinksList(element: cheerio.Cheerio<any>): boolean {
+  return (
+    element.closest(PROFILE_RELATED_LINKS_LIST_SELECTOR).length > 0 &&
+    element.closest(PROFILE_NEWS_OR_MEDIA_LIST_SELECTOR).length === 0
+  );
 }
 
 /**

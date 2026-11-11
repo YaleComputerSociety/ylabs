@@ -97,12 +97,12 @@ describe('profile website harvest', () => {
     expect(result.labUrl).toBeUndefined();
   });
 
-  it('retracts the website slot when the only lab link is a national laboratory', () => {
+  it('records a refusal when the only lab link is a national laboratory', () => {
     const result = enrich(
       `<p>Fixture experiments run at the <a href="https://www.fixture-national-lab.gov/world/">Fixture National Laboratory</a> on Long Island.</p>`,
     );
     expect(result.labUrl).toBeUndefined();
-    expect(result.labSlotAttestation).toBe('empty');
+    expect(result.labSlotAttestation).toBe('refused');
   });
 
   it("does not take a department's whole labs page that a lab's name links to", () => {
