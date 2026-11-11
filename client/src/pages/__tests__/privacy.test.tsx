@@ -114,6 +114,10 @@ describe('Privacy', () => {
     expect(text).toContain('use Report an issue with this page on the listing');
     expect(text).toContain('A maintainer applies an accepted request within 7 days.');
     expect(text).toContain(
+      'PostHog keeps session replays for 30 days and other events for 1 year.',
+    );
+    expect(text).not.toContain('keeps this data for no longer than');
+    expect(text).toContain(
       'Web addresses are sent without their search terms, and your netid is removed from everything sent.',
     );
   });

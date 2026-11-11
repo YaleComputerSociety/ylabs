@@ -125,9 +125,8 @@ const Privacy = () => {
               run if your browser sends Do Not Track.
             </li>
             <li>
-              PostHog runs in the United States, does not keep your IP address, and keeps this data
-              for no longer than the {ACTIVITY_RECORD_RETENTION_DAYS_LABEL} days y/labs keeps its
-              own records.
+              PostHog runs in the United States and does not keep your IP address. PostHog keeps
+              session replays for 30 days and other events for 1 year.
             </li>
           </ul>
         </Section>
