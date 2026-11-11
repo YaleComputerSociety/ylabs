@@ -332,6 +332,10 @@ It replaces the convention of announcing each write to the session that sequence
 - The lease heartbeats every 30 seconds and expires 5 minutes after the last heartbeat, so an apply running for hours keeps it, and a crashed holder frees it within 5 minutes; a holder on the same machine whose process has exited is taken over at once.
   A process that finds its lease taken exits before its next write.
 - Set `DEV_WRITE_OWNER=<session name>` so a refusal names who holds the lease.
+- Every apply that takes the lease also appends a launch record to `dev_write_launches` (#5782): the owner label, the worktree and working directory, the git sha, the entry script and the arguments, with any `://` value and the value of any flag or assignment whose name contains key, token, secret, password or credential redacted.
+  The lease row expires and is overwritten, so this collection is the durable answer to who changed Development and from which code; it is environment-local and preserved by the refresh from Beta.
+  An apply whose launch record cannot be written is refused.
+- Every scrape run stores the same launch metadata on its `scrape_runs` row as `launch`, next to `codeSha`, with `devWriteLeaseOwnerId` when the run belongs to a held apply lease, such as a sweep's child.
 - `yarn --cwd server dev:locks` lists the apply, host and source leases with owner, command, heartbeat age and live, stale or released state (`--json` for machine output).
   It is read-only: a crashed holder's lease frees itself by expiry, or at once for a holder on the same machine.
 - `DEV_WRITE_LEASE=off` switches the lease off; the test harness sets it for every suite.

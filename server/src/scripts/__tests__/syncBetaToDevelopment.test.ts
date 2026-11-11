@@ -313,6 +313,7 @@ describe('Beta to Development sync guards', () => {
       'analytics_events',
       'corpus_quality_snapshots',
       'deleted_account_event_tallies',
+      'dev_write_launches',
       'directory_removal_requests',
       'engine_benchmark_rows',
       'engine_benchmark_snapshots',

@@ -193,6 +193,36 @@ describe('ScraperOrchestrator', () => {
     expect(currentProcessCodeSha()).toMatch(/^[0-9a-f]{40}$/);
   });
 
+  it('records who launched the run, from where, and with which redacted arguments (#5782)', async () => {
+    const orchestrator = new ScraperOrchestrator();
+    orchestrator.register({
+      name: 'fixture-source',
+      displayName: 'Fixture source',
+      run: async () => ({ observationCount: 0, entitiesObserved: 0 }),
+    });
+    const previousArgv = process.argv;
+    const previousOwner = process.env.DEV_WRITE_OWNER;
+    process.argv = [previousArgv[0], 'src/scrapers/cli.ts', 'run', '--api-key=not-a-real-key'];
+    process.env.DEV_WRITE_OWNER = 'session-under-test';
+    try {
+      await orchestrator.run('fixture-source', { dryRun: true, useCache: true, release: false });
+    } finally {
+      process.argv = previousArgv;
+      if (previousOwner === undefined) delete process.env.DEV_WRITE_OWNER;
+      else process.env.DEV_WRITE_OWNER = previousOwner;
+    }
+
+    const [row] = mocks.scrapeRunCreate.mock.calls[0];
+    expect(row.launch).toMatchObject({
+      ownerLabel: 'session-under-test',
+      gitSha: currentProcessCodeSha(),
+      entry: 'src/scrapers/cli.ts',
+      argv: ['run', '--api-key=<redacted>'],
+      cwd: process.cwd(),
+    });
+    expect(row.launch.worktree).toEqual(expect.any(String));
+  });
+
   it('fails a run whose source has now emitted nothing on three consecutive runs', async () => {
     const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     mocks.scrapeRunFind.mockReturnValue(
