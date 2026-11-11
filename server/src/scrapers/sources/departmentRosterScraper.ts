@@ -71,6 +71,7 @@ import {
 import { asYaleNetid } from '../../utils/yaleNetid';
 import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
 import { isInProfilePublicityRegion } from '../utils/profilePublicityRegions';
+import { rosterProfileSubjectEmail } from '../utils/rosterProfileSubjectEmail';
 import {
   isMeshIndexedProfileUrl,
   withoutMeshNonSubjectDescriptors,
@@ -3485,9 +3486,6 @@ export function profileEnrichmentFromHtml(
   const $ = cheerio.load(html);
   const canonicalUrl = canonicalProfileUrlFromHtml($, profileUrl);
 
-  const emailHref = $('a[href^="mailto:"]').first().attr('href') || '';
-  const email = emailHref ? emailHref.replace(/^mailto:/i, '').trim() : undefined;
-
   const title =
     $(
       '[class*="professional-title"], [class*="person-title"], [class*="job-title"], [class*="position"], [class*="header-info__title"], [class*="workday-title"]',
@@ -3593,6 +3591,7 @@ export function profileEnrichmentFromHtml(
   const bio = wordpressAuthorProfileBiography($) ?? extractBioFromHtml($);
   const officialProse = extractGroundedProfileDescription(html);
   const declaredName = personNameFromProfileHtml($);
+  const email = rosterProfileSubjectEmail($, declaredName);
   const statedLabName = declaredName
     ? labNameStatedForPerson({
         text: visibleDescriptionTextWithLineBreaks(html),

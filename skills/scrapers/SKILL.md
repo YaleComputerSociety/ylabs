@@ -230,6 +230,12 @@ Four earlier mechanisms each broke on a stored title, and the module's test file
   `visible-profile-bio-backfill` selects a person by the one `YALE_OFFICIAL` link they hold, or a page whose slug is their own netid, as well as by a slug that agrees with their name (#5708).
   A link another live researcher also holds is dropped from every arm, two held links select nothing, and a slug that is or ends in a directory netid other than the person's own is refused before the page is read.
   In that mode only, the Yale directory pairing the page's own address with the person's netid stands in for the display-name check, so a compound given name spelled differently on the page and the record no longer refuses the person's own page; a stored address never stands in, because it can be the contaminated value under test.
+- `dept-faculty-roster` reads a profile page's email only as the subject's own (#5780, `utils/rosterProfileSubjectEmail.ts`).
+  The subject's JSON-LD `Person` node or `article` contact field decides first, through `subjectDeclaredProfileEmail`.
+  Otherwise a mailto counts only outside a footer, navigation, breadcrumb or banner, and outside a block labelled as an assistant, business office, staff, support, press contact, co-author, related-people or team card, because those print a real person's address that is not the subject's and the role-mailbox predicates cannot see it.
+  The roster keys a person by the netid in that address, so a page-wide first mailto minted a key for the office holder under the subject's name.
+  A netid-shaped address is read only from a contact-labelled block in the page content, never a sidebar or body prose, because the roster's name check cannot tie a netid to the subject.
+  A sidebar address counts only when the page content states none, and two different addresses yield none.
 - Any outbound fetch to a host derived from user input or stored data MUST go through `utils/ssrfGuard.ts`.
 Use `fetchPublicHttpUrl` (`scrapers/utils/httpFetch.ts`) when a script needs a status or a redirect location, and never the global `fetch`; the security preflight scan fails on an unguarded call, and `skills/auth-security/SKILL.md` owns the rules, including how the renderer's browser is kept on public hosts.
 - A lane that fetches a URL **discovered on a page** must establish that the fetched page is about the same subject before merging anything from it.
