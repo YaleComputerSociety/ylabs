@@ -70,7 +70,10 @@ beforeEach(() => {
   mocks.accountFind.mockReset();
   mocks.userFind.mockReset();
   mocks.getMeiliIndex.mockClear();
-  mocks.roleAssignmentFind.mockReturnValue({ lean: async () => [] });
+  mocks.roleAssignmentFind.mockReturnValue({
+    lean: async () => [],
+    select: () => ({ lean: async () => [] }),
+  });
   mocks.personFind.mockReturnValue({ select: () => ({ lean: async () => [] }) });
   mocks.accountFind.mockReturnValue({ select: () => ({ lean: async () => [] }) });
   mocks.userFind.mockReturnValue({ select: () => ({ lean: async () => [] }) });

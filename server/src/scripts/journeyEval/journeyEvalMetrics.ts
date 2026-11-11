@@ -287,6 +287,77 @@ export function tallyCreativePracticeLabels(
   };
 }
 
+export interface FilterBadgeTally {
+  filterTotal: number;
+  served: number;
+  withoutBadge: number;
+}
+
+export interface FilterBadgeInvariant {
+  id: string;
+  title: string;
+}
+
+export function checkFilterRowsServeTheirBadge(
+  invariant: FilterBadgeInvariant,
+  tally: FilterBadgeTally,
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult {
+  const { id, title } = invariant;
+
+  if (tally.served === 0) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The filter served no row, so zero rows without the badge would be a green signal over an empty population',
+      { ...tally },
+    );
+  }
+
+  if (tally.withoutBadge > 0 && corpusFingerprintMoved(corpusBefore, corpusAfter)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The corpus changed during the walk, so a row may lack the badge only because it was written after its index document',
+      { ...tally, corpusBefore, corpusAfter },
+    );
+  }
+
+  return buildInvariant(id, title, tally.withoutBadge === 0, { ...tally });
+}
+
+export const checkWelcomesFilterServesTheBadge = (
+  tally: FilterBadgeTally,
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult =>
+  checkFilterRowsServeTheirBadge(
+    {
+      id: 'welcomes-filter-rows-serve-the-badge',
+      title: 'Every row the "Welcomes undergrads" filter returns serves the welcomes badge',
+    },
+    tally,
+    corpusBefore,
+    corpusAfter,
+  );
+
+export const checkWorksWithFilterServesASignal = (
+  tally: FilterBadgeTally,
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult =>
+  checkFilterRowsServeTheirBadge(
+    {
+      id: 'works-with-filter-rows-serve-a-signal',
+      title:
+        'Every row the "Works with undergrads" filter returns serves hosted, welcomes or a mentors entry',
+    },
+    tally,
+    corpusBefore,
+    corpusAfter,
+  );
+
 export function checkCreativePracticeLabelAttribution(
   tally: CreativePracticeLabelTally,
   corpusBefore: CorpusFingerprint,

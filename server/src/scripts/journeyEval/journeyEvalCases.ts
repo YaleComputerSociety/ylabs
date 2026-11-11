@@ -44,6 +44,8 @@ import {
   checkSurvivorWebsiteAttribution,
   checkTitleSortOrdering,
   checkTopicDropAttribution,
+  checkWelcomesFilterServesTheBadge,
+  checkWorksWithFilterServesASignal,
   resolvePagesToWalk,
   scoreQueryRelevance,
   tallyCreativePracticeLabels,
@@ -357,6 +359,107 @@ const creativePracticeLabelAttribution: JourneyCase = {
         ),
       ],
       notes: { comparedRows: tally.comparable, skippedStaleIndex: tally.skippedStaleIndex },
+    };
+  },
+};
+
+const welcomesFilterServesTheBadge: JourneyCase = {
+  id: 'welcomes-filter-serves-the-badge',
+  title: 'A row under the "Welcomes undergrads" filter shows the welcomes badge on its card',
+  run: async (context) => {
+    const reachablePages = maxReachableResearchSearchPage(context.window);
+    const corpusBefore = await context.readCorpusFingerprint();
+    let filterTotal = 0;
+    let served = 0;
+    let withoutBadge = 0;
+    let degradedPages = 0;
+    let pagesWalked = 0;
+    for (let page = 1; page <= reachablePages; page += 1) {
+      const result = await context.browse({
+        filters: { welcomesUndergrads: true },
+        page,
+        pageSize: context.window,
+      });
+      pagesWalked = page;
+      if (page === 1) filterTotal = result.estimatedTotalHits ?? 0;
+      if (result.degraded !== false) degradedPages += 1;
+      const rows = servedRows(result);
+      served += rows.length;
+      withoutBadge += rows.filter((row) => row.welcomesUndergrads !== true).length;
+      if (rows.length < context.window || served >= filterTotal) break;
+    }
+    const corpusAfter = await context.readCorpusFingerprint();
+
+    return {
+      invariants: [
+        checkWelcomesFilterServesTheBadge(
+          { filterTotal, served, withoutBadge },
+          corpusBefore,
+          corpusAfter,
+        ),
+        buildInvariant(
+          'welcomes-filtered-browse-is-not-degraded',
+          'A browse filtered to "Welcomes undergrads" does not fall back to a degraded search path',
+          degradedPages === 0,
+          { pagesWalked, degradedPages },
+        ),
+      ],
+      rates: [],
+      notes: { pagesWalked, walkedEveryFilteredRow: served >= filterTotal },
+    };
+  },
+};
+
+const rowServesAnUndergradSignal = (row: Record<string, any>): boolean =>
+  row.hasUndergradHostingEvidence === true ||
+  row.welcomesUndergrads === true ||
+  (Array.isArray(row.undergradListEvidence) &&
+    row.undergradListEvidence.some((entry: any) => entry?.signal === 'mentors'));
+
+const worksWithFilterServesASignal: JourneyCase = {
+  id: 'works-with-filter-serves-a-signal',
+  title:
+    'A row under the "Works with undergrads" filter shows hosted, welcomes or mentors evidence on its card',
+  run: async (context) => {
+    const reachablePages = maxReachableResearchSearchPage(context.window);
+    const corpusBefore = await context.readCorpusFingerprint();
+    let filterTotal = 0;
+    let served = 0;
+    let withoutBadge = 0;
+    let degradedPages = 0;
+    let pagesWalked = 0;
+    for (let page = 1; page <= reachablePages; page += 1) {
+      const result = await context.browse({
+        filters: { worksWithUndergrads: true },
+        page,
+        pageSize: context.window,
+      });
+      pagesWalked = page;
+      if (page === 1) filterTotal = result.estimatedTotalHits ?? 0;
+      if (result.degraded !== false) degradedPages += 1;
+      const rows = servedRows(result);
+      served += rows.length;
+      withoutBadge += rows.filter((row) => !rowServesAnUndergradSignal(row)).length;
+      if (rows.length < context.window || served >= filterTotal) break;
+    }
+    const corpusAfter = await context.readCorpusFingerprint();
+
+    return {
+      invariants: [
+        checkWorksWithFilterServesASignal(
+          { filterTotal, served, withoutBadge },
+          corpusBefore,
+          corpusAfter,
+        ),
+        buildInvariant(
+          'works-with-filtered-browse-is-not-degraded',
+          'A browse filtered to "Works with undergrads" does not fall back to a degraded search path',
+          degradedPages === 0,
+          { pagesWalked, degradedPages },
+        ),
+      ],
+      rates: [],
+      notes: { pagesWalked, walkedEveryFilteredRow: served >= filterTotal },
     };
   },
 };
@@ -1347,6 +1450,8 @@ export const journeyCases: readonly JourneyCase[] = [
   coldBrowseCardContract,
   topicDropAttribution,
   creativePracticeLabelAttribution,
+  welcomesFilterServesTheBadge,
+  worksWithFilterServesASignal,
   facetCountAgreement,
   textQueryFacetCountAgreement,
   paginationServesDistinctRows,
