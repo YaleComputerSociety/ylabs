@@ -249,8 +249,9 @@ export function parseImportedCardDrafts(value: unknown): ImportedCardDraft[] {
 export interface CardImportRow {
   slug: string;
   writer: string;
-  outcome: 'accepted' | 'refused' | 'already-cached' | 'missing-request';
+  outcome: 'accepted' | 'refused' | 'missing-request';
   stored: boolean;
+  existingWriter?: string;
   inputHash?: string;
   card: string;
 }
@@ -289,9 +290,10 @@ export async function runCardImport(input: {
     row.outcome = verdict.outcome;
     row.inputHash = verdict.inputHash;
     row.card = verdict.card;
-    if (verdict.outcome !== 'accepted' || !verdict.record || input.validateOnly) continue;
-    if (await input.store.find(verdict.record.inputHash)) {
-      row.outcome = 'already-cached';
+    if (!verdict.record || input.validateOnly) continue;
+    const existing = await input.store.find(verdict.record.inputHash);
+    if (existing) {
+      row.existingWriter = existing.writer;
       continue;
     }
     await input.store.save(verdict.record);

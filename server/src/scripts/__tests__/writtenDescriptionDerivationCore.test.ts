@@ -272,7 +272,7 @@ describe('imported drafts (#5537)', () => {
     expect(verdict.record?.promptHash).toBe(CURRENT_WRITER_INPUTS.promptHash);
   });
 
-  it('refuses a draft that fails a check, naming it', async () => {
+  it('refuses a draft that fails a check, naming it, and still carries its record', async () => {
     const verdict = await judgeImportedWriterDraft(subject, {
       slug: 'reef-lab',
       writer: 'claude-agent:1',
@@ -281,6 +281,9 @@ describe('imported drafts (#5537)', () => {
     });
     expect(verdict.outcome).toBe('refused');
     expect(verdict.decision?.refusal).toBe('ungrounded-content-term');
-    expect(verdict.record).toBeUndefined();
+    expect(verdict.record).toMatchObject({
+      writer: 'claude-agent:1',
+      inputHash: writerInputHash(SNIPPETS),
+    });
   });
 });

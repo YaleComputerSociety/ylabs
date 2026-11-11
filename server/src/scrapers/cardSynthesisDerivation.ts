@@ -217,9 +217,8 @@ export async function judgeImportedCard(
   const inputs = options.inputs ?? CURRENT_CARD_INPUTS;
   const inputHash = cardInputHash(subject.fullDescription, inputs.model);
   const card = await judgeCachedCards(subject, [draft.card]);
-  if (!card) return { outcome: 'refused', inputHash, card };
   return {
-    outcome: 'accepted',
+    outcome: card ? 'accepted' : 'refused',
     inputHash,
     card,
     record: {

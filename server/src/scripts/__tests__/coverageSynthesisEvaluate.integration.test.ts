@@ -184,7 +184,7 @@ describe('writer evaluate and import modes against MongoDB (#5537)', () => {
     expect(model).not.toHaveBeenCalled();
   });
 
-  it('refuses a failing external draft and stores nothing', async () => {
+  it('stores a refused external draft with its provenance, judged again on read', async () => {
     const report = await runDerivationImport({
       rows: await loadRows(),
       drafts: [
@@ -201,10 +201,23 @@ describe('writer evaluate and import modes against MongoDB (#5537)', () => {
     });
     expect(report.rows[0]).toMatchObject({
       outcome: 'refused',
-      stored: false,
+      stored: true,
       refusalReasons: ['first-person'],
     });
-    expect(await WrittenDescriptionDerivation.countDocuments()).toBe(0);
+    const stored = await WrittenDescriptionDerivation.findOne().lean();
+    expect(stored).toMatchObject({
+      writer: 'claude-agent:1',
+      rawOutput: { fullDescription: `We study coral. ${GOOD}` },
+    });
+    const model = modelReturning('never read');
+    const evaluated = await runWriterEvaluation({
+      rows: await loadRows(),
+      store,
+      drafting: writerModelThroughCache({ callLLM: model, store }),
+      evidenceNow: new Date(),
+    });
+    expect(evaluated.rows[0]).toMatchObject({ step: 'refused', refusalReasons: ['first-person'] });
+    expect(model).not.toHaveBeenCalled();
   });
 
   it('lists the offending terms of an ungrounded refusal in the import and evaluate reports', async () => {

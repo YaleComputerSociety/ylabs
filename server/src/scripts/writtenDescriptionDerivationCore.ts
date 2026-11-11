@@ -436,7 +436,9 @@ export interface ImportedDraftVerdict {
 
 /**
  * Keyed under the writer's own model rather than the external writer's, so the writer
- * reads an accepted draft as its cache entry; `writer` records who actually wrote it.
+ * reads the draft as its cache entry; `writer` records who actually wrote it. A refused
+ * draft carries its record too, because the verdict is taken again on every read and a
+ * later check fix accepts it with no call.
  */
 export async function judgeImportedWriterDraft(
   subject: WrittenDescriptionSubject,
@@ -451,9 +453,8 @@ export async function judgeImportedWriterDraft(
   };
   const decision = await judgeWriterDraft(subject, rawOutput);
   const inputHash = writerInputHash(subject.snippets, inputs.model);
-  if (!decision.result) return { outcome: 'refused', inputHash, decision };
   return {
-    outcome: 'accepted',
+    outcome: decision.result ? 'accepted' : 'refused',
     inputHash,
     decision,
     record: writtenDescriptionDerivationRecord({

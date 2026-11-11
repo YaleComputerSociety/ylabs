@@ -101,7 +101,7 @@ describe('imported cards (#5537)', () => {
     expect(store.entries.get(cardInputHash(BODY))?.writer).toBe('claude-agent:1');
   });
 
-  it('refuses a failing external card and stores nothing, and validate-only writes nothing', async () => {
+  it('stores a refused external card for a later re-judgement, and validate-only writes nothing', async () => {
     const store = memoryStore();
     const refused = await runCardImport({
       requests,
@@ -109,14 +109,16 @@ describe('imported cards (#5537)', () => {
       store,
       validateOnly: false,
     });
-    expect(refused.rows[0]).toMatchObject({ outcome: 'refused', stored: false });
+    expect(refused.rows[0]).toMatchObject({ outcome: 'refused', stored: true });
+    expect(store.entries.get(cardInputHash(BODY))?.rawCards).toEqual([BAD_CARD]);
+    const untouched = memoryStore();
     const validated = await runCardImport({
       requests,
-      drafts: [{ slug: 'tidepool-lab', writer: 'claude-agent:1', card: CARD }],
-      store,
+      drafts: [{ slug: 'tidepool-lab', writer: 'claude-agent:1', card: BAD_CARD }],
+      store: untouched,
       validateOnly: true,
     });
-    expect(validated.rows[0]).toMatchObject({ outcome: 'accepted', stored: false });
-    expect(store.entries.size).toBe(0);
+    expect(validated.rows[0]).toMatchObject({ outcome: 'refused', stored: false });
+    expect(untouched.entries.size).toBe(0);
   });
 });

@@ -136,7 +136,7 @@ export async function runWriterEvaluation(input: {
 export interface DerivationImportRow {
   slug: string;
   writer: string;
-  outcome: ImportedDraftOutcome | 'missing-row' | 'already-cached';
+  outcome: ImportedDraftOutcome | 'missing-row';
   stored: boolean;
   inputHash?: string;
   existingWriter?: string;
@@ -189,10 +189,9 @@ export async function runDerivationImport(input: {
     report.description = verdict.decision?.result?.description ?? null;
     report.refusalReasons = verdict.decision?.refusal ? [verdict.decision.refusal] : [];
     if (verdict.decision?.refusalDetails) report.refusalDetails = verdict.decision.refusalDetails;
-    if (verdict.outcome !== 'accepted' || !verdict.record || input.validateOnly) continue;
+    if (!verdict.record || input.validateOnly) continue;
     const existing = await input.store.find(verdict.record.inputHash);
     if (existing) {
-      report.outcome = 'already-cached';
       report.existingWriter = existing.writer;
       continue;
     }
