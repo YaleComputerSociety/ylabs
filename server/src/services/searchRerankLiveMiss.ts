@@ -79,6 +79,7 @@ export type SearchRerankLiveMissJobStatus =
   | 'written-still-stale'
   | 'kept-existing'
   | 'not-wanted'
+  | 'still-fresh'
   | 'ineligible'
   | 'no-api-key'
   | 'spend-ceiling'
@@ -184,6 +185,7 @@ const defaultRunner: SearchRerankLiveMissRunner = async (request) => {
 
 const OUTCOMES_THAT_WOULD_REPEAT: ReadonlySet<SearchRerankLiveMissJobStatus> = new Set([
   'written-still-stale',
+  'still-fresh',
   'ineligible',
   'model-failed',
   'malformed-output',

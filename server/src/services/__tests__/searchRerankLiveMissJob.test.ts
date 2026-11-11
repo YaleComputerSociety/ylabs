@@ -314,7 +314,7 @@ describe('runSearchRerankLiveMissJob', () => {
       const model = vi.fn(validScores);
       existing({ ...liveMiss, scores: FRESH_SCORES });
 
-      expect((await runJob({ mode: 'serve', model })).status).toBe('not-wanted');
+      expect((await runJob({ mode: 'serve', model })).status).toBe('still-fresh');
       expect(model).not.toHaveBeenCalled();
       expect(mocks.cacheUpdateOne).not.toHaveBeenCalled();
     });
@@ -335,7 +335,7 @@ describe('runSearchRerankLiveMissJob', () => {
       expect(mocks.cacheUpdateOne.mock.calls[0][0].source).toBe('shadow');
 
       existing({ ...shadow, scores: FRESH_SCORES });
-      expect((await runJob({ mode: 'shadow' })).status).toBe('not-wanted');
+      expect((await runJob({ mode: 'shadow' })).status).toBe('still-fresh');
     });
 
     it('never searches, calls the model or writes over a stale seeded full- entry', async () => {
@@ -368,7 +368,7 @@ describe('runSearchRerankLiveMissJob', () => {
         })),
       });
 
-      expect((await runJob({ mode: 'serve', model })).status).toBe('not-wanted');
+      expect((await runJob({ mode: 'serve', model })).status).toBe('still-fresh');
       expect(model).not.toHaveBeenCalled();
     });
 
@@ -379,7 +379,7 @@ describe('runSearchRerankLiveMissJob', () => {
         scores: STALE_SCORES.map(({ entityId, score }) => ({ entityId, score })),
       });
 
-      expect((await runJob({ mode: 'serve', model })).status).toBe('not-wanted');
+      expect((await runJob({ mode: 'serve', model })).status).toBe('still-fresh');
       expect(model).not.toHaveBeenCalled();
     });
 

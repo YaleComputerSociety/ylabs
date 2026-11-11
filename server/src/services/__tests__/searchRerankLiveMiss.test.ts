@@ -288,6 +288,7 @@ describe('enqueueSearchRerankLiveMiss', () => {
 
   it.each<SearchRerankLiveMissJobStatus>([
     'written-still-stale',
+    'still-fresh',
     'ineligible',
     'model-failed',
     'malformed-output',

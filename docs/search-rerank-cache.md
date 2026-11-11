@@ -144,6 +144,7 @@ All of these are in-process, so they hold per server instance; the web service r
   The check runs before each call against the spend recorded so far, and usage records are written without waiting, so the last call of the day can take the total past USD 1.00 by about one call's cost.
 - A key whose job ends ineligible, with a failed model call, with a reply below the scoring bar, or with an error is not queued again until the next UTC day, so a query the model keeps failing costs one call a day rather than one per student who searches it.
   So is a key whose freshly written entry already fails the candidate-set rule (`written-still-stale`): a reply may leave up to 3 of 30 candidates unscored and a pooled row that cannot be hydrated is never scored, so without the hold such a key would be re-scored on every search.
+  So is a key whose job's own search finds its entry fresh (`still-fresh`): the request path judges staleness over the requester's pool, which may include non-public rows or skip spelling correction, while the job always runs the public, corrected search, so without the hold such a key would start a background search on every request.
   An unreadable log, or no database connection, skips the call rather than spending blind.
 
 ### The job

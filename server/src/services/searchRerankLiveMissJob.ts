@@ -252,7 +252,7 @@ export async function runSearchRerankLiveMissJob(
       searchRerankEntryIsStale(existingTextHashes, servedCandidates),
     )
   ) {
-    return { status: 'not-wanted' };
+    return { status: 'still-fresh' };
   }
   const top = searched.researchEntities.slice(0, SEARCH_RERANK_WINDOW);
   if (top.length < 2) return { status: 'ineligible' };
