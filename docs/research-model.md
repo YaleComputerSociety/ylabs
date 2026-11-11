@@ -262,7 +262,7 @@ A survivor with no roster read of its own that names a department takes its merg
 A survivor that does read a roster but whose department another source won still combines nothing.
 Only values that name a department combine, and a department observation's fingerprint carries its value, so a page that stops listing the person never supersedes its old value.
 A value read within 14 days of the row's newest roster read combines.
-An older value still combines until its own department's roster is read again in full, by a complete `departmentRosterHealth` snapshot, without listing the row under its own key or a merged-in key.
+An older value still combines until the newest later complete `departmentRosterHealth` snapshot of its own department's roster lists the row under neither its own key nor a merged-in key.
 Reads of other departments never age it out, because a run scoped to a few rosters otherwise dropped every other roster's live appointment on cross-listed rows (#5824); an incomplete or unread snapshot is not evidence of absence (#3251), so it retires nothing.
 A merged-in appointment an earlier rebuild appended leaves the stored departments once that re-read retires it, unless the survivor's own evidence names it.
 After a merge the roster keeps reading the page but files the person's appointment under the person key (`entityType: 'user'`), so a person-keyed roster read naming the same department also dates that appointment; it only dates a department the row's own or merged-in evidence already states, never adds one, and never moves the window's floor (#4694).

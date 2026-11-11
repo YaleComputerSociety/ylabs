@@ -8938,8 +8938,8 @@ async function authoritativeDepartmentRosterRereads(
 }
 
 /**
- * An appointment is retired only by a later complete read of its own department's
- * roster that no longer lists the row under any of its keys. A read of some other
+ * An appointment is retired only when the newest later complete read of its own
+ * department's roster no longer lists the row under any of its keys. A read of some other
  * department is not evidence about this one, so a run scoped to a few rosters leaves
  * every other roster's appointments standing (#5824).
  */
@@ -8954,12 +8954,13 @@ function rosterAppointmentRereadWithoutListing(
     const later = rereads.filter(
       (reread) => reread.departmentKey === key && reread.readAt > appointmentReadTime,
     );
-    return (
-      later.length > 0 &&
-      later.every((reread) =>
+    if (later.length === 0) return false;
+    const newestReadAt = Math.max(...later.map((reread) => reread.readAt));
+    return later
+      .filter((reread) => reread.readAt === newestReadAt)
+      .every((reread) =>
         [...rowEntityKeys].every((entityKey) => !reread.listedEntityKeys.has(entityKey)),
-      )
-    );
+      );
   });
 }
 

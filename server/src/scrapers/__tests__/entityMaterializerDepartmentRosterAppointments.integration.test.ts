@@ -367,6 +367,27 @@ describe('department roster appointments combine (#3621)', () => {
       expect(await departmentsOf('example-lead')).toEqual(['History']);
     });
 
+    it('judges the appointment by the newest complete read of its roster', async () => {
+      await seedCrossListing();
+      await seedRosterRead('example-lead-roster-shell', ['Early Modern Studies'], LAST_TERM);
+      await seedRosterSnapshot(
+        'early-modern-studies',
+        'Early Modern Studies',
+        ['example-lead-roster-shell'],
+        new Date(LAST_TERM.getTime() + 60_000),
+      );
+      await seedRosterSnapshot(
+        'early-modern-studies',
+        'Early Modern Studies',
+        ['another-faculty-member'],
+        SCOPED_RUN,
+      );
+
+      await materializeEntity('researchEntity', { entityKey: 'example-lead' });
+
+      expect(await departmentsOf('example-lead')).toEqual(['History']);
+    });
+
     it('treats an incomplete read of its roster as no evidence of absence', async () => {
       await seedCrossListing();
       await seedRosterRead('example-lead-roster-shell', ['Early Modern Studies'], LAST_TERM);
