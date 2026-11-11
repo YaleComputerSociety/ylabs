@@ -11,7 +11,7 @@ import { publicHttpUrl } from '../utils/urlSafety';
 // A source joins this set only after the owner has read a side-by-side sample of its
 // identity matches; an agent check is not that review (#5551, owner decision 2026-10-04).
 // The owner confirmed these on 2026-11-10, and the Tobin board on 2026-11-11 after its own
-// ballot; EPS waits on a row defect (#4916).
+// ballot, and the EPS theses on 2026-11-11 after its re-sample.
 export const OWNER_REVIEWED_UNDERGRAD_LIST_SOURCES: ReadonlySet<UndergradListSource> =
   new Set<UndergradListSource>([
     'cs-senior-projects',
@@ -27,6 +27,7 @@ export const OWNER_REVIEWED_UNDERGRAD_LIST_SOURCES: ReadonlySet<UndergradListSou
     'yibs-summer-research-fellows',
     'cognitive-science-senior-essays',
     'tobin-research-assistantships',
+    'eps-senior-theses',
   ]);
 
 export interface PublicUndergradListEntry {

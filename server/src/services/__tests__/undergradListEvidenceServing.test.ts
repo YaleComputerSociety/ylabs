@@ -33,7 +33,7 @@ const reviewed = new Set([
 ]);
 
 describe('publicUndergradListEvidence', () => {
-  it('serves exactly the sources the owner confirmed, and never EPS', () => {
+  it('serves exactly the sources the owner confirmed', () => {
     expect([...OWNER_REVIEWED_UNDERGRAD_LIST_SOURCES].sort()).toEqual(
       [
         'cs-senior-projects',
@@ -49,21 +49,12 @@ describe('publicUndergradListEvidence', () => {
         'yibs-summer-research-fellows',
         'cognitive-science-senior-essays',
         'tobin-research-assistantships',
+        'eps-senior-theses',
       ].sort(),
     );
-    expect(OWNER_REVIEWED_UNDERGRAD_LIST_SOURCES.has('eps-senior-theses')).toBe(false);
   });
 
   it('serves nothing from a source the owner has not reviewed', () => {
-    const unreviewed = [
-      {
-        source: 'eps-senior-theses',
-        kind: 'advised',
-        count: 1,
-        sourceUrl: 'https://earth.example.edu/theses',
-      },
-    ];
-    expect(publicUndergradListEvidence(unreviewed)).toEqual([]);
     expect(publicUndergradListEvidence(stored, { reviewedSources: new Set() })).toEqual([]);
     expect(entityMentorsUndergraduates({ undergradListEvidence: stored }, new Set())).toBe(false);
   });

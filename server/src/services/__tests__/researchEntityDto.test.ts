@@ -741,7 +741,7 @@ describe('researchEntityDto', () => {
       id: 'entity-held',
       slug: 'held-lab',
       name: 'Held Lab',
-      undergradListEvidence: [entry('eps-senior-theses')],
+      undergradListEvidence: [entry('a-list-nobody-reviewed')],
     });
     expect(held.mentorsUndergrads).toBeUndefined();
 
