@@ -75,10 +75,32 @@ function replacedSpans(text: string, spans: TokenSpan[]): string {
 }
 
 const SENTENCES = new Intl.Segmenter('en', { granularity: 'sentence' });
+const ENDS_IN_NAME_ABBREVIATION = /(?:^|[^\p{L}])(?:Dr|Prof|Mr|Mrs|Ms|Mx|\p{Lu})\.\s*$/u;
+
+interface Sentence {
+  index: number;
+  segment: string;
+}
+
+function sentencesOf(text: string): Sentence[] {
+  const sentences: Sentence[] = [];
+  let pending: Sentence | undefined;
+  for (const { index, segment } of SENTENCES.segment(text)) {
+    pending = pending
+      ? { index: pending.index, segment: pending.segment + segment }
+      : { index, segment };
+    if (!ENDS_IN_NAME_ABBREVIATION.test(pending.segment)) {
+      sentences.push(pending);
+      pending = undefined;
+    }
+  }
+  if (pending) sentences.push(pending);
+  return sentences;
+}
 
 function withoutSentencesNaming(text: string, spans: TokenSpan[]): string {
   if (spans.length === 0) return text;
-  const kept = [...SENTENCES.segment(text)].filter(({ index, segment }) => {
+  const kept = sentencesOf(text).filter(({ index, segment }) => {
     const end = index + segment.length;
     return !spans.some((span) => span.start < end && span.end > index);
   });
