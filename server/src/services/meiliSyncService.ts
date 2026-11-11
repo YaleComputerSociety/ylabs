@@ -49,7 +49,8 @@ export const isSyncableEntityType = (entityType: string): entityType is Syncable
 };
 
 /**
- * A row that is archived must not hold an index document, whatever path is syncing it.
+ * A row that is archived, or suppressed with `researcher_removed`, must not hold an index
+ * document, whatever path is syncing it (`isExcludedFromSearchIndex`).
  *
  * Archiving a row removed it from the rebuild's query but nothing removed the document
  * it already had, so the index accumulated rows that serve no page. `deleteFromIndex`
