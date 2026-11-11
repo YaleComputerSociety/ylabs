@@ -109,6 +109,7 @@ Ingest stamps the same id onto a lane's fresh old-key observations whenever no r
 The lane lookups that resolve a key to a row (relationship source and target, center roster and director retirement, center affiliation hand-off, official-profile director retirement, access materialization and the undergraduate quote loader) fall back to the same adoption.
 An adopted row reads the old key as its own: its contact observations count as the row's own contact evidence, a field the page stops stating is cleared, and official roster reconciliation archives departed members on it.
 The materializer never renames an existing row (`projectedSlugWouldRenameExistingResearchEntity`), so a later pass keeps the new slug.
+The stamp the command writes and every ingest stamp carried from it are marked `reslugAdoption`, and a key no row holds whose marked observations name only archived rows mints nothing, so archiving the renamed row later does not bring the old slug back; an unmarked key re-mints as before.
 As a refusal rather than a lock, no pass may create a research row whose slug carries a removed researcher's given name and surname, adjacent or apart, and that refusal counts as `removed_by_request`.
 A second apply finds nothing to rename.
 

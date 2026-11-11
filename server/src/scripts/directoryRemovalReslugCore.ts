@@ -177,7 +177,7 @@ export async function planDirectoryRemovalReslugs(
 
 async function applyPlan(plan: ReslugPlan): Promise<{ stamped: number; renamed: number }> {
   const stamped = await Observation.updateMany(keylessObservationsOf(plan.fromSlug), {
-    $set: { entityId: plan.entityId },
+    $set: { entityId: plan.entityId, reslugAdoption: true },
   });
   const renamed = await ResearchEntity.updateOne(
     { _id: plan.entityId, slug: plan.fromSlug, archived: { $ne: true } },

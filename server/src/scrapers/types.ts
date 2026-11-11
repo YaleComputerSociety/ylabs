@@ -24,6 +24,7 @@ export interface ObservationInput {
    * permission to retire a prior assertion (#2647).
    */
   assertsNoValueFor?: string[];
+  reslugAdoption?: boolean;
 }
 
 export interface ScraperContext {

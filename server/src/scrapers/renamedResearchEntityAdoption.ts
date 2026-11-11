@@ -44,6 +44,7 @@ interface KeyedInput {
   entityType: string;
   entityKey?: string;
   entityId?: string;
+  reslugAdoption?: boolean;
 }
 
 const isKeyOnlyResearchEntityInput = (input: KeyedInput): boolean =>
@@ -71,11 +72,23 @@ export async function withRenamedResearchEntityIds<T extends KeyedInput>(
   );
   const unheld = keys.filter((key) => !held.has(key));
   if (unheld.length === 0) return [...inputs];
-  const named = await Observation.aggregate<{ _id: string; ids: mongoose.Types.ObjectId[] }>([
+  const named = await Observation.aggregate<{
+    _id: string;
+    ids: mongoose.Types.ObjectId[];
+    reslugAdoptionIds: mongoose.Types.ObjectId[];
+  }>([
     {
       $match: { entityType: 'researchEntity', entityKey: { $in: unheld }, entityId: { $ne: null } },
     },
-    { $group: { _id: '$entityKey', ids: { $addToSet: '$entityId' } } },
+    {
+      $group: {
+        _id: '$entityKey',
+        ids: { $addToSet: '$entityId' },
+        reslugAdoptionIds: {
+          $addToSet: { $cond: [{ $eq: ['$reslugAdoption', true] }, '$entityId', '$$REMOVE'] },
+        },
+      },
+    },
   ]);
   const namedIds = named.flatMap((group) => group.ids);
   if (namedIds.length === 0) return [...inputs];
@@ -86,16 +99,22 @@ export async function withRenamedResearchEntityIds<T extends KeyedInput>(
         .toArray()
     ).map((row) => String(row._id)),
   );
-  const rowIdByKey = new Map<string, string>();
+  const stampByKey = new Map<string, { entityId: string; reslugAdoption: boolean }>();
   for (const group of named) {
     const liveIds = [...new Set(group.ids.map(String))].filter((id) => live.has(id));
-    if (liveIds.length === 1) rowIdByKey.set(group._id, liveIds[0]);
+    if (liveIds.length !== 1) continue;
+    const reslugAdoption = group.reslugAdoptionIds.map(String).includes(liveIds[0]);
+    stampByKey.set(group._id, { entityId: liveIds[0], reslugAdoption });
   }
-  return inputs.map((input) =>
-    isKeyOnlyResearchEntityInput(input) && rowIdByKey.has(input.entityKey!)
-      ? { ...input, entityId: rowIdByKey.get(input.entityKey!) }
-      : input,
-  );
+  return inputs.map((input) => {
+    const stamp = isKeyOnlyResearchEntityInput(input)
+      ? stampByKey.get(input.entityKey!)
+      : undefined;
+    if (!stamp) return input;
+    return stamp.reslugAdoption
+      ? { ...input, entityId: stamp.entityId, reslugAdoption: true }
+      : { ...input, entityId: stamp.entityId };
+  });
 }
 
 export async function liveResearchEntityIdForLaneKey(entityKey: string): Promise<unknown> {
@@ -105,6 +124,33 @@ export async function liveResearchEntityIdForLaneKey(entityKey: string): Promise
     { projection: { _id: 1 } },
   );
   return held?._id ?? (await liveResearchEntityNamedByKeyObservations(entityKey))?._id ?? null;
+}
+
+/**
+ * A key no row holds whose `directory-removal:reslug` stamps name only archived rows was
+ * renamed away from, so it mints nothing: archiving the renamed row must not bring a new
+ * row back at the old slug (#4160). Only the reslug's own stamps count, so a key whose
+ * observations name an archived row for any other reason re-mints as before.
+ */
+export async function reslugAdoptedKeyNamesOnlyArchivedRows(
+  entityKey: string | undefined,
+): Promise<boolean> {
+  if (!entityKey || mongoose.connection.readyState !== 1) return false;
+  const ids = await Observation.distinct('entityId', {
+    entityType: 'researchEntity',
+    entityKey,
+    entityId: { $ne: null },
+    reslugAdoption: true,
+  });
+  if (ids.length === 0) return false;
+  const [live, archived] = await Promise.all([
+    researchEntities().findOne(
+      { _id: { $in: ids }, archived: { $ne: true } },
+      { projection: { _id: 1 } },
+    ),
+    researchEntities().findOne({ _id: { $in: ids }, archived: true }, { projection: { _id: 1 } }),
+  ]);
+  return !live && Boolean(archived);
 }
 
 export async function researchEntityMintSlugNamesARemovedResearcher(
