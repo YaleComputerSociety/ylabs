@@ -9214,7 +9214,16 @@ async function materializeUserIdentityToResearcher(
   ] as const) {
     const bounded = normalizedResearcherProfileText(key, value);
     const storedValue = researcher.profile[key];
-    if (key === 'websiteUrl' && websiteStandsBelowStored(bounded, storedValue)) continue;
+    const keyHoldsStoredWebsite =
+      Boolean(writerKey) &&
+      researcher.profileFieldWriters?.get?.('websiteUrl')?.userKey === writerKey;
+    if (
+      key === 'websiteUrl' &&
+      !keyHoldsStoredWebsite &&
+      websiteStandsBelowStored(bounded, storedValue)
+    ) {
+      continue;
+    }
     const outranksStoredWebsite =
       key === 'websiteUrl' && websiteStandsAboveStored(bounded, storedValue);
     if (writerKey && !settleFieldWriter(key, bounded, confidence, outranksStoredWebsite)) continue;

@@ -307,6 +307,7 @@ The shape is `isPersonProfileOrDirectoryUrl`, and `personWebsiteStanding` ranks 
 Within one `user` key, the user materializer takes the first ranked `websiteUrl` or `website` candidate of the best standing, so a newer or surer profile page loses to the key's lab site.
 Across keys, a candidate standing below the stored `Researcher.profile.websiteUrl` neither writes nor takes the writer slot, and one standing above it writes whatever the writer rank, so the outcome is the same in either order and a second pass writes nothing.
 A person whose only website is the profile page still gets it.
+The key that holds the `websiteUrl` writer slot is the exception: when its own evidence no longer offers the stored site, its profile page replaces it, so a site no observation backs does not stick.
 A respelling of the stored site (scheme, `www.`, trailing slash or default document, by `normalizeWebsiteUrlIdentityKey`, with the query string still compared) is the same site and plans no write.
 Measured on Development 2026-11-11, a `--only-fields=websiteUrl` dry run of one roster run planned 18 replacements of a stored website, most of them a lab site replaced by the person's profile or directory page from an older roster `website` observation; the current roster extractors no longer emit those pages as `website`.
 

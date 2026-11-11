@@ -171,6 +171,24 @@ describe("a person's profile or directory page never displaces their own website
     expect(await storedWebsite()).toBe(PERSONAL_NAME_DOMAIN);
   });
 
+  it('lets the key that wrote the lab site fall back to its profile page once its lab site evidence is gone', async () => {
+    await createResearcher();
+    await seedName(NAME_KEY);
+    await seedWebsite({ entityKey: NAME_KEY, value: LAB_SITE, observedAt: '2026-06-01' });
+    await materialize(NAME_KEY);
+    expect(await storedWebsite()).toBe(LAB_SITE);
+
+    await Observation.updateMany(
+      { entityKey: NAME_KEY, field: 'website', value: LAB_SITE },
+      { $set: { superseded: true } },
+    );
+    await seedWebsite({ entityKey: NAME_KEY, value: PROFILE_PAGE, observedAt: '2026-11-10' });
+
+    await materialize(NAME_KEY);
+    expect(await storedWebsite()).toBe(PROFILE_PAGE);
+    expect((await materialize(NAME_KEY)).fieldsWritten).toBe(0);
+  });
+
   it('lets a personal-name domain replace a stored directory page', async () => {
     await createResearcher(DIRECTORY_PAGE);
     await seedName(NETID_KEY);
