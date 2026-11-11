@@ -1313,6 +1313,9 @@ An unresolved listing whose exact name an account-, netid- or ORCID-holding rese
 Only links the page subject owns count: a person-profile-shaped page outside navigation and footers, either spelled with the member's given name and surname in its URL, or outside asides and labelled generically ("Profile", "SOM Faculty Profile") or with the member's own name.
 A generic label is the subject's only when no other anchor names a different person at the same page and the label leads to one page, because co-author and colleague grids repeat "View Full Profile" under each card, and that is how 851 listings linked a differently named researcher (#5677).
 The page is never cached whole, only the extracted evidence, keyed on `ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION`; a test pins that version to the extractor's output on a fixture corpus, so an output change, from the extractor or a helper it calls, fails until the version is bumped rather than serving the old extractor's cached output.
+A linked page or address names a candidate only while nothing says it belongs to someone else (`withoutContradictedIdentityWitnesses`, #5751), because a URL that spells a name names every namesake equally.
+The candidate is dropped when `profilePageContradictsNetid` gives the member page to another netid, or when the member page's addresses the directory knows all share one owner and the candidate is not it (`directoryOwnerNetidsOfAddresses`), so an assistant's address beside the member's own decides nothing.
+A link or address is dropped when the candidate refuses it or when that linked page itself names another netid.
 A `--limit` run reads at most that many member pages per roster so the canary stays bounded.
 
 Then clear the borrowed URL with `yarn --cwd server observations:retire-organization-identity-websites`.
@@ -1803,11 +1806,12 @@ Measured on Development on 2026-11-11: 5 pages were shared, 2 by twins with no n
 
 When the backfill filed a person page under a namesake's `netid:` key, the same pass also named that namesake as the row's lead and could leave the page's link and ORCID on the namesake's record.
 `profilePageOwnerNetids` in `server/src/scrapers/directoryContradictedProfileNetid.ts` reads the email each person page states about itself and the netids the directory pairs with it, and `profilePageContradictsNetid` says whether that page names someone other than a given netid.
-Three readers use it on every resolve, so nothing is locked:
+Its readers run on every resolve, so nothing is locked:
 
 - `contradictedPageLeadObservations` drops a backfill `inferredPiUserId` observation whose page names another netid, and `materializeInferredPiMembership` ends the backfill's own `PI` edge citing that page;
 - `planScreenedPageWithdrawal` withdraws a stored `YALE_OFFICIAL` link whose page names another netid, which reaches a host or path variant of the screened page that an exact URL match missed;
-- it also clears an ORCID when every live observation asserting it was read from such a page.
+- it also clears an ORCID when every live observation asserting it was read from such a page;
+- the center roster member identity join drops a linked page that names another netid, as the center roster lane above records (#5751).
 
 A researcher whose stored netid the directory does not hold is never contradicted, because that is usually the person's own email alias stamped as a netid.
 Since #5737 the same withdrawal runs on every resolve of a holder, not only when one of its own keys is screened: `planHeldContradictedPageWithdrawal` withdraws a held link whose page names another netid, and an ORCID or photo URL that only such pages assert.

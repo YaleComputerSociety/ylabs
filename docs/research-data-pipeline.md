@@ -1283,6 +1283,7 @@ That key keeps the query string for `profileLink` and `imageUrl`, because a quer
 On every resolve the user materializer drops the person's refused values from the evidence of each identity that joins them before the resolver ranks it, and clears a stored refused value, so a rival still wins and a second resolve writes nothing.
 A refused ORCID is keyed by its bare identifier, clears `identifiers.orcid` and the matching ORCID link, and is never re-stamped or gap-filled by a fold.
 A refused email is not a join witness either, so an address refused as someone else's cannot join that identity to the person (owner decision 2026-11-11).
+A center roster member's page does not name the person through a refused email or profile link either (#5751).
 Archived researchers keep their refusals, so a restore or an unmerge cannot bring a refused value back, and the researcher fold copies the shell's refusals onto the survivor and never gap-fills a value either side refuses.
 `over_shared_value` names the #5645 class and `other_persons_page` the #5606 class; `operator_judgement` stays the rule for a one-person call.
 
