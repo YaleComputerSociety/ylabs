@@ -1,7 +1,8 @@
 import { isDeepStrictEqual } from 'node:util';
 import {
+  OWN_KEY_FALLBACK_TITLE_FIELD,
   RESEARCHER_WRITER_FIELDS,
-  type ResearcherWriterField,
+  type ResearcherGatedField,
 } from '../utils/researcherFieldWriters';
 
 export const PROFILE_FIELD_WRITERS_PATH = 'profileFieldWriters';
@@ -16,7 +17,9 @@ export const USER_MATERIALIZER_SCOPE_FIELDS = [
   'identifiers.emailSupport',
   'profileLinks',
   PROFILE_FIELD_WRITERS_PATH,
-  ...RESEARCHER_WRITER_FIELDS.map((field) => `${PROFILE_FIELD_WRITERS_PATH}.${field}`),
+  ...[...RESEARCHER_WRITER_FIELDS, OWN_KEY_FALLBACK_TITLE_FIELD].map(
+    (field) => `${PROFILE_FIELD_WRITERS_PATH}.${field}`,
+  ),
 ] as const;
 
 export const USER_MATERIALIZER_FIELD_ALIASES: Readonly<Record<string, string>> = {
@@ -38,9 +41,9 @@ export const USER_MATERIALIZER_DERIVED_FIELD_GROUPS: ReadonlyArray<readonly stri
   ['identifiers.email', 'identifiers.emailSupport'],
 ];
 
-const WRITER_FIELD_BY_VALUE_PATH: Readonly<Record<string, ResearcherWriterField>> = {
+const WRITER_FIELD_BY_VALUE_PATH: Readonly<Record<string, ResearcherGatedField>> = {
   displayName: 'displayName',
-  'profile.title': 'title',
+  'profile.title': OWN_KEY_FALLBACK_TITLE_FIELD,
   'profile.primaryDepartment': 'primaryDepartment',
   'profile.imageUrl': 'imageUrl',
   'profile.websiteUrl': 'websiteUrl',

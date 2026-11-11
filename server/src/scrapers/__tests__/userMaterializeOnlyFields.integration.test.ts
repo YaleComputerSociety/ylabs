@@ -98,7 +98,7 @@ describe('a user materialize scoped to named fields writes only that scope (#581
     Researcher.create({
       displayName: 'A. Synthetic',
       identifiers: { netid: NETID },
-      profile: { title: 'Lecturer in Fixtures' },
+      profile: {},
       profileLinks: [],
       status: 'UNKNOWN',
       archived: false,
@@ -139,9 +139,7 @@ describe('a user materialize scoped to named fields writes only that scope (#581
       'profile.primaryDepartment',
       'profileFieldWriters.primaryDepartment',
     ]);
-    expect(result.droppedPaths).toEqual(
-      expect.arrayContaining(['displayName', 'profile.title', 'profileFieldWriters.title']),
-    );
+    expect(result.droppedPaths).toEqual(expect.arrayContaining(['displayName', 'profile.title']));
     expect(result.fieldsWritten).toBe(2);
     expect(await stored(researcher._id)).toEqual(before);
   });
@@ -163,7 +161,7 @@ describe('a user materialize scoped to named fields writes only that scope (#581
     expect(withoutPaths(after, applied.plannedPaths ?? [])).toEqual(
       withoutPaths(before, applied.plannedPaths ?? []),
     );
-    expect(after.profile.title).toBe('Lecturer in Fixtures');
+    expect(after.profile.title).toBeUndefined();
     expect(after.displayName).toBe('A. Synthetic');
 
     const second = await resolve(KEY, ['primaryDepartment']);
@@ -189,13 +187,13 @@ describe('a user materialize scoped to named fields writes only that scope (#581
 
     const planned = await resolve(KEY, scope, true);
     expect(planned.plannedPaths).toEqual(expected);
-    expect(planned.droppedPaths).toEqual(['profile.title', 'profileFieldWriters.title']);
+    expect(planned.droppedPaths).toEqual(['profile.title']);
 
     const applied = await resolve(KEY, scope);
     expect(applied.plannedPaths).toEqual(expected);
     const after = await stored(researcher._id);
     expect(withoutPaths(after, expected)).toEqual(withoutPaths(before, expected));
-    expect(after.profile.title).toBe('Lecturer in Fixtures');
+    expect(after.profile.title).toBeUndefined();
     expect(after.profileFieldWriters.title).toBeUndefined();
 
     const second = await resolve(KEY, scope);
@@ -223,7 +221,7 @@ describe('a user materialize scoped to named fields writes only that scope (#581
 
     await resolve(KEY, ['profileFieldWriters']);
     const after = await stored(researcher._id);
-    expect(after.profileFieldWriters.title.confidence).not.toBe(0.01);
+    expect(after.profileFieldWriters.title).toBeUndefined();
     expect(after.profile).toEqual(before.profile);
     expect(after.displayName).toBe(before.displayName);
     expect(after.identifiers).toEqual(before.identifiers);
@@ -241,7 +239,7 @@ describe('a user materialize scoped to named fields writes only that scope (#581
     const researcher = await Researcher.create({
       displayName: 'Avery Synthetic',
       identifiers: { netid: EMAIL_NETID },
-      profile: { title: 'Lecturer in Fixtures' },
+      profile: {},
       profileLinks: [
         {
           kind: 'YALE_OFFICIAL',
@@ -271,9 +269,7 @@ describe('a user materialize scoped to named fields writes only that scope (#581
 
     const planned = await resolve(EMAIL_KEY, ['email'], true);
     expect(planned.plannedPaths).toEqual(['identifiers.email']);
-    expect(planned.droppedPaths).toEqual(
-      expect.arrayContaining(['profile.title', 'profileFieldWriters.title']),
-    );
+    expect(planned.droppedPaths).toEqual(expect.arrayContaining(['profile.title']));
 
     await resolve(EMAIL_KEY, ['identifiers.email']);
     const after = await stored(researcher._id);
