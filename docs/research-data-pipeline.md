@@ -2103,6 +2103,8 @@ Such a lane has to resync itself: `retireForeignLeadGrafts.ts` re-reads its corr
 `researchers:dedupe-accountless-shells` edits a roster too, by folding a person shell into the record that outranks it and moving or archiving that shell's role edges, and it did not re-gate at all: a row it changed kept a tier and a search document describing a roster it no longer had (#2952).
 It now re-gates every entity whose roster it edited, reporting `rosterChangedEntities` and `regatedEntities` alongside the merge counts, and the gate's own apply path resyncs the records it writes.
 That matters most where the fold strengthens a lead rather than removing one: the surviving record can carry a netid the shell did not, which is a different answer to the gate's lead question than the one the stored verdict was computed from.
+It also re-gates every live row the surviving record holds an edge on, because a fold can change the verdict of a row it never touched: when the shell and the survivor each led one of two rows for the same research, the survivor now leads both and the gate's same-PI arm holds the non-canonical one (#5687).
+`regatedEntities` therefore counts both sets, and can exceed `rosterChangedEntities`.
 
 `yarn --cwd server research-entity:backfill-lab-branded-name-type` is the other name-correcting lane and it both asserts and retracts (#2446).
 It is dry-run by default and apply mode requires `--confirm-lab-branded-name-type`; the destructive half retires that source's `name` and `displayName` observations and clears a grafted `displayName` on rows the product is already serving, so read a dry-run report before every apply.

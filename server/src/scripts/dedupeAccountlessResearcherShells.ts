@@ -36,7 +36,9 @@ import {
   type ShellFoldIdentity,
   type ShellMergeReason,
   planAliasTwinFolds,
+  researchEntityIdsToRegateAfterFold,
   type AliasTwinFoldRefusal,
+  type FoldRegateEdge,
 } from './dedupeAccountlessResearcherShellsCore';
 import { isLocalPartNetid } from '../utils/localPartNetid';
 import { normalizeOfficialProfileDestination } from '../services/leadProfileIdentity';
@@ -1001,19 +1003,26 @@ export async function dedupeAccountlessResearcherShells(options: {
 
     // Folding a shell changes the roster of every entity it held an edge on, and the
     // gate reads that roster: a merge can turn a name-only lead into a netid-backed
-    // one, or remove a duplicate the row was held on. Without this the row keeps a
+    // one, or remove a duplicate the row was held on. It can also make the survivor
+    // lead a second row for the same research, which changes the verdict of the
+    // survivor's own rows (#5687). Without this the row keeps a
     // tier and a search document describing a roster that no longer exists (#2952),
     // the same self-resync obligation `docs/research-data-pipeline.md` records for the
     // other roster-editing lanes. Re-gate through the ordinary gate rather than
     // writing tiers here, so every other blocker still applies; its apply path also
     // resyncs the affected search documents.
-    if (rosterChangedEntityIds.size > 0) {
+    const regateEntityIds = researchEntityIdsToRegateAfterFold({
+      shellEdges: shellRoleAssignments as FoldRegateEdge[],
+      survivorEdges: canonicalRoleAssignments as FoldRegateEdge[],
+      mergeTargetByShellId,
+    });
+    if (regateEntityIds.size > 0) {
       await runStudentVisibilityGate({
         collection: 'research',
         mode: 'apply',
-        recordIds: [...rosterChangedEntityIds],
+        recordIds: [...regateEntityIds],
       });
-      regatedEntities = rosterChangedEntityIds.size;
+      regatedEntities = regateEntityIds.size;
     }
   }
 

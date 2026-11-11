@@ -784,6 +784,44 @@ export function roleAssignmentEdgeKey(edge: RoleAssignmentEdge): string {
   return `${kind}::${id}::${role}`;
 }
 
+export interface FoldRegateEdge {
+  personId?: unknown;
+  archived?: unknown;
+  target?: { kind?: unknown; id?: unknown };
+}
+
+const liveResearchEntityTargetId = (edge: FoldRegateEdge): string | undefined => {
+  if (edge.archived === true || edge.target?.kind !== 'RESEARCH_ENTITY') return undefined;
+  const id = edge.target.id === undefined || edge.target.id === null ? '' : String(edge.target.id);
+  return id || undefined;
+};
+
+/**
+ * The research rows whose gate verdict a fold can change: every row the folded shell
+ * held an edge on, and every row the surviving researcher holds a live edge on.
+ */
+export function researchEntityIdsToRegateAfterFold(args: {
+  shellEdges: readonly FoldRegateEdge[];
+  survivorEdges: readonly FoldRegateEdge[];
+  mergeTargetByShellId: ReadonlyMap<string, string>;
+}): Set<string> {
+  const entityIds = new Set<string>();
+  for (const edge of args.shellEdges) {
+    if (!args.mergeTargetByShellId.has(String(edge.personId))) continue;
+    const entityId = liveResearchEntityTargetId(edge);
+    if (entityId) entityIds.add(entityId);
+  }
+  // A fold that makes one person PI of two rows turns the row it never touched into a
+  // same-PI duplicate, so that row's verdict changes too (#5687).
+  const survivorIds = new Set(args.mergeTargetByShellId.values());
+  for (const edge of args.survivorEdges) {
+    if (!survivorIds.has(String(edge.personId))) continue;
+    const entityId = liveResearchEntityTargetId(edge);
+    if (entityId) entityIds.add(entityId);
+  }
+  return entityIds;
+}
+
 export interface ResearcherProfileLinkLike {
   kind?: unknown;
   url?: unknown;
