@@ -116,3 +116,124 @@ export const planGuard = (args, context) => {
   const label = command.kind === 'api' ? 'API body' : `${command.group} ${command.action} body`;
   return { action: 'scan', label, text: texts.join('\n\n') };
 };
+
+// GitHub does not read a closing keyword inside a code span, so a body that says
+// "Closes `#5622`" merges with its issue left open. The no-mistakes gate writes its PR
+// bodies that way, and they reach GitHub through this guard, so the guard restores the
+// plain form before posting rather than leaving it to someone noticing (#5664).
+const LINE_LEADING_BACKTICKED_CLOSING_KEYWORD_RE =
+  /^([ \t]*)(close[sd]?|fix(?:e[sd])?|resolve[sd]?)([ \t]*:?[ \t]+)`((?:[\w.-]+\/[\w.-]+)?#\d+)`/i;
+const CODE_FENCE_RE = /^[ \t]*(?:```|~~~)/;
+
+export const rewriteBacktickedClosingKeywords = (text) => {
+  let count = 0;
+  let insideFence = false;
+  const lines = String(text)
+    .split('\n')
+    .map((line) => {
+      if (CODE_FENCE_RE.test(line)) {
+        insideFence = !insideFence;
+        return line;
+      }
+      if (insideFence) return line;
+      return line.replace(
+        LINE_LEADING_BACKTICKED_CLOSING_KEYWORD_RE,
+        (_match, indent, keyword, gap, ref) => {
+          count += 1;
+          return `${indent}${keyword}${gap}${ref}`;
+        },
+      );
+    });
+  return { text: lines.join('\n'), count };
+};
+
+const rewriteJsonDocumentBody = (raw) => {
+  let document;
+  try {
+    document = JSON.parse(raw);
+  } catch {
+    return { text: raw, count: 0 };
+  }
+  if (typeof document?.body !== 'string') return { text: raw, count: 0 };
+  const result = rewriteBacktickedClosingKeywords(document.body);
+  if (result.count === 0) return { text: raw, count: 0 };
+  return { text: JSON.stringify({ ...document, body: result.text }), count: result.count };
+};
+
+const BODY_VALUE_FLAGS = ['-b', '--body'];
+const BODY_FILE_FLAGS = ['-F', '--body-file'];
+const API_INPUT_FLAGS = ['--input'];
+
+const splitFlag = (arg, names) => {
+  for (const name of names) {
+    if (arg === name) return { name, attached: false };
+    const value = attachedValue(arg, name);
+    if (value !== null) return { name, attached: true, value };
+  }
+  return null;
+};
+
+/**
+ * Returns the args and stdin to hand the real gh, with every backticked closing keyword in a
+ * body restored to plain text. A body given as a file is never edited in place: the rewritten
+ * text goes to a new file from `writeTempFile` and the argument points there instead.
+ */
+export const planClosingKeywordRewrite = (args, { readBodyFile, readStdin, writeTempFile }) => {
+  const command = classifyCommand(args);
+  const out = [...args];
+  let stdin;
+  let count = 0;
+
+  const rewriteText = (text, rewriter = rewriteBacktickedClosingKeywords) => {
+    const result = rewriter(text);
+    count += result.count;
+    return result;
+  };
+  const rewriteFileArgument = (file, rewriter) => {
+    if (file === '-') {
+      const result = rewriteText(readStdin(), rewriter);
+      if (result.count > 0) stdin = result.text;
+      return file;
+    }
+    const result = rewriteText(readBodyFile(file), rewriter);
+    return result.count > 0 ? writeTempFile(result.text) : file;
+  };
+
+  const valueFlags = command.kind === 'api' ? API_FIELD_FLAGS : BODY_VALUE_FLAGS;
+  const fileFlags = command.kind === 'api' ? API_INPUT_FLAGS : BODY_FILE_FLAGS;
+  const fileRewriter =
+    command.kind === 'api' ? rewriteJsonDocumentBody : rewriteBacktickedClosingKeywords;
+
+  for (let i = 0; i < out.length; i += 1) {
+    const fileFlag = splitFlag(out[i], fileFlags);
+    if (fileFlag) {
+      if (fileFlag.attached) {
+        out[i] = `${fileFlag.name}=${rewriteFileArgument(fileFlag.value, fileRewriter)}`;
+      } else if (i + 1 < out.length) {
+        out[i + 1] = rewriteFileArgument(out[i + 1], fileRewriter);
+        i += 1;
+      }
+      continue;
+    }
+    const valueFlag = splitFlag(out[i], valueFlags);
+    if (!valueFlag) continue;
+    const index = valueFlag.attached ? i : i + 1;
+    if (index >= out.length) continue;
+    const raw = valueFlag.attached ? valueFlag.value : out[index];
+    let next;
+    if (command.kind === 'api') {
+      const [key, ...rest] = raw.split('=');
+      if (key.replace(/\[\]$/, '') !== 'body') continue;
+      const value = rest.join('=');
+      next = value.startsWith('@')
+        ? `${key}=@${rewriteFileArgument(value.slice(1))}`
+        : `${key}=${rewriteText(value).text}`;
+    } else {
+      next = rewriteText(raw).text;
+    }
+    out[index] = valueFlag.attached ? `${valueFlag.name}=${next}` : next;
+    if (!valueFlag.attached) i += 1;
+  }
+
+  return { args: out, ...(stdin === undefined ? {} : { stdin }), count };
+};
