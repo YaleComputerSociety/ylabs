@@ -181,6 +181,7 @@ describe("a lead's own official page marks them deceased or departed (#5721)", (
           activeAtYaleCache: false,
           yaleStatusCache: 'departed',
           studentVisibilityOverrideTier: 'suppressed',
+          studentVisibilitySuppressionReason: 'fixture_hold: the lead has departed',
         },
       },
     );
