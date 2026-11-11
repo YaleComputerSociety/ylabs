@@ -7,17 +7,27 @@ import {
 
 describe('observations:rematerialize-user-keys arguments', () => {
   it('is a dry run by default and requires the confirm flag to apply', () => {
-    expect(parseRematerializeUserKeysArgs(['--keys-file=/tmp/k.json'])).toMatchObject({
+    const required = ['--keys-file=/tmp/k.json', '--output=/tmp/r.json'];
+    expect(parseRematerializeUserKeysArgs(required)).toMatchObject({
       apply: false,
       passes: 1,
+      output: '/tmp/r.json',
     });
-    expect(() => parseRematerializeUserKeysArgs(['--keys-file=/tmp/k.json', '--apply'])).toThrow(
-      /confirm/,
+    expect(() => parseRematerializeUserKeysArgs([...required, '--apply'])).toThrow(/confirm/);
+    expect(
+      parseRematerializeUserKeysArgs([
+        ...required,
+        '--apply',
+        '--confirm-rematerialize-user-keys',
+        '--passes=2',
+      ]),
+    ).toMatchObject({ apply: true, passes: 2 });
+    expect(() => parseRematerializeUserKeysArgs(['--apply', '--output=/tmp/r.json'])).toThrow(
+      /keys-file/,
     );
-    expect(() => parseRematerializeUserKeysArgs(['--apply'])).toThrow(/keys-file/);
-    expect(() =>
-      parseRematerializeUserKeysArgs(['--keys-file=/tmp/k.json', '--passes=9']),
-    ).toThrow();
+    expect(() => parseRematerializeUserKeysArgs(['--keys-file=/tmp/k.json'])).toThrow(/output/);
+    expect(() => parseRematerializeUserKeysArgs([...required, '--passes=9'])).toThrow();
+    expect(() => parseRematerializeUserKeysArgs([...required, '--passes=2'])).toThrow(/apply/);
   });
 
   it('reads a JSON array of keys, de-duplicated, and refuses anything else', () => {

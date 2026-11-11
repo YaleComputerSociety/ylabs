@@ -6,13 +6,19 @@ export interface RematerializeUserKeysArgs {
   apply: boolean;
   confirm: boolean;
   passes: number;
-  output?: string;
+  output: string;
 }
 
 export const REMATERIALIZE_USER_KEYS_CONFIRM_FLAG = '--confirm-rematerialize-user-keys';
 
 export function parseRematerializeUserKeysArgs(argv: string[]): RematerializeUserKeysArgs {
-  const args: RematerializeUserKeysArgs = { keysFile: '', apply: false, confirm: false, passes: 1 };
+  const args: RematerializeUserKeysArgs = {
+    keysFile: '',
+    apply: false,
+    confirm: false,
+    passes: 1,
+    output: '',
+  };
   for (const arg of argv) {
     if (arg === '--apply') args.apply = true;
     else if (arg === '--dry-run') args.apply = false;
@@ -29,8 +35,12 @@ export function parseRematerializeUserKeysArgs(argv: string[]): RematerializeUse
     } else throw new Error(`Unknown argument: ${arg}`);
   }
   if (!args.keysFile) throw new Error('--keys-file=<json array of user entityKeys> is required.');
+  if (!args.output) throw new Error('--output=<tmp report path> is required.');
   if (args.apply && !args.confirm) {
     throw new Error(`--apply requires ${REMATERIALIZE_USER_KEYS_CONFIRM_FLAG}.`);
+  }
+  if (!args.apply && args.passes > 1) {
+    throw new Error('--passes above 1 requires --apply, because a dry run writes nothing.');
   }
   return args;
 }

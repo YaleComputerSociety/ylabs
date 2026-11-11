@@ -61,11 +61,11 @@ async function main(): Promise<void> {
     mongoUrl: process.env.MONGODBURL,
   });
   const keys = userKeysFromJson(fs.readFileSync(path.resolve(args.keysFile), 'utf8'));
-  const outputPath = args.output ? resolveSafeJsonReportOutputPath(args.output) : undefined;
+  const outputPath = resolveSafeJsonReportOutputPath(args.output);
   await initializeConnections();
   try {
     const passes: UserKeyPassRow[][] = [];
-    for (let pass = 1; pass <= (args.apply ? args.passes : 1); pass += 1) {
+    for (let pass = 1; pass <= args.passes; pass += 1) {
       const rows: UserKeyPassRow[] = [];
       for (const key of keys) rows.push(await visit(key, args.apply));
       passes.push(rows);
@@ -77,8 +77,7 @@ async function main(): Promise<void> {
       keys: keys.length,
       passes: summaries,
     };
-    if (outputPath)
-      fs.writeFileSync(outputPath, JSON.stringify({ ...report, rows: passes }, null, 2));
+    fs.writeFileSync(outputPath, JSON.stringify({ ...report, rows: passes }, null, 2));
     console.log(JSON.stringify(report, null, 2));
   } finally {
     await mongoose.disconnect();
