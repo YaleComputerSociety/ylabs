@@ -214,6 +214,29 @@ describe('roleAssignmentEdgeKey', () => {
 });
 
 describe('planResearcherAttributeUnion', () => {
+  it('never gap-fills or links an ORCID either side refuses (#5641)', () => {
+    const orcid = '9999-9000-9999-9021';
+    const plan = planResearcherAttributeUnion(
+      {
+        profileLinks: [],
+        identifiers: {},
+        profile: {},
+        fieldValueRefusals: {
+          orcid: [
+            { valueKey: orcid.toLowerCase(), rule: 'other_persons_page', refusedBy: 'fixture' },
+          ],
+        },
+      },
+      {
+        profileLinks: [{ kind: 'ORCID', url: `https://orcid.org/${orcid}` }],
+        identifiers: { orcid },
+        profile: {},
+      },
+    );
+    expect(plan.identifierGapFills).toEqual({});
+    expect(plan.profileLinksToAppend).toEqual([]);
+  });
+
   it('gap-fills profile links, identifiers, and profile fields the canonical lacks', () => {
     const plan = planResearcherAttributeUnion(
       {

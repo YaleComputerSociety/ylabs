@@ -24,6 +24,7 @@ export const RESEARCHER_REFUSABLE_FIELDS = [
   'primaryDepartment',
   'imageUrl',
   'email',
+  'orcid',
   'profileLink',
 ] as const;
 
@@ -46,7 +47,22 @@ const USER_OBSERVATION_REFUSAL_FIELD: Readonly<Record<string, ResearcherRefusabl
   primaryDepartment: 'primaryDepartment',
   imageUrl: 'imageUrl',
   email: 'email',
+  orcid: 'orcid',
 };
+
+const ORCID_ID_RE = /\b(\d{4}-\d{4}-\d{4}-\d{3}[\dX])\b/i;
+
+/**
+ * An ORCID is refused as its bare identifier, so a bare value, an `orcid.org` URL and a
+ * lower-case check digit all name the same refusal.
+ */
+export function orcidRefusalValue(value: unknown): string | undefined {
+  const match = typeof value === 'string' ? value.match(ORCID_ID_RE) : null;
+  return match ? match[1].toUpperCase() : undefined;
+}
+
+const refusalValueFor = (field: ResearcherRefusableField, value: unknown): unknown =>
+  field === 'orcid' ? (orcidRefusalValue(value) ?? value) : value;
 
 export const PROFILE_URLS_OBSERVATION_FIELD = 'profileUrls';
 
@@ -61,13 +77,15 @@ export function researcherRefusesValue(
   field: ResearcherRefusableField,
   value: unknown,
 ): boolean {
-  return valueIsRefused(fieldValueRefusals, field, value);
+  return valueIsRefused(fieldValueRefusals, field, refusalValueFor(field, value));
 }
 
 const withoutRefusedProfileUrls = (value: unknown, fieldValueRefusals: unknown): unknown => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
   const kept = Object.entries(value as Record<string, unknown>).filter(
-    ([, url]) => !valueIsRefused(fieldValueRefusals, 'profileLink', url),
+    ([, url]) =>
+      !valueIsRefused(fieldValueRefusals, 'profileLink', url) &&
+      !(orcidRefusalValue(url) && researcherRefusesValue(fieldValueRefusals, 'orcid', url)),
   );
   return Object.fromEntries(kept);
 };
@@ -94,7 +112,10 @@ export function withoutResearcherRefusedObservations<T extends ResearcherRefusab
       continue;
     }
     const refusalField = USER_OBSERVATION_REFUSAL_FIELD[field];
-    if (refusalField && valueIsRefused(fieldValueRefusals, refusalField, observation.value)) {
+    if (
+      refusalField &&
+      researcherRefusesValue(fieldValueRefusals, refusalField, observation.value)
+    ) {
       continue;
     }
     kept.push(observation);
@@ -103,7 +124,7 @@ export function withoutResearcherRefusedObservations<T extends ResearcherRefusab
 }
 
 export interface ResearcherStoredValues {
-  identifiers?: { email?: unknown } | null;
+  identifiers?: { email?: unknown; orcid?: unknown } | null;
   profile?: Record<string, unknown> | null;
   profileLinks?: Array<{ url?: unknown }> | null;
   fieldValueRefusals?: unknown;
@@ -128,8 +149,15 @@ export function planResearcherRefusedStoredValueClear(
   }
   const email = researcher.identifiers?.email;
   if (email && valueIsRefused(refusals, 'email', email)) unset.push('identifiers.email');
+  const orcid = researcher.identifiers?.orcid;
+  if (orcid && researcherRefusesValue(refusals, 'orcid', orcid)) unset.push('identifiers.orcid');
   for (const link of researcher.profileLinks ?? []) {
-    if (link?.url && valueIsRefused(refusals, 'profileLink', link.url)) {
+    if (!link?.url) continue;
+    const linkOrcid = orcidRefusalValue(link.url);
+    if (
+      valueIsRefused(refusals, 'profileLink', link.url) ||
+      (linkOrcid && researcherRefusesValue(refusals, 'orcid', linkOrcid))
+    ) {
       profileLinkUrlsToPull.push(String(link.url));
     }
   }
