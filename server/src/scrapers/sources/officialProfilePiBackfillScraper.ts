@@ -94,6 +94,7 @@ import {
 } from '../utils/scraperHelpers';
 import { LEAD_ROLE_LEGACY_LABELS } from '../../models/canonicalRoleMapping';
 import {
+  isJsonLdNodeOfAnotherPerson,
   isYaleAddress,
   jsonLdNodesThatMayNameThePerson,
   subjectDeclaredProfileEmail,
@@ -2727,6 +2728,7 @@ function nameShapedYaleEmailOnPage(
 ): string {
   const candidates: string[] = [];
   for (const profile of profiles) {
+    if (isJsonLdNodeOfAnotherPerson(profile, displayName)) continue;
     const email = profile.email;
     candidates.push(...(Array.isArray(email) ? email : [email]).map(textValue));
   }

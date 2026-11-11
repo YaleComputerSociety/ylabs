@@ -262,6 +262,13 @@ describe('the profile subject email read from more page shapes (#5669)', () => {
       );
     });
 
+    it("never reads a netid-shaped address from another Person node's structured data", async () => {
+      const colleagueNode = `,{"@type":"Person","name":"Casey Fixture","email":"cf4321@yale.edu"}`;
+      const html = ysmPage({ extraGraph: colleagueNode });
+      expect(identityOf(html, ysmUrl)?.email).toBe('');
+      expect(emailsOf(await visibleRun(html, ysmUrl))).toEqual([]);
+    });
+
     it('re-derives the same single observation on a second run', async () => {
       await expectRunTwiceIdentical(html, ysmUrl, ['avery.example@example.org']);
     });

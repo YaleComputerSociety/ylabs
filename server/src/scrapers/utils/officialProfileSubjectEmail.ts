@@ -62,6 +62,13 @@ export function namesTheSamePerson(left: unknown, right: unknown): boolean {
   return a.length >= 2 && b.length >= 2 && a[0] === b[0] && a.at(-1) === b.at(-1);
 }
 
+export function isJsonLdNodeOfAnotherPerson(
+  node: Record<string, any>,
+  displayName: string,
+): boolean {
+  return isJsonLdPersonNode(node) && !namesTheSamePerson(node.name, displayName);
+}
+
 function singleAddress(addresses: Iterable<string>): string {
   const distinct = new Set([...addresses].filter(Boolean));
   return distinct.size === 1 ? [...distinct][0] : '';
