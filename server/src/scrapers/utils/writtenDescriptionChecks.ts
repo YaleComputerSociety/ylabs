@@ -54,6 +54,29 @@ const numberedMemberOf = (symbol: string, word: string): boolean =>
   word.startsWith(symbol) &&
   /^\d+[a-z]?$/.test(word.slice(symbol.length));
 
+const DERIVED_WORD_FORMS: ReadonlyArray<[RegExp, string]> = [
+  [/graphy$/, 'graphic'],
+  [/graphic$/, 'graphy'],
+  [/metry$/, 'meter'],
+  [/meter$/, 'metry'],
+  [/metry$/, 'metric'],
+  [/metric$/, 'metry'],
+  [/ia$/, 'ian'],
+  [/ian$/, 'ia'],
+  [/a$/, 'an'],
+  [/an$/, 'a'],
+  [/ology$/, 'ological'],
+  [/ological$/, 'ology'],
+];
+
+/** One topic in two word classes: "ethnography" and "ethnographic", "Eurasia" and "Eurasian". */
+function derivedWordForms(word: string): string[] {
+  if (word.length < 6) return [];
+  return DERIVED_WORD_FORMS.filter(([pattern]) => pattern.test(word)).map(([pattern, ending]) =>
+    word.replace(pattern, ending),
+  );
+}
+
 /** "development" and "developmental", "emotion" and "emotional": the same topic, one a modifier. */
 function relationalAdjectivePairs(word: string): string[] {
   const noun = word.match(/^(.{3,}(?:ment|ion))(?:al|ally)$/)?.[1];
@@ -163,7 +186,35 @@ function isGroundedTerm(
   if (hasWordSharingStem(spelled, vocabulary.joinedNeighbours)) return true;
   const stateNoun = spelled.match(DERIVED_STATE_NOUN);
   if (stateNoun && hasWordSharingStem(stateNoun[1], vocabulary.words)) return true;
-  return relationalAdjectivePairs(spelled).some((form) => vocabulary.words.includes(form));
+  if (relationalAdjectivePairs(spelled).some((form) => vocabulary.words.includes(form)))
+    return true;
+  return derivedWordForms(spelled).some((form) => hasWordSharingStem(form, vocabulary.words));
+}
+
+/**
+ * The words of a body phrase spelled out from an acronym the evidence writes in capitals
+ * ("basal cell carcinoma" for "BCC"), which the evidence states by its initials.
+ */
+function wordsSpelledFromEvidenceAcronyms(
+  description: string,
+  evidence: readonly WrittenDescriptionEvidence[],
+): Set<string> {
+  const acronyms = new Set(
+    evidence.flatMap((entry) =>
+      (foldWriterTextForms(entry.text).match(/\b[A-Z][A-Z0-9]{1,5}\b/g) ?? []).map((word) =>
+        word.toLowerCase(),
+      ),
+    ),
+  );
+  const words = writerWordTokens(description);
+  const spelled = new Set<string>();
+  for (let start = 0; start < words.length; start += 1) {
+    for (let length = 2; length <= 5 && start + length <= words.length; length += 1) {
+      const phrase = words.slice(start, start + length);
+      if (acronyms.has(acronymOf(phrase))) for (const word of phrase) spelled.add(word);
+    }
+  }
+  return spelled;
 }
 
 export function ungroundedContentTerms(
@@ -175,9 +226,12 @@ export function ungroundedContentTerms(
     definedInBody: abbreviationsDefinedIn(description),
     writtenUpperCase: upperCaseAbbreviationsIn(description),
   };
+  const spelledFromAcronyms = wordsSpelledFromEvidenceAcronyms(description, evidence);
   return writerSpecificTerms(description)
     .map(({ term }) => term)
-    .filter((term) => !isGroundedTerm(term, vocabulary, abbreviations));
+    .filter(
+      (term) => !spelledFromAcronyms.has(term) && !isGroundedTerm(term, vocabulary, abbreviations),
+    );
 }
 
 export const RESEARCH_PAGE_FREQUENT_TERM_COUNT = 5;
@@ -193,6 +247,74 @@ export function researchPageFrequentTerms(pageTexts: readonly string[]): string[
     .sort(([a, left], [b, right]) => right - left || a.localeCompare(b))
     .slice(0, RESEARCH_PAGE_FREQUENT_TERM_COUNT)
     .map(([term]) => term);
+}
+
+const MIN_PROSE_SENTENCE_WORDS = 8;
+
+/** A statement rather than a label, a menu item or a keyword list. */
+export function isProseSentenceLine(line: string): boolean {
+  const text = foldWriterTextForms(line);
+  return (
+    /[.!?]["')\]]?$/.test(text) &&
+    text.split(/\s+/).filter(Boolean).length >= MIN_PROSE_SENTENCE_WORDS &&
+    (text.match(/;/g) ?? []).length < 2 &&
+    (text.match(/\p{Ll}\p{Lu}/gu) ?? []).length < 3
+  );
+}
+
+function proseAnchoredPageText(text: string): { headings: string[]; prose: string[] } {
+  const lines = text
+    .split(/\n+/)
+    .map((line) => foldWriterTextForms(line))
+    .filter(Boolean);
+  const headings = lines.filter(
+    (line, index) =>
+      researchPageHeadings(line).length > 0 && isProseSentenceLine(lines[index + 1] ?? ''),
+  );
+  return { headings, prose: lines.filter(isProseSentenceLine) };
+}
+
+/**
+ * Coverage read from the page's statements only: a heading counts when a prose sentence
+ * follows it, and frequent terms come from prose sentences, so a menu label, a name or a
+ * keyword line never sets what a body must name. A page with neither has nothing to cover.
+ */
+export function coversResearchPageProse(
+  description: string,
+  evidence: readonly WrittenDescriptionEvidence[],
+): boolean {
+  const pages = evidence
+    .filter((entry) => entry.isResearchPageText)
+    .map((entry) => proseAnchoredPageText(entry.text));
+  if (pages.length === 0) return true;
+  const bodyWords = writerWordTokens(description);
+  const headingTerms = [...new Set(pages.flatMap((page) => page.headings))]
+    .map(writerContentTerms)
+    .filter((terms) => terms.length > 0);
+  const frequentTerms = researchPageFrequentTerms(pages.flatMap((page) => page.prose));
+  if (headingTerms.length === 0 && frequentTerms.length === 0) return true;
+  if (headingTerms.some((terms) => terms.every((term) => hasWordSharingStem(term, bodyWords)))) {
+    return true;
+  }
+  return frequentTerms.some((term) => hasWordSharingStem(term, bodyWords));
+}
+
+const MIN_CARRIED_TERM_SHARE = 0.75;
+
+/** Whether the body's specific words are stated by prose sentences of the snippets it cites. */
+export function isCarriedByCitedProse(description: string, citedTexts: readonly string[]): boolean {
+  const terms = [...new Set(writerContentTerms(description))];
+  if (terms.length === 0) return false;
+  const proseWords = [
+    ...new Set(
+      citedTexts
+        .flatMap((text) => text.split(/\n+|(?<=[.!?])\s+/))
+        .filter(isProseSentenceLine)
+        .flatMap(writerWordTokens),
+    ),
+  ];
+  const carried = terms.filter((term) => hasWordSharingStem(term, proseWords)).length;
+  return carried / terms.length >= MIN_CARRIED_TERM_SHARE;
 }
 
 export function coversResearchPage(

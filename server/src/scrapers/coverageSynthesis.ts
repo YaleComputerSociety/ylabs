@@ -39,7 +39,9 @@ import {
 } from './utils/researchPageChrome';
 import {
   coversResearchPage,
+  coversResearchPageProse,
   hasFirstPerson,
+  isCarriedByCitedProse,
   hasFusedPageHeading,
   hasGreetingText,
   ungroundedContentTerms,
@@ -472,6 +474,7 @@ export function judgeWrittenDescription(input: {
   researchAreas?: unknown;
   entityType?: ResearchEntityType;
   citedSnippetCount: number;
+  citedSnippetIndexes?: readonly number[];
   coverageWriterChecks?: boolean;
 }): WrittenDescriptionJudgement {
   const refuse = (refusal: CoverageSynthesisRefusal): WrittenDescriptionJudgement => ({
@@ -502,7 +505,8 @@ export function judgeWrittenDescription(input: {
   // Before the quality bar, which blanks the same shape through the serve sanitizer and
   // would otherwise report a narrating body as a generic quality verdict.
   if (isSourcePageNarrationDescription(description)) return refuse('source-narration');
-  if (!fullDescriptionQuality(description, input.researchAreas, input.entityType).isUseful) {
+  const quality = fullDescriptionQuality(description, input.researchAreas, input.entityType);
+  if (!quality.isUseful && !writerDraftEchoesItsOwnProse(input, description, quality.flags)) {
     return refuse('quality-bar');
   }
   // After the older arms, so every arm above keeps the attribution it had and each
@@ -526,11 +530,40 @@ export function judgeWrittenDescription(input: {
       refusalDetails: { ungroundedTerms },
     };
   }
-  if (!coversResearchPage(description, evidence)) return refuse('missing-research-page-coverage');
+  if (
+    !coversResearchPage(description, evidence) &&
+    !coversResearchPageProse(description, evidence)
+  ) {
+    return refuse('missing-research-page-coverage');
+  }
   if (hasFirstPerson(description)) return refuse('first-person');
   if (hasFusedPageHeading(description, evidence)) return refuse('fused-page-heading');
   if (hasGreetingText(description)) return refuse('greeting-text');
   return { description, refusal: null };
+}
+
+const AREA_ECHO_FLAGS: ReadonlySet<string> = new Set(['area-echo-fallback', 'research-area-echo']);
+
+/**
+ * A writer draft that restates its row's topic list is not the old chip-template fallback
+ * when a cited snippet states the same content as prose: the list was derived from that prose.
+ * Only a keyword or MeSH line as the support keeps the echo refusal.
+ */
+function writerDraftEchoesItsOwnProse(
+  input: {
+    coverageWriterChecks?: boolean;
+    snippets: readonly CoverageSnippet[];
+    citedSnippetIndexes?: readonly number[];
+  },
+  description: string,
+  flags: readonly string[],
+): boolean {
+  if (!input.coverageWriterChecks || flags.length === 0) return false;
+  if (!flags.every((flag) => AREA_ECHO_FLAGS.has(flag))) return false;
+  const cited = (input.citedSnippetIndexes ?? [])
+    .map((index) => input.snippets[index]?.text)
+    .filter((text): text is string => typeof text === 'string');
+  return isCarriedByCitedProse(description, cited);
 }
 
 const normalizedBody = (value: unknown): string => textValue(value).replace(/\s+/g, ' ').trim();
@@ -610,6 +643,7 @@ export async function coverageSynthesisDecision(
     researchAreas: input.researchAreas,
     entityType: input.entityType,
     citedSnippetCount: usedSnippetIndexes.length,
+    citedSnippetIndexes: usedSnippetIndexes,
     coverageWriterChecks: input.coverageWriterChecks,
   });
   if (judged.refusal || !judged.description) {
