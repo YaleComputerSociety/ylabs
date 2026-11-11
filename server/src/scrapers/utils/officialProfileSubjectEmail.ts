@@ -9,6 +9,18 @@ const NODE_BOUNDARY_TAGS = new Set(['article', 'aside', 'nav', 'footer']);
 const FOREIGN_BLOCK_LABEL =
   /related|co-?authors?|collaborat|colleague|media-contact|press|admin|assistant|support|staff|team|people|member|footer|sidebar|breadcrumb/i;
 const CONTACT_FIELD_LABEL = /mail|contact/i;
+const SUBJECT_ROLE_TOKENS = new Set(['lab', 'labs', 'program', 'programs']);
+const ROLE_LEADING_WORDS = [
+  'admin',
+  'chair',
+  'department',
+  'dept',
+  'info',
+  'lab',
+  'office',
+  'program',
+];
+const NETID_SHAPE = /^[a-z]{2,6}\d{1,5}$/;
 
 export function isYaleAddress(address: string): boolean {
   return /@yale\.edu$/i.test(address);
@@ -26,13 +38,48 @@ function decodedMailtoAddress(value: string): string {
   }
 }
 
-export function admissibleSubjectAddress(value: unknown): string {
+function localPartTokens(localPart: string): string[] {
+  return localPart.split(/[._+-]+/).filter(Boolean);
+}
+
+function tokenNamesALabOrProgram(token: string): boolean {
+  return SUBJECT_ROLE_TOKENS.has(token);
+}
+
+function tokenLeadsWithARoleWord(token: string): boolean {
+  if (NETID_SHAPE.test(token)) return false;
+  return ROLE_LEADING_WORDS.some((word) => token.length > word.length && token.startsWith(word));
+}
+
+function localPartCarriesTheSubjectName(localPart: string, displayName: string): boolean {
+  const joined = localPart.replace(/[._+-]+/g, '');
+  return nameTokens(displayName)
+    .filter((token) => token.length >= 3)
+    .some((token) => joined.includes(token));
+}
+
+/**
+ * Whether a local part names an office rather than the page's subject. A role word as a whole
+ * token decides alone. A role word fused to a unit abbreviation with no separator (`chair` plus a
+ * department code) is only a leading affix of a one-token local part, so it decides only when
+ * the address also carries none of the subject's own name tokens; a surname that happens to
+ * begin with a role word keeps its address.
+ */
+export function localPartNamesASubjectRole(localPart: string, displayName: string): boolean {
+  if (localPartNamesARole(localPart)) return true;
+  const tokens = localPartTokens(localPart);
+  if (tokens.some(tokenNamesALabOrProgram)) return true;
+  if (tokens.length !== 1 || !tokenLeadsWithARoleWord(tokens[0])) return false;
+  return !localPartCarriesTheSubjectName(localPart, displayName);
+}
+
+export function admissibleSubjectAddress(value: unknown, displayName: string): string {
   const address = decodedMailtoAddress(String(value ?? ''))
     .trim()
     .toLowerCase();
   if (!WHOLE_ADDRESS.test(address)) return '';
   const localPart = address.split('@')[0].replace(/\+.*$/, '');
-  return localPartNamesARole(localPart) ? '' : address;
+  return localPartNamesASubjectRole(localPart, displayName) ? '' : address;
 }
 
 function jsonLdTypes(node: Record<string, any>): string[] {
@@ -81,7 +128,7 @@ export function subjectJsonLdEmail(nodes: Array<Record<string, any>>, displayNam
   return singleAddress(
     subjectNodes
       .flatMap((node) => (Array.isArray(node.email) ? node.email : [node.email]))
-      .map(admissibleSubjectAddress),
+      .map((email) => admissibleSubjectAddress(email, displayName)),
   );
 }
 
@@ -140,7 +187,7 @@ export function subjectContactBlockEmail($: cheerio.CheerioAPI, displayName: str
   return singleAddress(
     owners
       .filter(([owner]) => belongsToSubjectContactField($, owner, subjectNode))
-      .map(([, value]) => admissibleSubjectAddress(value)),
+      .map(([, value]) => admissibleSubjectAddress(value, displayName)),
   );
 }
 
