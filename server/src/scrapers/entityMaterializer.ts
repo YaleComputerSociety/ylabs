@@ -219,6 +219,7 @@ import {
 } from '../services/directoryRemovalMintGuard';
 import {
   liveResearchEntityNamedByKeyObservations,
+  reslugAdoptedKeyNamesOnlyArchivedRows,
   researchEntityMintSlugNamesARemovedResearcher,
 } from './renamedResearchEntityAdoption';
 import {
@@ -12158,6 +12159,21 @@ async function materializeEntityUnderRemovalGuard(
         created: false,
         resolved,
         skipped: 'missing-required-fields',
+      };
+    }
+    if (
+      isResearchEntityObservationType(entityType) &&
+      (await reslugAdoptedKeyNamesOnlyArchivedRows(identifier.entityKey))
+    ) {
+      return {
+        entityType,
+        entityId: undefined,
+        entityKey: identifier.entityKey,
+        fieldsWritten: 0,
+        conflicts: 0,
+        created: false,
+        resolved,
+        skipped: 'reslug-adopted-key-names-only-archived-rows',
       };
     }
     if (

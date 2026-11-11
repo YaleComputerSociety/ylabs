@@ -828,6 +828,7 @@ export async function appendObservations(
       ...(obs.assertsNoValueFor && obs.assertsNoValueFor.length > 0
         ? { assertsNoValueFor: [...new Set(obs.assertsNoValueFor)] }
         : {}),
+      ...(obs.reslugAdoption ? { reslugAdoption: true } : {}),
       observationFingerprint: buildObservationFingerprint({
         sourceName: ctx.sourceName,
         entityType: obs.entityType,
