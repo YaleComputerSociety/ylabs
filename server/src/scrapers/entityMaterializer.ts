@@ -304,6 +304,9 @@ import {
   netidOfNetidUserKey,
   screenDirectoryContradictedProfileEvidenceForKey,
   withoutDirectoryContradictedProfileEvidenceForKey,
+  profilePageContradictsNetid,
+  profilePageOwnerNetids,
+  type ProfilePageOwnerNetids,
 } from './directoryContradictedProfileNetid';
 import { derivedResearcherEmail } from './verifiedResearcherEmail';
 import {
@@ -3767,12 +3770,59 @@ function withResolvedFieldProvenance(
   return output;
 }
 
+/**
+ * The backfill once filed a person page under whichever researcher held a matching name, and
+ * the same pass named that researcher as the row's lead, citing the page. When the page's own
+ * email belongs, by the directory, to a different netid than the named researcher's, the page
+ * is not evidence that this researcher leads the row (#5693). Screened on every read, like the
+ * page's identity under the wrong key, so the immutable observation stops creating the edge.
+ */
+export async function contradictedPageLeadObservations(
+  observations: MaterializerObservationLike[],
+  owners?: ProfilePageOwnerNetids,
+): Promise<Set<MaterializerObservationLike>> {
+  const candidates = observations.filter(
+    (obs) =>
+      obs.field === 'inferredPiUserId' &&
+      obs.sourceName === OFFICIAL_PROFILE_PI_BACKFILL_SOURCE &&
+      textValue(obs.sourceUrl) &&
+      normalizeMaterializerObjectId(textValue(obs.value)),
+  );
+  const screened = new Set<MaterializerObservationLike>();
+  if (candidates.length === 0) return screened;
+  const pageOwners =
+    owners ??
+    (await profilePageOwnerNetids(
+      candidates.map((obs) => obs.sourceUrl),
+      materializationReadScopeFilter(),
+    ));
+  if (pageOwners.byPage.size === 0) return screened;
+  const researchers = (await Researcher.find({
+    _id: { $in: candidates.map((obs) => normalizeMaterializerObjectId(textValue(obs.value))) },
+  })
+    .select('_id identifiers.netid')
+    .lean()) as Array<{ _id: unknown; identifiers?: { netid?: string } }>;
+  const netidById = new Map(
+    researchers.map((researcher) => [String(researcher._id), researcher.identifiers?.netid]),
+  );
+  for (const obs of candidates) {
+    const netid = netidById.get(textValue(obs.value));
+    if (profilePageContradictsNetid(pageOwners, obs.sourceUrl, netid)) screened.add(obs);
+  }
+  return screened;
+}
+
 export async function planInferredPiMembership(
   researchEntityId: string,
   observations: MaterializerObservationLike[],
+  screenedLeadObservations?: ReadonlySet<MaterializerObservationLike>,
 ): Promise<InferredPiLeadFacts[]> {
   const leads: InferredPiLeadFacts[] = [];
-  const piObservations = observations.filter((obs) => obs.field === 'inferredPiUserId');
+  const screened =
+    screenedLeadObservations ?? (await contradictedPageLeadObservations(observations));
+  const piObservations = observations.filter(
+    (obs) => obs.field === 'inferredPiUserId' && !screened.has(obs),
+  );
   for (const observation of piObservations) {
     const facts = buildInferredPiLeadFacts(researchEntityId, observation);
     if (facts) leads.push(facts);
@@ -3845,13 +3895,65 @@ async function facultyResearchProfileMintIsRemovedByRequest(
   return removed;
 }
 
+export interface ContradictedPageLeadEdge {
+  personId: string;
+  sourceUrl: string;
+}
+
+export function contradictedPageLeadEdges(
+  screened: ReadonlySet<MaterializerObservationLike>,
+): ContradictedPageLeadEdge[] {
+  const edges = new Map<string, ContradictedPageLeadEdge>();
+  for (const obs of screened) {
+    const personId = textValue(obs.value);
+    const sourceUrl = textValue(obs.sourceUrl);
+    edges.set(`${personId} ${sourceUrl}`, { personId, sourceUrl });
+  }
+  return [...edges.values()];
+}
+
+/**
+ * The lane's own lead edge from a screened page ends on the read, which is derivation: the edge
+ * cites the page as its source, and the page no longer says this person leads the row. Only the
+ * backfill's edge citing that page is ended, so a lead edge any other evidence wrote stays.
+ */
+async function endContradictedPageLeadEdges(
+  researchEntityId: string,
+  edges: readonly ContradictedPageLeadEdge[],
+): Promise<number> {
+  const entityObjectId = toMaterializerObjectId(researchEntityId);
+  if (!entityObjectId || edges.length === 0) return 0;
+  let ended = 0;
+  for (const edge of edges) {
+    const personId = toMaterializerObjectId(edge.personId);
+    if (!personId) continue;
+    const result = await RoleAssignment.updateMany(
+      {
+        personId,
+        'target.kind': 'RESEARCH_ENTITY',
+        'target.id': entityObjectId,
+        role: 'PI',
+        'rosterProvenance.sourceName': OFFICIAL_PROFILE_PI_BACKFILL_SOURCE,
+        'rosterProvenance.sourceUrl': edge.sourceUrl,
+        state: { $ne: 'HISTORICAL' },
+        archived: { $ne: true },
+      },
+      { $set: { state: 'HISTORICAL', endedAt: new Date() } },
+    );
+    ended += result.modifiedCount ?? 0;
+  }
+  return ended;
+}
+
 export async function materializeInferredPiMembership(
   researchEntityId: string,
   observations: MaterializerObservationLike[],
 ): Promise<void> {
-  for (const facts of await planInferredPiMembership(researchEntityId, observations)) {
+  const screened = await contradictedPageLeadObservations(observations);
+  for (const facts of await planInferredPiMembership(researchEntityId, observations, screened)) {
     await materializeCanonicalPiMembership(researchEntityId, facts);
   }
+  await endContradictedPageLeadEdges(researchEntityId, contradictedPageLeadEdges(screened));
 }
 
 type RosterEmailAliasResolution =
@@ -7467,27 +7569,98 @@ export async function joinUserIdentityToExistingResearcher(
   };
 }
 
+export interface ScreenedPageWithdrawal {
+  researcherId: string;
+  officialLinkUrls: string[];
+  orcid?: string;
+}
+
 /**
- * A namesake's record kept the official link the misattributed page evidence gave it, and
- * the official-page join reads that link as identity, so the link goes with its evidence.
- * Only the screened page is withdrawn, from the live holder of the key's own netid.
+ * What a namesake's record keeps only because a screened page once spoke for it: the official
+ * link the misattributed page evidence gave it, which the official-page join reads as identity,
+ * and an ORCID copied from that page. Each goes with its evidence (#5693).
+ *
+ * A link is withdrawn when it is a screened page, or when the page it points at states an email
+ * the directory gives to a different netid, which covers a host or path variant of the same
+ * person page that no exact URL match reaches. An ORCID is withdrawn only when every live
+ * observation asserting it was read from such a page, so a value any of the person's own
+ * evidence states stays. Only the live holder of the key's own netid is touched.
  */
+export async function planScreenedPageWithdrawal(
+  entityKey: string | undefined,
+  screenedPageUrls: string[],
+): Promise<ScreenedPageWithdrawal | undefined> {
+  const netid = netidOfNetidUserKey(entityKey);
+  if (!netid || screenedPageUrls.length === 0) return undefined;
+  const holder = (await Researcher.findOne({ archived: { $ne: true }, 'identifiers.netid': netid })
+    .select('_id identifiers.orcid profileLinks')
+    .lean()) as {
+    _id: unknown;
+    identifiers?: { orcid?: string };
+    profileLinks?: ResearcherProfileLink[];
+  } | null;
+  if (!holder) return undefined;
+  const readScope = materializationReadScopeFilter();
+  const officialUrls = (holder.profileLinks ?? [])
+    .filter((link) => link?.kind === 'YALE_OFFICIAL' && typeof link.url === 'string')
+    .map((link) => link.url);
+  const linkOwners = await profilePageOwnerNetids(officialUrls, readScope);
+  const screened = new Set(screenedPageUrls);
+  const officialLinkUrls = officialUrls.filter(
+    (url) => screened.has(url) || profilePageContradictsNetid(linkOwners, url, netid),
+  );
+
+  let orcid: string | undefined;
+  const storedOrcid = textValue(holder.identifiers?.orcid);
+  if (storedOrcid) {
+    const assertions = (await Observation.find(
+      {
+        entityType: 'user',
+        field: 'orcid',
+        ...readScope,
+        value: { $in: [storedOrcid, storedOrcid.toUpperCase(), storedOrcid.toLowerCase()] },
+      },
+      { sourceUrl: 1 },
+    ).lean()) as Array<{ sourceUrl?: unknown }>;
+    const assertionOwners = await profilePageOwnerNetids(
+      assertions.map((assertion) => assertion.sourceUrl),
+      readScope,
+    );
+    if (
+      assertions.length > 0 &&
+      assertions.every((assertion) =>
+        profilePageContradictsNetid(assertionOwners, assertion.sourceUrl, netid),
+      )
+    ) {
+      orcid = storedOrcid;
+    }
+  }
+  if (officialLinkUrls.length === 0 && !orcid) return undefined;
+  return { researcherId: String(holder._id), officialLinkUrls, ...(orcid ? { orcid } : {}) };
+}
+
 async function withdrawScreenedOfficialProfileLinks(
   entityKey: string | undefined,
   screenedPageUrls: string[],
   options: MaterializeOptions,
 ): Promise<number> {
-  const netid = netidOfNetidUserKey(entityKey);
-  if (!netid || screenedPageUrls.length === 0) return 0;
-  const filter = {
-    archived: { $ne: true },
-    'identifiers.netid': netid,
-    profileLinks: { $elemMatch: { kind: 'YALE_OFFICIAL', url: { $in: screenedPageUrls } } },
-  };
-  if (options.dryRun) return (await Researcher.countDocuments(filter)) > 0 ? 1 : 0;
-  const result = await Researcher.updateMany(filter, {
-    $pull: { profileLinks: { kind: 'YALE_OFFICIAL', url: { $in: screenedPageUrls } } },
-  });
+  const plan = await planScreenedPageWithdrawal(entityKey, screenedPageUrls);
+  if (!plan) return 0;
+  if (options.dryRun) return 1;
+  const pulls: Array<Record<string, unknown>> = [];
+  if (plan.officialLinkUrls.length > 0) {
+    pulls.push({ kind: 'YALE_OFFICIAL', url: { $in: plan.officialLinkUrls } });
+  }
+  if (plan.orcid) {
+    pulls.push({ kind: 'ORCID', url: new RegExp(`(?:^|/)${escapeRegex(plan.orcid)}/*$`, 'i') });
+  }
+  const result = await Researcher.updateOne(
+    { _id: plan.researcherId },
+    {
+      ...(plan.orcid ? { $unset: { 'identifiers.orcid': '' } } : {}),
+      $pull: { profileLinks: pulls.length === 1 ? pulls[0] : { $or: pulls } },
+    },
+  );
   return result.modifiedCount > 0 ? 1 : 0;
 }
 

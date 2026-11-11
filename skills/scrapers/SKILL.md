@@ -196,7 +196,7 @@ Four earlier mechanisms each broke on a stored title, and the module's test file
 - `official-profile-pi-backfill` keys a page by a netid only when the candidate researcher is the page's person (#5370).
   `profileIdentityAgreesWithUser` accepts a candidate that holds the page's own address, or one whose name agrees and whose own named address does not differ; holding the page URL alone is not enough, because an earlier run gave namesakes that link.
   The resolver also refuses a candidate whose netid the Yale directory lanes do not pair with the page's address, and with no candidate the lane keeps its alias-keyed fallback rather than guessing a netid.
-  Keys stamped before the guard stay in the log and are screened on every read (`directoryContradictedProfileNetid.ts`): the user materializer, the inferred-PI key join and `resolveNetidForRosterEmailAlias` drop this lane's evidence from a page whose address the directory pairs with another netid, the user arm skips an emptied key as `directory-contradicts-profile-netid`, and it withdraws that page's `YALE_OFFICIAL` link from the netid holder on each pass.
+  Keys stamped before the guard stay in the log and are screened on every read (`directoryContradictedProfileNetid.ts`): the user materializer, the inferred-PI key join and `resolveNetidForRosterEmailAlias` drop this lane's evidence from a page whose address the directory pairs with another netid, the user arm skips an emptied key as `directory-contradicts-profile-netid`, and it withdraws what such a page left on the netid holder on each pass, as "A page the directory gives to another netid speaks for nobody else (#5693)" below records.
 - The official-profile lane reads the page subject's own address before any name-shaped address on the page (#5669, `utils/officialProfileSubjectEmail.ts`).
   The subject's own address is the one the JSON-LD `Person` node naming the subject states, or the single address in a contact field of the subject heading's own `article`.
   An address inside a nested `article`, an `aside`, `nav` or `footer`, or a block labelled as co-authors, related people, administrative support or a press contact is never the subject's, and a contact field listing two addresses yields none.
@@ -1761,6 +1761,20 @@ A netid is the only conflict witness, because a nickname, a second ORCID on the 
 The verify lane also adopts a candidate it built from the display name (`nameDerived` in `officialProfileLinkCandidatesWithOrigin`) only when `pageIdentityWitnessesPerson` finds the page's own email or netid on the researcher, or the directory pairs the page email with the researcher's netid.
 The guard refuses rather than removes, so a link stamped on the wrong record before it existed stays until an operator judges that row.
 Measured on Development on 2026-11-11: 5 pages were shared, 2 by twins with no netid conflict and 3 by two directory-distinct netids.
+
+#### A page the directory gives to another netid speaks for nobody else (#5693)
+
+When the backfill filed a person page under a namesake's `netid:` key, the same pass also named that namesake as the row's lead and could leave the page's link and ORCID on the namesake's record.
+`profilePageOwnerNetids` in `server/src/scrapers/directoryContradictedProfileNetid.ts` reads the email each person page states about itself and the netids the directory pairs with it, and `profilePageContradictsNetid` says whether that page names someone other than a given netid.
+Three readers use it on every resolve, so nothing is locked:
+
+- `contradictedPageLeadObservations` drops a backfill `inferredPiUserId` observation whose page names another netid, and `materializeInferredPiMembership` ends the backfill's own `PI` edge citing that page;
+- `planScreenedPageWithdrawal` withdraws a stored `YALE_OFFICIAL` link whose page names another netid, which reaches a host or path variant of the screened page that an exact URL match missed;
+- it also clears an ORCID when every live observation asserting it was read from such a page.
+
+A researcher whose stored netid the directory does not hold is never contradicted, because that is usually the person's own email alias stamped as a netid.
+A page that has stated several addresses keeps every netid the directory pairs with them, so an owner who changed address is still the owner, but a page whose addresses the directory does not all pair with one shared netid, such as a roster listing, decides nothing.
+Measured on Development on 2026-11-11 before that rule, 22 of 24 screened lead observations were that alias shape.
 
 #### Press copy and publication lists are not a description (#4446)
 
