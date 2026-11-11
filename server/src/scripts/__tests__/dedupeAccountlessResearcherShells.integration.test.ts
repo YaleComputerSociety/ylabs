@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Researcher } from '../../models/researcher';
+import { resetDirectoryNetidsByAddressCache } from '../../scrapers/directoryContradictedProfileNetid';
 import {
   parseRecordDistinctResearchersArgs,
   recordDistinctResearchers,
@@ -916,5 +917,203 @@ describe('dedupeAccountlessResearcherShells name-variant twins (#5592)', () => {
       .db!.collection('researchers')
       .findOne({ _id: shell });
     expect(untouched!.archived).toBe(false);
+  });
+});
+
+describe('dedupeAccountlessResearcherShells directory-email twins (#5811)', () => {
+  let server: MongoMemoryServer;
+
+  beforeAll(async () => {
+    server = await MongoMemoryServer.create();
+    await mongoose.connect(server.getUri(), { autoIndex: false });
+  });
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await server?.stop();
+  });
+
+  beforeEach(async () => {
+    resetDirectoryNetidsByAddressCache();
+    const db = mongoose.connection.db!;
+    for (const name of ['researchers', 'role_assignments', 'research_entities', 'observations']) {
+      await db.collection(name).deleteMany({});
+    }
+  });
+
+  const LISTING_PAGE = 'https://center.fixture.yale.edu/people/avery-synthetic';
+  const HOLDER_PROFILE = 'https://fixture.yale.edu/profile/avery-synthetic';
+  const ADDRESS = 'avery.synthetic@yale.edu';
+
+  const directoryEntry = (netid: string, address = ADDRESS) => ({
+    entityType: 'user',
+    entityKey: netid,
+    field: 'email',
+    value: address,
+    sourceName: 'yale-directory',
+    superseded: false,
+  });
+
+  const seedPair = async (
+    input: {
+      shellName?: string;
+      shellIdentifiers?: Record<string, unknown>;
+      holderIdentifiers?: Record<string, unknown>;
+      emails?: string[];
+      linkedProfileUrls?: string[];
+      directory?: Array<Record<string, unknown>>;
+    } = {},
+  ) => {
+    const db = mongoose.connection.db!;
+    const centerRow = new mongoose.Types.ObjectId();
+    const holderRow = new mongoose.Types.ObjectId();
+    const holder = new mongoose.Types.ObjectId();
+    const shell = new mongoose.Types.ObjectId();
+    await db.collection('research_entities').insertMany([
+      { _id: centerRow, slug: 'center-fixture', name: 'Fixture Center', archived: false },
+      { _id: holderRow, slug: 'lab-fixture', name: 'Fixture Lab', archived: false },
+    ]);
+    await db.collection('researchers').insertMany([
+      {
+        _id: holder,
+        displayName: 'Jordan Avery Synthetic',
+        archived: false,
+        identifiers: input.holderIdentifiers ?? { netid: 'fx901', email: ADDRESS },
+        profileLinks: [{ kind: 'YALE_OFFICIAL', purpose: 'PRIMARY_IDENTITY', url: HOLDER_PROFILE }],
+      },
+      {
+        _id: shell,
+        displayName: input.shellName ?? 'Avery Synthetic',
+        archived: false,
+        identifiers: input.shellIdentifiers ?? {},
+      },
+    ]);
+    await db.collection('role_assignments').insertMany([
+      {
+        personId: holder,
+        target: { kind: 'RESEARCH_ENTITY', id: holderRow },
+        role: 'PI',
+        state: 'CURRENT',
+        archived: false,
+      },
+      {
+        personId: shell,
+        target: { kind: 'RESEARCH_ENTITY', id: centerRow },
+        role: 'CORE_FACULTY',
+        state: 'CURRENT',
+        archived: false,
+        rosterProvenance: { sourceName: 'centers-institutes-index', profileUrl: LISTING_PAGE },
+      },
+    ]);
+    const listing = (field: string, value: unknown) => ({
+      entityType: 'researchGroupMember',
+      entityKey: 'center-fixture:avery-synthetic',
+      field,
+      value,
+      superseded: false,
+    });
+    await db.collection('observations').insertMany([
+      listing('profileUrl', LISTING_PAGE),
+      listing('researchGroupKey', 'center-fixture'),
+      listing('profileIdentityEvidence', {
+        pageUrl: LISTING_PAGE,
+        linkedProfileUrls: input.linkedProfileUrls ?? [],
+        emails: input.emails ?? [ADDRESS],
+        netids: [],
+      }),
+      ...(input.directory ?? [directoryEntry('fx901')]),
+    ]);
+    return { holder, shell };
+  };
+
+  const archivedState = async (id: mongoose.Types.ObjectId) =>
+    (await mongoose.connection.db!.collection('researchers').findOne({ _id: id }))!;
+
+  it('folds a name-only shell into the record of the netid its listing address pairs with, once', async () => {
+    const { holder, shell } = await seedPair({ shellName: 'Avi Synthetic' });
+
+    const first = await dedupeAccountlessResearcherShells({ apply: true });
+
+    expect(first.foldsByMatchedIdentity['directory-email']).toBe(1);
+    expect(first.shellsMerged).toBe(1);
+    const folded = await archivedState(shell);
+    expect(folded.archived).toBe(true);
+    expect(String(folded.dedupedIntoResearcherId)).toBe(String(holder));
+    const edge = await mongoose.connection
+      .db!.collection('role_assignments')
+      .findOne({ 'rosterProvenance.profileUrl': LISTING_PAGE });
+    expect(String(edge!.personId)).toBe(String(holder));
+
+    resetDirectoryNetidsByAddressCache();
+    const second = await dedupeAccountlessResearcherShells({ apply: true });
+    expect(second.shellsMerged).toBe(0);
+    expect(second.foldsByMatchedIdentity['directory-email']).toBe(0);
+  });
+
+  it('does not fold on a page address the directory does not pair, even when the holder stores it', async () => {
+    const { shell } = await seedPair({ directory: [] });
+
+    const result = await dedupeAccountlessResearcherShells({ apply: true });
+
+    expect(result.shellsMerged).toBe(0);
+    expect((await archivedState(shell)).archived).toBe(false);
+  });
+
+  it('does not fold on a linked profile URL alone', async () => {
+    const { shell } = await seedPair({ emails: [], linkedProfileUrls: [HOLDER_PROFILE] });
+
+    const result = await dedupeAccountlessResearcherShells({ apply: true });
+
+    expect(result.shellsMerged).toBe(0);
+    expect((await archivedState(shell)).archived).toBe(false);
+  });
+
+  it('keeps two directory records as two people', async () => {
+    const { shell } = await seedPair({
+      shellIdentifiers: { email: 'avery.fixture@yale.edu' },
+    });
+
+    const result = await dedupeAccountlessResearcherShells({ apply: true });
+
+    expect(result.shellsMerged).toBe(0);
+    expect((await archivedState(shell)).archived).toBe(false);
+  });
+
+  it('never folds two records carrying distinct ORCIDs', async () => {
+    const { shell } = await seedPair({
+      shellIdentifiers: { orcid: '0000-0002-0000-0001' },
+      holderIdentifiers: { netid: 'fx901', email: ADDRESS, orcid: '0000-0002-0000-0002' },
+    });
+
+    const result = await dedupeAccountlessResearcherShells({ apply: true });
+
+    expect(result.byReason.ORCID_CONFLICT).toBe(1);
+    expect(result.shellsMerged).toBe(0);
+    expect((await archivedState(shell)).archived).toBe(false);
+  });
+
+  it('fails closed when the directory pairs the address with two netids', async () => {
+    const { shell } = await seedPair({
+      directory: [directoryEntry('fx901'), directoryEntry('fx902')],
+    });
+
+    const result = await dedupeAccountlessResearcherShells({ apply: true });
+
+    expect(result.byReason.AMBIGUOUS_MULTIPLE_CANONICAL).toBe(1);
+    expect(result.shellsMerged).toBe(0);
+    expect((await archivedState(shell)).archived).toBe(false);
+  });
+
+  it('never folds a pair an operator recorded as different people', async () => {
+    const { holder, shell } = await seedPair();
+    await mongoose.connection
+      .db!.collection('researchers')
+      .updateOne({ _id: holder }, { $set: { distinctFromResearcherIds: [shell] } });
+
+    const result = await dedupeAccountlessResearcherShells({ apply: true });
+
+    expect(result.distinctPeopleRefusedFolds).toBe(1);
+    expect(result.shellsMerged).toBe(0);
+    expect((await archivedState(shell)).archived).toBe(false);
   });
 });
