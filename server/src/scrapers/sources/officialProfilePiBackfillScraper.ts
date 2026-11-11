@@ -3118,6 +3118,84 @@ function directoryPairsAddressWithEntityNetid(
   return Boolean(owners && owners.size === 1 && owners.has(netid));
 }
 
+const letterTokens = (value: string): string[] =>
+  value
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .map((token) => token.replace(/\d+$/, ''))
+    .filter((token) => /^[a-z]+$/.test(token));
+
+function initialsAgreeWithNetid(tokens: string[], netidLetters: string): boolean {
+  if (!netidLetters || tokens.length === 0) return false;
+  if (tokens[0][0] !== netidLetters[0]) return false;
+  return tokens.length === 1 || netidLetters.indexOf(tokens[tokens.length - 1][0], 1) > 0;
+}
+
+/**
+ * Whether the whole local part of the address names the person, in either name order, the
+ * sense #5736 gives a person address: a word fused onto the name does not count.
+ */
+function addressLocalPartWhollyNamesPerson(email: string, personName: string): boolean {
+  const localTokens = letterTokens(textValue(email).split('@')[0] || '');
+  const nameTokens = letterTokens(normalizeName(personName));
+  if (localTokens.length === 0 || nameTokens.length < 2) return false;
+  const nameTokenSet = new Set(nameTokens);
+  if (localTokens.length >= 2 && localTokens.every((token) => nameTokenSet.has(token))) return true;
+  const compactLocal = localTokens.join('');
+  const surname = nameTokens[nameTokens.length - 1];
+  const givenNames = nameTokens.slice(0, -1).join('');
+  return compactLocal === `${givenNames}${surname}` || compactLocal === `${surname}${givenNames}`;
+}
+
+export interface VisibleBioNetidInitialsCheck {
+  pageNameAgrees: boolean;
+  addressAgrees: boolean;
+  directoryWitness: boolean;
+  wholeNameAddressWitness: boolean;
+  refused: boolean;
+}
+
+/**
+ * A netid opens with the given-name initial and carries the surname initial, but married
+ * names and legacy netids diverge from it, so a mismatch with the page's name or with the
+ * address alone proves nothing. When the netid agrees with neither, the page is somebody the
+ * person's netid does not describe, and its identity fields need a witness: the directory
+ * pairing the address with the person's own netid, or an address whose whole local part names
+ * the person (#5708).
+ */
+export function visibleBioNetidInitialsCheck(
+  identity: { displayName?: string; email?: string },
+  person: Record<string, any>,
+  directory: DirectoryNetidsByAddress | undefined,
+): VisibleBioNetidInitialsCheck {
+  const netid = textValue(person.netid).toLowerCase();
+  const netidLetters = netid.match(/^[a-z]+/)?.[0] ?? '';
+  const email = textValue(identity.email).toLowerCase();
+  const localPart = email.split('@')[0] || '';
+  const pageNameAgrees = initialsAgreeWithNetid(
+    letterTokens(normalizeName(textValue(identity.displayName))),
+    netidLetters,
+  );
+  const addressAgrees =
+    !email ||
+    (Boolean(netid) && localPart.includes(netid)) ||
+    initialsAgreeWithNetid(letterTokens(localPart), netidLetters);
+  const directoryWitness = directoryPairsAddressWithEntityNetid(email, person, directory);
+  const wholeNameAddressWitness = addressLocalPartWhollyNamesPerson(
+    email,
+    textValue(person.name || person.displayName),
+  );
+  return {
+    pageNameAgrees,
+    addressAgrees,
+    directoryWitness,
+    wholeNameAddressWitness,
+    refused: !pageNameAgrees && !addressAgrees && !directoryWitness && !wholeNameAddressWitness,
+  };
+}
+
 function nameMatchesEntity(displayName: string, entity: Record<string, any>): boolean {
   const nameSlug = slugify(normalizeName(displayName));
   if (!nameSlug) return false;
@@ -5282,16 +5360,28 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
                     email: textValue(entity.email),
                   }
                 : null;
+            const directoryNetidsByAddress = visibleExistingUser
+              ? await loadDirectoryNetidsByAddress()
+              : undefined;
             const identity = extractOfficialProfilePersonIdentity(html, profileUrl, entity, {
               requireEmail: false,
               yaleDirectoryNetids,
-              ...(runVisibleProfileBioBackfill && textValue(entity.netid)
-                ? { directoryNetidsByAddress: await loadDirectoryNetidsByAddress() }
-                : {}),
+              ...(directoryNetidsByAddress ? { directoryNetidsByAddress } : {}),
             });
+            const unwitnessedNetidMismatch =
+              !!identity &&
+              !!visibleExistingUser &&
+              visibleBioNetidInitialsCheck(identity, entity, directoryNetidsByAddress).refused;
+            if (identity && unwitnessedNetidMismatch) {
+              ctx.log('Refused an unwitnessed netid-initials mismatch', {
+                entityId: officialProfileDocumentId(entity._id),
+                profileUrl,
+              });
+            }
             if (identity) {
-              const candidateUser =
-                visibleExistingUser || (await existingUserForIdentity(identity));
+              const candidateUser = unwitnessedNetidMismatch
+                ? null
+                : visibleExistingUser || (await existingUserForIdentity(identity));
               const existingUser =
                 candidateUser &&
                 !(await pageEmailHeldByAnotherResearcher(identity.email, candidateUser))

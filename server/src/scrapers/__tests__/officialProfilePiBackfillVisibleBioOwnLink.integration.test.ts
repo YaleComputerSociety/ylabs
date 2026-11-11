@@ -47,6 +47,17 @@ const officialLink = (url: string) => ({
   verifiedAt: new Date('2026-10-01T00:00:00Z'),
 });
 
+const personPageDeclaringAddress = (url: string, name: string, email: string): string =>
+  personPage(url, name, email).replace(
+    '</head>',
+    `<script type="application/ld+json">${JSON.stringify({
+      '@context': 'https://schema.org',
+      '@type': 'Person',
+      name,
+      email,
+    })}</script></head>`,
+  );
+
 const visibleBioContext = (emitted: ObservationInput[]): ScraperContext => ({
   scrapeRunId: 'run-5708',
   sourceId: 'source-5708',
@@ -295,6 +306,81 @@ describe('visible profile bio backfill selects by the person own official link (
 
     it('refuses a disagreeing name when the paired netid is a dotted placeholder', () => {
       expect(readWithDirectoryPairing(DOTTED_PLACEHOLDER_NETID)).toBeNull();
+    });
+  });
+
+  describe('a netid whose initials agree with neither the page name nor the address', () => {
+    const UNRELATED_NETID = 'qx5708';
+    const MARRIED_NETID = 'am5708';
+    const MAIDEN_PAGE_URL = 'https://medicine.yale.edu/profile/avery-maidenfixture/';
+    const MAIDEN_EMAIL = 'avery.maidenfixture5708@yale.edu';
+    const OTHER_ADDRESS = 'dfixture5708@yale.edu';
+
+    const seedNetidLead = async (
+      netid: string,
+      displayName: string,
+      url: string,
+      email: string,
+    ) => {
+      const entity = await ResearchEntity.create({
+        slug: 'fixture-initials-lab',
+        name: 'Fixture Initials Lab',
+        kind: 'lab',
+        studentVisibilityTier: 'student_ready',
+        archived: false,
+      });
+      const researcher = await Researcher.create({
+        displayName,
+        identifiers: { netid, email },
+        profileLinks: [officialLink(url)],
+        status: 'ACTIVE',
+        archived: false,
+      });
+      await RoleAssignment.create({
+        personId: researcher._id,
+        target: { kind: 'RESEARCH_ENTITY', id: entity._id },
+        role: 'PI',
+        state: 'CURRENT',
+        confidence: 0.9,
+        archived: false,
+      });
+    };
+
+    const emittedFrom = async (pageName: string, url: string, email: string) => {
+      const emitted: ObservationInput[] = [];
+      await scraperReading(async (fetched) =>
+        personPageDeclaringAddress(fetched, pageName, email),
+      ).run(visibleBioContext(emitted));
+      return emitted;
+    };
+
+    it('refuses identity fields without a witness', async () => {
+      await seedNetidLead(UNRELATED_NETID, 'Devon Fixture', RENAMED_PAGE_URL, OTHER_ADDRESS);
+
+      await expect(emittedFrom('Devon Fixture', RENAMED_PAGE_URL, OTHER_ADDRESS)).resolves.toEqual(
+        [],
+      );
+    });
+
+    it('emits when the directory pairs the address with the person own netid', async () => {
+      await seedNetidLead(UNRELATED_NETID, 'Devon Fixture', RENAMED_PAGE_URL, OTHER_ADDRESS);
+      await seedDirectoryEmail(UNRELATED_NETID, OTHER_ADDRESS);
+
+      const emitted = await emittedFrom('Devon Fixture', RENAMED_PAGE_URL, OTHER_ADDRESS);
+
+      expect(emitted.filter((o) => o.field === 'email')).toEqual([
+        expect.objectContaining({ entityKey: `netid:${UNRELATED_NETID}`, value: OTHER_ADDRESS }),
+      ]);
+    });
+
+    it('emits when only the page name disagrees, the married-name shape', async () => {
+      await seedNetidLead(MARRIED_NETID, 'Avery Synthetic', MAIDEN_PAGE_URL, MAIDEN_EMAIL);
+
+      const emitted = await emittedFrom('Avery Synthetic', MAIDEN_PAGE_URL, MAIDEN_EMAIL);
+
+      expect(emitted.filter((o) => o.field === 'email')).toEqual([
+        expect.objectContaining({ entityKey: `netid:${MARRIED_NETID}`, value: MAIDEN_EMAIL }),
+      ]);
     });
   });
 });
