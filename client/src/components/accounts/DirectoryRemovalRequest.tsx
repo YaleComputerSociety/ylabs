@@ -2,7 +2,6 @@ import { useCallback, useRef, useState } from 'react';
 import axios from '../../utils/axios';
 import useLatestRequest from '../../hooks/useLatestRequest';
 import useLoadEffect from '../../hooks/useLoadEffect';
-import { DIRECTORY_REMOVAL_REQUEST_EMAIL } from '../../utils/privacyNotice';
 import RemovalRequestEmailLink from '../privacy/RemovalRequestEmailLink';
 
 export const DIRECTORY_REMOVAL_REQUEST_PATH = '/users/directoryRemovalRequest';
@@ -11,15 +10,12 @@ export const REMOVAL_REQUESTED_MESSAGE =
   "We'll stop showing you within 7 days. You can ask to be listed again at any time.";
 export const REMOVAL_ACCEPTED_MESSAGE =
   'Your request was accepted. You will stop appearing on y/labs within 7 days.';
-const RemovalDeclinedMessage = ({ email }: { email: string | undefined }) =>
-  email ? (
-    <>
-      We could not confirm this request. You can send it again, or email{' '}
-      <RemovalRequestEmailLink email={email} /> from the address Yale publishes for you.
-    </>
-  ) : (
-    <>We could not confirm this request. You can send it again.</>
-  );
+const RemovalDeclinedMessage = () => (
+  <>
+    We could not confirm this request. You can send it again, or email <RemovalRequestEmailLink />{' '}
+    from the address Yale publishes for you.
+  </>
+);
 const SUBMIT_ERROR = 'Your request could not be sent. Please try again.';
 
 type RequestStatus = 'pending' | 'accepted' | 'declined';
@@ -34,11 +30,7 @@ const STATUS_MESSAGES: Partial<Record<RequestStatus, string>> = {
   accepted: REMOVAL_ACCEPTED_MESSAGE,
 };
 
-const DirectoryRemovalRequest = ({
-  email = DIRECTORY_REMOVAL_REQUEST_EMAIL,
-}: {
-  email?: string;
-}) => {
+const DirectoryRemovalRequest = () => {
   const [eligibility, setEligibility] = useState<Eligibility | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
@@ -105,7 +97,7 @@ const DirectoryRemovalRequest = ({
         <>
           {status === 'declined' && (
             <p className="mb-4 text-base leading-relaxed text-ink-soft">
-              <RemovalDeclinedMessage email={email} />
+              <RemovalDeclinedMessage />
             </p>
           )}
           <div className="flex flex-wrap items-center gap-3">

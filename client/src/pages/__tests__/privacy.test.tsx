@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import ConfigContext, { defaultConfigContext } from '../../contexts/ConfigContext';
 import Privacy from '../privacy';
 import { PRIVACY_CONTACT_EMAIL, PRIVACY_CONTACT_MAILTO } from '../../utils/privacyContact';
-import { DIRECTORY_REMOVAL_REQUEST_EMAIL, PRIVACY_QUESTIONS_URL } from '../../utils/privacyNotice';
+import { PRIVACY_QUESTIONS_URL } from '../../utils/privacyNotice';
 import { expectNoAxeViolations } from '../../testUtils/axe';
 
 afterEach(() => {
@@ -70,15 +70,16 @@ describe('Privacy', () => {
     expect(screen.getByRole('link', { name: PRIVACY_CONTACT_EMAIL })).toBeTruthy();
   });
 
-  it('ships no removal address until one is named, and says what a removal request stores', () => {
+  it('tells a listed person how to ask to be removed, and says what a request stores', () => {
     renderPrivacy();
 
-    expect(DIRECTORY_REMOVAL_REQUEST_EMAIL).toBeUndefined();
     const text = document.body.textContent ?? '';
     expect(text).toContain(
-      'If y/labs lists you and you would like to be removed, sign in and use Remove me on your dashboard.',
+      'If y/labs lists you and you would like to be removed, sign in and use Remove me on your dashboard, or email ycs.maintenance.ylabs@gmail.com from the address Yale publishes for you.',
     );
-    expect(text).not.toContain('from the address Yale publishes for you');
+    expect(
+      screen.getByRole('link', { name: 'ycs.maintenance.ylabs@gmail.com' }).getAttribute('href'),
+    ).toBe(PRIVACY_CONTACT_MAILTO);
     expect(text).toContain(
       'the request stores only your netid, the listing it matched and the request status.',
     );

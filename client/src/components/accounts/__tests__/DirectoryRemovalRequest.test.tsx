@@ -9,7 +9,7 @@ import DirectoryRemovalRequest, {
 } from '../DirectoryRemovalRequest';
 import axios from '../../../utils/axios';
 import { expectNoAxeViolations } from '../../../testUtils/axe';
-import { DIRECTORY_REMOVAL_REQUEST_EMAIL } from '../../../utils/privacyNotice';
+import { PRIVACY_CONTACT_EMAIL, PRIVACY_CONTACT_MAILTO } from '../../../utils/privacyContact';
 
 vi.mock('../../../utils/axios', () => ({
   default: {
@@ -104,8 +104,7 @@ describe('DirectoryRemovalRequest', () => {
     expect(screen.queryByRole('button', { name: REMOVE_ME_LABEL })).toBeNull();
   });
 
-  it('explains a declined request and offers it again while no address is named', async () => {
-    expect(DIRECTORY_REMOVAL_REQUEST_EMAIL).toBeUndefined();
+  it('explains a declined request with the privacy mailbox and offers it again', async () => {
     mockedAxios.get.mockResolvedValue(eligibility(true, 'declined'));
     mockedAxios.post.mockResolvedValue({
       data: { request: { status: 'pending', createdAt: '2026-11-10T00:00:00Z' } },
@@ -114,27 +113,17 @@ describe('DirectoryRemovalRequest', () => {
 
     const button = await screen.findByRole('button', { name: REMOVE_ME_LABEL });
     expect(container.textContent).toContain(
-      'We could not confirm this request. You can send it again.',
+      'We could not confirm this request. You can send it again, or email ycs.maintenance.ylabs@gmail.com from the address Yale publishes for you.',
     );
-    expect(container.textContent).not.toContain('email');
-    expect(screen.queryByRole('link')).toBeNull();
+    const link = screen.getByRole('link', { name: PRIVACY_CONTACT_EMAIL });
+    expect(link.getAttribute('href')).toBe(PRIVACY_CONTACT_MAILTO);
+    expect(link.getAttribute('href')).toBe('mailto:ycs.maintenance.ylabs@gmail.com');
+    expect(link.className).toContain('yr-focus-ring');
+    await expectNoAxeViolations(container);
+
     fireEvent.click(button);
     expect((await screen.findByRole('status')).textContent).toBe(REMOVAL_REQUESTED_MESSAGE);
     expect(container.textContent).not.toContain('We could not confirm');
-  });
-
-  it('mentions the email route for a declined request once an address is named', async () => {
-    mockedAxios.get.mockResolvedValue(eligibility(true, 'declined'));
-    const { container } = render(<DirectoryRemovalRequest email="removals@example.edu" />);
-
-    expect(await screen.findByRole('button', { name: REMOVE_ME_LABEL })).toBeTruthy();
-    expect(container.textContent).toContain(
-      'We could not confirm this request. You can send it again, or email removals@example.edu from the address Yale publishes for you.',
-    );
-    const link = screen.getByRole('link', { name: 'removals@example.edu' });
-    expect(link.getAttribute('href')).toBe('mailto:removals@example.edu');
-    expect(link.className).toContain('yr-focus-ring');
-    await expectNoAxeViolations(container);
   });
 
   it('says so when the request cannot be sent and keeps the button', async () => {

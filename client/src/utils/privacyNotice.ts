@@ -8,9 +8,6 @@ export const ACTIVITY_RECORD_RETENTION_DAYS_LABEL = new Intl.NumberFormat('en-US
 );
 export const SESSION_COOKIE_LIFETIME_DAYS = 30;
 
-// Left undefined until the owner names the address (#4160); the page then omits the email clause.
-export const DIRECTORY_REMOVAL_REQUEST_EMAIL: string | undefined = undefined;
-
 // Every third-party origin the page loads from or sends to must be named here and on the
 // page. `server/src/middleware/__tests__/privacyNoticeDisclosures.test.ts` imports this list
 // and fails when the Content-Security-Policy allows an origin it does not cover.
