@@ -40,18 +40,23 @@ describe('fetchDirectoryPageWithRetry', () => {
 });
 
 describe('loadDirectoryIdentities', () => {
-  it('walks pages until a short page and maps the directory field names', async () => {
-    const page1 = Array.from({ length: 100 }, (_, index) => ({
+  it('walks pages from the zero-indexed first page until a short page and maps the directory field names', async () => {
+    const page0 = Array.from({ length: 100 }, (_, index) => ({
       netid: `af${index}`,
       email: `ada.fixture${index}@yale.edu`,
       first_name: 'Ada',
       last_name: 'Fixture',
       school_code: 'GS',
     }));
+    const requestedPages: number[] = [];
     const identities = await loadDirectoryIdentities({
-      fetchPage: async (page) => (page === 1 ? page1 : page1.slice(0, 2)),
+      fetchPage: async (page) => {
+        requestedPages.push(page);
+        return page === 0 ? page0 : page0.slice(0, 2);
+      },
       sleep: noSleep,
     });
+    expect(requestedPages).toEqual([0, 1]);
     expect(identities).toHaveLength(102);
     expect(identities[0]).toEqual({
       netid: 'af0',

@@ -9,7 +9,7 @@ import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { Researcher } from '../models/researcher';
 import { RoleAssignment } from '../models/roleAssignment';
-import { listYalies, type YaliesPerson } from '../services/yaliesService';
+import { FIRST_YALIES_PAGE, listYalies, type YaliesPerson } from '../services/yaliesService';
 import { isFacultyPerson } from '../scrapers/sources/yaleDirectoryScraper';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { serializedDocumentId } from '../utils/idSerialization';
@@ -103,7 +103,7 @@ async function loadFacultyDirectory(cachePath?: string): Promise<YaliesPerson[]>
   }
 
   const people: YaliesPerson[] = [];
-  for (let page = 1; page <= DIRECTORY_MAX_PAGES; page += 1) {
+  for (let page = FIRST_YALIES_PAGE; page < FIRST_YALIES_PAGE + DIRECTORY_MAX_PAGES; page += 1) {
     const records = await fetchDirectoryPageWithRetry(page);
     people.push(...records);
     if (records.length < DIRECTORY_PAGE_SIZE) break;
