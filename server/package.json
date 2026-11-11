@@ -162,6 +162,7 @@
     "research:backfill-yale-status-cache": "tsx src/scripts/backfillYaleStatusCache.ts",
     "research-entity:record-departure": "tsx src/scripts/recordResearchEntityDeparture.ts",
     "directory-removal:record": "tsx src/scripts/recordDirectoryRemoval.ts",
+    "directory-removal:purge-observations": "tsx src/scripts/purgeDirectoryRemovalObservations.ts",
     "student-visibility:gate": "tsx src/scripts/studentVisibilityGate.ts",
     "visibility:retire-stale-launch-overrides": "tsx src/scripts/retireStaleLaunchSuppressionOverrides.ts",
     "visibility:recoverability": "tsx src/scripts/visibilityRecoverabilityAudit.ts",
