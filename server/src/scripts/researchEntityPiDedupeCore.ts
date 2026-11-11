@@ -1,3 +1,8 @@
+import {
+  normalizeWebsiteUrlIdentityKey,
+  websiteUrlIdentityKeyThroughRedirect,
+  websiteUrlIdentityKeyVariants,
+} from '../utils/websiteUrlIdentityKey';
 import { sanitizeProfileResearchTerms } from '../utils/profileResearchTerms';
 import {
   isAreaShellSlug,
@@ -105,7 +110,34 @@ export interface OfficialLabUrlDedupeRow {
 
 export interface WebsiteUrlDedupeRow {
   websiteUrl: string;
+  identityKey?: string;
   entities: ResearchEntityPiDedupeRow['entities'];
+}
+
+/**
+ * Groups entities by the page their `websiteUrl` names, following a redirect the
+ * site's own host recorded in link health, so a lab that moved from a path on a shared
+ * host to its own domain is one page rather than two (`landings` is built by
+ * `redirectLandingIdentityKeys`). Only groups of two or more are returned.
+ */
+export function groupEntitiesByWebsiteUrlIdentity(
+  entities: ResearchEntityPiDedupeRow['entities'],
+  landings: ReadonlyMap<string, string>,
+): WebsiteUrlDedupeRow[] {
+  const byKey = new Map<string, WebsiteUrlDedupeRow>();
+  for (const entity of entities) {
+    const identityKey = websiteUrlIdentityKeyThroughRedirect(entity.websiteUrl, landings);
+    if (!identityKey) continue;
+    const existing = byKey.get(identityKey);
+    if (existing) existing.entities.push(entity);
+    else
+      byKey.set(identityKey, {
+        websiteUrl: entity.websiteUrl || '',
+        identityKey,
+        entities: [entity],
+      });
+  }
+  return Array.from(byKey.values()).filter((row) => row.entities.length > 1);
 }
 
 export interface CurrentMemberDedupeRow {
@@ -1212,54 +1244,7 @@ const PERSON_LEAD_NAME_STOPWORDS = new Set([
   'yale',
 ]);
 
-/**
- * Normalizes a websiteUrl into a scheme-agnostic identity key: the same lab home
- * reached over `http://` and `https://`, with or without a trailing slash or a
- * leading `www.`, must collapse to one key so a URL-identity lane clusters them.
- * Query strings and fragments are dropped; an unparseable value yields ''.
- */
-export function normalizeWebsiteUrlIdentityKey(value: string | undefined): string {
-  const trimmed = (value || '').trim();
-  if (!trimmed) return '';
-  let parsed: URL;
-  try {
-    parsed = new URL(trimmed);
-  } catch {
-    return '';
-  }
-  const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
-  if (!host) return '';
-  const pathname = parsed.pathname.replace(/\/+$/, '');
-  return `${host}${pathname}`;
-}
-
-const WEBSITE_URL_IDENTITY_KEY_SCHEMES = ['https://', 'http://'];
-const WEBSITE_URL_IDENTITY_KEY_HOST_PREFIXES = ['', 'www.'];
-
-/**
- * Every stored `websiteUrl` spelling that `normalizeWebsiteUrlIdentityKey` folds into
- * `key`, so a caller can look the key up with an equality query rather than storing a
- * second normalized copy of the URL on the row (#3036).
- *
- * Changing `normalizeWebsiteUrlIdentityKey` requires changing this with it: they are an
- * encoder and its inverse, and the inverse only recovers what the encoder drops
- * reversibly - the scheme, a leading `www.`, and a trailing slash. A URL carrying a
- * query string or a fragment cannot be recovered, because the encoder discards those
- * without recording them; measured on Development, 7 of 1,763 live `websiteUrl` values
- * are in that residue and none of them is a resolver target.
- */
-export function websiteUrlIdentityKeyVariants(key: string): string[] {
-  const trimmed = key.trim();
-  if (!trimmed) return [];
-  const variants: string[] = [];
-  for (const scheme of WEBSITE_URL_IDENTITY_KEY_SCHEMES) {
-    for (const hostPrefix of WEBSITE_URL_IDENTITY_KEY_HOST_PREFIXES) {
-      variants.push(`${scheme}${hostPrefix}${trimmed}`);
-      variants.push(`${scheme}${hostPrefix}${trimmed}/`);
-    }
-  }
-  return variants;
-}
+export { normalizeWebsiteUrlIdentityKey, websiteUrlIdentityKeyVariants };
 
 const PERSON_PROFILE_URL_PATH = /\/(?:profile|people|person)\/([a-z0-9._-]+)$/i;
 
@@ -1858,7 +1843,7 @@ export function buildWebsiteUrlResearchEntityDedupePlan(
 
   const groups: ResearchEntityPiDedupeGroup[] = [];
   for (const row of rows) {
-    const key = normalizeWebsiteUrlIdentityKey(row.websiteUrl);
+    const key = row.identityKey || normalizeWebsiteUrlIdentityKey(row.websiteUrl);
     if (!key) continue;
     const cited = row.entities.filter((entity) => entity.id);
     if (cited.length <= 1) continue;

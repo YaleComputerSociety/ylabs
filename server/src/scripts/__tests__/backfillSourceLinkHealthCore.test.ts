@@ -11,6 +11,7 @@ import {
   needsRecheckSince,
   needsSourceLinkHealthRefresh,
   planSourceLinkReprobe,
+  resolveSourceLinkHealthEntry,
   tlsFallbackCandidates,
   verifiedHttpsSpelling,
   SOURCE_LINK_HEALTH_REPROBE_HEALTHY_AFTER_DAYS,
@@ -385,6 +386,48 @@ describe('carryForwardSourceLinkHealthEntry https landing (#4649)', () => {
       httpsLandingUrl: 'https://example-lab.yale.edu/',
       checkedAt,
     });
+  });
+});
+
+describe('redirect landing persistence (#5638)', () => {
+  const MOVED_FROM = 'http://www.example.edu/quilllab/';
+  const MOVED_TO = 'https://quilllab.example.edu/';
+  const now = new Date('2026-11-10T00:00:00Z');
+
+  it('stores the landing a fresh HEALTHY probe recorded', () => {
+    expect(
+      resolveSourceLinkHealthEntry(
+        MOVED_FROM,
+        { healthStatus: 'HEALTHY', httpStatusCode: 200, redirectLandingUrl: MOVED_TO },
+        undefined,
+        now,
+      ).entry,
+    ).toEqual({
+      url: MOVED_FROM,
+      healthStatus: 'HEALTHY',
+      httpStatusCode: 200,
+      redirectLandingUrl: MOVED_TO,
+      checkedAt: now,
+    });
+  });
+
+  it('keeps a stored landing when an inconclusive probe preserves the verdict', () => {
+    const stored = {
+      url: MOVED_FROM,
+      healthStatus: 'HEALTHY' as const,
+      httpStatusCode: 200,
+      redirectLandingUrl: MOVED_TO,
+      checkedAt: new Date('2026-11-01T00:00:00Z'),
+    };
+    const { entry, preservedDecisiveVerdict } = resolveSourceLinkHealthEntry(
+      MOVED_FROM,
+      { healthStatus: 'UNKNOWN' },
+      stored,
+      now,
+    );
+    expect(preservedDecisiveVerdict).toBe(true);
+    expect(entry.redirectLandingUrl).toBe(MOVED_TO);
+    expect(carryForwardSourceLinkHealthEntry(MOVED_FROM, stored).redirectLandingUrl).toBe(MOVED_TO);
   });
 });
 

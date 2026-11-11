@@ -131,6 +131,15 @@ const sourceLinkHealthSchema = new mongoose.Schema(
       type: String,
       required: false,
     },
+    /**
+     * The live page this URL's own host redirected it to, kept only on a `HEALTHY`
+     * verdict whose landing names a different page identity. The evidence a host or
+     * path alias is admitted on by the URL-identity dedupe and resolve-at-mint (#5638).
+     */
+    redirectLandingUrl: {
+      type: String,
+      required: false,
+    },
     checkedAt: {
       type: Date,
       required: false,
@@ -654,6 +663,10 @@ researchEntitySchema.index({ 'mergedFrom.entityId': 1 });
 // one row, so a unique index would refuse to build until those are resolved. The
 // resolver's ambiguity guard is what keeps a shared URL from merging (#3036).
 researchEntitySchema.index({ websiteUrl: 1 });
+researchEntitySchema.index(
+  { 'sourceLinkHealth.redirectLandingUrl': 1 },
+  { partialFilterExpression: { 'sourceLinkHealth.redirectLandingUrl': { $exists: true } } },
+);
 researchEntitySchema.index({ school: 1 });
 researchEntitySchema.index({ schools: 1 });
 researchEntitySchema.index({ departments: 1 });

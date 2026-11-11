@@ -246,6 +246,7 @@ export interface StoredSourceLinkHealthEntry {
   tlsVerificationFailed?: boolean;
   httpsLandingUrl?: string;
   httpsSpellingUrl?: string;
+  redirectLandingUrl?: string;
   checkedAt?: Date;
   lastAttemptedAt?: Date;
 }
@@ -335,6 +336,7 @@ export function resolveSourceLinkHealthEntry(
     tlsVerificationFailed?: boolean;
     httpsLandingUrl?: string;
     httpsSpellingUrl?: string;
+    redirectLandingUrl?: string;
   },
   stored: StoredSourceLinkHealthEntry | undefined,
   now: Date,
@@ -351,6 +353,7 @@ export function resolveSourceLinkHealthEntry(
     ...routing,
     ...(fresh.httpsLandingUrl ? { httpsLandingUrl: fresh.httpsLandingUrl } : {}),
     ...(fresh.httpsSpellingUrl ? { httpsSpellingUrl: fresh.httpsSpellingUrl } : {}),
+    ...(fresh.redirectLandingUrl ? { redirectLandingUrl: fresh.redirectLandingUrl } : {}),
     checkedAt: now,
   };
 
@@ -373,6 +376,7 @@ export function resolveSourceLinkHealthEntry(
       ...routing,
       ...(kept.httpsLandingUrl ? { httpsLandingUrl: kept.httpsLandingUrl } : {}),
       ...(kept.httpsSpellingUrl ? { httpsSpellingUrl: kept.httpsSpellingUrl } : {}),
+      ...(kept.redirectLandingUrl ? { redirectLandingUrl: kept.redirectLandingUrl } : {}),
       ...(kept.checkedAt ? { checkedAt: kept.checkedAt } : {}),
       lastAttemptedAt: now,
     },
@@ -453,6 +457,7 @@ export function carryForwardSourceLinkHealthEntry(
     ...(stored.tlsVerificationFailed === true ? { tlsVerificationFailed: true } : {}),
     ...(stored.httpsLandingUrl ? { httpsLandingUrl: stored.httpsLandingUrl } : {}),
     ...(stored.httpsSpellingUrl ? { httpsSpellingUrl: stored.httpsSpellingUrl } : {}),
+    ...(stored.redirectLandingUrl ? { redirectLandingUrl: stored.redirectLandingUrl } : {}),
     ...(stored.checkedAt ? { checkedAt: stored.checkedAt } : {}),
     ...(stored.lastAttemptedAt ? { lastAttemptedAt: stored.lastAttemptedAt } : {}),
   };

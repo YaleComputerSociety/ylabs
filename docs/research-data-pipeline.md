@@ -1798,6 +1798,17 @@ Serve time offers the landing first, then the probed spelling, and otherwise the
 The stored `websiteUrl` keeps recording what the source published, so this is derivation from link-health evidence and writes no field.
 `--http-websites-only` scopes a pass to rows whose `websiteUrl` or `website` is plain HTTP, which is how a landing is recorded without waiting for the sweep's seven-day re-probe window.
 
+A `HEALTHY` probe whose host's own redirects land on a different page identity (another host or another path, not a scheme, `www.`, letter-case, trailing-slash or default-document respelling) records that landing as `redirectLandingUrl` (#5638).
+It is the only evidence a host or path alias is admitted on: the website-url dedupe lane groups a row under its `websiteUrl`'s recorded landing, and resolve-at-mint's `website-url` arm consults the keys a recorded redirect makes equivalent only when no row carries the URL itself, so an exact match resolves as before and a redirect only adds a candidate where there was none.
+Nothing is aliased by pattern, so a URL no probe has followed stays its own page, and every dedupe guard (lead-person clustering, the conflated-person refusal, never-demote) still decides the lane's merge.
+A whole host redirecting to another host's root is not recorded either, because it names no page and is also how a lapsed lab domain falls back to its parent site; a page that moved to a host's root still is.
+Rootness is judged on the identity key, so a root spelled with a default document such as `index.html` counts as the root on either side.
+A landing that carries a query string is not recorded, because the identity key drops the query and would fold every `?id=` page of one script, or a login page, into one page.
+Only a live row's verdict is read, because link health never re-probes an archived row, so an archived duplicate's verdict cannot keep an alias alive after the URL stops redirecting.
+Resolve-at-mint has no lead-person clustering, so its redirect arm never folds a mint into a `CENTER`, `INSTITUTE`, `INITIATIVE` or `CORE_FACILITY` row reached only through a recorded redirect, the same organization-type exclusion the lane applies; a URL that names such a row directly still resolves to it as before.
+Because resolve-at-mint has no lead-person clustering either, a row reached only through a recorded redirect is a candidate only when its name agrees with the mint's, as the same normalized organization name or the same lead person, so a retired page redirecting to another host's root cannot fold a mint into whatever row serves that root.
+The landing is recorded by the ordinary link-health pass, so it reaches the dedupe on the sweep after the probe that saw it.
+
 The resolved address has to be the one a student gets, not the one the probing machine gets.
 Yale answers its legacy departmental hosts with split-horizon DNS: the resolver on the Development scrape host returned RFC1918 space for `www.cs.yale.edu`, `ursula.chem.yale.edu`, `www.astro.yale.edu` and others, while public resolvers return routable `128.36.0.0/16` addresses and the pages load off campus (#3903).
 So the flag is recorded only after `classifyOffCampusAddressing` (`server/src/utils/publicDnsResolution.ts`) confirms the host against public DNS over HTTPS, which a network intercepting port 53 cannot answer in the public resolver's place.
