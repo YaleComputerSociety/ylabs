@@ -32,6 +32,7 @@ import {
   truncateAtSentenceBoundary,
 } from './utils/researchPageText';
 import { isResearchPageHeadingLine } from './utils/writerEvidenceText';
+import { isClinicalPracticeAsResearch } from './utils/clinicalPracticeAsResearch';
 import { isNarrowedLabSiteDescription, researchPassageOf } from '../utils/researchStatementPassage';
 import {
   withoutPublicationListings,
@@ -297,7 +298,8 @@ export type CoverageSynthesisRefusal =
   | 'missing-research-page-coverage'
   | 'first-person'
   | 'fused-page-heading'
-  | 'greeting-text';
+  | 'greeting-text'
+  | 'clinical-practice-as-research';
 
 /**
  * The verbs a synthesized body uses of its subject. Shared with the two internal
@@ -547,6 +549,15 @@ export function judgeWrittenDescription(input: {
   if (hasFirstPerson(description)) return refuse('first-person');
   if (hasFusedPageHeading(description, evidence)) return refuse('fused-page-heading');
   if (hasGreetingText(description)) return refuse('greeting-text');
+  if (
+    isClinicalPracticeAsResearch({
+      description,
+      snippets: input.snippets,
+      entityType: input.entityType,
+    })
+  ) {
+    return refuse('clinical-practice-as-research');
+  }
   return { description, refusal: null };
 }
 
