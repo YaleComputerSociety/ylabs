@@ -80,6 +80,7 @@
     "observations:retire-organization-identity-websites": "tsx src/scripts/retireOrganizationIdentityWebsiteGrafts.ts",
     "observations:retire-shared-roster-websites": "tsx src/scripts/retireSharedRosterWebsites.ts",
     "observations:retire-borrowed-lab-websites": "tsx src/scripts/retireBorrowedLabWebsites.ts",
+    "observations:supersede-replaced-run-emails": "tsx src/scripts/supersedeReplacedRunEmails.ts",
     "data:repair-legacy-person-page-urls": "tsx src/scripts/repairLegacyPersonPageUrls.ts",
     "data:drop-dead-citations": "tsx src/scripts/dropSupersededDeadCitations.ts",
     "data:find-lab-websites": "tsx src/scripts/findLabWebsites.ts",

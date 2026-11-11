@@ -69,6 +69,8 @@ const OPERATOR_TOOLS: Record<string, string> = {
     're-embeds the whole index after a settings, embedder, or document-shape change, an infrastructure operation; the sweep stage is the incremental sync (#5023)',
   'research-entity:rematerialize': 're-derives rows on demand through the engine itself',
   'observations:catch-up-materialize': 'drains the materialize backlog through the engine itself',
+  'observations:supersede-replaced-run-emails':
+    'a one-time backfill of the run-scoped email rule appendObservations enforces on every write, for rows stored before it, which only a fresh fetch of every page would otherwise reach (#5705)',
   'observations:rederive-over-shared-person-websites':
     're-resolves through the engine itself the people whose evidence asserts an over-shared website, which no lane re-asserts (#5645)',
   'beta:readiness': 'promotion tooling, run as part of the release process',
