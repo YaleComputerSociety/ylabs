@@ -130,13 +130,16 @@ export type ShellMergeReason =
   | 'NO_CANONICAL'
   | 'AMBIGUOUS_MULTIPLE_CANONICAL'
   | 'ORCID_CONFLICT'
-  | 'NETID_CONFLICT';
+  | 'NETID_CONFLICT'
+  | 'NO_IDENTITY_WITNESS'
+  | 'VARIANT_SHAPE_NOT_ALLOWED';
 
 export const SHELL_FOLD_IDENTITIES = [
   'netid',
   'roster-identity',
   'verified-profile',
   'shared-row',
+  'name-variant-shared-row',
   'name',
 ] as const;
 export type ShellFoldIdentity = (typeof SHELL_FOLD_IDENTITIES)[number];
@@ -268,6 +271,105 @@ export interface RosterIdentityCandidate extends CanonicalCandidate {
 export interface SharedRowCandidate extends CanonicalCandidate {
   displayName?: unknown;
   title?: unknown;
+}
+
+export interface NameVariantCandidate extends SharedRowCandidate {
+  /**
+   * Whether a listing on the shared row that names the shell links, on its own person page,
+   * an official profile that resolves to this holder's profile.
+   */
+  witnessed: boolean;
+}
+
+const NAME_VARIANT_CREDENTIALS = new Set([
+  'phd',
+  'md',
+  'mph',
+  'msc',
+  'ms',
+  'ma',
+  'mba',
+  'jd',
+  'jr',
+  'sr',
+  'ii',
+  'iii',
+  'iv',
+  'dds',
+  'dmd',
+  'rn',
+  'facs',
+  'facp',
+  'dr',
+  'prof',
+  'mfa',
+  'dphil',
+  'mbbs',
+  'pharmd',
+  'dvm',
+  'np',
+  'pa',
+  'lcsw',
+  'psyd',
+  'edd',
+  'scd',
+  'drph',
+]);
+
+export type NameVariantShape =
+  | 'credential residue'
+  | 'hyphenation'
+  | 'middle initial or name'
+  | 'first initial only'
+  | 'nickname or first-name variant'
+  | 'other';
+
+/**
+ * The variant shapes the #5592 owner review graded as one person on a shared row with an
+ * identity witness. A shape not listed here never folds, whatever else agrees.
+ */
+export const FOLDABLE_NAME_VARIANT_SHAPES: ReadonlySet<NameVariantShape> = new Set([
+  'middle initial or name',
+  'hyphenation',
+  'nickname or first-name variant',
+]);
+
+const nameVariantTokens = (value: unknown): string[] =>
+  (typeof value === 'string' ? value : '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[.,()'\u2019"]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+
+/** How two spellings of a name differ, classified as the #5592 census classified them. */
+export function nameVariantShape(left: unknown, right: unknown): NameVariantShape {
+  const leftTokens = nameVariantTokens(left);
+  const rightTokens = nameVariantTokens(right);
+  const joined = (tokens: string[]) => tokens.join(' ');
+  const withoutCredentials = (tokens: string[]) =>
+    tokens.filter((token) => !NAME_VARIANT_CREDENTIALS.has(token));
+  const leftBare = withoutCredentials(leftTokens);
+  const rightBare = withoutCredentials(rightTokens);
+  if (joined(leftBare) === joined(rightBare) && joined(leftTokens) !== joined(rightTokens)) {
+    return 'credential residue';
+  }
+  const unhyphenated = (tokens: string[]) => joined(tokens).replace(/-/g, ' ').split(/\s+/);
+  if (joined(unhyphenated(leftBare)) === joined(unhyphenated(rightBare))) return 'hyphenation';
+  const firstAndLast = (tokens: string[]) => `${tokens[0]} ${tokens[tokens.length - 1]}`;
+  if (leftBare.length && rightBare.length && firstAndLast(leftBare) === firstAndLast(rightBare)) {
+    return 'middle initial or name';
+  }
+  const leftLast = leftBare[leftBare.length - 1];
+  const rightLast = rightBare[rightBare.length - 1];
+  if (leftLast && leftLast === rightLast && leftBare[0] !== rightBare[0]) {
+    const initialOnly =
+      leftBare[0]?.[0] === rightBare[0]?.[0] &&
+      (leftBare[0]?.length === 1 || rightBare[0]?.length === 1);
+    return initialOnly ? 'first initial only' : 'nickname or first-name variant';
+  }
+  return 'other';
 }
 
 /**
@@ -506,6 +608,78 @@ function decideSharedRowFold(
   return { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn: 'shared-row' };
 }
 
+/**
+ * A `NAME_ONLY` shell whose name is a variant of a stronger record's (a middle initial, a
+ * hyphenation, a first-name variant) and that shares a research row with it through any
+ * unarchived edge, including a historical one, is that record's twin only when the shell's
+ * own listing on that row links an official profile resolving to the holder's profile.
+ * A shared row alone is not evidence of one person: a multi-member center lists namesakes
+ * from other schools (#5592). The name, rank and identifiers only veto, the fold always goes
+ * into the identity-stronger record, and two qualifying holders resolve to nobody.
+ */
+export function decideNameVariantSharedRowFold(
+  shell: ShellIdentity,
+  candidates: ReadonlyArray<NameVariantCandidate>,
+): ShellMergeDecision | undefined {
+  const shellName = typeof shell.displayName === 'string' ? shell.displayName : '';
+  if (!shellName || researcherIdentityTier(shell) !== 'NAME_ONLY') return undefined;
+  const shellNormalizedName = normalizeResearcherName(shellName);
+  const agreeing = candidates.filter(
+    (candidate) =>
+      candidate.id !== shell.id &&
+      identityTierStrength(candidate.tier) > identityTierStrength('NAME_ONLY') &&
+      observedPersonNameAgreesWith(candidate.displayName, shellName) &&
+      normalizeResearcherName(candidate.displayName) !== shellNormalizedName &&
+      !titlesStateConflictingRanks(shell.title, candidate.title),
+  );
+  const holders = [...new Map(agreeing.map((candidate) => [candidate.id, candidate])).values()];
+  if (holders.length === 0) return undefined;
+  const matchedOn = 'name-variant-shared-row' as const;
+  const strongestStrength = Math.max(
+    ...holders.map((candidate) => identityTierStrength(candidate.tier)),
+  );
+  const strongest = holders.filter(
+    (candidate) => identityTierStrength(candidate.tier) === strongestStrength,
+  );
+  if (strongest.length > 1)
+    return { merge: false, reason: 'AMBIGUOUS_MULTIPLE_CANONICAL', matchedOn };
+  const [target] = strongest;
+  if (!FOLDABLE_NAME_VARIANT_SHAPES.has(nameVariantShape(shellName, target.displayName))) {
+    return { merge: false, reason: 'VARIANT_SHAPE_NOT_ALLOWED', matchedOn };
+  }
+  const shellOrcid = cleanOrcid(shell.orcid);
+  if (shellOrcid && target.orcid && shellOrcid !== target.orcid) {
+    return { merge: false, reason: 'ORCID_CONFLICT', matchedOn };
+  }
+  const shellNetid = bareNetid(shell.netid);
+  if (shellNetid && target.netid && shellNetid !== target.netid) {
+    return { merge: false, reason: 'NETID_CONFLICT', matchedOn };
+  }
+  if (!target.witnessed) return { merge: false, reason: 'NO_IDENTITY_WITNESS', matchedOn };
+  return { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn };
+}
+
+/** The unordered key of a pair an operator recorded as two different people. */
+export const distinctPeoplePairKey = (left: string, right: string): string =>
+  [left, right].sort().join('|');
+
+/**
+ * Drops every planned fold whose shell and final target an operator recorded as different
+ * people, whichever arm planned it, so an unmerged pair is never folded again (#5592).
+ */
+export function withoutDistinctPeopleFolds(
+  mergeTargetByShellId: ReadonlyMap<string, string>,
+  distinctPeoplePairs: ReadonlySet<string>,
+): { kept: Map<string, string>; refused: number } {
+  const kept = new Map<string, string>();
+  let refused = 0;
+  for (const [shellId, targetId] of mergeTargetByShellId) {
+    if (distinctPeoplePairs.has(distinctPeoplePairKey(shellId, targetId))) refused += 1;
+    else kept.set(shellId, targetId);
+  }
+  return { kept, refused };
+}
+
 export function decideShellMerge(
   shell: ShellIdentity,
   canonicalNameIndex: Map<string, CanonicalCandidate[]>,
@@ -513,6 +687,7 @@ export function decideShellMerge(
   rosterIdentityCandidates: ReadonlyArray<RosterIdentityCandidate> = [],
   verifiedProfileIndex: Map<string, VerifiedProfileCandidate[]> = new Map(),
   sharedRowCandidates: ReadonlyArray<SharedRowCandidate> = [],
+  nameVariantCandidates: ReadonlyArray<NameVariantCandidate> = [],
 ): ShellMergeDecision {
   const byNetid = decideNetidFold(shell, canonicalNetidIndex);
   if (byNetid) return byNetid;
@@ -522,7 +697,16 @@ export function decideShellMerge(
   if (byVerifiedProfile) return byVerifiedProfile;
   const bySharedRow = decideSharedRowFold(shell, sharedRowCandidates);
   if (bySharedRow) return bySharedRow;
+  const byNameVariant = decideNameVariantSharedRowFold(shell, nameVariantCandidates);
+  if (byNameVariant?.merge) return byNameVariant;
+  const byName = decideExactNameFold(shell, canonicalNameIndex);
+  return byName.reason === 'NO_CANONICAL' && byNameVariant ? byNameVariant : byName;
+}
 
+function decideExactNameFold(
+  shell: ShellIdentity,
+  canonicalNameIndex: Map<string, CanonicalCandidate[]>,
+): ShellMergeDecision {
   const name = normalizeResearcherName(shell.displayName);
   if (!name) return { merge: false, reason: 'NO_NAME' };
 

@@ -14,6 +14,10 @@ import {
   shellProfileLinkKindsReleasedWith,
   buildVerifiedPrimaryProfileIndex,
   planAccountlessClusterFolds,
+  decideNameVariantSharedRowFold,
+  distinctPeoplePairKey,
+  nameVariantShape,
+  withoutDistinctPeopleFolds,
   resolveFinalMergeTargets,
 } from '../dedupeAccountlessResearcherShellsCore';
 
@@ -980,5 +984,108 @@ describe('planAliasTwinFolds (#4988, #5092)', () => {
       plan({ researcherByNetid: new Map([['jqe7', { id: 'real', displayName: 'Casey Other' }]]) })
         .refusals['names-disagree'],
     ).toBe(1);
+  });
+});
+
+describe('name-variant shared-row fold (#5592)', () => {
+  const shell = (displayName: string, over: Record<string, unknown> = {}) => ({
+    id: 'shell'.padEnd(24, '0'),
+    displayName,
+    ...over,
+  });
+  const holder = (id: string, displayName: string, over: Record<string, unknown> = {}) => ({
+    id: id.padStart(24, '0'),
+    displayName,
+    tier: 'DIRECTORY' as const,
+    witnessed: true,
+    ...over,
+  });
+
+  it('classifies variant shapes as the owner review graded them', () => {
+    expect(nameVariantShape('Avery Q. Synthetic', 'Avery Synthetic')).toBe(
+      'middle initial or name',
+    );
+    expect(nameVariantShape('Avery Synthetic-Fixture', 'Avery Synthetic Fixture')).toBe(
+      'hyphenation',
+    );
+    expect(nameVariantShape('Avery Synthetic', 'Robin Synthetic')).toBe(
+      'nickname or first-name variant',
+    );
+    expect(nameVariantShape('A. Synthetic', 'Avery Synthetic')).toBe('first initial only');
+    expect(nameVariantShape('Avery Synthetic, PhD', 'Avery Synthetic')).toBe('credential residue');
+  });
+
+  it('folds a name-only shell into the one witnessed stronger holder', () => {
+    const decision = decideNameVariantSharedRowFold(shell('Avery Synthetic'), [
+      holder('1', 'Avery Q. Synthetic'),
+    ]);
+    expect(decision).toEqual({
+      merge: true,
+      canonicalId: '1'.padStart(24, '0'),
+      reason: 'MERGEABLE',
+      matchedOn: 'name-variant-shared-row',
+    });
+  });
+
+  it('refuses a shared row with no identity witness, as for two namesakes on one center', () => {
+    const decision = decideNameVariantSharedRowFold(shell('Avery Synthetic-Fixture'), [
+      holder('1', 'Avery Synthetic Fixture', { witnessed: false }),
+    ]);
+    expect(decision).toMatchObject({ merge: false, reason: 'NO_IDENTITY_WITNESS' });
+  });
+
+  it('refuses a variant shape the review did not approve', () => {
+    const decision = decideNameVariantSharedRowFold(shell('A. Synthetic'), [
+      holder('1', 'Avery Synthetic'),
+    ]);
+    expect(decision?.merge).not.toBe(true);
+  });
+
+  it('resolves to nobody when two equally strong holders qualify', () => {
+    const decision = decideNameVariantSharedRowFold(shell('Avery Synthetic'), [
+      holder('1', 'Avery Q. Synthetic'),
+      holder('2', 'Avery R. Synthetic'),
+    ]);
+    expect(decision).toMatchObject({ merge: false, reason: 'AMBIGUOUS_MULTIPLE_CANONICAL' });
+  });
+
+  it('keeps the ORCID conflict refusal', () => {
+    const decision = decideNameVariantSharedRowFold(
+      shell('Avery Synthetic', { orcid: '0000-0000-0000-0001' }),
+      [holder('1', 'Avery Q. Synthetic', { orcid: '0000-0000-0000-0028' })],
+    );
+    expect(decision).toMatchObject({ merge: false, reason: 'ORCID_CONFLICT' });
+  });
+
+  it('never folds a shell that carries identity, and never folds into a weaker record', () => {
+    expect(
+      decideNameVariantSharedRowFold(shell('Avery Synthetic', { netid: 'zz9999' }), [
+        holder('1', 'Avery Q. Synthetic'),
+      ]),
+    ).toBeUndefined();
+    expect(
+      decideNameVariantSharedRowFold(shell('Avery Synthetic'), [
+        holder('1', 'Avery Q. Synthetic', { tier: 'NAME_ONLY' }),
+      ]),
+    ).toBeUndefined();
+  });
+
+  it('leaves an exact-name fold to the exact-name arm', () => {
+    expect(
+      decideNameVariantSharedRowFold(shell('Avery Synthetic'), [holder('1', 'Avery Synthetic')]),
+    ).toBeUndefined();
+  });
+
+  it('drops every planned fold an operator recorded as two different people, in either order', () => {
+    const plan = new Map([
+      ['a', 'b'],
+      ['c', 'd'],
+    ]);
+    const { kept, refused } = withoutDistinctPeopleFolds(
+      plan,
+      new Set([distinctPeoplePairKey('b', 'a')]),
+    );
+    expect([...kept]).toEqual([['c', 'd']]);
+    expect(refused).toBe(1);
   });
 });
