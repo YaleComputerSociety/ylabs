@@ -4338,7 +4338,7 @@ export function userEntityKeyForInferredPiUserKey(value: unknown): string {
   return raw;
 }
 
-async function userIdentityJoinForKey(
+export async function userIdentityJoinForKey(
   userEntityKey: string,
 ): Promise<{ join: UserIdentityJoinResult; observations: any[] } | undefined> {
   const read = await Observation.find({
