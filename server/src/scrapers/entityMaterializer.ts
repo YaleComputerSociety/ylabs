@@ -558,6 +558,7 @@ import {
   orcidProfileLinksAgreeWithIdentifier,
   researcherDisplayProfileSchema,
   type ResearcherDisplayProfile,
+  type ResearcherEmailSupport,
   type ResearcherProfileLink,
 } from '../models/researcher';
 import { Account } from '../models/account';
@@ -4430,6 +4431,76 @@ export async function userIdentityJoinForKey(
     observations: kept,
   };
 }
+
+const isLiveObservation = (observation: any): boolean =>
+  observation?.superseded !== true && !observation?.rollback?.rolledBackAt;
+
+const liveObservationsStatingEmail = (observations: readonly any[], email: string): any[] =>
+  observations.filter(
+    (observation) =>
+      observation?.field === 'email' &&
+      isLiveObservation(observation) &&
+      !shouldIgnoreObservationForEntityMaterialization('user', observation) &&
+      normalizedAccountEmail(observation.value) === email,
+  );
+
+export interface EmailSupportJoinedKey {
+  entityKey: string;
+  observations: readonly any[];
+}
+
+/**
+ * Whether evidence still states a researcher's stored address (#5627). A `user` key counts
+ * only when the engine's own identity join reaches this researcher from it, so an address a
+ * namesake's key states never backs the record. `joinedKey` is the key a materialize pass is
+ * resolving, already joined to this researcher, which a researcher still being minted cannot
+ * reach through a fresh join.
+ */
+export async function researcherEmailSupport(
+  researcher: { _id?: unknown; identifiers?: { email?: unknown } | null },
+  joinedKey?: EmailSupportJoinedKey,
+): Promise<ResearcherEmailSupport | undefined> {
+  const email = normalizedAccountEmail(researcher.identifiers?.email);
+  const researcherId = idValue(researcher._id);
+  if (!email || !researcherId) return undefined;
+  const candidateKeys = (
+    (await Observation.distinct('entityKey', {
+      entityType: 'user',
+      field: 'email',
+      value: new RegExp(`^${escapeRegex(email)}$`, 'i'),
+      superseded: { $ne: true },
+      'rollback.rolledBackAt': { $exists: false },
+    })) as unknown[]
+  )
+    .map(textValue)
+    .filter((key) => key && key !== joinedKey?.entityKey)
+    .sort();
+  const sources = new Set<string>();
+  const addSources = (observations: readonly any[]) => {
+    for (const observation of liveObservationsStatingEmail(observations, email)) {
+      sources.add(textValue(observation.sourceName));
+    }
+  };
+  if (joinedKey) addSources(joinedKey.observations);
+  for (const entityKey of candidateKeys) {
+    const read = await userIdentityJoinForKey(entityKey);
+    if (idValue(read?.join.researcher?._id) !== researcherId) continue;
+    addSources(read?.observations ?? []);
+  }
+  const sortedSources = [...sources].filter(Boolean).sort();
+  return { supported: sortedSources.length > 0, sources: sortedSources, computedForEmail: email };
+}
+
+export const sameResearcherEmailSupport = (
+  stored: Partial<ResearcherEmailSupport> | undefined | null,
+  computed: ResearcherEmailSupport | undefined,
+): boolean =>
+  (!stored && !computed) ||
+  (Boolean(stored) &&
+    Boolean(computed) &&
+    stored?.supported === computed?.supported &&
+    stored?.computedForEmail === computed?.computedForEmail &&
+    JSON.stringify(stored?.sources ?? []) === JSON.stringify(computed?.sources ?? []));
 
 async function researcherReachedByUserIdentity(
   userEntityKey: string,
@@ -9268,6 +9339,14 @@ async function materializeUserIdentityToResearcher(
   }
 
   fieldsWritten += orcidFieldsWritten + netidFieldsWritten;
+  const emailSupport = await researcherEmailSupport(researcher, {
+    entityKey: textValue(identifier.entityKey),
+    observations: obs,
+  });
+  if (!sameResearcherEmailSupport(researcher.identifiers?.emailSupport, emailSupport)) {
+    researcher.set('identifiers.emailSupport', emailSupport);
+    fieldsWritten += 1;
+  }
   let conflicts = 0;
 
   // A stored row can already hold an ORCID link its identifier does not back, because
@@ -9329,6 +9408,7 @@ async function materializeUserIdentityToResearcher(
     netidFieldsWritten = 0;
     if (emailFieldsWritten > 0) {
       researcher.set('identifiers.email', priorEmail);
+      researcher.set('identifiers.emailSupport', undefined);
       fieldsWritten -= emailFieldsWritten;
       emailFieldsWritten = 0;
     }

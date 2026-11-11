@@ -24,6 +24,11 @@ const SOURCE = fs.readFileSync(SOURCE_PATH, 'utf8');
  */
 const REVIEWED_UNROUTED_READS: ReadonlyArray<{ fn: string; reason: string }> = [
   {
+    fn: 'researcherEmailSupport',
+    reason:
+      'Called from `materializeUserIdentityToResearcher`, the `user` materializer, so the benchmark never makes this read: it replays `researchEntity` rows only. It finds every `user` key stating a researcher address, which are keys other than the one being resolved, so an entity-keyed source cannot answer it (#5627).',
+  },
+  {
     fn: 'resolveNetidForRosterEmailAlias',
     reason:
       'On the inferred-PI mint path, reached from `resolveInferredPiKeyIdentity`, so THE BENCHMARK NEVER MAKES THIS READ: it replays `researchEntity` rows only. Measured by instrumenting it and replaying 147 rows, which hit it zero times (#3863). It is also a corpus-wide search by value and so unroutable through an entity-keyed source, but that is the weaker reason; routing or freezing it changes no outcome until the benchmark replays `user` rows.',

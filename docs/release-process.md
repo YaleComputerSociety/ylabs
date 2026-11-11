@@ -316,6 +316,19 @@ Those duplicates wait for the website-url dedupe lane, which refuses rows led by
 4. Run `yarn development:search:sync`, never a full rebuild.
 5. Served check: through the search route each merged lab or profile shows once, its detail route answers `200`, and each archived slug answers `302` to its survivor.
 
+### Researcher email support markers (#5627)
+
+The user materializer refreshes `identifiers.emailSupport` only for a researcher some `user` key reaches, so run this in the same operation as every Development materialize to mark the rest.
+
+1. Dry-run the pass and read the plan; the empty `ALLOW_NON_PROD_SCRAPER_WRITES` keeps a worktree `.env` that enables writes from turning the dry run into one:
+   `OPENAI_API_KEY= ALLOW_NON_PROD_SCRAPER_WRITES= yarn --cwd server researchers:compute-email-support --output=/tmp/researcher-email-support-dry.json`
+2. Apply it:
+   `OPENAI_API_KEY= yarn --cwd server researchers:compute-email-support --apply --confirm-compute-email-support --output=/tmp/researcher-email-support-apply.json`
+3. Dry-run again with the command from step 1; it must plan 0.
+4. Count coverage: `yarn --cwd server researchers:email-support-coverage --environment=development` must read `unmarked: 0`, the precondition for any serve-time use of the marker.
+
+Before the `ylabs-scraper` sweep cron is re-enabled, #5713 must land so the pass runs as a sweep stage; otherwise researchers that newly become unreached go unmarked.
+
 ## Verifying a release
 
 `Post-Promotion Verify` runs on every push to `main`.

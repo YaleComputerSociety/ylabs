@@ -287,9 +287,12 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     const result = await materializeEntity('user', { entityKey: 'collide2' }, {});
 
     expect(result.conflicts).toBe(1);
-    expect(result.fieldsWritten).toBe(3);
+    expect(result.fieldsWritten).toBe(4);
 
     const enriched = await enrichedResearcher(enrichTarget._id);
+    expect((enriched?.identifiers as any)?.emailSupport?.computedForEmail).toBe(
+      'collide2@example.invalid',
+    );
     expect(enriched?.identifiers?.orcid).toBe(ownOrcid);
     expect(enriched?.identifiers?.email).toBe('collide2@example.invalid');
     expect(orcidLinkUrls(enriched?.profileLinks)).toEqual([`https://orcid.org/${ownOrcid}`]);

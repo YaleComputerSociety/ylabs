@@ -35,6 +35,8 @@
     "role-assignments:detach-edge": "tsx src/scripts/detachRoleAssignmentEdge.ts",
     "observations:rollback-scrape-run": "tsx src/scripts/rollbackScrapeRun.ts",
     "researchers:record-distinct-people": "tsx src/scripts/recordDistinctResearchers.ts",
+    "researchers:compute-email-support": "tsx src/scripts/computeResearcherEmailSupport.ts",
+    "researchers:email-support-coverage": "tsx src/scripts/researcherEmailSupportCoverage.ts",
     "researchers:dedupe-accountless-shells": "tsx src/scripts/dedupeAccountlessResearcherShells.ts",
     "research-entity:merge-same-lead-duplicate-groups": "tsx src/scripts/mergeSameLeadDuplicateGroups.ts",
     "research-entity:merge-eponymous-fra": "tsx src/scripts/researchEntityEponymousMergeStage.ts",
