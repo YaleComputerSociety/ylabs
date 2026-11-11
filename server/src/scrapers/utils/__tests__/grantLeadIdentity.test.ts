@@ -101,9 +101,7 @@ describe('an investigator is provably not the row lead only on positive evidence
 
   it('is provable for every listed investigator on a row with no lead', () => {
     const other = { id: 'other', displayName: 'Quinn Synthetic', netid: 'qs2' };
-    expect(investigatorIsProvablyNotALead({ researcherId: 'other' }, [], listed(other))).toBe(
-      true,
-    );
+    expect(investigatorIsProvablyNotALead({ researcherId: 'other' }, [], listed(other))).toBe(true);
     expect(
       investigatorIsProvablyNotALead({ profileId: 7, name: 'Quinn Otherfamily' }, [], new Map()),
     ).toBe(true);
