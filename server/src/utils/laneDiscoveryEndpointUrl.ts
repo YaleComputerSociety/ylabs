@@ -62,7 +62,7 @@ const hostOf = (value: unknown): string | undefined => {
 /**
  * Prefers a grant the endpoint's own lane recorded, because that lane is the one the
  * credited field came from. The DOE lane stores its award search form as every grant's
- * url, so a row whose only principal-investigator grants come from it has no page to cite.
+ * url, so a row whose only grants come from it has no page to cite.
  */
 export function servedGrantPageUrl(
   recentGrants: unknown,
@@ -70,7 +70,7 @@ export function servedGrantPageUrl(
 ): string | undefined {
   if (!Array.isArray(recentGrants)) return undefined;
   const pages = recentGrants.flatMap((grant) =>
-    grant?.role === 'pi' && parsedHttpUrl(grant.url) && !isLaneDiscoveryEndpointUrl(grant.url)
+    parsedHttpUrl(grant?.url) && !isLaneDiscoveryEndpointUrl(grant.url)
       ? [String(grant.url).trim()]
       : [],
   );

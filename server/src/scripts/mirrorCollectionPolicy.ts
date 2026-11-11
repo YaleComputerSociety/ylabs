@@ -42,6 +42,7 @@ export const NEVER_COPY_COLLECTIONS = [
   'search_rerank_cache',
   'model_call_usages',
   'directory_removal_requests',
+  'dev_write_launches',
 ];
 
 // The Development refresh clears every collection the Beta mirror does not
@@ -71,6 +72,7 @@ export const PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS = [
   'model_call_usages',
   'directory_removal_requests',
   'scrape_job_locks',
+  'dev_write_launches',
 ];
 
 // scrape_job_locks used to be ephemeral, but it now holds the Development write

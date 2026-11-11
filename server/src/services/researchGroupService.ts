@@ -14,7 +14,13 @@
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
 import { type OfficialRosterUndergraduateStatus } from '../models/storedVocabularies';
-import { publicStudentVisibilityTiers, StudentVisibilityTier } from '../models/studentVisibility';
+import {
+  effectiveStudentVisibilityTier,
+  isStudentVisibilityTier,
+  publicStudentVisibilityTiers,
+  servedStudentVisibilityTierFilter,
+  servesStudentVisibilityTier,
+} from '../models/studentVisibility';
 import { partitionStudentVisibilityReasons } from './studentVisibilityTier';
 import {
   pinRoleAssignmentUpsertToLiveEdge,
@@ -182,6 +188,11 @@ import {
 import { getResearchSearchSpellingVocabulary } from './researchSearchSpellingVocabulary';
 import { replaceNicknameInQuery, resolveNicknameInNameQuery } from './nameQueryNicknames';
 import { foldLatinDiacritics } from '../utils/latinDiacritics';
+import {
+  SERVICE_CORE_DEMOTION_WINDOW,
+  orderServiceCoresBelowResearch,
+  serviceCoreDemotionExemption,
+} from './serviceCoreDemotion';
 import {
   maxReachableResearchSearchPage,
   RESEARCH_SEARCH_MAX_REACHABLE_RECORDS,
@@ -1116,9 +1127,11 @@ const mongoVisibilityFilter = (
   includeNonPublic?: boolean,
 ): Record<string, any> => {
   if (filters.studentVisibilityTier?.length) {
-    return { studentVisibilityTier: { $in: filters.studentVisibilityTier } };
+    return servedStudentVisibilityTierFilter(
+      filters.studentVisibilityTier.filter(isStudentVisibilityTier),
+    );
   }
-  return includeNonPublic ? {} : { studentVisibilityTier: { $in: publicStudentVisibilityTiers } };
+  return includeNonPublic ? {} : servedStudentVisibilityTierFilter();
 };
 
 const servesPublicResearchDetail = researchEntityServesPublicDetail;
@@ -1740,16 +1753,20 @@ const liveIndexSortability = async (
   return (field) => sortable === null || sortable.has(field);
 };
 
-export const withHiringRowsFirst = <T extends Record<string, unknown>>(hits: T[]): T[] => {
-  const rank = (hit: T) => {
-    const value = hit[UNDERGRAD_INVITATION_RANK_FIELD];
-    return typeof value === 'number' ? value : 0;
-  };
-  return hits
-    .map((hit, position) => ({ hit, position }))
-    .sort((a, b) => rank(b.hit) - rank(a.hit) || a.position - b.position)
-    .map(({ hit }) => hit);
+const undergradInvitationRankOf = (hit: Record<string, unknown>): number => {
+  const value = hit[UNDERGRAD_INVITATION_RANK_FIELD];
+  return typeof value === 'number' ? value : 0;
 };
+
+export const withHiringRowsFirst = <T extends Record<string, unknown>>(hits: T[]): T[] =>
+  hits
+    .map((hit, position) => ({ hit, position }))
+    .sort(
+      (a, b) =>
+        undergradInvitationRankOf(b.hit) - undergradInvitationRankOf(a.hit) ||
+        a.position - b.position,
+    )
+    .map(({ hit }) => hit);
 
 const liveIndexFilterability = async (
   meiliIndex: Awaited<ReturnType<typeof getMeiliSearchIndex>>,
@@ -2946,6 +2963,51 @@ async function searchResearchGroupsForQuery(
   // queries already come back pre-paginated from Meilisearch, so they are used
   // as-is. See #1064.
   const rerankedPool = rerankScores ? applyCachedRerank(servedPool, rerankScores) : servedPool;
+  // Runs after the cached rerank, which scores relevance rather than kind, so a cached
+  // score cannot lift a core back above research rows; the rerank-candidate read skips it
+  // so the rows it scores are the pre-demotion window the cache reorders (#5748).
+  const demotesServiceCores =
+    paginateHybridPoolLocally &&
+    runsSemanticLeg &&
+    !withRerankCandidateFingerprints &&
+    serviceCoreDemotionExemption({
+      answeredAsNameSearch: keywordLegTopHitNamesTheQuery,
+      filters: safeFilters,
+    }) === null;
+  const pageRowIds = (hits: any[]): string[] =>
+    hits
+      .map((hit: any) => hit.id || hit._id)
+      .map(normalizeResearchGroupObjectId)
+      .filter((id): id is string => Boolean(id));
+  const loadPageRows = async (ids: string[]): Promise<any[]> =>
+    ids.length > 0
+      ? ((await ResearchEntity.find({
+          _id: { $in: ids },
+          archived: { $ne: true },
+          ...mongoVisibilityFilter(safeFilters, safeOptions.includeNonPublic),
+        }).lean()) as any[])
+      : [];
+  // The demotion only reorders within its window, so the window plus the requested page
+  // holds every row the page can serve; one read supplies both the demotion facts and
+  // the page instead of a second round trip before hydration (#5748).
+  const preloadedPageRows = demotesServiceCores
+    ? await loadPageRows([
+        ...new Set(
+          pageRowIds([
+            ...rerankedPool.slice(0, SERVICE_CORE_DEMOTION_WINDOW),
+            ...rerankedPool.slice(offset, offset + safePageSize),
+          ]),
+        ),
+      ])
+    : null;
+  const servedOrder = preloadedPageRows
+    ? orderServiceCoresBelowResearch(rerankedPool, {
+        queryTokens: normalizedQuery.tokens,
+        idOf: candidateHitId,
+        factsById: new Map(preloadedPageRows.map((row) => [String(row._id), row])),
+        ...(ordersHiringFirst ? { tierOf: undergradInvitationRankOf } : {}),
+      })
+    : rerankedPool;
   const rerankLiveMissGate: SearchRerankLiveMissGate = !(
     paginateHybridPoolLocally && runsSemanticLeg
   )
@@ -2988,7 +3050,7 @@ async function searchResearchGroupsForQuery(
     );
   }
   const orderedHits = paginateHybridPoolLocally
-    ? rerankedPool.slice(offset, offset + safePageSize)
+    ? servedOrder.slice(offset, offset + safePageSize)
     : reorderedPool;
   const facetsTalliedOverPool = POOL_TALLIED_RESEARCH_FACETS.filter(
     ({ indexField }) =>
@@ -3001,18 +3063,12 @@ async function searchResearchGroupsForQuery(
       : undefined
     : disjunctiveRawFacetDistribution;
   const facetDistribution = toClientFacetDistribution(rawServedFacetDistribution);
-  const hitIds = orderedHits
-    .map((hit: any) => hit.id || hit._id)
-    .map(normalizeResearchGroupObjectId)
-    .filter((id): id is string => Boolean(id));
+  const hitIds = pageRowIds(orderedHits);
+  const servedHitIds = new Set(hitIds);
   const visibleEntities = withServablePublicResearchEntities(
-    hitIds.length > 0
-      ? ((await ResearchEntity.find({
-          _id: { $in: hitIds },
-          archived: { $ne: true },
-          ...mongoVisibilityFilter(safeFilters, safeOptions.includeNonPublic),
-        }).lean()) as any[])
-      : [],
+    preloadedPageRows
+      ? preloadedPageRows.filter((row) => servedHitIds.has(researchGroupDocumentId(row._id)))
+      : await loadPageRows(hitIds),
     safeOptions.includeNonPublic,
   );
   const visibleEntitiesById = new Map(
@@ -3648,7 +3704,7 @@ const PAGE_LEAD_OWN_RESEARCH_CANDIDATE_SLACK = 5;
 // official-roster lead, hand the copy sanitizer a short lead list, and make a rail
 // card strip the very name its own detail page keeps (#2240).
 export const PUBLIC_RELATED_ENTITY_PROJECTION = withPublicDescriptionGateFields(
-  '_id slug departments school studentVisibilityTier rosterEnrichment',
+  '_id slug departments school studentVisibilityTier studentVisibilityOverrideTier rosterEnrichment',
 );
 
 const MAX_SIMILAR_RESEARCH_ENTITIES = 6;
@@ -3801,7 +3857,8 @@ const distinctEndpointIdsInOrder = (
     new Set(relationships.map((relationship) => researchGroupDocumentId(endpointId(relationship)))),
   );
 
-const RELATED_ENTITY_RANKING_PROJECTION = '_id slug name displayName studentVisibilityTier';
+const RELATED_ENTITY_RANKING_PROJECTION =
+  '_id slug name displayName studentVisibilityTier studentVisibilityOverrideTier';
 
 const tierEligibleRankingEntities = async (
   entityIds: readonly string[],
@@ -3810,13 +3867,13 @@ const tierEligibleRankingEntities = async (
   const entities = (await ResearchEntity.find({
     _id: { $in: entityIds },
     archived: { $ne: true },
-    studentVisibilityTier: { $in: publicStudentVisibilityTiers },
+    ...servedStudentVisibilityTierFilter(),
   })
     .select(RELATED_ENTITY_RANKING_PROJECTION)
     .lean()) as any[];
   return new Map(
     entities
-      .filter((entity) => publicStudentVisibilityTiers.includes(entity.studentVisibilityTier))
+      .filter((entity) => servesStudentVisibilityTier(entity))
       .map((entity) => [researchGroupDocumentId(entity._id), entity]),
   );
 };
@@ -3833,15 +3890,13 @@ const servableEntitiesById = async (
   const entities = (await ResearchEntity.find({
     _id: { $in: entityIds },
     archived: { $ne: true },
-    studentVisibilityTier: { $in: publicStudentVisibilityTiers },
+    ...servedStudentVisibilityTierFilter(),
   })
     .select(PUBLIC_RELATED_ENTITY_PROJECTION)
     .lean()) as any[];
   return new Map(
     withServablePublicResearchEntities(
-      entities.filter((entity) =>
-        publicStudentVisibilityTiers.includes(entity.studentVisibilityTier),
-      ),
+      entities.filter((entity) => servesStudentVisibilityTier(entity)),
       false,
     ).map((entity) => [researchGroupDocumentId(entity._id), entity]),
   );
@@ -4210,7 +4265,7 @@ export async function listSimilarResearchEntities(
   const candidateEntities = (await ResearchEntity.find({
     _id: { $in: orderedCandidateIds },
     archived: { $ne: true },
-    studentVisibilityTier: { $in: publicStudentVisibilityTiers },
+    ...servedStudentVisibilityTierFilter(),
   })
     .select(PUBLIC_RELATED_ENTITY_PROJECTION)
     .lean()) as any[];
@@ -4623,8 +4678,7 @@ export const normalizeResearchDetailSlug = (value: unknown): string | undefined 
 
 const isPubliclyServableCanonicalTarget = (candidate: Record<string, any>): boolean =>
   candidate.archived !== true &&
-  !!candidate.studentVisibilityTier &&
-  publicStudentVisibilityTiers.includes(candidate.studentVisibilityTier as StudentVisibilityTier) &&
+  servesStudentVisibilityTier(candidate) &&
   !researchEntityHasDeceasedLead(candidate) &&
   typeof candidate.slug === 'string' &&
   candidate.slug.trim().length > 0;
@@ -4869,13 +4923,11 @@ export async function getResearchGroupDetail(
   const group = await ResearchEntity.findOne({
     slug: normalizedSlug,
     archived: { $ne: true },
-    ...(includeWithheldForOperator
-      ? {}
-      : { studentVisibilityTier: { $in: publicStudentVisibilityTiers } }),
+    ...(includeWithheldForOperator ? {} : servedStudentVisibilityTierFilter()),
   }).lean();
   if (!group) return null;
   const withheldBy: ResearchDetailWithholdingCheck[] = [];
-  if (!publicStudentVisibilityTiers.includes((group as any).studentVisibilityTier)) {
+  if (!servesStudentVisibilityTier(group as Record<string, any>)) {
     withheldBy.push('visibility_tier');
   }
   if (researchEntityHasDeceasedLead(group as Record<string, any>)) {
@@ -5030,7 +5082,7 @@ export async function getResearchGroupDetail(
   return {
     ...detail,
     operatorPreview: {
-      studentVisibilityTier: String((group as any).studentVisibilityTier ?? ''),
+      studentVisibilityTier: effectiveStudentVisibilityTier(group as any),
       ...operatorPreviewReasons((group as any).studentVisibilityReasons),
       studentVisibilitySuppressionReason:
         (group as any).studentVisibilitySuppressionReason || undefined,

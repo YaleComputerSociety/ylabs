@@ -312,7 +312,7 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
     },
     yaleStatusReasonCache: {
       type: String,
-      enum: ['deceased', 'departed', ''],
+      enum: ['deceased', 'departed', 'lead_departed', ''],
       default: '',
     },
     lastSeenInCompleteRosterAt: {
@@ -409,7 +409,7 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
           endDate: { type: Date },
           dollarAmount: { type: Number },
           url: { type: String },
-          role: { type: String, enum: ['pi', 'copi'], default: 'pi' },
+          role: { type: String, enum: ['pi', 'copi'], required: false },
         },
       ],
       default: [],

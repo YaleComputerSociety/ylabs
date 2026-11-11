@@ -34,6 +34,8 @@ import { ScrapeRun } from '../../models/scrapeRun';
 import { dedupeAccountlessResearcherShells } from '../../scripts/dedupeAccountlessResearcherShells';
 import { getResearchGroupDetail } from '../../services/researchGroupService';
 import { materializeFromRun } from '../entityMaterializer';
+import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
+import { resetDirectoryNetidsByAddressCache } from '../directoryContradictedProfileNetid';
 import { appendObservations } from '../observationStore';
 import {
   CentersInstitutesScraper,
@@ -91,7 +93,14 @@ const fetcherFor =
   };
 
 const profilePage = (
-  options: { canonical?: string; email?: string; netid?: string; links?: string[] } = {},
+  options: {
+    canonical?: string;
+    email?: string;
+    assistantEmail?: string;
+    netid?: string;
+    links?: string[];
+    title?: string;
+  } = {},
 ) => {
   const head = options.canonical ? `<link rel="canonical" href="${options.canonical}">` : '';
   const jsonLd = options.netid
@@ -100,9 +109,13 @@ const profilePage = (
         identifier: { propertyID: 'NetID', value: options.netid },
       })}</script>`
     : '';
-  const mail = options.email ? `<a href="mailto:${options.email}">Email</a>` : '';
+  const mail = [options.email, options.assistantEmail]
+    .filter(Boolean)
+    .map((address) => `<a href="mailto:${address}">Email</a>`)
+    .join('');
   const links = (options.links ?? []).map((href) => `<a href="${href}">Related</a>`).join('');
-  return `<html><head>${head}${jsonLd}</head><body><h1>Profile</h1>${mail}${links}</body></html>`;
+  const title = options.title ? `<p class="profile-title">${options.title}</p>` : '';
+  return `<html><head>${head}${jsonLd}</head><body><h1>Profile</h1>${title}${mail}${links}</body></html>`;
 };
 
 const afterAMoment = () => new Promise((resolve) => setTimeout(resolve, 5));
@@ -229,6 +242,20 @@ const servedNames = async (): Promise<string[]> => {
     .filter(Boolean);
 };
 
+const directoryPairs = (netid: string, email: string) =>
+  Observation.create({
+    entityType: 'user',
+    entityKey: `netid:${netid}`,
+    sourceId: new mongoose.Types.ObjectId(),
+    sourceName: 'yale-directory',
+    sourceUrl: 'https://directory.example.test/',
+    confidence: 0.95,
+    observedAt: LONG_AGO,
+    superseded: false,
+    field: 'email',
+    value: email,
+  });
+
 const seedCenter = () => runLane({}, []);
 
 describe(
@@ -250,6 +277,7 @@ describe(
 
     beforeEach(async () => {
       clearC4Flags();
+      resetDirectoryNetidsByAddressCache();
       const db = mongoose.connection.db;
       if (!db) throw new Error('no db');
       for (const name of [
@@ -369,6 +397,168 @@ describe(
       expect(await researchersNamed('Avery')).toBe(1);
       expect((await edgeById(averyEdge))?.rosterProvenance).toBeUndefined();
       expect(await liveEdgesOf(otherPerson)).toHaveLength(0);
+    });
+
+    it('does not join a same-name holder of a linked page when the member page address names another netid (#5751)', async () => {
+      const namesake = await accountHolder('Avery', {
+        officialUrl: officialProfileUrl('Avery'),
+        netid: 'nm77',
+      });
+      await directoryPairs('nm77', 'nm77@fixture.example.edu');
+      await directoryPairs('as77', 'avery.synthetic@yale.edu');
+
+      await runLane({
+        [centerProfileUrl('Avery')]: profilePage({
+          email: 'avery.synthetic@yale.edu',
+          links: [officialProfileUrl('Avery')],
+        }),
+      });
+
+      expect(await liveEdgesOf(namesake)).toHaveLength(0);
+    });
+
+    it("still joins the member when their page also carries another person's netid-shaped address (#5751)", async () => {
+      const member = await accountHolder('Avery', {
+        officialUrl: officialProfileUrl('Avery'),
+        netid: 'av77',
+      });
+      await directoryPairs('av77', 'av77@yale.edu');
+      await directoryPairs('xy45', 'xy45@yale.edu');
+
+      await runLane({
+        [centerProfileUrl('Avery')]: profilePage({
+          email: 'av77@yale.edu',
+          assistantEmail: 'xy45@yale.edu',
+          links: [officialProfileUrl('Avery')],
+        }),
+      });
+
+      expect(await liveEdgesOf(member)).toHaveLength(1);
+    });
+
+    it('still joins a holder whose stored netid the directory does not hold (#5751)', async () => {
+      const holder = await accountHolder('Devon', {
+        officialUrl: officialProfileUrl('Devon'),
+        netid: 'dv44',
+      });
+      await directoryPairs('ds77', 'devon.synthetic4@yale.edu');
+
+      await runLane({
+        [centerProfileUrl('Devon')]: profilePage({
+          canonical: officialProfileUrl('Devon'),
+          email: 'devon.synthetic4@yale.edu',
+        }),
+      });
+
+      expect(await liveEdgesOf(holder)).toHaveLength(1);
+    });
+
+    it('does not join the holder of a linked page whose own stated address names another netid (#5751)', async () => {
+      const holder = await accountHolder('Blair', {
+        officialUrl: officialProfileUrl('Blair'),
+        netid: 'bh77',
+      });
+      await directoryPairs('bh77', 'bh77@fixture.example.edu');
+      await directoryPairs('ot77', 'blair.synthetic3@yale.edu');
+      await Observation.create({
+        entityType: 'user',
+        entityKey: 'netid:ot77',
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: 'official-profile-pi-backfill',
+        sourceUrl: officialProfileUrl('Blair'),
+        confidence: 0.9,
+        observedAt: LONG_AGO,
+        superseded: false,
+        field: 'email',
+        value: 'blair.synthetic3@yale.edu',
+      });
+
+      await runLane({
+        [centerProfileUrl('Blair')]: profilePage({ canonical: officialProfileUrl('Blair') }),
+      });
+
+      expect(await liveEdgesOf(holder)).toHaveLength(0);
+    });
+
+    it('does not join a holder through a profile link the holder refuses (#5751)', async () => {
+      const holder = await accountHolder('Casey', { officialUrl: officialProfileUrl('Casey') });
+      await Researcher.updateOne(
+        { _id: holder },
+        {
+          $set: {
+            'fieldValueRefusals.profileLink': [
+              {
+                valueKey: fieldValueRefusalKey('profileLink', officialProfileUrl('Casey')),
+                rule: 'other_persons_page',
+                refusedBy: 'test',
+                refusedAt: LONG_AGO,
+                note: 'another person page',
+              },
+            ],
+          },
+        },
+      );
+
+      await runLane({
+        [centerProfileUrl('Casey')]: profilePage({ canonical: officialProfileUrl('Casey') }),
+      });
+
+      expect(await liveEdgesOf(holder)).toHaveLength(0);
+    });
+
+    it('serves a listing whose profile title names only a staff role as staff, not faculty (#5746)', async () => {
+      const avery = await accountHolder('Avery', { officialUrl: officialProfileUrl('Avery') });
+      const page = profilePage({
+        canonical: officialProfileUrl('Avery'),
+        title: 'Senior Administrative Assistant',
+      });
+
+      await runLane({ [centerProfileUrl('Avery')]: page });
+      const afterFirst = await liveEdgesOf(avery);
+      await runLane({ [centerProfileUrl('Avery')]: page });
+      const afterSecond = await liveEdgesOf(avery);
+
+      expect(afterFirst.map((edge) => edge.role)).toEqual(['STAFF']);
+      expect(afterSecond.map((edge) => String(edge._id))).toEqual(
+        afterFirst.map((edge) => String(edge._id)),
+      );
+      expect((await researcherById(avery))?.profile?.title).toBeUndefined();
+    });
+
+    it('ends the faculty edge of a listing the profile title shows is staff (#5746)', async () => {
+      const blair = await accountHolder('Blair', { officialUrl: officialProfileUrl('Blair') });
+      await runLane({
+        [centerProfileUrl('Blair')]: profilePage({ canonical: officialProfileUrl('Blair') }),
+      });
+      expect((await liveEdgesOf(blair)).map((edge) => edge.role)).toEqual(['CORE_FACULTY']);
+
+      await runLane({
+        [centerProfileUrl('Blair')]: profilePage({
+          canonical: officialProfileUrl('Blair'),
+          title: 'Grants and Finance Manager',
+        }),
+      });
+
+      expect((await liveEdgesOf(blair)).map((edge) => edge.role)).toEqual(['STAFF']);
+    });
+
+    it('keeps the faculty role for postdoc and research scientist titles (#5746)', async () => {
+      const casey = await accountHolder('Casey', { officialUrl: officialProfileUrl('Casey') });
+      const devon = await accountHolder('Devon', { officialUrl: officialProfileUrl('Devon') });
+
+      await runLane({
+        [centerProfileUrl('Casey')]: profilePage({
+          canonical: officialProfileUrl('Casey'),
+          title: 'Postdoctoral Associate',
+        }),
+        [centerProfileUrl('Devon')]: profilePage({
+          canonical: officialProfileUrl('Devon'),
+          title: 'Associate Research Scientist',
+        }),
+      });
+
+      expect((await liveEdgesOf(casey)).map((edge) => edge.role)).toEqual(['CORE_FACULTY']);
+      expect((await liveEdgesOf(devon)).map((edge) => edge.role)).toEqual(['CORE_FACULTY']);
     });
 
     it('resolves to nobody when the evidence reaches two agreeing people', async () => {

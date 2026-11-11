@@ -1,4 +1,8 @@
-import { studentVisibilityTiers, type StudentVisibilityTier } from '../models/studentVisibility';
+import {
+  holdingStudentVisibilityOverrideTiers,
+  studentVisibilityTiers,
+  type StudentVisibilityTier,
+} from '../models/studentVisibility';
 import { isAuditableActor } from '../services/adminAuditService';
 import { containsAsciiControl } from '../utils/asciiControl';
 import {
@@ -190,8 +194,10 @@ export function overrideState(entity: OverrideCandidate): OverrideState {
 }
 
 /**
- * The gate, not this tool, decides the served tier: it honours the override except where a
- * correctness floor outranks it, so `after.tier` is left for `student-visibility:gate`.
+ * A hold is written to the stored tier at once, because every serve path already reads a
+ * hold as the tier and a stored tier left above it would disagree with them (#5783). A
+ * release or a clear is left for `student-visibility:gate`, which honours the override
+ * except where a correctness floor outranks it.
  */
 export function planStudentVisibilityOverride(
   entity: OverrideCandidate,
@@ -220,7 +226,14 @@ export function planStudentVisibilityOverride(
   }
 
   const suppressionReason = [...otherReasons, reason].join(', ');
-  if (before.overrideTier === action.tier && before.suppressionReason === suppressionReason) {
+  const tier = holdingStudentVisibilityOverrideTiers.includes(action.tier)
+    ? action.tier
+    : before.tier;
+  if (
+    before.overrideTier === action.tier &&
+    before.suppressionReason === suppressionReason &&
+    before.tier === tier
+  ) {
     return { action: 'skip', reason: 'already_recorded', before };
   }
   return {
@@ -228,9 +241,10 @@ export function planStudentVisibilityOverride(
     set: {
       studentVisibilityOverrideTier: action.tier,
       studentVisibilitySuppressionReason: suppressionReason,
+      ...(tier !== before.tier ? { studentVisibilityTier: tier } : {}),
     },
     unset: {},
     before,
-    after: { tier: before.tier, overrideTier: action.tier, suppressionReason },
+    after: { tier, overrideTier: action.tier, suppressionReason },
   };
 }

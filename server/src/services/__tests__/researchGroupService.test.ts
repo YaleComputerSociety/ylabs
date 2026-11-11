@@ -3374,6 +3374,7 @@ describe('searchResearchGroupsViaMeili', () => {
       _id: { $in: [staleEntityId, currentEntityId] },
       archived: { $ne: true },
       studentVisibilityTier: { $in: ['student_ready'] },
+      studentVisibilityOverrideTier: { $nin: ['operator_review', 'suppressed'] },
     });
     expect(result.researchEntities).toEqual([
       expect.objectContaining({
@@ -3675,7 +3676,17 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(mocks.researchEntityFind).toHaveBeenCalledWith({
       _id: { $in: [reviewEntityId] },
       archived: { $ne: true },
-      studentVisibilityTier: { $in: ['operator_review'] },
+      $and: [
+        {
+          $or: [
+            { studentVisibilityOverrideTier: { $in: ['operator_review'] } },
+            {
+              studentVisibilityTier: { $in: ['operator_review'] },
+              studentVisibilityOverrideTier: { $nin: ['operator_review', 'suppressed'] },
+            },
+          ],
+        },
+      ],
     });
     expect(result.researchEntities).toEqual([
       expect.objectContaining({ _id: 'review-lab', studentVisibilityTier: 'operator_review' }),
@@ -3812,6 +3823,7 @@ describe('getResearchGroupDetail', () => {
       slug: 'hidden-lab',
       archived: { $ne: true },
       studentVisibilityTier: { $in: ['student_ready'] },
+      studentVisibilityOverrideTier: { $nin: ['operator_review', 'suppressed'] },
     });
   });
 
@@ -5045,6 +5057,7 @@ describe('listResearchEntityRelationshipPayload', () => {
       _id: { $in: [publicInstituteId, reviewInstituteId] },
       archived: { $ne: true },
       studentVisibilityTier: { $in: ['student_ready'] },
+      studentVisibilityOverrideTier: { $nin: ['operator_review', 'suppressed'] },
     });
     expect(result).toEqual({
       entityRelationships: [],

@@ -23,15 +23,23 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'research-entity:mint-fra-named-researchers';
 
-interface Args {
+export interface Args {
   apply: boolean;
   confirm: boolean;
   maxApply: number;
   output?: string;
+  slugs: string[];
+}
+
+function splitSlugs(value: string | undefined): string[] {
+  return String(value ?? '')
+    .split(',')
+    .map((slug) => slug.trim())
+    .filter(Boolean);
 }
 
 export function parseArgs(argv: string[]): Args {
-  const args: Args = { apply: false, confirm: false, maxApply: 250 };
+  const args: Args = { apply: false, confirm: false, maxApply: 250, slugs: [] };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--apply') args.apply = true;
@@ -42,22 +50,24 @@ export function parseArgs(argv: string[]): Args {
       args.maxApply = Number(arg.slice('--max-apply='.length));
     else if (arg === '--output') args.output = argv[++index];
     else if (arg.startsWith('--output=')) args.output = arg.slice('--output='.length);
+    else if (arg === '--slug') args.slugs.push(...splitSlugs(argv[++index]));
+    else if (arg.startsWith('--slug=')) args.slugs.push(...splitSlugs(arg.slice('--slug='.length)));
     else throw new Error(`Unknown ${SCRIPT_NAME} argument: ${arg}`);
   }
+  if (
+    argv.some((arg) => arg === '--slug' || arg.startsWith('--slug=')) &&
+    args.slugs.length === 0
+  ) {
+    throw new Error('--slug requires at least one research entity slug');
+  }
+  args.slugs = [...new Set(args.slugs)];
   if (!Number.isSafeInteger(args.maxApply) || args.maxApply < 1) {
     throw new Error('--max-apply must be a safe positive integer');
   }
   return args;
 }
 
-async function main() {
-  const args = parseArgs(process.argv.slice(2));
-  const guard = assertScriptApplyAllowed({
-    apply: args.apply,
-    scriptName: SCRIPT_NAME,
-    mongoUrl: process.env.MONGODBURL,
-  });
-  await initializeConnections();
+export async function runMintFraNamedResearchers(args: Args) {
   const removalGuard = await loadDirectoryRemovalMintGuard();
 
   const researchers = await Researcher.find({ archived: { $ne: true } })
@@ -73,22 +83,29 @@ async function main() {
     }
   }
 
+  const scoped = args.slugs.length > 0;
   const entities = await ResearchEntity.find({
     archived: { $ne: true },
     studentVisibilityReasons: 'missing_lead',
+    ...(scoped ? { slug: { $in: args.slugs } } : {}),
   })
     .select('_id slug name entityType sourceUrls studentVisibilityReasons')
     .lean();
+  const scopeRefusals = new Map<string, string>();
 
   const planned: Array<{
     entityId: string;
     personName: string;
     profileUrl: string;
     entityType?: string;
+    slug?: string;
   }> = [];
   for (const entity of entities as any[]) {
     const plan = planResearcherMint(entity, existingExactNames, claimedProfileKeys);
-    if (!plan) continue;
+    if (!plan) {
+      scopeRefusals.set(entity.slug, 'no named lead with an unclaimed cited Yale profile url');
+      continue;
+    }
     const entityId = serializedDocumentId(entity._id);
     if (!entityId) continue;
     const existingRole = await RoleAssignment.countDocuments({
@@ -96,9 +113,13 @@ async function main() {
       'target.id': new mongoose.Types.ObjectId(entityId),
       archived: { $ne: true },
     });
-    if (existingRole > 0) continue;
+    if (existingRole > 0) {
+      scopeRefusals.set(entity.slug, 'already has a current role assignment');
+      continue;
+    }
     if (removalGuard.refusesPerson({ profileLinks: [{ url: plan.profileUrl }] })) {
       removalGuard.recordRefusal();
+      scopeRefusals.set(entity.slug, 'refused as removed by request');
       continue;
     }
     planned.push({
@@ -106,8 +127,11 @@ async function main() {
       personName: plan.personName,
       profileUrl: plan.profileUrl,
       entityType: entity.entityType,
+      slug: entity.slug,
     });
   }
+
+  if (scoped) await assertEverySlugIsACandidate(args.slugs, planned, scopeRefusals);
 
   if (args.apply) {
     if (!args.confirm)
@@ -163,11 +187,9 @@ async function main() {
     });
   }
 
-  const report = {
-    generatedAt: new Date().toISOString(),
-    environment: guard.environment,
-    db: guard.dbLabel,
+  return {
     mode: args.apply ? 'apply' : 'dry-run',
+    ...(scoped ? { scopedSlugs: args.slugs } : {}),
     leadBlockedExamined: entities.length,
     existingResearchers: displayNames.length,
     claimedProfileUrls: claimedProfileKeys.size,
@@ -181,6 +203,50 @@ async function main() {
       acc[key] = (acc[key] || 0) + 1;
       return acc;
     }, {}),
+  };
+}
+
+async function assertEverySlugIsACandidate(
+  slugs: readonly string[],
+  planned: ReadonlyArray<{ slug?: string }>,
+  scopeRefusals: Map<string, string>,
+): Promise<void> {
+  const plannedSlugs = new Set(planned.map((row) => row.slug));
+  const refusals: string[] = [];
+  for (const slug of slugs) {
+    if (plannedSlugs.has(slug)) continue;
+    refusals.push(`${slug}: ${scopeRefusals.get(slug) ?? (await nonCandidateReason(slug))}`);
+  }
+  if (refusals.length > 0) {
+    throw new Error(
+      `${SCRIPT_NAME} --slug names ${refusals.length} row(s) that are not mint candidates, so nothing was planned or written:\n${refusals.join('\n')}`,
+    );
+  }
+}
+
+async function nonCandidateReason(slug: string): Promise<string> {
+  const row = (await ResearchEntity.findOne({ slug })
+    .select('archived studentVisibilityReasons')
+    .lean()) as { archived?: boolean } | null;
+  if (!row) return 'no research entity has this slug';
+  if (row.archived) return 'archived';
+  return 'not missing_lead';
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  const guard = assertScriptApplyAllowed({
+    apply: args.apply,
+    scriptName: SCRIPT_NAME,
+    mongoUrl: process.env.MONGODBURL,
+  });
+  await initializeConnections();
+  const result = await runMintFraNamedResearchers(args);
+  const report = {
+    generatedAt: new Date().toISOString(),
+    environment: guard.environment,
+    db: guard.dbLabel,
+    ...result,
   };
 
   if (args.output) {

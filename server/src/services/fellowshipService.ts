@@ -14,6 +14,7 @@ import {
 import {
   isStudentVisibilityTier,
   publicStudentVisibilityTiers,
+  servedStudentVisibilityTierFilter,
   type StudentVisibilityTier,
 } from '../models/studentVisibility';
 import * as itemOps from './itemOperations';
@@ -144,7 +145,7 @@ const boundedSearchFilterValues = (values?: unknown[]): string[] => {
 };
 
 const publicFellowshipFilter = (options: FellowshipReadOptions = {}) =>
-  options.includeNonPublic ? {} : { studentVisibilityTier: { $in: publicStudentVisibilityTiers } };
+  options.includeNonPublic ? {} : servedStudentVisibilityTierFilter();
 
 const PUBLIC_FELLOWSHIP_TEXT_FIELDS = new Set([
   'compensationSummary',
@@ -961,15 +962,16 @@ export const searchFellowships = async (params: {
 
   const filter: any = { archived: false };
   if (includeNonPublic && safeStudentVisibilityTier.length > 0) {
-    filter.studentVisibilityTier = { $in: safeStudentVisibilityTier };
+    Object.assign(filter, servedStudentVisibilityTierFilter(safeStudentVisibilityTier));
   } else if (includeNonPublic && includeSuppressed) {
     // Admin/operator mode: keep all archived=false tiers in scope.
   } else if (includeNonPublic && includeOperatorReview) {
-    filter.studentVisibilityTier = {
-      $in: [...publicStudentVisibilityTiers, 'operator_review'],
-    };
+    Object.assign(
+      filter,
+      servedStudentVisibilityTierFilter([...publicStudentVisibilityTiers, 'operator_review']),
+    );
   } else {
-    filter.studentVisibilityTier = { $in: publicStudentVisibilityTiers };
+    Object.assign(filter, servedStudentVisibilityTierFilter());
   }
 
   if (safeSubjects.length > 0) {

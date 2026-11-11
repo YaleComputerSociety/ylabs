@@ -49,6 +49,7 @@ import {
   resolveGrantEnrichmentTarget,
 } from '../utils/grantEnrichmentTarget';
 import { recentGrantPeriodsOf } from '../utils/recentGrantPeriods';
+import { mergeGrantInvestigators, type GrantInvestigator } from '../utils/grantInvestigators';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 
@@ -154,6 +155,7 @@ export interface RecentGrantRecord {
   dollarAmount: number;
   url: string;
   role: 'pi' | 'copi';
+  investigators?: GrantInvestigator[];
 }
 
 // ---------------------------------------------------------------------------
@@ -411,13 +413,48 @@ export function groupGrantsByProject(grants: readonly NihGrant[]): NihGrant[][] 
   return [...projects.values()];
 }
 
-export function projectToRecord(records: readonly NihGrant[]): RecentGrantRecord {
+export type NihPiResearcherLookup = (
+  pi: NihPrincipalInvestigator,
+  grant: NihGrant,
+) => string | undefined;
+
+export function nihAwardInvestigators(
+  records: readonly NihGrant[],
+  researcherIdForPi: NihPiResearcherLookup,
+): GrantInvestigator[] {
+  const newestFirst = [...records].sort(
+    (left, right) =>
+      fiscalYearRecency(right) - fiscalYearRecency(left) ||
+      (right.appl_id ?? 0) - (left.appl_id ?? 0),
+  );
+  const byProfileId = new Map<number, GrantInvestigator>();
+  for (const record of newestFirst) {
+    for (const pi of record.principal_investigators || []) {
+      if (!isProfileId(pi.profile_id) || byProfileId.has(pi.profile_id)) continue;
+      const researcherId = researcherIdForPi(pi, record);
+      byProfileId.set(pi.profile_id, {
+        contact: pi.is_contact_pi === true,
+        profileId: pi.profile_id,
+        ...(researcherId ? { researcherId } : {}),
+      });
+    }
+  }
+  return mergeGrantInvestigators([...byProfileId.values()]);
+}
+
+export function projectToRecord(
+  records: readonly NihGrant[],
+  researcherIdForPi?: NihPiResearcherLookup,
+): RecentGrantRecord {
   const newest = newestFiscalYearRecord(records);
   return {
     ...grantToRecord(newest),
     id: nihAwardKey(newest),
     startDate: earliestDate(records.map((record) => parseDate(record.project_start_date))),
     endDate: projectEndDate(records),
+    ...(researcherIdForPi
+      ? { investigators: nihAwardInvestigators(records, researcherIdForPi) }
+      : {}),
   };
 }
 
@@ -687,11 +724,12 @@ export function piGrantsToObservations(
   grants: NihGrant[],
   researcherId: string | undefined,
   existingRowSlug: string,
+  researcherIdForPi?: NihPiResearcherLookup,
 ): ObservationInput[] {
   if (grants.length === 0 || !existingRowSlug) return [];
 
   const awards = groupGrantsByProject(grants)
-    .map(projectToRecord)
+    .map((records) => projectToRecord(records, researcherIdForPi))
     .sort((a, b) => (b.startDate?.getTime() ?? 0) - (a.startDate?.getTime() ?? 0));
   const recentRecords = awards.slice(0, RECENT_GRANTS_PER_PI);
   const lastObservedAt = recentRecords
@@ -954,6 +992,12 @@ export class NihReporterScraper implements IScraper {
     let totalObs = 0;
     let processed = 0;
     const rows = new Map<string, { researcherIds: Set<string>; grants: NihGrant[] }>();
+    const researcherIdByCreditedName = new Map<string, string>();
+    const researcherIdForPi: NihPiResearcherLookup = (pi, grant) => {
+      if (!isProfileId(pi.profile_id) || !creditedProfileIds.has(pi.profile_id)) return undefined;
+      const name = pi.is_contact_pi ? pickContactPiName(grant) : principalInvestigatorName(pi);
+      return researcherIdByCreditedName.get(name);
+    };
     for (const [piName, grants] of piEntries) {
       processed++;
       const person = await resolveUserForPi(
@@ -965,6 +1009,7 @@ export class NihReporterScraper implements IScraper {
         },
         structuredNameFor(piName, grants),
       );
+      if (person.status === 'matched') researcherIdByCreditedName.set(piName, person.user._id);
       if (person.status === 'matched' && person.user.corroborated) corroboratedPis++;
       if (person.status === 'matched' && person.user.researchHomeEligible === false) {
         ineligibleLeadTitle++;
@@ -988,7 +1033,12 @@ export class NihReporterScraper implements IScraper {
 
     for (const [slug, row] of rows) {
       const soleResearcher = row.researcherIds.size === 1 ? [...row.researcherIds][0] : undefined;
-      const observations = piGrantsToObservations(row.grants, soleResearcher, slug);
+      const observations = piGrantsToObservations(
+        row.grants,
+        soleResearcher,
+        slug,
+        researcherIdForPi,
+      );
       await ctx.emit(observations);
       totalObs += observations.length;
     }

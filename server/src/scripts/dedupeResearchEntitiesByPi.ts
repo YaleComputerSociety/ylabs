@@ -88,6 +88,7 @@ import {
   LEAD_ROLE_LEGACY_LABELS,
 } from '../models/canonicalRoleMapping';
 import { connectScriptMongo } from '../db/connections';
+import { loadGrantCoPiListedLeadsByEntity } from '../services/grantCoPiListedLeads';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1153,9 +1154,20 @@ export async function loadSamePiCandidateRows(
     },
     { $limit: limit },
   ]);
+  const grantCoPiListedLeads = await loadGrantCoPiListedLeadsByEntity(
+    rows.flatMap((row: any) => (row.entities || []).map((entity: { id?: string }) => entity.id)),
+  );
 
   return Promise.all(
     rows.map(async (row: any) => {
+      const isGrantCoPiListing = (entity: { id?: string }) =>
+        Boolean(entity.id && grantCoPiListedLeads.get(entity.id)?.has(row._id.userId));
+      const grantCoPiListedEntityIds = (row.entities || [])
+        .filter(isGrantCoPiListing)
+        .map((entity: { id: string }) => entity.id);
+      const roleJoinedEntities = (row.entities || []).filter(
+        (entity: { id?: string }) => !isGrantCoPiListing(entity),
+      );
       const displayNameParts = String(row.piDisplayName || '')
         .trim()
         .split(/\s+/)
@@ -1185,8 +1197,9 @@ export async function loadSamePiCandidateRows(
         primaryAppointmentProfileUrl: primaryAppointmentProfileUrlFromLinks(
           row.piPrimaryIdentityUrls,
         ),
+        ...(grantCoPiListedEntityIds.length > 0 ? { grantCoPiListedEntityIds } : {}),
         entities: [
-          ...(row.entities || []).map((entity: { id?: string }) => ({
+          ...roleJoinedEntities.map((entity: { id?: string }) => ({
             ...entity,
             piRoleCorroborated: true,
           })),
@@ -3123,6 +3136,10 @@ async function main() {
     ),
     conflatedPersonProfileQuarantine,
     quarantinedConflatedPersonProfileGroups: conflatedPersonProfileQuarantine.length,
+    withheldGrantCoPiListings: piRows.reduce(
+      (sum, row) => sum + (row.grantCoPiListedEntityIds?.length ?? 0),
+      0,
+    ),
     ...(profileLabUrlOnly
       ? {
           refusedCandidatesByReason: countProfileLabUrlRefusalsByReason(profileLabUrlRefusals),

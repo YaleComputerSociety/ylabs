@@ -24,6 +24,7 @@ With the flag on, a non-empty text query whose candidate pool is paginated local
 After the keyword and semantic legs are fused and the student filters narrow the pool, `applyCachedRerank` reorders the first 30 rows by cached score, highest first, with the fused order as the tiebreak.
 A row the entry does not score takes the neutral score 1.5, and every row after the first 30 keeps its place.
 The reorder runs before the page is sliced, so every page of one search reads the same order, and the total and the facet counts are unchanged.
+The service core demotion (#5748) runs after it, so a cached score cannot lift a core above research rows, and the rerank-candidate read the live-miss job scores skips the demotion, so the rows it scores are the window the cache reorders.
 
 These searches are served exactly as without the flag:
 

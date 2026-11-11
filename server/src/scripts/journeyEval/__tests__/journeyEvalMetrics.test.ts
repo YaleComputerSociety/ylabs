@@ -6,6 +6,7 @@ import {
   checkDefaultBrowseOrderIsRepeatable,
   checkFacetAgreement,
   checkMeshDescriptorOnlyRowsRankBelowOwnEvidence,
+  checkServiceCoresRankBelowResearch,
   checkPersonNameWordsAreNotRespelled,
   checkNicknameExpansionReachesThePerson,
   checkDictionaryWordsAreNotRespelled,
@@ -728,6 +729,52 @@ describe('checkSimilarRailRanksSharedNamesLast', () => {
         [{ viewedSharesNames: false, cardsShareAName: [false] }],
         still,
         still,
+      ).status,
+    ).toBe('inconclusive');
+  });
+});
+
+describe('checkServiceCoresRankBelowResearch', () => {
+  const still = { rowCount: 10, latestUpdatedAt: '2026-11-11T00:00:00.000Z' };
+  const moved = { rowCount: 11, latestUpdatedAt: '2026-11-11T00:05:00.000Z' };
+  const research = { placement: 'research' as const, reason: 'research' };
+  const demoted = { placement: 'demoted' as const, reason: 'core-facility' };
+  const exempt = { placement: 'exempt' as const, reason: 'query-names-the-row' };
+
+  it('passes when an exempt core outranks research and demoted cores sit below it', () => {
+    const result = checkServiceCoresRankBelowResearch(
+      [{ query: 'chemistry', placements: [exempt, research, research, demoted] }],
+      still,
+      still,
+    );
+    expect(result.status).toBe('pass');
+    expect(result.detail).toMatchObject({
+      queries: [{ demotedRanks: [4], exempt: [{ rank: 1, reason: 'query-names-the-row' }] }],
+    });
+  });
+
+  it('fails when a demoted core outranks a research row', () => {
+    const result = checkServiceCoresRankBelowResearch(
+      [{ query: 'chemistry', placements: [research, demoted, research] }],
+      still,
+      still,
+    );
+    expect(result.status).toBe('fail');
+  });
+
+  it('is inconclusive over an empty population or a corpus that moved', () => {
+    expect(
+      checkServiceCoresRankBelowResearch(
+        [{ query: 'chemistry', placements: [research] }],
+        still,
+        still,
+      ).status,
+    ).toBe('inconclusive');
+    expect(
+      checkServiceCoresRankBelowResearch(
+        [{ query: 'chemistry', placements: [demoted, research] }],
+        still,
+        moved,
       ).status,
     ).toBe('inconclusive');
   });

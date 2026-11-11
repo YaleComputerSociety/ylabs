@@ -548,6 +548,15 @@ Every member of a group in `MATERIALIZER_DERIVED_FIELD_GROUPS` is written togeth
 The four grant fields (`recentGrants`, `recentGrantPeriods`, `recentGrantCount` and `fundingAgencies`) are one closure too, because `aggregateResearchEntityGrantEvidence` derives all four from one award union, so a count written without its list would disagree (#4418).
 That union keys an award by `grantAwardIdentity` (`server/src/scrapers/utils/grantAwardIdentity.ts`): the award number with case and punctuation dropped, scoped to its funder, with an NIH application number collapsed to its core project number and a DOE number keeping one identity with or without its `DE-` prefix, so an award two lanes report under two spellings is listed and counted once (#4593).
 When one award arrives twice, the record that ends later is kept.
+Before that union, each award is judged against the row's live leads (#5779).
+A grant lane pools every researcher that maps to one row into one observation, so an award on its own never said whose it was, and every entry was stored as `pi`.
+Each lane now records the award's investigators on the entry (`investigators`: the contact flag, the researcher id the lane resolved, and for NIH the RePORTER `profile_id` of every listed PI), and `deriveGrantEntryForLeads` in `server/src/scrapers/utils/grantInvestigators.ts` labels it.
+A lead who is the contact PI reads `pi`, a lead who is another listed PI reads `copi`, and an award that lists no lead is withheld from the list, the periods and the count.
+A lane's `fundingAgencies` keeps only the agencies its served awards back (`agenciesBackedByRunningAwards`), so a funder the Crossref lane names only on a withheld award is dropped, and a lane-level label such as `NIH` is dropped once every award the lane reported is withheld.
+The list is evidence only and is never stored on the row.
+An entry from an observation written before lanes recorded investigators is held without a role rather than defaulted to `pi`: every grant observation predated the change, so dropping them would have emptied every funded row until all six grant lanes re-read, while holding keeps the award and stops asserting whose it is.
+The writer's `eligibleWriterGrants` reads only `pi` entries, so a held entry is not description evidence until its lane re-reads it.
+A served grant page is cited for a lane's contribution (`servedGrantPageUrl`) whatever its role, because every served entry is a lead's award or a held one.
 A lane that adds a funder another lane already reports must use the same `agency` label, or the two copies stay apart.
 The Crossref grant lane stores each funder's own Crossref name as `agency`, so it refuses any record from a funder a federal lane reports (NIH, NSF or DOE by Crossref funder DOI or name, and NEH by name) rather than duplicate that award under a second label.
 A scoped pass also scopes what runs after the projection (#3874).
@@ -1285,6 +1294,7 @@ That key keeps the query string for `profileLink` and `imageUrl`, because a quer
 On every resolve the user materializer drops the person's refused values from the evidence of each identity that joins them before the resolver ranks it, and clears a stored refused value, so a rival still wins and a second resolve writes nothing.
 A refused ORCID is keyed by its bare identifier, clears `identifiers.orcid` and the matching ORCID link, and is never re-stamped or gap-filled by a fold.
 A refused email is not a join witness either, so an address refused as someone else's cannot join that identity to the person (owner decision 2026-11-11).
+A center roster member's page does not name the person through a refused email or profile link either (#5751).
 Archived researchers keep their refusals, so a restore or an unmerge cannot bring a refused value back, and the researcher fold copies the shell's refusals onto the survivor and never gap-fills a value either side refuses.
 `over_shared_value` names the #5645 class and `other_persons_page` the #5606 class; `operator_judgement` stays the rule for a one-person call.
 
@@ -1332,7 +1342,7 @@ The writer's evidence reading also counts "to better understand" and "to further
 `WRITER_TEXT_NORMALIZER_VERSION` moves with each such change, so the input hash reflects what the writer reads.
 `orderWriterEvidence` then reads the row's own research site (decided by the cited URL sitting under `websiteUrl`'s host and path, after an official Yale person page on that host counts as a profile), then official profiles, then other pages, with grant records last.
 Grants are read from `recentGrants` only, and only when no page snippet clears the description-quality bar (`hasOwnResearchProse`): `eligibleWriterGrants` keeps grants whose `role` is `pi` or `copi` (a grant that records no role is not read) and whose end date, or start date when there is no end date, is within five years, and grants are read only when at least two such grants exist.
-A grant lane's own observation carries no role or dates, so it is not read.
+The stored `role` is derived from the award's recorded investigators against the row's leads (#5779), so a legacy entry with no recorded list carries no role and is not read.
 The writer drops a sentence that presents training as current work (`isPastCareerClauseSentence`) or attributes a featured item, a related unit or a carousel (`isTeaserAttributionSentence`), and refuses a body that is nothing else as `teaser-attribution`.
 The past-career check reads its own patterns and the lab-site extractor's training and previous-position markers (`statesPersonalPastFraming` in `server/src/scrapers/utils/extractedDescriptionScope.ts`), because neither list covers the other; in written prose a postdoc or graduate phase or a former position counts only when it is one person's, so a program's "supports postdoctoral research" or "their graduate research", research prose such as "genes that were previously unknown", and a unit's old name ("formerly the X Program") stay.
 Since #4915 the writer also drops a sentence that restates, without its framing, what the snippets state only as training or a previous position (`restatesPastFramedEvidence`): at least half of the sentence's distinctive words must come from past-framed snippet clauses and from no current one, and it refuses a body left empty as `past-framed-restatement`.

@@ -4,6 +4,7 @@ import { Researcher } from '../models/researcher';
 import { officialProfileDestinationStoredPattern } from '../services/leadProfileIdentity';
 import { identityWitnessesConflict } from '../services/officialProfileLinkIdentity';
 import { isLikelyPersonSpecificYaleEmail } from './utils/scraperHelpers';
+import { loadPersonPageDepartures } from './personPageDeparture';
 import { materializationReadScopeFilter } from './entityMaterializer';
 import {
   invalidatedScrapeRunIds,
@@ -153,6 +154,16 @@ export async function derivedResearcherEmail(
 }
 
 /**
+ * A person whose own official page marks them deceased or departed gets no fill and no
+ * replacement (#5721): the address would be served as a way to reach someone who is gone.
+ */
+async function personPageMarksDeparted(person: EmailEvidencePerson): Promise<boolean> {
+  const id = person._id === undefined || person._id === null ? '' : String(person._id);
+  if (!id) return false;
+  return (await loadPersonPageDepartures([id], new Date())).has(id);
+}
+
+/**
  * A replacement overwrites an address the person may still use, so a Yale candidate must name
  * the person, judged by the predicate every lane applies to a person email: it refuses role and
  * office mailboxes as well as an address that names someone else. A candidate outside Yale has
@@ -173,6 +184,7 @@ export async function derivedResearcherEmailFrom(
 ): Promise<string | undefined> {
   const netid = bareNetid(person.netid);
   if (!netid) return undefined;
+  if (await personPageMarksDeparted(person)) return undefined;
   const verified = await verifiedResearcherEmailFrom(person, observations);
   if (verified.status !== 'verified') return undefined;
   const stored = normalizedEmail(storedEmail);

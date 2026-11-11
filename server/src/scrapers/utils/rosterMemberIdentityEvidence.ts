@@ -1,10 +1,23 @@
 import * as cheerio from 'cheerio';
+import { normalizeOfficialProfileDestination } from '../../services/leadProfileIdentity';
 import { isYaleProfileUrl } from '../yaleProfileDepartureEvidence';
-import { isLikelyPersonSpecificYaleEmail } from './scraperHelpers';
+import { isLikelyPersonSpecificYaleEmail, splitName } from './scraperHelpers';
+import {
+  isPersonNameParticleOrSuffixToken,
+  sanitizePersonName,
+} from '../../utils/personNameHygiene';
 import { observedPersonNameAgreesWith } from './personNameAgreement';
+import { givenNamesEquivalent } from './piNameMatch';
 import { normalizedYaleNetid } from '../../utils/yaleNetid';
 
 export const ROSTER_MEMBER_IDENTITY_EVIDENCE_FIELD = 'profileIdentityEvidence';
+
+/**
+ * Cached evidence is keyed on this, so changing what the extractor emits without bumping it
+ * serves the old extractor's output for every cached page (#5677). A test pins it to the
+ * extractor's output on a fixture corpus, so a change here or in a dependency fails until bumped.
+ */
+export const ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION = 2;
 
 const MAX_LINKED_PROFILE_URLS = 40;
 const MAX_EMAILS = 5;
@@ -108,30 +121,210 @@ function subjectPeople(
   });
 }
 
-const SUBJECT_LINK_LABEL =
-  /^(?:view\s+|visit\s+|see\s+)?(?:(?:my|full|faculty|official|yale|personal|lab|research|department)\s+)?(?:profile|website|web\s*site|home\s*page|homepage|web\s*page|bio|biography|page)$/i;
+const LINK_TARGET_NOUN =
+  '(?:profile|website|web\\s*site|home\\s*page|homepage|web\\s*page|bio|biography|page)';
+
+const SUBJECT_LINK_LABEL = new RegExp(
+  `^(?:view\\s+|visit\\s+|see\\s+)?(?:(?:my|full|faculty|official|yale|personal|lab|research|department)\\s+)?${LINK_TARGET_NOUN}$`,
+  'i',
+);
+
+const SCHOOL_QUALIFIER_WORDS = new Set([
+  'engineering',
+  'medicine',
+  'nursing',
+  'law',
+  'divinity',
+  'management',
+  'architecture',
+  'music',
+  'drama',
+  'art',
+  'health',
+  'public',
+  'environment',
+  'school',
+  'department',
+]);
+
+const LINK_TARGET_NOUN_ONLY = new RegExp(`^${LINK_TARGET_NOUN}$`, 'i');
+
+/**
+ * "SOM Faculty Profile", "Engineering Faculty Profile": a school named in front of the noun.
+ * A qualifier must be an all-capitals acronym or a school word, never free text, because a
+ * free qualifier lets "<colleague> Profile" through as a generic label.
+ */
+function isSchoolQualifiedLinkLabel(label: string): boolean {
+  const words = label.split(' ');
+  const noun = words.pop() ?? '';
+  if (!LINK_TARGET_NOUN_ONLY.test(noun)) return false;
+  if (words[words.length - 1]?.toLowerCase() === 'faculty') words.pop();
+  if (words.length < 1 || words.length > 2) return false;
+  return words.every(
+    (word) => /^[A-Z]{2,6}$/.test(word) || SCHOOL_QUALIFIER_WORDS.has(word.toLowerCase()),
+  );
+}
 
 const BARE_URL_TEXT = /^(?:https?:\/\/)?[\w.-]+\.yale\.edu\b/i;
 
-/**
- * Whether an anchor is the page subject's own link: outside navigation, footers and asides,
- * and labelled either generically ("Profile", "Website") or with the member's own name. An
- * anchor labelled with someone else's name or a publication title belongs to a co-author,
- * colleague or related-items block, and never names the member's profile (#5592).
- */
-function anchorIsSubjectLink(
-  $: cheerio.CheerioAPI,
-  el: Parameters<cheerio.CheerioAPI>[0],
-  memberName: string,
-): boolean {
+type AnchorLabelKind = 'generic' | 'member-name' | 'member-slug';
+
+interface SubjectAnchorCandidate {
+  url: string;
+  destination: string;
+  label: string;
+  kind: AnchorLabelKind;
+}
+
+const anchorLabel = ($: cheerio.CheerioAPI, el: Parameters<cheerio.CheerioAPI>[0]): string => {
   const anchor = $(el);
-  if (anchor.closest('nav, footer, aside').length > 0) return false;
-  const label = (anchor.text() || anchor.attr('aria-label') || anchor.attr('title') || '')
+  return (anchor.text() || anchor.attr('aria-label') || anchor.attr('title') || '')
     .replace(/\s+/g, ' ')
     .trim();
-  if (!label) return false;
-  if (SUBJECT_LINK_LABEL.test(label) || BARE_URL_TEXT.test(label)) return true;
-  return Boolean(memberName) && namesAgree(label, memberName);
+};
+
+const isGenericSubjectLabel = (label: string): boolean =>
+  SUBJECT_LINK_LABEL.test(label) || isSchoolQualifiedLinkLabel(label) || BARE_URL_TEXT.test(label);
+
+/**
+ * Only an anchor labelled with what reads as someone's full name speaks for another person.
+ * "Learn more", "Contact", a publication title or a bare "Dr. <Surname>" names nobody, so it
+ * must not cost the member a generic link to the same page (#5677).
+ */
+const LABEL_HONORIFIC_LEAD_IN = /^(?:dr|prof|professor|dean|mr|mrs|ms|mx)\.?\s+/i;
+
+const NON_NAME_LINK_WORDS = new Set([
+  'about',
+  'bio',
+  'click',
+  'contact',
+  'details',
+  'email',
+  'here',
+  'home',
+  'info',
+  'information',
+  'lab',
+  'learn',
+  'more',
+  'page',
+  'profile',
+  'read',
+  'see',
+  'view',
+  'visit',
+  'website',
+]);
+
+const MAX_PERSON_NAME_LABEL_TOKENS = 5;
+
+function labelReadsAsPersonName(label: string): boolean {
+  const name = label.replace(LABEL_HONORIFIC_LEAD_IN, '').trim();
+  if (/\d/.test(name)) return false;
+  const tokens = name.split(' ').filter(Boolean);
+  if (tokens.length < 2 || tokens.length > MAX_PERSON_NAME_LABEL_TOKENS) return false;
+  return tokens.every(
+    (token) =>
+      !NON_NAME_LINK_WORDS.has(token.toLowerCase().replace(/[.,]+$/, '')) &&
+      (/^\p{Lu}/u.test(token) || isPersonNameParticleOrSuffixToken(token)),
+  );
+}
+
+const nameTokens = (value: string): string[] =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter((token) => token.length > 1);
+
+/**
+ * Whether a profile URL's last path segment spells the member's given name (or a recognised
+ * variant) and surname. A surname alone is not enough: a co-author card for a colleague who
+ * shares a common surname would pass (#5677).
+ */
+const GENERATIONAL_SUFFIX_TOKENS = new Set(['jr', 'sr', 'ii', 'iii', 'iv']);
+
+function slugNamesMember(url: string, memberName: string): boolean {
+  const { first, last } = splitName(sanitizePersonName(memberName) ?? memberName);
+  const surname = nameTokens(last)
+    .filter((token) => !GENERATIONAL_SUFFIX_TOKENS.has(token))
+    .pop();
+  const given = nameTokens(first)[0];
+  if (!surname || !given) return false;
+  let slugTokens: string[];
+  try {
+    const segments = new URL(url).pathname.split('/').filter(Boolean);
+    slugTokens = nameTokens(segments[segments.length - 1] ?? '');
+  } catch {
+    return false;
+  }
+  if (!slugTokens.includes(surname)) return false;
+  return slugTokens.some(
+    (token) => token !== surname && (token === given || givenNamesEquivalent(token, given)),
+  );
+}
+
+/**
+ * Anchors the page subject could own, each pointing at a person-profile-shaped page and outside
+ * navigation and footers. An anchor whose URL spells the member's full name counts whatever its
+ * label, even in an aside ("Associated programs"). Otherwise it must sit outside asides and be
+ * labelled either generically ("Profile", "Website") or with the member's own name: one labelled
+ * with someone else's name or a publication title belongs to a co-author, colleague or
+ * related-items block (#5592, #5677), and only one labelled with another person's name marks its
+ * destination as that person's.
+ */
+function subjectAnchorCandidates(
+  $: cheerio.CheerioAPI,
+  pageUrl: string,
+  memberName: string,
+): { candidates: SubjectAnchorCandidate[]; otherPersonDestinations: Set<string> } {
+  const candidates: SubjectAnchorCandidate[] = [];
+  const otherPersonDestinations = new Set<string>();
+  $('a[href]').each((_i, el) => {
+    const url = absoluteHttpUrl($(el).attr('href'), pageUrl);
+    if (!url || !isYaleProfileUrl(url) || $(el).closest('nav, footer').length > 0) return;
+    const destination = normalizeOfficialProfileDestination(url);
+    const label = anchorLabel($, el);
+    if (slugNamesMember(url, memberName)) {
+      candidates.push({ url, destination, label, kind: 'member-slug' });
+      return;
+    }
+    if (!label || $(el).closest('aside').length > 0) return;
+    if (isGenericSubjectLabel(label)) {
+      candidates.push({ url, destination, label: label.toLowerCase(), kind: 'generic' });
+    } else if (memberName && namesAgree(label, memberName)) {
+      candidates.push({ url, destination, label, kind: 'member-name' });
+    } else if (labelReadsAsPersonName(label)) {
+      otherPersonDestinations.add(destination);
+    }
+  });
+  return { candidates, otherPersonDestinations };
+}
+
+/**
+ * A generic label speaks for the page subject only when nothing on the page says it speaks for
+ * someone else. A people grid or co-author block repeats "View Full Profile" under every card,
+ * beside an anchor to the same page labelled with that colleague's name, so a generic anchor is
+ * dropped when another anchor names a different person at its destination, or when its label
+ * leads to more than one page (#5677).
+ */
+function subjectAnchorUrls($: cheerio.CheerioAPI, pageUrl: string, memberName: string): string[] {
+  const { candidates, otherPersonDestinations } = subjectAnchorCandidates($, pageUrl, memberName);
+  const destinationsByGenericLabel = new Map<string, Set<string>>();
+  for (const candidate of candidates) {
+    if (candidate.kind !== 'generic') continue;
+    const destinations = destinationsByGenericLabel.get(candidate.label) ?? new Set<string>();
+    destinations.add(candidate.destination);
+    destinationsByGenericLabel.set(candidate.label, destinations);
+  }
+  return candidates
+    .filter((candidate) => {
+      if (candidate.kind !== 'generic') return true;
+      if (otherPersonDestinations.has(candidate.destination)) return false;
+      return (destinationsByGenericLabel.get(candidate.label)?.size ?? 0) <= 1;
+    })
+    .map((candidate) => candidate.url);
 }
 
 function linkedProfileUrls(
@@ -150,12 +343,10 @@ function linkedProfileUrls(
   ]
     .map((href) => absoluteHttpUrl(href, pageUrl))
     .filter(isYaleHostedUrl);
-  const anchors: string[] = [];
-  $('a[href]').each((_i, el) => {
-    const url = absoluteHttpUrl($(el).attr('href'), pageUrl);
-    if (url && isYaleProfileUrl(url) && anchorIsSubjectLink($, el, memberName)) anchors.push(url);
-  });
-  return uniqueCapped([pageUrl, ...declared, ...anchors], MAX_LINKED_PROFILE_URLS);
+  return uniqueCapped(
+    [pageUrl, ...declared, ...subjectAnchorUrls($, pageUrl, memberName)],
+    MAX_LINKED_PROFILE_URLS,
+  );
 }
 
 // Only mailto links and the page's own Person metadata are read, never body text, because a
