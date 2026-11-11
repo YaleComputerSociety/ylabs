@@ -236,7 +236,7 @@ describe('directory-removal:reslug renames a co-led row a removed lead names (#4
       const listening = app.listen(0, () => resolve(listening));
     });
     baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-  }, 120000);
+  });
 
   afterAll(async () => {
     setDirectoryRemovalServingForTest(undefined);
