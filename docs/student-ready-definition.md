@@ -267,6 +267,9 @@ They are the set `STUDENT_READY_SOFT_SIGNAL_REASONS`, and they are never repair 
 
 - `source_backed_description` - anti-fabrication signal; a coherent description is enough on its own, source-backing only strengthens ranking.
 - `biography_description_fallback` - the served body reads as a career biography (`isBiographyRatherThanResearch`), which per the 2026-10-01 decision is served only when the row has no servable research prose it could carry without losing its card (#4288, `docs/decisions.md`).
+- `thin_card_description` - the card fails the card bar only for thinness or for echoing the row's own topics (`too-short`, `topic-label-list`, `area-echo-fallback`, `research-area-echo`, and `full-not-useful` derived from those), the body carries no other flag, the stored body is not blank, the served page already passes the public-description invariant, and the card is neither a page fragment nor a swallowed-clause "including" sentence (`researchEntityCardIsOnlyThin`, #5673).
+  It is recorded in place of `missing_card_description`, so the row is served under the thin-but-accurate decision (2026-10-04) while the repair queue still records it as an evidence signal.
+  A row whose served page fails the invariant, or that has no stored body, keeps today's tier.
   It flags the row for a lane that can find research prose, and it never holds the row by itself, because refusing a row's only servable body took it off the surface (#4280).
   A flagged row that states no research anywhere is held by the hard blocker `career_biography_without_research` instead (owner decision, 2026-10-11).
 - `missing_facet_signal` - facets are query-scoped nice-to-haves, not a student-facing blocker.
