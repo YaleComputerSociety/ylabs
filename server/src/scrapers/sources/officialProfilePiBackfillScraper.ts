@@ -1,4 +1,7 @@
-import { PROFILE_APPOINTMENT_ENDED_FIELD, PROFILE_IN_MEMORIAM_FIELD } from '../personPageDepartureFields';
+import {
+  PROFILE_APPOINTMENT_ENDED_FIELD,
+  PROFILE_IN_MEMORIAM_FIELD,
+} from '../personPageDepartureFields';
 import axios from 'axios';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 import mongoose from 'mongoose';
