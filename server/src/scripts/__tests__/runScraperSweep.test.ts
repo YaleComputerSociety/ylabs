@@ -675,6 +675,7 @@ describe('runScraperSweep', () => {
       'inferred-pi-lead-reclaim',
       'profile-honors',
       'staff-minted-retirement',
+      'researcher-email-support',
       'visibility-gate',
       'search-sync',
       'search-index-check',
@@ -849,6 +850,7 @@ describe('runScraperSweep', () => {
       'inferred-pi-lead-reclaim',
       'profile-honors',
       'staff-minted-retirement',
+      'researcher-email-support',
       'visibility-gate',
       'search-sync',
       'search-index-check',
@@ -909,6 +911,7 @@ describe('runScraperSweep', () => {
       'inferred-pi-lead-reclaim',
       'profile-honors',
       'staff-minted-retirement',
+      'researcher-email-support',
       'visibility-gate',
       'search-sync',
       'search-index-check',
@@ -929,6 +932,37 @@ describe('runScraperSweep', () => {
         '--confirm-dedupe-accountless-researcher-shells',
       ]),
     );
+  });
+
+  it('runs the researcher email-support pass after every stage that can mint a researcher or change an address, directly before the gate (#5713)', () => {
+    const names = buildDevelopmentPostRunStages('/tmp/development-sweep', {
+      dedupeResearchers: true,
+    }).map((stage) => stage.name);
+    const emailSupport = names.indexOf('researcher-email-support');
+    expect(emailSupport).toBeGreaterThan(-1);
+    for (const earlier of [
+      'researcher-dedupe',
+      'url-identity-dedupe',
+      'website-url-identity-dedupe',
+      'shared-person-name-agreed-dedupe',
+      'pi-attributed-researcher-mint',
+      'inferred-pi-lead-reclaim',
+      'staff-minted-retirement',
+    ]) {
+      if (names.includes(earlier)) expect(names.indexOf(earlier)).toBeLessThan(emailSupport);
+    }
+    expect(names[emailSupport + 1]).toBe('visibility-gate');
+  });
+
+  it('runs the researcher email-support pass on every sweep, applying with its confirmation flag (#5713)', () => {
+    for (const options of [{}, { dedupeResearchers: true }, { dedupeResearchers: false }]) {
+      const stage = buildDevelopmentPostRunStages('/tmp/development-sweep', options).find(
+        (candidate) => candidate.name === 'researcher-email-support',
+      );
+      expect(stage?.args).toEqual(
+        expect.arrayContaining(['--apply', '--confirm-compute-email-support']),
+      );
+    }
   });
 
   it('runs the researcher dedupe stage even when the eponymous merge is off', () => {
