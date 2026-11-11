@@ -360,7 +360,7 @@ A pattern like `dept-faculty-roster` also matches an unrelated process that carr
 
 Setting `scrapeRun.invalidated` alone fences the run's observations out of materialize, but the observations its inserts superseded stay superseded, so every key the run re-emitted is left with no live evidence from the source.
 To reverse an observations-only run, use `yarn --cwd server observations:rollback-scrape-run --run=<id> --note='<why>'` (dry-run by default; `--snapshot=<path> --apply --confirm-rollback-scrape-run` to write).
-It invalidates the run, retires the run's live observations with a `rollback` record, and restores only the observations whose `supersededBy` points at one of the run's observations (#5735).
+It invalidates the run, retires the run's live observations with a `rollback` record, and restores only the observations from outside the run whose `supersededBy` points at one of the run's observations (#5735).
 It refuses a run that was materialized, a run any of whose observations was superseded from outside it, and a run whose source has written observations from another run since it started, because in each case the pre-run state is no longer the right state to restore.
 
 ## Exhaustive runs: bound every corpus-wide read
