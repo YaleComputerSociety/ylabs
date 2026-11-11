@@ -189,6 +189,7 @@ Four earlier mechanisms each broke on a stored title, and the module's test file
   An address inside a nested `article`, an `aside`, `nav` or `footer`, or a block labelled as co-authors, related people, administrative support or a press contact is never the subject's, and a contact field listing two addresses yields none.
   Such an address is admitted whatever its domain and whatever its local part, except a role mailbox, and the lane still prefers a Yale address when the page states one.
   An outside address does not contradict the Yale address expected for a lead, because it is not a Yale identity, while a different Yale address still fails closed (#585).
+  The same holds for `profileIdentityAgreesWithUser`, and `pageIdentityWitnessesPerson` reads a netid from an address's local part only when the address is a Yale one.
   The person's display name comes only from a JSON-LD `Person` node or an untyped node, never from an organization or website node, which named every MacMillan Center person page after the center.
   A canonical link differing from the fetched profile only in letter case is the same page.
   In `visible-profile-bio-backfill` only, a page with no admissible title still yields the address, and nothing else: no title, name, bio or role follows from such a page.

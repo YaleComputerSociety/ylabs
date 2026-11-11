@@ -89,6 +89,7 @@ export function pageIdentityWitnessesPerson(
   if (!personNetid) return false;
   if (pageNetid && pageNetid === personNetid) return true;
   const localPart = pageEmail.split('@')[0] ?? '';
-  if (BARE_NETID.test(localPart) && localPart === personNetid) return true;
+  if (pageEmail.endsWith('@yale.edu') && BARE_NETID.test(localPart) && localPart === personNetid)
+    return true;
   return Boolean(pageEmail && directory?.get(pageEmail)?.has(personNetid));
 }

@@ -4,6 +4,7 @@ import {
   extractOfficialProfileIdentity,
   identityToUserObservations,
   OfficialProfilePiBackfillScraper,
+  profileIdentityAgreesWithUser,
 } from '../sources/officialProfilePiBackfillScraper';
 import type { ObservationInput, ScraperContext } from '../types';
 
@@ -232,6 +233,25 @@ describe('the profile subject email read from more page shapes (#5669)', () => {
         expectedPeople: [{ ...SUBJECT, email: 'avery.example@yale.edu' }],
       });
       expect(identity?.displayName).toBe(SUBJECT.name);
+    });
+
+    it('does not refuse a candidate researcher whose own address is a Yale one', () => {
+      const identity = identityOf(html, ysmUrl)!;
+      expect(
+        profileIdentityAgreesWithUser(identity, {
+          ...SUBJECT,
+          netid: 'fixture501',
+          email: 'avery.example@yale.edu',
+        }),
+      ).toBe(true);
+      expect(
+        profileIdentityAgreesWithUser(identity, {
+          fname: 'Casey',
+          lname: 'Fixture',
+          netid: 'fixture502',
+          email: 'casey.fixture@yale.edu',
+        }),
+      ).toBe(false);
     });
 
     it("never reads another Person node's address or a role mailbox", () => {

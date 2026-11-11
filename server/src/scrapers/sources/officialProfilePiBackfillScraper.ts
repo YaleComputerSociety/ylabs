@@ -4617,7 +4617,11 @@ export function profileIdentityAgreesWithUser(
   const pageEmail = textValue(identity.email).toLowerCase();
   const candidateEmail = textValue(candidate.email).toLowerCase();
   if (pageEmail && candidateEmail === pageEmail) return true;
-  if (pageEmail && candidateEmail && !isNetidMailbox(candidateEmail, textValue(candidate.netid))) {
+  if (
+    isYaleAddress(pageEmail) &&
+    candidateEmail &&
+    !isNetidMailbox(candidateEmail, textValue(candidate.netid))
+  ) {
     return false;
   }
   const candidateName =
