@@ -79,6 +79,7 @@ import {
   officialProfileUrlFromRosterEntry,
 } from './leadProfileIdentity';
 import { nameDenotesOrganization } from '../utils/researchHomeNameIdentityAuthority';
+import { refusedValueRule } from '../utils/researchEntityFieldValueRefusals';
 import { servableOrcid } from '../utils/orcid';
 import {
   RE_DERIVED_ACCESS_SIGNAL_TYPES,
@@ -292,7 +293,7 @@ export const REVIEW_EXCEPTION_REPAIR_REASONS: ReadonlySet<string> = new Set(['fo
 // citation is a known 404. Composing the shared list means a future gate input is
 // inherited instead of waiting to be noticed a fourth time.
 export const researchEntityGateProjection = withPublicDescriptionGateFields(
-  '_id slug name displayName kind entityType website websiteUrl profileUrls sourceUrls sourceLinkHealth descriptionGrounding departments researchAreas shortDescription fullDescription profileSynthesisDescription descriptionSource activeAtYaleCache yaleStatusCache studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons studentVisibilitySuppressionReason leadVerification',
+  '_id slug name displayName kind entityType website websiteUrl profileUrls sourceUrls fieldValueRefusals sourceLinkHealth descriptionGrounding departments researchAreas shortDescription fullDescription profileSynthesisDescription descriptionSource activeAtYaleCache yaleStatusCache studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons studentVisibilitySuppressionReason leadVerification',
 );
 
 /**
@@ -644,6 +645,31 @@ const entityDuplicateUrls = (entity: any): string[] =>
     ]).map(normalizedExactDuplicateUrl),
   ).filter(isSpecificDuplicateSignalUrl);
 
+const WEBSITE_REFUSAL_FIELDS = ['websiteUrl', 'website'] as const;
+
+const urlsRefusedAsWrongOwner = (entity: any): Set<string> =>
+  new Set(
+    uniqueStrings([
+      entity.websiteUrl,
+      entity.website,
+      ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
+    ])
+      .filter((value) =>
+        WEBSITE_REFUSAL_FIELDS.some(
+          (field) => refusedValueRule(entity.fieldValueRefusals, field, value) === 'wrong_owner',
+        ),
+      )
+      .map(normalizedExactDuplicateUrl),
+  );
+
+// A row refused as the wrong owner of a URL still cites it, because the materializer
+// carries `sourceUrls` forward, but the refusal says the address is not this row's, so
+// the citation makes it no party to a contest over that address (#5858).
+const entityClaimedDuplicateUrls = (entity: any): string[] => {
+  const refused = urlsRefusedAsWrongOwner(entity);
+  return entityDuplicateUrls(entity).filter((url) => !refused.has(url));
+};
+
 /**
  * Sources that publish a research home's own address, so they assert which row
  * OWNS a URL rather than merely that the URL appeared somewhere.
@@ -898,7 +924,7 @@ const membersClaimingUrl = (url: string, members: any[]): any[] => {
 export const exactDuplicateUrlGroups = (entities: any[]): ExactDuplicateUrlGroup[] => {
   const entitiesByUrl = new Map<string, any[]>();
   for (const entity of entities) {
-    for (const url of entityDuplicateUrls(entity)) {
+    for (const url of entityClaimedDuplicateUrls(entity)) {
       entitiesByUrl.set(url, [...(entitiesByUrl.get(url) || []), entity]);
     }
   }
