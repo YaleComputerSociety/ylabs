@@ -1809,6 +1809,10 @@ A landing that carries a query string is not recorded, because the identity key 
 Only a live row's verdict is read, because link health never re-probes an archived row, so an archived duplicate's verdict cannot keep an alias alive after the URL stops redirecting.
 Resolve-at-mint has no lead-person clustering, so its redirect arm never folds a mint into a `CENTER`, `INSTITUTE`, `INITIATIVE` or `CORE_FACILITY` row reached only through a recorded redirect, the same organization-type exclusion the lane applies; a URL that names such a row directly still resolves to it as before.
 Because resolve-at-mint has no lead-person clustering either, a row reached only through a recorded redirect is a candidate only when its name agrees with the mint's, as the same normalized organization name or the same lead person, so a retired page redirecting to another host's root cannot fold a mint into whatever row serves that root.
+The redirect arm also never folds a person-led row (`isPersonScopedResearchEntityShape`: a `LAB` or a faculty research profile), whether the mint or the row it would reach is person-led, because a mint has no lead edges to compare researcher ids with (#5688).
+A mint with no `entityType` or `kind` observation counts as person-led when its slug carries person-name tokens (`entityKeyPersonTokens`), the fallback the name authority uses.
+Every live type is today either person-led or an organization type, so the redirect arm folds nothing on the current corpus; its code is kept for a type that is neither.
+A missed fold is recovered by the website-url dedupe lane, which refuses rows led by different researcher ids (#5684); see the routine Development maintenance pass in `docs/release-process.md`.
 The landing is recorded by the ordinary link-health pass, so it reaches the dedupe on the sweep after the probe that saw it.
 
 The resolved address has to be the one a student gets, not the one the probing machine gets.

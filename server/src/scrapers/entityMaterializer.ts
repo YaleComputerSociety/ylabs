@@ -131,6 +131,7 @@ import {
   isRefusedProfileLinkedHomeName,
   nameCarriesPersonIdentity,
   namesAResearchGroupRatherThanAPerson,
+  entityKeyPersonTokens,
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
   type LabRowRoster,
@@ -10812,11 +10813,32 @@ function redirectCandidateAgreesOnName(
   );
 }
 
+/**
+ * Resolve-at-mint cannot compare lead researcher ids, because a mint has no lead edges
+ * yet, so the redirect arm never folds a person-led row, on either side; the website-url
+ * dedupe lane, which refuses distinct leads (#5684), decides those once edges exist. A
+ * missed fold there is recovered on the next pass, a wrong one is not (#5688).
+ */
+function mintIsPersonLed(
+  obs: Array<{ field: string; value?: unknown }>,
+  entityKey: string | undefined,
+): boolean {
+  const first = (field: string): string => {
+    const hit = obs.find((o) => o.field === field && typeof o.value === 'string' && o.value.trim());
+    return hit ? String(hit.value).trim() : '';
+  };
+  const entityType = first('entityType');
+  const kind = first('kind');
+  if (entityType || kind) return isPersonScopedResearchEntityShape({ entityType, kind });
+  return entityKeyPersonTokens(first('slug') || entityKey).length > 0;
+}
+
 async function findEntityCandidatesByKey(
   resolverType: 'researchEntity' | 'fellowship',
   key: CanonicalKey,
   prefetch?: MaterializationReadSource,
   self?: CandidateEntity,
+  mintPersonLed = false,
 ): Promise<CandidateEntity[]> {
   if (resolverType === 'fellowship') {
     if (key.ns !== 'source-key') return [];
@@ -10844,8 +10866,14 @@ async function findEntityCandidatesByKey(
   if (key.ns === 'website-url') {
     const directVariants = websiteUrlIdentityKeyVariants(key.value);
     if (directVariants.length === 0) return [];
-    type WebsiteCandidateDoc = { _id: unknown; name?: string; studentVisibilityTier?: string };
-    const select = '_id name studentVisibilityTier';
+    type WebsiteCandidateDoc = {
+      _id: unknown;
+      name?: string;
+      studentVisibilityTier?: string;
+      entityType?: string;
+      kind?: string;
+    };
+    const select = '_id name studentVisibilityTier entityType kind';
     const direct = (await ResearchEntity.find({
       websiteUrl: { $in: directVariants },
       archived: { $ne: true },
@@ -10854,7 +10882,7 @@ async function findEntityCandidatesByKey(
       .limit(2)
       .lean()) as WebsiteCandidateDoc[];
     const redirectVariants =
-      direct.length > 0
+      direct.length > 0 || mintPersonLed
         ? []
         : (await websiteUrlIdentityKeyRedirectEquivalents(key.value)).flatMap(
             websiteUrlIdentityKeyVariants,
@@ -10873,7 +10901,11 @@ async function findEntityCandidatesByKey(
     const docs =
       direct.length > 0
         ? direct
-        : redirected.filter((doc) => redirectCandidateAgreesOnName(self, doc.name));
+        : redirected.filter(
+            (doc) =>
+              !isPersonScopedResearchEntityShape(doc) &&
+              redirectCandidateAgreesOnName(self, doc.name),
+          );
     return docs.map((doc) => ({
       id: String(doc._id),
       name: doc.name,
@@ -10892,6 +10924,7 @@ async function resolveCanonicalForEntityMint(
   entityType: ObservedEntityType,
   obs: Array<{ field: string; value?: unknown }>,
   prefetch?: MaterializationReadSource,
+  entityKey?: string,
 ): Promise<CanonicalResolution> {
   const resolverType = resolverTypeForEntity(entityType);
   const keys = deriveCanonicalKeys(
@@ -10910,7 +10943,13 @@ async function resolveCanonicalForEntityMint(
     { type: resolverType, keys, self: resolverSelf },
     {
       findCandidatesByKey: (_type, key) =>
-        findEntityCandidatesByKey(resolverType, key, prefetch, resolverSelf),
+        findEntityCandidatesByKey(
+          resolverType,
+          key,
+          prefetch,
+          resolverSelf,
+          mintIsPersonLed(obs, entityKey),
+        ),
     },
   );
 }
@@ -11226,7 +11265,12 @@ async function materializeEntityUnderRemovalGuard(
     (isResearchEntityObservationType(entityType) || entityType === 'fellowship') &&
     !entityDoc
   ) {
-    const resolution = await resolveCanonicalForEntityMint(entityType, obs, options.chunkPrefetch);
+    const resolution = await resolveCanonicalForEntityMint(
+      entityType,
+      obs,
+      options.chunkPrefetch,
+      identifier.entityKey,
+    );
     if (resolution.status === 'blocked') {
       return {
         entityType,

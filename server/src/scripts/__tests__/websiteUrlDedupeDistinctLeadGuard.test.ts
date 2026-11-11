@@ -116,4 +116,13 @@ describe('website-url lane distinct-lead guard (#5638)', () => {
       'dept-two-ada-quill',
     ]);
   });
+  it('merges a lab pair the mint left separate once the lane sees one shared lead (#5688)', () => {
+    const labs = twoProfiles(['researcher-1'], ['researcher-1']).map((entity) => ({
+      ...entity,
+      name: 'Quill Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+    }));
+    expect(planFor(labs)).toHaveLength(1);
+  });
 });

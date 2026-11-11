@@ -255,7 +255,7 @@ describe('resolve-at-mint for entities (C4_RESOLVE_AT_MINT_ENTITIES)', () => {
     expect(String(again.entityId)).toBe(String(first.entityId));
   });
 
-  it('default ON: a redirect link health recorded folds a lab that moved to its own host', async () => {
+  it('default ON: a lab mint reached only through a recorded redirect stays separate', async () => {
     await seedResearchEntity('smith-lab-a', 'Smith Lab', 'https://smithlab.example.edu/');
     const first = await materializeEntity('researchEntity', { entityKey: 'smith-lab-a' });
     await ResearchEntity.updateOne(
@@ -279,12 +279,13 @@ describe('resolve-at-mint for entities (C4_RESOLVE_AT_MINT_ENTITIES)', () => {
     const second = await materializeEntity('researchEntity', { entityKey: 'smith-lab-b' });
     const again = await materializeEntity('researchEntity', { entityKey: 'smith-lab-b' });
 
-    expect(await ResearchEntity.countDocuments({})).toBe(1);
-    expect(String(second.entityId)).toBe(String(first.entityId));
-    expect(String(again.entityId)).toBe(String(first.entityId));
+    expect(await ResearchEntity.countDocuments({})).toBe(2);
+    expect(second.created).toBe(true);
+    expect(String(second.entityId)).not.toBe(String(first.entityId));
+    expect(String(again.entityId)).toBe(String(second.entityId));
   });
 
-  it('default ON: a mint whose own URL is a recorded redirect target folds into the alias row', async () => {
+  it('default ON: a person-led mint at a recorded redirect target stays separate from the alias row', async () => {
     await seedResearchEntity('smith-lab-a', 'Smith Lab', 'http://www.example.edu/smithlab/');
     const first = await materializeEntity('researchEntity', { entityKey: 'smith-lab-a' });
     await ResearchEntity.updateOne(
@@ -306,8 +307,8 @@ describe('resolve-at-mint for entities (C4_RESOLVE_AT_MINT_ENTITIES)', () => {
     await seedResearchEntity('smith-lab-b', 'Smith Lab', 'https://smithlab.example.edu/');
     const second = await materializeEntity('researchEntity', { entityKey: 'smith-lab-b' });
 
-    expect(await ResearchEntity.countDocuments({})).toBe(1);
-    expect(String(second.entityId)).toBe(String(first.entityId));
+    expect(await ResearchEntity.countDocuments({})).toBe(2);
+    expect(second.created).toBe(true);
   });
 
   it('default ON: a redirect to a row naming another lab does not fold the mint', async () => {
@@ -406,6 +407,68 @@ describe('resolve-at-mint for entities (C4_RESOLVE_AT_MINT_ENTITIES)', () => {
     expect(await ResearchEntity.countDocuments({})).toBe(2);
     expect(String(aliasMint.entityId)).toBe(String(atAlias.entityId));
     expect(String(landingMint.entityId)).toBe(String(atLanding.entityId));
+  });
+
+  it('default ON: a faculty-research mint reached only through a recorded redirect stays separate', async () => {
+    await seedResearchEntity(
+      'dept-two-ada-quill',
+      'Ada Quill Faculty Research',
+      'https://press.example.edu/quill/',
+    );
+    const first = await materializeEntity('researchEntity', { entityKey: 'dept-two-ada-quill' });
+    await ResearchEntity.updateOne(
+      { _id: first.entityId },
+      {
+        $set: {
+          entityType: 'FACULTY_RESEARCH_AREA',
+          ...recordMove('http://quill.commons.example.edu/', 'https://press.example.edu/quill/'),
+        },
+      },
+    );
+
+    await seedResearchEntity(
+      'dept-one-ada-quill',
+      'Ada Quill Faculty Research',
+      'http://quill.commons.example.edu/',
+    );
+    const second = await materializeEntity('researchEntity', { entityKey: 'dept-one-ada-quill' });
+    const again = await materializeEntity('researchEntity', { entityKey: 'dept-one-ada-quill' });
+
+    expect(second.created).toBe(true);
+    expect(String(again.entityId)).toBe(String(second.entityId));
+    expect(await ResearchEntity.countDocuments({})).toBe(2);
+  });
+
+  it('default ON: an exact url match still folds a person-led mint', async () => {
+    await seedResearchEntity('smith-lab-a', 'Smith Lab', 'https://smithlab.example.edu/');
+    const first = await materializeEntity('researchEntity', { entityKey: 'smith-lab-a' });
+    await seedResearchEntity(
+      'smith-lab-b',
+      'Smith Lab',
+      'http://www.smithlab.example.edu/index.html',
+    );
+    const second = await materializeEntity('researchEntity', { entityKey: 'smith-lab-b' });
+
+    expect(await ResearchEntity.countDocuments({})).toBe(1);
+    expect(String(second.entityId)).toBe(String(first.entityId));
+  });
+
+  it('default ON: the redirect arm still folds a mint that is neither person-led nor an organization', async () => {
+    await seedResearchEntity('neuro-imaging', 'Neuro Imaging', 'https://imaging.example.edu/');
+    const target = await materializeEntity('researchEntity', { entityKey: 'neuro-imaging' });
+    await ResearchEntity.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(String(target.entityId)) },
+      {
+        $unset: { entityType: '', kind: '' },
+        $set: recordMove('https://www.example.edu/imaging/', 'https://imaging.example.edu/'),
+      },
+    );
+
+    await seedResearchEntity('2026', 'Neuro Imaging', 'https://www.example.edu/imaging/');
+    const second = await materializeEntity('researchEntity', { entityKey: '2026' });
+
+    expect(String(second.entityId)).toBe(String(target.entityId));
+    expect(await ResearchEntity.countDocuments({})).toBe(1);
   });
 
   it('default ON: a recorded redirect never folds a mint into an organization row', async () => {
