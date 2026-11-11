@@ -4586,6 +4586,37 @@ export async function resolveExistingUserForIdentity(
 }
 
 /**
+ * Whether the page's email is already held by a live researcher with a different netid
+ * from the key's person, which is positive evidence that the page belongs to someone else
+ * and its identity must not be filed under this key (#5606). A holder with no netid is a
+ * possible second record of the same person, so it decides nothing.
+ */
+export async function pageEmailHeldByAnotherResearcher(
+  email: unknown,
+  existingUser: ExistingProfileUser,
+): Promise<boolean> {
+  const address = textValue(email).toLowerCase();
+  if (!address) return false;
+  // Without a database connection the holder cannot be read; the lane only runs connected, and
+  // its offline unit tests exercise extraction rather than identity ownership.
+  if (mongoose.connection.readyState !== 1) return false;
+  const holders = (await Researcher.find({ archived: { $ne: true }, 'identifiers.email': address })
+    .select('_id identifiers.netid')
+    .limit(5)
+    .lean()) as unknown as Array<{ _id: unknown; identifiers?: { netid?: string } }>;
+  const keyNetid = textValue(existingUser.netid).toLowerCase();
+  return holders.some((holder) => {
+    const holderNetid = textValue(holder.identifiers?.netid).toLowerCase();
+    return (
+      String(holder._id) !== String(existingUser._id ?? '') &&
+      Boolean(holderNetid) &&
+      Boolean(keyNetid) &&
+      holderNetid !== keyNetid
+    );
+  });
+}
+
+/**
  * For a row that already serves the link, only a student-visible holder can own it: a
  * duplicate that is suppressed or held for review carrying the same site is a dedupe
  * question, and withdrawing on it stripped real lab sites from the visible row in the
@@ -4934,7 +4965,13 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
               yaleDirectoryNetids,
             });
             if (identity) {
-              const existingUser = visibleExistingUser || (await existingUserForIdentity(identity));
+              const candidateUser =
+                visibleExistingUser || (await existingUserForIdentity(identity));
+              const existingUser =
+                candidateUser &&
+                !(await pageEmailHeldByAnotherResearcher(identity.email, candidateUser))
+                  ? candidateUser
+                  : null;
               if (existingUser) {
                 observations.push(
                   ...identityToUserObservations(identity, existingUser, {
