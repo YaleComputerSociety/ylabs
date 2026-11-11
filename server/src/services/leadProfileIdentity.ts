@@ -123,7 +123,21 @@ const YSM_SECTION_PROFILE_PATH = /^\/[a-z0-9-]+\/profile\/([a-z0-9-]+)$/i;
  */
 const YDS_LEGACY_FACULTY_PATH = /^\/faculty-and-research\/yds-faculty\/([a-z0-9-]+)$/i;
 
+/**
+ * `macmillan.yale.edu` serves one person under both `/person/<slug>` and
+ * `/<program>/person/<slug>`, the same node under a program's skin, and center rosters moved
+ * from the first form to the second between reads (#5677). Only an identical slug collapses:
+ * a `-0` suffix is a different node.
+ */
+const MACMILLAN_SECTION_PERSON_PATH = /^\/[a-z0-9-]+\/person\/([a-z0-9-]+)$/i;
+
+const MACMILLAN_ROOT_PERSON_PATH = /^\/person\/([a-z0-9-]+)$/i;
+
 const canonicalOfficialProfilePath = (host: string, path: string): string => {
+  if (host === 'macmillan.yale.edu') {
+    const sectioned = MACMILLAN_SECTION_PERSON_PATH.exec(path);
+    return sectioned ? `/person/${sectioned[1]}` : path;
+  }
   if (host === 'divinity.yale.edu') {
     const legacy = YDS_LEGACY_FACULTY_PATH.exec(path);
     return legacy ? `/profile/${legacy[1]}` : path;
@@ -178,11 +192,15 @@ const officialProfileDestinationPatternParts = (
   }
   const ysmProfile = host === 'medicine.yale.edu' ? YSM_ROOT_PROFILE_PATH.exec(path) : null;
   const ydsProfile = host === 'divinity.yale.edu' ? YDS_PROFILE_PATH.exec(path) : null;
+  const macmillanPerson =
+    host === 'macmillan.yale.edu' ? MACMILLAN_ROOT_PERSON_PATH.exec(path) : null;
   const pathPattern = ysmProfile
     ? `(?:/[A-Za-z0-9-]+)?${anyCaseLiteral('/profile')}/${escapeRegex(ysmProfile[1])}`
-    : ydsProfile
-      ? `(?:/profile|${anyCaseLiteral('/faculty-and-research/yds-faculty')})/${escapeRegex(ydsProfile[1])}`
-      : escapeRegex(path);
+    : macmillanPerson
+      ? `(?:/[A-Za-z0-9-]+)?${anyCaseLiteral('/person')}/${escapeRegex(macmillanPerson[1])}`
+      : ydsProfile
+        ? `(?:/profile|${anyCaseLiteral('/faculty-and-research/yds-faculty')})/${escapeRegex(ydsProfile[1])}`
+        : escapeRegex(path);
   return { host, pathPattern: `${pathPattern}/*(?:[?#].*)?$`, caseInsensitive: true };
 };
 
