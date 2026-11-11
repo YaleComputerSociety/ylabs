@@ -138,6 +138,15 @@ describe('a website button the profile exposes is a candidate', () => {
     expect(result.labSlotAttestation).toBe('refused');
   });
 
+  it('leaves the slot claimable as empty when a related link carries no website signal', () => {
+    const result = enrich(
+      newsAndLinksSidebar(button('https://scholar.example.org/citations', 'Publications')),
+    );
+
+    expect(result.labUrl).toBeUndefined();
+    expect(result.labSlotAttestation).toBe('empty');
+  });
+
   it('reads no card title from the profile itself when the header card carries none', () => {
     const result = enrich(
       `<div class="profile-details-lab-header-card">${button(LAB_SITE, 'Visit Lab Website')}</div>`,

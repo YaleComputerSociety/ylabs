@@ -3540,11 +3540,13 @@ export function profileEnrichmentFromHtml(
     const link = $(el);
     if (isSiteChromeLink(link)) return;
     // A news or media item is ordinary in-tab page content, so neither the tab-order
-    // test nor the chrome containers in isSiteChromeLink can see it (#3184). A link the
-    // person published in their own related-links list is still a candidate the page
+    // test nor the chrome containers in isSiteChromeLink can see it (#3184). A link with a
+    // website signal in the person's own related-links list is still a candidate the page
     // carries, so declining it is a refusal rather than an empty slot (#5819, #3135).
     if (isInProfilePublicityRegion(link) && !isProfileWebsiteButton(link)) {
-      if (isInProfileRelatedLinksList(link)) labUrlCandidateRefused = true;
+      if (isInProfileRelatedLinksList(link) && WEBSITE_SIGNAL.test(link.text())) {
+        labUrlCandidateRefused = true;
+      }
       return;
     }
 

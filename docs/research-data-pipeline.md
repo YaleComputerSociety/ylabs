@@ -2386,7 +2386,7 @@ A `website` or `homepage` word in the path counts only when the link text is emp
 Measured on Development, that path arm alone justified 2 of 750 roster-lane websites, both wrong, while a labelled personal site with the word in its path still passes on its label.
 A link that arm declines is still a candidate the page carries, so it records `refused` and never lets the slot be attested empty, because `fieldRetraction` reads an empty slot as a witnessed absence (#5819, #3135).
 A profile's own website button is a candidate even where the template renders it inside the "News & Links" wrapper: a link in the person's related-links list whose whole label is a website label ("Personal Page", "Personal website", "Lab Website") is read, while the news and media lists in the same wrapper stay unread (`isInProfileRelatedLinksList`, #5819).
-Any other entry in that related-links list records `refused`, whatever it links to, because it is a link the person published rather than publicity.
+Any other entry in that related-links list that carries a website signal records `refused`, because it is a candidate the person published rather than publicity; an entry with no website signal is not a candidate and leaves the slot claimable as empty.
 Measured on Development on 2026-11-11, three served rows' personal websites were refused this way and their slots attested empty.
 
 The lane cites the website it adopts in `sourceUrls` as well, so refusing the website, or an operator clearing it, left the same paper or file listed under Sources as a "Profile source", because `planStoredCitationReadmission` gives a stored citation back on every pass (#3476, #5114).
