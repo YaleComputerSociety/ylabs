@@ -170,6 +170,12 @@ const ABSENCE_CLAIM_FIX_3666: Omit<AbsenceClaimCutoff, 'field'> = {
   fixMergedAt: new Date('2026-09-27T16:51:32Z'),
 };
 
+const ABSENCE_CLAIM_FIX_5819: Omit<AbsenceClaimCutoff, 'field'> = {
+  fixedBy: '#5819',
+  fixCommit: '39ad6670bd789980cedb180923ac179c3a04e05e',
+  fixMergedAt: new Date('2026-11-11T17:47:35Z'),
+};
+
 /**
  * Only sources whose emit path has been read end to end belong here.
  *
@@ -193,7 +199,9 @@ const ABSENCE_CLAIM_FIX_3666: Omit<AbsenceClaimCutoff, 'field'> = {
  *
  * Both of those lanes asserted `empty` on unread or refused profiles until #3666, so
  * each declares that fix as its `websiteUrl` cutoff; #3135 and #3658 predate it and are
- * contained in its commit.
+ * contained in its commit. `dept-faculty-roster` also attested `empty` when it never
+ * read a profile's website button or declined a candidate link, until #5819 (PR #5828),
+ * so its cutoff is that later fix, whose commit contains #3666.
  *
  * `yse-faculty-directory` qualifies for one case only. It emits `slug` and
  * `sourceUrls` for every entity it mints, and states `assertsNoValueFor:
@@ -229,7 +237,7 @@ export const fieldRetractionContracts: Readonly<Record<string, SourceFieldRetrac
   'dept-faculty-roster': {
     witnessFields: ['slug', 'sourceUrls'],
     retractableFields: ['websiteUrl'],
-    absenceClaimCutoffs: [{ field: 'websiteUrl', ...ABSENCE_CLAIM_FIX_3666 }],
+    absenceClaimCutoffs: [{ field: 'websiteUrl', ...ABSENCE_CLAIM_FIX_5819 }],
     notes:
       'Emits slug and sourceUrls on every entity it mints. It states assertsNoValueFor: [websiteUrl] only on a positively attested empty lab-website slot (FacultyEntry.labSlotAttestation === "empty"), which every parse that reads labUrl must set and which is never set when a candidate link was seen and not adopted. A parse that routes a single destination link, or that never looked, leaves the claim unmade (#3135). An unread profile withdraws the empty a roster card attested, and a profile refused as naming someone else records refused.',
   },
