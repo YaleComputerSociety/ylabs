@@ -42,6 +42,7 @@ import {
 import { buildAdminOperatorBoard } from '../services/adminOperatorBoardService';
 import { listAdminAuditEvents } from '../services/adminAuditService';
 import { adminAuditMutationLogger } from '../middleware/adminAuditLogger';
+import { requireSessionCsrfToken } from '../middleware/sessionCsrfToken';
 import { revokeAccountSessions } from '../services/accountService';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { publicHttpUrl } from '../utils/urlSafety';
@@ -414,6 +415,7 @@ router.get('/directory-removal-requests', listAdminDirectoryRemovalRequests);
 router.put(
   '/directory-removal-requests/:id',
   writeLimit,
+  requireSessionCsrfToken,
   validateObjectId('id'),
   decideAdminDirectoryRemovalRequest,
 );

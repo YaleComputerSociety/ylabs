@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import axios from '../../utils/axios';
 import useLatestRequest from '../../hooks/useLatestRequest';
 import useLoadEffect from '../../hooks/useLoadEffect';
+import { sessionCsrfHeaders } from '../../utils/sessionCsrf';
 import RemovalRequestEmailLink from '../privacy/RemovalRequestEmailLink';
 
 export const DIRECTORY_REMOVAL_REQUEST_PATH = '/users/directoryRemovalRequest';
@@ -64,7 +65,8 @@ const DirectoryRemovalRequest = () => {
     setIsSubmitting(true);
     setSubmitError('');
     try {
-      const { data } = await axios.post(DIRECTORY_REMOVAL_REQUEST_PATH);
+      const headers = await sessionCsrfHeaders();
+      const { data } = await axios.post(DIRECTORY_REMOVAL_REQUEST_PATH, undefined, { headers });
       focusMessageOnMount.current = true;
       setEligibility({ eligible: true, request: data?.request ?? { status: 'pending' } });
     } catch {

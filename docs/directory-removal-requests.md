@@ -24,14 +24,16 @@ Routes:
 
 - `GET /api/users/directoryRemovalRequest` (signed in) answers `{ eligible, request }`, where `request` is the caller's latest `{ status, createdAt }` or `null`.
   A person who is not listed gets `{ eligible: false, request: null }` and nothing else.
-- `POST /api/users/directoryRemovalRequest` (signed in, write-limited) creates a pending request.
+- `POST /api/users/directoryRemovalRequest` (signed in, write-limited, session CSRF token in `X-CSRF-Token` from `GET /api/users/me/csrf-token`) creates a pending request.
   It answers `201` for a new request and `200` with the existing one while a request is pending or accepted, so a repeat is a no-op.
   A declined request lets the person ask again.
   An accepted request stops counting once every `directory_removals` entry matching the person has been withdrawn after the decision, so a person listed again sees the button and `GET` answers `request: null`.
   Without `DIRECTORY_REMOVAL_KEY` the entries cannot be matched, so an accepted request stays accepted.
   A person who is not listed gets `403` with a fixed message that names nobody.
 - `GET /api/admin/directory-removal-requests?status=` (admin) lists up to 200 requests, newest first, with the matched researcher's display name read at request time.
-- `PUT /api/admin/directory-removal-requests/:id` (admin, audited as `directory_removal_request.decide`) takes `{ status: 'accepted' | 'declined' }` and decides a pending request; a decided one answers `409`.
+- `PUT /api/admin/directory-removal-requests/:id` (admin, session CSRF token, audited as `directory_removal_request.decide`) takes `{ status: 'accepted' | 'declined' }` and decides a pending request; a decided one answers `409`.
+
+Both writes also pass the global `csrfOriginGuard`; a missing or foreign token answers `403` with `CSRF_TOKEN_REQUIRED` (`server/src/middleware/sessionCsrfToken.ts`).
 
 The admin queue sits below the correction reports on the admin panel's "Correction Reports" tab.
 

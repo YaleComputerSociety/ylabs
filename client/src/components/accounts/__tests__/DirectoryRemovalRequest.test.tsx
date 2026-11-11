@@ -18,6 +18,11 @@ vi.mock('../../../utils/axios', () => ({
   },
 }));
 
+const csrfMock = vi.hoisted(() => ({
+  sessionCsrfHeaders: vi.fn(async () => ({ 'X-CSRF-Token': 't'.repeat(64) })),
+}));
+vi.mock('../../../utils/sessionCsrf', () => csrfMock);
+
 const mockedAxios = axios as unknown as {
   get: ReturnType<typeof vi.fn>;
   post: ReturnType<typeof vi.fn>;
@@ -70,8 +75,11 @@ describe('DirectoryRemovalRequest', () => {
     expect(button.getAttribute('aria-busy')).toBe('true');
     expect(button.getAttribute('aria-disabled')).toBe('true');
     fireEvent.click(button);
-    expect(mockedAxios.post).toHaveBeenCalledTimes(1);
-    expect(mockedAxios.post).toHaveBeenCalledWith(DIRECTORY_REMOVAL_REQUEST_PATH);
+    await waitFor(() => expect(mockedAxios.post).toHaveBeenCalledTimes(1));
+    expect(csrfMock.sessionCsrfHeaders).toHaveBeenCalledTimes(1);
+    expect(mockedAxios.post).toHaveBeenCalledWith(DIRECTORY_REMOVAL_REQUEST_PATH, undefined, {
+      headers: { 'X-CSRF-Token': 't'.repeat(64) },
+    });
 
     resolvePost({ data: { request: { status: 'pending', createdAt: '2026-11-10T00:00:00Z' } } });
     const message = await screen.findByRole('status');
@@ -124,6 +132,18 @@ describe('DirectoryRemovalRequest', () => {
     fireEvent.click(button);
     expect((await screen.findByRole('status')).textContent).toBe(REMOVAL_REQUESTED_MESSAGE);
     expect(container.textContent).not.toContain('We could not confirm');
+  });
+
+  it('sends nothing and says so when the CSRF token cannot be fetched', async () => {
+    mockedAxios.get.mockResolvedValue(eligibility(true));
+    csrfMock.sessionCsrfHeaders.mockRejectedValueOnce(new Error('network'));
+    render(<DirectoryRemovalRequest />);
+
+    fireEvent.click(await screen.findByRole('button', { name: REMOVE_ME_LABEL }));
+    expect((await screen.findByRole('alert')).textContent).toBe(
+      'Your request could not be sent. Please try again.',
+    );
+    expect(mockedAxios.post).not.toHaveBeenCalled();
   });
 
   it('says so when the request cannot be sent and keeps the button', async () => {

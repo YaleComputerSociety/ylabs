@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import axios from '../../utils/axios';
 import useLatestRequest from '../../hooks/useLatestRequest';
 import useLoadEffect from '../../hooks/useLoadEffect';
+import { sessionCsrfHeaders } from '../../utils/sessionCsrf';
 
 type RequestStatus = 'pending' | 'accepted' | 'declined';
 type Decision = Exclude<RequestStatus, 'pending'>;
@@ -56,7 +57,12 @@ export default function AdminDirectoryRemovalRequests() {
     setDecidingId(request._id);
     setDecisionError('');
     try {
-      await axios.put(`/admin/directory-removal-requests/${request._id}`, { status: decision });
+      const headers = await sessionCsrfHeaders();
+      await axios.put(
+        `/admin/directory-removal-requests/${request._id}`,
+        { status: decision },
+        { headers },
+      );
     } catch (error: any) {
       setDecisionError(error?.response?.data?.error || DECIDE_ERROR);
       setDecidingId(null);

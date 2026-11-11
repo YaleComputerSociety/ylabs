@@ -11,6 +11,11 @@ vi.mock('../../../utils/axios', () => ({
   },
 }));
 
+const csrfMock = vi.hoisted(() => ({
+  sessionCsrfHeaders: vi.fn(async () => ({ 'X-CSRF-Token': 't'.repeat(64) })),
+}));
+vi.mock('../../../utils/sessionCsrf', () => csrfMock);
+
 const mockedAxios = axios as unknown as {
   get: ReturnType<typeof vi.fn>;
   put: ReturnType<typeof vi.fn>;
@@ -54,9 +59,11 @@ describe('AdminDirectoryRemovalRequests', () => {
     );
 
     await waitFor(() => expect(mockedAxios.get).toHaveBeenCalledTimes(2));
-    expect(mockedAxios.put).toHaveBeenCalledWith('/admin/directory-removal-requests/req1', {
-      status,
-    });
+    expect(mockedAxios.put).toHaveBeenCalledWith(
+      '/admin/directory-removal-requests/req1',
+      { status },
+      { headers: { 'X-CSRF-Token': 't'.repeat(64) } },
+    );
     expect(await screen.findByText('No pending requests.')).toBeTruthy();
   });
 

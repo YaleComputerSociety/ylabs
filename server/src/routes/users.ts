@@ -6,10 +6,7 @@ import { isAuthenticated, validateObjectId, validateResearchEntityId } from '../
 import { writeLimit } from '../middleware/rateLimiters';
 import * as userController from '../controllers/userController';
 import * as accountDataController from '../controllers/accountDataController';
-import {
-  issueAccountDeletionCsrfToken,
-  requireAccountDeletionCsrfToken,
-} from '../middleware/accountDeletionCsrf';
+import { issueSessionCsrfToken, requireSessionCsrfToken } from '../middleware/sessionCsrfToken';
 import {
   getOwnDirectoryRemovalRequest,
   submitOwnDirectoryRemovalRequest,
@@ -83,14 +80,15 @@ router.get(
   '/me/deletion-csrf-token',
   isAuthenticated,
   accountDataController.requireAccountDataControls,
-  issueAccountDeletionCsrfToken,
+  issueSessionCsrfToken,
 );
+router.get('/me/csrf-token', isAuthenticated, issueSessionCsrfToken);
 router.delete(
   '/me',
   writeLimit,
   isAuthenticated,
   accountDataController.requireAccountDataControls,
-  requireAccountDeletionCsrfToken,
+  requireSessionCsrfToken,
   accountDataController.deleteOwnAccountData,
 );
 router.get('/directoryRemovalRequest', isAuthenticated, getOwnDirectoryRemovalRequest);
@@ -98,6 +96,7 @@ router.post(
   '/directoryRemovalRequest',
   writeLimit,
   isAuthenticated,
+  requireSessionCsrfToken,
   submitOwnDirectoryRemovalRequest,
 );
 

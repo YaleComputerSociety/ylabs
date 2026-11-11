@@ -10,6 +10,7 @@ const LISTED_NETID = 'zz9lst';
 const ARCHIVED_NETID = 'zz9arc';
 const UNLISTED_NETID = 'zz9unl';
 const ADMIN_NETID = 'zz9adm';
+const SESSION_CSRF_TOKEN = 'c'.repeat(64);
 const SYNTHETIC_REMOVAL_KEY = 'synthetic-directory-removal-key-0123456789';
 
 vi.mock('../services/adminGrantService', async (importOriginal) => ({
@@ -34,7 +35,10 @@ let listedResearcherId: mongoose.Types.ObjectId;
 const call = async (method: string, path: string, body?: unknown) => {
   const response = await fetch(`${baseUrl}${path}`, {
     method,
-    headers: body === undefined ? undefined : { 'content-type': 'application/json' },
+    headers: {
+      ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+      ...(method === 'GET' ? {} : { 'x-csrf-token': SESSION_CSRF_TOKEN }),
+    },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   return {
@@ -65,6 +69,7 @@ describe('directory removal requests', () => {
     app.use(express.json());
     app.use((request, _response, next) => {
       (request as any).user = { netId: signedInNetid, isAdmin: signedInNetid === ADMIN_NETID };
+      (request as any).session = { csrfToken: SESSION_CSRF_TOKEN };
       next();
     });
     app.use('/api', apiRouter);
