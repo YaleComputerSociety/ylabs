@@ -930,9 +930,9 @@ describe('a signed-in student can export and delete their account data (#4156)',
     expect(await db().collection('accounts').countDocuments({ netid: OWNER_NETID })).toBe(1);
   });
 
-  it('exports without any PostHog or audit setting, since export reads only this database', async () => {
+  it('exports with every deletion setting unset, since export reads only this database', async () => {
     const { cookie } = await signInBothAccounts();
-    process.env.MONGODBURL = PRODUCTION_MONGODBURL;
+    delete process.env.MONGODBURL;
     delete process.env.POSTHOG_PERSONAL_API_KEY;
     delete process.env.POSTHOG_PROJECT_ID;
     delete process.env.ACCOUNT_DELETION_AUDIT_HMAC_KEY;
@@ -943,6 +943,7 @@ describe('a signed-in student can export and delete their account data (#4156)',
     expect(exported.status).toBe(200);
     expect(JSON.parse(exported.body).researchPlans).toHaveLength(2);
     expect(postHogCalls).toHaveLength(0);
+    expect((await servedDeletionState()).readiness.status).toBe('unavailable');
   });
 
   it('reports deletion as off, not unavailable, while the release flag is off', async () => {

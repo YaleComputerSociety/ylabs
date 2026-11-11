@@ -281,11 +281,14 @@ describe('production promotion smoke account deletion readiness', () => {
     }
   });
 
-  it('warns when the server does not report deletion readiness at all', () => {
+  it('fails when the server does not report a recognised deletion readiness', () => {
     expect(evaluateAccountDeletionReadiness({ mongo: true, search: true })).toStrictEqual({
-      status: 'warn',
+      status: 'fail',
       details: { accountDeletion: 'unreported' },
     });
-    expect(evaluateAccountDeletionReadiness(null).status).toBe('warn');
+    expect(evaluateAccountDeletionReadiness(null).status).toBe('fail');
+    expect(
+      evaluateAccountDeletionReadiness({ accountDeletion: { status: 'degraded' } }).status,
+    ).toBe('fail');
   });
 });

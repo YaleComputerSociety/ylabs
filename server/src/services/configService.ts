@@ -7,7 +7,7 @@ import { OrgUnit, type OrgUnitKind } from '../models/orgUnit';
 import { withMongoReconnect } from '../db/connections';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { replaceAsciiControls } from '../utils/asciiControl';
-import { accountDeletionReadiness } from './accountDeletionReadiness';
+import { accountDeletionServingState } from './accountDeletionServing';
 
 let configCache: ConfigData | null = null;
 let cacheTimestamp: number = 0;
@@ -84,10 +84,6 @@ export const buildFeatureFlags = (
 
 export const isReleaseFeatureEnabled = (flag: string, env: DeploymentEnv = process.env): boolean =>
   buildFeatureFlags(env)[flag] === true;
-
-export const isSelfServeAccountDeletionServed = (env: DeploymentEnv = process.env): boolean =>
-  isReleaseFeatureEnabled(ACCOUNT_DATA_CONTROLS_FLAG, env) &&
-  accountDeletionReadiness(env as NodeJS.ProcessEnv).available;
 
 export const buildDeploymentFingerprint = (
   env: DeploymentEnv = process.env,
@@ -212,7 +208,8 @@ export const getConfig = async (
     },
     deployment: buildDeploymentFingerprint(env),
     features: buildFeatureFlags(env),
-    selfServeAccountDeletion: isSelfServeAccountDeletionServed(env),
+    selfServeAccountDeletion:
+      accountDeletionServingState(env as NodeJS.ProcessEnv).status === 'available',
     timestamp: new Date().toISOString(),
   };
 

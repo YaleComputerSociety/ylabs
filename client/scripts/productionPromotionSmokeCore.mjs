@@ -248,7 +248,7 @@ export const evaluateAccountDeletionReadiness = (json) => {
   if (status === 'unavailable') {
     return { status: 'fail', details: { accountDeletion: status, missingSettings } };
   }
-  return { status: 'warn', details: { accountDeletion: 'unreported' } };
+  return { status: 'fail', details: { accountDeletion: 'unreported' } };
 };
 
 export const discoverResearchSlug = (json) =>

@@ -235,7 +235,7 @@ The deletion order is the contract, and every step is safe to repeat:
 0. Refuse with `503` (`DELETION_UNAVAILABLE`), before reading or deleting anything, while the serving environment lacks a setting a later step needs (#5624, `server/src/services/accountDeletionReadiness.ts`): `ACCOUNT_DELETION_AUDIT_HMAC_KEY` always, a `MONGODBURL` database name that identifies the environment, and `POSTHOG_PERSONAL_API_KEY` and `POSTHOG_PROJECT_ID` wherever PostHog captures, which is Production and any environment the server cannot identify.
 The refusal tells the student to email the privacy mailbox, the dashboard hides the delete action and shows `PRIVACY_CONTACT_EMAIL` instead (served as `selfServeAccountDeletion: false` in `GET /api/config`), and `/privacy` stops describing the dashboard deletion.
 Export needs none of these settings, so it keeps working.
-`/api/ready` reports `accountDeletion` as `off`, `available` or `unavailable` with the missing settings by name only, the boot log says the same, and `yarn security:smoke:production` fails on `unavailable`.
+`/api/ready` reports `accountDeletion` as `off`, `available` or `unavailable` with the missing settings by name only, the boot log says the same, and `yarn security:smoke:production` fails on `unavailable` and on a readiness body that reports no recognised `accountDeletion.status`.
 1. Refuse with `409` (`DELETION_BLOCKED`) if a corpus field in `CORPUS_ACCOUNT_ID_REFERENCE_FIELDS` holds the account `_id`, rather than leave a dangling id.
 2. `revokeAccountSessions`, so another tab stops writing events.
 3. Delete every `research_plans` row for the account, bypassing the restore window.
