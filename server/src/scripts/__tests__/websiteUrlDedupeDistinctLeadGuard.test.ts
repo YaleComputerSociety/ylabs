@@ -64,9 +64,29 @@ describe('website-url lane distinct-lead guard (#5638)', () => {
     expect(planFor(twoProfiles([], []))).toHaveLength(1);
   });
 
-  it('merges a refused pair once researcher-dedupe has folded both leads into one id', () => {
-    expect(planFor(twoProfiles(['researcher-1'], ['researcher-2']))).toEqual([]);
-    const folded = planFor(twoProfiles(['researcher-1'], ['researcher-1']));
-    expect(folded).toHaveLength(1);
+  it('refuses a leadless survivor collecting different researcher ids from two duplicates', () => {
+    const entities: Entity[] = [
+      profile({
+        id: 'dept-zero-ada-quill',
+        websiteUrl: OLD_HOME,
+        sourceUrls: [OLD_HOME, NEW_HOME, 'https://zero.example.edu/a', 'https://zero.example.edu/b'],
+      }),
+      ...twoProfiles(['researcher-1'], ['researcher-2']),
+    ];
+    expect(planFor(entities)).toEqual([]);
+  });
+
+  it('merges a leadless survivor with two duplicates sharing one researcher id', () => {
+    const entities: Entity[] = [
+      profile({
+        id: 'dept-zero-ada-quill',
+        websiteUrl: OLD_HOME,
+        sourceUrls: [OLD_HOME, NEW_HOME, 'https://zero.example.edu/a', 'https://zero.example.edu/b'],
+      }),
+      ...twoProfiles(['researcher-1'], ['researcher-1']),
+    ];
+    const plan = planFor(entities);
+    expect(plan).toHaveLength(1);
+    expect(plan[0].duplicateEntityIds).toHaveLength(2);
   });
 });

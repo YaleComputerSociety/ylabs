@@ -1609,6 +1609,18 @@ function mergeHandsSurvivorAnotherLead(
   );
 }
 
+function mergeJoinsDistinctLeads(
+  group: ResearchEntityPiDedupeGroup,
+  byId: ReadonlyMap<string, ResearchEntityPiDedupeRow['entities'][number]>,
+): boolean {
+  if (mergeHandsSurvivorAnotherLead(group, byId)) return true;
+  const duplicateLeadSets = group.duplicateEntityIds
+    .map((id) => new Set(byId.get(id)?.leadPersonIds || []))
+    .filter((leads) => leads.size > 0);
+  const allLeads = new Set(duplicateLeadSets.flatMap((leads) => [...leads]));
+  return duplicateLeadSets.some((leads) => leads.size !== allLeads.size);
+}
+
 export function buildSpecificProfileLabUrlResearchEntityDedupePlan(
   rows: OfficialLabUrlDedupeRow[],
 ): ResearchEntityPiDedupeGroup[] {
@@ -1866,7 +1878,7 @@ export function buildWebsiteUrlResearchEntityDedupePlan(
         cluster,
         websiteUrlCanonicalScore,
       );
-      if (group && !mergeHandsSurvivorAnotherLead(group, byId)) groups.push(group);
+      if (group && !mergeJoinsDistinctLeads(group, byId)) groups.push(group);
     }
   }
   return dedupePlanGroupsByEntitySet(groups);
