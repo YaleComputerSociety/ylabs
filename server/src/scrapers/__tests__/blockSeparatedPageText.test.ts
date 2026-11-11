@@ -16,7 +16,7 @@ const PHYSICS_HTML_WITH_BLOCK_CONTACT = `
   <h1>Undergraduate Research</h1>
   <h2>Active Research in the Physics Department</h2>
   <h3>Quill Fennimore</h3>
-  <div class="contact"><div>Department of Physics</div><div>quill.fennimore@yale.edu</div></div>
+  <div class="contact"><div>Department of Physics</div><div>quill.fennimore1@yale.edu</div></div>
   <p>Undergraduates join the group each term to build detectors and analyze collision data.</p>
 </main>`;
 
@@ -26,8 +26,8 @@ describe('page text keeps adjacent blocks apart (#5720)', () => {
       PHYSICS_HTML_WITH_BLOCK_CONTACT,
       PHYSICS_CONFIG,
     );
-    expect(record.contactEmail).toBe('quill.fennimore@yale.edu');
-    expect(record.evidenceQuote).toContain('Department of Physics quill.fennimore@yale.edu');
+    expect(record.contactEmail).toBe('quill.fennimore1@yale.edu');
+    expect(record.evidenceQuote).toContain('Department of Physics quill.fennimore1@yale.edu');
   });
 
   it('sends the director model a name kept apart from the title block beside it', async () => {
@@ -68,14 +68,14 @@ describe('page text keeps adjacent blocks apart (#5720)', () => {
     const records = parsePhysicsUndergradResearchPage(
       `${PHYSICS_HTML_WITH_BLOCK_CONTACT.replace('</main>', '')}
   <h3>Bram Ostrander</h3>
-  <div class="contact"><div>Department of Physics</div><div>bram.ostrander@yale.edu</div></div>
+  <div class="contact"><div>Department of Physics</div><div>bram.ostrander1@yale.edu</div></div>
   <p>Students in the group model dark matter halos and write simulation code each summer.</p>
 </main>`,
       PHYSICS_CONFIG,
     );
     expect(records.map((record) => record.contactEmail)).toEqual([
-      'quill.fennimore@yale.edu',
-      'bram.ostrander@yale.edu',
+      'quill.fennimore1@yale.edu',
+      'bram.ostrander1@yale.edu',
     ]);
   });
 });

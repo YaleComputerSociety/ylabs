@@ -6,9 +6,9 @@ import { runGluedProfileTextRetirement } from '../retireGluedProfileText';
 
 const PAGE = 'https://eeb.example.edu/people/faculty/wren-halloway/';
 const LOCKED_PAGE = 'https://medicine.example.edu/profile/sorrel-ambry/';
-const GLUED = 'biologywren.halloway@yale.edu';
-const CLEAN = 'wren.halloway@yale.edu';
-const PHANTOM_KEY = 'netid:biologywren.halloway';
+const GLUED = 'biologywren.halloway1@yale.edu';
+const CLEAN = 'wren.halloway1@yale.edu';
+const PHANTOM_KEY = 'netid:biologywren.halloway1';
 
 const FIXED_PAGE_HTML = `<html><body><main>
   <h1>Wren Halloway</h1>
@@ -43,9 +43,9 @@ const seedCorpus = async () => {
   await seed(PHANTOM_KEY, 'email', GLUED);
   await seed(PHANTOM_KEY, 'fname', 'Wren');
   await seed(PHANTOM_KEY, 'lname', 'Halloway');
-  await seed(PHANTOM_KEY, 'netid', 'biologywren.halloway');
+  await seed(PHANTOM_KEY, 'netid', 'biologywren.halloway1');
   await seed(PHANTOM_KEY, 'profileUrls', { official: PAGE });
-  await seed('wren-halloway-lab', 'inferredPiUserKey', 'biologywren.halloway', {
+  await seed('wren-halloway-lab', 'inferredPiUserKey', 'biologywren.halloway1', {
     entityType: 'researchEntity',
   });
   await seed('netid:sa31', 'title', 'Professor of MedicineSection Chief', {

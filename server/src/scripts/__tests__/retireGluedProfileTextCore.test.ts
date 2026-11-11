@@ -31,20 +31,20 @@ const piKey = (id: string, value: string): StoredProfileObservation => ({
   sourceUrl: PAGE,
 });
 
-const GLUED = 'biologywren.halloway@yale.edu';
-const CLEAN = 'wren.halloway@yale.edu';
+const GLUED = 'biologywren.halloway1@yale.edu';
+const CLEAN = 'wren.halloway1@yale.edu';
 
 const laneObservations = (): StoredProfileObservation[] => [
   user('a1', 'netid:wh77', 'email', GLUED),
   user('a2', 'netid:wh77', 'title', 'Senior LecturerEcology and Evolutionary BiologyAddress'),
-  user('p1', 'netid:biologywren.halloway', 'email', GLUED),
-  user('p2', 'netid:biologywren.halloway', 'fname', 'Wren'),
-  user('p3', 'netid:biologywren.halloway', 'lname', 'Halloway'),
-  user('p4', 'netid:biologywren.halloway', 'netid', 'biologywren.halloway'),
-  user('p5', 'netid:biologywren.halloway', 'profileUrls', { official: PAGE }),
+  user('p1', 'netid:biologywren.halloway1', 'email', GLUED),
+  user('p2', 'netid:biologywren.halloway1', 'fname', 'Wren'),
+  user('p3', 'netid:biologywren.halloway1', 'lname', 'Halloway'),
+  user('p4', 'netid:biologywren.halloway1', 'netid', 'biologywren.halloway1'),
+  user('p5', 'netid:biologywren.halloway1', 'profileUrls', { official: PAGE }),
   user('r1', 'netid:wh77', 'email', CLEAN),
-  piKey('k1', 'biologywren.halloway'),
-  user('n1', 'netid:ab12', 'email', 'a.bystander@yale.edu', 'https://other.example.edu/a/'),
+  piKey('k1', 'biologywren.halloway1'),
+  user('n1', 'netid:ab12', 'email', 'a.bystander1@yale.edu', 'https://other.example.edu/a/'),
   user('n2', 'netid:ab12', 'title', 'Professor of Geology', 'https://other.example.edu/a/'),
 ];
 
@@ -63,8 +63,8 @@ const FIXED_PAGE: PageRead = {
 describe('glued profile text predicates (#5720)', () => {
   it('finds the address a department word was fused onto', () => {
     expect(gluedAddressTwin(GLUED, new Set([CLEAN]))).toBe(CLEAN);
-    expect(gluedAddressTwin(CLEAN, new Set(['halloway@yale.edu']))).toBe('');
-    expect(gluedAddressTwin('wh.halloway@yale.edu', new Set(['halloway@yale.edu']))).toBe('');
+    expect(gluedAddressTwin(CLEAN, new Set(['halloway1@yale.edu']))).toBe('');
+    expect(gluedAddressTwin('wh.halloway1@yale.edu', new Set(['halloway1@yale.edu']))).toBe('');
   });
 
   it('flags a title that absorbed a neighbouring field and leaves a clean one', () => {
@@ -83,7 +83,7 @@ describe('glued profile text predicates (#5720)', () => {
     expect(page.titles.map((row) => row.id)).toEqual(['a2']);
     expect(page.phantoms).toEqual([
       {
-        netid: 'biologywren.halloway',
+        netid: 'biologywren.halloway1',
         userObservationIds: ['p1', 'p2', 'p3', 'p4', 'p5'],
         piKeyObservationIds: ['k1'],
       },
@@ -154,7 +154,7 @@ describe('planGluedProfileTextRetirement', () => {
         ...laneObservations(),
         user(
           'p6',
-          'netid:biologywren.halloway',
+          'netid:biologywren.halloway1',
           'profileUrls',
           { official: LOCKED_PAGE },
           LOCKED_PAGE,
