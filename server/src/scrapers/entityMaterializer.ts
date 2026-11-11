@@ -5,6 +5,7 @@
  * For person identities, materializes a canonical Researcher/Account (lookup by
  * entityKey, e.g. netid).
  */
+import { withoutModelCalls } from '../utils/modelClient';
 import { isGrantLaneObservationOutsideEnrichment } from './grantLaneSourceNames';
 import {
   inferredPiKeyNamesRoleOrUnitMailbox,
@@ -77,13 +78,10 @@ import {
 import {
   isWeakCardLine,
   cardLineFitsBrowseCard,
-  CARD_SYNTHESIS_MODEL,
   cardGroundingScore,
-  defaultCardSynthesisLLM,
   isUngroundedSynthesizedCard,
   resolveGroundedCardDescription,
   servedCardClearsGateBar,
-  synthesizeGroundedCardDescription,
 } from '../utils/groundedCardSynthesis';
 import { isProgramTitleQualifierDrift, normalizedProgramTitleKey } from '../utils/programTitle';
 import {
@@ -597,19 +595,24 @@ export type CardSynthesizer = (
   evidenceTexts?: readonly string[],
 ) => Promise<string>;
 
+let reportedSkippedCardSynthesis = false;
+
+/**
+ * Materialization reads cached outputs only and never calls a model (#5537), so the card a
+ * synthesizer would have written is simply not written; the card resolution falls back to
+ * its stored, copied and derived candidates.
+ */
 export function defaultMaterializerCardSynthesizer(
-  entityName: string,
-  model: string = CARD_SYNTHESIS_MODEL,
+  _entityName?: string,
+  _model?: string,
 ): CardSynthesizer {
-  const apiKey = String(process.env.OPENAI_API_KEY || '').trim();
-  if (!apiKey) return () => Promise.resolve('');
-  return (fullDescription, evidenceTexts) =>
-    synthesizeGroundedCardDescription({
-      fullDescription,
-      evidenceTexts,
-      entityName,
-      callLLM: (llmInput) => defaultCardSynthesisLLM({ ...llmInput, apiKey, model }),
-    });
+  return async () => {
+    if (!reportedSkippedCardSynthesis) {
+      reportedSkippedCardSynthesis = true;
+      console.info('[materialize] card synthesis skipped: materialization makes no model calls');
+    }
+    return '';
+  };
 }
 
 /**
@@ -10656,7 +10659,17 @@ async function resolveCanonicalForEntityMint(
   );
 }
 
-export async function materializeEntity(
+export function materializeEntity(
+  entityType: ObservedEntityType,
+  identifier: { entityId?: string; entityKey?: string },
+  options: MaterializeOptions = {},
+): Promise<MaterializeResult> {
+  return withoutModelCalls('materializeEntity', () =>
+    materializeEntityWithoutModelCalls(entityType, identifier, options),
+  );
+}
+
+async function materializeEntityWithoutModelCalls(
   entityType: ObservedEntityType,
   identifier: { entityId?: string; entityKey?: string },
   options: MaterializeOptions = {},
