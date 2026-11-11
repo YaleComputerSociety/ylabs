@@ -331,7 +331,9 @@ It replaces the convention of announcing each write to the session that sequence
 - A writing lane run against Development also takes a `host:<hostname>` lease before its first fetch to each host, so two lane runs cannot fetch one host at once.
 - The lease heartbeats every 30 seconds and expires 5 minutes after the last heartbeat, so an apply running for hours keeps it, and a crashed holder frees it within 5 minutes; a holder on the same machine whose process has exited is taken over at once.
   A process that finds its lease taken exits before its next write.
-- Set `DEV_WRITE_OWNER=<session name>` so a refusal names who holds the lease.
+- `DEV_WRITE_OWNER=<session name>` is required: on Development, an apply or a writing lane run with no owner label is **refused** before it takes a lease or writes anything, so every launch record and refusal names who launched it.
+  The sweep runners (`scrape:sweep`, the weekly Development sweep, the source rerun) set their own `sweep-runner:<script>@<host>` label when none is set, and their children inherit it.
+  Beta, Production, test and local databases never ask for one.
 - Every apply that takes the lease also appends a launch record to `dev_write_launches` (#5782): the owner label, the worktree and working directory, the git sha, the entry script and the arguments, with any `://` value and the value of any flag or assignment whose name contains key, token, secret, password or credential redacted.
   The lease row expires and is overwritten, so this collection is the durable answer to who changed Development and from which code; it is environment-local and preserved by the refresh from Beta.
   An apply whose launch record cannot be written is refused.

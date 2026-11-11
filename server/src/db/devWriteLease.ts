@@ -132,6 +132,25 @@ export function devWriteLeaseCollection(db: Db): Collection<DevWriteLeaseRecord>
   return db.collection<DevWriteLeaseRecord>(DEV_WRITE_LEASE_COLLECTION);
 }
 
+export class DevWriteOwnerMissingError extends Error {
+  constructor(action: string) {
+    super(
+      `${action} refused: ${DEV_WRITE_OWNER_LABEL_ENV} is not set. Every apply or lane run against Development must name who launched it; set ${DEV_WRITE_OWNER_LABEL_ENV}=<your session name> and run it again. Nothing was written.`,
+    );
+    this.name = 'DevWriteOwnerMissingError';
+  }
+}
+
+export function assertDevWriteOwnerLabel(action: string, env: NodeJS.ProcessEnv = process.env) {
+  if (!env[DEV_WRITE_OWNER_LABEL_ENV]?.trim()) throw new DevWriteOwnerMissingError(action);
+}
+
+export function labelSweepRunnerOwner(scriptName: string, env: NodeJS.ProcessEnv = process.env) {
+  if (!env[DEV_WRITE_OWNER_LABEL_ENV]?.trim()) {
+    env[DEV_WRITE_OWNER_LABEL_ENV] = `sweep-runner:${scriptName}@${hostname()}`;
+  }
+}
+
 const leaseId = (name: string) => `${DEV_WRITE_LEASE_ENVIRONMENT}:${name}`;
 
 const isLiveFor = (record: DevWriteLeaseRecord | null | undefined, now: Date): boolean =>
@@ -374,6 +393,7 @@ export async function acquireIntendedDevApplyLease(
   if (target.kind === 'refuse') {
     throw new Error(`${applyIntent.scriptName} refused to apply: ${target.reason}.`);
   }
+  assertDevWriteOwnerLabel(applyIntent.scriptName, env);
   const lease = await holdLease(
     DEV_APPLY_LEASE_NAME,
     describeDevWriteCommand(applyIntent),
@@ -422,6 +442,7 @@ export function armDevHostLeases(
 ) {
   if (devWriteLeaseSwitchedOff(env)) return;
   if (resolveDevWriteLeaseTarget(connection).kind !== 'development') return;
+  assertDevWriteOwnerLabel(command, env);
   armedHostLeaseConnection = { connection, command };
 }
 
