@@ -562,7 +562,7 @@ Running the standard sync again replaces the approved Atlas Development mirror w
 It never clears Development's own measurement history.
 `PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS` in `server/src/scripts/mirrorCollectionPolicy.ts` is the authoritative list of what the refresh keeps: the frozen lane benchmarks and their hand labels, the lane and gate scorecard snapshots, the corpus quality trend, the engine benchmark rows and snapshots, the weekly sweep run records, the login signal tallies, the research-topics derivation cache, the search rerank cache, and the analytics event log.
 Beta never mirrors any of them, so without the allowlist the clear would be the thing that destroys them, and a frozen lane benchmark carries hand labels that no code can re-derive.
-`scrape_job_locks` is the one unmirrored collection the refresh still clears, because a lease is state rather than history and expires anyway.
+`scrape_job_locks` is preserved too, because it holds the Development write lease the refresh itself takes (#5756), so clearing it mid-refresh would admit a second apply; nothing environment-local is cleared any more.
 The dry-run and apply artifacts report both sides: read `localCollectionsClearedOnApply` for what goes and `localCollectionsPreservedOnApply` for what stays.
 
 Adding a collection to `NEVER_COPY_COLLECTIONS` without classifying it as preserved or ephemeral fails `assertEnvironmentLocalCollectionsClassified`, so a new instrument's history cannot join the cleared set by omission.
