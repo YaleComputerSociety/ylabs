@@ -133,6 +133,32 @@ export function shadowedValues(profile, values) {
   );
 }
 
+export const SHELL_PRECEDENT_KEYS = Object.freeze([
+  'LOCAL_AUTH_BYPASS',
+  'LOCAL_AUTH_BYPASS_NETID',
+  'LOCAL_AUTH_BYPASS_USER_TYPE',
+]);
+
+export function shellPrecedentValues(processEnv) {
+  return Object.fromEntries(
+    SHELL_PRECEDENT_KEYS.filter((key) => processEnv[key] !== undefined).map((key) => [
+      key,
+      processEnv[key],
+    ]),
+  );
+}
+
+export function childEnvironment({ processEnv, profile, values }) {
+  return {
+    ...processEnv,
+    ...shadowedValues(profile, values),
+    ...values,
+    ...shellPrecedentValues(processEnv),
+    SCRAPER_ENV: profile.environment,
+    CONFIRM_PROD_SCRAPE: 'false',
+  };
+}
+
 export function run(argv = process.argv.slice(2)) {
   const invocation = parseInvocation(argv);
   const profile = PROFILES[invocation.profileName];
@@ -150,13 +176,7 @@ export function run(argv = process.argv.slice(2)) {
   const { target } = validateProfileValues(invocation.profileName, values);
   assertWritesAllowed(invocation.profileName, invocation.writesEnabled);
 
-  const childEnv = {
-    ...process.env,
-    ...shadowedValues(profile, values),
-    ...values,
-    SCRAPER_ENV: profile.environment,
-    CONFIRM_PROD_SCRAPE: 'false',
-  };
+  const childEnv = childEnvironment({ processEnv: process.env, profile, values });
   if (invocation.writesEnabled) {
     childEnv.ALLOW_NON_PROD_SCRAPER_WRITES = 'true';
   } else {

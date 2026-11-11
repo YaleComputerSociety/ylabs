@@ -6073,6 +6073,154 @@ test('local auth bypass bounds netid session identities', () => {
   );
 });
 
+const COPIED_DOT_ENV_BYPASS = {
+  LOCAL_AUTH_BYPASS: 'true',
+  LOCAL_AUTH_BYPASS_NETID: 'devadmin',
+  LOCAL_AUTH_BYPASS_USER_TYPE: 'admin',
+};
+const LOCAL_DEVELOPMENT_RUNTIME = {
+  NODE_ENV: 'development',
+  SERVER_BASE_URL: 'http://localhost:4000',
+  SSOBASEURL: 'https://secure.its.yale.edu/cas',
+};
+const LOOPBACK_BYPASS_CALLER = { remoteAddress: '127.0.0.1', host: 'localhost:4000' };
+
+const evaluateLocalAuthBypassGate = (cases) => {
+  const moduleUrl = new URL('../server/src/passport.ts', import.meta.url).href;
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'preflight-bypass-gate-'));
+  const script = path.join(directory, 'evaluate.mts');
+  try {
+    fs.writeFileSync(
+      script,
+      [
+        'const cases = JSON.parse(process.argv[2]);',
+        `const passport = await import(${JSON.stringify(moduleUrl)});`,
+        'const bypassMiddleware = passport.passportRoutes.stack[0].handle;',
+        'const runtimeKeys = ["NODE_ENV", "SERVER_BASE_URL", "LOCAL_AUTH_BYPASS", "LOCAL_AUTH_BYPASS_NETID", "LOCAL_AUTH_BYPASS_USER_TYPE"];',
+        'const fakeRequest = ({ remoteAddress, host }) => {',
+        '  const headers = { "x-dev-netid": "devadmin", "x-dev-user-type": "admin" };',
+        '  if (host !== undefined) headers.host = host;',
+        '  return { headers, socket: { remoteAddress }, path: "/check", session: { visitorLogged: true }, query: {},',
+        '    get: (name) => headers[name.toLowerCase()], isAuthenticated() { return Boolean(this.user); } };',
+        '};',
+        'const results = [];',
+        'for (const testCase of cases) {',
+        '  for (const key of runtimeKeys) delete process.env[key];',
+        '  for (const [key, value] of Object.entries(testCase.env)) process.env[key] = value;',
+        '  const gate = passport.isLocalAuthBypassRequestAllowed(fakeRequest(testCase.caller), testCase.env);',
+        '  const result = { name: testCase.name, gate };',
+        '  if (!testCase.expectAllowed && !gate) {',
+        '    const req = fakeRequest(testCase.caller);',
+        '    let nextArgs = null;',
+        '    await bypassMiddleware(req, {}, (...args) => { nextArgs = args; });',
+        '    result.resolvedNetId = req.user?.netId ?? null;',
+        '    result.resolvedIsAdmin = req.user?.isAdmin ?? null;',
+        '    result.authenticated = req.isAuthenticated();',
+        '    result.nextArgs = nextArgs;',
+        '  }',
+        '  results.push(result);',
+        '}',
+        'process.stdout.write(JSON.stringify(results));',
+        'process.exit(0);',
+      ].join('\n'),
+    );
+    const result = spawnSync(serverTsx, [script, JSON.stringify(cases)], {
+      cwd: serverDirectory,
+      encoding: 'utf8',
+      timeout: 120_000,
+      env: {
+        PATH: process.env.PATH,
+        HOME: process.env.HOME,
+        ...LOCAL_DEVELOPMENT_RUNTIME,
+        ...COPIED_DOT_ENV_BYPASS,
+      },
+    });
+    if (result.status !== 0) {
+      throw new Error(`local auth bypass gate evaluation failed: ${result.stderr || result.error}`);
+    }
+    return JSON.parse(result.stdout);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+};
+
+test('the local auth bypass never activates on a deployed service, even with a copied .env that enables it', () => {
+  const localRuntime = { ...LOCAL_DEVELOPMENT_RUNTIME, ...COPIED_DOT_ENV_BYPASS };
+  const refused = (name, env, caller = LOOPBACK_BYPASS_CALLER) => ({
+    name,
+    env: { ...localRuntime, ...env },
+    caller,
+    expectAllowed: false,
+  });
+  const withoutNodeEnv = { ...localRuntime };
+  delete withoutNodeEnv.NODE_ENV;
+  const cases = [
+    {
+      name: 'local loopback baseline',
+      env: localRuntime,
+      caller: LOOPBACK_BYPASS_CALLER,
+      expectAllowed: true,
+    },
+    ...['production', 'prod', 'test', 'ci', 'staging', 'beta', ''].map((nodeEnv) =>
+      refused(`NODE_ENV=${JSON.stringify(nodeEnv)}`, { NODE_ENV: nodeEnv }),
+    ),
+    {
+      name: 'NODE_ENV unset',
+      env: withoutNodeEnv,
+      caller: LOOPBACK_BYPASS_CALLER,
+      expectAllowed: false,
+    },
+    ...['203.0.113.5', '10.0.0.4', '::ffff:10.1.2.3', '::', undefined].map((remoteAddress) =>
+      refused(
+        `socket peer ${String(remoteAddress)}`,
+        {},
+        { remoteAddress, host: 'localhost:4000' },
+      ),
+    ),
+    ...[
+      'yalelabs.io',
+      'localhost.attacker.example',
+      '127.0.0.1.nip.io',
+      'localhost@yalelabs.io',
+      undefined,
+    ].map((host) =>
+      refused(`Host header ${String(host)}`, {}, { remoteAddress: '127.0.0.1', host }),
+    ),
+    ...[
+      'https://yalelabs.io',
+      'https://yalelabs-beta.onrender.com',
+      'http://10.0.0.4:4000',
+      '',
+    ].map((serverBaseUrl) =>
+      refused(`SERVER_BASE_URL ${JSON.stringify(serverBaseUrl)}`, {
+        SERVER_BASE_URL: serverBaseUrl,
+      }),
+    ),
+    refused(
+      'deployed web service shape',
+      { NODE_ENV: 'production', SERVER_BASE_URL: 'https://yalelabs.io' },
+      { remoteAddress: '10.0.0.4', host: 'yalelabs.io' },
+    ),
+  ];
+
+  const results = evaluateLocalAuthBypassGate(cases);
+  assert.equal(results.length, cases.length);
+  for (const [index, result] of results.entries()) {
+    const expected = cases[index];
+    assert.equal(result.name, expected.name);
+    assert.equal(
+      result.gate,
+      expected.expectAllowed,
+      `isLocalAuthBypassRequestAllowed for ${expected.name}`,
+    );
+    if (expected.expectAllowed) continue;
+    assert.equal(result.resolvedNetId, null, `bypass middleware identity for ${expected.name}`);
+    assert.equal(result.resolvedIsAdmin, null, `bypass middleware admin for ${expected.name}`);
+    assert.equal(result.authenticated, false, `bypass middleware session for ${expected.name}`);
+    assert.deepEqual(result.nextArgs, [], `bypass middleware continues for ${expected.name}`);
+  }
+});
+
 test('admin authority requires an active admin grant and never consults userType', () => {
   const source = fs.readFileSync(
     new URL('../server/src/middleware/auth.ts', import.meta.url),
