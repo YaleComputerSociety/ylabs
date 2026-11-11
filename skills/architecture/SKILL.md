@@ -100,6 +100,9 @@ Do not add a per-hook timeout, because the config already covers it, and `server
 An explicit hook argument wins over the config, so the guard parses every hook call in the `server/src` test and spec files and fails on an argument at or below the config value, on one it cannot resolve to a numeric literal, and on a config value that does not exceed the launch budget.
 Only a setup genuinely slower than 180000 ms may carry its own larger argument.
 Raising `hookTimeout` also raises the guard's threshold, so raise the budget and delete the hook arguments it overtakes in the same change.
+The same wrapper gives every in-memory MongoDB a port from its vitest worker's own range, derived from `VITEST_POOL_ID` in `server/src/test/mongoMemoryPortRange.ts` (128 ports per worker from 20000, below every ephemeral range).
+Without it two workers could draw the same random port, and the loser's failed replica-set start sends `shutdown` to the winner's live server (#5646).
+Do not pass an explicit `port` in a suite: a chosen port wins over the wrapper and reopens the collision.
 This applies to hooks only.
 `testTimeout` stays at 30000 ms, so a slow `it` still needs its own argument.
 
