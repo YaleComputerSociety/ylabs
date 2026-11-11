@@ -5,6 +5,7 @@ import {
   REDERIVE_OVER_SHARED_PERSON_WEBSITES_CONFIRM_FLAG,
   identifiersAssertingOverSharedWebsites,
   parseRederiveOverSharedPersonWebsitesArgs,
+  scopeWebsiteOnlyPlans,
   summarizeRederiveVisits,
 } from '../rederiveOverSharedPersonWebsitesCore';
 
@@ -68,6 +69,59 @@ describe('observations:rederive-over-shared-person-websites planning (#5645)', (
       skippedByReason: { 'office-mailbox-user-key': 1 },
       plannedPathCounts: { 'profile.websiteUrl': 1 },
       errors: 1,
+    });
+  });
+
+  it('requires a snapshot before a website-only apply', () => {
+    expect(() =>
+      parseRederiveOverSharedPersonWebsitesArgs([
+        '--apply',
+        REDERIVE_OVER_SHARED_PERSON_WEBSITES_CONFIRM_FLAG,
+        '--website-only',
+      ]),
+    ).toThrow('--snapshot-output');
+  });
+
+  it('applies a researcher only when every identity reaching it plans the website alone', () => {
+    const website = ['profile', 'profile.websiteUrl'];
+    const scope = scopeWebsiteOnlyPlans([
+      {
+        identifier: { entityKey: 'a1' },
+        researcherId: 'r-website',
+        fieldsWritten: 1,
+        plannedPaths: website,
+      },
+      {
+        identifier: { entityKey: 'a2' },
+        researcherId: 'r-website',
+        fieldsWritten: 0,
+        plannedPaths: [],
+      },
+      {
+        identifier: { entityKey: 'b1' },
+        researcherId: 'r-drift',
+        fieldsWritten: 1,
+        plannedPaths: website,
+      },
+      {
+        identifier: { entityKey: 'b2' },
+        researcherId: 'r-drift',
+        fieldsWritten: 1,
+        plannedPaths: ['profile', 'profile.title'],
+      },
+      {
+        identifier: { entityKey: 'c1' },
+        researcherId: 'r-none',
+        fieldsWritten: 0,
+        plannedPaths: [],
+      },
+      { identifier: { entityKey: 'd1' }, fieldsWritten: 0, skipped: 'office-mailbox-user-key' },
+    ]);
+
+    expect(scope).toEqual({
+      applyIdentifiers: [{ entityKey: 'a1' }],
+      websiteOnlyResearcherIds: ['r-website'],
+      deferredResearcherIds: ['r-drift'],
     });
   });
 });
