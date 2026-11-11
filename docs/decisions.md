@@ -23,7 +23,10 @@ Net usefulness was +16.4% (lower bound +11.7%) and +12.4% (lower bound +8.1%).
 The writer refused 13.4% of rows.
 The old served text on a refused row is left to a resolve-time body-retirement rule rather than to the seed; that rule did not ship, because its arms failed their blind precision checks (#5763).
 OpenAI stays the change-only writer for later evidence changes.
-Bar G's judge calibration uses agent-cross-checked labels at the owner's direction, and those labels are marked as agent-labelled.
+In owner decision "G C" (2026-11-11), judge calibration against agent-cross-checked labels failed for both judges: S1 recall 50% and agreement 67.5% for the gpt-5 judge, and 90% and 82.5% for the Claude judge.
+For this batch only, the ship rests on the paired comparison: seed unsupported text of 4.7% to 8.1% against current text of 11.7% to 22.5% on both judges (p < 0.0001).
+The judges are recorded as uncalibrated, and the owner will spot-check about 10 items later.
+This is not a general waiver of judge calibration.
 The methodology is recorded on #5537.
 
 ## 2026-11-10: Every Current Member Is Found Through Their Row, Past The Display Cap (#5584)
