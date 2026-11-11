@@ -19,6 +19,7 @@ import { Researcher } from '../../models/researcher';
 import { materializeEntity } from '../entityMaterializer';
 import { resetOverSharedPersonWebsiteKeysCache } from '../overSharedPersonWebsite';
 import { clearC4Flags } from './c4FlagTestEnv';
+import { recordFullCoverageRun } from './fullCoverageRunFixture';
 
 const NETID = 'pw5578';
 const NETID_KEY = `netid:${NETID}`;
@@ -52,6 +53,9 @@ interface Read {
 
 async function seed(read: Read): Promise<void> {
   const scrapeRunId = new mongoose.Types.ObjectId();
+  if (read.sourceName === 'ysm-faculty-directory') {
+    await recordFullCoverageRun(read.sourceName, scrapeRunId, new Date(read.observedAt));
+  }
   await Observation.insertMany(
     Object.entries({ fname: 'Pell', lname: 'Wexford', ...read.fields }).map(([field, value]) => ({
       entityType: 'user',
@@ -95,7 +99,7 @@ describe('the pooled title is written whatever the writer rank (#5578, #5706)', 
   beforeEach(async () => {
     clearC4Flags();
     const db = mongoose.connection.db!;
-    for (const name of ['accounts', 'researchers', 'observations']) {
+    for (const name of ['accounts', 'researchers', 'observations', 'scrape_runs']) {
       await db.collection(name).deleteMany({});
     }
     resetOverSharedPersonWebsiteKeysCache();
@@ -222,7 +226,7 @@ describe('the pooled title is written whatever the writer rank (#5578, #5706)', 
 describe('a title a key falls back to from its own evidence keeps writer precedence (#5578, #5706)', () => {
   let replSet: MongoMemoryReplSet;
   const POOL_KEY = 'ysm:fixture-pell-wexford';
-  const STALE_KEY = 'dept:fixture-a:pell-wexford';
+  const STALE_KEY = 'dept:fixture-z:pell-wexford';
   const HIGHER_KEY = 'dept:fixture-b:pell-wexford';
   const LOWER_KEY = 'dept:fixture-c:pell-wexford';
   const listing = (key: string) => `https://${key.split(':')[1]}.yale.edu/people/faculty`;
@@ -241,7 +245,7 @@ describe('a title a key falls back to from its own evidence keeps writer precede
   beforeEach(async () => {
     clearC4Flags();
     const db = mongoose.connection.db!;
-    for (const name of ['accounts', 'researchers', 'observations']) {
+    for (const name of ['accounts', 'researchers', 'observations', 'scrape_runs']) {
       await db.collection(name).deleteMany({});
     }
     resetOverSharedPersonWebsiteKeysCache();
@@ -294,7 +298,9 @@ describe('a title a key falls back to from its own evidence keeps writer precede
   it('settles two name-only keys on a researcher no key identity can find', async () => {
     const { titles, secondPass } = await settleInEitherOrder([HIGHER_KEY, LOWER_KEY], async () => {
       const db = mongoose.connection.db!;
-      for (const name of ['researchers', 'observations']) await db.collection(name).deleteMany({});
+      for (const name of ['researchers', 'observations', 'scrape_runs']) {
+        await db.collection(name).deleteMany({});
+      }
       await seedFallbackKey(HIGHER_KEY, 'Professor of Fixture Studies', 0.9);
       await seedFallbackKey(LOWER_KEY, 'Lecturer in Fixture Studies', 0.6);
       return (await createResearcher())._id;
@@ -304,10 +310,12 @@ describe('a title a key falls back to from its own evidence keeps writer precede
     expect(secondPass).toEqual([0, 0]);
   });
 
-  it('forgets a fallback writer once a pooled title writes, so the next fallback round is fair', async () => {
+  it('forgets a fallback writer once a pooled title writes, so no later fallback round replaces it', async () => {
     const { titles, secondPass } = await settleInEitherOrder([HIGHER_KEY, LOWER_KEY], async () => {
       const db = mongoose.connection.db!;
-      for (const name of ['researchers', 'observations']) await db.collection(name).deleteMany({});
+      for (const name of ['researchers', 'observations', 'scrape_runs']) {
+        await db.collection(name).deleteMany({});
+      }
       const researcher = await createResearcher([
         {
           kind: 'YALE_OFFICIAL',
@@ -317,7 +325,7 @@ describe('a title a key falls back to from its own evidence keeps writer precede
           healthStatus: 'UNKNOWN',
         },
       ]);
-      await seedFallbackKey(STALE_KEY, 'Senior Fellow in Fixture Studies', 1);
+      await seedFallbackKey(STALE_KEY, 'Senior Fellow in Fixture Studies', 0.5);
       await materialize(STALE_KEY);
       await seed({
         entityKey: POOL_KEY,
@@ -337,7 +345,7 @@ describe('a title a key falls back to from its own evidence keeps writer precede
       return researcher._id;
     });
 
-    expect(titles).toEqual(['Professor of Fixture Studies', 'Professor of Fixture Studies']);
+    expect(titles).toEqual([FIRST_HAND_RANK, FIRST_HAND_RANK]);
     expect(secondPass).toEqual([0, 0]);
   });
 });

@@ -54,6 +54,7 @@ describe("a lead's own official page marks them deceased or departed (#5721)", (
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
+    await Observation.createIndexes();
   });
 
   afterAll(async () => {

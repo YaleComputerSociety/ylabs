@@ -483,6 +483,7 @@ import {
   type ResearchEntityRosterEntry,
 } from '../services/researchEntityMembershipAccessor';
 import { officialProfileIdentityKey, rosterMembershipKey } from './utils/rosterMembershipKey';
+import { latestFullCoverageRunIdByLane } from './latestFullCoverageRun';
 import {
   officialProfileIdentityUrlKey,
   officialProfileUrlSpellings,
@@ -7662,11 +7663,24 @@ const CURATED_USER_TITLE_SOURCES: ReadonlySet<string> = new Set([
   'manual-pi-edit',
 ]);
 
-function isFirstHandUserTitle(observation: any, officialPageKeys: ReadonlySet<string>): boolean {
+/**
+ * Where a first-hand read may grant authority: the researcher's own official pages, read by
+ * each lane's latest full-coverage run. A read from an earlier run is a page the lane has
+ * not re-read since, so it can be stale (#5578).
+ */
+export interface FirstHandTitleScope {
+  officialPageKeys: ReadonlySet<string>;
+  latestFullRunIdByLane: ReadonlyMap<string, string>;
+}
+
+function isFirstHandUserTitle(observation: any, scope: FirstHandTitleScope): boolean {
+  const lane = textValue(observation.sourceName);
   return (
     observation.field === 'title' &&
     isFirstHandUserTitleRead(observation) &&
-    officialPageKeys.has(officialProfileIdentityUrlKey(observation.sourceUrl))
+    scope.officialPageKeys.has(officialProfileIdentityUrlKey(observation.sourceUrl)) &&
+    Boolean(observation.scrapeRunId) &&
+    String(observation.scrapeRunId) === scope.latestFullRunIdByLane.get(lane)
   );
 }
 
@@ -7682,11 +7696,11 @@ function observedAtMs(observation: any): number {
  */
 function newestFirstHandUserTitle<T>(
   observations: readonly T[],
-  officialPageKeys: ReadonlySet<string>,
+  scope: FirstHandTitleScope,
 ): T | undefined {
   let newest: any;
   for (const observation of observations as any[]) {
-    if (!isFirstHandUserTitle(observation, officialPageKeys)) continue;
+    if (!isFirstHandUserTitle(observation, scope)) continue;
     if (!newest) {
       newest = observation;
       continue;
@@ -7719,9 +7733,10 @@ function newestLaneReadUserTitleEvidence<T extends { field?: unknown; sourceName
  * gone and the next newest first-hand read stands in for it.
  *
  * Source authority decides first. Given the researcher's official profile pages, the
- * newest first-hand read of one of them (`FIRST_HAND_USER_TITLE_SOURCES`) is the title
- * outright: older first-hand reads and every copying lane are dropped. An operator's or
- * PI's own edit stays beside it and keeps the precedence the resolver gives it.
+ * newest fresh first-hand read of one of them (`FIRST_HAND_USER_TITLE_SOURCES`, read by
+ * the lane's latest full-coverage run) is the title outright: older first-hand reads and
+ * every copying lane are dropped. An operator's or PI's own edit stays beside it and keeps
+ * the precedence the resolver gives it.
  *
  * With no first-hand read, or no researcher to read pages from, each lane is read as of
  * its newest read. A `user` title observation is value-keyed, so a lane's old value stays
@@ -7733,10 +7748,10 @@ function newestLaneReadUserTitleEvidence<T extends { field?: unknown; sourceName
  */
 export function userTitleEvidence<T extends { field?: unknown; sourceName?: unknown }>(
   observations: readonly T[],
-  officialPageKeys?: ReadonlySet<string>,
+  firstHandScope?: FirstHandTitleScope,
 ): T[] {
-  const firstHand = officialPageKeys
-    ? newestFirstHandUserTitle(observations, officialPageKeys)
+  const firstHand = firstHandScope
+    ? newestFirstHandUserTitle(observations, firstHandScope)
     : undefined;
   if (!firstHand) return newestLaneReadUserTitleEvidence(observations);
   return observations.filter(
@@ -7745,6 +7760,16 @@ export function userTitleEvidence<T extends { field?: unknown; sourceName?: unkn
       observation === firstHand ||
       CURATED_USER_TITLE_SOURCES.has(textValue(observation.sourceName)),
   );
+}
+
+async function latestFullRunIdByFirstHandLane(
+  cache?: UserIdentityJoinCache,
+): Promise<ReadonlyMap<string, string>> {
+  const cached = cache?.latestFullRunIdByLane();
+  if (cached) return cached;
+  const byLane = await latestFullCoverageRunIdByLane([...FIRST_HAND_USER_TITLE_SOURCES.keys()]);
+  cache?.rememberLatestFullRunIdByLane(byLane);
+  return byLane;
 }
 
 /**
@@ -8132,6 +8157,7 @@ function personTitleFrom(observations: readonly any[], now: Date): string | unde
 interface ResearcherTitle {
   title: string | undefined;
   fromOwnKeyFallback: boolean;
+  fromFreshFirstHand: boolean;
 }
 
 async function researcherTitleOverEveryJoiningKey(input: {
@@ -8145,6 +8171,7 @@ async function researcherTitleOverEveryJoiningKey(input: {
   const ownKeyFallback = (title: string | undefined): ResearcherTitle => ({
     title,
     fromOwnKeyFallback: true,
+    fromFreshFirstHand: false,
   });
   const researcherId = prefetchObjectIdString(input.researcher?._id);
   if (!researcherId) return ownKeyFallback(input.ownTitle);
@@ -8192,12 +8219,20 @@ async function researcherTitleOverEveryJoiningKey(input: {
     refusals,
   );
   if (ownKeyIsFindable) pooled.push(...ownTitleObservations);
-  const officialPageKeys = await soleClaimedOfficialPageKeys(input.researcher, cache);
-  const pooledTitle = personTitleFrom(userTitleEvidence(pooled, officialPageKeys), input.now);
-  if (pooledTitle) return { title: pooledTitle, fromOwnKeyFallback: false };
+  const scope: FirstHandTitleScope = {
+    officialPageKeys: await soleClaimedOfficialPageKeys(input.researcher, cache),
+    latestFullRunIdByLane: await latestFullRunIdByFirstHandLane(cache),
+  };
+  const pooledTitle = personTitleFrom(userTitleEvidence(pooled, scope), input.now);
+  if (pooledTitle) {
+    return {
+      title: pooledTitle,
+      fromOwnKeyFallback: false,
+      fromFreshFirstHand: Boolean(newestFirstHandUserTitle(pooled, scope)),
+    };
+  }
   return ownKeyFallback(
-    personTitleFrom(userTitleEvidence(ownTitleObservations, officialPageKeys), input.now) ??
-      input.ownTitle,
+    personTitleFrom(userTitleEvidence(ownTitleObservations, scope), input.now) ?? input.ownTitle,
   );
 }
 
@@ -8605,8 +8640,12 @@ async function materializeUserIdentityToResearcher(
     identityJoin = 'minted-from-pi-attribution';
   }
   const created = mintedFromPiAttribution;
-  const { title: researcherTitle, fromOwnKeyFallback: titleFromOwnKeyFallback } = created
-    ? { title, fromOwnKeyFallback: true }
+  const {
+    title: researcherTitle,
+    fromOwnKeyFallback: titleFromOwnKeyFallback,
+    fromFreshFirstHand: titleFromFreshFirstHand,
+  } = created
+    ? { title, fromOwnKeyFallback: true, fromFreshFirstHand: false }
     : await researcherTitleOverEveryJoiningKey({
         researcher,
         identifier: identifier.entityKey
@@ -8627,6 +8666,9 @@ async function materializeUserIdentityToResearcher(
   const identityJoinedWithoutANameResolver =
     identityJoinedOnEmailAlone || identityJoinedOnOfficialProfileUrlAlone;
   const writerKey = identifier.entityKey || String(identifier.entityId ?? '');
+  const titleHeldByFallbackWriter = Boolean(
+    researcher.profileFieldWriters?.get?.(OWN_KEY_FALLBACK_TITLE_FIELD),
+  );
   if (writerKey) await releaseFieldWritersThatNoLongerReach(researcher, writerKey);
   const resolvedConfidence = (...fields: string[]): unknown =>
     fields.map((field) => resolved[field]?.confidence).find((value) => value !== undefined);
@@ -8666,11 +8708,19 @@ async function materializeUserIdentityToResearcher(
     'title',
     servablePersonTitle(researcherTitle),
   );
+  // #5578 is scoped to fresh first-hand reads: without one, a servable stored title stays as
+  // it is, and only an empty or unservable one is filled. A title an own-key fallback wrote
+  // stays under #5706 precedence, so the keys that fall back still settle. The rest is #5801.
+  const titleInScope =
+    titleFromFreshFirstHand ||
+    !servablePersonTitle(researcher.profile.title) ||
+    (titleFromOwnKeyFallback && titleHeldByFallbackWriter);
   const titleWrites =
-    !titleFromOwnKeyFallback ||
-    !writerKey ||
-    settleFieldWriter(OWN_KEY_FALLBACK_TITLE_FIELD, servedTitle, resolvedConfidence('title'));
-  if (!titleFromOwnKeyFallback && servedTitle) {
+    titleInScope &&
+    (!titleFromOwnKeyFallback ||
+      !writerKey ||
+      settleFieldWriter(OWN_KEY_FALLBACK_TITLE_FIELD, servedTitle, resolvedConfidence('title')));
+  if (titleInScope && !titleFromOwnKeyFallback && servedTitle) {
     // A fallback writer recorded before the pool stated a title was never ranked against the
     // keys that may fall back next, so it must not decide a later fallback round.
     researcher.profileFieldWriters?.delete(OWN_KEY_FALLBACK_TITLE_FIELD);
@@ -8691,7 +8741,7 @@ async function materializeUserIdentityToResearcher(
       fieldsWritten += 1;
     }
   }
-  if (!servablePersonTitle(researcherTitle) && researcher.profile.title) {
+  if (researcher.profile.title) {
     const storedTitle = servablePersonTitle(researcher.profile.title);
     if (storedTitle !== researcher.profile.title) {
       researcher.profile.title = storedTitle;

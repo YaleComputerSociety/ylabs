@@ -83,11 +83,14 @@ export function userKeyReferenceId(reference: UserKeyReference): string {
  * reached, and which of a researcher's official pages no other live researcher claims,
  * reused across one chunk because every key of a person pools the same set (#5578). All
  * three read researcher and account identity, so any write to that identity clears them.
+ * Each first-hand lane's latest full-coverage run is read once per chunk too; no identity
+ * write changes it, so it outlives `forgetAll`.
  */
 export class UserIdentityJoinCache {
   private readonly candidatesByResearcher = new Map<string, UserKeyReference[]>();
   private readonly joinsByKey = new Map<string, UserKeyJoinEvidence>();
   private readonly soleClaimedPagesByResearcher = new Map<string, ReadonlySet<string>>();
+  private latestFullRunIds: ReadonlyMap<string, string> | undefined;
 
   candidatesFor(researcherId: string): UserKeyReference[] | undefined {
     return this.candidatesByResearcher.get(researcherId);
@@ -111,6 +114,14 @@ export class UserIdentityJoinCache {
 
   rememberSoleClaimedPages(researcherId: string, pageKeys: ReadonlySet<string>): void {
     this.soleClaimedPagesByResearcher.set(researcherId, pageKeys);
+  }
+
+  latestFullRunIdByLane(): ReadonlyMap<string, string> | undefined {
+    return this.latestFullRunIds;
+  }
+
+  rememberLatestFullRunIdByLane(byLane: ReadonlyMap<string, string>): void {
+    this.latestFullRunIds = byLane;
   }
 
   forgetAll(): void {

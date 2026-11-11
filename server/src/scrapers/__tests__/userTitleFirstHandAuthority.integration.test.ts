@@ -16,6 +16,7 @@ vi.mock('../../services/meiliSyncService', async () => {
 
 import { Observation } from '../../models/observation';
 import { Researcher } from '../../models/researcher';
+import { isFullCoverageRun } from '../latestFullCoverageRun';
 import {
   isFirstHandUserTitleRead,
   materializeEntity,
@@ -27,6 +28,7 @@ import {
 } from '../sources/yseFacultyDirectoryScraper';
 import { planFieldValueRefusal } from '../../utils/researchEntityFieldValueRefusals';
 import { clearC4Flags } from './c4FlagTestEnv';
+import { recordFullCoverageRun } from './fullCoverageRunFixture';
 
 const NETID = 'qs5578';
 const DIRECTORY_KEY = NETID;
@@ -41,6 +43,7 @@ const NOW = new Date('2026-11-10T00:00:00Z');
 const FIRST_HAND_RANK = 'Associate Professor of Fixture Medicine';
 const OLDER_FIRST_HAND_RANK = 'Assistant Professor of Fixture Medicine';
 const COPIED_RANK = 'Professor of Fixture Medicine';
+const STORED_RANK = 'Lecturer in Fixture Medicine';
 
 interface Read {
   entityKey: string;
@@ -51,11 +54,22 @@ interface Read {
   title: string;
 }
 
-const observation = (read: Read, field: string, value: unknown) => ({
+const FULL_COVERAGE_LANES = new Set([
+  'ysm-faculty-directory',
+  'yse-faculty-directory',
+  'dept-faculty-roster',
+]);
+
+const observation = (
+  read: Read,
+  field: string,
+  value: unknown,
+  scrapeRunId: mongoose.Types.ObjectId,
+) => ({
   entityType: 'user',
   entityKey: read.entityKey,
   sourceId: new mongoose.Types.ObjectId(),
-  scrapeRunId: new mongoose.Types.ObjectId(),
+  scrapeRunId,
   field,
   value,
   sourceName: read.sourceName,
@@ -66,13 +80,17 @@ const observation = (read: Read, field: string, value: unknown) => ({
 });
 
 async function seed(reads: Read[]): Promise<void> {
-  await Observation.insertMany(
-    reads.flatMap((read) => [
-      observation(read, 'fname', 'Quinn'),
-      observation(read, 'lname', 'Synthetic'),
-      observation(read, 'title', read.title),
-    ]),
-  );
+  for (const read of reads) {
+    const scrapeRunId = new mongoose.Types.ObjectId();
+    if (FULL_COVERAGE_LANES.has(read.sourceName)) {
+      await recordFullCoverageRun(read.sourceName, scrapeRunId, new Date(read.observedAt));
+    }
+    await Observation.insertMany([
+      observation(read, 'fname', 'Quinn', scrapeRunId),
+      observation(read, 'lname', 'Synthetic', scrapeRunId),
+      observation(read, 'title', read.title, scrapeRunId),
+    ]);
+  }
 }
 
 async function storedTitle(): Promise<string | undefined> {
@@ -153,7 +171,7 @@ describe("a researcher's own profile page decides the title (#5578)", () => {
   beforeEach(async () => {
     clearC4Flags();
     const db = mongoose.connection.db!;
-    for (const name of ['accounts', 'researchers', 'observations']) {
+    for (const name of ['accounts', 'researchers', 'observations', 'scrape_runs']) {
       await db.collection(name).deleteMany({});
     }
     await Researcher.create({
@@ -191,11 +209,17 @@ describe("a researcher's own profile page decides the title (#5578)", () => {
       { name: 'Quinn Synthetic', profileUrl: YSE_PAGE, slug: 'quinn-synthetic' },
     );
     const { observations, entityKey } = yseUserObservations(profile);
+    const yseRunId = new mongoose.Types.ObjectId();
+    await recordFullCoverageRun(
+      'yse-faculty-directory',
+      yseRunId,
+      new Date('2026-10-01T00:00:00Z'),
+    );
     await Observation.insertMany(
       observations.map((input) => ({
         ...input,
         sourceId: new mongoose.Types.ObjectId(),
-        scrapeRunId: new mongoose.Types.ObjectId(),
+        scrapeRunId: yseRunId,
         sourceName: 'yse-faculty-directory',
         confidence: 0.8,
         observedAt: new Date('2026-10-01T00:00:00Z'),
@@ -243,15 +267,21 @@ describe("a researcher's own profile page decides the title (#5578)", () => {
     await expectFromEveryKeyInEveryOrder([NETID_KEY, SCHOOL_KEY], FIRST_HAND_RANK);
   });
 
-  it('falls back to the older first-hand read, not to a copying lane, when the newest is refused', async () => {
+  it('gives an older first-hand read no authority once a newer full run read the page', async () => {
     await seed([
       schoolRead(OLDER_FIRST_HAND_RANK, '2026-08-01T00:00:00Z'),
       schoolRead('Professor of', '2026-10-01T00:00:00Z'),
       rosterRead(COPIED_RANK, ROSTER_LISTING),
-      backfillRead(COPIED_RANK),
     ]);
+    await Researcher.updateOne(
+      { 'identifiers.netid': NETID },
+      { $set: { 'profile.title': STORED_RANK } },
+    );
 
-    await expectFromEveryKeyInEveryOrder([NETID_KEY, SCHOOL_KEY], OLDER_FIRST_HAND_RANK);
+    for (const entityKey of [NETID_KEY, SCHOOL_KEY]) {
+      await materializeEntity('user', { entityKey }, { now: NOW });
+      expect(await storedTitle()).toBe(STORED_RANK);
+    }
   });
 
   it('passes over a first-hand title the researcher refuses, from every key', async () => {
@@ -325,6 +355,100 @@ describe("a researcher's own profile page decides the title (#5578)", () => {
   });
 });
 
+describe('a title is rewritten only from a fresh first-hand read (#5578, #5801)', () => {
+  let replSet: MongoMemoryReplSet;
+  const KEYS = [NETID_KEY, SCHOOL_KEY];
+
+  beforeAll(async () => {
+    replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    await mongoose.connect(replSet.getUri());
+    await Observation.syncIndexes();
+  });
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await replSet?.stop();
+  });
+
+  beforeEach(async () => {
+    clearC4Flags();
+    const db = mongoose.connection.db!;
+    for (const name of ['accounts', 'researchers', 'observations', 'scrape_runs']) {
+      await db.collection(name).deleteMany({});
+    }
+    await Researcher.create({
+      displayName: 'Quinn Synthetic',
+      identifiers: { netid: NETID },
+      profileLinks: [officialLink(OFFICIAL_PAGE)],
+      profile: { title: STORED_RANK },
+    });
+  });
+
+  async function materializeEveryKey(): Promise<number[]> {
+    const written: number[] = [];
+    for (const entityKey of KEYS) {
+      written.push((await materializeEntity('user', { entityKey }, { now: NOW })).fieldsWritten);
+    }
+    return written;
+  }
+
+  it('leaves a stored title alone when the first-hand read is not from the lane latest full run', async () => {
+    await seed([schoolRead(FIRST_HAND_RANK, '2026-08-01T00:00:00Z')]);
+    await recordFullCoverageRun(
+      'ysm-faculty-directory',
+      new mongoose.Types.ObjectId(),
+      new Date('2026-10-01T00:00:00Z'),
+    );
+
+    await materializeEveryKey();
+
+    expect(await storedTitle()).toBe(STORED_RANK);
+  });
+
+  it('does not let a scoped run displace the latest full run', async () => {
+    await seed([schoolRead(FIRST_HAND_RANK, '2026-08-01T00:00:00Z')]);
+    await recordFullCoverageRun(
+      'ysm-faculty-directory',
+      new mongoose.Types.ObjectId(),
+      new Date('2026-10-01T00:00:00Z'),
+      { dryRun: false, exhaustive: true, ignoreWorkPlanner: true, only: [OFFICIAL_PAGE] },
+    );
+
+    await materializeEveryKey();
+
+    expect(await storedTitle()).toBe(FIRST_HAND_RANK);
+  });
+
+  it("rewrites a stored title from the lane's latest full run, then writes nothing", async () => {
+    await seed([
+      schoolRead(FIRST_HAND_RANK, '2026-10-01T00:00:00Z'),
+      rosterRead(COPIED_RANK, ROSTER_LISTING),
+    ]);
+
+    await materializeEveryKey();
+    expect(await storedTitle()).toBe(FIRST_HAND_RANK);
+
+    expect(await materializeEveryKey()).toEqual([0, 0]);
+  });
+
+  it('leaves a stored title alone without a fresh first-hand read, though the pool disagrees', async () => {
+    await seed([rosterRead(COPIED_RANK, ROSTER_LISTING), backfillRead(COPIED_RANK)]);
+
+    expect(await materializeEveryKey()).toEqual([0, 0]);
+    expect(await storedTitle()).toBe(STORED_RANK);
+  });
+
+  it('fills an empty title from the pooled fallback, then writes nothing', async () => {
+    await Researcher.updateOne({ 'identifiers.netid': NETID }, { $unset: { 'profile.title': 1 } });
+    await seed([rosterRead(COPIED_RANK, ROSTER_LISTING), backfillRead(OLDER_FIRST_HAND_RANK)]);
+
+    await materializeEveryKey();
+    expect(await storedTitle()).toBe(COPIED_RANK);
+
+    expect(await materializeEveryKey()).toEqual([0, 0]);
+  });
+});
+
 describe('an official page two live researchers claim (#5578)', () => {
   let replSet: MongoMemoryReplSet;
   const OTHER_NETID = 'rf5578';
@@ -344,7 +468,7 @@ describe('an official page two live researchers claim (#5578)', () => {
   beforeEach(async () => {
     clearC4Flags();
     const db = mongoose.connection.db!;
-    for (const name of ['accounts', 'researchers', 'observations']) {
+    for (const name of ['accounts', 'researchers', 'observations', 'scrape_runs']) {
       await db.collection(name).deleteMany({});
     }
     await Researcher.create({
@@ -357,6 +481,12 @@ describe('an official page two live researchers claim (#5578)', () => {
       identifiers: { netid: OTHER_NETID },
       profileLinks: [officialLink(OFFICIAL_PAGE)],
     });
+    const ysmRunId = new mongoose.Types.ObjectId();
+    await recordFullCoverageRun(
+      'ysm-faculty-directory',
+      ysmRunId,
+      new Date('2026-08-01T00:00:00Z'),
+    );
     const read = (
       entityKey: string,
       sourceName: string,
@@ -373,7 +503,8 @@ describe('an official page two live researchers claim (#5578)', () => {
         entityType: 'user',
         entityKey,
         sourceId: new mongoose.Types.ObjectId(),
-        scrapeRunId: new mongoose.Types.ObjectId(),
+        scrapeRunId:
+          sourceName === 'ysm-faculty-directory' ? ysmRunId : new mongoose.Types.ObjectId(),
         field,
         value: fieldValue,
         sourceName,
@@ -464,9 +595,17 @@ describe('an official page two live researchers claim (#5578)', () => {
 });
 
 describe('the first-hand title screen (#5578)', () => {
-  const pages = new Set(['medicine.yale.edu/profile/quinn-synthetic']);
+  const FULL_RUN = 'full-run';
+  const pages = {
+    officialPageKeys: new Set(['medicine.yale.edu/profile/quinn-synthetic']),
+    latestFullRunIdByLane: new Map([
+      ['ysm-faculty-directory', FULL_RUN],
+      ['dept-faculty-roster', FULL_RUN],
+    ]),
+  };
   const title = (sourceName: string, value: string, observedAt: string, _id: string) => ({
     _id,
+    scrapeRunId: FULL_RUN,
     field: 'title',
     sourceName,
     value,
@@ -484,6 +623,27 @@ describe('the first-hand title screen (#5578)', () => {
     );
 
     expect(kept.map((observation) => observation.value)).toEqual(['First Seen Title']);
+  });
+
+  it('counts only a completed, written, unscoped, exhaustive run as full coverage', () => {
+    const full = {
+      status: 'success',
+      invalidated: false,
+      options: { dryRun: false, exhaustive: true, ignoreWorkPlanner: true },
+    };
+    expect(isFullCoverageRun(full)).toBe(true);
+    for (const narrowed of [
+      { ...full, status: 'partial' },
+      { ...full, invalidated: true },
+      { ...full, options: { ...full.options, dryRun: true } },
+      { ...full, options: { ...full.options, exhaustive: false } },
+      { ...full, options: { ...full.options, ignoreWorkPlanner: false } },
+      { ...full, options: { ...full.options, only: ['one-page'] } },
+      { ...full, options: { ...full.options, limit: 25 } },
+      { ...full, options: { ...full.options, benchmarkRun: true } },
+    ]) {
+      expect(isFullCoverageRun(narrowed)).toBe(false);
+    }
   });
 
   it('requires the profile title block marker of a roster read only', () => {
