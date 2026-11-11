@@ -243,6 +243,33 @@ function givenNameTokensCouldMatch(x: string, y: string): boolean {
   );
 }
 
+const MIN_TRANSLITERATION_LETTERS = 4;
+
+// The trailing fold reads the Greek `-ios` and its contracted `-is` as one ending, so
+// `dionysios` and `dionysis` are one romanised name rather than two people (#5853).
+const transliterationKey = (token: string): string =>
+  token
+    .replace(/h/g, '')
+    .replace(/y/g, 'i')
+    .replace(/o/g, 'u')
+    .replace(/e/g, 'a')
+    .replace(/([^aiu])\1+/g, '$1')
+    .replace(/ius$/, 'is');
+
+/**
+ * Whether two given-name tokens could be two romanisations of one name
+ * (`muhammad`/`mohammed`, `dionysios`/`dionysis`), while `tom`/`tim` stay two names.
+ * It reads only lowercase ASCII tokens and widens agreement, so a caller should ask it
+ * only where a surname already matched.
+ */
+export function givenNamesCouldBeOneTransliteration(left: string, right: string): boolean {
+  return (
+    Math.min(left.length, right.length) >= MIN_TRANSLITERATION_LETTERS &&
+    left[0] === right[0] &&
+    transliterationKey(left) === transliterationKey(right)
+  );
+}
+
 export function givenNameVariants(first: string): string[] {
   const key = foldToken(first);
   if (!key) return [];

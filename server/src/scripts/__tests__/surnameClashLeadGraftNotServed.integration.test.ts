@@ -230,4 +230,46 @@ describe('a same-surname stranger stops being served as a co-equal PI (#2768)', 
     expect(report.refusedByReason).toMatchObject({ 'named-lead-is-an-unanchored-shell': 1 });
     expect((await servedLeadNames()).sort()).toEqual(['Pradeep Quimby', 'Robin Quimby']);
   }, 30000);
+  it('lists a past detachment of the person the entity names, read-only, on every run (#5853)', async () => {
+    const db = mongoose.connection.db;
+    if (!db) throw new Error('no db');
+    const pastDetachedEdge = async (displayName: string) => {
+      const personId = new mongoose.Types.ObjectId();
+      await db.collection('researchers').insertOne({
+        _id: personId,
+        schemaVersion: 1,
+        displayName,
+        status: 'ACTIVE',
+        profileLinks: [],
+        archived: false,
+      });
+      await db.collection('role_assignments').insertOne({
+        personId,
+        schemaVersion: 1,
+        target: { kind: 'RESEARCH_ENTITY', id: entityId },
+        role: 'PI',
+        state: 'CURRENT',
+        reviewStatus: 'DISPUTED',
+        reviewNotes:
+          'Detached as a same-surname lead on an entity whose own identity names a different person (#2768).',
+        archived: true,
+      });
+    };
+    await pastDetachedEdge('Robyn Quimby');
+    await pastDetachedEdge('Pradeep Quimby');
+    const before = await db.collection('role_assignments').find({}).sort({ _id: 1 }).toArray();
+
+    const first = await retireSurnameClashLeadGrafts({ dryRun: true });
+    const second = await retireSurnameClashLeadGrafts({ dryRun: true });
+
+    expect(first).toMatchObject({
+      pastDetachmentsScanned: 2,
+      pastDetachmentsOfTheNamedPerson: 1,
+      pastDetachmentEntitySlugsOfTheNamedPerson: [SLUG],
+    });
+    expect(second).toEqual(first);
+    expect(await db.collection('role_assignments').find({}).sort({ _id: 1 }).toArray()).toEqual(
+      before,
+    );
+  }, 30000);
 });

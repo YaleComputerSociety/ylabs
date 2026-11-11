@@ -1,4 +1,8 @@
-import { givenNamesAgree, surnameCoreKey } from '../scrapers/utils/piNameMatch';
+import {
+  givenNamesAgree,
+  givenNamesCouldBeOneTransliteration,
+  surnameCoreKey,
+} from '../scrapers/utils/piNameMatch';
 import {
   researcherHoldsDirectoryIdentity,
   researcherNetid,
@@ -97,6 +101,9 @@ export function surnameClashGroups(leads: readonly SurnameClashLeadRow[]): Surna
   );
 }
 
+const givenNamesNameOnePerson = (given: string, token: string): boolean =>
+  givenNamesAgree(given, token) || givenNamesCouldBeOneTransliteration(given, token);
+
 /**
  * Whether the entity's own identity - its name and slug tokens - names this person.
  *
@@ -104,7 +111,9 @@ export function surnameClashGroups(leads: readonly SurnameClashLeadRow[]): Surna
  * that produced the graft, and a `<Surname> Lab` entity names no one person. A
  * given-name token must agree too, and any of the person's non-surname tokens may
  * supply it, so a middle-name form ("Jung Yun Julie Kang" against a `julie-kang`
- * slug) reads as the same person the entity is about rather than as a stranger.
+ * slug) reads as the same person the entity is about rather than as a stranger. Two
+ * romanisations of one given name agree too (#5853): one person stored under both
+ * spellings was otherwise read as a graft of themselves and detached.
  */
 export function entityIdentityNamesPerson(
   identityTokens: readonly string[],
@@ -117,7 +126,7 @@ export function entityIdentityNamesPerson(
   if (!surname || !identity.some((token) => surnameCoreKey(token) === surname)) return false;
   return nameTokens
     .slice(0, -1)
-    .some((given) => identity.some((token) => givenNamesAgree(given, token)));
+    .some((given) => identity.some((token) => givenNamesNameOnePerson(given, token)));
 }
 
 /**
@@ -264,4 +273,25 @@ export function summarizeSurnameClashRefusals(
   };
   for (const entry of refused) counts[entry.reason] += 1;
   return counts;
+}
+
+export interface PastSurnameClashDetachment {
+  assignmentId: string;
+  entityId: string;
+  personId: string;
+  displayName: string;
+  identityTokens: readonly string[];
+}
+
+/**
+ * The detachments this repair already made where the entity's identity now names the
+ * detached person, which is the person read as a graft of themselves (#5853). It only
+ * lists them: restoring an edge is a review verdict on that row, not a bulk write.
+ */
+export function pastDetachmentsOfTheNamedPerson(
+  detachments: readonly PastSurnameClashDetachment[],
+): PastSurnameClashDetachment[] {
+  return detachments.filter((detachment) =>
+    entityIdentityNamesPerson(detachment.identityTokens, detachment.displayName),
+  );
 }
