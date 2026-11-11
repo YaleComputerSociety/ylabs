@@ -668,6 +668,7 @@ export async function runOrphanedLaneConfigRetirement(input: {
   lanes?: readonly OrphanLaneDefinition[];
   readServedEntity?: (slug: string) => Promise<Record<string, unknown> | null>;
   retireSoleEvidence?: boolean;
+  projectResearchEntity?: typeof projectRow;
   log?: (message: string) => void;
 }): Promise<{
   report: RetireOrphanedLaneConfigsReport;
@@ -722,16 +723,23 @@ export async function runOrphanedLaneConfigRetirement(input: {
     (async (slug: string) =>
       ((await getResearchGroupDetail(slug))?.researchEntity as
         Record<string, unknown> | undefined) ?? null);
+  const projectResearchEntity = input.projectResearchEntity ?? projectRow;
   const withOrphansBySlug = new Map<string, ProjectedPlan>();
   const allIdentities = await retiredEvidenceIdentities(plan);
   const projectResearchRow = async (slug: string): Promise<ServedRowDiff> => {
     const { doc, retiredOnRow } = liveRows.get(slug)!;
     let withOrphans = withOrphansBySlug.get(slug);
     if (!withOrphans) {
-      withOrphans = await projectRow('researchEntity', slug, [], allIdentities, researchOnlyFields);
+      withOrphans = await projectResearchEntity(
+        'researchEntity',
+        slug,
+        [],
+        allIdentities,
+        researchOnlyFields,
+      );
       withOrphansBySlug.set(slug, withOrphans);
     }
-    const withoutOrphans = await projectRow(
+    const withoutOrphans = await projectResearchEntity(
       'researchEntity',
       slug,
       [...retiredIdSet].map((id) => new mongoose.Types.ObjectId(id)),
