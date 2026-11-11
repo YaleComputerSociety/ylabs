@@ -28,7 +28,9 @@ import { runWithBoundedConcurrency } from '../scrapers/utils/boundedConcurrency'
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   identifiersAssertingOverSharedWebsites,
+  isWebsiteOnlyVisit,
   parseRederiveOverSharedPersonWebsitesArgs,
+  scopeWebsiteOnlyPlans,
   uniqueIdentifiers,
   withoutNetidKey,
   summarizeRederiveVisits,
@@ -92,6 +94,12 @@ async function liveUserIdentifiersOfResearchers(
   ];
 }
 
+function writePrivateJson(target: string, value: unknown): void {
+  fs.writeFileSync(resolveSafeJsonReportOutputPath(target), JSON.stringify(value, null, 2), {
+    mode: 0o600,
+  });
+}
+
 async function visit(
   identifier: UserMaterializeIdentifier,
   apply: boolean,
@@ -150,8 +158,37 @@ async function main(): Promise<void> {
     planned.push(await visit(identifier, false));
   });
 
+  const scope = args.websiteOnly
+    ? scopeWebsiteOnlyPlans(planned, new Set(storedBefore.map((row) => row.researcherId)))
+    : undefined;
+  if (scope && args.deferredOutput) {
+    writePrivateJson(args.deferredOutput, { deferredResearcherIds: scope.deferredResearcherIds });
+  }
+
   const applied: RederiveVisit[] = [];
-  if (args.apply) {
+  const skippedForDrift: RederiveVisit[] = [];
+  if (args.apply && scope) {
+    const applySet = new Set(scope.websiteOnlyResearcherIds);
+    writePrivateJson(String(args.snapshotOutput), {
+      takenAt: new Date().toISOString(),
+      databaseName,
+      researchers: await Researcher.find({
+        _id: { $in: scope.websiteOnlyResearcherIds.map((id) => new mongoose.Types.ObjectId(id)) },
+      }).lean(),
+    });
+    for (const identifier of scope.applyIdentifiers) {
+      const replanned = await visit(identifier, false);
+      if (
+        !replanned.researcherId ||
+        !applySet.has(replanned.researcherId) ||
+        !isWebsiteOnlyVisit(replanned)
+      ) {
+        skippedForDrift.push(replanned);
+        continue;
+      }
+      applied.push(await visit(identifier, true));
+    }
+  } else if (args.apply) {
     for (const identifier of visiting) applied.push(await visit(identifier, true));
   }
   const storedAfter = args.apply
@@ -169,6 +206,25 @@ async function main(): Promise<void> {
     storedBeforeNotReached: storedBefore.filter((row) => !reachedResearchers.has(row.researcherId))
       .length,
     planned: summarizeRederiveVisits(planned),
+    ...(scope
+      ? {
+          websiteOnly: {
+            researchers: scope.websiteOnlyResearcherIds.length,
+            identities: scope.applyIdentifiers.length,
+            deferredResearchers: scope.deferredResearcherIds.length,
+            scopedPlan: summarizeRederiveVisits(
+              planned.filter((row) =>
+                scope.applyIdentifiers.some(
+                  (identifier) =>
+                    identifier.entityId === row.identifier.entityId &&
+                    identifier.entityKey === row.identifier.entityKey,
+                ),
+              ),
+            ),
+            skippedForDrift: skippedForDrift.length,
+          },
+        }
+      : {}),
     ...(args.apply
       ? { applied: summarizeRederiveVisits(applied), storedAfter: storedAfter?.length }
       : {}),

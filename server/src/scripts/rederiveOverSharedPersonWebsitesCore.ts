@@ -3,11 +3,16 @@ import { personWebsiteShareKey } from '../scrapers/overSharedPersonWebsite';
 export const REDERIVE_OVER_SHARED_PERSON_WEBSITES_CONFIRM_FLAG =
   '--confirm-rederive-over-shared-person-websites';
 
+export const WEBSITE_ONLY_PLANNED_PATH = 'profile.websiteUrl';
+
 export interface RederiveOverSharedPersonWebsitesArgs {
   apply: boolean;
   confirmed: boolean;
   limit?: number;
   output?: string;
+  websiteOnly?: boolean;
+  deferredOutput?: string;
+  snapshotOutput?: string;
 }
 
 export function parseRederiveOverSharedPersonWebsitesArgs(
@@ -23,11 +28,21 @@ export function parseRederiveOverSharedPersonWebsitesArgs(
     else if (arg === '--limit') args.limit = positiveInteger(argv[(index += 1)]);
     else if (arg.startsWith('--output=')) args.output = arg.slice('--output='.length).trim();
     else if (arg === '--output') args.output = String(argv[(index += 1)] ?? '').trim();
+    else if (arg === '--website-only') args.websiteOnly = true;
+    else if (arg === '--deferred-output')
+      args.deferredOutput = String(argv[(index += 1)] ?? '').trim();
+    else if (arg === '--snapshot-output')
+      args.snapshotOutput = String(argv[(index += 1)] ?? '').trim();
     else throw new Error(`Unknown argument: ${arg}`);
   }
   if (args.apply && !args.confirmed) {
     throw new Error(
       `${REDERIVE_OVER_SHARED_PERSON_WEBSITES_CONFIRM_FLAG} is required when --apply is set.`,
+    );
+  }
+  if (args.apply && args.websiteOnly && (!args.snapshotOutput || !args.deferredOutput)) {
+    throw new Error(
+      '--snapshot-output and --deferred-output are required when --apply and --website-only are set.',
     );
   }
   return args;
@@ -96,7 +111,7 @@ export interface RederiveVisit {
   error?: string;
 }
 
-function leafPaths(paths: readonly string[]): string[] {
+export function leafPaths(paths: readonly string[]): string[] {
   return paths.filter((candidate) => !paths.some((other) => other.startsWith(`${candidate}.`)));
 }
 
@@ -118,5 +133,69 @@ export function summarizeRederiveVisits(visits: readonly RederiveVisit[]) {
     skippedByReason,
     plannedPathCounts,
     errors: visits.filter((visit) => visit.error).length,
+  };
+}
+
+export function isWebsiteOnlyVisit(visit: RederiveVisit): boolean {
+  const paths = leafPaths(visit.plannedPaths ?? []);
+  return (
+    paths.every((plannedPath) => plannedPath === WEBSITE_ONLY_PLANNED_PATH) &&
+    visit.fieldsWritten === paths.length
+  );
+}
+
+export interface WebsiteOnlyScope {
+  applyIdentifiers: UserMaterializeIdentifier[];
+  websiteOnlyResearcherIds: string[];
+  deferredResearcherIds: string[];
+}
+
+/**
+ * Scopes the apply by researcher, never by field: a researcher is applied only when it stores
+ * an over-shared website and every identity reaching it plans `profile.websiteUrl` and nothing
+ * else, with no write beyond its planned paths, so a write cannot carry another field's resolve
+ * drift. Any other planned write defers the whole researcher.
+ */
+export function scopeWebsiteOnlyPlans(
+  visits: readonly RederiveVisit[],
+  researcherIdsStoringOverShared: ReadonlySet<string>,
+): WebsiteOnlyScope {
+  const visitsByResearcher = new Map<string, RederiveVisit[]>();
+  for (const visit of visits) {
+    if (!visit.researcherId) continue;
+    const reaching = visitsByResearcher.get(visit.researcherId) ?? [];
+    reaching.push(visit);
+    visitsByResearcher.set(visit.researcherId, reaching);
+  }
+  const plansWebsite = (visit: RederiveVisit): boolean =>
+    leafPaths(visit.plannedPaths ?? []).includes(WEBSITE_ONLY_PLANNED_PATH);
+  const websiteOnly = new Set<string>();
+  const deferred = new Set<string>();
+  for (const [researcherId, reaching] of visitsByResearcher) {
+    const plansAnyWrite = reaching.some(
+      (visit) => visit.fieldsWritten > 0 || leafPaths(visit.plannedPaths ?? []).length > 0,
+    );
+    if (!plansAnyWrite) continue;
+    if (
+      researcherIdsStoringOverShared.has(researcherId) &&
+      reaching.some(plansWebsite) &&
+      reaching.every(isWebsiteOnlyVisit)
+    ) {
+      websiteOnly.add(researcherId);
+    } else {
+      deferred.add(researcherId);
+    }
+  }
+  const applyIdentifiers = uniqueIdentifiers(
+    visits
+      .filter(
+        (visit) => visit.researcherId && websiteOnly.has(visit.researcherId) && plansWebsite(visit),
+      )
+      .map((visit) => visit.identifier),
+  );
+  return {
+    applyIdentifiers,
+    websiteOnlyResearcherIds: [...websiteOnly].sort(),
+    deferredResearcherIds: [...deferred].sort(),
   };
 }

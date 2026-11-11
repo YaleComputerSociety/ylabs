@@ -5,6 +5,7 @@ import {
   REDERIVE_OVER_SHARED_PERSON_WEBSITES_CONFIRM_FLAG,
   identifiersAssertingOverSharedWebsites,
   parseRederiveOverSharedPersonWebsitesArgs,
+  scopeWebsiteOnlyPlans,
   summarizeRederiveVisits,
 } from '../rederiveOverSharedPersonWebsitesCore';
 
@@ -68,6 +69,142 @@ describe('observations:rederive-over-shared-person-websites planning (#5645)', (
       skippedByReason: { 'office-mailbox-user-key': 1 },
       plannedPathCounts: { 'profile.websiteUrl': 1 },
       errors: 1,
+    });
+  });
+
+  it('requires a snapshot and a deferred-ids file before a website-only apply', () => {
+    const websiteOnlyApply = [
+      '--apply',
+      REDERIVE_OVER_SHARED_PERSON_WEBSITES_CONFIRM_FLAG,
+      '--website-only',
+    ];
+    expect(() =>
+      parseRederiveOverSharedPersonWebsitesArgs([
+        ...websiteOnlyApply,
+        '--deferred-output',
+        '/tmp/deferred.json',
+      ]),
+    ).toThrow('--snapshot-output');
+    expect(() =>
+      parseRederiveOverSharedPersonWebsitesArgs([
+        ...websiteOnlyApply,
+        '--snapshot-output',
+        '/tmp/snapshot.json',
+      ]),
+    ).toThrow('--deferred-output');
+    expect(
+      parseRederiveOverSharedPersonWebsitesArgs([
+        ...websiteOnlyApply,
+        '--snapshot-output',
+        '/tmp/snapshot.json',
+        '--deferred-output',
+        '/tmp/deferred.json',
+      ]),
+    ).toMatchObject({ apply: true, websiteOnly: true });
+  });
+
+  it('applies a researcher only when every identity reaching it plans the website alone', () => {
+    const website = ['profile', 'profile.websiteUrl'];
+    const scope = scopeWebsiteOnlyPlans(
+      [
+        {
+          identifier: { entityKey: 'a1' },
+          researcherId: 'r-website',
+          fieldsWritten: 1,
+          plannedPaths: website,
+        },
+        {
+          identifier: { entityKey: 'a2' },
+          researcherId: 'r-website',
+          fieldsWritten: 0,
+          plannedPaths: [],
+        },
+        {
+          identifier: { entityKey: 'b1' },
+          researcherId: 'r-drift',
+          fieldsWritten: 1,
+          plannedPaths: website,
+        },
+        {
+          identifier: { entityKey: 'b2' },
+          researcherId: 'r-drift',
+          fieldsWritten: 1,
+          plannedPaths: ['profile', 'profile.title'],
+        },
+        {
+          identifier: { entityKey: 'c1' },
+          researcherId: 'r-none',
+          fieldsWritten: 0,
+          plannedPaths: [],
+        },
+        { identifier: { entityKey: 'd1' }, fieldsWritten: 0, skipped: 'office-mailbox-user-key' },
+      ],
+      new Set(['r-website', 'r-drift']),
+    );
+
+    expect(scope).toEqual({
+      applyIdentifiers: [{ entityKey: 'a1' }],
+      websiteOnlyResearcherIds: ['r-website'],
+      deferredResearcherIds: ['r-drift'],
+    });
+  });
+
+  it('defers a researcher whose website plan also writes outside its planned paths', () => {
+    const scope = scopeWebsiteOnlyPlans(
+      [
+        {
+          identifier: { entityKey: 'a1' },
+          researcherId: 'r-website',
+          fieldsWritten: 1,
+          plannedPaths: ['profile', 'profile.websiteUrl'],
+        },
+        {
+          identifier: { entityKey: 'b1' },
+          researcherId: 'r-hidden-write',
+          fieldsWritten: 2,
+          plannedPaths: ['profile', 'profile.websiteUrl'],
+        },
+        {
+          identifier: { entityKey: 'c1' },
+          researcherId: 'r-hidden-only',
+          fieldsWritten: 1,
+          plannedPaths: [],
+        },
+      ],
+      new Set(['r-website', 'r-hidden-write', 'r-hidden-only']),
+    );
+
+    expect(scope).toEqual({
+      applyIdentifiers: [{ entityKey: 'a1' }],
+      websiteOnlyResearcherIds: ['r-website'],
+      deferredResearcherIds: ['r-hidden-only', 'r-hidden-write'],
+    });
+  });
+
+  it('defers a website-only researcher that does not store an over-shared website', () => {
+    const website = ['profile', 'profile.websiteUrl'];
+    const scope = scopeWebsiteOnlyPlans(
+      [
+        {
+          identifier: { entityKey: 'a1' },
+          researcherId: 'r-stores',
+          fieldsWritten: 1,
+          plannedPaths: website,
+        },
+        {
+          identifier: { entityKey: 'b1' },
+          researcherId: 'r-other-site',
+          fieldsWritten: 1,
+          plannedPaths: website,
+        },
+      ],
+      new Set(['r-stores']),
+    );
+
+    expect(scope).toEqual({
+      applyIdentifiers: [{ entityKey: 'a1' }],
+      websiteOnlyResearcherIds: ['r-stores'],
+      deferredResearcherIds: ['r-other-site'],
     });
   });
 });
