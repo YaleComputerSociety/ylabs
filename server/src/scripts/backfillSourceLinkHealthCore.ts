@@ -176,16 +176,23 @@ export function httpsSpellingProbes(
 
 /**
  * The probed `https:` spelling, recorded only when it answered `HEALTHY` with a
- * certificate that verified. Anything else, including no probe at all, records
- * nothing, so serve time keeps the stored `http:` link (#5639).
+ * certificate that verified, from the same host, path and query it asked for. A
+ * shared host's default `https:` site redirecting elsewhere is not this page.
+ * Anything else, including no probe at all, records nothing, so serve time keeps
+ * the stored `http:` link (#5639).
  */
 export function verifiedHttpsSpelling(
   spelling: string | undefined,
-  freshHealth: ReadonlyMap<string, { healthStatus?: string; tlsVerificationFailed?: boolean }>,
+  freshHealth: ReadonlyMap<
+    string,
+    { healthStatus?: string; tlsVerificationFailed?: boolean; landedOnRequestedResource?: true }
+  >,
 ): string | undefined {
   if (!spelling) return undefined;
   const verdict = freshHealth.get(spelling);
-  return verdict?.healthStatus === 'HEALTHY' && verdict.tlsVerificationFailed !== true
+  return verdict?.healthStatus === 'HEALTHY' &&
+    verdict.tlsVerificationFailed !== true &&
+    verdict.landedOnRequestedResource === true
     ? spelling
     : undefined;
 }

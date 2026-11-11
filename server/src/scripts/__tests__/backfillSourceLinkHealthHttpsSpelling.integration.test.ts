@@ -12,11 +12,17 @@ const HTTPS_GONE = 'http://gone.fixture.example.org/lab/';
 const REDIRECTS = 'http://redirects.fixture.example.org/lab/';
 const HTTPS_ONLY = 'https://secure.fixture.example.org/lab/';
 const HTTP_CITATION = 'http://citation.fixture.example.org/page/';
+const LANDS_ELSEWHERE = 'http://shared.fixture.example.org/';
 
 const httpsOf = (url: string) => url.replace(/^http:/, 'https:');
 
 const verdicts: Record<string, SourceLinkHealth> = {
-  [httpsOf(BOTH_SCHEMES)]: { healthStatus: 'HEALTHY', httpStatusCode: 200 },
+  [httpsOf(BOTH_SCHEMES)]: {
+    healthStatus: 'HEALTHY',
+    httpStatusCode: 200,
+    landedOnRequestedResource: true,
+  },
+  [httpsOf(LANDS_ELSEWHERE)]: { healthStatus: 'HEALTHY', httpStatusCode: 200 },
   [httpsOf(TLS_FAILS)]: { healthStatus: 'UNKNOWN', tlsVerificationFailed: true },
   [httpsOf(HTTPS_GONE)]: { healthStatus: 'UNAVAILABLE', httpStatusCode: 404 },
   [REDIRECTS]: {
@@ -66,6 +72,7 @@ describe('source-link-health https spelling of an http website (#5639)', () => {
       row('fixture-both', BOTH_SCHEMES),
       row('fixture-tls', TLS_FAILS),
       row('fixture-gone', HTTPS_GONE),
+      row('fixture-elsewhere', LANDS_ELSEWHERE),
       row('fixture-redirects', REDIRECTS),
       row('fixture-https-only', HTTPS_ONLY, [HTTP_CITATION]),
     ]);
@@ -96,10 +103,12 @@ describe('source-link-health https spelling of an http website (#5639)', () => {
     ]);
   }, 120000);
 
-  it('records nothing when the https spelling fails its certificate or is gone', async () => {
+  it('records nothing when the https spelling fails its certificate, is gone or lands elsewhere', async () => {
     const seen = await run();
-    expect(seen).toEqual(expect.arrayContaining([httpsOf(TLS_FAILS), httpsOf(HTTPS_GONE)]));
-    for (const slug of ['fixture-tls', 'fixture-gone']) {
+    expect(seen).toEqual(
+      expect.arrayContaining([httpsOf(TLS_FAILS), httpsOf(HTTPS_GONE), httpsOf(LANDS_ELSEWHERE)]),
+    );
+    for (const slug of ['fixture-tls', 'fixture-gone', 'fixture-elsewhere']) {
       const entries = await storedHealthOf(slug);
       expect(entries).toHaveLength(1);
       expect(entries[0]).not.toHaveProperty('httpsSpellingUrl');

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { SOURCE_LINK_HEALTH_FRESHNESS_DAYS } from '../../services/sourceLinkHealth';
+import {
+  classifySourceLinkHealth,
+  SOURCE_LINK_HEALTH_FRESHNESS_DAYS,
+} from '../../services/sourceLinkHealth';
 import {
   carryForwardSourceLinkHealthEntry,
   collectSourceLinkHealthCandidates,
@@ -430,13 +433,19 @@ describe('https spelling of an http website (#5639)', () => {
   });
 
   it('accepts the spelling only when its probe is HEALTHY with a verified certificate', () => {
-    const verdicts = (verdict: { healthStatus?: string; tlsVerificationFailed?: boolean }) =>
-      new Map([[HTTPS, verdict]]);
-    expect(verifiedHttpsSpelling(HTTPS, verdicts({ healthStatus: 'HEALTHY' }))).toBe(HTTPS);
+    const landed = { landedOnRequestedResource: true as const };
+    const verdicts = (verdict: {
+      healthStatus?: string;
+      tlsVerificationFailed?: boolean;
+      landedOnRequestedResource?: true;
+    }) => new Map([[HTTPS, verdict]]);
+    expect(verifiedHttpsSpelling(HTTPS, verdicts({ healthStatus: 'HEALTHY', ...landed }))).toBe(
+      HTTPS,
+    );
     expect(
       verifiedHttpsSpelling(
         HTTPS,
-        verdicts({ healthStatus: 'HEALTHY', tlsVerificationFailed: true }),
+        verdicts({ healthStatus: 'HEALTHY', tlsVerificationFailed: true, ...landed }),
       ),
     ).toBeUndefined();
     expect(
@@ -447,7 +456,26 @@ describe('https spelling of an http website (#5639)', () => {
     ).toBeUndefined();
     expect(verifiedHttpsSpelling(HTTPS, verdicts({ healthStatus: 'UNAVAILABLE' }))).toBeUndefined();
     expect(verifiedHttpsSpelling(HTTPS, new Map())).toBeUndefined();
-    expect(verifiedHttpsSpelling(undefined, verdicts({ healthStatus: 'HEALTHY' }))).toBeUndefined();
+    expect(
+      verifiedHttpsSpelling(undefined, verdicts({ healthStatus: 'HEALTHY', ...landed })),
+    ).toBeUndefined();
+  });
+
+  it('refuses a HEALTHY spelling whose probe was redirected to another site', () => {
+    const rootHttps = 'https://shared.fixture.example.org/';
+    const crossHost = classifySourceLinkHealth({
+      status: 200,
+      requestedUrl: rootHttps,
+      finalUrl: 'https://parent.fixture.example.edu/',
+    });
+    expect(crossHost.healthStatus).toBe('HEALTHY');
+    expect(verifiedHttpsSpelling(rootHttps, new Map([[rootHttps, crossHost]]))).toBeUndefined();
+    const samePage = classifySourceLinkHealth({
+      status: 200,
+      requestedUrl: rootHttps,
+      finalUrl: rootHttps,
+    });
+    expect(verifiedHttpsSpelling(rootHttps, new Map([[rootHttps, samePage]]))).toBe(rootHttps);
   });
 
   it('carries a recorded https spelling forward with the verdict', () => {

@@ -555,12 +555,22 @@ describe('classifySourceLinkHealth soft 404 handling', () => {
         requestedUrl: 'https://example.yale.edu/lab/thing',
         finalUrl: 'https://example.yale.edu/lab/thing/',
       }),
-    ).toEqual({ healthStatus: 'HEALTHY', httpStatusCode: 200 });
+    ).toEqual({ healthStatus: 'HEALTHY', httpStatusCode: 200, landedOnRequestedResource: true });
   });
 
   it('keeps a 200 healthy when no landing url was captured', () => {
     expect(
       classifySourceLinkHealth({ status: 200, requestedUrl: 'https://example.yale.edu/lab/thing' }),
+    ).toEqual({ healthStatus: 'HEALTHY', httpStatusCode: 200 });
+  });
+
+  it('keeps a root 200 that landed on another host healthy without vouching for the page', () => {
+    expect(
+      classifySourceLinkHealth({
+        status: 200,
+        requestedUrl: 'https://lab.example.org/',
+        finalUrl: 'https://www.example.edu/',
+      }),
     ).toEqual({ healthStatus: 'HEALTHY', httpStatusCode: 200 });
   });
 });
@@ -935,13 +945,19 @@ describe('https landing (#4649)', () => {
   it('records the https page a reachable http link was redirected to on its own host', () => {
     expect(
       classifySourceLinkHealth({ status: 200, requestedUrl: HTTP, finalUrl: LANDING }),
-    ).toEqual({ healthStatus: 'HEALTHY', httpStatusCode: 200, httpsLandingUrl: LANDING });
+    ).toEqual({
+      healthStatus: 'HEALTHY',
+      httpStatusCode: 200,
+      httpsLandingUrl: LANDING,
+      landedOnRequestedResource: true,
+    });
   });
 
   it('records no landing for a link that was not redirected to https', () => {
     expect(classifySourceLinkHealth({ status: 200, requestedUrl: HTTP, finalUrl: HTTP })).toEqual({
       healthStatus: 'HEALTHY',
       httpStatusCode: 200,
+      landedOnRequestedResource: true,
     });
   });
 
