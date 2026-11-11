@@ -388,6 +388,34 @@ describe('department roster appointments combine (#3621)', () => {
       expect(await departmentsOf('example-lead')).toEqual(['History']);
     });
 
+    it("never lets the snapshot of the appointment's own run retire it", async () => {
+      await seedCrossListing();
+      const programmeRun = new mongoose.Types.ObjectId();
+      const appointment = await seedRosterRead(
+        'example-lead-roster-shell',
+        ['Early Modern Studies'],
+        LAST_TERM,
+      );
+      await Observation.updateOne(
+        { _id: appointment._id },
+        { $set: { scrapeRunId: programmeRun } },
+      );
+      const ownRunSnapshot = await seedRosterSnapshot(
+        'early-modern-studies',
+        'Early Modern Studies',
+        ['another-faculty-member'],
+        new Date(LAST_TERM.getTime() + 60 * 60 * 1000),
+      );
+      await Observation.updateOne(
+        { _id: ownRunSnapshot._id },
+        { $set: { scrapeRunId: programmeRun } },
+      );
+
+      await materializeEntity('researchEntity', { entityKey: 'example-lead' });
+
+      expect(await departmentsOf('example-lead')).toEqual(['History', 'Early Modern Studies']);
+    });
+
     it('treats an incomplete read of its roster as no evidence of absence', async () => {
       await seedCrossListing();
       await seedRosterRead('example-lead-roster-shell', ['Early Modern Studies'], LAST_TERM);
