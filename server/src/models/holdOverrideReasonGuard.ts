@@ -35,9 +35,8 @@ const UNRECORDED_REASON_FILTER = {
   ],
 };
 
-export const holdWithoutRecordedReasonFilter = (): Record<string, unknown> => ({
-  ...HELD_FILTER,
-  ...UNRECORDED_REASON_FILTER,
+const notAlreadyReasonlessHold = (tier: unknown): Record<string, unknown> => ({
+  $nor: [{ [TIER_FIELD]: tier, ...UNRECORDED_REASON_FILTER }],
 });
 
 type FieldWrite = { kind: 'untouched' } | { kind: 'assigned'; value: unknown };
@@ -55,7 +54,6 @@ function fieldWrite(update: Record<string, unknown>, field: string): FieldWrite 
 
 export type HoldReasonCheck =
   | { verdict: 'allowed' }
-  | { verdict: 'refused' }
   | { verdict: 'refused_if_any_match'; filter: Record<string, unknown> };
 
 export function checkUpdateKeepsHoldReason(update: unknown): HoldReasonCheck {
@@ -65,32 +63,43 @@ export function checkUpdateKeepsHoldReason(update: unknown): HoldReasonCheck {
   const reason = fieldWrite(record, REASON_FIELD);
   if (tier.kind === 'assigned') {
     if (!isHoldingOverrideTier(tier.value)) return { verdict: 'allowed' };
-    if (reason.kind === 'assigned') {
-      return hasRecordedOverrideReason(reason.value)
-        ? { verdict: 'allowed' }
-        : { verdict: 'refused' };
+    if (reason.kind === 'untouched') {
+      return {
+        verdict: 'refused_if_any_match',
+        filter: { $and: [UNRECORDED_REASON_FILTER, { [TIER_FIELD]: { $ne: tier.value } }] },
+      };
     }
-    return { verdict: 'refused_if_any_match', filter: UNRECORDED_REASON_FILTER };
+    return hasRecordedOverrideReason(reason.value)
+      ? { verdict: 'allowed' }
+      : { verdict: 'refused_if_any_match', filter: notAlreadyReasonlessHold(tier.value) };
   }
   if (reason.kind === 'assigned' && !hasRecordedOverrideReason(reason.value)) {
-    return { verdict: 'refused_if_any_match', filter: HELD_FILTER };
+    return {
+      verdict: 'refused_if_any_match',
+      filter: { $and: [HELD_FILTER, { $nor: [UNRECORDED_REASON_FILTER] }] },
+    };
   }
   return { verdict: 'allowed' };
+}
+
+function checkReplacementKeepsHoldReason(document: unknown): HoldReasonCheck {
+  if (!document || typeof document !== 'object') return { verdict: 'allowed' };
+  const record = document as Record<string, unknown>;
+  if (!isHoldWithoutRecordedReason(record)) return { verdict: 'allowed' };
+  return { verdict: 'refused_if_any_match', filter: notAlreadyReasonlessHold(record[TIER_FIELD]) };
 }
 
 type ExistsModel = {
   exists(filter: Record<string, unknown>): { session(session: unknown): PromiseLike<unknown> };
 };
 
-async function assertUpdateKeepsHoldReason(
+async function enforceHoldReasonCheck(
   model: ExistsModel,
   filter: Record<string, unknown>,
-  update: unknown,
+  check: HoldReasonCheck,
   session: unknown,
 ): Promise<void> {
-  const check = checkUpdateKeepsHoldReason(update);
   if (check.verdict === 'allowed') return;
-  if (check.verdict === 'refused') throw new HoldingOverrideWithoutReasonError();
   const match = await model.exists({ $and: [filter ?? {}, check.filter] }).session(session ?? null);
   if (match) throw new HoldingOverrideWithoutReasonError();
 }
@@ -120,17 +129,22 @@ const REPLACE_QUERY_WRITES = ['replaceOne', 'findOneAndReplace'] as const;
 export function registerHoldOverrideReasonGuard(schema: mongoose.Schema): void {
   for (const operation of UPDATE_QUERY_WRITES) {
     schema.pre(operation, async function guardUpdate(this: mongoose.Query<unknown, unknown>) {
-      await assertUpdateKeepsHoldReason(
+      await enforceHoldReasonCheck(
         this.model as unknown as ExistsModel,
         this.getFilter() as Record<string, unknown>,
-        this.getUpdate(),
+        checkUpdateKeepsHoldReason(this.getUpdate()),
         this.getOptions().session,
       );
     });
   }
   for (const operation of REPLACE_QUERY_WRITES) {
-    schema.pre(operation, function guardReplace(this: mongoose.Query<unknown, unknown>) {
-      assertDocumentKeepsHoldReason(this.getUpdate());
+    schema.pre(operation, async function guardReplace(this: mongoose.Query<unknown, unknown>) {
+      await enforceHoldReasonCheck(
+        this.model as unknown as ExistsModel,
+        this.getFilter() as Record<string, unknown>,
+        checkReplacementKeepsHoldReason(this.getUpdate()),
+        this.getOptions().session,
+      );
     });
   }
   schema.pre('save', function guardSave(this: GuardedDocument) {
@@ -151,12 +165,18 @@ export function registerHoldOverrideReasonGuard(schema: mongoose.Schema): void {
       for (const [kind, body] of Object.entries(operation ?? {})) {
         if (!body || typeof body !== 'object') continue;
         if (kind === 'insertOne') assertDocumentKeepsHoldReason(body.document);
-        else if (kind === 'replaceOne') assertDocumentKeepsHoldReason(body.replacement);
-        else if (kind === 'updateOne' || kind === 'updateMany') {
-          await assertUpdateKeepsHoldReason(
+        else if (kind === 'replaceOne') {
+          await enforceHoldReasonCheck(
             this as ExistsModel,
             body.filter ?? {},
-            body.update,
+            checkReplacementKeepsHoldReason(body.replacement),
+            null,
+          );
+        } else if (kind === 'updateOne' || kind === 'updateMany') {
+          await enforceHoldReasonCheck(
+            this as ExistsModel,
+            body.filter ?? {},
+            checkUpdateKeepsHoldReason(body.update),
             null,
           );
         }

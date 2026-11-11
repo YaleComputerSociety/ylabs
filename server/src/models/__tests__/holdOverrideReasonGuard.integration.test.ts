@@ -52,15 +52,7 @@ describe('the hold-reason predicate', () => {
     );
   });
 
-  it('decides from the update alone when it names both fields', () => {
-    expect(
-      checkUpdateKeepsHoldReason({
-        $set: {
-          studentVisibilityOverrideTier: 'suppressed',
-          studentVisibilitySuppressionReason: '',
-        },
-      }),
-    ).toEqual({ verdict: 'refused' });
+  it('decides from the update alone when it records a reason or sets no hold', () => {
     expect(
       checkUpdateKeepsHoldReason({
         studentVisibilityOverrideTier: 'operator_review',
@@ -197,6 +189,74 @@ describe('a Mongoose write cannot leave a hold without a recorded reason (#5856)
       studentVisibilityOverrideTier: 'suppressed',
       studentVisibilitySuppressionReason: REASON,
     });
+  });
+
+  it('accepts a write that re-asserts an existing reasonless hold unchanged', async () => {
+    const _id = await seedResearchRow({ studentVisibilityOverrideTier: 'suppressed' });
+
+    await ResearchEntity.updateOne(
+      { _id },
+      { $set: { studentVisibilityOverrideTier: 'suppressed', name: 'Fixture Renamed Lab' } },
+    );
+    await ResearchEntity.updateOne(
+      { _id },
+      {
+        $set: {
+          studentVisibilityOverrideTier: 'suppressed',
+          studentVisibilitySuppressionReason: '',
+          kind: 'center',
+        },
+      },
+    );
+    await ResearchEntity.updateOne({ _id }, { $set: { studentVisibilitySuppressionReason: '' } });
+    await ResearchEntity.replaceOne(
+      { _id },
+      {
+        slug: 'fixture-replaced-hold',
+        name: 'Fixture Replaced Lab',
+        studentVisibilityOverrideTier: 'suppressed',
+      },
+    );
+    await ResearchEntity.bulkWrite([
+      {
+        updateOne: {
+          filter: { _id },
+          update: { $set: { studentVisibilityOverrideTier: 'suppressed', kind: 'lab' } },
+        },
+      },
+      {
+        replaceOne: {
+          filter: { _id },
+          replacement: {
+            slug: 'fixture-replaced-hold',
+            name: 'Fixture Bulk Replaced Lab',
+            studentVisibilityOverrideTier: 'suppressed',
+          },
+        },
+      },
+    ]);
+
+    expect(await stored(_id)).toMatchObject({
+      name: 'Fixture Bulk Replaced Lab',
+      studentVisibilityOverrideTier: 'suppressed',
+    });
+  });
+
+  it('refuses moving an existing reasonless hold to another holding tier', async () => {
+    const _id = await seedResearchRow({ studentVisibilityOverrideTier: 'suppressed' });
+    await expect(
+      ResearchEntity.updateOne(
+        { _id },
+        { $set: { studentVisibilityOverrideTier: 'operator_review' } },
+      ),
+    ).rejects.toBeInstanceOf(HoldingOverrideWithoutReasonError);
+    await expect(
+      ResearchEntity.replaceOne(
+        { _id },
+        { slug: 'fixture-moved-hold', studentVisibilityOverrideTier: 'operator_review' },
+      ),
+    ).rejects.toBeInstanceOf(HoldingOverrideWithoutReasonError);
+    expect((await stored(_id))?.studentVisibilityOverrideTier).toBe('suppressed');
   });
 
   it('guards save, insertMany, replaceOne and bulkWrite too', async () => {
