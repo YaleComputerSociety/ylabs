@@ -15,7 +15,7 @@ vi.mock('../services/accountService', () => accountServiceMock);
 
 const adminGrantServiceMock = vi.hoisted(() => ({
   ensureBootstrapAdminGrant: vi.fn(async () => undefined),
-  hasActiveAdminGrant: vi.fn(async () => false),
+  hasActiveAdminGrant: vi.fn(async (_netid?: unknown) => false),
 }));
 vi.mock('../services/adminGrantService', () => adminGrantServiceMock);
 
@@ -108,7 +108,7 @@ describe('development-only affordances are scoped to the developer machine', () 
     accountServiceMock.recordAccountLogin.mockClear();
     adminGrantServiceMock.ensureBootstrapAdminGrant.mockClear();
     adminGrantServiceMock.hasActiveAdminGrant.mockReset();
-    adminGrantServiceMock.hasActiveAdminGrant.mockImplementation(async () => false);
+    adminGrantServiceMock.hasActiveAdminGrant.mockImplementation(async (_netid?: unknown) => false);
     analyticsServiceMock.logEvent.mockClear();
   });
 
