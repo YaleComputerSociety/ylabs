@@ -15,6 +15,7 @@ import {
   isPhilanthropicFundAppealText,
   isResearchAreaTemplateLeakText,
   isResearchInterestsSentence,
+  opensOnSubjectOwnedResearchClause,
   sanitizeResearchEntityDescription,
   isStudiesResearchAreaEchoDescription,
   isStudiesSentenceNestingTopicsUnderTheFirst,
@@ -3048,7 +3049,7 @@ function leadingScholarlyFieldListSummary(sentences: string[], full: string): st
   if (/^(?:in\s+)?(?:my|our|i|we)\b/i.test(first)) return '';
   if (!/[,\s]\b(?:especially|and|or)\b|,/.test(first)) return '';
   if (startsWithPersonNameSubjectPredicate(first)) return '';
-  if (SUBJECT_OWNED_RESEARCH_SENTENCE.test(first)) return '';
+  if (opensOnSubjectOwnedResearchClause(first)) return '';
   if (isResearchInterestsSentence(first)) return '';
   if (
     hasResearchDescriptionVerb(first) ||
@@ -3073,14 +3074,6 @@ function leadingScholarlyFieldListSummary(sentences: string[], full: string): st
   const candidate = `Studies ${first.replace(/[.!?]+$/g, '').trim()}.`;
   return shortDescriptionQuality(candidate, full).isUseful ? candidate : '';
 }
-
-/**
- * A sentence whose subject is the person's own research ("<Name>'s main interests lie
- * in ...", "Her research focuses on ...") already carries its verb, so prefixing
- * "Studies " glues a template onto a whole sentence (#5685).
- */
-const SUBJECT_OWNED_RESEARCH_SENTENCE =
-  /^(?:(?:[A-Z][\p{L}.'’-]*\s+){0,3}[A-Z][\p{L}.'’-]*['’]s|his|her|their|its|my|our)\s+(?:(?:main|primary|principal|current|broad|chief)\s+)?(?:(?:research|scholarly|academic)\s+)?(?:interests?|research|work|focus|areas?|fields?|specialt(?:y|ies))\b/iu;
 
 function laterResearchActivitySummary(sentences: string[], full: string): string {
   const laterResearchSentence = sentences
