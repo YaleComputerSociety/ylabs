@@ -358,7 +358,7 @@ describe('visible profile bio backfill selects by the person own official link (
       return emitted;
     };
 
-    const FIXTURE_ORCID = '0000-0002-5708-0019';
+    const FIXTURE_ORCID = '9999-9000-9999-9005';
     const OTHER_PAGE_URL = 'https://ysph.yale.edu/profile/devon-fixture/';
 
     const seedOrcidObservation = async (netid: string, sourceUrl: string) =>
