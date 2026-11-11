@@ -108,6 +108,10 @@ import {
   OFFICIAL_PROFILE_DIRECTOR_SOURCE_NAME,
 } from '../officialProfileDirectorRetirement';
 import { officialProfileIdentityKey, rosterMembershipKey } from '../utils/rosterMembershipKey';
+import {
+  identityWitnessesConflict,
+  type OfficialProfilePageIdentity,
+} from '../../services/officialProfileLinkIdentity';
 
 const SOURCE_NAME = 'official-profile-pi-backfill';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
@@ -3005,6 +3009,23 @@ function officialProfileDisplayName(
   );
 }
 
+/**
+ * The identity a fetched official profile page states about its own owner, read with the
+ * same email and netid-slug rules the backfill lane uses, and no name: a link writer that
+ * built the URL from a display name compares this against the researcher (#5605).
+ */
+export function officialProfilePageStatedIdentity(
+  html: string,
+  profileUrl: string,
+): OfficialProfilePageIdentity {
+  const $ = cheerio.load(html);
+  const profiles = jsonLdProfiles($);
+  const email = extractEmail($, profiles, officialProfileDisplayName($, profiles));
+  const netid =
+    netidStyleProfileSlug(canonicalUrlFromHtml($, profileUrl)) || netidStyleProfileSlug(profileUrl);
+  return { ...(email ? { email } : {}), ...(netid ? { netid } : {}) };
+}
+
 export function extractOfficialProfileIdentity(
   html: string,
   profileUrl: string,
@@ -4607,16 +4628,12 @@ export async function pageEmailHeldByAnotherResearcher(
     .select('_id identifiers.netid')
     .limit(5)
     .lean()) as unknown as Array<{ _id: unknown; identifiers?: { netid?: string } }>;
-  const keyNetid = textValue(existingUser.netid).toLowerCase();
-  return holders.some((holder) => {
-    const holderNetid = textValue(holder.identifiers?.netid).toLowerCase();
-    return (
-      String(holder._id) !== String(existingUser._id ?? '') &&
-      Boolean(holderNetid) &&
-      Boolean(keyNetid) &&
-      holderNetid !== keyNetid
-    );
-  });
+  return holders.some((holder) =>
+    identityWitnessesConflict(holder, {
+      _id: existingUser._id ?? '',
+      netid: textValue(existingUser.netid),
+    }),
+  );
 }
 
 /**

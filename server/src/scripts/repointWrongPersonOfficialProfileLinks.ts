@@ -8,6 +8,7 @@ import { ResearchEntity } from '../models/researchEntity';
 import { Researcher, type ResearcherProfileLink } from '../models/researcher';
 import { RoleAssignment } from '../models/roleAssignment';
 import { normalizeOfficialProfileDestination } from '../services/leadProfileIdentity';
+import { officialProfileLinkHeldByConflictingIdentity } from '../services/officialProfileLinkIdentity';
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -16,6 +17,7 @@ import {
   planWrongPersonOfficialProfileLinkRepoints,
   summarizeWrongPersonProfileLinkRefusals,
   wrongPersonProfileLinkRefusalBeforeEvidence,
+  type WrongPersonProfileLinkPlan,
   type WrongPersonProfileLinkRow,
 } from './repointWrongPersonOfficialProfileLinksCore';
 
@@ -66,6 +68,7 @@ const officialIdentityLink = (links: unknown): { url: string; index: number } | 
 interface CandidateRecord {
   researcherId: string;
   displayName: string;
+  netid?: string;
   boundUrl: string;
   linkIndex: number;
 }
@@ -76,7 +79,7 @@ async function loadCandidateRecords(): Promise<{
   officialLinksScanned: number;
 }> {
   const researchers = (await Researcher.find({ archived: { $ne: true } })
-    .select('_id displayName profileLinks')
+    .select('_id displayName profileLinks identifiers.netid')
     .lean()) as unknown as Array<Record<string, any>>;
 
   const claimantNamesByDestination = new Map<string, string[]>();
@@ -93,7 +96,13 @@ async function loadCandidateRecords(): Promise<{
       ...(claimantNamesByDestination.get(destination) || []),
       displayName,
     ]);
-    candidates.push({ researcherId, displayName, boundUrl: link.url, linkIndex: link.index });
+    candidates.push({
+      researcherId,
+      displayName,
+      netid: row.identifiers?.netid,
+      boundUrl: link.url,
+      linkIndex: link.index,
+    });
   }
 
   const records = new Map(candidates.map((row) => [row.researcherId, row]));
@@ -155,11 +164,31 @@ async function ownPageCandidatesForResearcher(researcherId: string): Promise<str
   return [...candidates];
 }
 
+async function withoutRepointsOntoAnotherPersonsPage(
+  plan: WrongPersonProfileLinkPlan,
+  records: Map<string, CandidateRecord>,
+): Promise<WrongPersonProfileLinkPlan> {
+  const repoint: WrongPersonProfileLinkPlan['repoint'] = [];
+  const refused = [...plan.refused];
+  for (const move of plan.repoint) {
+    const person = { _id: move.researcherId, netid: records.get(move.researcherId)?.netid };
+    if (await officialProfileLinkHeldByConflictingIdentity(move.toUrl, person)) {
+      refused.push({ researcherId: move.researcherId, reason: 'own-page-held-by-another-netid' });
+    } else {
+      repoint.push(move);
+    }
+  }
+  return { repoint, refused };
+}
+
 export async function repointWrongPersonOfficialProfileLinks(options: {
   dryRun: boolean;
 }): Promise<Record<string, unknown>> {
   const { rows, records, officialLinksScanned } = await loadCandidateRecords();
-  const plan = planWrongPersonOfficialProfileLinkRepoints(rows);
+  const plan = await withoutRepointsOntoAnotherPersonsPage(
+    planWrongPersonOfficialProfileLinkRepoints(rows),
+    records,
+  );
 
   const entityIds = new Set<string>();
   for (const move of plan.repoint) {

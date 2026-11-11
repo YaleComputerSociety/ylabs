@@ -90,6 +90,10 @@ Both of those constructed candidates must still pass the same person-page name c
 Matching a slug to a person needs surname equality plus a given-name token that is equal or an enumerated short form, so a nickname page (`philip-gorski` published as `phil-gorski`) is followed while a look-alike is refused (#2308, #468).
 The short forms are a curated list rather than a rule, because every general rule also claims a same-surname colleague: a prefix rule reads `sara`/`sarah` and `alex`/`alexandra` as one person, and a first-letter rule lets `a` stand in for `alison`.
 An unlisted short form therefore loses a repair, which is the safe direction for a lane that overwrites a served identity link.
+A slug match is still only a name match, so two more checks gate adoption (#5605).
+A candidate another live researcher with a different netid already carries is skipped without a probe.
+A candidate chosen because its slug names the person, rather than because it continues the stored path, is adopted only when the live page's own email or netid names the researcher.
+The per-link report lists each skipped candidate under `refusedCandidates` and the summary counts them as `candidatesRefused`; [skills/scrapers/SKILL.md](../skills/scrapers/SKILL.md) owns the identity rule itself.
 Person pages are read from `/people/<slug>`, `/profile/<slug>`, `/person/<slug>`, section-nested `/people/<section>/<slug>`, and the nested CMS profile `/<section>/profile/<slug>` that `supersedesOfficialProfileUrl` already treats as canonical (#2310).
 That wider reader is deliberately separate from `personProfileNameTokensFromUrl`, which gates a materializer check on whether a field came *only* from person-profile pages; widening the gate would change which fields that check suppresses.
 A link left `UNAVAILABLE` is withheld at serve time, so an entity page falls back to the person's website rather than offering a 404.
