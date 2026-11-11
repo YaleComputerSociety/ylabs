@@ -97,6 +97,11 @@ export const ADMIN_AUDIT_ROUTES: Record<string, AdminAuditRouteDescriptor> = {
     targetType: 'correctionReport',
     targetId: paramId('id'),
   },
+  'PUT /directory-removal-requests/:id': {
+    action: 'directory_removal_request.decide',
+    targetType: 'directoryRemovalRequest',
+    targetId: paramId('id'),
+  },
 };
 
 const AUDIT_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);

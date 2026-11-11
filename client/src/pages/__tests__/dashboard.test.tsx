@@ -47,6 +47,10 @@ vi.mock('../../components/accounts/ProgramWatch', () => {
   return { default: MockProgramWatch };
 });
 
+vi.mock('../../components/accounts/DirectoryRemovalRequest', () => ({
+  default: () => <section aria-label="Your y/labs listing">Removal request</section>,
+}));
+
 const renderDashboard = (userType: string, initialEntries: string[] = ['/dashboard']) =>
   render(
     <MemoryRouter initialEntries={initialEntries}>
@@ -87,6 +91,15 @@ describe('Dashboard page', () => {
     expect(screen.getByText('Watched programs list')).toBeTruthy();
     expect(screen.getByText(/2 research plans/)).toBeTruthy();
     expect(screen.getByText(/1 watched program/)).toBeTruthy();
+  });
+
+  it('places the removal request section outside both tab panels', () => {
+    renderDashboard('professor');
+
+    const listing = screen.getByRole('region', { name: 'Your y/labs listing' });
+    for (const panel of screen.getAllByRole('tabpanel', { hidden: true })) {
+      expect(panel.contains(listing)).toBe(false);
+    }
   });
 
   it('shows no count rather than zero when a count is unknown', () => {

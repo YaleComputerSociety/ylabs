@@ -30,6 +30,8 @@ import {
   planSourceLinkReprobe,
   resolveSourceLinkHealthEntry,
   tlsFallbackCandidates,
+  httpsSpellingProbes,
+  verifiedHttpsSpelling,
   storedSourceLinkHealthByUrl,
   isStoredUnresolvableVerdict,
   type StoredSourceLinkHealthEntry,
@@ -484,6 +486,7 @@ export async function runSourceLinkHealthBackfill(options: {
       toProbe: string[];
       carried: Map<string, StoredSourceLinkHealthEntry>;
       tlsFallbacks: string[];
+      httpsSpellings: Map<string, string>;
     }> = [];
     const planNow = new Date();
     for (const entity of page) {
@@ -523,7 +526,14 @@ export async function runSourceLinkHealthBackfill(options: {
                 planNow,
               );
         noteStoredSourceLinkVerdicts(resolverBreaker, entity.sourceLinkHealth);
-        plans.push({ entity, candidates, toProbe, carried, tlsFallbacks: [] });
+        plans.push({
+          entity,
+          candidates,
+          toProbe,
+          carried,
+          tlsFallbacks: [],
+          httpsSpellings: new Map(),
+        });
       } catch (error) {
         result.errors += 1;
         console.error(
@@ -549,9 +559,17 @@ export async function runSourceLinkHealthBackfill(options: {
 
     for (const plan of plans) {
       plan.tlsFallbacks = tlsFallbackCandidates(plan.candidates, healthCache);
+      plan.httpsSpellings = httpsSpellingProbes(
+        [plan.entity.websiteUrl, plan.entity.website],
+        healthCache,
+      );
     }
     await probeUncachedUrlsByHost(
-      [...new Set(plans.flatMap((plan) => plan.tlsFallbacks))],
+      [
+        ...new Set(
+          plans.flatMap((plan) => [...plan.tlsFallbacks, ...plan.httpsSpellings.values()]),
+        ),
+      ],
       healthCache,
       {
         checkLink,
@@ -566,7 +584,7 @@ export async function runSourceLinkHealthBackfill(options: {
 
     // Phase 3, no network: every verdict is cached, so assembling and writing a
     // row cannot pace anything.
-    for (const { entity, candidates: planned, carried, tlsFallbacks } of plans) {
+    for (const { entity, candidates: planned, carried, tlsFallbacks, httpsSpellings } of plans) {
       const candidates = [...planned, ...tlsFallbacks];
       try {
         const now = new Date();
@@ -574,7 +592,10 @@ export async function runSourceLinkHealthBackfill(options: {
         const sourceLinkHealth: StoredSourceLinkHealthEntry[] = [];
         let probedEntries = 0;
         for (const url of candidates) {
-          const health = healthCache.get(url);
+          const probedHealth = healthCache.get(url);
+          const httpsSpellingUrl = verifiedHttpsSpelling(httpsSpellings.get(url), healthCache);
+          const health =
+            probedHealth && httpsSpellingUrl ? { ...probedHealth, httpsSpellingUrl } : probedHealth;
           const carriedEntry = carried.get(url);
           if (!health && carriedEntry) {
             result.carriedFreshHealthy += 1;

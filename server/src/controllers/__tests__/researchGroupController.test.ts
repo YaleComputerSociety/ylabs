@@ -74,6 +74,19 @@ describe('researchGroupController', () => {
     expect(res.status).toHaveBeenCalledWith(404);
   });
 
+  it('serves the same capped detail whatever `?member=` names', async () => {
+    mocks.getResearchGroupDetail.mockResolvedValue(null);
+    const req = { params: { slug: 'example-lab' }, query: { member: 'Example Member' } } as any;
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+
+    await getResearchGroupBySlug(req, res);
+
+    expect(mocks.getResearchGroupDetail.mock.calls[0]).toStrictEqual([
+      'example-lab',
+      { includeWithheldForOperator: false },
+    ]);
+  });
+
   it('lets an admin preview a research detail withheld from students', async () => {
     mocks.hasAdminAuthorityForUser.mockResolvedValue(true);
     const detail = {
@@ -461,6 +474,7 @@ describe('researchGroupController', () => {
         embeddingSpendKey: expect.any(String),
         correctSpelling: true,
         resolveFilterValues: true,
+        rerankLiveMissClient: { ipKey: expect.any(String), sessionKey: expect.any(String) },
       },
     );
   });
@@ -503,6 +517,7 @@ describe('researchGroupController', () => {
         embeddingSpendKey: expect.any(String),
         correctSpelling: true,
         resolveFilterValues: true,
+        rerankLiveMissClient: { ipKey: expect.any(String), sessionKey: expect.any(String) },
       },
     );
   });
@@ -567,6 +582,7 @@ describe('researchGroupController', () => {
         embeddingSpendKey: expect.any(String),
         correctSpelling: true,
         resolveFilterValues: true,
+        rerankLiveMissClient: { ipKey: expect.any(String), sessionKey: expect.any(String) },
       },
     );
   });

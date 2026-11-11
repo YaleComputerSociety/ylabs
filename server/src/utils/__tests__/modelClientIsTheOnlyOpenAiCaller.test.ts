@@ -8,6 +8,7 @@ import {
   clearResearchSearchQueryEmbeddingCache,
   getResearchSearchQueryVector,
 } from '../../services/researchSearchQueryEmbedding';
+import { defaultSearchRerankLiveMissModel } from '../../services/searchRerankLiveMissJob';
 import { defaultCardSynthesisLLM } from '../groundedCardSynthesis';
 import {
   type ModelCaller,
@@ -90,6 +91,22 @@ const defaultModelCalls: Array<[ModelCaller, () => Promise<unknown>]> = [
       }),
   ],
   ['research-search-query-embedding', () => getResearchSearchQueryVector('protein folding')],
+  [
+    'search-rerank-live-miss',
+    () =>
+      defaultSearchRerankLiveMissModel(API_KEY)({
+        query: 'protein folding',
+        candidates: [
+          {
+            entityId: 'synthetic-row-a',
+            name: 'Synthetic Folding Lab',
+            departments: ['Synthetic Department'],
+            shortDescription: 'Studies protein folding.',
+            fullDescription: 'Studies protein folding.',
+          },
+        ],
+      }),
+  ],
 ];
 
 describe('default model calls reach OpenAI only through the shared client', () => {

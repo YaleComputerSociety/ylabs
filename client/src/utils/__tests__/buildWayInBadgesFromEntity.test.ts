@@ -15,10 +15,33 @@ describe('buildWayInBadgesFromEntity', () => {
     expect(buildWayInBadgesFromEntity(undefined)).toEqual([]);
   });
 
+  it('shows the welcomes badge from the served flag when no page invitation is served (#5362)', () => {
+    expect(buildWayInBadgesFromEntity(entity({ welcomesUndergrads: true }))).toEqual([
+      'Welcomes undergrads',
+    ]);
+  });
+
   it('reads undergraduate evidence from the served hosted flag (#3593)', () => {
     expect(buildWayInBadgesFromEntity(entity({ hasUndergradHostingEvidence: true }))).toEqual([
       'Undergrad evidence',
     ]);
+  });
+
+  it('shows the mentors badge from served mentors list evidence, not hosted or welcomes lists (#5362)', () => {
+    const listEntry = (signal: 'hosted' | 'welcomes' | 'mentors') => ({
+      source: 'example-list',
+      signal,
+      kind: 'advised' as const,
+      sourceUrl: 'https://example.edu/list',
+    });
+    expect(
+      buildWayInBadgesFromEntity(entity({ undergradListEvidence: [listEntry('mentors')] })),
+    ).toEqual(['Mentors undergrads']);
+    expect(
+      buildWayInBadgesFromEntity(
+        entity({ undergradListEvidence: [listEntry('hosted'), listEntry('welcomes')] }),
+      ),
+    ).toEqual([]);
   });
 
   /**

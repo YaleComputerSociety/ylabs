@@ -115,13 +115,27 @@ export const isLikelyOfficialPersonProfileUrl = (value: unknown): boolean => {
  */
 const YSM_SECTION_PROFILE_PATH = /^\/[a-z0-9-]+\/profile\/([a-z0-9-]+)$/i;
 
+/**
+ * `divinity.yale.edu` moved its faculty pages from `/faculty-and-research/yds-faculty/<slug>`
+ * to `/profile/<slug>` under the same slug; center rosters still link the old form, which
+ * now answers 404, while archived copies show the same person under it (#5592). Only that
+ * one path pair collapses, and only on that host.
+ */
+const YDS_LEGACY_FACULTY_PATH = /^\/faculty-and-research\/yds-faculty\/([a-z0-9-]+)$/i;
+
 const canonicalOfficialProfilePath = (host: string, path: string): string => {
+  if (host === 'divinity.yale.edu') {
+    const legacy = YDS_LEGACY_FACULTY_PATH.exec(path);
+    return legacy ? `/profile/${legacy[1]}` : path;
+  }
   if (host !== 'medicine.yale.edu') return path;
   const sectioned = YSM_SECTION_PROFILE_PATH.exec(path);
   return sectioned ? `/profile/${sectioned[1]}` : path;
 };
 
-const YSM_ROOT_PROFILE_PATH = /^\/profile\/[a-z0-9-]+$/i;
+const YSM_ROOT_PROFILE_PATH = /^\/profile\/([a-z0-9-]+)$/i;
+
+const YDS_PROFILE_PATH = /^\/profile\/([a-z0-9-]+)$/i;
 
 /**
  * Hosts whose profile path is the same for everyone and whose query names the person, so
@@ -131,12 +145,18 @@ const IDENTITY_QUERY_PARAMETER_BY_HOST: Readonly<Record<string, string>> = {
   'scholar.google.com': 'user',
 };
 
-const identityQueryPattern = (host: string, path: string, parameter: string, value: string) =>
-  new RegExp(
-    `^https?://(?:www\\.)?${escapeRegex(host)}${escapeRegex(path)}/*\\?(?:[^#]*&)?${escapeRegex(parameter)}=${escapeRegex(encodeURIComponent(value))}(?:[&#].*)?$`,
-  );
+const anyCaseLiteral = (literal: string): string =>
+  literal.replace(/[a-z]/g, (letter) => `[${letter}${letter.toUpperCase()}]`);
 
-export const officialProfileDestinationStoredPattern = (url?: string | null): RegExp | null => {
+interface OfficialProfileDestinationPatternParts {
+  host: string;
+  pathPattern: string;
+  caseInsensitive: boolean;
+}
+
+const officialProfileDestinationPatternParts = (
+  url?: string | null,
+): OfficialProfileDestinationPatternParts | null => {
   let parsed: URL;
   try {
     parsed = new URL(String(url || '').trim());
@@ -149,15 +169,42 @@ export const officialProfileDestinationStoredPattern = (url?: string | null): Re
   const identityParameter = IDENTITY_QUERY_PARAMETER_BY_HOST[host];
   if (identityParameter) {
     const identityValue = parsed.searchParams.get(identityParameter);
-    return identityValue
-      ? identityQueryPattern(host, path, identityParameter, identityValue)
-      : null;
+    if (!identityValue) return null;
+    return {
+      host,
+      pathPattern: `${escapeRegex(path)}/*\\?(?:[^#]*&)?${escapeRegex(identityParameter)}=${escapeRegex(encodeURIComponent(identityValue))}(?:[&#].*)?$`,
+      caseInsensitive: false,
+    };
   }
-  const anySection =
-    host === 'medicine.yale.edu' && YSM_ROOT_PROFILE_PATH.test(path) ? '(?:/[a-z0-9-]+)?' : '';
+  const ysmProfile = host === 'medicine.yale.edu' ? YSM_ROOT_PROFILE_PATH.exec(path) : null;
+  const ydsProfile = host === 'divinity.yale.edu' ? YDS_PROFILE_PATH.exec(path) : null;
+  const pathPattern = ysmProfile
+    ? `(?:/[A-Za-z0-9-]+)?${anyCaseLiteral('/profile')}/${escapeRegex(ysmProfile[1])}`
+    : ydsProfile
+      ? `(?:/profile|${anyCaseLiteral('/faculty-and-research/yds-faculty')})/${escapeRegex(ydsProfile[1])}`
+      : escapeRegex(path);
+  return { host, pathPattern: `${pathPattern}/*(?:[?#].*)?$`, caseInsensitive: true };
+};
+
+export const officialProfileDestinationStoredPattern = (url?: string | null): RegExp | null => {
+  const parts = officialProfileDestinationPatternParts(url);
+  if (!parts) return null;
   return new RegExp(
-    `^https?://(?:www\\.)?${escapeRegex(host)}${anySection}${escapeRegex(path)}/*(?:[?#].*)?$`,
-    'i',
+    `^https?://(?:www\\.)?${escapeRegex(parts.host)}${parts.pathPattern}`,
+    parts.caseInsensitive ? 'i' : '',
+  );
+};
+
+/**
+ * The same destinations as `officialProfileDestinationStoredPattern`, as case-sensitive patterns
+ * that each start with a literal scheme and host, so a `sourceUrl` index bounds every one of them.
+ * A case-insensitive pattern cannot be bounded and scans every candidate row instead.
+ */
+export const officialProfileDestinationIndexedPatterns = (url?: string | null): RegExp[] => {
+  const parts = officialProfileDestinationPatternParts(url);
+  if (!parts) return [];
+  return ['https://', 'http://', 'https://www.', 'http://www.'].map(
+    (prefix) => new RegExp(`^${escapeRegex(`${prefix}${parts.host}`)}${parts.pathPattern}`),
   );
 };
 

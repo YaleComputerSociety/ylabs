@@ -2,9 +2,8 @@
  * UndergradFellowshipRecipientScraper
  *
  * Reverse-looks-up Yale faculty who have actually mentored undergraduate
- * researchers by harvesting publicly published recipient lists for each of the
- * major Yale undergrad research fellowship programs (STARS, Dean's Research,
- * Tetelman, Mellon Mays, etc.).
+ * researchers by harvesting publicly published recipient lists that name a
+ * faculty mentor (STARS II symposium booklets).
  *
  * Each {student, program, year, advisor} pair feeds the matched advisor's
  * ResearchGroup as a `pastUndergradAdvisees` entry, which the access materializer
@@ -41,18 +40,18 @@
  *     emitted) so a smoke run with `--limit 50` exercises the full pipeline
  *     without producing 1000s of observations
  *   - ctx.options.only — filters to a subset of programKeys, e.g.
- *     `--only stars-ii,deans-research`
+ *     `--only stars-ii`
  *   - ctx.options.manualRecipientCsvDir — optional directory containing
  *     `<programKey>.csv` files for otherwise manual-upload-required programs.
  *     When no CSV is present, the scraper also looks for `<programKey>.pdf`
  *     in the accepted-input fellowship directory and extracts labelled rows.
  *
  * Most Yale fellowship programs do NOT publish recipient lists in scrapable
- * HTML — they're either symposium PDFs (STARS II), hidden behind admin email
- * contact (Mellon Mays, Tetelman, Dean's Research), or not published at all.
- * Configs for those programs are stubbed with `manualUploadRequired=true` and
- * a clear error from their extractor; an admin can drop a CSV, or a reviewed
- * PDF with labelled recipient/advisor text, into the system at a later stage.
+ * HTML. STARS II publishes symposium PDFs, so its config is stubbed with
+ * `manualUploadRequired=true` and a clear error from its extractor; an admin
+ * can drop a CSV, or a reviewed PDF with labelled recipient/advisor text, into
+ * the system at a later stage. A program that publishes no recipient list
+ * naming a mentor is not configured at all (docs/decisions.md, #5362).
  * The scraper architecture is
  * built so adding a new program — when a list does become available — is a
  * single config-row change.
@@ -79,7 +78,6 @@ import {
 import { getCached, setCached } from '../snapshotCache';
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
 import {
-  LAB_SCIENCE_ADVISER_DEPARTMENTS,
   adviserPairCountsTowardHosting,
   departmentsAgree,
   type UndergradHostingRule,
@@ -243,9 +241,8 @@ export interface UserMatch {
 // ---------------------------------------------------------------------------
 // Per-program extractor stubs
 //
-// All active v1 programs require a manual upload: their recipient lists are either
-// PDF-only (STARS II symposium booklets), behind an admin contact (Mellon Mays,
-// Tetelman, Dean's Research), or simply never published. Each stub throws a
+// A program whose recipient list is PDF-only (STARS II symposium booklets)
+// requires a manual upload. Each stub throws a
 // clear, identical-shaped error so the
 // orchestrator records `manual-upload-required` for that program and continues.
 //
@@ -707,64 +704,6 @@ export const DEFAULT_PROGRAM_CONFIGS: ProgramConfig[] = [
     skipReason: 'STARS II symposium abstracts published as PDF only',
     hostingRule: 'lab-science-program',
   },
-  {
-    programKey: 'cogsci-senior-essays',
-    programName: 'Cognitive Science senior essay',
-    urls: ['https://cogsci.yale.edu/research/past-senior-essays'],
-    extractor: seniorEssayAdviserTableExtractor,
-    adviserDepartments: ['Cognitive Science', ...LAB_SCIENCE_ADVISER_DEPARTMENTS],
-    hostingRule: 'lab-science-adviser-department',
-  },
-  {
-    programKey: 'eps-senior-theses',
-    programName: 'Earth and Planetary Sciences senior thesis',
-    urls: ['https://earth.yale.edu/recent-alumni-and-senior-theses'],
-    extractor: seniorThesisAdviserParagraphExtractor,
-    adviserDepartments: ['Earth and Planetary Sciences', 'Geology and Geophysics'],
-    hostingRule: 'lab-science-program',
-  },
-  {
-    programKey: 'stars-summer',
-    programName: 'STARS Summer Research Program',
-    urls: [
-      'https://science.yalecollege.yale.edu/stem-fellowships/funding-stem-opportunities-yale/stars/stars-summer-research-program',
-    ],
-    extractor: manualUploadStub,
-    manualUploadRequired: true,
-    skipReason: 'STARS Summer recipient lists not publicly published; symposium booklets are PDFs',
-  },
-  {
-    programKey: 'deans-research',
-    programName: "Yale College Dean's Research Fellowship & Rosenfeld Science Scholars",
-    urls: [
-      'https://science.yalecollege.yale.edu/yale-undergraduate-research/fellowship-grants/yale-college-deans-research-fellowship',
-    ],
-    extractor: manualUploadStub,
-    manualUploadRequired: true,
-    skipReason: "Dean's Research / Rosenfeld recipient lists not published; contact program office",
-  },
-  {
-    programKey: 'tetelman',
-    programName: 'Alan S. Tetelman 1958 Fellowship for International Research in the Sciences',
-    urls: [
-      'https://science.yalecollege.yale.edu/yale-undergraduate-research/fellowship-grants/tetelman-fellowship-international-research-sciences',
-    ],
-    extractor: manualUploadStub,
-    manualUploadRequired: true,
-    skipReason:
-      'Tetelman recipient list not publicly published; only sample destinations are listed',
-  },
-  {
-    programKey: 'mellon-mays',
-    programName: 'Mellon Mays Undergraduate Fellowship (Yale)',
-    urls: [
-      'https://college.yale.edu/life-at-yale/student-faculty-awards/mellon-mays-undergraduate-fellowship-program',
-    ],
-    extractor: manualUploadStub,
-    manualUploadRequired: true,
-    skipReason: 'Mellon Mays Yale fellow names not publicly published',
-    hostingRule: 'lab-science-adviser-department',
-  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -1208,8 +1147,8 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
   private readonly ownerDepartments: (owner: UserMatch) => Promise<AdvisorDepartments>;
 
   /**
-   * Configs are injectable for testing; default to the v1 six-program set.
-   * Most defaults are stubs (`manualUploadRequired=true`) — see file header.
+   * Configs are injectable for testing; default to `DEFAULT_PROGRAM_CONFIGS`.
+   * The STARS II default is a stub (`manualUploadRequired=true`); see the file header.
    */
   constructor(
     private readonly configs: ProgramConfig[] = DEFAULT_PROGRAM_CONFIGS,

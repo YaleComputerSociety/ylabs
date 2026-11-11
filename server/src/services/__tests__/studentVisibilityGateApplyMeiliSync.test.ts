@@ -238,6 +238,41 @@ describe('applyStudentVisibilityGatePlans index divergence repair', () => {
     expect(mocks.syncEntities).not.toHaveBeenCalled();
   });
 
+  it('does not count a removal-suppressed row the index rightly omits as missing', async () => {
+    const recordId = objectIdHex(12);
+    mocks.researchDocsById.set(recordId, {
+      _id: recordId,
+      slug: 'removal-suppressed-lab',
+      studentVisibilityTier: 'operator_review',
+      studentVisibilityReasons: ['researcher_removed'],
+    });
+
+    const result = await applyStudentVisibilityGatePlans([unchangedPlan(recordId)]);
+
+    expect(result.missingFromIndex).toBe(0);
+    expect(result.divergentTierRecordIds).toEqual([]);
+    expect(mocks.syncEntities).not.toHaveBeenCalled();
+  });
+
+  it('re-syncs a removal-suppressed row the index still holds so the sync deletes it', async () => {
+    const recordId = objectIdHex(13);
+    mocks.researchDocsById.set(recordId, {
+      _id: recordId,
+      slug: 'removal-suppressed-indexed-lab',
+      studentVisibilityTier: 'operator_review',
+      studentVisibilityReasons: ['researcher_removed'],
+    });
+    mocks.readIndexedFieldByDocumentId.mockImplementation(
+      async () => new Map<string, unknown>([[recordId, 'operator_review']]),
+    );
+
+    const result = await applyStudentVisibilityGatePlans([unchangedPlan(recordId)]);
+
+    expect(result.divergentTierRecordIds).toEqual([recordId]);
+    expect(result.syncedRecordIds).toEqual([recordId]);
+    expect(studentVisibilityGateIndexSyncBlocker(result)).toBeUndefined();
+  });
+
   it('records the rows a failed index write left divergent instead of reporting a clean apply', async () => {
     const recordId = objectIdHex(10);
     mocks.researchDocsById.set(recordId, {

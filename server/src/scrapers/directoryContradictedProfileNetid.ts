@@ -1,5 +1,9 @@
 import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
+import {
+  normalizeOfficialProfileDestination,
+  officialProfileDestinationIndexedPatterns,
+} from '../services/leadProfileIdentity';
 
 export const OFFICIAL_PROFILE_PI_BACKFILL_SOURCE = 'official-profile-pi-backfill';
 
@@ -194,4 +198,92 @@ export async function withoutDirectoryContradictedProfileEvidenceForKey<T extend
   observations: T[],
 ): Promise<T[]> {
   return (await screenDirectoryContradictedProfileEvidenceForKey(entityKey, observations)).kept;
+}
+
+export interface ProfilePageOwnerNetids {
+  byPage: ReadonlyMap<string, ReadonlySet<string>>;
+  directoryNetids: ReadonlySet<string>;
+}
+
+const directoryNetidsOf = (directory: DirectoryNetidsByAddress): Set<string> => {
+  const netids = new Set<string>();
+  for (const named of directory.values()) for (const netid of named) netids.add(netid);
+  return netids;
+};
+
+/**
+ * The netids the Yale directory pairs with the email each person page states about itself,
+ * keyed by `normalizeOfficialProfileDestination`. Every address a page has stated counts, so a page
+ * that changed its address over time still names its owner. A page whose addresses the directory
+ * does not all pair with one shared netid, such as a roster listing, is never read as one page's
+ * owner, and a page whose email the directory does not know decides nothing (#5693).
+ */
+export async function profilePageOwnerNetids(
+  pageUrls: readonly unknown[],
+  readScope: Record<string, unknown>,
+  directory?: DirectoryNetidsByAddress,
+): Promise<ProfilePageOwnerNetids> {
+  const owners = new Map<string, Set<string>>();
+  const none: ProfilePageOwnerNetids = { byPage: owners, directoryNetids: new Set() };
+  const patterns = new Map<string, RegExp[]>();
+  for (const url of pageUrls) {
+    const destination = normalizeOfficialProfileDestination(String(url ?? ''));
+    const indexed = officialProfileDestinationIndexedPatterns(String(url ?? ''));
+    if (destination && indexed.length > 0) patterns.set(destination, indexed);
+  }
+  if (patterns.size === 0 || mongoose.connection.readyState !== 1) return none;
+  const statedEmails = (await Observation.find(
+    {
+      entityType: 'user',
+      field: 'email',
+      ...readScope,
+      sourceUrl: { $in: [...patterns.values()].flat() },
+    },
+    { sourceUrl: 1, value: 1 },
+  ).lean()) as Array<{ sourceUrl?: unknown; value?: unknown }>;
+  if (statedEmails.length === 0) return none;
+  const pairs = directory ?? (await loadDirectoryNetidsByAddress());
+  const addressesByPage = new Map<string, Set<string>>();
+  for (const observation of statedEmails) {
+    const destination = normalizeOfficialProfileDestination(String(observation.sourceUrl ?? ''));
+    const address = normalizedAddress(observation.value);
+    if (!patterns.has(destination) || !address) continue;
+    const addresses = addressesByPage.get(destination) ?? new Set<string>();
+    addresses.add(address);
+    addressesByPage.set(destination, addresses);
+  }
+  for (const [destination, addresses] of addressesByPage) {
+    const pairedNetidSets = [...addresses]
+      .map((address) => pairs.get(address))
+      .filter((netids): netids is ReadonlySet<string> => Boolean(netids && netids.size > 0));
+    if (pairedNetidSets.length === 0) continue;
+    const sharedByEveryAddress = [...pairedNetidSets[0]].some((netid) =>
+      pairedNetidSets.every((netids) => netids.has(netid)),
+    );
+    if (!sharedByEveryAddress) continue;
+    owners.set(destination, new Set(pairedNetidSets.flatMap((netids) => [...netids])));
+  }
+  return {
+    byPage: owners,
+    directoryNetids: owners.size > 0 ? directoryNetidsOf(pairs) : new Set(),
+  };
+}
+
+/**
+ * Whether the page's own stated email names somebody other than this netid. A researcher with no
+ * netid, or a page the directory cannot place, is never contradicted. Nor is a researcher whose
+ * stored netid the directory does not hold: that is most often the person's own email alias
+ * stamped as a netid, so it is the page owner under a second spelling, not a different person
+ * (22 of the first 24 screened lead observations on Development were that shape).
+ */
+export function profilePageContradictsNetid(
+  owners: ProfilePageOwnerNetids,
+  pageUrl: unknown,
+  netid: unknown,
+): boolean {
+  const bare = typeof netid === 'string' ? netid.trim().toLowerCase() : '';
+  if (!bare) return false;
+  if (!owners.directoryNetids.has(bare)) return false;
+  const named = owners.byPage.get(normalizeOfficialProfileDestination(String(pageUrl ?? '')));
+  return Boolean(named && named.size > 0 && !named.has(bare));
 }

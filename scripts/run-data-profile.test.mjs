@@ -4,9 +4,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
+  PROFILES,
+  SHELL_PRECEDENT_KEYS,
   assertWritesAllowed,
+  childEnvironment,
   parseInvocation,
   parseMongoTarget,
+  run,
   shadowedValues,
   validateProfileValues,
 } from './run-data-profile.mjs';
@@ -106,4 +110,140 @@ test('blanks every credentialed env key the local profile does not declare', () 
     { DEVELOPMENT_MONGODBURL: '' },
   );
   assert.deepEqual(shadowedValues({ shadowedFile: path.join(dir, 'absent') }, {}), {});
+});
+
+const developmentProfile = { environment: 'development' };
+const adminBypassDotEnv = {
+  MONGODBURL: 'mongodb+srv://example.mongodb.net/Development',
+  PORT: '4038',
+  LOCAL_AUTH_BYPASS: 'true',
+  LOCAL_AUTH_BYPASS_NETID: 'devadmin',
+  LOCAL_AUTH_BYPASS_USER_TYPE: 'admin',
+};
+
+test('a shell value for each local auth bypass key wins over server/.env', () => {
+  const env = childEnvironment({
+    processEnv: {
+      LOCAL_AUTH_BYPASS: 'false',
+      LOCAL_AUTH_BYPASS_NETID: 'devstudent',
+      LOCAL_AUTH_BYPASS_USER_TYPE: 'undergraduate',
+    },
+    profile: developmentProfile,
+    values: adminBypassDotEnv,
+  });
+
+  assert.equal(env.LOCAL_AUTH_BYPASS, 'false');
+  assert.equal(env.LOCAL_AUTH_BYPASS_NETID, 'devstudent');
+  assert.equal(env.LOCAL_AUTH_BYPASS_USER_TYPE, 'undergraduate');
+});
+
+test('an empty shell value still counts as explicitly set and wins', () => {
+  const env = childEnvironment({
+    processEnv: { LOCAL_AUTH_BYPASS: '' },
+    profile: developmentProfile,
+    values: adminBypassDotEnv,
+  });
+
+  assert.equal(env.LOCAL_AUTH_BYPASS, '');
+  assert.equal(env.LOCAL_AUTH_BYPASS_NETID, 'devadmin');
+});
+
+test('server/.env still supplies the local auth bypass keys the shell leaves unset', () => {
+  const env = childEnvironment({
+    processEnv: {},
+    profile: developmentProfile,
+    values: adminBypassDotEnv,
+  });
+
+  assert.equal(env.LOCAL_AUTH_BYPASS, 'true');
+  assert.equal(env.LOCAL_AUTH_BYPASS_NETID, 'devadmin');
+  assert.equal(env.LOCAL_AUTH_BYPASS_USER_TYPE, 'admin');
+});
+
+test('server/.env keeps precedence over the shell for every other key', () => {
+  const env = childEnvironment({
+    processEnv: {
+      MONGODBURL: 'mongodb+srv://example.mongodb.net/Prod',
+      PORT: '4000',
+      SCRAPER_ENV: 'production',
+    },
+    profile: developmentProfile,
+    values: adminBypassDotEnv,
+  });
+
+  assert.equal(env.MONGODBURL, 'mongodb+srv://example.mongodb.net/Development');
+  assert.equal(env.PORT, '4038');
+  assert.equal(env.SCRAPER_ENV, 'development');
+  assert.equal(env.CONFIRM_PROD_SCRAPE, 'false');
+  assert.deepEqual(SHELL_PRECEDENT_KEYS, [
+    'LOCAL_AUTH_BYPASS',
+    'LOCAL_AUTH_BYPASS_NETID',
+    'LOCAL_AUTH_BYPASS_USER_TYPE',
+  ]);
+});
+
+const runDevelopmentProfileWithShell = (shellEnv) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-profile-run-'));
+  const dotEnvFile = path.join(dir, '.env');
+  const outputFile = path.join(dir, 'child-env.json');
+  fs.writeFileSync(
+    dotEnvFile,
+    [
+      'MONGODBURL=mongodb+srv://example.mongodb.net/Development',
+      'SCRAPER_ENV=development',
+      'PORT=4038',
+      'LOCAL_AUTH_BYPASS=true',
+      'LOCAL_AUTH_BYPASS_NETID=devadmin',
+      'LOCAL_AUTH_BYPASS_USER_TYPE=admin',
+      '',
+    ].join('\n'),
+  );
+  const reportedKeys = ['PORT', ...SHELL_PRECEDENT_KEYS];
+  const childScript = `require('fs').writeFileSync(${JSON.stringify(outputFile)}, JSON.stringify(Object.fromEntries(${JSON.stringify(reportedKeys)}.map((key) => [key, process.env[key] ?? null]))))`;
+  const originalFile = PROFILES.development.file;
+  const originalShell = Object.fromEntries([...reportedKeys].map((key) => [key, process.env[key]]));
+  const originalLog = console.log;
+  try {
+    PROFILES.development.file = dotEnvFile;
+    for (const key of reportedKeys) delete process.env[key];
+    Object.assign(process.env, shellEnv);
+    console.log = () => {};
+    const status = run(['development', '--', process.execPath, '-e', childScript]);
+    assert.equal(status, 0);
+    return JSON.parse(fs.readFileSync(outputFile, 'utf8'));
+  } finally {
+    console.log = originalLog;
+    PROFILES.development.file = originalFile;
+    for (const [key, value] of Object.entries(originalShell)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+};
+
+test('run hands the spawned command the shell bypass values over server/.env', () => {
+  assert.deepEqual(
+    runDevelopmentProfileWithShell({
+      PORT: '4000',
+      LOCAL_AUTH_BYPASS: 'false',
+      LOCAL_AUTH_BYPASS_NETID: 'devstudent',
+      LOCAL_AUTH_BYPASS_USER_TYPE: 'undergraduate',
+    }),
+    {
+      PORT: '4038',
+      LOCAL_AUTH_BYPASS: 'false',
+      LOCAL_AUTH_BYPASS_NETID: 'devstudent',
+      LOCAL_AUTH_BYPASS_USER_TYPE: 'undergraduate',
+    },
+  );
+});
+
+test('run still hands the spawned command the server/.env bypass values when the shell is silent', () => {
+  assert.deepEqual(runDevelopmentProfileWithShell({}), {
+    PORT: '4038',
+    LOCAL_AUTH_BYPASS: 'true',
+    LOCAL_AUTH_BYPASS_NETID: 'devadmin',
+    LOCAL_AUTH_BYPASS_USER_TYPE: 'admin',
+  });
 });

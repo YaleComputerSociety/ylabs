@@ -1,6 +1,14 @@
 import { ResearchEntity } from '../models/researchEntity';
+import {
+  SEARCH_RERANK_TEXT_HASH_FIELD,
+  buildSearchRerankTextHash,
+} from './searchRerankCandidateText';
 import { asResearchEntityType, type ResearchEntityType } from '../models/researchAccessTypes';
-import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
+import {
+  freshDirectoryRemovalServing,
+  redactWithheldNamesDeep,
+  servedRosterByEntityId,
+} from './directoryRemovalServing';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizePersonName } from '../utils/personNameHygiene';
 import {
@@ -33,7 +41,10 @@ import { sanitizeMethodChipLabel } from '../utils/researchAreaLabelHygiene';
 import { decideServedResearchAreas } from '../utils/servedResearchAreaGuards';
 import { meshDescriptorOnlyTerms } from '../scrapers/utils/meshNonSubjectDescriptors';
 import { entityHasHostedUndergraduates } from './hostedUndergraduates';
+import { servedEmeritusWayInFlags, type EmeritusWayInDecision } from './emeritusLeadWayIn';
 import { entityWelcomesUndergraduates, servedUndergradInvitationLevel } from './researchEntityDto';
+import { entityMentorsUndergraduates } from './undergradListEvidenceServing';
+import { isExcludedFromSearchIndex, RESEARCHER_REMOVED_REASON } from './directoryRemovalReason';
 import {
   isSyntheticResearchHomeMetadataDescription,
   revoiceFirstPersonResearchLead,
@@ -93,6 +104,8 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'researchAreas',
     'hasUndergradHostingEvidence',
     'welcomesUndergrads',
+    'mentorsUndergrads',
+    'worksWithUndergrads',
     'studentVisibilityTier',
   ],
   sortableAttributes: [
@@ -135,6 +148,7 @@ export const RESEARCH_ENTITY_SEARCH_INDEX_DOCUMENT_FIELDS: readonly string[] = A
     RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
     'slug',
     MESH_DESCRIPTOR_ONLY_TERMS_FIELD,
+    SEARCH_RERANK_TEXT_HASH_FIELD,
     ...RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.searchableAttributes,
     ...RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.filterableAttributes,
     ...RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.sortableAttributes,
@@ -155,6 +169,7 @@ export interface ResearchEntitySearchIndexRebuildOptions {
   getClient?: () => Promise<ResearchEntitySearchIndexAdminClient>;
   fetchPage?: (page: number, pageSize: number) => Promise<any[]>;
   fetchMemberNames?: (entities: any[]) => Promise<ResearchEntitySearchMemberNameMap>;
+  fetchEmeritusWayIn?: (entities: any[]) => Promise<ResearchEntitySearchEmeritusWayInMap>;
   fetchChangedSince?: (since: Date) => Promise<any[]>;
   /**
    * Injectable for the same reason the index and the page fetch are: a rebuild test has no
@@ -185,6 +200,16 @@ export interface ResearchEntitySearchMemberNameFields {
 }
 
 export type ResearchEntitySearchMemberNameMap = Map<string, ResearchEntitySearchMemberNameFields>;
+
+export type ResearchEntitySearchEmeritusWayIn = Pick<
+  EmeritusWayInDecision,
+  'emeritusLed' | 'wayInWithheld'
+>;
+
+export type ResearchEntitySearchEmeritusWayInMap = ReadonlyMap<
+  string,
+  ResearchEntitySearchEmeritusWayIn
+>;
 
 export function getResearchEntitySearchIndexSettings() {
   return {
@@ -231,7 +256,7 @@ const SEARCH_INDEX_PERSON_NAME_FIELDS = [
   'memberNames',
 ] as const;
 
-const LEAD_PROFESSOR_MEMBER_ROLES = new Set([
+export const LEAD_PROFESSOR_MEMBER_ROLES: ReadonlySet<string> = new Set([
   'pi',
   'co-pi',
   'director',
@@ -241,14 +266,14 @@ const LEAD_PROFESSOR_MEMBER_ROLES = new Set([
   'faculty_lead',
 ]);
 
-const SEARCHABLE_STUDENT_MEMBER_ROLES: ReadonlySet<string> = new Set([
+export const SEARCHABLE_STUDENT_MEMBER_ROLES: ReadonlySet<string> = new Set([
   'postdoc',
   'grad-student',
   'undergrad',
   'past-undergrad',
 ]);
 
-const SEARCHABLE_PROFESSOR_MEMBER_ROLES = new Set([
+export const SEARCHABLE_PROFESSOR_MEMBER_ROLES: ReadonlySet<string> = new Set([
   ...LEAD_PROFESSOR_MEMBER_ROLES,
   'core-faculty',
   'affiliated',
@@ -259,6 +284,11 @@ const MONGO_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 const researchEntitySearchDocumentId = (doc: any): string =>
   serializedDocumentId(doc?._id) || serializedDocumentId(doc?.id) || '';
+
+export const searchablePersonName = (value: unknown): string => {
+  const name = cleanPersonName(value);
+  return name && !namesAResearchGroupRatherThanAPerson(name) ? name : '';
+};
 
 const cleanPersonName = (value: unknown): string => {
   if (typeof value !== 'string') return '';
@@ -428,40 +458,45 @@ export async function fetchResearchEntitySearchMemberNames(
   }
   if (entityById.size === 0) return new Map();
 
-  const rosterByEntityId = await getResearchEntityRosterByEntityId(Array.from(entityById.keys()));
-  const { publicResearchEntityDetailMemberNames, presentedLabMembers } =
-    await import('./researchGroupService');
+  const rosterByEntityId = await servedRosterByEntityId(Array.from(entityById.keys()));
+  const { searchableResearchEntityMembers } = await import('./researchGroupService');
   const now = new Date();
   const byEntityId: ResearchEntitySearchMemberNameMap = new Map();
-  const addName = (entityId: string, name: string, role: 'lead' | 'faculty' | 'student') => {
-    const fields = byEntityId.get(entityId) || emptyMemberNameFields();
-    if (role === 'student') {
-      fields.memberNames = uniquePersonNames([...fields.memberNames, name]);
-    } else {
-      fields.professorNames = uniquePersonNames([...fields.professorNames, name]);
-      if (role === 'lead') {
-        fields.leadProfessorNames = uniquePersonNames([...fields.leadProfessorNames, name]);
-      }
-    }
-    byEntityId.set(entityId, fields);
-  };
 
   for (const [entityId, entity] of entityById) {
     const rosterEntries = rosterByEntityId.get(entityId) ?? [];
-    for (const member of publicResearchEntityDetailMemberNames(entity, rosterEntries, now)) {
-      if (!SEARCHABLE_PROFESSOR_MEMBER_ROLES.has(member.role)) continue;
-      const name = cleanPersonName(member.name);
-      if (!name || namesAResearchGroupRatherThanAPerson(name)) continue;
-      addName(entityId, name, LEAD_PROFESSOR_MEMBER_ROLES.has(member.role) ? 'lead' : 'faculty');
+    const fields = emptyMemberNameFields();
+    for (const { name, kind } of searchableResearchEntityMembers(entity, rosterEntries, now)) {
+      if (kind === 'student') {
+        fields.memberNames = uniquePersonNames([...fields.memberNames, name]);
+        continue;
+      }
+      fields.professorNames = uniquePersonNames([...fields.professorNames, name]);
+      if (kind === 'lead') {
+        fields.leadProfessorNames = uniquePersonNames([...fields.leadProfessorNames, name]);
+      }
     }
-    for (const member of presentedLabMembers(entity, rosterEntries, now).members) {
-      if (!SEARCHABLE_STUDENT_MEMBER_ROLES.has(member.role)) continue;
-      const name = cleanPersonName(member.name);
-      if (name && !namesAResearchGroupRatherThanAPerson(name)) addName(entityId, name, 'student');
+    if (fields.professorNames.length > 0 || fields.memberNames.length > 0) {
+      byEntityId.set(entityId, fields);
     }
   }
 
   return byEntityId;
+}
+
+// Read through the call the browse and detail routes make, so the undergraduate filters cannot
+// count a row whose card withholds its way in (#5620). A read that could not decide fails the
+// build rather than indexing a flag the card would contradict.
+export async function fetchResearchEntitySearchEmeritusWayIn(
+  entities: any[],
+): Promise<ResearchEntitySearchEmeritusWayInMap> {
+  if (entities.length === 0) return new Map();
+  const { optionalPublicLeadMemberNames } = await import('./researchGroupService');
+  const read = await optionalPublicLeadMemberNames(entities, { withEmeritusWayIn: true });
+  if (read.unavailable) {
+    throw new Error('The emeritus way-in read failed, so the index documents were not built.');
+  }
+  return read.emeritusWayInByEntityId ?? new Map();
 }
 
 const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
@@ -598,9 +633,17 @@ const UNDERGRAD_INVITATION_RANK_BY_LEVEL: Record<string, number> = {
 export const undergradInvitationRank = (level: string | undefined): number =>
   (level && UNDERGRAD_INVITATION_RANK_BY_LEVEL[level]) || 0;
 
+const presentOnlyWhenTrue = (flags: Record<string, boolean>): Record<string, true> =>
+  Object.fromEntries(
+    Object.entries(flags)
+      .filter(([, value]) => value)
+      .map(([key]) => [key, true]),
+  );
+
 export function buildResearchEntitySearchIndexDocument(
   doc: any,
   memberNames?: ResearchEntitySearchMemberNameFields,
+  emeritusWayIn?: ResearchEntitySearchEmeritusWayIn,
 ): Record<string, any> | null {
   if (!doc) return null;
   const rawId = doc._id ?? doc.id;
@@ -608,15 +651,26 @@ export function buildResearchEntitySearchIndexDocument(
   const id = serializedDocumentId(rawId);
   if (!id) return null;
 
+  const servedRow = { ...doc, ...servedEmeritusWayInFlags(emeritusWayIn) };
+  const undergradSignals = {
+    hosts: entityHasHostedUndergraduates(servedRow),
+    welcomes: entityWelcomesUndergraduates(servedRow),
+    mentors: entityMentorsUndergraduates(servedRow),
+  };
   const out: Record<string, any> = {
     ...doc,
     id,
     // Derived from the row rather than copied from the stored flag, so the
     // `hostsUndergrads` filter and facet read the predicate the served badge reads
     // even when a writer changed its inputs without recomputing the flag (#5123).
-    hasUndergradHostingEvidence: entityHasHostedUndergraduates(doc),
-    welcomesUndergrads: entityWelcomesUndergraduates(doc),
-    undergradInvitationRank: undergradInvitationRank(servedUndergradInvitationLevel(doc)),
+    hasUndergradHostingEvidence: undergradSignals.hosts,
+    welcomesUndergrads: undergradSignals.welcomes,
+    ...presentOnlyWhenTrue({
+      mentorsUndergrads: undergradSignals.mentors,
+      worksWithUndergrads:
+        undergradSignals.hosts || undergradSignals.welcomes || undergradSignals.mentors,
+    }),
+    undergradInvitationRank: undergradInvitationRank(servedUndergradInvitationLevel(servedRow)),
   };
   if (memberNames) {
     out.leadProfessorNames = memberNames.leadProfessorNames;
@@ -677,20 +731,25 @@ export function buildResearchEntitySearchIndexDocument(
     ],
   );
   if (descriptorOnlyTerms.length > 0) out[MESH_DESCRIPTOR_ONLY_TERMS_FIELD] = descriptorOnlyTerms;
+  // Last, so it hashes the final served title and sanitized descriptions.
+  out[SEARCH_RERANK_TEXT_HASH_FIELD] = buildSearchRerankTextHash(out);
   return projectToIndexedFields(out);
 }
 
 export function buildResearchEntitySearchIndexDocuments(
   docs: any[],
   memberNamesByEntityId: ResearchEntitySearchMemberNameMap = new Map(),
+  emeritusWayInByEntityId: ResearchEntitySearchEmeritusWayInMap = new Map(),
 ): Record<string, any>[] {
   return docs
-    .map((doc) =>
-      buildResearchEntitySearchIndexDocument(
+    .map((doc) => {
+      const id = researchEntitySearchDocumentId(doc);
+      return buildResearchEntitySearchIndexDocument(
         doc,
-        memberNamesByEntityId.get(researchEntitySearchDocumentId(doc)),
-      ),
-    )
+        memberNamesByEntityId.get(id),
+        emeritusWayInByEntityId.get(id),
+      );
+    })
     .filter((doc): doc is Record<string, any> => doc !== null);
 }
 
@@ -699,13 +758,28 @@ export async function buildResearchEntitySearchIndexDocumentsWithMemberNames(
   fetchMemberNames: (
     entities: any[],
   ) => Promise<ResearchEntitySearchMemberNameMap> = fetchResearchEntitySearchMemberNames,
+  fetchEmeritusWayIn: (
+    entities: any[],
+  ) => Promise<ResearchEntitySearchEmeritusWayInMap> = fetchResearchEntitySearchEmeritusWayIn,
 ): Promise<Record<string, any>[]> {
-  const memberNamesByEntityId = await fetchMemberNames(docs);
-  return buildResearchEntitySearchIndexDocuments(docs, memberNamesByEntityId);
+  const [serving, memberNamesByEntityId, emeritusWayInByEntityId] = await Promise.all([
+    freshDirectoryRemovalServing(),
+    fetchMemberNames(docs),
+    fetchEmeritusWayIn(docs),
+  ]);
+  return redactWithheldNamesDeep(
+    buildResearchEntitySearchIndexDocuments(docs, memberNamesByEntityId, emeritusWayInByEntityId),
+    serving,
+  );
 }
 
+export const RESEARCH_ENTITY_SEARCH_INDEX_ROW_FILTER = {
+  archived: { $ne: true },
+  studentVisibilityReasons: { $ne: RESEARCHER_REMOVED_REASON },
+} as const;
+
 async function fetchResearchEntityPage(page: number, pageSize: number): Promise<any[]> {
-  return ResearchEntity.find({ archived: { $ne: true } })
+  return ResearchEntity.find(RESEARCH_ENTITY_SEARCH_INDEX_ROW_FILTER)
     .sort({ _id: 1 })
     .skip((page - 1) * pageSize)
     .limit(pageSize)
@@ -1072,6 +1146,7 @@ async function addEveryResearchEntityDocument(
   pageSize: number,
   fetchPage: (page: number, pageSize: number) => Promise<any[]>,
   fetchMemberNames: (entities: any[]) => Promise<ResearchEntitySearchMemberNameMap>,
+  fetchEmeritusWayIn: (entities: any[]) => Promise<ResearchEntitySearchEmeritusWayInMap>,
 ): Promise<ResearchEntitySearchIndexPopulateResult> {
   let page = 1;
   let fetchedDocumentCount = 0;
@@ -1087,6 +1162,7 @@ async function addEveryResearchEntityDocument(
     const indexDocs = await buildResearchEntitySearchIndexDocumentsWithMemberNames(
       docs,
       fetchMemberNames,
+      fetchEmeritusWayIn,
     );
     if (indexDocs.length > 0) {
       const addTask = await index.addDocuments(indexDocs, {
@@ -1126,9 +1202,10 @@ async function catchUpLiveIndexWithRowsChangedDuringBuild(
   liveIndex: any,
   changedRows: any[],
   fetchMemberNames: (entities: any[]) => Promise<ResearchEntitySearchMemberNameMap>,
+  fetchEmeritusWayIn: (entities: any[]) => Promise<ResearchEntitySearchEmeritusWayInMap>,
 ): Promise<ResearchEntitySearchIndexCatchUpResult> {
   const archivedIds = changedRows
-    .filter((row) => row?.archived === true)
+    .filter((row) => isExcludedFromSearchIndex(row))
     .map(researchEntitySearchDocumentId)
     .filter(Boolean);
   if (archivedIds.length > 0) {
@@ -1141,8 +1218,9 @@ async function catchUpLiveIndexWithRowsChangedDuringBuild(
   }
 
   const indexDocs = await buildResearchEntitySearchIndexDocumentsWithMemberNames(
-    changedRows.filter((row) => row?.archived !== true),
+    changedRows.filter((row) => !isExcludedFromSearchIndex(row)),
     fetchMemberNames,
+    fetchEmeritusWayIn,
   );
   if (indexDocs.length > 0) {
     await assertMeiliTaskSucceeded(
@@ -1276,12 +1354,19 @@ export async function rebuildResearchEntitySearchIndex(
   await (options.warmVocabulary || warmControlledVocabularyHeadings)();
   const fetchPage = options.fetchPage || fetchResearchEntityPage;
   const fetchMemberNames = options.fetchMemberNames || fetchResearchEntitySearchMemberNames;
+  const fetchEmeritusWayIn = options.fetchEmeritusWayIn || fetchResearchEntitySearchEmeritusWayIn;
   const fetchChangedSince = options.fetchChangedSince || fetchResearchEntitiesChangedSince;
   const liveUid = resolveIndexName(RESEARCH_ENTITY_SEARCH_INDEX_NAME);
   const targetsPrefixedIndex = liveUid !== RESEARCH_ENTITY_SEARCH_INDEX_NAME;
   const openAiApiKey = usableOpenAiApiKey();
   const populate = (index: any) =>
-    addEveryResearchEntityDocument(index, pageSize, fetchPage, fetchMemberNames);
+    addEveryResearchEntityDocument(
+      index,
+      pageSize,
+      fetchPage,
+      fetchMemberNames,
+      fetchEmeritusWayIn,
+    );
 
   let outcome: ResearchEntitySearchIndexPopulateResult & {
     swap?: ResearchEntitySearchIndexSwapResult;
@@ -1298,6 +1383,7 @@ export async function rebuildResearchEntitySearchIndex(
           liveIndex,
           await fetchChangedSince(startedAt),
           fetchMemberNames,
+          fetchEmeritusWayIn,
         ),
       swapConfirmation: options.swapConfirmation,
     });
@@ -1333,6 +1419,7 @@ export interface ResearchEntitySearchIndexReconcileOptions {
   getIndex?: typeof getMeiliIndex;
   fetchPage?: (page: number, pageSize: number) => Promise<any[]>;
   fetchMemberNames?: (entities: any[]) => Promise<ResearchEntitySearchMemberNameMap>;
+  fetchEmeritusWayIn?: (entities: any[]) => Promise<ResearchEntitySearchEmeritusWayInMap>;
   warmVocabulary?: () => Promise<unknown>;
 }
 
@@ -1389,13 +1476,18 @@ async function buildEveryCorpusIndexDocument(
   pageSize: number,
   fetchPage: (page: number, pageSize: number) => Promise<any[]>,
   fetchMemberNames: (entities: any[]) => Promise<ResearchEntitySearchMemberNameMap>,
+  fetchEmeritusWayIn: (entities: any[]) => Promise<ResearchEntitySearchEmeritusWayInMap>,
 ): Promise<Record<string, any>[]> {
   const corpus: Record<string, any>[] = [];
   for (let page = 1; ; page += 1) {
     const rows = await fetchPage(page, pageSize);
     if (rows.length === 0) break;
     corpus.push(
-      ...(await buildResearchEntitySearchIndexDocumentsWithMemberNames(rows, fetchMemberNames)),
+      ...(await buildResearchEntitySearchIndexDocumentsWithMemberNames(
+        rows,
+        fetchMemberNames,
+        fetchEmeritusWayIn,
+      )),
     );
     if (rows.length < pageSize) break;
   }
@@ -1429,6 +1521,7 @@ export async function reconcileResearchEntitySearchIndex(
     pageSize,
     options.fetchPage || fetchResearchEntityPage,
     options.fetchMemberNames || fetchResearchEntitySearchMemberNames,
+    options.fetchEmeritusWayIn || fetchResearchEntitySearchEmeritusWayIn,
   );
   if (corpus.length === 0) {
     throw new Error(

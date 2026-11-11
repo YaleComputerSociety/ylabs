@@ -4,13 +4,15 @@ import { fileURLToPath } from 'url';
 import { describe, expect, it } from 'vitest';
 import {
   isCoursePageSourceUrl,
+  isMapOrPublicityPageSourceUrl,
   isPatientCarePageSourceUrl,
   isPostingPageSourceUrl,
   isRefusedResearchWebsitePageUrl,
 } from '../researchDetailSources';
 
 /**
- * Client half of the shared course, posting and patient-care page contract (#5376).
+ * Client half of the shared course, posting, patient-care and map or directions page contract
+ * (#5376, #5657).
  *
  * See the server half in `server/src/utils/__tests__/inadmissibleWebsitePagesContract.test.ts`.
  */
@@ -26,7 +28,7 @@ interface UrlCase {
   url: string;
 }
 
-type Category = 'patientCare' | 'course' | 'posting';
+type Category = 'patientCare' | 'course' | 'posting' | 'mapOrDirections';
 
 const contract = JSON.parse(fs.readFileSync(CONTRACT_PATH, 'utf8')) as Record<
   Category,
@@ -37,6 +39,13 @@ const RULES: Record<Category, (url: string) => boolean> = {
   patientCare: isPatientCarePageSourceUrl,
   course: isCoursePageSourceUrl,
   posting: isPostingPageSourceUrl,
+  mapOrDirections: isMapOrPublicityPageSourceUrl,
+};
+
+const WEBSITE_BUTTON_REFUSES: Partial<Record<Category, (url: string) => boolean>> = {
+  patientCare: (url) => isRefusedResearchWebsitePageUrl(url, 'FACULTY_RESEARCH_AREA'),
+  course: (url) => isRefusedResearchWebsitePageUrl(url, 'FACULTY_RESEARCH_AREA'),
+  posting: (url) => isRefusedResearchWebsitePageUrl(url, 'FACULTY_RESEARCH_AREA'),
 };
 
 describe('inadmissible website page contract (client)', () => {
@@ -49,7 +58,8 @@ describe('inadmissible website page contract (client)', () => {
     contract[category].refused.forEach((testCase) => {
       it(`refuses as ${category}: ${testCase.name}`, () => {
         expect(RULES[category](testCase.url)).toBe(true);
-        expect(isRefusedResearchWebsitePageUrl(testCase.url, 'FACULTY_RESEARCH_AREA')).toBe(true);
+        const websiteButtonRefuses = WEBSITE_BUTTON_REFUSES[category];
+        if (websiteButtonRefuses) expect(websiteButtonRefuses(testCase.url)).toBe(true);
       });
     });
 

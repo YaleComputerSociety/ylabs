@@ -451,6 +451,42 @@ const personClaimFindings = (document) => {
   return findings;
 };
 
+const ESCAPED_LINE_BREAK_RE = /\\r\\n|\\n|\\r/g;
+const ESCAPED_TAB_RE = /\\t/g;
+
+const collectJsonStrings = (value, strings) => {
+  if (typeof value === 'string') {
+    strings.push(value);
+  } else if (Array.isArray(value)) {
+    for (const item of value) collectJsonStrings(item, strings);
+  } else if (value && typeof value === 'object') {
+    for (const [key, item] of Object.entries(value)) {
+      strings.push(key);
+      collectJsonStrings(item, strings);
+    }
+  }
+  return strings;
+};
+
+// A `gh api` body reaches the scanner JSON-escaped, so every line break is the two
+// characters `\n` and the whole body is one line. Scanned as is, a heading either glues
+// onto the next sentence and reads as a person in a claim, or, at the very start, blanks
+// the rest of the body so a real claim goes unscanned (#5622). Decode it to the text the
+// reader will see, so the escaped and markdown forms get the same verdict.
+export function decodeEscapedBody(content) {
+  const text = String(content ?? '');
+  const trimmed = text.trim();
+  if (/^[{["]/.test(trimmed)) {
+    try {
+      const strings = collectJsonStrings(JSON.parse(trimmed), []);
+      if (strings.length > 0) return strings.join('\n\n');
+    } catch {
+      // Not a JSON document, so decode only the escape sequences below.
+    }
+  }
+  return text.replace(ESCAPED_LINE_BREAK_RE, '\n').replace(ESCAPED_TAB_RE, '\t');
+}
+
 export function isExempt(content) {
   return EXEMPTION_RE.test(String(content || ''));
 }

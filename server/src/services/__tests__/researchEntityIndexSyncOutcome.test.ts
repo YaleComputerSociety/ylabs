@@ -32,12 +32,26 @@ describe('syncResearchEntitiesWithOutcome', () => {
     });
   });
 
-  it('does not count an archived row, which the sync deletes rather than submits', async () => {
-    meiliMocks.syncEntities.mockResolvedValue(1);
+  it('counts a confirmed delete of an excluded row as resynced, not as a failure', async () => {
+    meiliMocks.syncEntities.mockResolvedValue(3);
 
     expect(
-      await syncResearchEntitiesWithOutcome([{ _id: 'a' }, { _id: 'b', archived: true }]),
-    ).toEqual({ resynced: 1, indexSyncFailures: 0 });
+      await syncResearchEntitiesWithOutcome([
+        { _id: 'a' },
+        { _id: 'b', archived: true },
+        { _id: 'c', studentVisibilityReasons: ['researcher_removed'] },
+      ]),
+    ).toEqual({ resynced: 3, indexSyncFailures: 0 });
+  });
+
+  it('counts an excluded row as failed when the sync could not delete it', async () => {
+    meiliMocks.syncEntities.mockResolvedValue(0);
+
+    expect(
+      await syncResearchEntitiesWithOutcome([
+        { _id: 'c', studentVisibilityReasons: ['researcher_removed'] },
+      ]),
+    ).toEqual({ resynced: 0, indexSyncFailures: 1 });
   });
 
   it('treats a result that is not a count as a refusal', async () => {

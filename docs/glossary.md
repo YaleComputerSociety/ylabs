@@ -172,7 +172,7 @@ Development is the only environment where scrapers run, so a data fix is applied
 `MONGODBURL` names the database the current process talks to.
 
 **Promotion.**
-`promoteAcceptedBetaCopy` replaces twelve whole collections at once by default, fourteen with `--include-observations` and `--include-scrape-runs`, so one promotion delivers every pending fix together.
+`promoteAcceptedBetaCopy` replaces thirteen whole collections at once by default, fifteen with `--include-observations` and `--include-scrape-runs`, so one promotion delivers every pending fix together.
 Promotion is not per-fix work and never gets its own issue.
 It is also not monotonic: Production can hold the better value.
 

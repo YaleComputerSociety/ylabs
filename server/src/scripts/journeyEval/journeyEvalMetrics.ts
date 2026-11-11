@@ -287,6 +287,77 @@ export function tallyCreativePracticeLabels(
   };
 }
 
+export interface FilterBadgeTally {
+  filterTotal: number;
+  served: number;
+  withoutBadge: number;
+}
+
+export interface FilterBadgeInvariant {
+  id: string;
+  title: string;
+}
+
+export function checkFilterRowsServeTheirBadge(
+  invariant: FilterBadgeInvariant,
+  tally: FilterBadgeTally,
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult {
+  const { id, title } = invariant;
+
+  if (tally.served === 0) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The filter served no row, so zero rows without the badge would be a green signal over an empty population',
+      { ...tally },
+    );
+  }
+
+  if (tally.withoutBadge > 0 && corpusFingerprintMoved(corpusBefore, corpusAfter)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The corpus changed during the walk, so a row may lack the badge only because it was written after its index document',
+      { ...tally, corpusBefore, corpusAfter },
+    );
+  }
+
+  return buildInvariant(id, title, tally.withoutBadge === 0, { ...tally });
+}
+
+export const checkWelcomesFilterServesTheBadge = (
+  tally: FilterBadgeTally,
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult =>
+  checkFilterRowsServeTheirBadge(
+    {
+      id: 'welcomes-filter-rows-serve-the-badge',
+      title: 'Every row the "Welcomes undergrads" filter returns serves the welcomes badge',
+    },
+    tally,
+    corpusBefore,
+    corpusAfter,
+  );
+
+export const checkWorksWithFilterServesASignal = (
+  tally: FilterBadgeTally,
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult =>
+  checkFilterRowsServeTheirBadge(
+    {
+      id: 'works-with-filter-rows-serve-a-signal',
+      title:
+        'Every row the "Works with undergrads" filter returns serves hosted, welcomes or a mentors entry',
+    },
+    tally,
+    corpusBefore,
+    corpusAfter,
+  );
+
 export function checkCreativePracticeLabelAttribution(
   tally: CreativePracticeLabelTally,
   corpusBefore: CorpusFingerprint,
@@ -756,6 +827,35 @@ export function checkPersonNameWordsAreNotRespelled(
   return buildInvariant(id, title, respelled.length === 0, detail);
 }
 
+export interface NicknameQueryObservation {
+  expandedToTheGivenName: boolean;
+  rank: number | null;
+}
+
+export function checkNicknameExpansionReachesThePerson(
+  observations: readonly NicknameQueryObservation[],
+): InvariantResult {
+  const id = 'nickname-expansion-reaches-the-person';
+  const title =
+    "A short given name the nickname expansion maps to a person's own given name serves that person in the top 10";
+  const expanded = observations.filter((observation) => observation.expandedToTheGivenName);
+  const unreached = expanded.filter((observation) => observation.rank === null);
+  const detail = {
+    queried: observations.length,
+    expandedToTheGivenName: expanded.length,
+    unreached: unreached.length,
+  };
+  if (expanded.length === 0) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'No sampled person had a short given name the expansion mapped to their own, so a zero unreached count would be a green signal over an empty population',
+      detail,
+    );
+  }
+  return buildInvariant(id, title, unreached.length === 0, detail);
+}
+
 export interface DictionaryWordQueryObservation {
   respelledDictionaryWords: readonly string[];
 }
@@ -822,4 +922,51 @@ export function checkSimilarRailRanksSharedNamesLast(
     );
   }
   return buildInvariant(id, title, misordered === 0, detail);
+}
+
+export interface PastCapMemberObservation {
+  memberRowRank: number | null;
+  ownRowRank: number | null;
+  hasOwnRow: boolean;
+}
+
+const pastCapEmptyReason =
+  'No served row lists members past the detail display cap, so a zero count would be a green signal over an empty population';
+
+export function checkPastCapMembersReachTheirRow(
+  observations: readonly PastCapMemberObservation[],
+): InvariantResult {
+  const id = 'past-cap-member-search-reaches-their-row';
+  const title =
+    'A whole-name search for a current member past the detail display cap serves the row that lists them';
+  const missed = observations.filter((observation) => observation.memberRowRank === null).length;
+  const detail = { queried: observations.length, missed };
+  if (observations.length === 0) {
+    return buildInconclusiveInvariant(id, title, pastCapEmptyReason, detail);
+  }
+  return buildInvariant(id, title, missed === 0, detail);
+}
+
+export function checkOwnRowOutranksMemberRow(
+  observations: readonly PastCapMemberObservation[],
+): InvariantResult {
+  const id = 'own-row-outranks-a-row-listing-them-as-member';
+  const title =
+    "A search for a member's name ranks the research they lead above a row that only lists them as a member";
+  const withOwnRow = observations.filter((observation) => observation.hasOwnRow);
+  const outranked = withOwnRow.filter(
+    (observation) =>
+      observation.memberRowRank !== null &&
+      (observation.ownRowRank === null || observation.ownRowRank > observation.memberRowRank),
+  ).length;
+  const detail = { queried: withOwnRow.length, outranked };
+  if (withOwnRow.length === 0) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'No sampled past-cap member leads a served row of their own, so there is no ranking to compare',
+      detail,
+    );
+  }
+  return buildInvariant(id, title, outranked === 0, detail);
 }

@@ -16,6 +16,7 @@ import {
   CREATIVE_PRACTICE_KIND_LABEL,
   entityKindLabel,
   HOSTED_UNDERGRADUATES_LABEL,
+  MENTORS_UNDERGRADUATES_LABEL,
   isCreativePracticeEntity,
   leadRoleLabelForEntity,
   sanitizeResearchEntityCopy,
@@ -74,6 +75,7 @@ const ACCESS_SIGNAL_PRIORITY = [
   ACTIVELY_HIRING_LABEL,
   WELCOMES_UNDERGRADS_LABEL,
   'Undergrad evidence',
+  MENTORS_UNDERGRADUATES_LABEL,
   'Student project evidence',
   'Contact route',
 ];
@@ -82,23 +84,10 @@ const UNDERGRAD_ACCESS_SIGNALS = new Set([
   ACTIVELY_HIRING_LABEL,
   WELCOMES_UNDERGRADS_LABEL,
   'Undergrad evidence',
+  MENTORS_UNDERGRADUATES_LABEL,
 ]);
 
 const accessSignalLabel = (label: string): string => ACCESS_SIGNAL_LABELS[label] ?? label;
-
-const personNameKey = (value: string): string =>
-  value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .split(/[^a-z]+/)
-    .filter((token) => token.length > 1)
-    .join(' ');
-
-const titleNamesTheLead = (title: string, leadName: string): boolean => {
-  const leadKey = personNameKey(leadName);
-  return leadKey.length > 0 && leadKey === personNameKey(title);
-};
 
 const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -348,9 +337,7 @@ const ResearchHomeCard = ({
         {leadName && (
           <p className="text-xs font-medium leading-relaxed text-muted">
             {leadRole}:{' '}
-            {titleNamesTheLead(home.label, leadName) ? (
-              <span>{leadName}</span>
-            ) : leadProfileLink?.external ? (
+            {leadProfileLink?.external ? (
               <a
                 href={leadProfileLink.href}
                 target="_blank"

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { withBalancedLeadingQuotation } from '../cardLeadingQuotation';
+import { cardOpensMidSentence, withBalancedLeadingQuotation } from '../cardLeadingQuotation';
 
 describe('withBalancedLeadingQuotation', () => {
   it('drops a closing quote left at the start of a card by a sentence split', () => {
@@ -70,5 +70,22 @@ describe('withBalancedLeadingQuotation', () => {
     expect(withBalancedLeadingQuotation('‘The group’s reef survey counts.')).toBe(
       '‘The group’s reef survey counts.’',
     );
+  });
+});
+
+describe('cardOpensMidSentence (#5685)', () => {
+  it.each([
+    ['” Studies in Fixture Literature.', true],
+    ['’ Fixture Studies in Philosophy, 2019.', true],
+    [') and transcriptome profiling in fixture tissue.', true],
+    ['] of the fixture survey.', true],
+    ['’90s fixture survey data anchor this work.', false],
+    ['’Tis the fixture season.', false],
+    ['“Fixture” names the lab’s survey.', false],
+    ['"Fixture" names the lab survey.', false],
+    ['Studies fixture reefs.', false],
+    ['', false],
+  ])('%j -> %s', (card, expected) => {
+    expect(cardOpensMidSentence(card)).toBe(expected);
   });
 });

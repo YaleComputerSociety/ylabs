@@ -177,6 +177,7 @@ export interface ScraperMetrics<TFetchMode extends string = ScraperFetchMode> {
    * inconclusive; a zero reads as barren.
    */
   unitYields?: Record<string, number>;
+  removedByRequest?: number;
   descriptionSlotAttestation?: {
     vocabulary: number;
     empty: number;

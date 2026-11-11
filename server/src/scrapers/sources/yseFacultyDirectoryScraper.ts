@@ -74,7 +74,13 @@ export interface YseFacultyProfile {
   name: string;
   profileUrl: string;
   slug: string;
+  /** Every appointment in the position block, joined; the title screens read all of them. */
   title?: string;
+  /**
+   * The block's first appointment, the one emitted as `title`: later parts are additional
+   * titles such as a chair or a directorship (#5578).
+   */
+  leadingTitle?: string;
   email?: string;
   orcid?: string;
   researchAreas: string[];
@@ -267,14 +273,16 @@ export function extractProfile(html: string, faculty: RawYseFaculty): YseFaculty
   const name = normalizeName($('h1').first().text()) || faculty.name;
 
   const positionBlock = $('.profile__position').first();
-  const positionParts: string[] = [];
-  positionBlock.find('.semijoin').each((_i, span) => {
-    const text = cleanText($(span).text());
-    if (text) positionParts.push(text);
-  });
-  const title =
-    (positionParts.length > 0 ? positionParts.join('; ') : cleanText(positionBlock.text())) ||
-    undefined;
+  const spanTexts = positionBlock
+    .find('.semijoin')
+    .map((_i, span) => $(span).text())
+    .get();
+  const positionTexts = spanTexts.length > 0 ? spanTexts : [positionBlock.text()];
+  const positionParts = positionTexts
+    .flatMap((text) => cleanText(text).split(/\s*;\s*/))
+    .filter(Boolean);
+  const title = positionParts.join('; ') || undefined;
+  const leadingTitle = positionParts[0];
 
   let email: string | undefined;
   const contact = sectionByEyebrow($, 'Contact');
@@ -294,6 +302,7 @@ export function extractProfile(html: string, faculty: RawYseFaculty): YseFaculty
     profileUrl: faculty.profileUrl,
     slug: faculty.slug,
     title,
+    leadingTitle,
     email,
     orcid: extractOrcid($),
     researchAreas: extractResearchAreas($),
@@ -330,7 +339,8 @@ export function facultyToUserObservations(profile: YseFacultyProfile): {
   // roster's own claim and defeats `inheritSchoolFromLeadPi`.
   // The school still arrives: `schoolName` on the entity carries it.
   if (profile.email) obs.push({ ...base, field: 'email', value: profile.email });
-  if (profile.title) obs.push({ ...base, field: 'title', value: profile.title });
+  const statedTitle = profile.leadingTitle ?? profile.title;
+  if (statedTitle) obs.push({ ...base, field: 'title', value: statedTitle });
   obs.push({ ...base, field: 'profileUrls', value: { departmental: profile.profileUrl } });
   if (profile.orcid) obs.push({ ...base, field: 'orcid', value: profile.orcid });
   if (profile.description) obs.push({ ...base, field: 'bio', value: profile.description });

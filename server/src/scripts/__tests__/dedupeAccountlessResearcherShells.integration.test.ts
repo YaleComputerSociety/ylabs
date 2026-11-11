@@ -3,6 +3,10 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Researcher } from '../../models/researcher';
 import {
+  parseRecordDistinctResearchersArgs,
+  recordDistinctResearchers,
+} from '../recordDistinctResearchers';
+import {
   dedupeAccountlessResearcherShells,
   parseDedupeAccountlessResearcherShellsArgs,
 } from '../dedupeAccountlessResearcherShells';
@@ -130,6 +134,8 @@ describe('dedupeAccountlessResearcherShells (DB-backed)', () => {
       AMBIGUOUS_MULTIPLE_CANONICAL: 1,
       ORCID_CONFLICT: 1,
       NETID_CONFLICT: 0,
+      NO_IDENTITY_WITNESS: 0,
+      VARIANT_SHAPE_NOT_ALLOWED: 0,
     });
     expect(result.shellsMerged).toBe(1);
     expect(result.roleAssignmentsRepointed).toBe(1);
@@ -255,6 +261,60 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
     const shell = await db.collection('researchers').findOne({ _id: orcidShell });
     expect(shell!.archived).toBe(true);
     expect((shell!.identifiers as { orcid?: string } | undefined)?.orcid).toBeUndefined();
+  });
+
+  it("copies the shell's refusals to the survivor and never gap-fills a refused value (#5641)", async () => {
+    const survivor = new mongoose.Types.ObjectId();
+    const refusingShell = new mongoose.Types.ObjectId();
+    const refusedSite = 'https://school.example.test/about/fixture-fund-story/';
+    const refusedDepartment = 'Department of Fixture Stories';
+    const refusal = (valueKey: string) => ({
+      valueKey,
+      rule: 'over_shared_value',
+      refusedBy: 'synthetic fixture',
+      refusedAt: new Date('2026-11-11T00:00:00Z'),
+      note: 'synthetic fixture',
+    });
+    const db = mongoose.connection.db!;
+    await db.collection('researchers').insertMany([
+      {
+        _id: survivor,
+        displayName: 'Ines Fixture',
+        archived: false,
+        identifiers: { email: 'directory.fixture9@example.test' },
+        profile: { primaryDepartment: refusedDepartment },
+      },
+      {
+        _id: refusingShell,
+        displayName: 'Ines Fixture',
+        archived: false,
+        profile: { websiteUrl: refusedSite, title: 'Fixture Professor' },
+        fieldValueRefusals: {
+          websiteUrl: [refusal('school.example.test/about/fixture-fund-story')],
+          title: [refusal('fixture professor')],
+          primaryDepartment: [refusal('department of fixture stories')],
+        },
+      },
+    ]);
+
+    await dedupeAccountlessResearcherShells({ apply: true });
+
+    const kept = await db.collection('researchers').findOne({ _id: survivor });
+    expect(kept!.profile?.websiteUrl).toBeUndefined();
+    expect(kept!.profile?.title).toBeUndefined();
+    expect(kept!.profile?.primaryDepartment).toBeUndefined();
+    expect(Object.keys(kept!.fieldValueRefusals ?? {}).sort()).toEqual([
+      'primaryDepartment',
+      'title',
+      'websiteUrl',
+    ]);
+    const shell = await db.collection('researchers').findOne({ _id: refusingShell });
+    expect(shell!.archived).toBe(true);
+    expect(Object.keys(shell!.fieldValueRefusals ?? {}).sort()).toEqual([
+      'primaryDepartment',
+      'title',
+      'websiteUrl',
+    ]);
   });
 
   it('moves the shell ORCID link with its ORCID so neither row fails the schema (#4501)', async () => {
@@ -637,5 +697,224 @@ describe('parseDedupeAccountlessResearcherShellsArgs --only-shell', () => {
     expect(() => parseDedupeAccountlessResearcherShellsArgs(['--only-shell=not-an-id'])).toThrow(
       /24-character researcher id/,
     );
+  });
+});
+
+describe('dedupeAccountlessResearcherShells name-variant twins (#5592)', () => {
+  let server: MongoMemoryServer;
+
+  beforeAll(async () => {
+    server = await MongoMemoryServer.create();
+    await mongoose.connect(server.getUri(), { autoIndex: false });
+  });
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await server?.stop();
+  });
+
+  beforeEach(async () => {
+    const db = mongoose.connection.db!;
+    for (const name of ['researchers', 'role_assignments', 'research_entities', 'observations']) {
+      await db.collection(name).deleteMany({});
+    }
+  });
+
+  const HOLDER_PROFILE = 'https://fixture.yale.edu/profile/avery-synthetic';
+  const LISTING_PAGE = 'https://center.fixture.yale.edu/people/avery-synthetic';
+
+  const seedPair = async (input: {
+    shellName: string;
+    holderName: string;
+    linkedProfile: string;
+    holderEdgeState?: string;
+    otherMembers?: number;
+  }) => {
+    const db = mongoose.connection.db!;
+    const row = new mongoose.Types.ObjectId();
+    const holder = new mongoose.Types.ObjectId();
+    const shell = new mongoose.Types.ObjectId();
+    await db.collection('research_entities').insertOne({
+      _id: row,
+      slug: 'center-fixture',
+      name: 'Fixture Center',
+      archived: false,
+    });
+    await db.collection('researchers').insertMany([
+      {
+        _id: holder,
+        displayName: input.holderName,
+        archived: false,
+        identifiers: { email: 'directory.variant@example.test' },
+        profileLinks: [{ kind: 'YALE_OFFICIAL', purpose: 'PRIMARY_IDENTITY', url: HOLDER_PROFILE }],
+      },
+      { _id: shell, displayName: input.shellName, archived: false, identifiers: {} },
+    ]);
+    await db.collection('role_assignments').insertMany([
+      {
+        personId: holder,
+        target: { kind: 'RESEARCH_ENTITY', id: row },
+        role: 'CORE_FACULTY',
+        state: input.holderEdgeState ?? 'HISTORICAL',
+        archived: false,
+      },
+      {
+        personId: shell,
+        target: { kind: 'RESEARCH_ENTITY', id: row },
+        role: 'CORE_FACULTY',
+        state: 'CURRENT',
+        archived: false,
+        rosterProvenance: { profileUrl: LISTING_PAGE },
+      },
+    ]);
+    for (let index = 0; index < (input.otherMembers ?? 0); index += 1) {
+      const member = new mongoose.Types.ObjectId();
+      await db
+        .collection('researchers')
+        .insertOne({ _id: member, displayName: `Member Fixture ${index}`, archived: false });
+      await db.collection('role_assignments').insertOne({
+        personId: member,
+        target: { kind: 'RESEARCH_ENTITY', id: row },
+        role: 'AFFILIATED',
+        state: 'CURRENT',
+        archived: false,
+      });
+    }
+    const listing = (field: string, value: unknown) => ({
+      entityType: 'researchGroupMember',
+      entityKey: 'listing-variant-fixture',
+      field,
+      value,
+      superseded: false,
+    });
+    await db.collection('observations').insertMany([
+      listing('profileUrl', LISTING_PAGE),
+      listing('researchGroupKey', 'center-fixture'),
+      listing('profileIdentityEvidence', {
+        linkedProfileUrls: [input.linkedProfile],
+        emails: [],
+        netids: [],
+      }),
+    ]);
+    return { holder, shell };
+  };
+
+  it('folds a name-only variant into the stronger record its own listing links, on a large center too', async () => {
+    const { holder, shell } = await seedPair({
+      shellName: 'Avery Synthetic',
+      holderName: 'Avery Q. Synthetic',
+      linkedProfile: HOLDER_PROFILE,
+      otherMembers: 60,
+    });
+
+    const result = await dedupeAccountlessResearcherShells({ apply: true });
+
+    expect(result.foldsByMatchedIdentity['name-variant-shared-row']).toBe(1);
+    const folded = await mongoose.connection.db!.collection('researchers').findOne({ _id: shell });
+    expect(folded!.archived).toBe(true);
+    expect(String(folded!.dedupedIntoResearcherId)).toBe(String(holder));
+  });
+
+  it('accepts a holder department person page held as its website, and the divinity legacy path for it', async () => {
+    const PERSON_PAGE = 'https://divinity.yale.edu/profile/avery-synthetic';
+    const { holder, shell } = await seedPair({
+      shellName: 'Avery Synthetic',
+      holderName: 'Avery Q. Synthetic',
+      linkedProfile: 'https://divinity.yale.edu/faculty-and-research/yds-faculty/avery-synthetic',
+    });
+    const db = mongoose.connection.db!;
+    await db
+      .collection('researchers')
+      .updateOne(
+        { _id: holder },
+        { $set: { profileLinks: [], 'profile.websiteUrl': PERSON_PAGE } },
+      );
+
+    const result = await dedupeAccountlessResearcherShells({ apply: true });
+
+    expect(result.foldsByMatchedIdentity['name-variant-shared-row']).toBe(1);
+    expect((await db.collection('researchers').findOne({ _id: shell }))!.archived).toBe(true);
+  });
+
+  it('refuses a witness that is only the listing page itself, held by the holder as a lab website', async () => {
+    const LAB_SITE = 'https://fixture.yale.edu/lab/synthetic-lab';
+    const { holder, shell } = await seedPair({
+      shellName: 'Avery Synthetic',
+      holderName: 'Avery Q. Synthetic',
+      linkedProfile: LAB_SITE,
+    });
+    const db = mongoose.connection.db!;
+    await db
+      .collection('researchers')
+      .updateOne({ _id: holder }, { $set: { 'profile.websiteUrl': LAB_SITE } });
+    await db
+      .collection('observations')
+      .updateOne({ field: 'profileIdentityEvidence' }, { $set: { 'value.pageUrl': LAB_SITE } });
+
+    const result = await dedupeAccountlessResearcherShells({ apply: true });
+
+    expect(result.byReason.NO_IDENTITY_WITNESS).toBe(1);
+    const untouched = await db.collection('researchers').findOne({ _id: shell });
+    expect(untouched!.archived).toBe(false);
+  });
+
+  it('refuses a shared center role whose listing links a profile elsewhere, as for two namesakes', async () => {
+    const { shell } = await seedPair({
+      shellName: 'Avery Synthetic-Fixture',
+      holderName: 'Avery Synthetic Fixture',
+      linkedProfile: 'https://law.fixture.yale.edu/faculty/avery-synthetic-fixture',
+    });
+
+    const result = await dedupeAccountlessResearcherShells({ apply: true });
+
+    expect(result.byReason.NO_IDENTITY_WITNESS).toBe(1);
+    expect(result.shellsMerged).toBe(0);
+    const untouched = await mongoose.connection
+      .db!.collection('researchers')
+      .findOne({ _id: shell });
+    expect(untouched!.archived).toBe(false);
+  });
+
+  it('records a distinct-people pair on both records, once, and the dedupe then refuses it', async () => {
+    const { holder, shell } = await seedPair({
+      shellName: 'Avery Synthetic',
+      holderName: 'Avery Synthetic',
+      linkedProfile: HOLDER_PROFILE,
+    });
+    const dry = await recordDistinctResearchers(String(holder), String(shell), false);
+    expect(dry).toMatchObject({ found: 2, applied: false, alreadyRecorded: false });
+    expect(await recordDistinctResearchers(String(holder), String(shell), true)).toMatchObject({
+      applied: true,
+    });
+    expect(await recordDistinctResearchers(String(shell), String(holder), true)).toMatchObject({
+      applied: false,
+      alreadyRecorded: true,
+    });
+    const result = await dedupeAccountlessResearcherShells({ apply: false });
+    expect(result.distinctPeopleRefusedFolds).toBe(1);
+    expect(result.shellsMerged).toBe(0);
+    expect(() => parseRecordDistinctResearchersArgs(['--left=x', '--right=y'])).toThrow(
+      /24-character/,
+    );
+  });
+
+  it('never folds a pair an operator recorded as different people, whichever arm planned it', async () => {
+    const { holder, shell } = await seedPair({
+      shellName: 'Avery Synthetic',
+      holderName: 'Avery Synthetic',
+      linkedProfile: HOLDER_PROFILE,
+    });
+    await mongoose.connection
+      .db!.collection('researchers')
+      .updateOne({ _id: holder }, { $set: { distinctFromResearcherIds: [shell] } });
+
+    const result = await dedupeAccountlessResearcherShells({ apply: true });
+
+    expect(result.distinctPeopleRefusedFolds).toBe(1);
+    expect(result.shellsMerged).toBe(0);
+    const untouched = await mongoose.connection
+      .db!.collection('researchers')
+      .findOne({ _id: shell });
+    expect(untouched!.archived).toBe(false);
   });
 });

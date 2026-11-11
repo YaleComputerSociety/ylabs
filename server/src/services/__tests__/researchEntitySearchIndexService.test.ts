@@ -26,6 +26,8 @@ import {
   researchEntityTypeSearchTerms,
 } from '../researchEntitySearchIndexService';
 import { RESEARCH_SEARCH_RELEVANCE_TEXT_FIELDS } from '../../scripts/researchSearchRelevanceCore';
+import { buildSearchRerankTextHash } from '../searchRerankCandidateText';
+import { toPublicResearchEntityDto } from '../researchEntityDto';
 
 const succeedingTaskClient = {
   waitForTask: async () => ({ status: 'succeeded' }),
@@ -359,6 +361,47 @@ describe('researchEntitySearchIndexService', () => {
 
     expect(staleTrue?.hasUndergradHostingEvidence).toBe(false);
     expect(staleFalse?.hasUndergradHostingEvidence).toBe(true);
+  });
+
+  it('indexes works-with-undergrads as the OR of the hosting, welcomes and mentors fields', () => {
+    const base = {
+      slug: 'works-lab',
+      name: 'Works Lab',
+      archived: false,
+      websiteUrl: 'https://works.example.edu/',
+    };
+    const hosting = buildResearchEntitySearchIndexDocument({
+      ...base,
+      _id: 'entity-hosting',
+      pastUndergradAdvisees: [{ count: 1 }],
+    });
+    const welcoming = buildResearchEntitySearchIndexDocument({
+      ...base,
+      _id: 'entity-welcoming',
+      undergradInvitation: {
+        level: 'welcomes_undergrads',
+        quote: 'We welcome undergraduates.',
+        sourceUrl: 'https://works.example.edu/',
+      },
+    });
+    const unreviewedMentorList = buildResearchEntitySearchIndexDocument({
+      ...base,
+      _id: 'entity-unreviewed',
+      undergradListEvidence: [
+        {
+          source: 'eps-senior-theses',
+          kind: 'advised',
+          count: 2,
+          latestYear: 2026,
+          sourceUrl: 'https://works.example.edu/projects',
+        },
+      ],
+    });
+
+    expect(hosting).toMatchObject({ hasUndergradHostingEvidence: true, worksWithUndergrads: true });
+    expect(welcoming).toMatchObject({ welcomesUndergrads: true, worksWithUndergrads: true });
+    expect(unreviewedMentorList).not.toHaveProperty('mentorsUndergrads');
+    expect(unreviewedMentorList).not.toHaveProperty('worksWithUndergrads');
   });
 
   it('indexes the welcomes-undergraduates field from the predicate that serves the badge', () => {
@@ -1039,6 +1082,7 @@ describe('researchEntitySearchIndexService', () => {
         getIndex: async () => fakeIndex as any,
         fetchPage,
         fetchMemberNames: async () => new Map(),
+        fetchEmeritusWayIn: async () => new Map(),
       });
 
     const prev = process.env.OPENAI_API_KEY;
@@ -1080,6 +1124,7 @@ describe('researchEntitySearchIndexService', () => {
         fetchPage: async (page: number) =>
           page === 1 ? [{ _id: 'e1', name: 'Sample Lab', archived: false }] : [],
         fetchMemberNames: async () => new Map(),
+        fetchEmeritusWayIn: async () => new Map(),
       });
     const prev = process.env.OPENAI_API_KEY;
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -1140,6 +1185,7 @@ describe('researchEntitySearchIndexService', () => {
           fetchPage: async (page: number) =>
             page === 1 ? [{ _id: 'e1', name: 'Sample Lab', archived: false }] : [],
           fetchMemberNames: async () => new Map(),
+          fetchEmeritusWayIn: async () => new Map(),
         });
         expect(result.indexedDocumentCount).toBe(1);
       }
@@ -1177,6 +1223,7 @@ describe('researchEntitySearchIndexService', () => {
           getIndex: async () => fakeIndex as any,
           fetchPage: async () => [],
           fetchMemberNames: async () => new Map(),
+          fetchEmeritusWayIn: async () => new Map(),
         }),
       ).rejects.toThrow(/resetEmbedders task 2 did not succeed.*index_not_found/s);
     } finally {
@@ -1209,6 +1256,7 @@ describe('researchEntitySearchIndexService', () => {
         getIndex: async () => fakeIndex as any,
         fetchPage: async () => [],
         fetchMemberNames: async () => new Map(),
+        fetchEmeritusWayIn: async () => new Map(),
       }),
     ).rejects.toThrow(/updateEmbedders task 2 did not succeed.*invalid_document_fields/s);
 
@@ -1249,6 +1297,7 @@ describe('researchEntitySearchIndexService', () => {
         getIndex: async () => fakeIndex as any,
         fetchPage: async () => [],
         fetchMemberNames: async () => new Map(),
+        fetchEmeritusWayIn: async () => new Map(),
       }),
     ).rejects.toThrow(/updateSettings task 1 cannot be confirmed/);
 
@@ -1286,6 +1335,7 @@ describe('researchEntitySearchIndexService', () => {
               },
             ]
           : [],
+      fetchEmeritusWayIn: async () => new Map(),
       fetchMemberNames: async (entities: any[]) => {
         expect(entities.map((entity) => entity._id)).toEqual([entityId]);
         return new Map([
@@ -1333,6 +1383,7 @@ describe('researchEntitySearchIndexService', () => {
       fetchPage: async (page: number) =>
         page === 1 ? [{ _id: 'e1', name: 'Sample Lab', archived: false }] : [],
       fetchMemberNames: async () => new Map(),
+      fetchEmeritusWayIn: async () => new Map(),
     }).then(
       (result) => ({ threw: false, indexed: result.indexedDocumentCount, message: '' }),
       (error: Error) => ({ threw: true, indexed: 0, message: error.message }),
@@ -1364,6 +1415,7 @@ describe('researchEntitySearchIndexService', () => {
       fetchPage: async (page: number) =>
         page === 1 ? [{ _id: 'e1', name: 'Sample Lab', archived: false }] : [],
       fetchMemberNames: async () => new Map(),
+      fetchEmeritusWayIn: async () => new Map(),
     });
 
     expect(timeouts).toHaveLength(2);
@@ -1828,6 +1880,7 @@ describe('rebuildResearchEntitySearchIndex replacing the whole index (#4151)', (
       },
       fetchPage: async (page: number) => (page === 1 ? rows : []),
       fetchMemberNames: async () => new Map(),
+      fetchEmeritusWayIn: async () => new Map(),
       fetchChangedSince: async () => changedDuringBuild,
     });
 
@@ -2037,6 +2090,7 @@ describe('rebuildResearchEntitySearchIndex archived exclusion', () => {
       pageSize: 50,
       getIndex: async () => fakeIndex as any,
       fetchMemberNames: async () => new Map(),
+      fetchEmeritusWayIn: async () => new Map(),
     });
     return indexedIds;
   };
@@ -2286,6 +2340,61 @@ describe('index document field allowlist (#3944)', () => {
     ]) {
       expect(RESEARCH_ENTITY_SEARCH_INDEX_DOCUMENT_FIELDS).toContain(field);
     }
+  });
+});
+
+describe('buildResearchEntitySearchIndexDocument rerank text hash (#5569)', () => {
+  const row = (overrides: Record<string, unknown> = {}) => ({
+    _id: '64b7f0c2a1b2c3d4e5f60719',
+    slug: 'synthetic-rerank-hash-lab',
+    name: 'Synthetic Rerank Hash Lab',
+    kind: 'lab',
+    entityType: 'lab',
+    departments: ['Synthetic Department'],
+    researchAreas: ['Coastal Ecology'],
+    shortDescription: 'Studies synthetic tidal marshes and shoreline change.',
+    fullDescription:
+      'This synthetic research studies tidal marsh dynamics, sediment transport and shoreline restoration.',
+    ...overrides,
+  });
+
+  it('stores the hash of what the rerank prompt shows, from the final document', () => {
+    const doc = buildResearchEntitySearchIndexDocument(row())!;
+
+    expect(doc.rerankTextHash).toMatch(/^[0-9a-f]{16}$/);
+    expect(doc.rerankTextHash).toBe(buildSearchRerankTextHash(doc));
+    expect(RESEARCH_ENTITY_SEARCH_INDEX_DOCUMENT_FIELDS).toContain('rerankTextHash');
+  });
+
+  it('moves the hash on a description-only rewrite', () => {
+    expect(
+      buildResearchEntitySearchIndexDocument(
+        row({ shortDescription: 'A rewritten synthetic card about salt marsh restoration.' }),
+      )!.rerankTextHash,
+    ).not.toBe(buildResearchEntitySearchIndexDocument(row())!.rerankTextHash);
+  });
+
+  it('is never rendered by the embedder template, searched, filtered or sorted on', () => {
+    const template =
+      buildResearchEntitySearchEmbedderConfig('synthetic-key').default.documentTemplate;
+    const settings = getResearchEntitySearchIndexSettings();
+
+    expect(template).not.toContain('rerankTextHash');
+    for (const attributes of [
+      settings.searchableAttributes,
+      settings.filterableAttributes,
+      settings.sortableAttributes,
+    ]) {
+      expect(attributes).not.toContain('rerankTextHash');
+    }
+  });
+
+  it('is never served on the public research DTO', () => {
+    const doc = buildResearchEntitySearchIndexDocument(row())!;
+
+    expect(
+      JSON.stringify(toPublicResearchEntityDto({ ...row(), rerankTextHash: doc.rerankTextHash })),
+    ).not.toContain(doc.rerankTextHash);
   });
 });
 

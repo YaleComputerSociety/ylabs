@@ -17,6 +17,8 @@ const SYNTHETIC_QUERY = 'syntheticquerytext';
 const SYNTHETIC_NOTE = 'synthetic private plan note';
 const SYNTHETIC_TYPED = 'synthetic typed words';
 const SYNTHETIC_LABEL = 'synthetic accessible label';
+const SYNTHETIC_REFERRER_TERM = 'syntheticreferrerterm';
+const SYNTHETIC_RELATIVE_TERM = 'syntheticrelativeterm';
 const SYNTHETIC_POSTHOG_ID = '3f2b6c1e-8d4a-4f0b-9c7e-2a1d5e6f7a8b';
 const POSTHOG_INGEST_ORIGIN = 'https://us.i.posthog.com';
 const POSTHOG_ASSETS_ORIGIN = 'https://us-assets.i.posthog.com';
@@ -88,6 +90,24 @@ const freshPostHog = async () => {
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// The SDK flushes on its own timers, so a fixed sleep raced the session-replay batch under CI
+// load (#5570). Wait for what the assertion needs, with a ceiling well inside the test timeout.
+const WAIT_FOR_SDK = { timeout: 15000, interval: 50 } as const;
+const LATE_BATCH_SETTLE_MS = 2500;
+
+const sentEventNames = () => new Set(sentEvents().map((event) => event.event));
+
+const untilRemoteConfigLoaded = () =>
+  vi.waitFor(() => {
+    expect(sent.some((request) => new URL(request.url).pathname.includes('config'))).toBe(true);
+  }, WAIT_FOR_SDK);
+
+const untilSent = (eventNames: readonly string[]) =>
+  vi.waitFor(() => {
+    const names = sentEventNames();
+    for (const name of eventNames) expect(names).toContain(name);
+  }, WAIT_FOR_SDK);
+
 beforeEach(async () => {
   vi.resetModules();
   productAnalytics = await import('../productAnalytics');
@@ -139,7 +159,7 @@ describe('PostHog payload through the real SDK', () => {
         freshPostHog,
       ),
     ).toBe(true);
-    await wait(500);
+    await untilRemoteConfigLoaded();
     interact();
     productAnalytics.captureJourneyEvent({
       eventType: 'research_search',
@@ -158,7 +178,17 @@ describe('PostHog payload through the real SDK', () => {
       payload: { source: 'search' },
     });
     window.history.pushState({}, '', `/research/person/${SYNTHETIC_NETID}?q=${SYNTHETIC_QUERY}`);
-    await wait(4500);
+    await untilSent([
+      '$pageview',
+      '$autocapture',
+      '$snapshot',
+      'research_search',
+      'research_profile_open',
+    ]);
+    await vi.waitFor(() => {
+      expect(everythingSent()).toContain('/research/person/[redacted]');
+    }, WAIT_FOR_SDK);
+    await wait(LATE_BATCH_SETTLE_MS);
     return sentEvents();
   };
 
@@ -226,17 +256,61 @@ describe('PostHog payload through the real SDK', () => {
     expect(document.cookie).toBe('');
   }, 20000);
 
-  it('stays anonymous with no person profile when the server gives no opaque ID', async () => {
-    const events = await recordSession('test123');
+  it('loads and sends nothing when the server gives no opaque ID (#5621)', async () => {
+    const load = vi.fn(freshPostHog);
 
-    expect(events.length).toBeGreaterThan(0);
-    for (const event of events.filter((candidate) => candidate.event !== '$snapshot')) {
-      expect(event.properties.distinct_id).not.toBe('test123');
-      expect(event.properties.$process_person_profile).toBe(false);
+    expect(
+      productAnalytics.startProductAnalytics(
+        { allowed: true, netId: SYNTHETIC_NETID, distinctId: 'test123', userType: 'undergraduate' },
+        { key: freshSessionKey(), host: POSTHOG_INGEST_ORIGIN },
+        load,
+      ),
+    ).toBe(false);
+    expect(
+      productAnalytics.startProductAnalytics(
+        { allowed: true, netId: SYNTHETIC_NETID, userType: 'undergraduate' },
+        { key: freshSessionKey(), host: POSTHOG_INGEST_ORIGIN },
+        load,
+      ),
+    ).toBe(false);
+    await wait(200);
+    expect(load).not.toHaveBeenCalled();
+    expect(sent).toEqual([]);
+  });
+
+  it('never sends a search-engine referrer keyword, a relative query link or a query in replay data (#5621)', async () => {
+    Object.defineProperty(document, 'referrer', {
+      value: `https://www.google.com/search?q=${SYNTHETIC_REFERRER_TERM}`,
+      configurable: true,
+    });
+    document.querySelector('main')!.insertAdjacentHTML(
+      'beforeend',
+      `<a id="relative-query" href="?q=${SYNTHETIC_RELATIVE_TERM}">Relative</a>
+       <a id="pathless-query" href="search?q=${SYNTHETIC_RELATIVE_TERM}">Pathless</a>
+       <img alt="" src="/image.png?owner=${SYNTHETIC_RELATIVE_TERM}" />`,
+    );
+    for (const id of ['relative-query', 'pathless-query']) {
+      document.getElementById(id)!.addEventListener('click', (event) => event.preventDefault());
     }
-    expect(events.map((event) => event.event)).not.toContain('$set');
-    expect(everythingSent()).not.toContain(SYNTHETIC_NETID);
-  }, 20000);
+    try {
+      const events = await recordSession(SYNTHETIC_POSTHOG_ID);
+      document.getElementById('relative-query')!.click();
+      document.getElementById('pathless-query')!.click();
+      await wait(LATE_BATCH_SETTLE_MS);
+
+      const payload = everythingSent();
+      expect(events.map((event) => event.event)).toContain('$snapshot');
+      expect(payload).not.toContain(SYNTHETIC_REFERRER_TERM);
+      expect(payload).not.toContain(SYNTHETIC_RELATIVE_TERM);
+      for (const event of sentEvents()) {
+        expect(
+          Object.keys(event.properties).filter((key) => /ph_keyword|search_engine/.test(key)),
+        ).toEqual([]);
+      }
+    } finally {
+      Object.defineProperty(document, 'referrer', { value: '', configurable: true });
+    }
+  }, 30000);
 
   it('delivers journey events emitted before the session check and drops them when PostHog is off', async () => {
     productAnalytics.captureJourneyEvent({
@@ -244,11 +318,11 @@ describe('PostHog payload through the real SDK', () => {
       payload: { entityCountBucket: '2' },
     });
     productAnalytics.startProductAnalytics(
-      { allowed: true, netId: SYNTHETIC_NETID },
+      { allowed: true, netId: SYNTHETIC_NETID, distinctId: SYNTHETIC_POSTHOG_ID },
       { key: freshSessionKey(), host: POSTHOG_INGEST_ORIGIN },
       freshPostHog,
     );
-    await wait(4500);
+    await untilSent(['research_compare']);
 
     expect(sentEvents().map((event) => event.event)).toContain('research_compare');
   }, 20000);
@@ -268,11 +342,11 @@ describe('PostHog payload through the real SDK', () => {
 
   it('sends nothing once the session ends', async () => {
     productAnalytics.startProductAnalytics(
-      { allowed: true, netId: SYNTHETIC_NETID },
+      { allowed: true, netId: SYNTHETIC_NETID, distinctId: SYNTHETIC_POSTHOG_ID },
       { key: freshSessionKey(), host: POSTHOG_INGEST_ORIGIN },
       freshPostHog,
     );
-    await wait(500);
+    await vi.waitFor(() => expect(sentEvents().length).toBeGreaterThan(0), WAIT_FOR_SDK);
     productAnalytics.stopProductAnalytics();
     await wait(4000);
     const sentBeforeStop = sentEvents().length;
@@ -396,9 +470,62 @@ describe('PostHog configuration', () => {
     });
 
     const serialized = JSON.stringify(sentException);
-    expect(serialized).toContain('synthetic failure for [redacted]');
+    expect(serialized).not.toContain('synthetic failure');
     expect(serialized).not.toContain(SYNTHETIC_NETID);
     expect(serialized).not.toContain(SYNTHETIC_QUERY);
+  });
+
+  it('sends only the exception type, never a message that could quote a search (#5621)', () => {
+    const beforeSend = config().before_send as (event: unknown) => { properties: any } | null;
+    const sentException = beforeSend({
+      uuid: 'exception-2',
+      event: '$exception',
+      properties: {
+        $exception_message: `No results for ${SYNTHETIC_QUERY}`,
+        $exception_list: [{ type: 'TypeError', value: `No results for ${SYNTHETIC_QUERY}` }],
+      },
+    })!;
+
+    expect(sentException.properties.$exception_list).toEqual([
+      { type: 'TypeError', value: 'TypeError' },
+    ]);
+    expect(sentException.properties).not.toHaveProperty('$exception_message');
+    expect(JSON.stringify(sentException)).not.toContain(SYNTHETIC_QUERY);
+  });
+
+  it('drops an elements chain whose value boundaries a backslash makes ambiguous (#5621)', () => {
+    const beforeSend = config().before_send as (event: never) => unknown;
+    for (const chain of [
+      `a:attr__href="?q=${SYNTHETIC_QUERY}\\"href="?q=${SYNTHETIC_QUERY}\\"nth-child="1"`,
+      `a:href="?q=x\\";img:attr__src="?u=${SYNTHETIC_QUERY}"`,
+    ]) {
+      const scrubbed = beforeSend({
+        uuid: 'synthetic-ambiguous-chain',
+        event: '$autocapture',
+        properties: { $elements_chain: chain, $event_type: 'click' },
+      } as never) as { properties: Record<string, unknown> };
+
+      expect(JSON.stringify(scrubbed)).not.toContain(SYNTHETIC_QUERY);
+      expect(scrubbed.properties).not.toHaveProperty('$elements_chain');
+      expect(scrubbed.properties.$event_type).toBe('click');
+    }
+  });
+
+  it('strips a query hidden behind an escaped quote in an elements chain, and from an outbound link (#5621)', () => {
+    const beforeSend = config().before_send as (event: never) => unknown;
+    const chain = `a:attr__href="?q=a\\"${SYNTHETIC_QUERY}"href="/research?x=\\"${SYNTHETIC_QUERY}"nth-child="1"`;
+    const scrubbed = beforeSend({
+      uuid: 'synthetic-chain',
+      event: '$autocapture',
+      properties: {
+        $elements_chain: chain,
+        $external_click_url: `https://example.edu/lab?ref=${SYNTHETIC_QUERY}`,
+      },
+    } as never) as { properties: Record<string, unknown> };
+
+    expect(JSON.stringify(scrubbed)).not.toContain(SYNTHETIC_QUERY);
+    expect(scrubbed.properties).not.toHaveProperty('$elements_chain');
+    expect(scrubbed.properties.$external_click_url).toBe('https://example.edu/lab');
   });
 
   it('drops network bodies and headers and strips queries and the netid from recorded requests', () => {
@@ -432,6 +559,66 @@ describe('PostHog configuration', () => {
     );
     expect(maskAttribute('data-owner', SYNTHETIC_NETID)).toBe('[redacted]');
     expect(maskAttribute('class', 'rounded-md')).toBe('rounded-md');
+  });
+
+  it('strips the query from every URL attribute in an elements chain, including adjacent ones (#5621)', () => {
+    const beforeSend = config().before_send as (event: never) => unknown;
+    const chain = `a:attr__href="?q=${SYNTHETIC_QUERY}"href="?q=${SYNTHETIC_QUERY}"nth-child="1"`;
+    const scrubbed = beforeSend({
+      uuid: 'synthetic',
+      event: '$autocapture',
+      properties: { $elements_chain: chain },
+    } as never) as { properties: Record<string, unknown> };
+
+    expect(scrubbed.properties.$elements_chain).toBe('a:attr__href=""href=""nth-child="1"');
+  });
+
+  it('scrubs replay snapshots itself, so an SDK masking change cannot leak a query or the netid (#5621)', () => {
+    const config = productAnalytics.buildPostHogConfig({
+      host: POSTHOG_INGEST_ORIGIN,
+      netId: SYNTHETIC_NETID,
+      distinctId: SYNTHETIC_POSTHOG_ID,
+      isOpen: () => true,
+    });
+    expect(config.session_recording).toMatchObject({ compress_events: false });
+
+    const beforeSend = config.before_send as (event: never) => unknown;
+    const scrubbed = beforeSend({
+      uuid: 'synthetic',
+      event: '$snapshot',
+      properties: {
+        ph_keyword: SYNTHETIC_QUERY,
+        $snapshot_data: [
+          {
+            type: 4,
+            data: { href: `https://yalelabs.io/research?q=${SYNTHETIC_QUERY}`, width: 1 },
+          },
+          {
+            type: 2,
+            data: {
+              node: {
+                childNodes: [
+                  {
+                    attributes: {
+                      href: `?q=${SYNTHETIC_QUERY}`,
+                      src: `/i.png?u=${SYNTHETIC_NETID}`,
+                    },
+                  },
+                  { textContent: `/research/person/${SYNTHETIC_NETID}` },
+                ],
+              },
+            },
+          },
+        ],
+      },
+    } as never) as { properties: Record<string, unknown> };
+
+    const serialized = JSON.stringify(scrubbed);
+    expect(serialized).not.toContain(SYNTHETIC_QUERY);
+    expect(serialized).not.toContain(SYNTHETIC_NETID);
+    expect(serialized).toContain('https://yalelabs.io/research');
+    expect(serialized).toContain('"width":1');
+    expect(scrubbed.properties).not.toHaveProperty('ph_keyword');
   });
 
   it('runs only in a production build with a project key and the US host', () => {

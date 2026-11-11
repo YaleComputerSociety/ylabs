@@ -11,9 +11,12 @@ import {
   MESH_DESCRIPTOR_ONLY_TERMS_FIELD,
 } from '../../services/researchEntitySearchIndexService';
 import {
+  expandNicknameInResearchNameQuery,
   meiliSortEntries,
   normalizeResearchSearchQuery,
+  rewriteAcronymToPhrase,
 } from '../../services/researchGroupService';
+import { GIVEN_NAME_SHORT_FORMS } from '../../services/nameQueryNicknames';
 import { meshDescriptorWordKeys } from '../../scrapers/utils/meshNonSubjectDescriptors';
 import { isEnglishDictionaryWord } from '../../services/englishDictionaryWords';
 import {
@@ -32,6 +35,9 @@ import {
   checkNoRepeatedRowsAcrossPages,
   checkNotDegraded,
   checkPersonNameWordsAreNotRespelled,
+  checkNicknameExpansionReachesThePerson,
+  checkPastCapMembersReachTheirRow,
+  checkOwnRowOutranksMemberRow,
   checkDictionaryWordsAreNotRespelled,
   checkQueryRelevance,
   checkSimilarRailRanksSharedNamesLast,
@@ -39,6 +45,8 @@ import {
   checkSurvivorWebsiteAttribution,
   checkTitleSortOrdering,
   checkTopicDropAttribution,
+  checkWelcomesFilterServesTheBadge,
+  checkWorksWithFilterServesASignal,
   resolvePagesToWalk,
   scoreQueryRelevance,
   tallyCreativePracticeLabels,
@@ -48,6 +56,8 @@ import {
   type FacetAgreementObservation,
   type InvariantResult,
   type PersonNameQueryObservation,
+  type NicknameQueryObservation,
+  type PastCapMemberObservation,
   type QueryEvidenceClass,
   type RateResult,
   type SurvivorWebsiteObservation,
@@ -98,8 +108,20 @@ export interface SimilarRailRead {
   cards: ReadonlyArray<{ nameWords: readonly string[] }>;
 }
 
+export interface PastCapMemberSample {
+  rowKey: string;
+  memberName: string;
+  ownRowKeys: string[];
+}
+
+export interface PastCapMemberRead {
+  rowsOverCap: number;
+  samples: PastCapMemberSample[];
+}
+
 export interface JourneyEvalContext {
   browse: BrowseFn;
+  readPastCapMembers?: (sampleSize: number) => Promise<PastCapMemberRead>;
   readSimilarResearchRail?: (rowKey: string) => Promise<SimilarRailRead | null>;
   topicQueryJudgements: TopicQueryJudgement[] | null;
   readStoredRows: ReadStoredRowsFn;
@@ -338,6 +360,107 @@ const creativePracticeLabelAttribution: JourneyCase = {
         ),
       ],
       notes: { comparedRows: tally.comparable, skippedStaleIndex: tally.skippedStaleIndex },
+    };
+  },
+};
+
+const welcomesFilterServesTheBadge: JourneyCase = {
+  id: 'welcomes-filter-serves-the-badge',
+  title: 'A row under the "Welcomes undergrads" filter shows the welcomes badge on its card',
+  run: async (context) => {
+    const reachablePages = maxReachableResearchSearchPage(context.window);
+    const corpusBefore = await context.readCorpusFingerprint();
+    let filterTotal = 0;
+    let served = 0;
+    let withoutBadge = 0;
+    let degradedPages = 0;
+    let pagesWalked = 0;
+    for (let page = 1; page <= reachablePages; page += 1) {
+      const result = await context.browse({
+        filters: { welcomesUndergrads: true },
+        page,
+        pageSize: context.window,
+      });
+      pagesWalked = page;
+      if (page === 1) filterTotal = result.estimatedTotalHits ?? 0;
+      if (result.degraded !== false) degradedPages += 1;
+      const rows = servedRows(result);
+      served += rows.length;
+      withoutBadge += rows.filter((row) => row.welcomesUndergrads !== true).length;
+      if (rows.length < context.window || served >= filterTotal) break;
+    }
+    const corpusAfter = await context.readCorpusFingerprint();
+
+    return {
+      invariants: [
+        checkWelcomesFilterServesTheBadge(
+          { filterTotal, served, withoutBadge },
+          corpusBefore,
+          corpusAfter,
+        ),
+        buildInvariant(
+          'welcomes-filtered-browse-is-not-degraded',
+          'A browse filtered to "Welcomes undergrads" does not fall back to a degraded search path',
+          degradedPages === 0,
+          { pagesWalked, degradedPages },
+        ),
+      ],
+      rates: [],
+      notes: { pagesWalked, walkedEveryFilteredRow: served >= filterTotal },
+    };
+  },
+};
+
+const rowServesAnUndergradSignal = (row: Record<string, any>): boolean =>
+  row.hasUndergradHostingEvidence === true ||
+  row.welcomesUndergrads === true ||
+  (Array.isArray(row.undergradListEvidence) &&
+    row.undergradListEvidence.some((entry: any) => entry?.signal === 'mentors'));
+
+const worksWithFilterServesASignal: JourneyCase = {
+  id: 'works-with-filter-serves-a-signal',
+  title:
+    'A row under the "Works with undergrads" filter shows hosted, welcomes or mentors evidence on its card',
+  run: async (context) => {
+    const reachablePages = maxReachableResearchSearchPage(context.window);
+    const corpusBefore = await context.readCorpusFingerprint();
+    let filterTotal = 0;
+    let served = 0;
+    let withoutBadge = 0;
+    let degradedPages = 0;
+    let pagesWalked = 0;
+    for (let page = 1; page <= reachablePages; page += 1) {
+      const result = await context.browse({
+        filters: { worksWithUndergrads: true },
+        page,
+        pageSize: context.window,
+      });
+      pagesWalked = page;
+      if (page === 1) filterTotal = result.estimatedTotalHits ?? 0;
+      if (result.degraded !== false) degradedPages += 1;
+      const rows = servedRows(result);
+      served += rows.length;
+      withoutBadge += rows.filter((row) => !rowServesAnUndergradSignal(row)).length;
+      if (rows.length < context.window || served >= filterTotal) break;
+    }
+    const corpusAfter = await context.readCorpusFingerprint();
+
+    return {
+      invariants: [
+        checkWorksWithFilterServesASignal(
+          { filterTotal, served, withoutBadge },
+          corpusBefore,
+          corpusAfter,
+        ),
+        buildInvariant(
+          'works-with-filtered-browse-is-not-degraded',
+          'A browse filtered to "Works with undergrads" does not fall back to a degraded search path',
+          degradedPages === 0,
+          { pagesWalked, degradedPages },
+        ),
+      ],
+      rates: [],
+      notes: { pagesWalked, walkedEveryFilteredRow: served >= filterTotal },
     };
   },
 };
@@ -871,6 +994,85 @@ const accessWordKeepsTopicRanking: JourneyCase = {
   },
 };
 
+const ACRONYM_PHRASE_QUERY_PAIRS = [
+  { baselineQuery: 'natural language processing', variantQuery: 'nlp' },
+  { baselineQuery: 'natural language processing', variantQuery: 'NLP' },
+  { baselineQuery: 'artificial intelligence', variantQuery: 'AI' },
+  { baselineQuery: 'machine learning', variantQuery: 'ml' },
+  { baselineQuery: 'computer vision', variantQuery: 'CV' },
+  { baselineQuery: 'international relations', variantQuery: 'IR' },
+  { baselineQuery: 'large language models', variantQuery: 'LLM' },
+  { baselineQuery: 'large language models', variantQuery: 'llms' },
+  { baselineQuery: 'united nations', variantQuery: 'UN' },
+];
+
+const acronymServesItsPhrase: JourneyCase = {
+  id: 'acronym-serves-its-phrase',
+  title: 'An acronym typed alone serves the same top rows as the phrase it stands for',
+  run: async (context) => {
+    const rewrites = ACRONYM_PHRASE_QUERY_PAIRS.map((pair) => ({
+      ...pair,
+      rewrittenTo: rewriteAcronymToPhrase(pair.variantQuery),
+    }));
+    const unrewritten = rewrites.filter(
+      (pair) =>
+        normalizeResearchSearchQuery(pair.rewrittenTo).query !==
+        normalizeResearchSearchQuery(pair.baselineQuery).query,
+    );
+    const corpusBefore = await context.readCorpusFingerprint();
+    const servedKeys = async (query: string) =>
+      servedRows(await context.browse({ query, pageSize: QUERY_PAIR_DEPTH }))
+        .map(rowKey)
+        .filter(Boolean);
+    const pairs = [];
+    for (const pair of ACRONYM_PHRASE_QUERY_PAIRS) {
+      pairs.push({
+        ...pair,
+        baselineKeys: await servedKeys(pair.baselineQuery),
+        variantKeys: await servedKeys(pair.variantQuery),
+      });
+    }
+    const corpusAfter = await context.readCorpusFingerprint();
+    const baselineRows = pairs.reduce((total, pair) => total + pair.baselineKeys.length, 0);
+    const sharedRows = pairs.reduce(
+      (total, pair) =>
+        total + pair.baselineKeys.filter((key) => pair.variantKeys.includes(key)).length,
+      0,
+    );
+    return {
+      invariants: [
+        buildInvariant(
+          'acronym-rewrite-names-the-phrase',
+          'rewriteAcronymToPhrase searches each acronym as the phrase it stands for',
+          unrewritten.length === 0,
+          {
+            pairs: rewrites.length,
+            unrewritten: unrewritten.map(({ variantQuery, rewrittenTo }) => ({
+              variantQuery,
+              rewrittenTo,
+            })),
+          },
+        ),
+        checkQueryVariantServesTheBaseline(
+          'acronym-serves-the-phrase-ranking',
+          'An acronym typed alone serves the same ordered top rows as its phrase',
+          pairs,
+          corpusBefore,
+          corpusAfter,
+        ),
+      ],
+      rates: [
+        buildRate(
+          'acronym-phrase-top-row-overlap',
+          'Share of the phrase query top rows the acronym query also serves',
+          sharedRows,
+          baselineRows,
+        ),
+      ],
+    };
+  },
+};
+
 const UNMATCHED_WORD = 'zqxjv';
 const UNMATCHED_WORD_QUERY_PAIRS = [
   {
@@ -1028,21 +1230,28 @@ const personNameParts = (storedRow: Record<string, unknown> | undefined) => {
 const withOneLetterDropped = (word: string): string =>
   word.slice(0, word.length - 2) + word.slice(word.length - 1);
 
+const PERSON_NICKNAME_SAMPLE_SIZE = 10;
+
+const shortFormOfGivenName = (givenName: string): string | undefined =>
+  Object.entries(GIVEN_NAME_SHORT_FORMS).find(([, givenNames]) =>
+    givenNames.includes(givenName.toLowerCase()),
+  )?.[0];
+
 const personNameLookupReachesThePerson: JourneyCase = {
   id: 'person-name-lookup-reaches-the-person',
   title:
-    'A partly typed or one-letter-misspelled surname is searched as typed and reaches the person',
+    'A partly typed or one-letter-misspelled surname is searched as typed and reaches the person, and a short given name reaches them through the nickname expansion',
   run: async (context) => {
     const keys = servedRows(await context.browse({ pageSize: PERSON_NAME_SAMPLE_WINDOW }))
       .map(rowKey)
       .filter(Boolean);
     const storedRows = await context.readStoredRows(keys);
-    const people = keys
+    const namedPeople = keys
       .map((key) => ({ key, parts: personNameParts(storedRows.get(key)) }))
       .filter((person): person is { key: string; parts: { givenName: string; surname: string } } =>
         Boolean(person.parts),
-      )
-      .slice(0, PERSON_NAME_SAMPLE_SIZE);
+      );
+    const people = namedPeople.slice(0, PERSON_NAME_SAMPLE_SIZE);
     const observations: PersonNameQueryObservation[] = [];
     for (const { key, parts } of people) {
       const variants = [
@@ -1077,10 +1286,32 @@ const personNameLookupReachesThePerson: JourneyCase = {
         ofVariant.length,
       ];
     };
+    const nicknameObservations: NicknameQueryObservation[] = [];
+    const nicknamedPeople = namedPeople
+      .map((person) => ({ ...person, shortForm: shortFormOfGivenName(person.parts.givenName) }))
+      .filter((person): person is typeof person & { shortForm: string } =>
+        Boolean(person.shortForm),
+      )
+      .slice(0, PERSON_NICKNAME_SAMPLE_SIZE);
+    for (const { key, parts, shortForm } of nicknamedPeople) {
+      const query = `${shortForm} ${parts.surname}`;
+      const servedKeys = servedRows(
+        await context.browse({ query, pageSize: PERSON_NAME_RANK_DEPTH }),
+      ).map(rowKey);
+      nicknameObservations.push({
+        expandedToTheGivenName:
+          expandNicknameInResearchNameQuery(query).toLowerCase() ===
+          `${parts.givenName} ${parts.surname}`.toLowerCase(),
+        rank: servedKeys.includes(key) ? servedKeys.indexOf(key) + 1 : null,
+      });
+    }
     const [prefixReached, prefixQueried] = reached('prefix');
     const [typoReached, typoQueried] = reached('typo');
     return {
-      invariants: [checkPersonNameWordsAreNotRespelled(observations)],
+      invariants: [
+        checkPersonNameWordsAreNotRespelled(observations),
+        checkNicknameExpansionReachesThePerson(nicknameObservations),
+      ],
       rates: [
         buildRate(
           'surname-prefix-reaches-the-person',
@@ -1094,7 +1325,62 @@ const personNameLookupReachesThePerson: JourneyCase = {
           typoReached,
           typoQueried,
         ),
+        buildRate(
+          'short-given-name-reaches-the-person',
+          'Share of short given names beside the surname that serve the person in the top 10',
+          nicknameObservations.filter((observation) => observation.rank !== null).length,
+          nicknameObservations.length,
+        ),
       ],
+    };
+  },
+};
+
+const PAST_CAP_MEMBER_SAMPLE = 24;
+const PAST_CAP_MEMBER_RANK_DEPTH = 50;
+
+const pastCapMembersAreFoundThroughTheirRow: JourneyCase = {
+  id: 'past-cap-members-are-found-through-their-row',
+  title:
+    'Members past the detail display cap are name-searchable and rank below their own research',
+  run: async (context) => {
+    if (!context.readPastCapMembers) {
+      return { invariants: [], rates: [], notes: { skipped: 'no roster reader in this context' } };
+    }
+    const { rowsOverCap, samples } = await context.readPastCapMembers(PAST_CAP_MEMBER_SAMPLE);
+    const observations: PastCapMemberObservation[] = [];
+    for (const sample of samples) {
+      const result = await context.browse({
+        query: sample.memberName,
+        pageSize: PAST_CAP_MEMBER_RANK_DEPTH,
+      });
+      const servedKeys = servedRows(result).map(rowKey);
+      const rankOf = (key: string) =>
+        servedKeys.includes(key) ? servedKeys.indexOf(key) + 1 : null;
+      const ownRanks = sample.ownRowKeys
+        .map(rankOf)
+        .filter((rank): rank is number => rank !== null);
+      observations.push({
+        memberRowRank: rankOf(sample.rowKey),
+        ownRowRank: ownRanks.length > 0 ? Math.min(...ownRanks) : null,
+        hasOwnRow: sample.ownRowKeys.length > 0,
+      });
+    }
+    const reached = observations.filter((observation) => observation.memberRowRank !== null);
+    return {
+      invariants: [
+        checkPastCapMembersReachTheirRow(observations),
+        checkOwnRowOutranksMemberRow(observations),
+      ],
+      rates: [
+        buildRate(
+          'past-cap-member-search-reaches-their-row',
+          `Share of sampled past-cap members whose row is served in the top ${PAST_CAP_MEMBER_RANK_DEPTH}`,
+          reached.length,
+          observations.length,
+        ),
+      ],
+      notes: { rowsOverCap, sampled: samples.length },
     };
   },
 };
@@ -1190,6 +1476,8 @@ export const journeyCases: readonly JourneyCase[] = [
   coldBrowseCardContract,
   topicDropAttribution,
   creativePracticeLabelAttribution,
+  welcomesFilterServesTheBadge,
+  worksWithFilterServesASignal,
   facetCountAgreement,
   textQueryFacetCountAgreement,
   paginationServesDistinctRows,
@@ -1201,9 +1489,11 @@ export const journeyCases: readonly JourneyCase[] = [
   survivorWebsiteAttribution,
   institutionWordKeepsTopicRanking,
   accessWordKeepsTopicRanking,
+  acronymServesItsPhrase,
   unmatchedWordKeepsTopicResults,
   meshDescriptorRanksBelowOwnEvidence,
   personNameLookupReachesThePerson,
+  pastCapMembersAreFoundThroughTheirRow,
   dictionaryWordsAreNotRespelled,
   similarRailRanksTopicsAboveNames,
 ];

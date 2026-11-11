@@ -122,7 +122,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     Researcher.findById(id).lean<{
       displayName?: string;
       profile?: { title?: string };
-      identifiers?: { netid?: string; orcid?: string };
+      identifiers?: { netid?: string; orcid?: string; email?: string };
       profileLinks?: Array<{ kind: string; url: string }>;
     }>();
 
@@ -287,10 +287,11 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     const result = await materializeEntity('user', { entityKey: 'collide2' }, {});
 
     expect(result.conflicts).toBe(1);
-    expect(result.fieldsWritten).toBe(2);
+    expect(result.fieldsWritten).toBe(3);
 
     const enriched = await enrichedResearcher(enrichTarget._id);
     expect(enriched?.identifiers?.orcid).toBe(ownOrcid);
+    expect(enriched?.identifiers?.email).toBe('collide2@example.invalid');
     expect(orcidLinkUrls(enriched?.profileLinks)).toEqual([`https://orcid.org/${ownOrcid}`]);
     expect(enriched?.identifiers?.netid).toBe('collide2');
     expect(enriched?.profile?.title).toBe('Professor of Physics');

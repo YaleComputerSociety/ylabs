@@ -195,6 +195,12 @@ async function seedTarget(targetDb: Db): Promise<void> {
     .collection('login_signal_tallies')
     .insertOne({ date: '2026-10-04', undergrad_usable_major: 1 });
   await targetDb
+    .collection('deleted_account_event_tallies')
+    .insertOne({ month: '2026-10', eventType: 'search', count: 2 });
+  await targetDb
+    .collection('account_deletion_requests')
+    .insertOne({ subjectHash: 'a'.repeat(64), sourceEnvironment: 'development' });
+  await targetDb
     .collection('research_topics_derivations')
     .insertOne({ inputHash: 'example-input-hash', topics: ['Kelp forests'] });
   await targetDb
@@ -209,6 +215,9 @@ async function seedTarget(targetDb: Db): Promise<void> {
   await targetDb
     .collection('model_call_usages')
     .insertOne({ caller: 'card-synthesis', model: 'gpt-5-mini', promptTokens: 10 });
+  await targetDb
+    .collection('directory_removal_requests')
+    .insertOne({ requesterNetid: 'zz9xxx', researcherId: new ObjectId(), status: 'pending' });
   await targetDb.collection('scrape_snapshots').insertOne({ runId: 'stale-development-run' });
   await targetDb
     .collection('scrape_job_locks')

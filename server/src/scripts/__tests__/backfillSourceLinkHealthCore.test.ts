@@ -1,12 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { SOURCE_LINK_HEALTH_FRESHNESS_DAYS } from '../../services/sourceLinkHealth';
+import {
+  classifySourceLinkHealth,
+  SOURCE_LINK_HEALTH_FRESHNESS_DAYS,
+} from '../../services/sourceLinkHealth';
 import {
   carryForwardSourceLinkHealthEntry,
   collectSourceLinkHealthCandidates,
+  httpsSpellingOf,
+  httpsSpellingProbes,
   needsRecheckSince,
   needsSourceLinkHealthRefresh,
   planSourceLinkReprobe,
+  resolveSourceLinkHealthEntry,
   tlsFallbackCandidates,
+  verifiedHttpsSpelling,
   SOURCE_LINK_HEALTH_REPROBE_HEALTHY_AFTER_DAYS,
 } from '../backfillSourceLinkHealthCore';
 
@@ -382,6 +389,48 @@ describe('carryForwardSourceLinkHealthEntry https landing (#4649)', () => {
   });
 });
 
+describe('redirect landing persistence (#5638)', () => {
+  const MOVED_FROM = 'http://www.example.edu/quilllab/';
+  const MOVED_TO = 'https://quilllab.example.edu/';
+  const now = new Date('2026-11-10T00:00:00Z');
+
+  it('stores the landing a fresh HEALTHY probe recorded', () => {
+    expect(
+      resolveSourceLinkHealthEntry(
+        MOVED_FROM,
+        { healthStatus: 'HEALTHY', httpStatusCode: 200, redirectLandingUrl: MOVED_TO },
+        undefined,
+        now,
+      ).entry,
+    ).toEqual({
+      url: MOVED_FROM,
+      healthStatus: 'HEALTHY',
+      httpStatusCode: 200,
+      redirectLandingUrl: MOVED_TO,
+      checkedAt: now,
+    });
+  });
+
+  it('keeps a stored landing when an inconclusive probe preserves the verdict', () => {
+    const stored = {
+      url: MOVED_FROM,
+      healthStatus: 'HEALTHY' as const,
+      httpStatusCode: 200,
+      redirectLandingUrl: MOVED_TO,
+      checkedAt: new Date('2026-11-01T00:00:00Z'),
+    };
+    const { entry, preservedDecisiveVerdict } = resolveSourceLinkHealthEntry(
+      MOVED_FROM,
+      { healthStatus: 'UNKNOWN' },
+      stored,
+      now,
+    );
+    expect(preservedDecisiveVerdict).toBe(true);
+    expect(entry.redirectLandingUrl).toBe(MOVED_TO);
+    expect(carryForwardSourceLinkHealthEntry(MOVED_FROM, stored).redirectLandingUrl).toBe(MOVED_TO);
+  });
+});
+
 describe('tlsFallbackCandidates', () => {
   it('adds the plain-HTTP spelling of an https url whose certificate failed', () => {
     const health = new Map([['https://a.yale.edu/~x/', { tlsVerificationFailed: true }]]);
@@ -400,5 +449,87 @@ describe('tlsFallbackCandidates', () => {
   it('adds nothing for an https url whose certificate verified', () => {
     const health = new Map([['https://a.yale.edu/~x/', {}]]);
     expect(tlsFallbackCandidates(['https://a.yale.edu/~x/'], health)).toEqual([]);
+  });
+});
+
+describe('https spelling of an http website (#5639)', () => {
+  const HTTP = 'http://both.fixture.example.org/lab/?tab=people';
+  const HTTPS = 'https://both.fixture.example.org/lab/?tab=people';
+
+  it('spells only a plain-HTTP url over https, keeping host, path and query', () => {
+    expect(httpsSpellingOf(HTTP)).toBe(HTTPS);
+    expect(httpsSpellingOf(HTTPS)).toBeNull();
+    expect(httpsSpellingOf('not a url')).toBeNull();
+  });
+
+  it('plans a spelling probe only for a probed http website with no https landing', () => {
+    const redirecting = 'http://redirects.fixture.example.org/';
+    const unprobed = 'http://unprobed.fixture.example.org/';
+    const health = new Map<string, { httpsLandingUrl?: string }>([
+      [HTTP, {}],
+      [HTTPS, {}],
+      [redirecting, { httpsLandingUrl: 'https://redirects.fixture.example.org/' }],
+    ]);
+    expect([
+      ...httpsSpellingProbes([HTTP, HTTPS, redirecting, unprobed, undefined], health),
+    ]).toEqual([[HTTP, HTTPS]]);
+  });
+
+  it('accepts the spelling only when its probe is HEALTHY with a verified certificate', () => {
+    const landed = { landedOnRequestedResource: true as const };
+    const verdicts = (verdict: {
+      healthStatus?: string;
+      tlsVerificationFailed?: boolean;
+      landedOnRequestedResource?: true;
+    }) => new Map([[HTTPS, verdict]]);
+    expect(verifiedHttpsSpelling(HTTPS, verdicts({ healthStatus: 'HEALTHY', ...landed }))).toBe(
+      HTTPS,
+    );
+    expect(
+      verifiedHttpsSpelling(
+        HTTPS,
+        verdicts({ healthStatus: 'HEALTHY', tlsVerificationFailed: true, ...landed }),
+      ),
+    ).toBeUndefined();
+    expect(
+      verifiedHttpsSpelling(
+        HTTPS,
+        verdicts({ healthStatus: 'UNKNOWN', tlsVerificationFailed: true }),
+      ),
+    ).toBeUndefined();
+    expect(verifiedHttpsSpelling(HTTPS, verdicts({ healthStatus: 'UNAVAILABLE' }))).toBeUndefined();
+    expect(verifiedHttpsSpelling(HTTPS, new Map())).toBeUndefined();
+    expect(
+      verifiedHttpsSpelling(undefined, verdicts({ healthStatus: 'HEALTHY', ...landed })),
+    ).toBeUndefined();
+  });
+
+  it('refuses a HEALTHY spelling whose probe was redirected to another site', () => {
+    const rootHttps = 'https://shared.fixture.example.org/';
+    const crossHost = classifySourceLinkHealth({
+      status: 200,
+      requestedUrl: rootHttps,
+      finalUrl: 'https://parent.fixture.example.edu/',
+    });
+    expect(crossHost.healthStatus).toBe('HEALTHY');
+    expect(verifiedHttpsSpelling(rootHttps, new Map([[rootHttps, crossHost]]))).toBeUndefined();
+    const samePage = classifySourceLinkHealth({
+      status: 200,
+      requestedUrl: rootHttps,
+      finalUrl: rootHttps,
+    });
+    expect(verifiedHttpsSpelling(rootHttps, new Map([[rootHttps, samePage]]))).toBe(rootHttps);
+  });
+
+  it('carries a recorded https spelling forward with the verdict', () => {
+    const checkedAt = new Date('2026-09-20T00:00:00Z');
+    expect(
+      carryForwardSourceLinkHealthEntry(HTTP, {
+        url: HTTP,
+        healthStatus: 'HEALTHY',
+        httpsSpellingUrl: HTTPS,
+        checkedAt,
+      }),
+    ).toEqual({ url: HTTP, healthStatus: 'HEALTHY', httpsSpellingUrl: HTTPS, checkedAt });
   });
 });

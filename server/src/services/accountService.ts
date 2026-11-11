@@ -36,6 +36,7 @@ export interface AccountRecordView {
   archived: boolean;
   lastLoginAt?: Date;
   sessionVersion: number;
+  createdAt?: Date;
 }
 
 const normalizeNetid = (value: unknown): string | null => {
@@ -58,6 +59,7 @@ const toAccountView = (account: any): AccountRecordView => ({
   archived: account.archived === true,
   lastLoginAt: account.lastLoginAt ? new Date(account.lastLoginAt) : undefined,
   sessionVersion: normalizedSessionVersion(account.sessionVersion),
+  createdAt: account.createdAt ? new Date(account.createdAt) : undefined,
 });
 
 export const validateAccount = async (netid: unknown): Promise<AccountRecordView | null> => {

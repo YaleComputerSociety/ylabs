@@ -195,7 +195,7 @@ git -C <primary-checkout> branch --show-current   # still beta
 
 A stored-data fix does not close its issue on merge.
 Close it once Development is fixed and verified.
-Do not open an issue to track a promotion: one promotion replaces twelve whole collections by default and delivers every pending fix together.
+Do not open an issue to track a promotion: one promotion replaces thirteen whole collections by default and delivers every pending fix together.
 
 ## Where to look things up
 

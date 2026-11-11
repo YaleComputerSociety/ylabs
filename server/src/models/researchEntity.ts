@@ -28,8 +28,8 @@ import {
   labSiteVerificationStates,
   sourceLinkHealthStatuses,
   undergradInvitationLevels,
-  undergradMentoringKinds,
-  undergradMentoringSources,
+  undergradListEntryKinds,
+  undergradListSources,
   officialRosterConfigOrigins,
   officialRosterUndergraduateStatuses,
 } from './storedVocabularies';
@@ -119,6 +119,24 @@ const sourceLinkHealthSchema = new mongoose.Schema(
      * place of the `http:` spelling (#4649).
      */
     httpsLandingUrl: {
+      type: String,
+      required: false,
+    },
+    /**
+     * The `https:` spelling of a plain-HTTP website, kept only when its own probe came
+     * back `HEALTHY` with a verified certificate. Serve time offers it when the host
+     * answers on both schemes without redirecting (#5639).
+     */
+    httpsSpellingUrl: {
+      type: String,
+      required: false,
+    },
+    /**
+     * The live page this URL's own host redirected it to, kept only on a `HEALTHY`
+     * verdict whose landing names a different page identity. The evidence a host or
+     * path alias is admitted on by the URL-identity dedupe and resolve-at-mint (#5638).
+     */
+    redirectLandingUrl: {
       type: String,
       required: false,
     },
@@ -328,12 +346,12 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       ),
       default: undefined,
     },
-    undergradMentoring: {
+    undergradListEvidence: {
       type: [
         new mongoose.Schema(
           {
-            source: { type: String, enum: undergradMentoringSources, required: true },
-            kind: { type: String, enum: undergradMentoringKinds, required: true },
+            source: { type: String, enum: undergradListSources, required: true },
+            kind: { type: String, enum: undergradListEntryKinds, required: true },
             count: { type: Number },
             latestYear: { type: Number },
             sourceUrl: { type: String, required: true },
@@ -645,6 +663,10 @@ researchEntitySchema.index({ 'mergedFrom.entityId': 1 });
 // one row, so a unique index would refuse to build until those are resolved. The
 // resolver's ambiguity guard is what keeps a shared URL from merging (#3036).
 researchEntitySchema.index({ websiteUrl: 1 });
+researchEntitySchema.index(
+  { 'sourceLinkHealth.redirectLandingUrl': 1 },
+  { partialFilterExpression: { 'sourceLinkHealth.redirectLandingUrl': { $exists: true } } },
+);
 researchEntitySchema.index({ school: 1 });
 researchEntitySchema.index({ schools: 1 });
 researchEntitySchema.index({ departments: 1 });

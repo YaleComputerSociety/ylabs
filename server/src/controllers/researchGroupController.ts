@@ -21,7 +21,7 @@ import {
 } from '../models/studentVisibility';
 import { hasAdminAuthorityForUser } from '../services/adminGrantService';
 import { maxReachableResearchSearchPage } from '../services/researchSearchPagination';
-import { getPeerIpKey } from '../middleware/rateLimiters';
+import { getPeerIpKey, getRateLimitKey } from '../middleware/rateLimiters';
 
 const MAX_PAGE_SIZE = 100;
 const DEFAULT_PAGE_SIZE = 24;
@@ -87,6 +87,10 @@ const parseFilters = (raw: unknown): ResearchGroupFilterInput => {
 
   if (r.welcomesUndergrads === true) {
     filters.welcomesUndergrads = true;
+  }
+
+  if (r.worksWithUndergrads === true) {
+    filters.worksWithUndergrads = true;
   }
 
   return filters;
@@ -240,6 +244,10 @@ export const searchResearchGroups = async (request: Request, response: Response)
     embeddingSpendKey: getPeerIpKey(request),
     correctSpelling: body.correctSpelling !== false,
     resolveFilterValues: body.resolveFilterValues !== false,
+    rerankLiveMissClient: {
+      ipKey: getPeerIpKey(request),
+      sessionKey: getRateLimitKey(request),
+    },
   });
   if (includeFacets) return response.json(result);
   // Omitted rather than emptied: an empty object is indistinguishable from "this

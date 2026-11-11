@@ -179,6 +179,29 @@ describe('buildResearchGroupFilterString', () => {
       );
     });
   });
+
+  describe('worksWithUndergrads filter (#5362)', () => {
+    it('true filters on the one index field that ORs hosted, welcomes and mentors', () => {
+      expect(buildResearchGroupFilterString({ worksWithUndergrads: true })).toBe(
+        'archived = false AND worksWithUndergrads = true',
+      );
+    });
+
+    it('false or unset adds no clause', () => {
+      expect(buildResearchGroupFilterString({ worksWithUndergrads: false })).toBe(
+        'archived = false',
+      );
+    });
+
+    it('drops its own clause when its facet is computed disjunctively', () => {
+      expect(
+        buildResearchGroupFilterString(
+          { worksWithUndergrads: true, hostsUndergrads: true },
+          { excludeField: 'worksWithUndergrads' },
+        ),
+      ).toBe('archived = false AND hasUndergradHostingEvidence = true');
+    });
+  });
 });
 
 describe('candidateMatchesStudentFilters', () => {
@@ -267,5 +290,23 @@ describe('tallyCandidateFacetDistribution', () => {
       departments: { Genetics: 1, Chemistry: 1 },
       entityType: { LAB: 2, CENTER: 1 },
     });
+  });
+});
+
+describe('candidateMatchesStudentFilters with worksWithUndergrads (#5362)', () => {
+  it('keeps a pooled row only when its index document carries the combined field', () => {
+    expect(
+      candidateMatchesStudentFilters({ worksWithUndergrads: true }, { worksWithUndergrads: true }),
+    ).toBe(true);
+    expect(candidateMatchesStudentFilters({}, { worksWithUndergrads: true })).toBe(false);
+    expect(
+      candidateMatchesStudentFilters(
+        {},
+        { worksWithUndergrads: true },
+        {
+          excludeField: 'worksWithUndergrads',
+        },
+      ),
+    ).toBe(true);
   });
 });

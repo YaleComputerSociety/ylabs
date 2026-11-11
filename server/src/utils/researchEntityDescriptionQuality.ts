@@ -1,3 +1,4 @@
+import { cardOpensMidSentence } from './cardLeadingQuotation';
 import { researchStatementSentences } from './careerBiographyDescription';
 import type { ResearchEntityType } from '../models/researchAccessTypes';
 import {
@@ -14,6 +15,7 @@ import {
   isPhilanthropicFundAppealText,
   isResearchAreaTemplateLeakText,
   isResearchInterestsSentence,
+  opensOnSubjectOwnedResearchClause,
   sanitizeResearchEntityDescription,
   isStudiesResearchAreaEchoDescription,
   isStudiesSentenceNestingTopicsUnderTheFirst,
@@ -1512,6 +1514,14 @@ const countsAnnouncementItems = (text: string): number =>
 const isAnnouncementColumn = (text: string): boolean =>
   countsAnnouncementItems(text) >= MIN_ANNOUNCEMENT_ITEMS;
 
+/**
+ * A body that opens on a peer-review service record ("Reviewed the manuscript ...") is a
+ * CV line naming someone else's work and the venue that published it, not a description
+ * of the person's research (#5685).
+ */
+const REVIEW_SERVICE_RECORD_OPENER =
+  /^\s*(?:Reviewed|Evaluated|Refereed|Assessed|Peer[- ]reviewed)\s+(?:the\s+|a\s+)?(?:manuscript|article|paper|book|proposal|submission|chapter)\b/i;
+
 function computeFullDescriptionQuality(
   value: unknown,
   researchAreas?: unknown,
@@ -1521,6 +1531,7 @@ function computeFullDescriptionQuality(
   const flags: DescriptionQualityFlag[] = [];
 
   if (!text) flags.push('blank');
+  if (text && REVIEW_SERVICE_RECORD_OPENER.test(text)) flags.push('paper-fragment');
   if (text && wordCount(text) < 12 && !isConciseSpecificResearchDescription(text)) {
     flags.push('too-short');
   }
@@ -1968,6 +1979,21 @@ const isPastCardLengthCeiling = (text: string): boolean =>
   text.length > MAX_CARD_SHORT_DESCRIPTION_LENGTH ||
   wordCount(text) > MAX_CARD_SHORT_DESCRIPTION_WORDS;
 
+const TITLE_CONNECTIVES = new Set(['a', 'an', 'and', 'at', 'for', 'in', 'of', 'on', 'the', 'to']);
+
+/**
+ * A card that opens on a closing quotation mark or bracket and whose remainder is a
+ * title or citation (every lowercase word a connective, as in a journal name and year)
+ * is the tail of a citation, not a research card (#5685). A remainder that is a real
+ * sentence keeps #4341's repair, which serves it without the stray mark.
+ */
+function isTitleFragmentAfterClosingMark(text: string): boolean {
+  if (!cardOpensMidSentence(text)) return false;
+  const words = text.match(/\p{L}+/gu) ?? [];
+  const lowercase = words.filter((word) => /^\p{Ll}/u.test(word));
+  return words.length > 0 && lowercase.every((word) => TITLE_CONNECTIVES.has(word));
+}
+
 function computeShortDescriptionQuality(
   value: unknown,
   fullDescription: unknown,
@@ -1981,6 +2007,7 @@ function computeShortDescriptionQuality(
   const flags: DescriptionQualityFlag[] = [];
 
   if (!text) flags.push('blank');
+  if (text && isTitleFragmentAfterClosingMark(text)) flags.push('paper-fragment');
   if (text && isTooShortCardLine(text)) flags.push('too-short');
   if (text && isPastCardLengthCeiling(text)) flags.push('too-long');
   if (text && isSyntheticResearchHomeMetadataDescription(text)) flags.push('synthetic-placeholder');
@@ -3022,6 +3049,7 @@ function leadingScholarlyFieldListSummary(sentences: string[], full: string): st
   if (/^(?:in\s+)?(?:my|our|i|we)\b/i.test(first)) return '';
   if (!/[,\s]\b(?:especially|and|or)\b|,/.test(first)) return '';
   if (startsWithPersonNameSubjectPredicate(first)) return '';
+  if (opensOnSubjectOwnedResearchClause(first)) return '';
   if (isResearchInterestsSentence(first)) return '';
   if (
     hasResearchDescriptionVerb(first) ||

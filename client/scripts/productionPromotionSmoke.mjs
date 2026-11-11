@@ -8,6 +8,7 @@ import {
   containsInternalLabels,
   createSmokeReport,
   discoverResearchSlug,
+  evaluateAccountDeletionReadiness,
   evaluateResearchSearchResponse,
   parseSmokeConfig,
   shouldSendSmokeOrigin,
@@ -140,6 +141,9 @@ const runApiSmoke = async () => {
       present: check.present,
     });
   }
+  const readiness = await request('/ready');
+  const accountDeletion = evaluateAccountDeletionReadiness(readiness.json);
+  addCheck('api.ready.accountDeletion', accountDeletion.status, accountDeletion.details);
   await discoverResearch();
   await checkOpportunityDetail();
   await checkProgramApis();

@@ -37,7 +37,7 @@ import {
   classifyCasCallbackError,
   reportableCasLoginError,
 } from './utils/casCallbackFailure';
-import { CasStrategy, presentedCasTicket } from './utils/casStrategy';
+import { CasStrategy, presentedCasTicket, requestsCasReauthentication } from './utils/casStrategy';
 import { isProductAnalyticsAllowedForSession } from './utils/posthogConfig';
 import { ensureProductAnalyticsId } from './services/productAnalyticsIdentityService';
 
@@ -529,15 +529,26 @@ passport.use(
   ),
 );
 
-passport.serializeUser(function (user: any, done) {
+const credentialConfirmingSignIns = new WeakSet<express.Request>();
+
+passport.serializeUser(function (
+  req: express.Request,
+  user: any,
+  done: (error: unknown, stored?: unknown) => void,
+) {
   authDebug('Serializing user');
   const principal = publicAuthSessionUser(user);
   if (!principal) {
     done(new Error('Invalid authentication principal'));
     return;
   }
+  const credentialsConfirmed = credentialConfirmingSignIns.has(req);
   withMongoReconnect(() => validateAccount(principal.netId)).then(
-    (account) => done(null, { ...principal, ...mintSessionClaim(account?.sessionVersion) }),
+    (account) =>
+      done(null, {
+        ...principal,
+        ...mintSessionClaim(account?.sessionVersion, Date.now(), { credentialsConfirmed }),
+      }),
     (error: unknown) => done(error),
   );
 });
@@ -557,7 +568,7 @@ passport.deserializeUser(async (stored: unknown, done) => {
       return;
     }
     const account = await withMongoReconnect(() => validateAccount(principal.netId));
-    if (!account || account.archived || !isSessionClaimLive(claim, account.sessionVersion)) {
+    if (!account || account.archived || !isSessionClaimLive(claim, account)) {
       done(null, null);
       return;
     }
@@ -707,6 +718,7 @@ const casLogin = function (
     }
 
     markCasValidationAccepted(req);
+    if (requestsCasReauthentication(req)) credentialConfirmingSignIns.add(req);
 
     req.logIn(user, async function (err) {
       if (err) {
@@ -790,7 +802,7 @@ const productAnalyticsSessionFields = async (
     const productAnalyticsId = await ensureProductAnalyticsId(user.netId);
     return productAnalyticsId
       ? { productAnalytics: true, productAnalyticsId }
-      : { productAnalytics: true };
+      : { productAnalytics: false };
   } catch (error) {
     captureServerError(
       error instanceof Error ? error : new Error('product analytics id lookup failed'),

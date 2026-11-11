@@ -29,6 +29,10 @@ import {
   type ResearchEntityPublicDescriptionRepresentation,
 } from './researchEntityPublicDescription';
 import { buildResearchEntityQualitySummary } from './researchEntityQuality';
+import {
+  isCardPageFragment,
+  type DescriptionQualityFlag,
+} from '../utils/researchEntityDescriptionQuality';
 import { classifyProgramResearchRelevance } from './programResearchRelevance';
 import { classifyResearchEntityResearchScope } from './researchEntityResearchScope';
 import { detectProfileIdentityRisk, isLikelyOfficialPersonProfileUrl } from './leadProfileIdentity';
@@ -51,6 +55,7 @@ import {
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
   PERMANENTLY_CLOSED_SUPPRESSION_REASON,
+  RESEARCH_INFRASTRUCTURE_ONLY_SUPPRESSION_REASON,
   hasRecordedClosureEvidence,
 } from '../utils/researchEntityYaleStatus';
 import { hasOrganizationalAlternateAccessPath } from '../utils/organizationalAccessPath';
@@ -66,6 +71,7 @@ import {
   statesAwardSuspension,
 } from './programApplicability';
 import type { UpcomingDuplicateWindow } from './programUpcomingDuplicateWindow';
+import { RESEARCHER_REMOVED_REASON } from './directoryRemovalReason';
 import {
   DEPARTMENT_RESEARCH_GUIDANCE_REASON,
   isDepartmentResearchGuidance,
@@ -94,6 +100,7 @@ export interface ResearchEntityStudentVisibilityInput {
    */
   citationsSharedAcrossPersonRows?: boolean;
   relatedEntityAccessPathCount?: number;
+  everyLeadRemovedByRequest?: boolean;
   /**
    * The one corpus fact the name-identity authority cannot derive from one record,
    * supplied here for the same reason `ResearchEntityNameIdentityAuthority` supplies
@@ -722,6 +729,57 @@ const EVIDENCE_RATIONALE_PATTERN =
 const SWALLOWED_CLAUSE_PATTERN =
   /^Studies\b[^.]*?,\s+including\s+[^.,;:]{0,80}?\b(?:is|are|was|were|has\s+been|have\s+been)\s+(?:\w+ly\s+)?(?:focused|centered|centred|devoted|dedicated|organized|organised|structured)\b/i;
 
+const THIN_OR_CHIP_ECHO_FLAGS: ReadonlySet<DescriptionQualityFlag> = new Set([
+  'too-short',
+  'topic-label-list',
+  'area-echo-fallback',
+  'research-area-echo',
+]);
+
+const THIN_OR_CHIP_ECHO_CARD_FLAGS: ReadonlySet<DescriptionQualityFlag> = new Set([
+  ...THIN_OR_CHIP_ECHO_FLAGS,
+  'full-not-useful',
+]);
+
+export const THIN_CARD_DESCRIPTION_REASON = 'thin_card_description';
+
+/**
+ * A card that opens on closing punctuation is the tail of a sentence the splitter broke
+ * inside a quotation or parenthesis, such as a journal title cut out of a citation, so it
+ * is a fragment rather than a thin description (#5673).
+ */
+const CARD_OPENS_MID_SENTENCE_PATTERN = /^\s*[”’"'»)\]}]/;
+
+/**
+ * A row whose served page already passes the public-description invariant, whose stored
+ * body is not blank, and whose card fails the card bar only for thinness or for echoing
+ * its own topic chips. Such a card is thin but accurate, so it does not hold the row
+ * (owner decision, 2026-10-04, #5673). Any other card or body flag still holds the row, and
+ * so does a card that is a page fragment or whose "including" swallowed a clause.
+ */
+export function researchEntityCardIsOnlyThin(
+  entity: Record<string, any>,
+  publicDescription: ResearchEntityPublicDescriptionRepresentation,
+): boolean {
+  if (!textValue(entity.fullDescription)) return false;
+  if (!publicDescription.invariant.pass) return false;
+  const { full, short } = publicDescription.strictQuality;
+  const cards = [publicDescription.servedCard, entity.shortDescription]
+    .map(textValue)
+    .filter(Boolean);
+  return (
+    short.flags.length > 0 &&
+    !cards.some(
+      (card) =>
+        isCardPageFragment(card, full.text) ||
+        SWALLOWED_CLAUSE_PATTERN.test(card) ||
+        CARD_OPENS_MID_SENTENCE_PATTERN.test(card),
+    ) &&
+    full.flags.every((flag) => THIN_OR_CHIP_ECHO_FLAGS.has(flag)) &&
+    short.flags.every((flag) => THIN_OR_CHIP_ECHO_CARD_FLAGS.has(flag))
+  );
+}
+
 /**
  * A card the source itself stored that is the same sentence as a useful body. The
  * card bar refuses a "Studies A, including B and C." card identical to its body
@@ -756,7 +814,7 @@ function storedCardRepeatsUsefulBody(
 /**
  * The description half of the `student_ready` definition, as one predicate: the
  * public-description invariant passes AND the required research-focus card is
- * present and useful. This is `ResearchEntityStudentReadyCorrectness.descriptionCoherent`,
+ * present and useful, or is only thin (`researchEntityCardIsOnlyThin`). This is `ResearchEntityStudentReadyCorrectness.descriptionCoherent`,
  * and it is the only part of that definition a description write can move, so a
  * description lane comparing it before and after its own write is asking the gate
  * whether the write costs the row its place on the served surface.
@@ -771,7 +829,8 @@ export function researchEntityDescriptionIsCoherent(
   });
   return (
     publicDescription.invariant.pass &&
-    researchEntityDescriptionServesRequiredCard(entity, publicDescription)
+    (researchEntityDescriptionServesRequiredCard(entity, publicDescription) ||
+      researchEntityCardIsOnlyThin(entity, publicDescription))
   );
 }
 
@@ -873,6 +932,7 @@ export const BIOGRAPHY_DESCRIPTION_FALLBACK_REASON = 'biography_description_fall
 export const STUDENT_READY_SOFT_SIGNAL_REASONS: ReadonlySet<string> = new Set([
   'source_backed_description',
   BIOGRAPHY_DESCRIPTION_FALLBACK_REASON,
+  THIN_CARD_DESCRIPTION_REASON,
   'missing_facet_signal',
   'missing_alternate_access_path',
   'missing_application_route',
@@ -928,7 +988,10 @@ export const CAREER_BIOGRAPHY_WITHOUT_RESEARCH_REASON = 'career_biography_withou
 // (generic directory / biography / non-owner-grant) are removed one tier earlier
 // at `suppressed`; they appear here so the repair histogram classifies them as
 // blockers wherever they surface.
+export { RESEARCHER_REMOVED_REASON };
+
 export const STUDENT_READY_HARD_BLOCKER_REASONS: ReadonlySet<string> = new Set([
+  RESEARCHER_REMOVED_REASON,
   'missing_description',
   'missing_card_description',
   'thin_description',
@@ -1043,6 +1106,7 @@ export function computeResearchEntityStudentVisibility({
   exactUrlDuplicateRisk = false,
   citationsSharedAcrossPersonRows = false,
   relatedEntityAccessPathCount = 0,
+  everyLeadRemovedByRequest = false,
   knownPersonSurnames = NO_SURNAME_ROSTER,
 }: ResearchEntityStudentVisibilityInput): StudentVisibilityResult {
   const publicDescription = buildResearchEntityPublicDescriptionRepresentation({
@@ -1081,6 +1145,8 @@ export function computeResearchEntityStudentVisibility({
     entity,
     publicDescription,
   );
+  const cardIsOnlyThin =
+    !hasRequiredResearchFocusCard && researchEntityCardIsOnlyThin(entity, publicDescription);
   // The org/program lead exemption assumes the entity itself is an alternate
   // "way in" via its own page and programs. That premise only holds when the
   // entity actually surfaces a reachable next step: a linked related/affiliated
@@ -1197,12 +1263,15 @@ export function computeResearchEntityStudentVisibility({
   if (!hasUsableName) reasons.push('unusable_name');
   if (outsideResearchScope) reasons.push('non_research_entity', ...researchScope.reasons);
   if (
-    textValue(entity.studentVisibilitySuppressionReason).includes('research_infrastructure_only')
+    textValue(entity.studentVisibilitySuppressionReason).includes(
+      RESEARCH_INFRASTRUCTURE_ONLY_SUPPRESSION_REASON,
+    )
   ) {
     reasons.push('research_infrastructure_only');
   }
   const permanentlyClosed = hasRecordedClosureEvidence(entity);
   if (permanentlyClosed) reasons.push('permanently_closed');
+  if (everyLeadRemovedByRequest) reasons.push(RESEARCHER_REMOVED_REASON);
   if (exactUrlDuplicateRisk) reasons.push('exact_url_duplicate_risk');
   if (duplicateRisk || exactUrlDuplicateRisk) reasons.push('duplicate_risk');
   // `source_backed_description` is the one signal that claims a source backs the copy,
@@ -1223,7 +1292,8 @@ export function computeResearchEntityStudentVisibility({
   if (quality.descriptionState === 'profile_synthesis') reasons.push('profile_fallback_only');
   if (quality.descriptionState === 'thin') reasons.push('thin_description');
   if (quality.descriptionState === 'missing') reasons.push('missing_description');
-  if (!hasRequiredResearchFocusCard) reasons.push('missing_card_description');
+  if (cardIsOnlyThin) reasons.push(THIN_CARD_DESCRIPTION_REASON);
+  else if (!hasRequiredResearchFocusCard) reasons.push('missing_card_description');
   if (!publicDescription.invariant.pass) reasons.push(PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON);
   if (profileIdentityRisk) reasons.push('profile_identity_risk');
   const missingLead = requiresLead && quality.leadState !== 'lead_attached';
@@ -1265,7 +1335,7 @@ export function computeResearchEntityStudentVisibility({
   const studentReadyCorrectness: ResearchEntityStudentReadyCorrectness = {
     descriptionCoherent:
       publicDescription.invariant.pass &&
-      hasRequiredResearchFocusCard &&
+      (hasRequiredResearchFocusCard || cardIsOnlyThin) &&
       !servesNoResearchStatement,
     // Folded in beside the org-type mismatch rather than added as a new
     // correctness field, because it is the same question asked of the other half
@@ -1295,6 +1365,7 @@ export function computeResearchEntityStudentVisibility({
     nonOwnerGrantShell ||
     uncorroboratedGrantOnly ||
     permanentlyClosed ||
+    everyLeadRemovedByRequest ||
     reasons.includes('research_infrastructure_only')
   ) {
     computedTier = 'suppressed';
@@ -1335,6 +1406,13 @@ export function computeResearchEntityStudentVisibility({
   // remove the marker, not to publish over it; leaving the override able to win
   // would make the marker advisory, which is the "correct but cannot fire" shape
   // catalogued in #2258.
+  if (everyLeadRemovedByRequest && result.tier !== 'suppressed') {
+    return {
+      tier: 'suppressed',
+      computedTier: result.computedTier,
+      reasons: Array.from(new Set([...result.reasons, RESEARCHER_REMOVED_REASON])),
+    };
+  }
   if (permanentlyClosed && result.tier !== 'suppressed') {
     return {
       tier: 'suppressed',

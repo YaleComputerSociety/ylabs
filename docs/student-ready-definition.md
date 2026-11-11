@@ -127,6 +127,7 @@ A row that already carries `missing_lead` does not also carry this reason, so th
 - Application container: `common_application_container`. A program row whose title names a common application, which admits to several funds that are each served as their own program and link it as their route. Removed at `suppressed`.
 - Not a current program: `external_award_cycle_stale`, `award_suspended`, `prize_for_completed_work`, `program_listing_page`. A program row that is an outside program whose office record skipped its only stated cycle, an award its own record says is suspended, a prize for completed work, or a catalog page listing programs served on their own. Removed at `suppressed`; `server/src/services/programApplicability.ts` owns each predicate and `docs/decisions.md` records the measurement (#4587).
 - Inactive / out of scope: `inactive_at_yale`, `archive_review`, `not_undergraduate_relevant`.
+- Removed by request: `researcher_removed`. Every lead of the row is recorded in `directory_removals`. Removed at `suppressed`, outranking an operator override; `docs/directory-removal.md` owns the rule.
 - Citations: `all_citations_dead`, `citations_identify_no_person`. Maps to `citationIdentifiesSubject`: a row whose every citation is dead, or whose every citation is shared across person rows, has no live evidence about its own subject (#2464/#2635).
 Both block, because both are the same question; leaving the second unclassified made it read as non-blocking while the field it maps to still held the row.
 
@@ -259,6 +260,22 @@ Absence of closure evidence is not evidence of closure - roughly 4,500 live rows
 A lead-requiring entity with no lead, an unusable name, an identity risk, or an off-entity/off-scope failure is never published even under an explicit operator override: an override may pass softer gates, but not these correctness floors.
 The same floors also hold the record out of `limited_but_safe`, which the launch-trust report treats as publishable in `public-safe` mode.
 
+### Recording an operator visibility verdict on one row
+
+An operator verdict on one row is `studentVisibilityOverrideTier` plus one coded entry in `studentVisibilitySuppressionReason`, and the gate honours it with the `operator_override` reason except where a correctness floor above outranks it.
+It is the evidence contract's "review verdict on one row" (AGENTS.md), never a lock, and never an archive, so the row stays live in every environment and is only not served.
+Write it with `yarn --cwd server student-visibility:override` rather than a direct update (#5618).
+
+- One row per call, by `--slug` or `--id`, with `--tier=<tier>` or `--clear`, a required `--reason "<snake_case_code>: <evidence>"` and `--actor`, which is the operator's netid or, for an agent acting for the owner, an `agent:<name>` identifier so the audit never attributes an automated write to a person.
+- A dry run is the default; `--apply` also needs `--confirm-student-visibility-override` and the same Development opt-in the scraper writes use, `ALLOW_NON_PROD_SCRAPER_WRITES=true`, and Beta and Production are refused because they receive rows only through promotion.
+- The reason is appended as one entry of the comma-joined list and replaces an earlier entry with the same code, so a departure marker or a `research_infrastructure_only` entry survives; `--clear` removes only the entry carrying the given code.
+- A reason that contains `permanently_closed` or `research_infrastructure_only` anywhere is refused, because readers match those markers anywhere in the field and would treat the verdict as closure or infrastructure evidence.
+- Every apply writes an `admin_audit_events` row (`research_entity.visibility_override.set` or `.clear`) recording the actor, the time, the before and after state and the reason.
+- The tool writes the verdict only; run `student-visibility:gate --apply --confirm-student-visibility-apply --record-id=<id>` afterwards so the gate re-decides the served tier.
+
+Before the tool existed, 16 live research rows on Development carried an override written by scripts or by hand, measured on 2026-11-11: 15 `suppressed` (6 for the strict-launch rule that no student route is verified, 3 `research_infrastructure_only`, 3 with no reason, 1 `permanently_closed`, and 2 trainee-fellowship shells) and 1 `operator_review` with no reason.
+An umbrella organization whose sub-units are each discoverable under their own names is held by this verdict, row by row, rather than by a derived rule (owner decision 2026-10-17, applied 2026-11-11 in #5618): measured on 2026-11-11, a derived rule would have hidden 53 of the 84 served organizations that host member rows.
+
 ## Soft signals (these NEVER gate `student_ready`)
 
 These enrich ranking, badges, and the card's optional sub-payloads, and may hide their own sub-payload when absent, but they never hold a correct, coherent card out of `student_ready`.
@@ -268,6 +285,9 @@ They are the set `STUDENT_READY_SOFT_SIGNAL_REASONS`, and they are never repair 
 - `biography_description_fallback` - the served body reads as a career biography (`isBiographyRatherThanResearch`), which per the 2026-10-01 decision is served only when the row has no servable research prose it could carry without losing its card (#4288, `docs/decisions.md`).
   It flags the row for a lane that can find research prose, and it never holds the row by itself, because refusing a row's only servable body took it off the surface (#4280).
   A flagged row that states no research anywhere is held by the hard blocker `career_biography_without_research` instead (owner decision, 2026-10-11).
+- `thin_card_description` - the card fails the card bar only for thinness or for echoing the row's own topics (`too-short`, `topic-label-list`, `area-echo-fallback`, `research-area-echo`, and `full-not-useful` derived from those), the body carries no other flag, the stored body is not blank, the served page already passes the public-description invariant, and the card is neither a page fragment nor a swallowed-clause "including" sentence (`researchEntityCardIsOnlyThin`, #5673).
+  It is recorded in place of `missing_card_description`, so the row is served under the thin-but-accurate decision (2026-10-04) while the repair queue still records it as an evidence signal.
+  A row whose served page fails the invariant, or that has no stored body, keeps today's tier.
 - `missing_facet_signal` - facets are query-scoped nice-to-haves, not a student-facing blocker.
 - `missing_alternate_access_path` - an organizational home is reachable through its own official page even without a separate engagement path.
   It stays soft on purpose: per #1802 the card is never withheld for unknown access evidence.

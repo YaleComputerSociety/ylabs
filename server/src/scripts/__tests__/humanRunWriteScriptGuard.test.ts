@@ -20,11 +20,19 @@ const SWEEP_RUNNER = 'runScraperSweep.ts';
  */
 const OPERATOR_TOOLS: Record<string, string> = {
   'research-entity:refuse-field-value': 'records a per-row refusal, the layer-3 writer',
+  'researcher:refuse-field-value':
+    'records an operator refusal of one value on one person record, the person-record counterpart of the layer-3 writer (#5641)',
+  'role-assignments:detach-edge':
+    'detaches one role edge an operator judged wrong after reading the pages, as a DISPUTED verdict no lane re-attaches (#5614)',
+  'researchers:record-distinct-people':
+    'records an operator judgement that two researcher records are different people (#5592)',
   'research-entity:apply-page-read-verdict':
     'applies a verdict an operator reached by reading a page',
   'research-entity:adopt-led-group-site':
     "records an operator's verdict that one row's lead runs a named group site, as observations without a lock (#5040)",
   'research-entity:record-departure': 'records a departure an operator was told about',
+  'student-visibility:override':
+    "records an operator's visibility verdict on one row, an audited per-row judgement rather than a lock or an archive (#5618)",
   'research-entity:withdraw-non-research-home-row':
     'withdraws one row an operator judged not research',
   'research-entity:release-field-locks': 'releases locks one reviewed row at a time',
@@ -42,17 +50,27 @@ const OPERATOR_TOOLS: Record<string, string> = {
     'attaches hand judgements read off a frozen benchmark page, an operator judgement per row',
   'observations:purge-unread-directory-contact':
     'deletes stored personal contact data, which AGENTS.md reserves for an operator rather than a lane or a sweep stage (#4161)',
+  'accounts:delete-account-data':
+    "deletes one person's account data on their own request, an operator act for someone who cannot sign in to do it themselves (#4156)",
   'accounts:purge-retired-login-profile-fields':
     'clears stored personal data from login accounts, an operator decision rather than a lane or a promotion side effect (#4162)',
   'research-plans:expire-legacy-archived':
     'expires archived research plans that still hold a student’s private text, an operator decision about stored personal data per environment (#4163)',
   'observations:nonfetching-lane-gone-pages':
     'a one-time backfill for lanes that never run again or read no page, so no lane or sweep stage can re-derive it (#4862)',
+  'directory-removal:record':
+    "records or withdraws one person's directory removal request, an operator judgement about one person that no lane can derive (#4160)",
+  'directory-removal:purge-observations':
+    'deletes the stored observations of people on the removal list, an operator decision about personal data run per environment with owner approval for Beta and Production (#4160)',
+  'directory-removal:reslug':
+    'renames a co-led row whose slug names a removed lead, a one-time operator act on each removal request; a later pass keeps the slug because the materializer refuses renames and the old key reaches the row by id (#4160)',
   'db:build-indexes': 'builds declared indexes, a reviewed schema operation',
   'meili:rebuild-research-entities':
     're-embeds the whole index after a settings, embedder, or document-shape change, an infrastructure operation; the sweep stage is the incremental sync (#5023)',
   'research-entity:rematerialize': 're-derives rows on demand through the engine itself',
   'observations:catch-up-materialize': 'drains the materialize backlog through the engine itself',
+  'observations:rederive-over-shared-person-websites':
+    're-resolves through the engine itself the people whose evidence asserts an over-shared website, which no lane re-asserts (#5645)',
   'beta:readiness': 'promotion tooling, run as part of the release process',
   'beta:repair-queue': 'promotion tooling, run as part of the release process',
   'beta:clear-student-analytics': 'promotion tooling, run as part of the release process',

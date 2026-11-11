@@ -62,6 +62,7 @@ export const COVERAGE_SYNTHESIS_PROMPT = withSynthesisFidelityRules(
 );
 export const LAB_SITE_DECLARED_LEAD_PROMPT = loadPrompt('labSiteDeclaredLead.md');
 export const RESEARCH_PAGE_TOPICS_PROMPT = loadPrompt('researchPageTopics.md');
+export const SEARCH_RERANK_LIVE_MISS_PROMPT = loadPrompt('searchRerankLiveMiss.md').trim();
 
 export const CARD_SYNTHESIS_PROMPT_HASH = hashPrompt(CARD_SYNTHESIS_PROMPT);
 export const LAB_SITE_DECLARED_LEAD_PROMPT_HASH = hashPrompt(LAB_SITE_DECLARED_LEAD_PROMPT);

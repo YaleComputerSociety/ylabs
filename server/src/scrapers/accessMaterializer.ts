@@ -33,6 +33,7 @@ import {
 import { isRecruitingOrContactPageUrl } from './undergradRosterEvidence';
 import { listResearchEntityMergedInRowsBySurvivor } from '../services/researchEntityCanonicalTombstone';
 import { observationIsKeyedToRow, type ContactEvidenceRow } from './rowKeyedContactEvidence';
+import { liveResearchEntityNamedByKeyObservations } from './renamedResearchEntityAdoption';
 
 /**
  * Every access-signal type the materializer has a live emission path for. This
@@ -622,10 +623,9 @@ async function resolveResearchEntityId(identifier: {
   const researchEntityId = normalizeAccessMaterializerObjectId(identifier.researchEntityId);
   if (researchEntityId) return researchEntityId;
   if (!identifier.entityKey) return null;
-  const group: any = await ResearchEntity.findOne(
-    { slug: identifier.entityKey },
-    { _id: 1 },
-  ).lean();
+  const group: any =
+    (await ResearchEntity.findOne({ slug: identifier.entityKey }, { _id: 1 }).lean()) ??
+    (await liveResearchEntityNamedByKeyObservations(identifier.entityKey));
   return normalizeAccessMaterializerObjectId(group?._id) || null;
 }
 

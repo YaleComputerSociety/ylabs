@@ -4,7 +4,12 @@
 export { AdminGrant } from './adminGrant';
 export { AdminAuditEvent } from './adminAuditEvent';
 export { EntityCorrectionReport } from './entityCorrectionReport';
+export {
+  DirectoryRemovalRequest,
+  DIRECTORY_REMOVAL_REQUEST_COLLECTION,
+} from './directoryRemovalRequest';
 export { Fellowship } from './fellowship';
+export { DirectoryRemoval, DIRECTORY_REMOVAL_COLLECTION } from './directoryRemoval';
 export { AnalyticsEvent, AnalyticsEventType, RESEARCH_ENTITY_TYPES } from './analytics';
 export { ResearchArea, ResearchField, fieldColorKeys } from './researchArea';
 export { Department, DepartmentCategory, categoryColorKeys } from './department';
@@ -52,6 +57,14 @@ export { ScrapeRun } from './scrapeRun';
 export { ScrapeSnapshot } from './scrapeSnapshot';
 export { WeeklySweepRun, WEEKLY_SWEEP_RUN_COLLECTION } from './weeklySweepRun';
 export { LoginSignalTally, LOGIN_SIGNAL_TALLY_COLLECTION } from './loginSignalTally';
+export {
+  DeletedAccountEventTally,
+  DELETED_ACCOUNT_EVENT_TALLY_COLLECTION,
+} from './deletedAccountEventTally';
+export {
+  AccountDeletionRequest,
+  ACCOUNT_DELETION_REQUEST_COLLECTION,
+} from './accountDeletionRequest';
 export * from './researchAccessTypes';
 export * from './sourceCoverageTypes';
 export * from './modelPrimitives';

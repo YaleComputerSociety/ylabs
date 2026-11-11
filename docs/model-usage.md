@@ -17,6 +17,9 @@ Rows are ranked by estimated cost, so the first row is the lane or script to loo
 The cost is an estimate at the list prices in `server/src/utils/modelPricing.ts`, not the invoice.
 A model missing from that table is reported as `unpriced` rather than counted as free, so add its price when a lane adopts a new model.
 
+The search live-miss rerank job (`search-rerank-live-miss`, `docs/search-rerank-cache.md`) reads this log as well as writing it: before each call it sums its own caller's estimated cost since UTC midnight and stops for the day at USD 1.00.
+Renaming that caller, or dropping its usage records, would therefore lift its spend ceiling, and an unpriced model counts as over the ceiling.
+
 ## What is and is not recorded
 
 - Each caller is a name from `MODEL_CALLERS` in `modelClient.ts`: the lane's source name for a scraper lane, or the script's name for an operator script.

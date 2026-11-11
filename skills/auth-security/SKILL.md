@@ -124,6 +124,22 @@ This creates a test session as `test123` with user type `undergraduate`.
 Pass `?userType=admin|professor|faculty|graduate|unknown` for a different local account.
 `?userType=admin` mints an idempotent local bootstrap `AdminGrant` (via `ensureBootstrapAdminGrant`), so dev admin authority comes from a real grant, not a `userType` shortcut.
 
+### Testing locally as a non-admin student
+
+The copied `server/.env` that `scripts/new-agent-worktree.sh` writes sets `LOCAL_AUTH_BYPASS=true`, `LOCAL_AUTH_BYPASS_NETID=devadmin` and `LOCAL_AUTH_BYPASS_USER_TYPE=admin`, so every cookieless loopback request is the bootstrap admin by default.
+Admin authority comes from an active `AdminGrant` on the netid (`hasAdminAuthorityForUser`), never from `userType`.
+So an `x-dev-user-type: undergraduate` header alone does not make a student: the netid stays `devadmin`, which holds the grant, and the request keeps operator authority, including `operatorPreview` on withheld research rows (#5695).
+To test as a non-admin student, use one of these:
+
+- Run the API with the grant-less undergraduate dev-login netid as the bypass identity: `LOCAL_AUTH_BYPASS_NETID=test123 LOCAL_AUTH_BYPASS_USER_TYPE=undergraduate yarn dev:server`.
+- Turn the bypass off and sign in as the undergraduate: `LOCAL_AUTH_BYPASS=false yarn dev:server`, then open `/api/dev-login?userType=undergraduate`, which signs in `test123`.
+- Leave the server alone and send both `x-dev-netid: test123` and `x-dev-user-type: undergraduate` from a loopback client.
+
+`scripts/run-data-profile.mjs` gives an explicitly set shell value for the three `LOCAL_AUTH_BYPASS*` keys precedence over `server/.env`; every other key still comes from `server/.env` first (#5695).
+Before #5695 a shell `LOCAL_AUTH_BYPASS=false` was silently overridden by the file, so a "student" probe ran as the admin.
+Check the identity before trusting a result: `GET /api/check` reports `user.netId` and `user.isAdmin`, and the netid must hold no active `AdminGrant`.
+Every bypass or dev-login request records a login for its netid on the database the profile targets, and creates that account on first use, so reuse `test123` rather than inventing a new netid.
+
 ### Development affordances are scoped to the developer's own machine
 
 The runtime label alone never licenses a development affordance, because "this process is a local development process" and "this request came from the developer" are different facts.
@@ -133,6 +149,7 @@ It reads the socket peer rather than `req.ip`, because `req.ip` can be resolved 
 - `/api/dev-login` is registered only in a local development runtime (`isDevLoginAllowed`) and additionally answers `404 {"error":"Not found"}` to any caller that is not loopback (`isDevLoginRequestAllowed`).
 The refusal reuses the ordinary not-found shape rather than announcing a disabled route.
 - The `LOCAL_AUTH_BYPASS` user and its `x-dev-netid` / `x-dev-user-type` selection apply only to a loopback caller (`isLocalAuthBypassRequestAllowed`), so a request from elsewhere is simply unauthenticated.
+- `scripts/security-preflight.test.mjs` runs the real `isLocalAuthBypassRequestAllowed` and the bypass middleware with a copied `.env` that enables the bypass, and pins a refusal for every non-development `NODE_ENV`, a non-loopback socket peer, a non-localhost `Host` header, and a non-localhost `SERVER_BASE_URL`.
 - `serverListenHost` in `server/src/utils/environment.ts` binds a local run to `127.0.0.1` and a deployed run to `0.0.0.0`, keyed off `requiresDeployedRuntimeSecurity`, because the hosting platform reaches the process from outside its network namespace and a local run needs no interface beyond loopback.
 
 ## Auth middleware
@@ -154,6 +171,8 @@ A denylist leaks every field added to the model later, and a raw document leaks 
 The correction-report routes are the worked example (#4011): `POST /api/research/:slug/report` and `GET /api/research/:slug/reports/mine` return `toReporterCorrectionReport` from `entityCorrectionReportService.ts`, which keeps only `_id`, `category`, `status`, `note`, `reviewerNote`, and `createdAt`.
 The reviewer's netid (`reviewedBy`, `reviewHistory`), the reporter snapshot, and entity bookkeeping stay on the admin queue alone.
 Adding a field to the reporter panel means adding it to that allowlist, and `server/src/__tests__/correctionReportReporterProjection.integration.test.ts` pins the exact key set through the mounted routes.
+The directory removal request routes follow the same rule (#4160): `GET` and `POST /api/users/directoryRemovalRequest` return only `eligible` and the caller's own `{ status, createdAt }`, never the deciding admin or the matched researcher, and a caller y/labs does not list learns nothing about anyone else.
+`server/src/__tests__/directoryRemovalRequests.integration.test.ts` pins this; the channel is described in `docs/directory-removal-requests.md`.
 
 ## Admin audit log
 
@@ -208,6 +227,62 @@ Treating unknown as enabled would post a guest's first browse impression to `/an
 `SignInButton` applies it before building the CAS `redirect` parameter, and the server's `safeRedirectTarget` in `passport.ts` validates it again, so the return path can never become an open redirect.
 `/login` applies it too, and once a session check succeeds (for example after Retry connection) it sends the user to that path, falling back to the role default only when the path is empty.
 Any `401` dispatches `HTTP_AUTH_REQUIRED_EVENT` (`client/src/utils/httpStatusEvents.ts`), and `UserContextProvider` answers it by signing the client out, so a login link raised by an expired session reaches the CAS sign-in instead of bouncing off `/login` back to the page that failed.
+
+## Account data export and deletion (#4156)
+
+A signed-in account can download, and delete, everything y/labs holds keyed to it.
+`server/src/services/accountDataService.ts` is the one service for both, used by the self-serve routes and by `yarn --cwd server accounts:delete-account-data`, so an emailed request and a signed-in one remove exactly the same rows.
+Both routes sit behind the `accountDataControls` release flag (`FEATURE_ACCOUNT_DATA_CONTROLS`) and answer `404` while it is off.
+
+- `GET /api/users/me/export` streams one JSON attachment from a cursor: the account, every research plan with `privateNotes`, `checklist` and `deadlines` explicitly selected, the account's correction reports, its admin grants, the admin audit rows it acted in or was the subject of, the grant-history entries it made on other accounts, and every analytics event, plus `scopeVersion` and `generatedAt`.
+A field added to an exported collection is not exported until an allowlist in the service names it, and a scope change bumps `ACCOUNT_DATA_EXPORT_SCOPE_VERSION`.
+- `DELETE /api/users/me` requires three things beyond the session cookie, so a cookie alone can never erase an account.
+The body must be `{ "confirm": "delete my data" }`.
+The `X-CSRF-Token` header must equal the synchronizer token `GET /api/users/me/deletion-csrf-token` stored in this cookie session (`server/src/middleware/sessionCsrfToken.ts`), on top of the global `csrfOriginGuard`; another site can neither read the token through CORS nor forge it, and a missing or foreign token answers `403` with `CSRF_TOKEN_REQUIRED`.
+The token is one per session, held in `req.session.csrfToken`, and is not specific to deletion: `GET /api/users/me/csrf-token` issues the same token to any signed-in caller, and `requireSessionCsrfToken` also guards `POST /api/users/directoryRemovalRequest` and `PUT /api/admin/directory-removal-requests/:id` (#4160).
+A new state-changing route that CodeQL flags as `js/missing-token-validation` takes `requireSessionCsrfToken` rather than a dismissal, and its client fetches the header through `sessionCsrfHeaders` in `client/src/utils/sessionCsrf.ts`.
+`server/src/__tests__/directoryRemovalRequestCsrf.integration.test.ts` drives the origin guard, a missing token, another session's token, and the right token through the mounted app.
+The session must hold a fresh password confirmation: a CAS sign-in started with `?reauth=1` sends `renew=true` to CAS both at `/login` and at `/validate` (`requestsCasReauthentication` in `server/src/utils/casStrategy.ts`), so CAS asks for the password and refuses a ticket issued from single sign-on, and only that sign-in stamps `credentialsConfirmedAt` on the signed session claim.
+A confirmation older than 10 minutes (`ACCOUNT_DELETION_RECENT_SIGN_IN_MS`), or a session that never had one, answers `403` with `RECENT_SIGN_IN_REQUIRED`, and the client sends the student through CAS with `reauth=1`.
+`reauth=1` rides inside our own URL, so it is part of the `service` both legs send and a callback cannot claim it for a ticket CAS issued without it.
+It runs under `writeLimit`, and on success it ends the cookie session and returns per-collection counts.
+
+The deletion order is the contract, and every step is safe to repeat:
+
+0. Refuse with `503` (`DELETION_UNAVAILABLE`), before reading or deleting anything, while the serving environment lacks a setting a later step needs (#5624, `server/src/services/accountDeletionReadiness.ts`): `ACCOUNT_DELETION_AUDIT_HMAC_KEY` always, a `MONGODBURL` database name that identifies the environment, and `POSTHOG_PERSONAL_API_KEY` and `POSTHOG_PROJECT_ID` wherever PostHog captures, which is Production and any environment the server cannot identify.
+The refusal tells the student to email the privacy mailbox, the dashboard hides the delete action and shows `PRIVACY_CONTACT_EMAIL` instead (served as `selfServeAccountDeletion: false` in `GET /api/config`), and `/privacy` stops describing the dashboard deletion.
+Export needs none of these settings, so it keeps working.
+`/api/ready` reports `accountDeletion` as `off`, `available` or `unavailable` with the missing settings by name only, the boot log says the same, and `yarn security:smoke:production` fails on `unavailable` and on a readiness body that reports no recognised `accountDeletion.status`.
+1. Refuse with `409` (`DELETION_BLOCKED`) if a corpus field in `CORPUS_ACCOUNT_ID_REFERENCE_FIELDS` holds the account `_id`, rather than leave a dangling id.
+2. `revokeAccountSessions`, so another tab stops writing events.
+3. Delete every `research_plans` row for the account, bypassing the restore window.
+4. Fold the netid's `analytics_events` into `deleted_account_event_tallies` (UTC month, event type and count, nothing else) and delete them, one transaction per batch, so raw search text is gone and a retry never double-counts.
+5. Keep each correction report and replace its `reporter` with a tombstone whose `netId` is `deleted-<reportId>`, with empty email and name; the report is evidence about a public row.
+6. Revoke the netid's active `admin_grants`, appending a `revoked` history entry, so a maintainer who deletes their account loses the grant with it while the grant row and its history stay.
+`admin_audit_events`, the earlier history on the netid's own grant, and the `grantedBy`, `revokedBy` and history entries on other accounts' grants are left exactly as they are, because the audit log is append-only; the export includes the rows that name the netid, but a deletion never rewrites them.
+7. Ask PostHog to delete the person keyed on `productAnalyticsId`, with events and recordings.
+Where PostHog does not capture, Development and Beta, an unconfigured PostHog is skipped and reported as `skipped_not_configured`; elsewhere step 0 has already refused.
+Configured and failing, the deletion stops here, because the account row holds the only copy of that id.
+8. Record the deletion for every other environment, below, before the account goes, so a failure there is retried rather than lost.
+9. Delete the account last, so any failure above leaves an account the holder can sign in to and retry from.
+10. Append one `admin_audit_events` row, `account.self_delete` or `account.operator_delete`, whose `targetId` is an HMAC-SHA256 of the netid under `ACCOUNT_DELETION_AUDIT_HMAC_KEY`, never the netid.
+Step 0 guarantees the key, so the row always carries a subject.
+
+Analytics events and correction reports store the session netId as it arrived, so the service matches them case-insensitively; an exact lowercase match would leave a differently cased row behind while the residue read zero.
+Deleting the account row resets `sessionVersion`, so deserialization also refuses a claim whose `issuedAt` is earlier than the account's `createdAt`: a session left open before the deletion never authenticates against an account created again by a later sign-in.
+
+Every collection it touches is environment-local and never promoted or synced, so a deletion is durable in its environment and no copy brings it back; `server/src/scripts/__tests__/accountDataCollectionsAreEnvironmentLocal.test.ts` pins that.
+A deletion still covers every environment, but the web service holds no other environment's credentials, so it deletes locally and records an `account_deletion_requests` row naming the person only by the HMAC of the netid under its own `ACCOUNT_DELETION_AUDIT_HMAC_KEY`, with the other environments pending (`server/src/services/accountDeletionRequestService.ts`).
+The serving environment is read from the `MONGODBURL` database name; without the key, or in an environment that name does not identify, step 0 refuses the deletion rather than skip this request.
+An operator then runs `accounts:delete-account-data --environment <target> --process-pending-from <source>` once per other environment: it hashes every netid the target holds under the source key, deletes each match there through the same service without recording a new request, and moves the target from pending to completed on the source row, `matched: false` when the person never used the target.
+A match the target refuses (`DELETION_BLOCKED`) or a PostHog failure there stays pending and is counted in `failed`, and the run carries on with the rest, so one stuck request never holds back later ones.
+A second deletion for a person whose earlier request is still pending re-adds every other environment to it, so an environment completed in between is deleted again.
+`/privacy` names the request channel for someone who cannot sign in: `PRIVACY_CONTACT_EMAIL` in `client/src/utils/privacyContact.ts`, answered within 30 days, which is the one place the address lives (#4160 shares it); a request about someone's own data never goes to a public GitHub issue, and the page describes the dashboard path only while `accountDataControls` is on.
+An emailed request goes the same way: `--netid` deletes in one environment and records the request for the others.
+The operator script is dry-run by default; for one netid it prints the per-collection residue, which is also the verification after a deletion, since every count must read zero, and for pending requests it prints only counts.
+It reads the deletion keys for the environment it targets, `BETA_` or `PRODUCTION_` prefixed like its connection variable and unprefixed for Development, so a Production run never borrows the Development keys from a copied `server/.env`.
+`--apply` refuses before connecting while the target lacks one of the step 0 settings, naming the prefixed variable, and every run prints `missingDeletionSettings`.
+`server/src/__tests__/accountDataControls.integration.test.ts` drives export, the refusals, the deletion, the PostHog call and the retry through the mounted app with synthetic accounts.
 
 ## Validation middleware
 
@@ -446,6 +521,7 @@ Rotating a leaked secret is owned by `docs/incident-runbook.md`.
 | `MONGODBURL` | Yes | MongoDB connection string. |
 | `SESSION_SECRET` | Yes | Cookie session signing key. |
 | `SESSION_SECRET_PREVIOUS` | No | Verify-only previous signing key during a routine rotation; unset otherwise (#4484). |
+| `DIRECTORY_REMOVAL_KEY` / `DIRECTORY_REMOVAL_KEY_FILE` | No | HMAC key for directory removal entries, inline or from a file outside the repository, shared by every environment; `docs/deployment-inventory.md` owns the keyless behaviour (#4160). |
 | `AUTH_DEBUG` | No | Enables verbose auth tracing when `true`. |
 | `SSOBASEURL` | Yes | Yale CAS URL. |
 | `SERVER_BASE_URL` | Yes | Public server URL for CAS callbacks. |
@@ -471,6 +547,9 @@ Rotating a leaked secret is owned by `docs/incident-runbook.md`.
 | `GATE_SCORECARD_MAX_AGE_HOURS` | No | Max age before a gate scorecard is stale. |
 | `GATE_REFRESH_INTERVAL_MINUTES` | No | Positive value enables in-process gate refresh. |
 | `GATE_REFRESH_SKIP_HEAVY` | No | Skips heavy gate refresh work when `true`. |
+| `POSTHOG_PERSONAL_API_KEY`, `POSTHOG_PROJECT_ID` | Production, with deletion on | A `phx_` personal key with `person:write` and the digits-only project id; an account deletion asks PostHog to delete the person (#4156). Unset in Production, self-serve deletion is refused and the student is sent to the privacy mailbox (#5624); Development and Beta skip PostHog, which does not capture there. |
+| `ACCOUNT_DELETION_AUDIT_HMAC_KEY` | With deletion on | At least 32 characters; keys the netid hash on an account-deletion audit row and its cross-environment request (#4156). Unset, self-serve deletion is refused (#5624). |
+| `BETA_` and `PRODUCTION_` prefixed `POSTHOG_PERSONAL_API_KEY`, `POSTHOG_PROJECT_ID`, `ACCOUNT_DELETION_AUDIT_HMAC_KEY` | For `--apply` there | Operator machine only: the keys `accounts:delete-account-data` uses for that environment; `--apply` refuses while one that environment needs is missing (#4156, #5624). |
 
 ### Client
 

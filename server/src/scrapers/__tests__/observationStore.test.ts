@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { Observation } from '../../models/observation';
+
+vi.mock('../../models/directoryRemoval', () => ({
+  DirectoryRemoval: { find: () => ({ select: () => ({ lean: async () => [] }) }) },
+}));
 import {
   appendObservations,
   buildObservationFingerprint,

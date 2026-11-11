@@ -152,7 +152,7 @@ Release feature flags live in `RELEASE_FEATURE_FLAGS` in `server/src/services/co
 To add one:
 
 1. Add the camelCase flag name to `RELEASE_FEATURE_FLAGS`.
-2. Read `features.<flagName>` from the config payload at the point of use.
+2. Read `features.<flagName>` from the config payload at the point of use; in the client that is `features` on `ConfigContext`, which holds `true` only for a flag the server served as `true`.
 3. Set the matching environment variable in the Render environment groups.
 
 The environment variable name is the flag name upper-snake-cased with a `FEATURE_` prefix, so `newBrowseRanking` reads `FEATURE_NEW_BROWSE_RANKING`.
@@ -164,6 +164,12 @@ Undeclared `FEATURE_` variables are ignored, so the served payload is always bou
 Flipping a flag needs no redeploy.
 It is an environment variable plus the five minute config cache.
 Because the flag is resolved on the server, it can gate API responses as well as UI.
+A route reads it with `isReleaseFeatureEnabled` from `configService.ts`; `accountDataControls` (#4156) gates the account data export and deletion routes that way and answers `404` while it is off.
+
+Turning `accountDataControls` on for an environment no longer depends on remembering its secrets, because the system enforces them (#5624).
+While the flag is on and that environment lacks `ACCOUNT_DELETION_AUDIT_HMAC_KEY`, a `MONGODBURL` database name that identifies it, or, in Production, `POSTHOG_PERSONAL_API_KEY` and `POSTHOG_PROJECT_ID`, self-serve deletion is refused before it touches a row, the dashboard hides the delete action and names the privacy mailbox instead, and export keeps working.
+The boot log and `GET /api/ready` report `accountDeletion` as `unavailable` and name the missing settings, by name only, and `yarn security:smoke:production`, which the `Post-Promotion Verify` workflow runs on every push to `main`, fails its `api.ready.accountDeletion` check.
+So after flipping the flag or promoting, read `accountDeletion.status` from `/api/ready`: `available` is done, and `unavailable` means set the named settings on that web service, not that the release is broken.
 
 Retire a flag once it is fully on in production.
 Delete the registry entry, the branches that read it, and the Render variable.
@@ -202,7 +208,7 @@ The order is not cosmetic and two of the orderings are the opposite of what seem
 3. **Copy the data, before deploying the code.** The copy never touches Production's retired collections, so the currently deployed code keeps reading `users`, `entry_pathways`, `access_signals`, `contact_routes` and `research_entity_members` throughout. Data-first therefore has no broken window. Code-first has one: the current model reads `signals`, `accounts`, `researchers` and `role_assignments`, and a Production that has not received them yet cannot serve the visibility gate, browse ranking, login or person pages.
 4. **Re-point saved plans, then re-gate visibility.** The remote phase first runs `yarn --cwd server research-plans:retarget-merged --apply --confirm-research-plan-retarget`, which moves each Production plan saved on a merged research entity to its live survivor; plans are environment-local, so the merge Development recorded cannot carry them (#5208). Then `yarn --cwd server student-visibility:gate --collection=all --apply --confirm-student-visibility-apply --max-apply=100000`. Apply mode throws without `--max-apply`, and refuses to write without `--confirm-student-visibility-apply`. Freshly copied rows do not carry a usable tier until a gate pass runs, so skipping this leaves part of the corpus stuck at `operator_review` and invisible.
 5. **Update the search index, after the gate and not before.** `SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true yarn --cwd server reindex:meili --confirm`. When the live index's embedder matches the code it reconciles only the changed documents, applying any drifted settings in place (#5442), and otherwise it runs the full rebuild described below; `--full` forces the rebuild (#5107). Run it inside the Production Render shell because the private Meilisearch is not reachable from a laptop. `CONFIRM_PROD_SCRAPE=true` is not optional: the write guard refuses the rebuild without it, and it fires after the preflight and the index reconcile plan have already printed, so a run without it reads as working and stops at the last moment. Prefer `node scripts/reindex-search-index.mjs production --apply`, which reports every missing variable at once before anything starts. The gate writes tiers, so an index built before the gate carries pre-gate tiers. The rebuild applies the full settings object first, including `pagination.maxTotalHits`, so it also repairs an index left at Meilisearch's 1000-hit default. It builds into a fresh `prod_researchentities_next` index and swaps it in atomically once every document is confirmed, so student search keeps serving the previous index throughout and a failed rebuild changes nothing; the swap only protects against an incomplete rebuild and deletes the previous copy, so the restore point in `docs/data-refresh-runbook.md` is still required, the instance needs disk headroom for two copies, and the shell needs `OPENAI_API_KEY`, because a rebuild that cannot recreate the stored embedder is refused (#4151).
-6. **Then reconcile and merge `main`**, which deploys the code.
+6. **Then reconcile and merge `main`**, which deploys the code. With `accountDataControls` on, the system now enforces the deletion settings rather than relying on this list: Production refuses self-serve deletion while `ACCOUNT_DELETION_AUDIT_HMAC_KEY`, `POSTHOG_PERSONAL_API_KEY` or `POSTHOG_PROJECT_ID` is missing, and the `Post-Promotion Verify` smoke fails on `api.ready.accountDeletion` until they are set ("Holding one feature instead of the whole release", #5624).
 
 Build any declared index the target is missing, on Beta after the Development copy and on Production after this one.
 Indexes are no longer built on connect, and the copy moves documents rather than index definitions, so an index declared since the target's last build stays missing until someone builds it.
@@ -231,6 +237,13 @@ An account `_id` copied onto a corpus row would name nobody in the target, so bo
 The dry-run report's `blockedAccountReferences` lists them by collection and field and `accountReferenceBlockersClear` must read `true`.
 A reviewer stamp records the reviewer's netid in `studentVisibilityReviewedByNetid`, which names the same person in every environment.
 
+A directory removal (#4160, `docs/directory-removal.md`) is recorded on Development and reaches Beta and Production with the promotion copy, because `directory_removals` is copied with the corpus it suppresses.
+A request that arrives on Production is a review item there; the admin who accepts it records the entry on Development with `yarn --cwd server directory-removal:record`, which is a dry run unless given `--apply` and reads the identifier from standard input only.
+An entry written only on Beta or Production would be erased by the next whole-collection copy, so every copy direction refuses to run while the target holds an active entry the source does not (`server/src/scripts/directoryRemovalCopyGuard.ts`).
+The dry run reports that refusal ahead of time: the promotion lists it in `applyBlockers`, and each sync lists it in `directoryRemovalBlockers`.
+The fix for that refusal is to record the entry on the source, never to delete it from the target.
+Each entry is an HMAC digest under `DIRECTORY_REMOVAL_KEY`, so every environment must hold the same key, and the gate in the remote promotion phase refuses to run on an environment that holds entries without it (`docs/directory-removal.md`, "Before the first entry"); an environment that holds entries but no key cannot tell a removed person from anyone else (`docs/deployment-inventory.md`).
+
 `--include-observations` flips the observation default.
 `--include-scrape-runs` flips the run-history default, which is off: a promoted `scrape_runs` is Development's history under Production's name (#2589).
 It reads like a completeness option and is not one: when the source is empty it deletes the target and copies nothing back.
@@ -243,6 +256,7 @@ The owner approved serving it on Beta and Production after a promotion (#5448), 
 1. Seed Beta after the Development-to-Beta copy and reindex: `yarn --cwd server research-search:seed-rerank-cache --environment=beta --input=<seed.json>` as a dry run, then again with `--apply --confirm-search-rerank-cache-seed --index-version=<marker>`.
 2. Seed Production the same way after its copy and reindex, with `--environment=production`, `SCRAPER_ENV=production` and `CONFIRM_PROD_SCRAPE=true`.
 3. Use the seed file the Development cache was built from, and seed only when the promoted corpus is the one it was scored on; the dry run's `unresolvedSlugs` must read 0, because a slug the target does not carry is a row the scores cannot name.
+   Seeding after the reindex matters because each score stores a hash of its row read from the target's index; the dry run's `textHashes` must read `read-from-index` for hashes to be stored, which needs a shell whose `MEILISEARCH_INDEX_PREFIX` names the target, and `staleSeededEntries` reports how many existing seeds that index no longer matches.
 4. Then set `SEARCH_RERANK_CACHE_ENABLED=true` on that environment's web service and redeploy it; with the flag unset, search never reads the collection.
 5. Verify by searching a seeded query on the deployed site and comparing its top results with Development's served order for the same query.
 
@@ -281,6 +295,24 @@ Static addresses of our own need a Pro workspace plan plus a monthly fee per IP 
 Removing public network access entirely needs an Atlas Private Endpoint, which needs a dedicated cluster.
 Neither is worth buying before Atlas backups, which a free cluster does not provide.
 
+## Routine Development maintenance pass
+
+While the scheduled Development sweep is suspended, its post-run stages do not run on their own, so run these by hand in each routine Development maintenance pass.
+Run them from a worktree at current `beta`, with the model key blank and never `--force-llm`, and sequence the write and the search sync with any other session writing Development.
+
+### URL-identity duplicates waiting for the guarded lane (#5688)
+
+Resolve-at-mint never folds a person-led row (a lab or a faculty research profile) through a recorded redirect, because a mint has no lead edges to compare.
+Those duplicates wait for the website-url dedupe lane, which refuses rows led by different researcher ids (#5684).
+
+1. Dry-run the lane and read the planned groups:
+   `OPENAI_API_KEY= yarn --cwd server research-entity:dedupe-by-pi --website-url-only --limit=10000 --output=/tmp/website-url-dedupe-dry.json`
+2. Apply only the planned groups you have read, scoped with `--slug=<survivor slug>` per group or by matching the cap to the plan:
+   `OPENAI_API_KEY= ALLOW_NON_PROD_SCRAPER_WRITES=true yarn --cwd server research-entity:dedupe-by-pi --website-url-only --limit=10000 --apply --confirm-research-entity-pi-dedupe --max-apply=<number of planned groups>`
+3. Dry-run again with the same scope; it must plan 0.
+4. Run `yarn development:search:sync`, never a full rebuild.
+5. Served check: through the search route each merged lab or profile shows once, its detail route answers `200`, and each archived slug answers `302` to its survivor.
+
 ## Verifying a release
 
 `Post-Promotion Verify` runs on every push to `main`.
@@ -307,7 +339,8 @@ The check records only the status, the `degraded` flag and the row count, never 
 ## Monitoring production
 
 `GET /api/ready` is the route an external monitor polls (#4142).
-It runs a MongoDB `ping` and a Meilisearch `health()` call in parallel, each bounded at two seconds, and answers `{ "mongo": <boolean>, "search": <boolean> }` with 200 when both are true and 503 otherwise.
+It runs a MongoDB `ping` and a Meilisearch `health()` call in parallel, each bounded at two seconds, and answers `{ "mongo": <boolean>, "search": <boolean>, "accountDeletion": { "status", "missingSettings" } }` with 200 when both datastores are true and 503 otherwise.
+`accountDeletion` never changes the status code: an unavailable deletion sends students to the privacy mailbox and is not a reason to take search out of rotation.
 It is never cached, and it carries no version, host, commit, error text or timing, so it is safe to leave public.
 `/health` and `/` are the wrong targets, because the SPA shell answers 200 from disk through a full API outage, and `/api/config` is cached for five minutes and never touches Meilisearch.
 A one-minute cadence from one monitor stays far inside both the per-session limiter and the per-address first-contact ceiling in `server/src/middleware/rateLimiters.ts`.

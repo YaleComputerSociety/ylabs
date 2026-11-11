@@ -52,6 +52,23 @@ function repairOneLeadingMark(text: string): string {
   return text;
 }
 
+const CLOSING_BRACKETS = new Set([')', ']', '}']);
+
+/**
+ * A stored card that opens on a closing-only quotation mark or a closing bracket is the
+ * tail of a sentence the splitter broke inside a quotation or parenthesis, such as a
+ * journal title cut out of a citation. Dropping the mark, as the repair below does for
+ * a cosmetic stray, would serve that fragment as a research card, so the serve path
+ * treats such a card as absent instead (#5685).
+ */
+export function cardOpensMidSentence(card: unknown): boolean {
+  const text = typeof card === 'string' ? card.trimStart() : '';
+  const first = text[0];
+  if (!first) return false;
+  if (CLOSING_BRACKETS.has(first)) return true;
+  return CLOSING_ONLY_MARKS.has(first) && !(first === '’' && LEADING_ELISION.test(text));
+}
+
 export function withBalancedLeadingQuotation(card: string): string {
   let text = card.trimStart();
   for (let step = 0; step < MAX_LEADING_MARKS; step += 1) {

@@ -34,7 +34,8 @@ function directoryHtml(
 
 function profileHtml(options: {
   fullName: string;
-  workdayTitle?: string;
+  headerTitles?: string[];
+  workdayTitle?: string | null;
   bio?: string;
   email?: string;
   appointments?: Array<{ type: string; organizationName: string }>;
@@ -48,7 +49,8 @@ function profileHtml(options: {
   const about: Record<string, unknown> = {
     sectionType: 'about',
     bio: options.bio ? `<p>${options.bio}</p>` : '',
-    workdayTitle: options.workdayTitle ?? 'Professor of Medicine',
+    workdayTitle:
+      options.workdayTitle === undefined ? 'Professor of Medicine' : options.workdayTitle,
     appointments: options.appointments ?? [],
     organizations: options.organizations ?? [],
   };
@@ -71,7 +73,16 @@ function profileHtml(options: {
     email: options.email ?? '',
   });
   const pageData = {
-    mainComponents: [{ key: 'ProfileDetails', model: { fullName: options.fullName, sections } }],
+    mainComponents: [
+      {
+        key: 'ProfileDetails',
+        model: {
+          fullName: options.fullName,
+          ...(options.headerTitles ? { header: { titles: options.headerTitles } } : {}),
+          sections,
+        },
+      },
+    ],
   };
   return `<html><body><script id='page-data' type='application/json'>${JSON.stringify(
     pageData,
@@ -135,6 +146,73 @@ describe('parseYsmFacultyDirectory', () => {
 });
 
 describe('extractProfile', () => {
+  describe('the title the page displays (#5578)', () => {
+    it('reads the header title over a recruiting-placeholder Workday title', () => {
+      const html = profileHtml({
+        fullName: 'Jordan Rivers',
+        headerTitles: ['Director, Fixture Epilepsy Program, Pediatric Neurology'],
+        workdayTitle: 'Medical School Recruit - Associate Professor',
+        email: 'jordan.rivers@yale.edu',
+      });
+      const profile = extractProfile(html, RIVERS)!;
+
+      expect(profile.title).toBe('Director, Fixture Epilepsy Program, Pediatric Neurology');
+      expect(
+        facultyToUserObservations(profile).observations.find(
+          (observation) => observation.field === 'title',
+        )?.value,
+      ).toBe('Director, Fixture Epilepsy Program, Pediatric Neurology');
+    });
+
+    it('reads the leading header title when the header lists more than one', () => {
+      const html = profileHtml({
+        fullName: 'Jordan Rivers',
+        headerTitles: ['Associate Professor of Fixture Science', 'Director of Fixture Admissions'],
+        workdayTitle: 'Teleradiologist - Fixture',
+      });
+
+      expect(extractProfile(html, RIVERS)?.title).toBe('Associate Professor of Fixture Science');
+    });
+
+    it('reads the header title when the page carries no Workday title', () => {
+      const html = profileHtml({
+        fullName: 'Jordan Rivers',
+        headerTitles: ['Assistant Clinical Professor'],
+        workdayTitle: null,
+      });
+
+      expect(extractProfile(html, RIVERS)?.title).toBe('Assistant Clinical Professor');
+    });
+
+    it('screens nothing from the header when the page carries no Workday title', () => {
+      const html = profileHtml({
+        fullName: 'Jordan Rivers',
+        headerTitles: ['Professor of Fixture Medicine'],
+        workdayTitle: null,
+      });
+      const profile = extractProfile(html, RIVERS)!;
+
+      expect(profile.title).toBe('Professor of Fixture Medicine');
+      expect(profile.screeningTitle).toBeUndefined();
+      expect(
+        facultyToUserObservations(profile).observations.find(
+          (observation) => observation.field === 'userType',
+        )?.value,
+      ).toBe('faculty');
+    });
+
+    it('falls back to the Workday title only when the header states none', () => {
+      for (const headerTitles of [undefined, [], ['  ']]) {
+        const html = profileHtml({
+          fullName: 'Jordan Rivers',
+          headerTitles,
+          workdayTitle: 'Professor of Fixture Medicine',
+        });
+        expect(extractProfile(html, RIVERS)?.title).toBe('Professor of Fixture Medicine');
+      }
+    });
+  });
+
   it('extracts identity, title, email, departments, research areas, description, orcid, and lab site', () => {
     const html = profileHtml({
       fullName: 'Jordan Rivers',
@@ -551,6 +629,49 @@ describe('YsmFacultyDirectoryScraper.run teaching-appointment mint gate (#4916)'
       emitted.filter((o) => o.entityType === 'researchEntity' && o.field !== 'refusedWebsiteUrl'),
     ).toEqual([]);
     expect(result.notes).toMatch(/1 teaching appointments skipped/);
+  });
+});
+
+describe('YsmFacultyDirectoryScraper.run screens the HR title, not the displayed one (#5578)', () => {
+  it('mints nothing for a staff affiliate whose page displays a clinical rank', async () => {
+    const html = directoryHtml([
+      { id: 'A', items: [{ url: '/profile/affiliate-person/', text: 'Person, Affiliate' }] },
+    ]);
+    const profileUrl = 'https://medicine.yale.edu/profile/affiliate-person/';
+    const page = profileHtml({
+      fullName: 'Affiliate Person',
+      headerTitles: ['Clinical Instructor'],
+      workdayTitle: 'Staff Affiliate - Fixture Hospital',
+      email: 'affiliate.person@yale.edu',
+      bio: 'Affiliate Person studies fixture outcomes in clinical practice.',
+      meshKeywords: ['Fixture Outcomes'],
+    });
+    const fetcher = vi.fn(async (url: string) => {
+      if (url === DIRECTORY_URL) return html;
+      if (url === profileUrl) return page;
+      throw new Error(`unexpected url ${url}`);
+    });
+    const { ctx, emitted } = makeContext();
+    const result = await new YsmFacultyDirectoryScraper(fetcher).run(ctx);
+
+    expect(
+      emitted.filter((o) => o.entityType === 'researchEntity' && o.field !== 'refusedWebsiteUrl'),
+    ).toEqual([]);
+    expect(result.notes).toMatch(/1 subordinate ranks skipped/);
+  });
+
+  it('still emits the displayed title for a profile the screens admit', () => {
+    const profile = extractProfile(
+      profileHtml({
+        fullName: 'Jordan Rivers',
+        headerTitles: ['Associate Clinical Professor'],
+        workdayTitle: 'Medical Services Provider',
+      }),
+      RIVERS,
+    )!;
+
+    expect(profile.title).toBe('Associate Clinical Professor');
+    expect(profile.screeningTitle).toBe('Medical Services Provider');
   });
 });
 

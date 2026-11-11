@@ -5,17 +5,44 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
-## 2026-11-10: Mentoring Undergraduates Is Its Own Signal (#5551)
+## 2026-11-10: Every Current Member Is Found Through Their Row, Past The Display Cap (#5584)
 
-The owner decided on 2026-11-10 that a professor named as the adviser or mentor of a specific undergraduate is its own signal, "Mentors undergrads", separate from "Has hosted undergraduates" and from a lab page's invitation, because y/labs is also used to find a thesis adviser or a mentor for a student's own project.
-Every undergraduate signal exists to tell a student which professors are receptive to mentoring them.
-A list counts when it names the professor as adviser or mentor of a specific undergraduate's work, or lists them as open to advising undergraduates now; a summer program counts only when it names the professor as mentor of a specific undergraduate placed in their Yale lab, whether or not the student is at Yale.
+The owner decided on #5584 that a name search matches every current member of a row, not only the members within the detail page's display cap.
+This replaces the member-cap sentence of the 2026-10-21 entry below.
+The display caps are unchanged and the detail route serves no member past them.
+Showing every member (#5602) was closed as not planned on 2026-11-11, because every row over the cap is a center whose past-cap members are faculty edges the team section does not show at any count, so the detail route's single-member `?member=` append was removed with it.
+`skills/search-data/SKILL.md` owns the mechanics and the measurements.
+
+## 2026-11-10: Hosted, Welcomes And Mentors Each Take A Source Once, And Faculty Research Profiles Get All Three (#5362)
+
+The owner decided on 2026-11-10 that undergraduate evidence must reach faculty research profiles in every department, not only labs: on Development that day hosted evidence reached 289 of 710 served labs (41%) but 53 of 2,984 faculty research profiles (1.8%), and welcomes reached 69 labs (10%) but 9 profiles (0.3%).
+Each source entry feeds exactly one of three signals, decided by what the source says the undergraduate did.
+Hosted (in the past): the undergraduate worked inside the professor's research, as a roster or alumni entry, a research-assistant placement on the professor's project, or a summer or fellowship placement in the professor's own Yale lab.
+Welcomes (now): the professor or department says the professor is taking undergraduates now, such as an open research-opportunities list naming them.
+Mentors: the professor advised the undergraduate's own work, such as a senior essay, thesis or project, directed research, or a prize essay (#5551).
+A summer or fellowship placement in the professor's own Yale lab is hosted, once, and not also mentoring; this replaces the summer-program sentence of the #5551 entry below.
+The Cognitive Science senior essays and Earth and Planetary Sciences theses move from hosted to mentors, which on 2026-11-10 lowers hosted on faculty research profiles from 53 to about 22 until the new hosted sources land, since 31 of those 53 rested only on the two lists.
+A student finds faculty who take undergraduates through one "Works with undergraduates" browse control over the three signals, and each card still shows its own tag.
+None of the three is a row gate, and every one is derived from observations a deterministic lane wrote.
+Fellowship programs that publish no recipient list naming a mentor are not configured: STARS Summer, Dean's Research, Tetelman and Mellon Mays were checked once on 2026-11-10, had none, and credited 0 served rows, so their configs were retired.
+
+## 2026-11-10: Mentoring Undergraduates Is Its Own Signal, Read From One List Field (#5551, #5362)
+
+The owner decided on 2026-11-10 that a professor named as the adviser of a specific undergraduate's own work is its own signal, "Mentors undergrads", separate from "Has hosted undergraduates" and from "Welcomes undergrads", because y/labs is also used to find a thesis adviser or a mentor for a student's own project.
+Every undergraduate signal exists to tell a student which professors are receptive to mentoring them, and each official list feeds exactly one of the three, decided by what the list says the undergraduate did (owner ruling on #5362): advising the student's own essay, thesis, project, directed research or prize essay is mentors; working inside the professor's research, including a research-assistant placement and a summer or fellowship placement in the professor's own Yale lab, is hosted, counted once; a list of who is taking undergraduates now is welcomes.
+This supersedes the first version of this entry, which placed summer programs under mentoring.
+`UNDERGRAD_EVIDENCE_SIGNAL` in `server/src/models/storedVocabularies.ts` records the one signal each list feeds, and changing it requires the hosted and welcomes derivations of #5362 to agree.
+One deterministic lane, `official-undergrad-lists`, reads every list into one stored field, `undergradListEvidence`, through one identity resolver and one owner-review gate, and each signal's derivation reads only the entries of its own lists.
 A program director, committee member, general faculty pool, center-wide trainee list, graduate-student or postdoc mentor, or mentor at another institution does not count.
-The tag attaches only to a row the professor already leads: mentoring alone does not pass the directory test, so it never creates a row.
+An entry attaches only to a row the professor already leads: a list alone does not pass the directory test, so it never creates a row.
 Only the adviser is read from a list; student names, titles and topics are never stored.
 A source is served only after the owner has read a side-by-side sample of its identity matches, because an agent check of a sample is not a precision review.
-Measured on Development on 2026-11-10 over the first seven sources, 1,186 of 1,557 listings matched exactly one researcher who leads a row, and the faculty research profiles that almost never carried an undergraduate signal are most of the rows they reach.
-The common-surname and duplicate-record guard of the name resolver refuses the most prolific CS advisers, 211 listings across 37 names, which a department tie-break or a researcher merge would recover.
+An email binds only when the researcher who holds it carries the name the list prints, because a project card's contact email can belong to someone else in the group; a name binds only when no second live researcher could carry it, and a list that names no department, or an interdisciplinary program such as Cognitive Science, must agree with the departments its advisers come from.
+A list of who is open to undergraduates now refuses a name-only match to a researcher whose title holds only emeritus appointments, because an active professor the database does not hold can share a name with an emeritus one whose row lists the same department.
+The Cognitive Science senior essays and EPS senior theses move from the fellowship-recipient lane, where they counted as hosted, to this lane's mentors lists.
+The fellowship lane no longer reads them, and because that lane emits only for rows it matches and silence retracts nothing, the entries it already stored are dropped on every resolve (#5591).
+Measured on Development on 2026-11-10, 65 rows store a `pastUndergradAdvisees` entry from those two programs and 63 of them store nothing else, so dropping the configs alone would leave 63 rows hosted on a mentors page with no lane able to reach the value again.
+The common-surname and duplicate-record guard of the name resolver refuses the most prolific CS advisers, which a department tie-break or a researcher merge would recover.
 
 ## 2026-11-10: The Program Region Filter Returns Only Programs That Name The Region (#5533)
 
@@ -101,6 +128,8 @@ Hosting in the past and welcoming now stay separate filters, because the owner t
 The toggle is hidden when no result carries the badge, unlike the hosted toggle's disabled zero state, because reaching out is the default for every Yale lab and "Welcomes undergrads (0)" would read as no lab taking undergraduates.
 Measured on Development on 2026-10-29 through the search route, 79 served rows carry an invitation badge, 19 "Actively hiring" and 60 "Welcomes undergrads", and none of them is an emeritus row whose way in is withheld.
 An emeritus row whose way in is withheld drops the badge at serve time, which the index cannot see, so such a row would match the filter without showing its badge; there are none today.
+Since #5620 the index builder reads the same serve-time emeritus decision, so such a row no longer matches the filter; measured on Development on 2026-11-10 before that fix, the filter returned 117 rows, every one serving the badge, and none of them emeritus-led.
+The defect that was live was on mentors rather than welcomes: 3 of the 590 rows under "Works with undergrads" were emeritus-led rows whose only mentoring was an advising-now entry the card withholds, and the same decision now keeps them out of `mentorsUndergrads` and `worksWithUndergrads`.
 
 ## 2026-10-29: Students And Postdocs On A Lab's Roster Are Name-Searchable (#5442)
 
@@ -1631,6 +1660,7 @@ A stored column turns out to buy none of the prevention it was supposed to unloc
 
 `normalizeWebsiteUrlIdentityKey` drops only three things reversibly: the scheme, a leading `www.`, and a trailing slash.
 So the eight spellings that fold into a key can be enumerated and looked up against the stored `websiteUrl` directly.
+(#5638 adds a fourth, a trailing default document such as `index.aspx`, and the inverse enumerates those leaves too.)
 Measured on Development against the 101 entityKeys that actually reach the resolver, the enumeration finds all 32 folds a stored key would find and 0 that only a stored key would find.
 Corpus-wide the inverse recovers 1,756 of 1,763 live `websiteUrl` values; the 7 it cannot are 5 with a query string, 1 with a fragment, and 1 path-normalization case, and none of them is a resolver target.
 

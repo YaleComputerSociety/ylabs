@@ -12,6 +12,18 @@
 import mongoose from 'mongoose';
 
 export const SEARCH_RERANK_CACHE_COLLECTION = 'search_rerank_cache';
+const SEARCH_RERANK_CACHE_COLLECTION_PATTERN = /^search_rerank_cache(?:_[a-z0-9]+)*$/;
+
+export function searchRerankCacheCollectionName(env: NodeJS.ProcessEnv = process.env): string {
+  const configured = String(env.SEARCH_RERANK_CACHE_COLLECTION ?? '').trim();
+  if (!configured) return SEARCH_RERANK_CACHE_COLLECTION;
+  if (!SEARCH_RERANK_CACHE_COLLECTION_PATTERN.test(configured)) {
+    throw new Error(
+      'SEARCH_RERANK_CACHE_COLLECTION must be search_rerank_cache or search_rerank_cache_<suffix>',
+    );
+  }
+  return configured;
+}
 export const SEARCH_RERANK_MIN_SCORE = 0;
 export const SEARCH_RERANK_MAX_SCORE = 3;
 
@@ -24,6 +36,7 @@ const rerankScoreSchema = new mongoose.Schema(
       min: SEARCH_RERANK_MIN_SCORE,
       max: SEARCH_RERANK_MAX_SCORE,
     },
+    textHash: { type: String, required: false },
   },
   { _id: false },
 );
@@ -37,6 +50,7 @@ const rerankFiltersSchema = new mongoose.Schema(
     researchAreas: { type: [String], default: undefined },
     hostsUndergrads: { type: Boolean, required: false },
     welcomesUndergrads: { type: Boolean, required: false },
+    worksWithUndergrads: { type: Boolean, required: false },
   },
   { _id: false },
 );
@@ -59,7 +73,7 @@ searchRerankCacheSchema.index({ queryKey: 1 }, { unique: true });
 export const SearchRerankCache = mongoose.model(
   'SearchRerankCache',
   searchRerankCacheSchema,
-  SEARCH_RERANK_CACHE_COLLECTION,
+  searchRerankCacheCollectionName(),
 );
 
 export { searchRerankCacheSchema };

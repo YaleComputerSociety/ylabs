@@ -34,6 +34,7 @@ import ResearchProfileSkeleton, {
 } from '../components/labs/ResearchProfileSkeleton';
 import { undergraduateMemberEvidence } from '../utils/undergraduateMemberEvidence';
 import { formatPastAdvisees } from '../utils/pastUndergradAdvisees';
+import { formatUndergradListEvidence } from '../utils/undergradListEvidence';
 import ResearchResultsBackLink from '../components/research/ResearchResultsBackLink';
 import { deeperResearchResultsReturnState } from '../utils/researchResultsReturn';
 import LabMembersList from '../components/labs/LabMembersList';
@@ -492,6 +493,7 @@ const DecisionSummary = ({
   }, [description, group._id, group.slug]);
   const grantSummary = formatGrantSummary(group.recentGrants);
   const pastAdvisees = formatPastAdvisees(group, rosterListsUndergraduates);
+  const listEvidence = formatUndergradListEvidence(group.undergradListEvidence);
   const honors = formatLeadHonors(group);
   const piEmail = principalInvestigator?.user?.email?.trim();
   const piName =
@@ -520,7 +522,10 @@ const DecisionSummary = ({
     Boolean(piMailtoHref) || Boolean(profileUrl) || Boolean(websiteUrl) || Boolean(officialSource);
   const invitation = wayInWithheld ? undefined : undergradInvitationFromEntity(group);
   const hasEvidenceList =
-    Boolean(grantSummary) || pastAdvisees.length > 0 || Boolean(honors.recent || honors.other);
+    Boolean(grantSummary) ||
+    pastAdvisees.length > 0 ||
+    listEvidence.length > 0 ||
+    Boolean(honors.recent || honors.other);
   const showsRail = hasEvidenceList || Boolean(principalInvestigator);
   const profileNeedsOwnButton =
     Boolean(profileUrl) && !principalInvestigator && !leadProfilesLinkedInline;
@@ -864,6 +869,19 @@ const DecisionSummary = ({
                 {honors.other && <li>• {honors.other}</li>}
                 {pastAdvisees.map((line) => (
                   <li key={line}>• {line}</li>
+                ))}
+                {listEvidence.map((line) => (
+                  <li key={line.text}>
+                    •{' '}
+                    <a
+                      href={line.href}
+                      target="_blank"
+                      rel={EXTERNAL_LINK_REL}
+                      className="yr-link yr-focus-ring rounded-control underline wrap-anywhere"
+                    >
+                      {line.text}
+                    </a>
+                  </li>
                 ))}
               </ul>
             </div>

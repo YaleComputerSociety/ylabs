@@ -594,7 +594,7 @@ export function labResearchFacultyToObservations(
     { ...base, field: 'profileUrl', value: profile.profileUrl },
   ];
   if (profile.title) observations.push({ ...base, field: 'title', value: profile.title });
-  const userObservations = profileContactWidgetUserObservations(profile, nameHint);
+  const userObservations = profileContactWidgetUserObservations(profile, nameHint, sourceUrl);
   observations.push(...userObservations.observations);
   if (userObservations.entityKey) {
     const contactBase = {
@@ -623,6 +623,7 @@ export function labResearchFacultyToObservations(
 function profileContactWidgetUserObservations(
   profile: ResearchFacultyProfile,
   nameHint: PiNameHint,
+  readPageUrl: string,
 ): { entityKey?: string; observations: ObservationInput[] } {
   if (!profile.email || !isLikelyPersonSpecificYaleEmail(profile.email, profile.name)) {
     return { observations: [] };
@@ -655,7 +656,11 @@ function profileContactWidgetUserObservations(
     },
     { ...base, field: 'dataSources', value: ['ysm-atoz-index'] },
   ];
-  if (profile.title) observations.push({ ...base, field: 'title', value: profile.title });
+  // The title is read off the lab page's widget, not the profile page, so it cites the lab
+  // page; the identity fields keep the profile page the official-page join reads (#5578).
+  if (profile.title) {
+    observations.push({ ...base, sourceUrl: readPageUrl, field: 'title', value: profile.title });
+  }
   return { entityKey, observations };
 }
 

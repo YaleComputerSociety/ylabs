@@ -308,10 +308,13 @@ describe('Beta to Development sync guards', () => {
 
   it('pins the preserved collections so dropping one from the list fails', () => {
     expect([...PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS].sort()).toEqual([
+      'account_deletion_requests',
       'accounts',
       'analytics_events',
       'card_synthesis_derivations',
       'corpus_quality_snapshots',
+      'deleted_account_event_tallies',
+      'directory_removal_requests',
       'engine_benchmark_rows',
       'engine_benchmark_snapshots',
       'engine_benchmarks',

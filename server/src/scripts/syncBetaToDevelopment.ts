@@ -24,6 +24,11 @@ import {
   type DevelopmentArchiveCarryReport,
 } from './archivedTombstoneMirror';
 import { DATABASE_COPY_PAIRS, parseMongoTarget } from './databaseCopyPairs';
+import { DIRECTORY_REMOVAL_COLLECTION } from '../models/directoryRemoval';
+import {
+  assertCopyCarriesEveryDirectoryRemoval,
+  directoryRemovalCopyBlockers,
+} from './directoryRemovalCopyGuard';
 
 export { parseMongoTarget };
 
@@ -61,6 +66,7 @@ const BASE_COPY_COLLECTIONS: SyncCollection[] = [
   { name: 'signals', category: 'research-discovery' },
   { name: 'researchers', category: 'identity-spine' },
   { name: 'role_assignments', category: 'identity-spine' },
+  { name: 'directory_removals', category: 'identity-spine' },
   { name: 'sources', category: 'source-audit' },
   { name: 'scrape_runs', category: 'source-audit' },
   { name: 'observations', category: 'source-audit' },
@@ -108,6 +114,9 @@ export interface BetaToDevelopmentSummary {
 }
 
 const EXCLUDED_BETA_COLLECTIONS = [
+  // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy: a pending
+  // cross-environment deletion request belongs to the environment that recorded it (#4156).
+  'account_deletion_requests',
   // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy (#5088).
   'accounts',
   'admin_access_review_projection_state',
@@ -121,10 +130,16 @@ const EXCLUDED_BETA_COLLECTIONS = [
   // still present on the source blocks apply.
   'canonical_aliases',
   'research_entity_redirects',
+  // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy: a removal
+  // request is a private request made in the environment that holds it (#4160).
+  'directory_removal_requests',
   // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy:
   // copying a quality measurement both misdates the target's history and loses
   // it, because a sync replaces the whole collection.
   'corpus_quality_snapshots',
+  // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy: each row
+  // counts or requests this environment's own account deletions (#4156).
+  'deleted_account_event_tallies',
   'entitycorrectionreports',
   'evidence_claims',
   // Environment-local, per NEVER_COPY_COLLECTIONS in mirrorCollectionPolicy: a
@@ -423,6 +438,10 @@ async function syncIndexes(
   sourceCollectionName: string,
   stagingCollectionName: string,
 ): Promise<void> {
+  const sourceExists = await betaDb
+    .listCollections({ name: sourceCollectionName }, { nameOnly: true })
+    .hasNext();
+  if (!sourceExists) return;
   const indexes = await betaDb.collection(sourceCollectionName).indexes();
   const secondaryIndexes = indexes.filter((index) => index.name !== '_id_');
   if (secondaryIndexes.length === 0) return;
@@ -524,6 +543,9 @@ export async function applySync(
 ): Promise<void> {
   const { blockers } = await syncAccountReferences(sourceDb, collections);
   if (blockers.length > 0) throw new Error(`Sync blocked: ${blockers.join(' ')}`);
+  if (collections.some((collection) => collection.name === DIRECTORY_REMOVAL_COLLECTION)) {
+    await assertCopyCarriesEveryDirectoryRemoval(sourceDb, targetDb, 'Collection sync');
+  }
   await applyStagedCollectionSwap({
     targetDb,
     collections,
@@ -596,7 +618,15 @@ async function main(): Promise<void> {
 
     const accountReferences = await syncAccountReferences(betaDb, collections);
     if (options.mode === 'dry-run') {
-      const report = { ...summary, accountReferences };
+      const report = {
+        ...summary,
+        accountReferences,
+        directoryRemovalBlockers: await directoryRemovalCopyBlockers(
+          betaDb,
+          developmentDb,
+          'Beta to Development sync',
+        ),
+      };
       console.log(JSON.stringify(report, null, 2));
       writeOutput(report, options.output);
       return;

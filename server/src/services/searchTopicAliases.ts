@@ -11,6 +11,7 @@ export interface TopicAliasCluster {
   queryOnly?: boolean;
   freeTextGuarded?: boolean;
   textTriggers?: string[];
+  acronymPhrases?: Record<string, string>;
 }
 
 const dedupeInOrder = (values: string[]): string[] => {
@@ -33,6 +34,7 @@ export const RESEARCH_TOPIC_ALIAS_CLUSTERS: TopicAliasCluster[] = [
     aliases: ['ai', 'ml'],
     shortAliases: ['ai', 'ml'],
     textTriggers: ['ai', 'artificial intelligence', 'ml', 'machine learning'],
+    acronymPhrases: { ai: 'artificial intelligence', ml: 'machine learning' },
   },
   {
     kind: 'topical',
@@ -40,6 +42,7 @@ export const RESEARCH_TOPIC_ALIAS_CLUSTERS: TopicAliasCluster[] = [
     aliases: ['nlp'],
     shortAliases: ['nlp'],
     textTriggers: ['nlp', 'natural language processing'],
+    acronymPhrases: { nlp: 'natural language processing' },
   },
   {
     kind: 'topical',
@@ -54,6 +57,7 @@ export const RESEARCH_TOPIC_ALIAS_CLUSTERS: TopicAliasCluster[] = [
     shortAliases: ['cv'],
     freeTextGuarded: true,
     textTriggers: ['cv', 'computer vision', 'computational vision'],
+    acronymPhrases: { cv: 'computer vision' },
   },
   {
     kind: 'topical',
@@ -164,6 +168,7 @@ export const RESEARCH_TOPIC_ALIAS_CLUSTERS: TopicAliasCluster[] = [
     aliases: ['ir', 'international affairs'],
     shortAliases: ['ir'],
     queryOnly: true,
+    acronymPhrases: { ir: 'international relations' },
   },
   { kind: 'department', canonical: ['computer science'], aliases: ['cs', 'compsci', 'comp sci'] },
   { kind: 'department', canonical: ['economics'], aliases: ['econ'] },
@@ -338,6 +343,23 @@ export const QUERY_TOPIC_ALIASES: Record<string, string[]> = {
   ...ABBREVIATION_TOPIC_QUERY_ALIASES,
   ...DEPARTMENT_SHORTHAND_ALIASES,
 };
+
+// An acronym typed alone is searched as the phrase it stands for (#5169); `rna`,
+// `vlsi` and `pcos` are absent because the corpus carries them as themselves.
+// These three have no cluster on purpose: a cluster alias would add an index
+// synonym or typo guard, which needs a settings push.
+const ACRONYM_PHRASES_WITHOUT_A_CLUSTER: Record<string, string> = {
+  llm: 'large language models',
+  llms: 'large language models',
+  un: 'united nations',
+};
+
+export const QUERY_ACRONYM_PHRASES: Record<string, string> = Object.fromEntries(
+  [
+    ...topicalClusters.flatMap((cluster) => Object.entries(cluster.acronymPhrases ?? {})),
+    ...Object.entries(ACRONYM_PHRASES_WITHOUT_A_CLUSTER),
+  ].map(([acronym, phrase]) => [normalizeSynonymTerm(acronym), normalizeSynonymTerm(phrase)]),
+);
 
 export interface WorkingStylePhraseCluster {
   phrases: string[];

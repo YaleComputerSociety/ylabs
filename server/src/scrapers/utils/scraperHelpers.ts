@@ -113,7 +113,7 @@ function localPartTokens(localPart: string): string[] {
   return localPart.split(/[._-]+/).filter(Boolean);
 }
 
-function localPartNamesARole(localPart: string): boolean {
+export function localPartNamesARole(localPart: string): boolean {
   if (ROLE_MAILBOX_TOKENS.has(localPart)) return true;
   return localPartTokens(localPart).some((token) => ROLE_MAILBOX_TOKENS.has(token));
 }

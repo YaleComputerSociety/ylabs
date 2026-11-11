@@ -11,7 +11,18 @@ import {
 } from '../utils/researchStatementPassage';
 import { cachedCardFor } from './cardSynthesisDerivation';
 import { withoutModelCalls } from '../utils/modelClient';
+import {
+  planResearcherRefusedStoredValueClear,
+  researcherHasLiveRefusals,
+  researcherRefusesValue,
+  withoutResearcherRefusedObservations,
+} from '../utils/researcherFieldValueRefusals';
 import { isGrantLaneObservationOutsideEnrichment } from './grantLaneSourceNames';
+import {
+  comparablePageStatedName,
+  PAGE_STATED_NAME_SOURCES,
+  withoutSiteSharedPageNames,
+} from './siteSharedPageName';
 import {
   inferredPiKeyNamesRoleOrUnitMailbox,
   userKeyNamesRoleOrUnitMailbox,
@@ -20,9 +31,19 @@ import {
   isProfileTemplateChrome,
   withoutProfileTemplateWidgets,
 } from '../utils/profileTemplateChrome';
+import {
+  researcherCarriesIdentityEvidence,
+  type ResearcherIdentityEvidenceSource,
+} from '../utils/researcherIdentity';
 import mongoose from 'mongoose';
 import { Observation, ObservedEntityType } from '../models/observation';
+import {
+  isOverSharedPersonWebsite,
+  overSharedPersonWebsiteKeysForMaterialization,
+  withoutOverSharedPersonWebsiteObservations,
+} from './overSharedPersonWebsite';
 import { ResearchEntity } from '../models/researchEntity';
+import { websiteUrlIdentityKeyRedirectEquivalents } from '../services/websiteUrlRedirectLandings';
 import {
   DERIVED_RESEARCH_AREA_SOURCE_NAME,
   RESEARCH_PAGE_TOPICS_DERIVED_SOURCE_NAME,
@@ -119,6 +140,7 @@ import {
   isRefusedProfileLinkedHomeName,
   nameCarriesPersonIdentity,
   namesAResearchGroupRatherThanAPerson,
+  entityKeyPersonTokens,
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
   type LabRowRoster,
@@ -176,7 +198,10 @@ import {
   type CanonicalResolution,
 } from './resolveCanonical';
 import {
+  entitiesShareLeadPersonName,
+  normalizeOrgDedupeName,
   normalizeWebsiteUrlIdentityKey,
+  ORG_NAME_DEDUPE_ENTITY_TYPES,
   websiteUrlIdentityKeyVariants,
 } from '../scripts/researchEntityPiDedupeCore';
 import {
@@ -188,6 +213,17 @@ import {
 } from './centerRelationshipTarget';
 import { isSweepStageEnabledByDefault } from '../scripts/sweepStageFlags';
 import { recomputeBrowseRankForEntities } from '../services/researchEntityBrowseRankService';
+import {
+  currentDirectoryRemovalMintGuard,
+  loadDirectoryRemovalMintGuard,
+  REMOVED_BY_REQUEST,
+  researcherIsRemovedByRequest,
+  withDirectoryRemovalMintGuard,
+} from '../services/directoryRemovalMintGuard';
+import {
+  liveResearchEntityNamedByKeyObservations,
+  researchEntityMintSlugNamesARemovedResearcher,
+} from './renamedResearchEntityAdoption';
 import {
   materializeAccessForResearchGroup,
   type AccessObservation,
@@ -271,7 +307,11 @@ import {
   netidOfNetidUserKey,
   screenDirectoryContradictedProfileEvidenceForKey,
   withoutDirectoryContradictedProfileEvidenceForKey,
+  profilePageContradictsNetid,
+  profilePageOwnerNetids,
+  type ProfilePageOwnerNetids,
 } from './directoryContradictedProfileNetid';
+import { derivedResearcherEmail } from './verifiedResearcherEmail';
 import {
   storedResearchAreasCameFromAPersonProfileOnAnOrganizationRow,
   withoutPersonProfileTopicsOnOrganizationRow,
@@ -330,6 +370,7 @@ import {
 } from '../utils/descriptionHygiene';
 import { cleanPublicProfileBio } from '../services/profileService';
 import { buildResearchEntityPublicDescriptionRepresentation } from '../services/researchEntityPublicDescription';
+import { withoutAdviseeProgramsMovedToMentors } from '../services/hostedUndergraduates';
 import { servedResearchEntityCopy } from '../services/servedResearchEntityCard';
 import { isKnownDeadSourceUrl } from '../services/sourceLinkHealth';
 import {
@@ -373,6 +414,7 @@ import {
   normalizeOfficialProfileDestination,
   officialProfileDestinationStoredPattern,
 } from '../services/leadProfileIdentity';
+import { officialProfileLinkHeldByConflictingIdentity } from '../services/officialProfileLinkIdentity';
 import {
   planStoredUndergradEvidenceQuoteClear,
   sourcesWithdrawingUndergradEvidenceQuote,
@@ -407,6 +449,7 @@ import {
   archiveSupersededCanonicalRoleAssignments,
   identifiedResearcherHoldsDisplayName,
   materializeCanonicalMembership,
+  nameOnlyResolutionName,
   writeCanonicalMembership,
   type CanonicalMembershipOutcome,
   type CanonicalMemberFacts,
@@ -1048,10 +1091,13 @@ interface MaterializeResult {
   resolved: Record<string, ResolvedField>;
   postMaterializationMetrics?: ReportPostMaterializationMetrics;
   indexSyncFailed?: true;
+  /** Rows other than this one whose write this materialize made but whose index sync failed. */
+  otherIndexSyncFailedEntityIds?: string[];
   skipped?: string;
   plannedSet?: Record<string, unknown>;
   plannedUnset?: Record<string, ''>;
   plannedWriteSkip?: 'no-scoped-fields' | 'unchanged';
+  plannedPaths?: string[];
   identityJoin?: UserIdentityJoin;
   unbackedResearchAreas?: UnbackedResearchAreaOutcome;
   /** Fellowship fields this pass cleared because their only source states they have none. */
@@ -2030,6 +2076,34 @@ function schemaEnumFallback(existingValue: unknown, allowed: readonly string[]):
     : undefined;
 }
 
+function statesOnlyAdviseesMovedToMentors(observation: ResolverObservation): boolean {
+  return (
+    observation.field === 'pastUndergradAdvisees' &&
+    Array.isArray(observation.value) &&
+    observation.value.length > 0 &&
+    withoutAdviseeProgramsMovedToMentors(observation.value).length === 0
+  );
+}
+
+function withoutObservedAdviseesMovedToMentors(
+  observations: ResolverObservation[],
+): ResolverObservation[] {
+  const anotherAdviseeObservationRemains = observations.some(
+    (observation) =>
+      observation.field === 'pastUndergradAdvisees' &&
+      !statesOnlyAdviseesMovedToMentors(observation),
+  );
+  return observations.flatMap((observation) => {
+    if (observation.field !== 'pastUndergradAdvisees' || !Array.isArray(observation.value)) {
+      return [observation];
+    }
+    if (statesOnlyAdviseesMovedToMentors(observation) && anotherAdviseeObservationRemains) {
+      return [];
+    }
+    return [{ ...observation, value: withoutAdviseeProgramsMovedToMentors(observation.value) }];
+  });
+}
+
 export function materializedFieldValue(
   entityType: ObservedEntityType,
   field: string,
@@ -2039,6 +2113,9 @@ export function materializedFieldValue(
 ): unknown {
   if (isResearchEntityObservationType(entityType) && field === 'sourceUrls') {
     return sanitizeResearchEntitySourceUrlsForMaterialization(value, entityIdentity);
+  }
+  if (isResearchEntityObservationType(entityType) && field === 'pastUndergradAdvisees') {
+    return withoutAdviseeProgramsMovedToMentors(value);
   }
   if (isResearchEntityObservationType(entityType) && field === 'kind') {
     if (typeof value === 'string' && researchGroupKinds.includes(value as any)) return value;
@@ -2812,7 +2889,7 @@ async function liveResearchersHoldingRosterProfileUrl(
     archived: { $ne: true },
     $or: [{ 'profileLinks.url': profileUrlPattern }, { 'profile.websiteUrl': profileUrlPattern }],
   })
-    .select('_id displayName')
+    .select(ROSTER_CANDIDATE_IDENTITY_PROJECTION)
     .limit(limit)
     .lean();
 }
@@ -2826,6 +2903,24 @@ async function findUniqueResearcherForRosterMember(
 
 const SHARED_PROFILE_URL_HOLDER_LIMIT = 10;
 
+const ROSTER_CANDIDATE_IDENTITY_PROJECTION =
+  '_id displayName identifiers.netid identifiers.email identifiers.orcid profileLinks.kind';
+
+/**
+ * Of several records that all agree with a listed name and that the listing's evidence
+ * reached, the one carrying identity is the member when it is the only such record; a
+ * name-only twin never takes the seat from it (#5592). Otherwise the set is unchanged.
+ */
+function preferIdentityBackedAgreeing<T extends ResearcherIdentityEvidenceSource>(
+  agreeing: readonly T[],
+): readonly T[] {
+  if (agreeing.length < 2) return agreeing;
+  const identityBacked = agreeing.filter((candidate) =>
+    researcherCarriesIdentityEvidence(candidate),
+  );
+  return identityBacked.length === 1 ? identityBacked : agreeing;
+}
+
 /**
  * A profile URL several researchers hold reaches every one of them, so the listed name
  * vetoes the holders it disagrees with, as it vetoes every other candidate the evidence
@@ -2834,8 +2929,8 @@ const SHARED_PROFILE_URL_HOLDER_LIMIT = 10;
  */
 function holderTheListedNameLeaves(holders: readonly any[], listedName: string): any | null {
   if (holders.length > SHARED_PROFILE_URL_HOLDER_LIMIT) return null;
-  const agreeing = holders.filter((holder) =>
-    observedPersonNameAgreesWith(holder.displayName, listedName),
+  const agreeing = preferIdentityBackedAgreeing(
+    holders.filter((holder) => observedPersonNameAgreesWith(holder.displayName, listedName)),
   );
   return agreeing.length === 1 ? agreeing[0] : null;
 }
@@ -2953,6 +3048,7 @@ async function liveLeadsOfEntitiesAtWebsite(
 type ProfileUrlHolderForListing = {
   holder: any | null;
   holderEdgeToEnd: any | null;
+  vetoedHolders?: any[];
   urlNamesAnotherSiteLead?: boolean;
 };
 
@@ -2992,7 +3088,23 @@ async function profileUrlHolderForListing(
     SHARED_PROFILE_URL_HOLDER_LIMIT + 1,
   );
   if (holders.length > 1) {
-    return { holder: holderTheListedNameLeaves(holders, listedName), holderEdgeToEnd: null };
+    const holder = holderTheListedNameLeaves(holders, listedName);
+    if (!holder) return { holder: null, holderEdgeToEnd: null };
+    const otherListings = await listingsSharingProfileUrl(
+      textValue(resolved.profileUrl?.value),
+      scope,
+    );
+    const listedElsewhere = (candidate: any) =>
+      otherListings.some((entry) =>
+        entry.names.some((name) => observedPersonNameAgreesWith(candidate.displayName, name)),
+      );
+    return {
+      holder,
+      holderEdgeToEnd: null,
+      vetoedHolders: holders.filter(
+        (candidate) => String(candidate._id) !== String(holder._id) && !listedElsewhere(candidate),
+      ),
+    };
   }
   const holder = holders[0] ?? null;
   if (!holder || observedPersonNameAgreesWith(holder.displayName, listedName)) {
@@ -3026,18 +3138,19 @@ export type RosterMemberIdentity = (
   | { researcher: null; unresolved: RosterMemberUnresolvedReason }
 ) & {
   misattributedProfileUrlHolderId?: mongoose.Types.ObjectId;
+  vetoedProfileUrlHolderIds?: mongoose.Types.ObjectId[];
   profileUrlNamesAnotherSiteLead?: boolean;
 };
 
 async function liveResearcherById(researcherId: unknown): Promise<any | null> {
   return Researcher.findOne({ _id: researcherId, archived: { $ne: true } })
-    .select('_id displayName')
+    .select(ROSTER_CANDIDATE_IDENTITY_PROJECTION)
     .lean();
 }
 
 async function liveResearchersHoldingNetid(netid: string): Promise<any[]> {
   return Researcher.find({ 'identifiers.netid': netid, archived: { $ne: true } })
-    .select('_id displayName')
+    .select(ROSTER_CANDIDATE_IDENTITY_PROJECTION)
     .limit(ACCOUNT_EMAIL_JOIN_CANDIDATE_LIMIT)
     .lean();
 }
@@ -3078,11 +3191,15 @@ export async function resolveRosterMemberIdentity(
 ): Promise<RosterMemberIdentity> {
   const byProfileUrl = await profileUrlHolderForListing(resolved, listedName, scope);
   const misattributedProfileUrlHolderId = toMaterializerObjectId(byProfileUrl.holderEdgeToEnd?._id);
+  const vetoedProfileUrlHolderIds = (byProfileUrl.vetoedHolders ?? [])
+    .map((vetoed) => toMaterializerObjectId(vetoed?._id))
+    .filter((id): id is mongoose.Types.ObjectId => Boolean(id));
   if (byProfileUrl.holder) {
     return {
       researcher: byProfileUrl.holder,
       basis: 'profile-url',
       ...(misattributedProfileUrlHolderId ? { misattributedProfileUrlHolderId } : {}),
+      ...(vetoedProfileUrlHolderIds.length > 0 ? { vetoedProfileUrlHolderIds } : {}),
     };
   }
   const identity = await resolveRosterMemberIdentityFromEvidence(resolved, listedName);
@@ -3106,8 +3223,8 @@ async function resolveRosterMemberIdentityFromEvidence(
   if (!evidence || !listedName) return { researcher: null, unresolved: 'no-identity-evidence' };
   const named = await researchersNamedByIdentityEvidence(evidence);
   if (named.length === 0) return { researcher: null, unresolved: 'evidence-names-nobody' };
-  const agreeing = named.filter((researcher) =>
-    observedPersonNameAgreesWith(researcher.displayName, listedName),
+  const agreeing = preferIdentityBackedAgreeing(
+    named.filter((researcher) => observedPersonNameAgreesWith(researcher.displayName, listedName)),
   );
   if (agreeing.length === 0) {
     return { researcher: null, unresolved: 'evidence-names-someone-else' };
@@ -3451,14 +3568,15 @@ async function materializeRosterMember(
     'researchEntity',
     researchGroupKey,
   );
-  const entity: any = routedRosterHome?.hit
-    ? routedRosterHome.value
-    : await ResearchEntity.findOne({
-        slug: researchGroupKey,
-        archived: { $ne: true },
-      })
-        .select('_id')
-        .lean();
+  const entity: any =
+    (routedRosterHome?.hit
+      ? routedRosterHome.value
+      : await ResearchEntity.findOne({
+          slug: researchGroupKey,
+          archived: { $ne: true },
+        })
+          .select('_id')
+          .lean()) ?? (await liveResearchEntityNamedByKeyObservations(researchGroupKey));
   if (!entity?._id) {
     return {
       entityType: 'researchGroupMember',
@@ -3517,6 +3635,14 @@ async function materializeRosterMember(
       plan,
       identity.misattributedProfileUrlHolderId,
     );
+  }
+  // An edge the lane gave a holder the listed name vetoed carries this listing's source and
+  // membership key on this entity, and nothing else asserts it, so the read ends it rather
+  // than leaving another person served under this listing (#5582).
+  if (!options.dryRun) {
+    for (const vetoedHolderId of identity.vetoedProfileUrlHolderIds ?? []) {
+      await endMisattributedProfileUrlHolderEdges(researchEntityId, plan, vetoedHolderId);
+    }
   }
   if (await listingWouldMintANamesake(plan, identity)) {
     return {
@@ -3621,6 +3747,7 @@ async function materializeRosterMember(
     conflicts: plan.conflicts,
     created: outcome === 'created' || (!existing && outcome === 'updated'),
     resolved,
+    ...(outcome === REMOVED_BY_REQUEST ? { skipped: REMOVED_BY_REQUEST } : {}),
   };
 }
 
@@ -3644,12 +3771,59 @@ function withResolvedFieldProvenance(
   return output;
 }
 
+/**
+ * The backfill once filed a person page under whichever researcher held a matching name, and
+ * the same pass named that researcher as the row's lead, citing the page. When the page's own
+ * email belongs, by the directory, to a different netid than the named researcher's, the page
+ * is not evidence that this researcher leads the row (#5693). Screened on every read, like the
+ * page's identity under the wrong key, so the immutable observation stops creating the edge.
+ */
+export async function contradictedPageLeadObservations(
+  observations: MaterializerObservationLike[],
+  owners?: ProfilePageOwnerNetids,
+): Promise<Set<MaterializerObservationLike>> {
+  const candidates = observations.filter(
+    (obs) =>
+      obs.field === 'inferredPiUserId' &&
+      obs.sourceName === OFFICIAL_PROFILE_PI_BACKFILL_SOURCE &&
+      textValue(obs.sourceUrl) &&
+      normalizeMaterializerObjectId(textValue(obs.value)),
+  );
+  const screened = new Set<MaterializerObservationLike>();
+  if (candidates.length === 0) return screened;
+  const pageOwners =
+    owners ??
+    (await profilePageOwnerNetids(
+      candidates.map((obs) => obs.sourceUrl),
+      materializationReadScopeFilter(),
+    ));
+  if (pageOwners.byPage.size === 0) return screened;
+  const researchers = (await Researcher.find({
+    _id: { $in: candidates.map((obs) => normalizeMaterializerObjectId(textValue(obs.value))) },
+  })
+    .select('_id identifiers.netid')
+    .lean()) as Array<{ _id: unknown; identifiers?: { netid?: string } }>;
+  const netidById = new Map(
+    researchers.map((researcher) => [String(researcher._id), researcher.identifiers?.netid]),
+  );
+  for (const obs of candidates) {
+    const netid = netidById.get(textValue(obs.value));
+    if (profilePageContradictsNetid(pageOwners, obs.sourceUrl, netid)) screened.add(obs);
+  }
+  return screened;
+}
+
 export async function planInferredPiMembership(
   researchEntityId: string,
   observations: MaterializerObservationLike[],
+  screenedLeadObservations?: ReadonlySet<MaterializerObservationLike>,
 ): Promise<InferredPiLeadFacts[]> {
   const leads: InferredPiLeadFacts[] = [];
-  const piObservations = observations.filter((obs) => obs.field === 'inferredPiUserId');
+  const screened =
+    screenedLeadObservations ?? (await contradictedPageLeadObservations(observations));
+  const piObservations = observations.filter(
+    (obs) => obs.field === 'inferredPiUserId' && !screened.has(obs),
+  );
   for (const observation of piObservations) {
     const facts = buildInferredPiLeadFacts(researchEntityId, observation);
     if (facts) leads.push(facts);
@@ -3679,13 +3853,108 @@ export async function planInferredPiMembership(
   return leads;
 }
 
+const inferredLeadKeyPerson = (observation: MaterializerObservationLike) => {
+  const lookupValue = userLookupValueForInferredPiUserKey(observation.value);
+  return {
+    identifiers: lookupValue.includes('@') ? { email: lookupValue } : { netid: lookupValue },
+    profileLinks: observation.sourceUrl ? [{ url: observation.sourceUrl }] : [],
+  };
+};
+
+/**
+ * A faculty research profile is one person's own row, so it is not minted for a person
+ * removed from the directory (#4160): neither the identity its inferred lead key states nor
+ * the researcher that key resolves to may be on the list. Read only while the list holds
+ * entries, so an empty list costs no lookup.
+ */
+async function facultyResearchProfileMintIsRemovedByRequest(
+  insert: Record<string, unknown>,
+  observations: MaterializerObservationLike[],
+): Promise<boolean> {
+  if (insert.entityType !== 'FACULTY_RESEARCH_AREA') return false;
+  const guard = await currentDirectoryRemovalMintGuard();
+  if (!guard.active) return false;
+  const statesARemovedLead = observations.some(
+    (observation) =>
+      observation.field === 'inferredPiUserKey' &&
+      guard.refusesPerson(inferredLeadKeyPerson(observation)),
+  );
+  let removed = statesARemovedLead;
+  if (!removed) {
+    const leads = await planInferredPiMembership(
+      new mongoose.Types.ObjectId().toString(),
+      observations,
+    );
+    for (const lead of leads) {
+      if (await researcherIsRemovedByRequest(guard, lead.personId)) {
+        removed = true;
+        break;
+      }
+    }
+  }
+  if (removed) guard.recordRefusal();
+  return removed;
+}
+
+export interface ContradictedPageLeadEdge {
+  personId: string;
+  sourceUrl: string;
+}
+
+export function contradictedPageLeadEdges(
+  screened: ReadonlySet<MaterializerObservationLike>,
+): ContradictedPageLeadEdge[] {
+  const edges = new Map<string, ContradictedPageLeadEdge>();
+  for (const obs of screened) {
+    const personId = textValue(obs.value);
+    const sourceUrl = textValue(obs.sourceUrl);
+    edges.set(`${personId} ${sourceUrl}`, { personId, sourceUrl });
+  }
+  return [...edges.values()];
+}
+
+/**
+ * The lane's own lead edge from a screened page ends on the read, which is derivation: the edge
+ * cites the page as its source, and the page no longer says this person leads the row. Only the
+ * backfill's edge citing that page is ended, so a lead edge any other evidence wrote stays.
+ */
+async function endContradictedPageLeadEdges(
+  researchEntityId: string,
+  edges: readonly ContradictedPageLeadEdge[],
+): Promise<number> {
+  const entityObjectId = toMaterializerObjectId(researchEntityId);
+  if (!entityObjectId || edges.length === 0) return 0;
+  let ended = 0;
+  for (const edge of edges) {
+    const personId = toMaterializerObjectId(edge.personId);
+    if (!personId) continue;
+    const result = await RoleAssignment.updateMany(
+      {
+        personId,
+        'target.kind': 'RESEARCH_ENTITY',
+        'target.id': entityObjectId,
+        role: 'PI',
+        'rosterProvenance.sourceName': OFFICIAL_PROFILE_PI_BACKFILL_SOURCE,
+        'rosterProvenance.sourceUrl': edge.sourceUrl,
+        state: { $ne: 'HISTORICAL' },
+        archived: { $ne: true },
+      },
+      { $set: { state: 'HISTORICAL', endedAt: new Date() } },
+    );
+    ended += result.modifiedCount ?? 0;
+  }
+  return ended;
+}
+
 export async function materializeInferredPiMembership(
   researchEntityId: string,
   observations: MaterializerObservationLike[],
 ): Promise<void> {
-  for (const facts of await planInferredPiMembership(researchEntityId, observations)) {
+  const screened = await contradictedPageLeadObservations(observations);
+  for (const facts of await planInferredPiMembership(researchEntityId, observations, screened)) {
     await materializeCanonicalPiMembership(researchEntityId, facts);
   }
+  await endContradictedPageLeadEdges(researchEntityId, contradictedPageLeadEdges(screened));
 }
 
 type RosterEmailAliasResolution =
@@ -4457,7 +4726,7 @@ export interface InferredDirectorMaterializationResult {
   removedDuplicates: number;
   userId?: string;
   role?: string;
-  skipped?: 'no-observation' | 'unresolved-user' | 'name-mismatch';
+  skipped?: 'no-observation' | 'unresolved-user' | 'name-mismatch' | typeof REMOVED_BY_REQUEST;
 }
 
 /**
@@ -4577,7 +4846,7 @@ export async function materializeInferredDirectorMembership(
     hasCanonicalSourceReference: true,
     ...(directorPersonId ? { resolvedPersonId: directorPersonId } : {}),
   };
-  await materializeCanonicalMembership(
+  const directorOutcome = await materializeCanonicalMembership(
     researchEntityId,
     {
       legacyRole: role,
@@ -4594,6 +4863,7 @@ export async function materializeInferredDirectorMembership(
     },
     directorIdentity,
   );
+  if (directorOutcome === REMOVED_BY_REQUEST) return { ...empty, skipped: REMOVED_BY_REQUEST };
 
   const supersededPersonId =
     directorPersonId ?? (await resolveCanonicalResearcherId(directorIdentity));
@@ -4902,7 +5172,7 @@ async function deptRosterShellFoldTarget(personName: string): Promise<any | null
  */
 export async function foldDeptRosterShellIntoCanonicalResearchEntity(
   shellEntityId: string,
-): Promise<{ folded: boolean; canonicalEntityId?: string }> {
+): Promise<{ folded: boolean; canonicalEntityId?: string; canonicalIndexSyncFailed?: true }> {
   const shell = await ResearchEntity.findById(shellEntityId)
     .select('_id slug name departments schools sourceUrls archived')
     .lean<{
@@ -4950,7 +5220,15 @@ export async function foldDeptRosterShellIntoCanonicalResearchEntity(
   });
   await deleteFromIndex('researchEntity', String(shell._id));
 
-  return { folded: true, canonicalEntityId: canonicalId };
+  const foldedCanonical = await ResearchEntity.findById(canonicalId).lean();
+  const canonicalIndexSynced =
+    !!foldedCanonical && (await syncEntity('researchEntity', foldedCanonical));
+
+  return {
+    folded: true,
+    canonicalEntityId: canonicalId,
+    ...(canonicalIndexSynced ? {} : { canonicalIndexSyncFailed: true as const }),
+  };
 }
 
 export async function syncProfileBackedFacultyResearchAreaMemberFromIdentity(
@@ -4970,7 +5248,11 @@ export async function syncProfileBackedFacultyResearchAreaMemberFromIdentity(
   created: boolean;
   researchEntityId?: string;
   userId?: string;
-  skipped?: 'not-faculty-research-area' | 'lead-edge-held' | 'user-not-resolved';
+  skipped?:
+    | 'not-faculty-research-area'
+    | 'lead-edge-held'
+    | 'user-not-resolved'
+    | typeof REMOVED_BY_REQUEST;
 }> {
   const observedEntityType = textValue(identity.entityType);
   const observedKey = textValue(identity.entityKey);
@@ -5034,6 +5316,9 @@ export async function syncProfileBackedFacultyResearchAreaMemberFromIdentity(
     },
   );
 
+  if (outcome === REMOVED_BY_REQUEST) {
+    return { synced: false, created: false, researchEntityId, skipped: REMOVED_BY_REQUEST };
+  }
   return {
     synced: !outcome.startsWith('refused-'),
     created: outcome === 'created',
@@ -5071,12 +5356,16 @@ export async function resolveRelationshipTarget(
       entityKey: targetEntityKey,
       entityType: 'FACULTY_RESEARCH_AREA',
     })) as ResolvedRelationshipTargetRow | null;
-  const target = (await researchEntityModel
+  const target = ((await researchEntityModel
     .findOne(
       { slug: targetEntityKey, archived: { $ne: true } },
       { _id: 1, name: 1, slug: 1, entityType: 1 },
     )
-    .lean()) as ResolvedRelationshipTargetRow | null;
+    .lean()) ??
+    (await liveResearchEntityNamedByKeyObservations(
+      targetEntityKey,
+      '_id name slug entityType',
+    ))) as ResolvedRelationshipTargetRow | null;
   const namedTarget = canonicalFacultyResearchAreaTarget || target;
   return {
     canonicalFacultyResearchAreaTarget,
@@ -5219,9 +5508,11 @@ async function materializeResearchEntityRelationship(
   const researchEntityModel = deps.researchEntityModel || ResearchEntity;
   const relationshipModel = deps.relationshipModel || ResearchEntityRelationship;
 
-  const source = (await researchEntityModel
+  const source = ((await researchEntityModel
     .findOne({ slug: sourceEntityKey, archived: { $ne: true } }, { _id: 1 })
-    .lean()) as { _id?: unknown } | null;
+    .lean()) ?? (await liveResearchEntityNamedByKeyObservations(sourceEntityKey))) as {
+    _id?: unknown;
+  } | null;
   if (!source?._id) return skip('source-not-resolved');
 
   const { canonicalFacultyResearchAreaTarget, target, resolvedTarget } =
@@ -6769,7 +7060,7 @@ async function liveResearchersClaimingOfficialProfileUrls(
       },
     },
   })
-    .select('_id displayName profileLinks')
+    .select('_id displayName profileLinks identifiers.netid identifiers.email identifiers.orcid')
     .limit(OFFICIAL_PROFILE_URL_CLAIMANTS_LIMIT)
     .lean();
   for (const candidate of candidates) {
@@ -7101,15 +7392,7 @@ export interface UserIdentityJoinResult {
  * calls it too, so a PI key that names a `user` key reaches the same researcher the user
  * materializer enriches rather than a narrower netid-then-name lookup (#4697).
  */
-export async function joinUserIdentityToExistingResearcher(
-  identifier: { entityId?: string; entityKey?: string },
-  obs: any[],
-  now: Date = new Date(),
-): Promise<UserIdentityJoinResult> {
-  const keyNamesAnOfficeMailbox = userKeyNamesRoleOrUnitMailbox(identifier.entityKey, obs);
-  const materializationObs = keyNamesAnOfficeMailbox
-    ? []
-    : obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o));
+function deriveUserIdentityFields(materializationObs: any[], now: Date) {
   const resolverObs: ResolverObservation[] = materializationObs.map((o: any) => ({
     field: o.field,
     value: o.value,
@@ -7123,11 +7406,6 @@ export async function joinUserIdentityToExistingResearcher(
     const value = textValue(resolvedValue(field));
     return value && servedUserNameField(field, value);
   };
-
-  const netid = keyNamesAnOfficeMailbox
-    ? undefined
-    : (normalizedAccountNetid(uniqueKeyValueForIdentifier('user', identifier.entityKey, obs)) ??
-      normalizedAccountNetid(resolvedValue('netid')));
   // Normalized before the name resolver reads it, not just before it is stored: an
   // invisible format character inside a surname makes the person match nobody (#2874).
   const displayName = stripInvisibleFormatCharacters(
@@ -7145,7 +7423,38 @@ export async function joinUserIdentityToExistingResearcher(
     resolvedValue('profileUrls') && typeof resolvedValue('profileUrls') === 'object'
       ? (resolvedValue('profileUrls') as Record<string, unknown>)
       : undefined;
+  return {
+    resolved,
+    displayName,
+    title,
+    primaryDepartment,
+    imageUrl,
+    websiteUrl,
+    orcid,
+    profileUrls,
+  };
+}
 
+export async function joinUserIdentityToExistingResearcher(
+  identifier: { entityId?: string; entityKey?: string },
+  obs: any[],
+  now: Date = new Date(),
+): Promise<UserIdentityJoinResult> {
+  const keyNamesAnOfficeMailbox = userKeyNamesRoleOrUnitMailbox(identifier.entityKey, obs);
+  const materializationObs = keyNamesAnOfficeMailbox
+    ? []
+    : withoutOverSharedPersonWebsiteObservations(
+        obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o)),
+        await overSharedPersonWebsiteKeysForMaterialization(),
+      );
+  const derived = deriveUserIdentityFields(materializationObs, now);
+  const { resolved, displayName } = derived;
+  const resolvedValue = (field: string): unknown => resolved[field]?.value;
+
+  const netid = keyNamesAnOfficeMailbox
+    ? undefined
+    : (normalizedAccountNetid(uniqueKeyValueForIdentifier('user', identifier.entityKey, obs)) ??
+      normalizedAccountNetid(resolvedValue('netid')));
   const observedEmail = normalizedAccountEmail(resolvedValue('email'));
 
   let account: any = netid ? await Account.findOne({ netid }).lean() : null;
@@ -7194,7 +7503,11 @@ export async function joinUserIdentityToExistingResearcher(
    */
   let identityJoinedOnEmailAlone = false;
   if (!researcher && !account && observedEmail) {
-    const emailResearcher = await researcherTheObservedEmailNames(observedEmail, displayName);
+    const candidate = await researcherTheObservedEmailNames(observedEmail, displayName);
+    const emailResearcher =
+      candidate && !researcherRefusesValue(candidate.fieldValueRefusals, 'email', observedEmail)
+        ? candidate
+        : null;
     if (emailResearcher) {
       researcher = emailResearcher;
       const emailResearcherNetid = normalizedAccountNetid(emailResearcher.identifiers?.netid);
@@ -7236,16 +7549,18 @@ export async function joinUserIdentityToExistingResearcher(
       if (researcher) identityJoin = 'official-profile-page';
     }
   }
+  const refusals = researcher?.fieldValueRefusals;
+  const served = researcherHasLiveRefusals(refusals)
+    ? deriveUserIdentityFields(
+        withoutResearcherRefusedObservations(materializationObs, refusals),
+        now,
+      )
+    : derived;
   return {
-    resolved,
+    ...served,
+    resolved: served.resolved,
     netid,
     displayName,
-    title,
-    primaryDepartment,
-    imageUrl,
-    websiteUrl,
-    orcid,
-    profileUrls,
     account,
     researcher,
     identityJoin,
@@ -7255,27 +7570,98 @@ export async function joinUserIdentityToExistingResearcher(
   };
 }
 
+export interface ScreenedPageWithdrawal {
+  researcherId: string;
+  officialLinkUrls: string[];
+  orcid?: string;
+}
+
 /**
- * A namesake's record kept the official link the misattributed page evidence gave it, and
- * the official-page join reads that link as identity, so the link goes with its evidence.
- * Only the screened page is withdrawn, from the live holder of the key's own netid.
+ * What a namesake's record keeps only because a screened page once spoke for it: the official
+ * link the misattributed page evidence gave it, which the official-page join reads as identity,
+ * and an ORCID copied from that page. Each goes with its evidence (#5693).
+ *
+ * A link is withdrawn when it is a screened page, or when the page it points at states an email
+ * the directory gives to a different netid, which covers a host or path variant of the same
+ * person page that no exact URL match reaches. An ORCID is withdrawn only when every live
+ * observation asserting it was read from such a page, so a value any of the person's own
+ * evidence states stays. Only the live holder of the key's own netid is touched.
  */
+export async function planScreenedPageWithdrawal(
+  entityKey: string | undefined,
+  screenedPageUrls: string[],
+): Promise<ScreenedPageWithdrawal | undefined> {
+  const netid = netidOfNetidUserKey(entityKey);
+  if (!netid || screenedPageUrls.length === 0) return undefined;
+  const holder = (await Researcher.findOne({ archived: { $ne: true }, 'identifiers.netid': netid })
+    .select('_id identifiers.orcid profileLinks')
+    .lean()) as {
+    _id: unknown;
+    identifiers?: { orcid?: string };
+    profileLinks?: ResearcherProfileLink[];
+  } | null;
+  if (!holder) return undefined;
+  const readScope = materializationReadScopeFilter();
+  const officialUrls = (holder.profileLinks ?? [])
+    .filter((link) => link?.kind === 'YALE_OFFICIAL' && typeof link.url === 'string')
+    .map((link) => link.url);
+  const linkOwners = await profilePageOwnerNetids(officialUrls, readScope);
+  const screened = new Set(screenedPageUrls);
+  const officialLinkUrls = officialUrls.filter(
+    (url) => screened.has(url) || profilePageContradictsNetid(linkOwners, url, netid),
+  );
+
+  let orcid: string | undefined;
+  const storedOrcid = textValue(holder.identifiers?.orcid);
+  if (storedOrcid) {
+    const assertions = (await Observation.find(
+      {
+        entityType: 'user',
+        field: 'orcid',
+        ...readScope,
+        value: { $in: [storedOrcid, storedOrcid.toUpperCase(), storedOrcid.toLowerCase()] },
+      },
+      { sourceUrl: 1 },
+    ).lean()) as Array<{ sourceUrl?: unknown }>;
+    const assertionOwners = await profilePageOwnerNetids(
+      assertions.map((assertion) => assertion.sourceUrl),
+      readScope,
+    );
+    if (
+      assertions.length > 0 &&
+      assertions.every((assertion) =>
+        profilePageContradictsNetid(assertionOwners, assertion.sourceUrl, netid),
+      )
+    ) {
+      orcid = storedOrcid;
+    }
+  }
+  if (officialLinkUrls.length === 0 && !orcid) return undefined;
+  return { researcherId: String(holder._id), officialLinkUrls, ...(orcid ? { orcid } : {}) };
+}
+
 async function withdrawScreenedOfficialProfileLinks(
   entityKey: string | undefined,
   screenedPageUrls: string[],
   options: MaterializeOptions,
 ): Promise<number> {
-  const netid = netidOfNetidUserKey(entityKey);
-  if (!netid || screenedPageUrls.length === 0) return 0;
-  const filter = {
-    archived: { $ne: true },
-    'identifiers.netid': netid,
-    profileLinks: { $elemMatch: { kind: 'YALE_OFFICIAL', url: { $in: screenedPageUrls } } },
-  };
-  if (options.dryRun) return (await Researcher.countDocuments(filter)) > 0 ? 1 : 0;
-  const result = await Researcher.updateMany(filter, {
-    $pull: { profileLinks: { kind: 'YALE_OFFICIAL', url: { $in: screenedPageUrls } } },
-  });
+  const plan = await planScreenedPageWithdrawal(entityKey, screenedPageUrls);
+  if (!plan) return 0;
+  if (options.dryRun) return 1;
+  const pulls: Array<Record<string, unknown>> = [];
+  if (plan.officialLinkUrls.length > 0) {
+    pulls.push({ kind: 'YALE_OFFICIAL', url: { $in: plan.officialLinkUrls } });
+  }
+  if (plan.orcid) {
+    pulls.push({ kind: 'ORCID', url: new RegExp(`(?:^|/)${escapeRegex(plan.orcid)}/*$`, 'i') });
+  }
+  const result = await Researcher.updateOne(
+    { _id: plan.researcherId },
+    {
+      ...(plan.orcid ? { $unset: { 'identifiers.orcid': '' } } : {}),
+      $pull: { profileLinks: pulls.length === 1 ? pulls[0] : { $or: pulls } },
+    },
+  );
   return result.modifiedCount > 0 ? 1 : 0;
 }
 
@@ -7399,6 +7785,22 @@ async function materializeUserIdentityToResearcher(
     if (resolvedNetid && (await Researcher.exists({ 'identifiers.netid': resolvedNetid }))) {
       return skipped('resolved-netid-already-claimed');
     }
+    const mintGuard = await currentDirectoryRemovalMintGuard();
+    if (
+      mintGuard.refusesPerson({
+        identifiers: {
+          netid: resolvedNetid,
+          email: mintedEmail ?? normalizedAccountEmail(resolved.email?.value),
+          orcid,
+        },
+        profileLinks: Object.values(profileUrls ?? {})
+          .filter((url): url is string => typeof url === 'string')
+          .map((url) => ({ url })),
+      })
+    ) {
+      mintGuard.recordRefusal();
+      return skipped(REMOVED_BY_REQUEST);
+    }
     if (options.dryRun) {
       return skipped('dry-run-would-mint-researcher');
     }
@@ -7448,9 +7850,27 @@ async function materializeUserIdentityToResearcher(
     researcher.profile.title = undefined;
     fieldsWritten += 1;
   }
-  if (isInadmissiblePersonWebsiteUrl(researcher.profile.websiteUrl)) {
+  if (
+    isInadmissiblePersonWebsiteUrl(researcher.profile.websiteUrl) ||
+    isOverSharedPersonWebsite(
+      researcher.profile.websiteUrl,
+      await overSharedPersonWebsiteKeysForMaterialization(),
+    )
+  ) {
     researcher.profile.websiteUrl = undefined;
     fieldsWritten += 1;
+  }
+  const refusedStoredValues = planResearcherRefusedStoredValueClear(researcher);
+  for (const path of refusedStoredValues.unset) {
+    researcher.set(path, undefined);
+    fieldsWritten += 1;
+  }
+  if (refusedStoredValues.profileLinkUrlsToPull.length > 0) {
+    const refusedUrls = new Set(refusedStoredValues.profileLinkUrlsToPull);
+    researcher.profileLinks = (researcher.profileLinks || []).filter(
+      (link: ResearcherProfileLink) => !refusedUrls.has(String(link.url)),
+    );
+    fieldsWritten += refusedUrls.size;
   }
   const priorOrcid: string | undefined = researcher.identifiers?.orcid;
   const priorOrcidLinks: ResearcherProfileLink[] = (researcher.profileLinks || []).filter(
@@ -7481,11 +7901,38 @@ async function materializeUserIdentityToResearcher(
     netidFieldsWritten += 1;
   }
 
+  const priorEmail: string | undefined = researcher.identifiers?.email;
+  let emailFieldsWritten = 0;
+  const derivedEmail = await derivedResearcherEmail(
+    {
+      _id: researcher._id,
+      netid: textValue(researcher.identifiers?.netid),
+      displayName: textValue(researcher.displayName),
+    },
+    textValue(priorEmail),
+  );
+  if (derivedEmail) {
+    researcher.set('identifiers.email', derivedEmail);
+    emailFieldsWritten += 1;
+    fieldsWritten += 1;
+  }
+
   const now = new Date();
+  const refusesProfileLink = (link: ResearcherProfileLink | undefined): boolean =>
+    Boolean(link) &&
+    researcherRefusesValue(researcher.fieldValueRefusals, 'profileLink', link?.url);
   const existingLinkKinds = new Set(
     (researcher.profileLinks || []).map((link: ResearcherProfileLink) => link.kind),
   );
-  const officialLink = profileUrls ? composeOfficialProfileLink({ profileUrls }, now) : undefined;
+  const composedOfficialLink = profileUrls
+    ? composeOfficialProfileLink({ profileUrls }, now)
+    : undefined;
+  const officialLink =
+    composedOfficialLink &&
+    !refusesProfileLink(composedOfficialLink) &&
+    !(await officialProfileLinkHeldByConflictingIdentity(composedOfficialLink.url, researcher))
+      ? composedOfficialLink
+      : undefined;
   if (officialLink && !existingLinkKinds.has('YALE_OFFICIAL')) {
     researcher.profileLinks.push(officialLink);
     fieldsWritten += 1;
@@ -7502,13 +7949,17 @@ async function materializeUserIdentityToResearcher(
   const scholarUrl = profileUrls
     ? canonicalScholarCitationUrl(profileUrls.googleScholar)
     : undefined;
-  if (scholarUrl && !existingLinkKinds.has('GOOGLE_SCHOLAR')) {
-    researcher.profileLinks.push(scholarProfileLink(scholarUrl, now));
+  const scholarLink = scholarUrl ? scholarProfileLink(scholarUrl, now) : undefined;
+  if (scholarLink && !refusesProfileLink(scholarLink) && !existingLinkKinds.has('GOOGLE_SCHOLAR')) {
+    researcher.profileLinks.push(scholarLink);
     fieldsWritten += 1;
   }
   if (orcid) {
     const currentOrcidLink = orcidProfileLink(orcid, now);
-    if (priorOrcidLinks.every((link) => link.url !== currentOrcidLink.url)) {
+    if (
+      !refusesProfileLink(currentOrcidLink) &&
+      priorOrcidLinks.every((link) => link.url !== currentOrcidLink.url)
+    ) {
       researcher.profileLinks = [
         ...(researcher.profileLinks || []).filter(
           (link: ResearcherProfileLink) => link.kind !== 'ORCID',
@@ -7534,7 +7985,9 @@ async function materializeUserIdentityToResearcher(
       .map((link) => link.url);
     researcher.profileLinks = [
       ...links.filter((link) => link.kind !== 'ORCID'),
-      ...(identifierOrcid ? [orcidProfileLink(identifierOrcid.toUpperCase(), now)] : []),
+      ...(identifierOrcid ? [orcidProfileLink(identifierOrcid.toUpperCase(), now)] : []).filter(
+        (link) => !refusesProfileLink(link),
+      ),
     ];
     fieldsWritten += 1;
     conflicts += 1;
@@ -7572,10 +8025,16 @@ async function materializeUserIdentityToResearcher(
     reconcileOrcidLinkWithIdentifier();
   };
 
+  // The email was verified against the netid being stamped, so it goes with that netid.
   const forgiveNetidCollision = (): void => {
     researcher.set('identifiers.netid', priorNetid);
     fieldsWritten -= netidFieldsWritten;
     netidFieldsWritten = 0;
+    if (emailFieldsWritten > 0) {
+      researcher.set('identifiers.email', priorEmail);
+      fieldsWritten -= emailFieldsWritten;
+      emailFieldsWritten = 0;
+    }
     conflicts += 1;
     console.warn(
       'Directory identity netid already claimed by another researcher; keeping prior identity:',
@@ -7602,6 +8061,7 @@ async function materializeUserIdentityToResearcher(
       conflicts,
       created,
       resolved,
+      plannedPaths: researcher.modifiedPaths?.() ?? [],
       ...(identityJoin ? { identityJoin } : {}),
     };
   }
@@ -7698,6 +8158,7 @@ export interface ProjectFromLogInput {
   mergedInLeadProfileUrls?: readonly string[];
   laneWithdrawnWebsiteValues?: readonly unknown[];
   gonePageWithdrawnValuesByField?: ReadonlyMap<string, readonly unknown[]>;
+  siteSharedPageNames?: ReadonlySet<string>;
   loserRosterReads?: readonly ResolverObservation[];
   survivorReadOnARoster?: boolean;
   rosterPersonKeys?: readonly unknown[];
@@ -8221,8 +8682,10 @@ function enforceResearchEntityNameAuthority(input: {
   materializationObs: MaterializerObservationLike[];
   sourceEntityIdentity: ResearchEntityIdentity | undefined;
   nameIdentityAuthority: ResearchEntityNameIdentityAuthority;
+  siteSharedPageNames?: ReadonlySet<string>;
 }): number {
   const { set, unset, confidenceByField, entityDoc } = input;
+  const siteSharedPageNames = input.siteSharedPageNames ?? new Set<string>();
   const withdrawnRetype = reclassifyWithdrawnProfileHomeOrganizationRetype({
     set,
     unset,
@@ -8334,6 +8797,10 @@ function enforceResearchEntityNameAuthority(input: {
     if (
       !textValue(servedValue) ||
       (!namesNothingUsable(servedValue, provenance.sourceUrl) &&
+        !(
+          PAGE_STATED_NAME_SOURCES.has(String(provenance.sourceName ?? '')) &&
+          siteSharedPageNames.has(comparablePageStatedName(servedValue))
+        ) &&
         !isRefusedProfileLinkedHomeName(servedValue, provenance.sourceName) &&
         !(
           (withdrawnRetype || (personRow && !isLabShapedResearchHome(servedValue))) &&
@@ -8372,6 +8839,7 @@ function enforceResearchEntityNameAuthority(input: {
         ({ materialized, candidateSourceUrl }) =>
           textValue(materialized) &&
           textValue(materialized) !== textValue(servedValue) &&
+          !siteSharedPageNames.has(comparablePageStatedName(materialized)) &&
           !namesNothingUsable(materialized, candidateSourceUrl),
       );
 
@@ -9284,6 +9752,7 @@ export async function projectFromLog(
       materializationObs,
       sourceEntityIdentity,
       nameIdentityAuthority: input.nameIdentityAuthority,
+      siteSharedPageNames: input.siteSharedPageNames,
     });
     fieldsWritten += adoptServableFullDescription({
       now: input.now,
@@ -10580,10 +11049,53 @@ function buildEntityResolverSelf(obs: Array<{ field: string; value?: unknown }>)
   return { id: '', name: map.get('name') || undefined };
 }
 
+/**
+ * Resolve-at-mint runs no lead-person clustering, so a row reached only through a
+ * recorded redirect is a candidate only when it names the same lab or the same lead as
+ * the mint. A retired page that redirects to another host's root otherwise folds a mint
+ * into whatever row serves that root (#5638).
+ */
+function redirectCandidateAgreesOnName(
+  self: CandidateEntity | undefined,
+  candidateName: string | undefined,
+): boolean {
+  const selfName = (self?.name ?? '').trim();
+  const otherName = (candidateName ?? '').trim();
+  if (!selfName || !otherName) return false;
+  const selfOrgName = normalizeOrgDedupeName(selfName);
+  if (selfOrgName && selfOrgName === normalizeOrgDedupeName(otherName)) return true;
+  return entitiesShareLeadPersonName(
+    { name: selfName } as Parameters<typeof entitiesShareLeadPersonName>[0],
+    { name: otherName } as Parameters<typeof entitiesShareLeadPersonName>[1],
+  );
+}
+
+/**
+ * Resolve-at-mint cannot compare lead researcher ids, because a mint has no lead edges
+ * yet, so the redirect arm never folds a person-led row, on either side; the website-url
+ * dedupe lane, which refuses distinct leads (#5684), decides those once edges exist. A
+ * missed fold there is recovered on the next pass, a wrong one is not (#5688).
+ */
+function mintIsPersonLed(
+  obs: Array<{ field: string; value?: unknown }>,
+  entityKey: string | undefined,
+): boolean {
+  const first = (field: string): string => {
+    const hit = obs.find((o) => o.field === field && typeof o.value === 'string' && o.value.trim());
+    return hit ? String(hit.value).trim() : '';
+  };
+  const entityType = first('entityType');
+  const kind = first('kind');
+  if (entityType || kind) return isPersonScopedResearchEntityShape({ entityType, kind });
+  return entityKeyPersonTokens(first('slug') || entityKey).length > 0;
+}
+
 async function findEntityCandidatesByKey(
   resolverType: 'researchEntity' | 'fellowship',
   key: CanonicalKey,
   prefetch?: MaterializationReadSource,
+  self?: CandidateEntity,
+  mintPersonLed = false,
 ): Promise<CandidateEntity[]> {
   if (resolverType === 'fellowship') {
     if (key.ns !== 'source-key') return [];
@@ -10609,15 +11121,48 @@ async function findEntityCandidatesByKey(
   // URL on the row. Two candidates are enough: `resolveCanonical` only distinguishes
   // none, one, and more than one, and more than one is ambiguous either way.
   if (key.ns === 'website-url') {
-    const variants = websiteUrlIdentityKeyVariants(key.value);
-    if (variants.length === 0) return [];
-    const docs = (await ResearchEntity.find({
-      websiteUrl: { $in: variants },
+    const directVariants = websiteUrlIdentityKeyVariants(key.value);
+    if (directVariants.length === 0) return [];
+    type WebsiteCandidateDoc = {
+      _id: unknown;
+      name?: string;
+      studentVisibilityTier?: string;
+      entityType?: string;
+      kind?: string;
+    };
+    const select = '_id name studentVisibilityTier entityType kind';
+    const direct = (await ResearchEntity.find({
+      websiteUrl: { $in: directVariants },
       archived: { $ne: true },
     })
-      .select('_id name studentVisibilityTier')
+      .select(select)
       .limit(2)
-      .lean()) as Array<{ _id: unknown; name?: string; studentVisibilityTier?: string }>;
+      .lean()) as WebsiteCandidateDoc[];
+    const redirectVariants =
+      direct.length > 0 || mintPersonLed
+        ? []
+        : (await websiteUrlIdentityKeyRedirectEquivalents(key.value)).flatMap(
+            websiteUrlIdentityKeyVariants,
+          );
+    const redirected =
+      redirectVariants.length === 0
+        ? []
+        : ((await ResearchEntity.find({
+            websiteUrl: { $in: redirectVariants },
+            entityType: { $nin: [...ORG_NAME_DEDUPE_ENTITY_TYPES] },
+            archived: { $ne: true },
+          })
+            .select(select)
+            .limit(2)
+            .lean()) as WebsiteCandidateDoc[]);
+    const docs =
+      direct.length > 0
+        ? direct
+        : redirected.filter(
+            (doc) =>
+              !isPersonScopedResearchEntityShape(doc) &&
+              redirectCandidateAgreesOnName(self, doc.name),
+          );
     return docs.map((doc) => ({
       id: String(doc._id),
       name: doc.name,
@@ -10636,6 +11181,7 @@ async function resolveCanonicalForEntityMint(
   entityType: ObservedEntityType,
   obs: Array<{ field: string; value?: unknown }>,
   prefetch?: MaterializationReadSource,
+  entityKey?: string,
 ): Promise<CanonicalResolution> {
   const resolverType = resolverTypeForEntity(entityType);
   const keys = deriveCanonicalKeys(
@@ -10649,10 +11195,18 @@ async function resolveCanonicalForEntityMint(
   // observations into an existing canonical enriches it and re-gates it rather
   // than archiving any existing public row, so no live entity is demoted. The
   // guard stays wired for any caller that does supply a would-be tier.
+  const resolverSelf = buildEntityResolverSelf(obs);
   return resolveCanonical(
-    { type: resolverType, keys, self: buildEntityResolverSelf(obs) },
+    { type: resolverType, keys, self: resolverSelf },
     {
-      findCandidatesByKey: (_type, key) => findEntityCandidatesByKey(resolverType, key, prefetch),
+      findCandidatesByKey: (_type, key) =>
+        findEntityCandidatesByKey(
+          resolverType,
+          key,
+          prefetch,
+          resolverSelf,
+          mintIsPersonLed(obs, entityKey),
+        ),
     },
   );
 }
@@ -10671,6 +11225,16 @@ async function materializeEntityWithoutModelCalls(
   entityType: ObservedEntityType,
   identifier: { entityId?: string; entityKey?: string },
   options: MaterializeOptions = {},
+): Promise<MaterializeResult> {
+  return withDirectoryRemovalMintGuard(() =>
+    materializeEntityUnderRemovalGuard(entityType, identifier, options),
+  );
+}
+
+async function materializeEntityUnderRemovalGuard(
+  entityType: ObservedEntityType,
+  identifier: { entityId?: string; entityKey?: string },
+  options: MaterializeOptions,
 ): Promise<MaterializeResult> {
   // Structural, not a convention: a projection derived with locks ignored reaching
   // the write below is exactly the silent unfreeze that re-opening a lock is a
@@ -10827,6 +11391,12 @@ async function materializeEntityWithoutModelCalls(
     obs,
     options.chunkPrefetch,
   );
+  let renamedFromKey: string | undefined;
+  if (isResearchEntityObservationType(entityType) && !entityDoc && !identifier.entityId) {
+    const renamed = await liveResearchEntityNamedByKeyObservations(identifier.entityKey);
+    if (renamed?._id) entityDoc = await Model.findById(renamed._id).lean();
+    if (entityDoc) renamedFromKey = identifier.entityKey;
+  }
   if (
     entityDoc?.archived === true &&
     options.treatArchivedResearchEntitiesAsAbsent?.has(String(entityDoc._id))
@@ -10968,7 +11538,12 @@ async function materializeEntityWithoutModelCalls(
     (isResearchEntityObservationType(entityType) || entityType === 'fellowship') &&
     !entityDoc
   ) {
-    const resolution = await resolveCanonicalForEntityMint(entityType, obs, options.chunkPrefetch);
+    const resolution = await resolveCanonicalForEntityMint(
+      entityType,
+      obs,
+      options.chunkPrefetch,
+      identifier.entityKey,
+    );
     if (resolution.status === 'blocked') {
       return {
         entityType,
@@ -11056,8 +11631,13 @@ async function materializeEntityWithoutModelCalls(
   }
 
   let foreignContactWithheld = false;
+  let siteSharedPageNames: ReadonlySet<string> = new Set<string>();
   if (isResearchEntityObservationType(entityType) && entityDoc) {
-    const rowKeyedObs = withoutForeignContactObservations(obs, entityDoc);
+    const rowKeyedObs = withoutForeignContactObservations(obs, {
+      _id: entityDoc._id,
+      slug: entityDoc.slug,
+      renamedFromKey,
+    });
     foreignContactWithheld = rowKeyedObs.length !== obs.length;
     obs = rowKeyedObs;
     if (obs.length === 0) {
@@ -11075,7 +11655,13 @@ async function materializeEntityWithoutModelCalls(
   }
 
   if (isResearchEntityObservationType(entityType) && entityDoc) {
-    obs = withoutCoursePageEvidence(withoutPersonProfileTopicsOnOrganizationRow(obs, entityDoc));
+    const siteSharedPageNameWithdrawal = await withoutSiteSharedPageNames(
+      withoutCoursePageEvidence(withoutPersonProfileTopicsOnOrganizationRow(obs, entityDoc)),
+      entityDoc,
+      options.chunkPrefetch,
+    );
+    obs = siteSharedPageNameWithdrawal.observations;
+    siteSharedPageNames = siteSharedPageNameWithdrawal.withdrawnNames;
     researchAreaEvidenceObservations = withoutCoursePageEvidence(
       withoutPersonProfileTopicsOnOrganizationRow(researchAreaEvidenceObservations, entityDoc),
     );
@@ -11269,13 +11855,15 @@ async function materializeEntityWithoutModelCalls(
     researchPageTopics,
   );
   const resolverObs: ResolverObservation[] = [
-    ...collectivePageScreened.map((o: any) => ({
-      field: o.field,
-      value: o.value,
-      sourceName: o.sourceName,
-      confidence: o.confidence,
-      observedAt: o.observedAt,
-    })),
+    ...withoutObservedAdviseesMovedToMentors(
+      collectivePageScreened.map((o: any) => ({
+        field: o.field,
+        value: o.value,
+        sourceName: o.sourceName,
+        confidence: o.confidence,
+        observedAt: o.observedAt,
+      })),
+    ),
     ...(derivedResearchAreas ? [resolverObservationOfDerivedCandidate(derivedResearchAreas)] : []),
   ];
 
@@ -11389,6 +11977,7 @@ async function materializeEntityWithoutModelCalls(
   const readRowUnderOwnIdentity =
     Boolean(entityDoc) &&
     (mergedInKeys.length > 0 ||
+      Boolean(renamedFromKey) ||
       (Boolean(identifier.entityKey) &&
         identifier.entityKey ===
           textValue(entityType === 'fellowship' ? entityDoc?.sourceKey : entityDoc?.slug)) ||
@@ -11430,6 +12019,7 @@ async function materializeEntityWithoutModelCalls(
     mergedInLeadProfileUrls,
     laneWithdrawnWebsiteValues: laneWebsiteWithdrawal.withdrawnValues,
     gonePageWithdrawnValuesByField: gonePageWithdrawal.withdrawnValuesByField,
+    siteSharedPageNames,
     loserRosterReads,
     survivorReadOnARoster,
     rosterPersonKeys: researchAreaEvidenceObservations
@@ -11587,6 +12177,22 @@ async function materializeEntityWithoutModelCalls(
         skipped: 'missing-required-fields',
       };
     }
+    if (
+      isResearchEntityObservationType(entityType) &&
+      ((await facultyResearchProfileMintIsRemovedByRequest(insert, materializationObs)) ||
+        (await researchEntityMintSlugNamesARemovedResearcher(keyValue)))
+    ) {
+      return {
+        entityType,
+        entityId: undefined,
+        entityKey: identifier.entityKey,
+        fieldsWritten: 0,
+        conflicts: 0,
+        created: false,
+        resolved,
+        skipped: REMOVED_BY_REQUEST,
+      };
+    }
     let created_;
     let didCreate = true;
     if (isResearchEntityObservationType(entityType)) {
@@ -11634,6 +12240,7 @@ async function materializeEntityWithoutModelCalls(
   }
 
   let indexStale = false;
+  const otherIndexSyncFailedEntityIds: string[] = [];
   if (isSyncableEntityType(entityType) && entityIdString && !entityScalarUnchanged) {
     const fresh = await Model.findById(entityIdString).lean();
     indexStale = !fresh || !(await syncEntity(entityType, fresh));
@@ -11717,6 +12324,9 @@ async function materializeEntityWithoutModelCalls(
   ) {
     const fold = await foldDeptRosterShellIntoCanonicalResearchEntity(entityIdString);
     if (fold.folded) options.chunkPrefetch?.markTouched(fold.canonicalEntityId);
+    if (fold.canonicalIndexSyncFailed && fold.canonicalEntityId) {
+      otherIndexSyncFailedEntityIds.push(fold.canonicalEntityId);
+    }
   }
 
   return {
@@ -11730,6 +12340,7 @@ async function materializeEntityWithoutModelCalls(
     postMaterializationMetrics,
     ...reportedProjectionOutcomes,
     ...(indexStale ? { indexSyncFailed: true as const } : {}),
+    ...(otherIndexSyncFailedEntityIds.length > 0 ? { otherIndexSyncFailedEntityIds } : {}),
     ...(entityScalarUnchanged ? { skipped: 'unchanged' as const } : {}),
   };
 }
@@ -11788,12 +12399,13 @@ async function reconcileOfficialRosterSnapshotsFromRun(
       snapshotObservation.value,
     ) as OfficialRosterSnapshotForReconciliation;
     if (!snapshotObservation.entityKey) continue;
-    const entity: any = await ResearchEntity.findOne({
-      slug: snapshotObservation.entityKey,
-      archived: { $ne: true },
-    })
-      .select('_id')
-      .lean();
+    const entity: any =
+      (await ResearchEntity.findOne({
+        slug: snapshotObservation.entityKey,
+        archived: { $ne: true },
+      })
+        .select('_id')
+        .lean()) ?? (await liveResearchEntityNamedByKeyObservations(snapshotObservation.entityKey));
     if (!entity?._id) continue;
     const filter = buildOfficialRosterArchiveFilter(materializerDocumentId(entity._id), snapshot);
     if (!filter) continue;
@@ -12069,6 +12681,11 @@ export function materializationConcurrencyFromEnv(
 export interface ChunkConcurrencyPartition {
   independent: ObservedEntityRow[];
   sequential: ObservedEntityRow[];
+  /**
+   * The sequential rows that are department-roster shells safe to run beside each other,
+   * each with the person its fold is keyed on. Absent rows run strictly in order.
+   */
+  deptShellPersonByRow?: ReadonlyMap<ObservedEntityRow, string>;
 }
 
 /** Every archived row merged into each live survivor, keyed by the survivor's id. */
@@ -12123,13 +12740,119 @@ function storedResearchEntityWritableAlone(
   return { id: stored.id, groupKeys: [...ownKeys, ...mergedInKeys] };
 }
 
+function storedDocumentIdFor(
+  row: ObservedEntityRow,
+  chunkPrefetch: MaterializationReadSource,
+): string | undefined {
+  if (!isResearchEntityObservationType(row.entityType)) return undefined;
+  const lookup = row.entityId
+    ? chunkPrefetch.entityDocForId(row.entityType, row.entityId)
+    : row.entityKey
+      ? chunkPrefetch.entityDocForKey(row.entityType, row.entityKey)
+      : undefined;
+  if (!lookup?.hit || !lookup.value) return undefined;
+  return prefetchObjectIdString((lookup.value as { _id?: unknown })._id);
+}
+
+/** Every id and key a row names: its own identifiers and the stored row they resolve to. */
 function rowReferenceKeys(
   row: ObservedEntityRow,
-  writable: StoredRowWritableAlone | undefined,
+  chunkPrefetch: MaterializationReadSource,
 ): Set<string> {
   return new Set(
-    [row.entityId, row.entityKey, writable?.id].filter((key): key is string => Boolean(key)),
+    [row.entityId, row.entityKey, storedDocumentIdFor(row, chunkPrefetch)].filter(
+      (key): key is string => Boolean(key),
+    ),
   );
+}
+
+const deptShellPersonKey = (value: unknown): string => {
+  const personName = personNameFromDeptRosterEntityName(value);
+  return personName ? nameOnlyResolutionName(personName).toLowerCase() : '';
+};
+
+/**
+ * A department-roster shell writes itself and then folds into the research row its person
+ * already leads, so its only cross-row effect is keyed on that person. It may run beside
+ * other shells when it is live and unmerged, no other row in the chunk names it, and every
+ * name its observations assert is the stored person, so the person its fold reads cannot
+ * change while it runs (#5555).
+ */
+function deptShellPersonWritableBesideShells(
+  row: ObservedEntityRow,
+  chunkPrefetch: MaterializationReadSource,
+  rowsReferencingKey: ReadonlyMap<string, number>,
+): string | undefined {
+  if (!isResearchEntityObservationType(row.entityType) || !isDeptRosterKey(row.entityKey)) {
+    return undefined;
+  }
+  const lookup = row.entityId
+    ? chunkPrefetch.entityDocForId(row.entityType, row.entityId)
+    : chunkPrefetch.entityDocForKey(row.entityType, String(row.entityKey));
+  if (!lookup.hit || !lookup.value) return undefined;
+  const doc = lookup.value as {
+    _id?: unknown;
+    slug?: unknown;
+    name?: unknown;
+    archived?: unknown;
+    canonicalGroupId?: unknown;
+  };
+  if (doc.archived === true || doc.canonicalGroupId) return undefined;
+  const id = prefetchObjectIdString(doc._id);
+  if (!id || !chunkPrefetch.hasNoMergedInRows(id)) return undefined;
+  const ownReferences = rowReferenceKeys(row, chunkPrefetch);
+  const ownKeys = [id, textValue(doc.slug), row.entityId, row.entityKey].filter(
+    (key): key is string => Boolean(key),
+  );
+  const namedBySibling = ownKeys.some(
+    (key) => (rowsReferencingKey.get(key) ?? 0) - (ownReferences.has(key) ? 1 : 0) > 0,
+  );
+  if (namedBySibling) return undefined;
+  const person = deptShellPersonKey(doc.name);
+  if (!person) return undefined;
+  const observations = row.entityId
+    ? chunkPrefetch.observationsForId(row.entityType, row.entityId)
+    : chunkPrefetch.observationsForKey(row.entityType, String(row.entityKey));
+  if (!observations.hit) return undefined;
+  const assertsAnotherPerson = observations.value.some(
+    (observation: any) =>
+      observation?.field === 'name' && deptShellPersonKey(observation.value) !== person,
+  );
+  return assertsAnotherPerson ? undefined : person;
+}
+
+/**
+ * Runs the chunk's sequential rows in their original order, except that a run of
+ * consecutive department-roster shells for different people runs at once. A shell for a
+ * person already in the current run starts the next run, so two shells of one person never
+ * overlap and every shell keeps its order against every row that stays strictly sequential.
+ */
+export async function runSequentialRowsWithDeptShellSpans(
+  sequential: readonly ObservedEntityRow[],
+  deptShellPersonByRow: ReadonlyMap<ObservedEntityRow, string> | undefined,
+  concurrency: number,
+  work: (row: ObservedEntityRow) => Promise<void>,
+): Promise<void> {
+  let span: ObservedEntityRow[] = [];
+  let spanPeople = new Set<string>();
+  const flush = async () => {
+    if (span.length === 1) await work(span[0]);
+    else if (span.length > 1) await runWithConcurrency(span, concurrency, work);
+    span = [];
+    spanPeople = new Set();
+  };
+  for (const row of sequential) {
+    const person = deptShellPersonByRow?.get(row);
+    if (!person) {
+      await flush();
+      await work(row);
+      continue;
+    }
+    if (spanPeople.has(person)) await flush();
+    span.push(row);
+    spanPeople.add(person);
+  }
+  await flush();
 }
 
 /**
@@ -12179,7 +12902,7 @@ export function partitionChunkForConcurrency(
   for (const row of chunk) {
     const writable = storedResearchEntityWritableAlone(row, chunkPrefetch, mergeGroups);
     if (writable) writableByRow.set(row, writable);
-    for (const key of rowReferenceKeys(row, writable)) {
+    for (const key of rowReferenceKeys(row, chunkPrefetch)) {
       rowsReferencingKey.set(key, (rowsReferencingKey.get(key) ?? 0) + 1);
     }
   }
@@ -12187,7 +12910,7 @@ export function partitionChunkForConcurrency(
   const sequential: ObservedEntityRow[] = [];
   for (const row of chunk) {
     const writable = writableByRow.get(row);
-    const ownReferences = rowReferenceKeys(row, writable);
+    const ownReferences = rowReferenceKeys(row, chunkPrefetch);
     const namedByNoSibling =
       writable !== undefined &&
       writable.groupKeys.every(
@@ -12196,7 +12919,16 @@ export function partitionChunkForConcurrency(
     if (namedByNoSibling) independent.push(row);
     else sequential.push(row);
   }
-  return { independent, sequential };
+  const deptShellPersonByRow = new Map<ObservedEntityRow, string>();
+  for (const row of sequential) {
+    const person = deptShellPersonWritableBesideShells(row, chunkPrefetch, rowsReferencingKey);
+    if (person) deptShellPersonByRow.set(row, person);
+  }
+  return {
+    independent,
+    sequential,
+    ...(deptShellPersonByRow.size > 0 ? { deptShellPersonByRow } : {}),
+  };
 }
 
 async function materializeChunkRow(
@@ -12259,24 +12991,26 @@ export async function materializeObservedEntitiesInChunks(
       const mergeGroups = chunkPrefetch
         ? await loadChunkMergeGroups(chunk, chunkPrefetch)
         : undefined;
-      const { independent, sequential } = partitionChunkForConcurrency(
+      const { independent, sequential, deptShellPersonByRow } = partitionChunkForConcurrency(
         chunk,
         chunkPrefetch,
         mergeGroups,
       );
-      await runWithConcurrency(independent, concurrency, (row) =>
-        materializeChunkRow(row, options, chunkPrefetch, onRow),
+      const work = (row: ObservedEntityRow) =>
+        materializeChunkRow(row, options, chunkPrefetch, onRow);
+      await runWithConcurrency(independent, concurrency, work);
+      await runSequentialRowsWithDeptShellSpans(
+        sequential,
+        deptShellPersonByRow,
+        concurrency,
+        work,
       );
-      for (const row of sequential) await materializeChunkRow(row, options, chunkPrefetch, onRow);
     }
     start = end;
   }
 }
 
-export async function materializeFromRun(
-  scrapeRunId: string,
-  options: MaterializeOptions = {},
-): Promise<{
+interface MaterializeFromRunCounts {
   materialized: number;
   created: number;
   updated: number;
@@ -12285,7 +13019,29 @@ export async function materializeFromRun(
   errors: number;
   indexSyncFailures: number;
   postMaterializationMetrics: Required<ReportPostMaterializationMetrics>;
-}> {
+}
+
+export async function materializeFromRun(
+  scrapeRunId: string,
+  options: MaterializeOptions = {},
+): Promise<MaterializeFromRunCounts & { removedByRequest: number }> {
+  const guard = await loadDirectoryRemovalMintGuard();
+  const counts = await withDirectoryRemovalMintGuard(
+    () => materializeFromRunUnderRemovalGuard(scrapeRunId, options),
+    guard,
+  );
+  if (guard.refusals > 0) {
+    console.info(
+      `[directory-removal] refused ${guard.refusals} mint or attachment(s) for people removed from the directory by request`,
+    );
+  }
+  return { ...counts, removedByRequest: guard.refusals };
+}
+
+async function materializeFromRunUnderRemovalGuard(
+  scrapeRunId: string,
+  options: MaterializeOptions,
+): Promise<MaterializeFromRunCounts> {
   const runObjectId = toMaterializerObjectId(scrapeRunId);
   if (!runObjectId) {
     return {
@@ -12383,6 +13139,9 @@ export async function materializeFromRun(
         if (res.indexSyncFailed) {
           if (res.entityId) staleIndexEntityIds.add(String(res.entityId));
           else staleIndexRowsWithoutId += 1;
+        }
+        for (const entityId of res.otherIndexSyncFailedEntityIds ?? []) {
+          staleIndexEntityIds.add(entityId);
         }
         if (res.unbackedResearchAreas) {
           unbackedResearchAreaOutcomes[res.unbackedResearchAreas] =

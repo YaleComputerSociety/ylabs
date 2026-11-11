@@ -8,6 +8,11 @@ const mocks = vi.hoisted(() => ({
   getSourceByName: vi.fn(),
   appendObservations: vi.fn(),
   buildEvidenceCoverageImpactReportForObservations: vi.fn(),
+  reapDeadScrapeRuns: vi.fn(),
+}));
+
+vi.mock('../staleScrapeRunReaper', () => ({
+  reapDeadScrapeRuns: mocks.reapDeadScrapeRuns,
 }));
 
 vi.mock('../../models/scrapeRun', () => ({
@@ -54,6 +59,7 @@ describe('ScraperOrchestrator', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.scrapeRunCreate.mockResolvedValue({ _id: 'run-1' });
+    mocks.reapDeadScrapeRuns.mockResolvedValue({ closed: 0, changedSinceRead: 0 });
     mocks.scrapeRunUpdateOne.mockResolvedValue({ modifiedCount: 1 });
     mocks.scrapeRunFind.mockReturnValue(priorRuns([]));
     mocks.getSourceByName.mockResolvedValue({
@@ -69,6 +75,43 @@ describe('ScraperOrchestrator', () => {
       improved: 0,
       rows: [],
     });
+  });
+
+  const emptyScraper = (): IScraper => ({
+    name: 'fixture-source',
+    displayName: 'Fixture source',
+    async run() {
+      return { observationCount: 0, entitiesObserved: 0 };
+    },
+  });
+  const runOptions = { dryRun: true, dbReview: false, useCache: false, release: false };
+
+  it('closes dead runs before it records its own, passing its lock so a rerun can close its predecessor (#5628)', async () => {
+    const orchestrator = new ScraperOrchestrator();
+    orchestrator.register(emptyScraper());
+
+    await orchestrator.run('fixture-source', runOptions, { lockOwnerId: 'lock-owner-1' });
+
+    expect(mocks.reapDeadScrapeRuns).toHaveBeenCalledWith({
+      detectedBy: 'orchestrator-run-start',
+      callerLockOwnerId: 'lock-owner-1',
+    });
+    expect(mocks.reapDeadScrapeRuns.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.scrapeRunCreate.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('still runs the source when closing dead runs fails', async () => {
+    mocks.reapDeadScrapeRuns.mockRejectedValue(new Error('reap unavailable'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const orchestrator = new ScraperOrchestrator();
+    orchestrator.register(emptyScraper());
+
+    const result = await orchestrator.run('fixture-source', runOptions);
+
+    expect(result.runId).toBe('run-1');
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('Could not close dead scrape runs'));
+    warn.mockRestore();
   });
 
   it('persists dry-run emitted observation counts even when observations are not inserted', async () => {

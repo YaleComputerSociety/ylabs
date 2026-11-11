@@ -1124,6 +1124,19 @@ const careerFactLeakPattern =
 const studiesBioNameEchoVerbPattern =
   /^(?:Studies|Investigates|Examines|Explores)\s+[A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){0,3}\s+(?:holds?|works?\s+(?:in|on|with)|specializes?\s+in|received|earned|serves?\s+as|teaches?|is\s+an?)\b/u;
 
+const SUBJECT_OWNED_RESEARCH_CLAUSE = String.raw`(?:(?:[A-Z][\p{L}.'’-]*\s+){0,3}[A-Z][\p{L}.'’-]*['’]s|[Hh]is|[Hh]er|[Tt]heir|[Ii]ts|[Mm]y|[Oo]ur)\s+(?:(?:main|primary|principal|current|broad|chief)\s+)?(?:(?:research|scholarly|academic)\s+)?(?:interests?|research|work|focus|areas?|fields?|specialt(?:y|ies))\s+(?:lie|lies|include|includes|is|are|focus(?:es)?|center(?:s)?|centre(?:s)?|span(?:s)?|concern(?:s)?|revolve(?:s)?|range(?:s)?|explore(?:s)?|examine(?:s)?)\b`;
+
+const subjectOwnedResearchSentencePattern = new RegExp(`^${SUBJECT_OWNED_RESEARCH_CLAUSE}`, 'u');
+
+const studiesSubjectOwnedResearchPattern = new RegExp(
+  `^(?:Studies|Investigates|Examines|Explores)\\s+${SUBJECT_OWNED_RESEARCH_CLAUSE}`,
+  'u',
+);
+
+export function opensOnSubjectOwnedResearchClause(text: string): boolean {
+  return subjectOwnedResearchSentencePattern.test(normalizeHygieneWhitespace(text));
+}
+
 const studiesCourseCodeTopicPattern = /\b[A-Z]{2,5}\s?\d{3}[A-Z]?\b/;
 
 /**
@@ -1158,6 +1171,7 @@ export function isStudiesTemplateGlueMalformed(text: string): boolean {
     careerFactLeakPattern.test(normalized) ||
     awardCitationLeakPattern.test(normalized) ||
     studiesBioNameEchoVerbPattern.test(normalized) ||
+    studiesSubjectOwnedResearchPattern.test(normalized) ||
     studiesCourseCodeTopicPattern.test(normalized)
   );
 }

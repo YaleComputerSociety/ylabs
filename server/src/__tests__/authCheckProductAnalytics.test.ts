@@ -69,13 +69,13 @@ describe('GET /check product analytics fields', () => {
     expect(mocks.ensureProductAnalyticsId).not.toHaveBeenCalled();
   });
 
-  it('stays anonymous when the account has no ID to give', async () => {
+  it('turns product analytics off when no opaque id can be assigned (#5621)', async () => {
     mocks.isProductAnalyticsAllowedForSession.mockReturnValue(true);
     mocks.ensureProductAnalyticsId.mockResolvedValue(null);
 
     const body = await callCheck(sessionUser);
 
-    expect(body).toMatchObject({ auth: true, productAnalytics: true });
+    expect(body).toMatchObject({ auth: true, productAnalytics: false });
     expect(body).not.toHaveProperty('productAnalyticsId');
   });
 

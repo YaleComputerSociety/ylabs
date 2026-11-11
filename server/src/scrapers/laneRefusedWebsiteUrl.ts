@@ -7,6 +7,28 @@
  */
 import { websiteIdentity } from './survivorOwnedWebsiteClear';
 
+const LAB_DIRECTORY_SEGMENT_RE =
+  /^(?:labs|laboratories|facilities|research-labs|research-laboratories|our-labs|cores|core-facilities)$/i;
+
+/**
+ * A page whose last path segment is a bare plural lab or facility word lists several labs,
+ * so it is no one lab's or person's research website even when the link text names a lab:
+ * a profile linked its lab's name to a department's whole labs page, and the row took that
+ * page as its website and then its heading as its name (#4916).
+ */
+export function isLabDirectoryListingUrl(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  let parsed: URL;
+  try {
+    parsed = new URL(value.trim());
+  } catch {
+    return false;
+  }
+  if (parsed.search || parsed.hash) return false;
+  const segments = parsed.pathname.split('/').filter(Boolean);
+  return segments.length > 0 && LAB_DIRECTORY_SEGMENT_RE.test(segments[segments.length - 1]);
+}
+
 export const REFUSED_WEBSITE_URL_FIELD = 'refusedWebsiteUrl';
 
 export const LANE_WITHDRAWABLE_WEBSITE_FIELDS = ['website', 'websiteUrl'] as const;
@@ -63,6 +85,29 @@ export function laneScopeKey(
 }
 
 export function withoutLaneRefusedWebsiteUrls<T extends LaneWebsiteObservation>(
+  observations: T[],
+  rowIdentities: ReadonlySet<string>,
+): LaneRefusedWebsiteUrlWithdrawal<T> {
+  const listingWithdrawn = observations.filter(
+    (observation) =>
+      WITHDRAWABLE_FIELDS.has(String(observation.field ?? '')) &&
+      isLabDirectoryListingUrl(observation.value),
+  );
+  if (listingWithdrawn.length === 0) return withoutLaneRefusals(observations, rowIdentities);
+  const refusal = withoutLaneRefusals(
+    observations.filter((observation) => !listingWithdrawn.includes(observation)),
+    rowIdentities,
+  );
+  return {
+    observations: refusal.observations,
+    withdrawnValues: [
+      ...refusal.withdrawnValues,
+      ...listingWithdrawn.map((observation) => observation.value),
+    ],
+  };
+}
+
+function withoutLaneRefusals<T extends LaneWebsiteObservation>(
   observations: T[],
   rowIdentities: ReadonlySet<string>,
 ): LaneRefusedWebsiteUrlWithdrawal<T> {

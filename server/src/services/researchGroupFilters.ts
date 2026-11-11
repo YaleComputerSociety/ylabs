@@ -13,6 +13,7 @@ export interface ResearchGroupFilterInput {
   researchAreas?: string[];
   hostsUndergrads?: boolean;
   welcomesUndergrads?: boolean;
+  worksWithUndergrads?: boolean;
   studentVisibilityTier?: string[];
 }
 
@@ -47,6 +48,7 @@ const STUDENT_MULTI_VALUE_FILTER_FIELDS: ReadonlyArray<{
 
 export const HOSTS_UNDERGRADS_INDEX_FIELD = 'hasUndergradHostingEvidence';
 export const WELCOMES_UNDERGRADS_INDEX_FIELD = 'welcomesUndergrads';
+export const WORKS_WITH_UNDERGRADS_INDEX_FIELD = 'worksWithUndergrads';
 
 export interface BuildResearchGroupFilterStringOptions {
   /** Omit this field's own clause, so its facet distribution can be computed disjunctively. */
@@ -80,6 +82,10 @@ export function buildResearchGroupFilterString(
 
   if (effectiveFilters.welcomesUndergrads === true) {
     parts.push(`${WELCOMES_UNDERGRADS_INDEX_FIELD} = true`);
+  }
+
+  if (effectiveFilters.worksWithUndergrads === true) {
+    parts.push(`${WORKS_WITH_UNDERGRADS_INDEX_FIELD} = true`);
   }
 
   const studentVisibilityClause = effectiveFilters.studentVisibilityTier
@@ -136,6 +142,9 @@ export function candidateMatchesStudentFilters(
   }
   if (options.excludeField !== 'welcomesUndergrads' && filters.welcomesUndergrads === true) {
     if (candidate[WELCOMES_UNDERGRADS_INDEX_FIELD] !== true) return false;
+  }
+  if (options.excludeField !== 'worksWithUndergrads' && filters.worksWithUndergrads === true) {
+    if (candidate[WORKS_WITH_UNDERGRADS_INDEX_FIELD] !== true) return false;
   }
   return true;
 }

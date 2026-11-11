@@ -13,6 +13,7 @@ import {
   type SourceLinkHealthStatus,
 } from '../models/storedVocabularies';
 import { TLS_VERIFICATION_ERROR_CODES } from '../utils/tlsVerificationErrors';
+import { normalizeWebsiteUrlIdentityKey } from '../utils/websiteUrlIdentityKey';
 
 export { sourceLinkHealthStatuses, type SourceLinkHealthStatus };
 
@@ -50,6 +51,20 @@ export interface SourceLinkHealth {
    * (#4649).
    */
   httpsLandingUrl?: string;
+  /**
+   * The response came from the requested host, path and query, apart from scheme
+   * and cosmetic spelling. Held in memory only and never stored: an `https:`
+   * spelling counts only when its own probe stayed on the page it asked for (#5639).
+   */
+  landedOnRequestedResource?: true;
+  /**
+   * The live page the host's own redirects landed on, when it names a different page
+   * identity than the requested URL (another host, another path, not just a scheme,
+   * `www.`, letter case, slash or default-document spelling). Set only on a `HEALTHY` verdict. It is
+   * the evidence the URL-identity dedupe and resolve-at-mint read to treat the two URLs
+   * as one page (#5638).
+   */
+  redirectLandingUrl?: string;
 }
 
 export interface SourceLinkProbeResult {
@@ -57,6 +72,8 @@ export interface SourceLinkProbeResult {
   errorCode?: string;
   requestedUrl?: string;
   finalUrl?: string;
+  /** The status of each redirect hop on the way to `finalUrl`, in order (#5660). */
+  redirectStatuses?: number[];
   /** `Retry-After` the host asked for, when it sent one. Never a verdict input. */
   retryAfterMs?: number;
   privateAddressHost?: boolean;
@@ -169,6 +186,25 @@ const comparablePath = (url: URL): string => url.pathname.replace(/\/+$/, '').to
 
 const comparableHost = (url: URL): string => url.hostname.replace(/^www\./i, '').toLowerCase();
 
+const PERMANENT_REDIRECT_STATUSES = new Set([301, 308]);
+
+/**
+ * A host that permanently redirects an underscore slug to its hyphenated spelling
+ * has moved nothing: it serves the page it was asked for under the spelling it now
+ * publishes, so the landing is the requested resource rather than a roster (#5660).
+ * Every hop must be a 301 or 308, because a temporary redirect says nothing about
+ * where the page lives.
+ */
+function isPermanentSlugRespelling(
+  requestedPath: string,
+  finalPath: string,
+  redirectStatuses: readonly number[] | undefined,
+): boolean {
+  if (!redirectStatuses || redirectStatuses.length === 0) return false;
+  if (!redirectStatuses.every((status) => PERMANENT_REDIRECT_STATUSES.has(status))) return false;
+  return requestedPath.replace(/_/g, '-') === finalPath.replace(/_/g, '-');
+}
+
 const parseProbeUrl = (value: string | undefined): URL | undefined => {
   if (!value) return undefined;
   try {
@@ -206,6 +242,7 @@ const parseProbeUrl = (value: string | undefined): URL | undefined => {
 export function landsAwayFromRequestedResource(
   requestedUrl: string | undefined,
   finalUrl: string | undefined,
+  redirectStatuses?: readonly number[],
 ): boolean {
   const requested = parseProbeUrl(requestedUrl);
   const final = parseProbeUrl(finalUrl);
@@ -215,6 +252,9 @@ export function landsAwayFromRequestedResource(
   const finalPath = comparablePath(final);
   const sameHost = comparableHost(requested) === comparableHost(final);
   if (requestedPath === finalPath && sameHost) return false;
+  if (sameHost && isPermanentSlugRespelling(requestedPath, finalPath, redirectStatuses)) {
+    return false;
+  }
   if (requestedPath === '/') return false;
 
   if (finalPath === '/') return sameHost;
@@ -228,10 +268,10 @@ export function landsAwayFromRequestedResource(
 }
 
 function classifyProbeOutcome(probe: SourceLinkProbeResult): SourceLinkHealth {
-  const { status, errorCode, requestedUrl, finalUrl } = probe;
+  const { status, errorCode, requestedUrl, finalUrl, redirectStatuses } = probe;
   if (typeof status === 'number' && Number.isFinite(status)) {
     if (status >= 200 && status < 300) {
-      if (landsAwayFromRequestedResource(requestedUrl, finalUrl)) {
+      if (landsAwayFromRequestedResource(requestedUrl, finalUrl, redirectStatuses)) {
         return { healthStatus: 'UNAVAILABLE', httpStatusCode: status };
       }
       return { healthStatus: 'HEALTHY', httpStatusCode: status };
@@ -250,6 +290,20 @@ function classifyProbeOutcome(probe: SourceLinkProbeResult): SourceLinkHealth {
   return { healthStatus: 'UNKNOWN' };
 }
 
+const isSameResource = (requested: URL, final: URL): boolean =>
+  comparableHost(requested) === comparableHost(final) &&
+  comparablePath(requested) === comparablePath(final) &&
+  requested.search === final.search;
+
+function landedOnRequestedResource(
+  requestedUrl: string | undefined,
+  finalUrl: string | undefined,
+): boolean {
+  const requested = parseProbeUrl(requestedUrl);
+  const final = parseProbeUrl(finalUrl);
+  return Boolean(requested && final && isSameResource(requested, final));
+}
+
 export function httpsLandingOf(
   requestedUrl: string | undefined,
   finalUrl: string | undefined,
@@ -258,19 +312,47 @@ export function httpsLandingOf(
   const final = parseProbeUrl(finalUrl);
   if (!requested || !final) return undefined;
   if (requested.protocol !== 'http:' || final.protocol !== 'https:') return undefined;
-  if (comparableHost(requested) !== comparableHost(final)) return undefined;
-  if (comparablePath(requested) !== comparablePath(final)) return undefined;
-  if (requested.search !== final.search) return undefined;
+  return isSameResource(requested, final) ? final.toString() : undefined;
+}
+
+/**
+ * A whole host redirecting to another host's root names no page, so it is not alias
+ * evidence: it is also how a retired or lapsed lab domain falls back to its parent
+ * site. A page that moved to a host's root (a lab leaving a shared host for its own
+ * domain) still counts, because the requested side named one page (#5638).
+ */
+const isBareHostRootKey = (identityKey: string): boolean => !identityKey.includes('/');
+
+export function redirectLandingOf(
+  requestedUrl: string | undefined,
+  finalUrl: string | undefined,
+): string | undefined {
+  const requested = parseProbeUrl(requestedUrl);
+  const final = parseProbeUrl(finalUrl);
+  if (!requested || !final) return undefined;
+  if (final.protocol !== 'https:' && final.protocol !== 'http:') return undefined;
+  if (final.search) return undefined;
+  const requestedKey = normalizeWebsiteUrlIdentityKey(requested.toString()).toLowerCase();
+  const finalKey = normalizeWebsiteUrlIdentityKey(final.toString()).toLowerCase();
+  if (!requestedKey || !finalKey || requestedKey === finalKey) return undefined;
+  if (isBareHostRootKey(requestedKey) && isBareHostRootKey(finalKey)) return undefined;
   return final.toString();
 }
 
 export function classifySourceLinkHealth(probe: SourceLinkProbeResult): SourceLinkHealth {
   const verdict = classifyProbeOutcome(probe);
-  const httpsLandingUrl =
-    verdict.healthStatus === 'HEALTHY'
-      ? httpsLandingOf(probe.requestedUrl, probe.finalUrl)
-      : undefined;
-  const classified = httpsLandingUrl ? { ...verdict, httpsLandingUrl } : verdict;
+  const healthy = verdict.healthStatus === 'HEALTHY';
+  const httpsLandingUrl = healthy ? httpsLandingOf(probe.requestedUrl, probe.finalUrl) : undefined;
+  const redirectLandingUrl = healthy
+    ? redirectLandingOf(probe.requestedUrl, probe.finalUrl)
+    : undefined;
+  const landed = healthy && landedOnRequestedResource(probe.requestedUrl, probe.finalUrl);
+  const classified = {
+    ...verdict,
+    ...(httpsLandingUrl ? { httpsLandingUrl } : {}),
+    ...(redirectLandingUrl ? { redirectLandingUrl } : {}),
+    ...(landed ? { landedOnRequestedResource: true as const } : {}),
+  };
   const outcome =
     probe.errorCode && TLS_VERIFICATION_ERROR_CODES.has(probe.errorCode)
       ? { ...classified, tlsVerificationFailed: true }
@@ -497,18 +579,24 @@ export async function probeSourceLink(
 
   const requestedUrl = safeUrl.toString();
   const agents = ssrfSafeAgents();
+  let redirectStatuses: number[] = [];
   const request = (method: 'HEAD' | 'GET') => {
-    const send = () =>
-      axios.request({
+    const send = () => {
+      redirectStatuses = [];
+      return axios.request({
         url: requestedUrl,
         method,
         maxRedirects: 5,
+        beforeRedirect: (_options, responseDetails) => {
+          redirectStatuses.push(Number(responseDetails?.statusCode));
+        },
         timeout: PROBE_TIMEOUT_MS,
         httpAgent: agents.httpAgent,
         httpsAgent: agents.httpsAgent,
         responseType: method === 'GET' ? 'stream' : 'json',
         validateStatus: () => true,
       });
+    };
     return requestGate ? withHostSlot(requestedUrl, send, requestGate) : send();
   };
 
@@ -547,6 +635,7 @@ export async function probeSourceLink(
         status: response.status,
         requestedUrl,
         ...(resolvedUrl(response) ? { finalUrl: resolvedUrl(response) } : {}),
+        ...(redirectStatuses.length > 0 ? { redirectStatuses: [...redirectStatuses] } : {}),
         ...(retryAfterMs(response.headers) !== undefined
           ? { retryAfterMs: retryAfterMs(response.headers) }
           : {}),

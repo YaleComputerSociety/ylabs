@@ -31,6 +31,7 @@ import {
   sameNamedDirector,
   type NamedCenterDirector,
 } from './sources/centerDirectorLLMExtractor';
+import { liveResearchEntityNamedByKeyObservations } from './renamedResearchEntityAdoption';
 
 export interface CenterDirectorRead {
   scrapeRunId: string;
@@ -350,9 +351,11 @@ export async function reconcileCodeLaneDirectorRetirementsFromRun(
     indexSyncFailures: 0,
   };
   for (const centerKey of centerKeys) {
-    const center = (await ResearchEntity.findOne({ slug: centerKey, archived: { $ne: true } })
+    const center = ((await ResearchEntity.findOne({ slug: centerKey, archived: { $ne: true } })
       .select('_id')
-      .lean()) as { _id?: mongoose.Types.ObjectId } | null;
+      .lean()) ?? (await liveResearchEntityNamedByKeyObservations(centerKey))) as {
+      _id?: mongoose.Types.ObjectId;
+    } | null;
     if (!center?._id) continue;
     const ownEdges = await loadGovernedDirectorEdges(center._id, CENTER_DIRECTOR_SOURCE_NAME);
     const llmEdges = await loadGovernedDirectorEdges(center._id, CENTER_DIRECTOR_LLM_SOURCE_NAME);
@@ -428,9 +431,11 @@ export async function reconcileCenterDirectorRetirementsFromRun(
     indexSyncFailures: 0,
   };
   for (const centerKey of centerKeys) {
-    const center = (await ResearchEntity.findOne({ slug: centerKey, archived: { $ne: true } })
+    const center = ((await ResearchEntity.findOne({ slug: centerKey, archived: { $ne: true } })
       .select('_id')
-      .lean()) as { _id?: mongoose.Types.ObjectId } | null;
+      .lean()) ?? (await liveResearchEntityNamedByKeyObservations(centerKey))) as {
+      _id?: mongoose.Types.ObjectId;
+    } | null;
     if (!center?._id) continue;
     const plan = planCenterDirectorRetirement({
       reads: await loadCenterDirectorReads(centerKey),

@@ -1,5 +1,5 @@
 import type { PathwaySearchHit } from '../types/pathway';
-import { undergradInvitationFromEntity } from './undergradInvitation';
+import { undergradInvitationFromEntity, WELCOMES_UNDERGRADS_LABEL } from './undergradInvitation';
 import type { ResearchEntity } from '../types/researchEntity';
 import {
   isGenericResearchHomeDescription,
@@ -7,7 +7,7 @@ import {
   normalizeResearchMetadataLabels,
 } from './researchTextNormalization';
 import { getUniqueDepartmentLabels } from './departmentNames';
-import { researchEntityTitle } from './researchEntityCopy';
+import { MENTORS_UNDERGRADUATES_LABEL, researchEntityTitle } from './researchEntityCopy';
 import { safeHttpUrl } from './url';
 
 export interface EvidenceSourceRowData {
@@ -389,10 +389,14 @@ export const buildWayInBadgesFromEntity = (entity: ResearchEntity | undefined): 
   const badges: string[] = [];
   const invitation = undergradInvitationFromEntity(entity);
   if (invitation) badges.push(invitation.label);
+  else if (entity.welcomesUndergrads === true) badges.push(WELCOMES_UNDERGRADS_LABEL);
   // The badge reads the served flag rather than re-deriving it here, so it
   // cannot disagree with the `hostsUndergrads` browse filter or saved plans,
   // which read the same server predicate (#3593).
   if (entity.hasUndergradHostingEvidence === true) badges.push('Undergrad evidence');
+  if (entity.undergradListEvidence?.some((entry) => entry?.signal === 'mentors')) {
+    badges.push(MENTORS_UNDERGRADUATES_LABEL);
+  }
 
   return badges;
 };

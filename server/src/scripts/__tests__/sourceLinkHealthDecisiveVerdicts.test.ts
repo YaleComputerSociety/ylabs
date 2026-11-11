@@ -289,3 +289,45 @@ describe('resolveSourceLinkHealthEntry https landing (#4649)', () => {
     expect(resolved.entry.httpsLandingUrl).toBeUndefined();
   });
 });
+
+describe('resolveSourceLinkHealthEntry https spelling (#5639)', () => {
+  const HTTP = 'http://both.fixture.example.org/lab/';
+  const SPELLING = 'https://both.fixture.example.org/lab/';
+
+  it('stores the https spelling a fresh probe recorded', () => {
+    const resolved = resolveSourceLinkHealthEntry(
+      HTTP,
+      { healthStatus: 'HEALTHY', httpStatusCode: 200, httpsSpellingUrl: SPELLING },
+      undefined,
+      NOW,
+    );
+    expect(resolved.entry).toEqual({
+      url: HTTP,
+      healthStatus: 'HEALTHY',
+      httpStatusCode: 200,
+      httpsSpellingUrl: SPELLING,
+      checkedAt: NOW,
+    });
+  });
+
+  it('keeps the spelling with a decisive verdict an inconclusive probe preserved', () => {
+    const resolved = resolveSourceLinkHealthEntry(
+      HTTP,
+      { healthStatus: 'UNKNOWN', httpStatusCode: 503 },
+      { url: HTTP, healthStatus: 'HEALTHY', httpsSpellingUrl: SPELLING, checkedAt: EARLIER },
+      NOW,
+    );
+    expect(resolved.preservedDecisiveVerdict).toBe(true);
+    expect(resolved.entry.httpsSpellingUrl).toBe(SPELLING);
+  });
+
+  it('drops the spelling when a fresh decisive probe no longer records one', () => {
+    const resolved = resolveSourceLinkHealthEntry(
+      HTTP,
+      { healthStatus: 'HEALTHY', httpStatusCode: 200 },
+      { url: HTTP, healthStatus: 'HEALTHY', httpsSpellingUrl: SPELLING, checkedAt: EARLIER },
+      NOW,
+    );
+    expect(resolved.entry.httpsSpellingUrl).toBeUndefined();
+  });
+});

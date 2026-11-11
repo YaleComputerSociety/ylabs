@@ -106,6 +106,7 @@ import {
   orderCandidatesByKeywordLeg,
   fuseKeywordAndSemanticRankings,
   keywordLegTopHitIsNameMatch,
+  keywordLegTopHitTouchesAPersonName,
   SEMANTIC_LEG_SIZE,
   currentResearchEntityMemberFilter,
   dedupeSameNameLeadMembers,
@@ -115,6 +116,7 @@ import {
   listResearchEntityRelationshipPayload,
   listSimilarResearchEntities,
   normalizeResearchSearchQuery,
+  rewriteAcronymToPhrase,
   promoteExactAliasFieldMatches,
   rankOwnEvidenceAboveMeshDescriptorMatches,
   keepMeshDescriptorMatchesBelowOwnEvidence,
@@ -135,6 +137,8 @@ import { invalidateResearchEntitySearchEmbedderCache } from '../researchEntitySe
 import { RESEARCH_SEARCH_MAX_REACHABLE_RECORDS } from '../researchSearchPagination';
 import { searchResearchGroups } from '../../controllers/researchGroupController';
 import { publicStudentVisibilityTiers } from '../../models/studentVisibility';
+import { setResearchSearchSpellingVocabularyForTests } from '../researchSearchSpellingVocabulary';
+import { buildSearchSpellingVocabulary } from '../searchQuerySpellingCorrection';
 
 // One fully chainable query double: the service composes find().sort().limit()
 // .select().lean() in different orders per call site, so every helper returns
@@ -516,6 +520,19 @@ describe('searchResearchGroupsViaMeili', () => {
       tokens: ['econ'],
       isTopicAliasQuery: true,
     });
+  });
+
+  it('rewrites an acronym only when it is the whole query (#5169)', () => {
+    expect(rewriteAcronymToPhrase('NLP')).toBe('natural language processing');
+    expect(rewriteAcronymToPhrase('nlp lab')).toBe('natural language processing');
+    expect(rewriteAcronymToPhrase('LLM undergraduate research')).toBe('large language models');
+    expect(rewriteAcronymToPhrase('nlp history')).toBe('nlp history');
+    expect(rewriteAcronymToPhrase('ai art')).toBe('ai art');
+    expect(rewriteAcronymToPhrase('rna')).toBe('rna');
+    expect(rewriteAcronymToPhrase('orgo')).toBe('orgo');
+    expect(normalizeResearchSearchQuery(rewriteAcronymToPhrase('NLP'))).toMatchObject(
+      normalizeResearchSearchQuery('natural language processing'),
+    );
   });
 
   it('resolves organic chemistry vernacular to the canonical multi-word field name', () => {
@@ -1415,7 +1432,43 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(result.degraded).toBe(true);
   });
 
-  it('expands AI and restricts short alias searches to topic fields', async () => {
+  it('searches an acronym typed alone as the phrase it stands for (#5169)', async () => {
+    mocks.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+
+    await searchResearchGroupsViaMeili('AI', {}, 1, 24);
+
+    expect(mocks.search.mock.calls[0][0]).toBe('artificial intelligence');
+    for (const [, params] of mocks.search.mock.calls) {
+      expect(params).not.toHaveProperty('attributesToSearchOn');
+    }
+  });
+
+  it('searches a short given name as the full given name a person with that surname carries (#5169)', async () => {
+    setResearchSearchSpellingVocabularyForTests(
+      buildSearchSpellingVocabulary([
+        {
+          nameText: [['Robert Quillfeather']],
+          personNameText: [['Robert Quillfeather']],
+          bodyText: ['art history'],
+          served: true,
+        },
+      ]),
+    );
+    mocks.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+
+    try {
+      await searchResearchGroupsViaMeili('bob quillfeather', {}, 1, 24);
+      expect(mocks.search.mock.calls[0][0]).toBe('robert quillfeather');
+
+      mocks.search.mockClear();
+      await searchResearchGroupsViaMeili('art history', {}, 1, 24);
+      expect(mocks.search.mock.calls[0][0]).toBe('art history');
+    } finally {
+      setResearchSearchSpellingVocabularyForTests(null);
+    }
+  });
+
+  it('expands a kept shorthand and restricts its search to topic fields', async () => {
     mocks.search.mockResolvedValueOnce({
       hits: [],
       estimatedTotalHits: 0,
@@ -1425,10 +1478,10 @@ describe('searchResearchGroupsViaMeili', () => {
       },
     });
 
-    const result = await searchResearchGroupsViaMeili('AI', {}, 1, 24);
+    const result = await searchResearchGroupsViaMeili('neuro', {}, 1, 24);
 
     expect(mocks.search).toHaveBeenCalledWith(
-      'artificial intelligence machine learning deep learning ai',
+      'neuroscience neurology neural brain neuro',
       expect.objectContaining({
         attributesToSearchOn: ['studentSearchTerms', 'researchAreas', 'departments'],
         facets: [
@@ -1437,6 +1490,7 @@ describe('searchResearchGroupsViaMeili', () => {
           'entityType',
           'hasUndergradHostingEvidence',
           'welcomesUndergrads',
+          'worksWithUndergrads',
         ],
       }),
     );
@@ -1783,7 +1837,7 @@ describe('searchResearchGroupsViaMeili', () => {
       ]),
     );
 
-    const result = await searchResearchGroupsViaMeili('AI', {}, 1, 24);
+    const result = await searchResearchGroupsViaMeili('neuro', {}, 1, 24);
 
     expect(mocks.search).toHaveBeenCalledTimes(2);
     expect(mocks.search.mock.calls[0][1]).toHaveProperty('attributesToSearchOn');
@@ -1972,6 +2026,29 @@ describe('searchResearchGroupsViaMeili', () => {
     it('reads no deeper than the semantic leg size', () => {
       const semantic = Array.from({ length: SEMANTIC_LEG_SIZE + 5 }, (_, i) => hit(`s${i}`));
       expect(fuseKeywordAndSemanticRankings([], semantic)).toHaveLength(SEMANTIC_LEG_SIZE);
+    });
+  });
+
+  describe('keywordLegTopHitTouchesAPersonName (#5549)', () => {
+    const hit = (matches: Record<string, unknown>) => ({ _matchesPosition: matches });
+    const span = [{ start: 0, length: 4, indices: [0] }];
+
+    it('is true for any match inside a lead, professor or member name, typo or not', () => {
+      expect(keywordLegTopHitTouchesAPersonName([hit({ leadProfessorNames: span })])).toBe(true);
+      expect(keywordLegTopHitTouchesAPersonName([hit({ professorNames: span })])).toBe(true);
+      expect(keywordLegTopHitTouchesAPersonName([hit({ memberNames: span })])).toBe(true);
+    });
+
+    it('is true for a title match no topic field shares, and false when one does', () => {
+      expect(keywordLegTopHitTouchesAPersonName([hit({ name: span })])).toBe(true);
+      expect(keywordLegTopHitTouchesAPersonName([hit({ name: span, researchAreas: span })])).toBe(
+        false,
+      );
+    });
+
+    it('is false for a topic-only match or no hit', () => {
+      expect(keywordLegTopHitTouchesAPersonName([hit({ researchAreas: span })])).toBe(false);
+      expect(keywordLegTopHitTouchesAPersonName([])).toBe(false);
     });
   });
 
@@ -2482,8 +2559,10 @@ describe('searchResearchGroupsViaMeili', () => {
       'researchAreas',
       'hasUndergradHostingEvidence',
       'welcomesUndergrads',
+      'worksWithUndergrads',
       'undergradInvitationRank',
       'meshDescriptorOnlyTerms',
+      'rerankTextHash',
     ];
     expect(poolParams.attributesToRetrieve).toEqual(candidateFields);
     expect(keywordLegParams.attributesToRetrieve).toEqual(candidateFields);
@@ -2899,6 +2978,7 @@ describe('searchResearchGroupsViaMeili', () => {
       entityType: { LAB: 2, FACULTY_RESEARCH_AREA: 1 },
       hostsUndergrads: { true: 0 },
       welcomesUndergrads: { true: 0 },
+      worksWithUndergrads: { true: 0 },
     });
   });
 
@@ -3142,7 +3222,7 @@ describe('searchResearchGroupsViaMeili', () => {
   it('does not apply a ranking score threshold to keyword-only topic alias queries', async () => {
     mocks.search.mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
 
-    await searchResearchGroupsViaMeili('AI', {}, 1, 24);
+    await searchResearchGroupsViaMeili('neuro', {}, 1, 24);
 
     expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('rankingScoreThreshold');
     expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('hybrid');

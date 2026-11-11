@@ -292,4 +292,22 @@ describe('the microsite lane emits the page-stated lab name on every description
     expect(valueOf('name')).toBeUndefined();
     expect(valueOf('displayName')).toBeUndefined();
   });
+
+  it('reads og:site_name as the page name only on the site root (#5618)', () => {
+    const context = (sourceUrl: string) => ({
+      sourceUrl,
+      entityKey: 'directory-faculty-fixture-person',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      knownPersonSurnames: NO_SURNAME_ROSTER,
+    });
+    const html = newsFeedHtml('Regional council news');
+
+    expect(pageStatedLabNameObservations(extraction({}), context(SITE_URL), html)).not.toHaveLength(
+      0,
+    );
+    expect(
+      pageStatedLabNameObservations(extraction({}), context(`${SITE_URL}north-council`), html),
+    ).toHaveLength(0);
+  });
 });

@@ -27,6 +27,7 @@ const renderFilters = (
     onDepartmentChange: vi.fn(),
     onHostsUndergradsChange: vi.fn(),
     onWelcomesUndergradsChange: vi.fn(),
+    onWorksWithUndergradsChange: vi.fn(),
     onClearAll: vi.fn(),
     ...overrides,
   };
@@ -90,6 +91,43 @@ describe('ResearchFilterDisclosure', () => {
     expect(screen.getByRole('checkbox', { name: 'Hosted undergrads (7)' })).not.toBeChecked();
     fireEvent.click(checked);
     expect(props.onWelcomesUndergradsChange).toHaveBeenCalledWith(false);
+  });
+
+  it('leads with one works-with-undergraduates filter above the two it combines (#5362)', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    const { props, rerender } = renderFilters({
+      variant: 'sidebar',
+      facetDistribution: {
+        hostsUndergrads: { true: 7 },
+        welcomesUndergrads: { true: 4 },
+        worksWithUndergrads: { true: 9 },
+      },
+    });
+
+    const toggles = screen
+      .getAllByRole('checkbox')
+      .map((box) => box.getAttribute('aria-label') ?? box.closest('label')?.textContent ?? '');
+    expect(toggles[0]).toMatch(/^Works with undergrads/);
+    const toggle = screen.getByRole('checkbox', { name: 'Works with undergrads (9)' });
+    fireEvent.click(toggle);
+    expect(props.onWorksWithUndergradsChange).toHaveBeenCalledWith(true);
+
+    rerender(<ResearchFilterDisclosure {...props} selectedWorksWithUndergrads />);
+    expect(screen.getByRole('checkbox', { name: 'Works with undergrads (9)' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Welcomes undergrads (4)' })).not.toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Hosted undergrads (7)' })).not.toBeChecked();
+  });
+
+  it('hides the works-with-undergraduates filter at zero unless it is already applied', () => {
+    const { props, rerender } = renderFilters({
+      variant: 'sidebar',
+      facetDistribution: { worksWithUndergrads: { true: 0 }, hostsUndergrads: { true: 3 } },
+    });
+
+    expect(screen.queryByRole('checkbox', { name: /^Works with undergrads/ })).toBeNull();
+
+    rerender(<ResearchFilterDisclosure {...props} selectedWorksWithUndergrads />);
+    expect(screen.getByRole('checkbox', { name: 'Works with undergrads (0)' })).toBeChecked();
   });
 
   it('hides the welcomes-undergraduates filter at zero unless it is already applied', () => {

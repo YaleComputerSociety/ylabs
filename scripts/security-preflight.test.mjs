@@ -707,6 +707,232 @@ test('application and official-route CTAs use HTTP(S)-only URL helpers', () => {
   assert.doesNotMatch(programLinks, /href: link\.url/);
 });
 
+const MEMBER_LIMITED_FUNCTIONS = [
+  'canonicalPublicDetailMembers',
+  'publicResearchEntityDetailRosterMembers',
+];
+const UNCAPPED_MEMBER_CALLERS = new Set(['searchableResearchEntityMembers', 'matchableLabMembers']);
+const ENCLOSING_FUNCTION_PATTERN =
+  /(?:function\s+(\w+)\s*[<(])|(?:const\s+(\w+)\s*=\s*(?:async\s*)?(?:<[^>]*>)?\()/g;
+
+const topLevelEntries = (source, openIndex) => {
+  const closer = ')]}'['([{'.indexOf(source[openIndex])];
+  const entries = [];
+  let depth = 0;
+  let typeArgumentDepth = 0;
+  let current = '';
+  for (let index = openIndex + 1; index < source.length; index += 1) {
+    const character = source[index];
+    const previous = source[index - 1];
+    if (depth === 0 && character === closer) {
+      if (current.trim()) entries.push(current.trim());
+      return entries;
+    }
+    if ('([{'.includes(character)) depth += 1;
+    else if (')]}'.includes(character)) depth -= 1;
+    else if (character === '<' && /\w/.test(previous)) typeArgumentDepth += 1;
+    else if (character === '>' && typeArgumentDepth > 0 && previous !== '=') typeArgumentDepth -= 1;
+    if (character === ',' && depth === 0 && typeArgumentDepth === 0) {
+      entries.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += character;
+  }
+  return entries;
+};
+
+const enclosingFunctionName = (source, index) => {
+  let name = '';
+  for (const match of source.slice(0, index).matchAll(ENCLOSING_FUNCTION_PATTERN)) {
+    name = match[1] || match[2];
+  }
+  return name;
+};
+
+// The detail page's member list is the one response an unauthenticated caller can make
+// as large as a roster, so only the search paths may read past the display cap and the
+// detail route serializes no member beyond it (#5584).
+const memberLimitViolations = (serviceSource, controllerSource) => {
+  const violations = [];
+  for (const name of MEMBER_LIMITED_FUNCTIONS) {
+    for (const match of serviceSource.matchAll(new RegExp(`(^|[^\\w.])${name}\\(`, 'g'))) {
+      const before = serviceSource.slice(
+        Math.max(0, match.index - 20),
+        match.index + match[1].length,
+      );
+      if (/(function|const)\s+$/.test(before)) continue;
+      const openParenIndex = match.index + match[0].length - 1;
+      const limitArgument = topLevelEntries(serviceSource, openParenIndex)[3];
+      if (limitArgument === undefined || limitArgument === 'MAX_PUBLIC_DETAIL_MEMBERS') continue;
+      const caller = enclosingFunctionName(serviceSource, match.index);
+      if (limitArgument === 'limit' && caller === 'publicResearchEntityDetailRosterMembers')
+        continue;
+      if (limitArgument === 'EVERY_CURRENT_MEMBER' && UNCAPPED_MEMBER_CALLERS.has(caller)) continue;
+      violations.push(`${caller || 'module scope'} passes ${limitArgument} to ${name}`);
+    }
+  }
+  const detailCall = controllerSource.match(/\bgetResearchGroupDetail\(/);
+  const detailArguments = detailCall
+    ? topLevelEntries(controllerSource, detailCall.index + detailCall[0].length - 1)
+    : [];
+  if (
+    detailArguments.length !== 2 ||
+    detailArguments[0] !== 'slug' ||
+    !detailArguments[1].startsWith('{')
+  ) {
+    violations.push('the detail controller no longer calls getResearchGroupDetail(slug, { ... })');
+  } else {
+    for (const option of topLevelEntries(detailArguments[1], 0)) {
+      const key = /^(\w+)\s*(?::|$)/.exec(option)?.[1];
+      if (key !== 'includeWithheldForOperator') {
+        violations.push(`the detail controller passes ${key ?? option} to getResearchGroupDetail`);
+      }
+    }
+  }
+  return violations;
+};
+
+test('only the search paths read research members past the public detail cap', () => {
+  const serviceSource = fs.readFileSync(
+    new URL('../server/src/services/researchGroupService.ts', import.meta.url),
+    'utf8',
+  );
+  const controllerSource = fs.readFileSync(
+    new URL('../server/src/controllers/researchGroupController.ts', import.meta.url),
+    'utf8',
+  );
+  assert.deepEqual(memberLimitViolations(serviceSource, controllerSource), []);
+
+  const widenedService = serviceSource.replace(
+    /(canonicalPublicDetailMembers\(\s*group as Record<string, any>,\s*rosterEntries,)(\s*\))/,
+    '$1 new Date(), 500$2',
+  );
+  assert.notEqual(widenedService, serviceSource);
+  assert.deepEqual(memberLimitViolations(widenedService, controllerSource), [
+    'getResearchGroupDetail passes 500 to canonicalPublicDetailMembers',
+  ]);
+
+  const widenedController = controllerSource.replace(
+    'includeWithheldForOperator: hasAdminAuthority,',
+    'includeWithheldForOperator: hasAdminAuthority,\n    memberLimit: 500,',
+  );
+  assert.notEqual(widenedController, controllerSource);
+  assert.deepEqual(memberLimitViolations(serviceSource, widenedController), [
+    'the detail controller passes memberLimit to getResearchGroupDetail',
+  ]);
+});
+
+test('the member cap pin refuses a public path that passes a larger limit', () => {
+  const controller = `const detail = await getResearchGroupDetail(slug, {
+    includeWithheldForOperator: hasAdminAuthority,
+  });`;
+  const service = (body, helpers = '') => `
+const publicResearchEntityDetailRosterMembers = (entity, entries, now, limit = MAX_PUBLIC_DETAIL_MEMBERS) =>
+  dedupe(canonicalPublicDetailMembers(entity, entries, now, limit), entity);
+function searchableResearchEntityMembers(entity, entries) {
+  return publicResearchEntityDetailRosterMembers(entity, entries, now, EVERY_CURRENT_MEMBER);
+}
+${helpers}
+export async function getResearchGroupDetail(slug, { includeWithheldForOperator = false } = {}) {
+  ${body}
+}`;
+
+  assert.deepEqual(
+    memberLimitViolations(
+      service('const m = canonicalPublicDetailMembers(group, entries);'),
+      controller,
+    ),
+    [],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service('const m = canonicalPublicDetailMembers(group, entries, now, 500);'),
+      controller,
+    ),
+    ['getResearchGroupDetail passes 500 to canonicalPublicDetailMembers'],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service(
+        'const m = canonicalPublicDetailMembers(group, entries);',
+        `async function requestedPastCapMember(entity, entries) {
+  return publicResearchEntityDetailRosterMembers(entity, entries, now, EVERY_CURRENT_MEMBER);
+}`,
+      ),
+      controller,
+    ),
+    [
+      'requestedPastCapMember passes EVERY_CURRENT_MEMBER to publicResearchEntityDetailRosterMembers',
+    ],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service('const m = canonicalPublicDetailMembers(group, entries);'),
+      controller.replace(
+        'hasAdminAuthority,',
+        'hasAdminAuthority,\n    requestedMemberName: request.query?.member,',
+      ),
+    ),
+    ['the detail controller passes requestedMemberName to getResearchGroupDetail'],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service(
+        'const m = publicResearchEntityDetailRosterMembers(group, entries, now, EVERY_CURRENT_MEMBER);',
+      ),
+      controller,
+    ),
+    [
+      'getResearchGroupDetail passes EVERY_CURRENT_MEMBER to publicResearchEntityDetailRosterMembers',
+    ],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service('const m = canonicalPublicDetailMembers(group, entries);'),
+      controller.replace('hasAdminAuthority,', 'hasAdminAuthority,\n    memberLimit: 500,'),
+    ),
+    ['the detail controller passes memberLimit to getResearchGroupDetail'],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service(
+        'const m = canonicalPublicDetailMembers(group, entries.filter((entry) => entry.ok), now, 500);',
+      ),
+      controller,
+    ),
+    ['getResearchGroupDetail passes 500 to canonicalPublicDetailMembers'],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service('const m = canonicalPublicDetailMembers(group, entries, now, limit);'),
+      controller,
+    ),
+    ['getResearchGroupDetail passes limit to canonicalPublicDetailMembers'],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service('const m = canonicalPublicDetailMembers(group, entries);'),
+      controller.replace('hasAdminAuthority,', 'hasAdminAuthority,\n    memberLimit,'),
+    ),
+    ['the detail controller passes memberLimit to getResearchGroupDetail'],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service('const m = canonicalPublicDetailMembers(group, entries);'),
+      controller.replace('hasAdminAuthority,', 'hasAdminAuthority,\n    ...options,'),
+    ),
+    ['the detail controller passes ...options to getResearchGroupDetail'],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service('const m = canonicalPublicDetailMembers(group, entries);'),
+      'const detail = await getResearchGroupDetail(slug, options);',
+    ),
+    ['the detail controller no longer calls getResearchGroupDetail(slug, { ... })'],
+  );
+});
+
 test('public research detail queries cap unauthenticated fan-out before serialization', () => {
   const source = fs.readFileSync(
     new URL('../server/src/services/researchGroupService.ts', import.meta.url),
@@ -722,7 +948,7 @@ test('public research detail queries cap unauthenticated fan-out before serializ
   }
 
   assert.match(source, /const MAX_PUBLIC_DETAIL_MEMBERS = \d+/);
-  assert.match(source, /\.slice\(0, MAX_PUBLIC_DETAIL_MEMBERS\)/);
+  assert.match(source, /limit = MAX_PUBLIC_DETAIL_MEMBERS,\n\)[^{]*\{[\s\S]*?\.slice\(0, limit\)/);
 
   assert.doesNotMatch(source, /ResearchEntityRelationship\.find\(\{[^;]*?\}\)\.lean\(\)/);
   assert.doesNotMatch(
@@ -4043,6 +4269,40 @@ test('the unguarded-fetch scan passes constant hosts, guarded agents, comments a
   assert.deepEqual(findUnguardedOutboundFetches(shadowedFixture), []);
 });
 
+test('the unguarded-fetch scan keeps scanning past a regex literal that holds a quote (#5595)', () => {
+  const afterQuoteRegex = [
+    "const strip = (value) => value.replace(/^['\"]|['\"]$/g, '');",
+    'export const send = (url) => fetch(url);',
+  ].join('\n');
+  const afterClassRegex = [
+    'const quoted = /["\']/.test(input);',
+    'const ratio = total / count / 2;',
+    'export const send = (url) => fetch(url);',
+  ].join('\n');
+  const insideRegex = 'const pattern = /fetch\\(url\\)/;';
+  const betweenDivisions = 'export const ratio = (url) => total / fetch(url) / 2;';
+  const afterPostfixOperators =
+    'const halved = count! / 2; const next = index++ / 2; const prev = index-- / 2; fetch(`${base}/x`);';
+
+  assert.deepEqual(
+    findUnguardedOutboundFetches(afterQuoteRegex).map(({ kind, line }) => `${kind}@${line}`),
+    ['global fetch@2'],
+  );
+  assert.deepEqual(
+    findUnguardedOutboundFetches(afterClassRegex).map(({ kind, line }) => `${kind}@${line}`),
+    ['global fetch@3'],
+  );
+  assert.deepEqual(findUnguardedOutboundFetches(insideRegex), []);
+  assert.deepEqual(
+    findUnguardedOutboundFetches(betweenDivisions).map(({ kind, line }) => `${kind}@${line}`),
+    ['global fetch@1'],
+  );
+  assert.deepEqual(
+    findUnguardedOutboundFetches(afterPostfixOperators).map(({ kind, line }) => `${kind}@${line}`),
+    ['global fetch@1'],
+  );
+});
+
 test('the unguarded-fetch scan exempts only the reviewed number of calls in an exempt file', () => {
   const [exemptFile, { calls }] = [...REVIEWED_OUTBOUND_FETCHES][0];
   const reviewedCall = { kind: 'global fetch', line: 3, argument: 'url' };
@@ -4997,7 +5257,7 @@ test('public research Meilisearch service bounds direct search inputs', () => {
   assert.match(source, /buildResearchGroupFilterString\(visibilityScopedFilters\)/);
   assert.match(source, /\.map\(normalizeResearchGroupObjectId\)/);
   assert.match(source, /const safeEntityId = normalizeResearchGroupObjectId\(entityId\)/);
-  assert.match(source, /await getResearchEntityRoster\(\(group as any\)\._id\)/);
+  assert.match(source, /await servedRoster\(\(group as any\)\._id\)/);
   assert.doesNotMatch(source, /mongoose\.Types\.ObjectId\.isValid\(id\)/);
   assert.doesNotMatch(source, /mongoose\.Types\.ObjectId\.isValid\(String\(entityId/);
 });
@@ -5641,13 +5901,16 @@ test('auth principals are normalized before user lookup and session hydration', 
   assert.match(passportSource, /const netid = normalizeAuthNetId\(rawNetid\)/);
   assert.match(passportSource, /throw new Error\('Invalid authentication principal'\)/);
   assert.match(passportSource, /await recordAccountLogin\(\{ netid/);
-  assert.match(passportSource, /passport\.serializeUser\(function \(user: any, done\) \{/);
+  assert.match(
+    passportSource,
+    /passport\.serializeUser\(function \(\s*req: express\.Request,\s*user: any,\s*done:/,
+  );
   assert.match(passportSource, /const principal = publicAuthSessionUser\(user\)/);
   assert.match(passportSource, /const netId = normalizeAuthNetId\(source\.netId\)/);
   assert.match(passportSource, /done\(new Error\('Invalid authentication principal'\)\)/);
   assert.match(
     passportSource,
-    /done\(null, \{ \.\.\.principal, \.\.\.mintSessionClaim\(account\?\.sessionVersion\) \}\)/,
+    /done\(null, \{\s*\.\.\.principal,\s*\.\.\.mintSessionClaim\(account\?\.sessionVersion, Date\.now\(\), \{ credentialsConfirmed \}\),\s*\}\)/,
   );
   assert.match(passportSource, /function coerceStoredSessionPrincipal\(stored: unknown\)/);
   assert.match(passportSource, /const netId = normalizeAuthNetId\(stored\)/);
@@ -5657,7 +5920,7 @@ test('auth principals are normalized before user lookup and session hydration', 
   );
   assert.match(
     passportSource,
-    /if \(!account \|\| account\.archived \|\| !isSessionClaimLive\(claim, account\.sessionVersion\)\)/,
+    /if \(!account \|\| account\.archived \|\| !isSessionClaimLive\(claim, account\)\)/,
   );
   assert.match(passportSource, /done\(null, null\)/);
   assert.doesNotMatch(passportSource, /done\(null, user\.netId\)/);
@@ -5808,6 +6071,154 @@ test('local auth bypass bounds netid session identities', () => {
     passportSource,
     /normalizeAuthNetId\(unquoteEnvValue\(env\.LOCAL_AUTH_BYPASS_NETID\)\)/,
   );
+});
+
+const COPIED_DOT_ENV_BYPASS = {
+  LOCAL_AUTH_BYPASS: 'true',
+  LOCAL_AUTH_BYPASS_NETID: 'devadmin',
+  LOCAL_AUTH_BYPASS_USER_TYPE: 'admin',
+};
+const LOCAL_DEVELOPMENT_RUNTIME = {
+  NODE_ENV: 'development',
+  SERVER_BASE_URL: 'http://localhost:4000',
+  SSOBASEURL: 'https://secure.its.yale.edu/cas',
+};
+const LOOPBACK_BYPASS_CALLER = { remoteAddress: '127.0.0.1', host: 'localhost:4000' };
+
+const evaluateLocalAuthBypassGate = (cases) => {
+  const moduleUrl = new URL('../server/src/passport.ts', import.meta.url).href;
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'preflight-bypass-gate-'));
+  const script = path.join(directory, 'evaluate.mts');
+  try {
+    fs.writeFileSync(
+      script,
+      [
+        'const cases = JSON.parse(process.argv[2]);',
+        `const passport = await import(${JSON.stringify(moduleUrl)});`,
+        'const bypassMiddleware = passport.passportRoutes.stack[0].handle;',
+        'const runtimeKeys = ["NODE_ENV", "SERVER_BASE_URL", "LOCAL_AUTH_BYPASS", "LOCAL_AUTH_BYPASS_NETID", "LOCAL_AUTH_BYPASS_USER_TYPE"];',
+        'const fakeRequest = ({ remoteAddress, host }) => {',
+        '  const headers = { "x-dev-netid": "devadmin", "x-dev-user-type": "admin" };',
+        '  if (host !== undefined) headers.host = host;',
+        '  return { headers, socket: { remoteAddress }, path: "/check", session: { visitorLogged: true }, query: {},',
+        '    get: (name) => headers[name.toLowerCase()], isAuthenticated() { return Boolean(this.user); } };',
+        '};',
+        'const results = [];',
+        'for (const testCase of cases) {',
+        '  for (const key of runtimeKeys) delete process.env[key];',
+        '  for (const [key, value] of Object.entries(testCase.env)) process.env[key] = value;',
+        '  const gate = passport.isLocalAuthBypassRequestAllowed(fakeRequest(testCase.caller), testCase.env);',
+        '  const result = { name: testCase.name, gate };',
+        '  if (!testCase.expectAllowed && !gate) {',
+        '    const req = fakeRequest(testCase.caller);',
+        '    let nextArgs = null;',
+        '    await bypassMiddleware(req, {}, (...args) => { nextArgs = args; });',
+        '    result.resolvedNetId = req.user?.netId ?? null;',
+        '    result.resolvedIsAdmin = req.user?.isAdmin ?? null;',
+        '    result.authenticated = req.isAuthenticated();',
+        '    result.nextArgs = nextArgs;',
+        '  }',
+        '  results.push(result);',
+        '}',
+        'process.stdout.write(JSON.stringify(results));',
+        'process.exit(0);',
+      ].join('\n'),
+    );
+    const result = spawnSync(serverTsx, [script, JSON.stringify(cases)], {
+      cwd: serverDirectory,
+      encoding: 'utf8',
+      timeout: 120_000,
+      env: {
+        PATH: process.env.PATH,
+        HOME: process.env.HOME,
+        ...LOCAL_DEVELOPMENT_RUNTIME,
+        ...COPIED_DOT_ENV_BYPASS,
+      },
+    });
+    if (result.status !== 0) {
+      throw new Error(`local auth bypass gate evaluation failed: ${result.stderr || result.error}`);
+    }
+    return JSON.parse(result.stdout);
+  } finally {
+    fs.rmSync(directory, { recursive: true, force: true });
+  }
+};
+
+test('the local auth bypass never activates on a deployed service, even with a copied .env that enables it', () => {
+  const localRuntime = { ...LOCAL_DEVELOPMENT_RUNTIME, ...COPIED_DOT_ENV_BYPASS };
+  const refused = (name, env, caller = LOOPBACK_BYPASS_CALLER) => ({
+    name,
+    env: { ...localRuntime, ...env },
+    caller,
+    expectAllowed: false,
+  });
+  const withoutNodeEnv = { ...localRuntime };
+  delete withoutNodeEnv.NODE_ENV;
+  const cases = [
+    {
+      name: 'local loopback baseline',
+      env: localRuntime,
+      caller: LOOPBACK_BYPASS_CALLER,
+      expectAllowed: true,
+    },
+    ...['production', 'prod', 'test', 'ci', 'staging', 'beta', ''].map((nodeEnv) =>
+      refused(`NODE_ENV=${JSON.stringify(nodeEnv)}`, { NODE_ENV: nodeEnv }),
+    ),
+    {
+      name: 'NODE_ENV unset',
+      env: withoutNodeEnv,
+      caller: LOOPBACK_BYPASS_CALLER,
+      expectAllowed: false,
+    },
+    ...['203.0.113.5', '10.0.0.4', '::ffff:10.1.2.3', '::', undefined].map((remoteAddress) =>
+      refused(
+        `socket peer ${String(remoteAddress)}`,
+        {},
+        { remoteAddress, host: 'localhost:4000' },
+      ),
+    ),
+    ...[
+      'yalelabs.io',
+      'localhost.attacker.example',
+      '127.0.0.1.nip.io',
+      'localhost@yalelabs.io',
+      undefined,
+    ].map((host) =>
+      refused(`Host header ${String(host)}`, {}, { remoteAddress: '127.0.0.1', host }),
+    ),
+    ...[
+      'https://yalelabs.io',
+      'https://yalelabs-beta.onrender.com',
+      'http://10.0.0.4:4000',
+      '',
+    ].map((serverBaseUrl) =>
+      refused(`SERVER_BASE_URL ${JSON.stringify(serverBaseUrl)}`, {
+        SERVER_BASE_URL: serverBaseUrl,
+      }),
+    ),
+    refused(
+      'deployed web service shape',
+      { NODE_ENV: 'production', SERVER_BASE_URL: 'https://yalelabs.io' },
+      { remoteAddress: '10.0.0.4', host: 'yalelabs.io' },
+    ),
+  ];
+
+  const results = evaluateLocalAuthBypassGate(cases);
+  assert.equal(results.length, cases.length);
+  for (const [index, result] of results.entries()) {
+    const expected = cases[index];
+    assert.equal(result.name, expected.name);
+    assert.equal(
+      result.gate,
+      expected.expectAllowed,
+      `isLocalAuthBypassRequestAllowed for ${expected.name}`,
+    );
+    if (expected.expectAllowed) continue;
+    assert.equal(result.resolvedNetId, null, `bypass middleware identity for ${expected.name}`);
+    assert.equal(result.resolvedIsAdmin, null, `bypass middleware admin for ${expected.name}`);
+    assert.equal(result.authenticated, false, `bypass middleware session for ${expected.name}`);
+    assert.deepEqual(result.nextArgs, [], `bypass middleware continues for ${expected.name}`);
+  }
 });
 
 test('admin authority requires an active admin grant and never consults userType', () => {
@@ -6357,6 +6768,53 @@ test('user account routes set full private no-store response headers', () => {
     assert.match(source, /Expires', '0'/);
     assert.match(source, /X-Content-Type-Options', 'nosniff'/);
   }
+});
+
+test('account deletion fails closed while a setting it promises to use is missing (#5624)', () => {
+  const read = (file) => fs.readFileSync(new URL(file, import.meta.url), 'utf8');
+  const readiness = read('../server/src/services/accountDeletionReadiness.ts');
+  for (const setting of [
+    'POSTHOG_PERSONAL_API_KEY',
+    'POSTHOG_PROJECT_ID',
+    'ACCOUNT_DELETION_AUDIT_HMAC_KEY',
+  ]) {
+    assert.match(readiness, new RegExp(`missing\\.push\\('${setting}'\\)`));
+  }
+  assert.match(readiness, /missing\.push\(ACCOUNT_DELETION_ENVIRONMENT_SETTING\)/);
+  assert.match(readiness, /environment === null \|\| POSTHOG_CAPTURING_ENVIRONMENTS\.includes/);
+
+  const service = read('../server/src/services/accountDataService.ts');
+  const guard = service.indexOf('assertAccountDeletionAvailable(env, environment);');
+  const firstRead = service.indexOf("Account.findOne({ netid }).select('_id productAnalyticsId')");
+  assert.ok(
+    guard > 0 && firstRead > guard,
+    'deleteAccountData must refuse before reading or deleting',
+  );
+
+  const controller = read('../server/src/controllers/accountDataController.ts');
+  const refusal = controller.indexOf('if (!accountDeletionReadiness().available)');
+  const phraseCheck = controller.indexOf('ACCOUNT_DATA_DELETION_CONFIRM_PHRASE\n  ) {');
+  assert.ok(refusal > 0 && phraseCheck > refusal, 'the route must refuse before any other check');
+  assert.match(controller, /error instanceof AccountDeletionUnavailableError/);
+
+  const script = read('../server/src/scripts/deleteAccountData.ts');
+  const applyGuard = script.indexOf('assertDeleteAccountDataApplyReady(args);');
+  const connect = script.indexOf(
+    'const mongoUrl = resolveDeleteAccountDataMongoUrl(args.environment);',
+  );
+  assert.ok(
+    applyGuard > 0 && connect > applyGuard,
+    'the operator script must refuse before connecting',
+  );
+
+  assert.match(
+    read('../server/src/routes/ready.ts'),
+    /accountDeletion: accountDeletionServingState\(\)/,
+  );
+  assert.match(
+    read('../client/scripts/productionPromotionSmoke.mjs'),
+    /addCheck\('api\.ready\.accountDeletion', accountDeletion\.status/,
+  );
 });
 
 test('authenticated research-area routes set full private no-store response headers', () => {

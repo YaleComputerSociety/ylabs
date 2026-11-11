@@ -2270,6 +2270,57 @@ describe('servedLinkUrl https landing (#4649)', () => {
   });
 });
 
+describe('servedLinkUrl https spelling (#5639)', () => {
+  const HTTP = 'http://both.fixture.example.org/Lab/';
+  const SPELLING = 'https://both.fixture.example.org/Lab/';
+
+  it('offers the https spelling probed healthy for an http website', () => {
+    expect(
+      servedLinkUrl(HTTP, [{ url: HTTP, healthStatus: 'HEALTHY', httpsSpellingUrl: SPELLING }]),
+    ).toBe(SPELLING);
+  });
+
+  it('prefers the https page the host redirected to over the probed spelling', () => {
+    const landing = 'https://both.fixture.example.org/lab/';
+    expect(
+      servedLinkUrl(HTTP, [
+        {
+          url: HTTP,
+          healthStatus: 'HEALTHY',
+          httpsLandingUrl: landing,
+          httpsSpellingUrl: SPELLING,
+        },
+      ]),
+    ).toBe(landing);
+  });
+
+  it('keeps the http url when the https spelling failed its certificate', () => {
+    expect(
+      servedLinkUrl(HTTP, [
+        { url: HTTP, healthStatus: 'HEALTHY' },
+        { url: SPELLING, healthStatus: 'UNKNOWN', tlsVerificationFailed: true },
+      ]),
+    ).toBe(HTTP);
+  });
+
+  it('keeps the http url when the https spelling was never probed', () => {
+    expect(servedLinkUrl(HTTP, [{ url: HTTP, healthStatus: 'HEALTHY' }])).toBe(HTTP);
+    expect(servedLinkUrl(HTTP, [])).toBe(HTTP);
+  });
+
+  it('never offers a spelling that names another page', () => {
+    expect(
+      servedLinkUrl(HTTP, [
+        {
+          url: HTTP,
+          healthStatus: 'HEALTHY',
+          httpsSpellingUrl: 'https://other.fixture.example.org/Lab/',
+        },
+      ]),
+    ).toBe(HTTP);
+  });
+});
+
 describe('slug-derived labels keep acronym casing', () => {
   it('upper-cases a known acronym in a URL leaf', () => {
     expect(sourceLabelForUrl('https://medicine.yale.edu/lab/clinical-nlp/')).toBe(

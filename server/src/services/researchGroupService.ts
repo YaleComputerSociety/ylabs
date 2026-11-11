@@ -13,10 +13,7 @@
  */
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
-import {
-  type OfficialRosterUndergraduateStatus,
-  undergradInvitationLevels,
-} from '../models/storedVocabularies';
+import { type OfficialRosterUndergraduateStatus } from '../models/storedVocabularies';
 import { publicStudentVisibilityTiers, StudentVisibilityTier } from '../models/studentVisibility';
 import { partitionStudentVisibilityReasons } from './studentVisibilityTier';
 import {
@@ -24,18 +21,20 @@ import {
   RoleAssignment,
   roleAssignmentReattachWrite,
 } from '../models/roleAssignment';
+import { type ResearchEntityRosterEntry } from './researchEntityMembershipAccessor';
 import {
-  getResearchEntityRoster,
-  getResearchEntityRosterByEntityId,
-  type ResearchEntityRosterEntry,
-} from './researchEntityMembershipAccessor';
+  currentDirectoryRemovalServing,
+  servedRoster,
+  servedRosterByEntityId,
+} from './directoryRemovalServing';
 import {
   LEAD_ROLE_CANONICAL_VALUES,
   LEAD_ROLE_LEGACY_LABELS,
 } from '../models/canonicalRoleMapping';
 import { Researcher, type ResearcherProfileLink } from '../models/researcher';
 import { Department, DepartmentCategory } from '../models/department';
-import { resolveOrCreateResearcherIdForIdentity } from '../scrapers/canonicalMembershipMaterializer';
+import { resolveOrCreateResearcherIdUnlessRemoved } from '../scrapers/canonicalMembershipMaterializer';
+import { currentDirectoryRemovalMintGuard, REMOVED_BY_REQUEST } from './directoryRemovalMintGuard';
 import { judgeReDerivedAccessSignals } from '../scrapers/accessMaterializer';
 import { isProgrammePageAdmittedAsJoinRoute } from '../scrapers/undergradJoinPageAdmission';
 import { isLabRosterCitationUrl } from '../scrapers/undergradRosterEvidence';
@@ -51,14 +50,32 @@ import {
   readResearchEntitySearchSortableAttributes,
   UNDERGRAD_INVITATION_RANK_FIELD,
   RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME,
+  LEAD_PROFESSOR_MEMBER_ROLES,
+  SEARCHABLE_PROFESSOR_MEMBER_ROLES,
+  SEARCHABLE_STUDENT_MEMBER_ROLES,
+  searchablePersonName,
 } from './researchEntitySearchIndexService';
 import { meshDescriptorWordKeys } from '../scrapers/utils/meshNonSubjectDescriptors';
 import { getResearchSearchQueryVector } from './researchSearchQueryEmbedding';
 import {
   applyCachedRerank,
-  cachedSearchRerankScores,
   isSearchRerankCacheEnabled,
+  lookupSearchRerankCacheEntry,
+  SEARCH_RERANK_STALE_WINDOW,
+  SEARCH_RERANK_WINDOW,
+  searchRerankCandidateFingerprints,
+  searchRerankEntryIsStale,
+  type SearchRerankCandidateFingerprint,
 } from './searchRerankCache';
+import {
+  enqueueSearchRerankLiveMiss,
+  isSearchRerankLiveMissEnabled,
+  searchRerankLiveMissMode,
+  searchRerankLiveMissWantsEntry,
+  type SearchRerankLiveMissClient,
+  type SearchRerankLiveMissGate,
+} from './searchRerankLiveMiss';
+import { SEARCH_RERANK_TEXT_HASH_FIELD } from './searchRerankCandidateText';
 import { servedCitationUrl } from './servedCitationPolicy';
 import { withoutLeadGuardedCopy } from './servedResearchEntityCard';
 import { isPublicHttpUrl } from '../utils/urlSafety';
@@ -86,6 +103,7 @@ import {
   candidateMatchesStudentFilters,
   HOSTS_UNDERGRADS_INDEX_FIELD,
   WELCOMES_UNDERGRADS_INDEX_FIELD,
+  WORKS_WITH_UNDERGRADS_INDEX_FIELD,
   ResearchGroupFilterInput,
   tallyCandidateFacetDistribution,
   visibilityScopeOnly,
@@ -95,6 +113,7 @@ import {
   listedRosterUndergraduate,
   servableRosterSnapshot,
 } from './hostedUndergraduates';
+import { entityMentorsUndergraduates } from './undergradListEvidenceServing';
 import {
   type AppliedStudentFilters,
   resolveStudentFilterValuesInScope,
@@ -117,6 +136,7 @@ import {
 } from './researchEntityDto';
 import {
   isLikelyPublicProfileImageUrl,
+  profileImagePictureSearchPattern,
   isSharedProfileImageAcrossDifferentNames,
 } from '../scripts/profileImageQualityAuditCore';
 import {
@@ -147,6 +167,7 @@ import { sanitizeResearchAreaFacetDistribution } from '../utils/researchAreaLabe
 import { isServableOfficialProfileLink } from '../utils/officialProfileLinkServability';
 import { orcidProfileUrl, servableOrcid } from '../utils/orcid';
 import {
+  QUERY_ACRONYM_PHRASES,
   QUERY_TOPIC_ALIASES,
   RESEARCH_ENTITY_MEILI_DISABLE_ON_WORDS,
   RESEARCH_ENTITY_MEILI_SYNONYMS,
@@ -159,6 +180,7 @@ import {
   type CorrectedSearchQuery,
 } from './searchQuerySpellingCorrection';
 import { getResearchSearchSpellingVocabulary } from './researchSearchSpellingVocabulary';
+import { replaceNicknameInQuery, resolveNicknameInNameQuery } from './nameQueryNicknames';
 import { foldLatinDiacritics } from '../utils/latinDiacritics';
 import {
   maxReachableResearchSearchPage,
@@ -235,7 +257,7 @@ export const optionalPublicLeadMemberNames = async (
   const emeritusCandidates: EmeritusWayInCandidate[] = [];
   const now = new Date();
   try {
-    const rosterByEntityId = await getResearchEntityRosterByEntityId(
+    const rosterByEntityId = await servedRosterByEntityId(
       entities.map((entity) => entity._id),
       { peopleHoldingCanonicalRoles: PUBLIC_LEAD_CANONICAL_ROLES },
     );
@@ -336,7 +358,7 @@ async function resolveEmeritusWayInDecisions(
       .map((candidate) => candidate.entity._id);
     const rosterByEntityId =
       needsRoster.length > 0
-        ? await getResearchEntityRosterByEntityId(needsRoster)
+        ? await servedRosterByEntityId(needsRoster)
         : new Map<string, ResearchEntityRosterEntry[]>();
     for (const candidate of emeritusLed) {
       const key = researchGroupDocumentId(candidate.entity._id);
@@ -449,6 +471,7 @@ function ownerDisplayName(owner: OwnerLike, kind: 'lab' | 'individual'): string 
 export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
   group: any;
   created: boolean;
+  refused?: typeof REMOVED_BY_REQUEST;
 }> {
   if (!owner._id && !owner.netid) {
     throw new Error('findOrCreateForOwner requires owner._id or owner.netid');
@@ -456,11 +479,15 @@ export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
 
   const ownerDisplayNameValue =
     [owner.fname, owner.lname].filter(Boolean).join(' ').trim() || undefined;
-  const ownerPersonId = await resolveOrCreateResearcherIdForIdentity({
-    netid: owner.netid,
-    displayName: ownerDisplayNameValue,
-    hasCanonicalSourceReference: true,
-  });
+  const guard = await currentDirectoryRemovalMintGuard();
+  const ownerPersonId = await resolveOrCreateResearcherIdUnlessRemoved(
+    { netid: owner.netid, displayName: ownerDisplayNameValue, hasCanonicalSourceReference: true },
+    guard,
+  );
+  if (ownerPersonId === REMOVED_BY_REQUEST) {
+    guard.recordRefusal();
+    return { group: null, created: false, refused: REMOVED_BY_REQUEST };
+  }
   if (ownerPersonId) {
     const existingLeadAssignment = await RoleAssignment.findOne({
       personId: ownerPersonId,
@@ -557,6 +584,7 @@ export interface ResearchGroupSearchOptions {
   embeddingSpendKey?: string;
   correctSpelling?: boolean;
   resolveFilterValues?: boolean;
+  rerankLiveMissClient?: SearchRerankLiveMissClient;
 }
 
 export interface ResearchSearchQueryCorrection {
@@ -630,8 +658,10 @@ const RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES = [
   'researchAreas',
   HOSTS_UNDERGRADS_INDEX_FIELD,
   WELCOMES_UNDERGRADS_INDEX_FIELD,
+  WORKS_WITH_UNDERGRADS_INDEX_FIELD,
   UNDERGRAD_INVITATION_RANK_FIELD,
   MESH_DESCRIPTOR_ONLY_TERMS_FIELD,
+  SEARCH_RERANK_TEXT_HASH_FIELD,
 ];
 const MAX_FILTER_VALUE_LENGTH = 120;
 const STUDENT_QUERY_STOP_WORDS = new Set([
@@ -928,6 +958,20 @@ export const normalizeResearchSearchQuery = (value: unknown): NormalizedResearch
   };
 };
 
+export const expandNicknameInResearchNameQuery = (query: string): string => {
+  const expansion = resolveNicknameInNameQuery(
+    normalizeResearchSearchQuery(query).tokens,
+    getResearchSearchSpellingVocabulary(),
+  );
+  return expansion ? replaceNicknameInQuery(query, expansion) : query;
+};
+
+export const rewriteAcronymToPhrase = (query: string): string => {
+  const { tokens } = normalizeResearchSearchQuery(query);
+  const phrase = tokens.length === 1 ? QUERY_ACRONYM_PHRASES[tokens[0]] : undefined;
+  return phrase ?? query;
+};
+
 const boundedResearchFilterValues = (values?: string[]): string[] => {
   if (!Array.isArray(values)) return [];
 
@@ -958,6 +1002,7 @@ const sanitizeResearchGroupSearchFilters = (
   researchAreas: boundedResearchFilterValues(filters.researchAreas),
   hostsUndergrads: filters.hostsUndergrads === true ? true : undefined,
   welcomesUndergrads: filters.welcomesUndergrads === true ? true : undefined,
+  worksWithUndergrads: filters.worksWithUndergrads === true ? true : undefined,
   studentVisibilityTier: boundedResearchFilterValues(filters.studentVisibilityTier),
 });
 
@@ -968,7 +1013,11 @@ const SEARCH_RERANK_CACHE_FILTER_LISTS = [
   'departments',
   'researchAreas',
 ] as const;
-const SEARCH_RERANK_CACHE_FILTER_TOGGLES = ['hostsUndergrads', 'welcomesUndergrads'] as const;
+const SEARCH_RERANK_CACHE_FILTER_TOGGLES = [
+  'hostsUndergrads',
+  'welcomesUndergrads',
+  'worksWithUndergrads',
+] as const;
 
 export type SearchRerankCacheFilters = Pick<
   ResearchGroupFilterInput,
@@ -1009,7 +1058,9 @@ export const searchRerankCacheQueryKey = (
   query: unknown,
   filters: ResearchGroupFilterInput = {},
 ): string => {
-  const normalized = normalizeResearchSearchQuery(query);
+  const normalized = normalizeResearchSearchQuery(
+    typeof query === 'string' ? rewriteAcronymToPhrase(query) : query,
+  );
   const queryText =
     normalized.tokens.length > 0 ? normalized.tokens.join(' ') : collapsedLowercase(normalized.raw);
   const chosen = searchRerankCacheFilters(filters);
@@ -1088,16 +1139,13 @@ const mongoFilterFromResearchFilters = (
   if (filters.hostsUndergrads === true) {
     mongoFilter.hasUndergradHostingEvidence = true;
   }
-  if (filters.welcomesUndergrads === true) {
-    mongoFilter['undergradInvitation.level'] = { $in: [...undergradInvitationLevels] };
-  }
 
   return mongoFilter;
 };
 
 export const leadMembersForEntities = async (entityIds: any[]): Promise<Map<string, any[]>> => {
   if (entityIds.length === 0) return new Map();
-  const rosterByEntityId = await getResearchEntityRosterByEntityId(entityIds);
+  const rosterByEntityId = await servedRosterByEntityId(entityIds);
   const byEntityId = new Map<string, any[]>();
   for (const [key, roster] of rosterByEntityId) {
     const leads = roster.filter((member) => LEAD_ROLE_LEGACY_LABELS.has(member.role));
@@ -1461,6 +1509,29 @@ export const keywordLegTopHitIsNameMatch = (
   return !TOPIC_MATCH_ATTRIBUTES.some((attribute) => matchedAttributes.has(attribute));
 };
 
+// Skipping a background rerank only costs its gain, while reranking a name search
+// demotes the person it named, so the live-miss gate is looser than the serving
+// name guard above: any keyword match inside a person's name on the best hit, or a
+// title match no topic field shares, keeps the query out. Measured on the #5549
+// shadow replay, where name-shaped queries whose person no row names were the
+// largest losses.
+export const keywordLegTopHitTouchesAPersonName = (keywordLegHits: any[]): boolean => {
+  const top = keywordLegHits[0];
+  if (!top) return false;
+  const matchedAttributes = new Set(
+    Object.keys(top._matchesPosition ?? {}).map((attribute) => attribute.split('.')[0]),
+  );
+  if (WHOLE_NAME_PERSON_FIELD_ATTRIBUTES.some((attribute) => matchedAttributes.has(attribute))) {
+    return true;
+  }
+  return (
+    TITLE_ATTRIBUTES.some((attribute) => matchedAttributes.has(attribute)) &&
+    !TOPIC_MATCH_ATTRIBUTES.some((attribute) => matchedAttributes.has(attribute))
+  );
+};
+
+const LIVE_MISS_MIN_QUERY_CHARACTERS = 4;
+
 const hitMatchRestsOnMeshDescriptor = (hit: any, queryWordKeys: readonly string[]): boolean => {
   const descriptorOnlyTerms = hit?.[MESH_DESCRIPTOR_ONLY_TERMS_FIELD];
   if (!Array.isArray(descriptorOnlyTerms) || descriptorOnlyTerms.length === 0) return false;
@@ -1618,6 +1689,7 @@ export const RESEARCH_ENTITY_SEARCH_FACET_FIELDS = [
   'entityType',
   HOSTS_UNDERGRADS_INDEX_FIELD,
   WELCOMES_UNDERGRADS_INDEX_FIELD,
+  WORKS_WITH_UNDERGRADS_INDEX_FIELD,
 ];
 
 // A toggle needs no disjunctive query: with it on, its own count under the other
@@ -1632,12 +1704,16 @@ const POOL_TALLIED_RESEARCH_FACETS: ReadonlyArray<{
   })),
   { filterKey: 'hostsUndergrads', indexField: HOSTS_UNDERGRADS_INDEX_FIELD },
   { filterKey: 'welcomesUndergrads', indexField: WELCOMES_UNDERGRADS_INDEX_FIELD },
+  { filterKey: 'worksWithUndergrads', indexField: WORKS_WITH_UNDERGRADS_INDEX_FIELD },
 ];
 
 const TOGGLE_FILTERS_AHEAD_OF_INDEX: ReadonlyArray<{
-  filterKey: 'welcomesUndergrads';
+  filterKey: 'welcomesUndergrads' | 'worksWithUndergrads';
   indexField: string;
-}> = [{ filterKey: 'welcomesUndergrads', indexField: WELCOMES_UNDERGRADS_INDEX_FIELD }];
+}> = [
+  { filterKey: 'welcomesUndergrads', indexField: WELCOMES_UNDERGRADS_INDEX_FIELD },
+  { filterKey: 'worksWithUndergrads', indexField: WORKS_WITH_UNDERGRADS_INDEX_FIELD },
+];
 
 const liveIndexSortability = async (
   meiliIndex: Awaited<ReturnType<typeof getMeiliSearchIndex>>,
@@ -1697,6 +1773,7 @@ const SPELLING_PROTECTED_QUERY_TERMS: ReadonlySet<string> = new Set(
     ...RESEARCH_ENTITY_MEILI_DISABLE_ON_WORDS,
     ...Object.keys(STUDENT_QUERY_ALIASES),
     ...Object.keys(QUERY_TOPIC_ALIASES),
+    ...Object.keys(QUERY_ACRONYM_PHRASES),
     ...Object.keys(WORKING_STYLE_PHRASE_ALIASES),
     ...Object.keys(RESEARCH_ENTITY_MEILI_SYNONYMS),
   ].flatMap((phrase) => tokenizeStudentResearchQuery(phrase)),
@@ -1784,15 +1861,19 @@ const MATCHABLE_LAB_MEMBER_ROLES: ReadonlySet<string> = new Set([
   'undergrad',
 ]);
 
-export const presentedLabMembers = (
+export const matchableLabMembers = (
   entity: Record<string, any>,
   rosterEntries: ResearchEntityRosterEntry[],
   now: Date,
 ): { leadProfessorNames: string[]; members: MatchedLabMember[] } => {
-  const members = publicResearchEntityDetailRosterMembers(entity, rosterEntries, now);
+  const members = publicResearchEntityDetailRosterMembers(
+    entity,
+    rosterEntries,
+    now,
+    EVERY_CURRENT_MEMBER,
+  );
   const rosterMembers = members
     .filter((member) => isFreshVerifiedOfficialRosterRow(member.row, now, entity.rosterEnrichment))
-    .slice(0, MAX_PUBLIC_ROSTER_MEMBERS)
     .filter((member) => MATCHABLE_LAB_MEMBER_ROLES.has(member.role))
     .map((member) => ({
       name: memberDisplayName(member),
@@ -1827,15 +1908,13 @@ async function optionalMatchedLabMemberNames(
     return { byEntityId, unavailable: false };
   }
   try {
-    const rosterByEntityId = await getResearchEntityRosterByEntityId(
-      entities.map((entity) => entity._id),
-    );
+    const rosterByEntityId = await servedRosterByEntityId(entities.map((entity) => entity._id));
     const now = new Date();
     for (const entity of entities) {
       const entityId = researchGroupDocumentId(entity._id);
       if (!entityId) continue;
       const entries = rosterByEntityId.get(entityId) ?? [];
-      const matched = matchedLabMember(query, presentedLabMembers(entity, entries, now));
+      const matched = matchedLabMember(query, matchableLabMembers(entity, entries, now));
       if (matched) byEntityId.set(entityId, matched);
     }
   } catch (error) {
@@ -1846,17 +1925,34 @@ async function optionalMatchedLabMemberNames(
   return { byEntityId, unavailable: false };
 }
 
+interface RerankLiveMissOrigin {
+  typedQuery: string;
+  filters: ResearchGroupFilterInput;
+  client: SearchRerankLiveMissClient;
+}
+
 interface ResearchQuerySearchContext {
   rerankQueryKey?: string;
   meiliCallRole?: MeiliCallRole;
+  rerankLiveMiss?: RerankLiveMissOrigin;
+  withRerankCandidateFingerprints?: boolean;
 }
 
 interface SearchedResearchQuery {
   result: ResearchGroupSearchResult;
   answeredAsNameSearch: boolean;
+  rerankLiveMissGate?: SearchRerankLiveMissGate;
+  rerankCandidateFingerprints?: SearchRerankCandidateFingerprint[];
 }
 
-const MORE_TOPIC_RESULTS_ACCESS_TOGGLES = ['hostsUndergrads', 'welcomesUndergrads'] as const;
+const readsSearchRerankCache = (): boolean =>
+  isSearchRerankCacheEnabled() || isSearchRerankLiveMissEnabled();
+
+const MORE_TOPIC_RESULTS_ACCESS_TOGGLES = [
+  'hostsUndergrads',
+  'welcomesUndergrads',
+  'worksWithUndergrads',
+] as const;
 type MoreTopicResultsAccessToggle = (typeof MORE_TOPIC_RESULTS_ACCESS_TOGGLES)[number];
 const MORE_TOPIC_RESULTS_BELOW_FILTERED_TOTAL = 10;
 const MORE_TOPIC_RESULTS_LIMIT = 10;
@@ -1865,10 +1961,14 @@ const MORE_TOPIC_RESULTS_CANDIDATES_BEYOND_SHOWN = 2 * MORE_TOPIC_RESULTS_LIMIT;
 const carriesAccessToggleEvidence = (
   entity: PublicResearchEntityDto,
   toggle: MoreTopicResultsAccessToggle,
-): boolean =>
-  toggle === 'hostsUndergrads'
-    ? entity.hasUndergradHostingEvidence === true
-    : entity.undergradInvitation !== undefined && entity.undergradInvitation !== null;
+): boolean => {
+  const hosts = entity.hasUndergradHostingEvidence === true;
+  const welcomes = entity.welcomesUndergrads === true;
+  if (toggle === 'hostsUndergrads') return hosts;
+  if (toggle === 'welcomesUndergrads') return welcomes;
+  const listed = (entity as { undergradListEvidence?: unknown }).undergradListEvidence;
+  return hosts || welcomes || (Array.isArray(listed) && listed.length > 0);
+};
 
 interface MoreTopicResultsRequest {
   searchQuery: string;
@@ -1905,6 +2005,7 @@ async function optionalMoreTopicResults({
     ...filters,
     hostsUndergrads: undefined,
     welcomesUndergrads: undefined,
+    worksWithUndergrads: undefined,
   };
   const shownIds = new Set(
     filtered.researchEntities.map((entity) => researchGroupDocumentId(entity._id)),
@@ -1950,12 +2051,14 @@ export async function searchResearchGroupsViaMeili(
   sort: ResearchGroupSearchSort = {},
   options: ResearchGroupSearchOptions = {},
 ): Promise<ResearchGroupSearchResult> {
+  const nameQuery = expandNicknameInResearchNameQuery(query);
   const spelling =
     options.correctSpelling === false
-      ? { query, corrections: [] }
-      : correctResearchSearchQuerySpelling(query);
+      ? { query: nameQuery, corrections: [] }
+      : correctResearchSearchQuerySpelling(nameQuery);
+  const searchQuery = rewriteAcronymToPhrase(spelling.query);
   const studentFilters = await resolveStudentFiltersAgainstCorpus(filters, options);
-  const filterableToggles = answersFromMongoBrowse(spelling.query, options)
+  const filterableToggles = answersFromMongoBrowse(searchQuery, options)
     ? { filters: studentFilters.filters, dropped: undefined }
     : withoutUnfilterableToggles(
         studentFilters.filters,
@@ -1963,24 +2066,28 @@ export async function searchResearchGroupsViaMeili(
       );
   const droppedToggleFilters = filterableToggles.dropped;
   const rerankQueryKey =
-    isSearchRerankCacheEnabled() && normalizeResearchSearchQuery(query).raw !== ''
+    readsSearchRerankCache() && normalizeResearchSearchQuery(query).raw !== ''
       ? searchRerankCacheQueryKey(query, filters)
       : undefined;
+  const rerankLiveMiss =
+    rerankQueryKey && options.rerankLiveMissClient && isSearchRerankLiveMissEnabled()
+      ? { typedQuery: query, filters, client: options.rerankLiveMissClient }
+      : undefined;
   const { result: searched, answeredAsNameSearch } = await searchResearchGroupsForQuery(
-    spelling.query,
+    searchQuery,
     studentFilters.filters,
     page,
     pageSize,
     sort,
     options,
-    { rerankQueryKey },
+    { rerankQueryKey, rerankLiveMiss },
   );
   const appliedFilters =
     studentFilters.applied || droppedToggleFilters
       ? { ...studentFilters.applied, ...droppedToggleFilters }
       : undefined;
   const moreTopicResults = await optionalMoreTopicResults({
-    searchQuery: spelling.query,
+    searchQuery,
     typedQuery: query,
     filters: filterableToggles.filters,
     filtered: searched,
@@ -2030,7 +2137,12 @@ async function searchResearchGroupsForQuery(
   pageSize: number,
   sort: ResearchGroupSearchSort = {},
   options: ResearchGroupSearchOptions = {},
-  { rerankQueryKey, meiliCallRole = 'required' }: ResearchQuerySearchContext = {},
+  {
+    rerankQueryKey,
+    meiliCallRole = 'required',
+    rerankLiveMiss,
+    withRerankCandidateFingerprints = false,
+  }: ResearchQuerySearchContext = {},
 ): Promise<SearchedResearchQuery> {
   // Same reason as `getResearchGroupDetail`: a browse hit carries research-area chips too, and
   // a script that reads browse must see the chips a student sees (#3817).
@@ -2111,10 +2223,18 @@ async function searchResearchGroupsForQuery(
         mongoFilterFromResearchFilters(sanitizedFilters, safeOptions.includeNonPublic),
       ).lean()) as any[],
       safeOptions.includeNonPublic,
-    ).filter(
-      (entity) =>
-        sanitizedFilters.welcomesUndergrads !== true || entityWelcomesUndergraduates(entity),
-    );
+    )
+      .filter(
+        (entity) =>
+          sanitizedFilters.welcomesUndergrads !== true || entityWelcomesUndergraduates(entity),
+      )
+      .filter(
+        (entity) =>
+          sanitizedFilters.worksWithUndergrads !== true ||
+          entityHasHostedUndergraduates(entity) ||
+          entityWelcomesUndergraduates(entity) ||
+          entityMentorsUndergraduates(entity),
+      );
     const candidatesWithQuality = await withQualitySummaries(candidates as any[]);
     const filteredCandidates = candidatesWithQuality
       .filter((entity) => matchesQualityFilters(entity.qualitySummary, safeOptions.qualityFilters))
@@ -2444,9 +2564,9 @@ async function searchResearchGroupsForQuery(
   const runsSemanticLeg = runsHybridLegs && !sort.sortBy;
   // Only a locally paginated pool can be reordered before it is paged, so every page of
   // one search reads the same order; a sorted or pre-paginated search is served as is.
-  const rerankScoresLookup =
+  const rerankEntryLookup =
     rerankQueryKey && paginateHybridPoolLocally && runsSemanticLeg
-      ? cachedSearchRerankScores(rerankQueryKey)
+      ? lookupSearchRerankCacheEntry(rerankQueryKey)
       : null;
   const keywordLegParams = (matchingStrategy?: string): Record<string, any> => ({
     filter: candidatePoolFilterString,
@@ -2682,6 +2802,7 @@ async function searchResearchGroupsForQuery(
       researchAreas,
       [HOSTS_UNDERGRADS_INDEX_FIELD]: hostingEvidence,
       [WELCOMES_UNDERGRADS_INDEX_FIELD]: invitationEvidence,
+      [WORKS_WITH_UNDERGRADS_INDEX_FIELD]: worksWithEvidence,
       ...rest
     } = rawDistribution;
     const cleanedResearchAreas = sanitizeResearchAreaFacetDistribution(researchAreas);
@@ -2691,6 +2812,7 @@ async function searchResearchGroupsForQuery(
       ...(schools ? { school: schools } : {}),
       ...(hostingEvidence ? { hostsUndergrads: { true: hostingEvidence.true ?? 0 } } : {}),
       ...(invitationEvidence ? { welcomesUndergrads: { true: invitationEvidence.true ?? 0 } } : {}),
+      ...(worksWithEvidence ? { worksWithUndergrads: { true: worksWithEvidence.true ?? 0 } } : {}),
     };
   };
 
@@ -2732,8 +2854,9 @@ async function searchResearchGroupsForQuery(
     keywordLegTopHit !== null &&
     keywordLegTopHitIsNameMatch([keywordLegTopHit.hit], normalizedQuery.tokens);
   const withholdSemanticOnlyRows = fuseRankings && keywordLegTopHitNamesTheQuery;
-  const rerankScores =
-    rerankScoresLookup && !keywordLegTopHitNamesTheQuery ? await rerankScoresLookup : null;
+  const rerankEntry =
+    rerankEntryLookup && !keywordLegTopHitNamesTheQuery ? await rerankEntryLookup : null;
+  const rerankScores = isSearchRerankCacheEnabled() ? (rerankEntry?.scores ?? null) : null;
   const orderCandidatePool = (
     poolHits: any[],
     matchedKeywordLegHits: any[],
@@ -2800,6 +2923,46 @@ async function searchResearchGroupsForQuery(
   // queries already come back pre-paginated from Meilisearch, so they are used
   // as-is. See #1064.
   const rerankedPool = rerankScores ? applyCachedRerank(servedPool, rerankScores) : servedPool;
+  const rerankLiveMissGate: SearchRerankLiveMissGate = !(
+    paginateHybridPoolLocally && runsSemanticLeg
+  )
+    ? 'meili-paged'
+    : keywordLegTopHitNamesTheQuery
+      ? 'name-query'
+      : normalizedQuery.tokens.length === 0
+        ? 'no-query-tokens'
+        : normalizedQuery.tokens.join('').length < LIVE_MISS_MIN_QUERY_CHARACTERS
+          ? 'too-short'
+          : servesNoKeywordRow(keywordLeg.rawHits)
+            ? 'no-keyword-row'
+            : keywordLegTopHit !== null &&
+                (keywordLegTopHit.failed ||
+                  keywordLegTopHitTouchesAPersonName([keywordLegTopHit.hit]))
+              ? 'name-shaped'
+              : servedPool.length < 2
+                ? 'too-few-candidates'
+                : 'eligible';
+  if (
+    rerankLiveMiss &&
+    rerankQueryKey &&
+    rerankEntry &&
+    rerankLiveMissGate === 'eligible' &&
+    searchRerankLiveMissWantsEntry(rerankEntry.kind, searchRerankLiveMissMode(), () =>
+      searchRerankEntryIsStale(
+        rerankEntry.scoredTextHashes,
+        searchRerankCandidateFingerprints(servedPool, SEARCH_RERANK_STALE_WINDOW),
+      ),
+    )
+  ) {
+    enqueueSearchRerankLiveMiss(
+      {
+        queryKey: rerankQueryKey,
+        query: rerankLiveMiss.typedQuery,
+        filters: searchRerankCacheFilters(rerankLiveMiss.filters),
+      },
+      rerankLiveMiss.client,
+    );
+  }
   const orderedHits = paginateHybridPoolLocally
     ? rerankedPool.slice(offset, offset + safePageSize)
     : reorderedPool;
@@ -2882,6 +3045,53 @@ async function searchResearchGroupsForQuery(
       },
     ),
     answeredAsNameSearch: keywordLegTopHitNamesTheQuery,
+    rerankLiveMissGate,
+    ...(withRerankCandidateFingerprints && paginateHybridPoolLocally
+      ? {
+          rerankCandidateFingerprints: searchRerankCandidateFingerprints(
+            servedPool,
+            SEARCH_RERANK_WINDOW,
+          ),
+        }
+      : {}),
+  };
+}
+
+export interface SearchRerankCandidates {
+  researchEntities: PublicResearchEntityDto[];
+  rerankLiveMissGate: SearchRerankLiveMissGate | 'unsearchable';
+  candidateFingerprints: SearchRerankCandidateFingerprint[];
+}
+
+export async function searchResearchGroupsForRerankCandidates(
+  query: string,
+  filters: ResearchGroupFilterInput,
+  limit: number,
+): Promise<SearchRerankCandidates> {
+  const publicFilters: ResearchGroupFilterInput = {
+    ...filters,
+    studentVisibilityTier: [...publicStudentVisibilityTiers],
+  };
+  const options: ResearchGroupSearchOptions = { includeFacets: false };
+  const spelling = correctResearchSearchQuerySpelling(expandNicknameInResearchNameQuery(query));
+  const studentFilters = await resolveStudentFiltersAgainstCorpus(publicFilters, options);
+  const { result, rerankLiveMissGate, rerankCandidateFingerprints } =
+    await searchResearchGroupsForQuery(
+      rewriteAcronymToPhrase(spelling.query),
+      studentFilters.filters,
+      1,
+      limit,
+      {},
+      options,
+      {
+        meiliCallRole: 'optional',
+        withRerankCandidateFingerprints: true,
+      },
+    );
+  return {
+    researchEntities: result.researchEntities,
+    rerankLiveMissGate: rerankLiveMissGate ?? 'unsearchable',
+    candidateFingerprints: rerankCandidateFingerprints ?? [],
   };
 }
 
@@ -3178,8 +3388,14 @@ async function withPublicMemberImageGuards<T extends { user: any }>(members: T[]
     }));
   }
 
+  const picturePatterns = imageUrls
+    .map((imageUrl) => profileImagePictureSearchPattern(imageUrl))
+    .filter((pattern): pattern is RegExp => Boolean(pattern));
   const sameImageResearchers = await Researcher.find({
-    'profile.imageUrl': { $in: imageUrls },
+    $or: [
+      { 'profile.imageUrl': { $in: imageUrls } },
+      ...picturePatterns.map((pattern) => ({ 'profile.imageUrl': pattern })),
+    ],
     archived: { $ne: true },
   })
     .select('displayName profile.imageUrl')
@@ -3309,11 +3525,14 @@ export function publicRosterUndergraduates(
   if (!snapshot) return [];
   const freshnessExpiresAt = new Date(snapshot?.freshnessExpiresAt || 0).getTime();
   const currentIsFresh = Number.isFinite(freshnessExpiresAt) && freshnessExpiresAt >= now.getTime();
+  const serving = currentDirectoryRemovalServing();
   return snapshot.undergraduates
     .map(publicRosterUndergraduate)
     .filter(
       (member: PublicRosterUndergraduate | null): member is PublicRosterUndergraduate =>
-        Boolean(member) && (member!.status === 'past' || currentIsFresh),
+        Boolean(member) &&
+        (member!.status === 'past' || currentIsFresh) &&
+        !serving.isWithheldName(member!.name),
     )
     .slice(0, MAX_PUBLIC_ROSTER_UNDERGRADUATES);
 }
@@ -3393,7 +3612,7 @@ export const currentResearchEntityMemberFilter = (researchEntityId: unknown) => 
   isCurrentMember: { $ne: false },
 });
 
-const MAX_PUBLIC_DETAIL_MEMBERS = 100;
+export const MAX_PUBLIC_DETAIL_MEMBERS = 100;
 const MAX_PUBLIC_DETAIL_ACCESS_SIGNALS = 50;
 const MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION = 50;
 const MAX_PUBLIC_DETAIL_RELATIONSHIP_QUERY_LIMIT = 1000;
@@ -4409,7 +4628,9 @@ function canonicalPublicDetailMembers(
   entity: Record<string, any>,
   rosterEntries: ResearchEntityRosterEntry[],
   now = new Date(),
+  limit = MAX_PUBLIC_DETAIL_MEMBERS,
 ): Array<{ user: any; role: string; row: Record<string, any> }> {
+  const seenIdentityRoles = new Set<string>();
   return rosterEntries
     .filter((entry) => entry.state !== 'HISTORICAL')
     .filter(
@@ -4425,22 +4646,18 @@ function canonicalPublicDetailMembers(
       (a, b) =>
         (PUBLIC_DETAIL_ROLE_PRIORITY[a.role] ?? 99) - (PUBLIC_DETAIL_ROLE_PRIORITY[b.role] ?? 99),
     )
-    .slice(0, MAX_PUBLIC_DETAIL_MEMBERS)
+    .slice(0, limit)
     .map((entry) => ({
       user: canonicalMemberUserForResearchDetail(entry),
       role: entry.role,
       row: canonicalRosterMemberRow(entry),
     }))
     .filter((member) => Boolean(member.user.displayName || member.user.fname || member.user.lname))
-    .filter((member, index, rows) => {
+    .filter((member) => {
       const key = `${(member.row.identityKey || '').toLowerCase()}:${member.role}`;
-      return (
-        index ===
-        rows.findIndex(
-          (candidate) =>
-            `${(candidate.row.identityKey || '').toLowerCase()}:${candidate.role}` === key,
-        )
-      );
+      if (seenIdentityRoles.has(key)) return false;
+      seenIdentityRoles.add(key);
+      return true;
     })
     .sort(
       (a, b) =>
@@ -4480,20 +4697,55 @@ const publicResearchEntityDetailRosterMembers = (
   entity: Record<string, any>,
   rosterEntries: ResearchEntityRosterEntry[],
   now: Date,
+  limit = MAX_PUBLIC_DETAIL_MEMBERS,
 ) =>
   dedupeSameNameLeadMembers(
-    dropUncorroboratedPhantomLeads(canonicalPublicDetailMembers(entity, rosterEntries, now)),
+    dropUncorroboratedPhantomLeads(canonicalPublicDetailMembers(entity, rosterEntries, now, limit)),
     entity,
   );
 
-export function publicResearchEntityDetailMemberNames(
+const EVERY_CURRENT_MEMBER = Number.POSITIVE_INFINITY;
+
+export type SearchableMemberKind = 'lead' | 'faculty' | 'student';
+
+export interface SearchableResearchEntityMember {
+  name: string;
+  role: string;
+  kind: SearchableMemberKind;
+}
+
+/**
+ * The members a name search can match on a row. It reads every current member, not the
+ * detail page's display caps, because a member past the cap is still on the roster
+ * (#5584). The detail route stays capped and never serves a member past it.
+ */
+export function searchableResearchEntityMembers(
   entity: Record<string, any>,
   rosterEntries: ResearchEntityRosterEntry[],
   now = new Date(),
-): Array<{ name: string; role: string }> {
-  return publicResearchEntityDetailRosterMembers(entity, rosterEntries, now)
-    .map((member) => ({ name: memberDisplayName(member), role: member.role }))
-    .filter((member) => Boolean(member.name));
+): SearchableResearchEntityMember[] {
+  const members: SearchableResearchEntityMember[] = [];
+  for (const member of publicResearchEntityDetailRosterMembers(
+    entity,
+    rosterEntries,
+    now,
+    EVERY_CURRENT_MEMBER,
+  )) {
+    if (!SEARCHABLE_PROFESSOR_MEMBER_ROLES.has(member.role)) continue;
+    const name = searchablePersonName(memberDisplayName(member));
+    if (!name) continue;
+    members.push({
+      name,
+      role: member.role,
+      kind: LEAD_PROFESSOR_MEMBER_ROLES.has(member.role) ? 'lead' : 'faculty',
+    });
+  }
+  for (const member of matchableLabMembers(entity, rosterEntries, now).members) {
+    if (!SEARCHABLE_STUDENT_MEMBER_ROLES.has(member.role)) continue;
+    const name = searchablePersonName(member.name);
+    if (name) members.push({ name, role: member.role, kind: 'student' });
+  }
+  return members;
 }
 
 export async function resolveArchivedResearchEntityCanonicalSlug(
@@ -4560,6 +4812,8 @@ const operatorPreviewReasons = (
   return { studentVisibilityBlockingReasons: blocking, studentVisibilitySignalReasons: signals };
 };
 
+export const memberNameKey = (name: string): string => personNameWords(name).join(' ');
+
 export async function getResearchGroupDetail(
   slug: string,
   { includeWithheldForOperator = false }: { includeWithheldForOperator?: boolean } = {},
@@ -4604,7 +4858,7 @@ export async function getResearchGroupDetail(
     withheldBy.push('deceased_lead');
   }
 
-  const rosterEntries = await getResearchEntityRoster((group as any)._id);
+  const rosterEntries = await servedRoster((group as any)._id);
   const canonicalMembers = canonicalPublicDetailMembers(
     group as Record<string, any>,
     rosterEntries,

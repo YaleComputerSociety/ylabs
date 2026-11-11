@@ -3,18 +3,21 @@ import os from 'os';
 import path from 'path';
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ResearchEntity } from '../../models/researchEntity';
 import { SearchRerankCache } from '../../models/searchRerankCache';
 import { searchRerankCacheQueryKey } from '../../services/researchGroupService';
+import { buildSearchRerankTextHash } from '../../services/searchRerankCandidateText';
 import { assertScriptApplyAllowed } from '../scriptWriteGuards';
 import {
   SEED_CONFIRM_FLAG,
   assertSeedSearchRerankCacheApplyAllowed,
   parseSeedInput,
   parseSeedSearchRerankCacheArgs,
+  readIndexTextHashes,
   resolveSeedInputPath,
   resolveSeedMongoUrl,
+  seedIndexBelongsToEnvironment,
   seedSearchRerankCache,
 } from '../seedSearchRerankCacheCore';
 
@@ -80,6 +83,11 @@ describe('research-search:seed-rerank-cache', () => {
       unresolvedSlugs: 2,
       entriesWithNoResolvedScore: 1,
       upserted: 0,
+      textHashes: 'not-requested',
+      scoresWithTextHash: 0,
+      seededEntries: null,
+      staleSeededEntries: null,
+      seededEntriesWithoutTextHashes: null,
     });
     expect(await SearchRerankCache.countDocuments()).toBe(0);
   });
@@ -122,6 +130,138 @@ describe('research-search:seed-rerank-cache', () => {
       scoredAt,
       indexVersion: 'synthetic-index-2',
       source: 'test',
+    });
+  });
+
+  describe('text hashes', () => {
+    const indexDocument = (slug: string, researchAreas = ['Coastal Ecology']) => ({
+      id: entityIds[slug],
+      kind: 'lab',
+      entityType: 'lab',
+      departments: ['Synthetic Department'],
+      researchAreas,
+    });
+    const hashesOf =
+      (...documents: Array<ReturnType<typeof indexDocument>>) =>
+      async () =>
+        new Map(documents.map((document) => [document.id, buildSearchRerankTextHash(document)]));
+    const coastalKey = () =>
+      searchRerankCacheQueryKey('coastal ecology', {
+        welcomesUndergrads: true,
+        departments: ['Synthetic Department'],
+      });
+
+    it('stores the index hash of each resolved row with its score', async () => {
+      const report = await seedSearchRerankCache({
+        entries: parseSeedInput(SEED_INPUT),
+        apply: true,
+        indexVersion: 'full-synthetic-1',
+        source: 'test',
+        readIndexTextHashes: hashesOf(indexDocument('synthetic-coastal-lab')),
+      });
+
+      expect(report).toMatchObject({ textHashes: 'read-from-index', scoresWithTextHash: 1 });
+      const stored = await SearchRerankCache.findOne({ queryKey: coastalKey() }).lean();
+      expect(stored?.scores).toEqual([
+        {
+          entityId: entityIds['synthetic-coastal-lab'],
+          score: 3,
+          textHash: buildSearchRerankTextHash(indexDocument('synthetic-coastal-lab')),
+        },
+        { entityId: entityIds['synthetic-marsh-lab'], score: 1 },
+      ]);
+    });
+
+    it('stores no hash and says so when the index is unreachable', async () => {
+      const report = await seedSearchRerankCache({
+        entries: parseSeedInput(SEED_INPUT),
+        apply: true,
+        indexVersion: 'full-synthetic-1',
+        source: 'test',
+        readIndexTextHashes: async () => null,
+      });
+
+      expect(report).toMatchObject({ textHashes: 'index-unreachable', scoresWithTextHash: 0 });
+      expect(report.upserted).toBe(2);
+      const stored = await SearchRerankCache.findOne({ queryKey: coastalKey() }).lean();
+      expect(stored?.scores.every((row: { textHash?: string | null }) => !row.textHash)).toBe(true);
+    });
+
+    it('never reads an index that belongs to another environment', async () => {
+      const report = await seedSearchRerankCache({
+        entries: parseSeedInput(SEED_INPUT),
+        apply: false,
+        source: 'test',
+        readIndexTextHashes: 'index-of-another-environment',
+      });
+
+      expect(report).toMatchObject({
+        textHashes: 'index-of-another-environment',
+        scoresWithTextHash: 0,
+        staleSeededEntries: null,
+      });
+    });
+
+    it('counts stale seeded entries on a dry run, only among entries that carry hashes', async () => {
+      const coastal = indexDocument('synthetic-coastal-lab');
+      const scored = (textHash?: string) => [
+        {
+          entityId: entityIds['synthetic-coastal-lab'],
+          score: 2,
+          ...(textHash ? { textHash } : {}),
+        },
+      ];
+      const scoredAt = new Date('2026-11-01T00:00:00Z');
+      await SearchRerankCache.collection.insertMany([
+        {
+          queryKey: 'synthetic-fresh',
+          queryText: 'a',
+          scores: scored(buildSearchRerankTextHash(coastal)),
+          scoredAt,
+          indexVersion: 'full-synthetic-0',
+          source: 'test',
+        },
+        {
+          queryKey: 'synthetic-stale',
+          queryText: 'b',
+          scores: scored('0000000000000000'),
+          scoredAt,
+          indexVersion: 'full-synthetic-0',
+          source: 'test',
+        },
+        {
+          queryKey: 'synthetic-legacy',
+          queryText: 'c',
+          scores: scored(),
+          scoredAt,
+          indexVersion: 'full-synthetic-0',
+          source: 'test',
+        },
+        {
+          queryKey: 'synthetic-live',
+          queryText: 'd',
+          scores: scored('0000000000000000'),
+          scoredAt,
+          indexVersion: 'async-gpt-5-mini-2026-11-01',
+          source: 'live-miss',
+        },
+      ]);
+
+      const report = await seedSearchRerankCache({
+        entries: parseSeedInput(SEED_INPUT),
+        apply: false,
+        source: 'test',
+        readIndexTextHashes: hashesOf(coastal),
+      });
+
+      expect(report).toMatchObject({
+        mode: 'dry-run',
+        textHashes: 'read-from-index',
+        seededEntries: 3,
+        staleSeededEntries: 1,
+        seededEntriesWithoutTextHashes: 1,
+      });
+      expect(await SearchRerankCache.countDocuments()).toBe(4);
     });
   });
 
@@ -229,5 +369,55 @@ describe('research-search:seed-rerank-cache guard', () => {
         env: { ...env, SCRAPER_ENV: 'production' },
       }),
     ).toThrow('CONFIRM_PROD_SCRAPE=true');
+  });
+});
+
+describe('seedIndexBelongsToEnvironment', () => {
+  it('reads an index only when its prefix names the target environment', () => {
+    expect(seedIndexBelongsToEnvironment('development', {})).toBe(true);
+    expect(seedIndexBelongsToEnvironment('beta', {})).toBe(false);
+    expect(seedIndexBelongsToEnvironment('production', {})).toBe(false);
+    expect(seedIndexBelongsToEnvironment('beta', { MEILISEARCH_INDEX_PREFIX: 'beta' })).toBe(true);
+    expect(seedIndexBelongsToEnvironment('development', { MEILISEARCH_INDEX_PREFIX: 'beta' })).toBe(
+      false,
+    );
+    expect(seedIndexBelongsToEnvironment('production', { MEILISEARCH_INDEX_PREFIX: 'prod' })).toBe(
+      true,
+    );
+  });
+});
+
+describe('readIndexTextHashes', () => {
+  it('pages through the index and reads the hash the builder stored on each document', async () => {
+    const documents = [
+      ...Array.from({ length: 3 }, (_v, index) => ({
+        id: `synthetic-${index}`,
+        rerankTextHash: buildSearchRerankTextHash({ name: `Synthetic ${index}` }),
+      })),
+      { id: 'synthetic-unsynced' },
+    ];
+    const getDocuments = async ({ offset, fields }: { offset: number; fields: string[] }) => {
+      expect(fields).toEqual(['id', 'rerankTextHash']);
+      return { results: documents.slice(offset, offset + 2), total: documents.length };
+    };
+
+    const hashes = await readIndexTextHashes({ getDocuments });
+
+    expect(hashes?.size).toBe(3);
+    expect(hashes?.get('synthetic-2')).toBe(buildSearchRerankTextHash({ name: 'Synthetic 2' }));
+    expect(hashes?.has('synthetic-unsynced')).toBe(false);
+  });
+
+  it('answers null when the index cannot be read', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    expect(
+      await readIndexTextHashes({
+        getDocuments: async () => {
+          throw new Error('synthetic outage');
+        },
+      }),
+    ).toBeNull();
+    consoleError.mockRestore();
   });
 });

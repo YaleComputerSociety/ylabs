@@ -318,6 +318,37 @@ describe('ResearchHomeCard', () => {
     expect(checked).toEqual(['Welcomes undergrads, recruiting now', 'Hosted undergrads']);
   });
 
+  it('tags a row that only mentors undergraduates, from its served list evidence (#5362)', () => {
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          home={researchHome({
+            wayInBadges: [],
+            entities: [
+              {
+                ...researchHome().entities[0],
+                undergradListEvidence: [
+                  {
+                    source: 'cs-senior-projects',
+                    signal: 'mentors',
+                    kind: 'advised',
+                    sourceUrl: 'https://example.edu/senior-projects',
+                  },
+                ],
+              },
+            ],
+          })}
+        />
+      </MemoryRouter>,
+    );
+
+    const signals = screen.getByLabelText('Ways to get involved');
+    const checked = Array.from(signals.querySelectorAll('span.font-semibold')).map(
+      (node) => node.textContent,
+    );
+    expect(checked).toEqual(['Mentors undergrads']);
+  });
+
   it('keeps student project evidence a pill even when it is the only signal', () => {
     render(
       <MemoryRouter>
@@ -487,7 +518,7 @@ describe('ResearchHomeCard', () => {
     expect(screen.queryByRole('link', { name: 'Fixture Researcher' })).toBeNull();
   });
 
-  it('gives a card titled with its own lead one tab stop, not the same name twice', () => {
+  it('links a lead to their Yale profile even when the card is titled with their name', () => {
     const { container } = render(
       <MemoryRouter>
         <ResearchHomeCard
@@ -510,9 +541,9 @@ describe('ResearchHomeCard', () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getAllByRole('link').map((link) => link.textContent)).toEqual([
-      'Fixture Scholar',
-    ]);
+    expect(screen.getByRole('link', { name: 'Fixture Scholár' }).getAttribute('href')).toBe(
+      'https://medicine.yale.edu/profile/fixture-scholar/',
+    );
     expect(container.textContent).toContain('Principal Investigator: Fixture  Scholár');
   });
 

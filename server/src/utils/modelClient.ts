@@ -23,6 +23,7 @@ export const MODEL_CALLERS = [
   'research-search-query-embedding',
   'research-topics-derivation',
   'scraper-llm-model-ab-harness',
+  'search-rerank-live-miss',
 ] as const;
 
 export type ModelCaller = (typeof MODEL_CALLERS)[number];

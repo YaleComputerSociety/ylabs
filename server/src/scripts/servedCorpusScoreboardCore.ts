@@ -556,6 +556,27 @@ export function assertCollectionSetUnchanged(
 }
 
 /**
+ * A capped field can legitimately show no prefix row at all: once every baseline value at
+ * the cap has been rewritten, each one differs inside the cap and is a real change (#5579).
+ * What must never happen is a counted change whose served text merely continues the capped
+ * baseline, because that is exactly the row the cap-aware comparison exists to exclude.
+ */
+function countedPrefixChanges(
+  scoreboard: ServedCorpusScoreboard,
+  field: ServedBaselineComparedField,
+  cap: number,
+): number {
+  return scoreboard.changedRows
+    .flatMap((row) => row.changes)
+    .filter(
+      (change) =>
+        change.field === field &&
+        change.baseline.length === cap &&
+        change.served.slice(0, cap) === change.baseline,
+    ).length;
+}
+
+/**
  * Every figure this command prints is checked against its own population first.
  * Three measurement errors in this area in one hour all failed toward a
  * confident wrong number rather than toward an error, so a subset that exceeds
@@ -658,11 +679,11 @@ export function assertServedCorpusScoreboardConsistent(scoreboard: ServedCorpusS
       baseline.truncatedPrefixByField[field] > baseline.stillServed,
       `${field} compared on a truncated prefix (${baseline.truncatedPrefixByField[field]}) exceeds still served (${baseline.stillServed})`,
     );
+    const cap = scoreboard.baselineExportCaps[field];
+    const prefixChanges = cap === undefined ? 0 : countedPrefixChanges(scoreboard, field, cap);
     failIf(
-      scoreboard.baselineExportCaps[field] !== undefined &&
-        baseline.truncatedPrefixByField[field] === 0 &&
-        baseline.changedByField[field] > 0,
-      `${field} has a detected export cap of ${scoreboard.baselineExportCaps[field]} but no row was compared on a prefix, so the cap-aware comparison is not running`,
+      prefixChanges > 0,
+      `${field} has a detected export cap of ${cap} but ${prefixChanges} counted ${prefixChanges === 1 ? 'change serves' : 'changes serve'} text that only continues the capped baseline, so the cap-aware comparison is not running`,
     );
     failIf(
       baseline.changedByField[field] > baseline.changed,

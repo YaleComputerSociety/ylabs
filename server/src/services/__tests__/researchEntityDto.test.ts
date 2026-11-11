@@ -721,6 +721,47 @@ describe('researchEntityDto', () => {
     });
   });
 
+  it('serves the mentors flag only from an owner-reviewed mentors list, never a stale stored flag', () => {
+    const entry = (source: string) => ({
+      source,
+      kind: 'advised',
+      count: 2,
+      latestYear: 2026,
+      sourceUrl: 'https://list.example.edu/advisers',
+    });
+    const mentoring = toPublicResearchEntityDto({
+      id: 'entity-mentoring',
+      slug: 'mentoring-lab',
+      name: 'Mentoring Lab',
+      undergradListEvidence: [entry('cs-senior-projects')],
+    });
+    expect(mentoring.mentorsUndergrads).toBe(true);
+
+    const held = toPublicResearchEntityDto({
+      id: 'entity-held',
+      slug: 'held-lab',
+      name: 'Held Lab',
+      undergradListEvidence: [entry('eps-senior-theses')],
+    });
+    expect(held.mentorsUndergrads).toBeUndefined();
+
+    const hostedOnly = toPublicResearchEntityDto({
+      id: 'entity-hosted-list',
+      slug: 'hosted-list-lab',
+      name: 'Hosted List Lab',
+      undergradListEvidence: [entry('wu-tsai-undergraduate-fellows')],
+    });
+    expect(hostedOnly.mentorsUndergrads).toBeUndefined();
+
+    const staleFlag = toPublicResearchEntityDto({
+      id: 'entity-stale-mentor',
+      slug: 'stale-mentor-lab',
+      name: 'Stale Mentor Lab',
+      mentorsUndergrads: true,
+    });
+    expect(staleFlag.mentorsUndergrads).toBeUndefined();
+  });
+
   it('serves the hosted-undergraduates flag from the row, not from a stale stored flag (#3593)', () => {
     const hosted = toPublicResearchEntityDto({
       id: 'entity-hosted',

@@ -7,6 +7,7 @@ import { summarizeMongoUrl } from '../scrapers/scraperEnvironment';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { DATABASE_COPY_PAIRS } from './databaseCopyPairs';
+import { directoryRemovalCopyBlockers } from './directoryRemovalCopyGuard';
 import {
   archivedResearchEntityIds,
   mergedFromBySurvivorAtCopyTime,
@@ -122,6 +123,11 @@ async function main(): Promise<void> {
       archivedTombstonePolicy:
         'Archived research entities and the rows that hang off them stay in Development; each live survivor carries its merged identities as mergedFrom (#5148).',
       accountReferences: await syncAccountReferences(sourceDb, collections),
+      directoryRemovalBlockers: await directoryRemovalCopyBlockers(
+        sourceDb,
+        targetDb,
+        'Development to Beta sync',
+      ),
       userCopyPolicy: ACCOUNT_COPY_POLICY,
       observationPolicy: options.includeObservations
         ? 'Observations included by explicit --include-observations opt-in.'

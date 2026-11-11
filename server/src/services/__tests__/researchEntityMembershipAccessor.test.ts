@@ -92,7 +92,8 @@ describe('getResearchEntityRoster display profile projection', () => {
     'https://medicine.example.test/fixturedept/clinical-service/fixture/',
     'https://www.yalemedicine.org/departments/fixture-care-center',
     'https://fixturelab.example.test/jobs/',
-  ])('never carries %s as a member website (#5376)', async (websiteUrl) => {
+    'https://www.google.com/maps?daddr=1.5,-2.5&directionsMode=driving',
+  ])('never carries %s as a member website (#5376, #5657)', async (websiteUrl) => {
     const entityId = new mongoose.Types.ObjectId();
     await seedMember(entityId, { websiteUrl }, 'gh012');
 

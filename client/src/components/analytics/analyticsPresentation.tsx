@@ -4,6 +4,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   'admin_grant.grant': 'Admin granted',
   'admin_grant.revoke': 'Admin revoked',
   'account.sessions_revoke': 'Sessions ended',
+  'account.self_delete': 'Account deleted by its holder',
   'profile.update': 'Profile edited',
   'department.create': 'Department created',
   'department.update': 'Department edited',
@@ -18,6 +19,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   'access_review.manual_locks': 'Visibility locks changed',
   'access_review.record_review': 'Access review recorded',
   'correction_report.review': 'Correction report reviewed',
+  'directory_removal_request.decide': 'Removal request decided',
 };
 
 export const auditActionLabel = (action: string): string => AUDIT_ACTION_LABELS[action] || action;

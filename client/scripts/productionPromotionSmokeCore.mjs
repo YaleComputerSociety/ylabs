@@ -234,6 +234,23 @@ export const evaluateResearchSearchResponse = (statusCode, json) => {
   };
 };
 
+const SETTING_NAME = /^[A-Z][A-Z0-9_]{0,63}$/;
+
+export const evaluateAccountDeletionReadiness = (json) => {
+  const state = json?.accountDeletion;
+  const status = typeof state?.status === 'string' ? state.status : null;
+  const missingSettings = Array.isArray(state?.missingSettings)
+    ? state.missingSettings.filter((name) => typeof name === 'string' && SETTING_NAME.test(name))
+    : [];
+  if (status === 'available' || status === 'off') {
+    return { status: 'pass', details: { accountDeletion: status } };
+  }
+  if (status === 'unavailable') {
+    return { status: 'fail', details: { accountDeletion: status, missingSettings } };
+  }
+  return { status: 'fail', details: { accountDeletion: 'unreported' } };
+};
+
 export const discoverResearchSlug = (json) =>
   researchSearchRows(json)
     .map((entity) => entity?.slug || entity?.data?.slug)

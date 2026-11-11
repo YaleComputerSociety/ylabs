@@ -1,18 +1,20 @@
 # Search rerank cache
 
 The search rerank cache reorders the top results of a research text search by relevance scores produced offline, one entry per past query (#5448).
-No model is called at query time.
+No model is called while a search is answered; the optional live-miss job below scores a missed query in the background.
 The measurement that motivated it, and the decision to score in an agent session rather than through a per-search model API, are recorded on #5448.
 
 ## What it stores
 
 `search_rerank_cache` (`server/src/models/searchRerankCache.ts`) holds one document per query key.
 The key is `searchRerankCacheQueryKey(query, filters)` in `server/src/services/researchGroupService.ts`.
+It applies the same acronym rewrite search does (`rewriteAcronymToPhrase`, #5169), so an acronym typed alone shares its phrase's entry; an entry seeded under a bare acronym before that change is simply never read again.
 It reads the typed query the way search tokenizes it (lowercased, diacritics folded, punctuation and filler words dropped, whitespace collapsed), before spelling correction, so an entry for a logged query matches that query exactly as a student typed it.
-It adds only the student-chosen filters (`kind`, `entityType`, `school`, `departments`, `researchAreas`, `hostsUndergrads`, `welcomesUndergrads`), in a fixed key order with each list sorted and lowercased, so the same choice made in any order is one entry.
+It adds only the student-chosen filters (`kind`, `entityType`, `school`, `departments`, `researchAreas`, `hostsUndergrads`, `welcomesUndergrads`, `worksWithUndergrads`), in a fixed key order with each list sorted and lowercased, so the same choice made in any order is one entry.
 The visibility tier is an operator scope and never splits an entry.
 
-Each document carries `queryText`, the stored `filters`, `scores` as `[{ entityId, score }]` with `entityId` the string form of the research entity `_id` and `score` from 0 to 3, `scoredAt`, `indexVersion` (a free-form corpus or index marker the seeder supplies), and `source`.
+Each document carries `queryText`, the stored `filters`, `scores` as `[{ entityId, score, textHash? }]` with `entityId` the string form of the research entity `_id` and `score` from 0 to 3, `scoredAt`, `indexVersion` (a free-form corpus or index marker the seeder supplies), and `source`.
+`textHash` is the row's `rerankTextHash` at scoring time (see Staleness); a score written before #5569 has none.
 
 ## How search reads it
 
@@ -34,10 +36,16 @@ These searches are served exactly as without the flag:
 The file must sit outside the repository, and the script refuses one inside it.
 It resolves each slug to a live research row, keys each entry with `searchRerankCacheQueryKey`, and refuses two entries that share a key.
 A dry run is the default and prints counts only: entries, scores, resolved scores, unresolved slugs, and entries left with no resolved score.
+It also prints the staleness of the seeded entries already in the target cache (see Staleness).
 It never prints a query or a slug.
 An apply needs `--apply --confirm-search-rerank-cache-seed --index-version=<marker>` and upserts one document per key, replacing that key's scores.
 It writes Development, and refuses any other database, unless `--environment=beta` or `--environment=production` names the target, which then reads `BETA_MONGODBURL` or `PRODUCTION_MONGODBURL`; Production still needs `SCRAPER_ENV=production` and `CONFIRM_PROD_SCRAPE=true`.
 `--source=<label>` records where the scores came from and defaults to `offline-scoring`.
+
+The seeder stores a `textHash` with each resolved score, the `rerankTextHash` of that row's document in the target environment's research-entity index, read through the fail-soft optional Meilisearch path; a document the index has not hashed yet gives none.
+It reads the index only when this shell's `MEILISEARCH_INDEX_PREFIX` names the target (unset for Development, `beta`, `prod`), because a laptop seeding Beta or Production is normally configured for the Development index, and hashing one environment's rows against another's index would store wrong hashes.
+The report's `textHashes` says what happened: `read-from-index`, `index-unreachable` (the read failed, so no hash is stored and the seed still applies), or `index-of-another-environment` (the index was not read); `scoresWithTextHash` counts the scores that carry one.
+A seed without hashes is still served and still judged by the candidate-set rule, so seeding Beta or Production from a laptop degrades staleness detection rather than failing; run the seed from a shell whose prefix names the target, such as a Render shell on that environment, to store hashes.
 
 ## Environments and privacy
 
@@ -47,12 +55,123 @@ It is never committed to the repository, because it pairs real student queries w
 
 ## Staleness
 
-An entry records the `indexVersion` it was scored against.
-Re-seed after a corpus-wide change, including the final description batch, because a stale entry scores rows as they were.
-A stale entry can only reorder rows search already returned in its top 30: it never adds a row, hides a row, or changes a total.
-A row that has since left the top 30 is simply not reordered, and a new row in the top 30 takes the neutral score.
+Staleness is judged per entry, against the rows that entry scored (#5569).
+An index-wide marker was rejected because any routine sync moves it and would mark every entry stale; Mongo `updatedAt` was rejected because scrape runs touch it on rows whose searchable text does not change.
+
+The index document builder (`buildResearchEntitySearchIndexDocument`) stores `rerankTextHash` on every research-entity document: the first 16 hex characters of a SHA-1 over what the rerank prompt shows of the row, which is its `name`, `kind`, `entityType`, sorted `departments` and `researchAreas`, the first 220 characters of `shortDescription` and the first 300 of `fullDescription` (`buildSearchRerankTextHash` in `server/src/services/searchRerankCandidateText.ts`).
+The prompt cuts its descriptions with the same constants (`searchRerankPromptExcerpts`), so a description rewrite the model would read moves the hash, an edit past those limits does not, and the two cannot drift; changing what the prompt shows also requires changing the hash.
+The field is in `RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES`, so every pool hit carries it and search compares hashes with no extra database or Meilisearch read.
+It is not searchable, filterable or sortable, needs no index settings change (`displayedAttributes` is `*`), is not rendered by the embedder's document template, and is never served on the public DTO.
+Each stored score carries `textHash`, the `rerankTextHash` of its pool hit: the live-miss job takes it from the same re-run search it scores, and the seeder reads it from the target index, so the write and the comparison read one value.
+
+At lookup, an entry is stale when either holds over the served top 10, taken in the fused order before any cached reorder (the order the job would re-score):
+
+- a row it scored now hashes differently from its stored `textHash`; or
+- the candidate set moved: 3 or more of those 10 rows have no score in the entry.
+
+A score with no `textHash`, such as every score written before #5569, never counts as changed, and neither does a hit with no `rerankTextHash`, from an index not yet synced; only the candidate-set rule applies to them, so the change itself invalidates no existing seed.
+
+The field reaches an index only when its documents are rewritten.
+After this merges, run one `yarn development:search:sync`: the reconcile compares whole documents, so it upserts every document once to add the field.
+The rendered embedding template is unchanged by the field, and Meilisearch re-embeds a document only when that rendering changes (`docs/meilisearch-reindex-runbook.md`), so the sync costs no embedding call beyond rows whose text also changed.
+Beta and Production gain it from their post-promotion reindex.
+
+A stale entry is still served exactly as a fresh one, when serving is on.
+It can only reorder rows search already returned in its top 30: it never adds a row, hides a row, or changes a total.
+
+- A stale `live-miss` or `shadow` entry becomes eligible for the live-miss job only with `SEARCH_RERANK_LIVE_MISS_ENABLED=true`, under the same caps, ceiling and queue as a miss (see What queues a job).
+- A seeded `full-` entry is never replaced by the job, stale or not.
+  Its staleness is reported instead: the seed command's dry run prints `seededEntries`, `staleSeededEntries` (seeded entries with at least one stored hash that no longer matches the index, a row gone from the index included), and `seededEntriesWithoutTextHashes` (seeded entries carrying no hash, which the dry run cannot judge).
+  These are `null` when the index was not read.
+  A non-zero stale count means re-seed.
+- After a promotion, seed after the target's reindex (`docs/release-process.md`), so the stored hashes are read from the index that environment serves.
 
 ## Coverage
 
 A fixed cache covers past queries only.
-A new query falls back to the fused order.
+A new query falls back to the fused order, unless the live-miss job below is on, which scores it for the next search.
+
+## Live-miss job (#5549)
+
+A text search whose key has no entry can score itself in the background, so the next search for that key, by anyone, is a hit.
+The request never waits for the model: the search is served in today's fused order and one in-process job is queued for the key.
+It is off by default and has its own switch, independent of `SEARCH_RERANK_CACHE_ENABLED`.
+
+### Flags
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `SEARCH_RERANK_LIVE_MISS_ENABLED` | unset (off) | Only `true` queues jobs and serves `live-miss` entries. Unset, search queues nothing and serves no `live-miss` entry, so turning it off withdraws what the job wrote; seeded entries are still served as the serve flag decides. |
+| `SEARCH_RERANK_LIVE_MISS_MODE` | `shadow` | `shadow` writes entries with `source: 'shadow'`, which search never serves. Only `serve` writes `source: 'live-miss'`, which search serves when both `SEARCH_RERANK_CACHE_ENABLED=true` and `SEARCH_RERANK_LIVE_MISS_ENABLED=true`. |
+| `SEARCH_RERANK_CACHE_COLLECTION` | `search_rerank_cache` | The collection the serve path, the seeder and the job all use. Only `search_rerank_cache` or `search_rerank_cache_<suffix>` is accepted; anything else fails at startup. A bench names its own, so it never reads or writes the environment's cache. |
+
+With the job on and the serve flag off, search reads the entry only to learn whether it is a miss, and never reorders by it.
+A shadow entry is never served under either flag, so a shadow week can run with the serve flag on or off.
+
+### What queues a job
+
+A job is queued only for a search the cache would serve today: a non-empty text query whose pool is paginated locally, with no explicit sort, from a request that reached the search route.
+The served result decides the rest (`rerankLiveMissGate` in `searchResearchGroupsForQuery`), reusing the predicates search already has rather than a new lexical rule:
+
+- a name query (`keywordLegTopHitIsNameMatch`) is never queued;
+- a name-shaped query is never queued: the best keyword hit matched the query inside a lead, professor or member name, typo or prefix included, or in a row title that no topic field also matches (`keywordLegTopHitTouchesAPersonName`), which is looser than the serving name guard because skipping the job costs only its gain (#5549, where name-shaped queries whose person no row names were the largest losses), and so is a query whose best keyword hit could not be re-read for match positions, because the check fails closed;
+- a query under 4 letters once normalized, such as a two-letter acronym, is never queued;
+- a query whose normalized tokens are empty (`normalizeResearchSearchQuery`) is never queued;
+- a query whose keyword leg served no row (`servesNoKeywordRow`) is never queued, which is the nonsense-query case;
+- a pool with fewer than 2 candidates is never queued;
+- a query over 100 characters or 10 words is never queued.
+
+A request the rate limiter refused never reaches search, and a search whose semantic leg the embedding budget declined is paged by Meilisearch, so neither queues a job.
+An in-process caller (`journey:eval`, the relevance scripts) passes no request client and never queues one.
+
+An existing entry decides too.
+A seeded entry, one whose `indexVersion` starts with `full-`, is never replaced, stale or not.
+A fresh served entry is never replaced, so a key whose rows do not change is scored once.
+Shadow mode fills a missing entry or replaces a stale shadow one, and never replaces a served entry; serve mode fills a missing entry, replaces a shadow one, or replaces a stale served one (`searchRerankLiveMissWantsEntry`).
+Staleness is computed only when it alone decides, from the served candidates search already holds (see Staleness).
+
+### Limits
+
+All of these are in-process, so they hold per server instance; the web service runs one instance.
+
+- The queue holds 500 pending jobs and drops the oldest first.
+- One job runs at a time, and a key already pending or running is not queued again, so ten searches for one new query cost one call.
+- One address (`getPeerIpKey`) queues at most 20 jobs per hour, and one session (`getRateLimitKey`: the netid, else the cookie's anonymous id) at most 60 per UTC day.
+  The anonymous id lives in the caller's cookie, so the address cap is the real bound for a caller who discards cookies.
+  Over a cap the search is served normally and nothing is queued.
+- Before each model call the job reads today's spend for its caller from `model_call_usages` (UTC day, priced by `modelPricing.ts`).
+  At USD 1.00 the queue drops what is pending and queues nothing until the next UTC day.
+  The ceiling counts this caller's spend only, not every caller's, so a scraper or description run that spends on the same day never stops the job.
+  The check runs before each call against the spend recorded so far, and usage records are written without waiting, so the last call of the day can take the total past USD 1.00 by about one call's cost.
+- A key whose job ends ineligible, with a failed model call, with a reply below the scoring bar, or with an error is not queued again until the next UTC day, so a query the model keeps failing costs one call a day rather than one per student who searches it.
+  So is a key whose freshly written entry already fails the candidate-set rule (`written-still-stale`): a reply may leave up to 3 of 30 candidates unscored and a pooled row that cannot be hydrated is never scored, so without the hold such a key would be re-scored on every search.
+  So is a key whose job's own search finds its entry fresh (`still-fresh`): the request path judges staleness over the requester's pool, which may include non-public rows or skip spelling correction, while the job always runs the public, corrected search, so without the hold such a key would start a background search on every request.
+  An unreadable log, or no database connection, skips the call rather than spending blind.
+
+### The job
+
+`runSearchRerankLiveMissJob` in `server/src/services/searchRerankLiveMissJob.ts` re-runs the same search for the key through `searchResearchGroupsForRerankCandidates`, public visibility scope, spelling correction and filter resolution as the route applies them, and no cached reorder.
+It sends the top 30 to `gpt-5-mini` through the shared model client under caller `search-rerank-live-miss`, with the prompt in `server/src/scrapers/prompts/searchRerankLiveMiss.md` (the rerank prompt measured in the #5549 cost pilot).
+The reply must give at least 27 of every 30 candidates (all but a tenth, rounded down) an integer score from 0 to 3; ids outside the candidate window and non-integer ids are ignored, and a reply below that bar writes nothing.
+Only the scored candidates are stored, and an unscored candidate reads as the neutral 1.5 on the serve path, as any unscored row does.
+The bar is measured: a strict every-candidate rule threw away 61 of 320 real answers in the review pilot, 46 of them for missing one id of 30 (#5549).
+Each stored score carries the `textHash` of its pool hit from that same search.
+Before scoring, the job re-reads the existing entry and applies the same rule search applies, against the re-run search's served top 10, so the search path and the job agree on what is stale.
+The entry is upserted with `source` `live-miss` or `shadow` and `indexVersion` `async-gpt-5-mini-<YYYY-MM-DD>`, and the upsert filter excludes a `full-` entry, so a seeded entry that lands while the model is scoring still wins.
+Every outcome is logged as `[search-rerank-live-miss] job <status>`, never with the query text.
+
+### Running it on a bench
+
+The job is exported so a bench can run search, then the job, then search, with no timing race:
+
+```ts
+runSearchRerankLiveMissJob(
+  { query, filters },
+  { mode?: 'shadow' | 'serve', now?, model?, readSpendTodayUsd? },
+): Promise<{ status, entry? }>
+```
+
+It returns the entry it scored and writes it to the configured collection.
+Set `SEARCH_RERANK_CACHE_COLLECTION=search_rerank_cache_<bench>` before the server code is imported, so the bench never touches the environment's `search_rerank_cache`.
+`setSearchRerankLiveMissRunner` in `searchRerankLiveMiss.ts` replaces the queued runner, and `searchRerankLiveMissIdle` resolves once the queue is empty.
+Spend is read from `model_call_usages` for caller `search-rerank-live-miss`, so `yarn --cwd server model-usage:report` shows a bench's calls under that name.

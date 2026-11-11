@@ -20,6 +20,7 @@ import {
   directoryContradictsNetidForAddress,
   loadDirectoryNetidsByAddress,
 } from '../directoryContradictedProfileNetid';
+import { pageEmailHeldByAnotherResearcher } from '../verifiedResearcherEmail';
 import { stripTrailingResearchHomeDescription } from '../../utils/researchEntityNameNormalization';
 import {
   claimsAnotherPersonsLabByUrlPath,
@@ -93,6 +94,12 @@ import {
   splitName,
 } from '../utils/scraperHelpers';
 import { LEAD_ROLE_LEGACY_LABELS } from '../../models/canonicalRoleMapping';
+import {
+  isJsonLdNodeOfAnotherPerson,
+  isYaleAddress,
+  jsonLdNodesThatMayNameThePerson,
+  subjectDeclaredProfileEmail,
+} from '../utils/officialProfileSubjectEmail';
 import { forEachInOrderWithPrefetch } from '../utils/boundedConcurrency';
 import { ORGANIZATIONAL_ENTITY_TYPES } from '../../utils/researchEntityOrganizational';
 import { PERSON_SCOPED_RESEARCH_ENTITY_TYPES } from '../../models/storedVocabularies';
@@ -108,6 +115,7 @@ import {
   OFFICIAL_PROFILE_DIRECTOR_SOURCE_NAME,
 } from '../officialProfileDirectorRetirement';
 import { officialProfileIdentityKey, rosterMembershipKey } from '../utils/rosterMembershipKey';
+import { type OfficialProfilePageIdentity } from '../../services/officialProfileLinkIdentity';
 
 const SOURCE_NAME = 'official-profile-pi-backfill';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
@@ -154,10 +162,12 @@ export interface OfficialProfileIdentity {
   researchInterests: string[];
   orcid?: string;
   suppressDerivedBio?: boolean;
+  emailOnly?: boolean;
 }
 
 interface OfficialProfileIdentityOptions {
   requireEmail?: boolean;
+  emailOnlyWithoutAdmissibleTitle?: boolean;
   yaleDirectoryNetids?: ReadonlySet<string>;
   expectedPeople?: Array<{
     fname?: string;
@@ -166,6 +176,8 @@ interface OfficialProfileIdentityOptions {
     netid?: string;
   }>;
 }
+
+export { pageEmailHeldByAnotherResearcher };
 
 export interface ExistingProfileUser {
   _id?: string;
@@ -176,6 +188,7 @@ export interface ExistingProfileUser {
 interface IdentityToUserObservationOptions {
   includeProfileEnrichment?: boolean;
   includeIdentityEnrichment?: boolean;
+  includeEmail?: boolean;
 }
 
 export interface OfficialProfileResearchHome {
@@ -845,8 +858,8 @@ export function expectedNetidsForOfficialProfile(
 }
 
 function sameOfficialProfilePerson(left: string, right: string): boolean {
-  const leftSlug = profileSlug(left);
-  const rightSlug = profileSlug(right);
+  const leftSlug = profileSlug(left).toLowerCase();
+  const rightSlug = profileSlug(right).toLowerCase();
   return Boolean(leftSlug && rightSlug && leftSlug === rightSlug);
 }
 
@@ -2703,20 +2716,47 @@ function extractEmail(
   profiles: Array<Record<string, any>>,
   displayName: string,
 ): string {
-  const candidates: string[] = [];
+  const subjectDeclared = subjectDeclaredProfileEmail($, profiles, displayName);
+  if (subjectDeclared && isYaleAddress(subjectDeclared)) return subjectDeclared;
+  return nameShapedYaleEmailOnPage($, profiles, displayName) || subjectDeclared;
+}
+
+function nameShapedYaleEmailOnPage(
+  $: cheerio.CheerioAPI,
+  profiles: Array<Record<string, any>>,
+  displayName: string,
+): string {
+  const structuredCandidates: string[] = [];
   for (const profile of profiles) {
+    if (isJsonLdNodeOfAnotherPerson(profile, displayName)) continue;
     const email = profile.email;
-    candidates.push(...(Array.isArray(email) ? email : [email]).map(textValue));
+    structuredCandidates.push(...(Array.isArray(email) ? email : [email]).map(textValue));
   }
+  const pageWideCandidates: string[] = [];
   $('a[href^="mailto:"]').each((_i, el) => {
-    candidates.push(($(el).attr('href') || '').replace(/^mailto:/i, ''));
+    pageWideCandidates.push(($(el).attr('href') || '').replace(/^mailto:/i, ''));
   });
-  candidates.push($('body').text());
+  pageWideCandidates.push($('body').text());
+  return (
+    firstPersonSpecificYaleEmail(structuredCandidates, displayName, () => true) ||
+    firstPersonSpecificYaleEmail(
+      pageWideCandidates,
+      displayName,
+      (email) => !NETID_SHAPE.test(email.split('@')[0]),
+    )
+  );
+}
+
+function firstPersonSpecificYaleEmail(
+  candidates: string[],
+  displayName: string,
+  admissible: (email: string) => boolean,
+): string {
   for (const candidate of candidates) {
     const text = textValue(candidate);
     for (const match of text.matchAll(/\b[a-z0-9._%+-]+@yale\.edu\b/gi)) {
       const email = match[0].toLowerCase();
-      if (isLikelyPersonSpecificYaleEmail(email, displayName)) return email;
+      if (admissible(email) && isLikelyPersonSpecificYaleEmail(email, displayName)) return email;
     }
   }
   return '';
@@ -2968,8 +3008,10 @@ function officialProfileIdentityMatchesExpectedPerson(
   // the page belongs to a different person and must fail closed rather than
   // falling through to the weaker name-token check below - the exact gap that
   // let a same-name-different-person collision through (issue #585).
+  // An outside address is not a Yale identity, so it cannot contradict one (#5669).
   if (normalizedEmail && expectedEmails.length > 0) {
-    return expectedEmails.includes(normalizedEmail);
+    if (expectedEmails.includes(normalizedEmail)) return true;
+    if (isYaleAddress(normalizedEmail)) return false;
   }
 
   return expected.some((person) => {
@@ -2992,7 +3034,7 @@ function officialProfileDisplayName(
 ): string {
   return normalizeName(
     cleanOfficialProfileDisplayName(
-      firstJsonLdText(profiles, ['name']) ||
+      firstJsonLdText(jsonLdNodesThatMayNameThePerson(profiles), ['name']) ||
         firstUsefulText($, [
           'h1',
           '[class*="profile"] [class*="name"]',
@@ -3002,6 +3044,47 @@ function officialProfileDisplayName(
         ]),
     ),
   );
+}
+
+/**
+ * The identity a fetched official profile page states about its own owner, read with the
+ * same email and netid-slug rules the backfill lane uses, and no name: a link writer that
+ * built the URL from a display name compares this against the researcher (#5605).
+ */
+export function officialProfilePageStatedIdentity(
+  html: string,
+  profileUrl: string,
+): OfficialProfilePageIdentity {
+  const $ = cheerio.load(html);
+  const profiles = jsonLdProfiles($);
+  const email = extractEmail($, profiles, officialProfileDisplayName($, profiles));
+  const netid =
+    netidStyleProfileSlug(canonicalUrlFromHtml($, profileUrl)) || netidStyleProfileSlug(profileUrl);
+  return { ...(email ? { email } : {}), ...(netid ? { netid } : {}) };
+}
+
+/**
+ * A page without an admissible title is no evidence of a title, a role or a bio, but a page
+ * that is still this person's own states their address, so only that is kept (#5669).
+ */
+function emailOnlyOfficialProfileIdentity(
+  canonicalUrl: string,
+  fetchedUrl: string,
+  displayName: string,
+  email: string,
+  profileNetid: string,
+): OfficialProfileIdentity {
+  return {
+    canonicalUrl,
+    fetchedUrl,
+    displayName,
+    email,
+    title: '',
+    departments: [],
+    researchInterests: [],
+    ...(profileNetid ? { profileNetid } : {}),
+    emailOnly: true,
+  };
 }
 
 export function extractOfficialProfileIdentity(
@@ -3079,7 +3162,19 @@ export function extractOfficialProfileIdentity(
     uniqueStrings([firstJsonLdText(profiles, ['jobTitle']), firstUsefulProfileTitle($)]).find(
       isAdmissibleOfficialProfileTitle,
     ) || '';
-  if (!title) return null;
+  if (!title) {
+    const subjectStatedEmail =
+      email && email === subjectDeclaredProfileEmail($, profiles, displayName);
+    return options.emailOnlyWithoutAdmissibleTitle && subjectStatedEmail
+      ? emailOnlyOfficialProfileIdentity(
+          canonicalUrl,
+          fetchedUrl,
+          displayName,
+          email,
+          profileNetidSlug,
+        )
+      : null;
+  }
 
   const bio = extractBio($);
   const extractedResearchInterests = extractResearchInterests($);
@@ -3230,6 +3325,20 @@ export function identityToUserObservations(
   }
   const { first, last } = splitName(identity.displayName);
   if (!first || !last) return [];
+  if (identity.emailOnly) {
+    return identity.email && (options.includeEmail ?? options.includeIdentityEnrichment ?? true)
+      ? [
+          {
+            entityType: 'user',
+            entityKey: `netid:${netid}`,
+            field: 'email',
+            value: identity.email,
+            sourceUrl: identity.canonicalUrl,
+            confidenceOverride: 0.95,
+          },
+        ]
+      : [];
+  }
   const includeProfileEnrichment = options.includeProfileEnrichment ?? true;
   const includeIdentityEnrichment = options.includeIdentityEnrichment ?? true;
   const profileUrls = {
@@ -3246,16 +3355,18 @@ export function identityToUserObservations(
     identityObservations.push(['title', identity.title], ['profileUrls', profileUrls]);
   }
 
-  const observations: ObservationInput[] = includeIdentityEnrichment
-    ? identityObservations.map(([field, value]) => ({
-        entityType: 'user',
-        entityKey: `netid:${netid}`,
-        field: String(field),
-        value,
-        sourceUrl: identity.canonicalUrl,
-        confidenceOverride: 0.95,
-      }))
-    : [];
+  const includeEmail = options.includeEmail ?? includeIdentityEnrichment;
+  const emittedIdentityObservations = includeIdentityEnrichment
+    ? identityObservations
+    : identityObservations.filter(([field]) => includeEmail && field === 'email');
+  const observations: ObservationInput[] = emittedIdentityObservations.map(([field, value]) => ({
+    entityType: 'user',
+    entityKey: `netid:${netid}`,
+    field: String(field),
+    value,
+    sourceUrl: identity.canonicalUrl,
+    confidenceOverride: 0.95,
+  }));
 
   if (includeProfileEnrichment) {
     if (identity.imageUrl) {
@@ -4526,7 +4637,11 @@ export function profileIdentityAgreesWithUser(
   const pageEmail = textValue(identity.email).toLowerCase();
   const candidateEmail = textValue(candidate.email).toLowerCase();
   if (pageEmail && candidateEmail === pageEmail) return true;
-  if (pageEmail && candidateEmail && !isNetidMailbox(candidateEmail, textValue(candidate.netid))) {
+  if (
+    isYaleAddress(pageEmail) &&
+    candidateEmail &&
+    !isNetidMailbox(candidateEmail, textValue(candidate.netid))
+  ) {
     return false;
   }
   const candidateName =
@@ -4932,14 +5047,22 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
             const identity = identityForProfile({
               requireEmail: false,
               yaleDirectoryNetids,
+              emailOnlyWithoutAdmissibleTitle: runOnlyVisibleProfileBioBackfill,
             });
             if (identity) {
-              const existingUser = visibleExistingUser || (await existingUserForIdentity(identity));
+              const candidateUser =
+                visibleExistingUser || (await existingUserForIdentity(identity));
+              const existingUser =
+                candidateUser &&
+                !(await pageEmailHeldByAnotherResearcher(identity.email, candidateUser))
+                  ? candidateUser
+                  : null;
               if (existingUser) {
                 observations.push(
                   ...identityToUserObservations(identity, existingUser, {
                     includeProfileEnrichment: runVisibleProfileBioBackfill,
                     includeIdentityEnrichment: !runVisibleProfileBioBackfill,
+                    includeEmail: true,
                   }),
                 );
                 if (runQueuedPiBackfill) {

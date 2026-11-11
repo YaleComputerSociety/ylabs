@@ -129,6 +129,7 @@ import { evidenceAssertsALab } from '../utils/labClaimEvidence';
 import { labNameStatedForPerson, statedLabNameClaimsAnotherPerson } from '../utils/statedLabName';
 import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
 import { hostnameIsWithin } from '../../utils/yaleHost';
+import { isLabDirectoryListingUrl } from '../laneRefusedWebsiteUrl';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
@@ -283,6 +284,8 @@ export interface FacultyEntry {
   profileUrl?: string;
   /** Title / position string ("Sterling Professor of …") if present. */
   title?: string;
+  /** Set when `title` came from the person's profile page rather than the listing. */
+  titleFromProfilePage?: boolean;
   /** Email address if present (used to derive netid). */
   email?: string;
   /** External lab / personal website URL discovered on the listing. */
@@ -3195,6 +3198,19 @@ export function linkTextIsASentence(text: string): boolean {
   return words.length >= 6 && trimmed.endsWith('.') && !TEXT_ENDING_IN_WEBSITE_LABEL.test(trimmed);
 }
 
+const URL_SHAPED_TEXT = /^(?:https?:\/\/)?[\w-]+(?:\.[\w-]+)+(?:[/?#]\S*)?$/i;
+
+/**
+ * An organization's landing page is often served at `/homepage.html`, so a path word speaks
+ * for the destination only when the link says nothing of its own. Link text that names a
+ * foundation or a lecture series is judged by its label alone, which is how a bio's link to
+ * an event became its author's research website (#5619).
+ */
+export function linkTextDescribesNothing(text: string): boolean {
+  const trimmed = text.trim();
+  return trimmed === '' || URL_SHAPED_TEXT.test(trimmed);
+}
+
 /** A DOI resolves to a publication, which is never a person's research website (#5050). */
 function isDoiUrl(url: URL): boolean {
   return /(?:^|\.)doi\.org$/i.test(url.hostname) || /\/doi\//i.test(url.pathname);
@@ -3523,7 +3539,7 @@ export function profileEnrichmentFromHtml(
     const hasWebsiteSignal =
       WEBSITE_SIGNAL.test(labelSignal) ||
       (WEBSITE_SIGNAL.test(parsed.pathname) && pathNamesALab(parsed.pathname)) ||
-      /\b(?:website|homepage)\b/i.test(parsed.pathname);
+      (linkTextDescribesNothing(text) && /\b(?:website|homepage)\b/i.test(parsed.pathname));
     if (!hasWebsiteSignal || NATIONAL_LABORATORY_TEXT.test(`${text} ${aria} ${titleAttr}`)) return;
     if (isInstitutionalAdvancementUrl(absolute)) {
       labUrlCandidateRefused = true;
@@ -3536,7 +3552,12 @@ export function profileEnrichmentFromHtml(
       labUrlCandidateRefused = true;
       return;
     }
-    if (isPostingPageUrl(absolute) || isCoursePageUrl(absolute) || isPatientCarePageUrl(absolute)) {
+    if (
+      isPostingPageUrl(absolute) ||
+      isCoursePageUrl(absolute) ||
+      isPatientCarePageUrl(absolute) ||
+      isLabDirectoryListingUrl(absolute)
+    ) {
       labUrlCandidateRefused = true;
       return;
     }
@@ -3671,6 +3692,7 @@ function mergeProfileEnrichment(
     profileUrl: enrichment.profileUrl || entry.profileUrl,
     profileSourceUrl: enrichment.profileSourceUrl || entry.profileSourceUrl,
     title: entry.title || enrichment.title,
+    titleFromProfilePage: entry.title ? entry.titleFromProfilePage : Boolean(enrichment.title),
     email: entry.email || enrichment.email,
     labUrl: entry.labUrl || enrichment.labUrl,
     labSlotAttestation: mergedLabSlotAttestation(entry, enrichment),
@@ -4109,7 +4131,10 @@ function entryToUserObservations(
     obs.push({ ...rosterBase, field: 'departments', value: [dept.deptName] });
   }
   if (personEmail) obs.push({ ...profileBase, field: 'email', value: personEmail });
-  if (entry.title) obs.push({ ...profileBase, field: 'title', value: entry.title });
+  if (entry.title) {
+    const titleBase = entry.titleFromProfilePage ? profileBase : rosterBase;
+    obs.push({ ...titleBase, field: 'title', value: entry.title });
+  }
   if (entry.profileUrl) {
     obs.push({ ...profileBase, field: 'profileUrls', value: { departmental: entry.profileUrl } });
   }

@@ -1,0 +1,100 @@
+import axios from './axios';
+import { buildApiUrl } from './apiBaseUrl';
+import { rememberSignedIn } from './lastKnownSession';
+import { stopProductAnalytics } from './productAnalytics';
+import { setResearchAnalyticsEnabled } from './researchAnalytics';
+import { sessionCsrfHeaders } from './sessionCsrf';
+
+export const ACCOUNT_DATA_CONTROLS_FLAG = 'accountDataControls';
+export const ACCOUNT_DATA_DELETION_CONFIRM_PHRASE = 'delete my data';
+export const ACCOUNT_DATA_DELETE_INTENT_PARAM = 'data';
+export const ACCOUNT_DATA_DELETE_INTENT_VALUE = 'delete';
+export const ACCOUNT_DELETED_NOTICE_KEY = 'accountDataDeletedNotice';
+const EXPORT_URL_REVOKE_DELAY_MS = 30_000;
+
+export type AccountDataDeletionOutcome =
+  'deleted' | 'recent_sign_in_required' | 'blocked' | 'unavailable' | 'failed';
+
+const ERROR_CODE_OUTCOMES: Record<string, AccountDataDeletionOutcome> = {
+  RECENT_SIGN_IN_REQUIRED: 'recent_sign_in_required',
+  DELETION_BLOCKED: 'blocked',
+  DELETION_UNAVAILABLE: 'unavailable',
+};
+
+export const isDeletionConfirmPhrase = (value: string): boolean =>
+  value.trim().toLowerCase() === ACCOUNT_DATA_DELETION_CONFIRM_PHRASE;
+
+export const accountDataExportFileName = (now: Date = new Date()): string =>
+  `ylabs-account-data-${now.toISOString().slice(0, 10)}.json`;
+
+export const downloadAccountData = async (): Promise<void> => {
+  const response = await axios.get<Blob>('/users/me/export', { responseType: 'blob' });
+  const url = URL.createObjectURL(response.data);
+  try {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = accountDataExportFileName();
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } finally {
+    // Safari and older Firefox start a blob download after click() returns, so revoking now can drop the file silently.
+    setTimeout(() => URL.revokeObjectURL(url), EXPORT_URL_REVOKE_DELAY_MS);
+  }
+};
+
+/**
+ * Analytics stop before the request rather than after it: an event PostHog queued after its
+ * person deletion would recreate that person, and nothing in y/labs could find it again.
+ */
+const stopAnalyticsForDeletion = (): void => {
+  setResearchAnalyticsEnabled(false);
+  stopProductAnalytics();
+};
+
+export const deleteAccountData = async (): Promise<AccountDataDeletionOutcome> => {
+  stopAnalyticsForDeletion();
+  try {
+    const headers = await sessionCsrfHeaders('/users/me/deletion-csrf-token', {
+      skipAuthRequiredEvent: true,
+    });
+    await axios.delete('/users/me', {
+      data: { confirm: ACCOUNT_DATA_DELETION_CONFIRM_PHRASE },
+      headers,
+      skipAuthRequiredEvent: true,
+    });
+    return 'deleted';
+  } catch (error) {
+    const code = (error as { response?: { data?: { code?: unknown } } })?.response?.data?.code;
+    return (typeof code === 'string' && ERROR_CODE_OUTCOMES[code]) || 'failed';
+  }
+};
+
+export const reauthenticateForDeletionUrl = (): string => {
+  const returnPath = `/dashboard?${ACCOUNT_DATA_DELETE_INTENT_PARAM}=${ACCOUNT_DATA_DELETE_INTENT_VALUE}`;
+  return buildApiUrl(`/cas?redirect=${encodeURIComponent(returnPath)}&reauth=1`);
+};
+
+/**
+ * A full navigation rather than a router push: the server has already ended the session,
+ * and reloading drops every signed-in cache, analytics buffer and context in one step.
+ */
+export const leaveAfterAccountDeletion = (): void => {
+  rememberSignedIn(false);
+  try {
+    sessionStorage.setItem(ACCOUNT_DELETED_NOTICE_KEY, '1');
+  } catch {
+    // The notice is a courtesy; a browser that refuses storage still leaves signed out.
+  }
+  window.location.replace('/');
+};
+
+export const takeAccountDeletedNotice = (): boolean => {
+  try {
+    const pending = sessionStorage.getItem(ACCOUNT_DELETED_NOTICE_KEY) === '1';
+    if (pending) sessionStorage.removeItem(ACCOUNT_DELETED_NOTICE_KEY);
+    return pending;
+  } catch {
+    return false;
+  }
+};

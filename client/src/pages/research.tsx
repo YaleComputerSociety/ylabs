@@ -95,6 +95,7 @@ type ResearchSearchFilters = PathwaySearchFilters & {
   school?: string[];
   hostsUndergrads?: boolean;
   welcomesUndergrads?: boolean;
+  worksWithUndergrads?: boolean;
 };
 
 type ResearchQualityFilter = 'description-issue' | 'missing-lead' | 'profile-fallback';
@@ -137,6 +138,11 @@ const WELCOMES_UNDERGRADS_PARAM = 'welcomes';
 
 const readWelcomesUndergradsParam = (params: URLSearchParams): boolean =>
   params.get(WELCOMES_UNDERGRADS_PARAM) === '1';
+
+const WORKS_WITH_UNDERGRADS_PARAM = 'works';
+
+const readWorksWithUndergradsParam = (params: URLSearchParams): boolean =>
+  params.get(WORKS_WITH_UNDERGRADS_PARAM) === '1';
 
 const readEntityTypeParam = (params: URLSearchParams): string => {
   const value = (params.get('type') || '').trim();
@@ -184,6 +190,9 @@ const moreTopicResultsFor = (
   if (filters.welcomesUndergrads === true) {
     return { researchEntities, accessFilter: 'welcomesUndergrads' };
   }
+  if (filters.worksWithUndergrads === true) {
+    return { researchEntities, accessFilter: 'worksWithUndergrads' };
+  }
   return null;
 };
 
@@ -196,7 +205,13 @@ interface ActiveResearchSearchRequest {
 
 interface ResearchFilterAnalyticsChange {
   operation: 'apply' | 'remove';
-  filter: 'school' | 'department' | 'research_type' | 'hosts_undergrads' | 'welcomes_undergrads';
+  filter:
+    | 'school'
+    | 'department'
+    | 'research_type'
+    | 'hosts_undergrads'
+    | 'welcomes_undergrads'
+    | 'works_with_undergrads';
 }
 
 interface ResearchPageSnapshot {
@@ -214,6 +229,7 @@ interface ResearchPageSnapshot {
   selectedDepartment: string;
   selectedHostsUndergrads: boolean;
   selectedWelcomesUndergrads: boolean;
+  selectedWorksWithUndergrads: boolean;
   sortBy: ResearchSortField;
   sortOrder: 'asc' | 'desc';
   facetDistribution: Record<string, Record<string, number>>;
@@ -513,6 +529,10 @@ const Research = () => {
   const [selectedWelcomesUndergrads, setSelectedWelcomesUndergrads] = useState(
     () => restoredSnapshot?.selectedWelcomesUndergrads ?? readWelcomesUndergradsParam(searchParams),
   );
+  const [selectedWorksWithUndergrads, setSelectedWorksWithUndergrads] = useState(
+    () =>
+      restoredSnapshot?.selectedWorksWithUndergrads ?? readWorksWithUndergradsParam(searchParams),
+  );
   const [sortBy, setSortBy] = useState<ResearchSortField>(
     () => snapshotForThisPage?.sortBy ?? 'relevance',
   );
@@ -659,6 +679,7 @@ const Research = () => {
       department?: string;
       hostsUndergrads?: boolean;
       welcomesUndergrads?: boolean;
+      worksWithUndergrads?: boolean;
     },
     options: { replace?: boolean; markPending?: boolean } = {},
   ) => {
@@ -672,6 +693,7 @@ const Research = () => {
     if (nextState.department?.trim()) params.set('department', nextState.department.trim());
     if (nextState.hostsUndergrads) params.set(HOSTS_UNDERGRADS_PARAM, '1');
     if (nextState.welcomesUndergrads) params.set(WELCOMES_UNDERGRADS_PARAM, '1');
+    if (nextState.worksWithUndergrads) params.set(WORKS_WITH_UNDERGRADS_PARAM, '1');
 
     if (isAdmin) {
       if (nextState.showWeakest) params.set('weak', '1');
@@ -867,6 +889,7 @@ const Research = () => {
           department: options.departmentSearch ? undefined : filters.departments?.[0],
           hostsUndergrads: filters.hostsUndergrads === true,
           welcomesUndergrads: filters.welcomesUndergrads === true,
+          worksWithUndergrads: filters.worksWithUndergrads === true,
           showWeakest: showWeakestProfilesFirst,
           quality: qualityFilters,
           trustTiers: trustTierFilters,
@@ -905,16 +928,20 @@ const Research = () => {
         const hostsUndergrads = filters.hostsUndergrads === true;
         const welcomesUndergrads =
           filters.welcomesUndergrads === true && appliedFilters.welcomesUndergrads !== false;
+        const worksWithUndergrads =
+          filters.worksWithUndergrads === true && appliedFilters.worksWithUndergrads !== false;
         const appliedStudentFilters: ResearchSearchFilters = {
           ...(entityType ? { entityType: [entityType] } : {}),
           ...(school ? { school: [school] } : {}),
           ...(department ? { departments: [department] } : {}),
           ...(hostsUndergrads ? { hostsUndergrads: true } : {}),
           ...(welcomesUndergrads ? { welcomesUndergrads: true } : {}),
+          ...(worksWithUndergrads ? { worksWithUndergrads: true } : {}),
         };
         setSelectedSchool(school);
         setSelectedDepartment(department);
         setSelectedWelcomesUndergrads(welcomesUndergrads);
+        setSelectedWorksWithUndergrads(worksWithUndergrads);
         if (!trimmed && !hasStructuredFilters(appliedStudentFilters)) {
           writeResearchSearchParams(
             {
@@ -937,6 +964,7 @@ const Research = () => {
             department,
             hostsUndergrads,
             welcomesUndergrads,
+            worksWithUndergrads,
             showWeakest: showWeakestProfilesFirst,
             quality: qualityFilters,
             trustTiers: trustTierFilters,
@@ -1105,12 +1133,14 @@ const Research = () => {
     entityType = selectedEntityType,
     hostsUndergrads = selectedHostsUndergrads,
     welcomesUndergrads = selectedWelcomesUndergrads,
+    worksWithUndergrads = selectedWorksWithUndergrads,
   ): ResearchSearchFilters => ({
     ...(entityType ? { entityType: [entityType] } : {}),
     ...(school ? { school: [school] } : {}),
     ...(department ? { departments: [department] } : {}),
     ...(hostsUndergrads ? { hostsUndergrads: true } : {}),
     ...(welcomesUndergrads ? { welcomesUndergrads: true } : {}),
+    ...(worksWithUndergrads ? { worksWithUndergrads: true } : {}),
   });
 
   const activeSearchKeepsTypedSpelling = (text: string): boolean =>
@@ -1125,7 +1155,8 @@ const Research = () => {
       !selectedSchool &&
       !selectedDepartment &&
       !selectedHostsUndergrads &&
-      !selectedWelcomesUndergrads
+      !selectedWelcomesUndergrads &&
+      !selectedWorksWithUndergrads
     ) {
       setShowEmptySearchHint(true);
       searchInputRef.current?.focus();
@@ -1151,6 +1182,7 @@ const Research = () => {
     setSelectedDepartment('');
     setSelectedHostsUndergrads(false);
     setSelectedWelcomesUndergrads(false);
+    setSelectedWorksWithUndergrads(false);
     setFacetDistribution({});
     setGroupedResults(emptyGroupedResults(''));
     setSearchResultResearchEntities([]);
@@ -1215,6 +1247,9 @@ const Research = () => {
       searchParams.has(WELCOMES_UNDERGRADS_PARAM) && !readWelcomesUndergradsParam(searchParams)
         ? WELCOMES_UNDERGRADS_PARAM
         : null,
+      searchParams.has(WORKS_WITH_UNDERGRADS_PARAM) && !readWorksWithUndergradsParam(searchParams)
+        ? WORKS_WITH_UNDERGRADS_PARAM
+        : null,
     ].filter((key): key is string => key !== null);
     if (unreadableFilterParams.length > 0) {
       const readableParams = new URLSearchParams(searchParams);
@@ -1229,6 +1264,7 @@ const Research = () => {
     const urlDepartment = searchParams.get('department') || '';
     const urlHostsUndergrads = readHostsUndergradsParam(searchParams);
     const urlWelcomesUndergrads = readWelcomesUndergradsParam(searchParams);
+    const urlWorksWithUndergrads = readWorksWithUndergradsParam(searchParams);
     const urlQualityFilters = urlQualityFiltersKey
       ? (urlQualityFiltersKey.split(',') as ResearchQualityFilter[])
       : [];
@@ -1277,6 +1313,10 @@ const Research = () => {
       setSelectedWelcomesUndergrads(urlWelcomesUndergrads);
       return;
     }
+    if (selectedWorksWithUndergrads !== urlWorksWithUndergrads) {
+      setSelectedWorksWithUndergrads(urlWorksWithUndergrads);
+      return;
+    }
     // Key order matches `studentSearchFilters` because the reconcile below
     // compares these objects with `JSON.stringify`.
     const studentFilters: ResearchSearchFilters = {
@@ -1285,6 +1325,7 @@ const Research = () => {
       ...(urlDepartment ? { departments: [urlDepartment] } : {}),
       ...(urlHostsUndergrads ? { hostsUndergrads: true } : {}),
       ...(urlWelcomesUndergrads ? { welcomesUndergrads: true } : {}),
+      ...(urlWorksWithUndergrads ? { worksWithUndergrads: true } : {}),
     };
 
     if (awaitingDepartmentConfig || awaitingAdminScope) return;
@@ -1396,6 +1437,7 @@ const Research = () => {
     selectedDepartment,
     selectedHostsUndergrads,
     selectedWelcomesUndergrads,
+    selectedWorksWithUndergrads,
     departmentSearch,
     hasSubmittedSearch,
     submittedQuery,
@@ -1420,6 +1462,7 @@ const Research = () => {
       selectedDepartment,
       selectedHostsUndergrads,
       selectedWelcomesUndergrads,
+      selectedWorksWithUndergrads,
       sortBy,
       sortOrder,
       facetDistribution,
@@ -1458,6 +1501,7 @@ const Research = () => {
     selectedDepartment,
     selectedHostsUndergrads,
     selectedWelcomesUndergrads,
+    selectedWorksWithUndergrads,
     sortBy,
     sortOrder,
     facetDistribution,
@@ -1601,7 +1645,8 @@ const Research = () => {
     Number(Boolean(selectedSchool)) +
     Number(Boolean(selectedDepartment)) +
     Number(selectedHostsUndergrads) +
-    Number(selectedWelcomesUndergrads);
+    Number(selectedWelcomesUndergrads) +
+    Number(selectedWorksWithUndergrads);
   const hasStudentFacetSelection = activeStudentFilterCount > 0;
   const hasSubmittableChange = query.trim().length > 0 && query.trim() !== submittedQuery;
   const searchDisabled = searchLoading && !hasSubmittableChange;
@@ -1617,12 +1662,14 @@ const Research = () => {
     entityType?: string;
     hostsUndergrads?: boolean;
     welcomesUndergrads?: boolean;
+    worksWithUndergrads?: boolean;
   }) => {
     const school = next.school ?? selectedSchool;
     const department = next.department ?? selectedDepartment;
     const entityType = next.entityType ?? selectedEntityType;
     const hostsUndergrads = next.hostsUndergrads ?? selectedHostsUndergrads;
     const welcomesUndergrads = next.welcomesUndergrads ?? selectedWelcomesUndergrads;
+    const worksWithUndergrads = next.worksWithUndergrads ?? selectedWorksWithUndergrads;
     const filterChanges: ResearchFilterAnalyticsChange[] = [];
     if (entityType !== selectedEntityType) {
       filterChanges.push({ operation: entityType ? 'apply' : 'remove', filter: 'research_type' });
@@ -1645,18 +1692,26 @@ const Research = () => {
         filter: 'welcomes_undergrads',
       });
     }
+    if (worksWithUndergrads !== selectedWorksWithUndergrads) {
+      filterChanges.push({
+        operation: worksWithUndergrads ? 'apply' : 'remove',
+        filter: 'works_with_undergrads',
+      });
+    }
     if (filterChanges.length > 0) scrollViewportToTop();
     setSelectedEntityType(entityType);
     setSelectedSchool(school);
     setSelectedDepartment(department);
     setSelectedHostsUndergrads(hostsUndergrads);
     setSelectedWelcomesUndergrads(welcomesUndergrads);
+    setSelectedWorksWithUndergrads(worksWithUndergrads);
     const filters = studentSearchFilters(
       school,
       department,
       entityType,
       hostsUndergrads,
       welcomesUndergrads,
+      worksWithUndergrads,
     );
     if (departmentSearch && !department) {
       void runSearch(departmentSearch.label, {
@@ -1818,6 +1873,7 @@ const Research = () => {
     selectedDepartment,
     selectedHostsUndergrads,
     selectedWelcomesUndergrads,
+    selectedWorksWithUndergrads,
     isApplying: searchLoading,
     hasFacetError,
     departmentLabel: departmentFacetLabel,
@@ -1827,6 +1883,8 @@ const Research = () => {
     onHostsUndergradsChange: (hostsUndergrads: boolean) => applyStudentFilters({ hostsUndergrads }),
     onWelcomesUndergradsChange: (welcomesUndergrads: boolean) =>
       applyStudentFilters({ welcomesUndergrads }),
+    onWorksWithUndergradsChange: (worksWithUndergrads: boolean) =>
+      applyStudentFilters({ worksWithUndergrads }),
     onClearAll: () =>
       applyStudentFilters({
         school: '',
@@ -1834,6 +1892,7 @@ const Research = () => {
         entityType: '',
         hostsUndergrads: false,
         welcomesUndergrads: false,
+        worksWithUndergrads: false,
       }),
     resultCount: hasFacetError ? undefined : Math.max(searchTotal, activeClusters.length),
     resultCountPending: searchLoading,
@@ -2337,6 +2396,7 @@ const Research = () => {
                       selectedDepartment={selectedDepartment}
                       selectedHostsUndergrads={selectedHostsUndergrads}
                       selectedWelcomesUndergrads={selectedWelcomesUndergrads}
+                      selectedWorksWithUndergrads={selectedWorksWithUndergrads}
                       departmentLabel={departmentFacetLabel}
                       onRemoveEntityType={() => applyStudentFilters({ entityType: '' })}
                       onRemoveSchool={() => applyStudentFilters({ school: '' })}
@@ -2346,6 +2406,9 @@ const Research = () => {
                       }
                       onRemoveWelcomesUndergrads={() =>
                         applyStudentFilters({ welcomesUndergrads: false })
+                      }
+                      onRemoveWorksWithUndergrads={() =>
+                        applyStudentFilters({ worksWithUndergrads: false })
                       }
                       onClearAllFilters={() => {
                         researchFilterProps.onClearAll();

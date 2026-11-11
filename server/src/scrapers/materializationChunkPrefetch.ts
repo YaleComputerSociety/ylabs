@@ -94,6 +94,7 @@ export interface MaterializationReadSource {
   liveEntityDocForId(entityType: string, entityId: unknown): PrefetchLookup<unknown | null>;
   hasNoMergedInRows(survivorId: unknown): boolean;
   soleLeadPersonId(entityId: unknown): PrefetchLookup<string>;
+  pageStatedNamePeers(names: readonly string[]): PrefetchLookup<unknown[]>;
 }
 
 /**
@@ -196,6 +197,10 @@ export class MaterializationChunkPrefetch implements MaterializationReadSource {
     const id = prefetchObjectIdString(entityId);
     if (!id || this.isTouched(id) || !this.soleLeadPersonIdByEntityId.has(id)) return MISS;
     return hit(this.soleLeadPersonIdByEntityId.get(id) as string);
+  }
+
+  pageStatedNamePeers(): PrefetchLookup<unknown[]> {
+    return MISS;
   }
 
   private async loadObservations(

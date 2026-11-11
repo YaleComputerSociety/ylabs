@@ -96,6 +96,7 @@ A dry-run explain of `research-area-source-extractor` on one fixed scope planned
 `center-director-llm` fetched the same pages before and after, but its model answered differently on two live reads of the same pages, which is why the lane already holds a changed director until a second read agrees.
 That hold reads the lane's own previous observation from the live log, so a director held or confirmed on replay depends on what the lane last observed rather than only on the frozen pages.
 `center-affiliation-llm` and `research-area-source-extractor` choose their targets from the live corpus, so a row archived or re-sited after capture shows as `pagesMissed` rather than as a changed score.
+`yale-directory` reads the live researcher netids to decide which records whose title fails the faculty screen it emits as a corpus person's netid and email (#5627), so a researcher created, archived or re-stamped after capture changes those observations without any change to the lane.
 
 The four funding lanes, `nih-reporter`, `nsf-award-search`, `doe-osti` and `neh-funded-projects`, fetch through `getCached`, and joined once their query window followed the run's reference date rather than the wall clock (#4607).
 Each one asked for a date window computed from today, so a replay on a later day asked for a different query, missed every frozen page, and measured nothing; replay now passes the capture date as the reference date, as it already did for page-stated deadlines.

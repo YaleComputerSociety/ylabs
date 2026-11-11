@@ -11,6 +11,20 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import { isYaleOfficialProfileUrl } from './backfillResearcherOfficialProfileLinksCore';
 import { materializationReadScopeFilter } from '../scrapers/entityMaterializer';
 import {
+  fetchHtml,
+  officialProfilePageStatedIdentity,
+} from '../scrapers/sources/officialProfilePiBackfillScraper';
+import {
+  loadDirectoryNetidsByAddress,
+  type DirectoryNetidsByAddress,
+} from '../scrapers/directoryContradictedProfileNetid';
+import {
+  officialProfileLinkHeldByConflictingIdentity,
+  pageIdentityWitnessesPerson,
+  type OfficialProfilePageIdentity,
+  type PersonIdentityWitnesses,
+} from '../services/officialProfileLinkIdentity';
+import {
   decisiveVerdictCount,
   isDecisivelyDeadProbe,
   isDecisivelyLiveProbe,
@@ -18,7 +32,7 @@ import {
   isRetryableProbe,
   profileLinkVerificationCoverage,
   type ProfileLinkVerificationCoverage,
-  officialProfileLinkCandidates,
+  officialProfileLinkCandidatesWithOrigin,
   officialProfileLinkHost,
   probeRetryDelayMs,
   DEFAULT_UNSETTLED_RETRY_HOURS,
@@ -26,6 +40,7 @@ import {
   summarizeDepartmentLinkHealth,
   type DepartmentLinkHealthSummary,
   type OfficialProfileLinkRow,
+  type RefusedOfficialProfileLinkCandidate,
 } from './verifyOfficialProfileLinksCore';
 import { connectScriptMongo } from '../db/connections';
 
@@ -175,6 +190,7 @@ export interface VerifyOfficialProfileLinksResult {
   dead: number;
   inconclusive: number;
   decisiveVerdicts: number;
+  candidatesRefused: number;
   statusesWritten: number;
   urlsRepaired: number;
   coverage: ProfileLinkVerificationCoverage;
@@ -185,6 +201,7 @@ export interface VerifyOfficialProfileLinksResult {
 interface OfficialLinkTarget {
   researcherId: string;
   displayName?: string;
+  identifiers?: PersonIdentityWitnesses['identifiers'];
   host: string;
   url: string;
   storedHealthStatus?: string;
@@ -235,7 +252,7 @@ const officialLinkTargets = async (
     archived: { $ne: true },
     profileLinks: { $elemMatch: { kind: 'YALE_OFFICIAL' } },
   })
-    .select('_id displayName profileLinks')
+    .select('_id displayName profileLinks identifiers.netid identifiers.email')
     .lean();
 
   const targets: OfficialLinkTarget[] = [];
@@ -261,6 +278,7 @@ const officialLinkTargets = async (
       targets.push({
         researcherId: String(researcher._id),
         displayName: (researcher as { displayName?: string }).displayName,
+        identifiers: (researcher as PersonIdentityWitnesses).identifiers,
         host: linkHost,
         url: String(link.url).trim(),
         storedHealthStatus: link.healthStatus,
@@ -271,12 +289,27 @@ const officialLinkTargets = async (
   return targets;
 };
 
+const readOfficialProfilePageIdentity = async (
+  url: string,
+): Promise<OfficialProfilePageIdentity | undefined> => {
+  try {
+    return officialProfilePageStatedIdentity(
+      await fetchHtml(url, false, 'verify-official-profile-links'),
+      url,
+    );
+  } catch {
+    return undefined;
+  }
+};
+
 export async function runVerifyOfficialProfileLinks(
   options: Pick<VerifyOfficialProfileLinksOptions, 'apply' | 'host' | 'hostConcurrency'> & {
     limit?: number;
     staleAfterDays?: number;
     unsettledRetryHours?: number;
     probe?: (url: string) => Promise<SourceLinkHealth>;
+    readPageIdentity?: (url: string) => Promise<OfficialProfilePageIdentity | undefined>;
+    directory?: DirectoryNetidsByAddress;
     onHostVerified?: (host: string, links: number) => void;
     onProgress?: (snapshot: VerifyOfficialProfileLinksResult) => void;
     sleep?: (ms: number) => Promise<unknown>;
@@ -286,6 +319,8 @@ export async function runVerifyOfficialProfileLinks(
   },
 ): Promise<VerifyOfficialProfileLinksResult> {
   const probe = options.probe ?? checkSourceLinkHealth;
+  const readPageIdentity = options.readPageIdentity ?? readOfficialProfilePageIdentity;
+  const directory = options.directory ?? (await loadDirectoryNetidsByAddress());
   const observedIndex = await observedProfileUrlsByHost();
   const allTargets = await officialLinkTargets(
     options.host,
@@ -325,20 +360,39 @@ export async function runVerifyOfficialProfileLinks(
     const health = await probeWithBackoff(target.url);
     let verdict: OfficialProfileLinkRow['verdict'] = 'inconclusive';
     let replacementUrl: string | undefined;
+    const refusedCandidates: RefusedOfficialProfileLinkCandidate[] = [];
 
     if (isDecisivelyLiveProbe(health)) {
       verdict = 'healthy';
     } else if (isDecisivelyDeadProbe(health)) {
       verdict = 'dead';
       const observed = observedIndex.get(target.host) || [];
-      const candidates = officialProfileLinkCandidates(target.url, target.displayName, observed);
+      const person: PersonIdentityWitnesses = {
+        _id: target.researcherId,
+        identifiers: target.identifiers,
+      };
+      const candidates = officialProfileLinkCandidatesWithOrigin(
+        target.url,
+        target.displayName,
+        observed,
+      );
       for (const candidate of candidates) {
-        if (paceDelayMs > 0) await sleep(paceDelayMs);
-        if (isDecisivelyLiveProbe(await probeWithBackoff(candidate))) {
-          verdict = 'repaired';
-          replacementUrl = candidate;
-          break;
+        if (await officialProfileLinkHeldByConflictingIdentity(candidate.url, person)) {
+          refusedCandidates.push({ url: candidate.url, reason: 'held-by-another-netid' });
+          continue;
         }
+        if (paceDelayMs > 0) await sleep(paceDelayMs);
+        if (!isDecisivelyLiveProbe(await probeWithBackoff(candidate.url))) continue;
+        if (
+          candidate.nameDerived &&
+          !pageIdentityWitnessesPerson(await readPageIdentity(candidate.url), person, directory)
+        ) {
+          refusedCandidates.push({ url: candidate.url, reason: 'page-identity-not-witnessed' });
+          continue;
+        }
+        verdict = 'repaired';
+        replacementUrl = candidate.url;
+        break;
       }
     }
 
@@ -350,6 +404,7 @@ export async function runVerifyOfficialProfileLinks(
       verdict,
       httpStatusCode: health.httpStatusCode,
       replacementUrl,
+      ...(refusedCandidates.length ? { refusedCandidates } : {}),
     });
 
     if (!options.apply) return;
@@ -388,6 +443,7 @@ export async function runVerifyOfficialProfileLinks(
       dead: countOf('dead'),
       inconclusive: countOf('inconclusive'),
       decisiveVerdicts: decisiveVerdictCount(rows),
+      candidatesRefused: rows.reduce((sum, row) => sum + (row.refusedCandidates?.length ?? 0), 0),
       statusesWritten,
       urlsRepaired,
       coverage: profileLinkVerificationCoverage({

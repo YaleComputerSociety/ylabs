@@ -117,6 +117,25 @@ describe('classifySourceLinkHealth', () => {
 });
 
 describe('probeSourceLink', () => {
+  it('records each redirect status so a permanent slug respelling reads as the same page', async () => {
+    assertPublicHttpUrlMock.mockImplementation(async (url: string) => new URL(url));
+    requestMock.mockReset();
+    requestMock.mockImplementationOnce(
+      async (config: { beforeRedirect?: (o: unknown, d: { statusCode: number }) => void }) => {
+        config.beforeRedirect?.({}, { statusCode: 301 });
+        return {
+          status: 200,
+          request: { res: { responseUrl: 'https://fixture.yale.edu/people/past-fixture-fellows' } },
+        };
+      },
+    );
+    const probe = await probeSourceLink('https://fixture.yale.edu/people/past_fixture_fellows');
+    expect(probe.redirectStatuses).toEqual([301]);
+    expect(classifySourceLinkHealth(probe)).toEqual(
+      expect.objectContaining({ healthStatus: 'HEALTHY', httpStatusCode: 200 }),
+    );
+  });
+
   beforeEach(() => {
     requestMock.mockReset();
     assertPublicHttpUrlMock.mockReset();
@@ -461,6 +480,47 @@ describe('isLikelyUnavailableSourceLink', () => {
 });
 
 describe('landsAwayFromRequestedResource', () => {
+  const ROSTER_SLUG_REQUESTED = 'https://fixture.yale.edu/people/past_fixture_fellows';
+  const ROSTER_SLUG_LANDING = 'https://fixture.yale.edu/people/past-fixture-fellows';
+
+  it.each([[[301]], [[308]], [[301, 308]]])(
+    'is false when a permanent same-host redirect only respells the slug (%j)',
+    (statuses) => {
+      expect(
+        landsAwayFromRequestedResource(ROSTER_SLUG_REQUESTED, ROSTER_SLUG_LANDING, statuses),
+      ).toBe(false);
+    },
+  );
+
+  it.each([[[302]], [[303]], [[307]], [[301, 302]], [[]], [undefined]])(
+    'still lands away when the slug respelling is not a permanent redirect (%j)',
+    (statuses) => {
+      expect(
+        landsAwayFromRequestedResource(ROSTER_SLUG_REQUESTED, ROSTER_SLUG_LANDING, statuses),
+      ).toBe(true);
+    },
+  );
+
+  it('still lands away on a permanent same-host redirect to a genuinely different path', () => {
+    expect(
+      landsAwayFromRequestedResource(
+        'https://fixture.yale.edu/people/a_fixture_person',
+        'https://fixture.yale.edu/people/faculty',
+        [301],
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps a cross-host landing on a roster away even when only the slug is respelled', () => {
+    expect(
+      landsAwayFromRequestedResource(
+        ROSTER_SLUG_REQUESTED,
+        'https://other-fixture.yale.edu/people/past-fixture-fellows',
+        [301],
+      ),
+    ).toBe(true);
+  });
+
   it('is false when the landing keeps the requested resource', () => {
     expect(
       landsAwayFromRequestedResource(
@@ -555,13 +615,47 @@ describe('classifySourceLinkHealth soft 404 handling', () => {
         requestedUrl: 'https://example.yale.edu/lab/thing',
         finalUrl: 'https://example.yale.edu/lab/thing/',
       }),
-    ).toEqual({ healthStatus: 'HEALTHY', httpStatusCode: 200 });
+    ).toEqual({ healthStatus: 'HEALTHY', httpStatusCode: 200, landedOnRequestedResource: true });
   });
 
   it('keeps a 200 healthy when no landing url was captured', () => {
     expect(
       classifySourceLinkHealth({ status: 200, requestedUrl: 'https://example.yale.edu/lab/thing' }),
     ).toEqual({ healthStatus: 'HEALTHY', httpStatusCode: 200 });
+  });
+
+  it('keeps a root 200 that landed on another host healthy without vouching for the page', () => {
+    expect(
+      classifySourceLinkHealth({
+        status: 200,
+        requestedUrl: 'https://lab.example.org/',
+        finalUrl: 'https://www.example.edu/',
+      }),
+    ).toEqual({ healthStatus: 'HEALTHY', httpStatusCode: 200 });
+  });
+
+  it.each([
+    ['http://lab.example.org/index.html', 'https://www.example.edu/'],
+    ['https://lab.example.org/', 'https://www.example.edu/index.aspx'],
+    ['https://lab.example.org/Default.aspx', 'https://www.example.edu/index.php'],
+  ])(
+    'records no redirect landing for a host root spelled with a default document (%s -> %s)',
+    (requestedUrl, finalUrl) => {
+      expect(classifySourceLinkHealth({ status: 200, requestedUrl, finalUrl })).toEqual({
+        healthStatus: 'HEALTHY',
+        httpStatusCode: 200,
+      });
+    },
+  );
+
+  it('still records a page that moved to another host root', () => {
+    expect(
+      classifySourceLinkHealth({
+        status: 200,
+        requestedUrl: 'https://www.example.edu/lab/index.html',
+        finalUrl: 'https://lab.example.org/',
+      }),
+    ).toMatchObject({ healthStatus: 'HEALTHY', redirectLandingUrl: 'https://lab.example.org/' });
   });
 });
 
@@ -935,13 +1029,19 @@ describe('https landing (#4649)', () => {
   it('records the https page a reachable http link was redirected to on its own host', () => {
     expect(
       classifySourceLinkHealth({ status: 200, requestedUrl: HTTP, finalUrl: LANDING }),
-    ).toEqual({ healthStatus: 'HEALTHY', httpStatusCode: 200, httpsLandingUrl: LANDING });
+    ).toEqual({
+      healthStatus: 'HEALTHY',
+      httpStatusCode: 200,
+      httpsLandingUrl: LANDING,
+      landedOnRequestedResource: true,
+    });
   });
 
   it('records no landing for a link that was not redirected to https', () => {
     expect(classifySourceLinkHealth({ status: 200, requestedUrl: HTTP, finalUrl: HTTP })).toEqual({
       healthStatus: 'HEALTHY',
       httpStatusCode: 200,
+      landedOnRequestedResource: true,
     });
   });
 

@@ -19,6 +19,10 @@ import {
 import { Observation, researchEntityObservationSubjects } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
+import {
+  directoryRemovalServingForGate,
+  rosterWithoutWithheldPeople,
+} from './directoryRemovalServing';
 import { researchEntityLeadStateForMembers } from './researchEntityQuality';
 import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
 import mongoose from 'mongoose';
@@ -80,6 +84,7 @@ import {
 } from '../scrapers/accessMaterializer';
 import { SCHOOL_PROFILE_HOSTS } from '../scrapers/orgUnitCanonicalization';
 import { unwrapMicrosoftSafeLinksUrl } from '../utils/safeLinksUrl';
+import { isExcludedFromSearchIndex } from './directoryRemovalReason';
 
 export type StudentVisibilityGateMode = 'dry-run' | 'apply';
 export type StudentVisibilityGateCollection = VisibilityReleaseQueueCollection | 'all';
@@ -153,6 +158,7 @@ export interface ResearchEntityGateRowInput {
   exactUrlDuplicateRisk: boolean;
   citationsSharedAcrossPersonRows: boolean;
   relatedEntityAccessPathCount: number;
+  everyLeadRemovedByRequest?: boolean;
 }
 
 export interface VisibilityQueueUpsert {
@@ -253,6 +259,7 @@ export const SUPPRESSION_REPAIR_REASONS: ReadonlySet<string> = new Set([
   'non_owner_grant_shell',
   'grant_only_no_current_yale_source',
   'permanently_closed',
+  'researcher_removed',
   'non_research_entity',
   'non_research_program',
   'not_undergraduate_relevant',
@@ -1863,7 +1870,7 @@ export async function readStudentVisibilityGateIndexDrift(
   const storedRows = (await ResearchEntity.find({
     _id: { $in: plannedIds.map((id) => new mongoose.Types.ObjectId(id)) },
   })
-    .select('_id studentVisibilityTier')
+    .select('_id studentVisibilityTier archived studentVisibilityReasons')
     .lean()) as unknown as Array<{ _id: unknown; studentVisibilityTier?: string }>;
 
   const divergentTierRecordIds: string[] = [];
@@ -1871,6 +1878,10 @@ export async function readStudentVisibilityGateIndexDrift(
   for (const row of storedRows) {
     const recordId = studentVisibilityGateDocumentId(row._id);
     if (!recordId) continue;
+    if (isExcludedFromSearchIndex(row)) {
+      if (indexedTiers.has(recordId)) divergentTierRecordIds.push(recordId);
+      continue;
+    }
     if (!indexedTiers.has(recordId)) {
       missingFromIndex += 1;
       continue;
@@ -2026,7 +2037,8 @@ async function planResearchEntityGateUpdates(
       .lean(),
     entities as any[],
   );
-  const [rosterByEntityId, accessRows, alternateAccessPathCounts] = await Promise.all([
+  const [serving, rawRosterByEntityId, accessRows, alternateAccessPathCounts] = await Promise.all([
+    directoryRemovalServingForGate(),
     getResearchEntityRosterByEntityId(entityIds),
     Signal.aggregate([
       {
@@ -2053,11 +2065,24 @@ async function planResearchEntityGateUpdates(
 
   const buildGateLeadRows = (roster: Map<string, any[]>) =>
     Array.from(roster.values()).flatMap((entries) => studentVisibilityGateLeadRows(entries));
+  const rosterByEntityId = rosterWithoutWithheldPeople(rawRosterByEntityId, serving);
+  const everyLeadRemovedEntityIds = new Set(
+    [...rawRosterByEntityId]
+      .filter(
+        ([entityId, entries]) =>
+          studentVisibilityGateLeadRows(entries).length > 0 &&
+          studentVisibilityGateLeadRows(rosterByEntityId.get(entityId) ?? []).length === 0,
+      )
+      .map(([entityId]) => entityId),
+  );
 
   const leadRows = buildGateLeadRows(rosterByEntityId);
   const duplicateReferenceRosterByEntityId = needsDuplicateReferenceCorpus
-    ? await getResearchEntityRosterByEntityId(
-        duplicateReferenceEntities.map((entity: any) => entity._id),
+    ? rosterWithoutWithheldPeople(
+        await getResearchEntityRosterByEntityId(
+          duplicateReferenceEntities.map((entity: any) => entity._id),
+        ),
+        serving,
       )
     : rosterByEntityId;
   const duplicateReferenceLeadRows = needsDuplicateReferenceCorpus
@@ -2252,6 +2277,7 @@ async function planResearchEntityGateUpdates(
         exactUrlDuplicateRiskEntityIds.has(recordId),
       citationsSharedAcrossPersonRows: sharedCitationOnlyEntityIds.has(recordId),
       relatedEntityAccessPathCount: alternateAccessPathCounts.get(recordId) || 0,
+      everyLeadRemovedByRequest: everyLeadRemovedEntityIds.has(recordId),
     };
     const result = computeResearchEntityStudentVisibility({
       entity,

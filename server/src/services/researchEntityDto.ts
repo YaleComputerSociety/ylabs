@@ -42,8 +42,16 @@ import {
 } from '../utils/researchHomeNameIdentityAuthority';
 import { disambiguateCollidingResearchEntityNames } from '../utils/researchEntityDisplayNameDisambiguation';
 import { isPublicHttpUrl } from '../utils/urlSafety';
-import { entityHasHostedUndergraduates } from './hostedUndergraduates';
-import { publicUndergradMentoring } from './undergradMentoringServing';
+import { sourceLinkHealthKey, sourceLinkScheme } from './sourceLinkHealth';
+import {
+  entityHasHostedUndergraduates,
+  withoutAdviseeProgramsMovedToMentors,
+} from './hostedUndergraduates';
+import {
+  entityHasUndergradListSignal,
+  entityMentorsUndergraduates,
+  publicUndergradListEvidence,
+} from './undergradListEvidenceServing';
 import { RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE } from '../scrapers/undergradEvidenceQuoteValidation';
 import { quotePageIsAboutAnotherEntity } from '../scrapers/undergradQuoteRelevance';
 import { quoteListsPeopleWithTheirContactDetails } from '../scrapers/contactInstructionQuoteAdmission';
@@ -79,6 +87,7 @@ export interface PublicResearchEntitySourceLinkHealth {
   privateAddressHost?: boolean;
   tlsVerificationFailed?: boolean;
   httpsLandingUrl?: string;
+  httpsSpellingUrl?: string;
 }
 
 export interface PublicResearchEntityDto extends Record<string, unknown> {
@@ -357,6 +366,10 @@ export function publicSourceLinkHealthArray(
     const httpsLandingUrl = publicHttpUrl(
       (entry as { httpsLandingUrl?: unknown })?.httpsLandingUrl,
     );
+    const httpsSpellingUrl = publicHttpsSpellingOf(
+      url,
+      (entry as { httpsSpellingUrl?: unknown })?.httpsSpellingUrl,
+    );
     return [
       {
         url,
@@ -367,9 +380,22 @@ export function publicSourceLinkHealthArray(
         ...(privateAddressHost === true ? { privateAddressHost: true } : {}),
         ...(tlsVerificationFailed === true ? { tlsVerificationFailed: true } : {}),
         ...(httpsLandingUrl ? { httpsLandingUrl } : {}),
+        ...(httpsSpellingUrl ? { httpsSpellingUrl } : {}),
       },
     ];
   });
+}
+
+/**
+ * A stored `httpsSpellingUrl` is served only as what it claims to be: the `https:`
+ * spelling of this entry's own plain-HTTP URL, same host, path and query (#5639).
+ */
+function publicHttpsSpellingOf(entryUrl: string, value: unknown): string | undefined {
+  const spelling = publicHttpUrl(value);
+  if (!spelling) return undefined;
+  if (sourceLinkScheme(entryUrl) !== 'http:' || sourceLinkScheme(spelling) !== 'https:')
+    return undefined;
+  return sourceLinkHealthKey(spelling) === sourceLinkHealthKey(entryUrl) ? spelling : undefined;
 }
 
 /**
@@ -535,15 +561,23 @@ export function publicUndergradInvitation(
 
 type UndergradInvitationHolder = Parameters<typeof quotePageIsAboutAnotherEntity>[1] & {
   undergradInvitation?: unknown;
+  undergradListEvidence?: unknown;
+  wayInWithheld?: unknown;
 };
 
 export const servedUndergradInvitationLevel = (
   group: UndergradInvitationHolder,
 ): UndergradInvitationLevel | undefined =>
-  publicUndergradInvitation(group.undergradInvitation, group)?.level;
+  group.wayInWithheld === true
+    ? undefined
+    : publicUndergradInvitation(group.undergradInvitation, group)?.level;
 
-export const entityWelcomesUndergraduates = (group: UndergradInvitationHolder): boolean =>
-  servedUndergradInvitationLevel(group) !== undefined;
+export const entityWelcomesUndergraduates = (
+  group: UndergradInvitationHolder,
+  reviewedSources?: ReadonlySet<string>,
+): boolean =>
+  servedUndergradInvitationLevel(group) !== undefined ||
+  entityHasUndergradListSignal(group, 'welcomes', reviewedSources);
 
 const OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS = [
   'shortDescription',
@@ -554,7 +588,7 @@ const OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS = [
   'schools',
   'currentUndergradCount',
   'undergradInvitation',
-  'undergradMentoring',
+  'undergradListEvidence',
   'pastUndergradAdvisees',
   'fellowshipRecipients',
   'recentGrants',
@@ -707,9 +741,14 @@ function derivePublicResearchEntityDto(
         dto[field] = String(served[field] || '');
         continue;
       }
-      if (field === 'undergradMentoring') {
-        const mentoring = publicUndergradMentoring(group[field], { wayInWithheld });
-        if (mentoring.length > 0) dto[field] = mentoring;
+      if (field === 'undergradListEvidence') {
+        const evidence = publicUndergradListEvidence(group[field], { wayInWithheld });
+        if (evidence.length > 0) dto[field] = evidence;
+        continue;
+      }
+      if (field === 'pastUndergradAdvisees') {
+        const advisees = withoutAdviseeProgramsMovedToMentors(group[field]);
+        if (advisees.length > 0) dto[field] = advisees;
         continue;
       }
       if (field === 'undergradInvitation') {
@@ -739,6 +778,12 @@ function derivePublicResearchEntityDto(
 
   if (options.hasHostedUndergraduates ?? entityHasHostedUndergraduates(group)) {
     dto.hasUndergradHostingEvidence = true;
+  }
+  if (entityWelcomesUndergraduates(group)) {
+    dto.welcomesUndergrads = true;
+  }
+  if (entityMentorsUndergraduates(group)) {
+    dto.mentorsUndergrads = true;
   }
   Object.assign(dto, servedCreativePracticeFlag(creativePractice));
 

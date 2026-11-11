@@ -27,7 +27,7 @@ import {
   buildSpecificProfileLabUrlResearchEntityDedupePlan,
   explainSpecificProfileLabUrlRefusals,
   buildWebsiteUrlResearchEntityDedupePlan,
-  normalizeWebsiteUrlIdentityKey,
+  groupEntitiesByWebsiteUrlIdentity,
   partitionPlanByPersonProfileConflation,
   personProfileIdentityFromUrl,
   specificProfileLabUrlIdentityKey,
@@ -56,6 +56,7 @@ import {
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { isSweepStageEnabledByDefault } from './sweepStageFlags';
 import { deleteFromIndex } from '../services/meiliSyncService';
+import { loadRedirectLandingIdentityKeys } from '../services/websiteUrlRedirectLandings';
 import { syncResearchEntitiesWithOutcome } from '../services/researchEntityIndexSyncOutcome';
 import { recomputeVisibilityAndResyncCanonicals } from '../services/researchEntityEponymousMergeService';
 import {
@@ -1478,9 +1479,9 @@ async function loadSpecificProfileLabUrlCandidateRows(
   return attachLeadPersonIds(candidates);
 }
 
-async function attachLeadPersonIds(
-  rows: OfficialLabUrlDedupeRow[],
-): Promise<OfficialLabUrlDedupeRow[]> {
+async function attachLeadPersonIds<
+  Row extends { entities: Array<{ id: string; leadPersonIds?: string[] }> },
+>(rows: Row[]): Promise<Row[]> {
   const entityIds = Array.from(
     new Set(rows.flatMap((row) => row.entities.map((entity) => entity.id))),
   )
@@ -1571,7 +1572,10 @@ async function loadOrgNameCandidateRows(limit: number): Promise<OrgNameDedupeEnt
   ]).then((rows) => rows as OrgNameDedupeEntity[]);
 }
 
-async function loadWebsiteUrlCandidateRows(limit: number): Promise<WebsiteUrlDedupeRow[]> {
+export async function loadWebsiteUrlCandidateRows(
+  limit: number,
+  landings?: ReadonlyMap<string, string>,
+): Promise<WebsiteUrlDedupeRow[]> {
   const entities = await ResearchEntity.aggregate([
     {
       $match: {
@@ -1621,18 +1625,12 @@ async function loadWebsiteUrlCandidateRows(limit: number): Promise<WebsiteUrlDed
     { $sort: { id: 1 } },
   ]);
 
-  const byKey = new Map<string, WebsiteUrlDedupeRow>();
-  for (const entity of entities as ResearchEntityPiDedupeRow['entities']) {
-    const key = normalizeWebsiteUrlIdentityKey(entity.websiteUrl);
-    if (!key) continue;
-    const existing = byKey.get(key);
-    if (existing) existing.entities.push(entity);
-    else byKey.set(key, { websiteUrl: entity.websiteUrl || '', entities: [entity] });
-  }
-
-  return Array.from(byKey.values())
-    .filter((row) => row.entities.length > 1)
-    .slice(0, limit);
+  return attachLeadPersonIds(
+    groupEntitiesByWebsiteUrlIdentity(
+      entities as ResearchEntityPiDedupeRow['entities'],
+      landings ?? (await loadRedirectLandingIdentityKeys()),
+    ).slice(0, limit),
+  );
 }
 
 async function loadDuplicateCurrentMemberRows(limit: number) {

@@ -41,6 +41,15 @@ export interface StudentDecisionExplanation {
   reviewFlags?: string[];
 }
 
+export interface UndergradListEvidence {
+  source: string;
+  signal: 'hosted' | 'welcomes' | 'mentors';
+  kind: 'advised' | 'open';
+  count?: number;
+  latestYear?: number;
+  sourceUrl: string;
+}
+
 export interface PastUndergradAdvisee {
   year?: number;
   programName?: string;
@@ -86,6 +95,7 @@ export interface ResearchEntitySourceLinkHealth {
   privateAddressHost?: boolean;
   tlsVerificationFailed?: boolean;
   httpsLandingUrl?: string;
+  httpsSpellingUrl?: string;
 }
 
 export type UndergradInvitationLevel = 'actively_hiring' | 'welcomes_undergrads';
@@ -129,6 +139,12 @@ export interface ResearchGroup {
   fellowshipRecipients?: FellowshipRecipient[];
   /** Served by the API from the one hosted-undergraduates predicate the browse filter also uses. */
   hasUndergradHostingEvidence?: boolean;
+  /** Served by the API from the one welcomes predicate the browse filter also uses. */
+  welcomesUndergrads?: boolean;
+  /** Served by the API from the one mentors predicate the search index also uses. */
+  mentorsUndergrads?: boolean;
+  /** Owner-reviewed official Yale lists naming this row's professor, one entry per list. */
+  undergradListEvidence?: UndergradListEvidence[];
   recentGrants?: RecentGrant[];
   recentGrantCount?: number;
   fundingAgencies?: string[];
@@ -190,6 +206,7 @@ export interface ResearchGroupSearchResponse {
     school?: string[];
     departments?: string[];
     welcomesUndergrads?: false;
+    worksWithUndergrads?: false;
   };
   moreTopicResults?: ResearchEntity[];
 }

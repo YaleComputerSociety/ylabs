@@ -1,6 +1,7 @@
 import * as cheerio from 'cheerio';
 import { isYaleProfileUrl } from '../yaleProfileDepartureEvidence';
 import { isLikelyPersonSpecificYaleEmail } from './scraperHelpers';
+import { observedPersonNameAgreesWith } from './personNameAgreement';
 import { normalizedYaleNetid } from '../../utils/yaleNetid';
 
 export const ROSTER_MEMBER_IDENTITY_EVIDENCE_FIELD = 'profileIdentityEvidence';
@@ -82,22 +83,77 @@ function statedNetids(people: ReadonlyArray<Record<string, unknown>>): string[] 
   return netids;
 }
 
+const namesAgree = (left: string, right: string): boolean =>
+  observedPersonNameAgreesWith(left, right) || observedPersonNameAgreesWith(right, left);
+
+function jsonLdPersonName(person: Record<string, unknown>): string {
+  const stated = textOf(person.name);
+  if (stated) return stated;
+  return [textOf(person.givenName), textOf(person.familyName)].filter(Boolean).join(' ');
+}
+
+/**
+ * The Person metadata about the page's subject. A people grid or a co-author block declares a
+ * Person per listed colleague, so only a node whose name agrees with the member counts, and an
+ * unnamed node counts only when it is the page's single Person (#5592).
+ */
+function subjectPeople(
+  people: ReadonlyArray<Record<string, unknown>>,
+  memberName: string,
+): Array<Record<string, unknown>> {
+  if (!memberName) return people.length === 1 ? [...people] : [];
+  return people.filter((person) => {
+    const name = jsonLdPersonName(person);
+    return name ? namesAgree(name, memberName) : people.length === 1;
+  });
+}
+
+const SUBJECT_LINK_LABEL =
+  /^(?:view\s+|visit\s+|see\s+)?(?:(?:my|full|faculty|official|yale|personal|lab|research|department)\s+)?(?:profile|website|web\s*site|home\s*page|homepage|web\s*page|bio|biography|page)$/i;
+
+const BARE_URL_TEXT = /^(?:https?:\/\/)?[\w.-]+\.yale\.edu\b/i;
+
+/**
+ * Whether an anchor is the page subject's own link: outside navigation, footers and asides,
+ * and labelled either generically ("Profile", "Website") or with the member's own name. An
+ * anchor labelled with someone else's name or a publication title belongs to a co-author,
+ * colleague or related-items block, and never names the member's profile (#5592).
+ */
+function anchorIsSubjectLink(
+  $: cheerio.CheerioAPI,
+  el: Parameters<cheerio.CheerioAPI>[0],
+  memberName: string,
+): boolean {
+  const anchor = $(el);
+  if (anchor.closest('nav, footer, aside').length > 0) return false;
+  const label = (anchor.text() || anchor.attr('aria-label') || anchor.attr('title') || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!label) return false;
+  if (SUBJECT_LINK_LABEL.test(label) || BARE_URL_TEXT.test(label)) return true;
+  return Boolean(memberName) && namesAgree(label, memberName);
+}
+
 function linkedProfileUrls(
   $: cheerio.CheerioAPI,
   people: ReadonlyArray<Record<string, unknown>>,
   pageUrl: string,
+  memberName: string,
 ): string[] {
   const declared = [
     $('link[rel="canonical"]').first().attr('href'),
     $('meta[property="og:url"]').first().attr('content'),
-    ...people.flatMap((person) => [...asList(person.url), ...asList(person.sameAs)]),
+    ...subjectPeople(people, memberName).flatMap((person) => [
+      ...asList(person.url),
+      ...asList(person.sameAs),
+    ]),
   ]
     .map((href) => absoluteHttpUrl(href, pageUrl))
     .filter(isYaleHostedUrl);
   const anchors: string[] = [];
   $('a[href]').each((_i, el) => {
     const url = absoluteHttpUrl($(el).attr('href'), pageUrl);
-    if (url && isYaleProfileUrl(url)) anchors.push(url);
+    if (url && isYaleProfileUrl(url) && anchorIsSubjectLink($, el, memberName)) anchors.push(url);
   });
   return uniqueCapped([pageUrl, ...declared, ...anchors], MAX_LINKED_PROFILE_URLS);
 }
@@ -130,9 +186,9 @@ export function extractRosterMemberIdentityEvidence(
   const people = jsonLdPeople($);
   return {
     pageUrl,
-    linkedProfileUrls: linkedProfileUrls($, people, pageUrl),
+    linkedProfileUrls: linkedProfileUrls($, people, pageUrl, memberName),
     emails: personEmails($, people, memberName),
-    netids: uniqueCapped(statedNetids(people), MAX_NETIDS),
+    netids: uniqueCapped(statedNetids(subjectPeople(people, memberName)), MAX_NETIDS),
   };
 }
 

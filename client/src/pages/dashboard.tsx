@@ -7,16 +7,26 @@
  *   - Watched programs: the programs and fellowships an account is watching
  *     (canonical ResearchPlan PROGRAM targets), with deadline, accepting status,
  *     and eligibility.
+ * Below the tabs, a "Your data" section offers account export and deletion when
+ * the accountDataControls release flag is on.
  * There is no faculty self-edit surface and no faculty/student branching; public
  * profiles are source-derived and admin-curated.
  */
-import { useState } from 'react';
+import { useCallback, useContext, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import AccountDataControls from '../components/accounts/AccountDataControls';
+import DirectoryRemovalRequest from '../components/accounts/DirectoryRemovalRequest';
 import PlanningOverview from '../components/accounts/PlanningOverview';
 import ProgramWatch from '../components/accounts/ProgramWatch';
 import SavedResearchPlans from '../components/accounts/SavedResearchPlans';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import useRovingTabs from '../hooks/useRovingTabs';
+import ConfigContext from '../contexts/ConfigContext';
+import {
+  ACCOUNT_DATA_CONTROLS_FLAG,
+  ACCOUNT_DATA_DELETE_INTENT_PARAM,
+  ACCOUNT_DATA_DELETE_INTENT_VALUE,
+} from '../utils/accountData';
 
 type DashboardSurface = 'dashboard' | 'programs';
 
@@ -63,6 +73,22 @@ const Dashboard = () => {
     setFollowedSurface(requestedSurface);
     followSurface(requestedSurface);
   }
+  const { features, selfServeAccountDeletion } = useContext(ConfigContext);
+  const accountDataControlsEnabled = features[ACCOUNT_DATA_CONTROLS_FLAG] === true;
+  const deleteIntent =
+    searchParams.get(ACCOUNT_DATA_DELETE_INTENT_PARAM) === ACCOUNT_DATA_DELETE_INTENT_VALUE;
+  const clearDeleteIntent = useCallback(
+    () =>
+      setSearchParams(
+        (current) => {
+          const params = new URLSearchParams(current);
+          params.delete(ACCOUNT_DATA_DELETE_INTENT_PARAM);
+          return params;
+        },
+        { replace: true },
+      ),
+    [setSearchParams],
+  );
   const [savedResearchCount, setSavedResearchCount] = useState<number | null>(null);
   const [programSummary, setProgramSummary] = useState<ProgramSummary>({ count: null });
 
@@ -140,6 +166,15 @@ const Dashboard = () => {
         >
           <ProgramWatch onSummaryChange={setProgramSummary} />
         </div>
+
+        {accountDataControlsEnabled && (
+          <AccountDataControls
+            deletionAvailable={selfServeAccountDeletion}
+            openDeleteOnMount={deleteIntent}
+            onDeleteIntentConsumed={clearDeleteIntent}
+          />
+        )}
+        <DirectoryRemovalRequest />
       </div>
     </div>
   );
