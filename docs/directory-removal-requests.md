@@ -39,4 +39,4 @@ The admin queue sits below the correction reports on the admin panel's "Correcti
 
 Accepting only marks the request `accepted`.
 It writes no removal entry and changes nothing a student sees.
-The admin then records the removal on Development with `yarn --cwd server directory-removal:record`, which lands with the removal record work for #4160.
+The admin then records the removal on Development with `yarn --cwd server directory-removal:record`, documented in `docs/directory-removal.md`.
