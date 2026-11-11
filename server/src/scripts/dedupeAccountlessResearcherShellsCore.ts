@@ -892,7 +892,15 @@ export function planResearcherAttributeUnion(
   for (const field of RESEARCHER_UNION_IDENTIFIER_FIELDS) {
     if (nonEmptyString(canonical.identifiers?.[field])) continue;
     const shellValue = nonEmptyString(shell.identifiers?.[field]);
-    if (shellValue) identifierGapFills[field] = shellValue;
+    if (!shellValue) continue;
+    if (
+      field === 'orcid' &&
+      (researcherRefusesValue(canonical.fieldValueRefusals, 'orcid', shellValue) ||
+        researcherRefusesValue(shell.fieldValueRefusals, 'orcid', shellValue))
+    ) {
+      continue;
+    }
+    identifierGapFills[field] = shellValue;
   }
 
   const mergedOrcid = nonEmptyString(canonical.identifiers?.orcid) ?? identifierGapFills.orcid;
@@ -903,7 +911,7 @@ export function planResearcherAttributeUnion(
   for (const link of shell.profileLinks ?? []) {
     const kind = profileLinkKind(link);
     if (!kind || claimedKinds.has(kind)) continue;
-    if (refusedByEither('profileLink', link.url)) continue;
+    if (refusedByEither('profileLink', link.url) || refusedByEither('orcid', link.url)) continue;
     if (kind === 'ORCID' && !orcidLinkAgreesWith(link, mergedOrcid)) continue;
     claimedKinds.add(kind);
     profileLinksToAppend.push(link);

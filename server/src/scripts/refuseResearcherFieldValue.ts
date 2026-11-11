@@ -18,7 +18,7 @@
  *   ... --rule=operator_judgement --note='why' --decided-by='<who>'
  *   ... --withdraw --note='why'
  *
- * Fields: websiteUrl, title, primaryDepartment, imageUrl, email, profileLink (one link URL).
+ * Fields: websiteUrl, title, primaryDepartment, imageUrl, email, orcid, profileLink (one link URL).
  */
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
@@ -37,6 +37,7 @@ import {
 } from '../utils/researchEntityFieldValueRefusals';
 import {
   isResearcherRefusableField,
+  orcidRefusalValue,
   planResearcherRefusedStoredValueClear,
   RESEARCHER_REFUSABLE_FIELDS,
   type ResearcherRefusableField,
@@ -136,6 +137,7 @@ export interface ResearcherFieldValueRefusalOutcome {
 
 const storedValueAt = (researcher: any, field: ResearcherRefusableField): unknown[] => {
   if (field === 'email') return [researcher?.identifiers?.email];
+  if (field === 'orcid') return [researcher?.identifiers?.orcid];
   if (field === 'profileLink') {
     return (researcher?.profileLinks ?? []).map((link: { url?: unknown }) => link?.url);
   }
@@ -147,6 +149,11 @@ export async function refuseResearcherFieldValue(
   args: RefuseResearcherFieldValueArgs,
 ): Promise<ResearcherFieldValueRefusalOutcome> {
   const field = args.field as ResearcherRefusableField;
+  if (field === 'orcid') {
+    const bare = orcidRefusalValue(args.value);
+    if (!bare) throw new Error('--value must name an ORCID for --field=orcid.');
+    args = { ...args, value: bare };
+  }
   const researcher: any = await Researcher.findById(args.researcherId).lean();
   const base = {
     field,

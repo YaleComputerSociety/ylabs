@@ -251,4 +251,27 @@ describe('a person-record refusal holds on every resolve (#5641)', () => {
     expect(second.fieldsWritten).toBe(0);
     expect(await storedLinkUrls(owner._id)).not.toContain(orcidUrl);
   });
+
+  it('keeps a refused ORCID out of the identifiers and the links on every resolve', async () => {
+    const orcid = '9999-9000-9999-9013';
+    const orcidUrl = `https://orcid.org/${orcid}`;
+    await seedOwner([observation('orcid', orcid, 'dept-faculty-roster')]);
+    const owner = await person();
+    await resolveOwner();
+    const before = await Researcher.findById(owner._id).lean<any>();
+    expect(before.identifiers?.orcid).toBe(orcid);
+
+    const refused = await refuseResearcherFieldValue(
+      refusalArgs(owner._id, { field: 'orcid', value: orcidUrl, rule: 'other_persons_page' }),
+    );
+    expect(refused.clearedPaths).toEqual(['identifiers.orcid']);
+    expect(refused.pulledProfileLinks).toBe(1);
+
+    await resolveOwner();
+    const after = await Researcher.findById(owner._id).lean<any>();
+    expect(after.identifiers?.orcid).toBeUndefined();
+    expect(await storedLinkUrls(owner._id)).not.toContain(orcidUrl);
+    const second = await resolveOwner();
+    expect(second.fieldsWritten).toBe(0);
+  });
 });
