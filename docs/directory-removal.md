@@ -56,6 +56,22 @@ Every process that runs the gate must hold the key before the first entry is rec
 3. Set `DIRECTORY_REMOVAL_KEY` on the `ylabs-scraper` sweep cron before it is re-enabled, because its gate stage refuses otherwise (`docs/deployment-inventory.md`).
 4. Then record the entry on Development, run the gate, and read the served detail page and search route.
 
+## Purging observations
+
+A removed person's stored observations are deleted with `yarn --cwd server directory-removal:purge-observations`, one environment per run.
+Promotion copies `observations` only with `--include-observations`, so a Development purge does not remove older copies already on Beta or Production, and the purge is a per-environment operation.
+Run it on Development first; the Beta and Production runs are approved by the owner at promotion time.
+It is a dry run unless given `--apply --confirm-directory-removal-observation-purge`, takes no identifier, matches every active entry in that environment's `directory_removals`, and refuses when the list is empty or no key is configured.
+`--environment=beta` and `--environment=production` read `BETA_MONGODBURL` and `PRODUCTION_MONGODBURL`, the database name must match the named environment, and a Production apply also needs `SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true`.
+It reports counts only: subjects by verdict, observations to delete by `entityType`, identity form and field, and what it left in place.
+
+It matches through the ingest guard's own rules (`server/src/scrapers/directoryRemovalObservationGuard.ts`), so it deletes exactly what a lane would now refuse to observe.
+A `user` or `researchGroupMember` subject is deleted in both identity forms when a stable identifier matches, and a research row's `inferredPiUserKey`, `inferredPiUserId`, `inferredDirectorProfileUrl` or `contactEmail` observation is deleted when its value points at the person.
+A name entry never matches a researcher or a person subject, so a name-only match is never deleted.
+Values that list several people, such as `rosterEnrichment` and `fellowshipRecipients`, are not rewritten; the report counts the roster observations that list the person by profile URL, and the person subjects whose only link is roster identity evidence that can name someone else.
+It also counts, without deleting them, the other observations of a faculty research profile row whose pointer it deletes, which the ingest guard refuses on new batches.
+The removal entry has to stay after a purge, or the next sweep has nothing refusing the person.
+
 ## Known limits
 
 - Prose matching is by the person's current display name and by name digests over two to four word windows, so a spelling with a middle initial or a nickname is missed.

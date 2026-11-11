@@ -37,7 +37,9 @@ async function main(): Promise<void> {
   assertPurgeTargetMatchesEnvironment(args.environment, mongoUrl);
   const guard = assertScriptApplyAllowed({ apply: args.apply, scriptName: SCRIPT_NAME, mongoUrl });
   if (!readDirectoryRemovalKey()) {
-    throw new Error(`${SCRIPT_NAME} needs DIRECTORY_REMOVAL_KEY to match anyone, so it refuses.`);
+    throw new Error(
+      `${SCRIPT_NAME} needs DIRECTORY_REMOVAL_KEY or DIRECTORY_REMOVAL_KEY_FILE to match anyone, so it refuses.`,
+    );
   }
 
   await connectScriptMongo(mongoUrl);

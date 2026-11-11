@@ -78,6 +78,12 @@ beforeEach(async () => {
     { digest: directoryRemovalDigest(KEY, 'netid', REMOVED.netid), kind: 'netid', recordedAt },
     { digest: directoryRemovalDigest(KEY, 'email', REMOVED.email), kind: 'email', recordedAt },
     {
+      digest: directoryRemovalDigest(KEY, 'profile_url', REMOVED.profileUrl),
+      kind: 'profile_url',
+      recordedAt,
+    },
+    { digest: directoryRemovalDigest(KEY, 'name', 'Synthetic Other'), kind: 'name', recordedAt },
+    {
       digest: directoryRemovalDigest(KEY, 'netid', OTHER_NETID),
       kind: 'netid',
       recordedAt,
@@ -259,6 +265,30 @@ beforeEach(async () => {
       ],
     },
   });
+  await seedObservation('deleted', {
+    entityType: 'researchEntity',
+    entityKey: 'synthetic-profile',
+    field: 'inferredPiUserKey',
+    value: `netid:${REMOVED.netid}`,
+  });
+  await seedObservation('kept', {
+    entityType: 'researchEntity',
+    entityKey: 'synthetic-profile',
+    field: 'entityType',
+    value: 'FACULTY_RESEARCH_AREA',
+  });
+  await seedObservation('kept', {
+    entityType: 'researchEntity',
+    entityKey: 'synthetic-profile',
+    field: 'bio',
+    value: 'Synthetic profile bio',
+  });
+  await seedObservation('kept', {
+    entityType: 'user',
+    entityKey: 'dept:synthetic-dept:synthetic-other',
+    field: 'displayName',
+    value: 'Synthetic Other',
+  });
   await seedObservation('kept', {
     entityType: 'fellowship',
     entityKey: 'synthetic-fellowship',
@@ -276,44 +306,30 @@ describe('runDirectoryRemovalObservationPurge', () => {
     expect(await remainingIds()).toEqual(before);
     expect(result.mode).toBe('dry-run');
     expect(result.deleted).toBeNull();
-    expect(result.removalEntriesActive).toBe(2);
+    expect(result.removalEntriesActive).toBe(4);
     expect(result.removedResearchersMatched).toBe(1);
     expect(result.toDelete.observations).toBe(expectedDeleted.length);
     expect(result.toDelete.byEntityType).toEqual({
       user: 8,
       researchGroupMember: 3,
-      researchEntity: 4,
+      researchEntity: 5,
     });
-    expect(result.toDelete.byIdentityForm).toEqual({ entityKey: 13, entityId: 1, both: 1 });
-    expect(result.subjects.user).toEqual({
-      removed: 4,
-      identity_evidence_only: 0,
-      name_only: 1,
-      namesake: 1,
-    });
-    expect(result.subjects.researchGroupMember).toEqual({
-      removed: 2,
-      identity_evidence_only: 1,
-      name_only: 0,
-      namesake: 0,
+    expect(result.toDelete.byIdentityForm).toEqual({ entityKey: 14, entityId: 1, both: 1 });
+    expect(result.subjects).toEqual({
+      user: { removed: 4, identity_evidence_only: 0 },
+      researchGroupMember: { removed: 2, identity_evidence_only: 1 },
     });
     expect(result.leftInPlace).toEqual({
-      personObservationsBySubjectVerdict: {
-        identity_evidence_only: { researchGroupMember: 1 },
-        name_only: { user: 2 },
-        namesake: { user: 2 },
-      },
-      rowObservationsByField: {
-        contactName: { name_matched_left_in_place: 1 },
-        rosterEnrichment: { name_matched_left_in_place: 1 },
-      },
+      identityEvidenceOnlyObservations: { researchGroupMember: 1 },
+      rosterEnrichmentObservationsListingThePerson: 1,
     });
+    expect(result.facultyResearchProfileRowObservationsLeftInPlace).toBe(2);
     expect(JSON.stringify(result)).not.toMatch(
       new RegExp(`zz900|synthetic\\.removed|Synthetic Removed|${KEY}|[0-9a-f]{64}`, 'i'),
     );
   });
 
-  it('deletes exactly the matched observations on --apply and leaves namesakes and others alone', async () => {
+  it('deletes exactly the matched observations on --apply and leaves name-only matches, namesakes and others alone', async () => {
     const matcher = await loadDirectoryRemovalMatcher(KEYED_ENV);
     const result = await runDirectoryRemovalObservationPurge({ matcher, apply: true });
 
@@ -328,7 +344,7 @@ describe('runDirectoryRemovalObservationPurge', () => {
     const keyless = await loadDirectoryRemovalMatcher({} as NodeJS.ProcessEnv);
     await expect(
       runDirectoryRemovalObservationPurge({ matcher: keyless, apply: true }),
-    ).rejects.toThrow(/DIRECTORY_REMOVAL_KEY/);
+    ).rejects.toThrow(/without a directory removal key/);
 
     await DirectoryRemoval.collection.updateMany({}, { $set: { withdrawnAt: new Date() } });
     const empty = await loadDirectoryRemovalMatcher(KEYED_ENV);

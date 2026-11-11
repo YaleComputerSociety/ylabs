@@ -6,11 +6,12 @@ import {
   assertPurgeApplyConfirmed,
   assertPurgeMatcherUsable,
   assertPurgeTargetMatchesEnvironment,
-  classifyRowObservation,
   parsePurgeArgs,
   planObservationPurge,
   planPersonSubjects,
+  removedResearcherIdsOf,
   resolvePurgeMongoUrl,
+  rowPointerNamesRemovedPerson,
   type ObservationRow,
 } from '../directoryRemovalObservationPurgeCore';
 
@@ -24,6 +25,7 @@ const matcher = buildDirectoryRemovalMatcher({
   activeDigests: [
     directoryRemovalDigest(KEY, 'netid', REMOVED_NETID)!,
     directoryRemovalDigest(KEY, 'email', REMOVED_EMAIL)!,
+    directoryRemovalDigest(KEY, 'name', SHARED_NAME)!,
   ],
 });
 
@@ -82,12 +84,25 @@ describe('purge arguments and guards', () => {
           env: {} as NodeJS.ProcessEnv,
         }),
       ),
-    ).toThrow(/DIRECTORY_REMOVAL_KEY/);
+    ).toThrow(/key/);
     expect(() => assertPurgeMatcherUsable(matcher)).not.toThrow();
   });
 });
 
+describe('researcher matching', () => {
+  it('matches a researcher by identifier only, never by a name entry', () => {
+    expect(
+      removedResearcherIdsOf(matcher, [
+        { _id: 'r1', identifiers: { netid: REMOVED_NETID } },
+        { _id: 'r2', identifiers: { netid: 'zz9002' } },
+        { _id: 'r3', displayName: SHARED_NAME } as never,
+      ]),
+    ).toEqual(new Set(['r1']));
+  });
+});
+
 describe('planPersonSubjects', () => {
+  const context = { matcher, removedResearcherIds: new Set<string>() };
   const identityRows = [
     row({
       entityType: 'user',
@@ -95,27 +110,6 @@ describe('planPersonSubjects', () => {
       field: 'netid',
       value: REMOVED_NETID,
     }),
-    row({
-      entityType: 'user',
-      entityKey: 'dept:synthetic:removed',
-      field: 'fname',
-      value: 'Synthetic',
-    }),
-    row({
-      entityType: 'user',
-      entityKey: 'dept:synthetic:removed',
-      field: 'lname',
-      value: 'Removed',
-    }),
-    row({ entityType: 'user', entityKey: 'netid:zz9002', field: 'fname', value: 'Synthetic' }),
-    row({ entityType: 'user', entityKey: 'netid:zz9002', field: 'lname', value: 'Removed' }),
-    row({
-      entityType: 'user',
-      entityKey: 'dept:other:removed',
-      field: 'fname',
-      value: 'Synthetic',
-    }),
-    row({ entityType: 'user', entityKey: 'dept:other:removed', field: 'lname', value: 'Removed' }),
     row({
       entityType: 'user',
       entityId: 'legacy-id-1',
@@ -133,111 +127,92 @@ describe('planPersonSubjects', () => {
     row({ entityType: 'user', entityKey: 'netid:zz9001', entityId: 'legacy-id-1', field: 'bio' }),
   ];
   const plan = planPersonSubjects({
-    userKeys: [
-      'netid:zz9001',
-      'dept:synthetic:removed',
-      'netid:zz9002',
-      'dept:other:removed',
-      'zz9003',
-    ],
+    userKeys: ['netid:zz9001', 'dept:synthetic:removed', 'netid:zz9002', 'dept:other:removed'],
     identityRows,
     linkRows,
-    matcher,
-    removedResearcherIds: new Set(),
-    removedResearcherNames: new Set(),
+    context,
   });
 
   it('removes subjects only on a stable identifier, joining the entityId form through a shared row', () => {
-    expect(plan.subjects.user).toEqual({
-      removed: 2,
-      identity_evidence_only: 0,
-      name_only: 1,
-      namesake: 1,
+    expect(plan.subjects).toEqual({
+      user: { removed: 2, identity_evidence_only: 0 },
+      researchGroupMember: { removed: 0, identity_evidence_only: 1 },
     });
-    expect(plan.subjects.researchGroupMember.identity_evidence_only).toBe(1);
-    expect(plan.removedSubjectsMatchedBy.user).toEqual({ netid: 2 });
-    expect([...plan.judgedSubjects.user.ids]).toEqual(['legacy-id-1']);
     expect(plan.verdictByNode.get('user|i|legacy-id-1')).toBe('removed');
-    expect(plan.verdictByNode.get('user|k|zz9003')).toBeUndefined();
+    expect(plan.verdictByNode.get('user|k|dept:other:removed')).toBeUndefined();
+    expect(plan.removedUserKeys).toEqual(new Set(['netid:zz9001', 'dept:synthetic:removed']));
   });
 
-  it('deletes every observation of a removed subject in both forms and counts the rest', () => {
+  it('deletes every observation of a removed subject in both forms and the four pointer fields', () => {
     const subjectRows = [
       row({ entityType: 'user', entityKey: 'netid:zz9001', field: 'title' }),
       row({ entityType: 'user', entityId: 'legacy-id-1', field: 'bio' }),
       row({ entityType: 'user', entityKey: 'netid:zz9002', field: 'title' }),
-      row({ entityType: 'user', entityKey: 'dept:other:removed', field: 'title' }),
+    ];
+    const pointerRows = [
+      row({
+        entityType: 'researchEntity',
+        entityKey: 'synthetic-lab',
+        field: 'inferredPiUserKey',
+        value: 'dept:synthetic:removed',
+      }),
+      row({
+        entityType: 'researchEntity',
+        entityKey: 'synthetic-lab',
+        field: 'contactEmail',
+        value: REMOVED_EMAIL.toUpperCase(),
+      }),
+      row({
+        entityType: 'fellowship',
+        entityKey: 'synthetic-fellowship',
+        field: 'contactEmail',
+        value: REMOVED_EMAIL,
+      }),
     ];
     const purge = planObservationPurge({
-      removalEntriesActive: 2,
+      removalEntriesActive: 3,
       personPlan: plan,
       subjectRows,
-      rowFieldRows: [
-        row({
-          entityType: 'researchEntity',
-          entityKey: 'synthetic-lab',
-          field: 'inferredPiUserKey',
-          value: 'dept:synthetic:removed',
-        }),
-        row({
-          entityType: 'researchEntity',
-          entityKey: 'synthetic-lab',
-          field: 'contactName',
-          value: SHARED_NAME,
-        }),
-      ],
-      matcher,
-      removedResearcherIds: new Set(),
+      pointerRows,
+      rosterRows: [],
+      context,
     });
     expect(purge.observationIdsToDelete).toEqual([
       subjectRows[0]._id,
       subjectRows[1]._id,
-      expect.any(String),
+      pointerRows[0]._id,
+      pointerRows[1]._id,
     ]);
     expect(purge.report.toDelete).toEqual({
-      observations: 3,
-      byEntityType: { user: 2, researchEntity: 1 },
-      byIdentityForm: { entityKey: 2, entityId: 1, both: 0 },
-      byField: { user: { title: 1, bio: 1 }, researchEntity: { inferredPiUserKey: 1 } },
+      observations: 4,
+      byEntityType: { user: 2, researchEntity: 2 },
+      byIdentityForm: { entityKey: 3, entityId: 1, both: 0 },
+      byField: {
+        user: { title: 1, bio: 1 },
+        researchEntity: { inferredPiUserKey: 1, contactEmail: 1 },
+      },
     });
-    expect(purge.report.leftInPlace.personObservationsBySubjectVerdict).toEqual({
-      identity_evidence_only: {},
-      name_only: { user: 1 },
-      namesake: { user: 1 },
-    });
-    expect(purge.report.leftInPlace.rowObservationsByField).toEqual({
-      contactName: { name_matched_left_in_place: 1 },
-    });
+    expect(purge.rowNodesWithDeletedPointers).toEqual(new Set(['researchEntity|k|synthetic-lab']));
     expect(JSON.stringify(purge.report)).not.toMatch(/zz900|synthetic\.removed|Synthetic Removed/i);
   });
 });
 
-describe('classifyRowObservation', () => {
-  const context = {
-    matcher,
-    removedResearcherIds: new Set(['researcher-1']),
-    removedNames: new Set(['synthetic removed']),
-  };
-  const classify = (field: string, value: unknown) =>
-    classifyRowObservation(row({ entityType: 'researchEntity', field, value }), context, new Set());
-
-  it('deletes a row observation only when its whole value is a stable pointer to the person', () => {
-    expect(classify('inferredPiUserKey', `netid:${REMOVED_NETID}`)).toBe('delete');
-    expect(classify('inferredPiUserKey', REMOVED_EMAIL)).toBe('delete');
-    expect(classify('inferredPiUserKey', 'netid:zz9002')).toBeUndefined();
-    expect(classify('inferredPiUserId', 'researcher-1')).toBe('delete');
-    expect(classify('contactEmail', REMOVED_EMAIL.toUpperCase())).toBe('delete');
-  });
-
-  it('leaves name-only and multi-person values in place', () => {
-    expect(classify('inferredDirectorUserName', { fname: 'Synthetic', lname: 'Removed' })).toBe(
-      'name_matched_left_in_place',
+describe('rowPointerNamesRemovedPerson', () => {
+  const context = { matcher, removedResearcherIds: new Set(['researcher-1']) };
+  const names = (field: string, value: unknown) =>
+    rowPointerNamesRemovedPerson(
+      row({ entityType: 'researchEntity', entityKey: 'synthetic-lab', field, value }),
+      context,
+      new Set(),
     );
-    expect(
-      classify('rosterEnrichment', {
-        undergraduates: [{ name: 'Synthetic Peer' }, { name: SHARED_NAME }],
-      }),
-    ).toBe('name_matched_left_in_place');
-    expect(classify('fellowshipRecipients', [{ studentName: 'Synthetic Peer' }])).toBeUndefined();
+
+  it('names the person only through a stable pointer, never through a name', () => {
+    expect(names('inferredPiUserKey', `netid:${REMOVED_NETID}`)).toBe(true);
+    expect(names('inferredPiUserKey', REMOVED_EMAIL)).toBe(true);
+    expect(names('inferredPiUserKey', 'netid:zz9002')).toBe(false);
+    expect(names('inferredPiUserKey', `name:${SHARED_NAME}`)).toBe(false);
+    expect(names('inferredPiUserId', 'researcher-1')).toBe(true);
+    expect(names('contactEmail', REMOVED_EMAIL)).toBe(true);
+    expect(names('contactName', SHARED_NAME)).toBe(false);
   });
 });

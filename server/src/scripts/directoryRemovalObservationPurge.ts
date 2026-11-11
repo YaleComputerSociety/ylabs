@@ -8,19 +8,20 @@ import {
 import {
   PERSON_IDENTITY_FIELDS,
   PERSON_SUBJECT_TYPES,
-  ROW_PERSON_FIELDS,
+  ROSTER_ENRICHMENT_FIELD,
+  ROW_POINTER_FIELDS,
   ROW_SUBJECT_TYPES,
   assertPurgeMatcherUsable,
   planObservationPurge,
   planPersonSubjects,
-  removedResearchersOf,
+  removedResearcherIdsOf,
   type ObservationRow,
   type PurgeReport,
   type ResearcherIdentityRow,
 } from './directoryRemovalObservationPurgeCore';
 
 const DELETE_BATCH_SIZE = 500;
-const ROSTER_ENRICHMENT_FIELD = 'rosterEnrichment';
+const FACULTY_RESEARCH_PROFILE = 'FACULTY_RESEARCH_AREA';
 
 const idString = (value: unknown): string | undefined =>
   value === undefined || value === null ? undefined : String(value);
@@ -50,8 +51,45 @@ async function readRows(
   return docs.map((doc) => toObservationRow(doc as Record<string, unknown>));
 }
 
+function subjectClausesFor(entityTypes: readonly string[], nodes: Iterable<string>) {
+  const keys = new Set<string>();
+  const ids = new Set<string>();
+  for (const node of nodes) {
+    const [, form, ...rest] = node.split('|');
+    (form === 'k' ? keys : ids).add(rest.join('|'));
+  }
+  const entityType = { $in: [...entityTypes] };
+  return [
+    ...(keys.size ? [{ entityType, entityKey: { $in: [...keys] } }] : []),
+    ...(ids.size ? [{ entityType, entityId: { $in: [...ids].map(asObjectIdWhenValid) } }] : []),
+  ];
+}
+
+async function countFacultyProfileRowObservations(
+  rowNodes: ReadonlySet<string>,
+  deletedIds: readonly string[],
+): Promise<number> {
+  const rowClauses = subjectClausesFor(ROW_SUBJECT_TYPES, rowNodes);
+  if (!rowClauses.length) return 0;
+  const profileRows = await readRows(
+    { field: 'entityType', value: FACULTY_RESEARCH_PROFILE, $or: rowClauses },
+    SUBJECT_PROJECTION,
+  );
+  const profileNodes = profileRows.flatMap((row) => [
+    ...(row.entityKey ? [`${row.entityType}|k|${row.entityKey}`] : []),
+    ...(row.entityId ? [`${row.entityType}|i|${row.entityId}`] : []),
+  ]);
+  const profileClauses = subjectClausesFor(ROW_SUBJECT_TYPES, profileNodes);
+  if (!profileClauses.length) return 0;
+  return Observation.collection.countDocuments({
+    $or: profileClauses,
+    _id: { $nin: deletedIds.map((id) => new mongoose.Types.ObjectId(id)) },
+  });
+}
+
 export interface PurgeRunResult extends PurgeReport {
   mode: 'apply' | 'dry-run';
+  facultyResearchProfileRowObservationsLeftInPlace: number;
   deleted: number | null;
 }
 
@@ -63,9 +101,12 @@ export async function runDirectoryRemovalObservationPurge(args: {
   const removalEntriesActive = (await activeDirectoryRemovalDigests()).length;
 
   const researchers = (await Researcher.collection
-    .find({}, { projection: { displayName: 1, identifiers: 1, 'profileLinks.url': 1 } })
+    .find({}, { projection: { identifiers: 1, 'profileLinks.url': 1 } })
     .toArray()) as unknown as ResearcherIdentityRow[];
-  const removedResearchers = removedResearchersOf(args.matcher, researchers);
+  const context = {
+    matcher: args.matcher,
+    removedResearcherIds: removedResearcherIdsOf(args.matcher, researchers),
+  };
 
   const [userKeys, identityRows, linkRows] = await Promise.all([
     Observation.collection.distinct('entityKey', { entityType: 'user' }) as Promise<unknown[]>,
@@ -92,9 +133,7 @@ export async function runDirectoryRemovalObservationPurge(args: {
     userKeys: userKeys.filter((key): key is string => typeof key === 'string' && key !== ''),
     identityRows,
     linkRows,
-    matcher: args.matcher,
-    removedResearcherIds: removedResearchers.ids,
-    removedResearcherNames: removedResearchers.names,
+    context,
   });
 
   const subjectClauses = PERSON_SUBJECT_TYPES.flatMap((entityType) => {
@@ -104,28 +143,28 @@ export async function runDirectoryRemovalObservationPurge(args: {
       ...(ids.size ? [{ entityType, entityId: { $in: [...ids].map(asObjectIdWhenValid) } }] : []),
     ];
   });
-  const rowFields = ROW_PERSON_FIELDS.filter((field) => field !== ROSTER_ENRICHMENT_FIELD);
-  const [subjectRows, rowFieldRows, rosterRows] = await Promise.all([
+  const rowTypes = { $in: [...ROW_SUBJECT_TYPES] };
+  const [subjectRows, pointerRows, rosterRows] = await Promise.all([
     subjectClauses.length ? readRows({ $or: subjectClauses }, SUBJECT_PROJECTION) : [],
+    readRows({ entityType: rowTypes, field: { $in: [...ROW_POINTER_FIELDS] } }, VALUE_PROJECTION),
     readRows(
-      { entityType: { $in: [...ROW_SUBJECT_TYPES] }, field: { $in: rowFields } },
-      VALUE_PROJECTION,
+      { entityType: rowTypes, field: ROSTER_ENRICHMENT_FIELD },
+      { ...SUBJECT_PROJECTION, 'value.undergraduates.profileUrl': 1 },
     ),
-    readRows({ entityType: { $in: [...ROW_SUBJECT_TYPES] }, field: ROSTER_ENRICHMENT_FIELD }, {
-      ...SUBJECT_PROJECTION,
-      'value.undergraduates.name': 1,
-      'value.undergraduates.profileUrl': 1,
-    } as Record<string, 1>),
   ]);
 
   const plan = planObservationPurge({
     removalEntriesActive,
     personPlan,
     subjectRows,
-    rowFieldRows: [...rowFieldRows, ...rosterRows],
-    matcher: args.matcher,
-    removedResearcherIds: removedResearchers.ids,
+    pointerRows,
+    rosterRows,
+    context,
   });
+  const facultyResearchProfileRowObservationsLeftInPlace = await countFacultyProfileRowObservations(
+    plan.rowNodesWithDeletedPointers,
+    plan.observationIdsToDelete,
+  );
 
   let deleted: number | null = null;
   if (args.apply) {
@@ -137,5 +176,10 @@ export async function runDirectoryRemovalObservationPurge(args: {
       deleted += (await Observation.collection.deleteMany({ _id: { $in: batch } })).deletedCount;
     }
   }
-  return { mode: args.apply ? 'apply' : 'dry-run', deleted, ...plan.report };
+  return {
+    mode: args.apply ? 'apply' : 'dry-run',
+    ...plan.report,
+    facultyResearchProfileRowObservationsLeftInPlace,
+    deleted,
+  };
 }

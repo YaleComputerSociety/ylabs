@@ -23,10 +23,15 @@ const ROW_POINTER_FIELDS: ReadonlySet<string> = new Set([
   'contactEmail',
 ]);
 
-type IdentityClaim = {
+export type IdentityClaim = {
   kind: 'netid' | 'email' | 'orcid' | 'profile_url' | 'researcher_id';
   value: string;
 };
+
+export type SubjectObservation = Pick<
+  ObservationInput,
+  'entityType' | 'entityKey' | 'entityId' | 'field' | 'value'
+>;
 
 const asString = (value: unknown): string | undefined =>
   typeof value === 'string' && value.trim() ? value.trim() : undefined;
@@ -82,7 +87,7 @@ function claimsFromPersonField(entityType: string, field: string, value: unknown
   return [];
 }
 
-function claimsFromRowPointer(field: string, value: unknown): IdentityClaim[] {
+export function rowPointerClaims(field: string, value: unknown): IdentityClaim[] {
   if (field === 'inferredPiUserId') {
     return value === undefined || value === null
       ? []
@@ -95,18 +100,72 @@ function claimsFromRowPointer(field: string, value: unknown): IdentityClaim[] {
   return [{ kind: 'email', value: text }];
 }
 
-const subjectNodes = (obs: ObservationInput): string[] => [
+export const subjectNodes = (obs: Omit<SubjectObservation, 'field' | 'value'>): string[] => [
   ...(obs.entityKey ? [`${obs.entityType}|k|${obs.entityKey}`] : []),
   ...(obs.entityId ? [`${obs.entityType}|i|${String(obs.entityId)}`] : []),
 ];
 
-const isPersonSubject = (obs: ObservationInput) => PERSON_SUBJECT_TYPES.has(obs.entityType);
-const isRowPointer = (obs: ObservationInput) =>
+export const isPersonSubject = (obs: Pick<SubjectObservation, 'entityType'>) =>
+  PERSON_SUBJECT_TYPES.has(obs.entityType);
+export const isRowPointer = (obs: Pick<SubjectObservation, 'entityType' | 'field'>) =>
   ROW_SUBJECT_TYPES.has(obs.entityType) && ROW_POINTER_FIELDS.has(obs.field);
-const declaresAFacultyResearchProfile = (obs: ObservationInput) =>
+export const declaresAFacultyResearchProfile = (obs: SubjectObservation) =>
   ROW_SUBJECT_TYPES.has(obs.entityType) &&
   obs.field === 'entityType' &&
   obs.value === 'FACULTY_RESEARCH_AREA';
+
+export interface PersonSubjectGroups {
+  find(node: string): string;
+  nodes: string[];
+  claimsByRoot: Map<string, IdentityClaim[]>;
+}
+
+export const userKeyOfNode = (node: string): string | undefined => {
+  const [entityType, form, ...rest] = node.split('|');
+  return entityType === 'user' && form === 'k' ? rest.join('|') : undefined;
+};
+
+/**
+ * Joins a person's `entityKey` and `entityId` forms wherever one observation carries both,
+ * and collects every stable identifier each joined subject states. Names are never claims.
+ */
+export function groupPersonSubjects(people: readonly SubjectObservation[]): PersonSubjectGroups {
+  const parent = new Map<string, string>();
+  const find = (node: string): string => {
+    if (!parent.has(node)) parent.set(node, node);
+    let root = node;
+    while (parent.get(root) !== root) root = parent.get(root)!;
+    parent.set(node, root);
+    return root;
+  };
+  for (const obs of people) {
+    const [first, second] = subjectNodes(obs);
+    if (first) find(first);
+    if (first && second) parent.set(find(second), find(first));
+  }
+  const claimsByRoot = new Map<string, IdentityClaim[]>();
+  const claimsFor = (node: string) => {
+    const root = find(node);
+    if (!claimsByRoot.has(root)) claimsByRoot.set(root, []);
+    return claimsByRoot.get(root)!;
+  };
+  for (const node of parent.keys()) {
+    const userKey = userKeyOfNode(node);
+    if (userKey !== undefined) claimsFor(node).push(...claimsFromPersonKey(userKey));
+  }
+  for (const obs of people) {
+    const [node] = subjectNodes(obs);
+    if (node) claimsFor(node).push(...claimsFromPersonField(obs.entityType, obs.field, obs.value));
+  }
+  return { find, nodes: [...parent.keys()], claimsByRoot };
+}
+
+export function rowPointerNamesARemovedUserKey(
+  obs: Pick<SubjectObservation, 'field' | 'value'>,
+  removedUserKeys: ReadonlySet<string>,
+): boolean {
+  return obs.field === 'inferredPiUserKey' && removedUserKeys.has(asString(obs.value) ?? '');
+}
 
 export function batchMayNameARemovablePerson(inputs: readonly ObservationInput[]): boolean {
   return inputs.some((obs) => isPersonSubject(obs) || isRowPointer(obs));
@@ -160,59 +219,28 @@ export function createDirectoryRemovalObservationGuard(
   const removedPersonSubjectNodes = async (
     people: readonly ObservationInput[],
   ): Promise<Set<string>> => {
-    const parent = new Map<string, string>();
-    const find = (node: string): string => {
-      if (!parent.has(node)) parent.set(node, node);
-      let root = node;
-      while (parent.get(root) !== root) root = parent.get(root)!;
-      parent.set(node, root);
-      return root;
-    };
-    for (const obs of people) {
-      const [first, second] = subjectNodes(obs);
-      if (first) find(first);
-      if (first && second) parent.set(find(second), find(first));
-    }
-    const claimsByRoot = new Map<string, IdentityClaim[]>();
-    const claimsFor = (node: string) => {
-      const root = find(node);
-      if (!claimsByRoot.has(root)) claimsByRoot.set(root, []);
-      return claimsByRoot.get(root)!;
-    };
-    for (const node of parent.keys()) {
-      const [entityType, form, ...rest] = node.split('|');
-      if (entityType === 'user' && form === 'k')
-        claimsFor(node).push(...claimsFromPersonKey(rest.join('|')));
-    }
-    for (const obs of people) {
-      const [node] = subjectNodes(obs);
-      if (node)
-        claimsFor(node).push(...claimsFromPersonField(obs.entityType, obs.field, obs.value));
-    }
+    const { find, nodes, claimsByRoot } = groupPersonSubjects(people);
     const removedRoots = new Set<string>();
-    for (const node of parent.keys()) {
+    for (const node of nodes) {
       if (removedSubjectNodes.has(node)) removedRoots.add(find(node));
     }
     for (const [root, claims] of claimsByRoot) {
       if (!removedRoots.has(root) && (await anyClaimMatches(claims))) removedRoots.add(root);
     }
     const removedNodes = new Set<string>();
-    for (const node of parent.keys()) {
+    for (const node of nodes) {
       if (!removedRoots.has(find(node))) continue;
       removedNodes.add(node);
       removedSubjectNodes.add(node);
-      const [entityType, form, ...rest] = node.split('|');
-      if (entityType === 'user' && form === 'k') removedUserKeys.add(rest.join('|'));
+      const userKey = userKeyOfNode(node);
+      if (userKey !== undefined) removedUserKeys.add(userKey);
     }
     return removedNodes;
   };
 
-  const rowPointerNamesARemovedPerson = async (obs: ObservationInput): Promise<boolean> => {
-    if (obs.field === 'inferredPiUserKey' && removedUserKeys.has(asString(obs.value) ?? '')) {
-      return true;
-    }
-    return anyClaimMatches(claimsFromRowPointer(obs.field, obs.value));
-  };
+  const rowPointerNamesARemovedPerson = async (obs: ObservationInput): Promise<boolean> =>
+    rowPointerNamesARemovedUserKey(obs, removedUserKeys) ||
+    anyClaimMatches(rowPointerClaims(obs.field, obs.value));
 
   return {
     active,
