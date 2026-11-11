@@ -227,6 +227,29 @@ describe('a merge redirect carries lane evidence onto a person row only for its 
     expect(await survivorAreas(survivor._id)).toEqual([]);
   });
 
+  it('refuses the other lead of a row whose named lead is held only by a grant co-PI listing', async () => {
+    const survivor = await ResearchEntity.create({
+      slug: SURVIVOR_SLUG,
+      name: 'Ada Example Lab',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      archived: false,
+    });
+    await seedObservation(SURVIVOR_SLUG, 'name', 'Ada Example Lab');
+    await seedObservation(SURVIVOR_SLUG, 'entityType', 'FACULTY_RESEARCH_AREA');
+    await seedLead(survivor._id, 'Ada Example', 'ae11', undefined, 'YALE_OFFICIAL', 'nih-reporter');
+    await seedLead(survivor._id, 'Mia Sample', 'ms22');
+    await seedListing(survivor._id, 'dept-roster-mia-sample', 'Mia Sample');
+
+    const viaListing = await materializeEntity('researchEntity', {
+      entityKey: 'dept-roster-mia-sample',
+    });
+    await materializeEntity('researchEntity', { entityKey: SURVIVOR_SLUG });
+
+    expect(viaListing.skipped).toBe('merge-redirect-identity-refused');
+    expect(await survivorAreas(survivor._id)).toEqual([]);
+  });
+
   it('derives the same refusal on a second run without writing a field', async () => {
     const survivor = await seedSurvivor();
     await seedListing(survivor._id, 'dept-roster-adaline-example', 'Adaline Example');

@@ -34,11 +34,20 @@ export function personNamedByRow(row: MergedRedirectRow): string {
   return personNameFromEntityName(row.name) || textOf(row.name);
 }
 
+const PERSON_ROW_TITLE_TEMPLATE = /\bfaculty research\s*$/i;
+
+function rowIsTitledAfterAPerson(row: MergedRedirectRow): boolean {
+  return (
+    PERSON_ROW_TITLE_TEMPLATE.test(textOf(row.name)) && Boolean(personNameFromEntityName(row.name))
+  );
+}
+
 /**
  * A row titled after a lab or a project names no lead, and then its one lead is the person
- * it is about. A row holding several leads and naming none has no lead to vouch for it, and
- * neither does a row whose one lead is a same-surname namesake of the person in its title,
- * because that lead is how a prefix-built merge would vouch for itself.
+ * it is about. A row holding several leads and naming none has no lead to vouch for it.
+ * Neither does a row minted as `<Person> Faculty Research` whose one lead is someone else,
+ * nor a row whose one lead is a same-surname namesake of the person in its title, because
+ * such a lead is how a contaminating merge would vouch for itself.
  */
 export function leadsTheRowIsNamedAfter<Lead extends MergedRedirectLead>(
   survivor: MergedRedirectRow,
@@ -48,7 +57,13 @@ export function leadsTheRowIsNamedAfter<Lead extends MergedRedirectLead>(
   if (!rowPerson) return [];
   const named = leads.filter((lead) => listedPersonIsTheNamedLead(lead.displayName, rowPerson));
   if (named.length > 0) return named;
-  if (leads.length !== 1 || personNamesShareASurname(leads[0].displayName, rowPerson)) return [];
+  if (
+    leads.length !== 1 ||
+    rowIsTitledAfterAPerson(survivor) ||
+    personNamesShareASurname(leads[0].displayName, rowPerson)
+  ) {
+    return [];
+  }
   return [...leads];
 }
 

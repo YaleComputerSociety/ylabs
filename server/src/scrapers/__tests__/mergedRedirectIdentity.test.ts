@@ -94,6 +94,18 @@ describe('mergedRedirectAdmission', () => {
     ).toBe('refused');
   });
 
+  it('never takes another person as the one lead of a row minted after a person', () => {
+    const otherPerson = [lead('Mia Sample', 'ms22')];
+    expect(leadsTheRowIsNamedAfter(survivor, otherPerson)).toEqual([]);
+    expect(
+      mergedRedirectAdmission(
+        survivor,
+        leadsTheRowIsNamedAfter(survivor, otherPerson),
+        listing('Mia Sample', ['ms22']),
+      ),
+    ).toBe('refused');
+  });
+
   it('leaves a lab row and a lab listing to the merge', () => {
     expect(
       mergedRedirectAdmission(

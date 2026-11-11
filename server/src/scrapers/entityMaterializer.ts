@@ -6795,10 +6795,11 @@ const ROW_LEAD_OBSERVATION_FIELDS: ReadonlySet<string> = new Set([
   'inferredPiUserKey',
 ]);
 
-async function leadsOfRowForRedirectWitness(
-  survivorId: unknown,
+async function namedLeadWitnessesOfRow(
+  survivor: { _id?: unknown; name?: unknown; entityType?: unknown; kind?: unknown },
   ownLeadObservations: MaterializerObservationLike[],
 ): Promise<MergedRedirectLead[]> {
+  const survivorId = survivor._id;
   const edges = (await RoleAssignment.find({
     'target.kind': 'RESEARCH_ENTITY',
     'target.id': survivorId,
@@ -6818,21 +6819,28 @@ async function leadsOfRowForRedirectWitness(
     ]);
   }
   if (edgeSourceNamesByPerson.size === 0) return [];
+  const leads = (await Researcher.find({
+    _id: { $in: [...edgeSourceNamesByPerson.keys()] },
+    archived: { $ne: true },
+  })
+    .select('_id displayName identifiers.netid profileLinks')
+    .lean()) as any[];
+  const namedLeads = leadsTheRowIsNamedAfter(
+    survivor,
+    leads.map((lead) => ({
+      personId: String(lead._id),
+      displayName: lead.displayName,
+      netid: lead.identifiers?.netid,
+      profileDestinations: verifiedPrimaryProfileDestinations(lead.profileLinks),
+    })),
+  );
+  if (namedLeads.length === 0) return [];
   const grantCoPiListed = grantCoPiListedPersonIds({
     leadFacts: await planInferredPiMembership(String(survivorId), ownLeadObservations),
     rowLeadPersonIds: edgeSourceNamesByPerson.keys(),
     edgeSourceNamesByPerson,
   });
-  const leadIds = [...edgeSourceNamesByPerson.keys()].filter((id) => !grantCoPiListed.has(id));
-  if (leadIds.length === 0) return [];
-  const leads = (await Researcher.find({ _id: { $in: leadIds }, archived: { $ne: true } })
-    .select('displayName identifiers.netid profileLinks')
-    .lean()) as any[];
-  return leads.map((lead) => ({
-    displayName: lead.displayName,
-    netid: lead.identifiers?.netid,
-    profileDestinations: verifiedPrimaryProfileDestinations(lead.profileLinks),
-  }));
+  return namedLeads.filter((lead) => !grantCoPiListed.has(lead.personId));
 }
 
 export interface MergedRedirectRefusals {
@@ -6867,10 +6875,7 @@ export async function mergedRedirectRefusedListings(
       !listingSlugs.has(textValue(observation.entityKey)) &&
       !listingIds.has(normalizeMaterializerObjectId(observation.entityId) ?? ''),
   );
-  const namedLeads = leadsTheRowIsNamedAfter(
-    survivor,
-    await leadsOfRowForRedirectWitness(survivor._id, ownLeadObservations),
-  );
+  const namedLeads = await namedLeadWitnessesOfRow(survivor, ownLeadObservations);
   const refusedSlugs = new Set<string>();
   const refusedIds = new Set<string>();
   for (const listing of personListings) {
