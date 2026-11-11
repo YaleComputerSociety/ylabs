@@ -118,6 +118,7 @@ import {
   mintedDescriptionOf,
   mintsNoResearchEntityAsTeachingAppointment,
   ownsNoResearchEntityByTitle,
+  titleStatesOnlyAStaffRole,
 } from './yaleDirectoryScraper';
 import {
   rosterEntryIdentityKey,
@@ -4093,6 +4094,30 @@ function programmeRosterRowIsRejectableFromRosterAlone(entry: FacultyEntry): boo
   return Boolean(entry.title?.trim()) && !programmeRosterRowStatesFacultyRank(entry);
 }
 
+type RosterUserType = 'faculty' | 'staff';
+
+function rosterUserType(entry: FacultyEntry, dept: DeptConfig): RosterUserType | undefined {
+  if (titleStatesOnlyAStaffRole(entry.title)) return 'staff';
+  if (!dept.crossListedProgramme || statesFacultyAppointment(entry.title)) return 'faculty';
+  return undefined;
+}
+
+/**
+ * `userType` is latest-wins for this lane, so a person listed on two departments' rosters in
+ * one run keeps whichever typing was emitted last. A staff typing therefore never follows a
+ * faculty typing of the same key within a run: one roster stating a faculty title is enough.
+ */
+function withoutStaffTypingOfAKeyTypedFaculty(
+  observations: ObservationInput[],
+  entityKey: string,
+  facultyTypedUserKeys: Set<string>,
+): ObservationInput[] {
+  const typing = observations.find((o) => o.field === 'userType');
+  if (typing?.value === 'faculty') facultyTypedUserKeys.add(entityKey);
+  if (typing?.value !== 'staff' || !facultyTypedUserKeys.has(entityKey)) return observations;
+  return observations.filter((o) => o !== typing);
+}
+
 function entryToUserObservations(
   entry: FacultyEntry,
   dept: DeptConfig,
@@ -4121,8 +4146,14 @@ function entryToUserObservations(
   if (netid) obs.push({ ...rosterBase, field: 'netid', value: netid });
   if (first) obs.push({ ...rosterBase, field: 'fname', value: first });
   if (last) obs.push({ ...rosterBase, field: 'lname', value: last });
-  if (!dept.crossListedProgramme || statesFacultyAppointment(entry.title)) {
-    obs.push({ ...rosterBase, field: 'userType', value: 'faculty' });
+  const titleBase = entry.titleFromProfilePage ? profileBase : rosterBase;
+  const userType = rosterUserType(entry, dept);
+  if (userType) {
+    obs.push({
+      ...(userType === 'staff' ? titleBase : rosterBase),
+      field: 'userType',
+      value: userType,
+    });
   }
   if (!dept.affiliatesOnly && !dept.schoolWideDirectory) {
     if (!dept.crossListedProgramme) {
@@ -4132,7 +4163,6 @@ function entryToUserObservations(
   }
   if (personEmail) obs.push({ ...profileBase, field: 'email', value: personEmail });
   if (entry.title) {
-    const titleBase = entry.titleFromProfilePage ? profileBase : rosterBase;
     obs.push({ ...titleBase, field: 'title', value: entry.title });
   }
   if (entry.profileUrl) {
@@ -4538,6 +4568,7 @@ export class DepartmentRosterScraper implements IScraper {
     let totalLabs = 0;
     const fetchAttempts: ScraperFetchMetric[] = [];
     const seenUserKeys = new Set<string>();
+    const facultyTypedUserKeys = new Set<string>();
     const seenLabKeys = new Set<string>();
     const discoveredEntityKeysByDept = new Map<string, Set<string>>();
     const withdrawnEntityKeysByDept = new Map<string, Set<string>>();
@@ -4603,10 +4634,15 @@ export class DepartmentRosterScraper implements IScraper {
       }
 
       for (const { entry } of withoutSharedGroupWebsites(enriched)) {
-        const { observations: userObs, entityKey } = entryToUserObservations(
+        const { observations: typedUserObs, entityKey } = entryToUserObservations(
           entry,
           dept,
           sourceUrl,
+        );
+        const userObs = withoutStaffTypingOfAKeyTypedFaculty(
+          typedUserObs,
+          entityKey,
+          facultyTypedUserKeys,
         );
         await ctx.emit(userObs);
         observations += userObs.length;

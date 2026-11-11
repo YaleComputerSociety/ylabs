@@ -55,6 +55,9 @@ Three call sites, two of which do not use the helper and say why:
   A roster listing title now cites the listing, so a roster-minted row whose only title came from the listing reads `no-stored-title` and is kept.
   The one direction that can archive is a YSE block that leads with an administrative position and states a faculty appointment later; the `description-states-research` floor is what keeps that row.
 - A lane cites a title at the page it read it from: `dept-faculty-roster` cites a listing title at the listing and a profile-enrichment title at the profile page, and `ysm-atoz-index` cites its widget title at the lab page (#5578).
+- `dept-faculty-roster` types a person from their own listed title, never from the roster page: `titleStatesOnlyAStaffRole` (a staff or research-support title with no faculty appointment anywhere) yields `userType: 'staff'`, and anything else keeps the earlier rule (#5750).
+  `userType` is latest-wins for that source, so a re-read replaces the lane's earlier typing instead of standing beside it as a same-source conflict, and within one run a staff typing never follows a faculty typing of the same key.
+  No served surface reads the resolved `userType`: name search, the roster, hosting and lead eligibility all read role edges, so a staff person served as faculty is a role-edge defect in the lane that wrote the edge (#5746), not a typing defect.
 - the retirement pass restates them in `staffMintedEntityReasonFor`, because it has to name *which* screen refused in order to report by reason.
 
 `bbs-research-track` no longer mints at all (#3561): a PI with no existing row, or several, is counted by reason and skipped, so it needs none of the three screens.
