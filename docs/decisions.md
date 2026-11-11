@@ -9,8 +9,8 @@ Track tactical work in GitHub issues and keep transient artifacts outside `docs/
 
 The owner decided on #5584 that a name search matches every current member of a row, not only the members within the detail page's display cap.
 This replaces the member-cap sentence of the 2026-10-21 entry below.
-The card's "Matched a lab member" link still lands: the detail route serves that one requested member when they sit past the cap, and only when the row's own searchable roster lists them, so the link cannot put an arbitrary name on the page.
-The display caps are otherwise unchanged; showing every member is #5602.
+The display caps are unchanged and the detail route serves no member past them.
+Showing every member (#5602) was closed as not planned on 2026-11-11, because every row over the cap is a center whose past-cap members are faculty edges the team section does not show at any count, so the detail route's single-member `?member=` append was removed with it.
 `skills/search-data/SKILL.md` owns the mechanics and the measurements.
 
 ## 2026-11-10: Hosted, Welcomes And Mentors Each Take A Source Once, And Faculty Research Profiles Get All Three (#5362)

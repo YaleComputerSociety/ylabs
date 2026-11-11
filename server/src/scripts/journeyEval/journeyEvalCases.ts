@@ -12,7 +12,6 @@ import {
 } from '../../services/researchEntitySearchIndexService';
 import {
   meiliSortEntries,
-  memberNameKey,
   normalizeResearchSearchQuery,
   rewriteAcronymToPhrase,
 } from '../../services/researchGroupService';
@@ -36,7 +35,6 @@ import {
   checkPersonNameWordsAreNotRespelled,
   checkPastCapMembersReachTheirRow,
   checkOwnRowOutranksMemberRow,
-  checkMemberDeepLinkServesOnlyRosterMembers,
   checkDictionaryWordsAreNotRespelled,
   checkQueryRelevance,
   checkSimilarRailRanksSharedNamesLast,
@@ -120,7 +118,6 @@ export interface PastCapMemberRead {
 export interface JourneyEvalContext {
   browse: BrowseFn;
   readPastCapMembers?: (sampleSize: number) => Promise<PastCapMemberRead>;
-  readDetailMemberNames?: (rowKey: string, requestedMemberName: string) => Promise<string[]>;
   readSimilarResearchRail?: (rowKey: string) => Promise<SimilarRailRead | null>;
   topicQueryJudgements: TopicQueryJudgement[] | null;
   readStoredRows: ReadStoredRowsFn;
@@ -1302,14 +1299,13 @@ const personNameLookupReachesThePerson: JourneyCase = {
 
 const PAST_CAP_MEMBER_SAMPLE = 24;
 const PAST_CAP_MEMBER_RANK_DEPTH = 50;
-const NON_MEMBER_DEEP_LINK_NAME = 'Synthetic Nonmember Person';
 
 const pastCapMembersAreFoundThroughTheirRow: JourneyCase = {
   id: 'past-cap-members-are-found-through-their-row',
   title:
-    'Members past the detail display cap are name-searchable, rank below their own research, and deep-link onto the page',
+    'Members past the detail display cap are name-searchable and rank below their own research',
   run: async (context) => {
-    if (!context.readPastCapMembers || !context.readDetailMemberNames) {
+    if (!context.readPastCapMembers) {
       return { invariants: [], rates: [], notes: { skipped: 'no roster reader in this context' } };
     }
     const { rowsOverCap, samples } = await context.readPastCapMembers(PAST_CAP_MEMBER_SAMPLE);
@@ -1325,18 +1321,10 @@ const pastCapMembersAreFoundThroughTheirRow: JourneyCase = {
       const ownRanks = sample.ownRowKeys
         .map(rankOf)
         .filter((rank): rank is number => rank !== null);
-      const deepLinked = (
-        await context.readDetailMemberNames(sample.rowKey, sample.memberName)
-      ).map(memberNameKey);
-      const injected = (
-        await context.readDetailMemberNames(sample.rowKey, NON_MEMBER_DEEP_LINK_NAME)
-      ).map(memberNameKey);
       observations.push({
         memberRowRank: rankOf(sample.rowKey),
         ownRowRank: ownRanks.length > 0 ? Math.min(...ownRanks) : null,
         hasOwnRow: sample.ownRowKeys.length > 0,
-        deepLinkServesMember: deepLinked.includes(memberNameKey(sample.memberName)),
-        deepLinkServesNonMember: injected.includes(memberNameKey(NON_MEMBER_DEEP_LINK_NAME)),
       });
     }
     const reached = observations.filter((observation) => observation.memberRowRank !== null);
@@ -1344,7 +1332,6 @@ const pastCapMembersAreFoundThroughTheirRow: JourneyCase = {
       invariants: [
         checkPastCapMembersReachTheirRow(observations),
         checkOwnRowOutranksMemberRow(observations),
-        checkMemberDeepLinkServesOnlyRosterMembers(observations),
       ],
       rates: [
         buildRate(

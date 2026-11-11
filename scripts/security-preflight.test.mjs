@@ -711,11 +711,7 @@ const MEMBER_LIMITED_FUNCTIONS = [
   'canonicalPublicDetailMembers',
   'publicResearchEntityDetailRosterMembers',
 ];
-const UNCAPPED_MEMBER_CALLERS = new Set([
-  'searchableResearchEntityMembers',
-  'matchableLabMembers',
-  'requestedPastCapMember',
-]);
+const UNCAPPED_MEMBER_CALLERS = new Set(['searchableResearchEntityMembers', 'matchableLabMembers']);
 const ENCLOSING_FUNCTION_PATTERN =
   /(?:function\s+(\w+)\s*[<(])|(?:const\s+(\w+)\s*=\s*(?:async\s*)?(?:<[^>]*>)?\()/g;
 
@@ -755,8 +751,8 @@ const enclosingFunctionName = (source, index) => {
 };
 
 // The detail page's member list is the one response an unauthenticated caller can make
-// as large as a roster, so only the search paths may read past the display cap, and they
-// serialize at most the single roster-checked member a deep link asks for (#5584).
+// as large as a roster, so only the search paths may read past the display cap and the
+// detail route serializes no member beyond it (#5584).
 const memberLimitViolations = (serviceSource, controllerSource) => {
   const violations = [];
   for (const name of MEMBER_LIMITED_FUNCTIONS) {
@@ -789,7 +785,7 @@ const memberLimitViolations = (serviceSource, controllerSource) => {
   } else {
     for (const option of topLevelEntries(detailArguments[1], 0)) {
       const key = /^(\w+)\s*(?::|$)/.exec(option)?.[1];
-      if (!['includeWithheldForOperator', 'requestedMemberName'].includes(key)) {
+      if (key !== 'includeWithheldForOperator') {
         violations.push(`the detail controller passes ${key ?? option} to getResearchGroupDetail`);
       }
     }
@@ -831,12 +827,13 @@ test('the member cap pin refuses a public path that passes a larger limit', () =
   const controller = `const detail = await getResearchGroupDetail(slug, {
     includeWithheldForOperator: hasAdminAuthority,
   });`;
-  const service = (body) => `
+  const service = (body, helpers = '') => `
 const publicResearchEntityDetailRosterMembers = (entity, entries, now, limit = MAX_PUBLIC_DETAIL_MEMBERS) =>
   dedupe(canonicalPublicDetailMembers(entity, entries, now, limit), entity);
-function requestedPastCapMember(entity, entries) {
+function searchableResearchEntityMembers(entity, entries) {
   return publicResearchEntityDetailRosterMembers(entity, entries, now, EVERY_CURRENT_MEMBER);
 }
+${helpers}
 export async function getResearchGroupDetail(slug, { includeWithheldForOperator = false } = {}) {
   ${body}
 }`;
@@ -854,6 +851,30 @@ export async function getResearchGroupDetail(slug, { includeWithheldForOperator 
       controller,
     ),
     ['getResearchGroupDetail passes 500 to canonicalPublicDetailMembers'],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service(
+        'const m = canonicalPublicDetailMembers(group, entries);',
+        `async function requestedPastCapMember(entity, entries) {
+  return publicResearchEntityDetailRosterMembers(entity, entries, now, EVERY_CURRENT_MEMBER);
+}`,
+      ),
+      controller,
+    ),
+    [
+      'requestedPastCapMember passes EVERY_CURRENT_MEMBER to publicResearchEntityDetailRosterMembers',
+    ],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service('const m = canonicalPublicDetailMembers(group, entries);'),
+      controller.replace(
+        'hasAdminAuthority,',
+        'hasAdminAuthority,\n    requestedMemberName: request.query?.member,',
+      ),
+    ),
+    ['the detail controller passes requestedMemberName to getResearchGroupDetail'],
   );
   assert.deepEqual(
     memberLimitViolations(

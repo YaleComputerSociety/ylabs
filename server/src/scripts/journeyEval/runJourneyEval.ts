@@ -335,8 +335,6 @@ async function buildContext(args: JourneyEvalArgs): Promise<JourneyEvalContext> 
         detailMemberNames: async (slug) => detailMemberNames(await getResearchGroupDetail(slug)),
         nameKey: memberNameKey,
       }),
-    readDetailMemberNames: async (slug: string, requestedMemberName: string) =>
-      detailMemberNames(await getResearchGroupDetail(slug, { requestedMemberName })),
     readCorpusFingerprint: async () => {
       const [rowCount, latest] = await Promise.all([
         collection.countDocuments({}),

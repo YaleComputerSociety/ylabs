@@ -111,23 +111,4 @@ describe('a center with more members than the detail page displays (#5584)', () 
     expect(fields?.professorNames).toHaveLength(AFFILIATED_COUNT + 1);
     expect(fields?.professorNames).not.toContain(HISTORICAL_NAME);
   });
-
-  it('serves a requested past-cap member so the deep link lands', async () => {
-    const [requested] = await pastCapNames();
-    const names = memberNames(
-      await getResearchGroupDetail(SLUG, { requestedMemberName: requested }),
-    );
-    expect(names).toContain(requested);
-    expect(names).toHaveLength(MAX_PUBLIC_DETAIL_MEMBERS + 1);
-  });
-
-  it('ignores a requested name the row does not list as a current member', async () => {
-    for (const requested of ['Synthetic Nonmember Person', HISTORICAL_NAME]) {
-      const names = memberNames(
-        await getResearchGroupDetail(SLUG, { requestedMemberName: requested }),
-      );
-      expect(names).not.toContain(requested);
-      expect(names).toHaveLength(MAX_PUBLIC_DETAIL_MEMBERS);
-    }
-  });
 });
