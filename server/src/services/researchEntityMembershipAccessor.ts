@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import {
   Researcher,
   type ResearcherDisplayProfile,
+  type ResearcherEmailSupport,
   type ResearcherProfileLink,
 } from '../models/researcher';
 import {
@@ -25,6 +26,7 @@ export interface ResearchEntityRosterEntry {
   name: string;
   netid: string;
   email: string;
+  emailSupport?: ResearcherEmailSupport;
   title?: string;
   primaryDepartment?: string;
   imageUrl?: string;
@@ -68,7 +70,12 @@ interface RosterEntryBuildContext {
       displayName?: string;
       profile?: ResearcherDisplayProfile;
       profileLinks?: ResearcherProfileLink[];
-      identifiers?: { orcid?: string; netid?: string; email?: string };
+      identifiers?: {
+        orcid?: string;
+        netid?: string;
+        email?: string;
+        emailSupport?: ResearcherEmailSupport;
+      };
     }
   >;
 }
@@ -96,6 +103,7 @@ const buildRosterEntry = (
     name: person.displayName || '',
     netid: person.identifiers?.netid || '',
     email: person.identifiers?.email || '',
+    ...(person.identifiers?.emailSupport ? { emailSupport: person.identifiers.emailSupport } : {}),
     ...(person.profile?.title ? { title: person.profile.title } : {}),
     ...(person.profile?.primaryDepartment
       ? { primaryDepartment: person.profile.primaryDepartment }
@@ -219,7 +227,7 @@ export async function getResearchEntityRosterByEntityId(
   const people = personIds.length
     ? await Researcher.find({ _id: { $in: personIds }, archived: { $ne: true } })
         .select(
-          '_id displayName profile profileLinks identifiers.orcid identifiers.netid identifiers.email',
+          '_id displayName profile profileLinks identifiers.orcid identifiers.netid identifiers.email identifiers.emailSupport',
         )
         .lean()
     : [];
@@ -230,7 +238,12 @@ export async function getResearchEntityRosterByEntityId(
       displayName?: string;
       profile?: ResearcherDisplayProfile;
       profileLinks?: ResearcherProfileLink[];
-      identifiers?: { orcid?: string; netid?: string; email?: string };
+      identifiers?: {
+        orcid?: string;
+        netid?: string;
+        email?: string;
+        emailSupport?: ResearcherEmailSupport;
+      };
     }
   >(people.map((person: any) => [person._id.toString(), person]));
 

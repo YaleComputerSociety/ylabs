@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const meiliMocks = vi.hoisted(() => ({
   syncEntities: vi.fn(async () => {}),
@@ -16,7 +16,7 @@ vi.mock('../meiliSyncService', () => ({
 
 import { getResearchGroupDetail } from '../researchGroupService';
 
-const SLUG = 'fixture-co-led-email-marker-unread-lab';
+const SLUG = 'fixture-co-led-email-marker-lab';
 const SITE_URL = 'https://fixture-email-marker.example.edu/';
 
 interface LeadSeed {
@@ -42,7 +42,18 @@ const UNSUPPORTED: LeadSeed = {
   email: 'robin.synthetic5627@yale.edu',
   emailSupport: { supported: false, sources: [], computedForEmail: 'robin.synthetic5627@yale.edu' },
 };
-const LEADS = [SUPPORTED, UNSUPPORTED];
+const UNMARKED: LeadSeed = {
+  displayName: 'Casey Synthetic',
+  netid: 'fxcasey5627',
+  email: 'casey.synthetic5627@yale.edu',
+};
+const STALE: LeadSeed = {
+  displayName: 'Morgan Synthetic',
+  netid: 'fxmorgan5627',
+  email: 'morgan.synthetic5627@yale.edu',
+  emailSupport: { supported: false, sources: [], computedForEmail: 'morgan.prior5627@yale.edu' },
+};
+const LEADS = [SUPPORTED, UNSUPPORTED, UNMARKED, STALE];
 
 const servedLeadEmails = async (): Promise<Map<string, string | undefined>> => {
   const detail = await getResearchGroupDetail(SLUG);
@@ -51,7 +62,7 @@ const servedLeadEmails = async (): Promise<Map<string, string | undefined>> => {
   );
 };
 
-describe('the detail page does not read the email support marker yet (#5627)', () => {
+describe('the detail page serves a lead email by its stored support marker alone (#5627)', () => {
   let replSet: MongoMemoryReplSet;
 
   beforeAll(async () => {
@@ -62,6 +73,10 @@ describe('the detail page does not read the email support marker yet (#5627)', (
   afterAll(async () => {
     await mongoose.disconnect();
     await replSet?.stop();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   beforeEach(async () => {
@@ -119,10 +134,37 @@ describe('the detail page does not read the email support marker yet (#5627)', (
     }
   });
 
-  it('serves a lead email the marker reads unsupported, because no serve guard reads it yet', async () => {
+  it('serves a supported address and withholds an unsupported one, reading no observation', async () => {
     const served = await servedLeadEmails();
 
     expect(served.get(SUPPORTED.displayName)).toBe(SUPPORTED.email);
-    expect(served.get(UNSUPPORTED.displayName)).toBe(UNSUPPORTED.email);
+    expect(served.has(UNSUPPORTED.displayName)).toBe(true);
+    expect(served.get(UNSUPPORTED.displayName)).toBeUndefined();
+    expect(JSON.stringify(await getResearchGroupDetail(SLUG))).not.toContain(UNSUPPORTED.email);
+  }, 30000);
+
+  it('serves an address with a missing or stale marker while fail-closed is off', async () => {
+    const served = await servedLeadEmails();
+
+    expect(served.get(UNMARKED.displayName)).toBe(UNMARKED.email);
+    expect(served.get(STALE.displayName)).toBe(STALE.email);
+  }, 30000);
+
+  it('withholds a missing or stale marker once fail-closed is on, and still serves a supported one', async () => {
+    vi.stubEnv('RESEARCHER_EMAIL_SUPPORT_FAIL_CLOSED', 'true');
+    const served = await servedLeadEmails();
+
+    expect(served.get(SUPPORTED.displayName)).toBe(SUPPORTED.email);
+    expect(served.get(UNSUPPORTED.displayName)).toBeUndefined();
+    expect(served.get(UNMARKED.displayName)).toBeUndefined();
+    expect(served.get(STALE.displayName)).toBeUndefined();
+  }, 30000);
+
+  it('keeps the stored address on a withheld lead', async () => {
+    await servedLeadEmails();
+    const stored = await mongoose.connection
+      .db!.collection('researchers')
+      .findOne({ 'identifiers.netid': UNSUPPORTED.netid });
+    expect(stored?.identifiers?.email).toBe(UNSUPPORTED.email);
   }, 30000);
 });

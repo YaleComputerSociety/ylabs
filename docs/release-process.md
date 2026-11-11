@@ -248,6 +248,17 @@ Each entry is an HMAC digest under `DIRECTORY_REMOVAL_KEY`, so every environment
 `--include-scrape-runs` flips the run-history default, which is off: a promoted `scrape_runs` is Development's history under Production's name (#2589).
 It reads like a completeness option and is not one: when the source is empty it deletes the target and copies nothing back.
 
+### Turn on researcher email fail-closed only after a marker count
+
+The detail page withholds a lead email whose stored `identifiers.emailSupport` marker reads unsupported, and serves one whose marker is missing or was computed for a different address (#5627).
+`RESEARCHER_EMAIL_SUPPORT_FAIL_CLOSED=true` withholds the missing and stale ones too, so it stays unset on an environment until that environment's own count shows every researcher carries a current marker.
+
+1. Compute the marker on Development as described under "Researcher email support markers" in the routine Development maintenance pass, then confirm `yarn --cwd server researchers:email-support-coverage --environment=development` reads `unmarked: 0` and `failClosedSafe: true`.
+2. After each Development-to-Beta copy, run the same count with `--environment=beta`, and after each Beta-to-Production copy with `--environment=production`.
+   The marker travels with `researchers`, so a copy taken before step 1 carries the gap with it.
+3. Only when that environment reads `unmarked: 0`, set `RESEARCHER_EMAIL_SUPPORT_FAIL_CLOSED=true` on its web service and redeploy.
+   The flag never reads observations, which Beta and Production do not carry.
+
 ### Seed the search rerank cache after the copy and the reindex
 
 The rerank cache (`search_rerank_cache`, `docs/search-rerank-cache.md`) is environment-local, so a promotion never copies it and the target serves today's fused order until it is seeded.
@@ -327,7 +338,7 @@ The user materializer refreshes `identifiers.emailSupport` only for a researcher
 3. Dry-run again with the command from step 1; it must plan 0.
 4. Count coverage: `yarn --cwd server researchers:email-support-coverage --environment=development` must read `unmarked: 0`, the precondition for any serve-time use of the marker.
 
-Before the `ylabs-scraper` sweep cron is re-enabled, #5713 must land so the pass runs as a sweep stage; otherwise researchers that newly become unreached go unmarked.
+Before the `ylabs-scraper` sweep cron is re-enabled, #5713 must land so the pass runs as a sweep stage; otherwise researchers that newly become unreached go unmarked, and fail closed once `RESEARCHER_EMAIL_SUPPORT_FAIL_CLOSED` is on.
 
 ## Verifying a release
 

@@ -42,6 +42,7 @@ import { Department, DepartmentCategory } from '../models/department';
 import { resolveOrCreateResearcherIdUnlessRemoved } from '../scrapers/canonicalMembershipMaterializer';
 import { currentDirectoryRemovalMintGuard, REMOVED_BY_REQUEST } from './directoryRemovalMintGuard';
 import { judgeReDerivedAccessSignals } from '../scrapers/accessMaterializer';
+import { isServableResearcherEmail } from './servedResearcherEmail';
 import { isProgrammePageAdmittedAsJoinRoute } from '../scrapers/undergradJoinPageAdmission';
 import { isLabRosterCitationUrl } from '../scrapers/undergradRosterEvidence';
 import { ResearchEntityRelationship } from '../models/researchEntityRelationship';
@@ -4996,6 +4997,9 @@ export async function getResearchGroupDetail(
       member.row?.sourceName !== OFFICIAL_ROSTER_SOURCE_NAME ||
       publicRosterMemberRows.has(member.row),
   );
+  const emailSupportByPersonId = new Map(
+    rosterEntries.map((entry) => [researchGroupDocumentId(entry.personId), entry.emailSupport]),
+  );
   const members = boundedMembersWithRows.map(({ row, ...member }) => {
     const rosterEvidence = isFreshVerifiedOfficialRosterRow(
       row,
@@ -5023,7 +5027,13 @@ export async function getResearchGroupDetail(
           ...(leadHoldsOnlyEmeritusAppointments ? { emeritus: true } : {}),
         },
         member.role,
-        emeritusWayIn.wayInWithheld ? undefined : member.user?.email,
+        emeritusWayIn.wayInWithheld ||
+          !isServableResearcherEmail(
+            member.user?.email,
+            emailSupportByPersonId.get(row?.identityKey),
+          )
+          ? undefined
+          : member.user?.email,
       ),
       ...(rosterEvidence ? { rosterEvidence } : {}),
     };
