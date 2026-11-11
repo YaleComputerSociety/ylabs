@@ -2004,6 +2004,7 @@ Each planned key is checked against the engine's researcher join and held when t
 The dry run then projects every twin key, limited to the fields the old key's observations assert, and every row that names an old key as `inferredPiUserKey`, through `projectRow` and `servedFieldChanges` from the #5807 instrument, with and without the planned observations.
 It prints counts by lane, pair kind and category only; `--detail-output <tmp path>.json` writes the per-key plan and every changed projection to a mode-0600 file.
 An apply refuses when the projection changed any twin or row unless `--accept-served-changes` is passed after review.
+Like `scrape run` and `scrape materialize` (#5842), it writes only with `--apply`, here together with `--confirm-retire-rekeyed-person-keys`, and prints a `WILL WRITE` or `DRY RUN` banner before it connects.
 
     yarn --cwd server observations:retire-rekeyed-person-keys --lanes=dept-faculty-roster --detail-output=/tmp/<name>.json
     DEV_WRITE_OWNER=<session> yarn --cwd server observations:retire-rekeyed-person-keys --lanes=<same list> --apply --confirm-retire-rekeyed-person-keys --detail-output=/tmp/<name>.json

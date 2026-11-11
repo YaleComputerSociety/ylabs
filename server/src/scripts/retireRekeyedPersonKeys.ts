@@ -428,7 +428,7 @@ function writePrivateJson(file: string, value: unknown): void {
 
 async function main(): Promise<void> {
   const options = parseRetireRekeyedPersonKeysArgs(process.argv.slice(2));
-  assertScriptApplyAllowed({
+  const guard = assertScriptApplyAllowed({
     apply: options.apply,
     scriptName: SCRIPT_NAME,
     mongoUrl: process.env.MONGODBURL,
@@ -436,6 +436,11 @@ async function main(): Promise<void> {
   if (options.apply && !options.confirmed) {
     throw new Error(`${SCRIPT_NAME} apply requires ${CONFIRM_FLAG}`);
   }
+  console.error(
+    options.apply
+      ? `WILL WRITE to ${guard.dbLabel} (${SCRIPT_NAME} --apply ${CONFIRM_FLAG})`
+      : `DRY RUN: nothing will be written (${SCRIPT_NAME} without --apply)`,
+  );
   await initializeConnections();
   try {
     const { report, detail } = await runRekeyedPersonKeyRetirement({
