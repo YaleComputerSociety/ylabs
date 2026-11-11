@@ -1315,6 +1315,7 @@ A generic label is the subject's only when no other anchor names a different per
 The page is never cached whole, only the extracted evidence, keyed on `ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION`; a test pins that version to the extractor's output on a fixture corpus, so an output change, from the extractor or a helper it calls, fails until the version is bumped rather than serving the old extractor's cached output.
 A linked page or address names a candidate only while nothing says it belongs to someone else (`withoutContradictedIdentityWitnesses`, #5751), because a URL that spells a name names every namesake equally.
 The candidate is dropped when `profilePageContradictsNetid` gives the member page to another netid, or when the member page's addresses the directory knows all share one owner and the candidate is not it (`directoryOwnerNetidsOfAddresses`), so an assistant's address beside the member's own decides nothing.
+Neither arm drops a candidate whose stored netid the directory does not hold, because that is usually the person's own email alias stamped as a netid.
 A link or address is dropped when the candidate refuses it or when that linked page itself names another netid.
 A `--limit` run reads at most that many member pages per roster so the canary stays bounded.
 
