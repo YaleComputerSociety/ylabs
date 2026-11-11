@@ -50,11 +50,54 @@ describe('formatUndergradListEvidence (#5362)', () => {
     ).toEqual(["Listed on Psychology's research opportunities list as taking undergraduates"]);
   });
 
-  it('leaves mentors entries, unknown sources and unsafe links out', () => {
+  it('names the advised work and its program for mentors evidence', () => {
     expect(
       formatUndergradListEvidence([
         {
           source: 'cs-senior-projects',
+          signal: 'mentors',
+          kind: 'advised',
+          count: 3,
+          latestYear: 2026,
+          sourceUrl: 'https://cs.example.edu/projects',
+        },
+        {
+          source: 'cognitive-science-senior-essays',
+          signal: 'mentors',
+          kind: 'advised',
+          count: 1,
+          sourceUrl: 'https://cogsci.example.edu/essays',
+        },
+        {
+          source: 'economics-senior-essay-advisers',
+          signal: 'mentors',
+          kind: 'advised',
+          count: 1,
+          latestYear: 2026,
+          sourceUrl: 'https://economics.example.edu/advisers',
+        },
+      ]),
+    ).toEqual([
+      {
+        text: 'Advised 3 CPSC 4900 senior projects (latest 2026)',
+        href: 'https://cs.example.edu/projects',
+      },
+      {
+        text: 'Advised 1 Cognitive Science senior essay',
+        href: 'https://cogsci.example.edu/essays',
+      },
+      {
+        text: 'Senior essay adviser, Economics (2026)',
+        href: 'https://economics.example.edu/advisers',
+      },
+    ]);
+  });
+
+  it('leaves unknown sources and unsafe links out', () => {
+    expect(
+      formatUndergradListEvidence([
+        {
+          source: 'unknown-mentor-list',
           signal: 'mentors',
           kind: 'advised',
           sourceUrl: 'https://cs.example.edu/projects',

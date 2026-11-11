@@ -49,6 +49,7 @@ import {
 } from './hostedUndergraduates';
 import {
   entityHasUndergradListSignal,
+  entityMentorsUndergraduates,
   publicUndergradListEvidence,
 } from './undergradListEvidenceServing';
 import { RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE } from '../scrapers/undergradEvidenceQuoteValidation';
@@ -778,6 +779,9 @@ function derivePublicResearchEntityDto(
   }
   if (!wayInWithheld && entityWelcomesUndergraduates(group)) {
     dto.welcomesUndergrads = true;
+  }
+  if (entityMentorsUndergraduates(group)) {
+    dto.mentorsUndergrads = true;
   }
   Object.assign(dto, servedCreativePracticeFlag(creativePractice));
 

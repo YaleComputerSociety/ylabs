@@ -191,6 +191,7 @@ The DTO serves `welcomesUndergrads: true` from the same predicate unless the row
 The index builder does not know whether a row withholds its way in, so for an emeritus-led row the welcomes filter can still count a list entry or an invitation that the card withholds; that gap predates the lists and is #5620.
 With that filter on and no student-chosen sort, browse sorts on `undergradInvitationRank` first and a thresholded text search moves hiring rows ahead within its pool, so the recruiting-now rows lead without a filter of its own (#5456).
 `mentorsUndergrads` is present, and `true`, only on a row `entityMentorsUndergraduates` accepts, which needs owner-reviewed mentors list evidence, and is absent otherwise.
+The DTO serves `mentorsUndergrads: true` from the same predicate and never from a stored flag, and the detail page names the advised program for each mentors entry and links its list (`client/src/utils/undergradListEvidence.ts`).
 `worksWithUndergrads` is present, and `true`, only when `hasUndergradHostingEvidence`, `welcomesUndergrads` or `mentorsUndergrads` is, computed from the same three values the builder already holds so it cannot disagree with them.
 Both are filterable; no filter key, facet or client control reads `mentorsUndergrads` on its own (#5551).
 The browse card shows "Mentors undergrads" from a served `mentors` entry of `undergradListEvidence` (`buildWayInBadgesFromEntity` in `client/src/utils/researchDiscoveryAdapters.ts`), so a row the works filter returns only for mentoring still carries its own tag (#5362).
