@@ -97,6 +97,7 @@
     "observations:retire-dead-program-lanes": "tsx src/scripts/retireDeadProgramObservationLanes.ts",
     "observations:catch-up-materialize": "tsx src/scripts/catchUpMaterializeStrandedKeys.ts",
     "observations:materialize-pi-attributed-users": "tsx src/scripts/materializePiAttributedUsers.ts",
+    "observations:rematerialize-user-keys": "tsx src/scripts/rematerializeUserKeys.ts",
     "observations:materialize-profile-page-joined-users": "tsx src/scripts/materializeProfilePageJoinedUsers.ts",
     "observations:rederive-over-shared-person-websites": "tsx src/scripts/rederiveOverSharedPersonWebsites.ts",
     "observations:stranded-key-decisions": "tsx src/scripts/strandedKeyRedirectDecisionReport.ts",
