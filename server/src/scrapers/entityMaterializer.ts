@@ -149,10 +149,12 @@ import {
   type LabRowRoster,
   loadKnownPersonSurnameRoster,
   loadLabRowRoster,
+  loadResearchEntityLeadPersonIds,
   loadResearchEntityLeadPersonName,
   loadResearchEntitySoleLeadPersonId,
   normalizedLabRowName,
 } from '../utils/researchHomeNameIdentityRoster';
+import { deriveGrantEntryForLeads, recordedGrantInvestigators } from './utils/grantInvestigators';
 import { isComposedFullNameLabName, ownLabEvidence } from '../utils/unbackedLabSelfDescription';
 import {
   resolveAllFields,
@@ -379,6 +381,7 @@ import { cleanPublicProfileBio } from '../services/profileService';
 import { buildResearchEntityPublicDescriptionRepresentation } from '../services/researchEntityPublicDescription';
 import { withoutAdviseeProgramsMovedToMentors } from '../services/hostedUndergraduates';
 import { servedResearchEntityCopy } from '../services/servedResearchEntityCard';
+import { agenciesBackedByRunningAwards } from '../services/servedCurrentFunding';
 import { isKnownDeadSourceUrl } from '../services/sourceLinkHealth';
 import {
   SITE_TITLE_LAB_NAME_SOURCE,
@@ -2208,7 +2211,21 @@ const RESEARCH_ENTITY_GRANT_EVIDENCE_FIELDS = new Set([
 
 const GRANT_COUNTING_FIELDS = new Set(['recentGrants', 'recentGrantCount']);
 
-export function aggregateResearchEntityGrantEvidence(observations: MaterializerObservationLike[]): {
+export function grantEvidenceRecordsInvestigators(
+  observations: readonly MaterializerObservationLike[],
+): boolean {
+  return observations.some(
+    (observation) =>
+      (observation.field === 'recentGrants' || observation.field === 'recentGrantPeriods') &&
+      Array.isArray(observation.value) &&
+      observation.value.some((entry) => recordedGrantInvestigators(entry) !== undefined),
+  );
+}
+
+export function aggregateResearchEntityGrantEvidence(
+  observations: MaterializerObservationLike[],
+  leadPersonIds: ReadonlySet<string> = new Set(),
+): {
   recentGrants?: unknown[];
   recentGrantPeriods?: unknown[];
   recentGrantCount?: number;
@@ -2235,23 +2252,66 @@ export function aggregateResearchEntityGrantEvidence(observations: MaterializerO
   let hasGrantCountSnapshot = false;
   let hasAgencySnapshot = false;
   let recentGrantCount = 0;
-  for (const observation of latest.values()) {
+  const awardsBySource = new Map<string, unknown[]>();
+  const servedAwardsBySource = new Map<string, unknown[]>();
+  const servedEntries = (sourceName: string, entries: unknown[], carriesRole: boolean) => {
+    const served: unknown[] = [];
+    for (const entry of entries) {
+      awardsBySource.set(sourceName, [...(awardsBySource.get(sourceName) ?? []), entry]);
+      const derived = deriveGrantEntryForLeads(entry, leadPersonIds, { carriesRole });
+      if (derived.outcome === 'withheld') continue;
+      servedAwardsBySource.set(sourceName, [
+        ...(servedAwardsBySource.get(sourceName) ?? []),
+        derived.entry,
+      ]);
+      served.push(derived.entry);
+    }
+    return served;
+  };
+  const latestValues = [...latest.values()];
+  const servedByObservation = new Map<MaterializerObservationLike, unknown[]>();
+  for (const observation of latestValues) {
+    if (!Array.isArray(observation.value)) continue;
+    const sourceName = String(observation.sourceName || '');
+    if (observation.field === 'recentGrants') {
+      servedByObservation.set(observation, servedEntries(sourceName, observation.value, true));
+    } else if (observation.field === 'recentGrantPeriods') {
+      servedByObservation.set(observation, servedEntries(sourceName, observation.value, false));
+    }
+  }
+  const everyAwardWithheld = (sourceName: string) =>
+    awardsBySource.has(sourceName) && !servedAwardsBySource.has(sourceName);
+  const agenciesOfServedAwards = (sourceName: string, laneAgencies: unknown[]): unknown => {
+    const awards = awardsBySource.get(sourceName);
+    return awards
+      ? agenciesBackedByRunningAwards(
+          laneAgencies,
+          awards,
+          servedAwardsBySource.get(sourceName) ?? [],
+        )
+      : laneAgencies;
+  };
+  for (const observation of latestValues) {
     const sourceName = String(observation.sourceName || '');
     if (GRANT_COUNTING_FIELDS.has(String(observation.field))) countingSources.add(sourceName);
     if (observation.field === 'recentGrants' && Array.isArray(observation.value)) {
       hasGrantSnapshot = true;
-      for (const grant of observation.value) keepLaterEndingGrant(grants, grant);
+      for (const grant of servedByObservation.get(observation) ?? []) {
+        keepLaterEndingGrant(grants, grant);
+      }
     }
     if (observation.field === 'recentGrantPeriods' && Array.isArray(observation.value)) {
       periodSources.add(sourceName);
-      for (const period of observation.value) {
+      for (const period of servedByObservation.get(observation) ?? []) {
         const identity = grantIdentity(period);
         if (!periods.has(identity)) periods.set(identity, period);
       }
     }
+    if (everyAwardWithheld(sourceName)) continue;
     if (observation.field === 'fundingAgencies' && Array.isArray(observation.value)) {
       hasAgencySnapshot = true;
-      for (const agency of observation.value) {
+      const servedAgencies = agenciesOfServedAwards(sourceName, observation.value);
+      for (const agency of Array.isArray(servedAgencies) ? servedAgencies : []) {
         const normalized = textValue(agency);
         if (normalized && !agencies.has(normalized.toLowerCase())) {
           agencies.set(normalized.toLowerCase(), normalized);
@@ -12226,7 +12286,18 @@ async function materializeEntityUnderRemovalGuard(
     now: projectionNow,
   });
   if (isResearchEntityObservationType(entityType)) {
-    const grantEvidence = aggregateResearchEntityGrantEvidence(materializationObs);
+    const grantLeadPersonIds =
+      entityIdString && grantEvidenceRecordsInvestigators(materializationObs)
+        ? new Set(
+            (
+              (await loadResearchEntityLeadPersonIds([entityIdString])).get(entityIdString) ?? []
+            ).filter(Boolean),
+          )
+        : new Set<string>();
+    const grantEvidence = aggregateResearchEntityGrantEvidence(
+      materializationObs,
+      grantLeadPersonIds,
+    );
     if (grantEvidence.recentGrants && resolved.recentGrants) {
       resolved.recentGrants.value = grantEvidence.recentGrants;
     }

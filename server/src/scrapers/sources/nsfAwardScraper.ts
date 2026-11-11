@@ -49,6 +49,11 @@ import {
 } from '../utils/grantEnrichmentTarget';
 import { fetchGrantWindowPage } from '../utils/grantWindowPageFetch';
 import { recentGrantPeriodsOf } from '../utils/recentGrantPeriods';
+import {
+  creditedGrantInvestigator,
+  mergeGrantInvestigators,
+  type GrantInvestigator,
+} from '../utils/grantInvestigators';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 
@@ -143,6 +148,7 @@ export interface RecentGrantRecord {
   dollarAmount?: number;
   url: string;
   role: 'pi' | 'copi';
+  investigators?: GrantInvestigator[];
 }
 
 // ---------------------------------------------------------------------------
@@ -419,7 +425,7 @@ export function buildResearchEntityObservations(
   existingRowSlug: string,
 ): ObservationInput[] {
   return buildRowObservations(
-    group.awards.map((award) => ({ award, role: 'pi' as const })),
+    group.awards.map((award) => ({ award, role: 'pi' as const, researcherId: piUserId })),
     piUserId,
     existingRowSlug,
   );
@@ -428,6 +434,7 @@ export function buildResearchEntityObservations(
 export interface CreditedAward {
   award: NsfAward;
   role: 'pi' | 'copi';
+  researcherId?: string;
 }
 
 export function buildRowObservations(
@@ -436,12 +443,19 @@ export function buildRowObservations(
   existingRowSlug: string,
 ): ObservationInput[] {
   const byIdentity = new Map<string, RecentGrantRecord>();
-  for (const { award, role } of credited) {
+  for (const { award, role, researcherId } of credited) {
     const record = awardToRecord(award, role);
     const identity = record && grantAwardIdentity(record);
     if (!record || !identity) continue;
     const held = byIdentity.get(identity);
-    if (!held || (held.role === 'copi' && role === 'pi')) byIdentity.set(identity, record);
+    const credit = researcherId ? [creditedGrantInvestigator(researcherId, role === 'pi')] : [];
+    const kept = !held || (held.role === 'copi' && role === 'pi') ? record : held;
+    byIdentity.set(
+      identity,
+      held?.investigators || credit.length > 0
+        ? { ...kept, investigators: mergeGrantInvestigators(held?.investigators, credit) }
+        : kept,
+    );
   }
   const records = [...byIdentity.values()];
   const top = sortGrantsByRecency(records).slice(0, MAX_GRANTS_PER_PI);
@@ -629,7 +643,9 @@ export class NsfAwardScraper implements IScraper {
       if (target.status !== 'enrich') return;
       const row = rows.get(target.slug) ?? { researcherIds: new Set<string>(), credited: [] };
       row.researcherIds.add(target.researcherId);
-      row.credited.push(...group.awards.map((award) => ({ award, role })));
+      row.credited.push(
+        ...group.awards.map((award) => ({ award, role, researcherId: target.researcherId })),
+      );
       rows.set(target.slug, row);
     };
     for (const group of groups) await credit(group, 'pi', attach);

@@ -40,6 +40,11 @@ import {
 } from '../utils/grantEnrichmentTarget';
 import { grantAwardIdentity } from '../utils/grantAwardIdentity';
 import { recentGrantPeriodsOf } from '../utils/recentGrantPeriods';
+import {
+  withCreditedInvestigator,
+  withInvestigatorsUnioned,
+  type GrantInvestigator,
+} from '../utils/grantInvestigators';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 
@@ -145,6 +150,7 @@ export interface RecentGrantRecord {
   dollarAmount?: number;
   url: string;
   role: 'pi' | 'copi';
+  investigators?: GrantInvestigator[];
 }
 
 const CONTROL_CHARACTERS = /\p{Cc}/gu;
@@ -293,14 +299,20 @@ export interface RowGrants {
   slug: string;
   researcherIds: Set<string>;
   grants: CrossrefGrant[];
+  creditedResearcherIds?: Map<CrossrefGrant, string>;
 }
 
 export function buildResearchEntityObservations(row: RowGrants): ObservationInput[] {
   const byIdentity = new Map<string, RecentGrantRecord>();
   for (const grant of row.grants) {
-    const record = grantToRecord(grant);
+    const record = withCreditedInvestigator(
+      grantToRecord(grant),
+      row.creditedResearcherIds?.get(grant),
+    );
     const identity = grantAwardIdentity(record);
-    if (identity && !byIdentity.has(identity)) byIdentity.set(identity, record);
+    if (!identity) continue;
+    const held = byIdentity.get(identity);
+    byIdentity.set(identity, held ? withInvestigatorsUnioned(held, record) : record);
   }
   const records = [...byIdentity.values()];
   const base = {
@@ -513,9 +525,11 @@ export class CrossrefGrantScraper implements IScraper {
         slug: target.slug,
         researcherIds: new Set(),
         grants: [],
+        creditedResearcherIds: new Map<CrossrefGrant, string>(),
       };
       row.researcherIds.add(target.researcherId);
       row.grants.push(grant);
+      row.creditedResearcherIds?.set(grant, target.researcherId);
       rows.set(target.slug, row);
     }
 
