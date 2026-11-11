@@ -727,11 +727,10 @@ export async function ensureDevHostLease(host: string): Promise<void> {
   const armed = armedHostLeaseConnection;
   if (!armed || !host) return;
   const name = devHostLeaseName(host);
-  if (stopped) throw new DevWriteLeaseStoppedError(name);
+  if (stopped || stopIfRenewalOverdue()) throw new DevWriteLeaseStoppedError(name);
   const held = heldLeases.get(name);
   if (held) {
     held.lastUsedAt = runtime.now();
-    if (stopIfRenewalOverdue([held])) throw new DevWriteLeaseStoppedError(name);
     return;
   }
   await pendingIdleReleases.get(name);

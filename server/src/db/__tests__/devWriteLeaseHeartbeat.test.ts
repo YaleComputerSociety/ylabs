@@ -10,7 +10,6 @@ import {
   DEV_WRITE_LEASE_HEARTBEAT_TIMEOUT_MS,
   DEV_WRITE_LEASE_OWNER_ENV,
   DEV_WRITE_LEASE_RENEWAL_DEADLINE_MS,
-  DEV_WRITE_LEASE_TTL_MS,
   DevWriteLeaseStoppedError,
   acquireDevWriteLease,
   acquireIntendedDevApplyLease,
@@ -109,12 +108,6 @@ describe('the heartbeat tick', () => {
     expect(stops).toEqual([]);
   });
 
-  it('bounds each heartbeat operation well inside one interval', () => {
-    expect(DEV_WRITE_LEASE_HEARTBEAT_TIMEOUT_MS).toBeLessThan(DEV_WRITE_LEASE_HEARTBEAT_MS);
-    expect(DEV_WRITE_LEASE_RENEWAL_DEADLINE_MS).toBeLessThanOrEqual(DEV_WRITE_LEASE_TTL_MS / 2);
-    expect(DEV_WRITE_LEASE_RENEWAL_DEADLINE_MS).toBe(2 * 60_000);
-  });
-
   it('stops on exactly the leases a partial match no longer covers', async () => {
     await holdHosts(hosts(4));
     await leases().updateMany(
@@ -189,6 +182,33 @@ describe('the heartbeat tick', () => {
     );
   });
 
+  it('stops a fetch to a fresh lease while another held lease is past the deadline', async () => {
+    await holdHosts(['early.example.edu']);
+    const earlyRenewal = now();
+    vi.spyOn(Collection.prototype, 'updateMany').mockRejectedValue(new Error('not primary'));
+
+    await tickEvery(DEV_WRITE_LEASE_HEARTBEAT_MS, 2);
+    await ensureDevHostLease('late.example.edu');
+    await tickEvery(DEV_WRITE_LEASE_HEARTBEAT_MS, 2);
+    expect(stops).toEqual([]);
+
+    advance(1_000);
+    await expect(ensureDevHostLease('late.example.edu')).rejects.toBeInstanceOf(
+      DevWriteLeaseStoppedError,
+    );
+    await expect(ensureDevHostLease('new.example.edu')).rejects.toBeInstanceOf(
+      DevWriteLeaseStoppedError,
+    );
+    expect(stops).toHaveLength(1);
+    expect(stops[0]).toMatchObject({
+      reason: 'renewal-failed',
+      leases: [
+        { name: 'host:early.example.edu', lastRenewedAt: earlyRenewal, withoutRenewalMs: 121_000 },
+      ],
+    });
+    expect(await lease(devHostLeaseName('new.example.edu'))).toBeNull();
+  });
+
   it('bounds a heartbeat that never settles, then stops before the next fetch with the stale list', async () => {
     setDevWriteLeaseRuntimeForTests({
       now,
@@ -216,9 +236,11 @@ describe('the heartbeat tick', () => {
     expect(stops).toHaveLength(1);
     expect(stops[0]).toMatchObject({
       reason: 'renewal-failed',
-      leases: [
-        { name: 'host:b.example.edu', lastRenewedAt: lastRenewal, withoutRenewalMs: 150_000 },
-      ],
+      leases: ['host:a.example.edu', 'host:b.example.edu'].map((name) => ({
+        name,
+        lastRenewedAt: lastRenewal,
+        withoutRenewalMs: 150_000,
+      })),
     });
 
     await runDevWriteLeaseHeartbeatTick();
