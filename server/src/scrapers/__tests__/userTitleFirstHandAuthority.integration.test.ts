@@ -1,0 +1,691 @@
+import mongoose from 'mongoose';
+import { MongoMemoryReplSet } from 'mongodb-memory-server';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.mock('../../services/meiliSyncService', async () => {
+  const actual = await vi.importActual<typeof import('../../services/meiliSyncService')>(
+    '../../services/meiliSyncService',
+  );
+  return {
+    ...actual,
+    syncEntities: vi.fn(async () => {}),
+    syncEntity: vi.fn(async () => true),
+    deleteFromIndex: vi.fn(async () => {}),
+  };
+});
+
+import { Observation } from '../../models/observation';
+import { Researcher } from '../../models/researcher';
+import { isFullCoverageRun } from '../latestFullCoverageRun';
+import {
+  isFirstHandUserTitleRead,
+  materializeEntity,
+  userTitleEvidence,
+} from '../entityMaterializer';
+import {
+  extractProfile as extractYseProfile,
+  facultyToUserObservations as yseUserObservations,
+} from '../sources/yseFacultyDirectoryScraper';
+import { planFieldValueRefusal } from '../../utils/researchEntityFieldValueRefusals';
+import { clearC4Flags } from './c4FlagTestEnv';
+import { recordFullCoverageRun } from './fullCoverageRunFixture';
+
+const NETID = 'qs5578';
+const DIRECTORY_KEY = NETID;
+const NETID_KEY = `netid:${NETID}`;
+const SCHOOL_KEY = 'ysm:quinn-synthetic';
+const OFFICIAL_PAGE = 'https://medicine.yale.edu/profile/quinn-synthetic/';
+const SCHOOL_PAGE_AS_CITED = 'http://www.medicine.yale.edu/profile/quinn-synthetic';
+const YSE_PAGE = 'https://environment.yale.edu/profile/quinn-synthetic';
+const ROSTER_LISTING = 'https://fixture-dept.yale.edu/people/faculty';
+const NOW = new Date('2026-11-10T00:00:00Z');
+
+const FIRST_HAND_RANK = 'Associate Professor of Fixture Medicine';
+const OLDER_FIRST_HAND_RANK = 'Assistant Professor of Fixture Medicine';
+const COPIED_RANK = 'Professor of Fixture Medicine';
+const STORED_RANK = 'Lecturer in Fixture Medicine';
+
+interface Read {
+  entityKey: string;
+  sourceName: string;
+  confidence: number;
+  observedAt: string;
+  sourceUrl: string;
+  title: string;
+}
+
+const FULL_COVERAGE_LANES = new Set([
+  'ysm-faculty-directory',
+  'yse-faculty-directory',
+  'dept-faculty-roster',
+]);
+
+const observation = (
+  read: Read,
+  field: string,
+  value: unknown,
+  scrapeRunId: mongoose.Types.ObjectId,
+) => ({
+  entityType: 'user',
+  entityKey: read.entityKey,
+  sourceId: new mongoose.Types.ObjectId(),
+  scrapeRunId,
+  field,
+  value,
+  sourceName: read.sourceName,
+  sourceUrl: read.sourceUrl,
+  confidence: read.confidence,
+  observedAt: new Date(read.observedAt),
+  superseded: false,
+});
+
+async function seed(reads: Read[]): Promise<void> {
+  for (const read of reads) {
+    const scrapeRunId = new mongoose.Types.ObjectId();
+    if (FULL_COVERAGE_LANES.has(read.sourceName)) {
+      await recordFullCoverageRun(read.sourceName, scrapeRunId, new Date(read.observedAt));
+    }
+    await Observation.insertMany([
+      observation(read, 'fname', 'Quinn', scrapeRunId),
+      observation(read, 'lname', 'Synthetic', scrapeRunId),
+      observation(read, 'title', read.title, scrapeRunId),
+    ]);
+  }
+}
+
+async function storedTitle(): Promise<string | undefined> {
+  const researcher: any = await Researcher.findOne({ 'identifiers.netid': NETID }).lean();
+  return researcher?.profile?.title;
+}
+
+async function materializeInOrder(keys: string[]): Promise<string | undefined> {
+  await Researcher.updateOne({ 'identifiers.netid': NETID }, { $unset: { 'profile.title': 1 } });
+  for (const entityKey of keys) await materializeEntity('user', { entityKey }, { now: NOW });
+  return storedTitle();
+}
+
+async function expectFromEveryKeyInEveryOrder(keys: string[], title: string): Promise<void> {
+  expect(await materializeInOrder(keys)).toBe(title);
+  expect(await materializeInOrder([...keys].reverse())).toBe(title);
+  for (const key of keys) expect(await materializeInOrder([key])).toBe(title);
+}
+
+const directoryRead = (title: string): Read => ({
+  entityKey: DIRECTORY_KEY,
+  sourceName: 'yale-directory',
+  confidence: 0.9,
+  observedAt: '2026-11-03T00:00:00Z',
+  sourceUrl: 'https://directory.yale.edu/',
+  title,
+});
+
+const backfillRead = (title: string): Read => ({
+  entityKey: NETID_KEY,
+  sourceName: 'official-profile-pi-backfill',
+  confidence: 0.95,
+  observedAt: '2026-06-05T00:00:00Z',
+  sourceUrl: OFFICIAL_PAGE,
+  title,
+});
+
+const rosterRead = (title: string, sourceUrl: string): Read => ({
+  entityKey: NETID_KEY,
+  sourceName: 'dept-faculty-roster',
+  confidence: 0.7,
+  observedAt: '2026-11-09T00:00:00Z',
+  sourceUrl,
+  title,
+});
+
+const schoolRead = (title: string, observedAt: string): Read => ({
+  entityKey: SCHOOL_KEY,
+  sourceName: 'ysm-faculty-directory',
+  confidence: 0.8,
+  observedAt,
+  sourceUrl: SCHOOL_PAGE_AS_CITED,
+  title,
+});
+
+const officialLink = (url: string) => ({
+  kind: 'YALE_OFFICIAL',
+  purpose: 'PRIMARY_IDENTITY',
+  url,
+  verifiedAt: new Date('2026-09-01T00:00:00Z'),
+  healthStatus: 'UNKNOWN',
+});
+
+describe("a researcher's own profile page decides the title (#5578)", () => {
+  let replSet: MongoMemoryReplSet;
+
+  beforeAll(async () => {
+    replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    await mongoose.connect(replSet.getUri());
+    await Observation.syncIndexes();
+  });
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await replSet?.stop();
+  });
+
+  beforeEach(async () => {
+    clearC4Flags();
+    const db = mongoose.connection.db!;
+    for (const name of ['accounts', 'researchers', 'observations', 'scrape_runs']) {
+      await db.collection(name).deleteMany({});
+    }
+    await Researcher.create({
+      displayName: 'Quinn Synthetic',
+      identifiers: { netid: NETID },
+      profileLinks: [officialLink(OFFICIAL_PAGE)],
+    });
+  });
+
+  it('serves the newest first-hand read over a newer roster title, an agreeing directory and a stale lane', async () => {
+    await seed([
+      schoolRead(FIRST_HAND_RANK, '2026-10-01T00:00:00Z'),
+      rosterRead(COPIED_RANK, ROSTER_LISTING),
+      directoryRead(COPIED_RANK),
+      backfillRead(COPIED_RANK),
+    ]);
+
+    await expectFromEveryKeyInEveryOrder([DIRECTORY_KEY, NETID_KEY, SCHOOL_KEY], FIRST_HAND_RANK);
+  });
+
+  it('serves the leading title of a page that also lists an additional title', async () => {
+    await Researcher.updateOne(
+      { 'identifiers.netid': NETID },
+      { $set: { profileLinks: [officialLink(YSE_PAGE)] } },
+    );
+    const profile = extractYseProfile(
+      `<html><body><main><section class="profile">
+        <h1>Quinn Synthetic</h1>
+        <div class="intro-text profile__position"><p>
+          <span class="semijoin">${FIRST_HAND_RANK}</span>
+          <span class="semijoin">Director, Fixture Center for Water</span>
+        </p></div>
+        <p><a href="mailto:${NETID}@yale.edu">${NETID}@yale.edu</a></p>
+      </section></main></body></html>`,
+      { name: 'Quinn Synthetic', profileUrl: YSE_PAGE, slug: 'quinn-synthetic' },
+    );
+    const { observations, entityKey } = yseUserObservations(profile);
+    const yseRunId = new mongoose.Types.ObjectId();
+    await recordFullCoverageRun(
+      'yse-faculty-directory',
+      yseRunId,
+      new Date('2026-10-01T00:00:00Z'),
+    );
+    await Observation.insertMany(
+      observations.map((input) => ({
+        ...input,
+        sourceId: new mongoose.Types.ObjectId(),
+        scrapeRunId: yseRunId,
+        sourceName: 'yse-faculty-directory',
+        confidence: 0.8,
+        observedAt: new Date('2026-10-01T00:00:00Z'),
+        superseded: false,
+      })),
+    );
+    await seed([rosterRead(COPIED_RANK, ROSTER_LISTING)]);
+
+    await expectFromEveryKeyInEveryOrder([entityKey, NETID_KEY], FIRST_HAND_RANK);
+  });
+
+  it('does not count a roster title as first-hand because it cites the profile page', async () => {
+    await seed([
+      schoolRead(FIRST_HAND_RANK, '2026-10-01T00:00:00Z'),
+      rosterRead(COPIED_RANK, OFFICIAL_PAGE),
+    ]);
+
+    await expectFromEveryKeyInEveryOrder([NETID_KEY, SCHOOL_KEY], FIRST_HAND_RANK);
+  });
+
+  it('counts a roster title marked as read from the profile title block as first-hand', async () => {
+    await seed([
+      schoolRead(OLDER_FIRST_HAND_RANK, '2026-08-01T00:00:00Z'),
+      rosterRead(FIRST_HAND_RANK, OFFICIAL_PAGE),
+      backfillRead(COPIED_RANK),
+    ]);
+    await Observation.updateMany(
+      { sourceName: 'dept-faculty-roster', field: 'title' },
+      { $set: { extraction: { source: 'profileTitleBlock' } } },
+    );
+
+    await expectFromEveryKeyInEveryOrder([NETID_KEY, SCHOOL_KEY], FIRST_HAND_RANK);
+  });
+
+  it('does not count a marked roster title that cites a page other than the profile', async () => {
+    await seed([
+      schoolRead(FIRST_HAND_RANK, '2026-08-01T00:00:00Z'),
+      rosterRead(COPIED_RANK, ROSTER_LISTING),
+    ]);
+    await Observation.updateMany(
+      { sourceName: 'dept-faculty-roster', field: 'title' },
+      { $set: { extraction: { source: 'profileTitleBlock' } } },
+    );
+
+    await expectFromEveryKeyInEveryOrder([NETID_KEY, SCHOOL_KEY], FIRST_HAND_RANK);
+  });
+
+  it('gives an older first-hand read no authority once a newer full run read the page', async () => {
+    await seed([
+      schoolRead(OLDER_FIRST_HAND_RANK, '2026-08-01T00:00:00Z'),
+      schoolRead('Professor of', '2026-10-01T00:00:00Z'),
+      rosterRead(COPIED_RANK, ROSTER_LISTING),
+    ]);
+    await Researcher.updateOne(
+      { 'identifiers.netid': NETID },
+      { $set: { 'profile.title': STORED_RANK } },
+    );
+
+    for (const entityKey of [NETID_KEY, SCHOOL_KEY]) {
+      await materializeEntity('user', { entityKey }, { now: NOW });
+      expect(await storedTitle()).toBe(STORED_RANK);
+    }
+  });
+
+  it('passes over a first-hand title the researcher refuses, from every key', async () => {
+    await seed([
+      schoolRead(FIRST_HAND_RANK, '2026-10-01T00:00:00Z'),
+      rosterRead(COPIED_RANK, ROSTER_LISTING),
+    ]);
+    await Researcher.updateOne(
+      { 'identifiers.netid': NETID },
+      {
+        $set: planFieldValueRefusal(undefined, {
+          field: 'title',
+          value: FIRST_HAND_RANK,
+          rule: 'other_persons_page',
+          refusedBy: 'synthetic fixture',
+        }),
+      },
+    );
+
+    await expectFromEveryKeyInEveryOrder([NETID_KEY, SCHOOL_KEY], COPIED_RANK);
+    const secondPass = [];
+    for (const entityKey of [NETID_KEY, SCHOOL_KEY]) {
+      secondPass.push(await materializeEntity('user', { entityKey }, { now: NOW }));
+    }
+    expect(secondPass.map((result) => result.fieldsWritten)).toEqual([0, 0]);
+  });
+
+  it("keeps an operator's edit ahead of the first-hand read", async () => {
+    await seed([
+      schoolRead(FIRST_HAND_RANK, '2026-10-01T00:00:00Z'),
+      {
+        entityKey: NETID_KEY,
+        sourceName: 'manual-admin-edit',
+        confidence: 1,
+        observedAt: '2026-07-01T00:00:00Z',
+        sourceUrl: 'https://ylabs.example.invalid/admin',
+        title: COPIED_RANK,
+      },
+    ]);
+
+    await expectFromEveryKeyInEveryOrder([NETID_KEY, SCHOOL_KEY], COPIED_RANK);
+  });
+
+  it('keeps the newest-read fallback when no first-hand read exists', async () => {
+    await seed([
+      rosterRead(FIRST_HAND_RANK, ROSTER_LISTING),
+      directoryRead(COPIED_RANK),
+      backfillRead(OLDER_FIRST_HAND_RANK),
+    ]);
+
+    expect(await materializeInOrder([DIRECTORY_KEY, NETID_KEY])).toBe(FIRST_HAND_RANK);
+    expect(await materializeInOrder([NETID_KEY, DIRECTORY_KEY])).toBe(FIRST_HAND_RANK);
+  });
+
+  it('writes nothing on a second pass', async () => {
+    await seed([
+      schoolRead(FIRST_HAND_RANK, '2026-10-01T00:00:00Z'),
+      rosterRead(COPIED_RANK, ROSTER_LISTING),
+      directoryRead(COPIED_RANK),
+      backfillRead(COPIED_RANK),
+    ]);
+    const keys = [DIRECTORY_KEY, NETID_KEY, SCHOOL_KEY];
+    await materializeInOrder(keys);
+    const secondPass = [];
+    for (const entityKey of keys) {
+      secondPass.push(await materializeEntity('user', { entityKey }, { now: NOW }));
+    }
+
+    expect(secondPass.map((result) => result.fieldsWritten)).toEqual([0, 0, 0]);
+    expect(await storedTitle()).toBe(FIRST_HAND_RANK);
+  });
+});
+
+describe('a title is rewritten only from a fresh first-hand read (#5578, #5801)', () => {
+  let replSet: MongoMemoryReplSet;
+  const KEYS = [NETID_KEY, SCHOOL_KEY];
+
+  beforeAll(async () => {
+    replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    await mongoose.connect(replSet.getUri());
+    await Observation.syncIndexes();
+  });
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await replSet?.stop();
+  });
+
+  beforeEach(async () => {
+    clearC4Flags();
+    const db = mongoose.connection.db!;
+    for (const name of ['accounts', 'researchers', 'observations', 'scrape_runs']) {
+      await db.collection(name).deleteMany({});
+    }
+    await Researcher.create({
+      displayName: 'Quinn Synthetic',
+      identifiers: { netid: NETID },
+      profileLinks: [officialLink(OFFICIAL_PAGE)],
+      profile: { title: STORED_RANK },
+    });
+  });
+
+  async function materializeEveryKey(): Promise<number[]> {
+    const written: number[] = [];
+    for (const entityKey of KEYS) {
+      written.push((await materializeEntity('user', { entityKey }, { now: NOW })).fieldsWritten);
+    }
+    return written;
+  }
+
+  it('leaves a stored title alone when the first-hand read is not from the lane latest full run', async () => {
+    await seed([schoolRead(FIRST_HAND_RANK, '2026-08-01T00:00:00Z')]);
+    await recordFullCoverageRun(
+      'ysm-faculty-directory',
+      new mongoose.Types.ObjectId(),
+      new Date('2026-10-01T00:00:00Z'),
+    );
+
+    await materializeEveryKey();
+
+    expect(await storedTitle()).toBe(STORED_RANK);
+  });
+
+  it('does not let a scoped run displace the latest full run', async () => {
+    await seed([schoolRead(FIRST_HAND_RANK, '2026-08-01T00:00:00Z')]);
+    await recordFullCoverageRun(
+      'ysm-faculty-directory',
+      new mongoose.Types.ObjectId(),
+      new Date('2026-10-01T00:00:00Z'),
+      { dryRun: false, exhaustive: true, ignoreWorkPlanner: true, only: [OFFICIAL_PAGE] },
+    );
+
+    await materializeEveryKey();
+
+    expect(await storedTitle()).toBe(FIRST_HAND_RANK);
+  });
+
+  it('does not let an offset run displace the latest full run', async () => {
+    await seed([schoolRead(FIRST_HAND_RANK, '2026-08-01T00:00:00Z')]);
+    await recordFullCoverageRun(
+      'ysm-faculty-directory',
+      new mongoose.Types.ObjectId(),
+      new Date('2026-10-01T00:00:00Z'),
+      { dryRun: false, exhaustive: true, ignoreWorkPlanner: true, offset: 40 },
+    );
+
+    await materializeEveryKey();
+
+    expect(await storedTitle()).toBe(FIRST_HAND_RANK);
+  });
+
+  it("rewrites a stored title from the lane's latest full run, then writes nothing", async () => {
+    await seed([
+      schoolRead(FIRST_HAND_RANK, '2026-10-01T00:00:00Z'),
+      rosterRead(COPIED_RANK, ROSTER_LISTING),
+    ]);
+
+    await materializeEveryKey();
+    expect(await storedTitle()).toBe(FIRST_HAND_RANK);
+
+    expect(await materializeEveryKey()).toEqual([0, 0]);
+  });
+
+  it('leaves a stored title alone without a fresh first-hand read, though the pool disagrees', async () => {
+    await seed([rosterRead(COPIED_RANK, ROSTER_LISTING), backfillRead(COPIED_RANK)]);
+
+    expect(await materializeEveryKey()).toEqual([0, 0]);
+    expect(await storedTitle()).toBe(STORED_RANK);
+  });
+
+  it('fills an empty title from the pooled fallback, then writes nothing', async () => {
+    await Researcher.updateOne({ 'identifiers.netid': NETID }, { $unset: { 'profile.title': 1 } });
+    await seed([rosterRead(COPIED_RANK, ROSTER_LISTING), backfillRead(OLDER_FIRST_HAND_RANK)]);
+
+    await materializeEveryKey();
+    expect(await storedTitle()).toBe(COPIED_RANK);
+
+    expect(await materializeEveryKey()).toEqual([0, 0]);
+  });
+});
+
+describe('an official page two live researchers claim (#5578)', () => {
+  let replSet: MongoMemoryReplSet;
+  const OTHER_NETID = 'rf5578';
+  const OTHER_RANK = 'Research Associate in Fixture Surgery';
+
+  beforeAll(async () => {
+    replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    await mongoose.connect(replSet.getUri());
+    await Observation.syncIndexes();
+  });
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await replSet?.stop();
+  });
+
+  beforeEach(async () => {
+    clearC4Flags();
+    const db = mongoose.connection.db!;
+    for (const name of ['accounts', 'researchers', 'observations', 'scrape_runs']) {
+      await db.collection(name).deleteMany({});
+    }
+    await Researcher.create({
+      displayName: 'Quinn Synthetic',
+      identifiers: { netid: NETID },
+      profileLinks: [officialLink(OFFICIAL_PAGE)],
+    });
+    await Researcher.create({
+      displayName: 'Robin Fixture',
+      identifiers: { netid: OTHER_NETID },
+      profileLinks: [officialLink(OFFICIAL_PAGE)],
+    });
+    const ysmRunId = new mongoose.Types.ObjectId();
+    await recordFullCoverageRun(
+      'ysm-faculty-directory',
+      ysmRunId,
+      new Date('2026-08-01T00:00:00Z'),
+    );
+    const read = (
+      entityKey: string,
+      sourceName: string,
+      sourceUrl: string,
+      value: string,
+      observedAt: string,
+      names: [string, string],
+    ) =>
+      [
+        ['fname', names[0]],
+        ['lname', names[1]],
+        ['title', value],
+      ].map(([field, fieldValue]) => ({
+        entityType: 'user',
+        entityKey,
+        sourceId: new mongoose.Types.ObjectId(),
+        scrapeRunId:
+          sourceName === 'ysm-faculty-directory' ? ysmRunId : new mongoose.Types.ObjectId(),
+        field,
+        value: fieldValue,
+        sourceName,
+        sourceUrl,
+        confidence: 0.8,
+        observedAt: new Date(observedAt),
+        superseded: false,
+      }));
+    const quinn: [string, string] = ['Quinn', 'Synthetic'];
+    const robin: [string, string] = ['Robin', 'Fixture'];
+    const robinKey = `netid:${OTHER_NETID}`;
+    await Observation.insertMany([
+      ...read(
+        NETID_KEY,
+        'ysm-faculty-directory',
+        OFFICIAL_PAGE,
+        FIRST_HAND_RANK,
+        '2026-08-01T00:00:00Z',
+        quinn,
+      ),
+      ...read(
+        NETID_KEY,
+        'dept-faculty-roster',
+        ROSTER_LISTING,
+        COPIED_RANK,
+        '2026-11-09T00:00:00Z',
+        quinn,
+      ),
+      ...read(
+        NETID_KEY,
+        'official-profile-pi-backfill',
+        OFFICIAL_PAGE,
+        COPIED_RANK,
+        '2026-10-01T00:00:00Z',
+        quinn,
+      ),
+      ...read(
+        robinKey,
+        'ysm-faculty-directory',
+        OFFICIAL_PAGE,
+        FIRST_HAND_RANK,
+        '2026-08-01T00:00:00Z',
+        robin,
+      ),
+      ...read(
+        robinKey,
+        'dept-faculty-roster',
+        ROSTER_LISTING,
+        OTHER_RANK,
+        '2026-11-09T00:00:00Z',
+        robin,
+      ),
+      ...read(
+        robinKey,
+        'official-profile-pi-backfill',
+        OFFICIAL_PAGE,
+        OTHER_RANK,
+        '2026-10-01T00:00:00Z',
+        robin,
+      ),
+    ]);
+  });
+
+  const titleOf = async (netid: string) =>
+    ((await Researcher.findOne({ 'identifiers.netid': netid }).lean()) as any)?.profile?.title;
+
+  async function materializeAll(keys: string[]): Promise<void> {
+    await Researcher.updateMany({}, { $unset: { 'profile.title': 1 } });
+    for (const entityKey of keys) await materializeEntity('user', { entityKey }, { now: NOW });
+  }
+
+  it("gives the page's reads no authority, so each researcher's fallback serves, from either side", async () => {
+    const keys = [NETID_KEY, `netid:${OTHER_NETID}`];
+    for (const order of [keys, [...keys].reverse()]) {
+      await materializeAll(order);
+      expect(await titleOf(NETID)).toBe(COPIED_RANK);
+      expect(await titleOf(OTHER_NETID)).toBe(OTHER_RANK);
+    }
+  });
+
+  it('lets the first-hand read win again once the page has a sole live claimant', async () => {
+    await Researcher.updateOne({ 'identifiers.netid': OTHER_NETID }, { $set: { archived: true } });
+
+    await materializeAll([NETID_KEY]);
+
+    expect(await titleOf(NETID)).toBe(FIRST_HAND_RANK);
+  });
+});
+
+describe('the first-hand title screen (#5578)', () => {
+  const FULL_RUN = 'full-run';
+  const pages = {
+    officialPageKeys: new Set(['medicine.yale.edu/profile/quinn-synthetic']),
+    latestFullRunIdByLane: new Map([
+      ['ysm-faculty-directory', FULL_RUN],
+      ['dept-faculty-roster', FULL_RUN],
+    ]),
+  };
+  const title = (sourceName: string, value: string, observedAt: string, _id: string) => ({
+    _id,
+    scrapeRunId: FULL_RUN,
+    field: 'title',
+    sourceName,
+    value,
+    sourceUrl: OFFICIAL_PAGE,
+    observedAt: new Date(observedAt),
+  });
+
+  it('chooses one value of a read that states two, by the earliest id', () => {
+    const kept = userTitleEvidence(
+      [
+        title('ysm-faculty-directory', 'Second Seen Title', '2026-10-01T00:00:00Z', 'b'),
+        title('ysm-faculty-directory', 'First Seen Title', '2026-10-01T00:00:00Z', 'a'),
+      ],
+      pages,
+    );
+
+    expect(kept.map((observation) => observation.value)).toEqual(['First Seen Title']);
+  });
+
+  it('counts only a completed, written, unscoped, exhaustive run as full coverage', () => {
+    const full = {
+      status: 'success',
+      invalidated: false,
+      options: { dryRun: false, exhaustive: true, ignoreWorkPlanner: true },
+    };
+    expect(isFullCoverageRun(full)).toBe(true);
+    expect(isFullCoverageRun({ ...full, options: { ...full.options, offset: 0 } })).toBe(true);
+    for (const narrowed of [
+      { ...full, status: 'partial' },
+      { ...full, invalidated: true },
+      { ...full, options: { ...full.options, dryRun: true } },
+      { ...full, options: { ...full.options, exhaustive: false } },
+      { ...full, options: { ...full.options, ignoreWorkPlanner: false } },
+      { ...full, options: { ...full.options, only: ['one-page'] } },
+      { ...full, options: { ...full.options, limit: 25 } },
+      { ...full, options: { ...full.options, offset: 40 } },
+      { ...full, options: { ...full.options, benchmarkRun: true } },
+    ]) {
+      expect(isFullCoverageRun(narrowed)).toBe(false);
+    }
+  });
+
+  it('requires the profile title block marker of a roster read only', () => {
+    expect(isFirstHandUserTitleRead({ sourceName: 'ysm-faculty-directory' })).toBe(true);
+    expect(isFirstHandUserTitleRead({ sourceName: 'dept-faculty-roster' })).toBe(false);
+    expect(
+      isFirstHandUserTitleRead({
+        sourceName: 'dept-faculty-roster',
+        extraction: { source: 'profileTitleBlock' },
+      }),
+    ).toBe(true);
+    expect(
+      isFirstHandUserTitleRead({
+        sourceName: 'official-profile-pi-backfill',
+        extraction: { source: 'profileTitleBlock' },
+      }),
+    ).toBe(false);
+  });
+
+  it("ignores a first-hand lane's read of a page that is not the researcher's", () => {
+    const elsewhere = {
+      ...title('ysm-faculty-directory', FIRST_HAND_RANK, '2026-10-01T00:00:00Z', 'a'),
+      sourceUrl: 'https://medicine.yale.edu/profile/someone-else/',
+    };
+    const roster = title('dept-faculty-roster', COPIED_RANK, '2026-09-01T00:00:00Z', 'b');
+
+    expect(userTitleEvidence([elsewhere, roster], pages)).toEqual([elsewhere, roster]);
+  });
+});

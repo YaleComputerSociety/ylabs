@@ -1,7 +1,7 @@
 /**
  * Shared types for the scraper subsystem.
  */
-import type { ObservedEntityType } from '../models/observation';
+import type { ObservationExtraction, ObservedEntityType } from '../models/observation';
 import type { WorkPlannerMetrics } from './workPlanner';
 import type { HttpValidatorCacheStats } from './utils/httpValidatorCache';
 import type { SweepPageReuseStats } from './utils/sweepPageReuse';
@@ -25,6 +25,7 @@ export interface ObservationInput {
    */
   assertsNoValueFor?: string[];
   reslugAdoption?: boolean;
+  extraction?: ObservationExtraction;
 }
 
 export interface ScraperContext {

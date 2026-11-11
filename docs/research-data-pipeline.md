@@ -1284,7 +1284,15 @@ Every other rule names a condition a later reader can re-derive - a dead page ca
 `planFieldValueRefusal` enforces it rather than the CLI's argument parser, so every writer inherits the fence.
 `fieldLockProvenance.operator_decision` still has no writer and keeps none: a judgement recorded as a lock cannot be revisited and, as the 2026-09-24 census showed, carries no reason at all in practice.
 
-Several `user` keys can join one researcher, and each resolves only its own evidence, so a person's display fields (`displayName`, `title`, `primaryDepartment`, `imageUrl`, `websiteUrl`) need one precedence across keys (#5706).
+Several `user` keys can join one researcher, and each resolves only its own evidence, so a person's display fields (`displayName`, `primaryDepartment`, `imageUrl`, `websiteUrl`) need one precedence across keys (#5706).
+`title` is resolved per researcher over the title evidence of every key that joins it, with source authority (#5578), and a title from that pool is written whatever the materializing key's writer rank.
+The rewrite is scoped (#5578): a stored title changes only when a fresh first-hand read decides it, meaning a read of the researcher's own official page by a lane in `FIRST_HAND_USER_TITLE_SOURCES`, taken in that lane's latest full-coverage run.
+A full-coverage run finished `success`, was not invalidated, wrote, and was not narrowed by `--only`, `--limit`, `--offset`, a missing `--exhaustive`, or the work planner (`isFullCoverageRun`); `Source.lastCrawledAt` is not used, because a scoped or `partial` run stamps it too.
+Without a fresh first-hand read, a servable stored title is left as it is, and only an empty or unservable one is filled from the pooled or own-key fallback.
+The title-hygiene step still replaces a stored title that `servablePersonTitle` refuses.
+Rewriting the other stored titles is #5801.
+Only when the pool states no title and a key falls back to its own title (a key joined by name alone, on a researcher with no netid, email or official page any key cites) does that write go through the writer precedence below, under the `title` slot, and a title written that way stays under that precedence.
+A pooled write deletes `profileFieldWriters.title`, so a fallback writer recorded before the pool stated a title never decides a later fallback round against keys it was never ranked against.
 The researcher records, per field, the key that wrote it with its identity join and resolved confidence (`profileFieldWriters`), and a key writes the field only when it is that writer, no writer is recorded, or it outranks the writer: the join first (netid, then official profile page, then email, then name), then confidence, then the key itself.
 A full pass therefore settles on the same values in any order and a second pass writes nothing; a writer that resolves no value releases the field without clearing it.
 

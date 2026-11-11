@@ -16,6 +16,7 @@ vi.mock('../../services/meiliSyncService', async () => {
 import { Observation } from '../../models/observation';
 import { Researcher } from '../../models/researcher';
 import { materializeEntity } from '../entityMaterializer';
+import { recordFullCoverageRun } from './fullCoverageRunFixture';
 
 const OWNER_PAGE = 'https://medicine.yale.edu/profile/lorvan-tei-quennard/';
 const OTHER_PERSON_PAGE = 'https://medicine.yale.edu/psychiatry/profile/lo-quennard/';
@@ -38,7 +39,7 @@ describe('a person-name join never grafts a same-surname stranger onto a record 
   beforeEach(async () => {
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
-    for (const name of ['observations', 'researchers', 'accounts']) {
+    for (const name of ['observations', 'researchers', 'accounts', 'scrape_runs']) {
       await db.collection(name).deleteMany({});
     }
   });
@@ -47,14 +48,19 @@ describe('a person-name join never grafts a same-surname stranger onto a record 
     entityKey: string,
     fields: Record<string, unknown>,
     observedAt = new Date('2026-03-01T00:00:00Z'),
+    read: { sourceName: string; sourceUrl: string; scrapeRunId?: mongoose.Types.ObjectId } = {
+      sourceName: 'dept-faculty-roster',
+      sourceUrl: 'https://medicine.yale.edu/psychiatry/people/',
+    },
   ) => {
     for (const [field, value] of Object.entries(fields)) {
       await Observation.create({
         entityType: 'user',
         entityKey,
         sourceId: new mongoose.Types.ObjectId(),
-        sourceName: 'dept-faculty-roster',
-        sourceUrl: 'https://medicine.yale.edu/psychiatry/people/',
+        sourceName: read.sourceName,
+        sourceUrl: read.sourceUrl,
+        ...(read.scrapeRunId ? { scrapeRunId: read.scrapeRunId } : {}),
         confidence: 0.7,
         observedAt,
         superseded: false,
@@ -64,11 +70,11 @@ describe('a person-name join never grafts a same-surname stranger onto a record 
     }
   };
 
-  const professor = (displayName: string, netid?: string) =>
+  const professor = (displayName: string, netid?: string, title: string | null = PROFESSOR_TITLE) =>
     Researcher.create({
       displayName,
       ...(netid ? { identifiers: { netid } } : {}),
-      profile: { title: PROFESSOR_TITLE },
+      profile: title ? { title } : {},
       profileLinks: [
         {
           kind: 'YALE_OFFICIAL',
@@ -126,7 +132,7 @@ describe('a person-name join never grafts a same-surname stranger onto a record 
   });
 
   it('still joins evidence citing the same person page under a section path', async () => {
-    const owner = await professor('Lorvan-Tei Quennard');
+    const owner = await professor('Lorvan-Tei Quennard', undefined, null);
     await seedUser('dept:ysm-cancer:lorvan-tei-quennard', {
       fname: 'Lorvan-Tei',
       lname: 'Quennard',
@@ -151,12 +157,23 @@ describe('a person-name join never grafts a same-surname stranger onto a record 
   it("re-derives a conflated record from its own netid's evidence and keeps the stranger off it", async () => {
     const conflated = await professor('Lo Quennard', 'lq7');
     await Researcher.updateOne({ _id: conflated._id }, { 'profile.title': POSTDOC_TITLE });
-    await seedUser('netid:lq7', {
-      fname: 'Lorvan-Tei',
-      lname: 'Quennard',
-      title: PROFESSOR_TITLE,
-      profileUrls: { official: OWNER_PAGE },
-    });
+    const ownPageRun = new mongoose.Types.ObjectId();
+    await recordFullCoverageRun(
+      'ysm-faculty-directory',
+      ownPageRun,
+      new Date('2026-03-01T00:00:00Z'),
+    );
+    await seedUser(
+      'netid:lq7',
+      {
+        fname: 'Lorvan-Tei',
+        lname: 'Quennard',
+        title: PROFESSOR_TITLE,
+        profileUrls: { official: OWNER_PAGE },
+      },
+      new Date('2026-03-01T00:00:00Z'),
+      { sourceName: 'ysm-faculty-directory', sourceUrl: OWNER_PAGE, scrapeRunId: ownPageRun },
+    );
     await seedUser('dept:ysm-psychiatry:lo-quennard', {
       fname: 'Lo',
       lname: 'Quennard',

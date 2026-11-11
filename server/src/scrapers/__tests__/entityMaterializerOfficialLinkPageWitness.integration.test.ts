@@ -54,6 +54,7 @@ describe('a page that names its owner stamps them past a holder it does not name
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
+    await Observation.createIndexes();
   });
 
   afterAll(async () => {

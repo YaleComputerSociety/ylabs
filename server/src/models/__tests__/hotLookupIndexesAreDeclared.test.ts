@@ -57,6 +57,11 @@ const observationLookups: readonly HotLookup[] = [
     equalityFields: ['entityType', 'field', 'superseded'],
     thenReads: [],
   },
+  {
+    name: "person keys printing a researcher's address (#5578)",
+    equalityFields: ['field', 'value'],
+    thenReads: [],
+  },
 ];
 
 const researcherLookups: readonly HotLookup[] = [

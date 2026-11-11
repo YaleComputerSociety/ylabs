@@ -19,7 +19,8 @@ import { withoutModelCalls } from '../utils/modelClient';
 import {
   decideResearcherFieldWrite,
   researcherFieldWriter,
-  type ResearcherWriterField,
+  OWN_KEY_FALLBACK_TITLE_FIELD,
+  type ResearcherGatedField,
 } from '../utils/researcherFieldWriters';
 import {
   planResearcherRefusedStoredValueClear,
@@ -46,7 +47,11 @@ import {
   type ResearcherIdentityEvidenceSource,
 } from '../utils/researcherIdentity';
 import mongoose from 'mongoose';
-import { Observation, ObservedEntityType } from '../models/observation';
+import {
+  Observation,
+  ObservedEntityType,
+  type ObservationExtractionSource,
+} from '../models/observation';
 import {
   isOverSharedPersonWebsite,
   overSharedPersonWebsiteKeysForMaterialization,
@@ -177,7 +182,11 @@ import {
 import {
   MaterializationChunkPrefetch,
   prefetchObjectIdString,
+  userKeyReferenceId,
   type MaterializationReadSource,
+  type UserIdentityJoinCache,
+  type UserKeyJoinEvidence,
+  type UserKeyReference,
 } from './materializationChunkPrefetch';
 import {
   appendObservations,
@@ -490,7 +499,11 @@ import {
   type ResearchEntityRosterEntry,
 } from '../services/researchEntityMembershipAccessor';
 import { officialProfileIdentityKey, rosterMembershipKey } from './utils/rosterMembershipKey';
-import { officialProfileIdentityUrlKey } from './utils/officialProfileIdentityUrlKey';
+import { latestFullCoverageRunIdByLane } from './latestFullCoverageRun';
+import {
+  officialProfileIdentityUrlKey,
+  officialProfileUrlSpellings,
+} from './utils/officialProfileIdentityUrlKey';
 import {
   embeddedNetidContradictsCandidate,
   netidsEmbeddedInUserEvidence,
@@ -7834,6 +7847,205 @@ export interface UserIdentityJoinResult {
   identityJoinedOnOfficialProfileUrlAlone: boolean;
 }
 
+function laneReadOf(observation: any): string {
+  const runId = textValue(observation.scrapeRunId ? String(observation.scrapeRunId) : '');
+  if (runId) return `run:${runId}`;
+  return `at:${new Date(observation.observedAt as any).getTime() || 0}`;
+}
+
+const DIRECTORY_TITLE_SOURCES: ReadonlySet<string> = new Set([
+  'yale-directory',
+  'yale-directory-csv',
+]);
+
+function newestLaneReadOfUserTitles<T extends { field?: unknown; sourceName?: unknown }>(
+  observations: readonly T[],
+): T[] {
+  const newestByLane = new Map<string, any>();
+  for (const observation of observations as any[]) {
+    if (observation.field !== 'title') continue;
+    const lane = textValue(observation.sourceName);
+    const incumbent = newestByLane.get(lane);
+    const at = new Date(observation.observedAt as any).getTime() || 0;
+    const incumbentAt = incumbent ? new Date(incumbent.observedAt as any).getTime() || 0 : -1;
+    if (at > incumbentAt) newestByLane.set(lane, observation);
+  }
+  return observations.filter((observation: any) => {
+    if (observation.field !== 'title') return true;
+    const newest = newestByLane.get(textValue(observation.sourceName));
+    return laneReadOf(observation) === laneReadOf(newest);
+  });
+}
+
+/**
+ * The lanes whose `user` title is read from the person's own official profile page's title
+ * block, each verified against its extractor (#5578), mapped to the extraction marker a read
+ * must carry, if any. Every other title lane copies that page, reads another page, or cannot
+ * say which element it read: the A-Z index reads a lab page's contact widget, and the
+ * backfill takes the first title-classed element on the page. The roster reads either its
+ * listing or the profile, so only a read marked as taken from the profile's title block
+ * counts; an unmarked roster read, including every one stored before the marker, does not.
+ */
+export const FIRST_HAND_USER_TITLE_SOURCES: ReadonlyMap<
+  string,
+  ObservationExtractionSource | undefined
+> = new Map([
+  ['ysm-faculty-directory', undefined],
+  ['yse-faculty-directory', undefined],
+  ['dept-faculty-roster', 'profileTitleBlock'],
+]);
+
+export function isFirstHandUserTitleRead(observation: {
+  sourceName?: unknown;
+  extraction?: { source?: unknown } | null;
+}): boolean {
+  const lane = textValue(observation.sourceName);
+  if (!FIRST_HAND_USER_TITLE_SOURCES.has(lane)) return false;
+  const requiredMarker = FIRST_HAND_USER_TITLE_SOURCES.get(lane);
+  return !requiredMarker || observation.extraction?.source === requiredMarker;
+}
+
+const CURATED_USER_TITLE_SOURCES: ReadonlySet<string> = new Set([
+  'manual-admin-edit',
+  'manual-pi-edit',
+]);
+
+/**
+ * Where a first-hand read may grant authority: the researcher's own official pages, read by
+ * each lane's latest full-coverage run. A read from an earlier run is a page the lane has
+ * not re-read since, so it can be stale (#5578).
+ */
+export interface FirstHandTitleScope {
+  officialPageKeys: ReadonlySet<string>;
+  latestFullRunIdByLane: ReadonlyMap<string, string>;
+}
+
+function isFirstHandUserTitle(observation: any, scope: FirstHandTitleScope): boolean {
+  const lane = textValue(observation.sourceName);
+  return (
+    observation.field === 'title' &&
+    isFirstHandUserTitleRead(observation) &&
+    scope.officialPageKeys.has(officialProfileIdentityUrlKey(observation.sourceUrl)) &&
+    Boolean(observation.scrapeRunId) &&
+    String(observation.scrapeRunId) === scope.latestFullRunIdByLane.get(lane)
+  );
+}
+
+function observedAtMs(observation: any): number {
+  return new Date(observation.observedAt as any).getTime() || 0;
+}
+
+/**
+ * The newest first-hand read. A read stating more than one value has no stored emit order
+ * (a re-read value keeps its first `_id`), so the earliest `_id` breaks the tie: an
+ * arbitrary but stable choice, which the first-hand extractors avoid needing by emitting
+ * only the leading title.
+ */
+function newestFirstHandUserTitle<T>(
+  observations: readonly T[],
+  scope: FirstHandTitleScope,
+): T | undefined {
+  let newest: any;
+  for (const observation of observations as any[]) {
+    if (!isFirstHandUserTitle(observation, scope)) continue;
+    if (!newest) {
+      newest = observation;
+      continue;
+    }
+    const at = observedAtMs(observation);
+    const newestAt = observedAtMs(newest);
+    if (at > newestAt) newest = observation;
+    else if (at === newestAt && String(observation._id ?? '') < String(newest._id ?? '')) {
+      newest = observation;
+    }
+  }
+  return newest;
+}
+
+function newestLaneReadUserTitleEvidence<T extends { field?: unknown; sourceName?: unknown }>(
+  observations: readonly T[],
+): T[] {
+  const newest = newestLaneReadOfUserTitles(observations);
+  const isDirectoryTitle = (observation: any) =>
+    observation.field === 'title' && DIRECTORY_TITLE_SOURCES.has(textValue(observation.sourceName));
+  const statedElsewhere = newest.some(
+    (observation: any) => observation.field === 'title' && !isDirectoryTitle(observation),
+  );
+  return statedElsewhere ? newest.filter((observation) => !isDirectoryTitle(observation)) : newest;
+}
+
+/**
+ * The title evidence a person's title is resolved from, owned here for both the single-key
+ * and the pooled path (#5578). Callers screen hygiene first, so a refused read is already
+ * gone and the next newest first-hand read stands in for it.
+ *
+ * Source authority decides first. Given the researcher's official profile pages, the
+ * newest fresh first-hand read of one of them (`FIRST_HAND_USER_TITLE_SOURCES`, read by
+ * the lane's latest full-coverage run) is the title outright: older first-hand reads and
+ * every copying lane are dropped. An operator's or PI's own edit stays beside it and keeps
+ * the precedence the resolver gives it.
+ *
+ * With no first-hand read, or no researcher to read pages from, each lane is read as of
+ * its newest read. A `user` title observation is value-keyed, so a lane's old value stays
+ * live beside its new one; reading the newest read only, over every key the caller pools,
+ * counts a lane that read the person under two keys once. Every title of that read is
+ * kept, because one roster run can state several titles for one person. The directory's
+ * title lags the person's own page, so it serves only when no other source states one.
+ * Derived on every read; nothing is superseded.
+ */
+export function userTitleEvidence<T extends { field?: unknown; sourceName?: unknown }>(
+  observations: readonly T[],
+  firstHandScope?: FirstHandTitleScope,
+): T[] {
+  const firstHand = firstHandScope
+    ? newestFirstHandUserTitle(observations, firstHandScope)
+    : undefined;
+  if (!firstHand) return newestLaneReadUserTitleEvidence(observations);
+  return observations.filter(
+    (observation: any) =>
+      observation.field !== 'title' ||
+      observation === firstHand ||
+      CURATED_USER_TITLE_SOURCES.has(textValue(observation.sourceName)),
+  );
+}
+
+async function latestFullRunIdByFirstHandLane(
+  cache?: UserIdentityJoinCache,
+): Promise<ReadonlyMap<string, string>> {
+  const cached = cache?.latestFullRunIdByLane();
+  if (cached) return cached;
+  const byLane = await latestFullCoverageRunIdByLane([...FIRST_HAND_USER_TITLE_SOURCES.keys()]);
+  cache?.rememberLatestFullRunIdByLane(byLane);
+  return byLane;
+}
+
+/**
+ * The researcher's official pages no other live researcher also claims. A page two live
+ * researchers carry cannot say whose title it states, so it confers no authority, failing
+ * closed the way the official-page join does with several claimants (#5578). Remembered
+ * per researcher for the chunk; an identity write clears it with the rest of the joins.
+ */
+async function soleClaimedOfficialPageKeys(
+  researcher: any,
+  cache?: UserIdentityJoinCache,
+): Promise<ReadonlySet<string>> {
+  const researcherId = prefetchObjectIdString(researcher?._id);
+  const cached = researcherId ? cache?.soleClaimedPagesFor(researcherId) : undefined;
+  if (cached) return cached;
+  const officialUrls = (Array.isArray(researcher?.profileLinks) ? researcher.profileLinks : [])
+    .filter((link: ResearcherProfileLink) => link?.kind === 'YALE_OFFICIAL')
+    .map((link: ResearcherProfileLink) => textValue(link.url))
+    .filter(Boolean);
+  const claimantsByKey = await liveResearchersClaimingOfficialProfileUrls(officialUrls);
+  const keys: ReadonlySet<string> = new Set(
+    researcherOfficialProfileIdentityKeys(researcher).filter(
+      (key) => key && (claimantsByKey.get(key)?.length ?? 0) <= 1,
+    ),
+  );
+  if (researcherId) cache?.rememberSoleClaimedPages(researcherId, keys);
+  return keys;
+}
+
 /**
  * The read-only half of `materializeUserIdentityToResearcher`: which existing researcher a
  * person's `user` observations reach, and by which join. The inferred-PI lead resolver
@@ -7841,13 +8053,15 @@ export interface UserIdentityJoinResult {
  * materializer enriches rather than a narrower netid-then-name lookup (#4697).
  */
 function deriveUserIdentityFields(materializationObs: any[], now: Date) {
-  const resolverObs: ResolverObservation[] = materializationObs.map((o: any) => ({
-    field: o.field,
-    value: o.value,
-    sourceName: o.sourceName,
-    confidence: o.confidence,
-    observedAt: o.observedAt,
-  }));
+  const resolverObs: ResolverObservation[] = userTitleEvidence(materializationObs).map(
+    (o: any) => ({
+      field: o.field,
+      value: o.value,
+      sourceName: o.sourceName,
+      confidence: o.confidence,
+      observedAt: o.observedAt,
+    }),
+  );
   const resolved = resolveAllFields(resolverObs, { now });
   const resolvedValue = (field: string): unknown => resolved[field]?.value;
   const servedUserName = (field: string): string => {
@@ -8031,6 +8245,246 @@ export async function joinUserIdentityToExistingResearcher(
   };
 }
 
+const USER_KEY_HINT = { entityType: 1, entityKey: 1, field: 1, observedAt: -1 } as const;
+const USER_ID_HINT = { entityType: 1, entityId: 1, field: 1, observedAt: -1 } as const;
+
+function userKeyReferenceOf(observation: {
+  entityKey?: unknown;
+  entityId?: unknown;
+}): UserKeyReference | undefined {
+  const entityKey = textValue(observation.entityKey);
+  if (entityKey) return { entityKey };
+  const entityId = prefetchObjectIdString(observation.entityId);
+  return entityId ? { entityId } : undefined;
+}
+
+function sameUserKeyReference(a: UserKeyReference, b: UserKeyReference): boolean {
+  return userKeyReferenceId(a) === userKeyReferenceId(b);
+}
+
+/**
+ * Every person key the researcher's own identity can find: its netid in either key form,
+ * its address on a live `email` observation, and its official profile pages as a cited
+ * `sourceUrl`. Read from the researcher alone, so every key of one person sees one set.
+ */
+async function userKeysNamingResearcherIdentity(researcher: any): Promise<UserKeyReference[]> {
+  const netid = normalizedAccountNetid(researcher.identifiers?.netid);
+  const account: any = netid ? await Account.findOne({ netid }).select('email').lean() : null;
+  const emails = uniqueStrings(
+    [researcher.identifiers?.email, account?.email]
+      .map((email) => normalizedAccountEmail(email))
+      .filter((email): email is string => Boolean(email)),
+  );
+  const officialPages = uniqueStrings(
+    (researcher.profileLinks || [])
+      .filter((link: ResearcherProfileLink) => link.kind === 'YALE_OFFICIAL')
+      .flatMap((link: ResearcherProfileLink) => {
+        const url = textValue(link.url);
+        return url ? officialProfileUrlSpellings(url) : [];
+      }),
+  );
+  const clauses: Record<string, unknown>[] = [{ entityId: researcher._id }];
+  if (netid) clauses.push({ entityKey: { $in: [netid, `netid:${netid}`] } });
+  if (emails.length > 0) clauses.push({ field: 'email', value: { $in: emails } });
+  if (officialPages.length > 0) clauses.push({ sourceUrl: { $in: officialPages } });
+  const found = (await Observation.find(
+    { entityType: 'user', ...materializationReadScopeFilter(), $or: clauses },
+    { entityKey: 1, entityId: 1 },
+  ).lean()) as Array<{ entityKey?: unknown; entityId?: unknown }>;
+  const references = new Map<string, UserKeyReference>();
+  for (const observation of found) {
+    const reference = userKeyReferenceOf(observation);
+    if (reference) references.set(userKeyReferenceId(reference), reference);
+  }
+  return [...references.values()];
+}
+
+async function liveObservationsOfUserKeys(
+  references: readonly UserKeyReference[],
+  prefetch?: MaterializationReadSource,
+): Promise<Map<string, any[]>> {
+  const byReference = new Map<string, any[]>();
+  const unreadKeys: string[] = [];
+  const unreadIds: string[] = [];
+  for (const reference of references) {
+    const routed = reference.entityKey
+      ? prefetch?.observationsForKey('user', reference.entityKey)
+      : prefetch?.observationsForId('user', reference.entityId);
+    if (routed?.hit) byReference.set(userKeyReferenceId(reference), routed.value as any[]);
+    else if (reference.entityKey) unreadKeys.push(reference.entityKey);
+    else if (reference.entityId) unreadIds.push(reference.entityId);
+  }
+  const [byKey, byId] = await Promise.all([
+    unreadKeys.length > 0
+      ? Observation.find({
+          entityType: 'user',
+          ...materializationReadScopeFilter(),
+          entityKey: { $in: unreadKeys },
+        })
+          .hint(USER_KEY_HINT)
+          .lean()
+      : Promise.resolve([]),
+    unreadIds.length > 0
+      ? Observation.find({
+          entityType: 'user',
+          ...materializationReadScopeFilter(),
+          entityId: { $in: unreadIds.map((id) => new mongoose.Types.ObjectId(id)) },
+        })
+          .hint(USER_ID_HINT)
+          .lean()
+      : Promise.resolve([]),
+  ]);
+  for (const key of unreadKeys) byReference.set(userKeyReferenceId({ entityKey: key }), []);
+  for (const id of unreadIds) byReference.set(userKeyReferenceId({ entityId: id }), []);
+  for (const observation of byKey as any[]) {
+    byReference
+      .get(userKeyReferenceId({ entityKey: textValue(observation.entityKey) }))
+      ?.push(observation);
+  }
+  for (const observation of byId as any[]) {
+    const entityId = prefetchObjectIdString(observation.entityId);
+    if (entityId) byReference.get(userKeyReferenceId({ entityId }))?.push(observation);
+  }
+  return byReference;
+}
+
+function userTitleObservations(observations: readonly any[]): any[] {
+  return observations.filter(
+    (observation) =>
+      observation.field === 'title' &&
+      !shouldIgnoreObservationForEntityMaterialization('user', observation),
+  );
+}
+
+async function userKeyJoinEvidence(
+  reference: UserKeyReference,
+  readObservations: any[],
+  now: Date,
+): Promise<UserKeyJoinEvidence> {
+  const unscreened = partitionObservationsByInvalidatedRun(
+    readObservations,
+    await invalidatedScrapeRunIds(),
+  ).kept;
+  const kept = await withoutDirectoryContradictedProfileEvidenceForKey(
+    reference.entityKey,
+    unscreened,
+  );
+  const unjoined: UserKeyJoinEvidence = { researcherId: undefined, titleObservations: [] };
+  if (kept.length === 0) return unjoined;
+  const screened = await screenedUserIdentityJoin(reference, kept, now);
+  if ('skipped' in screened) return unjoined;
+  return {
+    researcherId: prefetchObjectIdString(screened.join.researcher?._id),
+    titleObservations: userTitleObservations(screened.observations),
+  };
+}
+
+function personTitleFrom(observations: readonly any[], now: Date): string | undefined {
+  const resolved = resolveField(
+    'title',
+    observations.map((observation) => ({
+      field: observation.field,
+      value: observation.value,
+      sourceName: observation.sourceName,
+      confidence: observation.confidence,
+      observedAt: observation.observedAt,
+    })),
+    { now },
+  );
+  return stripTitleFieldLabel(textValue(resolved?.value)) || undefined;
+}
+
+/**
+ * A researcher's title is resolved over the title evidence of every person key whose own
+ * engine join reaches the researcher, not over the one key being materialized, so the
+ * stored title no longer depends on which key materialized last (#5578). A key the
+ * researcher's identity cannot find (one the name resolver alone joined) adds its own
+ * title only when no key the researcher can find states one, which keeps the answer the
+ * same from both sides. That own-key fallback is the one title that is not the same from
+ * every key, so it is reported as such and the caller gates it by writer precedence.
+ */
+interface ResearcherTitle {
+  title: string | undefined;
+  fromOwnKeyFallback: boolean;
+  fromFreshFirstHand: boolean;
+}
+
+async function researcherTitleOverEveryJoiningKey(input: {
+  researcher: any;
+  identifier: UserKeyReference;
+  ownObservations: readonly any[];
+  ownTitle: string | undefined;
+  now: Date;
+  prefetch?: MaterializationReadSource;
+}): Promise<ResearcherTitle> {
+  const ownKeyFallback = (title: string | undefined): ResearcherTitle => ({
+    title,
+    fromOwnKeyFallback: true,
+    fromFreshFirstHand: false,
+  });
+  const researcherId = prefetchObjectIdString(input.researcher?._id);
+  if (!researcherId) return ownKeyFallback(input.ownTitle);
+  const cache = input.prefetch?.userIdentityJoins;
+  let candidates = cache?.candidatesFor(researcherId);
+  if (!candidates) {
+    candidates = await userKeysNamingResearcherIdentity(input.researcher);
+    cache?.rememberCandidates(researcherId, candidates);
+  }
+  const own = input.identifier;
+  const ownKeyIsFindable = candidates.some((candidate) => sameUserKeyReference(candidate, own));
+  const others = candidates.filter((candidate) => !sameUserKeyReference(candidate, own));
+  const evidence = new Map<string, UserKeyJoinEvidence>();
+  const unjoined: UserKeyReference[] = [];
+  for (const candidate of others) {
+    const cached = cache?.joinFor(candidate);
+    if (cached) evidence.set(userKeyReferenceId(candidate), cached);
+    else unjoined.push(candidate);
+  }
+  if (unjoined.length > 0) {
+    const observationsByReference = await liveObservationsOfUserKeys(unjoined, input.prefetch);
+    const joins = await Promise.all(
+      unjoined.map((candidate) =>
+        userKeyJoinEvidence(
+          candidate,
+          observationsByReference.get(userKeyReferenceId(candidate)) ?? [],
+          input.now,
+        ),
+      ),
+    );
+    unjoined.forEach((candidate, index) => {
+      cache?.rememberJoin(candidate, joins[index]);
+      evidence.set(userKeyReferenceId(candidate), joins[index]);
+    });
+  }
+  const refusals = input.researcher?.fieldValueRefusals;
+  const pooled: any[] = withoutResearcherRefusedObservations(
+    [...evidence.values()]
+      .filter((joined) => joined.researcherId === researcherId)
+      .flatMap((joined) => joined.titleObservations as any[]),
+    refusals,
+  );
+  const ownTitleObservations = withoutResearcherRefusedObservations(
+    userTitleObservations(input.ownObservations),
+    refusals,
+  );
+  if (ownKeyIsFindable) pooled.push(...ownTitleObservations);
+  const scope: FirstHandTitleScope = {
+    officialPageKeys: await soleClaimedOfficialPageKeys(input.researcher, cache),
+    latestFullRunIdByLane: await latestFullRunIdByFirstHandLane(cache),
+  };
+  const pooledTitle = personTitleFrom(userTitleEvidence(pooled, scope), input.now);
+  if (pooledTitle) {
+    return {
+      title: pooledTitle,
+      fromOwnKeyFallback: false,
+      fromFreshFirstHand: Boolean(newestFirstHandUserTitle(pooled, scope)),
+    };
+  }
+  return ownKeyFallback(
+    personTitleFrom(userTitleEvidence(ownTitleObservations, scope), input.now) ?? input.ownTitle,
+  );
+}
+
 export interface ScreenedPageWithdrawal {
   researcherId: string;
   officialLinkUrls: string[];
@@ -8196,6 +8650,35 @@ async function withoutPagesNamingAnotherNetid<T extends { sourceUrl?: unknown }>
   );
 }
 
+type ScreenedUserIdentityJoin =
+  | { join: UserIdentityJoinResult; observations: any[] }
+  | { skipped: 'office-mailbox-user-key' | 'page-evidence-names-another-netid' };
+
+/**
+ * The join a user key's own materialization acts on, shared with every reader that pools a
+ * key's evidence so a pooled key is screened exactly as it would be when it materializes.
+ */
+async function screenedUserIdentityJoin(
+  identifier: UserKeyReference,
+  observations: any[],
+  now: Date,
+): Promise<ScreenedUserIdentityJoin> {
+  if (userKeyNamesRoleOrUnitMailbox(identifier.entityKey, observations)) {
+    return { skipped: 'office-mailbox-user-key' };
+  }
+  const join = await joinUserIdentityToExistingResearcher(identifier, observations, now);
+  const joinedNetid = textValue(join.researcher?.identifiers?.netid).toLowerCase();
+  if (!join.researcher?._id || !joinedNetid) return { join, observations };
+  const kept = await withoutPagesNamingAnotherNetid(observations, joinedNetid);
+  if (kept.length === observations.length) return { join, observations };
+  const rejoined =
+    kept.length > 0 ? await joinUserIdentityToExistingResearcher(identifier, kept, now) : undefined;
+  if (!rejoined || String(rejoined.researcher?._id ?? '') !== String(join.researcher._id)) {
+    return { skipped: 'page-evidence-names-another-netid' };
+  }
+  return { join: rejoined, observations: kept };
+}
+
 async function officialPageNamesAnotherNetid(
   pageUrl: string,
   researcher: { identifiers?: { netid?: string } },
@@ -8257,6 +8740,16 @@ async function releaseFieldWritersThatNoLongerReach(
   }
 }
 
+function researcherJoinIdentitySnapshot(researcher: any): string {
+  return JSON.stringify([
+    researcher.displayName,
+    researcher.archived,
+    researcher.identifiers?.netid,
+    researcher.identifiers?.email,
+    (researcher.profileLinks || []).map((link: ResearcherProfileLink) => [link.kind, link.url]),
+  ]);
+}
+
 async function materializeUserIdentityToResearcher(
   identifier: { entityId?: string; entityKey?: string },
   obs: any[],
@@ -8272,24 +8765,9 @@ async function materializeUserIdentityToResearcher(
     skipped: reason,
   });
 
-  if (userKeyNamesRoleOrUnitMailbox(identifier.entityKey, obs)) {
-    return skipped('office-mailbox-user-key');
-  }
-  let join = await joinUserIdentityToExistingResearcher(identifier, obs, options.now ?? new Date());
-  const joinedNetid = textValue(join.researcher?.identifiers?.netid).toLowerCase();
-  if (join.researcher?._id && joinedNetid) {
-    const kept = await withoutPagesNamingAnotherNetid(obs, joinedNetid);
-    if (kept.length !== obs.length) {
-      const rejoined =
-        kept.length > 0
-          ? await joinUserIdentityToExistingResearcher(identifier, kept, options.now ?? new Date())
-          : undefined;
-      if (String(rejoined?.researcher?._id ?? '') !== String(join.researcher._id)) {
-        return skipped('page-evidence-names-another-netid');
-      }
-      join = rejoined!;
-    }
-  }
+  const screened = await screenedUserIdentityJoin(identifier, obs, options.now ?? new Date());
+  if ('skipped' in screened) return skipped(screened.skipped);
+  const { join, observations: screenedObservations } = screened;
   const {
     resolved,
     displayName,
@@ -8425,6 +8903,23 @@ async function materializeUserIdentityToResearcher(
     identityJoin = 'minted-from-pi-attribution';
   }
   const created = mintedFromPiAttribution;
+  const {
+    title: researcherTitle,
+    fromOwnKeyFallback: titleFromOwnKeyFallback,
+    fromFreshFirstHand: titleFromFreshFirstHand,
+  } = created
+    ? { title, fromOwnKeyFallback: true, fromFreshFirstHand: false }
+    : await researcherTitleOverEveryJoiningKey({
+        researcher,
+        identifier: identifier.entityKey
+          ? { entityKey: identifier.entityKey }
+          : { entityId: prefetchObjectIdString(identifier.entityId) },
+        ownObservations: screenedObservations,
+        ownTitle: title,
+        now: options.now ?? new Date(),
+        prefetch: options.chunkPrefetch,
+      });
+  const joinIdentityBeforeWrite = researcherJoinIdentitySnapshot(researcher);
 
   let fieldsWritten = heldPageFieldsWithdrawn;
   // An email-only or profile-URL-only join enriches the profile but never renames the
@@ -8434,11 +8929,14 @@ async function materializeUserIdentityToResearcher(
   const identityJoinedWithoutANameResolver =
     identityJoinedOnEmailAlone || identityJoinedOnOfficialProfileUrlAlone;
   const writerKey = identifier.entityKey || String(identifier.entityId ?? '');
+  const titleHeldByFallbackWriter = Boolean(
+    researcher.profileFieldWriters?.get?.(OWN_KEY_FALLBACK_TITLE_FIELD),
+  );
   if (writerKey) await releaseFieldWritersThatNoLongerReach(researcher, writerKey);
   const resolvedConfidence = (...fields: string[]): unknown =>
     fields.map((field) => resolved[field]?.confidence).find((value) => value !== undefined);
   const settleFieldWriter = (
-    field: ResearcherWriterField,
+    field: ResearcherGatedField,
     value: string | undefined,
     confidence: unknown,
   ): boolean => {
@@ -8469,8 +8967,32 @@ async function materializeUserIdentityToResearcher(
     fieldsWritten += 1;
   }
   researcher.profile = researcher.profile || {};
+  const servedTitle = normalizedResearcherProfileText(
+    'title',
+    servablePersonTitle(researcherTitle),
+  );
+  // #5578 is scoped to fresh first-hand reads: without one, a servable stored title stays as
+  // it is, and only an empty or unservable one is filled. A title an own-key fallback wrote
+  // stays under #5706 precedence, so the keys that fall back still settle. The rest is #5801.
+  const titleInScope =
+    titleFromFreshFirstHand ||
+    !servablePersonTitle(researcher.profile.title) ||
+    (titleFromOwnKeyFallback && titleHeldByFallbackWriter);
+  const titleWrites =
+    titleInScope &&
+    (!titleFromOwnKeyFallback ||
+      !writerKey ||
+      settleFieldWriter(OWN_KEY_FALLBACK_TITLE_FIELD, servedTitle, resolvedConfidence('title')));
+  if (titleInScope && !titleFromOwnKeyFallback && servedTitle) {
+    // A fallback writer recorded before the pool stated a title was never ranked against the
+    // keys that may fall back next, so it must not decide a later fallback round.
+    researcher.profileFieldWriters?.delete(OWN_KEY_FALLBACK_TITLE_FIELD);
+  }
+  if (titleWrites && servedTitle && researcher.profile.title !== servedTitle) {
+    researcher.profile.title = servedTitle;
+    fieldsWritten += 1;
+  }
   for (const [key, value, confidence] of [
-    ['title', servablePersonTitle(title), resolvedConfidence('title')],
     ['primaryDepartment', primaryDepartment, resolvedConfidence('primaryDepartment')],
     ['imageUrl', imageUrl, resolvedConfidence('imageUrl')],
     ['websiteUrl', websiteUrl, resolvedConfidence('websiteUrl', 'website')],
@@ -8482,7 +9004,7 @@ async function materializeUserIdentityToResearcher(
       fieldsWritten += 1;
     }
   }
-  if (!servablePersonTitle(title) && researcher.profile.title) {
+  if (researcher.profile.title) {
     const storedTitle = servablePersonTitle(researcher.profile.title);
     if (storedTitle !== researcher.profile.title) {
       researcher.profile.title = storedTitle;
@@ -8727,6 +9249,9 @@ async function materializeUserIdentityToResearcher(
       }
       throw error;
     }
+  }
+  if (created || researcherJoinIdentitySnapshot(researcher) !== joinIdentityBeforeWrite) {
+    options.chunkPrefetch?.userIdentityJoins?.forgetAll();
   }
 
   return {

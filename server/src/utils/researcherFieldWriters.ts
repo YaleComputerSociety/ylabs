@@ -8,16 +8,24 @@
  *
  * Rank: the identity join first (a netid reaches the person more surely than a name), then the
  * resolved candidate's confidence, then the key itself, so a tie still has one answer.
+ *
+ * `title` is not listed: it is resolved per researcher over every joining key with source
+ * authority (#5578), so a writer rank must not hold back the pooled value. Only a title a key
+ * falls back to from its own evidence, because the pool states none, is gated, under
+ * `OWN_KEY_FALLBACK_TITLE_FIELD`.
  */
 export const RESEARCHER_WRITER_FIELDS = [
   'displayName',
-  'title',
   'primaryDepartment',
   'imageUrl',
   'websiteUrl',
 ] as const;
 
 export type ResearcherWriterField = (typeof RESEARCHER_WRITER_FIELDS)[number];
+
+export const OWN_KEY_FALLBACK_TITLE_FIELD = 'title';
+
+export type ResearcherGatedField = ResearcherWriterField | typeof OWN_KEY_FALLBACK_TITLE_FIELD;
 
 const JOIN_RANK: Readonly<Record<string, number>> = {
   'account-netid': 4,
@@ -79,7 +87,7 @@ export type ResearcherFieldWriteDecision =
  */
 export function decideResearcherFieldWrite(
   writers: unknown,
-  field: ResearcherWriterField,
+  field: ResearcherGatedField,
   candidate: ResearcherFieldWriter,
   hasValue: boolean,
 ): ResearcherFieldWriteDecision {

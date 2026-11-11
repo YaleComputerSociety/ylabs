@@ -495,22 +495,4 @@ export function mintKeyIdentityFor(input: {
   };
 }
 
-export function officialProfileUrlSpellings(url: string): string[] {
-  const spellings = new Set([url]);
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return [...spellings];
-  }
-  const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
-  const path = parsed.pathname.replace(/\/+$/, '');
-  for (const scheme of ['https:', 'http:']) {
-    for (const prefix of ['', 'www.']) {
-      for (const slash of ['', '/']) {
-        spellings.add(`${scheme}//${prefix}${host}${path}${slash}${parsed.search}`);
-      }
-    }
-  }
-  return [...spellings];
-}
+export { officialProfileUrlSpellings } from '../scrapers/utils/officialProfileIdentityUrlKey';

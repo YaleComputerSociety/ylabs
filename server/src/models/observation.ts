@@ -41,6 +41,27 @@ export const researchEntityObservationSubjects = [
   'researchGroup',
 ] as readonly string[] as readonly ObservedEntityType[];
 
+/**
+ * Which part of a page a lane read the value from, for a lane whose one source can state a
+ * value in more than one place. Recorded beside the value, never inside its identity: it is
+ * outside the fingerprint and every hash and gate key, so adding it to a lane's emit leaves
+ * every existing observation reading as unchanged (#5578, #5076).
+ */
+export const observationExtractionSources = ['profileTitleBlock'] as const;
+
+export type ObservationExtractionSource = (typeof observationExtractionSources)[number];
+
+export interface ObservationExtraction {
+  source: ObservationExtractionSource;
+}
+
+const observationExtractionSchema = new mongoose.Schema(
+  {
+    source: { type: String, required: true, enum: [...observationExtractionSources] },
+  },
+  { _id: false },
+);
+
 const observationSchema = new mongoose.Schema(
   {
     entityType: {
@@ -121,6 +142,10 @@ const observationSchema = new mongoose.Schema(
       type: Boolean,
       required: false,
     },
+    extraction: {
+      type: observationExtractionSchema,
+      required: false,
+    },
     rollback: {
       rolledBackAt: { type: Date, required: false },
       reason: { type: String, maxlength: 500, required: false },
@@ -172,6 +197,21 @@ observationSchema.index(
   { field: 1, value: 1, superseded: 1 },
   { partialFilterExpression: { field: { $in: ['orcid', 'imageUrl'] } } },
 );
+/**
+ * The person-key lookup behind a researcher's pooled title asks which `user` keys print
+ * one researcher's address, as one arm of an `$or`. Without this that arm examined all
+ * 30,905 live user email observations on Development, about 885 ms per researcher (#5578).
+ * Partial on `field: 'email'` for the same 1024-byte reason as the index above, so a query
+ * must carry that `field` equality to use it.
+ *
+ * It leads on `field` rather than `entityType` on purpose: the planner hoists a predicate
+ * an `$or` arm shares with the top level, so the arm plans on `field` and `value` alone,
+ * and an `entityType`-first partial index was never a candidate for it. Measured on an
+ * in-memory `mongod`, the `entityType`-first shape left the arm on
+ * `entityType_1_field_1_superseded_1` (4,008 keys for 4 documents) and this one reads 8
+ * keys, pinned by `researcherPersonKeyLookupIndexPlan.integration.test.ts`.
+ */
+observationSchema.index({ field: 1, value: 1 }, { partialFilterExpression: { field: 'email' } });
 /**
  * The repair queue's evidence lookup sends `sourceUrl: { $in: variants }` with a
  * descending `observedAt` sort and a limit, so `observedAt` is the second key to let

@@ -45,6 +45,7 @@ describe('an empty researcher email is filled from identity-verified evidence on
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
+    await Observation.createIndexes();
   });
 
   afterAll(async () => {
