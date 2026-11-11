@@ -810,19 +810,17 @@ export async function dedupeAccountlessResearcherShells(options: {
     researcherIdentities,
   );
 
+  const nameOnlyShellIds = foldableShells
+    .filter((entry) => researcherIdentityTier(entry) === 'NAME_ONLY')
+    .map((entry) => entry.id);
   const nameVariantCandidatesByShellId = await loadNameVariantCandidates(
     RoleAssignment,
     mongoose.connection.collection('research_entities'),
     mongoose.connection.collection('observations'),
-    foldableShells
-      .filter((entry) => researcherIdentityTier(entry) === 'NAME_ONLY')
-      .map((entry) => entry.id),
+    nameOnlyShellIds,
     researcherIdentities,
   );
 
-  const nameOnlyShellIds = foldableShells
-    .filter((entry) => researcherIdentityTier(entry) === 'NAME_ONLY')
-    .map((entry) => entry.id);
   const listingAddressNetidsByShellId = await loadListingAddressNetids(
     RoleAssignment,
     mongoose.connection.collection('research_entities'),

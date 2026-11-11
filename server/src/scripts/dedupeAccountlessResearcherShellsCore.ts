@@ -753,7 +753,7 @@ export function decideShellMerge(
     listingAddressNetids,
     directoryEmailHolders,
   );
-  if (byDirectoryEmail) return byDirectoryEmail;
+  if (byDirectoryEmail?.merge) return byDirectoryEmail;
   const byRosterIdentity = decideRosterIdentityFold(shell, rosterIdentityCandidates);
   if (byRosterIdentity) return byRosterIdentity;
   const byVerifiedProfile = decideVerifiedProfileFold(shell, verifiedProfileIndex);
@@ -763,7 +763,8 @@ export function decideShellMerge(
   const byNameVariant = decideNameVariantSharedRowFold(shell, nameVariantCandidates);
   if (byNameVariant?.merge) return byNameVariant;
   const byName = decideExactNameFold(shell, canonicalNameIndex);
-  return byName.reason === 'NO_CANONICAL' && byNameVariant ? byNameVariant : byName;
+  if (byName.reason !== 'NO_CANONICAL') return byName;
+  return byNameVariant ?? byDirectoryEmail ?? byName;
 }
 
 function decideExactNameFold(

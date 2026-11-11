@@ -1267,6 +1267,35 @@ describe('directory-email fold (#5811)', () => {
     ).toMatchObject({ merge: false, reason: 'AMBIGUOUS_MULTIPLE_CANONICAL' });
   });
 
+  it('leaves a later arm free to fold when its own directory witness is ambiguous', () => {
+    const exactName = buildCanonicalNameIndex([
+      { id: '3', displayName: 'Avery Synthetic', email: 'avery.synthetic@example.test' },
+    ]);
+    const decideWith = (names: ReturnType<typeof buildCanonicalNameIndex>) =>
+      decideShellMerge(
+        shell('Avery Synthetic'),
+        names,
+        new Map(),
+        [],
+        new Map(),
+        [],
+        [],
+        [new Set(['fx901']), new Set(['fx902'])],
+        holdersOf(holder('1', 'Avery Synthetic')),
+      );
+    expect(decideWith(exactName)).toEqual({
+      merge: true,
+      canonicalId: '3',
+      reason: 'MERGEABLE',
+      matchedOn: 'name',
+    });
+    expect(decideWith(new Map())).toEqual({
+      merge: false,
+      reason: 'AMBIGUOUS_MULTIPLE_CANONICAL',
+      matchedOn: 'directory-email',
+    });
+  });
+
   it('never folds two people with distinct ORCIDs', () => {
     expect(
       decideDirectoryEmailFold(

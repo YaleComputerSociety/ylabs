@@ -354,6 +354,7 @@ It folds a `NAME_ONLY` shell into the one live record holding the netid the Yale
 The directory decides, so the name only vetoes, on surname and rank.
 An address the directory does not pair is no witness, an address or set of addresses pairing with more than one netid resolves to nobody, as does a netid two live records hold, and an ORCID conflict refuses.
 A directory record is never a shell, so two directory records stay two people, and an operator's distinct-people verdict refuses the fold like every other arm's.
+A refusal on this arm only withholds its own fold, so a later arm still decides the shell on its own evidence and guards.
 Measured on Development on 2026-11-11, read-only, it plans 11 folds, every one a center-listing shell, and no other arm reached any of them: 9 failed name agreement with no shared row, and 2 were name variants on a shared row with no linked-profile witness.
 The verified-profile arm exists because a programme roster mints under a go-by name and the directory account under the legal one, so the two records never share a name; the same live official profile page held as primary identity by both is the evidence that joins them.
 The arm requires `healthStatus: HEALTHY` rather than `verifiedAt`, because every writer and every probe stamps `verifiedAt`, dead or unprobed links included.
