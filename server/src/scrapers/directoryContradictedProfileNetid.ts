@@ -215,7 +215,7 @@ const directoryNetidsOf = (directory: DirectoryNetidsByAddress): Set<string> => 
  * The netids the Yale directory pairs with the email each person page states about itself,
  * keyed by `normalizeOfficialProfileDestination`. Every address a page has stated counts, so a page
  * that changed its address over time still names its owner. A page whose addresses the directory
- * gives to people who share no netid, such as a roster listing, is never read as one page's
+ * does not all pair with one shared netid, such as a roster listing, is never read as one page's
  * owner, and a page whose email the directory does not know decides nothing (#5693).
  */
 export async function profilePageOwnerNetids(

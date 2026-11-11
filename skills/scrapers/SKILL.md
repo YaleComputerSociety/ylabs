@@ -1757,7 +1757,7 @@ Three readers use it on every resolve, so nothing is locked:
 - it also clears an ORCID when every live observation asserting it was read from such a page.
 
 A researcher whose stored netid the directory does not hold is never contradicted, because that is usually the person's own email alias stamped as a netid.
-A page that has stated several addresses keeps every netid the directory pairs with them, so an owner who changed address is still the owner, but a page whose addresses the directory gives to people who share no netid, such as a roster listing, decides nothing.
+A page that has stated several addresses keeps every netid the directory pairs with them, so an owner who changed address is still the owner, but a page whose addresses the directory does not all pair with one shared netid, such as a roster listing, decides nothing.
 Measured on Development on 2026-11-11 before that rule, 22 of 24 screened lead observations were that alias shape.
 
 #### Press copy and publication lists are not a description (#4446)
