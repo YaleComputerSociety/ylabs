@@ -62,6 +62,7 @@ import {
   WRITER_ENTITY_PROJECTION,
   loadWriterObservations,
   loadWriterRowEvidence,
+  writerLeadNames,
   parseWriterEvidenceFile,
   readJsonInputFile,
   readSlugsFile,
@@ -620,6 +621,7 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
         entityType: entity.entityType,
         kind: entity.kind,
         identity: entity,
+        leadNames: await writerLeadNames(entity._id),
       },
     );
     report.snippets = snippets.length;
