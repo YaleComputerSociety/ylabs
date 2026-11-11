@@ -593,7 +593,9 @@ const normalizedBody = (value: unknown): string => textValue(value).replace(/\s+
  * body already served: retiring an adopted body on that verdict alone retired 180 bodies
  * in one all-rows run, 163 of which still passed every arm themselves. It must
  * pass verbatim, because the served text is the stored text and an arm that would have
- * trimmed it means the stored body is not what the arms accept.
+ * trimmed it means the stored body is not what the arms accept. A body that presents a
+ * person's clinical practice as research is retired too, because that is wrong whatever
+ * the redraft says (#5537).
  */
 export function adoptedWrittenBodyStillSupported(input: {
   body: unknown;
@@ -603,6 +605,15 @@ export function adoptedWrittenBodyStillSupported(input: {
 }): boolean {
   const body = normalizedBody(input.body);
   if (!body || input.snippets.length === 0) return false;
+  if (
+    isClinicalPracticeAsResearch({
+      description: body,
+      snippets: input.snippets,
+      entityType: input.entityType,
+    })
+  ) {
+    return false;
+  }
   const judged = judgeWrittenDescription({
     drafted: body,
     snippets: input.snippets,

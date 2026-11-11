@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { isPersonResearchRow, researchPassageOf } from '../researchStatementPassage';
+import {
+  isPersonResearchRow,
+  researchPassageOf,
+  researchPassageWithoutClinicalService,
+  withLabSiteDescriptionsNarrowedToResearch,
+} from '../researchStatementPassage';
 
 const RESEARCH = 'My research focuses on how coastal kelp forests recover after marine heatwaves.';
 const ELABORATION = 'The work combines long-term field surveys with models of urchin grazing.';
@@ -179,5 +184,68 @@ describe('"to better understand" is a research purpose for the writer only (#553
     expect(isBiographyRatherThanResearch(bio)).toBe(true);
     const { writerEvidenceTextOf } = await import('../../scrapers/coverageSynthesis');
     expect(writerEvidenceTextOf(sentence)).toBe(sentence);
+  });
+});
+
+describe('the resolver sets clinical service aside in a lab-site description (#5537)', () => {
+  const CARDIAC_RESEARCH =
+    'Her research focuses on how ion channel mutations cause arrhythmias in the developing heart.';
+  const CARDIAC_FOLLOW_ON =
+    'The work pairs stem-cell heart tissue with computational models of electrical conduction.';
+  const SPECIALTY = 'She specializes in the treatment of pediatric heart rhythm disorders.';
+  const CARE = 'She provides clinical care for children with congenital heart disease.';
+  const TRAINING = 'She completed her residency and fellowship at Example Children’s Hospital.';
+  const RECOGNITION = 'She has been nationally recognized for over 20 years.';
+
+  it('narrows a value with clinical-service and career sentences to its research sentences', () => {
+    const value = [
+      SPECIALTY,
+      CARDIAC_RESEARCH,
+      CARDIAC_FOLLOW_ON,
+      RECOGNITION,
+      CARE,
+      TRAINING,
+    ].join(' ');
+    expect(researchPassageWithoutClinicalService(value)).toBe(
+      `${CARDIAC_RESEARCH} ${CARDIAC_FOLLOW_ON}`,
+    );
+    expect(researchPassageOf(value)).toContain(RECOGNITION);
+  });
+
+  it('narrows a value with no clinical-service sentence exactly as before', () => {
+    for (const [, text] of [...EMPTIED, ...NARROWED]) {
+      expect(researchPassageWithoutClinicalService(text)).toBe(researchPassageOf(text));
+    }
+    const recognized = `${CARDIAC_RESEARCH} ${RECOGNITION}`;
+    expect(researchPassageWithoutClinicalService(recognized)).toBe(researchPassageOf(recognized));
+  });
+
+  it('drops a clinical-only value so the row falls back to its other sources', () => {
+    const observation = {
+      field: 'fullDescription',
+      sourceName: 'lab-microsite-description-llm',
+      value: `${SPECIALTY} ${CARE} ${TRAINING}`,
+    };
+    const other = { field: 'fullDescription', sourceName: 'ysm-faculty-directory', value: CARE };
+    expect(withLabSiteDescriptionsNarrowedToResearch([observation, other])).toEqual([other]);
+  });
+
+  it('leaves the writer evidence reading of the same value as it was', async () => {
+    const { gatherCoverageSnippets } = await import('../../scrapers/coverageSynthesis');
+    const value = `${SPECIALTY} ${CARDIAC_RESEARCH} ${RECOGNITION}`;
+    const snippets = gatherCoverageSnippets(
+      [
+        {
+          field: 'fullDescription',
+          value,
+          sourceName: 'lab-microsite-description-llm',
+          sourceUrl: 'https://heart.example.org/',
+          ingestVerifiedAgainstPage: true,
+        },
+      ],
+      undefined,
+      { narrowLabSiteDescriptions: true },
+    );
+    expect(snippets.map((snippet) => snippet.text)).toEqual([value]);
   });
 });

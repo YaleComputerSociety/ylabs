@@ -10,6 +10,7 @@ import {
   opensByStatingResearch,
   type ResearchStatementReading,
 } from './biographyRatherThanResearch';
+import { isClinicalServiceSentence, isClinicianCareerSentence } from './clinicalServiceSentence';
 
 const FIRST_PERSON_RESEARCH_ACTIVITY =
   /^(?:(?:Currently|Broadly|Primarily|Mainly),?\s+)?(?:I|We|Our\s+(?:lab|group|team))\s+(?:also\s+|mainly\s+|primarily\s+|currently\s+)?(?:study|develop|investigate|examine|explore|model|analy[sz]e|design|build|work\s+(?:on|in|mainly\s+in|at\s+the\s+intersection)|use\s+[^.]{0,80}\bto\s+(?:study|understand|examine|investigate)|focus\s+on|am\s+interested\s+in|are\s+interested\s+in|research)\b/i;
@@ -39,16 +40,18 @@ const isRecordOrCareerSentence = (sentence: string): boolean =>
   isCareerFactSentence(sentence) ||
   isTeachingOrPastTraineeSentence(sentence);
 
-/**
- * A lab-site description narrowed to the sentences that state research (#5648): each one that
- * states it, and each one after it that elaborates rather than records a career, a course, a
- * date or a former post. A value that states no research narrows to an empty string, because a
- * recipe, an awards list or a donation appeal copied off a homepage is not a description.
- */
-export function researchPassageOf(text: string, reading: ResearchStatementReading = {}): string {
+function passageOf(
+  sentences: readonly string[],
+  reading: ResearchStatementReading,
+  isSetAside: (sentence: string) => boolean,
+): string {
   const kept: string[] = [];
   let followsResearch = false;
-  for (const sentence of splitDescriptionSentences(text.replace(/\s+/g, ' ').trim())) {
+  for (const sentence of sentences) {
+    if (isSetAside(sentence)) {
+      followsResearch = false;
+      continue;
+    }
     if (statesResearchSentence(sentence, reading) && !isBibliographicCitationSentence(sentence)) {
       kept.push(sentence);
       followsResearch = true;
@@ -65,6 +68,34 @@ export function researchPassageOf(text: string, reading: ResearchStatementReadin
     followsResearch = false;
   }
   return kept.join(' ');
+}
+
+const sentencesOf = (text: string): string[] =>
+  splitDescriptionSentences(text.replace(/\s+/g, ' ').trim());
+
+/**
+ * A lab-site description narrowed to the sentences that state research (#5648): each one that
+ * states it, and each one after it that elaborates rather than records a career, a course, a
+ * date or a former post. A value that states no research narrows to an empty string, because a
+ * recipe, an awards list or a donation appeal copied off a homepage is not a description.
+ */
+export function researchPassageOf(text: string, reading: ResearchStatementReading = {}): string {
+  return passageOf(sentencesOf(text), reading, () => false);
+}
+
+const isClinicalServiceOrCareerSentence = (sentence: string): boolean =>
+  isClinicalServiceSentence(sentence) || isClinicianCareerSentence(sentence);
+
+/**
+ * The resolver's narrowing of a person's lab-site description (#5537): the research passage
+ * with each clinical-service sentence and clinician-career line set aside, so a specialty, the
+ * care given or a training line is neither kept as research nor carried as a follow-on. A value
+ * with no clinical-service sentence narrows exactly as `researchPassageOf` does.
+ */
+export function researchPassageWithoutClinicalService(text: string): string {
+  const sentences = sentencesOf(text);
+  if (!sentences.some(isClinicalServiceSentence)) return researchPassageOf(text);
+  return passageOf(sentences, {}, isClinicalServiceOrCareerSentence);
 }
 
 export const LAB_SITE_DESCRIPTION_SOURCE = 'lab-microsite-description-llm';
@@ -104,7 +135,7 @@ export function withLabSiteDescriptionsNarrowedToResearch<
 >(observations: readonly T[]): T[] {
   return observations.flatMap((observation) => {
     if (!isNarrowedLabSiteDescription(observation)) return [observation];
-    const passage = researchPassageOf(observation.value as string);
+    const passage = researchPassageWithoutClinicalService(observation.value as string);
     return passage ? [{ ...observation, value: passage }] : [];
   });
 }

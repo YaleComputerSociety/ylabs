@@ -77,7 +77,7 @@ describe('clinical practice presented as research (#5537)', () => {
   });
 });
 
-describe('the clinical-practice arm is writer-only (#5537)', () => {
+describe('the clinical-practice arm refuses writer drafts and retires adopted bodies (#5537)', () => {
   const body =
     'Studies cardiac arrhythmia, atrial fibrillation ablation and heart failure management.';
   const snippets = snippetsOf(clinicalOnlyProfile);
@@ -99,7 +99,20 @@ describe('the clinical-practice arm is writer-only (#5537)', () => {
     expect(judged(false)).toEqual({ description: body, refusal: null });
   });
 
-  it('leaves the adopted-body check unchanged', () => {
-    expect(adoptedWrittenBodyStillSupported({ body, snippets, entityType: PERSON })).toBe(true);
+  it('retires an adopted clinical "Studies <specialty>" body on refusal', () => {
+    expect(adoptedWrittenBodyStillSupported({ body, snippets, entityType: PERSON })).toBe(false);
+  });
+
+  it('keeps an adopted research body on a row that also lists clinical specialties', () => {
+    const researchBody =
+      'Studies how bone grafts heal in aging tissue and why some grafts fail to fuse.';
+    const researchSnippets = snippetsOf(clinicalPlusResearchProfile);
+    expect(
+      adoptedWrittenBodyStillSupported({
+        body: researchBody,
+        snippets: researchSnippets,
+        entityType: PERSON,
+      }),
+    ).toBe(true);
   });
 });

@@ -47,14 +47,14 @@ describe('lab-site descriptions resolve narrowed to research, as a derivation (#
     });
   });
 
-  const seed = (value: string) =>
+  const seed = (value: string, sourceName = 'lab-microsite-description-llm') =>
     Observation.create({
       entityType: 'researchEntity',
       entityKey: SLUG,
       field: 'fullDescription',
       value,
       sourceId: new mongoose.Types.ObjectId(),
-      sourceName: 'lab-microsite-description-llm',
+      sourceName,
       sourceUrl: 'https://kelp.example.org/',
       confidence: 0.9,
       observedAt: new Date(),
@@ -85,5 +85,23 @@ describe('lab-site descriptions resolve narrowed to research, as a derivation (#
     await seed(OFF_TOPIC);
     const result = await materializeEntity('researchEntity', { entityKey: SLUG }, { dryRun: true });
     expect(String(result.plannedSet?.fullDescription ?? '')).not.toContain('president-elect');
+  });
+
+  const SPECIALTY =
+    'She specializes in the treatment of coastal divers with decompression illness.';
+  const CARE = 'She provides clinical care for patients with diving injuries.';
+  const TRAINING = 'She completed her residency and fellowship at Example Hospital.';
+
+  it('sets clinical-service and career sentences aside and serves the research (#5537)', async () => {
+    await seed(`${SPECIALTY} ${RESEARCH} ${CARE} ${TRAINING}`);
+    const result = await materializeEntity('researchEntity', { entityKey: SLUG }, { dryRun: true });
+    expect(result.plannedSet?.fullDescription).toBe(RESEARCH);
+  });
+
+  it('falls back to another source when a value is clinical service only (#5537)', async () => {
+    await seed(`${SPECIALTY} ${CARE} ${TRAINING}`);
+    await seed(RESEARCH, 'ysm-faculty-directory');
+    const result = await materializeEntity('researchEntity', { entityKey: SLUG }, { dryRun: true });
+    expect(result.plannedSet?.fullDescription).toBe(RESEARCH);
   });
 });
