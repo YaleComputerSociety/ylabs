@@ -184,8 +184,8 @@ import { replaceNicknameInQuery, resolveNicknameInNameQuery } from './nameQueryN
 import { foldLatinDiacritics } from '../utils/latinDiacritics';
 import {
   orderServiceCoresBelowResearch,
-  readServiceCoreFacts,
   serviceCoreDemotionExemption,
+  serviceCoreDemotionSpan,
 } from './serviceCoreDemotion';
 import {
   maxReachableResearchSearchPage,
@@ -2966,11 +2966,37 @@ async function searchResearchGroupsForQuery(
       answeredAsNameSearch: keywordLegTopHitNamesTheQuery,
       filters: safeFilters,
     }) === null;
-  const servedOrder = demotesServiceCores
-    ? await orderServiceCoresBelowResearch(rerankedPool, {
+  const pageRowIds = (hits: any[]): string[] =>
+    hits
+      .map((hit: any) => hit.id || hit._id)
+      .map(normalizeResearchGroupObjectId)
+      .filter((id): id is string => Boolean(id));
+  const loadPageRows = async (ids: string[]): Promise<any[]> =>
+    ids.length > 0
+      ? ((await ResearchEntity.find({
+          _id: { $in: ids },
+          archived: { $ne: true },
+          ...mongoVisibilityFilter(safeFilters, safeOptions.includeNonPublic),
+        }).lean()) as any[])
+      : [];
+  // The demotion only reorders within its span, so the span plus the requested page
+  // holds every row the page can serve; one read supplies both the demotion facts and
+  // the page instead of a second round trip before hydration (#5748).
+  const preloadedPageRows = demotesServiceCores
+    ? await loadPageRows([
+        ...new Set(
+          pageRowIds([
+            ...rerankedPool.slice(0, serviceCoreDemotionSpan()),
+            ...rerankedPool.slice(offset, offset + safePageSize),
+          ]),
+        ),
+      ])
+    : null;
+  const servedOrder = preloadedPageRows
+    ? orderServiceCoresBelowResearch(rerankedPool, {
         queryTokens: normalizedQuery.tokens,
         idOf: candidateHitId,
-        readFacts: readServiceCoreFacts,
+        factsById: new Map(preloadedPageRows.map((row) => [String(row._id), row])),
         ...(ordersHiringFirst ? { tierOf: undergradInvitationRankOf } : {}),
       })
     : rerankedPool;
@@ -3029,18 +3055,12 @@ async function searchResearchGroupsForQuery(
       : undefined
     : disjunctiveRawFacetDistribution;
   const facetDistribution = toClientFacetDistribution(rawServedFacetDistribution);
-  const hitIds = orderedHits
-    .map((hit: any) => hit.id || hit._id)
-    .map(normalizeResearchGroupObjectId)
-    .filter((id): id is string => Boolean(id));
+  const hitIds = pageRowIds(orderedHits);
+  const servedHitIds = new Set(hitIds);
   const visibleEntities = withServablePublicResearchEntities(
-    hitIds.length > 0
-      ? ((await ResearchEntity.find({
-          _id: { $in: hitIds },
-          archived: { $ne: true },
-          ...mongoVisibilityFilter(safeFilters, safeOptions.includeNonPublic),
-        }).lean()) as any[])
-      : [],
+    preloadedPageRows
+      ? preloadedPageRows.filter((row) => servedHitIds.has(researchGroupDocumentId(row._id)))
+      : await loadPageRows(hitIds),
     safeOptions.includeNonPublic,
   );
   const visibleEntitiesById = new Map(

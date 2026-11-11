@@ -676,7 +676,8 @@ Cores stay listed and reachable, because a core can be a real way into research 
 `orderServiceCoresBelowResearch` in `services/serviceCoreDemotion.ts` moves every demoted row in the first `SERVICE_CORE_DEMOTION_WINDOW` (30) rows of the served pool below every other row of that window, keeping both groups in their own order, and leaves every row after the window in place.
 A row is demoted when it is typed `CORE_FACILITY`, or when it is a `FACULTY_RESEARCH_AREA` row whose short or full description opens with a core's service offer (`researchTextIsCoreServiceText`: a first sentence where "provides" or "offers", within six words of its start, governs "services" or "support for ... instruments", and no clinical, care, patient, legal or counselling word sits in between).
 On Development on 2026-11-11 that text predicate flagged 6 faculty rows (5 served), all 6 judged cores, and no other faculty row; it is not applied to other types, so one `CENTER` row with a sequencing service opening is left to the kind-inference follow-up.
-The facts come from one Mongo read of the window's core and faculty rows (`readServiceCoreFacts`, title, type and descriptions), because a candidate hit carries no title or description; a failed or skipped read serves today's order.
+The facts come from the stored rows, because a candidate hit carries no title or description, and they cost no extra round trip: the demotion only reorders within the window, so the window plus the requested page holds every row the page can serve, and one Mongo read of that set supplies both the demotion and the page.
+A stored row the read does not return (archived, or outside the visibility scope) is never demoted, which changes nothing a student sees, because the page drops it either way.
 
 Three things exempt a search or a row:
 

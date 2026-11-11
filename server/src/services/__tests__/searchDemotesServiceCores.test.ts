@@ -10,7 +10,6 @@ const mocks = vi.hoisted(() => ({
   emptyFind: vi.fn(),
   getResearchSearchQueryVector: vi.fn(),
   rerankFindOne: vi.fn(),
-  readServiceCoreFacts: vi.fn(),
 }));
 
 vi.mock('../../utils/meiliClient', () => ({
@@ -37,10 +36,6 @@ vi.mock('../../models/searchRerankCache', () => ({
 }));
 vi.mock('../researchSearchQueryEmbedding', () => ({
   getResearchSearchQueryVector: mocks.getResearchSearchQueryVector,
-}));
-vi.mock('../serviceCoreDemotion', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../serviceCoreDemotion')>()),
-  readServiceCoreFacts: mocks.readServiceCoreFacts,
 }));
 
 import {
@@ -140,7 +135,7 @@ const entityFor = (id: string) => ({
   slug: slugOf(id),
   name: nameOf(id),
   kind: 'lab',
-  entityType: entityTypeOf(id),
+  entityType: storedTypesAreCores ? entityTypeOf(id) : 'LAB',
   departments: ['Synthetic Department'],
   researchAreas: ['Coastal Ecology'],
   sourceUrls: [],
@@ -169,8 +164,10 @@ const searchTopic = (
     { includeFacets: true },
   );
 
-const withoutDemotionReads = () =>
-  mocks.readServiceCoreFacts.mockImplementation(async () => new Map());
+let storedTypesAreCores = true;
+const withoutDemotionReads = () => {
+  storedTypesAreCores = false;
+};
 
 beforeEach(() => {
   vi.unstubAllEnvs();
@@ -202,10 +199,7 @@ beforeEach(() => {
   });
   mocks.rerankFindOne.mockReset();
   mocks.rerankFindOne.mockImplementation(() => queryResult(null));
-  mocks.readServiceCoreFacts.mockReset();
-  mocks.readServiceCoreFacts.mockImplementation(
-    async (ids: readonly string[]) => new Map(ids.map((id) => [id, entityFor(id)])),
-  );
+  storedTypesAreCores = true;
 });
 
 afterEach(() => {
@@ -228,12 +222,7 @@ describe('a topic search over a pool holding service cores (#5748)', () => {
     expect(served.slice(SERVICE_CORE_DEMOTION_WINDOW)).toEqual(
       ROW_IDS.slice(SERVICE_CORE_DEMOTION_WINDOW),
     );
-    expect(mocks.readServiceCoreFacts).toHaveBeenCalledTimes(1);
-    expect(mocks.readServiceCoreFacts.mock.calls[0][0]).toEqual([
-      CORE_ROW,
-      SECOND_CORE_ROW,
-      SERVICE_TEXT_ROW,
-    ]);
+    expect(mocks.researchEntityFind).toHaveBeenCalledTimes(1);
   });
 
   it('reorders only: the total and the facet counts are the undemoted search', async () => {
@@ -246,6 +235,20 @@ describe('a topic search over a pool holding service cores (#5748)', () => {
     expect(demoted.estimatedTotalHits).toBe(undemoted.estimatedTotalHits);
     expect(demoted.facetDistribution).toEqual(undemoted.facetDistribution);
     expect(demoted.facetDistribution?.entityType).toMatchObject({ CORE_FACILITY: 3 });
+  });
+
+  it('loads the window and the requested page in one read and serves only the page', async () => {
+    const result = await searchTopic('coastal ecology', {}, 4, 10);
+
+    expect(mocks.researchEntityFind).toHaveBeenCalledTimes(1);
+    const loaded = mocks.researchEntityFind.mock.calls[0][0]._id.$in;
+    expect(new Set(loaded)).toEqual(
+      new Set([...ROW_IDS.slice(0, SERVICE_CORE_DEMOTION_WINDOW), ...ROW_IDS.slice(30, 40)]),
+    );
+    expect(servedIdsOf(result)).toEqual(ROW_IDS.slice(30, 40));
+    const rosterReadIds = JSON.stringify(mocks.emptyFind.mock.calls);
+    expect(rosterReadIds).toContain(ROW_IDS[30]);
+    expect(ROW_IDS.slice(0, 30).filter((id) => rosterReadIds.includes(id))).toEqual([]);
   });
 
   it('serves the same order page by page', async () => {
@@ -267,7 +270,6 @@ describe('a topic search over a pool holding service cores (#5748)', () => {
     nameQueryTopHit = true;
     const served = servedIdsOf(await searchTopic(SYNTHETIC_SURNAME.toLowerCase()));
     expect(served).toEqual(ROW_IDS);
-    expect(mocks.readServiceCoreFacts).not.toHaveBeenCalled();
   });
 
   it('leaves the order alone when the Type filter selects cores', async () => {
@@ -275,7 +277,6 @@ describe('a topic search over a pool holding service cores (#5748)', () => {
       await searchTopic('coastal ecology', { entityType: ['CORE_FACILITY', 'LAB'] }),
     );
     expect(served.slice(0, 4)).toEqual(ROW_IDS.slice(0, 4));
-    expect(mocks.readServiceCoreFacts).not.toHaveBeenCalled();
   });
 
   it('still demotes under a Type filter that does not select cores', async () => {
@@ -309,10 +310,9 @@ describe('a topic search over a pool holding service cores (#5748)', () => {
     expect(candidates.researchEntities.slice(0, 4).map((entity) => entity.slug)).toEqual(
       ROW_IDS.slice(0, 4).map(slugOf),
     );
-    expect(mocks.readServiceCoreFacts).not.toHaveBeenCalled();
   });
 
-  it('serves the undemoted order when the facts read returns nothing', async () => {
+  it('demotes by the stored type, not the indexed one', async () => {
     withoutDemotionReads();
     expect(servedIdsOf(await searchTopic())).toEqual(ROW_IDS);
   });

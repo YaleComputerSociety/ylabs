@@ -1,11 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import mongoose from 'mongoose';
-
-const mocks = vi.hoisted(() => ({ researchEntityFind: vi.fn() }));
-
-vi.mock('../../models/researchEntity', () => ({
-  ResearchEntity: { find: mocks.researchEntityFind },
-}));
+import { describe, expect, it } from 'vitest';
 
 import {
   SERVICE_CORE_BEHIND_RESEARCH_ROWS,
@@ -13,7 +6,6 @@ import {
   demoteServiceCoresBelowResearch,
   orderServiceCoresBelowResearch,
   queryNamesTheRow,
-  readServiceCoreFacts,
   researchTextIsCoreServiceText,
   serviceCoreDemotionExemption,
   serviceCoreDemotionReason,
@@ -251,122 +243,61 @@ describe('demoteServiceCoresBelowResearch', () => {
 });
 
 describe('orderServiceCoresBelowResearch', () => {
-  const factsFor = (entries: Record<string, ServiceCoreFacts>) =>
-    vi.fn(
-      async (requested: readonly string[]) =>
-        new Map(requested.filter((id) => entries[id]).map((id) => [id, entries[id]])),
-    );
-
-  it('reads facts only for core and faculty rows in the window and demotes the cores', async () => {
-    const readFacts = factsFor({
-      'core-a': { entityType: 'CORE_FACILITY', name: 'Example Analytical Core' },
-      p1: {
-        entityType: 'FACULTY_RESEARCH_AREA',
-        name: 'Example Person',
-        shortDescription: 'Studies chemistry.',
-      },
+  const order = (
+    pool: Array<{ id: string; entityType: string }>,
+    queryTokens: string[],
+    facts: Record<string, ServiceCoreFacts>,
+  ) =>
+    orderServiceCoresBelowResearch(pool, {
+      queryTokens,
+      idOf: (hit) => hit.id,
+      factsById: new Map(Object.entries(facts)),
     });
+
+  it('demotes the cores of the window by their stored facts', () => {
     const pool = [
       row('core-a', 'CORE_FACILITY'),
       row('lab-1'),
       row('p1', 'FACULTY_RESEARCH_AREA'),
       row('center-1', 'CENTER'),
     ];
-
-    const ordered = await orderServiceCoresBelowResearch(pool, {
-      queryTokens: ['chemistry'],
-      idOf: (hit) => hit.id,
-      readFacts,
+    const ordered = order(pool, ['chemistry'], {
+      'core-a': { entityType: 'CORE_FACILITY', name: 'Example Analytical Core' },
+      p1: {
+        entityType: 'FACULTY_RESEARCH_AREA',
+        name: 'Example Person',
+        shortDescription: 'Studies chemistry.',
+      },
+      'lab-1': {
+        entityType: 'LAB',
+        shortDescription: 'Provides imaging services to investigators.',
+      },
     });
-
-    expect(readFacts).toHaveBeenCalledWith(['core-a', 'p1']);
     expect(ids(ordered)).toEqual(['lab-1', 'p1', 'center-1', 'core-a']);
   });
 
-  it('keeps a core the query names, and a row whose facts were not read', async () => {
+  it('keeps a core the query names, and a core with no stored facts', () => {
     const pool = [row('core-a', 'CORE_FACILITY'), row('core-b', 'CORE_FACILITY'), row('lab-1')];
-    const ordered = await orderServiceCoresBelowResearch(pool, {
-      queryTokens: ['example', 'analytical'],
-      idOf: (hit) => hit.id,
-      readFacts: factsFor({
-        'core-a': { entityType: 'CORE_FACILITY', name: 'Example Analytical Core' },
-      }),
+    const ordered = order(pool, ['example', 'analytical'], {
+      'core-a': { entityType: 'CORE_FACILITY', name: 'Example Analytical Core' },
     });
     expect(ids(ordered)).toEqual(ids(pool));
   });
 
-  it('leaves a core past the window where it is', async () => {
+  it('leaves a core past the window where it is', () => {
     const research = Array.from({ length: SERVICE_CORE_DEMOTION_WINDOW }, (_, index) =>
       row(`r${index}`),
     );
     const pool = [...research, row('core-late', 'CORE_FACILITY'), row('r-last')];
-    const readFacts = factsFor({ 'core-late': { entityType: 'CORE_FACILITY', name: 'Late Core' } });
-
-    const ordered = await orderServiceCoresBelowResearch(pool, {
-      queryTokens: ['chemistry'],
-      idOf: (hit) => hit.id,
-      readFacts,
-    });
-
-    expect(readFacts).not.toHaveBeenCalled();
-    expect(ordered).toBe(pool);
-  });
-
-  it('skips the read when the window holds no core or faculty row', async () => {
-    const readFacts = factsFor({});
-    const pool = [row('lab-1'), row('center-1', 'CENTER')];
     expect(
-      await orderServiceCoresBelowResearch(pool, {
-        queryTokens: ['x'],
-        idOf: (hit) => hit.id,
-        readFacts,
+      order(pool, ['chemistry'], {
+        'core-late': { entityType: 'CORE_FACILITY', name: 'Late Core' },
       }),
     ).toBe(pool);
-    expect(readFacts).not.toHaveBeenCalled();
-  });
-});
-
-describe('readServiceCoreFacts', () => {
-  const setReadyState = (value: number) =>
-    Object.defineProperty(mongoose.connection, 'readyState', { value, configurable: true });
-
-  afterEach(() => {
-    delete (mongoose.connection as unknown as Record<string, unknown>).readyState;
-    mocks.researchEntityFind.mockReset();
   });
 
-  it('reads the title, type and description fields of the requested rows', async () => {
-    setReadyState(1);
-    const select = vi.fn(() => ({
-      lean: async () => [{ _id: 'row-1', entityType: 'CORE_FACILITY' }],
-    }));
-    mocks.researchEntityFind.mockReturnValue({ select });
-
-    const facts = await readServiceCoreFacts(['row-1']);
-
-    expect(mocks.researchEntityFind).toHaveBeenCalledWith({ _id: { $in: ['row-1'] } });
-    expect(select).toHaveBeenCalledWith(
-      'entityType name displayName shortDescription fullDescription',
-    );
-    expect(facts.get('row-1')).toMatchObject({ entityType: 'CORE_FACILITY' });
-  });
-
-  it('reads nothing without a connection or without ids', async () => {
-    setReadyState(0);
-    expect((await readServiceCoreFacts(['row-1'])).size).toBe(0);
-    setReadyState(1);
-    expect((await readServiceCoreFacts([])).size).toBe(0);
-    expect(mocks.researchEntityFind).not.toHaveBeenCalled();
-  });
-
-  it('returns no facts when the read fails, so nothing is demoted', async () => {
-    setReadyState(1);
-    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    mocks.researchEntityFind.mockImplementation(() => {
-      throw new Error('read failed');
-    });
-
-    expect((await readServiceCoreFacts(['row-1'])).size).toBe(0);
-    consoleError.mockRestore();
+  it('serves the pool unchanged when the window holds no core or faculty row', () => {
+    const pool = [row('lab-1'), row('center-1', 'CENTER')];
+    expect(order(pool, ['x'], {})).toBe(pool);
   });
 });

@@ -1,7 +1,4 @@
-import mongoose from 'mongoose';
-import { ResearchEntity } from '../models/researchEntity';
 import { foldLatinDiacritics } from '../utils/latinDiacritics';
-import { sanitizeLogValue } from '../utils/logSanitizer';
 
 export const SERVICE_CORE_DEMOTION_WINDOW = 30;
 // Measured on #5748: behind 3 research rows cleared 1 of the 6 judged queries, behind 10 and
@@ -12,7 +9,7 @@ export const SERVICE_CORE_BEHIND_RESEARCH_ROWS = Number.POSITIVE_INFINITY;
 export const CORE_FACILITY_ENTITY_TYPE = 'CORE_FACILITY';
 const CORE_FACILITY_KIND = 'core_facility';
 const FACULTY_RESEARCH_ENTITY_TYPE = 'FACULTY_RESEARCH_AREA';
-const FACT_READ_ENTITY_TYPES = new Set([CORE_FACILITY_ENTITY_TYPE, FACULTY_RESEARCH_ENTITY_TYPE]);
+const DEMOTABLE_ENTITY_TYPES = new Set([CORE_FACILITY_ENTITY_TYPE, FACULTY_RESEARCH_ENTITY_TYPE]);
 
 export interface ServiceCoreFacts {
   entityType?: unknown;
@@ -197,56 +194,31 @@ export const serviceCoreDemotionSpan = (
   window: number = SERVICE_CORE_DEMOTION_WINDOW,
 ): number => window + (Number.isFinite(behindResearchRows) ? behindResearchRows : 0);
 
-let factReadFailureReported = false;
-
-export async function readServiceCoreFacts(
-  ids: readonly string[],
-): Promise<Map<string, ServiceCoreFacts>> {
-  const facts = new Map<string, ServiceCoreFacts>();
-  if (ids.length === 0 || mongoose.connection.readyState !== 1) return facts;
-  try {
-    const rows = (await ResearchEntity.find({ _id: { $in: [...ids] } })
-      .select('entityType name displayName shortDescription fullDescription')
-      .lean()) as Array<ServiceCoreFacts & { _id?: unknown }>;
-    for (const row of rows) facts.set(String(row._id), row);
-  } catch (error) {
-    if (!factReadFailureReported) {
-      factReadFailureReported = true;
-      console.error(
-        '[search] service core facts read failed, so the page is served without the core demotion (#5748):',
-        sanitizeLogValue(error),
-      );
-    }
-  }
-  return facts;
-}
-
 export interface OrderServiceCoresOptions<T> {
   queryTokens: readonly string[];
   idOf: (hit: T) => string;
+  factsById: ReadonlyMap<string, ServiceCoreFacts>;
   tierOf?: (hit: T) => number;
-  readFacts: (ids: readonly string[]) => Promise<Map<string, ServiceCoreFacts>>;
 }
 
-export async function orderServiceCoresBelowResearch<T extends { entityType?: unknown }>(
+export const orderServiceCoresBelowResearch = <T extends { entityType?: unknown }>(
   pool: T[],
-  { queryTokens, idOf, tierOf, readFacts }: OrderServiceCoresOptions<T>,
-): Promise<T[]> {
-  const candidateIds = pool
-    .slice(0, SERVICE_CORE_DEMOTION_WINDOW)
-    .filter(
-      (hit) => typeof hit.entityType === 'string' && FACT_READ_ENTITY_TYPES.has(hit.entityType),
-    )
-    .map(idOf);
-  if (candidateIds.length === 0) return pool;
-  const facts = await readFacts(candidateIds);
+  { queryTokens, idOf, factsById, tierOf }: OrderServiceCoresOptions<T>,
+): T[] => {
   const demotedIds = new Set(
-    candidateIds.filter((id) => {
-      const row = facts.get(id);
-      return (
-        row !== undefined && isDemotedServiceCoreReason(serviceCoreDemotionReason(row, queryTokens))
-      );
-    }),
+    pool
+      .slice(0, SERVICE_CORE_DEMOTION_WINDOW)
+      .filter(
+        (hit) => typeof hit.entityType === 'string' && DEMOTABLE_ENTITY_TYPES.has(hit.entityType),
+      )
+      .map(idOf)
+      .filter((id) => {
+        const row = factsById.get(id);
+        return (
+          row !== undefined &&
+          isDemotedServiceCoreReason(serviceCoreDemotionReason(row, queryTokens))
+        );
+      }),
   );
   if (demotedIds.size === 0) return pool;
   const span = serviceCoreDemotionSpan();
@@ -257,4 +229,4 @@ export async function orderServiceCoresBelowResearch<T extends { entityType?: un
     }),
     ...pool.slice(span),
   ];
-}
+};
