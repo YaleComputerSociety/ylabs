@@ -3,7 +3,12 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { readRefTips, scanRefTipsForLaneConfigs, type GitRunner } from '../laneConfigRefScan';
+import {
+  codeShasReachableFromRefs,
+  readRefTips,
+  scanRefTipsForLaneConfigs,
+  type GitRunner,
+} from '../laneConfigRefScan';
 import { scanLaneConfigRefs } from '../retireOrphanedLaneConfigs';
 
 const ROSTER = 'dept-faculty-roster';
@@ -12,6 +17,8 @@ const CONFIG_FILE = 'server/src/scrapers/sources/rosterConfigs.ts';
 describe('lane config ref scan (#5807)', () => {
   let workTree: string;
   let gitDir: string;
+  let droppedLaneCommit: string;
+  let deletedBranchCommit: string;
 
   const git = (...args: string[]) =>
     execFileSync('git', args, {
@@ -49,8 +56,21 @@ describe('lane config ref scan (#5807)', () => {
       "export const CONFIGS = [{ deptKey: 'chem' }, { deptKey: 'dropped-lane' }];\n",
       'add dropped lane',
     );
+    droppedLaneCommit = git('rev-parse', 'HEAD').trim();
     commitFile(CONFIG_FILE, "export const CONFIGS = [{ deptKey: 'chem' }];\n", 'drop it');
     git('switch', '-q', 'beta');
+    git('switch', '-q', '-c', 'feat/root-lane');
+    commitFile(
+      'server/src/scrapers/rootConfigs.ts',
+      "export const ROOT = [{ deptKey: 'root-lane' }];\n",
+      'root lane',
+    );
+    git('switch', '-q', 'beta');
+    git('switch', '-q', '-c', 'feat/deleted');
+    commitFile(CONFIG_FILE, "export const CONFIGS = [{ deptKey: 'deleted-lane' }];\n", 'deleted');
+    deletedBranchCommit = git('rev-parse', 'HEAD').trim();
+    git('switch', '-q', 'beta');
+    git('branch', '-q', '-D', 'feat/deleted');
     git('tag', '-a', 'v-tagged', '-m', 'tagged');
     commitFile(
       'server/src/scrapers/__tests__/fixture.test.ts',
@@ -72,6 +92,10 @@ describe('lane config ref scan (#5807)', () => {
     expect(presence.refs).toEqual([`${gitDir}#refs/heads/feat/pending-lane`]);
   });
 
+  it('finds a config defined directly in the lane config root', () => {
+    expect(scan('root-lane').refs).toEqual([`${gitDir}#refs/heads/feat/root-lane`]);
+  });
+
   it('finds a config the checked-out branch and its tag define', () => {
     expect(scan('chem').refs.length).toBeGreaterThanOrEqual(4);
   });
@@ -80,6 +104,17 @@ describe('lane config ref scan (#5807)', () => {
     expect(scan('dropped-lane').refs).toEqual([]);
     expect(scan('test-only-lane').refs).toEqual([]);
     expect(scan('never-existed').refs).toEqual([]);
+    expect(scan('deleted-lane').refs).toEqual([]);
+  });
+
+  it('reaches a recorded run commit only through a ref that still holds it', () => {
+    const unknown = 'f'.repeat(40);
+    expect(
+      codeShasReachableFromRefs(
+        [droppedLaneCommit, deletedBranchCommit, unknown, '--all'],
+        [gitDir],
+      ),
+    ).toEqual(new Set([droppedLaneCommit]));
   });
 
   it('counts every ref, peeling an annotated tag to its commit', () => {
@@ -90,6 +125,7 @@ describe('lane config ref scan (#5807)', () => {
       'refs/heads/beta',
       'refs/heads/feat/added-then-dropped',
       'refs/heads/feat/pending-lane',
+      'refs/heads/feat/root-lane',
       'refs/tags/v-tagged',
     ]);
     expect(tips.refCount).toBeGreaterThanOrEqual(4);

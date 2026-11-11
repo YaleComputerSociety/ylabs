@@ -35,6 +35,7 @@ import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   currentGitCommonDir,
+  codeShasReachableFromRefs,
   defaultGitRunner,
   readRefTips,
   scanRefTipsForLaneConfigs,
@@ -74,7 +75,6 @@ export interface RetireOrphanedLaneConfigsOptions {
   configs: RequestedLaneConfig[];
   gitDirs: string[];
   output?: string;
-  skipProjection: boolean;
 }
 
 export function parseRetireOrphanedLaneConfigsArgs(
@@ -85,7 +85,6 @@ export function parseRetireOrphanedLaneConfigsArgs(
     confirmed: false,
     configs: [],
     gitDirs: [],
-    skipProjection: false,
   };
   const valueOf = (arg: string, flag: string, index: number): [string, number] =>
     arg === flag ? [argv[index + 1] ?? '', index + 1] : [arg.slice(flag.length + 1), index];
@@ -94,7 +93,6 @@ export function parseRetireOrphanedLaneConfigsArgs(
     if (arg === '--apply') options.apply = true;
     else if (arg === '--dry-run') options.apply = false;
     else if (arg === CONFIRM_FLAG) options.confirmed = true;
-    else if (arg === '--skip-projection') options.skipProjection = true;
     else if (arg === '--configs' || arg.startsWith('--configs=')) {
       const [value, next] = valueOf(arg, '--configs', i);
       options.configs.push(...parseRequestedLaneConfigs(value));
@@ -112,9 +110,6 @@ export function parseRetireOrphanedLaneConfigsArgs(
   }
   if (options.configs.length === 0) {
     throw new Error(`${SCRIPT_NAME} requires --configs, so a run names exactly what it judges`);
-  }
-  if (options.apply && options.skipProjection) {
-    throw new Error(`${SCRIPT_NAME} --apply always projects the served diff first`);
   }
   return options;
 }
@@ -553,7 +548,7 @@ export async function runOrphanedLaneConfigRetirement(input: {
   refPresence: readonly LaneConfigRefPresence[];
   scannedRepositories: Array<{ gitDir: string; refs: number; tipCommits: number }>;
   lanes?: readonly OrphanLaneDefinition[];
-  skipProjection?: boolean;
+  codeShasOnRef: (codeShas: readonly string[]) => ReadonlySet<string>;
   readServedEntity?: (slug: string) => Promise<Record<string, unknown> | null>;
   log?: (message: string) => void;
 }): Promise<{
@@ -569,6 +564,9 @@ export async function runOrphanedLaneConfigRetirement(input: {
     refPresence: input.refPresence,
     observations: evidence.observations,
     runs: evidence.runs,
+    codeShasOnRef: input.codeShasOnRef(
+      evidence.runs.flatMap((run) => (run.codeSha ? [run.codeSha] : [])),
+    ),
   });
   const notOrphaned = plan.verdicts.filter((entry) => entry.verdict.status !== 'orphaned');
   if (input.apply && notOrphaned.length > 0) {
@@ -582,73 +580,70 @@ export async function runOrphanedLaneConfigRetirement(input: {
   const excludedIds = plan.observationIdsToRetire.map((id) => new mongoose.Types.ObjectId(id));
   const retiredIdSet = new Set(plan.observationIdsToRetire);
   const rows: ServedRowDiff[] = [];
-  let personKeys: PersonKeyDiff[] = [];
   const liveRows = await affectedLiveResearchRows(plan);
   const retiredIdentities = await retiredEvidenceIdentities(plan);
   const onlyFieldsByEntityType = projectionOnlyFields(plan);
   input.log?.(
     `planned ${plan.observationIdsToRetire.length} observations over ${liveRows.size} live research rows`,
   );
-  if (!input.skipProjection) {
-    const readServed =
-      input.readServedEntity ??
-      (async (slug: string) =>
-        ((await getResearchGroupDetail(slug))?.researchEntity as
-          Record<string, unknown> | undefined) ?? null);
-    for (const [slug, { doc, retiredOnRow }] of [...liveRows.entries()].sort(([a], [b]) =>
-      a.localeCompare(b),
-    )) {
-      input.log?.(`projecting research row ${rows.length + 1} of ${liveRows.size}`);
-      const researchOnlyFields = onlyFieldsByEntityType.researchEntity ?? [];
-      const withOrphans = await projectRow(
-        'researchEntity',
-        slug,
-        [],
-        retiredIdentities,
-        researchOnlyFields,
-      );
-      const withoutOrphans = await projectRow(
-        'researchEntity',
-        slug,
-        excludedIds,
-        retiredIdentities,
-        researchOnlyFields,
-      );
-      const tier = typeof doc.studentVisibilityTier === 'string' ? doc.studentVisibilityTier : null;
-      const served = tier === SERVED_TIER;
-      const changes = servedFieldChanges({
-        stored: doc,
-        withOrphans,
-        withoutOrphans,
-        creditedFields: fieldsCreditedToRetired(doc.fieldProvenance, retiredIdSet),
-      });
-      const servedEntity = served && changes.length > 0 ? await readServed(slug) : null;
-      rows.push({
-        entityKey: slug,
-        studentVisibilityTier: tier,
-        served,
-        retiredObservationsOnRow: retiredOnRow,
-        creditedFields: [...fieldsCreditedToRetired(doc.fieldProvenance, retiredIdSet)].sort(),
-        changes: changes.map((change) => ({
-          ...change,
-          servedBefore: servedEntity ? servedEntity[change.field] : undefined,
-        })),
-        ...(withoutOrphans.skipped && !withOrphans.skipped
-          ? { skippedWithoutOrphans: withoutOrphans.skipped }
-          : {}),
-        retiredEvidenceReadLive: withoutOrphans.retiredEvidenceReadLive,
-        liveObservationsBefore: withOrphans.ownLiveObservations,
-        liveObservationsAfter: withoutOrphans.ownLiveObservations,
-      });
-    }
-    personKeys = await projectPersonKeys(
-      plan,
+  const readServed =
+    input.readServedEntity ??
+    (async (slug: string) =>
+      ((await getResearchGroupDetail(slug))?.researchEntity as
+        Record<string, unknown> | undefined) ?? null);
+  for (const [slug, { doc, retiredOnRow }] of [...liveRows.entries()].sort(([a], [b]) =>
+    a.localeCompare(b),
+  )) {
+    input.log?.(`projecting research row ${rows.length + 1} of ${liveRows.size}`);
+    const researchOnlyFields = onlyFieldsByEntityType.researchEntity ?? [];
+    const withOrphans = await projectRow(
+      'researchEntity',
+      slug,
+      [],
+      retiredIdentities,
+      researchOnlyFields,
+    );
+    const withoutOrphans = await projectRow(
+      'researchEntity',
+      slug,
       excludedIds,
       retiredIdentities,
-      onlyFieldsByEntityType.user ?? [],
-      input.log,
+      researchOnlyFields,
     );
+    const tier = typeof doc.studentVisibilityTier === 'string' ? doc.studentVisibilityTier : null;
+    const served = tier === SERVED_TIER;
+    const changes = servedFieldChanges({
+      stored: doc,
+      withOrphans,
+      withoutOrphans,
+      creditedFields: fieldsCreditedToRetired(doc.fieldProvenance, retiredIdSet),
+    });
+    const servedEntity = served && changes.length > 0 ? await readServed(slug) : null;
+    rows.push({
+      entityKey: slug,
+      studentVisibilityTier: tier,
+      served,
+      retiredObservationsOnRow: retiredOnRow,
+      creditedFields: [...fieldsCreditedToRetired(doc.fieldProvenance, retiredIdSet)].sort(),
+      changes: changes.map((change) => ({
+        ...change,
+        servedBefore: servedEntity ? servedEntity[change.field] : undefined,
+      })),
+      ...(withoutOrphans.skipped && !withOrphans.skipped
+        ? { skippedWithoutOrphans: withoutOrphans.skipped }
+        : {}),
+      retiredEvidenceReadLive: withoutOrphans.retiredEvidenceReadLive,
+      liveObservationsBefore: withOrphans.ownLiveObservations,
+      liveObservationsAfter: withoutOrphans.ownLiveObservations,
+    });
   }
+  const personKeys = await projectPersonKeys(
+    plan,
+    excludedIds,
+    retiredIdentities,
+    onlyFieldsByEntityType.user ?? [],
+    input.log,
+  );
 
   let retiredObservations = 0;
   if (input.apply && excludedIds.length > 0) {
@@ -735,7 +730,7 @@ async function main(): Promise<void> {
       configs: options.configs,
       refPresence: scan.presence,
       scannedRepositories: scan.scanned,
-      skipProjection: options.skipProjection,
+      codeShasOnRef: (codeShas) => codeShasReachableFromRefs(codeShas, gitDirs),
       log: (message) => console.error(`[${SCRIPT_NAME}] ${message}`),
     });
     if (outputPath) {

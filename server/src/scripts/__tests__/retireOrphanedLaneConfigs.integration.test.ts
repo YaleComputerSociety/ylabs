@@ -32,6 +32,8 @@ const gone: RequestedLaneConfig = { sourceName: ROSTER, configId: 'gone-lane' };
 const paused: RequestedLaneConfig = { sourceName: ROSTER, configId: 'paused-lane' };
 const pending: RequestedLaneConfig = { sourceName: ROSTER, configId: 'pending-lane' };
 
+const LANDED_SHA = 'b'.repeat(40);
+
 let sourceId: mongoose.Types.ObjectId;
 const runIds: Record<string, mongoose.Types.ObjectId> = {};
 
@@ -78,7 +80,7 @@ const run = (apply: boolean, configs: RequestedLaneConfig[]) =>
     refPresence: PENDING_ON_BRANCH,
     scannedRepositories: [],
     lanes: LANES,
-    skipProjection: true,
+    codeShasOnRef: (codeShas) => new Set(codeShas.filter((codeSha) => codeSha === LANDED_SHA)),
   });
 
 describe('observations:retire-orphaned-lane-configs (#5807)', () => {
@@ -87,6 +89,7 @@ describe('observations:retire-orphaned-lane-configs (#5807)', () => {
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
+    await Observation.createIndexes();
   });
 
   afterAll(async () => {
@@ -105,7 +108,7 @@ describe('observations:retire-orphaned-lane-configs (#5807)', () => {
     await seedRun('unlanded-full', []);
     await seedRun('paused', ['paused-lane']);
     await seedRun('pending', ['pending-lane']);
-    await seedRun('landed', [], 'b'.repeat(40));
+    await seedRun('landed', [], LANDED_SHA);
 
     await seed('dept-gone-lane-ash-kerr', 'websiteUrl', 'unlanded');
     await seed('dept-gone-lane-ash-kerr', 'name', 'unlanded');
@@ -185,12 +188,8 @@ describe('parseRetireOrphanedLaneConfigsArgs', () => {
     });
     expect(() => parseRetireOrphanedLaneConfigsArgs([])).toThrow(/requires --configs/);
     expect(() =>
-      parseRetireOrphanedLaneConfigsArgs([
-        `--configs=${ROSTER}:gone-lane`,
-        '--apply',
-        '--skip-projection',
-      ]),
-    ).toThrow(/always projects/);
+      parseRetireOrphanedLaneConfigsArgs([`--configs=${ROSTER}:gone-lane`, '--skip-projection']),
+    ).toThrow(/Unknown/);
     expect(
       parseRetireOrphanedLaneConfigsArgs([
         `--configs=${ROSTER}:gone-lane`,

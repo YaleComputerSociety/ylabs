@@ -1916,7 +1916,8 @@ Run `git fetch --all --prune` first; to include closed pull request heads, pass 
 An apply refuses unless every named config is orphaned.
 
 An observation is attributed by evidence its run left: an entity key minted under the config's key namespace (`dept-<ns>-...`, `dept:<ns>:...`, longest namespace wins), or a run whose `--only` selected nothing but orphaned configs.
-An observation whose run recorded a `codeSha`, or that has no run, is held rather than retired.
+A key that a current namespace also prefixes, such as `dept-<current>-<rest>` where `<current>-<rest>` starts with the orphaned namespace, is ambiguous, so only the run's `--only` can attribute it.
+An observation whose run recorded a `codeSha` that some scanned ref reaches, or that has no run, is held rather than retired; a recorded commit that no scanned ref reaches is unlanded code and does not hold.
 
 The dry run projects every affected live row, and every affected person key, through `materializeEntity` twice with `writeOnlyFields` limited to the fields the retired observations assert: once with them and once with them excluded from the read scope.
 It reports the fields whose projection differs, which fields' stored provenance is credited to a retired observation, rows left with no live evidence of their own, and `rowsWithRetiredEvidenceReadLive` for a projection that read retired evidence through a live fallback it could not isolate.

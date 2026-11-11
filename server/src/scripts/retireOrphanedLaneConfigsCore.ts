@@ -10,8 +10,9 @@
  *
  * An observation is attributed to an orphaned config by evidence the run left behind, never by
  * age: its entity key carries the config's key namespace, or its run selected only orphaned
- * configs with `--only`. Either way the run must have recorded no `codeSha`, because a run of
- * recorded code read a config that existed on that commit.
+ * configs with `--only`. A key that a current namespace also prefixes is ambiguous, so it needs
+ * the run's `--only` to attribute it. Either way the run's recorded `codeSha`, if any, must be
+ * reachable from no scanned ref, because a run of code some ref holds read a config that landed.
  */
 
 export interface OrphanLaneDefinition {
@@ -62,7 +63,7 @@ export interface AttributedObservation {
   basis: AttributionBasis;
 }
 
-export type HeldReason = 'run-recorded-code' | 'no-run';
+export type HeldReason = 'run-code-on-ref' | 'no-run';
 
 export interface HeldObservation {
   observation: StoredLaneObservation;
@@ -207,6 +208,7 @@ export function planOrphanedLaneConfigRetirement(input: {
   refPresence: readonly LaneConfigRefPresence[];
   observations: readonly StoredLaneObservation[];
   runs: readonly StoredLaneRun[];
+  codeShasOnRef: ReadonlySet<string>;
 }): OrphanedLaneConfigPlan {
   const verdicts = input.requested.map((config) => ({
     ...config,
@@ -242,8 +244,8 @@ export function planOrphanedLaneConfigRetirement(input: {
     const run = observation.scrapeRunId ? runsById.get(observation.scrapeRunId) : undefined;
     const heldReason: HeldReason | undefined = !run
       ? 'no-run'
-      : run.codeSha
-        ? 'run-recorded-code'
+      : run.codeSha && input.codeShasOnRef.has(run.codeSha)
+        ? 'run-code-on-ref'
         : undefined;
     if (heldReason) {
       held.push({ observation, configId: attribution.configId, reason: heldReason });
@@ -276,16 +278,18 @@ function attributeObservation(
     const orphanedNamespaces = new Map<string, string>();
     for (const configId of orphaned)
       orphanedNamespaces.set(lane.keyNamespaceOf(configId), configId);
+    const currentNamespace = keyNamespaceForEntityKey(
+      observation.entityType,
+      observation.entityKey,
+      lane.currentKeyNamespaces,
+    );
     const namespace = keyNamespaceForEntityKey(observation.entityType, observation.entityKey, [
       ...lane.currentKeyNamespaces,
       ...orphanedNamespaces.keys(),
     ]);
-    if (namespace !== undefined) {
-      const configId = orphanedNamespaces.get(namespace);
-      return configId && !lane.currentKeyNamespaces.includes(namespace)
-        ? { configId, basis: 'key-namespace' }
-        : undefined;
-    }
+    if (namespace !== undefined && namespace === currentNamespace) return undefined;
+    const configId = namespace === undefined ? undefined : orphanedNamespaces.get(namespace);
+    if (configId && currentNamespace === undefined) return { configId, basis: 'key-namespace' };
   }
   const run = observation.scrapeRunId ? runsById.get(observation.scrapeRunId) : undefined;
   if (!run || run.only.length === 0) return undefined;

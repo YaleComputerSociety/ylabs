@@ -46,6 +46,9 @@ const observation = (
 const RUNS: StoredLaneRun[] = [
   { id: 'run-unlanded', only: ['gone-lane'] },
   { id: 'run-landed', codeSha: 'a'.repeat(40), only: [] },
+  { id: 'run-off-every-ref', codeSha: 'b'.repeat(40), only: [] },
+  { id: 'run-full', only: [] },
+  { id: 'run-forestry-gone', only: ['forestry-gone'] },
   { id: 'run-paused', only: ['paused-lane'] },
   { id: 'run-directory-gone', only: ['cores'] },
   { id: 'run-mixed', only: ['cores', 'core-facilities'] },
@@ -153,6 +156,7 @@ describe('planOrphanedLaneConfigRetirement', () => {
       ],
       observations,
       runs: RUNS,
+      codeShasOnRef: new Set(['a'.repeat(40)]),
     });
 
   it('attributes by key namespace and by a run that selected only orphaned configs', () => {
@@ -196,7 +200,7 @@ describe('planOrphanedLaneConfigRetirement', () => {
     expect(result.observationIdsToRetire).toEqual([]);
   });
 
-  it('holds an observation whose run recorded its code, or that has no run', () => {
+  it('holds an observation whose run recorded code a ref holds, or that has no run', () => {
     const result = plan(
       [{ sourceName: 'dept-faculty-roster', configId: 'gone-lane' }],
       [
@@ -205,10 +209,31 @@ describe('planOrphanedLaneConfigRetirement', () => {
       ],
     );
     expect(result.observationIdsToRetire).toEqual([]);
-    expect(result.held.map((entry) => entry.reason).sort()).toEqual([
-      'no-run',
-      'run-recorded-code',
-    ]);
+    expect(result.held.map((entry) => entry.reason).sort()).toEqual(['no-run', 'run-code-on-ref']);
+  });
+
+  it('retires an observation whose run recorded a commit no scanned ref reaches', () => {
+    const result = plan(
+      [{ sourceName: 'dept-faculty-roster', configId: 'gone-lane' }],
+      [observation('r1', 'dept-gone-lane-pat-lee', { scrapeRunId: 'run-off-every-ref' })],
+    );
+    expect(result.observationIdsToRetire).toEqual(['r1']);
+    expect(result.held).toEqual([]);
+  });
+
+  it('needs the run selection for a research key a current namespace also prefixes', () => {
+    const result = plan(
+      [{ sourceName: 'dept-faculty-roster', configId: 'forestry-gone' }],
+      [
+        observation('a1', 'dept-forestry-gone-pat-lee', { scrapeRunId: 'run-full' }),
+        observation('a2', 'dept-forestry-gone-pat-lee', { scrapeRunId: 'run-forestry-gone' }),
+        observation('a3', 'dept:forestry-gone:pat-lee', { scrapeRunId: 'run-full' }),
+      ],
+    );
+    expect(result.verdicts[0].verdict).toEqual({ status: 'orphaned' });
+    expect(
+      result.attributed.map((entry) => `${entry.observation.id}:${entry.basis}`).sort(),
+    ).toEqual(['a2:run-only', 'a3:key-namespace']);
   });
 
   it('attributes a directory lane only through a run whose every selected config is orphaned', () => {
