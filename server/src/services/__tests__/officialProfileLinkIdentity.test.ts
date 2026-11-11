@@ -59,6 +59,15 @@ describe('pageIdentityWitnessesPerson (#5605)', () => {
     ).toBe(true);
   });
 
+  it('reads a netid only from a Yale address, never from an outside one (#5669)', () => {
+    expect(
+      pageIdentityWitnessesPerson(
+        { email: 'zzc5605@example.org' },
+        { identifiers: { netid: 'zzc5605' } },
+      ),
+    ).toBe(false);
+  });
+
   it('accepts the page when the directory pairs its email with the person netid', () => {
     const directory = new Map([['casey.s@yale.edu', new Set(['zzc5605'])]]);
     expect(

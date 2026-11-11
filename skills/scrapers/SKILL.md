@@ -185,6 +185,16 @@ Four earlier mechanisms each broke on a stored title, and the module's test file
   `profileIdentityAgreesWithUser` accepts a candidate that holds the page's own address, or one whose name agrees and whose own named address does not differ; holding the page URL alone is not enough, because an earlier run gave namesakes that link.
   The resolver also refuses a candidate whose netid the Yale directory lanes do not pair with the page's address, and with no candidate the lane keeps its alias-keyed fallback rather than guessing a netid.
   Keys stamped before the guard stay in the log and are screened on every read (`directoryContradictedProfileNetid.ts`): the user materializer, the inferred-PI key join and `resolveNetidForRosterEmailAlias` drop this lane's evidence from a page whose address the directory pairs with another netid, the user arm skips an emptied key as `directory-contradicts-profile-netid`, and it withdraws that page's `YALE_OFFICIAL` link from the netid holder on each pass.
+- The official-profile lane reads the page subject's own address before any name-shaped address on the page (#5669, `utils/officialProfileSubjectEmail.ts`).
+  The subject's own address is the one the JSON-LD `Person` node naming the subject states, or the single address in a contact field of the subject heading's own `article`.
+  An address inside a nested `article`, an `aside`, `nav` or `footer`, or a block labelled as co-authors, related people, administrative support or a press contact is never the subject's, and a contact field listing two addresses yields none.
+  Such an address is admitted whatever its domain and whatever its local part, except a role mailbox, and the lane still prefers a Yale address when the page states one.
+  Outside the subject's own nodes, a mailto link or body text yields only a Yale address shaped like the subject's name, never a netid-shaped one, because a netid names nobody in particular and a co-author's would be read as the subject's.
+  An outside address does not contradict the Yale address expected for a lead, because it is not a Yale identity, while a different Yale address still fails closed (#585).
+  The same holds for `profileIdentityAgreesWithUser`, and `pageIdentityWitnessesPerson` reads a netid from an address's local part only when the address is a Yale one.
+  The person's display name comes only from a JSON-LD `Person` node or an untyped node, never from an organization or website node, which named every MacMillan Center person page after the center.
+  A canonical link differing from the fetched profile only in letter case is the same page.
+  In `visible-profile-bio-backfill` only, a page with no admissible title still yields the address, and nothing else: no title, name, bio or role follows from such a page.
 - Any outbound fetch to a host derived from user input or stored data MUST go through `utils/ssrfGuard.ts`.
 Use `fetchPublicHttpUrl` (`scrapers/utils/httpFetch.ts`) when a script needs a status or a redirect location, and never the global `fetch`; the security preflight scan fails on an unguarded call, and `skills/auth-security/SKILL.md` owns the rules, including how the renderer's browser is kept on public hosts.
 - A lane that fetches a URL **discovered on a page** must establish that the fetched page is about the same subject before merging anything from it.
