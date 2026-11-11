@@ -851,6 +851,17 @@ describe('a body that only says how to join or narrates events serves the card (
     expect(researchEntityServesPublicDetail(entity)).toBe(true);
   });
 
+  it('never serves a stored card that opens mid-sentence as the body in place of joining instructions', () => {
+    const entity = lab(
+      'Students and researchers interested in joining the Example Phage Lab should contact the lab director directly. Prospective doctoral students should apply to the PhD program in Example Biology.',
+      '” and phage therapy. The lab studies evolutionary genetics of bacteriophages and RNA viruses.',
+    );
+    const representation = buildResearchEntityPublicDescriptionRepresentation({ entity });
+    expect(representation.entity.fullDescription).not.toMatch(/^”/);
+    expect(representation.entity.fullDescription).not.toContain('and phage therapy.');
+    expect(researchEntityServesPublicDetail(entity)).toBe(false);
+  });
+
   it('still withholds the row when the card states no research either', () => {
     const entity = lab(
       'Students interested in joining the Example Phage Lab should contact the lab director directly.',

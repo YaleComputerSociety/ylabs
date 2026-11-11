@@ -350,6 +350,11 @@ function servedResearchEntityType(
     : entityType;
 }
 
+export const servableStoredCard = (served: Record<string, any>): string => {
+  const card = typeof served.shortDescription === 'string' ? served.shortDescription : '';
+  return cardOpensMidSentence(card) ? '' : card;
+};
+
 /**
  * The card line a student reads, minus the last-resort whole-body card - the one
  * step of the served resolution the visibility gate deliberately does not judge.
@@ -361,11 +366,6 @@ function servedResearchEntityType(
  * absence. Every other step is shared, so the judged card and the served card can
  * now differ on that documented step alone (#3747).
  */
-const servableStoredCard = (served: Record<string, any>): string => {
-  const card = typeof served.shortDescription === 'string' ? served.shortDescription : '';
-  return cardOpensMidSentence(card) ? '' : card;
-};
-
 export function servedResearchEntityCardWithoutLastResort(
   served: Record<string, any>,
   entityType?: ResearchEntityType,

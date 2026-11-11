@@ -56,6 +56,7 @@ import {
   isSourceNarrationText,
 } from '../utils/descriptionNonResearchBodyShape';
 import {
+  servableStoredCard,
   servedResearchEntityCardWithoutLastResort,
   servedResearchEntityCopy,
 } from './servedResearchEntityCard';
@@ -667,7 +668,7 @@ function cardServedInPlaceOfANonResearchBody(
   ) {
     return '';
   }
-  const card = textValue(representation.servedCard) || textValue(entity.shortDescription);
+  const card = textValue(representation.servedCard) || textValue(servableStoredCard(entity));
   return cardStatesResearchItself(card) &&
     !isStudiesResearchAreaEchoDescription(card, entity.researchAreas)
     ? card
