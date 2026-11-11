@@ -55,6 +55,16 @@ describe('normalizeOverrideReason', () => {
     expect(() => normalizeOverrideReason('no code here')).toThrow('snake_case code');
     expect(() => normalizeOverrideReason('some_code: one, two')).toThrow('comma');
   });
+
+  it('refuses a reason that names a marker other readers match by substring', () => {
+    expect(() =>
+      normalizeOverrideReason('umbrella_review: not permanently_closed; sub-units served'),
+    ).toThrow('permanently_closed');
+    expect(() => normalizeOverrideReason('research_infrastructure_only_review: core')).toThrow(
+      'research_infrastructure_only',
+    );
+    expect(() => normalizeOverrideReason('permanently_closed: moved away')).toThrow('reserved');
+  });
 });
 
 describe('studentVisibilityOverrideWriteRefusal', () => {

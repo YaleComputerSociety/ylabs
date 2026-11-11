@@ -1,6 +1,7 @@
 import { studentVisibilityTiers, type StudentVisibilityTier } from '../models/studentVisibility';
 import { containsAsciiControl } from '../utils/asciiControl';
 import {
+  SUBSTRING_READ_SUPPRESSION_MARKERS,
   SUPPRESSION_REASON_FIELD,
   suppressionReasonIsWritable,
   suppressionReasonList,
@@ -62,6 +63,14 @@ export function normalizeOverrideReason(value: unknown): string {
   if (!REASON_CODE_RE.test(reason)) {
     throw new Error(
       '--reason must start with a snake_case code and a colon, as in "code: evidence"',
+    );
+  }
+  const reservedMarker = SUBSTRING_READ_SUPPRESSION_MARKERS.find((marker) =>
+    reason.toLowerCase().includes(marker),
+  );
+  if (reservedMarker) {
+    throw new Error(
+      `--reason must not contain the reserved marker "${reservedMarker}": readers of ${SUPPRESSION_REASON_FIELD} match it anywhere in the text`,
     );
   }
   return reason;
