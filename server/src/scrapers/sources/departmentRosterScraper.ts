@@ -3195,6 +3195,19 @@ export function linkTextIsASentence(text: string): boolean {
   return words.length >= 6 && trimmed.endsWith('.') && !TEXT_ENDING_IN_WEBSITE_LABEL.test(trimmed);
 }
 
+const URL_SHAPED_TEXT = /^(?:https?:\/\/)?[\w-]+(?:\.[\w-]+)+(?:[/?#]\S*)?$/i;
+
+/**
+ * An organization's landing page is often served at `/homepage.html`, so a path word speaks
+ * for the destination only when the link says nothing of its own. Link text that names a
+ * foundation or a lecture series is judged by its label alone, which is how a bio's link to
+ * an event became its author's research website (#5619).
+ */
+export function linkTextDescribesNothing(text: string): boolean {
+  const trimmed = text.trim();
+  return trimmed === '' || URL_SHAPED_TEXT.test(trimmed);
+}
+
 /** A DOI resolves to a publication, which is never a person's research website (#5050). */
 function isDoiUrl(url: URL): boolean {
   return /(?:^|\.)doi\.org$/i.test(url.hostname) || /\/doi\//i.test(url.pathname);
@@ -3523,7 +3536,7 @@ export function profileEnrichmentFromHtml(
     const hasWebsiteSignal =
       WEBSITE_SIGNAL.test(labelSignal) ||
       (WEBSITE_SIGNAL.test(parsed.pathname) && pathNamesALab(parsed.pathname)) ||
-      /\b(?:website|homepage)\b/i.test(parsed.pathname);
+      (linkTextDescribesNothing(text) && /\b(?:website|homepage)\b/i.test(parsed.pathname));
     if (!hasWebsiteSignal || NATIONAL_LABORATORY_TEXT.test(`${text} ${aria} ${titleAttr}`)) return;
     if (isInstitutionalAdvancementUrl(absolute)) {
       labUrlCandidateRefused = true;
