@@ -6,6 +6,7 @@ import {
   OfficialProfilePiBackfillScraper,
   profileIdentityAgreesWithUser,
 } from '../sources/officialProfilePiBackfillScraper';
+import { localPartNamesASubjectRole } from '../utils/officialProfileSubjectEmail';
 import type { ObservationInput, ScraperContext } from '../types';
 
 const SUBJECT = { fname: 'Avery', lname: 'Example', name: 'Avery Example' };
@@ -423,5 +424,72 @@ describe('the profile subject email read from more page shapes (#5669)', () => {
       expect(observe().map((o) => o.value)).toEqual(['avery.example@example.org']);
       expect(observe()).toEqual(observe());
     });
+  });
+});
+
+describe("a role or shared mailbox inside the profile subject's own node (#5714)", () => {
+  const officeMailbox = 'chairfixmed7@yale.edu';
+  const html = ysmPage({ personEmail: officeMailbox });
+
+  it('refuses a role word fused to a unit code in the Person node and contact card', () => {
+    expect(identityOf(html, ysmUrl)?.email).toBe('');
+  });
+
+  it('refuses lab and program mailboxes named by a whole local-part token', () => {
+    for (const personEmail of [
+      'fixture.lab@yale.edu',
+      'fixture-labs@yale.edu',
+      'program.fixture@yale.edu',
+      'officefixture@example.org',
+      'deptfixture7@yale.edu',
+    ]) {
+      expect(identityOf(ysmPage({ personEmail }), ysmUrl)?.email).toBe('');
+    }
+  });
+
+  it('still backs a personal address stated in the same shape', () => {
+    const personal = ysmPage({ personEmail: 'fixture.kestrel@yale.edu' });
+    expect(identityOf(personal, ysmUrl)?.email).toBe('fixture.kestrel@yale.edu');
+  });
+
+  it('never refuses a role word embedded inside a longer name-like token', () => {
+    for (const personEmail of [
+      'glabfixture7@yale.edu',
+      'kinfo.fixture@yale.edu',
+      'adeptfixture7@yale.edu',
+      'fixturelabs7.k@yale.edu',
+      'fixture.programmer@example.org',
+    ]) {
+      expect(identityOf(ysmPage({ personEmail }), ysmUrl)?.email).toBe(personEmail.toLowerCase());
+    }
+  });
+
+  it("never refuses an address that carries the subject's own name after a role-like prefix", () => {
+    expect(localPartNamesASubjectRole('chairfixturez', 'Kim Chairfixturez')).toBe(false);
+    expect(localPartNamesASubjectRole('labfixture.k', 'Kim Labfixture')).toBe(false);
+    expect(localPartNamesASubjectRole('infofixture', 'Infofixture Kim')).toBe(false);
+    expect(localPartNamesASubjectRole('chairfixturez', 'Avery Example')).toBe(true);
+  });
+
+  it('never lets a short given name hidden inside the role word admit the office mailbox', () => {
+    expect(localPartNamesASubjectRole('chairfixmed7', 'Hai Example')).toBe(true);
+    expect(localPartNamesASubjectRole('adminfixmed7', 'Min Example')).toBe(true);
+    expect(localPartNamesASubjectRole('programfix7', 'Ram Example')).toBe(true);
+    expect(localPartNamesASubjectRole('departmentfix7', 'Art Example')).toBe(true);
+  });
+
+  it('never lets a short given name hidden inside the unit code admit the office mailbox', () => {
+    expect(localPartNamesASubjectRole('chairpathology', 'Pat Example')).toBe(true);
+    expect(localPartNamesASubjectRole('deptgenetics', 'Gene Example')).toBe(true);
+    expect(localPartNamesASubjectRole('chairfixmed', 'Kim Fixmed')).toBe(true);
+  });
+
+  it('never treats a netid-shaped local part as a role word', () => {
+    expect(localPartNamesASubjectRole('lab42', 'Avery Example')).toBe(false);
+    expect(localPartNamesASubjectRole('info7', 'Avery Example')).toBe(false);
+  });
+
+  it('emits no email observation on either of two runs', async () => {
+    await expectRunTwiceIdentical(html, ysmUrl, []);
   });
 });
