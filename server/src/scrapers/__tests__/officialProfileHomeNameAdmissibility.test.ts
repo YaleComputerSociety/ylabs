@@ -162,7 +162,9 @@ describe('a profile-linked home name the lane stored before it refused the shape
 
   it('keeps an organization name from the lane and the same value from another lane', () => {
     expect(ignored(lane, 'name', 'Fictional Decisions Studio')).toBe(false);
-    expect(ignored('dept-faculty-roster', 'name', glued)).toBe(false);
+    expect(
+      ignored('dept-faculty-roster', 'name', 'Quillfixture Lab We study fictional cells'),
+    ).toBe(false);
   });
 
   it('takes the type paired with the ignored name down with it', () => {

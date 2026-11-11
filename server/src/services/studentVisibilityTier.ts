@@ -45,7 +45,7 @@ import {
   isPlaceholderEntityName,
   isUnrecoverablePersonScopedEntityName,
   isExternalScholarlyPlatformLinkLabelName,
-  isRefusedProfileLinkedHomeName,
+  isRefusedResearchEntityName,
   personScopedResearchEntityNameNamesSomethingElse,
   entityKeyPersonTokens,
   nameNamesACitedSharedAcademicHost,
@@ -1254,7 +1254,7 @@ export function computeResearchEntityStudentVisibility({
   const hasUsableName =
     !isPlaceholderEntityName(entity.name) &&
     !isExternalScholarlyPlatformLinkLabelName(entity.name) &&
-    !isRefusedProfileLinkedHomeName(entity.name, entity.fieldProvenance?.name?.sourceName) &&
+    !isRefusedResearchEntityName(entity.name, entity.fieldProvenance?.name?.sourceName) &&
     !namesASharedHostOrganization &&
     !namesAnotherPersonsResearch &&
     !(isPersonScopedResearchEntity(entity) && isUnrecoverablePersonScopedEntityName(entity.name));

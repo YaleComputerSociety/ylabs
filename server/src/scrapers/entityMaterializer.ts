@@ -139,7 +139,7 @@ import {
   isExternalScholarlyPlatformLinkLabelName,
   isOffSitePageTitleForPersonScopedName,
   isLabShapedResearchHome,
-  isRefusedProfileLinkedHomeName,
+  isRefusedResearchEntityName,
   nameCarriesPersonIdentity,
   namesAResearchGroupRatherThanAPerson,
   entityKeyPersonTokens,
@@ -1911,14 +1911,15 @@ const RETIRED_ACCESS_OBSERVATION_FIELDS = new Set([
 ]);
 
 /**
- * A name this lane stored before it refused that shape at the name step. A refusal retracts
- * nothing, so the stored value stays live (#5226). The type and kind it was paired with then
- * fall through `withoutUnpairedProfileHomeIdentity`.
+ * A stored name the engine now refuses: a profile-linked home shape this lane stored before
+ * it refused that shape at the name step (#5226), or a sentence-shaped name from any lane
+ * (#5739). A refusal retracts nothing, so the stored value stays live. The type and kind the
+ * profile lane paired with its name then fall through `withoutUnpairedProfileHomeIdentity`.
  */
 function isInadmissibleProfileHomeName(observation: MaterializerObservationLike): boolean {
   return (
     (observation.field === 'name' || observation.field === 'displayName') &&
-    isRefusedProfileLinkedHomeName(observation.value, observation.sourceName)
+    isRefusedResearchEntityName(observation.value, observation.sourceName)
   );
 }
 
@@ -8855,7 +8856,7 @@ function enforceResearchEntityNameAuthority(input: {
           PAGE_STATED_NAME_SOURCES.has(String(provenance.sourceName ?? '')) &&
           siteSharedPageNames.has(comparablePageStatedName(servedValue))
         ) &&
-        !isRefusedProfileLinkedHomeName(servedValue, provenance.sourceName) &&
+        !isRefusedResearchEntityName(servedValue, provenance.sourceName) &&
         !(
           (withdrawnRetype || (personRow && !isLabShapedResearchHome(servedValue))) &&
           isWithdrawnProfileHomeName(servedValue, provenance.sourceName, input.materializationObs)

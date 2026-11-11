@@ -23,6 +23,7 @@ import {
 import { isOrganizationalResearchEntity } from './researchEntityOrganizational';
 import { researchEntityDisplayName } from './servedResearchEntityTitle';
 import { isNavigationMenuPhrase } from './titleHygiene';
+import { isSentenceShapedName as isSentenceShapedResearchEntityName } from './sentenceShapedName';
 
 const RESEARCH_HOME_LAB_HEAD_RE = /\b(?:lab|labs|laborator(?:y|ies)|groups?)\b/i;
 
@@ -219,6 +220,19 @@ const PROFILE_LINKED_HOME_SOURCE_NAME = 'official-profile-pi-backfill';
 export function isRefusedProfileLinkedHomeName(value: unknown, sourceName: unknown): boolean {
   return (
     sourceName === PROFILE_LINKED_HOME_SOURCE_NAME && isInadmissibleProfileLinkedHomeName(value)
+  );
+}
+
+/**
+ * A research row name the engine refuses from the lane that asserted it: the
+ * profile-linked home shapes from `official-profile-pi-backfill` (#5226), and a
+ * sentence-shaped name from every lane (#5739). The materializer ignores the observation,
+ * replaces a served name with the next admissible one, and the gate holds a row still
+ * headed by one.
+ */
+export function isRefusedResearchEntityName(value: unknown, sourceName: unknown): boolean {
+  return (
+    isRefusedProfileLinkedHomeName(value, sourceName) || isSentenceShapedResearchEntityName(value)
   );
 }
 
