@@ -719,28 +719,31 @@ const UNCAPPED_MEMBER_CALLERS = new Set([
 const ENCLOSING_FUNCTION_PATTERN =
   /(?:function\s+(\w+)\s*[<(])|(?:const\s+(\w+)\s*=\s*(?:async\s*)?(?:<[^>]*>)?\()/g;
 
-const callArguments = (source, openParenIndex) => {
-  const args = [];
+const topLevelEntries = (source, openIndex) => {
+  const closer = ')]}'['([{'.indexOf(source[openIndex])];
+  const entries = [];
   let depth = 0;
+  let typeArgumentDepth = 0;
   let current = '';
-  for (let index = openParenIndex + 1; index < source.length; index += 1) {
+  for (let index = openIndex + 1; index < source.length; index += 1) {
     const character = source[index];
-    if ('([{<'.includes(character)) depth += 1;
-    if (')]}>'.includes(character)) {
-      if (depth === 0 && character === ')') {
-        if (current.trim()) args.push(current.trim());
-        return args;
-      }
-      depth -= 1;
+    const previous = source[index - 1];
+    if (depth === 0 && character === closer) {
+      if (current.trim()) entries.push(current.trim());
+      return entries;
     }
-    if (character === ',' && depth === 0) {
-      args.push(current.trim());
+    if ('([{'.includes(character)) depth += 1;
+    else if (')]}'.includes(character)) depth -= 1;
+    else if (character === '<' && /\w/.test(previous)) typeArgumentDepth += 1;
+    else if (character === '>' && typeArgumentDepth > 0 && previous !== '=') typeArgumentDepth -= 1;
+    if (character === ',' && depth === 0 && typeArgumentDepth === 0) {
+      entries.push(current.trim());
       current = '';
       continue;
     }
     current += character;
   }
-  return args;
+  return entries;
 };
 
 const enclosingFunctionName = (source, index) => {
@@ -764,7 +767,7 @@ const memberLimitViolations = (serviceSource, controllerSource) => {
       );
       if (/(function|const)\s+$/.test(before)) continue;
       const openParenIndex = match.index + match[0].length - 1;
-      const limitArgument = callArguments(serviceSource, openParenIndex)[3];
+      const limitArgument = topLevelEntries(serviceSource, openParenIndex)[3];
       if (limitArgument === undefined || limitArgument === 'MAX_PUBLIC_DETAIL_MEMBERS') continue;
       const caller = enclosingFunctionName(serviceSource, match.index);
       if (limitArgument === 'limit' && caller === 'publicResearchEntityDetailRosterMembers')
@@ -773,13 +776,21 @@ const memberLimitViolations = (serviceSource, controllerSource) => {
       violations.push(`${caller || 'module scope'} passes ${limitArgument} to ${name}`);
     }
   }
-  const detailCall = controllerSource.match(/getResearchGroupDetail\(slug, \{([\s\S]*?)\}\);/);
-  if (!detailCall) {
+  const detailCall = controllerSource.match(/\bgetResearchGroupDetail\(/);
+  const detailArguments = detailCall
+    ? topLevelEntries(controllerSource, detailCall.index + detailCall[0].length - 1)
+    : [];
+  if (
+    detailArguments.length !== 2 ||
+    detailArguments[0] !== 'slug' ||
+    !detailArguments[1].startsWith('{')
+  ) {
     violations.push('the detail controller no longer calls getResearchGroupDetail(slug, { ... })');
   } else {
-    for (const key of detailCall[1].matchAll(/(\w+)\s*:/g)) {
-      if (!['includeWithheldForOperator', 'requestedMemberName'].includes(key[1])) {
-        violations.push(`the detail controller passes ${key[1]} to getResearchGroupDetail`);
+    for (const option of topLevelEntries(detailArguments[1], 0)) {
+      const key = /^(\w+)\s*(?::|$)/.exec(option)?.[1];
+      if (!['includeWithheldForOperator', 'requestedMemberName'].includes(key)) {
+        violations.push(`the detail controller passes ${key ?? option} to getResearchGroupDetail`);
       }
     }
   }
@@ -796,15 +807,24 @@ test('only the search paths read research members past the public detail cap', (
     'utf8',
   );
   assert.deepEqual(memberLimitViolations(serviceSource, controllerSource), []);
-  assert.match(serviceSource, /const EVERY_CURRENT_MEMBER = Number\.POSITIVE_INFINITY;/);
-  assert.match(
-    serviceSource,
-    /const canonicalMembers = canonicalPublicDetailMembers\(\s*group as Record<string, any>,\s*rosterEntries,\s*\);/,
+
+  const widenedService = serviceSource.replace(
+    /(canonicalPublicDetailMembers\(\s*group as Record<string, any>,\s*rosterEntries,)(\s*\))/,
+    '$1 new Date(), 500$2',
   );
-  assert.match(
-    serviceSource,
-    /requestedMember\s*\?\s*\[\.\.\.boundedMembersWithRows, requestedMember\]\s*:\s*boundedMembersWithRows/,
+  assert.notEqual(widenedService, serviceSource);
+  assert.deepEqual(memberLimitViolations(widenedService, controllerSource), [
+    'getResearchGroupDetail passes 500 to canonicalPublicDetailMembers',
+  ]);
+
+  const widenedController = controllerSource.replace(
+    'includeWithheldForOperator: hasAdminAuthority,',
+    'includeWithheldForOperator: hasAdminAuthority,\n    memberLimit: 500,',
   );
+  assert.notEqual(widenedController, controllerSource);
+  assert.deepEqual(memberLimitViolations(serviceSource, widenedController), [
+    'the detail controller passes memberLimit to getResearchGroupDetail',
+  ]);
 });
 
 test('the member cap pin refuses a public path that passes a larger limit', () => {
@@ -852,6 +872,43 @@ export async function getResearchGroupDetail(slug, { includeWithheldForOperator 
       controller.replace('hasAdminAuthority,', 'hasAdminAuthority,\n    memberLimit: 500,'),
     ),
     ['the detail controller passes memberLimit to getResearchGroupDetail'],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service(
+        'const m = canonicalPublicDetailMembers(group, entries.filter((entry) => entry.ok), now, 500);',
+      ),
+      controller,
+    ),
+    ['getResearchGroupDetail passes 500 to canonicalPublicDetailMembers'],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service('const m = canonicalPublicDetailMembers(group, entries, now, limit);'),
+      controller,
+    ),
+    ['getResearchGroupDetail passes limit to canonicalPublicDetailMembers'],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service('const m = canonicalPublicDetailMembers(group, entries);'),
+      controller.replace('hasAdminAuthority,', 'hasAdminAuthority,\n    memberLimit,'),
+    ),
+    ['the detail controller passes memberLimit to getResearchGroupDetail'],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service('const m = canonicalPublicDetailMembers(group, entries);'),
+      controller.replace('hasAdminAuthority,', 'hasAdminAuthority,\n    ...options,'),
+    ),
+    ['the detail controller passes ...options to getResearchGroupDetail'],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service('const m = canonicalPublicDetailMembers(group, entries);'),
+      'const detail = await getResearchGroupDetail(slug, options);',
+    ),
+    ['the detail controller no longer calls getResearchGroupDetail(slug, { ... })'],
   );
 });
 
