@@ -1,5 +1,5 @@
 import { Fellowship } from '../models/fellowship';
-import { publicStudentVisibilityTiers } from '../models/studentVisibility';
+import { servedStudentVisibilityTierFilter } from '../models/studentVisibility';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { foldLatinDiacritics } from '../utils/latinDiacritics';
 import { PROGRAM_QUERY_ALIAS_PHRASES } from './programTopicService';
@@ -81,7 +81,7 @@ let inFlightLoad: Promise<SearchSpellingVocabulary | null> | null = null;
 
 export const loadProgramSearchSpellingVocabulary = async (): Promise<SearchSpellingVocabulary> => {
   const programs = (await Fellowship.find(
-    { archived: false, studentVisibilityTier: { $in: publicStudentVisibilityTiers } },
+    { archived: false, ...servedStudentVisibilityTierFilter() },
     Object.fromEntries(PROGRAM_SEARCH_SPELLING_FIELDS.map((field) => [field, 1])),
   ).lean()) as Array<Record<string, unknown>>;
   return buildSearchSpellingVocabulary(

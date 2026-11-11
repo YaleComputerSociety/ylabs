@@ -3374,6 +3374,7 @@ describe('searchResearchGroupsViaMeili', () => {
       _id: { $in: [staleEntityId, currentEntityId] },
       archived: { $ne: true },
       studentVisibilityTier: { $in: ['student_ready'] },
+      studentVisibilityOverrideTier: { $nin: ['operator_review', 'suppressed'] },
     });
     expect(result.researchEntities).toEqual([
       expect.objectContaining({
@@ -3812,6 +3813,7 @@ describe('getResearchGroupDetail', () => {
       slug: 'hidden-lab',
       archived: { $ne: true },
       studentVisibilityTier: { $in: ['student_ready'] },
+      studentVisibilityOverrideTier: { $nin: ['operator_review', 'suppressed'] },
     });
   });
 
@@ -5045,6 +5047,7 @@ describe('listResearchEntityRelationshipPayload', () => {
       _id: { $in: [publicInstituteId, reviewInstituteId] },
       archived: { $ne: true },
       studentVisibilityTier: { $in: ['student_ready'] },
+      studentVisibilityOverrideTier: { $nin: ['operator_review', 'suppressed'] },
     });
     expect(result).toEqual({
       entityRelationships: [],

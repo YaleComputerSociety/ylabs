@@ -123,13 +123,45 @@ describe('planStudentVisibilityOverride', () => {
       set: {
         studentVisibilityOverrideTier: 'suppressed',
         studentVisibilitySuppressionReason: `research_infrastructure_only, ${REASON}`,
+        studentVisibilityTier: 'suppressed',
       },
       before: { tier: 'student_ready', overrideTier: null },
+      after: { tier: 'suppressed', overrideTier: 'suppressed' },
     });
+  });
+
+  it('writes a hold to the stored tier even when the override was recorded earlier (#5783)', () => {
+    const decision = planStudentVisibilityOverride(
+      {
+        studentVisibilityTier: 'student_ready',
+        studentVisibilityOverrideTier: 'operator_review',
+        studentVisibilitySuppressionReason: REASON,
+      },
+      { kind: 'set', tier: 'operator_review' },
+      REASON,
+    );
+    expect(decision).toMatchObject({
+      action: 'write',
+      set: { studentVisibilityTier: 'operator_review' },
+      after: { tier: 'operator_review' },
+    });
+  });
+
+  it('leaves the stored tier to the gate for a release', () => {
+    const decision = planStudentVisibilityOverride(
+      { studentVisibilityTier: 'operator_review' },
+      { kind: 'set', tier: 'student_ready' },
+      REASON,
+    );
+    expect(decision.action).toBe('write');
+    if (decision.action !== 'write') return;
+    expect(decision.set).not.toHaveProperty('studentVisibilityTier');
+    expect(decision.after.tier).toBe('operator_review');
   });
 
   it('replaces an earlier entry with the same code and is a no-op when already recorded', () => {
     const stored = {
+      studentVisibilityTier: 'suppressed',
       studentVisibilityOverrideTier: 'suppressed',
       studentVisibilitySuppressionReason: REASON,
     };

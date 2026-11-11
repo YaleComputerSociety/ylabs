@@ -79,3 +79,47 @@ export const studentVisibilityFields = {
 
 export const isStudentVisibilityTier = (value: unknown): value is StudentVisibilityTier =>
   typeof value === 'string' && studentVisibilityTiers.includes(value as StudentVisibilityTier);
+
+export const holdingStudentVisibilityOverrideTiers: readonly StudentVisibilityTier[] = [
+  'operator_review',
+  'suppressed',
+];
+
+const isHoldingOverrideTier = (value: unknown): value is StudentVisibilityTier =>
+  typeof value === 'string' &&
+  (holdingStudentVisibilityOverrideTiers as readonly string[]).includes(value);
+
+/**
+ * An operator hold outranks the stored tier, which only the gate rewrites and which a
+ * rematerialize or any other writer can leave above the hold, so every serve path reads
+ * the tier through this function or `servedStudentVisibilityTierFilter` (#5783).
+ */
+export const effectiveStudentVisibilityTier = (
+  record: Record<string, any> | null | undefined,
+): string => {
+  if (isHoldingOverrideTier(record?.studentVisibilityOverrideTier)) {
+    return record!.studentVisibilityOverrideTier;
+  }
+  return typeof record?.studentVisibilityTier === 'string' ? record.studentVisibilityTier : '';
+};
+
+export const servesStudentVisibilityTier = (
+  record: Record<string, any> | null | undefined,
+  tiers: readonly StudentVisibilityTier[] = publicStudentVisibilityTiers,
+): boolean => (tiers as readonly string[]).includes(effectiveStudentVisibilityTier(record));
+
+/**
+ * The Mongo form of `servesStudentVisibilityTier` for a tier set that holds no operator
+ * hold tier, which is every student-facing set. A set that does name a hold tier is an
+ * operator view, which reads the stored tier as it always has.
+ */
+export const servedStudentVisibilityTierFilter = (
+  tiers: readonly StudentVisibilityTier[] = publicStudentVisibilityTiers,
+): Record<string, unknown> => {
+  const tierClause = { studentVisibilityTier: { $in: [...tiers] } };
+  if (tiers.some(isHoldingOverrideTier)) return tierClause;
+  return {
+    ...tierClause,
+    studentVisibilityOverrideTier: { $nin: [...holdingStudentVisibilityOverrideTiers] },
+  };
+};

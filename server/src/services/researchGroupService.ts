@@ -14,7 +14,12 @@
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
 import { type OfficialRosterUndergraduateStatus } from '../models/storedVocabularies';
-import { publicStudentVisibilityTiers, StudentVisibilityTier } from '../models/studentVisibility';
+import {
+  isStudentVisibilityTier,
+  publicStudentVisibilityTiers,
+  servedStudentVisibilityTierFilter,
+  servesStudentVisibilityTier,
+} from '../models/studentVisibility';
 import { partitionStudentVisibilityReasons } from './studentVisibilityTier';
 import {
   pinRoleAssignmentUpsertToLiveEdge,
@@ -1116,9 +1121,11 @@ const mongoVisibilityFilter = (
   includeNonPublic?: boolean,
 ): Record<string, any> => {
   if (filters.studentVisibilityTier?.length) {
-    return { studentVisibilityTier: { $in: filters.studentVisibilityTier } };
+    return servedStudentVisibilityTierFilter(
+      filters.studentVisibilityTier.filter(isStudentVisibilityTier),
+    );
   }
-  return includeNonPublic ? {} : { studentVisibilityTier: { $in: publicStudentVisibilityTiers } };
+  return includeNonPublic ? {} : servedStudentVisibilityTierFilter();
 };
 
 const servesPublicResearchDetail = researchEntityServesPublicDetail;
@@ -3648,7 +3655,7 @@ const PAGE_LEAD_OWN_RESEARCH_CANDIDATE_SLACK = 5;
 // official-roster lead, hand the copy sanitizer a short lead list, and make a rail
 // card strip the very name its own detail page keeps (#2240).
 export const PUBLIC_RELATED_ENTITY_PROJECTION = withPublicDescriptionGateFields(
-  '_id slug departments school studentVisibilityTier rosterEnrichment',
+  '_id slug departments school studentVisibilityTier studentVisibilityOverrideTier rosterEnrichment',
 );
 
 const MAX_SIMILAR_RESEARCH_ENTITIES = 6;
@@ -3801,7 +3808,8 @@ const distinctEndpointIdsInOrder = (
     new Set(relationships.map((relationship) => researchGroupDocumentId(endpointId(relationship)))),
   );
 
-const RELATED_ENTITY_RANKING_PROJECTION = '_id slug name displayName studentVisibilityTier';
+const RELATED_ENTITY_RANKING_PROJECTION =
+  '_id slug name displayName studentVisibilityTier studentVisibilityOverrideTier';
 
 const tierEligibleRankingEntities = async (
   entityIds: readonly string[],
@@ -3810,13 +3818,13 @@ const tierEligibleRankingEntities = async (
   const entities = (await ResearchEntity.find({
     _id: { $in: entityIds },
     archived: { $ne: true },
-    studentVisibilityTier: { $in: publicStudentVisibilityTiers },
+    ...servedStudentVisibilityTierFilter(),
   })
     .select(RELATED_ENTITY_RANKING_PROJECTION)
     .lean()) as any[];
   return new Map(
     entities
-      .filter((entity) => publicStudentVisibilityTiers.includes(entity.studentVisibilityTier))
+      .filter((entity) => servesStudentVisibilityTier(entity))
       .map((entity) => [researchGroupDocumentId(entity._id), entity]),
   );
 };
@@ -3833,15 +3841,13 @@ const servableEntitiesById = async (
   const entities = (await ResearchEntity.find({
     _id: { $in: entityIds },
     archived: { $ne: true },
-    studentVisibilityTier: { $in: publicStudentVisibilityTiers },
+    ...servedStudentVisibilityTierFilter(),
   })
     .select(PUBLIC_RELATED_ENTITY_PROJECTION)
     .lean()) as any[];
   return new Map(
     withServablePublicResearchEntities(
-      entities.filter((entity) =>
-        publicStudentVisibilityTiers.includes(entity.studentVisibilityTier),
-      ),
+      entities.filter((entity) => servesStudentVisibilityTier(entity)),
       false,
     ).map((entity) => [researchGroupDocumentId(entity._id), entity]),
   );
@@ -4210,7 +4216,7 @@ export async function listSimilarResearchEntities(
   const candidateEntities = (await ResearchEntity.find({
     _id: { $in: orderedCandidateIds },
     archived: { $ne: true },
-    studentVisibilityTier: { $in: publicStudentVisibilityTiers },
+    ...servedStudentVisibilityTierFilter(),
   })
     .select(PUBLIC_RELATED_ENTITY_PROJECTION)
     .lean()) as any[];
@@ -4623,8 +4629,7 @@ export const normalizeResearchDetailSlug = (value: unknown): string | undefined 
 
 const isPubliclyServableCanonicalTarget = (candidate: Record<string, any>): boolean =>
   candidate.archived !== true &&
-  !!candidate.studentVisibilityTier &&
-  publicStudentVisibilityTiers.includes(candidate.studentVisibilityTier as StudentVisibilityTier) &&
+  servesStudentVisibilityTier(candidate) &&
   !researchEntityHasDeceasedLead(candidate) &&
   typeof candidate.slug === 'string' &&
   candidate.slug.trim().length > 0;
@@ -4869,13 +4874,11 @@ export async function getResearchGroupDetail(
   const group = await ResearchEntity.findOne({
     slug: normalizedSlug,
     archived: { $ne: true },
-    ...(includeWithheldForOperator
-      ? {}
-      : { studentVisibilityTier: { $in: publicStudentVisibilityTiers } }),
+    ...(includeWithheldForOperator ? {} : servedStudentVisibilityTierFilter()),
   }).lean();
   if (!group) return null;
   const withheldBy: ResearchDetailWithholdingCheck[] = [];
-  if (!publicStudentVisibilityTiers.includes((group as any).studentVisibilityTier)) {
+  if (!servesStudentVisibilityTier(group as Record<string, any>)) {
     withheldBy.push('visibility_tier');
   }
   if (researchEntityHasDeceasedLead(group as Record<string, any>)) {
