@@ -12,8 +12,6 @@ const CONFIG_FILE = 'server/src/scrapers/sources/rosterConfigs.ts';
 describe('lane config ref scan (#5807)', () => {
   let workTree: string;
   let gitDir: string;
-  let droppedLaneCommit: string;
-  let deletedBranchCommit: string;
 
   const git = (...args: string[]) =>
     execFileSync('git', args, {
@@ -51,7 +49,6 @@ describe('lane config ref scan (#5807)', () => {
       "export const CONFIGS = [{ deptKey: 'chem' }, { deptKey: 'dropped-lane' }];\n",
       'add dropped lane',
     );
-    droppedLaneCommit = git('rev-parse', 'HEAD').trim();
     commitFile(CONFIG_FILE, "export const CONFIGS = [{ deptKey: 'chem' }];\n", 'drop it');
     git('switch', '-q', 'beta');
     git('switch', '-q', '-c', 'feat/root-lane');
@@ -63,7 +60,6 @@ describe('lane config ref scan (#5807)', () => {
     git('switch', '-q', 'beta');
     git('switch', '-q', '-c', 'feat/deleted');
     commitFile(CONFIG_FILE, "export const CONFIGS = [{ deptKey: 'deleted-lane' }];\n", 'deleted');
-    deletedBranchCommit = git('rev-parse', 'HEAD').trim();
     git('switch', '-q', 'beta');
     git('branch', '-q', '-D', 'feat/deleted');
     git('tag', '-a', 'v-tagged', '-m', 'tagged');
