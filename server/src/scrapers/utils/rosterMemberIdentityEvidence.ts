@@ -17,7 +17,7 @@ export const ROSTER_MEMBER_IDENTITY_EVIDENCE_FIELD = 'profileIdentityEvidence';
  * serves the old extractor's output for every cached page (#5677). A test pins it to the
  * extractor's output on a fixture corpus, so a change here or in a dependency fails until bumped.
  */
-export const ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION = 2;
+export const ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION = 3;
 
 const MAX_LINKED_PROFILE_URLS = 40;
 const MAX_EMAILS = 5;
@@ -274,6 +274,15 @@ function slugNamesMember(url: string, memberName: string): boolean {
  * related-items block (#5592, #5677), and only one labelled with another person's name marks its
  * destination as that person's.
  */
+/**
+ * Containers whose links never belong to the page subject: navigation, footers, and co-author or
+ * collaborator blocks. A profile showing one co-author card trips neither the repeated-label nor
+ * the other-person rule, because the card's name is plain text beside a lone "View Full Profile"
+ * (#5677).
+ */
+const NON_SUBJECT_LINK_CONTAINER =
+  'nav, footer, [class*="co-author"], [class*="coauthor"], [class*="collaborator"]';
+
 function subjectAnchorCandidates(
   $: cheerio.CheerioAPI,
   pageUrl: string,
@@ -283,7 +292,9 @@ function subjectAnchorCandidates(
   const otherPersonDestinations = new Set<string>();
   $('a[href]').each((_i, el) => {
     const url = absoluteHttpUrl($(el).attr('href'), pageUrl);
-    if (!url || !isYaleProfileUrl(url) || $(el).closest('nav, footer').length > 0) return;
+    if (!url || !isYaleProfileUrl(url) || $(el).closest(NON_SUBJECT_LINK_CONTAINER).length > 0) {
+      return;
+    }
     const destination = normalizeOfficialProfileDestination(url);
     const label = anchorLabel($, el);
     if (slugNamesMember(url, memberName)) {
