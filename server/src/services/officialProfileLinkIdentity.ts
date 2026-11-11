@@ -7,6 +7,7 @@ import {
   type ProfilePageOwnerNetids,
 } from '../scrapers/directoryContradictedProfileNetid';
 import { normalizeOfficialProfileDestination } from './leadProfileIdentity';
+import { looksLikeYaleNetid } from '../utils/yaleNetid';
 
 export interface PersonIdentityWitnesses {
   _id?: unknown;
@@ -36,7 +37,8 @@ const BARE_NETID = /^[a-z]+[0-9]+$/;
  * Nothing else is read as a conflict: a name differs between a nickname and a full first name,
  * one person can publish several ORCIDs (a YSM page listed two for one owner, #5605), and a
  * person can have more than one address. A record with no netid is a possible second record
- * of the same person, so it decides nothing.
+ * of the same person, so it decides nothing, and so does an email alias stored as a netid,
+ * which names no one (#5740).
  */
 export function identityWitnessesConflict(
   holder: PersonIdentityWitnesses,
@@ -45,7 +47,11 @@ export function identityWitnessesConflict(
   if (holder._id !== undefined && String(holder._id) === String(person._id ?? '')) return false;
   const holderNetid = netidOf(holder);
   const personNetid = netidOf(person);
-  return Boolean(holderNetid) && Boolean(personNetid) && holderNetid !== personNetid;
+  return (
+    looksLikeYaleNetid(holderNetid) &&
+    looksLikeYaleNetid(personNetid) &&
+    holderNetid !== personNetid
+  );
 }
 
 export interface OfficialProfileLinkHolderOptions {

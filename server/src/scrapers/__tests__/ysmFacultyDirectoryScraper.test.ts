@@ -361,7 +361,7 @@ describe('facultyToUserObservations', () => {
     const { observations, entityKey } = facultyToUserObservations(profile);
     expect(entityKey).toBe('netid:jordan.rivers');
     expect(observations.every((o) => o.sourceUrl === RIVERS.profileUrl)).toBe(true);
-    expect(observations.find((o) => o.field === 'netid')?.value).toBe('jordan.rivers');
+    expect(observations.some((o) => o.field === 'netid')).toBe(false);
     expect(observations.find((o) => o.field === 'userType')?.value).toBe('professor');
   });
 

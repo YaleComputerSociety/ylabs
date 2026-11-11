@@ -57,6 +57,7 @@ import {
   netidFromEmail,
   splitName,
 } from '../utils/scraperHelpers';
+import { asYaleNetid } from '../../utils/yaleNetid';
 import {
   classifyUserType,
   isResearchSupportStaffTitle,
@@ -383,7 +384,8 @@ export function facultyToUserObservations(profile: YsmFacultyProfile): {
   const base = { entityType: 'user' as const, entityKey, sourceUrl: profile.profileUrl };
   const obs: ObservationInput[] = [];
 
-  if (netid) obs.push({ ...base, field: 'netid', value: netid });
+  const statedNetid = asYaleNetid(netid);
+  if (statedNetid) obs.push({ ...base, field: 'netid', value: statedNetid });
   if (first) obs.push({ ...base, field: 'fname', value: first });
   if (last) obs.push({ ...base, field: 'lname', value: last });
   obs.push({ ...base, field: 'userType', value: classifyUserType(profile.screeningTitle) });

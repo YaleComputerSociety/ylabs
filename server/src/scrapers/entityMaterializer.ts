@@ -79,6 +79,7 @@ import {
 } from './invalidatedScrapeRuns';
 import { Fellowship } from '../models/fellowship';
 import { cannotOwnResearchHome } from '../utils/researchHomeOwnership';
+import { looksLikeYaleNetid } from '../utils/yaleNetid';
 import {
   buildResearchAreasCardSummary,
   deriveShortDescriptionFromFullDescription,
@@ -3990,6 +3991,7 @@ type RosterEmailAliasResolution =
  * Fails closed when an alias still maps to more than one netid. `ambiguous` is reported
  * apart from `absent` because the two mean opposite things downstream: an alias the
  * directory maps to two identities must not then be resolved by the name it spells.
+ * A candidate that is not a Yale netid, such as another alias key, is never a target (#5740).
  */
 export async function resolveNetidForRosterEmailAlias(
   alias: string,
@@ -4022,7 +4024,7 @@ export async function resolveNetidForRosterEmailAlias(
           ),
       )
       .map((match) => netidNamedByUserEntityKey(match.entityKey))
-      .filter((netid) => Boolean(netid) && netid !== local),
+      .filter((netid) => looksLikeYaleNetid(netid) && netid !== local),
   );
   if (netids.length === 1) return { status: 'resolved', netid: netids[0] };
   return { status: netids.length > 1 ? 'ambiguous' : 'absent' };
@@ -6975,11 +6977,13 @@ async function researcherTheObservedEmailNames(
  * The researcher a `user` key's netid reaches: the researcher holding it as
  * `identifiers.netid`. An alias the directory maps to another live holder's netid resolves to
  * that holder, as it did when every alias twin was an account (#4988), and either side may
- * hold the alias or its target (#5000).
+ * hold the alias or its target (#5000). An alias the directory does not map is never an
+ * identity netid, so a researcher stamped with it is not reached on it (#5740).
  */
 async function researcherReachedByIdentityNetid(netid: string): Promise<any | null> {
-  const target = (await aliasNetidWithLiveHolder(netid)) ?? netid;
-  return Researcher.findOne({ 'identifiers.netid': target });
+  const target =
+    (await aliasNetidWithLiveHolder(netid)) ?? (looksLikeYaleNetid(netid) ? netid : undefined);
+  return target ? Researcher.findOne({ 'identifiers.netid': target }) : null;
 }
 
 async function aliasNetidWithLiveHolder(netid: string): Promise<string | undefined> {

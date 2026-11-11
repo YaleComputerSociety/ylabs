@@ -99,6 +99,7 @@ import {
   slugify,
   splitName,
 } from '../utils/scraperHelpers';
+import { asYaleNetid } from '../../utils/yaleNetid';
 import { LEAD_ROLE_LEGACY_LABELS } from '../../models/canonicalRoleMapping';
 import {
   isJsonLdNodeOfAnotherPerson,
@@ -3420,8 +3421,9 @@ export function identityToUserObservations(
     medicine: identity.fetchedUrl,
     official: identity.canonicalUrl,
   };
+  const statedNetid = asYaleNetid(netid);
   const identityObservations: Array<[string, unknown]> = [
-    ['netid', netid],
+    ...(statedNetid ? ([['netid', statedNetid]] as Array<[string, unknown]>) : []),
     ['fname', first],
     ['lname', last],
   ];

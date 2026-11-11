@@ -66,6 +66,7 @@ import {
   splitName,
   yaleUnitMailboxTokens,
 } from '../utils/scraperHelpers';
+import { asYaleNetid } from '../../utils/yaleNetid';
 import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
 import { isInProfilePublicityRegion } from '../utils/profilePublicityRegions';
 import {
@@ -4118,7 +4119,8 @@ function entryToUserObservations(
   };
   const obs: ObservationInput[] = [];
 
-  if (netid) obs.push({ ...rosterBase, field: 'netid', value: netid });
+  const statedNetid = asYaleNetid(netid);
+  if (statedNetid) obs.push({ ...rosterBase, field: 'netid', value: statedNetid });
   if (first) obs.push({ ...rosterBase, field: 'fname', value: first });
   if (last) obs.push({ ...rosterBase, field: 'lname', value: last });
   if (!dept.crossListedProgramme || statesFacultyAppointment(entry.title)) {

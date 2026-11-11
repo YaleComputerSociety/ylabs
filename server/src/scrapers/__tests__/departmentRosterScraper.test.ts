@@ -3056,6 +3056,32 @@ describe('DepartmentRosterScraper.run', () => {
     ]);
   });
 
+  it('keys a person on a dotted email alias without stating it as their netid', async () => {
+    const cannedExtractor = vi.fn((): FacultyEntry[] => [
+      { name: 'Robin Fixture', email: 'robin.fixture@yale.edu' },
+    ]);
+    const htmlFetcher = vi.fn(async () => '<html><body></body></html>');
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'econ',
+        deptName: 'Economics',
+        schoolName: 'FAS',
+        url: 'https://example.invalid/econ',
+        paginated: false,
+        extractor: cannedExtractor,
+      },
+    ];
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const userObs = emitted.filter((o) => o.entityType === 'user');
+    expect(userObs.length).toBeGreaterThan(0);
+    expect(userObs.every((o) => o.entityKey === 'netid:robin.fixture')).toBe(true);
+    expect(userObs.find((o) => o.field === 'email')?.value).toBe('robin.fixture@yale.edu');
+    expect(userObs.some((o) => o.field === 'netid')).toBe(false);
+  });
+
   it('suppresses department claims on a derived research entity for an affiliates-only roster', async () => {
     const cannedExtractor = vi.fn((): FacultyEntry[] => [
       {
