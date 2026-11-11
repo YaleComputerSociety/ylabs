@@ -181,7 +181,7 @@ A request past that depth is answered with an empty page flagged `depthLimited: 
 That depth-limited page runs no search, so it reports no `estimatedTotalHits` at all instead of inventing one, and the client leaves the total it is already displaying untouched.
 Facets are sent once per result set: page 1 (or an explicit `includeFacets: true`) includes `facetDistribution`, later pages omit the key entirely and skip the facet queries, and an absent key means "unchanged" to the client rather than "no facet values".
 Because absence carries that meaning, every search path that was asked for facets must return the key, including the paths that run no Meilisearch query at all (unsearchable query, low-quality-first browse), which return an empty distribution.
-The distribution carries `school`, `departments`, `entityType`, `hostsUndergrads` (`{ true: n }`, from the `hasUndergradHostingEvidence` index field), and `welcomesUndergrads` (`{ true: n }`, from the `welcomesUndergrads` index field), the facets the filter rail reads.
+The distribution carries `school`, `departments`, `entityType`, `hostsUndergrads` (`{ true: n }`, from the `hasUndergradHostingEvidence` index field), `welcomesUndergrads` (`{ true: n }`, from the `welcomesUndergrads` index field), and `worksWithUndergrads` (`{ true: n }`, from the `worksWithUndergrads` index field), the facets the filter rail reads.
 `hasUndergradHostingEvidence` is derived from `entityHasHostedUndergraduates` when the index document is built, not copied from the stored flag, so the filter and facet read the predicate the served badge reads (#5123).
 `welcomesUndergrads` is derived the same way from `entityWelcomesUndergraduates`, the predicate that serves the invitation badge, and counts both levels, "Welcomes undergrads, recruiting now" (`actively_hiring`) and "Welcomes undergrads" (#5441).
 Both predicates also read the owner-reviewed official Yale lists of `undergradListEvidence`, each through its own signal in `UNDERGRAD_EVIDENCE_SIGNAL` (#5362): a `hosted` list entry makes a row hosted, and a `welcomes` list entry makes it welcome undergraduates, while a `mentors` list never feeds either, so a source is counted once.
@@ -190,7 +190,10 @@ The index builder does not know whether a row withholds its way in, so for an em
 With that filter on and no student-chosen sort, browse sorts on `undergradInvitationRank` first and a thresholded text search moves hiring rows ahead within its pool, so the recruiting-now rows lead without a filter of its own (#5456).
 `mentorsUndergrads` is present, and `true`, only on a row `entityMentorsUndergraduates` accepts, which needs owner-reviewed mentors list evidence, and is absent otherwise.
 `worksWithUndergrads` is present, and `true`, only when `hasUndergradHostingEvidence`, `welcomesUndergrads` or `mentorsUndergrads` is, computed from the same three values the builder already holds so it cannot disagree with them.
-Both are filterable, but no filter key, facet or client control reads either yet (#5551).
+Both are filterable; no filter key, facet or client control reads `mentorsUndergrads` on its own (#5551).
+The browse card shows "Mentors undergrads" from a served `mentors` entry of `undergradListEvidence` (`buildWayInBadgesFromEntity` in `client/src/utils/researchDiscoveryAdapters.ts`), so a row the works filter returns only for mentoring still carries its own tag (#5362).
+The `worksWithUndergrads` filter (the "Works with undergrads" toggle, URL `works=1`, listed first above the welcomes and hosted toggles) filters on the index field of the same name, the OR of the hosted, welcomes and mentors values the builder already holds, so its count is one facet and it cannot disagree with the three signals; the admin Mongo browse applies the same OR of the three predicates (#5362).
+Like `welcomesUndergrads` it is in `TOGGLE_FILTERS_AHEAD_OF_INDEX`, so on an index whose settings do not yet make it filterable the search drops it and reports `appliedFilters.worksWithUndergrads: false` instead of failing.
 
 ### An index behind the code still answers (#5441)
 

@@ -52,6 +52,15 @@ describe('searchRerankCacheQueryKey', () => {
     expect(searchRerankCacheQueryKey('ecology', {})).not.toBe(chosen);
   });
 
+  it('gives the works-with-undergraduates toggle its own key (#5362)', () => {
+    expect(searchRerankCacheQueryKey('ecology', { worksWithUndergrads: true })).not.toBe(
+      searchRerankCacheQueryKey('ecology', {}),
+    );
+    expect(searchRerankCacheQueryKey('ecology', { worksWithUndergrads: true })).not.toBe(
+      searchRerankCacheQueryKey('ecology', { welcomesUndergrads: true }),
+    );
+  });
+
   it('keeps an operator visibility scope and an unset toggle out of the key', () => {
     expect(
       searchRerankCacheQueryKey('ecology', {

@@ -9,7 +9,7 @@ The measurement that motivated it, and the decision to score in an agent session
 `search_rerank_cache` (`server/src/models/searchRerankCache.ts`) holds one document per query key.
 The key is `searchRerankCacheQueryKey(query, filters)` in `server/src/services/researchGroupService.ts`.
 It reads the typed query the way search tokenizes it (lowercased, diacritics folded, punctuation and filler words dropped, whitespace collapsed), before spelling correction, so an entry for a logged query matches that query exactly as a student typed it.
-It adds only the student-chosen filters (`kind`, `entityType`, `school`, `departments`, `researchAreas`, `hostsUndergrads`, `welcomesUndergrads`), in a fixed key order with each list sorted and lowercased, so the same choice made in any order is one entry.
+It adds only the student-chosen filters (`kind`, `entityType`, `school`, `departments`, `researchAreas`, `hostsUndergrads`, `welcomesUndergrads`, `worksWithUndergrads`), in a fixed key order with each list sorted and lowercased, so the same choice made in any order is one entry.
 The visibility tier is an operator scope and never splits an entry.
 
 Each document carries `queryText`, the stored `filters`, `scores` as `[{ entityId, score, textHash? }]` with `entityId` the string form of the research entity `_id` and `score` from 0 to 3, `scoredAt`, `indexVersion` (a free-form corpus or index marker the seeder supplies), and `source`.

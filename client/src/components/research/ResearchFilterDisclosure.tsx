@@ -7,6 +7,8 @@ import {
   HOSTED_UNDERGRADUATES_LABEL,
   NO_HOSTED_UNDERGRADUATE_EVIDENCE_NOTE,
   WELCOMES_UNDERGRADUATES_CHIP_VALUE,
+  WORKS_WITH_UNDERGRADUATES_CHIP_VALUE,
+  WORKS_WITH_UNDERGRADUATES_LABEL,
   isKnownResearchEntityType,
   researchEntityTypeFilterLabel,
 } from '../../utils/researchEntityCopy';
@@ -28,6 +30,7 @@ interface ResearchFilterDisclosureProps {
   selectedDepartment: string;
   selectedHostsUndergrads?: boolean;
   selectedWelcomesUndergrads?: boolean;
+  selectedWorksWithUndergrads?: boolean;
   isApplying: boolean;
   hasFacetError: boolean;
   departmentLabel: (value: string) => string;
@@ -36,6 +39,7 @@ interface ResearchFilterDisclosureProps {
   onDepartmentChange: (value: string) => void;
   onHostsUndergradsChange?: (value: boolean) => void;
   onWelcomesUndergradsChange?: (value: boolean) => void;
+  onWorksWithUndergradsChange?: (value: boolean) => void;
   onClearAll: () => void;
   variant?: 'popover' | 'sidebar';
   isOpen?: boolean;
@@ -246,6 +250,7 @@ const ResearchFilterDisclosure = ({
   selectedDepartment,
   selectedHostsUndergrads = false,
   selectedWelcomesUndergrads = false,
+  selectedWorksWithUndergrads = false,
   isApplying,
   hasFacetError,
   departmentLabel,
@@ -254,6 +259,7 @@ const ResearchFilterDisclosure = ({
   onDepartmentChange,
   onHostsUndergradsChange,
   onWelcomesUndergradsChange,
+  onWorksWithUndergradsChange,
   onClearAll,
   variant = 'popover',
   isOpen: controlledIsOpen,
@@ -326,15 +332,21 @@ const ResearchFilterDisclosure = ({
   const showWelcomesUndergrads =
     Boolean(onWelcomesUndergradsChange) &&
     (Boolean(welcomesUndergradsCount) || selectedWelcomesUndergrads);
+  const worksWithUndergradsCount = servedTrueCount(facetDistribution.worksWithUndergrads);
+  const showWorksWithUndergrads =
+    Boolean(onWorksWithUndergradsChange) &&
+    (Boolean(worksWithUndergradsCount) || selectedWorksWithUndergrads);
   const activeCount =
     Number(Boolean(selectedEntityType)) +
     Number(Boolean(selectedSchool)) +
     Number(Boolean(selectedDepartment)) +
     Number(selectedHostsUndergrads) +
-    Number(selectedWelcomesUndergrads);
+    Number(selectedWelcomesUndergrads) +
+    Number(selectedWorksWithUndergrads);
   const triggerCount = activeCount + operatorActiveCount;
   const visibleFields = (
     [
+      showWorksWithUndergrads && 'worksWithUndergrads',
       showWelcomesUndergrads && 'welcomesUndergrads',
       showHostsUndergrads && 'hostsUndergrads',
       showEntityType && 'entityType',
@@ -344,8 +356,13 @@ const ResearchFilterDisclosure = ({
   ).filter(
     (
       field,
-    ): field is 'entityType' | 'school' | 'department' | 'hostsUndergrads' | 'welcomesUndergrads' =>
-      Boolean(field),
+    ): field is
+      | 'entityType'
+      | 'school'
+      | 'department'
+      | 'hostsUndergrads'
+      | 'welcomesUndergrads'
+      | 'worksWithUndergrads' => Boolean(field),
   );
   const firstVisibleField = visibleFields.find(
     (field) => field !== 'hostsUndergrads' || !noHostedUndergraduateEvidence,
@@ -434,8 +451,20 @@ const ResearchFilterDisclosure = ({
     <fieldset className="min-w-0 border-0 p-0">
       <legend className="sr-only">Narrow research results</legend>
       <div className={`min-w-0 ${isSidebar ? 'space-y-3' : 'space-y-4'}`}>
-        {(showWelcomesUndergrads || showHostsUndergrads) && (
+        {(showWorksWithUndergrads || showWelcomesUndergrads || showHostsUndergrads) && (
           <div className="min-w-0">
+            {showWorksWithUndergrads && (
+              <UndergraduateToggle
+                label={WORKS_WITH_UNDERGRADUATES_LABEL}
+                count={worksWithUndergradsCount}
+                countSuffix={facetCountSuffix(worksWithUndergradsCount)}
+                checked={selectedWorksWithUndergrads}
+                inputRef={
+                  firstVisibleField === 'worksWithUndergrads' ? setFirstFieldNode : undefined
+                }
+                onChange={onWorksWithUndergradsChange}
+              />
+            )}
             {showWelcomesUndergrads && (
               <UndergraduateToggle
                 label={WELCOMES_UNDERGRADS_LABEL}
@@ -576,6 +605,14 @@ const ResearchFilterDisclosure = ({
             value={departmentLabel(selectedDepartment)}
             visibleLabel={besideTrigger ? departmentLabel(selectedDepartment) : undefined}
             onRemove={() => onDepartmentChange('')}
+          />
+        )}
+        {selectedWorksWithUndergrads && (
+          <ActiveFilterChip
+            axis="Undergraduates"
+            value={WORKS_WITH_UNDERGRADUATES_CHIP_VALUE}
+            visibleLabel={besideTrigger ? WORKS_WITH_UNDERGRADUATES_LABEL : undefined}
+            onRemove={() => onWorksWithUndergradsChange?.(false)}
           />
         )}
         {selectedHostsUndergrads && (

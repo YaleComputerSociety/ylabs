@@ -1438,6 +1438,7 @@ describe('searchResearchGroupsViaMeili', () => {
           'entityType',
           'hasUndergradHostingEvidence',
           'welcomesUndergrads',
+          'worksWithUndergrads',
         ],
       }),
     );
@@ -2506,6 +2507,7 @@ describe('searchResearchGroupsViaMeili', () => {
       'researchAreas',
       'hasUndergradHostingEvidence',
       'welcomesUndergrads',
+      'worksWithUndergrads',
       'undergradInvitationRank',
       'meshDescriptorOnlyTerms',
       'rerankTextHash',
@@ -2924,6 +2926,7 @@ describe('searchResearchGroupsViaMeili', () => {
       entityType: { LAB: 2, FACULTY_RESEARCH_AREA: 1 },
       hostsUndergrads: { true: 0 },
       welcomesUndergrads: { true: 0 },
+      worksWithUndergrads: { true: 0 },
     });
   });
 

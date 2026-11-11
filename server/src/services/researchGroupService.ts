@@ -103,6 +103,7 @@ import {
   candidateMatchesStudentFilters,
   HOSTS_UNDERGRADS_INDEX_FIELD,
   WELCOMES_UNDERGRADS_INDEX_FIELD,
+  WORKS_WITH_UNDERGRADS_INDEX_FIELD,
   ResearchGroupFilterInput,
   tallyCandidateFacetDistribution,
   visibilityScopeOnly,
@@ -112,6 +113,7 @@ import {
   listedRosterUndergraduate,
   servableRosterSnapshot,
 } from './hostedUndergraduates';
+import { entityMentorsUndergraduates } from './undergradListEvidenceServing';
 import {
   type AppliedStudentFilters,
   resolveStudentFilterValuesInScope,
@@ -653,6 +655,7 @@ const RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES = [
   'researchAreas',
   HOSTS_UNDERGRADS_INDEX_FIELD,
   WELCOMES_UNDERGRADS_INDEX_FIELD,
+  WORKS_WITH_UNDERGRADS_INDEX_FIELD,
   UNDERGRAD_INVITATION_RANK_FIELD,
   MESH_DESCRIPTOR_ONLY_TERMS_FIELD,
   SEARCH_RERANK_TEXT_HASH_FIELD,
@@ -982,6 +985,7 @@ const sanitizeResearchGroupSearchFilters = (
   researchAreas: boundedResearchFilterValues(filters.researchAreas),
   hostsUndergrads: filters.hostsUndergrads === true ? true : undefined,
   welcomesUndergrads: filters.welcomesUndergrads === true ? true : undefined,
+  worksWithUndergrads: filters.worksWithUndergrads === true ? true : undefined,
   studentVisibilityTier: boundedResearchFilterValues(filters.studentVisibilityTier),
 });
 
@@ -992,7 +996,11 @@ const SEARCH_RERANK_CACHE_FILTER_LISTS = [
   'departments',
   'researchAreas',
 ] as const;
-const SEARCH_RERANK_CACHE_FILTER_TOGGLES = ['hostsUndergrads', 'welcomesUndergrads'] as const;
+const SEARCH_RERANK_CACHE_FILTER_TOGGLES = [
+  'hostsUndergrads',
+  'welcomesUndergrads',
+  'worksWithUndergrads',
+] as const;
 
 export type SearchRerankCacheFilters = Pick<
   ResearchGroupFilterInput,
@@ -1662,6 +1670,7 @@ export const RESEARCH_ENTITY_SEARCH_FACET_FIELDS = [
   'entityType',
   HOSTS_UNDERGRADS_INDEX_FIELD,
   WELCOMES_UNDERGRADS_INDEX_FIELD,
+  WORKS_WITH_UNDERGRADS_INDEX_FIELD,
 ];
 
 // A toggle needs no disjunctive query: with it on, its own count under the other
@@ -1676,12 +1685,16 @@ const POOL_TALLIED_RESEARCH_FACETS: ReadonlyArray<{
   })),
   { filterKey: 'hostsUndergrads', indexField: HOSTS_UNDERGRADS_INDEX_FIELD },
   { filterKey: 'welcomesUndergrads', indexField: WELCOMES_UNDERGRADS_INDEX_FIELD },
+  { filterKey: 'worksWithUndergrads', indexField: WORKS_WITH_UNDERGRADS_INDEX_FIELD },
 ];
 
 const TOGGLE_FILTERS_AHEAD_OF_INDEX: ReadonlyArray<{
-  filterKey: 'welcomesUndergrads';
+  filterKey: 'welcomesUndergrads' | 'worksWithUndergrads';
   indexField: string;
-}> = [{ filterKey: 'welcomesUndergrads', indexField: WELCOMES_UNDERGRADS_INDEX_FIELD }];
+}> = [
+  { filterKey: 'welcomesUndergrads', indexField: WELCOMES_UNDERGRADS_INDEX_FIELD },
+  { filterKey: 'worksWithUndergrads', indexField: WORKS_WITH_UNDERGRADS_INDEX_FIELD },
+];
 
 const liveIndexSortability = async (
   meiliIndex: Awaited<ReturnType<typeof getMeiliSearchIndex>>,
@@ -1915,7 +1928,11 @@ interface SearchedResearchQuery {
 const readsSearchRerankCache = (): boolean =>
   isSearchRerankCacheEnabled() || isSearchRerankLiveMissEnabled();
 
-const MORE_TOPIC_RESULTS_ACCESS_TOGGLES = ['hostsUndergrads', 'welcomesUndergrads'] as const;
+const MORE_TOPIC_RESULTS_ACCESS_TOGGLES = [
+  'hostsUndergrads',
+  'welcomesUndergrads',
+  'worksWithUndergrads',
+] as const;
 type MoreTopicResultsAccessToggle = (typeof MORE_TOPIC_RESULTS_ACCESS_TOGGLES)[number];
 const MORE_TOPIC_RESULTS_BELOW_FILTERED_TOTAL = 10;
 const MORE_TOPIC_RESULTS_LIMIT = 10;
@@ -1924,10 +1941,14 @@ const MORE_TOPIC_RESULTS_CANDIDATES_BEYOND_SHOWN = 2 * MORE_TOPIC_RESULTS_LIMIT;
 const carriesAccessToggleEvidence = (
   entity: PublicResearchEntityDto,
   toggle: MoreTopicResultsAccessToggle,
-): boolean =>
-  toggle === 'hostsUndergrads'
-    ? entity.hasUndergradHostingEvidence === true
-    : entity.welcomesUndergrads === true;
+): boolean => {
+  const hosts = entity.hasUndergradHostingEvidence === true;
+  const welcomes = entity.welcomesUndergrads === true;
+  if (toggle === 'hostsUndergrads') return hosts;
+  if (toggle === 'welcomesUndergrads') return welcomes;
+  const listed = (entity as { undergradListEvidence?: unknown }).undergradListEvidence;
+  return hosts || welcomes || (Array.isArray(listed) && listed.length > 0);
+};
 
 interface MoreTopicResultsRequest {
   searchQuery: string;
@@ -1964,6 +1985,7 @@ async function optionalMoreTopicResults({
     ...filters,
     hostsUndergrads: undefined,
     welcomesUndergrads: undefined,
+    worksWithUndergrads: undefined,
   };
   const shownIds = new Set(
     filtered.researchEntities.map((entity) => researchGroupDocumentId(entity._id)),
@@ -2179,10 +2201,18 @@ async function searchResearchGroupsForQuery(
         mongoFilterFromResearchFilters(sanitizedFilters, safeOptions.includeNonPublic),
       ).lean()) as any[],
       safeOptions.includeNonPublic,
-    ).filter(
-      (entity) =>
-        sanitizedFilters.welcomesUndergrads !== true || entityWelcomesUndergraduates(entity),
-    );
+    )
+      .filter(
+        (entity) =>
+          sanitizedFilters.welcomesUndergrads !== true || entityWelcomesUndergraduates(entity),
+      )
+      .filter(
+        (entity) =>
+          sanitizedFilters.worksWithUndergrads !== true ||
+          entityHasHostedUndergraduates(entity) ||
+          entityWelcomesUndergraduates(entity) ||
+          entityMentorsUndergraduates(entity),
+      );
     const candidatesWithQuality = await withQualitySummaries(candidates as any[]);
     const filteredCandidates = candidatesWithQuality
       .filter((entity) => matchesQualityFilters(entity.qualitySummary, safeOptions.qualityFilters))
@@ -2750,6 +2780,7 @@ async function searchResearchGroupsForQuery(
       researchAreas,
       [HOSTS_UNDERGRADS_INDEX_FIELD]: hostingEvidence,
       [WELCOMES_UNDERGRADS_INDEX_FIELD]: invitationEvidence,
+      [WORKS_WITH_UNDERGRADS_INDEX_FIELD]: worksWithEvidence,
       ...rest
     } = rawDistribution;
     const cleanedResearchAreas = sanitizeResearchAreaFacetDistribution(researchAreas);
@@ -2759,6 +2790,7 @@ async function searchResearchGroupsForQuery(
       ...(schools ? { school: schools } : {}),
       ...(hostingEvidence ? { hostsUndergrads: { true: hostingEvidence.true ?? 0 } } : {}),
       ...(invitationEvidence ? { welcomesUndergrads: { true: invitationEvidence.true ?? 0 } } : {}),
+      ...(worksWithEvidence ? { worksWithUndergrads: { true: worksWithEvidence.true ?? 0 } } : {}),
     };
   };
 

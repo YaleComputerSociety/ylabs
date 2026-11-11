@@ -16,6 +16,7 @@ import {
   CREATIVE_PRACTICE_KIND_LABEL,
   entityKindLabel,
   HOSTED_UNDERGRADUATES_LABEL,
+  MENTORS_UNDERGRADUATES_LABEL,
   isCreativePracticeEntity,
   leadRoleLabelForEntity,
   sanitizeResearchEntityCopy,
@@ -74,6 +75,7 @@ const ACCESS_SIGNAL_PRIORITY = [
   ACTIVELY_HIRING_LABEL,
   WELCOMES_UNDERGRADS_LABEL,
   'Undergrad evidence',
+  MENTORS_UNDERGRADUATES_LABEL,
   'Student project evidence',
   'Contact route',
 ];
@@ -82,6 +84,7 @@ const UNDERGRAD_ACCESS_SIGNALS = new Set([
   ACTIVELY_HIRING_LABEL,
   WELCOMES_UNDERGRADS_LABEL,
   'Undergrad evidence',
+  MENTORS_UNDERGRADUATES_LABEL,
 ]);
 
 const accessSignalLabel = (label: string): string => ACCESS_SIGNAL_LABELS[label] ?? label;
