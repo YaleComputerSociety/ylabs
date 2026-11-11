@@ -49,6 +49,7 @@ import {
 import {
   extractRosterMemberIdentityEvidence,
   isYaleHostedUrl,
+  ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION,
   ROSTER_MEMBER_IDENTITY_EVIDENCE_FIELD,
   type RosterMemberIdentityEvidence,
 } from '../utils/rosterMemberIdentityEvidence';
@@ -93,7 +94,7 @@ const FETCH_TIMEOUT_MS = 30_000;
 const MAX_PAGES_PER_CENTER = 30;
 const CONSECUTIVE_REPEATED_PAGES_TO_STOP = 2;
 const MEMBER_PROFILE_FETCH_CONCURRENCY = 4;
-const MEMBER_IDENTITY_EVIDENCE_CACHE_PREFIX = 'member-identity-evidence:v1:';
+const MEMBER_IDENTITY_EVIDENCE_CACHE_PREFIX = `member-identity-evidence:v${ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION}:`;
 
 export type CenterKind = 'center' | 'institute' | 'program' | 'initiative';
 export type MemberRole = 'director' | 'co-director' | 'core-faculty' | 'affiliated';
@@ -2349,7 +2350,7 @@ export class CentersInstitutesScraper implements IScraper {
     ctx: ScraperContext,
   ): Promise<RosterMemberIdentityEvidence | undefined> {
     const profileUrl = member.profileUrl || '';
-    const cacheKey = `${MEMBER_IDENTITY_EVIDENCE_CACHE_PREFIX}${profileUrl}`;
+    const cacheKey = `${MEMBER_IDENTITY_EVIDENCE_CACHE_PREFIX}${profileUrl}#${member.name}`;
     if (ctx.options.useCache) {
       const cached = await getCached<RosterMemberIdentityEvidence>(this.name, cacheKey);
       if (cached) return cached;
