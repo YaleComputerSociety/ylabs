@@ -133,12 +133,9 @@ describe('isPhotoSceneDescription', () => {
     'Robin Photo-Fixture',
     'Image Fixture',
     'Portrait Studio Lab',
-  ])(
-    'does not flag a name: %s',
-    (text) => {
-      expect(isPhotoSceneDescription(text)).toBe(false);
-    },
-  );
+  ])('does not flag a name: %s', (text) => {
+    expect(isPhotoSceneDescription(text)).toBe(false);
+  });
 });
 
 describe('isRoleOrUnitMailbox', () => {
