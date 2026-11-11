@@ -85,13 +85,12 @@ describe('a card held only for thinness or for echoing its own topics (#5673)', 
     expect(result.reasons).toContain('missing_card_description');
   });
 
-  it("keeps today's tier for a row with no stored body", () => {
+  it('serves the line naming its own topics in place of a row with no stored body', () => {
     const result = visibility(fixtureEntity('', 'Studies Ice Sheet Dynamics and Sea Level Rise.'));
 
-    expect(result.tier).toBe('operator_review');
-    expect(result.reasons).toEqual(
-      expect.arrayContaining(['thin_description', 'missing_card_description']),
-    );
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).not.toContain('thin_description');
+    expect(result.reasons).not.toContain('missing_card_description');
     expect(result.reasons).not.toContain('thin_card_description');
   });
   it('keeps holding a row whose thin card is the tail of a sentence broken inside a quotation', () => {

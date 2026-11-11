@@ -18,6 +18,7 @@ import {
   STUDENT_READY_SOFT_SIGNAL_REASONS,
   type ResearchEntityStudentReadyCorrectness,
 } from '../studentVisibilityTier';
+import { buildResearchEntityPublicDescriptionRepresentation } from '../researchEntityPublicDescription';
 
 describe('researchEntityMeetsStudentReadyDefinition (#1802 canonical definition)', () => {
   const correct: ResearchEntityStudentReadyCorrectness = {
@@ -3415,13 +3416,21 @@ describe('a thin but accurate body', () => {
     expect(result.tier).not.toBe('student_ready');
   });
 
-  it('still holds a thin language-model line that is a topic label list', () => {
-    const result = visibility(
-      'Research Interests Glaciology; Ice Sheet Dynamics; Sea Level Rise',
-      SOUND_CARD,
-      LLM_SOURCE,
-    );
-    expect(result.reasons).toContain('thin_description');
+  it('serves the sound card rather than a thin language-model line that is a topic label list', () => {
+    const labelList = 'Research Interests Glaciology; Ice Sheet Dynamics; Sea Level Rise';
+    const served = buildResearchEntityPublicDescriptionRepresentation({
+      entity: {
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        fullDescription: labelList,
+        shortDescription: SOUND_CARD,
+        researchAreas: ['Glaciology', 'Ice Sheet Dynamics', 'Sea Level Rise'],
+        sourceUrls: ['https://example.yale.edu/profile/robin-fixture'],
+        fieldProvenance: { fullDescription: { sourceName: LLM_SOURCE } },
+      },
+    });
+    expect(served.entity.fullDescription).toBe(SOUND_CARD);
+    expect(visibility(labelList, SOUND_CARD, LLM_SOURCE).reasons).not.toContain('thin_description');
   });
 
   it('still holds a thin language-model line whose subject is another organization', () => {
@@ -3481,6 +3490,114 @@ describe('a thin but accurate body', () => {
     const result = visibility(
       "Robin Fixture's research focuses on glaciology, ice sheet dynamics, and sea level rise.",
       'May 11, 2021In Defense of Ice Models, using glaciology and sea level rise records.',
+    );
+    expect(result.tier).not.toBe('student_ready');
+  });
+});
+
+describe('a card standing in for an absent research body', () => {
+  const TOPICS = ['Glaciology', 'Ice Sheet Dynamics', 'Sea Level Rise'];
+  const SOUND_CARD =
+    'Develops satellite and ice flow models of how ice sheets respond to a warming ocean.';
+  const fixture = (fullDescription: string | undefined, shortDescription: string | undefined) => ({
+    _id: 'absent-body-fixture',
+    name: 'Robin Fixture Faculty Research',
+    slug: 'robin-fixture-research',
+    kind: 'individual',
+    entityType: 'FACULTY_RESEARCH_AREA',
+    fullDescription,
+    shortDescription,
+    researchAreas: TOPICS,
+    sourceUrls: ['https://example.yale.edu/profile/robin-fixture'],
+  });
+  const leadMembers = [
+    { role: 'pi', userId: 'robin-fixture', user: { fname: 'Robin', lname: 'Fixture' } },
+  ];
+  const visibility = (fullDescription?: string, shortDescription?: string) =>
+    computeResearchEntityStudentVisibility({
+      entity: fixture(fullDescription, shortDescription),
+      leadMembers,
+    });
+  const DESCRIPTION_HOLDS = [
+    'thin_description',
+    'missing_card_description',
+    'public_description_invariant_failed',
+    'blank_public_description',
+  ];
+
+  it('serves a sound card in place of a blank body', () => {
+    const result = visibility('', SOUND_CARD);
+    for (const reason of DESCRIPTION_HOLDS) expect(result.reasons).not.toContain(reason);
+    expect(result.tier).toBe('student_ready');
+    const served = buildResearchEntityPublicDescriptionRepresentation({
+      entity: fixture('', SOUND_CARD),
+      leadMembers,
+    });
+    expect(served.entity.fullDescription).toBe(SOUND_CARD);
+  });
+
+  it('serves a sound card in place of a body that is only a topic label list', () => {
+    const result = visibility('Interests Glaciology Ice Sheet Dynamics Sea Level Rise', SOUND_CARD);
+    for (const reason of DESCRIPTION_HOLDS) expect(result.reasons).not.toContain(reason);
+    expect(result.tier).toBe('student_ready');
+  });
+
+  it('serves the line naming the row own topics when there is no prose at all', () => {
+    const result = visibility(undefined, undefined);
+    for (const reason of DESCRIPTION_HOLDS) expect(result.reasons).not.toContain(reason);
+    expect(result.tier).toBe('student_ready');
+  });
+
+  it('reads the same verdict when the served copy is judged again', () => {
+    const served = buildResearchEntityPublicDescriptionRepresentation({
+      entity: fixture('', SOUND_CARD),
+      leadMembers,
+    });
+    const again = buildResearchEntityPublicDescriptionRepresentation({
+      entity: served.entity,
+      leadMembers,
+    });
+    expect(again.entity.fullDescription).toBe(served.entity.fullDescription);
+    expect(again.invariant).toEqual(served.invariant);
+    expect(
+      computeResearchEntityStudentVisibility({ entity: served.entity, leadMembers }).tier,
+    ).toBe('student_ready');
+  });
+
+  it('still holds a blank body whose card is a page fragment', () => {
+    const result = visibility(
+      '',
+      'May 11, 2021In Defense of Ice Models, using glaciology and sea level rise records.',
+    );
+    expect(result.reasons).toContain('public_description_invariant_failed');
+    expect(result.tier).not.toBe('student_ready');
+  });
+
+  it('still holds a blank body whose card describes teaching', () => {
+    expect(
+      visibility('', 'Teaches undergraduate courses on glaciology and sea level rise.').tier,
+    ).not.toBe('student_ready');
+  });
+
+  it('still holds a blank body whose card describes clinical care', () => {
+    expect(
+      visibility('', 'Provides clinical care for patients with altitude sickness.').tier,
+    ).not.toBe('student_ready');
+  });
+
+  it('still holds a body that nests the topics under the first one', () => {
+    const result = visibility(
+      'Studies glaciology, including ice sheet dynamics and sea level rise.',
+      'Studies Glaciology, Ice Sheet Dynamics, and Sea Level Rise.',
+    );
+    expect(result.reasons).toContain('public_description_invariant_failed');
+    expect(result.tier).not.toBe('student_ready');
+  });
+
+  it('does not replace a written body that states no research', () => {
+    const result = visibility(
+      'Robin Fixture is an associate professor in the department of earth sciences.',
+      SOUND_CARD,
     );
     expect(result.tier).not.toBe('student_ready');
   });

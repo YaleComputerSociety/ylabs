@@ -206,12 +206,28 @@ describe('researchEntityPublicDescription', () => {
           kind: 'individual',
           entityType: 'FACULTY_RESEARCH_AREA',
           descriptionSource: 'PI_PROFILE_SYNTHESIS',
-          researchAreas: ['Middle East Studies', 'Iranian Studies'],
+          researchAreas: [],
           shortDescription: '',
           fullDescription: '',
           sourceUrls: [],
         }),
       ).toBe(false);
+    });
+
+    it('serves the line naming its own topics when an entity has no prose at all', () => {
+      const representation = buildResearchEntityPublicDescriptionRepresentation({
+        entity: {
+          kind: 'individual',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          descriptionSource: 'PI_PROFILE_SYNTHESIS',
+          researchAreas: ['Middle East Studies', 'Iranian Studies'],
+          shortDescription: '',
+          fullDescription: '',
+          sourceUrls: [],
+        },
+      });
+      expect(representation.invariant.pass).toBe(true);
+      expect(representation.entity.fullDescription).toMatch(/^Studies Middle East Studies\b/);
     });
 
     it('rejects a student_ready card whose descriptions are CTA/poll-stat chrome the served hygiene strips (#1202)', () => {
@@ -254,6 +270,36 @@ describe('researchEntityPublicDescription', () => {
           fieldProvenance: { fullDescription: { sourceName: 'dept-faculty-roster' } },
         }),
       ).toBe(true);
+    });
+
+    it('serves a sound card as the body of a row whose body is blank', () => {
+      const card = 'Develops statistical models of how galaxies form in the early universe.';
+      const representation = buildResearchEntityPublicDescriptionRepresentation({
+        entity: {
+          kind: 'individual',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          researchAreas: ['Extragalactic Astronomy'],
+          shortDescription: card,
+          fullDescription: '',
+          sourceUrls: ['https://example.yale.edu/faculty/astronomy'],
+        },
+      });
+      expect(representation.invariant.pass).toBe(true);
+      expect(representation.invariant.cardDescriptionUseful).toBe(true);
+      expect(representation.entity.fullDescription).toBe(card);
+    });
+
+    it('still refuses a blank body whose only card is a dateline glued to a headline', () => {
+      expect(
+        researchEntityServesPublicDetail({
+          kind: 'individual',
+          entityType: 'FACULTY_RESEARCH_AREA',
+          researchAreas: ['Extragalactic Astronomy'],
+          shortDescription: 'May 11, 2021In Defense of Galaxy Models, using extragalactic surveys.',
+          fullDescription: '',
+          sourceUrls: ['https://example.yale.edu/faculty/astronomy'],
+        }),
+      ).toBe(false);
     });
 
     it('serves a "Studies <areas>" echo a language-model lane wrote, as thin but accurate', () => {

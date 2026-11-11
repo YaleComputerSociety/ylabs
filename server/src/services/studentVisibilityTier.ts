@@ -1459,7 +1459,10 @@ export function computeResearchEntityStudentVisibility({
       reasons: Array.from(new Set([...result.reasons, 'profile_identity_risk'])),
     };
   }
-  return enforceStudentReadyDescriptionInvariant(result, entity);
+  const servedOrStoredRecord = recordHasNoUsablePublicDescription(entity)
+    ? publicDescription.entity
+    : entity;
+  return enforceStudentReadyDescriptionInvariant(result, servedOrStoredRecord);
 }
 
 const comparableUrl = (value: unknown): string =>

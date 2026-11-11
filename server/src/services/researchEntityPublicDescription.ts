@@ -44,10 +44,12 @@ import { mapResearchGroupKindToEntityType } from '../models/researchAccessTypes'
 import {
   isResearchAreaEchoDescription,
   isStudiesResearchAreaEchoDescription,
+  isStudiesSentenceNestingTopicsUnderTheFirst,
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
 } from '../utils/descriptionHygiene';
 import { resolveServedShortDescription } from '../utils/groundedCardSynthesis';
+import { isClinicalServiceSentence } from '../utils/clinicalServiceSentence';
 import { stripBodyChrome } from '../utils/researchBodyChromeStrip';
 import { decideCreativePractice } from '../utils/creativePracticeDescription';
 import {
@@ -196,6 +198,16 @@ export function buildResearchEntityPublicDescriptionRepresentation(input: {
           entity: { ...input.entity, fullDescription: nonResearchBodyCard },
         });
         return cardOnly.invariant.pass ? cardOnly : whole;
+      }
+      const absentBodyCard = cardServedInPlaceOfAnAbsentBody(input.entity, whole);
+      if (absentBodyCard) {
+        const cardOnly = withCardStandingInForTheBody(
+          derivePublicDescriptionRepresentation({
+            ...input,
+            entity: { ...input.entity, fullDescription: absentBodyCard },
+          }),
+        );
+        return representationServesCard(cardOnly) ? cardOnly : whole;
       }
       const cardBody = cardServedInPlaceOfAResearchlessBiography(whole);
       if (!cardBody) return whole;
@@ -673,6 +685,51 @@ function cardServedInPlaceOfANonResearchBody(
     !isStudiesResearchAreaEchoDescription(card, entity.researchAreas)
     ? card
     : '';
+}
+
+const bodyIsOnlyATopicLabelList = ({ text, flags }: ResearchEntityDescriptionQuality['full']) =>
+  (flags.includes('topic-label-list') ||
+    (flags.includes('area-echo-fallback') && flags.includes('incomplete-sentence'))) &&
+  !flags.includes('research-area-echo') &&
+  !describesResearchFocus(text);
+
+const isOwnTopicsResearchLine = (card: string, researchAreas: unknown): boolean =>
+  isStudiesResearchAreaEchoDescription(card, Array.isArray(researchAreas) ? researchAreas : null) &&
+  !isStudiesSentenceNestingTopicsUnderTheFirst(card);
+
+// A row with no body, or only a label list, still shows a student its research when its
+// card states it: a sound card, or a line naming the row's own topics, is a thin but
+// accurate statement (owner decision, 2026-10-04, #4698), so it is served as the body
+// rather than holding the row for the prose it lacks.
+function cardServedInPlaceOfAnAbsentBody(
+  entity: Record<string, any>,
+  representation: ResearchEntityPublicDescriptionRepresentation,
+): string {
+  const { full, short } = representation.strictQuality;
+  if (textValue(entity.fullDescription) && !bodyIsOnlyATopicLabelList(full)) return '';
+  const card = textValue(representation.servedCard);
+  if (!cardStatesResearchItself(card) || isClinicalServiceSentence(card)) return '';
+  if (isCardPageFragment(card, full.text)) return '';
+  const cardIsSound = short.flags.every((flag) => flag === 'full-not-useful');
+  return cardIsSound || isOwnTopicsResearchLine(card, entity.researchAreas) ? card : '';
+}
+
+// The card was served as the body, so a card that repeats it is that same statement
+// rather than a copy that adds nothing.
+function withCardStandingInForTheBody(
+  representation: ResearchEntityPublicDescriptionRepresentation,
+): ResearchEntityPublicDescriptionRepresentation {
+  const { quality } = representation;
+  if (quality.short.isUseful || !quality.full.isUseful) return representation;
+  if (!quality.short.text || quality.short.flags.some((flag) => flag !== 'same-as-full')) {
+    return representation;
+  }
+  const short = { ...quality.short, flags: [], isUseful: true };
+  return {
+    ...representation,
+    quality: { ...quality, short, cardState: 'complete' },
+    invariant: { ...representation.invariant, cardDescriptionUseful: true },
+  };
 }
 
 /**

@@ -287,7 +287,7 @@ describe('researchPlanService saved plans', () => {
       name: 'Hollow Lab',
       kind: 'group',
       departments: ['History'],
-      researchAreas: ['Middle East Studies', 'Iranian Studies'],
+      researchAreas: [],
       descriptionSource: 'PI_PROFILE_SYNTHESIS',
       studentVisibilityTier: 'student_ready',
       shortDescription: '',
