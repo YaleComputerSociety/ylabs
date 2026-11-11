@@ -1948,8 +1948,8 @@ Each row an orphan backs, and each person key, is projected through `materialize
 An orphan is retired only when the projection without the orphans still produces the orphan's own items and every other item or value its field produces with them, compared as the engine outputs them, so a list that only reorders counts as kept and a gained value is not a loss.
 An item the field loses that a sibling orphan on the same row and field states holds that sibling rather than every orphan on the field, while a lost item no orphan states holds them all.
 A row whose projection without the orphans still read retired evidence live cannot isolate the retirement, so its orphans are held.
+An orphan the engine would not produce without is held by default and reported under `heldSoleEvidence` by row, field and value with `basis: engine-would-not-produce`.
 `--retire-sole-evidence` skips these projections, since it retires regardless.
-Otherwise it is held by default and reported under `heldSoleEvidence` by row, field and value with `basis: engine-would-not-produce`.
 Clearing the stored value matters because the engine lets a survivor's stored fill hold a field against its merged-in rows' evidence, so without it the stored value would stand in for evidence the engine no longer has.
 A field the projection plans nothing for with the orphans, such as `slug` or a person field the person projection does not plan, cannot be shown to be backed and is held.
 Each affected row is then projected through the engine without the observations still slated to go; a row that would serve a less complete field has that field's orphaned observations held (`basis: engine-projection`), then all of its orphaned observations, and an apply refuses if a row still would.
