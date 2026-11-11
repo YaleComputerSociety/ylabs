@@ -9,6 +9,7 @@ import { Researcher, type ResearcherProfileLink } from '../models/researcher';
 import { RoleAssignment } from '../models/roleAssignment';
 import { normalizeOfficialProfileDestination } from '../services/leadProfileIdentity';
 import { officialProfileLinkHeldByConflictingIdentity } from '../services/officialProfileLinkIdentity';
+import { materializationReadScopeFilter } from '../scrapers/entityMaterializer';
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -172,7 +173,11 @@ async function withoutRepointsOntoAnotherPersonsPage(
   const refused = [...plan.refused];
   for (const move of plan.repoint) {
     const person = { _id: move.researcherId, netid: records.get(move.researcherId)?.netid };
-    if (await officialProfileLinkHeldByConflictingIdentity(move.toUrl, person)) {
+    if (
+      await officialProfileLinkHeldByConflictingIdentity(move.toUrl, person, {
+        readScope: materializationReadScopeFilter(),
+      })
+    ) {
       refused.push({ researcherId: move.researcherId, reason: 'own-page-held-by-another-netid' });
     } else {
       repoint.push(move);

@@ -1,7 +1,12 @@
 import mongoose from 'mongoose';
 import { Researcher } from '../models/researcher';
 import { officialProfileDestinationStoredPattern } from './leadProfileIdentity';
-import type { DirectoryNetidsByAddress } from '../scrapers/directoryContradictedProfileNetid';
+import {
+  profilePageOwnerNetids,
+  type DirectoryNetidsByAddress,
+  type ProfilePageOwnerNetids,
+} from '../scrapers/directoryContradictedProfileNetid';
+import { normalizeOfficialProfileDestination } from './leadProfileIdentity';
 
 export interface PersonIdentityWitnesses {
   _id?: unknown;
@@ -43,16 +48,50 @@ export function identityWitnessesConflict(
   return Boolean(holderNetid) && Boolean(personNetid) && holderNetid !== personNetid;
 }
 
+export interface OfficialProfileLinkHolderOptions {
+  /**
+   * The engine's observation read scope. With it, the page's own stated email decides a
+   * conflict it can witness; without it the guard keeps refusing every conflict.
+   */
+  readScope?: Record<string, unknown>;
+  pageOwners?: ProfilePageOwnerNetids;
+}
+
+/**
+ * Whether the page's own identity settles a netid conflict for the candidate: the directory
+ * pairs the page's stated email with the candidate's netid and not with any conflicting
+ * holder's. When it witnesses both, neither, or only a holder, nothing is settled (#5733).
+ */
+export function pageWitnessSettlesConflictForCandidate(
+  pageOwners: ProfilePageOwnerNetids | undefined,
+  url: unknown,
+  person: PersonIdentityWitnesses,
+  conflictingHolders: readonly PersonIdentityWitnesses[],
+): boolean {
+  if (!pageOwners) return false;
+  const named = pageOwners.byPage.get(normalizeOfficialProfileDestination(String(url ?? '')));
+  if (!named || named.size === 0) return false;
+  if (!named.has(netidOf(person))) return false;
+  return conflictingHolders.every((holder) => !named.has(netidOf(holder)));
+}
+
 /**
  * Whether another live researcher whose netid conflicts with this person's already carries
  * the page as a `YALE_OFFICIAL` link. Every writer of that link asks this before stamping:
  * a person page belongs to one person, so the second netid on it is the wrong one, and the
  * join and title rules that read the link as identity would graft one person's evidence onto
  * the other (#5605). A twin of the same person, with one netid or none, is not refused.
+ *
+ * The refusal is not symmetric when the page can say whose it is: a holder that reached the
+ * page first under someone else's identity must not lock the page's own owner out of it, so
+ * a page whose stated email names the candidate and no conflicting holder lets the candidate
+ * through (#5733). The writer still only adds; the holder keeps its link until its own
+ * evidence or a refusal takes it away.
  */
 export async function officialProfileLinkHeldByConflictingIdentity(
   url: unknown,
   person: PersonIdentityWitnesses,
+  options: OfficialProfileLinkHolderOptions = {},
 ): Promise<boolean> {
   if (!netidOf(person)) return false;
   const pattern = officialProfileDestinationStoredPattern(typeof url === 'string' ? url : '');
@@ -66,7 +105,12 @@ export async function officialProfileLinkHeldByConflictingIdentity(
     .select('_id identifiers.netid')
     .limit(10)
     .lean()) as unknown as PersonIdentityWitnesses[];
-  return holders.some((holder) => identityWitnessesConflict(holder, person));
+  const conflicting = holders.filter((holder) => identityWitnessesConflict(holder, person));
+  if (conflicting.length === 0) return false;
+  if (!options.pageOwners && !options.readScope) return true;
+  const pageOwners =
+    options.pageOwners ?? (await profilePageOwnerNetids([url], options.readScope ?? {}));
+  return !pageWitnessSettlesConflictForCandidate(pageOwners, url, person, conflicting);
 }
 
 /**
