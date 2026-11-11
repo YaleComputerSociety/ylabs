@@ -105,6 +105,21 @@ describe('profile website harvest', () => {
     expect(result.labSlotAttestation).toBe('empty');
   });
 
+  it("does not take a department's whole labs page that a lab's name links to", () => {
+    const result = enrich(
+      `<p>Fixture directs the <a href="https://lab-sciences.example.edu/labs">Yale Fixture Laboratory</a>.</p>`,
+    );
+    expect(result.labUrl).toBeUndefined();
+    expect(result.labSlotAttestation).toBe('refused');
+  });
+
+  it('keeps one lab page under a labs listing', () => {
+    const result = enrich(
+      `<p>Fixture directs the <a href="https://lab-sciences.example.edu/labs/fixture">Yale Fixture Laboratory</a>.</p>`,
+    );
+    expect(result.labUrl).toBe('https://lab-sciences.example.edu/labs/fixture');
+  });
+
   it('keeps a lab whose slug ends in its lab word', () => {
     const result = enrich(
       `<p>Fixture co-directs the <a href="https://medicine.yale.edu/histmed/community-fixture-lab/">Community Fixture Lab</a>.</p>`,
