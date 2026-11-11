@@ -69,6 +69,8 @@ export interface ResearcherRecord {
    * survivor.
    */
   fieldValueRefusals?: Map<string, unknown[]>;
+  /** The `user` key that wrote each display field and the rank it wrote with (#5706). */
+  profileFieldWriters?: Map<string, { userKey: string; joinRank: number; confidence: number }>;
 }
 
 const PROFILE_LINK_PURPOSE_BY_KIND: Record<
@@ -318,6 +320,18 @@ export const researcherSchema = new mongoose.Schema<ResearcherRecord>(
     fieldValueRefusals: {
       type: Map,
       of: [fieldValueRefusalSchema],
+      default: undefined,
+    },
+    profileFieldWriters: {
+      type: Map,
+      of: new mongoose.Schema(
+        {
+          userKey: { type: String, required: true },
+          joinRank: { type: Number, default: 0 },
+          confidence: { type: Number, default: 0 },
+        },
+        { _id: false },
+      ),
       default: undefined,
     },
   },

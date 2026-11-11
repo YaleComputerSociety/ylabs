@@ -6,6 +6,11 @@
  * entityKey, e.g. netid).
  */
 import {
+  decideResearcherFieldWrite,
+  researcherFieldWriter,
+  type ResearcherWriterField,
+} from '../utils/researcherFieldWriters';
+import {
   planResearcherRefusedStoredValueClear,
   researcherHasLiveRefusals,
   researcherRefusesValue,
@@ -7651,22 +7656,49 @@ async function materializeUserIdentityToResearcher(
   // here could only swap one accepted spelling of the same person for another.
   const identityJoinedWithoutANameResolver =
     identityJoinedOnEmailAlone || identityJoinedOnOfficialProfileUrlAlone;
+  const writerKey = identifier.entityKey || String(identifier.entityId ?? '');
+  const resolvedConfidence = (...fields: string[]): unknown =>
+    fields.map((field) => resolved[field]?.confidence).find((value) => value !== undefined);
+  const settleFieldWriter = (
+    field: ResearcherWriterField,
+    value: string | undefined,
+    confidence: unknown,
+  ): boolean => {
+    const decision = decideResearcherFieldWrite(
+      researcher.profileFieldWriters,
+      field,
+      researcherFieldWriter(writerKey, identityJoin, confidence),
+      Boolean(value),
+    );
+    if (!decision.write) {
+      if (decision.releaseWriter) researcher.profileFieldWriters.delete(field);
+      return false;
+    }
+    if (decision.writerChanged) {
+      if (!researcher.profileFieldWriters) researcher.profileFieldWriters = new Map();
+      researcher.profileFieldWriters.set(field, decision.writer);
+    }
+    return true;
+  };
+  const nameValue = !identityJoinedWithoutANameResolver && displayName ? displayName : undefined;
   if (
-    !identityJoinedWithoutANameResolver &&
-    displayName &&
-    researcher.displayName !== displayName
+    (!writerKey ||
+      settleFieldWriter('displayName', nameValue, resolvedConfidence('displayName', 'lname'))) &&
+    nameValue &&
+    researcher.displayName !== nameValue
   ) {
-    researcher.displayName = displayName;
+    researcher.displayName = nameValue;
     fieldsWritten += 1;
   }
   researcher.profile = researcher.profile || {};
-  for (const [key, value] of [
-    ['title', title],
-    ['primaryDepartment', primaryDepartment],
-    ['imageUrl', imageUrl],
-    ['websiteUrl', websiteUrl],
+  for (const [key, value, confidence] of [
+    ['title', title, resolvedConfidence('title')],
+    ['primaryDepartment', primaryDepartment, resolvedConfidence('primaryDepartment')],
+    ['imageUrl', imageUrl, resolvedConfidence('imageUrl')],
+    ['websiteUrl', websiteUrl, resolvedConfidence('websiteUrl', 'website')],
   ] as const) {
     const bounded = normalizedResearcherProfileText(key, value);
+    if (writerKey && !settleFieldWriter(key, bounded, confidence)) continue;
     if (bounded && researcher.profile[key] !== bounded) {
       researcher.profile[key] = bounded;
       fieldsWritten += 1;
