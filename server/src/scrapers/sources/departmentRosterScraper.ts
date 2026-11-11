@@ -4106,21 +4106,27 @@ function rosterUserType(entry: FacultyEntry, dept: DeptConfig): RosterUserType |
 }
 
 /**
- * `userType` is latest-wins for this lane, so a person listed on two departments' rosters
- * keeps whichever typing was emitted last. A staff typing therefore never replaces a faculty
- * one: it is dropped for a key typed faculty earlier in the run, or for a key the lane holds a
- * live title stating a faculty appointment, so a run that reads only the staff listing cannot
- * undo the faculty listing an earlier run read. The cross-run evidence is the title rather
- * than the typing, because a stored faculty typing may be the page-default stamp #5750 retires.
+ * `userType` is latest-wins for this lane, so the lane emits one typing per key per run, after
+ * every roster lane has finished: concurrent lanes inserting rival typings for one key would
+ * each supersede the other and leave the key with none. A staff typing never replaces a faculty
+ * one: it loses to a faculty typing from any roster this run read, and is dropped for a key the
+ * lane holds a live title stating a faculty appointment, so a run that reads only the staff
+ * listing cannot undo the faculty listing an earlier run read. The cross-run evidence is the
+ * title rather than the typing, because a stored faculty typing may be the page-default stamp
+ * #5750 retires.
  */
-function withoutStaffTypingOfAKeyTypedFaculty(
+function holdUserTypingForRunEnd(
   observations: ObservationInput[],
   entityKey: string,
-  facultyTypedUserKeys: Set<string>,
+  facultyTitledUserKeys: Set<string>,
+  typingByUserKey: Map<string, ObservationInput>,
 ): ObservationInput[] {
   const typing = observations.find((o) => o.field === 'userType');
-  if (typing?.value === 'faculty') facultyTypedUserKeys.add(entityKey);
-  if (typing?.value !== 'staff' || !facultyTypedUserKeys.has(entityKey)) return observations;
+  if (!typing) return observations;
+  const staffBesideFaculty =
+    typing.value === 'staff' &&
+    (typingByUserKey.get(entityKey)?.value === 'faculty' || facultyTitledUserKeys.has(entityKey));
+  if (!staffBesideFaculty) typingByUserKey.set(entityKey, typing);
   return observations.filter((o) => o !== typing);
 }
 
@@ -4604,7 +4610,8 @@ export class DepartmentRosterScraper implements IScraper {
     let totalLabs = 0;
     const fetchAttempts: ScraperFetchMetric[] = [];
     const seenUserKeys = new Set<string>();
-    const facultyTypedUserKeys = new Set<string>();
+    const facultyTitledUserKeys = new Set<string>();
+    const typingByUserKey = new Map<string, ObservationInput>();
     const seenLabKeys = new Set<string>();
     const discoveredEntityKeysByDept = new Map<string, Set<string>>();
     const withdrawnEntityKeysByDept = new Map<string, Set<string>>();
@@ -4671,7 +4678,7 @@ export class DepartmentRosterScraper implements IScraper {
       for (const key of await this.facultyTitledUserKeyLoader(
         enriched.map(({ personKey }) => personKey),
       )) {
-        facultyTypedUserKeys.add(key);
+        facultyTitledUserKeys.add(key);
       }
 
       for (const { entry } of withoutSharedGroupWebsites(enriched)) {
@@ -4680,10 +4687,11 @@ export class DepartmentRosterScraper implements IScraper {
           dept,
           sourceUrl,
         );
-        const userObs = withoutStaffTypingOfAKeyTypedFaculty(
+        const userObs = holdUserTypingForRunEnd(
           typedUserObs,
           entityKey,
-          facultyTypedUserKeys,
+          facultyTitledUserKeys,
+          typingByUserKey,
         );
         await ctx.emit(userObs);
         observations += userObs.length;
@@ -4930,6 +4938,11 @@ export class DepartmentRosterScraper implements IScraper {
     const laneConcurrency = Number.isFinite(limit) ? 1 : resolveRosterLaneConcurrency();
     await runWithBoundedConcurrency(htmlLanes, laneConcurrency, runSelectedLane);
     await runWithBoundedConcurrency(renderedLanes, 1, runSelectedLane);
+    const heldTypings = [...typingByUserKey.values()];
+    if (heldTypings.length > 0) {
+      await ctx.emit(heldTypings);
+      totalObs += heldTypings.length;
+    }
 
     const laneOutcomes = outcomeByIndex.filter(
       (outcome): outcome is LaneOutcome => outcome !== null,

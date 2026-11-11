@@ -1127,9 +1127,11 @@ export const LATEST_WINS_FINGERPRINT_FIELDS_BY_ENTITY_TYPE: Readonly<
  *
  * The department roster lane types each person from their own listed title, so a re-read
  * that finds a staff title must replace the lane's earlier faculty typing rather than stand
- * beside it as a same-source conflict. The lane never lets a staff typing replace a faculty
- * one, whether the faculty typing came earlier in the run or from a live lane title stating a
- * faculty appointment, so a partial run cannot undo another roster's faculty typing (#5750).
+ * beside it as a same-source conflict. The lane emits one typing per key per run, after its
+ * concurrent roster lanes finish, because two inserts for one key in flight at once supersede
+ * each other. It never lets a staff typing replace a faculty one, whether the faculty typing
+ * came from another roster in the run or from a live lane title stating a faculty appointment,
+ * so a partial run cannot undo another roster's faculty typing (#5750).
  */
 export const LATEST_WINS_FINGERPRINT_FIELDS_BY_SOURCE: Readonly<
   Record<string, ReadonlySet<string>>
