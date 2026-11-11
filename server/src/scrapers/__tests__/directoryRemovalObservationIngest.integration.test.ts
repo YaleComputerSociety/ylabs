@@ -259,6 +259,12 @@ describe(
       expect(removedByRequest).toBe(3);
       expect(await Observation.countDocuments({ entityKey: 'synthetic-removed-profile' })).toBe(0);
       expect(await Observation.countDocuments({ entityKey: 'synthetic-kept-profile' })).toBe(3);
+
+      const second = await appendUnderOneRun([
+        [...profile('synthetic-removed-profile', 'netid:zz9201')],
+      ]);
+      expect(second.removedByRequest).toBe(3);
+      expect(await Observation.countDocuments({ entityKey: 'synthetic-removed-profile' })).toBe(0);
     });
 
     it('drops only the row fields that point at a removed person', async () => {
