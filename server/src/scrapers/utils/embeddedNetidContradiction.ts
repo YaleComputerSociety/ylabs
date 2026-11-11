@@ -8,20 +8,22 @@ const lowerText = (value: unknown): string =>
 /**
  * The netid a name-shaped identifier ends in, read only when its letters are the person's
  * initials: Yale appends the netid to a namesake's alias or page slug, and a netid opens
- * with the given-name initial and carries the surname initial. A counter fused onto a
- * surname (`<first>-<last>2`) or a final name part that happens to end in digits fails that
- * test, so it is never read as a netid.
+ * with the given-name initial and carries the initial of some later name part. Each part
+ * of a hyphenated or spaced surname, a particle and a middle name count, because a netid
+ * may take its surname letter from any of them. A counter fused onto a surname
+ * (`<first>-<last>2`) or a final name part that happens to end in digits fails that test,
+ * so it is never read as a netid.
  */
 function initialledNetidSuffix(nameParts: string[]): string | undefined {
   if (nameParts.length < 3) return undefined;
   const candidate = nameParts[nameParts.length - 1];
   const letters = candidate.match(NAME_SUFFIX_NETID)?.[1];
   if (!letters) return undefined;
-  const names = nameParts.slice(0, -1).map((part) => part.replace(/'/g, ''));
-  if (names.some((part) => !/^[a-z]+$/.test(part))) return undefined;
-  const givenInitial = names[0][0];
-  const surnameInitial = names[names.length - 1][0];
-  return letters[0] === givenInitial && letters.includes(surnameInitial) ? candidate : undefined;
+  const words = nameParts.slice(0, -1).flatMap((part) => part.replace(/'/g, '').split('-'));
+  if (words.some((word) => !/^[a-z]+$/.test(word))) return undefined;
+  const [given, ...laterWords] = words;
+  const agrees = letters[0] === given[0] && laterWords.some((word) => letters.includes(word[0]));
+  return agrees ? candidate : undefined;
 }
 
 function netidInAlias(value: unknown, { bareNetid }: { bareNetid: boolean }): string | undefined {
