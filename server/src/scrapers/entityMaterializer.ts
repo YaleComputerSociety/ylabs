@@ -8,7 +8,8 @@
 import {
   decideResearcherFieldWrite,
   researcherFieldWriter,
-  type ResearcherWriterField,
+  OWN_KEY_FALLBACK_TITLE_FIELD,
+  type ResearcherGatedField,
 } from '../utils/researcherFieldWriters';
 import {
   planResearcherRefusedStoredValueClear,
@@ -8107,8 +8108,14 @@ function personTitleFrom(observations: readonly any[], now: Date): string | unde
  * stored title no longer depends on which key materialized last (#5578). A key the
  * researcher's identity cannot find (one the name resolver alone joined) adds its own
  * title only when no key the researcher can find states one, which keeps the answer the
- * same from both sides.
+ * same from both sides. That own-key fallback is the one title that is not the same from
+ * every key, so it is reported as such and the caller gates it by writer precedence.
  */
+interface ResearcherTitle {
+  title: string | undefined;
+  fromOwnKeyFallback: boolean;
+}
+
 async function researcherTitleOverEveryJoiningKey(input: {
   researcher: any;
   identifier: UserKeyReference;
@@ -8116,9 +8123,13 @@ async function researcherTitleOverEveryJoiningKey(input: {
   ownTitle: string | undefined;
   now: Date;
   prefetch?: MaterializationReadSource;
-}): Promise<string | undefined> {
+}): Promise<ResearcherTitle> {
+  const ownKeyFallback = (title: string | undefined): ResearcherTitle => ({
+    title,
+    fromOwnKeyFallback: true,
+  });
   const researcherId = prefetchObjectIdString(input.researcher?._id);
-  if (!researcherId) return input.ownTitle;
+  if (!researcherId) return ownKeyFallback(input.ownTitle);
   const cache = input.prefetch?.userIdentityJoins;
   let candidates = cache?.candidatesFor(researcherId);
   if (!candidates) {
@@ -8164,10 +8175,11 @@ async function researcherTitleOverEveryJoiningKey(input: {
   );
   if (ownKeyIsFindable) pooled.push(...ownTitleObservations);
   const officialPageKeys = await soleClaimedOfficialPageKeys(input.researcher, cache);
-  return (
-    personTitleFrom(userTitleEvidence(pooled, officialPageKeys), input.now) ??
+  const pooledTitle = personTitleFrom(userTitleEvidence(pooled, officialPageKeys), input.now);
+  if (pooledTitle) return { title: pooledTitle, fromOwnKeyFallback: false };
+  return ownKeyFallback(
     personTitleFrom(userTitleEvidence(ownTitleObservations, officialPageKeys), input.now) ??
-    input.ownTitle
+      input.ownTitle,
   );
 }
 
@@ -8575,8 +8587,8 @@ async function materializeUserIdentityToResearcher(
     identityJoin = 'minted-from-pi-attribution';
   }
   const created = mintedFromPiAttribution;
-  const researcherTitle = created
-    ? title
+  const { title: researcherTitle, fromOwnKeyFallback: titleFromOwnKeyFallback } = created
+    ? { title, fromOwnKeyFallback: true }
     : await researcherTitleOverEveryJoiningKey({
         researcher,
         identifier: identifier.entityKey
@@ -8601,7 +8613,7 @@ async function materializeUserIdentityToResearcher(
   const resolvedConfidence = (...fields: string[]): unknown =>
     fields.map((field) => resolved[field]?.confidence).find((value) => value !== undefined);
   const settleFieldWriter = (
-    field: ResearcherWriterField,
+    field: ResearcherGatedField,
     value: string | undefined,
     confidence: unknown,
   ): boolean => {
@@ -8632,8 +8644,24 @@ async function materializeUserIdentityToResearcher(
     fieldsWritten += 1;
   }
   researcher.profile = researcher.profile || {};
+  const servedTitle = normalizedResearcherProfileText(
+    'title',
+    servablePersonTitle(researcherTitle),
+  );
+  const titleWrites =
+    !titleFromOwnKeyFallback ||
+    !writerKey ||
+    settleFieldWriter(OWN_KEY_FALLBACK_TITLE_FIELD, servedTitle, resolvedConfidence('title'));
+  if (!titleFromOwnKeyFallback && servedTitle) {
+    // A fallback writer recorded before the pool stated a title was never ranked against the
+    // keys that may fall back next, so it must not decide a later fallback round.
+    researcher.profileFieldWriters?.delete(OWN_KEY_FALLBACK_TITLE_FIELD);
+  }
+  if (titleWrites && servedTitle && researcher.profile.title !== servedTitle) {
+    researcher.profile.title = servedTitle;
+    fieldsWritten += 1;
+  }
   for (const [key, value, confidence] of [
-    ['title', servablePersonTitle(researcherTitle), resolvedConfidence('title')],
     ['primaryDepartment', primaryDepartment, resolvedConfidence('primaryDepartment')],
     ['imageUrl', imageUrl, resolvedConfidence('imageUrl')],
     ['websiteUrl', websiteUrl, resolvedConfidence('websiteUrl', 'website')],

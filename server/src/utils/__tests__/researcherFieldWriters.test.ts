@@ -20,25 +20,27 @@ describe('researcher field writer precedence (#5706)', () => {
   });
 
   it('lets only the writer or an outranking key write, and releases a writer with no value', () => {
-    const writers = new Map([['title', nameHigh]]);
-    expect(decideResearcherFieldWrite(writers, 'title', nameHighOther, true)).toEqual({
+    const writers = new Map([['primaryDepartment', nameHigh]]);
+    expect(decideResearcherFieldWrite(writers, 'primaryDepartment', nameHighOther, true)).toEqual({
       write: false,
       releaseWriter: false,
     });
-    expect(decideResearcherFieldWrite(writers, 'title', nameHigh, true)).toEqual({
+    expect(decideResearcherFieldWrite(writers, 'primaryDepartment', nameHigh, true)).toEqual({
       write: true,
       writer: nameHigh,
       writerChanged: false,
     });
-    expect(decideResearcherFieldWrite(writers, 'title', netid, true)).toMatchObject({
+    expect(decideResearcherFieldWrite(writers, 'primaryDepartment', netid, true)).toMatchObject({
       write: true,
       writerChanged: true,
     });
-    expect(decideResearcherFieldWrite(writers, 'title', nameHigh, false)).toEqual({
+    expect(decideResearcherFieldWrite(writers, 'primaryDepartment', nameHigh, false)).toEqual({
       write: false,
       releaseWriter: true,
     });
-    expect(decideResearcherFieldWrite(undefined, 'title', nameHighOther, true)).toMatchObject({
+    expect(
+      decideResearcherFieldWrite(undefined, 'primaryDepartment', nameHighOther, true),
+    ).toMatchObject({
       write: true,
       writerChanged: true,
     });
