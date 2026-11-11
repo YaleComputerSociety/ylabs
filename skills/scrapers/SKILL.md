@@ -828,6 +828,9 @@ Use `plainTextContent` (a byte-identical iterative `.text()`) or `extractElement
   `docs/research-data-pipeline.md` owns the contract.
 - `laneRefusedResearchHomeName.ts` - the name sibling: a lane that emits `refusedResearchHomeName` withdraws, on every resolve, its own older `name` and `displayName` carrying that value (#5053).
   `docs/research-data-pipeline.md` owns the contract.
+- `siteSharedPageName.ts` - a page-stated name (`lab-site-research-read`, `lab-microsite-description-llm`) that the same site states for another live row on a sibling sub-path is the site's name, so it is withdrawn on every resolve and a stored `name` or `displayName` carrying it re-resolves or clears (#5618).
+  A name its own page path corroborates (an eponymous lab at `/lab/<surname>/`) and a root page beside its own `index.html` are kept.
+  `docs/research-data-pipeline.md` owns the contract.
 - `lanePageHealth.ts` - how a lane that reads a fixed list of pages withdraws the values a gone page supplied (#4729).
   The lane emits a `lanePageHealth` observation on the row for each page it reads, in the link-health vocabulary: `HEALTHY` for a page it read, and `UNAVAILABLE` with the status code only when the page is gone twice, its own read or a stored gone verdict plus a confirming `checkSourceLinkHealth` probe that agrees (`confirmGoneLanePage`).
   A 403, a 429, a 5xx, a timeout, a DNS failure, a private-address host, or an `UNAVAILABLE` verdict without a status code records nothing, so it can never withdraw anything; a benchmark replay never probes.

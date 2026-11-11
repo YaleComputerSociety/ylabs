@@ -1,5 +1,6 @@
 import { fetchPageWithPolicy } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
+import { sitePage } from '../siteSharedPageName';
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../../models/researchEntity';
 import { VisibilityReleaseQueueItem } from '../../models/visibilityReleaseQueueItem';
@@ -1779,13 +1780,19 @@ const comparableHeadingText = (value: string): string =>
     .replace(/^\s*the\s+/, '')
     .trim()} `;
 
-export function pageIdentityHeadings(html: string): string[] {
+function namesTheWholeSite(pageUrl: string | undefined): boolean {
+  const page = pageUrl ? sitePage(pageUrl) : null;
+  return page === null || page.segments.length === 0;
+}
+
+export function pageIdentityHeadings(html: string, pageUrl?: string): string[] {
   const $ = cheerio.load(html);
-  return [
-    $('title').first().text(),
-    $('meta[property="og:site_name"]').attr('content'),
-    $('h1').first().text(),
-  ]
+  // On a sub-path page `og:site_name` names the whole site, which on a shared host is
+  // the parent organization rather than the unit the page is for (#5618).
+  const siteName = namesTheWholeSite(pageUrl)
+    ? $('meta[property="og:site_name"]').attr('content')
+    : undefined;
+  return [$('title').first().text(), siteName, $('h1').first().text()]
     .map((heading) =>
       textValue(heading)
         .replace(PAGE_HEADING_CHROME_SUFFIX_RE, '')
@@ -1795,10 +1802,14 @@ export function pageIdentityHeadings(html: string): string[] {
     .filter(Boolean);
 }
 
-export function labNameIsStatedInPageHeadings(labName: string, html: string): boolean {
+export function labNameIsStatedInPageHeadings(
+  labName: string,
+  html: string,
+  pageUrl?: string,
+): boolean {
   const target = comparableHeadingText(labName);
   if (!target.trim()) return false;
-  return pageIdentityHeadings(html).some((heading) =>
+  return pageIdentityHeadings(html, pageUrl).some((heading) =>
     comparableHeadingText(heading).includes(target),
   );
 }
@@ -1838,7 +1849,7 @@ export function pageStatedLabNameObservations(
   ) {
     return [];
   }
-  if (!labNameIsStatedInPageHeadings(labName, pageHtml)) return [];
+  if (!labNameIsStatedInPageHeadings(labName, pageHtml, context.sourceUrl)) return [];
   const fullDescription = extractedFullDescription(extraction, context);
   if (fullDescription && bodyDescribesAnotherOrganization(fullDescription, context, unitName)) {
     return [];

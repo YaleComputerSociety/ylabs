@@ -6,6 +6,7 @@
  * entityKey, e.g. netid).
  */
 import { isGrantLaneObservationOutsideEnrichment } from './grantLaneSourceNames';
+import { comparablePageStatedName, withoutSiteSharedPageNames } from './siteSharedPageName';
 import {
   inferredPiKeyNamesRoleOrUnitMailbox,
   userKeyNamesRoleOrUnitMailbox,
@@ -7835,6 +7836,7 @@ export interface ProjectFromLogInput {
   mergedInLeadProfileUrls?: readonly string[];
   laneWithdrawnWebsiteValues?: readonly unknown[];
   gonePageWithdrawnValuesByField?: ReadonlyMap<string, readonly unknown[]>;
+  siteSharedPageNames?: ReadonlySet<string>;
   loserRosterReads?: readonly ResolverObservation[];
   survivorReadOnARoster?: boolean;
   rosterPersonKeys?: readonly unknown[];
@@ -8358,8 +8360,10 @@ function enforceResearchEntityNameAuthority(input: {
   materializationObs: MaterializerObservationLike[];
   sourceEntityIdentity: ResearchEntityIdentity | undefined;
   nameIdentityAuthority: ResearchEntityNameIdentityAuthority;
+  siteSharedPageNames?: ReadonlySet<string>;
 }): number {
   const { set, unset, confidenceByField, entityDoc } = input;
+  const siteSharedPageNames = input.siteSharedPageNames ?? new Set<string>();
   const withdrawnRetype = reclassifyWithdrawnProfileHomeOrganizationRetype({
     set,
     unset,
@@ -8471,6 +8475,7 @@ function enforceResearchEntityNameAuthority(input: {
     if (
       !textValue(servedValue) ||
       (!namesNothingUsable(servedValue, provenance.sourceUrl) &&
+        !siteSharedPageNames.has(comparablePageStatedName(servedValue)) &&
         !isRefusedProfileLinkedHomeName(servedValue, provenance.sourceName) &&
         !(
           (withdrawnRetype || (personRow && !isLabShapedResearchHome(servedValue))) &&
@@ -9421,6 +9426,7 @@ export async function projectFromLog(
       materializationObs,
       sourceEntityIdentity,
       nameIdentityAuthority: input.nameIdentityAuthority,
+      siteSharedPageNames: input.siteSharedPageNames,
     });
     fieldsWritten += adoptServableFullDescription({
       now: input.now,
@@ -11193,6 +11199,7 @@ async function materializeEntityUnderRemovalGuard(
   }
 
   let foreignContactWithheld = false;
+  let siteSharedPageNames: ReadonlySet<string> = new Set<string>();
   if (isResearchEntityObservationType(entityType) && entityDoc) {
     const rowKeyedObs = withoutForeignContactObservations(obs, entityDoc);
     foreignContactWithheld = rowKeyedObs.length !== obs.length;
@@ -11212,7 +11219,12 @@ async function materializeEntityUnderRemovalGuard(
   }
 
   if (isResearchEntityObservationType(entityType) && entityDoc) {
-    obs = withoutCoursePageEvidence(withoutPersonProfileTopicsOnOrganizationRow(obs, entityDoc));
+    const siteSharedPageNameWithdrawal = await withoutSiteSharedPageNames(
+      withoutCoursePageEvidence(withoutPersonProfileTopicsOnOrganizationRow(obs, entityDoc)),
+      entityDoc,
+    );
+    obs = siteSharedPageNameWithdrawal.observations;
+    siteSharedPageNames = siteSharedPageNameWithdrawal.withdrawnNames;
     researchAreaEvidenceObservations = withoutCoursePageEvidence(
       withoutPersonProfileTopicsOnOrganizationRow(researchAreaEvidenceObservations, entityDoc),
     );
@@ -11563,6 +11575,7 @@ async function materializeEntityUnderRemovalGuard(
     mergedInLeadProfileUrls,
     laneWithdrawnWebsiteValues: laneWebsiteWithdrawal.withdrawnValues,
     gonePageWithdrawnValuesByField: gonePageWithdrawal.withdrawnValuesByField,
+    siteSharedPageNames,
     loserRosterReads,
     survivorReadOnARoster,
     rosterPersonKeys: researchAreaEvidenceObservations
