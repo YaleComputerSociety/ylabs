@@ -1479,9 +1479,9 @@ async function loadSpecificProfileLabUrlCandidateRows(
   return attachLeadPersonIds(candidates);
 }
 
-async function attachLeadPersonIds(
-  rows: OfficialLabUrlDedupeRow[],
-): Promise<OfficialLabUrlDedupeRow[]> {
+async function attachLeadPersonIds<
+  Row extends { entities: Array<{ id: string; leadPersonIds?: string[] }> },
+>(rows: Row[]): Promise<Row[]> {
   const entityIds = Array.from(
     new Set(rows.flatMap((row) => row.entities.map((entity) => entity.id))),
   )
@@ -1625,10 +1625,12 @@ export async function loadWebsiteUrlCandidateRows(
     { $sort: { id: 1 } },
   ]);
 
-  return groupEntitiesByWebsiteUrlIdentity(
-    entities as ResearchEntityPiDedupeRow['entities'],
-    landings ?? (await loadRedirectLandingIdentityKeys()),
-  ).slice(0, limit);
+  return attachLeadPersonIds(
+    groupEntitiesByWebsiteUrlIdentity(
+      entities as ResearchEntityPiDedupeRow['entities'],
+      landings ?? (await loadRedirectLandingIdentityKeys()),
+    ).slice(0, limit),
+  );
 }
 
 async function loadDuplicateCurrentMemberRows(limit: number) {
