@@ -209,6 +209,7 @@ Four earlier mechanisms each broke on a stored title, and the module's test file
   Only two kinds verify identity: a `yale-directory` record keyed by the person's own netid, and an `official-profile-pi-backfill` email on the person's own `netid:` key whose page the person already holds as their official link and no other live researcher does, and whose address the directory does not pair with another netid.
   Either source is refused when a researcher with a different netid already holds the address (#5606).
   A roster, alias or name-keyed email never verifies, verified sources that disagree change nothing, and no evidence never clears a stored email.
+- A verified address is refused when live evidence also states it under a key the engine join (`userIdentityJoinForKey`) resolves to a different researcher, or to nobody, which fails closed; a name-derived key that joins to the same researcher is the same person and decides nothing (#5731).
 - A person's own official page can mark them deceased or departed, through `profileInMemoriam` and `profileAppointmentEndedOn` observations on their own `netid:` key from `official-profile-pi-backfill` (`personPageDeparture.ts`, #5721).
   A row is gone only when every current lead is marked.
   A deceased lead is presented as `DECEASED_LEAD_ROW_PRESENTATION` decides (`utils/deceasedLeadRowPresentation.ts`): it hides by default, and `label` keeps the row served but needs a stored label and client copy before it can be chosen.

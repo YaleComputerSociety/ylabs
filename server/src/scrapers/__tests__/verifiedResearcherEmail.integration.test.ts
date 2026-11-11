@@ -464,6 +464,67 @@ describe('an empty researcher email is filled from identity-verified evidence on
     expect(after.identifiers?.email).toBeUndefined();
   });
 
+  const seedKeyStatingAddress = async (
+    entityKey: string,
+    email: string,
+    names: Array<readonly [string, string]> = [],
+  ) => {
+    for (const [field, value] of [...names, ['email', email] as const]) {
+      await observation({
+        entityKey,
+        sourceName: 'dept-faculty-roster',
+        sourceUrl: 'https://chemistry.yale.edu/people/',
+        field,
+        value,
+      });
+    }
+  };
+
+  it("refuses an address another researcher's key also states", async () => {
+    const researcher = await seedResearcher();
+    await Researcher.create({ displayName: 'Sam Other', identifiers: { netid: 'other456' } });
+    await seedStaffDirectoryRecord(OWN_NETID, DIRECTORY_EMAIL, [OWN_NETID]);
+    await seedKeyStatingAddress('netid:other456', DIRECTORY_EMAIL);
+
+    await materializeEntity('user', { entityKey: OWN_NETID }, {});
+
+    expect(await storedEmail(researcher._id)).toBeUndefined();
+  });
+
+  it('keeps an address a name-derived key of the same person also states', async () => {
+    const researcher = await seedResearcher();
+    await seedStaffDirectoryRecord(OWN_NETID, DIRECTORY_EMAIL, [OWN_NETID]);
+    await seedKeyStatingAddress('netid:own.directory.fixture', DIRECTORY_EMAIL, [
+      ['fname', 'Robin'],
+      ['lname', 'Own'],
+    ]);
+
+    await materializeEntity('user', { entityKey: OWN_NETID }, {});
+
+    expect(await storedEmail(researcher._id)).toBe(DIRECTORY_EMAIL);
+  });
+
+  it('does not refuse on a dotted placeholder key that joins nobody', async () => {
+    const researcher = await seedResearcher();
+    await seedStaffDirectoryRecord(OWN_NETID, DIRECTORY_EMAIL, [OWN_NETID]);
+    await seedKeyStatingAddress('netid:placeholder.fixture', DIRECTORY_EMAIL);
+
+    await materializeEntity('user', { entityKey: OWN_NETID }, {});
+
+    expect(await storedEmail(researcher._id)).toBe(DIRECTORY_EMAIL);
+  });
+
+  it('fails closed when the other key stating the address joins nobody', async () => {
+    const researcher = await seedResearcher();
+    await seedStaffDirectoryRecord(OWN_NETID, DIRECTORY_EMAIL, [OWN_NETID]);
+    await seedKeyStatingAddress('netid:unjoined789', DIRECTORY_EMAIL);
+
+    await materializeEntity('user', { entityKey: OWN_NETID }, {});
+    await materializeEntity('user', { entityKey: OWN_NETID }, {});
+
+    expect(await storedEmail(researcher._id)).toBeUndefined();
+  });
+
   it('keeps the stored value when verified sources disagree', async () => {
     const researcher = await seedResearcher();
     await seedStaffDirectoryRecord(OWN_NETID, DIRECTORY_EMAIL, [OWN_NETID]);
