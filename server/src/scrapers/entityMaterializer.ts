@@ -3395,6 +3395,8 @@ async function endSupersededListingHolderEdges(
  * The staff title screen moves a listing between its listed faculty role and `staff`, and the
  * membership key carries the role, so the edge written under the other role is the same
  * listing's earlier resolution and is ended on the read, in either direction (#5746).
+ * An adopted edge was not written by this listing, so it stays with center roster retirement
+ * and its freeze.
  */
 async function endListingEdgesUnderTheOtherScreenedRole(
   researchEntityId: string,
@@ -3418,6 +3420,7 @@ async function endListingEdgesUnderTheOtherScreenedRole(
       'target.id': entityObjectId,
       'rosterProvenance.sourceName': sourceName,
       'rosterProvenance.membershipKey': { $in: otherKeys },
+      'rosterProvenance.adoptedAt': { $exists: false },
       state: { $ne: 'HISTORICAL' },
       archived: { $ne: true },
     },
