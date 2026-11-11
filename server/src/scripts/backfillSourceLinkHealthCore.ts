@@ -138,6 +138,65 @@ export function tlsFallbackCandidates(
   return fallbacks;
 }
 
+/** The `https:` spelling of a plain-HTTP URL, or null for any other URL. */
+export const httpsSpellingOf = (url: string): string | null => {
+  try {
+    const parsed = new URL(url.trim());
+    if (parsed.protocol !== 'http:') return null;
+    parsed.protocol = 'https:';
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * The `https:` spelling to probe for each plain-HTTP website this pass probed, keyed
+ * by the website URL. A host that answers on both schemes without redirecting would
+ * otherwise send a student to plain HTTP while a working `https:` page exists (#5639).
+ * Only `websiteUrl` and `website` are offered, which bounds the extra probes to one
+ * per row, and a website whose own redirect already recorded an `httpsLandingUrl`
+ * needs no second answer.
+ */
+export function httpsSpellingProbes(
+  websiteValues: readonly unknown[],
+  freshHealth: ReadonlyMap<string, { httpsLandingUrl?: string }>,
+): Map<string, string> {
+  const probes = new Map<string, string>();
+  for (const value of websiteValues) {
+    if (typeof value !== 'string') continue;
+    const url = value.trim();
+    const verdict = freshHealth.get(url);
+    if (!verdict || verdict.httpsLandingUrl) continue;
+    const spelling = httpsSpellingOf(url);
+    if (spelling) probes.set(url, spelling);
+  }
+  return probes;
+}
+
+/**
+ * The probed `https:` spelling, recorded only when it answered `HEALTHY` with a
+ * certificate that verified, from the same host, path and query it asked for. A
+ * shared host's default `https:` site redirecting elsewhere is not this page.
+ * Anything else, including no probe at all, records nothing, so serve time keeps
+ * the stored `http:` link (#5639).
+ */
+export function verifiedHttpsSpelling(
+  spelling: string | undefined,
+  freshHealth: ReadonlyMap<
+    string,
+    { healthStatus?: string; tlsVerificationFailed?: boolean; landedOnRequestedResource?: true }
+  >,
+): string | undefined {
+  if (!spelling) return undefined;
+  const verdict = freshHealth.get(spelling);
+  return verdict?.healthStatus === 'HEALTHY' &&
+    verdict.tlsVerificationFailed !== true &&
+    verdict.landedOnRequestedResource === true
+    ? spelling
+    : undefined;
+}
+
 /**
  * Every `sourceUrl` recorded in `fieldProvenance`. These are citations as far as
  * `hasLiveSourceCitation` is concerned, and a provenance URL can outlive its
@@ -186,6 +245,7 @@ export interface StoredSourceLinkHealthEntry {
   privateAddressHost?: boolean;
   tlsVerificationFailed?: boolean;
   httpsLandingUrl?: string;
+  httpsSpellingUrl?: string;
   checkedAt?: Date;
   lastAttemptedAt?: Date;
 }
@@ -274,6 +334,7 @@ export function resolveSourceLinkHealthEntry(
     publicAddressHost?: boolean;
     tlsVerificationFailed?: boolean;
     httpsLandingUrl?: string;
+    httpsSpellingUrl?: string;
   },
   stored: StoredSourceLinkHealthEntry | undefined,
   now: Date,
@@ -289,6 +350,7 @@ export function resolveSourceLinkHealthEntry(
     ...(typeof fresh.httpStatusCode === 'number' ? { httpStatusCode: fresh.httpStatusCode } : {}),
     ...routing,
     ...(fresh.httpsLandingUrl ? { httpsLandingUrl: fresh.httpsLandingUrl } : {}),
+    ...(fresh.httpsSpellingUrl ? { httpsSpellingUrl: fresh.httpsSpellingUrl } : {}),
     checkedAt: now,
   };
 
@@ -310,6 +372,7 @@ export function resolveSourceLinkHealthEntry(
       ...(typeof kept.httpStatusCode === 'number' ? { httpStatusCode: kept.httpStatusCode } : {}),
       ...routing,
       ...(kept.httpsLandingUrl ? { httpsLandingUrl: kept.httpsLandingUrl } : {}),
+      ...(kept.httpsSpellingUrl ? { httpsSpellingUrl: kept.httpsSpellingUrl } : {}),
       ...(kept.checkedAt ? { checkedAt: kept.checkedAt } : {}),
       lastAttemptedAt: now,
     },
@@ -389,6 +452,7 @@ export function carryForwardSourceLinkHealthEntry(
     ...(stored.privateAddressHost === true ? { privateAddressHost: true } : {}),
     ...(stored.tlsVerificationFailed === true ? { tlsVerificationFailed: true } : {}),
     ...(stored.httpsLandingUrl ? { httpsLandingUrl: stored.httpsLandingUrl } : {}),
+    ...(stored.httpsSpellingUrl ? { httpsSpellingUrl: stored.httpsSpellingUrl } : {}),
     ...(stored.checkedAt ? { checkedAt: stored.checkedAt } : {}),
     ...(stored.lastAttemptedAt ? { lastAttemptedAt: stored.lastAttemptedAt } : {}),
   };

@@ -122,6 +122,15 @@ const sourceLinkHealthSchema = new mongoose.Schema(
       type: String,
       required: false,
     },
+    /**
+     * The `https:` spelling of a plain-HTTP website, kept only when its own probe came
+     * back `HEALTHY` with a verified certificate. Serve time offers it when the host
+     * answers on both schemes without redirecting (#5639).
+     */
+    httpsSpellingUrl: {
+      type: String,
+      required: false,
+    },
     checkedAt: {
       type: Date,
       required: false,

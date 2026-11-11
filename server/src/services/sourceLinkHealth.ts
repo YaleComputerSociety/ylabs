@@ -50,6 +50,12 @@ export interface SourceLinkHealth {
    * (#4649).
    */
   httpsLandingUrl?: string;
+  /**
+   * The response came from the requested host, path and query, apart from scheme
+   * and cosmetic spelling. Held in memory only and never stored: an `https:`
+   * spelling counts only when its own probe stayed on the page it asked for (#5639).
+   */
+  landedOnRequestedResource?: true;
 }
 
 export interface SourceLinkProbeResult {
@@ -250,6 +256,20 @@ function classifyProbeOutcome(probe: SourceLinkProbeResult): SourceLinkHealth {
   return { healthStatus: 'UNKNOWN' };
 }
 
+const isSameResource = (requested: URL, final: URL): boolean =>
+  comparableHost(requested) === comparableHost(final) &&
+  comparablePath(requested) === comparablePath(final) &&
+  requested.search === final.search;
+
+function landedOnRequestedResource(
+  requestedUrl: string | undefined,
+  finalUrl: string | undefined,
+): boolean {
+  const requested = parseProbeUrl(requestedUrl);
+  const final = parseProbeUrl(finalUrl);
+  return Boolean(requested && final && isSameResource(requested, final));
+}
+
 export function httpsLandingOf(
   requestedUrl: string | undefined,
   finalUrl: string | undefined,
@@ -258,10 +278,7 @@ export function httpsLandingOf(
   const final = parseProbeUrl(finalUrl);
   if (!requested || !final) return undefined;
   if (requested.protocol !== 'http:' || final.protocol !== 'https:') return undefined;
-  if (comparableHost(requested) !== comparableHost(final)) return undefined;
-  if (comparablePath(requested) !== comparablePath(final)) return undefined;
-  if (requested.search !== final.search) return undefined;
-  return final.toString();
+  return isSameResource(requested, final) ? final.toString() : undefined;
 }
 
 export function classifySourceLinkHealth(probe: SourceLinkProbeResult): SourceLinkHealth {
@@ -270,7 +287,13 @@ export function classifySourceLinkHealth(probe: SourceLinkProbeResult): SourceLi
     verdict.healthStatus === 'HEALTHY'
       ? httpsLandingOf(probe.requestedUrl, probe.finalUrl)
       : undefined;
-  const classified = httpsLandingUrl ? { ...verdict, httpsLandingUrl } : verdict;
+  const landed =
+    verdict.healthStatus === 'HEALTHY' &&
+    landedOnRequestedResource(probe.requestedUrl, probe.finalUrl);
+  const withLanding = httpsLandingUrl ? { ...verdict, httpsLandingUrl } : verdict;
+  const classified = landed
+    ? { ...withLanding, landedOnRequestedResource: true as const }
+    : withLanding;
   const outcome =
     probe.errorCode && TLS_VERIFICATION_ERROR_CODES.has(probe.errorCode)
       ? { ...classified, tlsVerificationFailed: true }

@@ -95,6 +95,7 @@ export interface ResearchEntitySourceLinkHealth {
   privateAddressHost?: boolean;
   tlsVerificationFailed?: boolean;
   httpsLandingUrl?: string;
+  httpsSpellingUrl?: string;
 }
 
 export type UndergradInvitationLevel = 'actively_hiring' | 'welcomes_undergrads';

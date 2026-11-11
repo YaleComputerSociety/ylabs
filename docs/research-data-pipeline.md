@@ -1784,7 +1784,11 @@ Browse cards and program pages are exempt, because their data carries no link he
 The reverse direction runs on the host's own redirect rather than on a guess (#4649).
 When a plain-HTTP probe comes back `HEALTHY` after its host redirected it to `https:` on the same host, the same path and the same query string, apart from `www.`, letter case and a trailing slash, the entry records that landing as `httpsLandingUrl`.
 Serve time offers the landing in place of the stored `http:` link, so a student lands on the page the server canonically answers on.
-An `https:` spelling that merely answers `200` beside a plain-HTTP site that never redirects is not adopted, because a shared host can answer `https:` with a different site.
+A host that answers on both schemes without redirecting gets a second probe instead of a guess (#5639).
+For a plain-HTTP `websiteUrl` or `website` whose probe recorded no landing, the pass also probes its `https:` spelling, same host, path and query, through the same probe, host budget and SSRF guard.
+The http entry records that spelling as `httpsSpellingUrl` only when the probe comes back `HEALTHY` with a verified certificate and its final URL is still the requested host, path and query; a certificate failure, a `404`, an inconclusive answer, a redirect to another page or host, or no probe at all records nothing, and no separate entry is written.
+A verified certificate alone does not rule out a shared host whose default `https:` site redirects to its parent, and a root request that lands on another host still reads `HEALTHY`, so the probe also has to stay on the page it asked for (`landedOnRequestedResource`, held in memory and never stored).
+Serve time offers the landing first, then the probed spelling, and otherwise the stored `http:` link.
 The stored `websiteUrl` keeps recording what the source published, so this is derivation from link-health evidence and writes no field.
 `--http-websites-only` scopes a pass to rows whose `websiteUrl` or `website` is plain HTTP, which is how a landing is recorded without waiting for the sweep's seven-day re-probe window.
 

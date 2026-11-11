@@ -59,6 +59,7 @@ export interface DetailSourceLinkHealth {
   privateAddressHost?: boolean;
   tlsVerificationFailed?: boolean;
   httpsLandingUrl?: string;
+  httpsSpellingUrl?: string;
 }
 
 export interface DetailSourceFieldContribution {
@@ -1327,7 +1328,9 @@ export const findSourceLinkHealthEntry = (
  * reachable, the working spelling is offered, so a click lands on the page instead of
  * a browser security warning. When a plain-HTTP link is verified reachable and its
  * own host redirected it to the same page over `https:`, that landing is offered
- * (#4649). Otherwise the stored URL is returned unchanged. Every link built from a
+ * (#4649). Failing that, a plain-HTTP link whose `https:` spelling was probed
+ * `HEALTHY` with a verified certificate is offered that spelling (#5639). Otherwise
+ * the stored URL is returned unchanged. Every link built from a
  * stored URL goes through this, the research website CTA and the Sources rows alike
  * (#3957).
  */
@@ -1339,12 +1342,15 @@ export const servedLinkUrl = (
   const normalized = normalizeSourceUrl(url);
   if (normalized && urlScheme(normalized) === 'http:') {
     const plainHealth = findSourceLinkHealthEntry(sourceLinkHealth, normalized);
+    if (urlScheme(plainHealth?.url) !== 'http:') return url;
     const landing = plainHealth?.httpsLandingUrl;
-    return plainHealth?.healthStatus === 'HEALTHY' &&
-      urlScheme(plainHealth.url) === 'http:' &&
-      landing &&
-      urlScheme(landing) === 'https:'
-      ? landing
+    if (plainHealth?.healthStatus === 'HEALTHY' && landing && urlScheme(landing) === 'https:')
+      return landing;
+    const spelling = plainHealth?.httpsSpellingUrl;
+    return spelling &&
+      urlScheme(spelling) === 'https:' &&
+      sourceLedgerKey(spelling) === sourceLedgerKey(normalized)
+      ? spelling
       : url;
   }
   if (!normalized || urlScheme(normalized) !== 'https:') return url;
