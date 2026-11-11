@@ -171,6 +171,14 @@ async function hasNonGrantObservationEvidence(doc: Record<string, any>): Promise
   return observations.some(observationCorroboratesBeyondGrants);
 }
 
+function mergeDidNotApply(result: ResearchEntityDedupeApplyOutcome): boolean {
+  return Boolean(
+    result.refusedAsDistinctPeople ||
+    result.deferredAsWouldDemote ||
+    result.deferredAsWouldSwapPinnedCanonical,
+  );
+}
+
 /**
  * The live research page a grant-only row's grants should enrich instead: the one live
  * lab or faculty research profile its lead also leads, excluding another row this pass is
@@ -183,14 +191,6 @@ async function hasNonGrantObservationEvidence(doc: Record<string, any>): Promise
  * grants. Topics are carried only onto another low-trust shell, never onto a real lab,
  * which is the #604 anti-graft rule.
  */
-function mergeDidNotApply(result: ResearchEntityDedupeApplyOutcome): boolean {
-  return Boolean(
-    result.refusedAsDistinctPeople ||
-    result.deferredAsWouldDemote ||
-    result.deferredAsWouldSwapPinnedCanonical,
-  );
-}
-
 async function mergeGrantRowInto(
   target: Record<string, any>,
   grantRow: Record<string, any>,
