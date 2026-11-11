@@ -3726,3 +3726,34 @@ describe('a person-scoped biography that states no research', () => {
     expect(result.reasons).not.toContain('biography_without_research');
   });
 });
+
+describe('a blank body beside a card', () => {
+  const visibility = (shortDescription: string) =>
+    computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'blank-body-card-fixture',
+        name: 'Robin Fixture Faculty Research',
+        slug: 'robin-fixture-research',
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        fullDescription: '',
+        shortDescription,
+        sourceUrls: ['https://example.yale.edu/profile/robin-fixture'],
+      },
+      leadMembers: [
+        { role: 'pi', userId: 'robin-fixture', user: { fname: 'Robin', lname: 'Fixture' } },
+      ],
+    });
+
+  it('records the hold as a missing description rather than a thin one', () => {
+    const result = visibility('Teaches undergraduate courses on glaciology and sea level rise.');
+    expect(result.reasons).toContain('missing_description');
+    expect(result.reasons).not.toContain('thin_description');
+    expect(result.tier).toBe('operator_review');
+  });
+
+  it('reads the same verdict on a second evaluation', () => {
+    const card = 'Teaches undergraduate courses on glaciology and sea level rise.';
+    expect(visibility(card)).toEqual(visibility(card));
+  });
+});

@@ -214,16 +214,16 @@ function isYaleProfileOrDirectoryUrl(value: string): boolean {
 function isProfileBiographyShell({
   entity,
   leadState,
-  descriptionState,
+  servesOnlyThinCopy,
   hasActionEvidence,
 }: {
   entity: Record<string, any>;
   leadState: string;
-  descriptionState: string;
+  servesOnlyThinCopy: boolean;
   hasActionEvidence: boolean;
 }): boolean {
   if (!isProfileAreaShellEntity(entity)) return false;
-  if (descriptionState !== 'thin') return false;
+  if (!servesOnlyThinCopy) return false;
   if (leadState === 'lead_attached') return false;
   if (hasUsefulResearchAreas(entity)) return false;
   if (hasActionEvidence) return false;
@@ -1158,16 +1158,20 @@ export function computeResearchEntityStudentVisibility({
     organizationalLeadExempt &&
     quality.leadState !== 'lead_attached' &&
     !hasOrganizationalAlternateAccessPath({ entity, relatedEntityAccessPathCount });
+  const servedCopyIsOnlyACard =
+    quality.descriptionState === 'missing' &&
+    Boolean(textValue(publicDescription.entity.shortDescription));
   const genericDirectoryShell =
     isGenericDirectoryOnlyProfileAreaShell(entity) &&
     quality.descriptionState === 'missing' &&
+    !servedCopyIsOnlyACard &&
     quality.leadState !== 'lead_attached' &&
     !hasUsefulResearchAreas(entity) &&
     !hasActionEvidence;
   const profileBiographyShell = isProfileBiographyShell({
     entity,
     leadState: quality.leadState,
-    descriptionState: quality.descriptionState,
+    servesOnlyThinCopy: quality.descriptionState === 'thin' || servedCopyIsOnlyACard,
     hasActionEvidence,
   });
   const nonOwnerGrantShell = isNonOwnerGrantShell({ entity, leadMembers, hasActionEvidence });
