@@ -68,8 +68,10 @@ const URL_VALUE_KEYS = new Set([
   '$session_entry_referrer',
   '$external_click_url',
 ]);
-const URL_ATTRIBUTE_IN_CHAIN =
-  /(?<![A-Za-z0-9_])((?:attr__)?(?:href|src|action))="((?:[^"\\]|\\.)*)"/g;
+// posthog-js escapes a quote inside an elements-chain value but not a backslash, so once a
+// chain holds a backslash no value boundary can be trusted and the chain is dropped whole
+// (withoutElementText). Without one, every quote is a boundary and this match is exact (#5621).
+const URL_ATTRIBUTE_IN_CHAIN = /(?<![A-Za-z0-9_])((?:attr__)?(?:href|src|action))="([^"]*)"/g;
 const withoutUrlQuery = (value: string) => value.replace(/[?#][\s\S]*$/, '');
 const SEARCH_ENGINE_PROPERTY = /(?:^\$?|_)(?:ph_keyword|search_engine)$/;
 
@@ -163,6 +165,9 @@ const withoutElementText = (properties: Properties): Properties => {
         ),
       ),
     );
+  }
+  if (typeof cleaned.$elements_chain === 'string' && cleaned.$elements_chain.includes('\\')) {
+    delete cleaned.$elements_chain;
   }
   if (typeof cleaned.$elements_chain === 'string') {
     cleaned.$elements_chain = cleaned.$elements_chain

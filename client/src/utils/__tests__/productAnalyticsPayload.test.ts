@@ -493,6 +493,24 @@ describe('PostHog configuration', () => {
     expect(JSON.stringify(sentException)).not.toContain(SYNTHETIC_QUERY);
   });
 
+  it('drops an elements chain whose value boundaries a backslash makes ambiguous (#5621)', () => {
+    const beforeSend = config().before_send as (event: never) => unknown;
+    for (const chain of [
+      `a:attr__href="?q=${SYNTHETIC_QUERY}\\"href="?q=${SYNTHETIC_QUERY}\\"nth-child="1"`,
+      `a:href="?q=x\\";img:attr__src="?u=${SYNTHETIC_QUERY}"`,
+    ]) {
+      const scrubbed = beforeSend({
+        uuid: 'synthetic-ambiguous-chain',
+        event: '$autocapture',
+        properties: { $elements_chain: chain, $event_type: 'click' },
+      } as never) as { properties: Record<string, unknown> };
+
+      expect(JSON.stringify(scrubbed)).not.toContain(SYNTHETIC_QUERY);
+      expect(scrubbed.properties).not.toHaveProperty('$elements_chain');
+      expect(scrubbed.properties.$event_type).toBe('click');
+    }
+  });
+
   it('strips a query hidden behind an escaped quote in an elements chain, and from an outbound link (#5621)', () => {
     const beforeSend = config().before_send as (event: never) => unknown;
     const chain = `a:attr__href="?q=a\\"${SYNTHETIC_QUERY}"href="/research?x=\\"${SYNTHETIC_QUERY}"nth-child="1"`;
@@ -506,9 +524,7 @@ describe('PostHog configuration', () => {
     } as never) as { properties: Record<string, unknown> };
 
     expect(JSON.stringify(scrubbed)).not.toContain(SYNTHETIC_QUERY);
-    expect(scrubbed.properties.$elements_chain).toBe(
-      'a:attr__href=""href="/research"nth-child="1"',
-    );
+    expect(scrubbed.properties).not.toHaveProperty('$elements_chain');
     expect(scrubbed.properties.$external_click_url).toBe('https://example.edu/lab');
   });
 
