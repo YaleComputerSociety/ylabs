@@ -722,7 +722,7 @@ test('public research detail queries cap unauthenticated fan-out before serializ
   }
 
   assert.match(source, /const MAX_PUBLIC_DETAIL_MEMBERS = \d+/);
-  assert.match(source, /\.slice\(0, MAX_PUBLIC_DETAIL_MEMBERS\)/);
+  assert.match(source, /limit = MAX_PUBLIC_DETAIL_MEMBERS,\n\)[^{]*\{[\s\S]*?\.slice\(0, limit\)/);
 
   assert.doesNotMatch(source, /ResearchEntityRelationship\.find\(\{[^;]*?\}\)\.lean\(\)/);
   assert.doesNotMatch(
