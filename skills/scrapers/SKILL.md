@@ -1786,6 +1786,9 @@ Three readers use it on every resolve, so nothing is locked:
 - it also clears an ORCID when every live observation asserting it was read from such a page.
 
 A researcher whose stored netid the directory does not hold is never contradicted, because that is usually the person's own email alias stamped as a netid.
+Since #5737 the same withdrawal runs on every resolve of a holder, not only when one of its own keys is screened: `planHeldContradictedPageWithdrawal` withdraws a held link whose page names another netid, and an ORCID or photo URL that only such pages assert.
+A title or department is never withdrawn this way, because many people share those values and a value alone cannot say which page it came from.
+The user materializer also drops a key's evidence read from such a page before writing the joined researcher (`withoutPagesNamingAnotherNetid`), so a key joined to the wrong person cannot re-stamp what was withdrawn.
 A page that has stated several addresses keeps every netid the directory pairs with them, so an owner who changed address is still the owner, but a page whose addresses the directory does not all pair with one shared netid, such as a roster listing, decides nothing.
 Measured on Development on 2026-11-11 before that rule, 22 of 24 screened lead observations were that alias shape.
 
