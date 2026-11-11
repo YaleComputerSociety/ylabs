@@ -376,6 +376,40 @@ describe('extractRosterMemberIdentityEvidence keeps own links on every Yale prof
   });
 });
 
+describe('extractRosterMemberIdentityEvidence ignores a lone co-author card (#5677)', () => {
+  it('drops the only co-author card on a profile, whose name is plain text', () => {
+    const page = 'https://medicine.yale.edu/profile/avery-synthetic/';
+    const html = `<html><body><main><h1>Avery Synthetic</h1>
+      <section class="profile-details-co-authors"><div class="profile-details-co-author">
+        <div class="profile-details-co-author__name">Casey Coauthor</div>
+        <div class="profile-details-co-author__profile-link-wrapper"><a href="/profile/casey-coauthor/">View Full Profile</a></div>
+      </div></section>
+    </main></body></html>`;
+    expect(
+      extractRosterMemberIdentityEvidence(html, page, 'Avery Synthetic').linkedProfileUrls,
+    ).toEqual([page]);
+  });
+
+  it("keeps the subject's own website link in a contact block", () => {
+    const page = 'https://center.yale.edu/person/avery-synthetic';
+    const html = `<html><body><main><div class="node__contact-info"><div class="node__website-link">
+      <a href="https://history.yale.edu/people/avery-synthetic">Website</a></div></div></main></body></html>`;
+    expect(
+      extractRosterMemberIdentityEvidence(html, page, 'Avery Synthetic').linkedProfileUrls,
+    ).toContain('https://history.yale.edu/people/avery-synthetic');
+  });
+
+  it('keeps own links on a page whose wrapper classes only mention collaborators in passing', () => {
+    const page = 'https://medicine.yale.edu/profile/avery-synthetic/';
+    const html = `<html><body class="path-our-team-collaborators page-node-type-collaborator">
+      <main><div class="education-collaboratory-team"><div class="node__contact-info">
+      <a href="https://history.yale.edu/people/avery-synthetic">Website</a></div></div></main></body></html>`;
+    expect(
+      extractRosterMemberIdentityEvidence(html, page, 'Avery Synthetic').linkedProfileUrls,
+    ).toContain('https://history.yale.edu/people/avery-synthetic');
+  });
+});
+
 describe('ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION (#5677)', () => {
   const PAGE = 'https://center.yale.edu/people/avery-synthetic';
   const CORPUS: Array<{ html: string; memberName: string }> = [
@@ -403,7 +437,7 @@ describe('ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION (#5677)', () => {
     },
   ];
   const PINNED = {
-    version: 2,
+    version: 3,
     outputs: [
       {
         pageUrl: PAGE,
