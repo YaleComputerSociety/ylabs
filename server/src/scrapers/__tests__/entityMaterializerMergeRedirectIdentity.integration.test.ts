@@ -79,6 +79,7 @@ describe('a merge redirect carries lane evidence onto a person row only for its 
     netid: string,
     profileUrl?: string,
     profileKind: 'YALE_OFFICIAL' | 'LAB_ABOUT' = 'YALE_OFFICIAL',
+    edgeSourceName?: string,
   ) => {
     const researcher = await Researcher.create({
       displayName,
@@ -103,6 +104,15 @@ describe('a merge redirect carries lane evidence onto a person row only for its 
       confidence: 0.9,
       reviewStatus: 'UNREVIEWED',
       archived: false,
+      ...(edgeSourceName
+        ? {
+            rosterProvenance: {
+              sourceName: edgeSourceName,
+              membershipKey: `${edgeSourceName}:${netid}`,
+              observedAt: new Date('2026-02-01T00:00:00Z'),
+            },
+          }
+        : {}),
     });
   };
 
@@ -195,6 +205,21 @@ describe('a merge redirect carries lane evidence onto a person row only for its 
 
     const viaListing = await materializeEntity('researchEntity', {
       entityKey: 'dept-roster-mia-sample',
+    });
+    await materializeEntity('researchEntity', { entityKey: SURVIVOR_SLUG });
+
+    expect(viaListing.skipped).toBe('merge-redirect-identity-refused');
+    expect(await survivorAreas(survivor._id)).toEqual([]);
+  });
+
+  it('refuses a listing whose only witness is a same-named lead held only by a grant co-PI listing', async () => {
+    const survivor = await seedSurvivor();
+    await seedLead(survivor._id, 'Ada Example', 'ae22', undefined, 'YALE_OFFICIAL', 'nih-reporter');
+    await seedListing(survivor._id, 'dept-roster-adaline-example', 'Adaline Example');
+    await seedObservation('dept-roster-adaline-example', 'inferredPiUserKey', 'netid:ae22');
+
+    const viaListing = await materializeEntity('researchEntity', {
+      entityKey: 'dept-roster-adaline-example',
     });
     await materializeEntity('researchEntity', { entityKey: SURVIVOR_SLUG });
 

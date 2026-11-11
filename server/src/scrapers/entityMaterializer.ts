@@ -362,6 +362,7 @@ import {
   mergedRowEvidenceIdentity,
   observationBelongsToMergedRow,
 } from './mergedRowEvidenceIdentity';
+import { grantCoPiListedPersonIds } from './grantCoPiListing';
 import {
   isPersonRow,
   leadsTheRowIsNamedAfter,
@@ -6789,14 +6790,40 @@ function verifiedPrimaryProfileDestinations(profileLinks: unknown): string[] {
     .filter(Boolean);
 }
 
-async function leadsOfRowForRedirectWitness(survivorId: unknown): Promise<MergedRedirectLead[]> {
-  const leadIds = (await RoleAssignment.distinct('personId', {
+const ROW_LEAD_OBSERVATION_FIELDS: ReadonlySet<string> = new Set([
+  'inferredPiUserId',
+  'inferredPiUserKey',
+]);
+
+async function leadsOfRowForRedirectWitness(
+  survivorId: unknown,
+  ownLeadObservations: MaterializerObservationLike[],
+): Promise<MergedRedirectLead[]> {
+  const edges = (await RoleAssignment.find({
     'target.kind': 'RESEARCH_ENTITY',
     'target.id': survivorId,
     role: { $in: SITE_LEAD_ROLES },
     state: { $ne: 'HISTORICAL' },
     archived: { $ne: true },
-  })) as unknown[];
+  })
+    .select('personId rosterProvenance.sourceName')
+    .lean()) as Array<{ personId?: unknown; rosterProvenance?: { sourceName?: string } }>;
+  const edgeSourceNamesByPerson = new Map<string, Array<string | undefined>>();
+  for (const edge of edges) {
+    const personId = edge.personId ? String(edge.personId) : '';
+    if (!personId) continue;
+    edgeSourceNamesByPerson.set(personId, [
+      ...(edgeSourceNamesByPerson.get(personId) ?? []),
+      edge.rosterProvenance?.sourceName,
+    ]);
+  }
+  if (edgeSourceNamesByPerson.size === 0) return [];
+  const grantCoPiListed = grantCoPiListedPersonIds({
+    leadFacts: await planInferredPiMembership(String(survivorId), ownLeadObservations),
+    rowLeadPersonIds: edgeSourceNamesByPerson.keys(),
+    edgeSourceNamesByPerson,
+  });
+  const leadIds = [...edgeSourceNamesByPerson.keys()].filter((id) => !grantCoPiListed.has(id));
   if (leadIds.length === 0) return [];
   const leads = (await Researcher.find({ _id: { $in: leadIds }, archived: { $ne: true } })
     .select('displayName identifiers.netid profileLinks')
@@ -6832,9 +6859,17 @@ export async function mergedRedirectRefusedListings(
     .lean()) as any[];
   const personListings = listings.filter((listing) => isPersonRow(listing));
   if (personListings.length === 0) return none;
+  const listingIds = new Set(personListings.map((listing) => String(listing._id)));
+  const listingSlugs = new Set(personListings.map((listing) => textValue(listing.slug)));
+  const ownLeadObservations = observations.filter(
+    (observation: any) =>
+      ROW_LEAD_OBSERVATION_FIELDS.has(String(observation.field ?? '')) &&
+      !listingSlugs.has(textValue(observation.entityKey)) &&
+      !listingIds.has(normalizeMaterializerObjectId(observation.entityId) ?? ''),
+  );
   const namedLeads = leadsTheRowIsNamedAfter(
     survivor,
-    await leadsOfRowForRedirectWitness(survivor._id),
+    await leadsOfRowForRedirectWitness(survivor._id, ownLeadObservations),
   );
   const refusedSlugs = new Set<string>();
   const refusedIds = new Set<string>();
