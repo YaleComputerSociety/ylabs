@@ -77,6 +77,32 @@ describe('clinical practice presented as research (#5537)', () => {
   });
 });
 
+describe('only research-bearing text counts against the clinical lines (#5537)', () => {
+  const specialties = [
+    'Clinical Specialties',
+    'Interventional Radiology; Vascular Embolization',
+    'Are you a patient?',
+    'Section Chief, Interventional Radiology and Vascular Embolization',
+    'What Is Vascular Embolization?',
+    'Member, Society of Interventional Radiology',
+    'Research Interests',
+    'Her laboratory studies how liver tumors respond to targeted drug delivery.',
+  ];
+  const draft = 'Studies interventional radiology and vascular embolization.';
+
+  it('refuses a draft whose specialty terms appear only in a department line and a fact-sheet title', () => {
+    expect(judge(draft, specialties.join('\n'))).toBe(true);
+  });
+
+  it('accepts a draft whose terms appear in a stated research-interest sentence', () => {
+    const withResearch = [
+      ...specialties,
+      'Her research examines outcomes of interventional radiology and vascular embolization.',
+    ].join('\n');
+    expect(judge(draft, withResearch)).toBe(false);
+  });
+});
+
 describe('the clinical-practice arm refuses writer drafts and retires adopted bodies (#5537)', () => {
   const body =
     'Studies cardiac arrhythmia, atrial fibrillation ablation and heart failure management.';

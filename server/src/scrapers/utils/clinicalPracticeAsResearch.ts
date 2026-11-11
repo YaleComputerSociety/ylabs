@@ -43,28 +43,40 @@ const isClinicalListText = (text: string): boolean =>
 const isClinicalInterestSentence = (sentence: string): boolean =>
   INTEREST_PHRASE.test(sentence) && !RESEARCH_WORD.test(sentence);
 
+const isBoilerplateOrCvRecord = (text: string): boolean =>
+  SCHOOL_BOILERPLATE_WITH_RESEARCH_WORD.test(text) || CV_RECORD_LINE.test(text);
+
+const isScholarlyLine = (line: string): boolean =>
+  SCHOLARLY_LINE.test(line) || isPublicationCitationLine(line);
+
+const isResearchSentence = (sentence: string): boolean =>
+  !isBoilerplateOrCvRecord(sentence) &&
+  (statesResearchSentence(sentence, WRITER_READING)
+    ? !isClinicalInterestSentence(sentence)
+    : RESEARCH_WORD_IN_PROSE.test(sentence));
+
 /**
  * Whether the evidence states research anywhere other than a clinical-interest sentence:
  * a research statement, a publications or trials line, a citation, or a prose sentence that
  * names research, after a school's boilerplate and CV lines are set aside.
  */
 function hasResearchSignal(text: string): boolean {
-  for (const line of linesOf(text)) {
-    if (SCHOOL_BOILERPLATE_WITH_RESEARCH_WORD.test(line) || CV_RECORD_LINE.test(line)) continue;
-    if (SCHOLARLY_LINE.test(line) || isPublicationCitationLine(line)) return true;
-  }
-  for (const sentence of sentencesOf(text)) {
-    if (SCHOOL_BOILERPLATE_WITH_RESEARCH_WORD.test(sentence) || CV_RECORD_LINE.test(sentence)) {
-      continue;
-    }
-    if (CLINICAL_SENTENCE.test(sentence) && !/\bresearch\b/i.test(sentence)) continue;
-    if (statesResearchSentence(sentence, WRITER_READING)) {
-      if (!isClinicalInterestSentence(sentence)) return true;
-    } else if (RESEARCH_WORD_IN_PROSE.test(sentence)) return true;
-  }
-  return false;
+  return (
+    linesOf(text).some((line) => !isBoilerplateOrCvRecord(line) && isScholarlyLine(line)) ||
+    sentencesOf(text).some(
+      (sentence) =>
+        !(CLINICAL_SENTENCE.test(sentence) && !/\bresearch\b/i.test(sentence)) &&
+        isResearchSentence(sentence),
+    )
+  );
 }
 
+/**
+ * The evidence split into its clinical lines and the research-bearing text beside them.
+ * Only research-bearing text counts as "other", because a department or title line, a
+ * condition fact-sheet title or a society membership repeats the specialty words without
+ * stating research, and counting it let a "Studies <specialty list>" draft through.
+ */
 function clinicalAndOtherText(text: string): { clinical: string[]; other: string[] } {
   const clinical: string[] = [];
   const other: string[] = [];
@@ -80,13 +92,18 @@ function clinicalAndOtherText(text: string): { clinical: string[]; other: string
       clinical.push(line);
       continue;
     }
+    if (isScholarlyLine(line)) {
+      other.push(line);
+      continue;
+    }
     const isClinical = (sentence: string) =>
       !RESEARCH_WORD.test(sentence) &&
       (CLINICAL_SENTENCE.test(sentence) || CLINICAL_INLINE.test(sentence));
     const sentences = sentencesOf(line);
     clinical.push(...sentences.filter(isClinical));
-    const kept = sentences.filter((sentence) => !isClinical(sentence));
-    if (kept.length > 0) other.push(kept.join(' '));
+    other.push(
+      ...sentences.filter((sentence) => !isClinical(sentence) && isResearchSentence(sentence)),
+    );
   }
   return { clinical, other };
 }
