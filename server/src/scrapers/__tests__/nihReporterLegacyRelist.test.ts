@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { aggregateResearchEntityGrantEvidence } from '../entityMaterializer';
+import { grantRoleForLeads } from '../utils/grantInvestigators';
 import {
   NihReporterScraper,
   relistedLegacyGrantObservations,
@@ -108,16 +109,20 @@ describe('relisting a legacy NIH grant observation with its PI list (#5779)', ()
     expect(relisted).toMatchObject({ listed: 2, unmatched: 1 });
   });
 
-  it('holds an award whose credited PI the resolver could not settle', () => {
+  it('lists a credited PI the resolver could not settle without a researcher, so the lead beside it still labels the award', () => {
     const relisted = relistedLegacyGrantObservations(
       legacyObservations(),
       projects,
-      (pi) => (pi.profile_id === 22 ? null : lookup(pi)),
+      (pi) => (pi.profile_id === 22 ? undefined : lookup(pi)),
       new Set(['synthetic-row-read-this-run']),
     );
     const entries = relisted.observations[0].value as Array<Record<string, any>>;
-    expect(entries[1]).not.toHaveProperty('investigators');
-    expect(relisted).toMatchObject({ listed: 1, unresolved: 1, unmatched: 1 });
+    expect(entries[1].investigators).toEqual([
+      { contact: true, profileId: 22, name: 'Blair Leadperson' },
+      { contact: false, profileId: 11, researcherId: LEAD, name: 'Avery Leadperson' },
+    ]);
+    expect(grantRoleForLeads(entries[1].investigators, new Set([LEAD]))).toBe('copi');
+    expect(relisted).toMatchObject({ listed: 2, unmatched: 1 });
   });
 
   it('relists nothing on a second pass over its own output', () => {
@@ -244,7 +249,7 @@ describe('a lane run relists legacy awards so another person award stops being s
     ).toBe(true);
   });
 
-  it('records no PI list on a fresh award whose contact PI the resolver cannot settle', async () => {
+  it('lists a fresh award whose contact PI the resolver cannot settle, labelling the resolved lead', async () => {
     const unresolvedContact = { profileId: 33, first: 'Casey', last: 'Unsettled' };
     const fresh: NihGrant = {
       ...project('R01GM000077', unresolvedContact, lead),
@@ -280,7 +285,11 @@ describe('a lane run relists legacy awards so another person award stops being s
     });
     const grants = emitted.find((obs) => obs.field === 'recentGrants')!.value as any[];
     expect(grants.map((entry) => entry.id)).toEqual(['R01GM000077']);
-    expect(grants[0]).not.toHaveProperty('investigators');
+    expect(grants[0].investigators).toEqual([
+      { contact: true, profileId: 33, name: 'Casey Unsettled' },
+      { contact: false, profileId: 11, researcherId: LEAD, name: 'Avery Leadperson' },
+    ]);
+    expect(grantRoleForLeads(grants[0].investigators, new Set([LEAD]))).toBe('copi');
   });
 
   it('fails closed and relists nothing when RePORTER cannot be read', async () => {

@@ -420,17 +420,15 @@ export function groupGrantsByProject(grants: readonly NihGrant[]): NihGrant[][] 
   return [...projects.values()];
 }
 
-export const UNRESOLVED_CREDITED_PI = null;
-
 export type NihPiResearcherLookup = (
   pi: NihPrincipalInvestigator,
   grant: NihGrant,
-) => string | typeof UNRESOLVED_CREDITED_PI | undefined;
+) => string | undefined;
 
 export function nihAwardInvestigators(
   records: readonly NihGrant[],
   researcherIdForPi: NihPiResearcherLookup,
-): GrantInvestigator[] | undefined {
+): GrantInvestigator[] {
   const newestFirst = [...records].sort(
     (left, right) =>
       fiscalYearRecency(right) - fiscalYearRecency(left) ||
@@ -441,9 +439,6 @@ export function nihAwardInvestigators(
     for (const pi of record.principal_investigators || []) {
       if (!isProfileId(pi.profile_id) || byProfileId.has(pi.profile_id)) continue;
       const researcherId = researcherIdForPi(pi, record);
-      // A credited PI the resolver could not settle may be the row's lead, so the list
-      // cannot say whose award it is; the entry stays held rather than withheld.
-      if (researcherId === UNRESOLVED_CREDITED_PI) return undefined;
       const name = [pi.first_name, pi.middle_name, pi.last_name]
         .map((part) => (part || '').trim())
         .filter(Boolean)
@@ -962,12 +957,11 @@ export function relistedLegacyGrantObservations(
   projects: readonly NihGrant[],
   researcherIdForPi: NihPiResearcherLookup,
   keysEmittedThisRun: ReadonlySet<string>,
-): { observations: ObservationInput[]; listed: number; unmatched: number; unresolved: number } {
+): { observations: ObservationInput[]; listed: number; unmatched: number } {
   const byNumber = projectRecordsByAwardNumber(projects);
   const out: ObservationInput[] = [];
   let listed = 0;
   let unmatched = 0;
-  let unresolved = 0;
   for (const observation of observations) {
     if (keysEmittedThisRun.has(observation.entityKey)) continue;
     let changed = false;
@@ -979,10 +973,6 @@ export function relistedLegacyGrantObservations(
         return entry;
       }
       const investigators = nihAwardInvestigators(records, researcherIdForPi);
-      if (!investigators) {
-        unresolved++;
-        return entry;
-      }
       listed++;
       changed = true;
       return { ...(entry as Record<string, unknown>), investigators };
@@ -999,7 +989,7 @@ export function relistedLegacyGrantObservations(
       ...(observation.observedAt ? { observedAt: observation.observedAt } : {}),
     });
   }
-  return { observations: out, listed, unmatched, unresolved };
+  return { observations: out, listed, unmatched };
 }
 
 async function defaultLoadLegacyGrantObservations(): Promise<LegacyGrantObservation[]> {
@@ -1216,7 +1206,7 @@ export class NihReporterScraper implements IScraper {
     const researcherIdForPi: NihPiResearcherLookup = (pi, grant) => {
       if (!isProfileId(pi.profile_id) || !creditedProfileIds.has(pi.profile_id)) return undefined;
       const name = pi.is_contact_pi ? pickContactPiName(grant) : principalInvestigatorName(pi);
-      return researcherIdByCreditedName.get(name) ?? UNRESOLVED_CREDITED_PI;
+      return researcherIdByCreditedName.get(name);
     };
     for (const [piName, grants] of piEntries) {
       processed++;
@@ -1267,7 +1257,6 @@ export class NihReporterScraper implements IScraper {
       observations: 0,
       listed: 0,
       unmatched: 0,
-      unresolved: 0,
       status: 'skipped (--limit)',
     };
     if (limitOption === undefined) {
@@ -1338,11 +1327,7 @@ export class NihReporterScraper implements IScraper {
             if (credited !== undefined) return credited;
             if (!isProfileId(pi.profile_id) || !legacyCredited.has(pi.profile_id)) return undefined;
             const name = legacyNameOf(pi, record);
-            return (
-              researcherIdByCreditedName.get(name) ??
-              legacyResolution.get(name) ??
-              UNRESOLVED_CREDITED_PI
-            );
+            return researcherIdByCreditedName.get(name) ?? legacyResolution.get(name);
           };
           const relisted = relistedLegacyGrantObservations(
             legacyElsewhere,
@@ -1355,7 +1340,6 @@ export class NihReporterScraper implements IScraper {
           relist.observations = relisted.observations.length;
           relist.listed = relisted.listed;
           relist.unmatched = relisted.unmatched;
-          relist.unresolved = relisted.unresolved;
         }
       } catch (err: unknown) {
         relist.status = 'failed';
@@ -1381,7 +1365,7 @@ export class NihReporterScraper implements IScraper {
       `${ineligibleLeadTitle} held for a non-lead title; ` +
       `${corroboratedPis} PI(s) settled by a corroborating profile URL; ` +
       `legacy award PI lists ${relist.status}: ${relist.observations} observation(s) relisted, ` +
-      `${relist.listed} award(s) listed, ${relist.unresolved} held with an unresolved credited PI, ` +
+      `${relist.listed} award(s) listed, ` +
       `${relist.unmatched} award(s) RePORTER did not return`;
     ctx.log(`Emitted ${totalObs} observations. ${notes}`);
 
