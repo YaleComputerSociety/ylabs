@@ -34,10 +34,16 @@ import {
   isInadmissibleProfileLinkedHomeName,
   isNonIdentifyingLinkLabelName,
   nameDenotesOrganization,
+  namesAResearchGroupRatherThanAPerson,
   stripResearchHomeNameLinkChrome,
 } from '../../utils/researchHomeNameIdentityAuthority';
 import { sanitizeProfileResearchTerms } from '../../utils/profileResearchTerms';
-import { isNavMenuChromeTitle, isPageHeadingTitle } from '../../utils/titleHygiene';
+import {
+  isNavMenuChromeTitle,
+  isPageHeadingTitle,
+  sanitizePersonTitle,
+} from '../../utils/titleHygiene';
+import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { canonicalPersonPageUrlCandidate } from '../../utils/yalePersonPagePrefix';
@@ -990,22 +996,51 @@ function isAdmissibleOfficialProfileTitle(value: string): boolean {
   );
 }
 
-function firstUsefulProfileTitle($: cheerio.CheerioAPI): string {
+/**
+ * Cheerio's `.text()` joins adjacent fields with nothing between them, so a department ending
+ * in a word ran into the address after it and a title absorbed the fields beside it (#5701).
+ */
+const blockSeparatedText = (selection: cheerio.Cheerio<any>): string =>
+  selection
+    .toArray()
+    .map((el) => extractElementTextWithBlockSeparators(el))
+    .join(' ');
+
+function admissibleProfileTitles($: cheerio.CheerioAPI): string[] {
   const selectors = [
     '[class*="title"]',
     '[class*="appointment"]',
     '[class*="position"]',
     'meta[name="description"]',
   ];
+  const titles: string[] = [];
   for (const selector of selectors) {
     const elements = $(selector).toArray();
     for (const el of elements) {
-      const value = cleanOfficialProfileTitle($(el).text() || $(el).attr('content') || '');
+      const value = cleanOfficialProfileTitle(
+        blockSeparatedText($(el)) || $(el).attr('content') || '',
+      );
       if (!value || /^information for$/i.test(value)) continue;
-      if (isAdmissibleOfficialProfileTitle(value)) return value;
+      if (isAdmissibleOfficialProfileTitle(value)) titles.push(value);
     }
   }
-  return '';
+  return titles;
+}
+
+/**
+ * The appointments a profile states, and the one it may emit as the person's title. A stated
+ * title that carries a contact block or other junk still says the page is a profile, but is
+ * never emitted as the title (#5701).
+ */
+function officialProfileTitles(
+  $: cheerio.CheerioAPI,
+  profiles: Array<Record<string, any>>,
+): { stated: string[]; emitted: string } {
+  const stated = uniqueStrings([
+    firstJsonLdText(profiles, ['jobTitle']),
+    ...admissibleProfileTitles($),
+  ]).filter(isAdmissibleOfficialProfileTitle);
+  return { stated, emitted: stated.map((value) => sanitizePersonTitle(value)).find(Boolean) ?? '' };
 }
 
 function isUsefulOfficialProfileBioText(value: string): boolean {
@@ -1366,11 +1401,11 @@ function profileEvidenceText(
       profile.description,
       ...(Array.isArray(profile.jobTitle) ? profile.jobTitle : [profile.jobTitle]),
     ]),
-    $('main').text(),
-    $('article').text(),
-    $('[class*="biography"]').text(),
-    $('[class*="profile-body"]').text(),
-    $('[class*="field--name-body"]').text(),
+    blockSeparatedText($('main')),
+    blockSeparatedText($('article')),
+    blockSeparatedText($('[class*="biography"]')),
+    blockSeparatedText($('[class*="profile-body"]')),
+    blockSeparatedText($('[class*="field--name-body"]')),
   ]).join(separator);
 }
 
@@ -1559,10 +1594,7 @@ export function readOrganizationDirectorProfile(
   if (!profileLinksWebsite($, profileUrl, websiteUrl)) {
     return { subjectKey, statedMember, claim: null };
   }
-  const title =
-    uniqueStrings([firstJsonLdText(profiles, ['jobTitle']), firstUsefulProfileTitle($)]).find(
-      isAdmissibleOfficialProfileTitle,
-    ) || '';
+  const title = officialProfileTitles($, profiles).emitted;
   return { subjectKey, statedMember, claim: { name, role, profileUrl: canonicalUrl, title } };
 }
 
@@ -1679,7 +1711,11 @@ export async function candidateWebsiteOwnedByLead(
   }
   if (!html) return false;
   const $ = cheerio.load(html);
-  const text = uniqueStrings([$('main').text(), $('article').text(), $('body').text()]).join(' ');
+  const text = uniqueStrings([
+    blockSeparatedText($('main')),
+    blockSeparatedText($('article')),
+    blockSeparatedText($('body')),
+  ]).join(' ');
   return textEvidencesNamedLeadership(text, leadNames);
 }
 
@@ -2240,17 +2276,12 @@ function acronymExpansionNamesIdentity(
   return words.some((word) => identityTokens.includes(word));
 }
 
-const BLOCK_LEVEL_SELECTOR =
-  'address, article, aside, blockquote, br, dd, div, dl, dt, figcaption, figure, footer, form, h1, h2, h3, h4, h5, h6, header, hr, li, main, nav, ol, p, pre, section, table, td, th, tr, ul';
-
 /**
  * Body text of a page for the acronym-expansion read, without script and style text.
  */
 export function pageBodyText(html: string): string {
   const $ = cheerio.load(html);
-  $('script, style, noscript').remove();
-  $(BLOCK_LEVEL_SELECTOR).before(' ').after(' ');
-  return textValue($('body').text() || $.root().text());
+  return textValue(blockSeparatedText($('body')) || blockSeparatedText($.root()));
 }
 
 /**
@@ -2736,7 +2767,7 @@ function nameShapedYaleEmailOnPage(
   $('a[href^="mailto:"]').each((_i, el) => {
     pageWideCandidates.push(($(el).attr('href') || '').replace(/^mailto:/i, ''));
   });
-  pageWideCandidates.push($('body').text());
+  pageWideCandidates.push(blockSeparatedText($('body')));
   return (
     firstPersonSpecificYaleEmail(structuredCandidates, displayName, () => true) ||
     firstPersonSpecificYaleEmail(
@@ -2754,7 +2785,7 @@ function firstPersonSpecificYaleEmail(
 ): string {
   for (const candidate of candidates) {
     const text = textValue(candidate);
-    for (const match of text.matchAll(/\b[a-z0-9._%+-]+@yale\.edu\b/gi)) {
+    for (const match of text.matchAll(/(?<![a-z0-9._%+-])[a-z0-9._%+-]+@yale\.edu\b/gi)) {
       const email = match[0].toLowerCase();
       if (admissible(email) && isLikelyPersonSpecificYaleEmail(email, displayName)) return email;
     }
@@ -3087,6 +3118,33 @@ function emailOnlyOfficialProfileIdentity(
   };
 }
 
+const statesAnAppointment = (identity: OfficialProfileIdentity): boolean => !identity.emailOnly;
+
+function displayNameNamesAPerson(displayName: string): boolean {
+  return (
+    Boolean(displayName) &&
+    !namesAResearchGroupRatherThanAPerson(displayName) &&
+    !nameDenotesOrganization(displayName)
+  );
+}
+
+/**
+ * The person a profile page is about, with or without a stated appointment, so the page's
+ * own address does not depend on the title extractor (#5701). Without a title the page
+ * yields its address and nothing else.
+ */
+export function extractOfficialProfilePersonIdentity(
+  html: string,
+  profileUrl: string,
+  entity: Record<string, any>,
+  options: OfficialProfileIdentityOptions = {},
+): OfficialProfileIdentity | null {
+  return extractOfficialProfileIdentity(html, profileUrl, entity, {
+    ...options,
+    emailOnlyWithoutAdmissibleTitle: true,
+  });
+}
+
 export function extractOfficialProfileIdentity(
   html: string,
   profileUrl: string,
@@ -3158,13 +3216,12 @@ export function extractOfficialProfileIdentity(
     }
   }
 
-  const title =
-    uniqueStrings([firstJsonLdText(profiles, ['jobTitle']), firstUsefulProfileTitle($)]).find(
-      isAdmissibleOfficialProfileTitle,
-    ) || '';
-  if (!title) {
+  const { stated: statedTitles, emitted: title } = officialProfileTitles($, profiles);
+  if (statedTitles.length === 0) {
     const subjectStatedEmail =
-      email && email === subjectDeclaredProfileEmail($, profiles, displayName);
+      email &&
+      email === subjectDeclaredProfileEmail($, profiles, displayName) &&
+      displayNameNamesAPerson(displayName);
     return options.emailOnlyWithoutAdmissibleTitle && subjectStatedEmail
       ? emailOnlyOfficialProfileIdentity(
           canonicalUrl,
@@ -3352,7 +3409,8 @@ export function identityToUserObservations(
   ];
   if (identity.email) identityObservations.push(['email', identity.email]);
   if (includeProfileEnrichment) {
-    identityObservations.push(['title', identity.title], ['profileUrls', profileUrls]);
+    if (identity.title) identityObservations.push(['title', identity.title]);
+    identityObservations.push(['profileUrls', profileUrls]);
   }
 
   const includeEmail = options.includeEmail ?? includeIdentityEnrichment;
@@ -5044,10 +5102,9 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
                     email: textValue(entity.email),
                   }
                 : null;
-            const identity = identityForProfile({
+            const identity = extractOfficialProfilePersonIdentity(html, profileUrl, entity, {
               requireEmail: false,
               yaleDirectoryNetids,
-              emailOnlyWithoutAdmissibleTitle: runOnlyVisibleProfileBioBackfill,
             });
             if (identity) {
               const candidateUser =
@@ -5065,7 +5122,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
                     includeEmail: true,
                   }),
                 );
-                if (runQueuedPiBackfill) {
+                if (runQueuedPiBackfill && statesAnAppointment(identity)) {
                   observations.push(
                     ...identityToResearchEntityPiObservations(identity, existingUser, entity),
                   );
@@ -5082,8 +5139,12 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
                       includeProfileEnrichment: true,
                       includeIdentityEnrichment: true,
                     }),
-                    ...identityToResearchEntityPiKeyObservations(identity, inferredNetid, entity),
                   );
+                  if (statesAnAppointment(identity)) {
+                    observations.push(
+                      ...identityToResearchEntityPiKeyObservations(identity, inferredNetid, entity),
+                    );
+                  }
                 }
               }
             }
