@@ -174,13 +174,6 @@ export function isRoleOrUnitMailbox(
   return tokens.length > 0 && tokens.every((token) => unitTokens.has(token));
 }
 
-/**
- * Return true only when a Yale email is plausibly owned by the supplied person.
- *
- * Yale pages sometimes include lab managers, admins, or departmental contacts
- * near a faculty name. Netid-shaped emails are safe enough to keep; name-shaped
- * local-parts must match the visible person name.
- */
 const GENERATIONAL_SUFFIX_THEN_DIGITS = /^(?:jr|sr|ii|iii|iv)?\d*$/;
 
 /**
@@ -196,6 +189,13 @@ function isWholeNameLocalPart(compactLocalPart: string, compactNames: readonly s
   );
 }
 
+/**
+ * Return true only when a Yale email is plausibly owned by the supplied person.
+ *
+ * Yale pages sometimes include lab managers, admins, or departmental contacts
+ * near a faculty name. Netid-shaped emails are safe enough to keep; name-shaped
+ * local-parts must match the visible person name.
+ */
 export function isLikelyPersonSpecificYaleEmail(
   email: string | undefined | null,
   personName: string | undefined | null,
