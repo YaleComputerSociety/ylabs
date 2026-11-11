@@ -4,13 +4,15 @@ import { describe, expect, it } from 'vitest';
 import {
   isCoursePageUrl,
   isInadmissiblePersonWebsiteUrl,
+  isMapOrDirectionsUrl,
   isPatientCarePageUrl,
   isPostingPageUrl,
   isWithheldResearchWebsiteUrl,
 } from '../researchHomeWebsiteUrl';
 
 /**
- * Server half of the shared course, posting and patient-care page contract (#5376).
+ * Server half of the shared course, posting, patient-care and map or directions page contract
+ * (#5376, #5657).
  *
  * See the client half in `client/src/utils/__tests__/inadmissibleWebsitePagesContract.test.ts`.
  */
@@ -24,7 +26,7 @@ interface UrlCase {
   url: string;
 }
 
-type Category = 'patientCare' | 'course' | 'posting';
+type Category = 'patientCare' | 'course' | 'posting' | 'mapOrDirections';
 
 const contract = JSON.parse(fs.readFileSync(CONTRACT_PATH, 'utf8')) as Record<
   Category,
@@ -35,6 +37,7 @@ const RULES: Record<Category, (url: string) => boolean> = {
   patientCare: isPatientCarePageUrl,
   course: isCoursePageUrl,
   posting: isPostingPageUrl,
+  mapOrDirections: isMapOrDirectionsUrl,
 };
 
 const FACULTY_ROW = { entityType: 'FACULTY_RESEARCH_AREA', kind: 'individual' };
@@ -57,6 +60,7 @@ describe('inadmissible website page contract (server)', () => {
     contract[category].kept.forEach((testCase) => {
       it(`keeps as ${category}: ${testCase.name}`, () => {
         expect(RULES[category](testCase.url)).toBe(false);
+        expect(isInadmissiblePersonWebsiteUrl(testCase.url)).toBe(false);
       });
     });
   });

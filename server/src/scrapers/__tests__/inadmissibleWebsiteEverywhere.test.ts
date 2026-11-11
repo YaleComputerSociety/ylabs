@@ -14,6 +14,8 @@ const COURSE_PAGE = 'https://fixturedept.example.edu/courses/fixture-anatomy';
 const POSTING_PAGE = 'https://medicine.example.edu/lab/fixture/jobs/';
 const PROFILE_PAGE = 'https://medicine.yale.edu/profile/fixture-quillsby-person/';
 const LAB_SITE = 'https://medicine.example.edu/lab/fixture/';
+const DIRECTIONS_LINK = 'https://www.google.com/maps?daddr=1.5,-2.5&directionsMode=driving';
+const MAPS_SHORT_LINK = 'https://maps.app.goo.gl/FixtureShortCode';
 
 describe('the legacy website field is cleared of what the payload withholds (#5376)', () => {
   it.each([PATIENT_CARE_PAGE, COURSE_PAGE, POSTING_PAGE])('clears a stored %s', (url) => {
@@ -127,5 +129,10 @@ describe("a lead's member website refuses course, posting and patient-care pages
     expect(servableMemberWebsite(PATIENT_CARE_PAGE, LAB_SITE)).toBe(LAB_SITE);
     expect(servableMemberWebsite(COURSE_PAGE, POSTING_PAGE, PATIENT_CARE_PAGE)).toBeUndefined();
     expect(servableMemberWebsite(undefined, 'not a url')).toBeUndefined();
+  });
+
+  it('never serves a map or directions link as a member website (#5657)', () => {
+    expect(servableMemberWebsite(DIRECTIONS_LINK, LAB_SITE)).toBe(LAB_SITE);
+    expect(servableMemberWebsite(DIRECTIONS_LINK, MAPS_SHORT_LINK)).toBeUndefined();
   });
 });

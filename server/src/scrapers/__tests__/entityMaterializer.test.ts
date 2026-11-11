@@ -628,6 +628,25 @@ describe('entityMaterializer post-materialization metrics', () => {
     ).toBe(true);
   });
 
+  it('ignores a map or directions link as a person website, in either website field (#5657)', () => {
+    for (const field of ['website', 'websiteUrl']) {
+      expect(
+        shouldIgnoreObservationForEntityMaterialization('user', {
+          field,
+          sourceName: 'dept-faculty-roster',
+          value: 'https://www.google.com/maps?daddr=1.5,-2.5&directionsMode=driving',
+        }),
+      ).toBe(true);
+    }
+    expect(
+      shouldIgnoreObservationForEntityMaterialization('user', {
+        field: 'website',
+        sourceName: 'dept-faculty-roster',
+        value: 'https://mapping-lab.example.test/',
+      }),
+    ).toBe(false);
+  });
+
   it('ignores a person title cut off at a connective, so a complete title wins (#5109)', () => {
     expect(
       shouldIgnoreObservationForEntityMaterialization('user', {

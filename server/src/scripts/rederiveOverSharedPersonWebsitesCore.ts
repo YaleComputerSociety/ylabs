@@ -1,4 +1,5 @@
 import { personWebsiteShareKey } from '../scrapers/overSharedPersonWebsite';
+import { isInadmissiblePersonWebsiteUrl } from '../utils/researchHomeWebsiteUrl';
 
 export const REDERIVE_OVER_SHARED_PERSON_WEBSITES_CONFIRM_FLAG =
   '--confirm-rederive-over-shared-person-websites';
@@ -11,6 +12,7 @@ export interface RederiveOverSharedPersonWebsitesArgs {
   limit?: number;
   output?: string;
   websiteOnly?: boolean;
+  inadmissible?: boolean;
   deferredOutput?: string;
   snapshotOutput?: string;
 }
@@ -29,6 +31,7 @@ export function parseRederiveOverSharedPersonWebsitesArgs(
     else if (arg.startsWith('--output=')) args.output = arg.slice('--output='.length).trim();
     else if (arg === '--output') args.output = String(argv[(index += 1)] ?? '').trim();
     else if (arg === '--website-only') args.websiteOnly = true;
+    else if (arg === '--inadmissible') args.inadmissible = true;
     else if (arg === '--deferred-output')
       args.deferredOutput = String(argv[(index += 1)] ?? '').trim();
     else if (arg === '--snapshot-output')
@@ -86,14 +89,36 @@ export function withoutNetidKey(visit: RederiveVisit): RederiveVisit {
     : visit;
 }
 
+export type CondemnedPersonWebsite = (value: unknown) => boolean;
+
+export function isOverSharedWebsiteIn(overSharedKeys: ReadonlySet<string>): CondemnedPersonWebsite {
+  return (value) => {
+    const key = personWebsiteShareKey(value);
+    return Boolean(key && overSharedKeys.has(key));
+  };
+}
+
+export function condemnedPersonWebsiteRule(
+  args: Pick<RederiveOverSharedPersonWebsitesArgs, 'inadmissible'>,
+  overSharedKeys: ReadonlySet<string>,
+): CondemnedPersonWebsite {
+  return args.inadmissible ? isInadmissiblePersonWebsiteUrl : isOverSharedWebsiteIn(overSharedKeys);
+}
+
 export function identifiersAssertingOverSharedWebsites(
   observations: readonly UserObservationIdentity[],
   overSharedKeys: ReadonlySet<string>,
 ): UserMaterializeIdentifier[] {
+  return identifiersAssertingCondemnedWebsites(observations, isOverSharedWebsiteIn(overSharedKeys));
+}
+
+export function identifiersAssertingCondemnedWebsites(
+  observations: readonly UserObservationIdentity[],
+  isCondemned: CondemnedPersonWebsite,
+): UserMaterializeIdentifier[] {
   const identifiers: UserMaterializeIdentifier[] = [];
   for (const observation of observations) {
-    const key = personWebsiteShareKey(observation.value);
-    if (!key || !overSharedKeys.has(key)) continue;
+    if (!isCondemned(observation.value)) continue;
     const entityId = observation.entityId ? String(observation.entityId) : '';
     const entityKey = typeof observation.entityKey === 'string' ? observation.entityKey : '';
     if (entityId) identifiers.push({ entityId });

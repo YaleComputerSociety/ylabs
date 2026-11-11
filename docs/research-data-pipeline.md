@@ -1158,7 +1158,7 @@ An organization row keeps its own clinic page, the scope the umbrella-page rule 
 It is a stored-data fix: the data operation is `research-entity:rematerialize` scoped to the rows whose stored `websiteUrl` matches, a re-gate of any row whose tier changes, a re-read through the detail route, and a Development search sync.
 The legacy `website` field and a lead's member website follow it too (#5376).
 The materializer declines and clears a `website` in `isWithheldResearchWebsiteUrl`, the set the detail payload withholds, and leaves a profile page there, which the detail page reads as the lead's official profile link.
-The user materializer ignores and clears a member website that `isInadmissiblePersonWebsiteUrl` refuses (a course, posting or patient-care page), and the roster accessor and member serializers never serve one.
+The user materializer ignores and clears a member website that `isInadmissiblePersonWebsiteUrl` refuses (a course, posting or patient-care page, or a map or directions link), and the roster accessor and member serializers never serve one.
 The client refuses the same pages as the website button and the headline actions, pinned to the server by `contracts/inadmissibleWebsitePages.cases.json`.
 That data operation is `research-entity:rematerialize` over the rows storing a withheld `website`, then user materialization of every `user` key that joins a researcher storing a refused member website.
 

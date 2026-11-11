@@ -1243,11 +1243,16 @@ export function isWithheldResearchWebsiteUrl(
 
 /**
  * A page that is never a person's own website: a course, a posting or a patient-care page
- * (#5213, #5364). Read on a lead's member website at the user materializer, the roster
- * accessor and the member serializers (#5376).
+ * (#5213, #5364), or a map or directions link (#5657). Read on a lead's member website at
+ * the user materializer, the roster accessor and the member serializers (#5376).
  */
 export function isInadmissiblePersonWebsiteUrl(value: unknown): boolean {
-  return isCoursePageUrl(value) || isPostingPageUrl(value) || isPatientCarePageUrl(value);
+  return (
+    isCoursePageUrl(value) ||
+    isPostingPageUrl(value) ||
+    isPatientCarePageUrl(value) ||
+    isMapOrDirectionsUrl(value)
+  );
 }
 
 // Organization shapes whose identity is the collective that publishes a site rather

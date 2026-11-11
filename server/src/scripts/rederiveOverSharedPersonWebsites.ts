@@ -20,20 +20,19 @@ import { connectScriptMongo } from '../db/connections';
 import { Observation } from '../models/observation';
 import { Researcher } from '../models/researcher';
 import { materializeEntity } from '../scrapers/entityMaterializer';
-import {
-  personWebsiteShareKey,
-  readOverSharedPersonWebsiteKeys,
-} from '../scrapers/overSharedPersonWebsite';
+import { readOverSharedPersonWebsiteKeys } from '../scrapers/overSharedPersonWebsite';
 import { runWithBoundedConcurrency } from '../scrapers/utils/boundedConcurrency';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
-  identifiersAssertingOverSharedWebsites,
+  condemnedPersonWebsiteRule,
+  identifiersAssertingCondemnedWebsites,
   isWebsiteOnlyVisit,
   parseRederiveOverSharedPersonWebsitesArgs,
   scopeWebsiteOnlyPlans,
   uniqueIdentifiers,
   withoutNetidKey,
   summarizeRederiveVisits,
+  type CondemnedPersonWebsite,
   type RederiveVisit,
   type UserMaterializeIdentifier,
 } from './rederiveOverSharedPersonWebsitesCore';
@@ -45,7 +44,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 const SCRIPT_NAME = 'observations:rederive-over-shared-person-websites';
 const PLANNING_CONCURRENCY = 10;
 
-async function researchersStoringOverSharedWebsites(overSharedKeys: ReadonlySet<string>) {
+async function researchersStoringCondemnedWebsites(isCondemned: CondemnedPersonWebsite) {
   const researchers = await Researcher.find(
     { 'profile.websiteUrl': { $exists: true, $nin: ['', null] } },
     { 'profile.websiteUrl': 1, 'identifiers.netid': 1, archived: 1, updatedAt: 1 },
@@ -59,9 +58,7 @@ async function researchersStoringOverSharedWebsites(overSharedKeys: ReadonlySet<
     }>
   >();
   return researchers
-    .filter((researcher) =>
-      overSharedKeys.has(personWebsiteShareKey(researcher.profile?.websiteUrl) ?? ''),
-    )
+    .filter((researcher) => isCondemned(researcher.profile?.websiteUrl))
     .map((researcher) => ({
       researcherId: String(researcher._id),
       websiteUrl: researcher.profile?.websiteUrl,
@@ -137,6 +134,7 @@ async function main(): Promise<void> {
   }
 
   const overSharedKeys = await readOverSharedPersonWebsiteKeys();
+  const isCondemned = condemnedPersonWebsiteRule(args, overSharedKeys);
   const observations = await Observation.find(
     {
       entityType: 'user',
@@ -146,9 +144,9 @@ async function main(): Promise<void> {
     },
     { entityId: 1, entityKey: 1, value: 1 },
   ).lean();
-  const storedBefore = await researchersStoringOverSharedWebsites(overSharedKeys);
+  const storedBefore = await researchersStoringCondemnedWebsites(isCondemned);
   const identifiers = uniqueIdentifiers([
-    ...identifiersAssertingOverSharedWebsites(observations, overSharedKeys),
+    ...identifiersAssertingCondemnedWebsites(observations, isCondemned),
     ...(await liveUserIdentifiersOfResearchers(storedBefore)),
   ]);
   const visiting = args.limit ? identifiers.slice(0, args.limit) : identifiers;
@@ -192,7 +190,7 @@ async function main(): Promise<void> {
     for (const identifier of visiting) applied.push(await visit(identifier, true));
   }
   const storedAfter = args.apply
-    ? await researchersStoringOverSharedWebsites(overSharedKeys)
+    ? await researchersStoringCondemnedWebsites(isCondemned)
     : undefined;
 
   const reachedResearchers = new Set(planned.map((row) => row.researcherId).filter(Boolean));
@@ -200,6 +198,7 @@ async function main(): Promise<void> {
     generatedAt: new Date().toISOString(),
     databaseName,
     mode: args.apply ? 'apply' : 'dry-run',
+    rule: args.inadmissible ? 'inadmissible' : 'over-shared',
     overSharedKeys: [...overSharedKeys].sort(),
     identifiers: identifiers.length,
     storedBefore: storedBefore.length,
