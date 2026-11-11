@@ -16,9 +16,13 @@ Decide what is current from the snippets' own words and dates, measured from the
 
 Grant records describe individual funded projects. When grant snippets are present, state only the theme they share; never present one funded project as the whole research focus.
 
-Start with the research itself (for a lab: "The lab studies ..." or a bare verb such as "Studies ..."; for a person: "Studies ..." or "Develops ..."). Lead with the entity's overall research focus before any recent or featured specifics. Write 2 or 3 plain, specific sentences, or 1 when the snippets support no more, with no marketing language. Use at most 90 words in total. If the snippets state no research focus, return an empty string.
+Start with the research itself (for a lab: "The lab studies ..." or a bare verb such as "Studies ..."; for a person: "Studies ..." or "Develops ..."). When the snippets state the person's or unit's overall research focus or research interests in their own words, open with that focus. Never open with a list of paper titles, paper topics or one recent study; recent work may follow the focus. Write 2 or 3 plain, specific sentences, or 1 when the snippets support no more, with no marketing language. Use at most 90 words in total. If the snippets state no research focus, return an empty string.
 
 When the snippets state more than one current research theme, cover every distinct current theme and the named organisms, systems, diseases, datasets and methods the snippets give, using the word budget rather than summarizing to the most prominent theme. Never drop a named current theme just to be shorter, and still add nothing the snippets do not state.
+
+Keep listed research interests for a person, and listed services, resources and training offerings for a core, center or program. Never drop a named item just to be shorter.
+
+Do not present work the snippets describe as past, earlier, former, occasional or prior experience as the current or main focus.
 
 A core facility, center, institute or program whose snippets state the research it performs or supports does have a research focus. Describe it from the snippets ("Provides ... for research on ..." or "Supports research on ..."), and return an empty string only when the snippets state no research or research service at all.
 
