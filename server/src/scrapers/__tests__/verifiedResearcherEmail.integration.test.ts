@@ -263,14 +263,16 @@ describe('an empty researcher email is filled from identity-verified evidence on
   it('keeps the stored value when no identity-verified evidence states one', async () => {
     const researcher = await seedResearcher();
     await observation({
-      entityKey: 'netid:own.directory.fixture',
+      entityKey: `netid:${OWN_NETID}`,
       sourceName: 'dept-faculty-roster',
-      sourceUrl: 'https://medicine.yale.edu/people/',
+      sourceUrl: OWN_PAGE,
       field: 'email',
       value: DIRECTORY_EMAIL,
     });
 
-    await materializeEntity('user', { entityKey: 'netid:own.directory.fixture' }, {});
+    const result = await materializeEntity('user', { entityKey: `netid:${OWN_NETID}` }, {});
+
+    expect(result.skipped).toBeUndefined();
 
     expect(await storedEmail(researcher._id)).toBeUndefined();
   });

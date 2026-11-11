@@ -7676,14 +7676,15 @@ async function materializeUserIdentityToResearcher(
     netidFieldsWritten += 1;
   }
 
-  const storedEmail = textValue(researcher.identifiers?.email).toLowerCase();
-  const verifiedEmail = await verifiedResearcherEmail({
-    _id: researcher._id,
-    netid: textValue(researcher.identifiers?.netid),
-  });
-  if (verifiedEmail.status === 'verified' && storedEmail === '') {
-    researcher.set('identifiers.email', verifiedEmail.email);
-    fieldsWritten += 1;
+  if (textValue(researcher.identifiers?.email) === '') {
+    const verifiedEmail = await verifiedResearcherEmail({
+      _id: researcher._id,
+      netid: textValue(researcher.identifiers?.netid),
+    });
+    if (verifiedEmail.status === 'verified') {
+      researcher.set('identifiers.email', verifiedEmail.email);
+      fieldsWritten += 1;
+    }
   }
 
   const now = new Date();
