@@ -6708,6 +6708,7 @@ export interface MergedSurvivorEvidence {
   survivorReadOnARoster: boolean;
   mergedInSourceUrlValues: string[];
   redirectRefusedObservations: number;
+  fieldsBackedByRefusedListings: string[];
 }
 
 /**
@@ -6770,8 +6771,22 @@ function profileDestinationsListedBy(observations: readonly any[]): string[] {
       : []),
   ]);
   return uniqueStrings(
-    pages.map((page) => normalizeOfficialProfileDestination(textValue(page))).filter(Boolean),
+    pages
+      .map((page) => textValue(page))
+      .filter((page) => isLikelyOfficialPersonProfileUrl(page))
+      .map((page) => normalizeOfficialProfileDestination(page))
+      .filter(Boolean),
   );
+}
+
+function verifiedPrimaryProfileDestinations(profileLinks: unknown): string[] {
+  return (Array.isArray(profileLinks) ? profileLinks : [])
+    .filter(
+      (link: any) =>
+        link?.kind === 'YALE_OFFICIAL' && link?.purpose === 'PRIMARY_IDENTITY' && link?.verifiedAt,
+    )
+    .map((link: any) => normalizeOfficialProfileDestination(textValue(link.url)))
+    .filter(Boolean);
 }
 
 async function leadsOfRowForRedirectWitness(survivorId: unknown): Promise<MergedRedirectLead[]> {
@@ -6784,14 +6799,12 @@ async function leadsOfRowForRedirectWitness(survivorId: unknown): Promise<Merged
   })) as unknown[];
   if (leadIds.length === 0) return [];
   const leads = (await Researcher.find({ _id: { $in: leadIds }, archived: { $ne: true } })
-    .select('displayName identifiers.netid profileLinks.url')
+    .select('displayName identifiers.netid profileLinks')
     .lean()) as any[];
   return leads.map((lead) => ({
     displayName: lead.displayName,
     netid: lead.identifiers?.netid,
-    profileDestinations: (Array.isArray(lead.profileLinks) ? lead.profileLinks : [])
-      .map((link: any) => normalizeOfficialProfileDestination(textValue(link?.url)))
-      .filter(Boolean),
+    profileDestinations: verifiedPrimaryProfileDestinations(lead.profileLinks),
   }));
 }
 
@@ -6880,6 +6893,7 @@ export async function mergedSurvivorEvidence(
     survivorReadOnARoster: false,
     mergedInSourceUrlValues: [],
     redirectRefusedObservations: 0,
+    fieldsBackedByRefusedListings: [],
   };
   if (!survivorId) return unmerged;
   if (prefetch?.hasNoMergedInRows(survivorId)) return unmerged;
@@ -7048,10 +7062,15 @@ export async function mergedSurvivorEvidence(
     }
   }
   const backingLoserSlugByField = new Map<string, string>();
+  const fieldsBackedByRefusedListings: string[] = [];
   for (const [field, value] of Object.entries(storedSurvivor)) {
     if (CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS.includes(field)) continue;
     const backingLoserSlug = backingLoserSlugByObservationId.get(provenanceObservationId(field));
-    if (backingLoserSlug !== undefined && refusedListings.slugs.has(backingLoserSlug)) continue;
+    if (backingLoserSlug !== undefined && refusedListings.slugs.has(backingLoserSlug)) {
+      if (!SURVIVOR_OWNED_RESEARCH_ENTITY_FIELDS.has(field))
+        fieldsBackedByRefusedListings.push(field);
+      continue;
+    }
     if (backingLoserSlug !== undefined) {
       backingLoserSlugByField.set(field, backingLoserSlug);
       continue;
@@ -7157,6 +7176,7 @@ export async function mergedSurvivorEvidence(
     loserRosterAppointments,
     survivorReadOnARoster,
     redirectRefusedObservations,
+    fieldsBackedByRefusedListings,
   };
 }
 
@@ -7193,16 +7213,7 @@ export function selectMergedInLeadProfileSourceUrls(
   leads: ReadonlyArray<{ profileLinks?: unknown }>,
 ): string[] {
   const verifiedPrimaryDestinations = new Set(
-    leads
-      .flatMap((lead) => (Array.isArray(lead.profileLinks) ? lead.profileLinks : []))
-      .filter(
-        (link: any) =>
-          link?.kind === 'YALE_OFFICIAL' &&
-          link?.purpose === 'PRIMARY_IDENTITY' &&
-          link?.verifiedAt,
-      )
-      .map((link: any) => normalizeOfficialProfileDestination(textValue(link.url)))
-      .filter(Boolean),
+    leads.flatMap((lead) => verifiedPrimaryProfileDestinations(lead.profileLinks)),
   );
   if (verifiedPrimaryDestinations.size === 0) return [];
   return mergedInSourceUrlValues.filter(
@@ -8691,6 +8702,7 @@ export interface ProjectFromLogInput {
   undergradEvidenceQuoteWithdrawnBy?: ReadonlySet<string>;
   fellowshipFieldsAssertedAbsent?: ReadonlyMap<string, ReadonlySet<string>>;
   droppedLoserWebsiteValues?: readonly unknown[];
+  fieldsBackedByRefusedListings?: readonly string[];
   mergedInLeadProfileUrls?: readonly string[];
   laneWithdrawnWebsiteValues?: readonly unknown[];
   gonePageWithdrawnValuesByField?: ReadonlyMap<string, readonly unknown[]>;
@@ -10166,6 +10178,7 @@ export async function projectFromLog(
       ReadonlySet<string>
     >(),
     droppedLoserWebsiteValues = [],
+    fieldsBackedByRefusedListings = [],
     mergedInLeadProfileUrls = [],
     laneWithdrawnWebsiteValues = [],
     gonePageWithdrawnValuesByField = new Map<string, readonly unknown[]>(),
@@ -11345,6 +11358,17 @@ export async function projectFromLog(
       unset[field] = '';
       delete confidenceByField[field];
     }
+    for (const field of fieldsBackedByRefusedListings) {
+      if (manuallyLockedFields.includes(field)) continue;
+      if (field in set || field in unset) continue;
+      if (fieldsWithLiveObservation.has(field)) continue;
+      if (!isClearableStaleFieldValue((entityDoc as Record<string, unknown>)[field])) continue;
+      console.log(`[merge-redirect-identity] cleared a ${field} only a refused listing backed`);
+      delete set[`fieldProvenance.${field}`];
+      unset[field] = '';
+      unset[`fieldProvenance.${field}`] = '';
+      delete confidenceByField[field];
+    }
     for (const field of planGoneLanePageFieldClears({
       stored: entityDoc as Record<string, unknown>,
       staged: set,
@@ -12136,6 +12160,7 @@ async function materializeEntityUnderRemovalGuard(
   let mergedInRows: MergedSurvivorEvidence['mergedInRows'] = [];
   let researchAreaEvidenceObservations: any[] = obs;
   let droppedLoserWebsiteValues: unknown[] = [];
+  let fieldsBackedByRefusedListings: string[] = [];
   let mergedInLeadProfileUrls: string[] = [];
   let loserRosterReads: ResolverObservation[] = [];
   let survivorReadOnARoster = false;
@@ -12146,6 +12171,7 @@ async function materializeEntityUnderRemovalGuard(
     mergedInRows = merged.mergedInRows;
     researchAreaEvidenceObservations = merged.evidenceObservations;
     droppedLoserWebsiteValues = merged.droppedLoserWebsiteValues;
+    fieldsBackedByRefusedListings = merged.fieldsBackedByRefusedListings;
     mergedInLeadProfileUrls = await mergedInLeadProfileSourceUrls(
       entityDoc._id,
       merged.mergedInSourceUrlValues,
@@ -12568,6 +12594,7 @@ async function materializeEntityUnderRemovalGuard(
     undergradEvidenceQuoteWithdrawnBy,
     fellowshipFieldsAssertedAbsent: fellowshipAbsentByField,
     droppedLoserWebsiteValues,
+    fieldsBackedByRefusedListings,
     mergedInLeadProfileUrls,
     laneWithdrawnWebsiteValues: laneWebsiteWithdrawal.withdrawnValues,
     gonePageWithdrawnValuesByField: gonePageWithdrawal.withdrawnValuesByField,

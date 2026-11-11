@@ -59,8 +59,8 @@ describe('a merge redirect carries lane evidence onto a person row only for its 
     }
   });
 
-  const seedObservation = async (entityKey: string, field: string, value: unknown) => {
-    await Observation.create({
+  const seedObservation = async (entityKey: string, field: string, value: unknown) =>
+    Observation.create({
       entityType: 'researchEntity',
       entityKey,
       field,
@@ -72,13 +72,13 @@ describe('a merge redirect carries lane evidence onto a person row only for its 
       observedAt: new Date('2026-02-01T00:00:00Z'),
       superseded: false,
     });
-  };
 
   const seedLead = async (
     rowId: mongoose.Types.ObjectId,
     displayName: string,
     netid: string,
     profileUrl?: string,
+    profileKind: 'YALE_OFFICIAL' | 'LAB_ABOUT' = 'YALE_OFFICIAL',
   ) => {
     const researcher = await Researcher.create({
       displayName,
@@ -86,7 +86,7 @@ describe('a merge redirect carries lane evidence onto a person row only for its 
       profileLinks: profileUrl
         ? [
             {
-              kind: 'YALE_OFFICIAL',
+              kind: profileKind,
               purpose: 'PRIMARY_IDENTITY',
               url: profileUrl,
               verifiedAt: new Date('2026-02-01T00:00:00Z'),
@@ -106,7 +106,10 @@ describe('a merge redirect carries lane evidence onto a person row only for its 
     });
   };
 
-  const seedSurvivor = async () => {
+  const seedSurvivor = async (leadProfile?: {
+    url: string;
+    kind: 'YALE_OFFICIAL' | 'LAB_ABOUT';
+  }) => {
     const survivor = await ResearchEntity.create({
       slug: SURVIVOR_SLUG,
       name: 'Ada Example Faculty Research',
@@ -116,7 +119,7 @@ describe('a merge redirect carries lane evidence onto a person row only for its 
     });
     await seedObservation(SURVIVOR_SLUG, 'name', 'Ada Example Faculty Research');
     await seedObservation(SURVIVOR_SLUG, 'entityType', 'FACULTY_RESEARCH_AREA');
-    await seedLead(survivor._id, 'Ada Example', 'ae11');
+    await seedLead(survivor._id, 'Ada Example', 'ae11', leadProfile?.url, leadProfile?.kind);
     return survivor;
   };
 
@@ -134,7 +137,7 @@ describe('a merge redirect carries lane evidence onto a person row only for its 
       canonicalGroupId: survivorId,
     });
     await seedObservation(slug, 'name', `${listedName} Faculty Research`);
-    await seedObservation(slug, 'researchAreas', LISTED_AREAS);
+    return seedObservation(slug, 'researchAreas', LISTED_AREAS);
   };
 
   const survivorAreas = async (id: mongoose.Types.ObjectId) => [
@@ -211,5 +214,59 @@ describe('a merge redirect carries lane evidence onto a person row only for its 
     expect(await survivorAreas(survivor._id)).toEqual([]);
     expect(second.fieldsWritten).toBe(0);
     expect({ ...after, updatedAt: undefined }).toEqual({ ...first, updatedAt: undefined });
+  });
+
+  it('clears a value a refused listing already filled on the row', async () => {
+    const survivor = await seedSurvivor();
+    const refusedFill = await seedListing(
+      survivor._id,
+      'dept-roster-adaline-example',
+      'Adaline Example',
+    );
+    await ResearchEntity.collection.updateOne(
+      { _id: survivor._id },
+      {
+        $set: {
+          researchAreas: LISTED_AREAS,
+          'fieldProvenance.researchAreas': {
+            sourceName: 'dept-faculty-roster',
+            observationId: refusedFill._id,
+          },
+        },
+      },
+    );
+
+    await materializeEntity('researchEntity', { entityKey: SURVIVOR_SLUG });
+
+    const after = await ResearchEntity.findById(survivor._id).lean<any>();
+    expect(after?.researchAreas ?? []).toEqual([]);
+    expect(after?.fieldProvenance?.researchAreas).toBeUndefined();
+  });
+
+  it("takes only the named lead's own official profile as a page witness", async () => {
+    const survivor = await seedSurvivor({
+      url: 'https://dept.yale.edu/people/dept-roster-adaline-example',
+      kind: 'YALE_OFFICIAL',
+    });
+    await seedListing(survivor._id, 'dept-roster-adaline-example', 'Adaline Example');
+
+    await materializeEntity('researchEntity', { entityKey: SURVIVOR_SLUG });
+
+    expect(await survivorAreas(survivor._id)).toEqual(LISTED_AREAS);
+  });
+
+  it("refuses a listing whose only page witness is the named lead's shared lab page", async () => {
+    const survivor = await seedSurvivor({
+      url: 'https://adaexamplelab.yale.edu/',
+      kind: 'LAB_ABOUT',
+    });
+    await seedListing(survivor._id, 'dept-roster-adaline-example', 'Adaline Example');
+    await seedObservation('dept-roster-adaline-example', 'sourceUrls', [
+      'https://adaexamplelab.yale.edu/',
+    ]);
+
+    await materializeEntity('researchEntity', { entityKey: SURVIVOR_SLUG });
+
+    expect(await survivorAreas(survivor._id)).toEqual([]);
   });
 });
