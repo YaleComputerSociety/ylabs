@@ -4335,6 +4335,70 @@ describe('officialProfilePiBackfillScraper', () => {
     expect(delay).toHaveBeenCalledWith(25);
   });
 
+  describe('a visible roster person whose stored email only a legacy account copy backs (#5627)', () => {
+    const visibleUser = {
+      _id: 'user-legacy-email',
+      netid: 'fixture106',
+      email: 'jules.legacy@yale.edu',
+      name: 'Jules Fixture',
+      slug: 'jules-fixture',
+      websiteUrl: profileUrl,
+    };
+    const visibleScraperOver = (html: string) =>
+      new OfficialProfilePiBackfillScraper(
+        vi.fn(async () => html),
+        vi.fn(async () => []),
+        vi.fn(async () => null),
+        vi.fn(async () => [visibleUser]),
+        vi.fn(async () => []),
+        vi.fn(async () => []),
+        0,
+      );
+    const emailObservationsOf = (emitted: ObservationInput[]) =>
+      emitted.filter((observation) => observation.field === 'email');
+
+    it("records the person's own official page email under their own netid key", async () => {
+      const emitted: ObservationInput[] = [];
+
+      await visibleScraperOver(profileHtml).run(visibleBioContextFor(emitted));
+
+      expect(emailObservationsOf(emitted)).toEqual([
+        expect.objectContaining({
+          entityType: 'user',
+          entityKey: 'netid:fixture106',
+          field: 'email',
+          value: 'jules.fixture@yale.edu',
+          sourceUrl: profileUrl,
+        }),
+      ]);
+      expect(emitted.map((observation) => observation.field)).not.toContain('netid');
+      expect(emitted.map((observation) => observation.field)).not.toContain('fname');
+    });
+
+    it('re-derives the same email evidence on a second run', async () => {
+      const first: ObservationInput[] = [];
+      const second: ObservationInput[] = [];
+
+      await visibleScraperOver(profileHtml).run(visibleBioContextFor(first));
+      await visibleScraperOver(profileHtml).run(visibleBioContextFor(second));
+
+      expect(emailObservationsOf(second)).toEqual(emailObservationsOf(first));
+      expect(emailObservationsOf(second)).toHaveLength(1);
+    });
+
+    it('asserts no email when the official page states none', async () => {
+      const emitted: ObservationInput[] = [];
+      const pageWithoutEmail = profileHtml.replace(
+        '<a href="mailto:jules.fixture@yale.edu">jules.fixture@yale.edu</a>',
+        '',
+      );
+
+      await visibleScraperOver(pageWithoutEmail).run(visibleBioContextFor(emitted));
+
+      expect(emailObservationsOf(emitted)).toEqual([]);
+    });
+  });
+
   it('bridges profile identity only through an existing user email and keeps the real netid', async () => {
     const emitted: ObservationInput[] = [];
     const scraper = new OfficialProfilePiBackfillScraper(
