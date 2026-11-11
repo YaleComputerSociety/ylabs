@@ -83,9 +83,9 @@ export function investigatorIsProvablyNotALead(
 ): boolean {
   const researcherId =
     typeof investigator.researcherId === 'string' ? investigator.researcherId : '';
-  if (!researcherId) {
-    return leads.every((lead) => !namesCouldBeOnePerson(lead.displayName, investigator.name));
-  }
+  // A name alone never proves someone else: an investigator the lane credited to no
+  // researcher has no netid to compare, so the award stays held (#5779).
+  if (!researcherId) return false;
   const person = listed.get(researcherId);
   if (!person?.netid) return false;
   return leads.every(

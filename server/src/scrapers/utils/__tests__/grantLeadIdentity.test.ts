@@ -72,14 +72,14 @@ describe('an investigator is provably not the row lead only on positive evidence
     ).toBe(false);
   });
 
-  it('is provable for an uncredited co-PI whose listed name cannot be the lead', () => {
+  it('is not provable for an uncredited co-PI on name alone', () => {
     expect(
       investigatorIsProvablyNotALead(
         { contact: false, profileId: 7, name: 'QUINN A OTHERFAMILY' },
         [lead],
         new Map(),
       ),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it('is not provable for an uncredited investigator listed under the lead name', () => {
@@ -99,12 +99,12 @@ describe('an investigator is provably not the row lead only on positive evidence
     ).toBe(false);
   });
 
-  it('is provable for every listed investigator on a row with no lead', () => {
+  it('is provable on a row with no lead only for a resolved researcher with a netid', () => {
     const other = { id: 'other', displayName: 'Quinn Synthetic', netid: 'qs2' };
     expect(investigatorIsProvablyNotALead({ researcherId: 'other' }, [], listed(other))).toBe(true);
     expect(
       investigatorIsProvablyNotALead({ profileId: 7, name: 'Quinn Otherfamily' }, [], new Map()),
-    ).toBe(true);
+    ).toBe(false);
   });
 
   it('is not provable for a duplicate record whose name carries a suffix or a longer surname', () => {
