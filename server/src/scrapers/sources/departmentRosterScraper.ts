@@ -70,7 +70,10 @@ import {
 } from '../utils/scraperHelpers';
 import { asYaleNetid } from '../../utils/yaleNetid';
 import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
-import { isInProfilePublicityRegion } from '../utils/profilePublicityRegions';
+import {
+  isInProfilePublicityRegion,
+  isInProfileRelatedLinksList,
+} from '../utils/profilePublicityRegions';
 import { rosterProfileSubjectEmail } from '../utils/rosterProfileSubjectEmail';
 import {
   isMeshIndexedProfileUrl,
@@ -314,6 +317,11 @@ export interface FacultyEntry {
    * `departmentRosterLabSlotAttestation.test.ts` enforces by scanning this file.
    */
   labSlotAttestation?: 'empty' | 'refused';
+  /**
+   * Set when the profile presented `labUrl` as its own labelled website button, with the
+   * title of the lab card the button sits in (#5819).
+   */
+  labWebsiteButton?: { cardTitle: string };
   /** ORCID extracted from an official Yale profile page. */
   orcid?: string;
   /** Short bio or research summary extracted from an official Yale profile page. */
@@ -3228,11 +3236,28 @@ function isCollapsedWidgetLink(link: cheerio.Cheerio<any>): boolean {
   return (link.attr('tabindex') || '').trim() === '-1';
 }
 
+const PROFILE_WEBSITE_BUTTON_LABEL =
+  /^(?:(?:visit|view|go to)\s+)?(?:(?:my|the)\s+)?(?:(?:personal|lab|laboratory|research|group)\s+(?:web\s?site|home\s?page|web\s?page|page|site)|web\s?site|home\s?page)$/i;
+
+function isProfileWebsiteButton(link: cheerio.Cheerio<any>): boolean {
+  return (
+    isInProfileRelatedLinksList(link) &&
+    PROFILE_WEBSITE_BUTTON_LABEL.test(link.text().replace(/\s+/g, ' ').trim())
+  );
+}
+
+function profileLabCardTitle(link: cheerio.Cheerio<any>): string {
+  const card = link.closest('[class*="profile-details-lab"]');
+  if (card.length === 0) return '';
+  const title = card.find('[class*="profile-details-lab__title"]').first().text();
+  return cleanText(title || card.closest('article[aria-label]').attr('aria-label') || '');
+}
+
 function isSiteChromeLink(link: cheerio.Cheerio<any>): boolean {
   if (isCollapsedWidgetLink(link)) return true;
   // A news or media item is ordinary in-tab page content, so neither the tab-order
   // test above nor the chrome containers below can see it (#3184).
-  if (isInProfilePublicityRegion(link)) return true;
+  if (isInProfilePublicityRegion(link) && !isProfileWebsiteButton(link)) return true;
   return (
     link.closest(
       [
@@ -3471,6 +3496,7 @@ export function profileEnrichmentFromHtml(
     | 'email'
     | 'labUrl'
     | 'labSlotAttestation'
+    | 'labWebsiteButton'
     | 'title'
     | 'orcid'
     | 'bio'
@@ -3496,8 +3522,10 @@ export function profileEnrichmentFromHtml(
       .trim() || undefined;
 
   let labUrl: string | undefined;
-  // Set only where a link cleared WEBSITE_SIGNAL and a guard then declined it, so a
-  // link that was never a candidate leaves the slot claimable as empty (#3135).
+  let labWebsiteButton: FacultyEntry['labWebsiteButton'];
+  // Set wherever a candidate link was seen and declined, including a website-named
+  // path whose label names something else (#5819), so only a page that offered no
+  // candidate leaves the slot claimable as empty (#3135).
   let labUrlCandidateRefused = false;
   const scholarCandidateProfileUrls: string[] = [];
   const profileHost = (() => {
@@ -3539,11 +3567,19 @@ export function profileEnrichmentFromHtml(
     const attributeSignal = UMBRELLA_ORGANIZATION_TEXT.test(text) ? '' : `${aria} ${titleAttr}`;
     if (isDoiUrl(parsed)) return;
     const labelSignal = `${visibleTextSignal} ${attributeSignal} ${parsed.hostname}`;
+    const pathNamesAWebsite = /\b(?:website|homepage)\b/i.test(parsed.pathname);
     const hasWebsiteSignal =
       WEBSITE_SIGNAL.test(labelSignal) ||
       (WEBSITE_SIGNAL.test(parsed.pathname) && pathNamesALab(parsed.pathname)) ||
-      (linkTextDescribesNothing(text) && /\b(?:website|homepage)\b/i.test(parsed.pathname));
-    if (!hasWebsiteSignal || NATIONAL_LABORATORY_TEXT.test(`${text} ${aria} ${titleAttr}`)) return;
+      (linkTextDescribesNothing(text) && pathNamesAWebsite);
+    if (!hasWebsiteSignal) {
+      if (pathNamesAWebsite) labUrlCandidateRefused = true;
+      return;
+    }
+    if (NATIONAL_LABORATORY_TEXT.test(`${text} ${aria} ${titleAttr}`)) {
+      labUrlCandidateRefused = true;
+      return;
+    }
     if (isInstitutionalAdvancementUrl(absolute)) {
       labUrlCandidateRefused = true;
       return;
@@ -3582,6 +3618,9 @@ export function profileEnrichmentFromHtml(
       return;
     }
     labUrl = absolute;
+    if (PROFILE_WEBSITE_BUTTON_LABEL.test(text)) {
+      labWebsiteButton = { cardTitle: profileLabCardTitle(link) };
+    }
   });
 
   const researchInterests = extractResearchInterestsFromHtml(
@@ -3608,6 +3647,7 @@ export function profileEnrichmentFromHtml(
     title,
     labUrl,
     ...(labUrl ? {} : { labSlotAttestation: labUrlCandidateRefused ? 'refused' : 'empty' }),
+    ...(labWebsiteButton ? { labWebsiteButton } : {}),
     orcid: extractOrcidFromHtml($),
     bio,
     researchHomeDescription: officialProse?.fullDescription,
@@ -3673,6 +3713,7 @@ function mergeProfileEnrichment(
       | 'email'
       | 'labUrl'
       | 'labSlotAttestation'
+      | 'labWebsiteButton'
       | 'title'
       | 'orcid'
       | 'bio'
@@ -3699,6 +3740,7 @@ function mergeProfileEnrichment(
     titleFromProfilePage: entry.title ? entry.titleFromProfilePage : Boolean(enrichment.title),
     email: entry.email || enrichment.email,
     labUrl: entry.labUrl || enrichment.labUrl,
+    labWebsiteButton: entry.labUrl ? entry.labWebsiteButton : enrichment.labWebsiteButton,
     labSlotAttestation: mergedLabSlotAttestation(entry, enrichment),
     orcid: entry.orcid || enrichment.orcid,
     bio: entry.bio || enrichment.bio,
@@ -3929,7 +3971,12 @@ function withoutInadmissibleLabWebsite(entry: FacultyEntry): FacultyEntry {
   }
   // Stripping a value the page still carries is a refusal, so the slot must stop
   // being claimable as empty even if an earlier parse attested it (#3135).
-  return { ...entry, labUrl: undefined, labSlotAttestation: 'refused' };
+  return {
+    ...entry,
+    labUrl: undefined,
+    labWebsiteButton: undefined,
+    labSlotAttestation: 'refused',
+  };
 }
 
 export function withoutAnotherRosterPersonsStatedLab(
@@ -3966,17 +4013,51 @@ const labUrlIdentity = (url: string): string => fieldValueRefusalKey('websiteUrl
 export function withoutSharedGroupWebsites<T extends { entry: FacultyEntry; personKey: string }>(
   items: readonly T[],
 ): T[] {
-  const peopleByUrl = new Map<string, Set<string>>();
+  const sharersByUrl = new Map<string, Map<string, FacultyEntry>>();
   for (const { entry, personKey } of items) {
     if (!entry.labUrl) continue;
     const key = labUrlIdentity(entry.labUrl);
-    peopleByUrl.set(key, (peopleByUrl.get(key) ?? new Set()).add(personKey));
+    const sharers = sharersByUrl.get(key) ?? new Map<string, FacultyEntry>();
+    sharersByUrl.set(key, sharers.set(personKey, entry));
   }
   return items.map((item) => {
     const url = item.entry.labUrl;
-    if (!url || (peopleByUrl.get(labUrlIdentity(url))?.size ?? 0) < 2) return item;
-    return { ...item, entry: { ...item.entry, labUrl: undefined, labSlotAttestation: 'refused' } };
+    const sharers = url ? sharersByUrl.get(labUrlIdentity(url)) : undefined;
+    if (!sharers || sharers.size < 2) return item;
+    if (profileClaimsSharedLabAsOwn(item, sharers)) return item;
+    return {
+      ...item,
+      entry: {
+        ...item.entry,
+        labUrl: undefined,
+        labWebsiteButton: undefined,
+        labSlotAttestation: 'refused',
+      },
+    };
   });
+}
+
+/**
+ * A lab's members link their PI's lab from their own profiles, so a lab site the roster
+ * lists for several people is still the PI's when the PI's profile presents it as a
+ * labelled lab-website button and either the button's lab card names the person, or
+ * every other sharer's stated title owns no research row (#5819). Measured on Development
+ * on 2026-11-11, that was how 5 served rows lost the website their own profile labels.
+ */
+function profileClaimsSharedLabAsOwn(
+  item: { entry: FacultyEntry; personKey: string },
+  sharers: ReadonlyMap<string, FacultyEntry>,
+): boolean {
+  const button = item.entry.labWebsiteButton;
+  if (!button) return false;
+  const nameTokens = identityTokens(normalizeName(item.entry.name));
+  const familyNameTokens = nameTokens.length > 1 ? nameTokens.slice(1) : nameTokens;
+  const cardTitleTokens = identityTokens(button.cardTitle);
+  if (familyNameTokens.some((token) => cardTitleTokens.includes(token))) return true;
+  if (ownsNoResearchEntityByTitle(item.entry.title)) return false;
+  return [...sharers]
+    .filter(([personKey]) => personKey !== item.personKey)
+    .every(([, sharer]) => ownsNoResearchEntityByTitle(sharer.title));
 }
 
 function rosterUnitMailboxTokens(

@@ -40,6 +40,32 @@ export function isInProfilePublicityRegion(element: cheerio.Cheerio<any>): boole
   return element.closest(PROFILE_PUBLICITY_REGION_SELECTOR).length > 0;
 }
 
+const PROFILE_RELATED_LINKS_LIST_SELECTOR = [
+  '#links-related-links',
+  '[class*="profile-details-related-link-list"]',
+].join(', ');
+
+const PROFILE_NEWS_OR_MEDIA_LIST_SELECTOR = [
+  '#links-news',
+  '#links-media',
+  '[class*="profile-details-news-list"]',
+  '[class*="digital-asset-media-list"]',
+  '[class~="article-list"]',
+].join(', ');
+
+/**
+ * Whether the element sits in the person's own related-links list, which the same
+ * template renders inside the "News & Links" wrapper beside the news and media lists.
+ * The list holds the links the person chose to publish, such as their personal website
+ * button, so it is not publicity about them (#5819).
+ */
+export function isInProfileRelatedLinksList(element: cheerio.Cheerio<any>): boolean {
+  return (
+    element.closest(PROFILE_RELATED_LINKS_LIST_SELECTOR).length > 0 &&
+    element.closest(PROFILE_NEWS_OR_MEDIA_LIST_SELECTOR).length === 0
+  );
+}
+
 /**
  * Drops every publicity region from a loaded document, for the text harvests that
  * scan a whole page rather than walking anchors. A news item's own paragraph is
