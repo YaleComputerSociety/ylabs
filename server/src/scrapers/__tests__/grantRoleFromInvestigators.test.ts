@@ -102,6 +102,31 @@ describe('a grant entry is labelled with the row lead role on that award (#5779)
     expect(evidence.fundingAgencies).toEqual(['NSF']);
   });
 
+  it('drops a pooled funder whose only award on the lane is withheld', () => {
+    const crossrefAward = (id: string, agency: string, researcherId: string) => ({
+      ...award(id, [{ contact: true, researcherId }]),
+      agency,
+      url: `https://doi.org/10.99999/${id}`,
+    });
+    const evidence = aggregateResearchEntityGrantEvidence(
+      laneSnapshot(
+        [
+          crossrefAward('fixture-a-1', 'Synthetic Foundation A', LEAD),
+          crossrefAward('fixture-b-1', 'Synthetic Foundation B', OTHER),
+        ],
+        ['Synthetic Foundation A', 'Synthetic Foundation B'],
+      ).map((entry) => ({ ...entry, sourceName: 'crossref-grants' })),
+      LEADS,
+    );
+    expect(evidence.fundingAgencies).toEqual(['Synthetic Foundation A']);
+    expect(evidence.recentGrantCount).toBe(1);
+  });
+
+  it('keeps a lane-level agency label while one of its awards is served', () => {
+    const evidence = aggregateResearchEntityGrantEvidence(laneSnapshot(mixed), LEADS);
+    expect(evidence.fundingAgencies).toEqual(['NIH']);
+  });
+
   it('derives the same output on a second resolve', () => {
     const first = aggregateResearchEntityGrantEvidence(laneSnapshot(mixed), LEADS);
     const second = aggregateResearchEntityGrantEvidence(laneSnapshot(mixed), LEADS);

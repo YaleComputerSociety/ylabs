@@ -34,7 +34,7 @@ function awardAgencyKey(award: unknown): string {
     : '';
 }
 
-function agenciesBackedByRunningAwards(
+export function agenciesBackedByRunningAwards(
   agencies: unknown,
   storedAwards: readonly unknown[],
   runningAwards: readonly unknown[],

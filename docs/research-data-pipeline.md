@@ -551,10 +551,12 @@ When one award arrives twice, the record that ends later is kept.
 Before that union, each award is judged against the row's live leads (#5779).
 A grant lane pools every researcher that maps to one row into one observation, so an award on its own never said whose it was, and every entry was stored as `pi`.
 Each lane now records the award's investigators on the entry (`investigators`: the contact flag, the researcher id the lane resolved, and for NIH the RePORTER `profile_id` of every listed PI), and `deriveGrantEntryForLeads` in `server/src/scrapers/utils/grantInvestigators.ts` labels it.
-A lead who is the contact PI reads `pi`, a lead who is another listed PI reads `copi`, and an award that lists no lead is withheld from the list, the periods, the count, and from `fundingAgencies` once every award a lane reported is withheld.
+A lead who is the contact PI reads `pi`, a lead who is another listed PI reads `copi`, and an award that lists no lead is withheld from the list, the periods and the count.
+A lane's `fundingAgencies` keeps only the agencies its served awards back (`agenciesBackedByRunningAwards`), so a funder the Crossref lane names only on a withheld award is dropped, and a lane-level label such as `NIH` is dropped once every award the lane reported is withheld.
 The list is evidence only and is never stored on the row.
 An entry from an observation written before lanes recorded investigators is held without a role rather than defaulted to `pi`: every grant observation predated the change, so dropping them would have emptied every funded row until all six grant lanes re-read, while holding keeps the award and stops asserting whose it is.
 The writer's `eligibleWriterGrants` reads only `pi` entries, so a held entry is not description evidence until its lane re-reads it.
+A served grant page is cited for a lane's contribution (`servedGrantPageUrl`) whatever its role, because every served entry is a lead's award or a held one.
 A lane that adds a funder another lane already reports must use the same `agency` label, or the two copies stay apart.
 The Crossref grant lane stores each funder's own Crossref name as `agency`, so it refuses any record from a funder a federal lane reports (NIH, NSF or DOE by Crossref funder DOI or name, and NEH by name) rather than duplicate that award under a second label.
 A scoped pass also scopes what runs after the projection (#3874).

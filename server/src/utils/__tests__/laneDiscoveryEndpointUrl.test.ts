@@ -43,14 +43,19 @@ describe('isLaneDiscoveryEndpointUrl (#5261)', () => {
 describe('servedGrantPageUrl (#5261)', () => {
   const doiPage = crossrefGrantUrl('10.99999/fixture-grant-1');
 
-  it('cites the most recent grant the lead holds as principal investigator', () => {
+  it('cites the most recent grant the row serves', () => {
     expect(
       servedGrantPageUrl([
-        { role: 'copi', url: 'https://www.nsf.gov/awardsearch/showAward?AWD_ID=0000002' },
         { role: 'pi', url: doiPage },
         { role: 'pi', url: 'https://reporter.nih.gov/project-details/00000001' },
       ]),
     ).toBe(doiPage);
+  });
+
+  it('cites a served grant whatever role the materializer derived for it (#5779)', () => {
+    const nsfPage = 'https://www.nsf.gov/awardsearch/showAward?AWD_ID=0000002';
+    expect(servedGrantPageUrl([{ role: 'copi', url: nsfPage }])).toBe(nsfPage);
+    expect(servedGrantPageUrl([{ url: doiPage }])).toBe(doiPage);
   });
 
   it('skips a grant whose stored url is the lane search form', () => {

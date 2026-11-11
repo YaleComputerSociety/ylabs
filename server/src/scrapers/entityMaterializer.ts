@@ -380,6 +380,7 @@ import { cleanPublicProfileBio } from '../services/profileService';
 import { buildResearchEntityPublicDescriptionRepresentation } from '../services/researchEntityPublicDescription';
 import { withoutAdviseeProgramsMovedToMentors } from '../services/hostedUndergraduates';
 import { servedResearchEntityCopy } from '../services/servedResearchEntityCard';
+import { agenciesBackedByRunningAwards } from '../services/servedCurrentFunding';
 import { isKnownDeadSourceUrl } from '../services/sourceLinkHealth';
 import {
   SITE_TITLE_LAB_NAME_SOURCE,
@@ -2250,15 +2251,18 @@ export function aggregateResearchEntityGrantEvidence(
   let hasGrantCountSnapshot = false;
   let hasAgencySnapshot = false;
   let recentGrantCount = 0;
-  const sourcesWithAwards = new Set<string>();
-  const sourcesServingAnAward = new Set<string>();
+  const awardsBySource = new Map<string, unknown[]>();
+  const servedAwardsBySource = new Map<string, unknown[]>();
   const servedEntries = (sourceName: string, entries: unknown[], carriesRole: boolean) => {
     const served: unknown[] = [];
     for (const entry of entries) {
-      sourcesWithAwards.add(sourceName);
+      awardsBySource.set(sourceName, [...(awardsBySource.get(sourceName) ?? []), entry]);
       const derived = deriveGrantEntryForLeads(entry, leadPersonIds, { carriesRole });
       if (derived.outcome === 'withheld') continue;
-      sourcesServingAnAward.add(sourceName);
+      servedAwardsBySource.set(sourceName, [
+        ...(servedAwardsBySource.get(sourceName) ?? []),
+        derived.entry,
+      ]);
       served.push(derived.entry);
     }
     return served;
@@ -2275,7 +2279,17 @@ export function aggregateResearchEntityGrantEvidence(
     }
   }
   const everyAwardWithheld = (sourceName: string) =>
-    sourcesWithAwards.has(sourceName) && !sourcesServingAnAward.has(sourceName);
+    awardsBySource.has(sourceName) && !servedAwardsBySource.has(sourceName);
+  const agenciesOfServedAwards = (sourceName: string, laneAgencies: unknown[]): unknown => {
+    const awards = awardsBySource.get(sourceName);
+    return awards
+      ? agenciesBackedByRunningAwards(
+          laneAgencies,
+          awards,
+          servedAwardsBySource.get(sourceName) ?? [],
+        )
+      : laneAgencies;
+  };
   for (const observation of latestValues) {
     const sourceName = String(observation.sourceName || '');
     if (GRANT_COUNTING_FIELDS.has(String(observation.field))) countingSources.add(sourceName);
@@ -2295,7 +2309,8 @@ export function aggregateResearchEntityGrantEvidence(
     if (everyAwardWithheld(sourceName)) continue;
     if (observation.field === 'fundingAgencies' && Array.isArray(observation.value)) {
       hasAgencySnapshot = true;
-      for (const agency of observation.value) {
+      const servedAgencies = agenciesOfServedAwards(sourceName, observation.value);
+      for (const agency of Array.isArray(servedAgencies) ? servedAgencies : []) {
         const normalized = textValue(agency);
         if (normalized && !agencies.has(normalized.toLowerCase())) {
           agencies.set(normalized.toLowerCase(), normalized);
