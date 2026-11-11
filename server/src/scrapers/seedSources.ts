@@ -219,6 +219,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'nightly',
   },
   {
+    name: 'department-emeritus-listings',
+    displayName: 'Department emeritus listings',
+    description:
+      'Deterministic read of the emeritus faculty pages Yale departments publish, recording on each row a listed person already leads that their department lists them as emeritus (#5835). Evidence about a lead only: it never mints a row, an edge or a roster member, and it defers to a stored title a live lane still asserts.',
+    baseUrl: '',
+    defaultWeight: 0.8,
+    cadence: 'monthly',
+  },
+  {
     name: 'official-undergrad-lists',
     displayName: 'Official undergraduate lists',
     description:

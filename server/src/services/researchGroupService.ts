@@ -200,6 +200,7 @@ import {
 import { warmServedResearchAreaVocabulary } from '../utils/controlledVocabularyHeadings';
 import { BROWSE_TIEBREAK_KEY_ATTRIBUTE } from '../utils/researchEntityBrowseTiebreakKey';
 import {
+  DEPARTMENT_LISTS_LEAD_AS_EMERITUS,
   NOT_EMERITUS_LED,
   decideEmeritusWayIn,
   emeritusCurrentActivityEvidence,
@@ -285,7 +286,7 @@ export const optionalPublicLeadMemberNames = async (
       if (leadPersonIds.length > 0) leadPersonIdsByEntityId.set(entityId, leadPersonIds);
       if (identityLeadDirectsOrganization(leadMembers)) identityLeadDirectorEntityIds.add(entityId);
       if (options.withEmeritusWayIn) {
-        emeritusCandidates.push({ entity, leadTitles: leadTitlesOf(leadMembers) });
+        emeritusCandidates.push({ entity, leadTitles: leadTitlesOf(leadMembers, entity) });
       }
     }
   } catch (error) {
@@ -335,10 +336,26 @@ function leadPersonIdsOf(members: Array<{ role: string; row?: Record<string, any
   );
 }
 
-function leadTitlesOf(members: Array<{ user?: any; role: string }>): unknown[] {
+const departmentListsLeadAsEmeritus = (
+  entity: { emeritusListedLeadIds?: unknown } | undefined,
+  identityKey: unknown,
+): boolean =>
+  Array.isArray(entity?.emeritusListedLeadIds) &&
+  entity.emeritusListedLeadIds.map(String).includes(String(identityKey ?? ''));
+
+// A lead their department lists as emeritus counts as emeritus whatever their stored title says,
+// because the lane records the listing only where no live lane still asserts that title (#5835).
+function leadTitlesOf(
+  members: Array<{ user?: any; role: string; row?: Record<string, any> }>,
+  entity?: { emeritusListedLeadIds?: unknown },
+): unknown[] {
   return members
     .filter((member) => PUBLIC_LEAD_ROLES.has(member.role))
-    .map((member) => member.user?.title);
+    .map((member) =>
+      departmentListsLeadAsEmeritus(entity, member.row?.identityKey)
+        ? DEPARTMENT_LISTS_LEAD_AS_EMERITUS
+        : member.user?.title,
+    );
 }
 
 function currentTeamMemberCount(
@@ -4970,7 +4987,7 @@ export async function getResearchGroupDetail(
         [
           {
             entity: group as Record<string, any>,
-            leadTitles: leadTitlesOf(dedupedMembersWithRows),
+            leadTitles: leadTitlesOf(dedupedMembersWithRows, group as Record<string, any>),
             rosterEntries,
           },
         ],
@@ -5010,7 +5027,9 @@ export async function getResearchGroupDetail(
         }
       : undefined;
     const leadHoldsOnlyEmeritusAppointments =
-      PUBLIC_LEAD_ROLES.has(member.role) && titleHoldsOnlyEmeritusAppointments(member.user?.title);
+      PUBLIC_LEAD_ROLES.has(member.role) &&
+      (titleHoldsOnlyEmeritusAppointments(member.user?.title) ||
+        departmentListsLeadAsEmeritus(group, row?.identityKey));
     return {
       ...member,
       user: withPublicMemberLeadEmail(

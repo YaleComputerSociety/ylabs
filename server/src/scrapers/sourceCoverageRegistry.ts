@@ -95,6 +95,15 @@ export const sourceCoverageRegistry = {
     notes:
       "Reads a lab site for the lead it declares for itself, so a website harvested from another person's profile lab-website slot is re-homed to the researcher who runs the lab; emits websiteUrl, sourceUrls, and a branded name only, never access, route, or opportunity evidence.",
   },
+  'department-emeritus-listings': {
+    priority: 2,
+    tier: 'PRIMARY_OFFICIAL',
+    artifactTypes: ['Observation'],
+    evidenceCategories: ['OFFICIAL_PROFILE'],
+    defaultConfidence: 'MEDIUM',
+    notes:
+      "Reads department emeritus faculty pages and records `emeritusListedLeadIds` on the row each listed person already leads, matched by a profile link exactly one live researcher holds, else by a name one researcher carries within the page's department. A lead whose stored title a live lane still asserts is left to that title. Never mints rows, edges or roster members.",
+  },
   'official-undergrad-lists': {
     priority: 2,
     tier: 'PRIMARY_OFFICIAL',
