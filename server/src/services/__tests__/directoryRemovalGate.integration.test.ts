@@ -214,7 +214,7 @@ describe('the gate suppresses a row whose every lead asked to be removed (#4160)
       serving,
     );
     expect(ownRow.fullDescription).toBe('Led by Robin Quill.');
-    expect(serving.redactWithheldNames('Led by Robin Quill.')).toBe('Led by a researcher.');
+    expect(serving.redactWithheldNames('Led by Robin Quill.')).toBe('');
   }, 60000);
 
   it('refuses to run while entries exist and no key is configured', async () => {
