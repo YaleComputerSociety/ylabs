@@ -1945,8 +1945,8 @@ A key that a current namespace also prefixes, such as `dept-<current>-<rest>` wh
 An observation whose run recorded a `codeSha`, or that has no run, is held rather than retired, because a recorded commit missing from a stale clone is not proof the code never landed.
 Whether anything else backs an orphaned observation is the engine's answer, not a rule restated here.
 Each row an orphan backs, and each person key, is projected through `materializeEntity` twice with the stored values of the orphaned fields cleared, together with their provenance and confidence, once with the orphans and once without them.
-An orphan is retired only when the projection without the orphans still produces the orphan's own items and every other item or value its field produces with them, compared as the engine outputs them, so a list that only reorders counts as kept and a gained value is not a loss.
-An item the field loses that a sibling orphan on the same row and field states holds that sibling rather than every orphan on the field, while a lost item no orphan states holds them all.
+An orphan is retired only when the projection without the orphans still produces every item or value its field produces with them, compared as the engine outputs them and never against the orphan's raw value, so a list that only reorders counts as kept and a gained value is not a loss.
+A field that loses an item holds every orphan on it, because the engine's output cannot say which orphan stated the lost item.
 A row whose projection without the orphans still read retired evidence live cannot isolate the retirement, so its orphans are held.
 An orphan the engine would not produce without is held by default and reported under `heldSoleEvidence` by row, field and value with `basis: engine-would-not-produce`.
 `--retire-sole-evidence` skips these projections, since it retires regardless.
