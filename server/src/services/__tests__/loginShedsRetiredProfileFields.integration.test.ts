@@ -79,4 +79,24 @@ describe('a login sheds the retired profile fields from a stored account', () =>
     const profile = await storedProfile('brandnew1');
     expect(Object.keys(profile).sort()).toEqual(['firstName', 'lastName', 'userType']);
   });
+
+  it('stores no department, even when the caller passes one (#5741)', async () => {
+    await Account.collection.insertOne({
+      ...accountCarryingRetiredProfileFields('dept1'),
+      profile: { firstName: 'Synthetic', userType: 'professor', department: 'Old Fixture Unit' },
+    });
+
+    await recordAccountLogin({
+      netid: 'dept1',
+      profile: { firstName: 'Synthetic', userType: 'professor', department: 'Fixture Studies' },
+    });
+    await recordAccountLogin({
+      netid: 'dept2',
+      email: 'dept2@example.invalid',
+      profile: { firstName: 'Synthetic', userType: 'professor', department: 'Fixture Studies' },
+    });
+
+    expect(await storedProfile('dept1')).not.toHaveProperty('department');
+    expect(await storedProfile('dept2')).not.toHaveProperty('department');
+  });
 });

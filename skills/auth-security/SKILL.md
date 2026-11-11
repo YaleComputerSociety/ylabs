@@ -24,7 +24,8 @@ User -> Yale CAS SSO -> passport.ts resolveLoginPrincipalForCas
 ```
 
 Authentication runs on the canonical `Account` (the private login principal); the legacy `User` model has been retired (#2014).
-Classification (undergraduate, graduate, professor, staff) is derived at login and carried in the signed session for authorization decisions; a descriptive copy of the Yalies profile (name and `userType`, plus title/department for faculty and staff) is persisted onto `Account.profile` at login via `recordAccountLogin`, refreshed on each sign-in that resolves a record.
+Classification (undergraduate, graduate, professor, staff) is derived at login and carried in the signed session for authorization decisions; a descriptive copy of the Yalies profile (name and `userType`, plus title for faculty and staff) is persisted onto `Account.profile` at login via `recordAccountLogin`, refreshed on each sign-in that resolves a record.
+A login stores no department: accounts are login-only (#5000) and nothing read it, so `recordAccountLogin` drops one even if a caller passes it, and the `profile.department` schema field stays only for old rows (#5741).
 A student's residential college, class year and major were persisted here until #4162 and are not any more: nothing read them, so every signed-in student carried three extra personal attributes against their netid for no product purpose.
 A login that resolves a record replaces `profile` wholesale and so sheds them; a login whose Yalies lookup was unavailable writes no profile and unsets those three paths instead, so an account stops carrying them either way.
 Accounts stored before the fix that never sign in again keep the values until a one-off cleanup runs, which is an operator decision rather than something a login may do for them.
@@ -52,7 +53,7 @@ The raw-driver copies in promotion and sync bypass the hooks on purpose, since t
 Admin authority is a separate signal: `buildAuthenticatedSessionUser` sets `isAdmin` from `hasActiveAdminGrant`, and that boolean is what guards and the client key off.
 The classification cascade runs only at login time.
 `unknown` means Yalies has no record of the person, or could not answer and no earlier login stored a type; a request failure is never read as "not in Yalies", because that typed returning students `unknown` (#4234).
-Yalies lists faculty and staff with a `title` and an organization or unit (`unit_name`, `organization_name`) but no `year` or `school_code`, so the lookup reads such a record as an employee rather than discarding it.
+Yalies lists faculty and staff with a `title` and an organization or unit (`organization`, `unit`) but no `year` or `school_code`, so the lookup reads such a record as an employee rather than discarding it.
 There is no Yale Directory fallback: `directory.yale.edu` is behind a per-person CAS sign-in with no server-callable API, so the old `directory.yale.edu/api/people` call resolved nobody and was removed (#4287); Yalies employee records type faculty and staff instead.
 Per-request session restore in `deserializeUser` re-validates that the backing `Account` exists and is not archived, then recomputes `isAdmin` from the admin-grant check.
 The admin-grant check is cached in memory for 60 seconds in `adminGrantService` and invalidated on grant or revoke.
