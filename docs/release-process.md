@@ -295,6 +295,24 @@ Static addresses of our own need a Pro workspace plan plus a monthly fee per IP 
 Removing public network access entirely needs an Atlas Private Endpoint, which needs a dedicated cluster.
 Neither is worth buying before Atlas backups, which a free cluster does not provide.
 
+## Routine Development maintenance pass
+
+While the scheduled Development sweep is suspended, its post-run stages do not run on their own, so run these by hand in each routine Development maintenance pass.
+Run them from a worktree at current `beta`, with the model key blank and never `--force-llm`, and sequence the write and the search sync with any other session writing Development.
+
+### URL-identity duplicates waiting for the guarded lane (#5688)
+
+Resolve-at-mint never folds a person-led row (a lab or a faculty research profile) through a recorded redirect, because a mint has no lead edges to compare.
+Those duplicates wait for the website-url dedupe lane, which refuses rows led by different researcher ids (#5684).
+
+1. Dry-run the lane and read the planned groups:
+   `OPENAI_API_KEY= yarn --cwd server research-entity:dedupe-by-pi --website-url-only --limit=10000 --output=/tmp/website-url-dedupe-dry.json`
+2. Apply only the planned groups you have read, scoped with `--slug=<survivor slug>` per group or by matching the cap to the plan:
+   `OPENAI_API_KEY= ALLOW_NON_PROD_SCRAPER_WRITES=true yarn --cwd server research-entity:dedupe-by-pi --website-url-only --limit=10000 --apply --confirm-research-entity-pi-dedupe --max-apply=<number of planned groups>`
+3. Dry-run again with the same scope; it must plan 0.
+4. Run `yarn development:search:sync`, never a full rebuild.
+5. Served check: through the search route each merged lab or profile shows once, its detail route answers `200`, and each archived slug answers `302` to its survivor.
+
 ## Verifying a release
 
 `Post-Promotion Verify` runs on every push to `main`.
