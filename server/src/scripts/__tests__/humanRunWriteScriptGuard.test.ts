@@ -20,6 +20,8 @@ const SWEEP_RUNNER = 'runScraperSweep.ts';
  */
 const OPERATOR_TOOLS: Record<string, string> = {
   'research-entity:refuse-field-value': 'records a per-row refusal, the layer-3 writer',
+  'role-assignments:detach-edge':
+    'detaches one role edge an operator judged wrong after reading the pages, as a DISPUTED verdict no lane re-attaches (#5614)',
   'researchers:record-distinct-people':
     'records an operator judgement that two researcher records are different people (#5592)',
   'research-entity:apply-page-read-verdict':

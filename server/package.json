@@ -31,6 +31,7 @@
     "research-entity:tombstone-same-person-archives": "tsx src/scripts/tombstoneSamePersonArchives.ts",
     "research-plans:retarget-merged": "tsx src/scripts/retargetResearchPlansToSurvivors.ts",
     "research-entity:union-stranded-merge-funding": "tsx src/scripts/unionStrandedMergeFunding.ts",
+    "role-assignments:detach-edge": "tsx src/scripts/detachRoleAssignmentEdge.ts",
     "researchers:record-distinct-people": "tsx src/scripts/recordDistinctResearchers.ts",
     "researchers:dedupe-accountless-shells": "tsx src/scripts/dedupeAccountlessResearcherShells.ts",
     "research-entity:merge-same-lead-duplicate-groups": "tsx src/scripts/mergeSameLeadDuplicateGroups.ts",
