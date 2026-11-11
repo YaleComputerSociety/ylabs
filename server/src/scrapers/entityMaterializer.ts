@@ -24,6 +24,8 @@ import {
   OWN_KEY_FALLBACK_TITLE_FIELD,
   type ResearcherGatedField,
 } from '../utils/researcherFieldWriters';
+import { isDepartmentHeadingChrome } from './utils/departmentHeadingChrome';
+import { withoutDepartmentHeadingObservations } from './departmentHeadingObservationScreen';
 import {
   changedResearcherPaths,
   expandUserMaterializerScope,
@@ -8210,9 +8212,11 @@ export async function joinUserIdentityToExistingResearcher(
   const keyNamesAnOfficeMailbox = userKeyNamesRoleOrUnitMailbox(identifier.entityKey, obs);
   const materializationObs = keyNamesAnOfficeMailbox
     ? []
-    : withoutOverSharedPersonWebsiteObservations(
-        obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o)),
-        await overSharedPersonWebsiteKeysForMaterialization(),
+    : withoutDepartmentHeadingObservations(
+        withoutOverSharedPersonWebsiteObservations(
+          obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o)),
+          await overSharedPersonWebsiteKeysForMaterialization(),
+        ),
       );
   const derived = deriveUserIdentityFields(materializationObs, now);
   const { resolved, displayName } = derived;
@@ -9313,6 +9317,10 @@ async function materializeUserIdentityToResearcher(
       researcher.profile[key] = bounded;
       fieldsWritten += 1;
     }
+  }
+  if (!primaryDepartment && isDepartmentHeadingChrome(researcher.profile.primaryDepartment)) {
+    researcher.profile.primaryDepartment = undefined;
+    fieldsWritten += 1;
   }
   if (researcher.profile.title) {
     const storedTitle = servablePersonTitle(researcher.profile.title);

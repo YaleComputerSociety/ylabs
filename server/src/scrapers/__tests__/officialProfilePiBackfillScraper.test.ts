@@ -3802,6 +3802,30 @@ describe('officialProfilePiBackfillScraper', () => {
     expect(obs.some((o) => o.field === 'departments')).toBe(false);
   });
 
+  it('never emits an affiliation group heading classed as a department (#5795)', () => {
+    const identity = extractOfficialProfileIdentity(
+      profileHtml.replace(
+        '<div class="department">Surgery</div>',
+        `
+          <div class="department">Other Departments &amp; Organizations</div>
+          <div class="department">Surgery</div>
+        `,
+      ),
+      profileUrl,
+      {
+        name: 'Jules Fixture Research Area',
+        slug: 'faculty-research-area-jules-fixture',
+      },
+    );
+
+    const obs = identityToUserObservations(identity!, {
+      netid: 'fixture106',
+      email: 'jules.fixture@yale.edu',
+    });
+
+    expect(obs.some((o) => o.value === 'Other Departments & Organizations')).toBe(false);
+  });
+
   it('runs only the targeted queued Medicine profile backfill', async () => {
     const emitted: ObservationInput[] = [];
     const scraper = new OfficialProfilePiBackfillScraper(
