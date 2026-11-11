@@ -112,6 +112,8 @@ import {
   isYaleAddress,
   jsonLdNodesThatMayNameThePerson,
   subjectDeclaredProfileEmail,
+  FOREIGN_BLOCK_LABEL,
+  namesTheSamePerson,
 } from '../utils/officialProfileSubjectEmail';
 import { forEachInOrderWithPrefetch } from '../utils/boundedConcurrency';
 import { ORGANIZATIONAL_ENTITY_TYPES } from '../../utils/researchEntityOrganizational';
@@ -3439,7 +3441,8 @@ export function officialProfilePageStatedFields(html: string): OfficialProfilePa
  */
 const IN_MEMORIAM_HEADING = /\bin\s+memoriam(?!\p{L})|\bobituary\b/iu;
 const SUBJECT_OPENING_WINDOW = 300;
-const APPOINTMENT_DATES_LABEL = /\bDates?:\s*([^|]+)/gi;
+const APPOINTMENT_DATES_LABEL_START = /\bDates?:/gi;
+const NUMERIC_DATE_ANYWHERE = /\b\d{1,2}\/\d{1,2}\/(?:\d{2}|\d{4})\b/;
 const NUMERIC_DATE = /\b(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})\b/g;
 
 function stated4DigitYear(year: string): number {
@@ -3451,21 +3454,35 @@ function stated4DigitYear(year: string): number {
  * ISO day, when every range it states has an end date. A page that states no dated
  * appointment, or a range without an end, says nothing about departure.
  */
+function statedAppointmentRanges(text: string): string[] {
+  const ranges: string[] = [];
+  for (const label of text.matchAll(APPOINTMENT_DATES_LABEL_START)) {
+    const rest = text.slice((label.index ?? 0) + label[0].length);
+    for (const segment of rest.split('|')) {
+      const value = segment.trim();
+      if (!value) continue;
+      if (!NUMERIC_DATE_ANYWHERE.test(value)) break;
+      ranges.push(
+        ...value
+          .split(/\.{3}|…|;/)
+          .map((range) => range.trim())
+          .filter(Boolean),
+      );
+    }
+  }
+  return ranges;
+}
+
 function statedAppointmentEndDate(text: string): string | undefined {
   const ends: number[] = [];
-  for (const label of text.matchAll(APPOINTMENT_DATES_LABEL)) {
-    const ranges = label[1]
-      .split(/\.{3}|…|;/)
-      .map((range) => range.trim())
-      .filter(Boolean);
-    for (const range of ranges) {
-      const dates = [...range.matchAll(NUMERIC_DATE)];
-      if (dates.length === 0) return undefined;
-      const [, month, day, year] = dates[dates.length - 1];
-      const end = Date.UTC(stated4DigitYear(year), Number(month) - 1, Number(day));
-      if (!Number.isFinite(end)) return undefined;
-      ends.push(end);
-    }
+  for (const range of statedAppointmentRanges(text)) {
+    const endPart = range.split(/\s[-–—]\s|\bto\b|\buntil\b|\bthrough\b/i).at(-1) ?? '';
+    const dates = [...endPart.matchAll(NUMERIC_DATE)];
+    if (dates.length === 0) return undefined;
+    const [, month, day, year] = dates[dates.length - 1];
+    const end = Date.UTC(stated4DigitYear(year), Number(month) - 1, Number(day));
+    if (!Number.isFinite(end)) return undefined;
+    ends.push(end);
   }
   if (ends.length === 0) return undefined;
   return new Date(Math.max(...ends)).toISOString().slice(0, 10);
@@ -3478,10 +3495,56 @@ function statedAppointmentEndDate(text: string): string | undefined {
  * the block-separated subject text, so a co-author's page or a sidebar notice cannot speak
  * for the subject.
  */
+const MEMORIAL_LABEL_MAX_LENGTH = 120;
+const FOREIGN_MEMORIAL_BLOCK = /\bnews\b|sidebar|related|co-?authors?/i;
+
+function insideForeignBlock($: cheerio.CheerioAPI, el: any, root: any): boolean {
+  for (let node = el; node && node !== root; node = node.parent) {
+    if (node.type !== 'tag') continue;
+    if (['aside', 'nav', 'footer'].includes(String(node.tagName).toLowerCase())) return true;
+    const label = [$(node).attr('class'), $(node).attr('id'), $(node).attr('aria-label')].join(' ');
+    if (FOREIGN_BLOCK_LABEL.test(label) || FOREIGN_MEMORIAL_BLOCK.test(label)) return true;
+  }
+  return false;
+}
+
+/**
+ * An in-memoriam heading or label inside the subject's own main node. The marker must stand
+ * alone or name the subject, so a memorial for a colleague is not read as the subject's, and
+ * nothing inside a co-author, related, news or sidebar block counts.
+ */
+function subjectNodeStatesInMemoriam($: cheerio.CheerioAPI, displayName: string): boolean {
+  const root = $('main').first().length ? $('main').first() : $('body').first();
+  const rootNode = root.get(0);
+  return root
+    .find('h1, h2, h3, h4, h5, dt, strong, b, p, span, div, li')
+    .toArray()
+    .some((el) => {
+      const text = $(el).clone().children().remove().end().text().replace(/\s+/g, ' ').trim();
+      if (!text || text.length > MEMORIAL_LABEL_MAX_LENGTH || !IN_MEMORIAM_HEADING.test(text)) {
+        return false;
+      }
+      if (insideForeignBlock($, el, rootNode)) return false;
+      const rest = text
+        .replace(IN_MEMORIAM_HEADING, '')
+        .replace(/[\s:|,.\-–—]+/g, ' ')
+        .trim();
+      return !rest || (Boolean(displayName) && namesTheSamePerson(rest, displayName));
+    });
+}
+
+/**
+ * Departure facts the subject's own page states about the subject (#5721): an in-memoriam or
+ * obituary heading in the page's title, its main heading, the opening of its subject text, or
+ * a memorial heading or label inside the subject's own main node; and the end date of its
+ * dated appointments once every one of them has passed. A co-author's page or a sidebar notice
+ * cannot speak for the subject.
+ */
 export function profileDepartureEvidence(
   html: string,
   profiles: Array<Record<string, any>>,
   now: Date = new Date(),
+  displayName = '',
 ): Pick<OfficialProfileIdentity, 'inMemoriam' | 'appointmentEndedOn'> {
   const $ = cheerio.load(html);
   const subjectText = blockSeparatedProfileEvidenceText(html, profiles);
@@ -3491,7 +3554,9 @@ export function profileDepartureEvidence(
     $('h1').first().text(),
     subjectText.slice(0, SUBJECT_OPENING_WINDOW),
   ];
-  const inMemoriam = headings.some((heading) => IN_MEMORIAM_HEADING.test(heading));
+  const inMemoriam =
+    headings.some((heading) => IN_MEMORIAM_HEADING.test(heading)) ||
+    subjectNodeStatesInMemoriam($, displayName);
   const endedOn = statedAppointmentEndDate(subjectText);
   const ended = endedOn && Date.parse(endedOn) < now.getTime() ? endedOn : undefined;
   return {
@@ -3642,7 +3707,7 @@ export function extractOfficialProfileIdentity(
             email,
             profileNetidSlug,
           ),
-          ...profileDepartureEvidence(html, profiles),
+          ...profileDepartureEvidence(html, profiles, new Date(), displayName),
         }
       : null;
   }
@@ -3670,7 +3735,7 @@ export function extractOfficialProfileIdentity(
     ...(profileNetidSlug ? { profileNetid: profileNetidSlug } : {}),
     orcid: extractOrcid($),
     ...(bio ? {} : hasSuppressedProfileBioText($) ? { suppressDerivedBio: true } : {}),
-    ...profileDepartureEvidence(html, profiles),
+    ...profileDepartureEvidence(html, profiles, new Date(), displayName),
   };
 }
 

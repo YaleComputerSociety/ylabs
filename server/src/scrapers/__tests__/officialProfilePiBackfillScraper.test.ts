@@ -4383,6 +4383,63 @@ describe('officialProfilePiBackfillScraper', () => {
       expect(profileDepartureEvidence(datedHtml('9/1/2026 - 5/31/2099'), [], now)).toEqual({});
     });
 
+    const longChrome =
+      '<p>' + 'Department news and events for the current academic year. '.repeat(8) + '</p>';
+    const withMain = (inner: string) =>
+      profileHtml.replace(
+        '<div class="department">Surgery</div>',
+        `<div class="department">Surgery</div>${inner}`,
+      );
+
+    it('reads appointment dates stated in the block after their label', () => {
+      const page = withMain(
+        '<p>Visiting from:</p><p>Fixture University</p><p>Dates:</p><p>9/1 - 12/31/2024</p>' +
+          '<p>Visiting from:</p><p>Fixture University</p><p>Dates:</p><p>1/1 - 5/31/2025</p><p>Programs:</p><p>Surgery</p>',
+      );
+
+      expect(profileDepartureEvidence(page, [], now, 'Jules Fixture')).toEqual({
+        appointmentEndedOn: '2025-05-31',
+      });
+    });
+
+    it('reads only the dated blocks that follow their label', () => {
+      const page = withMain(
+        '<p>Dates:</p><p>9/1 - 12/31/2024</p><p>Programs:</p><p>Surgery</p><p>Page updated 1/5/2099</p>',
+      );
+
+      expect(profileDepartureEvidence(page, [], now, 'Jules Fixture')).toEqual({
+        appointmentEndedOn: '2024-12-31',
+      });
+    });
+
+    it('still records nothing when a block-separated appointment has not ended', () => {
+      const future = withMain('<p>Dates:</p><p>9/1/2026 - 5/31/2099</p>');
+      const openEnded = withMain('<p>Dates:</p><p>9/1/2024 - present</p>');
+
+      expect(profileDepartureEvidence(future, [], now, 'Jules Fixture')).toEqual({});
+      expect(profileDepartureEvidence(openEnded, [], now, 'Jules Fixture')).toEqual({});
+    });
+
+    it('reads an in-memoriam label inside the subject node past the opening', () => {
+      const page = withMain(`${longChrome}<h2>In Memoriam</h2><p>Jules Fixture led the group.</p>`);
+
+      expect(profileDepartureEvidence(page, [], now, 'Jules Fixture')).toEqual({
+        inMemoriam: true,
+      });
+    });
+
+    it('never reads a colleague memorial as the subject', () => {
+      const inNews = withMain(
+        `${longChrome}<section class="news"><h3>In Memoriam</h3><p>A colleague is remembered.</p></section>`,
+      );
+      const namesAnother = withMain(`${longChrome}<h2>In Memoriam: Pat Colleague</h2>`);
+      const inSidebar = withMain(`${longChrome}<aside><h3>In Memoriam</h3></aside>`);
+
+      for (const page of [inNews, namesAnother, inSidebar]) {
+        expect(profileDepartureEvidence(page, [], now, 'Jules Fixture')).toEqual({});
+      }
+    });
+
     it('emits the marker on the person own netid key, the same on a second run', async () => {
       const first: ObservationInput[] = [];
       const second: ObservationInput[] = [];
