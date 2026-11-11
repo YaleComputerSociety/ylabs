@@ -299,7 +299,10 @@ export function planFacultyProfileRowDeletion(args: {
   pointerNodes: ReadonlySet<string>;
   rowObservations: readonly ObservationRow[];
 }): { rowCount: number; observationIds: string[] } {
-  const { find, nodes } = joinSubjectIdentityForms(args.rowObservations, args.pointerNodes);
+  const { find, nodes } = joinSubjectIdentityForms(
+    args.rowObservations.map(asSubject),
+    args.pointerNodes,
+  );
   const pointerRoots = new Set([...args.pointerNodes].map(find));
   const profileRoots = new Set(
     args.rowObservations
