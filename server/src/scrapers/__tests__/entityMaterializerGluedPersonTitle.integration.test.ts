@@ -110,7 +110,7 @@ describe('a person title with biography text glued on is never stored (#5594)', 
     expect(await storedTitle(person._id)).toBeUndefined();
   });
 
-  it('stores the leading whole appointments of an overlong appointment list', async () => {
+  it('stores a long clean appointment list whole', async () => {
     const appointments = [
       'Professor of Fixture Studies and of Synthetic Methods',
       'Director of the Fixture Center for Testing',
@@ -129,6 +129,22 @@ describe('a person title with biography text glued on is never stored (#5594)', 
 
     await materializeEntity('user', { entityKey: KEY }, {});
 
-    expect(await storedTitle(person._id)).toBe(appointments.slice(0, 4).join('; '));
+    expect(await storedTitle(person._id)).toBe(appointments.join('; '));
+  });
+
+  it('keeps a stored long clean appointment list when no title resolves', async () => {
+    const longList =
+      'Fixture Endowed Professor of Synthetic Studies; Director, Center for Fixture Methods in Placeholder Science (CFMPS); Professor of Statistics and Data Science; Professor of Medicine (Synthetic Medicine); Assistant Director, Global Placeholder Program, Fixture Cancer Center';
+    const person = await researcher(longList);
+    await observe('official-profile-pi-backfill', 0.95, {
+      fname: 'Avery',
+      lname: 'Synthetic',
+      title: GLUED_TITLE,
+      profileUrls: { departmental: PAGE },
+    });
+
+    await materializeEntity('user', { entityKey: KEY }, {});
+
+    expect(await storedTitle(person._id)).toBe(longList);
   });
 });

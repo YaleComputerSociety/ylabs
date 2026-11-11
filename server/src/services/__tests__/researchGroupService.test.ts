@@ -4129,6 +4129,17 @@ describe('getResearchGroupDetail', () => {
     expect(detail?.members[0].user.title).toBe(title);
   });
 
+  it('serves a long genuine appointment list whole on the detail page (#5594)', async () => {
+    const title =
+      'Fixture Endowed Professor of Synthetic Studies; Director, Center for Fixture Methods in Placeholder Science (CFMPS); Professor of Statistics and Data Science; Professor of Medicine (Synthetic Medicine); Assistant Director, Global Placeholder Program, Fixture Cancer Center';
+    expect(title.length).toBeGreaterThan(250);
+    seedSingleMemberDetail(title);
+
+    const detail = await getResearchGroupDetail('title-hygiene-lab');
+
+    expect(detail?.members[0].user.title).toBe(title);
+  });
+
   it('shows only fresh stable official roster evidence and reports bounded disclosure', () => {
     const latestSnapshot = {
       state: 'current',

@@ -676,7 +676,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
 
   it('refuses a directory title beyond the stored bound instead of failing the run (#5594)', async () => {
     const longTitle =
-      'Professor of Physics and Astronomy and Adjunct Professor of Applied Mathematics '.repeat(8);
+      'Professor of Physics and Astronomy and Adjunct Professor of Applied Mathematics '.repeat(14);
     const enrichTarget = await attachedResearcher('longtitle1', 'Terry Titleholder');
 
     await seedDirectoryIdentity('longtitle1', 'Terry', 'Titleholder', longTitle);

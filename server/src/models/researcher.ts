@@ -4,6 +4,7 @@ import {
   defineCanonicalSchemaVersion,
 } from './canonicalSchemaVersion';
 import { fieldValueRefusalSchema } from './modelPrimitives';
+import { MAX_STORED_PERSON_TITLE_LENGTH } from '../utils/titleHygiene';
 
 export const researcherSchemaVersion = defineCanonicalSchemaVersion({ currentVersion: 1 });
 
@@ -253,7 +254,7 @@ function orcidProfileMatchesIdentifier(
 
 export const researcherDisplayProfileSchema = new mongoose.Schema<ResearcherDisplayProfile>(
   {
-    title: { type: String, trim: true, maxlength: 400 },
+    title: { type: String, trim: true, maxlength: MAX_STORED_PERSON_TITLE_LENGTH },
     primaryDepartment: { type: String, trim: true, maxlength: 240 },
     imageUrl: { type: String, trim: true, maxlength: 2048 },
     websiteUrl: { type: String, trim: true, maxlength: 2048 },
