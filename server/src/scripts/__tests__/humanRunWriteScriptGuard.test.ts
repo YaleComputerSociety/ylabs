@@ -24,6 +24,8 @@ const OPERATOR_TOOLS: Record<string, string> = {
     'records an operator refusal of one value on one person record, the person-record counterpart of the layer-3 writer (#5641)',
   'role-assignments:detach-edge':
     'detaches one role edge an operator judged wrong after reading the pages, as a DISPUTED verdict no lane re-attaches (#5614)',
+  'observations:rollback-scrape-run':
+    'reverses one unmaterialized scrape run an operator judged harmful, restoring only the observations it superseded (#5735)',
   'researchers:record-distinct-people':
     'records an operator judgement that two researcher records are different people (#5592)',
   'research-entity:apply-page-read-verdict':
