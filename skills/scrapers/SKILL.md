@@ -1734,7 +1734,7 @@ Widening to those means deciding a name question the URL cannot answer, which is
 `server/src/services/officialProfileLinkIdentity.ts` owns the bind-time rule, and every writer of a `YALE_OFFICIAL` link calls it: the user materializer, the verify lane's dead-link repair, and the repoint lane's destination.
 `officialProfileLinkHeldByConflictingIdentity` refuses a page another live researcher already carries when the two records hold different netids.
 A netid is the only conflict witness, because a nickname, a second ORCID on the same page, and a second address all occur for one person; a record with no netid decides nothing, so a twin is never refused.
-`pageEmailHeldByAnotherResearcher` in the backfill lane reads the same rule through `identityWitnessesConflict`.
+`pageEmailHeldByAnotherResearcher` (`verifiedResearcherEmail.ts`, shared by the backfill lane and the email fill) reads the same rule through `identityWitnessesConflict`.
 The verify lane also adopts a candidate it built from the display name (`nameDerived` in `officialProfileLinkCandidatesWithOrigin`) only when `pageIdentityWitnessesPerson` finds the page's own email or netid on the researcher, or the directory pairs the page email with the researcher's netid.
 The guard refuses rather than removes, so a link stamped on the wrong record before it existed stays until an operator judges that row.
 Measured on Development on 2026-11-11: 5 pages were shared, 2 by twins with no netid conflict and 3 by two directory-distinct netids.
