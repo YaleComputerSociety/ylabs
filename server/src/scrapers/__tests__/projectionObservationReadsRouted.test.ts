@@ -59,6 +59,11 @@ const REVIEWED_UNROUTED_READS: ReadonlyArray<{ fn: string; reason: string }> = [
       'A read-after-write check: it reads back the observations `assertLeadPiInheritanceObservations` just wrote in this same pass, to tell an accepted assertion from a refused one. Frozen input would answer about the state BEFORE the write, so routing it would make the check lie.',
   },
   {
+    fn: 'planScreenedPageWithdrawal',
+    reason:
+      "Called only from the `user` branch of `materializeEntityUnderRemovalGuard`, so the benchmark never makes this read: it replays `researchEntity` rows only. It is a search by ORCID value for every `user` observation asserting the namesake's stored iD, whose purpose is to find the pages that asserted it under other keys, so an entity-keyed source cannot answer it (#5693).",
+  },
+  {
     fn: 'reconcileOfficialRosterSnapshotsFromRun',
     reason: 'Run-level reconciliation over a whole scrape run, not a per-row projection read.',
   },
