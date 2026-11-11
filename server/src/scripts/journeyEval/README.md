@@ -113,6 +113,7 @@ The two sorted cases are also the sample check that command and a laptop sweep's
 ## The welcomes filter serves the badge
 
 The `welcomes-filter-serves-the-badge` case walks every page of a browse filtered to "Welcomes undergrads" and asserts that every row it returns serves `welcomesUndergrads: true` on its card (#5620).
+The `works-with-filter-serves-a-signal` case does the same for "Works with undergrads", where a row passes when its card serves `hasUndergradHostingEvidence`, `welcomesUndergrads`, or an `undergradListEvidence` entry whose signal is `mentors`; the difference it finds is attributable to the emeritus way-in guard, which withholds an advising-now entry from the card (#5620).
 The filter reads the index and the badge is decided at serve time, so a row the index counts and the card withholds, such as an emeritus-led row whose way in is withheld, is the disagreement this catches.
 A row without the badge while the corpus fingerprint moved is inconclusive, since it may have been written after its index document, and a filter that serves no row is inconclusive rather than a pass.
 Measured on Development on 2026-11-10, the filter returned 117 rows and all 117 served the badge.

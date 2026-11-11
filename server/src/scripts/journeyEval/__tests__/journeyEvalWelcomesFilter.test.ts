@@ -109,3 +109,40 @@ describe('checkWelcomesFilterServesTheBadge', () => {
     ).toBe('pass');
   });
 });
+
+describe('works-with-filter-serves-a-signal case (#5620)', () => {
+  const worksWithCase = journeyCases.find(
+    (candidate) => candidate.id === 'works-with-filter-serves-a-signal',
+  )!;
+
+  const worksWithInvariants = async (cards: Array<Record<string, unknown>>) =>
+    Object.fromEntries(
+      (await worksWithCase.run(syntheticContext(cards as never, 10))).invariants.map(
+        (invariant) => [invariant.id, invariant],
+      ),
+    );
+
+  it('passes when every card serves hosted, welcomes or a mentors entry', async () => {
+    const invariants = await worksWithInvariants([
+      { slug: 'synthetic-hosted', hasUndergradHostingEvidence: true },
+      { slug: 'synthetic-welcomes', welcomesUndergrads: true },
+      {
+        slug: 'synthetic-mentors',
+        undergradListEvidence: [
+          { signal: 'mentors', kind: 'advised', source: 'x', sourceUrl: 'https://x.example.edu/' },
+        ],
+      },
+    ]);
+
+    expect(invariants['works-with-filter-rows-serve-a-signal']).toMatchObject({ status: 'pass' });
+  });
+
+  it('fails on a card that serves no undergraduate signal, such as a withheld advising-now entry', async () => {
+    const invariants = await worksWithInvariants([
+      { slug: 'synthetic-hosted', hasUndergradHostingEvidence: true },
+      { slug: 'synthetic-withheld', undergradListEvidence: [] },
+    ]);
+
+    expect(invariants['works-with-filter-rows-serve-a-signal']).toMatchObject({ status: 'fail' });
+  });
+});

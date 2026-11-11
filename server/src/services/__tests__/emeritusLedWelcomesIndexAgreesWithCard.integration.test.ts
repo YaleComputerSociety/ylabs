@@ -26,6 +26,9 @@ const INVITATION_ONLY = 'fixture-emeritus-invitation-lab';
 const OPEN_LIST_ONLY = 'fixture-emeritus-open-list-lab';
 const FUNDED = 'fixture-emeritus-funded-lab';
 const ACTIVE_LEAD = 'fixture-active-lead-lab';
+const OPEN_MENTOR_ONLY = 'fixture-emeritus-openmentor-lab';
+const PAST_MENTOR_ONLY = 'fixture-emeritus-pastmentor-lab';
+const ACTIVE_OPEN_MENTOR = 'fixture-active-advisingnow-lab';
 const RUNNING_AWARD = {
   id: 'R01XX000002',
   agency: 'NIH',
@@ -43,6 +46,20 @@ const invitationFor = (slug: string) => ({
   level: 'welcomes_undergrads',
   quote: 'Undergraduates interested in membrane signalling are welcome to get in touch.',
   sourceUrl: `${siteFor(slug)}join`,
+});
+
+const openMentorEntryFor = (slug: string) => ({
+  source: 'economics-senior-essay-advisers',
+  kind: 'open',
+  sourceUrl: `${siteFor(slug)}advisers`,
+});
+
+const pastMentorEntryFor = (slug: string) => ({
+  source: 'cs-senior-projects',
+  kind: 'advised',
+  count: 2,
+  latestYear: 2025,
+  sourceUrl: `${siteFor(slug)}projects`,
 });
 
 const openListEntryFor = (slug: string) => ({
@@ -162,7 +179,43 @@ describe('the welcomes filter in the index agrees with the emeritus way-in the c
         undergradInvitation: invitationFor(ACTIVE_LEAD),
       }),
     );
+    rowsBySlug.set(
+      OPEN_MENTOR_ONLY,
+      await seedRow(OPEN_MENTOR_ONLY, emeritus, {
+        undergradListEvidence: [openMentorEntryFor(OPEN_MENTOR_ONLY)],
+      }),
+    );
+    rowsBySlug.set(
+      PAST_MENTOR_ONLY,
+      await seedRow(PAST_MENTOR_ONLY, emeritus, {
+        undergradListEvidence: [pastMentorEntryFor(PAST_MENTOR_ONLY)],
+      }),
+    );
+    rowsBySlug.set(
+      ACTIVE_OPEN_MENTOR,
+      await seedRow(ACTIVE_OPEN_MENTOR, 'Professor of Physics', {
+        undergradListEvidence: [openMentorEntryFor(ACTIVE_OPEN_MENTOR)],
+      }),
+    );
   });
+
+  it('keeps a quiet emeritus-led row whose only mentoring is advising now out of mentors and works-with', async () => {
+    const document = await indexDocumentFor(OPEN_MENTOR_ONLY);
+
+    expect(document.mentorsUndergrads).toBeUndefined();
+    expect(document.worksWithUndergrads).toBeUndefined();
+  }, 60000);
+
+  it.each([PAST_MENTOR_ONLY, ACTIVE_OPEN_MENTOR])(
+    'keeps past advising, and advising now under an active lead, in mentors and works-with: %s',
+    async (slug) => {
+      const document = await indexDocumentFor(slug);
+
+      expect(document.mentorsUndergrads).toBe(true);
+      expect(document.worksWithUndergrads).toBe(true);
+    },
+    60000,
+  );
 
   const indexDocumentFor = async (slug: string) => {
     const [document] = await buildResearchEntitySearchIndexDocumentsWithMemberNames([
