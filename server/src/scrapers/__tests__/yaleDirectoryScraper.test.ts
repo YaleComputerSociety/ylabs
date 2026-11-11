@@ -25,7 +25,8 @@ import type { ObservationInput, ScraperContext } from '../types';
 // hoisted, so the spy is declared via vi.hoisted to keep it accessible from
 // the factory.
 const { listYaliesSpy } = vi.hoisted(() => ({ listYaliesSpy: vi.fn() }));
-vi.mock('../../services/yaliesService', () => ({
+vi.mock('../../services/yaliesService', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../services/yaliesService')>()),
   listYalies: listYaliesSpy,
 }));
 vi.mock('../snapshotCache', () => ({
