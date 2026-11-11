@@ -12,6 +12,13 @@ import {
 } from '../piNameMatch';
 
 describe('givenNamesEquivalent', () => {
+  it('reads the katharine spelling as the kate and kathy family (#5757)', () => {
+    expect(givenNamesEquivalent('Katharine', 'Kate')).toBe(true);
+    expect(givenNamesEquivalent('Kate', 'Katharine')).toBe(true);
+    expect(givenNamesEquivalent('Katharine', 'Kathy')).toBe(true);
+    expect(givenNamesEquivalent('Katharine', 'Margaret')).toBe(false);
+  });
+
   it('treats identical given names as equivalent (case-insensitive)', () => {
     expect(givenNamesEquivalent('Robert', 'robert')).toBe(true);
   });
