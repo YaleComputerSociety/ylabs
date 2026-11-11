@@ -14,6 +14,7 @@ import { Types } from 'mongoose';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { corroboratedLabNameEponyms } from '../utils/researchHomeNameIdentityAuthority';
+import type { MaterializationReadSource } from './materializationChunkPrefetch';
 
 export const PAGE_STATED_NAME_SOURCES: ReadonlySet<string> = new Set([
   'lab-site-research-read',
@@ -199,6 +200,23 @@ async function pageStatedNamePeersByName(
   return byName;
 }
 
+async function liveCachedPeersOf(
+  names: readonly string[],
+  row: { _id?: unknown; slug?: unknown },
+): Promise<PageStatedNameObservation[]> {
+  const peersByName = await pageStatedNamePeersByName();
+  const others = [...new Set(names.flatMap((name) => peersByName.get(name) ?? []))].filter(
+    (peer) => !belongsToRow(peer, row),
+  );
+  if (others.length === 0) return [];
+  const live = await liveRowIdentities(others);
+  return others.filter(
+    (peer) =>
+      (peer.entityId && live.ids.has(String(peer.entityId))) ||
+      live.slugs.has(textValue(peer.entityKey)),
+  );
+}
+
 export interface SiteSharedPageNameWithdrawal<T> {
   observations: T[];
   withdrawnNames: ReadonlySet<string>;
@@ -207,6 +225,7 @@ export interface SiteSharedPageNameWithdrawal<T> {
 export async function withoutSiteSharedPageNames<T extends PageStatedNameObservation>(
   observations: T[],
   row: { _id?: unknown; slug?: unknown },
+  readSource?: MaterializationReadSource,
 ): Promise<SiteSharedPageNameWithdrawal<T>> {
   const unchanged = { observations, withdrawnNames: new Set<string>() };
   const candidates = observations.filter(
@@ -216,22 +235,13 @@ export async function withoutSiteSharedPageNames<T extends PageStatedNameObserva
       (sitePage(observation.sourceUrl) as SitePage).segments.length > 0,
   );
   if (candidates.length === 0) return unchanged;
-  const peersByName = await pageStatedNamePeersByName();
-  const stated = [
-    ...new Set(
-      candidates.flatMap(
-        (candidate) => peersByName.get(comparablePageStatedName(candidate.value)) ?? [],
-      ),
-    ),
+  const names = [
+    ...new Set(candidates.map((candidate) => comparablePageStatedName(candidate.value))),
   ];
-  const others = stated.filter((peer) => !belongsToRow(peer, row));
-  if (others.length === 0) return unchanged;
-  const live = await liveRowIdentities(others);
-  const livePeers = others.filter(
-    (peer) =>
-      (peer.entityId && live.ids.has(String(peer.entityId))) ||
-      live.slugs.has(textValue(peer.entityKey)),
-  );
+  const routed = readSource?.pageStatedNamePeers(names);
+  const livePeers = routed?.hit
+    ? (routed.value as PageStatedNameObservation[])
+    : await liveCachedPeersOf(names, row);
   const withdrawnNames = siteSharedPageNames(candidates, livePeers);
   return { observations: withoutNames(observations, withdrawnNames), withdrawnNames };
 }

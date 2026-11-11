@@ -11230,6 +11230,7 @@ async function materializeEntityUnderRemovalGuard(
     const siteSharedPageNameWithdrawal = await withoutSiteSharedPageNames(
       withoutCoursePageEvidence(withoutPersonProfileTopicsOnOrganizationRow(obs, entityDoc)),
       entityDoc,
+      options.chunkPrefetch,
     );
     obs = siteSharedPageNameWithdrawal.observations;
     siteSharedPageNames = siteSharedPageNameWithdrawal.withdrawnNames;
