@@ -103,7 +103,7 @@ describe('retireDocumentedWayInField with MongoDB', () => {
       });
       mongoUrl = memoryReplSet.getUri('retire_documented_way_in_test');
     }
-    await mongoose.connect(mongoUrl, { autoIndex: false, autoCreate: false });
+    await mongoose.connect(mongoUrl);
   });
 
   beforeEach(async () => {
