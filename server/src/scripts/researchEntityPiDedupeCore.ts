@@ -1868,7 +1868,8 @@ export function buildWebsiteUrlResearchEntityDedupePlan(
     const hasFundingShellEntity = entities.some((entity) => isFundingShellSlug(entity.slug));
     if (hasFundingShellEntity && !isDistinctiveNonFundingWebsiteHost(row.websiteUrl)) continue;
 
-    for (const cluster of clusterEntitiesBySharedLeadPersonIdentity(entities)) {
+    const withoutLeadIds = entities.map((entity) => ({ ...entity, leadPersonIds: undefined }));
+    for (const cluster of clusterEntitiesBySharedLeadPersonIdentity(withoutLeadIds)) {
       const group = buildGroupFromCluster(
         {
           userId: `website-url:${key}`,

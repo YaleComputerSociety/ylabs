@@ -89,4 +89,21 @@ describe('website-url lane distinct-lead guard (#5638)', () => {
     expect(plan).toHaveLength(1);
     expect(plan[0].duplicateEntityIds).toHaveLength(2);
   });
+
+  it('still drops a member whose slug names another person when it shares a lead id', () => {
+    const entities: Entity[] = [
+      ...twoProfiles(['researcher-1'], ['researcher-1']),
+      profile({
+        id: 'dept-three-bo-lark',
+        websiteUrl: NEW_HOME,
+        leadPersonIds: ['researcher-1'],
+      }),
+    ];
+    const plan = planFor(entities);
+    expect(plan).toHaveLength(1);
+    expect([plan[0].canonicalEntityId, ...plan[0].duplicateEntityIds].sort()).toEqual([
+      'dept-one-ada-quill',
+      'dept-two-ada-quill',
+    ]);
+  });
 });
