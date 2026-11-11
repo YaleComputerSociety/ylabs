@@ -19,6 +19,7 @@ function syntheticContext(
   cards: Array<{ slug: string; welcomesUndergrads?: boolean }>,
   window: number,
   requests: BrowseRequest[] = [],
+  degraded = false,
 ): JourneyEvalContext {
   return {
     browse: async (request) => {
@@ -28,7 +29,7 @@ function syntheticContext(
       return {
         researchEntities: cards.slice((page - 1) * pageSize, page * pageSize),
         estimatedTotalHits: cards.length,
-        degraded: false,
+        degraded,
       };
     },
     readStoredRows: async () => new Map(),
@@ -115,9 +116,9 @@ describe('works-with-filter-serves-a-signal case (#5620)', () => {
     (candidate) => candidate.id === 'works-with-filter-serves-a-signal',
   )!;
 
-  const worksWithInvariants = async (cards: Array<Record<string, unknown>>) =>
+  const worksWithInvariants = async (cards: Array<Record<string, unknown>>, degraded = false) =>
     Object.fromEntries(
-      (await worksWithCase.run(syntheticContext(cards as never, 10))).invariants.map(
+      (await worksWithCase.run(syntheticContext(cards as never, 10, [], degraded))).invariants.map(
         (invariant) => [invariant.id, invariant],
       ),
     );
@@ -144,5 +145,27 @@ describe('works-with-filter-serves-a-signal case (#5620)', () => {
     ]);
 
     expect(invariants['works-with-filter-rows-serve-a-signal']).toMatchObject({ status: 'fail' });
+  });
+
+  it('fails when the filtered browse is degraded, since a degraded card cannot withhold a way in', async () => {
+    const invariants = await worksWithInvariants(
+      [{ slug: 'synthetic-hosted', hasUndergradHostingEvidence: true }],
+      true,
+    );
+
+    expect(invariants['works-with-filtered-browse-is-not-degraded']).toMatchObject({
+      status: 'fail',
+      detail: { pagesWalked: 1, degradedPages: 1 },
+    });
+  });
+
+  it('passes the degraded check when every filtered page is served by the full search path', async () => {
+    const invariants = await worksWithInvariants([
+      { slug: 'synthetic-hosted', hasUndergradHostingEvidence: true },
+    ]);
+
+    expect(invariants['works-with-filtered-browse-is-not-degraded']).toMatchObject({
+      status: 'pass',
+    });
   });
 });

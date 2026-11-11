@@ -426,6 +426,7 @@ const worksWithFilterServesASignal: JourneyCase = {
     let filterTotal = 0;
     let served = 0;
     let withoutBadge = 0;
+    let degradedPages = 0;
     let pagesWalked = 0;
     for (let page = 1; page <= reachablePages; page += 1) {
       const result = await context.browse({
@@ -435,6 +436,7 @@ const worksWithFilterServesASignal: JourneyCase = {
       });
       pagesWalked = page;
       if (page === 1) filterTotal = result.estimatedTotalHits ?? 0;
+      if (result.degraded !== false) degradedPages += 1;
       const rows = servedRows(result);
       served += rows.length;
       withoutBadge += rows.filter((row) => !rowServesAnUndergradSignal(row)).length;
@@ -448,6 +450,12 @@ const worksWithFilterServesASignal: JourneyCase = {
           { filterTotal, served, withoutBadge },
           corpusBefore,
           corpusAfter,
+        ),
+        buildInvariant(
+          'works-with-filtered-browse-is-not-degraded',
+          'A browse filtered to "Works with undergrads" does not fall back to a degraded search path',
+          degradedPages === 0,
+          { pagesWalked, degradedPages },
         ),
       ],
       rates: [],
