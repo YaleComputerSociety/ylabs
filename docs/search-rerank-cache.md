@@ -47,7 +47,8 @@ It writes Development, and refuses any other database, unless `--environment=bet
 The seeder stores a `textHash` with each resolved score, the `rerankTextHash` of that row's document in the target environment's research-entity index, read through the fail-soft optional Meilisearch path; a document the index has not hashed yet gives none.
 It reads the index only when this shell's `MEILISEARCH_INDEX_PREFIX` names the target (unset for Development, `beta`, `prod`), because a laptop seeding Beta or Production is normally configured for the Development index, and hashing one environment's rows against another's index would store wrong hashes.
 The report's `textHashes` says what happened: `read-from-index`, `index-unreachable` (the read failed, so no hash is stored and the seed still applies), or `index-of-another-environment` (the index was not read); `scoresWithTextHash` counts the scores that carry one.
-A seed without hashes is still served and still judged by the candidate-set rule, so seeding Beta or Production from a laptop degrades staleness detection rather than failing; run the seed from a shell whose prefix names the target, such as a Render shell on that environment, to store hashes.
+A seed without hashes is still served and still judged by the candidate-set rule, so seeding Beta or Production from a laptop degrades staleness detection rather than failing.
+A promotion seeds Beta and Production that way, from the laptop that holds the seed file, because a Render shell cannot read it; the exact runbook, its expected counts, turning the serve flag on, verification and rollback are in `docs/release-process.md` ("Seed the search rerank cache after the copy and the reindex").
 
 ## Environments and privacy
 
@@ -86,7 +87,7 @@ It can only reorder rows search already returned in its top 30: it never adds a 
   Its staleness is reported instead: the seed command's dry run prints `seededEntries`, `staleSeededEntries` (seeded entries with at least one stored hash that no longer matches the index, a row gone from the index included), and `seededEntriesWithoutTextHashes` (seeded entries carrying no hash, which the dry run cannot judge).
   These are `null` when the index was not read.
   A non-zero stale count means re-seed.
-- After a promotion, seed after the target's reindex (`docs/release-process.md`), so the stored hashes are read from the index that environment serves.
+- After a promotion, seed after the target's reindex (`docs/release-process.md`); a laptop seed stores no hashes, so read the re-seed signal from Development's dry run just before the copy, whose rows and hashes the target receives unchanged.
 
 ## Coverage
 
