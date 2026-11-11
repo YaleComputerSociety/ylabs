@@ -6,6 +6,7 @@ import {
   acquireIntendedDevApplyLease,
   devWriteLeaseSwitchedOff,
   recordDevApplyIntent,
+  labelSweepRunnerOwner,
   releaseHeldDevWriteLeases,
 } from './devWriteLease';
 
@@ -120,6 +121,7 @@ export async function holdDevApplyLeaseForRun(
   url: string | undefined = process.env.MONGODBURL,
 ): Promise<() => Promise<void>> {
   if (!url || devWriteLeaseSwitchedOff()) return async () => undefined;
+  labelSweepRunnerOwner(scriptName);
   recordDevApplyIntent(scriptName);
   const connection = await createScriptMongoConnection(url);
   return async () => {
