@@ -10,7 +10,7 @@ export interface LeadEvidenceFact {
 export interface GrantCoPiListingInput {
   leadFacts: readonly LeadEvidenceFact[];
   rowLeadPersonIds: Iterable<string>;
-  edgeSourceNameByPerson?: ReadonlyMap<string, string | undefined>;
+  edgeSourceNamesByPerson?: ReadonlyMap<string, Iterable<string | undefined>>;
 }
 
 const text = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
@@ -26,25 +26,35 @@ const text = (value: unknown): string => (typeof value === 'string' ? value.trim
  * that lead vouch for a listing. A grant-only lead who is the row's sole lead is the
  * funding shell the funding lane exists for, so it is not a listing.
  *
- * Lead facts come from the row's live lead observations. A lead edge with no such
- * observation falls back to the source name its edge records.
+ * A lead's sources are its live lead observations on the row together with the source
+ * name every one of its current lead edges records, so a roster, director, or profile
+ * edge keeps a lead from reading as grant-only.
  */
 export function grantCoPiListedPersonIds(input: GrantCoPiListingInput): Set<string> {
   const leads = new Set([...input.rowLeadPersonIds].map(text).filter(Boolean));
   const listed = new Set<string>();
   if (leads.size < 2) return listed;
   const sourcesByPerson = new Map<string, Set<string>>();
+  const addSource = (personId: string, sourceName: string) => {
+    const sources = sourcesByPerson.get(personId) ?? new Set<string>();
+    sources.add(sourceName);
+    sourcesByPerson.set(personId, sources);
+  };
   for (const fact of input.leadFacts) {
     const personId = text(fact.personId);
+    if (leads.has(personId)) addSource(personId, text(fact.sourceName));
+  }
+  for (const [rawPersonId, sourceNames] of input.edgeSourceNamesByPerson ?? []) {
+    const personId = text(rawPersonId);
     if (!leads.has(personId)) continue;
-    const sources = sourcesByPerson.get(personId) ?? new Set<string>();
-    sources.add(text(fact.sourceName));
-    sourcesByPerson.set(personId, sources);
+    for (const sourceName of sourceNames) {
+      const name = text(sourceName);
+      if (name) addSource(personId, name);
+    }
   }
   for (const personId of leads) {
-    const edgeSource = text(input.edgeSourceNameByPerson?.get(personId));
-    const sources = sourcesByPerson.get(personId) ?? new Set(edgeSource ? [edgeSource] : []);
-    if (sources.size === 0) continue;
+    const sources = sourcesByPerson.get(personId);
+    if (!sources || sources.size === 0) continue;
     if ([...sources].every((source) => GRANT_LANE_SOURCE_NAME_SET.has(source))) {
       listed.add(personId);
     }

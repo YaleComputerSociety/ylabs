@@ -37,17 +37,33 @@ describe('grantCoPiListedPersonIds (#5776)', () => {
     ).toEqual(new Set());
   });
 
-  it('falls back to the edge source name when no lead observation names the person', () => {
+  it('reads the edge source name when no lead observation names the person', () => {
     expect(
       grantCoPiListedPersonIds({
         leadFacts: [{ personId: 'lead', sourceName: 'dept-faculty-roster' }],
         rowLeadPersonIds: ['lead', 'co-pi'],
-        edgeSourceNameByPerson: new Map([
-          ['lead', 'dept-faculty-roster'],
-          ['co-pi', 'crossref-grants'],
+        edgeSourceNamesByPerson: new Map([
+          ['lead', ['dept-faculty-roster']],
+          ['co-pi', ['crossref-grants']],
         ]),
       }),
     ).toEqual(new Set(['co-pi']));
+  });
+
+  it('does not name a grant-observed lead that also holds a non-grant lead edge', () => {
+    expect(
+      grantCoPiListedPersonIds({
+        leadFacts: [
+          { personId: 'lead', sourceName: 'dept-faculty-roster' },
+          { personId: 'director', sourceName: 'nih-reporter' },
+        ],
+        rowLeadPersonIds: ['lead', 'director'],
+        edgeSourceNamesByPerson: new Map([
+          ['lead', ['dept-faculty-roster']],
+          ['director', ['nih-reporter', 'official-profile-pi-backfill']],
+        ]),
+      }),
+    ).toEqual(new Set());
   });
 
   it('does not name a lead with no recorded source at all', () => {

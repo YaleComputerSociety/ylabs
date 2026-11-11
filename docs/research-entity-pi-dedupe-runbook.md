@@ -32,6 +32,8 @@ A multi-PI award lists collaborators, so a lead whose every lead observation on 
 Without this, the co-PI's own profile-area shells folded into the other person's lab as if it were the co-PI's concrete home, and the survivor then served the co-PI as an extra lead.
 `loadSamePiCandidateRows` drops such a row from the co-PI's cluster, so the rule binds every lane that reads it: the default lane, `--shared-person-id` with or without `--require-name-agreement`, `--funding-only`, and the sweep's eponymous FRA merge.
 A grant-only lead who is the row's sole lead is a funding shell and still clusters, because that is what the funding lane folds.
+A lead's evidence on the row is its live lead observations together with the source every one of its current lead edges records, so a roster, director, or profile edge keeps a lead from reading as grant-only.
+Only current lead edges count as the row's leads, so a departed lead's `HISTORICAL` edge does not turn a sole-lead funding shell into a listing.
 The withheld co-PI still counts as a person on the row for the `--shared-person-id` multi-person quarantine, so withholding a listing only ever refuses a merge and never turns a two-lead row into a single-lead row another lane may fold.
 The predicate is `grantCoPiListedPersonIds` in `server/src/scrapers/grantCoPiListing.ts`, and the dry-run report counts the withheld rows in `withheldGrantCoPiListings`.
 

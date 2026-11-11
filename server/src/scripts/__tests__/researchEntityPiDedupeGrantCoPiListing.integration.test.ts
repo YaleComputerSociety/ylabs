@@ -75,7 +75,13 @@ const leadEdge = (
 });
 
 async function seed(
-  options: { coPiOwnLab?: boolean; coPiFundingShell?: boolean; leadProject?: boolean } = {},
+  options: {
+    coPiOwnLab?: boolean;
+    coPiFundingShell?: boolean;
+    departedLeadOnFundingShell?: boolean;
+    coPiDirectorEdgeOnSharedLab?: boolean;
+    leadProject?: boolean;
+  } = {},
 ) {
   await db()
     .collection('researchers')
@@ -104,7 +110,7 @@ async function seed(
       archived: false,
     },
   ];
-  const edges = [
+  const edges: Record<string, unknown>[] = [
     leadEdge(ids.sharedLab, ids.lead, 'dept-faculty-roster'),
     leadEdge(ids.sharedLab, ids.coPi, 'nih-reporter'),
     leadEdge(ids.coPiShell, ids.coPi, 'dept-faculty-roster'),
@@ -150,6 +156,18 @@ async function seed(
     observations.push(
       leadObservation(ids.coPiFundingShell, 'nih-pi-wren-ortolan', ids.coPi, 'nih-reporter'),
     );
+  }
+  if (options.departedLeadOnFundingShell) {
+    edges.push({
+      ...leadEdge(ids.coPiFundingShell, ids.lead, 'dept-faculty-roster'),
+      state: 'HISTORICAL',
+    });
+  }
+  if (options.coPiDirectorEdgeOnSharedLab) {
+    edges.push({
+      ...leadEdge(ids.sharedLab, ids.coPi, 'official-roster'),
+      role: 'DIRECTOR',
+    });
   }
   if (options.leadProject) {
     entities.push({
@@ -243,6 +261,26 @@ describe('PI folds never treat a grant co-PI listing as a same-row witness (#577
     expect(coPiRow?.entities.map((entity) => entity.id).sort()).toEqual(
       [String(ids.coPiShell), String(ids.coPiFundingShell)].sort(),
     );
+  });
+
+  it('keeps a sole-lead funding shell in the PI cluster beside a departed lead edge', async () => {
+    await seed({ coPiFundingShell: true, departedLeadOnFundingShell: true });
+    const rows = await loadSamePiCandidateRows(1000, { includeRetiredMembers: false });
+    const coPiRow = rows.find((row) => row.userId === String(ids.coPi));
+    expect(coPiRow?.entities.map((entity) => entity.id).sort()).toEqual(
+      [String(ids.coPiShell), String(ids.coPiFundingShell)].sort(),
+    );
+    expect(coPiRow?.grantCoPiListedEntityIds).toEqual([String(ids.sharedLab)]);
+  });
+
+  it('keeps a row in the co-PI cluster when a non-grant lead edge also names the co-PI', async () => {
+    await seed({ coPiDirectorEdgeOnSharedLab: true });
+    const { rows } = await allPlans();
+    const coPiRow = rows.find((row) => row.userId === String(ids.coPi));
+    expect(coPiRow?.entities.map((entity) => entity.id).sort()).toEqual(
+      [String(ids.coPiShell), String(ids.sharedLab)].sort(),
+    );
+    expect(coPiRow?.grantCoPiListedEntityIds).toBeUndefined();
   });
 
   it('still quarantines the shared row as multi-person in the shared-person lanes', async () => {

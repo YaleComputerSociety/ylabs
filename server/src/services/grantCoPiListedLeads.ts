@@ -29,6 +29,7 @@ export async function loadGrantCoPiListedLeadsByEntity(
     'target.kind': 'RESEARCH_ENTITY',
     'target.id': { $in: ids },
     role: { $in: LEAD_ROLES },
+    state: { $ne: 'HISTORICAL' },
     archived: { $ne: true },
   })
     .select('personId target.id rosterProvenance.sourceName')
@@ -37,13 +38,16 @@ export async function loadGrantCoPiListedLeadsByEntity(
     target?: { id?: unknown };
     rosterProvenance?: { sourceName?: string };
   }>;
-  const edgeSourcesByEntity = new Map<string, Map<string, string | undefined>>();
+  const edgeSourcesByEntity = new Map<string, Map<string, Set<string | undefined>>>();
   for (const edge of edges) {
     const entityId = String(edge.target?.id ?? '');
     const personId = edge.personId ? String(edge.personId) : '';
     if (!entityId || !personId) continue;
-    const byPerson = edgeSourcesByEntity.get(entityId) ?? new Map<string, string | undefined>();
-    if (!byPerson.has(personId)) byPerson.set(personId, edge.rosterProvenance?.sourceName);
+    const byPerson =
+      edgeSourcesByEntity.get(entityId) ?? new Map<string, Set<string | undefined>>();
+    const sourceNames = byPerson.get(personId) ?? new Set<string | undefined>();
+    sourceNames.add(edge.rosterProvenance?.sourceName);
+    byPerson.set(personId, sourceNames);
     edgeSourcesByEntity.set(entityId, byPerson);
   }
   const multiLeadIds = [...edgeSourcesByEntity.entries()]
@@ -77,7 +81,7 @@ export async function loadGrantCoPiListedLeadsByEntity(
     const listed = grantCoPiListedPersonIds({
       leadFacts: await planInferredPiMembership(entityId, own),
       rowLeadPersonIds: byPerson.keys(),
-      edgeSourceNameByPerson: byPerson,
+      edgeSourceNamesByPerson: byPerson,
     });
     if (listed.size > 0) listedByEntity.set(entityId, listed);
   }
