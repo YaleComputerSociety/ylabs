@@ -8,7 +8,8 @@ The measurement that motivated it, and the decision to score in an agent session
 
 `search_rerank_cache` (`server/src/models/searchRerankCache.ts`) holds one document per query key.
 The key is `searchRerankCacheQueryKey(query, filters)` in `server/src/services/researchGroupService.ts`.
-It applies the same acronym rewrite search does (`rewriteAcronymToPhrase`, #5169), so an acronym typed alone shares its phrase's entry; an entry seeded under a bare acronym before that change is simply never read again.
+It applies the same acronym rewrite search does (`rewriteAcronymToPhrase`, #5169), so an acronym typed alone shares its phrase's entry; an entry seeded under a bare acronym before that change is read only by a search the student asked to keep literal.
+A search sent with `rewriteAcronym: false` keys as the bare acronym, and a live-miss job it queues carries `rewriteAcronym: false`, so the job keys and searches its candidates the same way.
 It reads the typed query the way search tokenizes it (lowercased, diacritics folded, punctuation and filler words dropped, whitespace collapsed), before spelling correction, so an entry for a logged query matches that query exactly as a student typed it.
 It adds only the student-chosen filters (`kind`, `entityType`, `school`, `departments`, `researchAreas`, `hostsUndergrads`, `welcomesUndergrads`, `worksWithUndergrads`), in a fixed key order with each list sorted and lowercased, so the same choice made in any order is one entry.
 The visibility tier is an operator scope and never splits an entry.

@@ -377,7 +377,11 @@ export async function runVerifyOfficialProfileLinks(
         observed,
       );
       for (const candidate of candidates) {
-        if (await officialProfileLinkHeldByConflictingIdentity(candidate.url, person)) {
+        if (
+          await officialProfileLinkHeldByConflictingIdentity(candidate.url, person, {
+            readScope: materializationReadScopeFilter(),
+          })
+        ) {
           refusedCandidates.push({ url: candidate.url, reason: 'held-by-another-netid' });
           continue;
         }

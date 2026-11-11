@@ -162,8 +162,9 @@ const slugs = async () =>
 const KEY_ONLY_LANE_KEY = 'varrow-tallent-optics-lab';
 
 async function runKeyOnlyLane(
-  extra: Array<Pick<ObservationInput, 'field' | 'value'>> = [],
-): Promise<void> {
+  extra: Array<Pick<ObservationInput, 'field' | 'value' | 'entityId'>> = [],
+  entityKey = KEY_ONLY_LANE_KEY,
+): Promise<string> {
   await afterAMoment();
   const scrapeRunId = new mongoose.Types.ObjectId();
   await ScrapeRun.create({
@@ -174,12 +175,12 @@ async function runKeyOnlyLane(
   });
   const base = {
     entityType: 'researchEntity' as const,
-    entityKey: KEY_ONLY_LANE_KEY,
+    entityKey,
     sourceUrl: 'https://fixture-optics.example.edu/about',
   };
   await appendObservations(
     [
-      { ...base, field: 'slug', value: KEY_ONLY_LANE_KEY },
+      { ...base, field: 'slug', value: entityKey },
       { ...base, field: 'name', value: 'Synthetic Optics Lab' },
       { ...base, field: 'entityType', value: 'LAB' },
       ...extra.map((observation) => ({ ...base, ...observation })),
@@ -193,6 +194,7 @@ async function runKeyOnlyLane(
     },
   );
   await materializeFromRun(String(scrapeRunId));
+  return String(scrapeRunId);
 }
 
 async function keyOnlyLaneRowRenamedForARemovedLead(
@@ -439,6 +441,60 @@ describe('directory-removal:reslug renames a co-led row a removed lead names (#4
       await runKeyOnlyLane();
 
       expect(await slugs()).toEqual(['tallent-optics-lab']);
+    },
+  );
+
+  it(
+    'mints nothing at the old slug after the renamed row is archived, run twice, once the stamps the reslug wrote are gone',
+    {
+      timeout: 120000,
+    },
+    async () => {
+      const row = await keyOnlyLaneRowRenamedForARemovedLead();
+      const reslugStamped = await Observation.distinct('_id', {
+        entityKey: KEY_ONLY_LANE_KEY,
+        reslugAdoption: true,
+      });
+      expect(reslugStamped.length).toBeGreaterThan(0);
+      await runKeyOnlyLane();
+      await Observation.deleteMany({ _id: { $in: reslugStamped } });
+      await Observation.deleteMany({ superseded: true });
+      await ResearchEntity.updateOne({ _id: row._id }, { $set: { archived: true } });
+
+      await runKeyOnlyLane();
+      await runKeyOnlyLane();
+
+      expect(await ResearchEntity.countDocuments({ slug: KEY_ONLY_LANE_KEY })).toBe(0);
+      expect(await slugs()).toEqual(['tallent-optics-lab']);
+    },
+  );
+
+  it(
+    'still mints a key whose observations name an archived row by id without a reslug stamp',
+    {
+      timeout: 120000,
+    },
+    async () => {
+      const unrelatedKey = 'synthetic-unrelated-optics-lab';
+      const archivedElsewhere = await seedRow('synthetic-archived-elsewhere', [], {
+        archived: true,
+      });
+      await runKeyOnlyLane(
+        [{ field: 'name', value: 'Synthetic Optics Lab', entityId: String(archivedElsewhere._id) }],
+        unrelatedKey,
+      );
+      expect(
+        await Observation.countDocuments({
+          entityKey: unrelatedKey,
+          entityId: archivedElsewhere._id,
+        }),
+      ).toBeGreaterThan(0);
+
+      await runKeyOnlyLane([], unrelatedKey);
+
+      expect(
+        await ResearchEntity.countDocuments({ slug: unrelatedKey, archived: { $ne: true } }),
+      ).toBe(1);
     },
   );
 

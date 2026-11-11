@@ -1,0 +1,98 @@
+/**
+ * Which `user` key may write a person's display field when several keys join one researcher
+ * (#5706). Each key resolves its own evidence, so without a precedence the stored value is
+ * whichever key resolved last and a repeated resolve never settles. The researcher records the
+ * key that wrote each field and the strength it wrote with; a key writes only when it is that
+ * writer, nothing is recorded, or it outranks the writer. The outcome of a full pass is then the
+ * same in any order, and a second pass writes nothing.
+ *
+ * Rank: the identity join first (a netid reaches the person more surely than a name), then the
+ * resolved candidate's confidence, then the key itself, so a tie still has one answer.
+ */
+export const RESEARCHER_WRITER_FIELDS = [
+  'displayName',
+  'title',
+  'primaryDepartment',
+  'imageUrl',
+  'websiteUrl',
+] as const;
+
+export type ResearcherWriterField = (typeof RESEARCHER_WRITER_FIELDS)[number];
+
+const JOIN_RANK: Readonly<Record<string, number>> = {
+  'account-netid': 4,
+  'official-profile-page': 3,
+  'account-email': 2,
+  'person-name': 1,
+  'minted-from-pi-attribution': 1,
+};
+
+export interface ResearcherFieldWriter {
+  userKey: string;
+  joinRank: number;
+  confidence: number;
+}
+
+export function researcherFieldWriter(
+  userKey: string,
+  identityJoin: string | undefined,
+  confidence: unknown,
+): ResearcherFieldWriter {
+  const numeric = typeof confidence === 'number' && Number.isFinite(confidence) ? confidence : 0;
+  return {
+    userKey,
+    joinRank: JOIN_RANK[identityJoin ?? ''] ?? 0,
+    confidence: Math.round(numeric * 1e6) / 1e6,
+  };
+}
+
+export function writerOutranks(a: ResearcherFieldWriter, b: ResearcherFieldWriter): boolean {
+  if (a.joinRank !== b.joinRank) return a.joinRank > b.joinRank;
+  if (a.confidence !== b.confidence) return a.confidence > b.confidence;
+  return a.userKey < b.userKey;
+}
+
+const storedWriter = (writers: unknown, field: string): ResearcherFieldWriter | undefined => {
+  const entry =
+    writers instanceof Map
+      ? writers.get(field)
+      : writers && typeof writers === 'object'
+        ? (writers as Record<string, unknown>)[field]
+        : undefined;
+  if (!entry || typeof entry !== 'object') return undefined;
+  const { userKey, joinRank, confidence } = entry as Record<string, unknown>;
+  if (typeof userKey !== 'string' || !userKey) return undefined;
+  return {
+    userKey,
+    joinRank: typeof joinRank === 'number' ? joinRank : 0,
+    confidence: typeof confidence === 'number' ? confidence : 0,
+  };
+};
+
+export type ResearcherFieldWriteDecision =
+  | { write: true; writer: ResearcherFieldWriter; writerChanged: boolean }
+  | { write: false; releaseWriter: boolean };
+
+/**
+ * Whether this key writes `field`. A key that holds the field but resolves no candidate now
+ * releases it, so a sibling can take the field over; the stored value itself is left alone.
+ */
+export function decideResearcherFieldWrite(
+  writers: unknown,
+  field: ResearcherWriterField,
+  candidate: ResearcherFieldWriter,
+  hasValue: boolean,
+): ResearcherFieldWriteDecision {
+  const current = storedWriter(writers, field);
+  const holdsField = current?.userKey === candidate.userKey;
+  if (!hasValue) return { write: false, releaseWriter: holdsField };
+  if (current && !holdsField && !writerOutranks(candidate, current)) {
+    return { write: false, releaseWriter: false };
+  }
+  const writerChanged =
+    !current ||
+    current.userKey !== candidate.userKey ||
+    current.joinRank !== candidate.joinRank ||
+    current.confidence !== candidate.confidence;
+  return { write: true, writer: candidate, writerChanged };
+}

@@ -75,6 +75,7 @@ export interface SearchRerankLiveMissEntry {
 export interface SearchRerankLiveMissJobInput {
   query: string;
   filters?: ResearchGroupFilterInput;
+  rewriteAcronym?: false;
 }
 
 export interface RunSearchRerankLiveMissJobOptions {
@@ -227,7 +228,8 @@ export async function runSearchRerankLiveMissJob(
   const mode = options.mode ?? searchRerankLiveMissMode();
   const now = options.now ?? (() => new Date());
   const filters = searchRerankCacheFilters(input.filters ?? {});
-  const queryKey = searchRerankCacheQueryKey(input.query, filters);
+  const acronym = { rewriteAcronym: input.rewriteAcronym !== false };
+  const queryKey = searchRerankCacheQueryKey(input.query, filters, acronym);
   const queryText = input.query.trim();
   if (!searchRerankLiveMissQueryFits(queryText)) return { status: 'ineligible' };
 
@@ -243,6 +245,7 @@ export async function runSearchRerankLiveMissJob(
     queryText,
     filters,
     SEARCH_RERANK_WINDOW,
+    acronym,
   );
   if (searched.rerankLiveMissGate !== 'eligible') return { status: 'ineligible' };
   const servedCandidates = searched.candidateFingerprints;

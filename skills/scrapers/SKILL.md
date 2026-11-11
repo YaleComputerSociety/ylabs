@@ -210,7 +210,7 @@ Four earlier mechanisms each broke on a stored title, and the module's test file
   The same holds for `profileIdentityAgreesWithUser`, and `pageIdentityWitnessesPerson` reads a netid from an address's local part only when the address is a Yale one.
   The person's display name comes only from a JSON-LD `Person` node or an untyped node, never from an organization or website node, which named every MacMillan Center person page after the center.
   A canonical link differing from the fetched profile only in letter case is the same page.
-  In `visible-profile-bio-backfill` only, a page with no admissible title still yields the address, and nothing else: no title, name, bio or role follows from such a page.
+  In the queued and `visible-profile-bio-backfill` modes, a page with no admissible title still yields the address, and nothing else: no title, name, bio, role or lead attribution follows from such a page (#5701).
 - Any outbound fetch to a host derived from user input or stored data MUST go through `utils/ssrfGuard.ts`.
 Use `fetchPublicHttpUrl` (`scrapers/utils/httpFetch.ts`) when a script needs a status or a redirect location, and never the global `fetch`; the security preflight scan fails on an unguarded call, and `skills/auth-security/SKILL.md` owns the rules, including how the renderer's browser is kept on public hosts.
 - A lane that fetches a URL **discovered on a page** must establish that the fetched page is about the same subject before merging anything from it.
@@ -1765,6 +1765,8 @@ A netid is the only conflict witness, because a nickname, a second ORCID on the 
 `pageEmailHeldByAnotherResearcher` (`verifiedResearcherEmail.ts`, shared by the backfill lane and the email fill) reads the same rule through `identityWitnessesConflict`.
 The verify lane also adopts a candidate it built from the display name (`nameDerived` in `officialProfileLinkCandidatesWithOrigin`) only when `pageIdentityWitnessesPerson` finds the page's own email or netid on the researcher, or the directory pairs the page email with the researcher's netid.
 The guard refuses rather than removes, so a link stamped on the wrong record before it existed stays until an operator judges that row.
+The refusal is not symmetric when the page can say whose it is: `pageWitnessSettlesConflictForCandidate` lets a candidate through when the directory pairs the page's own stated email with the candidate's netid and with no conflicting holder's, so a holder that reached the page first cannot lock its owner out (#5733).
+It still refuses when the page names both, only the holder, or nobody, and the writer only adds, so the stale holder keeps its link until its own evidence or a refusal removes it.
 Measured on Development on 2026-11-11: 5 pages were shared, 2 by twins with no netid conflict and 3 by two directory-distinct netids.
 
 #### A page the directory gives to another netid speaks for nobody else (#5693)
@@ -1780,6 +1782,22 @@ Three readers use it on every resolve, so nothing is locked:
 A researcher whose stored netid the directory does not hold is never contradicted, because that is usually the person's own email alias stamped as a netid.
 A page that has stated several addresses keeps every netid the directory pairs with them, so an owner who changed address is still the owner, but a page whose addresses the directory does not all pair with one shared netid, such as a roster listing, decides nothing.
 Measured on Development on 2026-11-11 before that rule, 22 of 24 screened lead observations were that alias shape.
+
+#### A profile page's identity does not wait for its title (#5701)
+
+`extractOfficialProfilePersonIdentity` reads a page's person with or without a stated appointment, and the queued and visible-profile modes of `official-profile-pi-backfill` read identity through it, so the #5669 email-only identity now applies in both modes rather than in `visible-profile-bio-backfill` alone.
+A page with no admissible title emits only the subject's own address under the person's key: no name, title, profile link, image, department or ORCID, and no `inferredPiUserId` or `inferredPiUserKey`, so it can back an email but cannot rename, mint, link or attribute a lead.
+It needs the address to be the page subject's own (`subjectDeclaredProfileEmail`) and a display name that reads as a person rather than a lab or unit (`namesAResearchGroupRatherThanAPerson`, `nameDenotesOrganization`), because the title used to be all that kept a group page out.
+Every identity guard runs unchanged on that page: the email held by another netid (#5606), the directory netid contradiction, and the page's own netid slug (#4994).
+`extractOfficialProfileIdentity` still requires a stated title, so description, department and research-home backfill are unchanged.
+
+The lane reads page text through `extractElementTextWithBlockSeparators` at every text-joining site, because cheerio's `.text()` joins adjacent fields with nothing between them.
+That glued a department word onto the address after it, which passed the person check and became a phantom netid key, and it let a title absorb the department, the office address and a `WebsiteOffice:` label.
+A page-wide address match starts only after a non-address character, and the title the lane emits is the first stated title that `sanitizePersonTitle` accepts, so a stated title that carries a contact block still marks the page as a profile but is never emitted.
+
+Measured by replaying the 3,661 saved backfill pages offline on 2026-11-11 against `beta`: no page lost an identity field; 40 more pages emit identity (31 email-only titleless pages, 9 pages whose address was glued before), 42 more `email` and 10 more `inferredPiUserId` observations, and one glued phantom key is gone.
+Of the titles, 25 changed (contact blocks, `Title:` labels and section labels stripped), 14 are no longer emitted (11 navigation menus, 1 bio sentence, 1 glued address, 1 multi-appointment title longer than `MAX_PERSON_TITLE_LENGTH`), and none was newly found.
+A seeded sample of 10 newly emitted identities named the page's own person in all 10.
 
 #### Press copy and publication lists are not a description (#4446)
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   identityWitnessesConflict,
   pageIdentityWitnessesPerson,
+  pageWitnessSettlesConflictForCandidate,
 } from '../officialProfileLinkIdentity';
 
 describe('identityWitnessesConflict (#5605)', () => {
@@ -89,5 +90,32 @@ describe('pageIdentityWitnessesPerson (#5605)', () => {
 
   it('refuses when the researcher carries no witness to compare against', () => {
     expect(pageIdentityWitnessesPerson({ email: 'casey.synthetic@yale.edu' }, {})).toBe(false);
+  });
+});
+
+describe('pageWitnessSettlesConflictForCandidate (#5733)', () => {
+  const page = 'https://medicine.yale.edu/profile/casey-synthetic/';
+  const owners = (netids: string[]) => ({
+    byPage: new Map([['medicine.yale.edu/profile/casey-synthetic', new Set(netids)]]),
+    directoryNetids: new Set(netids),
+  });
+  const candidate = { _id: 'a', identifiers: { netid: 'zzc5733' } };
+  const holder = { _id: 'b', identifiers: { netid: 'zzd5733' } };
+
+  it('lets the candidate through when the page names only the candidate', () => {
+    expect(
+      pageWitnessSettlesConflictForCandidate(owners(['zzc5733']), page, candidate, [holder]),
+    ).toBe(true);
+  });
+
+  it('settles nothing when the page names both, the holder alone, or nobody', () => {
+    for (const named of [['zzc5733', 'zzd5733'], ['zzd5733'], []]) {
+      expect(pageWitnessSettlesConflictForCandidate(owners(named), page, candidate, [holder])).toBe(
+        false,
+      );
+    }
+    expect(pageWitnessSettlesConflictForCandidate(undefined, page, candidate, [holder])).toBe(
+      false,
+    );
   });
 });

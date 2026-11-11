@@ -12,6 +12,11 @@ import {
 import { cachedCardFor } from './cardSynthesisDerivation';
 import { withoutModelCalls } from '../utils/modelClient';
 import {
+  decideResearcherFieldWrite,
+  researcherFieldWriter,
+  type ResearcherWriterField,
+} from '../utils/researcherFieldWriters';
+import {
   planResearcherRefusedStoredValueClear,
   researcherHasLiveRefusals,
   researcherRefusesValue,
@@ -222,6 +227,7 @@ import {
 } from '../services/directoryRemovalMintGuard';
 import {
   liveResearchEntityNamedByKeyObservations,
+  reslugAdoptedKeyNamesOnlyArchivedRows,
   researchEntityMintSlugNamesARemovedResearcher,
 } from './renamedResearchEntityAdoption';
 import {
@@ -7665,6 +7671,26 @@ async function withdrawScreenedOfficialProfileLinks(
   return result.modifiedCount > 0 ? 1 : 0;
 }
 
+async function releaseFieldWritersThatNoLongerReach(
+  researcher: any,
+  materializingKey: string,
+): Promise<void> {
+  const writers: Map<string, { userKey?: string }> | undefined = researcher.profileFieldWriters;
+  if (!writers?.size) return;
+  const siblingKeys = new Set(
+    [...writers.values()]
+      .map((writer) => writer?.userKey)
+      .filter((key): key is string => Boolean(key) && key !== materializingKey),
+  );
+  for (const key of siblingKeys) {
+    const reached = await researcherReachedByUserIdentity(key);
+    if (reached && String(reached.researcherId) === String(researcher._id)) continue;
+    for (const [field, writer] of [...writers.entries()]) {
+      if (writer?.userKey === key) writers.delete(field);
+    }
+  }
+}
+
 async function materializeUserIdentityToResearcher(
   identifier: { entityId?: string; entityKey?: string },
   obs: any[],
@@ -7825,22 +7851,50 @@ async function materializeUserIdentityToResearcher(
   // here could only swap one accepted spelling of the same person for another.
   const identityJoinedWithoutANameResolver =
     identityJoinedOnEmailAlone || identityJoinedOnOfficialProfileUrlAlone;
+  const writerKey = identifier.entityKey || String(identifier.entityId ?? '');
+  if (writerKey) await releaseFieldWritersThatNoLongerReach(researcher, writerKey);
+  const resolvedConfidence = (...fields: string[]): unknown =>
+    fields.map((field) => resolved[field]?.confidence).find((value) => value !== undefined);
+  const settleFieldWriter = (
+    field: ResearcherWriterField,
+    value: string | undefined,
+    confidence: unknown,
+  ): boolean => {
+    const decision = decideResearcherFieldWrite(
+      researcher.profileFieldWriters,
+      field,
+      researcherFieldWriter(writerKey, identityJoin, confidence),
+      Boolean(value),
+    );
+    if (!decision.write) {
+      if (decision.releaseWriter) researcher.profileFieldWriters.delete(field);
+      return false;
+    }
+    if (decision.writerChanged) {
+      if (!researcher.profileFieldWriters) researcher.profileFieldWriters = new Map();
+      researcher.profileFieldWriters.set(field, decision.writer);
+    }
+    return true;
+  };
+  const nameValue = !identityJoinedWithoutANameResolver && displayName ? displayName : undefined;
   if (
-    !identityJoinedWithoutANameResolver &&
-    displayName &&
-    researcher.displayName !== displayName
+    (!writerKey ||
+      settleFieldWriter('displayName', nameValue, resolvedConfidence('displayName', 'lname'))) &&
+    nameValue &&
+    researcher.displayName !== nameValue
   ) {
-    researcher.displayName = displayName;
+    researcher.displayName = nameValue;
     fieldsWritten += 1;
   }
   researcher.profile = researcher.profile || {};
-  for (const [key, value] of [
-    ['title', title],
-    ['primaryDepartment', primaryDepartment],
-    ['imageUrl', imageUrl],
-    ['websiteUrl', websiteUrl],
+  for (const [key, value, confidence] of [
+    ['title', title, resolvedConfidence('title')],
+    ['primaryDepartment', primaryDepartment, resolvedConfidence('primaryDepartment')],
+    ['imageUrl', imageUrl, resolvedConfidence('imageUrl')],
+    ['websiteUrl', websiteUrl, resolvedConfidence('websiteUrl', 'website')],
   ] as const) {
     const bounded = normalizedResearcherProfileText(key, value);
+    if (writerKey && !settleFieldWriter(key, bounded, confidence)) continue;
     if (bounded && researcher.profile[key] !== bounded) {
       researcher.profile[key] = bounded;
       fieldsWritten += 1;
@@ -7930,7 +7984,9 @@ async function materializeUserIdentityToResearcher(
   const officialLink =
     composedOfficialLink &&
     !refusesProfileLink(composedOfficialLink) &&
-    !(await officialProfileLinkHeldByConflictingIdentity(composedOfficialLink.url, researcher))
+    !(await officialProfileLinkHeldByConflictingIdentity(composedOfficialLink.url, researcher, {
+      readScope: materializationReadScopeFilter(),
+    }))
       ? composedOfficialLink
       : undefined;
   if (officialLink && !existingLinkKinds.has('YALE_OFFICIAL')) {
@@ -12175,6 +12231,21 @@ async function materializeEntityUnderRemovalGuard(
         created: false,
         resolved,
         skipped: 'missing-required-fields',
+      };
+    }
+    if (
+      isResearchEntityObservationType(entityType) &&
+      (await reslugAdoptedKeyNamesOnlyArchivedRows(identifier.entityKey))
+    ) {
+      return {
+        entityType,
+        entityId: undefined,
+        entityKey: identifier.entityKey,
+        fieldsWritten: 0,
+        conflicts: 0,
+        created: false,
+        resolved,
+        skipped: 'reslug-adopted-key-names-only-archived-rows',
       };
     }
     if (

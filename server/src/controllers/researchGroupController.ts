@@ -165,6 +165,7 @@ export const searchResearchGroups = async (request: Request, response: Response)
     browseQuality?: unknown;
     qualityFilters?: unknown;
     correctSpelling?: boolean;
+    rewriteAcronym?: boolean;
     resolveFilterValues?: boolean;
   };
 
@@ -243,6 +244,7 @@ export const searchResearchGroups = async (request: Request, response: Response)
     // per-client ceiling.
     embeddingSpendKey: getPeerIpKey(request),
     correctSpelling: body.correctSpelling !== false,
+    rewriteAcronym: body.rewriteAcronym !== false,
     resolveFilterValues: body.resolveFilterValues !== false,
     rerankLiveMissClient: {
       ipKey: getPeerIpKey(request),

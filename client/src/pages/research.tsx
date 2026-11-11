@@ -55,7 +55,10 @@ import {
   ResearchEntitySearchResponse,
   StudentVisibilityTier,
 } from '../types/researchEntity';
-import type { ResearchSearchQueryCorrection } from '../types/researchGroup';
+import type {
+  ResearchSearchAcronymRewrite,
+  ResearchSearchQueryCorrection,
+} from '../types/researchGroup';
 import { getUniqueDepartmentLabels } from '../utils/departmentNames';
 import { isKnownResearchEntityType } from '../utils/researchEntityCopy';
 import { relaxResearchQuery } from '../utils/researchZeroResultRecovery';
@@ -170,6 +173,7 @@ interface ResearchEntitySearchPage {
   depthLimited?: boolean;
   degraded?: boolean;
   queryCorrection?: ResearchSearchQueryCorrection;
+  acronymRewrite?: ResearchSearchAcronymRewrite;
   appliedFilters?: ResearchEntitySearchResponse['appliedFilters'];
   moreTopicResults?: ResearchEntity[];
 }
@@ -249,6 +253,7 @@ interface ResearchPageSnapshot {
   searchDegraded: boolean;
   defaultSearchDegraded: boolean;
   queryCorrection: ResearchSearchQueryCorrection | null;
+  acronymRewrite: ResearchSearchAcronymRewrite | null;
 }
 
 interface ResearchEntitySearchOptions {
@@ -262,6 +267,7 @@ interface ResearchEntitySearchOptions {
   // telemetry does not report it as a query the student typed.
   suggestionProbe?: boolean;
   exactSpelling?: boolean;
+  literalAcronym?: boolean;
   exactFilterValues?: boolean;
 }
 
@@ -299,6 +305,7 @@ const searchResearchEntities = async (
       ...(options.sortBy ? { sortBy: options.sortBy, sortOrder: options.sortOrder ?? 'desc' } : {}),
       ...(options.suggestionProbe ? { suggestionProbe: true } : {}),
       ...(options.exactSpelling ? { correctSpelling: false } : {}),
+      ...(options.literalAcronym ? { rewriteAcronym: false } : {}),
       ...(options.exactFilterValues ? { resolveFilterValues: false } : {}),
     },
     { signal },
@@ -313,6 +320,7 @@ const searchResearchEntities = async (
     depthLimited: normalized.depthLimited === true,
     degraded: normalized.degraded === true,
     queryCorrection: normalized.queryCorrection,
+    acronymRewrite: normalized.acronymRewrite,
     appliedFilters: normalized.appliedFilters,
     moreTopicResults: normalized.moreTopicResults,
   };
@@ -603,11 +611,15 @@ const Research = () => {
   const [queryCorrection, setQueryCorrection] = useState<ResearchSearchQueryCorrection | null>(
     () => restoredSnapshot?.queryCorrection ?? null,
   );
+  const [acronymRewrite, setAcronymRewrite] = useState<ResearchSearchAcronymRewrite | null>(
+    () => restoredSnapshot?.acronymRewrite ?? null,
+  );
   const [relaxedQuerySuggestion, setRelaxedQuerySuggestion] = useState<string | null>(null);
   const relaxProbeRequestIdRef = useRef(0);
   const relaxProbeAbortRef = useRef<AbortController | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const resultsSectionRef = useRef<HTMLElement | null>(null);
+  const resultSummaryRef = useRef<HTMLParagraphElement | null>(null);
   const scrollToResults = () => {
     // Deferred past the filter sheet's own focus return to its trigger, which cancels a smooth scroll started before it.
     window.setTimeout(() =>
@@ -807,6 +819,7 @@ const Research = () => {
       preserveResults?: boolean;
       preserveDraftQuery?: boolean;
       exactSpelling?: boolean;
+      literalAcronym?: boolean;
     } = {},
   ) => {
     defaultSearchAbortRef.current?.abort();
@@ -832,6 +845,7 @@ const Research = () => {
       includeSuppressed: isAdmin && trustTierFilters.includes('suppressed'),
       sort: currentSortRequestOptions(),
       exactSpelling: options.exactSpelling === true,
+      literalAcronym: options.literalAcronym === true,
     });
     if (activeSearchKeyRef.current === requestKey) return;
     activeSearchKeyRef.current = requestKey;
@@ -861,6 +875,7 @@ const Research = () => {
         includeSuppressed: isAdmin && trustTierFilters.includes('suppressed'),
         ...currentSortRequestOptions(),
         ...(options.exactSpelling ? { exactSpelling: true } : {}),
+        ...(options.literalAcronym ? { literalAcronym: true } : {}),
         ...(options.departmentSearch ? { exactFilterValues: true } : {}),
       },
     });
@@ -876,6 +891,7 @@ const Research = () => {
     setHasFacetError(false);
     setSearchDegraded(false);
     setQueryCorrection(null);
+    setAcronymRewrite(null);
     if (!options.preserveResults) {
       setGroupedResults(emptyGroupedResults(resultQueryLabel));
     }
@@ -910,6 +926,7 @@ const Research = () => {
           includeSuppressed: isAdmin && trustTierFilters.includes('suppressed'),
           ...currentSortRequestOptions(),
           ...(options.exactSpelling ? { exactSpelling: true } : {}),
+          ...(options.literalAcronym ? { literalAcronym: true } : {}),
           ...(options.departmentSearch ? { exactFilterValues: true } : {}),
         },
       );
@@ -977,6 +994,7 @@ const Research = () => {
       setHasFacetError(false);
       setSearchDegraded(researchEntitiesPage.degraded === true);
       setQueryCorrection(researchEntitiesPage.queryCorrection ?? null);
+      setAcronymRewrite(researchEntitiesPage.acronymRewrite ?? null);
       setSearchResultSetId(requestId);
       setSearchResultResearchEntities(researchEntities);
       setMoreTopicResults(
@@ -1147,6 +1165,10 @@ const Research = () => {
     activeSearchRequest?.submittedText === text &&
     activeSearchRequest.options?.exactSpelling === true;
 
+  const activeSearchKeepsLiteralAcronym = (text: string): boolean =>
+    activeSearchRequest?.submittedText === text &&
+    activeSearchRequest.options?.literalAcronym === true;
+
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (
@@ -1195,6 +1217,7 @@ const Research = () => {
     setHasFacetError(false);
     setSearchDegraded(false);
     setQueryCorrection(null);
+    setAcronymRewrite(null);
     setSearchLoading(false);
     setIsLoadingMore(false);
     writeResearchSearchParams(
@@ -1482,6 +1505,7 @@ const Research = () => {
       searchDegraded,
       defaultSearchDegraded,
       queryCorrection,
+      acronymRewrite,
     };
   }, [
     hasSubmittedSearch,
@@ -1521,6 +1545,7 @@ const Research = () => {
     searchDegraded,
     defaultSearchDegraded,
     queryCorrection,
+    acronymRewrite,
   ]);
 
   useEffect(() => {
@@ -1742,6 +1767,7 @@ const Research = () => {
       filterChanges,
       preserveResults: true,
       exactSpelling: activeSearchKeepsTypedSpelling(textQuery),
+      literalAcronym: activeSearchKeepsLiteralAcronym(textQuery),
     });
   };
   const clearSearchText = () => {
@@ -1783,6 +1809,7 @@ const Research = () => {
       preserveDraftQuery: true,
       syncUrl: false,
       exactSpelling: activeSearchRequest.options?.exactSpelling === true,
+      literalAcronym: activeSearchRequest.options?.literalAcronym === true,
     });
   };
   const reloadDefaultResearchHomes = () => {
@@ -1920,13 +1947,27 @@ const Research = () => {
     });
   };
 
+  const focusResultSummary = () => resultSummaryRef.current?.focus({ preventScroll: true });
+
   const searchOriginalSpelling = () => {
     if (!queryCorrection) return;
+    focusResultSummary();
     const filters = studentSearchFilters();
     void runSearch(queryCorrection.originalQuery, {
       filters,
       hasFilterSelections: hasStructuredFilters(filters),
       exactSpelling: true,
+    });
+  };
+
+  const searchLiteralAcronym = () => {
+    if (!acronymRewrite) return;
+    focusResultSummary();
+    const filters = studentSearchFilters();
+    void runSearch(acronymRewrite.originalQuery, {
+      filters,
+      hasFilterSelections: hasStructuredFilters(filters),
+      literalAcronym: true,
     });
   };
 
@@ -2289,14 +2330,18 @@ const Research = () => {
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
                     <p
+                      ref={resultSummaryRef}
+                      tabIndex={-1}
                       role="status"
                       aria-live="polite"
                       aria-atomic="true"
-                      className="text-sm font-medium text-ink-soft"
+                      className="text-sm font-medium text-ink-soft focus:outline-none"
                     >
                       {resultSummary(
                         activeResults,
-                        queryCorrection?.correctedQuery ?? submittedQuery,
+                        queryCorrection?.correctedQuery ??
+                          acronymRewrite?.rewrittenQuery ??
+                          submittedQuery,
                         searchLoading,
                         departmentSearch?.label,
                         searchTotal,
@@ -2307,6 +2352,14 @@ const Research = () => {
                       <SearchSpellingNotice
                         originalQuery={queryCorrection.originalQuery}
                         onSearchOriginal={searchOriginalSpelling}
+                      />
+                    )}
+                    {acronymRewrite && !queryCorrection && !searchLoading && (
+                      <SearchSpellingNotice
+                        originalQuery={acronymRewrite.originalQuery}
+                        correctedQuery={acronymRewrite.rewrittenQuery}
+                        searchedLabel="Searching for"
+                        onSearchOriginal={searchLiteralAcronym}
                       />
                     )}
                   </div>

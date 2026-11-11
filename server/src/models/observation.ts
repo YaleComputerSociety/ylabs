@@ -117,6 +117,10 @@ const observationSchema = new mongoose.Schema(
       type: [String],
       required: false,
     },
+    reslugAdoption: {
+      type: Boolean,
+      required: false,
+    },
     rollback: {
       rolledBackAt: { type: Date, required: false },
       reason: { type: String, maxlength: 500, required: false },
