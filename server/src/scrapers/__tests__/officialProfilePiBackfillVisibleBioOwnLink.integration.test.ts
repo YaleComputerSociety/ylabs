@@ -7,6 +7,7 @@ import { ResearchEntity } from '../../models/researchEntity';
 import { RoleAssignment } from '../../models/roleAssignment';
 import { resetDirectoryNetidsByAddressCache } from '../directoryContradictedProfileNetid';
 import {
+  extractOfficialProfilePersonIdentity,
   OfficialProfilePiBackfillScraper,
   selectVisibleProfileBioTargets,
 } from '../sources/officialProfilePiBackfillScraper';
@@ -263,5 +264,37 @@ describe('visible profile bio backfill selects by the person own official link (
     expect(secondTargets).toEqual(firstTargets);
     expect(firstEmitted.length).toBeGreaterThan(0);
     expect(secondEmitted).toEqual(firstEmitted);
+  });
+
+  describe('the directory stand-in for the name check', () => {
+    const DOTTED_PLACEHOLDER_NETID = 'averylee.synthetic5708';
+    const compoundTarget = (netid: string) => ({
+      _id: 'researcher-5708',
+      netid,
+      email: COMPOUND_EMAIL,
+      fname: 'Avery',
+      lname: 'Lee Synthetic',
+      name: 'Avery Lee Synthetic',
+      displayName: 'Avery Lee Synthetic',
+      slug: 'avery-lee-synthetic',
+    });
+    const readWithDirectoryPairing = (netid: string) =>
+      extractOfficialProfilePersonIdentity(
+        personPage(COMPOUND_PAGE_URL, 'Averylee Synthetic', COMPOUND_EMAIL),
+        COMPOUND_PAGE_URL,
+        compoundTarget(netid),
+        {
+          requireEmail: false,
+          directoryNetidsByAddress: new Map([[COMPOUND_EMAIL, new Set([netid])]]),
+        },
+      );
+
+    it('accepts a disagreeing name when the directory pairs the address with a real netid', () => {
+      expect(readWithDirectoryPairing(OWN_NETID)).toMatchObject({ email: COMPOUND_EMAIL });
+    });
+
+    it('refuses a disagreeing name when the paired netid is a dotted placeholder', () => {
+      expect(readWithDirectoryPairing(DOTTED_PLACEHOLDER_NETID)).toBeNull();
+    });
   });
 });

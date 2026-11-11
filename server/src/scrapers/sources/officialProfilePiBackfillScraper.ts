@@ -15,6 +15,7 @@ import { publicStudentVisibilityTiers } from '../../models/studentVisibility';
 import { normalizeOrcid } from '../../utils/orcid';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { researcherEmail, researcherNetid } from '../../utils/researcherIdentity';
+import { looksLikeYaleNetid } from '../../utils/yaleNetid';
 import { observedPersonNameAgreesWith } from '../utils/personNameAgreement';
 import {
   directoryContradictsNetidForAddress,
@@ -3103,6 +3104,8 @@ function extractOrcid($: cheerio.CheerioAPI): string | undefined {
  * person more strongly than display-name tokens do, so a compound given name spelled as one word
  * on the page and two on the record no longer refuses the person's own page (#5708). Only a
  * directory pairing counts: a stored address can itself be the contaminated value under test.
+ * The person's netid must have a netid's shape, so a dotted address local part stored as a
+ * placeholder netid never stands in for the name check.
  */
 function directoryPairsAddressWithEntityNetid(
   email: string,
@@ -3110,7 +3113,7 @@ function directoryPairsAddressWithEntityNetid(
   directory: DirectoryNetidsByAddress | undefined,
 ): boolean {
   const netid = textValue(entity.netid).toLowerCase();
-  if (!directory || !netid || !email) return false;
+  if (!directory || !looksLikeYaleNetid(netid) || !email) return false;
   const owners = directory.get(email.toLowerCase());
   return Boolean(owners && owners.size === 1 && owners.has(netid));
 }
