@@ -55,6 +55,7 @@ describe('researchEntityMeetsStudentReadyDefinition (#1802 canonical definition)
         'missing_source_route',
         'missing_source_url',
         'source_backed_description',
+        'thin_card_description',
       ].sort(),
     );
     for (const soft of [
