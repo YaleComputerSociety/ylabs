@@ -26,8 +26,8 @@ describe('identityWitnessesConflict (#5605)', () => {
   it('does not read differing emails as a conflict, because one person can have several', () => {
     expect(
       identityWitnessesConflict(
-        { _id: 'a', identifiers: { email: 'one.synthetic@yale.edu' } },
-        { _id: 'b', identifiers: { email: 'two.synthetic@yale.edu' } },
+        { _id: 'a', identifiers: { email: 'one.synthetic5605@yale.edu' } },
+        { _id: 'b', identifiers: { email: 'two.synthetic5605@yale.edu' } },
       ),
     ).toBe(false);
   });
@@ -71,7 +71,9 @@ describe('pageIdentityWitnessesPerson (#5605)', () => {
   });
 
   it('refuses a page that states someone else, or nothing at all', () => {
-    expect(pageIdentityWitnessesPerson({ email: 'other.synthetic@yale.edu' }, person)).toBe(false);
+    expect(pageIdentityWitnessesPerson({ email: 'other.synthetic5605@yale.edu' }, person)).toBe(
+      false,
+    );
     expect(pageIdentityWitnessesPerson({}, person)).toBe(false);
     expect(pageIdentityWitnessesPerson(undefined, person)).toBe(false);
   });
