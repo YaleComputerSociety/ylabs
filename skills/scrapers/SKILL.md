@@ -1828,6 +1828,7 @@ The same block-text fix reached the other lanes that join page text and then mat
 
 A fixed lane does not clear what it read before: `user` `email` and `title` are value-keyed, so the right value lands beside the glued one, and nothing re-emits a key minted from a glued address.
 `observations:retire-glued-profile-text` (dry run by default) selects live `official-profile-pi-backfill` observations by predicate: an address that is a run of letters fused onto an address the same subject or page states, a title that carries an address, a contact label or a lower-to-upper word join, and every observation on a subject key minted from such an address, with the `inferredPiUserKey` that names it.
+An apply must name what it retires with `--kinds` (`email`, `phantom`, `title`), so a bare apply cannot retire titles by accident; a dry run counts every kind, and `--detail-output <tmp path>.json` writes the titles it would retire to a mode-0600 file for an independent check before the title kind is applied.
 It re-reads each cited page once, sequentially, through `officialProfilePageStatedFields`, and retires an observation only when the page now yields a different value or none; a failed read retires nothing on that page, and `--skip-host` defers a host-locked page without requesting it.
 It writes no researcher field, so a stored title re-derives at the next materialize.
 

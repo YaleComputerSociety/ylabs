@@ -64,9 +64,20 @@ export interface GluedProfileTextCounts {
   distinctObservationsToRetire: number;
 }
 
+export const gluedProfileTextKinds = ['email', 'phantom', 'title'] as const;
+export type GluedProfileTextKind = (typeof gluedProfileTextKinds)[number];
+
+export interface GluedTitleRetirement {
+  observationId: string;
+  storedValue: string;
+  sourceUrl: string;
+  pageTitle: string;
+}
+
 export interface GluedProfileTextPlan {
   observationIdsToRetire: string[];
   counts: GluedProfileTextCounts;
+  titleRetirements: GluedTitleRetirement[];
 }
 
 const MIN_GLUED_PREFIX_LENGTH = 3;
@@ -227,9 +238,12 @@ const emptyCounts = (): GluedProfileTextCounts => ({
 export function planGluedProfileTextRetirement(
   targets: GluedPageTarget[],
   reads: ReadonlyMap<string, PageRead>,
+  kinds: readonly GluedProfileTextKind[] = gluedProfileTextKinds,
 ): GluedProfileTextPlan {
   const counts = emptyCounts();
   const retire = new Set<string>();
+  const titleRetirements: GluedTitleRetirement[] = [];
+  const retiring = new Set<GluedProfileTextKind>(kinds);
   for (const page of targets) {
     const phantomObservations = page.phantoms.reduce(
       (sum, phantom) =>
@@ -262,7 +276,7 @@ export function planGluedProfileTextRetirement(
       else {
         counts.emailRetired += 1;
         if (!pageEmail) counts.emailRetiredPageYieldsNone += 1;
-        retire.add(row.id);
+        if (retiring.has('email')) retire.add(row.id);
       }
     }
     for (const row of page.titles) {
@@ -270,7 +284,13 @@ export function planGluedProfileTextRetirement(
       else {
         counts.titleRetired += 1;
         if (!read.reading.title) counts.titleRetiredPageYieldsNone += 1;
-        retire.add(row.id);
+        titleRetirements.push({
+          observationId: row.id,
+          storedValue: typeof row.value === 'string' ? row.value : String(row.value ?? ''),
+          sourceUrl: page.sourceUrl,
+          pageTitle: read.reading.title ?? '',
+        });
+        if (retiring.has('title')) retire.add(row.id);
       }
     }
     for (const phantom of page.phantoms) {
@@ -280,11 +300,11 @@ export function planGluedProfileTextRetirement(
         continue;
       }
       counts.phantomSubjectObservationsRetired += ids.length;
-      for (const id of ids) retire.add(id);
+      if (retiring.has('phantom')) for (const id of ids) retire.add(id);
     }
   }
   counts.distinctObservationsToRetire = retire.size;
-  return { observationIdsToRetire: [...retire].sort(), counts };
+  return { observationIdsToRetire: [...retire].sort(), counts, titleRetirements };
 }
 
 export type FetchProfileHtml = (url: string) => Promise<string>;

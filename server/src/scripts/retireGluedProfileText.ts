@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
@@ -11,9 +12,10 @@ import {
 } from '../scrapers/sources/officialProfilePiBackfillScraper';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   GLUED_PROFILE_TEXT_SOURCE_NAME,
+  gluedProfileTextKinds,
   hostOf,
   hostTally,
   planGluedProfileTextRetirement,
@@ -21,6 +23,8 @@ import {
   selectGluedProfileTextTargets,
   type FetchProfileHtml,
   type GluedProfileTextCounts,
+  type GluedProfileTextKind,
+  type GluedTitleRetirement,
   type StoredProfileObservation,
 } from './retireGluedProfileTextCore';
 
@@ -38,7 +42,12 @@ export interface RetireGluedProfileTextOptions {
   dryRun: boolean;
   confirmed: boolean;
   skipHosts: string[];
+  kinds?: GluedProfileTextKind[];
+  detailOutput?: string;
 }
+
+const isGluedProfileTextKind = (value: string): value is GluedProfileTextKind =>
+  (gluedProfileTextKinds as readonly string[]).includes(value);
 
 export function parseRetireGluedProfileTextArgs(argv: string[]): RetireGluedProfileTextOptions {
   const options: RetireGluedProfileTextOptions = {
@@ -58,7 +67,28 @@ export function parseRetireGluedProfileTextArgs(argv: string[]): RetireGluedProf
       if (!value.trim()) throw new Error('--skip-host needs a host name');
       options.skipHosts.push(value.trim().toLowerCase());
       i = next;
+    } else if (arg === '--kinds' || arg.startsWith('--kinds=')) {
+      const [value, next] = valueOf(arg, '--kinds', i);
+      const kinds = value
+        .split(',')
+        .map((kind) => kind.trim())
+        .filter(Boolean);
+      const unknown = kinds.filter((kind) => !isGluedProfileTextKind(kind));
+      if (kinds.length === 0 || unknown.length > 0) {
+        throw new Error(`--kinds takes a comma list of ${gluedProfileTextKinds.join(', ')}`);
+      }
+      options.kinds = [...new Set(kinds as GluedProfileTextKind[])];
+      i = next;
+    } else if (arg === '--detail-output' || arg.startsWith('--detail-output=')) {
+      const [value, next] = valueOf(arg, '--detail-output', i);
+      options.detailOutput = resolveSafeJsonReportOutputPath(value, '--detail-output');
+      i = next;
     } else throw new Error(`Unknown ${SCRIPT_NAME} argument: ${arg}`);
+  }
+  if (!options.dryRun && !options.kinds) {
+    throw new Error(
+      `${SCRIPT_NAME} --apply requires --kinds, so an apply names exactly what it retires`,
+    );
   }
   return options;
 }
@@ -129,6 +159,8 @@ async function loadAddressMaps(input: { subjectKeys: string[]; pageUrls: string[
 export interface GluedProfileTextRunResult {
   mode: 'dry-run' | 'apply';
   skipHosts: string[];
+  kinds: GluedProfileTextKind[];
+  titleRetirements: GluedTitleRetirement[];
   counts: GluedProfileTextCounts;
   retiredObservations: number;
   candidateHosts: {
@@ -141,6 +173,7 @@ export interface GluedProfileTextRunResult {
 export async function runGluedProfileTextRetirement(input: {
   dryRun: boolean;
   skipHosts: string[];
+  kinds?: readonly GluedProfileTextKind[];
   pauseMs: number;
   fetchHtml: FetchProfileHtml;
   sleep?: (ms: number) => Promise<void>;
@@ -168,7 +201,7 @@ export async function runGluedProfileTextRetirement(input: {
     onFailure: (url, error) =>
       input.log?.(`page read failed on ${hostOf(url)}: ${sanitizeLogValue(error)}`),
   });
-  const plan = planGluedProfileTextRetirement(targets, reads);
+  const plan = planGluedProfileTextRetirement(targets, reads, input.kinds);
 
   let retiredObservations = 0;
   if (!input.dryRun && plan.observationIdsToRetire.length > 0) {
@@ -189,6 +222,8 @@ export async function runGluedProfileTextRetirement(input: {
   return {
     mode: input.dryRun ? 'dry-run' : 'apply',
     skipHosts: input.skipHosts,
+    kinds: [...(input.kinds ?? gluedProfileTextKinds)],
+    titleRetirements: plan.titleRetirements,
     counts: plan.counts,
     retiredObservations,
     candidateHosts: {
@@ -217,17 +252,22 @@ async function main(): Promise<void> {
   }
 
   await initializeConnections();
-  const report = {
-    script: SCRIPT_NAME,
-    ...(await runGluedProfileTextRetirement({
-      dryRun: options.dryRun,
-      skipHosts: options.skipHosts,
-      pauseMs: PAUSE_BETWEEN_PAGES_MS,
-      fetchHtml: (url) => fetchOfficialProfileHtml(url, false, GLUED_PROFILE_TEXT_SOURCE_NAME),
-      log: (message) => console.error(message),
-    })),
-  };
-  console.log(JSON.stringify(report, null, 2));
+  const { titleRetirements, ...result } = await runGluedProfileTextRetirement({
+    dryRun: options.dryRun,
+    skipHosts: options.skipHosts,
+    kinds: options.kinds,
+    pauseMs: PAUSE_BETWEEN_PAGES_MS,
+    fetchHtml: (url) => fetchOfficialProfileHtml(url, false, GLUED_PROFILE_TEXT_SOURCE_NAME),
+    log: (message) => console.error(message),
+  });
+  if (options.detailOutput) {
+    fs.mkdirSync(path.dirname(options.detailOutput), { recursive: true });
+    fs.writeFileSync(options.detailOutput, `${JSON.stringify(titleRetirements, null, 2)}\n`, {
+      mode: 0o600,
+    });
+    fs.chmodSync(options.detailOutput, 0o600);
+  }
+  console.log(JSON.stringify({ script: SCRIPT_NAME, ...result }, null, 2));
   await mongoose.disconnect();
 }
 
