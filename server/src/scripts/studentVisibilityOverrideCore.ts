@@ -23,6 +23,13 @@ export const MAX_OVERRIDE_REASON_LENGTH = 320;
 
 const REASON_CODE_RE = /^([a-z][a-z0-9_]{2,63}):\s+\S/;
 const NETID_RE = /^[a-z0-9]{2,12}$/;
+const AGENT_ACTOR_RE = /^agent:[a-z0-9][a-z0-9-]{1,40}$/;
+
+// An agent acting for the owner names itself rather than borrowing a person's netid, so the
+// audit trail never attributes an automated write to someone who did not make it.
+export function isAuditableOverrideActor(actor: string): boolean {
+  return NETID_RE.test(actor) || AGENT_ACTOR_RE.test(actor);
+}
 const OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 export type OverrideAction = { kind: 'set'; tier: StudentVisibilityTier } | { kind: 'clear' };
@@ -118,7 +125,11 @@ export function parseStudentVisibilityOverrideArgs(
     throw new Error(`--tier must be one of ${studentVisibilityTiers.join(', ')}`);
   }
   const actorNetid = actor.toLowerCase();
-  if (!NETID_RE.test(actorNetid)) throw new Error('--actor must be the operator netid');
+  if (!isAuditableOverrideActor(actorNetid)) {
+    throw new Error(
+      '--actor must be the operator netid or an agent identifier such as agent:<name>',
+    );
+  }
   if (apply && !confirmed) {
     throw new Error(`--apply requires ${STUDENT_VISIBILITY_OVERRIDE_CONFIRM_FLAG}`);
   }

@@ -48,6 +48,23 @@ describe('parseStudentVisibilityOverrideArgs', () => {
   });
 });
 
+describe('the --actor form', () => {
+  it('accepts a netid or an agent identifier and refuses anything else', () => {
+    const parse = (actor: string) =>
+      parseStudentVisibilityOverrideArgs([
+        '--slug=center-fixture',
+        `--reason=${REASON}`,
+        '--tier=suppressed',
+        `--actor=${actor}`,
+      ]).actorNetid;
+    expect(parse('fixtureop')).toBe('fixtureop');
+    expect(parse('agent:sim-people')).toBe('agent:sim-people');
+    expect(() => parse('agent:')).toThrow('--actor');
+    expect(() => parse('agent:Has Spaces')).toThrow('--actor');
+    expect(() => parse('someone@example.edu')).toThrow('--actor');
+  });
+});
+
 describe('normalizeOverrideReason', () => {
   it('requires a coded, comma-free reason', () => {
     expect(normalizeOverrideReason(`  ${REASON}  `)).toBe(REASON);
