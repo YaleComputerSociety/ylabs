@@ -273,16 +273,16 @@ export function extractProfile(html: string, faculty: RawYseFaculty): YseFaculty
   const name = normalizeName($('h1').first().text()) || faculty.name;
 
   const positionBlock = $('.profile__position').first();
-  const positionParts: string[] = [];
-  positionBlock.find('.semijoin').each((_i, span) => {
-    for (const part of cleanText($(span).text()).split(/\s*;\s*/)) {
-      if (part) positionParts.push(part);
-    }
-  });
-  const title =
-    (positionParts.length > 0 ? positionParts.join('; ') : cleanText(positionBlock.text())) ||
-    undefined;
-  const leadingTitle = positionParts[0] || title;
+  const spanTexts = positionBlock
+    .find('.semijoin')
+    .map((_i, span) => $(span).text())
+    .get();
+  const positionTexts = spanTexts.length > 0 ? spanTexts : [positionBlock.text()];
+  const positionParts = positionTexts
+    .flatMap((text) => cleanText(text).split(/\s*;\s*/))
+    .filter(Boolean);
+  const title = positionParts.join('; ') || undefined;
+  const leadingTitle = positionParts[0];
 
   let email: string | undefined;
   const contact = sectionByEyebrow($, 'Contact');

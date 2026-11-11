@@ -659,4 +659,30 @@ describe('the YSE position block (#5578)', () => {
       );
     });
   });
+
+  describe('when the page renders the positions as plain text without spans', () => {
+    const plainHtml = `
+      <html><body><main><section class="profile">
+        <h1>Jordan Rivers</h1>
+        <div class="intro-text profile__position"><p>Professor of Wetland Ecology; Director of Fixture Forests</p></div>
+        <p><a href="mailto:jordan.rivers@yale.edu">jordan.rivers@yale.edu</a></p>
+      </section></main></body></html>
+    `;
+
+    it('emits only the first position', () => {
+      const titles = facultyToUserObservations(
+        extractProfile(plainHtml, faculty),
+      ).observations.filter((observation) => observation.field === 'title');
+
+      expect(titles.map((observation) => observation.value)).toEqual([
+        'Professor of Wetland Ecology',
+      ]);
+    });
+
+    it('still screens every position in the block', () => {
+      expect(extractProfile(plainHtml, faculty).title).toBe(
+        'Professor of Wetland Ecology; Director of Fixture Forests',
+      );
+    });
+  });
 });
