@@ -3,6 +3,7 @@
  */
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
 import { getCached, setCached } from '../snapshotCache';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 import { mapResearchGroupKindToEntityType } from '../../models/researchAccessTypes';
@@ -166,7 +167,7 @@ export function entityToObservations(entity: RawYseEntity, sourceUrl: string): O
 
 function pageText(html: string): string {
   const $ = cheerio.load(html);
-  return $('body').text().replace(/\s+/g, ' ').trim();
+  return extractElementTextWithBlockSeparators($('body')[0]);
 }
 
 export function yasspAccessObservations(htmlByUrl: Map<string, string>): ObservationInput[] {

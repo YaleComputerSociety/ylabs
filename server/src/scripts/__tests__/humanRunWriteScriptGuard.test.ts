@@ -56,6 +56,8 @@ const OPERATOR_TOOLS: Record<string, string> = {
     'clears stored personal data from login accounts, an operator decision rather than a lane or a promotion side effect (#4162)',
   'research-plans:expire-legacy-archived':
     'expires archived research plans that still hold a student’s private text, an operator decision about stored personal data per environment (#4163)',
+  'observations:retire-glued-profile-text':
+    'retires the observations the profile lane read from glued block text before #5729, after re-reading each cited page; user email and title are value-keyed, so a fixed re-read adds the right value beside the glued one instead of superseding it, and nothing ever re-emits the glued key (#5720)',
   'observations:nonfetching-lane-gone-pages':
     'a one-time backfill for lanes that never run again or read no page, so no lane or sweep stage can re-derive it (#4862)',
   'directory-removal:record':

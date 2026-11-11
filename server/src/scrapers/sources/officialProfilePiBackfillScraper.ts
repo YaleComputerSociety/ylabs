@@ -3094,6 +3094,24 @@ export function officialProfilePageStatedIdentity(
   return { ...(email ? { email } : {}), ...(netid ? { netid } : {}) };
 }
 
+export interface OfficialProfilePageStatedFields {
+  email?: string;
+  title?: string;
+}
+
+/**
+ * The address and title this lane would emit from a page today, read with the lane's own
+ * extractors and no identity matching, so a stored reading can be compared with a fresh one
+ * (#5720).
+ */
+export function officialProfilePageStatedFields(html: string): OfficialProfilePageStatedFields {
+  const $ = cheerio.load(html);
+  const profiles = jsonLdProfiles($);
+  const email = extractEmail($, profiles, officialProfileDisplayName($, profiles));
+  const { emitted: title } = officialProfileTitles($, profiles);
+  return { ...(email ? { email } : {}), ...(title ? { title } : {}) };
+}
+
 /**
  * A page without an admissible title is no evidence of a title, a role or a bio, but a page
  * that is still this person's own states their address, so only that is kept (#5669).
