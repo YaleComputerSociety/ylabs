@@ -849,8 +849,18 @@ describe('descriptionHygiene contact-block and publications-dump fail-closed (#6
     expect(sanitizeResearchEntityDescription(SYNTHETIC_UNREDACTED_CONTACT_HEADER_PROSE)).toBe('');
   });
 
-  it('fails closed to empty when a raw email in prose gets redacted to a leftover token', () => {
-    expect(sanitizeResearchEntityDescription(SYNTHETIC_INLINE_EMAIL_PROSE)).toBe('');
+  it('keeps a public email stated in prose rather than failing the description closed (#5046)', () => {
+    expect(sanitizeResearchEntityDescription(SYNTHETIC_INLINE_EMAIL_PROSE)).toBe(
+      SYNTHETIC_INLINE_EMAIL_PROSE,
+    );
+  });
+
+  it('still fails closed on a legacy redaction token left in stored prose', () => {
+    expect(
+      sanitizeResearchEntityDescription(
+        'The Sloane Lab studies tissue regeneration after injury. Email [email redacted] to apply.',
+      ),
+    ).toBe('');
   });
 
   it('fails closed to empty on a "Selected Publications:" dump bleeding into otherwise-good prose', () => {

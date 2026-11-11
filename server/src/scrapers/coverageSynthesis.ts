@@ -1,5 +1,5 @@
 import type { ResearchEntityType } from '../models/researchAccessTypes';
-import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { redactContactsAbsentFrom, redactDirectContactInfo } from '../utils/contactRedaction';
 import { openAiChatSampling } from '../utils/openAiChatSampling';
 import {
   CARD_SYNTHESIS_MODEL,
@@ -24,7 +24,31 @@ import {
 import { isRejectedDescriptionSourceUrl } from './sources/labMicrositeDescriptionLLMExtractor';
 import { COVERAGE_SYNTHESIS_PROMPT } from './prompts';
 import { WRITTEN_DESCRIPTION_SOURCE_NAME } from './confidenceResolver';
-import { postChatCompletion } from '../utils/modelClient';
+import { postChatCompletion, type ModelCaller } from '../utils/modelClient';
+import {
+  RESEARCH_PAGE_TEXT_FIELD,
+  RESEARCH_PAGE_TEXT_SOURCE,
+  researchPageTextEntries,
+  truncateAtSentenceBoundary,
+} from './utils/researchPageText';
+import { isResearchPageHeadingLine } from './utils/writerEvidenceText';
+import { isClinicalPracticeAsResearch } from './utils/clinicalPracticeAsResearch';
+import { isNarrowedLabSiteDescription, researchPassageOf } from '../utils/researchStatementPassage';
+import {
+  withoutPublicationListings,
+  withoutResearchPageChrome,
+  withoutSchoolMenuBlocks,
+} from './utils/researchPageChrome';
+import {
+  coversResearchPage,
+  coversResearchPageProse,
+  hasFirstPerson,
+  isCarriedByCitedProse,
+  hasFusedPageHeading,
+  hasGreetingText,
+  ungroundedContentTerms,
+  type WrittenDescriptionEvidence,
+} from './utils/writtenDescriptionChecks';
 
 export { WRITTEN_DESCRIPTION_SOURCE_NAME };
 
@@ -66,6 +90,8 @@ export interface CoverageObservationLike {
   sourceName?: string;
   confidence?: number;
   scrapeRunId?: unknown;
+  observedAt?: Date | string;
+  superseded?: boolean;
   /**
    * The lane that wrote this value checked it against the page it fetched before storing
    * it (owner decision on #4867). Derived by `markIngestVerifiedObservations`, never by
@@ -130,30 +156,100 @@ export type CoverageSynthesisLLMFn = (input: {
  * writer never reads an appointment, an award or a clinical role as what the person studies
  * (#4928).
  */
+const WRITER_RESEARCH_READING = { purposeAdverbs: true } as const;
+
 export function writerEvidenceTextOf(value: string): string {
-  if (!isBiographyRatherThanResearch(value)) return value;
+  if (!isBiographyRatherThanResearch(value, WRITER_RESEARCH_READING)) return value;
   return researchStatementSentences(value, { activityAnchors: true }).join(' ').trim();
+}
+
+function researchPageTextLines(text: string): string[] {
+  return text
+    .split(/\n+/)
+    .map((line) => withoutProfileTemplateWidgets(line))
+    .filter(Boolean)
+    .flatMap((line) => {
+      const pieces: string[] = [];
+      let rest = line;
+      while (rest.length > MAX_COVERAGE_SNIPPET_CHARS) {
+        const piece = truncateAtSentenceBoundary(rest, MAX_COVERAGE_SNIPPET_CHARS);
+        if (!piece) break;
+        pieces.push(piece);
+        rest = rest.slice(piece.length).trim();
+      }
+      return rest ? [...pieces, rest] : pieces;
+    });
+}
+
+export function researchPageTextSnippetTexts(text: string): string[] {
+  const chunks: string[][] = [];
+  let current: string[] = [];
+  let length = 0;
+  const close = () => {
+    if (current.length === 0) return;
+    const carried =
+      current.length > 1 && isResearchPageHeadingLine(current[current.length - 1])
+        ? current.pop()
+        : undefined;
+    chunks.push(current);
+    current = carried ? [carried] : [];
+    length = carried ? carried.length : 0;
+  };
+  for (const line of researchPageTextLines(text)) {
+    if (current.length > 0 && length + 1 + line.length > MAX_COVERAGE_SNIPPET_CHARS) close();
+    current.push(line);
+    length += (current.length > 1 ? 1 : 0) + line.length;
+  }
+  if (current.length > 0) chunks.push(current);
+  return chunks.map((lines) => lines.join('\n'));
+}
+
+function researchPageTextSnippets(obs: CoverageObservationLike): CoverageSnippet[] {
+  if (obs.sourceName !== RESEARCH_PAGE_TEXT_SOURCE) return [];
+  return researchPageTextEntries(obs.value).flatMap((page) =>
+    isRejectedDescriptionSourceUrl(page.url)
+      ? []
+      : researchPageTextSnippetTexts(
+          withoutPublicationListings(withoutSchoolMenuBlocks(withoutResearchPageChrome(page.text))),
+        ).map((text) => ({
+          text: writerEvidenceTextOf(text),
+          sourceUrl: page.url,
+          sourceName: RESEARCH_PAGE_TEXT_SOURCE,
+        })),
+  );
 }
 
 export function gatherCoverageSnippets(
   observations: CoverageObservationLike[],
   storedPageText?: StoredPageTextLookup,
+  options: { narrowLabSiteDescriptions?: boolean } = {},
 ): CoverageSnippet[] {
   const seen = new Set<string>();
   const snippets: CoverageSnippet[] = [];
+  const keep = (snippet: CoverageSnippet): boolean => {
+    if (snippet.text.length < 20) return false;
+    const key = snippet.text.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    snippets.push(snippet);
+    return snippets.length >= MAX_COVERAGE_SNIPPETS;
+  };
   for (const obs of observations) {
+    if (obs.field === RESEARCH_PAGE_TEXT_FIELD) {
+      if (researchPageTextSnippets(obs).some(keep)) break;
+      continue;
+    }
     if (!COVERAGE_SNIPPET_FIELDS.has(obs.field)) continue;
     if (!isWriterEvidenceObservation(obs, storedPageText)) continue;
     if (isRejectedDescriptionSourceUrl(obs.sourceUrl)) continue;
-    const raw = writerEvidenceTextOf(withoutProfileTemplateWidgets(textValue(obs.value)));
+    const statement =
+      options.narrowLabSiteDescriptions && isNarrowedLabSiteDescription(obs)
+        ? researchPassageOf(textValue(obs.value), WRITER_RESEARCH_READING)
+        : textValue(obs.value);
+    const raw = writerEvidenceTextOf(withoutProfileTemplateWidgets(statement));
     if (!raw) continue;
-    const clean = redactDirectContactInfo(raw).slice(0, MAX_COVERAGE_SNIPPET_CHARS).trim();
-    if (clean.length < 20) continue;
-    const key = clean.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    snippets.push({ text: clean, sourceUrl: obs.sourceUrl, sourceName: obs.sourceName });
-    if (snippets.length >= MAX_COVERAGE_SNIPPETS) break;
+    const clean = raw.slice(0, MAX_COVERAGE_SNIPPET_CHARS).trim();
+    if (keep({ text: clean, sourceUrl: obs.sourceUrl, sourceName: obs.sourceName })) break;
   }
   return snippets;
 }
@@ -164,6 +260,7 @@ export interface SynthesizeCoverageInput {
   entityType?: ResearchEntityType;
   researchAreas?: unknown;
   callLLM: CoverageSynthesisLLMFn;
+  coverageWriterChecks?: boolean;
 }
 
 export interface CoverageSynthesisResult {
@@ -196,7 +293,13 @@ export type CoverageSynthesisRefusal =
   | 'unsupported-method-clause'
   | 'past-framed-restatement'
   | 'source-narration'
-  | 'over-length';
+  | 'over-length'
+  | 'ungrounded-content-term'
+  | 'missing-research-page-coverage'
+  | 'first-person'
+  | 'fused-page-heading'
+  | 'greeting-text'
+  | 'clinical-practice-as-research';
 
 /**
  * The verbs a synthesized body uses of its subject. Shared with the two internal
@@ -355,11 +458,17 @@ export function hasInternalVocabulary(value: unknown): boolean {
 export interface CoverageSynthesisDecision {
   result: CoverageSynthesisResult | null;
   refusal: CoverageSynthesisRefusal | null;
+  refusalDetails?: CoverageSynthesisRefusalDetails;
 }
 
 export interface WrittenDescriptionJudgement {
   description: string | null;
   refusal: CoverageSynthesisRefusal | null;
+  refusalDetails?: CoverageSynthesisRefusalDetails;
+}
+
+export interface CoverageSynthesisRefusalDetails {
+  ungroundedTerms: string[];
 }
 
 /**
@@ -375,12 +484,17 @@ export function judgeWrittenDescription(input: {
   researchAreas?: unknown;
   entityType?: ResearchEntityType;
   citedSnippetCount: number;
+  citedSnippetIndexes?: readonly number[];
+  coverageWriterChecks?: boolean;
 }): WrittenDescriptionJudgement {
   const refuse = (refusal: CoverageSynthesisRefusal): WrittenDescriptionJudgement => ({
     description: null,
     refusal,
   });
-  const drafted = redactDirectContactInfo(textValue(input.drafted));
+  const drafted = redactContactsAbsentFrom(
+    textValue(input.drafted),
+    input.snippets.map((snippet) => snippet.text),
+  );
   if (!drafted) return refuse('empty-description');
   const stripped = withoutUnsupportedSentences(drafted);
   if (!stripped.description) return refuse(stripped.refusal ?? 'past-career-clause');
@@ -401,7 +515,8 @@ export function judgeWrittenDescription(input: {
   // Before the quality bar, which blanks the same shape through the serve sanitizer and
   // would otherwise report a narrating body as a generic quality verdict.
   if (isSourcePageNarrationDescription(description)) return refuse('source-narration');
-  if (!fullDescriptionQuality(description, input.researchAreas, input.entityType).isUseful) {
+  const quality = fullDescriptionQuality(description, input.researchAreas, input.entityType);
+  if (!quality.isUseful && !writerDraftEchoesItsOwnProse(input, description, quality.flags)) {
     return refuse('quality-bar');
   }
   // After the older arms, so every arm above keeps the attribution it had and each
@@ -412,7 +527,62 @@ export function judgeWrittenDescription(input: {
   if (wordCount(description) > MAX_WRITTEN_DESCRIPTION_WORDS) return refuse('over-length');
   if (!currentOnly) return refuse('past-framed-restatement');
   if (!methodChecked) return refuse('unsupported-method-clause');
+  if (!input.coverageWriterChecks) return { description, refusal: null };
+  const evidence: WrittenDescriptionEvidence[] = input.snippets.map((snippet) => ({
+    text: snippet.text,
+    isResearchPageText: snippet.sourceName === RESEARCH_PAGE_TEXT_SOURCE,
+  }));
+  const ungroundedTerms = ungroundedContentTerms(description, evidence);
+  if (ungroundedTerms.length > 0) {
+    return {
+      description: null,
+      refusal: 'ungrounded-content-term',
+      refusalDetails: { ungroundedTerms },
+    };
+  }
+  if (
+    !coversResearchPage(description, evidence) &&
+    !coversResearchPageProse(description, evidence)
+  ) {
+    return refuse('missing-research-page-coverage');
+  }
+  if (hasFirstPerson(description)) return refuse('first-person');
+  if (hasFusedPageHeading(description, evidence)) return refuse('fused-page-heading');
+  if (hasGreetingText(description)) return refuse('greeting-text');
+  if (
+    isClinicalPracticeAsResearch({
+      description,
+      snippets: input.snippets,
+      entityType: input.entityType,
+    })
+  ) {
+    return refuse('clinical-practice-as-research');
+  }
   return { description, refusal: null };
+}
+
+const AREA_ECHO_FLAGS: ReadonlySet<string> = new Set(['area-echo-fallback', 'research-area-echo']);
+
+/**
+ * A writer draft that restates its row's topic list is not the old chip-template fallback
+ * when a cited snippet states the same content as prose: the list was derived from that prose.
+ * Only a keyword or MeSH line as the support keeps the echo refusal.
+ */
+function writerDraftEchoesItsOwnProse(
+  input: {
+    coverageWriterChecks?: boolean;
+    snippets: readonly CoverageSnippet[];
+    citedSnippetIndexes?: readonly number[];
+  },
+  description: string,
+  flags: readonly string[],
+): boolean {
+  if (!input.coverageWriterChecks || flags.length === 0) return false;
+  if (!flags.every((flag) => AREA_ECHO_FLAGS.has(flag))) return false;
+  const cited = (input.citedSnippetIndexes ?? [])
+    .map((index) => input.snippets[index]?.text)
+    .filter((text): text is string => typeof text === 'string');
+  return isCarriedByCitedProse(description, cited);
 }
 
 const normalizedBody = (value: unknown): string => textValue(value).replace(/\s+/g, ' ').trim();
@@ -423,7 +593,9 @@ const normalizedBody = (value: unknown): string => textValue(value).replace(/\s+
  * body already served: retiring an adopted body on that verdict alone retired 180 bodies
  * in one all-rows run, 163 of which still passed every arm themselves. It must
  * pass verbatim, because the served text is the stored text and an arm that would have
- * trimmed it means the stored body is not what the arms accept.
+ * trimmed it means the stored body is not what the arms accept. A body that presents a
+ * person's clinical practice as research is retired too, because that is wrong whatever
+ * the redraft says (#5537).
  */
 export function adoptedWrittenBodyStillSupported(input: {
   body: unknown;
@@ -433,6 +605,15 @@ export function adoptedWrittenBodyStillSupported(input: {
 }): boolean {
   const body = normalizedBody(input.body);
   if (!body || input.snippets.length === 0) return false;
+  if (
+    isClinicalPracticeAsResearch({
+      description: body,
+      snippets: input.snippets,
+      entityType: input.entityType,
+    })
+  ) {
+    return false;
+  }
   const judged = judgeWrittenDescription({
     drafted: body,
     snippets: input.snippets,
@@ -447,8 +628,8 @@ export function adoptedWrittenBodyStillSupported(input: {
  * Fuse thin/alternate evidence snippets into one description via the LLM, then
  * FAIL CLOSED: the result is discarded unless its distinctive tokens are grounded
  * in the snippet corpus at `COVERAGE_MIN_OVERLAP`, it cites real snippets, and it
- * clears the description-quality bar. Contact data is redacted on the way in and
- * out, so a coverage description can never leak or invent PII.
+ * clears the description-quality bar. The contact details a public page publishes are
+ * kept on the way in and out (#5046), so the body states what its snippets state.
  *
  * Grounding is asked ONCE, by `cardGroundingScore` against `COVERAGE_MIN_OVERLAP`.
  * There used to be a second arm, `isUngroundedSynthesizedCard(description, corpus)`,
@@ -492,9 +673,14 @@ export async function coverageSynthesisDecision(
     researchAreas: input.researchAreas,
     entityType: input.entityType,
     citedSnippetCount: usedSnippetIndexes.length,
+    citedSnippetIndexes: usedSnippetIndexes,
+    coverageWriterChecks: input.coverageWriterChecks,
   });
   if (judged.refusal || !judged.description) {
-    return refuse(judged.refusal ?? 'empty-description');
+    return {
+      ...refuse(judged.refusal ?? 'empty-description'),
+      ...(judged.refusalDetails ? { refusalDetails: judged.refusalDetails } : {}),
+    };
   }
   const { description } = judged;
 
@@ -554,19 +740,33 @@ export async function synthesizeCoverageDescription(
   return (await coverageSynthesisDecision(input)).result;
 }
 
+export function coverageSynthesisUserMessage(input: {
+  snippets: readonly CoverageSnippet[];
+  entityName: string;
+  today: Date;
+}): string {
+  const safeName = redactDirectContactInfo(input.entityName).slice(0, 240);
+  const snippetBlock = input.snippets
+    .map((snippet, index) => `[${index}] (${snippet.sourceName ?? 'source'}) ${snippet.text}`)
+    .join('\n')
+    .slice(0, MAX_CARD_SOURCE_CHARS * 2);
+  return [
+    `TODAY: ${input.today.toISOString().slice(0, 10)}`,
+    `Research entity: ${safeName}`,
+    'EVIDENCE SNIPPETS:',
+    snippetBlock,
+  ].join('\n\n');
+}
+
 export function defaultCoverageSynthesisLLM(
   apiKey: string,
   model: string = COVERAGE_SYNTHESIS_MODEL,
   now: () => Date = () => new Date(),
+  caller: ModelCaller = 'coverage-synthesis-llm',
 ): CoverageSynthesisLLMFn {
   return async ({ snippets, entityName }) => {
-    const safeName = redactDirectContactInfo(entityName).slice(0, 240);
-    const snippetBlock = snippets
-      .map((snippet, index) => `[${index}] (${snippet.sourceName ?? 'source'}) ${snippet.text}`)
-      .join('\n')
-      .slice(0, MAX_CARD_SOURCE_CHARS * 2);
     const response = await postChatCompletion({
-      caller: 'coverage-synthesis-llm',
+      caller,
       apiKey: apiKey,
       timeoutMs: 30_000,
       body: {
@@ -577,12 +777,7 @@ export function defaultCoverageSynthesisLLM(
           { role: 'system', content: COVERAGE_SYNTHESIS_PROMPT },
           {
             role: 'user',
-            content: [
-              `TODAY: ${now().toISOString().slice(0, 10)}`,
-              `Research entity: ${safeName}`,
-              'EVIDENCE SNIPPETS:',
-              snippetBlock,
-            ].join('\n\n'),
+            content: coverageSynthesisUserMessage({ snippets, entityName, today: now() }),
           },
         ],
       },

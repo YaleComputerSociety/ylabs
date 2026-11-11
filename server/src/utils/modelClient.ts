@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import axios, { type AxiosResponse } from 'axios';
 import mongoose from 'mongoose';
 import { ModelCallUsage } from '../models/modelCallUsage';
@@ -10,6 +11,7 @@ export const MODEL_CALLERS = [
   'card-synthesis',
   'center-affiliation-llm',
   'center-director-llm',
+  'coverage-synthesis-evaluate',
   'coverage-synthesis-llm',
   'description-prompt-ab-harness',
   'description-rewrite-backfill',
@@ -111,10 +113,41 @@ async function recordUsage(request: ModelRequest, record: ModelUsageRecord): Pro
   if (request.usageWrite !== 'background') await write;
 }
 
+const modelFreeScope = new AsyncLocalStorage<string>();
+const reportedRefusals = new Set<string>();
+
+export class ModelCallRefusedError extends Error {
+  constructor(scope: string, caller: ModelCaller) {
+    super(`${scope} makes no model calls; ${caller} was refused`);
+    this.name = 'ModelCallRefusedError';
+  }
+}
+
+/**
+ * Runs `run` with every model call refused, so code that must read cached outputs only
+ * (materialization, #5537) cannot pay for a call however a caller wires it.
+ */
+export function withoutModelCalls<T>(scope: string, run: () => Promise<T>): Promise<T> {
+  return modelFreeScope.run(scope, run);
+}
+
+export const modelCallsAreRefused = (): boolean => modelFreeScope.getStore() !== undefined;
+
 async function postModelRequest(
   endpoint: ModelEndpoint,
   request: ModelRequest,
 ): Promise<AxiosResponse> {
+  const refusingScope = modelFreeScope.getStore();
+  if (refusingScope !== undefined) {
+    const key = `${refusingScope}:${request.caller}`;
+    if (!reportedRefusals.has(key)) {
+      reportedRefusals.add(key);
+      console.warn(
+        `[model-client] ${refusingScope} refused a ${request.caller} call; nothing new is written`,
+      );
+    }
+    throw new ModelCallRefusedError(refusingScope, request.caller);
+  }
   const startedAt = Date.now();
   let response: AxiosResponse;
   try {

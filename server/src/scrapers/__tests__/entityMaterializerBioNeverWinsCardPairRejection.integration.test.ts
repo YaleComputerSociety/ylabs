@@ -36,6 +36,11 @@ const RESEARCH_CARD =
 const CAREER_BIOGRAPHY =
   'Robin Quill is Professor of Film and Media Studies and Chair of Slavic Languages and Literatures at a university in New England. Quill completed a BA in English in 1987 and a PhD in Comparative Literature in 1998, and teaches a wide variety of courses on literature, cultural theory, and moving image media. Quill was appointed to an endowed chair in 2012 and has served as Deputy Dean. Quill’s current research interests include documentary and experimental film, early Soviet culture and its later reception, and the comparative study of the short story form.';
 
+// A person row reads a lab-site description narrowed to its research sentences (#5648), so
+// the biography above resolves as its research-interests sentence alone.
+const NARROWED_BIOGRAPHY =
+  'Quill’s current research interests include documentary and experimental film, early Soviet culture and its later reception, and the comparative study of the short story form.';
+
 const SYNTHESIS_RESTATING_THE_CARD =
   'Research on documentary and experimental film, early Soviet culture and its later reception, and the comparative study of the short story form.';
 
@@ -155,7 +160,7 @@ describe('a career biography never wins a full/card pair rejection (#2901)', () 
     expect(isCareerBiographyDescription(SYNTHESIS_THINNER_THAN_THE_CARD)).toBe(false);
   });
 
-  it('keeps the research body when the replacement restates the card', async () => {
+  it("serves the research sentence of a person's lab-site biography, never the biography, over a synthesis that restates the card (#5648)", async () => {
     await seedPair(RESTATEMENT_KEY, SYNTHESIS_RESTATING_THE_CARD);
 
     await materializeEntity(
@@ -165,11 +170,11 @@ describe('a career biography never wins a full/card pair rejection (#2901)', () 
     );
 
     const row = await persisted(RESTATEMENT_KEY);
-    expect(row?.fullDescription).toBe(SYNTHESIS_RESTATING_THE_CARD);
+    expect(row?.fullDescription).toBe(NARROWED_BIOGRAPHY);
     expect(row?.fullDescription).not.toBe(CAREER_BIOGRAPHY);
   });
 
-  it('keeps the research body when the replacement is thinner than the card', async () => {
+  it("serves the research sentence of a person's lab-site biography, never the biography, over a thinner synthesis (#5648)", async () => {
     await seedPair(THINNER_KEY, SYNTHESIS_THINNER_THAN_THE_CARD, RICH_RESEARCH_CARD);
 
     await materializeEntity(
@@ -179,7 +184,7 @@ describe('a career biography never wins a full/card pair rejection (#2901)', () 
     );
 
     const row = await persisted(THINNER_KEY);
-    expect(row?.fullDescription).toBe(SYNTHESIS_THINNER_THAN_THE_CARD);
+    expect(row?.fullDescription).toBe(NARROWED_BIOGRAPHY);
     expect(row?.fullDescription).not.toBe(CAREER_BIOGRAPHY);
   });
 
@@ -197,7 +202,7 @@ describe('a career biography never wins a full/card pair rejection (#2901)', () 
     expect(Boolean((row?.shortDescription ?? '').trim())).toBe(true);
   });
 
-  it('still serves a sole biography, because refusing it in the walk must not blank a row', async () => {
+  it('serves the research sentence of a sole lab-site biography rather than blanking the row (#5648)', async () => {
     const soleBioKey = 'sole-biography-fixture';
     await seedRow(soleBioKey);
     await seedObservation({
@@ -215,6 +220,6 @@ describe('a career biography never wins a full/card pair rejection (#2901)', () 
     );
 
     const row = await persisted(soleBioKey);
-    expect(row?.fullDescription).toBe(CAREER_BIOGRAPHY);
+    expect(row?.fullDescription).toBe(NARROWED_BIOGRAPHY);
   });
 });

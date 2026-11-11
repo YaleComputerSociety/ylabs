@@ -906,7 +906,7 @@ describe('researchEntityDto', () => {
     ]);
   });
 
-  it('redacts names, labels and descriptions but serves the contact a way in publishes (#5046)', () => {
+  it('redacts names and labels but serves the contact a description or way in publishes (#5046)', () => {
     const dto = toPublicResearchEntityDto({
       id: 'entity-recursive-redaction',
       slug: 'recursive-redaction-lab',
@@ -926,7 +926,7 @@ describe('researchEntityDto', () => {
     expect(dto.displayName).toBe('Recursive [phone redacted] Lab');
     expect(dto.departments).toEqual(['Department [email redacted]']);
     expect(dto.researchAreas).toEqual(['Calls to [phone redacted]']);
-    expect(dto.shortDescription).toBe('Questions go to [email redacted].');
+    expect(dto.shortDescription).toBe('Questions go to hidden@example.edu.');
     expect(dto).not.toHaveProperty('planningContext');
     expect(dto.waysIn).toEqual([{ label: 'Email hidden@example.edu to ask about openings.' }]);
   });
@@ -990,7 +990,7 @@ describe('researchEntityDto', () => {
       fullDescription: 'Avery Sloane, Ph.D. Professor Email: [email redacted]: 203-555-0142.',
     });
 
-    expect(dto.shortDescription).toBe('Questions go to [email redacted].');
+    expect(dto.shortDescription).toBe('Questions go to lab-contact@example.edu.');
     expect(dto.fullDescription).toBe('');
   });
 

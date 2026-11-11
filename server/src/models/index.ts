@@ -32,6 +32,14 @@ export {
   ResearchTopicsDerivation,
   RESEARCH_TOPICS_DERIVATION_COLLECTION,
 } from './researchTopicsDerivation';
+export {
+  CardSynthesisDerivation,
+  CARD_SYNTHESIS_DERIVATION_COLLECTION,
+} from './cardSynthesisDerivation';
+export {
+  WrittenDescriptionDerivation,
+  WRITTEN_DESCRIPTION_DERIVATION_COLLECTION,
+} from './writtenDescriptionDerivation';
 export { SearchRerankCache, SEARCH_RERANK_CACHE_COLLECTION } from './searchRerankCache';
 export { ModelCallUsage, MODEL_CALL_USAGE_COLLECTION } from './modelCallUsage';
 export {

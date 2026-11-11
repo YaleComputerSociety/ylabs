@@ -47,6 +47,7 @@ import {
   selectFraProfileSynthesisTargets,
   type FraProfileSynthesisEntity,
 } from '../fraProfileSynthesisLane';
+import { ungroundedContentTerms } from '../../scrapers/utils/writtenDescriptionChecks';
 
 const SLUG = 'fra-profile-lane-fixture';
 const PROFILE_URL = 'https://medicine.example.edu/profile/avery_lin/';
@@ -296,6 +297,25 @@ describe('FACULTY_RESEARCH_AREA profile-synthesis lane (#2200)', () => {
     );
     const served = toPublicResearchEntityDto(persisted) as Record<string, any>;
     expect(served.fullDescription).toBe(SYNTHESIZED_RESEARCH);
+  });
+
+  it('accepts a body the coverage writer grounding check alone would refuse (#5537)', async () => {
+    await seedFra();
+    await seedFullDescriptionObservation(
+      PROFILE_BIO,
+      'ysm-faculty-directory',
+      PROFILE_DESCRIPTION_CONFIDENCE,
+    );
+    const body = SYNTHESIZED_RESEARCH.replace(/\.$/, ', with an emphasis on colitis.');
+    expect(
+      ungroundedContentTerms(body, [{ text: PROFILE_PAGE_TEXT, isResearchPageText: false }]),
+    ).toEqual(['colitis']);
+
+    const report = await runLane(stubLLM(body));
+
+    expect(report).toMatchObject({ synthesized: true, written: true });
+    const persisted = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<string, any>;
+    expect(persisted.fullDescription).toBe(body);
   });
 
   it('keeps the synthesized description after the directory re-scrapes the biography', async () => {

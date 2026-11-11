@@ -124,6 +124,24 @@ Three lanes stay out, each for a reason a capture cannot remove:
 - `ysm-mesh-keyword` planned nothing on a `--limit` scope of 3 or 12, because `--limit` bounds the keyword index it walks rather than the faculty it attributes, so no small scope reaches a planned value; it needs an `--only` scope keyed by faculty before it can be benchmarked.
 - `undergrad-research-posting` is manual-only with an empty page list (`manualOnlySweepSources.ts`), so it has no pages to freeze until #3551 gives it some.
 
+### The description writer
+
+`coverage-synthesis-llm`, the description writer behind `research-entity:coverage-synthesis`, is a script rather than an orchestrator lane, and it joined `BENCHMARKABLE_LANES` through `SCRIPT_BENCHMARK_LANES`, which `runLaneDry` dispatches to `runWriterBenchmarkDry` (`server/src/scripts/coverageSynthesisBenchmark.ts`) instead of the orchestrator (#5537).
+Its input is not a fetched page but each row's writer evidence, the observations and row fields `--capture-evidence` reads, current research page text included, so capture freezes one `coverage-synthesis-evidence` entry per row slug and replay reads evidence only from those entries.
+Its model calls go over the default axios instance, so the model freeze above covers them, and the capture date stands in for the clock in the grant window and the prompt's `TODAY` line, so a replay on a later day asks the same question.
+Capture and replay never read or fill the shared `written_description_derivations` cache, because a cached draft answers without a model request, so capture would freeze nothing and replay would read a draft another run wrote.
+A benchmark needs an `--only` scope of row slugs:
+
+```bash
+yarn --cwd server lane:benchmark-capture --source=coverage-synthesis-llm --only=<slugs> --id=<benchmark-id> --apply --confirm-lane-benchmark-capture
+```
+
+It plans one `fullDescription` per row the writer accepts, so `emitted`, the frozen refusal labels and any gold labels score it as they score a lane, and each result also carries `writerSteps`, the count of each writer step, and `writerRows`, each row's step and refusal reasons.
+The writer rows are printed in the report and are not stored on `lane_scorecard_snapshots`.
+Replay writes nothing: no observation, no cache entry, and no model-usage record, because a frozen answer never leaves the process.
+Capture is a paid model call per row, so run it only on a scope chosen for the measurement.
+A changed writer prompt or snippet builder changes the request body, so it stales the benchmark like any LLM lane's.
+
 A replay is compared only once it has resolved something from the frozen input.
 One that served none of its frozen pages, or a rendered lane that served none of its frozen renders, is reported as unscored rather than scored, because it measured a path that never engaged.
 A lane that aborts because it requested a page or render the capture never froze is reported as unscored too, so one such benchmark does not stop the sweep before the others store their rows.

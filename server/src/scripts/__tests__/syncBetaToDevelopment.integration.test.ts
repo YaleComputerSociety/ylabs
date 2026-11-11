@@ -204,6 +204,12 @@ async function seedTarget(targetDb: Db): Promise<void> {
     .collection('research_topics_derivations')
     .insertOne({ inputHash: 'example-input-hash', topics: ['Kelp forests'] });
   await targetDb
+    .collection('card_synthesis_derivations')
+    .insertOne({ inputHash: 'example-card-input-hash', writer: 'openai:gpt-5-mini' });
+  await targetDb
+    .collection('written_description_derivations')
+    .insertOne({ inputHash: 'example-writer-input-hash', writer: 'openai:gpt-5-mini' });
+  await targetDb
     .collection('search_rerank_cache')
     .insertOne({ queryKey: 'example-query-key', scores: [{ entityId: 'example', score: 3 }] });
   await targetDb

@@ -38,6 +38,7 @@ import {
   type GoldLabel,
 } from './laneScorecardCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { summarizeWriterSteps } from './coverageSynthesisBenchmark';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
@@ -181,7 +182,14 @@ export async function replayBenchmark(
     runClockFieldsFor(benchmark.sourceName),
   );
   const gold = scoreGoldLabels(run.observations, benchmark.goldLabels ?? [], slugByEntityId);
-  return { refusedReason: undefined, score, gold, replay, truncated: run.truncated };
+  return {
+    refusedReason: undefined,
+    score,
+    gold,
+    replay,
+    truncated: run.truncated,
+    writerRows: run.writerRows,
+  };
 }
 
 async function main(): Promise<void> {
@@ -256,7 +264,7 @@ async function main(): Promise<void> {
       unscored.push({ benchmarkId: benchmark.benchmarkId, reason: replayed.refusedReason });
       continue;
     }
-    const { score, gold, replay, truncated } = replayed;
+    const { score, gold, replay, truncated, writerRows } = replayed;
     const priorRuns = (await LaneScorecardSnapshot.find({ benchmarkId: benchmark.benchmarkId })
       .select('codeSha pagesMissed measuredAt gold')
       .lean()) as unknown as ComparableReplayRun[];
@@ -286,7 +294,12 @@ async function main(): Promise<void> {
       gold,
     };
     if (!options.dryRun) await LaneScorecardSnapshot.create(snapshot);
-    results.push({ ...snapshot, networkBlocks: replay.networkBlocks, truncated });
+    results.push({
+      ...snapshot,
+      networkBlocks: replay.networkBlocks,
+      truncated,
+      ...(writerRows ? { writerSteps: summarizeWriterSteps(writerRows), writerRows } : {}),
+    });
   }
 
   const report = {

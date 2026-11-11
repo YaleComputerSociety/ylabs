@@ -35,7 +35,12 @@ const SMOKE_WITHHELD_ENTITIES = [
 ];
 const SMOKE_CONTACT_ENTITY_NAME = 'Quokka Burrow Acoustics Lab';
 const SMOKE_CONTACT_ENTITY_SLUG = 'e2e-smoke-quokka-burrow-acoustics-lab';
-const SMOKE_CONTACT_DETAILS = ['quokka.coordinator@example.invalid', '203-555-0147'];
+const SMOKE_DESCRIPTION_CONTACT_DETAILS = ['quokka.coordinator@example.invalid', '203-555-0147'];
+const SMOKE_WITHHELD_CONTACT_DETAILS = [
+  'quokka.fieldcontact@example.invalid',
+  'Quokka Field Contact',
+  'quokka.department@example.invalid',
+];
 const SMOKE_ZERO_RESULT_COPY =
   'No indexed research matched this search yet. This is a coverage gap, not proof that no such research exists at Yale. Try one of the recovery options below while coverage improves.';
 
@@ -406,24 +411,33 @@ await step('withheld-tier rows never reach browse, search, or detail', async () 
   }
 });
 
-await step('a contact-bearing row renders with its contact details withheld', async () => {
-  await page.goto(`${baseUrl}/research/${SMOKE_CONTACT_ENTITY_SLUG}`, {
-    waitUntil: 'domcontentloaded',
-  });
-  await settleResearchPage();
-  await page
-    .getByRole('heading', { level: 1, name: SMOKE_CONTACT_ENTITY_NAME })
-    .waitFor({ timeout: 20000 });
-  await assertTextIncludes('vocalizations');
-  const text = await bodyText();
-  const html = await page.content();
-  for (const detail of SMOKE_CONTACT_DETAILS) {
-    assert(
-      !text.includes(detail) && !html.includes(detail),
-      `The detail page served a stored contact detail (${detail}) unredacted.`,
-    );
-  }
-});
+await step(
+  'a contact-bearing row shows the contacts its description publishes and withholds its contact fields',
+  async () => {
+    await page.goto(`${baseUrl}/research/${SMOKE_CONTACT_ENTITY_SLUG}`, {
+      waitUntil: 'domcontentloaded',
+    });
+    await settleResearchPage();
+    await page
+      .getByRole('heading', { level: 1, name: SMOKE_CONTACT_ENTITY_NAME })
+      .waitFor({ timeout: 20000 });
+    await assertTextIncludes('vocalizations');
+    const text = await bodyText();
+    const html = await page.content();
+    for (const detail of SMOKE_DESCRIPTION_CONTACT_DETAILS) {
+      assert(
+        text.includes(detail),
+        `The detail page withheld a contact detail (${detail}) its public description states (#5046).`,
+      );
+    }
+    for (const detail of SMOKE_WITHHELD_CONTACT_DETAILS) {
+      assert(
+        !text.includes(detail) && !html.includes(detail),
+        `The detail page served a contact field or non-description contact (${detail}).`,
+      );
+    }
+  },
+);
 
 await step('the student returns to the detail page the journey continues from', async () => {
   await page.goto(`${baseUrl}/research/${SMOKE_ENTITY_SLUG}`, { waitUntil: 'domcontentloaded' });

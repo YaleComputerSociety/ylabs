@@ -788,7 +788,7 @@ describe('researchEntitySearchIndexService', () => {
     expect(facilityRow).toMatchObject({ kind: 'core_facility', entityType: 'CORE_FACILITY' });
   });
 
-  it('filters unsafe URLs and direct contact text from public research entity index documents', () => {
+  it('filters unsafe URLs and indexes the contacts a public description states (#5046)', () => {
     const doc = buildResearchEntitySearchIndexDocument({
       _id: 'entity-url-safety',
       name: 'URL Safety Lab',
@@ -806,16 +806,14 @@ describe('researchEntitySearchIndexService', () => {
 
     expect(doc).toMatchObject({
       id: 'entity-url-safety',
-      fullDescription: '',
-      shortDescription: 'Email [email redacted] for details.',
+      fullDescription: 'Contact pi@example.edu or 203-555-1212 for research roles.',
+      shortDescription: 'Email pi@example.edu for details.',
     });
     expect(doc).not.toHaveProperty('websiteUrl');
     expect(doc).not.toHaveProperty('website');
     expect(doc).not.toHaveProperty('sourceUrls');
     expect(JSON.stringify(doc)).not.toContain('javascript:');
     expect(JSON.stringify(doc)).not.toContain('mailto:');
-    expect(JSON.stringify(doc)).not.toContain('pi@example.edu');
-    expect(JSON.stringify(doc)).not.toContain('203-555-1212');
   });
 
   it('redacts direct contact text from biography description fields stored in the index', () => {

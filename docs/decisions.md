@@ -5,6 +5,30 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-11-11: Creative-Practice Faculty Count For The Directory (#5537)
+
+The owner decided on 2026-11-11 (decision "creative include") that faculty whose work is creative practice, such as performance or composition, count for the directory.
+Rows for an initiative that is only a programme stay listed.
+After the description batch, the writer gets a creative-practice prompt of its own, frozen like the research prompt and checked on a small held-out set.
+Any biography-only or no-research detector must exempt creative practice.
+The discussion is recorded on #5537.
+
+## 2026-11-11: The Agent-Written Description Seed Ships On A Claim-Level Held-Out Bar (#5537)
+
+The owner decided on 2026-11-11 (decision "5537 C") that the Claude-agent description seed ships against a held-out bar taken from the council consensus: claim-level checks S1 and S2, graded by two judge families, with confidence bounds in place of a "0 worse" rule.
+In the owner's corrected reading, S1 is scored on new drafts only, and usefulness is read as non-inferiority.
+On the frozen 298-row held-out run, S1 was 2 of 258 and 1 of 258 (Clopper-Pearson upper bounds 2.77% and 2.14%, against a 3% bar).
+Served unsupported text fell to 8.1% from 22.5% and to 4.7% from 11.7% (p < 0.0001).
+Net usefulness was +16.4% (lower bound +11.7%) and +12.4% (lower bound +8.1%).
+The writer refused 13.4% of rows.
+The old served text on a refused row is left to a resolve-time body-retirement rule rather than to the seed; that rule did not ship, because its arms failed their blind precision checks (#5763).
+OpenAI stays the change-only writer for later evidence changes.
+In owner decision "G C" (2026-11-11), judge calibration against agent-cross-checked labels failed for both judges: S1 recall 50% and agreement 67.5% for the gpt-5 judge, and 90% and 82.5% for the Claude judge.
+For this batch only, the ship rests on the paired comparison: seed unsupported text of 4.7% to 8.1% against current text of 11.7% to 22.5% on both judges (p < 0.0001).
+The judges are recorded as uncalibrated, and the owner will spot-check about 10 items later.
+This is not a general waiver of judge calibration.
+The methodology is recorded on #5537.
+
 ## 2026-11-10: Every Current Member Is Found Through Their Row, Past The Display Cap (#5584)
 
 The owner decided on #5584 that a name search matches every current member of a row, not only the members within the detail page's display cap.
@@ -416,7 +440,11 @@ The owner first kept phone numbers redacted, then reversed that the same day for
 The model still reads contact-redacted page text, so the lane puts each address and number back from the quoted page after the model answers, and the prompt and its answer cache are unchanged.
 Logs, analytics and search queries, admin and user input, and config keep redacting both.
 The same owner decision extends to the rest of the scraped public text outside research descriptions (#5046): program and fellowship prose and link labels, signal excerpts, a row's ways in, grants, honors and funding agencies, course-credit evidence, and the search index's quote fields all keep the contact details their page publishes.
-Research descriptions (`shortDescription`, `fullDescription`) still redact and drop contact sentences until the description pipeline redesign (#5020) decides them, and names, titles and labels that contain an address are still refused as malformed.
+Research descriptions (`shortDescription`, `fullDescription`) joined them with the #5537 description batch (Refs #5046): ingest (`sanitizeProseField`), projection, the description sanitizers, the public description and card serve paths and the search index's description fields keep the addresses and numbers their page publishes, and a description is no longer failed closed just because it states one.
+A legacy `[email redacted]` or `[phone redacted]` token still stored in older prose is still refused, because the page value it stood for is not on the row, and a contact block lifted from a profile header (a label such as `Phone:` beside a bare number, or a street address) is still dropped as page chrome.
+Model-written prose may repeat a contact its evidence publishes but never introduce one (`redactContactsAbsentFrom`): the coverage writer, the card synthesizer and the description backfill redact any address or number their source does not state.
+The model inputs stay redacted as #5041 decided, and the lab-site description extractor puts each address and number back from the page, sentence by sentence, before its verbatim grounding check (`proseWithPageContactsRestored`), which before this refused every copied sentence that carried a placeholder.
+Names, titles and labels that contain an address are still refused as malformed, and the stored `researchPageText` keeps redacting because nothing serves it.
 Two content rules that look like redaction stay, because they are about where a sentence belongs rather than hiding it: eligibility text drops a contact direction, which names who to ask rather than who may apply (#4177), and a profile bio drops leading contact chrome.
 A quote that carries a contact detail but states no instruction to use it is refused: it is a slice of a people page listing members with their own emails, such as an "Undergraduate Students" heading followed by names and addresses, not evidence of how to reach the lab (`quoteListsPeopleWithTheirContactDetails`).
 On Development that was 7 of the 12 quotes that had contacts restored, and the roster section, not the quote, is where a lab's undergraduates are listed.

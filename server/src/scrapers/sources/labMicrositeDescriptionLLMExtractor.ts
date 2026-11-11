@@ -10,6 +10,7 @@ import {
   shortDescriptionQuality,
 } from '../../utils/researchEntityDescriptionQuality';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
+import { proseWithPageContactsRestored } from '../../utils/quotedContactRestoration';
 import { isTlsVerificationError } from '../../utils/tlsVerificationErrors';
 import { openAiChatSampling } from '../../utils/openAiChatSampling';
 import {
@@ -1518,12 +1519,16 @@ export function groundDescriptionExtraction(
   extraction: DescriptionExtraction,
   pageText: string,
 ): DescriptionExtraction {
-  const groundedFull = isDescriptionGroundedInSource(extraction.fullDescription, pageText)
-    ? extraction.fullDescription
-    : '';
-  const groundedShort = isDescriptionGroundedInSource(extraction.shortDescription, pageText)
-    ? extraction.shortDescription
-    : '';
+  const restoredFull = proseWithPageContactsRestored(
+    textValue(extraction.fullDescription),
+    pageText,
+  );
+  const restoredShort = proseWithPageContactsRestored(
+    textValue(extraction.shortDescription),
+    pageText,
+  );
+  const groundedFull = isDescriptionGroundedInSource(restoredFull, pageText) ? restoredFull : '';
+  const groundedShort = isDescriptionGroundedInSource(restoredShort, pageText) ? restoredShort : '';
   // The model names whose prose it copied. An organization's mission or a department's
   // overview on a person's row is not that row's research however verbatim it is, and a
   // classification field is followed where an instruction to return nothing was not

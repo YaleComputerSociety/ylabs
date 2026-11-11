@@ -1,9 +1,34 @@
 import { describe, expect, it, vi } from 'vitest';
+import { parseCoverageSynthesisArgs, writerModelClientFor } from '../coverageSynthesisCore';
 import {
-  parseCoverageSynthesisArgs,
-  synthesizeWithWriterModel,
-  writerModelClientFor,
-} from '../coverageSynthesisCore';
+  resolveWrittenDescription,
+  writerModelThroughCache,
+  type StoredWrittenDescriptionDerivation,
+  type WrittenDescriptionDerivationStore,
+} from '../writtenDescriptionDerivationCore';
+
+const emptyStore = (): WrittenDescriptionDerivationStore & {
+  saved: StoredWrittenDescriptionDerivation[];
+} => {
+  const saved: StoredWrittenDescriptionDerivation[] = [];
+  return {
+    saved,
+    find: async () => null,
+    save: async (record) => {
+      saved.push(record);
+    },
+  };
+};
+
+const subject = {
+  snippets: [
+    {
+      text: 'The lab studies kelp forest recovery after marine heatwaves.',
+      sourceName: 'yale-research-official',
+    },
+  ],
+  entityName: 'Kelp Lab',
+};
 
 describe('writer dry run calls no model', () => {
   it('builds no model client in a dry run, even with a key present', () => {
@@ -14,42 +39,31 @@ describe('writer dry run calls no model', () => {
     expect(create).not.toHaveBeenCalled();
   });
 
-  it('never invokes the model for a row planned to synthesize when there is no client', async () => {
-    const model = vi.fn();
-    const synthesize = vi.fn(async (callLLM: typeof model) => callLLM());
-    const decision = await synthesizeWithWriterModel({
-      step: 'synthesize',
-      callLLM: null,
-      synthesize,
-    });
-    expect(decision).toBeNull();
-    expect(synthesize).not.toHaveBeenCalled();
-    expect(model).not.toHaveBeenCalled();
+  it('never invokes the model for a row that needs a draft when there is no client', async () => {
+    const store = emptyStore();
+    const resolution = await resolveWrittenDescription({ ...subject, store, drafting: null });
+    expect(resolution.step).toBe('planned');
+    expect(resolution.modelCalled).toBe(false);
+    expect(store.saved).toEqual([]);
   });
 
-  it('builds the client and synthesizes when applying', async () => {
-    const model = vi.fn(async () => 'written');
+  it('builds the client and drafts when applying', async () => {
+    const model = vi.fn(async () => ({
+      fullDescription: 'Studies kelp forest recovery after marine heatwaves.',
+      usedSnippetIndexes: [0],
+    }));
     const create = vi.fn(() => model);
     const client = writerModelClientFor({ apply: true, apiKey: 'sk-test', create });
     expect(create).toHaveBeenCalledWith('sk-test');
-    const decision = await synthesizeWithWriterModel({
-      step: 'synthesize',
-      callLLM: client,
-      synthesize: (callLLM) => callLLM(),
+    const store = emptyStore();
+    const resolution = await resolveWrittenDescription({
+      ...subject,
+      store,
+      drafting: writerModelThroughCache({ callLLM: client!, store }),
     });
-    expect(decision).toBe('written');
+    expect(resolution.step).toBe('synthesized');
+    expect(resolution.modelCalled).toBe(true);
     expect(model).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not synthesize a row whose evidence is unchanged, even when applying', async () => {
-    const synthesize = vi.fn();
-    const decision = await synthesizeWithWriterModel({
-      step: 'evidence-unchanged',
-      callLLM: vi.fn(),
-      synthesize,
-    });
-    expect(decision).toBeNull();
-    expect(synthesize).not.toHaveBeenCalled();
   });
 
   it('refuses an apply run with no key before any row is read', () => {

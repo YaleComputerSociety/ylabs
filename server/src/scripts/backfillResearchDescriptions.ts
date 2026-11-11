@@ -78,6 +78,17 @@ import { assessResearchEntityDescriptionQuality } from '../utils/researchEntityD
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
+import { redactContactsAbsentFrom } from '../utils/contactRedaction';
+
+function withContactsFromSourceOnly<
+  T extends { fullDescription: string; shortDescription: string },
+>(output: T, sourceText: string): T {
+  return {
+    ...output,
+    fullDescription: redactContactsAbsentFrom(String(output.fullDescription ?? ''), [sourceText]),
+    shortDescription: redactContactsAbsentFrom(String(output.shortDescription ?? ''), [sourceText]),
+  };
+}
 import { openAiChatSampling } from '../utils/openAiChatSampling';
 import { rankPersonProfileUrls } from '../utils/personProfileRanking';
 import type { ObservationInput } from '../scrapers/types';
@@ -488,13 +499,13 @@ export async function runResearchDescriptionBackfill(options: {
     if (sourceText.length < MIN_SOURCE_CHARS) continue;
     result.scanned += 1;
     try {
-      const out = await rewrite({ name: entity.displayName || entity.name, sourceText });
-      if (!out.fullDescription) {
+      const drafted = await rewrite({ name: entity.displayName || entity.name, sourceText });
+      if (!drafted.fullDescription) {
         result.skippedNoResearch += 1;
         continue;
       }
       const grounding = groundingScore(
-        `${out.fullDescription} ${out.shortDescription}`,
+        `${drafted.fullDescription} ${drafted.shortDescription}`,
         sourceText,
       );
       if (grounding < MIN_GROUNDING) {
@@ -502,13 +513,14 @@ export async function runResearchDescriptionBackfill(options: {
         continue;
       }
       const quality = assessResearchEntityDescriptionQuality({
-        fullDescription: out.fullDescription,
-        shortDescription: out.shortDescription,
+        fullDescription: drafted.fullDescription,
+        shortDescription: drafted.shortDescription,
       });
       if (!quality.full.isUseful || !quality.short.isUseful) {
         result.skippedQuality += 1;
         continue;
       }
+      const out = withContactsFromSourceOnly(drafted, sourceText);
       if (source) {
         const sourceUrl = officialSourceUrl(entity);
         const entityId = serializedDocumentId(entity._id);
@@ -1004,8 +1016,9 @@ export async function runLabDescriptionSynthesis(options: {
         skipped[verdict.reason ?? 'low-quality'] += 1;
         continue;
       }
-      const appliedFull = sanitizeResearchEntityDescription(output.fullDescription);
-      const appliedShort = sanitizeResearchEntityShortDescription(output.shortDescription);
+      const fromSource = withContactsFromSourceOnly(output, sourceText);
+      const appliedFull = sanitizeResearchEntityDescription(fromSource.fullDescription);
+      const appliedShort = sanitizeResearchEntityShortDescription(fromSource.shortDescription);
       if (!appliedFull || !appliedShort) {
         skipped['sanitized-empty'] += 1;
         continue;

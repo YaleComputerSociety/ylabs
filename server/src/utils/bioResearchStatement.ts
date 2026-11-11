@@ -16,13 +16,13 @@ export interface BioResearchStatement {
 const PAST_RESEARCH_SENTENCE =
   /\b(?:was|were|had\s+been|previously|formerly|directed|led|founded|established|for\s+(?:over|more\s+than|nearly|almost)\s+(?:\d+|[a-z]+(?:-[a-z]+)?)\s+years|earlier\s+in\s+(?:his|her|their)\s+career|doctoral|dissertation|thesis|post-?doctoral|as\s+an?\s+(?:graduate|doctoral|ph\.?\s?d\.?|undergraduate|medical)\s+student|during\s+(?:his|her|their)\s+(?:ph\.?\s?d|doctoral|graduate|postdoctoral|residency|fellowship))\b/i;
 
-const CLINICAL_SERVICE_FOCUS =
+export const CLINICAL_SERVICE_FOCUS =
   /\b(?:focus(?:es|ed)?\s+on\s+(?:the\s+)?(?:surgical|medical|clinical|operative|non-?operative|comprehensive)?\s*(?:treatment|care|management|evaluation)\s+of\s+(?:patients|adults|children|women|men|people)|speciali[sz](?:es|ing)\s+in\s+(?:the\s+)?(?:surgical\s+|medical\s+|clinical\s+|minimally\s+invasive\s+)?(?:treatment|care|management|diagnosis|evaluation)\s+of)\b/i;
 
-const CLINICAL_SPECIALTY_SENTENCE =
+export const CLINICAL_SPECIALTY_SENTENCE =
   /\bspeciali[sz](?:es|ing|ed)?\s+in\b|\b(?:primary\s+)?focus\s+is\s+(?:on\s+)?clinical\s+care\b|\bperforming\b[^.]{0,80}\bsurger(?:y|ies)\b/i;
 
-const SCHOLARLY_INQUIRY =
+export const SCHOLARLY_INQUIRY =
   /\b(?:research|stud(?:y|ies|ying)|investigat\w*|scholar\w*|analy[sz]\w*|theor\w*)\b/i;
 
 const NON_RESEARCH_ONLY_SENTENCE =
@@ -37,7 +37,7 @@ const CITATION_FRAGMENT =
 const DANGLING_REFERENCE_OPENER =
   /^(?:The\s+latter|The\s+former|These|This\s+(?:work|book|project|volume))\b/;
 
-const RESEARCH_WORD =
+export const RESEARCH_WORD =
   /\b(?:research|stud(?:y|ies|ying)|investigat|examin|explor|analy[sz]|model|develop|focus|interests?)\w*/i;
 
 const PERSON_RESEARCH_SUBJECT =

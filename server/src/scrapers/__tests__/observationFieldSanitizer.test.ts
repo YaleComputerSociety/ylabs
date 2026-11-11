@@ -217,7 +217,7 @@ describe('sanitizeObservationField', () => {
   });
 
   describe('description prose (leak class A: script/style chrome + contact in writes)', () => {
-    it('strips page chrome and redacts a raw email from a description', () => {
+    it('strips page chrome and keeps the public email a description states (#5046)', () => {
       const result = sanitizeObservationField(
         'researchEntity',
         'fullDescription',
@@ -226,7 +226,7 @@ describe('sanitizeObservationField', () => {
       expect(result.rejected).toBe(false);
       const value = String(result.value);
       expect(value).not.toContain('Skip to main content');
-      expect(value).not.toContain('@');
+      expect(value).toContain('jdoe@example.edu');
       expect(value).toContain('protein folding');
     });
 

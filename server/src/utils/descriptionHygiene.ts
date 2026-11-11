@@ -11,7 +11,6 @@
  * catalog scraper (#609/#610) both feed here, and the read-time program
  * payload uses it as a second line of defense over already-stored records.
  */
-import { redactDirectContactInfo } from './contactRedaction';
 import { isNonResearchCardSentence, stripProgramRenameNote } from './nonResearchCardSentence';
 
 export function normalizeHygieneWhitespace(value: string): string {
@@ -1623,7 +1622,8 @@ const truncationEllipsisTailPattern = /(?:\.{3}|…)\s*$/;
 
 /**
  * Chrome-only cleaner for a research-entity shortDescription (card blurb and
- * detail field): strip page chrome and redact contact info, but skip the
+ * detail field): strip page chrome, keeping the contact details a public page
+ * publishes (#5046), but skip the
  * fail-closed dump detection of sanitizeResearchEntityDescription so a genuine
  * research summary phrased as a question is not wrongly blanked, while a
  * chrome-only blurb collapses to empty (#808). Intentional fail-closed
@@ -1652,9 +1652,7 @@ export function sanitizeResearchEntityShortDescription(text: string): string {
                               stripInternalConfidenceHedge(
                                 stripCatalogChrome(
                                   evergreenizeStaleCycleDatePhrase(
-                                    repairMissingSpaceAfterSentence(
-                                      redactDirectContactInfo(String(text || '')),
-                                    ),
+                                    repairMissingSpaceAfterSentence(String(text || '')),
                                   ),
                                 ),
                               ),
@@ -2992,7 +2990,6 @@ export function stripLeadingAppointmentTitleBlock(text: string): string {
  * final step in sanitizeStoredCatalogDescription (#671).
  */
 export function sanitizeResearchEntityDescription(text: string, maxLength = 2000): string {
-  const redacted = redactDirectContactInfo(String(text || ''));
   const stripped = stripLeadingAppointmentTitleBlock(
     stripLeadingAdministrativeLocationSentences(
       stripTrailingSourceLayoutLabelSection(
@@ -3001,7 +2998,7 @@ export function sanitizeResearchEntityDescription(text: string, maxLength = 2000
             stripDirectoryResearcherNavChrome(
               stripGluedProfileRoleLabel(
                 stripTrailingContactAddress(
-                  sanitizeCatalogDescription(repairMissingSpaceAfterSentence(redacted)),
+                  sanitizeCatalogDescription(repairMissingSpaceAfterSentence(String(text || ''))),
                 ),
               ),
             ),
@@ -3019,6 +3016,7 @@ export function sanitizeResearchEntityDescription(text: string, maxLength = 2000
     isInstitutionalCenterBlurbText(stripped) ||
     containsHtmlTagMarkup(stripped) ||
     isClinicalTrialRecruitmentFlyerText(stripped) ||
+    isClinicalTrialRecruitmentFlyerText(String(text || '')) ||
     isPatientCareMarketingCopyText(stripped) ||
     isContentlessResearchProjectsBoilerplateText(stripped)
   ) {

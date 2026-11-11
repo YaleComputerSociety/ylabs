@@ -1,5 +1,5 @@
 import type { ResearchEntityType } from '../models/researchAccessTypes';
-import { redactDirectContactInfo } from './contactRedaction';
+import { redactContactsAbsentFrom, redactDirectContactInfo } from './contactRedaction';
 import { openAiChatSampling } from './openAiChatSampling';
 import {
   buildResearchAreasCardSummary,
@@ -784,7 +784,7 @@ export async function synthesizeGroundedCardDescription(
   const methodEvidence = [full, ...(input.evidenceTexts ?? [])];
   const attempt = async (previousAttempt?: string): Promise<string> => {
     try {
-      const card = normalizeCardText(
+      const drafted = normalizeCardText(
         await input.callLLM({
           fullDescription: full,
           entityName: input.entityName || '',
@@ -792,6 +792,7 @@ export async function synthesizeGroundedCardDescription(
           previousAttempt,
         }),
       );
+      const card = redactContactsAbsentFrom(drafted, [full]);
       return card ? (withoutUnsupportedMethodClauses(card, methodEvidence).text ?? '') : '';
     } catch {
       return '';

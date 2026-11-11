@@ -9,6 +9,11 @@ import type { ScraperOptions } from '../scrapers/types';
 import { installScraperHostConcurrencyInterceptor } from '../scrapers/utils/hostConcurrencyLimiter';
 import { scraperHostSlotLimiter } from '../scrapers/utils/scraperHostSlotLimiter';
 import type { PlannedObservation } from './laneScorecardCore';
+import {
+  WRITER_BENCHMARK_LANE,
+  runWriterBenchmarkDry,
+  type WriterBenchmarkRow,
+} from './coverageSynthesisBenchmark';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -50,7 +55,10 @@ export const BENCHMARKABLE_LANES: ReadonlySet<string> = new Set([
   'yale-reu-programs',
   'yse-centers-index',
   'yse-faculty-directory',
+  WRITER_BENCHMARK_LANE,
 ]);
+
+export const SCRIPT_BENCHMARK_LANES: ReadonlySet<string> = new Set([WRITER_BENCHMARK_LANE]);
 
 export const SOURCE_CONCURRENCY_LANES: ReadonlySet<string> = new Set([
   'lab-microsite-undergrad-llm',
@@ -98,7 +106,11 @@ export function assertLaneHonorsSourceConcurrency(sourceName: string): void {
 export async function runLaneDry(spec: LaneBenchmarkSpec): Promise<{
   observations: PlannedObservation[];
   truncated: boolean;
+  writerRows?: WriterBenchmarkRow[];
 }> {
+  if (spec.sourceName === WRITER_BENCHMARK_LANE) {
+    return runWriterBenchmarkDry({ only: spec.only, referenceDate: spec.referenceDate });
+  }
   installScraperHostConcurrencyInterceptor(scraperHostSlotLimiter());
   const options: ScraperOptions = {
     dryRun: true,
