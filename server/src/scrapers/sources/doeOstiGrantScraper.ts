@@ -63,6 +63,7 @@ import {
 } from '../utils/grantEnrichmentTarget';
 import { fetchGrantWindowPage } from '../utils/grantWindowPageFetch';
 import { recentGrantPeriodsOf } from '../utils/recentGrantPeriods';
+import { withCreditedInvestigator, type GrantInvestigator } from '../utils/grantInvestigators';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 
@@ -99,6 +100,7 @@ export interface RecentGrantRecord {
   startDate?: Date;
   url: string;
   role: 'pi';
+  investigators?: GrantInvestigator[];
 }
 
 export interface ParsedOstiAuthor {
@@ -251,7 +253,7 @@ export function buildResearchEntityObservations(
   existingRowSlug: string,
 ): ObservationInput[] {
   const grants = group.records
-    .map(recordToGrant)
+    .map((record) => withCreditedInvestigator(recordToGrant(record), group.userId))
     .sort((left, right) => (right.startDate?.getTime() ?? 0) - (left.startDate?.getTime() ?? 0));
   const top = grants.slice(0, MAX_GRANTS_PER_PI);
   const base = {

@@ -40,6 +40,7 @@ import {
   resolveGrantEnrichmentTarget,
 } from '../utils/grantEnrichmentTarget';
 import { recentGrantPeriodsOf } from '../utils/recentGrantPeriods';
+import { withCreditedInvestigator, type GrantInvestigator } from '../utils/grantInvestigators';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 
@@ -102,6 +103,7 @@ export interface RecentGrantRecord {
   dollarAmount?: number;
   url: string;
   role: 'pi' | 'copi';
+  investigators?: GrantInvestigator[];
 }
 
 export type NehGridRecord = Record<string, string>;
@@ -396,7 +398,9 @@ export function buildResearchEntityObservations(
   piUserId: string,
   canonicalResearchHomeSlug: string,
 ): ObservationInput[] {
-  const records = group.awards.map((a) => grantToRecord(a, 'pi'));
+  const records = group.awards.map((a) =>
+    withCreditedInvestigator(grantToRecord(a, 'pi'), piUserId),
+  );
   const top = sortGrantsByRecency(records).slice(0, MAX_GRANTS_PER_PI);
 
   const base = {
