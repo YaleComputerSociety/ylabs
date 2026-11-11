@@ -63,6 +63,8 @@ export interface SourceLinkProbeResult {
   errorCode?: string;
   requestedUrl?: string;
   finalUrl?: string;
+  /** The status of each redirect hop on the way to `finalUrl`, in order (#5660). */
+  redirectStatuses?: number[];
   /** `Retry-After` the host asked for, when it sent one. Never a verdict input. */
   retryAfterMs?: number;
   privateAddressHost?: boolean;
@@ -175,6 +177,25 @@ const comparablePath = (url: URL): string => url.pathname.replace(/\/+$/, '').to
 
 const comparableHost = (url: URL): string => url.hostname.replace(/^www\./i, '').toLowerCase();
 
+const PERMANENT_REDIRECT_STATUSES = new Set([301, 308]);
+
+/**
+ * A host that permanently redirects an underscore slug to its hyphenated spelling
+ * has moved nothing: it serves the page it was asked for under the spelling it now
+ * publishes, so the landing is the requested resource rather than a roster (#5660).
+ * Every hop must be a 301 or 308, because a temporary redirect says nothing about
+ * where the page lives.
+ */
+function isPermanentSlugRespelling(
+  requestedPath: string,
+  finalPath: string,
+  redirectStatuses: readonly number[] | undefined,
+): boolean {
+  if (!redirectStatuses || redirectStatuses.length === 0) return false;
+  if (!redirectStatuses.every((status) => PERMANENT_REDIRECT_STATUSES.has(status))) return false;
+  return requestedPath.replace(/_/g, '-') === finalPath.replace(/_/g, '-');
+}
+
 const parseProbeUrl = (value: string | undefined): URL | undefined => {
   if (!value) return undefined;
   try {
@@ -212,6 +233,7 @@ const parseProbeUrl = (value: string | undefined): URL | undefined => {
 export function landsAwayFromRequestedResource(
   requestedUrl: string | undefined,
   finalUrl: string | undefined,
+  redirectStatuses?: readonly number[],
 ): boolean {
   const requested = parseProbeUrl(requestedUrl);
   const final = parseProbeUrl(finalUrl);
@@ -221,6 +243,9 @@ export function landsAwayFromRequestedResource(
   const finalPath = comparablePath(final);
   const sameHost = comparableHost(requested) === comparableHost(final);
   if (requestedPath === finalPath && sameHost) return false;
+  if (sameHost && isPermanentSlugRespelling(requestedPath, finalPath, redirectStatuses)) {
+    return false;
+  }
   if (requestedPath === '/') return false;
 
   if (finalPath === '/') return sameHost;
@@ -234,10 +259,10 @@ export function landsAwayFromRequestedResource(
 }
 
 function classifyProbeOutcome(probe: SourceLinkProbeResult): SourceLinkHealth {
-  const { status, errorCode, requestedUrl, finalUrl } = probe;
+  const { status, errorCode, requestedUrl, finalUrl, redirectStatuses } = probe;
   if (typeof status === 'number' && Number.isFinite(status)) {
     if (status >= 200 && status < 300) {
-      if (landsAwayFromRequestedResource(requestedUrl, finalUrl)) {
+      if (landsAwayFromRequestedResource(requestedUrl, finalUrl, redirectStatuses)) {
         return { healthStatus: 'UNAVAILABLE', httpStatusCode: status };
       }
       return { healthStatus: 'HEALTHY', httpStatusCode: status };
@@ -520,18 +545,24 @@ export async function probeSourceLink(
 
   const requestedUrl = safeUrl.toString();
   const agents = ssrfSafeAgents();
+  let redirectStatuses: number[] = [];
   const request = (method: 'HEAD' | 'GET') => {
-    const send = () =>
-      axios.request({
+    const send = () => {
+      redirectStatuses = [];
+      return axios.request({
         url: requestedUrl,
         method,
         maxRedirects: 5,
+        beforeRedirect: (_options, responseDetails) => {
+          redirectStatuses.push(Number(responseDetails?.statusCode));
+        },
         timeout: PROBE_TIMEOUT_MS,
         httpAgent: agents.httpAgent,
         httpsAgent: agents.httpsAgent,
         responseType: method === 'GET' ? 'stream' : 'json',
         validateStatus: () => true,
       });
+    };
     return requestGate ? withHostSlot(requestedUrl, send, requestGate) : send();
   };
 
@@ -570,6 +601,7 @@ export async function probeSourceLink(
         status: response.status,
         requestedUrl,
         ...(resolvedUrl(response) ? { finalUrl: resolvedUrl(response) } : {}),
+        ...(redirectStatuses.length > 0 ? { redirectStatuses: [...redirectStatuses] } : {}),
         ...(retryAfterMs(response.headers) !== undefined
           ? { retryAfterMs: retryAfterMs(response.headers) }
           : {}),

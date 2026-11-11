@@ -1740,6 +1740,7 @@ Collapsing the inconclusive statuses into `UNAVAILABLE` let a WAF or one bad aft
 
 A `2xx` that lands somewhere other than the requested resource is a soft `404`, not a healthy page.
 `landsAwayFromRequestedResource` compares the post-redirect landing against the request and records `UNAVAILABLE` when a deeper page lands on the host root or on a shared roster, because a CMS answers a missing person by redirecting to the index rather than by status code.
+A same-host landing whose path differs from the request only by `_` versus `-` is the requested page when every redirect hop was a `301` or `308`, because the host has only respelled the slug; a temporary redirect, a cross-host landing and any other path change keep the verdict (#5660).
 An `http`-to-`https` upgrade, a `www.` change, a trailing-slash normalization, and a genuine per-person move that still names the person are all excluded, so a URL that merely moved is not read as gone.
 
 A verdict expires.

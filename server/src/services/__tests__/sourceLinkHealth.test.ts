@@ -117,6 +117,25 @@ describe('classifySourceLinkHealth', () => {
 });
 
 describe('probeSourceLink', () => {
+  it('records each redirect status so a permanent slug respelling reads as the same page', async () => {
+    assertPublicHttpUrlMock.mockImplementation(async (url: string) => new URL(url));
+    requestMock.mockReset();
+    requestMock.mockImplementationOnce(
+      async (config: { beforeRedirect?: (o: unknown, d: { statusCode: number }) => void }) => {
+        config.beforeRedirect?.({}, { statusCode: 301 });
+        return {
+          status: 200,
+          request: { res: { responseUrl: 'https://fixture.yale.edu/people/past-fixture-fellows' } },
+        };
+      },
+    );
+    const probe = await probeSourceLink('https://fixture.yale.edu/people/past_fixture_fellows');
+    expect(probe.redirectStatuses).toEqual([301]);
+    expect(classifySourceLinkHealth(probe)).toEqual(
+      expect.objectContaining({ healthStatus: 'HEALTHY', httpStatusCode: 200 }),
+    );
+  });
+
   beforeEach(() => {
     requestMock.mockReset();
     assertPublicHttpUrlMock.mockReset();
@@ -461,6 +480,47 @@ describe('isLikelyUnavailableSourceLink', () => {
 });
 
 describe('landsAwayFromRequestedResource', () => {
+  const ROSTER_SLUG_REQUESTED = 'https://fixture.yale.edu/people/past_fixture_fellows';
+  const ROSTER_SLUG_LANDING = 'https://fixture.yale.edu/people/past-fixture-fellows';
+
+  it.each([[[301]], [[308]], [[301, 308]]])(
+    'is false when a permanent same-host redirect only respells the slug (%j)',
+    (statuses) => {
+      expect(
+        landsAwayFromRequestedResource(ROSTER_SLUG_REQUESTED, ROSTER_SLUG_LANDING, statuses),
+      ).toBe(false);
+    },
+  );
+
+  it.each([[[302]], [[303]], [[307]], [[301, 302]], [[]], [undefined]])(
+    'still lands away when the slug respelling is not a permanent redirect (%j)',
+    (statuses) => {
+      expect(
+        landsAwayFromRequestedResource(ROSTER_SLUG_REQUESTED, ROSTER_SLUG_LANDING, statuses),
+      ).toBe(true);
+    },
+  );
+
+  it('still lands away on a permanent same-host redirect to a genuinely different path', () => {
+    expect(
+      landsAwayFromRequestedResource(
+        'https://fixture.yale.edu/people/a_fixture_person',
+        'https://fixture.yale.edu/people/faculty',
+        [301],
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps a cross-host landing on a roster away even when only the slug is respelled', () => {
+    expect(
+      landsAwayFromRequestedResource(
+        ROSTER_SLUG_REQUESTED,
+        'https://other-fixture.yale.edu/people/past-fixture-fellows',
+        [301],
+      ),
+    ).toBe(true);
+  });
+
   it('is false when the landing keeps the requested resource', () => {
     expect(
       landsAwayFromRequestedResource(
