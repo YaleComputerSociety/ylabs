@@ -130,7 +130,8 @@ It imports the no-external build plus the recorder, dead-click and web-vitals ex
 It starts only when all of these hold:
 
 - the build is a production build with `VITE_POSTHOG_KEY` set to a `phc_` project key and `VITE_POSTHOG_HOST` set to exactly `https://us.i.posthog.com`;
-- `GET /api/check` answers `productAnalytics: true`, which `isProductAnalyticsAllowedForSession` in `server/src/utils/posthogConfig.ts` gives only to a signed-in session without an active admin grant, on a deployed runtime whose `MONGODBURL` names the `Prod` database, whose `MEILISEARCH_INDEX_PREFIX` is `prod`, and whose `SCRAPER_ENV` is not `beta`.
+- `GET /api/check` answers `productAnalytics: true`, which `isProductAnalyticsAllowedForSession` in `server/src/utils/posthogConfig.ts` gives only to a signed-in session without an active admin grant, on a deployed runtime whose `MONGODBURL` names the `Prod` database, whose `MEILISEARCH_INDEX_PREFIX` is `prod`, and whose `SCRAPER_ENV` is not `beta`, and only alongside a `productAnalyticsId`;
+- that `productAnalyticsId` is a well-formed version 4 UUID.
 
 The same server gate is the only way `connect-src` in `server/src/middleware/securityHeaders.ts` gains `https://us.i.posthog.com` and `https://us-assets.i.posthog.com`, so a Beta, Development or local page that somehow started the SDK would have every request refused by its own CSP.
 A session that ends, or a request the server answers with an authentication failure, closes the instance: `before_send` drops every later event and replay stops.
