@@ -38,6 +38,7 @@ import { decideServedResearchAreas } from '../utils/servedResearchAreaGuards';
 import { meshDescriptorOnlyTerms } from '../scrapers/utils/meshNonSubjectDescriptors';
 import { entityHasHostedUndergraduates } from './hostedUndergraduates';
 import { entityWelcomesUndergraduates, servedUndergradInvitationLevel } from './researchEntityDto';
+import { entityMentorsUndergraduates } from './undergradListEvidenceServing';
 import {
   isSyntheticResearchHomeMetadataDescription,
   revoiceFirstPersonResearchLead,
@@ -97,6 +98,8 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'researchAreas',
     'hasUndergradHostingEvidence',
     'welcomesUndergrads',
+    'mentorsUndergrads',
+    'worksWithUndergrads',
     'studentVisibilityTier',
   ],
   sortableAttributes: [
@@ -609,6 +612,13 @@ const UNDERGRAD_INVITATION_RANK_BY_LEVEL: Record<string, number> = {
 export const undergradInvitationRank = (level: string | undefined): number =>
   (level && UNDERGRAD_INVITATION_RANK_BY_LEVEL[level]) || 0;
 
+const presentOnlyWhenTrue = (flags: Record<string, boolean>): Record<string, true> =>
+  Object.fromEntries(
+    Object.entries(flags)
+      .filter(([, value]) => value)
+      .map(([key]) => [key, true]),
+  );
+
 export function buildResearchEntitySearchIndexDocument(
   doc: any,
   memberNames?: ResearchEntitySearchMemberNameFields,
@@ -619,14 +629,24 @@ export function buildResearchEntitySearchIndexDocument(
   const id = serializedDocumentId(rawId);
   if (!id) return null;
 
+  const undergradSignals = {
+    hosts: entityHasHostedUndergraduates(doc),
+    welcomes: entityWelcomesUndergraduates(doc),
+    mentors: entityMentorsUndergraduates(doc),
+  };
   const out: Record<string, any> = {
     ...doc,
     id,
     // Derived from the row rather than copied from the stored flag, so the
     // `hostsUndergrads` filter and facet read the predicate the served badge reads
     // even when a writer changed its inputs without recomputing the flag (#5123).
-    hasUndergradHostingEvidence: entityHasHostedUndergraduates(doc),
-    welcomesUndergrads: entityWelcomesUndergraduates(doc),
+    hasUndergradHostingEvidence: undergradSignals.hosts,
+    welcomesUndergrads: undergradSignals.welcomes,
+    ...presentOnlyWhenTrue({
+      mentorsUndergrads: undergradSignals.mentors,
+      worksWithUndergrads:
+        undergradSignals.hosts || undergradSignals.welcomes || undergradSignals.mentors,
+    }),
     undergradInvitationRank: undergradInvitationRank(servedUndergradInvitationLevel(doc)),
   };
   if (memberNames) {
