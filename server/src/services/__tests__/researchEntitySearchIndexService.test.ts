@@ -361,6 +361,47 @@ describe('researchEntitySearchIndexService', () => {
     expect(staleFalse?.hasUndergradHostingEvidence).toBe(true);
   });
 
+  it('indexes works-with-undergrads as the OR of the hosting, welcomes and mentors fields', () => {
+    const base = {
+      slug: 'works-lab',
+      name: 'Works Lab',
+      archived: false,
+      websiteUrl: 'https://works.example.edu/',
+    };
+    const hosting = buildResearchEntitySearchIndexDocument({
+      ...base,
+      _id: 'entity-hosting',
+      pastUndergradAdvisees: [{ count: 1 }],
+    });
+    const welcoming = buildResearchEntitySearchIndexDocument({
+      ...base,
+      _id: 'entity-welcoming',
+      undergradInvitation: {
+        level: 'welcomes_undergrads',
+        quote: 'We welcome undergraduates.',
+        sourceUrl: 'https://works.example.edu/',
+      },
+    });
+    const unreviewedMentorList = buildResearchEntitySearchIndexDocument({
+      ...base,
+      _id: 'entity-unreviewed',
+      undergradListEvidence: [
+        {
+          source: 'cs-senior-projects',
+          kind: 'advised',
+          count: 2,
+          latestYear: 2026,
+          sourceUrl: 'https://works.example.edu/projects',
+        },
+      ],
+    });
+
+    expect(hosting).toMatchObject({ hasUndergradHostingEvidence: true, worksWithUndergrads: true });
+    expect(welcoming).toMatchObject({ welcomesUndergrads: true, worksWithUndergrads: true });
+    expect(unreviewedMentorList).not.toHaveProperty('mentorsUndergrads');
+    expect(unreviewedMentorList).not.toHaveProperty('worksWithUndergrads');
+  });
+
   it('indexes the welcomes-undergraduates field from the predicate that serves the badge', () => {
     const row = (undergradInvitation: unknown) =>
       buildResearchEntitySearchIndexDocument({
