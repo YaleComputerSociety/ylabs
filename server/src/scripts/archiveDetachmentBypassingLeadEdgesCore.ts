@@ -21,6 +21,7 @@ export const DETACHED_REVIEW_STATUS = 'DISPUTED';
 
 export interface PersonIdentityLike {
   personId: string;
+  displayName?: string | null;
   netid?: string | null;
   email?: string | null;
   orcid?: string | null;
@@ -162,8 +163,12 @@ export function classifyPastBypassArchive(input: PastBypassArchiveInput): PastBy
       String(detachment.personId) !== archivedPersonId,
   );
   if (sameEntity.length === 0) return 'no_detachment_on_its_entity';
+  const archivedDisplayName = input.archivedIdentity?.displayName ?? '';
   const anySameHuman = sameEntity.some(
-    (detachment) => !identitiesNameDistinctHumans(detachment.identity, input.archivedIdentity),
+    (detachment) =>
+      archivedDisplayName !== '' &&
+      detachment.identity?.displayName === archivedDisplayName &&
+      !identitiesNameDistinctHumans(detachment.identity, input.archivedIdentity),
   );
   return anySameHuman ? 'consistent_with_a_detachment' : 'archived_a_distinct_human';
 }

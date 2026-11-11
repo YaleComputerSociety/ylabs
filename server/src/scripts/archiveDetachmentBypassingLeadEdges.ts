@@ -49,7 +49,7 @@ const SCRIPT_NAME = 'archive-detachment-bypassing-leads';
 const BYPASS_ARCHIVE_NOTE =
   'Archived as a lead edge held by a second row for an already-detached human (#3182).';
 const IDENTITY_FIELDS =
-  '_id identifiers.netid identifiers.email identifiers.orcid distinctFromResearcherIds';
+  '_id displayName identifiers.netid identifiers.email identifiers.orcid distinctFromResearcherIds';
 
 // `role_assignments.role` stores canonical roles; `PUBLIC_LEAD_ROLES` holds the
 // legacy labels a SERVED member carries. Filtering stored edges by the legacy set
@@ -88,6 +88,7 @@ const idOf = (value: unknown): string => (value == null ? '' : String(value));
 
 const identityOf = (researcher: any): PersonIdentityLike => ({
   personId: idOf(researcher?._id),
+  displayName: typeof researcher?.displayName === 'string' ? researcher.displayName : null,
   netid: researcher?.identifiers?.netid ?? null,
   email: researcher?.identifiers?.email ?? null,
   orcid: researcher?.identifiers?.orcid ?? null,
@@ -177,7 +178,7 @@ export async function runArchiveDetachmentBypassingLeadEdges(
     const entityId = idOf(detached.target?.id);
     if (!entityId) continue;
     const person: any = await Researcher.findById(detached.personId)
-      .select(`displayName ${IDENTITY_FIELDS}`)
+      .select(IDENTITY_FIELDS)
       .lean();
     const displayName = typeof person?.displayName === 'string' ? person.displayName : '';
     if (!displayName) continue;

@@ -98,11 +98,13 @@ describe('planDetachmentBypassRepair', () => {
 describe('a detachment is scoped to its own row and its own human (#5854)', () => {
   const detachedIdentity = {
     personId: 'person-detached',
+    displayName: 'Synthetic Namesake',
     netid: 'ab111',
     email: 'first.namesake@example.edu',
   };
   const namesakeIdentity = {
     personId: 'person-namesake',
+    displayName: 'Synthetic Namesake',
     netid: 'cd222',
     email: 'second.namesake@example.edu',
   };
@@ -187,13 +189,16 @@ describe('a detachment is scoped to its own row and its own human (#5854)', () =
     expect(afterFirstRun.find((e) => e.edgeId === 'twin-edge-on-own-row')?.archived).toBe(false);
   });
 
-  it('treats differing netids as one human when one is an alias of the other email', () => {
+  it('treats differing netids and emails with no alias relation as two humans', () => {
     expect(
       identitiesNameDistinctHumans(
         { personId: 'a', netid: 'ab111', email: 'ab111@example.edu' },
-        { personId: 'b', netid: 'first.namesake', email: 'first.namesake@example.edu' },
+        { personId: 'b', netid: 'cd222', email: 'cd222@example.edu' },
       ),
     ).toBe(true);
+  });
+
+  it('treats differing netids as one human when one is the local part of the other email', () => {
     expect(
       identitiesNameDistinctHumans(
         { personId: 'a', netid: 'ab111', email: 'first.namesake@example.edu' },
@@ -249,10 +254,32 @@ describe('a detachment is scoped to its own row and its own human (#5854)', () =
     expect(
       classifyPastBypassArchive({
         archivedEdge,
-        archivedIdentity: { personId: 'person-namesake' },
+        archivedIdentity: { personId: 'person-namesake', displayName: 'Synthetic Namesake' },
         detachments: [detachment],
       }),
     ).toBe('consistent_with_a_detachment');
+  });
+
+  it('never counts a detachment of a differently named person as matching a past archive', () => {
+    const archivedEdge = edge({
+      edgeId: 'past-archive',
+      personId: 'person-namesake',
+      archived: true,
+      reviewStatus: DETACHED_REVIEW_STATUS,
+    });
+    const unrelatedDetachment = {
+      ...detached,
+      edgeId: 'unrelated-detached-edge',
+      personId: 'person-unrelated',
+      identity: { personId: 'person-unrelated', displayName: 'Synthetic Unrelated' },
+    };
+    expect(
+      classifyPastBypassArchive({
+        archivedEdge,
+        archivedIdentity: namesakeIdentity,
+        detachments: [{ ...detached, identity: detachedIdentity }, unrelatedDetachment],
+      }),
+    ).toBe('archived_a_distinct_human');
   });
 });
 
