@@ -851,6 +851,80 @@ export function checkServiceCoresRankBelowResearch(
   return buildInvariant(id, title, violations === 0, detail);
 }
 
+export interface ServiceCoreBrowsePlacement {
+  placement: 'demoted' | 'research';
+  reason: string;
+  rescoredSinceAdjustment: boolean;
+  indexedScoreMatchesStored: boolean;
+}
+
+export interface DefaultBrowseWalk {
+  total: number;
+  walked: number;
+}
+
+export function checkServiceCoresRankBelowResearchInBrowse(
+  placements: readonly ServiceCoreBrowsePlacement[],
+  walk: DefaultBrowseWalk,
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult {
+  const id = 'service-cores-rank-below-research-in-browse';
+  const title =
+    'No service core the browse-rank adjustment demotes outranks a research row in the default browse';
+  const ranked = placements.map((placement, index) => ({ ...placement, rank: index + 1 }));
+  const research = ranked.filter(({ placement }) => placement === 'research');
+  const demoted = ranked.filter(({ placement }) => placement === 'demoted');
+  const lastResearchRank = research.at(-1)?.rank ?? 0;
+  const outranking = demoted.filter(({ rank }) => rank < lastResearchRank);
+  const detail = {
+    walk,
+    demoted: demoted.length,
+    demotedByReason: Object.fromEntries(
+      [...new Set(demoted.map(({ reason }) => reason))].map((reason) => [
+        reason,
+        demoted.filter((row) => row.reason === reason).length,
+      ]),
+    ),
+    firstDemotedRank: demoted[0]?.rank ?? null,
+    lastResearchRank,
+    demotedOutrankingResearch: outranking.length,
+    outrankingNotRescoredSinceAdjustment: outranking.filter((row) => !row.rescoredSinceAdjustment)
+      .length,
+    outrankingWithStaleIndexedScore: outranking.filter(
+      (row) => row.rescoredSinceAdjustment && !row.indexedScoreMatchesStored,
+    ).length,
+    outrankingRescoredAndIndexed: outranking.filter(
+      (row) => row.rescoredSinceAdjustment && row.indexedScoreMatchesStored,
+    ).length,
+  };
+  if (walk.walked < walk.total) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The walk did not reach the end of the default browse, so a research row below the last page read could still sit under a core',
+      detail,
+    );
+  }
+  if (demoted.length === 0) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The default browse served no service core, so the ordering it asserts was never exercised',
+      detail,
+    );
+  }
+  if (outranking.length > 0 && corpusFingerprintMoved(corpusBefore, corpusAfter)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The corpus changed while the browse was walked, so a stored row may describe a different version than the one ranked',
+      { ...detail, corpusBefore, corpusAfter },
+    );
+  }
+  return buildInvariant(id, title, outranking.length === 0, detail);
+}
+
 export interface PersonNameQueryObservation {
   variant: 'prefix' | 'typo';
   respelled: boolean;

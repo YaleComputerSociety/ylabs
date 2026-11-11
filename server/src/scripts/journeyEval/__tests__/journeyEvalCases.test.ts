@@ -360,3 +360,72 @@ describe('service-cores-rank-below-research case (#5748)', () => {
     expect((await statusOf(['synthetic-lab', 'synthetic-profile'])).status).toBe('inconclusive');
   });
 });
+
+describe('service-cores-rank-below-research-in-browse case (#5748)', () => {
+  const browseCase = journeyCases.find(
+    (candidate) => candidate.id === 'service-cores-rank-below-research-in-browse',
+  )!;
+  const rescored = { browseRankScorerVersion: 4, browseRankScore: 22 };
+  const storedBySlug: Record<string, Record<string, unknown>> = {
+    'synthetic-lab': { entityType: 'LAB', name: 'Synthetic Lab', browseRankScore: 81 },
+    'synthetic-core': { entityType: 'CORE_FACILITY', name: 'Synthetic Core', ...rescored },
+    'synthetic-stale-core': {
+      entityType: 'CORE_FACILITY',
+      name: 'Synthetic Stale Core',
+      browseRankScorerVersion: 3,
+      browseRankScore: 81,
+    },
+    'synthetic-service-profile': {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      name: 'Synthetic Service Profile',
+      shortDescription: 'Provides electron microscopy services and training for users.',
+      ...rescored,
+    },
+  };
+  const contextServing = (slugs: string[], pageSize = slugs.length): JourneyEvalContext => ({
+    ...syntheticContext([]),
+    window: pageSize,
+    browse: async ({ page = 1, pageSize: size = pageSize }) => ({
+      estimatedTotalHits: slugs.length,
+      researchEntities: slugs.slice((page - 1) * size, page * size).map((slug) => ({ slug })),
+    }),
+    readStoredRows: async (keys) =>
+      new Map(keys.flatMap((key) => (storedBySlug[key] ? [[key, storedBySlug[key]]] : []))),
+    readIndexedSortKeys: async (_attribute, keys) =>
+      new Map(keys.map((key) => [key, storedBySlug[key]?.browseRankScore])),
+  });
+  const invariantOf = async (slugs: string[], pageSize?: number) =>
+    (await browseCase.run(contextServing(slugs, pageSize))).invariants[0];
+
+  it('passes when every demoted row sits below the research rows, walking every page', async () => {
+    const invariant = await invariantOf(
+      ['synthetic-lab', 'synthetic-core', 'synthetic-service-profile'],
+      1,
+    );
+    expect(invariant.status).toBe('pass');
+    expect(invariant.detail).toMatchObject({
+      walk: { total: 3, walked: 3 },
+      demotedByReason: { 'core-facility': 1, 'core-service-text': 1 },
+    });
+  });
+
+  it('fails and names a row not yet rescored by the adjustment', async () => {
+    const invariant = await invariantOf(['synthetic-stale-core', 'synthetic-lab']);
+    expect(invariant.status).toBe('fail');
+    expect(invariant.detail).toMatchObject({
+      demotedOutrankingResearch: 1,
+      outrankingNotRescoredSinceAdjustment: 1,
+      outrankingRescoredAndIndexed: 0,
+    });
+  });
+
+  it('fails and names a rescored row that still outranks research', async () => {
+    const invariant = await invariantOf(['synthetic-service-profile', 'synthetic-lab']);
+    expect(invariant.status).toBe('fail');
+    expect(invariant.detail).toMatchObject({ outrankingRescoredAndIndexed: 1 });
+  });
+
+  it('is inconclusive when the browse served no core', async () => {
+    expect((await invariantOf(['synthetic-lab'])).status).toBe('inconclusive');
+  });
+});

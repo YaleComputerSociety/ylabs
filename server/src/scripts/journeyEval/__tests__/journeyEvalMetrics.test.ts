@@ -7,6 +7,7 @@ import {
   checkFacetAgreement,
   checkMeshDescriptorOnlyRowsRankBelowOwnEvidence,
   checkServiceCoresRankBelowResearch,
+  checkServiceCoresRankBelowResearchInBrowse,
   checkPersonNameWordsAreNotRespelled,
   checkNicknameExpansionReachesThePerson,
   checkDictionaryWordsAreNotRespelled,
@@ -776,6 +777,68 @@ describe('checkServiceCoresRankBelowResearch', () => {
         still,
         moved,
       ).status,
+    ).toBe('inconclusive');
+  });
+});
+
+describe('checkServiceCoresRankBelowResearchInBrowse', () => {
+  const still = { rowCount: 10, latestUpdatedAt: '2026-11-11T00:00:00.000Z' };
+  const moved = { rowCount: 11, latestUpdatedAt: '2026-11-11T00:05:00.000Z' };
+  const research = {
+    placement: 'research' as const,
+    reason: 'research',
+    rescoredSinceAdjustment: true,
+    indexedScoreMatchesStored: true,
+  };
+  const core = { ...research, placement: 'demoted' as const, reason: 'core-facility' };
+  const whole = (length: number) => ({ total: length, walked: length });
+
+  it('passes when demoted rows follow the last research row', () => {
+    const result = checkServiceCoresRankBelowResearchInBrowse(
+      [research, research, core],
+      whole(3),
+      still,
+      still,
+    );
+    expect(result.status).toBe('pass');
+    expect(result.detail).toMatchObject({ firstDemotedRank: 3, lastResearchRank: 2 });
+  });
+
+  it('fails and attributes each outranking row to its cause', () => {
+    const result = checkServiceCoresRankBelowResearchInBrowse(
+      [
+        { ...core, rescoredSinceAdjustment: false },
+        { ...core, indexedScoreMatchesStored: false },
+        core,
+        research,
+      ],
+      whole(4),
+      still,
+      still,
+    );
+    expect(result.status).toBe('fail');
+    expect(result.detail).toMatchObject({
+      demotedOutrankingResearch: 3,
+      outrankingNotRescoredSinceAdjustment: 1,
+      outrankingWithStaleIndexedScore: 1,
+      outrankingRescoredAndIndexed: 1,
+    });
+  });
+
+  it('is inconclusive on a partial walk, an empty population, or a corpus that moved', () => {
+    expect(
+      checkServiceCoresRankBelowResearchInBrowse(
+        [research, core],
+        { total: 3, walked: 2 },
+        still,
+        still,
+      ).status,
+    ).toBe('inconclusive');
+    expect(
+      checkServiceCoresRankBelowResearchInBrowse([research], whole(1), still, still).status,
+    ).toBe('inconclusive');
+    expect(
+      checkServiceCoresRankBelowResearchInBrowse([core, research], whole(2), still, moved).status,
     ).toBe('inconclusive');
   });
 });

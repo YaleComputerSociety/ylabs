@@ -126,6 +126,13 @@ It fails when a row the guard demotes (a `CORE_FACILITY` row, or a faculty row w
 A run in which no query serves a core is inconclusive rather than a pass, and a violation while the corpus fingerprint moved is inconclusive too.
 Measured on Development on 2026-11-11 with the rerank cache on, it failed with the demotion at strength zero (35 demoted rows outranking a research row across 6 of 8 queries) and passed with it (none).
 
+## A service core ranks below research rows in the default browse
+
+The `service-cores-rank-below-research-in-browse` case walks every page of the default browse, reads the stored row behind each result, and classifies it through `serviceCoreDemotionReason` with no query, the predicate the browse score's `SERVICE_CORE_BROWSE_RANK_ADJUSTMENT` applies (#5748).
+It fails when a demoted row outranks a research row, and splits each such row by cause: its stored score predates `SERVICE_CORE_BROWSE_DEMOTION_SCORER_VERSION` (the browse-rank backfill has not run), its indexed score differs from the stored one (the index sync has not run), or neither.
+A walk that stops short of the browse total, a browse that serves no core, and a violation while the corpus fingerprint moved are inconclusive.
+Measured on Development on 2026-11-11 before the backfill, it failed with all 63 demoted rows outranking a research row and all 63 attributed to a score not yet rescored; computed through the new scorer in memory, every demoted row sits below every research row.
+
 ## What this harness does not cover
 
 The research cases call `searchResearchGroupsViaMeili` directly rather than the HTTP route, so real Meilisearch, real Mongo, the ranking, the filters, the visibility gate, and the index-time guards are all exercised, but everything the Express layer adds is not: the oversized-request rejection, parameter coercion, the `includeFacets` policy, JSON serialization, auth, and rate limits.

@@ -22,6 +22,7 @@ import {
   isDemotedServiceCoreReason,
   serviceCoreDemotionReason,
 } from '../../services/serviceCoreDemotion';
+import { SERVICE_CORE_BROWSE_DEMOTION_SCORER_VERSION } from '../../services/researchEntityBrowseRank';
 import { meshDescriptorWordKeys } from '../../scrapers/utils/meshNonSubjectDescriptors';
 import { isEnglishDictionaryWord } from '../../services/englishDictionaryWords';
 import {
@@ -37,6 +38,7 @@ import {
   checkDefaultBrowseOrderIsRepeatable,
   checkMeshDescriptorOnlyRowsRankBelowOwnEvidence,
   checkServiceCoresRankBelowResearch,
+  checkServiceCoresRankBelowResearchInBrowse,
   checkQueryVariantServesTheBaseline,
   checkNoRepeatedRowsAcrossPages,
   checkNotDegraded,
@@ -1260,6 +1262,54 @@ const serviceCoresRankBelowResearch: JourneyCase = {
   },
 };
 
+const serviceCoresRankBelowResearchInBrowse: JourneyCase = {
+  id: 'service-cores-rank-below-research-in-browse',
+  title: 'The default browse never ranks a service core above a research row',
+  run: async (context) => {
+    const reachablePages = maxReachableResearchSearchPage(context.window);
+    const corpusBefore = await context.readCorpusFingerprint();
+    const keys: string[] = [];
+    let total = 0;
+    for (let page = 1; page <= reachablePages; page += 1) {
+      const result = await context.browse({ page, pageSize: context.window });
+      if (page === 1) total = result.estimatedTotalHits ?? 0;
+      const rows = servedRows(result);
+      keys.push(...rows.map(rowKey).filter(Boolean));
+      if (rows.length < context.window || keys.length >= total) break;
+    }
+    const [storedRows, indexedScores] = await Promise.all([
+      context.readStoredRows(keys),
+      context.readIndexedSortKeys('browseRankScore', keys),
+    ]);
+    const placements = keys.map((key) => {
+      const stored = storedRows.get(key) ?? {};
+      const reason = serviceCoreDemotionReason(stored, []);
+      return {
+        placement: isDemotedServiceCoreReason(reason)
+          ? ('demoted' as const)
+          : ('research' as const),
+        reason,
+        rescoredSinceAdjustment:
+          typeof stored.browseRankScorerVersion === 'number' &&
+          stored.browseRankScorerVersion >= SERVICE_CORE_BROWSE_DEMOTION_SCORER_VERSION,
+        indexedScoreMatchesStored: indexedScores.get(key) === stored.browseRankScore,
+      };
+    });
+    const corpusAfter = await context.readCorpusFingerprint();
+    return {
+      invariants: [
+        checkServiceCoresRankBelowResearchInBrowse(
+          placements,
+          { total, walked: keys.length },
+          corpusBefore,
+          corpusAfter,
+        ),
+      ],
+      rates: [],
+    };
+  },
+};
+
 const PERSON_NAME_SAMPLE_WINDOW = 60;
 const PERSON_NAME_SAMPLE_SIZE = 15;
 const PERSON_NAME_MIN_SURNAME_LENGTH = 6;
@@ -1546,6 +1596,7 @@ export const journeyCases: readonly JourneyCase[] = [
   unmatchedWordKeepsTopicResults,
   meshDescriptorRanksBelowOwnEvidence,
   serviceCoresRankBelowResearch,
+  serviceCoresRankBelowResearchInBrowse,
   personNameLookupReachesThePerson,
   pastCapMembersAreFoundThroughTheirRow,
   dictionaryWordsAreNotRespelled,
