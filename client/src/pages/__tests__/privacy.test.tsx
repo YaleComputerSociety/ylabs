@@ -49,9 +49,14 @@ describe('Privacy', () => {
   it('sends a private data request to the maintainer address, answered within 30 days', () => {
     renderPrivacy();
 
-    const link = screen.getByRole('link', { name: PRIVACY_CONTACT_EMAIL });
-    expect(link.getAttribute('href')).toBe(PRIVACY_CONTACT_MAILTO);
-    const paragraph = link.closest('p')?.textContent ?? '';
+    const links = screen.getAllByRole('link', { name: PRIVACY_CONTACT_EMAIL });
+    for (const mailbox of links) {
+      expect(mailbox.getAttribute('href')).toBe(PRIVACY_CONTACT_MAILTO);
+    }
+    const link = links.find((candidate) =>
+      candidate.closest('p')?.textContent?.includes('If you cannot sign in'),
+    );
+    const paragraph = link?.closest('p')?.textContent ?? '';
     expect(paragraph).toContain('If you cannot sign in');
     expect(paragraph).toContain('within 30 days');
     expect(paragraph).toContain('Do not send a request about your own data as a GitHub issue');
@@ -67,7 +72,7 @@ describe('Privacy', () => {
     expect(text).toContain('under Your data');
     expect(text).toContain('enter your Yale password again');
     expect(text).toContain('a maintainer deletes that account too');
-    expect(screen.getByRole('link', { name: PRIVACY_CONTACT_EMAIL })).toBeTruthy();
+    expect(screen.getAllByRole('link', { name: PRIVACY_CONTACT_EMAIL }).length).toBeGreaterThan(0);
   });
 
   it('tells a listed person how to ask to be removed, and says what a request stores', () => {
@@ -77,11 +82,8 @@ describe('Privacy', () => {
     expect(text).toContain(
       'If y/labs lists you and you would like to be removed, sign in and use Remove me on your dashboard, or email ycs.maintenance.ylabs@gmail.com from the address Yale publishes for you.',
     );
-    expect(
-      screen.getByRole('link', { name: 'ycs.maintenance.ylabs@gmail.com' }).getAttribute('href'),
-    ).toBe(PRIVACY_CONTACT_MAILTO);
     expect(text).toContain(
-      'the request stores only your netid, the listing it matched and the request status.',
+      'If you ask to be removed from y/labs, the request stores only your netid, the listing it matched, the request status, when it was made and decided, and which maintainer decided it.',
     );
   });
 

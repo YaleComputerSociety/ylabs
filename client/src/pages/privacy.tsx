@@ -81,7 +81,8 @@ const Privacy = () => {
           </p>
           <p className={BODY_CLASS}>
             If you ask to be removed from y/labs, the request stores only your netid, the listing it
-            matched and the request status.
+            matched, the request status, when it was made and decided, and which maintainer decided
+            it.
           </p>
           <p className={BODY_CLASS}>
             Signing in adds your account to the same y/labs cookie, which keeps you signed in for up
