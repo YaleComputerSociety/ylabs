@@ -221,6 +221,9 @@ Four earlier mechanisms each broke on a stored title, and the module's test file
   The person's display name comes only from a JSON-LD `Person` node or an untyped node, never from an organization or website node, which named every MacMillan Center person page after the center.
   A canonical link differing from the fetched profile only in letter case is the same page.
   In the queued and `visible-profile-bio-backfill` modes, a page with no admissible title still yields the address, and nothing else: no title, name, bio, role or lead attribution follows from such a page (#5701).
+  `visible-profile-bio-backfill` selects a person by the one `YALE_OFFICIAL` link they hold, or a page whose slug is their own netid, as well as by a slug that agrees with their name (#5708).
+  A link another live researcher also holds is dropped from every arm, two held links select nothing, and a slug that is or ends in a directory netid other than the person's own is refused before the page is read.
+  In that mode only, the Yale directory pairing the page's own address with the person's netid stands in for the display-name check, so a compound given name spelled differently on the page and the record no longer refuses the person's own page; a stored address never stands in, because it can be the contaminated value under test.
 - Any outbound fetch to a host derived from user input or stored data MUST go through `utils/ssrfGuard.ts`.
 Use `fetchPublicHttpUrl` (`scrapers/utils/httpFetch.ts`) when a script needs a status or a redirect location, and never the global `fetch`; the security preflight scan fails on an unguarded call, and `skills/auth-security/SKILL.md` owns the rules, including how the renderer's browser is kept on public hosts.
 - A lane that fetches a URL **discovered on a page** must establish that the fetched page is about the same subject before merging anything from it.
