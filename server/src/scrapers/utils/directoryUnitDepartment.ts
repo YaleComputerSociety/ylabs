@@ -10,7 +10,10 @@
 const COSMETIC_SUFFIX = /\s*-\s*(?:all(?:\s+school)?|other)$|\s+other$/i;
 const LEADING_INTERNAL_CODE = /^[A-Z]{3,}\s+(?=[A-Z][a-z])/;
 
+export const DEPARTMENT_HEADING_CHROME_PATTERN = /^other\s+departments?\b/i;
+
 const ADMINISTRATIVE_UNIT_PATTERNS: readonly RegExp[] = [
+  DEPARTMENT_HEADING_CHROME_PATTERN,
   /\b(?:administration|admin|business (?:office|operations)|facilities)\b/i,
   /\b(?:dean'?s?|deans|deputy deans?|associate deans)\b/i,
   /\b(?:academic|research|faculty) affairs\b/i,
@@ -41,14 +44,29 @@ const INTERNAL_UNIT_CODE_DEPARTMENTS: ReadonlyArray<readonly [RegExp, string]> =
   [/^Psych Divisions\b/i, 'Psychiatry'],
 ];
 
+const UNIT_CLASS_DEPARTMENTS: Readonly<Record<string, string>> = {
+  MEDNEU: 'Neurology',
+};
+
+const LEADING_UNIT_CLASS = /^([A-Z]{6})\s+(?=\S)/;
+
 export function isAdministrativeDirectoryUnit(unit: string): boolean {
   return ADMINISTRATIVE_UNIT_PATTERNS.some((pattern) => pattern.test(unit));
 }
 
-export function directoryUnitDepartment(unit: unknown): string | undefined {
+/**
+ * `unitClass` is the directory's unit class code; the CSV export instead prefixes the unit with
+ * it ("MEDNEU Multiple Sclerosis"). A class that is one department reads as that department.
+ */
+export function directoryUnitDepartment(unit: unknown, unitClass?: unknown): string | undefined {
   if (typeof unit !== 'string') return undefined;
   const collapsed = unit.replace(/\s+/g, ' ').trim();
   if (!collapsed) return undefined;
+  const statedClass =
+    (typeof unitClass === 'string' && unitClass.trim().toUpperCase()) ||
+    LEADING_UNIT_CLASS.exec(collapsed)?.[1];
+  const classDepartment = statedClass ? UNIT_CLASS_DEPARTMENTS[statedClass] : undefined;
+  if (classDepartment) return classDepartment;
   const withoutSuffix = collapsed.replace(COSMETIC_SUFFIX, '').trim();
   const decoded = INTERNAL_UNIT_CODE_DEPARTMENTS.find(([code]) => code.test(withoutSuffix));
   if (decoded) return decoded[1];

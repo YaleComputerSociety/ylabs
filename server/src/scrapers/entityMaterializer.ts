@@ -24,6 +24,7 @@ import {
   OWN_KEY_FALLBACK_TITLE_FIELD,
   type ResearcherGatedField,
 } from '../utils/researcherFieldWriters';
+import { screenedPersonDepartmentObservations } from './personDepartmentObservationScreen';
 import {
   changedResearcherPaths,
   expandUserMaterializerScope,
@@ -8200,9 +8201,11 @@ export async function joinUserIdentityToExistingResearcher(
   const keyNamesAnOfficeMailbox = userKeyNamesRoleOrUnitMailbox(identifier.entityKey, obs);
   const materializationObs = keyNamesAnOfficeMailbox
     ? []
-    : withoutOverSharedPersonWebsiteObservations(
-        obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o)),
-        await overSharedPersonWebsiteKeysForMaterialization(),
+    : screenedPersonDepartmentObservations(
+        withoutOverSharedPersonWebsiteObservations(
+          obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o)),
+          await overSharedPersonWebsiteKeysForMaterialization(),
+        ),
       );
   const derived = deriveUserIdentityFields(materializationObs, now);
   const { resolved, displayName } = derived;

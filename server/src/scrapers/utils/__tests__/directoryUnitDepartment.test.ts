@@ -14,6 +14,8 @@ describe('directoryUnitDepartment (#5741)', () => {
     ['MPATH-All', 'Pathology'],
     ['ECE Faculty', 'Electrical and Computer Engineering'],
     ['Psych Divisions-CNRU', 'Psychiatry'],
+    ['MEDNEU Multiple Sclerosis', 'Neurology'],
+    ['FASHIS History', 'History'],
   ])('reads %j as the department %j', (unit, department) => {
     expect(directoryUnitDepartment(unit)).toBe(department);
   });
@@ -38,6 +40,8 @@ describe('directoryUnitDepartment (#5741)', () => {
     'YSM Central',
     'IPE',
     'MEDPSY Psychiatry Administration & General',
+    'Other Departments & Organizations',
+    'LAWFAF Academic Faculty',
     '',
     '   ',
   ])('refuses the administrative unit %j', (unit) => {
@@ -47,5 +51,11 @@ describe('directoryUnitDepartment (#5741)', () => {
   it('refuses a value that is not a string', () => {
     expect(directoryUnitDepartment(undefined)).toBeUndefined();
     expect(directoryUnitDepartment(42)).toBeUndefined();
+  });
+
+  it('reads a unit under a one-department unit class as that department', () => {
+    expect(directoryUnitDepartment('Multiple Sclerosis', 'MEDNEU')).toBe('Neurology');
+    expect(directoryUnitDepartment('Epilepsy', 'MEDNEU')).toBe('Neurology');
+    expect(directoryUnitDepartment('Cardiology', 'MEDINT')).toBe('Cardiology');
   });
 });

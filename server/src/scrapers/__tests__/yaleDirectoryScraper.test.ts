@@ -335,6 +335,18 @@ describe('YaleDirectoryScraper.run', () => {
     expect(keys.has('aaLast')).toBe(true);
   });
 
+  it('reads a unit under the Neurology unit class as Neurology (#5741)', () => {
+    const obs = personToObservations({
+      netid: 'nn01',
+      first_name: 'Fixture',
+      last_name: 'Neuro',
+      title: 'Professor of Neurology',
+      unit_class: 'MEDNEU',
+      unit: 'Multiple Sclerosis',
+    });
+    expect(obs.find((o) => o.field === 'primaryDepartment')?.value).toBe('Neurology');
+  });
+
   it('starts at the zero-indexed first page, so the first page of records is read', async () => {
     process.env.YALIES_API_KEY = 'test-key';
     const onFirstPage = {

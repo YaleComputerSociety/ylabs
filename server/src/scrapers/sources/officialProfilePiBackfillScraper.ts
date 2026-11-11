@@ -2,6 +2,7 @@ import {
   PROFILE_APPOINTMENT_ENDED_FIELD,
   PROFILE_IN_MEMORIAM_FIELD,
 } from '../personPageDepartureFields';
+import { DEPARTMENT_HEADING_CHROME_PATTERN } from '../utils/directoryUnitDepartment';
 import axios from 'axios';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 import mongoose from 'mongoose';
@@ -2953,7 +2954,6 @@ function firstPersonSpecificYaleEmail(
 // match section-heading chrome ("Other Departments & Organizations") and
 // center/institute affiliations that are not academic departments, so only an
 // element explicitly classed "department" is trusted as a department signal.
-const DEPARTMENT_HEADING_CHROME_PATTERN = /^other\s+departments?\b/i;
 
 function extractDepartments($: cheerio.CheerioAPI): string[] {
   const values: string[] = [];
