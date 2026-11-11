@@ -702,6 +702,41 @@ describe('search, then the job, then search again', () => {
     expect(servedIdsOf(second).slice(30)).toEqual(servedIdsOf(first).slice(30));
   });
 
+  it('keys and searches an acronym the student kept literal as the acronym itself (#5169)', async () => {
+    liveMissOn();
+    const literalKey = searchRerankCacheQueryKey('LLMs', {}, { rewriteAcronym: false });
+    const model = vi.fn(async ({ candidates }: { candidates: readonly unknown[] }) =>
+      JSON.stringify({
+        scores: Object.fromEntries(candidates.map((_candidate, index) => [String(index), 1])),
+      }),
+    );
+    let written: Record<string, unknown> | null = null;
+    mocks.rerankUpdateOne.mockImplementation(async (filter: Record<string, unknown>) => {
+      written = filter;
+      return { acknowledged: true };
+    });
+
+    await search('LLMs', { rerankLiveMissClient: CLIENT, rewriteAcronym: false });
+    expect(await enqueuedKeys()).toEqual([literalKey]);
+    const [request] = runner.mock.calls.map(([queued]) => queued);
+    mocks.search.mockClear();
+    mocks.rerankFindOne.mockClear();
+    await runSearchRerankLiveMissJob(request, { model, readSpendTodayUsd: async () => 0 });
+
+    expect(request).toEqual({
+      queryKey: literalKey,
+      query: 'LLMs',
+      filters: {},
+      rewriteAcronym: false,
+    });
+    expect(mocks.rerankFindOne).toHaveBeenCalledWith({ queryKey: literalKey });
+    expect(mocks.search.mock.calls.length).toBeGreaterThan(0);
+    expect(mocks.search.mock.calls.some(([text]) => String(text).includes('large language'))).toBe(
+      false,
+    );
+    expect(written).toMatchObject({ queryKey: literalKey });
+  });
+
   it('stores a hash per score, then re-scores once a scored top-10 row description changes', async () => {
     vi.stubEnv('SEARCH_RERANK_CACHE_ENABLED', 'true');
     liveMissOn('serve');

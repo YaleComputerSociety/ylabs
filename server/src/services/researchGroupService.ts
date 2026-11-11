@@ -583,6 +583,7 @@ export interface ResearchGroupSearchOptions {
   // its semantic leg to a budget written for public traffic.
   embeddingSpendKey?: string;
   correctSpelling?: boolean;
+  rewriteAcronym?: boolean;
   resolveFilterValues?: boolean;
   rerankLiveMissClient?: SearchRerankLiveMissClient;
 }
@@ -590,6 +591,11 @@ export interface ResearchGroupSearchOptions {
 export interface ResearchSearchQueryCorrection {
   originalQuery: string;
   correctedQuery: string;
+}
+
+export interface ResearchSearchAcronymRewrite {
+  originalQuery: string;
+  rewrittenQuery: string;
 }
 
 export interface ResearchGroupSearchResult {
@@ -600,6 +606,7 @@ export interface ResearchGroupSearchResult {
   facetDistribution?: Record<string, Record<string, number>>;
   degraded?: boolean;
   queryCorrection?: ResearchSearchQueryCorrection;
+  acronymRewrite?: ResearchSearchAcronymRewrite;
   appliedFilters?: AppliedStudentFilters;
   moreTopicResults?: PublicResearchEntityDto[];
 }
@@ -972,6 +979,13 @@ export const rewriteAcronymToPhrase = (query: string): string => {
   return phrase ?? query;
 };
 
+export interface AcronymRewriteChoice {
+  rewriteAcronym?: boolean;
+}
+
+const searchedAcronymForm = (query: string, { rewriteAcronym }: AcronymRewriteChoice): string =>
+  rewriteAcronym === false ? query : rewriteAcronymToPhrase(query);
+
 const boundedResearchFilterValues = (values?: string[]): string[] => {
   if (!Array.isArray(values)) return [];
 
@@ -1057,9 +1071,10 @@ export const searchRerankCacheFilters = (
 export const searchRerankCacheQueryKey = (
   query: unknown,
   filters: ResearchGroupFilterInput = {},
+  acronym: AcronymRewriteChoice = {},
 ): string => {
   const normalized = normalizeResearchSearchQuery(
-    typeof query === 'string' ? rewriteAcronymToPhrase(query) : query,
+    typeof query === 'string' ? searchedAcronymForm(query, acronym) : query,
   );
   const queryText =
     normalized.tokens.length > 0 ? normalized.tokens.join(' ') : collapsedLowercase(normalized.raw);
@@ -1092,6 +1107,7 @@ const sanitizeResearchGroupSearchOptions = (
         ? options.embeddingSpendKey.trim().slice(0, 64) || undefined
         : undefined,
     correctSpelling: options.correctSpelling !== false,
+    rewriteAcronym: options.rewriteAcronym !== false,
   };
 };
 
@@ -1928,6 +1944,7 @@ async function optionalMatchedLabMemberNames(
 interface RerankLiveMissOrigin {
   typedQuery: string;
   filters: ResearchGroupFilterInput;
+  acronym: AcronymRewriteChoice;
   client: SearchRerankLiveMissClient;
 }
 
@@ -1973,6 +1990,7 @@ const carriesAccessToggleEvidence = (
 interface MoreTopicResultsRequest {
   searchQuery: string;
   typedQuery: string;
+  acronym: AcronymRewriteChoice;
   filters: ResearchGroupFilterInput;
   filtered: ResearchGroupSearchResult;
   answeredAsNameSearch: boolean;
@@ -1983,6 +2001,7 @@ interface MoreTopicResultsRequest {
 async function optionalMoreTopicResults({
   searchQuery,
   typedQuery,
+  acronym,
   filters,
   filtered,
   answeredAsNameSearch,
@@ -2021,7 +2040,7 @@ async function optionalMoreTopicResults({
       {
         rerankQueryKey:
           isSearchRerankCacheEnabled() && normalizeResearchSearchQuery(typedQuery).raw !== ''
-            ? searchRerankCacheQueryKey(typedQuery, withoutAccessToggles)
+            ? searchRerankCacheQueryKey(typedQuery, withoutAccessToggles, acronym)
             : undefined,
         meiliCallRole: 'optional',
       },
@@ -2056,7 +2075,8 @@ export async function searchResearchGroupsViaMeili(
     options.correctSpelling === false
       ? { query: nameQuery, corrections: [] }
       : correctResearchSearchQuerySpelling(nameQuery);
-  const searchQuery = rewriteAcronymToPhrase(spelling.query);
+  const acronym: AcronymRewriteChoice = { rewriteAcronym: options.rewriteAcronym !== false };
+  const searchQuery = searchedAcronymForm(spelling.query, acronym);
   const studentFilters = await resolveStudentFiltersAgainstCorpus(filters, options);
   const filterableToggles = answersFromMongoBrowse(searchQuery, options)
     ? { filters: studentFilters.filters, dropped: undefined }
@@ -2067,11 +2087,11 @@ export async function searchResearchGroupsViaMeili(
   const droppedToggleFilters = filterableToggles.dropped;
   const rerankQueryKey =
     readsSearchRerankCache() && normalizeResearchSearchQuery(query).raw !== ''
-      ? searchRerankCacheQueryKey(query, filters)
+      ? searchRerankCacheQueryKey(query, filters, acronym)
       : undefined;
   const rerankLiveMiss =
     rerankQueryKey && options.rerankLiveMissClient && isSearchRerankLiveMissEnabled()
-      ? { typedQuery: query, filters, client: options.rerankLiveMissClient }
+      ? { typedQuery: query, filters, acronym, client: options.rerankLiveMissClient }
       : undefined;
   const { result: searched, answeredAsNameSearch } = await searchResearchGroupsForQuery(
     searchQuery,
@@ -2089,6 +2109,7 @@ export async function searchResearchGroupsViaMeili(
   const moreTopicResults = await optionalMoreTopicResults({
     searchQuery,
     typedQuery: query,
+    acronym,
     filters: filterableToggles.filters,
     filtered: searched,
     answeredAsNameSearch,
@@ -2098,13 +2119,15 @@ export async function searchResearchGroupsViaMeili(
   const withAppliedFilters = appliedFilters ? { ...searched, appliedFilters } : searched;
   const result =
     moreTopicResults.length > 0 ? { ...withAppliedFilters, moreTopicResults } : withAppliedFilters;
-  if (spelling.corrections.length === 0) return result;
+  const originalQuery = boundedResearchSearchQuery(query);
   return {
     ...result,
-    queryCorrection: {
-      originalQuery: boundedResearchSearchQuery(query),
-      correctedQuery: spelling.query,
-    },
+    ...(spelling.corrections.length > 0
+      ? { queryCorrection: { originalQuery, correctedQuery: spelling.query } }
+      : {}),
+    ...(searchQuery !== spelling.query
+      ? { acronymRewrite: { originalQuery, rewrittenQuery: searchQuery } }
+      : {}),
   };
 }
 
@@ -2959,6 +2982,7 @@ async function searchResearchGroupsForQuery(
         queryKey: rerankQueryKey,
         query: rerankLiveMiss.typedQuery,
         filters: searchRerankCacheFilters(rerankLiveMiss.filters),
+        ...(rerankLiveMiss.acronym.rewriteAcronym === false ? { rewriteAcronym: false } : {}),
       },
       rerankLiveMiss.client,
     );
@@ -3067,6 +3091,7 @@ export async function searchResearchGroupsForRerankCandidates(
   query: string,
   filters: ResearchGroupFilterInput,
   limit: number,
+  acronym: AcronymRewriteChoice = {},
 ): Promise<SearchRerankCandidates> {
   const publicFilters: ResearchGroupFilterInput = {
     ...filters,
@@ -3077,7 +3102,7 @@ export async function searchResearchGroupsForRerankCandidates(
   const studentFilters = await resolveStudentFiltersAgainstCorpus(publicFilters, options);
   const { result, rerankLiveMissGate, rerankCandidateFingerprints } =
     await searchResearchGroupsForQuery(
-      rewriteAcronymToPhrase(spelling.query),
+      searchedAcronymForm(spelling.query, acronym),
       studentFilters.filters,
       1,
       limit,

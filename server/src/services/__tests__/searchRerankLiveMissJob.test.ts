@@ -157,7 +157,7 @@ describe('runSearchRerankLiveMissJob', () => {
     expect(String(filter.indexVersion.$not)).toBe(String(/^full-/));
     expect(update).toEqual({ $set: outcome.entry });
     expect(options).toEqual({ upsert: true });
-    expect(mocks.searchCandidates).toHaveBeenCalledWith(QUERY, {}, 30);
+    expect(mocks.searchCandidates).toHaveBeenCalledWith(QUERY, {}, 30, { rewriteAcronym: true });
   });
 
   it('writes a shadow entry that only ever replaces another shadow entry', async () => {
