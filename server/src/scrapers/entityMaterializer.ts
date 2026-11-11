@@ -9,6 +9,11 @@ import {
   isPersonResearchRow,
   withLabSiteDescriptionsNarrowedToResearch,
 } from '../utils/researchStatementPassage';
+import {
+  everyCitedPersonPageUrl,
+  identityWithPersonPageUrls,
+  withoutNamesakePersonPageDescriptions,
+} from './utils/namesakePersonPageDescriptions';
 import { cachedCardFor } from './cardSynthesisDerivation';
 import { withoutModelCalls } from '../utils/modelClient';
 import {
@@ -2616,6 +2621,21 @@ export function researchEntityIdentityWithCitationsThroughThisPass(
       ...projectedSourceUrls,
     ].filter((url): url is string => typeof url === 'string'),
   };
+}
+
+/**
+ * The identity the lead-profile and provenance projections refuse a namesake's page with
+ * (#5764): the citations through this pass plus every person page the row's own
+ * observations cite, so a namesake's page a lane copied into `sourceUrls` cannot stand in
+ * as the row's only owner and be copied again.
+ */
+export function withObservedPersonPages(
+  entityIdentity: ResearchEntityIdentity | undefined,
+  observedPersonPageUrls: readonly string[],
+): ResearchEntityIdentity | undefined {
+  return entityIdentity
+    ? identityWithPersonPageUrls(entityIdentity, observedPersonPageUrls)
+    : entityIdentity;
 }
 
 export function deriveResearchEntityWebsiteUrl(
@@ -8204,6 +8224,8 @@ export interface ProjectFromLogInput {
   manualValues: Record<string, unknown>;
   entityDoc: any;
   materializationObs: any[];
+  /** Every person page the row's own live observations cite (#5764). */
+  observedPersonPageUrls?: readonly string[];
   resolverObs: ResolverObservation[];
   derivedResearchAreas?: DerivedResearchAreaCandidate;
   storedDerivedResearchAreasStale?: boolean;
@@ -9678,6 +9700,7 @@ export async function projectFromLog(
     manualValues,
     entityDoc,
     materializationObs,
+    observedPersonPageUrls = [],
     resolverObs,
     fullDescriptionShellGated,
     undergradEvidenceQuoteWithdrawnBy = new Set<string>(),
@@ -10376,10 +10399,13 @@ export async function projectFromLog(
           ...currentSourceUrls,
           ...(Array.isArray(entityDoc?.sourceUrls) ? (entityDoc?.sourceUrls as unknown[]) : []),
         ],
-        researchEntityIdentityWithCitationsThroughThisPass(
-          sourceEntityIdentity,
-          entityDoc?.sourceUrls,
-          currentSourceUrls,
+        withObservedPersonPages(
+          researchEntityIdentityWithCitationsThroughThisPass(
+            sourceEntityIdentity,
+            entityDoc?.sourceUrls,
+            currentSourceUrls,
+          ),
+          observedPersonPageUrls,
         ),
       );
       if (leadProfileUrl) {
@@ -10822,10 +10848,13 @@ export async function projectFromLog(
         const provenanceSourceUrl = bestMaterializationProvenanceSourceUrl(
           materializationObs,
           entityDoc?.sourceLinkHealth,
-          researchEntityIdentityWithCitationsThroughThisPass(
-            sourceEntityIdentity,
-            entityDoc?.sourceUrls,
-            currentSourceUrls,
+          withObservedPersonPages(
+            researchEntityIdentityWithCitationsThroughThisPass(
+              sourceEntityIdentity,
+              entityDoc?.sourceUrls,
+              currentSourceUrls,
+            ),
+            observedPersonPageUrls,
           ),
         );
         const projected = documentAsProjected(set, unset, entityDoc);
@@ -11898,9 +11927,31 @@ async function materializeEntityUnderRemovalGuard(
     );
   }
 
+  const namesakeScreened =
+    isResearchEntityObservationType(entityType) &&
+    isPersonResearchRow({ entityType: entityDoc?.entityType, kind: entityDoc?.kind })
+      ? withoutNamesakePersonPageDescriptions(
+          collectivePageScreened,
+          {
+            slug: textValue(entityDoc?.slug),
+            name: textValue(entityDoc?.name),
+            displayName: textValue(entityDoc?.displayName),
+            sourceUrls: Array.isArray(entityDoc?.sourceUrls) ? entityDoc.sourceUrls : [],
+          },
+          obs,
+        )
+      : collectivePageScreened;
+  if (namesakeScreened.length < collectivePageScreened.length) {
+    console.log(
+      `[description-namesake-page] ${entityType} ${entityIdString || identifier.entityKey || ''}: dropped ${
+        collectivePageScreened.length - namesakeScreened.length
+      } description candidate(s) citing a namesake's person page`,
+    );
+  }
+
   // Read off `obs`, because the set the projection reads has already dropped the page text.
   // When the code lane's topic hand-off (#5418, held) re-lands, it must screen
-  // `collectivePageScreened` before the derived candidate is appended here, so the hand-off
+  // `namesakeScreened` before the derived candidate is appended here, so the hand-off
   // can never drop it.
   const researchPageTopics = isResearchEntityObservationType(entityType)
     ? await researchPageTopicsStateFor(obs)
@@ -11912,7 +11963,7 @@ async function materializeEntityUnderRemovalGuard(
   );
   const resolverObs: ResolverObservation[] = [
     ...withoutObservedAdviseesMovedToMentors(
-      collectivePageScreened.map((o: any) => ({
+      namesakeScreened.map((o: any) => ({
         field: o.field,
         value: o.value,
         sourceName: o.sourceName,
@@ -12062,6 +12113,7 @@ async function materializeEntityUnderRemovalGuard(
     manualValues,
     entityDoc,
     materializationObs,
+    observedPersonPageUrls: everyCitedPersonPageUrl(obs),
     // Every re-rank walk in the projection reads these, so they are the refusal-screened
     // set the resolver itself read: a walk over the unscreened set can adopt a value this
     // row refuses, which the #3438 clear then blanks over an admissible rival (#3884).

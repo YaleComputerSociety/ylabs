@@ -62,6 +62,7 @@ import {
 import {
   loadIngestVerifiedRunIds,
   loadWriterEntitiesBySlug,
+  WRITER_ENTITY_PROJECTION,
   loadWriterObservations,
   loadWriterRowEvidence,
   parseWriterEvidenceFile,
@@ -148,8 +149,7 @@ export const summarizeCoverageSynthesisRefusals = (reports: CoverageEntityReport
 type EntityRow = Record<string, any>;
 
 async function loadTargetEntities(args: ReturnType<typeof parseCoverageSynthesisArgs>) {
-  const projection =
-    'slug name entityType researchAreas recentGrants manuallyLockedFields shortDescription websiteUrl fieldValueRefusals';
+  const projection = WRITER_ENTITY_PROJECTION;
   if (args.rederiveCards) {
     return (await ResearchEntity.find({
       ...writtenBodyCardRepairFilter(SOURCE_NAME, { allWrittenRows: args.all }),
@@ -583,6 +583,7 @@ async function main() {
         fieldValueRefusals: entity.fieldValueRefusals,
         entityType: entity.entityType,
         kind: entity.kind,
+        identity: entity,
       },
     );
     report.snippets = snippets.length;

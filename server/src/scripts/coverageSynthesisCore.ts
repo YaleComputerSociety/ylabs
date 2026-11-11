@@ -1,4 +1,6 @@
 import { isPersonResearchRow } from '../utils/researchStatementPassage';
+import { withoutNamesakePersonPageDescriptions } from '../scrapers/utils/namesakePersonPageDescriptions';
+import type { ResearchEntityIdentity } from '../scrapers/utils/personProfileEntityMatch';
 import { SOURCE_CONTENT_HASH_FIELD } from '../scrapers/contentHashGate';
 import {
   SEARCH_INDEX_WRITES_DEFERRED,
@@ -462,7 +464,19 @@ export interface WriterEvidenceOptions {
   fieldValueRefusals?: unknown;
   entityType?: unknown;
   kind?: unknown;
+  /** The row's own name, slug and committed citations, for the namesake screen (#5764). */
+  identity?: { slug?: unknown; name?: unknown; sourceUrls?: unknown };
 }
+
+const namesakeScreenIdentity = (
+  identity: NonNullable<WriterEvidenceOptions['identity']>,
+): ResearchEntityIdentity => ({
+  slug: typeof identity.slug === 'string' ? identity.slug : undefined,
+  name: typeof identity.name === 'string' ? identity.name : undefined,
+  sourceUrls: Array.isArray(identity.sourceUrls)
+    ? identity.sourceUrls.filter((url): url is string => typeof url === 'string')
+    : [],
+});
 
 /**
  * The writer's evidence: page text the row carries, ordered by `orderWriterEvidence`,
@@ -475,17 +489,22 @@ export function buildWriterEvidenceSnippets(
   recentGrants: unknown,
   options: WriterEvidenceOptions = {},
 ): CoverageSnippet[] {
+  const isPersonRow = isPersonResearchRow({ entityType: options.entityType, kind: options.kind });
+  const ownPersonEvidence =
+    isPersonRow && options.identity
+      ? withoutNamesakePersonPageDescriptions(
+          observations,
+          namesakeScreenIdentity(options.identity),
+        )
+      : observations;
   const admissible = refusedResolverObservations(
-    withOnlyCurrentResearchPageText(observations),
+    withOnlyCurrentResearchPageText(ownPersonEvidence),
     options.fieldValueRefusals,
   ).kept;
   const ordered = orderWriterEvidence(admissible, options.websiteUrl);
   const pageObservations = ordered.filter((obs) => !isGrantEvidenceSource(obs.sourceName));
   const fromPages = gatherCoverageSnippets(pageObservations, options.storedPageText, {
-    narrowLabSiteDescriptions: isPersonResearchRow({
-      entityType: options.entityType,
-      kind: options.kind,
-    }),
+    narrowLabSiteDescriptions: isPersonRow,
   });
   if (hasOwnResearchProse(fromPages)) return fromPages;
   const room = MAX_COVERAGE_SNIPPETS - fromPages.length;

@@ -18,7 +18,7 @@ import {
 } from './coverageSynthesisCore';
 
 export const WRITER_ENTITY_PROJECTION =
-  'slug name entityType researchAreas recentGrants manuallyLockedFields shortDescription websiteUrl fieldValueRefusals';
+  'slug name entityType researchAreas recentGrants manuallyLockedFields shortDescription websiteUrl sourceUrls fieldValueRefusals';
 export const WRITER_OBSERVATION_PROJECTION =
   'field value sourceUrl sourceName confidence observedAt scrapeRunId superseded';
 
@@ -109,6 +109,7 @@ export function snippetsFromRowEvidence(row: WriterRowEvidence, now: Date): Cove
     fieldValueRefusals: row.entity.fieldValueRefusals,
     entityType: row.entity.entityType,
     kind: row.entity.kind,
+    identity: row.entity,
     now,
   };
   const own = buildWriterEvidenceSnippets(row.observations, row.entity.recentGrants, options);
