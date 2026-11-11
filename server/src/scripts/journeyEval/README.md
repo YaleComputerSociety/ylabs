@@ -110,6 +110,13 @@ A failure names a stale index, and the remedy is a rebuild per `docs/meilisearch
 The usual cause on Development is a writer whose index syncs reach a different Meilisearch, or a hosted weekly run, which defers its index writes until `yarn development:search:sync` re-syncs it (`docs/data-refresh-runbook.md`).
 The two sorted cases are also the sample check that command and a laptop sweep's `search-index-check` stage run after a rebuild, as `yarn development:search:check`, with `--fail-on-inconclusive` so a window in which no served row settled before the read fails the check rather than passing over an empty population.
 
+## The welcomes filter serves the badge
+
+The `welcomes-filter-serves-the-badge` case walks every page of a browse filtered to "Welcomes undergrads" and asserts that every row it returns serves `welcomesUndergrads: true` on its card (#5620).
+The filter reads the index and the badge is decided at serve time, so a row the index counts and the card withholds, such as an emeritus-led row whose way in is withheld, is the disagreement this catches.
+A row without the badge while the corpus fingerprint moved is inconclusive, since it may have been written after its index document, and a filter that serves no row is inconclusive rather than a pass.
+Measured on Development on 2026-11-10, the filter returned 117 rows and all 117 served the badge.
+
 ## What this harness does not cover
 
 The research cases call `searchResearchGroupsViaMeili` directly rather than the HTTP route, so real Meilisearch, real Mongo, the ranking, the filters, the visibility gate, and the index-time guards are all exercised, but everything the Express layer adds is not: the oversized-request rejection, parameter coercion, the `includeFacets` policy, JSON serialization, auth, and rate limits.

@@ -287,6 +287,41 @@ export function tallyCreativePracticeLabels(
   };
 }
 
+export interface FilterBadgeTally {
+  filterTotal: number;
+  served: number;
+  withoutBadge: number;
+}
+
+export function checkWelcomesFilterServesTheBadge(
+  tally: FilterBadgeTally,
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult {
+  const id = 'welcomes-filter-rows-serve-the-badge';
+  const title = 'Every row the "Welcomes undergrads" filter returns serves the welcomes badge';
+
+  if (tally.served === 0) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The filter served no row, so zero rows without the badge would be a green signal over an empty population',
+      { ...tally },
+    );
+  }
+
+  if (tally.withoutBadge > 0 && corpusFingerprintMoved(corpusBefore, corpusAfter)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The corpus changed during the walk, so a row may lack the badge only because it was written after its index document',
+      { ...tally, corpusBefore, corpusAfter },
+    );
+  }
+
+  return buildInvariant(id, title, tally.withoutBadge === 0, { ...tally });
+}
+
 export function checkCreativePracticeLabelAttribution(
   tally: CreativePracticeLabelTally,
   corpusBefore: CorpusFingerprint,

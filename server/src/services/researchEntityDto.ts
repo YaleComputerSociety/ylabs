@@ -567,7 +567,9 @@ type UndergradInvitationHolder = Parameters<typeof quotePageIsAboutAnotherEntity
 export const servedUndergradInvitationLevel = (
   group: UndergradInvitationHolder,
 ): UndergradInvitationLevel | undefined =>
-  publicUndergradInvitation(group.undergradInvitation, group)?.level;
+  group.wayInWithheld === true
+    ? undefined
+    : publicUndergradInvitation(group.undergradInvitation, group)?.level;
 
 export const entityWelcomesUndergraduates = (
   group: UndergradInvitationHolder,
@@ -776,7 +778,7 @@ function derivePublicResearchEntityDto(
   if (options.hasHostedUndergraduates ?? entityHasHostedUndergraduates(group)) {
     dto.hasUndergradHostingEvidence = true;
   }
-  if (!wayInWithheld && entityWelcomesUndergraduates(group)) {
+  if (entityWelcomesUndergraduates(group)) {
     dto.welcomesUndergrads = true;
   }
   Object.assign(dto, servedCreativePracticeFlag(creativePractice));

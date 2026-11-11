@@ -67,6 +67,7 @@ const run = (index: ReturnType<typeof fakeIndex>, rows: any[], apply: boolean) =
     getIndex: async () => index as any,
     fetchPage: async (page) => (page === 1 ? rows : []),
     fetchMemberNames: async () => new Map(),
+    fetchEmeritusWayIn: async () => new Map(),
     warmVocabulary: async () => undefined,
   });
 
@@ -212,6 +213,7 @@ describe('reconcile failure part-way', () => {
         getIndex: async () => failing as any,
         fetchPage: async (page) => (page === 1 ? rows : []),
         fetchMemberNames: async () => new Map(),
+        fetchEmeritusWayIn: async () => new Map(),
         warmVocabulary: async () => undefined,
       }),
     ).rejects.toThrow(/stopped part-way: the live index holds 1 of 3 upserts/);

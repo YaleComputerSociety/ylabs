@@ -128,6 +128,7 @@ Hosting in the past and welcoming now stay separate filters, because the owner t
 The toggle is hidden when no result carries the badge, unlike the hosted toggle's disabled zero state, because reaching out is the default for every Yale lab and "Welcomes undergrads (0)" would read as no lab taking undergraduates.
 Measured on Development on 2026-10-29 through the search route, 79 served rows carry an invitation badge, 19 "Actively hiring" and 60 "Welcomes undergrads", and none of them is an emeritus row whose way in is withheld.
 An emeritus row whose way in is withheld drops the badge at serve time, which the index cannot see, so such a row would match the filter without showing its badge; there are none today.
+Since #5620 the index builder reads the same serve-time emeritus decision, so such a row no longer matches the filter; measured on Development on 2026-11-10 before that fix, the filter returned 117 rows, every one serving the badge, and none of them emeritus-led.
 
 ## 2026-10-29: Students And Postdocs On A Lab's Roster Are Name-Searchable (#5442)
 
