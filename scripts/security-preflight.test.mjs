@@ -4043,6 +4043,40 @@ test('the unguarded-fetch scan passes constant hosts, guarded agents, comments a
   assert.deepEqual(findUnguardedOutboundFetches(shadowedFixture), []);
 });
 
+test('the unguarded-fetch scan keeps scanning past a regex literal that holds a quote (#5595)', () => {
+  const afterQuoteRegex = [
+    "const strip = (value) => value.replace(/^['\"]|['\"]$/g, '');",
+    'export const send = (url) => fetch(url);',
+  ].join('\n');
+  const afterClassRegex = [
+    'const quoted = /["\']/.test(input);',
+    'const ratio = total / count / 2;',
+    'export const send = (url) => fetch(url);',
+  ].join('\n');
+  const insideRegex = 'const pattern = /fetch\\(url\\)/;';
+  const betweenDivisions = 'export const ratio = (url) => total / fetch(url) / 2;';
+  const afterPostfixOperators =
+    'const halved = count! / 2; const next = index++ / 2; const prev = index-- / 2; fetch(`${base}/x`);';
+
+  assert.deepEqual(
+    findUnguardedOutboundFetches(afterQuoteRegex).map(({ kind, line }) => `${kind}@${line}`),
+    ['global fetch@2'],
+  );
+  assert.deepEqual(
+    findUnguardedOutboundFetches(afterClassRegex).map(({ kind, line }) => `${kind}@${line}`),
+    ['global fetch@3'],
+  );
+  assert.deepEqual(findUnguardedOutboundFetches(insideRegex), []);
+  assert.deepEqual(
+    findUnguardedOutboundFetches(betweenDivisions).map(({ kind, line }) => `${kind}@${line}`),
+    ['global fetch@1'],
+  );
+  assert.deepEqual(
+    findUnguardedOutboundFetches(afterPostfixOperators).map(({ kind, line }) => `${kind}@${line}`),
+    ['global fetch@1'],
+  );
+});
+
 test('the unguarded-fetch scan exempts only the reviewed number of calls in an exempt file', () => {
   const [exemptFile, { calls }] = [...REVIEWED_OUTBOUND_FETCHES][0];
   const reviewedCall = { kind: 'global fetch', line: 3, argument: 'url' };

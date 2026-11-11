@@ -55,6 +55,54 @@ export function listOutboundFetchScanFiles(repoRoot) {
   return files.sort();
 }
 
+const REGEX_PRECEDING_PUNCTUATION = new Set('(,=:[!&|?{};+-*%<>~^'.split(''));
+const REGEX_PRECEDING_KEYWORDS = new Set([
+  'return',
+  'typeof',
+  'case',
+  'in',
+  'of',
+  'new',
+  'delete',
+  'void',
+  'throw',
+  'yield',
+  'await',
+]);
+
+const POSTFIX_OPERATOR_CHARS = new Set(['!', '+', '-']);
+
+function closesPostfixOperand(source, cursor) {
+  const operator = source[cursor];
+  if (!POSTFIX_OPERATOR_CHARS.has(operator)) return false;
+  let operand = cursor - 1;
+  if (operator !== '!' && source[operand] === operator) operand -= 1;
+  return operand >= 0 && /[\w$)\]]/.test(source[operand]);
+}
+
+function slashStartsRegex(source, index) {
+  let cursor = index - 1;
+  while (cursor >= 0 && /\s/.test(source[cursor])) cursor -= 1;
+  if (cursor < 0) return true;
+  if (closesPostfixOperand(source, cursor)) return false;
+  if (REGEX_PRECEDING_PUNCTUATION.has(source[cursor])) return true;
+  const word = /[A-Za-z_$][\w$]*$/.exec(source.slice(0, cursor + 1));
+  return Boolean(word && REGEX_PRECEDING_KEYWORDS.has(word[0]));
+}
+
+function regexLiteralEnd(source, index) {
+  let inClass = false;
+  for (let cursor = index + 1; cursor < source.length; cursor += 1) {
+    const char = source[cursor];
+    if (char === '\n') return -1;
+    if (char === '\\') cursor += 1;
+    else if (char === '[') inClass = true;
+    else if (char === ']') inClass = false;
+    else if (char === '/' && !inClass) return cursor;
+  }
+  return -1;
+}
+
 function maskCommentsAndStrings(source) {
   const out = source.split('');
   let index = 0;
@@ -74,6 +122,14 @@ function maskCommentsAndStrings(source) {
       const stop = end === -1 ? source.length : end + 2;
       blank(index, stop);
       index = stop;
+    } else if (
+      char === '/' &&
+      slashStartsRegex(source, index) &&
+      regexLiteralEnd(source, index) !== -1
+    ) {
+      const end = regexLiteralEnd(source, index);
+      blank(index + 1, end);
+      index = end + 1;
     } else if (char === "'" || char === '"' || char === '`') {
       let cursor = index + 1;
       while (cursor < source.length && source[cursor] !== char) {
