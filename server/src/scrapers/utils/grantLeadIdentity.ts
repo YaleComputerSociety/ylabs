@@ -10,14 +10,37 @@ export interface GrantPersonIdentity {
   distinctFromResearcherIds?: string[];
 }
 
+const NAME_SUFFIX_TOKENS = new Set([
+  'jr',
+  'sr',
+  'ii',
+  'iii',
+  'iv',
+  'phd',
+  'md',
+  'mph',
+  'mba',
+  'msc',
+  'ms',
+  'dds',
+  'dmd',
+  'dvm',
+  'pharmd',
+  'rn',
+  'np',
+  'facs',
+  'facp',
+]);
+
 const normalizedNameTokens = (name: unknown): string[] =>
   typeof name === 'string'
     ? name
         .normalize('NFKC')
         .toLowerCase()
+        .replace(/\./g, '')
         .replace(/[^\p{L}\s'-]/gu, ' ')
         .split(/\s+/)
-        .filter(Boolean)
+        .filter((token) => token && !NAME_SUFFIX_TOKENS.has(token))
     : [];
 
 const givenTokensCompatible = (left: string, right: string): boolean => {
@@ -27,14 +50,24 @@ const givenTokensCompatible = (left: string, right: string): boolean => {
   return shorter.length >= 3 && longer.startsWith(shorter);
 };
 
+const givenNamesBefore = (tokens: readonly string[], surname: string): string[] => {
+  const at = tokens.lastIndexOf(surname);
+  return at > 0 ? tokens.slice(0, at) : [];
+};
+
+const givenNamesShareAToken = (left: readonly string[], right: readonly string[]): boolean =>
+  left.some((token) => right.some((other) => givenTokensCompatible(token, other)));
+
 export function namesCouldBeOnePerson(left: unknown, right: unknown): boolean {
   const a = normalizedNameTokens(left);
   const b = normalizedNameTokens(right);
   if (a.length < 2 || b.length < 2) return true;
-  if (a[a.length - 1] !== b[b.length - 1]) return false;
-  const givenA = a.slice(0, -1);
-  const givenB = b.slice(0, -1);
-  return givenA.some((token) => givenB.some((other) => givenTokensCompatible(token, other)));
+  const surnameA = a[a.length - 1];
+  const surnameB = b[b.length - 1];
+  return (
+    givenNamesShareAToken(a.slice(0, -1), givenNamesBefore(b, surnameA)) ||
+    givenNamesShareAToken(givenNamesBefore(a, surnameB), b.slice(0, -1))
+  );
 }
 
 const linked = (one: GrantPersonIdentity, other: GrantPersonIdentity): boolean =>
@@ -50,7 +83,10 @@ export function investigatorIsProvablyNotALead(
 ): boolean {
   const researcherId =
     typeof investigator.researcherId === 'string' ? investigator.researcherId : '';
-  const person = researcherId ? listed.get(researcherId) : undefined;
+  if (!researcherId) {
+    return leads.every((lead) => !namesCouldBeOnePerson(lead.displayName, investigator.name));
+  }
+  const person = listed.get(researcherId);
   if (!person?.netid) return false;
   return leads.every(
     (lead) =>

@@ -66,10 +66,58 @@ describe('an investigator is provably not the row lead only on positive evidence
     );
   });
 
-  it('is not provable for an investigator the lane resolved to no researcher', () => {
+  it('is not provable for an uncredited investigator with no listed name', () => {
     expect(
       investigatorIsProvablyNotALead({ contact: false, profileId: 7 }, [lead], new Map()),
     ).toBe(false);
+  });
+
+  it('is provable for an uncredited co-PI whose listed name cannot be the lead', () => {
+    expect(
+      investigatorIsProvablyNotALead(
+        { contact: false, profileId: 7, name: 'QUINN A OTHERFAMILY' },
+        [lead],
+        new Map(),
+      ),
+    ).toBe(true);
+  });
+
+  it('is not provable for an uncredited investigator listed under the lead name', () => {
+    expect(
+      investigatorIsProvablyNotALead(
+        { contact: false, profileId: 7, name: 'ROBIN J SYNTHETIC' },
+        [lead],
+        new Map(),
+      ),
+    ).toBe(false);
+    expect(
+      investigatorIsProvablyNotALead(
+        { contact: false, profileId: 7, name: 'Quinn Otherfamily' },
+        [{ id: 'lead' }],
+        new Map(),
+      ),
+    ).toBe(false);
+  });
+
+  it('is provable for every listed investigator on a row with no lead', () => {
+    const other = { id: 'other', displayName: 'Quinn Synthetic', netid: 'qs2' };
+    expect(investigatorIsProvablyNotALead({ researcherId: 'other' }, [], listed(other))).toBe(
+      true,
+    );
+    expect(
+      investigatorIsProvablyNotALead({ profileId: 7, name: 'Quinn Otherfamily' }, [], new Map()),
+    ).toBe(true);
+  });
+
+  it('is not provable for a duplicate record whose name carries a suffix or a longer surname', () => {
+    const suffixed = { id: 'dup', displayName: 'Robin Synthetic Jr.', netid: 'rs9' };
+    expect(investigatorIsProvablyNotALead({ researcherId: 'dup' }, [lead], listed(suffixed))).toBe(
+      false,
+    );
+    const compound = { id: 'dup', displayName: 'Robin Synthetic Otherfamily', netid: 'rs9' };
+    expect(investigatorIsProvablyNotALead({ researcherId: 'dup' }, [lead], listed(compound))).toBe(
+      false,
+    );
   });
 
   it('reads given names as compatible on an initial or a shared prefix only', () => {
@@ -77,5 +125,9 @@ describe('an investigator is provably not the row lead only on positive evidence
     expect(namesCouldBeOnePerson('Rob Synthetic', 'Robin Synthetic')).toBe(true);
     expect(namesCouldBeOnePerson('Robin Synthetic', 'Rowan Synthetic')).toBe(false);
     expect(namesCouldBeOnePerson('Robin Synthetic', 'Robin Otherfamily')).toBe(false);
+    expect(namesCouldBeOnePerson('Robin Synthetic, PhD', 'Robin Synthetic')).toBe(true);
+    expect(namesCouldBeOnePerson('Robin Synthetic M.D.', 'R. Synthetic')).toBe(true);
+    expect(namesCouldBeOnePerson('Robin Synthetic Otherfamily', 'Robin Synthetic')).toBe(true);
+    expect(namesCouldBeOnePerson('Synthetic Robin', 'Robin Otherfamily')).toBe(false);
   });
 });
