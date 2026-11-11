@@ -7676,13 +7676,16 @@ async function materializeUserIdentityToResearcher(
     netidFieldsWritten += 1;
   }
 
-  if (textValue(researcher.identifiers?.email) === '') {
+  const priorEmail: string | undefined = researcher.identifiers?.email;
+  let emailFieldsWritten = 0;
+  if (textValue(priorEmail) === '') {
     const verifiedEmail = await verifiedResearcherEmail({
       _id: researcher._id,
       netid: textValue(researcher.identifiers?.netid),
     });
     if (verifiedEmail.status === 'verified') {
       researcher.set('identifiers.email', verifiedEmail.email);
+      emailFieldsWritten += 1;
       fieldsWritten += 1;
     }
   }
@@ -7785,10 +7788,16 @@ async function materializeUserIdentityToResearcher(
     reconcileOrcidLinkWithIdentifier();
   };
 
+  // The email was verified against the netid being stamped, so it goes with that netid.
   const forgiveNetidCollision = (): void => {
     researcher.set('identifiers.netid', priorNetid);
     fieldsWritten -= netidFieldsWritten;
     netidFieldsWritten = 0;
+    if (emailFieldsWritten > 0) {
+      researcher.set('identifiers.email', priorEmail);
+      fieldsWritten -= emailFieldsWritten;
+      emailFieldsWritten = 0;
+    }
     conflicts += 1;
     console.warn(
       'Directory identity netid already claimed by another researcher; keeping prior identity:',

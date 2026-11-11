@@ -20,6 +20,7 @@ vi.mock('../../services/researchEntityBrowseRankService', async () => {
   return { ...actual, recomputeBrowseRankForEntities: vi.fn().mockResolvedValue(undefined) };
 });
 
+import { Account } from '../../models/account';
 import { Observation } from '../../models/observation';
 import { Researcher } from '../../models/researcher';
 import { ResearchEntity } from '../../models/researchEntity';
@@ -248,6 +249,60 @@ describe('an empty researcher email is filled from identity-verified evidence on
 
     expect(result.skipped).toBeUndefined();
     expect(await storedEmail(researcher._id)).toBeUndefined();
+  });
+
+  it('drops the filled email when the netid it was verified against is rolled back', async () => {
+    await Researcher.init();
+    const stampedNetid = 'race123';
+    await Account.create({
+      netid: stampedNetid,
+      email: 'race.account.fixture@example.invalid',
+      status: 'ACTIVE',
+    });
+    const researcher = await Researcher.create({ displayName: 'Robin Own' });
+    for (const [field, value] of [
+      ['netid', stampedNetid],
+      ['fname', 'Robin'],
+      ['lname', 'Own'],
+      ['email', DIRECTORY_EMAIL],
+      ['title', 'Professor of Medicine'],
+    ] as const) {
+      await observation({
+        entityKey: stampedNetid,
+        sourceName: 'yale-directory',
+        sourceUrl: `https://directory.yale.edu/${stampedNetid}`,
+        field,
+        value,
+      });
+    }
+    const originalSave = Researcher.prototype.save;
+    let concurrentHolderInserted = false;
+    const saveSpy = vi.spyOn(Researcher.prototype, 'save').mockImplementation(async function (
+      this: any,
+      ...args: any[]
+    ) {
+      if (!concurrentHolderInserted && this.identifiers?.netid === stampedNetid) {
+        concurrentHolderInserted = true;
+        await Researcher.collection.insertOne({
+          displayName: 'Concurrent Holder',
+          identifiers: { netid: stampedNetid },
+          archived: false,
+        });
+      }
+      return originalSave.apply(this, args as any);
+    });
+
+    try {
+      const result = await materializeEntity('user', { entityKey: stampedNetid }, {});
+      expect(result.conflicts).toBeGreaterThanOrEqual(1);
+    } finally {
+      saveSpy.mockRestore();
+    }
+
+    expect(concurrentHolderInserted).toBe(true);
+    const after = await Researcher.findById(researcher._id).lean<any>();
+    expect(after.identifiers?.netid).toBeUndefined();
+    expect(after.identifiers?.email).toBeUndefined();
   });
 
   it('keeps the stored value when verified sources disagree', async () => {
