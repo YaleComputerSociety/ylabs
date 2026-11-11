@@ -27,7 +27,7 @@ const withoutDiacriticsOrApostrophes = (value: string): string =>
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/['\u2019`]/g, '');
 
-const comparableName = (value: string): string =>
+export const comparableName = (value: string): string =>
   withoutDiacriticsOrApostrophes(value)
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
@@ -36,7 +36,7 @@ const comparableName = (value: string): string =>
 export const leadSurname = (personName: string | undefined | null): string =>
   [...personSurnamesFromDisplayNames([withoutDiacriticsOrApostrophes(personName || '')])][0] ?? '';
 
-const urlHostAndPath = (pageUrl: string): string => {
+export const urlHostAndPath = (pageUrl: string): string => {
   try {
     const url = new URL(pageUrl);
     return `${url.host} ${url.pathname}`;

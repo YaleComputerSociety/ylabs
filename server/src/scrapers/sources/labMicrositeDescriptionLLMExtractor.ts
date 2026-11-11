@@ -133,7 +133,6 @@ import {
   pageStatesPersonAsPrincipalInvestigator,
   personScopedResearchEntityBodyDescribesAnotherOrganization,
   personScopedResearchEntityNameFromPersonName,
-  personSurnamesFromDisplayNames,
   researchHomeIdentityTokens,
 } from '../../utils/researchHomeNameIdentityAuthority';
 import {
@@ -159,9 +158,12 @@ import {
 } from '../../utils/relatedEntityTeaserCards';
 import { postChatCompletion } from '../../utils/modelClient';
 import {
+  comparableName,
   isYaleHostedPage,
+  leadSurname,
   nonYaleMicrositeOwnership,
   rowIsScopedToLead,
+  urlHostAndPath,
 } from '../utils/nonYaleMicrositeOwnership';
 
 const SOURCE_KEY = 'lab-microsite-description-llm';
@@ -1067,30 +1069,6 @@ async function storedLaneDescriptionPageNotNamingRowLead(
     ? undefined
     : cited.page;
 }
-
-const withoutDiacriticsOrApostrophes = (value: string): string =>
-  value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/['’`]/g, '');
-
-const comparableName = (value: string): string =>
-  withoutDiacriticsOrApostrophes(value)
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-
-const leadSurname = (personName: string | undefined): string =>
-  [...personSurnamesFromDisplayNames([withoutDiacriticsOrApostrophes(personName || '')])][0] ?? '';
-
-const urlHostAndPath = (pageUrl: string): string => {
-  try {
-    const url = new URL(pageUrl);
-    return `${url.host} ${url.pathname}`;
-  } catch {
-    return pageUrl;
-  }
-};
 
 const MIN_AFFIX_MATCHED_SURNAME_LENGTH = 4;
 
@@ -2827,14 +2805,12 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           observations = llmOutcome.observations;
           guardRefusal = guardRefusal ?? llmOutcome.refusal;
         }
-        if (
-          observations.length > 0 &&
-          !descriptionPageNamesRowLead({
-            ...rowLead,
-            pageUrl: page.url,
-            pageText: [pageText, officialProse?.fullDescription ?? ''].join('\n'),
-          })
-        ) {
+        const pageNamesRowLead = descriptionPageNamesRowLead({
+          ...rowLead,
+          pageUrl: page.url,
+          pageText: [pageText, officialProse?.fullDescription ?? ''].join('\n'),
+        });
+        if (observations.length > 0 && !pageNamesRowLead) {
           observations = [];
           guardRefusal = guardRefusal ?? 'page_does_not_name_row';
         }
@@ -2872,6 +2848,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           const foreignLabPage = groundedLlmExtraction
             ? extractedPageDescribesAnotherPersonsLab(groundedLlmExtraction, identity)
             : false;
+          const pageIsNotRowLeads = foreignLabPage || !pageNamesRowLead;
           const slotAttestation = storedLaneDescriptionIsRetracted
             ? 'empty'
             : descriptionSlotAttestation({
@@ -2909,7 +2886,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
               : hashObservations,
             slotAttestation,
           );
-          const nameObservations = foreignLabPage ? [] : pageStatedNameObservations;
+          const nameObservations = pageIsNotRowLeads ? [] : pageStatedNameObservations;
           const methodsObservation: ObservationInput | null =
             methods.length > 0
               ? {
@@ -2922,7 +2899,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
                   value: methods,
                 }
               : storedDescriptionMethodsObservation;
-          if (methodsObservation && !foreignLabPage) {
+          if (methodsObservation && !pageIsNotRowLeads) {
             await ctx.emit([methodsObservation, ...nameObservations, ...attestedHashObservations]);
             observationCount += 1 + nameObservations.length;
             entitiesObserved += 1;

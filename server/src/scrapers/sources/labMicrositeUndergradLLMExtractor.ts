@@ -147,7 +147,7 @@ const UNDERGRAD_EVIDENCE_QUOTE_FIELD = 'undergradEvidenceQuote';
 const MIN_READABLE_PAGE_TEXT_CHARS = 200;
 // Part of the content-hash contract: bumping it makes an unchanged page re-derive its
 // observations on the next read, served from the answer cache when one is held (#3789).
-const OBSERVATION_DERIVATION_VERSION = 'people-listing-quotes-refused-v8';
+const OBSERVATION_DERIVATION_VERSION = 'non-yale-lead-identity-refused-v9';
 
 /** Path patterns we'll probe on the lab origin if the home page doesn't link
  *  to one. Ordered most-specific → least-specific. */
@@ -1116,31 +1116,6 @@ export function splitRosterUndergraduates(
 // Mirrored in client/src/utils/pastUndergradAdvisees.ts; change both together.
 export const ROSTER_ALUMNI_PROGRAM_NAME = 'Lab roster alumni';
 
-/**
- * Pure: turn an LLMExtraction into the ObservationInput list the materializer
- * will consume. Implements the rules:
- *
- *   - undergradAccessEvidence: emitted iff openToUndergrads is 'yes' or 'no';
- *     skipped on 'unclear', and skipped unless its quote is on a fetched page. Confidence override 0.5 (LLM-based, low-trust).
- *   - currentUndergradCount: emitted on every read, and zero when no grounded
- *     current roster line on a page that lists people survives the gates in
- *     splitRosterUndergraduates; a positive count cites that roster page. The field
- *     is latest-wins, so a re-read replaces a stale positive (#3789). A zero is
- *     withheld when readIsComplete is false, so a sub-page the home page links to
- *     that failed to fetch cannot erase a count it backed. Confidence 0.5.
- *   - pastUndergradAdvisees: emitted when the roster lists undergraduate alumni, as
- *     one entry counting them, cited to the roster page (#4430). Confidence 0.5.
- *   - every quote field: emitted only when the quote is on a fetched page, and
- *     cited to that page (#3592).
- *   - undergradEvidenceQuote: emitted iff evidenceQuote is non-empty, plausible,
- *     and passes the same recency/institution gate as currentUndergradCount, so
- *     a historical or non-Yale snippet never gets displayed as current evidence.
- *     Confidence 0.5.
- *   - joinPageUrl: emitted on every read like currentUndergradCount, empty when the read
- *     found no admissible join page, so a re-read replaces a join page an earlier read
- *     named (#4430); withheld under the same incomplete-read rule.
- *   - lastObservedAt: always emitted (to refresh the freshness clock).
- */
 function nonYaleDescriptionSourceUnconfirmedAsLeads(
   sourceUrl: string,
   sourceContext: {
@@ -1170,6 +1145,31 @@ function nonYaleDescriptionSourceUnconfirmedAsLeads(
   );
 }
 
+/**
+ * Pure: turn an LLMExtraction into the ObservationInput list the materializer
+ * will consume. Implements the rules:
+ *
+ *   - undergradAccessEvidence: emitted iff openToUndergrads is 'yes' or 'no';
+ *     skipped on 'unclear', and skipped unless its quote is on a fetched page. Confidence override 0.5 (LLM-based, low-trust).
+ *   - currentUndergradCount: emitted on every read, and zero when no grounded
+ *     current roster line on a page that lists people survives the gates in
+ *     splitRosterUndergraduates; a positive count cites that roster page. The field
+ *     is latest-wins, so a re-read replaces a stale positive (#3789). A zero is
+ *     withheld when readIsComplete is false, so a sub-page the home page links to
+ *     that failed to fetch cannot erase a count it backed. Confidence 0.5.
+ *   - pastUndergradAdvisees: emitted when the roster lists undergraduate alumni, as
+ *     one entry counting them, cited to the roster page (#4430). Confidence 0.5.
+ *   - every quote field: emitted only when the quote is on a fetched page, and
+ *     cited to that page (#3592).
+ *   - undergradEvidenceQuote: emitted iff evidenceQuote is non-empty, plausible,
+ *     and passes the same recency/institution gate as currentUndergradCount, so
+ *     a historical or non-Yale snippet never gets displayed as current evidence.
+ *     Confidence 0.5.
+ *   - joinPageUrl: emitted on every read like currentUndergradCount, empty when the read
+ *     found no admissible join page, so a re-read replaces a join page an earlier read
+ *     named (#4430); withheld under the same incomplete-read rule.
+ *   - lastObservedAt: always emitted (to refresh the freshness clock).
+ */
 export function extractionToObservations(
   groupSlug: string,
   sourceUrl: string,
