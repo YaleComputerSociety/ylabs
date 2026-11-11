@@ -1372,30 +1372,96 @@ test('the smoke waits for the background Playwright install and fails when it fa
     const inTempDir = (script) => script.replaceAll('/tmp/playwright-install', `${dir}/install`);
     const stubBin = path.join(dir, 'bin');
     fs.mkdirSync(stubBin);
-    const handshakeExit = (npxExit) => {
+    const run = ({ downloadExit, depsExit, launchExit }) => {
       fs.rmSync(`${dir}/install.exit`, { force: true });
+      fs.rmSync(`${dir}/npx.calls`, { force: true });
       fs.writeFileSync(
         path.join(stubBin, 'npx'),
-        `#!/bin/sh\necho "npx $*" >> "${dir}/npx.calls"\nexit ${npxExit}\n`,
+        `#!/bin/sh\necho "npx $*" >> "${dir}/npx.calls"\ncase "$*" in *install-deps*) exit ${depsExit};; *) exit ${downloadExit};; esac\n`,
         { mode: 0o755 },
       );
-      const env = { ...process.env, PATH: `${stubBin}:${process.env.PATH}` };
+      fs.writeFileSync(
+        path.join(stubBin, 'node'),
+        `#!/bin/sh\necho "node launch" >> "${dir}/npx.calls"\nexit ${launchExit}\n`,
+        { mode: 0o755 },
+      );
+      fs.writeFileSync(
+        path.join(stubBin, 'timeout'),
+        `#!/bin/sh\necho "$1" >> "${dir}/timeout.calls"\nshift\nexec "$@"\n`,
+        { mode: 0o755 },
+      );
+      const env = {
+        ...process.env,
+        ...steps[waitAt].env,
+        PATH: `${stubBin}:${process.env.PATH}`,
+        PLAYWRIGHT_DEPS_RETRY_DELAYS: '0 0',
+      };
       const start = spawnSync('bash', ['-e', '-c', inTempDir(steps[startAt].run)], {
         env,
         encoding: 'utf8',
       });
       assert.equal(start.status, 0, 'the start step must return at once and never fail the job');
-      return spawnSync('bash', ['-e', '-c', inTempDir(steps[waitAt].run)], {
+      const status = spawnSync('bash', ['-e', '-c', inTempDir(steps[waitAt].run)], {
         env,
         encoding: 'utf8',
       }).status;
+      const calls = fs.existsSync(`${dir}/npx.calls`)
+        ? fs.readFileSync(`${dir}/npx.calls`, 'utf8').trim().split('\n')
+        : [];
+      return { status, calls };
     };
-    assert.equal(handshakeExit(0), 0);
-    assert.notEqual(handshakeExit(1), 0, 'a failed browser install must fail the smoke job');
-    assert.deepEqual(fs.readFileSync(`${dir}/npx.calls`, 'utf8').trim().split('\n'), [
-      'npx playwright install --with-deps chromium',
-      'npx playwright install --with-deps chromium',
+
+    const healthy = run({ downloadExit: 0, depsExit: 0, launchExit: 0 });
+    assert.equal(healthy.status, 0);
+    assert.deepEqual(healthy.calls, [
+      'npx playwright install chromium',
+      'npx playwright install-deps chromium',
+      'node launch',
     ]);
+
+    assert.notEqual(
+      run({ downloadExit: 1, depsExit: 0, launchExit: 0 }).status,
+      0,
+      'a failed browser download must fail the smoke job',
+    );
+
+    const mirrorsDown = run({ downloadExit: 0, depsExit: 1, launchExit: 0 });
+    assert.equal(mirrorsDown.status, 0, 'an apt mirror outage alone must not fail the job');
+    assert.equal(
+      mirrorsDown.calls.filter((call) => call.includes('install-deps')).length,
+      3,
+      'the system dependency install is retried with backoff',
+    );
+
+    fs.rmSync(`${dir}/timeout.calls`, { force: true });
+    run({ downloadExit: 0, depsExit: 1, launchExit: 0 });
+    const attemptBounds = fs
+      .readFileSync(`${dir}/timeout.calls`, 'utf8')
+      .trim()
+      .split('\n')
+      .map(Number);
+    assert.equal(attemptBounds.length, 3, 'every dependency install attempt is time-bounded');
+    const workflowDelays = steps[waitAt].env.PLAYWRIGHT_DEPS_RETRY_DELAYS.split(' ').map(Number);
+    const worstCaseSeconds =
+      (workflowDelays.length + 1) * attemptBounds[0] +
+      workflowDelays.reduce((sum, delay) => sum + delay, 0);
+    const restOfJobSeconds = 5 * 60;
+    assert.ok(
+      worstCaseSeconds + restOfJobSeconds <=
+        yaml.load(e2eSmokeWorkflow).jobs['student-journey-smoke']['timeout-minutes'] * 60,
+      'every retry must fit inside the job timeout with room left for the smokes',
+    );
+
+    assert.notEqual(
+      run({ downloadExit: 0, depsExit: 1, launchExit: 1 }).status,
+      0,
+      'a browser that cannot launch must fail the job even when the mirrors are down',
+    );
+    assert.notEqual(
+      run({ downloadExit: 0, depsExit: 0, launchExit: 1 }).status,
+      0,
+      'a browser that cannot launch must fail the job',
+    );
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }

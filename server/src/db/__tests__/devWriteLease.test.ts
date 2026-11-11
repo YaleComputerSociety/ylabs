@@ -10,6 +10,9 @@ import {
   DEV_WRITE_LEASE_OWNER_ENV,
   DEV_WRITE_LEASE_TTL_MS,
   DevWriteLeaseHeldError,
+  DevWriteOwnerMissingError,
+  assertDevWriteOwnerLabel,
+  labelSweepRunnerOwner,
   acquireDevWriteLease,
   acquireIntendedDevApplyLease,
   armDevHostLeases,
@@ -26,7 +29,8 @@ import { onInterrupt } from '../../utils/interruptCleanup';
 import { describeDevLocks, parseDevLocksArgs } from '../../scripts/devWriteLocks';
 import { runCanonicalMongoValidators } from '../../scripts/canonicalMongoValidators';
 
-const LEASE_ON: NodeJS.ProcessEnv = {};
+const TEST_OWNER_LABEL = 'test-session';
+const LEASE_ON: NodeJS.ProcessEnv = { DEV_WRITE_OWNER: TEST_OWNER_LABEL };
 
 let memoryServer: MongoMemoryServer;
 let client: MongoClient;
@@ -76,12 +80,14 @@ afterAll(async () => {
 beforeEach(() => {
   resetDevWriteLeaseStateForTests();
   delete process.env[DEV_WRITE_LEASE_OWNER_ENV];
+  process.env.DEV_WRITE_OWNER = TEST_OWNER_LABEL;
 });
 
 afterEach(async () => {
   await releaseHeldDevWriteLeases();
   resetDevWriteLeaseStateForTests();
   delete process.env[DEV_WRITE_LEASE_OWNER_ENV];
+  delete process.env.DEV_WRITE_OWNER;
 });
 
 describe('which database the lease protects', () => {
@@ -409,6 +415,48 @@ describe('a script that writes Development through its own client', () => {
     } finally {
       await other.release();
     }
+  });
+});
+
+describe('an unnamed write against Development', () => {
+  it('refuses an apply with no owner label before taking or writing anything', async () => {
+    const db = database('Development');
+    await leases(db).deleteMany({});
+    recordDevApplyIntent('repair:thing', ['--apply']);
+    await expect(acquireIntendedDevApplyLease(descriptor(db), {})).rejects.toBeInstanceOf(
+      DevWriteOwnerMissingError,
+    );
+    await expect(
+      acquireIntendedDevApplyLease(descriptor(db), { DEV_WRITE_OWNER: ' ' }),
+    ).rejects.toThrow(/DEV_WRITE_OWNER is not set.*Nothing was written/);
+    expect(await leases(db).countDocuments({ locked: true })).toBe(0);
+  });
+
+  it('refuses a writing lane run with no owner label', () => {
+    expect(() => armDevHostLeases(descriptor(database('Development')), 'scrape run', {})).toThrow(
+      DevWriteOwnerMissingError,
+    );
+  });
+
+  it.each(['Beta', 'Prod', 'ylabs_test'])(
+    'never asks for a label outside Development (%s)',
+    async (name) => {
+      const db = database(name);
+      recordDevApplyIntent('repair:thing', ['--apply']);
+      await expect(acquireIntendedDevApplyLease(descriptor(db), {})).resolves.toBeUndefined();
+      expect(() => armDevHostLeases(descriptor(db), 'scrape run', {})).not.toThrow();
+    },
+  );
+
+  it('labels the sweep runner itself, and keeps a label the operator set', () => {
+    const unlabelled: NodeJS.ProcessEnv = {};
+    labelSweepRunnerOwner('scrape:sweep', unlabelled);
+    expect(unlabelled.DEV_WRITE_OWNER).toMatch(/^sweep-runner:scrape:sweep@/);
+    expect(() => assertDevWriteOwnerLabel('scrape run', unlabelled)).not.toThrow();
+
+    const labelled: NodeJS.ProcessEnv = { DEV_WRITE_OWNER: 'session-a' };
+    labelSweepRunnerOwner('scrape:sweep', labelled);
+    expect(labelled.DEV_WRITE_OWNER).toBe('session-a');
   });
 });
 
