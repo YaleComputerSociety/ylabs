@@ -96,6 +96,7 @@ import {
 import {
   isLikelyPersonSpecificYaleEmail,
   normalizeName,
+  observableNetid,
   slugify,
   splitName,
 } from '../utils/scraperHelpers';
@@ -3402,8 +3403,9 @@ export function identityToUserObservations(
     medicine: identity.fetchedUrl,
     official: identity.canonicalUrl,
   };
+  const statedNetid = observableNetid(netid);
   const identityObservations: Array<[string, unknown]> = [
-    ['netid', netid],
+    ...(statedNetid ? ([['netid', statedNetid]] as Array<[string, unknown]>) : []),
     ['fname', first],
     ['lname', last],
   ];

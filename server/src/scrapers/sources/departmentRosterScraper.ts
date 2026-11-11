@@ -59,6 +59,7 @@ import {
   isLikelyPersonSpecificYaleEmail,
   isRoleOrUnitMailbox,
   netidFromEmail,
+  observableNetid,
   isPhotoSceneDescription,
   normalizeName,
   normalizeNameKeepingCaption,
@@ -4118,7 +4119,8 @@ function entryToUserObservations(
   };
   const obs: ObservationInput[] = [];
 
-  if (netid) obs.push({ ...rosterBase, field: 'netid', value: netid });
+  const statedNetid = observableNetid(netid);
+  if (statedNetid) obs.push({ ...rosterBase, field: 'netid', value: statedNetid });
   if (first) obs.push({ ...rosterBase, field: 'fname', value: first });
   if (last) obs.push({ ...rosterBase, field: 'lname', value: last });
   if (!dept.crossListedProgramme || statesFacultyAppointment(entry.title)) {

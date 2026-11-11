@@ -110,6 +110,7 @@ describe('a user keyed by an email local part that has a twin account (#4988)', 
   it('reaches the real account rather than the twin the bare netid names', async () => {
     const result = await join();
     expect(String(result.researcher?._id)).toBe(String(realResearcherId));
+    expect(result.identityJoin).toBe('account-netid');
   });
 
   it('folds the twin researcher into the real one, so the alias key still reaches a live record', async () => {

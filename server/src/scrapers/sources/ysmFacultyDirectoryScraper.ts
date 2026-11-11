@@ -55,6 +55,7 @@ import { REFUSED_WEBSITE_URL_FIELD } from '../laneRefusedWebsiteUrl';
 import {
   isLikelyPersonSpecificYaleEmail,
   netidFromEmail,
+  observableNetid,
   splitName,
 } from '../utils/scraperHelpers';
 import {
@@ -383,7 +384,8 @@ export function facultyToUserObservations(profile: YsmFacultyProfile): {
   const base = { entityType: 'user' as const, entityKey, sourceUrl: profile.profileUrl };
   const obs: ObservationInput[] = [];
 
-  if (netid) obs.push({ ...base, field: 'netid', value: netid });
+  const statedNetid = observableNetid(netid);
+  if (statedNetid) obs.push({ ...base, field: 'netid', value: statedNetid });
   if (first) obs.push({ ...base, field: 'fname', value: first });
   if (last) obs.push({ ...base, field: 'lname', value: last });
   obs.push({ ...base, field: 'userType', value: classifyUserType(profile.screeningTitle) });

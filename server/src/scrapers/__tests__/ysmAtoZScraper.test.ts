@@ -637,6 +637,7 @@ describe('labResearchFacultyToObservations', () => {
         }),
       ]),
     );
+    expect(observations.some((o) => o.entityType === 'user' && o.field === 'netid')).toBe(false);
   });
 
   it("cites the widget's title at the lab page it was read from (#5578)", () => {

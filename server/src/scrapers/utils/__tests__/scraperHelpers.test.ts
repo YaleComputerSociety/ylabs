@@ -5,6 +5,7 @@ import {
   isRoleOrUnitMailbox,
   normalizeInitialSpacing,
   normalizeName,
+  observableNetid,
   slugify,
   splitName,
   yaleUnitMailboxTokens,
@@ -161,5 +162,21 @@ describe('isLikelyPersonSpecificYaleEmail refuses role mailboxes', () => {
     expect(isLikelyPersonSpecificYaleEmail('registrar.fixture@yale.edu', 'Ann Fixture')).toBe(
       false,
     );
+  });
+});
+
+describe('observableNetid', () => {
+  it('states a Yale netid', () => {
+    expect(observableNetid('abc123')).toBe('abc123');
+  });
+
+  it('never states a dotted email local part', () => {
+    expect(observableNetid('robin.fixture')).toBeUndefined();
+    expect(observableNetid('robin.fixture.abc123')).toBeUndefined();
+  });
+
+  it('states nothing for an empty value', () => {
+    expect(observableNetid(undefined)).toBeUndefined();
+    expect(observableNetid('')).toBeUndefined();
   });
 });
