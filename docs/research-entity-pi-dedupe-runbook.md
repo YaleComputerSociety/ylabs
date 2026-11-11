@@ -47,6 +47,7 @@ A refused group is refused whole and nothing partial is planned in its place, so
 The predicate is `distinctPeopleVerdictPairsJoinedByFold` in `server/src/scrapers/distinctPeopleVerdict.ts`, and `server/src/services/distinctPeopleVerdicts.ts` loads it.
 It runs on the plan of every `research-entity:dedupe-by-pi` lane (reported as `plannedRefusedAsDistinctPeopleGroups` and `refusedAsDistinctPeople`), again inside `applyResearchEntityDedupeMergeGroup` (reported as `refusedAsDistinctPeople` on an applied group), and in the eponymous FRA merge, the same-lead duplicate merge, the same-person archive tombstones, the merge-tombstone restore, the stranded-key redirect, the dept-roster shell fold, resolve-at-mint adoption, and researcher-dedupe.
 A refused resolve-at-mint adoption mints the new row on its own instead of joining the other person's row.
+The new row starts at the default `operator_review` tier like any other mint, so it serves only once the student-visibility gate passes it.
 The grant-shell port rolls back a refused port and reports it as `refusedAsDistinctPeople`, and a refused grant-only enrichment counts as deferred.
 A new fold path must call the shared predicate before it writes a redirect.
 

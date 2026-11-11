@@ -26,6 +26,7 @@ import { ResearchEntity } from '../../models/researchEntity';
 import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
 import { materializeEntity } from '../entityMaterializer';
+import { planStudentVisibilityGate } from '../../services/studentVisibilityGateService';
 
 beforeEach(clearC4Flags);
 
@@ -114,6 +115,35 @@ describe('materializer folds honour a recorded distinct-people verdict (#5802)',
     expect(
       await RoleAssignment.countDocuments({ 'target.id': first.entityId, personId: people.y }),
     ).toBe(0);
+  });
+
+  it('a refused adoption mints exactly one row, held unserved until the gate evaluates it', async () => {
+    process.env.C4_RESOLVE_AT_MINT_ENTITIES = 'true';
+    const people = await seedPeople({ verdict: true });
+    await observe('quill-coastal-lab', 'name', 'Coastal Sediment Lab', 'lab-microsite');
+    await observe('quill-coastal-lab', 'websiteUrl', SITE, 'lab-microsite');
+    const first = await materializeEntity('researchEntity', { entityKey: 'quill-coastal-lab' });
+    await leadEdge(first.entityId, people.x);
+    const rowsBefore = await ResearchEntity.countDocuments({});
+
+    await observe('ortolan-coastal-lab', 'name', 'Coastal Sediment Lab', 'lab-people-page');
+    await observe('ortolan-coastal-lab', 'websiteUrl', SITE, 'lab-people-page');
+    await observe('ortolan-coastal-lab', 'inferredPiUserId', String(people.y), 'lab-people-page');
+    const second = await materializeEntity('researchEntity', { entityKey: 'ortolan-coastal-lab' });
+
+    expect(second.created).toBe(true);
+    expect(await ResearchEntity.countDocuments({})).toBe(rowsBefore + 1);
+    const minted = (await ResearchEntity.findById(second.entityId).lean()) as Record<string, any>;
+    expect(minted.studentVisibilityTier).toBe('operator_review');
+    expect(minted.studentVisibilityEvaluatedAt ?? null).toBeNull();
+
+    const plans = await planStudentVisibilityGate({
+      collection: 'research',
+      mode: 'dry-run',
+      recordIds: [String(second.entityId)],
+    });
+    expect(plans).toHaveLength(1);
+    expect(plans[0].tier).not.toBe('student_ready');
   });
 
   it('resolve-at-mint still adopts the same row when no verdict separates the two leads', async () => {
