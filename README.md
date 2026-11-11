@@ -42,7 +42,7 @@ yarn dev:client
 yarn dev:server
 ```
 
-Go to **http://localhost:3000**. Use `http://localhost:4000/api/dev-login` for a local session (in a worktree, use the dev-login URL `scripts/new-agent-worktree.sh` prints, whose `?redirect=` returns you to that worktree's client port), or set `LOCAL_AUTH_BYPASS=true` in `server/.env` to inject the default `devadmin` admin user on protected API requests. Leave that flag off when testing the real CAS flow at `/api/cas`. A shell value for `LOCAL_AUTH_BYPASS`, `LOCAL_AUTH_BYPASS_NETID` or `LOCAL_AUTH_BYPASS_USER_TYPE` overrides `server/.env`, so `LOCAL_AUTH_BYPASS_NETID=test123 LOCAL_AUTH_BYPASS_USER_TYPE=undergraduate yarn dev:server` runs as a non-admin student; see "Testing locally as a non-admin student" in `skills/auth-security/SKILL.md`.
+Go to **http://localhost:3000**. Use `http://localhost:4000/api/dev-login` for a local session (in a worktree, use the dev-login URL `scripts/new-agent-worktree.sh` prints, whose `?redirect=` returns you to that worktree's client port), or set `LOCAL_AUTH_BYPASS=true` in `server/.env` to inject the default `devadmin` admin user on protected API requests. Leave that flag off when testing the real CAS flow at `/api/cas`. A shell value for `LOCAL_AUTH_BYPASS`, `LOCAL_AUTH_BYPASS_NETID` or `LOCAL_AUTH_BYPASS_USER_TYPE` overrides `server/.env`, so `LOCAL_AUTH_BYPASS_NETID=test123 LOCAL_AUTH_BYPASS_USER_TYPE=undergraduate yarn dev:server` runs as a non-admin student. For a write-free check of what a student sees, start with `LOCAL_AUTH_BYPASS=false yarn dev:server` and confirm `GET /api/check` returns `{"auth":false}` before reading; see "Testing locally as a non-admin student" in `skills/auth-security/SKILL.md`.
 
 ## Product Surfaces
 

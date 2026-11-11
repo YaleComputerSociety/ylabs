@@ -277,4 +277,15 @@ describe('development-only affordances are scoped to the developer machine', () 
     expect(accountServiceMock.recordAccountLogin).not.toHaveBeenCalled();
     expect(adminGrantServiceMock.ensureBootstrapAdminGrant).not.toHaveBeenCalled();
   });
+  it('announces an active bypass at startup only in a local runtime with the flag on', async () => {
+    const { localAuthBypassStartupNotice } = await loadPassportModule(LOCAL_DEVELOPMENT_ENV);
+
+    expect(
+      localAuthBypassStartupNotice({ ...LOCAL_DEVELOPMENT_ENV, LOCAL_AUTH_BYPASS: 'true' }),
+    ).toMatch(/LOCAL_AUTH_BYPASS is on[\s\S]*LOCAL_AUTH_BYPASS=false/);
+    expect(
+      localAuthBypassStartupNotice({ ...LOCAL_DEVELOPMENT_ENV, LOCAL_AUTH_BYPASS: 'false' }),
+    ).toBeNull();
+    expect(localAuthBypassStartupNotice({ ...DEPLOYED_ENV, LOCAL_AUTH_BYPASS: 'true' })).toBeNull();
+  });
 });

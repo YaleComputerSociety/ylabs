@@ -177,6 +177,15 @@ function isLocalAuthBypassAllowed(env: NodeJS.ProcessEnv = process.env): boolean
   return isLocalDevelopmentRuntime(env) && isTruthyEnvFlag(env.LOCAL_AUTH_BYPASS);
 }
 
+function localAuthBypassStartupNotice(env: NodeJS.ProcessEnv = process.env): string | null {
+  if (!isLocalAuthBypassAllowed(env)) return null;
+  return [
+    '[auth] LOCAL_AUTH_BYPASS is on: every cookieless loopback request signs in as the configured bypass user,',
+    "records that login on this database, and carries the user's admin grant when it holds one.",
+    'For a write-free student check start with LOCAL_AUTH_BYPASS=false and confirm GET /api/check returns {"auth":false}.',
+  ].join(' ');
+}
+
 /**
  * A development-only affordance is scoped to the machine running the server, so
  * the runtime label alone never licenses one: the request must also have
@@ -928,6 +937,7 @@ export {
   isDevLoginRequestAllowed,
   isLocalAuthBypassAllowed,
   isLocalAuthBypassRequestAllowed,
+  localAuthBypassStartupNotice,
   isLocalDevelopmentRuntime,
   localAuthBypassUser,
   localDevOriginFromRequest,
