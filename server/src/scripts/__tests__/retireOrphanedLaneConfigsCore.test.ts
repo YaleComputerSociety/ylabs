@@ -8,7 +8,7 @@ import {
   planOrphanedLaneConfigRetirement,
   runOnlySelection,
   servedFieldChanges,
-  engineStillProduces,
+  engineStillProducesObservation,
   splitByEngineProduction,
   type OrphanLaneDefinition,
   type StoredLaneObservation,
@@ -323,20 +323,47 @@ describe('fieldsCreditedToRetired', () => {
   });
 });
 
-describe('engineStillProduces', () => {
+describe('engineStillProducesObservation', () => {
+  const produces = (
+    withOrphans: unknown,
+    withoutOrphans: unknown,
+    observationValue: unknown,
+    siblingValues: unknown[] = [],
+  ) =>
+    engineStillProducesObservation({
+      withOrphans,
+      withoutOrphans,
+      observationValue,
+      siblingValues,
+    });
+
   it('needs every item the engine produces with the orphans, in any order', () => {
     expect(
-      engineStillProduces(['Physics', 'Applied Physics'], ['Applied Physics', 'Physics']),
+      produces(['Physics', 'Applied Physics'], ['Applied Physics', 'Physics'], ['Physics']),
     ).toBe(true);
-    expect(engineStillProduces(['Physics', 'Applied Physics'], ['Physics'])).toBe(false);
-    expect(engineStillProduces(['Physics'], ['Physics', 'Radiology'])).toBe(true);
-    expect(engineStillProduces('Lee Lab', 'Lee Lab')).toBe(true);
-    expect(engineStillProduces('Lee Lab', 'Lee Group')).toBe(false);
+    expect(produces(['Physics', 'Applied Physics'], ['Physics'], ['Physics'])).toBe(false);
+    expect(produces(['Physics'], ['Physics', 'Radiology'], ['Physics'])).toBe(true);
+    expect(produces('Lee Lab', 'Lee Lab', 'Lee Lab')).toBe(true);
+    expect(produces('Lee Lab', 'Lee Group', 'Lee Lab')).toBe(false);
+  });
+
+  it('retires an orphan whose own items survive when a sibling orphan states every lost item', () => {
+    expect(produces(['Physics', 'Chemistry'], ['Physics'], ['Physics'], [['Chemistry']])).toBe(
+      true,
+    );
+    expect(produces(['Physics', 'Chemistry'], ['Physics'], ['Chemistry'], [['Physics']])).toBe(
+      false,
+    );
+    expect(produces(['Physics', 'Chemistry'], ['Physics'], ['Physics'], [['Biology']])).toBe(false);
+  });
+
+  it('holds an orphan whose own value the engine does not produce without the orphans', () => {
+    expect(produces(['Physics'], ['Physics'], ['physics'])).toBe(false);
   });
 
   it('never reads an empty projection as backing', () => {
-    expect(engineStillProduces(undefined, undefined)).toBe(false);
-    expect(engineStillProduces([], ['Physics'])).toBe(false);
+    expect(produces(undefined, undefined, ['Physics'])).toBe(false);
+    expect(produces([], ['Physics'], ['Physics'])).toBe(false);
   });
 });
 
@@ -409,6 +436,24 @@ describe('splitByEngineProduction', () => {
       },
     ]);
     expect(split.withoutRow).toBe(1);
+  });
+
+  it('holds only the sibling orphan whose item the engine loses without the orphans', () => {
+    const departmentsOrphan = (id: string, value: string[]) => ({
+      observation: observation(id, 'dept-gone-lane-pat-lee', { field: 'departments', value }),
+      configId: 'gone-lane',
+      basis: 'key-namespace' as const,
+    });
+    const split = splitByEngineProduction({
+      attributed: [departmentsOrphan('a', ['Chemistry']), departmentsOrphan('b', ['Physics'])],
+      rowOf,
+      outputsByRow,
+      retireSoleEvidence: false,
+    });
+    expect(split.observationIdsToRetire).toEqual(['a']);
+    expect(split.heldSoleEvidence).toEqual([
+      expect.objectContaining({ field: 'departments', observationIds: ['b'] }),
+    ]);
   });
 
   it('retires everything only under the explicit opt-out, and plans the same split twice', () => {

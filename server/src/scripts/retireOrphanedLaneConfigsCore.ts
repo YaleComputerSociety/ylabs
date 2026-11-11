@@ -450,21 +450,31 @@ const engineItems = (value: unknown): string[] =>
   isEmptyValue(value) ? [] : (Array.isArray(value) ? value : [value]).map(stableJson);
 
 /**
- * Whether the engine, projecting the row with the field's stored value cleared, produces every
- * item without the orphans that it produces with them. An empty output with the orphans means
- * the projection cannot say what they back, so it counts as not produced.
+ * Whether the engine, projecting the row with the field's stored value cleared, still produces
+ * one orphan's own items without any orphan, while every item the field loses is stated by a
+ * sibling orphan, which is then held for it. A lost item no orphan states cannot be attributed,
+ * so it holds every orphan on the field, and an empty output with the orphans means the
+ * projection cannot say what they back, so it counts as not produced.
  */
-export function engineStillProduces(withOrphans: unknown, withoutOrphans: unknown): boolean {
-  const produced = engineItems(withOrphans);
+export function engineStillProducesObservation(input: {
+  withOrphans: unknown;
+  withoutOrphans: unknown;
+  observationValue: unknown;
+  siblingValues: readonly unknown[];
+}): boolean {
+  const produced = engineItems(input.withOrphans);
   if (produced.length === 0) return false;
-  const kept = new Set(engineItems(withoutOrphans));
-  return produced.every((item) => kept.has(item));
+  const own = engineItems(input.observationValue);
+  const kept = new Set(engineItems(input.withoutOrphans));
+  if (!own.every((item) => kept.has(item))) return false;
+  const statedBySiblings = new Set(input.siblingValues.flatMap(engineItems));
+  return produced.every((item) => kept.has(item) || statedBySiblings.has(item));
 }
 
 /**
- * Retires an attributed observation only when the engine still produces its field's value
- * from the row's other evidence, unless the operator opts out. A row the engine was not asked
- * to project holds its observations, so a missing projection never reads as backing.
+ * Retires an attributed observation only when the engine still produces its own value from the
+ * row's other evidence, unless the operator opts out. A row the engine was not asked to project
+ * holds its observations, so a missing projection never reads as backing.
  */
 export function splitByEngineProduction(input: {
   attributed: readonly AttributedObservation[];
@@ -475,6 +485,13 @@ export function splitByEngineProduction(input: {
   const retire = new Set<string>();
   const held = new Map<string, HeldSoleEvidence>();
   let withoutRow = 0;
+  const entriesByRowField = new Map<string, AttributedObservation[]>();
+  for (const entry of input.attributed) {
+    const row = input.rowOf(entry.observation);
+    if (!row) continue;
+    const key = `${row}\u0000${entry.observation.field}`;
+    entriesByRowField.set(key, [...(entriesByRowField.get(key) ?? []), entry]);
+  }
   for (const entry of input.attributed) {
     const row = input.rowOf(entry.observation);
     if (!row) {
@@ -484,14 +501,22 @@ export function splitByEngineProduction(input: {
     }
     const outputs = input.outputsByRow.get(row);
     const field = entry.observation.field;
+    const key = `${row}\u0000${field}`;
     if (
       input.retireSoleEvidence ||
-      (outputs && engineStillProduces(outputs.withOrphans[field], outputs.withoutOrphans[field]))
+      (outputs &&
+        engineStillProducesObservation({
+          withOrphans: outputs.withOrphans[field],
+          withoutOrphans: outputs.withoutOrphans[field],
+          observationValue: entry.observation.value,
+          siblingValues: (entriesByRowField.get(key) ?? [])
+            .filter((sibling) => sibling !== entry)
+            .map((sibling) => sibling.observation.value),
+        }))
     ) {
       retire.add(entry.observation.id);
       continue;
     }
-    const key = `${row}\u0000${field}`;
     const group = held.get(key) ?? {
       row,
       field,

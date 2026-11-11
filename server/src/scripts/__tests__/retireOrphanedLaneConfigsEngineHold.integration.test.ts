@@ -270,6 +270,47 @@ describe('observations:retire-orphaned-lane-configs engine-projection hold (#580
     expect(before.length - (await liveIds()).length).toBe(report.retiredObservations);
   });
 
+  it('holds an orphan when the projection without it still read retired evidence live', async () => {
+    await Observation.create({
+      entityType: 'researchEntity',
+      entityKey: ROW,
+      field: 'departments',
+      value: DEPARTMENTS,
+      sourceId: liveSourceId,
+      sourceName: OTHER_LANE,
+      scrapeRunId: liveRunId,
+      sourceUrl: 'https://dept.example.edu/people',
+      confidence: 0.9,
+      observedAt: new Date('2026-10-01T00:00:00Z'),
+    });
+    const clearedProjectionReadsRetiredEvidenceLive: typeof projectRow = async (
+      entityType,
+      entityKey,
+      excluded,
+      identities,
+      onlyFields,
+      cleared = [],
+    ) => {
+      const plan = await projectRow(
+        entityType,
+        entityKey,
+        excluded,
+        identities,
+        onlyFields,
+        cleared,
+      );
+      return cleared.length > 0 && excluded.length > 0
+        ? { ...plan, retiredEvidenceReadLive: 1 }
+        : plan;
+    };
+    const { heldSoleEvidence } = await runRetirement(clearedProjectionReadsRetiredEvidenceLive);
+    expect(heldDepartments(heldSoleEvidence)).toMatchObject({
+      basis: 'engine-would-not-produce',
+      observationIds: [orphanDepartmentsId],
+    });
+    expect(await Observation.exists({ _id: orphanDepartmentsId, superseded: true })).toBeNull();
+  });
+
   it('refuses an apply while a row would still serve a less complete field', async () => {
     const before = await liveIds();
     let servedCalls = 0;

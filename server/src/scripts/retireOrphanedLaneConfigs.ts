@@ -525,7 +525,8 @@ const IDENTITY_FIELDS = new Set(['slug']);
  * Projects every row an orphan backs through the engine twice with the orphaned fields' stored
  * values cleared, once with the orphans and once without them, so a stored value cannot stand in
  * for evidence the engine no longer has. A person key goes through the same projection, which
- * plans no stored person fields, so it never reads as backed.
+ * plans no stored person fields, so it never reads as backed. A row whose projection without the
+ * orphans still read retired evidence live is left out, so its orphans are held.
  */
 async function engineOutputsByRow(input: {
   plan: OrphanedLaneConfigPlan;
@@ -571,11 +572,12 @@ async function engineOutputsByRow(input: {
       onlyFields,
       cleared,
     );
+    if (withoutOrphans.retiredEvidenceReadLive > 0) return;
     outputs.set(row, { withOrphans: withOrphans.set, withoutOrphans: withoutOrphans.set });
   };
-  for (const slug of input.researchSlugs) {
+  for (const [index, slug] of input.researchSlugs.entries()) {
     input.log?.(
-      `projecting a research row with its stored orphaned fields cleared: ${outputs.size + 1}`,
+      `projecting a research row with its stored orphaned fields cleared: ${index + 1} of ${input.researchSlugs.length}`,
     );
     await project(researchRowLabel(slug), 'researchEntity', slug, input.projectResearchEntity);
   }
@@ -747,15 +749,17 @@ export async function runOrphanedLaneConfigRetirement(input: {
   const researchOnlyFields = onlyFieldsByEntityType.researchEntity ?? [];
   const projectResearchEntity = input.projectResearchEntity ?? projectRow;
   const allIdentities = await retiredEvidenceIdentities(plan);
-  const outputsByRow = await engineOutputsByRow({
-    plan,
-    rowOfAttributed,
-    researchSlugs: [...liveRows.keys()].sort(),
-    projectResearchEntity,
-    retiredIdentities: allIdentities,
-    onlyFieldsByEntityType,
-    log: input.log,
-  });
+  const outputsByRow = input.retireSoleEvidence
+    ? new Map<string, EngineFieldOutputs>()
+    : await engineOutputsByRow({
+        plan,
+        rowOfAttributed,
+        researchSlugs: [...liveRows.keys()].sort(),
+        projectResearchEntity,
+        retiredIdentities: allIdentities,
+        onlyFieldsByEntityType,
+        log: input.log,
+      });
   const split = splitByEngineProduction({
     attributed: plan.attributed,
     rowOf: (observation) => rowOfAttributed.get(observation.id),
