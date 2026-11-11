@@ -31,22 +31,32 @@ describe('buildDirectoryRemovalServing', () => {
     expect(serving.isWithheldName('Brisa Tallent')).toBe(false);
   });
 
-  it('replaces a removed name in prose and leaves other names alone', () => {
+  it('drops each sentence of prose that names a removed person and keeps the rest', () => {
     const serving = activeServing();
-    expect(serving.redactWithheldNames('Brisa Tallent and Quillon Varrow lead the lab.')).toBe(
-      `Brisa Tallent and ${WITHHELD_PERSON_PHRASE} lead the lab.`,
+    expect(
+      serving.redactWithheldNames(
+        'The lab studies tissue repair. Brisa Tallent and Quillon Varrow lead it. It welcomes students.',
+      ),
+    ).toBe('The lab studies tissue repair. It welcomes students.');
+    expect(serving.redactWithheldNames("Quillon Varrow's group studies repair.")).toBe('');
+  });
+
+  it('replaces a removed name in a title instead of dropping it', () => {
+    const serving = activeServing();
+    expect(serving.redactWithheldNames('Quillon Varrow Lab', undefined, 'title')).toBe(
+      `${WITHHELD_PERSON_PHRASE} Lab`,
     );
-    expect(serving.redactWithheldNames("Quillon Varrow's group")).toBe(
-      `${WITHHELD_PERSON_PHRASE}'s group`,
+    expect(redactWithheldNamesDeep({ name: 'Quillon Varrow Lab' }, serving).name).toBe(
+      `${WITHHELD_PERSON_PHRASE} Lab`,
     );
   });
 
   it('replaces a name removed only by its digest', () => {
     const serving = activeServing([directoryRemovalDigest(KEY, 'name', 'Odile Marchetti')!]);
     expect(serving.isWithheldName('odile marchetti')).toBe(true);
-    expect(serving.redactWithheldNames('Built by Odile Marchetti in 2024.')).toBe(
-      `Built by ${WITHHELD_PERSON_PHRASE} in 2024.`,
-    );
+    expect(
+      serving.redactWithheldNames('The lab images cells. Built by Odile Marchetti in 2024.'),
+    ).toBe('The lab images cells.');
   });
 
   it('keeps a name-entry name only in the prose of the row that serves that person', () => {
@@ -63,14 +73,14 @@ describe('buildDirectoryRemovalServing', () => {
       },
       unrelatedRow: {
         leadName: 'Brisa Tallent',
-        fullDescription: 'Odile Marchetti built the imaging pipeline.',
+        fullDescription: 'The lab images cells. Odile Marchetti built the imaging pipeline.',
       },
     };
     expect(redactWithheldNamesDeep(payload, serving)).toEqual({
       ownRow: payload.ownRow,
       unrelatedRow: {
         leadName: 'Brisa Tallent',
-        fullDescription: `${WITHHELD_PERSON_PHRASE} built the imaging pipeline.`,
+        fullDescription: 'The lab images cells.',
       },
     });
   });
@@ -81,9 +91,7 @@ describe('buildDirectoryRemovalServing', () => {
       members: [{ displayName: 'Quillon Varrow' }],
       fullDescription: 'Quillon Varrow leads the lab.',
     };
-    expect(redactWithheldNamesDeep(payload, serving).fullDescription).toBe(
-      `${WITHHELD_PERSON_PHRASE} leads the lab.`,
-    );
+    expect(redactWithheldNamesDeep(payload, serving).fullDescription).toBe('');
   });
 
   it('withholds every listed name while failing closed', () => {
@@ -92,9 +100,9 @@ describe('buildDirectoryRemovalServing', () => {
       { removed: [], everyKnownName: ['Brisa Tallent', 'Tobin Ashgrove'] },
     );
     expect(serving.isWithheldPersonId('anyone')).toBe(true);
-    expect(serving.redactWithheldNames('Brisa Tallent studies tissue repair.')).toBe(
-      `${WITHHELD_PERSON_PHRASE} studies tissue repair.`,
-    );
+    expect(
+      serving.redactWithheldNames('The lab studies repair. Brisa Tallent studies tissue repair.'),
+    ).toBe('The lab studies repair.');
   });
 
   it('changes nothing while inert', () => {
@@ -125,7 +133,7 @@ describe('served payload helpers', () => {
       _id: 'Quillon Varrow',
       slug: 'quillon-varrow-lab',
       researchEntity: {
-        fullDescription: 'Founded by Quillon Varrow.',
+        fullDescription: 'The lab studies repair. Founded by Quillon Varrow.',
         websiteUrl: 'https://example.edu/Quillon Varrow',
         recordedAt: new Date('2026-11-10T00:00:00Z'),
       },
@@ -135,11 +143,11 @@ describe('served payload helpers', () => {
       _id: 'Quillon Varrow',
       slug: 'quillon-varrow-lab',
       researchEntity: {
-        fullDescription: `Founded by ${WITHHELD_PERSON_PHRASE}.`,
+        fullDescription: 'The lab studies repair.',
         websiteUrl: 'https://example.edu/Quillon Varrow',
         recordedAt: '2026-11-10T00:00:00.000Z',
       },
-      quotes: [`Ask ${WITHHELD_PERSON_PHRASE} first.`],
+      quotes: [''],
     });
   });
 });

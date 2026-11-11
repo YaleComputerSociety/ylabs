@@ -26,7 +26,8 @@ Until that first load completes, a deployed runtime withholds every role edge an
   That covers detail members, card lead names, similar and related cards, saved research, and the search index's `leadProfessorNames`, `professorNames` and `memberNames`.
   The shared roster accessor is left unfiltered on purpose, because the materializer and the dedupe scripts read it and must still see the person.
 - Embedded undergraduates: `publicRosterUndergraduates` drops a withheld name.
-- Prose: every JSON response under `/api/research`, `/api/programs`, `/api/fellowships`, `/api/users/savedResearchEntities` and `/api/users/watchedPrograms` passes through `redactWithheldNamesInJson`, which replaces a withheld name with `WITHHELD_PERSON_PHRASE`.
+- Prose: every JSON response under `/api/research`, `/api/programs`, `/api/fellowships`, `/api/users/savedResearchEntities` and `/api/users/watchedPrograms` passes through `redactWithheldNamesInJson`, which drops every sentence of prose that names a withheld person, by the owner's decision of 2026-11-10.
+  A title field (`name`, `displayName`, `title` and the other `TITLE_KEYS`) cannot lose a sentence, so there the name is replaced with `WITHHELD_PERSON_PHRASE` instead.
   The search index documents and the page shell's share metadata go through the same redaction.
   Ids, slugs and links are never rewritten.
 
@@ -59,5 +60,5 @@ Every process that runs the gate must hold the key before the first entry is rec
 ## Known limits
 
 - Prose matching is by the person's current display name and by name digests over two to four word windows, so a spelling with a middle initial or a nickname is missed.
-- A row whose slug contains a removed co-lead's name keeps its URL; whether to rename it is with the owner.
+- A row whose slug contains a removed co-lead's name keeps its URL until the slug migration lands; the owner decided it gets a new slug with no redirect.
 - Meilisearch ranks on the documents it holds, so a removed name can still rank a row until the next reindex, even though the served row is re-read from Mongo and redacted.
