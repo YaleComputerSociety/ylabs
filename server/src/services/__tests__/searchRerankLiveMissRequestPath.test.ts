@@ -43,6 +43,7 @@ vi.mock('../researchSearchQueryEmbedding', () => ({
 import { searchRerankCacheQueryKey, searchResearchGroupsViaMeili } from '../researchGroupService';
 import { invalidateResearchEntitySearchEmbedderCache } from '../researchEntitySearchIndexService';
 import { resetSearchRerankCacheMemo } from '../searchRerankCache';
+import { buildSearchRerankTextHash } from '../searchRerankCandidateText';
 import {
   resetSearchRerankLiveMissQueue,
   searchRerankLiveMissIdle,
@@ -74,6 +75,20 @@ let nameQueryTopHit = false;
 let keywordLegEmpty = false;
 let topHitMatches: Record<string, unknown> | null = null;
 let matchPositionReadFails = false;
+let rewrittenDescriptionRows = new Set<string>();
+let unsyncedIndex = false;
+
+const rerankTextHashOf = (id: string) =>
+  buildSearchRerankTextHash({
+    name: `Synthetic Row ${id.slice(-4)}`,
+    kind: 'lab',
+    entityType: 'lab',
+    departments: ['Synthetic Department'],
+    researchAreas: ['Coastal Ecology'],
+    shortDescription: rewrittenDescriptionRows.has(id)
+      ? 'A rewritten synthetic card.'
+      : 'Studies coastal ecology.',
+  });
 
 const indexHit = (id: string, position: number) => ({
   id,
@@ -82,6 +97,7 @@ const indexHit = (id: string, position: number) => ({
   schools: ['Synthetic School'],
   departments: ['Synthetic Department'],
   researchAreas: ['Coastal Ecology'],
+  ...(unsyncedIndex ? {} : { rerankTextHash: rerankTextHashOf(id) }),
   name: `Synthetic Row ${id.slice(-4)}`,
   leadProfessorNames: [`Avery ${SYNTHETIC_SURNAME}`],
   _rankingScore: 0.9 - position * 0.001,
@@ -140,6 +156,26 @@ const entityFor = (id: string) => ({
     'This research studies coastal ecology, tidal marsh dynamics, and shoreline restoration across many field sites.',
 });
 
+const currentTextHash = (index: number) => rerankTextHashOf(rowId(index));
+
+const scoresOverTopTen = (row25Score = 3) => [
+  ...Array.from({ length: 10 }, (_v, index) => ({
+    entityId: rowId(index),
+    score: 1,
+    textHash: currentTextHash(index),
+  })),
+  { entityId: rowId(25), score: row25Score, textHash: currentTextHash(25) },
+];
+
+const liveMissEntry = (
+  scores: Array<{ entityId: string; score: number; textHash?: string }> = scoresOverTopTen(),
+) => ({
+  source: 'live-miss',
+  indexVersion: 'async-gpt-5-mini-2026-11-01',
+  scoredAt: new Date('2026-11-01T00:00:00Z'),
+  scores,
+});
+
 const servedIdsOf = (result: { researchEntities: Array<{ slug?: unknown }> }) =>
   result.researchEntities.map((entity) =>
     ALL_ROW_IDS.find((id) => slugOf(id) === String(entity.slug))!,
@@ -194,6 +230,8 @@ beforeEach(() => {
   keywordLegEmpty = false;
   topHitMatches = null;
   matchPositionReadFails = false;
+  rewrittenDescriptionRows = new Set();
+  unsyncedIndex = false;
   mocks.search.mockReset();
   serveIndex();
   mocks.searchSimilarDocuments.mockReset();
@@ -255,6 +293,20 @@ describe('with SEARCH_RERANK_LIVE_MISS_ENABLED unset', () => {
     expect(mocks.rerankFindOne).toHaveBeenCalledWith({
       queryKey: searchRerankCacheQueryKey(QUERY, {}),
     });
+    expect(await enqueuedKeys()).toEqual([]);
+  });
+});
+
+describe('with SEARCH_RERANK_LIVE_MISS_ENABLED unset over a stale entry', () => {
+  it('serves the same response as without the entry and enqueues nothing', async () => {
+    const entry = liveMissEntry();
+    rewrittenDescriptionRows = new Set([rowId(3)]);
+    const today = await todaysResponse();
+    vi.stubEnv('SEARCH_RERANK_CACHE_ENABLED', 'true');
+    vi.stubEnv('SEARCH_RERANK_LIVE_MISS_MODE', 'serve');
+    mocks.rerankFindOne.mockImplementation(() => queryResult(entry));
+
+    expect(JSON.stringify(await search())).toBe(today);
     expect(await enqueuedKeys()).toEqual([]);
   });
 });
@@ -371,7 +423,7 @@ describe('with the live-miss job on', () => {
         source: 'shadow',
         indexVersion: 'async-gpt-5-mini-2026-11-10',
         scoredAt: new Date(),
-        scores: [{ entityId: rowId(25), score: 3 }],
+        scores: scoresOverTopTen(),
       }),
     );
 
@@ -400,22 +452,128 @@ describe('with the live-miss job on', () => {
     expect(await enqueuedKeys()).toEqual([]);
   });
 
-  it('serves a live-miss entry and never enqueues over it', async () => {
+  it('serves a fresh live-miss entry and never enqueues over it', async () => {
     vi.stubEnv('SEARCH_RERANK_CACHE_ENABLED', 'true');
     liveMissOn('serve');
-    mocks.rerankFindOne.mockImplementation(() =>
-      queryResult({
-        source: 'live-miss',
-        indexVersion: 'async-gpt-5-mini-2026-11-01',
-        scoredAt: new Date('2026-11-01T00:00:00Z'),
-        scores: [{ entityId: rowId(25), score: 3 }],
-      }),
-    );
+    mocks.rerankFindOne.mockImplementation(() => queryResult(liveMissEntry()));
 
     const result = await search();
 
     expect(servedIdsOf(result)[0]).toBe(rowId(25));
     expect(await enqueuedKeys()).toEqual([]);
+  });
+
+  describe('over a stale entry', () => {
+    it('still serves a stale live-miss entry and queues it in serve mode', async () => {
+      vi.stubEnv('SEARCH_RERANK_CACHE_ENABLED', 'true');
+      liveMissOn('serve');
+      const entry = liveMissEntry();
+      mocks.rerankFindOne.mockImplementation(() => queryResult(entry));
+      rewrittenDescriptionRows = new Set([rowId(3)]);
+
+      const result = await search();
+
+      expect(servedIdsOf(result)[0]).toBe(rowId(25));
+      expect(await enqueuedKeys()).toEqual([searchRerankCacheQueryKey(QUERY, {})]);
+    });
+
+    it('never queues a stale live-miss entry from shadow mode', async () => {
+      vi.stubEnv('SEARCH_RERANK_CACHE_ENABLED', 'true');
+      liveMissOn('shadow');
+      const entry = liveMissEntry();
+      mocks.rerankFindOne.mockImplementation(() => queryResult(entry));
+      rewrittenDescriptionRows = new Set([rowId(3)]);
+
+      await search();
+
+      expect(await enqueuedKeys()).toEqual([]);
+    });
+
+    it('queues a stale shadow entry from shadow mode', async () => {
+      liveMissOn('shadow');
+      const entry = { ...liveMissEntry(), source: 'shadow' };
+      mocks.rerankFindOne.mockImplementation(() => queryResult(entry));
+      rewrittenDescriptionRows = new Set([rowId(3)]);
+
+      await search();
+
+      expect(await enqueuedKeys()).toEqual([searchRerankCacheQueryKey(QUERY, {})]);
+    });
+
+    it('ignores a rewritten row outside the served top 10', async () => {
+      liveMissOn('serve');
+      const entry = liveMissEntry();
+      mocks.rerankFindOne.mockImplementation(() => queryResult(entry));
+      rewrittenDescriptionRows = new Set([rowId(25)]);
+
+      await search();
+
+      expect(await enqueuedKeys()).toEqual([]);
+    });
+
+    it('queues an entry whose candidate set moved: 3 of the served top 10 unscored', async () => {
+      liveMissOn('serve');
+      const scoredOnlySeven = scoresOverTopTen().filter(
+        ({ entityId }) => ![rowId(2), rowId(5), rowId(8)].includes(entityId),
+      );
+      mocks.rerankFindOne.mockImplementation(() => queryResult(liveMissEntry(scoredOnlySeven)));
+
+      await search();
+
+      expect(await enqueuedKeys()).toEqual([searchRerankCacheQueryKey(QUERY, {})]);
+    });
+
+    it('keeps an entry with 2 of the served top 10 unscored', async () => {
+      liveMissOn('serve');
+      const scoredEight = scoresOverTopTen().filter(
+        ({ entityId }) => ![rowId(2), rowId(5)].includes(entityId),
+      );
+      mocks.rerankFindOne.mockImplementation(() => queryResult(liveMissEntry(scoredEight)));
+
+      await search();
+
+      expect(await enqueuedKeys()).toEqual([]);
+    });
+
+    it('never calls an entry stale by hash while the index has not hashed its rows', async () => {
+      liveMissOn('serve');
+      const entry = liveMissEntry();
+      mocks.rerankFindOne.mockImplementation(() => queryResult(entry));
+      rewrittenDescriptionRows = new Set(ALL_ROW_IDS);
+      unsyncedIndex = true;
+
+      await search();
+
+      expect(await enqueuedKeys()).toEqual([]);
+    });
+
+    it('never calls a hashless legacy entry stale on the hash rule', async () => {
+      liveMissOn('serve');
+      const hashless = scoresOverTopTen().map(({ entityId, score }) => ({ entityId, score }));
+      mocks.rerankFindOne.mockImplementation(() => queryResult(liveMissEntry(hashless)));
+      rewrittenDescriptionRows = new Set(ALL_ROW_IDS);
+
+      await search();
+
+      expect(await enqueuedKeys()).toEqual([]);
+    });
+
+    it('never queues over a stale seeded full- entry, and still serves it', async () => {
+      vi.stubEnv('SEARCH_RERANK_CACHE_ENABLED', 'true');
+      liveMissOn('serve');
+      const entry = {
+        ...liveMissEntry(),
+        source: 'offline-scoring',
+        indexVersion: 'full-v2-2026-11-10',
+      };
+      mocks.rerankFindOne.mockImplementation(() => queryResult(entry));
+      rewrittenDescriptionRows = new Set([rowId(3)]);
+
+      const result = await search();
+
+      expect(servedIdsOf(result)[0]).toBe(rowId(25));
+      expect(await enqueuedKeys()).toEqual([]);
+    });
   });
 
   describe('never enqueues', () => {
@@ -542,5 +700,42 @@ describe('search, then the job, then search again', () => {
     expect(stored).toMatchObject({ source: 'live-miss', queryText: QUERY });
     expect(servedIdsOf(second)[0]).toBe(rowId(7));
     expect(servedIdsOf(second).slice(30)).toEqual(servedIdsOf(first).slice(30));
+  });
+
+  it('stores a hash per score, then re-scores once a scored top-10 row description changes', async () => {
+    vi.stubEnv('SEARCH_RERANK_CACHE_ENABLED', 'true');
+    liveMissOn('serve');
+    let stored = null as Record<string, any> | null;
+    mocks.rerankFindOne.mockImplementation(() => queryResult(stored));
+    mocks.rerankUpdateOne.mockImplementation(async (_filter: unknown, update: { $set: any }) => {
+      stored = update.$set;
+      return { acknowledged: true };
+    });
+    const model = vi.fn(async ({ candidates }: { candidates: readonly unknown[] }) =>
+      JSON.stringify({
+        scores: Object.fromEntries(candidates.map((_candidate, index) => [String(index), 1])),
+      }),
+    );
+    setSearchRerankLiveMissRunner((request) =>
+      runSearchRerankLiveMissJob(request, { model, readSpendTodayUsd: async () => 0 }),
+    );
+
+    await search();
+    await searchRerankLiveMissIdle();
+    expect(stored?.scores[4]).toEqual({
+      entityId: rowId(4),
+      score: 1,
+      textHash: currentTextHash(4),
+    });
+
+    await search();
+    await searchRerankLiveMissIdle();
+    expect(model).toHaveBeenCalledTimes(1);
+
+    rewrittenDescriptionRows = new Set([rowId(4)]);
+    await search();
+    await searchRerankLiveMissIdle();
+    expect(model).toHaveBeenCalledTimes(2);
+    expect(stored?.scores[4].textHash).toBe(currentTextHash(4));
   });
 });

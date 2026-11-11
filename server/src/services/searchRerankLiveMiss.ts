@@ -44,18 +44,24 @@ export type SearchRerankLiveMissGate =
   | 'no-keyword-row'
   | 'too-few-candidates';
 
+/**
+ * `isStale` is read only when staleness alone decides, so a search that would not queue
+ * the key anyway never hashes its candidates.
+ */
 export function searchRerankLiveMissWantsEntry(
   kind: SearchRerankEntryKind,
   mode: SearchRerankLiveMissMode,
+  isStale: () => boolean = () => false,
 ): boolean {
   switch (kind) {
     case 'absent':
       return true;
     case 'seeded':
-    case 'served':
       return false;
+    case 'served':
+      return mode === 'serve' && isStale();
     case 'shadow':
-      return mode === 'serve';
+      return mode === 'serve' || isStale();
   }
 }
 
@@ -70,8 +76,10 @@ export const searchRerankLiveMissQueryFits = (query: string): boolean => {
 
 export type SearchRerankLiveMissJobStatus =
   | 'written'
+  | 'written-still-stale'
   | 'kept-existing'
   | 'not-wanted'
+  | 'still-fresh'
   | 'ineligible'
   | 'no-api-key'
   | 'spend-ceiling'
@@ -176,6 +184,8 @@ const defaultRunner: SearchRerankLiveMissRunner = async (request) => {
 };
 
 const OUTCOMES_THAT_WOULD_REPEAT: ReadonlySet<SearchRerankLiveMissJobStatus> = new Set([
+  'written-still-stale',
+  'still-fresh',
   'ineligible',
   'model-failed',
   'malformed-output',

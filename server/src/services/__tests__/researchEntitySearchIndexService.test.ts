@@ -26,6 +26,8 @@ import {
   researchEntityTypeSearchTerms,
 } from '../researchEntitySearchIndexService';
 import { RESEARCH_SEARCH_RELEVANCE_TEXT_FIELDS } from '../../scripts/researchSearchRelevanceCore';
+import { buildSearchRerankTextHash } from '../searchRerankCandidateText';
+import { toPublicResearchEntityDto } from '../researchEntityDto';
 
 const succeedingTaskClient = {
   waitForTask: async () => ({ status: 'succeeded' }),
@@ -2329,6 +2331,61 @@ describe('index document field allowlist (#3944)', () => {
     ]) {
       expect(RESEARCH_ENTITY_SEARCH_INDEX_DOCUMENT_FIELDS).toContain(field);
     }
+  });
+});
+
+describe('buildResearchEntitySearchIndexDocument rerank text hash (#5569)', () => {
+  const row = (overrides: Record<string, unknown> = {}) => ({
+    _id: '64b7f0c2a1b2c3d4e5f60719',
+    slug: 'synthetic-rerank-hash-lab',
+    name: 'Synthetic Rerank Hash Lab',
+    kind: 'lab',
+    entityType: 'lab',
+    departments: ['Synthetic Department'],
+    researchAreas: ['Coastal Ecology'],
+    shortDescription: 'Studies synthetic tidal marshes and shoreline change.',
+    fullDescription:
+      'This synthetic research studies tidal marsh dynamics, sediment transport and shoreline restoration.',
+    ...overrides,
+  });
+
+  it('stores the hash of what the rerank prompt shows, from the final document', () => {
+    const doc = buildResearchEntitySearchIndexDocument(row())!;
+
+    expect(doc.rerankTextHash).toMatch(/^[0-9a-f]{16}$/);
+    expect(doc.rerankTextHash).toBe(buildSearchRerankTextHash(doc));
+    expect(RESEARCH_ENTITY_SEARCH_INDEX_DOCUMENT_FIELDS).toContain('rerankTextHash');
+  });
+
+  it('moves the hash on a description-only rewrite', () => {
+    expect(
+      buildResearchEntitySearchIndexDocument(
+        row({ shortDescription: 'A rewritten synthetic card about salt marsh restoration.' }),
+      )!.rerankTextHash,
+    ).not.toBe(buildResearchEntitySearchIndexDocument(row())!.rerankTextHash);
+  });
+
+  it('is never rendered by the embedder template, searched, filtered or sorted on', () => {
+    const template =
+      buildResearchEntitySearchEmbedderConfig('synthetic-key').default.documentTemplate;
+    const settings = getResearchEntitySearchIndexSettings();
+
+    expect(template).not.toContain('rerankTextHash');
+    for (const attributes of [
+      settings.searchableAttributes,
+      settings.filterableAttributes,
+      settings.sortableAttributes,
+    ]) {
+      expect(attributes).not.toContain('rerankTextHash');
+    }
+  });
+
+  it('is never served on the public research DTO', () => {
+    const doc = buildResearchEntitySearchIndexDocument(row())!;
+
+    expect(
+      JSON.stringify(toPublicResearchEntityDto({ ...row(), rerankTextHash: doc.rerankTextHash })),
+    ).not.toContain(doc.rerankTextHash);
   });
 });
 

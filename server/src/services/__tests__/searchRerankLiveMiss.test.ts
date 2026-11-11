@@ -82,9 +82,10 @@ describe('live-miss configuration', () => {
 });
 
 describe('which cache entries a live-miss job may replace', () => {
-  it('never replaces a seeded full- entry', () => {
+  it('never replaces a seeded full- entry, even a stale one', () => {
     for (const mode of ['shadow', 'serve'] as const) {
       expect(searchRerankLiveMissWantsEntry('seeded', mode)).toBe(false);
+      expect(searchRerankLiveMissWantsEntry('seeded', mode, () => true)).toBe(false);
     }
   });
 
@@ -93,14 +94,34 @@ describe('which cache entries a live-miss job may replace', () => {
     expect(searchRerankLiveMissWantsEntry('absent', 'serve')).toBe(true);
   });
 
-  it('never replaces a served entry', () => {
+  it('never replaces a fresh served entry', () => {
     expect(searchRerankLiveMissWantsEntry('served', 'shadow')).toBe(false);
     expect(searchRerankLiveMissWantsEntry('served', 'serve')).toBe(false);
+    expect(searchRerankLiveMissWantsEntry('served', 'serve', () => false)).toBe(false);
+  });
+
+  it('re-scores a stale served entry in serve mode only', () => {
+    expect(searchRerankLiveMissWantsEntry('served', 'serve', () => true)).toBe(true);
+    expect(searchRerankLiveMissWantsEntry('served', 'shadow', () => true)).toBe(false);
   });
 
   it('promotes a shadow entry to a served one only in serve mode', () => {
     expect(searchRerankLiveMissWantsEntry('shadow', 'serve')).toBe(true);
     expect(searchRerankLiveMissWantsEntry('shadow', 'shadow')).toBe(false);
+  });
+
+  it('re-scores a stale shadow entry in shadow mode', () => {
+    expect(searchRerankLiveMissWantsEntry('shadow', 'shadow', () => true)).toBe(true);
+    expect(searchRerankLiveMissWantsEntry('shadow', 'shadow', () => false)).toBe(false);
+  });
+
+  it('asks about staleness only when staleness alone decides', () => {
+    const isStale = vi.fn(() => true);
+    searchRerankLiveMissWantsEntry('absent', 'serve', isStale);
+    searchRerankLiveMissWantsEntry('seeded', 'serve', isStale);
+    searchRerankLiveMissWantsEntry('shadow', 'serve', isStale);
+    searchRerankLiveMissWantsEntry('served', 'shadow', isStale);
+    expect(isStale).not.toHaveBeenCalled();
   });
 });
 
@@ -265,31 +286,34 @@ describe('enqueueSearchRerankLiveMiss', () => {
     await searchRerankLiveMissIdle();
   });
 
-  it.each<SearchRerankLiveMissJobStatus>(['ineligible', 'model-failed', 'malformed-output'])(
-    'does not queue a key again the same UTC day after its job ends %s',
-    async (status) => {
-      const runner = vi.fn().mockResolvedValue({ status });
-      setSearchRerankLiveMissRunner(runner);
+  it.each<SearchRerankLiveMissJobStatus>([
+    'written-still-stale',
+    'still-fresh',
+    'ineligible',
+    'model-failed',
+    'malformed-output',
+  ])('does not queue a key again the same UTC day after its job ends %s', async (status) => {
+    const runner = vi.fn().mockResolvedValue({ status });
+    setSearchRerankLiveMissRunner(runner);
 
-      enqueueSearchRerankLiveMiss(job(1), client('ip:first', 'anonymous:first'));
-      await searchRerankLiveMissIdle();
+    enqueueSearchRerankLiveMiss(job(1), client('ip:first', 'anonymous:first'));
+    await searchRerankLiveMissIdle();
 
-      expect(enqueueSearchRerankLiveMiss(job(1), client('ip:second', 'anonymous:second'))).toBe(
-        'failed-today',
-      );
-      expect(enqueueSearchRerankLiveMiss(job(2), client('ip:second', 'anonymous:second'))).toBe(
-        'enqueued',
-      );
-      await searchRerankLiveMissIdle();
+    expect(enqueueSearchRerankLiveMiss(job(1), client('ip:second', 'anonymous:second'))).toBe(
+      'failed-today',
+    );
+    expect(enqueueSearchRerankLiveMiss(job(2), client('ip:second', 'anonymous:second'))).toBe(
+      'enqueued',
+    );
+    await searchRerankLiveMissIdle();
 
-      now = Date.UTC(2026, 10, 11, 0, 0, 0);
-      expect(enqueueSearchRerankLiveMiss(job(1), client('ip:third', 'anonymous:third'))).toBe(
-        'enqueued',
-      );
-      await searchRerankLiveMissIdle();
-      expect(runner).toHaveBeenCalledTimes(3);
-    },
-  );
+    now = Date.UTC(2026, 10, 11, 0, 0, 0);
+    expect(enqueueSearchRerankLiveMiss(job(1), client('ip:third', 'anonymous:third'))).toBe(
+      'enqueued',
+    );
+    await searchRerankLiveMissIdle();
+    expect(runner).toHaveBeenCalledTimes(3);
+  });
 
   it('does not queue a key again the same UTC day after its job throws', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);

@@ -64,6 +64,11 @@ import {
   applyCachedRerank,
   isSearchRerankCacheEnabled,
   lookupSearchRerankCacheEntry,
+  SEARCH_RERANK_STALE_WINDOW,
+  SEARCH_RERANK_WINDOW,
+  searchRerankCandidateFingerprints,
+  searchRerankEntryIsStale,
+  type SearchRerankCandidateFingerprint,
 } from './searchRerankCache';
 import {
   enqueueSearchRerankLiveMiss,
@@ -73,6 +78,7 @@ import {
   type SearchRerankLiveMissClient,
   type SearchRerankLiveMissGate,
 } from './searchRerankLiveMiss';
+import { SEARCH_RERANK_TEXT_HASH_FIELD } from './searchRerankCandidateText';
 import { servedCitationUrl } from './servedCitationPolicy';
 import { withoutLeadGuardedCopy } from './servedResearchEntityCard';
 import { isPublicHttpUrl } from '../utils/urlSafety';
@@ -652,6 +658,7 @@ const RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES = [
   WELCOMES_UNDERGRADS_INDEX_FIELD,
   UNDERGRAD_INVITATION_RANK_FIELD,
   MESH_DESCRIPTOR_ONLY_TERMS_FIELD,
+  SEARCH_RERANK_TEXT_HASH_FIELD,
 ];
 const MAX_FILTER_VALUE_LENGTH = 120;
 const STUDENT_QUERY_STOP_WORDS = new Set([
@@ -1901,12 +1908,14 @@ interface ResearchQuerySearchContext {
   rerankQueryKey?: string;
   meiliCallRole?: MeiliCallRole;
   rerankLiveMiss?: RerankLiveMissOrigin;
+  withRerankCandidateFingerprints?: boolean;
 }
 
 interface SearchedResearchQuery {
   result: ResearchGroupSearchResult;
   answeredAsNameSearch: boolean;
   rerankLiveMissGate?: SearchRerankLiveMissGate;
+  rerankCandidateFingerprints?: SearchRerankCandidateFingerprint[];
 }
 
 const readsSearchRerankCache = (): boolean =>
@@ -2090,7 +2099,12 @@ async function searchResearchGroupsForQuery(
   pageSize: number,
   sort: ResearchGroupSearchSort = {},
   options: ResearchGroupSearchOptions = {},
-  { rerankQueryKey, meiliCallRole = 'required', rerankLiveMiss }: ResearchQuerySearchContext = {},
+  {
+    rerankQueryKey,
+    meiliCallRole = 'required',
+    rerankLiveMiss,
+    withRerankCandidateFingerprints = false,
+  }: ResearchQuerySearchContext = {},
 ): Promise<SearchedResearchQuery> {
   // Same reason as `getResearchGroupDetail`: a browse hit carries research-area chips too, and
   // a script that reads browse must see the chips a student sees (#3817).
@@ -2885,7 +2899,12 @@ async function searchResearchGroupsForQuery(
     rerankQueryKey &&
     rerankEntry &&
     rerankLiveMissGate === 'eligible' &&
-    searchRerankLiveMissWantsEntry(rerankEntry.kind, searchRerankLiveMissMode())
+    searchRerankLiveMissWantsEntry(rerankEntry.kind, searchRerankLiveMissMode(), () =>
+      searchRerankEntryIsStale(
+        rerankEntry.scoredTextHashes,
+        searchRerankCandidateFingerprints(servedPool, SEARCH_RERANK_STALE_WINDOW),
+      ),
+    )
   ) {
     enqueueSearchRerankLiveMiss(
       {
@@ -2979,12 +2998,21 @@ async function searchResearchGroupsForQuery(
     ),
     answeredAsNameSearch: keywordLegTopHitNamesTheQuery,
     rerankLiveMissGate,
+    ...(withRerankCandidateFingerprints && paginateHybridPoolLocally
+      ? {
+          rerankCandidateFingerprints: searchRerankCandidateFingerprints(
+            servedPool,
+            SEARCH_RERANK_WINDOW,
+          ),
+        }
+      : {}),
   };
 }
 
 export interface SearchRerankCandidates {
   researchEntities: PublicResearchEntityDto[];
   rerankLiveMissGate: SearchRerankLiveMissGate | 'unsearchable';
+  candidateFingerprints: SearchRerankCandidateFingerprint[];
 }
 
 export async function searchResearchGroupsForRerankCandidates(
@@ -2999,18 +3027,23 @@ export async function searchResearchGroupsForRerankCandidates(
   const options: ResearchGroupSearchOptions = { includeFacets: false };
   const spelling = correctResearchSearchQuerySpelling(query);
   const studentFilters = await resolveStudentFiltersAgainstCorpus(publicFilters, options);
-  const { result, rerankLiveMissGate } = await searchResearchGroupsForQuery(
-    spelling.query,
-    studentFilters.filters,
-    1,
-    limit,
-    {},
-    options,
-    { meiliCallRole: 'optional' },
-  );
+  const { result, rerankLiveMissGate, rerankCandidateFingerprints } =
+    await searchResearchGroupsForQuery(
+      spelling.query,
+      studentFilters.filters,
+      1,
+      limit,
+      {},
+      options,
+      {
+        meiliCallRole: 'optional',
+        withRerankCandidateFingerprints: true,
+      },
+    );
   return {
     researchEntities: result.researchEntities,
     rerankLiveMissGate: rerankLiveMissGate ?? 'unsearchable',
+    candidateFingerprints: rerankCandidateFingerprints ?? [],
   };
 }
 

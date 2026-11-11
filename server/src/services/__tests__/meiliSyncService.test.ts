@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { buildSearchRerankTextHash } from '../searchRerankCandidateText';
 import mongoose from 'mongoose';
 import { researchEntityBrowseTiebreakKey } from '../../utils/researchEntityBrowseTiebreakKey';
 
@@ -139,6 +140,7 @@ describe('syncEntity transform', () => {
       hasUndergradHostingEvidence: false,
       welcomesUndergrads: false,
       undergradInvitationRank: 0,
+      rerankTextHash: buildSearchRerankTextHash(docs[0]),
     });
     expect(docs[0]).not.toHaveProperty('_id');
     expect(docs[0]).not.toHaveProperty('__v');
@@ -239,6 +241,7 @@ describe('syncEntities', () => {
         hasUndergradHostingEvidence: false,
         welcomesUndergrads: false,
         undergradInvitationRank: 0,
+        rerankTextHash: buildSearchRerankTextHash({ name: 'A' }),
       },
       {
         id: 'b',
@@ -249,6 +252,7 @@ describe('syncEntities', () => {
         hasUndergradHostingEvidence: false,
         welcomesUndergrads: false,
         undergradInvitationRank: 0,
+        rerankTextHash: buildSearchRerankTextHash({ name: 'B' }),
       },
     ]);
   });
