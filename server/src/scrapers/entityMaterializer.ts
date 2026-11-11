@@ -9823,8 +9823,11 @@ async function personKeyedRosterDepartmentReads(
 interface DepartmentRosterReread {
   departmentKey: string;
   readAt: number;
+  scrapeRunId: string;
   listedEntityKeys: ReadonlySet<string>;
 }
+
+const scrapeRunIdOf = (value: unknown): string => (value ? String(value) : '');
 
 /**
  * Every live roster snapshot that read its whole page, as the department it governs and
@@ -9839,8 +9842,8 @@ async function authoritativeDepartmentRosterRereads(
     field: DEPARTMENT_ROSTER_HEALTH_FIELD,
     ...materializationReadScopeFilter(),
   })
-    .select('value observedAt')
-    .lean()) as Array<{ value?: unknown; observedAt?: unknown }>;
+    .select('value observedAt scrapeRunId')
+    .lean()) as Array<{ value?: unknown; observedAt?: unknown; scrapeRunId?: unknown }>;
   return snapshots.flatMap((row) => {
     const snapshot = (row.value ?? {}) as DepartmentRosterHealthSnapshot;
     const deptName = textValue(snapshot.deptName).trim();
@@ -9851,6 +9854,7 @@ async function authoritativeDepartmentRosterRereads(
       {
         departmentKey: departmentKey(deptName),
         readAt,
+        scrapeRunId: scrapeRunIdOf(row.scrapeRunId),
         listedEntityKeys: new Set(snapshotDiscoveredEntityKeys(snapshot)),
       },
     ];
@@ -9861,18 +9865,25 @@ async function authoritativeDepartmentRosterRereads(
  * An appointment is retired only when the newest later complete read of its own
  * department's roster no longer lists the row under any of its keys. A read of some other
  * department is not evidence about this one, so a run scoped to a few rosters leaves
- * every other roster's appointments standing (#5824).
+ * every other roster's appointments standing (#5824). The snapshot of the appointment's
+ * own run is not a re-read either, nor is that of any person-keyed read that dates it: it
+ * is written after the walk, and a cross-listed programme lane's appointees are never in
+ * its keys, so it would retire the appointment that run just read.
  */
 function rosterAppointmentRereadWithoutListing(
   appointmentDepartmentKeys: readonly string[],
   appointmentReadTime: number,
+  appointmentReadingRunIds: ReadonlySet<string>,
   rereads: readonly DepartmentRosterReread[],
   rowEntityKeys: ReadonlySet<string>,
 ): boolean {
   if (appointmentDepartmentKeys.length === 0) return false;
   return appointmentDepartmentKeys.every((key) => {
     const later = rereads.filter(
-      (reread) => reread.departmentKey === key && reread.readAt > appointmentReadTime,
+      (reread) =>
+        reread.departmentKey === key &&
+        reread.readAt > appointmentReadTime &&
+        !appointmentReadingRunIds.has(reread.scrapeRunId),
     );
     if (later.length === 0) return false;
     const newestReadAt = Math.max(...later.map((reread) => reread.readAt));
@@ -9884,21 +9895,42 @@ function rosterAppointmentRereadWithoutListing(
   });
 }
 
-export function rosterAppointmentReadTime(
+function rosterAppointmentReads(
   observation: ResolverObservation,
   personReads: readonly ResolverObservation[],
-): number {
+): ResolverObservation[] {
   const departmentsOf = (value: unknown) =>
     (Array.isArray(value) ? value : [value])
       .map((item) => textValue(item).trim().toLowerCase())
       .filter(Boolean);
-  const own = new Date(observation.observedAt as any).getTime() || 0;
   const departments = new Set(departmentsOf(observation.value));
+  return [
+    observation,
+    ...personReads.filter((read) =>
+      departmentsOf(read.value).some((department) => departments.has(department)),
+    ),
+  ];
+}
+
+export function rosterAppointmentReadTime(
+  observation: ResolverObservation,
+  personReads: readonly ResolverObservation[],
+): number {
   return Math.max(
-    own,
-    ...personReads
-      .filter((read) => departmentsOf(read.value).some((department) => departments.has(department)))
-      .map((read) => new Date(read.observedAt as any).getTime() || 0),
+    ...rosterAppointmentReads(observation, personReads).map(
+      (read) => new Date(read.observedAt as any).getTime() || 0,
+    ),
+  );
+}
+
+function rosterAppointmentReadingRunIds(
+  observation: ResolverObservation,
+  personReads: readonly ResolverObservation[],
+): Set<string> {
+  return new Set(
+    rosterAppointmentReads(observation, personReads)
+      .map((read) => scrapeRunIdOf((read as { scrapeRunId?: unknown }).scrapeRunId))
+      .filter(Boolean),
   );
 }
 
@@ -9994,6 +10026,7 @@ async function combineDepartmentRosterAppointments(input: {
     !rosterAppointmentRereadWithoutListing(
       departmentKeysOf(observation),
       readTime(observation),
+      rosterAppointmentReadingRunIds(observation, personReads),
       rereads,
       rowEntityKeys,
     );
@@ -13120,6 +13153,7 @@ async function materializeEntityUnderRemovalGuard(
       sourceName: o.sourceName,
       confidence: o.confidence,
       observedAt: o.observedAt,
+      scrapeRunId: o.scrapeRunId,
     }));
     survivorReadOnARoster = merged.survivorReadOnARoster;
     if (obs.length === 0) {
@@ -13412,6 +13446,7 @@ async function materializeEntityUnderRemovalGuard(
         sourceName: o.sourceName,
         confidence: o.confidence,
         observedAt: o.observedAt,
+        scrapeRunId: o.scrapeRunId,
       })),
     ),
     ...(derivedResearchAreas ? [resolverObservationOfDerivedCandidate(derivedResearchAreas)] : []),

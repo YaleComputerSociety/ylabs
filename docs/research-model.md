@@ -271,6 +271,7 @@ A survivor that does read a roster but whose department another source won still
 Only values that name a department combine, and a department observation's fingerprint carries its value, so a page that stops listing the person never supersedes its old value.
 A value read within 14 days of the row's newest roster read combines.
 An older value still combines until the newest later complete `departmentRosterHealth` snapshot of its own department's roster lists the row under none of its own, merged-in, or person keys.
+The snapshot of the appointment's own run, or of the run of a person-keyed read that dates it, never counts, since it is written after the walk and never lists a cross-listed programme lane's appointees.
 Reads of other departments never age it out, because a run scoped to a few rosters otherwise dropped every other roster's live appointment on cross-listed rows (#5824); an incomplete or unread snapshot is not evidence of absence (#3251), so it retires nothing.
 A merged-in appointment an earlier rebuild appended leaves the stored departments once that re-read retires it, unless the survivor's own evidence names it.
 After a merge the roster keeps reading the page but files the person's appointment under the person key (`entityType: 'user'`), so a person-keyed roster read naming the same department also dates that appointment; it only dates a department the row's own or merged-in evidence already states, never adds one, and never moves the window's floor (#4694).
