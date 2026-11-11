@@ -5,10 +5,12 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { AdminAuditEvent } from '../models/adminAuditEvent';
 import { ResearchEntity } from '../models/researchEntity';
+import { holdingStudentVisibilityOverrideTiers } from '../models/studentVisibility';
 import {
   assertScraperEnvironmentMatchesMongoTarget,
   resolveScraperEnvironment,
 } from '../scrapers/scraperEnvironment';
+import { syncEntities } from '../services/meiliSyncService';
 import { getResearchGroupDetail } from '../services/researchGroupService';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
@@ -60,17 +62,20 @@ export async function runStudentVisibilityOverride(
   const entityId = serializedDocumentId(entity._id);
   const decision = planStudentVisibilityOverride(entity, args.action, args.reason);
   let audited = false;
+  let searchIndexSynced: boolean | null = null;
   if (args.apply && decision.action === 'write') {
     const update: Record<string, unknown> = { $set: decision.set };
     if (Object.keys(decision.unset).length > 0) update.$unset = decision.unset;
     await ResearchEntity.updateOne({ _id: entity._id }, update);
+    const written = await ResearchEntity.findById(entity._id).lean();
+    searchIndexSynced = (await syncEntities('researchEntity', written ? [written] : [])) > 0;
     await AdminAuditEvent.create({
       actorNetid: args.actorNetid,
       action: STUDENT_VISIBILITY_OVERRIDE_AUDIT_ACTIONS[args.action.kind],
       targetType: STUDENT_VISIBILITY_OVERRIDE_AUDIT_TARGET_TYPE,
       targetId: entityId,
       summary: {
-        fields: ['studentVisibilityOverrideTier', 'studentVisibilitySuppressionReason'],
+        fields: Object.keys({ ...decision.set, ...decision.unset }),
         note: args.reason,
         status: args.action.kind,
       },
@@ -96,8 +101,12 @@ export async function runStudentVisibilityOverride(
     reason: args.reason,
     decision,
     audited,
+    searchIndexSynced,
     servedNow: Boolean(await getResearchGroupDetail(entity.slug)),
-    next: 'The served tier changes only when the gate re-decides the row: run student-visibility:gate --apply --confirm-student-visibility-apply --record-id=<id>.',
+    next:
+      args.action.kind === 'set' && holdingStudentVisibilityOverrideTiers.includes(args.action.tier)
+        ? 'The hold is the stored tier now and every serve path reads it; run student-visibility:gate --apply --confirm-student-visibility-apply --record-id=<id> to refresh the reasons.'
+        : 'A release or a clear changes the served tier only when the gate re-decides the row: run student-visibility:gate --apply --confirm-student-visibility-apply --record-id=<id>.',
   };
 }
 

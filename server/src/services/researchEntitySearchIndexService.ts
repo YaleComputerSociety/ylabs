@@ -1,4 +1,5 @@
 import { ResearchEntity } from '../models/researchEntity';
+import { effectiveStudentVisibilityTier } from '../models/studentVisibility';
 import {
   SEARCH_RERANK_TEXT_HASH_FIELD,
   buildSearchRerankTextHash,
@@ -667,6 +668,7 @@ export function buildResearchEntitySearchIndexDocument(
   const out: Record<string, any> = {
     ...doc,
     id,
+    studentVisibilityTier: effectiveStudentVisibilityTier(doc) || doc.studentVisibilityTier,
     // Derived from the row rather than copied from the stored flag, so the
     // `hostsUndergrads` filter and facet read the predicate the served badge reads
     // even when a writer changed its inputs without recomputing the flag (#5123).

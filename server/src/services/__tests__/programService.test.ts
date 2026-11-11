@@ -94,11 +94,13 @@ describe('program search service', () => {
       expect.objectContaining({
         archived: false,
         studentVisibilityTier: { $in: ['student_ready'] },
+        studentVisibilityOverrideTier: { $nin: ['operator_review', 'suppressed'] },
       }),
     );
     expect(mocks.countDocuments).toHaveBeenCalledWith(
       expect.objectContaining({
         studentVisibilityTier: { $in: ['student_ready'] },
+        studentVisibilityOverrideTier: { $nin: ['operator_review', 'suppressed'] },
       }),
     );
   });
@@ -114,11 +116,13 @@ describe('program search service', () => {
       expect.objectContaining({
         archived: false,
         studentVisibilityTier: { $in: ['student_ready'] },
+        studentVisibilityOverrideTier: { $nin: ['operator_review', 'suppressed'] },
       }),
     );
     expect(mocks.countDocuments).toHaveBeenCalledWith(
       expect.objectContaining({
         studentVisibilityTier: { $in: ['student_ready'] },
+        studentVisibilityOverrideTier: { $nin: ['operator_review', 'suppressed'] },
       }),
     );
   });
@@ -332,7 +336,17 @@ describe('program search service', () => {
     expect(mocks.find).toHaveBeenCalledWith(
       expect.objectContaining({
         archived: false,
-        studentVisibilityTier: { $in: ['student_ready', 'operator_review'] },
+        $and: [
+          {
+            $or: [
+              { studentVisibilityOverrideTier: { $in: ['operator_review'] } },
+              {
+                studentVisibilityTier: { $in: ['student_ready', 'operator_review'] },
+                studentVisibilityOverrideTier: { $nin: ['operator_review', 'suppressed'] },
+              },
+            ],
+          },
+        ],
       }),
     );
   });
@@ -346,7 +360,17 @@ describe('program search service', () => {
     expect(mocks.find).toHaveBeenCalledWith(
       expect.objectContaining({
         archived: false,
-        studentVisibilityTier: { $in: ['suppressed'] },
+        $and: [
+          {
+            $or: [
+              { studentVisibilityOverrideTier: { $in: ['suppressed'] } },
+              {
+                studentVisibilityTier: { $in: ['suppressed'] },
+                studentVisibilityOverrideTier: { $nin: ['operator_review', 'suppressed'] },
+              },
+            ],
+          },
+        ],
       }),
     );
   });
@@ -358,6 +382,7 @@ describe('program search service', () => {
       _id: '67d8928150621bcef434a1d5',
       archived: false,
       studentVisibilityTier: { $in: ['student_ready'] },
+      studentVisibilityOverrideTier: { $nin: ['operator_review', 'suppressed'] },
     });
   });
 
@@ -449,6 +474,7 @@ describe('program search service', () => {
     const visibleFilter = {
       archived: false,
       studentVisibilityTier: { $in: ['student_ready'] },
+      studentVisibilityOverrideTier: { $nin: ['operator_review', 'suppressed'] },
     };
     expect(mocks.distinct).toHaveBeenCalledWith('programCategory', visibleFilter);
     expect(mocks.distinct).toHaveBeenCalledWith('programKind', visibleFilter);

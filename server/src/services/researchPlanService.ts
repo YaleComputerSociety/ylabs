@@ -13,7 +13,10 @@ import {
   type ResearchPlanStage,
   type ResearchPlanTargetKind,
 } from '../models/researchPlan';
-import { publicStudentVisibilityTiers } from '../models/studentVisibility';
+import {
+  servedStudentVisibilityTierFilter,
+  servesStudentVisibilityTier,
+} from '../models/studentVisibility';
 import {
   researchEntityServesPublicDetail,
   withPublicDescriptionGateFields,
@@ -419,7 +422,7 @@ export const savedResearchEntitySummary = (
 
 const servesSavedResearchEntity = (entity: Record<string, any>): boolean =>
   entity.archived !== true &&
-  publicStudentVisibilityTiers.includes(entity.studentVisibilityTier) &&
+  servesStudentVisibilityTier(entity) &&
   researchEntityServesPublicDetail(entity);
 
 interface PartitionedSavedResearchEntities {
@@ -465,7 +468,9 @@ const partitionSavedResearchEntities = async (
   const entities = await ResearchEntity.find({
     _id: { $in: normalizedIds.map((id) => new mongoose.Types.ObjectId(id)) },
   })
-    .select(`${savedResearchEntityProjection} archived studentVisibilityTier canonicalGroupId`)
+    .select(
+      `${savedResearchEntityProjection} archived studentVisibilityTier studentVisibilityOverrideTier canonicalGroupId`,
+    )
     .lean();
   const verdictById = new Map(
     entities.map((entity: any) => [
@@ -569,7 +574,7 @@ export const resolveSavedResearchEntityObjectIds = async (
     const entities = await ResearchEntity.find({
       slug: { $in: slugs },
       archived: { $ne: true },
-      studentVisibilityTier: { $in: publicStudentVisibilityTiers },
+      ...servedStudentVisibilityTierFilter(),
     })
       .select('_id')
       .lean();
