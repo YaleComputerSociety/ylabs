@@ -40,8 +40,10 @@ export function parseRederiveOverSharedPersonWebsitesArgs(
       `${REDERIVE_OVER_SHARED_PERSON_WEBSITES_CONFIRM_FLAG} is required when --apply is set.`,
     );
   }
-  if (args.apply && args.websiteOnly && !args.snapshotOutput) {
-    throw new Error('--snapshot-output is required when --apply and --website-only are set.');
+  if (args.apply && args.websiteOnly && (!args.snapshotOutput || !args.deferredOutput)) {
+    throw new Error(
+      '--snapshot-output and --deferred-output are required when --apply and --website-only are set.',
+    );
   }
   return args;
 }
@@ -134,8 +136,12 @@ export function summarizeRederiveVisits(visits: readonly RederiveVisit[]) {
   };
 }
 
-export function isWebsiteOnlyPlan(paths: readonly string[]): boolean {
-  return leafPaths(paths).every((plannedPath) => plannedPath === WEBSITE_ONLY_PLANNED_PATH);
+export function isWebsiteOnlyVisit(visit: RederiveVisit): boolean {
+  const paths = leafPaths(visit.plannedPaths ?? []);
+  return (
+    paths.every((plannedPath) => plannedPath === WEBSITE_ONLY_PLANNED_PATH) &&
+    visit.fieldsWritten === paths.length
+  );
 }
 
 export interface WebsiteOnlyScope {
@@ -145,32 +151,45 @@ export interface WebsiteOnlyScope {
 }
 
 /**
- * Scopes the apply by researcher, never by field: a researcher is applied only when every
- * identity reaching it plans `profile.websiteUrl` and nothing else, so a write cannot carry
- * another field's resolve drift. Any other planned path defers the whole researcher.
+ * Scopes the apply by researcher, never by field: a researcher is applied only when it stores
+ * an over-shared website and every identity reaching it plans `profile.websiteUrl` and nothing
+ * else, with no write beyond its planned paths, so a write cannot carry another field's resolve
+ * drift. Any other planned write defers the whole researcher.
  */
-export function scopeWebsiteOnlyPlans(visits: readonly RederiveVisit[]): WebsiteOnlyScope {
-  const pathsByResearcher = new Map<string, Set<string>>();
+export function scopeWebsiteOnlyPlans(
+  visits: readonly RederiveVisit[],
+  researcherIdsStoringOverShared: ReadonlySet<string>,
+): WebsiteOnlyScope {
+  const visitsByResearcher = new Map<string, RederiveVisit[]>();
   for (const visit of visits) {
     if (!visit.researcherId) continue;
-    const paths = pathsByResearcher.get(visit.researcherId) ?? new Set<string>();
-    for (const plannedPath of leafPaths(visit.plannedPaths ?? [])) paths.add(plannedPath);
-    pathsByResearcher.set(visit.researcherId, paths);
+    const reaching = visitsByResearcher.get(visit.researcherId) ?? [];
+    reaching.push(visit);
+    visitsByResearcher.set(visit.researcherId, reaching);
   }
+  const plansWebsite = (visit: RederiveVisit): boolean =>
+    leafPaths(visit.plannedPaths ?? []).includes(WEBSITE_ONLY_PLANNED_PATH);
   const websiteOnly = new Set<string>();
   const deferred = new Set<string>();
-  for (const [researcherId, paths] of pathsByResearcher) {
-    if (paths.size === 0) continue;
-    if (isWebsiteOnlyPlan([...paths])) websiteOnly.add(researcherId);
-    else deferred.add(researcherId);
+  for (const [researcherId, reaching] of visitsByResearcher) {
+    const plansAnyWrite = reaching.some(
+      (visit) => visit.fieldsWritten > 0 || leafPaths(visit.plannedPaths ?? []).length > 0,
+    );
+    if (!plansAnyWrite) continue;
+    if (
+      researcherIdsStoringOverShared.has(researcherId) &&
+      reaching.some(plansWebsite) &&
+      reaching.every(isWebsiteOnlyVisit)
+    ) {
+      websiteOnly.add(researcherId);
+    } else {
+      deferred.add(researcherId);
+    }
   }
   const applyIdentifiers = uniqueIdentifiers(
     visits
       .filter(
-        (visit) =>
-          visit.researcherId &&
-          websiteOnly.has(visit.researcherId) &&
-          leafPaths(visit.plannedPaths ?? []).includes(WEBSITE_ONLY_PLANNED_PATH),
+        (visit) => visit.researcherId && websiteOnly.has(visit.researcherId) && plansWebsite(visit),
       )
       .map((visit) => visit.identifier),
   );

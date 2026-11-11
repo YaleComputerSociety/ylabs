@@ -28,7 +28,7 @@ import { runWithBoundedConcurrency } from '../scrapers/utils/boundedConcurrency'
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   identifiersAssertingOverSharedWebsites,
-  isWebsiteOnlyPlan,
+  isWebsiteOnlyVisit,
   parseRederiveOverSharedPersonWebsitesArgs,
   scopeWebsiteOnlyPlans,
   uniqueIdentifiers,
@@ -158,18 +158,11 @@ async function main(): Promise<void> {
     planned.push(await visit(identifier, false));
   });
 
-  const scope = args.websiteOnly ? scopeWebsiteOnlyPlans(planned) : undefined;
-  const storedIds = new Set(storedBefore.map((row) => row.researcherId));
-  const websiteOnlyNotStoringOverShared = scope
-    ? scope.websiteOnlyResearcherIds.filter((researcherId) => !storedIds.has(researcherId))
-    : [];
+  const scope = args.websiteOnly
+    ? scopeWebsiteOnlyPlans(planned, new Set(storedBefore.map((row) => row.researcherId)))
+    : undefined;
   if (scope && args.deferredOutput) {
     writePrivateJson(args.deferredOutput, { deferredResearcherIds: scope.deferredResearcherIds });
-  }
-  if (args.apply && websiteOnlyNotStoringOverShared.length > 0) {
-    throw new Error(
-      `${SCRIPT_NAME} refuses to apply: ${websiteOnlyNotStoringOverShared.length} website-only researchers do not store an over-shared website.`,
-    );
   }
 
   const applied: RederiveVisit[] = [];
@@ -188,7 +181,7 @@ async function main(): Promise<void> {
       if (
         !replanned.researcherId ||
         !applySet.has(replanned.researcherId) ||
-        !isWebsiteOnlyPlan(replanned.plannedPaths ?? [])
+        !isWebsiteOnlyVisit(replanned)
       ) {
         skippedForDrift.push(replanned);
         continue;
@@ -219,7 +212,6 @@ async function main(): Promise<void> {
             researchers: scope.websiteOnlyResearcherIds.length,
             identities: scope.applyIdentifiers.length,
             deferredResearchers: scope.deferredResearcherIds.length,
-            notStoringOverShared: websiteOnlyNotStoringOverShared.length,
             scopedPlan: summarizeRederiveVisits(
               planned.filter((row) =>
                 scope.applyIdentifiers.some(
