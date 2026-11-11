@@ -6,6 +6,11 @@ import { givenNameTokensAgree } from '../scrapers/utils/piNameMatch';
 
 export type OfficialProfileLinkVerdict = 'healthy' | 'repaired' | 'dead' | 'inconclusive';
 
+export interface RefusedOfficialProfileLinkCandidate {
+  url: string;
+  reason: 'held-by-another-netid' | 'page-identity-not-witnessed';
+}
+
 export interface OfficialProfileLinkRow {
   researcherId: string;
   displayName?: string;
@@ -14,6 +19,7 @@ export interface OfficialProfileLinkRow {
   verdict: OfficialProfileLinkVerdict;
   httpStatusCode?: number;
   replacementUrl?: string;
+  refusedCandidates?: RefusedOfficialProfileLinkCandidate[];
 }
 
 export interface DepartmentLinkHealthSummary {
@@ -143,6 +149,16 @@ export function personNameSlug(displayName: unknown): string {
     .replace(/^-+|-+$/g, '');
 }
 
+export interface OfficialProfileLinkCandidate {
+  url: string;
+  /**
+   * Chosen because its slug names the person rather than because it continues the stored
+   * path. A slug names every namesake equally, so such a candidate is adopted only once the
+   * page's own email or netid names the researcher (#5605).
+   */
+  nameDerived: boolean;
+}
+
 /**
  * Replacement candidates for a dead official link, most trustworthy first: a URL
  * some source was observed publishing for this exact path, then an observed
@@ -167,6 +183,16 @@ export function officialProfileLinkCandidates(
   displayName?: unknown,
   observedSameHostUrls: readonly string[] = [],
 ): string[] {
+  return officialProfileLinkCandidatesWithOrigin(deadUrl, displayName, observedSameHostUrls).map(
+    (candidate) => candidate.url,
+  );
+}
+
+export function officialProfileLinkCandidatesWithOrigin(
+  deadUrl: string,
+  displayName?: unknown,
+  observedSameHostUrls: readonly string[] = [],
+): OfficialProfileLinkCandidate[] {
   const host = officialProfileLinkHost(deadUrl);
   if (!host) return [];
   let deadPath: string;
@@ -177,9 +203,9 @@ export function officialProfileLinkCandidates(
   }
   const deadSlug = deadPath.split('/').pop() || '';
 
-  const candidates: string[] = [];
+  const candidates: OfficialProfileLinkCandidate[] = [];
   const seen = new Set<string>();
-  const add = (value: unknown) => {
+  const add = (value: unknown, nameDerived: boolean) => {
     if (!isYaleOfficialProfileUrl(value)) return;
     const candidate = String(value).trim();
     let parsed: URL;
@@ -192,7 +218,7 @@ export function officialProfileLinkCandidates(
     const path = parsed.pathname.replace(/\/+$/, '').toLowerCase();
     if (path === deadPath || seen.has(path)) return;
     seen.add(path);
-    candidates.push(candidate);
+    candidates.push({ url: candidate, nameDerived });
   };
 
   const sameSlug = (url: string): boolean => {
@@ -206,20 +232,20 @@ export function officialProfileLinkCandidates(
     }
   };
 
-  const addPersonPage = (value: string) => {
-    if (profileSlugNamesPerson(value, displayName)) add(value);
+  const addPersonPage = (value: string, nameDerived: boolean) => {
+    if (profileSlugNamesPerson(value, displayName)) add(value, nameDerived);
   };
 
-  for (const observed of observedSameHostUrls) if (sameSlug(observed)) add(observed);
-  for (const observed of observedSameHostUrls) addPersonPage(observed);
+  for (const observed of observedSameHostUrls) if (sameSlug(observed)) add(observed, false);
+  for (const observed of observedSameHostUrls) addPersonPage(observed, true);
   if (deadSlug) {
-    add(`https://${host}/profile/${deadSlug}`);
-    addPersonPage(`https://${host}/people/${deadSlug}`);
+    add(`https://${host}/profile/${deadSlug}`, false);
+    addPersonPage(`https://${host}/people/${deadSlug}`, false);
   }
   const nameSlug = personNameSlug(displayName);
   if (nameSlug) {
-    addPersonPage(`https://${host}/profile/${nameSlug}`);
-    addPersonPage(`https://${host}/people/${nameSlug}`);
+    addPersonPage(`https://${host}/profile/${nameSlug}`, true);
+    addPersonPage(`https://${host}/people/${nameSlug}`, true);
   }
   return candidates;
 }

@@ -17,7 +17,8 @@ export type WrongPersonProfileLinkRefusal =
   | 'bound-page-carries-another-surname'
   | 'bound-page-names-this-record'
   | 'record-has-no-person-page-of-its-own'
-  | 'bound-page-is-claimed-by-no-other-record';
+  | 'bound-page-is-claimed-by-no-other-record'
+  | 'own-page-held-by-another-netid';
 
 export interface WrongPersonProfileLinkRow {
   researcherId: string;

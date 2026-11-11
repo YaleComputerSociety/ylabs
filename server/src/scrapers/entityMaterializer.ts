@@ -396,6 +396,7 @@ import {
   normalizeOfficialProfileDestination,
   officialProfileDestinationStoredPattern,
 } from '../services/leadProfileIdentity';
+import { officialProfileLinkHeldByConflictingIdentity } from '../services/officialProfileLinkIdentity';
 import {
   planStoredUndergradEvidenceQuoteClear,
   sourcesWithdrawingUndergradEvidenceQuote,
@@ -7678,7 +7679,14 @@ async function materializeUserIdentityToResearcher(
   const existingLinkKinds = new Set(
     (researcher.profileLinks || []).map((link: ResearcherProfileLink) => link.kind),
   );
-  const officialLink = profileUrls ? composeOfficialProfileLink({ profileUrls }, now) : undefined;
+  const composedOfficialLink = profileUrls
+    ? composeOfficialProfileLink({ profileUrls }, now)
+    : undefined;
+  const officialLink =
+    composedOfficialLink &&
+    !(await officialProfileLinkHeldByConflictingIdentity(composedOfficialLink.url, researcher))
+      ? composedOfficialLink
+      : undefined;
   if (officialLink && !existingLinkKinds.has('YALE_OFFICIAL')) {
     researcher.profileLinks.push(officialLink);
     fieldsWritten += 1;

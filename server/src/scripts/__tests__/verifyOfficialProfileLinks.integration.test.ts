@@ -373,6 +373,10 @@ describe('runVerifyOfficialProfileLinks against stored researchers', () => {
     const deadUrl = 'https://example-dept.yale.edu/people/philip-example';
     const nicknameUrl = 'https://example-dept.yale.edu/profile/phil-example';
     const researcher = await seedResearcher('Philip Example', deadUrl);
+    await Researcher.updateOne(
+      { _id: researcher._id },
+      { $set: { 'identifiers.email': 'philip.example@yale.edu' } },
+    );
     await seedProfileUrlsObservation('pe123', { departmental: nicknameUrl });
     const { probe } = probeReturning({
       [nicknameUrl]: { healthStatus: 'HEALTHY', httpStatusCode: 200 },
@@ -383,6 +387,8 @@ describe('runVerifyOfficialProfileLinks against stored researchers', () => {
       hostConcurrency: 1,
       limit: 10,
       probe,
+      readPageIdentity: async () => ({ email: 'philip.example@yale.edu' }),
+      directory: new Map(),
     });
 
     expect(result).toMatchObject({ repaired: 1, dead: 0, urlsRepaired: 1 });
@@ -418,6 +424,10 @@ describe('runVerifyOfficialProfileLinks against stored researchers', () => {
     const deadUrl = 'https://example-dept.yale.edu/ada-home';
     const namedUrl = 'https://example-dept.yale.edu/profile/ada-example';
     const researcher = await seedResearcher('Ada Example', deadUrl);
+    await Researcher.updateOne(
+      { _id: researcher._id },
+      { $set: { 'identifiers.netid': 'zae5605' } },
+    );
     const { probe } = probeReturning({
       [namedUrl]: { healthStatus: 'HEALTHY', httpStatusCode: 200 },
     });
@@ -427,6 +437,8 @@ describe('runVerifyOfficialProfileLinks against stored researchers', () => {
       hostConcurrency: 1,
       limit: 10,
       probe,
+      readPageIdentity: async () => ({ email: 'zae5605@yale.edu' }),
+      directory: new Map(),
     });
 
     expect(result).toMatchObject({ repaired: 1, dead: 0, urlsRepaired: 1 });
