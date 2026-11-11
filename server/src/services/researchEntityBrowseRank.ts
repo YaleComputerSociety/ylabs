@@ -8,8 +8,9 @@
  * quality-state classification so there is one source of truth for those
  * states, then on served enrichment (a live research website, methods, a
  * description of substance, a current grant), plus a small umbrella-type
- * demotion. The gate already requires the completeness terms of every served
- * row, so on their own they tie nearly the whole served corpus (#4547).
+ * demotion and a service-core demotion below research rows. The gate already
+ * requires the completeness terms of every served row, so on their own they
+ * tie nearly the whole served corpus (#4547).
  * Access-plausibility signals do not contribute to rank (see the 2026-08-25
  * "Simple Directory First" decision): reaching out is the universal action, so
  * ordering is by data quality and relevance, not by a computed access grade.
@@ -31,6 +32,7 @@ import {
   mapResearchGroupKindToEntityType,
   ResearchEntityType,
 } from '../models/researchAccessTypes';
+import { isDemotedServiceCoreReason, serviceCoreDemotionReason } from './serviceCoreDemotion';
 
 export interface ResearchEntityBrowseRankInput {
   entity: Record<string, any>;
@@ -99,10 +101,27 @@ const entityTypeRankAdjustment = (
   return adjustment;
 };
 
+// Measured on the served Development corpus on 2026-11-11 (#5748): the highest served core
+// scored 81 and the lowest served research row 23, so 59 is the smallest uniform demotion that
+// puts every core below every research row it tied or outranked. Re-measure when either end moves.
+const SERVICE_CORE_BROWSE_RANK_ADJUSTMENT = -59;
+
+const serviceCoreBrowseRankAdjustment = (entity: Record<string, any>): number =>
+  isDemotedServiceCoreReason(serviceCoreDemotionReason(entity, []))
+    ? SERVICE_CORE_BROWSE_RANK_ADJUSTMENT
+    : 0;
+
+const DUPLICATE_RISK_PENALTY = 14;
+
+const BROWSE_RANK_SCORE_FLOOR =
+  -DUPLICATE_RISK_PENALTY + Math.min(0, ...Object.values(ENTITY_TYPE_RANK_ADJUSTMENT));
+
 // Bump on any change to what computeResearchEntityBrowseRank returns for the same input.
 // The service refuses to overwrite a score stamped by a newer version, so a checkout that
 // predates a formula change cannot revert rows a newer checkout already scored (#4642).
-export const BROWSE_RANK_SCORER_VERSION = 3;
+export const BROWSE_RANK_SCORER_VERSION = 4;
+
+export const SERVICE_CORE_BROWSE_DEMOTION_SCORER_VERSION = 4;
 
 const ENRICHMENT_POINTS = {
   website: 8,
@@ -180,15 +199,19 @@ export function computeResearchEntityBrowseRank({
   } else {
     score += 10;
   }
-  if (summary.repairFlags.includes('duplicate_risk')) score -= 14;
+  if (summary.repairFlags.includes('duplicate_risk')) score -= DUPLICATE_RISK_PENALTY;
   score += servedEnrichmentPoints(entity, leadMembers);
   score += entityTypeRankAdjustment(entity, hostsAffiliatedResearchHomes);
+  score += serviceCoreBrowseRankAdjustment(entity);
 
-  return score;
+  return Math.max(BROWSE_RANK_SCORE_FLOOR, score);
 }
 
 export const __testing = {
+  BROWSE_RANK_SCORE_FLOOR,
   ENTITY_TYPE_RANK_ADJUSTMENT,
+  SERVICE_CORE_BROWSE_RANK_ADJUSTMENT,
+  serviceCoreBrowseRankAdjustment,
   ENRICHMENT_POINTS,
   servesACurrentGrant,
   servesALiveWebsite,

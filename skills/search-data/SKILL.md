@@ -307,8 +307,9 @@ Every write stamps `browseRankScorerVersion` with `BROWSE_RANK_SCORER_VERSION`, 
 Bump the constant in the same change as any formula change, or the guard cannot tell the two formulas apart.
 A checkout that predates the stamp still writes unguarded, so `research-homes:backfill-browse-rank --fail-on-drift` (dry run) is the backstop: it counts rows whose stored score the current scorer does not compute as `scoreDrifted` and exits non-zero when any exist.
 
-The scorer rewards completeness (a source-backed description, an identified lead, an official source URL), then served enrichment, minus a duplicate-risk penalty and an umbrella demotion for a center, institute, or initiative that hosts other research.
-Access-plausibility signals earn nothing (2026-08-25 "Simple Directory First"), and there is no entity-type bonus, so a faculty research row is never demoted for its type.
+The scorer rewards completeness (a source-backed description, an identified lead, an official source URL), then served enrichment, minus a duplicate-risk penalty, an umbrella demotion for a center, institute, or initiative that hosts other research, and the service-core demotion below.
+Access-plausibility signals earn nothing (2026-08-25 "Simple Directory First"), and there is no entity-type bonus, so a faculty research row is never demoted for its type; only one whose text is a core's service offer is, by the predicate search uses.
+The score never falls below the lowest value the scorer produced before the service-core demotion (`BROWSE_RANK_SCORE_FLOOR`, -39: the duplicate-risk penalty plus the largest type demotion).
 Completeness is read from the copy a row serves, so the stored-only `profileSynthesisDescription` earns no rank: before #4120 it lifted a row with no served description from 0 or 2 description points to 8.
 The gate requires every completeness term of a served row, so completeness alone tied 3,379 of 3,464 `student_ready` Development rows at the maximum score on 2026-10-03.
 Enrichment separates them, each term read from the public DTO (`toPublicResearchEntityDto`) so a value the serve guards withhold earns nothing: a served research website that stored link health does not call gone (+8, `isKnownDeadSourceUrl`), served methods (+5), a served description of at least 200 characters (+3), and a current grant from the served current-funding view, weighted 0 for now (#4622).
@@ -697,6 +698,15 @@ Moving each core behind the next 3 research rows cleared 1 of the 6 Production q
 Against the undemoted run: bench-v3 nDCG@10 0.657 to 0.663 (delta +0.006, 95% CI +0.001..+0.012), real-v2 0.752 to 0.763 (+0.010, CI +0.002..+0.020, 6 better, 0 worse), held-out MRR 0.414 to 0.407 (delta -0.007, CI -0.019..+0.003), where all 7 held-out queries that lost rank target a core-typed row and the 17 that changed otherwise all gained.
 Over the 565 distinct Production query and filter pairs, a judged core reached the top 10 for 51 and the top 3 for 15 before, and 7 and 3 after.
 `journey:eval --case=service-cores-rank-below-research` reads the top 30 of eight topic queries, classifies each row through `serviceCoreDemotionReason`, and fails when a demoted row outranks a research row, reporting each exempt row with its reason.
+
+Default browse demotes the same class through the stored score (#5748 run 2).
+`computeResearchEntityBrowseRank` adds `SERVICE_CORE_BROWSE_RANK_ADJUSTMENT` (-59) to every row `serviceCoreDemotionReason(row, [])` demotes, so search and browse share one predicate; with no query there is no name exemption, and a Type filter that selects cores serves only cores, whose order among themselves the uniform shift keeps.
+The size was measured on the served Development corpus on 2026-11-11: the highest served core scored 81 and the lowest served research row 23, so -59 is the smallest uniform demotion that puts every core below every research row it tied with or outranked (-58 leaves the top cores tied at 23), and it moves no research row.
+Over the 3,827 served rows, the 63 demoted rows (58 `CORE_FACILITY`, 5 faculty rows with service text) went from a median browse position of 798, with 3 in the top 100 and 19 in the top 500, to positions 3,765 to 3,827, below all 3,764 research rows, whose relative order is unchanged.
+The demotion lowers a core inside a text query's `browseRankScore:desc` tiebreak too, the same direction as the hybrid window demotion above.
+If a research row is ever served below the demoted cores' top score of 22, re-measure the size; the journey case below fails first.
+It is a stored score, so the formula change (`BROWSE_RANK_SCORER_VERSION` 4) reaches browse only after `research-homes:backfill-browse-rank --apply --confirm-browse-rank` and `yarn development:search:sync` on Development.
+`journey:eval --case=service-cores-rank-below-research-in-browse` walks the whole default browse, classifies each row through the same predicate, and fails when a demoted row outranks a research row, attributing each such row to a stored score older than `SERVICE_CORE_BROWSE_DEMOTION_SCORER_VERSION` (the backfill has not run), an indexed score that differs from the stored one (the sync has not run), or neither (a real defect).
 
 ### "More like this" ranks on meaning, not on a shared name
 
