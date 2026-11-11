@@ -50,6 +50,7 @@ const rerankFiltersSchema = new mongoose.Schema(
     researchAreas: { type: [String], default: undefined },
     hostsUndergrads: { type: Boolean, required: false },
     welcomesUndergrads: { type: Boolean, required: false },
+    worksWithUndergrads: { type: Boolean, required: false },
   },
   { _id: false },
 );

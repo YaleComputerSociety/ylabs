@@ -55,7 +55,8 @@ export type ResearchJourneyPayload =
         | 'research_area'
         | 'research_type'
         | 'hosts_undergrads'
-        | 'welcomes_undergrads';
+        | 'welcomes_undergrads'
+        | 'works_with_undergrads';
     }
   | { operation: 'save' | 'remove'; surface: ResearchSaveSurface }
   | { entityCountBucket: '1' | '2' | '3-4' | '5+' }

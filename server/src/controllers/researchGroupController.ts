@@ -89,6 +89,10 @@ const parseFilters = (raw: unknown): ResearchGroupFilterInput => {
     filters.welcomesUndergrads = true;
   }
 
+  if (r.worksWithUndergrads === true) {
+    filters.worksWithUndergrads = true;
+  }
+
   return filters;
 };
 

@@ -1177,6 +1177,58 @@ describe('Research page', () => {
     });
   });
 
+  it('filters to rows that work with undergraduates through the URL, the request, and a chip (#5362)', async () => {
+    mockSearchResponses((url) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse([researchEntity], {
+        facetDistribution: {
+          hostsUndergrads: { true: 3 },
+          welcomesUndergrads: { true: 2 },
+          worksWithUndergrads: { true: 4 },
+        },
+      });
+    });
+    const lastSearchBody = () =>
+      mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search').at(-1)?.[1];
+
+    render(
+      <MemoryRouter initialEntries={['/research?q=machine+learning&works=1']}>
+        <ConfigContext.Provider
+          value={{ ...defaultConfigContext, isLoading: false, isLoaded: true, departments }}
+        >
+          <LocationDisplay />
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    await waitFor(() =>
+      expect(lastSearchBody()).toEqual(
+        expect.objectContaining({ q: 'machine learning', filters: { worksWithUndergrads: true } }),
+      ),
+    );
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Remove Undergraduates: Hosted, welcomes or mentors' }),
+    );
+    await waitFor(() => {
+      expect(lastSearchBody()).toEqual(expect.objectContaining({ filters: {}, page: 1 }));
+      expect(screen.getByTestId('location').textContent).toBe('/research?q=machine+learning');
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Works with undergrads (4)' }));
+    await waitFor(() => {
+      expect(lastSearchBody()).toEqual(
+        expect.objectContaining({ filters: { worksWithUndergrads: true }, page: 1 }),
+      );
+      expect(screen.getByTestId('location').textContent).toBe(
+        '/research?q=machine+learning&works=1',
+      );
+    });
+  });
+
   describe('more research on a thin access-filtered topic page (#5464)', () => {
     const syntheticMoreEntity = (index: number) => ({
       _id: `synthetic-more-${index}`,

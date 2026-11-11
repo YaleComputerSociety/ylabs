@@ -203,6 +203,7 @@ export interface ResearchGroupSearchResponse {
     school?: string[];
     departments?: string[];
     welcomesUndergrads?: false;
+    worksWithUndergrads?: false;
   };
   moreTopicResults?: ResearchEntity[];
 }
