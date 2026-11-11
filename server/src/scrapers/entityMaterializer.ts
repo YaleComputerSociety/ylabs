@@ -305,7 +305,7 @@ import {
   screenDirectoryContradictedProfileEvidenceForKey,
   withoutDirectoryContradictedProfileEvidenceForKey,
 } from './directoryContradictedProfileNetid';
-import { verifiedResearcherEmail } from './verifiedResearcherEmail';
+import { derivedResearcherEmail } from './verifiedResearcherEmail';
 import {
   storedResearchAreasCameFromAPersonProfileOnAnOrganizationRow,
   withoutPersonProfileTopicsOnOrganizationRow,
@@ -7729,16 +7729,14 @@ async function materializeUserIdentityToResearcher(
 
   const priorEmail: string | undefined = researcher.identifiers?.email;
   let emailFieldsWritten = 0;
-  if (textValue(priorEmail) === '') {
-    const verifiedEmail = await verifiedResearcherEmail({
-      _id: researcher._id,
-      netid: textValue(researcher.identifiers?.netid),
-    });
-    if (verifiedEmail.status === 'verified') {
-      researcher.set('identifiers.email', verifiedEmail.email);
-      emailFieldsWritten += 1;
-      fieldsWritten += 1;
-    }
+  const derivedEmail = await derivedResearcherEmail(
+    { _id: researcher._id, netid: textValue(researcher.identifiers?.netid) },
+    textValue(priorEmail),
+  );
+  if (derivedEmail) {
+    researcher.set('identifiers.email', derivedEmail);
+    emailFieldsWritten += 1;
+    fieldsWritten += 1;
   }
 
   const now = new Date();

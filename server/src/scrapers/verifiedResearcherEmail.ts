@@ -130,6 +130,48 @@ export async function verifiedResearcherEmail(
   return verifiedResearcherEmailFrom(person, await loadVerifiableEmailObservations(netid));
 }
 
+/**
+ * The address a researcher's stored email should hold after this resolve, or undefined to keep
+ * it. An empty value is filled from any verified address. A non-empty value is replaced only
+ * when the person's own official page is among the verified sources and no official-page
+ * evidence on the person's key still states the stored address (#5627): a directory-only
+ * candidate, or page evidence that states both addresses, cannot tell which one is current.
+ */
+export async function derivedResearcherEmail(
+  person: EmailEvidencePerson,
+  storedEmail: string,
+): Promise<string | undefined> {
+  const netid = bareNetid(person.netid);
+  if (!netid) return undefined;
+  return derivedResearcherEmailFrom(
+    person,
+    storedEmail,
+    await loadVerifiableEmailObservations(netid),
+  );
+}
+
+export async function derivedResearcherEmailFrom(
+  person: EmailEvidencePerson,
+  storedEmail: string,
+  observations: readonly EmailObservation[],
+): Promise<string | undefined> {
+  const netid = bareNetid(person.netid);
+  if (!netid) return undefined;
+  const verified = await verifiedResearcherEmailFrom(person, observations);
+  if (verified.status !== 'verified') return undefined;
+  const stored = normalizedEmail(storedEmail);
+  if (!stored) return verified.email;
+  if (stored === verified.email) return undefined;
+  if (!verified.sources.includes('official-profile-page')) return undefined;
+  const pageEvidenceStatesStored = observations.some(
+    (observation) =>
+      observation.sourceName === OFFICIAL_PROFILE_PI_BACKFILL_SOURCE &&
+      netidOfNetidUserKey(observation.entityKey) === netid &&
+      normalizedEmail(observation.value) === stored,
+  );
+  return pageEvidenceStatesStored ? undefined : verified.email;
+}
+
 export async function verifiedResearcherEmailFrom(
   person: EmailEvidencePerson,
   observations: readonly EmailObservation[],

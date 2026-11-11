@@ -149,11 +149,138 @@ describe('an empty researcher email is filled from identity-verified evidence on
     expect(await ResearchEntity.countDocuments({})).toBe(0);
   });
 
-  it('never replaces a non-empty stored email', async () => {
+  it('replaces a stored email when only the person own page states the candidate', async () => {
+    const researcher = await seedResearcherWithStoredEmail();
+    await seedOwnKeyPageEmail(PAGE_EMAIL, OWN_PAGE);
+
+    await materializeEntity('user', { entityKey: `netid:${OWN_NETID}` }, {});
+
+    expect(await storedEmail(researcher._id)).toBe(PAGE_EMAIL);
+  });
+
+  it('keeps the stored email when page evidence states both addresses', async () => {
+    const researcher = await seedResearcherWithStoredEmail();
+    await seedOwnKeyPageEmail(PAGE_EMAIL, OWN_PAGE);
+    await seedOwnKeyPageEmail(LEGACY_EMAIL, 'https://medicine.yale.edu/lab/robin-own/');
+
+    await materializeEntity('user', { entityKey: `netid:${OWN_NETID}` }, {});
+
+    expect(await storedEmail(researcher._id)).toBe(LEGACY_EMAIL);
+  });
+
+  it('keeps the stored email when only the directory states the candidate', async () => {
     const researcher = await seedResearcherWithStoredEmail();
     await seedStaffDirectoryRecord(OWN_NETID, DIRECTORY_EMAIL, [OWN_NETID]);
 
     await materializeEntity('user', { entityKey: OWN_NETID }, {});
+
+    expect(await storedEmail(researcher._id)).toBe(LEGACY_EMAIL);
+  });
+
+  it('keeps the stored email when the page is not one the person holds', async () => {
+    const researcher = await seedResearcher({
+      identifiers: { netid: OWN_NETID, email: LEGACY_EMAIL },
+      profileLinks: [],
+    });
+    await seedOwnKeyPageEmail(PAGE_EMAIL, OWN_PAGE);
+
+    await materializeEntity('user', { entityKey: `netid:${OWN_NETID}` }, {});
+
+    expect(await storedEmail(researcher._id)).toBe(LEGACY_EMAIL);
+  });
+
+  it('replaces a stored email when the own page and the directory agree on the candidate', async () => {
+    const researcher = await seedResearcherWithStoredEmail();
+    await seedStaffDirectoryRecord(OWN_NETID, PAGE_EMAIL, [OWN_NETID]);
+    await seedOwnKeyPageEmail(PAGE_EMAIL, OWN_PAGE);
+
+    await materializeEntity('user', { entityKey: OWN_NETID }, {});
+
+    expect(await storedEmail(researcher._id)).toBe(PAGE_EMAIL);
+  });
+
+  it.todo(
+    'keeps the stored email once a fresh read of the own page no longer states the candidate (absence does not retract a user email)',
+  );
+
+  it('restores a replaced email to its prior value when the netid is rolled back', async () => {
+    await Researcher.init();
+    const stampedNetid = 'race456';
+    await Account.create({
+      netid: stampedNetid,
+      email: 'race.replace.fixture@example.invalid',
+      status: 'ACTIVE',
+    });
+    const researcher = await Researcher.create({
+      displayName: 'Robin Own',
+      identifiers: { email: LEGACY_EMAIL },
+      profileLinks: [officialLink(OWN_PAGE)],
+    });
+    for (const [field, value] of [
+      ['netid', stampedNetid],
+      ['fname', 'Robin'],
+      ['lname', 'Own'],
+      ['email', PAGE_EMAIL],
+    ] as const) {
+      await observation({
+        entityKey: `netid:${stampedNetid}`,
+        sourceName: 'official-profile-pi-backfill',
+        sourceUrl: OWN_PAGE,
+        field,
+        value,
+      });
+    }
+    const originalSave = Researcher.prototype.save;
+    let replacementAttempted = false;
+    let concurrentHolderInserted = false;
+    const saveSpy = vi.spyOn(Researcher.prototype, 'save').mockImplementation(async function (
+      this: any,
+      ...args: any[]
+    ) {
+      if (!concurrentHolderInserted && this.identifiers?.netid === stampedNetid) {
+        replacementAttempted = this.identifiers?.email === PAGE_EMAIL;
+        concurrentHolderInserted = true;
+        await Researcher.collection.insertOne({
+          displayName: 'Concurrent Holder',
+          identifiers: { netid: stampedNetid },
+          archived: false,
+        });
+      }
+      return originalSave.apply(this, args as any);
+    });
+
+    try {
+      await materializeEntity('user', { entityKey: `netid:${stampedNetid}` }, {});
+    } finally {
+      saveSpy.mockRestore();
+    }
+
+    expect(replacementAttempted).toBe(true);
+    const after = await Researcher.findById(researcher._id).lean<any>();
+    expect(after.identifiers?.netid).toBeUndefined();
+    expect(after.identifiers?.email).toBe(LEGACY_EMAIL);
+  });
+
+  it('keeps a non-empty stored email when verified sources disagree', async () => {
+    const researcher = await seedResearcherWithStoredEmail();
+    await seedStaffDirectoryRecord(OWN_NETID, DIRECTORY_EMAIL, [OWN_NETID]);
+    await seedOwnKeyPageEmail(PAGE_EMAIL, OWN_PAGE);
+
+    await materializeEntity('user', { entityKey: OWN_NETID }, {});
+
+    expect(await storedEmail(researcher._id)).toBe(LEGACY_EMAIL);
+  });
+
+  it("never replaces a stored email from another person's page", async () => {
+    const researcher = await seedResearcherWithStoredEmail();
+    await Researcher.create({
+      displayName: 'Sam Other',
+      identifiers: { netid: 'other456' },
+      profileLinks: [officialLink(OTHER_PAGE)],
+    });
+    await seedOwnKeyPageEmail('other.page.fixture@yale.edu', OTHER_PAGE);
+
+    await materializeEntity('user', { entityKey: `netid:${OWN_NETID}` }, {});
 
     expect(await storedEmail(researcher._id)).toBe(LEGACY_EMAIL);
   });
