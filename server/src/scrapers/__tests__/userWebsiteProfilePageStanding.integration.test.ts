@@ -171,7 +171,7 @@ describe("a person's profile or directory page never displaces their own website
     expect(await storedWebsite()).toBe(PERSONAL_NAME_DOMAIN);
   });
 
-  it('lets the key that wrote the lab site fall back to its profile page once its lab site evidence is gone', async () => {
+  it('keeps a stored lab site when the key that wrote it now offers only its profile page', async () => {
     await createResearcher();
     await seedName(NAME_KEY);
     await seedWebsite({ entityKey: NAME_KEY, value: LAB_SITE, observedAt: '2026-06-01' });
@@ -185,7 +185,7 @@ describe("a person's profile or directory page never displaces their own website
     await seedWebsite({ entityKey: NAME_KEY, value: PROFILE_PAGE, observedAt: '2026-11-10' });
 
     await materialize(NAME_KEY);
-    expect(await storedWebsite()).toBe(PROFILE_PAGE);
+    expect(await storedWebsite()).toBe(LAB_SITE);
     expect((await materialize(NAME_KEY)).fieldsWritten).toBe(0);
   });
 
