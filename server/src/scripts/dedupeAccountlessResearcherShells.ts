@@ -39,7 +39,10 @@ import {
   type AliasTwinFoldRefusal,
 } from './dedupeAccountlessResearcherShellsCore';
 import { isLocalPartNetid } from '../utils/localPartNetid';
-import { normalizeOfficialProfileDestination } from '../services/leadProfileIdentity';
+import {
+  isLikelyOfficialPersonProfileUrl,
+  normalizeOfficialProfileDestination,
+} from '../services/leadProfileIdentity';
 import { parseRosterMemberIdentityEvidence } from '../scrapers/utils/rosterMemberIdentityEvidence';
 
 dotenv.config({ quiet: true });
@@ -352,6 +355,16 @@ async function loadSharedRowCandidates(
 const observationReadScope = { superseded: { $ne: true } };
 
 /**
+ * Whether a URL is a person's official profile page once its known path aliases are folded,
+ * so a divinity legacy faculty path counts and a lab or center site never does (#5592).
+ */
+function isPersonProfileDestination(url: unknown): boolean {
+  if (typeof url !== 'string' || !url) return false;
+  const destination = normalizeOfficialProfileDestination(url);
+  return Boolean(destination) && isLikelyOfficialPersonProfileUrl(`https://${destination}`);
+}
+
+/**
  * Stronger records sharing a live research row with each `NAME_ONLY` shell through any
  * unarchived edge, including a historical one, each marked with whether the shell's own
  * listing on that row is an identity witness: the listing (the roster entry its edge cites,
@@ -455,9 +468,15 @@ async function loadNameVariantCandidates(
       } else {
         const evidence = parseRosterMemberIdentityEvidence(observation.value);
         if (evidence) {
+          const ownPage = normalizeOfficialProfileDestination(evidence.pageUrl);
+          const outbound = evidence.linkedProfileUrls.filter(
+            (url) =>
+              isPersonProfileDestination(url) &&
+              normalizeOfficialProfileDestination(url) !== ownPage,
+          );
           linkedUrlsByListingKey.set(key, [
             ...(linkedUrlsByListingKey.get(key) ?? []),
-            ...evidence.linkedProfileUrls,
+            ...outbound,
           ]);
         }
       }
@@ -468,10 +487,10 @@ async function loadNameVariantCandidates(
   const destinationsOf = (identity: (typeof researcherIdentities)[number]): Set<string> =>
     new Set(
       [
-        ...(Array.isArray(identity.profileLinks) ? identity.profileLinks : []).map(
-          (link: any) => link?.url,
-        ),
-        identity.websiteUrl,
+        ...(Array.isArray(identity.profileLinks) ? identity.profileLinks : [])
+          .filter((link: any) => link?.kind === 'YALE_OFFICIAL')
+          .map((link: any) => link?.url),
+        isPersonProfileDestination(identity.websiteUrl) ? identity.websiteUrl : undefined,
       ]
         .filter((url): url is string => typeof url === 'string' && url.length > 0)
         .map((url) => normalizeOfficialProfileDestination(url))

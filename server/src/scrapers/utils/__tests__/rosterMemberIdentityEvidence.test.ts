@@ -102,3 +102,91 @@ describe('parseRosterMemberIdentityEvidence', () => {
     expect(parseRosterMemberIdentityEvidence('not evidence')).toBeNull();
   });
 });
+
+describe('extractRosterMemberIdentityEvidence reads only the page subject (#5592)', () => {
+  const PAGE = 'https://medicine.yale.edu/profile/avery-synthetic/';
+  const ysmProfileWithWidgets = `<html><head><link rel="canonical" href="${PAGE}"></head><body>
+    <main><article class="profile-details">
+      <header class="profile-details-header"><h1>Avery Synthetic, MD</h1>
+        <a href="https://medicine.yale.edu/profile/avery-synthetic/">Avery Synthetic</a>
+        <a href="https://medicine.yale.edu/lab/synthetic/">Lab Website</a></header>
+      <section class="profile-details-content-section" id="get-in-touch-administrative-support">
+        <div class="profile-list"><ul><li class="profile-list__item">
+          <a href="https://medicine.yale.edu/profile/blair-fixture/">Blair Fixture</a></li></ul></div></section>
+      <article class="card"><div class="achievement-activity-card__related-items-container"><ul>
+        <li class="achievement-activity-card__related-item"><a href="https://medicine.yale.edu/profile/casey-coauthor/">Casey Coauthor</a></li>
+        <li class="achievement-activity-card__related-item"><a href="https://medicine.yale.edu/profile/dana-coauthor/">A study of synthetic outcomes</a></li>
+      </ul></div></article>
+      <footer class="profile-details-footer"><a href="https://medicine.yale.edu/profile/edit/">Profile</a></footer>
+    </article></main>
+    <footer class="footer"><nav><a href="https://medicine.yale.edu/profile/footer-person/">Profile</a></nav></footer>
+  </body></html>`;
+
+  it('keeps the subject own profile and generic-labelled links, never co-author, admin or footer links', () => {
+    const evidence = extractRosterMemberIdentityEvidence(
+      ysmProfileWithWidgets,
+      PAGE,
+      'Avery Synthetic',
+    );
+    expect(evidence.linkedProfileUrls).toContain(
+      'https://medicine.yale.edu/profile/avery-synthetic/',
+    );
+    for (const other of [
+      'blair-fixture',
+      'casey-coauthor',
+      'dana-coauthor',
+      'footer-person',
+      'profile/edit',
+    ]) {
+      expect(evidence.linkedProfileUrls.some((url) => url.includes(other))).toBe(false);
+    }
+  });
+
+  it('keeps a center person page "Website" link to the subject departmental profile', () => {
+    const page = 'https://center.yale.edu/people/avery-synthetic';
+    const html = `<html><body><main><h1>Avery Synthetic</h1>
+      <div class="contact"><a href="https://medicine.yale.edu/profile/avery-synthetic/">Website</a></div>
+      <aside><h3>Related people</h3><a href="https://medicine.yale.edu/profile/blair-fixture/">Website</a></aside>
+    </main></body></html>`;
+    const evidence = extractRosterMemberIdentityEvidence(html, page, 'Avery Synthetic');
+    expect(evidence.linkedProfileUrls).toEqual([
+      page,
+      'https://medicine.yale.edu/profile/avery-synthetic/',
+    ]);
+  });
+
+  it('reads Person metadata and netids only from the node naming the subject', () => {
+    const page = 'https://center.yale.edu/people/grid';
+    const html = `<html><head><script type="application/ld+json">${JSON.stringify([
+      {
+        '@type': 'Person',
+        name: 'Avery Synthetic',
+        sameAs: 'https://medicine.yale.edu/profile/avery-synthetic/',
+        identifier: { '@type': 'PropertyValue', propertyID: 'netid', value: 'as1111' },
+      },
+      {
+        '@type': 'Person',
+        name: 'Blair Fixture',
+        sameAs: 'https://medicine.yale.edu/profile/blair-fixture/',
+        identifier: { '@type': 'PropertyValue', propertyID: 'netid', value: 'bf2222' },
+      },
+    ])}</script></head><body></body></html>`;
+    const evidence = extractRosterMemberIdentityEvidence(html, page, 'Avery Synthetic');
+    expect(evidence.linkedProfileUrls).toContain(
+      'https://medicine.yale.edu/profile/avery-synthetic/',
+    );
+    expect(evidence.linkedProfileUrls.some((url) => url.includes('blair-fixture'))).toBe(false);
+    expect(evidence.netids).toEqual(['as1111']);
+  });
+
+  it('gives the same evidence on a second read of the same page', () => {
+    const first = extractRosterMemberIdentityEvidence(
+      ysmProfileWithWidgets,
+      PAGE,
+      'Avery Synthetic',
+    );
+    expect(
+      extractRosterMemberIdentityEvidence(ysmProfileWithWidgets, PAGE, 'Avery Synthetic'),
+    ).toEqual(first);
+  });
+});

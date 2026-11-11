@@ -761,6 +761,49 @@ describe('dedupeAccountlessResearcherShells name-variant twins (#5592)', () => {
     expect(String(folded!.dedupedIntoResearcherId)).toBe(String(holder));
   });
 
+  it('accepts a holder department person page held as its website, and the divinity legacy path for it', async () => {
+    const PERSON_PAGE = 'https://divinity.yale.edu/profile/avery-synthetic';
+    const { holder, shell } = await seedPair({
+      shellName: 'Avery Synthetic',
+      holderName: 'Avery Q. Synthetic',
+      linkedProfile: 'https://divinity.yale.edu/faculty-and-research/yds-faculty/avery-synthetic',
+    });
+    const db = mongoose.connection.db!;
+    await db
+      .collection('researchers')
+      .updateOne(
+        { _id: holder },
+        { $set: { profileLinks: [], 'profile.websiteUrl': PERSON_PAGE } },
+      );
+
+    const result = await dedupeAccountlessResearcherShells({ apply: true });
+
+    expect(result.foldsByMatchedIdentity['name-variant-shared-row']).toBe(1);
+    expect((await db.collection('researchers').findOne({ _id: shell }))!.archived).toBe(true);
+  });
+
+  it('refuses a witness that is only the listing page itself, held by the holder as a lab website', async () => {
+    const LAB_SITE = 'https://fixture.yale.edu/lab/synthetic-lab';
+    const { holder, shell } = await seedPair({
+      shellName: 'Avery Synthetic',
+      holderName: 'Avery Q. Synthetic',
+      linkedProfile: LAB_SITE,
+    });
+    const db = mongoose.connection.db!;
+    await db
+      .collection('researchers')
+      .updateOne({ _id: holder }, { $set: { 'profile.websiteUrl': LAB_SITE } });
+    await db
+      .collection('observations')
+      .updateOne({ field: 'profileIdentityEvidence' }, { $set: { 'value.pageUrl': LAB_SITE } });
+
+    const result = await dedupeAccountlessResearcherShells({ apply: true });
+
+    expect(result.byReason.NO_IDENTITY_WITNESS).toBe(1);
+    const untouched = await db.collection('researchers').findOne({ _id: shell });
+    expect(untouched!.archived).toBe(false);
+  });
+
   it('refuses a shared center role whose listing links a profile elsewhere, as for two namesakes', async () => {
     const { shell } = await seedPair({
       shellName: 'Avery Synthetic-Fixture',
