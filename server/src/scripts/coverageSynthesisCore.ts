@@ -38,6 +38,7 @@ export interface CoverageSynthesisArgs {
   evaluate: boolean;
   validateOnly: boolean;
   printWriterPrompt: boolean;
+  synthesizeCards: boolean;
   slugsFile?: string;
   captureEvidence?: string;
   evidenceFile?: string;
@@ -86,6 +87,7 @@ export function parseCoverageSynthesisArgs(argv: string[]): CoverageSynthesisArg
     evaluate: false,
     validateOnly: false,
     printWriterPrompt: false,
+    synthesizeCards: false,
   };
   const setValue = (flag: ValueFlag, value: string) => {
     const key = VALUE_FLAGS[flag];
@@ -118,6 +120,7 @@ export function parseCoverageSynthesisArgs(argv: string[]): CoverageSynthesisArg
     else if (token === '--evaluate') args.evaluate = true;
     else if (token === '--validate-only') args.validateOnly = true;
     else if (token === '--print-writer-prompt') args.printWriterPrompt = true;
+    else if (token === '--synthesize-cards') args.synthesizeCards = true;
   }
   if (!Number.isFinite(args.limit) || args.limit <= 0)
     args.limit = DEFAULT_COVERAGE_SYNTHESIS_LIMIT;
@@ -129,10 +132,69 @@ export function parseCoverageSynthesisArgs(argv: string[]): CoverageSynthesisArg
 }
 
 export type CoverageSynthesisMode =
-  'print-writer-prompt' | 'capture-evidence' | 'import-derivations' | 'evaluate' | 'write';
+  | 'print-writer-prompt'
+  | 'capture-evidence'
+  | 'import-derivations'
+  | 'evaluate'
+  | 'synthesize-cards'
+  | 'write';
+
+export type CardPassMode = 'capture-evidence' | 'import-derivations' | 'evaluate' | 'plan';
+
+/**
+ * The card pass reuses the writer's read-only flags: `--capture-evidence` freezes the bodies
+ * materialization would ask a card for, `--evidence-file` reads them, `--evaluate` drafts
+ * through the card cache, and `--import-derivations` judges external cards; with none of them
+ * it only plans. It never writes an observation or a field.
+ */
+export function cardPassModeOf(args: CoverageSynthesisArgs): CardPassMode {
+  if (args.captureEvidence) return 'capture-evidence';
+  if (args.importDerivations) return 'import-derivations';
+  if (args.evaluate) return 'evaluate';
+  return 'plan';
+}
+
+function assertCardPassArgs(args: CoverageSynthesisArgs): void {
+  const refused = [
+    args.apply ? '--apply' : null,
+    args.all ? '--all' : null,
+    args.rederiveCards ? '--rederive-cards' : null,
+    args.reinstateRetiredBodies ? '--reinstate-retired-bodies' : null,
+  ].filter(Boolean);
+  if (refused.length > 0) {
+    throw new Error(
+      `research-entity:coverage-synthesis --synthesize-cards is refused with ${refused.join(', ')}`,
+    );
+  }
+  const chosen = [args.captureEvidence, args.importDerivations, args.evaluate].filter(Boolean);
+  if (chosen.length > 1) {
+    throw new Error(
+      'research-entity:coverage-synthesis --synthesize-cards: choose one of --capture-evidence, --import-derivations, --evaluate',
+    );
+  }
+  if (args.validateOnly && !args.importDerivations) {
+    throw new Error(
+      'research-entity:coverage-synthesis --validate-only requires --import-derivations',
+    );
+  }
+  if (args.captureEvidence && args.evidenceFile) {
+    throw new Error(
+      'research-entity:coverage-synthesis --capture-evidence reads the database, not --evidence-file',
+    );
+  }
+  if (args.slugs.length === 0 && !args.slugsFile && !args.evidenceFile) {
+    throw new Error(
+      'research-entity:coverage-synthesis --synthesize-cards requires --slugs, --slugs-file or --evidence-file',
+    );
+  }
+}
 
 export function coverageSynthesisModeOf(args: CoverageSynthesisArgs): CoverageSynthesisMode {
   if (args.printWriterPrompt) return 'print-writer-prompt';
+  if (args.synthesizeCards) {
+    assertCardPassArgs(args);
+    return 'synthesize-cards';
+  }
   const readOnlyModes = [
     args.captureEvidence ? 'capture-evidence' : null,
     args.importDerivations ? 'import-derivations' : null,
@@ -189,8 +251,18 @@ export function coverageSynthesisModeOf(args: CoverageSynthesisArgs): CoverageSy
   return mode;
 }
 
-export function assertWriterCacheModeAllowed(mode: CoverageSynthesisMode, dbLabel: string): void {
-  if (mode !== 'evaluate' && mode !== 'import-derivations') return;
+export function assertWriterCacheModeAllowed(
+  mode: CoverageSynthesisMode,
+  dbLabel: string,
+  args?: Pick<
+    CoverageSynthesisArgs,
+    'evaluate' | 'importDerivations' | 'validateOnly' | 'captureEvidence'
+  >,
+): void {
+  const writesCardCache =
+    mode === 'synthesize-cards' &&
+    Boolean(args?.evaluate || (args?.importDerivations && !args.validateOnly));
+  if (mode !== 'evaluate' && mode !== 'import-derivations' && !writesCardCache) return;
   if (!/\/development$/i.test(dbLabel)) {
     throw new Error(
       `research-entity:coverage-synthesis --${mode} is restricted to a Development database (got ${dbLabel})`,

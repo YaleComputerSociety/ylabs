@@ -53,6 +53,7 @@ import {
   type WriterStep,
   carriedOverWrites,
   assertWriterCacheModeAllowed,
+  cardPassModeOf,
   coverageSynthesisModeOf,
   deferSearchIndexWritesWhenSkipping,
   writerModelClientFor,
@@ -70,6 +71,18 @@ import {
   type WriterRowEvidence,
 } from './coverageSynthesisEvidence';
 import { runDerivationImport, runWriterEvaluation } from './coverageSynthesisEvaluate';
+import {
+  collectCardRequests,
+  parseCardRequests,
+  parseImportedCardDrafts,
+  runCardImport,
+  runCardPass,
+} from './cardSynthesisCore';
+import {
+  mongoCardSynthesisDerivationStore,
+  type CardDraftFn,
+} from '../scrapers/cardSynthesisDerivation';
+import { CARD_SYNTHESIS_MODEL, defaultCardSynthesisLLM } from '../utils/groundedCardSynthesis';
 import {
   mongoWrittenDescriptionDerivationStore,
   parseImportedWriterDrafts,
@@ -329,11 +342,76 @@ function writeJsonReport(output: string, flag: string, value: unknown): void {
   fs.writeFileSync(resolveSafeJsonReportOutputPath(output, flag), JSON.stringify(value, null, 2));
 }
 
+async function runCardPassMode(
+  args: ReturnType<typeof parseCoverageSynthesisArgs>,
+  dbLabel: string,
+): Promise<void> {
+  const cardMode = cardPassModeOf(args);
+  const slugs = namedSlugs(args);
+  const wanted = new Set(slugs);
+  const requests = args.evidenceFile
+    ? parseCardRequests(readJsonInputFile(args.evidenceFile, '--evidence-file')).filter(
+        (request) => wanted.size === 0 || wanted.has(request.slug),
+      )
+    : await collectCardRequests(await loadWriterEntitiesBySlug(slugs));
+  const summary = { mode: 'synthesize-cards', cardMode, db: dbLabel, requests: requests.length };
+  if (cardMode === 'capture-evidence') {
+    writeJsonReport(args.captureEvidence as string, '--capture-evidence', requests);
+    console.log(JSON.stringify(summary, null, 2));
+    return;
+  }
+  const store = mongoCardSynthesisDerivationStore;
+  if (cardMode === 'import-derivations') {
+    if (!args.output)
+      throw new Error(
+        'research-entity:coverage-synthesis --synthesize-cards --import-derivations requires --output',
+      );
+    const report = await runCardImport({
+      requests,
+      drafts: parseImportedCardDrafts(
+        readJsonInputFile(args.importDerivations as string, '--import-derivations'),
+      ),
+      store,
+      validateOnly: args.validateOnly,
+    });
+    writeJsonReport(args.output, '--output', {
+      ...summary,
+      validateOnly: args.validateOnly,
+      ...report,
+    });
+    console.log(JSON.stringify({ ...summary, stored: report.stored }, null, 2));
+    return;
+  }
+  let callLLM: CardDraftFn | null = null;
+  if (cardMode === 'evaluate') {
+    if (!args.output)
+      throw new Error(
+        'research-entity:coverage-synthesis --synthesize-cards --evaluate requires --output',
+      );
+    const apiKey = process.env.OPENAI_API_KEY?.trim();
+    if (!apiKey)
+      throw new Error(
+        'research-entity:coverage-synthesis --synthesize-cards --evaluate requires OPENAI_API_KEY',
+      );
+    callLLM = (llmInput) =>
+      defaultCardSynthesisLLM({ ...llmInput, apiKey, model: CARD_SYNTHESIS_MODEL });
+  }
+  const report = await runCardPass({ requests, store, callLLM, concurrency: args.concurrency });
+  if (args.output) writeJsonReport(args.output, '--output', { ...summary, ...report });
+  console.log(
+    JSON.stringify({ ...summary, modelCalls: report.modelCalls, byStep: report.byStep }, null, 2),
+  );
+}
+
 async function runReadOnlyMode(
   mode: ReadOnlyMode,
   args: ReturnType<typeof parseCoverageSynthesisArgs>,
   dbLabel: string,
 ): Promise<void> {
+  if (mode === 'synthesize-cards') {
+    await runCardPassMode(args, dbLabel);
+    return;
+  }
   if (mode === 'capture-evidence') {
     const slugs = namedSlugs(args);
     const { rows, missingSlugs, evidenceNow } = await rowEvidenceFor(args, slugs);
@@ -424,7 +502,7 @@ async function main() {
     mongoUrl: process.env.MONGODBURL,
   });
   if (mode !== 'write') {
-    assertWriterCacheModeAllowed(mode, guard.dbLabel);
+    assertWriterCacheModeAllowed(mode, guard.dbLabel, args);
     await initializeConnections();
     await runReadOnlyMode(mode, args, guard.dbLabel);
     return;

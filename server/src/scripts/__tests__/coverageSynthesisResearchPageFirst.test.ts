@@ -6,6 +6,7 @@ import {
 import {
   assertWriterCacheModeAllowed,
   buildWriterEvidenceSnippets,
+  cardPassModeOf,
   coverageSynthesisModeOf,
   parseCoverageSynthesisArgs,
   writerEvidenceRank,
@@ -137,6 +138,51 @@ describe('evaluate, capture and import modes (#5537)', () => {
     );
     expect(() => assertWriterCacheModeAllowed('evaluate', 'cluster/Development')).not.toThrow();
     expect(() => assertWriterCacheModeAllowed('capture-evidence', 'cluster/Prod')).not.toThrow();
+  });
+
+  it('folds the card pass into the writer as a read-only mode', () => {
+    expect(mode(['--synthesize-cards', '--slugs=reef-lab'])).toBe('synthesize-cards');
+    expect(mode(['--synthesize-cards', '--evidence-file=/tmp/cards.json'])).toBe(
+      'synthesize-cards',
+    );
+    expect(() => mode(['--synthesize-cards'])).toThrow(/requires --slugs/);
+    expect(() => mode(['--synthesize-cards', '--slugs=reef-lab', '--apply'])).toThrow(
+      /refused with --apply/,
+    );
+    expect(() =>
+      mode([
+        '--synthesize-cards',
+        '--slugs=reef-lab',
+        '--evaluate',
+        '--import-derivations=/tmp/c.json',
+      ]),
+    ).toThrow(/choose one/);
+    expect(
+      cardPassModeOf(parseCoverageSynthesisArgs(['--synthesize-cards', '--slugs=a', '--evaluate'])),
+    ).toBe('evaluate');
+    expect(cardPassModeOf(parseCoverageSynthesisArgs(['--synthesize-cards', '--slugs=a']))).toBe(
+      'plan',
+    );
+  });
+
+  it('writes the card cache only on a Development database', () => {
+    const evaluate = parseCoverageSynthesisArgs(['--synthesize-cards', '--slugs=a', '--evaluate']);
+    expect(() =>
+      assertWriterCacheModeAllowed('synthesize-cards', 'cluster/Prod', evaluate),
+    ).toThrow(/Development/);
+    const validate = parseCoverageSynthesisArgs([
+      '--synthesize-cards',
+      '--slugs=a',
+      '--import-derivations=/tmp/c.json',
+      '--validate-only',
+    ]);
+    expect(() =>
+      assertWriterCacheModeAllowed('synthesize-cards', 'cluster/Prod', validate),
+    ).not.toThrow();
+    const plan = parseCoverageSynthesisArgs(['--synthesize-cards', '--slugs=a']);
+    expect(() =>
+      assertWriterCacheModeAllowed('synthesize-cards', 'cluster/Prod', plan),
+    ).not.toThrow();
   });
 
   it('prints the writer prompt without any other mode', () => {
