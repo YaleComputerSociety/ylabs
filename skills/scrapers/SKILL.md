@@ -302,6 +302,13 @@ It requires `--website-only`, so it can never widen into a full re-materializati
 The detail page's website button and its headline official-page and profile actions refuse the same pages through `isRefusedResearchWebsitePageUrl` in `client/src/utils/researchDetailSources.ts`, with the course rule for every row and the posting and patient-care rules for lab and person-scoped rows, as on the server.
 The client has no person-website predicate; it refuses a map or directions link as the website button through `isMapOrPublicityPageSourceUrl`, which the contract's map category pins against `isMapOrDirectionsUrl`.
 Parity is pinned by `contracts/inadmissibleWebsitePages.cases.json`, which both suites read; add a case to the contract, never to one side alone.
+A person's own profile or directory page is a fallback member website, never a rival to the person's own lab or personal site (#5845, `utils/personWebsiteStanding.ts`).
+The shape is `isPersonProfileOrDirectoryUrl`, and `personWebsiteStanding` ranks it below any admissible website and above an empty slot.
+Within one `user` key, the user materializer takes the first ranked `websiteUrl` or `website` candidate of the best standing, so a newer or surer profile page loses to the key's lab site.
+Across keys, a candidate standing below the stored `Researcher.profile.websiteUrl` neither writes nor takes the writer slot, and one standing above it writes whatever the writer rank, so the outcome is the same in either order and a second pass writes nothing.
+A person whose only website is the profile page still gets it.
+A respelling of the stored site (scheme, `www.`, trailing slash or default document, by `normalizeWebsiteUrlIdentityKey`, with the query string still compared) is the same site and plans no write.
+Measured on Development 2026-11-11, a `--only-fields=websiteUrl` dry run of one roster run planned 18 replacements of a stored website, most of them a lab site replaced by the person's profile or directory page from an older roster `website` observation; the current roster extractors no longer emit those pages as `website`.
 
 ## Repairs: export a pure planner
 

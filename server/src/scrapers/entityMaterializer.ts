@@ -458,6 +458,12 @@ import {
   withoutUncreditedCreditOnlyCitations,
   type ResearchEntityHostOwnerIdentity,
 } from '../utils/researchHomeWebsiteUrl';
+import {
+  isSamePersonWebsite,
+  preferredPersonWebsiteCandidate,
+  websiteStandsAboveStored,
+  websiteStandsBelowStored,
+} from '../utils/personWebsiteStanding';
 import { namesAPostingRatherThanResearch } from '../utils/postingName';
 import {
   isLikelyOfficialPersonProfileUrl,
@@ -7929,6 +7935,7 @@ export interface UserIdentityJoinResult {
   primaryDepartment: string | undefined;
   imageUrl: string | undefined;
   websiteUrl: string | undefined;
+  websiteUrlConfidence: number | undefined;
   orcid: string | undefined;
   profileUrls: Record<string, unknown> | undefined;
   account: any;
@@ -8169,8 +8176,12 @@ function deriveUserIdentityFields(materializationObs: any[], now: Date) {
   const title = stripTitleFieldLabel(textValue(resolvedValue('title'))) || undefined;
   const primaryDepartment = textValue(resolvedValue('primaryDepartment')) || undefined;
   const imageUrl = textValue(resolvedValue('imageUrl')) || undefined;
-  const websiteUrl =
-    textValue(resolvedValue('websiteUrl')) || textValue(resolvedValue('website')) || undefined;
+  const websiteCandidate = preferredPersonWebsiteCandidate([
+    ...resolveFieldRanked('websiteUrl', resolverObs, { now }),
+    ...resolveFieldRanked('website', resolverObs, { now }),
+  ]);
+  const websiteUrl = textValue(websiteCandidate?.value) || undefined;
+  const websiteUrlConfidence = websiteCandidate?.confidence;
   const orcidCandidate = textValue(resolvedValue('orcid')).trim().toUpperCase();
   const orcid = orcidCandidate && isValidOrcid(orcidCandidate) ? orcidCandidate : undefined;
   const profileUrls =
@@ -8184,6 +8195,7 @@ function deriveUserIdentityFields(materializationObs: any[], now: Date) {
     primaryDepartment,
     imageUrl,
     websiteUrl,
+    websiteUrlConfidence,
     orcid,
     profileUrls,
   };
@@ -8971,6 +8983,7 @@ async function materializeUserIdentityToResearcher(
     primaryDepartment,
     imageUrl,
     websiteUrl,
+    websiteUrlConfidence,
     orcid,
     profileUrls,
     personNameHeldByNobody,
@@ -9139,12 +9152,14 @@ async function materializeUserIdentityToResearcher(
     field: ResearcherGatedField,
     value: string | undefined,
     confidence: unknown,
+    valueOutranksStored = false,
   ): boolean => {
     const decision = decideResearcherFieldWrite(
       researcher.profileFieldWriters,
       field,
       researcherFieldWriter(writerKey, identityJoin, confidence),
       Boolean(value),
+      valueOutranksStored,
     );
     if (!decision.write) {
       if (decision.releaseWriter) researcher.profileFieldWriters.delete(field);
@@ -9195,11 +9210,16 @@ async function materializeUserIdentityToResearcher(
   for (const [key, value, confidence] of [
     ['primaryDepartment', primaryDepartment, resolvedConfidence('primaryDepartment')],
     ['imageUrl', imageUrl, resolvedConfidence('imageUrl')],
-    ['websiteUrl', websiteUrl, resolvedConfidence('websiteUrl', 'website')],
+    ['websiteUrl', websiteUrl, websiteUrlConfidence],
   ] as const) {
     const bounded = normalizedResearcherProfileText(key, value);
-    if (writerKey && !settleFieldWriter(key, bounded, confidence)) continue;
-    if (bounded && researcher.profile[key] !== bounded) {
+    const storedValue = researcher.profile[key];
+    if (key === 'websiteUrl' && websiteStandsBelowStored(bounded, storedValue)) continue;
+    const outranksStoredWebsite =
+      key === 'websiteUrl' && websiteStandsAboveStored(bounded, storedValue);
+    if (writerKey && !settleFieldWriter(key, bounded, confidence, outranksStoredWebsite)) continue;
+    if (key === 'websiteUrl' && isSamePersonWebsite(storedValue, bounded)) continue;
+    if (bounded && storedValue !== bounded) {
       researcher.profile[key] = bounded;
       fieldsWritten += 1;
     }
