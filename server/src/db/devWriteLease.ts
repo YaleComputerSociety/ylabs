@@ -25,6 +25,16 @@ export const DEV_APPLY_LEASE_NAME = '__dev-apply__';
 export const DEV_HOST_LEASE_PREFIX = 'host:';
 export const DEV_WRITE_LEASE_HEARTBEAT_MS = 30_000;
 export const DEV_WRITE_LEASE_TTL_MS = 5 * 60_000;
+/** Bounds each heartbeat round trip, so a hung renewal cannot outlast the next tick. */
+export const DEV_WRITE_LEASE_HEARTBEAT_TIMEOUT_MS = DEV_WRITE_LEASE_HEARTBEAT_MS / 3;
+/**
+ * A held lease that goes this long without a successful renewal stops the process. It must stay
+ * well under the TTL: past the TTL another run may take the lease while this one is still writing.
+ */
+export const DEV_WRITE_LEASE_RENEWAL_DEADLINE_MS = (DEV_WRITE_LEASE_TTL_MS * 2) / 5;
+/** A dead-pid takeover also needs the holder's heartbeat this stale, so a misread pid probe cannot take a live lease. */
+export const DEV_WRITE_LEASE_DEAD_OWNER_HEARTBEAT_AGE_MS = 2 * DEV_WRITE_LEASE_HEARTBEAT_MS;
+export const DEV_HOST_LEASE_IDLE_RELEASE_MS = 10 * 60_000;
 export const DEV_WRITE_LEASE_OWNER_ENV = 'DEV_WRITE_LEASE_OWNER';
 export const DEV_WRITE_LEASE_SWITCH_ENV = 'DEV_WRITE_LEASE';
 export { DEV_WRITE_OWNER_LABEL_ENV };
@@ -183,6 +193,7 @@ export interface HeldDevWriteLease {
   name: string;
   ownerId: string;
   joined: boolean;
+  acquired: boolean;
   heartbeat(): Promise<boolean>;
   release(): Promise<void>;
 }
@@ -190,7 +201,8 @@ export interface HeldDevWriteLease {
 /**
  * Takes a named lease, or joins it when this process's parent holds it and passed its owner id
  * down, and throws `DevWriteLeaseHeldError` before anything is written when someone else holds it.
- * An expired lease, or one whose owner process on this host is dead, is taken over.
+ * An expired lease is taken over, and so is one whose owner process on this host is dead and whose
+ * heartbeat is older than two intervals.
  */
 export async function acquireDevWriteLease(
   input: { name: string; command: string },
@@ -207,7 +219,7 @@ export async function acquireDevWriteLease(
 
   const current = await collection.findOne({ _id: leaseId(input.name) });
   if (inherited && current?.ownerId === inherited && isLiveFor(current, now())) {
-    return heldLease(input.name, inherited, deps.db, now, { releasable: false });
+    return heldLease(input.name, inherited, deps.db, now, { releasable: false, acquired: false });
   }
   // A process started by a lease holder shares its owner id, so siblings share a host lease, and
   // only the root owner releases it: a sibling that finished first must not end it for the rest.
@@ -226,11 +238,16 @@ export async function acquireDevWriteLease(
     leaseExpiresAt: new Date(at.getTime() + DEV_WRITE_LEASE_TTL_MS),
   };
   const takeoverable = current && !isLiveFor(current, at);
+  const holderHeartbeatStale =
+    !current?.heartbeatAt ||
+    at.getTime() - new Date(current.heartbeatAt).getTime() >
+      DEV_WRITE_LEASE_DEAD_OWNER_HEARTBEAT_AGE_MS;
   const deadLocalOwner =
     current?.locked &&
     current.ownerHost === host &&
     typeof current.ownerPid === 'number' &&
     current.ownerPid !== pid &&
+    holderHeartbeatStale &&
     !isAlive(current.ownerPid);
 
   if (!current) {
@@ -248,7 +265,9 @@ export async function acquireDevWriteLease(
           return false;
         },
       );
-    if (inserted) return heldLease(input.name, ownerId, deps.db, now, { releasable });
+    if (inserted) {
+      return heldLease(input.name, ownerId, deps.db, now, { releasable, acquired: true });
+    }
   } else if (takeoverable || deadLocalOwner) {
     const result = await collection.updateOne(
       {
@@ -264,13 +283,13 @@ export async function acquireDevWriteLease(
           `Took over Development write lease "${input.name}" from ${current.ownerLabel || current.ownerId} ("${current.command || 'unrecorded'}"), whose ${deadLocalOwner ? 'process on this host had exited' : 'lease had expired'}.`,
         );
       }
-      return heldLease(input.name, ownerId, deps.db, now, { releasable });
+      return heldLease(input.name, ownerId, deps.db, now, { releasable, acquired: true });
     }
   }
   const unrecorded: DevWriteLeaseRecord = { _id: '', sourceName: input.name };
   const holder = (await collection.findOne({ _id: leaseId(input.name) })) ?? current ?? unrecorded;
   if (holder.ownerId === ownerId && isLiveFor(holder, now())) {
-    return heldLease(input.name, ownerId, deps.db, now, { releasable: false });
+    return heldLease(input.name, ownerId, deps.db, now, { releasable: false, acquired: false });
   }
   throw new DevWriteLeaseHeldError(input.name, holder, at);
 }
@@ -280,24 +299,18 @@ function heldLease(
   ownerId: string,
   db: Db,
   now: () => Date,
-  { releasable }: { releasable: boolean },
+  { releasable, acquired }: { releasable: boolean; acquired: boolean },
 ): HeldDevWriteLease {
   return {
     name,
     ownerId,
     joined: !releasable,
+    acquired,
     async heartbeat() {
-      const at = now();
-      const result = await devWriteLeaseCollection(db).updateOne(
-        { _id: leaseId(name), ownerId, locked: true },
-        {
-          $set: {
-            heartbeatAt: at,
-            leaseExpiresAt: new Date(at.getTime() + DEV_WRITE_LEASE_TTL_MS),
-          },
-        },
-      );
-      return result.matchedCount === 1;
+      const renewed = await renewLeases(db, ownerId, [name], now(), {
+        timeoutMs: DEV_WRITE_LEASE_HEARTBEAT_TIMEOUT_MS,
+      });
+      return renewed.has(name);
     },
     async release() {
       if (!releasable) return;
@@ -321,30 +334,263 @@ export interface ConnectionDescriptor {
   host?: string;
 }
 
-const heldLeases = new Map<string, HeldDevWriteLease>();
-let heartbeatTimer: NodeJS.Timeout | undefined;
+export interface DevWriteLeaseStaleRenewal {
+  name: string;
+  lastRenewedAt: Date;
+  withoutRenewalMs: number;
+}
 
-function ensureHeartbeat(onLost: (name: string) => void) {
-  if (heartbeatTimer) return;
-  heartbeatTimer = setInterval(() => {
-    for (const lease of heldLeases.values()) {
-      lease.heartbeat().then(
-        (alive) => {
-          if (!alive) onLost(lease.name);
+export type DevWriteLeaseStop =
+  | { reason: 'lost'; leases: string[]; message: string }
+  | { reason: 'renewal-failed'; leases: DevWriteLeaseStaleRenewal[]; message: string };
+
+interface DevWriteLeaseRuntime {
+  now: () => Date;
+  heartbeatTimeoutMs: number;
+  log: (message: string) => void;
+  stop: (stop: DevWriteLeaseStop) => void;
+}
+
+const defaultRuntime: DevWriteLeaseRuntime = {
+  now: () => new Date(),
+  heartbeatTimeoutMs: DEV_WRITE_LEASE_HEARTBEAT_TIMEOUT_MS,
+  log: (message) => console.error(message),
+  stop: ({ message }) => {
+    console.error(message);
+    process.exit(1);
+  },
+};
+
+let runtime: DevWriteLeaseRuntime = defaultRuntime;
+
+export function setDevWriteLeaseRuntimeForTests(overrides: Partial<DevWriteLeaseRuntime>) {
+  runtime = { ...defaultRuntime, ...overrides };
+}
+
+interface HeldLeaseState {
+  lease: HeldDevWriteLease;
+  db: Db;
+  lastRenewedAt: Date;
+  lastUsedAt: Date;
+  idleReleasable: boolean;
+}
+
+const heldLeases = new Map<string, HeldLeaseState>();
+const pendingIdleReleases = new Map<string, Promise<void>>();
+let mintedOwner: { db: Db; ownerId: string } | undefined;
+let heartbeatTimer: NodeJS.Timeout | undefined;
+let tickInFlight: Promise<void> | undefined;
+let stopped = false;
+
+class DevWriteLeaseTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`timed out after ${timeoutMs} ms`);
+    this.name = 'DevWriteLeaseTimeoutError';
+  }
+}
+
+async function withinTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new DevWriteLeaseTimeoutError(timeoutMs)), timeoutMs);
+    timer.unref?.();
+  });
+  try {
+    return await Promise.race([operation, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+const boundedOptions = (timeoutMs: number) => ({ maxTimeMS: timeoutMs, timeoutMS: timeoutMs });
+
+async function renewLeases(
+  db: Db,
+  ownerId: string,
+  names: string[],
+  at: Date,
+  { timeoutMs }: { timeoutMs: number },
+): Promise<Set<string>> {
+  const collection = devWriteLeaseCollection(db);
+  const filter = { _id: { $in: names.map(leaseId) }, ownerId, locked: true };
+  const result = await withinTimeout(
+    collection.updateMany(
+      filter,
+      {
+        $set: {
+          heartbeatAt: at,
+          leaseExpiresAt: new Date(at.getTime() + DEV_WRITE_LEASE_TTL_MS),
         },
-        () => undefined,
+      },
+      boundedOptions(timeoutMs),
+    ),
+    timeoutMs,
+  );
+  if (result.matchedCount === names.length) return new Set(names);
+  const stillOwned = await withinTimeout(
+    collection
+      .find(filter, { projection: { sourceName: 1 }, ...boundedOptions(timeoutMs) })
+      .toArray(),
+    timeoutMs,
+  );
+  return new Set(stillOwned.map((record) => record.sourceName));
+}
+
+export class DevWriteLeaseStoppedError extends Error {
+  constructor(leaseName: string) {
+    super(
+      `Development write lease "${leaseName}" is no longer confirmed, so this run is stopping and the fetch was not made.`,
+    );
+    this.name = 'DevWriteLeaseStoppedError';
+  }
+}
+
+const quoted = (names: string[]) => names.map((name) => `"${name}"`).join(', ');
+
+function stopProcess(stop: DevWriteLeaseStop) {
+  if (stopped) return;
+  stopped = true;
+  runtime.stop(stop);
+}
+
+function stopForLostLeases(names: string[]) {
+  stopProcess({
+    reason: 'lost',
+    leases: names,
+    message: `Lost the Development write lease ${quoted(names)} to another owner; stopping before the next write.`,
+  });
+}
+
+function overdueRenewals(states: Iterable<HeldLeaseState>, at: Date): DevWriteLeaseStaleRenewal[] {
+  return [...states]
+    .map(({ lease, lastRenewedAt }) => ({
+      name: lease.name,
+      lastRenewedAt,
+      withoutRenewalMs: at.getTime() - lastRenewedAt.getTime(),
+    }))
+    .filter(({ withoutRenewalMs }) => withoutRenewalMs > DEV_WRITE_LEASE_RENEWAL_DEADLINE_MS);
+}
+
+function stopIfRenewalOverdue(states: Iterable<HeldLeaseState> = heldLeases.values()): boolean {
+  const overdue = overdueRenewals(states, runtime.now());
+  if (overdue.length === 0) return false;
+  const lines = overdue.map(
+    ({ name, lastRenewedAt, withoutRenewalMs }) =>
+      `  "${name}": last renewed ${lastRenewedAt.toISOString()}, ${Math.round(withoutRenewalMs / 1000)} s without a renewal`,
+  );
+  stopProcess({
+    reason: 'renewal-failed',
+    leases: overdue,
+    message: [
+      `Renewal failed for ${overdue.length} Development write lease(s) for longer than ${DEV_WRITE_LEASE_RENEWAL_DEADLINE_MS / 1000} s; stopping before the next write, because another run may take them over once they expire.`,
+      'Fetches and writes guarded by these leases since their last renewal ran without a confirmed lease:',
+      ...lines,
+    ].join('\n'),
+  });
+  return true;
+}
+
+function groupByOwner(states: HeldLeaseState[]) {
+  const groups = new Map<Db, Map<string, HeldLeaseState[]>>();
+  for (const state of states) {
+    const byOwner = groups.get(state.db) ?? new Map<string, HeldLeaseState[]>();
+    groups.set(state.db, byOwner);
+    byOwner.set(state.lease.ownerId, [...(byOwner.get(state.lease.ownerId) ?? []), state]);
+  }
+  return [...groups].flatMap(([db, byOwner]) =>
+    [...byOwner].map(([ownerId, members]) => ({ db, ownerId, members })),
+  );
+}
+
+/**
+ * A host lease this process took under its own owner id and has not fetched through for
+ * `DEV_HOST_LEASE_IDLE_RELEASE_MS` is released, and taken again on the next fetch. The apply lease
+ * and a lease joined from a parent are never idle-released: a sibling may still be using it.
+ */
+async function releaseIdleHostLeases(at: Date) {
+  const idle = [...heldLeases.values()].filter(
+    (state) =>
+      state.idleReleasable &&
+      at.getTime() - state.lastUsedAt.getTime() >= DEV_HOST_LEASE_IDLE_RELEASE_MS,
+  );
+  for (const state of idle) heldLeases.delete(state.lease.name);
+  await Promise.all(
+    groupByOwner(idle).map(({ db, ownerId, members }) => {
+      const names = members.map(({ lease }) => lease.name);
+      const release = withinTimeout(
+        devWriteLeaseCollection(db).updateMany(
+          { _id: { $in: names.map(leaseId) }, ownerId, locked: true },
+          {
+            $set: { locked: false, releasedAt: at, releaseReason: 'idle' },
+            $unset: { ownerId: '', leaseExpiresAt: '' },
+          },
+          boundedOptions(runtime.heartbeatTimeoutMs),
+        ),
+        runtime.heartbeatTimeoutMs,
+      ).then(
+        () => runtime.log(`Released idle Development host lease ${quoted(names)}.`),
+        (error) =>
+          runtime.log(
+            `Could not release idle Development host lease ${quoted(names)} (${(error as Error)?.message ?? error}); it expires on its own.`,
+          ),
+      );
+      for (const name of names) pendingIdleReleases.set(name, release);
+      return release.finally(() => {
+        for (const name of names) {
+          if (pendingIdleReleases.get(name) === release) pendingIdleReleases.delete(name);
+        }
+      });
+    }),
+  );
+}
+
+async function renewHeldLeases(at: Date) {
+  const lost: string[] = [];
+  await Promise.all(
+    groupByOwner([...heldLeases.values()]).map(async ({ db, ownerId, members }) => {
+      const names = members.map(({ lease }) => lease.name);
+      try {
+        const renewed = await renewLeases(db, ownerId, names, at, {
+          timeoutMs: runtime.heartbeatTimeoutMs,
+        });
+        for (const state of members) {
+          if (renewed.has(state.lease.name)) state.lastRenewedAt = at;
+          else lost.push(state.lease.name);
+        }
+      } catch (error) {
+        runtime.log(
+          `Development write lease heartbeat failed for ${quoted(names)}: ${(error as Error)?.message ?? error}.`,
+        );
+      }
+    }),
+  );
+  if (lost.length > 0) stopForLostLeases(lost);
+}
+
+export function runDevWriteLeaseHeartbeatTick(): Promise<void> {
+  tickInFlight ??= (async () => {
+    try {
+      await releaseIdleHostLeases(runtime.now());
+      await renewHeldLeases(runtime.now());
+      stopIfRenewalOverdue();
+    } catch (error) {
+      runtime.log(
+        `Development write lease heartbeat tick failed: ${(error as Error)?.message ?? error}.`,
       );
     }
+  })().finally(() => {
+    tickInFlight = undefined;
+  });
+  return tickInFlight;
+}
+
+function ensureHeartbeat() {
+  if (heartbeatTimer) return;
+  heartbeatTimer = setInterval(() => {
+    void runDevWriteLeaseHeartbeatTick();
   }, DEV_WRITE_LEASE_HEARTBEAT_MS);
   heartbeatTimer.unref();
 }
-
-const exitOnLostLease = (name: string) => {
-  console.error(
-    `Lost the Development write lease "${name}" to another owner; stopping before the next write.`,
-  );
-  process.exit(1);
-};
 
 let removeInterruptRelease: (() => void) | undefined;
 
@@ -355,9 +601,17 @@ export async function releaseHeldDevWriteLeases(): Promise<void> {
   }
   removeInterruptRelease?.();
   removeInterruptRelease = undefined;
-  const leases = [...heldLeases.values()];
+  const leases = [...heldLeases.values()].map(({ lease }) => lease);
   heldLeases.clear();
-  await Promise.all(leases.map((lease) => lease.release().catch(() => undefined)));
+  await Promise.allSettled([...pendingIdleReleases.values()]);
+  const owner = mintedOwner;
+  mintedOwner = undefined;
+  await Promise.all([
+    ...leases.map((lease) => lease.release().catch(() => undefined)),
+    owner
+      ? releaseLeasesOwnedBy(owner.db, owner.ownerId, runtime.now()).catch(() => undefined)
+      : undefined,
+  ]);
 }
 
 async function holdLease(
@@ -366,11 +620,27 @@ async function holdLease(
   connection: ConnectionDescriptor,
 ): Promise<HeldDevWriteLease> {
   const existing = heldLeases.get(name);
-  if (existing) return existing;
-  const lease = await acquireDevWriteLease({ name, command }, { db: connection.db });
-  heldLeases.set(name, lease);
-  if (!lease.joined) process.env[DEV_WRITE_LEASE_OWNER_ENV] ??= lease.ownerId;
-  ensureHeartbeat(exitOnLostLease);
+  if (existing) return existing.lease;
+  const lease = await acquireDevWriteLease(
+    { name, command },
+    { db: connection.db, now: runtime.now },
+  );
+  if (!lease.joined) {
+    process.env[DEV_WRITE_LEASE_OWNER_ENV] ??= lease.ownerId;
+    mintedOwner ??= { db: connection.db, ownerId: lease.ownerId };
+  }
+  const at = runtime.now();
+  heldLeases.set(name, {
+    lease,
+    db: connection.db,
+    lastRenewedAt: at,
+    lastUsedAt: at,
+    idleReleasable:
+      name.startsWith(DEV_HOST_LEASE_PREFIX) &&
+      lease.acquired &&
+      lease.ownerId === mintedOwner?.ownerId,
+  });
+  ensureHeartbeat();
   removeInterruptRelease ??= onInterrupt(() => releaseHeldDevWriteLeases());
   return lease;
 }
@@ -457,7 +727,13 @@ export async function ensureDevHostLease(host: string): Promise<void> {
   const armed = armedHostLeaseConnection;
   if (!armed || !host) return;
   const name = devHostLeaseName(host);
-  if (heldLeases.has(name)) return;
+  if (stopped || stopIfRenewalOverdue()) throw new DevWriteLeaseStoppedError(name);
+  const held = heldLeases.get(name);
+  if (held) {
+    held.lastUsedAt = runtime.now();
+    return;
+  }
+  await pendingIdleReleases.get(name);
   let pending = pendingHostLeases.get(name);
   if (!pending) {
     pending = holdLease(name, armed.command, armed.connection);
@@ -475,6 +751,11 @@ export function resetDevWriteLeaseStateForTests() {
   armedHostLeaseConnection = undefined;
   pendingHostLeases.clear();
   heldLeases.clear();
+  pendingIdleReleases.clear();
+  mintedOwner = undefined;
+  tickInFlight = undefined;
+  stopped = false;
+  runtime = defaultRuntime;
   removeInterruptRelease?.();
   removeInterruptRelease = undefined;
   if (heartbeatTimer) clearInterval(heartbeatTimer);
