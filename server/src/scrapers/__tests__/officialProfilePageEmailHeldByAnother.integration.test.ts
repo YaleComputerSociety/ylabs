@@ -10,8 +10,8 @@ import {
 import type { ObservationInput } from '../types';
 
 const PAGE = 'https://medicine.yale.edu/profile/blair-synthetic/';
-const PAGE_EMAIL = 'blair.synthetic@yale.edu';
-const KEY_NETID = 'avs11';
+const PAGE_EMAIL = 'blair.synthetic5606@yale.edu';
+const KEY_NETID = 'zzk5606';
 
 const pageHtml = `<html><head><title>Blair Synthetic | Yale School of Medicine</title></head><body>
 <h1>Blair Synthetic, PhD</h1>
@@ -32,7 +32,7 @@ async function runLane(): Promise<ObservationInput[]> {
   const scraper = new OfficialProfilePiBackfillScraper(
     vi.fn(async () => pageHtml),
     vi.fn(async () => [entity]),
-    vi.fn(async () => ({ netid: KEY_NETID, email: 'avery.synthetic@yale.edu' })),
+    vi.fn(async () => ({ netid: KEY_NETID, email: 'avery.synthetic5606@yale.edu' })),
     vi.fn(async () => []),
     vi.fn(async () => []),
   );
@@ -73,7 +73,7 @@ describe('the official profile lane never files a page under a key whose person 
   it('emits no identity under the key when a researcher with another netid holds the page email, on either run', async () => {
     await Researcher.create({
       displayName: 'Blair Synthetic',
-      identifiers: { netid: 'bls22', email: PAGE_EMAIL },
+      identifiers: { netid: 'zzh5606', email: PAGE_EMAIL },
     });
 
     expect(userObservationsUnderKey(await runLane())).toEqual([]);
@@ -106,7 +106,7 @@ describe('pageEmailHeldByAnotherResearcher (#5606)', () => {
   it('is true for a holder with a different netid', async () => {
     await Researcher.create({
       displayName: 'Blair Synthetic',
-      identifiers: { netid: 'bls22', email: PAGE_EMAIL },
+      identifiers: { netid: 'zzh5606', email: PAGE_EMAIL },
     });
     expect(
       await pageEmailHeldByAnotherResearcher(PAGE_EMAIL.toUpperCase(), { netid: KEY_NETID }),
