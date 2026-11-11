@@ -69,7 +69,9 @@ It matches through the ingest guard's own rules (`server/src/scrapers/directoryR
 A `user` or `researchGroupMember` subject is deleted in both identity forms when a stable identifier matches, and a research row's `inferredPiUserKey`, `inferredPiUserId`, `inferredDirectorProfileUrl` or `contactEmail` observation is deleted when its value points at the person.
 A name entry never matches a researcher or a person subject, so a name-only match is never deleted.
 Values that list several people, such as `rosterEnrichment` and `fellowshipRecipients`, are not rewritten; the report counts the roster observations that list the person by profile URL, and the person subjects whose only link is roster identity evidence that can name someone else.
-It also counts, without deleting them, the other observations of a faculty research profile row whose pointer it deletes, which the ingest guard refuses on new batches.
+It also deletes every stored observation of the removed person's own faculty research profile row, identified the way ingest refuses the whole row: the row declares `entityType: FACULTY_RESEARCH_AREA` and its stored lead pointer names the person, read across both identity forms of the row and never by name.
+Those deletions are reported apart, as `facultyResearchProfileRowsToDelete`, `facultyResearchProfileRowObservationsToDelete` and, on an apply, `facultyResearchProfileRowObservationsDeleted`.
+A second run deletes nothing, because the pointers that identified the row are gone.
 The removal entry has to stay after a purge, or the next sweep has nothing refusing the person.
 
 ## Known limits

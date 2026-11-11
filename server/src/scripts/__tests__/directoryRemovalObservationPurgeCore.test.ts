@@ -7,6 +7,7 @@ import {
   assertPurgeMatcherUsable,
   assertPurgeTargetMatchesEnvironment,
   parsePurgeArgs,
+  planFacultyProfileRowDeletion,
   planObservationPurge,
   planPersonSubjects,
   removedResearcherIdsOf,
@@ -214,5 +215,40 @@ describe('rowPointerNamesRemovedPerson', () => {
     expect(names('inferredPiUserId', 'researcher-1')).toBe(true);
     expect(names('contactEmail', REMOVED_EMAIL)).toBe(true);
     expect(names('contactName', SHARED_NAME)).toBe(false);
+  });
+});
+
+describe('planFacultyProfileRowDeletion', () => {
+  it('takes a declared profile row only when its own pointer was deleted, joining both forms', () => {
+    const declaredById = row({
+      entityType: 'researchEntity',
+      entityId: 'row-1',
+      field: 'entityType',
+      value: 'FACULTY_RESEARCH_AREA',
+    });
+    const link = row({
+      entityType: 'researchEntity',
+      entityKey: 'removed-profile',
+      entityId: 'row-1',
+      field: 'slug',
+    });
+    const name = row({ entityType: 'researchEntity', entityKey: 'removed-profile', field: 'name' });
+    const otherDeclared = row({
+      entityType: 'researchEntity',
+      entityKey: 'other-profile',
+      field: 'entityType',
+      value: 'FACULTY_RESEARCH_AREA',
+    });
+    const undeclared = row({
+      entityType: 'researchEntity',
+      entityKey: 'synthetic-lab',
+      field: 'name',
+    });
+    const plan = planFacultyProfileRowDeletion({
+      pointerNodes: new Set(['researchEntity|k|removed-profile', 'researchEntity|k|synthetic-lab']),
+      rowObservations: [declaredById, link, name, otherDeclared, undeclared],
+    });
+    expect(plan.rowCount).toBe(1);
+    expect(plan.observationIds.sort()).toEqual([declaredById._id, link._id, name._id].sort());
   });
 });

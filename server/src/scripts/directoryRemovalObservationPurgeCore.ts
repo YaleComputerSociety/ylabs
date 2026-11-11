@@ -1,4 +1,5 @@
 import {
+  declaresAFacultyResearchProfile,
   groupPersonSubjects,
   isRowPointer,
   rowPointerClaims,
@@ -390,4 +391,42 @@ export function planObservationPurge(args: {
     }
   }
   return { observationIdsToDelete: [...ids], rowNodesWithDeletedPointers, report };
+}
+
+/**
+ * A removed person's own faculty research profile row: a row subject that declares
+ * `FACULTY_RESEARCH_AREA` and whose stored lead pointer names the person, the same rule
+ * ingest uses to refuse the whole row. The row's identity forms are joined wherever one
+ * stored observation carries both, so a declaration stored under the other form counts.
+ */
+export function planFacultyProfileRowDeletion(args: {
+  pointerNodes: ReadonlySet<string>;
+  rowObservations: readonly ObservationRow[];
+}): { rowCount: number; observationIds: string[] } {
+  const parent = new Map<string, string>();
+  const find = (node: string): string => {
+    if (!parent.has(node)) parent.set(node, node);
+    let root = node;
+    while (parent.get(root) !== root) root = parent.get(root)!;
+    parent.set(node, root);
+    return root;
+  };
+  for (const node of args.pointerNodes) find(node);
+  for (const row of args.rowObservations) {
+    const [first, second] = subjectNodes(asSubject(row));
+    if (first) find(first);
+    if (first && second) parent.set(find(second), find(first));
+  }
+  const pointerRoots = new Set([...args.pointerNodes].map(find));
+  const profileRoots = new Set(
+    args.rowObservations
+      .filter((row) => declaresAFacultyResearchProfile(asSubject(row)))
+      .flatMap((row) => subjectNodes(asSubject(row)).map(find))
+      .filter((root) => pointerRoots.has(root)),
+  );
+  const rowNodes = new Set([...parent.keys()].filter((node) => profileRoots.has(find(node))));
+  const observationIds = args.rowObservations
+    .filter((row) => subjectNodes(asSubject(row)).some((node) => rowNodes.has(node)))
+    .map((row) => row._id);
+  return { rowCount: profileRoots.size, observationIds: [...new Set(observationIds)] };
 }

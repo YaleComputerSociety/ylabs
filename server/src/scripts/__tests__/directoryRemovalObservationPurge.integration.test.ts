@@ -271,13 +271,13 @@ beforeEach(async () => {
     field: 'inferredPiUserKey',
     value: `netid:${REMOVED.netid}`,
   });
-  await seedObservation('kept', {
+  await seedObservation('deleted', {
     entityType: 'researchEntity',
     entityKey: 'synthetic-profile',
     field: 'entityType',
     value: 'FACULTY_RESEARCH_AREA',
   });
-  await seedObservation('kept', {
+  await seedObservation('deleted', {
     entityType: 'researchEntity',
     entityKey: 'synthetic-profile',
     field: 'bio',
@@ -308,7 +308,6 @@ describe('runDirectoryRemovalObservationPurge', () => {
     expect(result.deleted).toBeNull();
     expect(result.removalEntriesActive).toBe(4);
     expect(result.removedResearchersMatched).toBe(1);
-    expect(result.toDelete.observations).toBe(expectedDeleted.length);
     expect(result.toDelete.byEntityType).toEqual({
       user: 8,
       researchGroupMember: 3,
@@ -323,7 +322,12 @@ describe('runDirectoryRemovalObservationPurge', () => {
       identityEvidenceOnlyObservations: { researchGroupMember: 1 },
       rosterEnrichmentObservationsListingThePerson: 1,
     });
-    expect(result.facultyResearchProfileRowObservationsLeftInPlace).toBe(2);
+    expect(result.facultyResearchProfileRowsToDelete).toBe(1);
+    expect(result.facultyResearchProfileRowObservationsToDelete).toBe(2);
+    expect(result.facultyResearchProfileRowObservationsDeleted).toBeNull();
+    expect(
+      result.toDelete.observations + result.facultyResearchProfileRowObservationsToDelete,
+    ).toBe(expectedDeleted.length);
     expect(JSON.stringify(result)).not.toMatch(
       new RegExp(`zz900|synthetic\\.removed|Synthetic Removed|${KEY}|[0-9a-f]{64}`, 'i'),
     );
@@ -338,6 +342,93 @@ describe('runDirectoryRemovalObservationPurge', () => {
 
     const rerun = await runDirectoryRemovalObservationPurge({ matcher, apply: true });
     expect(rerun.deleted).toBe(0);
+  });
+
+  it("deletes a removed person's own faculty research profile row in both forms, and nothing on a second run", async () => {
+    const removedRowId = new mongoose.Types.ObjectId();
+    const namesakeRowId = new mongoose.Types.ObjectId();
+    const removedRow: string[] = [];
+    const untouched: string[] = [];
+    const seedRow = async (bucket: string[], fields: Record<string, unknown>) => {
+      const { insertedId } = await Observation.collection.insertOne({
+        sourceId,
+        sourceName: 'synthetic-source',
+        confidence: 0.9,
+        observedAt: new Date('2026-11-02T00:00:00Z'),
+        superseded: false,
+        entityType: 'researchEntity',
+        ...fields,
+      });
+      bucket.push(String(insertedId));
+    };
+    await seedRow(removedRow, {
+      entityKey: 'synthetic-removed-profile',
+      field: 'name',
+      value: 'Synthetic Removed',
+    });
+    await seedRow(removedRow, {
+      entityKey: 'synthetic-removed-profile',
+      entityId: removedRowId,
+      field: 'slug',
+      value: 'synthetic-removed-profile',
+    });
+    await seedRow(removedRow, {
+      entityId: removedRowId,
+      field: 'entityType',
+      value: 'FACULTY_RESEARCH_AREA',
+    });
+    await seedRow(removedRow, {
+      entityId: removedRowId,
+      field: 'inferredPiUserId',
+      value: removedResearcherId,
+    });
+    await seedRow(untouched, {
+      entityKey: 'synthetic-kept-profile',
+      field: 'name',
+      value: 'Synthetic Other',
+    });
+    await seedRow(untouched, {
+      entityKey: 'synthetic-kept-profile',
+      field: 'entityType',
+      value: 'FACULTY_RESEARCH_AREA',
+    });
+    await seedRow(untouched, {
+      entityKey: 'synthetic-kept-profile',
+      field: 'inferredPiUserKey',
+      value: `netid:${OTHER_NETID}`,
+    });
+    await seedRow(untouched, {
+      entityId: namesakeRowId,
+      field: 'name',
+      value: 'Synthetic Removed',
+    });
+    await seedRow(untouched, {
+      entityId: namesakeRowId,
+      field: 'entityType',
+      value: 'FACULTY_RESEARCH_AREA',
+    });
+    await seedRow(untouched, {
+      entityId: namesakeRowId,
+      field: 'inferredPiUserKey',
+      value: `netid:${NAMESAKE_NETID}`,
+    });
+
+    const matcher = await loadDirectoryRemovalMatcher(KEYED_ENV);
+    const result = await runDirectoryRemovalObservationPurge({ matcher, apply: true });
+
+    const removedRowNonPointer = removedRow.length - 1;
+    expect(result.facultyResearchProfileRowsToDelete).toBe(2);
+    expect(result.facultyResearchProfileRowObservationsDeleted).toBe(removedRowNonPointer + 2);
+    expect(result.deleted).toBe(expectedDeleted.length + removedRow.length);
+    const remaining = new Set(await remainingIds());
+    expect(removedRow.filter((id) => remaining.has(id))).toEqual([]);
+    expect(untouched.filter((id) => !remaining.has(id))).toEqual([]);
+    expect([...remaining].sort()).toEqual([...expectedKept, ...untouched].sort());
+
+    const rerun = await runDirectoryRemovalObservationPurge({ matcher, apply: true });
+    expect(rerun.deleted).toBe(0);
+    expect(rerun.facultyResearchProfileRowObservationsDeleted).toBe(0);
+    expect(rerun.facultyResearchProfileRowsToDelete).toBe(0);
   });
 
   it('refuses when the key is missing or the list holds no active entry', async () => {

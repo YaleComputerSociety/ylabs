@@ -12,6 +12,7 @@ import {
   ROW_POINTER_FIELDS,
   ROW_SUBJECT_TYPES,
   assertPurgeMatcherUsable,
+  planFacultyProfileRowDeletion,
   planObservationPurge,
   planPersonSubjects,
   removedResearcherIdsOf,
@@ -65,31 +66,46 @@ function subjectClausesFor(entityTypes: readonly string[], nodes: Iterable<strin
   ];
 }
 
-async function countFacultyProfileRowObservations(
-  rowNodes: ReadonlySet<string>,
-  deletedIds: readonly string[],
-): Promise<number> {
-  const rowClauses = subjectClausesFor(ROW_SUBJECT_TYPES, rowNodes);
-  if (!rowClauses.length) return 0;
-  const profileRows = await readRows(
-    { field: 'entityType', value: FACULTY_RESEARCH_PROFILE, $or: rowClauses },
-    SUBJECT_PROJECTION,
-  );
-  const profileNodes = profileRows.flatMap((row) => [
-    ...(row.entityKey ? [`${row.entityType}|k|${row.entityKey}`] : []),
-    ...(row.entityId ? [`${row.entityType}|i|${row.entityId}`] : []),
-  ]);
-  const profileClauses = subjectClausesFor(ROW_SUBJECT_TYPES, profileNodes);
-  if (!profileClauses.length) return 0;
-  return Observation.collection.countDocuments({
-    $or: profileClauses,
-    _id: { $nin: deletedIds.map((id) => new mongoose.Types.ObjectId(id)) },
-  });
+async function readRowSubjectObservations(
+  seedNodes: ReadonlySet<string>,
+): Promise<ObservationRow[]> {
+  const nodes = new Set(seedNodes);
+  for (;;) {
+    const clauses = subjectClausesFor(ROW_SUBJECT_TYPES, nodes);
+    if (!clauses.length) return [];
+    const rows = await readRows({ $or: clauses }, SUBJECT_PROJECTION);
+    const before = nodes.size;
+    for (const row of rows) {
+      if (row.entityKey) nodes.add(`${row.entityType}|k|${row.entityKey}`);
+      if (row.entityId) nodes.add(`${row.entityType}|i|${row.entityId}`);
+    }
+    if (nodes.size === before) {
+      const declarations = await readRows(
+        { $or: clauses, field: 'entityType', value: FACULTY_RESEARCH_PROFILE },
+        VALUE_PROJECTION,
+      );
+      const declared = new Map(declarations.map((row) => [row._id, row]));
+      return rows.map((row) => declared.get(row._id) ?? row);
+    }
+  }
+}
+
+async function deleteObservations(ids: readonly string[]): Promise<number> {
+  let deleted = 0;
+  for (let start = 0; start < ids.length; start += DELETE_BATCH_SIZE) {
+    const batch = ids
+      .slice(start, start + DELETE_BATCH_SIZE)
+      .map((id) => new mongoose.Types.ObjectId(id));
+    deleted += (await Observation.collection.deleteMany({ _id: { $in: batch } })).deletedCount;
+  }
+  return deleted;
 }
 
 export interface PurgeRunResult extends PurgeReport {
   mode: 'apply' | 'dry-run';
-  facultyResearchProfileRowObservationsLeftInPlace: number;
+  facultyResearchProfileRowsToDelete: number;
+  facultyResearchProfileRowObservationsToDelete: number;
+  facultyResearchProfileRowObservationsDeleted: number | null;
   deleted: number | null;
 }
 
@@ -161,25 +177,26 @@ export async function runDirectoryRemovalObservationPurge(args: {
     rosterRows,
     context,
   });
-  const facultyResearchProfileRowObservationsLeftInPlace = await countFacultyProfileRowObservations(
-    plan.rowNodesWithDeletedPointers,
-    plan.observationIdsToDelete,
-  );
+  const pointerAndSubjectIds = new Set(plan.observationIdsToDelete);
+  const profileRows = planFacultyProfileRowDeletion({
+    pointerNodes: plan.rowNodesWithDeletedPointers,
+    rowObservations: await readRowSubjectObservations(plan.rowNodesWithDeletedPointers),
+  });
+  const profileRowIds = profileRows.observationIds.filter((id) => !pointerAndSubjectIds.has(id));
 
   let deleted: number | null = null;
+  let facultyResearchProfileRowObservationsDeleted: number | null = null;
   if (args.apply) {
-    deleted = 0;
-    for (let start = 0; start < plan.observationIdsToDelete.length; start += DELETE_BATCH_SIZE) {
-      const batch = plan.observationIdsToDelete
-        .slice(start, start + DELETE_BATCH_SIZE)
-        .map((id) => new mongoose.Types.ObjectId(id));
-      deleted += (await Observation.collection.deleteMany({ _id: { $in: batch } })).deletedCount;
-    }
+    const pointerAndSubjectDeleted = await deleteObservations(plan.observationIdsToDelete);
+    facultyResearchProfileRowObservationsDeleted = await deleteObservations(profileRowIds);
+    deleted = pointerAndSubjectDeleted + facultyResearchProfileRowObservationsDeleted;
   }
   return {
     mode: args.apply ? 'apply' : 'dry-run',
     ...plan.report,
-    facultyResearchProfileRowObservationsLeftInPlace,
+    facultyResearchProfileRowsToDelete: profileRows.rowCount,
+    facultyResearchProfileRowObservationsToDelete: profileRowIds.length,
+    facultyResearchProfileRowObservationsDeleted,
     deleted,
   };
 }
