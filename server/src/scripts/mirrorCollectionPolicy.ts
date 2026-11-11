@@ -64,13 +64,13 @@ export const PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS = [
   'search_rerank_cache',
   'model_call_usages',
   'directory_removal_requests',
+  'scrape_job_locks',
 ];
 
-// A lease is state rather than history: it expires and is taken over, so a
-// refresh may drop it. This is the only environment-local collection a refresh
-// is allowed to clear, and it is named here so that the classification below
-// stays exhaustive.
-export const EPHEMERAL_ENVIRONMENT_LOCAL_COLLECTIONS = ['scrape_job_locks'];
+// scrape_job_locks used to be ephemeral, but it now holds the Development write
+// lease the refresh itself takes (#5756), so clearing it mid-refresh would admit a
+// second apply. Nothing environment-local is cleared by a refresh any more.
+export const EPHEMERAL_ENVIRONMENT_LOCAL_COLLECTIONS: string[] = [];
 
 // Adding a collection to NEVER_COPY_COLLECTIONS without classifying it as
 // preserved or ephemeral fails here rather than silently joining the refresh's

@@ -2,6 +2,12 @@
  * MongoDB connection management and model initialization.
  */
 import mongoose from 'mongoose';
+import {
+  acquireIntendedDevApplyLease,
+  devWriteLeaseSwitchedOff,
+  recordDevApplyIntent,
+  releaseHeldDevWriteLeases,
+} from './devWriteLease';
 
 // `bufferTimeoutMS` is a Mongoose connection option the driver's own type does not
 // declare, so the shape is spelled out here rather than inferred.
@@ -79,18 +85,63 @@ export function scriptMongoConnectOptions(
   };
 }
 
-export function connectScriptMongo(
+export async function connectScriptMongo(
   url: string,
   extra?: ScriptMongoConnectOptions,
 ): Promise<typeof mongoose> {
-  return mongoose.connect(url, scriptMongoConnectOptions(extra));
+  const connected = await mongoose.connect(url, scriptMongoConnectOptions(extra));
+  await holdIntendedDevApplyLease(connected.connection);
+  return connected;
 }
 
-export function createScriptMongoConnection(
+export async function createScriptMongoConnection(
   url: string,
   extra?: ScriptMongoConnectOptions,
 ): Promise<mongoose.Connection> {
-  return mongoose.createConnection(url, scriptMongoConnectOptions(extra)).asPromise();
+  const connection = await mongoose
+    .createConnection(url, scriptMongoConnectOptions(extra))
+    .asPromise();
+  await holdIntendedDevApplyLease(connection);
+  return connection;
+}
+
+export const devWriteLeaseDescriptor = (connection: mongoose.Connection) =>
+  connection.db
+    ? { db: connection.db, databaseName: connection.db.databaseName, host: connection.host }
+    : undefined;
+
+/**
+ * For an orchestrator that writes through child processes and connects only briefly itself: holds
+ * the Development write lease on a dedicated connection for the whole run, so its children join it
+ * rather than racing another session's apply (#5756). Returns the release to call when the run ends.
+ */
+export async function holdDevApplyLeaseForRun(
+  scriptName: string,
+  url: string | undefined = process.env.MONGODBURL,
+): Promise<() => Promise<void>> {
+  if (!url || devWriteLeaseSwitchedOff()) return async () => undefined;
+  recordDevApplyIntent(scriptName);
+  const connection = await createScriptMongoConnection(url);
+  return async () => {
+    await connection.close();
+  };
+}
+
+/**
+ * Takes the Development write lease for a script whose apply guard recorded an apply intent (#5756),
+ * and releases it before the connection closes. Without a recorded intent it does nothing, which is
+ * every request-path connection.
+ */
+async function holdIntendedDevApplyLease(connection: mongoose.Connection): Promise<void> {
+  const descriptor = devWriteLeaseDescriptor(connection);
+  if (!descriptor) return;
+  const lease = await acquireIntendedDevApplyLease(descriptor);
+  if (!lease) return;
+  const close = connection.close.bind(connection);
+  connection.close = (async (...args: Parameters<typeof close>) => {
+    await releaseHeldDevWriteLeases();
+    return close(...args);
+  }) as typeof connection.close;
 }
 
 // Serialise reconnect attempts: if one is already in flight, later callers
@@ -460,6 +511,7 @@ export async function initializeConnections(
   }
   activeConnectOptions = connectOptions;
   await mongoose.connect(url, connectOptions);
+  await holdIntendedDevApplyLease(mongoose.connection);
   console.log(`Connected to database 🚀`);
   // Deliberately non-fatal. An unbuilt index is a performance problem, and
   // refusing to boot on one would turn a slow query into an outage on the very

@@ -301,6 +301,30 @@ Before #2498 only the cron runner took the lock, so two operators or two agents 
 - Losing the lease mid-run is reported, not ignored: a renewal that matches no row means the row no longer belongs to this process, so the command prints `LOCK LOST` and exits nonzero rather than reporting an exclusive write it did not have.
 - The lock row records a CLI writer's provenance: `releaseReason` follows the run's own outcome, and `lastRunId` names the run.
 
+### One apply-class Development write at a time (#5756)
+
+Above the per-source lock sits a Development-wide write lease, also stored in `scrape_job_locks` under reserved names.
+It replaces the convention of announcing each write to the session that sequences Development writes with enforcement.
+
+- An apply-class script takes the `__dev-apply__` lease before its first write, and a second apply is **refused** with a nonzero exit that names the holder, its command and its heartbeat age.
+  Nothing was written when that refusal prints.
+- The hook is `assertScriptApplyAllowed`: with `--apply` it records an apply intent, and the shared connect paths in `db/connections.ts` take the lease only for a process that recorded one.
+  The API server, the Render web service and request-path code never record an intent, so they never read or wait on a lease; `devWriteLease.test.ts` scans the request-path directories to keep it that way.
+- The lease is taken only when the connected database resolves to Development (`resolveDevWriteLeaseTarget`).
+  Beta, Production, test and localhost databases never read or write a lease document, and an apply against a remote database the resolver cannot place refuses rather than writing unguarded.
+- Scripts that write through their own client or connect path take it explicitly: `scrape run` that auto-materializes, `scrape materialize`, `scrape prune-observations`, the sweeps (`holdDevApplyLeaseForRun`), `development:refresh-from-beta` and `model-refactor:validators` (`holdDevApplyLeaseOnDb`), and the retire and backfill scripts that bypass the guard (`recordDevApplyIntent`).
+- A child process inherits its parent's owner id through `DEV_WRITE_LEASE_OWNER`, so a sweep's `scrape run` children join the sweep's lease instead of being refused by it, and only the root owner releases it.
+- Append-only measurement writes are exempt (`DEV_APPLY_LEASE_EXEMPT_SCRIPTS`: `corpus:snapshot`, `gates:refresh`, the lane benchmark and scorecard scripts, `engine:benchmark`), because they write their own collections and are meant to run during a long apply.
+- A dry run never takes the lease; it warns when one is held, because its counts read a corpus that is changing.
+- A writing lane run against Development also takes a `host:<hostname>` lease before its first fetch to each host, so two lane runs cannot fetch one host at once.
+- The lease heartbeats every 30 seconds and expires 5 minutes after the last heartbeat, so an apply running for hours keeps it, and a crashed holder frees it within 5 minutes; a holder on the same machine whose process has exited is taken over at once.
+  A process that finds its lease taken exits before its next write.
+- Set `DEV_WRITE_OWNER=<session name>` so a refusal names who holds the lease.
+- `yarn --cwd server dev:locks` lists the apply, host and source leases with owner, command, heartbeat age and live, stale or released state (`--json` for machine output).
+  `--release <ownerId> --confirm-release-dev-lease` frees a dead holder's leases, and refuses while the heartbeat is fresh.
+- `DEV_WRITE_LEASE=off` switches the lease off; the test harness sets it for every suite.
+- `development:refresh-from-beta` keeps `scrape_job_locks`, which is now a preserved environment-local collection, because the refresh holds its own lease there.
+
 ### `scrape_runs.status` is read through a heartbeat
 
 Every exit path of the orchestrator writes a terminal status: `success`, `partial`, `failure`, or `interrupted` on `SIGINT`/`SIGTERM` (#3595).

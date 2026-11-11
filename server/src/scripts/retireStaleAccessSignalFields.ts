@@ -1,3 +1,4 @@
+import { recordDevApplyIntent } from '../db/devWriteLease';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import mongoose from 'mongoose';
@@ -172,6 +173,7 @@ async function main() {
   const mongoUrl = process.env.MONGODBURL;
   assertConnectedToDevelopment(mongoUrl);
 
+  if (args.apply) recordDevApplyIntent('retire:stale-access-signal-fields');
   await initializeConnections();
   const db = mongoose.connection.db;
   if (!db) throw new Error('MongoDB connection is not initialized');

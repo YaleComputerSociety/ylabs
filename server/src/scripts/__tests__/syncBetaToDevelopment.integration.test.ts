@@ -334,13 +334,17 @@ describe('Beta to Development mirror against MongoDB', () => {
     expect(await targetDb.collection('analytics_events').findOne({})).toMatchObject({
       event: 'development_student_search',
     });
-    expect(await targetDb.listCollections({ name: 'scrape_job_locks' }).hasNext()).toBe(false);
+    expect(
+      await targetDb
+        .collection('scrape_job_locks')
+        .countDocuments({ sourceName: 'example-directory' }),
+    ).toBe(1);
     expect(await targetDb.listCollections({ name: 'student_profiles' }).hasNext()).toBe(false);
     expect(await targetDb.listCollections({ name: 'evidence_claims' }).hasNext()).toBe(false);
   });
 
   it('keeps the frozen benchmarks and measurement history a refresh cannot re-derive', async () => {
-    expect(clearedCollectionNames).toEqual(['scrape_job_locks', 'scrape_snapshots']);
+    expect(clearedCollectionNames).toEqual(['scrape_snapshots']);
     expect(preservedCollectionNames).toEqual([...PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS].sort());
 
     const benchmark = await targetDb

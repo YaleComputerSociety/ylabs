@@ -3,7 +3,7 @@ import path from 'path';
 import { spawn, spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
-import { connectScriptMongo } from '../db/connections';
+import { connectScriptMongo, holdDevApplyLeaseForRun } from '../db/connections';
 import { findHeldScrapeJobLock } from '../scrapers/scrapeJobLock';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { isDirectScriptInvocation } from './directScriptInvocation';
@@ -503,7 +503,14 @@ function reportSearchIndexOutcome(): void {
 }
 
 if (isDirectScriptInvocation(import.meta.url, 'weeklyDevelopmentSweep')) {
-  runWeeklyDevelopmentSweep(process.argv.slice(2))
+  holdDevApplyLeaseForRun('scrape:sweep:weekly-development')
+    .then(async (releaseLease) => {
+      try {
+        return await runWeeklyDevelopmentSweep(process.argv.slice(2));
+      } finally {
+        await releaseLease();
+      }
+    })
     .then((code) => {
       process.exitCode = code;
     })
