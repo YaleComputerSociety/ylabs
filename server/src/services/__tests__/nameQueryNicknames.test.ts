@@ -74,6 +74,19 @@ describe('resolveNicknameInNameQuery', () => {
     );
   });
 
+  it('reads only served people, so a person on an unserved row neither triggers nor blocks a rewrite', () => {
+    const unservedOnly = buildSearchSpellingVocabulary([
+      { ...personRow('Robert Hollowmere'), served: false },
+      { ...personRow('Bob Quillfeather'), served: false },
+      personRow('Robert Quillfeather'),
+    ]);
+    expect(resolveNicknameInNameQuery(['bob', 'hollowmere'], unservedOnly)).toBeNull();
+    expect(resolveNicknameInNameQuery(['bob', 'quillfeather'], unservedOnly)).toEqual({
+      nickname: 'bob',
+      givenName: 'robert',
+    });
+  });
+
   it('never introduces a given name no person with the other words carries', () => {
     expect(resolveNicknameInNameQuery(['will', 'quillfeather'], vocabulary)).toBeNull();
     expect(resolveNicknameInNameQuery(['tom', 'quillfeather'], vocabulary)).toBeNull();

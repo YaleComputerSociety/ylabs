@@ -70,7 +70,7 @@ export const buildSearchSpellingVocabulary = (
     for (const personName of personNamesOf(document.personNameText ?? [])) {
       const key = personName.join(' ');
       for (const term of personName) personNameTerms.add(term);
-      if (personName.length < 2 || seenPersonNames.has(key)) continue;
+      if (!document.served || personName.length < 2 || seenPersonNames.has(key)) continue;
       seenPersonNames.add(key);
       const nameWords = new Set(personName);
       for (const term of nameWords) {
