@@ -404,10 +404,6 @@ async function withinTimeout<T>(operation: Promise<T>, timeoutMs: number): Promi
 
 const boundedOptions = (timeoutMs: number) => ({ maxTimeMS: timeoutMs, timeoutMS: timeoutMs });
 
-/**
- * Renews every named lease of one owner in a single bounded round trip and returns the names that
- * are still this owner's. A partial match reads back which ones are, so exactly the rest are lost.
- */
 async function renewLeases(
   db: Db,
   ownerId: string,
@@ -571,7 +567,6 @@ async function renewHeldLeases(at: Date) {
   if (lost.length > 0) stopForLostLeases(lost);
 }
 
-/** One heartbeat tick: idle host leases are released, every held lease is renewed, overdue ones stop the run. */
 export function runDevWriteLeaseHeartbeatTick(): Promise<void> {
   tickInFlight ??= (async () => {
     try {

@@ -348,8 +348,16 @@ It replaces the convention of announcing each write to the session that sequence
 - Append-only measurement writes are exempt (`DEV_APPLY_LEASE_EXEMPT_SCRIPTS`: `corpus:snapshot`, `gates:refresh`, the lane benchmark and scorecard scripts, `engine:benchmark`), because they write their own collections and are meant to run during a long apply.
 - A dry run never takes or reads the lease.
 - A writing lane run against Development also takes a `host:<hostname>` lease before its first fetch to each host, so two lane runs cannot fetch one host at once.
-- The lease heartbeats every 30 seconds and expires 5 minutes after the last heartbeat, so an apply running for hours keeps it, and a crashed holder frees it within 5 minutes; a holder on the same machine whose process has exited is taken over at once.
-  A process that finds its lease taken exits before its next write.
+- The lease heartbeats every 30 seconds and expires 5 minutes after the last heartbeat, so an apply running for hours keeps it, and a crashed holder frees it within 5 minutes.
+  A holder on the same machine whose process has exited is taken over once its heartbeat is older than two intervals (`DEV_WRITE_LEASE_DEAD_OWNER_HEARTBEAT_AGE_MS`), so a misread pid probe, such as a sandboxed `process.kill` answering `ESRCH`, can never take a lease that is still renewing.
+- Each heartbeat tick renews every lease the process holds with **one** `updateMany` per owner, bounded by `maxTimeMS` and the driver's `timeoutMS` plus a client-side race (`DEV_WRITE_LEASE_HEARTBEAT_TIMEOUT_MS`, 10 seconds), so a hung renewal cannot outlast the tick or wait out the 10-minute scrape socket timeout.
+  A renewal that matches fewer leases than it sent reads back which ones are still this owner's, and exactly the rest count as lost: the process exits with `Lost the Development write lease` naming them, before its next write.
+- A heartbeat is never swallowed: a failed or timed-out renewal is logged with the lease names, and each lease records its last successful renewal.
+  A lease that goes longer than `DEV_WRITE_LEASE_RENEWAL_DEADLINE_MS` (2 minutes, two fifths of the TTL) without one stops the process through the same path, at the next tick or the next fetch to that host, whichever comes first.
+  The message lists exactly the stale leases, each with its last successful renewal time and how long it went without one, because fetches and writes on those hosts since then ran without a confirmed lease.
+- A `host:` lease the process took under its own owner id and has not fetched through for 10 minutes (`DEV_HOST_LEASE_IDLE_RELEASE_MS`) is released at a heartbeat tick with `releaseReason: 'idle'`, and taken again on the next fetch to that host.
+  That re-acquisition can be refused because another run took the host meanwhile, which is the protection working.
+  The `__dev-apply__` lease is never idle-released, and neither is a lease a child joined or took under an owner id inherited from its parent, because a sibling may still be fetching through it; the root owner releases those when it ends.
 - `DEV_WRITE_OWNER=<session name>` is required: on Development, an apply or a writing lane run with no owner label is **refused** before it takes a lease or writes anything, so every launch record and refusal names who launched it.
   The sweep runners (`scrape:sweep`, the weekly Development sweep, the source rerun) set their own `sweep-runner:<script>@<host>` label when none is set, and their children inherit it.
   Beta, Production, test and local databases never ask for one.
