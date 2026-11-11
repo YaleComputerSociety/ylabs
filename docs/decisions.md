@@ -5,6 +5,27 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-11-11: Creative-Practice Faculty Count For The Directory (#5537)
+
+The owner decided on 2026-11-11 (decision "creative include") that faculty whose work is creative practice, such as performance or composition, count for the directory.
+Rows for an initiative that is only a programme stay listed.
+After the description batch, the writer gets a creative-practice prompt of its own, frozen like the research prompt and checked on a small held-out set.
+Any biography-only or no-research detector must exempt creative practice.
+The discussion is recorded on #5537.
+
+## 2026-11-11: The Agent-Written Description Seed Ships On A Claim-Level Held-Out Bar (#5537)
+
+The owner decided on 2026-11-11 (decision "5537 C") that the Claude-agent description seed ships against a held-out bar taken from the council consensus: claim-level checks S1 and S2, graded by two judge families, with confidence bounds in place of a "0 worse" rule.
+In the owner's corrected reading, S1 is scored on new drafts only, and usefulness is read as non-inferiority.
+On the frozen 298-row held-out run, S1 was 2 of 258 and 1 of 258 (Clopper-Pearson upper bounds 2.77% and 2.14%, against a 3% bar).
+Served unsupported text fell to 8.1% from 22.5% and to 4.7% from 11.7% (p < 0.0001).
+Net usefulness was +16.4% (lower bound +11.7%) and +12.4% (lower bound +8.1%).
+The writer refused 13.4% of rows.
+The old served text on a refused row is left to a resolve-time body-retirement rule rather than to the seed; that rule did not ship, because its arms failed their blind precision checks (#5763).
+OpenAI stays the change-only writer for later evidence changes.
+Bar G's judge calibration uses agent-cross-checked labels at the owner's direction, and those labels are marked as agent-labelled.
+The methodology is recorded on #5537.
+
 ## 2026-11-10: Every Current Member Is Found Through Their Row, Past The Display Cap (#5584)
 
 The owner decided on #5584 that a name search matches every current member of a row, not only the members within the detail page's display cap.
