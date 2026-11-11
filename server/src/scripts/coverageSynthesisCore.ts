@@ -43,6 +43,7 @@ export interface CoverageSynthesisArgs {
   printWriterPrompt: boolean;
   synthesizeCards: boolean;
   cacheOnly: boolean;
+  deferMaterializeForRuns: string[];
   slugsFile?: string;
   captureEvidence?: string;
   evidenceFile?: string;
@@ -63,6 +64,7 @@ const VALUE_FLAGS = {
   '--evidence-file': 'evidenceFile',
   '--import-derivations': 'importDerivations',
   '--output': 'output',
+  '--defer-materialize-for-runs': 'deferMaterializeForRuns',
 } as const;
 
 type ValueFlag = keyof typeof VALUE_FLAGS;
@@ -74,6 +76,21 @@ export function parseSlugList(value: string): string[] {
     .split(/[\s,]+/)
     .map((slug) => slug.trim())
     .filter(Boolean);
+}
+
+/** `--defer-materialize-for-runs`: scrape run ids, each a 24-hex ObjectId. */
+export function parseRunIdList(value: string): string[] {
+  const ids = value
+    .split(',')
+    .map((id) => id.trim())
+    .filter(Boolean);
+  const invalid = ids.filter((id) => !/^[0-9a-f]{24}$/i.test(id));
+  if (ids.length === 0 || invalid.length > 0) {
+    throw new Error(
+      `--defer-materialize-for-runs expects comma-separated 24-hex run ids (got ${invalid.length > 0 ? invalid.join(', ') : 'none'})`,
+    );
+  }
+  return [...new Set(ids.map((id) => id.toLowerCase()))];
 }
 
 export function parseCoverageSynthesisArgs(argv: string[]): CoverageSynthesisArgs {
@@ -93,12 +110,14 @@ export function parseCoverageSynthesisArgs(argv: string[]): CoverageSynthesisArg
     printWriterPrompt: false,
     synthesizeCards: false,
     cacheOnly: false,
+    deferMaterializeForRuns: [],
   };
   const setValue = (flag: ValueFlag, value: string) => {
     const key = VALUE_FLAGS[flag];
     if (key === 'limit') args.limit = Number(value);
     else if (key === 'concurrency') args.concurrency = Number(value);
     else if (key === 'slugs') args.slugs = parseSlugList(value);
+    else if (key === 'deferMaterializeForRuns') args.deferMaterializeForRuns = parseRunIdList(value);
     else args[key] = value;
   };
   for (let index = 0; index < argv.length; index += 1) {

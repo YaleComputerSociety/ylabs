@@ -15,6 +15,7 @@ import { contentHashObservation } from '../scrapers/contentHashGate';
 import { resetDescriptionOwnershipCitersCache } from '../scrapers/descriptionOwnershipResolverScreen';
 import {
   defaultMaterializerCardSynthesizer,
+  materializationReadScopeFilter,
   materializeEntity,
 } from '../scrapers/entityMaterializer';
 import { mapWithConcurrency } from '../scrapers/utils/mapWithConcurrency';
@@ -104,10 +105,42 @@ const RETIRE_REASON = 'written-description-no-longer-supported-by-evidence';
 const REGATE_CHUNK = 500;
 const ENTITY_READ_CHUNK = 200;
 
+/**
+ * Whether a row carries any live observation from the named scrape runs, read in the
+ * materializer's own scope and through both identity forms of the row and of the rows merged
+ * into it, so `--defer-materialize-for-runs` defers exactly the rows a materialize would read
+ * that run's observations on.
+ */
+export async function rowHasObservationFromRuns(
+  anchors: readonly Record<string, unknown>[],
+  runIds: readonly string[],
+): Promise<boolean> {
+  if (anchors.length === 0 || runIds.length === 0) return false;
+  return Boolean(
+    await Observation.exists({
+      ...materializationReadScopeFilter(),
+      scrapeRunId: { $in: runIds.map((id) => new mongoose.Types.ObjectId(id)) },
+      $or: [...anchors],
+    }),
+  );
+}
+
+const deferMaterialize = (report: CoverageEntityReport): void => {
+  report.writerStep = report.step;
+  report.step = 'materialize-deferred';
+};
+
 export interface CoverageEntityReport {
   slug: string;
   snippets: number;
-  step?: WriterStep | WrittenDescriptionStep | ReinstateStep | 'fullDescription-locked';
+  step?:
+    | WriterStep
+    | WrittenDescriptionStep
+    | ReinstateStep
+    | 'fullDescription-locked'
+    | 'materialize-deferred';
+  /** The writer's own step, kept when `step` records a deferred materialize. */
+  writerStep?: string;
   modelCalled?: boolean;
   inputHash?: string;
   synthesized: boolean;
@@ -493,8 +526,8 @@ async function runReadOnlyMode(
   );
 }
 
-async function main() {
-  const args = parseCoverageSynthesisArgs(process.argv.slice(2));
+export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2)) {
+  const args = parseCoverageSynthesisArgs(argv);
   const mode = coverageSynthesisModeOf(args);
   if (mode === 'print-writer-prompt') {
     process.stdout.write(`${COVERAGE_SYNTHESIS_PROMPT}\n`);
@@ -621,6 +654,15 @@ async function main() {
           { $set: { superseded: false }, $unset: { rollback: '' } },
         );
         resetDescriptionOwnershipCitersCache();
+        if (
+          await rowHasObservationFromRuns(
+            [...anchors, ...mergedInAnchors],
+            args.deferMaterializeForRuns,
+          )
+        ) {
+          deferMaterialize(report);
+          return;
+        }
         const materializedId = await materializeWrittenRow(entity);
         if (!materializedId) return;
         materializedEntityIds.push(materializedId);
@@ -678,6 +720,11 @@ async function main() {
       }
       if (!decision) return;
     }
+    const materializeIsDeferred = await rowHasObservationFromRuns(
+      [...anchors, ...mergedInAnchors],
+      args.deferMaterializeForRuns,
+    );
+    if (materializeIsDeferred) deferMaterialize(report);
     if (!args.apply || !context) return;
     try {
       const liveBody = liveWrittenBody(observations, SOURCE_NAME);
@@ -726,7 +773,8 @@ async function main() {
         retired += outcome.retired;
         if (outcome.retired > 0) changed = true;
       }
-      const materializedId = changed ? await materializeWrittenRow(entity) : undefined;
+      const materializedId =
+        changed && !materializeIsDeferred ? await materializeWrittenRow(entity) : undefined;
       if (materializedId) materializedEntityIds.push(materializedId);
       if (writes.recordHash && derivationInputHash && derivationInputHash !== storedHash) {
         await appendObservations(
@@ -766,6 +814,7 @@ async function main() {
     llmCalls: reports.filter((entry) => entry.modelCalled).length,
     plannedLlmCalls: countBy('planned'),
     cacheMissesNoCall: countBy('cache-miss-no-call'),
+    materializeDeferred: countBy('materialize-deferred'),
     cacheHits: countBy('cache-hit'),
     carriedOverUnchanged: countBy('carried-over-unchanged'),
     carriedOverPromptChange: countBy('carried-over-prompt-change'),
@@ -799,7 +848,7 @@ const isDirectRun = process.argv[1]
   : false;
 
 if (isDirectRun) {
-  main()
+  runCoverageSynthesis()
     .catch((error) => {
       console.error('Failed to run coverage synthesis:', sanitizeLogValue(error));
       process.exitCode = 1;
