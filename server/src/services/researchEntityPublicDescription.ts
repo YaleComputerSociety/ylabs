@@ -207,7 +207,9 @@ export function buildResearchEntityPublicDescriptionRepresentation(input: {
             entity: { ...input.entity, fullDescription: absentBodyCard },
           }),
         );
-        return representationServesCard(cardOnly) ? cardOnly : whole;
+        return representationServesCard(cardOnly)
+          ? { ...cardOnly, strictQuality: whole.strictQuality }
+          : whole;
       }
       const cardBody = cardServedInPlaceOfAResearchlessBiography(whole);
       if (!cardBody) return whole;

@@ -226,4 +226,26 @@ describe('full description adoption asks the serving check (#3437)', () => {
     });
     expect(result.set.fullDescription).toBe(RESEARCH_BODY);
   });
+  it('still adopts research prose over a topic label list whose sound card the served page shows', async () => {
+    const labelList = 'Research Interests Labor Economics; Applied Econometrics; Child Development';
+    const soundCard =
+      'Studies how early childhood programs shape later earnings, using randomized evaluations of preschool and home visiting.';
+    const labelListRow = { ...entityDoc, fullDescription: labelList, shortDescription: soundCard };
+    const representation = buildResearchEntityPublicDescriptionRepresentation({
+      entity: labelListRow,
+    });
+    expect(representation.entity.fullDescription).toBe(soundCard);
+    expect(representation.strictQuality.full.isUseful).toBe(false);
+    expect(servingBarAcceptsFullDescription(labelListRow, {}, labelList, '')).toBe(false);
+
+    const result = await projectFromLog('researchEntity', {
+      ...input([
+        observation(labelList, 'synthetic-page-source', 0.82),
+        observation(RESEARCH_BODY, 'synthetic-signal-source', 0.55),
+      ]),
+      resolved: { fullDescription: resolvedField(labelList, 0.82) },
+      entityDoc: labelListRow,
+    });
+    expect(result.set.fullDescription).toBe(RESEARCH_BODY);
+  });
 });
