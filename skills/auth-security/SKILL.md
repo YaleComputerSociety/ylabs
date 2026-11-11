@@ -244,7 +244,8 @@ Export needs none of these settings, so it keeps working.
 6. Revoke the netid's active `admin_grants`, appending a `revoked` history entry, so a maintainer who deletes their account loses the grant with it while the grant row and its history stay.
 `admin_audit_events`, the earlier history on the netid's own grant, and the `grantedBy`, `revokedBy` and history entries on other accounts' grants are left exactly as they are, because the audit log is append-only; the export includes the rows that name the netid, but a deletion never rewrites them.
 7. Ask PostHog to delete the person keyed on `productAnalyticsId`, with events and recordings.
-Where PostHog does not capture, Development and Beta, an unconfigured PostHog is skipped and reported as `skipped_not_configured`; elsewhere step 0 has already refused. Configured and failing, the deletion stops here, because the account row holds the only copy of that id.
+Where PostHog does not capture, Development and Beta, an unconfigured PostHog is skipped and reported as `skipped_not_configured`; elsewhere step 0 has already refused.
+Configured and failing, the deletion stops here, because the account row holds the only copy of that id.
 8. Record the deletion for every other environment, below, before the account goes, so a failure there is retried rather than lost.
 9. Delete the account last, so any failure above leaves an account the holder can sign in to and retry from.
 10. Append one `admin_audit_events` row, `account.self_delete` or `account.operator_delete`, whose `targetId` is an HMAC-SHA256 of the netid under `ACCOUNT_DELETION_AUDIT_HMAC_KEY`, never the netid.
