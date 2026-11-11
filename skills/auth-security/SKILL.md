@@ -124,6 +124,22 @@ This creates a test session as `test123` with user type `undergraduate`.
 Pass `?userType=admin|professor|faculty|graduate|unknown` for a different local account.
 `?userType=admin` mints an idempotent local bootstrap `AdminGrant` (via `ensureBootstrapAdminGrant`), so dev admin authority comes from a real grant, not a `userType` shortcut.
 
+### Testing locally as a non-admin student
+
+The copied `server/.env` that `scripts/new-agent-worktree.sh` writes sets `LOCAL_AUTH_BYPASS=true`, `LOCAL_AUTH_BYPASS_NETID=devadmin` and `LOCAL_AUTH_BYPASS_USER_TYPE=admin`, so every cookieless loopback request is the bootstrap admin by default.
+Admin authority comes from an active `AdminGrant` on the netid (`hasAdminAuthorityForUser`), never from `userType`.
+So an `x-dev-user-type: undergraduate` header alone does not make a student: the netid stays `devadmin`, which holds the grant, and the request keeps operator authority, including `operatorPreview` on withheld research rows (#5695).
+To test as a non-admin student, use one of these:
+
+- Run the API with the grant-less undergraduate dev-login netid as the bypass identity: `LOCAL_AUTH_BYPASS_NETID=test123 LOCAL_AUTH_BYPASS_USER_TYPE=undergraduate yarn dev:server`.
+- Turn the bypass off and sign in as the undergraduate: `LOCAL_AUTH_BYPASS=false yarn dev:server`, then open `/api/dev-login?userType=undergraduate`, which signs in `test123`.
+- Leave the server alone and send both `x-dev-netid: test123` and `x-dev-user-type: undergraduate` from a loopback client.
+
+`scripts/run-data-profile.mjs` gives an explicitly set shell value for the three `LOCAL_AUTH_BYPASS*` keys precedence over `server/.env`; every other key still comes from `server/.env` first (#5695).
+Before #5695 a shell `LOCAL_AUTH_BYPASS=false` was silently overridden by the file, so a "student" probe ran as the admin.
+Check the identity before trusting a result: `GET /api/check` reports `user.netId` and `user.isAdmin`, and the netid must hold no active `AdminGrant`.
+Every bypass or dev-login request records a login for its netid on the database the profile targets, and creates that account on first use, so reuse `test123` rather than inventing a new netid.
+
 ### Development affordances are scoped to the developer's own machine
 
 The runtime label alone never licenses a development affordance, because "this process is a local development process" and "this request came from the developer" are different facts.
@@ -133,6 +149,7 @@ It reads the socket peer rather than `req.ip`, because `req.ip` can be resolved 
 - `/api/dev-login` is registered only in a local development runtime (`isDevLoginAllowed`) and additionally answers `404 {"error":"Not found"}` to any caller that is not loopback (`isDevLoginRequestAllowed`).
 The refusal reuses the ordinary not-found shape rather than announcing a disabled route.
 - The `LOCAL_AUTH_BYPASS` user and its `x-dev-netid` / `x-dev-user-type` selection apply only to a loopback caller (`isLocalAuthBypassRequestAllowed`), so a request from elsewhere is simply unauthenticated.
+- `scripts/security-preflight.test.mjs` runs the real `isLocalAuthBypassRequestAllowed` and the bypass middleware with a copied `.env` that enables the bypass, and pins a refusal for every non-development `NODE_ENV`, a non-loopback socket peer, a non-localhost `Host` header, and a non-localhost `SERVER_BASE_URL`.
 - `serverListenHost` in `server/src/utils/environment.ts` binds a local run to `127.0.0.1` and a deployed run to `0.0.0.0`, keyed off `requiresDeployedRuntimeSecurity`, because the hosting platform reaches the process from outside its network namespace and a local run needs no interface beyond loopback.
 
 ## Auth middleware

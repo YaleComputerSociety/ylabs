@@ -15,7 +15,7 @@ vi.mock('../services/accountService', () => accountServiceMock);
 
 const adminGrantServiceMock = vi.hoisted(() => ({
   ensureBootstrapAdminGrant: vi.fn(async () => undefined),
-  hasActiveAdminGrant: vi.fn(async () => false),
+  hasActiveAdminGrant: vi.fn(async (_netid?: unknown) => false),
 }));
 vi.mock('../services/adminGrantService', () => adminGrantServiceMock);
 
@@ -107,6 +107,8 @@ describe('development-only affordances are scoped to the developer machine', () 
     process.env = { ...ORIGINAL_ENV };
     accountServiceMock.recordAccountLogin.mockClear();
     adminGrantServiceMock.ensureBootstrapAdminGrant.mockClear();
+    adminGrantServiceMock.hasActiveAdminGrant.mockReset();
+    adminGrantServiceMock.hasActiveAdminGrant.mockImplementation(async (_netid?: unknown) => false);
     analyticsServiceMock.logEvent.mockClear();
   });
 
@@ -208,5 +210,71 @@ describe('development-only affordances are scoped to the developer machine', () 
     });
 
     expect(isLocalAuthBypassRequestAllowed(fakeRequest(LOOPBACK_CALLER))).toBe(false);
+  });
+
+  it('keeps the granted env netid when only the user type header asks for a student', async () => {
+    adminGrantServiceMock.hasActiveAdminGrant.mockImplementation(
+      async (netid: unknown) => netid === 'devadmin',
+    );
+    const { passportRoutes } = await loadPassportModule({
+      ...LOCAL_DEVELOPMENT_ENV,
+      LOCAL_AUTH_BYPASS: 'true',
+      LOCAL_AUTH_BYPASS_NETID: 'devadmin',
+      LOCAL_AUTH_BYPASS_USER_TYPE: 'admin',
+    });
+    const bypassMiddleware = (passportRoutes as any).stack[0].handle;
+
+    const req = fakeRequest({
+      ...LOOPBACK_CALLER,
+      headers: { 'x-dev-user-type': 'undergraduate' },
+    });
+    await bypassMiddleware(req, fakeResponse(), vi.fn());
+
+    expect(req.user).toMatchObject({ netId: 'devadmin', userType: 'undergraduate' });
+  });
+
+  it('resolves a grant-less bypass netid as a non-admin student', async () => {
+    adminGrantServiceMock.hasActiveAdminGrant.mockImplementation(
+      async (netid: unknown) => netid === 'devadmin',
+    );
+    const { passportRoutes } = await loadPassportModule({
+      ...LOCAL_DEVELOPMENT_ENV,
+      LOCAL_AUTH_BYPASS: 'true',
+      LOCAL_AUTH_BYPASS_NETID: 'devstudent',
+      LOCAL_AUTH_BYPASS_USER_TYPE: 'undergraduate',
+    });
+    const bypassMiddleware = (passportRoutes as any).stack[0].handle;
+
+    const req = fakeRequest(LOOPBACK_CALLER);
+    await bypassMiddleware(req, fakeResponse(), vi.fn());
+
+    expect(req.user).toMatchObject({
+      netId: 'devstudent',
+      userType: 'undergraduate',
+      isAdmin: false,
+    });
+    expect(adminGrantServiceMock.ensureBootstrapAdminGrant).not.toHaveBeenCalled();
+  });
+
+  it('leaves a caller anonymous when the bypass flag is explicitly false', async () => {
+    const { passportRoutes } = await loadPassportModule({
+      ...LOCAL_DEVELOPMENT_ENV,
+      LOCAL_AUTH_BYPASS: 'false',
+      LOCAL_AUTH_BYPASS_NETID: 'devadmin',
+      LOCAL_AUTH_BYPASS_USER_TYPE: 'admin',
+    });
+    const bypassMiddleware = (passportRoutes as any).stack[0].handle;
+
+    const req = fakeRequest({
+      ...LOOPBACK_CALLER,
+      headers: { 'x-dev-netid': 'devadmin', 'x-dev-user-type': 'admin' },
+    });
+    const next = vi.fn();
+    await bypassMiddleware(req, fakeResponse(), next);
+
+    expect(req.user).toBeUndefined();
+    expect(next).toHaveBeenCalledWith();
+    expect(accountServiceMock.recordAccountLogin).not.toHaveBeenCalled();
+    expect(adminGrantServiceMock.ensureBootstrapAdminGrant).not.toHaveBeenCalled();
   });
 });
