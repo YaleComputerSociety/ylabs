@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-  SERVICE_CORE_BEHIND_RESEARCH_ROWS,
   SERVICE_CORE_DEMOTION_WINDOW,
   demoteServiceCoresBelowResearch,
   orderServiceCoresBelowResearch,
@@ -179,37 +178,28 @@ const row = (id: string, entityType = 'LAB', extra: Record<string, unknown> = {}
 
 describe('demoteServiceCoresBelowResearch', () => {
   const isCore = (hit: { id: string }) => hit.id.startsWith('core');
+  const tierOf = (hit: { id: string }) => (hit as Record<string, unknown>).tier as number;
 
-  it('places a core below every research row of the span by default', () => {
+  it('places a core below every research row it is given', () => {
     const research = Array.from({ length: 12 }, (_, index) => row(`r${index}`));
     const ordered = ids(
       demoteServiceCoresBelowResearch([row('core-a'), ...research], { isDemoted: isCore }),
     );
-    expect(SERVICE_CORE_BEHIND_RESEARCH_ROWS).toBe(Number.POSITIVE_INFINITY);
     expect(ordered.indexOf('core-a')).toBe(12);
   });
 
-  it('places every core below every research row when unbounded, keeping each group in order', () => {
+  it('places every core below every research row, keeping each group in order', () => {
     const hits = [row('core-a'), row('r1'), row('core-b'), row('r2'), row('r3')];
-    expect(
-      ids(
-        demoteServiceCoresBelowResearch(hits, { isDemoted: isCore, behindResearchRows: Infinity }),
-      ),
-    ).toEqual(['r1', 'r2', 'r3', 'core-a', 'core-b']);
+    expect(ids(demoteServiceCoresBelowResearch(hits, { isDemoted: isCore }))).toEqual([
+      'r1',
+      'r2',
+      'r3',
+      'core-a',
+      'core-b',
+    ]);
   });
 
-  it('moves a core behind only the next K research rows when bounded', () => {
-    const hits = [row('core-a'), row('r1'), row('r2'), row('r3'), row('core-b'), row('r4')];
-    expect(
-      ids(demoteServiceCoresBelowResearch(hits, { isDemoted: isCore, behindResearchRows: 2 })),
-    ).toEqual(['r1', 'r2', 'core-a', 'r3', 'r4', 'core-b']);
-  });
-
-  it('is the identity at K = 0 and when nothing is demoted', () => {
-    const hits = [row('core-a'), row('r1'), row('core-b')];
-    expect(
-      ids(demoteServiceCoresBelowResearch(hits, { isDemoted: isCore, behindResearchRows: 0 })),
-    ).toEqual(ids(hits));
+  it('is the identity when nothing is demoted', () => {
     const research = [row('r1'), row('r2')];
     expect(demoteServiceCoresBelowResearch(research, { isDemoted: isCore })).toBe(research);
   });
@@ -220,23 +210,33 @@ describe('demoteServiceCoresBelowResearch', () => {
       row('r1', 'LAB', { tier: 1 }),
       row('r2', 'LAB', { tier: 0 }),
     ];
-    expect(
-      ids(
-        demoteServiceCoresBelowResearch(hits, {
-          isDemoted: isCore,
-          behindResearchRows: Infinity,
-          tierOf: (hit) => (hit as Record<string, unknown>).tier as number,
-        }),
-      ),
-    ).toEqual(['r1', 'core-a', 'r2']);
+    expect(ids(demoteServiceCoresBelowResearch(hits, { isDemoted: isCore, tierOf }))).toEqual([
+      'r1',
+      'core-a',
+      'r2',
+    ]);
+  });
+
+  it('places a core below every research row of its tier when a rerank interleaves the tiers', () => {
+    const hits = [
+      row('r1', 'LAB', { tier: 1 }),
+      row('r2', 'LAB', { tier: 0 }),
+      row('core-a', 'CORE_FACILITY', { tier: 0 }),
+      row('r3', 'LAB', { tier: 1 }),
+      row('r4', 'LAB', { tier: 0 }),
+    ];
+    expect(ids(demoteServiceCoresBelowResearch(hits, { isDemoted: isCore, tierOf }))).toEqual([
+      'r1',
+      'r2',
+      'r4',
+      'r3',
+      'core-a',
+    ]);
   });
 
   it('serves the same rows it was given', () => {
     const hits = [row('core-a'), row('r1'), row('core-b'), row('r2')];
-    const ordered = demoteServiceCoresBelowResearch(hits, {
-      isDemoted: isCore,
-      behindResearchRows: 1,
-    });
+    const ordered = demoteServiceCoresBelowResearch(hits, { isDemoted: isCore });
     expect(new Set(ordered)).toEqual(new Set(hits));
     expect(ordered).toHaveLength(hits.length);
   });

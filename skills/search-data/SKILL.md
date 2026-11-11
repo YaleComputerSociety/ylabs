@@ -690,7 +690,7 @@ It is an ordering change only: the total is the pool length and the facets are t
 It runs after hiring-first ordering and after the cached rerank (#5458).
 After the rerank because a cached score grades relevance rather than kind, so applying it first let a cached score lift a core back above research rows; measured on Development with the cache on, the cache alone left 7 demoted rows above research rows across 3 of the 5 probe queries it holds an entry for, and the demotion after it left none.
 The rerank-candidate read the live-miss job scores (`searchResearchGroupsForRerankCandidates`) skips the demotion, so the rows it scores are the pre-demotion window the cache reorders and its staleness fingerprints are unchanged.
-Under hiring-first a demoted row never moves across a change in `undergradInvitationRank`, so an inviting row stays ahead of a non-inviting one; no served core carried an invitation when this was measured.
+Under hiring-first each `undergradInvitationRank` keeps the positions its rows hold and reorders only its own rows into them, research rows first, so an inviting row stays where the order put it relative to a non-inviting one even after a cached rerank interleaves the two; no served core carried an invitation when this was measured.
 
 The strength was chosen by measurement, one variant per run, on the bench copy of the post-batch index.
 Moving each core behind the next 3 research rows cleared 1 of the 6 Production queries where a judged-relevant research row sat below a core; behind the next 10, and below every research row of the window, both cleared 6 of 6 with the same benchmark numbers, and only the window partition satisfies the journey invariant that a demoted core never outranks a research row.

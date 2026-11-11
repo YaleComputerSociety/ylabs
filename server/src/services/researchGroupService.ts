@@ -183,9 +183,9 @@ import { getResearchSearchSpellingVocabulary } from './researchSearchSpellingVoc
 import { replaceNicknameInQuery, resolveNicknameInNameQuery } from './nameQueryNicknames';
 import { foldLatinDiacritics } from '../utils/latinDiacritics';
 import {
+  SERVICE_CORE_DEMOTION_WINDOW,
   orderServiceCoresBelowResearch,
   serviceCoreDemotionExemption,
-  serviceCoreDemotionSpan,
 } from './serviceCoreDemotion';
 import {
   maxReachableResearchSearchPage,
@@ -2979,14 +2979,14 @@ async function searchResearchGroupsForQuery(
           ...mongoVisibilityFilter(safeFilters, safeOptions.includeNonPublic),
         }).lean()) as any[])
       : [];
-  // The demotion only reorders within its span, so the span plus the requested page
+  // The demotion only reorders within its window, so the window plus the requested page
   // holds every row the page can serve; one read supplies both the demotion facts and
   // the page instead of a second round trip before hydration (#5748).
   const preloadedPageRows = demotesServiceCores
     ? await loadPageRows([
         ...new Set(
           pageRowIds([
-            ...rerankedPool.slice(0, serviceCoreDemotionSpan()),
+            ...rerankedPool.slice(0, SERVICE_CORE_DEMOTION_WINDOW),
             ...rerankedPool.slice(offset, offset + safePageSize),
           ]),
         ),

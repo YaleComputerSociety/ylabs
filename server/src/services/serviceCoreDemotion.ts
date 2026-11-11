@@ -1,10 +1,6 @@
 import { foldLatinDiacritics } from '../utils/latinDiacritics';
 
 export const SERVICE_CORE_DEMOTION_WINDOW = 30;
-// Measured on #5748: behind 3 research rows cleared 1 of the 6 judged queries, behind 10 and
-// below every research row of the window both cleared 6 of 6 with the same benchmark numbers,
-// and only the window partition keeps a demoted core from outranking a research row.
-export const SERVICE_CORE_BEHIND_RESEARCH_ROWS = Number.POSITIVE_INFINITY;
 
 export const CORE_FACILITY_ENTITY_TYPE = 'CORE_FACILITY';
 const CORE_FACILITY_KIND = 'core_facility';
@@ -147,52 +143,32 @@ export const serviceCoreDemotionExemption = ({
 
 export interface DemoteServiceCoresOptions<T> {
   isDemoted: (hit: T) => boolean;
-  behindResearchRows?: number;
   tierOf?: (hit: T) => number;
 }
 
-const demoteWithinTier = <T>(
-  hits: T[],
-  isDemoted: (hit: T) => boolean,
-  behindResearchRows: number,
-): T[] => {
-  let researchRowsSeen = 0;
-  const keyed = hits.map((hit, position) => {
-    if (isDemoted(hit)) {
-      return { hit, position, key: researchRowsSeen + behindResearchRows - 0.5 };
-    }
-    researchRowsSeen += 1;
-    return { hit, position, key: researchRowsSeen - 1 };
-  });
-  return keyed.sort((a, b) => a.key - b.key || a.position - b.position).map(({ hit }) => hit);
-};
-
 export const demoteServiceCoresBelowResearch = <T>(
   hits: T[],
-  {
-    isDemoted,
-    behindResearchRows = SERVICE_CORE_BEHIND_RESEARCH_ROWS,
-    tierOf = () => 0,
-  }: DemoteServiceCoresOptions<T>,
+  { isDemoted, tierOf = () => 0 }: DemoteServiceCoresOptions<T>,
 ): T[] => {
   if (!hits.some(isDemoted)) return hits;
-  const ordered: T[] = [];
-  let run: T[] = [];
-  for (const hit of hits) {
-    if (run.length > 0 && tierOf(run[0]) !== tierOf(hit)) {
-      ordered.push(...demoteWithinTier(run, isDemoted, behindResearchRows));
-      run = [];
-    }
-    run.push(hit);
+  const positionsByTier = new Map<number, number[]>();
+  hits.forEach((hit, position) => {
+    const tier = tierOf(hit);
+    positionsByTier.set(tier, [...(positionsByTier.get(tier) ?? []), position]);
+  });
+  const ordered = [...hits];
+  for (const positions of positionsByTier.values()) {
+    const members = positions.map((position) => hits[position]);
+    const researchFirst = [
+      ...members.filter((hit) => !isDemoted(hit)),
+      ...members.filter(isDemoted),
+    ];
+    positions.forEach((position, index) => {
+      ordered[position] = researchFirst[index];
+    });
   }
-  ordered.push(...demoteWithinTier(run, isDemoted, behindResearchRows));
   return ordered;
 };
-
-export const serviceCoreDemotionSpan = (
-  behindResearchRows: number = SERVICE_CORE_BEHIND_RESEARCH_ROWS,
-  window: number = SERVICE_CORE_DEMOTION_WINDOW,
-): number => window + (Number.isFinite(behindResearchRows) ? behindResearchRows : 0);
 
 export interface OrderServiceCoresOptions<T> {
   queryTokens: readonly string[];
@@ -221,12 +197,11 @@ export const orderServiceCoresBelowResearch = <T extends { entityType?: unknown 
       }),
   );
   if (demotedIds.size === 0) return pool;
-  const span = serviceCoreDemotionSpan();
   return [
-    ...demoteServiceCoresBelowResearch(pool.slice(0, span), {
+    ...demoteServiceCoresBelowResearch(pool.slice(0, SERVICE_CORE_DEMOTION_WINDOW), {
       isDemoted: (hit) => demotedIds.has(idOf(hit)),
       tierOf,
     }),
-    ...pool.slice(span),
+    ...pool.slice(SERVICE_CORE_DEMOTION_WINDOW),
   ];
 };
