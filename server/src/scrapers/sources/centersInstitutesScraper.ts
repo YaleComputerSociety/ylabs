@@ -91,6 +91,7 @@ import {
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizePersonTitle } from '../../utils/titleHygiene';
 import { statesAnyFacultyAppointment } from './yaleDirectoryScraper';
+import { screenedRosterRole } from '../rosterStaffTitleScreen';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
@@ -1909,10 +1910,14 @@ export function centerRosterReadMember(
   const memberKey = memberObs[0]?.entityKey || '';
   if (!memberKey) return null;
   const role = member.role || 'core-faculty';
+  const edgeRole = screenedRosterRole(role, [member.title, member.profileTitle]);
   return {
     memberKey,
     role,
-    membershipKey: rosterMembershipKey(officialProfileIdentityKey(member.profileUrl || ''), role),
+    membershipKey: rosterMembershipKey(
+      officialProfileIdentityKey(member.profileUrl || ''),
+      edgeRole,
+    ),
     relationshipKey: relationshipObs[0]?.entityKey || '',
   };
 }

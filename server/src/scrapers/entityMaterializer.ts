@@ -318,10 +318,7 @@ import {
   type ProfilePageOwnerNetids,
 } from './directoryContradictedProfileNetid';
 import { derivedResearcherEmail } from './verifiedResearcherEmail';
-import {
-  statesAnyFacultyAppointment,
-  titleStatesOnlyAStaffRole,
-} from './sources/yaleDirectoryScraper';
+import { STAFF_SCREENED_ROSTER_ROLES, screenedRosterRole } from './rosterStaffTitleScreen';
 import {
   storedResearchAreasCameFromAPersonProfileOnAnOrganizationRow,
   withoutPersonProfileTopicsOnOrganizationRow,
@@ -3488,30 +3485,14 @@ export const rosterMemberFieldsWritten = (
   fieldsResolved: number,
 ): number => (outcome === 'created' || outcome === 'updated' ? fieldsResolved : 0);
 
-const STAFF_SCREENED_ROSTER_ROLES: ReadonlySet<string> = new Set([
-  'core-faculty',
-  'affiliated',
-  'affiliate',
-]);
-
-/**
- * A faculty-default roster role read as staff when the listing's own title or the member's
- * profile title names only a staff role and neither states a faculty appointment. Mixed
- * "Faculty & Staff" pages give every link the lane's default role, so the title is the only
- * evidence the listing is staff (#5746). Derived on every resolve; it writes no field.
- */
 export function rosterRoleAfterStaffTitleScreen(
   role: string,
   resolved: Record<string, ResolvedField>,
 ): string {
-  if (!STAFF_SCREENED_ROSTER_ROLES.has(role)) return role;
-  const titles = [textValue(resolved.title?.value), textValue(resolved.profileTitle?.value)].filter(
-    Boolean,
-  );
-  if (titles.length === 0 || titles.some((title) => statesAnyFacultyAppointment(title))) {
-    return role;
-  }
-  return titles.some((title) => titleStatesOnlyAStaffRole(title)) ? 'staff' : role;
+  return screenedRosterRole(role, [
+    textValue(resolved.title?.value),
+    textValue(resolved.profileTitle?.value),
+  ]);
 }
 
 export function buildRosterMemberCanonicalPlan(
@@ -12788,7 +12769,9 @@ async function centerMembershipKeysAssertedByOtherSources(
     {
       entityType: 'researchGroupMember',
       entityKey: { $in: memberKeys },
-      field: { $in: ['profileUrl', 'role', 'identityKey', 'membershipKey'] },
+      field: {
+        $in: ['profileUrl', 'role', 'identityKey', 'membershipKey', 'title', 'profileTitle'],
+      },
     },
     sourceName,
   );
@@ -12801,7 +12784,10 @@ async function centerMembershipKeysAssertedByOtherSources(
   }
   const keys = new Set<string>();
   for (const fields of bySourceAndKey.values()) {
-    const role = normalizeMemberRole(fields.role);
+    const role = screenedRosterRole(normalizeMemberRole(fields.role), [
+      fields.title,
+      fields.profileTitle,
+    ]);
     const identityKey = fields.identityKey || officialProfileIdentityKey(fields.profileUrl || '');
     const membershipKey = fields.membershipKey || rosterMembershipKey(identityKey, role);
     if (membershipKey) keys.add(membershipKey);

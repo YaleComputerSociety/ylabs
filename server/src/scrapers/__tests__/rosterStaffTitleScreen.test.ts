@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { rosterRoleAfterStaffTitleScreen } from '../entityMaterializer';
-import { memberProfileTitle } from '../sources/centersInstitutesScraper';
+import {
+  buildRosterMemberCanonicalPlan,
+  rosterRoleAfterStaffTitleScreen,
+} from '../entityMaterializer';
+import { centerRosterReadMember, memberProfileTitle } from '../sources/centersInstitutesScraper';
 import { titleStatesOnlyAStaffRole } from '../sources/yaleDirectoryScraper';
 
 const resolvedWith = (fields: Record<string, string>) =>
@@ -95,5 +98,32 @@ describe('memberProfileTitle (#5746)', () => {
       { '@type': 'Person', name: 'Blair Synthetic', jobTitle: 'Program Coordinator' },
     ])}</script>`;
     expect(memberProfileTitle(`<html><head>${jsonLd}</head><body></body></html>`)).toBe('');
+  });
+});
+
+describe('center roster read membership key (#5746)', () => {
+  const profileUrl = 'https://medicine.yale.edu/profile/synthetic-member/';
+  const readKey = (member: Record<string, string>) =>
+    centerRosterReadMember(
+      { name: 'Avery Synthetic', profileUrl, role: 'core-faculty', ...member } as any,
+      [{ entityKey: 'member-key' } as any],
+      [],
+    )?.membershipKey;
+  const edgeKey = (fields: Record<string, string>) =>
+    buildRosterMemberCanonicalPlan(
+      '64f000000000000000000010',
+      resolvedWith({ name: 'Avery Synthetic', profileUrl, role: 'core-faculty', ...fields }),
+    )?.facts.rosterProvenance?.membershipKey;
+
+  it('lists a screened staff edge under the key the materializer writes, so retirement finds it', () => {
+    const titles = { profileTitle: 'Grants and Finance Manager' };
+    expect(readKey(titles)).toBe(`official-profile:${profileUrl}|staff`);
+    expect(readKey(titles)).toBe(edgeKey(titles));
+  });
+
+  it('keeps the listed role in the key when a title states a faculty appointment', () => {
+    const titles = { title: 'Program Coordinator', profileTitle: 'Associate Professor' };
+    expect(readKey(titles)).toBe(`official-profile:${profileUrl}|core-faculty`);
+    expect(readKey(titles)).toBe(edgeKey(titles));
   });
 });
