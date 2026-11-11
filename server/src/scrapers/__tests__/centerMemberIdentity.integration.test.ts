@@ -434,6 +434,23 @@ describe(
       expect(await liveEdgesOf(member)).toHaveLength(1);
     });
 
+    it('still joins a holder whose stored netid the directory does not hold (#5751)', async () => {
+      const holder = await accountHolder('Devon', {
+        officialUrl: officialProfileUrl('Devon'),
+        netid: 'dv44',
+      });
+      await directoryPairs('ds77', 'devon.synthetic4@yale.edu');
+
+      await runLane({
+        [centerProfileUrl('Devon')]: profilePage({
+          canonical: officialProfileUrl('Devon'),
+          email: 'devon.synthetic4@yale.edu',
+        }),
+      });
+
+      expect(await liveEdgesOf(holder)).toHaveLength(1);
+    });
+
     it('does not join the holder of a linked page whose own stated address names another netid (#5751)', async () => {
       const holder = await accountHolder('Blair', {
         officialUrl: officialProfileUrl('Blair'),

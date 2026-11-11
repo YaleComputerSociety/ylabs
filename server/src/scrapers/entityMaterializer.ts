@@ -3219,10 +3219,12 @@ async function withoutContradictedIdentityWitnesses(
     [evidence.pageUrl, ...evidence.linkedProfileUrls],
     materializationReadScopeFilter(),
   );
-  const memberPageAddressOwners =
-    evidence.emails.length > 0
-      ? directoryOwnerNetidsOfAddresses(evidence.emails, await loadDirectoryNetidsByAddress())
-      : undefined;
+  const directory = evidence.emails.length > 0 ? await loadDirectoryNetidsByAddress() : undefined;
+  const memberPageAddressOwners = directory
+    ? directoryOwnerNetidsOfAddresses(evidence.emails, directory)
+    : undefined;
+  const directoryHoldsNetid = (netid: string): boolean =>
+    Boolean(directory && [...directory.values()].some((netids) => netids.has(netid)));
   const kept: any[] = [];
   for (const [id, witness] of witnesses) {
     const netid = textValue(witness.researcher?.identifiers?.netid).toLowerCase();
@@ -3230,7 +3232,9 @@ async function withoutContradictedIdentityWitnesses(
     const memberPageNamesSomeoneElse =
       Boolean(netid) &&
       (profilePageContradictsNetid(pageOwners, evidence.pageUrl, netid) ||
-        (memberPageAddressOwners !== undefined && !memberPageAddressOwners.has(netid)));
+        (memberPageAddressOwners !== undefined &&
+          !memberPageAddressOwners.has(netid) &&
+          directoryHoldsNetid(netid)));
     if (memberPageNamesSomeoneElse) continue;
     const urls = witness.urls.filter(
       (url) =>
