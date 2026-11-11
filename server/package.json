@@ -232,6 +232,7 @@
     "eval:pipeline": "tsx src/scripts/pipelineEval/evalPipelineOrchestration.ts",
     "fuzzy:labeled-set": "tsx src/scripts/pipelineEval/fuzzyMatchLabeledSet.ts",
     "fuzzy:residual-report": "tsx src/scripts/pipelineEval/fuzzyResidualReport.ts",
+    "research-entity:card-synthesis": "tsx src/scripts/cardSynthesis.ts",
     "research-entity:coverage-synthesis": "tsx src/scripts/coverageSynthesis.ts",
     "research-topics:derive": "tsx src/scripts/deriveResearchTopics.ts",
     "research-search:seed-rerank-cache": "tsx src/scripts/seedSearchRerankCache.ts",

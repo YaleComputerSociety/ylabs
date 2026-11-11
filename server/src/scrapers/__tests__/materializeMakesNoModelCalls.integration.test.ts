@@ -21,10 +21,18 @@ import {
   withoutModelCalls,
 } from '../../utils/modelClient';
 import { materializeEntity } from '../entityMaterializer';
+import {
+  CURRENT_CARD_INPUTS,
+  cardInputHash,
+  mongoCardSynthesisDerivationStore,
+} from '../cardSynthesisDerivation';
+import { collectCardRequests } from '../../scripts/cardSynthesisCore';
 
 const SLUG = 'tidepool-no-model-calls-fixture';
 const BODY =
-  'The Tidepool Lab studies how coastal kelp forests recover after marine heatwaves, using long-term field surveys of kelp canopy and sea urchin grazing across rocky shores.';
+  'The Tidepool Lab studies how coastal kelp forests recover after marine heatwaves along rocky temperate shores, combining long-term field surveys of kelp canopy cover, sea urchin grazing pressure, water temperature records and juvenile kelp recruitment across many monitored sites and seasons. The lab also compares recovery across shores.';
+const CACHED_CARD =
+  'Studies how coastal kelp forests recover after marine heatwaves along rocky shores.';
 
 describe('materialization makes no model calls (#5537)', () => {
   let replSet: MongoMemoryReplSet;
@@ -49,7 +57,7 @@ describe('materialization makes no model calls (#5537)', () => {
     });
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
-    for (const name of ['observations', 'research_entities'])
+    for (const name of ['observations', 'research_entities', 'card_synthesis_derivations'])
       await db.collection(name).deleteMany({});
     await ResearchEntity.create({
       slug: SLUG,
@@ -88,6 +96,24 @@ describe('materialization makes no model calls (#5537)', () => {
       { dryRun: false },
     );
     expect(result.entityId).toBeTruthy();
+    expect(post).not.toHaveBeenCalled();
+    expect(usage).toEqual([]);
+  });
+
+  it('reads a cached card for the body it projects and still makes no model call', async () => {
+    const requests = await collectCardRequests([{ slug: SLUG, name: 'Tidepool Lab Fixture' }]);
+    expect(requests.length).toBeGreaterThan(0);
+    await mongoCardSynthesisDerivationStore.save({
+      inputHash: cardInputHash(requests[0].fullDescription),
+      promptHash: CURRENT_CARD_INPUTS.promptHash,
+      model: CURRENT_CARD_INPUTS.model,
+      writer: 'claude-agent:test',
+      rawCards: [CACHED_CARD],
+      derivedAt: new Date(),
+    });
+    const post = vi.spyOn(axios, 'post');
+    const result = await materializeEntity('researchEntity', { entityKey: SLUG }, { dryRun: true });
+    expect(result.plannedSet?.shortDescription).toBe(CACHED_CARD);
     expect(post).not.toHaveBeenCalled();
     expect(usage).toEqual([]);
   });

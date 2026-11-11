@@ -28,6 +28,10 @@ export {
   RESEARCH_TOPICS_DERIVATION_COLLECTION,
 } from './researchTopicsDerivation';
 export {
+  CardSynthesisDerivation,
+  CARD_SYNTHESIS_DERIVATION_COLLECTION,
+} from './cardSynthesisDerivation';
+export {
   WrittenDescriptionDerivation,
   WRITTEN_DESCRIPTION_DERIVATION_COLLECTION,
 } from './writtenDescriptionDerivation';

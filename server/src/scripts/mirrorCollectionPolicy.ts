@@ -9,7 +9,8 @@
 // benchmark and its scorecards are the same kind of environment-local history.
 // A research-topics derivation is a paid model reading of this environment's
 // stored page text, so a refresh that cleared it would buy every reading again, and a
-// written-description derivation is the same for the description writer's drafts.
+// written-description derivation is the same for the description writer's drafts, and a
+// card-synthesis derivation is the same for its cards.
 // A search rerank cache pairs this environment's student queries with its rows and
 // is seeded per environment, so a copy would serve one corpus's scores on another's ids.
 // A model call usage entry records this environment's own paid calls, so a copy would
@@ -31,6 +32,7 @@ export const NEVER_COPY_COLLECTIONS = [
   'login_signal_tallies',
   'research_topics_derivations',
   'written_description_derivations',
+  'card_synthesis_derivations',
   'search_rerank_cache',
   'model_call_usages',
 ];
@@ -55,6 +57,7 @@ export const PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS = [
   'login_signal_tallies',
   'research_topics_derivations',
   'written_description_derivations',
+  'card_synthesis_derivations',
   'search_rerank_cache',
   'model_call_usages',
 ];

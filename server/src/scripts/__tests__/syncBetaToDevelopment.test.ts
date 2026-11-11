@@ -310,6 +310,7 @@ describe('Beta to Development sync guards', () => {
     expect([...PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS].sort()).toEqual([
       'accounts',
       'analytics_events',
+      'card_synthesis_derivations',
       'corpus_quality_snapshots',
       'engine_benchmark_rows',
       'engine_benchmark_snapshots',
@@ -473,6 +474,9 @@ describe('Beta to Development sync guards', () => {
         .filter(([, list]) => (list as readonly string[]).includes(name))
         .map(([label]) => label);
     expect(listsNaming('written_description_derivations')).toEqual(
+      listsNaming('research_topics_derivations'),
+    );
+    expect(listsNaming('card_synthesis_derivations')).toEqual(
       listsNaming('research_topics_derivations'),
     );
     expect(listsNaming('written_description_derivations')).toEqual([

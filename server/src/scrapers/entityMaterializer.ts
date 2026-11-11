@@ -5,6 +5,7 @@
  * For person identities, materializes a canonical Researcher/Account (lookup by
  * entityKey, e.g. netid).
  */
+import { cachedCardFor } from './cardSynthesisDerivation';
 import { withoutModelCalls } from '../utils/modelClient';
 import { isGrantLaneObservationOutsideEnrichment } from './grantLaneSourceNames';
 import {
@@ -595,24 +596,17 @@ export type CardSynthesizer = (
   evidenceTexts?: readonly string[],
 ) => Promise<string>;
 
-let reportedSkippedCardSynthesis = false;
-
 /**
- * Materialization reads cached outputs only and never calls a model (#5537), so the card a
- * synthesizer would have written is simply not written; the card resolution falls back to
- * its stored, copied and derived candidates.
+ * Materialization reads cached outputs only and never calls a model (#5537): the card for the
+ * body being projected comes from the card cache, judged now, and a body with no entry gets
+ * no new card, so the card resolution falls back to its stored, copied and derived candidates.
  */
 export function defaultMaterializerCardSynthesizer(
-  _entityName?: string,
+  entityName: string = '',
   _model?: string,
 ): CardSynthesizer {
-  return async () => {
-    if (!reportedSkippedCardSynthesis) {
-      reportedSkippedCardSynthesis = true;
-      console.info('[materialize] card synthesis skipped: materialization makes no model calls');
-    }
-    return '';
-  };
+  return (fullDescription, evidenceTexts) =>
+    cachedCardFor({ fullDescription, evidenceTexts, entityName });
 }
 
 /**
