@@ -1,4 +1,5 @@
 import { studentVisibilityTiers, type StudentVisibilityTier } from '../models/studentVisibility';
+import { isAuditableActor } from '../services/adminAuditService';
 import { containsAsciiControl } from '../utils/asciiControl';
 import {
   SUBSTRING_READ_SUPPRESSION_MARKERS,
@@ -22,7 +23,6 @@ export const STUDENT_VISIBILITY_OVERRIDE_AUDIT_ACTIONS = {
 export const MAX_OVERRIDE_REASON_LENGTH = 320;
 
 const REASON_CODE_RE = /^([a-z][a-z0-9_]{2,63}):\s+\S/;
-const NETID_RE = /^[a-z0-9]{2,12}$/;
 const OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 export type OverrideAction = { kind: 'set'; tier: StudentVisibilityTier } | { kind: 'clear' };
@@ -118,7 +118,11 @@ export function parseStudentVisibilityOverrideArgs(
     throw new Error(`--tier must be one of ${studentVisibilityTiers.join(', ')}`);
   }
   const actorNetid = actor.toLowerCase();
-  if (!NETID_RE.test(actorNetid)) throw new Error('--actor must be the operator netid');
+  if (!isAuditableActor(actorNetid)) {
+    throw new Error(
+      '--actor must be the operator netid or an agent identifier such as agent:<name>',
+    );
+  }
   if (apply && !confirmed) {
     throw new Error(`--apply requires ${STUDENT_VISIBILITY_OVERRIDE_CONFIRM_FLAG}`);
   }

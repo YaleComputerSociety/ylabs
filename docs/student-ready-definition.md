@@ -266,7 +266,7 @@ An operator verdict on one row is `studentVisibilityOverrideTier` plus one coded
 It is the evidence contract's "review verdict on one row" (AGENTS.md), never a lock, and never an archive, so the row stays live in every environment and is only not served.
 Write it with `yarn --cwd server student-visibility:override` rather than a direct update (#5618).
 
-- One row per call, by `--slug` or `--id`, with `--tier=<tier>` or `--clear`, a required `--reason "<snake_case_code>: <evidence>"` and the operator's `--actor <netid>`.
+- One row per call, by `--slug` or `--id`, with `--tier=<tier>` or `--clear`, a required `--reason "<snake_case_code>: <evidence>"` and `--actor`, which is the operator's netid or, for an agent acting for the owner, an `agent:<name>` identifier so the audit never attributes an automated write to a person.
 - A dry run is the default; `--apply` also needs `--confirm-student-visibility-override` and the same Development opt-in the scraper writes use, `ALLOW_NON_PROD_SCRAPER_WRITES=true`, and Beta and Production are refused because they receive rows only through promotion.
 - The reason is appended as one entry of the comma-joined list and replaces an earlier entry with the same code, so a departure marker or a `research_infrastructure_only` entry survives; `--clear` removes only the entry carrying the given code.
 - A reason that contains `permanently_closed` or `research_infrastructure_only` anywhere is refused, because readers match those markers anywhere in the field and would treat the verdict as closure or infrastructure evidence.
