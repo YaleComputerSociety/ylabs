@@ -57,19 +57,6 @@ const surnameUrlTokens = (surname: string): Set<string> =>
     ...RESEARCH_UNIT_WORDS.flatMap((unit) => [`${surname}${unit}`, `${unit}${surname}`]),
   ]);
 
-export const urlCarriesSurname = (pageUrl: string, surname: string): boolean => {
-  const accepted = surnameUrlTokens(surname);
-  return comparableName(urlHostAndPath(pageUrl))
-    .split(' ')
-    .map(withoutTrailingDigits)
-    .some(
-      (token) =>
-        accepted.has(token) ||
-        (surname.length >= MIN_AFFIX_MATCHED_SURNAME_LENGTH &&
-          (token.startsWith(surname) || token.endsWith(surname))),
-    );
-};
-
 const HONORIFICS = new Set(['dr', 'prof', 'professor', 'mr', 'mrs', 'ms', 'mx']);
 
 const leadOtherNameTokens = (personName: string, surname: string): Set<string> => {
@@ -77,6 +64,27 @@ const leadOtherNameTokens = (personName: string, surname: string): Set<string> =
     .split(' ')
     .filter((token) => token !== '' && token !== surname && !HONORIFICS.has(token));
   return new Set(tokens.flatMap((token) => [token, token[0]]));
+};
+
+const isLeadNamePrefix = (prefix: string, otherNameTokens: Set<string>): boolean =>
+  otherNameTokens.size > 0 &&
+  new RegExp(`^(?:${[...otherNameTokens].join('|')})+[a-z]?$`).test(prefix);
+
+export const urlCarriesSurname = (pageUrl: string, personName: string): boolean => {
+  const surname = leadSurname(personName);
+  if (!surname) return false;
+  const accepted = surnameUrlTokens(surname);
+  const otherNameTokens = leadOtherNameTokens(personName, surname);
+  return comparableName(urlHostAndPath(pageUrl))
+    .split(' ')
+    .map(withoutTrailingDigits)
+    .some(
+      (token) =>
+        accepted.has(token) ||
+        (surname.length >= MIN_AFFIX_MATCHED_SURNAME_LENGTH &&
+          token.endsWith(surname) &&
+          isLeadNamePrefix(token.slice(0, -surname.length), otherNameTokens)),
+    );
 };
 
 const NAME_CONTEXT_WORDS = 3;
@@ -122,7 +130,7 @@ export function nonYaleMicrositeOwnership(
     (name): name is string => typeof name === 'string' && leadSurname(name) !== '',
   );
   if (leadNames.length === 0) return { decision: 'not_applicable', reason: 'no_lead_surname' };
-  if (leadNames.some((name) => urlCarriesSurname(input.sourceUrl, leadSurname(name)))) {
+  if (leadNames.some((name) => urlCarriesSurname(input.sourceUrl, name))) {
     return { decision: 'admit', reason: 'surname_in_url' };
   }
   if (leadNames.some((name) => isPersonalNameDomainWebsite(input.sourceUrl, name))) {
