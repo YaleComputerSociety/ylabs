@@ -9207,6 +9207,19 @@ async function materializeUserIdentityToResearcher(
     researcher.profile.title = servedTitle;
     fieldsWritten += 1;
   }
+  const overSharedWebsiteKeys = await overSharedPersonWebsiteKeysForMaterialization();
+  const isScreenedOutPersonWebsite = (value: unknown): boolean =>
+    isInadmissiblePersonWebsiteUrl(value) ||
+    isOverSharedPersonWebsite(value, overSharedWebsiteKeys);
+  const storedWebsiteSurvivingScreens =
+    isScreenedOutPersonWebsite(researcher.profile.websiteUrl) ||
+    researcherRefusesValue(
+      researcher.fieldValueRefusals,
+      'websiteUrl',
+      researcher.profile.websiteUrl,
+    )
+      ? undefined
+      : researcher.profile.websiteUrl;
   for (const [key, value, confidence] of [
     ['primaryDepartment', primaryDepartment, resolvedConfidence('primaryDepartment')],
     ['imageUrl', imageUrl, resolvedConfidence('imageUrl')],
@@ -9214,11 +9227,15 @@ async function materializeUserIdentityToResearcher(
   ] as const) {
     const bounded = normalizedResearcherProfileText(key, value);
     const storedValue = researcher.profile[key];
-    if (key === 'websiteUrl' && websiteStandsBelowStored(bounded, storedValue)) continue;
+    if (key === 'websiteUrl' && websiteStandsBelowStored(bounded, storedWebsiteSurvivingScreens)) {
+      continue;
+    }
     const outranksStoredWebsite =
-      key === 'websiteUrl' && websiteStandsAboveStored(bounded, storedValue);
+      key === 'websiteUrl' && websiteStandsAboveStored(bounded, storedWebsiteSurvivingScreens);
     if (writerKey && !settleFieldWriter(key, bounded, confidence, outranksStoredWebsite)) continue;
-    if (key === 'websiteUrl' && isSamePersonWebsite(storedValue, bounded)) continue;
+    if (key === 'websiteUrl' && isSamePersonWebsite(storedWebsiteSurvivingScreens, bounded)) {
+      continue;
+    }
     if (bounded && storedValue !== bounded) {
       researcher.profile[key] = bounded;
       fieldsWritten += 1;
@@ -9231,13 +9248,7 @@ async function materializeUserIdentityToResearcher(
       fieldsWritten += 1;
     }
   }
-  if (
-    isInadmissiblePersonWebsiteUrl(researcher.profile.websiteUrl) ||
-    isOverSharedPersonWebsite(
-      researcher.profile.websiteUrl,
-      await overSharedPersonWebsiteKeysForMaterialization(),
-    )
-  ) {
+  if (isScreenedOutPersonWebsite(researcher.profile.websiteUrl)) {
     researcher.profile.websiteUrl = undefined;
     fieldsWritten += 1;
   }

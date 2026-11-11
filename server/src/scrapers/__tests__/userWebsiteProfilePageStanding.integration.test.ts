@@ -17,7 +17,10 @@ vi.mock('../../services/meiliSyncService', async () => {
 import { Observation } from '../../models/observation';
 import { Researcher } from '../../models/researcher';
 import { materializeEntity } from '../entityMaterializer';
-import { resetOverSharedPersonWebsiteKeysCache } from '../overSharedPersonWebsite';
+import {
+  OVER_SHARED_PERSON_WEBSITE_MIN_SUBJECTS,
+  resetOverSharedPersonWebsiteKeysCache,
+} from '../overSharedPersonWebsite';
 import { clearC4Flags } from './c4FlagTestEnv';
 
 const NETID = 'pw5845';
@@ -221,6 +224,32 @@ describe("a person's profile or directory page never displaces their own website
     await materialize(NAME_KEY);
 
     expect(await storedWebsite()).toBe(storedSite);
+  });
+
+  it('fills the slot with the profile page in the same pass that clears a stored over-shared site', async () => {
+    const overSharedPage = 'https://fixture-news.example.org/stories/';
+    await Observation.insertMany(
+      Array.from({ length: OVER_SHARED_PERSON_WEBSITE_MIN_SUBJECTS }, (_, index) => ({
+        entityType: 'user',
+        entityKey: `dept:fixture-dept:other-person-${index}`,
+        sourceId: new mongoose.Types.ObjectId(),
+        scrapeRunId: new mongoose.Types.ObjectId(),
+        field: 'website',
+        value: overSharedPage,
+        sourceName: 'dept-faculty-roster',
+        sourceUrl: ROSTER_LISTING,
+        confidence: 0.7,
+        observedAt: new Date('2026-08-24T00:00:00Z'),
+        superseded: false,
+      })),
+    );
+    await createResearcher(overSharedPage);
+    await seedName(NAME_KEY);
+    await seedWebsite({ entityKey: NAME_KEY, value: PROFILE_PAGE, observedAt: '2026-08-24' });
+
+    await materialize(NAME_KEY);
+    expect(await storedWebsite()).toBe(PROFILE_PAGE);
+    expect((await materialize(NAME_KEY)).fieldsWritten).toBe(0);
   });
 
   it('still gives the profile page to a person who has no other website', async () => {

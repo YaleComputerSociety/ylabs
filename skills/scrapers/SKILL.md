@@ -307,7 +307,9 @@ The shape is `isPersonProfileOrDirectoryUrl`, and `personWebsiteStanding` ranks 
 Within one `user` key, the user materializer takes the first ranked `websiteUrl` or `website` candidate of the best standing, so a newer or surer profile page loses to the key's lab site.
 Across keys, a candidate standing below the stored `Researcher.profile.websiteUrl` neither writes nor takes the writer slot, and one standing above it writes whatever the writer rank, so the outcome is the same in either order and a second pass writes nothing.
 A person whose only website is the profile page still gets it.
-That holds for the key that wrote the stored site too, because a slot holder's own profile page replacing it would make a run-scoped pass depend on which sibling keys it reached; a stale own site is cleared by the link-health and refusal paths, as any stored value is when its writer stops resolving it.
+That holds for the key that wrote the stored site too, because a slot holder's own profile page replacing it would make a run-scoped pass depend on which sibling keys it reached.
+So a stale own site stays until another own website replaces it or a clear removes it: only the inadmissible and over-shared screen, the researcher's `websiteUrl` refusal (`planResearcherRefusedStoredValueClear`), and the over-shared rederive script clear `profile.websiteUrl`, and researcher link health reads `profileLinks` only.
+A stored site that one of those clears removes stands as an empty slot when the candidate is judged, so a profile page fills it in the same pass rather than one scoped run late.
 A respelling of the stored site (scheme, `www.`, trailing slash or default document, by `normalizeWebsiteUrlIdentityKey`, with the query string still compared) is the same site and plans no write.
 Measured on Development 2026-11-11, a `--only-fields=websiteUrl` dry run of one roster run planned 18 replacements of a stored website, most of them a lab site replaced by the person's profile or directory page from an older roster `website` observation; the current roster extractors no longer emit those pages as `website`.
 
