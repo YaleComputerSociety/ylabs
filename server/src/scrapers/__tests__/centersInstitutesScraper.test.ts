@@ -925,6 +925,24 @@ describe('centerToGroupObservations', () => {
   });
 });
 
+describe('a centres config that declares a core facility (#5749)', () => {
+  it('emits the core facility type and kind for the record', () => {
+    const config: CenterConfig = {
+      centerKey: 'synthetic-sequencing-core',
+      centerName: 'Synthetic Sequencing Analysis Center',
+      schoolName: '',
+      kind: 'core_facility',
+      url: 'https://center.example.edu/people/',
+      homeUrl: 'https://center.example.edu/',
+      extractor: viewsFieldNameExtractor,
+    };
+    const { observations } = centerToGroupObservations(config, [], config.url);
+    expect(observations.find((o) => o.field === 'entityType')?.value).toBe('CORE_FACILITY');
+    expect(observations.find((o) => o.field === 'kind')?.value).toBe('core_facility');
+    expect(centerHomeUrlWriteRefusal(config)).toBeNull();
+  });
+});
+
 describe('centerToGroupObservations homeUrl override', () => {
   const config: CenterConfig = {
     centerKey: 'wc-nanobiology',
