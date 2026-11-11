@@ -1596,6 +1596,8 @@ function planSpecificProfileLabUrlRow(row: OfficialLabUrlDedupeRow): {
 // The lane runs unattended, and a loser's lead the survivor does not hold is moved onto
 // the survivor by the merge, so an accountless shell of the survivor's own lead would be
 // served as a second lead. A survivor with no lead edge yet takes the loser's leads.
+// The website-url lane applies it too: two rows led by different researcher ids are two
+// people until researcher-dedupe folds the ids into one (#5638).
 function mergeHandsSurvivorAnotherLead(
   group: ResearchEntityPiDedupeGroup,
   byId: ReadonlyMap<string, ResearchEntityPiDedupeRow['entities'][number]>,
@@ -1842,6 +1844,7 @@ export function buildWebsiteUrlResearchEntityDedupePlan(
     canonicalScore(entity) + (entity.piRoleCorroborated ? 200 : 0);
 
   const groups: ResearchEntityPiDedupeGroup[] = [];
+  const byId = new Map(rows.flatMap((row) => row.entities).map((entity) => [entity.id, entity]));
   for (const row of rows) {
     const key = row.identityKey || normalizeWebsiteUrlIdentityKey(row.websiteUrl);
     if (!key) continue;
@@ -1863,7 +1866,7 @@ export function buildWebsiteUrlResearchEntityDedupePlan(
         cluster,
         websiteUrlCanonicalScore,
       );
-      if (group) groups.push(group);
+      if (group && !mergeHandsSurvivorAnotherLead(group, byId)) groups.push(group);
     }
   }
   return dedupePlanGroupsByEntitySet(groups);
