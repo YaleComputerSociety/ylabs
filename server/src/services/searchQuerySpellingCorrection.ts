@@ -1,11 +1,17 @@
 import { foldLatinDiacritics } from '../utils/latinDiacritics';
 import { isEnglishDictionaryWord } from './englishDictionaryWords';
+import {
+  collectCenterTitleInitialismCandidates,
+  type CenterTitleInitialismCandidates,
+} from './centerTitleInitialisms';
 
 export interface SearchVocabularyDocument {
   nameText: readonly unknown[];
   personNameText?: readonly unknown[];
   bodyText: readonly unknown[];
   served: boolean;
+  titles?: readonly unknown[];
+  entityType?: unknown;
 }
 
 export interface SearchSpellingVocabulary {
@@ -15,6 +21,7 @@ export interface SearchSpellingVocabulary {
   personNameWords: readonly string[];
   personNamesByWord: ReadonlyMap<string, ReadonlyArray<ReadonlySet<string>>>;
   candidatesByLength: ReadonlyMap<number, ReadonlyArray<readonly [string, number]>>;
+  centerInitialismCandidates?: CenterTitleInitialismCandidates;
 }
 
 export interface SearchQueryCorrection {
@@ -99,6 +106,13 @@ export const buildSearchSpellingVocabulary = (
     personNameWords: [...personNameTerms].sort(),
     personNamesByWord,
     candidatesByLength,
+    centerInitialismCandidates: collectCenterTitleInitialismCandidates(
+      documents.map((document) => ({
+        titles: document.titles ?? [],
+        entityType: document.entityType,
+        served: document.served,
+      })),
+    ),
   };
 };
 

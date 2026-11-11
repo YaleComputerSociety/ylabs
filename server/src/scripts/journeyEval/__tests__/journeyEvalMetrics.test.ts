@@ -8,6 +8,7 @@ import {
   checkMeshDescriptorOnlyRowsRankBelowOwnEvidence,
   checkPersonNameWordsAreNotRespelled,
   checkNicknameExpansionReachesThePerson,
+  checkCenterInitialismReachesTheCenter,
   checkDictionaryWordsAreNotRespelled,
   checkQueryVariantServesTheBaseline,
   checkSimilarRailRanksSharedNamesLast,
@@ -651,6 +652,49 @@ describe('checkNicknameExpansionReachesThePerson', () => {
   it('is inconclusive when no nickname query was attributable to the expansion', () => {
     expect(
       checkNicknameExpansionReachesThePerson([{ expandedToTheGivenName: false, rank: 2 }]).status,
+    ).toBe('inconclusive');
+  });
+});
+
+describe('checkCenterInitialismReachesTheCenter', () => {
+  it('passes when every rewritten initialism reaches the center its title reaches, ignoring the rest', () => {
+    expect(
+      checkCenterInitialismReachesTheCenter(
+        [
+          { rewritesToTheTitle: true, titleRank: 1, initialismRank: 1 },
+          { rewritesToTheTitle: true, titleRank: null, initialismRank: null },
+          { rewritesToTheTitle: false, titleRank: 1, initialismRank: null },
+        ],
+        steadyCorpus,
+        steadyCorpus,
+      ).status,
+    ).toBe('pass');
+  });
+
+  it('fails when a rewritten initialism misses a center its title reaches', () => {
+    const result = checkCenterInitialismReachesTheCenter(
+      [{ rewritesToTheTitle: true, titleRank: 2, initialismRank: 4 }],
+      steadyCorpus,
+      steadyCorpus,
+    );
+    expect(result.status).toBe('fail');
+    expect(result.detail).toMatchObject({ titleReachesTheCenter: 1, unreached: 1 });
+  });
+
+  it('is inconclusive over an empty population or a corpus that moved', () => {
+    expect(
+      checkCenterInitialismReachesTheCenter(
+        [{ rewritesToTheTitle: false, titleRank: 1, initialismRank: 1 }],
+        steadyCorpus,
+        steadyCorpus,
+      ).status,
+    ).toBe('inconclusive');
+    expect(
+      checkCenterInitialismReachesTheCenter(
+        [{ rewritesToTheTitle: true, titleRank: 1, initialismRank: null }],
+        steadyCorpus,
+        { ...steadyCorpus, rowCount: steadyCorpus.rowCount + 1 },
+      ).status,
     ).toBe('inconclusive');
   });
 });

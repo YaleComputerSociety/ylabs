@@ -178,7 +178,10 @@ import {
 import {
   correctSearchQuerySpelling,
   type CorrectedSearchQuery,
+  type SearchSpellingVocabulary,
 } from './searchQuerySpellingCorrection';
+import { resolveCenterInitialismTable, type CenterInitialismTable } from './centerTitleInitialisms';
+import { isEnglishDictionaryWord } from './englishDictionaryWords';
 import { getResearchSearchSpellingVocabulary } from './researchSearchSpellingVocabulary';
 import { replaceNicknameInQuery, resolveNicknameInNameQuery } from './nameQueryNicknames';
 import { foldLatinDiacritics } from '../utils/latinDiacritics';
@@ -973,10 +976,38 @@ export const expandNicknameInResearchNameQuery = (query: string): string => {
   return expansion ? replaceNicknameInQuery(query, expansion) : query;
 };
 
+const centerInitialismTables = new WeakMap<SearchSpellingVocabulary, CenterInitialismTable>();
+
+const EMPTY_CENTER_INITIALISM_TABLE: CenterInitialismTable = resolveCenterInitialismTable(
+  new Map(),
+  { isReservedQueryWord: () => false, isEnglishWord: () => false, isCorpusWord: () => false },
+);
+
+export const servedCenterInitialismTable = (): CenterInitialismTable => {
+  const vocabulary = getResearchSearchSpellingVocabulary();
+  if (!vocabulary?.centerInitialismCandidates) return EMPTY_CENTER_INITIALISM_TABLE;
+  const cached = centerInitialismTables.get(vocabulary);
+  if (cached) return cached;
+  const table = resolveCenterInitialismTable(vocabulary.centerInitialismCandidates, {
+    isReservedQueryWord: isReservedResearchQueryWord,
+    isEnglishWord: isEnglishDictionaryWord,
+    isCorpusWord: (word) =>
+      vocabulary.documentFrequency.has(word) ||
+      vocabulary.nameTerms.has(word) ||
+      vocabulary.personNamesByWord.has(word),
+  });
+  centerInitialismTables.set(vocabulary, table);
+  return table;
+};
+
 export const rewriteAcronymToPhrase = (query: string): string => {
   const { tokens } = normalizeResearchSearchQuery(query);
-  const phrase = tokens.length === 1 ? QUERY_ACRONYM_PHRASES[tokens[0]] : undefined;
-  return phrase ?? query;
+  if (tokens.length !== 1) return query;
+  return (
+    QUERY_ACRONYM_PHRASES[tokens[0]] ??
+    servedCenterInitialismTable().phraseByInitialism.get(tokens[0]) ??
+    query
+  );
 };
 
 export interface AcronymRewriteChoice {
@@ -1795,11 +1826,17 @@ const SPELLING_PROTECTED_QUERY_TERMS: ReadonlySet<string> = new Set(
   ].flatMap((phrase) => tokenizeStudentResearchQuery(phrase)),
 );
 
+export const isReservedResearchQueryWord = (word: string): boolean =>
+  SPELLING_PROTECTED_QUERY_TERMS.has(word);
+
+const isSpellingProtectedQueryTerm = (word: string): boolean =>
+  isReservedResearchQueryWord(word) || servedCenterInitialismTable().phraseByInitialism.has(word);
+
 export const correctResearchSearchQuerySpelling = (query: string): CorrectedSearchQuery =>
   correctSearchQuerySpelling(
     boundedResearchSearchQuery(query),
     getResearchSearchSpellingVocabulary(),
-    SPELLING_PROTECTED_QUERY_TERMS,
+    { has: isSpellingProtectedQueryTerm },
   );
 
 const personNameWords = (value: string): string[] =>

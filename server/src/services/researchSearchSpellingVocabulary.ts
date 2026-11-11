@@ -56,6 +56,8 @@ const toVocabularyDocument = (hit: Record<string, unknown>): SearchVocabularyDoc
   personNameText: RESEARCH_SEARCH_SPELLING_PERSON_NAME_FIELDS.map((field) => hit[field]),
   bodyText: RESEARCH_SEARCH_SPELLING_BODY_FIELDS.map((field) => hit[field]),
   served: SERVED_TIERS.has(hit.studentVisibilityTier),
+  titles: [hit.name, hit.displayName],
+  entityType: hit.entityType,
 });
 
 export const loadResearchSearchSpellingVocabulary = async (
@@ -74,6 +76,7 @@ export const loadResearchSearchSpellingVocabulary = async (
         'memberNames',
         ...RESEARCH_SEARCH_SPELLING_BODY_FIELDS,
         'studentVisibilityTier',
+        'entityType',
       ],
     });
     documents.push(...page.hits.map(toVocabularyDocument));

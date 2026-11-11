@@ -23,6 +23,7 @@ import mongoose from 'mongoose';
 import { connectScriptMongo } from '../db/connections';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
+import { warmResearchSearchSpellingVocabulary } from '../services/researchSearchSpellingVocabulary';
 import {
   SCRIPT_NAME,
   assertSeedSearchRerankCacheApplyAllowed,
@@ -51,12 +52,15 @@ async function main(): Promise<void> {
 
   await connectScriptMongo(mongoUrl);
   try {
+    const indexBelongsToEnvironment = seedIndexBelongsToEnvironment(args.environment);
+    // A served center's initialism keys as its title, read from the served index.
+    if (indexBelongsToEnvironment) await warmResearchSearchSpellingVocabulary();
     const report = await seedSearchRerankCache({
       entries,
       apply: args.apply,
       indexVersion: args.indexVersion,
       source: args.source,
-      readIndexTextHashes: seedIndexBelongsToEnvironment(args.environment)
+      readIndexTextHashes: indexBelongsToEnvironment
         ? configuredIndexTextHashReader
         : 'index-of-another-environment',
     });

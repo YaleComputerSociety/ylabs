@@ -15,7 +15,9 @@ import {
   meiliSortEntries,
   normalizeResearchSearchQuery,
   rewriteAcronymToPhrase,
+  servedCenterInitialismTable,
 } from '../../services/researchGroupService';
+import { centerTitleSearchPhrase } from '../../services/centerTitleInitialisms';
 import { GIVEN_NAME_SHORT_FORMS } from '../../services/nameQueryNicknames';
 import { meshDescriptorWordKeys } from '../../scrapers/utils/meshNonSubjectDescriptors';
 import { isEnglishDictionaryWord } from '../../services/englishDictionaryWords';
@@ -36,6 +38,8 @@ import {
   checkNotDegraded,
   checkPersonNameWordsAreNotRespelled,
   checkNicknameExpansionReachesThePerson,
+  checkCenterInitialismReachesTheCenter,
+  CENTER_INITIALISM_REACH_DEPTH,
   checkPastCapMembersReachTheirRow,
   checkOwnRowOutranksMemberRow,
   checkDictionaryWordsAreNotRespelled,
@@ -1073,6 +1077,96 @@ const acronymServesItsPhrase: JourneyCase = {
   },
 };
 
+const CENTER_INITIALISM_SAMPLE_SIZE = 10;
+
+const shortestInitialismPerCenter = (
+  phraseByInitialism: ReadonlyMap<string, string>,
+): Array<{ initialism: string; phrase: string }> => {
+  const byPhrase = new Map<string, string>();
+  for (const [initialism, phrase] of phraseByInitialism) {
+    const chosen = byPhrase.get(phrase);
+    if (
+      !chosen ||
+      initialism.length < chosen.length ||
+      (initialism.length === chosen.length && initialism < chosen)
+    ) {
+      byPhrase.set(phrase, initialism);
+    }
+  }
+  return [...byPhrase]
+    .map(([phrase, initialism]) => ({ initialism, phrase }))
+    .sort((a, b) => a.initialism.localeCompare(b.initialism));
+};
+
+const centerRank = (rows: Array<Record<string, unknown>>, phrase: string): number | null => {
+  const position = rows.findIndex(
+    (row) =>
+      typeof row.name === 'string' &&
+      centerTitleSearchPhrase(row.name).toLowerCase() === phrase.toLowerCase(),
+  );
+  return position === -1 ? null : position + 1;
+};
+
+// No Production search has typed a center initialism yet (803 logged searches read on
+// 2026-11-11), so the sample is the served centers' own guard-passing initialisms.
+const centerInitialismReachesTheCenter: JourneyCase = {
+  id: 'center-initialism-reaches-the-center',
+  title: 'A served center or institute initialism typed alone reaches the center its title reaches',
+  run: async (context) => {
+    const sample = shortestInitialismPerCenter(
+      servedCenterInitialismTable().phraseByInitialism,
+    ).slice(0, CENTER_INITIALISM_SAMPLE_SIZE);
+    const corpusBefore = await context.readCorpusFingerprint();
+    const observations = [];
+    for (const { initialism, phrase } of sample) {
+      const served = async (query: string) =>
+        servedRows(await context.browse({ query, pageSize: CENTER_INITIALISM_REACH_DEPTH }));
+      observations.push({
+        initialism,
+        rewritesToTheTitle: rewriteAcronymToPhrase(initialism) === phrase,
+        titleRank: centerRank(await served(phrase), phrase),
+        initialismRank: centerRank(await served(initialism.toUpperCase()), phrase),
+      });
+    }
+    const corpusAfter = await context.readCorpusFingerprint();
+    return {
+      invariants: [
+        observations.length === 0
+          ? buildInconclusiveInvariant(
+              'center-initialism-rewrite-names-the-title',
+              'rewriteAcronymToPhrase searches each sampled center initialism as its title',
+              'No served center or institute has a guard-passing initialism, so there is nothing to rewrite',
+              { queried: 0 },
+            )
+          : buildInvariant(
+              'center-initialism-rewrite-names-the-title',
+              'rewriteAcronymToPhrase searches each sampled center initialism as its title',
+              observations.every((observation) => observation.rewritesToTheTitle),
+              {
+                queried: observations.length,
+                unrewritten: observations
+                  .filter((observation) => !observation.rewritesToTheTitle)
+                  .map((observation) => observation.initialism),
+              },
+            ),
+        checkCenterInitialismReachesTheCenter(observations, corpusBefore, corpusAfter),
+      ],
+      rates: [
+        buildRate(
+          'center-initialism-top-three-reach',
+          `Share of sampled center initialisms whose center is served in the top ${CENTER_INITIALISM_REACH_DEPTH}`,
+          observations.filter(
+            (observation) =>
+              observation.initialismRank !== null &&
+              observation.initialismRank <= CENTER_INITIALISM_REACH_DEPTH,
+          ).length,
+          observations.length,
+        ),
+      ],
+    };
+  },
+};
+
 const UNMATCHED_WORD = 'zqxjv';
 const UNMATCHED_WORD_QUERY_PAIRS = [
   {
@@ -1490,6 +1584,7 @@ export const journeyCases: readonly JourneyCase[] = [
   institutionWordKeepsTopicRanking,
   accessWordKeepsTopicRanking,
   acronymServesItsPhrase,
+  centerInitialismReachesTheCenter,
   unmatchedWordKeepsTopicResults,
   meshDescriptorRanksBelowOwnEvidence,
   personNameLookupReachesThePerson,

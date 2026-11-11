@@ -856,6 +856,57 @@ export function checkNicknameExpansionReachesThePerson(
   return buildInvariant(id, title, unreached.length === 0, detail);
 }
 
+export interface CenterInitialismQueryObservation {
+  rewritesToTheTitle: boolean;
+  titleRank: number | null;
+  initialismRank: number | null;
+}
+
+export const CENTER_INITIALISM_REACH_DEPTH = 3;
+
+const withinCenterInitialismReach = (rank: number | null): boolean =>
+  rank !== null && rank <= CENTER_INITIALISM_REACH_DEPTH;
+
+export function checkCenterInitialismReachesTheCenter(
+  observations: readonly CenterInitialismQueryObservation[],
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult {
+  const id = 'center-initialism-reaches-the-center';
+  const title = `A center initialism the rewrite maps to its title serves that center in the top ${CENTER_INITIALISM_REACH_DEPTH} wherever the title does`;
+  const attributable = observations.filter(
+    (observation) =>
+      observation.rewritesToTheTitle && withinCenterInitialismReach(observation.titleRank),
+  );
+  const unreached = attributable.filter(
+    (observation) => !withinCenterInitialismReach(observation.initialismRank),
+  );
+  const detail = {
+    queried: observations.length,
+    rewrittenToTheTitle: observations.filter((observation) => observation.rewritesToTheTitle)
+      .length,
+    titleReachesTheCenter: attributable.length,
+    unreached: unreached.length,
+  };
+  if (attributable.length === 0) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'No sampled initialism was rewritten to a title that itself reaches its center, so a zero unreached count would be a green signal over an empty population',
+      detail,
+    );
+  }
+  if (unreached.length > 0 && corpusFingerprintMoved(corpusBefore, corpusAfter)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The corpus changed between the title and initialism queries, so a ranking difference may be a write rather than the rewrite',
+      { ...detail, corpusBefore, corpusAfter },
+    );
+  }
+  return buildInvariant(id, title, unreached.length === 0, detail);
+}
+
 export interface DictionaryWordQueryObservation {
   respelledDictionaryWords: readonly string[];
 }
