@@ -419,6 +419,7 @@ export function withOnlyCurrentResearchPageText<T extends CoverageObservationLik
 }
 
 export const WRITER_GRANT_RECENCY_YEARS = 5;
+const WRITER_GRANT_ROLES: ReadonlySet<string> = new Set(['pi', 'copi']);
 /** Without research prose of the row's own, one funded project would become the whole focus. */
 export const MIN_GRANTS_WITHOUT_OWN_PROSE = 2;
 
@@ -436,7 +437,8 @@ const grantTime = (value: unknown): number | undefined => {
 
 /**
  * The grants the writer may read (#4867, owner direction): the row's lead is the
- * principal investigator, and the grant is active or ended within five years. A grant
+ * principal investigator or a co-principal investigator (#5537), and the grant is active or
+ * ended within five years. A grant that records no role is not read. A grant
  * with no end date counts from its start date, and one with neither is not dated, so it
  * is not read.
  */
@@ -445,7 +447,7 @@ export function eligibleWriterGrants(recentGrants: unknown, now: Date): unknown[
   const floor = new Date(now);
   floor.setFullYear(floor.getFullYear() - WRITER_GRANT_RECENCY_YEARS);
   return recentGrants.filter((grant: WriterGrantLike) => {
-    if (!grant || grant.role !== 'pi') return false;
+    if (!grant || !WRITER_GRANT_ROLES.has(String(grant.role))) return false;
     const last = grantTime(grant.endDate) ?? grantTime(grant.startDate);
     return last !== undefined && last >= floor.getTime();
   });

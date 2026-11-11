@@ -168,18 +168,21 @@ describe('the grant rule (#4867, owner direction)', () => {
     ]);
   });
 
-  it('reads only grants the lead holds as PI that are active or ended within five years', () => {
+  it('reads only grants the lead holds as PI or co-PI that are active or ended within five years', () => {
     const kept = eligibleWriterGrants(
       [
         grant({ title: 'active' }),
         grant({ title: 'recent', endDate: '2022-06-01' }),
         grant({ title: 'old', endDate: '2019-06-01' }),
         grant({ title: 'copi', role: 'copi' }),
+        grant({ title: 'old copi', role: 'copi', endDate: '2019-06-01' }),
+        grant({ title: 'role-less', role: undefined }),
+        grant({ title: 'other role', role: 'investigator' }),
         grant({ title: 'undated', startDate: undefined, endDate: undefined }),
       ],
       NOW,
     ) as Array<{ title: string }>;
-    expect(kept.map((entry) => entry.title)).toEqual(['active', 'recent']);
+    expect(kept.map((entry) => entry.title)).toEqual(['active', 'recent', 'copi']);
   });
 });
 
