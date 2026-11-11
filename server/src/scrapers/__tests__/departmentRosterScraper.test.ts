@@ -4108,6 +4108,55 @@ describe('DepartmentRosterScraper.run', () => {
     expect(labObs.find((o) => o.field === 'inferredPiUserKey')?.value).toBe('netid:ada.lovelace');
   });
 
+  it('cites a listing title at the listing and a profile title at the profile page (#5578)', async () => {
+    const profileHtml = (slug: string) => `
+      <html><head><link rel="canonical" href="/people/${slug}" /></head><body>
+        <div class="person-title">Professor of Fixture Studies</div>
+        <a href="mailto:${slug.replace('-', '.')}@yale.edu">${slug}@yale.edu</a>
+      </body></html>
+    `;
+    const htmlFetcher = vi.fn(async (url: string) => {
+      if (url === 'https://math.yale.edu/people/rowan-listed') return profileHtml('rowan-listed');
+      if (url === 'https://math.yale.edu/people/sage-profiled') return profileHtml('sage-profiled');
+      return '<html><body>listing</body></html>';
+    });
+    const listing = 'https://math.yale.edu/people/faculty';
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'math',
+        deptName: 'Mathematics',
+        schoolName: 'FAS',
+        url: listing,
+        paginated: false,
+        extractor: () => [
+          {
+            name: 'Rowan Listed',
+            profileUrl: 'https://math.yale.edu/people/rowan-listed',
+            title: 'Lecturer in Fixture Studies',
+          },
+          { name: 'Sage Profiled', profileUrl: 'https://math.yale.edu/people/sage-profiled' },
+        ],
+      },
+    ];
+
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+
+    const titleOf = (entityKey: string) =>
+      emitted.find(
+        (o) => o.entityType === 'user' && o.entityKey === entityKey && o.field === 'title',
+      );
+    expect(titleOf('netid:rowan.listed')).toMatchObject({
+      value: 'Lecturer in Fixture Studies',
+      sourceUrl: listing,
+    });
+    expect(titleOf('netid:sage.profiled')).toMatchObject({
+      value: 'Professor of Fixture Studies',
+      sourceUrl: 'https://math.yale.edu/people/sage-profiled',
+    });
+  });
+
   it('preserves Scholar discovery without mirroring Engineering publications', async () => {
     const htmlFetcher = vi.fn(async (url: string) => {
       if (

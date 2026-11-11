@@ -639,6 +639,27 @@ describe('labResearchFacultyToObservations', () => {
     );
   });
 
+  it("cites the widget's title at the lab page it was read from (#5578)", () => {
+    const userObservations = labResearchFacultyToObservations(
+      lab,
+      {
+        name: 'Skylar Lab',
+        profileUrl: 'https://medicine.yale.edu/profile/skylar-lab/',
+        title: 'Professor of Fixture Medicine',
+        email: 'skylar.lab@yale.edu',
+      },
+      lab.url,
+    ).filter((observation) => observation.entityType === 'user');
+
+    expect(userObservations.find((observation) => observation.field === 'title')).toMatchObject({
+      value: 'Professor of Fixture Medicine',
+      sourceUrl: lab.url,
+    });
+    expect(userObservations.find((observation) => observation.field === 'email')?.sourceUrl).toBe(
+      'https://medicine.yale.edu/profile/skylar-lab/',
+    );
+  });
+
   it('does not create user or PI-key observations for a generic widget email', () => {
     const observations = labResearchFacultyToObservations(
       lab,
