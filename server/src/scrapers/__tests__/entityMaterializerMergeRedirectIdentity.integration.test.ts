@@ -250,6 +250,49 @@ describe('a merge redirect carries lane evidence onto a person row only for its 
     expect(await survivorAreas(survivor._id)).toEqual([]);
   });
 
+  it("admits the one roster lead's own listing past a co-PI the row holds only through its own grant evidence", async () => {
+    const survivor = await ResearchEntity.create({
+      slug: SURVIVOR_SLUG,
+      name: 'Imaging Signal Project',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      archived: false,
+    });
+    await seedObservation(SURVIVOR_SLUG, 'name', 'Imaging Signal Project');
+    await seedObservation(SURVIVOR_SLUG, 'entityType', 'FACULTY_RESEARCH_AREA');
+    await seedLead(
+      survivor._id,
+      'Ada Example',
+      'ae11',
+      undefined,
+      'YALE_OFFICIAL',
+      'dept-faculty-roster',
+    );
+    await seedLead(survivor._id, 'Mia Sample', 'ms22');
+    const coPi = await Researcher.findOne({ 'identifiers.netid': 'ms22' }).lean();
+    await Observation.create({
+      entityType: 'researchEntity',
+      entityKey: SURVIVOR_SLUG,
+      field: 'inferredPiUserId',
+      value: String(coPi?._id),
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'nih-reporter',
+      sourceUrl: 'https://reporter.nih.gov/project-details/0000000',
+      confidence: 0.9,
+      observedAt: new Date('2026-02-01T00:00:00Z'),
+      superseded: false,
+    });
+    await seedListing(survivor._id, 'dept-roster-ada-example', 'Ada Example');
+
+    const viaListing = await materializeEntity('researchEntity', {
+      entityKey: 'dept-roster-ada-example',
+    });
+
+    expect(viaListing.skipped).toBeUndefined();
+    expect(String(viaListing.entityId)).toBe(survivor._id.toHexString());
+    expect(await survivorAreas(survivor._id)).toEqual(LISTED_AREAS);
+  });
+
   it('derives the same refusal on a second run without writing a field', async () => {
     const survivor = await seedSurvivor();
     await seedListing(survivor._id, 'dept-roster-adaline-example', 'Adaline Example');

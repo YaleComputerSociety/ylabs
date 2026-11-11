@@ -6842,6 +6842,26 @@ async function namedLeadWitnessesOfRow(
   );
 }
 
+async function observationsFiledUnderSurvivor(
+  entityType: ObservedEntityType,
+  survivor: { _id?: unknown; slug?: unknown },
+  prefetch?: MaterializationReadSource,
+): Promise<any[]> {
+  const survivorId = toMaterializerObjectId(survivor._id);
+  const survivorSlug = textValue(survivor.slug);
+  const keys = survivorSlug ? [survivorSlug] : [];
+  const ids = survivorId ? [survivorId] : [];
+  if (keys.length === 0 && ids.length === 0) return [];
+  const read =
+    routedObservationsForKeysAndIds(entityType, keys, ids, prefetch) ??
+    (await Observation.find({
+      entityType,
+      ...materializationReadScopeFilter(),
+      $or: [{ entityKey: { $in: keys } }, { entityId: { $in: ids } }],
+    }).lean());
+  return partitionObservationsByInvalidatedRun(read, await invalidatedScrapeRunIds()).kept;
+}
+
 export interface MergedRedirectRefusals {
   slugs: ReadonlySet<string>;
   refuses: (observation: any) => boolean;
@@ -12011,7 +12031,18 @@ async function materializeEntityUnderRemovalGuard(
     const tombstoneCanonical = await resolveResearchEntityCanonicalByTombstone(entityDoc);
     const refusedRedirect =
       tombstoneCanonical &&
-      (await mergedRedirectRefusedListings(tombstoneCanonical, [entityDoc], obs));
+      (await mergedRedirectRefusedListings(
+        tombstoneCanonical,
+        [entityDoc],
+        [
+          ...(await observationsFiledUnderSurvivor(
+            entityType,
+            tombstoneCanonical,
+            options.chunkPrefetch,
+          )),
+          ...obs,
+        ],
+      ));
     if (refusedRedirect && obs.every((observation: any) => refusedRedirect.refuses(observation))) {
       return {
         entityType,
