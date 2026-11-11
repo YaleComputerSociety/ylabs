@@ -41,6 +41,24 @@ describe('buildDirectoryRemovalServing', () => {
     expect(serving.redactWithheldNames("Quillon Varrow's group studies repair.")).toBe('');
   });
 
+  it('drops the whole sentence when an honorific or initial precedes the removed name', () => {
+    const serving = activeServing();
+    expect(
+      serving.redactWithheldNames('Led by Prof. Quillon Varrow. The lab studies repair.'),
+    ).toBe('The lab studies repair.');
+    expect(
+      serving.redactWithheldNames(
+        'The lab studies repair. It is led by Dr. Quillon Varrow and colleagues.',
+      ),
+    ).toBe('The lab studies repair.');
+    expect(
+      serving.redactWithheldNames('Founded by J. Quillon Varrow in 2020. Students are welcome.'),
+    ).toBe('Students are welcome.');
+    expect(
+      serving.redactWithheldNames('The lab is run by Dr. Brisa Tallent. Students are welcome.'),
+    ).toBe('The lab is run by Dr. Brisa Tallent. Students are welcome.');
+  });
+
   it('replaces a removed name in a title instead of dropping it', () => {
     const serving = activeServing();
     expect(serving.redactWithheldNames('Quillon Varrow Lab', undefined, 'title')).toBe(
