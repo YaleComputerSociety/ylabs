@@ -1,5 +1,6 @@
 import { MongoMemoryReplSet, MongoMemoryServer } from 'mongodb-memory-server';
 
+import { createWorkerPortAllocator, vitestPoolId } from './mongoMemoryPortRange';
 import { MONGO_MEMORY_LAUNCH_BUDGET_MS } from './testTimeBudgets';
 
 /**
@@ -70,9 +71,16 @@ async function retryingPortRace<T>(create: () => Promise<T>): Promise<T> {
 type ServerOptions = NonNullable<Parameters<typeof MongoMemoryServer.create>[0]>;
 type ReplSetOptions = NonNullable<Parameters<typeof MongoMemoryReplSet.create>[0]>;
 
+let workerPortAllocator: (() => number) | undefined;
+
+const nextWorkerPort = (): number => {
+  workerPortAllocator ??= createWorkerPortAllocator(vitestPoolId());
+  return workerPortAllocator();
+};
+
 const withServerLaunchBudget = (options?: ServerOptions): ServerOptions => ({
   ...options,
-  instance: { launchTimeout: LAUNCH_BUDGET_MS, ...options?.instance },
+  instance: { launchTimeout: LAUNCH_BUDGET_MS, port: nextWorkerPort(), ...options?.instance },
 });
 
 /**
@@ -87,6 +95,7 @@ const withReplSetLaunchBudget = (options?: ReplSetOptions): ReplSetOptions => {
     ...options,
     instanceOpts: Array.from({ length: members }, (_unused, index) => ({
       launchTimeout: LAUNCH_BUDGET_MS,
+      port: nextWorkerPort(),
       ...provided[index],
     })),
   };
