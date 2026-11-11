@@ -93,7 +93,13 @@ const fetcherFor =
   };
 
 const profilePage = (
-  options: { canonical?: string; email?: string; netid?: string; links?: string[] } = {},
+  options: {
+    canonical?: string;
+    email?: string;
+    assistantEmail?: string;
+    netid?: string;
+    links?: string[];
+  } = {},
 ) => {
   const head = options.canonical ? `<link rel="canonical" href="${options.canonical}">` : '';
   const jsonLd = options.netid
@@ -102,7 +108,10 @@ const profilePage = (
         identifier: { propertyID: 'NetID', value: options.netid },
       })}</script>`
     : '';
-  const mail = options.email ? `<a href="mailto:${options.email}">Email</a>` : '';
+  const mail = [options.email, options.assistantEmail]
+    .filter(Boolean)
+    .map((address) => `<a href="mailto:${address}">Email</a>`)
+    .join('');
   const links = (options.links ?? []).map((href) => `<a href="${href}">Related</a>`).join('');
   return `<html><head>${head}${jsonLd}</head><body><h1>Profile</h1>${mail}${links}</body></html>`;
 };
@@ -404,6 +413,25 @@ describe(
       });
 
       expect(await liveEdgesOf(namesake)).toHaveLength(0);
+    });
+
+    it("still joins the member when their page also carries another person's netid-shaped address (#5751)", async () => {
+      const member = await accountHolder('Avery', {
+        officialUrl: officialProfileUrl('Avery'),
+        netid: 'av77',
+      });
+      await directoryPairs('av77', 'av77@yale.edu');
+      await directoryPairs('xy45', 'xy45@yale.edu');
+
+      await runLane({
+        [centerProfileUrl('Avery')]: profilePage({
+          email: 'av77@yale.edu',
+          assistantEmail: 'xy45@yale.edu',
+          links: [officialProfileUrl('Avery')],
+        }),
+      });
+
+      expect(await liveEdgesOf(member)).toHaveLength(1);
     });
 
     it('does not join the holder of a linked page whose own stated address names another netid (#5751)', async () => {

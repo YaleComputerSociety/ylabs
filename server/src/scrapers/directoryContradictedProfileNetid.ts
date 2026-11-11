@@ -103,6 +103,27 @@ export function directoryContradictsNetidForAddress(
   return Boolean(named && named.size > 0 && !named.has(netid.trim().toLowerCase()));
 }
 
+/**
+ * The netids the Yale directory pairs with a set of addresses one page states, read as that
+ * page's owner only when every address the directory knows shares one netid. Addresses that
+ * pair with different people, such as a member's own address beside an assistant's, name no
+ * owner, and addresses the directory does not know decide nothing.
+ */
+export function directoryOwnerNetidsOfAddresses(
+  addresses: Iterable<unknown>,
+  directory: DirectoryNetidsByAddress,
+): Set<string> | undefined {
+  const pairedNetidSets = [...addresses]
+    .map((address) => directory.get(normalizedAddress(address)))
+    .filter((netids): netids is ReadonlySet<string> => Boolean(netids && netids.size > 0));
+  if (pairedNetidSets.length === 0) return undefined;
+  const sharedByEveryAddress = [...pairedNetidSets[0]].some((netid) =>
+    pairedNetidSets.every((netids) => netids.has(netid)),
+  );
+  if (!sharedByEveryAddress) return undefined;
+  return new Set(pairedNetidSets.flatMap((netids) => [...netids]));
+}
+
 function directoryContradictedProfilePages(
   netid: string,
   observations: readonly KeyedObservation[],
@@ -253,15 +274,8 @@ export async function profilePageOwnerNetids(
     addressesByPage.set(destination, addresses);
   }
   for (const [destination, addresses] of addressesByPage) {
-    const pairedNetidSets = [...addresses]
-      .map((address) => pairs.get(address))
-      .filter((netids): netids is ReadonlySet<string> => Boolean(netids && netids.size > 0));
-    if (pairedNetidSets.length === 0) continue;
-    const sharedByEveryAddress = [...pairedNetidSets[0]].some((netid) =>
-      pairedNetidSets.every((netids) => netids.has(netid)),
-    );
-    if (!sharedByEveryAddress) continue;
-    owners.set(destination, new Set(pairedNetidSets.flatMap((netids) => [...netids])));
+    const owner = directoryOwnerNetidsOfAddresses(addresses, pairs);
+    if (owner) owners.set(destination, owner);
   }
   return {
     byPage: owners,

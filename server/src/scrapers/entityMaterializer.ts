@@ -307,6 +307,7 @@ import {
 } from './coursePageEvidenceScreen';
 import {
   directoryContradictsNetidForAddress,
+  directoryOwnerNetidsOfAddresses,
   loadDirectoryNetidsByAddress,
   netidOfNetidUserKey,
   screenDirectoryContradictedProfileEvidenceForKey,
@@ -3218,7 +3219,10 @@ async function withoutContradictedIdentityWitnesses(
     [evidence.pageUrl, ...evidence.linkedProfileUrls],
     materializationReadScopeFilter(),
   );
-  const directory = evidence.emails.length > 0 ? await loadDirectoryNetidsByAddress() : undefined;
+  const memberPageAddressOwners =
+    evidence.emails.length > 0
+      ? directoryOwnerNetidsOfAddresses(evidence.emails, await loadDirectoryNetidsByAddress())
+      : undefined;
   const kept: any[] = [];
   for (const [id, witness] of witnesses) {
     const netid = textValue(witness.researcher?.identifiers?.netid).toLowerCase();
@@ -3226,10 +3230,7 @@ async function withoutContradictedIdentityWitnesses(
     const memberPageNamesSomeoneElse =
       Boolean(netid) &&
       (profilePageContradictsNetid(pageOwners, evidence.pageUrl, netid) ||
-        (directory !== undefined &&
-          evidence.emails.some((email) =>
-            directoryContradictsNetidForAddress(netid, email, directory),
-          )));
+        (memberPageAddressOwners !== undefined && !memberPageAddressOwners.has(netid)));
     if (memberPageNamesSomeoneElse) continue;
     const urls = witness.urls.filter(
       (url) =>
