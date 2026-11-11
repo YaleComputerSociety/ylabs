@@ -140,6 +140,8 @@ export interface ResearchGroup {
   hasUndergradHostingEvidence?: boolean;
   /** Served by the API from the one welcomes predicate the browse filter also uses. */
   welcomesUndergrads?: boolean;
+  /** Served by the API from the one mentors predicate the search index also uses. */
+  mentorsUndergrads?: boolean;
   /** Owner-reviewed official Yale lists naming this row's professor, one entry per list. */
   undergradListEvidence?: UndergradListEvidence[];
   recentGrants?: RecentGrant[];

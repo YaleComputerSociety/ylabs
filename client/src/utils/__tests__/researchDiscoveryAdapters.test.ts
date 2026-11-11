@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildGroupedSearchResults,
+  buildWayInBadgesFromEntity,
   buildResearchHomeContextLine,
   buildIdentityConfidenceRecords,
   formatSourceLabel,
@@ -252,5 +253,25 @@ describe('parseQueryInterpretationChips', () => {
       'Topic term: protein',
       'Topic term: folding',
     ]);
+  });
+});
+
+describe('buildWayInBadgesFromEntity mentors signal', () => {
+  it('adds the mentors badge from the served flag and nothing without it', () => {
+    expect(
+      buildWayInBadgesFromEntity({
+        _id: 'entity-mentors',
+        slug: 'mentors-lab',
+        name: 'Mentors Lab',
+        mentorsUndergrads: true,
+      } as ResearchEntity),
+    ).toEqual(['Mentors undergrads']);
+    expect(
+      buildWayInBadgesFromEntity({
+        _id: 'entity-none',
+        slug: 'none-lab',
+        name: 'None Lab',
+      } as ResearchEntity),
+    ).toEqual([]);
   });
 });

@@ -318,6 +318,24 @@ describe('ResearchHomeCard', () => {
     expect(checked).toEqual(['Welcomes undergrads, recruiting now', 'Hosted undergrads']);
   });
 
+  it('shows the mentors signal as its own checked line after hosting', () => {
+    render(
+      <MemoryRouter>
+        <ResearchHomeCard
+          home={researchHome({
+            wayInBadges: ['Mentors undergrads', 'Undergrad evidence', 'Welcomes undergrads'],
+          })}
+        />
+      </MemoryRouter>,
+    );
+
+    const signals = screen.getByLabelText('Ways to get involved');
+    const checked = Array.from(signals.querySelectorAll('span.font-semibold')).map(
+      (node) => node.textContent,
+    );
+    expect(checked).toEqual(['Welcomes undergrads', 'Hosted undergrads', 'Mentors undergrads']);
+  });
+
   it('keeps student project evidence a pill even when it is the only signal', () => {
     render(
       <MemoryRouter>
