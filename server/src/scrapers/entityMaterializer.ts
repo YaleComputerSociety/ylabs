@@ -19,6 +19,7 @@ import { cachedCardFor } from './cardSynthesisDerivation';
 import { withoutModelCalls } from '../utils/modelClient';
 import {
   decideResearcherFieldWrite,
+  isFillOnlyFieldValue,
   researcherFieldWriter,
   OWN_KEY_FALLBACK_TITLE_FIELD,
   type ResearcherGatedField,
@@ -9202,6 +9203,8 @@ async function materializeUserIdentityToResearcher(
   if (writerKey) await releaseFieldWritersThatNoLongerReach(researcher, writerKey);
   const resolvedConfidence = (...fields: string[]): unknown =>
     fields.map((field) => resolved[field]?.confidence).find((value) => value !== undefined);
+  const storedFieldValue = (field: ResearcherGatedField): unknown =>
+    field === 'displayName' ? researcher.displayName : researcher.profile?.[field];
   const settleFieldWriter = (
     field: ResearcherGatedField,
     value: string | undefined,
@@ -9211,8 +9214,14 @@ async function materializeUserIdentityToResearcher(
     const decision = decideResearcherFieldWrite(
       researcher.profileFieldWriters,
       field,
-      researcherFieldWriter(writerKey, identityJoin, confidence),
+      researcherFieldWriter(
+        writerKey,
+        identityJoin,
+        confidence,
+        isFillOnlyFieldValue(field, resolved[field]?.contributingSources),
+      ),
       Boolean(value),
+      Boolean(textValue(storedFieldValue(field))),
       valueOutranksStored,
     );
     if (!decision.write) {

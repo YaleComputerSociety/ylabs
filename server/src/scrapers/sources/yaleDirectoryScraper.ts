@@ -43,6 +43,7 @@ import {
 import { getCached, setCached } from '../snapshotCache';
 import { Researcher } from '../../models/researcher';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
+import { directoryUnitDepartment } from '../utils/directoryUnitDepartment';
 
 dotenv.config({ quiet: true });
 
@@ -50,6 +51,7 @@ const SOURCE_NAME = 'yale-directory';
 const SOURCE_URL = 'https://api.yalies.io/v2/people';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const PAGE_SIZE = 100;
+const FIRST_YALIES_PAGE = 0;
 const FACULTY_KEYWORDS = [
   'professor',
   'lecturer',
@@ -428,27 +430,7 @@ export function personToObservations(
   const imageUrl = (person.image && String(person.image).trim()) || '';
   const orcid = (person.orcid && String(person.orcid).trim()) || '';
 
-  // Department fields. Yalies exposes organization_name / unit_name pairs and
-  // primary_organization_* on faculty records. We treat the most-specific unit
-  // as primaryDepartment and the broader organization as a secondary.
-  const primaryDept =
-    (person.unit_name && String(person.unit_name).trim()) ||
-    (person.primary_division_name && String(person.primary_division_name).trim()) ||
-    (person.organization_name && String(person.organization_name).trim()) ||
-    (person.primary_organization_name && String(person.primary_organization_name).trim()) ||
-    '';
-
-  const secondarySet = new Set<string>();
-  for (const v of [
-    person.organization_name,
-    person.primary_organization_name,
-    person.primary_division_name,
-  ]) {
-    if (typeof v === 'string' && v.trim() && v.trim() !== primaryDept) {
-      secondarySet.add(v.trim());
-    }
-  }
-  const secondaryDepts = Array.from(secondarySet);
+  const primaryDept = directoryUnitDepartment(person.unit) ?? '';
 
   // Profile URLs: Yalies returns a single `url` field on faculty records.
   const profileUrls: Record<string, string> = {};
@@ -464,7 +446,6 @@ export function personToObservations(
     ['userType', classifyUserType(title)],
     ['title', title],
     ['primaryDepartment', primaryDept],
-    ['secondaryDepartments', secondaryDepts.length > 0 ? secondaryDepts : undefined],
     ['school', school],
     ['imageUrl', imageUrl],
     ['orcid', orcid],
@@ -574,7 +555,7 @@ export class YaleDirectoryScraper implements IScraper {
     let processed = 0;
     let skippedNonFaculty = 0;
     let corpusPeopleBacked = 0;
-    let pageNum = 1;
+    let pageNum = FIRST_YALIES_PAGE;
     let stop = false;
     const partialFailures: string[] = [];
 
@@ -593,7 +574,7 @@ export class YaleDirectoryScraper implements IScraper {
             ? 'Yalies API returned 401 (auth failed)'
             : sanitizeLogValue(err instanceof Error ? err.message : String(err));
         const failure = `Yalies page ${pageNum} could not be read (${reason}); pagination aborted`;
-        if (pageNum === 1) throw new Error(failure, { cause: err });
+        if (pageNum === FIRST_YALIES_PAGE) throw new Error(failure, { cause: err });
         ctx.log(`${failure}; the faculty roster is incomplete.`);
         partialFailures.push(failure);
         break;
@@ -637,7 +618,7 @@ export class YaleDirectoryScraper implements IScraper {
 
     ctx.log(
       `Done. Faculty processed: ${processed}, observations emitted: ${totalObs}, ` +
-        `non-faculty skipped: ${skippedNonFaculty} (${corpusPeopleBacked} backing a corpus person's email), pages fetched: ${pageNum}.`,
+        `non-faculty skipped: ${skippedNonFaculty} (${corpusPeopleBacked} backing a corpus person's email), pages fetched: ${pageNum - FIRST_YALIES_PAGE + 1}.`,
     );
 
     const incomplete =
@@ -645,7 +626,7 @@ export class YaleDirectoryScraper implements IScraper {
     return {
       observationCount: totalObs,
       entitiesObserved: processed,
-      notes: `Yalies faculty sync: ${processed} faculty, ${corpusPeopleBacked} non-faculty corpus emails, ${totalObs} observations across ${pageNum} pages${incomplete}`,
+      notes: `Yalies faculty sync: ${processed} faculty, ${corpusPeopleBacked} non-faculty corpus emails, ${totalObs} observations across ${pageNum - FIRST_YALIES_PAGE + 1} pages${incomplete}`,
       ...(partialFailures.length > 0 ? { partialFailures } : {}),
     };
   }

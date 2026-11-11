@@ -125,9 +125,11 @@ describe('personToObservations', () => {
       school_code: 'GS',
       school: 'Graduate School of Arts and Sciences',
       school_name: 'Yale Graduate School of Arts and Sciences',
-      organization_name: 'Yale School of Medicine',
-      primary_organization_name: 'Yale School of Medicine',
-      unit_name: 'Molecular Biophysics & Biochemistry',
+      organization: 'School of Medicine',
+      organization_code: 'MED',
+      unit_class: 'MEDMBB',
+      unit_code: 'CC0000',
+      unit: 'MB and B-All',
       image: 'https://yalies.io/images/jdoe24.jpg',
       url: 'https://yalies.io/jdoe24',
       orcid: '0000-0001-2345-6789',
@@ -145,8 +147,8 @@ describe('personToObservations', () => {
     expect(byField.email?.value).toBe('jane.doe@yale.edu');
     expect(byField.userType?.value).toBe('professor');
     expect(byField.title?.value).toContain('Professor');
-    expect(byField.primaryDepartment?.value).toBe('Molecular Biophysics & Biochemistry');
-    expect(byField.secondaryDepartments?.value).toEqual(['Yale School of Medicine']);
+    expect(byField.primaryDepartment?.value).toBe('Molecular Biophysics and Biochemistry');
+    expect(byField.secondaryDepartments).toBeUndefined();
     expect(byField.school?.value).toBe('Yale Graduate School of Arts and Sciences');
     expect(byField.imageUrl?.value).toBe('https://yalies.io/images/jdoe24.jpg');
     expect(byField.orcid?.value).toBe('0000-0001-2345-6789');
@@ -308,7 +310,7 @@ describe('YaleDirectoryScraper.run', () => {
       last_name: 'Lovelace',
       email: 'ada@yale.edu',
       title: 'Professor of Computer Science',
-      unit_name: 'Computer Science',
+      unit: 'Computer Science',
     };
     // Page 1: 200 identical-shape records (using distinct netids), Page 2: 1 record.
     const page1 = Array.from({ length: 200 }, (_, i) => ({
@@ -324,11 +326,34 @@ describe('YaleDirectoryScraper.run', () => {
     const result = await scraper.run(ctx);
 
     expect(mockedListYalies).toHaveBeenCalledTimes(2);
+    expect(mockedListYalies.mock.calls.map(([options]) => options.page)).toEqual([0, 1]);
     expect(result.entitiesObserved).toBe(201);
     // Distinct entity keys should match the 201 distinct netids.
     const keys = new Set(emitted.map((o) => o.entityKey));
     expect(keys.size).toBe(201);
     expect(keys.has('aaLast')).toBe(true);
+  });
+
+  it('starts at the zero-indexed first page, so the first page of records is read', async () => {
+    process.env.YALIES_API_KEY = 'test-key';
+    const onFirstPage = {
+      netid: 'zz01',
+      first_name: 'Fixture',
+      last_name: 'Firstpage',
+      email: 'fixture.firstpage@yale.edu',
+      title: 'Professor of Fixture Studies',
+      unit: 'Fixture Studies',
+    };
+    mockedListYalies.mockImplementation(async ({ page }: { page: number }) =>
+      page === 0 ? [onFirstPage] : [],
+    );
+
+    const { ctx, emitted } = buildContext();
+    await new YaleDirectoryScraper().run(ctx);
+
+    expect(mockedListYalies.mock.calls[0][0].page).toBe(0);
+    expect(new Set(emitted.map((o) => o.entityKey))).toEqual(new Set(['zz01']));
+    mockedListYalies.mockReset();
   });
 
   it('respects ctx.options.limit', async () => {
@@ -339,7 +364,7 @@ describe('YaleDirectoryScraper.run', () => {
       last_name: 'Hopper',
       email: 'grace@yale.edu',
       title: 'Professor of Naval Engineering',
-      unit_name: 'Engineering',
+      unit: 'Engineering',
     };
     const page1 = Array.from({ length: 200 }, (_, i) => ({
       ...facultyRecord,
@@ -379,7 +404,7 @@ describe('YaleDirectoryScraper.run', () => {
         first_name: 'Faye',
         last_name: 'Faculty',
         title: 'Professor',
-        unit_name: 'Linguistics',
+        unit: 'Linguistics',
       },
       {
         netid: 'stu01',
@@ -421,7 +446,7 @@ describe('YaleDirectoryScraper.run', () => {
     expect(result.entitiesObserved).toBe(200);
     expect(emitted.length).toBeGreaterThan(0);
     expect(logs.some((l) => /ECONNRESET|aborting/i.test(l))).toBe(true);
-    expect(result.partialFailures).toEqual([expect.stringMatching(/page 2.*ECONNRESET/)]);
+    expect(result.partialFailures).toEqual([expect.stringMatching(/page 1.*ECONNRESET/)]);
     expect(result.notes).toMatch(/incomplete/);
   });
 
@@ -443,7 +468,7 @@ describe('YaleDirectoryScraper.run', () => {
     const result = await new YaleDirectoryScraper().run(ctx);
 
     expect(result.entitiesObserved).toBe(200);
-    expect(result.partialFailures).toEqual([expect.stringMatching(/page 2.*401/)]);
+    expect(result.partialFailures).toEqual([expect.stringMatching(/page 1.*401/)]);
   });
 
   it('fails the run when the first page cannot be read, since nothing was synced', async () => {
@@ -452,7 +477,7 @@ describe('YaleDirectoryScraper.run', () => {
 
     const { ctx, emitted } = buildContext();
 
-    await expect(new YaleDirectoryScraper().run(ctx)).rejects.toThrow(/page 1.*ECONNRESET/);
+    await expect(new YaleDirectoryScraper().run(ctx)).rejects.toThrow(/page 0.*ECONNRESET/);
     expect(emitted).toEqual([]);
   });
 
@@ -463,7 +488,7 @@ describe('YaleDirectoryScraper.run', () => {
       last_name: 'Staff',
       email: 'staff.fixture@yale.edu',
       title: 'Research Affiliates',
-      unit_name: 'Medicine',
+      unit: 'Medicine',
     };
 
     it('emits the netid and email of a staff-titled person the corpus already holds', async () => {

@@ -44,6 +44,11 @@ export interface YaliesPerson {
   image?: string;
   orcid?: string;
   url?: string;
+  unit?: string;
+  unit_code?: string;
+  unit_class?: string;
+  organization?: string;
+  organization_code?: string;
   unit_name?: string;
   organization_name?: string;
   primary_organization_name?: string;
