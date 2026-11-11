@@ -1,6 +1,6 @@
 import { personNameFromEntityName } from '../scripts/attachFraNamedLeadsCore';
 import { leadIsTheRecordSubjectFor } from './utils/labSiteLeadVerification';
-import { listedPersonIsTheNamedLead } from './utils/personNameAgreement';
+import { listedPersonIsTheNamedLead, personNamesShareASurname } from './utils/personNameAgreement';
 
 export interface MergedRedirectRow {
   name?: unknown;
@@ -36,7 +36,9 @@ export function personNamedByRow(row: MergedRedirectRow): string {
 
 /**
  * A row titled after a lab or a project names no lead, and then its one lead is the person
- * it is about. A row holding several leads and naming none has no lead to vouch for it.
+ * it is about. A row holding several leads and naming none has no lead to vouch for it, and
+ * neither does a row whose one lead is a same-surname namesake of the person in its title,
+ * because that lead is how a prefix-built merge would vouch for itself.
  */
 export function leadsTheRowIsNamedAfter<Lead extends MergedRedirectLead>(
   survivor: MergedRedirectRow,
@@ -46,7 +48,8 @@ export function leadsTheRowIsNamedAfter<Lead extends MergedRedirectLead>(
   if (!rowPerson) return [];
   const named = leads.filter((lead) => listedPersonIsTheNamedLead(lead.displayName, rowPerson));
   if (named.length > 0) return named;
-  return leads.length === 1 ? [...leads] : [];
+  if (leads.length !== 1 || personNamesShareASurname(leads[0].displayName, rowPerson)) return [];
+  return [...leads];
 }
 
 /**

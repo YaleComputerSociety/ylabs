@@ -82,6 +82,18 @@ describe('mergedRedirectAdmission', () => {
     );
   });
 
+  it('never takes a same-surname namesake as the one lead of a row titled after a person', () => {
+    const namesake = [lead('Adaline Example')];
+    expect(leadsTheRowIsNamedAfter(survivor, namesake)).toEqual([]);
+    expect(
+      mergedRedirectAdmission(
+        survivor,
+        leadsTheRowIsNamedAfter(survivor, namesake),
+        listing('Adaline Example'),
+      ),
+    ).toBe('refused');
+  });
+
   it('leaves a lab row and a lab listing to the merge', () => {
     expect(
       mergedRedirectAdmission(

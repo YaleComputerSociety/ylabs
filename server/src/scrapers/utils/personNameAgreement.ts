@@ -86,6 +86,16 @@ function givenNamesOfOnePerson(left: readonly string[], right: readonly string[]
   return leftJoined === rightJoined || leftJoined === rightFirst || rightJoined === leftFirst;
 }
 
+export function personNamesShareASurname(left: unknown, right: unknown): boolean {
+  const leftTokens = foldedNameTokens(left);
+  const rightTokens = foldedNameTokens(right);
+  return (
+    leftTokens.length >= 2 &&
+    rightTokens.length >= 2 &&
+    Boolean(sharedSurnameRuns(leftTokens, rightTokens))
+  );
+}
+
 /**
  * Whether a listed person is the person a row is named after, strictly enough to let a
  * merge redirect carry that listing's evidence onto the row (#5771).
