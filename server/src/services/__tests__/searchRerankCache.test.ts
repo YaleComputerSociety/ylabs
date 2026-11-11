@@ -35,6 +35,15 @@ describe('searchRerankCacheQueryKey', () => {
     );
   });
 
+  it('keys an acronym typed alone as the phrase it is searched as (#5169)', () => {
+    const phrase = searchRerankCacheQueryKey('natural language processing', {});
+    expect(searchRerankCacheQueryKey('NLP', {})).toBe(phrase);
+    expect(searchRerankCacheQueryKey('nlp lab', {})).toBe(phrase);
+    expect(searchRerankCacheQueryKey('rna', {})).not.toBe(
+      searchRerankCacheQueryKey('ribonucleic acid', {}),
+    );
+  });
+
   it('serializes the student filters in a stable order whatever order they were chosen in', () => {
     const chosen = searchRerankCacheQueryKey('ecology', {
       departments: ['Physics', 'Biology'],

@@ -14,6 +14,7 @@ import {
   meiliSortEntries,
   memberNameKey,
   normalizeResearchSearchQuery,
+  rewriteAcronymToPhrase,
 } from '../../services/researchGroupService';
 import { meshDescriptorWordKeys } from '../../scrapers/utils/meshNonSubjectDescriptors';
 import { isEnglishDictionaryWord } from '../../services/englishDictionaryWords';
@@ -889,6 +890,85 @@ const accessWordKeepsTopicRanking: JourneyCase = {
   },
 };
 
+const ACRONYM_PHRASE_QUERY_PAIRS = [
+  { baselineQuery: 'natural language processing', variantQuery: 'nlp' },
+  { baselineQuery: 'natural language processing', variantQuery: 'NLP' },
+  { baselineQuery: 'artificial intelligence', variantQuery: 'AI' },
+  { baselineQuery: 'machine learning', variantQuery: 'ml' },
+  { baselineQuery: 'computer vision', variantQuery: 'CV' },
+  { baselineQuery: 'international relations', variantQuery: 'IR' },
+  { baselineQuery: 'large language models', variantQuery: 'LLM' },
+  { baselineQuery: 'large language models', variantQuery: 'llms' },
+  { baselineQuery: 'united nations', variantQuery: 'UN' },
+];
+
+const acronymServesItsPhrase: JourneyCase = {
+  id: 'acronym-serves-its-phrase',
+  title: 'An acronym typed alone serves the same top rows as the phrase it stands for',
+  run: async (context) => {
+    const rewrites = ACRONYM_PHRASE_QUERY_PAIRS.map((pair) => ({
+      ...pair,
+      rewrittenTo: rewriteAcronymToPhrase(pair.variantQuery),
+    }));
+    const unrewritten = rewrites.filter(
+      (pair) =>
+        normalizeResearchSearchQuery(pair.rewrittenTo).query !==
+        normalizeResearchSearchQuery(pair.baselineQuery).query,
+    );
+    const corpusBefore = await context.readCorpusFingerprint();
+    const servedKeys = async (query: string) =>
+      servedRows(await context.browse({ query, pageSize: QUERY_PAIR_DEPTH }))
+        .map(rowKey)
+        .filter(Boolean);
+    const pairs = [];
+    for (const pair of ACRONYM_PHRASE_QUERY_PAIRS) {
+      pairs.push({
+        ...pair,
+        baselineKeys: await servedKeys(pair.baselineQuery),
+        variantKeys: await servedKeys(pair.variantQuery),
+      });
+    }
+    const corpusAfter = await context.readCorpusFingerprint();
+    const baselineRows = pairs.reduce((total, pair) => total + pair.baselineKeys.length, 0);
+    const sharedRows = pairs.reduce(
+      (total, pair) =>
+        total + pair.baselineKeys.filter((key) => pair.variantKeys.includes(key)).length,
+      0,
+    );
+    return {
+      invariants: [
+        buildInvariant(
+          'acronym-rewrite-names-the-phrase',
+          'rewriteAcronymToPhrase searches each acronym as the phrase it stands for',
+          unrewritten.length === 0,
+          {
+            pairs: rewrites.length,
+            unrewritten: unrewritten.map(({ variantQuery, rewrittenTo }) => ({
+              variantQuery,
+              rewrittenTo,
+            })),
+          },
+        ),
+        checkQueryVariantServesTheBaseline(
+          'acronym-serves-the-phrase-ranking',
+          'An acronym typed alone serves the same ordered top rows as its phrase',
+          pairs,
+          corpusBefore,
+          corpusAfter,
+        ),
+      ],
+      rates: [
+        buildRate(
+          'acronym-phrase-top-row-overlap',
+          'Share of the phrase query top rows the acronym query also serves',
+          sharedRows,
+          baselineRows,
+        ),
+      ],
+    };
+  },
+};
+
 const UNMATCHED_WORD = 'zqxjv';
 const UNMATCHED_WORD_QUERY_PAIRS = [
   {
@@ -1278,6 +1358,7 @@ export const journeyCases: readonly JourneyCase[] = [
   survivorWebsiteAttribution,
   institutionWordKeepsTopicRanking,
   accessWordKeepsTopicRanking,
+  acronymServesItsPhrase,
   unmatchedWordKeepsTopicResults,
   meshDescriptorRanksBelowOwnEvidence,
   personNameLookupReachesThePerson,

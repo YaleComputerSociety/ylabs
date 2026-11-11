@@ -116,6 +116,7 @@ import {
   listResearchEntityRelationshipPayload,
   listSimilarResearchEntities,
   normalizeResearchSearchQuery,
+  rewriteAcronymToPhrase,
   promoteExactAliasFieldMatches,
   rankOwnEvidenceAboveMeshDescriptorMatches,
   keepMeshDescriptorMatchesBelowOwnEvidence,
@@ -517,6 +518,19 @@ describe('searchResearchGroupsViaMeili', () => {
       tokens: ['econ'],
       isTopicAliasQuery: true,
     });
+  });
+
+  it('rewrites an acronym only when it is the whole query (#5169)', () => {
+    expect(rewriteAcronymToPhrase('NLP')).toBe('natural language processing');
+    expect(rewriteAcronymToPhrase('nlp lab')).toBe('natural language processing');
+    expect(rewriteAcronymToPhrase('LLM undergraduate research')).toBe('large language models');
+    expect(rewriteAcronymToPhrase('nlp history')).toBe('nlp history');
+    expect(rewriteAcronymToPhrase('ai art')).toBe('ai art');
+    expect(rewriteAcronymToPhrase('rna')).toBe('rna');
+    expect(rewriteAcronymToPhrase('orgo')).toBe('orgo');
+    expect(normalizeResearchSearchQuery(rewriteAcronymToPhrase('NLP'))).toMatchObject(
+      normalizeResearchSearchQuery('natural language processing'),
+    );
   });
 
   it('resolves organic chemistry vernacular to the canonical multi-word field name', () => {
@@ -1416,7 +1430,18 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(result.degraded).toBe(true);
   });
 
-  it('expands AI and restricts short alias searches to topic fields', async () => {
+  it('searches an acronym typed alone as the phrase it stands for (#5169)', async () => {
+    mocks.search.mockResolvedValue({ hits: [], estimatedTotalHits: 0 });
+
+    await searchResearchGroupsViaMeili('AI', {}, 1, 24);
+
+    expect(mocks.search.mock.calls[0][0]).toBe('artificial intelligence');
+    for (const [, params] of mocks.search.mock.calls) {
+      expect(params).not.toHaveProperty('attributesToSearchOn');
+    }
+  });
+
+  it('expands a kept shorthand and restricts its search to topic fields', async () => {
     mocks.search.mockResolvedValueOnce({
       hits: [],
       estimatedTotalHits: 0,
@@ -1426,10 +1451,10 @@ describe('searchResearchGroupsViaMeili', () => {
       },
     });
 
-    const result = await searchResearchGroupsViaMeili('AI', {}, 1, 24);
+    const result = await searchResearchGroupsViaMeili('neuro', {}, 1, 24);
 
     expect(mocks.search).toHaveBeenCalledWith(
-      'artificial intelligence machine learning deep learning ai',
+      'neuroscience neurology neural brain neuro',
       expect.objectContaining({
         attributesToSearchOn: ['studentSearchTerms', 'researchAreas', 'departments'],
         facets: [
@@ -1785,7 +1810,7 @@ describe('searchResearchGroupsViaMeili', () => {
       ]),
     );
 
-    const result = await searchResearchGroupsViaMeili('AI', {}, 1, 24);
+    const result = await searchResearchGroupsViaMeili('neuro', {}, 1, 24);
 
     expect(mocks.search).toHaveBeenCalledTimes(2);
     expect(mocks.search.mock.calls[0][1]).toHaveProperty('attributesToSearchOn');
@@ -3170,7 +3195,7 @@ describe('searchResearchGroupsViaMeili', () => {
   it('does not apply a ranking score threshold to keyword-only topic alias queries', async () => {
     mocks.search.mockResolvedValueOnce({ hits: [], estimatedTotalHits: 0 });
 
-    await searchResearchGroupsViaMeili('AI', {}, 1, 24);
+    await searchResearchGroupsViaMeili('neuro', {}, 1, 24);
 
     expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('rankingScoreThreshold');
     expect(mocks.search.mock.calls[0][1]).not.toHaveProperty('hybrid');

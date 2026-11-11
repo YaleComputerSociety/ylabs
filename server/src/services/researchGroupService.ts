@@ -166,6 +166,7 @@ import { sanitizeResearchAreaFacetDistribution } from '../utils/researchAreaLabe
 import { isServableOfficialProfileLink } from '../utils/officialProfileLinkServability';
 import { orcidProfileUrl, servableOrcid } from '../utils/orcid';
 import {
+  QUERY_ACRONYM_PHRASES,
   QUERY_TOPIC_ALIASES,
   RESEARCH_ENTITY_MEILI_DISABLE_ON_WORDS,
   RESEARCH_ENTITY_MEILI_SYNONYMS,
@@ -955,6 +956,12 @@ export const normalizeResearchSearchQuery = (value: unknown): NormalizedResearch
   };
 };
 
+export const rewriteAcronymToPhrase = (query: string): string => {
+  const { tokens } = normalizeResearchSearchQuery(query);
+  const phrase = tokens.length === 1 ? QUERY_ACRONYM_PHRASES[tokens[0]] : undefined;
+  return phrase ?? query;
+};
+
 const boundedResearchFilterValues = (values?: string[]): string[] => {
   if (!Array.isArray(values)) return [];
 
@@ -1041,7 +1048,9 @@ export const searchRerankCacheQueryKey = (
   query: unknown,
   filters: ResearchGroupFilterInput = {},
 ): string => {
-  const normalized = normalizeResearchSearchQuery(query);
+  const normalized = normalizeResearchSearchQuery(
+    typeof query === 'string' ? rewriteAcronymToPhrase(query) : query,
+  );
   const queryText =
     normalized.tokens.length > 0 ? normalized.tokens.join(' ') : collapsedLowercase(normalized.raw);
   const chosen = searchRerankCacheFilters(filters);
@@ -1754,6 +1763,7 @@ const SPELLING_PROTECTED_QUERY_TERMS: ReadonlySet<string> = new Set(
     ...RESEARCH_ENTITY_MEILI_DISABLE_ON_WORDS,
     ...Object.keys(STUDENT_QUERY_ALIASES),
     ...Object.keys(QUERY_TOPIC_ALIASES),
+    ...Object.keys(QUERY_ACRONYM_PHRASES),
     ...Object.keys(WORKING_STYLE_PHRASE_ALIASES),
     ...Object.keys(RESEARCH_ENTITY_MEILI_SYNONYMS),
   ].flatMap((phrase) => tokenizeStudentResearchQuery(phrase)),
@@ -2035,8 +2045,9 @@ export async function searchResearchGroupsViaMeili(
     options.correctSpelling === false
       ? { query, corrections: [] }
       : correctResearchSearchQuerySpelling(query);
+  const searchQuery = rewriteAcronymToPhrase(spelling.query);
   const studentFilters = await resolveStudentFiltersAgainstCorpus(filters, options);
-  const filterableToggles = answersFromMongoBrowse(spelling.query, options)
+  const filterableToggles = answersFromMongoBrowse(searchQuery, options)
     ? { filters: studentFilters.filters, dropped: undefined }
     : withoutUnfilterableToggles(
         studentFilters.filters,
@@ -2052,7 +2063,7 @@ export async function searchResearchGroupsViaMeili(
       ? { typedQuery: query, filters, client: options.rerankLiveMissClient }
       : undefined;
   const { result: searched, answeredAsNameSearch } = await searchResearchGroupsForQuery(
-    spelling.query,
+    searchQuery,
     studentFilters.filters,
     page,
     pageSize,
@@ -2065,7 +2076,7 @@ export async function searchResearchGroupsViaMeili(
       ? { ...studentFilters.applied, ...droppedToggleFilters }
       : undefined;
   const moreTopicResults = await optionalMoreTopicResults({
-    searchQuery: spelling.query,
+    searchQuery,
     typedQuery: query,
     filters: filterableToggles.filters,
     filtered: searched,
@@ -3055,7 +3066,7 @@ export async function searchResearchGroupsForRerankCandidates(
   const studentFilters = await resolveStudentFiltersAgainstCorpus(publicFilters, options);
   const { result, rerankLiveMissGate, rerankCandidateFingerprints } =
     await searchResearchGroupsForQuery(
-      spelling.query,
+      rewriteAcronymToPhrase(spelling.query),
       studentFilters.filters,
       1,
       limit,

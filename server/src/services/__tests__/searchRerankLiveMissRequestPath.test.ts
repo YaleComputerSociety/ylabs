@@ -613,8 +613,8 @@ describe('with the live-miss job on', () => {
       expect(await enqueuedKeys()).toEqual([]);
     });
 
-    it('a query shorter than four letters, such as a two-letter acronym', async () => {
-      await search('un');
+    it('a query shorter than four letters that is not searched as a phrase', async () => {
+      await search('cos');
       expect(await enqueuedKeys()).toEqual([]);
     });
 
