@@ -108,4 +108,20 @@ describe('several user keys joining one researcher settle on one value (#5706)',
 
     expect(await profileOf(backward._id)).toEqual(forwardProfile);
   });
+
+  it('lets a sibling take a field over once the recorded writer no longer reaches the person', async () => {
+    const person = await seed();
+    await resolve(KEY_A);
+    await resolve(KEY_B);
+    const held = (await profileOf(person._id)).title;
+    const holder = held === 'Professor of Fixture Studies' ? KEY_A : KEY_B;
+    const sibling = holder === KEY_A ? KEY_B : KEY_A;
+    const siblingTitle =
+      sibling === KEY_A ? 'Professor of Fixture Studies' : 'Professor of Applied Fixtures';
+
+    await Observation.updateMany({ entityKey: holder }, { $set: { superseded: true } });
+    await resolve(sibling);
+
+    expect((await profileOf(person._id)).title).toBe(siblingTitle);
+  });
 });
