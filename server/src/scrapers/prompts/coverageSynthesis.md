@@ -18,4 +18,10 @@ Grant records describe individual funded projects. When grant snippets are prese
 
 Start with the research itself (for a lab: "The lab studies ..." or a bare verb such as "Studies ..."; for a person: "Studies ..." or "Develops ..."). Lead with the entity's overall research focus before any recent or featured specifics. Write 2 or 3 plain, specific sentences, or 1 when the snippets support no more, with no marketing language. Use at most 90 words in total. If the snippets state no research focus, return an empty string.
 
+When the snippets state more than one current research theme, cover every distinct current theme and the named organisms, systems, diseases, datasets and methods the snippets give, using the word budget rather than summarizing to the most prominent theme. Never drop a named current theme just to be shorter, and still add nothing the snippets do not state.
+
+A core facility, center, institute or program whose snippets state the research it performs or supports does have a research focus. Describe it from the snippets ("Provides ... for research on ..." or "Supports research on ..."), and return an empty string only when the snippets state no research or research service at all.
+
+Ignore site navigation, menus, donation appeals and job advertisements inside snippets; they are not evidence of research.
+
 Return JSON {"fullDescription": "...", "usedSnippetIndexes": [<indexes of the snippets you actually used>]} or {"fullDescription": "", "usedSnippetIndexes": []} when there is no clear focus.
