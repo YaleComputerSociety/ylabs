@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { gatherCoverageSnippets } from '../../coverageSynthesis';
-import { withoutResearchPageChrome } from '../researchPageChrome';
+import { withoutPublicationListings, withoutResearchPageChrome } from '../researchPageChrome';
 
 const PROSE = 'The lab studies how coral reefs recover after marine heatwaves.';
 const kept = (lines: string[]) => withoutResearchPageChrome(lines.join('\n')).split('\n');
@@ -92,5 +92,63 @@ describe('withoutResearchPageChrome (#5577)', () => {
       },
     ]);
     expect(snippets.map((snippet) => snippet.text)).toEqual([`Coral Reef Recovery\n${PROSE}`]);
+  });
+});
+
+describe('withoutPublicationListings (#5537)', () => {
+  const listed = (lines: string[]) =>
+    withoutPublicationListings(lines.join('\n')).split('\n').filter(Boolean);
+
+  it('removes bibliography entries in each listed shape', () => {
+    expect(
+      listed([
+        'Quill A, Marsh B. Kelp forest recovery after marine heatwaves. Journal Of Reef Science 2025, 12: 101-110. PMID: 40000001, DOI: 10.0000/jrs.2025.1.',
+        'Quill AB, Marsh C, Tidewater D, Reefson E. Coral bleaching thresholds. Reef Biology 2024;8:21-30.',
+        '2. Marsh B, Quill A. Tidepool acoustics. J Mar Acoust 2010;24:295-303.',
+        'Tidewater JEM, Quill A, Marsh B, et al. Sea urchin grazing pressure. Coastal Ecology.',
+        PROSE,
+      ]),
+    ).toEqual([PROSE]);
+  });
+
+  it('removes a MeSH keyword block and keeps what follows it', () => {
+    expect(
+      listed([
+        'MeSH Keywords',
+        'AnimalsCoral ReefsEcosystemHumansOceans and SeasTemperature',
+        'Kelp forest recovery after marine heatwaves',
+        PROSE,
+      ]),
+    ).toEqual(['Kelp forest recovery after marine heatwaves', PROSE]);
+  });
+
+  it('keeps prose that mentions a paper', () => {
+    const lines = [
+      'In a 2024 paper in Reef Biology, the lab showed that kelp forests recover within five years.',
+      'Our work with Marsh B. and colleagues extends these coral bleaching models to new reefs.',
+      PROSE,
+    ];
+    expect(listed(lines)).toEqual(lines);
+  });
+
+  it('is what the writer reads from research page text', () => {
+    const snippets = gatherCoverageSnippets([
+      {
+        field: 'researchPageText',
+        sourceName: 'research-page-text',
+        value: [
+          {
+            url: 'https://reef.example.edu/profile',
+            text: [
+              PROSE,
+              'Quill A, Marsh B. Kelp recovery. Reef Biology 2025, 12: 101-110. PMID: 40000001.',
+              'MeSH Keywords',
+              'AnimalsCoral ReefsEcosystemHumansTemperature',
+            ].join('\n'),
+          },
+        ],
+      },
+    ]);
+    expect(snippets.map((snippet) => snippet.text)).toEqual([PROSE]);
   });
 });

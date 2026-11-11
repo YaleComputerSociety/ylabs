@@ -1,3 +1,4 @@
+import { isCitationAuthorListDumpText } from '../../utils/descriptionHygiene';
 import { foldWriterTextForms } from './writerEvidenceText';
 
 const SKIP_LINK =
@@ -73,4 +74,48 @@ export function withoutResearchPageChrome(text: string): string {
     .map((line) => line.replace(SKIP_LINK, ' ').replace(/\s+/g, ' ').trim())
     .filter((line, index, lines) => line && !isChromeLine(lines[index]))
     .join('\n');
+}
+
+const AUTHOR_TOKEN = String.raw`\p{Lu}[\p{L}'’\-]+(?: \p{Lu}[\p{L}'’\-]+)* \p{Lu}{1,3}`;
+const LEADING_AUTHORS = new RegExp(
+  String.raw`^(?:\d{1,3}[.)]\s+)?(?:${AUTHOR_TOKEN}(?:,\s*|\.\s+|\s+et al\b))+`,
+  'u',
+);
+const CITATION_RECORD_MARKER =
+  /\bPMID:?\s*\d|\bPMCID\b|\bDOI:?\s*10\.|\b(?:19|20)\d\d\s*[,;:]\s*\d+\s*[:(-]|\bet al\.?/i;
+const MESH_KEYWORDS_HEADING = /^mesh (?:keywords|terms|headings)$/i;
+const MIN_GLUED_TERM_SEAMS = 3;
+
+const gluedTermSeams = (line: string): number => (line.match(/\p{Ll}\p{Lu}/gu) ?? []).length;
+
+/** A bibliography entry: an author list followed by a journal record, never a sentence about a paper. */
+export function isPublicationCitationLine(line: string): boolean {
+  const text = foldWriterTextForms(line);
+  if (isCitationAuthorListDumpText(text)) return true;
+  return LEADING_AUTHORS.test(text) && CITATION_RECORD_MARKER.test(text);
+}
+
+/**
+ * Research page text without its auto-listed publications: bibliography entries and a MeSH
+ * keyword block with its run-together terms. A profile page lists papers by name match, so a
+ * namesake's papers can sit among the person's own, which makes the listing unsafe evidence
+ * for what this person studies; a prose sentence that mentions a paper stays.
+ */
+export function withoutPublicationListings(text: string): string {
+  const kept: string[] = [];
+  let inMeshBlock = false;
+  for (const line of text.split('\n')) {
+    const folded = foldWriterTextForms(line);
+    if (MESH_KEYWORDS_HEADING.test(folded)) {
+      inMeshBlock = true;
+      continue;
+    }
+    if (inMeshBlock && gluedTermSeams(folded) >= MIN_GLUED_TERM_SEAMS && !/[.!?]$/.test(folded)) {
+      continue;
+    }
+    inMeshBlock = false;
+    if (isPublicationCitationLine(folded)) continue;
+    kept.push(line);
+  }
+  return kept.join('\n');
 }
