@@ -588,6 +588,12 @@ import {
   LEGACY_ROLE_BY_CANONICAL,
 } from '../models/canonicalRoleMapping';
 import { isYaleHostname } from '../utils/yaleHost';
+import {
+  loadCurrentLeadPersonIdsByEntity,
+  loadDistinctPeopleVerdictIndex,
+  mergeGroupJoinsDistinctPeople,
+} from '../services/distinctPeopleVerdicts';
+import { distinctPeopleVerdictPairsJoinedByFold } from './distinctPeopleVerdict';
 
 interface MaterializeOptions {
   dryRun?: boolean;
@@ -5420,6 +5426,11 @@ export async function foldDeptRosterShellIntoCanonicalResearchEntity(
   const canonical = await deptRosterShellFoldTarget(personName);
   const canonicalId = normalizeMaterializerObjectId(canonical?._id);
   if (!canonicalId || canonicalId === String(shell._id)) return { folded: false };
+  const joinedVerdictPairs = await mergeGroupJoinsDistinctPeople({
+    canonicalEntityId: canonicalId,
+    duplicateEntityIds: [String(shell._id)],
+  });
+  if (joinedVerdictPairs.length > 0) return { folded: false };
 
   const now = new Date();
   await ResearchEntity.updateOne(
@@ -11846,7 +11857,7 @@ async function resolveCanonicalForEntityMint(
   // than archiving any existing public row, so no live entity is demoted. The
   // guard stays wired for any caller that does supply a would-be tier.
   const resolverSelf = buildEntityResolverSelf(obs);
-  return resolveCanonical(
+  const resolution = await resolveCanonical(
     { type: resolverType, keys, self: resolverSelf },
     {
       findCandidatesByKey: (_type, key) =>
@@ -11858,6 +11869,58 @@ async function resolveCanonicalForEntityMint(
           mintIsPersonLed(obs, entityKey),
         ),
     },
+  );
+  if (
+    resolution.status === 'existing' &&
+    resolverType === 'researchEntity' &&
+    (await mintAdoptionJoinsDistinctPeople(obs, resolution.canonicalId, resolverSelf.name ?? ''))
+  ) {
+    return { status: 'mint', reservedKeys: [] };
+  }
+  return resolution;
+}
+
+/** Lead researcher ids a not-yet-minted row's own lead observations name. */
+export async function leadPersonIdsFromLeadObservations(
+  obs: ReadonlyArray<{ field: string; value?: unknown; sourceName?: string }>,
+  entityName: string,
+): Promise<string[]> {
+  const ids = new Set<string>();
+  for (const observation of obs) {
+    if (observation.field !== 'inferredPiUserId') continue;
+    const id = normalizeMaterializerObjectId(String(observation.value ?? '').trim());
+    if (id) ids.add(String(id));
+  }
+  for (const observation of obs) {
+    if (observation.field !== 'inferredPiUserKey') continue;
+    if (
+      inferredPiKeyNamesRoleOrUnitMailbox(
+        userEntityKeyForInferredPiUserKey(observation.value),
+        observation as MaterializerObservationLike,
+      )
+    ) {
+      continue;
+    }
+    const resolved = await resolveInferredPiUserKey(observation.value, async () => entityName);
+    if (resolved.status === 'matched' && resolved.researcherId) {
+      ids.add(String(resolved.researcherId));
+    }
+  }
+  return [...ids];
+}
+
+async function mintAdoptionJoinsDistinctPeople(
+  obs: ReadonlyArray<{ field: string; value?: unknown }>,
+  canonicalId: string,
+  entityName: string,
+): Promise<boolean> {
+  const verdicts = await loadDistinctPeopleVerdictIndex();
+  if (verdicts.size === 0) return false;
+  const mintLeads = await leadPersonIdsFromLeadObservations(obs, entityName);
+  if (mintLeads.length === 0) return false;
+  const canonicalLeads = (await loadCurrentLeadPersonIdsByEntity([canonicalId])).get(canonicalId);
+  return (
+    distinctPeopleVerdictPairsJoinedByFold([mintLeads, canonicalLeads ?? []], verdicts).length > 0
   );
 }
 

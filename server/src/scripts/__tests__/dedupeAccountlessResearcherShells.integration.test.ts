@@ -918,6 +918,31 @@ describe('dedupeAccountlessResearcherShells name-variant twins (#5592)', () => {
       .findOne({ _id: shell });
     expect(untouched!.archived).toBe(false);
   });
+
+  it('honours a verdict recorded on a researcher record that was later folded into the holder', async () => {
+    const { holder, shell } = await seedPair({
+      shellName: 'Avery Synthetic',
+      holderName: 'Avery Synthetic',
+      linkedProfile: HOLDER_PROFILE,
+    });
+    const earlierRecord = new mongoose.Types.ObjectId();
+    await mongoose.connection.db!.collection('researchers').insertOne({
+      _id: earlierRecord,
+      displayName: 'Avery Synthetic',
+      archived: true,
+      dedupedIntoResearcherId: holder,
+      distinctFromResearcherIds: [shell],
+    });
+
+    const result = await dedupeAccountlessResearcherShells({ apply: true });
+
+    expect(result.distinctPeopleRefusedFolds).toBe(1);
+    expect(result.shellsMerged).toBe(0);
+    const untouched = await mongoose.connection
+      .db!.collection('researchers')
+      .findOne({ _id: shell });
+    expect(untouched!.archived).toBe(false);
+  });
 });
 
 describe('dedupeAccountlessResearcherShells directory-email twins (#5811)', () => {

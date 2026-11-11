@@ -173,6 +173,8 @@ describe('buildEponymousFraLabMergePairs', () => {
   });
 });
 
+const keepEveryGroup = async <T>(groups: readonly T[]) => ({ kept: [...groups], refused: [] });
+
 describe('runEponymousFraLabMergeStage', () => {
   it('is a no-op in dry-run: reports the plan without applying', async () => {
     const applyMergeGroup = vi.fn(async (group: { canonicalEntityId: string }) => ({
@@ -189,6 +191,7 @@ describe('runEponymousFraLabMergeStage', () => {
       maxMerges: 10,
       sinceIso: '2026-08-26T00:00:00.000Z',
       loadRows: async () => [eponymousShellRow()],
+      partitionByDistinctPeople: keepEveryGroup,
       applyMergeGroup,
       previewResearchPlanCarry,
     });
@@ -216,6 +219,7 @@ describe('runEponymousFraLabMergeStage', () => {
       maxMerges: 10,
       sinceIso: '2026-08-26T00:00:00.000Z',
       loadRows: async () => [eponymousShellRow()],
+      partitionByDistinctPeople: keepEveryGroup,
       applyMergeGroup,
       previewResearchPlanCarry,
     });
@@ -233,6 +237,7 @@ describe('runEponymousFraLabMergeStage', () => {
       maxMerges: 10,
       sinceIso: '2026-08-26T00:00:00.000Z',
       loadRows: async () => [eponymousShellRow()],
+      partitionByDistinctPeople: keepEveryGroup,
       applyMergeGroup,
     });
     expect(applyMergeGroup).toHaveBeenCalledTimes(1);
@@ -284,6 +289,7 @@ describe('runEponymousFraLabMergeStage', () => {
       maxMerges: 1,
       sinceIso: '2026-08-26T00:00:00.000Z',
       loadRows: async () => rows,
+      partitionByDistinctPeople: keepEveryGroup,
       applyMergeGroup,
     });
     expect(applyMergeGroup).toHaveBeenCalledTimes(1);
@@ -299,11 +305,33 @@ describe('runEponymousFraLabMergeStage', () => {
       maxMerges: 10,
       sinceIso: '2026-08-26T00:00:00.000Z',
       loadRows: async () => [centerOnlyRow()],
+      partitionByDistinctPeople: keepEveryGroup,
       applyMergeGroup,
     });
     expect(applyMergeGroup).not.toHaveBeenCalled();
     expect(delta.plannedMergeCount).toBe(0);
     expect(delta.appliedMergeCount).toBe(0);
     expect(delta.centerGuardedPiCount).toBe(1);
+  });
+
+  it('does not apply a merge the recorded distinct-people verdicts refuse', async () => {
+    const applyMergeGroup = vi.fn();
+    const delta = await runEponymousFraLabMergeStage({
+      apply: true,
+      maxMerges: 10,
+      sinceIso: '2026-08-26T00:00:00.000Z',
+      loadRows: async () => [eponymousShellRow()],
+      applyMergeGroup,
+      partitionByDistinctPeople: async (groups) => ({
+        kept: [],
+        refused: groups.map((group) => ({
+          group,
+          joinedVerdictPairs: [['person-a', 'person-b'] as const],
+        })),
+      }),
+    });
+    expect(applyMergeGroup).not.toHaveBeenCalled();
+    expect(delta.plannedMergeCount).toBe(0);
+    expect(delta.refusedAsDistinctPeopleCount).toBe(1);
   });
 });

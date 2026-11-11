@@ -34,6 +34,7 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   applyResearchEntityDedupeMergeGroup,
   previewResearchPlanCarryForMergeGroups,
+  type ResearchEntityDedupeApplyOutcome,
 } from './dedupeResearchEntitiesByPi';
 import {
   addResearchPlanCarryReports,
@@ -88,6 +89,7 @@ export interface GrantShellPortDelta {
   appliedPorts: number;
   shellsArchived: number;
   deferredAsWouldDemote: number;
+  refusedAsDistinctPeople: number;
   secondPassChangedFields: Record<string, number>;
   shellsServedBefore: number;
   survivorsServedAfter: number;
@@ -169,6 +171,14 @@ async function hasNonGrantObservationEvidence(doc: Record<string, any>): Promise
   return observations.some(observationCorroboratesBeyondGrants);
 }
 
+function mergeDidNotApply(result: ResearchEntityDedupeApplyOutcome): boolean {
+  return Boolean(
+    result.refusedAsDistinctPeople ||
+    result.deferredAsWouldDemote ||
+    result.deferredAsWouldSwapPinnedCanonical,
+  );
+}
+
 /**
  * The live research page a grant-only row's grants should enrich instead: the one live
  * lab or faculty research profile its lead also leads, excluding another row this pass is
@@ -208,13 +218,7 @@ async function mergeGrantRowInto(
       pinnedCanonical: true,
     },
   );
-  const deferred =
-    Boolean((result as { deferredAsWouldDemote?: boolean }).deferredAsWouldDemote) ||
-    Boolean(
-      (result as { deferredAsWouldSwapPinnedCanonical?: boolean })
-        .deferredAsWouldSwapPinnedCanonical,
-    );
-  return { merged: !deferred, researchPlanCarry: result.researchPlanCarry };
+  return { merged: !mergeDidNotApply(result), researchPlanCarry: result.researchPlanCarry };
 }
 
 async function enrichmentTargetIdForRow(
@@ -567,7 +571,12 @@ async function prepareSurvivor(
 async function applyPort(
   plan: GrantShellPortPlan,
   shellDocById: Map<string, Record<string, any>>,
-): Promise<{ applied: boolean; survivorId: string; researchPlanCarry: ResearchPlanCarryReport }> {
+): Promise<{
+  applied: boolean;
+  refusedAsDistinctPeople: boolean;
+  survivorId: string;
+  researchPlanCarry: ResearchPlanCarryReport;
+}> {
   const { survivorId, rollback } = await prepareSurvivor(plan, shellDocById);
   const survivorDoc = ((await ResearchEntity.findById(survivorId).lean()) ?? {}) as Record<
     string,
@@ -597,21 +606,27 @@ async function applyPort(
       pinnedCanonical: true,
     },
   );
-  const deferred =
-    Boolean((result as { deferredAsWouldDemote?: boolean }).deferredAsWouldDemote) ||
-    Boolean(
-      (result as { deferredAsWouldSwapPinnedCanonical?: boolean })
-        .deferredAsWouldSwapPinnedCanonical,
-    );
-  if (deferred) {
+  if (mergeDidNotApply(result)) {
     await rollback();
-    return { applied: false, survivorId, researchPlanCarry: result.researchPlanCarry };
+    return {
+      applied: false,
+      refusedAsDistinctPeople: Boolean(
+        (result as ResearchEntityDedupeApplyOutcome).refusedAsDistinctPeople,
+      ),
+      survivorId,
+      researchPlanCarry: result.researchPlanCarry,
+    };
   }
   await ResearchEntity.updateMany(
     { _id: { $in: plan.shellIds }, archived: true },
     { $set: { archivedReason: GRANT_SHELL_FACULTY_PORT_ARCHIVE_REASON } },
   );
-  return { applied: true, survivorId, researchPlanCarry: result.researchPlanCarry };
+  return {
+    applied: true,
+    refusedAsDistinctPeople: false,
+    survivorId,
+    researchPlanCarry: result.researchPlanCarry,
+  };
 }
 
 function withoutSubdocumentIds(value: unknown): unknown {
@@ -690,6 +705,7 @@ export async function runGrantShellPort(options: Options): Promise<{
     appliedPorts: 0,
     shellsArchived: 0,
     deferredAsWouldDemote: 0,
+    refusedAsDistinctPeople: 0,
     secondPassChangedFields: {},
     shellsServedBefore: 0,
     survivorsServedAfter: 0,
@@ -730,6 +746,10 @@ export async function runGrantShellPort(options: Options): Promise<{
       delta.researchPlanCarry,
       result.researchPlanCarry,
     );
+    if (result.refusedAsDistinctPeople) {
+      delta.refusedAsDistinctPeople += 1;
+      continue;
+    }
     if (!result.applied) {
       delta.deferredAsWouldDemote += 1;
       continue;

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
 import { RoleAssignment } from '../models/roleAssignment';
+import { partitionMergeGroupsByDistinctPeopleVerdict } from '../services/distinctPeopleVerdicts';
 import type { ResearchEntityPiDedupeRow } from './researchEntityPiDedupeCore';
 import {
   applyResearchEntityDedupeMergeGroup,
@@ -63,6 +64,7 @@ export interface EponymousFraLabMergeDelta {
   deferredByCapCount: number;
   maxMerges: number;
   centerGuardedPiCount: number;
+  refusedAsDistinctPeopleCount: number;
   mergedPairs: EponymousFraLabMergePair[];
   visibilityRecomputed: number;
   canonicalEntitiesResynced: number;
@@ -181,6 +183,7 @@ export interface RunEponymousFraLabMergeStageOptions {
     canonicalEntityId: string;
   }) => Promise<{ canonicalEntityId?: string; researchPlanCarry?: ResearchPlanCarryReport }>;
   previewResearchPlanCarry?: typeof previewResearchPlanCarryForMergeGroups;
+  partitionByDistinctPeople?: typeof partitionMergeGroupsByDistinctPeopleVerdict;
 }
 
 export async function runEponymousFraLabMergeStage(
@@ -188,7 +191,12 @@ export async function runEponymousFraLabMergeStage(
 ): Promise<EponymousFraLabMergeDelta> {
   const loadRows = options.loadRows ?? loadEponymousFraLabMergeScopeRows;
   const rows = await loadRows({ sinceIso: options.sinceIso, limit: options.limit });
-  const { plannedGroups, cappedGroups } = planEponymousFraLabMerges(rows, options.maxMerges);
+  const partitionByDistinctPeople =
+    options.partitionByDistinctPeople ?? partitionMergeGroupsByDistinctPeopleVerdict;
+  const { kept: plannedGroups, refused: distinctPeopleRefusals } = await partitionByDistinctPeople(
+    selectEponymousFraLabMergeGroups(rows),
+  );
+  const cappedGroups = plannedGroups.slice(0, Math.max(0, options.maxMerges));
 
   let appliedMergeCount = 0;
   let visibilityRecomputed = 0;
@@ -230,6 +238,7 @@ export async function runEponymousFraLabMergeStage(
     plannedMergeCount: plannedGroups.length,
     appliedMergeCount,
     deferredByCapCount: plannedGroups.length - cappedGroups.length,
+    refusedAsDistinctPeopleCount: distinctPeopleRefusals.length,
     maxMerges: options.maxMerges,
     centerGuardedPiCount: countCenterGuardedPis(rows),
     mergedPairs: buildEponymousFraLabMergePairs(cappedGroups, rows),
