@@ -36,8 +36,9 @@ const Section = ({
 
 const Privacy = () => {
   useDocumentTitle(PRIVACY_PAGE_TITLE);
-  const { features } = useContext(ConfigContext);
+  const { features, selfServeAccountDeletion } = useContext(ConfigContext);
   const selfServeDataControls = features[ACCOUNT_DATA_CONTROLS_FLAG] === true;
+  const selfServeDeletion = selfServeDataControls && selfServeAccountDeletion;
   return (
     <div className="yr-page flex min-h-screen flex-col items-center px-5 py-8 sm:px-8">
       <article className="yr-panel w-full max-w-3xl rounded-card p-5 sm:p-8">
@@ -141,7 +142,13 @@ const Privacy = () => {
         </Section>
 
         <Section id="your-data" title="Download or delete your data">
-          {selfServeDataControls && (
+          {selfServeDataControls && !selfServeDeletion && (
+            <p className={BODY_CLASS}>
+              On your dashboard, under Your data, you can download a copy of everything y/labs keeps
+              with your account. To have it deleted, email the address below.
+            </p>
+          )}
+          {selfServeDeletion && (
             <>
               <p className={BODY_CLASS}>
                 On your dashboard, under Your data, you can download a copy of everything y/labs

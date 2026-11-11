@@ -39,6 +39,7 @@ export interface ConfigContextType {
   departmentPillEligibleLabels: string[];
 
   features: Record<string, boolean>;
+  selfServeAccountDeletion: boolean;
 
   getResearchAreaByName: (name: string) => ResearchAreaConfig | undefined;
   getColorForResearchArea: (name: string) => { bg: string; text: string; border: string };
@@ -61,6 +62,7 @@ export const defaultConfigContext: ConfigContextType = {
   departmentCategories: [],
   departmentPillEligibleLabels: [],
   features: {},
+  selfServeAccountDeletion: false,
   getResearchAreaByName: () => undefined,
   getColorForResearchArea: () => ({
     bg: 'bg-panel-muted',

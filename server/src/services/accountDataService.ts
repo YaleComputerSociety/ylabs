@@ -31,9 +31,14 @@ import {
   deletePostHogPerson,
   type PostHogPersonDeletionOutcome,
 } from './posthogPersonDeletionService';
+import {
+  accountDeletionAuditHmacKey,
+  assertAccountDeletionAvailable,
+} from './accountDeletionReadiness';
+
+export { ACCOUNT_DELETION_AUDIT_HMAC_KEY_MIN_LENGTH } from './accountDeletionReadiness';
 
 export const ACCOUNT_DATA_EXPORT_SCOPE_VERSION = 1;
-export const ACCOUNT_DELETION_AUDIT_HMAC_KEY_MIN_LENGTH = 32;
 export const ACCOUNT_DATA_DELETION_CONFIRM_PHRASE = 'delete my data';
 export const ANALYTICS_EVENT_DELETION_BATCH_SIZE = 500;
 export const DELETED_ACCOUNT_REPORTER_TOMBSTONE_PREFIX = 'deleted-';
@@ -114,11 +119,6 @@ const adminGrantsActedOnBy = (netid: string) => ({
   $or: [{ grantedBy: netid }, { revokedBy: netid }, { 'history.actorNetid': netid }],
 });
 
-const auditHmacKey = (env: NodeJS.ProcessEnv): string | null => {
-  const key = String(env.ACCOUNT_DELETION_AUDIT_HMAC_KEY || '').trim();
-  return key.length >= ACCOUNT_DELETION_AUDIT_HMAC_KEY_MIN_LENGTH ? key : null;
-};
-
 /**
  * The audit row records that an account was deleted without recording whose (#4156). A
  * keyed hash still lets a maintainer who holds the key answer "was this netid deleted?",
@@ -128,7 +128,7 @@ export const accountDeletionAuditSubjectHash = (
   netid: string,
   env: NodeJS.ProcessEnv = process.env,
 ): string | null => {
-  const key = auditHmacKey(env);
+  const key = accountDeletionAuditHmacKey(env);
   return key ? createHmac('sha256', key).update(netid).digest('hex') : null;
 };
 
@@ -413,6 +413,7 @@ const recordDeletionAudit = async (
  * is asked before the account goes because the account holds the only copy of the id it
  * knows the student by. The request that carries the deletion to the other environments is
  * recorded before the account goes too, so a failure there is retried rather than lost.
+ * It refuses before touching a row while a setting any of those steps needs is missing.
  */
 export const deleteAccountData = async (
   netidInput: unknown,
@@ -431,6 +432,7 @@ export const deleteAccountData = async (
   },
 ): Promise<AccountDataDeletionResult> => {
   const netid = requireNetid(netidInput);
+  assertAccountDeletionAvailable(env, environment);
   const account = (await Account.findOne({ netid }).select('_id productAnalyticsId').lean()) as {
     _id: mongoose.Types.ObjectId;
     productAnalyticsId?: unknown;

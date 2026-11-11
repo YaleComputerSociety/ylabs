@@ -12,6 +12,9 @@
  * deletion records a request for the other environments; `--process-pending-from <source>`
  * then deletes those people in `--environment`, one run per target, and marks it done on the
  * source's request, which also writes the source database.
+ *
+ * `--apply` refuses before connecting while the target environment lacks a setting the
+ * deletion needs (#5624), naming the prefixed variable and never its value.
  */
 import dotenv from 'dotenv';
 import path from 'path';
@@ -27,6 +30,7 @@ import {
   normalizeAccountNetid,
   readAccountDataResidue,
 } from '../services/accountDataService';
+import { missingAccountDeletionSettings } from '../services/accountDeletionReadiness';
 
 dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -136,6 +140,29 @@ export function resolveDeleteAccountDataServiceEnv(
   );
 }
 
+export function missingDeleteAccountDataSettings(
+  environment: DeleteAccountDataEnvironment,
+  env: NodeJS.ProcessEnv = process.env,
+): string[] {
+  const prefix = ENVIRONMENT_VARIABLE_PREFIXES[environment];
+  return missingAccountDeletionSettings(
+    resolveDeleteAccountDataServiceEnv(environment, env),
+    environment,
+  ).map((setting) => `${prefix}${setting}`);
+}
+
+export function assertDeleteAccountDataApplyReady(
+  args: Pick<DeleteAccountDataArgs, 'apply' | 'environment'>,
+  env: NodeJS.ProcessEnv = process.env,
+): void {
+  if (!args.apply) return;
+  const missing = missingDeleteAccountDataSettings(args.environment, env);
+  if (missing.length === 0) return;
+  throw new Error(
+    `--apply refused: a deletion in ${args.environment} needs ${missing.join(', ')}, and without them it would skip PostHog, the audit hash or the other environments.`,
+  );
+}
+
 async function deleteOneNetid(args: DeleteAccountDataArgs): Promise<Record<string, unknown>> {
   const before = await readAccountDataResidue(args.netid);
   const deletion = args.apply
@@ -178,6 +205,7 @@ async function processPendingFrom(
 
 async function main(): Promise<void> {
   const args = parseDeleteAccountDataArgs(process.argv.slice(2));
+  assertDeleteAccountDataApplyReady(args);
   const mongoUrl = resolveDeleteAccountDataMongoUrl(args.environment);
   const guard = assertScriptApplyAllowed({ apply: args.apply, scriptName: SCRIPT_NAME, mongoUrl });
 
@@ -192,6 +220,7 @@ async function main(): Promise<void> {
         environment: args.environment,
         db: guard.dbLabel,
         mode: args.apply ? 'apply' : 'dry-run',
+        missingDeletionSettings: missingDeleteAccountDataSettings(args.environment),
         ...outcome,
       }),
     );

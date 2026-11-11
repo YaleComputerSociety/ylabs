@@ -20,6 +20,10 @@ import {
   directoryRemovalServingStateMessage,
   freshDirectoryRemovalServing,
 } from './services/directoryRemovalServing';
+import {
+  accountDeletionServingState,
+  accountDeletionServingStateMessage,
+} from './services/accountDeletionServing';
 
 dotenv.config({ quiet: true });
 initializeErrorTracking();
@@ -59,6 +63,11 @@ const startApp = async () => {
     );
 
     console.log(directoryRemovalServingStateMessage(await freshDirectoryRemovalServing()));
+
+    const accountDeletion = accountDeletionServingState();
+    const logAccountDeletion =
+      accountDeletion.status === 'unavailable' ? console.warn : console.log;
+    logAccountDeletion(accountDeletionServingStateMessage(accountDeletion));
 
     // Express 5 hands a listen failure such as EADDRINUSE to this callback instead
     // of leaving it uncaught, so the process must exit here to stay fail-fast.

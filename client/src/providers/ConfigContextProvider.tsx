@@ -72,6 +72,7 @@ const ConfigContextProvider: FC<ConfigContextProviderProps> = ({ children }) => 
     departmentCategories,
     departmentPillEligibleLabels,
     features,
+    selfServeAccountDeletion,
   } = state;
 
   const fetchConfig = useCallback(async () => {
@@ -105,6 +106,7 @@ const ConfigContextProvider: FC<ConfigContextProviderProps> = ({ children }) => 
           departmentCategories: deptCategories,
           departmentPillEligibleLabels: deptPillEligibleLabels,
           features: featureFlags,
+          selfServeAccountDeletion: data?.selfServeAccountDeletion === true,
         },
       });
     } catch {
@@ -222,6 +224,7 @@ const ConfigContextProvider: FC<ConfigContextProviderProps> = ({ children }) => 
     departmentCategories,
     departmentPillEligibleLabels,
     features,
+    selfServeAccountDeletion,
     getResearchAreaByName,
     getColorForResearchArea,
     getDepartmentByAbbr,

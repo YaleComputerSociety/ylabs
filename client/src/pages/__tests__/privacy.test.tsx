@@ -12,11 +12,18 @@ afterEach(() => {
   cleanup();
 });
 
-const renderPrivacy = (accountDataControls = false) =>
+const renderPrivacy = (
+  accountDataControls = false,
+  selfServeAccountDeletion = accountDataControls,
+) =>
   render(
     <MemoryRouter initialEntries={['/privacy']}>
       <ConfigContext.Provider
-        value={{ ...defaultConfigContext, features: { accountDataControls } }}
+        value={{
+          ...defaultConfigContext,
+          features: { accountDataControls },
+          selfServeAccountDeletion,
+        }}
       >
         <Privacy />
       </ConfigContext.Provider>
@@ -120,6 +127,17 @@ describe('Privacy', () => {
     expect(text).toContain(
       'Web addresses are sent without their search terms, and your netid is removed from everything sent.',
     );
+  });
+
+  it('sends deletion to the mailbox when the server cannot delete, keeping the download', () => {
+    renderPrivacy(true, false);
+
+    const text = document.body.textContent ?? '';
+    expect(text).toContain('you can download a copy');
+    expect(text).toContain('To have it deleted, email the address below.');
+    expect(text).not.toContain('enter your Yale password again');
+    expect(text).not.toContain('asks PostHog to delete');
+    expect(screen.getAllByRole('link', { name: PRIVACY_CONTACT_EMAIL }).length).toBeGreaterThan(0);
   });
 
   it('has no serious or critical accessibility violations', async () => {

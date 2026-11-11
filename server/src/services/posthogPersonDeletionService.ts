@@ -27,13 +27,21 @@ interface PostHogDeletionConfig {
 
 const trimmed = (value: string | undefined) => String(value || '').trim();
 
+export const isPostHogPersonalApiKey = (value: string | undefined): boolean =>
+  POSTHOG_PERSONAL_API_KEY.test(trimmed(value));
+
+export const isPostHogProjectId = (value: string | undefined): boolean =>
+  POSTHOG_PROJECT_ID.test(trimmed(value));
+
 export const postHogPersonDeletionConfig = (
   env: NodeJS.ProcessEnv = process.env,
 ): PostHogDeletionConfig | null => {
-  const apiKey = trimmed(env.POSTHOG_PERSONAL_API_KEY);
-  const projectId = trimmed(env.POSTHOG_PROJECT_ID);
-  if (!POSTHOG_PERSONAL_API_KEY.test(apiKey) || !POSTHOG_PROJECT_ID.test(projectId)) return null;
-  return { apiKey, projectId };
+  if (!isPostHogPersonalApiKey(env.POSTHOG_PERSONAL_API_KEY)) return null;
+  if (!isPostHogProjectId(env.POSTHOG_PROJECT_ID)) return null;
+  return {
+    apiKey: trimmed(env.POSTHOG_PERSONAL_API_KEY),
+    projectId: trimmed(env.POSTHOG_PROJECT_ID),
+  };
 };
 
 export const postHogPersonBulkDeleteUrl = (projectId: string): string =>
