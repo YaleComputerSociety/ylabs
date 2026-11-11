@@ -7730,7 +7730,11 @@ async function materializeUserIdentityToResearcher(
   const priorEmail: string | undefined = researcher.identifiers?.email;
   let emailFieldsWritten = 0;
   const derivedEmail = await derivedResearcherEmail(
-    { _id: researcher._id, netid: textValue(researcher.identifiers?.netid) },
+    {
+      _id: researcher._id,
+      netid: textValue(researcher.identifiers?.netid),
+      displayName: textValue(researcher.displayName),
+    },
     textValue(priorEmail),
   );
   if (derivedEmail) {

@@ -3,6 +3,7 @@ import { Observation } from '../models/observation';
 import { Researcher } from '../models/researcher';
 import { officialProfileDestinationStoredPattern } from '../services/leadProfileIdentity';
 import { identityWitnessesConflict } from '../services/officialProfileLinkIdentity';
+import { isLikelyPersonSpecificYaleEmail } from './utils/scraperHelpers';
 import { materializationReadScopeFilter } from './entityMaterializer';
 import {
   invalidatedScrapeRunIds,
@@ -35,6 +36,7 @@ const bareNetid = (value: unknown): string => {
 export interface EmailEvidencePerson {
   _id?: unknown;
   netid: string;
+  displayName?: string;
 }
 
 /**
@@ -150,6 +152,20 @@ export async function derivedResearcherEmail(
   );
 }
 
+/**
+ * A replacement overwrites an address the person may still use, so a Yale candidate must name
+ * the person, judged by the predicate every lane applies to a person email: it refuses role and
+ * office mailboxes as well as an address that names someone else. A candidate outside Yale has
+ * no such predicate and is left to the page rules.
+ */
+function yaleCandidateIsNotThePersonsOwnAddress(
+  candidate: string,
+  person: EmailEvidencePerson,
+): boolean {
+  if (!candidate.endsWith('@yale.edu')) return false;
+  return !isLikelyPersonSpecificYaleEmail(candidate, textValue(person.displayName));
+}
+
 export async function derivedResearcherEmailFrom(
   person: EmailEvidencePerson,
   storedEmail: string,
@@ -163,6 +179,9 @@ export async function derivedResearcherEmailFrom(
   if (!stored) return verified.email;
   if (stored === verified.email) return undefined;
   if (!verified.sources.includes('official-profile-page')) return undefined;
+  if (yaleCandidateIsNotThePersonsOwnAddress(verified.email, person)) {
+    return undefined;
+  }
   const pageEvidenceStatesStored = observations.some(
     (observation) =>
       observation.sourceName === OFFICIAL_PROFILE_PI_BACKFILL_SOURCE &&
