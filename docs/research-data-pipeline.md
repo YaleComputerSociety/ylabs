@@ -1057,6 +1057,8 @@ A read that gains or loses the address writes the same person under a new key, a
 A re-key is supersession rather than absence, because the lane still states every value under the newer key, so the two-read retraction rule below does not apply.
 `server/src/scrapers/rekeyedPersonKeyPlan.ts` decides which old keys a newer twin from the same listing replaced, and `rekeyedPersonKeyRetirement.ts` retires them through `retireObservations` at the end of the lane's run, holding any key whose twin does not reach the researcher the old key reaches.
 `observations:retire-rekeyed-person-keys` is the backfill over the same planner; `skills/scrapers/SKILL.md` records the admission, refusal and hold rules and the command.
+The twin join costs about 1.3 seconds per pair against Development at concurrency 8, so the first full `dept-faculty-roster` run before the backfill pays about 20 minutes extra, and later runs check only a handful of pairs.
+The post-batch apply sequence (backfill apply in a write-order slot after #5537, then served re-reads of the 2 rows the projection could not isolate and of 20 researchers whose old keys were retired) is recorded in the skill.
 
 ### Field retraction: how the engine stops asserting a field a source dropped
 

@@ -487,6 +487,7 @@ Start an address pattern with the non-address lookbehind `(?<![a-z0-9._%+-])` ra
   It refuses when one twin admits two old keys, one old key admits two twins, two people on the listing share the name, or the directory gives the name to two netids, and it holds a key whose twin does not reach, through `userKeyResearcherJoins`, the researcher the old key reaches today.
   A same-name match with no shared page, a shared page under another name (a co-author card), and a read from an `--only` or `--limit` run that did not read the old key's listing all retire nothing.
   The run notes and `metrics.rekeyedPersonKeys` count admitted, retired, held, refused and left-alone keys.
+  The twin join costs about 1.3 seconds per pair against Development and runs at concurrency 8, so the first full `dept-faculty-roster` run before the backfill pays about 20 minutes for its roughly 3,670 pairs, and later runs check only the handful of keys re-keyed since.
   `observations:retire-rekeyed-person-keys` is the dry-run-by-default backfill over the same planner for keys stored before the rule; see "Retiring the person keys a lane re-keyed" below.
 - `observationFieldSanitizer.ts` - shared ingest-time extraction sanitizer applied by `observationStore.appendObservations` to every observation from every source, so no scraper (present or future) can leak page furniture into a stored field (#1375).
   It composes the existing hygiene utilities rather than restating their rules:
@@ -2011,6 +2012,14 @@ Like `scrape run` and `scrape materialize` (#5842), it writes only with `--apply
 
 Superseding writes no researcher or row field, so re-derive the affected people with `observations:rematerialize-user-keys --keys-file=<twin keys> --passes=2` and the affected rows with `research-entity:rematerialize --slugs=... --only-fields=...`, dry run first.
 A second apply retires nothing.
+
+The Development apply waits for the #5537 description batch and then runs in this order:
+
+1. The backfill apply, in a Development write-order slot (`~/Personal/ylabs-experiments/manager/dev-write-order.md`, `yarn --cwd server dev:locks` first), then the rematerialize steps above.
+2. A served re-read of the 2 rows whose dry-run projection read the planned observations through a live fallback it could not isolate (`rowsWithRetiredEvidenceReadLive` on 2026-11-11), because their projected "no change" is not proven.
+3. A served re-read of a sample of 20 researchers whose old keys were retired.
+
+The 2026-11-11 full Development dry run planned 3,624 `dept-faculty-roster` keys (25,818 observations) and 1 `ysm-faculty-directory` key, refused 727, held 46 at the twin join, and projected 0 served changes over every twin key and the 8 rows naming an old key.
 
 #### Press copy and publication lists are not a description (#4446)
 
