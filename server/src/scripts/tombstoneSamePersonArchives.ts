@@ -15,6 +15,10 @@ import {
 } from '../services/researchEntityEponymousMergeService';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { planSamePersonArchiveTombstones } from './tombstoneSamePersonArchivesCore';
+import {
+  loadCurrentLeadPersonIdsByEntity,
+  partitionMergeGroupsByDistinctPeopleVerdict,
+} from '../services/distinctPeopleVerdicts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
@@ -80,6 +84,24 @@ async function main(): Promise<void> {
     leadKeysBySlug,
   });
 
+  const archivedLeads = await loadCurrentLeadPersonIdsByEntity(
+    plan.tombstones.map((tombstone) => tombstone.archivedId),
+    { includeRetiredEdges: true },
+  );
+  const survivorLeads = await loadCurrentLeadPersonIdsByEntity(
+    plan.tombstones.map((tombstone) => tombstone.survivorId),
+  );
+  const { kept: tombstones, refused: refusedAsDistinctPeople } =
+    await partitionMergeGroupsByDistinctPeopleVerdict(
+      plan.tombstones.map((tombstone) => ({
+        tombstone,
+        canonicalEntityId: tombstone.survivorId,
+        duplicateEntityIds: [tombstone.archivedId],
+      })),
+      { leadsByEntity: new Map([...survivorLeads, ...archivedLeads]) },
+    );
+  plan.tombstones = tombstones.map(({ tombstone }) => tombstone);
+
   const applied = { pointed: 0, rematerialized: 0, regated: 0, redirectsResolving: 0 };
   if (apply) {
     for (const tombstone of plan.tombstones) {
@@ -122,6 +144,7 @@ async function main(): Promise<void> {
     environment: guard.environment,
     db: guard.dbLabel,
     planned: plan.tombstones.length,
+    refusedAsDistinctPeople: refusedAsDistinctPeople.length,
     resumedSurvivors: plan.resumedSurvivorIds.length,
     heldByReason: plan.held.reduce<Record<string, number>>((counts, hold) => {
       counts[hold.reason] = (counts[hold.reason] ?? 0) + 1;

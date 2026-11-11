@@ -1682,6 +1682,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       appliedGroups: 2,
       deferredAsWouldDemoteGroups: 1,
       deferredAsWouldSwapPinnedCanonicalGroups: 1,
+      refusedAsDistinctPeopleGroups: 0,
       deferredByCapGroups: 4,
       archivedEntities: 3,
       deletedEntities: 0,
@@ -1706,6 +1707,7 @@ describe('buildResearchEntityPiDedupePlan', () => {
       appliedGroups: 0,
       deferredAsWouldDemoteGroups: 1,
       deferredAsWouldSwapPinnedCanonicalGroups: 2,
+      refusedAsDistinctPeopleGroups: 0,
     });
   });
 

@@ -37,6 +37,17 @@ Only current lead edges count as the row's leads, so a departed lead's `HISTORIC
 The withheld co-PI still counts as a person on the row for the `--shared-person-id` multi-person quarantine, so withholding a listing only ever refuses a merge and never turns a two-lead row into a single-lead row another lane may fold.
 The predicate is `grantCoPiListedPersonIds` in `server/src/scrapers/grantCoPiListing.ts`, and the dry-run report counts the withheld rows in `withheldGrantCoPiListings`.
 
+A recorded distinct-people verdict refuses a fold in every lane, whatever evidence the leads carry (#5802).
+The co-PI rule above stops applying once the co-lead gains a non-grant edge, so it cannot keep two separated people apart on its own; the verdict does.
+A verdict is written by `researchers:record-distinct-people` as `distinctFromResearcherIds` on both researchers, and is read from either side and through researcher-dedupe fold chains (`dedupedIntoResearcherId`).
+A merge is refused when one of its rows holds one of the two people and a row holds the other, unless every row holding either already holds both.
+So one person's own row never folds into the other's row or into a lab the two co-lead, while two copies of that co-led lab still merge and the genuine co-lead edge stays.
+Two copies of a co-led lab where one lists only one person and the other lists only the other are refused, which fails closed; none existed on Development when this landed.
+A refused group is refused whole and nothing partial is planned in its place, so the rule only removes merges.
+The predicate is `distinctPeopleVerdictPairsJoinedByFold` in `server/src/scrapers/distinctPeopleVerdict.ts`, and `server/src/services/distinctPeopleVerdicts.ts` loads it.
+It runs on the plan of every `research-entity:dedupe-by-pi` lane (reported as `plannedRefusedAsDistinctPeopleGroups` and `refusedAsDistinctPeople`), again inside `applyResearchEntityDedupeMergeGroup` (reported as `refusedAsDistinctPeople` on an applied group), and in the eponymous FRA merge, the same-lead duplicate merge, the same-person archive tombstones, the merge-tombstone restore, the stranded-key redirect, the dept-roster shell fold, resolve-at-mint adoption, and researcher-dedupe.
+`foldPathsHonourDistinctPeopleVerdict.test.ts` fails when a new file writes a merge redirect without reading the verdict.
+
 Narrowing modes let an operator review one risk class at a time:
 
 - `--reviewed-profile-area-only` limits the plan to profile-area shells that have a concrete same-PI home.

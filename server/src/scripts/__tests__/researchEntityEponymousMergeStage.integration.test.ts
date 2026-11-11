@@ -22,6 +22,7 @@ vi.mock('../../services/studentVisibilityGateService', () => ({
 
 import { ResearchEntity } from '../../models/researchEntity';
 import { runEponymousFraLabMergeStage } from '../researchEntityEponymousMergeStage';
+import { applyResearchEntityDedupeMergeGroup } from '../dedupeResearchEntitiesByPi';
 
 const SINCE = '2026-08-01T00:00:00.000Z';
 const TOUCHED_AT = new Date('2026-08-26T00:00:00.000Z');
@@ -136,5 +137,67 @@ describe('runEponymousFraLabMergeStage idempotency (DB-backed)', () => {
     const afterSecond = await shellDoc();
     expect(afterSecond?.archived).toBe(true);
     expect(String(afterSecond?.canonicalGroupId)).toBe(labId.toHexString());
+  });
+
+  describe('with a co-lead recorded as a different person (#5802)', () => {
+    const coLeadId = new mongoose.Types.ObjectId();
+
+    beforeEach(async () => {
+      const db = mongoose.connection.db!;
+      await db.collection('researchers').insertOne({
+        _id: coLeadId,
+        displayName: 'Wren Ortolan',
+        archived: false,
+        distinctFromResearcherIds: [personId],
+      });
+      await db.collection('role_assignments').insertMany([
+        {
+          personId: coLeadId,
+          target: { kind: 'RESEARCH_ENTITY', id: labId },
+          role: 'DIRECTOR',
+          state: 'CURRENT',
+          archived: false,
+        },
+        {
+          personId,
+          target: { kind: 'RESEARCH_ENTITY', id: shellId },
+          role: 'PI',
+          state: 'CURRENT',
+          archived: false,
+        },
+      ]);
+    });
+
+    it('does not fold the person`s own row into the lab the two co-lead, on either run', async () => {
+      for (let run = 0; run < 2; run += 1) {
+        const delta = await runEponymousFraLabMergeStage({
+          apply: true,
+          maxMerges: 50,
+          sinceIso: SINCE,
+        });
+        expect(delta.plannedMergeCount).toBe(0);
+        expect(delta.appliedMergeCount).toBe(0);
+        expect(delta.refusedAsDistinctPeopleCount).toBe(1);
+      }
+      const shell = await shellDoc();
+      expect(shell?.archived).toBe(false);
+      expect(shell?.canonicalGroupId ?? null).toBeNull();
+    });
+
+    it('refuses the same fold at the shared merge primitive, whichever lane asks for it', async () => {
+      const result = await applyResearchEntityDedupeMergeGroup(
+        {
+          canonicalEntityId: labId.toHexString(),
+          duplicateEntityIds: [shellId.toHexString()],
+          mergedDepartments: [],
+          mergedResearchAreas: [],
+          mergedSourceUrls: [],
+        },
+        { deleteDuplicates: false, relinkReferences: true },
+      );
+      expect(result).toMatchObject({ refusedAsDistinctPeople: true, archivedEntities: 0 });
+      const shell = await shellDoc();
+      expect(shell?.archived).toBe(false);
+    });
   });
 });

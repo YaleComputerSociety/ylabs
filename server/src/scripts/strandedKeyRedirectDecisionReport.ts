@@ -35,11 +35,17 @@ import { ResearchEntity } from '../models/researchEntity';
 import { Researcher } from '../models/researcher';
 import { RoleAssignment } from '../models/roleAssignment';
 import {
+  leadPersonIdsFromLeadObservations,
   materializeEntity,
   sanitizeProjectedField,
   shouldIgnoreObservationForEntityMaterialization,
 } from '../scrapers/entityMaterializer';
 import { retireObservations } from '../scrapers/observationStore';
+import { distinctPeopleVerdictPairsJoinedByFold } from '../scrapers/distinctPeopleVerdict';
+import {
+  loadCurrentLeadPersonIdsByEntity,
+  loadDistinctPeopleVerdictIndex,
+} from '../services/distinctPeopleVerdicts';
 import {
   previewResearchEntityMergeTombstonePlanCarry,
   recordResearchEntityMergeTombstone,
@@ -77,7 +83,8 @@ export type StrandedKeyApplyAction =
   | 'redirect_withdrawn_merge_did_not_land'
   | 'retired'
   | 'skipped_no_target_id'
-  | 'deferred_target_written_by_a_sibling_key';
+  | 'deferred_target_written_by_a_sibling_key'
+  | 'refused_distinct_people_verdict';
 
 interface StrandedKeyApplyOutcome {
   entityKey: string;
@@ -390,10 +397,33 @@ async function previewStrandedKeyResearchPlanCarry(
   return total;
 }
 
+async function strandedKeyJoinsDistinctPeople(
+  entityKey: string,
+  targetEntityId: string,
+): Promise<boolean> {
+  const verdicts = await loadDistinctPeopleVerdictIndex();
+  if (verdicts.size === 0) return false;
+  const leadObservations = (await Observation.find({
+    entityType: 'researchEntity',
+    entityKey,
+    field: { $in: ['inferredPiUserId', 'inferredPiUserKey'] },
+    superseded: { $ne: true },
+  }).lean()) as Array<{ field: string; value?: unknown }>;
+  const keyLeads = await leadPersonIdsFromLeadObservations(leadObservations, entityKey);
+  if (keyLeads.length === 0) return false;
+  const targetLeads = (await loadCurrentLeadPersonIdsByEntity([targetEntityId])).get(
+    targetEntityId,
+  );
+  return distinctPeopleVerdictPairsJoinedByFold([keyLeads, targetLeads ?? []], verdicts).length > 0;
+}
+
 async function applyOneRedirect(
   row: ReportRow,
   targetEntityId: string,
 ): Promise<StrandedKeyApplyOutcome> {
+  if (await strandedKeyJoinsDistinctPeople(row.entityKey, targetEntityId)) {
+    return { entityKey: row.entityKey, action: 'refused_distinct_people_verdict' };
+  }
   const tombstone = await recordResearchEntityMergeTombstone({
     slug: row.entityKey,
     canonicalEntityId: targetEntityId,

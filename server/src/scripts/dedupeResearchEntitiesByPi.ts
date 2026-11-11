@@ -5,6 +5,10 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
 import {
+  mergeGroupJoinsDistinctPeople,
+  partitionMergeGroupsByDistinctPeopleVerdict,
+} from '../services/distinctPeopleVerdicts';
+import {
   archivedEntityUpdate,
   attributedArchiveSet,
   PI_DEDUPE_ARCHIVE_REASON,
@@ -458,12 +462,14 @@ export interface ResearchEntityDedupeApplyOutcome {
   deletedEntities?: number;
   deferredAsWouldDemote?: boolean;
   deferredAsWouldSwapPinnedCanonical?: boolean;
+  refusedAsDistinctPeople?: boolean;
 }
 
 export interface ResearchEntityDedupeApplyDeferrals {
   appliedGroups: number;
   deferredAsWouldDemoteGroups: number;
   deferredAsWouldSwapPinnedCanonicalGroups: number;
+  refusedAsDistinctPeopleGroups: number;
 }
 
 /**
@@ -480,11 +486,18 @@ export function countResearchEntityDedupeApplyDeferrals(
   const deferredAsWouldSwapPinnedCanonicalGroups = applied.filter(
     (result) => result.deferredAsWouldSwapPinnedCanonical === true,
   ).length;
+  const refusedAsDistinctPeopleGroups = applied.filter(
+    (result) => result.refusedAsDistinctPeople === true,
+  ).length;
   return {
     appliedGroups:
-      applied.length - deferredAsWouldDemoteGroups - deferredAsWouldSwapPinnedCanonicalGroups,
+      applied.length -
+      deferredAsWouldDemoteGroups -
+      deferredAsWouldSwapPinnedCanonicalGroups -
+      refusedAsDistinctPeopleGroups,
     deferredAsWouldDemoteGroups,
     deferredAsWouldSwapPinnedCanonicalGroups,
+    refusedAsDistinctPeopleGroups,
   };
 }
 
@@ -494,6 +507,7 @@ export interface UrlIdentityDedupeStageDelta {
   appliedGroups: number;
   deferredAsWouldDemoteGroups: number;
   deferredAsWouldSwapPinnedCanonicalGroups: number;
+  refusedAsDistinctPeopleGroups: number;
   deferredByCapGroups: number;
   archivedEntities: number;
   deletedEntities: number;
@@ -551,6 +565,7 @@ export function buildUrlIdentityDedupeStageDelta(input: {
   quarantinedSameNameGroups: DedupeQuarantineCount;
   quarantinedMultiPersonEntities: DedupeQuarantineCount;
   quarantinedConflatedPersonProfileGroups: number;
+  plannedRefusedAsDistinctPeopleGroups?: number;
   visibilityRecomputed: number;
   canonicalEntitiesResynced: number;
   canonicalIndexSyncFailures: number;
@@ -566,6 +581,8 @@ export function buildUrlIdentityDedupeStageDelta(input: {
     appliedGroups: deferrals.appliedGroups,
     deferredAsWouldDemoteGroups: deferrals.deferredAsWouldDemoteGroups,
     deferredAsWouldSwapPinnedCanonicalGroups: deferrals.deferredAsWouldSwapPinnedCanonicalGroups,
+    refusedAsDistinctPeopleGroups:
+      (input.plannedRefusedAsDistinctPeopleGroups ?? 0) + deferrals.refusedAsDistinctPeopleGroups,
     deferredByCapGroups: input.deferredByCapGroups,
     archivedEntities: sumApplied((result) => result.archivedEntities),
     deletedEntities: sumApplied((result) => result.deletedEntities),
@@ -2550,6 +2567,10 @@ export async function applyResearchEntityDedupeMergeGroup(
   ) {
     return zeroedResult();
   }
+  const joinedVerdictPairs = await mergeGroupJoinsDistinctPeople(group);
+  if (joinedVerdictPairs.length > 0) {
+    return { ...zeroedResult(), refusedAsDistinctPeople: true, joinedVerdictPairs };
+  }
   const now = new Date();
 
   let canonicalId = requestedCanonicalId;
@@ -2949,7 +2970,7 @@ async function main() {
   const multiPersonEntityQuarantine: MultiPersonEntityQuarantine[] = sharedPersonId
     ? buildMultiPersonEntityQuarantine(piRows)
     : [];
-  const { plan: allPlan, quarantine: conflatedPersonProfileQuarantine } =
+  const { plan: conflationScreenedPlan, quarantine: conflatedPersonProfileQuarantine } =
     partitionPlanByPersonProfileConflation(
       dedupePlannedGroups(
         officialLabUrlOnly
@@ -2969,6 +2990,8 @@ async function main() {
                     : buildResearchEntityPiDedupePlan(piRows),
       ),
     );
+  const { kept: allPlan, refused: distinctPeopleRefusals } =
+    await partitionMergeGroupsByDistinctPeopleVerdict(conflationScreenedPlan);
   const slugFilteredPlan = slug
     ? allPlan.filter((group) => group.canonicalSlug === slug || group.duplicateSlugs.includes(slug))
     : allPlan;
@@ -3136,6 +3159,12 @@ async function main() {
     ),
     conflatedPersonProfileQuarantine,
     quarantinedConflatedPersonProfileGroups: conflatedPersonProfileQuarantine.length,
+    plannedRefusedAsDistinctPeopleGroups: distinctPeopleRefusals.length,
+    refusedAsDistinctPeople: distinctPeopleRefusals.map(({ group, joinedVerdictPairs }) => ({
+      canonicalSlug: group.canonicalSlug,
+      duplicateSlugs: group.duplicateSlugs,
+      joinedVerdictPairs,
+    })),
     withheldGrantCoPiListings: piRows.reduce(
       (sum, row) => sum + (row.grantCoPiListedEntityIds?.length ?? 0),
       0,
@@ -3180,6 +3209,7 @@ async function main() {
               multiPersonEntityQuarantine,
             ),
             quarantinedConflatedPersonProfileGroups: conflatedPersonProfileQuarantine.length,
+            plannedRefusedAsDistinctPeopleGroups: distinctPeopleRefusals.length,
             visibilityRecomputed,
             canonicalEntitiesResynced,
             canonicalIndexSyncFailures,

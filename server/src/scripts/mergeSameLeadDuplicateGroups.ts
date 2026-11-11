@@ -17,6 +17,7 @@ import {
 } from '../services/researchGroupService';
 import { SAME_LEAD_DUPLICATE_MERGE_ARCHIVE_REASON } from '../models/entityArchival';
 import { archiveResearchEntities } from '../services/archivedResearchEntityRoleEdges';
+import { partitionMergeGroupsByDistinctPeopleVerdict } from '../services/distinctPeopleVerdicts';
 import { materializeEntity } from '../scrapers/entityMaterializer';
 import {
   addResearchPlanCarryReports,
@@ -159,7 +160,22 @@ async function main(): Promise<void> {
     })
     .flatMap((group) => (group ? [group] : []));
 
-  const outcome = planSameLeadCorroboratedMerges(groups);
+  const corroborated = planSameLeadCorroboratedMerges(groups);
+  const distinctPeople = await partitionMergeGroupsByDistinctPeopleVerdict(
+    corroborated.merges.map((merge) => ({
+      merge,
+      canonicalEntityId: merge.survivorId,
+      duplicateEntityIds: merge.loserIds,
+    })),
+  );
+  const outcome = {
+    ...corroborated,
+    merges: distinctPeople.kept.map(({ merge }) => merge),
+    refusedAsDistinctPeople: distinctPeople.refused.map(({ group, joinedVerdictPairs }) => ({
+      url: group.merge.url,
+      joinedVerdictPairs,
+    })),
+  };
   const plannedUrls = new Set(outcome.merges.map((merge) => merge.url));
   const plannedGroups = groups.filter((group) => plannedUrls.has(group.url));
 
@@ -343,6 +359,7 @@ async function main(): Promise<void> {
         duplicateUrlGroupsScanned: groups.length,
         sameLeadGroups: groups.filter((g) => g.sharesALead && g.everyMemberHasALead).length,
         plannedMerges: outcome.merges.length,
+        refusedAsDistinctPeople: outcome.refusedAsDistinctPeople.length,
         plannedByCorroboration: {
           nameAgrees: outcome.merges.filter((m) => m.corroboration === 'name-agrees').length,
           shellVersusConcrete: outcome.merges.filter(

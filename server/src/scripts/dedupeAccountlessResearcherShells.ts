@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { DETACHED_ROLE_ASSIGNMENT_REVIEW_STATUS } from '../models/roleAssignment';
 import { resolveNetidForRosterEmailAlias } from '../scrapers/entityMaterializer';
+import { loadDistinctPeopleVerdictIndex } from '../services/distinctPeopleVerdicts';
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
@@ -619,13 +620,16 @@ export async function dedupeAccountlessResearcherShells(options: {
     primaryDepartment: doc.profile?.primaryDepartment,
     websiteUrl: doc.profile?.websiteUrl,
   }));
-  const distinctPeoplePairs = new Set<string>(
-    (liveResearchers as any[]).flatMap((doc) =>
+  const distinctPeoplePairs = new Set<string>([
+    ...(liveResearchers as any[]).flatMap((doc) =>
       (Array.isArray(doc.distinctFromResearcherIds) ? doc.distinctFromResearcherIds : []).map(
         (otherId: unknown) => distinctPeoplePairKey(idKey(doc._id), idKey(otherId)),
       ),
     ),
-  );
+    ...(await loadDistinctPeopleVerdictIndex())
+      .verdictPairs()
+      .map(([left, right]) => distinctPeoplePairKey(left, right)),
+  ]);
 
   const canonicalIndex = buildCanonicalNameIndex(researcherIdentities);
 

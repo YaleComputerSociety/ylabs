@@ -6,6 +6,10 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { walkResearchEntityTombstoneChain } from '../services/researchEntityCanonicalTombstone';
+import {
+  loadCurrentLeadPersonIdsByEntity,
+  partitionMergeGroupsByDistinctPeopleVerdict,
+} from '../services/distinctPeopleVerdicts';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
@@ -215,9 +219,28 @@ export async function runRestoreMergeTombstoneRows(
     },
   });
 
-  const plannedTotal = summary.plans.length;
+  const plansForExistingRows = summary.plans.filter((plan) => plan.existingRowId);
+  const leadsByEntity = new Map([
+    ...(await loadCurrentLeadPersonIdsByEntity(
+      plansForExistingRows.map((plan) => plan.existingRowId as string),
+      { includeRetiredEdges: true },
+    )),
+    ...(await loadCurrentLeadPersonIdsByEntity(
+      plansForExistingRows.map((plan) => plan.canonicalEntityId),
+    )),
+  ]);
+  const distinctPeople = await partitionMergeGroupsByDistinctPeopleVerdict(
+    summary.plans.map((plan) => ({
+      plan,
+      canonicalEntityId: plan.canonicalEntityId,
+      duplicateEntityIds: plan.existingRowId ? [plan.existingRowId] : [],
+    })),
+    { leadsByEntity },
+  );
+  const restorablePlans = distinctPeople.kept.map(({ plan }) => plan);
+  const plannedTotal = restorablePlans.length;
   const selected =
-    options.limit === undefined ? summary.plans : summary.plans.slice(0, options.limit);
+    options.limit === undefined ? restorablePlans : restorablePlans.slice(0, options.limit);
 
   let applied = 0;
   const failures: Array<{ mergedSlug: string; error: string }> = [];
@@ -242,6 +265,7 @@ export async function runRestoreMergeTombstoneRows(
     database: guard.dbLabel,
     scanned: summary.scanned,
     plannedTotal,
+    refusedAsDistinctPeople: distinctPeople.refused.length,
     selectedForWrite: selected.length,
     applied,
     plannedByAction: summary.plannedByAction,
