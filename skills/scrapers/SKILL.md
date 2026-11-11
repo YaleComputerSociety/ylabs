@@ -58,11 +58,12 @@ Three call sites, two of which do not use the helper and say why:
 - `dept-faculty-roster` types a person from their own listed title, never from the roster page: `titleStatesOnlyAStaffRole` (a staff or research-support title with no faculty appointment anywhere) yields `userType: 'staff'`, and anything else keeps the earlier rule (#5750).
   `userType` is latest-wins for that source, so a re-read replaces the lane's earlier typing instead of standing beside it as a same-source conflict, the lane emits one typing per person per run after every roster lane finishes (two concurrent inserts for one key would supersede each other), and a staff typing never replaces a faculty one: not one from another roster in the run, and not one a live lane title stating a faculty appointment supports, so an `--only` or `--limit` run cannot undo another roster's faculty typing.
   No served surface reads the resolved `userType`: name search, the roster, hosting and lead eligibility all read role edges, so a staff person served as faculty is a role-edge defect in the lane that wrote the edge (#5746), not a typing defect.
+- the retirement pass restates them in `staffMintedEntityReasonFor`, because it has to name *which* screen refused in order to report by reason.
+
 - A researcher's stored title is resolved over every `user` key that joins it, and the newest fresh first-hand read of the researcher's own official page wins outright (`userTitleEvidence`, `FIRST_HAND_USER_TITLE_SOURCES`, #5578).
   A read is fresh only when it comes from its lane's latest full-coverage run (`isFullCoverageRun` in `scrapers/latestFullCoverageRun.ts`).
   Without one, a servable stored title is never rewritten, and only an empty or unservable title is filled from the fallback; rewriting the rest is #5801.
   A roster title counts as first-hand only when it carries `extraction.source: 'profileTitleBlock'`, which the lane sets on a profile-enrichment title; see `docs/glossary.md`.
-- the retirement pass restates them in `staffMintedEntityReasonFor`, because it has to name *which* screen refused in order to report by reason.
 
 `bbs-research-track` no longer mints at all (#3561): a PI with no existing row, or several, is counted by reason and skipped, so it needs none of the three screens.
 Its track listings come in two shapes and the parser must match both: most render the roster as `link-items-list__item` anchors with the name as "Last, First", while at least one renders a plain two-column table with no `link-items-list` wrapper, no `hyperlink` class, and the name as "First Last".

@@ -1287,7 +1287,7 @@ Every other rule names a condition a later reader can re-derive - a dead page ca
 Several `user` keys can join one researcher, and each resolves only its own evidence, so a person's display fields (`displayName`, `primaryDepartment`, `imageUrl`, `websiteUrl`) need one precedence across keys (#5706).
 `title` is resolved per researcher over the title evidence of every key that joins it, with source authority (#5578), and a title from that pool is written whatever the materializing key's writer rank.
 The rewrite is scoped (#5578): a stored title changes only when a fresh first-hand read decides it, meaning a read of the researcher's own official page by a lane in `FIRST_HAND_USER_TITLE_SOURCES`, taken in that lane's latest full-coverage run.
-A full-coverage run finished `success`, was not invalidated, wrote, and was not narrowed by `--only`, `--limit`, a missing `--exhaustive`, or the work planner (`isFullCoverageRun`); `Source.lastCrawledAt` is not used, because a scoped or `partial` run stamps it too.
+A full-coverage run finished `success`, was not invalidated, wrote, and was not narrowed by `--only`, `--limit`, `--offset`, a missing `--exhaustive`, or the work planner (`isFullCoverageRun`); `Source.lastCrawledAt` is not used, because a scoped or `partial` run stamps it too.
 Without a fresh first-hand read, a servable stored title is left as it is, and only an empty or unservable one is filled from the pooled or own-key fallback.
 The title-hygiene step still replaces a stored title that `servablePersonTitle` refuses.
 Rewriting the other stored titles is #5801.

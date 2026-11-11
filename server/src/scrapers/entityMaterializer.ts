@@ -8122,11 +8122,13 @@ async function userKeyJoinEvidence(
     reference.entityKey,
     unscreened,
   );
-  if (kept.length === 0) return { researcherId: undefined, titleObservations: [] };
-  const join = await joinUserIdentityToExistingResearcher(reference, kept, now);
+  const unjoined: UserKeyJoinEvidence = { researcherId: undefined, titleObservations: [] };
+  if (kept.length === 0) return unjoined;
+  const screened = await screenedUserIdentityJoin(reference, kept, now);
+  if ('skipped' in screened) return unjoined;
   return {
-    researcherId: prefetchObjectIdString(join.researcher?._id),
-    titleObservations: userTitleObservations(kept),
+    researcherId: prefetchObjectIdString(screened.join.researcher?._id),
+    titleObservations: userTitleObservations(screened.observations),
   };
 }
 
@@ -8401,6 +8403,35 @@ async function withoutPagesNamingAnotherNetid<T extends { sourceUrl?: unknown }>
   );
 }
 
+type ScreenedUserIdentityJoin =
+  | { join: UserIdentityJoinResult; observations: any[] }
+  | { skipped: 'office-mailbox-user-key' | 'page-evidence-names-another-netid' };
+
+/**
+ * The join a user key's own materialization acts on, shared with every reader that pools a
+ * key's evidence so a pooled key is screened exactly as it would be when it materializes.
+ */
+async function screenedUserIdentityJoin(
+  identifier: UserKeyReference,
+  observations: any[],
+  now: Date,
+): Promise<ScreenedUserIdentityJoin> {
+  if (userKeyNamesRoleOrUnitMailbox(identifier.entityKey, observations)) {
+    return { skipped: 'office-mailbox-user-key' };
+  }
+  const join = await joinUserIdentityToExistingResearcher(identifier, observations, now);
+  const joinedNetid = textValue(join.researcher?.identifiers?.netid).toLowerCase();
+  if (!join.researcher?._id || !joinedNetid) return { join, observations };
+  const kept = await withoutPagesNamingAnotherNetid(observations, joinedNetid);
+  if (kept.length === observations.length) return { join, observations };
+  const rejoined =
+    kept.length > 0 ? await joinUserIdentityToExistingResearcher(identifier, kept, now) : undefined;
+  if (!rejoined || String(rejoined.researcher?._id ?? '') !== String(join.researcher._id)) {
+    return { skipped: 'page-evidence-names-another-netid' };
+  }
+  return { join: rejoined, observations: kept };
+}
+
 async function officialPageNamesAnotherNetid(
   pageUrl: string,
   researcher: { identifiers?: { netid?: string } },
@@ -8487,24 +8518,9 @@ async function materializeUserIdentityToResearcher(
     skipped: reason,
   });
 
-  if (userKeyNamesRoleOrUnitMailbox(identifier.entityKey, obs)) {
-    return skipped('office-mailbox-user-key');
-  }
-  let join = await joinUserIdentityToExistingResearcher(identifier, obs, options.now ?? new Date());
-  const joinedNetid = textValue(join.researcher?.identifiers?.netid).toLowerCase();
-  if (join.researcher?._id && joinedNetid) {
-    const kept = await withoutPagesNamingAnotherNetid(obs, joinedNetid);
-    if (kept.length !== obs.length) {
-      const rejoined =
-        kept.length > 0
-          ? await joinUserIdentityToExistingResearcher(identifier, kept, options.now ?? new Date())
-          : undefined;
-      if (String(rejoined?.researcher?._id ?? '') !== String(join.researcher._id)) {
-        return skipped('page-evidence-names-another-netid');
-      }
-      join = rejoined!;
-    }
-  }
+  const screened = await screenedUserIdentityJoin(identifier, obs, options.now ?? new Date());
+  if ('skipped' in screened) return skipped(screened.skipped);
+  const { join, observations: screenedObservations } = screened;
   const {
     resolved,
     displayName,
@@ -8651,7 +8667,7 @@ async function materializeUserIdentityToResearcher(
         identifier: identifier.entityKey
           ? { entityKey: identifier.entityKey }
           : { entityId: prefetchObjectIdString(identifier.entityId) },
-        ownObservations: obs,
+        ownObservations: screenedObservations,
         ownTitle: title,
         now: options.now ?? new Date(),
         prefetch: options.chunkPrefetch,

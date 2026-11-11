@@ -3,8 +3,9 @@ import { serializedDocumentId } from '../utils/idSerialization';
 
 /**
  * A run that read the whole source: it finished `success`, nobody invalidated it, it wrote,
- * and nothing narrowed what it fetched. `--only` names a subset, `--limit` caps it, a run
- * without `--exhaustive` is capped at the CLI's default row count, and a run that consulted
+ * and nothing narrowed what it fetched. `--only` names a subset, `--limit` caps it, `--offset`
+ * skips the leading rows, a run without `--exhaustive` is capped at the CLI's default row
+ * count, and a run that consulted
  * the work planner skipped the targets it judged fresh, so each of those leaves some of the
  * lane's pages unread and cannot say the lane re-read a person (#5578).
  *
@@ -26,7 +27,8 @@ export function isFullCoverageRun(run: {
     options.ignoreWorkPlanner === true &&
     options.benchmarkRun !== true &&
     (only === undefined || (Array.isArray(only) && only.length === 0)) &&
-    (options.limit === undefined || options.limit === null)
+    (options.limit === undefined || options.limit === null) &&
+    (options.offset === undefined || options.offset === null || options.offset === 0)
   );
 }
 
@@ -50,6 +52,7 @@ export async function latestFullCoverageRunIdByLane(
         'options.exhaustive': true,
         'options.ignoreWorkPlanner': true,
         'options.limit': null,
+        'options.offset': { $in: [null, 0] },
         'options.benchmarkRun': { $ne: true },
         $or: [{ 'options.only': { $exists: false } }, { 'options.only': { $size: 0 } }],
       })

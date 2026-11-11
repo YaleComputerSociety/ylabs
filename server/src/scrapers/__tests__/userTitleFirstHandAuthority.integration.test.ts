@@ -419,6 +419,20 @@ describe('a title is rewritten only from a fresh first-hand read (#5578, #5801)'
     expect(await storedTitle()).toBe(FIRST_HAND_RANK);
   });
 
+  it('does not let an offset run displace the latest full run', async () => {
+    await seed([schoolRead(FIRST_HAND_RANK, '2026-08-01T00:00:00Z')]);
+    await recordFullCoverageRun(
+      'ysm-faculty-directory',
+      new mongoose.Types.ObjectId(),
+      new Date('2026-10-01T00:00:00Z'),
+      { dryRun: false, exhaustive: true, ignoreWorkPlanner: true, offset: 40 },
+    );
+
+    await materializeEveryKey();
+
+    expect(await storedTitle()).toBe(FIRST_HAND_RANK);
+  });
+
   it("rewrites a stored title from the lane's latest full run, then writes nothing", async () => {
     await seed([
       schoolRead(FIRST_HAND_RANK, '2026-10-01T00:00:00Z'),
@@ -632,6 +646,7 @@ describe('the first-hand title screen (#5578)', () => {
       options: { dryRun: false, exhaustive: true, ignoreWorkPlanner: true },
     };
     expect(isFullCoverageRun(full)).toBe(true);
+    expect(isFullCoverageRun({ ...full, options: { ...full.options, offset: 0 } })).toBe(true);
     for (const narrowed of [
       { ...full, status: 'partial' },
       { ...full, invalidated: true },
@@ -640,6 +655,7 @@ describe('the first-hand title screen (#5578)', () => {
       { ...full, options: { ...full.options, ignoreWorkPlanner: false } },
       { ...full, options: { ...full.options, only: ['one-page'] } },
       { ...full, options: { ...full.options, limit: 25 } },
+      { ...full, options: { ...full.options, offset: 40 } },
       { ...full, options: { ...full.options, benchmarkRun: true } },
     ]) {
       expect(isFullCoverageRun(narrowed)).toBe(false);
