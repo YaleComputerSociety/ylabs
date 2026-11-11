@@ -21,6 +21,9 @@ const projectionOf = (select: string): Record<string, 1> =>
  * as its slug. A row renamed by `directory-removal:reslug` keeps no alias or redirect, so its
  * old key reaches it only through the `entityId` that migration and ingest stamp onto the
  * key's observations (#4160). Exactly one live row must be named, or nothing is adopted.
+ *
+ * A row renamed with a redirect also lists the old key in `previousSlugs` (#5808), which
+ * outlives the stamped observations, so the key still reaches it once those are pruned.
  */
 export async function liveResearchEntityNamedByKeyObservations(
   entityKey: string | undefined,
@@ -32,9 +35,23 @@ export async function liveResearchEntityNamedByKeyObservations(
     entityKey,
     entityId: { $ne: null },
   });
-  if (ids.length === 0) return null;
+  if (ids.length === 0) return liveResearchEntityListingPreviousSlug(entityKey, select);
   const rows = await researchEntities()
     .find({ _id: { $in: ids }, archived: { $ne: true } }, { projection: projectionOf(select) })
+    .limit(2)
+    .toArray();
+  return rows.length === 1 ? rows[0] : null;
+}
+
+async function liveResearchEntityListingPreviousSlug(
+  entityKey: string,
+  select: string,
+): Promise<Record<string, unknown> | null> {
+  const rows = await researchEntities()
+    .find(
+      { 'previousSlugs.slug': entityKey, archived: { $ne: true } },
+      { projection: projectionOf(select) },
+    )
     .limit(2)
     .toArray();
   return rows.length === 1 ? rows[0] : null;

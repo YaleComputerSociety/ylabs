@@ -600,4 +600,20 @@ describe('directory-removal:reslug renames a co-led row a removed lead names (#4
       expect(await ResearchEntity.countDocuments({ slug: base.entityKey })).toBe(0);
     },
   );
+
+  it(
+    'records no previous slug, so the old slug stays a 404 rather than a redirect (#5808)',
+    { timeout: 60000 },
+    async () => {
+      const coLed = await laneMintedCoLedRowWithARemovedLead();
+      await reslug(true);
+
+      const renamed = await ResearchEntity.findById(coLed._id).lean<any>();
+      expect(renamed.slug).toBe(NEW_SLUG);
+      expect(renamed.previousSlugs).toBeUndefined();
+      expect(await ResearchEntity.countDocuments({ 'previousSlugs.slug': OLD_SLUG })).toBe(0);
+      const old = await fetch(`${baseUrl}/api/research/${OLD_SLUG}`, { redirect: 'manual' });
+      expect(old.status).toBe(404);
+    },
+  );
 });

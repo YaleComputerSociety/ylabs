@@ -68,6 +68,8 @@ const OPERATOR_TOOLS: Record<string, string> = {
     'deletes the stored observations of people on the removal list, an operator decision about personal data run per environment with owner approval for Beta and Production (#4160)',
   'directory-removal:reslug':
     'renames a co-led row whose slug names a removed lead, a one-time operator act on each removal request; a later pass keeps the slug because the materializer refuses renames and the old key reaches the row by id (#4160)',
+  'research-entity:reslug-alt-text-slugs':
+    'renames the roster rows whose slug was minted from photo alt text and keeps the old slug as a redirect, a one-time correction: the lane no longer mints such a key and the materializer refuses renames, so no lane or sweep stage can re-derive it (#5808)',
   'db:build-indexes': 'builds declared indexes, a reviewed schema operation',
   'meili:rebuild-research-entities':
     're-embeds the whole index after a settings, embedder, or document-shape change, an infrastructure operation; the sweep stage is the incremental sync (#5023)',

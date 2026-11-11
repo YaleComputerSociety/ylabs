@@ -5,22 +5,18 @@ import { ResearchEntity } from '../models/researchEntity';
 import { Researcher } from '../models/researcher';
 import { RoleAssignment } from '../models/roleAssignment';
 import type { DirectoryRemovalMatcher } from '../services/directoryRemovalMatcher';
-import {
-  numberedSlugCandidate,
-  slugWithoutRemovedLead,
-} from '../services/directoryRemovalSlugNames';
+import { slugWithoutRemovedLead } from '../services/directoryRemovalSlugNames';
 import { getResearchEntityRosterByEntityId } from '../services/researchEntityMembershipAccessor';
-import {
-  addIndexSyncOutcomes,
-  NO_INDEX_SYNC,
-  syncResearchEntitiesWithOutcome,
-  type IndexSyncOutcome,
-} from '../services/researchEntityIndexSyncOutcome';
 import { studentVisibilityGateLeadRows } from '../services/studentVisibilityGateService';
+import {
+  applyResearchEntityReslug,
+  firstFreeResearchEntitySlug,
+  keylessResearchEntityObservationsOf,
+  resyncRenamedResearchEntities,
+  type ResearchEntityReslugPlan,
+} from './researchEntityReslugCore';
 
 export const SCRIPT_NAME = 'directory-removal:reslug';
-
-const MAX_SLUG_ATTEMPTS = 50;
 
 export interface ReslugArgs {
   apply: boolean;
@@ -54,11 +50,7 @@ export function assertReslugMatcherUsable(matcher: DirectoryRemovalMatcher): voi
   }
 }
 
-export interface ReslugPlan {
-  entityId: mongoose.Types.ObjectId;
-  fromSlug: string;
-  toSlug: string;
-}
+export type ReslugPlan = ResearchEntityReslugPlan;
 
 export interface ReslugCounts {
   removedResearchers: number;
@@ -91,26 +83,6 @@ async function removedResearchersOf(
     .select('_id displayName identifiers profileLinks.url')
     .lean<Array<RemovedResearcher & Record<string, any>>>();
   return researchers.filter((researcher) => matcher.isRemovedPerson(researcher));
-}
-
-const keylessObservationsOf = (slug: string) => ({
-  entityType: 'researchEntity' as const,
-  entityKey: slug,
-  entityId: null,
-});
-
-async function slugIsTaken(slug: string, reserved: ReadonlySet<string>): Promise<boolean> {
-  if (reserved.has(slug)) return true;
-  if (await ResearchEntity.exists({ $or: [{ slug }, { 'mergedFrom.slug': slug }] })) return true;
-  return Boolean(await Observation.exists({ entityType: 'researchEntity', entityKey: slug }));
-}
-
-async function firstFreeSlug(base: string, reserved: ReadonlySet<string>): Promise<string> {
-  for (let attempt = 1; attempt <= MAX_SLUG_ATTEMPTS; attempt += 1) {
-    const candidate = numberedSlugCandidate(base, attempt);
-    if (!(await slugIsTaken(candidate, reserved))) return candidate;
-  }
-  throw new Error(`${SCRIPT_NAME} found no free numbered slug after ${MAX_SLUG_ATTEMPTS} tries.`);
 }
 
 export async function planDirectoryRemovalReslugs(
@@ -165,25 +137,16 @@ export async function planDirectoryRemovalReslugs(
       counts.rowsWhoseSlugNamesNoRemovedLead += 1;
       continue;
     }
-    const toSlug = await firstFreeSlug(base, reserved);
+    const toSlug = await firstFreeResearchEntitySlug(base, reserved, SCRIPT_NAME);
     reserved.add(toSlug);
     if (toSlug !== base) counts.rowsTakingANumberedSlug += 1;
     counts.rowsToRename += 1;
-    counts.observationsToStamp += await Observation.countDocuments(keylessObservationsOf(row.slug));
+    counts.observationsToStamp += await Observation.countDocuments(
+      keylessResearchEntityObservationsOf(row.slug),
+    );
     plans.push({ entityId: row._id, fromSlug: row.slug, toSlug });
   }
   return { plans, counts };
-}
-
-async function applyPlan(plan: ReslugPlan): Promise<{ stamped: number; renamed: number }> {
-  const stamped = await Observation.updateMany(keylessObservationsOf(plan.fromSlug), {
-    $set: { entityId: plan.entityId, reslugAdoption: true },
-  });
-  const renamed = await ResearchEntity.updateOne(
-    { _id: plan.entityId, slug: plan.fromSlug, archived: { $ne: true } },
-    { $set: { slug: plan.toSlug } },
-  );
-  return { stamped: stamped.modifiedCount, renamed: renamed.matchedCount };
 }
 
 export async function runDirectoryRemovalReslug(args: {
@@ -198,19 +161,12 @@ export async function runDirectoryRemovalReslug(args: {
   let rowsRenamed = 0;
   const renamedIds: mongoose.Types.ObjectId[] = [];
   for (const plan of plans) {
-    const outcome = await applyPlan(plan);
+    const outcome = await applyResearchEntityReslug(plan);
     observationsStamped += outcome.stamped;
     rowsRenamed += outcome.renamed;
     if (outcome.renamed > 0) renamedIds.push(plan.entityId);
   }
-  const index: IndexSyncOutcome = renamedIds.length
-    ? addIndexSyncOutcomes(
-        NO_INDEX_SYNC,
-        await syncResearchEntitiesWithOutcome(
-          await ResearchEntity.find({ _id: { $in: renamedIds } }).lean(),
-        ),
-      )
-    : NO_INDEX_SYNC;
+  const index = await resyncRenamedResearchEntities(renamedIds);
   return {
     apply: true,
     ...counts,
