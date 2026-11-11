@@ -21,3 +21,25 @@ export function researcherEmail(researcher: ResearcherIdentitySource): string {
 export function researcherHoldsDirectoryIdentity(researcher: ResearcherIdentitySource): boolean {
   return trimmedText(researcher.identifiers?.email).length > 0;
 }
+
+export interface ResearcherIdentityEvidenceSource {
+  identifiers?: { netid?: unknown; email?: unknown; orcid?: unknown } | null;
+  profileLinks?: ReadonlyArray<{ kind?: unknown } | null> | null;
+}
+
+/**
+ * Whether a researcher carries any identity beyond a name: a netid, a directory email, an
+ * ORCID, or a Yale official profile link. A roster listing that two name-agreeing records
+ * share resolves to the one carrying identity, never to its name-only twin (#5592).
+ */
+export function researcherCarriesIdentityEvidence(
+  researcher: ResearcherIdentityEvidenceSource,
+): boolean {
+  const identifiers = researcher.identifiers ?? {};
+  if (
+    [identifiers.netid, identifiers.email, identifiers.orcid].some((value) => trimmedText(value))
+  ) {
+    return true;
+  }
+  return (researcher.profileLinks ?? []).some((link) => link?.kind === 'YALE_OFFICIAL');
+}

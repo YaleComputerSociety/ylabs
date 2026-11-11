@@ -19,6 +19,10 @@ import {
   isProfileTemplateChrome,
   withoutProfileTemplateWidgets,
 } from '../utils/profileTemplateChrome';
+import {
+  researcherCarriesIdentityEvidence,
+  type ResearcherIdentityEvidenceSource,
+} from '../utils/researcherIdentity';
 import mongoose from 'mongoose';
 import { Observation, ObservedEntityType } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
@@ -2858,7 +2862,7 @@ async function liveResearchersHoldingRosterProfileUrl(
     archived: { $ne: true },
     $or: [{ 'profileLinks.url': profileUrlPattern }, { 'profile.websiteUrl': profileUrlPattern }],
   })
-    .select('_id displayName')
+    .select(ROSTER_CANDIDATE_IDENTITY_PROJECTION)
     .limit(limit)
     .lean();
 }
@@ -2872,6 +2876,24 @@ async function findUniqueResearcherForRosterMember(
 
 const SHARED_PROFILE_URL_HOLDER_LIMIT = 10;
 
+const ROSTER_CANDIDATE_IDENTITY_PROJECTION =
+  '_id displayName identifiers.netid identifiers.email identifiers.orcid profileLinks.kind';
+
+/**
+ * Of several records that all agree with a listed name and that the listing's evidence
+ * reached, the one carrying identity is the member when it is the only such record; a
+ * name-only twin never takes the seat from it (#5592). Otherwise the set is unchanged.
+ */
+function preferIdentityBackedAgreeing<T extends ResearcherIdentityEvidenceSource>(
+  agreeing: readonly T[],
+): readonly T[] {
+  if (agreeing.length < 2) return agreeing;
+  const identityBacked = agreeing.filter((candidate) =>
+    researcherCarriesIdentityEvidence(candidate),
+  );
+  return identityBacked.length === 1 ? identityBacked : agreeing;
+}
+
 /**
  * A profile URL several researchers hold reaches every one of them, so the listed name
  * vetoes the holders it disagrees with, as it vetoes every other candidate the evidence
@@ -2880,8 +2902,8 @@ const SHARED_PROFILE_URL_HOLDER_LIMIT = 10;
  */
 function holderTheListedNameLeaves(holders: readonly any[], listedName: string): any | null {
   if (holders.length > SHARED_PROFILE_URL_HOLDER_LIMIT) return null;
-  const agreeing = holders.filter((holder) =>
-    observedPersonNameAgreesWith(holder.displayName, listedName),
+  const agreeing = preferIdentityBackedAgreeing(
+    holders.filter((holder) => observedPersonNameAgreesWith(holder.displayName, listedName)),
   );
   return agreeing.length === 1 ? agreeing[0] : null;
 }
@@ -3095,13 +3117,13 @@ export type RosterMemberIdentity = (
 
 async function liveResearcherById(researcherId: unknown): Promise<any | null> {
   return Researcher.findOne({ _id: researcherId, archived: { $ne: true } })
-    .select('_id displayName')
+    .select(ROSTER_CANDIDATE_IDENTITY_PROJECTION)
     .lean();
 }
 
 async function liveResearchersHoldingNetid(netid: string): Promise<any[]> {
   return Researcher.find({ 'identifiers.netid': netid, archived: { $ne: true } })
-    .select('_id displayName')
+    .select(ROSTER_CANDIDATE_IDENTITY_PROJECTION)
     .limit(ACCOUNT_EMAIL_JOIN_CANDIDATE_LIMIT)
     .lean();
 }
@@ -3174,8 +3196,8 @@ async function resolveRosterMemberIdentityFromEvidence(
   if (!evidence || !listedName) return { researcher: null, unresolved: 'no-identity-evidence' };
   const named = await researchersNamedByIdentityEvidence(evidence);
   if (named.length === 0) return { researcher: null, unresolved: 'evidence-names-nobody' };
-  const agreeing = named.filter((researcher) =>
-    observedPersonNameAgreesWith(researcher.displayName, listedName),
+  const agreeing = preferIdentityBackedAgreeing(
+    named.filter((researcher) => observedPersonNameAgreesWith(researcher.displayName, listedName)),
   );
   if (agreeing.length === 0) {
     return { researcher: null, unresolved: 'evidence-names-someone-else' };
@@ -6905,7 +6927,7 @@ async function liveResearchersClaimingOfficialProfileUrls(
       },
     },
   })
-    .select('_id displayName profileLinks')
+    .select('_id displayName profileLinks identifiers.netid identifiers.email identifiers.orcid')
     .limit(OFFICIAL_PROFILE_URL_CLAIMANTS_LIMIT)
     .lean();
   for (const candidate of candidates) {

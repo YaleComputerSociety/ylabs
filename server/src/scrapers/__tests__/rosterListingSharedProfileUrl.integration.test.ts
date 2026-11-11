@@ -83,3 +83,52 @@ describe('a roster listing whose profile URL two researchers hold (#4500)', () =
     expect(String(identity.researcher?._id)).toBe(String(sole._id));
   });
 });
+
+describe('a roster listing two name-agreeing records reach, one name-only (#5592)', () => {
+  beforeEach(async () => {
+    await Researcher.deleteMany({});
+  });
+
+  const nameOnlyTwin = (displayName: string) =>
+    Researcher.create({ displayName, profile: { websiteUrl: SHARED_URL } });
+
+  it('joins the record carrying identity, never its name-only twin', async () => {
+    const identified = await Researcher.create({
+      displayName: 'Avery Q. Synthetic',
+      identifiers: { orcid: '0000-0000-0000-0001' },
+      profileLinks: [officialLink(SHARED_URL)],
+    });
+    await nameOnlyTwin('Avery Synthetic');
+
+    const identity = await resolveRosterMemberIdentity(listing(SHARED_URL), 'Avery Synthetic');
+
+    expect(String(identity.researcher?._id)).toBe(String(identified._id));
+  });
+
+  it('counts a netid or a directory email as identity too', async () => {
+    const byNetid = await Researcher.create({
+      displayName: 'Avery Synthetic',
+      identifiers: { netid: 'zz9999' },
+      profile: { websiteUrl: SHARED_URL },
+    });
+    await nameOnlyTwin('Avery Synthetic');
+
+    const identity = await resolveRosterMemberIdentity(listing(SHARED_URL), 'Avery Synthetic');
+
+    expect(String(identity.researcher?._id)).toBe(String(byNetid._id));
+  });
+
+  it('still resolves to nobody when two agreeing records both carry identity', async () => {
+    await holder('Avery Synthetic');
+    await Researcher.create({
+      displayName: 'Avery Synthetic',
+      identifiers: { orcid: '0000-0000-0000-0028' },
+      profile: { websiteUrl: SHARED_URL },
+    });
+    await nameOnlyTwin('Avery Synthetic');
+
+    const identity = await resolveRosterMemberIdentity(listing(SHARED_URL), 'Avery Synthetic');
+
+    expect(identity.researcher).toBeNull();
+  });
+});
