@@ -293,9 +293,13 @@ describe('a page the directory gives to another netid stops speaking for the nam
     expect(planned.map((lead) => lead.personId)).toEqual([String(aliasTwin._id)]);
   });
 
-  it('does not read a listing page that states several addresses as one person page', async () => {
+  it('does not read a listing page whose addresses belong to different people as one person page', async () => {
     const { namesake } = await seedCorpus();
     const listingPage = 'https://medicine.yale.edu/listing/synthetic-people/';
+    await observe('user', { entityKey: 'lo5693' }, 'yale-directory', 'https://dir.test/', {
+      netid: 'lo5693',
+      email: 'listed.other5693@yale.edu',
+    });
     await observe('user', { entityKey: 'netid:listed-one' }, 'department-roster', listingPage, {
       email: OWNER_ADDRESS,
     });
@@ -318,6 +322,27 @@ describe('a page the directory gives to another netid stops speaking for the nam
 
     const plan = await planScreenedPageWithdrawal(`netid:${NAMESAKE_NETID}`, [SCHOOL_PAGE]);
     expect(plan?.officialLinkUrls).toEqual([MEDICINE_PAGE]);
+  });
+
+  it('still reads a person page that stated a second address of the same owner', async () => {
+    const { namesake } = await seedCorpus();
+    const secondOwnerAddress = 'sam.m.fixture5693@yale.edu';
+    await observe('user', { entityKey: OWNER_NETID }, 'yale-directory', 'https://dir.test/', {
+      email: secondOwnerAddress,
+    });
+    await observe(
+      'user',
+      { entityKey: 'netid:sam.fixture5693' },
+      'ysm-faculty-directory',
+      MEDICINE_PAGE,
+      { email: secondOwnerAddress },
+    );
+
+    expect(await planScreenedPageWithdrawal(`netid:${NAMESAKE_NETID}`, [SCHOOL_PAGE])).toEqual({
+      researcherId: String(namesake._id),
+      officialLinkUrls: [MEDICINE_PAGE],
+      orcid: OWNER_ORCID,
+    });
   });
 
   it('withdraws nothing on a dry run', async () => {

@@ -213,9 +213,10 @@ const directoryNetidsOf = (directory: DirectoryNetidsByAddress): Set<string> => 
 
 /**
  * The netids the Yale directory pairs with the email each person page states about itself,
- * keyed by `normalizeOfficialProfileDestination`. A page that states more than one address, such
- * as a roster listing that names many people, is never read as one page's owner. A page whose
- * email the directory does not know has no entry and decides nothing (#5693).
+ * keyed by `normalizeOfficialProfileDestination`. Every address a page has stated counts, so a page
+ * that changed its address over time still names its owner. A page whose addresses the directory
+ * gives to people who share no netid, such as a roster listing, is never read as one page's
+ * owner, and a page whose email the directory does not know decides nothing (#5693).
  */
 export async function profilePageOwnerNetids(
   pageUrls: readonly unknown[],
@@ -252,9 +253,15 @@ export async function profilePageOwnerNetids(
     addressesByPage.set(destination, addresses);
   }
   for (const [destination, addresses] of addressesByPage) {
-    if (addresses.size !== 1) continue;
-    const netids = pairs.get([...addresses][0]);
-    if (netids && netids.size > 0) owners.set(destination, new Set(netids));
+    const pairedNetidSets = [...addresses]
+      .map((address) => pairs.get(address))
+      .filter((netids): netids is ReadonlySet<string> => Boolean(netids && netids.size > 0));
+    if (pairedNetidSets.length === 0) continue;
+    const sharedByEveryAddress = [...pairedNetidSets[0]].some((netid) =>
+      pairedNetidSets.every((netids) => netids.has(netid)),
+    );
+    if (!sharedByEveryAddress) continue;
+    owners.set(destination, new Set(pairedNetidSets.flatMap((netids) => [...netids])));
   }
   return {
     byPage: owners,
