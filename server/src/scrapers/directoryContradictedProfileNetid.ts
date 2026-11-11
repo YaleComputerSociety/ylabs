@@ -226,7 +226,7 @@ export interface ProfilePageOwnerNetids {
   directoryNetids: ReadonlySet<string>;
 }
 
-const directoryNetidsOf = (directory: DirectoryNetidsByAddress): Set<string> => {
+export const directoryNetidsOf = (directory: DirectoryNetidsByAddress): Set<string> => {
   const netids = new Set<string>();
   for (const named of directory.values()) for (const netid of named) netids.add(netid);
   return netids;

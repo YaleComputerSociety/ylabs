@@ -293,6 +293,19 @@ describe('extractRosterMemberIdentityEvidence keeps the subject own links (#5677
     ]);
   });
 
+  it('keeps a generic own link beside other labels at the same page that name nobody', () => {
+    const own = 'https://medicine.yale.edu/profile/a-synthetic/';
+    const html = `<html><body><main>
+      <a href="${own}">View Full Profile</a>
+      <a href="${own}">Learn more</a>
+      <a href="${own}">Dr. Synthetic</a>
+      <a href="${own}">Advances in Synthetic Research Methods for Center Studies</a>
+    </main></body></html>`;
+    expect(
+      extractRosterMemberIdentityEvidence(html, PAGE, 'Avery Synthetic').linkedProfileUrls,
+    ).toEqual([PAGE, own]);
+  });
+
   it('keeps an anchor whose URL spells the member full name whatever its label, even in an aside', () => {
     const html = `<html><body><main>
       <p>For more, click <a href="https://italian.yale.edu/profile/avery-synthetic">here</a>.</p>

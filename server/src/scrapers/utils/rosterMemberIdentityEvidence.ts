@@ -2,7 +2,10 @@ import * as cheerio from 'cheerio';
 import { normalizeOfficialProfileDestination } from '../../services/leadProfileIdentity';
 import { isYaleProfileUrl } from '../yaleProfileDepartureEvidence';
 import { isLikelyPersonSpecificYaleEmail, splitName } from './scraperHelpers';
-import { sanitizePersonName } from '../../utils/personNameHygiene';
+import {
+  isPersonNameParticleOrSuffixToken,
+  sanitizePersonName,
+} from '../../utils/personNameHygiene';
 import { observedPersonNameAgreesWith } from './personNameAgreement';
 import { givenNamesEquivalent } from './piNameMatch';
 import { normalizedYaleNetid } from '../../utils/yaleNetid';
@@ -183,6 +186,50 @@ const anchorLabel = ($: cheerio.CheerioAPI, el: Parameters<cheerio.CheerioAPI>[0
 const isGenericSubjectLabel = (label: string): boolean =>
   SUBJECT_LINK_LABEL.test(label) || isSchoolQualifiedLinkLabel(label) || BARE_URL_TEXT.test(label);
 
+/**
+ * Only an anchor labelled with what reads as someone's full name speaks for another person.
+ * "Learn more", "Contact", a publication title or a bare "Dr. <Surname>" names nobody, so it
+ * must not cost the member a generic link to the same page (#5677).
+ */
+const LABEL_HONORIFIC_LEAD_IN = /^(?:dr|prof|professor|dean|mr|mrs|ms|mx)\.?\s+/i;
+
+const NON_NAME_LINK_WORDS = new Set([
+  'about',
+  'bio',
+  'click',
+  'contact',
+  'details',
+  'email',
+  'here',
+  'home',
+  'info',
+  'information',
+  'lab',
+  'learn',
+  'more',
+  'page',
+  'profile',
+  'read',
+  'see',
+  'view',
+  'visit',
+  'website',
+]);
+
+const MAX_PERSON_NAME_LABEL_TOKENS = 5;
+
+function labelReadsAsPersonName(label: string): boolean {
+  const name = label.replace(LABEL_HONORIFIC_LEAD_IN, '').trim();
+  if (/\d/.test(name)) return false;
+  const tokens = name.split(' ').filter(Boolean);
+  if (tokens.length < 2 || tokens.length > MAX_PERSON_NAME_LABEL_TOKENS) return false;
+  return tokens.every(
+    (token) =>
+      !NON_NAME_LINK_WORDS.has(token.toLowerCase().replace(/[.,]+$/, '')) &&
+      (/^\p{Lu}/u.test(token) || isPersonNameParticleOrSuffixToken(token)),
+  );
+}
+
 const nameTokens = (value: string): string[] =>
   value
     .normalize('NFD')
@@ -224,7 +271,8 @@ function slugNamesMember(url: string, memberName: string): boolean {
  * label, even in an aside ("Associated programs"). Otherwise it must sit outside asides and be
  * labelled either generically ("Profile", "Website") or with the member's own name: one labelled
  * with someone else's name or a publication title belongs to a co-author, colleague or
- * related-items block (#5592, #5677).
+ * related-items block (#5592, #5677), and only one labelled with another person's name marks its
+ * destination as that person's.
  */
 function subjectAnchorCandidates(
   $: cheerio.CheerioAPI,
@@ -247,7 +295,7 @@ function subjectAnchorCandidates(
       candidates.push({ url, destination, label: label.toLowerCase(), kind: 'generic' });
     } else if (memberName && namesAgree(label, memberName)) {
       candidates.push({ url, destination, label, kind: 'member-name' });
-    } else {
+    } else if (labelReadsAsPersonName(label)) {
       otherPersonDestinations.add(destination);
     }
   });
