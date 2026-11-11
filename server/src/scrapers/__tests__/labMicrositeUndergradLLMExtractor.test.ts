@@ -864,6 +864,78 @@ describe('extractionToObservations', () => {
     });
   });
 
+  describe('a non-Yale description source must confirm the row lead (#5777)', () => {
+    const extraction: LLMExtraction = {
+      openToUndergrads: 'unclear',
+      currentUndergradCount: 0,
+      evidenceQuote: '',
+      evidenceSource: 'none',
+      joinPageUrl: null,
+      researchSummary:
+        'The lab studies urban climate adaptation using satellite imagery and field sensors.',
+      methodsQuote: 'We combine satellite imagery with field sensors',
+      topicsQuote: 'urban climate adaptation',
+    };
+    const summary =
+      'Research: We combine satellite imagery with field sensors to study urban climate adaptation.';
+    const leadRow = { slug: 'fixture-tidewell-lab', name: 'Tidewell Lab' };
+
+    const descriptionFieldsFrom = (
+      sourceUrl: string,
+      pageText: string,
+      leadPersonName = 'Robin Tidewell',
+    ) =>
+      extractionToObservations(leadRow.slug, sourceUrl, extraction, fixedDate, {
+        quoteSourceUrl: sourceUrl,
+        sourceTexts: [pageText],
+        sourcePages: [{ url: sourceUrl, text: pageText }],
+        entityIdentity: leadRow,
+        entityShape: { entityType: 'LAB', kind: 'lab', websiteUrl: sourceUrl },
+        leadPersonName,
+      })
+        .filter((o) => o.field === 'fullDescription' || o.field === 'shortDescription')
+        .map((o) => o.field);
+
+    it('refuses a non-Yale page that never names the lead', () => {
+      expect(
+        descriptionFieldsFrom('https://coastal-foundation.example.org/', `About us. ${summary}`),
+      ).toEqual([]);
+    });
+
+    it('admits a non-Yale page that names the lead', () => {
+      expect(
+        descriptionFieldsFrom(
+          'https://coastal-foundation.example.org/',
+          `Robin Tidewell directs the group. ${summary}`,
+        ),
+      ).toContain('fullDescription');
+    });
+
+    it('admits a personal-name domain and a surname-carrying address', () => {
+      expect(descriptionFieldsFrom('https://robintidewell.example/', summary)).toContain(
+        'fullDescription',
+      );
+      expect(descriptionFieldsFrom('https://tidewelllab.github.io/', summary)).toContain(
+        'fullDescription',
+      );
+    });
+
+    it('leaves a Yale-hosted page and a row with no known lead as before', () => {
+      expect(descriptionFieldsFrom('https://climate.yale.edu/research/', summary)).toContain(
+        'fullDescription',
+      );
+      expect(
+        descriptionFieldsFrom('https://coastal-foundation.example.org/', summary, ''),
+      ).toContain('fullDescription');
+    });
+
+    it('derives the same refusal when the same evidence is read twice', () => {
+      const read = () =>
+        descriptionFieldsFrom('https://coastal-foundation.example.org/', `About us. ${summary}`);
+      expect([read(), read()]).toEqual([[], []]);
+    });
+  });
+
   it('does not emit description observations when researchSummary is empty', () => {
     const ext: LLMExtraction = {
       openToUndergrads: 'unclear',

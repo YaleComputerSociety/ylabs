@@ -119,6 +119,13 @@ import {
   resolveSourceConcurrency,
 } from '../utils/mapWithConcurrency';
 import { postChatCompletion } from '../../utils/modelClient';
+import { serializedDocumentId } from '../../utils/idSerialization';
+import { loadResearchEntityLeadPersonNames } from '../../utils/researchHomeNameIdentityRoster';
+import {
+  leadSurname,
+  nonYaleMicrositeOwnership,
+  rowIsScopedToLead,
+} from '../utils/nonYaleMicrositeOwnership';
 import { liveResearchEntityIdForLaneKey } from '../renamedResearchEntityAdoption';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
@@ -1134,6 +1141,35 @@ export const ROSTER_ALUMNI_PROGRAM_NAME = 'Lab roster alumni';
  *     named (#4430); withheld under the same incomplete-read rule.
  *   - lastObservedAt: always emitted (to refresh the freshness clock).
  */
+function nonYaleDescriptionSourceUnconfirmedAsLeads(
+  sourceUrl: string,
+  sourceContext: {
+    leadPersonName?: string;
+    entityIdentity?: ResearchEntityIdentity;
+    entityShape?: JoinPageEntity;
+    sourcePages?: PromptSourcePage[];
+    sourceTexts?: string[];
+  },
+): boolean {
+  const surname = leadSurname(sourceContext.leadPersonName);
+  if (!surname) return false;
+  const row = {
+    kind: sourceContext.entityShape?.kind,
+    rowName: sourceContext.entityIdentity?.name,
+  };
+  if (!rowIsScopedToLead(row, surname)) return false;
+  const citedPageText =
+    sourceContext.sourcePages?.find((page) => page.url === sourceUrl)?.text ??
+    (sourceContext.sourceTexts ?? []).join('\n');
+  return (
+    nonYaleMicrositeOwnership({
+      sourceUrl,
+      text: citedPageText,
+      lead: { names: [sourceContext.leadPersonName] },
+    }).decision === 'refuse'
+  );
+}
+
 export function extractionToObservations(
   groupSlug: string,
   sourceUrl: string,
@@ -1148,6 +1184,7 @@ export function extractionToObservations(
     entityShape?: JoinPageEntity;
     joinPages?: PromptSourcePage[];
     readIsComplete?: boolean;
+    leadPersonName?: string;
   } = {},
 ): ObservationInput[] {
   const sourceUrls = sourceContext.sourceUrls?.filter(Boolean) ?? [sourceUrl];
@@ -1279,6 +1316,7 @@ export function extractionToObservations(
     // row's research prose (#2570). An absent identity carries no tokens to check
     // and so is allowed, the same way the guard allows a URL with no readable name.
     !personProfileSourceNamesADifferentPerson(quoteSourceUrl, sourceContext.entityIdentity || {}) &&
+    !nonYaleDescriptionSourceUnconfirmedAsLeads(quoteSourceUrl, sourceContext) &&
     sourceSupportsResearchSummary(extraction, sourceContext.sourceTexts)
       ? cleanStudentFacingDescription(researchSummary)
       : '';
@@ -1448,6 +1486,7 @@ export interface CandidateLab extends ResearchEntityIdentity {
   entityType?: string;
   kind?: string;
   storedWebsiteUrl?: string;
+  leadPersonName?: string;
 }
 
 function usableWebsiteUrlFromDoc(doc: Record<string, any>): string {
@@ -1482,6 +1521,14 @@ export function candidateLabFromResearchEntityDoc(doc: Record<string, any>): Can
     sourceUrls: doc.sourceUrls,
     fullDescription: doc.fullDescription,
   };
+}
+
+function withLeadPersonName(
+  lab: CandidateLab,
+  leadPersonNameByEntityId: ReadonlyMap<string, string>,
+): CandidateLab {
+  const leadPersonName = leadPersonNameByEntityId.get(serializedDocumentId(lab._id) || '');
+  return leadPersonName ? { ...lab, leadPersonName } : lab;
 }
 
 export function selectLabsToProcess(
@@ -1658,7 +1705,10 @@ async function defaultLabFinder(): Promise<CandidateLab[]> {
     departments: 1,
     fullDescription: 1,
   }).lean();
-  return (docs as any[]).map(candidateLabFromResearchEntityDoc);
+  const leadPersonNameByEntityId = await loadResearchEntityLeadPersonNames();
+  return (docs as any[])
+    .map(candidateLabFromResearchEntityDoc)
+    .map((lab) => withLeadPersonName(lab, leadPersonNameByEntityId));
 }
 
 class SharedDependencyFailure extends Error {
@@ -1971,6 +2021,7 @@ export class LabMicrositeUndergradLLMExtractor implements IScraper {
             sourcePages,
             joinPages: joinPage?.page ? [joinPage.page] : [],
             entityIdentity: lab,
+            leadPersonName: lab.leadPersonName,
             entityShape: {
               entityType: lab.entityType,
               kind: lab.kind,

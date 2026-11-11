@@ -107,7 +107,20 @@ export const textNamesLead = (text: string, personName: string): boolean => {
   });
 };
 
-const isYaleHostedPage = (pageUrl: string): boolean => {
+export function rowIsScopedToLead(
+  row: { kind?: unknown; rowName?: unknown },
+  surname: string,
+): boolean {
+  // Only a row named for its lead is the lead's to describe. A center, a program or a
+  // lab named for its work describes the unit, and its own page need not name the
+  // director: on the same 637 rows those were most of the pages this would refuse.
+  return (
+    row.kind === 'individual' ||
+    ` ${comparableName(String(row.rowName || ''))} `.includes(` ${surname} `)
+  );
+}
+
+export const isYaleHostedPage = (pageUrl: string): boolean => {
   try {
     return isYaleHostname(new URL(pageUrl).hostname);
   } catch {

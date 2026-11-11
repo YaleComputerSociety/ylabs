@@ -158,6 +158,11 @@ import {
   removeRelatedEntityTeaserCards,
 } from '../../utils/relatedEntityTeaserCards';
 import { postChatCompletion } from '../../utils/modelClient';
+import {
+  isYaleHostedPage,
+  nonYaleMicrositeOwnership,
+  rowIsScopedToLead,
+} from '../utils/nonYaleMicrositeOwnership';
 
 const SOURCE_KEY = 'lab-microsite-description-llm';
 export const DEFAULT_MODEL = 'gpt-5-mini';
@@ -1124,21 +1129,26 @@ const isUnderOwnWebsite = (pageUrl: string, websiteUrl: unknown): boolean => {
  * page that names that person (#4809): on 454 person-named Development lab rows, the
  * cited page of 10 never named the surname, and the ones not on the row's own website
  * were a working group's page, a department research index and an art-school
- * opportunities page. The row's own website is exempt, because a lab site may name its
- * lead only in an image, a frame or a rendered script.
+ * opportunities page. The row's own website is exempt on a Yale host, because a lab site
+ * may name its lead only in an image, a frame or a rendered script. Off Yale's hosts the
+ * stored website may be one a roster lane linked wrongly, so the page must confirm the
+ * lead itself through the shared ownership rule (#5777).
  */
 export function descriptionPageNamesRowLead(
   input: RowLead & { pageUrl: string; pageText: string },
 ): boolean {
   const surname = leadSurname(input.personName);
   if (!surname) return true;
-  // Only a row named for its lead is the lead's to describe. A center, a program or a
-  // lab named for its work describes the unit, and its own page need not name the
-  // director: on the same 637 rows those were most of the pages this would refuse.
-  const personScoped =
-    input.kind === 'individual' ||
-    ` ${comparableName(String(input.rowName || ''))} `.includes(` ${surname} `);
-  if (!personScoped) return true;
+  if (!rowIsScopedToLead(input, surname)) return true;
+  if (!isYaleHostedPage(input.pageUrl)) {
+    return (
+      nonYaleMicrositeOwnership({
+        sourceUrl: input.pageUrl,
+        text: input.pageText,
+        lead: { names: [input.personName] },
+      }).decision === 'admit'
+    );
+  }
   if (isUnderOwnWebsite(input.pageUrl, input.websiteUrl)) return true;
   if (urlCarriesSurname(input.pageUrl, surname)) return true;
   return ` ${comparableName(input.pageText)} `.includes(` ${surname} `);
