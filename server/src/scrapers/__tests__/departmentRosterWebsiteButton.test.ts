@@ -135,6 +135,16 @@ describe('a website button the profile exposes is a candidate', () => {
     const result = enrich(newsAndLinksSidebar(button(PERSONAL_SITE, 'Fixture Lab news')));
 
     expect(result.labUrl).toBeUndefined();
+    expect(result.labSlotAttestation).toBe('refused');
+  });
+
+  it('reads no card title from the profile itself when the header card carries none', () => {
+    const result = enrich(
+      `<div class="profile-details-lab-header-card">${button(LAB_SITE, 'Visit Lab Website')}</div>`,
+    );
+
+    expect(result.labUrl).toBe(LAB_SITE);
+    expect(result.labWebsiteButton).toEqual({ cardTitle: '' });
   });
 
   it('refuses a directions link even when the list labels it as a page', () => {

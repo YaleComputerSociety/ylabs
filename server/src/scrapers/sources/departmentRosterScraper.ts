@@ -3250,14 +3250,14 @@ function profileLabCardTitle(link: cheerio.Cheerio<any>): string {
   const card = link.closest('[class*="profile-details-lab"]');
   if (card.length === 0) return '';
   const title = card.find('[class*="profile-details-lab__title"]').first().text();
-  return cleanText(title || card.closest('article[aria-label]').attr('aria-label') || '');
+  if (title) return cleanText(title);
+  const cardArticle = card.closest('article[aria-label]');
+  if (cardArticle.find('h1, .person-title').length > 0) return '';
+  return cleanText(cardArticle.attr('aria-label') || '');
 }
 
 function isSiteChromeLink(link: cheerio.Cheerio<any>): boolean {
   if (isCollapsedWidgetLink(link)) return true;
-  // A news or media item is ordinary in-tab page content, so neither the tab-order
-  // test above nor the chrome containers below can see it (#3184).
-  if (isInProfilePublicityRegion(link) && !isProfileWebsiteButton(link)) return true;
   return (
     link.closest(
       [
@@ -3539,6 +3539,14 @@ export function profileEnrichmentFromHtml(
   $('a[href]').each((_i, el) => {
     const link = $(el);
     if (isSiteChromeLink(link)) return;
+    // A news or media item is ordinary in-tab page content, so neither the tab-order
+    // test nor the chrome containers in isSiteChromeLink can see it (#3184). A link the
+    // person published in their own related-links list is still a candidate the page
+    // carries, so declining it is a refusal rather than an empty slot (#5819, #3135).
+    if (isInProfilePublicityRegion(link) && !isProfileWebsiteButton(link)) {
+      if (isInProfileRelatedLinksList(link)) labUrlCandidateRefused = true;
+      return;
+    }
 
     const href = link.attr('href') || '';
     if (!href || /^mailto:|^tel:|^#|^javascript:/i.test(href)) return;
