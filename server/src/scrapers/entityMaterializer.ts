@@ -319,6 +319,10 @@ import {
 } from './directoryContradictedProfileNetid';
 import { derivedResearcherEmail } from './verifiedResearcherEmail';
 import {
+  statesAnyFacultyAppointment,
+  titleStatesOnlyAStaffRole,
+} from './sources/yaleDirectoryScraper';
+import {
   storedResearchAreasCameFromAPersonProfileOnAnOrganizationRow,
   withoutPersonProfileTopicsOnOrganizationRow,
 } from './personProfileTopicScreen';
@@ -3390,6 +3394,41 @@ async function endSupersededListingHolderEdges(
   return ended.modifiedCount ?? 0;
 }
 
+/**
+ * The staff title screen moves a listing between its listed faculty role and `staff`, and the
+ * membership key carries the role, so the edge written under the other role is the same
+ * listing's earlier resolution and is ended on the read, in either direction (#5746).
+ */
+async function endListingEdgesUnderTheOtherScreenedRole(
+  researchEntityId: string,
+  plan: RosterMemberCanonicalPlan,
+  personId: mongoose.Types.ObjectId,
+): Promise<number> {
+  if (textValue(plan.resolved.membershipKey?.value)) return 0;
+  const listedRole = normalizeMemberRole(plan.resolved.role?.value);
+  if (!STAFF_SCREENED_ROSTER_ROLES.has(listedRole)) return 0;
+  const entityObjectId = toMaterializerObjectId(researchEntityId);
+  const provenance = plan.facts.rosterProvenance;
+  const sourceName = textValue(provenance?.sourceName);
+  if (!entityObjectId || !sourceName || !plan.identityKey) return 0;
+  const otherKeys = [listedRole, 'staff']
+    .filter((role) => role !== plan.role)
+    .map((role) => rosterMembershipKey(plan.identityKey, role));
+  const ended = await RoleAssignment.updateMany(
+    {
+      personId,
+      'target.kind': 'RESEARCH_ENTITY',
+      'target.id': entityObjectId,
+      'rosterProvenance.sourceName': sourceName,
+      'rosterProvenance.membershipKey': { $in: otherKeys },
+      state: { $ne: 'HISTORICAL' },
+      archived: { $ne: true },
+    },
+    { $set: { state: 'HISTORICAL', endedAt: provenance?.observedAt ?? new Date() } },
+  );
+  return ended.modifiedCount ?? 0;
+}
+
 async function listingWouldMintANamesake(
   plan: RosterMemberCanonicalPlan,
   identity: RosterMemberIdentity,
@@ -3449,13 +3488,39 @@ export const rosterMemberFieldsWritten = (
   fieldsResolved: number,
 ): number => (outcome === 'created' || outcome === 'updated' ? fieldsResolved : 0);
 
+const STAFF_SCREENED_ROSTER_ROLES: ReadonlySet<string> = new Set([
+  'core-faculty',
+  'affiliated',
+  'affiliate',
+]);
+
+/**
+ * A faculty-default roster role read as staff when the listing's own title or the member's
+ * profile title names only a staff role and neither states a faculty appointment. Mixed
+ * "Faculty & Staff" pages give every link the lane's default role, so the title is the only
+ * evidence the listing is staff (#5746). Derived on every resolve; it writes no field.
+ */
+export function rosterRoleAfterStaffTitleScreen(
+  role: string,
+  resolved: Record<string, ResolvedField>,
+): string {
+  if (!STAFF_SCREENED_ROSTER_ROLES.has(role)) return role;
+  const titles = [textValue(resolved.title?.value), textValue(resolved.profileTitle?.value)].filter(
+    Boolean,
+  );
+  if (titles.length === 0 || titles.some((title) => statesAnyFacultyAppointment(title))) {
+    return role;
+  }
+  return titles.some((title) => titleStatesOnlyAStaffRole(title)) ? 'staff' : role;
+}
+
 export function buildRosterMemberCanonicalPlan(
   researchEntityId: string,
   resolved: Record<string, ProvenanceResolvedField>,
   user: Record<string, unknown> | null = null,
 ): RosterMemberCanonicalPlan | null {
   if (!normalizeMaterializerObjectId(researchEntityId)) return null;
-  const role = normalizeMemberRole(resolved.role?.value);
+  const role = rosterRoleAfterStaffTitleScreen(normalizeMemberRole(resolved.role?.value), resolved);
   if (!role) return null;
   if (
     textValue(resolved.currentStatus?.value) &&
@@ -3815,6 +3880,7 @@ async function materializeRosterMember(
         : undefined,
   });
   await adoptListedPersonUnprovenancedEdges(researchEntityId, plan, personId);
+  if (personId) await endListingEdgesUnderTheOtherScreenedRole(researchEntityId, plan, personId);
   if (personId && !('basis' in identity)) {
     await endSupersededListingHolderEdges(researchEntityId, plan, personId, listingScope);
   }
