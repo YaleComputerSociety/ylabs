@@ -11,6 +11,9 @@
  * to hold on `missing_lead`, which `docs/decisions.md` records as the intended
  * outcome rather than a cost to be worked around.
  *
+ * The report's `pastArchives` re-reads every archive this repair already made and
+ * counts the ones the current rule would refuse (#5854).
+ *
  *   yarn --cwd server research-entity:archive-detachment-bypassing-leads
  *   yarn --cwd server research-entity:archive-detachment-bypassing-leads --apply \
  *     --confirm-archive-detachment-bypassing-leads
@@ -30,15 +33,23 @@ import { PUBLIC_LEAD_ROLES } from '../services/researchGroupService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
+  classifyPastBypassArchive,
   DETACHED_REVIEW_STATUS,
+  PAST_BYPASS_ARCHIVE_CLASSES,
   planDetachmentBypassRepair,
   type LeadEdgeLike,
+  type PastBypassArchiveClass,
+  type PersonIdentityLike,
 } from './archiveDetachmentBypassingLeadEdgesCore';
 
 const __filename = fileURLToPath(import.meta.url);
 dotenv.config({ path: path.resolve(path.dirname(__filename), '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'archive-detachment-bypassing-leads';
+const BYPASS_ARCHIVE_NOTE =
+  'Archived as a lead edge held by a second row for an already-detached human (#3182).';
+const IDENTITY_FIELDS =
+  '_id identifiers.netid identifiers.email identifiers.orcid distinctFromResearcherIds';
 
 // `role_assignments.role` stores canonical roles; `PUBLIC_LEAD_ROLES` holds the
 // legacy labels a SERVED member carries. Filtering stored edges by the legacy set
@@ -75,6 +86,67 @@ export function parseArchiveBypassArgs(argv: string[]): ArchiveBypassOptions {
 
 const idOf = (value: unknown): string => (value == null ? '' : String(value));
 
+const identityOf = (researcher: any): PersonIdentityLike => ({
+  personId: idOf(researcher?._id),
+  netid: researcher?.identifiers?.netid ?? null,
+  email: researcher?.identifiers?.email ?? null,
+  orcid: researcher?.identifiers?.orcid ?? null,
+  distinctFromPersonIds: (researcher?.distinctFromResearcherIds ?? []).map(idOf),
+});
+
+async function loadIdentities(
+  personIds: Iterable<string>,
+): Promise<Map<string, PersonIdentityLike>> {
+  const ids = [...new Set(personIds)].filter(Boolean);
+  const researchers: any[] = await Researcher.find({ _id: { $in: ids } })
+    .select(IDENTITY_FIELDS)
+    .lean();
+  return new Map(researchers.map((researcher) => [idOf(researcher._id), identityOf(researcher)]));
+}
+
+async function classifyPastBypassArchives(
+  detachedEdges: any[],
+): Promise<Record<PastBypassArchiveClass, number>> {
+  const pastArchives: any[] = await RoleAssignment.find({
+    reviewStatus: DETACHED_REVIEW_STATUS,
+    reviewNotes: BYPASS_ARCHIVE_NOTE,
+  })
+    .select('_id personId target role archived reviewStatus')
+    .lean();
+  const detachments = detachedEdges.filter(
+    (edge) => edge.target?.kind === 'RESEARCH_ENTITY' && edge.reviewNotes !== BYPASS_ARCHIVE_NOTE,
+  );
+  const identities = await loadIdentities(
+    [...pastArchives, ...detachments].map((edge) => idOf(edge.personId)),
+  );
+  const counts = Object.fromEntries(PAST_BYPASS_ARCHIVE_CLASSES.map((c) => [c, 0])) as Record<
+    PastBypassArchiveClass,
+    number
+  >;
+  for (const archived of pastArchives) {
+    const verdict = classifyPastBypassArchive({
+      archivedEdge: {
+        edgeId: idOf(archived._id),
+        personId: idOf(archived.personId),
+        entityId: idOf(archived.target?.id),
+        role: String(archived.role),
+        archived: archived.archived === true,
+        reviewStatus: archived.reviewStatus ?? null,
+      },
+      archivedIdentity: identities.get(idOf(archived.personId)),
+      detachments: detachments.map((detachment) => ({
+        edgeId: idOf(detachment._id),
+        personId: idOf(detachment.personId),
+        entityId: idOf(detachment.target?.id),
+        role: String(detachment.role),
+        identity: identities.get(idOf(detachment.personId)),
+      })),
+    });
+    counts[verdict] += 1;
+  }
+  return counts;
+}
+
 export async function runArchiveDetachmentBypassingLeadEdges(
   options: ArchiveBypassOptions,
 ): Promise<number> {
@@ -92,7 +164,7 @@ export async function runArchiveDetachmentBypassingLeadEdges(
   await initializeConnections();
 
   const detachedEdges = await RoleAssignment.find({ reviewStatus: DETACHED_REVIEW_STATUS })
-    .select('_id personId target role')
+    .select('_id personId target role reviewNotes')
     .lean();
 
   const rows: Array<Record<string, unknown>> = [];
@@ -101,9 +173,12 @@ export async function runArchiveDetachmentBypassingLeadEdges(
 
   for (const detached of detachedEdges as any[]) {
     if (detached.target?.kind !== 'RESEARCH_ENTITY') continue;
+    if (detached.reviewNotes === BYPASS_ARCHIVE_NOTE) continue;
     const entityId = idOf(detached.target?.id);
     if (!entityId) continue;
-    const person: any = await Researcher.findById(detached.personId).select('displayName').lean();
+    const person: any = await Researcher.findById(detached.personId)
+      .select(`displayName ${IDENTITY_FIELDS}`)
+      .lean();
     const displayName = typeof person?.displayName === 'string' ? person.displayName : '';
     if (!displayName) continue;
 
@@ -112,7 +187,7 @@ export async function runArchiveDetachmentBypassingLeadEdges(
       _id: { $ne: detached.personId },
       archived: { $ne: true },
     })
-      .select('_id')
+      .select(IDENTITY_FIELDS)
       .lean();
     if (twins.length === 0) continue;
 
@@ -131,7 +206,8 @@ export async function runArchiveDetachmentBypassingLeadEdges(
         entityId,
         role: String(detached.role),
       },
-      twinPersonIds: twins.map((t) => idOf(t._id)),
+      detachedIdentity: identityOf(person),
+      twinCandidates: twins.map(identityOf),
       entityLeadEdges: entityLeadEdges.map((edge): LeadEdgeLike => ({
         edgeId: idOf(edge._id),
         personId: idOf(edge.personId),
@@ -168,8 +244,7 @@ export async function runArchiveDetachmentBypassingLeadEdges(
         $set: {
           archived: true,
           reviewStatus: DETACHED_REVIEW_STATUS,
-          reviewNotes:
-            'Archived as a lead edge held by a second row for an already-detached human (#3182).',
+          reviewNotes: BYPASS_ARCHIVE_NOTE,
         },
       },
     );
@@ -187,6 +262,8 @@ export async function runArchiveDetachmentBypassingLeadEdges(
     }
   }
 
+  const pastArchives = await classifyPastBypassArchives(detachedEdges as any[]);
+
   const report = {
     script: SCRIPT_NAME,
     mode: options.apply ? 'apply' : 'dry-run',
@@ -200,6 +277,7 @@ export async function runArchiveDetachmentBypassingLeadEdges(
     entitiesRegated,
     rowsKeepingALead: rows.filter((r) => r.outcome === 'keeps_a_lead').length,
     rowsHeldWithNoLeadRemaining: rows.filter((r) => r.outcome === 'held_no_lead_remains').length,
+    pastArchives,
     rows,
   };
 
