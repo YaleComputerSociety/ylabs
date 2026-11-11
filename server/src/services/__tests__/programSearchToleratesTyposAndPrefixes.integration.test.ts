@@ -46,7 +46,14 @@ const titles = (result: { fellowships: Array<{ title?: string }> }) =>
 describe('program search tolerates misspellings and unfinished words (#4537)', () => {
   beforeAll(async () => {
     memoryServer = await MongoMemoryServer.create();
-    await mongoose.connect(memoryServer.getUri('program_search_typo_prefix_test'));
+    // Importing the search services registers every model, and with mongoose's defaults each
+    // one creates its collection and builds all its indexes on connect, so this suite's
+    // Fellowship index waited behind the whole corpus schema and timed out under load (#5709).
+    // Connect the way the server does and build only the index the search reads.
+    await mongoose.connect(memoryServer.getUri('program_search_typo_prefix_test'), {
+      autoIndex: false,
+      autoCreate: false,
+    });
     await Fellowship.createIndexes();
     await Fellowship.insertMany(PROGRAMS);
   });
