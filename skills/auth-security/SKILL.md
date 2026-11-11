@@ -552,7 +552,7 @@ Rotating a leaked secret is owned by `docs/incident-runbook.md`.
 | `MEILISEARCH_INDEX_PREFIX` | Deployed | Environment index prefix (`beta`, `prod`); unset locally, and the server refuses to start without it when deployed. |
 | `PORT` | No | Server port, default 4000. |
 | `SCRAPER_ENV` | No | Scraper write guards. |
-| `ALLOW_NON_PROD_SCRAPER_WRITES` | No | Enables scraper writes to non-prod DBs. |
+| `ALLOW_NON_PROD_SCRAPER_WRITES` | No | Environment permission for scraper writes to non-prod DBs; `scrape run` and `scrape materialize` also need `--apply` (#5842). |
 | `CONFIRM_PROD_SCRAPE` | No | Confirms guarded Production writes such as the promotion and reindex; scraper writes against Production are refused regardless. |
 | `SCRAPER_DEVELOPMENT_DB_NAME` | No | Overrides the exact Development database name expected by scraper guards. |
 | `SCRAPER_BETA_DB_NAME` | No | Overrides the exact Beta database name expected by scraper guards. |

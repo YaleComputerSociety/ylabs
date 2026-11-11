@@ -2,7 +2,11 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { describe, expect, it, vi } from 'vitest';
-import { parseArgs, parseScraperOptions } from '../../scrapers/cliHelpers';
+import {
+  buildScraperCliPreflight,
+  parseArgs,
+  parseScraperOptions,
+} from '../../scrapers/cliHelpers';
 import { buildOrchestrator } from '../../scrapers/registry';
 import { brokerSocketPath } from '../../scrapers/utils/hostSlotBroker';
 import { ACTIVE_SOURCE_NAMES } from '../../scrapers/seedSources';
@@ -532,6 +536,52 @@ describe('runScraperSweep', () => {
     expect(incrementalArgs).toContain('--auto-materialize');
     expect(incrementalArgs).not.toContain('--ignore-work-planner');
     expect(incrementalArgs).not.toContain('--limit');
+  });
+
+  it('passes --apply to every writing sweep child and never to a plan child (#5842)', () => {
+    const writingModes = [
+      'development-sample',
+      'development-full',
+      'development-incremental',
+      'fellowship-development-full',
+    ] as const;
+    for (const mode of writingModes) {
+      const args = buildScraperSweepChildArgs(mode, 'yale-directory', '/tmp/yale-directory.json');
+      expect(args, mode).toContain('--apply');
+      expect(args, mode).not.toContain('--dry-run');
+    }
+
+    const planArgs = buildScraperSweepChildArgs(
+      'development-plan',
+      'yale-directory',
+      '/tmp/yale-directory.json',
+    );
+    expect(planArgs).not.toContain('--apply');
+    expect(planArgs).toContain('--dry-run');
+  });
+
+  it('spawns writing children the scrape CLI accepts as writes, and plan children it treats as dry runs (#5842)', () => {
+    const permitted = {
+      SCRAPER_ENV: 'development',
+      ALLOW_NON_PROD_SCRAPER_WRITES: 'true',
+    } as NodeJS.ProcessEnv;
+    const developmentUrl = 'mongodb+srv://example.invalid/Development';
+    const childPreflight = (mode: Parameters<typeof buildScraperSweepChildArgs>[0]) => {
+      const childArgs = buildScraperSweepChildArgs(mode, 'yale-directory', '/tmp/child.json');
+      const { command, flags } = parseArgs([
+        'node',
+        'cli.ts',
+        ...childArgs.slice(childArgs.indexOf('scrape') + 1),
+      ]);
+      return buildScraperCliPreflight(command, flags, developmentUrl, permitted) as {
+        guard: { writes: boolean; autoMaterialize: boolean };
+      };
+    };
+
+    const full = childPreflight('development-full');
+    expect(full.guard.writes).toBe(true);
+    expect(full.guard.autoMaterialize).toBe(true);
+    expect(childPreflight('development-plan').guard.writes).toBe(false);
   });
 
   it('never lets an exhaustive mode write the fetch cache, and caches only bounded modes', () => {

@@ -148,8 +148,11 @@ Four earlier mechanisms each broke on a stored title, and the module's test file
 
 ## Safety rules (write guards)
 
-- Scrapers write only to Development. Non-production environments default to dry-run; set `ALLOW_NON_PROD_SCRAPER_WRITES=true` to write to the Development DB.
+- Scrapers write only to Development. `scrape run` and `scrape materialize` write only when the command line carries `--apply` AND the environment grants `ALLOW_NON_PROD_SCRAPER_WRITES=true` (#5842); `materialize` additionally needs `--confirm-materialize`.
+  Without `--apply` the command is a dry run, `--dry-run` stays an explicit dry run, `--apply` with `--dry-run` is refused, and the environment permission without `--apply` (or `--apply` without the permission) is refused in the preflight, before the CLI connects. A loaded `.env` therefore never turns a dry run into a write.
   A worktree made by `scripts/new-agent-worktree.sh` starts with the flag off even when the primary checkout's `server/.env` sets it, so a write needs the flag on that command's own environment.
+  Every run and materialize prints one banner line before any network or database work, `WILL WRITE to <database>` or `DRY RUN: nothing will be written (<reason>)`, from `ScraperCommandGuardResult.banner`.
+  `scripts/run-data-profile.mjs development --write` only grants the permission, so a writing scrape through it still spells `--apply` on the command line; the sweep children get `--apply` from `buildScraperSweepChildArgs` for every writing mode and never for `development-plan`.
 - Beta and Production receive data only through promotion, so `applyScraperEnvironmentGuards` refuses any `run` or `materialize` write against either, with `promotionOnlyScraperWriteRefusal` naming the promotion commands (#3670). Dry runs stay allowed. Never add a Beta or Production sweep mode or a direct-write command; `docs/decisions.md` (2026-09-27) records why.
 - `scraperEnvironment.ts` enforces `SCRAPER_ENV` write guards.
 - A person on the directory removal list (#4160) gets no new researcher, role edge or faculty research profile on any materialize or attach path (`services/directoryRemovalMintGuard.ts`), and no lane stores a new observation whose subject matches them by a stable identifier, nor a research row's `inferredPiUserKey`, `inferredPiUserId`, `inferredDirectorProfileUrl` or `contactEmail` naming them (`scrapers/directoryRemovalObservationGuard.ts`).
@@ -318,11 +321,11 @@ Each entry names an npm script that `server/package.json` registers, and `auditP
 Every CLI write to a source runs inside that source's `ScrapeJobLock`, through `withScrapeJobLock`.
 Before #2498 only the cron runner took the lock, so two operators or two agents could write one source concurrently with nothing objecting, and any sequencing was convention rather than enforcement.
 
-- `scrape run` without `--dry-run` acquires the lock, heartbeats it, and releases it on success or failure.
+- `scrape run --apply` acquires the lock, heartbeats it, and releases it on success or failure.
   A second writer on the same source is **refused** with a nonzero exit and does not start.
-- `scrape materialize` without `--dry-run` resolves the source from the run and takes the same lock, because materializing writes entities for that source.
+- `scrape materialize --apply` resolves the source from the run and takes the same lock, because materializing writes entities for that source.
   If the source cannot be resolved from the run it proceeds with an explicit warning rather than silently unlocked.
-- A `--dry-run` does not contend for the lock, because it writes no Observations.
+- A dry run (no `--apply`, or `--dry-run`) does not contend for the lock, because it writes no Observations.
   It does **warn** when a live holder exists, since a plan or an `--explain` audit read while another writer changes the same source is not reproducible.
 - The lock is keyed `environment:sourceName`, so parallel work on **different** sources is unaffected. Only same-source writers serialize.
 - `scrape:sweep` spawns `scrape run` children, so the sweep inherits the fence without carrying lock code of its own.

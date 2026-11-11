@@ -216,7 +216,7 @@ export function unmaterializedWriteRunWarning(input: {
   return [
     `Run ${input.runId} wrote ${input.observationCount} observation(s) and materialized none,`,
     'so any key it observed for the first time still has no record.',
-    `Finish with "yarn --cwd server scrape materialize --run ${input.runId} --confirm-materialize",`,
+    `Finish with "yarn --cwd server scrape materialize --run ${input.runId} --apply --confirm-materialize",`,
     'or sweep the backlog with "yarn --cwd server observations:catch-up-materialize".',
   ].join(' ');
 }
@@ -256,7 +256,7 @@ export function scrapeCliCompletionOutcome(input: {
         ...(input.visibilityGateSkipped
           ? ['The student visibility gate was skipped, so no row this run touched was re-gated.']
           : []),
-        `Fix the cause and re-run "yarn --cwd server scrape materialize --run ${input.runId} --confirm-materialize".`,
+        `Fix the cause and re-run "yarn --cwd server scrape materialize --run ${input.runId} --apply --confirm-materialize".`,
       ].join(' '),
     );
   }
@@ -322,6 +322,7 @@ export function buildScraperCliPreflight(
         command,
         options,
         autoMaterialize: !!flags['auto-materialize'],
+        apply: !!flags.apply,
         mongoUrl,
         env,
       }),
@@ -353,11 +354,14 @@ export function buildScraperCliPreflight(
         release: !!flags.release,
       },
       autoMaterialize: false,
+      apply: !!flags.apply,
       mongoUrl,
       env,
     });
-    if (!guard.options.dryRun && !confirmMaterialize) {
-      throw new Error('--confirm-materialize is required for scrape materialize write mode.');
+    if (guard.writes && !confirmMaterialize) {
+      throw new Error(
+        '--confirm-materialize is required with --apply for scrape materialize write mode.',
+      );
     }
     return {
       command,

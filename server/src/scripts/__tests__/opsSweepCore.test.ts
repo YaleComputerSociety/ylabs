@@ -160,6 +160,7 @@ describe('rerun commands', () => {
       'run',
       '--source',
       'nih-reporter',
+      '--apply',
       '--ignore-work-planner',
       '--exhaustive',
       '--auto-materialize',

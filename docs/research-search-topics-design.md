@@ -158,7 +158,7 @@ A second instrument stays separate: the lane scorecard over frozen pages (`lane_
 This is a stored-data change, so merging the code changes nothing a student sees.
 
 1. Land the benchmark harness and the lane code behind the normal write guard.
-2. Run `research-page-text` on Development scoped to the 557 rows that compete for the sampled rows' top five, with `ALLOW_NON_PROD_SCRAPER_WRITES=true` and `--exhaustive`.
+2. Run `research-page-text` on Development scoped to the 557 rows that compete for the sampled rows' top five, with `ALLOW_NON_PROD_SCRAPER_WRITES=true`, `--apply` and `--exhaustive`.
 3. Run `research-topics:derive` as a dry run, then apply it on the same rows, then rematerialize them for `researchAreas` and run `development:search:sync` (the index shape does not change, so no rebuild).
 4. Measure Sets B and C through the real route on Development against today's baseline, and grade a random sample of the new topics by hand.
 5. If the gain holds, run the lane corpus-wide, then add it to the weekly sweep.

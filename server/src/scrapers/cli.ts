@@ -3,13 +3,14 @@
  *
  * Usage:
  *   npx tsx server/src/scrapers/cli.ts list
- *   npx tsx server/src/scrapers/cli.ts run --source nih-reporter [flags] [--output <path>]
- *   npx tsx server/src/scrapers/cli.ts materialize --run <runId> [--dry-run|--confirm-materialize] [--output <path>]
+ *   npx tsx server/src/scrapers/cli.ts run --source nih-reporter [--apply] [flags] [--output <path>]
+ *   npx tsx server/src/scrapers/cli.ts materialize --run <runId> [--dry-run|--apply --confirm-materialize] [--output <path>]
  *   npx tsx server/src/scrapers/cli.ts report --run <runId> [--output <path>]
  *   npx tsx server/src/scrapers/cli.ts prune-observations [--apply --confirm-observation-prune] [--output <path>]
  *
  * Flags for `run`:
- *   --dry-run       Don't write Observations (just log what would be inserted)
+ *   --apply         Write Observations (also needs ALLOW_NON_PROD_SCRAPER_WRITES=true)
+ *   --dry-run       Don't write Observations (the default without --apply)
  *   --use-cache     Memoize external fetches in ScrapeSnapshot collection (dev only)
  *   --release       Release mode (caches off, errors surface)
  *   --limit <n>     Cap the number of entities the scraper processes
@@ -197,18 +198,23 @@ export function scraperCliWrites(preflight: ScraperCliPreflight): {
 } {
   if (preflight.command === 'run') {
     const { guard } = preflight as Extract<ScraperCliPreflight, { command: 'run' }>;
-    const writing = !guard.options.dryRun;
-    return { observations: writing, apply: writing && guard.autoMaterialize };
+    return { observations: guard.writes, apply: guard.writes && guard.autoMaterialize };
   }
   if (preflight.command === 'materialize') {
     const { guard } = preflight as Extract<ScraperCliPreflight, { command: 'materialize' }>;
-    return { observations: false, apply: !guard.options.dryRun };
+    return { observations: false, apply: guard.writes };
   }
   if (preflight.command === 'prune-observations') {
     const { guard } = preflight as Extract<ScraperCliPreflight, { command: 'prune-observations' }>;
     return { observations: false, apply: guard.apply };
   }
   return { observations: false, apply: false };
+}
+
+export function scraperCliBanner(preflight: ScraperCliPreflight): string | undefined {
+  if (preflight.command !== 'run' && preflight.command !== 'materialize') return undefined;
+  const { guard } = preflight as Extract<ScraperCliPreflight, { command: 'run' | 'materialize' }>;
+  return guard.banner;
 }
 
 const devHostLeaseLimiter: HostSlotLimiter = {
@@ -235,14 +241,15 @@ export async function main(): Promise<void> {
 ylabs scraper CLI
 
   list                                       List registered scrapers
-  run --source <name> [flags]                Run a scraper
-  materialize --run <runId> [--output <path>] [--only-fields <paths>]
+  run --source <name> [--apply] [flags]      Run a scraper (a dry run without --apply)
+  materialize --run <runId> [--apply --confirm-materialize] [--output <path>] [--only-fields <paths>]
                                              Materialize observations from a previous run
   report --run <runId> [--output <path>]     Print or save a QA report for a ScrapeRun
   prune-observations [flags]                 Prune old unreferenced superseded Observation rows
 
 Run flags:
-  --dry-run            Skip Observation writes (preview only)
+  --apply              Write Observations; without it the run is a dry run
+  --dry-run            Skip Observation writes (preview only, the default)
   --use-cache          Cache external fetches in ScrapeSnapshot (dev)
   --release            Release mode (caches off, errors surface)
   --limit <n>          Cap entities processed
@@ -266,9 +273,10 @@ Run flags:
   --output <path>      Save the ScrapeRun report JSON
 
 Materialize flags:
-  --dry-run            Preview materialization without writing derived records
+  --apply              Write derived records; without it materialize is a dry run
+  --dry-run            Preview materialization without writing (the default)
   --confirm-materialize
-                       Required when standalone materialize writes derived records.
+                       Required with --apply when standalone materialize writes.
   --output <path>      Save the materialize result, visibility gate, and run report JSON
   --only-fields <paths>
                        Write only these researcher paths on the run's user rows:
@@ -294,8 +302,11 @@ Prune flags:
 
 Environment guardrails:
   SCRAPER_ENV=development|beta|production
-  Development runs default to --dry-run and disable --auto-materialize;
-  set ALLOW_NON_PROD_SCRAPER_WRITES=true to write.
+  run and materialize write only with --apply on the command line AND
+  ALLOW_NON_PROD_SCRAPER_WRITES=true in the environment. Without --apply they
+  are dry runs; with the environment flag but no --apply they refuse.
+  Every run and materialize prints one banner line, "WILL WRITE to <db>" or
+  "DRY RUN: nothing will be written (<reason>)", before it connects.
   Beta and Production refuse run and materialize writes: they receive
   data only through promotion (docs/data-refresh-runbook.md).
 
@@ -325,6 +336,8 @@ Concurrency:
   }
 
   const preflight = buildScraperCliPreflight(command, flags, url);
+  const banner = scraperCliBanner(preflight);
+  if (banner) console.log(banner);
   const writes = scraperCliWrites(preflight);
   if (writes.apply) recordDevApplyIntent(`scrape ${command}`);
 

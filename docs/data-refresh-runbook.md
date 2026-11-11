@@ -267,7 +267,7 @@ The held list is `OWNER_HELD_SOURCES`; of the sweep sources only `lab-microsite-
 5. It records each source's last comparable successful `scrape_runs` row: exhaustive, not a dry run, not `--force-llm`, and not scoped by `--only`, `--limit` or a benchmark.
 6. It starts `/usr/bin/tini -- /app/deploy/sweep-runner/entrypoint.sh --rerun-source <source>...` and polls the job every minute.
 The entrypoint resolves `beta` HEAD, clones and installs it exactly as for the weekly sweep, and runs `yarn --cwd server scrape:sweep:rerun-source` (`server/src/scripts/sweepSourceRerun.ts`) from that checkout with `SEARCH_INDEX_WRITES=deferred`.
-That script repeats the environment, source, and activity refusals inside the job, applies the weekly sweep's code freshness refusal (`server/src/scripts/sweepCodeFreshness.ts`), and runs each source in turn with `SCRAPER_ENV=development` and `ALLOW_NON_PROD_SCRAPER_WRITES=true` and exactly the `development-full` flags, `--ignore-work-planner --exhaustive --auto-materialize`, stopping at the first source that fails.
+That script repeats the environment, source, and activity refusals inside the job, applies the weekly sweep's code freshness refusal (`server/src/scripts/sweepCodeFreshness.ts`), and runs each source in turn with `SCRAPER_ENV=development` and `ALLOW_NON_PROD_SCRAPER_WRITES=true` and exactly the `development-full` flags, `--apply --ignore-work-planner --exhaustive --auto-materialize`, stopping at the first source that fails.
 It never passes `--force-llm`.
 7. When the job ends it reads each source's new `scrape_runs` row and compares it with the recorded one.
 A source is flagged when its run is missing or failed, when it wrote no observations (`producedNothing`), or when its observation count or its entities updated fell by more than 25% and by at least 10.
@@ -774,11 +774,14 @@ export SOURCE_NAME='ysm-atoz-index'
 
 yarn scrape:development:write run \
   --source "$SOURCE_NAME" \
+  --apply \
   --ignore-work-planner \
   --exhaustive \
   --auto-materialize \
   --output "/tmp/ylabs-development-${SOURCE_NAME}-repair.json"
 ```
+
+`--write` grants the environment permission and `--apply` is the command line's own request to write; the scrape CLI needs both, and refuses `--write` without `--apply` before it connects (#5842).
 
 Every post-run stage that ran writes one JSON artifact into the printed sweep directory, and `summary.json` records each stage's `artifactPath`, so read `summary.json` rather than a hand-kept filename list.
 [research-data-pipeline.md](research-data-pipeline.md) owns which stages run and which of them are flag-gated; the artifact name each one writes is declared beside its command in `DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS` in `server/src/scripts/runScraperSweep.ts`.
