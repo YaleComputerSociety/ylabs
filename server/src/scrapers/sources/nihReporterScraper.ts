@@ -1011,6 +1011,7 @@ async function defaultLoadLegacyGrantObservations(): Promise<LegacyGrantObservat
 
 async function fetchProjectsByNumber(
   projectNumbers: string[],
+  fiscalYears: number[],
   ctx: ScraperContext,
 ): Promise<NihGrant[]> {
   const projects: NihGrant[] = [];
@@ -1019,7 +1020,7 @@ async function fetchProjectsByNumber(
     let offset = 0;
     let total = Infinity;
     for (let page = 0; offset < total && page < MAX_PAGES; page++) {
-      const cacheKey = `legacy-award-pis:numbers=${batch.join(',')}:offset=${offset}:limit=${PAGE_SIZE}`;
+      const cacheKey = `legacy-award-pis:numbers=${batch.join(',')}:fy=${fiscalYears.join(',')}:offset=${offset}:limit=${PAGE_SIZE}`;
       let payload = ctx.options.useCache
         ? await getCached<NihPage>('nih-reporter', cacheKey)
         : null;
@@ -1028,7 +1029,11 @@ async function fetchProjectsByNumber(
           axios.post(
             REPORTER_ENDPOINT,
             {
-              criteria: { project_nums: batch, exclude_subprojects: true },
+              criteria: {
+                project_nums: batch,
+                exclude_subprojects: true,
+                fiscal_years: fiscalYears,
+              },
               include_fields: [
                 'ApplId',
                 'ProjectNum',
@@ -1036,6 +1041,7 @@ async function fetchProjectsByNumber(
                 'PrincipalInvestigators',
                 'FiscalYear',
                 'Organization',
+                'ActivityCode',
               ],
               offset,
               limit: PAGE_SIZE,
@@ -1239,17 +1245,24 @@ export class NihReporterScraper implements IScraper {
 
     const relist = { observations: 0, listed: 0, unmatched: 0, status: 'skipped (--limit)' };
     if (limitOption === undefined) {
-      const legacy = await (
-        this.opts.loadLegacyGrantObservations ?? defaultLoadLegacyGrantObservations
-      )();
-      const numbers = legacyAwardProjectNumbers(legacy);
-      relist.status = numbers.length === 0 ? 'none pending' : 'read';
-      if (numbers.length > 0) {
-        try {
-          const projects = await (
-            this.opts.lookupProjectsByNumber ??
-            ((projectNumbers) => fetchProjectsByNumber(projectNumbers, ctx))
-          )(numbers);
+      try {
+        const legacy = await (
+          this.opts.loadLegacyGrantObservations ?? defaultLoadLegacyGrantObservations
+        )();
+        const numbers = legacyAwardProjectNumbers(legacy);
+        relist.status = numbers.length === 0 ? 'none pending' : 'read';
+        if (numbers.length > 0) {
+          const projects = (
+            await (
+              this.opts.lookupProjectsByNumber ??
+              ((projectNumbers) => fetchProjectsByNumber(projectNumbers, fiscalYears, ctx))
+            )(numbers)
+          ).filter(
+            (record) =>
+              record.fiscal_year !== undefined &&
+              fiscalYears.includes(record.fiscal_year) &&
+              !isTraineeFellowshipGrant(record),
+          );
           const legacyCredited = new Set<number>();
           for (const record of projects) {
             if (!isYaleOrganization(record.organization?.org_name)) continue;
@@ -1313,14 +1326,14 @@ export class NihReporterScraper implements IScraper {
           relist.observations = relisted.observations.length;
           relist.listed = relisted.listed;
           relist.unmatched = relisted.unmatched;
-        } catch (err: unknown) {
-          relist.status = 'failed';
-          const failure = `legacy award PI read failed; no legacy observation relisted: ${sanitizeLogValue(
-            err instanceof Error ? err.message : err,
-          )}`;
-          ctx.log(failure);
-          partialFailures.push(failure);
         }
+      } catch (err: unknown) {
+        relist.status = 'failed';
+        const failure = `legacy award PI read failed; no legacy observation relisted: ${sanitizeLogValue(
+          err instanceof Error ? err.message : err,
+        )}`;
+        ctx.log(failure);
+        partialFailures.push(failure);
       }
     }
 

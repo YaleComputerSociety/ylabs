@@ -17,11 +17,12 @@ const project = (
   coreNumber: string,
   contact: { profileId: number; first: string; last: string },
   coPi?: { profileId: number; first: string; last: string },
+  fiscalYear = 2026,
 ): NihGrant => ({
-  appl_id: Number(coreNumber.replace(/\D/g, '')),
+  appl_id: Number(coreNumber.replace(/\D/g, '')) * 10000 + fiscalYear,
   project_num: `5${coreNumber}-03`,
   core_project_num: coreNumber,
-  fiscal_year: 2023,
+  fiscal_year: fiscalYear,
   organization: { org_name: 'YALE UNIVERSITY' },
   principal_investigators: [
     {
@@ -133,7 +134,11 @@ describe('relisting a legacy NIH grant observation with its PI list (#5779)', ()
 describe('a lane run relists legacy awards so another person award stops being served (#5779)', () => {
   afterEach(() => vi.restoreAllMocks());
 
-  const runLane = async (lookupProjectsByNumber: (numbers: string[]) => Promise<NihGrant[]>) => {
+  const runLane = async (
+    lookupProjectsByNumber: (numbers: string[]) => Promise<NihGrant[]>,
+    loadLegacyGrantObservations: () => Promise<LegacyGrantObservation[]> = async () =>
+      legacyObservations(),
+  ) => {
     vi.spyOn(axios, 'post').mockResolvedValue({
       data: { meta: { total: 0, offset: 0, limit: 500 }, results: [] },
     } as any);
@@ -159,7 +164,7 @@ describe('a lane run relists legacy awards so another person award stops being s
       loadResearcherProfileTitle: async () => 'Professor',
       researchHomeResolver: async () => ({ status: 'canonical', slug: 'synthetic-row' }) as any,
       lookupContactPiAffiliations: async () => new Map(),
-      loadLegacyGrantObservations: async () => legacyObservations(),
+      loadLegacyGrantObservations,
       lookupProjectsByNumber,
     }).run({
       ...ctx,
@@ -184,6 +189,44 @@ describe('a lane run relists legacy awards so another person award stops being s
       new Set(['researcher-unrelated']),
     );
     expect((soleOther.recentGrants as any[]).map((entry) => entry.id)).toEqual(['R01GM000099']);
+  });
+
+  it('credits only the award records inside the run fiscal window', async () => {
+    const handedOver = 'R01GM000003';
+    const { emitted } = await runLane(
+      async () => [project(handedOver, lead, undefined, 2008), project(handedOver, other)],
+      async () => [
+        {
+          entityKey: 'synthetic-merged-in-key',
+          field: 'recentGrants',
+          value: [legacyEntry(handedOver)],
+          observedAt: READ_AT,
+        },
+      ],
+    );
+    const relisted = emitted.filter((obs) => obs.entityKey === 'synthetic-merged-in-key');
+    expect(relisted).toHaveLength(1);
+    expect((relisted[0].value as Array<Record<string, any>>)[0].investigators).toEqual([
+      { contact: true, profileId: 22, researcherId: OTHER },
+    ]);
+    const servedForEarlierLead = aggregateResearchEntityGrantEvidence(
+      relisted.map((obs) => ({ ...obs, sourceName: 'nih-reporter', observedAt: READ_AT })) as any,
+      new Set([LEAD]),
+    );
+    expect(servedForEarlierLead.recentGrants ?? []).toEqual([]);
+  });
+
+  it('reports a failed legacy observation load as a partial failure', async () => {
+    const { emitted, result } = await runLane(
+      async () => projects,
+      async () => {
+        throw new Error('synthetic database outage');
+      },
+    );
+    expect(emitted.filter((obs) => obs.entityKey === 'synthetic-merged-in-key')).toEqual([]);
+    expect(
+      result.partialFailures?.some((line) => line.includes('legacy award PI read failed')),
+    ).toBe(true);
   });
 
   it('fails closed and relists nothing when RePORTER cannot be read', async () => {
