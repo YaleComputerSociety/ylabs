@@ -5,6 +5,7 @@ import {
   type ScraperCommandGuardResult,
 } from './scraperEnvironment';
 import type { ScraperOptions } from './types';
+import { parseUserOnlyFieldsList } from './userMaterializerFieldScope';
 
 export interface ScraperCliOutputMetadata {
   command: string;
@@ -23,6 +24,7 @@ export type ScraperCliPreflight =
       command: 'materialize';
       runId: string;
       confirmMaterialize: boolean;
+      onlyFields: string[];
       guard: ScraperCommandGuardResult;
     }
   | {
@@ -45,6 +47,7 @@ const VALUE_FLAGS = new Set([
   'offset',
   'older-than-days',
   'only',
+  'only-fields',
   'output',
   'run',
   'since',
@@ -303,6 +306,9 @@ export function buildScraperCliPreflight(
   mongoUrl?: string,
   env: NodeJS.ProcessEnv = process.env,
 ): ScraperCliPreflight {
+  if (command !== 'materialize' && flags['only-fields'] !== undefined) {
+    throw new Error('--only-fields applies only to scrape materialize --run <runId>.');
+  }
   if (command === 'run') {
     const sourceName = flags.source as string;
     if (!sourceName) {
@@ -328,6 +334,17 @@ export function buildScraperCliPreflight(
       throw new Error('ERROR: --run <runId> is required');
     }
     const confirmMaterialize = !!flags['confirm-materialize'];
+    const onlyFields =
+      flags['only-fields'] === undefined
+        ? []
+        : parseUserOnlyFieldsList(
+            typeof flags['only-fields'] === 'string' ? flags['only-fields'] : undefined,
+          );
+    if (onlyFields.length > 0 && typeof flags.output !== 'string') {
+      throw new Error(
+        '--only-fields requires --output <path>: the per-key planned and dropped paths are written there.',
+      );
+    }
     const guard = applyScraperEnvironmentGuards({
       command,
       options: {
@@ -346,6 +363,7 @@ export function buildScraperCliPreflight(
       command,
       runId,
       confirmMaterialize,
+      onlyFields,
       guard,
     };
   }

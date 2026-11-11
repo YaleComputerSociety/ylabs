@@ -23,6 +23,14 @@ import {
   type ResearcherGatedField,
 } from '../utils/researcherFieldWriters';
 import {
+  changedResearcherPaths,
+  expandUserMaterializerScope,
+  partitionPlannedPaths,
+  scopedResearcherUpdate,
+  userScopeAdmits,
+  valueAtPath,
+} from './userMaterializerFieldScope';
+import {
   planResearcherRefusedStoredValueClear,
   researcherHasLiveRefusals,
   researcherRefusesValue,
@@ -629,6 +637,7 @@ interface MaterializeOptions {
   resynthesizeWeakCards?: boolean;
   cardModel?: string;
   writeOnlyFields?: string[];
+  userWriteOnlyFields?: readonly string[];
   /**
    * Keep the field-less post-projection steps (inferred lead edges, access-signal
    * upserts, the department-roster fold) on a `writeOnlyFields` pass. The merge
@@ -1151,6 +1160,7 @@ interface MaterializeResult {
   plannedUnset?: Record<string, ''>;
   plannedWriteSkip?: 'no-scoped-fields' | 'unchanged';
   plannedPaths?: string[];
+  droppedPaths?: string[];
   identityJoin?: UserIdentityJoin;
   unbackedResearchAreas?: UnbackedResearchAreaOutcome;
   /** Fellowship fields this pass cleared because their only source states they have none. */
@@ -8689,14 +8699,74 @@ async function officialPageNamesAnotherNetid(
   return profilePageContradictsNetid(owners, pageUrl, netid);
 }
 
+function userWriteScope(options: MaterializeOptions): string[] | undefined {
+  return options.userWriteOnlyFields && options.userWriteOnlyFields.length > 0
+    ? expandUserMaterializerScope(options.userWriteOnlyFields)
+    : undefined;
+}
+
+const unionSorted = (...lists: ReadonlyArray<readonly string[] | undefined>): string[] =>
+  [...new Set(lists.flatMap((list) => list ?? []))].sort();
+
+function withScreenedWithdrawalPaths(
+  result: MaterializeResult,
+  withdrawal: ScreenedPageWithdrawalOutcome,
+): MaterializeResult {
+  return {
+    ...result,
+    plannedPaths: unionSorted(result.plannedPaths, withdrawal.plannedPaths),
+    droppedPaths: unionSorted(result.droppedPaths, withdrawal.droppedPaths),
+  };
+}
+
+interface ScreenedPageWithdrawalOutcome {
+  written: number;
+  plannedPaths: string[];
+  droppedPaths: string[];
+}
+
+function scopeScreenedPageWithdrawal(
+  plan: ScreenedPageWithdrawal,
+  scope: readonly string[],
+): { plan: ScreenedPageWithdrawal; plannedPaths: string[]; droppedPaths: string[] } {
+  const planned = [
+    ...(plan.officialLinkUrls.length > 0 || plan.orcid ? ['profileLinks'] : []),
+    ...(plan.orcid ? ['identifiers.orcid'] : []),
+    ...(plan.imageUrl ? ['profile.imageUrl'] : []),
+  ];
+  const { kept, dropped } = partitionPlannedPaths(planned, scope);
+  const keepsLinks = kept.includes('profileLinks');
+  return {
+    plan: {
+      researcherId: plan.researcherId,
+      officialLinkUrls: keepsLinks ? plan.officialLinkUrls : [],
+      ...(plan.orcid && (keepsLinks || kept.includes('identifiers.orcid'))
+        ? { orcid: plan.orcid }
+        : {}),
+      ...(plan.imageUrl && kept.includes('profile.imageUrl') ? { imageUrl: plan.imageUrl } : {}),
+    },
+    plannedPaths: kept,
+    droppedPaths: dropped,
+  };
+}
+
 async function withdrawScreenedOfficialProfileLinks(
   entityKey: string | undefined,
   screenedPageUrls: string[],
   options: MaterializeOptions,
-): Promise<number> {
-  const plan = await planScreenedPageWithdrawal(entityKey, screenedPageUrls);
-  if (!plan) return 0;
-  if (options.dryRun) return 1;
+): Promise<ScreenedPageWithdrawalOutcome> {
+  const none: ScreenedPageWithdrawalOutcome = { written: 0, plannedPaths: [], droppedPaths: [] };
+  const plannedPlan = await planScreenedPageWithdrawal(entityKey, screenedPageUrls);
+  if (!plannedPlan) return none;
+  const scope = userWriteScope(options);
+  const scoped = scope ? scopeScreenedPageWithdrawal(plannedPlan, scope) : undefined;
+  const plan = scoped?.plan ?? plannedPlan;
+  const paths = {
+    plannedPaths: scoped?.plannedPaths ?? [],
+    droppedPaths: scoped?.droppedPaths ?? [],
+  };
+  if (scoped && scoped.plannedPaths.length === 0) return { ...none, ...paths };
+  if (options.dryRun) return { written: 1, ...paths };
   const pulls: Array<Record<string, unknown>> = [];
   if (plan.officialLinkUrls.length > 0) {
     pulls.push({ kind: 'YALE_OFFICIAL', url: { $in: plan.officialLinkUrls } });
@@ -8705,7 +8775,9 @@ async function withdrawScreenedOfficialProfileLinks(
     pulls.push({ kind: 'ORCID', url: new RegExp(`(?:^|/)${escapeRegex(plan.orcid)}/*$`, 'i') });
   }
   const unset: Record<string, ''> = {
-    ...(plan.orcid ? { 'identifiers.orcid': '' as const } : {}),
+    ...(plan.orcid && (!scope || userScopeAdmits(scope, 'identifiers.orcid'))
+      ? { 'identifiers.orcid': '' as const }
+      : {}),
     ...(plan.imageUrl ? { 'profile.imageUrl': '' as const } : {}),
   };
   const result = await Researcher.updateOne(
@@ -8717,7 +8789,7 @@ async function withdrawScreenedOfficialProfileLinks(
         : {}),
     },
   );
-  return result.modifiedCount > 0 ? 1 : 0;
+  return { written: result.modifiedCount > 0 ? 1 : 0, ...paths };
 }
 
 async function releaseFieldWritersThatNoLongerReach(
@@ -8748,6 +8820,48 @@ function researcherJoinIdentitySnapshot(researcher: any): string {
     researcher.identifiers?.email,
     (researcher.profileLinks || []).map((link: ResearcherProfileLink) => [link.kind, link.url]),
   ]);
+}
+
+function researcherSnapshot(researcher: any): Record<string, unknown> {
+  return typeof researcher?.toObject === 'function'
+    ? researcher.toObject({ flattenMaps: true, depopulate: true })
+    : structuredClone(researcher);
+}
+
+async function writeScopedResearcherPlan(input: {
+  researcher: any;
+  storedResearcher: Record<string, unknown>;
+  scope: readonly string[];
+  identifier: { entityId?: string; entityKey?: string };
+  resolved: Record<string, ResolvedField>;
+  conflicts: number;
+  identityJoin: UserIdentityJoin | undefined;
+  dryRun: boolean;
+}): Promise<MaterializeResult> {
+  const planned = researcherSnapshot(input.researcher);
+  const { kept, dropped } = partitionPlannedPaths(
+    changedResearcherPaths(input.storedResearcher, planned),
+    input.scope,
+  );
+  const result = (fieldsWritten: number): MaterializeResult => ({
+    entityType: 'user',
+    entityId: materializerDocumentId(input.researcher._id),
+    entityKey: input.identifier.entityKey,
+    fieldsWritten,
+    conflicts: input.conflicts,
+    created: false,
+    resolved: input.resolved,
+    plannedPaths: kept,
+    droppedPaths: dropped,
+    ...(input.identityJoin ? { identityJoin: input.identityJoin } : {}),
+  });
+  if (input.dryRun) return result(kept.length);
+  if (kept.length === 0) return result(0);
+  const candidate = Researcher.hydrate(input.storedResearcher);
+  for (const path of kept) candidate.set(path, valueAtPath(planned, path));
+  await candidate.validate();
+  await Researcher.updateOne({ _id: input.researcher._id }, scopedResearcherUpdate(planned, kept));
+  return result(kept.length);
 }
 
 async function materializeUserIdentityToResearcher(
@@ -8783,6 +8897,9 @@ async function materializeUserIdentityToResearcher(
     account,
   } = join;
   let { researcher, identityJoin } = join;
+  const scope = userWriteScope(options);
+  const storedResearcher: Record<string, unknown> | undefined =
+    scope && researcher?._id ? researcherSnapshot(researcher) : undefined;
   const accountId: mongoose.Types.ObjectId | undefined = account?._id;
   let heldPageFieldsWithdrawn = 0;
   if (researcher?._id) {
@@ -8821,6 +8938,7 @@ async function materializeUserIdentityToResearcher(
   //     on `missing_lead`.
   //   - Only a live entity's attribution may mint (`liveResearchEntityNamesUserKeyAsLead`).
   let mintedFromPiAttribution = false;
+  if (!researcher && scope) return skipped('field-scoped-run-mints-no-researcher');
   if (!researcher) {
     const attributionKey = textValue(identifier.entityKey);
     const keyIdentity = inferredPiUserKeyIdentity(attributionKey);
@@ -9064,11 +9182,15 @@ async function materializeUserIdentityToResearcher(
 
   const priorEmail: string | undefined = researcher.identifiers?.email;
   let emailFieldsWritten = 0;
+  const storedUnlessScoped = (path: string, planned: unknown): unknown =>
+    storedResearcher && scope && !userScopeAdmits(scope, path)
+      ? valueAtPath(storedResearcher, path)
+      : planned;
   const derivedEmail = await derivedResearcherEmail(
     {
       _id: researcher._id,
-      netid: textValue(researcher.identifiers?.netid),
-      displayName: textValue(researcher.displayName),
+      netid: textValue(storedUnlessScoped('identifiers.netid', researcher.identifiers?.netid)),
+      displayName: textValue(storedUnlessScoped('displayName', researcher.displayName)),
     },
     textValue(priorEmail),
   );
@@ -9209,6 +9331,23 @@ async function materializeUserIdentityToResearcher(
       }),
     );
   };
+
+  if (scope && storedResearcher) {
+    const scopedResult = await writeScopedResearcherPlan({
+      researcher,
+      storedResearcher,
+      scope,
+      identifier,
+      resolved,
+      conflicts,
+      identityJoin,
+      dryRun: Boolean(options.dryRun),
+    });
+    if (!options.dryRun && scopedResult.fieldsWritten > 0) {
+      options.chunkPrefetch?.userIdentityJoins?.forgetAll();
+    }
+    return scopedResult;
+  }
 
   // Every other materializer arm returns its plan here rather than writing, and this
   // one did not: `dryRun` was honoured only on the mint branch above, so a resolved
@@ -12644,11 +12783,13 @@ async function materializeEntityUnderRemovalGuard(
   if (entityType === 'user') {
     const { kept: userObs, screenedPageUrls } =
       await screenDirectoryContradictedProfileEvidenceForKey(identifier.entityKey, obs);
-    const withdrawnLinks = await withdrawScreenedOfficialProfileLinks(
+    const withdrawal = await withdrawScreenedOfficialProfileLinks(
       identifier.entityKey,
       screenedPageUrls,
       options,
     );
+    const withdrawnLinks = withdrawal.written;
+    const scoped = Boolean(userWriteScope(options));
     if (userObs.length === 0) {
       return {
         entityType,
@@ -12658,12 +12799,16 @@ async function materializeEntityUnderRemovalGuard(
         created: false,
         resolved: {},
         skipped: 'directory-contradicts-profile-netid',
+        ...(scoped
+          ? { plannedPaths: withdrawal.plannedPaths, droppedPaths: withdrawal.droppedPaths }
+          : {}),
       };
     }
     const result = await materializeUserIdentityToResearcher(identifier, userObs, options);
+    const merged = scoped ? withScreenedWithdrawalPaths(result, withdrawal) : result;
     return withdrawnLinks
-      ? { ...result, fieldsWritten: result.fieldsWritten + withdrawnLinks }
-      : result;
+      ? { ...merged, fieldsWritten: merged.fieldsWritten + withdrawnLinks }
+      : merged;
   }
 
   if (entityType === 'orgUnit') {
@@ -14429,6 +14574,127 @@ interface MaterializeFromRunCounts {
   errors: number;
   indexSyncFailures: number;
   postMaterializationMetrics: Required<ReportPostMaterializationMetrics>;
+  userFieldScope?: UserFieldScopeReport;
+}
+
+export interface UserFieldScopeRow {
+  entityKey?: string;
+  entityId?: string;
+  fieldsWritten: number;
+  plannedPaths: string[];
+  droppedPaths: string[];
+  skipped?: string;
+  error?: string;
+}
+
+export interface UserFieldScopeSummary {
+  onlyFields: string[];
+  scope: string[];
+  keys: number;
+  keysWriting: number;
+  plannedPathSet: string[];
+  droppedPathSet: string[];
+  skipped: Record<string, number>;
+  errors: number;
+}
+
+export interface UserFieldScopeReport extends UserFieldScopeSummary {
+  rowsOutsideUserSkipped: Record<string, number>;
+  runReconciliationsSkipped: true;
+  rows: UserFieldScopeRow[];
+}
+
+export function userFieldScopeRow(
+  identifier: { entityKey?: string; entityId?: string },
+  outcome: { result: MaterializeResult } | { error: unknown },
+): UserFieldScopeRow {
+  if ('error' in outcome) {
+    return {
+      ...identifier,
+      fieldsWritten: 0,
+      plannedPaths: [],
+      droppedPaths: [],
+      error: sanitizeLogValue((outcome.error as Error)?.message ?? String(outcome.error)),
+    };
+  }
+  const { result } = outcome;
+  return {
+    ...identifier,
+    fieldsWritten: result.fieldsWritten,
+    plannedPaths: result.plannedPaths ?? [],
+    droppedPaths: result.droppedPaths ?? [],
+    ...(result.skipped ? { skipped: result.skipped } : {}),
+  };
+}
+
+export function summarizeUserFieldScopeRows(
+  onlyFields: readonly string[],
+  rows: readonly UserFieldScopeRow[],
+): UserFieldScopeSummary {
+  const skipped: Record<string, number> = {};
+  for (const row of rows) if (row.skipped) skipped[row.skipped] = (skipped[row.skipped] ?? 0) + 1;
+  return {
+    onlyFields: [...onlyFields],
+    scope: expandUserMaterializerScope(onlyFields),
+    keys: rows.length,
+    keysWriting: rows.filter((row) => row.fieldsWritten > 0).length,
+    plannedPathSet: unionSorted(...rows.map((row) => row.plannedPaths)),
+    droppedPathSet: unionSorted(...rows.map((row) => row.droppedPaths)),
+    skipped,
+    errors: rows.filter((row) => row.error).length,
+  };
+}
+
+export function withoutUserFieldScopeRows<T extends { userFieldScope?: UserFieldScopeReport }>(
+  counts: T,
+): T | (Omit<T, 'userFieldScope'> & { userFieldScope: Omit<UserFieldScopeReport, 'rows'> }) {
+  if (!counts.userFieldScope) return counts;
+  const { rows: _rows, ...summary } = counts.userFieldScope;
+  return { ...counts, userFieldScope: summary };
+}
+
+async function materializeUserRowsInFieldScope(
+  rows: ReadonlyArray<{ entityType: ObservedEntityType; entityId?: string; entityKey?: string }>,
+  options: MaterializeOptions,
+): Promise<MaterializeFromRunCounts> {
+  const onlyFields = [...(options.userWriteOnlyFields ?? [])];
+  const rowsOutsideUserSkipped: Record<string, number> = {};
+  const userRows = rows.filter((row) => {
+    if (row.entityType === 'user') return true;
+    rowsOutsideUserSkipped[row.entityType] = (rowsOutsideUserSkipped[row.entityType] ?? 0) + 1;
+    return false;
+  });
+  const scopeRows: UserFieldScopeRow[] = [];
+  let conflicts = 0;
+  await materializeObservedEntitiesInChunks(
+    userRows,
+    options,
+    (row, outcome) => {
+      scopeRows.push(
+        userFieldScopeRow({ entityKey: row.entityKey, entityId: row.entityId }, outcome),
+      );
+      if ('result' in outcome) conflicts += outcome.result.conflicts;
+    },
+    MATERIALIZATION_CHUNK_SIZE,
+    1,
+  );
+  const summary = summarizeUserFieldScopeRows(onlyFields, scopeRows);
+  return {
+    materialized: scopeRows.filter((row) => !row.error).length,
+    created: 0,
+    updated: scopeRows.filter((row) => !row.error && !row.skipped).length,
+    conflicts,
+    skipped: scopeRows.filter((row) => row.skipped).length,
+    errors: summary.errors,
+    indexSyncFailures: 0,
+    postMaterializationMetrics: emptyPostMaterializationMetrics(),
+    userFieldScope: {
+      ...summary,
+      rowsOutsideUserSkipped,
+      runReconciliationsSkipped: true,
+      rows: scopeRows,
+    },
+  };
 }
 
 export async function materializeFromRun(
@@ -14512,6 +14778,17 @@ async function materializeFromRunUnderRemovalGuard(
       String(b._id?.entityKey || b._id?.entityId || ''),
     );
   });
+
+  if (userWriteScope(options)) {
+    return materializeUserRowsInFieldScope(
+      distinct.map((row) => ({
+        entityType: row._id.entityType,
+        entityId: row._id.entityId ? String(row._id.entityId) : undefined,
+        entityKey: row._id.entityKey || undefined,
+      })),
+      options,
+    );
+  }
 
   let materialized = 0;
   let created = 0;

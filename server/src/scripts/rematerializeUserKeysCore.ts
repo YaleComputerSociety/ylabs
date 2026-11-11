@@ -1,12 +1,15 @@
 /**
  * Pure argument parsing and reporting for `observations:rematerialize-user-keys`.
  */
+import { parseUserOnlyFieldsList } from '../scrapers/userMaterializerFieldScope';
+
 export interface RematerializeUserKeysArgs {
   keysFile: string;
   apply: boolean;
   confirm: boolean;
   passes: number;
   output: string;
+  onlyFields: string[];
 }
 
 export const REMATERIALIZE_USER_KEYS_CONFIRM_FLAG = '--confirm-rematerialize-user-keys';
@@ -18,6 +21,7 @@ export function parseRematerializeUserKeysArgs(argv: string[]): RematerializeUse
     confirm: false,
     passes: 1,
     output: '',
+    onlyFields: [],
   };
   for (const arg of argv) {
     if (arg === '--apply') args.apply = true;
@@ -26,7 +30,11 @@ export function parseRematerializeUserKeysArgs(argv: string[]): RematerializeUse
     else if (arg.startsWith('--keys-file='))
       args.keysFile = arg.slice('--keys-file='.length).trim();
     else if (arg.startsWith('--output=')) args.output = arg.slice('--output='.length).trim();
-    else if (arg.startsWith('--passes=')) {
+    else if (arg.startsWith('--only-fields=')) {
+      args.onlyFields = parseUserOnlyFieldsList(arg.slice('--only-fields='.length));
+    } else if (arg === '--only-fields') {
+      throw new Error('--only-fields requires a value: --only-fields=<comma-separated paths>');
+    } else if (arg.startsWith('--passes=')) {
       const passes = Number.parseInt(arg.slice('--passes='.length), 10);
       if (!Number.isSafeInteger(passes) || passes < 1 || passes > 3) {
         throw new Error('--passes must be 1, 2 or 3.');
@@ -58,6 +66,7 @@ export interface UserKeyPassRow {
   entityKey: string;
   fieldsWritten: number;
   plannedPaths: string[];
+  droppedPaths?: string[];
   skipped?: string;
   error?: string;
 }
@@ -69,7 +78,12 @@ export interface UserKeyPassSummary {
   fieldsWritten: number;
   skipped: Record<string, number>;
   errors: number;
+  plannedPathSet: string[];
+  droppedPathSet: string[];
 }
+
+const pathSet = (lists: ReadonlyArray<readonly string[] | undefined>): string[] =>
+  [...new Set(lists.flatMap((list) => list ?? []))].sort();
 
 export function summarizeUserKeyPass(
   pass: number,
@@ -84,5 +98,7 @@ export function summarizeUserKeyPass(
     fieldsWritten: rows.reduce((total, row) => total + row.fieldsWritten, 0),
     skipped,
     errors: rows.filter((row) => row.error).length,
+    plannedPathSet: pathSet(rows.map((row) => row.plannedPaths)),
+    droppedPathSet: pathSet(rows.map((row) => row.droppedPaths)),
   };
 }

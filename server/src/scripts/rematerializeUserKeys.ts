@@ -12,6 +12,20 @@
  *     --output=<tmp>.json
  *   yarn --cwd server observations:rematerialize-user-keys --keys-file=<keys.json> --passes=2 \
  *     --apply --confirm-rematerialize-user-keys --output=<tmp>.json
+ *
+ * `--only-fields=<paths>` scopes the write to named researcher paths (#5816): every planned
+ * path outside the expanded scope is dropped and listed per key under `droppedPaths`, a key
+ * no researcher joins mints nothing, and each pass summary carries `plannedPathSet` and
+ * `droppedPathSet`, so "nothing outside the scope" is a check that `plannedPathSet` is a
+ * subset of the printed `scope`. Accepted paths: displayName, profile.title,
+ * profile.primaryDepartment, profile.imageUrl, profile.websiteUrl, identifiers.email,
+ * identifiers.emailSupport, profileLinks, profileFieldWriters and profileFieldWriters.<field>;
+ * aliases email, emailSupport, title, primaryDepartment, imageUrl and websiteUrl. A display
+ * value also writes its own writer record, `profileFieldWriters` alone writes only writer
+ * records, and identifiers.email and identifiers.emailSupport are written together.
+ *
+ *   yarn --cwd server observations:rematerialize-user-keys --keys-file=<keys.json> \
+ *     --only-fields=identifiers.email --output=<tmp>.json
  */
 import dotenv from 'dotenv';
 import fs from 'fs';
@@ -20,6 +34,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { materializeEntity } from '../scrapers/entityMaterializer';
+import { expandUserMaterializerScope } from '../scrapers/userMaterializerFieldScope';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   parseRematerializeUserKeysArgs,
@@ -34,13 +49,24 @@ dotenv.config({ path: path.resolve(here, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'observations:rematerialize-user-keys';
 
-async function visit(entityKey: string, apply: boolean): Promise<UserKeyPassRow> {
+async function visit(
+  entityKey: string,
+  apply: boolean,
+  onlyFields: readonly string[],
+): Promise<UserKeyPassRow> {
   try {
-    const result: any = await materializeEntity('user', { entityKey }, { dryRun: !apply });
+    const result: any = await materializeEntity(
+      'user',
+      { entityKey },
+      { dryRun: !apply, ...(onlyFields.length > 0 ? { userWriteOnlyFields: onlyFields } : {}) },
+    );
     return {
       entityKey,
       fieldsWritten: Number(result?.fieldsWritten ?? 0),
       plannedPaths: Array.isArray(result?.plannedPaths) ? result.plannedPaths : [],
+      ...(onlyFields.length > 0
+        ? { droppedPaths: Array.isArray(result?.droppedPaths) ? result.droppedPaths : [] }
+        : {}),
       ...(result?.skipped ? { skipped: String(result.skipped) } : {}),
     };
   } catch (error) {
@@ -67,13 +93,16 @@ async function main(): Promise<void> {
     const passes: UserKeyPassRow[][] = [];
     for (let pass = 1; pass <= args.passes; pass += 1) {
       const rows: UserKeyPassRow[] = [];
-      for (const key of keys) rows.push(await visit(key, args.apply));
+      for (const key of keys) rows.push(await visit(key, args.apply, args.onlyFields));
       passes.push(rows);
     }
     const summaries = passes.map((rows, index) => summarizeUserKeyPass(index + 1, rows));
     const report = {
       generatedAt: new Date().toISOString(),
       mode: args.apply ? 'apply' : 'dry-run',
+      ...(args.onlyFields.length > 0
+        ? { onlyFields: args.onlyFields, scope: expandUserMaterializerScope(args.onlyFields) }
+        : {}),
       keys: keys.length,
       passes: summaries,
     };

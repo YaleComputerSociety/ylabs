@@ -93,6 +93,7 @@ Rules:
 - Start with `--limit`, `--only`, `--since`, or source-specific caps.
 - Use `--output <path>` on `yarn --cwd server scrape run` when a bounded dry-run or write should produce a saved report artifact. If a run was already completed without `--output`, use `yarn --cwd server scrape report --run <scrapeRunId> --output <path>`. Saved scraper CLI artifacts include command, target `environment`, `db`, parsed `options`, and the command-specific report payload.
 - Use `yarn --cwd server scrape materialize --run <scrapeRunId> --dry-run --output <path>` for a saved materialization review artifact before any standalone materialization write. Standalone write materialization requires `--confirm-materialize` in addition to the existing environment write guards. The materialize artifact includes the materialization result, optional visibility-gate result, ScrapeRun report, command, target `environment`, `db`, and parsed `options`.
+  Add `--only-fields=<paths>` to write only named researcher paths on the run's `user` rows; it requires `--output`, skips every other entity type, mint, run reconciliation and the visibility gate, and lists the dropped paths per key (see "A user materialize scoped to named researcher fields" in `docs/research-data-pipeline.md`).
 - Do not promote a source while materialization errors are nonzero or conflicts are unexplained.
 
 ### 2. Beta Staging

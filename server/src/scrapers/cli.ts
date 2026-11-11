@@ -34,7 +34,7 @@ import {
 import { scraperHostSlotLimiter } from './utils/scraperHostSlotLimiter';
 import { installScraperHttpValidatorCache } from './utils/httpValidatorCache';
 import { installSweepPageReuse } from './utils/sweepPageReuse';
-import { materializeFromRun } from './entityMaterializer';
+import { materializeFromRun, withoutUserFieldScopeRows } from './entityMaterializer';
 import { ScrapeRun } from '../models/scrapeRun';
 import { getScrapeRunReport } from './runReport';
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
@@ -236,7 +236,7 @@ ylabs scraper CLI
 
   list                                       List registered scrapers
   run --source <name> [flags]                Run a scraper
-  materialize --run <runId> [--output <path>]
+  materialize --run <runId> [--output <path>] [--only-fields <paths>]
                                              Materialize observations from a previous run
   report --run <runId> [--output <path>]     Print or save a QA report for a ScrapeRun
   prune-observations [flags]                 Prune old unreferenced superseded Observation rows
@@ -270,6 +270,16 @@ Materialize flags:
   --confirm-materialize
                        Required when standalone materialize writes derived records.
   --output <path>      Save the materialize result, visibility gate, and run report JSON
+  --only-fields <paths>
+                       Write only these researcher paths on the run's user rows:
+                       displayName, profile.title, profile.primaryDepartment,
+                       profile.imageUrl, profile.websiteUrl, identifiers.email,
+                       identifiers.emailSupport, profileLinks, profileFieldWriters
+                       (or profileFieldWriters.<field>); aliases email, emailSupport,
+                       title, primaryDepartment, imageUrl, websiteUrl. Planned paths
+                       outside the scope are dropped and reported; other entity
+                       types, mints, run reconciliations and the visibility gate
+                       are skipped. Per-key paths go to --output only.
 
 Prune flags:
   --apply              Delete matching rows. Omit for dry-run.
@@ -462,16 +472,25 @@ Concurrency:
         ScraperCliPreflight,
         { command: 'materialize' }
       >;
-      const { runId, confirmMaterialize, guard } = materializePreflight;
+      const { runId, confirmMaterialize, onlyFields, guard } = materializePreflight;
+      const fieldScoped = onlyFields.length > 0;
       console.log(`Materializing observations from run ${runId}...`);
+      if (fieldScoped) {
+        console.log(
+          `Field-scoped user materialize: ${onlyFields.join(', ')}. Only user rows are materialized, no researcher is minted, and no run reconciliation or visibility gate runs.`,
+        );
+      }
       for (const warning of guard.warnings) console.warn(`WARNING: ${warning}`);
       console.log(`Scraper environment: ${guard.environment}; Mongo target: ${guard.dbLabel}`);
       const performMaterialize = async (): Promise<ScrapeCliLockedOutcome> => {
-        const result = await materializeFromRun(runId, { dryRun: guard.options.dryRun });
-        console.log(JSON.stringify(result, null, 2));
+        const result = await materializeFromRun(runId, {
+          dryRun: guard.options.dryRun,
+          ...(fieldScoped ? { userWriteOnlyFields: onlyFields } : {}),
+        });
+        console.log(JSON.stringify(withoutUserFieldScopeRows(result), null, 2));
         const report = await getScrapeRunReport(runId);
         let visibilityGate: unknown | undefined;
-        if (!guard.options.dryRun && result.errors === 0) {
+        if (!guard.options.dryRun && result.errors === 0 && !fieldScoped) {
           const sourceName = (report as any).run?.sourceName;
           console.log(
             `\nRunning student visibility gate${sourceName ? ` for source ${sourceName}` : ''}...`,
@@ -500,6 +519,7 @@ Concurrency:
                 runId,
                 ...guard.options,
                 confirmMaterialize,
+                ...(fieldScoped ? { onlyFields } : {}),
                 output: typeof flags.output === 'string' ? flags.output : undefined,
               },
             },

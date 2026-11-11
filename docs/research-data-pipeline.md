@@ -565,6 +565,32 @@ The inferred-PI and inferred-director lead edges, the access-signal upserts, and
 The dedupe merge's fill-only pass (`rematerializeMergeCanonicalFillOnly`) is the one scoped caller that keeps them, through `keepPostProjectionEvidence`, because it exists to carry the merged-in evidence onto the survivor.
 The browse-rank recompute and the search-index sync still run, because each is a cache recomputed from the row as stored and must follow the scoped write.
 
+### A user materialize scoped to named researcher fields (#5816)
+
+`--only-fields=<paths>` scopes the `user` materializer the way `research-entity:rematerialize --only-fields` scopes a research row.
+It is accepted by `yarn --cwd server observations:rematerialize-user-keys` and by `yarn --cwd server scrape materialize --run <runId>`, which then also requires `--output`.
+Without the flag both commands behave exactly as before.
+
+The accepted researcher paths are `displayName`, `profile.title`, `profile.primaryDepartment`, `profile.imageUrl`, `profile.websiteUrl`, `identifiers.email`, `identifiers.emailSupport`, `profileLinks`, `profileFieldWriters` and `profileFieldWriters.<field>`.
+The aliases `email`, `emailSupport`, `title`, `primaryDepartment`, `imageUrl` and `websiteUrl` name the same paths, and any other name is refused with `Unsupported --only-fields field`.
+The scope is expanded before it is applied (`expandUserMaterializerScope` in `server/src/scrapers/userMaterializerFieldScope.ts`).
+A display value also writes its own writer record, so `displayName` brings `profileFieldWriters.displayName` and `profile.title` brings `profileFieldWriters.title`.
+`profileFieldWriters` alone re-records only the writer entries and leaves every display value as stored, even where the resolve would change it.
+`identifiers.email` and `identifiers.emailSupport` are one closure in `USER_MATERIALIZER_DERIVED_FIELD_GROUPS`, because the support marker records the address it was computed for.
+
+The resolve runs unchanged, then the planned document is compared with the stored one path by path (`changedResearcherPaths`).
+A changed path inside the scope is reported under `plannedPaths` and written with one `$set`/`$unset` of exactly those paths, after the stored document with only those paths applied passes the schema validators.
+A changed path outside the scope is reported under `droppedPaths` and never written, on a dry run and an apply alike.
+An email derived inside the scope reads the stored netid and display name rather than ones the same resolve planned outside it.
+The screened-page withdrawal, which writes a researcher directly, is scoped the same way.
+
+A scoped resolve never mints a researcher: a key no existing researcher joins reports `skipped: field-scoped-run-mints-no-researcher`.
+A scoped `scrape materialize` materializes only the run's `user` rows, serially, and skips every other entity type (counted in `rowsOutsideUserSkipped`), every run-level reconciliation (roster, center, director and departure retirements, field retractions), the `ScrapeRun` counter update and the visibility gate, so it writes no edge, no access signal and no stored tier.
+Run `student-visibility:gate` separately if the scoped write changes what a row may serve.
+
+The check that nothing escaped the scope is mechanical: every pass summary carries `scope`, `plannedPathSet` and `droppedPathSet`, and `plannedPathSet` must be a subset of `scope`.
+Per-key rows name `user` keys, so they go only to the `--output` report under the temp directory, and stdout carries the summary.
+
 ### Stored-versus-projected divergence is four classes, and only one of them is safe
 
 `yarn --cwd server research-entity:projection-drift-census` (`projectionDriftCensus.ts`, pure classification in `projectionDriftCensusCore.ts`) measures the gap between a stored row and what the engine would project onto it today.
