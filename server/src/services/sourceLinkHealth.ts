@@ -315,6 +315,14 @@ export function httpsLandingOf(
   return isSameResource(requested, final) ? final.toString() : undefined;
 }
 
+/**
+ * A whole host redirecting to another host's root names no page, so it is not alias
+ * evidence: it is also how a retired or lapsed lab domain falls back to its parent
+ * site. A page that moved to a host's root (a lab leaving a shared host for its own
+ * domain) still counts, because the requested side named one page (#5638).
+ */
+const isBareHostRoot = (url: URL): boolean => url.pathname.replace(/\/+$/, '') === '';
+
 export function redirectLandingOf(
   requestedUrl: string | undefined,
   finalUrl: string | undefined,
@@ -324,6 +332,7 @@ export function redirectLandingOf(
   if (!requested || !final) return undefined;
   if (final.protocol !== 'https:' && final.protocol !== 'http:') return undefined;
   if (final.search) return undefined;
+  if (isBareHostRoot(requested) && isBareHostRoot(final)) return undefined;
   const requestedKey = normalizeWebsiteUrlIdentityKey(requested.toString()).toLowerCase();
   const finalKey = normalizeWebsiteUrlIdentityKey(final.toString()).toLowerCase();
   if (!requestedKey || !finalKey || requestedKey === finalKey) return undefined;

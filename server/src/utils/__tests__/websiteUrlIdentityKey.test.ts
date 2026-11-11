@@ -117,6 +117,23 @@ describe('recorded redirect landings (#5638)', () => {
     expect(verdict.redirectLandingUrl).toBeUndefined();
   });
 
+  it('records no landing when a whole host redirects to another host root', () => {
+    const verdict = classifySourceLinkHealth({
+      status: 200,
+      requestedUrl: 'https://quilllab.example.org/',
+      finalUrl: 'https://www.example.edu/',
+    });
+    expect(verdict.healthStatus).toBe('HEALTHY');
+    expect(verdict.redirectLandingUrl).toBeUndefined();
+  });
+
+  it('never changes the verdict link health classifies for the requested URL', () => {
+    const requestedUrl = 'https://med.example.edu/lab/quill/index.aspx';
+    const finalUrl = 'https://med.example.edu/lab/quill/';
+    const verdict = classifySourceLinkHealth({ status: 200, requestedUrl, finalUrl });
+    expect(verdict).toEqual({ healthStatus: 'HEALTHY', httpStatusCode: 200 });
+  });
+
   it('records no landing on a verdict that is not HEALTHY', () => {
     const softMissing = classifySourceLinkHealth({
       status: 200,
