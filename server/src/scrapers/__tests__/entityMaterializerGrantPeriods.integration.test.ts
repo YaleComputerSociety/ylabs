@@ -92,7 +92,7 @@ describe('dated award periods reach the stored row and the served count (#4245)'
     expect(dto.recentGrantCount).toBe(11);
   });
 
-  it('keeps the summed count and no periods while another lane has not dated its awards', async () => {
+  it('counts only awards some lane lists or dates, never a lane total on its own (#5785)', async () => {
     const awards = Array.from({ length: 3 }, (_value, index) => award(index, false));
     await seed('nih-reporter', 'recentGrants', awards);
     await seed('nih-reporter', 'recentGrantPeriods', awards);
@@ -104,7 +104,7 @@ describe('dated award periods reach the stored row and the served count (#4245)'
     const stored = await ResearchEntity.findOne({ slug: ENTITY_KEY }).lean<
       Record<string, unknown>
     >();
-    expect(stored?.recentGrantPeriods).toEqual([]);
-    expect(stored?.recentGrantCount).toBe(7);
+    expect(stored?.recentGrantPeriods).toHaveLength(3);
+    expect(stored?.recentGrantCount).toBe(3);
   });
 });

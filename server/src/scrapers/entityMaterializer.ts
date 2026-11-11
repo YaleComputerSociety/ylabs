@@ -2271,8 +2271,6 @@ const RESEARCH_ENTITY_GRANT_EVIDENCE_FIELDS = new Set([
   'fundingAgencies',
 ]);
 
-const GRANT_COUNTING_FIELDS = new Set(['recentGrants', 'recentGrantCount']);
-
 export function grantEvidenceRecordsInvestigators(
   observations: readonly MaterializerObservationLike[],
 ): boolean {
@@ -2284,6 +2282,27 @@ export function grantEvidenceRecordsInvestigators(
   );
 }
 
+const awardPeriodOf = (award: unknown): Record<string, unknown> => {
+  const record = objectRecord(award);
+  return {
+    id: record.id,
+    agency: record.agency,
+    ...(record.startDate ? { startDate: record.startDate } : {}),
+    ...(record.endDate ? { endDate: record.endDate } : {}),
+  };
+};
+
+const newestStartFirst = (left: unknown, right: unknown): number => {
+  const leftTime = new Date(objectRecord(left).startDate as any).getTime();
+  const rightTime = new Date(objectRecord(right).startDate as any).getTime();
+  return (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0);
+};
+
+// The count, the periods and the funder list are derived from the one set of awards the
+// row is eligible to serve, before the list is cut to its newest ten, so an award that is
+// withheld or refused can never survive in a count or a funder a lane stated on its own
+// (#5779, #5785). A lane's own `recentGrantCount` observation is therefore never read: an
+// award it counts but never lists or dates is not an award the row can show.
 export function aggregateResearchEntityGrantEvidence(
   observations: MaterializerObservationLike[],
   leadPersonIds: ReadonlySet<string> = new Set(),
@@ -2306,19 +2325,16 @@ export function aggregateResearchEntityGrantEvidence(
       latest.set(key, observation);
     }
   }
-  const grants = new Map<string, unknown>();
-  const periods = new Map<string, unknown>();
-  const agencies = new Map<string, string>();
-  const countingSources = new Set<string>();
-  const periodSources = new Set<string>();
-  let hasGrantSnapshot = false;
-  let hasGrantCountSnapshot = false;
-  let hasAgencySnapshot = false;
-  let recentGrantCount = 0;
+  const latestValues = [...latest.values()];
+  if (latestValues.length === 0) return {};
+
+  const listed = new Map<string, unknown>();
+  const eligible = new Map<string, unknown>();
   const awardsBySource = new Map<string, unknown[]>();
-  const servedAwardsBySource = new Map<string, unknown[]>();
-  const servedEntries = (sourceName: string, entries: unknown[], carriesRole: boolean) => {
-    const served: unknown[] = [];
+  const eligibleBySource = new Map<string, unknown[]>();
+  let hasGrantSnapshot = false;
+  const admit = (sourceName: string, entries: unknown[], carriesRole: boolean) => {
+    const admitted: unknown[] = [];
     for (const entry of entries) {
       awardsBySource.set(sourceName, [...(awardsBySource.get(sourceName) ?? []), entry]);
       const derived = deriveGrantEntryForLeads(entry, leadPersonIds, {
@@ -2326,96 +2342,56 @@ export function aggregateResearchEntityGrantEvidence(
         isProvablyNotALead,
       });
       if (derived.outcome === 'withheld') continue;
-      servedAwardsBySource.set(sourceName, [
-        ...(servedAwardsBySource.get(sourceName) ?? []),
+      eligibleBySource.set(sourceName, [
+        ...(eligibleBySource.get(sourceName) ?? []),
         derived.entry,
       ]);
-      served.push(derived.entry);
+      admitted.push(derived.entry);
     }
-    return served;
-  };
-  const latestValues = [...latest.values()];
-  const servedByObservation = new Map<MaterializerObservationLike, unknown[]>();
-  for (const observation of latestValues) {
-    if (!Array.isArray(observation.value)) continue;
-    const sourceName = String(observation.sourceName || '');
-    if (observation.field === 'recentGrants') {
-      servedByObservation.set(observation, servedEntries(sourceName, observation.value, true));
-    } else if (observation.field === 'recentGrantPeriods') {
-      servedByObservation.set(observation, servedEntries(sourceName, observation.value, false));
-    }
-  }
-  const everyAwardWithheld = (sourceName: string) =>
-    awardsBySource.has(sourceName) && !servedAwardsBySource.has(sourceName);
-  const agenciesOfServedAwards = (sourceName: string, laneAgencies: unknown[]): unknown => {
-    const awards = awardsBySource.get(sourceName);
-    return awards
-      ? agenciesBackedByRunningAwards(
-          laneAgencies,
-          awards,
-          servedAwardsBySource.get(sourceName) ?? [],
-        )
-      : laneAgencies;
+    return admitted;
   };
   for (const observation of latestValues) {
-    const sourceName = String(observation.sourceName || '');
-    if (GRANT_COUNTING_FIELDS.has(String(observation.field))) countingSources.add(sourceName);
-    if (observation.field === 'recentGrants' && Array.isArray(observation.value)) {
-      hasGrantSnapshot = true;
-      for (const grant of servedByObservation.get(observation) ?? []) {
-        keepLaterEndingGrant(grants, grant);
-      }
-    }
-    if (observation.field === 'recentGrantPeriods' && Array.isArray(observation.value)) {
-      periodSources.add(sourceName);
-      for (const period of servedByObservation.get(observation) ?? []) {
-        const identity = grantIdentity(period);
-        if (!periods.has(identity)) periods.set(identity, period);
-      }
-    }
-    if (everyAwardWithheld(sourceName)) continue;
-    if (observation.field === 'fundingAgencies' && Array.isArray(observation.value)) {
-      hasAgencySnapshot = true;
-      const servedAgencies = agenciesOfServedAwards(sourceName, observation.value);
-      for (const agency of Array.isArray(servedAgencies) ? servedAgencies : []) {
-        const normalized = textValue(agency);
-        if (normalized && !agencies.has(normalized.toLowerCase())) {
-          agencies.set(normalized.toLowerCase(), normalized);
-        }
-      }
-    }
-    if (
-      observation.field === 'recentGrantCount' &&
-      typeof observation.value === 'number' &&
-      Number.isFinite(observation.value) &&
-      observation.value >= 0
-    ) {
-      hasGrantCountSnapshot = true;
-      recentGrantCount += Math.floor(observation.value);
+    if (observation.field !== 'recentGrantPeriods' || !Array.isArray(observation.value)) continue;
+    for (const period of admit(String(observation.sourceName || ''), observation.value, false)) {
+      keepLaterEndingGrant(eligible, period);
     }
   }
-  const recentGrants = [...grants.values()]
-    .sort((left, right) => {
-      const leftTime = new Date(objectRecord(left).startDate as any).getTime();
-      const rightTime = new Date(objectRecord(right).startDate as any).getTime();
-      return (
-        (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0)
-      );
-    })
-    .slice(0, 10);
-  const everyCountingSourceDatesItsAwards =
-    countingSources.size > 0 &&
-    [...countingSources].every((sourceName) => periodSources.has(sourceName));
-  const recentGrantPeriods = everyCountingSourceDatesItsAwards ? [...periods.values()] : [];
+  for (const observation of latestValues) {
+    if (observation.field !== 'recentGrants' || !Array.isArray(observation.value)) continue;
+    hasGrantSnapshot = true;
+    for (const grant of admit(String(observation.sourceName || ''), observation.value, true)) {
+      keepLaterEndingGrant(listed, grant);
+      keepLaterEndingGrant(eligible, grant);
+    }
+  }
+
+  const agencies = new Map<string, string>();
+  for (const observation of latestValues) {
+    if (observation.field !== 'fundingAgencies' || !Array.isArray(observation.value)) continue;
+    const sourceName = String(observation.sourceName || '');
+    const eligibleAwards = eligibleBySource.get(sourceName) ?? [];
+    if (eligibleAwards.length === 0) continue;
+    const backed = agenciesBackedByRunningAwards(
+      observation.value,
+      awardsBySource.get(sourceName) ?? [],
+      eligibleAwards,
+    );
+    for (const agency of Array.isArray(backed) ? backed : []) {
+      const normalized = textValue(agency);
+      if (normalized && !agencies.has(normalized.toLowerCase())) {
+        agencies.set(normalized.toLowerCase(), normalized);
+      }
+    }
+  }
+
+  const eligibleAwards = [...eligible.values()];
   return {
-    ...(hasGrantSnapshot ? { recentGrants } : {}),
-    ...(periodSources.size > 0 ? { recentGrantPeriods } : {}),
-    ...(everyCountingSourceDatesItsAwards
-      ? { recentGrantCount: recentGrantPeriods.length }
-      : hasGrantCountSnapshot
-        ? { recentGrantCount }
-        : {}),
-    ...(hasAgencySnapshot ? { fundingAgencies: [...agencies.values()] } : {}),
+    ...(hasGrantSnapshot
+      ? { recentGrants: [...listed.values()].sort(newestStartFirst).slice(0, 10) }
+      : {}),
+    recentGrantPeriods: eligibleAwards.map(awardPeriodOf),
+    recentGrantCount: eligibleAwards.length,
+    fundingAgencies: [...agencies.values()],
   };
 }
 
@@ -13689,7 +13665,7 @@ async function materializeEntityUnderRemovalGuard(
     if (grantEvidence.recentGrantCount !== undefined && resolved.recentGrantCount) {
       resolved.recentGrantCount.value = grantEvidence.recentGrantCount;
     }
-    if (grantEvidence.fundingAgencies && resolved.fundingAgencies) {
+    if (grantEvidence.fundingAgencies !== undefined && resolved.fundingAgencies) {
       resolved.fundingAgencies.value = grantEvidence.fundingAgencies;
     }
   }

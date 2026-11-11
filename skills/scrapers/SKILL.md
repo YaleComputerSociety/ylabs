@@ -1201,8 +1201,8 @@ That file records the deliberate skips (Haskins, John B. Pierce, YCCI, IPCH, Poo
 | `crossrefGrantScraper.ts` | Crossref grant records: reads the grant DOIs funders register with Crossref (`api.crossref.org/types/grant/works`, `query.affiliation=yale`) for private and international funders no federal lane covers, citing each grant's DOI, which resolves to the funder's own award page. Resolves the Yale lead investigator by ORCID first (`resolveResearcherIdForOrcid`) and only then by name; refuses `facilities` records (instrument time, not funding) and records from a funder a federal lane reports (NIH, NSF or DOE by funder DOI or name, and NEH by name, so one award never counts under two agency labels), attaches a fellowship or salary award only through an ORCID match, and never mints a row. Groups grants by the resolved row so two investigators on one row cannot supersede each other, and fails closed with no writes, recording a failed run, when the cursor walk serves fewer records than Crossref reports. Responses carry raw control characters, so the page parser blanks them before `JSON.parse` (#4593). |
 
 Every grant lane emits `recentGrantPeriods` (id, agency and dates of every distinct award in its window) beside its capped `recentGrants`, and counts `recentGrantCount` as those distinct awards.
-The materializer stores the periods only while every source stating a grant list or count has dated its awards, and the served count is read from them.
-So a new grant lane must emit the periods too or it withholds them for every row it touches (#4245, `docs/research-data-pipeline.md`).
+The materializer derives the stored periods, the count and the funders from the awards the row is eligible to serve, before the list is capped, and never reads a lane's own count (#5785).
+So a new grant lane must emit the periods too, or no award past its capped list is counted (#4245, `docs/research-data-pipeline.md`).
 
 ### Faculty rosters and official profiles
 
