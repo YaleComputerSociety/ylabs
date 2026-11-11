@@ -51,18 +51,22 @@ function leadingRoleWord(token: string): string | undefined {
   return ROLE_LEADING_WORDS.find((word) => token.length > word.length && token.startsWith(word));
 }
 
-function tokenCarriesTheSubjectName(token: string, roleWord: string, displayName: string): boolean {
-  return nameTokens(displayName)
-    .filter((name) => name.length >= 3 && !roleWord.includes(name))
-    .some((name) => token.includes(name));
+function tokenBeginsWithTheSubjectName(
+  token: string,
+  roleWord: string,
+  displayName: string,
+): boolean {
+  return nameTokens(displayName).some(
+    (name) => name.length > roleWord.length && token.startsWith(name),
+  );
 }
 
 /**
  * Whether a local part names an office rather than the page's subject. A role word as a whole
  * token decides alone. A role word fused to a unit abbreviation with no separator (`chair` plus a
  * department code) is only a leading affix of a one-token local part, so it decides only when
- * the address also carries none of the subject's own name tokens; a surname that happens to
- * begin with a role word keeps its address.
+ * the token does not begin with one of the subject's own name tokens longer than the role word;
+ * a surname that happens to begin with a role word keeps its address.
  */
 export function localPartNamesASubjectRole(localPart: string, displayName: string): boolean {
   if (localPartNamesARole(localPart)) return true;
@@ -70,7 +74,7 @@ export function localPartNamesASubjectRole(localPart: string, displayName: strin
   if (tokens.some(tokenNamesALabOrProgram)) return true;
   if (tokens.length !== 1) return false;
   const roleWord = leadingRoleWord(tokens[0]);
-  return roleWord !== undefined && !tokenCarriesTheSubjectName(tokens[0], roleWord, displayName);
+  return roleWord !== undefined && !tokenBeginsWithTheSubjectName(tokens[0], roleWord, displayName);
 }
 
 export function admissibleSubjectAddress(value: unknown, displayName: string): string {

@@ -193,8 +193,9 @@ Four earlier mechanisms each broke on a stored title, and the module's test file
   The subject's own address is the one the JSON-LD `Person` node naming the subject states, or the single address in a contact field of the subject heading's own `article`.
   An address inside a nested `article`, an `aside`, `nav` or `footer`, or a block labelled as co-authors, related people, administrative support or a press contact is never the subject's, and a contact field listing two addresses yields none.
   Such an address is admitted whatever its domain and whatever its local part, except a role mailbox, and the lane still prefers a Yale address when the page states one.
-  A role mailbox is one whose local part carries a role, lab, or program word as a whole token (split on `.`, `_`, `-`, `+`), or a one-token local part that begins with such a word fused to a unit code and carries none of the subject's own name tokens (#5714).
-  A role word inside a longer name-like token is never a refusal, and a local part that carries the subject's name keeps its address.
+  A role mailbox is one whose local part carries a role, lab, or program word as a whole token (split on `.`, `_`, `-`, `+`), or a one-token local part that begins with such a word fused to a unit code and does not begin with one of the subject's own name tokens longer than that word (#5714).
+  A netid-shaped local part (letters then digits, such as `lab42`) is never refused by the leading-word rule.
+  A role word inside, not leading, a longer name-like token is never a refusal, and a one-token local part that begins with the subject's own surname or given name keeps its address.
   An address several people's pages state is shared, but one page cannot show that, so the per-subject extractor does not decide it.
   Outside the subject's own nodes, a mailto link or body text yields only a Yale address shaped like the subject's name, never a netid-shaped one, because a netid names nobody in particular and a co-author's would be read as the subject's.
   An outside address does not contradict the Yale address expected for a lead, because it is not a Yale identity, while a different Yale address still fails closed (#585).

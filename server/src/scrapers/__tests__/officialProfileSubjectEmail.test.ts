@@ -478,6 +478,12 @@ describe("a role or shared mailbox inside the profile subject's own node (#5714)
     expect(localPartNamesASubjectRole('departmentfix7', 'Art Example')).toBe(true);
   });
 
+  it('never lets a short given name hidden inside the unit code admit the office mailbox', () => {
+    expect(localPartNamesASubjectRole('chairpathology', 'Pat Example')).toBe(true);
+    expect(localPartNamesASubjectRole('deptgenetics', 'Gene Example')).toBe(true);
+    expect(localPartNamesASubjectRole('chairfixmed', 'Kim Fixmed')).toBe(true);
+  });
+
   it('never treats a netid-shaped local part as a role word', () => {
     expect(localPartNamesASubjectRole('lab42', 'Avery Example')).toBe(false);
     expect(localPartNamesASubjectRole('info7', 'Avery Example')).toBe(false);
