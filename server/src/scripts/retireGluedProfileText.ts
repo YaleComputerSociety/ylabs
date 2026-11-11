@@ -1,5 +1,4 @@
 import dotenv from 'dotenv';
-import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
@@ -12,7 +11,7 @@ import {
 } from '../scrapers/sources/officialProfilePiBackfillScraper';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { assertScriptApplyAllowed } from './scriptWriteGuards';
 import {
   GLUED_PROFILE_TEXT_SOURCE_NAME,
   hostOf,
@@ -33,14 +32,12 @@ const SCRIPT_NAME = 'observations:retire-glued-profile-text';
 export const CONFIRM_FLAG = '--confirm-retire-glued-profile-text';
 export const GLUED_PROFILE_TEXT_ROLLBACK_REASON =
   'value read from block text that cheerio .text() glued to an adjacent field; the page re-read with the fixed extractor no longer yields it (#5720)';
-const DEFAULT_PAUSE_MS = 1500;
+const PAUSE_BETWEEN_PAGES_MS = 1500;
 
 export interface RetireGluedProfileTextOptions {
   dryRun: boolean;
   confirmed: boolean;
   skipHosts: string[];
-  pauseMs: number;
-  output?: string;
 }
 
 export function parseRetireGluedProfileTextArgs(argv: string[]): RetireGluedProfileTextOptions {
@@ -48,7 +45,6 @@ export function parseRetireGluedProfileTextArgs(argv: string[]): RetireGluedProf
     dryRun: true,
     confirmed: false,
     skipHosts: [],
-    pauseMs: DEFAULT_PAUSE_MS,
   };
   const valueOf = (arg: string, flag: string, index: number): [string, number] =>
     arg === flag ? [argv[index + 1] ?? '', index + 1] : [arg.slice(flag.length + 1), index];
@@ -62,18 +58,7 @@ export function parseRetireGluedProfileTextArgs(argv: string[]): RetireGluedProf
       if (!value.trim()) throw new Error('--skip-host needs a host name');
       options.skipHosts.push(value.trim().toLowerCase());
       i = next;
-    } else if (arg === '--pause-ms' || arg.startsWith('--pause-ms=')) {
-      const [value, next] = valueOf(arg, '--pause-ms', i);
-      options.pauseMs = Number(value);
-      i = next;
-    } else if (arg === '--output' || arg.startsWith('--output=')) {
-      const [value, next] = valueOf(arg, '--output', i);
-      options.output = resolveSafeJsonReportOutputPath(value);
-      i = next;
     } else throw new Error(`Unknown ${SCRIPT_NAME} argument: ${arg}`);
-  }
-  if (!Number.isFinite(options.pauseMs) || options.pauseMs < 0) {
-    throw new Error('--pause-ms must be a non-negative number');
   }
   return options;
 }
@@ -237,17 +222,12 @@ async function main(): Promise<void> {
     ...(await runGluedProfileTextRetirement({
       dryRun: options.dryRun,
       skipHosts: options.skipHosts,
-      pauseMs: options.pauseMs,
+      pauseMs: PAUSE_BETWEEN_PAGES_MS,
       fetchHtml: (url) => fetchOfficialProfileHtml(url, false, GLUED_PROFILE_TEXT_SOURCE_NAME),
       log: (message) => console.error(message),
     })),
   };
   console.log(JSON.stringify(report, null, 2));
-  if (options.output) {
-    fs.mkdirSync(path.dirname(options.output), { recursive: true });
-    fs.writeFileSync(options.output, JSON.stringify(report, null, 2), { mode: 0o600 });
-    console.log(`Saved report to ${options.output}`);
-  }
   await mongoose.disconnect();
 }
 

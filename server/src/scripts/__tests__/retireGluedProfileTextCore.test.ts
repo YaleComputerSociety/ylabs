@@ -148,6 +148,36 @@ describe('planGluedProfileTextRetirement', () => {
     });
   });
 
+  it('decides a phantom observation by the read of the page it cites', () => {
+    const lockedTargets = selectGluedProfileTextTargets({
+      laneObservations: [
+        ...laneObservations(),
+        user(
+          'p6',
+          'netid:biologywren.halloway',
+          'profileUrls',
+          { official: LOCKED_PAGE },
+          LOCKED_PAGE,
+        ),
+      ],
+      otherAddressesBySubject: new Map([['netid:wh77', new Set([CLEAN])]]),
+      otherAddressesByPage: new Map([[PAGE, new Set([GLUED, CLEAN])]]),
+    });
+    const plan = planGluedProfileTextRetirement(
+      lockedTargets,
+      new Map<string, PageRead>([
+        [PAGE, FIXED_PAGE],
+        [LOCKED_PAGE, { status: 'deferred' }],
+      ]),
+    );
+    expect(plan.observationIdsToRetire).not.toContain('p6');
+    expect(plan.counts).toMatchObject({
+      phantomSubjectObservationCandidates: 7,
+      phantomSubjectObservationsRetired: 6,
+      deferredPhantomSubjectObservations: 1,
+    });
+  });
+
   it('reads the fixed lane extractor the way the planner compares it', () => {
     const html = `<html><body><main>
       <h1>Wren Halloway</h1>

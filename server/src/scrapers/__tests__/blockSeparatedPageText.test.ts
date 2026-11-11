@@ -64,15 +64,18 @@ describe('page text keeps adjacent blocks apart (#5720)', () => {
     expect(text).toBe('Awards Funding Halvard Research Fund');
   });
 
-  it('reads the same page the same way twice', () => {
-    const first = parsePhysicsUndergradResearchPage(
-      PHYSICS_HTML_WITH_BLOCK_CONTACT,
+  it("gives each heading on a page its own address, not the first heading's", () => {
+    const records = parsePhysicsUndergradResearchPage(
+      `${PHYSICS_HTML_WITH_BLOCK_CONTACT.replace('</main>', '')}
+  <h3>Bram Ostrander</h3>
+  <div class="contact"><div>Department of Physics</div><div>bram.ostrander@yale.edu</div></div>
+  <p>Students in the group model dark matter halos and write simulation code each summer.</p>
+</main>`,
       PHYSICS_CONFIG,
     );
-    const second = parsePhysicsUndergradResearchPage(
-      PHYSICS_HTML_WITH_BLOCK_CONTACT,
-      PHYSICS_CONFIG,
-    );
-    expect(second).toEqual(first);
+    expect(records.map((record) => record.contactEmail)).toEqual([
+      'quill.fennimore@yale.edu',
+      'bram.ostrander@yale.edu',
+    ]);
   });
 });

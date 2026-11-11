@@ -115,7 +115,8 @@ export function isGluedProfileTitle(value: unknown): boolean {
 
 /**
  * The pages to re-read, each with the observations it cited that a glued predicate selects.
- * The address maps hold every live address from any lane on each user key and on each cited
+ * A phantom subject's observations are grouped by the page each one cites, so each is decided
+ * by the read of its own page. The address maps hold every live address from any lane on each user key and on each cited
  * page, so a twin stated elsewhere about the same person or on the same page counts.
  */
 export function selectGluedProfileTextTargets(input: {
@@ -133,6 +134,7 @@ export function selectGluedProfileTextTargets(input: {
   };
 
   const userObservations = input.laneObservations.filter((row) => row.entityType === 'user');
+  const phantomKeysByNetid = new Map<string, string>();
 
   for (const row of userObservations) {
     if (!row.sourceUrl) continue;
@@ -146,24 +148,31 @@ export function selectGluedProfileTextTargets(input: {
     ]);
     known.delete(value);
     if (!gluedAddressTwin(value, known)) continue;
-    const page = target(row.sourceUrl);
-    page.emails.push(row);
+    target(row.sourceUrl).emails.push(row);
     const netid = keyNetid(row.entityKey);
-    if (netid && netid === localPart(value) && !page.phantoms.some((p) => p.netid === netid)) {
-      page.phantoms.push({
-        netid,
-        userObservationIds: userObservations
-          .filter((other) => other.entityKey.toLowerCase() === row.entityKey.toLowerCase())
-          .map((other) => other.id),
-        piKeyObservationIds: input.laneObservations
-          .filter(
-            (other) =>
-              other.entityType === 'researchEntity' &&
-              other.field === 'inferredPiUserKey' &&
-              lower(other.value) === netid,
-          )
-          .map((other) => other.id),
-      });
+    if (netid && netid === localPart(value))
+      phantomKeysByNetid.set(netid, row.entityKey.toLowerCase());
+  }
+
+  for (const [netid, entityKey] of phantomKeysByNetid) {
+    const phantomOnPage = (sourceUrl: string): PhantomSubject => {
+      const page = target(sourceUrl);
+      const existing = page.phantoms.find((phantom) => phantom.netid === netid);
+      if (existing) return existing;
+      const created: PhantomSubject = { netid, userObservationIds: [], piKeyObservationIds: [] };
+      page.phantoms.push(created);
+      return created;
+    };
+    for (const row of input.laneObservations) {
+      if (!row.sourceUrl) continue;
+      if (row.entityType === 'user' && row.entityKey.toLowerCase() === entityKey)
+        phantomOnPage(row.sourceUrl).userObservationIds.push(row.id);
+      else if (
+        row.entityType === 'researchEntity' &&
+        row.field === 'inferredPiUserKey' &&
+        lower(row.value) === netid
+      )
+        phantomOnPage(row.sourceUrl).piKeyObservationIds.push(row.id);
     }
   }
   return [...byPage.values()].sort((a, b) => a.sourceUrl.localeCompare(b.sourceUrl));
