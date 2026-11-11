@@ -27,6 +27,8 @@ const OPERATOR_TOOLS: Record<string, string> = {
   'research-entity:adopt-led-group-site':
     "records an operator's verdict that one row's lead runs a named group site, as observations without a lock (#5040)",
   'research-entity:record-departure': 'records a departure an operator was told about',
+  'student-visibility:override':
+    "records an operator's visibility verdict on one row, an audited per-row judgement rather than a lock or an archive (#5618)",
   'research-entity:withdraw-non-research-home-row':
     'withdraws one row an operator judged not research',
   'research-entity:release-field-locks': 'releases locks one reviewed row at a time',

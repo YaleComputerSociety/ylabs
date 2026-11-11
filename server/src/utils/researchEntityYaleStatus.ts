@@ -117,6 +117,17 @@ export const hasRecordedClosureEvidence = (
     PERMANENTLY_CLOSED_SUPPRESSION_REASON,
   );
 
+export const RESEARCH_INFRASTRUCTURE_ONLY_SUPPRESSION_REASON = 'research_infrastructure_only';
+
+/**
+ * Readers match these markers anywhere in the reason text, so a free-text writer
+ * must never let one appear inside an unrelated reason.
+ */
+export const SUBSTRING_READ_SUPPRESSION_MARKERS = [
+  PERMANENTLY_CLOSED_SUPPRESSION_REASON,
+  RESEARCH_INFRASTRUCTURE_ONLY_SUPPRESSION_REASON,
+] as const;
+
 export const SUPPRESSION_REASON_FIELD = 'studentVisibilitySuppressionReason';
 
 export function suppressionReasonList(value: unknown): string[] {

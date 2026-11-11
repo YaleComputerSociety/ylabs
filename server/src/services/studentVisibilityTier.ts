@@ -51,6 +51,7 @@ import {
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
   PERMANENTLY_CLOSED_SUPPRESSION_REASON,
+  RESEARCH_INFRASTRUCTURE_ONLY_SUPPRESSION_REASON,
   hasRecordedClosureEvidence,
 } from '../utils/researchEntityYaleStatus';
 import { hasOrganizationalAlternateAccessPath } from '../utils/organizationalAccessPath';
@@ -1203,7 +1204,9 @@ export function computeResearchEntityStudentVisibility({
   if (!hasUsableName) reasons.push('unusable_name');
   if (outsideResearchScope) reasons.push('non_research_entity', ...researchScope.reasons);
   if (
-    textValue(entity.studentVisibilitySuppressionReason).includes('research_infrastructure_only')
+    textValue(entity.studentVisibilitySuppressionReason).includes(
+      RESEARCH_INFRASTRUCTURE_ONLY_SUPPRESSION_REASON,
+    )
   ) {
     reasons.push('research_infrastructure_only');
   }

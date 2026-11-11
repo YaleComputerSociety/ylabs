@@ -260,6 +260,22 @@ Absence of closure evidence is not evidence of closure - roughly 4,500 live rows
 A lead-requiring entity with no lead, an unusable name, an identity risk, or an off-entity/off-scope failure is never published even under an explicit operator override: an override may pass softer gates, but not these correctness floors.
 The same floors also hold the record out of `limited_but_safe`, which the launch-trust report treats as publishable in `public-safe` mode.
 
+### Recording an operator visibility verdict on one row
+
+An operator verdict on one row is `studentVisibilityOverrideTier` plus one coded entry in `studentVisibilitySuppressionReason`, and the gate honours it with the `operator_override` reason except where a correctness floor above outranks it.
+It is the evidence contract's "review verdict on one row" (AGENTS.md), never a lock, and never an archive, so the row stays live in every environment and is only not served.
+Write it with `yarn --cwd server student-visibility:override` rather than a direct update (#5618).
+
+- One row per call, by `--slug` or `--id`, with `--tier=<tier>` or `--clear`, a required `--reason "<snake_case_code>: <evidence>"` and the operator's `--actor <netid>`.
+- A dry run is the default; `--apply` also needs `--confirm-student-visibility-override` and the same Development opt-in the scraper writes use, `ALLOW_NON_PROD_SCRAPER_WRITES=true`, and Beta and Production are refused because they receive rows only through promotion.
+- The reason is appended as one entry of the comma-joined list and replaces an earlier entry with the same code, so a departure marker or a `research_infrastructure_only` entry survives; `--clear` removes only the entry carrying the given code.
+- A reason that contains `permanently_closed` or `research_infrastructure_only` anywhere is refused, because readers match those markers anywhere in the field and would treat the verdict as closure or infrastructure evidence.
+- Every apply writes an `admin_audit_events` row (`research_entity.visibility_override.set` or `.clear`) recording the actor, the time, the before and after state and the reason.
+- The tool writes the verdict only; run `student-visibility:gate --apply --confirm-student-visibility-apply --record-id=<id>` afterwards so the gate re-decides the served tier.
+
+Before the tool existed, 16 live research rows on Development carried an override written by scripts or by hand, measured on 2026-11-11: 15 `suppressed` (6 for the strict-launch rule that no student route is verified, 3 `research_infrastructure_only`, 3 with no reason, 1 `permanently_closed`, and 2 trainee-fellowship shells) and 1 `operator_review` with no reason.
+An umbrella organization whose sub-units are each discoverable under their own names is held by this verdict, row by row, rather than by a derived rule (owner decision 2026-10-17, applied 2026-11-11 in #5618): measured on 2026-11-11, a derived rule would have hidden 53 of the 84 served organizations that host member rows.
+
 ## Soft signals (these NEVER gate `student_ready`)
 
 These enrich ranking, badges, and the card's optional sub-payloads, and may hide their own sub-payload when absent, but they never hold a correct, coherent card out of `student_ready`.
