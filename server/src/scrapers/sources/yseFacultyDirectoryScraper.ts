@@ -41,10 +41,10 @@ import {
 import {
   isLikelyPersonSpecificYaleEmail,
   netidFromEmail,
-  observableNetid,
   normalizeName,
   splitName,
 } from '../utils/scraperHelpers';
+import { asYaleNetid } from '../../utils/yaleNetid';
 import {
   mintsNoResearchEntityAsTeachingAppointment,
   ownsNoResearchEntityByTitle,
@@ -328,7 +328,7 @@ export function facultyToUserObservations(profile: YseFacultyProfile): {
   const base = { entityType: 'user' as const, entityKey, sourceUrl: profile.profileUrl };
   const obs: ObservationInput[] = [];
 
-  const statedNetid = observableNetid(netid);
+  const statedNetid = asYaleNetid(netid);
   if (statedNetid) obs.push({ ...base, field: 'netid', value: statedNetid });
   if (first) obs.push({ ...base, field: 'fname', value: first });
   if (last) obs.push({ ...base, field: 'lname', value: last });

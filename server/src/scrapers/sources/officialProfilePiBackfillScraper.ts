@@ -96,10 +96,10 @@ import {
 import {
   isLikelyPersonSpecificYaleEmail,
   normalizeName,
-  observableNetid,
   slugify,
   splitName,
 } from '../utils/scraperHelpers';
+import { asYaleNetid } from '../../utils/yaleNetid';
 import { LEAD_ROLE_LEGACY_LABELS } from '../../models/canonicalRoleMapping';
 import {
   isJsonLdNodeOfAnotherPerson,
@@ -3403,7 +3403,7 @@ export function identityToUserObservations(
     medicine: identity.fetchedUrl,
     official: identity.canonicalUrl,
   };
-  const statedNetid = observableNetid(netid);
+  const statedNetid = asYaleNetid(netid);
   const identityObservations: Array<[string, unknown]> = [
     ...(statedNetid ? ([['netid', statedNetid]] as Array<[string, unknown]>) : []),
     ['fname', first],

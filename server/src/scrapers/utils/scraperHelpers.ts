@@ -10,7 +10,6 @@ import {
   stripPersonNameCaptionWrapper,
   stripPersonNameCredentialList,
 } from '../../utils/personNameHygiene';
-import { looksLikeYaleNetid } from '../../utils/yaleNetid';
 
 export const SLUG_MAX_LENGTH = 100;
 
@@ -63,14 +62,6 @@ export function netidFromEmail(email: string | undefined | null): string | null 
   const match = cleaned.match(/^([a-z0-9._-]+)(?:\+[a-z0-9._-]+)?@yale\.edu$/i);
   if (!match) return null;
   return match[1].toLowerCase();
-}
-
-/**
- * The value a `netid` observation may state: a Yale netid only. An email local part such as
- * a dotted name still keys the person, but it is an alias and never an identity netid (#5740).
- */
-export function observableNetid(value: string | undefined | null): string | undefined {
-  return looksLikeYaleNetid(value) ? String(value).trim() : undefined;
 }
 
 function asciiTokens(input: string): string[] {
