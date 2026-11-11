@@ -277,12 +277,13 @@ The Development-to-Beta mirror inserts each live row as read and rewrites only `
 It is still not the path.
 `search_rerank_cache` is in `NEVER_COPY_COLLECTIONS`, every copy refuses one, and no tool exports it.
 Development's collection also holds `shadow` entries and entries keyed before the acronym rewrite (#5643), which a re-seed from the file does not carry.
-What a re-seed loses is a score whose slug no longer resolves: on 2026-11-11 that was 10 of 9,942 scores, on 8 rows, of which 6 had a new slug and 2 were archived, and each of those rows takes the neutral 1.5.
+What a re-seed loses is a score whose slug no longer resolves: on 2026-11-11 the revised file left 6 of 9,942 scores unresolved, and each of those rows takes the neutral 1.5.
 
 #### Before the first run: the seed file must key cleanly under current code
 
 Since #5643 a bare acronym keys as the phrase it stands for, so a file holding a bare acronym and its phrase as two entries is refused with `Entries <i> and <j> have the same query key`, before anything is read or written.
 The seed file Development was seeded from on 2026-11-10 holds one such pair, so it cannot seed any environment until it is revised.
+That revision is done: version v3 of the file, outside the repository, reseeded Development on 2026-11-11 under the marker `full-v3-2026-11-11`, so the steps below are the procedure for the next revision rather than a pending task.
 Drop the bare acronym entry and keep the phrase entry, because the acronym is now searched as its phrase, so the phrase entry's scores are the ones scored against the pool the acronym is served.
 Revise the file outside the repository under a new version name and keep the previous version.
 While revising it, rewrite each slug that no longer resolves to the row's current slug, read through the `entityId` Development's cache stored for it, so the renamed rows keep their scores.
@@ -357,25 +358,25 @@ Removing them is optional, is a write against that environment that needs its ow
 
 #### Expected counts on a fresh copy of Development
 
-Rehearsed on Development on 2026-11-11 into the scratch collection `search_rerank_cache_rehearsal`, with the 2026-11-10 seed file less its bare acronym entry, and the scratch collection dropped afterwards.
+Measured on Development on 2026-11-11 with the v3 seed file, after Development's own cache was re-seeded from it.
 These change whenever the seed file or the corpus changes, so read them as the shape of a correct run rather than as values to match.
 
 | Count | Development dry run | Laptop seed of Beta or Production |
 | --- | --- | --- |
 | `entries` | 346 | 346 |
 | `scores` | 9,942 | 9,942 |
-| `resolvedScores` | 9,932 | 9,932 |
-| `unresolvedSlugs` | 10 | 10 |
+| `resolvedScores` | 9,936 | 9,936 |
+| `unresolvedSlugs` | 6 | 6 |
 | `entriesWithNoResolvedScore` | 0 | 0 |
 | `textHashes` | `read-from-index` | `index-of-another-environment` |
-| `scoresWithTextHash` | 9,932 | 0 |
-| `seededEntries`, `staleSeededEntries`, `seededEntriesWithoutTextHashes` | 0, 0, 0 into an empty collection; 346, 0, 0 after the apply | `null`, `null`, `null` |
+| `scoresWithTextHash` | 9,936 | 0 |
+| `seededEntries`, `staleSeededEntries`, `seededEntriesWithoutTextHashes` | 346, 0, 0 | `null`, `null`, `null` |
 | `upserted` on apply | 346 | 346 |
 
 The laptop column was measured by the same dry run on Development with `MEILISEARCH_INDEX_PREFIX=beta`, which is the mode a laptop seeding Beta or Production gets.
 The unrevised file, 347 entries, is refused by the key-collision check.
-Through the search function the route calls, the scratch cache changed the top 10 of 38 of 40 unfiltered multi-word seeded queries, and matched Development's live cache on 39 of the 40; the one difference is a row whose slug changed after scoring.
-On five topic queries picked by the predicate above, in the public visibility scope, the scratch cache matched Development's live cache on all five and moved the first result on all five.
+Through the search route, with the flag on and the public visibility scope, 20 sampled unfiltered multi-word seeded queries served a top 5 worth 284 of the 286 grade points the best five graded rows would score, and every one of the 20 served its graded rows in non-increasing grade order.
+An earlier rehearsal into a scratch collection, with the 2026-11-10 file less its bare acronym entry, changed the top 10 of 38 of 40 such queries against the unseeded order.
 
 To rehearse again, prefix each seed command with `DEV_WRITE_OWNER="<label>" SEARCH_RERANK_CACHE_COLLECTION=search_rerank_cache_rehearsal`, which keeps Development's live cache untouched, and drop the scratch collection when done.
 
