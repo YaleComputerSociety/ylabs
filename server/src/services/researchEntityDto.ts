@@ -42,7 +42,10 @@ import {
 } from '../utils/researchHomeNameIdentityAuthority';
 import { disambiguateCollidingResearchEntityNames } from '../utils/researchEntityDisplayNameDisambiguation';
 import { isPublicHttpUrl } from '../utils/urlSafety';
-import { entityHasHostedUndergraduates } from './hostedUndergraduates';
+import {
+  entityHasHostedUndergraduates,
+  withoutAdviseeProgramsMovedToMentors,
+} from './hostedUndergraduates';
 import { publicUndergradListEvidence } from './undergradListEvidenceServing';
 import { RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE } from '../scrapers/undergradEvidenceQuoteValidation';
 import { quotePageIsAboutAnotherEntity } from '../scrapers/undergradQuoteRelevance';
@@ -710,6 +713,11 @@ function derivePublicResearchEntityDto(
       if (field === 'undergradListEvidence') {
         const evidence = publicUndergradListEvidence(group[field], { wayInWithheld });
         if (evidence.length > 0) dto[field] = evidence;
+        continue;
+      }
+      if (field === 'pastUndergradAdvisees') {
+        const advisees = withoutAdviseeProgramsMovedToMentors(group[field]);
+        if (advisees.length > 0) dto[field] = advisees;
         continue;
       }
       if (field === 'undergradInvitation') {

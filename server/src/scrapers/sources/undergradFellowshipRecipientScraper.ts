@@ -3,8 +3,7 @@
  *
  * Reverse-looks-up Yale faculty who have actually mentored undergraduate
  * researchers by harvesting publicly published recipient lists that name a
- * faculty mentor (STARS II symposium booklets and the CogSci and EPS senior
- * essay adviser pages).
+ * faculty mentor (STARS II symposium booklets).
  *
  * Each {student, program, year, advisor} pair feeds the matched advisor's
  * ResearchGroup as a `pastUndergradAdvisees` entry, which the access materializer
@@ -41,7 +40,7 @@
  *     emitted) so a smoke run with `--limit 50` exercises the full pipeline
  *     without producing 1000s of observations
  *   - ctx.options.only — filters to a subset of programKeys, e.g.
- *     `--only stars-ii,cogsci-senior-essays`
+ *     `--only stars-ii`
  *   - ctx.options.manualRecipientCsvDir — optional directory containing
  *     `<programKey>.csv` files for otherwise manual-upload-required programs.
  *     When no CSV is present, the scraper also looks for `<programKey>.pdf`
@@ -79,7 +78,6 @@ import {
 import { getCached, setCached } from '../snapshotCache';
 import { normalizeName, slugify, splitName } from '../utils/scraperHelpers';
 import {
-  LAB_SCIENCE_ADVISER_DEPARTMENTS,
   adviserPairCountsTowardHosting,
   departmentsAgree,
   type UndergradHostingRule,
@@ -704,22 +702,6 @@ export const DEFAULT_PROGRAM_CONFIGS: ProgramConfig[] = [
     pdfExtractor: starsSymposiumBookletExtractor,
     manualUploadRequired: true,
     skipReason: 'STARS II symposium abstracts published as PDF only',
-    hostingRule: 'lab-science-program',
-  },
-  {
-    programKey: 'cogsci-senior-essays',
-    programName: 'Cognitive Science senior essay',
-    urls: ['https://cogsci.yale.edu/research/past-senior-essays'],
-    extractor: seniorEssayAdviserTableExtractor,
-    adviserDepartments: ['Cognitive Science', ...LAB_SCIENCE_ADVISER_DEPARTMENTS],
-    hostingRule: 'lab-science-adviser-department',
-  },
-  {
-    programKey: 'eps-senior-theses',
-    programName: 'Earth and Planetary Sciences senior thesis',
-    urls: ['https://earth.yale.edu/recent-alumni-and-senior-theses'],
-    extractor: seniorThesisAdviserParagraphExtractor,
-    adviserDepartments: ['Earth and Planetary Sciences', 'Geology and Geophysics'],
     hostingRule: 'lab-science-program',
   },
 ];
