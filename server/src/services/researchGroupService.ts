@@ -134,6 +134,7 @@ import {
 } from './researchEntityDto';
 import {
   isLikelyPublicProfileImageUrl,
+  profileImagePictureSearchPattern,
   isSharedProfileImageAcrossDifferentNames,
 } from '../scripts/profileImageQualityAuditCore';
 import {
@@ -3334,8 +3335,14 @@ async function withPublicMemberImageGuards<T extends { user: any }>(members: T[]
     }));
   }
 
+  const picturePatterns = imageUrls
+    .map((imageUrl) => profileImagePictureSearchPattern(imageUrl))
+    .filter((pattern): pattern is RegExp => Boolean(pattern));
   const sameImageResearchers = await Researcher.find({
-    'profile.imageUrl': { $in: imageUrls },
+    $or: [
+      { 'profile.imageUrl': { $in: imageUrls } },
+      ...picturePatterns.map((pattern) => ({ 'profile.imageUrl': pattern })),
+    ],
     archived: { $ne: true },
   })
     .select('displayName profile.imageUrl')
