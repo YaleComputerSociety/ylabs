@@ -59,7 +59,7 @@ export function buildSearchRerankTextHash(document: Readonly<Record<string, unkn
       SEARCH_RERANK_PROMPT_FULL_DESCRIPTION_CHARACTERS,
     ),
   };
-  return createHash('sha1')
+  return createHash('sha256')
     .update(JSON.stringify(fields))
     .digest('hex')
     .slice(0, SEARCH_RERANK_TEXT_HASH_LENGTH);
