@@ -389,7 +389,7 @@ describe('researchEntitySearchIndexService', () => {
       _id: 'entity-unreviewed',
       undergradListEvidence: [
         {
-          source: 'cs-senior-projects',
+          source: 'eps-senior-theses',
           kind: 'advised',
           count: 2,
           latestYear: 2026,

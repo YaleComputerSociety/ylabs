@@ -33,10 +33,39 @@ const reviewed = new Set([
 ]);
 
 describe('publicUndergradListEvidence', () => {
+  it('serves exactly the sources the owner confirmed on 2026-11-10, and never EPS or Tobin', () => {
+    expect([...OWNER_REVIEWED_UNDERGRAD_LIST_SOURCES].sort()).toEqual(
+      [
+        'cs-senior-projects',
+        'cs-directed-research',
+        'economics-senior-essay-advisers',
+        'psychology-research-opportunities',
+        'wu-tsai-undergraduate-fellows',
+        'physics-open-research-opportunities',
+        'english-senior-essays',
+        'english-creative-writing-projects',
+        'political-science-senior-essay-prizes',
+        'german-senior-essays',
+        'yibs-summer-research-fellows',
+        'cognitive-science-senior-essays',
+      ].sort(),
+    );
+    expect(OWNER_REVIEWED_UNDERGRAD_LIST_SOURCES.has('eps-senior-theses')).toBe(false);
+    expect(OWNER_REVIEWED_UNDERGRAD_LIST_SOURCES.has('tobin-research-assistantships')).toBe(false);
+  });
+
   it('serves nothing from a source the owner has not reviewed', () => {
-    expect(OWNER_REVIEWED_UNDERGRAD_LIST_SOURCES.size).toBe(0);
-    expect(publicUndergradListEvidence(stored)).toEqual([]);
-    expect(entityMentorsUndergraduates({ undergradListEvidence: stored })).toBe(false);
+    const unreviewed = [
+      {
+        source: 'tobin-research-assistantships',
+        kind: 'advised',
+        count: 1,
+        sourceUrl: 'https://economics.example.edu/tobin',
+      },
+    ];
+    expect(publicUndergradListEvidence(unreviewed)).toEqual([]);
+    expect(publicUndergradListEvidence(stored, { reviewedSources: new Set() })).toEqual([]);
+    expect(entityMentorsUndergraduates({ undergradListEvidence: stored }, new Set())).toBe(false);
   });
 
   it('serves each reviewed entry with the one signal its list feeds', () => {
