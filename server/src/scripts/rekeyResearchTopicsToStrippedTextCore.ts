@@ -39,7 +39,7 @@ export interface RekeyResearchTopicsStore {
 }
 
 export type RekeyRowOutcome =
-  'unchanged-text' | 'already-rekeyed' | 'no-reading' | 'rekeyed' | 'would-rekey';
+  'unchanged-text' | 'all-chrome' | 'already-rekeyed' | 'no-reading' | 'rekeyed' | 'would-rekey';
 
 export type RekeyTopicEffect = 'identical' | 'trimmed' | 'lost-all' | 'changed';
 
@@ -54,6 +54,7 @@ export interface RekeyRowReport {
 export interface RekeyResearchTopicsReport {
   rowsRead: number;
   unchangedText: number;
+  allChrome: number;
   alreadyRekeyed: number;
   noReading: number;
   rekeyed: number;
@@ -79,6 +80,7 @@ export async function rekeyResearchTopicsToStrippedText(input: {
   const report: RekeyResearchTopicsReport = {
     rowsRead: input.rows.length,
     unchangedText: 0,
+    allChrome: 0,
     alreadyRekeyed: 0,
     noReading: 0,
     rekeyed: 0,
@@ -102,6 +104,16 @@ export async function rekeyResearchTopicsToStrippedText(input: {
     const strippedKey = researchTopicsDerivationInputHash(strippedPages);
     if (rawKey === strippedKey) {
       report.unchangedText += 1;
+      continue;
+    }
+    if (strippedPages.length === 0) {
+      // All-chrome rows share one empty-text key that the materializer never reads.
+      row.outcome = 'all-chrome';
+      report.allChrome += 1;
+      if (await input.store.find(rawKey)) {
+        row.topicEffect = 'lost-all';
+        report.topicsLostAll += 1;
+      }
       continue;
     }
     if (await input.store.find(strippedKey)) {

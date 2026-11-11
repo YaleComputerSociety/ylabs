@@ -136,6 +136,28 @@ describe('research-topics:rekey-stripped (#5577)', () => {
     expect(second).toMatchObject({ alreadyRekeyed: 2, unchangedText: 1, rekeyed: 0 });
   });
 
+  it('counts every all-chrome row as losing its topics and writes no shared empty-text key', async () => {
+    const allChrome = (url: string) => [
+      { url, text: ['Skip to main content', 'Make a gift to support our research.'].join('\n') },
+    ];
+    const first = { entityKey: 'synthetic-row-chrome-1', value: allChrome(URL_A) };
+    const second = { entityKey: 'synthetic-row-chrome-2', value: allChrome(URL_B) };
+    const { store, inserted } = memoryStore([
+      readingFor(first.value, ['coastal wetland carbon storage']),
+      readingFor(second.value, ['stable isotope tracing']),
+    ]);
+
+    const report = await rekeyResearchTopicsToStrippedText({
+      rows: [first, second],
+      store,
+      apply: true,
+    });
+
+    expect(report).toMatchObject({ allChrome: 2, topicsLostAll: 2, alreadyRekeyed: 0, rekeyed: 0 });
+    expect(report.rows.map((row) => row.outcome)).toEqual(['all-chrome', 'all-chrome']);
+    expect(inserted).toEqual([]);
+  });
+
   it('refuses an apply without the confirmation flag', () => {
     expect(() => parseRekeyResearchTopicsArgs(['--apply'])).toThrow(
       '--confirm-research-topics-rekey',
