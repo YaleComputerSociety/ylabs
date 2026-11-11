@@ -1,3 +1,4 @@
+import { rostersWithDepartedLeadsRetired } from './departedLeadServing';
 import { Signal } from '../models/signal';
 import { isPersonScopedResearchEntityType } from '../models/storedVocabularies';
 import { accessSignalTypes } from '../models/researchAccessTypes';
@@ -347,7 +348,9 @@ export async function researchEntityIdsWithGateAttachedLead(
 ): Promise<Set<string>> {
   const attached = new Set<string>();
   if (entityIds.length === 0) return attached;
-  const roster = await getResearchEntityRosterByEntityId([...entityIds]);
+  const roster = await rostersWithDepartedLeadsRetired(
+    await getResearchEntityRosterByEntityId([...entityIds]),
+  );
   for (const [entityId, entries] of roster) {
     const leadMembers = studentVisibilityGateLeadRows(entries);
     if (researchEntityLeadStateForMembers(leadMembers) === 'lead_attached') {
@@ -2065,7 +2068,9 @@ async function planResearchEntityGateUpdates(
 
   const buildGateLeadRows = (roster: Map<string, any[]>) =>
     Array.from(roster.values()).flatMap((entries) => studentVisibilityGateLeadRows(entries));
-  const rosterByEntityId = rosterWithoutWithheldPeople(rawRosterByEntityId, serving);
+  const rosterByEntityId = await rostersWithDepartedLeadsRetired(
+    rosterWithoutWithheldPeople(rawRosterByEntityId, serving),
+  );
   const everyLeadRemovedEntityIds = new Set(
     [...rawRosterByEntityId]
       .filter(

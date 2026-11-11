@@ -1,4 +1,8 @@
 import { researchEntityHasDeceasedLead } from './researchEntityDeceasedLead';
+import {
+  DECEASED_LEAD_ROW_PRESENTATION,
+  type DeceasedLeadRowPresentation,
+} from './deceasedLeadRowPresentation';
 
 const MARKER_SCAN_WINDOW = 200;
 const MIN_HUMAN_LIFESPAN_YEARS = 15;
@@ -10,7 +14,7 @@ const IN_MEMORIAM_URL_PATH_RE = /\bin-memoriam\b|\bobituar(?:y|ies)\b/i;
 // ("In Memoriam1945-2026"), so the marker ends at the last letter, not a word boundary.
 const IN_MEMORIAM_TEXT_RE = /\bin\s+memoriam(?!\p{L})|\bpassed\s+away\b/iu;
 
-export type ResearchEntityYaleStatusReason = 'deceased' | 'departed';
+export type ResearchEntityYaleStatusReason = 'deceased' | 'departed' | 'lead_departed';
 
 export interface ResearchEntityYaleStatusSignal {
   yaleStatusCache: 'departed';
@@ -180,12 +184,27 @@ export function suppressionReasonIsWritable(
   return !lockedFields.includes(SUPPRESSION_REASON_FIELD);
 }
 
+/**
+ * `leadPageDeparture` is what every current lead's own official page says (#5721). A
+ * departed lead follows the existing departure semantics. A deceased lead is presented as
+ * `DECEASED_LEAD_ROW_PRESENTATION` decides: hidden through the same deceased signal the row's
+ * own markers raise, or left served so a label can name it.
+ */
 export function deriveResearchEntityYaleStatus(
   entity: Record<string, any> | null | undefined,
+  presentation: DeceasedLeadRowPresentation = DECEASED_LEAD_ROW_PRESENTATION,
 ): ResearchEntityYaleStatusSignal | null {
   if (!entity) return null;
   if (researchEntityHasDeceasedLead(entity) || hasInMemoriamMarker(entity)) {
     return { yaleStatusCache: 'departed', activeAtYaleCache: false, reason: 'deceased' };
+  }
+  if (entity.leadPageDeparture === 'deceased' && presentation === 'hide') {
+    return { yaleStatusCache: 'departed', activeAtYaleCache: false, reason: 'deceased' };
+  }
+  // Its own reason, not the roster reconciler's `departed`, which nothing clears: a lead-page
+  // departure is derived, so it lifts when its evidence goes.
+  if (entity.leadPageDeparture === 'departed') {
+    return { yaleStatusCache: 'departed', activeAtYaleCache: false, reason: 'lead_departed' };
   }
   // A recorded closure is re-derived on every pass, exactly as the deceased
   // markers are, so the departure survives re-materialization instead of being

@@ -312,7 +312,7 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
     },
     yaleStatusReasonCache: {
       type: String,
-      enum: ['deceased', 'departed', ''],
+      enum: ['deceased', 'departed', 'lead_departed', ''],
       default: '',
     },
     lastSeenInCompleteRosterAt: {
