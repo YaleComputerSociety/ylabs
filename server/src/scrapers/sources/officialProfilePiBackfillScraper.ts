@@ -20,6 +20,7 @@ import {
   directoryContradictsNetidForAddress,
   loadDirectoryNetidsByAddress,
 } from '../directoryContradictedProfileNetid';
+import { pageEmailHeldByAnotherResearcher } from '../verifiedResearcherEmail';
 import { stripTrailingResearchHomeDescription } from '../../utils/researchEntityNameNormalization';
 import {
   claimsAnotherPersonsLabByUrlPath,
@@ -114,10 +115,7 @@ import {
   OFFICIAL_PROFILE_DIRECTOR_SOURCE_NAME,
 } from '../officialProfileDirectorRetirement';
 import { officialProfileIdentityKey, rosterMembershipKey } from '../utils/rosterMembershipKey';
-import {
-  identityWitnessesConflict,
-  type OfficialProfilePageIdentity,
-} from '../../services/officialProfileLinkIdentity';
+import { type OfficialProfilePageIdentity } from '../../services/officialProfileLinkIdentity';
 
 const SOURCE_NAME = 'official-profile-pi-backfill';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
@@ -178,6 +176,8 @@ interface OfficialProfileIdentityOptions {
     netid?: string;
   }>;
 }
+
+export { pageEmailHeldByAnotherResearcher };
 
 export interface ExistingProfileUser {
   _id?: string;
@@ -4698,33 +4698,6 @@ export async function resolveExistingUserForIdentity(
     return null;
   }
   return netid ? { _id: idValue(user._id), netid, email: textValue(user.email) } : null;
-}
-
-/**
- * Whether the page's email is already held by a live researcher with a different netid
- * from the key's person, which is positive evidence that the page belongs to someone else
- * and its identity must not be filed under this key (#5606). A holder with no netid is a
- * possible second record of the same person, so it decides nothing.
- */
-export async function pageEmailHeldByAnotherResearcher(
-  email: unknown,
-  existingUser: ExistingProfileUser,
-): Promise<boolean> {
-  const address = textValue(email).toLowerCase();
-  if (!address) return false;
-  // Without a database connection the holder cannot be read; the lane only runs connected, and
-  // its offline unit tests exercise extraction rather than identity ownership.
-  if (mongoose.connection.readyState !== 1) return false;
-  const holders = (await Researcher.find({ archived: { $ne: true }, 'identifiers.email': address })
-    .select('_id identifiers.netid')
-    .limit(5)
-    .lean()) as unknown as Array<{ _id: unknown; identifiers?: { netid?: string } }>;
-  return holders.some((holder) =>
-    identityWitnessesConflict(holder, {
-      _id: existingUser._id ?? '',
-      netid: textValue(existingUser.netid),
-    }),
-  );
 }
 
 /**

@@ -31,6 +31,7 @@
  *     so operators see them.
  */
 import axios from 'axios';
+import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import { listYalies, YaliesPerson } from '../../services/yaliesService';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
@@ -40,6 +41,7 @@ import {
   descriptionStatesCreativePracticeEvidence,
 } from '../../utils/descriptionStatesResearch';
 import { getCached, setCached } from '../snapshotCache';
+import { Researcher } from '../../models/researcher';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 
 dotenv.config({ quiet: true });
@@ -467,6 +469,40 @@ export function personToObservations(
 }
 
 /**
+ * A directory record whose title fails the faculty screen still verifies the email of a
+ * person the corpus already holds under that netid (#5627). It carries only the netid and
+ * the address: no name, title or user type, so it can rename nobody, mint nobody, and make
+ * no staff record a row or a search result. It only backs the existing researcher's email.
+ */
+export function corpusPersonEmailObservations(
+  person: YaliesPerson,
+  corpusNetids: ReadonlySet<string>,
+  sourceUrl: string = SOURCE_URL,
+): ObservationInput[] {
+  const netid = (person?.netid && String(person.netid).trim()) || '';
+  const email = (person?.email && String(person.email).trim()) || '';
+  if (!netid || !email || !corpusNetids.has(netid.toLowerCase())) return [];
+  const base = { entityType: 'user' as const, entityKey: netid, sourceUrl };
+  return [
+    { ...base, field: 'netid', value: netid },
+    { ...base, field: 'email', value: email },
+  ];
+}
+
+export async function loadCorpusResearcherNetids(): Promise<ReadonlySet<string>> {
+  // Unconnected reads as an empty corpus, which backs nobody rather than blocking the faculty sync.
+  if (mongoose.connection.readyState !== 1) return new Set();
+  const netids = (await Researcher.distinct('identifiers.netid', {
+    archived: { $ne: true },
+  })) as unknown[];
+  return new Set(
+    netids
+      .filter((netid): netid is string => typeof netid === 'string' && netid.trim() !== '')
+      .map((netid) => netid.trim().toLowerCase()),
+  );
+}
+
+/**
  * Fetch one Yalies page, optionally hitting the snapshot cache.
  */
 async function fetchYaliesPage(
@@ -495,6 +531,12 @@ export class YaleDirectoryScraper implements IScraper {
   readonly name = SOURCE_NAME;
   readonly displayName = 'Yale Directory (faculty roster via Yalies API)';
 
+  constructor(
+    private readonly corpusNetidLoader: () => Promise<
+      ReadonlySet<string>
+    > = loadCorpusResearcherNetids,
+  ) {}
+
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     const apiKey = process.env.YALIES_API_KEY;
     if (!apiKey) {
@@ -514,9 +556,11 @@ export class YaleDirectoryScraper implements IScraper {
     }
     const limit = limitOption;
 
+    const corpusNetids = await this.corpusNetidLoader();
     let totalObs = 0;
     let processed = 0;
     let skippedNonFaculty = 0;
+    let corpusPeopleBacked = 0;
     let pageNum = 1;
     let stop = false;
     const partialFailures: string[] = [];
@@ -556,6 +600,12 @@ export class YaleDirectoryScraper implements IScraper {
         }
         const obs = personToObservations(person);
         if (obs.length === 0) {
+          const backing = corpusPersonEmailObservations(person, corpusNetids);
+          if (backing.length > 0) {
+            await ctx.emit(backing);
+            totalObs += backing.length;
+            corpusPeopleBacked++;
+          }
           skippedNonFaculty++;
           continue;
         }
@@ -574,7 +624,7 @@ export class YaleDirectoryScraper implements IScraper {
 
     ctx.log(
       `Done. Faculty processed: ${processed}, observations emitted: ${totalObs}, ` +
-        `non-faculty skipped: ${skippedNonFaculty}, pages fetched: ${pageNum}.`,
+        `non-faculty skipped: ${skippedNonFaculty} (${corpusPeopleBacked} backing a corpus person's email), pages fetched: ${pageNum}.`,
     );
 
     const incomplete =
@@ -582,7 +632,7 @@ export class YaleDirectoryScraper implements IScraper {
     return {
       observationCount: totalObs,
       entitiesObserved: processed,
-      notes: `Yalies faculty sync: ${processed} faculty, ${totalObs} observations across ${pageNum} pages${incomplete}`,
+      notes: `Yalies faculty sync: ${processed} faculty, ${corpusPeopleBacked} non-faculty corpus emails, ${totalObs} observations across ${pageNum} pages${incomplete}`,
       ...(partialFailures.length > 0 ? { partialFailures } : {}),
     };
   }

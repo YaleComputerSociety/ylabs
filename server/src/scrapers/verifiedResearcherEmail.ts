@@ -1,0 +1,171 @@
+import mongoose from 'mongoose';
+import { Observation } from '../models/observation';
+import { Researcher } from '../models/researcher';
+import { officialProfileDestinationStoredPattern } from '../services/leadProfileIdentity';
+import { identityWitnessesConflict } from '../services/officialProfileLinkIdentity';
+import { materializationReadScopeFilter } from './entityMaterializer';
+import {
+  invalidatedScrapeRunIds,
+  partitionObservationsByInvalidatedRun,
+} from './invalidatedScrapeRuns';
+import {
+  OFFICIAL_PROFILE_PI_BACKFILL_SOURCE,
+  loadDirectoryNetidsByAddress,
+  directoryContradictsNetidForAddress,
+  netidOfNetidUserKey,
+} from './directoryContradictedProfileNetid';
+
+export const YALE_DIRECTORY_EMAIL_SOURCE = 'yale-directory';
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const BARE_NETID = /^[a-z0-9]+$/;
+
+const textValue = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
+
+const normalizedEmail = (value: unknown): string => {
+  const email = textValue(value).toLowerCase();
+  return EMAIL_PATTERN.test(email) ? email : '';
+};
+
+const bareNetid = (value: unknown): string => {
+  const netid = textValue(value).toLowerCase();
+  return BARE_NETID.test(netid) ? netid : '';
+};
+
+export interface EmailEvidencePerson {
+  _id?: unknown;
+  netid: string;
+}
+
+/**
+ * Whether the page's email is already held by a live researcher with a different netid
+ * from the key's person, which is positive evidence that the page belongs to someone else
+ * and its identity must not be filed under this key (#5606). A holder with no netid is a
+ * possible second record of the same person, so it decides nothing.
+ */
+export async function pageEmailHeldByAnotherResearcher(
+  email: unknown,
+  person: EmailEvidencePerson,
+): Promise<boolean> {
+  const address = textValue(email).toLowerCase();
+  if (!address) return false;
+  // Without a database connection the holder cannot be read; the lane only runs connected, and
+  // its offline unit tests exercise extraction rather than identity ownership.
+  if (mongoose.connection.readyState !== 1) return false;
+  const holders = (await Researcher.find({ archived: { $ne: true }, 'identifiers.email': address })
+    .select('_id identifiers.netid')
+    .limit(5)
+    .lean()) as unknown as Array<{ _id: unknown; identifiers?: { netid?: string } }>;
+  return holders.some((holder) =>
+    identityWitnessesConflict(holder, {
+      _id: person._id ?? '',
+      netid: textValue(person.netid),
+    }),
+  );
+}
+
+async function pageIsOnlyThePersonsOwnOfficialLink(
+  pageUrl: unknown,
+  researcherId: unknown,
+): Promise<boolean> {
+  const pattern = officialProfileDestinationStoredPattern(textValue(pageUrl));
+  if (!pattern) return false;
+  const holdsPage = {
+    archived: { $ne: true },
+    profileLinks: { $elemMatch: { kind: 'YALE_OFFICIAL', url: pattern } },
+  };
+  const [personHoldsIt, anotherHoldsIt] = await Promise.all([
+    Researcher.exists({ ...holdsPage, _id: researcherId }),
+    Researcher.exists({ ...holdsPage, _id: { $ne: researcherId } }),
+  ]);
+  return Boolean(personHoldsIt) && !anotherHoldsIt;
+}
+
+export type VerifiedEmailSource = 'yale-directory' | 'official-profile-page';
+
+export type VerifiedResearcherEmail =
+  | { status: 'verified'; email: string; sources: VerifiedEmailSource[] }
+  | { status: 'none' }
+  | { status: 'conflicting'; emails: string[] };
+
+export type EmailObservation = {
+  scrapeRunId?: unknown;
+  entityKey?: unknown;
+  value?: unknown;
+  sourceName?: unknown;
+  sourceUrl?: unknown;
+};
+
+export async function loadVerifiableEmailObservations(netid: string): Promise<EmailObservation[]> {
+  const read = (await Observation.find(
+    {
+      entityType: 'user',
+      field: 'email',
+      ...materializationReadScopeFilter(),
+      $or: [
+        { sourceName: YALE_DIRECTORY_EMAIL_SOURCE, entityKey: { $in: [netid, `netid:${netid}`] } },
+        { sourceName: OFFICIAL_PROFILE_PI_BACKFILL_SOURCE, entityKey: `netid:${netid}` },
+      ],
+    },
+    { entityKey: 1, value: 1, sourceName: 1, sourceUrl: 1, scrapeRunId: 1 },
+  ).lean()) as EmailObservation[];
+  return partitionObservationsByInvalidatedRun(read, await invalidatedScrapeRunIds()).kept;
+}
+
+/**
+ * The email a researcher's identity-verified evidence states, read on every resolve so a
+ * stored address follows its evidence without a lock (#5627). Only two kinds of evidence
+ * verify identity: the Yale directory's record keyed by the person's own netid, and the
+ * person's own official page observed under their own `netid:` key. A page counts only when
+ * the person already holds it as their official link and no other live researcher does, and
+ * when the directory does not pair its address with a different netid. Either source is
+ * refused when a researcher with a different netid already holds the address (#5606), and
+ * verified sources that disagree decide nothing.
+ */
+export async function verifiedResearcherEmail(
+  person: EmailEvidencePerson,
+): Promise<VerifiedResearcherEmail> {
+  const netid = bareNetid(person.netid);
+  if (!netid) return { status: 'none' };
+  return verifiedResearcherEmailFrom(person, await loadVerifiableEmailObservations(netid));
+}
+
+export async function verifiedResearcherEmailFrom(
+  person: EmailEvidencePerson,
+  observations: readonly EmailObservation[],
+): Promise<VerifiedResearcherEmail> {
+  const netid = bareNetid(person.netid);
+  if (!netid || observations.length === 0) return { status: 'none' };
+
+  const sourcesByEmail = new Map<string, Set<VerifiedEmailSource>>();
+  const accept = (email: string, source: VerifiedEmailSource) =>
+    sourcesByEmail.set(email, (sourcesByEmail.get(email) ?? new Set()).add(source));
+
+  const directory = await loadDirectoryNetidsByAddress();
+  for (const observation of observations) {
+    const email = normalizedEmail(observation.value);
+    if (!email) continue;
+    if (observation.sourceName === YALE_DIRECTORY_EMAIL_SOURCE) {
+      if (bareNetid(String(observation.entityKey ?? '').replace(/^netid:/i, '')) !== netid)
+        continue;
+      if (await pageEmailHeldByAnotherResearcher(email, { _id: person._id, netid })) continue;
+      accept(email, 'yale-directory');
+      continue;
+    }
+    if (observation.sourceName !== OFFICIAL_PROFILE_PI_BACKFILL_SOURCE) continue;
+    if (netidOfNetidUserKey(observation.entityKey) !== netid) continue;
+    if (directoryContradictsNetidForAddress(netid, email, directory)) continue;
+    if (!(await pageIsOnlyThePersonsOwnOfficialLink(observation.sourceUrl, person._id))) continue;
+    if (await pageEmailHeldByAnotherResearcher(email, { _id: person._id, netid })) continue;
+    accept(email, 'official-profile-page');
+  }
+
+  const emails = [...sourcesByEmail.keys()].sort();
+  if (emails.length === 0) return { status: 'none' };
+  if (emails.length > 1) return { status: 'conflicting', emails };
+  return {
+    status: 'verified',
+    email: emails[0],
+    sources: [...sourcesByEmail.get(emails[0])!].sort(),
+  };
+}

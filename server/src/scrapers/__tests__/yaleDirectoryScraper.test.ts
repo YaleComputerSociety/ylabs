@@ -454,6 +454,59 @@ describe('YaleDirectoryScraper.run', () => {
     await expect(new YaleDirectoryScraper().run(ctx)).rejects.toThrow(/page 1.*ECONNRESET/);
     expect(emitted).toEqual([]);
   });
+
+  describe("a staff-titled record backs only a corpus person's email (#5627)", () => {
+    const staffRecord = {
+      netid: 'st01',
+      first_name: 'Robin',
+      last_name: 'Staff',
+      email: 'staff.fixture@yale.edu',
+      title: 'Research Affiliates',
+      unit_name: 'Medicine',
+    };
+
+    it('emits the netid and email of a staff-titled person the corpus already holds', async () => {
+      process.env.YALIES_API_KEY = 'test-key';
+      mockedListYalies.mockResolvedValueOnce([staffRecord]);
+      const { ctx, emitted } = buildContext();
+
+      const result = await new YaleDirectoryScraper(async () => new Set(['st01'])).run(ctx);
+
+      expect(emitted).toEqual([
+        expect.objectContaining({ entityType: 'user', entityKey: 'st01', field: 'netid' }),
+        expect.objectContaining({
+          entityType: 'user',
+          entityKey: 'st01',
+          field: 'email',
+          value: 'staff.fixture@yale.edu',
+        }),
+      ]);
+      expect(result.entitiesObserved).toBe(0);
+    });
+
+    it('emits no name, title or user type that could rename, mint or surface the record', async () => {
+      process.env.YALIES_API_KEY = 'test-key';
+      mockedListYalies.mockResolvedValueOnce([staffRecord]);
+      const { ctx, emitted } = buildContext();
+
+      await new YaleDirectoryScraper(async () => new Set(['st01'])).run(ctx);
+
+      const fields = emitted.map((observation) => observation.field);
+      for (const field of ['fname', 'lname', 'displayName', 'title', 'userType', 'profileUrls']) {
+        expect(fields).not.toContain(field);
+      }
+    });
+
+    it('emits nothing for a staff-titled person the corpus does not hold', async () => {
+      process.env.YALIES_API_KEY = 'test-key';
+      mockedListYalies.mockResolvedValueOnce([staffRecord]);
+      const { ctx, emitted } = buildContext();
+
+      await new YaleDirectoryScraper(async () => new Set(['someone-else'])).run(ctx);
+
+      expect(emitted).toEqual([]);
+    });
+  });
 });
 
 describe('isSubordinateResearchRank (#2304)', () => {
