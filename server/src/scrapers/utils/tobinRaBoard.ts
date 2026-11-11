@@ -1,3 +1,4 @@
+import { createHmac, randomBytes } from 'node:crypto';
 import * as cheerio from 'cheerio';
 
 export const TOBIN_RA_BOARD_URL = 'https://economics.yale.edu/undergraduate/tobin-ra';
@@ -20,6 +21,7 @@ export interface TobinRaProject {
   filled: boolean;
   sponsors: TobinRaSponsor[];
   unlinkedSponsorText: string;
+  awardeeKeys: string[];
 }
 
 export interface TobinRaBoardRead {
@@ -44,7 +46,9 @@ const absoluteUrl = (href: string, pageUrl: string): string | null => {
 /**
  * The `Award` entry names the students who hold a filled project. It is removed from the
  * document before anything else is read, so no student name can reach a parsed value, an
- * observation, a log line or a run report (#3551).
+ * observation, a log line or a run report (#3551). The one thing taken from it first is
+ * `awardeeKeysByBlock`'s salted digest, which only tells two postings of one student apart
+ * from two students (#5609).
  */
 export function removeAwardSections($: cheerio.CheerioAPI): void {
   $('dt').each((_, element) => {
@@ -56,8 +60,43 @@ export function removeAwardSections($: cheerio.CheerioAPI): void {
   $('[class*="award" i]').remove();
 }
 
+const AWARDEE_SEPARATOR = /\s*(?:,|;|&|\band\b)\s*/i;
+
+const awardeeIdentity = (name: string): string =>
+  name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z]+/g, ' ')
+    .trim();
+
+/**
+ * One digest per student named on each project, keyed with a salt drawn for this read only.
+ * A digest is equal across two postings of one board read and unrelated across reads, so it
+ * counts distinct students without becoming a stable pseudonym anywhere (#5609).
+ */
+function awardeeKeysByBlock($: cheerio.CheerioAPI): Map<unknown, string[]> {
+  const salt = randomBytes(32);
+  const keysByBlock = new Map<unknown, string[]>();
+  $(PROJECT_BLOCK_SELECTOR).each((_, element) => {
+    const keys = new Set<string>();
+    $(element)
+      .find('dt')
+      .filter((_, label) => AWARD_LABEL.test(labelText($(label).text())))
+      .each((_, label) => {
+        for (const name of labelText($(label).nextUntil('dt').text()).split(AWARDEE_SEPARATOR)) {
+          const identity = awardeeIdentity(name);
+          if (identity) keys.add(createHmac('sha256', salt).update(identity).digest('hex'));
+        }
+      });
+    keysByBlock.set(element, [...keys]);
+  });
+  return keysByBlock;
+}
+
 export function parseTobinRaBoard(html: string, pageUrl = TOBIN_RA_BOARD_URL): TobinRaBoardRead {
   const $ = cheerio.load(html);
+  const awardeeKeys = awardeeKeysByBlock($);
   removeAwardSections($);
   const blocks = $(PROJECT_BLOCK_SELECTOR);
   const projects: TobinRaProject[] = [];
@@ -85,6 +124,7 @@ export function parseTobinRaBoard(html: string, pageUrl = TOBIN_RA_BOARD_URL): T
       filled: labelled(FILLED_LABEL).length > 0,
       sponsors: [...sponsorsByUrl.values()],
       unlinkedSponsorText: labelText(sponsorEntries.clone().find('a').remove().end().text()),
+      awardeeKeys: awardeeKeys.get(element) ?? [],
     });
   });
   return { projectBlocks: blocks.length, projects };

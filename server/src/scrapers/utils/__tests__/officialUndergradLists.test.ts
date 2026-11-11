@@ -166,6 +166,7 @@ describe('Tobin RA board', () => {
       adviserProfileUrl: 'https://economics.example.edu/people/avery-synthetic',
       year: 2026,
       itemKey: 'https://economics.example.edu/undergraduate/tobin-ra/2026/03/one',
+      undergraduateKeys: [expect.stringMatching(/^tobin-awardee:[0-9a-f]{64}$/)],
       sourceUrl: url,
     });
   });
@@ -175,17 +176,68 @@ describe('Tobin RA board', () => {
     for (const name of AWARDEES) expect(serialized).not.toContain(name);
   });
 
-  it('counts a project once on a row that both of its co-sponsors resolve to', () => {
+  it('counts each student of a co-sponsored project once on a row both sponsors resolve to', () => {
     const { listings } = tobinBoardListings(board, url);
     const coSponsored = listings.filter((listing) => listing.year === 2025);
     expect(aggregateListEntries(coSponsored, () => url)).toEqual([
       expect.objectContaining({
         source: 'tobin-research-assistantships',
-        count: 1,
+        count: 2,
         latestYear: 2025,
       }),
     ]);
-    expect(aggregateListEntries(listings, () => url)[0].count).toBe(5);
+  });
+
+  it('counts distinct students, not the projects or semesters that name them', () => {
+    const { listings } = tobinBoardListings(board, url);
+    expect(aggregateListEntries(listings, () => url)[0].count).toBe(AWARDEES.length);
+  });
+
+  it('counts a carried-over project once and keeps its newest semester', () => {
+    const carriedOver = `<main>${[
+      project({
+        href: '/undergraduate/tobin-ra/2025/carried',
+        sponsors: [{ name: 'Avery Synthetic', slug: 'avery-synthetic' }],
+        semester: '2025 Fall',
+        filled: true,
+        award: AWARDEES[0],
+      }),
+      project({
+        href: '/undergraduate/tobin-ra/2026/01/carried',
+        sponsors: [{ name: 'Avery Synthetic', slug: 'avery-synthetic' }],
+        semester: '2026 Spring',
+        filled: true,
+        award: ` ${AWARDEES[0].toUpperCase()} `,
+      }),
+    ].join('')}</main>`;
+    expect(aggregateListEntries(tobinBoardListings(carriedOver, url).listings, () => url)).toEqual([
+      expect.objectContaining({ count: 1, latestYear: 2026 }),
+    ]);
+  });
+
+  it('counts each filled project with no readable award as one student', () => {
+    const unawarded = `<main>${['a', 'b']
+      .map((slug) =>
+        project({
+          href: `/undergraduate/tobin-ra/2026/03/${slug}`,
+          sponsors: [{ name: 'Avery Synthetic', slug: 'avery-synthetic' }],
+          semester: '2026 Fall',
+          filled: true,
+        }),
+      )
+      .join('')}</main>`;
+    const { listings } = tobinBoardListings(unawarded, url);
+    expect(listings.every((listing) => listing.undergraduateKeys === undefined)).toBe(true);
+    expect(aggregateListEntries(listings, () => url)[0].count).toBe(2);
+  });
+
+  it('draws a fresh salt per read, so an awardee key is never a stable pseudonym', () => {
+    const keysOf = () =>
+      tobinBoardListings(board, url).listings.flatMap((listing) => listing.undergraduateKeys ?? []);
+    const first = keysOf();
+    const second = keysOf();
+    expect(first.length).toBeGreaterThan(0);
+    expect(first.filter((key) => second.includes(key))).toEqual([]);
   });
 
   it('reads a single sponsor under the singular label and counts a sponsorless filled card', () => {
