@@ -2,7 +2,11 @@ import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Observation } from '../../models/observation';
-import { runGluedProfileTextRetirement } from '../retireGluedProfileText';
+import {
+  parseRetireGluedProfileTextArgs,
+  runGluedProfileTextRetirement,
+} from '../retireGluedProfileText';
+import type { GluedProfileTextKind } from '../retireGluedProfileTextCore';
 
 const PAGE = 'https://eeb.example.edu/people/faculty/wren-halloway/';
 const LOCKED_PAGE = 'https://medicine.example.edu/profile/sorrel-ambry/';
@@ -63,10 +67,15 @@ const liveIds = async () =>
     .map((row) => String(row._id))
     .sort();
 
-const run = (dryRun: boolean, fetchHtml: (url: string) => Promise<string>) =>
+const run = (
+  dryRun: boolean,
+  fetchHtml: (url: string) => Promise<string>,
+  kinds?: GluedProfileTextKind[],
+) =>
   runGluedProfileTextRetirement({
     dryRun,
     skipHosts: ['medicine.example.edu'],
+    kinds,
     pauseMs: 0,
     fetchHtml,
   });
@@ -128,6 +137,18 @@ describe('observations:retire-glued-profile-text (#5720)', () => {
     expect(second.counts.distinctObservationsToRetire).toBe(0);
   });
 
+  it('retires only the kinds an apply names, and reports every title it would retire', async () => {
+    const first = await run(false, fixedPage, ['email', 'phantom']);
+    expect(first.retiredObservations).toBe(7);
+    expect(first.counts.titleRetired).toBe(1);
+    expect(first.titleRetirements).toHaveLength(1);
+    expect(await Observation.countDocuments({ field: 'title', superseded: true })).toBe(0);
+
+    const titles = await run(false, fixedPage, ['title']);
+    expect(titles.retiredObservations).toBe(1);
+    expect(await Observation.countDocuments({ field: 'title', superseded: true })).toBe(1);
+  });
+
   it('never requests a host-locked page', async () => {
     await run(true, fixedPage);
     expect(requested).toEqual([PAGE]);
@@ -141,5 +162,17 @@ describe('observations:retire-glued-profile-text (#5720)', () => {
     expect(result.counts.pagesFailed).toBe(1);
     expect(result.retiredObservations).toBe(0);
     expect(await liveIds()).toEqual(before);
+  });
+});
+
+describe('observations:retire-glued-profile-text arguments', () => {
+  it('refuses an apply that does not name its kinds', () => {
+    expect(() => parseRetireGluedProfileTextArgs(['--apply'])).toThrow(/requires --kinds/);
+    expect(parseRetireGluedProfileTextArgs([]).kinds).toBeUndefined();
+    expect(parseRetireGluedProfileTextArgs(['--apply', '--kinds=email,phantom']).kinds).toEqual([
+      'email',
+      'phantom',
+    ]);
+    expect(() => parseRetireGluedProfileTextArgs(['--kinds=everything'])).toThrow(/comma list/);
   });
 });
