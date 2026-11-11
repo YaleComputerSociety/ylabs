@@ -6,7 +6,11 @@
  * entityKey, e.g. netid).
  */
 import { isGrantLaneObservationOutsideEnrichment } from './grantLaneSourceNames';
-import { comparablePageStatedName, withoutSiteSharedPageNames } from './siteSharedPageName';
+import {
+  comparablePageStatedName,
+  PAGE_STATED_NAME_SOURCES,
+  withoutSiteSharedPageNames,
+} from './siteSharedPageName';
 import {
   inferredPiKeyNamesRoleOrUnitMailbox,
   userKeyNamesRoleOrUnitMailbox,
@@ -8475,7 +8479,10 @@ function enforceResearchEntityNameAuthority(input: {
     if (
       !textValue(servedValue) ||
       (!namesNothingUsable(servedValue, provenance.sourceUrl) &&
-        !siteSharedPageNames.has(comparablePageStatedName(servedValue)) &&
+        !(
+          PAGE_STATED_NAME_SOURCES.has(String(provenance.sourceName ?? '')) &&
+          siteSharedPageNames.has(comparablePageStatedName(servedValue))
+        ) &&
         !isRefusedProfileLinkedHomeName(servedValue, provenance.sourceName) &&
         !(
           (withdrawnRetype || (personRow && !isLabShapedResearchHome(servedValue))) &&
@@ -8514,6 +8521,7 @@ function enforceResearchEntityNameAuthority(input: {
         ({ materialized, candidateSourceUrl }) =>
           textValue(materialized) &&
           textValue(materialized) !== textValue(servedValue) &&
+          !siteSharedPageNames.has(comparablePageStatedName(materialized)) &&
           !namesNothingUsable(materialized, candidateSourceUrl),
       );
 

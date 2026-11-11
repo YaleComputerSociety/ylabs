@@ -180,10 +180,14 @@ export async function withoutSiteSharedPageNames<T extends PageStatedNameObserva
       (sitePage(observation.sourceUrl) as SitePage).segments.length > 0,
   );
   if (candidates.length === 0) return unchanged;
-  const values = [...new Set(candidates.map((candidate) => textValue(candidate.value)))];
+  const values = [
+    ...new Set(
+      candidates.flatMap((candidate) => [String(candidate.value), textValue(candidate.value)]),
+    ),
+  ];
   const stated = (await Observation.find({
     entityType: 'researchEntity',
-    field: 'name',
+    field: { $in: [...PAGE_STATED_NAME_FIELDS] },
     value: { $in: values },
     superseded: { $ne: true },
     sourceName: { $in: [...PAGE_STATED_NAME_SOURCES] },
