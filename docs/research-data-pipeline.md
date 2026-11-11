@@ -1145,6 +1145,8 @@ The lane's own older citations stop keeping a withdrawn link standing for the sa
 Another lane's assertion of the link resolves normally, and the stored value is cleared only when no other lane asserts or cites it after the withdrawal and the field carries no lock.
 The same pass declines to promote that link back from a citation, because a clear that the citation promotion refills on the same pass does not hold.
 Nothing is written to the observation log and the refusal is never projected onto the row, so a second pass over an unchanged corpus plans nothing.
+The same pass also withdraws, from every lane, a `websiteUrl` or `website` whose last path segment is a bare plural lab or facility word (`/labs`, `/laboratories`, `/facilities`, `/cores`, `isLabDirectoryListingUrl`, #4916), because that page lists several labs and is no one lab's or person's website, and it feeds the same lane-withdrawn clear even while `sourceUrls` still cites the page.
+A single lab page under a listing (`/labs/<name>`) is kept, and the roster lane refuses a listing link at read.
 
 ### A patient-care page is never a research website (#5364)
 
@@ -2419,6 +2421,7 @@ Description extraction should follow newly discovered official research-home web
 A shared host gives every unit's page the parent's site name, which named eight council rows on `macmillan.yale.edu` after their parent center while each council's own title stated its own name.
 `lab-microsite-description-llm` therefore reads `og:site_name` as a heading only on the site root, and the held `lab-site-research-read` lane needs the same rule in its name candidates when it re-lands.
 Because a refusal retracts nothing (#5226), the materializer also withdraws, on every resolve, a page-stated `name` or `displayName` that the same site states for another live row on a sibling sub-path (`siteSharedPageName.ts`), and re-resolves or clears a stored value carrying it, with no lock and no field write.
+The same screen withdraws a page-stated name made only of generic section words ("Laboratories & Equipment", "Our Labs", `isGenericPageHeadingName`, #4916) wherever it stands, so the row falls back to its own lane's name.
 A name its own page path corroborates, such as two eponymous labs at `/lab/<surname>/` and `/lab/<first>_<surname>/`, is kept, and so is a root page beside its own `index.html`, because those are one page rather than siblings.
 
 Card-copy derivation may treat later official-profile project prose as usable research evidence when the sentence itself is explicit, such as `research aimed at`, `presently working on`, or `Co-Principal Investigator on a grant`. It may also summarize narrow official lab homepage phrasing such as `lab research focus extends through diverse areas...`, `our research program uses...`, `our lab is focused on...`, `mission is to enhance...`, `working group aims to...`, or `seek to decrease...` when the source text names a concrete research method/domain. Keep these patterns narrow: the biography or appointment lead is still ignored, and the derived card should summarize the later research/project sentence rather than copying title, retirement, degree, directory chronology, book pages, teaching-only profiles, or page chrome.

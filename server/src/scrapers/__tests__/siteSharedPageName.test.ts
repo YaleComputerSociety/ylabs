@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isGenericPageHeadingName,
   areSiblingPagesOfOneSite,
   siteSharedPageNames,
   sitePage,
@@ -153,5 +154,18 @@ describe('withoutNames', () => {
       ['name', 'centers-institutes-index'],
       ['websiteUrl', 'lab-site-research-read'],
     ]);
+  });
+});
+
+describe('isGenericPageHeadingName (#4916)', () => {
+  it.each([
+    ['Laboratories & Equipment', true],
+    ['Our Labs', true],
+    ['Research', true],
+    ['Fixture Lab', false],
+    ['Laboratory for Fixture Studies', false],
+    ['', false],
+  ])('%j -> %s', (name, expected) => {
+    expect(isGenericPageHeadingName(name)).toBe(expected);
   });
 });

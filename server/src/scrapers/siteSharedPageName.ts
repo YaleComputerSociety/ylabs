@@ -23,6 +23,48 @@ export const PAGE_STATED_NAME_SOURCES: ReadonlySet<string> = new Set([
 
 const PAGE_STATED_NAME_FIELDS: ReadonlySet<string> = new Set(['name', 'displayName']);
 
+const GENERIC_PAGE_HEADING_WORDS: ReadonlySet<string> = new Set([
+  'about',
+  'and',
+  'contact',
+  'core',
+  'cores',
+  'equipment',
+  'facilities',
+  'facility',
+  'group',
+  'home',
+  'instrumentation',
+  'lab',
+  'laboratories',
+  'laboratory',
+  'labs',
+  'members',
+  'news',
+  'our',
+  'overview',
+  'people',
+  'projects',
+  'publications',
+  'research',
+  'resources',
+  'services',
+  'shared',
+  'team',
+  'us',
+  'welcome',
+]);
+
+/**
+ * A heading made only of section words ("Laboratories & Equipment", "Our Labs") names a
+ * page of a site, never the research a row is, so a page-stated name of that shape is
+ * withdrawn wherever it stands (#4916).
+ */
+export function isGenericPageHeadingName(value: unknown): boolean {
+  const words = comparablePageStatedName(value).split(' ').filter(Boolean);
+  return words.length > 0 && words.every((word) => GENERIC_PAGE_HEADING_WORDS.has(word));
+}
+
 const INDEX_DOCUMENT_SEGMENT_RE = /^(?:index|default|home)\.(?:html?|aspx?|php|shtml)$/i;
 
 export interface PageStatedNameObservation {
@@ -227,8 +269,19 @@ export async function withoutSiteSharedPageNames<T extends PageStatedNameObserva
   row: { _id?: unknown; slug?: unknown },
   readSource?: MaterializationReadSource,
 ): Promise<SiteSharedPageNameWithdrawal<T>> {
-  const unchanged = { observations, withdrawnNames: new Set<string>() };
-  const candidates = observations.filter(
+  const genericHeadings = new Set(
+    observations
+      .filter(
+        (observation) =>
+          isPageStatedNameObservation(observation) && isGenericPageHeadingName(observation.value),
+      )
+      .map((observation) => comparablePageStatedName(observation.value)),
+  );
+  const unchanged = {
+    observations: withoutNames(observations, genericHeadings),
+    withdrawnNames: genericHeadings,
+  };
+  const candidates = unchanged.observations.filter(
     (observation) =>
       isPageStatedNameObservation(observation) &&
       corroboratedLabNameEponyms(observation.value, observation.sourceUrl).length === 0 &&
@@ -242,6 +295,9 @@ export async function withoutSiteSharedPageNames<T extends PageStatedNameObserva
   const livePeers = routed?.hit
     ? (routed.value as PageStatedNameObservation[])
     : await liveCachedPeersOf(names, row);
-  const withdrawnNames = siteSharedPageNames(candidates, livePeers);
+  const withdrawnNames = new Set([
+    ...genericHeadings,
+    ...siteSharedPageNames(candidates, livePeers),
+  ]);
   return { observations: withoutNames(observations, withdrawnNames), withdrawnNames };
 }

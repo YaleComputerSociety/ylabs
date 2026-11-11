@@ -129,6 +129,7 @@ import { evidenceAssertsALab } from '../utils/labClaimEvidence';
 import { labNameStatedForPerson, statedLabNameClaimsAnotherPerson } from '../utils/statedLabName';
 import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
 import { hostnameIsWithin } from '../../utils/yaleHost';
+import { isLabDirectoryListingUrl } from '../laneRefusedWebsiteUrl';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
@@ -3549,7 +3550,12 @@ export function profileEnrichmentFromHtml(
       labUrlCandidateRefused = true;
       return;
     }
-    if (isPostingPageUrl(absolute) || isCoursePageUrl(absolute) || isPatientCarePageUrl(absolute)) {
+    if (
+      isPostingPageUrl(absolute) ||
+      isCoursePageUrl(absolute) ||
+      isPatientCarePageUrl(absolute) ||
+      isLabDirectoryListingUrl(absolute)
+    ) {
       labUrlCandidateRefused = true;
       return;
     }

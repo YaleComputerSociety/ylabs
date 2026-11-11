@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   REFUSED_WEBSITE_URL_FIELD,
   planLaneWithdrawnWebsiteUrlClear,
+  isLabDirectoryListingUrl as isListing,
   withoutLaneRefusedWebsiteUrls,
 } from '../laneRefusedWebsiteUrl';
 
@@ -156,5 +157,42 @@ describe('planLaneWithdrawnWebsiteUrlClear (#3926)', () => {
     expect(plan({ lockedFields: ['websiteUrl'] })).toBe(false);
     expect(plan({ staged: { websiteUrl: 'https://another.example.org/' } })).toBe(false);
     expect(plan({ withdrawnValues: [] })).toBe(false);
+  });
+});
+
+describe('isLabDirectoryListingUrl (#4916)', () => {
+  it.each([
+    ['https://lab-sciences.example.edu/labs', true],
+    ['https://lab-sciences.example.edu/research/laboratories/', true],
+    ['https://lab-sciences.example.edu/facilities', true],
+    ['https://lab-sciences.example.edu/labs/fixture', false],
+    ['https://fixture-lab.example.edu/', false],
+    ['https://lab-sciences.example.edu/labs?page=2', false],
+    ['not a url', false],
+  ])('%s -> %s', (url, expected) => {
+    expect(isListing(url)).toBe(expected);
+  });
+
+  it('withdraws a listing website even while sourceUrls still cites it', () => {
+    const listing = 'https://lab-sciences.example.edu/labs';
+    const result = withoutLaneRefusedWebsiteUrls(
+      [
+        {
+          sourceName: 'dept-faculty-roster',
+          field: 'websiteUrl',
+          value: listing,
+          entityKey: 'row',
+        },
+        {
+          sourceName: 'dept-faculty-roster',
+          field: 'sourceUrls',
+          value: ['https://earth.example.edu/faculty', listing],
+          entityKey: 'row',
+        },
+      ],
+      new Set(['row']),
+    );
+    expect(result.observations.map((observation) => observation.field)).toEqual(['sourceUrls']);
+    expect(result.withdrawnValues).toEqual([listing]);
   });
 });
