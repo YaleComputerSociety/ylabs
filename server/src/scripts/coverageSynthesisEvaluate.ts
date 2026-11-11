@@ -72,6 +72,7 @@ export async function runWriterEvaluation(input: {
   missingSlugs?: readonly string[];
   store: WrittenDescriptionDerivationStore;
   drafting: WriterDrafting | null;
+  cacheOnly?: boolean;
   evidenceNow: Date;
   inputs?: WriterInputs;
   concurrency?: number;
@@ -111,6 +112,7 @@ export async function runWriterEvaluation(input: {
         store: input.store,
         drafting: input.drafting,
         inputs: input.inputs,
+        cacheOnly: input.cacheOnly,
       });
       entry.step = resolution.step;
       entry.inputHash = resolution.inputHash;

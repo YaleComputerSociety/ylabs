@@ -249,6 +249,7 @@ export type WrittenDescriptionStep =
   | 'carried-over-prompt-change'
   | 'synthesized'
   | 'refused'
+  | 'cache-miss-no-call'
   | 'planned';
 
 export interface WrittenDescriptionResolution {
@@ -291,6 +292,8 @@ export async function resolveWrittenDescription(
     store: WrittenDescriptionDerivationStore;
     drafting: WriterDrafting | null;
     inputs?: WriterInputs;
+    /** `--cache-only`: a row the cache cannot settle is recorded, never drafted. */
+    cacheOnly?: boolean;
   },
 ): Promise<WrittenDescriptionResolution> {
   const inputs = input.inputs ?? CURRENT_WRITER_INPUTS;
@@ -355,10 +358,10 @@ export async function resolveWrittenDescription(
     }
   }
 
-  const drafting = input.drafting;
+  const drafting = input.cacheOnly ? null : input.drafting;
   if (!drafting) {
     return {
-      step: 'planned',
+      step: input.cacheOnly ? 'cache-miss-no-call' : 'planned',
       inputHash,
       decision: null,
       modelCalled: false,

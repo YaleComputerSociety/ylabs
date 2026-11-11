@@ -42,6 +42,7 @@ export interface CoverageSynthesisArgs {
   validateOnly: boolean;
   printWriterPrompt: boolean;
   synthesizeCards: boolean;
+  cacheOnly: boolean;
   slugsFile?: string;
   captureEvidence?: string;
   evidenceFile?: string;
@@ -91,6 +92,7 @@ export function parseCoverageSynthesisArgs(argv: string[]): CoverageSynthesisArg
     validateOnly: false,
     printWriterPrompt: false,
     synthesizeCards: false,
+    cacheOnly: false,
   };
   const setValue = (flag: ValueFlag, value: string) => {
     const key = VALUE_FLAGS[flag];
@@ -124,6 +126,7 @@ export function parseCoverageSynthesisArgs(argv: string[]): CoverageSynthesisArg
     else if (token === '--validate-only') args.validateOnly = true;
     else if (token === '--print-writer-prompt') args.printWriterPrompt = true;
     else if (token === '--synthesize-cards') args.synthesizeCards = true;
+    else if (token === '--cache-only') args.cacheOnly = true;
   }
   if (!Number.isFinite(args.limit) || args.limit <= 0)
     args.limit = DEFAULT_COVERAGE_SYNTHESIS_LIMIT;

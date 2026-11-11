@@ -453,22 +453,26 @@ async function runReadOnlyMode(
     return;
   }
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey)
+  if (!apiKey && !args.cacheOnly)
     throw new Error('research-entity:coverage-synthesis --evaluate requires OPENAI_API_KEY');
   const { rows, missingSlugs, evidenceNow } = await rowEvidenceFor(args, namedSlugs(args));
   const report = await runWriterEvaluation({
     rows,
     missingSlugs,
     store,
-    drafting: writerModelThroughCache({
-      callLLM: defaultCoverageSynthesisLLM(
-        apiKey,
-        COVERAGE_SYNTHESIS_MODEL,
-        undefined,
-        'coverage-synthesis-evaluate',
-      ),
-      store,
-    }),
+    cacheOnly: args.cacheOnly,
+    drafting:
+      args.cacheOnly || !apiKey
+        ? null
+        : writerModelThroughCache({
+            callLLM: defaultCoverageSynthesisLLM(
+              apiKey,
+              COVERAGE_SYNTHESIS_MODEL,
+              undefined,
+              'coverage-synthesis-evaluate',
+            ),
+            store,
+          }),
     evidenceNow,
     concurrency: args.concurrency,
     log: (message) => console.error(message),
@@ -511,7 +515,7 @@ async function main() {
 
   deferSearchIndexWritesWhenSkipping(args);
   const callLLM = writerModelClientFor({
-    apply: args.apply && !args.reinstateRetiredBodies,
+    apply: args.apply && !args.reinstateRetiredBodies && !args.cacheOnly,
     apiKey: process.env.OPENAI_API_KEY,
     create: defaultCoverageSynthesisLLM,
   });
@@ -649,6 +653,7 @@ async function main() {
           previousInputHash: storedHash,
           store,
           drafting,
+          cacheOnly: args.cacheOnly,
         });
         report.step = resolution.step;
         report.modelCalled = resolution.modelCalled;
@@ -760,6 +765,7 @@ async function main() {
     scanned: reports.length,
     llmCalls: reports.filter((entry) => entry.modelCalled).length,
     plannedLlmCalls: countBy('planned'),
+    cacheMissesNoCall: countBy('cache-miss-no-call'),
     cacheHits: countBy('cache-hit'),
     carriedOverUnchanged: countBy('carried-over-unchanged'),
     carriedOverPromptChange: countBy('carried-over-prompt-change'),

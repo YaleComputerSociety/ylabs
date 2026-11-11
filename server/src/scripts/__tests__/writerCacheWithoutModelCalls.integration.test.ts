@@ -6,7 +6,13 @@ import { Observation } from '../../models/observation';
 import { WrittenDescriptionDerivation } from '../../models/writtenDescriptionDerivation';
 import { runDerivationImport } from '../coverageSynthesisEvaluate';
 import { snippetsFromRowEvidence, type WriterRowEvidence } from '../coverageSynthesisEvidence';
-import { carriedOverWrites, liveWrittenBody, writerWritesFor } from '../coverageSynthesisCore';
+import {
+  carriedOverWrites,
+  liveWrittenBody,
+  parseCoverageSynthesisArgs,
+  writerModelClientFor,
+  writerWritesFor,
+} from '../coverageSynthesisCore';
 import {
   CURRENT_WRITER_INPUTS,
   mongoWrittenDescriptionDerivationStore,
@@ -44,7 +50,7 @@ const row: WriterRowEvidence = {
   mergedInObservations: [],
 };
 
-describe('a refused imported draft under the current prompt and model is final (#5537)', () => {
+describe('the writer cache settles imported drafts without a model call (#5537)', () => {
   let replSet: MongoMemoryReplSet;
 
   beforeAll(async () => {
@@ -81,6 +87,7 @@ describe('a refused imported draft under the current prompt and model is final (
   const resolve = (
     drafting: ReturnType<typeof writerModelThroughCache> | null,
     inputs = CURRENT_WRITER_INPUTS,
+    cacheOnly = false,
   ) =>
     resolveWrittenDescription({
       snippets: snippetsFromRowEvidence(row, EVIDENCE_AT),
@@ -90,6 +97,7 @@ describe('a refused imported draft under the current prompt and model is final (
       store: mongoWrittenDescriptionDerivationStore,
       drafting,
       inputs,
+      cacheOnly,
     });
 
   it('stores the empty draft, then applies it with no model call and no body written', async () => {
@@ -144,6 +152,92 @@ describe('a refused imported draft under the current prompt and model is final (
       laterPrompt,
     );
     expect(resolution.modelCalled).toBe(true);
+    expect(model).toHaveBeenCalledTimes(1);
+  });
+
+  const ACCEPTED =
+    'Studies how coral reefs recover after marine heatwaves and bleaching events, with field surveys of coral colonies and reef fish across the Caribbean.';
+  const importDraft = (fullDescription: string) =>
+    runDerivationImport({
+      rows: [row],
+      drafts: [
+        {
+          slug: row.slug,
+          writer: 'claude-agent:seed-fixture',
+          fullDescription,
+          usedSnippetIndexes: [0],
+        },
+      ],
+      store: mongoWrittenDescriptionDerivationStore,
+      evidenceNow: EVIDENCE_AT,
+      validateOnly: false,
+    });
+  const spyDrafting = () => {
+    const model = vi.fn(async () => ({ fullDescription: ACCEPTED, usedSnippetIndexes: [0] }));
+    return {
+      model,
+      drafting: writerModelThroughCache({
+        callLLM: model,
+        store: mongoWrittenDescriptionDerivationStore,
+      }),
+    };
+  };
+
+  it('builds no model client under --cache-only, with the key unset', () => {
+    const args = parseCoverageSynthesisArgs(['--cache-only', '--apply', '--all']);
+    expect(args.cacheOnly).toBe(true);
+    const create = vi.fn();
+    expect(
+      writerModelClientFor({
+        apply: args.apply && !args.reinstateRetiredBodies && !args.cacheOnly,
+        apiKey: undefined,
+        create,
+      }),
+    ).toBeNull();
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('writes a cached accepted draft under --cache-only', async () => {
+    const imported = await importDraft(ACCEPTED);
+    expect(imported.rows[0]).toMatchObject({ outcome: 'accepted', stored: true });
+    const { model, drafting } = spyDrafting();
+    const resolution = await resolve(drafting, CURRENT_WRITER_INPUTS, true);
+    expect(resolution.step).toBe('cache-hit');
+    expect(model).not.toHaveBeenCalled();
+    expect(writerWritesFor('synthesize', resolution.decision).writeBody).toBe(true);
+  });
+
+  it('records a cache miss with no call, no body and no retire under --cache-only', async () => {
+    const { model, drafting } = spyDrafting();
+    const resolution = await resolve(drafting, CURRENT_WRITER_INPUTS, true);
+    expect(resolution.step).toBe('cache-miss-no-call');
+    expect(resolution.decision).toBeNull();
+    expect(resolution.modelCalled).toBe(false);
+    expect(model).not.toHaveBeenCalled();
+    expect(await WrittenDescriptionDerivation.countDocuments({})).toBe(0);
+  });
+
+  it('records a prompt-change re-run as a cache miss under --cache-only', async () => {
+    await importEmptyDraft();
+    const laterPrompt = { ...CURRENT_WRITER_INPUTS, promptHash: 'a-later-prompt' };
+    const model = vi.fn(async () => ({ fullDescription: ACCEPTED, usedSnippetIndexes: [0] }));
+    const resolution = await resolve(
+      writerModelThroughCache({
+        callLLM: model,
+        store: mongoWrittenDescriptionDerivationStore,
+        inputs: laterPrompt,
+      }),
+      laterPrompt,
+      true,
+    );
+    expect(resolution.step).toBe('cache-miss-no-call');
+    expect(model).not.toHaveBeenCalled();
+  });
+
+  it('still drafts a cache miss without --cache-only', async () => {
+    const { model, drafting } = spyDrafting();
+    const resolution = await resolve(drafting);
+    expect(resolution.step).toBe('synthesized');
     expect(model).toHaveBeenCalledTimes(1);
   });
 });
