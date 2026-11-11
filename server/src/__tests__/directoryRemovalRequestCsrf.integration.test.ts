@@ -32,14 +32,14 @@ const signCookie = (name: string, value: string): string =>
     .digest('base64')
     .replace(/\/|\+|=/g, (character) => ({ '/': '_', '+': '-', '=': '' })[character] ?? '');
 
-const sessionCookieFor = (netid: string, sessionIdCharacter: string): string => {
+const sessionCookieFor = (netid: string, sessionVariant: string): string => {
   const value = Buffer.from(
     JSON.stringify({
       passport: {
         user: {
           netId: netid,
           userType: 'unknown',
-          sessionId: sessionIdCharacter.repeat(32),
+          sessionId: sessionVariant.repeat(32),
           issuedAt: Date.now(),
           sessionVersion: 0,
         },
