@@ -62,9 +62,16 @@ describe('profile website harvest', () => {
     expect(result.labUrl).toBeUndefined();
   });
 
-  it('keeps a bare-address link whose path says homepage', () => {
+  it('keeps a link whose text is a bare address and whose path says homepage', () => {
     const result = enrich(
-      `<p><a href="https://fixture.example.github.io/homepage/">https://fixture.example.github.io/homepage/</a></p>`,
+      `<p><a href="https://fixture.example.github.io/homepage/">fixture.example.github.io</a></p>`,
+    );
+    expect(result.labUrl).toBe('https://fixture.example.github.io/homepage/');
+  });
+
+  it('keeps an image-only link whose path says homepage', () => {
+    const result = enrich(
+      `<p><a href="https://fixture.example.github.io/homepage/"><img src="/fixture.png" alt=""></a></p>`,
     );
     expect(result.labUrl).toBe('https://fixture.example.github.io/homepage/');
   });
