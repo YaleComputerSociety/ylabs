@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  MAX_STORED_PERSON_TITLE_LENGTH,
+  servablePersonTitle,
   hasPhoneContactFragment,
   hasRawEmailAddress,
   hasStreetAddressFragment,
@@ -349,4 +351,102 @@ describe('a title cut off at a connective (#5109)', () => {
     expect(isTruncatedPersonTitle(title)).toBe(false);
     expect(sanitizePersonTitle(title)).toBe(title);
   });
+});
+
+describe('servablePersonTitle (#5594)', () => {
+  const bio =
+    'Avery Synthetic is associate professor of political science. Avery studies the history of fixture institutions and how they change over time, drawing on archival work.';
+
+  it('keeps an ordinary title unchanged', () => {
+    expect(servablePersonTitle('Associate Professor of Political Science')).toBe(
+      'Associate Professor of Political Science',
+    );
+  });
+
+  it("refuses a title with the person's name and biography glued on", () => {
+    expect(
+      servablePersonTitle(`Associate Professor of Political Science Avery Synthetic ${bio}`),
+    ).toBeUndefined();
+  });
+
+  it('refuses a site menu read as a title', () => {
+    expect(
+      servablePersonTitle(
+        'HomeAboutFixture CouncilFixture SocietyResearchResearch HomeCosmologyExoplanetsPeopleFacultyPostdocsGraduate StudentsUndergraduatesEventsSeminarsColloquiaNewsContact UsGiving',
+      ),
+    ).toBeUndefined();
+  });
+
+  it('refuses a title with degree lines run on', () => {
+    expect(
+      servablePersonTitle(
+        'Professor of English Ph.D., Fixture University, 1999M.A., Fixture College, 1995B.A., Fixture College, summa cum laude, 1993 Fields of interest include fixture poetry',
+      ),
+    ).toBeUndefined();
+  });
+
+  it('refuses a title with contact details run on', () => {
+    expect(
+      servablePersonTitle(
+        'Professor of History.avery.synthetic@yale.eduOffice: HQ 101Phone: 203-555-0100',
+      ),
+    ).toBeUndefined();
+  });
+
+  it('keeps the leading whole appointments of a long semicolon list within the limit', () => {
+    const appointments = [
+      'Professor of Fixture Studies and of Synthetic Methods',
+      'Director of the Fixture Center for Testing',
+      'Chair of the Committee on Synthetic Records',
+      'Faculty Fellow of Fixture College',
+      'Affiliated Faculty of the Program in Placeholder Studies',
+    ];
+    const kept = servablePersonTitle(appointments.join('; '));
+    expect(kept).toBe(appointments.slice(0, 4).join('; '));
+    expect(kept!.length).toBeLessThanOrEqual(MAX_STORED_PERSON_TITLE_LENGTH);
+  });
+
+  it('never cuts inside an appointment', () => {
+    const first = `Professor of ${'Fixture '.repeat(25)}Studies`;
+    expect(first.length).toBeGreaterThan(MAX_STORED_PERSON_TITLE_LENGTH);
+    expect(servablePersonTitle(`${first}; Director of the Fixture Center`)).toBeUndefined();
+  });
+
+  it('stops at the first semicolon part that is not a title', () => {
+    expect(
+      servablePersonTitle(
+        `Professor of Fixture Studies; Director of the Fixture Center; ${bio} ${bio}`,
+      ),
+    ).toBe('Professor of Fixture Studies; Director of the Fixture Center');
+  });
+
+  it('keeps a real comma-joined appointment title between the card and stored limits', () => {
+    const title =
+      'Associate Professor of Fixture Studies and of Synthetic Methods, Director of the Fixture Center for Testing, and Chair of Placeholder Records';
+    expect(title.length).toBeGreaterThan(140);
+    expect(title.length).toBeLessThanOrEqual(MAX_STORED_PERSON_TITLE_LENGTH);
+    expect(servablePersonTitle(title)).toBe(title);
+  });
+
+  it('refuses glued biography text by its defect, not only by its length', () => {
+    const glued = `Associate Professor of Political Science Avery Synthetic ${bio} ${bio}`;
+    expect(glued.length).toBeGreaterThan(300);
+    expect(servablePersonTitle(glued)).toBeUndefined();
+    const underTheLimit = glued.slice(0, MAX_STORED_PERSON_TITLE_LENGTH - 10);
+    expect(servablePersonTitle(underTheLimit)).toBeUndefined();
+  });
+
+  it.each(['Research / Faculty', 'Related Research', 'Research', 'Profile', 'Overview', 'Home'])(
+    'refuses profile-page furniture %s, which a first-hand profile read would otherwise carry',
+    (value) => {
+      expect(servablePersonTitle(value)).toBeUndefined();
+    },
+  );
+
+  it.each(['Voluntary Faculty', 'Adjunct Faculty', 'Research Assistant 1', 'Critic', 'Lector'])(
+    'keeps the real title %s',
+    (value) => {
+      expect(servablePersonTitle(value)).toBe(value);
+    },
+  );
 });
