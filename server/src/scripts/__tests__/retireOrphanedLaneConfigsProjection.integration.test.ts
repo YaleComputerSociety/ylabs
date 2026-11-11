@@ -108,26 +108,36 @@ describe('observations:retire-orphaned-lane-configs served projection (#5807)', 
     await replSet?.stop();
   });
 
-  it('reports the served diff, holds sole evidence, and writes nothing', async () => {
+  it('holds a value the engine would no longer produce, reports the served diff, and writes nothing', async () => {
     const before = await ResearchEntity.findOne({ slug: ROW }).lean();
     expect(before?.websiteUrl).toBe(ORPHAN_SITE);
-    const { report, rows, heldSoleEvidence } = await runOrphanedLaneConfigRetirement({
-      apply: false,
-      configs: [{ sourceName: ROSTER, configId: 'gone-lane' }],
-      refPresence: [],
-      scannedRepositories: [],
-      lanes: LANES,
-      readServedEntity: async () => ({ websiteUrl: ORPHAN_SITE }),
-    });
+    const dryRun = (retireSoleEvidence: boolean) =>
+      runOrphanedLaneConfigRetirement({
+        apply: false,
+        configs: [{ sourceName: ROSTER, configId: 'gone-lane' }],
+        refPresence: [],
+        scannedRepositories: [],
+        lanes: LANES,
+        readServedEntity: async () => ({ websiteUrl: ORPHAN_SITE }),
+        retireSoleEvidence,
+      });
+    const { report, heldSoleEvidence } = await dryRun(false);
     expect(report.affectedServedResearchRows).toBe(2);
     expect(report.servedRowsLeftWithoutOwnEvidence).toBe(0);
     expect(report.servedFieldsBecomingLessComplete).toEqual({});
     expect(heldSoleEvidence.map((group) => `${group.row}|${group.field}`).sort()).toEqual([
+      `researchEntity:${ROW}|websiteUrl`,
       `researchEntity:${ORPHAN_ONLY_ROW}|entityType`,
       `researchEntity:${ORPHAN_ONLY_ROW}|name`,
       `researchEntity:${ORPHAN_ONLY_ROW}|websiteUrl`,
     ]);
-    const byKey = new Map(rows.map((row) => [row.entityKey, row]));
+    expect(heldSoleEvidence.every((group) => group.basis === 'engine-would-not-produce')).toBe(
+      true,
+    );
+
+    const optedOut = await dryRun(true);
+    expect(optedOut.heldSoleEvidence).toEqual([]);
+    const byKey = new Map(optedOut.rows.map((row) => [row.entityKey, row]));
     const website = byKey.get(ROW)?.changes.find((change) => change.field === 'websiteUrl');
     expect(website).toMatchObject({
       servedBefore: ORPHAN_SITE,
@@ -137,7 +147,7 @@ describe('observations:retire-orphaned-lane-configs served projection (#5807)', 
       becomesEmpty: false,
       becomesLessComplete: false,
     });
-    expect(byKey.get(ORPHAN_ONLY_ROW)).toMatchObject({ liveObservationsAfter: 3, changes: [] });
+    expect(byKey.get(ORPHAN_ONLY_ROW)).toMatchObject({ liveObservationsAfter: 0 });
     expect(await Observation.countDocuments({ superseded: true })).toBe(0);
     expect((await ResearchEntity.findOne({ slug: ROW }).lean())?.websiteUrl).toBe(ORPHAN_SITE);
     expect(await Observation.countDocuments({ superseded: { $ne: true } })).toBe(9);

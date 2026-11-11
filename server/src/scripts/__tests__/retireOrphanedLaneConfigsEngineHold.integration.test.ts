@@ -55,6 +55,10 @@ const liveIds = async () =>
 describe('observations:retire-orphaned-lane-configs engine-projection hold (#5807)', () => {
   let replSet: MongoMemoryReplSet;
   let orphanDepartmentsId: string;
+  let liveRunId: mongoose.Types.ObjectId;
+  let liveSourceId: mongoose.Types.ObjectId;
+  let rosterSourceId: mongoose.Types.ObjectId;
+  let invalidatedRunId: mongoose.Types.ObjectId;
 
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
@@ -128,6 +132,10 @@ describe('observations:retire-orphaned-lane-configs engine-projection hold (#580
     await observe('entityType', 'LAB', liveRun);
     await observe('departments', ['Physics'], liveRun);
     await observe('departments', DEPARTMENTS, invalidatedRun);
+    liveRunId = liveRun._id as mongoose.Types.ObjectId;
+    liveSourceId = other._id as mongoose.Types.ObjectId;
+    rosterSourceId = roster._id as mongoose.Types.ObjectId;
+    invalidatedRunId = invalidatedRun._id as mongoose.Types.ObjectId;
     await materializeEntity('researchEntity', { entityKey: ROW }, {});
     await ResearchEntity.updateOne(
       { slug: ROW },
@@ -135,27 +143,128 @@ describe('observations:retire-orphaned-lane-configs engine-projection hold (#580
     );
   });
 
-  it('holds an orphan whose values another observation states when the engine would still drop one', async () => {
-    expect((await ResearchEntity.findOne({ slug: ROW }).lean())?.departments).toEqual(
-      expect.arrayContaining(DEPARTMENTS),
-    );
-    const before = await liveIds();
-    const { report, heldSoleEvidence } = await runOrphanedLaneConfigRetirement({
+  const runRetirement = (projectResearchEntity?: typeof projectRow) =>
+    runOrphanedLaneConfigRetirement({
       apply: true,
       configs: GONE,
       refPresence: [],
       scannedRepositories: [],
       lanes: LANES,
       readServedEntity: async () => null,
+      ...(projectResearchEntity ? { projectResearchEntity } : {}),
     });
-    const departments = heldSoleEvidence.find(
+  const heldDepartments = (
+    heldSoleEvidence: Awaited<ReturnType<typeof runRetirement>>['heldSoleEvidence'],
+  ) =>
+    heldSoleEvidence.find(
       (group) => group.row === `researchEntity:${ROW}` && group.field === 'departments',
     );
-    expect(departments).toMatchObject({
+
+  it('holds an orphan the engine would not produce once the stored value it backs is cleared', async () => {
+    await Observation.deleteMany({ field: 'departments', scrapeRunId: liveRunId });
+    const otherDepartmentsEvidence = await Observation.find({
+      field: 'departments',
+      _id: { $ne: orphanDepartmentsId },
+    })
+      .select('scrapeRunId')
+      .lean();
+    expect(otherDepartmentsEvidence.map((row) => String(row.scrapeRunId))).toEqual([
+      String(invalidatedRunId),
+    ]);
+    const stored = await ResearchEntity.findOne({ slug: ROW }).lean();
+    expect(stored?.departments).toEqual(expect.arrayContaining(DEPARTMENTS));
+    expect(String(stored?.fieldProvenance?.departments?.observationId)).toBe(orphanDepartmentsId);
+
+    const servedProjection = await projectRow('researchEntity', ROW, [
+      new mongoose.Types.ObjectId(orphanDepartmentsId),
+    ]);
+    expect(servedProjection.set.departments).toBeUndefined();
+
+    const { report, heldSoleEvidence } = await runRetirement();
+    expect(report.servedFieldsBecomingLessComplete).toEqual({});
+    expect(heldDepartments(heldSoleEvidence)).toMatchObject({
+      basis: 'engine-would-not-produce',
+      observationIds: [orphanDepartmentsId],
+    });
+    expect(await Observation.exists({ _id: orphanDepartmentsId, superseded: true })).toBeNull();
+  });
+
+  it('retires an orphan whose departments a merged-in row still gives the engine', async () => {
+    await Observation.deleteMany({ field: 'departments', scrapeRunId: liveRunId });
+    const survivor = await ResearchEntity.findOne({ slug: ROW }).select('_id').lean();
+    const shellSlug = 'dept-chem-cy-dorn';
+    await ResearchEntity.collection.insertOne({
+      _id: new mongoose.Types.ObjectId(),
+      slug: shellSlug,
+      name: 'Dorn Lab',
+      archived: true,
+      archivedReason: 'materialize:fold-dept-roster-shell',
+      canonicalGroupId: survivor!._id,
+    });
+    const rosterRun = await ScrapeRun.create({
+      sourceId: rosterSourceId,
+      sourceName: ROSTER,
+      startedAt: new Date('2026-10-23T00:00:00Z'),
+      status: 'success',
+      codeSha: 'e'.repeat(40),
+      options: { only: ['chem'] },
+    });
+    await Observation.create({
+      entityType: 'researchEntity',
+      entityKey: shellSlug,
+      field: 'departments',
+      value: DEPARTMENTS,
+      sourceId: rosterSourceId,
+      sourceName: ROSTER,
+      scrapeRunId: rosterRun._id,
+      sourceUrl: 'https://dept.example.edu/people/dorn',
+      confidence: 0.7,
+      observedAt: new Date(),
+    });
+    const { heldSoleEvidence } = await runRetirement();
+    expect(heldDepartments(heldSoleEvidence)).toBeUndefined();
+    expect(await Observation.exists({ _id: orphanDepartmentsId, superseded: true })).not.toBeNull();
+  });
+
+  it('holds an orphan by the served projection when it still loses an item the engine produces', async () => {
+    await Observation.create({
+      entityType: 'researchEntity',
+      entityKey: ROW,
+      field: 'departments',
+      value: DEPARTMENTS,
+      sourceId: liveSourceId,
+      sourceName: OTHER_LANE,
+      scrapeRunId: liveRunId,
+      sourceUrl: 'https://dept.example.edu/people',
+      confidence: 0.9,
+      observedAt: new Date('2026-10-01T00:00:00Z'),
+    });
+    const before = await liveIds();
+    const servedProjectionLosesAnItem: typeof projectRow = async (
+      entityType,
+      entityKey,
+      excluded,
+      identities,
+      onlyFields,
+      cleared = [],
+    ) => {
+      const plan = await projectRow(
+        entityType,
+        entityKey,
+        excluded,
+        identities,
+        onlyFields,
+        cleared,
+      );
+      return cleared.length === 0 && excluded.some((id) => String(id) === orphanDepartmentsId)
+        ? { ...plan, set: { ...plan.set, departments: ['Physics'] } }
+        : plan;
+    };
+    const { report, heldSoleEvidence } = await runRetirement(servedProjectionLosesAnItem);
+    expect(heldDepartments(heldSoleEvidence)).toMatchObject({
       basis: 'engine-projection',
       observationIds: [orphanDepartmentsId],
     });
-    expect(report.servedFieldsBecomingLessComplete).toEqual({});
     expect(report.rowsStillLessComplete).toBe(0);
     expect(await Observation.exists({ _id: orphanDepartmentsId, superseded: true })).toBeNull();
     expect(before.length - (await liveIds()).length).toBe(report.retiredObservations);
@@ -163,23 +272,30 @@ describe('observations:retire-orphaned-lane-configs engine-projection hold (#580
 
   it('refuses an apply while a row would still serve a less complete field', async () => {
     const before = await liveIds();
-    let calls = 0;
-    const laterPassesLoseADepartment: typeof projectRow = async (...args) => {
-      const plan = await projectRow(...args);
-      calls += 1;
-      return calls === 1 ? plan : { ...plan, set: { ...plan.set, departments: ['Physics'] } };
+    let servedCalls = 0;
+    const laterPassesLoseADepartment: typeof projectRow = async (
+      entityType,
+      entityKey,
+      excluded,
+      identities,
+      onlyFields,
+      cleared = [],
+    ) => {
+      const plan = await projectRow(
+        entityType,
+        entityKey,
+        excluded,
+        identities,
+        onlyFields,
+        cleared,
+      );
+      if (cleared.length > 0) return plan;
+      servedCalls += 1;
+      return servedCalls === 1 ? plan : { ...plan, set: { ...plan.set, departments: ['Physics'] } };
     };
-    await expect(
-      runOrphanedLaneConfigRetirement({
-        apply: true,
-        configs: GONE,
-        refPresence: [],
-        scannedRepositories: [],
-        lanes: LANES,
-        readServedEntity: async () => null,
-        projectResearchEntity: laterPassesLoseADepartment,
-      }),
-    ).rejects.toThrow(/would still serve a less complete field/);
+    await expect(runRetirement(laterPassesLoseADepartment)).rejects.toThrow(
+      /would still serve a less complete field/,
+    );
     expect(await liveIds()).toEqual(before);
   });
 });

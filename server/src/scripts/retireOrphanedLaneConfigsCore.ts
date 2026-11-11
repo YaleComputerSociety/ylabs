@@ -425,24 +425,13 @@ export function fieldsCreditedToRetired(
   return credited;
 }
 
-/**
- * A list field resolves as the union of its observations, so an orphaned item no other
- * observation states would drop out even when the field has other evidence.
- */
-export function evidenceValueKeys(value: unknown): string[] {
-  const items = Array.isArray(value) ? value : [value];
-  return items
-    .filter((item) => item !== undefined && item !== null && item !== '')
-    .map((item) => (typeof item === 'string' ? item.trim().toLowerCase() : stableJson(item)));
-}
-
 export interface HeldSoleEvidence {
   row: string;
   field: string;
   configIds: string[];
   values: unknown[];
   observationIds: string[];
-  basis: 'no-other-evidence' | 'engine-projection';
+  basis: 'engine-would-not-produce' | 'engine-projection';
 }
 
 export interface SoleEvidenceSplit {
@@ -451,16 +440,36 @@ export interface SoleEvidenceSplit {
   withoutRow: number;
 }
 
+/** What the engine's projection of one row plans per field, with and without the orphans. */
+export interface EngineFieldOutputs {
+  withOrphans: Record<string, unknown>;
+  withoutOrphans: Record<string, unknown>;
+}
+
+const engineItems = (value: unknown): string[] =>
+  isEmptyValue(value) ? [] : (Array.isArray(value) ? value : [value]).map(stableJson);
+
 /**
- * Keeps every attributed observation that is the only live evidence for its field on the row
- * it backs, unless the operator opts in. Retiring it would leave the field with nothing behind
- * it, and a hand check found such values correct, so a missing landed lane is not enough to
- * retract them; a later run retires them once a live lane backs the field.
+ * Whether the engine, projecting the row with the field's stored value cleared, produces every
+ * item without the orphans that it produces with them. An empty output with the orphans means
+ * the projection cannot say what they back, so it counts as not produced.
  */
-export function splitSoleEvidence(input: {
+export function engineStillProduces(withOrphans: unknown, withoutOrphans: unknown): boolean {
+  const produced = engineItems(withOrphans);
+  if (produced.length === 0) return false;
+  const kept = new Set(engineItems(withoutOrphans));
+  return produced.every((item) => kept.has(item));
+}
+
+/**
+ * Retires an attributed observation only when the engine still produces its field's value
+ * from the row's other evidence, unless the operator opts out. A row the engine was not asked
+ * to project holds its observations, so a missing projection never reads as backing.
+ */
+export function splitByEngineProduction(input: {
   attributed: readonly AttributedObservation[];
   rowOf: (observation: StoredLaneObservation) => string | undefined;
-  otherEvidenceByRow: ReadonlyMap<string, ReadonlyMap<string, ReadonlySet<string>>>;
+  outputsByRow: ReadonlyMap<string, EngineFieldOutputs>;
   retireSoleEvidence: boolean;
 }): SoleEvidenceSplit {
   const retire = new Set<string>();
@@ -473,23 +482,23 @@ export function splitSoleEvidence(input: {
       retire.add(entry.observation.id);
       continue;
     }
-    const otherValues = input.otherEvidenceByRow.get(row)?.get(entry.observation.field);
-    const backed =
-      otherValues !== undefined &&
-      (!Array.isArray(entry.observation.value) ||
-        evidenceValueKeys(entry.observation.value).every((key) => otherValues.has(key)));
-    if (backed || input.retireSoleEvidence) {
+    const outputs = input.outputsByRow.get(row);
+    const field = entry.observation.field;
+    if (
+      input.retireSoleEvidence ||
+      (outputs && engineStillProduces(outputs.withOrphans[field], outputs.withoutOrphans[field]))
+    ) {
       retire.add(entry.observation.id);
       continue;
     }
-    const key = `${row}\u0000${entry.observation.field}`;
+    const key = `${row}\u0000${field}`;
     const group = held.get(key) ?? {
       row,
-      field: entry.observation.field,
+      field,
       configIds: [],
       values: [],
       observationIds: [],
-      basis: 'no-other-evidence' as const,
+      basis: 'engine-would-not-produce' as const,
     };
     if (!group.configIds.includes(entry.configId)) group.configIds.push(entry.configId);
     group.values.push(entry.observation.value);

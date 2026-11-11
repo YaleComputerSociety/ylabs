@@ -8,7 +8,8 @@ import {
   planOrphanedLaneConfigRetirement,
   runOnlySelection,
   servedFieldChanges,
-  splitSoleEvidence,
+  engineStillProduces,
+  splitByEngineProduction,
   type OrphanLaneDefinition,
   type StoredLaneObservation,
   type StoredLaneRun,
@@ -322,7 +323,24 @@ describe('fieldsCreditedToRetired', () => {
   });
 });
 
-describe('splitSoleEvidence', () => {
+describe('engineStillProduces', () => {
+  it('needs every item the engine produces with the orphans, in any order', () => {
+    expect(
+      engineStillProduces(['Physics', 'Applied Physics'], ['Applied Physics', 'Physics']),
+    ).toBe(true);
+    expect(engineStillProduces(['Physics', 'Applied Physics'], ['Physics'])).toBe(false);
+    expect(engineStillProduces(['Physics'], ['Physics', 'Radiology'])).toBe(true);
+    expect(engineStillProduces('Lee Lab', 'Lee Lab')).toBe(true);
+    expect(engineStillProduces('Lee Lab', 'Lee Group')).toBe(false);
+  });
+
+  it('never reads an empty projection as backing', () => {
+    expect(engineStillProduces(undefined, undefined)).toBe(false);
+    expect(engineStillProduces([], ['Physics'])).toBe(false);
+  });
+});
+
+describe('splitByEngineProduction', () => {
   const attributed = [
     {
       observation: observation('s1', 'dept-gone-lane-pat-lee', {
@@ -342,43 +360,33 @@ describe('splitSoleEvidence', () => {
       configId: 'gone-lane',
       basis: 'key-namespace' as const,
     },
+    {
+      observation: observation('s4', 'dept-gone-lane-unprojected', { field: 'name', value: 'X' }),
+      configId: 'gone-lane',
+      basis: 'key-namespace' as const,
+    },
   ];
   const rowOf = (entry: StoredLaneObservation) =>
-    entry.entityKey === 'dept-gone-lane-pat-lee' ? 'researchEntity:lee-lab' : undefined;
-  const otherEvidenceByRow = new Map([
+    entry.entityKey === 'dept-gone-lane-pat-lee'
+      ? 'researchEntity:lee-lab'
+      : entry.entityKey === 'dept-gone-lane-unprojected'
+        ? 'researchEntity:unprojected'
+        : undefined;
+  const outputsByRow = new Map([
     [
       'researchEntity:lee-lab',
-      new Map([
-        ['name', new Set(['another lee lab'])],
-        ['departments', new Set(['chemistry'])],
-      ]),
+      {
+        withOrphans: { departments: ['Physics', 'Chemistry'], name: 'Lee Lab' },
+        withoutOrphans: { departments: ['Chemistry'], name: 'Lee Lab' },
+      },
     ],
   ]);
 
-  it('retires a list value another lane also states', () => {
-    const split = splitSoleEvidence({
-      attributed: [
-        {
-          observation: observation('l1', 'dept-gone-lane-pat-lee', {
-            field: 'departments',
-            value: ['Chemistry'],
-          }),
-          configId: 'gone-lane',
-          basis: 'key-namespace' as const,
-        },
-      ],
-      rowOf,
-      otherEvidenceByRow,
-      retireSoleEvidence: false,
-    });
-    expect(split.observationIdsToRetire).toEqual(['l1']);
-  });
-
-  it('holds a list item no other lane states, even when the field has other evidence, and retires a backed scalar', () => {
-    const split = splitSoleEvidence({
+  it('retires only what the engine still produces, and holds an unprojected row', () => {
+    const split = splitByEngineProduction({
       attributed,
       rowOf,
-      otherEvidenceByRow,
+      outputsByRow,
       retireSoleEvidence: false,
     });
     expect(split.observationIdsToRetire).toEqual(['s2', 's3']);
@@ -389,23 +397,31 @@ describe('splitSoleEvidence', () => {
         configIds: ['gone-lane'],
         values: [['Physics']],
         observationIds: ['s1'],
-        basis: 'no-other-evidence',
+        basis: 'engine-would-not-produce',
+      },
+      {
+        row: 'researchEntity:unprojected',
+        field: 'name',
+        configIds: ['gone-lane'],
+        values: ['X'],
+        observationIds: ['s4'],
+        basis: 'engine-would-not-produce',
       },
     ]);
     expect(split.withoutRow).toBe(1);
   });
 
-  it('retires sole evidence only under the explicit opt-out, and plans the same split twice', () => {
-    const optedOut = splitSoleEvidence({
+  it('retires everything only under the explicit opt-out, and plans the same split twice', () => {
+    const optedOut = splitByEngineProduction({
       attributed,
       rowOf,
-      otherEvidenceByRow,
+      outputsByRow,
       retireSoleEvidence: true,
     });
-    expect(optedOut.observationIdsToRetire).toEqual(['s1', 's2', 's3']);
+    expect(optedOut.observationIdsToRetire).toEqual(['s1', 's2', 's3', 's4']);
     expect(optedOut.heldSoleEvidence).toEqual([]);
-    const input = { attributed, rowOf, otherEvidenceByRow, retireSoleEvidence: false };
-    expect(splitSoleEvidence(input)).toEqual(splitSoleEvidence(input));
+    const input = { attributed, rowOf, outputsByRow, retireSoleEvidence: false };
+    expect(splitByEngineProduction(input)).toEqual(splitByEngineProduction(input));
   });
 });
 
