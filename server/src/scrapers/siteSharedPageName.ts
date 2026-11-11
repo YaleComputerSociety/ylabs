@@ -163,6 +163,42 @@ async function liveRowIdentities(peers: PageStatedNameObservation[]): Promise<{
   };
 }
 
+const PEER_CACHE_TTL_MS = 5 * 60_000;
+
+let cachedPeersByName: Map<string, PageStatedNameObservation[]> | undefined;
+let cachedPeersAt = 0;
+
+export function resetSiteSharedPageNameCache(): void {
+  cachedPeersByName = undefined;
+  cachedPeersAt = 0;
+}
+
+// One load per TTL rather than one unindexed `value` scan per resolve.
+async function pageStatedNamePeersByName(
+  now: number = Date.now(),
+): Promise<Map<string, PageStatedNameObservation[]>> {
+  if (cachedPeersByName && now - cachedPeersAt < PEER_CACHE_TTL_MS) return cachedPeersByName;
+  const stated = (await Observation.find({
+    entityType: 'researchEntity',
+    field: { $in: [...PAGE_STATED_NAME_FIELDS] },
+    superseded: { $ne: true },
+    sourceName: { $in: [...PAGE_STATED_NAME_SOURCES] },
+  })
+    .select('field value sourceName sourceUrl entityKey entityId')
+    .lean()) as PageStatedNameObservation[];
+  const byName = new Map<string, PageStatedNameObservation[]>();
+  for (const observation of stated) {
+    const name = comparablePageStatedName(observation.value);
+    if (!name) continue;
+    const peers = byName.get(name);
+    if (peers) peers.push(observation);
+    else byName.set(name, [observation]);
+  }
+  cachedPeersByName = byName;
+  cachedPeersAt = now;
+  return byName;
+}
+
 export interface SiteSharedPageNameWithdrawal<T> {
   observations: T[];
   withdrawnNames: ReadonlySet<string>;
@@ -180,20 +216,14 @@ export async function withoutSiteSharedPageNames<T extends PageStatedNameObserva
       (sitePage(observation.sourceUrl) as SitePage).segments.length > 0,
   );
   if (candidates.length === 0) return unchanged;
-  const values = [
+  const peersByName = await pageStatedNamePeersByName();
+  const stated = [
     ...new Set(
-      candidates.flatMap((candidate) => [String(candidate.value), textValue(candidate.value)]),
+      candidates.flatMap(
+        (candidate) => peersByName.get(comparablePageStatedName(candidate.value)) ?? [],
+      ),
     ),
   ];
-  const stated = (await Observation.find({
-    entityType: 'researchEntity',
-    field: { $in: [...PAGE_STATED_NAME_FIELDS] },
-    value: { $in: values },
-    superseded: { $ne: true },
-    sourceName: { $in: [...PAGE_STATED_NAME_SOURCES] },
-  })
-    .select('field value sourceName sourceUrl entityKey entityId')
-    .lean()) as PageStatedNameObservation[];
   const others = stated.filter((peer) => !belongsToRow(peer, row));
   if (others.length === 0) return unchanged;
   const live = await liveRowIdentities(others);

@@ -23,6 +23,7 @@ import {
   resetLabRowRosterCache,
 } from '../../utils/researchHomeNameIdentityRoster';
 import { materializeEntity } from '../entityMaterializer';
+import { resetSiteSharedPageNameCache } from '../siteSharedPageName';
 
 const SITE_NAME = 'Orrery Institute for Regional Studies';
 const SITE = 'https://orrery.example.edu';
@@ -104,6 +105,7 @@ describe('materializeEntity withdraws a site name stated for sibling sub-unit pa
     }
     resetKnownPersonSurnameRosterCache();
     resetLabRowRosterCache();
+    resetSiteSharedPageNameCache();
   });
 
   it('serves each council under the name its own pages state', async () => {
