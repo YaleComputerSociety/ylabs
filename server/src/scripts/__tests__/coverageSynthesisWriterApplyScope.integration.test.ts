@@ -15,6 +15,7 @@ import { ResearchEntity } from '../../models/researchEntity';
 import { Source } from '../../models/source';
 import { WRITTEN_DESCRIPTION_SOURCE_NAME } from '../../scrapers/coverageSynthesis';
 import { runCoverageSynthesis } from '../coverageSynthesis';
+import { coverageSynthesisModeOf, parseCoverageSynthesisArgs } from '../coverageSynthesisCore';
 
 const PAGE_TEXT = [
   'Coral Reef Recovery',
@@ -32,6 +33,9 @@ const REFUSED_ROW = 'reef-lab-refused-scope-fixture';
 const STORED_DEPARTMENTS = ['Ecology and Evolutionary Biology', 'Earth and Planetary Sciences'];
 const DRAFTS = '/tmp/ylabs-writer-apply-scope-drafts.json';
 const OUTPUT = '/tmp/ylabs-writer-apply-scope-output.json';
+const CARD_REQUESTS = '/tmp/ylabs-writer-apply-scope-card-requests.json';
+const CARDS = '/tmp/ylabs-writer-apply-scope-cards.json';
+const CARD = 'Studies how coral reefs recover after marine heatwaves and bleaching events.';
 
 describe('the writer apply only adds bodies and writes only description fields (#5537)', () => {
   let replSet: MongoMemoryReplSet;
@@ -48,7 +52,7 @@ describe('the writer apply only adds bodies and writes only description fields (
     await mongoose.disconnect();
     await replSet?.stop();
     process.env = env;
-    for (const file of [DRAFTS, OUTPUT]) fs.rmSync(file, { force: true });
+    for (const file of [DRAFTS, OUTPUT, CARD_REQUESTS, CARDS]) fs.rmSync(file, { force: true });
   });
 
   const connected = async () => {
@@ -128,6 +132,7 @@ describe('the writer apply only adds bodies and writes only description fields (
       'research_entities',
       'sources',
       'written_description_derivations',
+      'card_synthesis_derivations',
       'scrape_job_locks',
     ]) {
       await db.collection(name).deleteMany({});
@@ -196,5 +201,51 @@ describe('the writer apply only adds bodies and writes only description fields (
     expect(accepted.fullDescription).not.toBe(SERVED_BODY);
     expect(accepted.departments).toEqual(STORED_DEPARTMENTS);
     expect(accepted.websiteUrl).toBe(STORED_WEBSITE);
+  });
+
+  it('captures a card request for each body it would write, and the apply serves its imported card', async () => {
+    const dry = await run([
+      '--cache-only',
+      `--slugs=${ACCEPTED_ROW},${REFUSED_ROW}`,
+      '--capture-card-requests',
+      CARD_REQUESTS,
+    ]);
+    await connected();
+    expect(dry.cardRequests).toBe(1);
+    const requests = JSON.parse(fs.readFileSync(CARD_REQUESTS, 'utf8'));
+    expect(requests.map((request: { slug: string }) => request.slug)).toEqual([ACCEPTED_ROW]);
+    expect(await liveWrittenBodies(ACCEPTED_ROW)).toHaveLength(1);
+
+    fs.writeFileSync(
+      CARDS,
+      JSON.stringify([{ slug: ACCEPTED_ROW, writer: 'claude-agent:scope-fixture', card: CARD }]),
+    );
+    await run([
+      '--synthesize-cards',
+      '--import-derivations',
+      CARDS,
+      '--evidence-file',
+      CARD_REQUESTS,
+      '--output',
+      OUTPUT,
+    ]);
+    await run([
+      '--apply',
+      '--confirm-coverage-synthesis',
+      '--cache-only',
+      `--slugs=${ACCEPTED_ROW}`,
+      '--skip-index-sync',
+    ]);
+    await connected();
+    const accepted = (await ResearchEntity.findOne({ slug: ACCEPTED_ROW }).lean()) as any;
+    expect(accepted.shortDescription).toBe(CARD);
+  });
+
+  it('refuses --capture-card-requests with --apply', () => {
+    expect(() =>
+      coverageSynthesisModeOf(
+        parseCoverageSynthesisArgs(['--apply', '--capture-card-requests', CARD_REQUESTS]),
+      ),
+    ).toThrow(/refused with --apply/);
   });
 });

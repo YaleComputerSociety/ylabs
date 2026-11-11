@@ -70,6 +70,7 @@ import {
 } from './coverageSynthesisEvidence';
 import { runDerivationImport, runWriterEvaluation } from './coverageSynthesisEvaluate';
 import {
+  type CardRequest,
   collectCardRequests,
   parseCardRequests,
   parseImportedCardDrafts,
@@ -582,6 +583,7 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
     : null;
 
   const reports: CoverageEntityReport[] = [];
+  const cardRequests: CardRequest[] = [];
   const materializedEntityIds: string[] = [];
   let written = 0;
   let observationDropped = 0;
@@ -722,14 +724,22 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
       args.deferMaterializeForRuns,
     );
     if (materializeIsDeferred) deferMaterialize(report);
+    const liveBody = liveWrittenBody(observations, SOURCE_NAME);
+    let writes = carriedOverWrites(writerWritesFor(planned, decision), {
+      carriedOver,
+      liveBody,
+      description: decision?.result?.description,
+    });
+    if (writes.writeBody && decision?.result) {
+      cardRequests.push({
+        slug: entity.slug,
+        entityName: typeof entity.name === 'string' ? entity.name : '',
+        fullDescription: decision.result.description,
+        evidenceTexts: snippets.map((snippet) => snippet.text),
+      });
+    }
     if (!args.apply || !context) return;
     try {
-      const liveBody = liveWrittenBody(observations, SOURCE_NAME);
-      let writes = carriedOverWrites(writerWritesFor(planned, decision), {
-        carriedOver,
-        liveBody,
-        description: decision?.result?.description,
-      });
       let changed = false;
       if (writes.writeBody && decision?.result) {
         const stored = await appendSynthesizedDescription(
@@ -812,7 +822,16 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
     indexSyncSkipped: regates.reduce((sum, entry) => sum + entry.indexSyncDeferred, 0),
     entities: reports,
   };
-  console.log(JSON.stringify({ ...report, entities: `${reports.length} rows` }, null, 2));
+  if (args.captureCardRequests) {
+    writeJsonReport(args.captureCardRequests, '--capture-card-requests', cardRequests);
+  }
+  console.log(
+    JSON.stringify(
+      { ...report, cardRequests: cardRequests.length, entities: `${reports.length} rows` },
+      null,
+      2,
+    ),
+  );
   if (args.output) {
     fs.writeFileSync(resolveSafeJsonReportOutputPath(args.output), JSON.stringify(report, null, 2));
   }

@@ -46,6 +46,7 @@ export interface CoverageSynthesisArgs {
   deferMaterializeForRuns: string[];
   slugsFile?: string;
   captureEvidence?: string;
+  captureCardRequests?: string;
   evidenceFile?: string;
   importDerivations?: string;
   output?: string;
@@ -61,6 +62,7 @@ const VALUE_FLAGS = {
   '--slugs': 'slugs',
   '--slugs-file': 'slugsFile',
   '--capture-evidence': 'captureEvidence',
+  '--capture-card-requests': 'captureCardRequests',
   '--evidence-file': 'evidenceFile',
   '--import-derivations': 'importDerivations',
   '--output': 'output',
@@ -248,6 +250,11 @@ export function coverageSynthesisModeOf(args: CoverageSynthesisArgs): CoverageSy
     if (args.slugsFile) {
       throw new Error(
         'research-entity:coverage-synthesis --slugs-file is read only by --evaluate or --capture-evidence',
+      );
+    }
+    if (args.captureCardRequests && args.apply) {
+      throw new Error(
+        'research-entity:coverage-synthesis --capture-card-requests is a dry-run read and is refused with --apply',
       );
     }
     return 'write';
