@@ -13,10 +13,7 @@
  */
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../models/researchEntity';
-import {
-  type OfficialRosterUndergraduateStatus,
-  undergradInvitationLevels,
-} from '../models/storedVocabularies';
+import { type OfficialRosterUndergraduateStatus } from '../models/storedVocabularies';
 import { publicStudentVisibilityTiers, StudentVisibilityTier } from '../models/studentVisibility';
 import { partitionStudentVisibilityReasons } from './studentVisibilityTier';
 import {
@@ -1104,9 +1101,6 @@ const mongoFilterFromResearchFilters = (
   if (filters.hostsUndergrads === true) {
     mongoFilter.hasUndergradHostingEvidence = true;
   }
-  if (filters.welcomesUndergrads === true) {
-    mongoFilter['undergradInvitation.level'] = { $in: [...undergradInvitationLevels] };
-  }
 
   return mongoFilter;
 };
@@ -1916,7 +1910,7 @@ const carriesAccessToggleEvidence = (
 ): boolean =>
   toggle === 'hostsUndergrads'
     ? entity.hasUndergradHostingEvidence === true
-    : entity.undergradInvitation !== undefined && entity.undergradInvitation !== null;
+    : entity.welcomesUndergrads === true;
 
 interface MoreTopicResultsRequest {
   searchQuery: string;
