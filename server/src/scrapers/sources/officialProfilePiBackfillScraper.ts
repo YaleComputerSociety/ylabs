@@ -2726,21 +2726,37 @@ function nameShapedYaleEmailOnPage(
   profiles: Array<Record<string, any>>,
   displayName: string,
 ): string {
-  const candidates: string[] = [];
+  const structuredCandidates: string[] = [];
   for (const profile of profiles) {
     if (isJsonLdNodeOfAnotherPerson(profile, displayName)) continue;
     const email = profile.email;
-    candidates.push(...(Array.isArray(email) ? email : [email]).map(textValue));
+    structuredCandidates.push(...(Array.isArray(email) ? email : [email]).map(textValue));
   }
+  const pageWideCandidates: string[] = [];
   $('a[href^="mailto:"]').each((_i, el) => {
-    candidates.push(($(el).attr('href') || '').replace(/^mailto:/i, ''));
+    pageWideCandidates.push(($(el).attr('href') || '').replace(/^mailto:/i, ''));
   });
-  candidates.push($('body').text());
+  pageWideCandidates.push($('body').text());
+  return (
+    firstPersonSpecificYaleEmail(structuredCandidates, displayName, () => true) ||
+    firstPersonSpecificYaleEmail(
+      pageWideCandidates,
+      displayName,
+      (email) => !NETID_SHAPE.test(email.split('@')[0]),
+    )
+  );
+}
+
+function firstPersonSpecificYaleEmail(
+  candidates: string[],
+  displayName: string,
+  admissible: (email: string) => boolean,
+): string {
   for (const candidate of candidates) {
     const text = textValue(candidate);
     for (const match of text.matchAll(/\b[a-z0-9._%+-]+@yale\.edu\b/gi)) {
       const email = match[0].toLowerCase();
-      if (isLikelyPersonSpecificYaleEmail(email, displayName)) return email;
+      if (admissible(email) && isLikelyPersonSpecificYaleEmail(email, displayName)) return email;
     }
   }
   return '';

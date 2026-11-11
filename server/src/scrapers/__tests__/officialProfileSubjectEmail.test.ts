@@ -269,6 +269,12 @@ describe('the profile subject email read from more page shapes (#5669)', () => {
       expect(emailsOf(await visibleRun(html, ysmUrl))).toEqual([]);
     });
 
+    it("never reads a co-author's netid-shaped mailto link when the subject states none", async () => {
+      const html = ysmPage({ coAuthorEmail: 'cf4321@yale.edu' });
+      expect(identityOf(html, ysmUrl)?.email).toBe('');
+      expect(emailsOf(await visibleRun(html, ysmUrl))).toEqual([]);
+    });
+
     it('re-derives the same single observation on a second run', async () => {
       await expectRunTwiceIdentical(html, ysmUrl, ['avery.example@example.org']);
     });

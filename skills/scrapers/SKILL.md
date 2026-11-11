@@ -188,6 +188,7 @@ Four earlier mechanisms each broke on a stored title, and the module's test file
   The subject's own address is the one the JSON-LD `Person` node naming the subject states, or the single address in a contact field of the subject heading's own `article`.
   An address inside a nested `article`, an `aside`, `nav` or `footer`, or a block labelled as co-authors, related people, administrative support or a press contact is never the subject's, and a contact field listing two addresses yields none.
   Such an address is admitted whatever its domain and whatever its local part, except a role mailbox, and the lane still prefers a Yale address when the page states one.
+  Outside the subject's own nodes, a mailto link or body text yields only a Yale address shaped like the subject's name, never a netid-shaped one, because a netid names nobody in particular and a co-author's would be read as the subject's.
   An outside address does not contradict the Yale address expected for a lead, because it is not a Yale identity, while a different Yale address still fails closed (#585).
   The same holds for `profileIdentityAgreesWithUser`, and `pageIdentityWitnessesPerson` reads a netid from an address's local part only when the address is a Yale one.
   The person's display name comes only from a JSON-LD `Person` node or an untyped node, never from an organization or website node, which named every MacMillan Center person page after the center.
