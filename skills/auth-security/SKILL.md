@@ -53,7 +53,7 @@ The raw-driver copies in promotion and sync bypass the hooks on purpose, since t
 Admin authority is a separate signal: `buildAuthenticatedSessionUser` sets `isAdmin` from `hasActiveAdminGrant`, and that boolean is what guards and the client key off.
 The classification cascade runs only at login time.
 `unknown` means Yalies has no record of the person, or could not answer and no earlier login stored a type; a request failure is never read as "not in Yalies", because that typed returning students `unknown` (#4234).
-Yalies lists faculty and staff with a `title` and an organization or unit (`organization`, `unit`) but no `year` or `school_code`, so the lookup reads such a record as an employee rather than discarding it.
+Yalies lists faculty and staff with a `title` and an organization or unit (`unit_name`, `organization_name`) but no `year` or `school_code`, so the lookup reads such a record as an employee rather than discarding it.
 There is no Yale Directory fallback: `directory.yale.edu` is behind a per-person CAS sign-in with no server-callable API, so the old `directory.yale.edu/api/people` call resolved nobody and was removed (#4287); Yalies employee records type faculty and staff instead.
 Per-request session restore in `deserializeUser` re-validates that the backing `Account` exists and is not archived, then recomputes `isAdmin` from the admin-grant check.
 The admin-grant check is cached in memory for 60 seconds in `adminGrantService` and invalidated on grant or revoke.
