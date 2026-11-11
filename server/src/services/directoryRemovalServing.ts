@@ -1,4 +1,5 @@
 import { Researcher } from '../models/researcher';
+import { rostersWithDepartedLeadsRetired, withDepartedLeadsRetired } from './departedLeadServing';
 import { ResearchEntity } from '../models/researchEntity';
 import { normalizedRosterLabel } from '../scrapers/rosterStrikeDigests';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -413,7 +414,7 @@ export async function servedRosterByEntityId(
     freshDirectoryRemovalServing(),
     getResearchEntityRosterByEntityId(entityIds, scope),
   ]);
-  return rosterWithoutWithheldPeople(roster, serving);
+  return rostersWithDepartedLeadsRetired(rosterWithoutWithheldPeople(roster, serving));
 }
 
 export async function servedRoster(entityId: unknown): Promise<ResearchEntityRosterEntry[]> {
@@ -421,7 +422,7 @@ export async function servedRoster(entityId: unknown): Promise<ResearchEntityRos
     freshDirectoryRemovalServing(),
     getResearchEntityRoster(entityId),
   ]);
-  return withoutWithheldPeople(roster, serving);
+  return withDepartedLeadsRetired(withoutWithheldPeople(roster, serving));
 }
 
 export function directoryRemovalServingStateMessage(serving: DirectoryRemovalServing): string {

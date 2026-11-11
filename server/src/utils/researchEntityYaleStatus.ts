@@ -14,7 +14,7 @@ const IN_MEMORIAM_URL_PATH_RE = /\bin-memoriam\b|\bobituar(?:y|ies)\b/i;
 // ("In Memoriam1945-2026"), so the marker ends at the last letter, not a word boundary.
 const IN_MEMORIAM_TEXT_RE = /\bin\s+memoriam(?!\p{L})|\bpassed\s+away\b/iu;
 
-export type ResearchEntityYaleStatusReason = 'deceased' | 'departed';
+export type ResearchEntityYaleStatusReason = 'deceased' | 'departed' | 'lead_departed';
 
 export interface ResearchEntityYaleStatusSignal {
   yaleStatusCache: 'departed';
@@ -201,8 +201,10 @@ export function deriveResearchEntityYaleStatus(
   if (entity.leadPageDeparture === 'deceased' && presentation === 'hide') {
     return { yaleStatusCache: 'departed', activeAtYaleCache: false, reason: 'deceased' };
   }
+  // Its own reason, not the roster reconciler's `departed`, which nothing clears: a lead-page
+  // departure is derived, so it lifts when its evidence goes.
   if (entity.leadPageDeparture === 'departed') {
-    return { yaleStatusCache: 'departed', activeAtYaleCache: false, reason: 'departed' };
+    return { yaleStatusCache: 'departed', activeAtYaleCache: false, reason: 'lead_departed' };
   }
   // A recorded closure is re-derived on every pass, exactly as the deceased
   // markers are, so the departure survives re-materialization instead of being

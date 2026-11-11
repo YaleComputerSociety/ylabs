@@ -31,9 +31,14 @@ import {
   PROFILE_APPOINTMENT_ENDED_FIELD,
   PROFILE_IN_MEMORIAM_FIELD,
   loadPersonPageDepartures,
+  personPageDepartureFrom,
 } from '../personPageDeparture';
-import { withDepartedLeadsRetired } from '../../services/researchGroupService';
-import { getResearchEntityRoster } from '../../services/researchEntityMembershipAccessor';
+import { servedRoster } from '../../services/directoryRemovalServing';
+import { optionalPublicLeadMemberNames } from '../../services/researchGroupService';
+import { fetchResearchEntitySearchMemberNames } from '../../services/researchEntitySearchIndexService';
+import { studentVisibilityGateLeadRows } from '../../services/studentVisibilityGateService';
+import { rostersWithDepartedLeadsRetired } from '../../services/departedLeadServing';
+import { getResearchEntityRosterByEntityId } from '../../services/researchEntityMembershipAccessor';
 import { deriveResearchEntityYaleStatus } from '../../utils/researchEntityYaleStatus';
 
 const ROW_KEY = 'person-page-departure-fixture';
@@ -187,7 +192,7 @@ describe("a lead's own official page marks them deceased or departed (#5721)", (
     });
   });
 
-  it('marks a row departed when its sole lead appointment ended in the past', async () => {
+  it('only observes an ended appointment by default, leaving the row served', async () => {
     const lead = await seedLead(LEAD_NETID, 'Ada Fixture');
     await seedRow([lead]);
     await userObservation(
@@ -199,10 +204,33 @@ describe("a lead's own official page marks them deceased or departed (#5721)", (
 
     await materializeEntity('researchEntity', { entityKey: ROW_KEY });
 
-    expect(await storedRow()).toMatchObject({
-      activeAtYaleCache: false,
-      yaleStatusReasonCache: 'departed',
-    });
+    expect((await storedRow())?.activeAtYaleCache).not.toBe(false);
+    expect((await loadPersonPageDepartures([String(lead._id)], new Date())).size).toBe(0);
+  });
+
+  it('never reads an ended appointment as a departure for an emeritus title', () => {
+    const observations = [
+      {
+        entityKey: `netid:${LEAD_NETID}`,
+        sourceName: 'official-profile-pi-backfill',
+        field: PROFILE_APPOINTMENT_ENDED_FIELD,
+        value: '2025-05-31',
+      },
+    ];
+    const now = new Date('2026-11-11T00:00:00Z');
+
+    expect(
+      personPageDepartureFrom(LEAD_NETID, observations, now, {
+        title: 'Professor Emeritus of Chemistry',
+        endedAppointmentMode: 'hide',
+      }),
+    ).toBeUndefined();
+    expect(
+      personPageDepartureFrom(LEAD_NETID, observations, now, {
+        title: 'Visiting Professor',
+        endedAppointmentMode: 'hide',
+      }),
+    ).toBe('departed');
   });
 
   it('leaves a row current when the stated end date is still ahead', async () => {
@@ -239,11 +267,32 @@ describe("a lead's own official page marks them deceased or departed (#5721)", (
     await materializeEntity('researchEntity', { entityKey: ROW_KEY });
     expect((await storedRow())?.activeAtYaleCache).not.toBe(false);
 
-    const served = await withDepartedLeadsRetired(await getResearchEntityRoster(row._id));
+    const served = await servedRoster(row._id);
     const currentLeadIds = served
-      .filter((entry) => entry.state !== 'HISTORICAL')
-      .map((entry) => String(entry.personId));
+      .filter((entry: any) => entry.state !== 'HISTORICAL')
+      .map((entry: any) => String(entry.personId));
     expect(currentLeadIds).toEqual([String(current._id)]);
+  });
+
+  it('names only the continuing lead on the card, the search document and the gate', async () => {
+    const gone = await seedLead(LEAD_NETID, 'Ada Fixture');
+    const current = await seedLead(OTHER_NETID, 'Ari Fixture');
+    const row = await seedRow([gone, current]);
+    await markInMemoriam(LEAD_NETID);
+    const entity = await ResearchEntity.findById(row._id).lean<Record<string, any>>();
+
+    const cards = await optionalPublicLeadMemberNames([entity!]);
+    expect(cards.byEntityId.get(String(row._id))).toEqual(['Ari Fixture']);
+
+    const search = await fetchResearchEntitySearchMemberNames([entity]);
+    expect(search.get(String(row._id))?.leadProfessorNames).toEqual(['Ari Fixture']);
+
+    const gateRoster = await rostersWithDepartedLeadsRetired(
+      await getResearchEntityRosterByEntityId([row._id]),
+    );
+    expect(
+      studentVisibilityGateLeadRows(gateRoster.get(String(row._id)) ?? []).map((lead) => lead.name),
+    ).toEqual(['Ari Fixture']);
   });
 
   it('presents a deceased-lead row by the single switch: hidden by default, served when labelled', () => {
@@ -254,7 +303,7 @@ describe("a lead's own official page marks them deceased or departed (#5721)", (
     expect(deriveResearchEntityYaleStatus(entity, 'label')).toBeNull();
     expect(
       deriveResearchEntityYaleStatus({ leadPageDeparture: 'departed' }, 'label'),
-    ).toMatchObject({ reason: 'departed' });
+    ).toMatchObject({ reason: 'lead_departed' });
   });
 
   it('gives a person their own page marks deceased no email fill', async () => {

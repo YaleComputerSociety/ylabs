@@ -1,5 +1,10 @@
 import { Observation } from '../models/observation';
 import { Researcher } from '../models/researcher';
+import { titleHoldsOnlyEmeritusAppointments } from '../services/emeritusLeadWayIn';
+import {
+  ENDED_APPOINTMENT_LEAD_MODE,
+  type EndedAppointmentLeadMode,
+} from '../utils/endedAppointmentLeadMode';
 import { loadResearchEntityLeadPersonIds } from '../utils/researchHomeNameIdentityRoster';
 import { OFFICIAL_PROFILE_PI_BACKFILL_SOURCE } from './directoryContradictedProfileNetid';
 import { materializationReadScopeFilter } from './entityMaterializer';
@@ -41,13 +46,14 @@ const endedOn = (value: unknown): number => {
  * What the person's own official page says about them, read from observations the
  * official-profile lane recorded on the person's own `netid:` key (#5721). An in-memoriam or
  * obituary marker means deceased. A sole appointment whose stated end date has passed means
- * departed, which is the existing departure semantics. Evidence from any other lane or key
- * decides nothing.
+ * departed, but only when `ENDED_APPOINTMENT_LEAD_MODE` hides and never for an emeritus title.
+ * Evidence from any other lane or key decides nothing.
  */
 export function personPageDepartureFrom(
   netid: string,
   observations: readonly DepartureObservation[],
   now: Date,
+  options: { title?: unknown; endedAppointmentMode?: EndedAppointmentLeadMode } = {},
 ): PersonPageDeparture | undefined {
   const own = observations.filter(
     (observation) =>
@@ -61,20 +67,30 @@ export function personPageDepartureFrom(
     .filter((observation) => observation.field === PROFILE_APPOINTMENT_ENDED_FIELD)
     .map((observation) => endedOn(observation.value))
     .filter((time) => Number.isFinite(time));
-  if (ended.length > 0 && ended.every((time) => time < now.getTime())) return 'departed';
-  return undefined;
+  if (ended.length === 0 || !ended.every((time) => time < now.getTime())) return undefined;
+  // Emeritus-led research is shown labelled by owner decision, so an emeritus appointment is
+  // never read as a departure, however its earlier appointment ended.
+  if (titleHoldsOnlyEmeritusAppointments(options.title)) return undefined;
+  const mode = options.endedAppointmentMode ?? ENDED_APPOINTMENT_LEAD_MODE;
+  return mode === 'hide' ? 'departed' : undefined;
 }
 
 export async function loadPersonPageDepartures(
   researcherIds: readonly string[],
   now: Date,
+  endedAppointmentMode: EndedAppointmentLeadMode = ENDED_APPOINTMENT_LEAD_MODE,
 ): Promise<Map<string, PersonPageDeparture>> {
   const departures = new Map<string, PersonPageDeparture>();
   if (researcherIds.length === 0) return departures;
   const people = (await Researcher.find(
     { _id: { $in: [...researcherIds] }, archived: { $ne: true } },
-    { 'identifiers.netid': 1 },
-  ).lean()) as Array<{ _id: unknown; identifiers?: { netid?: unknown } }>;
+    { 'identifiers.netid': 1, 'profile.title': 1 },
+  ).lean()) as Array<{
+    _id: unknown;
+    identifiers?: { netid?: unknown };
+    profile?: { title?: unknown };
+  }>;
+  const titleById = new Map(people.map((person) => [String(person._id), person.profile?.title]));
   const netidById = new Map(
     people
       .map((person) => [String(person._id), bareNetid(person.identifiers?.netid)] as const)
@@ -93,7 +109,10 @@ export async function loadPersonPageDepartures(
   ).lean()) as DepartureObservation[];
   const kept = partitionObservationsByInvalidatedRun(read, await invalidatedScrapeRunIds()).kept;
   for (const [id, netid] of netidById) {
-    const departure = personPageDepartureFrom(netid, kept, now);
+    const departure = personPageDepartureFrom(netid, kept, now, {
+      title: titleById.get(id),
+      endedAppointmentMode,
+    });
     if (departure) departures.set(id, departure);
   }
   return departures;
