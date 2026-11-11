@@ -54,7 +54,6 @@ export interface OfficialProfileLinkHolderOptions {
    * conflict it can witness; without it the guard keeps refusing every conflict.
    */
   readScope?: Record<string, unknown>;
-  pageOwners?: ProfilePageOwnerNetids;
 }
 
 /**
@@ -107,9 +106,8 @@ export async function officialProfileLinkHeldByConflictingIdentity(
     .lean()) as unknown as PersonIdentityWitnesses[];
   const conflicting = holders.filter((holder) => identityWitnessesConflict(holder, person));
   if (conflicting.length === 0) return false;
-  if (!options.pageOwners && !options.readScope) return true;
-  const pageOwners =
-    options.pageOwners ?? (await profilePageOwnerNetids([url], options.readScope ?? {}));
+  if (!options.readScope) return true;
+  const pageOwners = await profilePageOwnerNetids([url], options.readScope);
   return !pageWitnessSettlesConflictForCandidate(pageOwners, url, person, conflicting);
 }
 
