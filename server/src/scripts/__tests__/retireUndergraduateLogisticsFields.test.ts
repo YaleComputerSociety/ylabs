@@ -108,7 +108,7 @@ describe('retireUndergraduateLogisticsFields with MongoDB', () => {
       });
       mongoUrl = memoryReplSet.getUri('retire_undergraduate_logistics_test');
     }
-    await mongoose.connect(mongoUrl, { autoIndex: false, autoCreate: false });
+    await mongoose.connect(mongoUrl);
   });
 
   beforeEach(async () => {

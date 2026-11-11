@@ -1,8 +1,20 @@
 import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
-import { ResearchEntity } from '../models/researchEntity';
 import { slugNamesPersonByFullName } from '../services/directoryRemovalSlugNames';
 import { currentDirectoryRemovalMintGuard } from '../services/directoryRemovalMintGuard';
+
+// Raw collection on purpose: importing the ResearchEntity model here would register it on
+// the ingest path and auto-build its unique slug index on a default connection (#5716).
+// Guarded by observationStoreWithoutResearchEntityModel.integration.test.ts.
+const researchEntities = () => mongoose.connection.db!.collection('research_entities');
+
+const projectionOf = (select: string): Record<string, 1> =>
+  Object.fromEntries(
+    select
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((field) => [field, 1]),
+  );
 
 /**
  * The live row a lane key's own stored observations name by id, when no row holds the key
@@ -21,10 +33,10 @@ export async function liveResearchEntityNamedByKeyObservations(
     entityId: { $ne: null },
   });
   if (ids.length === 0) return null;
-  const rows = await ResearchEntity.find({ _id: { $in: ids }, archived: { $ne: true } })
-    .select(select)
+  const rows = await researchEntities()
+    .find({ _id: { $in: ids }, archived: { $ne: true } }, { projection: projectionOf(select) })
     .limit(2)
-    .lean<Array<Record<string, unknown>>>();
+    .toArray();
   return rows.length === 1 ? rows[0] : null;
 }
 
@@ -52,14 +64,14 @@ export async function withRenamedResearchEntityIds<T extends KeyedInput>(
   if (keys.length === 0 || mongoose.connection.readyState !== 1) return [...inputs];
   const held = new Set(
     (
-      await ResearchEntity.find({ slug: { $in: keys } })
-        .select('slug')
-        .lean<Array<{ slug: string }>>()
-    ).map((row) => row.slug),
+      await researchEntities()
+        .find({ slug: { $in: keys } }, { projection: { slug: 1 } })
+        .toArray()
+    ).map((row) => String(row.slug)),
   );
   const unheld = keys.filter((key) => !held.has(key));
   if (unheld.length === 0) return [...inputs];
-  const named = await Observation.aggregate<{ _id: string; ids: unknown[] }>([
+  const named = await Observation.aggregate<{ _id: string; ids: mongoose.Types.ObjectId[] }>([
     {
       $match: { entityType: 'researchEntity', entityKey: { $in: unheld }, entityId: { $ne: null } },
     },
@@ -69,9 +81,9 @@ export async function withRenamedResearchEntityIds<T extends KeyedInput>(
   if (namedIds.length === 0) return [...inputs];
   const live = new Set(
     (
-      await ResearchEntity.find({ _id: { $in: namedIds }, archived: { $ne: true } })
-        .select('_id')
-        .lean<Array<{ _id: unknown }>>()
+      await researchEntities()
+        .find({ _id: { $in: namedIds }, archived: { $ne: true } }, { projection: { _id: 1 } })
+        .toArray()
     ).map((row) => String(row._id)),
   );
   const rowIdByKey = new Map<string, string>();
@@ -87,9 +99,11 @@ export async function withRenamedResearchEntityIds<T extends KeyedInput>(
 }
 
 export async function liveResearchEntityIdForLaneKey(entityKey: string): Promise<unknown> {
-  const held = await ResearchEntity.findOne({ slug: entityKey, archived: { $ne: true } })
-    .select('_id')
-    .lean<{ _id: unknown } | null>();
+  if (mongoose.connection.readyState !== 1) return null;
+  const held = await researchEntities().findOne(
+    { slug: entityKey, archived: { $ne: true } },
+    { projection: { _id: 1 } },
+  );
   return held?._id ?? (await liveResearchEntityNamedByKeyObservations(entityKey))?._id ?? null;
 }
 
