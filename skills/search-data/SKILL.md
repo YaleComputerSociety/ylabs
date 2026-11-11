@@ -670,6 +670,33 @@ Its USD 1.00 daily ceiling counts the `search-rerank-live-miss` caller's spend o
 The eligibility gate reads the served result through the existing predicates (`keywordLegTopHitIsNameMatch`, empty `normalizeResearchSearchQuery` tokens, `servesNoKeywordRow`, fewer than 2 candidates), so do not add a lexical one beside it.
 `docs/search-rerank-cache.md` is the full contract.
 
+### A service core ranks below the research rows of its window (#5748)
+
+Cores stay listed and reachable, because a core can be a real way into research work (the 2026-09-23 reachability decision), but a topic query no longer serves one above the research a student could join.
+`orderServiceCoresBelowResearch` in `services/serviceCoreDemotion.ts` moves every demoted row in the first `SERVICE_CORE_DEMOTION_WINDOW` (30) rows of the served pool below every other row of that window, keeping both groups in their own order, and leaves every row after the window in place.
+A row is demoted when it is typed `CORE_FACILITY`, or when it is a `FACULTY_RESEARCH_AREA` row whose short or full description opens with a core's service offer (`researchTextIsCoreServiceText`: a first sentence where "provides" or "offers", within six words of its start, governs "services" or "support for ... instruments", and no clinical, care, patient, legal or counselling word sits in between).
+On Development on 2026-11-11 that text predicate flagged 6 faculty rows (5 served), all 6 judged cores, and no other faculty row; it is not applied to other types, so one `CENTER` row with a sequencing service opening is left to the kind-inference follow-up.
+The facts come from one Mongo read of the window's core and faculty rows (`readServiceCoreFacts`, title, type and descriptions), because a candidate hit carries no title or description; a failed or skipped read serves today's order.
+
+Three things exempt a search or a row:
+
+- A name search (`keywordLegTopHitIsNameMatch`), which keeps the keyword leg's order untouched.
+- A Type filter that selects cores (`entityType` `CORE_FACILITY` or `kind` `core_facility`).
+- A core whose title the query names (`queryNamesTheRow`): its parenthesized acronym, every distinctive title word (generic words such as core, facility, center and Yale do not count), or a core kind word typed beside words that are all title words.
+  A topic word the title happens to contain is not a name, so `stem cell` does not name a pluripotent stem cell core while `stem cell core` does.
+
+It is an ordering change only: the total is the pool length and the facets are tallied over the pool before the reorder, so neither moves, and every page of one search reads the same order.
+It runs after hiring-first ordering and after the cached rerank (#5458).
+After the rerank because a cached score grades relevance rather than kind, so applying it first let a cached score lift a core back above research rows; measured on Development with the cache on, the cache alone left 7 demoted rows above research rows across 3 of the 5 probe queries it holds an entry for, and the demotion after it left none.
+The rerank-candidate read the live-miss job scores (`searchResearchGroupsForRerankCandidates`) skips the demotion, so the rows it scores are the pre-demotion window the cache reorders and its staleness fingerprints are unchanged.
+Under hiring-first a demoted row never moves across a change in `undergradInvitationRank`, so an inviting row stays ahead of a non-inviting one; no served core carried an invitation when this was measured.
+
+The strength was chosen by measurement, one variant per run, on the bench copy of the post-batch index.
+Moving each core behind the next 3 research rows cleared 1 of the 6 Production queries where a judged-relevant research row sat below a core; behind the next 10, and below every research row of the window, both cleared 6 of 6 with the same benchmark numbers, and only the window partition satisfies the journey invariant that a demoted core never outranks a research row.
+Against the undemoted run: bench-v3 nDCG@10 0.657 to 0.663 (delta +0.006, 95% CI +0.001..+0.012), real-v2 0.752 to 0.763 (+0.010, CI +0.002..+0.020, 6 better, 0 worse), held-out MRR 0.414 to 0.407 (delta -0.007, CI -0.019..+0.003), where all 7 held-out queries that lost rank target a core-typed row and the 17 that changed otherwise all gained.
+Over the 565 distinct Production query and filter pairs, a judged core reached the top 10 for 51 and the top 3 for 15 before, and 7 and 3 after.
+`journey:eval --case=service-cores-rank-below-research` reads the top 30 of eight topic queries, classifies each row through `serviceCoreDemotionReason`, and fails when a demoted row outranks a research row, reporting each exempt row with its reason.
+
 ### "More like this" ranks on meaning, not on a shared name
 
 The detail page's similar-research rail is `listSimilarResearchEntities`, which asks Meilisearch's `searchSimilarDocuments` for the 40 nearest stored vectors and serves the first six that pass the live serve gate.

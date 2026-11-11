@@ -183,6 +183,11 @@ import { getResearchSearchSpellingVocabulary } from './researchSearchSpellingVoc
 import { replaceNicknameInQuery, resolveNicknameInNameQuery } from './nameQueryNicknames';
 import { foldLatinDiacritics } from '../utils/latinDiacritics';
 import {
+  orderServiceCoresBelowResearch,
+  readServiceCoreFacts,
+  serviceCoreDemotionExemption,
+} from './serviceCoreDemotion';
+import {
   maxReachableResearchSearchPage,
   RESEARCH_SEARCH_MAX_REACHABLE_RECORDS,
 } from './researchSearchPagination';
@@ -1740,16 +1745,20 @@ const liveIndexSortability = async (
   return (field) => sortable === null || sortable.has(field);
 };
 
-export const withHiringRowsFirst = <T extends Record<string, unknown>>(hits: T[]): T[] => {
-  const rank = (hit: T) => {
-    const value = hit[UNDERGRAD_INVITATION_RANK_FIELD];
-    return typeof value === 'number' ? value : 0;
-  };
-  return hits
-    .map((hit, position) => ({ hit, position }))
-    .sort((a, b) => rank(b.hit) - rank(a.hit) || a.position - b.position)
-    .map(({ hit }) => hit);
+const undergradInvitationRankOf = (hit: Record<string, unknown>): number => {
+  const value = hit[UNDERGRAD_INVITATION_RANK_FIELD];
+  return typeof value === 'number' ? value : 0;
 };
+
+export const withHiringRowsFirst = <T extends Record<string, unknown>>(hits: T[]): T[] =>
+  hits
+    .map((hit, position) => ({ hit, position }))
+    .sort(
+      (a, b) =>
+        undergradInvitationRankOf(b.hit) - undergradInvitationRankOf(a.hit) ||
+        a.position - b.position,
+    )
+    .map(({ hit }) => hit);
 
 const liveIndexFilterability = async (
   meiliIndex: Awaited<ReturnType<typeof getMeiliSearchIndex>>,
@@ -2946,6 +2955,25 @@ async function searchResearchGroupsForQuery(
   // queries already come back pre-paginated from Meilisearch, so they are used
   // as-is. See #1064.
   const rerankedPool = rerankScores ? applyCachedRerank(servedPool, rerankScores) : servedPool;
+  // Runs after the cached rerank, which scores relevance rather than kind, so a cached
+  // score cannot lift a core back above research rows; the rerank-candidate read skips it
+  // so the rows it scores are the pre-demotion window the cache reorders (#5748).
+  const demotesServiceCores =
+    paginateHybridPoolLocally &&
+    runsSemanticLeg &&
+    !withRerankCandidateFingerprints &&
+    serviceCoreDemotionExemption({
+      answeredAsNameSearch: keywordLegTopHitNamesTheQuery,
+      filters: safeFilters,
+    }) === null;
+  const servedOrder = demotesServiceCores
+    ? await orderServiceCoresBelowResearch(rerankedPool, {
+        queryTokens: normalizedQuery.tokens,
+        idOf: candidateHitId,
+        readFacts: readServiceCoreFacts,
+        ...(ordersHiringFirst ? { tierOf: undergradInvitationRankOf } : {}),
+      })
+    : rerankedPool;
   const rerankLiveMissGate: SearchRerankLiveMissGate = !(
     paginateHybridPoolLocally && runsSemanticLeg
   )
@@ -2988,7 +3016,7 @@ async function searchResearchGroupsForQuery(
     );
   }
   const orderedHits = paginateHybridPoolLocally
-    ? rerankedPool.slice(offset, offset + safePageSize)
+    ? servedOrder.slice(offset, offset + safePageSize)
     : reorderedPool;
   const facetsTalliedOverPool = POOL_TALLIED_RESEARCH_FACETS.filter(
     ({ indexField }) =>

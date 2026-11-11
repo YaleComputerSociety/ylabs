@@ -17,6 +17,11 @@ import {
   rewriteAcronymToPhrase,
 } from '../../services/researchGroupService';
 import { GIVEN_NAME_SHORT_FORMS } from '../../services/nameQueryNicknames';
+import {
+  SERVICE_CORE_DEMOTION_WINDOW,
+  isDemotedServiceCoreReason,
+  serviceCoreDemotionReason,
+} from '../../services/serviceCoreDemotion';
 import { meshDescriptorWordKeys } from '../../scrapers/utils/meshNonSubjectDescriptors';
 import { isEnglishDictionaryWord } from '../../services/englishDictionaryWords';
 import {
@@ -31,6 +36,7 @@ import {
   checkCreativePracticeLabelAttribution,
   checkDefaultBrowseOrderIsRepeatable,
   checkMeshDescriptorOnlyRowsRankBelowOwnEvidence,
+  checkServiceCoresRankBelowResearch,
   checkQueryVariantServesTheBaseline,
   checkNoRepeatedRowsAcrossPages,
   checkNotDegraded,
@@ -1207,6 +1213,53 @@ const meshDescriptorRanksBelowOwnEvidence: JourneyCase = {
   },
 };
 
+const SERVICE_CORE_PROBE_QUERIES = [
+  'chemistry',
+  'mechanical engineering',
+  'stem cell',
+  'rna dna',
+  'edge computing',
+  'electron microscopy',
+  'imaging',
+  'flow cytometry',
+];
+
+const serviceCoresRankBelowResearch: JourneyCase = {
+  id: 'service-cores-rank-below-research',
+  title:
+    'A topic query never ranks a service core above a research row unless the query names the core',
+  run: async (context) => {
+    const corpusBefore = await context.readCorpusFingerprint();
+    const rankings = [];
+    for (const query of SERVICE_CORE_PROBE_QUERIES) {
+      const keys = servedRows(
+        await context.browse({ query, pageSize: SERVICE_CORE_DEMOTION_WINDOW }),
+      )
+        .map(rowKey)
+        .filter(Boolean);
+      const storedRows = await context.readStoredRows(keys);
+      const queryTokens = normalizeResearchSearchQuery(query).tokens;
+      rankings.push({
+        query,
+        placements: keys.map((key) => {
+          const reason = serviceCoreDemotionReason(storedRows.get(key) ?? {}, queryTokens);
+          const placement = isDemotedServiceCoreReason(reason)
+            ? ('demoted' as const)
+            : reason === 'research'
+              ? ('research' as const)
+              : ('exempt' as const);
+          return { placement, reason };
+        }),
+      });
+    }
+    const corpusAfter = await context.readCorpusFingerprint();
+    return {
+      invariants: [checkServiceCoresRankBelowResearch(rankings, corpusBefore, corpusAfter)],
+      rates: [],
+    };
+  },
+};
+
 const PERSON_NAME_SAMPLE_WINDOW = 60;
 const PERSON_NAME_SAMPLE_SIZE = 15;
 const PERSON_NAME_MIN_SURNAME_LENGTH = 6;
@@ -1492,6 +1545,7 @@ export const journeyCases: readonly JourneyCase[] = [
   acronymServesItsPhrase,
   unmatchedWordKeepsTopicResults,
   meshDescriptorRanksBelowOwnEvidence,
+  serviceCoresRankBelowResearch,
   personNameLookupReachesThePerson,
   pastCapMembersAreFoundThroughTheirRow,
   dictionaryWordsAreNotRespelled,
