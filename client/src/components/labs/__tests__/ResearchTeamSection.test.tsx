@@ -368,9 +368,9 @@ describe('ResearchTeamSection', () => {
         highlightedMemberName="Fixture Scholar 27"
       />,
     );
-    expect(
-      screen.getByText('Fixture Scholar 27').closest('li')?.getAttribute('aria-current'),
-    ).toBe('true');
+    expect(screen.getByText('Fixture Scholar 27').closest('li')?.getAttribute('aria-current')).toBe(
+      'true',
+    );
     expect(screen.getAllByRole('listitem')).toHaveLength(25);
     expect(screen.queryByText('Fixture Scholar 28')).toBeNull();
 

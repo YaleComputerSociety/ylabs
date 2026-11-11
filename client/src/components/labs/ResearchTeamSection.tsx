@@ -79,7 +79,8 @@ const withinTeamCapKeepingHighlighted = (
   const shown = members.slice(0, MAX_PRESENTED_TEAM_MEMBERS);
   const highlightedKey = memberNameKey(highlightedMemberName);
   if (!highlightedKey) return shown;
-  const isHighlighted = (member: LabMember) => memberNameKey(displayName(member)) === highlightedKey;
+  const isHighlighted = (member: LabMember) =>
+    memberNameKey(displayName(member)) === highlightedKey;
   if (shown.some(isHighlighted)) return shown;
   const highlightedPastCap = members.slice(MAX_PRESENTED_TEAM_MEMBERS).find(isHighlighted);
   return highlightedPastCap ? [...shown, highlightedPastCap] : shown;
