@@ -299,6 +299,9 @@ Neither is worth buying before Atlas backups, which a free cluster does not prov
 
 While the scheduled Development sweep is suspended, its post-run stages do not run on their own, so run these by hand in each routine Development maintenance pass.
 Run them from a worktree at current `beta`, with the model key blank and never `--force-llm`, and sequence the write and the search sync with any other session writing Development.
+The Development write lease (#5756) enforces that sequencing: an apply-class write, `development:search:sync` included, is refused while another holds the lease, and `yarn --cwd server dev:locks` shows who holds it.
+The lease never touches Beta or Production, so promotion steps are unaffected.
+See the write-lease section of `skills/scrapers/SKILL.md`.
 
 ### URL-identity duplicates waiting for the guarded lane (#5688)
 

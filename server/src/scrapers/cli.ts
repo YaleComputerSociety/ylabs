@@ -26,7 +26,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { buildOrchestrator } from './registry';
-import { installScraperHostConcurrencyInterceptor } from './utils/hostConcurrencyLimiter';
+import {
+  ChainedHostSlotLimiter,
+  installScraperHostConcurrencyInterceptor,
+  type HostSlotLimiter,
+} from './utils/hostConcurrencyLimiter';
 import { scraperHostSlotLimiter } from './utils/scraperHostSlotLimiter';
 import { installScraperHttpValidatorCache } from './utils/httpValidatorCache';
 import { installSweepPageReuse } from './utils/sweepPageReuse';
@@ -72,7 +76,13 @@ export {
   scrapeCliCompletionOutcome,
   unmaterializedWriteRunWarning,
 } from './cliHelpers';
-import { connectScriptMongo } from '../db/connections';
+import { connectScriptMongo, devWriteLeaseDescriptor } from '../db/connections';
+import {
+  armDevHostLeases,
+  ensureDevHostLease,
+  recordDevApplyIntent,
+  releaseHeldDevWriteLeases,
+} from '../db/devWriteLease';
 import { SCRAPE_RUN_SOCKET_TIMEOUT_MS } from './scrapeRunProgress';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -176,8 +186,42 @@ async function warnWhenSourceIsBeingWritten(
   );
 }
 
+/**
+ * Which writes a scrape CLI command will make, read from its preflight before it connects: a
+ * writing `run` writes observations and takes per-host leases, and a materialize, an
+ * auto-materialize or a prune is apply-class and takes the Development write lease (#5756).
+ */
+export function scraperCliWrites(preflight: ScraperCliPreflight): {
+  observations: boolean;
+  apply: boolean;
+} {
+  if (preflight.command === 'run') {
+    const { guard } = preflight as Extract<ScraperCliPreflight, { command: 'run' }>;
+    const writing = !guard.options.dryRun;
+    return { observations: writing, apply: writing && guard.autoMaterialize };
+  }
+  if (preflight.command === 'materialize') {
+    const { guard } = preflight as Extract<ScraperCliPreflight, { command: 'materialize' }>;
+    return { observations: false, apply: !guard.options.dryRun };
+  }
+  if (preflight.command === 'prune-observations') {
+    const { guard } = preflight as Extract<ScraperCliPreflight, { command: 'prune-observations' }>;
+    return { observations: false, apply: guard.apply };
+  }
+  return { observations: false, apply: false };
+}
+
+const devHostLeaseLimiter: HostSlotLimiter = {
+  async acquire(host) {
+    await ensureDevHostLease(host);
+    return () => undefined;
+  },
+};
+
 export async function main(): Promise<void> {
-  installScraperHostConcurrencyInterceptor(scraperHostSlotLimiter());
+  installScraperHostConcurrencyInterceptor(
+    new ChainedHostSlotLimiter([devHostLeaseLimiter, scraperHostSlotLimiter()]),
+  );
   const { command, flags } = parseArgs(process.argv);
   if (!flags.release) {
     installScraperHttpValidatorCache();
@@ -271,11 +315,20 @@ Concurrency:
   }
 
   const preflight = buildScraperCliPreflight(command, flags, url);
+  const writes = scraperCliWrites(preflight);
+  if (writes.apply) recordDevApplyIntent(`scrape ${command}`);
 
   await connectScriptMongo(
     url,
     command === 'run' ? { socketTimeoutMS: SCRAPE_RUN_SOCKET_TIMEOUT_MS } : undefined,
   );
+  const leaseConnection = devWriteLeaseDescriptor(mongoose.connection);
+  if (writes.observations && leaseConnection) {
+    armDevHostLeases(
+      leaseConnection,
+      `scrape run ${process.argv.slice(3).join(' ')}`.slice(0, 300),
+    );
+  }
 
   try {
     const connectedDbLabel = (): string =>
@@ -582,6 +635,7 @@ Concurrency:
     console.error(`Unknown command: ${command}. Use "help" for usage.`);
     process.exit(1);
   } finally {
+    await releaseHeldDevWriteLeases().catch(() => undefined);
     await disconnectWithin(MONGO_DISCONNECT_DEADLINE_MS);
   }
 }

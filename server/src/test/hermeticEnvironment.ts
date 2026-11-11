@@ -68,6 +68,7 @@ export const applyEnvironmentFence = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv
   // A suite must never join, or become, the machine-wide host slot broker a live scrape on
   // the same machine is using; a suite that tests the broker re-enables it in a private directory.
   env.SCRAPER_MACHINE_HOST_SLOTS = 'off';
+  env.DEV_WRITE_LEASE = 'off';
   return env;
 };
 

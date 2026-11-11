@@ -34,7 +34,7 @@ vi.mock('../../services/researchEntityEvidenceCoverage', () => ({
 }));
 
 import { ScraperOrchestrator } from '../orchestrator';
-import { INTERRUPT_CLEANUP_TIMEOUT_MS } from '../interruptCleanup';
+import { INTERRUPT_CLEANUP_TIMEOUT_MS } from '../../utils/interruptCleanup';
 import { currentProcessCodeSha } from '../scrapeRunCodeIdentity';
 import { ScrapeRunStalledError } from '../scrapeRunProgress';
 import { SCRAPE_RUN_NOTES_MAX_LENGTH, SCRAPE_RUN_NOTES_TRUNCATED_SUFFIX } from '../scrapeRunNotes';

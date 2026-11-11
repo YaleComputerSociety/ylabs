@@ -193,6 +193,9 @@ These are typed for one command and never stored on a service.
 | `ALLOW_REMOTE_E2E_SEED` | Allows the end-to-end smoke seed against a non-local database. |
 | `PROMOTION_DATASET_VERSION` | The dataset version label the promotion copy records. |
 | `SCRAPER_DEVELOPMENT_DB_NAME`, `SCRAPER_BETA_DB_NAME`, `SCRAPER_PRODUCTION_DB_NAME` | Override the database names the scraper guards expect. |
+| `DEV_WRITE_OWNER` | A session name recorded on a Development write lease, so a refused apply names who holds it (`server/src/db/devWriteLease.ts`, #5756). |
+| `DEV_WRITE_LEASE_OWNER` | Set by a lease holder for its child processes, so a sweep's children join its lease instead of being refused by it. Never set it by hand. |
+| `DEV_WRITE_LEASE` | `off`, `false` or `0` switches the Development write lease off; the test harness sets it for every suite. |
 | `YLABS_SKIP_LOCAL_DOTENV` | Stops a script loading `server/.env`; the test fence sets it for spawned children. |
 
 ## Scraper and Script Tuning Variables

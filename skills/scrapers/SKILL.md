@@ -307,6 +307,30 @@ Before #2498 only the cron runner took the lock, so two operators or two agents 
 - Losing the lease mid-run is reported, not ignored: a renewal that matches no row means the row no longer belongs to this process, so the command prints `LOCK LOST` and exits nonzero rather than reporting an exclusive write it did not have.
 - The lock row records a CLI writer's provenance: `releaseReason` follows the run's own outcome, and `lastRunId` names the run.
 
+### One apply-class Development write at a time (#5756)
+
+Above the per-source lock sits a Development-wide write lease, also stored in `scrape_job_locks` under reserved names.
+It replaces the convention of announcing each write to the session that sequences Development writes with enforcement.
+
+- An apply-class script takes the `__dev-apply__` lease before its first write, and a second apply is **refused** with a nonzero exit that names the holder, its command and its heartbeat age.
+  Nothing was written when that refusal prints.
+- The hook is `assertScriptApplyAllowed`: with `--apply` it records an apply intent, and the shared connect paths in `db/connections.ts` take the lease only for a process that recorded one.
+  The API server, the Render web service and request-path code never record an intent, so they never read or wait on a lease; `devWriteLease.test.ts` connects through `initializeConnections` to a Development-named database and asserts no lease document appears.
+- The lease is taken only when the connected database resolves to Development (`resolveDevWriteLeaseTarget`).
+  Beta, Production, test and localhost databases never read or write a lease document, and an apply against a remote database the resolver cannot place refuses rather than writing unguarded.
+- Scripts that write through their own client or connect path take it explicitly: `scrape run` that auto-materializes, `scrape materialize`, `scrape prune-observations`, the sweeps (`holdDevApplyLeaseForRun`), `development:refresh-from-beta` and `model-refactor:validators` (`holdDevApplyLeaseOnDb`), and the retire and backfill scripts that bypass the guard (`recordDevApplyIntent`).
+- A child process inherits its parent's owner id through `DEV_WRITE_LEASE_OWNER`, so a sweep's `scrape run` children join the sweep's lease instead of being refused by it, and only the root owner releases it.
+- Append-only measurement writes are exempt (`DEV_APPLY_LEASE_EXEMPT_SCRIPTS`: `corpus:snapshot`, `gates:refresh`, the lane benchmark and scorecard scripts, `engine:benchmark`), because they write their own collections and are meant to run during a long apply.
+- A dry run never takes or reads the lease.
+- A writing lane run against Development also takes a `host:<hostname>` lease before its first fetch to each host, so two lane runs cannot fetch one host at once.
+- The lease heartbeats every 30 seconds and expires 5 minutes after the last heartbeat, so an apply running for hours keeps it, and a crashed holder frees it within 5 minutes; a holder on the same machine whose process has exited is taken over at once.
+  A process that finds its lease taken exits before its next write.
+- Set `DEV_WRITE_OWNER=<session name>` so a refusal names who holds the lease.
+- `yarn --cwd server dev:locks` lists the apply, host and source leases with owner, command, heartbeat age and live, stale or released state (`--json` for machine output).
+  It is read-only: a crashed holder's lease frees itself by expiry, or at once for a holder on the same machine.
+- `DEV_WRITE_LEASE=off` switches the lease off; the test harness sets it for every suite.
+- `development:refresh-from-beta` keeps `scrape_job_locks`, which is now a preserved environment-local collection, because the refresh holds its own lease there.
+
 ### `scrape_runs.status` is read through a heartbeat
 
 Every exit path of the orchestrator writes a terminal status: `success`, `partial`, `failure`, or `interrupted` on `SIGINT`/`SIGTERM` (#3595).
@@ -331,7 +355,7 @@ A run whose work hangs stops heartbeating too (#5086): real work bumps the proce
   Do not run it with `--apply` while a sweep is running unless you have read its dry run: a sweep started on code older than #3595 writes rows with no heartbeat, which only the lock and the 72-hour bound protect.
 - Every Development sweep already reaps heartbeat-stale rows: its first post-run stage, `stale-scrape-run-reap`, runs the command with `--heartbeat-stale-only --started-before <sweep start>`.
   That closes only `heartbeat_stale` rows (stale heartbeat, owner not a live process on this host, no held source lock) that started before the sweep, and keeps pre-heartbeat rows as `legacy_operator_only`, so a `legacy_abandoned` row still needs the operator-run command.
-- A new signal cleanup goes through `onInterrupt` in `interruptCleanup.ts`, never its own `process.once` plus re-raise, because two handlers that each re-raise race and the first kills the process while the other is still writing.
+- A new signal cleanup goes through `onInterrupt` in `utils/interruptCleanup.ts`, never its own `process.once` plus re-raise, because two handlers that each re-raise race and the first kills the process while the other is still writing.
 - The stored values are not enum-valid: Development holds 2 rows with `completed` and 1 with `failed`, written by raw operator updates that bypass the validator (the #2137 family).
   Any status check must treat the stored set as open, not as the enum.
   `docs/research-data-pipeline.md` ("A run record always ends terminal") owns the full contract and every consumer of `interrupted`.
@@ -1044,7 +1068,7 @@ Start an address pattern with the non-address lookbehind `(?<![a-z0-9._%+-])` ra
   The lock is keyed `environment:sourceName`, so it serializes writers on ONE source and leaves parallel work on different sources alone.
   `startScrapeJobLockHeartbeat` renews the lease during a long run; `findHeldScrapeJobLock` reports a live holder for a read-only caller without competing for the lock, and treats an expired lease as no holder because `acquireScrapeJobLock` would take it.
 - `scrapeRunLiveness.ts` - the `ScrapeRun` heartbeat, owner stamp, and `classifyScrapeRunLiveness`/`isAbandonedScrapeRun`, the only honest way to ask whether a run is alive.
-- `interruptCleanup.ts` - `onInterrupt`, the single `SIGINT`/`SIGTERM` handler that settles every registered cleanup (run status, lock release) before re-raising the signal.
+- `../utils/interruptCleanup.ts` - `onInterrupt`, the single `SIGINT`/`SIGTERM` handler that settles every registered cleanup (run status, lock release) before re-raising the signal; it lives in `utils/` so the Development write lease in `db/` releases through the same handler.
 - `seedSources.ts` - populates active `Source` rows from the coverage registry and disables retained historical rows for retired sources.
   `enabled` means "not retired" and is re-derived on every apply, so it is never a run switch; what runs is decided by the sweep manifests and `MANUAL_ONLY_SWEEP_SOURCES` alone (#4025).
   Every scraper registered in `registry.ts` needs a seed entry here, because `validateScraperSweepSourceRows` refuses to start a sweep without the row and `scrapers:audit-freshness` blocks on it; applying the seed is the remediation, so a registered scraper the seed does not declare leaves the audit failing with nothing an operator can do.
