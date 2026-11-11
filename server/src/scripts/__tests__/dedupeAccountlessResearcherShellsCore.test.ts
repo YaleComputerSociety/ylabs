@@ -19,6 +19,7 @@ import {
   nameVariantShape,
   withoutDistinctPeopleFolds,
   resolveFinalMergeTargets,
+  researchEntityIdsToRegateAfterFold,
 } from '../dedupeAccountlessResearcherShellsCore';
 
 describe('normalizeResearcherName', () => {
@@ -1087,5 +1088,43 @@ describe('name-variant shared-row fold (#5592)', () => {
     );
     expect([...kept]).toEqual([['c', 'd']]);
     expect(refused).toBe(1);
+  });
+});
+
+describe('researchEntityIdsToRegateAfterFold (#5687)', () => {
+  const edge = (personId: string, entityId: string, archived = false) => ({
+    personId,
+    archived,
+    target: { kind: 'RESEARCH_ENTITY', id: entityId },
+  });
+
+  it('adds every live row the survivor holds an edge on to the rows the shell held', () => {
+    const ids = researchEntityIdsToRegateAfterFold({
+      shellEdges: [edge('shell', 'row-a')],
+      survivorEdges: [edge('survivor', 'row-b'), edge('survivor', 'row-c', true)],
+      mergeTargetByShellId: new Map([['shell', 'survivor']]),
+    });
+    expect([...ids].sort()).toEqual(['row-a', 'row-b']);
+  });
+
+  it('ignores edges of people the run did not fold and non-research targets', () => {
+    const ids = researchEntityIdsToRegateAfterFold({
+      shellEdges: [edge('other-shell', 'row-x')],
+      survivorEdges: [
+        edge('other-survivor', 'row-y'),
+        { personId: 'survivor', archived: false, target: { kind: 'ORG_UNIT', id: 'unit-1' } },
+      ],
+      mergeTargetByShellId: new Map([['shell', 'survivor']]),
+    });
+    expect(ids.size).toBe(0);
+  });
+
+  it('returns nothing when there is no fold', () => {
+    const ids = researchEntityIdsToRegateAfterFold({
+      shellEdges: [edge('shell', 'row-a')],
+      survivorEdges: [edge('survivor', 'row-b')],
+      mergeTargetByShellId: new Map(),
+    });
+    expect(ids.size).toBe(0);
   });
 });
