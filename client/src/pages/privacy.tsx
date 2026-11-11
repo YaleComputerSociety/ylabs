@@ -226,7 +226,8 @@ const Privacy = () => {
           <p className={BODY_CLASS}>
             If you ask to be removed from y/labs, the request stores only your netid, the listing it
             matched, the request status, when it was made and decided, and which maintainer decided
-            it. A maintainer applies an accepted request within 7 days.
+            it. A maintainer applies an accepted request, and it reaches the live site with the next
+            update.
           </p>
           <p className={BODY_CLASS}>
             The removal itself keeps only one-way keyed hashes of your netid, email, ORCID iD,

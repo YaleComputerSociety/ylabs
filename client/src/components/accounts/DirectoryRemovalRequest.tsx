@@ -8,9 +8,9 @@ import RemovalRequestEmailLink from '../privacy/RemovalRequestEmailLink';
 export const DIRECTORY_REMOVAL_REQUEST_PATH = '/users/directoryRemovalRequest';
 export const REMOVE_ME_LABEL = 'Remove me from y/labs';
 export const REMOVAL_REQUESTED_MESSAGE =
-  "We'll stop showing you within 7 days. You can ask to be listed again at any time.";
+  "We'll stop showing you after a maintainer applies your request and the next update reaches the live site. You can ask to be listed again at any time.";
 export const REMOVAL_ACCEPTED_MESSAGE =
-  'Your request was accepted. You will stop appearing on y/labs within 7 days.';
+  'Your request was accepted. You will stop appearing on y/labs with the next update.';
 const RemovalDeclinedMessage = () => (
   <>
     We could not confirm this request. You can send it again, or email <RemovalRequestEmailLink />{' '}

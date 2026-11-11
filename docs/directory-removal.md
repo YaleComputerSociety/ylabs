@@ -11,6 +11,7 @@ An identity entry withholds the researcher who carries that identifier.
 A name entry withholds that name wherever it appears as a name string, which is how an undergraduate on an embedded roster is removed.
 It also withholds a namesake's name on an embedded roster and in prose, except in the prose of a row that serves that namesake as a lead or member, which is their own context; only an identity entry withholds a live researcher.
 Entries are recorded on Development with `yarn --cwd server directory-removal:record` and reach Beta and Production with the corpus they suppress; `docs/release-process.md` owns the copy rules.
+There is no fixed time for a removal to take effect: an accepted request reaches the live site with the next update, the next promotion.
 
 ## What a removal withholds
 
