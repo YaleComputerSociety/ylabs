@@ -148,6 +148,20 @@ describe('a materialized row labels each grant with its lead role (#5779)', () =
     });
   });
 
+  it('stores no count and no funder once every award is withheld (#5785)', async () => {
+    await Observation.deleteMany({});
+    await seed('recentGrants', [
+      award('R01GM000002', [{ contact: true, researcherId: String(other), profileId: 2 }]),
+    ]);
+    await seed('recentGrantCount', 4);
+    await seed('fundingAgencies', ['NIH']);
+    await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+    const stored = await ResearchEntity.findOne({ slug: ENTITY_KEY }).lean<Record<string, any>>();
+    expect(stored?.recentGrants ?? []).toEqual([]);
+    expect(stored?.recentGrantCount ?? 0).toBe(0);
+    expect(stored?.fundingAgencies ?? []).toEqual([]);
+  });
+
   it('stores the same grants after a second materialize', async () => {
     await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
     const first = await storedGrants();

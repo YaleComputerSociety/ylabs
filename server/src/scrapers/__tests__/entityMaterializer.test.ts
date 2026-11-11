@@ -142,7 +142,8 @@ describe('entityMaterializer post-materialization metrics', () => {
       ]),
     ).toEqual({
       recentGrants: [{ id: 'NIH-1' }, { id: 'shared', title: 'new' }, { id: 'NSF-1' }],
-      recentGrantCount: 23,
+      recentGrantPeriods: [{ id: 'NIH-1' }, { id: 'shared' }, { id: 'NSF-1' }],
+      recentGrantCount: 3,
       fundingAgencies: ['NIH', 'NSF'],
     });
   });
@@ -208,7 +209,7 @@ describe('entityMaterializer post-materialization metrics', () => {
     expect(evidence.recentGrantCount).toBe(4);
   });
 
-  it('withholds award periods while a counting source has not dated its awards', () => {
+  it('never counts awards a lane only states a total for (#5785)', () => {
     const evidence = aggregateResearchEntityGrantEvidence([
       {
         field: 'recentGrantPeriods',
@@ -229,8 +230,8 @@ describe('entityMaterializer post-materialization metrics', () => {
         value: 5,
       },
     ]);
-    expect(evidence.recentGrantPeriods).toEqual([]);
-    expect(evidence.recentGrantCount).toBe(6);
+    expect(evidence.recentGrantPeriods).toEqual([{ id: 'NIH-1' }]);
+    expect(evidence.recentGrantCount).toBe(1);
   });
 
   it('normalizes materializer ObjectIds without object-shaped coercion', () => {

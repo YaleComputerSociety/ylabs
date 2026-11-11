@@ -2611,7 +2611,10 @@ The collapsed award takes its title, abstract, amount and link from the newest f
 The NSF lane needs no collapse, because NSF Award Search returns one record per award id.
 The public grant display is a recency-sorted, deduplicated union capped at ten records, and funding agencies are unioned across sources.
 Each grant lane also emits `recentGrantPeriods`, the id, agency and start and end dates of every distinct award in its window rather than only the ten it lists (#4245).
-When every source that states a grant list or count has also dated its awards, the materializer stores the union of those periods and sets `recentGrantCount` to the number of distinct dated awards; until then it stores no periods and `recentGrantCount` sums the independent latest source totals, as before.
+The materializer derives `recentGrantPeriods`, `recentGrantCount` and `fundingAgencies` on every resolve from one set: every award some lane lists or dates that the row is eligible to serve after #5779 withholding, taken before the list is cut to ten (#5785).
+The count is the size of that set and the stored periods are that set, so a truncated list still counts every eligible award, while a withheld or refused award leaves neither a count nor a funder behind.
+A lane's own `recentGrantCount` observation is never read: an award a lane counts but never lists or dates is not one the row can show, so a lane that only states a total contributes only the awards it lists.
+A lane's funder labels are kept only while that lane contributes at least one eligible award, filtered by the awards it backs, and a row whose every award is withheld stores a count of 0 and no funder.
 The stored list is what the lanes read and may hold awards that have since ended, because the NIH and NSF windows admit ended awards and a stored list ages between reads.
 The public DTO (`server/src/services/servedCurrentFunding.ts`) therefore re-reads each award's `endDate` on every request and serves an award as current funding only while its end day has not passed or it has no end date (#3924).
 When the stored periods cover every award (their number equals the stored count), the served `recentGrantCount` is the number of distinct running awards across the periods and the list, so an award past the ten listed still counts and an ended one never does, and the agencies follow the running awards.
