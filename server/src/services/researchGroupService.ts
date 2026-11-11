@@ -4853,15 +4853,14 @@ export async function resolveArchivedResearchEntityCanonicalSlug(
   const canonicalSlug = typeof canonical?.slug === 'string' ? canonical.slug.trim() : '';
   if (canonicalSlug && canonicalSlug !== normalizedSlug) return canonicalSlug;
   if (mergedShell) return null;
-  return (
-    (await servableSurvivorSlugByMergedFromSlug(normalizedSlug)) ??
-    servableRenamedRowSlugByPreviousSlug(normalizedSlug)
-  );
+  return servableSurvivorSlugByMergedFromSlug(normalizedSlug);
 }
 
 // A live row renamed by a redirecting reslug keeps its old slugs in `previousSlugs` (#5808),
 // so a bookmarked or indexed URL still reaches it.
-async function servableRenamedRowSlugByPreviousSlug(slug: string): Promise<string | null> {
+export async function resolveRenamedResearchEntitySlug(rawSlug: string): Promise<string | null> {
+  const slug = normalizeResearchDetailSlug(rawSlug);
+  if (!slug) return null;
   const renamed = (await ResearchEntity.find({
     'previousSlugs.slug': slug,
     archived: { $ne: true },

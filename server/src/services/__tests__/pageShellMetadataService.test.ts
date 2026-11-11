@@ -23,6 +23,7 @@ const dependencies = (
     slug === SERVED_SLUG ? SERVED_ROW : null,
   ),
   readArchivedCanonicalSlug: vi.fn(async () => null),
+  readRenamedSlug: vi.fn(async () => null),
   lookupTimeoutMs: 50,
   cache: createPageShellResolutionCache(),
   lookupLimiter: createPageShellLookupLimiter(),
@@ -88,6 +89,20 @@ describe('resolvePageShell', () => {
     expect(resolution).toEqual({
       kind: 'redirect',
       status: 301,
+      location: `/research/${SERVED_SLUG}`,
+    });
+  });
+
+  it('redirects the previous slug of a renamed row temporarily to its current page', async () => {
+    const resolution = await resolvePageShell(
+      '/research/previous-slug',
+      CLIENT_KEY,
+      dependencies({ readRenamedSlug: async () => SERVED_SLUG }),
+    );
+
+    expect(resolution).toEqual({
+      kind: 'redirect',
+      status: 302,
       location: `/research/${SERVED_SLUG}`,
     });
   });

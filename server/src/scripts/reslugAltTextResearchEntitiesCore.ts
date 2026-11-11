@@ -53,12 +53,17 @@ export function assertAltTextReslugApplyAllowed(args: AltTextReslugArgs, dbLabel
   }
 }
 
-const RESEARCH_ENTITY_NAME_SUFFIX = /(?:^|\s+)(?:faculty\s+research|lab)$/i;
+const ROSTER_LANE_RESEARCH_ENTITY_NAME = /^(.+?)\s+(?:faculty\s+research|lab)$/i;
 
-/** The person a roster row is named for, read off the row's own name, never off its slug. */
+/**
+ * The person a roster row is named for, read off the row's own name, never off its slug.
+ * Only a name in the form the lane writes for a person names one; any other name, such as
+ * a stated lab name, would give a target the lane never emits.
+ */
 export function rosterPersonNameOfResearchEntity(name: unknown): string {
-  const raw = typeof name === 'string' ? name.trim() : '';
-  return normalizeName(raw.replace(RESEARCH_ENTITY_NAME_SUFFIX, ''));
+  const match =
+    typeof name === 'string' ? name.trim().match(ROSTER_LANE_RESEARCH_ENTITY_NAME) : null;
+  return match ? normalizeName(match[1]) : '';
 }
 
 /** The alt text a roster slug was minted from, read back from the slug's name part. */

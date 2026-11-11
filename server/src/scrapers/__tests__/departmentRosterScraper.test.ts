@@ -43,7 +43,6 @@ import {
   referenceCardExtractor,
   rosterDeptNameNamesItsOwnSchool,
   rosterResearchEntitySlug,
-  rosterResearchEntitySlugForPersonName,
   withoutUnheldSceneIdentity,
   jacksonPersonCardExtractor,
   ysphDirectoryExtractor,
@@ -1333,12 +1332,6 @@ describe('a headshot caption never mints a research row slug (#5808)', () => {
       pageUrl: 'https://music.yale.edu/meet-our-faculty',
     });
     expect(entry.name).toBe('Robin Fixture');
-  });
-
-  it('mints the row slug the reslug migration targets from the same name', () => {
-    expect(rosterResearchEntitySlugForPersonName('Robin Fixture', music)).toBe(
-      'dept-school-of-music-robin-fixture',
-    );
   });
 });
 

@@ -34,7 +34,14 @@ import { ResearchEntity } from '../../models/researchEntity';
 import { ScrapeRun } from '../../models/scrapeRun';
 import { materializeFromRun } from '../../scrapers/entityMaterializer';
 import { appendObservations } from '../../scrapers/observationStore';
-import { liveResearchEntityNamedByKeyObservations } from '../../scrapers/renamedResearchEntityAdoption';
+import {
+  DEFAULT_DEPT_CONFIGS,
+  nodePersonCardExtractor,
+  rosterResearchEntitySlug,
+  withoutUnheldSceneIdentity,
+  type DeptConfig,
+} from '../../scrapers/sources/departmentRosterScraper';
+import { normalizeName } from '../../scrapers/utils/scraperHelpers';
 import { toPublicResearchEntityDto } from '../../services/researchEntityDto';
 import { buildResearchEntitySearchIndexDocument } from '../../services/researchEntitySearchIndexService';
 import { clearC4Flags } from '../../scrapers/__tests__/c4FlagTestEnv';
@@ -54,6 +61,14 @@ const SCENE_SLUG = 'dept-school-of-music-man-in-green-suit-holding-sam-fixture';
 const SCENE_TARGET = 'dept-school-of-music-sam-fixture';
 const NAME_SLUG = 'dept-school-of-music-avery-fixture';
 const RENAMED_AT = new Date('2026-11-11T00:00:00Z');
+const MUSIC = DEFAULT_DEPT_CONFIGS.find((c) => c.deptKey === 'school-of-music') as DeptConfig;
+const CAPTION_CARD = `
+  <article about="/people/robin-fixture" class="node node--type-person node--view-mode-card">
+    <div class="top"><div class="field field--name-field-profile-image field__item">
+      <img src="/img/robin-fixture.jpg" alt="Photo of Dean Robin Fixture."></div></div>
+    <div class="card-content"><h2><span>Robin Fixture</span></h2>
+      <div class="paragraph--type--title-affiliation">Professor of Synthetic Music</div></div>
+  </article>`;
 
 const servedRow = (slug: string, personName: string, extra: Record<string, unknown> = {}) =>
   ResearchEntity.create({
@@ -285,16 +300,45 @@ describe('research-entity:reslug-alt-text-slugs renames rows minted from photo a
     expect(await ResearchEntity.countDocuments({ slug: SCENE_SLUG })).toBe(1);
   });
 
-  it('keeps the redirect once the stamped observations are pruned, and the old key still reaches the row', async () => {
-    const { caption } = await seedAltTextRows();
+  it('keeps the redirect once the stamped observations are pruned', async () => {
+    await seedAltTextRows();
     await reslug(true);
     await Observation.deleteMany({});
 
     const old = await fetch(`${baseUrl}/api/research/${CAPTION_SLUG}`, { redirect: 'manual' });
     expect(old.status).toBe(302);
-    expect(String((await liveResearchEntityNamedByKeyObservations(CAPTION_SLUG))?._id)).toBe(
-      String(caption._id),
+    expect(old.headers.get('location')).toBe(`/api/research/${CAPTION_TARGET}`);
+  });
+
+  it('renames a row to the key the roster lane emits for the same card on its next run', async () => {
+    const [entry] = nodePersonCardExtractor(CAPTION_CARD, {
+      pageUrl: 'https://music.yale.edu/meet-our-faculty',
+    });
+    const heldSlug = rosterResearchEntitySlug(entry, MUSIC);
+    await servedRow(heldSlug, normalizeName(entry.name));
+
+    await reslug(true);
+
+    const corpusAfterReslug = new Map((await slugs()).map((slug) => [slug, {}]));
+    const nextLaneKey = rosterResearchEntitySlug(
+      withoutUnheldSceneIdentity(entry, MUSIC, corpusAfterReslug),
+      MUSIC,
     );
+    expect(heldSlug).toBe(CAPTION_SLUG);
+    expect(await slugs()).toEqual([nextLaneKey]);
+  });
+
+  it('holds a row whose name is not the person name the lane writes, such as a stated lab name', async () => {
+    await servedRow(CAPTION_SLUG, '', { name: 'Synthetic Counterpoint Studio', kind: 'lab' });
+
+    const report = await reslug(true);
+
+    expect(report).toMatchObject({
+      rowsWithAltTextSlug: 1,
+      rowsWithNoUsableName: 1,
+      rowsRenamed: 0,
+    });
+    expect(await slugs()).toEqual([CAPTION_SLUG]);
   });
 
   it(
