@@ -1132,12 +1132,20 @@ export const LATEST_WINS_FINGERPRINT_FIELDS_BY_ENTITY_TYPE: Readonly<
  * each other. It never lets a staff typing replace a faculty one, whether the faculty typing
  * came from another roster in the run or from a live lane title stating a faculty appointment,
  * so a partial run cannot undo another roster's faculty typing (#5750).
+ *
+ * The research.yale.edu directory lane and the centres lane state one type per record per
+ * read too. Value-keyed, a core facility record kept the `CENTER` a pre-category read had
+ * inferred from its name live beside the `CORE_FACILITY` every later read took from the
+ * cores directory, and with one more `CENTER` vote from another lane the stale reading won
+ * (#5749).
  */
 export const LATEST_WINS_FINGERPRINT_FIELDS_BY_SOURCE: Readonly<
   Record<string, ReadonlySet<string>>
 > = {
   'lab-microsite-description-llm': new Set(['name', 'displayName']),
   'official-profile-pi-backfill': new Set(['entityType', 'kind']),
+  'yale-research-official': new Set(['entityType', 'kind']),
+  'centers-institutes-index': new Set(['entityType', 'kind']),
   'center-member-profile-research': new Set(['researchSummary', 'bio']),
   'dept-faculty-roster': new Set(['userType']),
 };

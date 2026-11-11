@@ -95,7 +95,7 @@ const CONSECUTIVE_REPEATED_PAGES_TO_STOP = 2;
 const MEMBER_PROFILE_FETCH_CONCURRENCY = 4;
 const MEMBER_IDENTITY_EVIDENCE_CACHE_PREFIX = 'member-identity-evidence:v1:';
 
-export type CenterKind = 'center' | 'institute' | 'program' | 'initiative';
+export type CenterKind = 'center' | 'institute' | 'program' | 'initiative' | 'core_facility';
 export type MemberRole = 'director' | 'co-director' | 'core-faculty' | 'affiliated';
 
 /** A single person extracted from a center's people page. */
@@ -1428,7 +1428,9 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     centerKey: 'ycga',
     centerName: 'Yale Center for Genome Analysis',
     schoolName: 'Yale School of Medicine',
-    kind: 'center',
+    // Named a centre, but the research cores directory lists it and its site takes project
+    // submissions and billing for sequencing as a service (#5749).
+    kind: 'core_facility',
     departments: ['Genetics'],
     url: 'https://medicine.yale.edu/genetics/research/ycga/people/',
     homeUrl: 'https://medicine.yale.edu/genetics/research/ycga/',
