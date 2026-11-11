@@ -5,6 +5,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 import {
   DEV_APPLY_LEASE_NAME,
+  DEV_WRITE_LEASE_DEAD_OWNER_HEARTBEAT_AGE_MS,
   DEV_WRITE_LEASE_COLLECTION,
   DEV_WRITE_LEASE_HEARTBEAT_MS,
   DEV_WRITE_LEASE_OWNER_ENV,
@@ -172,18 +173,33 @@ describe('acquiring a named lease', () => {
     await expect(holder.heartbeat()).resolves.toBe(false);
   });
 
-  it('takes over a live lease whose owner process on this host has exited', async () => {
+  it('takes over a lease whose owner process on this host has exited only once its heartbeat is stale', async () => {
     const db = database('Development_dead_pid');
-    const deps = { db, env: {}, host: 'laptop', isLocalProcessAlive: () => false };
+    const clock = new Clock(Date.UTC(2026, 10, 11, 9));
+    const deps = {
+      db,
+      env: {},
+      host: 'laptop',
+      now: clock.now,
+      isLocalProcessAlive: () => false,
+    };
     await acquireDevWriteLease(
       { name: DEV_APPLY_LEASE_NAME, command: 'crashed --apply' },
       { ...deps, pid: 111, newOwnerId: () => 'crashed' },
     );
-    const next = await acquireDevWriteLease(
-      { name: DEV_APPLY_LEASE_NAME, command: 'next --apply' },
-      { ...deps, pid: 222, newOwnerId: () => 'next' },
-    );
-    expect(next.ownerId).toBe('next');
+    const attempt = () =>
+      acquireDevWriteLease(
+        { name: DEV_APPLY_LEASE_NAME, command: 'next --apply' },
+        { ...deps, pid: 222, newOwnerId: () => 'next' },
+      );
+
+    clock.advance(DEV_WRITE_LEASE_HEARTBEAT_MS);
+    await expect(attempt()).rejects.toBeInstanceOf(DevWriteLeaseHeldError);
+    clock.advance(DEV_WRITE_LEASE_DEAD_OWNER_HEARTBEAT_AGE_MS - DEV_WRITE_LEASE_HEARTBEAT_MS);
+    await expect(attempt()).rejects.toBeInstanceOf(DevWriteLeaseHeldError);
+
+    clock.advance(1000);
+    expect((await attempt()).ownerId).toBe('next');
   });
 
   it('never takes over a live lease held from another host', async () => {
