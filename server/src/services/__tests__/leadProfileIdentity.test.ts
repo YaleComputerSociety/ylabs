@@ -35,6 +35,69 @@ describe('normalizeOfficialProfileDestination', () => {
   });
 });
 
+describe('normalizeOfficialProfileDestination on the divinity legacy faculty path (#5592)', () => {
+  it('reads the legacy faculty path and the profile path as one destination', () => {
+    for (const url of [
+      'https://divinity.yale.edu/faculty-and-research/yds-faculty/avery-synthetic',
+      'https://divinity.yale.edu/faculty-and-research/yds-faculty/avery-synthetic/',
+      'https://www.divinity.yale.edu/faculty-and-research/yds-faculty/avery-synthetic',
+      'https://divinity.yale.edu/profile/avery-synthetic',
+    ]) {
+      expect(normalizeOfficialProfileDestination(url)).toBe(
+        'divinity.yale.edu/profile/avery-synthetic',
+      );
+    }
+  });
+
+  it('collapses only that path pair, only on the divinity host', () => {
+    expect(
+      normalizeOfficialProfileDestination(
+        'https://law.yale.edu/faculty-and-research/yds-faculty/avery-synthetic',
+      ),
+    ).toBe('law.yale.edu/faculty-and-research/yds-faculty/avery-synthetic');
+    expect(
+      normalizeOfficialProfileDestination(
+        'https://divinity.yale.edu/faculty-and-research/yds-faculty/avery-synthetic/publications',
+      ),
+    ).toBe('divinity.yale.edu/faculty-and-research/yds-faculty/avery-synthetic/publications');
+    expect(
+      normalizeOfficialProfileDestination(
+        'https://divinity.yale.edu/faculty-and-research/avery-synthetic',
+      ),
+    ).toBe('divinity.yale.edu/faculty-and-research/avery-synthetic');
+  });
+});
+
+describe('officialProfileDestinationStoredPattern on the divinity legacy faculty path (#5592)', () => {
+  const fromProfile = officialProfileDestinationStoredPattern(
+    'https://divinity.yale.edu/profile/avery-synthetic',
+  );
+  const fromLegacy = officialProfileDestinationStoredPattern(
+    'https://divinity.yale.edu/faculty-and-research/yds-faculty/avery-synthetic',
+  );
+
+  it('matches a stored link in either form, from either form', () => {
+    for (const pattern of [fromProfile, fromLegacy]) {
+      expect(pattern?.test('https://divinity.yale.edu/profile/avery-synthetic')).toBe(true);
+      expect(
+        pattern?.test(
+          'https://divinity.yale.edu/faculty-and-research/yds-faculty/avery-synthetic/',
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it('does not match another person or another host', () => {
+    for (const pattern of [fromProfile, fromLegacy]) {
+      expect(pattern?.test('https://divinity.yale.edu/profile/avery-synthetic-jr')).toBe(false);
+      expect(pattern?.test('https://divinity.yale.edu/profile/blake-synthetic')).toBe(false);
+      expect(
+        pattern?.test('https://law.yale.edu/faculty-and-research/yds-faculty/avery-synthetic'),
+      ).toBe(false);
+    }
+  });
+});
+
 describe('isLikelyOfficialPersonProfileUrl', () => {
   it('accepts specific Yale person profile paths and rejects generic lab or directory pages', () => {
     expect(isLikelyOfficialPersonProfileUrl('https://medicine.yale.edu/profile/jane-doe/')).toBe(
