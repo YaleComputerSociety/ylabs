@@ -46,6 +46,7 @@ export interface StoredLaneObservation {
   entityKey?: string;
   entityId?: string;
   field: string;
+  value?: unknown;
   scrapeRunId?: string;
 }
 
@@ -319,6 +320,7 @@ export interface ServedFieldChange {
   projectedWithoutOrphans: unknown;
   creditedToRetired: boolean;
   becomesEmpty: boolean;
+  becomesLessComplete: boolean;
 }
 
 const isEmptyValue = (value: unknown): boolean =>
@@ -326,6 +328,14 @@ const isEmptyValue = (value: unknown): boolean =>
   value === null ||
   (typeof value === 'string' && value.trim() === '') ||
   (Array.isArray(value) && value.length === 0);
+
+const isLessComplete = (before: unknown, after: unknown): boolean => {
+  if (isEmptyValue(before)) return false;
+  if (isEmptyValue(after)) return true;
+  if (!Array.isArray(before) || !Array.isArray(after)) return false;
+  const kept = new Set(after.map((item) => stableJson(item)));
+  return before.some((item) => !kept.has(stableJson(item)));
+};
 
 const stableJson = (value: unknown): string =>
   JSON.stringify(value, (_key, inner) =>
@@ -390,6 +400,9 @@ export function servedFieldChanges(input: {
       projectedWithoutOrphans: withoutOrphans[field],
       creditedToRetired: input.creditedFields.has(field),
       becomesEmpty: !isEmptyValue(withOrphans[field]) && isEmptyValue(withoutOrphans[field]),
+      becomesLessComplete:
+        isLessComplete(withOrphans[field], withoutOrphans[field]) &&
+        isLessComplete(input.stored[field], withoutOrphans[field]),
     });
   }
   return changes;
@@ -410,4 +423,84 @@ export function fieldsCreditedToRetired(
     if (observationId && retiredIds.has(String(observationId))) credited.add(field);
   }
   return credited;
+}
+
+/**
+ * A list field resolves as the union of its observations, so an orphaned item no other
+ * observation states would drop out even when the field has other evidence.
+ */
+export function evidenceValueKeys(value: unknown): string[] {
+  const items = Array.isArray(value) ? value : [value];
+  return items
+    .filter((item) => item !== undefined && item !== null && item !== '')
+    .map((item) => (typeof item === 'string' ? item.trim().toLowerCase() : stableJson(item)));
+}
+
+export interface HeldSoleEvidence {
+  row: string;
+  field: string;
+  configIds: string[];
+  values: unknown[];
+  observationIds: string[];
+  basis: 'no-other-evidence' | 'engine-projection';
+}
+
+export interface SoleEvidenceSplit {
+  observationIdsToRetire: string[];
+  heldSoleEvidence: HeldSoleEvidence[];
+  withoutRow: number;
+}
+
+/**
+ * Keeps every attributed observation that is the only live evidence for its field on the row
+ * it backs, unless the operator opts in. Retiring it would leave the field with nothing behind
+ * it, and a hand check found such values correct, so a missing landed lane is not enough to
+ * retract them; a later run retires them once a live lane backs the field.
+ */
+export function splitSoleEvidence(input: {
+  attributed: readonly AttributedObservation[];
+  rowOf: (observation: StoredLaneObservation) => string | undefined;
+  otherEvidenceByRow: ReadonlyMap<string, ReadonlyMap<string, ReadonlySet<string>>>;
+  retireSoleEvidence: boolean;
+}): SoleEvidenceSplit {
+  const retire = new Set<string>();
+  const held = new Map<string, HeldSoleEvidence>();
+  let withoutRow = 0;
+  for (const entry of input.attributed) {
+    const row = input.rowOf(entry.observation);
+    if (!row) {
+      withoutRow += 1;
+      retire.add(entry.observation.id);
+      continue;
+    }
+    const otherValues = input.otherEvidenceByRow.get(row)?.get(entry.observation.field);
+    const backed =
+      otherValues !== undefined &&
+      (!Array.isArray(entry.observation.value) ||
+        evidenceValueKeys(entry.observation.value).every((key) => otherValues.has(key)));
+    if (backed || input.retireSoleEvidence) {
+      retire.add(entry.observation.id);
+      continue;
+    }
+    const key = `${row}\u0000${entry.observation.field}`;
+    const group = held.get(key) ?? {
+      row,
+      field: entry.observation.field,
+      configIds: [],
+      values: [],
+      observationIds: [],
+      basis: 'no-other-evidence' as const,
+    };
+    if (!group.configIds.includes(entry.configId)) group.configIds.push(entry.configId);
+    group.values.push(entry.observation.value);
+    group.observationIds.push(entry.observation.id);
+    held.set(key, group);
+  }
+  return {
+    observationIdsToRetire: [...retire].sort(),
+    heldSoleEvidence: [...held.values()].sort(
+      (a, b) => a.row.localeCompare(b.row) || a.field.localeCompare(b.field),
+    ),
+    withoutRow,
+  };
 }

@@ -20,7 +20,11 @@ import mongoose from 'mongoose';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
-import { Observation, type ObservedEntityType } from '../models/observation';
+import {
+  Observation,
+  researchEntityObservationSubjects,
+  type ObservedEntityType,
+} from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { ScrapeRun } from '../models/scrapeRun';
 import { Source } from '../models/source';
@@ -46,6 +50,9 @@ import {
   laneConfigLabel,
   parseRequestedLaneConfigs,
   planOrphanedLaneConfigRetirement,
+  evidenceValueKeys,
+  splitSoleEvidence,
+  type HeldSoleEvidence,
   runOnlySelection,
   servedFieldChanges,
   type LaneConfigRefPresence,
@@ -64,6 +71,7 @@ dotenv.config({ path: path.resolve(here, '../../.env'), quiet: true });
 
 export const SCRIPT_NAME = 'observations:retire-orphaned-lane-configs';
 export const CONFIRM_FLAG = '--confirm-retire-orphaned-lane-configs';
+export const RETIRE_SOLE_EVIDENCE_FLAG = '--retire-sole-evidence';
 export const ORPHANED_LANE_CONFIG_ROLLBACK_REASON =
   'written by a lane config that exists on no git ref, so no run of current code re-reads its pages (#5807)';
 const SERVED_TIER = 'student_ready';
@@ -74,6 +82,7 @@ export interface RetireOrphanedLaneConfigsOptions {
   configs: RequestedLaneConfig[];
   gitDirs: string[];
   output?: string;
+  retireSoleEvidence: boolean;
 }
 
 export function parseRetireOrphanedLaneConfigsArgs(
@@ -84,6 +93,7 @@ export function parseRetireOrphanedLaneConfigsArgs(
     confirmed: false,
     configs: [],
     gitDirs: [],
+    retireSoleEvidence: false,
   };
   const valueOf = (arg: string, flag: string, index: number): [string, number] =>
     arg === flag ? [argv[index + 1] ?? '', index + 1] : [arg.slice(flag.length + 1), index];
@@ -92,6 +102,7 @@ export function parseRetireOrphanedLaneConfigsArgs(
     if (arg === '--apply') options.apply = true;
     else if (arg === '--dry-run') options.apply = false;
     else if (arg === CONFIRM_FLAG) options.confirmed = true;
+    else if (arg === RETIRE_SOLE_EVIDENCE_FLAG) options.retireSoleEvidence = true;
     else if (arg === '--configs' || arg.startsWith('--configs=')) {
       const [value, next] = valueOf(arg, '--configs', i);
       options.configs.push(...parseRequestedLaneConfigs(value));
@@ -178,7 +189,7 @@ async function loadCandidateLaneEvidence(input: {
       ...materializationReadScopeFilter(),
       $or: clauses,
     })
-      .select('_id sourceName entityType entityKey entityId field scrapeRunId')
+      .select('_id sourceName entityType entityKey entityId field value scrapeRunId')
       .lean()) as Array<Record<string, unknown>>;
     for (const row of rows) {
       observations.push({
@@ -188,6 +199,7 @@ async function loadCandidateLaneEvidence(input: {
         entityKey: typeof row.entityKey === 'string' ? row.entityKey : undefined,
         entityId: serializedDocumentId(row.entityId) ?? undefined,
         field: String(row.field),
+        value: row.value,
         scrapeRunId: serializedDocumentId(row.scrapeRunId) ?? undefined,
       });
     }
@@ -378,13 +390,19 @@ export interface ServedRowDiff {
 
 const MAX_SURVIVOR_HOPS = 8;
 
+interface ResearchEvidenceRows {
+  live: Map<string, { doc: Record<string, unknown>; retiredOnRow: number }>;
+  survivorOfIdentity: Map<string, string>;
+}
+
+const isResearchSubject = (entityType: string) =>
+  entityType === 'researchEntity' || entityType === 'researchGroup';
+
 async function affectedLiveResearchRows(
-  plan: OrphanedLaneConfigPlan,
-): Promise<Map<string, { doc: Record<string, unknown>; retiredOnRow: number }>> {
-  const researchObservations = plan.attributed.filter(
-    (entry) =>
-      entry.observation.entityType === 'researchEntity' ||
-      entry.observation.entityType === 'researchGroup',
+  attributed: OrphanedLaneConfigPlan['attributed'],
+): Promise<ResearchEvidenceRows> {
+  const researchObservations = attributed.filter((entry) =>
+    isResearchSubject(entry.observation.entityType),
   );
   const keys = [
     ...new Set(
@@ -405,6 +423,7 @@ async function affectedLiveResearchRows(
     ],
   }).lean()) as Array<Record<string, unknown>>;
   const live = new Map<string, { doc: Record<string, unknown>; retiredOnRow: number }>();
+  const survivorOfIdentity = new Map<string, string>();
   const retiredByKey = new Map<string, number>();
   for (const entry of researchObservations) {
     const key = entry.observation.entityKey ?? entry.observation.entityId ?? '';
@@ -419,6 +438,8 @@ async function affectedLiveResearchRows(
         : null;
     }
     if (!current || current.archived === true || typeof current.slug !== 'string') continue;
+    survivorOfIdentity.set(`key:${String(doc.slug)}`, current.slug);
+    survivorOfIdentity.set(`id:${serializedDocumentId(doc._id) ?? ''}`, current.slug);
     const retiredHere =
       (retiredByKey.get(String(doc.slug)) ?? 0) +
       (retiredByKey.get(serializedDocumentId(doc._id) ?? '') ?? 0);
@@ -428,7 +449,97 @@ async function affectedLiveResearchRows(
       retiredOnRow: (existing?.retiredOnRow ?? 0) + retiredHere,
     });
   }
-  return live;
+  return { live, survivorOfIdentity };
+}
+
+const researchRowLabel = (slug: string) => `researchEntity:${slug}`;
+const personRowLabel = (entityKey: string) => `user:${entityKey}`;
+
+function evidenceRowOf(
+  observation: StoredLaneObservation,
+  survivorOfIdentity: ReadonlyMap<string, string>,
+): string | undefined {
+  if (isResearchSubject(observation.entityType)) {
+    const survivor =
+      (observation.entityKey && survivorOfIdentity.get(`key:${observation.entityKey}`)) ||
+      (observation.entityId && survivorOfIdentity.get(`id:${observation.entityId}`));
+    return survivor ? researchRowLabel(survivor) : undefined;
+  }
+  return observation.entityKey ? personRowLabel(observation.entityKey) : undefined;
+}
+
+async function otherEvidenceByRow(input: {
+  attributed: OrphanedLaneConfigPlan['attributed'];
+  live: ResearchEvidenceRows['live'];
+}): Promise<Map<string, Map<string, Set<string>>>> {
+  const attributedIds = new Set(input.attributed.map((entry) => entry.observation.id));
+  const fieldsByRow = new Map<string, Map<string, Set<string>>>();
+  const note = (row: string, field: string, value: unknown) => {
+    const fields = fieldsByRow.get(row) ?? new Map<string, Set<string>>();
+    const values = fields.get(field) ?? new Set<string>();
+    for (const key of evidenceValueKeys(value)) values.add(key);
+    fields.set(field, values);
+    fieldsByRow.set(row, fields);
+  };
+  for (const [slug, { doc }] of input.live) {
+    const slugs = new Set<string>([slug]);
+    const ids = new Set<string>([serializedDocumentId(doc._id) ?? '']);
+    let frontier = [...ids];
+    for (let hop = 0; frontier.length > 0 && hop < MAX_SURVIVOR_HOPS; hop += 1) {
+      const merged = (await ResearchEntity.find({
+        canonicalGroupId: { $in: frontier.map((id) => new mongoose.Types.ObjectId(id)) },
+      })
+        .select('_id slug')
+        .lean()) as Array<{ _id: unknown; slug?: string }>;
+      frontier = [];
+      for (const row of merged) {
+        const id = serializedDocumentId(row._id) ?? '';
+        if (!id || ids.has(id)) continue;
+        ids.add(id);
+        if (row.slug) slugs.add(row.slug);
+        frontier.push(id);
+      }
+    }
+    const rows = (await Observation.find({
+      entityType: { $in: [...researchEntityObservationSubjects] },
+      ...materializationReadScopeFilter(),
+      $or: [
+        { entityKey: { $in: [...slugs] } },
+        {
+          entityId: { $in: [...ids].filter(Boolean).map((id) => new mongoose.Types.ObjectId(id)) },
+        },
+      ],
+    })
+      .select('_id field value')
+      .lean()) as Array<{ _id: unknown; field?: string; value?: unknown }>;
+    for (const row of rows) {
+      if (attributedIds.has(serializedDocumentId(row._id) ?? '')) continue;
+      if (row.field) note(researchRowLabel(slug), row.field, row.value);
+    }
+  }
+  const personKeys = [
+    ...new Set(
+      input.attributed.flatMap((entry) =>
+        entry.observation.entityType === 'user' && entry.observation.entityKey
+          ? [entry.observation.entityKey]
+          : [],
+      ),
+    ),
+  ];
+  if (personKeys.length > 0) {
+    const rows = (await Observation.find({
+      entityType: 'user',
+      ...materializationReadScopeFilter(),
+      entityKey: { $in: personKeys },
+    })
+      .select('_id entityKey field value')
+      .lean()) as Array<{ _id: unknown; entityKey?: string; field?: string; value?: unknown }>;
+    for (const row of rows) {
+      if (attributedIds.has(serializedDocumentId(row._id) ?? '')) continue;
+      if (row.entityKey && row.field) note(personRowLabel(row.entityKey), row.field, row.value);
+    }
+  }
+  return fieldsByRow;
 }
 
 const IDENTITY_FIELDS = new Set(['slug']);
@@ -527,11 +638,19 @@ export interface RetireOrphanedLaneConfigsReport {
   countsByConfig: OrphanedLaneConfigPlan['countsByConfig'];
   observationsToRetire: number;
   heldObservations: number;
+  retireSoleEvidence: boolean;
+  heldSoleEvidenceFields: number;
+  heldSoleEvidenceObservations: number;
+  heldSoleEvidenceByConfigAndField: Record<string, number>;
+  heldSoleEvidenceOnServedRows: number;
+  rowsStillLessComplete: number;
+  attributedWithoutRow: number;
   affectedLiveResearchRows: number;
   affectedServedResearchRows: number;
   servedRowsWithChanges: number;
   servedFieldChangeCounts: Record<string, number>;
   servedFieldsBecomingEmpty: Record<string, number>;
+  servedFieldsBecomingLessComplete: Record<string, number>;
   rowsWithRetiredEvidenceReadLive: number;
   personKeysWithRetiredEvidenceReadLive: number;
   servedRowsLeftWithoutOwnEvidence: number;
@@ -548,11 +667,13 @@ export async function runOrphanedLaneConfigRetirement(input: {
   scannedRepositories: Array<{ gitDir: string; refs: number; tipCommits: number }>;
   lanes?: readonly OrphanLaneDefinition[];
   readServedEntity?: (slug: string) => Promise<Record<string, unknown> | null>;
+  retireSoleEvidence?: boolean;
   log?: (message: string) => void;
 }): Promise<{
   report: RetireOrphanedLaneConfigsReport;
   rows: ServedRowDiff[];
   personKeys: PersonKeyDiff[];
+  heldSoleEvidence: HeldSoleEvidence[];
 }> {
   const lanes = input.lanes ?? orphanedLaneConfigRegistry();
   const evidence = await loadCandidateLaneEvidence({ configs: input.configs, lanes });
@@ -572,54 +693,67 @@ export async function runOrphanedLaneConfigRetirement(input: {
     );
   }
 
-  const excludedIds = plan.observationIdsToRetire.map((id) => new mongoose.Types.ObjectId(id));
-  const retiredIdSet = new Set(plan.observationIdsToRetire);
-  const rows: ServedRowDiff[] = [];
-  const liveRows = await affectedLiveResearchRows(plan);
-  const retiredIdentities = await retiredEvidenceIdentities(plan);
+  const evidenceRows = await affectedLiveResearchRows(plan.attributed);
+  const liveRows = evidenceRows.live;
+  const split = splitSoleEvidence({
+    attributed: plan.attributed,
+    rowOf: (observation) => evidenceRowOf(observation, evidenceRows.survivorOfIdentity),
+    otherEvidenceByRow: await otherEvidenceByRow({
+      attributed: plan.attributed,
+      live: liveRows,
+    }),
+    retireSoleEvidence: input.retireSoleEvidence ?? false,
+  });
+  const retiredIdSet = new Set(split.observationIdsToRetire);
+  const heldSoleEvidence: HeldSoleEvidence[] = [...split.heldSoleEvidence];
+  const rowOfAttributed = new Map(
+    plan.attributed.map((entry) => [
+      entry.observation.id,
+      evidenceRowOf(entry.observation, evidenceRows.survivorOfIdentity),
+    ]),
+  );
   const onlyFieldsByEntityType = projectionOnlyFields(plan);
+  const researchOnlyFields = onlyFieldsByEntityType.researchEntity ?? [];
   input.log?.(
-    `planned ${plan.observationIdsToRetire.length} observations over ${liveRows.size} live research rows`,
+    `planned ${retiredIdSet.size} observations (holding ${heldSoleEvidence.length} sole-evidence fields) over ${liveRows.size} live research rows`,
   );
   const readServed =
     input.readServedEntity ??
     (async (slug: string) =>
       ((await getResearchGroupDetail(slug))?.researchEntity as
         Record<string, unknown> | undefined) ?? null);
-  for (const [slug, { doc, retiredOnRow }] of [...liveRows.entries()].sort(([a], [b]) =>
-    a.localeCompare(b),
-  )) {
-    input.log?.(`projecting research row ${rows.length + 1} of ${liveRows.size}`);
-    const researchOnlyFields = onlyFieldsByEntityType.researchEntity ?? [];
-    const withOrphans = await projectRow(
-      'researchEntity',
-      slug,
-      [],
-      retiredIdentities,
-      researchOnlyFields,
-    );
+  const withOrphansBySlug = new Map<string, ProjectedPlan>();
+  const allIdentities = await retiredEvidenceIdentities(plan);
+  const projectResearchRow = async (slug: string): Promise<ServedRowDiff> => {
+    const { doc, retiredOnRow } = liveRows.get(slug)!;
+    let withOrphans = withOrphansBySlug.get(slug);
+    if (!withOrphans) {
+      withOrphans = await projectRow('researchEntity', slug, [], allIdentities, researchOnlyFields);
+      withOrphansBySlug.set(slug, withOrphans);
+    }
     const withoutOrphans = await projectRow(
       'researchEntity',
       slug,
-      excludedIds,
-      retiredIdentities,
+      [...retiredIdSet].map((id) => new mongoose.Types.ObjectId(id)),
+      allIdentities,
       researchOnlyFields,
     );
     const tier = typeof doc.studentVisibilityTier === 'string' ? doc.studentVisibilityTier : null;
     const served = tier === SERVED_TIER;
+    const credited = fieldsCreditedToRetired(doc.fieldProvenance, retiredIdSet);
     const changes = servedFieldChanges({
       stored: doc,
       withOrphans,
       withoutOrphans,
-      creditedFields: fieldsCreditedToRetired(doc.fieldProvenance, retiredIdSet),
+      creditedFields: credited,
     });
     const servedEntity = served && changes.length > 0 ? await readServed(slug) : null;
-    rows.push({
+    return {
       entityKey: slug,
       studentVisibilityTier: tier,
       served,
       retiredObservationsOnRow: retiredOnRow,
-      creditedFields: [...fieldsCreditedToRetired(doc.fieldProvenance, retiredIdSet)].sort(),
+      creditedFields: [...credited].sort(),
       changes: changes.map((change) => ({
         ...change,
         servedBefore: servedEntity ? servedEntity[change.field] : undefined,
@@ -630,10 +764,77 @@ export async function runOrphanedLaneConfigRetirement(input: {
       retiredEvidenceReadLive: withoutOrphans.retiredEvidenceReadLive,
       liveObservationsBefore: withOrphans.ownLiveObservations,
       liveObservationsAfter: withoutOrphans.ownLiveObservations,
-    });
+    };
+  };
+  const holdOnRow = (slug: string, fields: ReadonlySet<string> | 'all') => {
+    const row = researchRowLabel(slug);
+    let added = 0;
+    for (const entry of plan.attributed) {
+      const id = entry.observation.id;
+      if (!retiredIdSet.has(id) || rowOfAttributed.get(id) !== row) continue;
+      if (fields !== 'all' && !fields.has(entry.observation.field)) continue;
+      retiredIdSet.delete(id);
+      added += 1;
+      const existing = heldSoleEvidence.find(
+        (group) => group.row === row && group.field === entry.observation.field,
+      );
+      const group = existing ?? {
+        row,
+        field: entry.observation.field,
+        configIds: [],
+        values: [],
+        observationIds: [],
+        basis: 'engine-projection' as const,
+      };
+      if (!group.configIds.includes(entry.configId)) group.configIds.push(entry.configId);
+      group.values.push(entry.observation.value);
+      group.observationIds.push(id);
+      if (!existing) heldSoleEvidence.push(group);
+    }
+    return added;
+  };
+  const lessCompleteFields = (row: ServedRowDiff) =>
+    new Set(row.changes.filter((change) => change.becomesLessComplete).map((c) => c.field));
+
+  const rowsBySlug = new Map<string, ServedRowDiff>();
+  for (const slug of [...liveRows.keys()].sort()) {
+    input.log?.(`projecting research row ${rowsBySlug.size + 1} of ${liveRows.size}`);
+    rowsBySlug.set(slug, await projectResearchRow(slug));
   }
+  const unresolvedLessComplete: string[] = [];
+  if (!(input.retireSoleEvidence ?? false)) {
+    for (const scope of ['fields', 'all'] as const) {
+      const flagged = [...rowsBySlug.values()].filter((row) => lessCompleteFields(row).size > 0);
+      if (flagged.length === 0) break;
+      for (const row of flagged) {
+        holdOnRow(row.entityKey, scope === 'fields' ? lessCompleteFields(row) : 'all');
+      }
+      for (const row of flagged) {
+        input.log?.(`re-projecting a research row the retirement left less complete (${scope})`);
+        rowsBySlug.set(row.entityKey, await projectResearchRow(row.entityKey));
+      }
+    }
+    for (const row of rowsBySlug.values()) {
+      if (lessCompleteFields(row).size > 0) unresolvedLessComplete.push(row.entityKey);
+    }
+  }
+  const rows = [...rowsBySlug.values()];
+  if (input.apply && unresolvedLessComplete.length > 0) {
+    throw new Error(
+      `${SCRIPT_NAME} refuses to apply: ${unresolvedLessComplete.length} row(s) would still serve a less complete field after holding their orphaned evidence`,
+    );
+  }
+  const retiringPlan: OrphanedLaneConfigPlan = {
+    ...plan,
+    attributed: plan.attributed.filter((entry) => retiredIdSet.has(entry.observation.id)),
+    observationIdsToRetire: [...retiredIdSet].sort(),
+  };
+  const excludedIds = retiringPlan.observationIdsToRetire.map(
+    (id) => new mongoose.Types.ObjectId(id),
+  );
+  const retiredIdentities = await retiredEvidenceIdentities(retiringPlan);
   const personKeys = await projectPersonKeys(
-    plan,
+    retiringPlan,
     excludedIds,
     retiredIdentities,
     onlyFieldsByEntityType.user ?? [],
@@ -676,8 +877,25 @@ export async function runOrphanedLaneConfigRetirement(input: {
       scannedRepositories: input.scannedRepositories,
       verdicts: plan.verdicts,
       countsByConfig: plan.countsByConfig,
-      observationsToRetire: plan.observationIdsToRetire.length,
+      observationsToRetire: retiringPlan.observationIdsToRetire.length,
+      rowsStillLessComplete: unresolvedLessComplete.length,
       heldObservations: plan.held.length,
+      retireSoleEvidence: input.retireSoleEvidence ?? false,
+      heldSoleEvidenceFields: heldSoleEvidence.length,
+      heldSoleEvidenceObservations: heldSoleEvidence.reduce(
+        (count, group) => count + group.observationIds.length,
+        0,
+      ),
+      heldSoleEvidenceByConfigAndField: tally(
+        heldSoleEvidence.flatMap((group) =>
+          group.configIds.map((configId) => `${configId}|${group.field}`),
+        ),
+      ),
+      heldSoleEvidenceOnServedRows: heldSoleEvidence.filter((group) => {
+        const slug = group.row.startsWith('researchEntity:') ? group.row.slice(15) : '';
+        return liveRows.get(slug)?.doc.studentVisibilityTier === SERVED_TIER;
+      }).length,
+      attributedWithoutRow: split.withoutRow,
       affectedLiveResearchRows: liveRows.size,
       affectedServedResearchRows: [...liveRows.values()].filter(
         ({ doc }) => doc.studentVisibilityTier === SERVED_TIER,
@@ -686,6 +904,11 @@ export async function runOrphanedLaneConfigRetirement(input: {
       servedFieldChangeCounts: tally(servedRows.flatMap((row) => row.changes.map((c) => c.field))),
       servedFieldsBecomingEmpty: tally(
         servedRows.flatMap((row) => row.changes.filter((c) => c.becomesEmpty).map((c) => c.field)),
+      ),
+      servedFieldsBecomingLessComplete: tally(
+        servedRows.flatMap((row) =>
+          row.changes.filter((c) => c.becomesLessComplete).map((c) => c.field),
+        ),
       ),
       rowsWithRetiredEvidenceReadLive: rows.filter((row) => row.retiredEvidenceReadLive > 0).length,
       personKeysWithRetiredEvidenceReadLive: personKeys.filter(
@@ -701,6 +924,7 @@ export async function runOrphanedLaneConfigRetirement(input: {
     },
     rows,
     personKeys,
+    heldSoleEvidence,
   };
 }
 
@@ -720,8 +944,9 @@ async function main(): Promise<void> {
 
   await initializeConnections();
   try {
-    const { report, rows, personKeys } = await runOrphanedLaneConfigRetirement({
+    const { report, rows, personKeys, heldSoleEvidence } = await runOrphanedLaneConfigRetirement({
       apply: options.apply,
+      retireSoleEvidence: options.retireSoleEvidence,
       configs: options.configs,
       refPresence: scan.presence,
       scannedRepositories: scan.scanned,
@@ -737,6 +962,7 @@ async function main(): Promise<void> {
             rematerializeSlugs: rows
               .filter((row) => row.changes.length > 0 || row.creditedFields.length > 0)
               .map((row) => row.entityKey),
+            heldSoleEvidence,
             rows,
             personKeys,
           },

@@ -8,6 +8,7 @@ import {
   planOrphanedLaneConfigRetirement,
   runOnlySelection,
   servedFieldChanges,
+  splitSoleEvidence,
   type OrphanLaneDefinition,
   type StoredLaneObservation,
   type StoredLaneRun,
@@ -318,5 +319,108 @@ describe('fieldsCreditedToRetired', () => {
     expect([
       ...fieldsCreditedToRetired(new Map([['name', { observationId: 'o1' }]]), new Set(['o1'])),
     ]).toEqual(['name']);
+  });
+});
+
+describe('splitSoleEvidence', () => {
+  const attributed = [
+    {
+      observation: observation('s1', 'dept-gone-lane-pat-lee', {
+        field: 'departments',
+        value: ['Physics'],
+      }),
+      configId: 'gone-lane',
+      basis: 'key-namespace' as const,
+    },
+    {
+      observation: observation('s2', 'dept-gone-lane-pat-lee', { field: 'name', value: 'Lee Lab' }),
+      configId: 'gone-lane',
+      basis: 'key-namespace' as const,
+    },
+    {
+      observation: observation('s3', 'dept-gone-lane-no-row', { field: 'name', value: 'Gone Lab' }),
+      configId: 'gone-lane',
+      basis: 'key-namespace' as const,
+    },
+  ];
+  const rowOf = (entry: StoredLaneObservation) =>
+    entry.entityKey === 'dept-gone-lane-pat-lee' ? 'researchEntity:lee-lab' : undefined;
+  const otherEvidenceByRow = new Map([
+    [
+      'researchEntity:lee-lab',
+      new Map([
+        ['name', new Set(['another lee lab'])],
+        ['departments', new Set(['chemistry'])],
+      ]),
+    ],
+  ]);
+
+  it('retires a list value another lane also states', () => {
+    const split = splitSoleEvidence({
+      attributed: [
+        {
+          observation: observation('l1', 'dept-gone-lane-pat-lee', {
+            field: 'departments',
+            value: ['Chemistry'],
+          }),
+          configId: 'gone-lane',
+          basis: 'key-namespace' as const,
+        },
+      ],
+      rowOf,
+      otherEvidenceByRow,
+      retireSoleEvidence: false,
+    });
+    expect(split.observationIdsToRetire).toEqual(['l1']);
+  });
+
+  it('holds a list item no other lane states, even when the field has other evidence, and retires a backed scalar', () => {
+    const split = splitSoleEvidence({
+      attributed,
+      rowOf,
+      otherEvidenceByRow,
+      retireSoleEvidence: false,
+    });
+    expect(split.observationIdsToRetire).toEqual(['s2', 's3']);
+    expect(split.heldSoleEvidence).toEqual([
+      {
+        row: 'researchEntity:lee-lab',
+        field: 'departments',
+        configIds: ['gone-lane'],
+        values: [['Physics']],
+        observationIds: ['s1'],
+        basis: 'no-other-evidence',
+      },
+    ]);
+    expect(split.withoutRow).toBe(1);
+  });
+
+  it('retires sole evidence only under the explicit opt-out, and plans the same split twice', () => {
+    const optedOut = splitSoleEvidence({
+      attributed,
+      rowOf,
+      otherEvidenceByRow,
+      retireSoleEvidence: true,
+    });
+    expect(optedOut.observationIdsToRetire).toEqual(['s1', 's2', 's3']);
+    expect(optedOut.heldSoleEvidence).toEqual([]);
+    const input = { attributed, rowOf, otherEvidenceByRow, retireSoleEvidence: false };
+    expect(splitSoleEvidence(input)).toEqual(splitSoleEvidence(input));
+  });
+});
+
+describe('servedFieldChanges completeness', () => {
+  it('flags a list that loses a value as less complete', () => {
+    const [change] = servedFieldChanges({
+      stored: { departments: ['A', 'B'] },
+      withOrphans: { set: { departments: ['A', 'B'] }, unset: {} },
+      withoutOrphans: { set: { departments: ['A'] }, unset: {} },
+      creditedFields: new Set(),
+    });
+    expect(change).toMatchObject({
+      field: 'departments',
+      becomesLessComplete: true,
+      becomesEmpty: false,
+    });
   });
 });

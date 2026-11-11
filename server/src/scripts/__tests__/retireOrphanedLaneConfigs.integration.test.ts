@@ -2,11 +2,13 @@ import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Observation } from '../../models/observation';
+import { ResearchEntity } from '../../models/researchEntity';
 import { ScrapeRun } from '../../models/scrapeRun';
 import { Source } from '../../models/source';
 import {
   CONFIRM_FLAG,
   parseRetireOrphanedLaneConfigsArgs,
+  RETIRE_SOLE_EVIDENCE_FLAG,
   runOrphanedLaneConfigRetirement,
 } from '../retireOrphanedLaneConfigs';
 import type {
@@ -73,13 +75,14 @@ const liveIds = async () =>
     .map((row) => String(row._id))
     .sort();
 
-const run = (apply: boolean, configs: RequestedLaneConfig[]) =>
+const run = (apply: boolean, configs: RequestedLaneConfig[], retireSoleEvidence = false) =>
   runOrphanedLaneConfigRetirement({
     apply,
     configs,
     refPresence: PENDING_ON_BRANCH,
     scannedRepositories: [],
     lanes: LANES,
+    retireSoleEvidence,
   });
 
 describe('observations:retire-orphaned-lane-configs (#5807)', () => {
@@ -101,6 +104,7 @@ describe('observations:retire-orphaned-lane-configs (#5807)', () => {
     await Promise.all(
       ['observations', 'scrape_runs', 'sources'].map((name) => db.collection(name).deleteMany({})),
     );
+    await ResearchEntity.collection.deleteMany({});
     sourceId = (await Source.create({ name: ROSTER, displayName: 'Roster', defaultWeight: 0.8 }))
       ._id as mongoose.Types.ObjectId;
     await seedRun('unlanded', ['gone-lane']);
@@ -123,7 +127,7 @@ describe('observations:retire-orphaned-lane-configs (#5807)', () => {
 
   it('writes nothing in a dry run and counts what an apply would retire', async () => {
     const before = await liveIds();
-    const { report } = await run(false, [gone]);
+    const { report } = await run(false, [gone], true);
     expect(report).toMatchObject({
       mode: 'dry-run',
       observationsToRetire: 4,
@@ -137,8 +141,8 @@ describe('observations:retire-orphaned-lane-configs (#5807)', () => {
     expect(await liveIds()).toEqual(before);
   });
 
-  it('supersedes exactly the orphaned observations, and a second apply changes nothing', async () => {
-    const first = await run(true, [gone]);
+  it('supersedes exactly the orphaned observations when sole evidence may go, and a second apply changes nothing', async () => {
+    const first = await run(true, [gone], true);
     expect(first.report.retiredObservations).toBe(4);
     const retired = await Observation.find({ superseded: true }).lean();
     expect(retired.map((row) => `${row.entityKey}|${row.field}`).sort()).toEqual([
@@ -151,10 +155,53 @@ describe('observations:retire-orphaned-lane-configs (#5807)', () => {
     expect(await Observation.countDocuments({})).toBe(10);
 
     const afterFirst = await liveIds();
-    const second = await run(true, [gone]);
+    const second = await run(true, [gone], true);
     expect(second.report.retiredObservations).toBe(0);
     expect(second.report.observationsToRetire).toBe(0);
     expect(await liveIds()).toEqual(afterFirst);
+  });
+
+  it('holds an orphaned observation that is the only evidence for its field, and retires one another lane backs', async () => {
+    const rowId = new mongoose.Types.ObjectId();
+    await ResearchEntity.collection.insertOne({
+      _id: rowId,
+      slug: 'dept-gone-lane-ash-kerr',
+      name: 'Kerr Lab',
+      studentVisibilityTier: 'student_ready',
+    });
+    await Observation.create({
+      entityType: 'researchEntity',
+      entityId: rowId,
+      field: 'name',
+      value: 'Kerr Lab',
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'official-profile-pi-backfill',
+      confidence: 0.6,
+      observedAt: new Date('2026-10-01T00:00:00Z'),
+    });
+
+    const first = await run(true, [gone]);
+    expect(first.report.retiredObservations).toBe(1);
+    expect(first.heldSoleEvidence.map((group) => `${group.row}|${group.field}`).sort()).toEqual([
+      'researchEntity:dept-gone-lane-ash-kerr|websiteUrl',
+      'user:dept:gone-lane:ash-kerr|title',
+      'user:netid:ak12|title',
+    ]);
+    expect(first.heldSoleEvidence.every((group) => group.values.length === 1)).toBe(true);
+    const retired = await Observation.find({ superseded: true }).lean();
+    expect(retired.map((row) => `${row.entityKey}|${row.field}`)).toEqual([
+      'dept-gone-lane-ash-kerr|name',
+    ]);
+
+    const afterFirst = await liveIds();
+    const second = await run(true, [gone]);
+    expect(second.report.retiredObservations).toBe(0);
+    expect(second.heldSoleEvidence).toHaveLength(3);
+    expect(await liveIds()).toEqual(afterFirst);
+
+    const optedOut = await run(true, [gone], true);
+    expect(optedOut.report.retiredObservations).toBe(3);
+    expect(optedOut.heldSoleEvidence).toEqual([]);
   });
 
   it('retracts nothing for a config the code defines but nothing has run lately', async () => {
@@ -195,6 +242,12 @@ describe('parseRetireOrphanedLaneConfigsArgs', () => {
         '--apply',
         CONFIRM_FLAG,
       ]),
-    ).toMatchObject({ apply: true, confirmed: true });
+    ).toMatchObject({ apply: true, confirmed: true, retireSoleEvidence: false });
+    expect(
+      parseRetireOrphanedLaneConfigsArgs([
+        `--configs=${ROSTER}:gone-lane`,
+        RETIRE_SOLE_EVIDENCE_FLAG,
+      ]),
+    ).toMatchObject({ retireSoleEvidence: true });
   });
 });

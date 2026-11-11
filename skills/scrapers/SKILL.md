@@ -1918,6 +1918,12 @@ An apply refuses unless every named config is orphaned.
 An observation is attributed by evidence its run left: an entity key minted under the config's key namespace (`dept-<ns>-...`, `dept:<ns>:...`, longest namespace wins), or a run whose `--only` selected nothing but orphaned configs.
 A key that a current namespace also prefixes, such as `dept-<current>-<rest>` where `<current>-<rest>` starts with the orphaned namespace, is ambiguous, so only the run's `--only` can attribute it.
 An observation whose run recorded a `codeSha`, or that has no run, is held rather than retired, because a recorded commit missing from a stale clone is not proof the code never landed.
+An orphaned observation that is the only live evidence for its field on the row it backs is held by default and reported under `heldSoleEvidence` by row, field and value.
+For a list field such as `departments` the check is per item, because the field resolves as a union and an item no other observation states would drop out.
+Each affected row is then projected through the engine without the observations still slated to go; a row that would serve a less complete field has that field's orphaned observations held (`basis: engine-projection`), then all of its orphaned observations, and an apply refuses if a row still would.
+The row is the live survivor the observation's key or id reaches, read with every row merged into it; a person observation's row is its own key.
+A hand check of the department values that only `seas` observations backed found the official engineering pages still list them, so a missing landed lane alone is not enough to retract a value with nothing else behind it.
+`--retire-sole-evidence` is the reviewed opt-out for a later run, once a live lane backs those fields; without it the served diff never shows a field becoming less complete.
 
 The dry run projects every affected live row, and every affected person key, through `materializeEntity` twice with `writeOnlyFields` limited to the fields the retired observations assert: once with them and once with them excluded from the read scope.
 It reports the fields whose projection differs, which fields' stored provenance is credited to a retired observation, rows left with no live evidence of their own, and `rowsWithRetiredEvidenceReadLive` for a projection that read retired evidence through a live fallback it could not isolate.
