@@ -2508,6 +2508,7 @@ describe('searchResearchGroupsViaMeili', () => {
       'welcomesUndergrads',
       'undergradInvitationRank',
       'meshDescriptorOnlyTerms',
+      'rerankTextHash',
     ];
     expect(poolParams.attributesToRetrieve).toEqual(candidateFields);
     expect(keywordLegParams.attributesToRetrieve).toEqual(candidateFields);

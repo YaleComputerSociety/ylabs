@@ -17,6 +17,7 @@ import {
   searchRerankEntryIsStale,
   searchRerankScoredTextHashes,
 } from '../searchRerankCache';
+import { buildSearchRerankTextHash } from '../searchRerankCandidateText';
 import { searchRerankCacheFilters, searchRerankCacheQueryKey } from '../researchGroupService';
 
 const candidates = (count: number) =>
@@ -253,55 +254,40 @@ describe('lookupSearchRerankCacheEntry', () => {
   });
 });
 
-const poolHit = (index: number, overrides: Record<string, unknown> = {}) => ({
-  id: `row-${index}`,
-  kind: 'lab',
-  entityType: 'lab',
-  departments: ['Synthetic Department', 'Another Synthetic Department'],
-  researchAreas: ['Coastal Ecology', 'Tidal Marsh'],
-  ...overrides,
-});
+const poolHit = (index: number, overrides: Record<string, unknown> = {}) => {
+  const document = {
+    id: `row-${index}`,
+    name: `Synthetic Row ${index}`,
+    kind: 'lab',
+    entityType: 'lab',
+    departments: ['Synthetic Department'],
+    researchAreas: ['Coastal Ecology'],
+    shortDescription: `Synthetic card ${index}.`,
+    fullDescription: `Synthetic description ${index}.`,
+    ...overrides,
+  };
+  return { id: document.id, rerankTextHash: buildSearchRerankTextHash(document) };
+};
 
 describe('searchRerankCandidateTextHash', () => {
-  it('is a short stable hex hash that ignores list order', () => {
-    const hash = searchRerankCandidateTextHash(poolHit(0));
+  it('reads the hash the index document builder stored on the hit', () => {
+    const hit = poolHit(0);
 
-    expect(hash).toMatch(/^[0-9a-f]{16}$/);
-    expect(
-      searchRerankCandidateTextHash(
-        poolHit(0, {
-          departments: ['Another Synthetic Department', 'Synthetic Department'],
-          researchAreas: ['Tidal Marsh', 'Coastal Ecology'],
-        }),
-      ),
-    ).toBe(hash);
+    expect(searchRerankCandidateTextHash(hit)).toBe(hit.rerankTextHash);
   });
 
-  it.each([
-    ['topics', { researchAreas: ['Coastal Ecology'] }],
-    ['departments', { departments: ['Synthetic Department'] }],
-    ['kind', { kind: 'center' }],
-    ['entity type', { entityType: 'center' }],
-  ])('changes when the %s change', (_label, overrides) => {
-    expect(searchRerankCandidateTextHash(poolHit(0, overrides))).not.toBe(
-      searchRerankCandidateTextHash(poolHit(0)),
-    );
-  });
-
-  it('ignores ranking and access fields the pool also carries', () => {
-    expect(
-      searchRerankCandidateTextHash(
-        poolHit(0, { _rankingScore: 0.4, schools: ['Synthetic School'], hostsUndergrads: true }),
-      ),
-    ).toBe(searchRerankCandidateTextHash(poolHit(0)));
+  it('has no hash for a hit from an index not yet synced, or a malformed one', () => {
+    expect(searchRerankCandidateTextHash({ id: 'row-0' })).toBeNull();
+    expect(searchRerankCandidateTextHash({ id: 'row-0', rerankTextHash: 'not-a-hash' })).toBeNull();
   });
 });
 
 describe('searchRerankEntryIsStale', () => {
   const pool = (count: number) => Array.from({ length: count }, (_v, index) => poolHit(index));
-  const servedTop = (hits = pool(12)) => searchRerankCandidateFingerprints(hits, 10);
+  const servedTop = (hits: Array<{ id: string; rerankTextHash?: string }> = pool(12)) =>
+    searchRerankCandidateFingerprints(hits, 10);
   const scoredWithHashes = (hits: ReturnType<typeof poolHit>[]) =>
-    new Map(hits.map((hit) => [hit.id, searchRerankCandidateTextHash(hit)] as const));
+    new Map(hits.map((hit) => [hit.id, hit.rerankTextHash] as const));
 
   it('is fresh when every served top-10 row is scored with its current hash', () => {
     expect(searchRerankEntryIsStale(scoredWithHashes(pool(10)), servedTop())).toBe(false);
@@ -312,6 +298,19 @@ describe('searchRerankEntryIsStale', () => {
     changed[4] = poolHit(4, { researchAreas: ['Synthetic Rewritten Topic'] });
 
     expect(searchRerankEntryIsStale(scoredWithHashes(pool(10)), servedTop(changed))).toBe(true);
+  });
+
+  it('is stale when only a scored row description was rewritten', () => {
+    const changed = pool(12);
+    changed[2] = poolHit(2, { shortDescription: 'A rewritten synthetic card.' });
+
+    expect(searchRerankEntryIsStale(scoredWithHashes(pool(10)), servedTop(changed))).toBe(true);
+  });
+
+  it('never calls a row stale by hash while the index has not hashed it', () => {
+    const unsynced = pool(12).map(({ id }) => ({ id }));
+
+    expect(searchRerankEntryIsStale(scoredWithHashes(pool(10)), servedTop(unsynced))).toBe(false);
   });
 
   it('ignores a changed row outside the served top 10', () => {
@@ -329,7 +328,9 @@ describe('searchRerankEntryIsStale', () => {
   });
 
   it('never calls a hashless legacy score changed, so only the candidate-set rule applies', () => {
-    const changed = pool(12).map((hit) => ({ ...hit, researchAreas: ['Synthetic New Topic'] }));
+    const changed = pool(12).map((_hit, index) =>
+      poolHit(index, { researchAreas: ['Synthetic New Topic'] }),
+    );
     const legacy = searchRerankScoredTextHashes({
       scores: pool(10).map((hit) => ({ entityId: hit.id, score: 2 })),
     });

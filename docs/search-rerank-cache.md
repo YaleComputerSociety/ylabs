@@ -13,7 +13,7 @@ It adds only the student-chosen filters (`kind`, `entityType`, `school`, `depart
 The visibility tier is an operator scope and never splits an entry.
 
 Each document carries `queryText`, the stored `filters`, `scores` as `[{ entityId, score, textHash? }]` with `entityId` the string form of the research entity `_id` and `score` from 0 to 3, `scoredAt`, `indexVersion` (a free-form corpus or index marker the seeder supplies), and `source`.
-`textHash` is the row's searchable-text hash at scoring time (see Staleness); a score written before #5569 has none.
+`textHash` is the row's `rerankTextHash` at scoring time (see Staleness); a score written before #5569 has none.
 
 ## How search reads it
 
@@ -41,7 +41,7 @@ An apply needs `--apply --confirm-search-rerank-cache-seed --index-version=<mark
 It writes Development, and refuses any other database, unless `--environment=beta` or `--environment=production` names the target, which then reads `BETA_MONGODBURL` or `PRODUCTION_MONGODBURL`; Production still needs `SCRAPER_ENV=production` and `CONFIRM_PROD_SCRAPE=true`.
 `--source=<label>` records where the scores came from and defaults to `offline-scoring`.
 
-The seeder stores a `textHash` with each resolved score, read from the target environment's research-entity index through the fail-soft optional Meilisearch path.
+The seeder stores a `textHash` with each resolved score, the `rerankTextHash` of that row's document in the target environment's research-entity index, read through the fail-soft optional Meilisearch path; a document the index has not hashed yet gives none.
 It reads the index only when this shell's `MEILISEARCH_INDEX_PREFIX` names the target (unset for Development, `beta`, `prod`), because a laptop seeding Beta or Production is normally configured for the Development index, and hashing one environment's rows against another's index would store wrong hashes.
 The report's `textHashes` says what happened: `read-from-index`, `index-unreachable` (the read failed, so no hash is stored and the seed still applies), or `index-of-another-environment` (the index was not read); `scoresWithTextHash` counts the scores that carry one.
 A seed without hashes is still served and still judged by the candidate-set rule, so seeding Beta or Production from a laptop degrades staleness detection rather than failing; run the seed from a shell whose prefix names the target, such as a Render shell on that environment, to store hashes.
@@ -57,16 +57,23 @@ It is never committed to the repository, because it pairs real student queries w
 Staleness is judged per entry, against the rows that entry scored (#5569).
 An index-wide marker was rejected because any routine sync moves it and would mark every entry stale; Mongo `updatedAt` was rejected because scrape runs touch it on rows whose searchable text does not change.
 
-Each stored score carries `textHash`, the first 16 hex characters of a SHA-1 over the row's `kind`, `entityType`, `departments` and `researchAreas`, with list fields sorted (`searchRerankCandidateTextHash` in `server/src/services/searchRerankCache.ts`).
-Those are the searchable fields every pool hit already carries (`RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES`), so search compares hashes with no extra database or Meilisearch read; the name and the descriptions are not retrieved for pool hits and so are not hashed.
-The live-miss job hashes the pool hits of the same re-run search it scores, and the seeder hashes the target index's documents, so the write and the comparison read the same fields.
+The index document builder (`buildResearchEntitySearchIndexDocument`) stores `rerankTextHash` on every research-entity document: the first 16 hex characters of a SHA-1 over what the rerank prompt shows of the row, which is its `name`, `kind`, `entityType`, sorted `departments` and `researchAreas`, the first 220 characters of `shortDescription` and the first 300 of `fullDescription` (`buildSearchRerankTextHash` in `server/src/services/searchRerankCandidateText.ts`).
+The prompt cuts its descriptions with the same constants (`searchRerankPromptExcerpts`), so a description rewrite the model would read moves the hash, an edit past those limits does not, and the two cannot drift; changing what the prompt shows also requires changing the hash.
+The field is in `RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES`, so every pool hit carries it and search compares hashes with no extra database or Meilisearch read.
+It is not searchable, filterable or sortable, needs no index settings change (`displayedAttributes` is `*`), is not rendered by the embedder's document template, and is never served on the public DTO.
+Each stored score carries `textHash`, the `rerankTextHash` of its pool hit: the live-miss job takes it from the same re-run search it scores, and the seeder reads it from the target index, so the write and the comparison read one value.
 
 At lookup, an entry is stale when either holds over the served top 10, taken in the fused order before any cached reorder (the order the job would re-score):
 
 - a row it scored now hashes differently from its stored `textHash`; or
 - the candidate set moved: 3 or more of those 10 rows have no score in the entry.
 
-A score with no `textHash`, such as every score written before #5569, never counts as changed, so only the candidate-set rule applies to it and the change itself invalidates no existing seed.
+A score with no `textHash`, such as every score written before #5569, never counts as changed, and neither does a hit with no `rerankTextHash`, from an index not yet synced; only the candidate-set rule applies to them, so the change itself invalidates no existing seed.
+
+The field reaches an index only when its documents are rewritten.
+After this merges, run one `yarn development:search:sync`: the reconcile compares whole documents, so it upserts every document once to add the field.
+The rendered embedding template is unchanged by the field, and Meilisearch re-embeds a document only when that rendering changes (`docs/meilisearch-reindex-runbook.md`), so the sync costs no embedding call beyond rows whose text also changed.
+Beta and Production gain it from their post-promotion reindex.
 
 A stale entry is still served exactly as a fresh one, when serving is on.
 It can only reorder rows search already returned in its top 30: it never adds a row, hides a row, or changes a total.

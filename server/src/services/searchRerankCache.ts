@@ -1,6 +1,6 @@
-import { createHash } from 'crypto';
 import { SearchRerankCache } from '../models/searchRerankCache';
 import { sanitizeLogValue } from '../utils/logSanitizer';
+import { storedSearchRerankTextHash } from './searchRerankCandidateText';
 import { isSearchRerankLiveMissEnabled } from './searchRerankLiveMiss';
 
 export const SEARCH_RERANK_WINDOW = 30;
@@ -45,41 +45,20 @@ export function applyCachedRerank<T extends RerankCandidate>(
   return [...reorderedHead, ...candidates.slice(windowSize)];
 }
 
-export const SEARCH_RERANK_CANDIDATE_TEXT_FIELDS = [
-  'kind',
-  'entityType',
-  'departments',
-  'researchAreas',
-] as const;
 export const SEARCH_RERANK_STALE_WINDOW = 10;
 export const SEARCH_RERANK_STALE_UNSCORED_ROWS = 3;
-const SEARCH_RERANK_TEXT_HASH_LENGTH = 16;
-
-const hashableCandidateValue = (value: unknown): string | string[] | null => {
-  if (typeof value === 'string') return value;
-  if (Array.isArray(value)) {
-    return value.filter((item): item is string => typeof item === 'string').sort();
-  }
-  return null;
-};
 
 /**
- * Hashes only attributes every pool hit already carries, so the job that writes a hash and
- * the search that compares it read the same fields without widening what Meilisearch returns.
+ * Reads the hash the index document builder precomputed, so search compares it without
+ * retrieving descriptions for every pool hit. A hit from an index not yet synced has none.
  */
-export function searchRerankCandidateTextHash(hit: Readonly<Record<string, unknown>>): string {
-  const fields = Object.fromEntries(
-    SEARCH_RERANK_CANDIDATE_TEXT_FIELDS.map((field) => [field, hashableCandidateValue(hit[field])]),
-  );
-  return createHash('sha1')
-    .update(JSON.stringify(fields))
-    .digest('hex')
-    .slice(0, SEARCH_RERANK_TEXT_HASH_LENGTH);
-}
+export const searchRerankCandidateTextHash = (
+  hit: Readonly<Record<string, unknown>>,
+): string | null => storedSearchRerankTextHash(hit);
 
 export interface SearchRerankCandidateFingerprint {
   entityId: string;
-  textHash: string;
+  textHash: string | null;
 }
 
 export const searchRerankCandidateFingerprints = (
@@ -108,7 +87,8 @@ export const searchRerankScoredTextHashes = (entry: unknown): SearchRerankScored
 /**
  * Judged against the fused order before any cached reorder, which is the order the job
  * re-scores; the reordered head would pull the entry's own scored rows up and hide a moved
- * candidate set. A score stored without a hash predates hashing and never counts as changed.
+ * candidate set. A score stored without a hash, or a hit the index has not hashed yet, never
+ * counts as changed.
  */
 export function searchRerankEntryIsStale(
   scored: SearchRerankScoredTextHashes,
@@ -122,7 +102,7 @@ export function searchRerankEntryIsStale(
       continue;
     }
     const storedHash = scored.get(candidate.entityId);
-    if (storedHash && storedHash !== candidate.textHash) return true;
+    if (storedHash && candidate.textHash && storedHash !== candidate.textHash) return true;
   }
   return false;
 }

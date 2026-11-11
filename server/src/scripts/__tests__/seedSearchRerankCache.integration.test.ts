@@ -7,7 +7,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import { ResearchEntity } from '../../models/researchEntity';
 import { SearchRerankCache } from '../../models/searchRerankCache';
 import { searchRerankCacheQueryKey } from '../../services/researchGroupService';
-import { searchRerankCandidateTextHash } from '../../services/searchRerankCache';
+import { buildSearchRerankTextHash } from '../../services/searchRerankCandidateText';
 import { assertScriptApplyAllowed } from '../scriptWriteGuards';
 import {
   SEED_CONFIRM_FLAG,
@@ -144,9 +144,7 @@ describe('research-search:seed-rerank-cache', () => {
     const hashesOf =
       (...documents: Array<ReturnType<typeof indexDocument>>) =>
       async () =>
-        new Map(
-          documents.map((document) => [document.id, searchRerankCandidateTextHash(document)]),
-        );
+        new Map(documents.map((document) => [document.id, buildSearchRerankTextHash(document)]));
     const coastalKey = () =>
       searchRerankCacheQueryKey('coastal ecology', {
         welcomesUndergrads: true,
@@ -168,7 +166,7 @@ describe('research-search:seed-rerank-cache', () => {
         {
           entityId: entityIds['synthetic-coastal-lab'],
           score: 3,
-          textHash: searchRerankCandidateTextHash(indexDocument('synthetic-coastal-lab')),
+          textHash: buildSearchRerankTextHash(indexDocument('synthetic-coastal-lab')),
         },
         { entityId: entityIds['synthetic-marsh-lab'], score: 1 },
       ]);
@@ -218,7 +216,7 @@ describe('research-search:seed-rerank-cache', () => {
         {
           queryKey: 'synthetic-fresh',
           queryText: 'a',
-          scores: scored(searchRerankCandidateTextHash(coastal)),
+          scores: scored(buildSearchRerankTextHash(coastal)),
           scoredAt,
           indexVersion: 'full-synthetic-0',
           source: 'test',
@@ -390,21 +388,24 @@ describe('seedIndexBelongsToEnvironment', () => {
 });
 
 describe('readIndexTextHashes', () => {
-  it('pages through the index and hashes each document', async () => {
-    const documents = Array.from({ length: 3 }, (_v, index) => ({
-      id: `synthetic-${index}`,
-      kind: 'lab',
-      researchAreas: [`Synthetic Topic ${index}`],
-    }));
-    const getDocuments = async ({ offset }: { offset: number }) => ({
-      results: documents.slice(offset, offset + 2),
-      total: documents.length,
-    });
+  it('pages through the index and reads the hash the builder stored on each document', async () => {
+    const documents = [
+      ...Array.from({ length: 3 }, (_v, index) => ({
+        id: `synthetic-${index}`,
+        rerankTextHash: buildSearchRerankTextHash({ name: `Synthetic ${index}` }),
+      })),
+      { id: 'synthetic-unsynced' },
+    ];
+    const getDocuments = async ({ offset, fields }: { offset: number; fields: string[] }) => {
+      expect(fields).toEqual(['id', 'rerankTextHash']);
+      return { results: documents.slice(offset, offset + 2), total: documents.length };
+    };
 
     const hashes = await readIndexTextHashes({ getDocuments });
 
     expect(hashes?.size).toBe(3);
-    expect(hashes?.get('synthetic-2')).toBe(searchRerankCandidateTextHash(documents[2]));
+    expect(hashes?.get('synthetic-2')).toBe(buildSearchRerankTextHash({ name: 'Synthetic 2' }));
+    expect(hashes?.has('synthetic-unsynced')).toBe(false);
   });
 
   it('answers null when the index cannot be read', async () => {

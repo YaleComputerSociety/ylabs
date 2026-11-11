@@ -13,11 +13,13 @@ import {
 } from '../services/researchGroupService';
 import type { ResearchGroupFilterInput } from '../services/researchGroupFilters';
 import {
-  SEARCH_RERANK_CANDIDATE_TEXT_FIELDS,
   SEARCH_RERANK_SEEDED_INDEX_VERSION_PREFIX,
-  searchRerankCandidateTextHash,
   searchRerankScoredTextHashes,
 } from '../services/searchRerankCache';
+import {
+  SEARCH_RERANK_TEXT_HASH_FIELD,
+  storedSearchRerankTextHash,
+} from '../services/searchRerankCandidateText';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { withMeiliAvailabilityGuard } from '../utils/meiliAvailability';
 import { getMeiliSearchIndex } from '../utils/meiliClient';
@@ -275,11 +277,11 @@ export async function readIndexTextHashes(
       const page = await index.getDocuments({
         limit: INDEX_TEXT_HASH_PAGE_SIZE,
         offset,
-        fields: ['id', ...SEARCH_RERANK_CANDIDATE_TEXT_FIELDS],
+        fields: ['id', SEARCH_RERANK_TEXT_HASH_FIELD],
       });
       for (const document of page.results) {
-        if (document.id != null)
-          byId.set(String(document.id), searchRerankCandidateTextHash(document));
+        const textHash = storedSearchRerankTextHash(document);
+        if (document.id != null && textHash) byId.set(String(document.id), textHash);
       }
       offset += page.results.length;
       if (page.results.length === 0 || offset >= page.total) break;

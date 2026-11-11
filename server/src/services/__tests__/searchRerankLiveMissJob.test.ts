@@ -34,11 +34,8 @@ import {
   searchRerankLiveMissSpendTodayUsd,
   searchRerankLiveMissUserPrompt,
 } from '../searchRerankLiveMissJob';
-import {
-  lookupSearchRerankCacheEntry,
-  resetSearchRerankCacheMemo,
-  searchRerankCandidateTextHash,
-} from '../searchRerankCache';
+import { lookupSearchRerankCacheEntry, resetSearchRerankCacheMemo } from '../searchRerankCache';
+import { buildSearchRerankTextHash } from '../searchRerankCandidateText';
 
 const NOW = new Date('2026-11-10T15:30:00.000Z');
 const QUERY = 'tidal marsh ecology';
@@ -81,7 +78,7 @@ const poolHit = (index: number, researchAreas = ['Coastal Ecology']) => ({
   researchAreas,
 });
 const textHashOf = (index: number, researchAreas?: string[]) =>
-  searchRerankCandidateTextHash(poolHit(index, researchAreas));
+  buildSearchRerankTextHash(poolHit(index, researchAreas));
 const fingerprints = (count: number) =>
   Array.from({ length: count }, (_v, index) => ({
     entityId: rowId(index),
@@ -355,6 +352,24 @@ describe('runSearchRerankLiveMissJob', () => {
       expect(mocks.searchCandidates).not.toHaveBeenCalled();
       expect(model).not.toHaveBeenCalled();
       expect(mocks.cacheUpdateOne).not.toHaveBeenCalled();
+    });
+
+    it('never calls an entry stale by hash while the index has not hashed its rows', async () => {
+      const model = vi.fn(validScores);
+      existing({ ...liveMiss, scores: STALE_SCORES });
+      mocks.searchCandidates.mockResolvedValue({
+        researchEntities: Array.from({ length: CANDIDATE_COUNT }, (_v, index) =>
+          servedEntity(index),
+        ),
+        rerankLiveMissGate: 'eligible',
+        candidateFingerprints: fingerprints(CANDIDATE_COUNT).map(({ entityId }) => ({
+          entityId,
+          textHash: null,
+        })),
+      });
+
+      expect((await runJob({ mode: 'serve', model })).status).toBe('not-wanted');
+      expect(model).not.toHaveBeenCalled();
     });
 
     it('never calls a hashless legacy entry stale on the hash rule', async () => {

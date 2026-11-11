@@ -1,4 +1,8 @@
 import { ResearchEntity } from '../models/researchEntity';
+import {
+  SEARCH_RERANK_TEXT_HASH_FIELD,
+  buildSearchRerankTextHash,
+} from './searchRerankCandidateText';
 import { asResearchEntityType, type ResearchEntityType } from '../models/researchAccessTypes';
 import {
   freshDirectoryRemovalServing,
@@ -142,6 +146,7 @@ export const RESEARCH_ENTITY_SEARCH_INDEX_DOCUMENT_FIELDS: readonly string[] = A
     RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY,
     'slug',
     MESH_DESCRIPTOR_ONLY_TERMS_FIELD,
+    SEARCH_RERANK_TEXT_HASH_FIELD,
     ...RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.searchableAttributes,
     ...RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.filterableAttributes,
     ...RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS.sortableAttributes,
@@ -708,6 +713,8 @@ export function buildResearchEntitySearchIndexDocument(
     ],
   );
   if (descriptorOnlyTerms.length > 0) out[MESH_DESCRIPTOR_ONLY_TERMS_FIELD] = descriptorOnlyTerms;
+  // Last, so it hashes the final served title and sanitized descriptions.
+  out[SEARCH_RERANK_TEXT_HASH_FIELD] = buildSearchRerankTextHash(out);
   return projectToIndexedFields(out);
 }
 

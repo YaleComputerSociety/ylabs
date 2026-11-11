@@ -74,6 +74,7 @@ import {
   type SearchRerankLiveMissClient,
   type SearchRerankLiveMissGate,
 } from './searchRerankLiveMiss';
+import { SEARCH_RERANK_TEXT_HASH_FIELD } from './searchRerankCandidateText';
 import { servedCitationUrl } from './servedCitationPolicy';
 import { withoutLeadGuardedCopy } from './servedResearchEntityCard';
 import { isPublicHttpUrl } from '../utils/urlSafety';
@@ -653,6 +654,7 @@ const RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES = [
   WELCOMES_UNDERGRADS_INDEX_FIELD,
   UNDERGRAD_INVITATION_RANK_FIELD,
   MESH_DESCRIPTOR_ONLY_TERMS_FIELD,
+  SEARCH_RERANK_TEXT_HASH_FIELD,
 ];
 const MAX_FILTER_VALUE_LENGTH = 120;
 const STUDENT_QUERY_STOP_WORDS = new Set([

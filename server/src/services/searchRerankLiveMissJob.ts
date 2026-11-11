@@ -12,6 +12,7 @@ import { postChatCompletion } from '../utils/modelClient';
 import { estimatedCostUsd } from '../utils/modelPricing';
 import { usableOpenAiApiKey } from '../utils/openAiApiKey';
 import { detailServedSource, toPublicResearchEntityDto } from './researchEntityDto';
+import { searchRerankPromptExcerpts } from './searchRerankCandidateText';
 import type { ResearchGroupFilterInput } from './researchGroupFilters';
 import {
   searchRerankCacheFilters,
@@ -97,15 +98,10 @@ export function searchRerankLiveMissUserPrompt(
   query: string,
   candidates: readonly SearchRerankLiveMissCandidate[],
 ): string {
-  const lines = candidates.map(
-    (candidate, index) =>
-      `[${index}] ${candidate.name} | departments: ${candidate.departments
-        .join(', ')
-        .slice(
-          0,
-          120,
-        )} | ${candidate.shortDescription.slice(0, 220)} | ${candidate.fullDescription.slice(0, 300)}`,
-  );
+  const lines = candidates.map((candidate, index) => {
+    const excerpts = searchRerankPromptExcerpts(candidate);
+    return `[${index}] ${candidate.name} | departments: ${excerpts.departments} | ${excerpts.shortDescription} | ${excerpts.fullDescription}`;
+  });
   return `Query: ${query}\n\n${lines.join('\n')}`;
 }
 
