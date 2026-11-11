@@ -47,6 +47,10 @@ const urlHostAndPath = (pageUrl: string): string => {
 
 const RESEARCH_UNIT_WORDS = ['lab', 'labs', 'laboratory', 'group', 'research'];
 
+const MIN_AFFIX_MATCHED_SURNAME_LENGTH = 5;
+
+const withoutTrailingDigits = (token: string): string => token.replace(/\d+$/, '');
+
 const surnameUrlTokens = (surname: string): Set<string> =>
   new Set([
     surname,
@@ -57,33 +61,40 @@ export const urlCarriesSurname = (pageUrl: string, surname: string): boolean => 
   const accepted = surnameUrlTokens(surname);
   return comparableName(urlHostAndPath(pageUrl))
     .split(' ')
-    .some((token) => accepted.has(token));
+    .map(withoutTrailingDigits)
+    .some(
+      (token) =>
+        accepted.has(token) ||
+        (surname.length >= MIN_AFFIX_MATCHED_SURNAME_LENGTH &&
+          (token.startsWith(surname) || token.endsWith(surname))),
+    );
 };
 
 const HONORIFICS = new Set(['dr', 'prof', 'professor', 'mr', 'mrs', 'ms', 'mx']);
 
-const leadGivenName = (personName: string, surname: string): string => {
-  const given = comparableName(personName)
+const leadOtherNameTokens = (personName: string, surname: string): Set<string> => {
+  const tokens = comparableName(personName)
     .split(' ')
-    .find((token) => token !== '' && !HONORIFICS.has(token));
-  return given && given !== surname ? given : '';
+    .filter((token) => token !== '' && token !== surname && !HONORIFICS.has(token));
+  return new Set(tokens.flatMap((token) => [token, token[0]]));
 };
 
-const isMiddleInitial = (word: string | undefined): boolean => word?.length === 1;
+const NAME_CONTEXT_WORDS = 3;
 
 export const textNamesLead = (text: string, personName: string): boolean => {
   const surname = leadSurname(personName);
-  const given = leadGivenName(personName, surname);
-  if (!surname || !given) return false;
-  const namesGiven = (word: string | undefined): boolean => word === given || word === given[0];
+  if (!surname) return false;
+  const otherNameTokens = leadOtherNameTokens(personName, surname);
   const words = comparableName(text).split(' ').filter(Boolean);
   return words.some((word, index) => {
     if (!surnamesCompatible(word, surname)) return false;
-    const before = words[index - 1];
-    return (
-      namesGiven(before) ||
-      (isMiddleInitial(before) && namesGiven(words[index - 2])) ||
-      words[index + 1] === given
+    if (surname.length >= MIN_AFFIX_MATCHED_SURNAME_LENGTH) return true;
+    const context = [
+      ...words.slice(Math.max(0, index - NAME_CONTEXT_WORDS), index),
+      words[index + 1],
+    ];
+    return context.some(
+      (contextWord) => contextWord !== undefined && otherNameTokens.has(contextWord),
     );
   });
 };

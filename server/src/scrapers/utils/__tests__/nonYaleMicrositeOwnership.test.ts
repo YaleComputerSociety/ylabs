@@ -127,22 +127,33 @@ describe('ownership name helpers', () => {
     expect(leadSurname('Zoë Brénnick')).toBe('brennick');
   });
 
-  it('matches a surname in an address only as a whole token or joined to a research-unit word', () => {
+  it('matches a short surname in an address only as a whole token or joined to a research-unit word', () => {
     expect(urlCarriesSurname('https://example.org/people/vey', 'vey')).toBe(true);
-    expect(urlCarriesSurname('https://example.org/varnadore-lab', 'varnadore')).toBe(true);
-    expect(urlCarriesSurname('https://groupvarnadore.example.org/', 'varnadore')).toBe(true);
+    expect(urlCarriesSurname('https://veylab.example.org/', 'vey')).toBe(true);
     expect(urlCarriesSurname('https://surveyors.example.org/', 'vey')).toBe(false);
     expect(urlCarriesSurname('https://example.org/building', 'ding')).toBe(false);
     expect(urlCarriesSurname('https://stanford.example.edu/', 'ford')).toBe(false);
   });
 
-  it('matches the lead in text only when the given name or its initial sits beside the surname', () => {
+  it('matches a longer surname joined to given names, initials or a trailing number in an address', () => {
+    expect(urlCarriesSurname('https://example.org/varnadore-lab', 'varnadore')).toBe(true);
+    expect(urlCarriesSurname('https://quillonrvarnadore.example/', 'varnadore')).toBe(true);
+    expect(urlCarriesSurname('https://qvarnadore2.github.io/', 'varnadore')).toBe(true);
+    expect(urlCarriesSurname('https://coastal-foundation.example.org/', 'varnadore')).toBe(false);
+  });
+
+  it('reads a longer surname in text as naming the lead, middle names and nicknames included', () => {
     expect(textNamesLead('Led by Q. VARNADÖRE.', 'Quillon Varnadore')).toBe(true);
-    expect(textNamesLead('Quillon R. Varnadore directs the group.', 'Dr. Quillon Varnadore')).toBe(
+    expect(textNamesLead('Quill Ansel Varnadore, Professor', 'Quillon Varnadore')).toBe(true);
+    expect(textNamesLead('Robin Parker-Tidewell directs the group.', 'Robin Parker-Tidewell')).toBe(
       true,
     );
-    expect(textNamesLead('Contact: Varnadore, Quillon.', 'Quillon Varnadore')).toBe(true);
-    expect(textNamesLead('Varnadore studies sediment.', 'Quillon Varnadore')).toBe(false);
     expect(textNamesLead('No mention here.', 'Quillon Varnadore')).toBe(false);
+  });
+
+  it('needs a lead name or initial beside a short surname in text', () => {
+    expect(textNamesLead('Quillon A. Long directs the group.', 'Quillon Long')).toBe(true);
+    expect(textNamesLead('Contact: Long, Quillon.', 'Quillon Long')).toBe(true);
+    expect(textNamesLead('A long history of coastal work.', 'Quillon Long')).toBe(false);
   });
 });
