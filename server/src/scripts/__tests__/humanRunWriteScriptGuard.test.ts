@@ -59,6 +59,8 @@ const OPERATOR_TOOLS: Record<string, string> = {
     're-embeds the whole index after a settings, embedder, or document-shape change, an infrastructure operation; the sweep stage is the incremental sync (#5023)',
   'research-entity:rematerialize': 're-derives rows on demand through the engine itself',
   'observations:catch-up-materialize': 'drains the materialize backlog through the engine itself',
+  'observations:rederive-over-shared-person-websites':
+    're-resolves through the engine itself the people whose evidence asserts an over-shared website, which no lane re-asserts (#5645)',
   'beta:readiness': 'promotion tooling, run as part of the release process',
   'beta:repair-queue': 'promotion tooling, run as part of the release process',
   'beta:clear-student-analytics': 'promotion tooling, run as part of the release process',
