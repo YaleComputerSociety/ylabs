@@ -307,12 +307,33 @@ export function isTruncatedPersonTitle(value: string | null | undefined): boolea
 
 export const MAX_PERSON_TITLE_LENGTH = 140;
 
-export const MAX_STORED_PERSON_TITLE_LENGTH = 200;
+/**
+ * The longest person title storage holds, and `researchers.profile.title`'s schema
+ * `maxlength` (#5594). It is a storage bound, not a defect heuristic: the longest genuine
+ * appointment list measured on Development runs 436 characters, so the bound sits more than
+ * twice above it. A title past it cannot be stored whole, so it is refused rather than cut.
+ */
+export const MAX_STORED_PERSON_TITLE_LENGTH = 1000;
 
 const FIELD_LABEL_PREFIX = /^(?:job\s+title|title|position|rank|appointment)\s*:\s*/i;
 
 export const stripTitleFieldLabel = (value: string): string =>
   value.replace(FIELD_LABEL_PREFIX, '');
+
+function hasPersonTitleDefectShape(text: string): boolean {
+  return (
+    isNavMenuChromeTitle(text) ||
+    isSpaceSeparatedSiteMenu(text) ||
+    isSectionLabelTitle(text) ||
+    isPageHeadingTitle(text) ||
+    hasRawEmailAddress(text) ||
+    hasStreetAddressFragment(text) ||
+    hasPhoneContactFragment(text) ||
+    hasBiographyClause(text) ||
+    hasDegreeLine(text) ||
+    isTruncatedPersonTitle(text)
+  );
+}
 
 /**
  * Fail-closed sanitizer for the short person `title` field, applied at both the
@@ -330,52 +351,51 @@ export const stripTitleFieldLabel = (value: string): string =>
  * heuristic), so a corrupted title never lands in storage nor renders from
  * stale data (#708, #740, #1257).
  */
-function personTitleWithinLimit(
-  value: string | null | undefined,
-  maxLength: number,
-): string | undefined {
+export function sanitizePersonTitle(value: string | null | undefined): string | undefined {
   const text = stripTitleFieldLabel(normalizeTitleWhitespace(value));
-  if (!text) return undefined;
-  if (text.length > maxLength) return undefined;
-  if (isNavMenuChromeTitle(text)) return undefined;
-  if (isSpaceSeparatedSiteMenu(text)) return undefined;
-  if (isSectionLabelTitle(text)) return undefined;
-  if (isPageHeadingTitle(text)) return undefined;
-  if (hasRawEmailAddress(text)) return undefined;
-  if (hasStreetAddressFragment(text)) return undefined;
-  if (hasPhoneContactFragment(text)) return undefined;
-  if (isBioProseTitle(text)) return undefined;
-  if (hasBiographyClause(text)) return undefined;
-  if (hasDegreeLine(text)) return undefined;
-  if (isTruncatedPersonTitle(text)) return undefined;
+  if (!text || text.length > MAX_PERSON_TITLE_LENGTH) return undefined;
+  if (hasPersonTitleDefectShape(text) || isBioProseTitle(text)) return undefined;
   return text;
 }
 
-export function sanitizePersonTitle(value: string | null | undefined): string | undefined {
-  return personTitleWithinLimit(value, MAX_PERSON_TITLE_LENGTH);
+const PROSE_VERB =
+  /\b(?:is|was|are|were|has|had|have|holds|received|earned|completed|joined|serves|served|directs|directed|teaches|taught|studied|investigates|focuses|worked|began|became)\b/;
+const PERSONAL_PRONOUN = /\b(?:he|she|they|his|her|hers|their|we|my)\b/i;
+const FIRST_PERSON_CLAUSE =
+  /\bI(?:['’]m|\s+(?:am|was|have|study|work|research|teach|write|edit|read|look))\b/;
+
+function isCleanStoredAppointment(text: string): boolean {
+  return (
+    Boolean(text) &&
+    !hasPersonTitleDefectShape(text) &&
+    !PROSE_VERB.test(text) &&
+    !PERSONAL_PRONOUN.test(text) &&
+    !FIRST_PERSON_CLAUSE.test(text)
+  );
 }
 
+const storableWhole = (title: string): string | undefined =>
+  title.length <= MAX_STORED_PERSON_TITLE_LENGTH ? title : undefined;
+
 /**
- * The person title a materializer may store (#5594). A stored title may run longer than
- * a served card's (MAX_STORED_PERSON_TITLE_LENGTH), because a real list of appointments
- * joined by commas reaches about 160 characters, while every defect check still applies,
- * so glued biography text, a site menu or contact details are refused at any length. A
- * list of appointments separated by semicolons that is too long to keep whole keeps its
- * leading appointments, whole and in order, and every kept appointment must itself be a
- * clean title, so an appointment is never cut.
+ * The person title a materializer may store and a detail page may serve (#5594). Length is
+ * never a defect here: a genuine list of appointments, joined by semicolons, commas or
+ * sentences, is kept whole up to the storage bound. A title is refused or trimmed only for
+ * a defect shape: glued biography (a lowercase finite verb such as "is" or "received", or a
+ * personal pronoun, neither of which an appointment carries), degree lines, contact details,
+ * a site menu, section label or page heading, or a title cut off at a dangling connective.
+ * When the defect sits in a later appointment of a semicolon list, the leading clean
+ * appointments are kept, whole and in order, and the defective appointment and everything
+ * after it are dropped. A list that is clean throughout is never trimmed.
  */
 export function servablePersonTitle(value: string | null | undefined): string | undefined {
-  const whole = personTitleWithinLimit(value, MAX_STORED_PERSON_TITLE_LENGTH);
-  if (whole) return whole;
   const text = stripTitleFieldLabel(normalizeTitleWhitespace(value));
-  if (!text.includes(';')) return undefined;
-  const kept: string[] = [];
-  for (const appointment of text.split(';').map((part) => part.trim())) {
-    if (!appointment || !personTitleWithinLimit(appointment, MAX_STORED_PERSON_TITLE_LENGTH)) break;
-    if ([...kept, appointment].join('; ').length > MAX_STORED_PERSON_TITLE_LENGTH) break;
-    kept.push(appointment);
-  }
-  return kept.length > 0
-    ? personTitleWithinLimit(kept.join('; '), MAX_STORED_PERSON_TITLE_LENGTH)
-    : undefined;
+  if (!text) return undefined;
+  if (isCleanStoredAppointment(text)) return storableWhole(text);
+  const appointments = text.split(';').map((part) => part.trim());
+  const firstDefective = appointments.findIndex((part) => !isCleanStoredAppointment(part));
+  if (firstDefective === 0) return undefined;
+  const cleanCount = firstDefective === -1 ? appointments.length : firstDefective;
+  const leading = appointments.slice(0, cleanCount).join('; ');
+  return isCleanStoredAppointment(leading) ? storableWhole(leading) : undefined;
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { researcherDisplayProfileSchema } from '../../models/researcher';
 import {
   MAX_STORED_PERSON_TITLE_LENGTH,
   servablePersonTitle,
@@ -393,23 +394,97 @@ describe('servablePersonTitle (#5594)', () => {
     ).toBeUndefined();
   });
 
-  it('keeps the leading whole appointments of a long semicolon list within the limit', () => {
+  it('keeps a long semicolon list of appointments whole, never trimming it to a length', () => {
     const appointments = [
-      'Professor of Fixture Studies and of Synthetic Methods',
-      'Director of the Fixture Center for Testing',
-      'Chair of the Committee on Synthetic Records',
-      'Faculty Fellow of Fixture College',
-      'Affiliated Faculty of the Program in Placeholder Studies',
+      'Fixture Endowed Professor of Synthetic Studies',
+      'Director, Center for Fixture Methods in Placeholder Science (CFMPS)',
+      'Professor of Statistics and Data Science',
+      'Professor of Medicine (Synthetic Medicine)',
+      'Assistant Director, Global Placeholder Program, Fixture Cancer Center',
     ];
-    const kept = servablePersonTitle(appointments.join('; '));
-    expect(kept).toBe(appointments.slice(0, 4).join('; '));
-    expect(kept!.length).toBeLessThanOrEqual(MAX_STORED_PERSON_TITLE_LENGTH);
+    const title = appointments.join('; ');
+    expect(title.length).toBeGreaterThan(250);
+    expect(servablePersonTitle(title)).toBe(title);
   });
 
-  it('never cuts inside an appointment', () => {
-    const first = `Professor of ${'Fixture '.repeat(25)}Studies`;
+  it('keeps an appointment list written as sentences whole', () => {
+    const title =
+      'Avery B. and Casey Fixture Professor and Chair of Synthetic Studies. Professor of Genetics and Placeholder Pathology. Associate Dean for Fixture Scientist Development';
+    expect(title.length).toBeGreaterThan(140);
+    expect(servablePersonTitle(title)).toBe(title);
+  });
+
+  it('keeps a semicolon list whose last appointment runs on as a second sentence', () => {
+    const title =
+      'Professor of Fixture Studies and Synthetic Methods; Executive Director of the FSMTU and Vice Chair for Clinical and Translational Research in the Departments of Fixture Studies and Synthetic Methods. Director, Fixture Center for Placeholder Health.';
+    expect(title.length).toBeGreaterThan(200);
+    expect(servablePersonTitle(title)).toBe(title);
+  });
+
+  it.each([
+    'Fixture Endowed Professor of Synthetic Culture; Professor of American Studies, Placeholder Studies, and Divinity (ISM); and Director, Center for the Study of Material and Visual Cultures of Fixture Religion',
+    'Dean of the Faculty of Fixture Arts and Sciences; Synthetic Professor of Placeholder Studies; Professor of Political Science and International Affairs; Professor in the Institution for Fixture Policy Studies.',
+  ])('keeps the long genuine appointment list %s whole', (title) => {
+    expect(title.length).toBeGreaterThan(200);
+    expect(servablePersonTitle(title)).toBe(title);
+  });
+
+  it('keeps a stray space before a comma, which a page renders inside a genuine appointment', () => {
+    for (const title of [
+      'Associate Professor , Fixture and Synthetic Science',
+      'Senior Lecturer in Ethnicity ,Fixture, and Migration',
+    ]) {
+      expect(servablePersonTitle(title)).toBe(title);
+    }
+  });
+
+  it("refuses a heading run into the person's biography, which a lowercase verb gives away", () => {
+    expect(
+      servablePersonTitle(
+        "Professor of Fixture Studies and Faculty Director of the Synthetic Program at the Fixture Center Bio Avery Synthetic is Professor in the Department of Fixture Studies, where Avery's research focuses on the",
+      ),
+    ).toBeUndefined();
+    expect(
+      servablePersonTitle(
+        "Dr. Avery Synthetic's research is focused on developing predictive fixture methods to understand synthetic genome architecture",
+      ),
+    ).toBeUndefined();
+  });
+
+  it('refuses a first-person biography run onto a title', () => {
+    expect(
+      servablePersonTitle(
+        'Fixture Professor of English I study the history of synthetic poetry, primarily American and British',
+      ),
+    ).toBeUndefined();
+  });
+
+  it.each([
+    'Associate Research Scientist I in Fixture Medicine',
+    'Professor of History and of Fixture Studies',
+  ])('keeps %s, whose roman numeral or field name is not a pronoun', (title) => {
+    expect(servablePersonTitle(title)).toBe(title);
+  });
+
+  it('trims a list only to drop a trailing glued defect, keeping the leading appointments whole', () => {
+    expect(
+      servablePersonTitle(
+        'Professor of Fixture Studies; Director of the Fixture Center; Avery received her Ph.D. in synthetic methods',
+      ),
+    ).toBe('Professor of Fixture Studies; Director of the Fixture Center');
+  });
+
+  it('refuses a clean title past the storage bound rather than cutting it', () => {
+    const first = `Professor of ${'Fixture '.repeat(130)}Studies`;
     expect(first.length).toBeGreaterThan(MAX_STORED_PERSON_TITLE_LENGTH);
+    expect(servablePersonTitle(first)).toBeUndefined();
     expect(servablePersonTitle(`${first}; Director of the Fixture Center`)).toBeUndefined();
+  });
+
+  it('bounds a stored title at the researcher schema limit', () => {
+    expect(researcherDisplayProfileSchema.path('title').options.maxlength).toBe(
+      MAX_STORED_PERSON_TITLE_LENGTH,
+    );
   });
 
   it('stops at the first semicolon part that is not a title', () => {
@@ -432,7 +507,7 @@ describe('servablePersonTitle (#5594)', () => {
     const glued = `Associate Professor of Political Science Avery Synthetic ${bio} ${bio}`;
     expect(glued.length).toBeGreaterThan(300);
     expect(servablePersonTitle(glued)).toBeUndefined();
-    const underTheLimit = glued.slice(0, MAX_STORED_PERSON_TITLE_LENGTH - 10);
+    const underTheLimit = glued.slice(0, 190);
     expect(servablePersonTitle(underTheLimit)).toBeUndefined();
   });
 

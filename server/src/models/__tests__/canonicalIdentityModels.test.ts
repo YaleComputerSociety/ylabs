@@ -7,6 +7,7 @@ import { ResearchEntityRelationship } from '../researchEntityRelationship';
 import { RoleAssignment } from '../roleAssignment';
 import { TaxonomyTerm } from '../taxonomyTerm';
 import * as modelExports from '../index';
+import { MAX_STORED_PERSON_TITLE_LENGTH } from '../../utils/titleHygiene';
 
 const objectId = () => new mongoose.Types.ObjectId();
 
@@ -202,8 +203,10 @@ describe('canonical identity and reference models', () => {
     expect(person.validateSync()?.errors?.['profile.title']).toBeUndefined();
   });
 
-  it('rejects a research profile title beyond the 400 character bound', () => {
-    const person = validPerson({ profile: { title: 'A'.repeat(401) } });
+  it('rejects a research profile title beyond the stored title bound', () => {
+    const person = validPerson({
+      profile: { title: 'A'.repeat(MAX_STORED_PERSON_TITLE_LENGTH + 1) },
+    });
 
     expect(person.validateSync()?.errors?.['profile.title']).toBeTruthy();
   });
