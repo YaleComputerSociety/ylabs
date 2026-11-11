@@ -332,6 +332,30 @@ describe('a lab site the roster lists for several people', () => {
     ]);
   });
 
+  it('keeps it for a lead who also lists the lab as an appointment before the button', () => {
+    expect(
+      keptBy([
+        profileOf(
+          'ada-fixture',
+          'Ada Fixture',
+          'Professor of Fixture Studies',
+          `<ul><li><a href="${SHARED_LAB}">Fixture Lab</a></li></ul>${researchLabCard(
+            button(SHARED_LAB, 'View Lab Website'),
+          ).replace('Coastal Dynamics Lab', 'Fixture Lab')}`,
+        ),
+        profileOf(
+          'bo-member',
+          'Bo Member',
+          'Professor of Fixture Studies',
+          `<ul><li><a href="${SHARED_LAB}">Fixture Lab</a></li></ul>`,
+        ),
+      ]),
+    ).toEqual([
+      ['dept:fixture-health:ada-fixture', SHARED_LAB],
+      ['dept:fixture-health:bo-member', 'refused'],
+    ]);
+  });
+
   it('keeps it for the one faculty sharer when every other sharer owns no research row', () => {
     expect(
       keptBy([

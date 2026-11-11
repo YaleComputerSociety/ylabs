@@ -3557,10 +3557,19 @@ export function profileEnrichmentFromHtml(
       return;
     }
     if (hostnameIsWithin(parsed.hostname, 'orcid.org')) return;
-    if (labUrl) return;
+    const text = link.text().replace(/\s+/g, ' ').trim();
+    if (labUrl) {
+      if (
+        !labWebsiteButton &&
+        PROFILE_WEBSITE_BUTTON_LABEL.test(text) &&
+        normalizeUrlForDedupe(absolute) === normalizeUrlForDedupe(labUrl)
+      ) {
+        labWebsiteButton = { cardTitle: profileLabCardTitle(link) };
+      }
+      return;
+    }
     if (normalizeUrlForDedupe(absolute) === normalizeUrlForDedupe(canonicalUrl)) return;
 
-    const text = link.text().replace(/\s+/g, ' ').trim();
     const aria = link.attr('aria-label') || '';
     const titleAttr = link.attr('title') || '';
     const visibleTextSignal = linkTextIsASentence(text) ? '' : text;
