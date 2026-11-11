@@ -13,7 +13,7 @@ import {
   type TopicRefusalReason,
 } from '../scrapers/utils/pageQuotedResearchTopics';
 import {
-  researchPageTextEntries,
+  researchPageTextEntriesWithoutChrome,
   type ResearchPageTextEntry,
 } from '../scrapers/utils/researchPageText';
 import { mapWithConcurrency } from '../scrapers/utils/mapWithConcurrency';
@@ -257,7 +257,7 @@ export async function deriveResearchTopicsForRows(input: {
         outcome: 'no-text',
       };
       report.rows.push(row);
-      const pages = researchPageTextEntries(stored.value);
+      const pages = researchPageTextEntriesWithoutChrome(stored.value);
       if (pages.length === 0) {
         report.noText += 1;
         return;

@@ -4,6 +4,7 @@ import { isCurriculumVitaeRecordSentence } from '../../utils/careerBiographyDesc
 import { removeRelatedEntityTeaserCards } from '../../utils/relatedEntityTeaserCards';
 import { extractElementTextWithLineBreaks } from './htmlText';
 import { removeProfilePublicityRegions } from './profilePublicityRegions';
+import { withoutResearchPageChrome } from './researchPageChrome';
 
 export const RESEARCH_PAGE_TEXT_SOURCE = 'research-page-text';
 export const RESEARCH_PAGE_TEXT_FIELD = 'researchPageText';
@@ -197,7 +198,7 @@ export function researchPageTextValue(
     if (entries.some((entry) => entry.text === text)) continue;
     entries.push({ url: page.url, text });
   }
-  return capResearchPageText(entries);
+  return researchPageTextEntriesWithoutChrome(capResearchPageText(entries));
 }
 
 const textOf = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
@@ -211,5 +212,20 @@ export function researchPageTextEntries(value: unknown): ResearchPageTextEntry[]
     const url = textOf(record.url);
     const text = textOf(record.text);
     return url && text ? [{ url, text }] : [];
+  });
+}
+
+/**
+ * Stored page text with the site chrome removed (#5577). The lane stores exactly this, and
+ * applies it after the cap, so for an unchanged page the new stored value equals this
+ * function of the old one: the writer's hashed input (#5537) and the topic cache key stay
+ * the same, and `research-topics:rekey-stripped` can move existing readings ahead of a
+ * re-scrape. Changing the order or adding other stripping here forces a description
+ * rewrite and a topic re-derive for every affected row.
+ */
+export function researchPageTextEntriesWithoutChrome(value: unknown): ResearchPageTextEntry[] {
+  return researchPageTextEntries(value).flatMap((entry) => {
+    const text = withoutResearchPageChrome(entry.text).trim();
+    return text ? [{ url: entry.url, text }] : [];
   });
 }
