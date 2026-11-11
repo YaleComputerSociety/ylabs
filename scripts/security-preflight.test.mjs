@@ -707,6 +707,211 @@ test('application and official-route CTAs use HTTP(S)-only URL helpers', () => {
   assert.doesNotMatch(programLinks, /href: link\.url/);
 });
 
+const MEMBER_LIMITED_FUNCTIONS = [
+  'canonicalPublicDetailMembers',
+  'publicResearchEntityDetailRosterMembers',
+];
+const UNCAPPED_MEMBER_CALLERS = new Set([
+  'searchableResearchEntityMembers',
+  'matchableLabMembers',
+  'requestedPastCapMember',
+]);
+const ENCLOSING_FUNCTION_PATTERN =
+  /(?:function\s+(\w+)\s*[<(])|(?:const\s+(\w+)\s*=\s*(?:async\s*)?(?:<[^>]*>)?\()/g;
+
+const topLevelEntries = (source, openIndex) => {
+  const closer = ')]}'['([{'.indexOf(source[openIndex])];
+  const entries = [];
+  let depth = 0;
+  let typeArgumentDepth = 0;
+  let current = '';
+  for (let index = openIndex + 1; index < source.length; index += 1) {
+    const character = source[index];
+    const previous = source[index - 1];
+    if (depth === 0 && character === closer) {
+      if (current.trim()) entries.push(current.trim());
+      return entries;
+    }
+    if ('([{'.includes(character)) depth += 1;
+    else if (')]}'.includes(character)) depth -= 1;
+    else if (character === '<' && /\w/.test(previous)) typeArgumentDepth += 1;
+    else if (character === '>' && typeArgumentDepth > 0 && previous !== '=') typeArgumentDepth -= 1;
+    if (character === ',' && depth === 0 && typeArgumentDepth === 0) {
+      entries.push(current.trim());
+      current = '';
+      continue;
+    }
+    current += character;
+  }
+  return entries;
+};
+
+const enclosingFunctionName = (source, index) => {
+  let name = '';
+  for (const match of source.slice(0, index).matchAll(ENCLOSING_FUNCTION_PATTERN)) {
+    name = match[1] || match[2];
+  }
+  return name;
+};
+
+// The detail page's member list is the one response an unauthenticated caller can make
+// as large as a roster, so only the search paths may read past the display cap, and they
+// serialize at most the single roster-checked member a deep link asks for (#5584).
+const memberLimitViolations = (serviceSource, controllerSource) => {
+  const violations = [];
+  for (const name of MEMBER_LIMITED_FUNCTIONS) {
+    for (const match of serviceSource.matchAll(new RegExp(`(^|[^\\w.])${name}\\(`, 'g'))) {
+      const before = serviceSource.slice(
+        Math.max(0, match.index - 20),
+        match.index + match[1].length,
+      );
+      if (/(function|const)\s+$/.test(before)) continue;
+      const openParenIndex = match.index + match[0].length - 1;
+      const limitArgument = topLevelEntries(serviceSource, openParenIndex)[3];
+      if (limitArgument === undefined || limitArgument === 'MAX_PUBLIC_DETAIL_MEMBERS') continue;
+      const caller = enclosingFunctionName(serviceSource, match.index);
+      if (limitArgument === 'limit' && caller === 'publicResearchEntityDetailRosterMembers')
+        continue;
+      if (limitArgument === 'EVERY_CURRENT_MEMBER' && UNCAPPED_MEMBER_CALLERS.has(caller)) continue;
+      violations.push(`${caller || 'module scope'} passes ${limitArgument} to ${name}`);
+    }
+  }
+  const detailCall = controllerSource.match(/\bgetResearchGroupDetail\(/);
+  const detailArguments = detailCall
+    ? topLevelEntries(controllerSource, detailCall.index + detailCall[0].length - 1)
+    : [];
+  if (
+    detailArguments.length !== 2 ||
+    detailArguments[0] !== 'slug' ||
+    !detailArguments[1].startsWith('{')
+  ) {
+    violations.push('the detail controller no longer calls getResearchGroupDetail(slug, { ... })');
+  } else {
+    for (const option of topLevelEntries(detailArguments[1], 0)) {
+      const key = /^(\w+)\s*(?::|$)/.exec(option)?.[1];
+      if (!['includeWithheldForOperator', 'requestedMemberName'].includes(key)) {
+        violations.push(`the detail controller passes ${key ?? option} to getResearchGroupDetail`);
+      }
+    }
+  }
+  return violations;
+};
+
+test('only the search paths read research members past the public detail cap', () => {
+  const serviceSource = fs.readFileSync(
+    new URL('../server/src/services/researchGroupService.ts', import.meta.url),
+    'utf8',
+  );
+  const controllerSource = fs.readFileSync(
+    new URL('../server/src/controllers/researchGroupController.ts', import.meta.url),
+    'utf8',
+  );
+  assert.deepEqual(memberLimitViolations(serviceSource, controllerSource), []);
+
+  const widenedService = serviceSource.replace(
+    /(canonicalPublicDetailMembers\(\s*group as Record<string, any>,\s*rosterEntries,)(\s*\))/,
+    '$1 new Date(), 500$2',
+  );
+  assert.notEqual(widenedService, serviceSource);
+  assert.deepEqual(memberLimitViolations(widenedService, controllerSource), [
+    'getResearchGroupDetail passes 500 to canonicalPublicDetailMembers',
+  ]);
+
+  const widenedController = controllerSource.replace(
+    'includeWithheldForOperator: hasAdminAuthority,',
+    'includeWithheldForOperator: hasAdminAuthority,\n    memberLimit: 500,',
+  );
+  assert.notEqual(widenedController, controllerSource);
+  assert.deepEqual(memberLimitViolations(serviceSource, widenedController), [
+    'the detail controller passes memberLimit to getResearchGroupDetail',
+  ]);
+});
+
+test('the member cap pin refuses a public path that passes a larger limit', () => {
+  const controller = `const detail = await getResearchGroupDetail(slug, {
+    includeWithheldForOperator: hasAdminAuthority,
+  });`;
+  const service = (body) => `
+const publicResearchEntityDetailRosterMembers = (entity, entries, now, limit = MAX_PUBLIC_DETAIL_MEMBERS) =>
+  dedupe(canonicalPublicDetailMembers(entity, entries, now, limit), entity);
+function requestedPastCapMember(entity, entries) {
+  return publicResearchEntityDetailRosterMembers(entity, entries, now, EVERY_CURRENT_MEMBER);
+}
+export async function getResearchGroupDetail(slug, { includeWithheldForOperator = false } = {}) {
+  ${body}
+}`;
+
+  assert.deepEqual(
+    memberLimitViolations(
+      service('const m = canonicalPublicDetailMembers(group, entries);'),
+      controller,
+    ),
+    [],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service('const m = canonicalPublicDetailMembers(group, entries, now, 500);'),
+      controller,
+    ),
+    ['getResearchGroupDetail passes 500 to canonicalPublicDetailMembers'],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service(
+        'const m = publicResearchEntityDetailRosterMembers(group, entries, now, EVERY_CURRENT_MEMBER);',
+      ),
+      controller,
+    ),
+    [
+      'getResearchGroupDetail passes EVERY_CURRENT_MEMBER to publicResearchEntityDetailRosterMembers',
+    ],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service('const m = canonicalPublicDetailMembers(group, entries);'),
+      controller.replace('hasAdminAuthority,', 'hasAdminAuthority,\n    memberLimit: 500,'),
+    ),
+    ['the detail controller passes memberLimit to getResearchGroupDetail'],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service(
+        'const m = canonicalPublicDetailMembers(group, entries.filter((entry) => entry.ok), now, 500);',
+      ),
+      controller,
+    ),
+    ['getResearchGroupDetail passes 500 to canonicalPublicDetailMembers'],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service('const m = canonicalPublicDetailMembers(group, entries, now, limit);'),
+      controller,
+    ),
+    ['getResearchGroupDetail passes limit to canonicalPublicDetailMembers'],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service('const m = canonicalPublicDetailMembers(group, entries);'),
+      controller.replace('hasAdminAuthority,', 'hasAdminAuthority,\n    memberLimit,'),
+    ),
+    ['the detail controller passes memberLimit to getResearchGroupDetail'],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service('const m = canonicalPublicDetailMembers(group, entries);'),
+      controller.replace('hasAdminAuthority,', 'hasAdminAuthority,\n    ...options,'),
+    ),
+    ['the detail controller passes ...options to getResearchGroupDetail'],
+  );
+  assert.deepEqual(
+    memberLimitViolations(
+      service('const m = canonicalPublicDetailMembers(group, entries);'),
+      'const detail = await getResearchGroupDetail(slug, options);',
+    ),
+    ['the detail controller no longer calls getResearchGroupDetail(slug, { ... })'],
+  );
+});
+
 test('public research detail queries cap unauthenticated fan-out before serialization', () => {
   const source = fs.readFileSync(
     new URL('../server/src/services/researchGroupService.ts', import.meta.url),
