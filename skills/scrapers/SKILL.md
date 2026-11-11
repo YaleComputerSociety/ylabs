@@ -203,6 +203,11 @@ Four earlier mechanisms each broke on a stored title, and the module's test file
   Only two kinds verify identity: a `yale-directory` record keyed by the person's own netid, and an `official-profile-pi-backfill` email on the person's own `netid:` key whose page the person already holds as their official link and no other live researcher does, and whose address the directory does not pair with another netid.
   Either source is refused when a researcher with a different netid already holds the address (#5606).
   A roster, alias or name-keyed email never verifies, verified sources that disagree change nothing, and no evidence never clears a stored email.
+- A person's own official page can mark them deceased or departed, through `profileInMemoriam` and `profileAppointmentEndedOn` observations on their own `netid:` key from `official-profile-pi-backfill` (`personPageDeparture.ts`, #5721).
+  A row is gone only when every current lead is marked: a departed lead follows the existing departure semantics, and a deceased lead is presented as `DECEASED_LEAD_ROW_PRESENTATION` decides (`utils/deceasedLeadRowPresentation.ts`, hide by default, an owner decision).
+  A row whose research continues under another current lead keeps being served, and `withDepartedLeadsRetired` reads the marked lead as historical so the existing member selection serves the remaining one.
+  A marked person gets no email fill and no replacement.
+  It is derived on every resolve: no field is written directly and no lock is added.
 - `official-profile-pi-backfill` keys a page by a netid only when the candidate researcher is the page's person (#5370).
   `profileIdentityAgreesWithUser` accepts a candidate that holds the page's own address, or one whose name agrees and whose own named address does not differ; holding the page URL alone is not enough, because an earlier run gave namesakes that link.
   The resolver also refuses a candidate whose netid the Yale directory lanes do not pair with the page's address, and with no candidate the lane keeps its alias-keyed fallback rather than guessing a netid.

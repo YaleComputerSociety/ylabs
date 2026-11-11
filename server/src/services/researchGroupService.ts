@@ -4649,6 +4649,34 @@ const PUBLIC_DETAIL_ROLE_PRIORITY: Record<string, number> = {
  * lead set than the detail page's, and the two surfaces would serve two strings for
  * one row again, which is the defect #2240 exists to close.
  */
+/**
+ * A lead whose own official page marks them deceased or departed no longer leads a row whose
+ * research continues under another current lead (#5721). The entry is read as historical, so
+ * the existing member selection serves the remaining lead. A row every lead has left is the
+ * Yale-status derivation's to present, so it is passed through unchanged.
+ */
+export async function withDepartedLeadsRetired(
+  rosterEntries: ResearchEntityRosterEntry[],
+  now = new Date(),
+): Promise<ResearchEntityRosterEntry[]> {
+  const currentLeads = rosterEntries.filter(
+    (entry) => entry.state !== 'HISTORICAL' && PUBLIC_LEAD_ROLES.has(entry.role),
+  );
+  if (currentLeads.length < 2 || mongoose.connection.readyState !== 1) return rosterEntries;
+  const leadIds = [...new Set(currentLeads.map((entry) => String(entry.personId)))];
+  // Loaded on use: the reader sits on the materializer's read scope, which the serving layer
+  // must not pull in at module load.
+  const { loadPersonPageDepartures, rowDepartureFromLeads } =
+    await import('../scrapers/personPageDeparture');
+  const departures = await loadPersonPageDepartures(leadIds, now);
+  if (departures.size === 0 || rowDepartureFromLeads(leadIds, departures)) return rosterEntries;
+  return rosterEntries.map((entry) =>
+    PUBLIC_LEAD_ROLES.has(entry.role) && departures.has(String(entry.personId))
+      ? { ...entry, state: 'HISTORICAL', isCurrentMember: false }
+      : entry,
+  );
+}
+
 function canonicalPublicDetailMembers(
   entity: Record<string, any>,
   rosterEntries: ResearchEntityRosterEntry[],
@@ -4883,7 +4911,7 @@ export async function getResearchGroupDetail(
     withheldBy.push('deceased_lead');
   }
 
-  const rosterEntries = await servedRoster((group as any)._id);
+  const rosterEntries = await withDepartedLeadsRetired(await servedRoster((group as any)._id));
   const canonicalMembers = canonicalPublicDetailMembers(
     group as Record<string, any>,
     rosterEntries,

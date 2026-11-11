@@ -317,6 +317,10 @@ import {
 } from './directoryContradictedProfileNetid';
 import { derivedResearcherEmail } from './verifiedResearcherEmail';
 import {
+  loadResearchEntityLeadPageDeparture,
+  type PersonPageDeparture,
+} from './personPageDeparture';
+import {
   storedResearchAreasCameFromAPersonProfileOnAnOrganizationRow,
   withoutPersonProfileTopicsOnOrganizationRow,
 } from './personProfileTopicScreen';
@@ -8329,6 +8333,7 @@ export async function loadResearchEntityNameIdentityAuthority(
 }
 
 export interface ProjectFromLogInput {
+  leadPageDeparture?: PersonPageDeparture;
   resolved: Record<string, ResolvedField>;
   nameIdentityAuthority: ResearchEntityNameIdentityAuthority;
   manuallyLockedFields: string[];
@@ -10916,6 +10921,7 @@ export async function projectFromLog(
         // what makes the recorded-closure arm of the derivation reachable at all
         // (#1923); omit it and that arm silently never fires from materialize.
         studentVisibilitySuppressionReason: entityDoc?.studentVisibilitySuppressionReason,
+        leadPageDeparture: input.leadPageDeparture,
       });
       if (yaleStatusSignal) {
         if (entityDoc?.activeAtYaleCache !== false) fieldsWritten++;
@@ -12170,7 +12176,12 @@ async function materializeEntityUnderRemovalGuard(
       storedFieldIsCreditedToACoursePage(entityDoc, 'researchAreas') ||
       (await storedResearchAreasSourceRetiredItsClaim(entityDoc, mergedInRows)));
 
+  const leadPageDeparture =
+    isResearchEntityObservationType(entityType) && entityDoc?._id
+      ? await loadResearchEntityLeadPageDeparture(String(entityDoc._id), options.now ?? new Date())
+      : undefined;
   const projection = await projectFromLog(entityType, {
+    leadPageDeparture,
     resolved,
     nameIdentityAuthority,
     manuallyLockedFields,
