@@ -15,10 +15,12 @@ import { servedSiteLeadVerdicts } from '../utils/leadContradictedByNamesake';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
+  pastDetachmentsOfTheNamedPerson,
   planSurnameClashLeadDetachment,
   researcherIdentityAnchored,
   summarizeSurnameClashRefusals,
   surnameClashGroups,
+  type PastSurnameClashDetachment,
   type SurnameClashEntityRow,
   type SurnameClashLeadRow,
 } from './retireSurnameClashLeadGraftsCore';
@@ -150,6 +152,65 @@ async function loadClashEntities(
   return { rows, slugByEntityId };
 }
 
+async function loadPastDetachments(): Promise<{
+  detachments: PastSurnameClashDetachment[];
+  slugByEntityId: Map<string, string>;
+}> {
+  const assignments = (await RoleAssignment.find({
+    role: { $in: LEAD_ROLES },
+    archived: true,
+    reviewNotes: DETACH_NOTE,
+    'target.kind': 'RESEARCH_ENTITY',
+  })
+    .select('_id personId target')
+    .lean()) as unknown as Array<Record<string, any>>;
+  const objectIds = (ids: Array<string | undefined>) =>
+    [...new Set(ids)]
+      .filter((id): id is string => Boolean(id) && mongoose.isValidObjectId(id))
+      .map((id) => new mongoose.Types.ObjectId(id));
+
+  const researchers = (await Researcher.find({
+    _id: { $in: objectIds(assignments.map((doc) => serializedDocumentId(doc.personId))) },
+  })
+    .select('_id displayName')
+    .lean()) as unknown as Array<Record<string, any>>;
+  const displayNameByPersonId = new Map(
+    researchers.map((row) => [serializedDocumentId(row._id), String(row.displayName || '')]),
+  );
+
+  const entities = (await ResearchEntity.find({
+    _id: { $in: objectIds(assignments.map((doc) => serializedDocumentId(doc.target?.id))) },
+    archived: { $ne: true },
+  })
+    .select('_id slug name displayName')
+    .lean()) as unknown as Array<Record<string, any>>;
+  const entityById = new Map(entities.map((entity) => [serializedDocumentId(entity._id), entity]));
+
+  const detachments: PastSurnameClashDetachment[] = [];
+  const slugByEntityId = new Map<string, string>();
+  for (const doc of assignments) {
+    const assignmentId = serializedDocumentId(doc._id);
+    const personId = serializedDocumentId(doc.personId);
+    const entityId = serializedDocumentId(doc.target?.id);
+    const entity = entityById.get(entityId);
+    const displayName = displayNameByPersonId.get(personId);
+    if (!assignmentId || !personId || !entityId || !entity || !displayName) continue;
+    detachments.push({
+      assignmentId,
+      entityId,
+      personId,
+      displayName,
+      identityTokens: researchEntityIdentityTokens({
+        name: entity.name,
+        displayName: entity.displayName,
+        slug: entity.slug,
+      }),
+    });
+    slugByEntityId.set(entityId, String(entity.slug || ''));
+  }
+  return { detachments, slugByEntityId };
+}
+
 export async function retireSurnameClashLeadGrafts(options: {
   dryRun: boolean;
 }): Promise<Record<string, unknown>> {
@@ -187,6 +248,9 @@ export async function retireSurnameClashLeadGrafts(options: {
     }
   }
 
+  const past = await loadPastDetachments();
+  const pastDetachmentsNowNamed = pastDetachmentsOfTheNamedPerson(past.detachments);
+
   const report = {
     script: SCRIPT_NAME,
     mode: options.dryRun ? 'dry-run' : 'apply',
@@ -197,6 +261,13 @@ export async function retireSurnameClashLeadGrafts(options: {
     refusedByReason: summarizeSurnameClashRefusals(plan.refused),
     detached,
     regatedEntities,
+    pastDetachmentsScanned: past.detachments.length,
+    pastDetachmentsOfTheNamedPerson: pastDetachmentsNowNamed.length,
+    pastDetachmentEntitySlugsOfTheNamedPerson: [
+      ...new Set(
+        pastDetachmentsNowNamed.map((row) => past.slugByEntityId.get(row.entityId) || row.entityId),
+      ),
+    ].sort(),
   };
   return report;
 }

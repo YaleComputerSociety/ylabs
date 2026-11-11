@@ -19,7 +19,7 @@ import {
   type LabSiteVerificationState,
 } from '../../models/storedVocabularies';
 import { personNameAliases } from '../../utils/personNameHygiene';
-import { givenNamesCouldNameOnePerson } from './piNameMatch';
+import { givenNamesCouldBeOneTransliteration, givenNamesCouldNameOnePerson } from './piNameMatch';
 
 export const LAB_SITE_LEAD_VERIFICATION_SOURCE = 'lab-site-lead-verification';
 
@@ -458,24 +458,6 @@ export function slugNamesAnotherLead(
   return slugContradictionShape(slug, leadDisplayName, visibleText) !== '';
 }
 
-const MIN_TRANSLITERATION_LETTERS = 4;
-
-const transliterationKey = (token: string): string =>
-  token
-    .replace(/h/g, '')
-    .replace(/y/g, 'i')
-    .replace(/o/g, 'u')
-    .replace(/e/g, 'a')
-    .replace(/([^aiu])\1+/g, '$1');
-
-function couldBeOneTransliteration(left: string, right: string): boolean {
-  return (
-    Math.min(left.length, right.length) >= MIN_TRANSLITERATION_LETTERS &&
-    left[0] === right[0] &&
-    transliterationKey(left) === transliterationKey(right)
-  );
-}
-
 function sharedTrailingTokenCount(left: readonly string[], right: readonly string[]): number {
   let count = 0;
   while (
@@ -511,7 +493,7 @@ function namesakeGivenNameCouldBeTheLead(
     const slugGiven = slugTokens.slice(0, slugTokens.length - sharedSurnameRun).filter(isGivenName);
     if (givenNamesCouldNameOnePerson(leadGiven.join(' '), slugGiven.join(' '))) return true;
     return leadGiven.some((left) =>
-      slugGiven.some((right) => couldBeOneTransliteration(left, right)),
+      slugGiven.some((right) => givenNamesCouldBeOneTransliteration(left, right)),
     );
   });
 }

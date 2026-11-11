@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   givenNamesAgree,
+  givenNamesCouldBeOneTransliteration,
   givenNamesCouldNameOnePerson,
   givenNamesEquivalent,
   givenNameTokensAgree,
@@ -242,5 +243,19 @@ describe('givenNamesCouldNameOnePerson (#4388)', () => {
   it('reads two unrelated given names as two people', () => {
     expect(givenNamesCouldNameOnePerson('Ada', 'Byron')).toBe(false);
     expect(givenNamesCouldNameOnePerson('Mara', 'Jonas')).toBe(false);
+  });
+});
+
+describe('givenNamesCouldBeOneTransliteration', () => {
+  it('reads two romanisations of one given name as one name', () => {
+    expect(givenNamesCouldBeOneTransliteration('muhammad', 'mohammed')).toBe(true);
+    expect(givenNamesCouldBeOneTransliteration('anastasios', 'anastasis')).toBe(true);
+  });
+
+  it('keeps genuinely different given names apart', () => {
+    expect(givenNamesCouldBeOneTransliteration('tom', 'tim')).toBe(false);
+    expect(givenNamesCouldBeOneTransliteration('andreas', 'anastasis')).toBe(false);
+    expect(givenNamesCouldBeOneTransliteration('anastasios', 'athanasios')).toBe(false);
+    expect(givenNamesCouldBeOneTransliteration('marius', 'maris')).toBe(false);
   });
 });

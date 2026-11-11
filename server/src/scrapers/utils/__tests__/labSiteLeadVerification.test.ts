@@ -654,6 +654,7 @@ describe('slugContradictionShape (#4916)', () => {
       ['dana-quill', 'D. Chui-Ying Quill'],
       ['mohammed-quill', 'Muhammad Quill'],
       ['yury-quill', 'Yuri Quill'],
+      ['dionysis-quill', 'Dionysios Quill'],
       ['dale-quill', 'Robin Quill f.k.a. Dale Quill'],
     ]) {
       expect(slugContradictionShape(slug, lead, members), `${slug} / ${lead}`).toBe('');
@@ -669,6 +670,7 @@ describe('slugContradictionShape (#4916)', () => {
       ['bonnie-quill', 'Ben Quill'],
       ['ali-quill', 'Eli Quill'],
       ['ian-quill', 'Ann Quill'],
+      ['maris-quill', 'Marius Quill'],
     ]) {
       expect(slugContradictionShape(slug, lead, members), `${slug} / ${lead}`).toBe('NAMESAKE');
     }

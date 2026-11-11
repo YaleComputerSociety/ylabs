@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   entityIdentityNamesPerson,
   leadSurnameKey,
+  pastDetachmentsOfTheNamedPerson,
   planSurnameClashLeadDetachment,
   researcherIdentityAnchored,
   summarizeSurnameClashRefusals,
@@ -64,6 +65,16 @@ describe('entityIdentityNamesPerson', () => {
 
   it('matches an accented given name against the slug form of the same name', () => {
     expect(entityIdentityNamesPerson(['jose', 'quimby'], 'José Quimby')).toBe(true);
+  });
+
+  it('names a transliteration of the same given name (#5853)', () => {
+    expect(entityIdentityNamesPerson(['anastasis', 'quimby'], 'Anastasios Quimby')).toBe(true);
+    expect(entityIdentityNamesPerson(['muhammad', 'quimby'], 'Mohammed Quimby')).toBe(true);
+  });
+
+  it('still does not name a same-surname person with a different given name (#5853)', () => {
+    expect(entityIdentityNamesPerson(['anastasis', 'quimby'], 'Andreas Quimby')).toBe(false);
+    expect(entityIdentityNamesPerson(['anastasis', 'quimby'], 'Athanasios Quimby')).toBe(false);
   });
 
   it('keeps unrelated accented surnames in separate clash groups', () => {
@@ -396,5 +407,81 @@ describe('researcherIdentityAnchored', () => {
   it('leaves a bare name unanchored', () => {
     expect(researcherIdentityAnchored({ identifiers: { netid: '  ', email: '' } })).toBe(false);
     expect(researcherIdentityAnchored({})).toBe(false);
+  });
+});
+
+describe('one person stored under two romanisations of a given name (#5853)', () => {
+  const identityTokens = ['dept', 'electrical', 'computer', 'engineering', 'anastasis', 'quimby'];
+  const slugSpelling = lead({
+    assignmentId: 'assignment-slug-spelling',
+    personId: 'person-slug-spelling',
+    displayName: 'Anastasis Quimby',
+    identityAnchored: false,
+  });
+  const liveRecord = lead({
+    assignmentId: 'assignment-live',
+    personId: 'person-live',
+    displayName: 'Anastasios Quimby',
+  });
+  const stranger = lead({
+    assignmentId: 'assignment-stranger',
+    personId: 'person-stranger',
+    displayName: 'Andreas Quimby',
+  });
+
+  it('refuses the pair as a merge rather than detaching the live record', () => {
+    const plan = planSurnameClashLeadDetachment([
+      entity({ identityTokens, leads: [slugSpelling, liveRecord] }),
+    ]);
+    expect(plan.detach).toEqual([]);
+    expect(plan.refused).toEqual([
+      {
+        entityId: 'entity-1',
+        reason: 'identity-names-more-than-one-of-the-clash',
+        assignments: 2,
+      },
+    ]);
+  });
+
+  it('still detaches a same-surname person whose given name is different', () => {
+    const plan = planSurnameClashLeadDetachment([
+      entity({ identityTokens, leads: [liveRecord, stranger] }),
+    ]);
+    expect(plan.detach).toEqual([
+      { assignmentId: 'assignment-stranger', entityId: 'entity-1', personId: 'person-stranger' },
+    ]);
+  });
+
+  it('plans the same thing on a second run', () => {
+    const rows = [
+      entity({ identityTokens, leads: [slugSpelling, liveRecord] }),
+      entity({ entityId: 'entity-2', identityTokens, leads: [liveRecord, stranger] }),
+    ];
+    expect(planSurnameClashLeadDetachment(rows)).toEqual(planSurnameClashLeadDetachment(rows));
+  });
+
+  it('lists a past detachment of the named person and not one of a stranger', () => {
+    const past = [
+      {
+        assignmentId: 'assignment-live',
+        entityId: 'entity-1',
+        personId: 'person-live',
+        displayName: 'Anastasios Quimby',
+        identityTokens,
+      },
+      {
+        assignmentId: 'assignment-stranger',
+        entityId: 'entity-1',
+        personId: 'person-stranger',
+        displayName: 'Andreas Quimby',
+        identityTokens,
+      },
+    ];
+    expect(pastDetachmentsOfTheNamedPerson(past).map((row) => row.assignmentId)).toEqual([
+      'assignment-live',
+    ]);
+    expect(pastDetachmentsOfTheNamedPerson(pastDetachmentsOfTheNamedPerson(past))).toEqual(
+      pastDetachmentsOfTheNamedPerson(past),
+    );
   });
 });
