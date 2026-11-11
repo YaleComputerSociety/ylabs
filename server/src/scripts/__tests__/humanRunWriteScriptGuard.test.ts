@@ -74,8 +74,6 @@ const OPERATOR_TOOLS: Record<string, string> = {
     'renames the roster rows whose slug was minted from photo alt text and keeps the old slug as a redirect, a one-time correction: the lane no longer mints such a key and the materializer refuses renames, so no lane or sweep stage can re-derive it (#5808)',
   'research-topics:rekey-stripped':
     'a one-time, owner-decided migration of cached topic readings to the chrome-stripped text key, run once before the materialize that follows the #5577 lane change; a second run is a no-op',
-  'research-entity:reslug-alt-text-slugs':
-    'renames the roster rows whose slug was minted from photo alt text and keeps the old slug as a redirect, a one-time correction: the lane no longer mints such a key and the materializer refuses renames, so no lane or sweep stage can re-derive it (#5808)',
   'db:build-indexes': 'builds declared indexes, a reviewed schema operation',
   'meili:rebuild-research-entities':
     're-embeds the whole index after a settings, embedder, or document-shape change, an infrastructure operation; the sweep stage is the incremental sync (#5023)',

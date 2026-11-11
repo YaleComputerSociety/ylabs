@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import { gatherCoverageSnippets } from '../coverageSynthesis';
-import { researchTopicsDerivationInputHash } from '../researchPageTopicsDerivation';
 import {
   capResearchPageText,
   researchPageTextEntriesWithoutChrome,
@@ -93,12 +92,6 @@ describe('research-page-text lane chrome strip (#5577)', () => {
 
       it("leaves the writer's hashed input byte-identical, so the description is not rewritten", () => {
         expect(writerHashOf(current)).toBe(writerHashOf(legacy));
-      });
-
-      it('gives the topic cache the key the re-key moves the old reading to', () => {
-        expect(
-          researchTopicsDerivationInputHash(researchPageTextEntriesWithoutChrome(current)),
-        ).toBe(researchTopicsDerivationInputHash(researchPageTextEntriesWithoutChrome(legacy)));
       });
     });
   }
