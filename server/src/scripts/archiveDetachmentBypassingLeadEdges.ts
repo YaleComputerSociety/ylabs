@@ -177,9 +177,7 @@ export async function runArchiveDetachmentBypassingLeadEdges(
     if (detached.reviewNotes === BYPASS_ARCHIVE_NOTE) continue;
     const entityId = idOf(detached.target?.id);
     if (!entityId) continue;
-    const person: any = await Researcher.findById(detached.personId)
-      .select(IDENTITY_FIELDS)
-      .lean();
+    const person: any = await Researcher.findById(detached.personId).select(IDENTITY_FIELDS).lean();
     const displayName = typeof person?.displayName === 'string' ? person.displayName : '';
     if (!displayName) continue;
 
