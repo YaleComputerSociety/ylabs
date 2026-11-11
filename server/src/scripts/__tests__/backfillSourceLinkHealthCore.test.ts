@@ -3,10 +3,13 @@ import { SOURCE_LINK_HEALTH_FRESHNESS_DAYS } from '../../services/sourceLinkHeal
 import {
   carryForwardSourceLinkHealthEntry,
   collectSourceLinkHealthCandidates,
+  httpsSpellingOf,
+  httpsSpellingProbes,
   needsRecheckSince,
   needsSourceLinkHealthRefresh,
   planSourceLinkReprobe,
   tlsFallbackCandidates,
+  verifiedHttpsSpelling,
   SOURCE_LINK_HEALTH_REPROBE_HEALTHY_AFTER_DAYS,
 } from '../backfillSourceLinkHealthCore';
 
@@ -400,5 +403,62 @@ describe('tlsFallbackCandidates', () => {
   it('adds nothing for an https url whose certificate verified', () => {
     const health = new Map([['https://a.yale.edu/~x/', {}]]);
     expect(tlsFallbackCandidates(['https://a.yale.edu/~x/'], health)).toEqual([]);
+  });
+});
+
+describe('https spelling of an http website (#5639)', () => {
+  const HTTP = 'http://both.fixture.example.org/lab/?tab=people';
+  const HTTPS = 'https://both.fixture.example.org/lab/?tab=people';
+
+  it('spells only a plain-HTTP url over https, keeping host, path and query', () => {
+    expect(httpsSpellingOf(HTTP)).toBe(HTTPS);
+    expect(httpsSpellingOf(HTTPS)).toBeNull();
+    expect(httpsSpellingOf('not a url')).toBeNull();
+  });
+
+  it('plans a spelling probe only for a probed http website with no https landing', () => {
+    const redirecting = 'http://redirects.fixture.example.org/';
+    const unprobed = 'http://unprobed.fixture.example.org/';
+    const health = new Map<string, { httpsLandingUrl?: string }>([
+      [HTTP, {}],
+      [HTTPS, {}],
+      [redirecting, { httpsLandingUrl: 'https://redirects.fixture.example.org/' }],
+    ]);
+    expect([
+      ...httpsSpellingProbes([HTTP, HTTPS, redirecting, unprobed, undefined], health),
+    ]).toEqual([[HTTP, HTTPS]]);
+  });
+
+  it('accepts the spelling only when its probe is HEALTHY with a verified certificate', () => {
+    const verdicts = (verdict: { healthStatus?: string; tlsVerificationFailed?: boolean }) =>
+      new Map([[HTTPS, verdict]]);
+    expect(verifiedHttpsSpelling(HTTPS, verdicts({ healthStatus: 'HEALTHY' }))).toBe(HTTPS);
+    expect(
+      verifiedHttpsSpelling(
+        HTTPS,
+        verdicts({ healthStatus: 'HEALTHY', tlsVerificationFailed: true }),
+      ),
+    ).toBeUndefined();
+    expect(
+      verifiedHttpsSpelling(
+        HTTPS,
+        verdicts({ healthStatus: 'UNKNOWN', tlsVerificationFailed: true }),
+      ),
+    ).toBeUndefined();
+    expect(verifiedHttpsSpelling(HTTPS, verdicts({ healthStatus: 'UNAVAILABLE' }))).toBeUndefined();
+    expect(verifiedHttpsSpelling(HTTPS, new Map())).toBeUndefined();
+    expect(verifiedHttpsSpelling(undefined, verdicts({ healthStatus: 'HEALTHY' }))).toBeUndefined();
+  });
+
+  it('carries a recorded https spelling forward with the verdict', () => {
+    const checkedAt = new Date('2026-09-20T00:00:00Z');
+    expect(
+      carryForwardSourceLinkHealthEntry(HTTP, {
+        url: HTTP,
+        healthStatus: 'HEALTHY',
+        httpsSpellingUrl: HTTPS,
+        checkedAt,
+      }),
+    ).toEqual({ url: HTTP, healthStatus: 'HEALTHY', httpsSpellingUrl: HTTPS, checkedAt });
   });
 });

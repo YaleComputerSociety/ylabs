@@ -42,6 +42,7 @@ import {
 } from '../utils/researchHomeNameIdentityAuthority';
 import { disambiguateCollidingResearchEntityNames } from '../utils/researchEntityDisplayNameDisambiguation';
 import { isPublicHttpUrl } from '../utils/urlSafety';
+import { sourceLinkHealthKey, sourceLinkScheme } from './sourceLinkHealth';
 import {
   entityHasHostedUndergraduates,
   withoutAdviseeProgramsMovedToMentors,
@@ -85,6 +86,7 @@ export interface PublicResearchEntitySourceLinkHealth {
   privateAddressHost?: boolean;
   tlsVerificationFailed?: boolean;
   httpsLandingUrl?: string;
+  httpsSpellingUrl?: string;
 }
 
 export interface PublicResearchEntityDto extends Record<string, unknown> {
@@ -363,6 +365,10 @@ export function publicSourceLinkHealthArray(
     const httpsLandingUrl = publicHttpUrl(
       (entry as { httpsLandingUrl?: unknown })?.httpsLandingUrl,
     );
+    const httpsSpellingUrl = publicHttpsSpellingOf(
+      url,
+      (entry as { httpsSpellingUrl?: unknown })?.httpsSpellingUrl,
+    );
     return [
       {
         url,
@@ -373,9 +379,22 @@ export function publicSourceLinkHealthArray(
         ...(privateAddressHost === true ? { privateAddressHost: true } : {}),
         ...(tlsVerificationFailed === true ? { tlsVerificationFailed: true } : {}),
         ...(httpsLandingUrl ? { httpsLandingUrl } : {}),
+        ...(httpsSpellingUrl ? { httpsSpellingUrl } : {}),
       },
     ];
   });
+}
+
+/**
+ * A stored `httpsSpellingUrl` is served only as what it claims to be: the `https:`
+ * spelling of this entry's own plain-HTTP URL, same host, path and query (#5639).
+ */
+function publicHttpsSpellingOf(entryUrl: string, value: unknown): string | undefined {
+  const spelling = publicHttpUrl(value);
+  if (!spelling) return undefined;
+  if (sourceLinkScheme(entryUrl) !== 'http:' || sourceLinkScheme(spelling) !== 'https:')
+    return undefined;
+  return sourceLinkHealthKey(spelling) === sourceLinkHealthKey(entryUrl) ? spelling : undefined;
 }
 
 /**
