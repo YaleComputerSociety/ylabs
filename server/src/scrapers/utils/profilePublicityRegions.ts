@@ -17,6 +17,10 @@
  * the research's own home even when the region's own wrapper changes name. Both
  * subsection ids are matched as well, so a template that drops the wrapper still
  * fails closed rather than silently reopening the harvest.
+ *
+ * The one exception is the person's own related-links list inside the same wrapper
+ * (`isInProfileRelatedLinksList`): the roster lane reads its website button there
+ * and records any other entry as a refused candidate (#5819).
  */
 import type * as cheerio from 'cheerio';
 
