@@ -12,6 +12,7 @@ import {
 } from '../../services/researchEntitySearchIndexService';
 import {
   meiliSortEntries,
+  memberNameKey,
   normalizeResearchSearchQuery,
 } from '../../services/researchGroupService';
 import { meshDescriptorWordKeys } from '../../scrapers/utils/meshNonSubjectDescriptors';
@@ -1141,17 +1142,18 @@ const pastCapMembersAreFoundThroughTheirRow: JourneyCase = {
       const ownRanks = sample.ownRowKeys
         .map(rankOf)
         .filter((rank): rank is number => rank !== null);
-      const deepLinked = await context.readDetailMemberNames(sample.rowKey, sample.memberName);
-      const injected = await context.readDetailMemberNames(
-        sample.rowKey,
-        NON_MEMBER_DEEP_LINK_NAME,
-      );
+      const deepLinked = (
+        await context.readDetailMemberNames(sample.rowKey, sample.memberName)
+      ).map(memberNameKey);
+      const injected = (
+        await context.readDetailMemberNames(sample.rowKey, NON_MEMBER_DEEP_LINK_NAME)
+      ).map(memberNameKey);
       observations.push({
         memberRowRank: rankOf(sample.rowKey),
         ownRowRank: ownRanks.length > 0 ? Math.min(...ownRanks) : null,
         hasOwnRow: sample.ownRowKeys.length > 0,
-        deepLinkServesMember: deepLinked.includes(sample.memberName),
-        deepLinkServesNonMember: injected.includes(NON_MEMBER_DEEP_LINK_NAME),
+        deepLinkServesMember: deepLinked.includes(memberNameKey(sample.memberName)),
+        deepLinkServesNonMember: injected.includes(memberNameKey(NON_MEMBER_DEEP_LINK_NAME)),
       });
     }
     const reached = observations.filter((observation) => observation.memberRowRank !== null);

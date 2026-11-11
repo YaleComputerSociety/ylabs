@@ -4543,6 +4543,7 @@ function canonicalPublicDetailMembers(
   now = new Date(),
   limit = MAX_PUBLIC_DETAIL_MEMBERS,
 ): Array<{ user: any; role: string; row: Record<string, any> }> {
+  const seenIdentityRoles = new Set<string>();
   return rosterEntries
     .filter((entry) => entry.state !== 'HISTORICAL')
     .filter(
@@ -4565,15 +4566,11 @@ function canonicalPublicDetailMembers(
       row: canonicalRosterMemberRow(entry),
     }))
     .filter((member) => Boolean(member.user.displayName || member.user.fname || member.user.lname))
-    .filter((member, index, rows) => {
+    .filter((member) => {
       const key = `${(member.row.identityKey || '').toLowerCase()}:${member.role}`;
-      return (
-        index ===
-        rows.findIndex(
-          (candidate) =>
-            `${(candidate.row.identityKey || '').toLowerCase()}:${candidate.role}` === key,
-        )
-      );
+      if (seenIdentityRoles.has(key)) return false;
+      seenIdentityRoles.add(key);
+      return true;
     })
     .sort(
       (a, b) =>
@@ -4729,7 +4726,7 @@ const operatorPreviewReasons = (
   return { studentVisibilityBlockingReasons: blocking, studentVisibilitySignalReasons: signals };
 };
 
-const memberNameKey = (name: string): string => personNameWords(name).join(' ');
+export const memberNameKey = (name: string): string => personNameWords(name).join(' ');
 
 /**
  * A search card links a matched member as `?member=<name>`, and a member past the display

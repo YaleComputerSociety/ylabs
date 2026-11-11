@@ -145,6 +145,7 @@ async function readPastCapMembers(input: {
     rosterEntries: ResearchEntityRosterEntry[],
   ) => Array<{ name: string; kind: string }>;
   detailMemberNames: (slug: string) => Promise<string[]>;
+  nameKey: (name: string) => string;
 }): Promise<PastCapMemberRead> {
   const collection = mongoose.connection.db!.collection(RESEARCH_ENTITY_COLLECTION);
   const servedRows = await collection
@@ -163,17 +164,18 @@ async function readPastCapMembers(input: {
   const perRow = Math.max(1, Math.ceil(input.sampleSize / overCap.length));
   const picks: Array<{ rowKey: string; memberName: string; personIds: string[] }> = [];
   for (const { row, live } of overCap) {
-    const shown = new Set(await input.detailMemberNames(String(row.slug)));
+    const shownKeys = new Set((await input.detailMemberNames(String(row.slug))).map(input.nameKey));
     const pastCap = input
       .searchableMembers(row as Record<string, any>, live)
-      .filter((member) => member.kind === 'faculty' && !shown.has(member.name))
+      .filter((member) => member.kind === 'faculty' && !shownKeys.has(input.nameKey(member.name)))
       .map((member) => member.name)
       .filter((name, index, names) => names.indexOf(name) === index)
       .sort()
       .slice(0, perRow);
     for (const memberName of pastCap) {
+      const memberKey = input.nameKey(memberName);
       const personIds = live
-        .filter((entry) => entry.name.trim() === memberName)
+        .filter((entry) => input.nameKey(entry.name) === memberKey)
         .map((entry) => String(entry.personId));
       picks.push({ rowKey: String(row.slug), memberName, personIds });
     }
@@ -216,6 +218,7 @@ async function buildContext(args: JourneyEvalArgs): Promise<JourneyEvalContext> 
     getResearchGroupDetail,
     listSimilarResearchEntities,
     MAX_PUBLIC_DETAIL_MEMBERS,
+    memberNameKey,
     optionalPublicLeadMemberNames,
     personNameWordKeys,
     searchableResearchEntityMembers,
@@ -330,6 +333,7 @@ async function buildContext(args: JourneyEvalArgs): Promise<JourneyEvalContext> 
         displayCap: MAX_PUBLIC_DETAIL_MEMBERS,
         searchableMembers: searchableResearchEntityMembers,
         detailMemberNames: async (slug) => detailMemberNames(await getResearchGroupDetail(slug)),
+        nameKey: memberNameKey,
       }),
     readDetailMemberNames: async (slug: string, requestedMemberName: string) =>
       detailMemberNames(await getResearchGroupDetail(slug, { requestedMemberName })),
