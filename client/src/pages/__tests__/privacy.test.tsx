@@ -166,7 +166,7 @@ describe('Privacy', () => {
       'Neither request carries your account or browser id, even when you are signed in.',
     );
     expect(text).toContain(
-      'y/labs sends text from those public pages, including the names on them, to OpenAI',
+      'y/labs sends text from those public pages, including the names on them, to OpenAI to write the descriptions, summaries and topics it shows, and to read lab and center websites, including who leads or belongs to them.',
     );
     expect(text).toContain('To build its search index, it also sends');
   });

@@ -214,9 +214,9 @@ const Privacy = () => {
           </p>
           <p className={BODY_CLASS}>
             y/labs sends text from those public pages, including the names on them, to OpenAI to
-            write the descriptions, summaries and topics it shows and to read lab websites. To build
-            its search index, it also sends each listing&apos;s name, people, departments, topics
-            and description to OpenAI.
+            write the descriptions, summaries and topics it shows, and to read lab and center
+            websites, including who leads or belongs to them. To build its search index, it also
+            sends each listing&apos;s name, people, departments, topics and description to OpenAI.
           </p>
           <p className={BODY_CLASS}>
             If something y/labs shows about you is wrong, sign in and use Report an issue with this
