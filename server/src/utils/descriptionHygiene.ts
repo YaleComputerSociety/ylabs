@@ -1125,6 +1125,9 @@ const careerFactLeakPattern =
 const studiesBioNameEchoVerbPattern =
   /^(?:Studies|Investigates|Examines|Explores)\s+[A-Z][\p{L}.'’-]+(?:\s+[A-Z][\p{L}.'’-]+){0,3}\s+(?:holds?|works?\s+(?:in|on|with)|specializes?\s+in|received|earned|serves?\s+as|teaches?|is\s+an?)\b/u;
 
+const studiesSubjectOwnedResearchPattern =
+  /^(?:Studies|Investigates|Examines|Explores)\s+(?:(?:[A-Z][\p{L}.'’-]*\s+){0,3}[A-Z][\p{L}.'’-]*['’]s|his|her|their|its|my|our)\s+(?:(?:main|primary|principal|current|broad|chief)\s+)?(?:(?:research|scholarly|academic)\s+)?(?:interests?|research|work|focus|areas?|fields?|specialt(?:y|ies))\s+(?:lie|lies|include|includes|is|are|focus(?:es)?|center(?:s)?|centre(?:s)?|span(?:s)?|concern(?:s)?|revolve(?:s)?|range(?:s)?|explore(?:s)?|examine(?:s)?)\b/iu;
+
 const studiesCourseCodeTopicPattern = /\b[A-Z]{2,5}\s?\d{3}[A-Z]?\b/;
 
 /**
@@ -1159,6 +1162,7 @@ export function isStudiesTemplateGlueMalformed(text: string): boolean {
     careerFactLeakPattern.test(normalized) ||
     awardCitationLeakPattern.test(normalized) ||
     studiesBioNameEchoVerbPattern.test(normalized) ||
+    studiesSubjectOwnedResearchPattern.test(normalized) ||
     studiesCourseCodeTopicPattern.test(normalized)
   );
 }
