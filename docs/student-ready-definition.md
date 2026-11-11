@@ -269,6 +269,7 @@ Write it with `yarn --cwd server student-visibility:override` rather than a dire
 - One row per call, by `--slug` or `--id`, with `--tier=<tier>` or `--clear`, a required `--reason "<snake_case_code>: <evidence>"` and the operator's `--actor <netid>`.
 - A dry run is the default; `--apply` also needs `--confirm-student-visibility-override` and the same Development opt-in the scraper writes use, `ALLOW_NON_PROD_SCRAPER_WRITES=true`, and Beta and Production are refused because they receive rows only through promotion.
 - The reason is appended as one entry of the comma-joined list and replaces an earlier entry with the same code, so a departure marker or a `research_infrastructure_only` entry survives; `--clear` removes only the entry carrying the given code.
+- A reason that contains `permanently_closed` or `research_infrastructure_only` anywhere is refused, because readers match those markers anywhere in the field and would treat the verdict as closure or infrastructure evidence.
 - Every apply writes an `admin_audit_events` row (`research_entity.visibility_override.set` or `.clear`) recording the actor, the time, the before and after state and the reason.
 - The tool writes the verdict only; run `student-visibility:gate --apply --confirm-student-visibility-apply --record-id=<id>` afterwards so the gate re-decides the served tier.
 
