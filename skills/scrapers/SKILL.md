@@ -1847,6 +1847,16 @@ The by-value ORCID and photo lookup is served by the partial `field_1_value_1_su
 A page that has stated several addresses keeps every netid the directory pairs with them, so an owner who changed address is still the owner, but a page whose addresses the directory does not all pair with one shared netid, such as a roster listing, decides nothing.
 Measured on Development on 2026-11-11 before that rule, 22 of 24 screened lead observations were that alias shape.
 
+#### A name or page join the directory gives to another netid is two people (#5765)
+
+`joinUserIdentityToExistingResearcher` refuses a `person-name` candidate, and an `official-profile-page` candidate, when the Yale directory pairs one of the key's own emails with a netid of Yale shape that is not the candidate's, and pairs none of them with the candidate's (`directoryPairsAddressesWithAnotherNetid` in `server/src/services/officialProfileLinkIdentity.ts`, reading `loadDirectoryNetidsByAddress`).
+Without it a namesake's key joined by name, and the materializer rewrote the researcher's name, title and department with the other person's.
+A candidate with no netid of Yale shape, or one whose netid the directory does not hold (the #5702 alias shape), decides nothing, and a key whose emails the directory does not pair joins as before.
+The #5753 page screen does not cover the page join: it reads the page's own stated addresses, and a page that states two addresses the directory gives to different netids decides nothing.
+Measured on Development on 2026-11-11: 9 of 9,912 name joins were refused and all 9 now reach nobody, 2,509 whose emails the directory pairs with the candidate's own netid still join, and page joins went from 68 to 67.
+A hand check of the 9 found 8 namesakes and 1 key of the same person whose email is a department office address the roster read from the page, so that key no longer reaches its researcher.
+The guard refuses rather than repairs: fields and lead edges a namesake's key already wrote stay until the researcher's own evidence replaces them or an operator judges the row.
+
 #### A profile page's identity does not wait for its title (#5701)
 
 `extractOfficialProfilePersonIdentity` reads a page's person with or without a stated appointment, and the queued and visible-profile modes of `official-profile-pi-backfill` read identity through it, so the #5669 email-only identity now applies in both modes rather than in `visible-profile-bio-backfill` alone.

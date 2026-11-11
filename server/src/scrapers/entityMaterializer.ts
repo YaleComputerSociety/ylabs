@@ -416,7 +416,10 @@ import {
   normalizeOfficialProfileDestination,
   officialProfileDestinationStoredPattern,
 } from '../services/leadProfileIdentity';
-import { officialProfileLinkHeldByConflictingIdentity } from '../services/officialProfileLinkIdentity';
+import {
+  directoryPairsAddressesWithAnotherNetid,
+  officialProfileLinkHeldByConflictingIdentity,
+} from '../services/officialProfileLinkIdentity';
 import {
   planStoredUndergradEvidenceQuoteClear,
   sourcesWithdrawingUndergradEvidenceQuote,
@@ -7547,6 +7550,15 @@ export async function joinUserIdentityToExistingResearcher(
 
   let researcher: any = netid ? await researcherReachedByIdentityNetid(netid) : null;
   let identityJoin: UserIdentityJoin | undefined = researcher ? 'account-netid' : undefined;
+  const keyEmails = materializationObs
+    .filter((o: any) => o.field === 'email')
+    .map((o: any) => o.value);
+  const directoryGivesKeyEmailsToAnotherNetid = async (candidate: any): Promise<boolean> =>
+    directoryPairsAddressesWithAnotherNetid(
+      keyEmails,
+      candidate,
+      await loadDirectoryNetidsByAddress(),
+    );
   let personNameHeldByNobody = false;
   if (!researcher && displayName) {
     const resolution = await resolveResearcherIdForPersonName(displayName, {
@@ -7563,7 +7575,8 @@ export async function joinUserIdentityToExistingResearcher(
         !embeddedNetidContradictsCandidate(
           netidsEmbeddedInUserEvidence(identifier.entityKey, materializationObs),
           nameMatch.identifiers?.netid,
-        )
+        ) &&
+        !(await directoryGivesKeyEmailsToAnotherNetid(nameMatch))
       ) {
         researcher = nameMatch;
         identityJoin = 'person-name';
@@ -7628,9 +7641,12 @@ export async function joinUserIdentityToExistingResearcher(
       officialProfileJoinUrlsFromObservations(materializationObs),
     );
     if (urlResearcher && observedPersonNameAgreesWith(urlResearcher.displayName, displayName)) {
-      researcher = await Researcher.findById(urlResearcher._id);
-      identityJoinedOnOfficialProfileUrlAlone = Boolean(researcher);
-      if (researcher) identityJoin = 'official-profile-page';
+      const pageMatch = await Researcher.findById(urlResearcher._id);
+      if (pageMatch && !(await directoryGivesKeyEmailsToAnotherNetid(pageMatch))) {
+        researcher = pageMatch;
+        identityJoinedOnOfficialProfileUrlAlone = true;
+        identityJoin = 'official-profile-page';
+      }
     }
   }
   const refusals = researcher?.fieldValueRefusals;

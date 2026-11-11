@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../services/meiliSyncService', async () => {
   const actual = await vi.importActual<typeof import('../../services/meiliSyncService')>(
@@ -19,15 +19,17 @@ import { Observation } from '../../models/observation';
 import { Researcher } from '../../models/researcher';
 import {
   joinUserIdentityToExistingResearcher,
+  materializeEntity,
   resolveNetidForRosterEmailAlias,
 } from '../entityMaterializer';
 import { clearC4Flags } from './c4FlagTestEnv';
+import { resetDirectoryNetidsByAddressCache } from '../directoryContradictedProfileNetid';
 
 const NETID = 'qz901';
 const EMAIL = 'quinn.synthetic901@yale.edu';
 
 const userObservation = (entityKey: string, field: string, value: unknown) => ({
-  entityType: 'user',
+  entityType: 'user' as const,
   entityKey,
   field,
   value,
@@ -327,6 +329,162 @@ describe('the user identity join reads researcher identifiers when no account ex
 
       expect(join.identityJoin).toBe('account-netid');
       expect(String(join.researcher?._id)).toBe(String(real._id));
+    });
+  });
+
+  describe('a name match the Yale directory pairs with another netid', () => {
+    const CANDIDATE_NETID = 'abc123';
+    const OTHER_NETID = 'rf456';
+    const KEY = 'netid:robin.fixture';
+    const KEY_EMAIL = 'robin.fixture@yale.edu';
+
+    const directoryPairs = (netid: string, email: string) =>
+      Observation.create({
+        entityType: 'user',
+        entityKey: `netid:${netid}`,
+        field: 'email',
+        value: email,
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: 'yale-directory',
+        confidence: 0.95,
+        observedAt: new Date('2026-09-01T00:00:00Z'),
+        superseded: false,
+      });
+
+    const joinKey = (displayName: string, email?: string) =>
+      joinUserIdentityToExistingResearcher({ entityKey: KEY }, [
+        userObservation(KEY, 'displayName', displayName),
+        ...(email ? [userObservation(KEY, 'email', email)] : []),
+      ]);
+
+    let candidateId: mongoose.Types.ObjectId;
+
+    beforeEach(async () => {
+      resetDirectoryNetidsByAddressCache();
+      candidateId = (
+        await Researcher.create({
+          displayName: 'Robin A. Fixture',
+          identifiers: { netid: CANDIDATE_NETID, email: `${CANDIDATE_NETID}@yale.edu` },
+        })
+      )._id;
+      await directoryPairs(CANDIDATE_NETID, `${CANDIDATE_NETID}@yale.edu`);
+    });
+
+    afterEach(() => resetDirectoryNetidsByAddressCache());
+
+    it('does not join a namesake whose own email the directory gives to another netid', async () => {
+      await directoryPairs(OTHER_NETID, KEY_EMAIL);
+
+      const join = await joinKey('Robin Fixture', KEY_EMAIL);
+
+      expect(join.identityJoin).toBeUndefined();
+      expect(join.researcher).toBeNull();
+    });
+
+    it('still joins a short form of the same person whose email the directory gives to the candidate', async () => {
+      await directoryPairs(CANDIDATE_NETID, KEY_EMAIL);
+
+      const join = await joinKey('Robin Fixture', KEY_EMAIL);
+
+      expect(String(join.researcher?._id)).toBe(String(candidateId));
+      expect(join.identityJoin).toBe('person-name');
+    });
+
+    it('re-derives the same refusal on a second resolve and writes nothing new', async () => {
+      await directoryPairs(OTHER_NETID, KEY_EMAIL);
+      await directoryPairs('zz789', 'casey.fixture@yale.edu');
+      await Observation.create({
+        ...userObservation('netid:casey.fixture', 'email', 'casey.fixture@yale.edu'),
+        sourceId: new mongoose.Types.ObjectId(),
+        superseded: false,
+      });
+      for (const [field, value] of Object.entries({
+        displayName: 'Robin Fixture',
+        email: KEY_EMAIL,
+        title: 'Lecturer in Fixture Studies',
+        primaryDepartment: 'Fixture Department',
+      })) {
+        await Observation.create({
+          ...userObservation(KEY, field, value),
+          sourceId: new mongoose.Types.ObjectId(),
+          superseded: false,
+        });
+      }
+      const snapshot = async () => ({
+        candidate: await Researcher.findById(candidateId)
+          .select('displayName profile identifiers profileLinks')
+          .lean(),
+        researchers: await Researcher.countDocuments({}),
+      });
+      const before = await snapshot();
+
+      const first = await materializeEntity('user', { entityKey: KEY });
+      const afterFirst = await snapshot();
+      const second = await materializeEntity('user', { entityKey: KEY });
+      const afterSecond = await snapshot();
+
+      expect(first.identityJoin).not.toBe('person-name');
+      expect(second.identityJoin).toBe(first.identityJoin);
+      expect(String(second.entityId ?? '')).not.toBe(String(candidateId));
+      expect(afterFirst.candidate).toEqual(before.candidate);
+      expect(afterSecond).toEqual(afterFirst);
+      expect(second.fieldsWritten).toBe(0);
+    });
+
+    describe('through the official profile page the key cites', () => {
+      const PAGE = 'https://medicine.yale.edu/profile/robin-fixture/';
+
+      const joinKeyByPage = () =>
+        joinUserIdentityToExistingResearcher({ entityKey: KEY }, [
+          userObservation(KEY, 'displayName', 'Robin Fixture'),
+          userObservation(KEY, 'email', KEY_EMAIL),
+          userObservation(KEY, 'profileUrls', { official: PAGE }),
+        ]);
+
+      beforeEach(async () => {
+        await Researcher.updateOne(
+          { _id: candidateId },
+          {
+            $set: {
+              profileLinks: [
+                {
+                  kind: 'YALE_OFFICIAL',
+                  purpose: 'PRIMARY_IDENTITY',
+                  url: PAGE,
+                  verifiedAt: new Date('2026-01-01T00:00:00Z'),
+                  healthStatus: 'UNKNOWN',
+                },
+              ],
+            },
+          },
+        );
+        await Researcher.create({ displayName: 'Robin Fixture', identifiers: {} });
+      });
+
+      it('does not join a namesake whose own email the directory gives to another netid', async () => {
+        await directoryPairs(OTHER_NETID, KEY_EMAIL);
+
+        const join = await joinKeyByPage();
+
+        expect(join.identityJoin).toBeUndefined();
+        expect(join.researcher).toBeNull();
+      });
+
+      it('still joins the page owner whose email the directory gives to the candidate', async () => {
+        await directoryPairs(CANDIDATE_NETID, KEY_EMAIL);
+
+        const join = await joinKeyByPage();
+
+        expect(String(join.researcher?._id)).toBe(String(candidateId));
+        expect(join.identityJoin).toBe('official-profile-page');
+      });
+    });
+
+    it('joins by name as before when the directory pairs the email with nobody', async () => {
+      const join = await joinKey('Robin Fixture', KEY_EMAIL);
+
+      expect(String(join.researcher?._id)).toBe(String(candidateId));
+      expect(join.identityJoin).toBe('person-name');
     });
   });
 });

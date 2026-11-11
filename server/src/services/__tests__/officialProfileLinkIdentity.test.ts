@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  directoryPairsAddressesWithAnotherNetid,
   identityWitnessesConflict,
   pageIdentityWitnessesPerson,
   pageWitnessSettlesConflictForCandidate,
@@ -132,5 +133,71 @@ describe('pageWitnessSettlesConflictForCandidate (#5733)', () => {
     expect(pageWitnessSettlesConflictForCandidate(undefined, page, candidate, [holder])).toBe(
       false,
     );
+  });
+});
+
+describe('directoryPairsAddressesWithAnotherNetid (#5765)', () => {
+  const directory = new Map<string, Set<string>>([
+    ['robin.fixture@yale.edu', new Set(['rf456'])],
+    ['abc123@yale.edu', new Set(['abc123'])],
+    ['shared.fixture@yale.edu', new Set(['abc123', 'rf456'])],
+    ['dotted.fixture@yale.edu', new Set(['dotted.alias'])],
+  ]);
+  const candidate = { identifiers: { netid: 'abc123' } };
+
+  it('reads an address the directory gives only to another netid as a different person', () => {
+    expect(
+      directoryPairsAddressesWithAnotherNetid(['Robin.Fixture@yale.edu'], candidate, directory),
+    ).toBe(true);
+  });
+
+  it('decides nothing when any address the directory pairs names the candidate', () => {
+    expect(
+      directoryPairsAddressesWithAnotherNetid(
+        ['robin.fixture@yale.edu', 'abc123@yale.edu'],
+        candidate,
+        directory,
+      ),
+    ).toBe(false);
+    expect(
+      directoryPairsAddressesWithAnotherNetid(['shared.fixture@yale.edu'], candidate, directory),
+    ).toBe(false);
+  });
+
+  it('decides nothing for an address the directory does not pair', () => {
+    expect(
+      directoryPairsAddressesWithAnotherNetid(
+        ['unknown@fixture.example.edu'],
+        candidate,
+        directory,
+      ),
+    ).toBe(false);
+  });
+
+  it('decides nothing for a candidate with no netid, a non-netid value, or one the directory does not hold', () => {
+    const other = ['robin.fixture@yale.edu'];
+    expect(directoryPairsAddressesWithAnotherNetid(other, { identifiers: {} }, directory)).toBe(
+      false,
+    );
+    expect(
+      directoryPairsAddressesWithAnotherNetid(
+        other,
+        { identifiers: { netid: 'robin.alias.fixture' } },
+        directory,
+      ),
+    ).toBe(false);
+    expect(
+      directoryPairsAddressesWithAnotherNetid(
+        other,
+        { identifiers: { netid: 'zz999' } },
+        directory,
+      ),
+    ).toBe(false);
+  });
+
+  it('ignores a paired value that is not netid-shaped', () => {
+    expect(
+      directoryPairsAddressesWithAnotherNetid(['dotted.fixture@yale.edu'], candidate, directory),
+    ).toBe(false);
   });
 });
