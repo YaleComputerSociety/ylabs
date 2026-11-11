@@ -76,7 +76,7 @@ async function loadConnectedEvidenceUrlCiterCounts(): Promise<ReadonlyMap<string
   return loadEvidenceUrlCiterCounts();
 }
 
-const HOME_PAGE_LEAF = /^(?:home|welcome|index(?:\.html?|\.php)?)$/i;
+const HOME_PAGE_LEAF = /^(?:home|welcome|index|default)(?:\.(?:s?html?|php|aspx?))?$/i;
 
 /**
  * Whether a research subpage sits inside the home page's own subtree, so a shared host's section
@@ -283,12 +283,10 @@ export class ResearchPageTextScraper implements IScraper {
 
     const labSite = labSiteUrl ? await read(labSiteUrl) : null;
     if (labSite) {
-      const subpages = researchSubPageCrawlUrls(labSite.html, labSite.url, MAX_RESEARCH_SUBPAGES);
-      for (const url of subpages.filter(
-        (candidate) =>
-          !isRefusedDescriptionLaneSourceUrl(candidate) &&
-          researchSubPageIsWithinHome(candidate, labSite.url),
-      )) {
+      const subpages = researchSubPageCrawlUrls(labSite.html, labSite.url, Number.POSITIVE_INFINITY)
+        .filter((candidate) => researchSubPageIsWithinHome(candidate, labSite.url))
+        .slice(0, MAX_RESEARCH_SUBPAGES);
+      for (const url of subpages) {
         await read(url);
       }
     }

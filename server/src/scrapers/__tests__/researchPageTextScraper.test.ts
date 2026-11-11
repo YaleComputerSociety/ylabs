@@ -266,6 +266,27 @@ describe('ResearchPageTextScraper reads only the row own pages (#5707)', () => {
     expect(fetchPage.mock.calls.map(([url]) => url)).toEqual([home, ownResearch]);
   });
 
+  it('still reads the own research page when shared research links fill the navigation first', async () => {
+    const home = 'https://medicine.example.edu/lab/tidepool/';
+    const schoolResearch = 'https://medicine.example.edu/research/';
+    const departmentResearch = 'https://medicine.example.edu/departments/marine/research/';
+    const ownResearch = 'https://medicine.example.edu/lab/tidepool/research/';
+    const fetchPage = fetcherFor({
+      [home]: labHome(
+        `<a href="${schoolResearch}">Research</a><a href="${departmentResearch}">Research</a><a href="${ownResearch}">Research</a>`,
+      ),
+      [schoolResearch]: researchPage,
+      [departmentResearch]: researchPage,
+      [ownResearch]: researchPage,
+    });
+    const lane = new ResearchPageTextScraper({
+      fetchPage,
+      storedHashLoader: async () => undefined,
+    });
+    await lane.readCitedResearchPages({ ...row, websiteUrl: home, sourceUrls: [home] }, ctxOnly());
+    expect(fetchPage.mock.calls.map(([url]) => url)).toEqual([home, ownResearch]);
+  });
+
   it('roots a home page whose path ends in an index or home leaf at its folder', async () => {
     const { researchSubPageIsWithinHome } = await import('../sources/researchPageTextScraper');
     expect(
@@ -280,6 +301,14 @@ describe('ResearchPageTextScraper reads only the row own pages (#5707)', () => {
         'https://www.people.example.edu/~tidepool/home',
       ),
     ).toBe(true);
+    for (const leaf of ['home.html', 'welcome.htm', 'index.shtml', 'index.aspx', 'default.asp']) {
+      expect(
+        researchSubPageIsWithinHome(
+          'https://people.example.edu/~tidepool/research.html',
+          `https://people.example.edu/~tidepool/${leaf}`,
+        ),
+      ).toBe(true);
+    }
     expect(
       researchSubPageIsWithinHome(
         'https://people.example.edu/research',
