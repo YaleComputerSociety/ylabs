@@ -524,8 +524,7 @@ describe('a lab site the roster card and the profile button both carry', () => {
 
     const websites = emitted.filter(
       (o) =>
-        (o.entityType === 'researchEntity' || o.entityType === 'user') &&
-        o.field === 'websiteUrl',
+        (o.entityType === 'researchEntity' || o.entityType === 'user') && o.field === 'websiteUrl',
     );
     expect(websites.map((o) => o.value)).toEqual([SHARED_LAB]);
     expect(websites[0].entityKey).toContain('ada-fixture');
