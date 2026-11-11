@@ -302,15 +302,14 @@ describe("a lead's own official page marks them deceased or departed (#5721)", (
     ]);
   });
 
-  it('presents a deceased-lead row by the single switch: hidden by default, served when labelled', () => {
-    const entity = { leadPageDeparture: 'deceased' };
-
-    expect(deriveResearchEntityYaleStatus(entity)).toMatchObject({ reason: 'deceased' });
-    expect(deriveResearchEntityYaleStatus(entity, 'hide')).toMatchObject({ reason: 'deceased' });
-    expect(deriveResearchEntityYaleStatus(entity, 'label')).toBeNull();
-    expect(
-      deriveResearchEntityYaleStatus({ leadPageDeparture: 'departed' }, 'label'),
-    ).toMatchObject({ reason: 'lead_departed' });
+  it('always hides a row every current lead of which is marked deceased', () => {
+    expect(deriveResearchEntityYaleStatus({ leadPageDeparture: 'deceased' })).toMatchObject({
+      activeAtYaleCache: false,
+      reason: 'deceased',
+    });
+    expect(deriveResearchEntityYaleStatus({ leadPageDeparture: 'departed' })).toMatchObject({
+      reason: 'lead_departed',
+    });
   });
 
   it('gives a person their own page marks deceased no email fill', async () => {

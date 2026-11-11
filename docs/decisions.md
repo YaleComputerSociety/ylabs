@@ -29,6 +29,14 @@ The judges are recorded as uncalibrated, and the owner will spot-check about 10 
 This is not a general waiver of judge calibration.
 The methodology is recorded on #5537.
 
+## 2026-11-11: Research Led By A Deceased Faculty Member Is Hidden (#5721)
+
+The owner decided that a row whose every current lead is marked deceased is hidden, permanently, and that showing such a row with a label is not a product option.
+The marker comes from the person's own official page, and the row follows it on every resolve.
+A row whose research continues under another current lead stays served, with that lead named in place of the deceased one.
+An ended sole appointment is a separate signal under `ENDED_APPOINTMENT_LEAD_MODE`, and it only observes until a blind sampled check clears it.
+`skills/scrapers/SKILL.md` owns the mechanics.
+
 ## 2026-11-10: Every Current Member Is Found Through Their Row, Past The Display Cap (#5584)
 
 The owner decided on #5584 that a name search matches every current member of a row, not only the members within the detail page's display cap.
