@@ -90,8 +90,9 @@ describe('a card held only for thinness or for echoing its own topics (#5673)', 
 
     expect(result.tier).toBe('operator_review');
     expect(result.reasons).toEqual(
-      expect.arrayContaining(['thin_description', 'missing_card_description']),
+      expect.arrayContaining(['missing_description', 'missing_card_description']),
     );
+    expect(result.reasons).not.toContain('thin_description');
     expect(result.reasons).not.toContain('thin_card_description');
   });
   it('keeps holding a row whose thin card is the tail of a sentence broken inside a quotation', () => {
