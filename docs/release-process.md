@@ -316,7 +316,7 @@ Neither target takes the Development write lease, because the lease skips a data
 #### Order
 
 Beta: the Development reference dry run, the mirror, the remote phase, the seed dry run, the seed apply, then the flag on the Beta web service, then verification.
-Production: the Phase 4 copy, the remote phase, the seed dry run, the seed apply, step 6 above (merge `main` and wait for `Post-Promotion Verify`), then the flag on the Production web service, then verification.
+Production: the Beta-to-Production copy (steps 1-3 of "Promoting data, not just code" above), the remote phase, the seed dry run, the seed apply, step 6 above (merge `main` and wait for `Post-Promotion Verify`), then the flag on the Production web service, then verification.
 A seed from the laptop stores no hashes, so it needs only the copied rows; it still follows the remote phase, because a failed gate or reindex means fixing Development and promoting again, and a seed should be resolved against the corpus that will actually be served.
 Production can serve the cache only once `main` carries the serve path: on 2026-11-11 `origin/main` did not contain `SEARCH_RERANK_CACHE_ENABLED` at all, so the Production flag waits for the code merge.
 
@@ -330,12 +330,14 @@ Set nothing on the operator services, which never answer a search.
 #### Verification
 
 Pick five verification queries from the revised seed file by predicate: no filters, two or more words, a research topic rather than a person's name, and a first result the cache moves on Development.
-Each read is the search route a student's browser calls, with the public visibility scope it applies:
+Each read is the search route a student's browser calls, with the public visibility scope it applies.
+The `Origin` header names the web service's own host, because a deployed API refuses a cross-site `POST` without an allowed origin and answers 403.
+For the local Development read, use `http://localhost:<worktree API port>` in both places; a local runtime skips that check.
 
 ```bash
 mkdir -p /tmp/rerank-verify
 curl -s -X POST "https://<host>/api/research/search" -H 'Content-Type: application/json' \
-  -d '{"q":"<query>","page":1,"pageSize":10,"filters":{}}' \
+  -H 'Origin: https://<host>' -d '{"q":"<query>","page":1,"pageSize":10,"filters":{}}' \
   | jq -r '.researchEntities[].slug' > "/tmp/rerank-verify/<environment>-<on|off>-<n>.txt"
 ```
 
