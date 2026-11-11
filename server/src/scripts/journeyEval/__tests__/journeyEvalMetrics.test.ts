@@ -7,6 +7,7 @@ import {
   checkFacetAgreement,
   checkMeshDescriptorOnlyRowsRankBelowOwnEvidence,
   checkPersonNameWordsAreNotRespelled,
+  checkNicknameExpansionReachesThePerson,
   checkDictionaryWordsAreNotRespelled,
   checkQueryVariantServesTheBaseline,
   checkSimilarRailRanksSharedNamesLast,
@@ -626,6 +627,31 @@ describe('checkMeshDescriptorOnlyRowsRankBelowOwnEvidence', () => {
       still,
     );
     expect(result.status).toBe('inconclusive');
+  });
+});
+
+describe('checkNicknameExpansionReachesThePerson', () => {
+  it('passes when every expanded nickname query serves the person, ignoring unexpanded ones', () => {
+    expect(
+      checkNicknameExpansionReachesThePerson([
+        { expandedToTheGivenName: true, rank: 1 },
+        { expandedToTheGivenName: false, rank: null },
+      ]).status,
+    ).toBe('pass');
+  });
+
+  it('fails when an expanded nickname query does not serve the person', () => {
+    const result = checkNicknameExpansionReachesThePerson([
+      { expandedToTheGivenName: true, rank: null },
+    ]);
+    expect(result.status).toBe('fail');
+    expect(result.detail).toMatchObject({ expandedToTheGivenName: 1, unreached: 1 });
+  });
+
+  it('is inconclusive when no nickname query was attributable to the expansion', () => {
+    expect(
+      checkNicknameExpansionReachesThePerson([{ expandedToTheGivenName: false, rank: 2 }]).status,
+    ).toBe('inconclusive');
   });
 });
 

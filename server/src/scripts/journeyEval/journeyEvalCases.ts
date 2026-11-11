@@ -11,10 +11,12 @@ import {
   MESH_DESCRIPTOR_ONLY_TERMS_FIELD,
 } from '../../services/researchEntitySearchIndexService';
 import {
+  expandNicknameInResearchNameQuery,
   meiliSortEntries,
   normalizeResearchSearchQuery,
   rewriteAcronymToPhrase,
 } from '../../services/researchGroupService';
+import { GIVEN_NAME_SHORT_FORMS } from '../../services/nameQueryNicknames';
 import { meshDescriptorWordKeys } from '../../scrapers/utils/meshNonSubjectDescriptors';
 import { isEnglishDictionaryWord } from '../../services/englishDictionaryWords';
 import {
@@ -33,6 +35,7 @@ import {
   checkNoRepeatedRowsAcrossPages,
   checkNotDegraded,
   checkPersonNameWordsAreNotRespelled,
+  checkNicknameExpansionReachesThePerson,
   checkPastCapMembersReachTheirRow,
   checkOwnRowOutranksMemberRow,
   checkDictionaryWordsAreNotRespelled,
@@ -53,6 +56,7 @@ import {
   type FacetAgreementObservation,
   type InvariantResult,
   type PersonNameQueryObservation,
+  type NicknameQueryObservation,
   type PastCapMemberObservation,
   type QueryEvidenceClass,
   type RateResult,
@@ -1226,21 +1230,28 @@ const personNameParts = (storedRow: Record<string, unknown> | undefined) => {
 const withOneLetterDropped = (word: string): string =>
   word.slice(0, word.length - 2) + word.slice(word.length - 1);
 
+const PERSON_NICKNAME_SAMPLE_SIZE = 10;
+
+const shortFormOfGivenName = (givenName: string): string | undefined =>
+  Object.entries(GIVEN_NAME_SHORT_FORMS).find(([, givenNames]) =>
+    givenNames.includes(givenName.toLowerCase()),
+  )?.[0];
+
 const personNameLookupReachesThePerson: JourneyCase = {
   id: 'person-name-lookup-reaches-the-person',
   title:
-    'A partly typed or one-letter-misspelled surname is searched as typed and reaches the person',
+    'A partly typed or one-letter-misspelled surname is searched as typed and reaches the person, and a short given name reaches them through the nickname expansion',
   run: async (context) => {
     const keys = servedRows(await context.browse({ pageSize: PERSON_NAME_SAMPLE_WINDOW }))
       .map(rowKey)
       .filter(Boolean);
     const storedRows = await context.readStoredRows(keys);
-    const people = keys
+    const namedPeople = keys
       .map((key) => ({ key, parts: personNameParts(storedRows.get(key)) }))
       .filter((person): person is { key: string; parts: { givenName: string; surname: string } } =>
         Boolean(person.parts),
-      )
-      .slice(0, PERSON_NAME_SAMPLE_SIZE);
+      );
+    const people = namedPeople.slice(0, PERSON_NAME_SAMPLE_SIZE);
     const observations: PersonNameQueryObservation[] = [];
     for (const { key, parts } of people) {
       const variants = [
@@ -1275,10 +1286,32 @@ const personNameLookupReachesThePerson: JourneyCase = {
         ofVariant.length,
       ];
     };
+    const nicknameObservations: NicknameQueryObservation[] = [];
+    const nicknamedPeople = namedPeople
+      .map((person) => ({ ...person, shortForm: shortFormOfGivenName(person.parts.givenName) }))
+      .filter((person): person is typeof person & { shortForm: string } =>
+        Boolean(person.shortForm),
+      )
+      .slice(0, PERSON_NICKNAME_SAMPLE_SIZE);
+    for (const { key, parts, shortForm } of nicknamedPeople) {
+      const query = `${shortForm} ${parts.surname}`;
+      const servedKeys = servedRows(
+        await context.browse({ query, pageSize: PERSON_NAME_RANK_DEPTH }),
+      ).map(rowKey);
+      nicknameObservations.push({
+        expandedToTheGivenName:
+          expandNicknameInResearchNameQuery(query).toLowerCase() ===
+          `${parts.givenName} ${parts.surname}`.toLowerCase(),
+        rank: servedKeys.includes(key) ? servedKeys.indexOf(key) + 1 : null,
+      });
+    }
     const [prefixReached, prefixQueried] = reached('prefix');
     const [typoReached, typoQueried] = reached('typo');
     return {
-      invariants: [checkPersonNameWordsAreNotRespelled(observations)],
+      invariants: [
+        checkPersonNameWordsAreNotRespelled(observations),
+        checkNicknameExpansionReachesThePerson(nicknameObservations),
+      ],
       rates: [
         buildRate(
           'surname-prefix-reaches-the-person',
@@ -1291,6 +1324,12 @@ const personNameLookupReachesThePerson: JourneyCase = {
           'Share of given names with a one-letter-misspelled surname that serve the person in the top 10',
           typoReached,
           typoQueried,
+        ),
+        buildRate(
+          'short-given-name-reaches-the-person',
+          'Share of short given names beside the surname that serve the person in the top 10',
+          nicknameObservations.filter((observation) => observation.rank !== null).length,
+          nicknameObservations.length,
         ),
       ],
     };

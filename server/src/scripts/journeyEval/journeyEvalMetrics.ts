@@ -827,6 +827,35 @@ export function checkPersonNameWordsAreNotRespelled(
   return buildInvariant(id, title, respelled.length === 0, detail);
 }
 
+export interface NicknameQueryObservation {
+  expandedToTheGivenName: boolean;
+  rank: number | null;
+}
+
+export function checkNicknameExpansionReachesThePerson(
+  observations: readonly NicknameQueryObservation[],
+): InvariantResult {
+  const id = 'nickname-expansion-reaches-the-person';
+  const title =
+    "A short given name the nickname expansion maps to a person's own given name serves that person in the top 10";
+  const expanded = observations.filter((observation) => observation.expandedToTheGivenName);
+  const unreached = expanded.filter((observation) => observation.rank === null);
+  const detail = {
+    queried: observations.length,
+    expandedToTheGivenName: expanded.length,
+    unreached: unreached.length,
+  };
+  if (expanded.length === 0) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'No sampled person had a short given name the expansion mapped to their own, so a zero unreached count would be a green signal over an empty population',
+      detail,
+    );
+  }
+  return buildInvariant(id, title, unreached.length === 0, detail);
+}
+
 export interface DictionaryWordQueryObservation {
   respelledDictionaryWords: readonly string[];
 }

@@ -13,6 +13,7 @@ export interface SearchSpellingVocabulary {
   documentFrequency: ReadonlyMap<string, number>;
   nameTerms: ReadonlySet<string>;
   personNameWords: readonly string[];
+  personNamesByWord: ReadonlyMap<string, ReadonlyArray<ReadonlySet<string>>>;
   candidatesByLength: ReadonlyMap<number, ReadonlyArray<readonly [string, number]>>;
 }
 
@@ -49,17 +50,35 @@ const termsOf = (values: readonly unknown[]): string[] => {
   return terms;
 };
 
+const personNamesOf = (values: readonly unknown[]): string[][] =>
+  values
+    .flatMap((value) => (Array.isArray(value) ? value : [value]))
+    .map((item) => termsOf([item]));
+
 export const buildSearchSpellingVocabulary = (
   documents: readonly SearchVocabularyDocument[],
 ): SearchSpellingVocabulary => {
   const documentFrequency = new Map<string, number>();
   const nameTerms = new Set<string>();
   const personNameTerms = new Set<string>();
+  const personNamesByWord = new Map<string, Array<ReadonlySet<string>>>();
+  const seenPersonNames = new Set<string>();
   let documentCount = 0;
   for (const document of documents) {
     const names = termsOf(document.nameText);
     for (const term of names) nameTerms.add(term);
-    for (const term of termsOf(document.personNameText ?? [])) personNameTerms.add(term);
+    for (const personName of personNamesOf(document.personNameText ?? [])) {
+      const key = personName.join(' ');
+      for (const term of personName) personNameTerms.add(term);
+      if (!document.served || personName.length < 2 || seenPersonNames.has(key)) continue;
+      seenPersonNames.add(key);
+      const nameWords = new Set(personName);
+      for (const term of nameWords) {
+        const names = personNamesByWord.get(term) ?? [];
+        names.push(nameWords);
+        personNamesByWord.set(term, names);
+      }
+    }
     if (!document.served) continue;
     documentCount += 1;
     for (const term of new Set([...names, ...termsOf(document.bodyText)])) {
@@ -78,6 +97,7 @@ export const buildSearchSpellingVocabulary = (
     documentFrequency,
     nameTerms,
     personNameWords: [...personNameTerms].sort(),
+    personNamesByWord,
     candidatesByLength,
   };
 };
