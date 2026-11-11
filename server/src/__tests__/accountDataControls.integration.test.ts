@@ -14,6 +14,19 @@ const AUDIT_HMAC_KEY = 'synthetic-audit-key-0123456789abcdef0123';
 const OWNER_ANALYTICS_ID = '0f8b1c2d-3e4f-4a5b-8c6d-7e8f9a0b1c2d';
 const SYNTHETIC_SEARCH_TEXT = 'synthetic owner search phrase';
 const FLAG_ENV = 'FEATURE_ACCOUNT_DATA_CONTROLS';
+const BETA_MONGODBURL = 'mongodb://127.0.0.1:1/Beta';
+const PRODUCTION_MONGODBURL = 'mongodb://127.0.0.1:1/Prod';
+const SYNTHETIC_POSTHOG_KEY = `phx_${'s'.repeat(40)}`;
+const SYNTHETIC_POSTHOG_PROJECT_ID = '24680';
+const BETA_TARGET_SERVICE_ENV = {
+  ACCOUNT_DELETION_AUDIT_HMAC_KEY: 'synthetic-beta-target-key-0123456789abcdef',
+};
+const COMPLETE_PRODUCTION_DELETION_ENV = {
+  MONGODBURL: PRODUCTION_MONGODBURL,
+  POSTHOG_PERSONAL_API_KEY: SYNTHETIC_POSTHOG_KEY,
+  POSTHOG_PROJECT_ID: SYNTHETIC_POSTHOG_PROJECT_ID,
+  ACCOUNT_DELETION_AUDIT_HMAC_KEY: AUDIT_HMAC_KEY,
+};
 const AUTHENTICATED_ROUTE = '/api/users/savedResearchEntityIds';
 
 vi.mock('../services/yaliesService', () => ({
@@ -246,6 +259,7 @@ describe('a signed-in student can export and delete their account data (#4156)',
   let server: http.Server;
   let baseUrl: string;
   let nativeFetch: typeof fetch;
+  let invalidateConfigCache: () => void;
 
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
@@ -262,6 +276,7 @@ describe('a signed-in student can export and delete their account data (#4156)',
     delete process.env.POSTHOG_PROJECT_ID;
     delete process.env.ACCOUNT_DELETION_AUDIT_HMAC_KEY;
     nativeFetch = globalThis.fetch;
+    ({ invalidateConfigCache } = await import('../services/configService'));
     const { default: app } = await import('../app');
     server = http.createServer(app);
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -278,6 +293,9 @@ describe('a signed-in student can export and delete their account data (#4156)',
 
   beforeEach(async () => {
     process.env[FLAG_ENV] = 'true';
+    process.env.MONGODBURL = BETA_MONGODBURL;
+    process.env.ACCOUNT_DELETION_AUDIT_HMAC_KEY = AUDIT_HMAC_KEY;
+    invalidateConfigCache();
     for (const name of [
       'accounts',
       'research_plans',
@@ -494,8 +512,7 @@ describe('a signed-in student can export and delete their account data (#4156)',
 
   it('records a pending deletion for every other environment, keyed by the hash alone', async () => {
     const { cookie } = await signInBothAccounts();
-    process.env.ACCOUNT_DELETION_AUDIT_HMAC_KEY = AUDIT_HMAC_KEY;
-    process.env.MONGODBURL = 'mongodb://127.0.0.1:1/Prod';
+    process.env.MONGODBURL = BETA_MONGODBURL;
 
     const deleted = await deleteOwnData(cookie, { confirm: 'delete my data' });
 
@@ -505,22 +522,12 @@ describe('a signed-in student can export and delete their account data (#4156)',
     expect(requests).toHaveLength(1);
     expect(requests[0]).toMatchObject({
       subjectHash: createHmac('sha256', AUDIT_HMAC_KEY).update(OWNER_NETID).digest('hex'),
-      sourceEnvironment: 'production',
+      sourceEnvironment: 'beta',
       requester: 'account_holder',
-      pendingEnvironments: ['development', 'beta'],
+      pendingEnvironments: ['development', 'production'],
       completedEnvironments: [],
     });
     expect(JSON.stringify(requests).toLowerCase()).not.toContain(OWNER_NETID);
-  });
-
-  it('records no cross-environment request without the hash key, and says so', async () => {
-    const { cookie } = await signInBothAccounts();
-    process.env.MONGODBURL = 'mongodb://127.0.0.1:1/Prod';
-
-    const deleted = await deleteOwnData(cookie, { confirm: 'delete my data' });
-
-    expect(JSON.parse(deleted.body).otherEnvironments).toBe('skipped_not_configured');
-    expect(await db().collection('account_deletion_requests').countDocuments()).toBe(0);
   });
 
   it('lets the operator carry a pending request into another environment and mark it done', async () => {
@@ -554,7 +561,7 @@ describe('a signed-in student can export and delete their account data (#4156)',
       sourceDb,
       sourceKey,
       target: 'beta',
-      targetServiceEnv: {},
+      targetServiceEnv: BETA_TARGET_SERVICE_ENV,
       apply: false,
     });
     expect(dryRun).toEqual({ pending: 2, matched: 1, deleted: 0, markedDone: 0, failed: 0 });
@@ -564,7 +571,7 @@ describe('a signed-in student can export and delete their account data (#4156)',
       sourceDb,
       sourceKey,
       target: 'beta',
-      targetServiceEnv: {},
+      targetServiceEnv: BETA_TARGET_SERVICE_ENV,
       apply: true,
     });
 
@@ -599,7 +606,7 @@ describe('a signed-in student can export and delete their account data (#4156)',
         sourceDb,
         sourceKey,
         target: 'beta',
-        targetServiceEnv: {},
+        targetServiceEnv: BETA_TARGET_SERVICE_ENV,
         apply: true,
       }),
     ).toEqual({ pending: 0, matched: 0, deleted: 0, markedDone: 0, failed: 0 });
@@ -637,7 +644,7 @@ describe('a signed-in student can export and delete their account data (#4156)',
       sourceDb,
       sourceKey,
       target: 'beta',
-      targetServiceEnv: {},
+      targetServiceEnv: BETA_TARGET_SERVICE_ENV,
       apply: true,
     });
 
@@ -650,6 +657,40 @@ describe('a signed-in student can export and delete their account data (#4156)',
       .toArray();
     expect(remaining.map((request) => request.subjectHash)).toEqual([hashOf(OWNER_NETID)]);
     await db().collection('researchers').deleteMany({});
+  });
+
+  it('refuses to carry requests into an environment that lacks a deletion setting, marking none done', async () => {
+    const { processPendingDeletionRequests } =
+      await import('../services/accountDeletionRequestProcessor');
+    await signInBothAccounts();
+    const sourceDb = mongoose.connection.getClient().db('synthetic_deletion_source');
+    await sourceDb.collection('account_deletion_requests').deleteMany({});
+    const sourceKey = 'synthetic-source-key-0123456789abcdef0123';
+    await sourceDb.collection('account_deletion_requests').insertOne({
+      subjectHash: createHmac('sha256', sourceKey).update(OWNER_NETID).digest('hex'),
+      sourceEnvironment: 'beta',
+      requester: 'account_holder',
+      requestedAt: new Date(),
+      pendingEnvironments: ['production'],
+      completedEnvironments: [],
+    });
+
+    await expect(
+      processPendingDeletionRequests({
+        sourceDb,
+        sourceKey,
+        target: 'production',
+        targetServiceEnv: { ACCOUNT_DELETION_AUDIT_HMAC_KEY: AUDIT_HMAC_KEY },
+        apply: true,
+      }),
+    ).rejects.toThrow('POSTHOG_PERSONAL_API_KEY, POSTHOG_PROJECT_ID');
+
+    expect(await db().collection('accounts').countDocuments({ netid: OWNER_NETID })).toBe(1);
+    expect(
+      await sourceDb
+        .collection('account_deletion_requests')
+        .countDocuments({ pendingEnvironments: 'production' }),
+    ).toBe(1);
   });
 
   it('puts an environment already carried back to pending when the person deletes again', async () => {
@@ -773,10 +814,7 @@ describe('a signed-in student can export and delete their account data (#4156)',
     expect((await request(`${baseUrl}${AUTHENTICATED_ROUTE}`, { cookie })).status).toBe(401);
   });
 
-  it('asks PostHog to delete the person by its random id when configured', async () => {
-    const { cookie } = await signInBothAccounts();
-    process.env.POSTHOG_PERSONAL_API_KEY = `phx_${'a'.repeat(40)}`;
-    process.env.POSTHOG_PROJECT_ID = '12345';
+  const recordPostHogCalls = () => {
     const postHogCalls: Array<{ url: string; init?: RequestInit }> = [];
     globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const url = String(input instanceof Request ? input.url : input);
@@ -786,15 +824,36 @@ describe('a signed-in student can export and delete their account data (#4156)',
       }
       return nativeFetch(input, init);
     }) as typeof fetch;
+    return postHogCalls;
+  };
+
+  const useProductionDeletionEnv = (without?: string) => {
+    Object.assign(process.env, COMPLETE_PRODUCTION_DELETION_ENV);
+    if (without) delete process.env[without];
+    invalidateConfigCache();
+  };
+
+  const servedDeletionState = async () => {
+    const ready = JSON.parse((await request(`${baseUrl}/api/ready`)).body);
+    const config = JSON.parse((await request(`${baseUrl}/api/config`)).body);
+    return { readiness: ready.accountDeletion, config: config.selfServeAccountDeletion };
+  };
+
+  it('asks PostHog to delete the person by its random id when configured', async () => {
+    const { cookie } = await signInBothAccounts();
+    useProductionDeletionEnv();
+    const postHogCalls = recordPostHogCalls();
 
     const deleted = await deleteOwnData(cookie, { confirm: 'delete my data' });
 
     expect(deleted.status).toBe(200);
-    expect(JSON.parse(deleted.body).postHog).toBe('requested');
-    expect(JSON.parse(deleted.body).auditSubjectHash).toBe('skipped_not_configured');
+    const body = JSON.parse(deleted.body);
+    expect(body.postHog).toBe('requested');
+    expect(body.auditSubjectHash).toBe('recorded');
+    expect(body.otherEnvironments).toBe('requested');
     expect(postHogCalls).toHaveLength(1);
     expect(postHogCalls[0].url).toBe(
-      'https://us.posthog.com/api/projects/12345/persons/bulk_delete/',
+      `https://us.posthog.com/api/projects/${SYNTHETIC_POSTHOG_PROJECT_ID}/persons/bulk_delete/`,
     );
     expect(JSON.parse(String(postHogCalls[0].init?.body))).toEqual({
       distinct_ids: [OWNER_ANALYTICS_ID],
@@ -804,7 +863,97 @@ describe('a signed-in student can export and delete their account data (#4156)',
     const audit = await db()
       .collection('admin_audit_events')
       .findOne({ action: 'account.self_delete' });
-    expect(audit?.targetId).toBeUndefined();
+    expect(audit?.targetId).toBe(
+      createHmac('sha256', AUDIT_HMAC_KEY).update(OWNER_NETID).digest('hex'),
+    );
+  });
+
+  it('serves deletion as available once every production setting is present', async () => {
+    useProductionDeletionEnv();
+
+    expect(await servedDeletionState()).toEqual({
+      readiness: { status: 'available', missingSettings: [] },
+      config: true,
+    });
+  });
+
+  it.each(['POSTHOG_PERSONAL_API_KEY', 'POSTHOG_PROJECT_ID', 'ACCOUNT_DELETION_AUDIT_HMAC_KEY'])(
+    'refuses deletion without %s, deleting nothing and naming only the setting',
+    async (missing) => {
+      const { cookie } = await signInBothAccounts();
+      useProductionDeletionEnv(missing);
+      const postHogCalls = recordPostHogCalls();
+
+      const refused = await deleteOwnData(cookie, { confirm: 'delete my data' });
+
+      expect(refused.status).toBe(503);
+      expect(JSON.parse(refused.body)).toEqual({
+        code: 'DELETION_UNAVAILABLE',
+        error: expect.stringContaining('Email the privacy address'),
+      });
+      expect(postHogCalls).toHaveLength(0);
+      expect(await db().collection('accounts').countDocuments({ netid: OWNER_NETID })).toBe(1);
+      expect(await db().collection('analytics_events').countDocuments({ netid: OWNER_NETID })).toBe(
+        3,
+      );
+      expect(await db().collection('research_plans').countDocuments()).toBe(4);
+      expect(await db().collection('account_deletion_requests').countDocuments()).toBe(0);
+      expect(await db().collection('admin_audit_events').countDocuments()).toBe(0);
+
+      const served = await servedDeletionState();
+      expect(served).toEqual({
+        readiness: { status: 'unavailable', missingSettings: [missing] },
+        config: false,
+      });
+      const servedText = JSON.stringify(served);
+      for (const value of Object.values(COMPLETE_PRODUCTION_DELETION_ENV)) {
+        expect(servedText).not.toContain(value);
+      }
+
+      const exported = await request(`${baseUrl}/api/users/me/export`, { cookie });
+      expect(exported.status).toBe(200);
+      expect(JSON.parse(exported.body).account.netid).toBe(OWNER_NETID);
+    },
+  );
+
+  it('refuses deletion where it cannot tell which environment it serves', async () => {
+    const { cookie } = await signInBothAccounts();
+    useProductionDeletionEnv('MONGODBURL');
+
+    const refused = await deleteOwnData(cookie, { confirm: 'delete my data' });
+
+    expect(refused.status).toBe(503);
+    expect((await servedDeletionState()).readiness).toEqual({
+      status: 'unavailable',
+      missingSettings: ['MONGODBURL'],
+    });
+    expect(await db().collection('accounts').countDocuments({ netid: OWNER_NETID })).toBe(1);
+  });
+
+  it('exports without any PostHog or audit setting, since export reads only this database', async () => {
+    const { cookie } = await signInBothAccounts();
+    process.env.MONGODBURL = PRODUCTION_MONGODBURL;
+    delete process.env.POSTHOG_PERSONAL_API_KEY;
+    delete process.env.POSTHOG_PROJECT_ID;
+    delete process.env.ACCOUNT_DELETION_AUDIT_HMAC_KEY;
+    const postHogCalls = recordPostHogCalls();
+
+    const exported = await request(`${baseUrl}/api/users/me/export`, { cookie });
+
+    expect(exported.status).toBe(200);
+    expect(JSON.parse(exported.body).researchPlans).toHaveLength(2);
+    expect(postHogCalls).toHaveLength(0);
+  });
+
+  it('reports deletion as off, not unavailable, while the release flag is off', async () => {
+    process.env[FLAG_ENV] = 'false';
+    delete process.env.ACCOUNT_DELETION_AUDIT_HMAC_KEY;
+    invalidateConfigCache();
+
+    expect(await servedDeletionState()).toEqual({
+      readiness: { status: 'off', missingSettings: [] },
+      config: false,
+    });
   });
 
   it('keeps the account when PostHog fails, so a retry after signing in again finishes the job', async () => {

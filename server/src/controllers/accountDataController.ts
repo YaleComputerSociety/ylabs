@@ -7,12 +7,26 @@ import {
   accountDataExportChunks,
   deleteAccountData,
 } from '../services/accountDataService';
+import {
+  ACCOUNT_DELETION_UNAVAILABLE_CODE,
+  AccountDeletionUnavailableError,
+  accountDeletionReadiness,
+} from '../services/accountDeletionReadiness';
 import { ACCOUNT_DATA_CONTROLS_FLAG, isReleaseFeatureEnabled } from '../services/configService';
 import { storedSessionClaim } from '../utils/sessionClaim';
 
 export const ACCOUNT_DELETION_RECENT_SIGN_IN_MS = 10 * 60 * 1000;
 export const RECENT_SIGN_IN_REQUIRED_CODE = 'RECENT_SIGN_IN_REQUIRED';
 export const DELETION_BLOCKED_CODE = 'DELETION_BLOCKED';
+export const DELETION_UNAVAILABLE_MESSAGE =
+  'Deleting your data here is not available right now. Email the privacy address on the y/labs privacy page and a maintainer will delete it for you.';
+
+const refuseUnavailableDeletion = (response: Response) => {
+  response.status(503).json({
+    error: DELETION_UNAVAILABLE_MESSAGE,
+    code: ACCOUNT_DELETION_UNAVAILABLE_CODE,
+  });
+};
 
 const currentNetid = (request: Request): string =>
   String((request.user as { netId?: unknown } | undefined)?.netId ?? '');
@@ -87,6 +101,10 @@ export const deleteOwnAccountData = async (
   response: Response,
   next: NextFunction,
 ) => {
+  if (!accountDeletionReadiness().available) {
+    refuseUnavailableDeletion(response);
+    return;
+  }
   if (
     (request.body as { confirm?: unknown } | undefined)?.confirm !==
     ACCOUNT_DATA_DELETION_CONFIRM_PHRASE
@@ -117,6 +135,10 @@ export const deleteOwnAccountData = async (
   } catch (error) {
     if (error instanceof AccountDataDeletionBlockedError) {
       response.status(409).json({ error: error.message, code: DELETION_BLOCKED_CODE });
+      return;
+    }
+    if (error instanceof AccountDeletionUnavailableError) {
+      refuseUnavailableDeletion(response);
       return;
     }
     next(error);

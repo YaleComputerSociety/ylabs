@@ -73,7 +73,7 @@ const Dashboard = () => {
     setFollowedSurface(requestedSurface);
     followSurface(requestedSurface);
   }
-  const { features } = useContext(ConfigContext);
+  const { features, selfServeAccountDeletion } = useContext(ConfigContext);
   const accountDataControlsEnabled = features[ACCOUNT_DATA_CONTROLS_FLAG] === true;
   const deleteIntent =
     searchParams.get(ACCOUNT_DATA_DELETE_INTENT_PARAM) === ACCOUNT_DATA_DELETE_INTENT_VALUE;
@@ -169,6 +169,7 @@ const Dashboard = () => {
 
         {accountDataControlsEnabled && (
           <AccountDataControls
+            deletionAvailable={selfServeAccountDeletion}
             openDeleteOnMount={deleteIntent}
             onDeleteIntentConsumed={clearDeleteIntent}
           />

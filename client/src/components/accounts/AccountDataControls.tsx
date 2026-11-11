@@ -12,6 +12,7 @@ import {
   leaveAfterAccountDeletion,
   reauthenticateForDeletionUrl,
 } from '../../utils/accountData';
+import { PRIVACY_CONTACT_EMAIL, PRIVACY_CONTACT_MAILTO } from '../../utils/privacyContact';
 import { PRIVACY_PATH } from '../../utils/privacyNotice';
 import { WarningIcon } from '../shared/icons';
 
@@ -75,7 +76,30 @@ const DownloadFailedText = ({
     </p>
   ) : null;
 
+const PrivacyMailboxLink = () => (
+  <a
+    href={PRIVACY_CONTACT_MAILTO}
+    className="yr-link yr-focus-ring -my-1.5 inline-block break-words py-1.5"
+  >
+    {PRIVACY_CONTACT_EMAIL}
+  </a>
+);
+
+const EmailToDeleteText = ({ className }: { className: string }) => (
+  <p className={className}>
+    To delete your data, email <PrivacyMailboxLink /> from your Yale address and a maintainer will
+    delete it for you. You will get an answer within 30 days.
+  </p>
+);
+
 const DeletionOutcomeNotice = ({ outcome }: { outcome: AccountDataDeletionOutcome | null }) => {
+  if (outcome === 'unavailable') {
+    return (
+      <div role="alert" className="mt-4">
+        <EmailToDeleteText className="text-sm text-red-700" />
+      </div>
+    );
+  }
   if (outcome === 'recent_sign_in_required') {
     return (
       <div role="alert" className="mt-4 rounded-card border border-amber-200 bg-amber-50 p-4">
@@ -267,17 +291,19 @@ const DeleteAccountDataDialog = ({
 };
 
 interface AccountDataControlsProps {
+  deletionAvailable: boolean;
   openDeleteOnMount?: boolean;
   onDeleteIntentConsumed?: () => void;
 }
 
 const AccountDataControls = ({
+  deletionAvailable,
   openDeleteOnMount = false,
   onDeleteIntentConsumed,
 }: AccountDataControlsProps) => {
   const headingId = useId();
   const download = useAccountDataDownload();
-  const [deleteOpen, setDeleteOpen] = useState(openDeleteOnMount);
+  const [deleteOpen, setDeleteOpen] = useState(openDeleteOnMount && deletionAvailable);
   const deleteTriggerRef = useRef<HTMLButtonElement>(null);
   const consumedIntent = useRef(false);
 
@@ -301,7 +327,10 @@ const AccountDataControls = ({
         Your data
       </h2>
       <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted">
-        Download a copy of everything y/labs keeps with your account, or delete it. The{' '}
+        {deletionAvailable
+          ? 'Download a copy of everything y/labs keeps with your account, or delete it.'
+          : 'Download a copy of everything y/labs keeps with your account.'}{' '}
+        The{' '}
         <Link to={PRIVACY_PATH} className="yr-link yr-focus-ring -my-1.5 inline-block py-1.5">
           privacy page
         </Link>{' '}
@@ -309,17 +338,23 @@ const AccountDataControls = ({
       </p>
       <div className="mt-4 flex flex-wrap gap-3">
         <DownloadButton download={download} className={SECONDARY_BUTTON_CLASS} />
-        <button
-          ref={deleteTriggerRef}
-          type="button"
-          className={DESTRUCTIVE_OUTLINE_BUTTON_CLASS}
-          onClick={() => setDeleteOpen(true)}
-        >
-          Delete my data
-        </button>
+        {deletionAvailable && (
+          <button
+            ref={deleteTriggerRef}
+            type="button"
+            className={DESTRUCTIVE_OUTLINE_BUTTON_CLASS}
+            onClick={() => setDeleteOpen(true)}
+          >
+            Delete my data
+          </button>
+        )}
       </div>
       <DownloadFailedText download={download} />
-      <DeleteAccountDataDialog open={deleteOpen} onClose={closeDelete} download={download} />
+      {deletionAvailable ? (
+        <DeleteAccountDataDialog open={deleteOpen} onClose={closeDelete} download={download} />
+      ) : (
+        <EmailToDeleteText className="mt-4 max-w-2xl text-sm leading-relaxed text-ink-soft" />
+      )}
     </section>
   );
 };

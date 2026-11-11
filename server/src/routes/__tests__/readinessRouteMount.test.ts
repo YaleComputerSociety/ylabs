@@ -14,6 +14,7 @@ let server: Server;
 let baseUrl: string;
 
 beforeAll(async () => {
+  vi.stubEnv('FEATURE_ACCOUNT_DATA_CONTROLS', '');
   const app = express().use('/api', routes);
   server = await new Promise<Server>((resolve) => {
     const listening = app.listen(0, '127.0.0.1', () => resolve(listening));
@@ -22,6 +23,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  vi.unstubAllEnvs();
   await new Promise((resolve) => server.close(resolve));
 });
 
@@ -31,6 +33,10 @@ describe('readiness route mount', () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get('content-type')).toContain('application/json');
-    expect(await response.json()).toStrictEqual({ mongo: true, search: true });
+    expect(await response.json()).toStrictEqual({
+      mongo: true,
+      search: true,
+      accountDeletion: { status: 'off', missingSettings: [] },
+    });
   });
 });

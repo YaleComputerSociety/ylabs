@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  assertDeleteAccountDataApplyReady,
   DELETE_CONFIRM_FLAG,
+  missingDeleteAccountDataSettings,
   PENDING_FROM_FLAG,
   parseDeleteAccountDataArgs,
   resolveDeleteAccountDataMongoUrl,
@@ -97,5 +99,56 @@ describe('accounts:delete-account-data arguments (#4156)', () => {
       POSTHOG_PROJECT_ID: '111',
       ACCOUNT_DELETION_AUDIT_HMAC_KEY: 'development-audit-key',
     });
+  });
+
+  const COMPLETE_PRODUCTION_ENV = {
+    PRODUCTION_POSTHOG_PERSONAL_API_KEY: `phx_${'s'.repeat(40)}`,
+    PRODUCTION_POSTHOG_PROJECT_ID: '222',
+    PRODUCTION_ACCOUNT_DELETION_AUDIT_HMAC_KEY: 'synthetic-production-audit-key-0123456789',
+  };
+
+  it.each(Object.keys(COMPLETE_PRODUCTION_ENV))(
+    'refuses a production --apply without %s, naming it and not its value',
+    (variable) => {
+      const env: Record<string, string> = { ...COMPLETE_PRODUCTION_ENV };
+      delete env[variable];
+      expect(missingDeleteAccountDataSettings('production', env)).toEqual([variable]);
+      const refusal = () =>
+        assertDeleteAccountDataApplyReady({ apply: true, environment: 'production' }, env);
+      expect(refusal).toThrow(variable);
+      for (const value of Object.values(env)) {
+        expect(refusal).not.toThrow(value);
+      }
+    },
+  );
+
+  it('lets a production --apply run once every target setting is present', () => {
+    expect(missingDeleteAccountDataSettings('production', COMPLETE_PRODUCTION_ENV)).toEqual([]);
+    expect(() =>
+      assertDeleteAccountDataApplyReady(
+        { apply: true, environment: 'production' },
+        COMPLETE_PRODUCTION_ENV,
+      ),
+    ).not.toThrow();
+  });
+
+  it('never refuses a dry run, which only reads residue', () => {
+    expect(() =>
+      assertDeleteAccountDataApplyReady({ apply: false, environment: 'production' }, {}),
+    ).not.toThrow();
+  });
+
+  it('requires the beta audit key but not PostHog, which captures only in production', () => {
+    expect(missingDeleteAccountDataSettings('beta', {})).toEqual([
+      'BETA_ACCOUNT_DELETION_AUDIT_HMAC_KEY',
+    ]);
+    expect(() =>
+      assertDeleteAccountDataApplyReady({ apply: true, environment: 'beta' }, {}),
+    ).toThrow('BETA_ACCOUNT_DELETION_AUDIT_HMAC_KEY');
+    expect(
+      missingDeleteAccountDataSettings('beta', {
+        BETA_ACCOUNT_DELETION_AUDIT_HMAC_KEY: 'synthetic-beta-audit-key-0123456789abcdef',
+      }),
+    ).toEqual([]);
   });
 });

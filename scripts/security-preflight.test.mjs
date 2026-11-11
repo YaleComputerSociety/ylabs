@@ -6601,6 +6601,53 @@ test('user account routes set full private no-store response headers', () => {
   }
 });
 
+test('account deletion fails closed while a setting it promises to use is missing (#5624)', () => {
+  const read = (file) => fs.readFileSync(new URL(file, import.meta.url), 'utf8');
+  const readiness = read('../server/src/services/accountDeletionReadiness.ts');
+  for (const setting of [
+    'POSTHOG_PERSONAL_API_KEY',
+    'POSTHOG_PROJECT_ID',
+    'ACCOUNT_DELETION_AUDIT_HMAC_KEY',
+  ]) {
+    assert.match(readiness, new RegExp(`missing\\.push\\('${setting}'\\)`));
+  }
+  assert.match(readiness, /missing\.push\(ACCOUNT_DELETION_ENVIRONMENT_SETTING\)/);
+  assert.match(readiness, /environment === null \|\| POSTHOG_CAPTURING_ENVIRONMENTS\.includes/);
+
+  const service = read('../server/src/services/accountDataService.ts');
+  const guard = service.indexOf('assertAccountDeletionAvailable(env, environment);');
+  const firstRead = service.indexOf("Account.findOne({ netid }).select('_id productAnalyticsId')");
+  assert.ok(
+    guard > 0 && firstRead > guard,
+    'deleteAccountData must refuse before reading or deleting',
+  );
+
+  const controller = read('../server/src/controllers/accountDataController.ts');
+  const refusal = controller.indexOf('if (!accountDeletionReadiness().available)');
+  const phraseCheck = controller.indexOf('ACCOUNT_DATA_DELETION_CONFIRM_PHRASE\n  ) {');
+  assert.ok(refusal > 0 && phraseCheck > refusal, 'the route must refuse before any other check');
+  assert.match(controller, /error instanceof AccountDeletionUnavailableError/);
+
+  const script = read('../server/src/scripts/deleteAccountData.ts');
+  const applyGuard = script.indexOf('assertDeleteAccountDataApplyReady(args);');
+  const connect = script.indexOf(
+    'const mongoUrl = resolveDeleteAccountDataMongoUrl(args.environment);',
+  );
+  assert.ok(
+    applyGuard > 0 && connect > applyGuard,
+    'the operator script must refuse before connecting',
+  );
+
+  assert.match(
+    read('../server/src/routes/ready.ts'),
+    /accountDeletion: accountDeletionServingState\(\)/,
+  );
+  assert.match(
+    read('../client/scripts/productionPromotionSmoke.mjs'),
+    /addCheck\('api\.ready\.accountDeletion', accountDeletion\.status/,
+  );
+});
+
 test('authenticated research-area routes set full private no-store response headers', () => {
   const routeFiles = ['../server/src/routes/admin.ts'];
 

@@ -13,11 +13,12 @@ export const ACCOUNT_DELETED_NOTICE_KEY = 'accountDataDeletedNotice';
 const EXPORT_URL_REVOKE_DELAY_MS = 30_000;
 
 export type AccountDataDeletionOutcome =
-  'deleted' | 'recent_sign_in_required' | 'blocked' | 'failed';
+  'deleted' | 'recent_sign_in_required' | 'blocked' | 'unavailable' | 'failed';
 
 const ERROR_CODE_OUTCOMES: Record<string, AccountDataDeletionOutcome> = {
   RECENT_SIGN_IN_REQUIRED: 'recent_sign_in_required',
   DELETION_BLOCKED: 'blocked',
+  DELETION_UNAVAILABLE: 'unavailable',
 };
 
 export const isDeletionConfirmPhrase = (value: string): boolean =>

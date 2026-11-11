@@ -232,6 +232,10 @@ It runs under `writeLimit`, and on success it ends the cookie session and return
 
 The deletion order is the contract, and every step is safe to repeat:
 
+0. Refuse with `503` (`DELETION_UNAVAILABLE`), before reading or deleting anything, while the serving environment lacks a setting a later step needs (#5624, `server/src/services/accountDeletionReadiness.ts`): `ACCOUNT_DELETION_AUDIT_HMAC_KEY` always, a `MONGODBURL` database name that identifies the environment, and `POSTHOG_PERSONAL_API_KEY` and `POSTHOG_PROJECT_ID` wherever PostHog captures, which is Production and any environment the server cannot identify.
+The refusal tells the student to email the privacy mailbox, the dashboard hides the delete action and shows `PRIVACY_CONTACT_EMAIL` instead (served as `selfServeAccountDeletion: false` in `GET /api/config`), and `/privacy` stops describing the dashboard deletion.
+Export needs none of these settings, so it keeps working.
+`/api/ready` reports `accountDeletion` as `off`, `available` or `unavailable` with the missing settings by name only, the boot log says the same, and `yarn security:smoke:production` fails on `unavailable`.
 1. Refuse with `409` (`DELETION_BLOCKED`) if a corpus field in `CORPUS_ACCOUNT_ID_REFERENCE_FIELDS` holds the account `_id`, rather than leave a dangling id.
 2. `revokeAccountSessions`, so another tab stops writing events.
 3. Delete every `research_plans` row for the account, bypassing the restore window.
@@ -240,18 +244,18 @@ The deletion order is the contract, and every step is safe to repeat:
 6. Revoke the netid's active `admin_grants`, appending a `revoked` history entry, so a maintainer who deletes their account loses the grant with it while the grant row and its history stay.
 `admin_audit_events`, the earlier history on the netid's own grant, and the `grantedBy`, `revokedBy` and history entries on other accounts' grants are left exactly as they are, because the audit log is append-only; the export includes the rows that name the netid, but a deletion never rewrites them.
 7. Ask PostHog to delete the person keyed on `productAnalyticsId`, with events and recordings.
-Unconfigured, this is skipped and reported as `skipped_not_configured`; configured and failing, the deletion stops here, because the account row holds the only copy of that id.
+Where PostHog does not capture, Development and Beta, an unconfigured PostHog is skipped and reported as `skipped_not_configured`; elsewhere step 0 has already refused. Configured and failing, the deletion stops here, because the account row holds the only copy of that id.
 8. Record the deletion for every other environment, below, before the account goes, so a failure there is retried rather than lost.
 9. Delete the account last, so any failure above leaves an account the holder can sign in to and retry from.
 10. Append one `admin_audit_events` row, `account.self_delete` or `account.operator_delete`, whose `targetId` is an HMAC-SHA256 of the netid under `ACCOUNT_DELETION_AUDIT_HMAC_KEY`, never the netid.
-Without the key the row carries no subject.
+Step 0 guarantees the key, so the row always carries a subject.
 
 Analytics events and correction reports store the session netId as it arrived, so the service matches them case-insensitively; an exact lowercase match would leave a differently cased row behind while the residue read zero.
 Deleting the account row resets `sessionVersion`, so deserialization also refuses a claim whose `issuedAt` is earlier than the account's `createdAt`: a session left open before the deletion never authenticates against an account created again by a later sign-in.
 
 Every collection it touches is environment-local and never promoted or synced, so a deletion is durable in its environment and no copy brings it back; `server/src/scripts/__tests__/accountDataCollectionsAreEnvironmentLocal.test.ts` pins that.
 A deletion still covers every environment, but the web service holds no other environment's credentials, so it deletes locally and records an `account_deletion_requests` row naming the person only by the HMAC of the netid under its own `ACCOUNT_DELETION_AUDIT_HMAC_KEY`, with the other environments pending (`server/src/services/accountDeletionRequestService.ts`).
-The serving environment is read from the `MONGODBURL` database name; without the key, or in an environment that name does not identify, no request is recorded and the result says `skipped_not_configured` or `skipped_unknown_environment`.
+The serving environment is read from the `MONGODBURL` database name; without the key, or in an environment that name does not identify, step 0 refuses the deletion rather than skip this request.
 An operator then runs `accounts:delete-account-data --environment <target> --process-pending-from <source>` once per other environment: it hashes every netid the target holds under the source key, deletes each match there through the same service without recording a new request, and moves the target from pending to completed on the source row, `matched: false` when the person never used the target.
 A match the target refuses (`DELETION_BLOCKED`) or a PostHog failure there stays pending and is counted in `failed`, and the run carries on with the rest, so one stuck request never holds back later ones.
 A second deletion for a person whose earlier request is still pending re-adds every other environment to it, so an environment completed in between is deleted again.
@@ -259,6 +263,7 @@ A second deletion for a person whose earlier request is still pending re-adds ev
 An emailed request goes the same way: `--netid` deletes in one environment and records the request for the others.
 The operator script is dry-run by default; for one netid it prints the per-collection residue, which is also the verification after a deletion, since every count must read zero, and for pending requests it prints only counts.
 It reads the deletion keys for the environment it targets, `BETA_` or `PRODUCTION_` prefixed like its connection variable and unprefixed for Development, so a Production run never borrows the Development keys from a copied `server/.env`.
+`--apply` refuses before connecting while the target lacks one of the step 0 settings, naming the prefixed variable, and every run prints `missingDeletionSettings`.
 `server/src/__tests__/accountDataControls.integration.test.ts` drives export, the refusals, the deletion, the PostHog call and the retry through the mounted app with synthetic accounts.
 
 ## Validation middleware
@@ -524,9 +529,9 @@ Rotating a leaked secret is owned by `docs/incident-runbook.md`.
 | `GATE_SCORECARD_MAX_AGE_HOURS` | No | Max age before a gate scorecard is stale. |
 | `GATE_REFRESH_INTERVAL_MINUTES` | No | Positive value enables in-process gate refresh. |
 | `GATE_REFRESH_SKIP_HEAVY` | No | Skips heavy gate refresh work when `true`. |
-| `POSTHOG_PERSONAL_API_KEY`, `POSTHOG_PROJECT_ID` | No | A `phx_` personal key with `person:write` and the digits-only project id; set, an account deletion asks PostHog to delete the person, unset it skips PostHog and says so (#4156). |
-| `ACCOUNT_DELETION_AUDIT_HMAC_KEY` | No | At least 32 characters; keys the netid hash on an account-deletion audit row, which otherwise carries no subject (#4156). |
-| `BETA_` and `PRODUCTION_` prefixed `POSTHOG_PERSONAL_API_KEY`, `POSTHOG_PROJECT_ID`, `ACCOUNT_DELETION_AUDIT_HMAC_KEY` | No | Operator machine only: the keys `accounts:delete-account-data` uses for that environment; unset, a run there skips that step and says so (#4156). |
+| `POSTHOG_PERSONAL_API_KEY`, `POSTHOG_PROJECT_ID` | Production, with deletion on | A `phx_` personal key with `person:write` and the digits-only project id; an account deletion asks PostHog to delete the person (#4156). Unset in Production, self-serve deletion is refused and the student is sent to the privacy mailbox (#5624); Development and Beta skip PostHog, which does not capture there. |
+| `ACCOUNT_DELETION_AUDIT_HMAC_KEY` | With deletion on | At least 32 characters; keys the netid hash on an account-deletion audit row and its cross-environment request (#4156). Unset, self-serve deletion is refused (#5624). |
+| `BETA_` and `PRODUCTION_` prefixed `POSTHOG_PERSONAL_API_KEY`, `POSTHOG_PROJECT_ID`, `ACCOUNT_DELETION_AUDIT_HMAC_KEY` | For `--apply` there | Operator machine only: the keys `accounts:delete-account-data` uses for that environment; `--apply` refuses while one that environment needs is missing (#4156, #5624). |
 
 ### Client
 
