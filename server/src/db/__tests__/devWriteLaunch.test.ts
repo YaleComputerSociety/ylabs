@@ -101,7 +101,9 @@ describe('redacting launch arguments', () => {
 describe('the apply launch record', () => {
   it('is written next to the apply lease and outlives its release', async () => {
     const connection = descriptor('Development');
-    recordDevApplyIntent('repair:thing', ['--apply', '--api-key=abc']);
+    // The secret holds characters an ObjectId or timestamp never prints, so a generated id
+    // cannot contain it by chance (an id with `abc` in it failed this assertion).
+    recordDevApplyIntent('repair:thing', ['--apply', '--api-key=zz-launch-secret']);
     const lease = await acquireIntendedDevApplyLease(connection, { DEV_WRITE_OWNER: 'session-a' });
     await releaseHeldDevWriteLeases();
 
@@ -114,7 +116,7 @@ describe('the apply launch record', () => {
       joinedParentLease: false,
       launch: { ownerLabel: 'session-a', cwd: process.cwd() },
     });
-    expect(JSON.stringify(records[0])).not.toContain('abc');
+    expect(JSON.stringify(records[0])).not.toContain('zz-launch-secret');
   });
 
   it.each(['Beta', 'Prod', 'ylabs_test'])('is never written in %s', async (name) => {
