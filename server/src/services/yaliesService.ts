@@ -4,6 +4,7 @@
 import axios from 'axios';
 import dotenv from 'dotenv';
 import type { LoginSignalBucket } from '../models/storedVocabularies';
+import { directoryUnitDepartment } from '../scrapers/utils/directoryUnitDepartment';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
 dotenv.config({ quiet: true });
@@ -50,10 +51,6 @@ export interface YaliesPerson {
   unit_class?: string;
   organization?: string;
   organization_code?: string;
-  unit_name?: string;
-  organization_name?: string;
-  primary_organization_name?: string;
-  primary_division_name?: string;
 }
 
 export interface ListYaliesOptions {
@@ -170,11 +167,7 @@ function employeeRecord(record: YaliesRecord, netid: string): YaliesEmployee {
     lname: text(record.last_name),
     email: text(record.email),
     title: text(record.title),
-    department:
-      text(record.unit_name) ||
-      text(record.primary_division_name) ||
-      text(record.organization_name) ||
-      text(record.primary_organization_name),
+    department: directoryUnitDepartment(record.unit) ?? '',
   };
 }
 

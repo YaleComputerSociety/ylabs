@@ -67,8 +67,7 @@ describe('lookupYalieByNetid', () => {
       {
         ...person,
         title: 'Program Coordinator',
-        unit_name: 'Fixture Office',
-        organization_name: 'Fixture Organization',
+        unit: 'Dept of Fixture Studies',
       },
     ]);
 
@@ -80,8 +79,17 @@ describe('lookupYalieByNetid', () => {
         lname: 'Person',
         email: 'fixture.person@example.invalid',
         title: 'Program Coordinator',
-        department: 'Fixture Office',
+        department: 'Department of Fixture Studies',
       },
+    });
+  });
+
+  it('stores no department for an employee whose directory unit is an administrative bucket', async () => {
+    respond([{ ...person, title: 'Program Coordinator', unit: 'Business Office' }]);
+
+    expect(await lookupYalieByNetid('fixturenetid')).toMatchObject({
+      kind: 'employee',
+      employee: { department: '' },
     });
   });
 
