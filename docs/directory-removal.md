@@ -26,7 +26,8 @@ Until that first load completes, a deployed runtime withholds every role edge an
   That covers detail members, card lead names, similar and related cards, saved research, and the search index's `leadProfessorNames`, `professorNames` and `memberNames`.
   The shared roster accessor is left unfiltered on purpose, because the materializer and the dedupe scripts read it and must still see the person.
 - Embedded undergraduates: `publicRosterUndergraduates` drops a withheld name.
-- Prose: every JSON response under `/api/research`, `/api/programs`, `/api/fellowships`, `/api/users/savedResearchEntities` and `/api/users/watchedPrograms` passes through `redactWithheldNamesInJson`, which replaces a withheld name with `WITHHELD_PERSON_PHRASE`.
+- Prose: every JSON response under `/api/research`, `/api/programs`, `/api/fellowships`, `/api/users/savedResearchEntities` and `/api/users/watchedPrograms` passes through `redactWithheldNamesInJson`, which drops every sentence of prose that names a withheld person, by the owner's decision of 2026-11-10.
+  A title field (`name`, `displayName`, `title` and the other `TITLE_KEYS`) cannot lose a sentence, so there the name is replaced with `WITHHELD_PERSON_PHRASE` instead.
   The search index documents and the page shell's share metadata go through the same redaction.
   Ids, slugs and links are never rewritten.
 
@@ -45,7 +46,17 @@ The server logs its state at startup.
 The student visibility gate reads the same served roster, so a row whose every lead is removed is held at `suppressed` with the reason `researcher_removed`, which outranks an operator override (`server/src/services/studentVisibilityTier.ts`).
 A removed co-lead or member leaves the row to the ordinary tests, which decide it on the people who remain.
 Nothing is locked: withdrawing the entry restores the row on the next gate pass.
+A row carrying `researcher_removed` is kept out of the search index altogether, like an archived row, so its name and slug never sit in Meilisearch (`isExcludedFromSearchIndex` in `server/src/services/directoryRemovalReason.ts`); a sync or reconcile after the gate pass deletes a document it already had.
 The gate refuses to run while entries exist and the process has no usable key, in every environment including a loopback development worktree, because a pass that cannot match would publish removed rows again.
+
+## Mint and ingest
+
+Lanes never store new evidence about a removed person, so a purge stays done after the next sweep (`server/src/scrapers/directoryRemovalObservationGuard.ts`).
+At `appendObservations`, an observation whose person subject matches an identity entry is dropped, as are the four row fields that point at the person (`inferredPiUserKey`, `inferredPiUserId`, `inferredDirectorProfileUrl`, `contactEmail`), and a faculty research profile whose lead pointer names the person is dropped whole, because it is their own row.
+No mint or attach path creates a researcher, role edge or faculty research profile for them (`server/src/services/directoryRemovalMintGuard.ts`).
+Each refusal is counted as `removed_by_request`, and none writes a lock or an override.
+Researchers are refused by identifier only: a name entry never refuses a researcher or a person subject, keyed or keyless.
+A `--dry-run --explain` preview lists only the observations ingest would keep, and it writes only to the `--output` file the operator names, never to stdout.
 
 ## Before the first entry
 
@@ -54,7 +65,8 @@ Every process that runs the gate must hold the key before the first entry is rec
 1. Give Development's operators the key through `DIRECTORY_REMOVAL_KEY_FILE`, a file outside the repository, because `scripts/new-agent-worktree.sh` copies `server/.env` into every agent worktree.
 2. Set `DIRECTORY_REMOVAL_KEY` on the Beta and Production web services, whose remote promotion phase runs the gate after every copy.
 3. Set `DIRECTORY_REMOVAL_KEY` on the `ylabs-scraper` sweep cron before it is re-enabled, because its gate stage refuses otherwise (`docs/deployment-inventory.md`).
-4. Then record the entry on Development, run the gate, and read the served detail page and search route.
+4. Then record the entry on Development and run the gate.
+5. Tell ylabs-manager before the `development:search:sync` that removes the suppressed rows' documents, then read the served detail page and search route.
 
 ## Purging observations
 
@@ -77,5 +89,5 @@ The removal entry has to stay after a purge, or the next sweep has nothing refus
 ## Known limits
 
 - Prose matching is by the person's current display name and by name digests over two to four word windows, so a spelling with a middle initial or a nickname is missed.
-- A row whose slug contains a removed co-lead's name keeps its URL; whether to rename it is with the owner.
+- A row whose slug contains a removed co-lead's name keeps its URL until the slug migration lands; the owner decided it gets a new slug with no redirect.
 - Meilisearch ranks on the documents it holds, so a removed name can still rank a row until the next reindex, even though the served row is re-read from Mongo and redacted.

@@ -30,7 +30,7 @@ const REMOVED_LEAD = 'Quillon Varrow';
 const KEPT_LEAD = 'Brisa Tallent';
 const REMOVED_STUDENT = 'Odile Marchetti';
 const KEPT_STUDENT = 'Tobin Ashgrove';
-const FULL_DESCRIPTION = `With ${REMOVED_LEAD} as co-lead, the lab studies how synthetic tissues repair after injury. ${REMOVED_STUDENT} built the imaging pipeline the lab uses for every experiment.`;
+const FULL_DESCRIPTION = `With ${REMOVED_LEAD} as co-lead, the lab studies how synthetic tissues repair after injury. ${REMOVED_STUDENT} built the imaging pipeline the lab uses for every experiment. The lab studies how synthetic tissues repair after injury in model organisms.`;
 
 const entityId = new mongoose.Types.ObjectId();
 const removedLeadId = new mongoose.Types.ObjectId();
@@ -176,7 +176,7 @@ describe('a recorded directory removal reaches every served surface (#4160)', ()
     expect(body).toContain(KEPT_LEAD);
     expect(body).toContain(KEPT_STUDENT);
     const detail = JSON.parse(body);
-    expect(detail.researchEntity.fullDescription).toContain('a researcher');
+    expect(detail.researchEntity.fullDescription).toContain('studies how synthetic tissues repair');
     expect(detail.members.map((member: any) => member.user?.displayName)).toEqual([KEPT_LEAD]);
   }, 30000);
 

@@ -19,12 +19,18 @@ import {
 
 export const WITHHELD_PERSON_PHRASE = 'a researcher';
 
+export type WithheldTextShape = 'prose' | 'title';
+
 export interface DirectoryRemovalServing {
   state: DirectoryRemovalState;
   withholdsEveryName: boolean;
   isWithheldPersonId(personId: unknown): boolean;
   isWithheldName(name: unknown): boolean;
-  redactWithheldNames(text: string, ownPeopleLabels?: ReadonlySet<string>): string;
+  redactWithheldNames(
+    text: string,
+    ownPeopleLabels?: ReadonlySet<string>,
+    shape?: WithheldTextShape,
+  ): string;
 }
 
 const NAME_WINDOW_SIZES = [4, 3, 2];
@@ -66,6 +72,46 @@ function replacedSpans(text: string, spans: TokenSpan[]): string {
     cursor = span.end;
   }
   return result + text.slice(cursor);
+}
+
+const SENTENCES = new Intl.Segmenter('en', { granularity: 'sentence' });
+const ENDS_IN_NAME_ABBREVIATION = /(?:^|[^\p{L}])(?:Dr|Prof|Mr|Mrs|Ms|Mx|\p{Lu})\.\s*$/u;
+
+interface Sentence {
+  index: number;
+  segment: string;
+}
+
+function sentencesOf(text: string): Sentence[] {
+  const sentences: Sentence[] = [];
+  let pending: Sentence | undefined;
+  for (const { index, segment } of SENTENCES.segment(text)) {
+    pending = pending
+      ? { index: pending.index, segment: pending.segment + segment }
+      : { index, segment };
+    if (!ENDS_IN_NAME_ABBREVIATION.test(pending.segment)) {
+      sentences.push(pending);
+      pending = undefined;
+    }
+  }
+  if (pending) sentences.push(pending);
+  return sentences;
+}
+
+function withoutSentencesNaming(text: string, spans: TokenSpan[]): string {
+  if (spans.length === 0) return text;
+  const kept = sentencesOf(text).filter(({ index, segment }) => {
+    const end = index + segment.length;
+    return !spans.some((span) => span.start < end && span.end > index);
+  });
+  return kept
+    .map(({ segment }) => segment)
+    .join('')
+    .trim();
+}
+
+function withheldText(text: string, spans: TokenSpan[], shape: WithheldTextShape): string {
+  return shape === 'title' ? replacedSpans(text, spans) : withoutSentencesNaming(text, spans);
 }
 
 const idKey = (value: unknown): string => (value == null ? '' : String(value));
@@ -114,8 +160,8 @@ export function buildDirectoryRemovalServing(
       withholdsEveryName: true,
       isWithheldPersonId: () => true,
       isWithheldName: () => true,
-      redactWithheldNames: (text) =>
-        text ? replacedSpans(text, withheldNameSpans(text, isKnownName)) : text,
+      redactWithheldNames: (text, _ownPeopleLabels, shape = 'prose') =>
+        text ? withheldText(text, withheldNameSpans(text, isKnownName), shape) : text,
     };
   }
   const removedIds = new Set(people.removed.map((person) => idKey(person._id)));
@@ -129,14 +175,14 @@ export function buildDirectoryRemovalServing(
     withholdsEveryName: false,
     isWithheldPersonId: (personId) => removedIds.has(idKey(personId)),
     isWithheldName,
-    redactWithheldNames: (text, ownPeopleLabels) => {
+    redactWithheldNames: (text, ownPeopleLabels, shape = 'prose') => {
       if (!text) return text;
       const isWithheldHere = (name: string) => {
         const label = normalizedRosterLabel(name);
         if (isRemovedByIdentityName(label)) return true;
         return !ownPeopleLabels?.has(label) && isNameEntry(name);
       };
-      return replacedSpans(text, withheldNameSpans(text, isWithheldHere));
+      return withheldText(text, withheldNameSpans(text, isWithheldHere), shape);
     },
   };
 }
@@ -208,6 +254,17 @@ function withServedPeopleOf(
   return new Set([...inherited, ...labels]);
 }
 
+const TITLE_KEYS = new Set([
+  'name',
+  'displayName',
+  'title',
+  'label',
+  'leadName',
+  'matchedMemberName',
+  'programName',
+  'projectTitle',
+]);
+
 const URL_LIKE = /^(https?:|mailto:|tel:)/i;
 const UNREDACTED_KEYS = new Set(['_id', 'id', 'slug', 'publicKey', 'url', 'sourceUrl']);
 
@@ -223,7 +280,11 @@ export function redactWithheldNamesDeep<T>(
   ): unknown => {
     if (typeof node === 'string') {
       if ((key && UNREDACTED_KEYS.has(key)) || URL_LIKE.test(node)) return node;
-      return serving.redactWithheldNames(node, ownPeople);
+      return serving.redactWithheldNames(
+        node,
+        ownPeople,
+        key && TITLE_KEYS.has(key) ? 'title' : 'prose',
+      );
     }
     if (Array.isArray(node)) return node.map((item) => visit(item, undefined, ownPeople));
     if (node && typeof node === 'object' && typeof (node as any).toJSON === 'function') {
