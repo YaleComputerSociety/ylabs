@@ -80,6 +80,12 @@ const seedCouncil = async (slug: string, path: string, ownName: string, archived
   await observe(slug, 'lab-site-research-read', websiteUrl, 'displayName', SITE_NAME, 0.95);
 };
 
+const seedPreviouslyServedCouncil = async (slug: string, path: string, ownName: string) => {
+  await seedCouncil(slug, path, ownName);
+  await materializeEntity('researchEntity', { entityKey: slug });
+  resetSiteSharedPageNameCache();
+};
+
 describe('materializeEntity withdraws a site name stated for sibling sub-unit pages (#5618)', () => {
   let replSet: MongoMemoryReplSet;
 
@@ -109,8 +115,8 @@ describe('materializeEntity withdraws a site name stated for sibling sub-unit pa
   });
 
   it('serves each council under the name its own pages state', async () => {
-    await seedCouncil('orrery-north', 'north', 'Council on Northern Studies');
-    await seedCouncil('orrery-south', 'south', 'Council on Southern Studies');
+    await seedPreviouslyServedCouncil('orrery-north', 'north', 'Council on Northern Studies');
+    await seedPreviouslyServedCouncil('orrery-south', 'south', 'Council on Southern Studies');
 
     await materializeEntity('researchEntity', { entityKey: 'orrery-north' });
     await materializeEntity('researchEntity', { entityKey: 'orrery-south' });
@@ -121,8 +127,8 @@ describe('materializeEntity withdraws a site name stated for sibling sub-unit pa
   });
 
   it('re-derives the same names on a second pass with no lock', async () => {
-    await seedCouncil('orrery-north', 'north', 'Council on Northern Studies');
-    await seedCouncil('orrery-south', 'south', 'Council on Southern Studies');
+    await seedPreviouslyServedCouncil('orrery-north', 'north', 'Council on Northern Studies');
+    await seedPreviouslyServedCouncil('orrery-south', 'south', 'Council on Southern Studies');
 
     await materializeEntity('researchEntity', { entityKey: 'orrery-north' });
     const second = await materializeEntity('researchEntity', { entityKey: 'orrery-north' });
@@ -135,7 +141,7 @@ describe('materializeEntity withdraws a site name stated for sibling sub-unit pa
   });
 
   it('keeps a page-stated name when the only sibling stating it is archived', async () => {
-    await seedCouncil('orrery-north', 'north', 'Council on Northern Studies');
+    await seedPreviouslyServedCouncil('orrery-north', 'north', 'Council on Northern Studies');
     await seedCouncil('orrery-south', 'south', 'Council on Southern Studies', true);
 
     await materializeEntity('researchEntity', { entityKey: 'orrery-north' });
