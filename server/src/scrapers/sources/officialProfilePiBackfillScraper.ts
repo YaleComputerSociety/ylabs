@@ -1,3 +1,4 @@
+import { PROFILE_APPOINTMENT_ENDED_FIELD, PROFILE_IN_MEMORIAM_FIELD } from '../personPageDepartureFields';
 import axios from 'axios';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 import mongoose from 'mongoose';
@@ -173,6 +174,8 @@ export interface OfficialProfileIdentity {
   orcid?: string;
   suppressDerivedBio?: boolean;
   emailOnly?: boolean;
+  inMemoriam?: boolean;
+  appointmentEndedOn?: string;
 }
 
 interface OfficialProfileIdentityOptions {
@@ -3431,6 +3434,69 @@ export function officialProfilePageStatedFields(html: string): OfficialProfilePa
  * A page without an admissible title is no evidence of a title, a role or a bio, but a page
  * that is still this person's own states their address, so only that is kept (#5669).
  */
+const IN_MEMORIAM_HEADING = /\bin\s+memoriam(?!\p{L})|\bobituary\b/iu;
+const SUBJECT_OPENING_WINDOW = 300;
+const APPOINTMENT_DATES_LABEL = /\bDates?:\s*([^|]+)/gi;
+const NUMERIC_DATE = /\b(\d{1,2})\/(\d{1,2})\/(\d{2}|\d{4})\b/g;
+
+function stated4DigitYear(year: string): number {
+  return year.length === 2 ? 2000 + Number(year) : Number(year);
+}
+
+/**
+ * The latest end date among the appointments the page states under a "Dates:" label, as an
+ * ISO day, when every range it states has an end date. A page that states no dated
+ * appointment, or a range without an end, says nothing about departure.
+ */
+function statedAppointmentEndDate(text: string): string | undefined {
+  const ends: number[] = [];
+  for (const label of text.matchAll(APPOINTMENT_DATES_LABEL)) {
+    const ranges = label[1]
+      .split(/\.{3}|…|;/)
+      .map((range) => range.trim())
+      .filter(Boolean);
+    for (const range of ranges) {
+      const dates = [...range.matchAll(NUMERIC_DATE)];
+      if (dates.length === 0) return undefined;
+      const [, month, day, year] = dates[dates.length - 1];
+      const end = Date.UTC(stated4DigitYear(year), Number(month) - 1, Number(day));
+      if (!Number.isFinite(end)) return undefined;
+      ends.push(end);
+    }
+  }
+  if (ends.length === 0) return undefined;
+  return new Date(Math.max(...ends)).toISOString().slice(0, 10);
+}
+
+/**
+ * Departure facts the subject's own page states about the subject (#5721): an in-memoriam or
+ * obituary heading in the page's title, its main heading, or the opening of its subject text,
+ * and the end date of its dated appointments once every one of them has passed. Read from
+ * the block-separated subject text, so a co-author's page or a sidebar notice cannot speak
+ * for the subject.
+ */
+export function profileDepartureEvidence(
+  html: string,
+  profiles: Array<Record<string, any>>,
+  now: Date = new Date(),
+): Pick<OfficialProfileIdentity, 'inMemoriam' | 'appointmentEndedOn'> {
+  const $ = cheerio.load(html);
+  const subjectText = blockSeparatedProfileEvidenceText(html, profiles);
+  const headings = [
+    $('title').first().text(),
+    $('meta[property="og:title"]').attr('content') || '',
+    $('h1').first().text(),
+    subjectText.slice(0, SUBJECT_OPENING_WINDOW),
+  ];
+  const inMemoriam = headings.some((heading) => IN_MEMORIAM_HEADING.test(heading));
+  const endedOn = statedAppointmentEndDate(subjectText);
+  const ended = endedOn && Date.parse(endedOn) < now.getTime() ? endedOn : undefined;
+  return {
+    ...(inMemoriam ? { inMemoriam: true } : {}),
+    ...(ended ? { appointmentEndedOn: ended } : {}),
+  };
+}
+
 function emailOnlyOfficialProfileIdentity(
   canonicalUrl: string,
   fetchedUrl: string,
@@ -3565,13 +3631,16 @@ export function extractOfficialProfileIdentity(
       email === subjectDeclaredProfileEmail($, profiles, displayName) &&
       displayNameNamesAPerson(displayName);
     return options.emailOnlyWithoutAdmissibleTitle && subjectStatedEmail
-      ? emailOnlyOfficialProfileIdentity(
-          canonicalUrl,
-          fetchedUrl,
-          displayName,
-          email,
-          profileNetidSlug,
-        )
+      ? {
+          ...emailOnlyOfficialProfileIdentity(
+            canonicalUrl,
+            fetchedUrl,
+            displayName,
+            email,
+            profileNetidSlug,
+          ),
+          ...profileDepartureEvidence(html, profiles),
+        }
       : null;
   }
 
@@ -3598,6 +3667,7 @@ export function extractOfficialProfileIdentity(
     ...(profileNetidSlug ? { profileNetid: profileNetidSlug } : {}),
     orcid: extractOrcid($),
     ...(bio ? {} : hasSuppressedProfileBioText($) ? { suppressDerivedBio: true } : {}),
+    ...profileDepartureEvidence(html, profiles),
   };
 }
 
@@ -3768,6 +3838,23 @@ export function identityToUserObservations(
     sourceUrl: identity.canonicalUrl,
     confidenceOverride: 0.95,
   }));
+
+  const departureBase = {
+    entityType: 'user' as const,
+    entityKey: `netid:${netid}`,
+    sourceUrl: identity.canonicalUrl,
+    confidenceOverride: 0.95,
+  };
+  if (identity.inMemoriam) {
+    observations.push({ ...departureBase, field: PROFILE_IN_MEMORIAM_FIELD, value: true });
+  }
+  if (identity.appointmentEndedOn) {
+    observations.push({
+      ...departureBase,
+      field: PROFILE_APPOINTMENT_ENDED_FIELD,
+      value: identity.appointmentEndedOn,
+    });
+  }
 
   if (includeProfileEnrichment) {
     if (identity.imageUrl) {

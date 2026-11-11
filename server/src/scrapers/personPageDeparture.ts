@@ -13,12 +13,13 @@ import {
   partitionObservationsByInvalidatedRun,
 } from './invalidatedScrapeRuns';
 
-export const PROFILE_IN_MEMORIAM_FIELD = 'profileInMemoriam';
-export const PROFILE_APPOINTMENT_ENDED_FIELD = 'profileAppointmentEndedOn';
-export const PERSON_PAGE_DEPARTURE_FIELDS = [
-  PROFILE_IN_MEMORIAM_FIELD,
+import {
+  PERSON_PAGE_DEPARTURE_FIELDS,
   PROFILE_APPOINTMENT_ENDED_FIELD,
-] as const;
+  PROFILE_IN_MEMORIAM_FIELD,
+} from './personPageDepartureFields';
+
+export { PERSON_PAGE_DEPARTURE_FIELDS, PROFILE_APPOINTMENT_ENDED_FIELD, PROFILE_IN_MEMORIAM_FIELD };
 
 export type PersonPageDeparture = 'deceased' | 'departed';
 

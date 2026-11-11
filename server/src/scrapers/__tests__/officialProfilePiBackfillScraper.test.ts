@@ -11,6 +11,7 @@ import {
   identityToResearchEntityPiKeyObservations,
   identityToResearchEntityPiObservations,
   identityToUserObservations,
+  profileDepartureEvidence,
   isInstitutionalHomeMismatchedWithPersonScopedShell,
   profileLinkedHomeRefusal,
   generatedOfficialProfileUrlCandidatesForPerson,
@@ -4333,6 +4334,81 @@ describe('officialProfilePiBackfillScraper', () => {
     expect(htmlFetcher).toHaveBeenCalledTimes(2);
     expect(delay).toHaveBeenCalledTimes(1);
     expect(delay).toHaveBeenCalledWith(25);
+  });
+
+  describe("a person's own page records departure evidence on their own key (#5721)", () => {
+    const now = new Date('2026-11-11T00:00:00Z');
+    const inMemoriamHtml = profileHtml.replace(
+      '<head>',
+      '<head><title>In Memoriam | Jules Fixture</title>',
+    );
+    const datedHtml = (dates: string) =>
+      profileHtml.replace(
+        '<div class="department">Surgery</div>',
+        `<div class="department">Surgery</div><p>Visiting from: Fixture University</p><p>Dates: ${dates}</p>`,
+      );
+    const visibleUser = {
+      _id: 'user-departure',
+      netid: 'fixture106',
+      email: 'jules.fixture@yale.edu',
+      name: 'Jules Fixture',
+      slug: 'jules-fixture',
+      websiteUrl: profileUrl,
+    };
+    const scraperOverPage = (html: string) =>
+      new OfficialProfilePiBackfillScraper(
+        vi.fn(async () => html),
+        vi.fn(async () => []),
+        vi.fn(async () => null),
+        vi.fn(async () => [visibleUser]),
+        vi.fn(async () => []),
+        vi.fn(async () => []),
+        0,
+      );
+    const departureObservations = (emitted: ObservationInput[]) =>
+      emitted.filter((o) => ['profileInMemoriam', 'profileAppointmentEndedOn'].includes(o.field));
+
+    it('reads an in-memoriam heading as a marker', () => {
+      expect(profileDepartureEvidence(inMemoriamHtml, [], now)).toEqual({ inMemoriam: true });
+    });
+
+    it('reads the end date once every dated appointment has passed', () => {
+      expect(
+        profileDepartureEvidence(datedHtml('9/1 - 12/31/2024 ... 1/1 - 5/31/2025'), [], now),
+      ).toEqual({ appointmentEndedOn: '2025-05-31' });
+    });
+
+    it('records nothing for a current appointment', () => {
+      expect(profileDepartureEvidence(profileHtml, [], now)).toEqual({});
+      expect(profileDepartureEvidence(datedHtml('9/1/2026 - 5/31/2099'), [], now)).toEqual({});
+    });
+
+    it('emits the marker on the person own netid key, the same on a second run', async () => {
+      const first: ObservationInput[] = [];
+      const second: ObservationInput[] = [];
+
+      await scraperOverPage(inMemoriamHtml).run(visibleBioContextFor(first));
+      await scraperOverPage(inMemoriamHtml).run(visibleBioContextFor(second));
+
+      expect(departureObservations(first)).toEqual([
+        expect.objectContaining({
+          entityType: 'user',
+          entityKey: 'netid:fixture106',
+          field: 'profileInMemoriam',
+          value: true,
+          sourceUrl: profileUrl,
+        }),
+      ]);
+      expect(departureObservations(second)).toEqual(departureObservations(first));
+    });
+
+    it('emits nothing about departure for a page with a current appointment', async () => {
+      const emitted: ObservationInput[] = [];
+
+      await scraperOverPage(profileHtml).run(visibleBioContextFor(emitted));
+
+      expect(departureObservations(emitted)).toEqual([]);
+    });
   });
 
   describe('a visible roster person whose stored email only a legacy account copy backs (#5627)', () => {
