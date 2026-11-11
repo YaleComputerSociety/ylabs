@@ -5,7 +5,7 @@ import { computeContentHash } from '../contentHashGate';
  * split into sentences and headings changes every key once, instead of comparing hashes
  * produced by two different normalizers.
  */
-export const WRITER_TEXT_NORMALIZER_VERSION = 'writer-text-normalizer-v3';
+export const WRITER_TEXT_NORMALIZER_VERSION = 'writer-text-normalizer-v4';
 
 const SINGLE_QUOTES = /[\u2018\u2019\u201A\u201B\u2032\u2035`\u00B4]/g;
 const DOUBLE_QUOTES = /[\u201C\u201D\u201E\u201F\u2033\u2036\u00AB\u00BB]/g;

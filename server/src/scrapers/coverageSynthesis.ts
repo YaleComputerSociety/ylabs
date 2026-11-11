@@ -32,7 +32,11 @@ import {
   truncateAtSentenceBoundary,
 } from './utils/researchPageText';
 import { isResearchPageHeadingLine } from './utils/writerEvidenceText';
-import { withoutPublicationListings, withoutResearchPageChrome } from './utils/researchPageChrome';
+import {
+  withoutPublicationListings,
+  withoutResearchPageChrome,
+  withoutSchoolMenuBlocks,
+} from './utils/researchPageChrome';
 import {
   coversResearchPage,
   hasFirstPerson,
@@ -200,7 +204,7 @@ function researchPageTextSnippets(obs: CoverageObservationLike): CoverageSnippet
     isRejectedDescriptionSourceUrl(page.url)
       ? []
       : researchPageTextSnippetTexts(
-          withoutPublicationListings(withoutResearchPageChrome(page.text)),
+          withoutPublicationListings(withoutSchoolMenuBlocks(withoutResearchPageChrome(page.text))),
         ).map((text) => ({
           text: writerEvidenceTextOf(text),
           sourceUrl: page.url,

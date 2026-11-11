@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { gatherCoverageSnippets } from '../../coverageSynthesis';
-import { withoutPublicationListings, withoutResearchPageChrome } from '../researchPageChrome';
+import {
+  withoutPublicationListings,
+  withoutResearchPageChrome,
+  withoutSchoolMenuBlocks,
+} from '../researchPageChrome';
 
 const PROSE = 'The lab studies how coral reefs recover after marine heatwaves.';
 const kept = (lines: string[]) => withoutResearchPageChrome(lines.join('\n')).split('\n');
@@ -150,5 +154,74 @@ describe('withoutPublicationListings (#5537)', () => {
       },
     ]);
     expect(snippets.map((snippet) => snippet.text)).toEqual([PROSE]);
+  });
+});
+
+describe('school menu blocks and page furniture (#5537)', () => {
+  const menu = [
+    'Facts & Figures',
+    'Leadership, Administration & Governance',
+    'Example Dean & Deputy Deans',
+    'Committees & Workgroups',
+    'Organization Charts',
+    'Departments & Centers',
+    'Find People',
+    'Historical Milestones',
+    'Giving to Example School',
+    'Biomedical Data Science',
+    'Office of the Dean',
+    'Degree Programs',
+    'How to Apply',
+  ];
+
+  it('removes a long run of school menu labels', () => {
+    expect(withoutSchoolMenuBlocks([...menu, PROSE].join('\n')).split('\n')).toEqual([PROSE]);
+  });
+
+  it('keeps a lab list of its own measures, which names no menu label', () => {
+    const measures = [
+      'Heart Rate',
+      'Impedance Cardiography',
+      'Blood Pressure',
+      'Skin Temperature',
+      'Pulse Transit Time',
+      'Skin Conductance',
+      'Sleep Actigraphy',
+      'Facial Electromyography',
+      'Salivary Cortisol',
+      'Respiration Rate',
+      'Heart Rate Variability',
+      'Peripheral Vasoconstriction',
+      PROSE,
+    ];
+    expect(withoutSchoolMenuBlocks(measures.join('\n')).split('\n')).toEqual(measures);
+  });
+
+  it('keeps a short run of menu labels, which is not a whole menu', () => {
+    const lines = ['Find People', 'Contact Us', 'About Us', PROSE];
+    expect(withoutSchoolMenuBlocks(lines.join('\n')).split('\n')).toEqual(lines);
+  });
+
+  it('removes browser notices, directions and address lines', () => {
+    expect(
+      kept([
+        'Your browser is antiquated and no longer supported on this website. Please update your browser.',
+        'You can update your IE here:',
+        'Get Directions',
+        '300 Example Street, Ste S240',
+        'New Haven, CT 06519',
+        PROSE,
+      ]),
+    ).toEqual([PROSE]);
+  });
+
+  it('removes an unheaded run-together MeSH line but keeps prose with a capitalized name', () => {
+    expect(
+      withoutPublicationListings(
+        ['Acute Kidney InjuryAgedFemaleHumansIncidenceLiver CirrhosisMale', PROSE].join('\n'),
+      ).split('\n'),
+    ).toEqual([PROSE]);
+    const prose = 'The lab works with McDonald colleagues and the DeepMind team on reef models.';
+    expect(withoutPublicationListings(prose)).toBe(prose);
   });
 });
