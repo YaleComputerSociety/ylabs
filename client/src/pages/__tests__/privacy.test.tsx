@@ -2,7 +2,9 @@ import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it } from 'vitest';
 
+import ConfigContext, { defaultConfigContext } from '../../contexts/ConfigContext';
 import Privacy from '../privacy';
+import { PRIVACY_CONTACT_EMAIL, PRIVACY_CONTACT_MAILTO } from '../../utils/privacyContact';
 import { PRIVACY_QUESTIONS_URL } from '../../utils/privacyNotice';
 import { expectNoAxeViolations } from '../../testUtils/axe';
 
@@ -10,10 +12,14 @@ afterEach(() => {
   cleanup();
 });
 
-const renderPrivacy = () =>
+const renderPrivacy = (accountDataControls = false) =>
   render(
     <MemoryRouter initialEntries={['/privacy']}>
-      <Privacy />
+      <ConfigContext.Provider
+        value={{ ...defaultConfigContext, features: { accountDataControls } }}
+      >
+        <Privacy />
+      </ConfigContext.Provider>
     </MemoryRouter>,
   );
 
@@ -31,11 +37,37 @@ describe('Privacy', () => {
     expect(text).toContain('yalelabs.io');
   });
 
-  it('points questions at the public issue tracker', () => {
+  it('keeps the public issue tracker for general questions only', () => {
     renderPrivacy();
 
     const link = screen.getByRole('link', { name: 'y/labs GitHub repository' });
     expect(link.getAttribute('href')).toBe(PRIVACY_QUESTIONS_URL);
+    expect(link.closest('p')?.textContent).toContain('For general questions');
+    expect(link.closest('p')?.textContent).toContain(PRIVACY_CONTACT_EMAIL);
+  });
+
+  it('sends a private data request to the maintainer address, answered within 30 days', () => {
+    renderPrivacy();
+
+    const link = screen.getByRole('link', { name: PRIVACY_CONTACT_EMAIL });
+    expect(link.getAttribute('href')).toBe(PRIVACY_CONTACT_MAILTO);
+    const paragraph = link.closest('p')?.textContent ?? '';
+    expect(paragraph).toContain('If you cannot sign in');
+    expect(paragraph).toContain('within 30 days');
+    expect(paragraph).toContain('Do not send a request about your own data as a GitHub issue');
+  });
+
+  it('describes the dashboard deletion only while the release flag is on', () => {
+    renderPrivacy(false);
+    expect(document.body.textContent).not.toContain('under Your data');
+    cleanup();
+
+    renderPrivacy(true);
+    const text = document.body.textContent ?? '';
+    expect(text).toContain('under Your data');
+    expect(text).toContain('enter your Yale password again');
+    expect(text).toContain('a maintainer deletes that account too');
+    expect(screen.getByRole('link', { name: PRIVACY_CONTACT_EMAIL })).toBeTruthy();
   });
 
   it('has no serious or critical accessibility violations', async () => {
