@@ -15,7 +15,7 @@
  *
  * Producing that evidence is a separate operation, because it costs a paid re-read:
  *
- *   yarn --cwd server scrape run --source lab-microsite-description-llm \
+ *   yarn --cwd server scrape run --source lab-microsite-description-llm --apply \
  *     --only <slugs> --limit 500 --force-llm --ignore-work-planner
  *
  * Run it twice, on different days, because an LLM lane is not repeatable and

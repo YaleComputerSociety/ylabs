@@ -16,6 +16,8 @@ export interface ScraperCommandGuardResult {
   autoMaterialize: boolean;
   warnings: string[];
   dbLabel: string;
+  writes: boolean;
+  banner: string;
 }
 
 export interface ObservationPruneGuardResult {
@@ -121,10 +123,54 @@ export function promotionOnlyScraperWriteRefusal(environment: ScraperEnvironment
   );
 }
 
+export const SCRAPER_WRITE_PERMISSION_ENV = 'ALLOW_NON_PROD_SCRAPER_WRITES';
+
+export function scraperWritePermissionWithoutApplyRefusal(
+  command: 'run' | 'materialize' | 'report',
+  databaseLabel: string,
+): string {
+  return (
+    `REFUSED: the ${SCRAPER_WRITE_PERMISSION_ENV} permission is granted, but the command line has no --apply. ` +
+    `The environment permission alone no longer writes (#5842). ` +
+    `Add --apply to write to ${databaseLabel}, or --dry-run to preview scrape ${command} without writing.`
+  );
+}
+
+export function scraperApplyWithoutWritePermissionRefusal(
+  command: 'run' | 'materialize' | 'report',
+): string {
+  return (
+    `REFUSED: scrape ${command} --apply requires the ${SCRAPER_WRITE_PERMISSION_ENV} permission in the environment. ` +
+    'Launch it through "node scripts/run-data-profile.mjs development --write -- ...", ' +
+    'or drop --apply for a dry run.'
+  );
+}
+
+function scraperRunBanner(input: {
+  command: 'run' | 'materialize' | 'report';
+  writes: boolean;
+  databaseLabel: string;
+  dryRunReason: string;
+  useCache: boolean;
+}): string {
+  if (input.writes) {
+    return `WILL WRITE to ${input.databaseLabel} (scrape ${input.command} --apply with the ${SCRAPER_WRITE_PERMISSION_ENV} permission)`;
+  }
+  const recordedRows = input.useCache
+    ? 'the run bookkeeping row and --use-cache fetch snapshots are'
+    : 'the run bookkeeping row is';
+  const bookkeeping =
+    input.command === 'run'
+      ? `; observations and entities stay untouched, only ${recordedRows} recorded`
+      : '';
+  return `DRY RUN: nothing will be written (${input.dryRunReason})${bookkeeping}`;
+}
+
 export function applyScraperEnvironmentGuards(args: {
   command: 'run' | 'materialize' | 'report';
   options: ScraperOptions;
   autoMaterialize: boolean;
+  apply: boolean;
   mongoUrl?: string;
   env?: NodeJS.ProcessEnv;
 }): ScraperCommandGuardResult {
@@ -136,36 +182,35 @@ export function applyScraperEnvironmentGuards(args: {
     env,
   });
   const options: ScraperOptions = { ...args.options };
-  let autoMaterialize = args.autoMaterialize;
   const warnings: string[] = [];
-  const allowNonProdWrites = env.ALLOW_NON_PROD_SCRAPER_WRITES === 'true';
+  const allowNonProdWrites = env[SCRAPER_WRITE_PERMISSION_ENV] === 'true';
+  const explicitDryRun = options.dryRun === true;
+  const resolvedMongoUrl = args.mongoUrl ?? env.MONGODBURL;
+  const dbLabel = summarizeMongoUrl(resolvedMongoUrl);
+  const databaseLabel = resolveMongoDatabaseName(resolvedMongoUrl) ?? dbLabel;
 
-  if (environment !== 'production') {
-    if (args.command === 'run' && !options.dryRun && !allowNonProdWrites) {
-      options.dryRun = true;
-      warnings.push(
-        `SCRAPER_ENV=${environment}; forcing --dry-run. Set ALLOW_NON_PROD_SCRAPER_WRITES=true to write to this non-production DB.`,
-      );
+  if (isPromotionOnlyEnvironment(environment)) {
+    const writeIntent =
+      !explicitDryRun && (environment === 'production' || allowNonProdWrites || args.apply);
+    if (writeIntent && (args.command === 'run' || args.command === 'materialize')) {
+      throw new Error(promotionOnlyScraperWriteRefusal(environment));
     }
-
-    if (autoMaterialize && !allowNonProdWrites) {
-      autoMaterialize = false;
-      warnings.push(
-        `SCRAPER_ENV=${environment}; disabling --auto-materialize for non-production safety.`,
-      );
+  } else if (!explicitDryRun) {
+    if (args.apply && !allowNonProdWrites) {
+      throw new Error(scraperApplyWithoutWritePermissionRefusal(args.command));
     }
-
-    if (args.command === 'materialize' && !options.dryRun && !allowNonProdWrites) {
-      options.dryRun = true;
-      warnings.push(
-        `SCRAPER_ENV=${environment}; materialize defaults to dry-run outside production.`,
-      );
+    if (!args.apply && allowNonProdWrites) {
+      throw new Error(scraperWritePermissionWithoutApplyRefusal(args.command, databaseLabel));
     }
   }
 
-  const writes = (args.command === 'run' || args.command === 'materialize') && !options.dryRun;
-  if (writes && isPromotionOnlyEnvironment(environment)) {
-    throw new Error(promotionOnlyScraperWriteRefusal(environment));
+  const writes = args.apply && allowNonProdWrites && !explicitDryRun;
+  options.dryRun = !writes;
+
+  let autoMaterialize = args.autoMaterialize;
+  if (autoMaterialize && !writes) {
+    autoMaterialize = false;
+    warnings.push('Dry run, so --auto-materialize is disabled.');
   }
 
   if (environment === 'production' && options.useCache) {
@@ -178,7 +223,15 @@ export function applyScraperEnvironmentGuards(args: {
     options,
     autoMaterialize,
     warnings,
-    dbLabel: summarizeMongoUrl(args.mongoUrl ?? env.MONGODBURL),
+    dbLabel,
+    writes,
+    banner: scraperRunBanner({
+      command: args.command,
+      writes,
+      databaseLabel,
+      dryRunReason: explicitDryRun ? '--dry-run' : 'no --apply',
+      useCache: options.useCache === true,
+    }),
   };
 }
 

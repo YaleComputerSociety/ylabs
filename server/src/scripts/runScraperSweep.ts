@@ -917,6 +917,7 @@ export function buildScraperSweepChildArgs(
     'run',
     '--source',
     sourceName,
+    ...(MODE_CONFIG[mode].writes ? ['--apply'] : []),
     ...MODE_CONFIG[mode].scraperFlags,
     ...(options.forceLlm ? ['--force-llm'] : []),
     '--output',

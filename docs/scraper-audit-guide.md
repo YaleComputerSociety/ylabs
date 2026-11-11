@@ -77,15 +77,17 @@ Small development write with materialization:
 
 ```bash
 SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true \
-  npx -y corepack@0.34.7 yarn --cwd server scrape run --source <source-name> --limit 10 --use-cache --auto-materialize
+  npx -y corepack@0.34.7 yarn --cwd server scrape run --source <source-name> --apply --limit 10 --use-cache --auto-materialize
 ```
 
 Scale up in development:
 
 ```bash
 SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true \
-  npx -y corepack@0.34.7 yarn --cwd server scrape run --source <source-name> --limit 100 --use-cache --auto-materialize
+  npx -y corepack@0.34.7 yarn --cwd server scrape run --source <source-name> --apply --limit 100 --use-cache --auto-materialize
 ```
+
+A write needs both `--apply` on the command line and `ALLOW_NON_PROD_SCRAPER_WRITES` in the environment (#5842): without `--apply` the run is a dry run, and the environment permission without `--apply` is refused before the CLI connects.
 
 There is no Beta or Production write command.
 The CLI refuses a `run` or `materialize` write against either, because both receive data only through promotion; [`docs/data-refresh-runbook.md`](./data-refresh-runbook.md) owns that sequence.
@@ -201,7 +203,7 @@ Commands:
 
 ```bash
 SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true \
-  npx -y corepack@0.34.7 yarn --cwd server scrape run --source dept-faculty-roster --limit 100 --use-cache --auto-materialize
+  npx -y corepack@0.34.7 yarn --cwd server scrape run --source dept-faculty-roster --apply --limit 100 --use-cache --auto-materialize
 ```
 
 Expected collections:
@@ -229,7 +231,7 @@ Commands:
 
 ```bash
 SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true \
-  npx -y corepack@0.34.7 yarn --cwd server scrape run --source lab-microsite-undergrad-llm --only <reviewed-slug> --limit 1 --use-cache --auto-materialize
+  npx -y corepack@0.34.7 yarn --cwd server scrape run --source lab-microsite-undergrad-llm --apply --only <reviewed-slug> --limit 1 --use-cache --auto-materialize
 ```
 
 Expected collections:
@@ -264,7 +266,7 @@ SCRAPER_ENV=development \
   npx -y corepack@0.34.7 yarn --cwd server scrape run --source lab-microsite-description-llm --dry-run --only <entity-id-or-slug> --limit 1 --output /tmp/ylabs-description-llm-dry-run.json
 
 SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true \
-  npx -y corepack@0.34.7 yarn --cwd server scrape run --source lab-microsite-description-llm --only <entity-id-or-slug> --limit 1 --auto-materialize --output /tmp/ylabs-description-llm-apply.json
+  npx -y corepack@0.34.7 yarn --cwd server scrape run --source lab-microsite-description-llm --apply --only <entity-id-or-slug> --limit 1 --auto-materialize --output /tmp/ylabs-description-llm-apply.json
 ```
 
 Expected collections:
@@ -322,7 +324,7 @@ Commands:
 
 ```bash
 SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true \
-  npx -y corepack@0.34.7 yarn --cwd server scrape run --source undergrad-fellowships-recipients --limit 50 --use-cache --auto-materialize
+  npx -y corepack@0.34.7 yarn --cwd server scrape run --source undergrad-fellowships-recipients --apply --limit 50 --use-cache --auto-materialize
 ```
 
 Expected collections:
@@ -383,7 +385,7 @@ Expected collections:
 Audit focus:
 
 - Run the source in dry-run mode against the narrow reviewed allowlist before any write.
-- Use `yarn --cwd server scrape run --source official-research-home-roster --only <research-entity-key> --limit 1` for a bounded source review; add the normal environment write confirmation and `--auto-materialize` only after the dry-run evidence is accepted.
+- Use `yarn --cwd server scrape run --source official-research-home-roster --only <research-entity-key> --limit 1` for a bounded source review; add `--apply`, the normal environment write permission, and `--auto-materialize` only after the dry-run evidence is accepted.
 - Confirm every accepted section is explicitly configured as current and that former or alumni sections remain excluded.
 - Confirm each materialized member has a unique official profile identity, an honest mapped role, an observation date, and an unexpired freshness window.
 - Confirm duplicate profile identities, same-profile different-name collisions, ambiguous roles, unsafe links, and direct contact text are withheld.

@@ -35,6 +35,8 @@ const APPLY_GUARD_EXEMPTIONS: Record<string, string> = {
     'forwards --apply only to production:promote-beta-copy, which refuses any pair but Beta to Prod, after the operator types the target name',
   'promoteRemotePhase.ts':
     'runs on the Render operator service only after remotePhaseEnvironmentProblems matches SCRAPER_ENV and the index prefix to the target, then forwards --apply to commands that run their own guard',
+  'sweepSourceRerun.ts':
+    'forwards --apply only to the scrape run children it spawns, whose CLI preflight also requires the environment write permission, after weeklySweepEnvironmentProblems refuses any database but Development',
   'weeklyDevelopmentSweep.ts':
     'forwards --apply only to observations:prune-dead, which runs its own guard, after weeklySweepEnvironmentProblems refuses any database but Development',
 };

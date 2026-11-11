@@ -185,7 +185,7 @@ These are typed for one command and never stored on a service.
 | Variable | Meaning |
 | -------- | ------- |
 | `SCRAPER_ENV`, `APP_ENV` | Which environment a script believes it targets. |
-| `ALLOW_NON_PROD_SCRAPER_WRITES` | Required for a Development scrape or materialize write; without it the run is silently dry. |
+| `ALLOW_NON_PROD_SCRAPER_WRITES` | The environment permission for a Development scrape or materialize write. Necessary but not sufficient: the command line must also carry `--apply`, and the permission without `--apply` is refused before connecting (#5842). |
 | `CONFIRM_PROD_SCRAPE` | Required for every guarded Production write, including the promotion copy and the reindex. |
 | `CONFIRM_LANE_A_COPY` | Required for `production:promote-beta-copy --apply`. |
 | `CONFIRM_DEVELOPMENT_TO_BETA_SYNC`, `CONFIRM_BETA_TO_DEVELOPMENT_SYNC`, `CONFIRM_ATLAS_DEVELOPMENT_OVERWRITE` | Required by the two mirrors. |

@@ -80,10 +80,15 @@ Typical development write:
 
 ```bash
 SCRAPER_ENV=development ALLOW_NON_PROD_SCRAPER_WRITES=true \
-  yarn --cwd server scrape run --source <source-name> --limit 10 --use-cache --auto-materialize --output /tmp/ylabs-<source-name>-write-report.json
+  yarn --cwd server scrape run --source <source-name> --apply --limit 10 --use-cache --auto-materialize --output /tmp/ylabs-<source-name>-write-report.json
 ```
 
 Rules:
+
+- `scrape run` and `scrape materialize` write only when the command line carries `--apply` and the environment grants `ALLOW_NON_PROD_SCRAPER_WRITES` (#5842).
+  Without `--apply` the command is a dry run, `--dry-run` stays accepted as an explicit dry run, and the environment permission without `--apply` is refused before the CLI connects, so a `.env` alone can never turn a dry run into a write.
+  Every run and materialize prints one banner line before any network or database work: `WILL WRITE to <database>` or `DRY RUN: nothing will be written (<reason>)`.
+  A `scrape run` dry run's banner goes on to say that observations and entities stay untouched while the run bookkeeping row, and with `--use-cache` the fetch snapshots, are still recorded.
 
 - Use `--use-cache` only outside production.
 - Every non-`--release` CLI run already sends conditional requests through the disk-backed HTTP validator cache (`server/src/scrapers/utils/httpValidatorCache.ts`, #3557), so an unchanged page costs a `304` instead of a full download while the lane still parses and emits it.
@@ -92,7 +97,7 @@ Rules:
   Read `fetchMetrics.httpCache` on the `ScrapeRun` for `revalidations`, `notModified`, `bytesSaved`, and `bytesDownloaded`.
 - Start with `--limit`, `--only`, `--since`, or source-specific caps.
 - Use `--output <path>` on `yarn --cwd server scrape run` when a bounded dry-run or write should produce a saved report artifact. If a run was already completed without `--output`, use `yarn --cwd server scrape report --run <scrapeRunId> --output <path>`. Saved scraper CLI artifacts include command, target `environment`, `db`, parsed `options`, and the command-specific report payload.
-- Use `yarn --cwd server scrape materialize --run <scrapeRunId> --dry-run --output <path>` for a saved materialization review artifact before any standalone materialization write. Standalone write materialization requires `--confirm-materialize` in addition to the existing environment write guards. The materialize artifact includes the materialization result, optional visibility-gate result, ScrapeRun report, command, target `environment`, `db`, and parsed `options`.
+- Use `yarn --cwd server scrape materialize --run <scrapeRunId> --dry-run --output <path>` for a saved materialization review artifact before any standalone materialization write. Standalone write materialization requires `--apply --confirm-materialize` in addition to the existing environment write guards. The materialize artifact includes the materialization result, optional visibility-gate result, ScrapeRun report, command, target `environment`, `db`, and parsed `options`.
   Add `--only-fields=<paths>` to write only named researcher paths on the run's `user` rows; it requires `--output`, skips every other entity type, mint, run reconciliation and the visibility gate, and lists the dropped paths per key (see "A user materialize scoped to named researcher fields" in `docs/research-data-pipeline.md`).
 - Do not promote a source while materialization errors are nonzero or conflicts are unexplained.
 
