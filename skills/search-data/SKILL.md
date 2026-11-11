@@ -191,6 +191,7 @@ With that filter on and no student-chosen sort, browse sorts on `undergradInvita
 `mentorsUndergrads` is present, and `true`, only on a row `entityMentorsUndergraduates` accepts, which needs owner-reviewed mentors list evidence, and is absent otherwise.
 `worksWithUndergrads` is present, and `true`, only when `hasUndergradHostingEvidence`, `welcomesUndergrads` or `mentorsUndergrads` is, computed from the same three values the builder already holds so it cannot disagree with them.
 Both are filterable; no filter key, facet or client control reads `mentorsUndergrads` on its own (#5551).
+The browse card shows "Mentors undergrads" from a served `mentors` entry of `undergradListEvidence` (`buildWayInBadgesFromEntity` in `client/src/utils/researchDiscoveryAdapters.ts`), so a row the works filter returns only for mentoring still carries its own tag (#5362).
 The `worksWithUndergrads` filter (the "Works with undergrads" toggle, URL `works=1`, listed first above the welcomes and hosted toggles) filters on the index field of the same name, the OR of the hosted, welcomes and mentors values the builder already holds, so its count is one facet and it cannot disagree with the three signals; the admin Mongo browse applies the same OR of the three predicates (#5362).
 Like `welcomesUndergrads` it is in `TOGGLE_FILTERS_AHEAD_OF_INDEX`, so on an index whose settings do not yet make it filterable the search drops it and reports `appliedFilters.worksWithUndergrads: false` instead of failing.
 
