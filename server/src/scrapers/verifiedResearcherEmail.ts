@@ -3,6 +3,11 @@ import { Observation } from '../models/observation';
 import { Researcher } from '../models/researcher';
 import { officialProfileDestinationStoredPattern } from '../services/leadProfileIdentity';
 import { identityWitnessesConflict } from '../services/officialProfileLinkIdentity';
+import { materializationReadScopeFilter } from './entityMaterializer';
+import {
+  invalidatedScrapeRunIds,
+  partitionObservationsByInvalidatedRun,
+} from './invalidatedScrapeRuns';
 import {
   OFFICIAL_PROFILE_PI_BACKFILL_SOURCE,
   loadDirectoryNetidsByAddress,
@@ -84,6 +89,7 @@ export type VerifiedResearcherEmail =
   | { status: 'conflicting'; emails: string[] };
 
 export type EmailObservation = {
+  scrapeRunId?: unknown;
   entityKey?: unknown;
   value?: unknown;
   sourceName?: unknown;
@@ -91,19 +97,19 @@ export type EmailObservation = {
 };
 
 export async function loadVerifiableEmailObservations(netid: string): Promise<EmailObservation[]> {
-  return (await Observation.find(
+  const read = (await Observation.find(
     {
       entityType: 'user',
       field: 'email',
-      superseded: { $ne: true },
-      'rollback.rolledBackAt': { $exists: false },
+      ...materializationReadScopeFilter(),
       $or: [
         { sourceName: YALE_DIRECTORY_EMAIL_SOURCE, entityKey: { $in: [netid, `netid:${netid}`] } },
         { sourceName: OFFICIAL_PROFILE_PI_BACKFILL_SOURCE, entityKey: `netid:${netid}` },
       ],
     },
-    { entityKey: 1, value: 1, sourceName: 1, sourceUrl: 1 },
+    { entityKey: 1, value: 1, sourceName: 1, sourceUrl: 1, scrapeRunId: 1 },
   ).lean()) as EmailObservation[];
+  return partitionObservationsByInvalidatedRun(read, await invalidatedScrapeRunIds()).kept;
 }
 
 /**

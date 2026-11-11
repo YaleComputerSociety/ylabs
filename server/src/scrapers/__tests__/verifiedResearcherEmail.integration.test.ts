@@ -24,8 +24,10 @@ import { Observation } from '../../models/observation';
 import { Researcher } from '../../models/researcher';
 import { ResearchEntity } from '../../models/researchEntity';
 import { RoleAssignment } from '../../models/roleAssignment';
+import { ScrapeRun } from '../../models/scrapeRun';
 import { materializeEntity } from '../entityMaterializer';
 import { resetDirectoryNetidsByAddressCache } from '../directoryContradictedProfileNetid';
+import { resetInvalidatedScrapeRunCache } from '../invalidatedScrapeRuns';
 import { corpusPersonEmailObservations } from '../sources/yaleDirectoryScraper';
 
 const OWN_NETID = 'own123';
@@ -57,10 +59,12 @@ describe('an empty researcher email is filled from identity-verified evidence on
       'accounts',
       'research_entities',
       'role_assignments',
+      'scrape_runs',
     ]) {
       await db.collection(name).deleteMany({});
     }
     resetDirectoryNetidsByAddressCache();
+    resetInvalidatedScrapeRunCache();
   });
 
   const officialLink = (url: string) => ({
@@ -221,6 +225,28 @@ describe('an empty researcher email is filled from identity-verified evidence on
 
     await materializeEntity('user', { entityKey: OWN_NETID }, {});
 
+    expect(await storedEmail(researcher._id)).toBeUndefined();
+  });
+
+  it('never fills from a directory record whose run an operator invalidated', async () => {
+    const researcher = await seedResearcher();
+    const invalidatedRunId = new mongoose.Types.ObjectId();
+    await ScrapeRun.create({
+      _id: invalidatedRunId,
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'yale-directory',
+      status: 'success',
+      invalidated: true,
+    });
+    await seedStaffDirectoryRecord(OWN_NETID, DIRECTORY_EMAIL, [OWN_NETID]);
+    await Observation.updateMany(
+      { entityKey: OWN_NETID, field: 'email' },
+      { $set: { scrapeRunId: invalidatedRunId } },
+    );
+
+    const result = await materializeEntity('user', { entityKey: OWN_NETID }, {});
+
+    expect(result.skipped).toBeUndefined();
     expect(await storedEmail(researcher._id)).toBeUndefined();
   });
 
