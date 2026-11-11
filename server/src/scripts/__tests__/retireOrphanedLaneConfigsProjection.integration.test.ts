@@ -117,7 +117,6 @@ describe('observations:retire-orphaned-lane-configs served projection (#5807)', 
       refPresence: [],
       scannedRepositories: [],
       lanes: LANES,
-      codeShasOnRef: (codeShas) => new Set(codeShas),
       readServedEntity: async () => ({ websiteUrl: ORPHAN_SITE }),
     });
     expect(report.affectedServedResearchRows).toBe(2);

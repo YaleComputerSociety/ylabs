@@ -80,7 +80,6 @@ const run = (apply: boolean, configs: RequestedLaneConfig[]) =>
     refPresence: PENDING_ON_BRANCH,
     scannedRepositories: [],
     lanes: LANES,
-    codeShasOnRef: (codeShas) => new Set(codeShas.filter((codeSha) => codeSha === LANDED_SHA)),
   });
 
 describe('observations:retire-orphaned-lane-configs (#5807)', () => {

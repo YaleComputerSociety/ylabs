@@ -11,8 +11,8 @@
  * An observation is attributed to an orphaned config by evidence the run left behind, never by
  * age: its entity key carries the config's key namespace, or its run selected only orphaned
  * configs with `--only`. A key that a current namespace also prefixes is ambiguous, so it needs
- * the run's `--only` to attribute it. Either way the run's recorded `codeSha`, if any, must be
- * reachable from no scanned ref, because a run of code some ref holds read a config that landed.
+ * the run's `--only` to attribute it. Either way the run must have recorded no `codeSha`: a
+ * recorded commit missing from a stale clone is not proof the code never landed.
  */
 
 export interface OrphanLaneDefinition {
@@ -63,7 +63,7 @@ export interface AttributedObservation {
   basis: AttributionBasis;
 }
 
-export type HeldReason = 'run-code-on-ref' | 'no-run';
+export type HeldReason = 'run-recorded-code' | 'no-run';
 
 export interface HeldObservation {
   observation: StoredLaneObservation;
@@ -208,7 +208,6 @@ export function planOrphanedLaneConfigRetirement(input: {
   refPresence: readonly LaneConfigRefPresence[];
   observations: readonly StoredLaneObservation[];
   runs: readonly StoredLaneRun[];
-  codeShasOnRef: ReadonlySet<string>;
 }): OrphanedLaneConfigPlan {
   const verdicts = input.requested.map((config) => ({
     ...config,
@@ -244,8 +243,8 @@ export function planOrphanedLaneConfigRetirement(input: {
     const run = observation.scrapeRunId ? runsById.get(observation.scrapeRunId) : undefined;
     const heldReason: HeldReason | undefined = !run
       ? 'no-run'
-      : run.codeSha && input.codeShasOnRef.has(run.codeSha)
-        ? 'run-code-on-ref'
+      : run.codeSha
+        ? 'run-recorded-code'
         : undefined;
     if (heldReason) {
       held.push({ observation, configId: attribution.configId, reason: heldReason });

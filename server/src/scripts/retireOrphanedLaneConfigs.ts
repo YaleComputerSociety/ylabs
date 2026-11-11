@@ -35,7 +35,6 @@ import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   currentGitCommonDir,
-  codeShasReachableFromRefs,
   defaultGitRunner,
   readRefTips,
   scanRefTipsForLaneConfigs,
@@ -548,7 +547,6 @@ export async function runOrphanedLaneConfigRetirement(input: {
   refPresence: readonly LaneConfigRefPresence[];
   scannedRepositories: Array<{ gitDir: string; refs: number; tipCommits: number }>;
   lanes?: readonly OrphanLaneDefinition[];
-  codeShasOnRef: (codeShas: readonly string[]) => ReadonlySet<string>;
   readServedEntity?: (slug: string) => Promise<Record<string, unknown> | null>;
   log?: (message: string) => void;
 }): Promise<{
@@ -564,9 +562,6 @@ export async function runOrphanedLaneConfigRetirement(input: {
     refPresence: input.refPresence,
     observations: evidence.observations,
     runs: evidence.runs,
-    codeShasOnRef: input.codeShasOnRef(
-      evidence.runs.flatMap((run) => (run.codeSha ? [run.codeSha] : [])),
-    ),
   });
   const notOrphaned = plan.verdicts.filter((entry) => entry.verdict.status !== 'orphaned');
   if (input.apply && notOrphaned.length > 0) {
@@ -730,7 +725,6 @@ async function main(): Promise<void> {
       configs: options.configs,
       refPresence: scan.presence,
       scannedRepositories: scan.scanned,
-      codeShasOnRef: (codeShas) => codeShasReachableFromRefs(codeShas, gitDirs),
       log: (message) => console.error(`[${SCRIPT_NAME}] ${message}`),
     });
     if (outputPath) {

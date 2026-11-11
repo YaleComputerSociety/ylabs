@@ -120,26 +120,3 @@ export function scanRefTipsForLaneConfigs(
     ),
   }));
 }
-
-const COMMIT_SHA_PATTERN = /^[0-9a-f]{7,64}$/i;
-
-export function codeShasReachableFromRefs(
-  codeShas: readonly string[],
-  gitDirs: readonly string[],
-  git: GitRunner = defaultGitRunner,
-): Set<string> {
-  const reachable = new Set<string>();
-  for (const codeSha of new Set(codeShas)) {
-    if (!COMMIT_SHA_PATTERN.test(codeSha)) continue;
-    for (const gitDir of gitDirs) {
-      if (git(gitDir, ['cat-file', '-e', `${codeSha}^{commit}`]).status !== 0) continue;
-      const unreached = git(gitDir, ['rev-list', '-n', '1', codeSha, '--not', '--all']);
-      if (unreached.status !== 0) throw new Error(`git rev-list failed in ${gitDir}`);
-      if (unreached.stdout.trim() === '') {
-        reachable.add(codeSha);
-        break;
-      }
-    }
-  }
-  return reachable;
-}

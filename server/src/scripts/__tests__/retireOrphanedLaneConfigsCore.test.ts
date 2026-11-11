@@ -156,7 +156,6 @@ describe('planOrphanedLaneConfigRetirement', () => {
       ],
       observations,
       runs: RUNS,
-      codeShasOnRef: new Set(['a'.repeat(40)]),
     });
 
   it('attributes by key namespace and by a run that selected only orphaned configs', () => {
@@ -200,7 +199,7 @@ describe('planOrphanedLaneConfigRetirement', () => {
     expect(result.observationIdsToRetire).toEqual([]);
   });
 
-  it('holds an observation whose run recorded code a ref holds, or that has no run', () => {
+  it('holds an observation whose run recorded code, or that has no run', () => {
     const result = plan(
       [{ sourceName: 'dept-faculty-roster', configId: 'gone-lane' }],
       [
@@ -209,16 +208,19 @@ describe('planOrphanedLaneConfigRetirement', () => {
       ],
     );
     expect(result.observationIdsToRetire).toEqual([]);
-    expect(result.held.map((entry) => entry.reason).sort()).toEqual(['no-run', 'run-code-on-ref']);
+    expect(result.held.map((entry) => entry.reason).sort()).toEqual([
+      'no-run',
+      'run-recorded-code',
+    ]);
   });
 
-  it('retires an observation whose run recorded a commit no scanned ref reaches', () => {
+  it('holds an observation whose run recorded a commit no scanned ref reaches', () => {
     const result = plan(
       [{ sourceName: 'dept-faculty-roster', configId: 'gone-lane' }],
       [observation('r1', 'dept-gone-lane-pat-lee', { scrapeRunId: 'run-off-every-ref' })],
     );
-    expect(result.observationIdsToRetire).toEqual(['r1']);
-    expect(result.held).toEqual([]);
+    expect(result.observationIdsToRetire).toEqual([]);
+    expect(result.held.map((entry) => entry.reason)).toEqual(['run-recorded-code']);
   });
 
   it('needs the run selection for a research key a current namespace also prefixes', () => {

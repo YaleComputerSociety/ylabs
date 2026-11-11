@@ -3,12 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import {
-  codeShasReachableFromRefs,
-  readRefTips,
-  scanRefTipsForLaneConfigs,
-  type GitRunner,
-} from '../laneConfigRefScan';
+import { readRefTips, scanRefTipsForLaneConfigs, type GitRunner } from '../laneConfigRefScan';
 import { scanLaneConfigRefs } from '../retireOrphanedLaneConfigs';
 
 const ROSTER = 'dept-faculty-roster';
@@ -105,16 +100,6 @@ describe('lane config ref scan (#5807)', () => {
     expect(scan('test-only-lane').refs).toEqual([]);
     expect(scan('never-existed').refs).toEqual([]);
     expect(scan('deleted-lane').refs).toEqual([]);
-  });
-
-  it('reaches a recorded run commit only through a ref that still holds it', () => {
-    const unknown = 'f'.repeat(40);
-    expect(
-      codeShasReachableFromRefs(
-        [droppedLaneCommit, deletedBranchCommit, unknown, '--all'],
-        [gitDir],
-      ),
-    ).toEqual(new Set([droppedLaneCommit]));
   });
 
   it('counts every ref, peeling an annotated tag to its commit', () => {
