@@ -282,6 +282,48 @@ test('forwards a clean body and its stdin to the real gh unchanged', () => {
   assert.equal(fs.readFileSync(log, 'utf8'), `issue comment 1 -R ${GUARDED} -F -\n${CLEAN}`);
 });
 
+const ESCAPE_REPRO_MARKDOWN = [
+  '## What Changed',
+  '- `redactWithheldNamesDeep` now drops every prose sentence that names a withheld person. It splits text with `Intl.Segmenter` and does not treat an honorific or initial before a name as a sentence break. Title fields in `TITLE_KEYS` (`name`, `displayName`, `title` and the like) still swap the name for `WITHHELD_PERSON_PHRASE`, because a title has no sentence to drop. The namesake-own-row exemption still applies.',
+  '',
+].join('\n');
+
+const apiInput = (contents) => {
+  const file = path.join(makeTempDirectory('gh-guard-input-'), 'body.json');
+  fs.writeFileSync(file, contents);
+  return file;
+};
+
+const apiPatch = (dir, contents) =>
+  runGuard(
+    path.join(scriptsDir, 'gh-identifier-guard.mjs'),
+    ['api', `repos/${GUARDED}/pulls/1`, '-X', 'PATCH', '--input', apiInput(contents)],
+    { binDir: dir },
+  );
+
+test('forwards a clean gh api JSON body the markdown scan would pass (#5622)', () => {
+  for (const contents of [
+    JSON.stringify({ body: ESCAPE_REPRO_MARKDOWN }),
+    ESCAPE_REPRO_MARKDOWN.replaceAll('\n', '\\n'),
+  ]) {
+    const { dir, log } = makeFakeGh();
+    const result = apiPatch(dir, contents);
+    assert.equal(result.status, 0, result.stderr);
+    assert.ok(fs.existsSync(log));
+  }
+});
+
+test('still refuses a real claim in a JSON-escaped body, including after a leading heading', () => {
+  const markdown = `## Status\n${FLAGGED_COMMENT}\n`;
+  for (const contents of [JSON.stringify({ body: markdown }), markdown.replaceAll('\n', '\\n')]) {
+    const { dir, log } = makeFakeGh();
+    const result = apiPatch(dir, contents);
+    assert.equal(result.status, 1, result.stdout);
+    assert.match(result.stderr, /gh guard: NOT posted/);
+    assert.equal(fs.existsSync(log), false);
+  }
+});
+
 const makeForkCheckout = () => {
   const repo = makeTempDirectory('gh-guard-fork-');
   const run = (gitArgs) =>
