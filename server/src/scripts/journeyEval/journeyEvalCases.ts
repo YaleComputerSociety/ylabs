@@ -898,6 +898,8 @@ const ACRONYM_PHRASE_QUERY_PAIRS = [
   { baselineQuery: 'computer vision', variantQuery: 'CV' },
   { baselineQuery: 'international relations', variantQuery: 'IR' },
   { baselineQuery: 'large language models', variantQuery: 'LLM' },
+  { baselineQuery: 'large language models', variantQuery: 'llms' },
+  { baselineQuery: 'united nations', variantQuery: 'UN' },
 ];
 
 const acronymServesItsPhrase: JourneyCase = {
