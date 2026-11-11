@@ -5,6 +5,14 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-11-10: Every Current Member Is Found Through Their Row, Past The Display Cap (#5584)
+
+The owner decided on #5584 that a name search matches every current member of a row, not only the members within the detail page's display cap.
+This replaces the member-cap sentence of the 2026-10-21 entry below.
+The card's "Matched a lab member" link still lands: the detail route serves that one requested member when they sit past the cap, and only when the row's own searchable roster lists them, so the link cannot put an arbitrary name on the page.
+The display caps are otherwise unchanged; showing every member is #5602.
+`skills/search-data/SKILL.md` owns the mechanics and the measurements.
+
 ## 2026-11-10: Hosted, Welcomes And Mentors Each Take A Source Once, And Faculty Research Profiles Get All Three (#5362)
 
 The owner decided on 2026-11-10 that undergraduate evidence must reach faculty research profiles in every department, not only labs: on Development that day hosted evidence reached 289 of 710 served labs (41%) but 53 of 2,984 faculty research profiles (1.8%), and welcomes reached 69 labs (10%) but 9 profiles (0.3%).

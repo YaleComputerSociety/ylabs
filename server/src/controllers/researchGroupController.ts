@@ -253,6 +253,14 @@ export const searchResearchGroups = async (request: Request, response: Response)
   return response.json(withoutFacets);
 };
 
+const MAX_REQUESTED_MEMBER_NAME_LENGTH = 120;
+
+const requestedMemberNameFrom = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const name = value.trim();
+  return name && name.length <= MAX_REQUESTED_MEMBER_NAME_LENGTH ? name : undefined;
+};
+
 export const getResearchGroupBySlug = async (request: Request, response: Response) => {
   const rawSlug = request.params.slug;
   if (!rawSlug || typeof rawSlug !== 'string' || rawSlug.trim().length === 0) {
@@ -273,6 +281,7 @@ export const getResearchGroupBySlug = async (request: Request, response: Respons
   const hasAdminAuthority = await hasAdminAuthorityForUser(currentUser);
   const detail = await getResearchGroupDetail(slug, {
     includeWithheldForOperator: hasAdminAuthority,
+    requestedMemberName: requestedMemberNameFrom(request.query?.member),
   });
   if (!detail) {
     const canonicalSlug = await resolveArchivedResearchEntityCanonicalSlug(slug);

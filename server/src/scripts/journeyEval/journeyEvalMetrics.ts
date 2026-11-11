@@ -823,3 +823,67 @@ export function checkSimilarRailRanksSharedNamesLast(
   }
   return buildInvariant(id, title, misordered === 0, detail);
 }
+
+export interface PastCapMemberObservation {
+  memberRowRank: number | null;
+  ownRowRank: number | null;
+  hasOwnRow: boolean;
+  deepLinkServesMember: boolean;
+  deepLinkServesNonMember: boolean;
+}
+
+const pastCapEmptyReason =
+  'No served row lists members past the detail display cap, so a zero count would be a green signal over an empty population';
+
+export function checkPastCapMembersReachTheirRow(
+  observations: readonly PastCapMemberObservation[],
+): InvariantResult {
+  const id = 'past-cap-member-search-reaches-their-row';
+  const title =
+    'A whole-name search for a current member past the detail display cap serves the row that lists them';
+  const missed = observations.filter((observation) => observation.memberRowRank === null).length;
+  const detail = { queried: observations.length, missed };
+  if (observations.length === 0) {
+    return buildInconclusiveInvariant(id, title, pastCapEmptyReason, detail);
+  }
+  return buildInvariant(id, title, missed === 0, detail);
+}
+
+export function checkOwnRowOutranksMemberRow(
+  observations: readonly PastCapMemberObservation[],
+): InvariantResult {
+  const id = 'own-row-outranks-a-row-listing-them-as-member';
+  const title =
+    "A search for a member's name ranks the research they lead above a row that only lists them as a member";
+  const withOwnRow = observations.filter((observation) => observation.hasOwnRow);
+  const outranked = withOwnRow.filter(
+    (observation) =>
+      observation.memberRowRank !== null &&
+      (observation.ownRowRank === null || observation.ownRowRank > observation.memberRowRank),
+  ).length;
+  const detail = { queried: withOwnRow.length, outranked };
+  if (withOwnRow.length === 0) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'No sampled past-cap member leads a served row of their own, so there is no ranking to compare',
+      detail,
+    );
+  }
+  return buildInvariant(id, title, outranked === 0, detail);
+}
+
+export function checkMemberDeepLinkServesOnlyRosterMembers(
+  observations: readonly PastCapMemberObservation[],
+): InvariantResult {
+  const id = 'member-deep-link-serves-only-roster-members';
+  const title =
+    'A ?member= deep link shows a past-cap member of that row, and never shows a name the row does not list';
+  const unserved = observations.filter((observation) => !observation.deepLinkServesMember).length;
+  const injected = observations.filter((observation) => observation.deepLinkServesNonMember).length;
+  const detail = { queried: observations.length, unserved, injected };
+  if (observations.length === 0) {
+    return buildInconclusiveInvariant(id, title, pastCapEmptyReason, detail);
+  }
+  return buildInvariant(id, title, unserved === 0 && injected === 0, detail);
+}

@@ -245,7 +245,7 @@ const SEARCH_INDEX_PERSON_NAME_FIELDS = [
   'memberNames',
 ] as const;
 
-const LEAD_PROFESSOR_MEMBER_ROLES = new Set([
+export const LEAD_PROFESSOR_MEMBER_ROLES: ReadonlySet<string> = new Set([
   'pi',
   'co-pi',
   'director',
@@ -255,14 +255,14 @@ const LEAD_PROFESSOR_MEMBER_ROLES = new Set([
   'faculty_lead',
 ]);
 
-const SEARCHABLE_STUDENT_MEMBER_ROLES: ReadonlySet<string> = new Set([
+export const SEARCHABLE_STUDENT_MEMBER_ROLES: ReadonlySet<string> = new Set([
   'postdoc',
   'grad-student',
   'undergrad',
   'past-undergrad',
 ]);
 
-const SEARCHABLE_PROFESSOR_MEMBER_ROLES = new Set([
+export const SEARCHABLE_PROFESSOR_MEMBER_ROLES: ReadonlySet<string> = new Set([
   ...LEAD_PROFESSOR_MEMBER_ROLES,
   'core-faculty',
   'affiliated',
@@ -273,6 +273,11 @@ const MONGO_OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 
 const researchEntitySearchDocumentId = (doc: any): string =>
   serializedDocumentId(doc?._id) || serializedDocumentId(doc?.id) || '';
+
+export const searchablePersonName = (value: unknown): string => {
+  const name = cleanPersonName(value);
+  return name && !namesAResearchGroupRatherThanAPerson(name) ? name : '';
+};
 
 const cleanPersonName = (value: unknown): string => {
   if (typeof value !== 'string') return '';
@@ -443,35 +448,25 @@ export async function fetchResearchEntitySearchMemberNames(
   if (entityById.size === 0) return new Map();
 
   const rosterByEntityId = await servedRosterByEntityId(Array.from(entityById.keys()));
-  const { publicResearchEntityDetailMemberNames, presentedLabMembers } =
-    await import('./researchGroupService');
+  const { searchableResearchEntityMembers } = await import('./researchGroupService');
   const now = new Date();
   const byEntityId: ResearchEntitySearchMemberNameMap = new Map();
-  const addName = (entityId: string, name: string, role: 'lead' | 'faculty' | 'student') => {
-    const fields = byEntityId.get(entityId) || emptyMemberNameFields();
-    if (role === 'student') {
-      fields.memberNames = uniquePersonNames([...fields.memberNames, name]);
-    } else {
-      fields.professorNames = uniquePersonNames([...fields.professorNames, name]);
-      if (role === 'lead') {
-        fields.leadProfessorNames = uniquePersonNames([...fields.leadProfessorNames, name]);
-      }
-    }
-    byEntityId.set(entityId, fields);
-  };
 
   for (const [entityId, entity] of entityById) {
     const rosterEntries = rosterByEntityId.get(entityId) ?? [];
-    for (const member of publicResearchEntityDetailMemberNames(entity, rosterEntries, now)) {
-      if (!SEARCHABLE_PROFESSOR_MEMBER_ROLES.has(member.role)) continue;
-      const name = cleanPersonName(member.name);
-      if (!name || namesAResearchGroupRatherThanAPerson(name)) continue;
-      addName(entityId, name, LEAD_PROFESSOR_MEMBER_ROLES.has(member.role) ? 'lead' : 'faculty');
+    const fields = emptyMemberNameFields();
+    for (const { name, kind } of searchableResearchEntityMembers(entity, rosterEntries, now)) {
+      if (kind === 'student') {
+        fields.memberNames = uniquePersonNames([...fields.memberNames, name]);
+        continue;
+      }
+      fields.professorNames = uniquePersonNames([...fields.professorNames, name]);
+      if (kind === 'lead') {
+        fields.leadProfessorNames = uniquePersonNames([...fields.leadProfessorNames, name]);
+      }
     }
-    for (const member of presentedLabMembers(entity, rosterEntries, now).members) {
-      if (!SEARCHABLE_STUDENT_MEMBER_ROLES.has(member.role)) continue;
-      const name = cleanPersonName(member.name);
-      if (name && !namesAResearchGroupRatherThanAPerson(name)) addName(entityId, name, 'student');
+    if (fields.professorNames.length > 0 || fields.memberNames.length > 0) {
+      byEntityId.set(entityId, fields);
     }
   }
 

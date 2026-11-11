@@ -354,4 +354,34 @@ describe('ResearchTeamSection', () => {
     );
     expect(document.querySelector('[aria-current="true"]')).toBeNull();
   });
+  it('keeps a deep-linked member who sits past the team display cap, and only that one (#5584)', () => {
+    const faculty = Array.from({ length: 30 }, (_, index) => member(index, 'core-faculty'));
+    render(<ResearchTeamSection members={faculty} roster={roster()} />);
+    expect(screen.queryByText('Fixture Scholar 27')).toBeNull();
+    expect(screen.getAllByRole('listitem')).toHaveLength(24);
+
+    cleanup();
+    render(
+      <ResearchTeamSection
+        members={faculty}
+        roster={roster()}
+        highlightedMemberName="Fixture Scholar 27"
+      />,
+    );
+    expect(screen.getByText('Fixture Scholar 27').closest('li')?.getAttribute('aria-current')).toBe(
+      'true',
+    );
+    expect(screen.getAllByRole('listitem')).toHaveLength(25);
+    expect(screen.queryByText('Fixture Scholar 28')).toBeNull();
+
+    cleanup();
+    render(
+      <ResearchTeamSection
+        members={faculty}
+        roster={roster()}
+        highlightedMemberName="Fixture Scholar 99"
+      />,
+    );
+    expect(screen.getAllByRole('listitem')).toHaveLength(24);
+  });
 });
