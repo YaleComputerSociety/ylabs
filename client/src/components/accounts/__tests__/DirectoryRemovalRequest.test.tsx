@@ -85,7 +85,7 @@ describe('DirectoryRemovalRequest', () => {
     const message = await screen.findByRole('status');
     expect(message.textContent).toBe(REMOVAL_REQUESTED_MESSAGE);
     expect(REMOVAL_REQUESTED_MESSAGE).toBe(
-      "We'll stop showing you after a maintainer applies your request and the next update reaches the live site. You can ask to be listed again at any time.",
+      "If a maintainer accepts your request, you'll stop appearing on y/labs with the next update. You can ask to be listed again at any time.",
     );
     await waitFor(() => expect(document.activeElement).toBe(message));
     expect(screen.queryByRole('button', { name: REMOVE_ME_LABEL })).toBeNull();
