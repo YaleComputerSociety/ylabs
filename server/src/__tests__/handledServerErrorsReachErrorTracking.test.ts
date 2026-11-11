@@ -141,6 +141,7 @@ vi.mock('../services/researchGroupService', async (importOriginal) => ({
   searchResearchGroupsViaMeili: mocks.searchResearchGroupsViaMeili,
   getResearchGroupDetail: mocks.getResearchGroupDetail,
   resolveArchivedResearchEntityCanonicalSlug: vi.fn(async () => null),
+  resolveRenamedResearchEntitySlug: vi.fn(async () => null),
 }));
 
 vi.mock('../services/researchPlanService', async (importOriginal) => ({
