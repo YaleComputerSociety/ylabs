@@ -49,6 +49,7 @@ describe('a held official link to another netid person page is withdrawn on any 
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
+    await Observation.createIndexes();
   });
 
   afterAll(async () => {
