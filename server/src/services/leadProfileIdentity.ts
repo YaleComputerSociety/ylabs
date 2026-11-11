@@ -145,6 +145,9 @@ const IDENTITY_QUERY_PARAMETER_BY_HOST: Readonly<Record<string, string>> = {
   'scholar.google.com': 'user',
 };
 
+const anyCaseLiteral = (literal: string): string =>
+  literal.replace(/[a-z]/g, (letter) => `[${letter}${letter.toUpperCase()}]`);
+
 interface OfficialProfileDestinationPatternParts {
   host: string;
   pathPattern: string;
@@ -174,10 +177,10 @@ const officialProfileDestinationPatternParts = (
     };
   }
   const anySection =
-    host === 'medicine.yale.edu' && YSM_ROOT_PROFILE_PATH.test(path) ? '(?:/[a-z0-9-]+)?' : '';
+    host === 'medicine.yale.edu' && YSM_ROOT_PROFILE_PATH.test(path) ? '(?:/[A-Za-z0-9-]+)?' : '';
   const ydsProfile = host === 'divinity.yale.edu' ? YDS_PROFILE_PATH.exec(path) : null;
   const pathPattern = ydsProfile
-    ? `(?:/profile|/faculty-and-research/yds-faculty)/${escapeRegex(ydsProfile[1])}`
+    ? `(?:/profile|${anyCaseLiteral('/faculty-and-research/yds-faculty')})/${escapeRegex(ydsProfile[1])}`
     : `${anySection}${escapeRegex(path)}`;
   return { host, pathPattern: `${pathPattern}/*(?:[?#].*)?$`, caseInsensitive: true };
 };

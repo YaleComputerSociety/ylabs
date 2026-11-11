@@ -5,6 +5,7 @@ import {
   entityOfficialPersonProfileDestinations,
   isLikelyOfficialPersonProfileUrl,
   normalizeOfficialProfileDestination,
+  officialProfileDestinationIndexedPatterns,
   officialProfileDestinationStoredPattern,
   officialProfileUrlFromRosterEntry,
 } from '../leadProfileIdentity';
@@ -786,5 +787,45 @@ describe('officialProfileDestinationStoredPattern on a host whose query names th
       'https://fixture.yale.edu/people/avery-synthetic',
     );
     expect(yale?.test('https://fixture.yale.edu/people/avery-synthetic?utm_source=x')).toBe(true);
+  });
+});
+
+describe('officialProfileDestinationIndexedPatterns', () => {
+  const matchesAny = (patterns: RegExp[], url: string) =>
+    patterns.some((pattern) => pattern.test(url));
+
+  it('finds every stored spelling that reads as the same destination, whatever case the discarded segment has', () => {
+    const cases: Array<[string, string]> = [
+      [
+        'https://medicine.yale.edu/profile/synthetic-person',
+        'https://medicine.yale.edu/Psychiatry/profile/synthetic-person/',
+      ],
+      [
+        'https://medicine.yale.edu/profile/synthetic-person',
+        'http://www.medicine.yale.edu/bbs/profile/synthetic-person',
+      ],
+      [
+        'https://divinity.yale.edu/profile/synthetic-person',
+        'https://divinity.yale.edu/Faculty-and-Research/YDS-Faculty/synthetic-person',
+      ],
+    ];
+    for (const [link, stored] of cases) {
+      expect(normalizeOfficialProfileDestination(stored)).toBe(
+        normalizeOfficialProfileDestination(link),
+      );
+      expect(matchesAny(officialProfileDestinationIndexedPatterns(link), stored)).toBe(true);
+    }
+  });
+
+  it('does not find a different person on the same host', () => {
+    const patterns = officialProfileDestinationIndexedPatterns(
+      'https://medicine.yale.edu/profile/synthetic-person',
+    );
+    expect(matchesAny(patterns, 'https://medicine.yale.edu/profile/synthetic-person-two')).toBe(
+      false,
+    );
+    expect(matchesAny(patterns, 'https://publichealth.yale.edu/profile/synthetic-person')).toBe(
+      false,
+    );
   });
 });
