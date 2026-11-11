@@ -22,9 +22,9 @@ describe('the per-card today breakdown over a real store', () => {
   beforeAll(async () => {
     memoryServer = await MongoMemoryServer.create();
     await mongoose.connect(memoryServer.getUri('analytics_today_boundary_test'));
-    // getAnalytics $lookups `accounts` and `researchers`; awaiting each model's init lets Mongoose
-    // finish creating them, so neither can appear mid-aggregate, which MongoDB rejects as appearing after a restore.
-    await Promise.all([Account.init(), Researcher.init()]);
+    // getAnalytics $lookups `accounts` and `researchers`; building each model's indexes creates its
+    // collection first, so neither can appear mid-aggregate, which MongoDB rejects as appearing after a restore.
+    await Promise.all([Account.createIndexes(), Researcher.createIndexes()]);
   });
 
   afterAll(async () => {

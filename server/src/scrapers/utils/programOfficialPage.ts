@@ -1,4 +1,5 @@
 import * as cheerio from 'cheerio';
+import { extractElementTextWithBlockSeparators } from './htmlText';
 import { isProgramApplicationPortalUrl } from '../../utils/researchHomeWebsiteUrl';
 
 export const PROGRAM_OFFICIAL_PAGE_SOURCE = 'program-official-page';
@@ -105,7 +106,10 @@ export function officialPageText(html: string): string {
   const $ = cheerio.load(html);
   $('script, style, noscript, template, svg').remove();
   const title = $('title').first().text();
-  return `${title} ${$('body').text() || $.root().text()}`.replace(/\s+/g, ' ').trim();
+  const body =
+    extractElementTextWithBlockSeparators($('body')[0]) ||
+    extractElementTextWithBlockSeparators($.root()[0]);
+  return `${title} ${body}`.replace(/\s+/g, ' ').trim();
 }
 
 function indexOfSequence(haystack: readonly string[], needle: readonly string[]): number {

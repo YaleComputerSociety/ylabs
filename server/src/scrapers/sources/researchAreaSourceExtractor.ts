@@ -1,5 +1,6 @@
 import { fetchPageWithPolicy } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
+import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
 import mongoose from 'mongoose';
 import { isListingOrIndexUrl } from '../../utils/researchHomeWebsiteUrl';
 import {
@@ -418,7 +419,10 @@ function htmlToText(html: string): string {
   const $ = cheerio.load(html);
   $(NON_SUBJECT_CONTENT_SELECTOR).remove();
   removeNonSelfDeclaringContent($);
-  return textValue($('body').text() || $.root().text()).slice(0, MAX_SCAN_CHARS);
+  return textValue(
+    extractElementTextWithBlockSeparators($('body')[0]) ||
+      extractElementTextWithBlockSeparators($.root()[0]),
+  ).slice(0, MAX_SCAN_CHARS);
 }
 
 function proseTextFromPage(html: string): string {

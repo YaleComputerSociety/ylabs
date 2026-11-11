@@ -140,7 +140,7 @@ import {
   isExternalScholarlyPlatformLinkLabelName,
   isOffSitePageTitleForPersonScopedName,
   isLabShapedResearchHome,
-  isRefusedProfileLinkedHomeName,
+  isRefusedResearchEntityName,
   nameCarriesPersonIdentity,
   namesAResearchGroupRatherThanAPerson,
   entityKeyPersonTokens,
@@ -354,11 +354,7 @@ import {
   observationBelongsToMergedRow,
 } from './mergedRowEvidenceIdentity';
 import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacters';
-import {
-  isPageHeadingTitle,
-  isTruncatedPersonTitle,
-  stripTitleFieldLabel,
-} from '../utils/titleHygiene';
+import { servablePersonTitle, stripTitleFieldLabel } from '../utils/titleHygiene';
 import type { ReportPostMaterializationMetrics } from './runReport';
 import { withoutUnsupportedMethodClauses } from '../utils/methodClauseSupport';
 import { isModelTextSource } from './sourceCoverageRegistry';
@@ -1916,14 +1912,15 @@ const RETIRED_ACCESS_OBSERVATION_FIELDS = new Set([
 ]);
 
 /**
- * A name this lane stored before it refused that shape at the name step. A refusal retracts
- * nothing, so the stored value stays live (#5226). The type and kind it was paired with then
- * fall through `withoutUnpairedProfileHomeIdentity`.
+ * A stored name the engine now refuses: a profile-linked home shape this lane stored before
+ * it refused that shape at the name step (#5226), or a sentence-shaped name from any lane
+ * (#5739). A refusal retracts nothing, so the stored value stays live. The type and kind the
+ * profile lane paired with its name then fall through `withoutUnpairedProfileHomeIdentity`.
  */
 function isInadmissibleProfileHomeName(observation: MaterializerObservationLike): boolean {
   return (
     (observation.field === 'name' || observation.field === 'displayName') &&
-    isRefusedProfileLinkedHomeName(observation.value, observation.sourceName)
+    isRefusedResearchEntityName(observation.value, observation.sourceName)
   );
 }
 
@@ -1960,7 +1957,7 @@ export function shouldIgnoreObservationForEntityMaterialization(
     entityType === 'user' &&
     observation.field === 'title' &&
     typeof observation.value === 'string' &&
-    (isTruncatedPersonTitle(observation.value) || isPageHeadingTitle(observation.value))
+    !servablePersonTitle(observation.value)
   ) {
     return true;
   }
@@ -7583,7 +7580,79 @@ export interface ScreenedPageWithdrawal {
   researcherId: string;
   officialLinkUrls: string[];
   orcid?: string;
+  imageUrl?: string;
 }
+
+interface WithdrawalHolder {
+  _id: unknown;
+  identifiers?: { orcid?: string };
+  profile?: { imageUrl?: string };
+  profileLinks?: ResearcherProfileLink[];
+}
+
+/**
+ * Whether every live `user` observation stating this value for the field was read from a page
+ * that names another netid. Only for values that identify one person, an ORCID or a photo URL,
+ * so a value many people share, such as a title, is never attributed by its value alone.
+ */
+async function personValueOnlyFromContradictedPages(
+  field: 'orcid' | 'imageUrl',
+  value: string,
+  netid: string,
+  readScope: Record<string, unknown>,
+): Promise<boolean> {
+  const values = field === 'orcid' ? [value, value.toUpperCase(), value.toLowerCase()] : [value];
+  const assertions = (await Observation.find(
+    { entityType: 'user', field, ...readScope, value: { $in: [...new Set(values)] } },
+    { sourceUrl: 1 },
+  ).lean()) as Array<{ sourceUrl?: unknown }>;
+  if (assertions.length === 0) return false;
+  const owners = await profilePageOwnerNetids(
+    assertions.map((assertion) => assertion.sourceUrl),
+    readScope,
+  );
+  return assertions.every((assertion) =>
+    profilePageContradictsNetid(owners, assertion.sourceUrl, netid),
+  );
+}
+
+async function planContradictedPageWithdrawalForHolder(
+  holder: WithdrawalHolder,
+  netid: string,
+  screenedPageUrls: readonly string[],
+): Promise<ScreenedPageWithdrawal | undefined> {
+  const readScope = materializationReadScopeFilter();
+  const officialUrls = (holder.profileLinks ?? [])
+    .filter((link) => link?.kind === 'YALE_OFFICIAL' && typeof link.url === 'string')
+    .map((link) => link.url);
+  const linkOwners = await profilePageOwnerNetids(officialUrls, readScope);
+  const screened = new Set(screenedPageUrls);
+  const officialLinkUrls = officialUrls.filter(
+    (url) => screened.has(url) || profilePageContradictsNetid(linkOwners, url, netid),
+  );
+  const storedOrcid = textValue(holder.identifiers?.orcid);
+  const orcid =
+    storedOrcid &&
+    (await personValueOnlyFromContradictedPages('orcid', storedOrcid, netid, readScope))
+      ? storedOrcid
+      : undefined;
+  const storedImage = textValue(holder.profile?.imageUrl);
+  const imageUrl =
+    storedImage &&
+    (await personValueOnlyFromContradictedPages('imageUrl', storedImage, netid, readScope))
+      ? storedImage
+      : undefined;
+  if (officialLinkUrls.length === 0 && !orcid && !imageUrl) return undefined;
+  return {
+    researcherId: String(holder._id),
+    officialLinkUrls,
+    ...(orcid ? { orcid } : {}),
+    ...(imageUrl ? { imageUrl } : {}),
+  };
+}
+
+const WITHDRAWAL_HOLDER_FIELDS =
+  '_id identifiers.netid identifiers.orcid profile.imageUrl profileLinks';
 
 /**
  * What a namesake's record keeps only because a screened page once spoke for it: the official
@@ -7603,50 +7672,83 @@ export async function planScreenedPageWithdrawal(
   const netid = netidOfNetidUserKey(entityKey);
   if (!netid || screenedPageUrls.length === 0) return undefined;
   const holder = (await Researcher.findOne({ archived: { $ne: true }, 'identifiers.netid': netid })
-    .select('_id identifiers.orcid profileLinks')
-    .lean()) as {
-    _id: unknown;
-    identifiers?: { orcid?: string };
-    profileLinks?: ResearcherProfileLink[];
-  } | null;
+    .select(WITHDRAWAL_HOLDER_FIELDS)
+    .lean()) as WithdrawalHolder | null;
   if (!holder) return undefined;
-  const readScope = materializationReadScopeFilter();
-  const officialUrls = (holder.profileLinks ?? [])
-    .filter((link) => link?.kind === 'YALE_OFFICIAL' && typeof link.url === 'string')
-    .map((link) => link.url);
-  const linkOwners = await profilePageOwnerNetids(officialUrls, readScope);
-  const screened = new Set(screenedPageUrls);
-  const officialLinkUrls = officialUrls.filter(
-    (url) => screened.has(url) || profilePageContradictsNetid(linkOwners, url, netid),
-  );
+  return planContradictedPageWithdrawalForHolder(holder, netid, screenedPageUrls);
+}
 
-  let orcid: string | undefined;
-  const storedOrcid = textValue(holder.identifiers?.orcid);
-  if (storedOrcid) {
-    const assertions = (await Observation.find(
-      {
-        entityType: 'user',
-        field: 'orcid',
-        ...readScope,
-        value: { $in: [storedOrcid, storedOrcid.toUpperCase(), storedOrcid.toLowerCase()] },
-      },
-      { sourceUrl: 1 },
-    ).lean()) as Array<{ sourceUrl?: unknown }>;
-    const assertionOwners = await profilePageOwnerNetids(
-      assertions.map((assertion) => assertion.sourceUrl),
-      readScope,
-    );
-    if (
-      assertions.length > 0 &&
-      assertions.every((assertion) =>
-        profilePageContradictsNetid(assertionOwners, assertion.sourceUrl, netid),
-      )
-    ) {
-      orcid = storedOrcid;
-    }
+/**
+ * The same withdrawal for a researcher reached by any key, so a link to another person's page
+ * does not survive just because none of the holder's own keys is screened (#5737). The
+ * researcher's own netid is the witness, and the alias-twin rule in
+ * `profilePageContradictsNetid` still applies.
+ */
+export async function planHeldContradictedPageWithdrawal(
+  holder: WithdrawalHolder & { identifiers?: { netid?: string; orcid?: string } },
+): Promise<ScreenedPageWithdrawal | undefined> {
+  const netid = textValue(holder.identifiers?.netid).toLowerCase();
+  if (!netid) return undefined;
+  return planContradictedPageWithdrawalForHolder(holder, netid, []);
+}
+
+function applyWithdrawalToResearcherDocument(
+  researcher: any,
+  plan: ScreenedPageWithdrawal,
+): number {
+  let changed = 0;
+  const links: ResearcherProfileLink[] = researcher.profileLinks ?? [];
+  const withdrawn = new Set(plan.officialLinkUrls);
+  const orcidLink = plan.orcid ? new RegExp(`(?:^|/)${escapeRegex(plan.orcid)}/*$`, 'i') : null;
+  const keptLinks = links.filter(
+    (link) =>
+      !(link?.kind === 'YALE_OFFICIAL' && withdrawn.has(link.url)) &&
+      !(orcidLink && link?.kind === 'ORCID' && orcidLink.test(String(link.url ?? ''))),
+  );
+  if (keptLinks.length !== links.length) {
+    researcher.profileLinks = keptLinks;
+    changed += 1;
   }
-  if (officialLinkUrls.length === 0 && !orcid) return undefined;
-  return { researcherId: String(holder._id), officialLinkUrls, ...(orcid ? { orcid } : {}) };
+  if (plan.orcid && researcher.identifiers?.orcid) {
+    researcher.set('identifiers.orcid', undefined);
+    changed += 1;
+  }
+  if (plan.imageUrl && researcher.profile?.imageUrl) {
+    researcher.set('profile.imageUrl', undefined);
+    changed += 1;
+  }
+  return changed;
+}
+
+/**
+ * A key's evidence read from a person page that the directory gives to another netid is not
+ * evidence about the researcher the key joined, so it is dropped before the profile is written
+ * (#5737). Without this, a key joined to the wrong person re-stamps that page's link and photo
+ * on every pass after the held link is withdrawn.
+ */
+async function withoutPagesNamingAnotherNetid<T extends { sourceUrl?: unknown }>(
+  observations: T[],
+  netid: string,
+): Promise<T[]> {
+  const pages = [
+    ...new Set(observations.map((observation) => textValue(observation.sourceUrl)).filter(Boolean)),
+  ];
+  if (pages.length === 0) return observations;
+  const owners = await profilePageOwnerNetids(pages, materializationReadScopeFilter());
+  if (owners.byPage.size === 0) return observations;
+  return observations.filter(
+    (observation) => !profilePageContradictsNetid(owners, observation.sourceUrl, netid),
+  );
+}
+
+async function officialPageNamesAnotherNetid(
+  pageUrl: string,
+  researcher: { identifiers?: { netid?: string } },
+): Promise<boolean> {
+  const netid = textValue(researcher.identifiers?.netid).toLowerCase();
+  if (!netid) return false;
+  const owners = await profilePageOwnerNetids([pageUrl], materializationReadScopeFilter());
+  return profilePageContradictsNetid(owners, pageUrl, netid);
 }
 
 async function withdrawScreenedOfficialProfileLinks(
@@ -7664,11 +7766,17 @@ async function withdrawScreenedOfficialProfileLinks(
   if (plan.orcid) {
     pulls.push({ kind: 'ORCID', url: new RegExp(`(?:^|/)${escapeRegex(plan.orcid)}/*$`, 'i') });
   }
+  const unset: Record<string, ''> = {
+    ...(plan.orcid ? { 'identifiers.orcid': '' as const } : {}),
+    ...(plan.imageUrl ? { 'profile.imageUrl': '' as const } : {}),
+  };
   const result = await Researcher.updateOne(
     { _id: plan.researcherId },
     {
-      ...(plan.orcid ? { $unset: { 'identifiers.orcid': '' } } : {}),
-      $pull: { profileLinks: pulls.length === 1 ? pulls[0] : { $or: pulls } },
+      ...(Object.keys(unset).length ? { $unset: unset } : {}),
+      ...(pulls.length
+        ? { $pull: { profileLinks: pulls.length === 1 ? pulls[0] : { $or: pulls } } }
+        : {}),
     },
   );
   return result.modifiedCount > 0 ? 1 : 0;
@@ -7712,11 +7820,21 @@ async function materializeUserIdentityToResearcher(
   if (userKeyNamesRoleOrUnitMailbox(identifier.entityKey, obs)) {
     return skipped('office-mailbox-user-key');
   }
-  const join = await joinUserIdentityToExistingResearcher(
-    identifier,
-    obs,
-    options.now ?? new Date(),
-  );
+  let join = await joinUserIdentityToExistingResearcher(identifier, obs, options.now ?? new Date());
+  const joinedNetid = textValue(join.researcher?.identifiers?.netid).toLowerCase();
+  if (join.researcher?._id && joinedNetid) {
+    const kept = await withoutPagesNamingAnotherNetid(obs, joinedNetid);
+    if (kept.length !== obs.length) {
+      const rejoined =
+        kept.length > 0
+          ? await joinUserIdentityToExistingResearcher(identifier, kept, options.now ?? new Date())
+          : undefined;
+      if (String(rejoined?.researcher?._id ?? '') !== String(join.researcher._id)) {
+        return skipped('page-evidence-names-another-netid');
+      }
+      join = rejoined!;
+    }
+  }
   const {
     resolved,
     displayName,
@@ -7733,6 +7851,12 @@ async function materializeUserIdentityToResearcher(
   } = join;
   let { researcher, identityJoin } = join;
   const accountId: mongoose.Types.ObjectId | undefined = account?._id;
+  let heldPageFieldsWithdrawn = 0;
+  if (researcher?._id) {
+    const heldPlan = await planHeldContradictedPageWithdrawal(researcher);
+    if (heldPlan)
+      heldPageFieldsWithdrawn = applyWithdrawalToResearcherDocument(researcher, heldPlan);
+  }
 
   // #2129 refuses to mint a person from a bare directory identity, and that stays.
   // A person the corpus already names as the lead of a research entity is not a bare
@@ -7847,7 +7971,7 @@ async function materializeUserIdentityToResearcher(
   }
   const created = mintedFromPiAttribution;
 
-  let fieldsWritten = 0;
+  let fieldsWritten = heldPageFieldsWithdrawn;
   // An email-only or profile-URL-only join enriches the profile but never renames the
   // researcher: the address and the page vouched for which person this is, not for what
   // that person is called. Both joins already required the names to agree, so a rename
@@ -7891,7 +8015,7 @@ async function materializeUserIdentityToResearcher(
   }
   researcher.profile = researcher.profile || {};
   for (const [key, value, confidence] of [
-    ['title', title, resolvedConfidence('title')],
+    ['title', servablePersonTitle(title), resolvedConfidence('title')],
     ['primaryDepartment', primaryDepartment, resolvedConfidence('primaryDepartment')],
     ['imageUrl', imageUrl, resolvedConfidence('imageUrl')],
     ['websiteUrl', websiteUrl, resolvedConfidence('websiteUrl', 'website')],
@@ -7903,9 +8027,12 @@ async function materializeUserIdentityToResearcher(
       fieldsWritten += 1;
     }
   }
-  if (!title && isPageHeadingTitle(researcher.profile.title)) {
-    researcher.profile.title = undefined;
-    fieldsWritten += 1;
+  if (!servablePersonTitle(title) && researcher.profile.title) {
+    const storedTitle = servablePersonTitle(researcher.profile.title);
+    if (storedTitle !== researcher.profile.title) {
+      researcher.profile.title = storedTitle;
+      fieldsWritten += 1;
+    }
   }
   if (
     isInadmissiblePersonWebsiteUrl(researcher.profile.websiteUrl) ||
@@ -7989,7 +8116,8 @@ async function materializeUserIdentityToResearcher(
     !refusesProfileLink(composedOfficialLink) &&
     !(await officialProfileLinkHeldByConflictingIdentity(composedOfficialLink.url, researcher, {
       readScope: materializationReadScopeFilter(),
-    }))
+    })) &&
+    !(await officialPageNamesAnotherNetid(composedOfficialLink.url, researcher))
       ? composedOfficialLink
       : undefined;
   if (officialLink && !existingLinkKinds.has('YALE_OFFICIAL')) {
@@ -8860,7 +8988,7 @@ function enforceResearchEntityNameAuthority(input: {
           PAGE_STATED_NAME_SOURCES.has(String(provenance.sourceName ?? '')) &&
           siteSharedPageNames.has(comparablePageStatedName(servedValue))
         ) &&
-        !isRefusedProfileLinkedHomeName(servedValue, provenance.sourceName) &&
+        !isRefusedResearchEntityName(servedValue, provenance.sourceName) &&
         !(
           (withdrawnRetype || (personRow && !isLabShapedResearchHome(servedValue))) &&
           isWithdrawnProfileHomeName(servedValue, provenance.sourceName, input.materializationObs)

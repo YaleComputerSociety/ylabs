@@ -186,6 +186,19 @@ const SECTION_LABEL_TITLES = new Set([
   'people',
   'our people',
   'our faculty',
+  'related research',
+  'research',
+  'profile',
+  'overview',
+  'bio',
+  'biography',
+  'home',
+  'about',
+  'publications',
+  'selected publications',
+  'research interests',
+  'contact',
+  'news',
 ]);
 
 function normalizeSectionLabel(text: string): string {
@@ -256,6 +269,29 @@ export function isBioProseTitle(value: string | null | undefined): boolean {
   return sentenceBoundaryCount(text) >= 2;
 }
 
+const BIOGRAPHY_CLAUSE =
+  /\b(?:is|was) (?:a|an|the|currently|also|associate|assistant|professor|director|lecturer)\b|\b(?:received|earned|completed) (?:his|her|their|a|an|the)\b|\b(?:joined|joins) (?:the|yale)\b|\b(?:his|her|their) (?:research|work|scholarship)\b|\bstudies (?:the|how|why|whether)\b|\bfocuses on\b/;
+
+/**
+ * A title states an appointment, never a clause about the person, so a biography sentence
+ * run onto the title ("... is associate professor of ...", "... received her ...") is
+ * refused at any length (#5594). Only lowercase phrasing counts, because a field name in
+ * a title is capitalized ("Professor of Fixture Studies").
+ */
+export function hasBiographyClause(value: string | null | undefined): boolean {
+  return BIOGRAPHY_CLAUSE.test(normalizeTitleWhitespace(value));
+}
+
+const DEGREE_LINE =
+  /\b(?:Ph\.?\s?D|M\.?\s?A|B\.?\s?A|M\.?\s?S|B\.?\s?S|M\.?\s?Phil|J\.?\s?D|M\.?\s?F\.?\s?A)\.?,\s*(?:[A-Z][\w.'&-]*\s+){0,5}(?:University|College|Institute|School)\b/;
+
+/**
+ * A curriculum vitae line ("Ph.D., Fixture University") run onto the title (#5594).
+ */
+export function hasDegreeLine(value: string | null | undefined): boolean {
+  return DEGREE_LINE.test(normalizeTitleWhitespace(value));
+}
+
 const DANGLING_TITLE_CONNECTIVE = /\b(?:of|in|and|for|the|to|at|on|with)\s*[,;:]?$|&\s*$/i;
 
 /**
@@ -270,6 +306,8 @@ export function isTruncatedPersonTitle(value: string | null | undefined): boolea
 }
 
 export const MAX_PERSON_TITLE_LENGTH = 140;
+
+export const MAX_STORED_PERSON_TITLE_LENGTH = 200;
 
 const FIELD_LABEL_PREFIX = /^(?:job\s+title|title|position|rank|appointment)\s*:\s*/i;
 
@@ -292,10 +330,13 @@ export const stripTitleFieldLabel = (value: string): string =>
  * heuristic), so a corrupted title never lands in storage nor renders from
  * stale data (#708, #740, #1257).
  */
-export function sanitizePersonTitle(value: string | null | undefined): string | undefined {
+function personTitleWithinLimit(
+  value: string | null | undefined,
+  maxLength: number,
+): string | undefined {
   const text = stripTitleFieldLabel(normalizeTitleWhitespace(value));
   if (!text) return undefined;
-  if (text.length > MAX_PERSON_TITLE_LENGTH) return undefined;
+  if (text.length > maxLength) return undefined;
   if (isNavMenuChromeTitle(text)) return undefined;
   if (isSpaceSeparatedSiteMenu(text)) return undefined;
   if (isSectionLabelTitle(text)) return undefined;
@@ -304,6 +345,37 @@ export function sanitizePersonTitle(value: string | null | undefined): string | 
   if (hasStreetAddressFragment(text)) return undefined;
   if (hasPhoneContactFragment(text)) return undefined;
   if (isBioProseTitle(text)) return undefined;
+  if (hasBiographyClause(text)) return undefined;
+  if (hasDegreeLine(text)) return undefined;
   if (isTruncatedPersonTitle(text)) return undefined;
   return text;
+}
+
+export function sanitizePersonTitle(value: string | null | undefined): string | undefined {
+  return personTitleWithinLimit(value, MAX_PERSON_TITLE_LENGTH);
+}
+
+/**
+ * The person title a materializer may store (#5594). A stored title may run longer than
+ * a served card's (MAX_STORED_PERSON_TITLE_LENGTH), because a real list of appointments
+ * joined by commas reaches about 160 characters, while every defect check still applies,
+ * so glued biography text, a site menu or contact details are refused at any length. A
+ * list of appointments separated by semicolons that is too long to keep whole keeps its
+ * leading appointments, whole and in order, and every kept appointment must itself be a
+ * clean title, so an appointment is never cut.
+ */
+export function servablePersonTitle(value: string | null | undefined): string | undefined {
+  const whole = personTitleWithinLimit(value, MAX_STORED_PERSON_TITLE_LENGTH);
+  if (whole) return whole;
+  const text = stripTitleFieldLabel(normalizeTitleWhitespace(value));
+  if (!text.includes(';')) return undefined;
+  const kept: string[] = [];
+  for (const appointment of text.split(';').map((part) => part.trim())) {
+    if (!appointment || !personTitleWithinLimit(appointment, MAX_STORED_PERSON_TITLE_LENGTH)) break;
+    if ([...kept, appointment].join('; ').length > MAX_STORED_PERSON_TITLE_LENGTH) break;
+    kept.push(appointment);
+  }
+  return kept.length > 0
+    ? personTitleWithinLimit(kept.join('; '), MAX_STORED_PERSON_TITLE_LENGTH)
+    : undefined;
 }

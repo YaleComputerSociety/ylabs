@@ -174,6 +174,21 @@ export function isRoleOrUnitMailbox(
   return tokens.length > 0 && tokens.every((token) => unitTokens.has(token));
 }
 
+const GENERATIONAL_SUFFIX_THEN_DIGITS = /^(?:jr|sr|ii|iii|iv)?\d*$/;
+
+/**
+ * The compacted local part is the person's whole name, in either order, optionally followed
+ * by a generational suffix and digits (`firstlast`, `lastfirst2`, `firstlastjr`). A name
+ * with another word fused before or after it (`physicsfirstlast`) is a glued extraction, not the person's own address (#5730).
+ */
+function isWholeNameLocalPart(compactLocalPart: string, compactNames: readonly string[]): boolean {
+  return compactNames.some(
+    (name) =>
+      compactLocalPart.startsWith(name) &&
+      GENERATIONAL_SUFFIX_THEN_DIGITS.test(compactLocalPart.slice(name.length)),
+  );
+}
+
 /**
  * Return true only when a Yale email is plausibly owned by the supplied person.
  *
@@ -213,7 +228,7 @@ export function isLikelyPersonSpecificYaleEmail(
   const compactEmail = emailTokens.join('');
   const normalCompact = [...givenNames, lastName].join('');
   const reversedCompact = [lastName, ...givenNames].join('');
-  if (compactEmail.includes(normalCompact) || compactEmail.includes(reversedCompact)) {
+  if (isWholeNameLocalPart(compactEmail, [normalCompact, reversedCompact])) {
     return true;
   }
 

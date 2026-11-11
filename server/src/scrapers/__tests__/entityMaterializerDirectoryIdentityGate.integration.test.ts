@@ -216,7 +216,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
   });
 
   it('yields a colliding ORCID to its existing holder instead of crashing the source', async () => {
-    await Researcher.init();
+    await Researcher.createIndexes();
     const sharedOrcid = '9999-9999-9999-9994';
 
     const holder = await Researcher.create({
@@ -268,7 +268,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
   });
 
   it('keeps the researcher own ORCID and link when the directory ORCID is already claimed', async () => {
-    await Researcher.init();
+    await Researcher.createIndexes();
     const claimedOrcid = '9999-9999-9999-9994';
     const ownOrcid = '9999-9000-9999-9005';
 
@@ -301,7 +301,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
   });
 
   it('moves the ORCID profile link with the identifier when the directory resolves a new ORCID', async () => {
-    await Researcher.init();
+    await Researcher.createIndexes();
     const priorOrcid = '9999-9000-9999-9005';
     const nextOrcid = '9999-9001-9999-9010';
 
@@ -330,7 +330,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     };
 
     it('drops an orphaned ORCID link when the observed ORCID collides and no identifier stays', async () => {
-      await Researcher.init();
+      await Researcher.createIndexes();
       const claimedOrcid = '9999-9999-9999-9994';
       await Researcher.create({
         displayName: 'Canonical Holder',
@@ -362,7 +362,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     });
 
     it('derives the ORCID link from the stored identifier when the stored link names another ORCID', async () => {
-      await Researcher.init();
+      await Researcher.createIndexes();
       const ownOrcid = '9999-9000-9999-9005';
       const strayOrcid = '9999-9001-9999-9010';
       const account = await Account.create({
@@ -387,7 +387,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     });
 
     it('plans the reconciled link on a dry run without writing it', async () => {
-      await Researcher.init();
+      await Researcher.createIndexes();
       const strayOrcid = '9999-9001-9999-9010';
       const account = await Account.create({
         netid: 'dryorphan1',
@@ -674,7 +674,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     expect(enriched?.identifiers?.netid).toBeUndefined();
   });
 
-  it('clamps a directory title beyond the profile bound instead of failing the run', async () => {
+  it('refuses a directory title beyond the stored bound instead of failing the run (#5594)', async () => {
     const longTitle =
       'Professor of Physics and Astronomy and Adjunct Professor of Applied Mathematics '.repeat(8);
     const enrichTarget = await attachedResearcher('longtitle1', 'Terry Titleholder');
@@ -686,7 +686,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     expect(result.skipped).toBeUndefined();
 
     const enriched = await enrichedResearcher(enrichTarget._id);
-    expect(enriched?.profile?.title).toBe(longTitle.slice(0, 400).trim());
+    expect(enriched?.profile?.title).toBeUndefined();
   });
 
   it('strips invisible format characters a stored observation carries into a title (#2874)', async () => {
@@ -1200,7 +1200,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
     it('refuses to mint over a netid an archived researcher already holds', async () => {
       // The name resolver skips archived records and the unique index does not, so this is
       // the shape that aborted 5 mints per apply run.
-      await Researcher.init();
+      await Researcher.createIndexes();
       await seedDirectoryEmail('netid:uv123', 'ken.thompson@example.invalid');
       await seedRosterIdentity('netid:ken.thompson', 'Ken', 'Thompson');
       await seedNamingResearchEntity();

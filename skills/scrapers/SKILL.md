@@ -187,6 +187,9 @@ Four earlier mechanisms each broke on a stored title, and the module's test file
   `research-entity:rematerialize --foreign-contact` selects the rows storing a contact field value no live row-keyed observation states, rematerializes only the contact fields, reports field names and never values, and re-gates what it cleared.
 - A person email, and so a `netid:<local>` user key, is never an office mailbox.
   `isRoleOrUnitMailbox` (`utils/scraperHelpers.ts`) refuses an address whose local part names a role (`dus`, `registrar`, `office`) or is only the name of the unit whose page printed it (`<unit>@yale.edu` on `<unit>.yale.edu`), and `isLikelyPersonSpecificYaleEmail` refuses the role words on every lane.
+  `isLikelyPersonSpecificYaleEmail` accepts a name-shaped local part only when its compacted letters are the whole name in either order, optionally followed by a generational suffix and digits, so a word fused before the name is refused as a glued extraction (#5730).
+  A token that embeds the stored last name with a particle before it or a second surname after it still passes on its given-name check, because tightening that arm would refuse about 99 legitimate compound and second surnames (of 315 live addresses with that shape, none was a glued department word), so a word glued after the last name is a known limit.
+  A second given name glued before a short-form stored first name (`<given><first>.<last>`) is refused too, because it is indistinguishable at the token level from a department word in the same position; such an address survives when another lane that does not apply this check, such as the Yale directory, carries it.
   `dept-faculty-roster` also refuses an address it reads for two different people in one batch (`withoutSharedRosterEmails`) before minting any person key from it, because a shared netid-shaped address passes the shape test and would collapse both people into one key.
   Keys minted that way before the guard stay in the log, so the materializer screens them on every read instead of retiring them (`roleMailboxUserKey.ts`): `joinUserIdentityToExistingResearcher` reaches nobody through such a key, the user arm skips it as `office-mailbox-user-key`, and an `inferredPiUserKey` naming one is ignored, so the row's lead comes from the key the lane now emits.
 - A `netid:<local>` user key may carry an email local part, but a `netid` observation states only a Yale netid (#5740).
@@ -357,6 +360,13 @@ A failure that reads as success or as a legitimate verdict is worse than a crash
 Match on PID, never on a command-string pattern.
 A pattern like `dept-faculty-roster` also matches an unrelated process that carries the source name inside an `--intent` or issue-slug argument, and #2469 killed a live gate run that way.
 
+### Rolling back an unmaterialized run
+
+Setting `scrapeRun.invalidated` alone fences the run's observations out of materialize, but the observations its inserts superseded stay superseded, so every key the run re-emitted is left with no live evidence from the source.
+To reverse an observations-only run, use `yarn --cwd server observations:rollback-scrape-run --run=<id> --note='<why>'` (dry-run by default; `--snapshot=<path> --apply --confirm-rollback-scrape-run` to write).
+It invalidates the run, retires the run's live observations with a `rollback` record, and restores only the observations from outside the run whose `supersededBy` points at one of the run's observations (#5735).
+It refuses a run that was materialized, a run any of whose observations was superseded from outside it, and a run whose source has written observations from another run since it started, because in each case the pre-run state is no longer the right state to restore.
+
 ## Exhaustive runs: bound every corpus-wide read
 
 An exhaustive lane run hands its read queries the whole corpus, so a query shape that works on a bounded run can fail on the sweep.
@@ -375,6 +385,8 @@ Let a failure of a lane-shared dependency (an observation write, a WorkPlanner r
 Do not flatten a whole page with cheerio `.text()`: it recurses once per DOM level and overflows the stack on a page nested a few thousand elements deep, while parsing and selection survive far deeper.
 Use `plainTextContent` (a byte-identical iterative `.text()`) or `extractElementTextWithBlockSeparators` from `utils/htmlText.ts`.
 #3558 lost `lab-microsite-undergrad-llm` on the Development sweep that way, about 700 labs in.
+A text the lane then pattern-matches for an address, a name or a title must keep block boundaries, so read it with `extractElementTextWithBlockSeparators`: `.text()` and `plainTextContent` join adjacent fields with nothing between them (#5720).
+Start an address pattern with the non-address lookbehind `(?<![a-z0-9._%+-])` rather than `\b` or nothing, so a glued word cannot become the front of the address.
 
 ## Infrastructure files
 
@@ -446,6 +458,8 @@ Use `plainTextContent` (a byte-identical iterative `.text()`) or `extractElement
   A titled card whose title names no organization ("Lab Website", "n/a", "About Us", the person alone) adopts nothing; only an untitled slot keeps the "<person> Lab" fallback, because the titled-but-unnamed cards measured on Development linked personal sites, a code repository, a bio page and a department page, none of which the profile called a lab.
   A refusal retracts nothing, so the materializer ignores a stored `name` or `displayName` from this lane of that shape on every resolve (`shouldIgnoreObservationForEntityMaterialization`), and the type and kind paired with it then fall through `withoutUnpairedProfileHomeIdentity`.
   Ignoring the observation moves nothing where no rival name exists, because `name` is never cleared on empty, so `isRefusedProfileLinkedHomeName` also judges the served value by its `fieldProvenance` source: the materializer's name authority replaces it with a rival or the lead-derived name, or clears `displayName`, and the gate holds a row whose `name` still carries one as `unusable_name`.
+  A sentence-shaped name is refused the same way from every lane, not only this one (#5739): `isSentenceShapedName` in `utils/sentenceShapedName.ts` refuses a name that opens with a thank-you, please, click-here, learn-more or read-more phrase, or that has four or more words and ends in `.`, `!` or `?` other than an abbreviation's period, and `isRefusedResearchEntityName` joins it to this lane's shapes at the same three places (the ignored observation, the served-name replacement, and the gate's `unusable_name`).
+  A lane that can read a page's welcome or call-to-action line as a name, such as the held `lab-site-research-read` when it re-lands, imports that predicate rather than copying it.
   A glued name the predicate cannot see (a title with a tagline after it) stays live, and the lane's re-read of the card title emits the clean name, which wins on recency at equal confidence.
   A withdrawn type resolves to nothing, `entityType` is never cleared on empty, and it is survivor-owned, so a merged-in row cannot supply a different one; a merged-in row's observation of the same type does back it when the survivor has no type observation of its own (#3381).
   So a person-scoped row titled "<person> Faculty Research" kept the graft's `CENTER`, `INITIATIVE` or `INSTITUTE` with nothing behind it; `reclassifyUnstatedOrganizationTypeOnFacultyResearchName` re-derives such a row as `FACULTY_RESEARCH_AREA` on every resolve whenever no live observation states its organizational type and every word before the suffix is a word of the row's resolved lead's name, so an organization whose name ends the same way and a leadless row keep their type, and an operator edit stating the type keeps it unless the operator has refused that type on the row (#5140).
@@ -1787,6 +1801,11 @@ Three readers use it on every resolve, so nothing is locked:
 - it also clears an ORCID when every live observation asserting it was read from such a page.
 
 A researcher whose stored netid the directory does not hold is never contradicted, because that is usually the person's own email alias stamped as a netid.
+Since #5737 the same withdrawal runs on every resolve of a holder, not only when one of its own keys is screened: `planHeldContradictedPageWithdrawal` withdraws a held link whose page names another netid, and an ORCID or photo URL that only such pages assert.
+A title or department is never withdrawn this way, because many people share those values and a value alone cannot say which page it came from.
+The user materializer also drops a key's evidence read from such a page before writing the joined researcher (`withoutPagesNamingAnotherNetid`), so a key joined to the wrong person cannot re-stamp what was withdrawn.
+It also refuses to compose an official link to such a page from a `profileUrls` value read elsewhere, such as a roster, because the page's owner, not the observation's source, decides whose page it is.
+The by-value ORCID and photo lookup is served by the partial `field_1_value_1_superseded_1` index on `orcid` and `imageUrl`.
 A page that has stated several addresses keeps every netid the directory pairs with them, so an owner who changed address is still the owner, but a page whose addresses the directory does not all pair with one shared netid, such as a roster listing, decides nothing.
 Measured on Development on 2026-11-11 before that rule, 22 of 24 screened lead observations were that alias shape.
 
@@ -1805,6 +1824,16 @@ A page-wide address match starts only after a non-address character, and the tit
 Measured by replaying the 3,661 saved backfill pages offline on 2026-11-11 against `beta`: no page lost an identity field; 40 more pages emit identity (31 email-only titleless pages, 9 pages whose address was glued before), 42 more `email` and 10 more `inferredPiUserId` observations, and one glued phantom key is gone.
 Of the titles, 25 changed (contact blocks, `Title:` labels and section labels stripped), 14 are no longer emitted (11 navigation menus, 1 bio sentence, 1 glued address, 1 multi-appointment title longer than `MAX_PERSON_TITLE_LENGTH`), and none was newly found.
 A seeded sample of 10 newly emitted identities named the page's own person in all 10.
+
+#### Retiring what the glued reads left behind (#5720)
+
+The same block-text fix reached the other lanes that join page text and then match it: `undergradRosterDerivation`, `departmentUndergradResearchScraper`, `departmentRosterScraper`, `programOfficialPage`, `yseCentersScraper`, `researchAreaSourceExtractor` and `centerDirectorLLMExtractor`.
+`centerDirectorLLMExtractor` sends that text to a model but keys no content-hash gate on it, so the change moves no gate key.
+
+A fixed lane does not clear what it read before: `user` `email` and `title` are value-keyed, so the right value lands beside the glued one, and nothing re-emits a key minted from a glued address.
+`observations:retire-glued-profile-text` (dry run by default) selects live `official-profile-pi-backfill` observations by predicate: an address that is a run of letters fused onto an address the same subject or page states, a title that carries an address, a contact label or a lower-to-upper word join, and every observation on a subject key minted from such an address, with the `inferredPiUserKey` that names it.
+It re-reads each cited page once, sequentially, through `officialProfilePageStatedFields`, and retires an observation only when the page now yields a different value or none; a failed read retires nothing on that page, and `--skip-host` defers a host-locked page without requesting it.
+It writes no researcher field, so a stored title re-derives at the next materialize.
 
 #### Press copy and publication lists are not a description (#4446)
 
