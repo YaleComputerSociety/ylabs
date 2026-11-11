@@ -23,7 +23,6 @@ vi.mock('../../services/researchEntityBrowseRankService', async () => {
 import { Observation } from '../../models/observation';
 import { Source } from '../../models/source';
 import { resolveAllFields } from '../confidenceResolver';
-import { buildObservationFingerprint } from '../observationStore';
 import { ScraperOrchestrator } from '../orchestrator';
 import {
   DepartmentRosterScraper,
@@ -36,10 +35,14 @@ beforeEach(clearC4Flags);
 const SOURCE_NAME = 'dept-faculty-roster';
 const OFFICIAL_ORIGIN = 'https://chem.yale.edu';
 
-const listing = { name: 'Quill Ledgerton', title: '' };
+const listing = { name: 'Quill Ledgerton', title: '', email: '' };
+const secondListingTitle = { title: '' };
 
 const rosterPage = (): string =>
   `<html><body><main><ul><li><a class="person" href="/people/quill-ledgerton">${listing.name}</a><span class="title">${listing.title}</span></li></ul></main></body></html>`;
+
+const secondRosterPage = (): string =>
+  `<html><body><main><ul><li><a class="person" href="/staff/quill-ledgerton">${listing.name}</a><span class="title">${secondListingTitle.title}</span></li></ul></main></body></html>`;
 
 const rosterExtractor = (html: string): FacultyEntry[] => {
   const $ = cheerio.load(html);
@@ -49,19 +52,33 @@ const rosterExtractor = (html: string): FacultyEntry[] => {
       name: $(item).find('a.person').text().trim(),
       profileUrl: `${OFFICIAL_ORIGIN}${$(item).find('a.person').attr('href')}`,
       title: $(item).find('.title').text().trim() || undefined,
+      email: listing.email || undefined,
     }));
 };
 
-const config = (): DeptConfig[] => [
-  {
-    deptKey: 'chemistry',
-    deptName: 'Chemistry',
-    schoolName: 'Yale Faculty of Arts and Sciences',
-    url: `${OFFICIAL_ORIGIN}/people/faculty`,
-    paginated: false,
-    extractor: rosterExtractor,
-  },
-];
+const chemistry: DeptConfig = {
+  deptKey: 'chemistry',
+  deptName: 'Chemistry',
+  schoolName: 'Yale Faculty of Arts and Sciences',
+  url: `${OFFICIAL_ORIGIN}/people/faculty`,
+  paginated: false,
+  extractor: rosterExtractor,
+};
+
+const physics: DeptConfig = {
+  deptKey: 'physics',
+  deptName: 'Physics',
+  schoolName: 'Yale Faculty of Arts and Sciences',
+  url: `${OFFICIAL_ORIGIN}/people/staff`,
+  paginated: false,
+  extractor: rosterExtractor,
+};
+
+const legacyValueKeyedFingerprint = (entityKey: string, value: string): string =>
+  `[${[SOURCE_NAME, 'user', `key:${entityKey}`, 'userType', value]
+    .map((part) => JSON.stringify(part.toLowerCase()))
+    .sort()
+    .join(',')}]`;
 
 type LiveTyping = { entityKey: string; value: string; observationFingerprint?: string };
 
@@ -79,6 +96,10 @@ describe('dept-faculty-roster types a person by their own listed title (#5750), 
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
         return res.end(rosterPage());
       }
+      if (path === '/people/staff') {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        return res.end(secondRosterPage());
+      }
       res.writeHead(404);
       return res.end('');
     });
@@ -95,6 +116,7 @@ describe('dept-faculty-roster types a person by their own listed title (#5750), 
   });
 
   beforeEach(async () => {
+    listing.email = '';
     const db = mongoose.connection.db;
     if (!db) throw new Error('no db');
     for (const name of ['observations', 'researchers', 'sources', 'scrape_runs']) {
@@ -112,10 +134,10 @@ describe('dept-faculty-roster types a person by their own listed title (#5750), 
     return response.ok ? response.text() : '';
   };
 
-  const scrape = async (): Promise<void> => {
+  const scrape = async (configs: DeptConfig[] = [chemistry]): Promise<void> => {
     const orchestrator = new ScraperOrchestrator();
     orchestrator.register(
-      new DepartmentRosterScraper(config(), null, throughLocalServer, async () => new Map()),
+      new DepartmentRosterScraper(configs, null, throughLocalServer, async () => new Map()),
     );
     await orchestrator.run(SOURCE_NAME, {
       dryRun: false,
@@ -167,13 +189,7 @@ describe('dept-faculty-roster types a person by their own listed title (#5750), 
       {
         $set: {
           value: 'faculty',
-          observationFingerprint: buildObservationFingerprint({
-            sourceName: `${SOURCE_NAME}-pre-5750`,
-            entityType: 'user',
-            entityKey,
-            field: 'userType',
-            value: 'faculty',
-          }),
+          observationFingerprint: legacyValueKeyedFingerprint(entityKey, 'faculty'),
         },
       },
     );
@@ -190,5 +206,26 @@ describe('dept-faculty-roster types a person by their own listed title (#5750), 
     const rerun = await liveTypings();
     expect(rerun.map((typing) => typing.value)).toEqual(['staff']);
     expect((await resolvedUserType(entityKey))?.value).toBe('staff');
+  });
+
+  it('keeps faculty when a later run reads only the roster that lists the person as staff', async () => {
+    listing.email = 'ql123@yale.edu';
+    listing.title = 'Professor of Chemistry';
+    secondListingTitle.title = 'Department Administrator';
+    await scrape([chemistry, physics]);
+    expect((await liveTypings()).map((typing) => typing.value)).toEqual(['faculty']);
+
+    await scrape([physics]);
+    expect((await liveTypings()).map((typing) => typing.value)).toEqual(['faculty']);
+    expect((await resolvedUserType('netid:ql123'))?.value).toBe('faculty');
+  });
+
+  it('types staff when no roster the lane read states a faculty appointment', async () => {
+    listing.email = 'ql123@yale.edu';
+    listing.title = 'Program Coordinator';
+    secondListingTitle.title = 'Department Administrator';
+    await scrape([chemistry, physics]);
+    await scrape([physics]);
+    expect((await liveTypings()).map((typing) => typing.value)).toEqual(['staff']);
   });
 });
