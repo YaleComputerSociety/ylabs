@@ -71,8 +71,13 @@ export function titleHoldsOnlyEmeritusAppointments(title: unknown): boolean {
 
 // Every lead, not any: a co-led row with an active lead, or with a lead whose title is
 // unknown, has someone who may be running the work now.
+export const DEPARTMENT_LISTS_LEAD_AS_EMERITUS = Object.freeze({ departmentEmeritusListing: true });
+
+const leadIsEmeritus = (leadTitle: unknown): boolean =>
+  leadTitle === DEPARTMENT_LISTS_LEAD_AS_EMERITUS || titleHoldsOnlyEmeritusAppointments(leadTitle);
+
 export function leadTitlesAreAllEmeritus(leadTitles: readonly unknown[]): boolean {
-  return leadTitles.length > 0 && leadTitles.every(titleHoldsOnlyEmeritusAppointments);
+  return leadTitles.length > 0 && leadTitles.every(leadIsEmeritus);
 }
 
 const MS_PER_DAY = 86_400_000;

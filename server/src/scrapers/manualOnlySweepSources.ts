@@ -4,6 +4,8 @@ const MANUAL_ONLY_SWEEP_SOURCE_REASONS: Record<string, string> = {
     'stores page text that only `research-topics:derive` reads, so a sweep run adds storage with no served change; it runs on Development scoped first and its derived topics are measured through the real search route before any corpus-wide run (#5396), and joins the sweep only by a recorded owner decision',
   'roster-bio-research-evidence':
     'mints new faculty-research rows from roster biographies, and an agent check of a sample is not a precision review: the owner reviewed a 20-row dry-run sample on 2026-10-05 and reviews a sample of the rows the first Development run produces; return it to the sweep only after that review is recorded by a person',
+  'department-emeritus-listings':
+    'withholds the way in on rows whose lead a department lists as emeritus, and its matches were checked by a blind read of the leads own pages (#5835); it runs on Development after the writer-evidence freeze and joins the sweep only by a recorded coordinator decision',
   'official-undergrad-lists':
     'attaches named faculty to rows by identity matching, and an agent check of a sample is not a precision review: it serves nothing until the owner reads a side-by-side sample of its matches per source (#5551), and joins the sweep only after that review is recorded by a person',
   'center-profile-research-rows':

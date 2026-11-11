@@ -361,6 +361,8 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       ),
       default: undefined,
     },
+    /** Leads their own department's emeritus page lists, by researcher id (#5835). */
+    emeritusListedLeadIds: { type: [String], default: undefined },
     undergradListEvidence: {
       type: [
         new mongoose.Schema(

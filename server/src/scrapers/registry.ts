@@ -43,6 +43,7 @@ import { LabSiteLeadVerificationScraper } from './sources/labSiteLeadVerificatio
 import { DirectoryAliasResolutionScraper } from './sources/directoryAliasResolutionScraper';
 import { RosterBioResearchEvidenceScraper } from './sources/rosterBioResearchEvidenceScraper';
 import { OfficialUndergradListScraper } from './sources/officialUndergradListScraper';
+import { DepartmentEmeritusListingScraper } from './sources/departmentEmeritusListingScraper';
 import { CenterMemberProfileResearchScraper } from './sources/centerMemberProfileResearchScraper';
 import { CenterProfileResearchRowsScraper } from './sources/centerProfileResearchRowsScraper';
 import { ResearchPageTextScraper } from './sources/researchPageTextScraper';
@@ -95,6 +96,7 @@ export function buildOrchestrator(): ScraperOrchestrator {
   o.register(new DirectoryAliasResolutionScraper());
   o.register(new RosterBioResearchEvidenceScraper());
   o.register(new OfficialUndergradListScraper());
+  o.register(new DepartmentEmeritusListingScraper());
   o.register(new CenterMemberProfileResearchScraper());
   o.register(new CenterProfileResearchRowsScraper());
   o.register(new ResearchPageTextScraper());
