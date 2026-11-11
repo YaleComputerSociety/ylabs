@@ -414,7 +414,10 @@ import {
   normalizeOfficialProfileDestination,
   officialProfileDestinationStoredPattern,
 } from '../services/leadProfileIdentity';
-import { officialProfileLinkHeldByConflictingIdentity } from '../services/officialProfileLinkIdentity';
+import {
+  directoryPairsAddressesWithAnotherNetid,
+  officialProfileLinkHeldByConflictingIdentity,
+} from '../services/officialProfileLinkIdentity';
 import {
   planStoredUndergradEvidenceQuoteClear,
   sourcesWithdrawingUndergradEvidenceQuote,
@@ -7485,6 +7488,11 @@ export async function joinUserIdentityToExistingResearcher(
         !embeddedNetidContradictsCandidate(
           netidsEmbeddedInUserEvidence(identifier.entityKey, materializationObs),
           nameMatch.identifiers?.netid,
+        ) &&
+        !directoryPairsAddressesWithAnotherNetid(
+          materializationObs.filter((o: any) => o.field === 'email').map((o: any) => o.value),
+          nameMatch,
+          await loadDirectoryNetidsByAddress(),
         )
       ) {
         researcher = nameMatch;

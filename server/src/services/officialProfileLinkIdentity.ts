@@ -54,6 +54,30 @@ export function identityWitnessesConflict(
   );
 }
 
+/**
+ * Whether the Yale directory pairs the person's own addresses with a netid other than the
+ * candidate's and never with the candidate's, so a name match would join two people (#5765).
+ * A candidate with no netid of Yale shape, or one the directory does not hold, decides nothing,
+ * as in `identityWitnessesConflict` and `profilePageContradictsNetid`.
+ */
+export function directoryPairsAddressesWithAnotherNetid(
+  addresses: readonly unknown[],
+  candidate: PersonIdentityWitnesses,
+  directory: DirectoryNetidsByAddress,
+): boolean {
+  const candidateNetid = netidOf(candidate);
+  if (!looksLikeYaleNetid(candidateNetid)) return false;
+  const pairedNetids = new Set<string>();
+  for (const address of addresses) {
+    for (const netid of directory.get(lower(address)) ?? []) {
+      if (looksLikeYaleNetid(netid)) pairedNetids.add(netid);
+    }
+  }
+  if (pairedNetids.size === 0 || pairedNetids.has(candidateNetid)) return false;
+  for (const named of directory.values()) if (named.has(candidateNetid)) return true;
+  return false;
+}
+
 export interface OfficialProfileLinkHolderOptions {
   /**
    * The engine's observation read scope. With it, the page's own stated email decides a

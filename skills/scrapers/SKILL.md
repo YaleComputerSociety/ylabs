@@ -1812,6 +1812,13 @@ The by-value ORCID and photo lookup is served by the partial `field_1_value_1_su
 A page that has stated several addresses keeps every netid the directory pairs with them, so an owner who changed address is still the owner, but a page whose addresses the directory does not all pair with one shared netid, such as a roster listing, decides nothing.
 Measured on Development on 2026-11-11 before that rule, 22 of 24 screened lead observations were that alias shape.
 
+#### A name join the directory gives to another netid is two people (#5765)
+
+`joinUserIdentityToExistingResearcher` refuses a `person-name` candidate when the Yale directory pairs one of the key's own emails with a netid of Yale shape that is not the candidate's, and pairs none of them with the candidate's (`directoryPairsAddressesWithAnotherNetid` in `server/src/services/officialProfileLinkIdentity.ts`, reading `loadDirectoryNetidsByAddress`).
+Without it a namesake's key joined by name, and the materializer rewrote the researcher's name, title and department with the other person's.
+A candidate with no netid of Yale shape, or one whose netid the directory does not hold (the #5702 alias shape), decides nothing, and a key whose emails the directory does not pair joins as before.
+Measured on Development on 2026-11-11: 9 of 9,912 name joins were refused, and 2,509 whose emails the directory pairs with the candidate's own netid still join; 1 of the 9 still reaches the same researcher through the `official-profile-page` join, which has no directory check.
+
 #### A profile page's identity does not wait for its title (#5701)
 
 `extractOfficialProfilePersonIdentity` reads a page's person with or without a stated appointment, and the queued and visible-profile modes of `official-profile-pi-backfill` read identity through it, so the #5669 email-only identity now applies in both modes rather than in `visible-profile-bio-backfill` alone.
