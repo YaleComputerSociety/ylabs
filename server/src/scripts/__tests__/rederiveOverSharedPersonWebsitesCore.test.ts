@@ -53,9 +53,9 @@ describe('observations:rederive-over-shared-person-websites planning (#5645)', (
   it('selects by the inadmissible person-website rule under --inadmissible (#5657)', () => {
     const directions = 'https://www.google.com/maps?daddr=1.5,-2.5&directionsMode=driving';
     const keys = new Set([personWebsiteShareKey(CHROME_PAGE) as string]);
-    expect(() => parseRederiveOverSharedPersonWebsitesArgs(['--dry-run', '--inadmissible'])).toThrow(
-      '--inadmissible requires --website-only',
-    );
+    expect(() =>
+      parseRederiveOverSharedPersonWebsitesArgs(['--dry-run', '--inadmissible']),
+    ).toThrow('--inadmissible requires --website-only');
     expect(() =>
       parseRederiveOverSharedPersonWebsitesArgs([
         '--apply',
