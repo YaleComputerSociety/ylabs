@@ -23,6 +23,7 @@ vi.mock('../../services/researchEntityBrowseRankService', async () => {
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { RoleAssignment } from '../../models/roleAssignment';
+import { Researcher } from '../../models/researcher';
 import { materializeEntity } from '../entityMaterializer';
 
 const ENTITY_KEY = 'synthetic-grant-role-lab';
@@ -84,6 +85,17 @@ describe('a materialized row labels each grant with its lead role (#5779)', () =
     await Observation.deleteMany({});
     await ResearchEntity.deleteMany({});
     await RoleAssignment.deleteMany({});
+    await Researcher.deleteMany({});
+    await Researcher.create({
+      _id: lead,
+      displayName: 'Avery Leadperson',
+      identifiers: { netid: 'synlead1' },
+    });
+    await Researcher.create({
+      _id: other,
+      displayName: 'Blair Otherperson',
+      identifiers: { netid: 'synother2' },
+    });
     const row = await ResearchEntity.create({
       slug: ENTITY_KEY,
       name: 'Synthetic Grant Role Lab',
@@ -122,6 +134,17 @@ describe('a materialized row labels each grant with its lead role (#5779)', () =
       grants: { R01GM000001: 'pi', R01GM000003: 'copi', R01GM000004: null },
       count: 3,
       periods: ['R01GM000001', 'R01GM000003', 'R01GM000004'],
+    });
+  });
+
+  it('holds another person award when that person is a duplicate record of the lead', async () => {
+    await Researcher.updateOne({ _id: other }, { $set: { displayName: 'Avery Leadperson' } });
+    await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+    expect((await storedGrants()).grants).toEqual({
+      R01GM000001: 'pi',
+      R01GM000002: null,
+      R01GM000003: 'copi',
+      R01GM000004: null,
     });
   });
 

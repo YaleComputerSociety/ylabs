@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { aggregateResearchEntityGrantEvidence } from '../entityMaterializer';
+import type { ProvablyNotALead } from '../utils/grantInvestigators';
 import { NihReporterScraper, type NihGrant } from '../sources/nihReporterScraper';
 import { buildRowObservations, type NsfAward } from '../sources/nsfAwardScraper';
 import type { ObservationInput, ScraperContext } from '../types';
@@ -8,6 +9,8 @@ import type { ObservationInput, ScraperContext } from '../types';
 const LEAD = 'researcher-lead';
 const OTHER = 'researcher-other';
 const LEADS = new Set([LEAD]);
+const EVERYONE_ELSE_PROVABLY: ProvablyNotALead = (investigator) =>
+  investigator.researcherId !== LEAD;
 
 const award = (id: string, investigators?: unknown[]) => ({
   id,
@@ -50,24 +53,40 @@ describe('a grant entry is labelled with the row lead role on that award (#5779)
   ];
 
   it('does not serve another person sole-PI award as the lead award', () => {
-    const evidence = aggregateResearchEntityGrantEvidence(laneSnapshot(mixed), LEADS);
+    const evidence = aggregateResearchEntityGrantEvidence(
+      laneSnapshot(mixed),
+      LEADS,
+      EVERYONE_ELSE_PROVABLY,
+    );
     expect(Object.keys(byId(evidence.recentGrants))).not.toContain('R01GM000002');
     expect(Object.keys(byId(evidence.recentGrantPeriods))).not.toContain('R01GM000002');
     expect(evidence.recentGrantCount).toBe(2);
   });
 
   it('labels the lead as copi where the lead is another listed PI', () => {
-    const evidence = aggregateResearchEntityGrantEvidence(laneSnapshot(mixed), LEADS);
+    const evidence = aggregateResearchEntityGrantEvidence(
+      laneSnapshot(mixed),
+      LEADS,
+      EVERYONE_ELSE_PROVABLY,
+    );
     expect(byId(evidence.recentGrants).R01GM000003.role).toBe('copi');
   });
 
   it('keeps the contact PI as pi', () => {
-    const evidence = aggregateResearchEntityGrantEvidence(laneSnapshot(mixed), LEADS);
+    const evidence = aggregateResearchEntityGrantEvidence(
+      laneSnapshot(mixed),
+      LEADS,
+      EVERYONE_ELSE_PROVABLY,
+    );
     expect(byId(evidence.recentGrants).R01GM000001.role).toBe('pi');
   });
 
   it('never stores the investigator list on the row', () => {
-    const evidence = aggregateResearchEntityGrantEvidence(laneSnapshot(mixed), LEADS);
+    const evidence = aggregateResearchEntityGrantEvidence(
+      laneSnapshot(mixed),
+      LEADS,
+      EVERYONE_ELSE_PROVABLY,
+    );
     for (const entry of [...evidence.recentGrants!, ...evidence.recentGrantPeriods!]) {
       expect(entry).not.toHaveProperty('investigators');
     }
@@ -77,6 +96,7 @@ describe('a grant entry is labelled with the row lead role on that award (#5779)
     const evidence = aggregateResearchEntityGrantEvidence(
       laneSnapshot([award('R01GM000009')]),
       LEADS,
+      EVERYONE_ELSE_PROVABLY,
     );
     expect(evidence.recentGrants).toHaveLength(1);
     expect(evidence.recentGrants![0]).not.toHaveProperty('role');
@@ -84,7 +104,11 @@ describe('a grant entry is labelled with the row lead role on that award (#5779)
   });
 
   it('withholds every listed award when the row has no lead', () => {
-    const evidence = aggregateResearchEntityGrantEvidence(laneSnapshot(mixed), new Set());
+    const evidence = aggregateResearchEntityGrantEvidence(
+      laneSnapshot(mixed),
+      new Set(),
+      () => true,
+    );
     expect(evidence.recentGrants).toEqual([]);
     expect(evidence.recentGrantCount).toBe(0);
   });
@@ -98,6 +122,7 @@ describe('a grant entry is labelled with the row lead role on that award (#5779)
         ),
       ],
       LEADS,
+      EVERYONE_ELSE_PROVABLY,
     );
     expect(evidence.fundingAgencies).toEqual(['NSF']);
   });
@@ -117,19 +142,38 @@ describe('a grant entry is labelled with the row lead role on that award (#5779)
         ['Synthetic Foundation A', 'Synthetic Foundation B'],
       ).map((entry) => ({ ...entry, sourceName: 'crossref-grants' })),
       LEADS,
+      EVERYONE_ELSE_PROVABLY,
     );
     expect(evidence.fundingAgencies).toEqual(['Synthetic Foundation A']);
     expect(evidence.recentGrantCount).toBe(1);
   });
 
   it('keeps a lane-level agency label while one of its awards is served', () => {
-    const evidence = aggregateResearchEntityGrantEvidence(laneSnapshot(mixed), LEADS);
+    const evidence = aggregateResearchEntityGrantEvidence(
+      laneSnapshot(mixed),
+      LEADS,
+      EVERYONE_ELSE_PROVABLY,
+    );
     expect(evidence.fundingAgencies).toEqual(['NIH']);
   });
 
+  it('holds, rather than withholds, an unlisted award nobody is proven not to be the lead', () => {
+    const evidence = aggregateResearchEntityGrantEvidence(laneSnapshot(mixed), LEADS);
+    expect(byId(evidence.recentGrants).R01GM000002).toBeDefined();
+    expect(byId(evidence.recentGrants).R01GM000002).not.toHaveProperty('role');
+  });
+
   it('derives the same output on a second resolve', () => {
-    const first = aggregateResearchEntityGrantEvidence(laneSnapshot(mixed), LEADS);
-    const second = aggregateResearchEntityGrantEvidence(laneSnapshot(mixed), LEADS);
+    const first = aggregateResearchEntityGrantEvidence(
+      laneSnapshot(mixed),
+      LEADS,
+      EVERYONE_ELSE_PROVABLY,
+    );
+    const second = aggregateResearchEntityGrantEvidence(
+      laneSnapshot(mixed),
+      LEADS,
+      EVERYONE_ELSE_PROVABLY,
+    );
     expect(second).toEqual(first);
     const reread = aggregateResearchEntityGrantEvidence(
       [
@@ -139,6 +183,7 @@ describe('a grant entry is labelled with the row lead role on that award (#5779)
         observation('fundingAgencies', first.fundingAgencies),
       ],
       LEADS,
+      EVERYONE_ELSE_PROVABLY,
     );
     expect(byId(reread.recentGrants).R01GM000001).toMatchObject({ id: 'R01GM000001' });
     expect(Object.keys(byId(reread.recentGrants)).sort()).toEqual(
@@ -236,19 +281,20 @@ describe('the NIH lane records each award PI list (#5779)', () => {
     const grants = emitted.find((obs) => obs.field === 'recentGrants')!.value as any[];
     const listed = Object.fromEntries(grants.map((entry) => [entry.id, entry.investigators]));
     expect(listed.R01GM000001).toEqual([
-      { contact: true, profileId: LEAD_PROFILE, researcherId: LEAD },
+      { contact: true, profileId: LEAD_PROFILE, researcherId: LEAD, name: 'Avery Leadperson' },
     ]);
     expect(listed.R01GM000002).toEqual([
-      { contact: true, profileId: OTHER_PROFILE, researcherId: OTHER },
+      { contact: true, profileId: OTHER_PROFILE, researcherId: OTHER, name: 'Blair Leadperson' },
     ]);
     expect(listed.R01GM000003).toEqual([
-      { contact: true, profileId: LEAD_PROFILE, researcherId: LEAD },
-      { contact: false, profileId: OUTSIDE_PROFILE },
+      { contact: true, profileId: LEAD_PROFILE, researcherId: LEAD, name: 'Avery Leadperson' },
+      { contact: false, profileId: OUTSIDE_PROFILE, name: 'Casey Elsewhere' },
     ]);
 
     const served = aggregateResearchEntityGrantEvidence(
       emitted.map((obs) => ({ ...obs, observedAt: new Date('2026-02-01T00:00:00Z') })) as any,
       LEADS,
+      EVERYONE_ELSE_PROVABLY,
     );
     expect(Object.keys(byId(served.recentGrants)).sort()).toEqual(['R01GM000001', 'R01GM000003']);
   });
@@ -279,6 +325,7 @@ describe('the NSF lane records the credited researcher on each award (#5779)', (
         observedAt: new Date('2026-02-01T00:00:00Z'),
       })) as any,
       LEADS,
+      EVERYONE_ELSE_PROVABLY,
     );
     expect(served.recentGrants!.map((entry: any) => [entry.id, entry.role])).toEqual([
       ['2400001', 'copi'],

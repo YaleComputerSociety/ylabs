@@ -98,14 +98,26 @@ describe('relisting a legacy NIH grant observation with its PI list (#5779)', ()
     });
     const entries = observation.value as Array<Record<string, any>>;
     expect(entries[0].investigators).toEqual([
-      { contact: true, profileId: 11, researcherId: LEAD },
+      { contact: true, profileId: 11, researcherId: LEAD, name: 'Avery Leadperson' },
     ]);
     expect(entries[1].investigators).toEqual([
-      { contact: true, profileId: 22, researcherId: OTHER },
-      { contact: false, profileId: 11, researcherId: LEAD },
+      { contact: true, profileId: 22, researcherId: OTHER, name: 'Blair Leadperson' },
+      { contact: false, profileId: 11, researcherId: LEAD, name: 'Avery Leadperson' },
     ]);
     expect(entries[2]).not.toHaveProperty('investigators');
     expect(relisted).toMatchObject({ listed: 2, unmatched: 1 });
+  });
+
+  it('holds an award whose credited PI the resolver could not settle', () => {
+    const relisted = relistedLegacyGrantObservations(
+      legacyObservations(),
+      projects,
+      (pi) => (pi.profile_id === 22 ? null : lookup(pi)),
+      new Set(['synthetic-row-read-this-run']),
+    );
+    const entries = relisted.observations[0].value as Array<Record<string, any>>;
+    expect(entries[1]).not.toHaveProperty('investigators');
+    expect(relisted).toMatchObject({ listed: 1, unresolved: 1, unmatched: 1 });
   });
 
   it('relists nothing on a second pass over its own output', () => {
@@ -180,6 +192,7 @@ describe('a lane run relists legacy awards so another person award stops being s
     const served = aggregateResearchEntityGrantEvidence(
       relisted.map((obs) => ({ ...obs, sourceName: 'nih-reporter', observedAt: READ_AT })) as any,
       new Set([LEAD]),
+      (investigator) => investigator.researcherId !== LEAD,
     );
     expect(
       Object.fromEntries((served.recentGrants as any[]).map((entry) => [entry.id, entry.role])),
@@ -187,11 +200,12 @@ describe('a lane run relists legacy awards so another person award stops being s
     const soleOther = aggregateResearchEntityGrantEvidence(
       relisted.map((obs) => ({ ...obs, sourceName: 'nih-reporter', observedAt: READ_AT })) as any,
       new Set(['researcher-unrelated']),
+      () => true,
     );
     expect((soleOther.recentGrants as any[]).map((entry) => entry.id)).toEqual(['R01GM000099']);
   });
 
-  it('credits only the award records inside the run fiscal window', async () => {
+  it('credits the PI list of the award newest record, not an earlier holder', async () => {
     const handedOver = 'R01GM000003';
     const { emitted } = await runLane(
       async () => [project(handedOver, lead, undefined, 2008), project(handedOver, other)],
@@ -207,11 +221,12 @@ describe('a lane run relists legacy awards so another person award stops being s
     const relisted = emitted.filter((obs) => obs.entityKey === 'synthetic-merged-in-key');
     expect(relisted).toHaveLength(1);
     expect((relisted[0].value as Array<Record<string, any>>)[0].investigators).toEqual([
-      { contact: true, profileId: 22, researcherId: OTHER },
+      { contact: true, profileId: 22, researcherId: OTHER, name: 'Blair Leadperson' },
     ]);
     const servedForEarlierLead = aggregateResearchEntityGrantEvidence(
       relisted.map((obs) => ({ ...obs, sourceName: 'nih-reporter', observedAt: READ_AT })) as any,
       new Set([LEAD]),
+      (investigator) => investigator.researcherId !== LEAD,
     );
     expect(servedForEarlierLead.recentGrants ?? []).toEqual([]);
   });
@@ -227,6 +242,45 @@ describe('a lane run relists legacy awards so another person award stops being s
     expect(
       result.partialFailures?.some((line) => line.includes('legacy award PI read failed')),
     ).toBe(true);
+  });
+
+  it('records no PI list on a fresh award whose contact PI the resolver cannot settle', async () => {
+    const unresolvedContact = { profileId: 33, first: 'Casey', last: 'Unsettled' };
+    const fresh: NihGrant = {
+      ...project('R01GM000077', unresolvedContact, lead),
+      fiscal_year: 2026,
+      project_start_date: '2025-04-01T00:00:00',
+      project_end_date: '2999-03-31T00:00:00',
+    };
+    vi.spyOn(axios, 'post').mockResolvedValue({
+      data: { meta: { total: 1, offset: 0, limit: 500 }, results: [fresh] },
+    } as any);
+    const emitted: ObservationInput[] = [];
+    await new NihReporterScraper({
+      fiscalYears: [2026],
+      resolveResearcherId: async (name: string) =>
+        researcherFor(name)
+          ? ({ status: 'matched', researcherId: researcherFor(name) } as any)
+          : ({ status: 'ambiguous' } as any),
+      resolveCorroborated: async () => ({ status: 'absent' }) as any,
+      loadResearcherProfileTitle: async () => 'Professor',
+      researchHomeResolver: async () => ({ status: 'canonical', slug: 'synthetic-row' }) as any,
+      lookupContactPiAffiliations: async () => new Map([[11, { fiscalYear: 2026, atYale: true }]]),
+      loadLegacyGrantObservations: async () => [],
+    }).run({
+      scrapeRunId: 'test-run',
+      sourceId: 'test-source',
+      sourceName: 'nih-reporter',
+      sourceWeight: 0.9,
+      options: { dryRun: true, useCache: false, release: false },
+      emit: async (obs) => {
+        emitted.push(...(Array.isArray(obs) ? obs : [obs]));
+      },
+      log: () => {},
+    });
+    const grants = emitted.find((obs) => obs.field === 'recentGrants')!.value as any[];
+    expect(grants.map((entry) => entry.id)).toEqual(['R01GM000077']);
+    expect(grants[0]).not.toHaveProperty('investigators');
   });
 
   it('fails closed and relists nothing when RePORTER cannot be read', async () => {

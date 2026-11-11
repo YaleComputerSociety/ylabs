@@ -2,7 +2,12 @@ export interface GrantInvestigator {
   contact: boolean;
   researcherId?: string;
   profileId?: number;
+  name?: string;
 }
+
+export type ProvablyNotALead = (investigator: Record<string, unknown>) => boolean;
+
+export const NO_INVESTIGATOR_IS_PROVABLY_NOT_A_LEAD: ProvablyNotALead = () => false;
 
 export type GrantLeadRole = 'pi' | 'copi';
 
@@ -83,18 +88,32 @@ function withoutInvestigatorsOrRole(entry: GrantEntry): GrantEntry {
 // An entry written before lanes recorded investigators is held without a role rather
 // than defaulted to `pi`: dropping it would empty every funded row until all six grant
 // lanes re-read, and the next read replaces it with a listed entry (#5779).
+// An award that lists no lead is withheld only when every listed investigator is provably
+// someone else; one that cannot be told apart from a lead (a duplicate researcher record,
+// no netid, a compatible name) is held instead, because withholding it would hide a
+// lead's own award (#5779).
 export function deriveGrantEntryForLeads(
   entry: unknown,
   leadPersonIds: ReadonlySet<string>,
-  { carriesRole }: { carriesRole: boolean },
+  {
+    carriesRole,
+    isProvablyNotALead = NO_INVESTIGATOR_IS_PROVABLY_NOT_A_LEAD,
+  }: { carriesRole: boolean; isProvablyNotALead?: ProvablyNotALead },
 ): GrantEntryDerivation {
   if (!isPlainObject(entry)) return { outcome: 'withheld' };
   const investigators = recordedGrantInvestigators(entry);
   const stripped = withoutInvestigatorsOrRole(entry);
   if (!investigators) return { outcome: 'held', entry: stripped };
   const role = grantRoleForLeads(investigators, leadPersonIds);
-  if (!role) return { outcome: 'withheld' };
-  return { outcome: 'labelled', role, entry: carriesRole ? { ...stripped, role } : stripped };
+  if (role) {
+    return { outcome: 'labelled', role, entry: carriesRole ? { ...stripped, role } : stripped };
+  }
+  const everyoneProvablyElse =
+    investigators.length > 0 &&
+    investigators.every(
+      (investigator) => isPlainObject(investigator) && isProvablyNotALead(investigator),
+    );
+  return everyoneProvablyElse ? { outcome: 'withheld' } : { outcome: 'held', entry: stripped };
 }
 
 export function withCreditedInvestigator<T extends object>(

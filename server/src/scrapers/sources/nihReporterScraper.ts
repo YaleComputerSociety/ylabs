@@ -420,15 +420,17 @@ export function groupGrantsByProject(grants: readonly NihGrant[]): NihGrant[][] 
   return [...projects.values()];
 }
 
+export const UNRESOLVED_CREDITED_PI = null;
+
 export type NihPiResearcherLookup = (
   pi: NihPrincipalInvestigator,
   grant: NihGrant,
-) => string | undefined;
+) => string | typeof UNRESOLVED_CREDITED_PI | undefined;
 
 export function nihAwardInvestigators(
   records: readonly NihGrant[],
   researcherIdForPi: NihPiResearcherLookup,
-): GrantInvestigator[] {
+): GrantInvestigator[] | undefined {
   const newestFirst = [...records].sort(
     (left, right) =>
       fiscalYearRecency(right) - fiscalYearRecency(left) ||
@@ -439,10 +441,18 @@ export function nihAwardInvestigators(
     for (const pi of record.principal_investigators || []) {
       if (!isProfileId(pi.profile_id) || byProfileId.has(pi.profile_id)) continue;
       const researcherId = researcherIdForPi(pi, record);
+      // A credited PI the resolver could not settle may be the row's lead, so the list
+      // cannot say whose award it is; the entry stays held rather than withheld.
+      if (researcherId === UNRESOLVED_CREDITED_PI) return undefined;
+      const name = [pi.first_name, pi.middle_name, pi.last_name]
+        .map((part) => (part || '').trim())
+        .filter(Boolean)
+        .join(' ');
       byProfileId.set(pi.profile_id, {
         contact: pi.is_contact_pi === true,
         profileId: pi.profile_id,
         ...(researcherId ? { researcherId } : {}),
+        ...(name ? { name } : {}),
       });
     }
   }
@@ -459,10 +469,16 @@ export function projectToRecord(
     id: nihAwardKey(newest),
     startDate: earliestDate(records.map((record) => parseDate(record.project_start_date))),
     endDate: projectEndDate(records),
-    ...(researcherIdForPi
-      ? { investigators: nihAwardInvestigators(records, researcherIdForPi) }
-      : {}),
+    ...withRecordedInvestigators(
+      researcherIdForPi && nihAwardInvestigators(records, researcherIdForPi),
+    ),
   };
+}
+
+function withRecordedInvestigators(investigators: GrantInvestigator[] | undefined): {
+  investigators?: GrantInvestigator[];
+} {
+  return investigators ? { investigators } : {};
 }
 
 /** Map a single API record into the schema-shaped record stored in `recentGrants`. */
@@ -935,32 +951,41 @@ export function projectRecordsByAwardNumber(
   return byNumber;
 }
 
+function newestFiscalYearRecords(records: readonly NihGrant[] | undefined): NihGrant[] {
+  if (!records || records.length === 0) return [];
+  const newest = Math.max(...records.map(fiscalYearRecency));
+  return records.filter((record) => fiscalYearRecency(record) === newest);
+}
+
 export function relistedLegacyGrantObservations(
   observations: readonly LegacyGrantObservation[],
   projects: readonly NihGrant[],
   researcherIdForPi: NihPiResearcherLookup,
   keysEmittedThisRun: ReadonlySet<string>,
-): { observations: ObservationInput[]; listed: number; unmatched: number } {
+): { observations: ObservationInput[]; listed: number; unmatched: number; unresolved: number } {
   const byNumber = projectRecordsByAwardNumber(projects);
   const out: ObservationInput[] = [];
   let listed = 0;
   let unmatched = 0;
+  let unresolved = 0;
   for (const observation of observations) {
     if (keysEmittedThisRun.has(observation.entityKey)) continue;
     let changed = false;
     const value = observation.value.map((entry) => {
       if (!entryLacksInvestigators(entry)) return entry;
-      const records = byNumber.get(awardEntryId(entry));
-      if (!records || records.length === 0) {
+      const records = newestFiscalYearRecords(byNumber.get(awardEntryId(entry)));
+      if (records.length === 0) {
         unmatched++;
+        return entry;
+      }
+      const investigators = nihAwardInvestigators(records, researcherIdForPi);
+      if (!investigators) {
+        unresolved++;
         return entry;
       }
       listed++;
       changed = true;
-      return {
-        ...(entry as Record<string, unknown>),
-        investigators: nihAwardInvestigators(records, researcherIdForPi),
-      };
+      return { ...(entry as Record<string, unknown>), investigators };
     });
     if (!changed) continue;
     out.push({
@@ -974,7 +999,7 @@ export function relistedLegacyGrantObservations(
       ...(observation.observedAt ? { observedAt: observation.observedAt } : {}),
     });
   }
-  return { observations: out, listed, unmatched };
+  return { observations: out, listed, unmatched, unresolved };
 }
 
 async function defaultLoadLegacyGrantObservations(): Promise<LegacyGrantObservation[]> {
@@ -1011,7 +1036,6 @@ async function defaultLoadLegacyGrantObservations(): Promise<LegacyGrantObservat
 
 async function fetchProjectsByNumber(
   projectNumbers: string[],
-  fiscalYears: number[],
   ctx: ScraperContext,
 ): Promise<NihGrant[]> {
   const projects: NihGrant[] = [];
@@ -1020,7 +1044,7 @@ async function fetchProjectsByNumber(
     let offset = 0;
     let total = Infinity;
     for (let page = 0; offset < total && page < MAX_PAGES; page++) {
-      const cacheKey = `legacy-award-pis:numbers=${batch.join(',')}:fy=${fiscalYears.join(',')}:offset=${offset}:limit=${PAGE_SIZE}`;
+      const cacheKey = `legacy-award-pis:numbers=${batch.join(',')}:offset=${offset}:limit=${PAGE_SIZE}`;
       let payload = ctx.options.useCache
         ? await getCached<NihPage>('nih-reporter', cacheKey)
         : null;
@@ -1029,11 +1053,7 @@ async function fetchProjectsByNumber(
           axios.post(
             REPORTER_ENDPOINT,
             {
-              criteria: {
-                project_nums: batch,
-                exclude_subprojects: true,
-                fiscal_years: fiscalYears,
-              },
+              criteria: { project_nums: batch, exclude_subprojects: true },
               include_fields: [
                 'ApplId',
                 'ProjectNum',
@@ -1196,7 +1216,7 @@ export class NihReporterScraper implements IScraper {
     const researcherIdForPi: NihPiResearcherLookup = (pi, grant) => {
       if (!isProfileId(pi.profile_id) || !creditedProfileIds.has(pi.profile_id)) return undefined;
       const name = pi.is_contact_pi ? pickContactPiName(grant) : principalInvestigatorName(pi);
-      return researcherIdByCreditedName.get(name);
+      return researcherIdByCreditedName.get(name) ?? UNRESOLVED_CREDITED_PI;
     };
     for (const [piName, grants] of piEntries) {
       processed++;
@@ -1243,26 +1263,31 @@ export class NihReporterScraper implements IScraper {
       totalObs += observations.length;
     }
 
-    const relist = { observations: 0, listed: 0, unmatched: 0, status: 'skipped (--limit)' };
+    const relist = {
+      observations: 0,
+      listed: 0,
+      unmatched: 0,
+      unresolved: 0,
+      status: 'skipped (--limit)',
+    };
     if (limitOption === undefined) {
       try {
         const legacy = await (
           this.opts.loadLegacyGrantObservations ?? defaultLoadLegacyGrantObservations
         )();
-        const numbers = legacyAwardProjectNumbers(legacy);
+        const legacyElsewhere = legacy.filter((observation) => !rows.has(observation.entityKey));
+        const numbers = legacyAwardProjectNumbers(legacyElsewhere);
         relist.status = numbers.length === 0 ? 'none pending' : 'read';
         if (numbers.length > 0) {
+          // Not bounded to the discovery window: the window decides which awards the lane
+          // finds, not who held an award it already attached, and a legacy award is
+          // usually older than the window, so a bound leaves exactly those entries held.
           const projects = (
             await (
               this.opts.lookupProjectsByNumber ??
-              ((projectNumbers) => fetchProjectsByNumber(projectNumbers, fiscalYears, ctx))
+              ((projectNumbers) => fetchProjectsByNumber(projectNumbers, ctx))
             )(numbers)
-          ).filter(
-            (record) =>
-              record.fiscal_year !== undefined &&
-              fiscalYears.includes(record.fiscal_year) &&
-              !isTraineeFellowshipGrant(record),
-          );
+          ).filter((record) => !isTraineeFellowshipGrant(record));
           const legacyCredited = new Set<number>();
           for (const record of projects) {
             if (!isYaleOrganization(record.organization?.org_name)) continue;
@@ -1310,13 +1335,17 @@ export class NihReporterScraper implements IScraper {
           }
           const researcherIdForLegacyPi: NihPiResearcherLookup = (pi, record) => {
             const credited = researcherIdForPi(pi, record);
-            if (credited) return credited;
+            if (credited !== undefined) return credited;
             if (!isProfileId(pi.profile_id) || !legacyCredited.has(pi.profile_id)) return undefined;
             const name = legacyNameOf(pi, record);
-            return researcherIdByCreditedName.get(name) ?? legacyResolution.get(name);
+            return (
+              researcherIdByCreditedName.get(name) ??
+              legacyResolution.get(name) ??
+              UNRESOLVED_CREDITED_PI
+            );
           };
           const relisted = relistedLegacyGrantObservations(
-            legacy,
+            legacyElsewhere,
             projects,
             researcherIdForLegacyPi,
             new Set(rows.keys()),
@@ -1326,6 +1355,7 @@ export class NihReporterScraper implements IScraper {
           relist.observations = relisted.observations.length;
           relist.listed = relisted.listed;
           relist.unmatched = relisted.unmatched;
+          relist.unresolved = relisted.unresolved;
         }
       } catch (err: unknown) {
         relist.status = 'failed';
@@ -1351,7 +1381,8 @@ export class NihReporterScraper implements IScraper {
       `${ineligibleLeadTitle} held for a non-lead title; ` +
       `${corroboratedPis} PI(s) settled by a corroborating profile URL; ` +
       `legacy award PI lists ${relist.status}: ${relist.observations} observation(s) relisted, ` +
-      `${relist.listed} award(s) listed, ${relist.unmatched} award(s) RePORTER did not return`;
+      `${relist.listed} award(s) listed, ${relist.unresolved} held with an unresolved credited PI, ` +
+      `${relist.unmatched} award(s) RePORTER did not return`;
     ctx.log(`Emitted ${totalObs} observations. ${notes}`);
 
     return {

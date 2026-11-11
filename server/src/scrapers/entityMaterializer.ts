@@ -154,7 +154,13 @@ import {
   loadResearchEntitySoleLeadPersonId,
   normalizedLabRowName,
 } from '../utils/researchHomeNameIdentityRoster';
-import { deriveGrantEntryForLeads, recordedGrantInvestigators } from './utils/grantInvestigators';
+import {
+  deriveGrantEntryForLeads,
+  NO_INVESTIGATOR_IS_PROVABLY_NOT_A_LEAD,
+  recordedGrantInvestigators,
+  type ProvablyNotALead,
+} from './utils/grantInvestigators';
+import { loadProvablyNotALead } from './utils/grantLeadIdentity';
 import { isComposedFullNameLabName, ownLabEvidence } from '../utils/unbackedLabSelfDescription';
 import {
   resolveAllFields,
@@ -2225,6 +2231,7 @@ export function grantEvidenceRecordsInvestigators(
 export function aggregateResearchEntityGrantEvidence(
   observations: MaterializerObservationLike[],
   leadPersonIds: ReadonlySet<string> = new Set(),
+  isProvablyNotALead: ProvablyNotALead = NO_INVESTIGATOR_IS_PROVABLY_NOT_A_LEAD,
 ): {
   recentGrants?: unknown[];
   recentGrantPeriods?: unknown[];
@@ -2258,7 +2265,10 @@ export function aggregateResearchEntityGrantEvidence(
     const served: unknown[] = [];
     for (const entry of entries) {
       awardsBySource.set(sourceName, [...(awardsBySource.get(sourceName) ?? []), entry]);
-      const derived = deriveGrantEntryForLeads(entry, leadPersonIds, { carriesRole });
+      const derived = deriveGrantEntryForLeads(entry, leadPersonIds, {
+        carriesRole,
+        isProvablyNotALead,
+      });
       if (derived.outcome === 'withheld') continue;
       servedAwardsBySource.set(sourceName, [
         ...(servedAwardsBySource.get(sourceName) ?? []),
@@ -12297,6 +12307,9 @@ async function materializeEntityUnderRemovalGuard(
     const grantEvidence = aggregateResearchEntityGrantEvidence(
       materializationObs,
       grantLeadPersonIds,
+      entityIdString && grantEvidenceRecordsInvestigators(materializationObs)
+        ? await loadProvablyNotALead(grantLeadPersonIds, materializationObs)
+        : NO_INVESTIGATOR_IS_PROVABLY_NOT_A_LEAD,
     );
     if (grantEvidence.recentGrants && resolved.recentGrants) {
       resolved.recentGrants.value = grantEvidence.recentGrants;
