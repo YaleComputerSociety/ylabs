@@ -1034,7 +1034,10 @@ const LabDetail = () => {
     fetchAbortRef.current = controller;
     dispatch({ type: 'FETCH_START' });
     axios
-      .get(`/research/${slug}`, { signal: controller.signal })
+      .get(`/research/${slug}`, {
+        signal: controller.signal,
+        ...(highlightedMemberName ? { params: { member: highlightedMemberName } } : {}),
+      })
       .then((res) => {
         if (requestId !== requestIdRef.current || controller.signal.aborted) return;
         const finalUrl: string = res.request?.responseURL || '';
@@ -1066,7 +1069,7 @@ const LabDetail = () => {
     return () => {
       fetchAbortRef.current?.abort();
     };
-  }, [slug, navigate]);
+  }, [slug, navigate, highlightedMemberName]);
 
   useEffect(() => {
     const entity = payload?.researchEntity || payload?.group;

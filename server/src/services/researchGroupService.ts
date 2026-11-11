@@ -53,6 +53,10 @@ import {
   readResearchEntitySearchSortableAttributes,
   UNDERGRAD_INVITATION_RANK_FIELD,
   RESEARCH_ENTITY_SEARCH_EMBEDDER_NAME,
+  LEAD_PROFESSOR_MEMBER_ROLES,
+  SEARCHABLE_PROFESSOR_MEMBER_ROLES,
+  SEARCHABLE_STUDENT_MEMBER_ROLES,
+  searchablePersonName,
 } from './researchEntitySearchIndexService';
 import { meshDescriptorWordKeys } from '../scrapers/utils/meshNonSubjectDescriptors';
 import { getResearchSearchQueryVector } from './researchSearchQueryEmbedding';
@@ -1823,15 +1827,19 @@ const MATCHABLE_LAB_MEMBER_ROLES: ReadonlySet<string> = new Set([
   'undergrad',
 ]);
 
-export const presentedLabMembers = (
+export const matchableLabMembers = (
   entity: Record<string, any>,
   rosterEntries: ResearchEntityRosterEntry[],
   now: Date,
 ): { leadProfessorNames: string[]; members: MatchedLabMember[] } => {
-  const members = publicResearchEntityDetailRosterMembers(entity, rosterEntries, now);
+  const members = publicResearchEntityDetailRosterMembers(
+    entity,
+    rosterEntries,
+    now,
+    EVERY_CURRENT_MEMBER,
+  );
   const rosterMembers = members
     .filter((member) => isFreshVerifiedOfficialRosterRow(member.row, now, entity.rosterEnrichment))
-    .slice(0, MAX_PUBLIC_ROSTER_MEMBERS)
     .filter((member) => MATCHABLE_LAB_MEMBER_ROLES.has(member.role))
     .map((member) => ({
       name: memberDisplayName(member),
@@ -1872,7 +1880,7 @@ async function optionalMatchedLabMemberNames(
       const entityId = researchGroupDocumentId(entity._id);
       if (!entityId) continue;
       const entries = rosterByEntityId.get(entityId) ?? [];
-      const matched = matchedLabMember(query, presentedLabMembers(entity, entries, now));
+      const matched = matchedLabMember(query, matchableLabMembers(entity, entries, now));
       if (matched) byEntityId.set(entityId, matched);
     }
   } catch (error) {
@@ -3517,7 +3525,7 @@ export const currentResearchEntityMemberFilter = (researchEntityId: unknown) => 
   isCurrentMember: { $ne: false },
 });
 
-const MAX_PUBLIC_DETAIL_MEMBERS = 100;
+export const MAX_PUBLIC_DETAIL_MEMBERS = 100;
 const MAX_PUBLIC_DETAIL_ACCESS_SIGNALS = 50;
 const MAX_PUBLIC_DETAIL_RELATIONSHIPS_PER_DIRECTION = 50;
 const MAX_PUBLIC_DETAIL_RELATIONSHIP_QUERY_LIMIT = 1000;
@@ -4533,6 +4541,7 @@ function canonicalPublicDetailMembers(
   entity: Record<string, any>,
   rosterEntries: ResearchEntityRosterEntry[],
   now = new Date(),
+  limit = MAX_PUBLIC_DETAIL_MEMBERS,
 ): Array<{ user: any; role: string; row: Record<string, any> }> {
   return rosterEntries
     .filter((entry) => entry.state !== 'HISTORICAL')
@@ -4549,7 +4558,7 @@ function canonicalPublicDetailMembers(
       (a, b) =>
         (PUBLIC_DETAIL_ROLE_PRIORITY[a.role] ?? 99) - (PUBLIC_DETAIL_ROLE_PRIORITY[b.role] ?? 99),
     )
-    .slice(0, MAX_PUBLIC_DETAIL_MEMBERS)
+    .slice(0, limit)
     .map((entry) => ({
       user: canonicalMemberUserForResearchDetail(entry),
       role: entry.role,
@@ -4604,20 +4613,56 @@ const publicResearchEntityDetailRosterMembers = (
   entity: Record<string, any>,
   rosterEntries: ResearchEntityRosterEntry[],
   now: Date,
+  limit = MAX_PUBLIC_DETAIL_MEMBERS,
 ) =>
   dedupeSameNameLeadMembers(
-    dropUncorroboratedPhantomLeads(canonicalPublicDetailMembers(entity, rosterEntries, now)),
+    dropUncorroboratedPhantomLeads(canonicalPublicDetailMembers(entity, rosterEntries, now, limit)),
     entity,
   );
 
-export function publicResearchEntityDetailMemberNames(
+const EVERY_CURRENT_MEMBER = Number.POSITIVE_INFINITY;
+
+export type SearchableMemberKind = 'lead' | 'faculty' | 'student';
+
+export interface SearchableResearchEntityMember {
+  name: string;
+  role: string;
+  kind: SearchableMemberKind;
+}
+
+/**
+ * The members a name search can match on a row, and so the only names its `?member=`
+ * deep link may ask the detail page to show. It reads every current member, not the
+ * detail page's display caps, because a member past the cap is still on the roster
+ * (#5584); the detail route serves a requested past-cap member by this same rule.
+ */
+export function searchableResearchEntityMembers(
   entity: Record<string, any>,
   rosterEntries: ResearchEntityRosterEntry[],
   now = new Date(),
-): Array<{ name: string; role: string }> {
-  return publicResearchEntityDetailRosterMembers(entity, rosterEntries, now)
-    .map((member) => ({ name: memberDisplayName(member), role: member.role }))
-    .filter((member) => Boolean(member.name));
+): SearchableResearchEntityMember[] {
+  const members: SearchableResearchEntityMember[] = [];
+  for (const member of publicResearchEntityDetailRosterMembers(
+    entity,
+    rosterEntries,
+    now,
+    EVERY_CURRENT_MEMBER,
+  )) {
+    if (!SEARCHABLE_PROFESSOR_MEMBER_ROLES.has(member.role)) continue;
+    const name = searchablePersonName(memberDisplayName(member));
+    if (!name) continue;
+    members.push({
+      name,
+      role: member.role,
+      kind: LEAD_PROFESSOR_MEMBER_ROLES.has(member.role) ? 'lead' : 'faculty',
+    });
+  }
+  for (const member of matchableLabMembers(entity, rosterEntries, now).members) {
+    if (!SEARCHABLE_STUDENT_MEMBER_ROLES.has(member.role)) continue;
+    const name = searchablePersonName(member.name);
+    if (name) members.push({ name, role: member.role, kind: 'student' });
+  }
+  return members;
 }
 
 export async function resolveArchivedResearchEntityCanonicalSlug(
@@ -4684,9 +4729,50 @@ const operatorPreviewReasons = (
   return { studentVisibilityBlockingReasons: blocking, studentVisibilitySignalReasons: signals };
 };
 
+const memberNameKey = (name: string): string => personNameWords(name).join(' ');
+
+/**
+ * A search card links a matched member as `?member=<name>`, and a member past the display
+ * cap is not on the page it opens. Serve that one member, and only when the row's own
+ * searchable roster holds them, so the parameter can land a deep link but cannot put an
+ * arbitrary name on the page (#5584). The display cap is otherwise unchanged.
+ */
+async function requestedPastCapMember<T extends { user: any; role: string }>(
+  entity: Record<string, any>,
+  rosterEntries: ResearchEntityRosterEntry[],
+  requestedMemberName: string | undefined,
+  shownMembers: readonly T[],
+): Promise<{ user: any; role: string; row: Record<string, any> } | undefined> {
+  const requestedKey = memberNameKey(requestedMemberName ?? '');
+  if (!requestedKey) return undefined;
+  if (shownMembers.some((member) => memberNameKey(memberDisplayName(member)) === requestedKey)) {
+    return undefined;
+  }
+  const now = new Date();
+  const match = searchableResearchEntityMembers(entity, rosterEntries, now).find(
+    (member) => memberNameKey(member.name) === requestedKey,
+  );
+  if (!match) return undefined;
+  const member = publicResearchEntityDetailRosterMembers(
+    entity,
+    rosterEntries,
+    now,
+    EVERY_CURRENT_MEMBER,
+  ).find(
+    (candidate) =>
+      candidate.role === match.role && memberNameKey(memberDisplayName(candidate)) === requestedKey,
+  );
+  if (!member) return undefined;
+  const [guarded] = await withPublicMemberImageGuards([member]);
+  return guarded;
+}
+
 export async function getResearchGroupDetail(
   slug: string,
-  { includeWithheldForOperator = false }: { includeWithheldForOperator?: boolean } = {},
+  {
+    includeWithheldForOperator = false,
+    requestedMemberName,
+  }: { includeWithheldForOperator?: boolean; requestedMemberName?: string } = {},
 ): Promise<{
   researchEntity: PublicResearchEntityDto;
   members: Array<{ user: any; role: string }>;
@@ -4773,7 +4859,16 @@ export async function getResearchGroupDetail(
       member.row?.sourceName !== OFFICIAL_ROSTER_SOURCE_NAME ||
       publicRosterMemberRows.has(member.row),
   );
-  const members = boundedMembersWithRows.map(({ row, ...member }) => {
+  const requestedMember = await requestedPastCapMember(
+    group as Record<string, any>,
+    rosterEntries,
+    requestedMemberName,
+    boundedMembersWithRows,
+  );
+  const shownMembersWithRows = requestedMember
+    ? [...boundedMembersWithRows, requestedMember]
+    : boundedMembersWithRows;
+  const members = shownMembersWithRows.map(({ row, ...member }) => {
     const rosterEvidence = isFreshVerifiedOfficialRosterRow(
       row,
       new Date(),

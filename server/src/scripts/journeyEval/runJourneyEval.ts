@@ -7,7 +7,16 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../../db/connections';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { resolveSafeJsonReportOutputPath } from '../scriptWriteGuards';
-import { journeyCases, type BrowseRequest, type JourneyEvalContext } from './journeyEvalCases';
+import {
+  journeyCases,
+  type BrowseRequest,
+  type JourneyEvalContext,
+  type PastCapMemberRead,
+} from './journeyEvalCases';
+import { RoleAssignment } from '../../models/roleAssignment';
+import { LEAD_ROLE_CANONICAL_VALUES } from '../../models/canonicalRoleMapping';
+import { type ResearchEntityRosterEntry } from '../../services/researchEntityMembershipAccessor';
+import { servedRosterByEntityId } from '../../services/directoryRemovalServing';
 import { programJourneyCases } from './journeyEvalProgramCases';
 import { fellowshipJourneyCases } from './journeyEvalFellowshipCases';
 import { buildProgramJourneyContext } from './programJourneyContext';
@@ -117,12 +126,99 @@ async function readOwnedSlotSurvivorWebsite(
   };
 }
 
+const detailMemberNames = (detail: { members?: Array<{ user?: any }> } | null): string[] =>
+  (detail?.members ?? [])
+    .map((member) =>
+      String(
+        member.user?.displayName ||
+          [member.user?.fname, member.user?.lname].filter(Boolean).join(' ') ||
+          '',
+      ).trim(),
+    )
+    .filter(Boolean);
+
+async function readPastCapMembers(input: {
+  sampleSize: number;
+  displayCap: number;
+  searchableMembers: (
+    entity: Record<string, any>,
+    rosterEntries: ResearchEntityRosterEntry[],
+  ) => Array<{ name: string; kind: string }>;
+  detailMemberNames: (slug: string) => Promise<string[]>;
+}): Promise<PastCapMemberRead> {
+  const collection = mongoose.connection.db!.collection(RESEARCH_ENTITY_COLLECTION);
+  const servedRows = await collection
+    .find({ archived: { $ne: true }, studentVisibilityTier: SERVED_TIER })
+    .sort({ slug: 1 })
+    .toArray();
+  const rosterByEntityId = await servedRosterByEntityId(servedRows.map((row) => row._id));
+  const overCap = servedRows.flatMap((row) => {
+    const live = (rosterByEntityId.get(String(row._id)) ?? []).filter(
+      (entry) => entry.state !== 'HISTORICAL',
+    );
+    return live.length > input.displayCap ? [{ row, live }] : [];
+  });
+  if (overCap.length === 0) return { rowsOverCap: 0, samples: [] };
+
+  const perRow = Math.max(1, Math.ceil(input.sampleSize / overCap.length));
+  const picks: Array<{ rowKey: string; memberName: string; personIds: string[] }> = [];
+  for (const { row, live } of overCap) {
+    const shown = new Set(await input.detailMemberNames(String(row.slug)));
+    const pastCap = input
+      .searchableMembers(row as Record<string, any>, live)
+      .filter((member) => member.kind === 'faculty' && !shown.has(member.name))
+      .map((member) => member.name)
+      .filter((name, index, names) => names.indexOf(name) === index)
+      .sort()
+      .slice(0, perRow);
+    for (const memberName of pastCap) {
+      const personIds = live
+        .filter((entry) => entry.name.trim() === memberName)
+        .map((entry) => String(entry.personId));
+      picks.push({ rowKey: String(row.slug), memberName, personIds });
+    }
+  }
+  const sampled = picks.slice(0, input.sampleSize);
+
+  const ledAssignments = await RoleAssignment.find({
+    'target.kind': 'RESEARCH_ENTITY',
+    personId: { $in: sampled.flatMap((pick) => pick.personIds) },
+    role: { $in: LEAD_ROLE_CANONICAL_VALUES },
+    archived: { $ne: true },
+  })
+    .select('personId target.id')
+    .lean();
+  const servedById = new Map(servedRows.map((row) => [String(row._id), String(row.slug)]));
+  const ownRowKeysByPersonId = new Map<string, string[]>();
+  for (const assignment of ledAssignments as Array<{
+    personId: unknown;
+    target?: { id?: unknown };
+  }>) {
+    const slug = servedById.get(String(assignment.target?.id));
+    if (!slug) continue;
+    const key = String(assignment.personId);
+    ownRowKeysByPersonId.set(key, [...(ownRowKeysByPersonId.get(key) ?? []), slug]);
+  }
+  return {
+    rowsOverCap: overCap.length,
+    samples: sampled.map(({ rowKey, memberName, personIds }) => ({
+      rowKey,
+      memberName,
+      ownRowKeys: [
+        ...new Set(personIds.flatMap((personId) => ownRowKeysByPersonId.get(personId) ?? [])),
+      ].filter((slug) => slug !== rowKey),
+    })),
+  };
+}
+
 async function buildContext(args: JourneyEvalArgs): Promise<JourneyEvalContext> {
   const {
     getResearchGroupDetail,
     listSimilarResearchEntities,
+    MAX_PUBLIC_DETAIL_MEMBERS,
     optionalPublicLeadMemberNames,
     personNameWordKeys,
+    searchableResearchEntityMembers,
     searchResearchGroupsViaMeili,
   } = await import('../../services/researchGroupService');
   const database = mongoose.connection.db;
@@ -228,6 +324,15 @@ async function buildContext(args: JourneyEvalArgs): Promise<JourneyEvalContext> 
       }
       return { survivorsScanned: survivors.length, observations };
     },
+    readPastCapMembers: (sampleSize: number) =>
+      readPastCapMembers({
+        sampleSize,
+        displayCap: MAX_PUBLIC_DETAIL_MEMBERS,
+        searchableMembers: searchableResearchEntityMembers,
+        detailMemberNames: async (slug) => detailMemberNames(await getResearchGroupDetail(slug)),
+      }),
+    readDetailMemberNames: async (slug: string, requestedMemberName: string) =>
+      detailMemberNames(await getResearchGroupDetail(slug, { requestedMemberName })),
     readCorpusFingerprint: async () => {
       const [rowCount, latest] = await Promise.all([
         collection.countDocuments({}),
