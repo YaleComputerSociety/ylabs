@@ -21,6 +21,11 @@ import {
 } from '../utils/profileTemplateChrome';
 import mongoose from 'mongoose';
 import { Observation, ObservedEntityType } from '../models/observation';
+import {
+  isOverSharedPersonWebsite,
+  overSharedPersonWebsiteKeysForMaterialization,
+  withoutOverSharedPersonWebsiteObservations,
+} from './overSharedPersonWebsite';
 import { ResearchEntity } from '../models/researchEntity';
 import {
   DERIVED_RESEARCH_AREA_SOURCE_NAME,
@@ -1067,6 +1072,7 @@ interface MaterializeResult {
   plannedSet?: Record<string, unknown>;
   plannedUnset?: Record<string, ''>;
   plannedWriteSkip?: 'no-scoped-fields' | 'unchanged';
+  plannedPaths?: string[];
   identityJoin?: UserIdentityJoin;
   unbackedResearchAreas?: UnbackedResearchAreaOutcome;
   /** Fellowship fields this pass cleared because their only source states they have none. */
@@ -7245,7 +7251,10 @@ export async function joinUserIdentityToExistingResearcher(
   const keyNamesAnOfficeMailbox = userKeyNamesRoleOrUnitMailbox(identifier.entityKey, obs);
   const materializationObs = keyNamesAnOfficeMailbox
     ? []
-    : obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o));
+    : withoutOverSharedPersonWebsiteObservations(
+        obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o)),
+        await overSharedPersonWebsiteKeysForMaterialization(),
+      );
   const resolverObs: ResolverObservation[] = materializationObs.map((o: any) => ({
     field: o.field,
     value: o.value,
@@ -7600,7 +7609,13 @@ async function materializeUserIdentityToResearcher(
     researcher.profile.title = undefined;
     fieldsWritten += 1;
   }
-  if (isInadmissiblePersonWebsiteUrl(researcher.profile.websiteUrl)) {
+  if (
+    isInadmissiblePersonWebsiteUrl(researcher.profile.websiteUrl) ||
+    isOverSharedPersonWebsite(
+      researcher.profile.websiteUrl,
+      await overSharedPersonWebsiteKeysForMaterialization(),
+    )
+  ) {
     researcher.profile.websiteUrl = undefined;
     fieldsWritten += 1;
   }
@@ -7754,6 +7769,7 @@ async function materializeUserIdentityToResearcher(
       conflicts,
       created,
       resolved,
+      plannedPaths: researcher.modifiedPaths?.() ?? [],
       ...(identityJoin ? { identityJoin } : {}),
     };
   }
