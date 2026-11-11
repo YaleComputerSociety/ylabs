@@ -241,6 +241,55 @@ describe('scraper CLI helpers', () => {
     });
   });
 
+  it('parses a user field scope for materialize only (#5816)', async () => {
+    const cli = await import('../cliHelpers');
+    const env = { SCRAPER_ENV: 'development' } as NodeJS.ProcessEnv;
+    const mongoUrl = 'mongodb+srv://example.mongodb.net/Development';
+
+    expect(
+      cli.buildScraperCliPreflight(
+        'materialize',
+        { run: 'run-1', 'only-fields': 'email,displayName', output: '/tmp/scope.json' },
+        mongoUrl,
+        env,
+      ),
+    ).toMatchObject({
+      command: 'materialize',
+      onlyFields: ['identifiers.email', 'displayName'],
+      guard: { options: { dryRun: true } },
+    });
+    expect(
+      cli.buildScraperCliPreflight('materialize', { run: 'run-1' }, mongoUrl, env),
+    ).toMatchObject({ onlyFields: [] });
+    expect(() =>
+      cli.buildScraperCliPreflight(
+        'materialize',
+        { run: 'run-1', 'only-fields': 'status', output: '/tmp/scope.json' },
+        mongoUrl,
+        env,
+      ),
+    ).toThrow(/Unsupported --only-fields field: status/);
+    expect(() =>
+      cli.buildScraperCliPreflight(
+        'materialize',
+        { run: 'run-1', 'only-fields': 'email' },
+        mongoUrl,
+        env,
+      ),
+    ).toThrow(/--only-fields requires --output/);
+    expect(() =>
+      cli.buildScraperCliPreflight(
+        'run',
+        { source: 'orcid', 'only-fields': 'email' },
+        mongoUrl,
+        env,
+      ),
+    ).toThrow(/--only-fields applies only to scrape materialize/);
+    expect(() => cli.parseArgs(['node', 'cli.ts', 'materialize', '--only-fields'])).toThrow(
+      /--only-fields requires a value/,
+    );
+  });
+
   it('builds materialization review artifacts from materialize, visibility, and run reports', async () => {
     const cli = await import('../cliHelpers');
 

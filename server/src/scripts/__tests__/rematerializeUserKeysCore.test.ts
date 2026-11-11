@@ -54,6 +54,42 @@ describe('observations:rematerialize-user-keys arguments', () => {
       fieldsWritten: 3,
       skipped: { 'office-mailbox-user-key': 1 },
       errors: 1,
+      plannedPathSet: ['profile.title'],
+      droppedPathSet: [],
+    });
+  });
+
+  it('parses a field scope and reports the planned and dropped path sets (#5816)', () => {
+    const required = ['--keys-file=/tmp/k.json', '--output=/tmp/r.json'];
+    expect(parseRematerializeUserKeysArgs(required).onlyFields).toEqual([]);
+    expect(
+      parseRematerializeUserKeysArgs([...required, '--only-fields=email,profileFieldWriters'])
+        .onlyFields,
+    ).toEqual(['identifiers.email', 'profileFieldWriters']);
+    expect(() =>
+      parseRematerializeUserKeysArgs([...required, '--only-fields=identifiers.netid']),
+    ).toThrow(/Unsupported --only-fields field/);
+    expect(() => parseRematerializeUserKeysArgs([...required, '--only-fields'])).toThrow(
+      /requires a value/,
+    );
+    expect(
+      summarizeUserKeyPass(1, [
+        {
+          entityKey: 'a',
+          fieldsWritten: 1,
+          plannedPaths: ['identifiers.email'],
+          droppedPaths: ['profile.title'],
+        },
+        {
+          entityKey: 'b',
+          fieldsWritten: 0,
+          plannedPaths: [],
+          droppedPaths: ['displayName', 'profile.title'],
+        },
+      ]),
+    ).toMatchObject({
+      plannedPathSet: ['identifiers.email'],
+      droppedPathSet: ['displayName', 'profile.title'],
     });
   });
 });
