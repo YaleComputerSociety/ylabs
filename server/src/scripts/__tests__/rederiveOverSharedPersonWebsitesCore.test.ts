@@ -5,7 +5,7 @@ import {
   REDERIVE_OVER_SHARED_PERSON_WEBSITES_CONFIRM_FLAG,
   condemnedPersonWebsiteRule,
   identifiersAssertingCondemnedWebsites,
-  identifiersAssertingOverSharedWebsites,
+  isOverSharedWebsiteIn,
   parseRederiveOverSharedPersonWebsitesArgs,
   scopeWebsiteOnlyPlans,
   summarizeRederiveVisits,
@@ -34,14 +34,14 @@ describe('observations:rederive-over-shared-person-websites planning (#5645)', (
   it('visits each identity asserting an over-shared website once, in either identity form', () => {
     const keys = new Set([personWebsiteShareKey(CHROME_PAGE) as string]);
 
-    const identifiers = identifiersAssertingOverSharedWebsites(
+    const identifiers = identifiersAssertingCondemnedWebsites(
       [
         { entityKey: 'dept:fixture:b', value: CHROME_PAGE },
         { entityKey: 'dept:fixture:b', value: CHROME_PAGE.replace(/\/$/, '') },
         { entityId: 'aaaaaaaaaaaaaaaaaaaaaaaa', value: CHROME_PAGE },
         { entityKey: 'dept:fixture:c', value: LAB_SITE },
       ],
-      keys,
+      isOverSharedWebsiteIn(keys),
     );
 
     expect(identifiers).toEqual([
@@ -53,8 +53,22 @@ describe('observations:rederive-over-shared-person-websites planning (#5645)', (
   it('selects by the inadmissible person-website rule under --inadmissible (#5657)', () => {
     const directions = 'https://www.google.com/maps?daddr=1.5,-2.5&directionsMode=driving';
     const keys = new Set([personWebsiteShareKey(CHROME_PAGE) as string]);
-    const args = parseRederiveOverSharedPersonWebsitesArgs(['--dry-run', '--inadmissible']);
-    expect(args).toEqual({ apply: false, confirmed: false, inadmissible: true });
+    expect(() => parseRederiveOverSharedPersonWebsitesArgs(['--dry-run', '--inadmissible'])).toThrow(
+      '--inadmissible requires --website-only',
+    );
+    expect(() =>
+      parseRederiveOverSharedPersonWebsitesArgs([
+        '--apply',
+        REDERIVE_OVER_SHARED_PERSON_WEBSITES_CONFIRM_FLAG,
+        '--inadmissible',
+      ]),
+    ).toThrow('--inadmissible requires --website-only');
+    const args = parseRederiveOverSharedPersonWebsitesArgs([
+      '--dry-run',
+      '--website-only',
+      '--inadmissible',
+    ]);
+    expect(args).toEqual({ apply: false, confirmed: false, websiteOnly: true, inadmissible: true });
     const observations = [
       { entityKey: 'dept:fixture:b', value: CHROME_PAGE },
       { entityKey: 'dept:fixture:c', value: directions },

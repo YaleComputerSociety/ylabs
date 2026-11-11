@@ -42,11 +42,10 @@ const RULES: Record<Category, (url: string) => boolean> = {
   mapOrDirections: isMapOrPublicityPageSourceUrl,
 };
 
-const WEBSITE_BUTTON_REFUSES: Record<Category, (url: string) => boolean> = {
+const WEBSITE_BUTTON_REFUSES: Partial<Record<Category, (url: string) => boolean>> = {
   patientCare: (url) => isRefusedResearchWebsitePageUrl(url, 'FACULTY_RESEARCH_AREA'),
   course: (url) => isRefusedResearchWebsitePageUrl(url, 'FACULTY_RESEARCH_AREA'),
   posting: (url) => isRefusedResearchWebsitePageUrl(url, 'FACULTY_RESEARCH_AREA'),
-  mapOrDirections: isMapOrPublicityPageSourceUrl,
 };
 
 describe('inadmissible website page contract (client)', () => {
@@ -59,7 +58,8 @@ describe('inadmissible website page contract (client)', () => {
     contract[category].refused.forEach((testCase) => {
       it(`refuses as ${category}: ${testCase.name}`, () => {
         expect(RULES[category](testCase.url)).toBe(true);
-        expect(WEBSITE_BUTTON_REFUSES[category](testCase.url)).toBe(true);
+        const websiteButtonRefuses = WEBSITE_BUTTON_REFUSES[category];
+        if (websiteButtonRefuses) expect(websiteButtonRefuses(testCase.url)).toBe(true);
       });
     });
 

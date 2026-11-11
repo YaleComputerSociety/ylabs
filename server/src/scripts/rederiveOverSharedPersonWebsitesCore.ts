@@ -43,6 +43,9 @@ export function parseRederiveOverSharedPersonWebsitesArgs(
       `${REDERIVE_OVER_SHARED_PERSON_WEBSITES_CONFIRM_FLAG} is required when --apply is set.`,
     );
   }
+  if (args.inadmissible && !args.websiteOnly) {
+    throw new Error('--inadmissible requires --website-only.');
+  }
   if (args.apply && args.websiteOnly && (!args.snapshotOutput || !args.deferredOutput)) {
     throw new Error(
       '--snapshot-output and --deferred-output are required when --apply and --website-only are set.',
@@ -103,13 +106,6 @@ export function condemnedPersonWebsiteRule(
   overSharedKeys: ReadonlySet<string>,
 ): CondemnedPersonWebsite {
   return args.inadmissible ? isInadmissiblePersonWebsiteUrl : isOverSharedWebsiteIn(overSharedKeys);
-}
-
-export function identifiersAssertingOverSharedWebsites(
-  observations: readonly UserObservationIdentity[],
-  overSharedKeys: ReadonlySet<string>,
-): UserMaterializeIdentifier[] {
-  return identifiersAssertingCondemnedWebsites(observations, isOverSharedWebsiteIn(overSharedKeys));
 }
 
 export function identifiersAssertingCondemnedWebsites(
