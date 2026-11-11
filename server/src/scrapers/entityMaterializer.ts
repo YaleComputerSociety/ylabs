@@ -10836,9 +10836,6 @@ async function findEntityCandidatesByKey(
   if (key.ns === 'website-url') {
     const directVariants = websiteUrlIdentityKeyVariants(key.value);
     if (directVariants.length === 0) return [];
-    const redirectVariants = (await websiteUrlIdentityKeyRedirectEquivalents(key.value)).flatMap(
-      websiteUrlIdentityKeyVariants,
-    );
     type WebsiteCandidateDoc = { _id: unknown; name?: string; studentVisibilityTier?: string };
     const select = '_id name studentVisibilityTier';
     const direct = (await ResearchEntity.find({
@@ -10848,6 +10845,12 @@ async function findEntityCandidatesByKey(
       .select(select)
       .limit(2)
       .lean()) as WebsiteCandidateDoc[];
+    const redirectVariants =
+      direct.length > 0
+        ? []
+        : (await websiteUrlIdentityKeyRedirectEquivalents(key.value)).flatMap(
+            websiteUrlIdentityKeyVariants,
+          );
     const redirected =
       redirectVariants.length === 0
         ? []
@@ -10859,13 +10862,10 @@ async function findEntityCandidatesByKey(
             .select(select)
             .limit(2)
             .lean()) as WebsiteCandidateDoc[]);
-    const seen = new Set(direct.map((doc) => String(doc._id)));
-    const docs = [
-      ...direct,
-      ...redirected.filter(
-        (doc) => !seen.has(String(doc._id)) && redirectCandidateAgreesOnName(self, doc.name),
-      ),
-    ].slice(0, 2);
+    const docs =
+      direct.length > 0
+        ? direct
+        : redirected.filter((doc) => redirectCandidateAgreesOnName(self, doc.name));
     return docs.map((doc) => ({
       id: String(doc._id),
       name: doc.name,

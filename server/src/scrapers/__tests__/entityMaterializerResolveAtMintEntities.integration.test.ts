@@ -387,6 +387,27 @@ describe('resolve-at-mint for entities (C4_RESOLVE_AT_MINT_ENTITIES)', () => {
     expect(await ResearchEntity.countDocuments({ archived: { $ne: true } })).toBe(2);
   });
 
+  it('default ON: an exact url match still resolves when a recorded redirect reaches a second row', async () => {
+    await seedResearchEntity('smith-lab-a', 'Smith Lab', 'http://www.example.edu/smithlab/');
+    const atAlias = await materializeEntity('researchEntity', { entityKey: 'smith-lab-a' });
+    await seedResearchEntity('smith-lab-b', 'Smith Lab', 'https://smithlab.example.edu/');
+    const atLanding = await materializeEntity('researchEntity', { entityKey: 'smith-lab-b' });
+    expect(String(atLanding.entityId)).not.toBe(String(atAlias.entityId));
+    await ResearchEntity.updateOne(
+      { _id: atLanding.entityId },
+      { $set: recordMove('http://www.example.edu/smithlab/', 'https://smithlab.example.edu/') },
+    );
+
+    await seedResearchEntity('smith-lab-c', 'Smith Lab', 'http://www.example.edu/smithlab/');
+    const aliasMint = await materializeEntity('researchEntity', { entityKey: 'smith-lab-c' });
+    await seedResearchEntity('smith-lab-d', 'Smith Lab', 'https://smithlab.example.edu/');
+    const landingMint = await materializeEntity('researchEntity', { entityKey: 'smith-lab-d' });
+
+    expect(await ResearchEntity.countDocuments({})).toBe(2);
+    expect(String(aliasMint.entityId)).toBe(String(atAlias.entityId));
+    expect(String(landingMint.entityId)).toBe(String(atLanding.entityId));
+  });
+
   it('default ON: a recorded redirect never folds a mint into an organization row', async () => {
     await seedResearchEntity('imaging-center', 'Imaging Center', 'https://imaging.example.edu/');
     const center = await materializeEntity('researchEntity', { entityKey: 'imaging-center' });

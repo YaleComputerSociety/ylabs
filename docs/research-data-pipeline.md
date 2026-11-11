@@ -1799,7 +1799,7 @@ The stored `websiteUrl` keeps recording what the source published, so this is de
 `--http-websites-only` scopes a pass to rows whose `websiteUrl` or `website` is plain HTTP, which is how a landing is recorded without waiting for the sweep's seven-day re-probe window.
 
 A `HEALTHY` probe whose host's own redirects land on a different page identity (another host or another path, not a scheme, `www.`, letter-case, trailing-slash or default-document respelling) records that landing as `redirectLandingUrl` (#5638).
-It is the only evidence a host or path alias is admitted on: the website-url dedupe lane groups a row under its `websiteUrl`'s recorded landing, and resolve-at-mint's `website-url` arm adds the keys a recorded redirect makes equivalent.
+It is the only evidence a host or path alias is admitted on: the website-url dedupe lane groups a row under its `websiteUrl`'s recorded landing, and resolve-at-mint's `website-url` arm consults the keys a recorded redirect makes equivalent only when no row carries the URL itself, so an exact match resolves as before and a redirect only adds a candidate where there was none.
 Nothing is aliased by pattern, so a URL no probe has followed stays its own page, and every dedupe guard (lead-person clustering, the conflated-person refusal, never-demote) still decides the lane's merge.
 A landing that carries a query string is not recorded, because the identity key drops the query and would fold every `?id=` page of one script, or a login page, into one page.
 Only a live row's verdict is read, because link health never re-probes an archived row, so an archived duplicate's verdict cannot keep an alias alive after the URL stops redirecting.
