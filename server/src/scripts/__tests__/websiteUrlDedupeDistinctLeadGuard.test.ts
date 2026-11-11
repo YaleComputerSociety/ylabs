@@ -69,7 +69,12 @@ describe('website-url lane distinct-lead guard (#5638)', () => {
       profile({
         id: 'dept-zero-ada-quill',
         websiteUrl: OLD_HOME,
-        sourceUrls: [OLD_HOME, NEW_HOME, 'https://zero.example.edu/a', 'https://zero.example.edu/b'],
+        sourceUrls: [
+          OLD_HOME,
+          NEW_HOME,
+          'https://zero.example.edu/a',
+          'https://zero.example.edu/b',
+        ],
       }),
       ...twoProfiles(['researcher-1'], ['researcher-2']),
     ];
@@ -81,7 +86,12 @@ describe('website-url lane distinct-lead guard (#5638)', () => {
       profile({
         id: 'dept-zero-ada-quill',
         websiteUrl: OLD_HOME,
-        sourceUrls: [OLD_HOME, NEW_HOME, 'https://zero.example.edu/a', 'https://zero.example.edu/b'],
+        sourceUrls: [
+          OLD_HOME,
+          NEW_HOME,
+          'https://zero.example.edu/a',
+          'https://zero.example.edu/b',
+        ],
       }),
       ...twoProfiles(['researcher-1'], ['researcher-1']),
     ];
