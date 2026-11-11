@@ -134,12 +134,14 @@ describe('a user keyed by an email local part that has a twin account (#4988)', 
     expect(real?.identifiers?.netid).not.toBe(LOCAL_PART);
   });
 
-  it('leaves a twin alone when the alias map does not resolve', async () => {
+  it('leaves a twin alone when the alias map does not resolve, reaching it by name rather than by its dotted netid (#5740)', async () => {
     await Observation.deleteMany({ entityKey: `netid:${REAL_NETID}` });
     const report = await dedupeAccountlessResearcherShells({ apply: false });
     expect(report.aliasTwinFolds.folded).toBe(0);
     expect(report.aliasTwinFolds.refusals['alias-unresolved']).toBe(1);
     const result = await join();
     expect(String(result.researcher?._id)).toBe(String(twinResearcherId));
+    expect(result.identityJoin).not.toBe('account-netid');
+    expect(result.identityJoin).toBe('person-name');
   });
 });
