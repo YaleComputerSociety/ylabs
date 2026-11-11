@@ -8,6 +8,7 @@ import {
 } from './canonicalSchemaVersion';
 import { archiveAttributionFields } from './entityArchival';
 import { registerFieldProvenanceBackingGuard } from './fieldProvenanceBacking';
+import { registerHoldOverrideReasonGuard } from './holdOverrideReasonGuard';
 import {
   fieldLockProvenanceSchema,
   fieldProvenanceSchema,
@@ -702,6 +703,7 @@ researchEntitySchema.index({ studentVisibilityComputedAt: -1 });
 researchEntitySchema.index({ studentVisibilityEvaluatedAt: -1 });
 
 registerFieldProvenanceBackingGuard(researchEntitySchema);
+registerHoldOverrideReasonGuard(researchEntitySchema);
 
 export const ResearchEntity =
   mongoose.models.ResearchEntity ||

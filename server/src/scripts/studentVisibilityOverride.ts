@@ -21,6 +21,7 @@ import {
   parseStudentVisibilityOverrideArgs,
   planStudentVisibilityOverride,
   studentVisibilityOverrideWriteRefusal,
+  overrideReviewerStamp,
   type StudentVisibilityOverrideArgs,
 } from './studentVisibilityOverrideCore';
 
@@ -64,7 +65,12 @@ export async function runStudentVisibilityOverride(
   let audited = false;
   let searchIndexSynced: boolean | null = null;
   if (args.apply && decision.action === 'write') {
-    const update: Record<string, unknown> = { $set: decision.set };
+    const update: Record<string, unknown> = {
+      $set:
+        args.action.kind === 'set'
+          ? { ...decision.set, ...overrideReviewerStamp(args.actorNetid, new Date()) }
+          : decision.set,
+    };
     if (Object.keys(decision.unset).length > 0) update.$unset = decision.unset;
     await ResearchEntity.updateOne({ _id: entity._id }, update);
     const written = await ResearchEntity.findById(entity._id).lean();

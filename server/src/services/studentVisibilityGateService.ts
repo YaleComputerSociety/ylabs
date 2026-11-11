@@ -31,6 +31,7 @@ import {
   publicStudentVisibilityTiers,
   type StudentVisibilityTier,
 } from '../models/studentVisibility';
+import { isHoldWithoutRecordedReason } from '../models/holdOverrideReasonGuard';
 import {
   archivedProgramStudentVisibilityVerdictFilter,
   archivedStudentVisibilityVerdictFilter,
@@ -133,6 +134,7 @@ export interface StudentVisibilityGatePlan {
   sourceNames: string[];
   nextRepairAction: string;
   hasResolvedLead?: boolean;
+  holdWithoutRecordedReason?: boolean;
   /**
    * The per-row inputs this verdict was reached on, reported so the engine benchmark can
    * freeze them (#3589). Every one of them is either corpus-wide (the duplicate and
@@ -208,6 +210,7 @@ export interface StudentVisibilityGateReport {
     resolved: number;
     changed: number;
     unexplainedHeld: number;
+    holdsWithoutRecordedReason: number;
     upcomingDuplicateWindowsChanged: number;
   };
   reasonCounts: Record<string, number>;
@@ -451,6 +454,18 @@ const stringSetsEqual = (left: string[], right: string[]): boolean => {
   const sortedRight = sortedStrings(right);
   return sortedLeft.every((value, index) => value === sortedRight[index]);
 };
+
+/**
+ * A hold that records no reason cannot be re-decided by anyone, and a raw-driver write
+ * can still mint one past the model guard, so the gate counts them on every run rather
+ * than refusing: the existing ones are left for an operator to explain (#5856).
+ */
+export function studentVisibilityGateHoldsWithoutReasonWarning(
+  holdsWithoutRecordedReason: number,
+): string | undefined {
+  if (holdsWithoutRecordedReason <= 0) return undefined;
+  return `${holdsWithoutRecordedReason} row(s) carry a holding studentVisibilityOverrideTier with no recorded studentVisibilitySuppressionReason; record one with student-visibility:override`;
+}
 
 export function isStudentVisibilityGatePlanMateriallyChanged(
   plan: StudentVisibilityGatePlan,
@@ -1554,6 +1569,7 @@ export async function runStudentVisibilityGateForPlans(
     resolved: 0,
     changed: 0,
     unexplainedHeld: 0,
+    holdsWithoutRecordedReason: 0,
     upcomingDuplicateWindowsChanged: 0,
   };
 
@@ -1566,6 +1582,7 @@ export async function runStudentVisibilityGateForPlans(
       counts.held += 1;
     }
     if (isUnexplainedHeldVisibilityPlan(plan)) counts.unexplainedHeld += 1;
+    if (plan.holdWithoutRecordedReason) counts.holdsWithoutRecordedReason += 1;
     const materiallyChanged = isStudentVisibilityGatePlanMateriallyChanged(plan);
     if (materiallyChanged) counts.changed += 1;
     if (isUpcomingDuplicateWindowChanged(plan)) counts.upcomingDuplicateWindowsChanged += 1;
@@ -2304,6 +2321,7 @@ async function planResearchEntityGateUpdates(
       sourceNames: sourceNamesByEntityId.get(recordId) || [],
       nextRepairAction: nextRepairActionForReasons(result.reasons),
       hasResolvedLead: leadMembers.length > 0,
+      holdWithoutRecordedReason: isHoldWithoutRecordedReason(entity),
       gateInput,
     };
   });
@@ -2439,6 +2457,7 @@ async function planProgramGateUpdates(
       reasons: result.reasons,
       sourceNames: uniqueStrings([program.sourceName]),
       nextRepairAction: nextRepairActionForReasons(result.reasons),
+      holdWithoutRecordedReason: isHoldWithoutRecordedReason(program),
       currentUpcomingDuplicateWindow: storedUpcomingDuplicateWindow(
         program.upcomingDuplicateWindow,
       ),

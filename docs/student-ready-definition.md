@@ -279,6 +279,21 @@ Write it with `yarn --cwd server student-visibility:override` rather than a dire
 - Every serve path also reads a hold as the tier whatever the stored tier says, through `effectiveStudentVisibilityTier`, `servesStudentVisibilityTier` and `servedStudentVisibilityTierFilter` in `server/src/models/studentVisibility.ts`, so a rematerialize or any other writer that leaves the stored tier above a hold cannot serve the row (#5783).
 Operator views filtered by tier and the operator detail preview read the same effective tier, so a held row lists under its hold rather than under the stale stored tier.
 - A new serve path must read the tier through those helpers rather than comparing `studentVisibilityTier` alone.
+- An apply that sets a verdict also stamps `studentVisibilityReviewedAt`, and `studentVisibilityReviewedByNetid` when the actor is a netid rather than an `agent:` identifier.
+- Running it on a row that already holds without a reason, with the same `--tier`, records the reason and leaves the tier where it is, which is how a reasonless hold gets explained.
+
+### Every hold records a reason (#5856)
+
+A hold (`suppressed` or `operator_review`) with no recorded reason cannot be re-decided by anyone, so no write path may produce one.
+
+- The model guard in `server/src/models/holdOverrideReasonGuard.ts` runs on every Mongoose write to `research_entities` and `fellowships`, update, save, insert, replace and bulk alike, and refuses a write that would leave a holding `studentVisibilityOverrideTier` with an empty `studentVisibilitySuppressionReason`.
+It judges only what the write changes: a write that touches neither field passes, and so does one that re-asserts the hold tier and empty reason a row already carries, as a materializer rewriting its whole resolved set does.
+So an existing reasonless hold still reads, serves its hold and accepts every other write.
+- The writers record a coded `code: evidence` reason.
+The release queue's suppression stage writes a `visibility_repair_queue:` entry naming the auto-suppressible blockers, keeps the row's other entries, and records an `admin_audit_events` row as `agent:visibility-repair-queue`.
+The admin fellowship editor refuses a hold whose `studentVisibilitySuppressionReason` is not one coded entry with a 400, and stamps the signed-in admin as the reviewer; its existing `fellowship.update` audit event still records the write.
+- A raw-driver write bypasses the guard, so `student-visibility:gate` counts every live hold without a reason as `counts.holdsWithoutRecordedReason` and warns on every run without refusing to apply.
+A non-zero count is answered row by row with `student-visibility:override`, never by clearing the hold in bulk.
 
 Before the tool existed, 16 live research rows on Development carried an override written by scripts or by hand, measured on 2026-11-11: 15 `suppressed` (6 for the strict-launch rule that no student route is verified, 3 `research_infrastructure_only`, 3 with no reason, 1 `permanently_closed`, and 2 trainee-fellowship shells) and 1 `operator_review` with no reason.
 An umbrella organization whose sub-units are each discoverable under their own names is held by this verdict, row by row, rather than by a derived rule (owner decision 2026-10-17, applied 2026-11-11 in #5618): measured on 2026-11-11, a derived rule would have hidden 53 of the 84 served organizations that host member rows.

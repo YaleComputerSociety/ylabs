@@ -85,7 +85,7 @@ export const holdingStudentVisibilityOverrideTiers: readonly StudentVisibilityTi
   'suppressed',
 ];
 
-const isHoldingOverrideTier = (value: unknown): value is StudentVisibilityTier =>
+export const isHoldingOverrideTier = (value: unknown): value is StudentVisibilityTier =>
   typeof value === 'string' &&
   (holdingStudentVisibilityOverrideTiers as readonly string[]).includes(value);
 

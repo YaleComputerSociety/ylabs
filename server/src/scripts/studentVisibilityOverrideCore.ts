@@ -52,21 +52,21 @@ function flagValue(flag: string, raw: string | undefined, alreadySet: string): s
  * by entry, so a reason is one entry: a snake_case code, a colon, and the evidence.
  * The code is what a later `--clear` removes, so it must be stable and named.
  */
-export function normalizeOverrideReason(value: unknown): string {
+export function normalizeOverrideReason(value: unknown, label = '--reason'): string {
   const reason = typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '';
-  if (!reason) throw new Error('--reason is required: an override is a judgement about one row');
+  if (!reason) throw new Error(`${label} is required: an override is a judgement about one row`);
   if (reason.includes(',')) {
     throw new Error(
-      `--reason must not contain a comma: ${SUPPRESSION_REASON_FIELD} is a comma-joined reason list`,
+      `${label} must not contain a comma: ${SUPPRESSION_REASON_FIELD} is a comma-joined reason list`,
     );
   }
-  if (containsAsciiControl(reason)) throw new Error('--reason contains invalid characters');
+  if (containsAsciiControl(reason)) throw new Error(`${label} contains invalid characters`);
   if (reason.length > MAX_OVERRIDE_REASON_LENGTH) {
-    throw new Error(`--reason must be at most ${MAX_OVERRIDE_REASON_LENGTH} characters`);
+    throw new Error(`${label} must be at most ${MAX_OVERRIDE_REASON_LENGTH} characters`);
   }
-  if (!REASON_CODE_RE.test(reason)) {
+  if (!isCodedOverrideReason(reason)) {
     throw new Error(
-      '--reason must start with a snake_case code and a colon, as in "code: evidence"',
+      `${label} must start with a snake_case code and a colon, as in "code: evidence"`,
     );
   }
   const reservedMarker = SUBSTRING_READ_SUPPRESSION_MARKERS.find((marker) =>
@@ -74,14 +74,26 @@ export function normalizeOverrideReason(value: unknown): string {
   );
   if (reservedMarker) {
     throw new Error(
-      `--reason must not contain the reserved marker "${reservedMarker}": readers of ${SUPPRESSION_REASON_FIELD} match it anywhere in the text`,
+      `${label} must not contain the reserved marker "${reservedMarker}": readers of ${SUPPRESSION_REASON_FIELD} match it anywhere in the text`,
     );
   }
   return reason;
 }
 
+export function isCodedOverrideReason(reason: string): boolean {
+  return REASON_CODE_RE.test(reason);
+}
+
 export function overrideReasonCode(reason: string): string {
   return REASON_CODE_RE.exec(reason)?.[1] ?? '';
+}
+
+export function suppressionReasonsWithout(existing: unknown, code: string): string[] {
+  return suppressionReasonList(existing).filter((entry) => overrideReasonCode(entry) !== code);
+}
+
+export function withOverrideReasonEntry(existing: unknown, reason: string): string {
+  return [...suppressionReasonsWithout(existing, overrideReasonCode(reason)), reason].join(', ');
 }
 
 export function parseStudentVisibilityOverrideArgs(
@@ -137,6 +149,17 @@ export function parseStudentVisibilityOverrideArgs(
     actorNetid,
     apply,
     confirmed,
+  };
+}
+
+export function overrideReviewerStamp(
+  actorNetid: string,
+  reviewedAt: Date,
+): Record<string, unknown> {
+  const actorIsAPerson = isAuditableActor(actorNetid) && !actorNetid.startsWith('agent:');
+  return {
+    studentVisibilityReviewedAt: reviewedAt,
+    ...(actorIsAPerson ? { studentVisibilityReviewedByNetid: actorNetid } : {}),
   };
 }
 
@@ -208,9 +231,9 @@ export function planStudentVisibilityOverride(
   if (!suppressionReasonIsWritable(entity as Record<string, any>)) {
     return { action: 'skip', reason: 'suppression_reason_locked', before };
   }
-  const code = overrideReasonCode(reason);
-  const otherReasons = suppressionReasonList(entity.studentVisibilitySuppressionReason).filter(
-    (entry) => overrideReasonCode(entry) !== code,
+  const otherReasons = suppressionReasonsWithout(
+    entity.studentVisibilitySuppressionReason,
+    overrideReasonCode(reason),
   );
 
   if (action.kind === 'clear') {
@@ -225,7 +248,10 @@ export function planStudentVisibilityOverride(
     };
   }
 
-  const suppressionReason = [...otherReasons, reason].join(', ');
+  const suppressionReason = withOverrideReasonEntry(
+    entity.studentVisibilitySuppressionReason,
+    reason,
+  );
   const tier = holdingStudentVisibilityOverrideTiers.includes(action.tier)
     ? action.tier
     : before.tier;
