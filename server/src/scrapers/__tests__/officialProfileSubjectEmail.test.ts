@@ -379,9 +379,9 @@ describe('the profile subject email read from more page shapes (#5669)', () => {
     it('emits only the email from an email-only identity', () => {
       const identity = identityOf(html, ysmUrl, { emailOnlyWithoutAdmissibleTitle: true });
       expect(identity?.emailOnly).toBe(true);
-      expect(
-        identityToUserObservations(identity!, { netid: 'fk501' }).map((o) => o.field),
-      ).toEqual(['email']);
+      expect(identityToUserObservations(identity!, { netid: 'fk501' }).map((o) => o.field)).toEqual(
+        ['email'],
+      );
     });
 
     it('re-derives the same single observation on a second run', async () => {
