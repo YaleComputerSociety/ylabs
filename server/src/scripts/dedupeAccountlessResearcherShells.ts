@@ -39,6 +39,7 @@ import {
   researchEntityIdsToRegateAfterFold,
   type AliasTwinFoldRefusal,
   type FoldRegateEdge,
+  withCopiedRefusals,
 } from './dedupeAccountlessResearcherShellsCore';
 import { isLocalPartNetid } from '../utils/localPartNetid';
 import {
@@ -785,11 +786,17 @@ export async function dedupeAccountlessResearcherShells(options: {
     (id) => new mongoose.Types.ObjectId(id),
   );
 
-  const attributeProjection = { profileLinks: 1, identifiers: 1, profile: 1 } as const;
+  const attributeProjection = {
+    profileLinks: 1,
+    identifiers: 1,
+    profile: 1,
+    fieldValueRefusals: 1,
+  } as const;
   const snapshotOf = (doc: any): ResearcherAttributeSnapshot => ({
     profileLinks: Array.isArray(doc?.profileLinks) ? doc.profileLinks : [],
     identifiers: doc?.identifiers ?? {},
     profile: doc?.profile ?? {},
+    fieldValueRefusals: doc?.fieldValueRefusals,
   });
 
   const shellDocs = shellObjectIds.length
@@ -886,7 +893,7 @@ export async function dedupeAccountlessResearcherShells(options: {
 
   const canonicalMergeState = new Map<string, ResearcherAttributeSnapshot>();
   const canonicalAppendedLinks = new Map<string, ResearcherAttributeSnapshot['profileLinks']>();
-  const canonicalSetFills = new Map<string, Record<string, string>>();
+  const canonicalSetFills = new Map<string, Record<string, unknown>>();
 
   for (const [shellId, canonicalId] of mergeTargetByShellId.entries()) {
     const edges = mergesByShell.get(shellId) ?? { repointed: [], archivedRedundant: [] };
@@ -935,6 +942,11 @@ export async function dedupeAccountlessResearcherShells(options: {
       }
       for (const [field, value] of Object.entries(plan.profileGapFills)) {
         setForCanonical[`profile.${field}`] = value;
+      }
+      for (const [field, list] of Object.entries(
+        withCopiedRefusals(canonicalState.fieldValueRefusals, plan.refusalsToCopy),
+      )) {
+        if (plan.refusalsToCopy[field]) setForCanonical[`fieldValueRefusals.${field}`] = list;
       }
       canonicalSetFills.set(canonicalId, setForCanonical);
     }

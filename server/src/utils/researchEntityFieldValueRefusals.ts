@@ -41,6 +41,11 @@ import { type ResearchHomeWebsiteUrlRefusal } from './researchHomeWebsiteUrl';
  */
 export const perRowFieldValueRefusalRules = [
   'wrong_owner',
+  // A person value live evidence asserts for so many subjects that it is nobody's own
+  // (#5645), on a person record no resolve reaches (#5641).
+  'over_shared_value',
+  // A person value read from another person's page (#5606, #5641).
+  'other_persons_page',
   'not_this_rows_research',
   'superseded_by_better_source',
   'operator_judgement',
@@ -77,7 +82,14 @@ export const FIELD_VALUE_REFUSALS_PATH = 'fieldValueRefusals';
  * each other. Anything else compares on trimmed, case-folded text, because a
  * refusal that missed on a trailing space would read as a clean row.
  */
-const URL_VALUED_FIELDS: ReadonlySet<string> = new Set(['websiteUrl', 'website']);
+// `profileLink` and `imageUrl` are the person-record URL fields (#5641); no research row
+// field carries either name.
+const URL_VALUED_FIELDS: ReadonlySet<string> = new Set([
+  'websiteUrl',
+  'website',
+  'profileLink',
+  'imageUrl',
+]);
 
 export { foldDefaultDocumentLeaf };
 

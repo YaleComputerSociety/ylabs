@@ -5,6 +5,12 @@
  * For person identities, materializes a canonical Researcher/Account (lookup by
  * entityKey, e.g. netid).
  */
+import {
+  planResearcherRefusedStoredValueClear,
+  researcherHasLiveRefusals,
+  researcherRefusesValue,
+  withoutResearcherRefusedObservations,
+} from '../utils/researcherFieldValueRefusals';
 import { isGrantLaneObservationOutsideEnrichment } from './grantLaneSourceNames';
 import {
   comparablePageStatedName,
@@ -7270,18 +7276,7 @@ export interface UserIdentityJoinResult {
  * calls it too, so a PI key that names a `user` key reaches the same researcher the user
  * materializer enriches rather than a narrower netid-then-name lookup (#4697).
  */
-export async function joinUserIdentityToExistingResearcher(
-  identifier: { entityId?: string; entityKey?: string },
-  obs: any[],
-  now: Date = new Date(),
-): Promise<UserIdentityJoinResult> {
-  const keyNamesAnOfficeMailbox = userKeyNamesRoleOrUnitMailbox(identifier.entityKey, obs);
-  const materializationObs = keyNamesAnOfficeMailbox
-    ? []
-    : withoutOverSharedPersonWebsiteObservations(
-        obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o)),
-        await overSharedPersonWebsiteKeysForMaterialization(),
-      );
+function deriveUserIdentityFields(materializationObs: any[], now: Date) {
   const resolverObs: ResolverObservation[] = materializationObs.map((o: any) => ({
     field: o.field,
     value: o.value,
@@ -7295,11 +7290,6 @@ export async function joinUserIdentityToExistingResearcher(
     const value = textValue(resolvedValue(field));
     return value && servedUserNameField(field, value);
   };
-
-  const netid = keyNamesAnOfficeMailbox
-    ? undefined
-    : (normalizedAccountNetid(uniqueKeyValueForIdentifier('user', identifier.entityKey, obs)) ??
-      normalizedAccountNetid(resolvedValue('netid')));
   // Normalized before the name resolver reads it, not just before it is stored: an
   // invisible format character inside a surname makes the person match nobody (#2874).
   const displayName = stripInvisibleFormatCharacters(
@@ -7317,7 +7307,65 @@ export async function joinUserIdentityToExistingResearcher(
     resolvedValue('profileUrls') && typeof resolvedValue('profileUrls') === 'object'
       ? (resolvedValue('profileUrls') as Record<string, unknown>)
       : undefined;
+  return {
+    resolved,
+    displayName,
+    title,
+    primaryDepartment,
+    imageUrl,
+    websiteUrl,
+    orcid,
+    profileUrls,
+  };
+}
 
+const REFUSING_RESEARCHER_CACHE_TTL_MS = 60_000;
+let refusingResearchers: { at: number; byId: Map<string, unknown> } | undefined;
+
+export function resetRefusingResearcherCache(): void {
+  refusingResearchers = undefined;
+}
+
+// One small read per minute rather than one per resolve: few people carry a refusal.
+async function liveRefusalsOfResearcher(researcherId: unknown): Promise<unknown | undefined> {
+  if (researcherId === undefined || researcherId === null) return undefined;
+  const now = Date.now();
+  if (!refusingResearchers || now - refusingResearchers.at > REFUSING_RESEARCHER_CACHE_TTL_MS) {
+    const rows = (await Researcher.find({ fieldValueRefusals: { $exists: true } })
+      .select('_id fieldValueRefusals')
+      .lean()) as Array<{ _id: unknown; fieldValueRefusals?: unknown }>;
+    refusingResearchers = {
+      at: now,
+      byId: new Map(
+        rows
+          .filter((row) => researcherHasLiveRefusals(row.fieldValueRefusals))
+          .map((row) => [String(row._id), row.fieldValueRefusals]),
+      ),
+    };
+  }
+  return refusingResearchers.byId.get(String(researcherId));
+}
+
+export async function joinUserIdentityToExistingResearcher(
+  identifier: { entityId?: string; entityKey?: string },
+  obs: any[],
+  now: Date = new Date(),
+): Promise<UserIdentityJoinResult> {
+  const keyNamesAnOfficeMailbox = userKeyNamesRoleOrUnitMailbox(identifier.entityKey, obs);
+  const materializationObs = keyNamesAnOfficeMailbox
+    ? []
+    : withoutOverSharedPersonWebsiteObservations(
+        obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o)),
+        await overSharedPersonWebsiteKeysForMaterialization(),
+      );
+  const derived = deriveUserIdentityFields(materializationObs, now);
+  const { resolved, displayName } = derived;
+  const resolvedValue = (field: string): unknown => resolved[field]?.value;
+
+  const netid = keyNamesAnOfficeMailbox
+    ? undefined
+    : (normalizedAccountNetid(uniqueKeyValueForIdentifier('user', identifier.entityKey, obs)) ??
+      normalizedAccountNetid(resolvedValue('netid')));
   const observedEmail = normalizedAccountEmail(resolvedValue('email'));
 
   let account: any = netid ? await Account.findOne({ netid }).lean() : null;
@@ -7366,7 +7414,12 @@ export async function joinUserIdentityToExistingResearcher(
    */
   let identityJoinedOnEmailAlone = false;
   if (!researcher && !account && observedEmail) {
-    const emailResearcher = await researcherTheObservedEmailNames(observedEmail, displayName);
+    const candidate = await researcherTheObservedEmailNames(observedEmail, displayName);
+    const emailResearcher =
+      candidate &&
+      !researcherRefusesValue(await liveRefusalsOfResearcher(candidate._id), 'email', observedEmail)
+        ? candidate
+        : null;
     if (emailResearcher) {
       researcher = emailResearcher;
       const emailResearcherNetid = normalizedAccountNetid(emailResearcher.identifiers?.netid);
@@ -7408,16 +7461,18 @@ export async function joinUserIdentityToExistingResearcher(
       if (researcher) identityJoin = 'official-profile-page';
     }
   }
+  const refusals = researcher ? await liveRefusalsOfResearcher(researcher._id) : undefined;
+  const served = refusals
+    ? deriveUserIdentityFields(
+        withoutResearcherRefusedObservations(materializationObs, refusals),
+        now,
+      )
+    : derived;
   return {
-    resolved,
+    ...served,
+    resolved: served.resolved,
     netid,
     displayName,
-    title,
-    primaryDepartment,
-    imageUrl,
-    websiteUrl,
-    orcid,
-    profileUrls,
     account,
     researcher,
     identityJoin,
@@ -7645,6 +7700,18 @@ async function materializeUserIdentityToResearcher(
   ) {
     researcher.profile.websiteUrl = undefined;
     fieldsWritten += 1;
+  }
+  const refusedStoredValues = planResearcherRefusedStoredValueClear(researcher);
+  for (const path of refusedStoredValues.unset) {
+    researcher.set(path, undefined);
+    fieldsWritten += 1;
+  }
+  if (refusedStoredValues.profileLinkUrlsToPull.length > 0) {
+    const refusedUrls = new Set(refusedStoredValues.profileLinkUrlsToPull);
+    researcher.profileLinks = (researcher.profileLinks || []).filter(
+      (link: ResearcherProfileLink) => !refusedUrls.has(String(link.url)),
+    );
+    fieldsWritten += refusedUrls.size;
   }
   const priorOrcid: string | undefined = researcher.identifiers?.orcid;
   const priorOrcidLinks: ResearcherProfileLink[] = (researcher.profileLinks || []).filter(

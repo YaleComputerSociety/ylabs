@@ -1,4 +1,10 @@
 import { orcidProfileLinksAgreeWithIdentifier } from '../models/researcher';
+import type { FieldValueRefusal } from '../utils/researchEntityFieldValueRefusals';
+import {
+  refusalsToCopyOnFold,
+  researcherRefusesValue,
+  type ResearcherRefusableField,
+} from '../utils/researcherFieldValueRefusals';
 import { officialProfileIdentityUrlKey } from '../scrapers/utils/officialProfileIdentityUrlKey';
 import { observedPersonNameAgreesWith } from '../scrapers/utils/personNameAgreement';
 import { surnamesCompatible } from '../scrapers/utils/piNameMatch';
@@ -832,6 +838,7 @@ export interface ResearcherAttributeSnapshot {
   profileLinks?: ResearcherProfileLinkLike[];
   identifiers?: Record<string, unknown>;
   profile?: Record<string, unknown>;
+  fieldValueRefusals?: unknown;
 }
 
 export const RESEARCHER_UNION_IDENTIFIER_FIELDS = ['orcid', 'googleScholarId', 'netid'] as const;
@@ -868,6 +875,7 @@ export interface ResearcherAttributeUnionPlan {
   profileLinksToAppend: ResearcherProfileLinkLike[];
   identifierGapFills: Record<string, string>;
   profileGapFills: Record<string, string>;
+  refusalsToCopy: Record<string, FieldValueRefusal[]>;
 }
 
 export function planResearcherAttributeUnion(
@@ -888,10 +896,14 @@ export function planResearcherAttributeUnion(
   }
 
   const mergedOrcid = nonEmptyString(canonical.identifiers?.orcid) ?? identifierGapFills.orcid;
+  const refusedByEither = (field: ResearcherRefusableField, value: unknown): boolean =>
+    researcherRefusesValue(canonical.fieldValueRefusals, field, value) ||
+    researcherRefusesValue(shell.fieldValueRefusals, field, value);
   const profileLinksToAppend: ResearcherProfileLinkLike[] = [];
   for (const link of shell.profileLinks ?? []) {
     const kind = profileLinkKind(link);
     if (!kind || claimedKinds.has(kind)) continue;
+    if (refusedByEither('profileLink', link.url)) continue;
     if (kind === 'ORCID' && !orcidLinkAgreesWith(link, mergedOrcid)) continue;
     claimedKinds.add(kind);
     profileLinksToAppend.push(link);
@@ -901,17 +913,23 @@ export function planResearcherAttributeUnion(
   for (const field of RESEARCHER_UNION_PROFILE_FIELDS) {
     if (nonEmptyString(canonical.profile?.[field])) continue;
     const shellValue = nonEmptyString(shell.profile?.[field]);
-    if (shellValue) profileGapFills[field] = shellValue;
+    if (shellValue && !refusedByEither(field, shellValue)) profileGapFills[field] = shellValue;
   }
 
-  return { profileLinksToAppend, identifierGapFills, profileGapFills };
+  return {
+    profileLinksToAppend,
+    identifierGapFills,
+    profileGapFills,
+    refusalsToCopy: refusalsToCopyOnFold(canonical.fieldValueRefusals, shell.fieldValueRefusals),
+  };
 }
 
 export function researcherAttributeUnionIsEmpty(plan: ResearcherAttributeUnionPlan): boolean {
   return (
     plan.profileLinksToAppend.length === 0 &&
     Object.keys(plan.identifierGapFills).length === 0 &&
-    Object.keys(plan.profileGapFills).length === 0
+    Object.keys(plan.profileGapFills).length === 0 &&
+    Object.keys(plan.refusalsToCopy).length === 0
   );
 }
 
@@ -923,7 +941,31 @@ export function applyUnionPlanToSnapshot(
     profileLinks: [...(canonical.profileLinks ?? []), ...plan.profileLinksToAppend],
     identifiers: { ...(canonical.identifiers ?? {}), ...plan.identifierGapFills },
     profile: { ...(canonical.profile ?? {}), ...plan.profileGapFills },
+    fieldValueRefusals: withCopiedRefusals(canonical.fieldValueRefusals, plan.refusalsToCopy),
   };
+}
+
+function refusalEntries(fieldValueRefusals: unknown): Array<[string, unknown]> {
+  if (fieldValueRefusals instanceof Map) return [...fieldValueRefusals.entries()];
+  if (fieldValueRefusals && typeof fieldValueRefusals === 'object') {
+    return Object.entries(fieldValueRefusals as Record<string, unknown>);
+  }
+  return [];
+}
+
+/** The survivor's refusals with a shell's copied in, as a plain object a `$set` can store. */
+export function withCopiedRefusals(
+  survivorRefusals: unknown,
+  copies: Record<string, FieldValueRefusal[]>,
+): Record<string, unknown[]> {
+  const merged: Record<string, unknown[]> = {};
+  for (const [field, list] of refusalEntries(survivorRefusals)) {
+    merged[field] = Array.isArray(list) ? [...list] : [];
+  }
+  for (const [field, list] of Object.entries(copies)) {
+    merged[field] = [...(merged[field] ?? []), ...list];
+  }
+  return merged;
 }
 
 export interface AccountlessClusterMember {

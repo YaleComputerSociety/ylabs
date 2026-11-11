@@ -3,6 +3,7 @@ import {
   canonicalSchemaVersionField,
   defineCanonicalSchemaVersion,
 } from './canonicalSchemaVersion';
+import { fieldValueRefusalSchema } from './modelPrimitives';
 
 export const researcherSchemaVersion = defineCanonicalSchemaVersion({ currentVersion: 1 });
 
@@ -61,6 +62,13 @@ export interface ResearcherRecord {
    * fold arm refuses a pair recorded here, so an unmerged pair is never folded again (#5592).
    */
   distinctFromResearcherIds?: mongoose.Types.ObjectId[];
+  /**
+   * Values an operator or a named rule refused at one field of this person, keyed by
+   * `RESEARCHER_REFUSABLE_FIELDS` (#5641). Archived researchers keep theirs, so a restore or
+   * an unmerge cannot bring a refused value back, and a fold copies the shell's onto the
+   * survivor.
+   */
+  fieldValueRefusals?: Map<string, unknown[]>;
 }
 
 const PROFILE_LINK_PURPOSE_BY_KIND: Record<
@@ -305,6 +313,11 @@ export const researcherSchema = new mongoose.Schema<ResearcherRecord>(
     },
     distinctFromResearcherIds: {
       type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Researcher' }],
+      default: undefined,
+    },
+    fieldValueRefusals: {
+      type: Map,
+      of: [fieldValueRefusalSchema],
       default: undefined,
     },
   },

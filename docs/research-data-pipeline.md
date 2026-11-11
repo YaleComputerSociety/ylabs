@@ -1273,6 +1273,13 @@ Every other rule names a condition a later reader can re-derive - a dead page ca
 `planFieldValueRefusal` enforces it rather than the CLI's argument parser, so every writer inherits the fence.
 `fieldLockProvenance.operator_decision` still has no writer and keeps none: a judgement recorded as a lock cannot be revisited and, as the 2026-09-24 census showed, carries no reason at all in practice.
 
+A person record refuses a value the same way (#5641): `Researcher.fieldValueRefusals` holds the same record at `websiteUrl`, `title`, `primaryDepartment`, `imageUrl`, `email` and `profileLink` (one link, by URL), keyed by the same `fieldValueRefusalKey`.
+`yarn --cwd server researcher:refuse-field-value --researcher=<id>` records or withdraws one, dry-run by default, and clears the stored value in the same write, because a person no identity resolves to is reached by nothing else.
+On every resolve the user materializer drops the person's refused values from the evidence of each identity that joins them before the resolver ranks it, and clears a stored refused value, so a rival still wins and a second resolve writes nothing.
+A refused email is not a join witness either, so an address refused as someone else's cannot join that identity to the person (owner decision 2026-11-11).
+Archived researchers keep their refusals, so a restore or an unmerge cannot bring a refused value back, and the researcher fold copies the shell's refusals onto the survivor and never gap-fills a value either side refuses.
+`over_shared_value` names the #5645 class and `other_persons_page` the #5606 class; `operator_judgement` stays the rule for a one-person call.
+
 A refusal also names the lane that produced the refused value, which is what turns a refusal count into a lane's precision.
 `sourceName` is the lane an operator declared at refusal time (#3506).
 `attributedSourceNames` is derived: the `refusal-lane-attribution` Development sweep stage (`yarn --cwd server refusals:attribute-lanes`, #3521) reads the observation log and records every lane that asserted the refused value, and it never overwrites a declared `sourceName`.
