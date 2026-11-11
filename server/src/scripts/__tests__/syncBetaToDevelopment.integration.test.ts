@@ -212,6 +212,9 @@ async function seedTarget(targetDb: Db): Promise<void> {
   await targetDb
     .collection('directory_removal_requests')
     .insertOne({ requesterNetid: 'zz9xxx', researcherId: new ObjectId(), status: 'pending' });
+  await targetDb
+    .collection('dev_write_launches')
+    .insertOne({ kind: 'apply', scriptName: 'repair:thing' });
   await targetDb.collection('scrape_snapshots').insertOne({ runId: 'stale-development-run' });
   await targetDb
     .collection('scrape_job_locks')

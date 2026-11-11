@@ -13,6 +13,7 @@ import { onInterrupt } from '../utils/interruptCleanup';
 import { appendObservations, getSourceByName } from './observationStore';
 import { directoryRemovalObservationRun } from './directoryRemovalObservationGuard';
 import { currentProcessCodeSha } from './scrapeRunCodeIdentity';
+import { describeScrapeRunLaunch } from '../db/devWriteLease';
 import type { ReturnedScrapeRunStatus } from './sourceCrawlStamp';
 import { currentScrapeRunOwner, startScrapeRunHeartbeat } from './scrapeRunLiveness';
 import { reapDeadScrapeRuns } from './staleScrapeRunReaper';
@@ -131,6 +132,7 @@ export class ScraperOrchestrator {
       heartbeatAt: startedAt,
       owner: currentScrapeRunOwner(ownership.lockOwnerId),
       codeSha: currentProcessCodeSha(),
+      launch: describeScrapeRunLaunch(),
       status: 'running',
       options: options as any,
       invalidated: options.benchmarkRun === true,

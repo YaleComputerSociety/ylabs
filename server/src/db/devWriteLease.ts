@@ -4,6 +4,12 @@ import type { Collection, Db } from 'mongodb';
 
 import { onInterrupt } from '../utils/interruptCleanup';
 import { operatorEnvironmentForDatabaseName } from './operatorDatabaseEnvironment';
+import {
+  DEV_WRITE_OWNER_LABEL_ENV,
+  describeDevWriteLaunch,
+  recordDevWriteLaunch,
+  redactLaunchArgv,
+} from './devWriteLaunch';
 
 /**
  * One apply-class write to Development at a time, and one lane run per fetched host (#5756).
@@ -21,7 +27,7 @@ export const DEV_WRITE_LEASE_HEARTBEAT_MS = 30_000;
 export const DEV_WRITE_LEASE_TTL_MS = 5 * 60_000;
 export const DEV_WRITE_LEASE_OWNER_ENV = 'DEV_WRITE_LEASE_OWNER';
 export const DEV_WRITE_LEASE_SWITCH_ENV = 'DEV_WRITE_LEASE';
-export const DEV_WRITE_OWNER_LABEL_ENV = 'DEV_WRITE_OWNER';
+export { DEV_WRITE_OWNER_LABEL_ENV };
 
 /**
  * Append-only measurement writes go to their own collections and run during long applies by
@@ -86,11 +92,8 @@ export function hasDevApplyIntent(): boolean {
   return applyIntent !== undefined;
 }
 
-const SECRET_LIKE_ARG = /:\/\/|password|secret|token|key=/i;
-
 export function describeDevWriteCommand(intent: DevApplyIntent): string {
-  const args = intent.args.filter((arg) => !SECRET_LIKE_ARG.test(arg)).slice(0, 12);
-  return [intent.scriptName, ...args].join(' ').slice(0, 300);
+  return [intent.scriptName, ...redactLaunchArgv(intent.args).slice(0, 12)].join(' ').slice(0, 300);
 }
 
 export interface DevWriteLeaseRecord {
@@ -371,7 +374,28 @@ export async function acquireIntendedDevApplyLease(
   if (target.kind === 'refuse') {
     throw new Error(`${applyIntent.scriptName} refused to apply: ${target.reason}.`);
   }
-  return holdLease(DEV_APPLY_LEASE_NAME, describeDevWriteCommand(applyIntent), connection);
+  const lease = await holdLease(
+    DEV_APPLY_LEASE_NAME,
+    describeDevWriteCommand(applyIntent),
+    connection,
+  );
+  try {
+    await recordDevWriteLaunch(connection.db, {
+      kind: 'apply',
+      scriptName: applyIntent.scriptName,
+      leaseOwnerId: lease.ownerId,
+      joinedParentLease: lease.joined,
+      launchedAt: new Date(),
+      launch: describeDevWriteLaunch({ env }),
+    });
+  } catch (error) {
+    await releaseHeldDevWriteLeases();
+    throw new Error(
+      `${applyIntent.scriptName} refused to apply: its launch record could not be written (${(error as Error)?.message ?? error}).`,
+      { cause: error },
+    );
+  }
+  return lease;
 }
 
 /**
@@ -434,4 +458,12 @@ export function resetDevWriteLeaseStateForTests() {
   removeInterruptRelease = undefined;
   if (heartbeatTimer) clearInterval(heartbeatTimer);
   heartbeatTimer = undefined;
+}
+
+export function describeScrapeRunLaunch(env: NodeJS.ProcessEnv = process.env) {
+  const devWriteLeaseOwnerId = env[DEV_WRITE_LEASE_OWNER_ENV]?.trim();
+  return {
+    ...describeDevWriteLaunch({ env }),
+    ...(devWriteLeaseOwnerId ? { devWriteLeaseOwnerId } : {}),
+  };
 }

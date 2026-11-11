@@ -56,6 +56,23 @@ const scrapeRunSchema = new mongoose.Schema(
       ),
       default: undefined,
     },
+    launch: {
+      type: new mongoose.Schema(
+        {
+          ownerLabel: String,
+          worktree: String,
+          cwd: String,
+          gitSha: String,
+          entry: String,
+          argv: [String],
+          host: String,
+          pid: Number,
+          devWriteLeaseOwnerId: String,
+        },
+        { _id: false },
+      ),
+      default: undefined,
+    },
     interruption: {
       type: new mongoose.Schema(
         {
