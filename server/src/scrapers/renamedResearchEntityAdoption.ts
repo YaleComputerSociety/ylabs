@@ -3,6 +3,9 @@ import { Observation } from '../models/observation';
 import { slugNamesPersonByFullName } from '../services/directoryRemovalSlugNames';
 import { currentDirectoryRemovalMintGuard } from '../services/directoryRemovalMintGuard';
 
+// Raw collection on purpose: importing the ResearchEntity model here would register it on
+// the ingest path and auto-build its unique slug index on a default connection (#5716).
+// Guarded by observationStoreWithoutResearchEntityModel.integration.test.ts.
 const researchEntities = () => mongoose.connection.db!.collection('research_entities');
 
 const projectionOf = (select: string): Record<string, 1> =>
