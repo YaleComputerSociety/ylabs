@@ -16,6 +16,7 @@ import {
 } from './researchEntityBrowseRank';
 import { entityHasHostedUndergraduates } from './hostedUndergraduates';
 import { getResearchEntityRosterByEntityId } from './researchEntityMembershipAccessor';
+import { rostersWithDepartedLeadsRetired } from './departedLeadServing';
 import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
 import { syncEntity } from './meiliSyncService';
 import { searchIndexWritesDeferred } from '../utils/searchIndexWrites';
@@ -24,12 +25,23 @@ import { relatesTwoDistinctResearchEntities } from '../utils/researchEntityRelat
 
 const browseRankDocumentId = (value: unknown): string => serializedDocumentId(value) || '';
 
-const leadMembersByEntityId = async (entityIds: any[]): Promise<Map<string, any[]>> => {
+export const leadMembersByEntityId = async (entityIds: any[]): Promise<Map<string, any[]>> => {
   if (entityIds.length === 0) return new Map();
   const rosterByEntityId = await getResearchEntityRosterByEntityId(entityIds);
+  const servedByEntityId = await rostersWithDepartedLeadsRetired(rosterByEntityId);
   const byId = new Map<string, any[]>();
   for (const [key, roster] of rosterByEntityId) {
-    const leads = roster.filter((member) => LEAD_ROLE_LEGACY_LABELS.has(member.role));
+    const retiredHere = new Set(
+      (servedByEntityId.get(key) ?? [])
+        .filter(
+          (entry, index) => entry.state === 'HISTORICAL' && roster[index]?.state !== 'HISTORICAL',
+        )
+        .map((entry) => String(entry.personId)),
+    );
+    const leads = roster.filter(
+      (member) =>
+        LEAD_ROLE_LEGACY_LABELS.has(member.role) && !retiredHere.has(String(member.personId)),
+    );
     if (leads.length > 0) byId.set(key, leads);
   }
   return byId;

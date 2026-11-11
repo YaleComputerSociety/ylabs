@@ -34,6 +34,7 @@ import {
   personPageDepartureFrom,
 } from '../personPageDeparture';
 import { servedRoster } from '../../services/directoryRemovalServing';
+import { leadMembersByEntityId } from '../../services/researchEntityBrowseRankService';
 import { optionalPublicLeadMemberNames } from '../../services/researchGroupService';
 import { fetchResearchEntitySearchMemberNames } from '../../services/researchEntitySearchIndexService';
 import { studentVisibilityGateLeadRows } from '../../services/studentVisibilityGateService';
@@ -274,7 +275,7 @@ describe("a lead's own official page marks them deceased or departed (#5721)", (
     expect(currentLeadIds).toEqual([String(current._id)]);
   });
 
-  it('names only the continuing lead on the card, the search document and the gate', async () => {
+  it('names only the continuing lead on the card, the search document, the gate and browse rank', async () => {
     const gone = await seedLead(LEAD_NETID, 'Ada Fixture');
     const current = await seedLead(OTHER_NETID, 'Ari Fixture');
     const row = await seedRow([gone, current]);
@@ -293,6 +294,11 @@ describe("a lead's own official page marks them deceased or departed (#5721)", (
     expect(
       studentVisibilityGateLeadRows(gateRoster.get(String(row._id)) ?? []).map((lead) => lead.name),
     ).toEqual(['Ari Fixture']);
+
+    const browse = await leadMembersByEntityId([row._id]);
+    expect((browse.get(String(row._id)) ?? []).map((lead: any) => lead.name)).toEqual([
+      'Ari Fixture',
+    ]);
   });
 
   it('presents a deceased-lead row by the single switch: hidden by default, served when labelled', () => {
