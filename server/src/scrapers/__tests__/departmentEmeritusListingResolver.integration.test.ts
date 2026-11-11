@@ -8,7 +8,11 @@ const PROFILE = 'https://physics.example.edu/profile/avery-synthetic';
 
 describe('defaultEmeritusLeadResolver (#5835)', () => {
   let replSet: MongoMemoryReplSet;
-  const ids = { avery: new mongoose.Types.ObjectId(), row: new mongoose.Types.ObjectId() };
+  const ids = {
+    avery: new mongoose.Types.ObjectId(),
+    row: new mongoose.Types.ObjectId(),
+    center: new mongoose.Types.ObjectId(),
+  };
 
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
@@ -29,6 +33,7 @@ describe('defaultEmeritusLeadResolver (#5835)', () => {
       _id: ids.avery,
       displayName: 'Avery Synthetic',
       profile: { title: 'Professor of Physics' },
+      identifiers: { netid: 'fx1' },
       profileLinks: [{ kind: 'YALE_OFFICIAL', url: PROFILE }],
       archived: false,
     });
@@ -48,6 +53,17 @@ describe('defaultEmeritusLeadResolver (#5835)', () => {
     });
   });
 
+  const titleObservation = (entityKey: string, sourceName = 'dept-faculty-roster') =>
+    mongoose.connection.db!.collection('observations').insertOne({
+      entityType: 'user',
+      entityKey,
+      field: 'title',
+      value: 'Professor of Physics',
+      sourceName,
+      superseded: false,
+      observedAt: new Date('2026-11-01T00:00:00Z'),
+    });
+
   const counts = async () => {
     const db = mongoose.connection.db!;
     return Promise.all(
@@ -60,37 +76,49 @@ describe('defaultEmeritusLeadResolver (#5835)', () => {
   it('records a listed lead whose stored title nothing still asserts', async () => {
     await expect(
       defaultEmeritusLeadResolver({ name: 'Avery Synthetic', profileUrl: PROFILE }, PAGE),
-    ).resolves.toEqual({ researcherId: String(ids.avery), slug: 'avery-row' });
+    ).resolves.toEqual({ researcherId: String(ids.avery), slugs: ['avery-row'] });
   });
 
-  it('leaves a listed lead to a current title a live lane still asserts', async () => {
-    await mongoose.connection.db!.collection('observations').insertOne({
-      entityType: 'user',
-      entityKey: 'netid:fx1',
-      field: 'title',
-      value: 'Professor of Physics',
-      sourceName: 'dept-faculty-roster',
-      superseded: false,
-      observedAt: new Date('2026-11-01T00:00:00Z'),
+  it('records the listing on every row the lead still leads', async () => {
+    const db = mongoose.connection.db!;
+    await db.collection('research_entities').insertOne({
+      _id: ids.center,
+      slug: 'avery-center',
+      entityType: 'CENTER',
+      departments: ['Physics'],
+      archived: false,
     });
+    await db.collection('role_assignments').insertOne({
+      personId: ids.avery,
+      target: { kind: 'RESEARCH_ENTITY', id: ids.center },
+      role: 'DIRECTOR',
+      state: 'CURRENT',
+      archived: false,
+    });
+    await expect(
+      defaultEmeritusLeadResolver({ name: 'Avery Synthetic', profileUrl: PROFILE }, PAGE),
+    ).resolves.toEqual({ researcherId: String(ids.avery), slugs: ['avery-center', 'avery-row'] });
+  });
+
+  it('leaves a listed lead to a current title a live lane still asserts about them', async () => {
+    await titleObservation('netid:fx1');
     await expect(
       defaultEmeritusLeadResolver({ name: 'Avery Synthetic', profileUrl: PROFILE }, PAGE),
     ).resolves.toBeNull();
   });
 
-  it('lets the listing outrank a title only the Yale directory still asserts', async () => {
-    await mongoose.connection.db!.collection('observations').insertOne({
-      entityType: 'user',
-      entityKey: 'fx1',
-      field: 'title',
-      value: 'Professor of Physics',
-      sourceName: 'yale-directory',
-      superseded: false,
-      observedAt: new Date('2026-11-01T00:00:00Z'),
-    });
+  it('does not let another person asserting the same title hold the listing back', async () => {
+    await titleObservation('netid:other9');
     await expect(
       defaultEmeritusLeadResolver({ name: 'Avery Synthetic', profileUrl: PROFILE }, PAGE),
-    ).resolves.toEqual({ researcherId: String(ids.avery), slug: 'avery-row' });
+    ).resolves.toEqual({ researcherId: String(ids.avery), slugs: ['avery-row'] });
+  });
+
+  it('lets the listing outrank a title only the Yale directory still asserts', async () => {
+    await titleObservation('netid:fx1', 'yale-directory');
+    await expect(
+      defaultEmeritusLeadResolver({ name: 'Avery Synthetic', profileUrl: PROFILE }, PAGE),
+    ).resolves.toEqual({ researcherId: String(ids.avery), slugs: ['avery-row'] });
   });
 
   it('creates no row, edge or person for someone listed only on an emeritus page', async () => {

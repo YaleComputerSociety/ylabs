@@ -949,7 +949,7 @@ export function preferredLeadRowSlug(candidates: LeadRowCandidate[]): string | n
   return best?.slug ?? null;
 }
 
-export async function existingLeadRowSlugForOwner(owner: UserMatch): Promise<string | null> {
+export async function existingLeadRowsForOwner(owner: UserMatch): Promise<LeadRowCandidate[]> {
   const edges: any[] = await RoleAssignment.find({
     personId: owner._id,
     'target.kind': 'RESEARCH_ENTITY',
@@ -959,7 +959,7 @@ export async function existingLeadRowSlugForOwner(owner: UserMatch): Promise<str
   })
     .select('target role')
     .lean();
-  if (edges.length === 0) return null;
+  if (edges.length === 0) return [];
   const roleByEntityId = new Map(edges.map((edge) => [String(edge.target?.id), edge.role]));
   const rows: any[] = await ResearchEntity.find({
     _id: { $in: edges.map((edge) => edge.target?.id).filter(Boolean) },
@@ -967,13 +967,15 @@ export async function existingLeadRowSlugForOwner(owner: UserMatch): Promise<str
   })
     .select('slug entityType')
     .lean();
-  return preferredLeadRowSlug(
-    rows.map((row) => ({
-      slug: String(row.slug),
-      entityType: row.entityType,
-      role: roleByEntityId.get(String(row._id)),
-    })),
-  );
+  return rows.map((row) => ({
+    slug: String(row.slug),
+    entityType: row.entityType,
+    role: roleByEntityId.get(String(row._id)),
+  }));
+}
+
+export async function existingLeadRowSlugForOwner(owner: UserMatch): Promise<string | null> {
+  return preferredLeadRowSlug(await existingLeadRowsForOwner(owner));
 }
 
 export async function leadRowDepartmentsForOwner(owner: UserMatch): Promise<AdvisorDepartments> {

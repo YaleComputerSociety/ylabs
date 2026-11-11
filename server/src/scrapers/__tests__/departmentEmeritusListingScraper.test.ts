@@ -66,17 +66,61 @@ describe('department emeritus listings (#5835)', () => {
       pages: [PAGE],
       fetchText: async () => page(['Avery Synthetic', 'Blair Invented']),
       resolveLead: async (person) =>
-        person.name === 'Avery Synthetic' ? { researcherId: 'r-avery', slug: 'avery-row' } : null,
+        person.name === 'Avery Synthetic'
+          ? { researcherId: 'r-avery', slugs: ['avery-center', 'avery-row'] }
+          : null,
       storedListingFinder: async () => new Map(),
     });
     await scraper.run(context(emitted));
     expect(emitted).toEqual([
       {
         entityType: 'researchEntity',
+        entityKey: 'avery-center',
+        field: EMERITUS_LISTED_LEADS_FIELD,
+        value: ['r-avery'],
+      },
+      {
+        entityType: 'researchEntity',
         entityKey: 'avery-row',
         field: EMERITUS_LISTED_LEADS_FIELD,
         value: ['r-avery'],
       },
+    ]);
+  });
+
+  it('keeps a co-lead another page listed when only one page is read', async () => {
+    const otherPage = { department: 'Other Fixtures', url: 'https://other.example.edu/emeriti' };
+    const stored = async () => new Map([['shared-row', ['r-blair', 'r-avery']]]);
+    const scraper = (fetchText: (url: string) => Promise<string | null>) =>
+      new DepartmentEmeritusListingScraper({
+        pages: [PAGE, otherPage],
+        fetchText,
+        resolveLead: async (person) =>
+          person.name === 'Avery Synthetic'
+            ? { researcherId: 'r-avery', slugs: ['shared-row'] }
+            : null,
+        storedListingFinder: stored,
+      });
+    const listsAvery = async () => page(['Avery Synthetic']);
+
+    const scoped: ObservationInput[] = [];
+    await scraper(listsAvery).run(context(scoped, [PAGE.url]));
+    expect(scoped).toEqual([
+      expect.objectContaining({ entityKey: 'shared-row', value: ['r-avery', 'r-blair'] }),
+    ]);
+
+    const unread: ObservationInput[] = [];
+    await scraper(async (url) => (url === PAGE.url ? page(['Avery Synthetic']) : null)).run(
+      context(unread),
+    );
+    expect(unread).toEqual([
+      expect.objectContaining({ entityKey: 'shared-row', value: ['r-avery', 'r-blair'] }),
+    ]);
+
+    const complete: ObservationInput[] = [];
+    await scraper(listsAvery).run(context(complete));
+    expect(complete).toEqual([
+      expect.objectContaining({ entityKey: 'shared-row', value: ['r-avery'] }),
     ]);
   });
 

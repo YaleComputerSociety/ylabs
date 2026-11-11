@@ -24,7 +24,7 @@ import { splitName } from '../utils/scraperHelpers';
 import { defaultMentorFetchText, listedNameAgrees } from './officialUndergradListScraper';
 import {
   defaultAdvisorResolution,
-  existingLeadRowSlugForOwner,
+  existingLeadRowsForOwner,
   leadRowDepartmentsForOwner,
   researcherToUserMatch,
   type UserMatch,
@@ -109,7 +109,7 @@ export function emeritusListingPeople(html: string, pageUrl: string): EmeritusLi
 
 export interface EmeritusListedLead {
   researcherId: string;
-  slug: string;
+  slugs: string[];
 }
 
 export type EmeritusLeadResolver = (
@@ -128,7 +128,7 @@ async function soleHolderOfProfileUrl(url: string): Promise<any | null> {
     archived: { $ne: true },
     'profileLinks.url': { $in: profileUrlVariants(url) },
   })
-    .select('_id displayName profile identifiers')
+    .select('_id displayName profile identifiers profileLinks')
     .limit(2)
     .lean();
   return holders.length === 1 ? holders[0] : null;
@@ -145,12 +145,26 @@ async function liveNamesakes(name: string): Promise<number> {
 // before retiring, so it is not a read of the person's own page and does not outrank a listing.
 const DIRECTORY_TITLE_SOURCES = ['yale-directory', 'yale-directory-csv'];
 
+function userKeysOfResearcher(researcher: any): Record<string, unknown>[] {
+  const netid = researcherNetid(researcher).toLowerCase();
+  const profilePages = (researcher.profileLinks ?? [])
+    .map((link: any) => (typeof link?.url === 'string' ? link.url.trim() : ''))
+    .filter(Boolean)
+    .flatMap(profileUrlVariants);
+  return [
+    { entityId: researcher._id },
+    ...(netid ? [{ entityKey: { $in: [netid, `netid:${netid}`] } }] : []),
+    ...(profilePages.length ? [{ sourceUrl: { $in: profilePages } }] : []),
+  ];
+}
+
 /**
- * A stored title a live lane other than the directory still asserts is a current read of the
- * person, so the department listing does not override it; a title only the directory or nothing
- * asserts any more is a leftover the listing outranks.
+ * A stored title a live lane other than the directory still asserts about this person is a
+ * current read of them, so the department listing does not override it; a title only the
+ * directory or nothing asserts any more is a leftover the listing outranks.
  */
-async function storedTitleIsBacked(title: unknown): Promise<boolean> {
+async function storedTitleIsBacked(researcher: any): Promise<boolean> {
+  const title = researcher?.profile?.title;
   if (typeof title !== 'string' || !title.trim()) return false;
   return Boolean(
     await Observation.exists({
@@ -159,12 +173,13 @@ async function storedTitleIsBacked(title: unknown): Promise<boolean> {
       superseded: { $ne: true },
       sourceName: { $nin: DIRECTORY_TITLE_SOURCES },
       value: title.trim(),
+      $or: userKeysOfResearcher(researcher),
     }),
   );
 }
 
 /**
- * The row a listed person leads, when the listing may stand for them. A profile link binds when
+ * The rows a listed person leads, when the listing may stand for them. A profile link binds when
  * exactly one live researcher holds it and carries the listed name; otherwise the name binds only
  * when one researcher carries it and their rows agree with the page's department.
  */
@@ -187,12 +202,19 @@ export const defaultEmeritusLeadResolver: EmeritusLeadResolver = async (person, 
     if (!departmentsAgree([page.department], [...own.departments, ...own.affiliations]))
       return null;
     owner = resolution.match;
-    researcher = await Researcher.findById(owner._id).select('_id profile').lean();
+    researcher = await Researcher.findById(owner._id)
+      .select('_id profile identifiers profileLinks')
+      .lean();
   }
-  const title = researcher?.profile?.title;
-  if (!titleHoldsOnlyEmeritusAppointments(title) && (await storedTitleIsBacked(title))) return null;
-  const slug = await existingLeadRowSlugForOwner(owner);
-  return slug ? { researcherId: String(owner._id), slug } : null;
+  if (!researcher) return null;
+  if (
+    !titleHoldsOnlyEmeritusAppointments(researcher.profile?.title) &&
+    (await storedTitleIsBacked(researcher))
+  ) {
+    return null;
+  }
+  const slugs = (await existingLeadRowsForOwner(owner)).map((row) => row.slug).sort();
+  return slugs.length ? { researcherId: String(owner._id), slugs } : null;
 };
 
 export type EmeritusListingFetchText = (url: string) => Promise<string | null>;
@@ -234,7 +256,6 @@ export class DepartmentEmeritusListingScraper implements IScraper {
     const pages = this.pages.filter((page) => only.size === 0 || only.has(page.url));
     const leadsBySlug = new Map<string, Set<string>>();
     const unreadPages: string[] = [];
-    const readSlugs = new Set<string>();
     const stats = { pages: pages.length, listed: 0, recorded: 0, skipped: 0 };
     for (const page of pages) {
       const html = await this.fetchText(page.url);
@@ -250,10 +271,11 @@ export class DepartmentEmeritusListingScraper implements IScraper {
           continue;
         }
         stats.recorded += 1;
-        readSlugs.add(lead.slug);
-        const leads = leadsBySlug.get(lead.slug) ?? new Set<string>();
-        leads.add(lead.researcherId);
-        leadsBySlug.set(lead.slug, leads);
+        for (const slug of lead.slugs) {
+          const leads = leadsBySlug.get(slug) ?? new Set<string>();
+          leads.add(lead.researcherId);
+          leadsBySlug.set(slug, leads);
+        }
       }
     }
 
@@ -261,6 +283,7 @@ export class DepartmentEmeritusListingScraper implements IScraper {
     const stored = await this.storedListingFinder();
     const observations: ObservationInput[] = [];
     for (const [slug, leads] of leadsBySlug) {
+      if (!complete) for (const previous of stored.get(slug) ?? []) leads.add(previous);
       observations.push({
         entityType: 'researchEntity',
         entityKey: slug,
@@ -270,7 +293,7 @@ export class DepartmentEmeritusListingScraper implements IScraper {
     }
     if (complete) {
       for (const [slug, previous] of stored) {
-        if (readSlugs.has(slug) || previous.length === 0) continue;
+        if (leadsBySlug.has(slug) || previous.length === 0) continue;
         observations.push({
           entityType: 'researchEntity',
           entityKey: slug,
