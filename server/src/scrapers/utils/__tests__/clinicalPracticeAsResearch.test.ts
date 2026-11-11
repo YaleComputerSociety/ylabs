@@ -4,7 +4,10 @@ import {
   judgeWrittenDescription,
   type CoverageSnippet,
 } from '../../coverageSynthesis';
-import { isClinicalPracticeAsResearch } from '../clinicalPracticeAsResearch';
+import {
+  isClinicalInterestSentence,
+  isClinicalPracticeAsResearch,
+} from '../clinicalPracticeAsResearch';
 
 const PERSON = 'FACULTY_RESEARCH_AREA' as const;
 
@@ -139,6 +142,30 @@ describe('the clinical-practice arm refuses writer drafts and retires adopted bo
         snippets: researchSnippets,
         entityType: PERSON,
       }),
+    ).toBe(true);
+  });
+});
+
+describe('clinical-interest wordings (#5537)', () => {
+  it.each([
+    'Dr. Example has a special interest in pediatric sleep disorders.',
+    'She has special interest in adolescent eating disorders.',
+    'He is also interested in sports injuries of the knee.',
+    'I have interest in geriatric pain management.',
+    'She has interests in pelvic floor disorders and incontinence.',
+    'Areas of special clinical interest include heart failure and transplant.',
+    'She  has a special interest in pediatric sleep disorders.',
+  ])('reads "%s" as a clinical-interest sentence', (sentence) => {
+    expect(isClinicalInterestSentence(sentence)).toBe(true);
+  });
+
+  it('does not read a scholarly interest with no clinical wording as one', () => {
+    expect(isClinicalInterestSentence('She has an interest in medieval manuscripts.')).toBe(false);
+  });
+
+  it('records a known existing match: a lab subject in the interest arm (current behaviour, not desired)', () => {
+    expect(
+      isClinicalInterestSentence('My lab is interested in the mechanisms of axon regeneration.'),
     ).toBe(true);
   });
 });

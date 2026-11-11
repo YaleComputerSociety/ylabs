@@ -21,7 +21,7 @@ const SCHOOL_BOILERPLATE_WITH_RESEARCH_WORD =
 const CV_RECORD_LINE =
   /\((?:19|20)\d{2}\)\s*$|^\d{2}\/\d{2}\/(?:19|20)\d{2}|^(?:19|20)\d{2}\s*-\s*(?:present|(?:19|20)\d{2})|^[^.!?]{0,80}\b(?:award|scholarship|fellowship|prize)\s*$/i;
 const INTEREST_PHRASE =
-  /\b(?:interests?\s+(?:include|are|is)|(?:is|are)\s+(?:particularly\s+|especially\s+)?interested\s+in|(?:has\s+)?(?:a\s+)?particular\s+interest\s+in|practice\s+(?:has\s+)?focus(?:es|ed)?\s+on)\b/i;
+  /\b(?:interests?\s+(?:include|are|is)|(?:is|are)\s+(?:also\s+)?(?:particularly\s+|especially\s+)?interested\s+in|(?:has\s+)?(?:a\s+)?(?:particular|special)\s+interest\s+in|has\s+interests\s+in|I\s+have\s+interest\s+in|practice\s+(?:has\s+)?focus(?:es|ed)?\s+on)\b/i;
 const RESEARCH_WORD = /\b(?:research\w*|stud(?:y|ies|ying)|investigat\w*|scholar\w*|trials?)\b/i;
 const CLINICAL_BLOCK_END =
   /^(?:are you a patient\?|patient care locations|administrative support|academic office|view doctor profile)/i;
@@ -40,8 +40,10 @@ const sentencesOf = (text: string): string[] =>
 const isClinicalListText = (text: string): boolean =>
   linesOf(text).some((line) => CLINICAL_LIST_HEADING.test(line)) || CLINICAL_INLINE.test(text);
 
-const isClinicalInterestSentence = (sentence: string): boolean =>
-  INTEREST_PHRASE.test(sentence) && !RESEARCH_WORD.test(sentence);
+export const isClinicalInterestSentence = (sentence: string): boolean => {
+  const text = sentence.normalize('NFKC').replace(/\s+/g, ' ');
+  return INTEREST_PHRASE.test(text) && !RESEARCH_WORD.test(text);
+};
 
 const isBoilerplateOrCvRecord = (text: string): boolean =>
   SCHOOL_BOILERPLATE_WITH_RESEARCH_WORD.test(text) || CV_RECORD_LINE.test(text);
