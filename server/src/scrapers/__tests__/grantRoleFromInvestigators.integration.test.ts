@@ -158,8 +158,8 @@ describe('a materialized row labels each grant with its lead role (#5779)', () =
     await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
     const stored = await ResearchEntity.findOne({ slug: ENTITY_KEY }).lean<Record<string, any>>();
     expect(stored?.recentGrants ?? []).toEqual([]);
-    expect(stored?.recentGrantCount ?? 0).toBe(0);
-    expect(stored?.fundingAgencies ?? []).toEqual([]);
+    expect(stored?.recentGrantCount).toBe(0);
+    expect(stored?.fundingAgencies).toEqual([]);
   });
 
   it('stores the same grants after a second materialize', async () => {

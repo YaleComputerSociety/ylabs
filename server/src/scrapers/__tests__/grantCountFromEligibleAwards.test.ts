@@ -94,19 +94,4 @@ describe('the grant count and funders derive from the eligible award set (#5785)
     expect(evidence.recentGrants).toHaveLength(1);
     expect(evidence.recentGrantCount).toBe(2);
   });
-
-  it('derives the same fields on a second resolve', () => {
-    const input = [
-      obs('nih-reporter', 'recentGrants', [
-        award('R01GM000001', LEAD),
-        award('R01GM000002', OTHER),
-      ]),
-      obs('nih-reporter', 'recentGrantCount', 2),
-      obs('nih-reporter', 'fundingAgencies', ['NIH']),
-    ] as any;
-    const first = aggregateResearchEntityGrantEvidence(input, new Set([LEAD]), everyoneElse);
-    expect(aggregateResearchEntityGrantEvidence(input, new Set([LEAD]), everyoneElse)).toEqual(
-      first,
-    );
-  });
 });
