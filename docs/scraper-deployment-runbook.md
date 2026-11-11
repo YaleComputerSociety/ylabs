@@ -88,6 +88,7 @@ Rules:
 - `scrape run` and `scrape materialize` write only when the command line carries `--apply` and the environment grants `ALLOW_NON_PROD_SCRAPER_WRITES` (#5842).
   Without `--apply` the command is a dry run, `--dry-run` stays accepted as an explicit dry run, and the environment permission without `--apply` is refused before the CLI connects, so a `.env` alone can never turn a dry run into a write.
   Every run and materialize prints one banner line before any network or database work: `WILL WRITE to <database>` or `DRY RUN: nothing will be written (<reason>)`.
+  A `scrape run` dry run's banner goes on to say that observations and entities stay untouched while the run bookkeeping row, and with `--use-cache` the fetch snapshots, are still recorded.
 
 - Use `--use-cache` only outside production.
 - Every non-`--release` CLI run already sends conditional requests through the disk-backed HTTP validator cache (`server/src/scrapers/utils/httpValidatorCache.ts`, #3557), so an unchanged page costs a `304` instead of a full download while the lane still parses and emits it.

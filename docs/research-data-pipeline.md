@@ -116,6 +116,7 @@ The sweep modes fix the environment, database, write posture, and confirmation f
 | `development-incremental` | development / Development | yes | yes | `--confirm-development-incremental-sweep` (`--exhaustive`) |
 | `fellowship-development-full` | development / Development | yes | yes | `--confirm-fellowship-sweep` (fellowship engine only, `--exhaustive --ignore-work-planner`) |
 
+Every writing mode passes `--apply` to each `scrape run` child (`buildScraperSweepChildArgs`), because the environment permission alone no longer writes (#5842); `development-plan` never does.
 Every mode targets Development, because sweeps run only there (decision 2026-09-27 in `docs/decisions.md`).
 Beta and Production receive the swept result through promotion, and the scrape CLI refuses any `run` or `materialize` write against either of them.
 
