@@ -97,6 +97,9 @@ export const REMATERIALIZE_TRACKED_FIELDS = [
   'recentGrantPeriods',
   'recentGrantCount',
   'fundingAgencies',
+  'yaleStatusCache',
+  'activeAtYaleCache',
+  'yaleStatusReasonCache',
 ] as const;
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/i;

@@ -741,13 +741,22 @@ export function defaultMaterializerCardSynthesizer(
  * wrote `departments` alone would leave the stored `schools` facet describing the
  * old departments. `aggregateResearchEntityGrantEvidence` derives the four grant
  * fields from one award union, so a count written without its list would disagree.
+ * The Yale-status derivation writes its cache, its active flag and its reason together,
+ * so a scope naming one of them writes all three (#5721).
  * Each closure is symmetric because every member is a legal
  * `--only-fields` value (#2536).
  */
+export const YALE_STATUS_DERIVED_FIELDS = [
+  'yaleStatusCache',
+  'activeAtYaleCache',
+  'yaleStatusReasonCache',
+] as const;
+
 export const MATERIALIZER_DERIVED_FIELD_GROUPS: ReadonlyArray<readonly string[]> = [
   ['entityType', 'kind'],
   ['school', 'schools', 'departments', 'orgAffiliationLabels'],
   ['recentGrants', 'recentGrantPeriods', 'recentGrantCount', 'fundingAgencies'],
+  YALE_STATUS_DERIVED_FIELDS,
 ];
 
 export function withDerivedMaterializerFields(fields: readonly string[]): string[] {
@@ -782,7 +791,12 @@ function restrictMaterializerSetToFields(
   for (const key of Object.keys(unset)) {
     if (!fields.includes(key) && !provenancePaths.has(key)) delete unset[key];
   }
-  if (valueFields.length > 0) set.lastObservedAt = new Date();
+  // A Yale-status re-derivation reads stored evidence and observes nothing new, so a scope
+  // made only of it leaves the row's observation stamp alone.
+  const observesTheRow = valueFields.some(
+    (field) => !(YALE_STATUS_DERIVED_FIELDS as readonly string[]).includes(field),
+  );
+  if (observesTheRow) set.lastObservedAt = new Date();
   return valueFields.length + Object.keys(unset).length;
 }
 
