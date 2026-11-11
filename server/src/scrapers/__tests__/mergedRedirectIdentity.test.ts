@@ -94,16 +94,34 @@ describe('mergedRedirectAdmission', () => {
     ).toBe('refused');
   });
 
-  it('never takes another person as the one lead of a row minted after a person', () => {
-    const otherPerson = [lead('Mia Sample', 'ms22')];
-    expect(leadsTheRowIsNamedAfter(survivor, otherPerson)).toEqual([]);
+  it('falls back past a grant co-PI listing to the one lead a project-titled row holds', () => {
+    const projectTitled = personRow('Example Imaging Project');
+    const leads = [
+      { ...lead('Ada Example'), personId: 'roster-lead' },
+      { ...lead('Mia Sample'), personId: 'grant-co-pi' },
+    ];
     expect(
-      mergedRedirectAdmission(
-        survivor,
-        leadsTheRowIsNamedAfter(survivor, otherPerson),
-        listing('Mia Sample', ['ms22']),
+      leadsTheRowIsNamedAfter(projectTitled, leads, new Set(['grant-co-pi'])).map(
+        (each) => each.displayName,
       ),
-    ).toBe('refused');
+    ).toEqual(['Ada Example']);
+  });
+
+  it('takes the one lead of a row titled after its own lab with a leading article', () => {
+    const labTitled = personRow('The Example Lab');
+    expect(leadsTheRowIsNamedAfter(labTitled, [lead('Ada Example')])).toHaveLength(1);
+  });
+
+  it('falls back to nobody when the lead the title names is held only by a grant listing', () => {
+    const leads = [
+      { ...lead('Ada Example'), personId: 'grant-co-pi' },
+      { ...lead('Mia Sample', 'ms22'), personId: 'roster-lead' },
+    ];
+    const named = leadsTheRowIsNamedAfter(survivor, leads, new Set(['grant-co-pi']));
+    expect(named).toEqual([]);
+    expect(mergedRedirectAdmission(survivor, named, listing('Mia Sample', ['ms22']))).toBe(
+      'refused',
+    );
   });
 
   it('leaves a lab row and a lab listing to the merge', () => {

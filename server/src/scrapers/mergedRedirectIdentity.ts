@@ -9,6 +9,7 @@ export interface MergedRedirectRow {
 }
 
 export interface MergedRedirectLead {
+  personId?: string;
   displayName?: unknown;
   netid?: unknown;
   profileDestinations: readonly string[];
@@ -30,41 +31,36 @@ export function isPersonRow(row: MergedRedirectRow): boolean {
   return leadIsTheRecordSubjectFor(row.entityType);
 }
 
+const LEADING_ARTICLE = /^the\s+/i;
+
 export function personNamedByRow(row: MergedRedirectRow): string {
-  return personNameFromEntityName(row.name) || textOf(row.name);
-}
-
-const PERSON_ROW_TITLE_TEMPLATE = /\bfaculty research\s*$/i;
-
-function rowIsTitledAfterAPerson(row: MergedRedirectRow): boolean {
-  return (
-    PERSON_ROW_TITLE_TEMPLATE.test(textOf(row.name)) && Boolean(personNameFromEntityName(row.name))
-  );
+  const title = textOf(row.name);
+  return personNameFromEntityName(title.replace(LEADING_ARTICLE, '')) || title;
 }
 
 /**
  * A row titled after a lab or a project names no lead, and then its one lead is the person
- * it is about. A row holding several leads and naming none has no lead to vouch for it.
- * Neither does a row minted as `<Person> Faculty Research` whose one lead is someone else,
- * nor a row whose one lead is a same-surname namesake of the person in its title, because
- * such a lead is how a contaminating merge would vouch for itself.
+ * it is about. A lead held only through grant co-PI listings never vouches (#5776), and a
+ * row whose title names such a lead has nobody else to fall back on. A row holding several
+ * leads and naming none has no lead to vouch for it, and neither does a row whose one lead is
+ * a same-surname namesake of the person in its title, because that lead is how a
+ * prefix-built merge would vouch for itself.
  */
 export function leadsTheRowIsNamedAfter<Lead extends MergedRedirectLead>(
   survivor: MergedRedirectRow,
   leads: readonly Lead[],
+  grantCoPiListed: ReadonlySet<string> = new Set(),
 ): Lead[] {
   const rowPerson = personNamedByRow(survivor);
   if (!rowPerson) return [];
+  const vouches = (lead: Lead) => !lead.personId || !grantCoPiListed.has(lead.personId);
   const named = leads.filter((lead) => listedPersonIsTheNamedLead(lead.displayName, rowPerson));
-  if (named.length > 0) return named;
-  if (
-    leads.length !== 1 ||
-    rowIsTitledAfterAPerson(survivor) ||
-    personNamesShareASurname(leads[0].displayName, rowPerson)
-  ) {
+  if (named.length > 0) return named.filter(vouches);
+  const eligible = leads.filter(vouches);
+  if (eligible.length !== 1 || personNamesShareASurname(eligible[0].displayName, rowPerson)) {
     return [];
   }
-  return [...leads];
+  return eligible;
 }
 
 /**

@@ -6825,7 +6825,12 @@ async function namedLeadWitnessesOfRow(
   })
     .select('_id displayName identifiers.netid profileLinks')
     .lean()) as any[];
-  const namedLeads = leadsTheRowIsNamedAfter(
+  const grantCoPiListed = grantCoPiListedPersonIds({
+    leadFacts: await planInferredPiMembership(String(survivorId), ownLeadObservations),
+    rowLeadPersonIds: edgeSourceNamesByPerson.keys(),
+    edgeSourceNamesByPerson,
+  });
+  return leadsTheRowIsNamedAfter(
     survivor,
     leads.map((lead) => ({
       personId: String(lead._id),
@@ -6833,14 +6838,8 @@ async function namedLeadWitnessesOfRow(
       netid: lead.identifiers?.netid,
       profileDestinations: verifiedPrimaryProfileDestinations(lead.profileLinks),
     })),
+    grantCoPiListed,
   );
-  if (namedLeads.length === 0) return [];
-  const grantCoPiListed = grantCoPiListedPersonIds({
-    leadFacts: await planInferredPiMembership(String(survivorId), ownLeadObservations),
-    rowLeadPersonIds: edgeSourceNamesByPerson.keys(),
-    edgeSourceNamesByPerson,
-  });
-  return namedLeads.filter((lead) => !grantCoPiListed.has(lead.personId));
 }
 
 export interface MergedRedirectRefusals {
