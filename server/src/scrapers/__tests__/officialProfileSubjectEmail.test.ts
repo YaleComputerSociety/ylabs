@@ -354,6 +354,14 @@ describe('the profile subject email read from more page shapes (#5669)', () => {
       expect(emailsOf(await visibleRun(withoutSubject, ysmUrl))).toEqual([]);
     });
 
+    it("never records a co-author's netid-shaped address when the subject states none", async () => {
+      const withoutSubject = ysmPage({
+        title: 'Senior Administrative Assistant',
+        coAuthorEmail: 'cf4321@yale.edu',
+      });
+      expect(emailsOf(await visibleRun(withoutSubject, ysmUrl))).toEqual([]);
+    });
+
     it('emits only the email from an email-only identity', () => {
       const identity = identityOf(html, ysmUrl, { emailOnlyWithoutAdmissibleTitle: true });
       expect(identity?.emailOnly).toBe(true);

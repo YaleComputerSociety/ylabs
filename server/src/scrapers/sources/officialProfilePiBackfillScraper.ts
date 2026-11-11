@@ -3145,7 +3145,9 @@ export function extractOfficialProfileIdentity(
       isAdmissibleOfficialProfileTitle,
     ) || '';
   if (!title) {
-    return options.emailOnlyWithoutAdmissibleTitle && email
+    const subjectStatedEmail =
+      email && email === subjectDeclaredProfileEmail($, profiles, displayName);
+    return options.emailOnlyWithoutAdmissibleTitle && subjectStatedEmail
       ? emailOnlyOfficialProfileIdentity(
           canonicalUrl,
           fetchedUrl,
