@@ -440,7 +440,7 @@ describe(
         netid: 'bh77',
       });
       await directoryPairs('bh77', 'bh77@fixture.example.edu');
-      await directoryPairs('ot77', 'blair.other@yale.edu');
+      await directoryPairs('ot77', 'blair.synthetic3@yale.edu');
       await Observation.create({
         entityType: 'user',
         entityKey: 'netid:ot77',
@@ -451,7 +451,7 @@ describe(
         observedAt: LONG_AGO,
         superseded: false,
         field: 'email',
-        value: 'blair.other@yale.edu',
+        value: 'blair.synthetic3@yale.edu',
       });
 
       await runLane({
