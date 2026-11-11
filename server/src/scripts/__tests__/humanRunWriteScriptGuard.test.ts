@@ -60,6 +60,8 @@ const OPERATOR_TOOLS: Record<string, string> = {
     'expires archived research plans that still hold a student’s private text, an operator decision about stored personal data per environment (#4163)',
   'observations:retire-glued-profile-text':
     'retires the observations the profile lane read from glued block text before #5729, after re-reading each cited page; user email and title are value-keyed, so a fixed re-read adds the right value beside the glued one instead of superseding it, and nothing ever re-emits the glued key (#5720)',
+  'observations:retire-orphaned-lane-configs':
+    'retires the live observations of an operator-reviewed list of lane configs that exist on no git ref; the producing config is gone, so no lane run can supersede them, and the run-time scan of every ref is a check the sweep has no repository to make (#5807)',
   'observations:nonfetching-lane-gone-pages':
     'a one-time backfill for lanes that never run again or read no page, so no lane or sweep stage can re-derive it (#4862)',
   'directory-removal:record':

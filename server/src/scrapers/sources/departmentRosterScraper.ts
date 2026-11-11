@@ -4026,7 +4026,7 @@ const SHARED_SYNTHETIC_ENTITY_KEY_NAMESPACE: Record<string, string> = {
   'materials-science': 'meng-matsci',
 };
 
-function namespacedDeptKey(deptKey: string): string {
+export function namespacedDeptKey(deptKey: string): string {
   return SHARED_SYNTHETIC_ENTITY_KEY_NAMESPACE[deptKey] || deptKey;
 }
 
