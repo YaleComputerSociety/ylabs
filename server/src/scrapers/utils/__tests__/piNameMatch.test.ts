@@ -256,5 +256,6 @@ describe('givenNamesCouldBeOneTransliteration', () => {
     expect(givenNamesCouldBeOneTransliteration('tom', 'tim')).toBe(false);
     expect(givenNamesCouldBeOneTransliteration('andreas', 'anastasis')).toBe(false);
     expect(givenNamesCouldBeOneTransliteration('anastasios', 'athanasios')).toBe(false);
+    expect(givenNamesCouldBeOneTransliteration('marius', 'maris')).toBe(false);
   });
 });

@@ -245,16 +245,16 @@ function givenNameTokensCouldMatch(x: string, y: string): boolean {
 
 const MIN_TRANSLITERATION_LETTERS = 4;
 
-// The trailing fold reads the Greek `-ios` and its contracted `-is` as one ending, so
-// `dionysios` and `dionysis` are one romanised name rather than two people (#5853).
+// The Greek `-ios` is read as its contracted `-is` before any vowel fold, so `dionysios` and
+// `dionysis` are one romanised name (#5853) while a Latin `-ius` such as `marius` stays apart from `maris`.
 const transliterationKey = (token: string): string =>
   token
+    .replace(/ios$/, 'is')
     .replace(/h/g, '')
     .replace(/y/g, 'i')
     .replace(/o/g, 'u')
     .replace(/e/g, 'a')
-    .replace(/([^aiu])\1+/g, '$1')
-    .replace(/ius$/, 'is');
+    .replace(/([^aiu])\1+/g, '$1');
 
 /**
  * Whether two given-name tokens could be two romanisations of one name
