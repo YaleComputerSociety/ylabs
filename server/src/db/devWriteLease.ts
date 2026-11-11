@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import { hostname } from 'os';
 import type { Collection, Db } from 'mongodb';
 
+import { onInterrupt } from '../utils/interruptCleanup';
 import { operatorEnvironmentForDatabaseName } from './operatorDatabaseEnvironment';
 
 /**
@@ -74,16 +75,11 @@ interface DevApplyIntent {
 }
 
 let applyIntent: DevApplyIntent | undefined;
-let dryRunIntent: string | undefined;
 
 /** Called by the apply guard, so a script that will write says so before it connects. */
 export function recordDevApplyIntent(scriptName: string, args: string[] = process.argv.slice(2)) {
   if (DEV_APPLY_LEASE_EXEMPT_SCRIPTS.has(scriptName)) return;
   applyIntent ??= { scriptName, args };
-}
-
-export function recordDevDryRunIntent(scriptName: string) {
-  dryRunIntent ??= scriptName;
 }
 
 export function hasDevApplyIntent(): boolean {
@@ -216,25 +212,22 @@ export async function acquireDevWriteLease(
     !isAlive(current.ownerPid);
 
   if (!current) {
-    try {
-      await collection.insertOne({
+    const inserted = await collection
+      .insertOne({
         _id: leaseId(input.name),
         environment: DEV_WRITE_LEASE_ENVIRONMENT,
         sourceName: input.name,
         ...fields,
-      } as DevWriteLeaseRecord);
-      return heldLease(input.name, ownerId, deps.db, now, { releasable });
-    } catch (error) {
-      if ((error as { code?: number }).code !== 11000) throw error;
-      const holder = await collection.findOne({ _id: leaseId(input.name) });
-      throw new DevWriteLeaseHeldError(
-        input.name,
-        holder ?? { _id: '', sourceName: input.name },
-        at,
+      } as DevWriteLeaseRecord)
+      .then(
+        () => true,
+        (error: { code?: number }) => {
+          if (error.code !== 11000) throw error;
+          return false;
+        },
       );
-    }
-  }
-  if (takeoverable || deadLocalOwner) {
+    if (inserted) return heldLease(input.name, ownerId, deps.db, now, { releasable });
+  } else if (takeoverable || deadLocalOwner) {
     const result = await collection.updateOne(
       {
         _id: leaseId(input.name),
@@ -252,7 +245,11 @@ export async function acquireDevWriteLease(
       return heldLease(input.name, ownerId, deps.db, now, { releasable });
     }
   }
-  const holder = (await collection.findOne({ _id: leaseId(input.name) })) ?? current;
+  const unrecorded: DevWriteLeaseRecord = { _id: '', sourceName: input.name };
+  const holder = (await collection.findOne({ _id: leaseId(input.name) })) ?? current ?? unrecorded;
+  if (holder.ownerId === ownerId && isLiveFor(holder, now())) {
+    return heldLease(input.name, ownerId, deps.db, now, { releasable: false });
+  }
   throw new DevWriteLeaseHeldError(input.name, holder, at);
 }
 
@@ -327,23 +324,15 @@ const exitOnLostLease = (name: string) => {
   process.exit(1);
 };
 
-let interruptHandlersInstalled = false;
-
-function installReleaseOnInterrupt() {
-  if (interruptHandlersInstalled) return;
-  interruptHandlersInstalled = true;
-  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-    process.once(signal, () => {
-      void releaseHeldDevWriteLeases().finally(() => process.exit(signal === 'SIGINT' ? 130 : 143));
-    });
-  }
-}
+let removeInterruptRelease: (() => void) | undefined;
 
 export async function releaseHeldDevWriteLeases(): Promise<void> {
   if (heartbeatTimer) {
     clearInterval(heartbeatTimer);
     heartbeatTimer = undefined;
   }
+  removeInterruptRelease?.();
+  removeInterruptRelease = undefined;
   const leases = [...heldLeases.values()];
   heldLeases.clear();
   await Promise.all(leases.map((lease) => lease.release().catch(() => undefined)));
@@ -360,7 +349,7 @@ async function holdLease(
   heldLeases.set(name, lease);
   if (!lease.joined) process.env[DEV_WRITE_LEASE_OWNER_ENV] ??= lease.ownerId;
   ensureHeartbeat(exitOnLostLease);
-  installReleaseOnInterrupt();
+  removeInterruptRelease ??= onInterrupt(() => releaseHeldDevWriteLeases());
   return lease;
 }
 
@@ -373,10 +362,7 @@ export async function acquireIntendedDevApplyLease(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<HeldDevWriteLease | undefined> {
   if (devWriteLeaseSwitchedOff(env)) return undefined;
-  if (!applyIntent) {
-    if (dryRunIntent) await warnWhenDevApplyLeaseHeld(connection, dryRunIntent);
-    return undefined;
-  }
+  if (!applyIntent) return undefined;
   // Already held through an earlier connection, which owns its release; a later, shorter-lived
   // connection must not end it when it closes.
   if (heldLeases.has(DEV_APPLY_LEASE_NAME)) return undefined;
@@ -399,17 +385,6 @@ export async function holdDevApplyLeaseOnDb(
   recordDevApplyIntent(scriptName);
   const lease = await acquireIntendedDevApplyLease(connection);
   return lease ? releaseHeldDevWriteLeases : async () => undefined;
-}
-
-async function warnWhenDevApplyLeaseHeld(connection: ConnectionDescriptor, scriptName: string) {
-  if (resolveDevWriteLeaseTarget(connection).kind !== 'development') return;
-  const record = await devWriteLeaseCollection(connection.db)
-    .findOne({ _id: leaseId(DEV_APPLY_LEASE_NAME) })
-    .catch(() => null);
-  if (!isLiveFor(record, new Date())) return;
-  console.warn(
-    `WARNING: ${scriptName} is reading Development while "${record?.command || 'an apply'}" holds the write lease, so its counts are indicative only.`,
-  );
 }
 
 let armedHostLeaseConnection: { connection: ConnectionDescriptor; command: string } | undefined;
@@ -452,10 +427,11 @@ export async function ensureDevHostLease(host: string): Promise<void> {
 
 export function resetDevWriteLeaseStateForTests() {
   applyIntent = undefined;
-  dryRunIntent = undefined;
   armedHostLeaseConnection = undefined;
   pendingHostLeases.clear();
   heldLeases.clear();
+  removeInterruptRelease?.();
+  removeInterruptRelease = undefined;
   if (heartbeatTimer) clearInterval(heartbeatTimer);
   heartbeatTimer = undefined;
 }

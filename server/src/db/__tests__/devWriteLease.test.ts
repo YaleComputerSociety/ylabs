@@ -1,9 +1,7 @@
-import fs from 'node:fs';
-import path from 'node:path';
-
 import { MongoClient, type Db } from 'mongodb';
+import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   DEV_APPLY_LEASE_NAME,
@@ -16,16 +14,18 @@ import {
   acquireIntendedDevApplyLease,
   armDevHostLeases,
   ensureDevHostLease,
+  DEV_WRITE_LEASE_SWITCH_ENV,
   recordDevApplyIntent,
-  recordDevDryRunIntent,
   releaseHeldDevWriteLeases,
   resetDevWriteLeaseStateForTests,
   resolveDevWriteLeaseTarget,
   type DevWriteLeaseRecord,
 } from '../devWriteLease';
-import { describeDevLocks, parseDevLocksArgs, releasableByHand } from '../../scripts/devWriteLocks';
+import { initializeConnections } from '../connections';
+import { onInterrupt } from '../../utils/interruptCleanup';
+import { describeDevLocks, parseDevLocksArgs } from '../../scripts/devWriteLocks';
+import { runCanonicalMongoValidators } from '../../scripts/canonicalMongoValidators';
 
-const SERVER_SRC = path.resolve(__dirname, '../..');
 const LEASE_ON: NodeJS.ProcessEnv = {};
 
 let memoryServer: MongoMemoryServer;
@@ -34,6 +34,26 @@ let client: MongoClient;
 const database = (name: string): Db => client.db(name);
 const leases = (db: Db) => db.collection<DevWriteLeaseRecord>(DEV_WRITE_LEASE_COLLECTION);
 const descriptor = (db: Db) => ({ db, databaseName: db.databaseName, host: 'cluster.example.net' });
+const leaseCollections = (db: Db) =>
+  db.listCollections({ name: DEV_WRITE_LEASE_COLLECTION }).toArray();
+
+function withLeaseSwitchedOnInProcess() {
+  let saved: { switch?: string; url?: string } = {};
+  beforeEach(async () => {
+    saved = { switch: process.env[DEV_WRITE_LEASE_SWITCH_ENV], url: process.env.MONGODBURL };
+    delete process.env[DEV_WRITE_LEASE_SWITCH_ENV];
+    await database('Development').dropDatabase();
+  });
+  afterEach(async () => {
+    await releaseHeldDevWriteLeases();
+    await mongoose.disconnect();
+    vi.restoreAllMocks();
+    if (saved.switch === undefined) delete process.env[DEV_WRITE_LEASE_SWITCH_ENV];
+    else process.env[DEV_WRITE_LEASE_SWITCH_ENV] = saved.switch;
+    if (saved.url === undefined) delete process.env.MONGODBURL;
+    else process.env.MONGODBURL = saved.url;
+  });
+}
 
 class Clock {
   constructor(private at: number) {}
@@ -209,13 +229,6 @@ describe('the connect-path hook', () => {
     expect(await db.listCollections({ name: DEV_WRITE_LEASE_COLLECTION }).toArray()).toEqual([]);
   });
 
-  it('only reads, and never writes, the lease for a dry run', async () => {
-    const db = database('Development_dry_run');
-    recordDevDryRunIntent('repair:thing');
-    await expect(acquireIntendedDevApplyLease(descriptor(db), LEASE_ON)).resolves.toBeUndefined();
-    expect(await db.listCollections({ name: DEV_WRITE_LEASE_COLLECTION }).toArray()).toEqual([]);
-  });
-
   it('takes the apply lease in Development for a recorded apply', async () => {
     const db = database('Development');
     recordDevApplyIntent('repair:thing', ['--apply']);
@@ -273,45 +286,129 @@ describe('per-host leases', () => {
   });
 });
 
-describe('request-path code never takes the lease', () => {
-  const REQUEST_PATH = ['routes', 'controllers', 'services', 'middleware', 'app.ts', 'index.ts'];
-  const LEASE_TRIGGERS =
-    /\b(assertScriptApplyAllowed|recordDevApplyIntent|holdDevApplyLeaseOnDb|holdDevApplyLeaseForRun|armDevHostLeases)\s*\(/;
-  const sources = (entry: string): string[] => {
-    const full = path.join(SERVER_SRC, entry);
-    if (!fs.existsSync(full)) return [];
-    if (fs.statSync(full).isFile()) return [full];
-    return fs.readdirSync(full).flatMap((name) => {
-      if (name === '__tests__') return [];
-      return sources(path.join(entry, name));
-    });
-  };
-
-  it('has request-path files to scan', () => {
-    expect(REQUEST_PATH.flatMap(sources).length).toBeGreaterThan(50);
+describe('children of one sweep racing for the same host', () => {
+  it('both join the lease their parent passed down instead of refusing each other', async () => {
+    const db = database('Development_sibling_race');
+    const childEnv = { [DEV_WRITE_LEASE_OWNER_ENV]: 'sweep-owner' };
+    const children = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        acquireDevWriteLease(
+          { name: 'host:example.edu', command: 'scrape run' },
+          { db, env: childEnv },
+        ),
+      ),
+    );
+    expect(children.every((child) => child.ownerId === 'sweep-owner')).toBe(true);
+    expect(await leases(db).countDocuments({ locked: true, ownerId: 'sweep-owner' })).toBe(1);
   });
 
-  it.each(REQUEST_PATH)('%s never records an apply intent', (entry) => {
-    const offenders = sources(entry)
-      .filter((file) => file.endsWith('.ts'))
-      .filter((file) => LEASE_TRIGGERS.test(fs.readFileSync(file, 'utf8')));
-    expect(offenders.map((file) => path.relative(SERVER_SRC, file))).toEqual([]);
+  it('both join after racing to take over an expired lease', async () => {
+    const db = database('Development_sibling_takeover');
+    const clock = new Clock(Date.UTC(2026, 10, 11, 9));
+    await acquireDevWriteLease(
+      { name: 'host:example.edu', command: 'old run' },
+      { db, env: {}, now: clock.now, newOwnerId: () => 'old-owner' },
+    );
+    clock.advance(DEV_WRITE_LEASE_TTL_MS + 1000);
+    const childEnv = { [DEV_WRITE_LEASE_OWNER_ENV]: 'sweep-owner' };
+    const children = await Promise.all(
+      Array.from({ length: 8 }, () =>
+        acquireDevWriteLease(
+          { name: 'host:example.edu', command: 'scrape run' },
+          { db, env: childEnv, now: clock.now },
+        ),
+      ),
+    );
+    expect(children.every((child) => child.ownerId === 'sweep-owner')).toBe(true);
   });
 });
 
-describe('scripts that write Development without the shared apply guard', () => {
-  it.each([
-    'scripts/retireStaleAccessSignalFields.ts',
-    'scripts/retireStaleSavedPlanFields.ts',
-    'scripts/backfillNonLabBrowseRankDebias.ts',
-    'scripts/canonicalMongoValidators.ts',
-    'scripts/syncBetaToDevelopment.ts',
-    'scrapers/cli.ts',
-  ])('%s takes the apply lease', (file) => {
-    const source = fs.readFileSync(path.join(SERVER_SRC, file), 'utf8');
-    expect(source).toMatch(
-      /recordDevApplyIntent\(|holdDevApplyLeaseOnDb\(|holdDevApplyLeaseForRun\(/,
+describe('interrupting a lease holder', () => {
+  it('releases through the shared interrupt cleanup and lets every other cleanup finish first', async () => {
+    const db = database('Development');
+    await db.dropDatabase();
+    recordDevApplyIntent('repair:thing', ['--apply']);
+    await acquireIntendedDevApplyLease(descriptor(db), LEASE_ON);
+
+    const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
+    let reraised!: () => void;
+    const reraise = new Promise<void>((resolve) => {
+      reraised = resolve;
+    });
+    const kill = vi.spyOn(process, 'kill').mockImplementation(() => {
+      reraised();
+      return true;
+    });
+    let terminalStatusWritten = false;
+    onInterrupt(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      terminalStatusWritten = true;
+    });
+
+    try {
+      process.emit('SIGTERM', 'SIGTERM');
+      await reraise;
+      expect(terminalStatusWritten).toBe(true);
+      expect(exit).not.toHaveBeenCalled();
+      expect(kill).toHaveBeenCalledWith(process.pid, 'SIGTERM');
+      expect(await leases(db).countDocuments({ locked: true })).toBe(0);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+});
+
+describe('the API connect path', () => {
+  withLeaseSwitchedOnInProcess();
+
+  it('takes no lease when the API server connects to Development', async () => {
+    process.env.MONGODBURL = `${memoryServer.getUri()}Development`;
+    await initializeConnections();
+    expect(mongoose.connection.db?.databaseName).toBe('Development');
+    expect(await leaseCollections(database('Development'))).toEqual([]);
+  });
+
+  it('takes the lease on the same path for a script that recorded an apply', async () => {
+    process.env.MONGODBURL = `${memoryServer.getUri()}Development`;
+    recordDevApplyIntent('retire:thing', ['--apply']);
+    await initializeConnections();
+    expect(
+      await leases(database('Development')).countDocuments({
+        locked: true,
+        sourceName: DEV_APPLY_LEASE_NAME,
+      }),
+    ).toBe(1);
+  });
+});
+
+describe('a script that writes Development through its own client', () => {
+  withLeaseSwitchedOnInProcess();
+
+  it('is refused before writing while another owner holds the apply lease', async () => {
+    const dev = database('Development');
+    const other = await acquireDevWriteLease(
+      { name: DEV_APPLY_LEASE_NAME, command: 'other:apply --apply' },
+      { db: dev, env: { DEV_WRITE_OWNER: 'session-a' }, newOwnerId: () => 'other-owner' },
     );
+    const validatorClient = new MongoClient(`${memoryServer.getUri()}Development`);
+    try {
+      await expect(
+        runCanonicalMongoValidators(
+          {
+            environment: 'development',
+            apply: true,
+            confirmEnvironment: 'development',
+            applyFrom: '/tmp/canonical-validator-dry-run.json',
+          },
+          `${memoryServer.getUri()}Development`,
+          { client: validatorClient as never, reviewedArtifact: {} },
+        ),
+      ).rejects.toBeInstanceOf(DevWriteLeaseHeldError);
+      const names = (await dev.listCollections().toArray()).map(({ name }) => name);
+      expect(names).toEqual([DEV_WRITE_LEASE_COLLECTION]);
+    } finally {
+      await other.release();
+    }
   });
 });
 
@@ -345,20 +442,8 @@ describe('dev:locks', () => {
     expect(rows[0]).toMatchObject({ ownerLabel: 'session-a', heartbeatAgeSeconds: 10 });
   });
 
-  it('refuses a manual release while the heartbeat is fresh', () => {
-    expect(releasableByHand(record({}), now)).toBe(false);
-    expect(
-      releasableByHand(
-        record({ heartbeatAt: new Date(now.getTime() - DEV_WRITE_LEASE_TTL_MS - 1) }),
-        now,
-      ),
-    ).toBe(true);
-  });
-
-  it('requires the confirm flag to release', () => {
-    expect(() => parseDevLocksArgs(['--release', 'owner-a'])).toThrow(/confirm-release-dev-lease/);
-    expect(
-      parseDevLocksArgs(['--release', 'owner-a', '--confirm-release-dev-lease']).releaseOwnerId,
-    ).toBe('owner-a');
+  it('is read-only and takes no release argument', () => {
+    expect(parseDevLocksArgs(['--json'])).toEqual({ json: true });
+    expect(() => parseDevLocksArgs(['--release', 'owner-a'])).toThrow(/Unknown dev:locks argument/);
   });
 });

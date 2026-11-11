@@ -3,7 +3,7 @@ import { hostname } from 'os';
 
 import { ScrapeJobLock } from '../models/scrapeJobLock';
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import { onInterrupt } from './interruptCleanup';
+import { onInterrupt } from '../utils/interruptCleanup';
 import type { ScraperEnvironment } from './scraperEnvironment';
 
 export const DEFAULT_SCRAPE_JOB_LOCK_LEASE_MS = 30 * 60 * 1000;

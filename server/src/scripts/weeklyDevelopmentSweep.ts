@@ -503,14 +503,17 @@ function reportSearchIndexOutcome(): void {
 }
 
 if (isDirectScriptInvocation(import.meta.url, 'weeklyDevelopmentSweep')) {
-  holdDevApplyLeaseForRun('scrape:sweep:weekly-development')
-    .then(async (releaseLease) => {
-      try {
-        return await runWeeklyDevelopmentSweep(process.argv.slice(2));
-      } finally {
-        await releaseLease();
-      }
-    })
+  void (async () => {
+    const argv = process.argv.slice(2);
+    const releaseLease = parseWeeklySweepArgs(argv).dryRun
+      ? async () => undefined
+      : await holdDevApplyLeaseForRun('scrape:sweep:weekly-development');
+    try {
+      return await runWeeklyDevelopmentSweep(argv);
+    } finally {
+      await releaseLease();
+    }
+  })()
     .then((code) => {
       process.exitCode = code;
     })

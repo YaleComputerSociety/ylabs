@@ -1,4 +1,4 @@
-import { sanitizeLogValue } from '../utils/logSanitizer';
+import { sanitizeLogValue } from './logSanitizer';
 
 export type InterruptCleanup = (signal: NodeJS.Signals) => Promise<unknown> | unknown;
 

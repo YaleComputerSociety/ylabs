@@ -9,7 +9,6 @@ import {
   DEV_APPLY_LEASE_NAME,
   DEV_HOST_LEASE_PREFIX,
   DEV_WRITE_LEASE_ENVIRONMENT,
-  DEV_WRITE_LEASE_TTL_MS,
   devWriteLeaseCollection,
   resolveDevWriteLeaseTarget,
   type DevWriteLeaseRecord,
@@ -17,8 +16,6 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 dotenv.config({ path: path.resolve(path.dirname(__filename), '../../.env'), quiet: true });
-
-export const RELEASE_CONFIRM_FLAG = '--confirm-release-dev-lease';
 
 export type DevLockState = 'live' | 'stale' | 'released';
 export type DevLockKind = 'apply' | 'host' | 'source';
@@ -70,34 +67,16 @@ export function describeDevLocks(records: DevWriteLeaseRecord[], now: Date): Dev
 
 export interface DevLocksArgs {
   json: boolean;
-  releaseOwnerId?: string;
-  confirmRelease: boolean;
 }
 
 export function parseDevLocksArgs(argv: string[]): DevLocksArgs {
-  const args: DevLocksArgs = { json: false, confirmRelease: false };
-  for (let index = 0; index < argv.length; index += 1) {
-    const arg = argv[index];
+  const args: DevLocksArgs = { json: false };
+  for (const arg of argv) {
     if (arg === '--') continue;
     if (arg === '--json') args.json = true;
-    else if (arg === RELEASE_CONFIRM_FLAG) args.confirmRelease = true;
-    else if (arg === '--release') {
-      const owner = argv[index + 1]?.trim();
-      if (!owner || owner.startsWith('--')) throw new Error('--release requires an owner id');
-      args.releaseOwnerId = owner;
-      index += 1;
-    } else throw new Error(`Unknown dev:locks argument: ${arg}`);
-  }
-  if (args.releaseOwnerId && !args.confirmRelease) {
-    throw new Error(`--release requires ${RELEASE_CONFIRM_FLAG}`);
+    else throw new Error(`Unknown dev:locks argument: ${arg}`);
   }
   return args;
-}
-
-export function releasableByHand(record: DevWriteLeaseRecord, now: Date): boolean {
-  if (!record.locked) return false;
-  const heartbeat = record.heartbeatAt ? new Date(record.heartbeatAt).getTime() : 0;
-  return now.getTime() - heartbeat > DEV_WRITE_LEASE_TTL_MS;
 }
 
 function formatTable(rows: DevLockRow[]): string {
@@ -134,34 +113,6 @@ async function main(): Promise<void> {
     }
     const collection = devWriteLeaseCollection(db);
     const now = new Date();
-    if (args.releaseOwnerId) {
-      const held = await collection
-        .find({
-          environment: DEV_WRITE_LEASE_ENVIRONMENT,
-          ownerId: args.releaseOwnerId,
-          locked: true,
-        } as Record<string, unknown>)
-        .toArray();
-      const fresh = held.filter((record) => !releasableByHand(record, now));
-      if (fresh.length > 0) {
-        throw new Error(
-          `Refusing to release ${fresh.length} lease(s) owned by ${args.releaseOwnerId}: their heartbeat is still fresh, so the owner is still writing.`,
-        );
-      }
-      const result = await collection.updateMany(
-        {
-          environment: DEV_WRITE_LEASE_ENVIRONMENT,
-          ownerId: args.releaseOwnerId,
-          locked: true,
-        } as Record<string, unknown>,
-        {
-          $set: { locked: false, releasedAt: now, releaseReason: 'manual' },
-          $unset: { ownerId: '', leaseExpiresAt: '' },
-        },
-      );
-      console.log(`Released ${result.modifiedCount} lease(s) owned by ${args.releaseOwnerId}.`);
-      return;
-    }
     const records = await collection
       .find({ environment: DEV_WRITE_LEASE_ENVIRONMENT } as Record<string, unknown>)
       .toArray();
