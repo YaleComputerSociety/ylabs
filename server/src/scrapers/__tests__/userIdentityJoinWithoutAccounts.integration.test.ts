@@ -129,6 +129,56 @@ describe('the user identity join reads researcher identifiers when no account ex
     expect(join.identityJoin).toBe('person-name');
   });
 
+  describe('a person with a compound surname (#5761)', () => {
+    const COMPOUND_NETID = 'rv584';
+    let compoundResearcherId: mongoose.Types.ObjectId;
+
+    beforeEach(async () => {
+      compoundResearcherId = (
+        await Researcher.create({
+          displayName: 'Rowan Vale-Moss',
+          identifiers: { netid: COMPOUND_NETID },
+        })
+      )._id;
+    });
+
+    const joinTwice = async (key: string, pageSlug: string) => {
+      const page = `https://medicine.yale.edu/profile/${pageSlug}/`;
+      const observations = [
+        { ...userObservation(key, 'fname', 'Rowan'), sourceUrl: page },
+        { ...userObservation(key, 'lname', 'Vale-Moss'), sourceUrl: page },
+        { ...userObservation(key, 'profileUrls', { departmental: page }), sourceUrl: page },
+      ];
+      const first = await joinUserIdentityToExistingResearcher({ entityKey: key }, observations);
+      const second = await joinUserIdentityToExistingResearcher({ entityKey: key }, observations);
+      return [first, second].map((join) => ({
+        researcherId: join.researcher?._id ? String(join.researcher._id) : null,
+        identityJoin: join.identityJoin ?? null,
+      }));
+    };
+
+    it('refuses the name match on every resolve when a hyphenated-surname alias spells out another netid', async () => {
+      expect(await joinTwice('netid:rowan.vale-moss.rv311', 'rowan-vale-moss')).toEqual([
+        { researcherId: null, identityJoin: null },
+        { researcherId: null, identityJoin: null },
+      ]);
+    });
+
+    it('refuses the name match on every resolve when the page slug takes its netid from the first surname part', async () => {
+      expect(await joinTwice('dept:fixture:rowan-vale-moss', 'rowan-vale-moss-rv311')).toEqual([
+        { researcherId: null, identityJoin: null },
+        { researcherId: null, identityJoin: null },
+      ]);
+    });
+
+    it('keeps joining the compound-surname person whose own netid the evidence spells out', async () => {
+      const kept = { researcherId: String(compoundResearcherId), identityJoin: 'person-name' };
+      expect(
+        await joinTwice('dept:fixture:rowan-vale-moss', `rowan-vale-moss-${COMPOUND_NETID}`),
+      ).toEqual([kept, kept]);
+    });
+  });
+
   it('reaches the researcher holding the email when the key names no netid holder', async () => {
     const key = 'netid:quinn.synthetic';
     const join = await joinUserIdentityToExistingResearcher({ entityKey: key }, [
