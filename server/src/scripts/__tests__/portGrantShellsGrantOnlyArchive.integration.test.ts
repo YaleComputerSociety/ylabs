@@ -147,6 +147,45 @@ describe('the grant-only archive is bounded by the cap and reads URL-less eviden
     expect(delta.researchPlansThatWouldMove).toBe(1);
   });
 
+  it('an enrichment that would join two people recorded as distinct is deferred, not applied', async () => {
+    const grantRowId = await seedGrantOnlyRow('nih-pi-synthetic-one');
+    const labId = new mongoose.Types.ObjectId();
+    await ResearchEntity.collection.insertOne({
+      _id: labId,
+      slug: 'synthetic-enrichment-lab',
+      name: 'Synthetic Enrichment Lab',
+      entityType: 'LAB',
+      archived: false,
+    });
+    const personId = new mongoose.Types.ObjectId();
+    const distinctCoLeadId = new mongoose.Types.ObjectId();
+    await mongoose.connection
+      .db!.collection('researchers')
+      .insertMany([
+        { _id: personId, distinctFromResearcherIds: [distinctCoLeadId] },
+        { _id: distinctCoLeadId },
+      ]);
+    for (const [leadId, targetId] of [
+      [personId, grantRowId],
+      [personId, labId],
+      [distinctCoLeadId, labId],
+    ]) {
+      await RoleAssignment.collection.insertOne({
+        personId: leadId,
+        role: LEAD_ROLE_CANONICAL_VALUES[0],
+        target: { kind: 'RESEARCH_ENTITY', id: targetId },
+        archived: false,
+      });
+    }
+
+    const { delta } = await runGrantShellPort({ dryRun: false, confirmed: true, maxPorts: 10 });
+
+    expect(delta.grantOnlyEnrichedIntoExistingRow).toBe(0);
+    expect(delta.grantOnlyEnrichmentDeferred).toBe(1);
+    const grantRow = await ResearchEntity.collection.findOne({ _id: grantRowId });
+    expect(grantRow?.canonicalGroupId ?? null).toBeNull();
+  });
+
   it('a row carrying URL-less evidence from a non-grant lane is not archived', async () => {
     await seedGrantOnlyRow('nih-pi-synthetic-one');
     const corroboratedId = await seedGrantOnlyRow('nih-pi-synthetic-two');

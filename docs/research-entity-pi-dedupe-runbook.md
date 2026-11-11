@@ -46,7 +46,9 @@ Two copies of a co-led lab where one lists only one person and the other lists o
 A refused group is refused whole and nothing partial is planned in its place, so the rule only removes merges.
 The predicate is `distinctPeopleVerdictPairsJoinedByFold` in `server/src/scrapers/distinctPeopleVerdict.ts`, and `server/src/services/distinctPeopleVerdicts.ts` loads it.
 It runs on the plan of every `research-entity:dedupe-by-pi` lane (reported as `plannedRefusedAsDistinctPeopleGroups` and `refusedAsDistinctPeople`), again inside `applyResearchEntityDedupeMergeGroup` (reported as `refusedAsDistinctPeople` on an applied group), and in the eponymous FRA merge, the same-lead duplicate merge, the same-person archive tombstones, the merge-tombstone restore, the stranded-key redirect, the dept-roster shell fold, resolve-at-mint adoption, and researcher-dedupe.
-`foldPathsHonourDistinctPeopleVerdict.test.ts` fails when a new file writes a merge redirect without reading the verdict.
+A refused resolve-at-mint adoption mints the new row on its own instead of joining the other person's row.
+The grant-shell port rolls back a refused port and reports it as `refusedAsDistinctPeople`, and a refused grant-only enrichment counts as deferred.
+A new fold path must call the shared predicate before it writes a redirect.
 
 Narrowing modes let an operator review one risk class at a time:
 

@@ -105,10 +105,12 @@ describe('materializer folds honour a recorded distinct-people verdict (#5802)',
     return { first, second, people };
   }
 
-  it('resolve-at-mint does not adopt a row led by a person recorded as distinct from the mint`s lead', async () => {
+  it('resolve-at-mint mints its own row instead of adopting one led by a person recorded as distinct', async () => {
     const { first, second, people } = await mintAgainstAnotherPersonsSite({ verdict: true });
-    expect(second.skipped).toBe('resolver-blocked');
+    expect(second.skipped).toBeUndefined();
+    expect(second.created).toBe(true);
     expect(String(second.entityId ?? '')).not.toBe(String(first.entityId));
+    expect(await ResearchEntity.countDocuments({ archived: { $ne: true } })).toBe(2);
     expect(
       await RoleAssignment.countDocuments({ 'target.id': first.entityId, personId: people.y }),
     ).toBe(0);

@@ -11622,7 +11622,7 @@ async function resolveCanonicalForEntityMint(
     resolverType === 'researchEntity' &&
     (await mintAdoptionJoinsDistinctPeople(obs, resolution.canonicalId, resolverSelf.name ?? ''))
   ) {
-    return { status: 'blocked', reason: 'distinct-people-verdict' };
+    return { status: 'mint', reservedKeys: [] };
   }
   return resolution;
 }
