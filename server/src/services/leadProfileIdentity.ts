@@ -145,12 +145,15 @@ const IDENTITY_QUERY_PARAMETER_BY_HOST: Readonly<Record<string, string>> = {
   'scholar.google.com': 'user',
 };
 
-const identityQueryPattern = (host: string, path: string, parameter: string, value: string) =>
-  new RegExp(
-    `^https?://(?:www\\.)?${escapeRegex(host)}${escapeRegex(path)}/*\\?(?:[^#]*&)?${escapeRegex(parameter)}=${escapeRegex(encodeURIComponent(value))}(?:[&#].*)?$`,
-  );
+interface OfficialProfileDestinationPatternParts {
+  host: string;
+  pathPattern: string;
+  caseInsensitive: boolean;
+}
 
-export const officialProfileDestinationStoredPattern = (url?: string | null): RegExp | null => {
+const officialProfileDestinationPatternParts = (
+  url?: string | null,
+): OfficialProfileDestinationPatternParts | null => {
   let parsed: URL;
   try {
     parsed = new URL(String(url || '').trim());
@@ -163,9 +166,12 @@ export const officialProfileDestinationStoredPattern = (url?: string | null): Re
   const identityParameter = IDENTITY_QUERY_PARAMETER_BY_HOST[host];
   if (identityParameter) {
     const identityValue = parsed.searchParams.get(identityParameter);
-    return identityValue
-      ? identityQueryPattern(host, path, identityParameter, identityValue)
-      : null;
+    if (!identityValue) return null;
+    return {
+      host,
+      pathPattern: `${escapeRegex(path)}/*\\?(?:[^#]*&)?${escapeRegex(identityParameter)}=${escapeRegex(encodeURIComponent(identityValue))}(?:[&#].*)?$`,
+      caseInsensitive: false,
+    };
   }
   const anySection =
     host === 'medicine.yale.edu' && YSM_ROOT_PROFILE_PATH.test(path) ? '(?:/[a-z0-9-]+)?' : '';
@@ -173,7 +179,29 @@ export const officialProfileDestinationStoredPattern = (url?: string | null): Re
   const pathPattern = ydsProfile
     ? `(?:/profile|/faculty-and-research/yds-faculty)/${escapeRegex(ydsProfile[1])}`
     : `${anySection}${escapeRegex(path)}`;
-  return new RegExp(`^https?://(?:www\\.)?${escapeRegex(host)}${pathPattern}/*(?:[?#].*)?$`, 'i');
+  return { host, pathPattern: `${pathPattern}/*(?:[?#].*)?$`, caseInsensitive: true };
+};
+
+export const officialProfileDestinationStoredPattern = (url?: string | null): RegExp | null => {
+  const parts = officialProfileDestinationPatternParts(url);
+  if (!parts) return null;
+  return new RegExp(
+    `^https?://(?:www\\.)?${escapeRegex(parts.host)}${parts.pathPattern}`,
+    parts.caseInsensitive ? 'i' : '',
+  );
+};
+
+/**
+ * The same destinations as `officialProfileDestinationStoredPattern`, as case-sensitive patterns
+ * that each start with a literal scheme and host, so a `sourceUrl` index bounds every one of them.
+ * A case-insensitive pattern cannot be bounded and scans every candidate row instead.
+ */
+export const officialProfileDestinationIndexedPatterns = (url?: string | null): RegExp[] => {
+  const parts = officialProfileDestinationPatternParts(url);
+  if (!parts) return [];
+  return ['https://', 'http://', 'https://www.', 'http://www.'].map(
+    (prefix) => new RegExp(`^${escapeRegex(`${prefix}${parts.host}`)}${parts.pathPattern}`),
+  );
 };
 
 export const normalizeOfficialProfileDestination = (url?: string | null): string => {

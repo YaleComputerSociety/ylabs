@@ -31,6 +31,7 @@ const OWNER_ADDRESS = 'sam.fixture5693@yale.edu';
 const OWNER_NETID = 'sf5693';
 const NAMESAKE_NETID = 'sz5693';
 const OWNER_ORCID = '9999-9000-9999-9005';
+const NAMESAKE_OWN_ORCID = '9999-9000-9999-9013';
 const BACKFILL = 'official-profile-pi-backfill';
 
 const observe = (
@@ -217,6 +218,25 @@ describe('a page the directory gives to another netid stops speaking for the nam
       expect(after.identifiers.orcid).toBeUndefined();
       expect(after.identifiers.netid).toBe(NAMESAKE_NETID);
     }
+  });
+
+  it('withdraws only the ORCID link for the copied iD, keeping an ORCID link of the namesake own', async () => {
+    const { namesake } = await seedCorpus();
+    const ownOrcidLink = {
+      kind: 'ORCID',
+      purpose: 'SCHOLARLY',
+      url: `https://orcid.org/${NAMESAKE_OWN_ORCID}`,
+      verifiedAt: new Date('2026-10-01T00:00:00Z'),
+    };
+    await Researcher.updateOne({ _id: namesake._id }, { $push: { profileLinks: ownOrcidLink } });
+
+    await materializeEntity('user', { entityKey: `netid:${NAMESAKE_NETID}` });
+
+    const after = (await Researcher.findById(namesake._id).lean()) as any;
+    expect(after.identifiers.orcid).toBeUndefined();
+    expect(
+      after.profileLinks.map((link: { kind: string; url: string }) => [link.kind, link.url]),
+    ).toEqual([['ORCID', ownOrcidLink.url]]);
   });
 
   it('keeps an ORCID the namesake own page also asserts, and a link the directory places with them', async () => {

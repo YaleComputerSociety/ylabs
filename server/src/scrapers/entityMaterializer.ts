@@ -7650,7 +7650,9 @@ async function withdrawScreenedOfficialProfileLinks(
   if (plan.officialLinkUrls.length > 0) {
     pulls.push({ kind: 'YALE_OFFICIAL', url: { $in: plan.officialLinkUrls } });
   }
-  if (plan.orcid) pulls.push({ kind: 'ORCID' });
+  if (plan.orcid) {
+    pulls.push({ kind: 'ORCID', url: new RegExp(`(?:^|/)${escapeRegex(plan.orcid)}/*$`, 'i') });
+  }
   const result = await Researcher.updateOne(
     { _id: plan.researcherId },
     {

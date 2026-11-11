@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 import {
   normalizeOfficialProfileDestination,
-  officialProfileDestinationStoredPattern,
+  officialProfileDestinationIndexedPatterns,
 } from '../services/leadProfileIdentity';
 
 export const OFFICIAL_PROFILE_PI_BACKFILL_SOURCE = 'official-profile-pi-backfill';
@@ -224,11 +224,11 @@ export async function profilePageOwnerNetids(
 ): Promise<ProfilePageOwnerNetids> {
   const owners = new Map<string, Set<string>>();
   const none: ProfilePageOwnerNetids = { byPage: owners, directoryNetids: new Set() };
-  const patterns = new Map<string, RegExp>();
+  const patterns = new Map<string, RegExp[]>();
   for (const url of pageUrls) {
     const destination = normalizeOfficialProfileDestination(String(url ?? ''));
-    const pattern = officialProfileDestinationStoredPattern(String(url ?? ''));
-    if (destination && pattern) patterns.set(destination, pattern);
+    const indexed = officialProfileDestinationIndexedPatterns(String(url ?? ''));
+    if (destination && indexed.length > 0) patterns.set(destination, indexed);
   }
   if (patterns.size === 0 || mongoose.connection.readyState !== 1) return none;
   const statedEmails = (await Observation.find(
@@ -236,7 +236,7 @@ export async function profilePageOwnerNetids(
       entityType: 'user',
       field: 'email',
       ...readScope,
-      sourceUrl: { $in: [...patterns.values()] },
+      sourceUrl: { $in: [...patterns.values()].flat() },
     },
     { sourceUrl: 1, value: 1 },
   ).lean()) as Array<{ sourceUrl?: unknown; value?: unknown }>;
