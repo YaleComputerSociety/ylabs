@@ -318,3 +318,45 @@ describe('default-browse-order-is-repeatable case', () => {
     expect(byId['default-browse-order-is-repeatable'].status).toBe('fail');
   });
 });
+
+describe('service-cores-rank-below-research case (#5748)', () => {
+  const coreCase = journeyCases.find(
+    (candidate) => candidate.id === 'service-cores-rank-below-research',
+  )!;
+  const storedBySlug: Record<string, Record<string, unknown>> = {
+    'synthetic-lab': { entityType: 'LAB', name: 'Synthetic Lab' },
+    'synthetic-profile': {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      name: 'Synthetic Profile',
+      shortDescription: 'Studies reaction mechanisms.',
+    },
+    'synthetic-core': { entityType: 'CORE_FACILITY', name: 'Synthetic Instrument Core' },
+    'synthetic-service-profile': {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      name: 'Synthetic Service Profile',
+      shortDescription: 'Provides electron microscopy services and training for users.',
+    },
+  };
+  const contextServing = (slugs: string[]): JourneyEvalContext => ({
+    ...syntheticContext([]),
+    browse: async () => ({ researchEntities: slugs.map((slug) => ({ slug })) }),
+    readStoredRows: async (keys) =>
+      new Map(keys.flatMap((key) => (storedBySlug[key] ? [[key, storedBySlug[key]]] : []))),
+  });
+  const statusOf = async (slugs: string[]) =>
+    (await coreCase.run(contextServing(slugs))).invariants[0];
+
+  it('passes when every core the guard demotes sits below the research rows', async () => {
+    const invariant = await statusOf(['synthetic-lab', 'synthetic-profile', 'synthetic-core']);
+    expect(invariant.status).toBe('pass');
+  });
+
+  it('fails when a core or a service-text profile outranks a research row', async () => {
+    expect((await statusOf(['synthetic-core', 'synthetic-lab'])).status).toBe('fail');
+    expect((await statusOf(['synthetic-service-profile', 'synthetic-lab'])).status).toBe('fail');
+  });
+
+  it('is inconclusive when no query served a core', async () => {
+    expect((await statusOf(['synthetic-lab', 'synthetic-profile'])).status).toBe('inconclusive');
+  });
+});

@@ -119,6 +119,13 @@ A row without the badge while the corpus fingerprint moved is inconclusive, sinc
 Both cases also fail on a degraded filtered page, because a degraded card cannot apply the withheld decision and would agree with a stale index.
 Measured on Development on 2026-11-10, the filter returned 117 rows and all 117 served the badge.
 
+## A service core ranks below research rows
+
+The `service-cores-rank-below-research` case searches eight topic queries, reads the stored row behind each of the top 30 results, and classifies it through `serviceCoreDemotionReason`, the guard search itself calls (#5748).
+It fails when a row the guard demotes (a `CORE_FACILITY` row, or a faculty row whose research text is a core's service offer) outranks a row it classifies as research, and reports each row the guard exempts because the query names it, with its rank and reason.
+A run in which no query serves a core is inconclusive rather than a pass, and a violation while the corpus fingerprint moved is inconclusive too.
+Measured on Development on 2026-11-11 with the rerank cache on, it failed with the demotion at strength zero (35 demoted rows outranking a research row across 6 of 8 queries) and passed with it (none).
+
 ## What this harness does not cover
 
 The research cases call `searchResearchGroupsViaMeili` directly rather than the HTTP route, so real Meilisearch, real Mongo, the ranking, the filters, the visibility gate, and the index-time guards are all exercised, but everything the Express layer adds is not: the oversized-request rejection, parameter coercion, the `includeFacets` policy, JSON serialization, auth, and rate limits.

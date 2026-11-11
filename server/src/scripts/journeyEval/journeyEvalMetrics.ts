@@ -795,6 +795,62 @@ export function checkMeshDescriptorOnlyRowsRankBelowOwnEvidence(
   return buildInvariant(id, title, violations === 0, detail);
 }
 
+export type ServiceCorePlacement = 'demoted' | 'exempt' | 'research';
+
+export interface ServiceCorePlacementRanking {
+  query: string;
+  placements: ReadonlyArray<{ placement: ServiceCorePlacement; reason: string }>;
+}
+
+export function checkServiceCoresRankBelowResearch(
+  rankings: readonly ServiceCorePlacementRanking[],
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult {
+  const id = 'service-cores-rank-below-research';
+  const title =
+    'No service core the demotion guard places below research rows outranks a research row of a topic query';
+  const perQuery = rankings.map((ranking) => {
+    const lastResearchRank = ranking.placements
+      .map(({ placement }) => placement)
+      .lastIndexOf('research');
+    const outranking = ranking.placements.filter(
+      ({ placement }, rank) => placement === 'demoted' && rank < lastResearchRank,
+    );
+    return {
+      query: ranking.query,
+      ranked: ranking.placements.length,
+      demoted: ranking.placements.filter(({ placement }) => placement === 'demoted').length,
+      exempt: ranking.placements
+        .map(({ placement, reason }, rank) => ({ placement, reason, rank: rank + 1 }))
+        .filter(({ placement }) => placement === 'exempt'),
+      demotedRanks: ranking.placements
+        .map(({ placement }, rank) => (placement === 'demoted' ? rank + 1 : 0))
+        .filter((rank) => rank > 0),
+      demotedOutrankingResearch: outranking.length,
+    };
+  });
+  const detail = { queries: perQuery };
+  if (perQuery.every((query) => query.demoted === 0 && query.exempt.length === 0)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'No query served a service core in the window, so the ordering it asserts was never exercised',
+      detail,
+    );
+  }
+  const violations = perQuery.reduce((total, query) => total + query.demotedOutrankingResearch, 0);
+  if (violations > 0 && corpusFingerprintMoved(corpusBefore, corpusAfter)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The corpus changed while the rows were classified, so a stored row may describe a different version than the one ranked',
+      { ...detail, corpusBefore, corpusAfter },
+    );
+  }
+  return buildInvariant(id, title, violations === 0, detail);
+}
+
 export interface PersonNameQueryObservation {
   variant: 'prefix' | 'typo';
   respelled: boolean;
