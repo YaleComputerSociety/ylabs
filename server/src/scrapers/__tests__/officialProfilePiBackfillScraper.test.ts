@@ -4425,6 +4425,32 @@ describe('officialProfilePiBackfillScraper', () => {
     expect(emitted.some((o) => o.field === 'profileUrls')).toBe(false);
   });
 
+  it('keys a profile on an email-alias netid without stating the alias as a netid', async () => {
+    const emitted: ObservationInput[] = [];
+    const scraper = new OfficialProfilePiBackfillScraper(
+      vi.fn(async () => ysmJsonProfileHtml),
+      vi.fn(async () => [
+        {
+          _id: 'entity-2',
+          name: 'Cameron Profile Research',
+          slug: 'faculty-research-area-cameron-profile',
+          websiteUrl: 'https://medicine.yale.edu/profile/cameron-profile/',
+        },
+      ]),
+      vi.fn(async () => ({
+        netid: 'cameron.profile',
+        email: 'cameron.profile@yale.edu',
+      })),
+    );
+
+    await scraper.run(contextFor(emitted));
+
+    const userObs = emitted.filter((o) => o.entityType === 'user');
+    expect(userObs.length).toBeGreaterThan(0);
+    expect(userObs.every((o) => o.entityKey === 'netid:cameron.profile')).toBe(true);
+    expect(userObs.some((o) => o.field === 'netid')).toBe(false);
+  });
+
   it('extracts a profile-linked research home from Yale profile affiliations and director text', () => {
     const homes = extractOfficialProfileResearchHomes(
       sinusasProfileHtml,

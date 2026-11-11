@@ -1,3 +1,4 @@
+import { holdDevApplyLeaseOnDb } from '../db/devWriteLease';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import { MongoClient, type AnyBulkWriteOperation, type Db, type Document } from 'mongodb';
@@ -583,11 +584,22 @@ async function main(): Promise<void> {
 
   const betaClient = new MongoClient(options.betaUrl);
   const developmentClient = new MongoClient(options.developmentUrl);
+  let releaseDevWriteLease: () => Promise<void> = async () => undefined;
   try {
     await betaClient.connect();
     await developmentClient.connect();
     const betaDb = betaClient.db();
     const developmentDb = developmentClient.db();
+    if (options.mode === 'apply') {
+      releaseDevWriteLease = await holdDevApplyLeaseOnDb(
+        {
+          db: developmentDb,
+          databaseName: developmentDb.databaseName,
+          host: new URL(options.developmentUrl).hostname,
+        },
+        'development:refresh-from-beta',
+      );
+    }
     const collections = collectionsForOptions(options);
     const approvedMirrorCollectionNames = betaToDevelopmentCollectionNames(true);
     const [betaCollectionRows, developmentCollectionRows] = await Promise.all([
@@ -671,6 +683,7 @@ async function main(): Promise<void> {
     console.log(JSON.stringify(result, null, 2));
     writeOutput(result, options.output);
   } finally {
+    await releaseDevWriteLease().catch(() => undefined);
     await betaClient.close();
     await developmentClient.close();
   }

@@ -55,6 +55,9 @@ Three call sites, two of which do not use the helper and say why:
   A roster listing title now cites the listing, so a roster-minted row whose only title came from the listing reads `no-stored-title` and is kept.
   The one direction that can archive is a YSE block that leads with an administrative position and states a faculty appointment later; the `description-states-research` floor is what keeps that row.
 - A lane cites a title at the page it read it from: `dept-faculty-roster` cites a listing title at the listing and a profile-enrichment title at the profile page, and `ysm-atoz-index` cites its widget title at the lab page (#5578).
+- `dept-faculty-roster` types a person from their own listed title, never from the roster page: `titleStatesOnlyAStaffRole` (a staff or research-support title with no faculty appointment anywhere) yields `userType: 'staff'`, and anything else keeps the earlier rule (#5750).
+  `userType` is latest-wins for that source, so a re-read replaces the lane's earlier typing instead of standing beside it as a same-source conflict, the lane emits one typing per person per run after every roster lane finishes (two concurrent inserts for one key would supersede each other), and a staff typing never replaces a faculty one: not one from another roster in the run, and not one a live lane title stating a faculty appointment supports, so an `--only` or `--limit` run cannot undo another roster's faculty typing.
+  No served surface reads the resolved `userType`: name search, the roster, hosting and lead eligibility all read role edges, so a staff person served as faculty is a role-edge defect in the lane that wrote the edge (#5746), not a typing defect.
 - the retirement pass restates them in `staffMintedEntityReasonFor`, because it has to name *which* screen refused in order to report by reason.
 
 `bbs-research-track` no longer mints at all (#3561): a PI with no existing row, or several, is counted by reason and skipped, so it needs none of the three screens.
@@ -187,8 +190,15 @@ Four earlier mechanisms each broke on a stored title, and the module's test file
   `research-entity:rematerialize --foreign-contact` selects the rows storing a contact field value no live row-keyed observation states, rematerializes only the contact fields, reports field names and never values, and re-gates what it cleared.
 - A person email, and so a `netid:<local>` user key, is never an office mailbox.
   `isRoleOrUnitMailbox` (`utils/scraperHelpers.ts`) refuses an address whose local part names a role (`dus`, `registrar`, `office`) or is only the name of the unit whose page printed it (`<unit>@yale.edu` on `<unit>.yale.edu`), and `isLikelyPersonSpecificYaleEmail` refuses the role words on every lane.
+  `isLikelyPersonSpecificYaleEmail` accepts a name-shaped local part only when its compacted letters are the whole name in either order, optionally followed by a generational suffix and digits, so a word fused before the name is refused as a glued extraction (#5730).
+  A token that embeds the stored last name with a particle before it or a second surname after it still passes on its given-name check, because tightening that arm would refuse about 99 legitimate compound and second surnames (of 315 live addresses with that shape, none was a glued department word), so a word glued after the last name is a known limit.
+  A second given name glued before a short-form stored first name (`<given><first>.<last>`) is refused too, because it is indistinguishable at the token level from a department word in the same position; such an address survives when another lane that does not apply this check, such as the Yale directory, carries it.
   `dept-faculty-roster` also refuses an address it reads for two different people in one batch (`withoutSharedRosterEmails`) before minting any person key from it, because a shared netid-shaped address passes the shape test and would collapse both people into one key.
   Keys minted that way before the guard stay in the log, so the materializer screens them on every read instead of retiring them (`roleMailboxUserKey.ts`): `joinUserIdentityToExistingResearcher` reaches nobody through such a key, the user arm skips it as `office-mailbox-user-key`, and an `inferredPiUserKey` naming one is ignored, so the row's lead comes from the key the lane now emits.
+- A `netid:<local>` user key may carry an email local part, but a `netid` observation states only a Yale netid (#5740).
+  Every lane that keys a person on an address's local part emits the `netid` field through `asYaleNetid` (`utils/yaleNetid.ts`, the single owner of the netid shape), which refuses a value `looksLikeYaleNetid` rejects, such as a dotted name, so the key still joins the person while the alias never reads as their netid.
+  The `account-netid` join reads the same rule: an alias reaches a researcher on that join only through `aliasNetidWithLiveHolder`, the directory's map to another live holder, never by equality with a researcher whose stored `identifiers.netid` is the alias itself, so such a record is reached by name or not at all.
+  The same value witnesses nothing elsewhere: `identityWitnessesConflict` reads two records as two people only when both netids pass `looksLikeYaleNetid`, `resolveNetidForRosterEmailAlias` never resolves an alias to a key that is not a netid, and the shell dedupe never copies such a value into a canonical record's empty `identifiers.netid`.
 - A researcher's `identifiers.email` follows identity-verified evidence on every resolve: an empty value is filled from any verified source, and a different stored value is replaced only when the person's own official page is among the verified sources and no official-page evidence on the person's key still states the stored address, so a directory-only candidate or a page stating both addresses keeps the stored value, with no lock (`verifiedResearcherEmail.ts`, #5627).
   Only two kinds verify identity: a `yale-directory` record keyed by the person's own netid, and an `official-profile-pi-backfill` email on the person's own `netid:` key whose page the person already holds as their official link and no other live researcher does, and whose address the directory does not pair with another netid.
   Either source is refused when a researcher with a different netid already holds the address (#5606).
@@ -211,6 +221,9 @@ Four earlier mechanisms each broke on a stored title, and the module's test file
   The person's display name comes only from a JSON-LD `Person` node or an untyped node, never from an organization or website node, which named every MacMillan Center person page after the center.
   A canonical link differing from the fetched profile only in letter case is the same page.
   In the queued and `visible-profile-bio-backfill` modes, a page with no admissible title still yields the address, and nothing else: no title, name, bio, role or lead attribution follows from such a page (#5701).
+  `visible-profile-bio-backfill` selects a person by the one `YALE_OFFICIAL` link they hold, or a page whose slug is their own netid, as well as by a slug that agrees with their name (#5708).
+  A link another live researcher also holds is dropped from every arm, two held links select nothing, and a slug that is or ends in a directory netid other than the person's own is refused before the page is read.
+  In that mode only, the Yale directory pairing the page's own address with the person's netid stands in for the display-name check, so a compound given name spelled differently on the page and the record no longer refuses the person's own page; a stored address never stands in, because it can be the contaminated value under test.
 - Any outbound fetch to a host derived from user input or stored data MUST go through `utils/ssrfGuard.ts`.
 Use `fetchPublicHttpUrl` (`scrapers/utils/httpFetch.ts`) when a script needs a status or a redirect location, and never the global `fetch`; the security preflight scan fails on an unguarded call, and `skills/auth-security/SKILL.md` owns the rules, including how the renderer's browser is kept on public hosts.
 - A lane that fetches a URL **discovered on a page** must establish that the fetched page is about the same subject before merging anything from it.
@@ -294,6 +307,30 @@ Before #2498 only the cron runner took the lock, so two operators or two agents 
 - Losing the lease mid-run is reported, not ignored: a renewal that matches no row means the row no longer belongs to this process, so the command prints `LOCK LOST` and exits nonzero rather than reporting an exclusive write it did not have.
 - The lock row records a CLI writer's provenance: `releaseReason` follows the run's own outcome, and `lastRunId` names the run.
 
+### One apply-class Development write at a time (#5756)
+
+Above the per-source lock sits a Development-wide write lease, also stored in `scrape_job_locks` under reserved names.
+It replaces the convention of announcing each write to the session that sequences Development writes with enforcement.
+
+- An apply-class script takes the `__dev-apply__` lease before its first write, and a second apply is **refused** with a nonzero exit that names the holder, its command and its heartbeat age.
+  Nothing was written when that refusal prints.
+- The hook is `assertScriptApplyAllowed`: with `--apply` it records an apply intent, and the shared connect paths in `db/connections.ts` take the lease only for a process that recorded one.
+  The API server, the Render web service and request-path code never record an intent, so they never read or wait on a lease; `devWriteLease.test.ts` connects through `initializeConnections` to a Development-named database and asserts no lease document appears.
+- The lease is taken only when the connected database resolves to Development (`resolveDevWriteLeaseTarget`).
+  Beta, Production, test and localhost databases never read or write a lease document, and an apply against a remote database the resolver cannot place refuses rather than writing unguarded.
+- Scripts that write through their own client or connect path take it explicitly: `scrape run` that auto-materializes, `scrape materialize`, `scrape prune-observations`, the sweeps (`holdDevApplyLeaseForRun`), `development:refresh-from-beta` and `model-refactor:validators` (`holdDevApplyLeaseOnDb`), and the retire and backfill scripts that bypass the guard (`recordDevApplyIntent`).
+- A child process inherits its parent's owner id through `DEV_WRITE_LEASE_OWNER`, so a sweep's `scrape run` children join the sweep's lease instead of being refused by it, and only the root owner releases it.
+- Append-only measurement writes are exempt (`DEV_APPLY_LEASE_EXEMPT_SCRIPTS`: `corpus:snapshot`, `gates:refresh`, the lane benchmark and scorecard scripts, `engine:benchmark`), because they write their own collections and are meant to run during a long apply.
+- A dry run never takes or reads the lease.
+- A writing lane run against Development also takes a `host:<hostname>` lease before its first fetch to each host, so two lane runs cannot fetch one host at once.
+- The lease heartbeats every 30 seconds and expires 5 minutes after the last heartbeat, so an apply running for hours keeps it, and a crashed holder frees it within 5 minutes; a holder on the same machine whose process has exited is taken over at once.
+  A process that finds its lease taken exits before its next write.
+- Set `DEV_WRITE_OWNER=<session name>` so a refusal names who holds the lease.
+- `yarn --cwd server dev:locks` lists the apply, host and source leases with owner, command, heartbeat age and live, stale or released state (`--json` for machine output).
+  It is read-only: a crashed holder's lease frees itself by expiry, or at once for a holder on the same machine.
+- `DEV_WRITE_LEASE=off` switches the lease off; the test harness sets it for every suite.
+- `development:refresh-from-beta` keeps `scrape_job_locks`, which is now a preserved environment-local collection, because the refresh holds its own lease there.
+
 ### `scrape_runs.status` is read through a heartbeat
 
 Every exit path of the orchestrator writes a terminal status: `success`, `partial`, `failure`, or `interrupted` on `SIGINT`/`SIGTERM` (#3595).
@@ -318,7 +355,7 @@ A run whose work hangs stops heartbeating too (#5086): real work bumps the proce
   Do not run it with `--apply` while a sweep is running unless you have read its dry run: a sweep started on code older than #3595 writes rows with no heartbeat, which only the lock and the 72-hour bound protect.
 - Every Development sweep already reaps heartbeat-stale rows: its first post-run stage, `stale-scrape-run-reap`, runs the command with `--heartbeat-stale-only --started-before <sweep start>`.
   That closes only `heartbeat_stale` rows (stale heartbeat, owner not a live process on this host, no held source lock) that started before the sweep, and keeps pre-heartbeat rows as `legacy_operator_only`, so a `legacy_abandoned` row still needs the operator-run command.
-- A new signal cleanup goes through `onInterrupt` in `interruptCleanup.ts`, never its own `process.once` plus re-raise, because two handlers that each re-raise race and the first kills the process while the other is still writing.
+- A new signal cleanup goes through `onInterrupt` in `utils/interruptCleanup.ts`, never its own `process.once` plus re-raise, because two handlers that each re-raise race and the first kills the process while the other is still writing.
 - The stored values are not enum-valid: Development holds 2 rows with `completed` and 1 with `failed`, written by raw operator updates that bypass the validator (the #2137 family).
   Any status check must treat the stored set as open, not as the enum.
   `docs/research-data-pipeline.md` ("A run record always ends terminal") owns the full contract and every consumer of `interrupted`.
@@ -353,6 +390,13 @@ A failure that reads as success or as a legitimate verdict is worse than a crash
 Match on PID, never on a command-string pattern.
 A pattern like `dept-faculty-roster` also matches an unrelated process that carries the source name inside an `--intent` or issue-slug argument, and #2469 killed a live gate run that way.
 
+### Rolling back an unmaterialized run
+
+Setting `scrapeRun.invalidated` alone fences the run's observations out of materialize, but the observations its inserts superseded stay superseded, so every key the run re-emitted is left with no live evidence from the source.
+To reverse an observations-only run, use `yarn --cwd server observations:rollback-scrape-run --run=<id> --note='<why>'` (dry-run by default; `--snapshot=<path> --apply --confirm-rollback-scrape-run` to write).
+It invalidates the run, retires the run's live observations with a `rollback` record, and restores only the observations from outside the run whose `supersededBy` points at one of the run's observations (#5735).
+It refuses a run that was materialized, a run any of whose observations was superseded from outside it, and a run whose source has written observations from another run since it started, because in each case the pre-run state is no longer the right state to restore.
+
 ## Exhaustive runs: bound every corpus-wide read
 
 An exhaustive lane run hands its read queries the whole corpus, so a query shape that works on a bounded run can fail on the sweep.
@@ -371,6 +415,8 @@ Let a failure of a lane-shared dependency (an observation write, a WorkPlanner r
 Do not flatten a whole page with cheerio `.text()`: it recurses once per DOM level and overflows the stack on a page nested a few thousand elements deep, while parsing and selection survive far deeper.
 Use `plainTextContent` (a byte-identical iterative `.text()`) or `extractElementTextWithBlockSeparators` from `utils/htmlText.ts`.
 #3558 lost `lab-microsite-undergrad-llm` on the Development sweep that way, about 700 labs in.
+A text the lane then pattern-matches for an address, a name or a title must keep block boundaries, so read it with `extractElementTextWithBlockSeparators`: `.text()` and `plainTextContent` join adjacent fields with nothing between them (#5720).
+Start an address pattern with the non-address lookbehind `(?<![a-z0-9._%+-])` rather than `\b` or nothing, so a glued word cannot become the front of the address.
 
 ## Infrastructure files
 
@@ -386,6 +432,10 @@ Use `plainTextContent` (a byte-identical iterative `.text()`) or `extractElement
 - `observationStore.ts` - writes `Observation` rows. Supersession keys on `observationFingerprint`: a new observation supersedes prior non-superseded ones with the same fingerprint. Fingerprint = `(sourceName, entityType, entity, field)` and, for most fields, `value`. Fields in the authoritative `LATEST_WINS_FINGERPRINT_FIELDS` constant omit `value`, so a fresh snapshot supersedes the prior one despite content drift. Fellowship observations also omit `value` because the sole fellowship producer emits one source-owned snapshot row per (entity, field) per run. `LATEST_WINS_FINGERPRINT_FIELDS_BY_ENTITY_TYPE` holds the fields that are one value per run on one entity type only: a roster member's `profileUrl` is latest-wins because a center site can serve the same person under a different program path on each read, and two live links conflict and leave the member's edge without provenance (#3799), and its listing fields are latest-wins too (#4758, see `docs/research-data-pipeline.md`); `materializeRosterMember` also folds its read through `collapseLatestWins`. Only use latest-wins semantics when no source emits multiple rows per (entity, field) per run. Latest-wins for the guarded prose fields (`fullDescription`, `shortDescription`) has one exception: `isRegressiveProseRefresh` drops an incoming prose observation that is not useful (per `researchEntityDescriptionQuality`) when an existing active same-(source, entity, field) observation is useful, so a re-run that degrades to a flagged/unusable description can never supersede a previously clean, source-backed one (#2028). Clean-to-clean refreshes are guarded too as of #2232: `isWeakerProseRefresh` additionally drops an incoming prose value that IS useful but scores strictly lower than the clean incumbent on `prosePreferenceScore`, and `collapseLatestWins` applies the same guard CHAIN so the preference also holds under `C4_LOSSLESS_INGEST`. The chain, not just that one comparison: the collapse ran only the comparative guards until #2302, so a longer newer value that failed the quality bar outright fell through `isWeakerProseRefresh` (which needs both values useful) and through `isMateriallyThinnerProseRefresh` (which needs 200+ fewer chars) and won on recency. A prose guard added to the `appendObservations` chokepoint must be added to the collapse in the same change, and the test must assert it fired through the damaging path rather than calling it directly. Ties pass, so a same-quality refresh keeps newest-wins and the corpus cannot freeze on its first capture. `docs/research-data-pipeline.md` owns the scoring rules and their rationale: which demotions `prosePreferenceScore` sums, why the kind-aware person-centric term and `researchSubjectSpecificityScore` are excluded, and why the collapse folds each key's rows oldest-first.
   The `inferredDirector*` fields are latest-wins for a third reason (#2668): `center-director-llm` names one director per entity per run, and an LLM re-narrates the same director in slightly different words each run, so a value-bearing fingerprint made every rephrasing a rival live row instead of a replacement and the resolver read near-equal rival weights as a genuine conflict on a field only one source writes.
   Latest-wins per field is not tuple-atomic, though, which is why the director materialization lane carries its own name check.
+  A `user` `email` observation is the one run-scoped supersession outside the fingerprint (#5705, `runScopedEmailSupersede.ts`).
+  When a read states one or more emails for a subject, `appendObservations` supersedes the same lane's live email rows for that subject and page from earlier runs whose address the read no longer states.
+  Rows of the same run never retire each other, so a page listing two addresses keeps both, and a read stating no email retires nothing, because silence is not absence (#2647).
+  `observations:supersede-replaced-run-emails` is the dry-run-by-default backfill for rows stored before the rule.
 - `observationFieldSanitizer.ts` - shared ingest-time extraction sanitizer applied by `observationStore.appendObservations` to every observation from every source, so no scraper (present or future) can leak page furniture into a stored field (#1375).
   It composes the existing hygiene utilities rather than restating their rules:
   - a `user` `title` runs through `sanitizePersonTitle` (rejected when it is nav/section furniture, or cut off at a dangling connective such as "Professor of", which the materializer also ignores so a complete title wins, #5109);
@@ -438,6 +488,8 @@ Use `plainTextContent` (a byte-identical iterative `.text()`) or `extractElement
   A titled card whose title names no organization ("Lab Website", "n/a", "About Us", the person alone) adopts nothing; only an untitled slot keeps the "<person> Lab" fallback, because the titled-but-unnamed cards measured on Development linked personal sites, a code repository, a bio page and a department page, none of which the profile called a lab.
   A refusal retracts nothing, so the materializer ignores a stored `name` or `displayName` from this lane of that shape on every resolve (`shouldIgnoreObservationForEntityMaterialization`), and the type and kind paired with it then fall through `withoutUnpairedProfileHomeIdentity`.
   Ignoring the observation moves nothing where no rival name exists, because `name` is never cleared on empty, so `isRefusedProfileLinkedHomeName` also judges the served value by its `fieldProvenance` source: the materializer's name authority replaces it with a rival or the lead-derived name, or clears `displayName`, and the gate holds a row whose `name` still carries one as `unusable_name`.
+  A sentence-shaped name is refused the same way from every lane, not only this one (#5739): `isSentenceShapedName` in `utils/sentenceShapedName.ts` refuses a name that opens with a thank-you, please, click-here, learn-more or read-more phrase, or that has four or more words and ends in `.`, `!` or `?` other than an abbreviation's period, and `isRefusedResearchEntityName` joins it to this lane's shapes at the same three places (the ignored observation, the served-name replacement, and the gate's `unusable_name`).
+  A lane that can read a page's welcome or call-to-action line as a name, such as the held `lab-site-research-read` when it re-lands, imports that predicate rather than copying it.
   A glued name the predicate cannot see (a title with a tagline after it) stays live, and the lane's re-read of the card title emits the clean name, which wins on recency at equal confidence.
   A withdrawn type resolves to nothing, `entityType` is never cleared on empty, and it is survivor-owned, so a merged-in row cannot supply a different one; a merged-in row's observation of the same type does back it when the survivor has no type observation of its own (#3381).
   So a person-scoped row titled "<person> Faculty Research" kept the graft's `CENTER`, `INITIATIVE` or `INSTITUTE` with nothing behind it; `reclassifyUnstatedOrganizationTypeOnFacultyResearchName` re-derives such a row as `FACULTY_RESEARCH_AREA` on every resolve whenever no live observation states its organizational type and every word before the suffix is a word of the row's resolved lead's name, so an organization whose name ends the same way and a leadless row keep their type, and an operator edit stating the type keeps it unless the operator has refused that type on the row (#5140).
@@ -1016,7 +1068,7 @@ Use `plainTextContent` (a byte-identical iterative `.text()`) or `extractElement
   The lock is keyed `environment:sourceName`, so it serializes writers on ONE source and leaves parallel work on different sources alone.
   `startScrapeJobLockHeartbeat` renews the lease during a long run; `findHeldScrapeJobLock` reports a live holder for a read-only caller without competing for the lock, and treats an expired lease as no holder because `acquireScrapeJobLock` would take it.
 - `scrapeRunLiveness.ts` - the `ScrapeRun` heartbeat, owner stamp, and `classifyScrapeRunLiveness`/`isAbandonedScrapeRun`, the only honest way to ask whether a run is alive.
-- `interruptCleanup.ts` - `onInterrupt`, the single `SIGINT`/`SIGTERM` handler that settles every registered cleanup (run status, lock release) before re-raising the signal.
+- `../utils/interruptCleanup.ts` - `onInterrupt`, the single `SIGINT`/`SIGTERM` handler that settles every registered cleanup (run status, lock release) before re-raising the signal; it lives in `utils/` so the Development write lease in `db/` releases through the same handler.
 - `seedSources.ts` - populates active `Source` rows from the coverage registry and disables retained historical rows for retired sources.
   `enabled` means "not retired" and is re-derived on every apply, so it is never a run switch; what runs is decided by the sweep manifests and `MANUAL_ONLY_SWEEP_SOURCES` alone (#4025).
   Every scraper registered in `registry.ts` needs a seed entry here, because `validateScraperSweepSourceRows` refuses to start a sweep without the row and `scrapers:audit-freshness` blocks on it; applying the seed is the remediation, so a registered scraper the seed does not declare leaves the audit failing with nothing an operator can do.
@@ -1780,6 +1832,11 @@ Three readers use it on every resolve, so nothing is locked:
 - it also clears an ORCID when every live observation asserting it was read from such a page.
 
 A researcher whose stored netid the directory does not hold is never contradicted, because that is usually the person's own email alias stamped as a netid.
+Since #5737 the same withdrawal runs on every resolve of a holder, not only when one of its own keys is screened: `planHeldContradictedPageWithdrawal` withdraws a held link whose page names another netid, and an ORCID or photo URL that only such pages assert.
+A title or department is never withdrawn this way, because many people share those values and a value alone cannot say which page it came from.
+The user materializer also drops a key's evidence read from such a page before writing the joined researcher (`withoutPagesNamingAnotherNetid`), so a key joined to the wrong person cannot re-stamp what was withdrawn.
+It also refuses to compose an official link to such a page from a `profileUrls` value read elsewhere, such as a roster, because the page's owner, not the observation's source, decides whose page it is.
+The by-value ORCID and photo lookup is served by the partial `field_1_value_1_superseded_1` index on `orcid` and `imageUrl`.
 A page that has stated several addresses keeps every netid the directory pairs with them, so an owner who changed address is still the owner, but a page whose addresses the directory does not all pair with one shared netid, such as a roster listing, decides nothing.
 Measured on Development on 2026-11-11 before that rule, 22 of 24 screened lead observations were that alias shape.
 
@@ -1798,6 +1855,17 @@ A page-wide address match starts only after a non-address character, and the tit
 Measured by replaying the 3,661 saved backfill pages offline on 2026-11-11 against `beta`: no page lost an identity field; 40 more pages emit identity (31 email-only titleless pages, 9 pages whose address was glued before), 42 more `email` and 10 more `inferredPiUserId` observations, and one glued phantom key is gone.
 Of the titles, 25 changed (contact blocks, `Title:` labels and section labels stripped), 14 are no longer emitted (11 navigation menus, 1 bio sentence, 1 glued address, 1 multi-appointment title longer than `MAX_PERSON_TITLE_LENGTH`), and none was newly found.
 A seeded sample of 10 newly emitted identities named the page's own person in all 10.
+
+#### Retiring what the glued reads left behind (#5720)
+
+The same block-text fix reached the other lanes that join page text and then match it: `undergradRosterDerivation`, `departmentUndergradResearchScraper`, `departmentRosterScraper`, `programOfficialPage`, `yseCentersScraper`, `researchAreaSourceExtractor` and `centerDirectorLLMExtractor`.
+`centerDirectorLLMExtractor` sends that text to a model but keys no content-hash gate on it, so the change moves no gate key.
+
+A fixed lane does not clear what it read before: `user` `email` and `title` are value-keyed, so the right value lands beside the glued one, and nothing re-emits a key minted from a glued address.
+`observations:retire-glued-profile-text` (dry run by default) selects live `official-profile-pi-backfill` observations by predicate: an address that is a run of letters fused onto an address the same subject or page states, a title that carries an address, a contact label or a lower-to-upper word join, and every observation on a subject key minted from such an address, with the `inferredPiUserKey` that names it.
+An apply must name what it retires with `--kinds` (`email`, `phantom`, `title`), so a bare apply cannot retire titles by accident; a dry run counts every kind, and `--detail-output <tmp path>.json` writes the titles it would retire to a mode-0600 file for an independent check before the title kind is applied.
+It re-reads each cited page once, sequentially, through `officialProfilePageStatedFields`, and retires an observation only when the page now yields a different value or none; a failed read retires nothing on that page, and `--skip-host` defers a host-locked page without requesting it.
+It writes no researcher field, so a stored title re-derives at the next materialize.
 
 #### Press copy and publication lists are not a description (#4446)
 

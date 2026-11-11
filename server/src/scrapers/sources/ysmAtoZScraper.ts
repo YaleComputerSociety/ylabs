@@ -46,6 +46,7 @@ import {
   netidFromEmail,
   normalizeInitialSpacing,
 } from '../utils/scraperHelpers';
+import { asYaleNetid } from '../../utils/yaleNetid';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 
 const PAGE_URL = 'https://medicine.yale.edu/about/a-to-z-index/lab-websites/';
@@ -640,8 +641,9 @@ function profileContactWidgetUserObservations(
     sourceUrl: profile.profileUrl,
     confidenceOverride: 0.9,
   };
+  const statedNetid = asYaleNetid(netid);
   const observations: ObservationInput[] = [
-    { ...base, field: 'netid', value: netid },
+    ...(statedNetid ? [{ ...base, field: 'netid', value: statedNetid }] : []),
     { ...base, field: 'fname', value: nameHint.firstName },
     { ...base, field: 'lname', value: nameHint.lastName },
     { ...base, field: 'email', value: profile.email },

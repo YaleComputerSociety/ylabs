@@ -49,6 +49,12 @@ import {
   type DirectoryRemovalObservationGuard,
 } from './directoryRemovalObservationGuard';
 import { withRenamedResearchEntityIds } from './renamedResearchEntityAdoption';
+import {
+  RUN_SCOPED_EMAIL_RETIREMENT_REASON,
+  isRunScopedLatestWinsEmail,
+  planRunScopedEmailSupersede,
+  type RunScopedEmailRow,
+} from './runScopedEmailSupersede';
 
 export const QUALITY_GUARDED_PROSE_FIELDS = new Set(['fullDescription', 'shortDescription']);
 
@@ -898,8 +904,98 @@ export async function appendObservations(
           )
         ).modifiedCount || 0
       : 0;
+  const emailsANewerReadReplaced = await retireEmailsANewerReadReplaced(
+    landed.map(({ input }) => input),
+    ctx,
+  );
 
-  return { inserted: landed.length, skipped: skippedCount, superseded, ...refusedByRequest };
+  return {
+    inserted: landed.length,
+    skipped: skippedCount,
+    superseded: superseded + emailsANewerReadReplaced,
+    ...refusedByRequest,
+  };
+}
+
+const RUN_SCOPED_EMAIL_LOOKUP_CHUNK = 200;
+
+function runScopedEmailRow(doc: {
+  _id: unknown;
+  sourceName?: unknown;
+  entityKey?: unknown;
+  entityId?: unknown;
+  sourceUrl?: unknown;
+  scrapeRunId?: unknown;
+  observedAt?: unknown;
+  value?: unknown;
+}): RunScopedEmailRow {
+  return {
+    id: String(doc._id),
+    sourceName: String(doc.sourceName ?? ''),
+    entityKey: stringifyIdentifier(doc.entityKey),
+    entityId: stringifyIdentifier(doc.entityId),
+    sourceUrl: typeof doc.sourceUrl === 'string' ? doc.sourceUrl : undefined,
+    scrapeRunId: stringifyIdentifier(doc.scrapeRunId),
+    observedAt: doc.observedAt,
+    value: doc.value,
+  };
+}
+
+async function retireEmailsANewerReadReplaced(
+  landedDocs: Array<{
+    _id: unknown;
+    entityType: string;
+    field: string;
+    entityKey?: string;
+    entityId?: unknown;
+    sourceUrl?: string;
+  }>,
+  ctx: AppendContext,
+): Promise<number> {
+  const emailDocs = landedDocs.filter(
+    (doc) =>
+      isRunScopedLatestWinsEmail(doc) &&
+      Boolean(doc.sourceUrl) &&
+      Boolean(observationEntityIdentityFilter(doc)),
+  );
+  if (emailDocs.length === 0 || mongoose.connection.readyState !== 1) return 0;
+
+  const clauses = new Map<string, Record<string, unknown>>();
+  for (const doc of emailDocs) {
+    const identity = observationEntityIdentityFilter(doc) as Record<string, unknown>;
+    const clause = { sourceUrl: doc.sourceUrl, ...identity };
+    clauses.set(JSON.stringify(clause), clause);
+  }
+  const stored: RunScopedEmailRow[] = [];
+  const clauseList = [...clauses.values()];
+  for (let start = 0; start < clauseList.length; start += RUN_SCOPED_EMAIL_LOOKUP_CHUNK) {
+    const rows = (await Observation.find({
+      entityType: 'user',
+      field: 'email',
+      sourceName: ctx.sourceName,
+      superseded: { $ne: true },
+      'rollback.rolledBackAt': { $exists: false },
+      $or: clauseList.slice(start, start + RUN_SCOPED_EMAIL_LOOKUP_CHUNK),
+    })
+      .select('_id sourceName entityKey entityId sourceUrl scrapeRunId observedAt value')
+      .lean()) as unknown as Array<Parameters<typeof runScopedEmailRow>[0]>;
+    stored.push(...rows.map(runScopedEmailRow));
+  }
+
+  const landedIds = new Set(emailDocs.map((doc) => String(doc._id)));
+  const storedById = new Map(stored.map((row) => [row.id, row]));
+  const landedRows = emailDocs
+    .filter((doc) => !storedById.has(String(doc._id)))
+    .map((doc) => runScopedEmailRow({ ...doc, sourceName: ctx.sourceName }));
+  const retireIds = planRunScopedEmailSupersede([...storedById.values(), ...landedRows])
+    .map((retirement) => retirement.id)
+    .filter((id) => !landedIds.has(id));
+  if (retireIds.length === 0) return 0;
+  const { retired } = await retireObservations(
+    { _id: { $in: retireIds.map((id) => new mongoose.Types.ObjectId(id)) } },
+    RUN_SCOPED_EMAIL_RETIREMENT_REASON,
+  );
+  return retired;
 }
 
 export interface RetireObservationsResult {
@@ -1028,13 +1124,30 @@ export const LATEST_WINS_FINGERPRINT_FIELDS_BY_ENTITY_TYPE: Readonly<
  * same reason, so value-keyed rows left its own earlier typings live to outvote the newest one
  * at resolve; another source's type is a rival claim rather than a restatement, so it stays
  * value-keyed (#4884).
+ *
+ * The department roster lane types each person from their own listed title, so a re-read
+ * that finds a staff title must replace the lane's earlier faculty typing rather than stand
+ * beside it as a same-source conflict. The lane emits one typing per key per run, after its
+ * concurrent roster lanes finish, because two inserts for one key in flight at once supersede
+ * each other. It never lets a staff typing replace a faculty one, whether the faculty typing
+ * came from another roster in the run or from a live lane title stating a faculty appointment,
+ * so a partial run cannot undo another roster's faculty typing (#5750).
+ *
+ * The research.yale.edu directory lane and the centres lane state one type per record per
+ * read too. Value-keyed, a core facility record kept the `CENTER` a pre-category read had
+ * inferred from its name live beside the `CORE_FACILITY` every later read took from the
+ * cores directory, and with one more `CENTER` vote from another lane the stale reading won
+ * (#5749).
  */
 export const LATEST_WINS_FINGERPRINT_FIELDS_BY_SOURCE: Readonly<
   Record<string, ReadonlySet<string>>
 > = {
   'lab-microsite-description-llm': new Set(['name', 'displayName']),
   'official-profile-pi-backfill': new Set(['entityType', 'kind']),
+  'yale-research-official': new Set(['entityType', 'kind']),
+  'centers-institutes-index': new Set(['entityType', 'kind']),
   'center-member-profile-research': new Set(['researchSummary', 'bio']),
+  'dept-faculty-roster': new Set(['userType']),
 };
 
 export function usesLatestWinsFingerprint(input: {

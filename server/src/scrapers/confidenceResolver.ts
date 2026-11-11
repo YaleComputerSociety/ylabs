@@ -128,6 +128,15 @@ const OUTRANKED_SOURCES_BY_FIELD: Readonly<
     by: new Set([PAGE_QUOTED_RESEARCH_TOPICS_SOURCE]),
     outranked: new Set(['lab-site-research-read', 'ysm-mesh-keyword', 'ysm-faculty-directory']),
   },
+  // The profile lane types a home it reached through a person's profile link from the words
+  // in that link's name and URL, so "Research Center" made a fee-for-service core a CENTER.
+  // The university's research directory states the type of the records it lists, a cores
+  // directory record being a core facility, so its typing wins whatever the weights say
+  // (#5749).
+  entityType: {
+    by: new Set(['yale-research-official']),
+    outranked: new Set(['official-profile-pi-backfill']),
+  },
 };
 const PROSE_EXTENSION_BONUS = 1.25;
 

@@ -496,7 +496,6 @@ async function resolveLoginPrincipalForCas(rawNetid: string): Promise<PersistedU
       lastName: employee.lname,
       userType,
       title: employee.title,
-      department: employee.department || undefined,
     };
   } else if (lookup.kind === 'unavailable') {
     userType = (await lastKnownAccountUserType(netid)) ?? 'unknown';

@@ -1,3 +1,4 @@
+import { recordDevApplyIntent } from '../db/devWriteLease';
 import os from 'os';
 import path from 'path';
 import { createHash } from 'crypto';
@@ -69,6 +70,7 @@ export function assertScriptApplyAllowed(args: {
     );
   }
 
+  if (args.apply) recordDevApplyIntent(args.scriptName);
   return { environment, dbLabel, dbFingerprint: mongoTargetFingerprint(mongoUrl) };
 }
 

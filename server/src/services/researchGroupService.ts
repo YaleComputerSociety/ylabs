@@ -157,7 +157,7 @@ import {
 } from './researchDetailRelatedRows';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { SearchUnavailableError } from '../utils/errors';
-import { sanitizePersonTitle } from '../utils/titleHygiene';
+import { servablePersonTitle } from '../utils/titleHygiene';
 import {
   personNameHasLifespanSuffix,
   stripPersonNameLifespanSuffix,
@@ -3283,7 +3283,7 @@ function publicMemberUserForResearchDetail(user: any): any {
   addPublicMemberField(publicUser, 'fname', publicPersonNameField(user?.fname));
   addPublicMemberField(publicUser, 'lname', publicPersonNameField(user?.lname));
   addPublicMemberField(publicUser, 'displayName', publicPersonNameField(user?.displayName));
-  addPublicMemberField(publicUser, 'title', sanitizePersonTitle(user?.title));
+  addPublicMemberField(publicUser, 'title', servablePersonTitle(user?.title));
   publicUser.imageUrl = imageUrl;
   publicUser.image_url = imageUrl;
   addPublicMemberField(publicUser, 'primaryDepartment', primaryDepartment);
@@ -3338,7 +3338,7 @@ function canonicalMemberUserForResearchDetail(entry: ResearchEntityRosterEntry):
   addPublicMemberField(publicUser, 'fname', fallbackFirstName || undefined);
   addPublicMemberField(publicUser, 'lname', rest.join(' ') || undefined);
   addPublicMemberField(publicUser, 'displayName', displayName || undefined);
-  addPublicMemberField(publicUser, 'title', sanitizePersonTitle(entry.title));
+  addPublicMemberField(publicUser, 'title', servablePersonTitle(entry.title));
   publicUser.imageUrl = imageUrl;
   publicUser.image_url = imageUrl;
   addPublicMemberField(publicUser, 'primaryDepartment', primaryDepartment || undefined);

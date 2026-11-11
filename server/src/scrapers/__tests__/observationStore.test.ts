@@ -1630,3 +1630,41 @@ describe('collapseLatestWins on a profile-linked home retyped by a re-read (#488
     expect(collapseLatestWins(observations, 'researchEntity')).toHaveLength(2);
   });
 });
+
+describe('collapseLatestWins on a directory or centres record retyped by a re-read (#5749)', () => {
+  const typing = (sourceName: string, field: string, value: string, observedAt: string) => ({
+    field,
+    sourceName,
+    observedAt: new Date(observedAt),
+    value,
+  });
+
+  it('keeps only the newest typing from each of the two lanes', () => {
+    const observations = [
+      typing('yale-research-official', 'entityType', 'CENTER', '2026-07-25T00:00:00.000Z'),
+      typing('yale-research-official', 'kind', 'center', '2026-07-25T00:00:00.000Z'),
+      typing('yale-research-official', 'entityType', 'CORE_FACILITY', '2026-10-23T00:00:00.000Z'),
+      typing('yale-research-official', 'kind', 'core_facility', '2026-10-23T00:00:00.000Z'),
+      typing('centers-institutes-index', 'entityType', 'CENTER', '2026-09-20T00:00:00.000Z'),
+      typing('centers-institutes-index', 'entityType', 'CORE_FACILITY', '2026-10-23T00:00:00.000Z'),
+      typing('nih-reporter', 'entityType', 'CENTER', '2026-07-25T00:00:00.000Z'),
+      typing('nih-reporter', 'entityType', 'LAB', '2026-10-23T00:00:00.000Z'),
+    ];
+
+    const collapsed = collapseLatestWins(observations, 'researchEntity');
+
+    expect(
+      collapsed
+        .filter((observation) => observation.sourceName !== 'nih-reporter')
+        .map((observation) => [observation.sourceName, observation.field, observation.value])
+        .sort(),
+    ).toEqual([
+      ['centers-institutes-index', 'entityType', 'CORE_FACILITY'],
+      ['yale-research-official', 'entityType', 'CORE_FACILITY'],
+      ['yale-research-official', 'kind', 'core_facility'],
+    ]);
+    expect(
+      collapsed.filter((observation) => observation.sourceName === 'nih-reporter'),
+    ).toHaveLength(2);
+  });
+});

@@ -29,6 +29,7 @@
 import { LEAD_ROLE_CANONICAL_VALUES } from '../../models/canonicalRoleMapping';
 import mongoose from 'mongoose';
 import * as cheerio from 'cheerio';
+import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
 import { openAiChatSampling } from '../../utils/openAiChatSampling';
@@ -136,7 +137,10 @@ function htmlToText(html: string): string {
   if (!html) return '';
   const $ = cheerio.load(html);
   $('script, style, noscript, svg, iframe, nav, footer').remove();
-  return textValue($('body').text() || $.root().text()).slice(0, MAX_PROMPT_CHARS);
+  return textValue(
+    extractElementTextWithBlockSeparators($('body')[0]) ||
+      extractElementTextWithBlockSeparators($.root()[0]),
+  ).slice(0, MAX_PROMPT_CHARS);
 }
 
 function sameHost(a: string, b: string): boolean {

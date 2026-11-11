@@ -139,12 +139,12 @@ const drupalPersonPage = ({
   </html>`;
 
 const identityOf = (html: string, url: string, options = {}) =>
-  extractOfficialProfileIdentity(html, url, subjectEntity('fixture501'), {
+  extractOfficialProfileIdentity(html, url, subjectEntity('fk501'), {
     requireEmail: false,
     ...options,
   });
 
-function visibleRun(html: string, url: string, netid = 'fixture501') {
+function visibleRun(html: string, url: string, netid = 'fk501') {
   const emitted: ObservationInput[] = [];
   const visibleUser = { ...subjectEntity(netid), email: '', websiteUrl: url };
   const scraper = new OfficialProfilePiBackfillScraper(
@@ -241,7 +241,7 @@ describe('the profile subject email read from more page shapes (#5669)', () => {
       expect(
         profileIdentityAgreesWithUser(identity, {
           ...SUBJECT,
-          netid: 'fixture501',
+          netid: 'fk501',
           email: 'avery.example@yale.edu',
         }),
       ).toBe(true);
@@ -329,7 +329,7 @@ describe('the profile subject email read from more page shapes (#5669)', () => {
 
     it('re-derives the same single observation on a second read', () => {
       const observe = () =>
-        identityToUserObservations(identityOf(html, centerUrl)!, { netid: 'fixture501' }).filter(
+        identityToUserObservations(identityOf(html, centerUrl)!, { netid: 'fk501' }).filter(
           (o) => o.field === 'email',
         );
       expect(observe().map((o) => o.value)).toEqual(['avery.example@yale.edu']);
@@ -347,7 +347,7 @@ describe('the profile subject email read from more page shapes (#5669)', () => {
       const emitted = await visibleRun(html, ysmUrl);
       expect(emitted.filter((o) => o.entityType === 'user')).toEqual([
         expect.objectContaining({
-          entityKey: 'netid:fixture501',
+          entityKey: 'netid:fk501',
           field: 'email',
           value: 'avery.example@yale.edu',
           sourceUrl: ysmUrl,
@@ -379,9 +379,9 @@ describe('the profile subject email read from more page shapes (#5669)', () => {
     it('emits only the email from an email-only identity', () => {
       const identity = identityOf(html, ysmUrl, { emailOnlyWithoutAdmissibleTitle: true });
       expect(identity?.emailOnly).toBe(true);
-      expect(
-        identityToUserObservations(identity!, { netid: 'fixture501' }).map((o) => o.field),
-      ).toEqual(['email']);
+      expect(identityToUserObservations(identity!, { netid: 'fk501' }).map((o) => o.field)).toEqual(
+        ['email'],
+      );
     });
 
     it('re-derives the same single observation on a second run', async () => {

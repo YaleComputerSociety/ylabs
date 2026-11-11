@@ -1,5 +1,5 @@
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import { INTERRUPT_CLEANUP_TIMEOUT_MS } from './interruptCleanup';
+import { INTERRUPT_CLEANUP_TIMEOUT_MS } from '../utils/interruptCleanup';
 
 export const SCRAPE_RUN_TERMINAL_WRITE_BACKOFF_MS: readonly number[] = [500, 1_500];
 

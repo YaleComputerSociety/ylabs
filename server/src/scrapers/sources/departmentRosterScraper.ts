@@ -24,6 +24,8 @@
  * `--only` (filter by deptKey, e.g. `--only econ,mcdb`).
  */
 import axios from 'axios';
+import mongoose from 'mongoose';
+import { Observation } from '../../models/observation';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
 import { wordpressAuthorProfileBiography } from '../utils/wordpressAuthorProfile';
@@ -66,6 +68,7 @@ import {
   splitName,
   yaleUnitMailboxTokens,
 } from '../utils/scraperHelpers';
+import { asYaleNetid } from '../../utils/yaleNetid';
 import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
 import { isInProfilePublicityRegion } from '../utils/profilePublicityRegions';
 import {
@@ -118,6 +121,8 @@ import {
   mintedDescriptionOf,
   mintsNoResearchEntityAsTeachingAppointment,
   ownsNoResearchEntityByTitle,
+  statesAnyFacultyAppointment,
+  titleStatesOnlyAStaffRole,
 } from './yaleDirectoryScraper';
 import {
   rosterEntryIdentityKey,
@@ -665,7 +670,7 @@ function yaleEmailFromElement(
   const mailtoMatch = decoded.match(/mailto:([a-z0-9._%+-]+@yale\.edu)/i);
   if (mailtoMatch) return mailtoMatch[1].toLowerCase();
 
-  return decoded.match(/\b[a-z0-9._%+-]+@yale\.edu\b/i)?.[0]?.toLowerCase();
+  return decoded.match(/(?<![a-z0-9._%+-])[a-z0-9._%+-]+@yale\.edu\b/i)?.[0]?.toLowerCase();
 }
 
 /**
@@ -3274,7 +3279,7 @@ function extractOrcidFromHtml($: cheerio.CheerioAPI): string | undefined {
     const text = $(el).text();
     candidates.push(href, text);
   });
-  const bodyText = $('body').text();
+  const bodyText = extractElementTextWithBlockSeparators($('body')[0]);
   const matches = bodyText.match(/\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{3}[\dX]\b/gi) || [];
   candidates.push(...matches);
 
@@ -4093,6 +4098,68 @@ function programmeRosterRowIsRejectableFromRosterAlone(entry: FacultyEntry): boo
   return Boolean(entry.title?.trim()) && !programmeRosterRowStatesFacultyRank(entry);
 }
 
+type RosterUserType = 'faculty' | 'staff';
+
+function rosterUserType(entry: FacultyEntry, dept: DeptConfig): RosterUserType | undefined {
+  if (titleStatesOnlyAStaffRole(entry.title)) return 'staff';
+  if (!dept.crossListedProgramme || statesFacultyAppointment(entry.title)) return 'faculty';
+  return undefined;
+}
+
+/**
+ * `userType` is latest-wins for this lane, so the lane emits one typing per key per run, after
+ * every roster lane has finished: concurrent lanes inserting rival typings for one key would
+ * each supersede the other and leave the key with none. A staff typing never replaces a faculty
+ * one: it loses to a faculty typing from any roster this run read, and is dropped for a key the
+ * lane holds a live title stating a faculty appointment, so a run that reads only the staff
+ * listing cannot undo the faculty listing an earlier run read. The cross-run evidence is the
+ * title rather than the typing, because a stored faculty typing may be the page-default stamp
+ * #5750 retires.
+ */
+function holdUserTypingForRunEnd(
+  observations: ObservationInput[],
+  entityKey: string,
+  facultyTitledUserKeys: Set<string>,
+  typingByUserKey: Map<string, ObservationInput>,
+): ObservationInput[] {
+  const typing = observations.find((o) => o.field === 'userType');
+  if (!typing) return observations;
+  const staffBesideFaculty =
+    typing.value === 'staff' &&
+    (typingByUserKey.get(entityKey)?.value === 'faculty' || facultyTitledUserKeys.has(entityKey));
+  if (!staffBesideFaculty) typingByUserKey.set(entityKey, typing);
+  return observations.filter((o) => o !== typing);
+}
+
+export type FacultyTitledUserKeyLoader = (entityKeys: string[]) => Promise<Set<string>>;
+
+export async function loadUserKeysWithALiveFacultyTitle(
+  entityKeys: string[],
+): Promise<Set<string>> {
+  const wanted = [...new Set(entityKeys.filter(Boolean))];
+  if (wanted.length === 0 || mongoose.connection.readyState !== 1) return new Set();
+  const titles = await Observation.find(
+    {
+      sourceName: 'dept-faculty-roster',
+      entityType: 'user',
+      entityKey: { $in: wanted },
+      field: 'title',
+      superseded: false,
+    },
+    { entityKey: 1, value: 1 },
+  ).lean<Array<{ entityKey?: string; value?: unknown }>>();
+  return new Set(
+    titles
+      .filter(
+        (title) =>
+          title.entityKey &&
+          typeof title.value === 'string' &&
+          statesAnyFacultyAppointment(title.value),
+      )
+      .map((title) => title.entityKey as string),
+  );
+}
+
 function entryToUserObservations(
   entry: FacultyEntry,
   dept: DeptConfig,
@@ -4118,11 +4185,18 @@ function entryToUserObservations(
   };
   const obs: ObservationInput[] = [];
 
-  if (netid) obs.push({ ...rosterBase, field: 'netid', value: netid });
+  const statedNetid = asYaleNetid(netid);
+  if (statedNetid) obs.push({ ...rosterBase, field: 'netid', value: statedNetid });
   if (first) obs.push({ ...rosterBase, field: 'fname', value: first });
   if (last) obs.push({ ...rosterBase, field: 'lname', value: last });
-  if (!dept.crossListedProgramme || statesFacultyAppointment(entry.title)) {
-    obs.push({ ...rosterBase, field: 'userType', value: 'faculty' });
+  const titleBase = entry.titleFromProfilePage ? profileBase : rosterBase;
+  const userType = rosterUserType(entry, dept);
+  if (userType) {
+    obs.push({
+      ...(userType === 'staff' ? titleBase : rosterBase),
+      field: 'userType',
+      value: userType,
+    });
   }
   if (!dept.affiliatesOnly && !dept.schoolWideDirectory) {
     if (!dept.crossListedProgramme) {
@@ -4132,7 +4206,6 @@ function entryToUserObservations(
   }
   if (personEmail) obs.push({ ...profileBase, field: 'email', value: personEmail });
   if (entry.title) {
-    const titleBase = entry.titleFromProfilePage ? profileBase : rosterBase;
     obs.push({ ...titleBase, field: 'title', value: entry.title });
   }
   if (entry.profileUrl) {
@@ -4463,6 +4536,7 @@ export class DepartmentRosterScraper implements IScraper {
     private readonly renderedFetcher: RenderedFetcher | null = createScraplingRenderedFetcher(),
     private readonly htmlFetcher: HtmlFetcher = fetchHtml,
     private readonly labUrlEvidenceLoader: LabUrlEvidenceLoader = loadLabUrlEvidenceBySlug,
+    private readonly facultyTitledUserKeyLoader: FacultyTitledUserKeyLoader = loadUserKeysWithALiveFacultyTitle,
   ) {}
 
   /**
@@ -4538,6 +4612,8 @@ export class DepartmentRosterScraper implements IScraper {
     let totalLabs = 0;
     const fetchAttempts: ScraperFetchMetric[] = [];
     const seenUserKeys = new Set<string>();
+    const facultyTitledUserKeys = new Set<string>();
+    const typingByUserKey = new Map<string, ObservationInput>();
     const seenLabKeys = new Set<string>();
     const discoveredEntityKeysByDept = new Map<string, Set<string>>();
     const withdrawnEntityKeysByDept = new Map<string, Set<string>>();
@@ -4601,12 +4677,23 @@ export class DepartmentRosterScraper implements IScraper {
         seenUserKeys.add(userDedupeKey);
         enriched.push({ entry, personKey });
       }
+      for (const key of await this.facultyTitledUserKeyLoader(
+        enriched.map(({ personKey }) => personKey),
+      )) {
+        facultyTitledUserKeys.add(key);
+      }
 
       for (const { entry } of withoutSharedGroupWebsites(enriched)) {
-        const { observations: userObs, entityKey } = entryToUserObservations(
+        const { observations: typedUserObs, entityKey } = entryToUserObservations(
           entry,
           dept,
           sourceUrl,
+        );
+        const userObs = holdUserTypingForRunEnd(
+          typedUserObs,
+          entityKey,
+          facultyTitledUserKeys,
+          typingByUserKey,
         );
         await ctx.emit(userObs);
         observations += userObs.length;
@@ -4853,6 +4940,11 @@ export class DepartmentRosterScraper implements IScraper {
     const laneConcurrency = Number.isFinite(limit) ? 1 : resolveRosterLaneConcurrency();
     await runWithBoundedConcurrency(htmlLanes, laneConcurrency, runSelectedLane);
     await runWithBoundedConcurrency(renderedLanes, 1, runSelectedLane);
+    const heldTypings = [...typingByUserKey.values()];
+    if (heldTypings.length > 0) {
+      await ctx.emit(heldTypings);
+      totalObs += heldTypings.length;
+    }
 
     const laneOutcomes = outcomeByIndex.filter(
       (outcome): outcome is LaneOutcome => outcome !== null,

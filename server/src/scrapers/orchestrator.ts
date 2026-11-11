@@ -9,7 +9,7 @@ import { ScrapeRun } from '../models/scrapeRun';
 import { buildEvidenceCoverageImpactReportForObservations } from '../services/researchEntityEvidenceCoverage';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { sanitizeErrorForLog, sanitizeLogValue } from '../utils/logSanitizer';
-import { onInterrupt } from './interruptCleanup';
+import { onInterrupt } from '../utils/interruptCleanup';
 import { appendObservations, getSourceByName } from './observationStore';
 import { directoryRemovalObservationRun } from './directoryRemovalObservationGuard';
 import { currentProcessCodeSha } from './scrapeRunCodeIdentity';

@@ -1743,3 +1743,45 @@ describe('a Yale fellowship database fund page as a program sourceUrl (#4601)', 
     expect(resolveField('sourceUrl', [fundPage], { now })?.value).toBe(fundPage.value);
   });
 });
+
+describe('the research directory typing outranks the profile lane name-word typing (#5749)', () => {
+  const now = new Date('2026-11-11T00:00:00Z');
+  const directoryCore = {
+    field: 'entityType',
+    value: 'CORE_FACILITY',
+    sourceName: 'yale-research-official',
+    confidence: 0.9,
+    observedAt: new Date('2026-10-23T00:00:00Z'),
+  };
+  const profileCenter = {
+    field: 'entityType',
+    value: 'CENTER',
+    sourceName: 'official-profile-pi-backfill',
+    confidence: 0.96,
+    observedAt: now,
+  };
+
+  it('serves the directory type over a newer, heavier profile-lane type', () => {
+    const resolved = resolveField('entityType', [profileCenter, directoryCore], { now });
+    expect(resolved?.value).toBe('CORE_FACILITY');
+    expect(resolved?.hasConflict).toBe(false);
+  });
+
+  it('still lets the profile lane type a home the directory does not list', () => {
+    expect(resolveField('entityType', [profileCenter], { now })?.value).toBe('CENTER');
+  });
+
+  it('keeps a profile-lane type another lane corroborates in the weighing', () => {
+    const centresCenter = {
+      field: 'entityType',
+      value: 'CENTER',
+      sourceName: 'centers-institutes-index',
+      confidence: 0.9,
+      observedAt: now,
+    };
+    const resolved = resolveField('entityType', [profileCenter, centresCenter, directoryCore], {
+      now,
+    });
+    expect(resolved?.value).toBe('CENTER');
+  });
+});

@@ -270,11 +270,11 @@ describe('Beta to Development sync guards', () => {
       options,
       [],
       [],
-      ['scrape_job_locks'],
+      ['scrape_snapshots'],
       ['lane_benchmarks'],
     );
     expect(summary.clearsDevelopmentNonMirrorData).toBe(true);
-    expect(summary.localCollectionsClearedOnApply).toEqual(['scrape_job_locks']);
+    expect(summary.localCollectionsClearedOnApply).toEqual(['scrape_snapshots']);
     expect(summary.localCollectionsPreservedOnApply).toEqual(['lane_benchmarks']);
     expect(summary.excludedOperationalCollections).toEqual(
       expect.arrayContaining([
@@ -300,7 +300,7 @@ describe('Beta to Development sync guards', () => {
     for (const preserved of PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS) {
       expect(cleared).not.toContain(preserved);
     }
-    expect(cleared).toEqual(['scrape_job_locks', 'scrape_snapshots']);
+    expect(cleared).toEqual(['scrape_snapshots']);
     expect(preservedDevelopmentCollectionNames(developmentCollections)).toEqual(
       [...PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS].sort(),
     );
@@ -326,11 +326,12 @@ describe('Beta to Development sync guards', () => {
       'model_call_usages',
       'research_plans',
       'research_topics_derivations',
+      'scrape_job_locks',
       'search_rerank_cache',
       'weekly_sweep_runs',
       'written_description_derivations',
     ]);
-    expect(EPHEMERAL_ENVIRONMENT_LOCAL_COLLECTIONS).toEqual(['scrape_job_locks']);
+    expect(EPHEMERAL_ENVIRONMENT_LOCAL_COLLECTIONS).toEqual([]);
   });
 
   it('refuses an environment-local collection that is classified neither way', () => {

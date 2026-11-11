@@ -13,6 +13,7 @@ import { canonicalPersonName } from '../scrapers/utils/personNameCasing';
 import { titleResearchOwnership } from '../scrapers/utils/titleResearchOwnership';
 import { sanitizePersonName } from '../utils/personNameHygiene';
 import { researcherHoldsDirectoryIdentity } from '../utils/researcherIdentity';
+import { looksLikeYaleNetid } from '../utils/yaleNetid';
 
 export function normalizeResearcherName(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
@@ -878,6 +879,7 @@ export interface ResearcherAttributeUnionPlan {
   refusalsToCopy: Record<string, FieldValueRefusal[]>;
 }
 
+/** A shell's netid fills the canonical record's empty slot only when it is a Yale netid (#5740). */
 export function planResearcherAttributeUnion(
   canonical: ResearcherAttributeSnapshot,
   shell: ResearcherAttributeSnapshot,
@@ -893,6 +895,7 @@ export function planResearcherAttributeUnion(
     if (nonEmptyString(canonical.identifiers?.[field])) continue;
     const shellValue = nonEmptyString(shell.identifiers?.[field]);
     if (!shellValue) continue;
+    if (field === 'netid' && !looksLikeYaleNetid(shellValue)) continue;
     if (
       field === 'orcid' &&
       (researcherRefusesValue(canonical.fieldValueRefusals, 'orcid', shellValue) ||

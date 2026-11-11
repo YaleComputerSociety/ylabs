@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
+import mongoose from 'mongoose';
 import { vi } from 'vitest';
 import { applyMongoMemoryLaunchBudget } from './mongoMemoryLaunchBudget';
 
@@ -67,6 +68,7 @@ export const applyEnvironmentFence = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv
   // A suite must never join, or become, the machine-wide host slot broker a live scrape on
   // the same machine is using; a suite that tests the broker re-enables it in a private directory.
   env.SCRAPER_MACHINE_HOST_SLOTS = 'off';
+  env.DEV_WRITE_LEASE = 'off';
   return env;
 };
 
@@ -150,3 +152,14 @@ vi.mock('../utils/meiliClient', () => ({
 applyEnvironmentFence(process.env);
 
 applyMongoMemoryLaunchBudget();
+
+/**
+ * A suite left on mongoose's defaults ran a connection mode production never uses, and paid for
+ * it: connecting made every model its imports registered build its collection and indexes, so the
+ * one index a suite needed queued behind the whole corpus schema (#5709, #5722). A suite that
+ * relies on an index now builds it explicitly, so the reliance is visible in the suite. This sets
+ * mongoose directly rather than importing db/connections, because a module imported here is shared
+ * with every suite and would defeat a suite's own mock of that module.
+ */
+mongoose.set('autoIndex', false);
+mongoose.set('autoCreate', false);

@@ -24,6 +24,8 @@ const OPERATOR_TOOLS: Record<string, string> = {
     'records an operator refusal of one value on one person record, the person-record counterpart of the layer-3 writer (#5641)',
   'role-assignments:detach-edge':
     'detaches one role edge an operator judged wrong after reading the pages, as a DISPUTED verdict no lane re-attaches (#5614)',
+  'observations:rollback-scrape-run':
+    'reverses one unmaterialized scrape run an operator judged harmful, restoring only the observations it superseded (#5735)',
   'researchers:record-distinct-people':
     'records an operator judgement that two researcher records are different people (#5592)',
   'research-entity:apply-page-read-verdict':
@@ -56,6 +58,8 @@ const OPERATOR_TOOLS: Record<string, string> = {
     'clears stored personal data from login accounts, an operator decision rather than a lane or a promotion side effect (#4162)',
   'research-plans:expire-legacy-archived':
     'expires archived research plans that still hold a student’s private text, an operator decision about stored personal data per environment (#4163)',
+  'observations:retire-glued-profile-text':
+    'retires the observations the profile lane read from glued block text before #5729, after re-reading each cited page; user email and title are value-keyed, so a fixed re-read adds the right value beside the glued one instead of superseding it, and nothing ever re-emits the glued key (#5720)',
   'observations:nonfetching-lane-gone-pages':
     'a one-time backfill for lanes that never run again or read no page, so no lane or sweep stage can re-derive it (#4862)',
   'directory-removal:record':
@@ -69,6 +73,10 @@ const OPERATOR_TOOLS: Record<string, string> = {
     're-embeds the whole index after a settings, embedder, or document-shape change, an infrastructure operation; the sweep stage is the incremental sync (#5023)',
   'research-entity:rematerialize': 're-derives rows on demand through the engine itself',
   'observations:catch-up-materialize': 'drains the materialize backlog through the engine itself',
+  'observations:rematerialize-user-keys':
+    're-resolves an operator-named list of person keys through the engine itself, for a scoped data step (#5706, #5740)',
+  'observations:supersede-replaced-run-emails':
+    'a one-time backfill of the run-scoped email rule appendObservations enforces on every write, for rows stored before it, which only a fresh fetch of every page would otherwise reach (#5705)',
   'observations:rederive-over-shared-person-websites':
     're-resolves through the engine itself the people whose evidence asserts an over-shared website, which no lane re-asserts (#5645)',
   'beta:readiness': 'promotion tooling, run as part of the release process',

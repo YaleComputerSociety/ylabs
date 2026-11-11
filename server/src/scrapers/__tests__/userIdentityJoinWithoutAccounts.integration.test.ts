@@ -17,7 +17,10 @@ vi.mock('../../services/meiliSyncService', async () => {
 import { Account } from '../../models/account';
 import { Observation } from '../../models/observation';
 import { Researcher } from '../../models/researcher';
-import { joinUserIdentityToExistingResearcher } from '../entityMaterializer';
+import {
+  joinUserIdentityToExistingResearcher,
+  resolveNetidForRosterEmailAlias,
+} from '../entityMaterializer';
 import { clearC4Flags } from './c4FlagTestEnv';
 
 const NETID = 'qz901';
@@ -194,7 +197,7 @@ describe('the user identity join reads researcher identifiers when no account ex
       expect(String(join.researcher?._id)).toBe(String(real._id));
     });
 
-    it('stays on the alias holder when the directory map names someone else', async () => {
+    it('stays on the alias holder, by name rather than netid, when the directory map names someone else', async () => {
       const holder = await Researcher.create({
         displayName: 'Quinn Alias',
         identifiers: { netid: ALIAS },
@@ -202,9 +205,78 @@ describe('the user identity join reads researcher identifiers when no account ex
       await Researcher.create({ displayName: 'Morgan Other', identifiers: { netid: REAL } });
       await seedAliasMap();
 
-      const join = await joinAlias();
+      const join = await joinUserIdentityToExistingResearcher({ entityKey: `netid:${ALIAS}` }, [
+        userObservation(`netid:${ALIAS}`, 'fname', 'Quinn'),
+        userObservation(`netid:${ALIAS}`, 'lname', 'Alias'),
+      ]);
 
       expect(String(join.researcher?._id)).toBe(String(holder._id));
+      expect(join.identityJoin).toBe('person-name');
+    });
+  });
+
+  describe('an email local part stamped as a researcher netid', () => {
+    const ALIAS = 'robin.fixture';
+    const ALIAS_KEY = `netid:${ALIAS}`;
+    const REAL = 'abc123';
+
+    it('is not an identity netid, so it reaches nobody on the netid join', async () => {
+      await Researcher.create({ displayName: 'Robin Fixture', identifiers: { netid: ALIAS } });
+      const join = await joinUserIdentityToExistingResearcher({ entityKey: ALIAS_KEY }, [
+        userObservation(ALIAS_KEY, 'netid', ALIAS),
+      ]);
+
+      expect(join.identityJoin).not.toBe('account-netid');
+      expect(join.researcher).toBeNull();
+    });
+
+    const aliasMapEntry = (entityKey: string) =>
+      Observation.create({
+        entityType: 'user',
+        entityKey,
+        field: 'email',
+        value: `${ALIAS}@yale.edu`,
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: 'directory-alias-resolution',
+        confidence: 0.9,
+        observedAt: new Date('2026-09-01T00:00:00Z'),
+        superseded: false,
+      });
+
+    it('never resolves an alias to another alias key, but resolves it to a netid (#5740)', async () => {
+      await aliasMapEntry(`netid:${ALIAS}.second`);
+      expect(await resolveNetidForRosterEmailAlias(ALIAS)).toEqual({ status: 'absent' });
+
+      await aliasMapEntry(`netid:${REAL}`);
+      expect(await resolveNetidForRosterEmailAlias(ALIAS)).toEqual({
+        status: 'resolved',
+        netid: REAL,
+      });
+    });
+
+    it('still reaches the holder the directory maps the alias to', async () => {
+      await Researcher.create({ displayName: 'Robin Fixture', identifiers: { netid: ALIAS } });
+      const real = await Researcher.create({
+        displayName: 'Robin Fixture',
+        identifiers: { netid: REAL },
+      });
+      await Observation.create({
+        entityType: 'user',
+        entityKey: `netid:${REAL}`,
+        field: 'email',
+        value: `${ALIAS}@yale.edu`,
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: 'directory-alias-resolution',
+        confidence: 0.9,
+        observedAt: new Date('2026-09-01T00:00:00Z'),
+        superseded: false,
+      });
+      const join = await joinUserIdentityToExistingResearcher({ entityKey: ALIAS_KEY }, [
+        userObservation(ALIAS_KEY, 'netid', ALIAS),
+      ]);
+
+      expect(join.identityJoin).toBe('account-netid');
+      expect(String(join.researcher?._id)).toBe(String(real._id));
     });
   });
 });

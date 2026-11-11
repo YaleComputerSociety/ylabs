@@ -90,7 +90,7 @@ import { WeeklySweepRun } from '../models/weeklySweepRun';
 import type { WeeklySweepStageFailureKind } from '../models/storedVocabularies';
 import { PRUNE_DEAD_OBSERVATIONS_CONFIRM_FLAG } from './pruneDeadObservationsCore';
 import { formatSweepPreflightReport, runSweepPreflight } from './scraperSweepPreflight';
-import { connectScriptMongo } from '../db/connections';
+import { connectScriptMongo, holdDevApplyLeaseForRun } from '../db/connections';
 import {
   decideSweepSourceRetry,
   remainingSweepBudgetMs,
@@ -2839,7 +2839,18 @@ const isDirectRun = process.argv[1]
   : false;
 
 if (isDirectRun) {
-  void (async () => runScraperSweep(parseScraperSweepArgs(process.argv.slice(2))))()
+  void (async () => {
+    const options = parseScraperSweepArgs(process.argv.slice(2));
+    const releaseLease =
+      options.mode === 'development-plan'
+        ? async () => undefined
+        : await holdDevApplyLeaseForRun('scrape:sweep');
+    try {
+      return await runScraperSweep(options);
+    } finally {
+      await releaseLease();
+    }
+  })()
     .then((summary) => {
       if (summary.failed > 0 || summary.notRun > 0 || summary.postRun?.status === 'failed') {
         process.exitCode = 1;

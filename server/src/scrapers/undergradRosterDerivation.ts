@@ -1,4 +1,5 @@
 import * as cheerio from 'cheerio';
+import { extractElementTextWithBlockSeparators } from './utils/htmlText';
 import { ResearchEntity } from '../models/researchEntity';
 import {
   detectOfficialRosterTemplate,
@@ -112,7 +113,7 @@ const labOwnerIsKeyPerson = (owner: string, nameTokens: string[]): boolean =>
 
 const pageText = ($: cheerio.CheerioAPI): string => {
   $('script, style, noscript').remove();
-  return $('body').text().replace(/\s+/g, ' ');
+  return extractElementTextWithBlockSeparators($('body')[0]);
 };
 
 /**

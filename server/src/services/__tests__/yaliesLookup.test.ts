@@ -80,7 +80,6 @@ describe('lookupYalieByNetid', () => {
         lname: 'Person',
         email: 'fixture.person@example.invalid',
         title: 'Program Coordinator',
-        department: 'Fixture Office',
       },
     });
   });

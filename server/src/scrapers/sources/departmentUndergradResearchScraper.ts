@@ -6,6 +6,7 @@
  */
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
 import { getCached, setCached } from '../snapshotCache';
 import { buildFetchAttemptMetrics, summarizeFetchMetrics } from '../renderedFetch';
 import type {
@@ -461,7 +462,7 @@ function absoluteUrl(rawUrl: string | undefined, pageUrl: string): string | unde
 }
 
 function firstEmail(text: string): string | undefined {
-  return text.match(/[A-Z0-9._%+-]+@yale\.edu/i)?.[0]?.toLowerCase();
+  return text.match(/(?<![a-z0-9._%+-])[a-z0-9._%+-]+@yale\.edu\b/i)?.[0]?.toLowerCase();
 }
 
 function conciseText(text: string, maxLength = 700): string {
@@ -654,7 +655,7 @@ export function parsePhysicsUndergradResearchPage(
     const links: string[] = [];
     let cursor = $(heading).next();
     while (cursor.length > 0 && cursor.prop('tagName')?.toLowerCase() !== 'h3') {
-      const text = normalizeText(cursor.text());
+      const text = normalizeText(extractElementTextWithBlockSeparators(cursor[0]));
       if (text) chunks.push(text);
       cursor.find('a[href]').each((_i, link) => {
         const url = absoluteUrl($(link).attr('href'), config.url);

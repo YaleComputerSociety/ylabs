@@ -214,6 +214,21 @@ describe('roleAssignmentEdgeKey', () => {
 });
 
 describe('planResearcherAttributeUnion', () => {
+  it('never copies an email alias stored as a netid into the empty slot, but copies a netid (#5740)', () => {
+    const empty = { profileLinks: [], identifiers: {}, profile: {} };
+    const shellWith = (netid: string) => ({
+      profileLinks: [],
+      identifiers: { netid },
+      profile: {},
+    });
+    expect(
+      planResearcherAttributeUnion(empty, shellWith('robin.fixture')).identifierGapFills,
+    ).toEqual({});
+    expect(planResearcherAttributeUnion(empty, shellWith('abc123')).identifierGapFills).toEqual({
+      netid: 'abc123',
+    });
+  });
+
   it('never gap-fills or links an ORCID either side refuses (#5641)', () => {
     const orcid = '9999-9000-9999-9021';
     const plan = planResearcherAttributeUnion(

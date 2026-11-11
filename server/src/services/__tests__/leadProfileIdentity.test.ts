@@ -833,3 +833,42 @@ describe('officialProfileDestinationIndexedPatterns', () => {
     );
   });
 });
+
+describe('normalizeOfficialProfileDestination on a macmillan program-section person path (#5757)', () => {
+  it('reads a program-section person path and the root person path as one destination', () => {
+    for (const url of [
+      'https://macmillan.yale.edu/africa/person/avery-synthetic',
+      'https://macmillan.yale.edu/leitner/person/avery-synthetic/',
+      'https://www.macmillan.yale.edu/person/avery-synthetic',
+    ]) {
+      expect(normalizeOfficialProfileDestination(url)).toBe(
+        'macmillan.yale.edu/person/avery-synthetic',
+      );
+    }
+  });
+
+  it('keeps a different slug and other hosts distinct', () => {
+    expect(
+      normalizeOfficialProfileDestination(
+        'https://macmillan.yale.edu/africa/person/avery-synthetic-0',
+      ),
+    ).toBe('macmillan.yale.edu/person/avery-synthetic-0');
+    expect(
+      normalizeOfficialProfileDestination('https://history.yale.edu/africa/person/avery-synthetic'),
+    ).toBe('history.yale.edu/africa/person/avery-synthetic');
+  });
+
+  it('matches a stored program-section link from the root person path', () => {
+    const pattern = officialProfileDestinationStoredPattern(
+      'https://macmillan.yale.edu/person/avery-synthetic',
+    );
+    expect(pattern?.test('https://macmillan.yale.edu/africa/person/avery-synthetic')).toBe(true);
+    expect(pattern?.test('https://macmillan.yale.edu/person/avery-synthetic')).toBe(true);
+    expect(pattern?.test('https://macmillan.yale.edu/africa/person/avery-synthetic-0')).toBe(false);
+    for (const indexed of officialProfileDestinationIndexedPatterns(
+      'https://macmillan.yale.edu/person/avery-synthetic',
+    ).slice(0, 1)) {
+      expect(indexed.test('https://macmillan.yale.edu/leitner/person/avery-synthetic/')).toBe(true);
+    }
+  });
+});

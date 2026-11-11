@@ -156,7 +156,6 @@ const employee = (title: string) => ({
     lname: 'Employee',
     email: 'fixture.employee@example.invalid',
     title,
-    department: 'Fixture Department',
   },
 });
 

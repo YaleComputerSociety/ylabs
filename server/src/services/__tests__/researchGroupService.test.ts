@@ -4106,6 +4106,17 @@ describe('getResearchGroupDetail', () => {
     );
   });
 
+  it('serves a real appointment title between the card and stored limits on the detail page (#5594)', async () => {
+    const title =
+      'Professor of Fixture Studies, Economics, and Public Placeholder Health; Professor in the Practice of Synthetic Management; Director of the Fixture Program';
+    expect(title.length).toBeGreaterThan(140);
+    seedSingleMemberDetail(title);
+
+    const detail = await getResearchGroupDetail('title-hygiene-lab');
+
+    expect(detail?.members[0].user.title).toBe(title);
+  });
+
   it('shows only fresh stable official roster evidence and reports bounded disclosure', () => {
     const latestSnapshot = {
       state: 'current',

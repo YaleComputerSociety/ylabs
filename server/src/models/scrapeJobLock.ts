@@ -54,6 +54,22 @@ const scrapeJobLockSchema = new mongoose.Schema(
       type: String,
       required: false,
     },
+    ownerHost: {
+      type: String,
+      required: false,
+    },
+    ownerPid: {
+      type: Number,
+      required: false,
+    },
+    ownerLabel: {
+      type: String,
+      required: false,
+    },
+    command: {
+      type: String,
+      required: false,
+    },
   },
   {
     timestamps: true,
