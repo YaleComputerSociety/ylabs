@@ -27,7 +27,7 @@ const withoutDiacriticsOrApostrophes = (value: string): string =>
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/['\u2019`]/g, '');
 
-const comparableName = (value: string): string =>
+export const comparableName = (value: string): string =>
   withoutDiacriticsOrApostrophes(value)
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
@@ -36,7 +36,7 @@ const comparableName = (value: string): string =>
 export const leadSurname = (personName: string | undefined | null): string =>
   [...personSurnamesFromDisplayNames([withoutDiacriticsOrApostrophes(personName || '')])][0] ?? '';
 
-const urlHostAndPath = (pageUrl: string): string => {
+export const urlHostAndPath = (pageUrl: string): string => {
   try {
     const url = new URL(pageUrl);
     return `${url.host} ${url.pathname}`;
@@ -107,7 +107,20 @@ export const textNamesLead = (text: string, personName: string): boolean => {
   });
 };
 
-const isYaleHostedPage = (pageUrl: string): boolean => {
+export function rowIsScopedToLead(
+  row: { kind?: unknown; rowName?: unknown },
+  surname: string,
+): boolean {
+  // Only a row named for its lead is the lead's to describe. A center, a program or a
+  // lab named for its work describes the unit, and its own page need not name the
+  // director: on the 637 Development lab rows measured for #4809 those were most of the pages this would refuse.
+  return (
+    row.kind === 'individual' ||
+    ` ${comparableName(String(row.rowName || ''))} `.includes(` ${surname} `)
+  );
+}
+
+export const isYaleHostedPage = (pageUrl: string): boolean => {
   try {
     return isYaleHostname(new URL(pageUrl).hostname);
   } catch {

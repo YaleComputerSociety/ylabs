@@ -133,7 +133,6 @@ import {
   pageStatesPersonAsPrincipalInvestigator,
   personScopedResearchEntityBodyDescribesAnotherOrganization,
   personScopedResearchEntityNameFromPersonName,
-  personSurnamesFromDisplayNames,
   researchHomeIdentityTokens,
 } from '../../utils/researchHomeNameIdentityAuthority';
 import {
@@ -158,6 +157,14 @@ import {
   removeRelatedEntityTeaserCards,
 } from '../../utils/relatedEntityTeaserCards';
 import { postChatCompletion } from '../../utils/modelClient';
+import {
+  comparableName,
+  isYaleHostedPage,
+  leadSurname,
+  nonYaleMicrositeOwnership,
+  rowIsScopedToLead,
+  urlHostAndPath,
+} from '../utils/nonYaleMicrositeOwnership';
 
 const SOURCE_KEY = 'lab-microsite-description-llm';
 export const DEFAULT_MODEL = 'gpt-5-mini';
@@ -1063,30 +1070,6 @@ async function storedLaneDescriptionPageNotNamingRowLead(
     : cited.page;
 }
 
-const withoutDiacriticsOrApostrophes = (value: string): string =>
-  value
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/['’`]/g, '');
-
-const comparableName = (value: string): string =>
-  withoutDiacriticsOrApostrophes(value)
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-
-const leadSurname = (personName: string | undefined): string =>
-  [...personSurnamesFromDisplayNames([withoutDiacriticsOrApostrophes(personName || '')])][0] ?? '';
-
-const urlHostAndPath = (pageUrl: string): string => {
-  try {
-    const url = new URL(pageUrl);
-    return `${url.host} ${url.pathname}`;
-  } catch {
-    return pageUrl;
-  }
-};
-
 const MIN_AFFIX_MATCHED_SURNAME_LENGTH = 4;
 
 const urlCarriesSurname = (pageUrl: string, surname: string): boolean =>
@@ -1124,21 +1107,26 @@ const isUnderOwnWebsite = (pageUrl: string, websiteUrl: unknown): boolean => {
  * page that names that person (#4809): on 454 person-named Development lab rows, the
  * cited page of 10 never named the surname, and the ones not on the row's own website
  * were a working group's page, a department research index and an art-school
- * opportunities page. The row's own website is exempt, because a lab site may name its
- * lead only in an image, a frame or a rendered script.
+ * opportunities page. The row's own website is exempt on a Yale host, because a lab site
+ * may name its lead only in an image, a frame or a rendered script. Off Yale's hosts the
+ * stored website may be one a roster lane linked wrongly, so the page must confirm the
+ * lead itself through the shared ownership rule (#5777).
  */
 export function descriptionPageNamesRowLead(
   input: RowLead & { pageUrl: string; pageText: string },
 ): boolean {
   const surname = leadSurname(input.personName);
   if (!surname) return true;
-  // Only a row named for its lead is the lead's to describe. A center, a program or a
-  // lab named for its work describes the unit, and its own page need not name the
-  // director: on the same 637 rows those were most of the pages this would refuse.
-  const personScoped =
-    input.kind === 'individual' ||
-    ` ${comparableName(String(input.rowName || ''))} `.includes(` ${surname} `);
-  if (!personScoped) return true;
+  if (!rowIsScopedToLead(input, surname)) return true;
+  if (!isYaleHostedPage(input.pageUrl)) {
+    return (
+      nonYaleMicrositeOwnership({
+        sourceUrl: input.pageUrl,
+        text: input.pageText,
+        lead: { names: [input.personName] },
+      }).decision === 'admit'
+    );
+  }
   if (isUnderOwnWebsite(input.pageUrl, input.websiteUrl)) return true;
   if (urlCarriesSurname(input.pageUrl, surname)) return true;
   return ` ${comparableName(input.pageText)} `.includes(` ${surname} `);
@@ -2817,14 +2805,12 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           observations = llmOutcome.observations;
           guardRefusal = guardRefusal ?? llmOutcome.refusal;
         }
-        if (
-          observations.length > 0 &&
-          !descriptionPageNamesRowLead({
-            ...rowLead,
-            pageUrl: page.url,
-            pageText: [pageText, officialProse?.fullDescription ?? ''].join('\n'),
-          })
-        ) {
+        const pageNamesRowLead = descriptionPageNamesRowLead({
+          ...rowLead,
+          pageUrl: page.url,
+          pageText: [pageText, officialProse?.fullDescription ?? ''].join('\n'),
+        });
+        if (observations.length > 0 && !pageNamesRowLead) {
           observations = [];
           guardRefusal = guardRefusal ?? 'page_does_not_name_row';
         }
@@ -2862,6 +2848,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
           const foreignLabPage = groundedLlmExtraction
             ? extractedPageDescribesAnotherPersonsLab(groundedLlmExtraction, identity)
             : false;
+          const pageIsNotRowLeads = foreignLabPage || !pageNamesRowLead;
           const slotAttestation = storedLaneDescriptionIsRetracted
             ? 'empty'
             : descriptionSlotAttestation({
@@ -2899,7 +2886,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
               : hashObservations,
             slotAttestation,
           );
-          const nameObservations = foreignLabPage ? [] : pageStatedNameObservations;
+          const nameObservations = pageIsNotRowLeads ? [] : pageStatedNameObservations;
           const methodsObservation: ObservationInput | null =
             methods.length > 0
               ? {
@@ -2912,7 +2899,7 @@ export class LabMicrositeDescriptionLLMExtractor implements IScraper {
                   value: methods,
                 }
               : storedDescriptionMethodsObservation;
-          if (methodsObservation && !foreignLabPage) {
+          if (methodsObservation && !pageIsNotRowLeads) {
             await ctx.emit([methodsObservation, ...nameObservations, ...attestedHashObservations]);
             observationCount += 1 + nameObservations.length;
             entitiesObserved += 1;

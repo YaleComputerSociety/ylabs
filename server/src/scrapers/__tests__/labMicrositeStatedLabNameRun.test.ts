@@ -9,6 +9,7 @@ import type { ObservationInput, ScraperContext } from '../types';
 
 const SITE_URL = 'https://quillcircuits.example.org/';
 const LAB_NAME = 'Quill Neural Circuits Lab';
+const LEAD_CONFIRMING_SITE_URL = 'https://quill.example.org/';
 
 const RESEARCH_PROSE =
   'The laboratory studies how cortical circuits encode sensory expectation, combining two-photon imaging in behaving mice with computational models of predictive coding to explain how learned priors reshape perception. ';
@@ -97,6 +98,7 @@ describe('the microsite lane emits the page-stated lab name on every description
 
   it('emits the name when no description is usable', async () => {
     const { emitted, valueOf } = await runLane({
+      url: LEAD_CONFIRMING_SITE_URL,
       html: newsFeedHtml('News | Yale'),
       extraction: extraction({}),
     });
@@ -107,6 +109,7 @@ describe('the microsite lane emits the page-stated lab name on every description
 
   it('emits the name once when the model description is adopted', async () => {
     const { emitted } = await runLane({
+      url: LEAD_CONFIRMING_SITE_URL,
       html: newsFeedHtml(LAB_NAME).replace('<ul>', `<div>${RESEARCH_PROSE}</div><ul>`),
       extraction: extraction({ fullDescription: RESEARCH_PROSE.trim() }),
     });
