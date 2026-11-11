@@ -137,7 +137,7 @@ describe('Privacy', () => {
     expect(text).toContain('To have it deleted, email the address below.');
     expect(text).not.toContain('enter your Yale password again');
     expect(text).not.toContain('asks PostHog to delete');
-    expect(screen.getByRole('link', { name: PRIVACY_CONTACT_EMAIL })).toBeTruthy();
+    expect(screen.getAllByRole('link', { name: PRIVACY_CONTACT_EMAIL }).length).toBeGreaterThan(0);
   });
 
   it('has no serious or critical accessibility violations', async () => {
