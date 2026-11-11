@@ -120,7 +120,9 @@ describe('Privacy', () => {
     );
     expect(text).not.toContain('publication records');
     expect(text).toContain('use Report an issue with this page on the listing');
-    expect(text).toContain('A maintainer applies an accepted request within 7 days.');
+    expect(text).toContain(
+      'A maintainer applies an accepted request, and it reaches the live site with the next update.',
+    );
     expect(text).toContain(
       'PostHog keeps session replays for 30 days and other events for 1 year.',
     );

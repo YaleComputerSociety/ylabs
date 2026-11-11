@@ -85,7 +85,7 @@ describe('DirectoryRemovalRequest', () => {
     const message = await screen.findByRole('status');
     expect(message.textContent).toBe(REMOVAL_REQUESTED_MESSAGE);
     expect(REMOVAL_REQUESTED_MESSAGE).toBe(
-      "We'll stop showing you within 7 days. You can ask to be listed again at any time.",
+      "We'll stop showing you after a maintainer applies your request and the next update reaches the live site. You can ask to be listed again at any time.",
     );
     await waitFor(() => expect(document.activeElement).toBe(message));
     expect(screen.queryByRole('button', { name: REMOVE_ME_LABEL })).toBeNull();
@@ -104,10 +104,10 @@ describe('DirectoryRemovalRequest', () => {
     render(<DirectoryRemovalRequest />);
 
     expect((await screen.findByRole('status')).textContent).toBe(
-      'Your request was accepted. You will stop appearing on y/labs within 7 days.',
+      'Your request was accepted. You will stop appearing on y/labs with the next update.',
     );
     expect(REMOVAL_ACCEPTED_MESSAGE).toBe(
-      'Your request was accepted. You will stop appearing on y/labs within 7 days.',
+      'Your request was accepted. You will stop appearing on y/labs with the next update.',
     );
     expect(screen.queryByRole('button', { name: REMOVE_ME_LABEL })).toBeNull();
   });
