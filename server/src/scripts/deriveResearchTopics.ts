@@ -60,7 +60,7 @@ async function scopeClauses(slugs: string[]): Promise<Record<string, unknown>[]>
   ];
 }
 
-async function loadStoredPageTextRows(
+export async function loadStoredPageTextRows(
   args: DeriveResearchTopicsArgs,
 ): Promise<StoredResearchPageTextRow[]> {
   const clauses = await scopeClauses(args.slugs);

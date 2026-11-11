@@ -20,7 +20,7 @@ import {
 import {
   RESEARCH_PAGE_TEXT_FIELD,
   RESEARCH_PAGE_TEXT_SOURCE,
-  researchPageTextEntries,
+  researchPageTextEntriesWithoutChrome,
   type ResearchPageTextEntry,
 } from './utils/researchPageText';
 
@@ -155,7 +155,7 @@ export async function researchPageTopicsStateFor(
 ): Promise<ResearchPageTopicsState> {
   const current = currentResearchPageTextObservation(observations);
   if (!current) return {};
-  const pages = researchPageTextEntries(current.value);
+  const pages = researchPageTextEntriesWithoutChrome(current.value);
   const currentTextHash = researchPageTextHash(pages);
   if (pages.length === 0) return { currentTextHash };
   const inputHash = researchTopicsDerivationInputHash(pages);
