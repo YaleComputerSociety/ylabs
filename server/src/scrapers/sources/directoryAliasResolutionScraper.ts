@@ -26,7 +26,7 @@ import {
   type AliasObservationKey,
   type DirectoryIdentity,
 } from '../utils/aliasObservationKeyResolution';
-import { listYalies, type YaliesPerson } from '../../services/yaliesService';
+import { FIRST_YALIES_PAGE, listYalies, type YaliesPerson } from '../../services/yaliesService';
 import { netidNamedByUserEntityKey } from '../entityMaterializer';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 
@@ -80,7 +80,7 @@ export async function loadDirectoryIdentities(options?: {
     options?.fetchPage ?? ((page: number) => listYalies({ page, pageSize: DIRECTORY_PAGE_SIZE }));
   const sleep = options?.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const people: YaliesPerson[] = [];
-  for (let page = 1; page <= DIRECTORY_MAX_PAGES; page += 1) {
+  for (let page = FIRST_YALIES_PAGE; page < FIRST_YALIES_PAGE + DIRECTORY_MAX_PAGES; page += 1) {
     const rows = await fetchDirectoryPageWithRetry(page, fetchPage, sleep, options?.log);
     people.push(...rows);
     if (rows.length < DIRECTORY_PAGE_SIZE) break;

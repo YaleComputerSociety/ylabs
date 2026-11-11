@@ -33,7 +33,7 @@
 import axios from 'axios';
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import { listYalies, YaliesPerson } from '../../services/yaliesService';
+import { FIRST_YALIES_PAGE, listYalies, YaliesPerson } from '../../services/yaliesService';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatCharacters';
 import {
@@ -51,7 +51,6 @@ const SOURCE_NAME = 'yale-directory';
 const SOURCE_URL = 'https://api.yalies.io/v2/people';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const PAGE_SIZE = 100;
-const FIRST_YALIES_PAGE = 0;
 const FACULTY_KEYWORDS = [
   'professor',
   'lecturer',

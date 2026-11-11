@@ -11,6 +11,7 @@ dotenv.config({ quiet: true });
 const YALIES_API_URL = 'https://api.yalies.io/v2/people';
 const YALIES_API_TIMEOUT_MS = 10_000;
 const YALIES_NETID_RE = /^[A-Za-z0-9]{2,12}$/;
+export const FIRST_YALIES_PAGE = 0;
 
 const yaliesApiKey = () => String(process.env.YALIES_API_KEY || '').trim();
 
