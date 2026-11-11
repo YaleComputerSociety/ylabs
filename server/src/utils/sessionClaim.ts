@@ -10,31 +10,50 @@ export type SessionClaim = {
   sessionId: string;
   issuedAt: number;
   sessionVersion: number;
+  credentialsConfirmedAt?: number;
 };
 
 export const normalizedSessionVersion = (value: unknown): number =>
   Number.isInteger(value) && (value as number) >= 0 ? (value as number) : 0;
 
-export const mintSessionClaim = (sessionVersion: unknown, now = Date.now()): SessionClaim => ({
+export const mintSessionClaim = (
+  sessionVersion: unknown,
+  now = Date.now(),
+  { credentialsConfirmed = false }: { credentialsConfirmed?: boolean } = {},
+): SessionClaim => ({
   sessionId: randomBytes(SESSION_ID_BYTES).toString('hex'),
   issuedAt: now,
   sessionVersion: normalizedSessionVersion(sessionVersion),
+  ...(credentialsConfirmed ? { credentialsConfirmedAt: now } : {}),
 });
 
 export const storedSessionClaim = (stored: unknown): SessionClaim | null => {
   if (!stored || typeof stored !== 'object') return null;
-  const { sessionId, issuedAt, sessionVersion } = stored as Record<string, unknown>;
+  const { sessionId, issuedAt, sessionVersion, credentialsConfirmedAt } = stored as Record<
+    string,
+    unknown
+  >;
   if (typeof sessionId !== 'string' || !SESSION_ID_RE.test(sessionId)) return null;
   if (typeof issuedAt !== 'number' || !Number.isFinite(issuedAt)) return null;
   if (!Number.isInteger(sessionVersion) || (sessionVersion as number) < 0) return null;
-  return { sessionId, issuedAt, sessionVersion: sessionVersion as number };
+  const claim: SessionClaim = { sessionId, issuedAt, sessionVersion: sessionVersion as number };
+  if (typeof credentialsConfirmedAt === 'number' && Number.isFinite(credentialsConfirmedAt)) {
+    claim.credentialsConfirmedAt = credentialsConfirmedAt;
+  }
+  return claim;
+};
+
+const accountCreatedAtMs = (value: unknown): number => {
+  const ms = value instanceof Date ? value.getTime() : Number.NaN;
+  return Number.isFinite(ms) ? ms : Number.NEGATIVE_INFINITY;
 };
 
 export const isSessionClaimLive = (
   claim: SessionClaim,
-  accountSessionVersion: unknown,
+  account: { sessionVersion: unknown; createdAt?: unknown },
   now = Date.now(),
 ): boolean =>
-  claim.sessionVersion === normalizedSessionVersion(accountSessionVersion) &&
+  claim.sessionVersion === normalizedSessionVersion(account.sessionVersion) &&
+  claim.issuedAt >= accountCreatedAtMs(account.createdAt) &&
   claim.issuedAt <= now + SESSION_CLOCK_SKEW_MS &&
   now - claim.issuedAt < SESSION_LIFETIME_MS;

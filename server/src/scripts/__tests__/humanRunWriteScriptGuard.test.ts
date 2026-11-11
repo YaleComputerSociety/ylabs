@@ -42,6 +42,8 @@ const OPERATOR_TOOLS: Record<string, string> = {
     'attaches hand judgements read off a frozen benchmark page, an operator judgement per row',
   'observations:purge-unread-directory-contact':
     'deletes stored personal contact data, which AGENTS.md reserves for an operator rather than a lane or a sweep stage (#4161)',
+  'accounts:delete-account-data':
+    "deletes one person's account data on their own request, an operator act for someone who cannot sign in to do it themselves (#4156)",
   'accounts:purge-retired-login-profile-fields':
     'clears stored personal data from login accounts, an operator decision rather than a lane or a promotion side effect (#4162)',
   'research-plans:expire-legacy-archived':

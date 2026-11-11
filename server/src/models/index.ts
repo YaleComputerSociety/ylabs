@@ -45,6 +45,14 @@ export { ScrapeRun } from './scrapeRun';
 export { ScrapeSnapshot } from './scrapeSnapshot';
 export { WeeklySweepRun, WEEKLY_SWEEP_RUN_COLLECTION } from './weeklySweepRun';
 export { LoginSignalTally, LOGIN_SIGNAL_TALLY_COLLECTION } from './loginSignalTally';
+export {
+  DeletedAccountEventTally,
+  DELETED_ACCOUNT_EVENT_TALLY_COLLECTION,
+} from './deletedAccountEventTally';
+export {
+  AccountDeletionRequest,
+  ACCOUNT_DELETION_REQUEST_COLLECTION,
+} from './accountDeletionRequest';
 export * from './researchAccessTypes';
 export * from './sourceCoverageTypes';
 export * from './modelPrimitives';

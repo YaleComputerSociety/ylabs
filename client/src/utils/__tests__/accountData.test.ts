@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const axiosMock = vi.hoisted(() => ({ delete: vi.fn(), get: vi.fn() }));
 vi.mock('../axios', () => ({ default: axiosMock }));
@@ -20,6 +20,10 @@ afterEach(() => {
 });
 
 describe('account data client (#4156)', () => {
+  beforeEach(() => {
+    axiosMock.get.mockResolvedValue({ data: { csrfToken: 'b'.repeat(64) } });
+  });
+
   it('keeps the export URL alive after the click so a deferred browser download still finds it', async () => {
     vi.useFakeTimers();
     try {
@@ -42,12 +46,17 @@ describe('account data client (#4156)', () => {
     }
   });
 
-  it('sends the exact confirmation phrase and reports a deletion', async () => {
+  it("sends the exact confirmation phrase with this session's CSRF token", async () => {
+    axiosMock.get.mockResolvedValue({ data: { csrfToken: 'a'.repeat(64) } });
     axiosMock.delete.mockResolvedValue({ data: { deleted: true } });
 
     await expect(deleteAccountData()).resolves.toBe('deleted');
+    expect(axiosMock.get).toHaveBeenCalledWith('/users/me/deletion-csrf-token', {
+      skipAuthRequiredEvent: true,
+    });
     expect(axiosMock.delete).toHaveBeenCalledWith('/users/me', {
       data: { confirm: 'delete my data' },
+      headers: { 'X-CSRF-Token': 'a'.repeat(64) },
       skipAuthRequiredEvent: true,
     });
   });
