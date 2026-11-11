@@ -7983,7 +7983,9 @@ async function materializeUserIdentityToResearcher(
   const officialLink =
     composedOfficialLink &&
     !refusesProfileLink(composedOfficialLink) &&
-    !(await officialProfileLinkHeldByConflictingIdentity(composedOfficialLink.url, researcher))
+    !(await officialProfileLinkHeldByConflictingIdentity(composedOfficialLink.url, researcher, {
+      readScope: materializationReadScopeFilter(),
+    }))
       ? composedOfficialLink
       : undefined;
   if (officialLink && !existingLinkKinds.has('YALE_OFFICIAL')) {

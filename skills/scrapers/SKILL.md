@@ -1764,6 +1764,8 @@ A netid is the only conflict witness, because a nickname, a second ORCID on the 
 `pageEmailHeldByAnotherResearcher` (`verifiedResearcherEmail.ts`, shared by the backfill lane and the email fill) reads the same rule through `identityWitnessesConflict`.
 The verify lane also adopts a candidate it built from the display name (`nameDerived` in `officialProfileLinkCandidatesWithOrigin`) only when `pageIdentityWitnessesPerson` finds the page's own email or netid on the researcher, or the directory pairs the page email with the researcher's netid.
 The guard refuses rather than removes, so a link stamped on the wrong record before it existed stays until an operator judges that row.
+The refusal is not symmetric when the page can say whose it is: `pageWitnessSettlesConflictForCandidate` lets a candidate through when the directory pairs the page's own stated email with the candidate's netid and with no conflicting holder's, so a holder that reached the page first cannot lock its owner out (#5733).
+It still refuses when the page names both, only the holder, or nobody, and the writer only adds, so the stale holder keeps its link until its own evidence or a refusal removes it.
 Measured on Development on 2026-11-11: 5 pages were shared, 2 by twins with no netid conflict and 3 by two directory-distinct netids.
 
 #### A page the directory gives to another netid speaks for nobody else (#5693)
