@@ -220,7 +220,7 @@ export const planClosingKeywordRewrite = (args, { readBodyFile, readStdin, write
     const index = valueFlag.attached ? i : i + 1;
     if (index >= out.length) continue;
     const raw = valueFlag.attached ? valueFlag.value : out[index];
-    let next = raw;
+    let next;
     if (command.kind === 'api') {
       const [key, ...rest] = raw.split('=');
       if (key.replace(/\[\]$/, '') !== 'body') continue;
