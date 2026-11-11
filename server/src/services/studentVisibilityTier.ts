@@ -66,6 +66,7 @@ import {
   statesAwardSuspension,
 } from './programApplicability';
 import type { UpcomingDuplicateWindow } from './programUpcomingDuplicateWindow';
+import { RESEARCHER_REMOVED_REASON } from './directoryRemovalReason';
 import {
   DEPARTMENT_RESEARCH_GUIDANCE_REASON,
   isDepartmentResearchGuidance,
@@ -929,7 +930,7 @@ export const CAREER_BIOGRAPHY_WITHOUT_RESEARCH_REASON = 'career_biography_withou
 // (generic directory / biography / non-owner-grant) are removed one tier earlier
 // at `suppressed`; they appear here so the repair histogram classifies them as
 // blockers wherever they surface.
-export const RESEARCHER_REMOVED_REASON = 'researcher_removed';
+export { RESEARCHER_REMOVED_REASON };
 
 export const STUDENT_READY_HARD_BLOCKER_REASONS: ReadonlySet<string> = new Set([
   RESEARCHER_REMOVED_REASON,

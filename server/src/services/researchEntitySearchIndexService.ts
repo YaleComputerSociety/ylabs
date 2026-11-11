@@ -38,6 +38,7 @@ import { decideServedResearchAreas } from '../utils/servedResearchAreaGuards';
 import { meshDescriptorOnlyTerms } from '../scrapers/utils/meshNonSubjectDescriptors';
 import { entityHasHostedUndergraduates } from './hostedUndergraduates';
 import { entityWelcomesUndergraduates, servedUndergradInvitationLevel } from './researchEntityDto';
+import { isExcludedFromSearchIndex, RESEARCHER_REMOVED_REASON } from './directoryRemovalReason';
 import {
   isSyntheticResearchHomeMetadataDescription,
   revoiceFirstPersonResearchLead,
@@ -721,8 +722,13 @@ export async function buildResearchEntitySearchIndexDocumentsWithMemberNames(
   );
 }
 
+export const RESEARCH_ENTITY_SEARCH_INDEX_ROW_FILTER = {
+  archived: { $ne: true },
+  studentVisibilityReasons: { $ne: RESEARCHER_REMOVED_REASON },
+} as const;
+
 async function fetchResearchEntityPage(page: number, pageSize: number): Promise<any[]> {
-  return ResearchEntity.find({ archived: { $ne: true } })
+  return ResearchEntity.find(RESEARCH_ENTITY_SEARCH_INDEX_ROW_FILTER)
     .sort({ _id: 1 })
     .skip((page - 1) * pageSize)
     .limit(pageSize)
@@ -1145,7 +1151,7 @@ async function catchUpLiveIndexWithRowsChangedDuringBuild(
   fetchMemberNames: (entities: any[]) => Promise<ResearchEntitySearchMemberNameMap>,
 ): Promise<ResearchEntitySearchIndexCatchUpResult> {
   const archivedIds = changedRows
-    .filter((row) => row?.archived === true)
+    .filter((row) => isExcludedFromSearchIndex(row))
     .map(researchEntitySearchDocumentId)
     .filter(Boolean);
   if (archivedIds.length > 0) {
@@ -1158,7 +1164,7 @@ async function catchUpLiveIndexWithRowsChangedDuringBuild(
   }
 
   const indexDocs = await buildResearchEntitySearchIndexDocumentsWithMemberNames(
-    changedRows.filter((row) => row?.archived !== true),
+    changedRows.filter((row) => !isExcludedFromSearchIndex(row)),
     fetchMemberNames,
   );
   if (indexDocs.length > 0) {
