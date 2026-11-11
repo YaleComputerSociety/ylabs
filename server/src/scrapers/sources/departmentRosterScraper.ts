@@ -138,6 +138,8 @@ import { evidenceAssertsALab } from '../utils/labClaimEvidence';
 import { labNameStatedForPerson, statedLabNameClaimsAnotherPerson } from '../utils/statedLabName';
 import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
 import { hostnameIsWithin } from '../../utils/yaleHost';
+import { personNameKey } from '../rekeyedPersonKeyPlan';
+import { RekeyedPersonReads, settleRekeyedPersonReads } from '../rekeyedPersonKeyRetirement';
 import { isLabDirectoryListingUrl } from '../laneRefusedWebsiteUrl';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
@@ -4529,6 +4531,11 @@ export function withoutUnheldSceneIdentity(
   return rest;
 }
 
+function rosterEntryNameKey(entry: FacultyEntry): string {
+  const { first, last } = splitName(normalizeName(entry.name));
+  return personNameKey(first, last);
+}
+
 function rosterIdentityNameSlug(entry: FacultyEntry): string {
   return entry.identityName ? slugify(entry.identityName) : slugify(normalizeName(entry.name));
 }
@@ -4760,6 +4767,7 @@ export class DepartmentRosterScraper implements IScraper {
     const discoveredEntityKeysByDept = new Map<string, Set<string>>();
     const withdrawnEntityKeysByDept = new Map<string, Set<string>>();
     const profilesReadByDept = new Map<string, number>();
+    const rekeyReads = new RekeyedPersonReads(this.name);
     const processEntries = async (
       entries: FacultyEntry[],
       dept: DeptConfig,
@@ -4838,6 +4846,7 @@ export class DepartmentRosterScraper implements IScraper {
           typingByUserKey,
         );
         await ctx.emit(userObs);
+        rekeyReads.recordPerson(typedUserObs);
         observations += userObs.length;
 
         const mint = dept.officialProfileOnly
@@ -4898,6 +4907,13 @@ export class DepartmentRosterScraper implements IScraper {
         totalFaculty++;
       }
 
+      rekeyReads.recordListingRead(sourceUrl, {
+        complete: !truncatedByLimit,
+        names: entries.map((rosterEntry, index) => ({
+          nameKey: rosterEntryNameKey(rosterEntry),
+          identity: `${sourceUrl}#${index}`,
+        })),
+      });
       return { faculty, labs, observations, truncatedByLimit };
     };
 
@@ -5199,6 +5215,7 @@ export class DepartmentRosterScraper implements IScraper {
       totalObs += rosterHealthObservations.length;
     }
 
+    const rekeyed = await settleRekeyedPersonReads(rekeyReads, ctx);
     const summary = perDept
       .map((d) => `${d.deptKey}=${d.status === 'ok' ? d.count : d.status}`)
       .join(', ');
@@ -5237,7 +5254,8 @@ export class DepartmentRosterScraper implements IScraper {
     return {
       observationCount: totalObs,
       entitiesObserved: totalFaculty + totalLabs,
-      notes: `Departments: ${summary}`,
+      notes: rekeyed.note ? `Departments: ${summary}; ${rekeyed.note}` : `Departments: ${summary}`,
+      ...(rekeyed.partialFailure ? { partialFailures: [rekeyed.partialFailure] } : {}),
       fetchMetrics: summarizeFetchMetrics(fetchAttempts),
     };
   }

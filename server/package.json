@@ -206,6 +206,7 @@
     "research-areas:retire-listing-item-harvests": "tsx src/scripts/retireListingItemResearchAreas.ts",
     "observations:retire-glued-profile-text": "tsx src/scripts/retireGluedProfileText.ts",
     "observations:retire-orphaned-lane-configs": "tsx src/scripts/retireOrphanedLaneConfigs.ts",
+    "observations:retire-rekeyed-person-keys": "tsx src/scripts/retireRekeyedPersonKeys.ts",
     "research-homes:clear-directory-index-descriptions": "tsx src/scripts/clearDirectoryIndexDescriptions.ts",
     "research-entity:repair-unbacked-lab-names": "tsx src/scripts/repairUnbackedLabNames.ts",
     "data:repair-invisible-format-characters": "tsx src/scripts/repairInvisibleFormatCharacters.ts",

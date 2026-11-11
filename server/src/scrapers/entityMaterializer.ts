@@ -8483,6 +8483,70 @@ async function userKeyJoinEvidence(
   };
 }
 
+export interface UserKeyResearcherJoins {
+  joinedResearcherId?: string;
+  namingResearcherIds: string[];
+}
+
+export async function userKeyResearcherJoins(
+  entityKey: string,
+  now: Date = new Date(),
+): Promise<UserKeyResearcherJoins> {
+  const reference: UserKeyReference = { entityKey };
+  const observations =
+    (await liveObservationsOfUserKeys([reference])).get(userKeyReferenceId(reference)) ?? [];
+  if (observations.length === 0) return { namingResearcherIds: [] };
+  const joinedResearcherId = (await userKeyJoinEvidence(reference, observations, now)).researcherId;
+  const netid = normalizedAccountNetid(entityKey.replace(/^netid:/, ''));
+  const emails = uniqueStrings(
+    observations
+      .filter((observation: any) => observation.field === 'email')
+      .map((observation: any) => normalizedAccountEmail(observation.value))
+      .filter((email): email is string => Boolean(email)),
+  );
+  const accountNetids = emails.length
+    ? (
+        (await Account.find({ email: { $in: emails } })
+          .select('netid')
+          .lean()) as any[]
+      )
+        .map((account) => normalizedAccountNetid(account.netid))
+        .filter((value): value is string => Boolean(value))
+    : [];
+  const claimants = await liveResearchersClaimingOfficialProfileUrls(
+    uniqueStrings(observations.map((observation: any) => textValue(observation.sourceUrl))),
+  );
+  const candidateIds = new Set<string>(
+    [...claimants.values()]
+      .flat()
+      .map((researcher) => prefetchObjectIdString(researcher?._id))
+      .filter((id): id is string => Boolean(id)),
+  );
+  if (joinedResearcherId) candidateIds.add(joinedResearcherId);
+  const netids = uniqueStrings([...(netid ? [netid] : []), ...accountNetids]);
+  const clauses: Record<string, unknown>[] = [];
+  if (netids.length > 0) clauses.push({ 'identifiers.netid': { $in: netids } });
+  if (emails.length > 0) clauses.push({ 'identifiers.email': { $in: emails } });
+  if (candidateIds.size > 0) {
+    clauses.push({
+      _id: { $in: [...candidateIds].map((id) => new mongoose.Types.ObjectId(id)) },
+    });
+  }
+  if (clauses.length === 0) return { joinedResearcherId, namingResearcherIds: [] };
+  const researchers = (await Researcher.find({ archived: { $ne: true }, $or: clauses })
+    .select('_id identifiers profileLinks')
+    .lean()) as any[];
+  const namingResearcherIds: string[] = [];
+  for (const researcher of researchers) {
+    const named = await userKeysNamingResearcherIdentity(researcher);
+    if (named.some((candidate) => sameUserKeyReference(candidate, reference))) {
+      const id = prefetchObjectIdString(researcher._id);
+      if (id) namingResearcherIds.push(id);
+    }
+  }
+  return { joinedResearcherId, namingResearcherIds: namingResearcherIds.sort() };
+}
+
 function personTitleFrom(observations: readonly any[], now: Date): string | undefined {
   const resolved = resolveField(
     'title',

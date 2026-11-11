@@ -57,6 +57,8 @@ import {
   netidFromEmail,
   splitName,
 } from '../utils/scraperHelpers';
+import { personNameKey } from '../rekeyedPersonKeyPlan';
+import { RekeyedPersonReads, settleRekeyedPersonReads } from '../rekeyedPersonKeyRetirement';
 import { asYaleNetid } from '../../utils/yaleNetid';
 import {
   classifyUserType,
@@ -591,6 +593,15 @@ export function facultyToResearchEntityObservations(
   return obs;
 }
 
+function directoryNameCensus(
+  roster: readonly RawYsmFaculty[],
+): Array<{ nameKey: string; identity: string }> {
+  return roster.map((entry) => {
+    const { first, last } = splitName(entry.name);
+    return { nameKey: personNameKey(first, last), identity: entry.slug };
+  });
+}
+
 function matchesOnlyFilter(faculty: RawYsmFaculty, only: string[]): boolean {
   const normalized = new Set(
     [faculty.slug, faculty.name, faculty.profileUrl].map((value) => value.toLowerCase().trim()),
@@ -672,6 +683,8 @@ export class YsmFacultyDirectoryScraper implements IScraper {
     // cannot be narrowed to research roles here - a role needs the person's own
     // profile, and this run only fetches the limited slice (#2368/#2369).
     const directorySurnames = personSurnamesFromDisplayNames(roster.map((entry) => entry.name));
+    const rekeyReads = new RekeyedPersonReads(SOURCE_KEY);
+    rekeyReads.recordLaneNames(directoryNameCensus(roster));
     const labUrlEvidenceBySlug = await this.labUrlEvidenceLoader(
       limited.map((faculty) => `ysm-faculty-${faculty.slug}`),
     );
@@ -717,6 +730,7 @@ export class YsmFacultyDirectoryScraper implements IScraper {
 
         const profile = extractProfile(profileHtml, faculty);
         if (!profile) return;
+        rekeyReads.recordListingRead(profile.profileUrl, { complete: true });
         if (looksLikeNonResearchTitle(profile.screeningTitle)) {
           totalObs += await emitSkippedProfileRefusal(profile);
           return;
@@ -736,6 +750,7 @@ export class YsmFacultyDirectoryScraper implements IScraper {
         researchersEnriched += 1;
         const { observations: userObs, entityKey } = facultyToUserObservations(profile);
         await ctx.emit(userObs);
+        rekeyReads.recordPerson(userObs);
         totalObs += userObs.length;
 
         // After the person observations, not before them, because a support-staff
@@ -801,6 +816,7 @@ export class YsmFacultyDirectoryScraper implements IScraper {
       only.length ? { entityKeys: selected.map(researchEntityKeyOf) } : undefined,
     );
     totalObs += pageHealth.gone + pageHealth.restored;
+    const rekeyed = await settleRekeyedPersonReads(rekeyReads, ctx);
 
     ctx.log(
       `Emitted ${totalObs} observations across ${researchersEnriched} researchers / ${entityCount} entities ` +
@@ -821,7 +837,9 @@ export class YsmFacultyDirectoryScraper implements IScraper {
         `${subordinateRankSkipped} subordinate ranks skipped, ` +
         `${supportStaffSkipped} research-support staff skipped, ` +
         `${teachingAppointmentSkipped} teaching appointments skipped, ` +
-        `${refusedProfiles.length} profiles refused then ${refusedProfilesRecovered} recovered on a second pass`,
+        `${refusedProfiles.length} profiles refused then ${refusedProfilesRecovered} recovered on a second pass` +
+        (rekeyed.note ? `; ${rekeyed.note}` : ''),
+      ...(rekeyed.partialFailure ? { partialFailures: [rekeyed.partialFailure] } : {}),
     };
   }
 }
