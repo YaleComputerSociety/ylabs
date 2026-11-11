@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   leadSurname,
   nonYaleMicrositeOwnership,
-  textNamesSurname,
+  textNamesLead,
   urlCarriesSurname,
 } from '../nonYaleMicrositeOwnership';
 
@@ -99,13 +99,24 @@ describe('nonYaleMicrositeOwnership', () => {
     ).toBe('refuse');
   });
 
-  it('gives the same verdict when asked twice', () => {
-    const input = {
-      sourceUrl: 'https://coastal-foundation.example.org/about',
-      text: 'The foundation funds coastal restoration.',
-      lead,
-    };
-    expect(nonYaleMicrositeOwnership(input)).toEqual(nonYaleMicrositeOwnership(input));
+  it('refuses an address that only contains the lead surname inside a common word', () => {
+    expect(
+      nonYaleMicrositeOwnership({
+        sourceUrl: 'https://example.org/funding',
+        text: 'Apply for research funding through the trust.',
+        lead: { names: ['Quillon Ding'] },
+      }),
+    ).toEqual({ decision: 'refuse', reason: 'lead_not_confirmed' });
+  });
+
+  it('refuses text that carries the lead surname only as an ordinary word', () => {
+    expect(
+      nonYaleMicrositeOwnership({
+        sourceUrl: 'https://coastal-foundation.example.org/about',
+        text: 'The trust has a long history of funding coastal work.',
+        lead: { names: ['Quillon Long'] },
+      }),
+    ).toEqual({ decision: 'refuse', reason: 'lead_not_confirmed' });
   });
 });
 
@@ -116,13 +127,22 @@ describe('ownership name helpers', () => {
     expect(leadSurname('Zoë Brénnick')).toBe('brennick');
   });
 
-  it('matches a short surname in an address only as a whole token', () => {
+  it('matches a surname in an address only as a whole token or joined to a research-unit word', () => {
     expect(urlCarriesSurname('https://example.org/people/vey', 'vey')).toBe(true);
+    expect(urlCarriesSurname('https://example.org/varnadore-lab', 'varnadore')).toBe(true);
+    expect(urlCarriesSurname('https://groupvarnadore.example.org/', 'varnadore')).toBe(true);
     expect(urlCarriesSurname('https://surveyors.example.org/', 'vey')).toBe(false);
+    expect(urlCarriesSurname('https://example.org/building', 'ding')).toBe(false);
+    expect(urlCarriesSurname('https://stanford.example.edu/', 'ford')).toBe(false);
   });
 
-  it('matches a surname in text as a whole word, case and accent folded', () => {
-    expect(textNamesSurname('Led by Q. VARNADÖRE.', 'varnadore')).toBe(true);
-    expect(textNamesSurname('No mention here.', 'varnadore')).toBe(false);
+  it('matches the lead in text only when the given name or its initial sits beside the surname', () => {
+    expect(textNamesLead('Led by Q. VARNADÖRE.', 'Quillon Varnadore')).toBe(true);
+    expect(textNamesLead('Quillon R. Varnadore directs the group.', 'Dr. Quillon Varnadore')).toBe(
+      true,
+    );
+    expect(textNamesLead('Contact: Varnadore, Quillon.', 'Quillon Varnadore')).toBe(true);
+    expect(textNamesLead('Varnadore studies sediment.', 'Quillon Varnadore')).toBe(false);
+    expect(textNamesLead('No mention here.', 'Quillon Varnadore')).toBe(false);
   });
 });

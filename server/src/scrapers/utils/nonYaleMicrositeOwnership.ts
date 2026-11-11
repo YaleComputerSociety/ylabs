@@ -45,26 +45,50 @@ const urlHostAndPath = (pageUrl: string): string => {
   }
 };
 
-const MIN_AFFIX_MATCHED_SURNAME_LENGTH = 4;
+const RESEARCH_UNIT_WORDS = ['lab', 'labs', 'laboratory', 'group', 'research'];
 
-export const urlCarriesSurname = (pageUrl: string, surname: string): boolean =>
-  comparableName(urlHostAndPath(pageUrl))
+const surnameUrlTokens = (surname: string): Set<string> =>
+  new Set([
+    surname,
+    ...RESEARCH_UNIT_WORDS.flatMap((unit) => [`${surname}${unit}`, `${unit}${surname}`]),
+  ]);
+
+export const urlCarriesSurname = (pageUrl: string, surname: string): boolean => {
+  const accepted = surnameUrlTokens(surname);
+  return comparableName(urlHostAndPath(pageUrl))
     .split(' ')
-    .some((token) =>
-      surname.length < MIN_AFFIX_MATCHED_SURNAME_LENGTH
-        ? token === surname
-        : token.startsWith(surname) || token.endsWith(surname),
-    );
-
-export const textNamesSurname = (text: string, surname: string): boolean => {
-  const words = new Set(comparableName(text).split(' ').filter(Boolean));
-  for (const word of words) {
-    if (surnamesCompatible(word, surname)) return true;
-  }
-  return false;
+    .some((token) => accepted.has(token));
 };
 
-export const isYaleHostedUrl = (pageUrl: string): boolean => {
+const HONORIFICS = new Set(['dr', 'prof', 'professor', 'mr', 'mrs', 'ms', 'mx']);
+
+const leadGivenName = (personName: string, surname: string): string => {
+  const given = comparableName(personName)
+    .split(' ')
+    .find((token) => token !== '' && !HONORIFICS.has(token));
+  return given && given !== surname ? given : '';
+};
+
+const isMiddleInitial = (word: string | undefined): boolean => word?.length === 1;
+
+export const textNamesLead = (text: string, personName: string): boolean => {
+  const surname = leadSurname(personName);
+  const given = leadGivenName(personName, surname);
+  if (!surname || !given) return false;
+  const namesGiven = (word: string | undefined): boolean => word === given || word === given[0];
+  const words = comparableName(text).split(' ').filter(Boolean);
+  return words.some((word, index) => {
+    if (!surnamesCompatible(word, surname)) return false;
+    const before = words[index - 1];
+    return (
+      namesGiven(before) ||
+      (isMiddleInitial(before) && namesGiven(words[index - 2])) ||
+      words[index + 1] === given
+    );
+  });
+};
+
+const isYaleHostedPage = (pageUrl: string): boolean => {
   try {
     return isYaleHostname(new URL(pageUrl).hostname);
   } catch {
@@ -82,7 +106,7 @@ export const isYaleHostedUrl = (pageUrl: string): boolean => {
 export function nonYaleMicrositeOwnership(
   input: NonYaleMicrositeOwnershipInput,
 ): NonYaleMicrositeOwnershipVerdict {
-  if (isYaleHostedUrl(input.sourceUrl)) return { decision: 'not_applicable', reason: 'yale_host' };
+  if (isYaleHostedPage(input.sourceUrl)) return { decision: 'not_applicable', reason: 'yale_host' };
   const leadNames = input.lead.names.filter(
     (name): name is string => typeof name === 'string' && leadSurname(name) !== '',
   );
@@ -93,7 +117,7 @@ export function nonYaleMicrositeOwnership(
   if (leadNames.some((name) => isPersonalNameDomainWebsite(input.sourceUrl, name))) {
     return { decision: 'admit', reason: 'personal_name_domain' };
   }
-  if (leadNames.some((name) => textNamesSurname(input.text, leadSurname(name)))) {
+  if (leadNames.some((name) => textNamesLead(input.text, name))) {
     return { decision: 'admit', reason: 'text_names_lead' };
   }
   return { decision: 'refuse', reason: 'lead_not_confirmed' };
