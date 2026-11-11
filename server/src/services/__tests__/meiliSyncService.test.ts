@@ -328,6 +328,20 @@ describe('an archived row leaves the index (#3449)', () => {
     expect(mocks.addDocuments).not.toHaveBeenCalled();
   });
 
+  it('deletes rather than indexes a row suppressed because every lead asked to be removed (#4160)', async () => {
+    const id = new mongoose.Types.ObjectId();
+    await expect(
+      syncEntity('researchEntity', {
+        _id: id,
+        slug: 'a-row',
+        archived: false,
+        studentVisibilityReasons: ['researcher_removed'],
+      }),
+    ).resolves.toBe(true);
+    expect(mocks.deleteDocument).toHaveBeenCalledWith(String(id));
+    expect(mocks.addDocuments).not.toHaveBeenCalled();
+  });
+
   it('keeps indexing a row that is not archived', async () => {
     const id = new mongoose.Types.ObjectId();
     await syncEntity('researchEntity', { _id: id, slug: 'a-row', archived: false });

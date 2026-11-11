@@ -7,6 +7,7 @@ import { searchIndexWritesDeferred } from '../utils/searchIndexWrites';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertMeiliTaskSucceeded, MEILI_DOCUMENT_TASK_WAIT_TIMEOUT_MS } from '../utils/meiliTask';
 import { buildResearchEntitySearchIndexDocumentsWithMemberNames } from './researchEntitySearchIndexService';
+import { isExcludedFromSearchIndex } from './directoryRemovalReason';
 
 export type SyncableEntityType = 'researchEntity';
 type MaybePromise<T> = T | Promise<T>;
@@ -62,7 +63,7 @@ export const isSyncableEntityType = (entityType: string): entityType is Syncable
  * already re-accumulated documents, and an earlier rebuild found 307 of them, so the
  * drift is continuous rather than a one-off.
  */
-const isArchivedRow = (doc: any): boolean => doc?.archived === true;
+const isArchivedRow = isExcludedFromSearchIndex;
 
 const confirmDocumentTask = (index: any, enqueued: unknown, label: string): Promise<void> =>
   assertMeiliTaskSucceeded(index, enqueued, label, MEILI_DOCUMENT_TASK_WAIT_TIMEOUT_MS);

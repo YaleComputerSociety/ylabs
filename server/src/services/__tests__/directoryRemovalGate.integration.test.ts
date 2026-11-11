@@ -24,6 +24,7 @@ import {
   setDirectoryRemovalServingForTest,
 } from '../directoryRemovalServing';
 import { runStudentVisibilityGate } from '../studentVisibilityGateService';
+import { RESEARCH_ENTITY_SEARCH_INDEX_ROW_FILTER } from '../researchEntitySearchIndexService';
 import { RESEARCHER_REMOVED_REASON } from '../studentVisibilityTier';
 
 const KEY = 'synthetic-directory-removal-key-0123456789';
@@ -161,6 +162,18 @@ describe('the gate suppresses a row whose every lead asked to be removed (#4160)
       expect(sole.studentVisibilityReasons).toContain(RESEARCHER_REMOVED_REASON);
       expect(sole.studentVisibilityOverrideTier).toBeUndefined();
       expect(sole.manuallyLockedFields ?? []).toEqual([]);
+      expect(
+        await ResearchEntity.countDocuments({
+          ...RESEARCH_ENTITY_SEARCH_INDEX_ROW_FILTER,
+          slug: SOLE_LEAD_SLUG,
+        }),
+      ).toBe(0);
+      expect(
+        await ResearchEntity.countDocuments({
+          ...RESEARCH_ENTITY_SEARCH_INDEX_ROW_FILTER,
+          slug: CO_LED_SLUG,
+        }),
+      ).toBe(1);
       const coLed = await persisted(CO_LED_SLUG);
       expect(coLed.studentVisibilityReasons).not.toContain(RESEARCHER_REMOVED_REASON);
       expect(coLed.studentVisibilityTier).not.toBe('suppressed');
