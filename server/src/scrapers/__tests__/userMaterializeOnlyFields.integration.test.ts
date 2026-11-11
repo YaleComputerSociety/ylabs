@@ -268,18 +268,49 @@ describe('a user materialize scoped to named fields writes only that scope (#581
     const before = await stored(researcher._id);
 
     const planned = await resolve(EMAIL_KEY, ['email'], true);
-    expect(planned.plannedPaths).toEqual(['identifiers.email']);
+    expect(planned.plannedPaths).toEqual(['identifiers.email', 'identifiers.emailSupport']);
     expect(planned.droppedPaths).toEqual(expect.arrayContaining(['profile.title']));
 
     await resolve(EMAIL_KEY, ['identifiers.email']);
     const after = await stored(researcher._id);
     expect(after.identifiers.email).toBe(PAGE_EMAIL);
-    expect(withoutPaths(after, ['identifiers.email'])).toEqual(
-      withoutPaths(before, ['identifiers.email']),
+    expect(after.identifiers.emailSupport).toEqual({
+      supported: true,
+      sources: ['official-profile-pi-backfill'],
+      computedForEmail: PAGE_EMAIL,
+    });
+    expect(withoutPaths(after, ['identifiers.email', 'identifiers.emailSupport'])).toEqual(
+      withoutPaths(before, ['identifiers.email', 'identifiers.emailSupport']),
     );
 
     const second = await resolve(EMAIL_KEY, ['identifiers.email']);
     expect(second.plannedPaths).toEqual([]);
+  });
+
+  it('writes the email support marker only inside a scope that names the email pair (#5627)', async () => {
+    const researcher = await seedResearcher({
+      identifiers: { netid: NETID, email: PAGE_EMAIL },
+    });
+    await seedProfileEvidence(KEY);
+    await observation({ entityKey: KEY, field: 'email', value: PAGE_EMAIL });
+
+    const outsideScope = await resolve(KEY, ['title']);
+    expect(outsideScope.droppedPaths).toEqual(expect.arrayContaining(['identifiers.emailSupport']));
+    expect((await stored(researcher._id)).identifiers.emailSupport).toBeUndefined();
+
+    const before = await stored(researcher._id);
+    const inScope = await resolve(KEY, ['identifiers.email', 'identifiers.emailSupport']);
+    expect(inScope.plannedPaths).toEqual(['identifiers.emailSupport']);
+    const after = await stored(researcher._id);
+    expect(after.identifiers.emailSupport).toEqual({
+      supported: true,
+      sources: ['dept-faculty-roster'],
+      computedForEmail: PAGE_EMAIL,
+    });
+    expect(withoutPaths(after, ['identifiers.emailSupport'])).toEqual(
+      withoutPaths(before, ['identifiers.emailSupport']),
+    );
+    expect((await resolve(KEY, ['email'])).plannedPaths).toEqual([]);
   });
 
   it('mints no researcher and writes no edge on a field-scoped run materialize', async () => {

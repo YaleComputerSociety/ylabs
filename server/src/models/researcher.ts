@@ -35,10 +35,17 @@ export interface ResearcherProfileLink {
 export const researcherStatuses = ['ACTIVE', 'DEPARTED', 'UNKNOWN'] as const;
 export type ResearcherStatus = (typeof researcherStatuses)[number];
 
+export interface ResearcherEmailSupport {
+  supported: boolean;
+  sources: string[];
+  computedForEmail: string;
+}
+
 export interface ResearcherIdentifiers {
   orcid?: string;
   netid?: string;
   email?: string;
+  emailSupport?: ResearcherEmailSupport;
 }
 
 export interface ResearcherDisplayProfile {
@@ -216,6 +223,18 @@ export const researcherIdentifiersSchema = new mongoose.Schema<ResearcherIdentif
       lowercase: true,
       maxlength: 254,
       match: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+    },
+    emailSupport: {
+      type: new mongoose.Schema(
+        {
+          supported: { type: Boolean, required: true },
+          sources: { type: [String], default: [] },
+          computedForEmail: { type: String, required: true, trim: true, lowercase: true },
+        },
+        { _id: false },
+      ),
+      required: false,
+      default: undefined,
     },
   },
   {
