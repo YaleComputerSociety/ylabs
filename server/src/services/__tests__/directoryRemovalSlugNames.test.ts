@@ -34,6 +34,10 @@ describe('slugWithoutRemovedLead (#4160)', () => {
     expect(reslug('quillon-optics-varrow-lab')).toBe('optics-lab');
   });
 
+  it('renames nothing when the slug carries the removed given name but not the surname', () => {
+    expect(reslug('quillon-tallent-lab')).toBeUndefined();
+  });
+
   it('keeps a given name a remaining lead shares and strips the surname', () => {
     expect(reslug('quillon-tallent-varrow-lab', ['Quillon Tallent'])).toBe('quillon-tallent-lab');
   });
@@ -62,9 +66,11 @@ describe('numberedSlugCandidate', () => {
 });
 
 describe('slugNamesPersonByFullName', () => {
-  it('matches a full name as adjacent tokens and never a surname alone', () => {
+  it('matches a given name and surname adjacent or apart and never either alone', () => {
     expect(slugNamesPersonByFullName('dept-chem-quillon-varrow', REMOVED)).toBe(true);
+    expect(slugNamesPersonByFullName('quillon-optics-varrow-lab', REMOVED)).toBe(true);
+    expect(slugNamesPersonByFullName('varrow-quillon-lab', REMOVED)).toBe(true);
     expect(slugNamesPersonByFullName('center-varrow-tallent', REMOVED)).toBe(false);
-    expect(slugNamesPersonByFullName('varrow-quillon-lab', REMOVED)).toBe(false);
+    expect(slugNamesPersonByFullName('quillon-tallent-lab', REMOVED)).toBe(false);
   });
 });

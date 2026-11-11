@@ -101,7 +101,8 @@ const keylessObservationsOf = (slug: string) => ({
 
 async function slugIsTaken(slug: string, reserved: ReadonlySet<string>): Promise<boolean> {
   if (reserved.has(slug)) return true;
-  return Boolean(await ResearchEntity.exists({ $or: [{ slug }, { 'mergedFrom.slug': slug }] }));
+  if (await ResearchEntity.exists({ $or: [{ slug }, { 'mergedFrom.slug': slug }] })) return true;
+  return Boolean(await Observation.exists({ entityType: 'researchEntity', entityKey: slug }));
 }
 
 async function firstFreeSlug(base: string, reserved: ReadonlySet<string>): Promise<string> {

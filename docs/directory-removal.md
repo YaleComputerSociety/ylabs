@@ -96,10 +96,10 @@ It reports counts only.
 It finds the removed researchers by identifier, the way the serving layer does, and reads the rows where one of them holds a live lead role edge.
 A row qualifies when it is live, at least one other live lead remains, and its slug carries the removed lead's name.
 A row whose every lead is removed is already suppressed by the gate and keeps its slug.
-The name is matched by the full-name tokens, adjacent or not, when no remaining lead has that surname; a given name a remaining lead shares stays, so a slug that carries only the removed person's surname loses just that.
+The name is matched by the full-name tokens, adjacent or not, when the slug carries the surname and no remaining lead has that surname; a given name a remaining lead shares stays, so a slug that carries only the removed person's surname loses just that, and a slug that carries only the given name keeps its slug.
 The new slug keeps the lane prefix and strips those tokens (`server/src/services/directoryRemovalSlugNames.ts`).
 When what is left says nothing distinctive, the remaining leads' surnames stand in.
-A slug held by any live or archived row, or by any `mergedFrom` entry, takes a numbered `-2`, `-3` suffix.
+A slug held by any live or archived row, by any `mergedFrom` entry, or by a lane key that already has research observations takes a numbered `-2`, `-3` suffix, so the renamed row never takes over another entity's evidence.
 
 The old slug goes into no `mergedFrom`, redirect or archived tombstone.
 A lane still emits the old key, so before renaming the row the command stamps the row's `entityId` onto every observation filed under the old key with no id.
@@ -108,7 +108,7 @@ Ingest stamps the same id onto a lane's fresh old-key observations whenever no r
 The lane lookups that resolve a key to a row (relationship source and target, center roster and director retirement, center affiliation hand-off, official-profile director retirement, access materialization and the undergraduate quote loader) fall back to the same adoption.
 An adopted row reads the old key as its own: its contact observations count as the row's own contact evidence, a field the page stops stating is cleared, and official roster reconciliation archives departed members on it.
 The materializer never renames an existing row (`projectedSlugWouldRenameExistingResearchEntity`), so a later pass keeps the new slug.
-As a refusal rather than a lock, no pass may create a research row whose slug carries a removed researcher's full name, and that refusal counts as `removed_by_request`.
+As a refusal rather than a lock, no pass may create a research row whose slug carries a removed researcher's given name and surname, adjacent or apart, and that refusal counts as `removed_by_request`.
 A second apply finds nothing to rename.
 
 Other places that hold a slug:
@@ -124,6 +124,7 @@ Unlike the purge, it needs no Beta or Production run: `research_entities` reache
 
 ## Known limits
 
-- The mint refusal matches a removed researcher's full name as adjacent slug tokens, so a namesake's new row whose slug carries the same name is refused too.
+- The mint refusal matches a removed researcher's given name and surname as slug tokens, adjacent or apart, so a namesake's new row whose slug carries the same name is refused too.
+- A lane that starts emitting the renamed row's new slug as its own key after the rename resolves to the renamed row.
 - Prose matching is by the person's current display name and by name digests over two to four word windows, so a spelling with a middle initial or a nickname is missed.
 - Meilisearch ranks on the documents it holds, so a removed name can still rank a row until the next reindex, even though the served row is re-read from Mongo and redacted.

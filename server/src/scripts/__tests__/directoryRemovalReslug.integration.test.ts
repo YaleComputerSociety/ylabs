@@ -374,6 +374,25 @@ describe('directory-removal:reslug renames a co-led row a removed lead names (#4
     },
   );
 
+  it('numbers the new slug when a lane already files observations under it', async () => {
+    await laneMintedCoLedRowWithARemovedLead();
+    await Observation.create({
+      entityType: 'researchEntity',
+      entityKey: NEW_SLUG,
+      field: 'name',
+      value: 'Synthetic Unminted Center',
+      confidence: 0.8,
+      sourceId: SOURCE_ID,
+      sourceName: SOURCE_NAME,
+      scrapeRunId: new mongoose.Types.ObjectId(),
+      observedAt: new Date(),
+    });
+
+    await reslug(true);
+
+    expect(await slugs()).toEqual([`${NEW_SLUG}-2`]);
+  });
+
   it('is a no-op on a second apply', { timeout: 60000 }, async () => {
     await laneMintedCoLedRowWithARemovedLead();
     await reslug(true);

@@ -48,7 +48,14 @@ function fullNamePositions(slugTokenList: readonly string[], name: unknown): num
 
 export function slugNamesPersonByFullName(slug: unknown, name: unknown): boolean {
   if (typeof slug !== 'string') return false;
-  return fullNamePositions(slugTokens(slug), name).length > 0;
+  const slugTokenList = slugTokens(slug);
+  if (fullNamePositions(slugTokenList, name).length > 0) return true;
+  const tokens = personNameTokens(name);
+  return (
+    tokens.length >= 2 &&
+    slugTokenList.includes(tokens[0]) &&
+    slugTokenList.includes(tokens[tokens.length - 1])
+  );
 }
 
 function scatteredNamePositions(
@@ -61,7 +68,7 @@ function scatteredNamePositions(
   const surname = removedTokens[removedTokens.length - 1];
   const sharedWithARemainingLead = (token: string) =>
     remainingLeadTokens.some((tokens) => tokens.includes(token));
-  if (sharedWithARemainingLead(surname)) return [];
+  if (!slugTokenList.includes(surname) || sharedWithARemainingLead(surname)) return [];
   const strippable = new Set([surname, ...(sharedWithARemainingLead(given) ? [] : [given])]);
   return slugTokenList.flatMap((token, index) => (strippable.has(token) ? [index] : []));
 }
