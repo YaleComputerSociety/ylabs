@@ -63,6 +63,29 @@ test('copies the primary env files privately and points them at the reserved por
   assert.match(fs.readFileSync(path.join(primaryRoot, 'server', '.env'), 'utf8'), /^PORT=4000$/m);
 });
 
+test('a worktree never inherits scraper write permission from the primary env', () => {
+  const primaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'env-primary-'));
+  const worktreeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'env-worktree-'));
+  try {
+    writeFile(
+      path.join(primaryRoot, 'server', '.env'),
+      'PORT=4000\nALLOW_NON_PROD_SCRAPER_WRITES=true\nexport ALLOW_NON_PROD_SCRAPER_WRITES=1\n',
+    );
+    prepareWorktreeEnv({ primaryRoot, worktreeRoot, serverPort: 4011 });
+    const serverEnv = fs.readFileSync(path.join(worktreeRoot, 'server', '.env'), 'utf8');
+    assert.deepEqual(serverEnv.match(/^.*ALLOW_NON_PROD_SCRAPER_WRITES.*$/gm), [
+      'ALLOW_NON_PROD_SCRAPER_WRITES=',
+    ]);
+    assert.match(
+      fs.readFileSync(path.join(primaryRoot, 'server', '.env'), 'utf8'),
+      /^ALLOW_NON_PROD_SCRAPER_WRITES=true$/m,
+    );
+  } finally {
+    fs.rmSync(primaryRoot, { recursive: true, force: true });
+    fs.rmSync(worktreeRoot, { recursive: true, force: true });
+  }
+});
+
 test('reports a missing primary server env and still points the client at the reserved API port', () => {
   const primaryRoot = makeTempDir('ylabs-primary-');
   const worktreeRoot = makeTempDir('ylabs-worktree-');

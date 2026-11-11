@@ -149,6 +149,7 @@ Four earlier mechanisms each broke on a stored title, and the module's test file
 ## Safety rules (write guards)
 
 - Scrapers write only to Development. Non-production environments default to dry-run; set `ALLOW_NON_PROD_SCRAPER_WRITES=true` to write to the Development DB.
+  A worktree made by `scripts/new-agent-worktree.sh` starts with the flag off even when the primary checkout's `server/.env` sets it, so a write needs the flag on that command's own environment.
 - Beta and Production receive data only through promotion, so `applyScraperEnvironmentGuards` refuses any `run` or `materialize` write against either, with `promotionOnlyScraperWriteRefusal` naming the promotion commands (#3670). Dry runs stay allowed. Never add a Beta or Production sweep mode or a direct-write command; `docs/decisions.md` (2026-09-27) records why.
 - `scraperEnvironment.ts` enforces `SCRAPER_ENV` write guards.
 - A person on the directory removal list (#4160) gets no new researcher, role edge or faculty research profile on any materialize or attach path (`services/directoryRemovalMintGuard.ts`), and no lane stores a new observation whose subject matches them by a stable identifier, nor a research row's `inferredPiUserKey`, `inferredPiUserId`, `inferredDirectorProfileUrl` or `contactEmail` naming them (`scrapers/directoryRemovalObservationGuard.ts`).

@@ -34,11 +34,26 @@ function writePrivateFile(file, contents) {
   fs.chmodSync(file, PRIVATE_FILE_MODE);
 }
 
-function prepareEnvFile({ label, primaryFile, worktreeFile, values, generateWhenMissing }) {
+// A worktree is where agents run "dry" commands, so it must never inherit the primary
+// checkout's standing permission for scraper writes to Development.
+export const WORKTREE_SWITCHED_OFF_SERVER_FLAGS = ['ALLOW_NON_PROD_SCRAPER_WRITES'];
+
+function prepareEnvFile({
+  label,
+  primaryFile,
+  worktreeFile,
+  values,
+  switchedOff = [],
+  generateWhenMissing,
+}) {
   const keys = Object.keys(values);
   if (fs.existsSync(primaryFile)) {
-    writePrivateFile(worktreeFile, upsertEnvValues(fs.readFileSync(primaryFile, 'utf8'), values));
-    return { label, keys, ready: true, source: 'primary' };
+    const offValues = Object.fromEntries(switchedOff.map((key) => [key, '']));
+    writePrivateFile(
+      worktreeFile,
+      upsertEnvValues(fs.readFileSync(primaryFile, 'utf8'), { ...values, ...offValues }),
+    );
+    return { label, keys, switchedOff, ready: true, source: 'primary' };
   }
   if (generateWhenMissing) {
     writePrivateFile(worktreeFile, upsertEnvValues('', values));
@@ -54,6 +69,7 @@ export function prepareWorktreeEnv({ primaryRoot, worktreeRoot, serverPort }) {
     primaryFile: path.join(primaryRoot, 'server', '.env'),
     worktreeFile: path.join(worktreeRoot, 'server', '.env'),
     values: { PORT: String(serverPort), SERVER_BASE_URL: serverOrigin },
+    switchedOff: WORKTREE_SWITCHED_OFF_SERVER_FLAGS,
   });
   const client = prepareEnvFile({
     label: 'client/.env',
@@ -68,7 +84,7 @@ export function prepareWorktreeEnv({ primaryRoot, worktreeRoot, serverPort }) {
 export function describePreparedEnv({ server, client }, primaryRoot) {
   return [server, client].map((result) =>
     result.source === 'primary'
-      ? `  ${result.label}: copied from the primary checkout (${primaryRoot}), mode 0600, ports written`
+      ? `  ${result.label}: copied from the primary checkout (${primaryRoot}), mode 0600, ports written${result.switchedOff?.length ? `, ${result.switchedOff.join(' and ')} switched off` : ''}`
       : result.source === 'generated'
         ? `  ${result.label}: the primary checkout has none, so it was created holding only ${result.keys.join(' and ')}, mode 0600`
         : `  ${result.label}: MISSING. The primary checkout has no ${result.label}, so nothing was copied. Create it from ${result.label}.example (see DEVELOPER_GUIDE.md), then set ${result.keys.join(' and ')} to the ports above.`,
