@@ -136,8 +136,12 @@ describe('evaluate, capture and import modes (#5537)', () => {
     expect(() => assertWriterCacheModeAllowed('import-derivations', 'cluster/Beta')).toThrow(
       /Development/,
     );
-    expect(() => assertWriterCacheModeAllowed('evaluate', 'cluster/Development')).not.toThrow();
-    expect(() => assertWriterCacheModeAllowed('capture-evidence', 'cluster/Prod')).not.toThrow();
+    expect(assertWriterCacheModeAllowed('evaluate', 'cluster/Development')).toEqual({
+      writesDevelopmentCache: true,
+    });
+    expect(assertWriterCacheModeAllowed('capture-evidence', 'cluster/Prod')).toEqual({
+      writesDevelopmentCache: false,
+    });
   });
 
   it('folds the card pass into the writer as a read-only mode', () => {

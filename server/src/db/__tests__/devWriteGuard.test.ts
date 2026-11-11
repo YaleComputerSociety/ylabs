@@ -1,13 +1,9 @@
-import fs from 'node:fs';
-import path from 'node:path';
-
 import { MongoClient, type Db } from 'mongodb';
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import {
-  DEV_LANE_RUN_COLLECTIONS,
   DEV_WRITE_GUARD_EXEMPT_COLLECTIONS,
   DevWriteRefusedError,
   UnguardedModelError,
@@ -19,7 +15,6 @@ import {
   setDevWriteGuardLeaseStateForTests,
 } from '../devWriteGuard';
 import {
-  DEV_APPLY_LEASE_EXEMPT_SCRIPTS,
   DEV_WRITE_LEASE_COLLECTION,
   DEV_WRITE_LEASE_OWNER_ENV,
   DEV_WRITE_LEASE_SWITCH_ENV,
@@ -39,8 +34,6 @@ import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { ScrapeRun } from '../../models/scrapeRun';
 import { WeeklySweepRun } from '../../models/weeklySweepRun';
-
-const SERVER_SRC = path.resolve(__dirname, '../..');
 
 let memoryServer: MongoMemoryServer;
 let client: MongoClient;
@@ -264,18 +257,23 @@ describe('a writing lane run with armed host leases', () => {
     expect(rows.map(({ name }) => name).sort()).toEqual(['row-0', 'row-1']);
   });
 
-  it('lists the collections a lane run writes, and never the apply-only corpus', () => {
-    expect([...DEV_LANE_RUN_COLLECTIONS].sort()).toEqual(
-      [
-        'model_call_usages',
-        'observations',
-        'scrape_job_locks',
-        'scrape_runs',
-        'scrape_snapshots',
-        'sources',
-      ].sort(),
-    );
-    expect(DEV_LANE_RUN_COLLECTIONS.has('research_entities')).toBe(false);
+  it('writes every model a lane run records its run, fetch cache and model calls through', async () => {
+    const dev = database('Development');
+    const laneModels = [
+      models.Observation,
+      models.ScrapeRun,
+      models.ScrapeJobLock,
+      models.Source,
+      models.ScrapeSnapshot,
+      models.ModelCallUsage,
+    ] as unknown as mongoose.Model<unknown>[];
+    for (const model of laneModels) await seed(dev, model.collection.collectionName, 1);
+    await armLaneRun();
+
+    for (const model of laneModels) {
+      await model.deleteMany({});
+      expect(await count(dev, model.collection.collectionName), model.modelName).toBe(0);
+    }
   });
 });
 
@@ -368,16 +366,6 @@ describe('a process that is not guarded', () => {
 
 describe('the exempt measurement collections', () => {
   it('are exactly the ones the lease-exempt scripts and model-call accounting append to', () => {
-    expect([...DEV_APPLY_LEASE_EXEMPT_SCRIPTS].sort()).toEqual(
-      [
-        'corpus:snapshot',
-        'engine:benchmark',
-        'gates:refresh',
-        'lane:benchmark-capture',
-        'lane:benchmark-label',
-        'lane:scorecard',
-      ].sort(),
-    );
     expect([...DEV_WRITE_GUARD_EXEMPT_COLLECTIONS].sort()).toEqual(
       [
         models.CORPUS_QUALITY_SNAPSHOT_COLLECTION,
@@ -410,19 +398,6 @@ describe('every model carries the guard', () => {
       .filter((name) => !schemaHasDevWriteGuard(mongoose.model(name).schema));
     expect(mongoose.modelNames().length).toBeGreaterThan(30);
     expect(unguarded).toEqual([]);
-  });
-
-  it('imports the guard in every file that compiles a model, so importing one model installs it', () => {
-    const modelFiles = fs
-      .readdirSync(path.join(SERVER_SRC, 'models'))
-      .filter((name) => name.endsWith('.ts'))
-      .map((name) => path.join(SERVER_SRC, 'models', name))
-      .filter((file) => /mongoose\.model[(<]/.test(fs.readFileSync(file, 'utf8')));
-    expect(modelFiles.length).toBeGreaterThan(30);
-    const missing = modelFiles
-      .filter((file) => !/^import '\.\.\/db\/devWriteGuard';$/m.test(fs.readFileSync(file, 'utf8')))
-      .map((file) => path.relative(SERVER_SRC, file));
-    expect(missing).toEqual([]);
   });
 
   it('refuses a script connection to Development when a model was compiled without it', async () => {

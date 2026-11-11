@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
+import { recordDevApplyIntent } from '../db/devWriteLease';
 import { countConnectionDrops } from '../utils/mongooseConnectionWasOpened';
 import { ResearchEntity } from '../models/researchEntity';
 import { Observation } from '../models/observation';
@@ -540,7 +541,8 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
     mongoUrl: process.env.MONGODBURL,
   });
   if (mode !== 'write') {
-    assertWriterCacheModeAllowed(mode, guard.dbLabel, args);
+    const { writesDevelopmentCache } = assertWriterCacheModeAllowed(mode, guard.dbLabel, args);
+    if (writesDevelopmentCache) recordDevApplyIntent('research-entity:coverage-synthesis');
     await initializeConnections();
     await runReadOnlyMode(mode, args, guard.dbLabel);
     return;

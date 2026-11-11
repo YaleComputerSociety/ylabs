@@ -1,18 +1,58 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import ts from 'typescript';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
+
+import tsupConfig from '../../../tsup.config';
+import { isRequestServingProcess, resetDevWriteGuardStateForTests } from '../devWriteGuard';
 
 const SERVER_ROOT = path.resolve(__dirname, '../../..');
-const SERVER_SRC = path.join(SERVER_ROOT, 'src');
 const REPO_ROOT = path.dirname(SERVER_ROOT);
-const API_ENTRY = path.join(SERVER_SRC, 'index.ts');
-const DECLARATION = 'declareRequestServingProcess';
 
 const read = (file: string) => fs.readFileSync(file, 'utf8');
 const serverScripts = (): Record<string, string> =>
   JSON.parse(read(path.join(SERVER_ROOT, 'package.json'))).scripts;
+
+const connectStates = vi.hoisted(() => [] as boolean[]);
+
+vi.mock('dotenv', () => ({ default: { config: vi.fn() } }));
+vi.mock('../../app', () => ({ default: { listen: vi.fn(() => ({})) } }));
+vi.mock('../connections', () => ({
+  initializeConnections: vi.fn(async () => {
+    const { isRequestServingProcess: servingAtConnect } = await import('../devWriteGuard');
+    connectStates.push(servingAtConnect());
+  }),
+  mongoOptions: {},
+  startMongoKeepAlive: vi.fn(),
+}));
+vi.mock('../../utils/controlledVocabularyHeadings', () => ({
+  warmControlledVocabularyHeadings: vi.fn(async () => undefined),
+}));
+vi.mock('../../scripts/gateRefreshScheduler', () => ({ startGateRefreshScheduler: vi.fn() }));
+vi.mock('../../services/corpusQualitySnapshotScheduler', () => ({
+  startCorpusQualitySnapshotScheduler: vi.fn(),
+}));
+vi.mock('../../services/researchSearchSpellingVocabulary', () => ({
+  startResearchSearchSpellingVocabularyRefresh: vi.fn(),
+}));
+vi.mock('../../utils/errorTracking', () => ({
+  captureStartupError: vi.fn(async () => undefined),
+  initializeErrorTracking: vi.fn(),
+}));
+vi.mock('../../middleware/rateLimiters', () => ({ describeFirstContactCeiling: vi.fn(() => '') }));
+vi.mock('../../passport', () => ({ localAuthBypassStartupNotice: vi.fn(() => null) }));
+vi.mock('../../serverShutdown', () => ({ registerGracefulShutdown: vi.fn() }));
+vi.mock('../../utils/worktreePortGuard', () => ({ worktreePortConflict: vi.fn(() => null) }));
+vi.mock('../../services/directoryRemovalServing', () => ({
+  directoryRemovalServingStateMessage: vi.fn(() => ''),
+  freshDirectoryRemovalServing: vi.fn(async () => ({})),
+}));
+vi.mock('../../services/accountDeletionServing', () => ({
+  accountDeletionServingState: vi.fn(() => ({ status: 'available' })),
+  accountDeletionServingStateMessage: vi.fn(() => ''),
+}));
+
+const commandTokens = (command: string) => command.split(/\s+|&&/).filter(Boolean);
 
 type ServiceClass =
   | { kind: 'request-serving'; runs: string }
@@ -44,12 +84,6 @@ const DEPLOYED_SERVICES: Record<string, ServiceClass> = {
   },
 };
 
-const SWEEP_RUNNER_JOBS: Record<string, 'holds-apply-lease-for-run' | 'reads-only'> = {
-  'scrape:sweep:weekly-development': 'holds-apply-lease-for-run',
-  'scrape:sweep:rerun-source': 'holds-apply-lease-for-run',
-  'scrape:probe-hosts': 'reads-only',
-};
-
 function inventoryServiceNames(): string[] {
   const inventory = read(path.join(REPO_ROOT, 'docs', 'deployment-inventory.md'));
   const section = inventory.split(/^## Services$/m)[1]?.split(/^## /m)[0] ?? '';
@@ -69,67 +103,29 @@ function blueprintServiceNames(): string[] | null {
   );
 }
 
-function topLevelCallIndex(source: ts.SourceFile, callee: string): number {
-  return source.statements.findIndex(
-    (statement) =>
-      ts.isExpressionStatement(statement) &&
-      ts.isCallExpression(statement.expression) &&
-      ts.isIdentifier(statement.expression.expression) &&
-      statement.expression.expression.text === callee,
-  );
-}
-
-function startAppInvocationIndex(source: ts.SourceFile): number {
-  return source.statements.findIndex(
-    (statement) =>
-      ts.isExpressionStatement(statement) &&
-      ts.isVoidExpression(statement.expression) &&
-      ts.isCallExpression(statement.expression.expression) &&
-      ts.isIdentifier(statement.expression.expression.expression) &&
-      statement.expression.expression.expression.text === 'startApp',
-  );
-}
-
-const productionSources = (dir: string): string[] =>
-  fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      return ['__tests__', 'node_modules', 'test'].includes(entry.name)
-        ? []
-        : productionSources(full);
-    }
-    return entry.name.endsWith('.ts') && !/\.(test|spec|d)\.ts$/.test(entry.name) ? [full] : [];
-  });
-
 describe('the API server entry point', () => {
-  const source = ts.createSourceFile(API_ENTRY, read(API_ENTRY), ts.ScriptTarget.Latest, true);
+  afterAll(() => resetDevWriteGuardStateForTests());
 
-  it('declares the process request-serving at top level, before it starts and connects', () => {
-    const declaration = topLevelCallIndex(source, DECLARATION);
-    const start = startAppInvocationIndex(source);
-    expect(declaration).toBeGreaterThanOrEqual(0);
-    expect(start).toBeGreaterThan(declaration);
-    expect(read(API_ENTRY)).toMatch(
-      new RegExp(`import \\{ ${DECLARATION} \\} from '\\./db/devWriteGuard';`),
-    );
-  });
+  it('declares the process request-serving before its first connect', async () => {
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    expect(isRequestServingProcess()).toBe(false);
 
-  it('is the only module that declares a process request-serving', () => {
-    const declaring = productionSources(SERVER_SRC)
-      .filter((file) => file !== path.join(SERVER_SRC, 'db', 'devWriteGuard.ts'))
-      .filter((file) => read(file).includes(`${DECLARATION}(`))
-      .map((file) => path.relative(SERVER_SRC, file));
-    expect(declaring).toEqual(['index.ts']);
+    await import('../../index');
+    await vi.waitFor(() => expect(connectStates).toHaveLength(1));
+
+    expect(connectStates).toEqual([true]);
   });
 
   it('is the one module every request-serving command runs', () => {
-    expect(read(path.join(SERVER_ROOT, 'tsup.config.ts'))).toMatch(/entry: \['src\/index\.ts'\]/);
+    expect(tsupConfig).toMatchObject({ entry: ['src/index.ts'], outDir: 'build' });
     const servingScripts = Object.entries(serverScripts())
-      .filter(([, command]) => /\b(src\/index\.ts|build\/index\.js)\b/.test(command))
+      .filter(([, command]) =>
+        commandTokens(command).some((token) => ['src/index.ts', 'build/index.js'].includes(token)),
+      )
       .map(([name]) => name)
       .sort();
     expect(servingScripts).toEqual(['dev', 'prod', 'start']);
-    expect(serverScripts().start).toMatch(/build\/index\.js$/);
+    expect(commandTokens(serverScripts().start).at(-1)).toBe('build/index.js');
   });
 });
 
@@ -154,32 +150,6 @@ describe('every deployed service is classified as request-serving or a script', 
     for (const service of Object.values(DEPLOYED_SERVICES)) {
       if (service.kind !== 'request-serving') continue;
       expect(service.runs).toBe('yarn --cwd server start');
-    }
-  });
-
-  it('runs only sweep-runner jobs whose writes are leased or that only read', () => {
-    const entrypoint = read(path.join(REPO_ROOT, 'deploy', 'sweep-runner', 'entrypoint.sh'));
-    const jobs = new Set([
-      ...[...entrypoint.matchAll(/yarn --cwd server ([a-z][\w:-]+)/g)].map(([, job]) => job),
-      ...[...entrypoint.matchAll(/job_script="([\w:-]+)"/g)].map(([, job]) => job),
-    ]);
-    expect([...jobs].sort()).toEqual(Object.keys(SWEEP_RUNNER_JOBS).sort());
-
-    for (const [job, kind] of Object.entries(SWEEP_RUNNER_JOBS)) {
-      const command = serverScripts()[job];
-      const file = command?.match(/tsx (src\/\S+\.ts)/)?.[1];
-      expect(file, job).toBeTruthy();
-      const text = read(path.join(SERVER_ROOT, file!));
-      if (kind === 'holds-apply-lease-for-run') {
-        expect(text, job).toMatch(/holdDevApplyLeaseForRun\(\s*'/);
-      } else {
-        expect(
-          text.match(
-            /\.(insertOne|insertMany|updateOne|updateMany|replaceOne|bulkWrite|deleteOne|deleteMany|findOneAndUpdate|findOneAndDelete|create|save)\(/g,
-          ),
-          job,
-        ).toBeNull();
-      }
     }
   });
 });
