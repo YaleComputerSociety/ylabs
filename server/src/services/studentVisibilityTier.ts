@@ -52,6 +52,7 @@ import {
   researchHomeIdentitySource,
   leadRoleDirectsTheOrganization,
   NO_SURNAME_ROSTER,
+  organizationNameIsAmong,
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
   PERMANENTLY_CLOSED_SUPPRESSION_REASON,
@@ -406,7 +407,12 @@ const SCHOOL_OR_DEPARTMENT_HOST_LABELS = new Set([
 const isSchoolOrDepartmentLabel = (label: string): boolean =>
   SCHOOL_OR_DEPARTMENT_HOST_LABELS.has(label) || genericYaleWebsiteSubdomains.has(label);
 
-function isYaleOwnSite(url: URL): boolean {
+const LONGEST_ACRONYM_HOST_LABEL = 4;
+const PERSONAL_TILDE_PATH = /^\/~[a-z0-9._-]+(?:\/|$)/i;
+
+// A host label of four letters or fewer reads like a department as readily as a lab
+// (#4739), so it stands for the lab only when the site itself declares the row's name.
+function isYaleOwnSite(url: URL, siteDeclaresTheRowName: boolean): boolean {
   const host = url.hostname.toLowerCase().replace(/^www\./, '');
   if (PERSONAL_SITE_PLATFORM_HOSTS.has(host)) {
     const [siteName] = url.pathname.toLowerCase().split('/').filter(Boolean);
@@ -418,8 +424,18 @@ function isYaleOwnSite(url: URL): boolean {
     .filter(Boolean);
   if (labels.length === 0 || isSchoolOrDepartmentLabel(labels[0])) return false;
   if (labels.length >= 2 && labels[labels.length - 1] === 'research') return true;
-  return labels.length === 1 && /^[a-z]+$/.test(labels[0]) && labels[0].length > 4;
+  if (siteDeclaresTheRowName && PERSONAL_TILDE_PATH.test(url.pathname)) return true;
+  if (labels.length !== 1 || !/^[a-z]+$/.test(labels[0])) return false;
+  return labels[0].length > LONGEST_ACRONYM_HOST_LABEL || siteDeclaresTheRowName;
 }
+
+const rowNameIsSiteDeclared = (entity: Record<string, any>): boolean =>
+  [entity.name, entity.displayName].some((name) =>
+    organizationNameIsAmong(
+      name,
+      Array.isArray(entity.siteDeclaredOwnNames) ? entity.siteDeclaredOwnNames : [],
+    ),
+  );
 
 /**
  * A website specific enough to stand for this lab or this person: any non-Yale host, or a
@@ -442,7 +458,7 @@ function isSpecificResearchWebsite(value: unknown, entity: Record<string, any>):
   }
   if (!YALE_HOST.test(url.hostname)) return true;
   if (urlNamesALaboratory(text) || isLikelyOfficialPersonProfileUrl(text)) return true;
-  if (isYaleOwnSite(url)) return true;
+  if (isYaleOwnSite(url, rowNameIsSiteDeclared(entity))) return true;
   const urlWords = new Set([
     ...url.hostname.toLowerCase().split('.'),
     ...letterTokensOf(url.pathname),

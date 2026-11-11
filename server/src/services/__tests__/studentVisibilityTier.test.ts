@@ -3530,6 +3530,52 @@ describe('a lab name backed only by a school section page', () => {
   });
 });
 
+describe('a lab name on a short Yale host', () => {
+  const LAB_NAME = 'Coastal Morphology Lab';
+  const labRow = (websiteUrl: string, siteDeclaredOwnNames?: string[]) => ({
+    entityType: 'LAB',
+    kind: 'lab',
+    name: LAB_NAME,
+    websiteUrl,
+    sourceUrls: [websiteUrl],
+    ...(siteDeclaredOwnNames ? { siteDeclaredOwnNames } : {}),
+  });
+
+  it.each(['https://cml.yale.edu/', 'https://cmlx.yale.edu/rf123/', 'https://www.cml.yale.edu/'])(
+    'is backed by an acronym host whose site declares the lab name: %s',
+    (url) => {
+      expect(isUnbackedLabNameShell(labRow(url, [LAB_NAME]))).toBe(false);
+    },
+  );
+
+  it.each(['https://cml.yale.edu/~rf123/', 'https://zoo.cml.yale.edu/~rf123/'])(
+    'is backed by a netid page whose site declares the lab name: %s',
+    (url) => {
+      expect(isUnbackedLabNameShell(labRow(url, [LAB_NAME]))).toBe(false);
+    },
+  );
+
+  it.each(['https://cml.yale.edu/', 'https://cmlx.yale.edu/', 'https://cml.yale.edu/~rf123/'])(
+    'is still unbacked by a short host whose site declares no name: %s',
+    (url) => {
+      expect(isUnbackedLabNameShell(labRow(url))).toBe(true);
+    },
+  );
+
+  it('is still unbacked when the site declares a different name', () => {
+    expect(isUnbackedLabNameShell(labRow('https://cml.yale.edu/', ['Harbor Sediment Lab']))).toBe(
+      true,
+    );
+  });
+
+  it.each(['https://som.yale.edu/', 'https://seas.yale.edu/~rf123/', 'https://news.yale.edu/'])(
+    'is still unbacked by a short school or department host: %s',
+    (url) => {
+      expect(isUnbackedLabNameShell(labRow(url, [LAB_NAME]))).toBe(true);
+    },
+  );
+});
+
 describe("a lab heading composed from the lead's full name", () => {
   const labRow = (name: string, websiteUrl: string) => ({
     entityType: 'LAB',
