@@ -57,8 +57,12 @@ describe('lead edge source-name provenance (#3254)', () => {
   // whether the name arrives. Same edge, retired when it does not and refused when
   // it does.
   it('lets the fail-closed refusal fire on an edge carrying a source name', () => {
-    const cannotOwnResearchHome = () => true;
-    const titleByPersonId = new Map([['person-1', 'Postdoctoral Associate']]);
+    const evidence = {
+      storedTitleByPersonId: new Map([['person-1', 'Postdoctoral Associate']]),
+      ownEvidenceTitlesByPersonId: new Map(),
+      cannotOwnResearchHome: () => true,
+      statesResearchOwningAppointment: () => false,
+    };
     const edge = (sourceName?: string): NonOwnerPiEdgeRow => ({
       id: 'edge-1',
       personId: 'person-1',
@@ -67,19 +71,11 @@ describe('lead edge source-name provenance (#3254)', () => {
       sourceName,
     });
 
-    const withName = planNonOwnerPiEdgeRetirement(
-      [edge(facts()?.sourceName)],
-      cannotOwnResearchHome,
-      titleByPersonId,
-    );
+    const withName = planNonOwnerPiEdgeRetirement([edge(facts()?.sourceName)], evidence);
     expect(withName.retire).toEqual([]);
     expect(withName.refused[0].reason).toBe('edge-carries-provenance');
 
-    const withoutName = planNonOwnerPiEdgeRetirement(
-      [edge(undefined)],
-      cannotOwnResearchHome,
-      titleByPersonId,
-    );
+    const withoutName = planNonOwnerPiEdgeRetirement([edge(undefined)], evidence);
     expect(withoutName.refused).toEqual([]);
     expect(withoutName.retire).toHaveLength(1);
   });

@@ -137,6 +137,9 @@ Both block, because both are the same question; leaving the second unclassified 
 `hasStrongLead` in `server/src/services/researchEntityQuality.ts` is the authority, and it refuses two title classes through one shared predicate, `cannotOwnResearchHome` in `server/src/utils/researchHomeOwnership.ts`.
 The retirement lane that acts on the gate's verdict (`role-assignments:retire-non-owner-pi-edges`) reads the same predicate, so a future refusal class added there reaches both.
 The lane runs both ways: an edge it retired whose person's current title no longer refuses is restored to `UNREVIEWED` on the next run, so a corrected title re-derives the lead rather than leaving a stale `DISPUTED` verdict (#5323).
+The stored `profile.title` alone never decides a retirement when the person's own official profile disagrees (#5855).
+The lane reads the live `title` observations on any observation subject that carries one of the person's `YALE_OFFICIAL` profile links, and when one of them states an appointment that can own a row (`statesResearchOwningAppointment` in the same file), it refuses the retirement and restores a past one, because a namesake's roster or a stale read can leave the stored title wrong with no observation behind it.
+The gate itself still reads the stored title, so a restored edge releases the row only once a lane corrects that field.
 A page heading or headline stored as a title (`isPageHeadingTitle` in `server/src/utils/titleHygiene.ts`: a plural roster heading such as "Research Affiliates", an award name, a news headline) is read as no title at all, never as a rank.
 
 A trainee cannot host (#2876): a postdoc, postgraduate associate or fellow, research assistant, student, candidate, intern or pre-doctoral fellow runs real research but has no standing to admit an undergraduate, who approaches the PI instead.

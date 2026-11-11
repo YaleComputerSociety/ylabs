@@ -129,11 +129,12 @@ describe('an inferred-PI lead edge carries the sourceName its retirement guard r
     };
     // The lead cannot host, so the only thing standing between this edge and a bulk
     // retirement is the provenance refusal.
-    const plan = planNonOwnerPiEdgeRetirement(
-      [row],
-      () => true,
-      new Map([[String(personId), 'Postdoctoral Associate']]),
-    );
+    const plan = planNonOwnerPiEdgeRetirement([row], {
+      storedTitleByPersonId: new Map([[String(personId), 'Postdoctoral Associate']]),
+      ownEvidenceTitlesByPersonId: new Map(),
+      cannotOwnResearchHome: () => true,
+      statesResearchOwningAppointment: () => false,
+    });
     expect(plan.retire).toEqual([]);
     expect(plan.refused[0]?.reason).toBe('edge-carries-provenance');
   });

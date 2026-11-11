@@ -4,13 +4,17 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
+import { Observation } from '../models/observation';
 import { Researcher } from '../models/researcher';
 import { RoleAssignment } from '../models/roleAssignment';
 import {
   runStudentVisibilityGate,
   type StudentVisibilityGateReport,
 } from '../services/studentVisibilityGateService';
-import { cannotOwnResearchHome } from '../utils/researchHomeOwnership';
+import {
+  cannotOwnResearchHome,
+  statesResearchOwningAppointment,
+} from '../utils/researchHomeOwnership';
 import { isTraineeLevelTitle } from '../utils/traineeLevelTitle';
 import { serializedDocumentId } from '../utils/idSerialization';
 import {
@@ -20,11 +24,16 @@ import {
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
+  ownEvidenceTitlesByPersonId,
   planNonOwnerPiEdgeRestoration,
   planNonOwnerPiEdgeRetirement,
   planTraineeRosterArchive,
   summarizeNonOwnerPiEdgeRefusals,
+  type LeadTitleEvidence,
+  type NonOwnerPiEdgeRestorationGround,
   type NonOwnerPiEdgeRow,
+  type OfficialProfileOwner,
+  type PersonTitleObservation,
 } from './retireNonOwnerPiEdgesCore';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -36,8 +45,12 @@ export const CONFIRM_FLAG = '--confirm-retire-non-owner-pi-edges';
 const LEAD_ROLES = ['PI', 'DIRECTOR'];
 const RETIREMENT_NOTE =
   'Retired as a lead claim on someone whose title cannot own a research home (#2880, #1897).';
-const RESTORATION_NOTE =
-  'Restored: the title this lane retired the lead claim on no longer refuses a research home (#5323).';
+const RESTORATION_NOTE_BY_GROUND: Record<NonOwnerPiEdgeRestorationGround, string> = {
+  'stored-title-no-longer-refuses':
+    'Restored: the title this lane retired the lead claim on no longer refuses a research home (#5323).',
+  'own-evidence-states-owning-appointment':
+    "Restored: the person's own official profile states an appointment that can own a research home (#5855).",
+};
 
 export interface RetireNonOwnerPiEdgeOptions {
   dryRun: boolean;
@@ -76,13 +89,43 @@ async function main(): Promise<void> {
   await initializeConnections();
 
   const researchers = (await Researcher.find({ archived: { $ne: true } })
-    .select('_id profile.title')
-    .lean()) as unknown as Array<{ _id: unknown; profile?: { title?: unknown } }>;
+    .select('_id profile.title profileLinks')
+    .lean()) as unknown as Array<{
+    _id: unknown;
+    profile?: { title?: unknown };
+    profileLinks?: Array<{ kind?: unknown; url?: unknown }>;
+  }>;
   const titleByPersonId = new Map<string, string>();
+  const officialProfileOwners: OfficialProfileOwner[] = [];
   for (const row of researchers) {
     const id = serializedDocumentId(row._id);
-    if (id) titleByPersonId.set(id, String(row?.profile?.title || ''));
+    if (!id) continue;
+    titleByPersonId.set(id, String(row?.profile?.title || ''));
+    const officialProfileUrls = (row.profileLinks ?? [])
+      .filter((link) => link?.kind === 'YALE_OFFICIAL' && typeof link.url === 'string')
+      .map((link) => String(link.url));
+    if (officialProfileUrls.length > 0) {
+      officialProfileOwners.push({ personId: id, officialProfileUrls });
+    }
   }
+
+  const personTitleObservations = (await Observation.find({
+    entityType: 'user',
+    field: { $in: ['title', 'profileUrls'] },
+    superseded: { $ne: true },
+  })
+    .select('entityKey field value sourceUrl')
+    .lean()) as unknown as PersonTitleObservation[];
+
+  const evidence: LeadTitleEvidence = {
+    storedTitleByPersonId: titleByPersonId,
+    ownEvidenceTitlesByPersonId: ownEvidenceTitlesByPersonId(
+      officialProfileOwners,
+      personTitleObservations,
+    ),
+    cannotOwnResearchHome,
+    statesResearchOwningAppointment,
+  };
 
   const edgeDocs = (await RoleAssignment.find({
     role: { $in: LEAD_ROLES },
@@ -110,7 +153,7 @@ async function main(): Promise<void> {
     ];
   });
 
-  const plan = planNonOwnerPiEdgeRetirement(edges, cannotOwnResearchHome, titleByPersonId);
+  const plan = planNonOwnerPiEdgeRetirement(edges, evidence);
 
   const retiredDocs = (await RoleAssignment.find({
     role: { $in: LEAD_ROLES },
@@ -144,8 +187,7 @@ async function main(): Promise<void> {
       ];
     }),
     RETIREMENT_NOTE,
-    cannotOwnResearchHome,
-    titleByPersonId,
+    evidence,
   );
 
   const directoryIdentityByPersonId = new Map<string, boolean>();
@@ -179,22 +221,20 @@ async function main(): Promise<void> {
   let restored = 0;
   let corpusWideRegate: StudentVisibilityGateReport['counts'] | null = null;
   let archivedRosterRows = 0;
-  if (!options.dryRun && restorable.length > 0) {
+  for (const [ground, reviewNotes] of Object.entries(RESTORATION_NOTE_BY_GROUND) as Array<
+    [NonOwnerPiEdgeRestorationGround, string]
+  >) {
+    const ids = restorable
+      .filter((row) => row.ground === ground)
+      .map((row) => row.id)
+      .filter((id) => mongoose.isValidObjectId(id))
+      .map((id) => new mongoose.Types.ObjectId(id));
+    if (options.dryRun || ids.length === 0) continue;
     const result = await RoleAssignment.updateMany(
-      {
-        _id: {
-          $in: restorable
-            .map((row) => row.id)
-            .filter((id) => mongoose.isValidObjectId(id))
-            .map((id) => new mongoose.Types.ObjectId(id)),
-        },
-        archived: true,
-        reviewStatus: 'DISPUTED',
-        reviewNotes: RETIREMENT_NOTE,
-      },
-      { $set: { archived: false, reviewStatus: 'UNREVIEWED', reviewNotes: RESTORATION_NOTE } },
+      { _id: { $in: ids }, archived: true, reviewStatus: 'DISPUTED', reviewNotes: RETIREMENT_NOTE },
+      { $set: { archived: false, reviewStatus: 'UNREVIEWED', reviewNotes } },
     );
-    restored = result.modifiedCount || 0;
+    restored += result.modifiedCount || 0;
   }
   if (!options.dryRun && plan.retire.length > 0) {
     const result = await RoleAssignment.updateMany(
@@ -254,6 +294,12 @@ async function main(): Promise<void> {
     refusedByReason: summarizeNonOwnerPiEdgeRefusals(plan.refused),
     retired,
     plannedForRestoration: restorable.length,
+    plannedForRestorationByGround: Object.fromEntries(
+      Object.keys(RESTORATION_NOTE_BY_GROUND).map((ground) => [
+        ground,
+        restorable.filter((row) => row.ground === ground).length,
+      ]),
+    ),
     distinctEntitiesRestored: new Set(restorable.map((row) => row.entityId).filter(Boolean)).size,
     restored,
     corpusWideRegate,
@@ -265,7 +311,21 @@ async function main(): Promise<void> {
 
   if (options.output) {
     fs.mkdirSync(path.dirname(options.output), { recursive: true });
-    fs.writeFileSync(options.output, JSON.stringify(report, null, 2));
+    fs.writeFileSync(
+      options.output,
+      JSON.stringify(
+        {
+          ...report,
+          restorable: restorable.map((row) => ({
+            edgeId: row.id,
+            entityId: row.entityId,
+            ground: row.ground,
+          })),
+        },
+        null,
+        2,
+      ),
+    );
     console.log(`Saved report to ${options.output}`);
   }
 
