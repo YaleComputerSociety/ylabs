@@ -94,4 +94,12 @@ describe('a card held only for thinness or for echoing its own topics (#5673)', 
     );
     expect(result.reasons).not.toContain('thin_card_description');
   });
+  it('keeps holding a row whose thin card is the tail of a sentence broken inside a quotation', () => {
+    const entity = fixtureEntity(
+      THIN_ACCURATE_BODY,
+      '” Studies glaciology, ice sheet dynamics, and sea level rise.',
+    );
+    expect(visibility(entity).tier).not.toBe('student_ready');
+    expect(visibility(entity).reasons).not.toContain('thin_card_description');
+  });
 });

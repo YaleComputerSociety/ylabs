@@ -743,6 +743,13 @@ const THIN_OR_CHIP_ECHO_CARD_FLAGS: ReadonlySet<DescriptionQualityFlag> = new Se
 export const THIN_CARD_DESCRIPTION_REASON = 'thin_card_description';
 
 /**
+ * A card that opens on closing punctuation is the tail of a sentence the splitter broke
+ * inside a quotation or parenthesis, such as a journal title cut out of a citation, so it
+ * is a fragment rather than a thin description (#5673).
+ */
+const CARD_OPENS_MID_SENTENCE_PATTERN = /^\s*[”’"'»)\]}]/;
+
+/**
  * A row whose served page already passes the public-description invariant, whose stored
  * body is not blank, and whose card fails the card bar only for thinness or for echoing
  * its own topic chips. Such a card is thin but accurate, so it does not hold the row
@@ -762,7 +769,10 @@ export function researchEntityCardIsOnlyThin(
   return (
     short.flags.length > 0 &&
     !cards.some(
-      (card) => isCardPageFragment(card, full.text) || SWALLOWED_CLAUSE_PATTERN.test(card),
+      (card) =>
+        isCardPageFragment(card, full.text) ||
+        SWALLOWED_CLAUSE_PATTERN.test(card) ||
+        CARD_OPENS_MID_SENTENCE_PATTERN.test(card),
     ) &&
     full.flags.every((flag) => THIN_OR_CHIP_ECHO_FLAGS.has(flag)) &&
     short.flags.every((flag) => THIN_OR_CHIP_ECHO_CARD_FLAGS.has(flag))
