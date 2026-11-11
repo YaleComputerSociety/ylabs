@@ -35,6 +35,11 @@ export interface MentorListing {
   year?: number;
   /** One listed item, so co-advisers who resolve to one row count it once. */
   itemKey?: string;
+  /**
+   * The distinct undergraduates the item names, as opaque per-read keys, so one student
+   * listed on several items of a source counts once (#5609).
+   */
+  undergraduateKeys?: readonly string[];
   sourceUrl: string;
 }
 
@@ -143,8 +148,10 @@ export function csArchiveTermListings(
 /**
  * The faculty sponsors of every filled project on the Tobin RA board, one listing per
  * sponsor. The award section names the students and is removed before the board is read,
- * so only sponsor names and profile links leave here; every semester on the board counts,
- * and a project whose semester prints no year still counts, undated.
+ * so only sponsor names, profile links and per-read awardee digests leave here. A row counts
+ * each student once however many semesters a carried-over project is reposted (#5609), a
+ * filled project whose award is unreadable still counts once, and a project whose semester
+ * prints no year still counts, undated.
  */
 export function tobinBoardListings(
   html: string,
@@ -171,6 +178,9 @@ export function tobinBoardListings(
       adviserProfileUrl: sponsor.profileUrl,
       year: project.year ?? undefined,
       itemKey,
+      ...(project.awardeeKeys.length > 0
+        ? { undergraduateKeys: project.awardeeKeys.map((key) => `tobin-awardee:${key}`) }
+        : {}),
       sourceUrl: url,
     }));
   });
@@ -576,14 +586,19 @@ export function yibsSuresFellowListings(html: string, url: string): MentorListin
  * One entry per source for a row: how many undergraduates the lists name for it and the
  * latest year, or for a list of who is open now, that it lists them.
  */
-function distinctItems(listings: readonly MentorListing[]): MentorListing[] {
-  const seen = new Set<string>();
-  return listings.filter((listing) => {
-    if (!listing.itemKey) return true;
-    if (seen.has(listing.itemKey)) return false;
-    seen.add(listing.itemKey);
-    return true;
-  });
+function distinctUndergraduateCount(listings: readonly MentorListing[]): number {
+  const keys = new Set<string>();
+  let unkeyed = 0;
+  for (const listing of listings) {
+    const listingKeys = listing.undergraduateKeys?.length
+      ? listing.undergraduateKeys
+      : listing.itemKey
+        ? [`item:${listing.itemKey}`]
+        : [];
+    if (listingKeys.length === 0) unkeyed += 1;
+    for (const key of listingKeys) keys.add(key);
+  }
+  return keys.size + unkeyed;
 }
 
 export function aggregateListEntries(
@@ -597,13 +612,13 @@ export function aggregateListEntries(
   return undergradListSources
     .filter((source) => bySource.has(source))
     .map((source) => {
-      const entries = distinctItems(bySource.get(source) ?? []);
+      const listed = bySource.get(source) ?? [];
       const kind = UNDERGRAD_LIST_SOURCE_KIND[source];
-      const years = entries.map((entry) => entry.year).filter((year): year is number => !!year);
+      const years = listed.map((entry) => entry.year).filter((year): year is number => !!year);
       return {
         source,
         kind,
-        ...(kind === 'advised' ? { count: entries.length } : {}),
+        ...(kind === 'advised' ? { count: distinctUndergraduateCount(listed) } : {}),
         ...(years.length > 0 ? { latestYear: Math.max(...years) } : {}),
         sourceUrl: sourceUrlFor(source),
       };
