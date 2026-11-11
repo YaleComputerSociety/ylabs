@@ -51,7 +51,8 @@ Every job begins with step 1, and each check runs in exactly one job:
 14. `typecheck-and-build`: `yarn build`
 
 `E2E Smoke` (`.github/workflows/e2e-smoke.yml`, job `student-journey-smoke`) is the other required context.
-It starts the Playwright Chromium install in the background right after the dependency installs, builds the client, seeds and indexes synthetic entities and starts the API while the browser downloads, then waits for that install and fails if it failed before running the smokes.
+It starts the Playwright Chromium install in the background right after the dependency installs, builds the client, seeds and indexes synthetic entities and starts the API while the browser downloads, then waits for that download and fails if it failed.
+It then installs the apt system dependencies with time-bounded attempts, retries and backoff, tolerates an Ubuntu mirror outage only with a warning, and fails unless Chromium actually launches before running the smokes.
 
 `yarn test:changed` runs only the server and client test files whose import graph reaches a file changed since `origin/beta`, and falls back to the whole suite when a `package.json`, a Vitest config, or a setup file changed.
 It is a fast local pre-check, not a substitute for CI, which always runs every file.
