@@ -546,7 +546,12 @@ import {
   type RosterIdentityBasis,
 } from '../models/roleAssignment';
 import {
+  DEPARTMENT_ROSTER_HEALTH_FIELD,
+  isEntityAuthoritativeSnapshot,
   reconcileFacultyRosterDeparturesFromRun,
+  rosterHealthReadAt,
+  snapshotDiscoveredEntityKeys,
+  type DepartmentRosterHealthSnapshot,
   type FacultyRosterDepartureOutcome,
 } from './facultyRosterDepartureReconciler';
 import {
@@ -9140,6 +9145,70 @@ async function personKeyedRosterDepartmentReads(
   return partitionObservationsByInvalidatedRun(reads, await invalidatedScrapeRunIds()).kept;
 }
 
+interface DepartmentRosterReread {
+  departmentKey: string;
+  readAt: number;
+  listedEntityKeys: ReadonlySet<string>;
+}
+
+/**
+ * Every live roster snapshot that read its whole page, as the department it governs and
+ * the keys it listed. An incomplete or unread snapshot says nothing about who a page
+ * lists, so it is left out rather than read as an absence (#3251).
+ */
+async function authoritativeDepartmentRosterRereads(
+  departmentKey: (value: string) => string,
+): Promise<DepartmentRosterReread[]> {
+  const snapshots = (await Observation.find({
+    entityType: 'departmentRosterHealth',
+    field: DEPARTMENT_ROSTER_HEALTH_FIELD,
+    ...materializationReadScopeFilter(),
+  })
+    .select('value observedAt')
+    .lean()) as Array<{ value?: unknown; observedAt?: unknown }>;
+  return snapshots.flatMap((row) => {
+    const snapshot = (row.value ?? {}) as DepartmentRosterHealthSnapshot;
+    const deptName = textValue(snapshot.deptName).trim();
+    if (!deptName || !isEntityAuthoritativeSnapshot(snapshot)) return [];
+    const readAt = (rosterHealthReadAt(snapshot) ?? new Date(row.observedAt as any)).getTime();
+    if (!Number.isFinite(readAt)) return [];
+    return [
+      {
+        departmentKey: departmentKey(deptName),
+        readAt,
+        listedEntityKeys: new Set(snapshotDiscoveredEntityKeys(snapshot)),
+      },
+    ];
+  });
+}
+
+/**
+ * An appointment is retired only when the newest later complete read of its own
+ * department's roster no longer lists the row under any of its keys. A read of some other
+ * department is not evidence about this one, so a run scoped to a few rosters leaves
+ * every other roster's appointments standing (#5824).
+ */
+function rosterAppointmentRereadWithoutListing(
+  appointmentDepartmentKeys: readonly string[],
+  appointmentReadTime: number,
+  rereads: readonly DepartmentRosterReread[],
+  rowEntityKeys: ReadonlySet<string>,
+): boolean {
+  if (appointmentDepartmentKeys.length === 0) return false;
+  return appointmentDepartmentKeys.every((key) => {
+    const later = rereads.filter(
+      (reread) => reread.departmentKey === key && reread.readAt > appointmentReadTime,
+    );
+    if (later.length === 0) return false;
+    const newestReadAt = Math.max(...later.map((reread) => reread.readAt));
+    return later
+      .filter((reread) => reread.readAt === newestReadAt)
+      .every((reread) =>
+        [...rowEntityKeys].every((entityKey) => !reread.listedEntityKeys.has(entityKey)),
+      );
+  });
+}
+
 export function rosterAppointmentReadTime(
   observation: ResolverObservation,
   personReads: readonly ResolverObservation[],
@@ -9170,9 +9239,11 @@ export function rosterAppointmentReadTime(
  * A department observation's fingerprint carries its value, so a page that stops
  * listing the person never supersedes its old value; it just stops being refreshed.
  * Measured on Development, 147 of 173 multi-value roster groups held a value last
- * read 30 or more days before its sibling. Only values read within the currency
- * window of the row's newest roster read combine, which is what keeps the field from
- * hoarding every page that ever listed the person (#3330).
+ * read 30 or more days before its sibling. A value read within the currency window of
+ * the row's newest roster read combines; an older one combines until its own
+ * department's roster is read again in full without listing the row, which is what
+ * keeps the field from hoarding every page that ever listed the person (#3330) without
+ * letting a run scoped to one roster age out every other roster's appointment (#5824).
  */
 async function combineDepartmentRosterAppointments(input: {
   set: Record<string, unknown>;
@@ -9181,6 +9252,7 @@ async function combineDepartmentRosterAppointments(input: {
   mergedInRosterReads: readonly ResolverObservation[];
   survivorReadOnARoster: boolean;
   rosterPersonKeys: readonly unknown[];
+  rowEntityKeys: readonly unknown[];
   chunkPrefetch?: MaterializationReadSource;
   manuallyLockedFields: string[];
 }): Promise<void> {
@@ -9228,7 +9300,28 @@ async function combineDepartmentRosterAppointments(input: {
   const namesADepartment = await departmentValueNamesADepartment(
     'school' in set ? set.school : entityDoc?.school,
   );
-  const isCurrent = (observation: ResolverObservation) => readTime(observation) >= currencyFloor;
+  const canonicalizer = await getOrgUnitCanonicalizer();
+  const departmentKey = (value: string) =>
+    canonicalizer.canonicalizeDepartments([value]).values[0] ?? value.trim().toLowerCase();
+  const departmentKeysOf = (observation: ResolverObservation) =>
+    (Array.isArray(observation.value) ? observation.value : [observation.value])
+      .map((item) => textValue(item))
+      .filter(Boolean)
+      .map(departmentKey);
+  const rereads = anyReadIsStale ? await authoritativeDepartmentRosterRereads(departmentKey) : [];
+  const rowEntityKeys = new Set(
+    [...input.rowEntityKeys, ...input.rosterPersonKeys]
+      .map((key) => textValue(key))
+      .filter(Boolean),
+  );
+  const isCurrent = (observation: ResolverObservation) =>
+    readTime(observation) >= currencyFloor ||
+    !rosterAppointmentRereadWithoutListing(
+      departmentKeysOf(observation),
+      readTime(observation),
+      rereads,
+      rowEntityKeys,
+    );
   const currentAppointments = rosterReads
     .filter(isCurrent)
     .sort(
@@ -9238,18 +9331,8 @@ async function combineDepartmentRosterAppointments(input: {
     )
     .flatMap((observation) => (observation.value as unknown[]).map((item) => textValue(item)))
     .filter((item) => item && namesADepartment([item]));
-  const canonicalizer = await getOrgUnitCanonicalizer();
-  const departmentKey = (value: string) =>
-    canonicalizer.canonicalizeDepartments([value]).values[0] ?? value.trim().toLowerCase();
   const keysNamedBy = (observations: readonly ResolverObservation[]) =>
-    new Set(
-      observations.flatMap((observation) =>
-        (Array.isArray(observation.value) ? observation.value : [observation.value])
-          .map((item) => textValue(item))
-          .filter(Boolean)
-          .map(departmentKey),
-      ),
-    );
+    new Set(observations.flatMap(departmentKeysOf));
   const winner = (winnerValue as unknown[]).map((value) => textValue(value)).filter(Boolean);
   const winnerKeys = new Set(winner.map(departmentKey));
   const winnerIsStored = !Array.isArray(set[field]);
@@ -10440,6 +10523,7 @@ export async function projectFromLog(
       mergedInRosterReads: loserRosterReads,
       survivorReadOnARoster,
       rosterPersonKeys,
+      rowEntityKeys: [entityDoc?.slug, ...(input.mergedInRows ?? []).map((row) => row.slug)],
       chunkPrefetch,
       manuallyLockedFields,
     });
