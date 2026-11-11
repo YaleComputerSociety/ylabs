@@ -5,6 +5,14 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-11-11: A Lead Their Department Lists As Emeritus Is Emeritus (#5835)
+
+The coordinator decided that a lead whom their own department's official emeritus page lists, and whose own page is not freshly read as a current appointment, is emeritus for the 2026-10-02 rule below, so the row is labelled and claims no way in without current activity.
+A fresh read of the person's own page wins: a lead whose stored title a live lane other than the Yale directory still asserts is left to that title, because the directory's HR title is often the appointment held before retiring.
+The listing is evidence about a lead only, recorded as `emeritusListedLeadIds` on the rows the person already leads, and it never mints a row, an edge or a roster member.
+This narrows the 2026-10-02 entry's "no field is written": the derivation still writes nothing, and it now also reads that one stored field.
+`skills/scrapers/SKILL.md` owns the mechanics.
+
 ## 2026-11-11: Creative-Practice Faculty Count For The Directory (#5537)
 
 The owner decided on 2026-11-11 (decision "creative include") that faculty whose work is creative practice, such as performance or composition, count for the directory.
