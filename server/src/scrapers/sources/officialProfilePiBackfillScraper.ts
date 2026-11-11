@@ -19,6 +19,7 @@ import { observedPersonNameAgreesWith } from '../utils/personNameAgreement';
 import {
   directoryContradictsNetidForAddress,
   loadDirectoryNetidsByAddress,
+  type DirectoryNetidsByAddress,
 } from '../directoryContradictedProfileNetid';
 import { pageEmailHeldByAnotherResearcher } from '../verifiedResearcherEmail';
 import { stripTrailingResearchHomeDescription } from '../../utils/researchEntityNameNormalization';
@@ -122,6 +123,7 @@ import {
 } from '../officialProfileDirectorRetirement';
 import { officialProfileIdentityKey, rosterMembershipKey } from '../utils/rosterMembershipKey';
 import { type OfficialProfilePageIdentity } from '../../services/officialProfileLinkIdentity';
+import { normalizeOfficialProfileDestination } from '../../services/leadProfileIdentity';
 
 const SOURCE_NAME = 'official-profile-pi-backfill';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
@@ -175,6 +177,7 @@ interface OfficialProfileIdentityOptions {
   requireEmail?: boolean;
   emailOnlyWithoutAdmissibleTitle?: boolean;
   yaleDirectoryNetids?: ReadonlySet<string>;
+  directoryNetidsByAddress?: DirectoryNetidsByAddress;
   expectedPeople?: Array<{
     fname?: string;
     lname?: string;
@@ -455,6 +458,147 @@ function visibleBioProfileUrlMatchesUser(url: string, user: Record<string, any>)
   return isLikelyPersonUrl(url, first, last) && personPageUrlMatchesUser(url, user);
 }
 
+/** Every live researcher holding each `YALE_OFFICIAL` page, keyed by the page's destination. */
+export type OfficialProfileLinkHolders = ReadonlyMap<string, ReadonlySet<string>>;
+
+interface VisibleBioIdentityEvidence {
+  holders: OfficialProfileLinkHolders;
+  directoryNetids: ReadonlySet<string>;
+}
+
+async function loadVisibleBioIdentityEvidence(): Promise<VisibleBioIdentityEvidence> {
+  const [holders, directoryNetids] = await Promise.all([
+    loadOfficialProfileLinkHolders(),
+    loadYaleDirectoryNetids(),
+  ]);
+  return { holders, directoryNetids };
+}
+
+export async function loadOfficialProfileLinkHolders(): Promise<OfficialProfileLinkHolders> {
+  const researchers = (await Researcher.find({
+    archived: { $ne: true },
+    'profileLinks.kind': 'YALE_OFFICIAL',
+  })
+    .select('_id profileLinks')
+    .lean()) as Array<Record<string, any>>;
+  const holders = new Map<string, Set<string>>();
+  for (const researcher of researchers) {
+    for (const url of officialProfileLinksOf(researcher.profileLinks)) {
+      const destination = normalizeOfficialProfileDestination(url);
+      if (!destination) continue;
+      const holderIds = holders.get(destination) ?? new Set<string>();
+      holderIds.add(idValue(researcher._id));
+      holders.set(destination, holderIds);
+    }
+  }
+  return holders;
+}
+
+function officialProfileLinksOf(profileLinks: unknown): string[] {
+  return uniqueStrings(
+    (Array.isArray(profileLinks) ? profileLinks : [])
+      .filter((link: any) => link?.kind === 'YALE_OFFICIAL')
+      .map((link: any) => textValue(link?.url)),
+  );
+}
+
+function pageHeldByAnotherResearcher(
+  url: string,
+  user: Record<string, any>,
+  holders: OfficialProfileLinkHolders,
+): boolean {
+  const holderIds = holders.get(normalizeOfficialProfileDestination(url));
+  return !!holderIds && [...holderIds].some((holderId) => holderId !== idValue(user._id));
+}
+
+/**
+ * A slug that is a netid, or that ends in a netid the Yale directory holds, names that person,
+ * so a page whose slug names somebody else is refused before it is read (#5708).
+ */
+function pageSlugNamesAnotherNetid(
+  url: string,
+  user: Record<string, any>,
+  directoryNetids: ReadonlySet<string>,
+): boolean {
+  const slugNetid =
+    netidStyleProfileSlug(url) || trailingDirectoryNetidOfProfileSlug(url, directoryNetids);
+  return Boolean(slugNetid) && slugNetid !== textValue(user.netid).toLowerCase();
+}
+
+/**
+ * The person's own official page, read from the one `YALE_OFFICIAL` link they hold rather than
+ * from a slug that agrees with their name, so a nickname, a middle name or a disambiguated slug
+ * no longer hides them (#5708). Two links, a link another live researcher also holds, or a
+ * netid slug naming somebody else is ambiguous and yields nothing.
+ */
+function ownHeldOfficialProfileUrls(
+  user: Record<string, any>,
+  { holders, directoryNetids }: VisibleBioIdentityEvidence,
+): string[] {
+  const heldDestinations = uniqueStrings(
+    (user.officialProfileLinks || []).map(normalizeOfficialProfileDestination),
+  );
+  if (heldDestinations.length !== 1) return [];
+  const [url] = user.officialProfileLinks as string[];
+  if (!isOfficialYalePersonPageUrl(url) || pageSlugNamesAnotherNetid(url, user, directoryNetids))
+    return [];
+  const holderIds = holders.get(heldDestinations[0]);
+  if (!holderIds || holderIds.size !== 1 || !holderIds.has(idValue(user._id))) return [];
+  return [url];
+}
+
+function netidKeyedOfficialProfileUrls(user: Record<string, any>, urls: unknown[]): string[] {
+  const netid = textValue(user.netid).toLowerCase();
+  if (!netid) return [];
+  return uniqueStrings(urls.map(textValue)).filter(
+    (url) => isOfficialYalePersonPageUrl(url) && netidStyleProfileSlug(url) === netid,
+  );
+}
+
+function identitySafeVisibleBioProfileUrls(
+  target: Record<string, any>,
+  user: Record<string, any>,
+  attachedUrls: unknown[],
+  evidence: VisibleBioIdentityEvidence,
+): string[] {
+  const userUrls = [
+    user.websiteUrl,
+    user.website,
+    ...Object.values((user.profileUrls || {}) as Record<string, unknown>),
+  ];
+  return uniqueStrings(
+    [
+      ...ownHeldOfficialProfileUrls(user, evidence),
+      ...netidKeyedOfficialProfileUrls(user, [...attachedUrls, ...userUrls]),
+      ...visibleBioProfileUrlsForUser(target),
+    ].map(normalizeOfficialProfileUrl),
+  ).filter(
+    (url) =>
+      url &&
+      !pageHeldByAnotherResearcher(url, user, evidence.holders) &&
+      !pageSlugNamesAnotherNetid(url, user, evidence.directoryNetids),
+  );
+}
+
+function visibleBioTarget(
+  user: Record<string, any>,
+  nameMatchedUrls: string[],
+  attachedUrls: unknown[],
+  evidence: VisibleBioIdentityEvidence,
+): Record<string, any> {
+  const target = userIdentityMatchEntity(user, nameMatchedUrls);
+  return {
+    ...target,
+    visibleBioProfileUrls: identitySafeVisibleBioProfileUrls(target, user, attachedUrls, evidence),
+  };
+}
+
+function visibleBioProfileUrlsForTarget(target: Record<string, any>): string[] {
+  return Array.isArray(target.visibleBioProfileUrls)
+    ? target.visibleBioProfileUrls
+    : visibleBioProfileUrlsForUser(target);
+}
+
 function visibleBioProfileUrlsForUser(user: Record<string, any>): string[] {
   const profileUrls =
     user.profileUrls && typeof user.profileUrls === 'object'
@@ -727,6 +871,7 @@ function researcherToProfileUser(researcher: Record<string, any>): Record<string
     website: websiteUrl,
     websiteUrl,
     profileUrls,
+    officialProfileLinks: officialProfileLinksOf(links),
     imageUrl: textValue(profile.imageUrl),
     orcid: textValue(researcher.identifiers?.orcid),
   };
@@ -2953,6 +3098,23 @@ function extractOrcid($: cheerio.CheerioAPI): string | undefined {
   return distinct.length === 1 ? distinct[0] : undefined;
 }
 
+/**
+ * The Yale directory pairing the page's own address with the entity's own netid names the page's
+ * person more strongly than display-name tokens do, so a compound given name spelled as one word
+ * on the page and two on the record no longer refuses the person's own page (#5708). Only a
+ * directory pairing counts: a stored address can itself be the contaminated value under test.
+ */
+function directoryPairsAddressWithEntityNetid(
+  email: string,
+  entity: Record<string, any>,
+  directory: DirectoryNetidsByAddress | undefined,
+): boolean {
+  const netid = textValue(entity.netid).toLowerCase();
+  if (!directory || !netid || !email) return false;
+  const owners = directory.get(email.toLowerCase());
+  return Boolean(owners && owners.size === 1 && owners.has(netid));
+}
+
 function nameMatchesEntity(displayName: string, entity: Record<string, any>): boolean {
   const nameSlug = slugify(normalizeName(displayName));
   if (!nameSlug) return false;
@@ -3172,7 +3334,15 @@ export function extractOfficialProfileIdentity(
     email,
     options.expectedPeople,
   );
-  if (hasExpectedPeople ? !matchesExpectedPerson : !nameMatchesEntity(displayName, entity))
+  const directoryOwnsPageForEntity = directoryPairsAddressWithEntityNetid(
+    email,
+    entity,
+    options.directoryNetidsByAddress,
+  );
+  if (
+    !directoryOwnsPageForEntity &&
+    (hasExpectedPeople ? !matchesExpectedPerson : !nameMatchesEntity(displayName, entity))
+  )
     return null;
   // A same-name faculty member at a different Yale school still passes the bare
   // name-token check above. Only the fetched profile's own email actually
@@ -3188,7 +3358,8 @@ export function extractOfficialProfileIdentity(
     (options.expectedPeople || []).map((person) => textValue(person.email)),
   ).map((value) => value.toLowerCase());
   const identityConfirmedByEmail =
-    Boolean(normalizedFetchedEmail) && expectedEmails.includes(normalizedFetchedEmail);
+    directoryOwnsPageForEntity ||
+    (Boolean(normalizedFetchedEmail) && expectedEmails.includes(normalizedFetchedEmail));
   const fetchedHostDisciplineText = singleDisciplineProfileHostText(fetchedUrl);
   if (
     !identityConfirmedByEmail &&
@@ -3828,6 +3999,7 @@ async function selectQueuedEntities(limit: number): Promise<Array<Record<string,
 export async function selectDirectVisibleProfileBioUserTargets(
   limit: number,
   excludedUserIds: Set<string>,
+  identityEvidence?: VisibleBioIdentityEvidence,
 ): Promise<Array<Record<string, any>>> {
   if (limit <= 0) return [];
 
@@ -3851,13 +4023,11 @@ export async function selectDirectVisibleProfileBioUserTargets(
     50,
   ).lean()) as Array<Record<string, any>>;
 
+  const evidence = identityEvidence ?? (await loadVisibleBioIdentityEvidence());
   return profileUsersForResearchers(researchers)
     .filter((user) => user.netid && !excludedUserIds.has(idValue(user._id)))
-    .map((user) => {
-      const urls = visibleBioProfileUrlsForUser(user);
-      return urls.length > 0 ? userIdentityMatchEntity(user, urls) : null;
-    })
-    .filter((entity): entity is Record<string, any> => !!entity)
+    .map((user) => visibleBioTarget(user, visibleBioProfileUrlsForUser(user), [], evidence))
+    .filter((target) => target.visibleBioProfileUrls.length > 0)
     .slice(0, limit);
 }
 
@@ -3888,26 +4058,32 @@ export async function selectVisibleProfileBioTargets(
   }
   const netids = uniqueStrings(rosterEntries.map((entry) => entry.netid));
 
-  const users = await profileUsersByNetids(netids);
+  const [users, evidence] = await Promise.all([
+    profileUsersByNetids(netids),
+    loadVisibleBioIdentityEvidence(),
+  ]);
 
   const memberTargets = users
     .filter((user) => user.netid)
     .map((user) => {
-      const attachedUrls = (rosterEntriesByNetid.get(textValue(user.netid).toLowerCase()) || [])
-        .flatMap((entry) => {
-          const entity = entitiesById.get(idValue(entry.researchEntityId));
-          return [
-            entity?.websiteUrl,
-            entity?.website,
-            ...(Array.isArray(entity?.sourceUrls) ? entity.sourceUrls : []),
-            entry.rosterProvenance?.profileUrl,
-            entry.rosterProvenance?.sourceUrl,
-          ];
-        })
-        .filter((url) => visibleBioProfileUrlMatchesUser(textValue(url), user));
-      return userIdentityMatchEntity(user, uniqueStrings(attachedUrls));
+      const attachedUrls = (
+        rosterEntriesByNetid.get(textValue(user.netid).toLowerCase()) || []
+      ).flatMap((entry) => {
+        const entity = entitiesById.get(idValue(entry.researchEntityId));
+        return [
+          entity?.websiteUrl,
+          entity?.website,
+          ...(Array.isArray(entity?.sourceUrls) ? entity.sourceUrls : []),
+          entry.rosterProvenance?.profileUrl,
+          entry.rosterProvenance?.sourceUrl,
+        ];
+      });
+      const nameMatchedUrls = uniqueStrings(
+        attachedUrls.filter((url) => visibleBioProfileUrlMatchesUser(textValue(url), user)),
+      );
+      return visibleBioTarget(user, nameMatchedUrls, attachedUrls, evidence);
     })
-    .filter((entity) => visibleBioProfileUrlsForUser(entity).length > 0)
+    .filter((target) => target.visibleBioProfileUrls.length > 0)
     .slice(0, limit);
 
   const excludedUserIds = new Set(memberTargets.map((target) => idValue(target._id)));
@@ -3916,6 +4092,7 @@ export async function selectVisibleProfileBioTargets(
     ...(await selectDirectVisibleProfileBioUserTargets(
       limit - memberTargets.length,
       excludedUserIds,
+      evidence,
     )),
   ].slice(0, limit);
 }
@@ -5034,7 +5211,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
 
     const profileCandidatesFor = (entity: Record<string, any>): string[] =>
       runOnlyVisibleProfileBioBackfill
-        ? visibleBioProfileUrlsForUser(entity)
+        ? visibleBioProfileUrlsForTarget(entity)
         : uniqueStrings([
             ...officialProfileUrlsForEntity(entity),
             ...officialProfileUrlsForUser(entity),
@@ -5105,6 +5282,9 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
             const identity = extractOfficialProfilePersonIdentity(html, profileUrl, entity, {
               requireEmail: false,
               yaleDirectoryNetids,
+              ...(runVisibleProfileBioBackfill && textValue(entity.netid)
+                ? { directoryNetidsByAddress: await loadDirectoryNetidsByAddress() }
+                : {}),
             });
             if (identity) {
               const candidateUser =
