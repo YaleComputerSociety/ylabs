@@ -803,7 +803,7 @@ function storedCardRepeatsUsefulBody(
 /**
  * The description half of the `student_ready` definition, as one predicate: the
  * public-description invariant passes AND the required research-focus card is
- * present and useful. This is `ResearchEntityStudentReadyCorrectness.descriptionCoherent`,
+ * present and useful, or is only thin (`researchEntityCardIsOnlyThin`). This is `ResearchEntityStudentReadyCorrectness.descriptionCoherent`,
  * and it is the only part of that definition a description write can move, so a
  * description lane comparing it before and after its own write is asking the gate
  * whether the write costs the row its place on the served surface.
