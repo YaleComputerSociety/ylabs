@@ -49,6 +49,15 @@ Nothing is locked: withdrawing the entry restores the row on the next gate pass.
 A row carrying `researcher_removed` is kept out of the search index altogether, like an archived row, so its name and slug never sit in Meilisearch (`isExcludedFromSearchIndex` in `server/src/services/directoryRemovalReason.ts`); a sync or reconcile after the gate pass deletes a document it already had.
 The gate refuses to run while entries exist and the process has no usable key, in every environment including a loopback development worktree, because a pass that cannot match would publish removed rows again.
 
+## Mint and ingest
+
+Lanes never store new evidence about a removed person, so a purge stays done after the next sweep (`server/src/scrapers/directoryRemovalObservationGuard.ts`).
+At `appendObservations`, an observation whose person subject matches an identity entry is dropped, as are the four row fields that point at the person (`inferredPiUserKey`, `inferredPiUserId`, `inferredDirectorProfileUrl`, `contactEmail`), and a faculty research profile whose lead pointer names the person is dropped whole, because it is their own row.
+No mint or attach path creates a researcher, role edge or faculty research profile for them (`server/src/services/directoryRemovalMintGuard.ts`).
+Each refusal is counted as `removed_by_request`, and none writes a lock or an override.
+Researchers are refused by identifier only: a name entry never refuses a researcher or a person subject, keyed or keyless.
+A `--dry-run --explain` preview lists only the observations ingest would keep, and it writes only to the `--output` file the operator names, never to stdout.
+
 ## Before the first entry
 
 Every process that runs the gate must hold the key before the first entry is recorded, or it stops at the gate.
