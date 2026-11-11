@@ -323,6 +323,7 @@ export function redirectLandingOf(
   const final = parseProbeUrl(finalUrl);
   if (!requested || !final) return undefined;
   if (final.protocol !== 'https:' && final.protocol !== 'http:') return undefined;
+  if (final.search) return undefined;
   const requestedKey = normalizeWebsiteUrlIdentityKey(requested.toString()).toLowerCase();
   const finalKey = normalizeWebsiteUrlIdentityKey(final.toString()).toLowerCase();
   if (!requestedKey || !finalKey || requestedKey === finalKey) return undefined;

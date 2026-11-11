@@ -189,6 +189,7 @@ import {
 } from './resolveCanonical';
 import {
   normalizeWebsiteUrlIdentityKey,
+  ORG_NAME_DEDUPE_ENTITY_TYPES,
   websiteUrlIdentityKeyVariants,
 } from '../scripts/researchEntityPiDedupeCore';
 import {
@@ -10809,11 +10810,19 @@ async function findEntityCandidatesByKey(
   // URL on the row. Two candidates are enough: `resolveCanonical` only distinguishes
   // none, one, and more than one, and more than one is ambiguous either way.
   if (key.ns === 'website-url') {
-    const equivalentKeys = await websiteUrlIdentityKeyRedirectEquivalents(key.value);
-    const variants = [key.value, ...equivalentKeys].flatMap(websiteUrlIdentityKeyVariants);
-    if (variants.length === 0) return [];
+    const directVariants = websiteUrlIdentityKeyVariants(key.value);
+    if (directVariants.length === 0) return [];
+    const redirectVariants = (await websiteUrlIdentityKeyRedirectEquivalents(key.value)).flatMap(
+      websiteUrlIdentityKeyVariants,
+    );
     const docs = (await ResearchEntity.find({
-      websiteUrl: { $in: variants },
+      $or: [
+        { websiteUrl: { $in: directVariants } },
+        {
+          websiteUrl: { $in: redirectVariants },
+          entityType: { $nin: [...ORG_NAME_DEDUPE_ENTITY_TYPES] },
+        },
+      ],
       archived: { $ne: true },
     })
       .select('_id name studentVisibilityTier')

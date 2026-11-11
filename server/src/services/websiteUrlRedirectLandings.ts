@@ -9,6 +9,8 @@ type VerdictReader = Pick<typeof ResearchEntity, 'find'>;
 
 const REDIRECT_LANDING_PATH = 'sourceLinkHealth.redirectLandingUrl';
 
+const LIVE = { archived: { $ne: true } };
+
 const verdictsOf = (docs: Array<{ sourceLinkHealth?: unknown }>): RedirectLandingVerdict[] =>
   docs.flatMap((doc) =>
     Array.isArray(doc.sourceLinkHealth) ? (doc.sourceLinkHealth as RedirectLandingVerdict[]) : [],
@@ -18,7 +20,7 @@ export async function loadRedirectLandingIdentityKeys(
   model: VerdictReader = ResearchEntity,
 ): Promise<Map<string, string>> {
   const docs = (await model
-    .find({ [REDIRECT_LANDING_PATH]: { $exists: true } }, { sourceLinkHealth: 1 })
+    .find({ ...LIVE, [REDIRECT_LANDING_PATH]: { $exists: true } }, { sourceLinkHealth: 1 })
     .lean()) as Array<{ sourceLinkHealth?: unknown }>;
   return redirectLandingIdentityKeys(verdictsOf(docs));
 }
@@ -39,6 +41,7 @@ export async function websiteUrlIdentityKeyRedirectEquivalents(
     model
       .find(
         {
+          ...LIVE,
           [REDIRECT_LANDING_PATH]: { $exists: true },
           sourceLinkHealth: {
             $elemMatch: { url: { $in: variants }, redirectLandingUrl: { $exists: true } },
@@ -47,7 +50,9 @@ export async function websiteUrlIdentityKeyRedirectEquivalents(
         { sourceLinkHealth: 1 },
       )
       .lean(),
-    model.find({ [REDIRECT_LANDING_PATH]: { $in: variants } }, { sourceLinkHealth: 1 }).lean(),
+    model
+      .find({ ...LIVE, [REDIRECT_LANDING_PATH]: { $in: variants } }, { sourceLinkHealth: 1 })
+      .lean(),
   ])) as Array<Array<{ sourceLinkHealth?: unknown }>>;
   const landings = redirectLandingIdentityKeys(verdictsOf([...outbound, ...inbound]));
   const equivalents = new Set<string>();

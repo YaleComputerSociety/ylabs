@@ -333,6 +333,54 @@ describe('resolve-at-mint for entities (C4_RESOLVE_AT_MINT_ENTITIES)', () => {
     expect(await ResearchEntity.countDocuments({})).toBe(2);
     expect(second.created).toBe(true);
   });
+
+  const recordMove = (from: string, to: string) => ({
+    sourceLinkHealth: [
+      { url: from, healthStatus: 'HEALTHY', httpStatusCode: 200, redirectLandingUrl: to },
+    ],
+  });
+
+  it('default ON: a redirect recorded only on an archived row folds nothing', async () => {
+    await seedResearchEntity('smith-lab-a', 'Smith Lab', 'https://smithlab.example.edu/');
+    await materializeEntity('researchEntity', { entityKey: 'smith-lab-a' });
+    await seedResearchEntity('smith-lab-old', 'Smith Lab', 'https://old.example.edu/smith/');
+    const merged = await materializeEntity('researchEntity', { entityKey: 'smith-lab-old' });
+    await ResearchEntity.updateOne(
+      { _id: merged.entityId },
+      {
+        $set: {
+          archived: true,
+          ...recordMove('http://www.example.edu/smithlab/', 'https://smithlab.example.edu/'),
+        },
+      },
+    );
+
+    await seedResearchEntity('smith-lab-b', 'Smith Lab', 'http://www.example.edu/smithlab/');
+    const second = await materializeEntity('researchEntity', { entityKey: 'smith-lab-b' });
+
+    expect(second.created).toBe(true);
+    expect(await ResearchEntity.countDocuments({ archived: { $ne: true } })).toBe(2);
+  });
+
+  it('default ON: a recorded redirect never folds a mint into an organization row', async () => {
+    await seedResearchEntity('imaging-center', 'Imaging Center', 'https://imaging.example.edu/');
+    const center = await materializeEntity('researchEntity', { entityKey: 'imaging-center' });
+    await ResearchEntity.updateOne(
+      { _id: center.entityId },
+      {
+        $set: {
+          entityType: 'CENTER',
+          ...recordMove('https://www.example.edu/smithlab/', 'https://imaging.example.edu/'),
+        },
+      },
+    );
+
+    await seedResearchEntity('smith-lab-b', 'Smith Lab', 'https://www.example.edu/smithlab/');
+    const second = await materializeEntity('researchEntity', { entityKey: 'smith-lab-b' });
+
+    expect(second.created).toBe(true);
+    expect(await ResearchEntity.countDocuments({})).toBe(2);
+  });
 });
 
 describe('resolveCanonical guards (pure)', () => {

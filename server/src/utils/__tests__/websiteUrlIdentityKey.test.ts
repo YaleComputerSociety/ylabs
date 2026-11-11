@@ -107,6 +107,16 @@ describe('recorded redirect landings (#5638)', () => {
     ).toBeUndefined();
   });
 
+  it('records no landing whose query string the identity key would drop', () => {
+    const verdict = classifySourceLinkHealth({
+      status: 200,
+      requestedUrl: 'https://med.example.edu/lab/quill/',
+      finalUrl: 'https://portal.example.edu/Content.aspx?id=3',
+    });
+    expect(verdict.healthStatus).toBe('HEALTHY');
+    expect(verdict.redirectLandingUrl).toBeUndefined();
+  });
+
   it('records no landing on a verdict that is not HEALTHY', () => {
     const softMissing = classifySourceLinkHealth({
       status: 200,
