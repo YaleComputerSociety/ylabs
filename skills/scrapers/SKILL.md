@@ -1746,6 +1746,19 @@ The verify lane also adopts a candidate it built from the display name (`nameDer
 The guard refuses rather than removes, so a link stamped on the wrong record before it existed stays until an operator judges that row.
 Measured on Development on 2026-11-11: 5 pages were shared, 2 by twins with no netid conflict and 3 by two directory-distinct netids.
 
+#### A page the directory gives to another netid speaks for nobody else (#5693)
+
+When the backfill filed a person page under a namesake's `netid:` key, the same pass also named that namesake as the row's lead and could leave the page's link and ORCID on the namesake's record.
+`profilePageOwnerNetids` in `server/src/scrapers/directoryContradictedProfileNetid.ts` reads the email each person page states about itself and the netids the directory pairs with it, and `profilePageContradictsNetid` says whether that page names someone other than a given netid.
+Three readers use it on every resolve, so nothing is locked:
+
+- `contradictedPageLeadObservations` drops a backfill `inferredPiUserId` observation whose page names another netid, and `materializeInferredPiMembership` ends the backfill's own `PI` edge citing that page;
+- `planScreenedPageWithdrawal` withdraws a stored `YALE_OFFICIAL` link whose page names another netid, which reaches a host or path variant of the screened page that an exact URL match missed;
+- it also clears an ORCID when every live observation asserting it was read from such a page.
+
+A researcher whose stored netid the directory does not hold is never contradicted, because that is usually the person's own email alias stamped as a netid.
+Measured on Development on 2026-11-11 before that rule, 22 of 24 screened lead observations were that alias shape.
+
 #### Press copy and publication lists are not a description (#4446)
 
 A clinician feature made of attributed quoted speech, book-jacket blurbs, a news announcement, and a body that opens on a citation all passed the description quality bar and served.

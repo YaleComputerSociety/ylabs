@@ -1,5 +1,9 @@
 import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
+import {
+  normalizeOfficialProfileDestination,
+  officialProfileDestinationStoredPattern,
+} from '../services/leadProfileIdentity';
 
 export const OFFICIAL_PROFILE_PI_BACKFILL_SOURCE = 'official-profile-pi-backfill';
 
@@ -194,4 +198,80 @@ export async function withoutDirectoryContradictedProfileEvidenceForKey<T extend
   observations: T[],
 ): Promise<T[]> {
   return (await screenDirectoryContradictedProfileEvidenceForKey(entityKey, observations)).kept;
+}
+
+export interface ProfilePageOwnerNetids {
+  byPage: ReadonlyMap<string, ReadonlySet<string>>;
+  directoryNetids: ReadonlySet<string>;
+}
+
+const directoryNetidsOf = (directory: DirectoryNetidsByAddress): Set<string> => {
+  const netids = new Set<string>();
+  for (const named of directory.values()) for (const netid of named) netids.add(netid);
+  return netids;
+};
+
+/**
+ * The netids the Yale directory pairs with the email each person page states about itself,
+ * keyed by `normalizeOfficialProfileDestination`. Only an observation read from the page itself
+ * counts, so a roster listing that names many people is never read as one page's owner. A page
+ * whose email the directory does not know has no entry and decides nothing (#5693).
+ */
+export async function profilePageOwnerNetids(
+  pageUrls: readonly unknown[],
+  readScope: Record<string, unknown>,
+  directory?: DirectoryNetidsByAddress,
+): Promise<ProfilePageOwnerNetids> {
+  const owners = new Map<string, Set<string>>();
+  const none: ProfilePageOwnerNetids = { byPage: owners, directoryNetids: new Set() };
+  const patterns = new Map<string, RegExp>();
+  for (const url of pageUrls) {
+    const destination = normalizeOfficialProfileDestination(String(url ?? ''));
+    const pattern = officialProfileDestinationStoredPattern(String(url ?? ''));
+    if (destination && pattern) patterns.set(destination, pattern);
+  }
+  if (patterns.size === 0 || mongoose.connection.readyState !== 1) return none;
+  const statedEmails = (await Observation.find(
+    {
+      entityType: 'user',
+      field: 'email',
+      ...readScope,
+      sourceUrl: { $in: [...patterns.values()] },
+    },
+    { sourceUrl: 1, value: 1 },
+  ).lean()) as Array<{ sourceUrl?: unknown; value?: unknown }>;
+  if (statedEmails.length === 0) return none;
+  const pairs = directory ?? (await loadDirectoryNetidsByAddress());
+  for (const observation of statedEmails) {
+    const destination = normalizeOfficialProfileDestination(String(observation.sourceUrl ?? ''));
+    if (!patterns.has(destination)) continue;
+    const netids = pairs.get(normalizedAddress(observation.value));
+    if (!netids || netids.size === 0) continue;
+    const bucket = owners.get(destination) ?? new Set<string>();
+    for (const netid of netids) bucket.add(netid);
+    owners.set(destination, bucket);
+  }
+  return {
+    byPage: owners,
+    directoryNetids: owners.size > 0 ? directoryNetidsOf(pairs) : new Set(),
+  };
+}
+
+/**
+ * Whether the page's own stated email names somebody other than this netid. A researcher with no
+ * netid, or a page the directory cannot place, is never contradicted. Nor is a researcher whose
+ * stored netid the directory does not hold: that is most often the person's own email alias
+ * stamped as a netid, so it is the page owner under a second spelling, not a different person
+ * (22 of the first 24 screened lead observations on Development were that shape).
+ */
+export function profilePageContradictsNetid(
+  owners: ProfilePageOwnerNetids,
+  pageUrl: unknown,
+  netid: unknown,
+): boolean {
+  const bare = typeof netid === 'string' ? netid.trim().toLowerCase() : '';
+  if (!bare) return false;
+  if (!owners.directoryNetids.has(bare)) return false;
+  const named = owners.byPage.get(normalizeOfficialProfileDestination(String(pageUrl ?? '')));
+  return Boolean(named && named.size > 0 && !named.has(bare));
 }
