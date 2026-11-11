@@ -374,6 +374,8 @@ Let a failure of a lane-shared dependency (an observation write, a WorkPlanner r
 Do not flatten a whole page with cheerio `.text()`: it recurses once per DOM level and overflows the stack on a page nested a few thousand elements deep, while parsing and selection survive far deeper.
 Use `plainTextContent` (a byte-identical iterative `.text()`) or `extractElementTextWithBlockSeparators` from `utils/htmlText.ts`.
 #3558 lost `lab-microsite-undergrad-llm` on the Development sweep that way, about 700 labs in.
+A text the lane then pattern-matches for an address, a name or a title must keep block boundaries, so read it with `extractElementTextWithBlockSeparators`: `.text()` and `plainTextContent` join adjacent fields with nothing between them (#5720).
+Start an address pattern with the non-address lookbehind `(?<![a-z0-9._%+-])` rather than `\b` or nothing, so a glued word cannot become the front of the address.
 
 ## Infrastructure files
 
@@ -1804,6 +1806,16 @@ A page-wide address match starts only after a non-address character, and the tit
 Measured by replaying the 3,661 saved backfill pages offline on 2026-11-11 against `beta`: no page lost an identity field; 40 more pages emit identity (31 email-only titleless pages, 9 pages whose address was glued before), 42 more `email` and 10 more `inferredPiUserId` observations, and one glued phantom key is gone.
 Of the titles, 25 changed (contact blocks, `Title:` labels and section labels stripped), 14 are no longer emitted (11 navigation menus, 1 bio sentence, 1 glued address, 1 multi-appointment title longer than `MAX_PERSON_TITLE_LENGTH`), and none was newly found.
 A seeded sample of 10 newly emitted identities named the page's own person in all 10.
+
+#### Retiring what the glued reads left behind (#5720)
+
+The same block-text fix reached the other lanes that join page text and then match it: `undergradRosterDerivation`, `departmentUndergradResearchScraper`, `departmentRosterScraper`, `programOfficialPage`, `yseCentersScraper`, `researchAreaSourceExtractor` and `centerDirectorLLMExtractor`.
+`centerDirectorLLMExtractor` sends that text to a model but keys no content-hash gate on it, so the change moves no gate key.
+
+A fixed lane does not clear what it read before: `user` `email` and `title` are value-keyed, so the right value lands beside the glued one, and nothing re-emits a key minted from a glued address.
+`observations:retire-glued-profile-text` (dry run by default) selects live `official-profile-pi-backfill` observations by predicate: an address that is a run of letters fused onto an address the same subject or page states, a title that carries an address, a contact label or a lower-to-upper word join, and every observation on a subject key minted from such an address, with the `inferredPiUserKey` that names it.
+It re-reads each cited page once, sequentially, through `officialProfilePageStatedFields`, and retires an observation only when the page now yields a different value or none; a failed read retires nothing on that page, and `--skip-host` defers a host-locked page without requesting it.
+It writes no researcher field, so a stored title re-derives at the next materialize.
 
 #### Press copy and publication lists are not a description (#4446)
 

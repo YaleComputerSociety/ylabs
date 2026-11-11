@@ -665,7 +665,7 @@ function yaleEmailFromElement(
   const mailtoMatch = decoded.match(/mailto:([a-z0-9._%+-]+@yale\.edu)/i);
   if (mailtoMatch) return mailtoMatch[1].toLowerCase();
 
-  return decoded.match(/\b[a-z0-9._%+-]+@yale\.edu\b/i)?.[0]?.toLowerCase();
+  return decoded.match(/(?<![a-z0-9._%+-])[a-z0-9._%+-]+@yale\.edu\b/i)?.[0]?.toLowerCase();
 }
 
 /**
@@ -3274,7 +3274,7 @@ function extractOrcidFromHtml($: cheerio.CheerioAPI): string | undefined {
     const text = $(el).text();
     candidates.push(href, text);
   });
-  const bodyText = $('body').text();
+  const bodyText = extractElementTextWithBlockSeparators($('body')[0]);
   const matches = bodyText.match(/\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{3}[\dX]\b/gi) || [];
   candidates.push(...matches);
 
