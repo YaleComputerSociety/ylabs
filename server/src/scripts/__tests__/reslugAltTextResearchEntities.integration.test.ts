@@ -325,11 +325,12 @@ describe('research-entity:reslug-alt-text-slugs renames rows minted from photo a
       MUSIC,
     );
     expect(heldSlug).toBe(CAPTION_SLUG);
-    expect(await slugs()).toEqual([nextLaneKey]);
+    expect(nextLaneKey).toBe(CAPTION_TARGET);
+    expect(await slugs()).toEqual([CAPTION_TARGET]);
   });
 
-  it('holds a row whose name is not the person name the lane writes, such as a stated lab name', async () => {
-    await servedRow(CAPTION_SLUG, '', { name: 'Synthetic Counterpoint Studio', kind: 'lab' });
+  it('holds a row named for a stated surname lab, whose name part is not the roster person', async () => {
+    await servedRow(CAPTION_SLUG, '', { name: 'Fixture Lab', kind: 'lab', entityType: 'LAB' });
 
     const report = await reslug(true);
 
