@@ -274,6 +274,7 @@ A run whose work hangs stops heartbeating too (#5086): real work bumps the proce
 - Never ask "is anything running" with a bare `status: 'running'`.
   Use `classifyScrapeRunLiveness` (or `isAbandonedScrapeRun`) from `scrapeRunLiveness.ts`: only `live` (heartbeat within 15 minutes) means a writer is working, and a `running` row with no `heartbeatAt` predates the heartbeat and proves nothing.
 - `scrape_job_locks` is still the live-writer signal for a source, read through `findHeldScrapeJobLock`.
+- Every `scrape run` closes heartbeat-stale rows before it records its own (`reapDeadScrapeRuns`, #5628), so a dead row lasts only until the next run on Development.
 - Close dead rows with `yarn --cwd server scrape-runs:reconcile-stale`, which is dry-run by default.
   `--apply --confirm-reconcile-stale-scrape-runs` closes a row as `interrupted` only when its heartbeat is stale, or when it predates heartbeats and is older than 72 hours, and never when its heartbeat is fresh, its source lock is held, or its owner pid is alive on this host.
   It refuses every target except Development, and its bounds can be raised but not lowered.

@@ -5,9 +5,12 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
-import { ScrapeJobLock } from '../models/scrapeJobLock';
 import { ScrapeRun } from '../models/scrapeRun';
 import { isLocalProcessAlive } from '../scrapers/scrapeRunLiveness';
+import {
+  loadHeldScrapeLockSourceNames,
+  loadRunningScrapeRuns,
+} from '../scrapers/staleScrapeRunReaper';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   assertReconcileStaleScrapeRunsApplyAllowed,
@@ -15,7 +18,6 @@ import {
   resolveStaleScrapeRunThresholds,
   staleScrapeRunUpdate,
   summarizeStaleScrapeRunPlan,
-  type RunningScrapeRunFacts,
 } from './reconcileStaleScrapeRunsCore';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 
@@ -90,30 +92,6 @@ export function parseReconcileStaleScrapeRunsArgs(argv: string[]): ReconcileStal
   return options;
 }
 
-async function loadRunningRuns(sourceName?: string): Promise<RunningScrapeRunFacts[]> {
-  const docs = (await ScrapeRun.find({
-    status: 'running',
-    ...(sourceName ? { sourceName } : {}),
-  })
-    .select('_id sourceName startedAt heartbeatAt owner')
-    .sort({ startedAt: 1 })
-    .lean()) as unknown as Array<Record<string, any>>;
-  return docs.map((doc) => ({
-    id: String(doc._id),
-    sourceName: String(doc.sourceName),
-    startedAt: new Date(doc.startedAt),
-    ...(doc.heartbeatAt ? { heartbeatAt: new Date(doc.heartbeatAt) } : {}),
-    ...(doc.owner ? { owner: doc.owner } : {}),
-  }));
-}
-
-async function loadHeldLockSourceNames(now: Date): Promise<Set<string>> {
-  const locks = (await ScrapeJobLock.find({ locked: true, leaseExpiresAt: { $gt: now } })
-    .select('sourceName')
-    .lean()) as unknown as Array<{ sourceName?: string }>;
-  return new Set(locks.map((lock) => String(lock.sourceName)));
-}
-
 async function main(): Promise<void> {
   const options = parseReconcileStaleScrapeRunsArgs(process.argv.slice(2));
   const thresholds = resolveStaleScrapeRunThresholds(options);
@@ -129,8 +107,8 @@ async function main(): Promise<void> {
 
   const now = new Date();
   const [runs, heldLockSourceNames] = await Promise.all([
-    loadRunningRuns(options.sourceName),
-    loadHeldLockSourceNames(now),
+    loadRunningScrapeRuns(options.sourceName),
+    loadHeldScrapeLockSourceNames(now),
   ]);
   const plan = planStaleScrapeRunReconciliation({
     runs,
