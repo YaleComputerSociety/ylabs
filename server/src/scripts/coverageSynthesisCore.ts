@@ -1,3 +1,4 @@
+import { isPersonResearchRow } from '../utils/researchStatementPassage';
 import { SOURCE_CONTENT_HASH_FIELD } from '../scrapers/contentHashGate';
 import {
   SEARCH_INDEX_WRITES_DEFERRED,
@@ -459,6 +460,8 @@ export interface WriterEvidenceOptions {
   now?: Date;
   /** The row's own refusals, so a value an operator refused never becomes evidence again. */
   fieldValueRefusals?: unknown;
+  entityType?: unknown;
+  kind?: unknown;
 }
 
 /**
@@ -478,7 +481,12 @@ export function buildWriterEvidenceSnippets(
   ).kept;
   const ordered = orderWriterEvidence(admissible, options.websiteUrl);
   const pageObservations = ordered.filter((obs) => !isGrantEvidenceSource(obs.sourceName));
-  const fromPages = gatherCoverageSnippets(pageObservations, options.storedPageText);
+  const fromPages = gatherCoverageSnippets(pageObservations, options.storedPageText, {
+    narrowLabSiteDescriptions: isPersonResearchRow({
+      entityType: options.entityType,
+      kind: options.kind,
+    }),
+  });
   if (hasOwnResearchProse(fromPages)) return fromPages;
   const room = MAX_COVERAGE_SNIPPETS - fromPages.length;
   if (room <= 0) return fromPages;

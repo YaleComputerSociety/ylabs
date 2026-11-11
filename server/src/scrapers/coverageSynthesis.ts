@@ -32,6 +32,7 @@ import {
   truncateAtSentenceBoundary,
 } from './utils/researchPageText';
 import { isResearchPageHeadingLine } from './utils/writerEvidenceText';
+import { isNarrowedLabSiteDescription, researchPassageOf } from '../utils/researchStatementPassage';
 import {
   withoutPublicationListings,
   withoutResearchPageChrome,
@@ -154,8 +155,10 @@ export type CoverageSynthesisLLMFn = (input: {
  * writer never reads an appointment, an award or a clinical role as what the person studies
  * (#4928).
  */
+const WRITER_RESEARCH_READING = { purposeAdverbs: true } as const;
+
 export function writerEvidenceTextOf(value: string): string {
-  if (!isBiographyRatherThanResearch(value)) return value;
+  if (!isBiographyRatherThanResearch(value, WRITER_RESEARCH_READING)) return value;
   return researchStatementSentences(value, { activityAnchors: true }).join(' ').trim();
 }
 
@@ -218,6 +221,7 @@ function researchPageTextSnippets(obs: CoverageObservationLike): CoverageSnippet
 export function gatherCoverageSnippets(
   observations: CoverageObservationLike[],
   storedPageText?: StoredPageTextLookup,
+  options: { narrowLabSiteDescriptions?: boolean } = {},
 ): CoverageSnippet[] {
   const seen = new Set<string>();
   const snippets: CoverageSnippet[] = [];
@@ -237,7 +241,11 @@ export function gatherCoverageSnippets(
     if (!COVERAGE_SNIPPET_FIELDS.has(obs.field)) continue;
     if (!isWriterEvidenceObservation(obs, storedPageText)) continue;
     if (isRejectedDescriptionSourceUrl(obs.sourceUrl)) continue;
-    const raw = writerEvidenceTextOf(withoutProfileTemplateWidgets(textValue(obs.value)));
+    const statement =
+      options.narrowLabSiteDescriptions && isNarrowedLabSiteDescription(obs)
+        ? researchPassageOf(textValue(obs.value), WRITER_RESEARCH_READING)
+        : textValue(obs.value);
+    const raw = writerEvidenceTextOf(withoutProfileTemplateWidgets(statement));
     if (!raw) continue;
     const clean = raw.slice(0, MAX_COVERAGE_SNIPPET_CHARS).trim();
     if (keep({ text: clean, sourceUrl: obs.sourceUrl, sourceName: obs.sourceName })) break;

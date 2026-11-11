@@ -107,6 +107,8 @@ export function snippetsFromRowEvidence(row: WriterRowEvidence, now: Date): Cove
   const options = {
     websiteUrl: row.entity.websiteUrl,
     fieldValueRefusals: row.entity.fieldValueRefusals,
+    entityType: row.entity.entityType,
+    kind: row.entity.kind,
     now,
   };
   const own = buildWriterEvidenceSnippets(row.observations, row.entity.recentGrants, options);

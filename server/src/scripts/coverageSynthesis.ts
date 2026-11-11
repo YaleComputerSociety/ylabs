@@ -581,6 +581,8 @@ async function main() {
       {
         websiteUrl: entity.websiteUrl,
         fieldValueRefusals: entity.fieldValueRefusals,
+        entityType: entity.entityType,
+        kind: entity.kind,
       },
     );
     report.snippets = snippets.length;

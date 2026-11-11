@@ -5,6 +5,10 @@
  * For person identities, materializes a canonical Researcher/Account (lookup by
  * entityKey, e.g. netid).
  */
+import {
+  isPersonResearchRow,
+  withLabSiteDescriptionsNarrowedToResearch,
+} from '../utils/researchStatementPassage';
 import { cachedCardFor } from './cardSynthesisDerivation';
 import { withoutModelCalls } from '../utils/modelClient';
 import { isGrantLaneObservationOutsideEnrichment } from './grantLaneSourceNames';
@@ -11279,7 +11283,13 @@ async function materializeEntityWithoutModelCalls(
   // rivals remain still resolve normally and a field whose every candidate is
   // refused resolves to nothing. That is the retraction a repair was reaching for
   // when it wrote a lock instead (#3167).
-  const refusalScreen = refusedResolverObservations(resolverObs, entityDoc?.fieldValueRefusals);
+  const rawRefusalScreen = refusedResolverObservations(resolverObs, entityDoc?.fieldValueRefusals);
+  const refusalScreen = {
+    ...rawRefusalScreen,
+    kept: isPersonResearchRow({ entityType: entityDoc?.entityType, kind: entityDoc?.kind })
+      ? withLabSiteDescriptionsNarrowedToResearch(rawRefusalScreen.kept)
+      : rawRefusalScreen.kept,
+  };
   if (refusalScreen.refused.length > 0) {
     console.log(
       `[field-value-refusal] ${entityType} ${entityIdString || identifier.entityKey || ''}: dropped ${
