@@ -318,6 +318,7 @@ import {
   type ProfilePageOwnerNetids,
 } from './directoryContradictedProfileNetid';
 import { derivedResearcherEmail } from './verifiedResearcherEmail';
+import { STAFF_SCREENED_ROSTER_ROLES, screenedRosterRole } from './rosterStaffTitleScreen';
 import {
   loadResearchEntityLeadPageDeparture,
   type PersonPageDeparture,
@@ -3397,6 +3398,44 @@ async function endSupersededListingHolderEdges(
   return ended.modifiedCount ?? 0;
 }
 
+/**
+ * The staff title screen moves a listing between its listed faculty role and `staff`, and the
+ * membership key carries the role, so the edge written under the other role is the same
+ * listing's earlier resolution and is ended on the read, in either direction (#5746).
+ * An adopted edge was not written by this listing, so it stays with center roster retirement
+ * and its freeze.
+ */
+async function endListingEdgesUnderTheOtherScreenedRole(
+  researchEntityId: string,
+  plan: RosterMemberCanonicalPlan,
+  personId: mongoose.Types.ObjectId,
+): Promise<number> {
+  if (textValue(plan.resolved.membershipKey?.value)) return 0;
+  const listedRole = normalizeMemberRole(plan.resolved.role?.value);
+  if (!STAFF_SCREENED_ROSTER_ROLES.has(listedRole)) return 0;
+  const entityObjectId = toMaterializerObjectId(researchEntityId);
+  const provenance = plan.facts.rosterProvenance;
+  const sourceName = textValue(provenance?.sourceName);
+  if (!entityObjectId || !sourceName || !plan.identityKey) return 0;
+  const otherKeys = [listedRole, 'staff']
+    .filter((role) => role !== plan.role)
+    .map((role) => rosterMembershipKey(plan.identityKey, role));
+  const ended = await RoleAssignment.updateMany(
+    {
+      personId,
+      'target.kind': 'RESEARCH_ENTITY',
+      'target.id': entityObjectId,
+      'rosterProvenance.sourceName': sourceName,
+      'rosterProvenance.membershipKey': { $in: otherKeys },
+      'rosterProvenance.adoptedAt': { $exists: false },
+      state: { $ne: 'HISTORICAL' },
+      archived: { $ne: true },
+    },
+    { $set: { state: 'HISTORICAL', endedAt: provenance?.observedAt ?? new Date() } },
+  );
+  return ended.modifiedCount ?? 0;
+}
+
 async function listingWouldMintANamesake(
   plan: RosterMemberCanonicalPlan,
   identity: RosterMemberIdentity,
@@ -3456,13 +3495,23 @@ export const rosterMemberFieldsWritten = (
   fieldsResolved: number,
 ): number => (outcome === 'created' || outcome === 'updated' ? fieldsResolved : 0);
 
+export function rosterRoleAfterStaffTitleScreen(
+  role: string,
+  resolved: Record<string, ResolvedField>,
+): string {
+  return screenedRosterRole(role, [
+    textValue(resolved.title?.value),
+    textValue(resolved.profileTitle?.value),
+  ]);
+}
+
 export function buildRosterMemberCanonicalPlan(
   researchEntityId: string,
   resolved: Record<string, ProvenanceResolvedField>,
   user: Record<string, unknown> | null = null,
 ): RosterMemberCanonicalPlan | null {
   if (!normalizeMaterializerObjectId(researchEntityId)) return null;
-  const role = normalizeMemberRole(resolved.role?.value);
+  const role = rosterRoleAfterStaffTitleScreen(normalizeMemberRole(resolved.role?.value), resolved);
   if (!role) return null;
   if (
     textValue(resolved.currentStatus?.value) &&
@@ -3822,6 +3871,7 @@ async function materializeRosterMember(
         : undefined,
   });
   await adoptListedPersonUnprovenancedEdges(researchEntityId, plan, personId);
+  if (personId) await endListingEdgesUnderTheOtherScreenedRole(researchEntityId, plan, personId);
   if (personId && !('basis' in identity)) {
     await endSupersededListingHolderEdges(researchEntityId, plan, personId, listingScope);
   }
@@ -12749,7 +12799,9 @@ async function centerMembershipKeysAssertedByOtherSources(
     {
       entityType: 'researchGroupMember',
       entityKey: { $in: memberKeys },
-      field: { $in: ['profileUrl', 'role', 'identityKey', 'membershipKey'] },
+      field: {
+        $in: ['profileUrl', 'role', 'identityKey', 'membershipKey', 'title', 'profileTitle'],
+      },
     },
     sourceName,
   );
@@ -12762,7 +12814,10 @@ async function centerMembershipKeysAssertedByOtherSources(
   }
   const keys = new Set<string>();
   for (const fields of bySourceAndKey.values()) {
-    const role = normalizeMemberRole(fields.role);
+    const role = screenedRosterRole(normalizeMemberRole(fields.role), [
+      fields.title,
+      fields.profileTitle,
+    ]);
     const identityKey = fields.identityKey || officialProfileIdentityKey(fields.profileUrl || '');
     const membershipKey = fields.membershipKey || rosterMembershipKey(identityKey, role);
     if (membershipKey) keys.add(membershipKey);

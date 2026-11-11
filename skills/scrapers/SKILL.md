@@ -1351,6 +1351,8 @@ A linked page or address names a candidate only while nothing says it belongs to
 The candidate is dropped when `profilePageContradictsNetid` gives the member page to another netid, or when the member page's addresses the directory knows all share one owner and the candidate is not it (`directoryOwnerNetidsOfAddresses`), so an assistant's address beside the member's own decides nothing.
 Neither arm drops a candidate whose stored netid the directory does not hold, because that is usually the person's own email alias stamped as a netid.
 A link or address is dropped when the candidate refuses it or when that linked page itself names another netid.
+The lane also emits the member page's own title as `profileTitle`, read only by the roster role screen and never written to the person (#5746).
+`buildRosterMemberCanonicalPlan` reads a `core-faculty`, `affiliated` or `affiliate` listing as `staff` when its listing title or `profileTitle` passes `titleStatesOnlyAStaffRole` and neither states a faculty appointment, because a mixed "Faculty & Staff" page gives every link the lane's default role; the edge under the other role is ended on the same read, and `staff` is not name-searchable as a professor.
 A `--limit` run reads at most that many member pages per roster so the canary stays bounded.
 
 Then clear the borrowed URL with `yarn --cwd server observations:retire-organization-identity-websites`.

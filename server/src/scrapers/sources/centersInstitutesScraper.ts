@@ -57,6 +57,7 @@ import { mapWithConcurrency } from '../utils/mapWithConcurrency';
 import { fetchPageWithPolicy, retryOnRetryableStatus } from '../utils/httpFetch';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
 import { getCached, setCached } from '../snapshotCache';
 import {
   createScraplingRenderedFetcher,
@@ -88,12 +89,16 @@ import {
   type LanePageProbe,
 } from '../lanePageHealth';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
+import { sanitizePersonTitle } from '../../utils/titleHygiene';
+import { statesAnyFacultyAppointment } from './yaleDirectoryScraper';
+import { screenedRosterRole } from '../rosterStaffTitleScreen';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 const MAX_PAGES_PER_CENTER = 30;
 const CONSECUTIVE_REPEATED_PAGES_TO_STOP = 2;
 const MEMBER_PROFILE_FETCH_CONCURRENCY = 4;
+const MEMBER_PROFILE_TITLE_CACHE_PREFIX = 'member-profile-title:v1:';
 const MEMBER_IDENTITY_EVIDENCE_CACHE_PREFIX = `member-identity-evidence:v${ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION}:`;
 
 export type CenterKind = 'center' | 'institute' | 'program' | 'initiative' | 'core_facility';
@@ -106,6 +111,66 @@ export interface CenterMember {
   title?: string;
   role?: MemberRole;
   identityEvidence?: RosterMemberIdentityEvidence;
+  profileTitle?: string;
+}
+
+export const ROSTER_MEMBER_PROFILE_TITLE_FIELD = 'profileTitle';
+
+interface MemberProfileRead {
+  evidence: RosterMemberIdentityEvidence;
+  profileTitle: string;
+}
+
+const PROFILE_TITLE_SELECTOR = '[class*="title"], [class*="appointment"], [class*="position"]';
+
+const NON_SUBJECT_TITLE_CONTAINER =
+  'nav, footer, aside, [class*="card"], [class*="related"], [class*="grid"], [class*="teaser"], [class*="listing"]';
+
+function jsonLdJobTitles($: cheerio.CheerioAPI): string[] {
+  const titles: string[] = [];
+  $('script[type="application/ld+json"]').each((_i, el) => {
+    try {
+      const nodes = [JSON.parse($(el).contents().text())].flat(Infinity);
+      for (const node of nodes) {
+        const graph = [node, ...(Array.isArray(node?.['@graph']) ? node['@graph'] : [])];
+        for (const entry of graph) {
+          const type = entry?.['@type'];
+          const isPerson = Array.isArray(type) ? type.includes('Person') : type === 'Person';
+          if (isPerson)
+            titles.push(...[entry.jobTitle].flat().filter((v) => typeof v === 'string'));
+        }
+      }
+    } catch {
+      return;
+    }
+  });
+  return titles;
+}
+
+/**
+ * The title a member's own profile page states, read only to decide whether the listing is
+ * staff and never written to the person (#5746). Title elements inside cards, grids, lists and
+ * related-people blocks belong to colleagues and are skipped, and a page that states a faculty
+ * appointment in any title element yields that appointment, so nothing on the page can make a
+ * professor read as staff.
+ */
+export function memberProfileTitle(html: string): string {
+  const $ = cheerio.load(html);
+  const jsonLdTitles = jsonLdJobTitles($);
+  if (jsonLdTitles.length > 1) return '';
+  const subjectTitles: string[] = [...jsonLdTitles];
+  const everyStatedTitle: string[] = [...jsonLdTitles];
+  const heading = $('h1').first().text().replace(/\s+/g, ' ').trim().toLowerCase();
+  $(PROFILE_TITLE_SELECTOR).each((_i, el) => {
+    if ($(el).is('h1, h2, title, meta') || $(el).find(PROFILE_TITLE_SELECTOR).length > 0) return;
+    const text = extractElementTextWithBlockSeparators(el).replace(/\s+/g, ' ').trim();
+    if (!text || text.toLowerCase() === heading) return;
+    everyStatedTitle.push(text);
+    if ($(el).closest(NON_SUBJECT_TITLE_CONTAINER).length === 0) subjectTitles.push(text);
+  });
+  const faculty = everyStatedTitle.find((title) => statesAnyFacultyAppointment(title));
+  if (faculty) return sanitizePersonTitle(faculty) ?? '';
+  return subjectTitles.map((title) => sanitizePersonTitle(title)).find(Boolean) ?? '';
 }
 
 /** A child research entity discovered on a parent index page (Jackson School). */
@@ -1753,6 +1818,14 @@ export function memberObservationsForEntityKey(
       value: member.identityEvidence,
     });
   }
+  if (member.profileTitle) {
+    obs.push({
+      ...base,
+      field: ROSTER_MEMBER_PROFILE_TITLE_FIELD,
+      value: member.profileTitle,
+      ...(member.profileUrl ? { sourceUrl: member.profileUrl } : {}),
+    });
+  }
   return obs;
 }
 
@@ -1837,10 +1910,14 @@ export function centerRosterReadMember(
   const memberKey = memberObs[0]?.entityKey || '';
   if (!memberKey) return null;
   const role = member.role || 'core-faculty';
+  const edgeRole = screenedRosterRole(role, [member.title, member.profileTitle]);
   return {
     memberKey,
     role,
-    membershipKey: rosterMembershipKey(officialProfileIdentityKey(member.profileUrl || ''), role),
+    membershipKey: rosterMembershipKey(
+      officialProfileIdentityKey(member.profileUrl || ''),
+      edgeRole,
+    ),
     relationshipKey: relationshipObs[0]?.entityKey || '',
   };
 }
@@ -2329,33 +2406,40 @@ export class CentersInstitutesScraper implements IScraper {
     const profiled = members
       .filter((member) => isYaleHostedUrl(member.profileUrl))
       .slice(0, ctx.options.limit ?? Infinity);
-    const evidenceByMember = new Map<CenterMember, RosterMemberIdentityEvidence>();
+    const readByMember = new Map<CenterMember, MemberProfileRead>();
     await mapWithConcurrency(profiled, MEMBER_PROFILE_FETCH_CONCURRENCY, async (member) => {
-      const evidence = await this.readMemberIdentityEvidence(member, ctx);
-      if (evidence) evidenceByMember.set(member, evidence);
+      const read = await this.readMemberProfile(member, ctx);
+      if (read) readByMember.set(member, read);
     });
     if (profiled.length > 0) {
       ctx.log(
-        `[${rosterKey}] member identity evidence: ${evidenceByMember.size} of ${profiled.length} profile page(s) read`,
+        `[${rosterKey}] member identity evidence: ${readByMember.size} of ${profiled.length} profile page(s) read`,
       );
     }
     return members.map((member) => {
-      const identityEvidence = evidenceByMember.get(member);
-      return identityEvidence ? { ...member, identityEvidence } : member;
+      const read = readByMember.get(member);
+      if (!read) return member;
+      return {
+        ...member,
+        identityEvidence: read.evidence,
+        ...(read.profileTitle ? { profileTitle: read.profileTitle } : {}),
+      };
     });
   }
 
-  // Only the extracted evidence is cached, never the page: a center's member pages run to
+  // Only what is extracted is cached, never the page: a center's member pages run to
   // hundreds of megabytes, and caching them whole fills the Development quota.
-  private async readMemberIdentityEvidence(
+  private async readMemberProfile(
     member: CenterMember,
     ctx: ScraperContext,
-  ): Promise<RosterMemberIdentityEvidence | undefined> {
+  ): Promise<MemberProfileRead | undefined> {
     const profileUrl = member.profileUrl || '';
-    const cacheKey = `${MEMBER_IDENTITY_EVIDENCE_CACHE_PREFIX}${profileUrl}#${member.name}`;
+    const evidenceKey = `${MEMBER_IDENTITY_EVIDENCE_CACHE_PREFIX}${profileUrl}#${member.name}`;
+    const titleKey = `${MEMBER_PROFILE_TITLE_CACHE_PREFIX}${profileUrl}`;
     if (ctx.options.useCache) {
-      const cached = await getCached<RosterMemberIdentityEvidence>(this.name, cacheKey);
-      if (cached) return cached;
+      const evidence = await getCached<RosterMemberIdentityEvidence>(this.name, evidenceKey);
+      const title = await getCached<{ profileTitle: string }>(this.name, titleKey);
+      if (evidence && title) return { evidence, profileTitle: title.profileTitle };
     }
     let html: string;
     try {
@@ -2365,8 +2449,12 @@ export class CentersInstitutesScraper implements IScraper {
     }
     if (typeof html !== 'string' || !html) return undefined;
     const evidence = extractRosterMemberIdentityEvidence(html, profileUrl, member.name);
-    if (ctx.options.useCache) await setCached(this.name, cacheKey, evidence);
-    return evidence;
+    const profileTitle = memberProfileTitle(html);
+    if (ctx.options.useCache) {
+      await setCached(this.name, evidenceKey, evidence);
+      await setCached(this.name, titleKey, { profileTitle });
+    }
+    return { evidence, profileTitle };
   }
 
   /**

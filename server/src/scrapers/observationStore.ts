@@ -1107,6 +1107,7 @@ export const LATEST_WINS_FINGERPRINT_FIELDS_BY_ENTITY_TYPE: Readonly<
     'name',
     'inferredUserName',
     'title',
+    'profileTitle',
     'sectionLabel',
     'sourcePublishedAt',
     'freshnessExpiresAt',

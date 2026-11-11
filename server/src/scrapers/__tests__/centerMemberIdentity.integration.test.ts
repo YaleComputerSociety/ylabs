@@ -99,6 +99,7 @@ const profilePage = (
     assistantEmail?: string;
     netid?: string;
     links?: string[];
+    title?: string;
   } = {},
 ) => {
   const head = options.canonical ? `<link rel="canonical" href="${options.canonical}">` : '';
@@ -113,7 +114,8 @@ const profilePage = (
     .map((address) => `<a href="mailto:${address}">Email</a>`)
     .join('');
   const links = (options.links ?? []).map((href) => `<a href="${href}">Related</a>`).join('');
-  return `<html><head>${head}${jsonLd}</head><body><h1>Profile</h1>${mail}${links}</body></html>`;
+  const title = options.title ? `<p class="profile-title">${options.title}</p>` : '';
+  return `<html><head>${head}${jsonLd}</head><body><h1>Profile</h1>${title}${mail}${links}</body></html>`;
 };
 
 const afterAMoment = () => new Promise((resolve) => setTimeout(resolve, 5));
@@ -502,6 +504,61 @@ describe(
       });
 
       expect(await liveEdgesOf(holder)).toHaveLength(0);
+    });
+
+    it('serves a listing whose profile title names only a staff role as staff, not faculty (#5746)', async () => {
+      const avery = await accountHolder('Avery', { officialUrl: officialProfileUrl('Avery') });
+      const page = profilePage({
+        canonical: officialProfileUrl('Avery'),
+        title: 'Senior Administrative Assistant',
+      });
+
+      await runLane({ [centerProfileUrl('Avery')]: page });
+      const afterFirst = await liveEdgesOf(avery);
+      await runLane({ [centerProfileUrl('Avery')]: page });
+      const afterSecond = await liveEdgesOf(avery);
+
+      expect(afterFirst.map((edge) => edge.role)).toEqual(['STAFF']);
+      expect(afterSecond.map((edge) => String(edge._id))).toEqual(
+        afterFirst.map((edge) => String(edge._id)),
+      );
+      expect((await researcherById(avery))?.profile?.title).toBeUndefined();
+    });
+
+    it('ends the faculty edge of a listing the profile title shows is staff (#5746)', async () => {
+      const blair = await accountHolder('Blair', { officialUrl: officialProfileUrl('Blair') });
+      await runLane({
+        [centerProfileUrl('Blair')]: profilePage({ canonical: officialProfileUrl('Blair') }),
+      });
+      expect((await liveEdgesOf(blair)).map((edge) => edge.role)).toEqual(['CORE_FACULTY']);
+
+      await runLane({
+        [centerProfileUrl('Blair')]: profilePage({
+          canonical: officialProfileUrl('Blair'),
+          title: 'Grants and Finance Manager',
+        }),
+      });
+
+      expect((await liveEdgesOf(blair)).map((edge) => edge.role)).toEqual(['STAFF']);
+    });
+
+    it('keeps the faculty role for postdoc and research scientist titles (#5746)', async () => {
+      const casey = await accountHolder('Casey', { officialUrl: officialProfileUrl('Casey') });
+      const devon = await accountHolder('Devon', { officialUrl: officialProfileUrl('Devon') });
+
+      await runLane({
+        [centerProfileUrl('Casey')]: profilePage({
+          canonical: officialProfileUrl('Casey'),
+          title: 'Postdoctoral Associate',
+        }),
+        [centerProfileUrl('Devon')]: profilePage({
+          canonical: officialProfileUrl('Devon'),
+          title: 'Associate Research Scientist',
+        }),
+      });
+
+      expect((await liveEdgesOf(casey)).map((edge) => edge.role)).toEqual(['CORE_FACULTY']);
+      expect((await liveEdgesOf(devon)).map((edge) => edge.role)).toEqual(['CORE_FACULTY']);
     });
 
     it('resolves to nobody when the evidence reaches two agreeing people', async () => {
