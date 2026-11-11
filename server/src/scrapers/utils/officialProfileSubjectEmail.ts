@@ -6,7 +6,7 @@ const ADDRESS_IN_TEXT = /[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}/g
 const WHOLE_ADDRESS = /^[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}$/i;
 const PERSON_TYPE = /^(?:https?:\/\/schema\.org\/)?Person$/i;
 const NODE_BOUNDARY_TAGS = new Set(['article', 'aside', 'nav', 'footer']);
-const FOREIGN_BLOCK_LABEL =
+export const FOREIGN_BLOCK_LABEL =
   /related|co-?authors?|collaborat|colleague|media-contact|press|admin|assistant|support|staff|team|people|member|footer|sidebar|breadcrumb/i;
 const CONTACT_FIELD_LABEL = /mail|contact/i;
 const SUBJECT_ROLE_TOKENS = new Set(['lab', 'labs', 'program', 'programs']);
