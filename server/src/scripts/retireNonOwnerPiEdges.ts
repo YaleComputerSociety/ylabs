@@ -49,7 +49,7 @@ const RESTORATION_NOTE_BY_GROUND: Record<NonOwnerPiEdgeRestorationGround, string
   'stored-title-no-longer-refuses':
     'Restored: the title this lane retired the lead claim on no longer refuses a research home (#5323).',
   'own-evidence-states-owning-appointment':
-    "Restored: the person's own official profile states an appointment that can own a research home (#5855).",
+    "Restored: the person's own official profile states an appointment that can own a research row (#5855).",
 };
 
 export interface RetireNonOwnerPiEdgeOptions {

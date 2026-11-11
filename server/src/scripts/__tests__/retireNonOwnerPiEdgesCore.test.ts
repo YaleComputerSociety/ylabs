@@ -329,7 +329,11 @@ describe('own official-profile evidence outweighs a wrong stored title (#5855)',
 describe('statesResearchOwningAppointment', () => {
   it('accepts a faculty appointment and refuses staff, trainee, heading and silence', () => {
     expect(statesResearchOwningAppointment('Professor of Nursing')).toBe(true);
-    expect(statesResearchOwningAppointment('Associate Research Scientist')).toBe(true);
+    expect(statesResearchOwningAppointment('Clinical Professor of Medicine')).toBe(true);
+    expect(statesResearchOwningAppointment('Senior Research Scientist')).toBe(true);
+    expect(statesResearchOwningAppointment('Associate Research Scientist')).toBe(false);
+    expect(statesResearchOwningAppointment('Clinical Psychologist')).toBe(false);
+    expect(statesResearchOwningAppointment('Clinical Nurse')).toBe(false);
     expect(statesResearchOwningAppointment('Senior Clinical Research Coordinator')).toBe(false);
     expect(statesResearchOwningAppointment('Postdoctoral Associate')).toBe(false);
     expect(statesResearchOwningAppointment('Research Affiliates')).toBe(false);

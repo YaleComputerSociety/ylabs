@@ -1,4 +1,4 @@
-import { isFacultyTitle } from './facultyTitle';
+import { titleOwnsResearch } from '../scrapers/utils/titleResearchOwnership';
 import { isNonResearchStaffTitle } from './nonResearchStaffTitle';
 import { isPageHeadingTitle } from './titleHygiene';
 import { isTraineeLevelTitle } from './traineeLevelTitle';
@@ -28,7 +28,4 @@ export const cannotOwnResearchHome = (title?: string): boolean =>
  * lane can get wrong (#5855).
  */
 export const statesResearchOwningAppointment = (title?: string): boolean =>
-  Boolean(title) &&
-  !isPageHeadingTitle(title) &&
-  isFacultyTitle(title || '') &&
-  !cannotOwnResearchHome(title);
+  !isPageHeadingTitle(title) && titleOwnsResearch(title) && !cannotOwnResearchHome(title);
