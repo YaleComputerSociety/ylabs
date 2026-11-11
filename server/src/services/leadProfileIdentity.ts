@@ -115,13 +115,27 @@ export const isLikelyOfficialPersonProfileUrl = (value: unknown): boolean => {
  */
 const YSM_SECTION_PROFILE_PATH = /^\/[a-z0-9-]+\/profile\/([a-z0-9-]+)$/i;
 
+/**
+ * `divinity.yale.edu` moved its faculty pages from `/faculty-and-research/yds-faculty/<slug>`
+ * to `/profile/<slug>` under the same slug; center rosters still link the old form, which
+ * now answers 404, while archived copies show the same person under it (#5592). Only that
+ * one path pair collapses, and only on that host.
+ */
+const YDS_LEGACY_FACULTY_PATH = /^\/faculty-and-research\/yds-faculty\/([a-z0-9-]+)$/i;
+
 const canonicalOfficialProfilePath = (host: string, path: string): string => {
+  if (host === 'divinity.yale.edu') {
+    const legacy = YDS_LEGACY_FACULTY_PATH.exec(path);
+    return legacy ? `/profile/${legacy[1]}` : path;
+  }
   if (host !== 'medicine.yale.edu') return path;
   const sectioned = YSM_SECTION_PROFILE_PATH.exec(path);
   return sectioned ? `/profile/${sectioned[1]}` : path;
 };
 
 const YSM_ROOT_PROFILE_PATH = /^\/profile\/[a-z0-9-]+$/i;
+
+const YDS_PROFILE_PATH = /^\/profile\/([a-z0-9-]+)$/i;
 
 /**
  * Hosts whose profile path is the same for everyone and whose query names the person, so
@@ -155,10 +169,11 @@ export const officialProfileDestinationStoredPattern = (url?: string | null): Re
   }
   const anySection =
     host === 'medicine.yale.edu' && YSM_ROOT_PROFILE_PATH.test(path) ? '(?:/[a-z0-9-]+)?' : '';
-  return new RegExp(
-    `^https?://(?:www\\.)?${escapeRegex(host)}${anySection}${escapeRegex(path)}/*(?:[?#].*)?$`,
-    'i',
-  );
+  const ydsProfile = host === 'divinity.yale.edu' ? YDS_PROFILE_PATH.exec(path) : null;
+  const pathPattern = ydsProfile
+    ? `(?:/profile|/faculty-and-research/yds-faculty)/${escapeRegex(ydsProfile[1])}`
+    : `${anySection}${escapeRegex(path)}`;
+  return new RegExp(`^https?://(?:www\\.)?${escapeRegex(host)}${pathPattern}/*(?:[?#].*)?$`, 'i');
 };
 
 export const normalizeOfficialProfileDestination = (url?: string | null): string => {
