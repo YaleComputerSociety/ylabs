@@ -16,6 +16,7 @@ import {
   ownsNoResearchEntityByTitle,
   personToObservations,
   statesOnlyATeachingAppointment,
+  titleStatesOnlyAStaffRole,
   YaleDirectoryScraper,
 } from '../sources/yaleDirectoryScraper';
 import type { ObservationInput, ScraperContext } from '../types';
@@ -743,5 +744,36 @@ describe('title classification against invisible format characters (#2874)', () 
     } as never);
     expect(observations.length).toBeGreaterThan(0);
     expect(observations.find((obs) => obs.field === 'userType')?.value).toBe('professor');
+  });
+});
+
+describe('titleStatesOnlyAStaffRole (#5750)', () => {
+  it('reads administrative, operations and research-support titles as staff', () => {
+    for (const title of [
+      'Senior Administrative Assistant',
+      'Program Coordinator',
+      'Financial Analyst',
+      'Accountant',
+      'Clinical Technologist',
+      'Research and Education Librarian',
+    ]) {
+      expect(titleStatesOnlyAStaffRole(title)).toBe(true);
+    }
+  });
+
+  it('never reads a stated faculty appointment as staff', () => {
+    for (const title of [
+      'Associate Professor of Medicine; Clinical Program Manager',
+      'Special Collections Librarian, Lecturer in American Religious History',
+      'Professor of Chemistry',
+    ]) {
+      expect(titleStatesOnlyAStaffRole(title)).toBe(false);
+    }
+  });
+
+  it('says nothing about an absent title or an academic rank held in another group', () => {
+    for (const title of [undefined, null, '', 'Postdoctoral Associate', 'Graduate Student']) {
+      expect(titleStatesOnlyAStaffRole(title)).toBe(false);
+    }
   });
 });

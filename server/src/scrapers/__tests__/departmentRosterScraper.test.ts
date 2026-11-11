@@ -5917,3 +5917,64 @@ describe('withoutSharedRosterEmails', () => {
     expect(out.map((o) => o.entry.email)).toEqual(['aa1@yale.edu', 'aa1@yale.edu']);
   });
 });
+
+describe('dept-faculty-roster userType comes from the person, not the page (#5750)', () => {
+  const htmlFetcher = vi.fn(async () => '<html><body></body></html>');
+  const deptListing = (deptKey: string, deptName: string, title: string): DeptConfig => ({
+    deptKey,
+    deptName,
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    url: `https://${deptKey}.yale.edu/people/faculty`,
+    paginated: false,
+    extractor: () => [
+      {
+        name: 'Test Lister',
+        email: 'tl123@yale.edu',
+        profileUrl: `https://${deptKey}.yale.edu/people/test-lister`,
+        title,
+      },
+    ],
+  });
+  const typingsOf = async (configs: DeptConfig[]) => {
+    const scraper = new DepartmentRosterScraper(configs, null, htmlFetcher);
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+    return emitted
+      .filter((o) => o.entityType === 'user' && o.field === 'userType')
+      .map((o) => o.value);
+  };
+
+  it.each([
+    'Senior Administrative Assistant',
+    'Program Coordinator',
+    'Financial Analyst',
+    'Clinical Technologist',
+    'Subject Librarian',
+  ])('types a person titled %s as staff', async (title) => {
+    expect(await typingsOf([deptListing('chem', 'Chemistry', title)])).toEqual(['staff']);
+  });
+
+  it.each(['Professor of Chemistry', 'Associate Professor of Medicine; Clinical Program Manager'])(
+    'keeps faculty for %s',
+    async (title) => {
+      expect(await typingsOf([deptListing('chem', 'Chemistry', title)])).toEqual(['faculty']);
+    },
+  );
+
+  it('keeps faculty for a person one roster lists as faculty and a later one as staff', async () => {
+    expect(
+      await typingsOf([
+        deptListing('chem', 'Chemistry', 'Professor of Chemistry'),
+        deptListing('physics', 'Physics', 'Department Administrator'),
+      ]),
+    ).toEqual(['faculty']);
+  });
+
+  it('ends on faculty when the faculty listing is read after the staff one', async () => {
+    const typings = await typingsOf([
+      deptListing('physics', 'Physics', 'Department Administrator'),
+      deptListing('chem', 'Chemistry', 'Professor of Chemistry'),
+    ]);
+    expect(typings.at(-1)).toBe('faculty');
+  });
+});

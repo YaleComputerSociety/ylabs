@@ -281,6 +281,19 @@ export function isResearchSupportStaffTitle(title: string | undefined | null): b
   return !isFacultyTitle(clean);
 }
 
+/**
+ * Whether a person's own title names a staff role and no faculty appointment anywhere: an
+ * administrative, operations or research-support title. The page a person is listed on is
+ * no witness to this, because a department's people page lists its staff beside its
+ * professors (#5750).
+ */
+export function titleStatesOnlyAStaffRole(title: string | undefined | null): boolean {
+  return (
+    (looksLikeNonResearchTitle(title) || isResearchSupportStaffTitle(title)) &&
+    !statesAnyFacultyAppointment(title)
+  );
+}
+
 const TEACHING_APPOINTMENT_RANK_RE = /\b(?:senior\s+)?lect(?:urer|or)s?\b/gi;
 
 const TEACHING_TITLE_NAMES_ANOTHER_ROLE_RE =

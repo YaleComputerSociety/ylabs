@@ -1124,6 +1124,14 @@ export const LATEST_WINS_FINGERPRINT_FIELDS_BY_ENTITY_TYPE: Readonly<
  * same reason, so value-keyed rows left its own earlier typings live to outvote the newest one
  * at resolve; another source's type is a rival claim rather than a restatement, so it stays
  * value-keyed (#4884).
+ *
+ * The department roster lane types each person from their own listed title, so a re-read
+ * that finds a staff title must replace the lane's earlier faculty typing rather than stand
+ * beside it as a same-source conflict. The lane emits one typing per key per run, after its
+ * concurrent roster lanes finish, because two inserts for one key in flight at once supersede
+ * each other. It never lets a staff typing replace a faculty one, whether the faculty typing
+ * came from another roster in the run or from a live lane title stating a faculty appointment,
+ * so a partial run cannot undo another roster's faculty typing (#5750).
  */
 export const LATEST_WINS_FINGERPRINT_FIELDS_BY_SOURCE: Readonly<
   Record<string, ReadonlySet<string>>
@@ -1131,6 +1139,7 @@ export const LATEST_WINS_FINGERPRINT_FIELDS_BY_SOURCE: Readonly<
   'lab-microsite-description-llm': new Set(['name', 'displayName']),
   'official-profile-pi-backfill': new Set(['entityType', 'kind']),
   'center-member-profile-research': new Set(['researchSummary', 'bio']),
+  'dept-faculty-roster': new Set(['userType']),
 };
 
 export function usesLatestWinsFingerprint(input: {
