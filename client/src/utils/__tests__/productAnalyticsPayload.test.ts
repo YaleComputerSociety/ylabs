@@ -508,6 +508,18 @@ describe('PostHog configuration', () => {
     expect(maskAttribute('class', 'rounded-md')).toBe('rounded-md');
   });
 
+  it('strips the query from every URL attribute in an elements chain, including adjacent ones (#5621)', () => {
+    const beforeSend = config().before_send as (event: never) => unknown;
+    const chain = `a:attr__href="?q=${SYNTHETIC_QUERY}"href="?q=${SYNTHETIC_QUERY}"nth-child="1"`;
+    const scrubbed = beforeSend({
+      uuid: 'synthetic',
+      event: '$autocapture',
+      properties: { $elements_chain: chain },
+    } as never) as { properties: Record<string, unknown> };
+
+    expect(scrubbed.properties.$elements_chain).toBe('a:attr__href=""href=""nth-child="1"');
+  });
+
   it('scrubs replay snapshots itself, so an SDK masking change cannot leak a query or the netid (#5621)', () => {
     const config = productAnalytics.buildPostHogConfig({
       host: POSTHOG_INGEST_ORIGIN,

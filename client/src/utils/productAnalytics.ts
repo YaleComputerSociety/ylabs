@@ -67,7 +67,7 @@ const URL_VALUE_KEYS = new Set([
   '$session_entry_url',
   '$session_entry_referrer',
 ]);
-const URL_ATTRIBUTE_IN_CHAIN = /(^|[^A-Za-z0-9_])((?:attr__)?(?:href|src|action))="([^"]*)"/g;
+const URL_ATTRIBUTE_IN_CHAIN = /(?<![A-Za-z0-9_])((?:attr__)?(?:href|src|action))="([^"]*)"/g;
 const withoutUrlQuery = (value: string) => value.replace(/[?#][\s\S]*$/, '');
 const SEARCH_ENGINE_PROPERTY = /(?:^\$?|_)(?:ph_keyword|search_engine)$/;
 
@@ -82,8 +82,7 @@ export const createRedactor = (netId?: string) => {
       .replace(URL_QUERY_OR_FRAGMENT, '$1')
       .replace(
         URL_ATTRIBUTE_IN_CHAIN,
-        (_match, lead: string, name: string, url: string) =>
-          `${lead}${name}="${withoutUrlQuery(url)}"`,
+        (_match, name: string, url: string) => `${name}="${withoutUrlQuery(url)}"`,
       );
     return netIdPattern
       ? withoutQueries.replace(netIdPattern, (_match, lead: string) => `${lead}${REDACTED}`)
@@ -395,9 +394,7 @@ export const startProductAnalytics = (
           isOpen: gate.isOpen,
         }),
       );
-      if (opaqueProductAnalyticsId(session.distinctId)) {
-        instance.setPersonProperties({ user_type: userTypeBucket(session.userType) });
-      }
+      instance.setPersonProperties({ user_type: userTypeBucket(session.userType) });
       const queued = pendingJourneyEvents;
       pendingJourneyEvents = [];
       queued.forEach(({ name, properties }) => instance.capture(name, properties));
