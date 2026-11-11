@@ -95,14 +95,15 @@ jobs:
           yarn --cwd server install --immutable
           yarn --cwd client install --immutable
 
-      # The browser download and its apt dependencies take ~25 seconds and need
-      # nothing the steps below produce, so they run while the client builds, the
-      # index is seeded and the API starts (#4666). The exit code is written to a
-      # file because a later step cannot `wait` on another step's process, and
-      # the wait step below fails the job on any non-zero install.
+      # The browser download takes ~25 seconds and needs nothing the steps below
+      # produce, so it runs while the client builds, the index is seeded and the
+      # API starts (#4666). The exit code is written to a file because a later
+      # step cannot `wait` on another step's process, and the wait step below
+      # fails the job on any non-zero download. The apt dependencies are kept out
+      # of this download so an Ubuntu mirror outage cannot fail it.
       - name: Start Playwright Chromium install
         run: |
-          nohup bash -c 'npx playwright install --with-deps chromium > /tmp/playwright-install.log 2>&1; echo $? > /tmp/playwright-install.exit' > /dev/null 2>&1 &
+          nohup bash -c 'npx playwright install chromium > /tmp/playwright-install.log 2>&1; echo $? > /tmp/playwright-install.exit' > /dev/null 2>&1 &
 
       - name: Build client
         run: yarn build:client
@@ -140,7 +141,15 @@ jobs:
           cat /tmp/e2e-server.log || true
           exit 1
 
+      # The system libraries come from the Ubuntu mirrors, which went unreachable
+      # from the runners for hours on 2026-11-11 and blocked every merge. The
+      # install is retried with backoff, and then the job proves Chromium really
+      # launches: the runner image already carries a browser's libraries, so a
+      # mirror outage passes only when nothing is missing, and a missing library
+      # still fails here, before the smoke runs.
       - name: Install Playwright Chromium
+        env:
+          PLAYWRIGHT_DEPS_RETRY_DELAYS: '15 45 90'
         run: |
           for attempt in $(seq 1 300); do
             [ -s /tmp/playwright-install.exit ] && break
@@ -148,6 +157,19 @@ jobs:
           done
           cat /tmp/playwright-install.log || true
           [ "$(cat /tmp/playwright-install.exit 2>/dev/null)" = 0 ]
+          deps_installed=false
+          for delay in 0 $PLAYWRIGHT_DEPS_RETRY_DELAYS; do
+            sleep "$delay"
+            if npx playwright install-deps chromium; then
+              deps_installed=true
+              break
+            fi
+            echo "Playwright system dependency install failed; retrying after backoff"
+          done
+          if [ "$deps_installed" != true ]; then
+            echo "::warning::Ubuntu mirrors unreachable; continuing only if Chromium launches with the runner's own libraries"
+          fi
+          node -e "require('playwright').chromium.launch().then((browser) => browser.close()).catch((error) => { console.error(error); process.exit(1); })"
 
       - name: Run student-journey smoke
         run: node scripts/e2e-student-journey-smoke.mjs
