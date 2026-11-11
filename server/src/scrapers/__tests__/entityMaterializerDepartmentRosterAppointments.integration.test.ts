@@ -416,6 +416,52 @@ describe('department roster appointments combine (#3621)', () => {
       expect(await departmentsOf('example-lead')).toEqual(['History', 'Early Modern Studies']);
     });
 
+    it('never lets the snapshot of the run whose person-keyed read dates the appointment retire it', async () => {
+      await seedCrossListing();
+      await seedRosterRead('example-lead-roster-shell', ['Early Modern Studies'], LAST_TERM);
+      await Observation.create({
+        entityType: 'researchEntity',
+        entityKey: 'example-lead',
+        field: 'inferredPiUserKey',
+        value: 'netid:example.lead',
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: ROSTER,
+        sourceUrl: 'https://history.example.yale.edu/people/',
+        confidence: 0.7,
+        observedAt: RECENT,
+        superseded: false,
+      });
+      const personReadRun = new mongoose.Types.ObjectId();
+      const personReadAt = new Date('2026-08-01T00:00:00Z');
+      await Observation.create({
+        entityType: 'user',
+        entityKey: 'netid:example.lead',
+        field: 'departments',
+        value: ['Early Modern Studies'],
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: ROSTER,
+        sourceUrl: 'https://early-modern-studies.example.yale.edu/people/',
+        confidence: 0.7,
+        observedAt: personReadAt,
+        superseded: false,
+        scrapeRunId: personReadRun,
+      });
+      const personReadRunSnapshot = await seedRosterSnapshot(
+        'early-modern-studies',
+        'Early Modern Studies',
+        ['another-faculty-member'],
+        new Date(personReadAt.getTime() + 60 * 60 * 1000),
+      );
+      await Observation.updateOne(
+        { _id: personReadRunSnapshot._id },
+        { $set: { scrapeRunId: personReadRun } },
+      );
+
+      await materializeEntity('researchEntity', { entityKey: 'example-lead' });
+
+      expect(await departmentsOf('example-lead')).toEqual(['History', 'Early Modern Studies']);
+    });
+
     it('treats an incomplete read of its roster as no evidence of absence', async () => {
       await seedCrossListing();
       await seedRosterRead('example-lead-roster-shell', ['Early Modern Studies'], LAST_TERM);

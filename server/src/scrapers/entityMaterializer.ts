@@ -9716,14 +9716,14 @@ async function authoritativeDepartmentRosterRereads(
  * department's roster no longer lists the row under any of its keys. A read of some other
  * department is not evidence about this one, so a run scoped to a few rosters leaves
  * every other roster's appointments standing (#5824). The snapshot of the appointment's
- * own run is not a re-read either: it is written after the walk, and a cross-listed
- * programme lane's appointees are never in its keys, so it would retire the appointment
- * that run just read.
+ * own run is not a re-read either, nor is that of any person-keyed read that dates it: it
+ * is written after the walk, and a cross-listed programme lane's appointees are never in
+ * its keys, so it would retire the appointment that run just read.
  */
 function rosterAppointmentRereadWithoutListing(
   appointmentDepartmentKeys: readonly string[],
   appointmentReadTime: number,
-  appointmentScrapeRunId: string,
+  appointmentReadingRunIds: ReadonlySet<string>,
   rereads: readonly DepartmentRosterReread[],
   rowEntityKeys: ReadonlySet<string>,
 ): boolean {
@@ -9733,7 +9733,7 @@ function rosterAppointmentRereadWithoutListing(
       (reread) =>
         reread.departmentKey === key &&
         reread.readAt > appointmentReadTime &&
-        !(appointmentScrapeRunId && reread.scrapeRunId === appointmentScrapeRunId),
+        !appointmentReadingRunIds.has(reread.scrapeRunId),
     );
     if (later.length === 0) return false;
     const newestReadAt = Math.max(...later.map((reread) => reread.readAt));
@@ -9745,21 +9745,42 @@ function rosterAppointmentRereadWithoutListing(
   });
 }
 
-export function rosterAppointmentReadTime(
+function rosterAppointmentReads(
   observation: ResolverObservation,
   personReads: readonly ResolverObservation[],
-): number {
+): ResolverObservation[] {
   const departmentsOf = (value: unknown) =>
     (Array.isArray(value) ? value : [value])
       .map((item) => textValue(item).trim().toLowerCase())
       .filter(Boolean);
-  const own = new Date(observation.observedAt as any).getTime() || 0;
   const departments = new Set(departmentsOf(observation.value));
+  return [
+    observation,
+    ...personReads.filter((read) =>
+      departmentsOf(read.value).some((department) => departments.has(department)),
+    ),
+  ];
+}
+
+export function rosterAppointmentReadTime(
+  observation: ResolverObservation,
+  personReads: readonly ResolverObservation[],
+): number {
   return Math.max(
-    own,
-    ...personReads
-      .filter((read) => departmentsOf(read.value).some((department) => departments.has(department)))
-      .map((read) => new Date(read.observedAt as any).getTime() || 0),
+    ...rosterAppointmentReads(observation, personReads).map(
+      (read) => new Date(read.observedAt as any).getTime() || 0,
+    ),
+  );
+}
+
+function rosterAppointmentReadingRunIds(
+  observation: ResolverObservation,
+  personReads: readonly ResolverObservation[],
+): Set<string> {
+  return new Set(
+    rosterAppointmentReads(observation, personReads)
+      .map((read) => scrapeRunIdOf((read as { scrapeRunId?: unknown }).scrapeRunId))
+      .filter(Boolean),
   );
 }
 
@@ -9855,7 +9876,7 @@ async function combineDepartmentRosterAppointments(input: {
     !rosterAppointmentRereadWithoutListing(
       departmentKeysOf(observation),
       readTime(observation),
-      scrapeRunIdOf((observation as { scrapeRunId?: unknown }).scrapeRunId),
+      rosterAppointmentReadingRunIds(observation, personReads),
       rereads,
       rowEntityKeys,
     );
