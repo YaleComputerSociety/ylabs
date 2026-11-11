@@ -353,7 +353,7 @@ export function extractProfile(html: string, faculty: RawYsmFaculty): YsmFaculty
     profileUrl: faculty.profileUrl,
     slug: faculty.slug,
     title: displayedProfileTitle(model) || textValue(about.workdayTitle) || undefined,
-    screeningTitle: textValue(about.workdayTitle) || displayedProfileTitle(model) || undefined,
+    screeningTitle: textValue(about.workdayTitle) || undefined,
     email: extractPersonEmail(getInTouch.email, name),
     orcid: extractOrcid(research),
     departments: departmentsFromAboutSection(about),

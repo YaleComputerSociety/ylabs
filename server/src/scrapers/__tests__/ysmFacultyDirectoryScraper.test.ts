@@ -184,6 +184,23 @@ describe('extractProfile', () => {
       expect(extractProfile(html, RIVERS)?.title).toBe('Assistant Clinical Professor');
     });
 
+    it('screens nothing from the header when the page carries no Workday title', () => {
+      const html = profileHtml({
+        fullName: 'Jordan Rivers',
+        headerTitles: ['Professor of Fixture Medicine'],
+        workdayTitle: null,
+      });
+      const profile = extractProfile(html, RIVERS)!;
+
+      expect(profile.title).toBe('Professor of Fixture Medicine');
+      expect(profile.screeningTitle).toBeUndefined();
+      expect(
+        facultyToUserObservations(profile).observations.find(
+          (observation) => observation.field === 'userType',
+        )?.value,
+      ).toBe('faculty');
+    });
+
     it('falls back to the Workday title only when the header states none', () => {
       for (const headerTitles of [undefined, [], ['  ']]) {
         const html = profileHtml({
