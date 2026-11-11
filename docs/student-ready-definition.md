@@ -127,6 +127,7 @@ A row that already carries `missing_lead` does not also carry this reason, so th
 - Application container: `common_application_container`. A program row whose title names a common application, which admits to several funds that are each served as their own program and link it as their route. Removed at `suppressed`.
 - Not a current program: `external_award_cycle_stale`, `award_suspended`, `prize_for_completed_work`, `program_listing_page`. A program row that is an outside program whose office record skipped its only stated cycle, an award its own record says is suspended, a prize for completed work, or a catalog page listing programs served on their own. Removed at `suppressed`; `server/src/services/programApplicability.ts` owns each predicate and `docs/decisions.md` records the measurement (#4587).
 - Inactive / out of scope: `inactive_at_yale`, `archive_review`, `not_undergraduate_relevant`.
+- Removed by request: `researcher_removed`. Every lead of the row is recorded in `directory_removals`. Removed at `suppressed`, outranking an operator override; `docs/directory-removal.md` owns the rule.
 - Citations: `all_citations_dead`, `citations_identify_no_person`. Maps to `citationIdentifiesSubject`: a row whose every citation is dead, or whose every citation is shared across person rows, has no live evidence about its own subject (#2464/#2635).
 Both block, because both are the same question; leaving the second unclassified made it read as non-blocking while the field it maps to still held the row.
 

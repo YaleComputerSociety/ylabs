@@ -94,6 +94,7 @@ export interface ResearchEntityStudentVisibilityInput {
    */
   citationsSharedAcrossPersonRows?: boolean;
   relatedEntityAccessPathCount?: number;
+  everyLeadRemovedByRequest?: boolean;
   /**
    * The one corpus fact the name-identity authority cannot derive from one record,
    * supplied here for the same reason `ResearchEntityNameIdentityAuthority` supplies
@@ -928,7 +929,10 @@ export const CAREER_BIOGRAPHY_WITHOUT_RESEARCH_REASON = 'career_biography_withou
 // (generic directory / biography / non-owner-grant) are removed one tier earlier
 // at `suppressed`; they appear here so the repair histogram classifies them as
 // blockers wherever they surface.
+export const RESEARCHER_REMOVED_REASON = 'researcher_removed';
+
 export const STUDENT_READY_HARD_BLOCKER_REASONS: ReadonlySet<string> = new Set([
+  RESEARCHER_REMOVED_REASON,
   'missing_description',
   'missing_card_description',
   'thin_description',
@@ -1043,6 +1047,7 @@ export function computeResearchEntityStudentVisibility({
   exactUrlDuplicateRisk = false,
   citationsSharedAcrossPersonRows = false,
   relatedEntityAccessPathCount = 0,
+  everyLeadRemovedByRequest = false,
   knownPersonSurnames = NO_SURNAME_ROSTER,
 }: ResearchEntityStudentVisibilityInput): StudentVisibilityResult {
   const publicDescription = buildResearchEntityPublicDescriptionRepresentation({
@@ -1203,6 +1208,7 @@ export function computeResearchEntityStudentVisibility({
   }
   const permanentlyClosed = hasRecordedClosureEvidence(entity);
   if (permanentlyClosed) reasons.push('permanently_closed');
+  if (everyLeadRemovedByRequest) reasons.push(RESEARCHER_REMOVED_REASON);
   if (exactUrlDuplicateRisk) reasons.push('exact_url_duplicate_risk');
   if (duplicateRisk || exactUrlDuplicateRisk) reasons.push('duplicate_risk');
   // `source_backed_description` is the one signal that claims a source backs the copy,
@@ -1295,6 +1301,7 @@ export function computeResearchEntityStudentVisibility({
     nonOwnerGrantShell ||
     uncorroboratedGrantOnly ||
     permanentlyClosed ||
+    everyLeadRemovedByRequest ||
     reasons.includes('research_infrastructure_only')
   ) {
     computedTier = 'suppressed';
@@ -1335,6 +1342,13 @@ export function computeResearchEntityStudentVisibility({
   // remove the marker, not to publish over it; leaving the override able to win
   // would make the marker advisory, which is the "correct but cannot fire" shape
   // catalogued in #2258.
+  if (everyLeadRemovedByRequest && result.tier !== 'suppressed') {
+    return {
+      tier: 'suppressed',
+      computedTier: result.computedTier,
+      reasons: Array.from(new Set([...result.reasons, RESEARCHER_REMOVED_REASON])),
+    };
+  }
   if (permanentlyClosed && result.tier !== 'suppressed') {
     return {
       tier: 'suppressed',

@@ -4997,7 +4997,7 @@ test('public research Meilisearch service bounds direct search inputs', () => {
   assert.match(source, /buildResearchGroupFilterString\(visibilityScopedFilters\)/);
   assert.match(source, /\.map\(normalizeResearchGroupObjectId\)/);
   assert.match(source, /const safeEntityId = normalizeResearchGroupObjectId\(entityId\)/);
-  assert.match(source, /await getResearchEntityRoster\(\(group as any\)\._id\)/);
+  assert.match(source, /await servedRoster\(\(group as any\)\._id\)/);
   assert.doesNotMatch(source, /mongoose\.Types\.ObjectId\.isValid\(id\)/);
   assert.doesNotMatch(source, /mongoose\.Types\.ObjectId\.isValid\(String\(entityId/);
 });
