@@ -114,6 +114,12 @@ export interface YsmFacultyProfile {
   profileUrl: string;
   slug: string;
   title?: string;
+  /**
+   * What the mint screens and `userType` read: the HR title when the page carries one. A
+   * hospital staff affiliate can display a clinical rank, and the screens were measured
+   * against the HR title (#5578).
+   */
+  screeningTitle?: string;
   email?: string;
   orcid?: string;
   departments: string[];
@@ -296,6 +302,19 @@ function extractLabWebsite(
 }
 
 /**
+ * The leading title of the page's header title block, which the page renders and its
+ * JSON-LD `jobTitle` repeats. `about.workdayTitle` is the HR record instead, and it can
+ * be a recruiting placeholder or a job code ("Medical School Recruit - ...") while the
+ * page displays the person's appointment (#5578), so it is read only when the header
+ * states no title.
+ */
+function displayedProfileTitle(model: Record<string, unknown>): string {
+  const header = (model.header || {}) as Record<string, unknown>;
+  const titles = Array.isArray(header.titles) ? header.titles : [];
+  return titles.map((title) => textValue(title)).find(Boolean) || '';
+}
+
+/**
  * Parse an individual profile page's `ProfileDetails` component into a
  * researcher-shaped record. Returns null when the page carries no
  * `ProfileDetails` component (a malformed/removed profile).
@@ -333,7 +352,8 @@ export function extractProfile(html: string, faculty: RawYsmFaculty): YsmFaculty
     name,
     profileUrl: faculty.profileUrl,
     slug: faculty.slug,
-    title: textValue(about.workdayTitle) || undefined,
+    title: displayedProfileTitle(model) || textValue(about.workdayTitle) || undefined,
+    screeningTitle: textValue(about.workdayTitle) || displayedProfileTitle(model) || undefined,
     email: extractPersonEmail(getInTouch.email, name),
     orcid: extractOrcid(research),
     departments: departmentsFromAboutSection(about),
@@ -366,7 +386,7 @@ export function facultyToUserObservations(profile: YsmFacultyProfile): {
   if (netid) obs.push({ ...base, field: 'netid', value: netid });
   if (first) obs.push({ ...base, field: 'fname', value: first });
   if (last) obs.push({ ...base, field: 'lname', value: last });
-  obs.push({ ...base, field: 'userType', value: classifyUserType(profile.title) });
+  obs.push({ ...base, field: 'userType', value: classifyUserType(profile.screeningTitle) });
   if (profile.departments.length > 0) {
     obs.push({ ...base, field: 'primaryDepartment', value: profile.departments[0] });
     obs.push({ ...base, field: 'departments', value: profile.departments });
@@ -695,7 +715,7 @@ export class YsmFacultyDirectoryScraper implements IScraper {
 
         const profile = extractProfile(profileHtml, faculty);
         if (!profile) return;
-        if (looksLikeNonResearchTitle(profile.title)) {
+        if (looksLikeNonResearchTitle(profile.screeningTitle)) {
           totalObs += await emitSkippedProfileRefusal(profile);
           return;
         }
@@ -704,7 +724,7 @@ export class YsmFacultyDirectoryScraper implements IScraper {
         // (#2304, the mint-side cause of the #2285 grafts). A lab technician,
         // instrument technologist or research librarian works in somebody else's
         // lab for the same reason, and matched neither screen before #3410.
-        if (isSubordinateResearchRank(profile.title)) {
+        if (isSubordinateResearchRank(profile.screeningTitle)) {
           subordinateRankSkipped += 1;
           totalObs += await emitSkippedProfileRefusal(profile);
           return;
@@ -721,14 +741,14 @@ export class YsmFacultyDirectoryScraper implements IScraper {
         // retirement pass keys on, so screening ahead of the emit would stop
         // refreshing the very claim that judges the row (#3410). The two screens above
         // still skip person enrichment, which predates this change.
-        if (isResearchSupportStaffTitle(profile.title)) {
+        if (isResearchSupportStaffTitle(profile.screeningTitle)) {
           supportStaffSkipped += 1;
           totalObs += await emitSkippedProfileRefusal(profile);
           return;
         }
 
         if (
-          mintsNoResearchEntityAsTeachingAppointment(profile.title, {
+          mintsNoResearchEntityAsTeachingAppointment(profile.screeningTitle, {
             fullDescription: profile.description,
           })
         ) {

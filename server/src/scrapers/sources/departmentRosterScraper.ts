@@ -284,6 +284,8 @@ export interface FacultyEntry {
   profileUrl?: string;
   /** Title / position string ("Sterling Professor of …") if present. */
   title?: string;
+  /** Set when `title` came from the person's profile page rather than the listing. */
+  titleFromProfilePage?: boolean;
   /** Email address if present (used to derive netid). */
   email?: string;
   /** External lab / personal website URL discovered on the listing. */
@@ -3690,6 +3692,7 @@ function mergeProfileEnrichment(
     profileUrl: enrichment.profileUrl || entry.profileUrl,
     profileSourceUrl: enrichment.profileSourceUrl || entry.profileSourceUrl,
     title: entry.title || enrichment.title,
+    titleFromProfilePage: entry.title ? entry.titleFromProfilePage : Boolean(enrichment.title),
     email: entry.email || enrichment.email,
     labUrl: entry.labUrl || enrichment.labUrl,
     labSlotAttestation: mergedLabSlotAttestation(entry, enrichment),
@@ -4128,7 +4131,10 @@ function entryToUserObservations(
     obs.push({ ...rosterBase, field: 'departments', value: [dept.deptName] });
   }
   if (personEmail) obs.push({ ...profileBase, field: 'email', value: personEmail });
-  if (entry.title) obs.push({ ...profileBase, field: 'title', value: entry.title });
+  if (entry.title) {
+    const titleBase = entry.titleFromProfilePage ? profileBase : rosterBase;
+    obs.push({ ...titleBase, field: 'title', value: entry.title });
+  }
   if (entry.profileUrl) {
     obs.push({ ...profileBase, field: 'profileUrls', value: { departmental: entry.profileUrl } });
   }

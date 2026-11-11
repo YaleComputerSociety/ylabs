@@ -47,6 +47,10 @@ Three call sites, two of which do not use the helper and say why:
 
 - `dept-faculty-roster` and `yse-faculty-directory` call `ownsNoResearchEntityByTitle`.
 - `ysm-faculty-directory` asks the three individually, because two of them run before person enrichment and the support screen runs after it: a support-staff profile still describes a real person, and its stored title is the evidence the retirement pass reads.
+- Those screens read the HR title (`about.workdayTitle`), while the `title` observation is the title the profile page displays (`header.titles[0]`, #5578).
+  A hospital staff affiliate can display a clinical rank, and the screens were measured against the HR title, so the displayed rank must not mint a row.
+  `yse-faculty-directory` likewise emits only the first position of its position block as `title` and screens the whole block.
+- A lane cites a title at the page it read it from: `dept-faculty-roster` cites a listing title at the listing and a profile-enrichment title at the profile page, and `ysm-atoz-index` cites its widget title at the lab page (#5578).
 - the retirement pass restates them in `staffMintedEntityReasonFor`, because it has to name *which* screen refused in order to report by reason.
 
 `bbs-research-track` no longer mints at all (#3561): a PI with no existing row, or several, is counted by reason and skipped, so it needs none of the three screens.

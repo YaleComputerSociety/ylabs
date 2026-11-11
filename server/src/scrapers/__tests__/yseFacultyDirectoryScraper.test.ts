@@ -597,3 +597,66 @@ describe('a lab link whose verdict the link-health lane has since dropped (#3452
     expect(riversFields(emitted).entityType).toBe('LAB');
   });
 });
+
+describe('the YSE position block (#5578)', () => {
+  const faculty: RawYseFaculty = {
+    name: 'Jordan Rivers',
+    profileUrl: 'https://environment.yale.edu/profile/jordan-rivers',
+    slug: 'jordan-rivers',
+  };
+  const html = `
+    <html><body><main><section class="profile">
+      <h1>Jordan Rivers</h1>
+      <div class="intro-text profile__position"><p>
+        <span class="semijoin" data-self-delimiter="; ">Professor of Wetland Ecology</span>
+        <span class="semijoin" data-self-delimiter="; ">Director, Fixture Center for Water</span>
+      </p></div>
+      <p><a href="mailto:jordan.rivers@yale.edu">jordan.rivers@yale.edu</a></p>
+    </section></main></body></html>
+  `;
+
+  it('emits only the leading title when the page lists an additional one', () => {
+    const profile = extractProfile(html, faculty);
+    const titles = facultyToUserObservations(profile).observations.filter(
+      (observation) => observation.field === 'title',
+    );
+
+    expect(titles.map((observation) => observation.value)).toEqual([
+      'Professor of Wetland Ecology',
+    ]);
+  });
+
+  it('still screens every appointment in the block', () => {
+    expect(extractProfile(html, faculty).title).toBe(
+      'Professor of Wetland Ecology; Director, Fixture Center for Water',
+    );
+  });
+
+  describe('when the page joins every position inside one span, as the live pages do', () => {
+    const joinedHtml = `
+      <html><body><main><section class="profile">
+        <h1>Jordan Rivers</h1>
+        <div class="intro-text profile__position"><p>
+          <span class="semijoin" data-self-delimiter="; ">Associate Dean of Fixture Studies; Professor of Wetland Ecology; Director of Fixture Forests</span>
+        </p></div>
+        <p><a href="mailto:jordan.rivers@yale.edu">jordan.rivers@yale.edu</a></p>
+      </section></main></body></html>
+    `;
+
+    it('emits the first displayed position, even an administrative one', () => {
+      const titles = facultyToUserObservations(
+        extractProfile(joinedHtml, faculty),
+      ).observations.filter((observation) => observation.field === 'title');
+
+      expect(titles.map((observation) => observation.value)).toEqual([
+        'Associate Dean of Fixture Studies',
+      ]);
+    });
+
+    it('still screens every position in the span', () => {
+      expect(extractProfile(joinedHtml, faculty).title).toBe(
+        'Associate Dean of Fixture Studies; Professor of Wetland Ecology; Director of Fixture Forests',
+      );
+    });
+  });
+});
