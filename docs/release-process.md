@@ -251,16 +251,136 @@ It reads like a completeness option and is not one: when the source is empty it 
 ### Seed the search rerank cache after the copy and the reindex
 
 The rerank cache (`search_rerank_cache`, `docs/search-rerank-cache.md`) is environment-local, so a promotion never copies it and the target serves today's fused order until it is seeded.
-The owner approved serving it on Beta and Production after a promotion (#5448), so seed each target once its copy and reindex are done, and before turning the flag on.
+A promotion never clears it either, so entries seeded by an earlier promotion stay until a later seed replaces them by key.
+The owner approved serving seeded entries on Beta and Production after a promotion (#5448).
+The live-miss job is not approved there, so `SEARCH_RERANK_LIVE_MISS_ENABLED` stays unset on both web services.
+`yarn promote:beta` and `yarn promote:production` run none of these steps, and skipping them is safe: an unseeded or disabled cache changes nothing a student sees.
 
-1. Seed Beta after the Development-to-Beta copy and reindex: `yarn --cwd server research-search:seed-rerank-cache --environment=beta --input=<seed.json>` as a dry run, then again with `--apply --confirm-search-rerank-cache-seed --index-version=<marker>`.
-2. Seed Production the same way after its copy and reindex, with `--environment=production`, `SCRAPER_ENV=production` and `CONFIRM_PROD_SCRAPE=true`.
-3. Use the seed file the Development cache was built from, and seed only when the promoted corpus is the one it was scored on; the dry run's `unresolvedSlugs` must read 0, because a slug the target does not carry is a row the scores cannot name.
-   Seeding after the reindex matters because each score stores a hash of its row read from the target's index; the dry run's `textHashes` must read `read-from-index` for hashes to be stored, which needs a shell whose `MEILISEARCH_INDEX_PREFIX` names the target, and `staleSeededEntries` reports how many existing seeds that index no longer matches.
-4. Then set `SEARCH_RERANK_CACHE_ENABLED=true` on that environment's web service and redeploy it; with the flag unset, search never reads the collection.
-5. Verify by searching a seeded query on the deployed site and comparing its top results with Development's served order for the same query.
+#### Where the seed comes from
 
-`yarn promote:production` does not run these steps, and they are safe to skip: an unseeded or disabled cache changes nothing a student sees.
+Seed each target from the laptop that runs the promotion, with `--environment=beta` or `--environment=production`, from the seed file Development's cache is seeded from.
+The file pairs real student queries with row slugs, so it stays outside the repository, where the seeder insists on finding it, and it is never copied onto a Render instance.
+A Render shell cannot read a laptop file, and an operator one-off job receives only a build and its service's variables, so the laptop is the one place that holds both the file and a connection to the target.
+The laptop already reaches Atlas `Beta` and `Prod` for the two copies ("Where Each Step Runs" in `docs/data-refresh-runbook.md`), through `BETA_MONGODBURL` and `PRODUCTION_MONGODBURL`, which is what the seeder reads for those targets.
+The seeder resolves each slug against the target's own live rows, so nothing is read from Development at seed time.
+
+The cost is the stored text hashes, and it is not one a student sees.
+The private Meilisearch is unreachable from a laptop, so leave `MEILISEARCH_INDEX_PREFIX` unset: the seeder then reports `textHashes: index-of-another-environment`, stores no `textHash`, and reports `null` for every staleness count.
+Never set the prefix to `beta` or `prod` on a laptop, because the laptop's Meilisearch host is the local Development one and the seeder would hash the target's rows against the wrong index.
+A stale entry is served exactly as a fresh one, and staleness only decides whether the live-miss job may replace an entry, which is off on Beta and Production and never replaces a seeded `full-` entry anyway.
+What is lost is the target's own re-seed signal, `staleSeededEntries`.
+Read it on Development instead, in a dry run just before the copy: Beta receives Development's live rows with the same `_id` and the same content, and its index is built by the same document builder, so Development's count is what the target would report at copy time.
+Between promotions Beta and Production change only by promotion, and each promotion re-seeds.
+
+Copying Development's entries instead would also name the right rows, because both copies keep every research entity `_id`.
+The Development-to-Beta mirror inserts each live row as read and rewrites only `mergedFrom` (`withMergedFromAtCopyTime` in `server/src/scripts/archivedTombstoneMirror.ts`), and `promoteAcceptedBetaCopy.ts` inserts Beta's documents unchanged.
+It is still not the path.
+`search_rerank_cache` is in `NEVER_COPY_COLLECTIONS`, every copy refuses one, and no tool exports it.
+Development's collection also holds `shadow` entries and entries keyed before the acronym rewrite (#5643), which a re-seed from the file does not carry.
+What a re-seed loses is a score whose slug no longer resolves: on 2026-11-11 the revised file left 6 of 9,942 scores unresolved, and each of those rows takes the neutral 1.5.
+
+#### Before the first run: the seed file must key cleanly under current code
+
+Since #5643 a bare acronym keys as the phrase it stands for, so a file holding a bare acronym and its phrase as two entries is refused with `Entries <i> and <j> have the same query key`, before anything is read or written.
+The seed file Development was seeded from on 2026-11-10 holds one such pair, so it cannot seed any environment until it is revised.
+That revision is done: version v3 of the file, outside the repository, reseeded Development on 2026-11-11 under the marker `full-v3-2026-11-11`, so the steps below are the procedure for the next revision rather than a pending task.
+Drop the bare acronym entry and keep the phrase entry, because the acronym is now searched as its phrase, so the phrase entry's scores are the ones scored against the pool the acronym is served.
+Revise the file outside the repository under a new version name and keep the previous version.
+While revising it, rewrite each slug that no longer resolves to the row's current slug, read through the `entityId` Development's cache stored for it, so the renamed rows keep their scores.
+Then re-seed Development's own `search_rerank_cache` from the revised file, so its entries carry text hashes (the 2026-11-10 seed stored none), its keys match current code, and Development is a valid reference for the two reads below.
+
+#### Commands
+
+Run every command from the repository root of a laptop checkout at current `beta`, with `<seed.json>` the revised file and `<marker>` the index version.
+Name the marker `full-<seed version>-<YYYY-MM-DD>` with the seeding date, for example `full-v3-2026-11-20`.
+The `full-` prefix is what marks an entry as seeded: the live-miss job never replaces such an entry, and the dry run counts it in `seededEntries`.
+Write each variable as a prefix on the command line itself, as below; in zsh an unquoted variable holding two assignments does not split, so the second never reaches the command.
+Neither target takes the Development write lease, because the lease skips a database that receives data only by promotion, so `DEV_WRITE_OWNER` is not needed here.
+
+1. **Development reference, before the Development-to-Beta copy.**
+   `OPENAI_API_KEY= ALLOW_NON_PROD_SCRAPER_WRITES= yarn --cwd server research-search:seed-rerank-cache --input=<seed.json>`
+   It must read `textHashes: read-from-index` and `staleSeededEntries: 0`; a non-zero count means re-seed Development first.
+   Record `entries`, `scores` and `unresolvedSlugs`: the targets must report the same values.
+2. **Beta, after `yarn promote:beta` reports the mirror applied and its remote phase (gate, reindex, readiness) succeeded.**
+   Dry run: `yarn --cwd server research-search:seed-rerank-cache --environment=beta --input=<seed.json>`
+   It must name a `db` ending in `/Beta`, read `textHashes: index-of-another-environment`, `entriesWithNoResolvedScore: 0`, and `entries`, `scores` and `unresolvedSlugs` equal to step 1.
+   A higher `unresolvedSlugs` than Development's means the target lacks live rows Development has, so stop and read the mirror report rather than seeding.
+   Apply: `yarn --cwd server research-search:seed-rerank-cache --environment=beta --input=<seed.json> --apply --confirm-search-rerank-cache-seed --index-version=<marker>`
+   `upserted` must equal `entries`.
+3. **Production, after `yarn promote:production` reports the copy applied and its remote phase (re-gate, reindex, smoke) succeeded.**
+   Dry run: `yarn --cwd server research-search:seed-rerank-cache --environment=production --input=<seed.json>`
+   It must name a `db` ending in `/Prod` and report the same counts as the Beta dry run, because the Beta-to-Production copy carries Beta's rows unfiltered.
+   Apply: `SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true yarn --cwd server research-search:seed-rerank-cache --environment=production --input=<seed.json> --apply --confirm-search-rerank-cache-seed --index-version=<marker>`
+   Without both variables the write guard refuses the apply; `upserted` must equal `entries`.
+
+#### Order
+
+Beta: the Development reference dry run, the mirror, the remote phase, the seed dry run, the seed apply, then the flag on the Beta web service, then verification.
+Production: the Beta-to-Production copy (steps 1-3 of "Promoting data, not just code" above), the remote phase, the seed dry run, the seed apply, step 6 above (merge `main` and wait for `Post-Promotion Verify`), then the flag on the Production web service, then verification.
+A seed from the laptop stores no hashes, so it needs only the copied rows; it still follows the remote phase, because a failed gate or reindex means fixing Development and promoting again, and a seed should be resolved against the corpus that will actually be served.
+Production can serve the cache only once `main` carries the serve path: on 2026-11-11 `origin/main` did not contain `SEARCH_RERANK_CACHE_ENABLED` at all, so the Production flag waits for the code merge.
+
+#### Turning it on
+
+In the Render dashboard, open the web service (Beta is `ylabs-gr4v.onrender.com`, Production is `yalelabs.onrender.com`), add `SEARCH_RERANK_CACHE_ENABLED` with the value `true` under Environment, and save and deploy.
+No rebuild is needed, because the server reads the variable at run time and it is not a `VITE_` build variable, but it reaches the process only on the restart a deploy performs.
+Leave `SEARCH_RERANK_LIVE_MISS_ENABLED`, `SEARCH_RERANK_LIVE_MISS_MODE` and `SEARCH_RERANK_CACHE_COLLECTION` unset, so the service serves seeded entries only, from `search_rerank_cache`.
+Set nothing on the operator services, which never answer a search.
+
+#### Verification
+
+Pick five verification queries from the revised seed file by predicate: no filters, two or more words, a research topic rather than a person's name, and a first result the cache moves on Development.
+Each read is the search route a student's browser calls, with the public visibility scope it applies.
+The `Origin` header names the web service's own host, because a deployed API refuses a cross-site `POST` without an allowed origin and answers 403.
+For the local Development read, use `http://localhost:<worktree API port>` in both places; a local runtime skips that check.
+
+```bash
+mkdir -p /tmp/rerank-verify
+curl -s -X POST "https://<host>/api/research/search" -H 'Content-Type: application/json' \
+  -H 'Origin: https://<host>' -d '{"q":"<query>","page":1,"pageSize":10,"filters":{}}' \
+  | jq -r '.researchEntities[].slug' > "/tmp/rerank-verify/<environment>-<on|off>-<n>.txt"
+```
+
+1. Read the Development reference right after the mirror applies, from a local API started from a `beta` worktree with `SEARCH_RERANK_CACHE_ENABLED=true`, at `http://localhost:<worktree API port>`.
+2. Read the target with the flag still off, after the seed apply, then again after the flag deploy.
+3. Pass when the target's `on` list equals Development's for all five queries and differs from its own `off` list, which proves search read the seeded entries.
+   A position that differs from Development's must be attributable to a row Development changed after the copy; anything else means the seed or the copy differs.
+
+The files hold row slugs, so they stay under `/tmp` and are reported only as counts, such as "5 of 5 matched".
+Each read is logged as an ordinary search event in that environment's analytics.
+No `journey:eval` case reads the cache (`server/src/scripts/journeyEval/README.md`), and `journey:eval` searches in-process on Development, so it cannot read a deployed environment in any case.
+
+#### Rollback
+
+Remove `SEARCH_RERANK_CACHE_ENABLED` from the web service, or set it to anything but `true`, and save and deploy.
+With the flag unset search never reads the collection, so every student sees today's fused order again on the next request after the restart.
+The rows a student sees, the totals and the facet counts are the same either way, because the cache only reorders the first 30 rows of a search it already returned.
+The seeded entries are inert with the flag off and can stay for the next attempt.
+Removing them is optional, is a write against that environment that needs its own decision, and is scoped by the marker: delete only the documents whose `indexVersion` equals the marker this run applied.
+
+#### Expected counts on a fresh copy of Development
+
+Measured on Development on 2026-11-11 with the v3 seed file, after Development's own cache was re-seeded from it.
+These change whenever the seed file or the corpus changes, so read them as the shape of a correct run rather than as values to match.
+
+| Count | Development dry run | Laptop seed of Beta or Production |
+| --- | --- | --- |
+| `entries` | 346 | 346 |
+| `scores` | 9,942 | 9,942 |
+| `resolvedScores` | 9,936 | 9,936 |
+| `unresolvedSlugs` | 6 | 6 |
+| `entriesWithNoResolvedScore` | 0 | 0 |
+| `textHashes` | `read-from-index` | `index-of-another-environment` |
+| `scoresWithTextHash` | 9,936 | 0 |
+| `seededEntries`, `staleSeededEntries`, `seededEntriesWithoutTextHashes` | 346, 0, 0 | `null`, `null`, `null` |
+| `upserted` on apply | 346 | 346 |
+
+The laptop column was measured by the same dry run on Development with `MEILISEARCH_INDEX_PREFIX=beta`, which is the mode a laptop seeding Beta or Production gets.
+The unrevised file, 347 entries, is refused by the key-collision check.
+Through the search route, with the flag on and the public visibility scope, 20 sampled unfiltered multi-word seeded queries served a top 5 worth 284 of the 286 grade points the best five graded rows would score, and every one of the 20 served its graded rows in non-increasing grade order.
+An earlier rehearsal into a scratch collection, with the 2026-11-10 file less its bare acronym entry, changed the top 10 of 38 of 40 such queries against the unseeded order.
+
+To rehearse again, prefix each seed command with `DEV_WRITE_OWNER="<label>" SEARCH_RERANK_CACHE_COLLECTION=search_rerank_cache_rehearsal`, which keeps Development's live cache untouched, and drop the scratch collection when done.
 
 ### The reindex step needs Render's outbound ranges on the Atlas access list
 
