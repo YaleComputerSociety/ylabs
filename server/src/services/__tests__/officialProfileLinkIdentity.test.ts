@@ -33,6 +33,21 @@ describe('identityWitnessesConflict (#5605)', () => {
     ).toBe(false);
   });
 
+  it('reads an email alias stored as a netid as no witness, so it never conflicts a real netid (#5740)', () => {
+    expect(
+      identityWitnessesConflict(
+        { _id: 'a', identifiers: { netid: 'robin.fixture' } },
+        { _id: 'b', identifiers: { netid: 'abc123' } },
+      ),
+    ).toBe(false);
+    expect(
+      identityWitnessesConflict(
+        { _id: 'a', identifiers: { netid: 'abc123' } },
+        { _id: 'b', netid: 'robin.fixture' },
+      ),
+    ).toBe(false);
+  });
+
   it('never conflicts a record with itself', () => {
     expect(
       identityWitnessesConflict(

@@ -3,6 +3,7 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Researcher } from '../../models/researcher';
+import { officialProfileLinkHeldByConflictingIdentity } from '../../services/officialProfileLinkIdentity';
 import {
   OfficialProfilePiBackfillScraper,
   pageEmailHeldByAnotherResearcher,
@@ -80,6 +81,15 @@ describe('the official profile lane never files a page under a key whose person 
     expect(userObservationsUnderKey(await runLane())).toEqual([]);
   });
 
+  it('still files the page under the key when the other holder of its email stores an email alias as its netid (#5740)', async () => {
+    await Researcher.create({
+      displayName: 'Blair Synthetic',
+      identifiers: { netid: 'blair.synthetic5606', email: PAGE_EMAIL },
+    });
+    const emitted = userObservationsUnderKey(await runLane());
+    expect(emitted.map((o) => o.field)).toContain('email');
+  });
+
   it('still files the page under the key when no other researcher holds its email', async () => {
     const emitted = userObservationsUnderKey(await runLane());
     expect(emitted.map((o) => o.field)).toContain('email');
@@ -129,5 +139,53 @@ describe('pageEmailHeldByAnotherResearcher (#5606)', () => {
         netid: KEY_NETID,
       }),
     ).toBe(false);
+  });
+});
+
+describe('an email alias stored as a netid witnesses no conflict on a page (#5740)', () => {
+  let replSet: MongoMemoryReplSet;
+
+  beforeAll(async () => {
+    replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    await mongoose.connect(replSet.getUri());
+  });
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await replSet?.stop();
+  });
+
+  beforeEach(async () => {
+    await Researcher.deleteMany({});
+  });
+
+  const holderOfPage = (netid: string) =>
+    Researcher.create({
+      displayName: 'Blair Synthetic',
+      identifiers: { netid, email: PAGE_EMAIL },
+      profileLinks: [
+        {
+          kind: 'YALE_OFFICIAL',
+          purpose: 'PRIMARY_IDENTITY',
+          url: PAGE,
+          verifiedAt: new Date('2026-09-01T00:00:00Z'),
+        },
+      ],
+    });
+
+  it('keeps the page link and email for the real netid when the holder stores an alias', async () => {
+    await holderOfPage('blair.synthetic5606');
+    expect(await officialProfileLinkHeldByConflictingIdentity(PAGE, { netid: KEY_NETID })).toBe(
+      false,
+    );
+    expect(await pageEmailHeldByAnotherResearcher(PAGE_EMAIL, { netid: KEY_NETID })).toBe(false);
+  });
+
+  it('still refuses both when the holder carries a different real netid', async () => {
+    await holderOfPage('zzh5606');
+    expect(await officialProfileLinkHeldByConflictingIdentity(PAGE, { netid: KEY_NETID })).toBe(
+      true,
+    );
+    expect(await pageEmailHeldByAnotherResearcher(PAGE_EMAIL, { netid: KEY_NETID })).toBe(true);
   });
 });

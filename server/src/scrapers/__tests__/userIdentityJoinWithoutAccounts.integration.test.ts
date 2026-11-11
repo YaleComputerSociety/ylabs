@@ -17,7 +17,10 @@ vi.mock('../../services/meiliSyncService', async () => {
 import { Account } from '../../models/account';
 import { Observation } from '../../models/observation';
 import { Researcher } from '../../models/researcher';
-import { joinUserIdentityToExistingResearcher } from '../entityMaterializer';
+import {
+  joinUserIdentityToExistingResearcher,
+  resolveNetidForRosterEmailAlias,
+} from '../entityMaterializer';
 import { clearC4Flags } from './c4FlagTestEnv';
 
 const NETID = 'qz901';
@@ -225,6 +228,30 @@ describe('the user identity join reads researcher identifiers when no account ex
 
       expect(join.identityJoin).not.toBe('account-netid');
       expect(join.researcher).toBeNull();
+    });
+
+    const aliasMapEntry = (entityKey: string) =>
+      Observation.create({
+        entityType: 'user',
+        entityKey,
+        field: 'email',
+        value: `${ALIAS}@yale.edu`,
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: 'directory-alias-resolution',
+        confidence: 0.9,
+        observedAt: new Date('2026-09-01T00:00:00Z'),
+        superseded: false,
+      });
+
+    it('never resolves an alias to another alias key, but resolves it to a netid (#5740)', async () => {
+      await aliasMapEntry(`netid:${ALIAS}.second`);
+      expect(await resolveNetidForRosterEmailAlias(ALIAS)).toEqual({ status: 'absent' });
+
+      await aliasMapEntry(`netid:${REAL}`);
+      expect(await resolveNetidForRosterEmailAlias(ALIAS)).toEqual({
+        status: 'resolved',
+        netid: REAL,
+      });
     });
 
     it('still reaches the holder the directory maps the alias to', async () => {
