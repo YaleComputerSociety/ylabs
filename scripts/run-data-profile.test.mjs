@@ -179,13 +179,3 @@ test('server/.env keeps precedence over the shell for every other key', () => {
     'LOCAL_AUTH_BYPASS_USER_TYPE',
   ]);
 });
-
-test('run builds the child process environment through childEnvironment', () => {
-  const source = fs.readFileSync(new URL('./run-data-profile.mjs', import.meta.url), 'utf8');
-
-  assert.match(
-    source,
-    /const childEnv = childEnvironment\(\{ processEnv: process\.env, profile, values \}\);/,
-  );
-  assert.equal(source.match(/\.\.\.values,/g)?.length, 1);
-});

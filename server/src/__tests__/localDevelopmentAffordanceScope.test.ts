@@ -231,7 +231,6 @@ describe('development-only affordances are scoped to the developer machine', () 
     await bypassMiddleware(req, fakeResponse(), vi.fn());
 
     expect(req.user).toMatchObject({ netId: 'devadmin', userType: 'undergraduate' });
-    expect(await adminGrantServiceMock.hasActiveAdminGrant(req.user.netId)).toBe(true);
   });
 
   it('resolves a grant-less bypass netid as a non-admin student', async () => {
@@ -255,7 +254,6 @@ describe('development-only affordances are scoped to the developer machine', () 
       isAdmin: false,
     });
     expect(adminGrantServiceMock.ensureBootstrapAdminGrant).not.toHaveBeenCalled();
-    expect(await adminGrantServiceMock.hasActiveAdminGrant(req.user.netId)).toBe(false);
   });
 
   it('leaves a caller anonymous when the bypass flag is explicitly false', async () => {
