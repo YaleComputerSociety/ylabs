@@ -1,6 +1,5 @@
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ACTIVELY_HIRING_LABEL, WELCOMES_UNDERGRADS_LABEL } from '../../utils/undergradInvitation';
-import { MENTORS_UNDERGRADUATES_LABEL } from '../../utils/undergradListEvidence';
 import { memo, type MouseEvent } from 'react';
 import { CheckIcon } from '../shared/icons';
 
@@ -75,7 +74,6 @@ const ACCESS_SIGNAL_PRIORITY = [
   ACTIVELY_HIRING_LABEL,
   WELCOMES_UNDERGRADS_LABEL,
   'Undergrad evidence',
-  MENTORS_UNDERGRADUATES_LABEL,
   'Student project evidence',
   'Contact route',
 ];
@@ -84,7 +82,6 @@ const UNDERGRAD_ACCESS_SIGNALS = new Set([
   ACTIVELY_HIRING_LABEL,
   WELCOMES_UNDERGRADS_LABEL,
   'Undergrad evidence',
-  MENTORS_UNDERGRADUATES_LABEL,
 ]);
 
 const accessSignalLabel = (label: string): string => ACCESS_SIGNAL_LABELS[label] ?? label;

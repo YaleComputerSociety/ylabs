@@ -1,6 +1,5 @@
 import type { PathwaySearchHit } from '../types/pathway';
 import { undergradInvitationFromEntity, WELCOMES_UNDERGRADS_LABEL } from './undergradInvitation';
-import { MENTORS_UNDERGRADUATES_LABEL } from './undergradListEvidence';
 import type { ResearchEntity } from '../types/researchEntity';
 import {
   isGenericResearchHomeDescription,
@@ -395,7 +394,6 @@ export const buildWayInBadgesFromEntity = (entity: ResearchEntity | undefined): 
   // cannot disagree with the `hostsUndergrads` browse filter or saved plans,
   // which read the same server predicate (#3593).
   if (entity.hasUndergradHostingEvidence === true) badges.push('Undergrad evidence');
-  if (entity.mentorsUndergrads === true) badges.push(MENTORS_UNDERGRADUATES_LABEL);
 
   return badges;
 };

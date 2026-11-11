@@ -1,8 +1,6 @@
 import type { UndergradListEvidence } from '../types/researchGroup';
 import { safeHttpUrl } from './url';
 
-export const MENTORS_UNDERGRADUATES_LABEL = 'Mentors undergrads';
-
 // Mirrors the keys of UNDERGRAD_EVIDENCE_SIGNAL in server/src/models/storedVocabularies.ts;
 // a source missing here is not shown.
 const HOSTED_LIST_PARTICIPANTS: Record<string, { one: string; many: string }> = {
