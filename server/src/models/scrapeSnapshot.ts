@@ -6,6 +6,7 @@
  * automatically so the cache self-cleans.
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 
 const scrapeSnapshotSchema = new mongoose.Schema(
   {

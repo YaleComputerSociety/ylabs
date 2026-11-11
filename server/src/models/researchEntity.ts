@@ -2,6 +2,7 @@
  * Canonical Mongoose model for research entities (`research_entities`).
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 import {
   canonicalSchemaVersionField,
   defineCanonicalSchemaVersion,

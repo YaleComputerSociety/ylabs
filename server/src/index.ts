@@ -4,6 +4,7 @@
 import app from './app';
 import dotenv from 'dotenv';
 import { initializeConnections, mongoOptions, startMongoKeepAlive } from './db/connections';
+import { declareRequestServingProcess } from './db/devWriteGuard';
 import { warmControlledVocabularyHeadings } from './utils/controlledVocabularyHeadings';
 import { startGateRefreshScheduler } from './scripts/gateRefreshScheduler';
 import { startCorpusQualitySnapshotScheduler } from './services/corpusQualitySnapshotScheduler';
@@ -27,6 +28,7 @@ import {
 } from './services/accountDeletionServing';
 
 dotenv.config({ quiet: true });
+declareRequestServingProcess();
 initializeErrorTracking();
 
 const port = Number(process.env.PORT || 4000);

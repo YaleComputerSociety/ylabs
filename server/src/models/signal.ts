@@ -10,6 +10,7 @@
  * and the materializers must not cross-infer one type from another.
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 import { archiveAttributionFields, enforceArchiveAttribution } from './entityArchival';
 import { recordSuppressionSchema } from './modelPrimitives';
 import { signalConfidences, signalStatuses, signalTypes } from './researchAccessTypes';

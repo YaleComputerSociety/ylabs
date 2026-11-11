@@ -8,6 +8,7 @@
  * to another.
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 
 export const MODEL_CALL_USAGE_COLLECTION = 'model_call_usages';
 

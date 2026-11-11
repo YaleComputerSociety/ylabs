@@ -361,6 +361,18 @@ It replaces the convention of announcing each write to the session that sequence
 - A child process inherits its parent's owner id through `DEV_WRITE_LEASE_OWNER`, so a sweep's `scrape run` children join the sweep's lease instead of being refused by it, and only the root owner releases it.
 - Append-only measurement writes are exempt (`DEV_APPLY_LEASE_EXEMPT_SCRIPTS`: `corpus:snapshot`, `gates:refresh`, the lane benchmark and scorecard scripts, `engine:benchmark`), because they write their own collections and are meant to run during a long apply.
 - A dry run never takes or reads the lease.
+- The lease is also enforced at the model, so a script that never calls the apply guard cannot write Development unleased (#5871).
+  `db/devWriteGuard.ts` registers a global Mongoose plugin that every model file imports before it compiles, so importing any one model installs it, even in a scratch script that connects with a plain `mongoose.connect`.
+  It refuses `save`, `insertMany`, `bulkWrite`, the update, replace and delete query writes, and an `aggregate` with `$out` or `$merge`, before anything is written, naming the model and collection and how to take the lease.
+- The guard acts only in a script process connected to a database that resolves to Development.
+  The API server entry point (`src/index.ts`) calls `declareRequestServingProcess()` before it connects, so the web services and every request path return before the guard reads anything; every other process is a script.
+  Beta, Production, test and localhost databases return before any lease state is read.
+- A script's Development write passes only when the process holds or joined the apply lease, or the collection is an append-only measurement collection (`DEV_WRITE_GUARD_EXEMPT_COLLECTIONS`, kept in step with `DEV_APPLY_LEASE_EXEMPT_SCRIPTS`, plus `model_call_usages`), or the lease is switched off.
+  A writing lane run with armed host leases may also write `DEV_LANE_RUN_COLLECTIONS` (`observations`, `scrape_runs`, `scrape_job_locks`, `sources`, `scrape_snapshots`, `model_call_usages`) and nothing else, so it can never touch `research_entities` without the apply lease.
+  A dry orchestrator run declares itself a dry lane run and may write only its `scrape_runs` row and the `scrape_snapshots` fetch cache.
+  A lane that starts writing a new collection must add it to that set, or its run is refused.
+- The connect paths in `db/connections.ts` also refuse a script's Development connection when a registered model lacks the guard, which only a model compiled before `db/devWriteGuard` loaded can.
+- Raw driver handles (`Model.collection.*`, `db.collection(...)`) skip Mongoose middleware, so `rawResearchEntityWriteGuard.test.ts` lists every production file that writes any collection through one, at its exact site count and with a reason; a new raw writer fails that suite until it is reviewed there.
 - A writing lane run against Development also takes a `host:<hostname>` lease before its first fetch to each host, so two lane runs cannot fetch one host at once.
 - The lease heartbeats every 30 seconds and expires 5 minutes after the last heartbeat, so an apply running for hours keeps it, and a crashed holder frees it within 5 minutes.
   A holder on the same machine whose process has exited is taken over once its heartbeat is older than two intervals (`DEV_WRITE_LEASE_DEAD_OWNER_HEARTBEAT_AGE_MS`), so a misread pid probe, such as a sandboxed `process.kill` answering `ESRCH`, can never take a lease that is still renewing.

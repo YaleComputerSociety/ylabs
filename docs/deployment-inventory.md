@@ -7,6 +7,7 @@ Never write a value, a host, a password, a key, or a connection string here, and
 The repository declares no Render blueprint, so the Render dashboard is the only place the live configuration exists.
 `scripts/deployment-inventory.test.mjs` fails when code under `server/src`, `client/src`, `client/scripts`, or `scripts/` reads an environment variable name that this page does not mention, so a new variable cannot ship without an entry.
 That test proves a name is listed, not that the dashboard holds it, so a rebuild still reads each service's settings against the tables below.
+`server/src/db/__tests__/requestServingEntryPoints.test.ts` classifies every service in the table below as request-serving or a script for the Development write guard (#5871), and fails on a service it does not know, including one a future Render blueprint declares.
 
 Incident response, including how to rotate every secret named here, is owned by [the incident runbook](./incident-runbook.md).
 
@@ -195,7 +196,7 @@ These are typed for one command and never stored on a service.
 | `SCRAPER_DEVELOPMENT_DB_NAME`, `SCRAPER_BETA_DB_NAME`, `SCRAPER_PRODUCTION_DB_NAME` | Override the database names the scraper guards expect. |
 | `DEV_WRITE_OWNER` | The session name that launched a Development write; required for an apply or a writing lane run against Development, which is refused without it (the sweep runners label themselves). Recorded on the lease and the launch record (`server/src/db/devWriteLease.ts`, #5756, #5782). |
 | `DEV_WRITE_LEASE_OWNER` | Set by a lease holder for its child processes, so a sweep's children join its lease instead of being refused by it. Never set it by hand. |
-| `DEV_WRITE_LEASE` | `off`, `false` or `0` switches the Development write lease off; the test harness sets it for every suite. |
+| `DEV_WRITE_LEASE` | `off`, `false` or `0` switches the Development write lease off, and with it the model write guard that refuses an unleased Development write from a script (#5871); the test harness sets it for every suite. |
 | `YLABS_SKIP_LOCAL_DOTENV` | Stops a script loading `server/.env`; the test fence sets it for spawned children. |
 
 ## Scraper and Script Tuning Variables
