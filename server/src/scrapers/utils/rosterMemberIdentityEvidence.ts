@@ -293,11 +293,11 @@ function sitsInNonSubjectLinkContainer($: cheerio.CheerioAPI, el: AnyNode): bool
 /**
  * Anchors the page subject could own, each pointing at a person-profile-shaped page and outside
  * navigation, footers, and co-author or collaborator blocks. An anchor whose URL spells the
- * member's full name counts whatever its label, even in an aside ("Associated programs"). Otherwise it must sit outside asides and be
- * labelled either generically ("Profile", "Website") or with the member's own name: one labelled
- * with someone else's name or a publication title belongs to a co-author, colleague or
- * related-items block (#5592, #5677), and only one labelled with another person's name marks its
- * destination as that person's.
+ * member's full name counts whatever its label, even in an aside ("Associated programs").
+ * Otherwise it must sit outside asides and be labelled either generically ("Profile", "Website")
+ * or with the member's own name: one labelled with someone else's name or a publication title
+ * belongs to a co-author, colleague or related-items block (#5592, #5677), and only one labelled
+ * with another person's name marks its destination as that person's.
  */
 function subjectAnchorCandidates(
   $: cheerio.CheerioAPI,
