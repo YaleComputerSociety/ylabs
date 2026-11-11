@@ -235,7 +235,7 @@ describe('a person-record refusal holds on every resolve (#5641)', () => {
   });
 
   it('never re-adds a refused ORCID link the orcid evidence composes', async () => {
-    const orcid = '0000-0002-1825-0097';
+    const orcid = '9999-9000-9999-9005';
     const orcidUrl = `https://orcid.org/${orcid}`;
     await seedOwner([observation('orcid', orcid, 'dept-faculty-roster')]);
     const owner = await person();
