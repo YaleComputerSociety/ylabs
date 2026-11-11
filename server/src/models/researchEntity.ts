@@ -245,6 +245,21 @@ const researchEntitySchema = new mongoose.Schema<Record<string, unknown>>(
       ],
       default: undefined,
     },
+    // Written only by a reslug that opts into a redirect, never by a lane: the slugs this
+    // live row was served under before it was renamed, kept so an old public URL keeps
+    // answering with a redirect (#5808). It is a redirect source only, never served or
+    // indexed, and promotion copies it with the row.
+    previousSlugs: {
+      type: [
+        {
+          _id: false,
+          slug: { type: String, required: true },
+          renamedAt: { type: Date, required: true },
+          reason: { type: String, required: true },
+        },
+      ],
+      default: undefined,
+    },
     kind: {
       type: String,
       enum: [...researchGroupKinds],
@@ -659,6 +674,7 @@ researchEntitySchema.index({ entityType: 1 });
 researchEntitySchema.index({ canonicalGroupId: 1 });
 researchEntitySchema.index({ 'mergedFrom.slug': 1 });
 researchEntitySchema.index({ 'mergedFrom.entityId': 1 });
+researchEntitySchema.index({ 'previousSlugs.slug': 1 });
 // Not unique on purpose: 130 live website-url identity groups already hold more than
 // one row, so a unique index would refuse to build until those are resolved. The
 // resolver's ambiguity guard is what keeps a shared URL from merging (#3036).

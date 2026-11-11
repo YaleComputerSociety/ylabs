@@ -43,6 +43,7 @@ import {
   referenceCardExtractor,
   rosterDeptNameNamesItsOwnSchool,
   rosterResearchEntitySlug,
+  withoutUnheldSceneIdentity,
   jacksonPersonCardExtractor,
   ysphDirectoryExtractor,
   csJsRenderedStub,
@@ -1264,6 +1265,76 @@ describe('nodePersonCardExtractor never takes a photo scene description as a nam
   });
 });
 
+describe('a headshot caption never mints a research row slug (#5808)', () => {
+  const music = DEFAULT_DEPT_CONFIGS.find((c) => c.deptKey === 'school-of-music') as DeptConfig;
+  const captionCard = (heading: string) => `
+    <article about="/people/robin-fixture" class="node node--type-person node--view-mode-card">
+      <div class="top"><div class="field field--name-field-profile-image field__item">
+        <img src="/img/robin-fixture.jpg" alt="Photo of Dean Robin Fixture."></div></div>
+      <div class="card-content"><h2><span>${heading}</span></h2>
+        <div class="paragraph--type--title-affiliation">Professor of Synthetic Music</div></div>
+    </article>`;
+
+  const runCaptionRoster = async (corpusSlugs: string[], heading = 'Robin Fixture') => {
+    const htmlFetcher = vi.fn(async () => captionCard(heading));
+    const scraper = new DepartmentRosterScraper(
+      [{ ...music, renderedExtractor: undefined }],
+      null,
+      htmlFetcher,
+      async () => new Map(corpusSlugs.map((slug) => [slug, {}])),
+    );
+    const { ctx, emitted } = makeContext();
+    await scraper.run(ctx);
+    return {
+      userKeys: new Set(emitted.filter((o) => o.entityType === 'user').map((o) => o.entityKey)),
+    };
+  };
+
+  it('keys a new person by the heading name, not the caption', async () => {
+    const { userKeys } = await runCaptionRoster([]);
+    expect(userKeys).toEqual(new Set(['dept:school-of-music:robin-fixture']));
+  });
+
+  it('gives a new research row the slug of the heading name', () => {
+    const [entry] = nodePersonCardExtractor(captionCard('Robin Fixture'), {
+      pageUrl: 'https://music.yale.edu/meet-our-faculty',
+    });
+    expect(
+      rosterResearchEntitySlug(withoutUnheldSceneIdentity(entry, music, new Map()), music),
+    ).toBe('dept-school-of-music-robin-fixture');
+  });
+
+  it('keeps the caption slug only for a row the corpus still holds under it', () => {
+    const [entry] = nodePersonCardExtractor(captionCard('Robin Fixture'), {
+      pageUrl: 'https://music.yale.edu/meet-our-faculty',
+    });
+    const held = new Map([['dept-school-of-music-photo-of-dean-robin-fixture', {}]]);
+    expect(rosterResearchEntitySlug(withoutUnheldSceneIdentity(entry, music, held), music)).toBe(
+      'dept-school-of-music-photo-of-dean-robin-fixture',
+    );
+  });
+
+  it('derives the same key on a second run over the same page', async () => {
+    const first = await runCaptionRoster([]);
+    const second = await runCaptionRoster([]);
+    expect(second).toEqual(first);
+  });
+
+  it('keeps the caption key of a row the corpus still holds under it, until it is reslugged', async () => {
+    const { userKeys } = await runCaptionRoster([
+      'dept-school-of-music-photo-of-dean-robin-fixture',
+    ]);
+    expect(userKeys).toEqual(new Set(['dept:school-of-music:photo-of-dean-robin-fixture']));
+  });
+
+  it('takes the name inside the caption when the card has no heading', () => {
+    const [entry] = nodePersonCardExtractor(captionCard(''), {
+      pageUrl: 'https://music.yale.edu/meet-our-faculty',
+    });
+    expect(entry.name).toBe('Robin Fixture');
+  });
+});
+
 describe('nodePersonCardExtractor reads the card heading, not the headshot caption', () => {
   const captionedCard = `
     <article about="/people/robin-fixture" class="node node--type-person node--view-mode-card">
@@ -1281,7 +1352,7 @@ describe('nodePersonCardExtractor reads the card heading, not the headshot capti
     expect(entry.name).toBe('Robin Fixture');
   });
 
-  it('keeps the slug the caption-derived name first minted, so the row is not re-keyed', () => {
+  it('records the caption-derived key, which a run keeps only for a row still held under it', () => {
     const [entry] = nodePersonCardExtractor(captionedCard, {
       pageUrl: 'https://music.yale.edu/meet-our-faculty',
     });

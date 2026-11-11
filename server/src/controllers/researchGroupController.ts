@@ -9,6 +9,7 @@ import {
   getResearchGroupDetail,
   normalizeResearchDetailSlug,
   resolveArchivedResearchEntityCanonicalSlug,
+  resolveRenamedResearchEntitySlug,
   searchResearchGroupsViaMeili,
   type ResearchGroupQualityFilter,
   ResearchGroupSearchSort,
@@ -281,7 +282,9 @@ export const getResearchGroupBySlug = async (request: Request, response: Respons
     includeWithheldForOperator: hasAdminAuthority,
   });
   if (!detail) {
-    const canonicalSlug = await resolveArchivedResearchEntityCanonicalSlug(slug);
+    const canonicalSlug =
+      (await resolveArchivedResearchEntityCanonicalSlug(slug)) ??
+      (await resolveRenamedResearchEntitySlug(slug));
     if (canonicalSlug) {
       return response.redirect(302, `${request.baseUrl}/${encodeURIComponent(canonicalSlug)}`);
     }

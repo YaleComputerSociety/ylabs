@@ -1474,7 +1474,8 @@ export const nodePersonCardExtractor: FacultyExtractor = (html, ctx) => {
     const about = card.attr('about') || card.find('a[href*="/people/"]').first().attr('href') || '';
     const altText = cleanText(card.find('img[alt]').first().attr('alt') || '');
     const headingName = normalizeName(cleanText(card.find('.card-content h2').first().text()));
-    const altName = isPhotoSceneDescription(altText) ? '' : normalizeName(altText);
+    const captionFreeAltText = normalizeName(altText);
+    const altName = isPhotoSceneDescription(captionFreeAltText) ? '' : captionFreeAltText;
     const name = headingName || altName || nameFromPeopleSlug(about);
     if (!name) return;
     const firstKeyedName = normalizeNameKeepingCaption(altText) || nameFromPeopleSlug(about);
@@ -4359,6 +4360,36 @@ export function rosterResearchEntitySlug(entry: FacultyEntry, dept: DeptConfig):
   return deptResearchEntitySlug(nameSlug, dept);
 }
 
+/**
+ * The slug this lane mints for a person whose roster row carries no identity name, so
+ * a one-time reslug of a row keyed by alt text lands on the key the lane emits next
+ * (#5808). A target that differed would leave the lane minting a second row.
+ */
+export function rosterResearchEntitySlugForPersonName(name: string, dept: DeptConfig): string {
+  return rosterResearchEntitySlug({ name }, dept);
+}
+
+/**
+ * The roster configs whose research-row slugs could carry the slug, longest namespace
+ * first, so a namespace that prefixes another (`music`, `school-of-music`) cannot claim
+ * the other's rows.
+ */
+export function rosterDeptConfigsForResearchEntitySlug(
+  slug: string,
+  configs: readonly DeptConfig[] = DEFAULT_DEPT_CONFIGS,
+): DeptConfig[] {
+  return configs
+    .filter((dept) => slug.startsWith(rosterResearchEntitySlugPrefix(dept)))
+    .sort(
+      (left, right) =>
+        rosterResearchEntitySlugPrefix(right).length - rosterResearchEntitySlugPrefix(left).length,
+    );
+}
+
+export function rosterResearchEntitySlugPrefix(dept: DeptConfig): string {
+  return `dept-${namespacedDeptKey(dept.deptKey)}-`;
+}
+
 export function rosterResearchEntitySlugForUserKey(userKey: string, dept: DeptConfig): string {
   const prefix = `dept:${namespacedDeptKey(dept.deptKey)}:`;
   if (!userKey.startsWith(prefix)) return '';
@@ -4368,14 +4399,14 @@ export function rosterResearchEntitySlugForUserKey(userKey: string, dept: DeptCo
 
 function deptResearchEntitySlug(nameSlug: string, dept: DeptConfig): string {
   if (!nameSlug) return '';
-  return `dept-${namespacedDeptKey(dept.deptKey)}-${nameSlug}`.slice(0, 100);
+  return `${rosterResearchEntitySlugPrefix(dept)}${nameSlug}`.slice(0, 100);
 }
 
 /**
  * A scene alt text keeps its key only for a row the corpus already holds under it,
  * so an existing row is not re-keyed while a new one is never minted from a scene.
  */
-function withoutUnheldSceneIdentity(
+export function withoutUnheldSceneIdentity(
   entry: FacultyEntry,
   dept: DeptConfig,
   corpusRowsBySlug: ReadonlyMap<string, unknown>,

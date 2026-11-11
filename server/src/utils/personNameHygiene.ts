@@ -193,6 +193,10 @@ const DOTTED_LOWERCASE_LOCAL_PART_RE = /^[a-z][a-z0-9'-]*(?:\.[a-z][a-z0-9'-]*)+
 // bare "Dean Karlan" is a given name, so this list must never run outside the wrapper.
 const CAPTION_HONORIFIC_LEAD_IN = /^(?:dean|dr\.?|prof\.?|professor)\s+(?=\S+\s+\S)/i;
 
+export function isPersonNameCaption(value: string): boolean {
+  return CAPTION_LEAD_IN.test(value.trim());
+}
+
 export function stripPersonNameCaptionWrapper(value: string): string {
   const trimmed = value.trim();
   const match = trimmed.match(CAPTION_LEAD_IN);

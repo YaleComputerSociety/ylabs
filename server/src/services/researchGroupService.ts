@@ -4856,6 +4856,22 @@ export async function resolveArchivedResearchEntityCanonicalSlug(
   return servableSurvivorSlugByMergedFromSlug(normalizedSlug);
 }
 
+// A live row renamed by a redirecting reslug keeps its old slugs in `previousSlugs` (#5808),
+// so a bookmarked or indexed URL still reaches it.
+export async function resolveRenamedResearchEntitySlug(rawSlug: string): Promise<string | null> {
+  const slug = normalizeResearchDetailSlug(rawSlug);
+  if (!slug) return null;
+  const renamed = (await ResearchEntity.find({
+    'previousSlugs.slug': slug,
+    archived: { $ne: true },
+  })
+    .limit(2)
+    .lean()) as Array<Record<string, any>>;
+  if (renamed.length !== 1 || !isPubliclyServableCanonicalTarget(renamed[0])) return null;
+  const currentSlug = String(renamed[0].slug).trim();
+  return currentSlug && currentSlug !== slug ? currentSlug : null;
+}
+
 // Beta and Production carry no archived rows once promotion copies live rows only
 // (#5148), so an old slug is resolved from the survivor that lists it in `mergedFrom`.
 async function servableSurvivorSlugByMergedFromSlug(slug: string): Promise<string | null> {

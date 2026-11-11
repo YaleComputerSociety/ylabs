@@ -102,7 +102,8 @@ The new slug keeps the lane prefix and strips those tokens (`server/src/services
 When what is left says nothing distinctive, the remaining leads' surnames stand in.
 A slug held by any live or archived row, by any `mergedFrom` entry, or by a lane key that already has research observations takes a numbered `-2`, `-3` suffix, so the renamed row never takes over another entity's evidence.
 
-The old slug goes into no `mergedFrom`, redirect or archived tombstone.
+The old slug goes into no `mergedFrom`, redirect, `previousSlugs` entry or archived tombstone.
+The rename itself is shared with the alt-text reslug (`server/src/scripts/researchEntityReslugCore.ts`), whose redirect is opt-in; this command passes no redirect option at all, and a test pins that its renamed row lists no previous slug and its old slug answers 404.
 A lane still emits the old key, so before renaming the row the command stamps the row's `entityId` onto every observation filed under the old key with no id.
 When no row holds a key, the materializer adopts the one live row that key's observations name by id (`server/src/scrapers/renamedResearchEntityAdoption.ts`), and a roster member filed under the old key attaches to that row the same way.
 Ingest stamps the same id onto a lane's fresh old-key observations whenever no row holds the key, so the link lives in the key's live observations and survives the next pass superseding the stamped ones and pruning deleting them.

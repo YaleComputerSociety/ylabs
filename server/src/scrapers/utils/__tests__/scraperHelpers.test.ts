@@ -113,12 +113,29 @@ describe('isPhotoSceneDescription', () => {
     expect(isPhotoSceneDescription(text)).toBe(true);
   });
 
-  it.each(['Man Wah Fixture', 'Man', 'Rémi Lâsuit', 'Photo of Robin Fixture.', 'Jordan Stage'])(
-    'does not flag a name: %s',
-    (text) => {
-      expect(isPhotoSceneDescription(text)).toBe(false);
-    },
-  );
+  it.each([
+    'Photo of Robin Fixture.',
+    'photo of Dean Robin Fixture',
+    'Headshot of Professor Robin Q. Fixture',
+    'Portrait of Robin Fixture',
+    'Image of Robin Fixture.',
+  ])('flags a headshot caption, whose text is the photo and not a name (#5808): %s', (text) => {
+    expect(isPhotoSceneDescription(text)).toBe(true);
+  });
+
+  it.each([
+    'Man Wah Fixture',
+    'Man',
+    'Rémi Lâsuit',
+    'Jordan Stage',
+    'Robin Fixture',
+    'Photon Fixture',
+    'Robin Photo-Fixture',
+    'Image Fixture',
+    'Portrait Studio Lab',
+  ])('does not flag a name: %s', (text) => {
+    expect(isPhotoSceneDescription(text)).toBe(false);
+  });
 });
 
 describe('isRoleOrUnitMailbox', () => {

@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   hasAdminAuthorityForUser: vi.fn(),
   searchResearchGroupsViaMeili: vi.fn(),
   resolveArchivedResearchEntityCanonicalSlug: vi.fn(),
+  resolveRenamedResearchEntitySlug: vi.fn(),
 }));
 
 vi.mock('../../services/researchGroupService', () => ({
@@ -16,6 +17,7 @@ vi.mock('../../services/researchGroupService', () => ({
   },
   searchResearchGroupsViaMeili: mocks.searchResearchGroupsViaMeili,
   resolveArchivedResearchEntityCanonicalSlug: mocks.resolveArchivedResearchEntityCanonicalSlug,
+  resolveRenamedResearchEntitySlug: mocks.resolveRenamedResearchEntitySlug,
 }));
 
 vi.mock('../../services/adminGrantService', () => ({
@@ -30,6 +32,7 @@ describe('researchGroupController', () => {
     vi.clearAllMocks();
     mocks.hasAdminAuthorityForUser.mockResolvedValue(false);
     mocks.resolveArchivedResearchEntityCanonicalSlug.mockResolvedValue(null);
+    mocks.resolveRenamedResearchEntitySlug.mockResolvedValue(null);
   });
 
   it('rethrows public research detail failures for the global error handler', async () => {

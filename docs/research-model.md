@@ -132,6 +132,14 @@ Beta and Production hold no archived rows, so they resolve a merge from it: the 
 The Development-to-Beta copy re-derives the list at copy time rather than trusting the stored one, so a merge made after the last sweep still reaches Beta with its survivor's entry.
 On Development on 2026-10-18 it planned 3,640 entries on 1,850 survivors from 3,715 tombstones, 75 of which name no live survivor.
 
+A live row renamed by a reslug that opts into a redirect also carries `previousSlugs: [{ slug, renamedAt, reason }]`, the slugs it was served under before (#5808).
+Only `server/src/scripts/researchEntityReslugCore.ts` writes it, and only when its caller passes a redirect; `directory-removal:reslug` passes none, because a privacy rename must leave no trail from the old slug (#4160).
+It is a redirect source only: when no row holds a slug, the API and the page shell both answer a 302 to the one live, publicly servable row that lists it.
+It never adopts the old key for a lane, which reaches the renamed row only through the `entityId` the reslug stamps onto the key's observations.
+It is never served, rendered or indexed, which `reslugAltTextResearchEntities.integration.test.ts` pins against the public DTO, the search document and the detail response.
+Unlike `mergedFrom` it is not derived, so no sweep stage rewrites it, the materializer never touches it, and the Development-to-Beta copy carries it unchanged with the row.
+An archived renamed row redirects nowhere, and its old key mints nothing, through the same `reslugAdoption` marker as #5726.
+
 ### `RoleAssignment` (`role_assignments`)
 
 The person-to-research-entity membership edge (the roster); replaces the retired `ResearchGroupMember`.
