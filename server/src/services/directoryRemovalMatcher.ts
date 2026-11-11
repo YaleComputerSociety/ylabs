@@ -35,6 +35,19 @@ const personIdentityValues = (
   ]),
 ];
 
+export function personDirectoryRemovalDigests(
+  key: string,
+  person: DirectoryRemovalPerson,
+): string[] {
+  const values: Array<[DirectoryRemovalKind, unknown]> = [
+    ...personIdentityValues(person),
+    ['name', person.displayName],
+  ];
+  return values
+    .map(([kind, value]) => directoryRemovalDigest(key, kind, value))
+    .filter((digest): digest is string => digest !== undefined);
+}
+
 const matcherThatRemoves = (
   state: DirectoryRemovalState,
   removesEveryone: boolean,

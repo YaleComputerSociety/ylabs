@@ -10,6 +10,7 @@ const LISTED_NETID = 'zz9lst';
 const ARCHIVED_NETID = 'zz9arc';
 const UNLISTED_NETID = 'zz9unl';
 const ADMIN_NETID = 'zz9adm';
+const SYNTHETIC_REMOVAL_KEY = 'synthetic-directory-removal-key-0123456789';
 
 vi.mock('../services/adminGrantService', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -19,7 +20,9 @@ vi.mock('../services/adminGrantService', async (importOriginal) => ({
 import apiRouter from '../routes';
 import { errorHandler } from '../middleware/errorHandler';
 import { AdminAuditEvent } from '../models/adminAuditEvent';
+import { DirectoryRemoval } from '../models/directoryRemoval';
 import { DirectoryRemovalRequest } from '../models/directoryRemovalRequest';
+import { DIRECTORY_REMOVAL_KEY_ENV, directoryRemovalDigest } from '../utils/directoryRemovalDigest';
 import { Researcher } from '../models/researcher';
 
 let memoryServer: MongoMemoryServer | undefined;
@@ -74,6 +77,8 @@ describe('directory removal requests', () => {
 
   beforeEach(async () => {
     await DirectoryRemovalRequest.collection.deleteMany({});
+    await DirectoryRemoval.collection.deleteMany({});
+    delete process.env[DIRECTORY_REMOVAL_KEY_ENV];
     await AdminAuditEvent.collection.deleteMany({});
     await Researcher.collection.deleteMany({});
     listedResearcherId = new mongoose.Types.ObjectId();
@@ -94,6 +99,7 @@ describe('directory removal requests', () => {
   });
 
   afterAll(async () => {
+    delete process.env[DIRECTORY_REMOVAL_KEY_ENV];
     await new Promise<void>((resolve) => (server ? server.close(() => resolve()) : resolve()));
     await mongoose.disconnect();
     await memoryServer?.stop();
@@ -222,6 +228,33 @@ describe('directory removal requests', () => {
     const repeat = await call('POST', '/api/users/directoryRemovalRequest');
     expect(repeat.status).toBe(200);
     expect(await DirectoryRemovalRequest.countDocuments()).toBe(1);
+  });
+
+  it('stops treating an accepted request as open once the person is listed again', async () => {
+    process.env[DIRECTORY_REMOVAL_KEY_ENV] = SYNTHETIC_REMOVAL_KEY;
+    await call('POST', '/api/users/directoryRemovalRequest');
+    const [row] = await DirectoryRemovalRequest.find({}).lean();
+    signInAs(ADMIN_NETID);
+    await call('PUT', `/api/admin/directory-removal-requests/${row._id}`, { status: 'accepted' });
+    signInAs(LISTED_NETID);
+
+    const digest = directoryRemovalDigest(SYNTHETIC_REMOVAL_KEY, 'netid', LISTED_NETID)!;
+    await DirectoryRemoval.create({ digest, kind: 'netid', recordedAt: new Date() });
+    expect((await call('GET', '/api/users/directoryRemovalRequest')).body.request.status).toBe(
+      'accepted',
+    );
+    expect((await call('POST', '/api/users/directoryRemovalRequest')).status).toBe(200);
+
+    await DirectoryRemoval.updateOne(
+      { digest },
+      { $set: { withdrawnAt: new Date(), withdrawnReason: 'requester_withdrew' } },
+    );
+    const listedAgain = await call('GET', '/api/users/directoryRemovalRequest');
+    expect(listedAgain.body).toEqual({ eligible: true, request: null });
+    const askAgain = await call('POST', '/api/users/directoryRemovalRequest');
+    expect(askAgain.status).toBe(201);
+    expect(askAgain.body.request.status).toBe('pending');
+    expect(await DirectoryRemovalRequest.countDocuments()).toBe(2);
   });
 
   it('lets an admin decline a request, after which the person may ask again', async () => {

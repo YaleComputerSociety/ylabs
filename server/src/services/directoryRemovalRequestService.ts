@@ -6,7 +6,10 @@ import {
   type DirectoryRemovalRequestDecision,
   type DirectoryRemovalRequestStatus,
 } from '../models/directoryRemovalRequest';
+import { DirectoryRemoval } from '../models/directoryRemoval';
 import { Researcher } from '../models/researcher';
+import { readDirectoryRemovalKey } from '../utils/directoryRemovalDigest';
+import { personDirectoryRemovalDigests } from './directoryRemovalMatcher';
 import { researchersByNetid } from './researcherNetidLookup';
 import {
   BadRequestError,
@@ -68,13 +71,46 @@ async function latestRequestFor(netid: string) {
     .lean();
 }
 
+async function removalWithdrawnSince(
+  researcherId: mongoose.Types.ObjectId,
+  decidedAt: Date | null | undefined,
+): Promise<boolean> {
+  const key = readDirectoryRemovalKey();
+  if (!key || !decidedAt) return false;
+  const researcher = await Researcher.findById(researcherId)
+    .select('displayName identifiers profileLinks')
+    .lean();
+  if (!researcher) return false;
+  const entries = await DirectoryRemoval.find({
+    digest: { $in: personDirectoryRemovalDigests(key, researcher as any) },
+  })
+    .select('withdrawnAt -_id')
+    .lean<Array<{ withdrawnAt?: Date }>>();
+  return (
+    entries.every((entry) => entry.withdrawnAt) &&
+    entries.some((entry) => entry.withdrawnAt! > decidedAt)
+  );
+}
+
+async function currentRequestFor(netid: string, researcherId: mongoose.Types.ObjectId) {
+  const latest = await latestRequestFor(netid);
+  if (
+    latest?.status === 'accepted' &&
+    (await removalWithdrawnSince(researcherId, latest.decidedAt))
+  ) {
+    return null;
+  }
+  return latest;
+}
+
 export async function getOwnDirectoryRemovalEligibility(
   sessionNetid: string,
 ): Promise<DirectoryRemovalEligibility> {
   const netid = normalizedNetid(sessionNetid);
-  if (!(await listedResearcherId(netid))) return { eligible: false, request: null };
-  const latest = await latestRequestFor(netid);
-  return { eligible: true, request: latest ? toOwnRequest(latest) : null };
+  const researcherId = await listedResearcherId(netid);
+  if (!researcherId) return { eligible: false, request: null };
+  const current = await currentRequestFor(netid, researcherId);
+  return { eligible: true, request: current ? toOwnRequest(current) : null };
 }
 
 export async function createOwnDirectoryRemovalRequest(
@@ -86,9 +122,9 @@ export async function createOwnDirectoryRemovalRequest(
     throw new IncorrectPermissionsError('Only a person y/labs lists can ask to be removed.');
   }
 
-  const latest = await latestRequestFor(netid);
-  if (latest && OPEN_STATUSES.includes(latest.status as DirectoryRemovalRequestStatus)) {
-    return { created: false, request: toOwnRequest(latest) };
+  const current = await currentRequestFor(netid, researcherId);
+  if (current && OPEN_STATUSES.includes(current.status as DirectoryRemovalRequestStatus)) {
+    return { created: false, request: toOwnRequest(current) };
   }
 
   try {

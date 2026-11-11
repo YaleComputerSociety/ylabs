@@ -9,7 +9,7 @@ The removal itself, the record every serve, gate, index and mint path reads, is 
 A signed-in person whose CAS netid matches a live `Researcher.identifiers.netid` sees "Remove me from y/labs" on `/dashboard`.
 Anyone else sees nothing there, and `/privacy` tells a listed person to use that button or to email the y/labs privacy mailbox, ycs.maintenance.ylabs@gmail.com, from the address Yale publishes for them.
 The mailbox is `PRIVACY_CONTACT_EMAIL` in `client/src/utils/privacyContact.ts`, and both `/privacy` and the declined text render it through `client/src/components/privacy/RemovalRequestEmailLink.tsx` as a mailto link.
-Below the button, a pending request reads "We'll stop showing you within 7 days. You can ask to be listed again at any time." and an accepted one reads "Your request was accepted. You will stop appearing on y/labs within 7 days."
+For a pending or accepted request, a status message replaces the button: a pending request reads "We'll stop showing you within 7 days. You can ask to be listed again at any time." and an accepted one reads "Your request was accepted. You will stop appearing on y/labs within 7 days."
 A declined request reads "We could not confirm this request. You can send it again, or email ycs.maintenance.ylabs@gmail.com from the address Yale publishes for you." and keeps the button.
 If the eligibility check fails, the section stays hidden, and the server logs a fixed line with only the error name and code, never the netid or the original error.
 
@@ -27,6 +27,8 @@ Routes:
 - `POST /api/users/directoryRemovalRequest` (signed in, write-limited) creates a pending request.
   It answers `201` for a new request and `200` with the existing one while a request is pending or accepted, so a repeat is a no-op.
   A declined request lets the person ask again.
+  An accepted request stops counting once every `directory_removals` entry matching the person has been withdrawn after the decision, so a person listed again sees the button and `GET` answers `request: null`.
+  Without `DIRECTORY_REMOVAL_KEY` the entries cannot be matched, so an accepted request stays accepted.
   A person who is not listed gets `403` with a fixed message that names nobody.
 - `GET /api/admin/directory-removal-requests?status=` (admin) lists up to 200 requests, newest first, with the matched researcher's display name read at request time.
 - `PUT /api/admin/directory-removal-requests/:id` (admin, audited as `directory_removal_request.decide`) takes `{ status: 'accepted' | 'declined' }` and decides a pending request; a decided one answers `409`.
