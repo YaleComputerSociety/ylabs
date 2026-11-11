@@ -113,7 +113,7 @@ export function rowIsScopedToLead(
 ): boolean {
   // Only a row named for its lead is the lead's to describe. A center, a program or a
   // lab named for its work describes the unit, and its own page need not name the
-  // director: on the same 637 rows those were most of the pages this would refuse.
+  // director: on the 637 Development lab rows measured for #4809 those were most of the pages this would refuse.
   return (
     row.kind === 'individual' ||
     ` ${comparableName(String(row.rowName || ''))} `.includes(` ${surname} `)
