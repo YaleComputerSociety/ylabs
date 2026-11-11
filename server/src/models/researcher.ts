@@ -70,7 +70,10 @@ export interface ResearcherRecord {
    */
   fieldValueRefusals?: Map<string, unknown[]>;
   /** The `user` key that wrote each display field and the rank it wrote with (#5706). */
-  profileFieldWriters?: Map<string, { userKey: string; joinRank: number; confidence: number }>;
+  profileFieldWriters?: Map<
+    string,
+    { userKey: string; joinRank: number; confidence: number; fillOnly?: boolean }
+  >;
 }
 
 const PROFILE_LINK_PURPOSE_BY_KIND: Record<
@@ -329,6 +332,7 @@ export const researcherSchema = new mongoose.Schema<ResearcherRecord>(
           userKey: { type: String, required: true },
           joinRank: { type: Number, default: 0 },
           confidence: { type: Number, default: 0 },
+          fillOnly: { type: Boolean },
         },
         { _id: false },
       ),

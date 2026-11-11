@@ -8,6 +8,11 @@
  *
  * Rank: the identity join first (a netid reaches the person more surely than a name), then the
  * resolved candidate's confidence, then the key itself, so a tie still has one answer.
+ *
+ * Above that rank sits a field-specific source rule: a value backed only by a fill-only source
+ * for that field may fill an empty field but never outranks or ties a value any other source
+ * backs, whatever the join. The Yale directory's department is its HR unit, which a person's own
+ * official page contradicted in 6 of 10 hand-checked disagreements (#5741).
  */
 export const RESEARCHER_WRITER_FIELDS = [
   'displayName',
@@ -18,6 +23,21 @@ export const RESEARCHER_WRITER_FIELDS = [
 ] as const;
 
 export type ResearcherWriterField = (typeof RESEARCHER_WRITER_FIELDS)[number];
+
+const FILL_ONLY_SOURCES_BY_FIELD: Readonly<
+  Partial<Record<ResearcherWriterField, ReadonlySet<string>>>
+> = {
+  primaryDepartment: new Set(['yale-directory']),
+};
+
+export function isFillOnlyFieldValue(
+  field: ResearcherWriterField,
+  contributingSources: readonly string[] | undefined,
+): boolean {
+  const fillOnly = FILL_ONLY_SOURCES_BY_FIELD[field];
+  if (!fillOnly || !contributingSources?.length) return false;
+  return contributingSources.every((source) => fillOnly.has(source));
+}
 
 const JOIN_RANK: Readonly<Record<string, number>> = {
   'account-netid': 4,
@@ -31,22 +51,26 @@ export interface ResearcherFieldWriter {
   userKey: string;
   joinRank: number;
   confidence: number;
+  fillOnly?: boolean;
 }
 
 export function researcherFieldWriter(
   userKey: string,
   identityJoin: string | undefined,
   confidence: unknown,
+  fillOnly = false,
 ): ResearcherFieldWriter {
   const numeric = typeof confidence === 'number' && Number.isFinite(confidence) ? confidence : 0;
   return {
     userKey,
     joinRank: JOIN_RANK[identityJoin ?? ''] ?? 0,
     confidence: Math.round(numeric * 1e6) / 1e6,
+    ...(fillOnly ? { fillOnly: true } : {}),
   };
 }
 
 export function writerOutranks(a: ResearcherFieldWriter, b: ResearcherFieldWriter): boolean {
+  if (Boolean(a.fillOnly) !== Boolean(b.fillOnly)) return !a.fillOnly;
   if (a.joinRank !== b.joinRank) return a.joinRank > b.joinRank;
   if (a.confidence !== b.confidence) return a.confidence > b.confidence;
   return a.userKey < b.userKey;
@@ -60,12 +84,13 @@ const storedWriter = (writers: unknown, field: string): ResearcherFieldWriter | 
         ? (writers as Record<string, unknown>)[field]
         : undefined;
   if (!entry || typeof entry !== 'object') return undefined;
-  const { userKey, joinRank, confidence } = entry as Record<string, unknown>;
+  const { userKey, joinRank, confidence, fillOnly } = entry as Record<string, unknown>;
   if (typeof userKey !== 'string' || !userKey) return undefined;
   return {
     userKey,
     joinRank: typeof joinRank === 'number' ? joinRank : 0,
     confidence: typeof confidence === 'number' ? confidence : 0,
+    ...(fillOnly === true ? { fillOnly: true } : {}),
   };
 };
 
@@ -76,16 +101,22 @@ export type ResearcherFieldWriteDecision =
 /**
  * Whether this key writes `field`. A key that holds the field but resolves no candidate now
  * releases it, so a sibling can take the field over; the stored value itself is left alone.
+ * A fill-only candidate with no recorded writer writes only into an empty field, because a
+ * stored value with no writer was set by some other source before writers were recorded.
  */
 export function decideResearcherFieldWrite(
   writers: unknown,
   field: ResearcherWriterField,
   candidate: ResearcherFieldWriter,
   hasValue: boolean,
+  storedValuePresent = false,
 ): ResearcherFieldWriteDecision {
   const current = storedWriter(writers, field);
   const holdsField = current?.userKey === candidate.userKey;
   if (!hasValue) return { write: false, releaseWriter: holdsField };
+  if (candidate.fillOnly && !current && storedValuePresent) {
+    return { write: false, releaseWriter: false };
+  }
   if (current && !holdsField && !writerOutranks(candidate, current)) {
     return { write: false, releaseWriter: false };
   }
@@ -93,6 +124,7 @@ export function decideResearcherFieldWrite(
     !current ||
     current.userKey !== candidate.userKey ||
     current.joinRank !== candidate.joinRank ||
-    current.confidence !== candidate.confidence;
+    current.confidence !== candidate.confidence ||
+    Boolean(current.fillOnly) !== Boolean(candidate.fillOnly);
   return { write: true, writer: candidate, writerChanged };
 }
