@@ -176,6 +176,7 @@ export interface ExistingProfileUser {
 interface IdentityToUserObservationOptions {
   includeProfileEnrichment?: boolean;
   includeIdentityEnrichment?: boolean;
+  includeEmail?: boolean;
 }
 
 export interface OfficialProfileResearchHome {
@@ -3246,16 +3247,18 @@ export function identityToUserObservations(
     identityObservations.push(['title', identity.title], ['profileUrls', profileUrls]);
   }
 
-  const observations: ObservationInput[] = includeIdentityEnrichment
-    ? identityObservations.map(([field, value]) => ({
-        entityType: 'user',
-        entityKey: `netid:${netid}`,
-        field: String(field),
-        value,
-        sourceUrl: identity.canonicalUrl,
-        confidenceOverride: 0.95,
-      }))
-    : [];
+  const includeEmail = options.includeEmail ?? includeIdentityEnrichment;
+  const emittedIdentityObservations = includeIdentityEnrichment
+    ? identityObservations
+    : identityObservations.filter(([field]) => includeEmail && field === 'email');
+  const observations: ObservationInput[] = emittedIdentityObservations.map(([field, value]) => ({
+    entityType: 'user',
+    entityKey: `netid:${netid}`,
+    field: String(field),
+    value,
+    sourceUrl: identity.canonicalUrl,
+    confidenceOverride: 0.95,
+  }));
 
   if (includeProfileEnrichment) {
     if (identity.imageUrl) {
@@ -4977,6 +4980,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
                   ...identityToUserObservations(identity, existingUser, {
                     includeProfileEnrichment: runVisibleProfileBioBackfill,
                     includeIdentityEnrichment: !runVisibleProfileBioBackfill,
+                    includeEmail: true,
                   }),
                 );
                 if (runQueuedPiBackfill) {
