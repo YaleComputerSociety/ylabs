@@ -56,7 +56,8 @@ export function identityWitnessesConflict(
 
 /**
  * Whether the Yale directory pairs the person's own addresses with a netid other than the
- * candidate's and never with the candidate's, so a name match would join two people (#5765).
+ * candidate's and never with the candidate's, so a name or page match would join two people
+ * (#5765).
  * A candidate with no netid of Yale shape, or one the directory does not hold, decides nothing,
  * as in `identityWitnessesConflict` and `profilePageContradictsNetid`.
  */
