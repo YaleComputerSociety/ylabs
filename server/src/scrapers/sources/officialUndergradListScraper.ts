@@ -6,13 +6,14 @@
  * named professor's list entries to the research row they already lead as
  * `undergradListEvidence`. Mentoring is its own signal, separate from hosting.
  *
- * Deterministic: every source is read by an HTML, XML or CSV parser in
+ * Deterministic: every source is read by an HTML or CSV parser in
  * `utils/officialUndergradLists.ts`, with no model call. Only the adviser is read; no student
  * name, project title or topic is stored.
  *
- * Identity fails closed. A Yale email on the list matches the researcher who holds it; a
- * name matches only when exactly one researcher carries it, and, where the list states a
- * department, only when that researcher's own rows agree with it. An adviser who leads no
+ * Identity fails closed. A Yale email, or a Tobin sponsor's profile link, matches the
+ * researcher who holds it only when they carry the listed name; a name matches only when
+ * exactly one researcher carries it, and, where the list states a department, only when
+ * that researcher's own rows agree with it. An adviser who leads no
  * row is counted and skipped: mentoring alone never creates a row (owner, 2026-11-10).
  *
  * Every run rebuilds each row's whole list, so an entry withdraws when its source stops
@@ -44,9 +45,7 @@ import {
   googleSheetCsvUrl,
   physicsOpenOpportunityListings,
   psychologyResearchSheetListings,
-  sitemapIndexUrls,
-  tobinProjectListings,
-  tobinProjectUrls,
+  tobinBoardListings,
   undergradListSources,
   wuTsaiFellowListings,
   UNDERGRAD_LIST_SOURCE_KIND,
@@ -55,6 +54,7 @@ import {
   type UndergradListSource,
 } from '../utils/officialUndergradLists';
 import { fetchPageWithPolicy, HttpStatusError } from '../utils/httpFetch';
+import { TOBIN_RA_BOARD_URL } from '../utils/tobinRaBoard';
 import {
   parseSeniorEssayAdviserTables,
   parseSeniorThesisAdviserParagraphs,
@@ -78,7 +78,12 @@ export type MentorRefusal =
   'no-match' | 'ambiguous' | 'department-mismatch' | 'emeritus-on-current-list' | 'no-lead-row';
 
 export type MentorResolution =
-  | { status: 'matched'; slug: string; researcherName?: string; matchedBy?: 'email' | 'name' }
+  | {
+      status: 'matched';
+      slug: string;
+      researcherName?: string;
+      matchedBy?: 'email' | 'profile' | 'name';
+    }
   | { status: 'refused'; reason: MentorRefusal };
 
 export type MentorResolver = (listing: MentorListing) => Promise<MentorResolution>;
@@ -273,8 +278,6 @@ function adviserPairsAsMentorListings(
 
 const EPS_ADVISER_DEPARTMENTS = ['Earth and Planetary Sciences', 'Geology and Geophysics'] as const;
 
-const TOBIN_LANDING = 'https://economics.yale.edu/undergraduate/tobin-ra';
-const ECONOMICS_SITEMAP = 'https://economics.yale.edu/sitemap.xml';
 const PSYCHOLOGY_PAGE = 'https://psychology.yale.edu/undergraduate/research-opportunities';
 
 export const UNDERGRAD_LIST_SOURCE_CONFIGS: readonly MentorSourceConfig[] = [
@@ -292,36 +295,13 @@ export const UNDERGRAD_LIST_SOURCE_CONFIGS: readonly MentorSourceConfig[] = [
   },
   {
     source: 'tobin-research-assistantships',
-    landingUrl: TOBIN_LANDING,
+    landingUrl: TOBIN_RA_BOARD_URL,
     departmentScope: ECONOMIC_POLICY_ADVISER_DEPARTMENTS,
-    read: async (fetchText, now) => {
-      const index = await fetchText(ECONOMICS_SITEMAP);
-      if (index === null) return { listings: [], complete: false };
-      const children = sitemapIndexUrls(index);
-      const sitemaps = children.length > 0 ? children : [ECONOMICS_SITEMAP];
-      const projectUrls = new Set<string>();
-      let complete = true;
-      for (const sitemap of sitemaps) {
-        const xml = sitemap === ECONOMICS_SITEMAP ? index : await fetchText(sitemap);
-        if (xml === null) {
-          complete = false;
-          continue;
-        }
-        for (const url of tobinProjectUrls(xml)) {
-          const year = Number(/\/tobin-ra\/(\d{4})\//.exec(url)?.[1]);
-          if (withinLookback(Number.isFinite(year) ? year : undefined, now)) projectUrls.add(url);
-        }
-      }
-      const listings: MentorListing[] = [];
-      for (const url of projectUrls) {
-        const html = await fetchText(url);
-        if (html === null) {
-          complete = false;
-          continue;
-        }
-        listings.push(...tobinProjectListings(html, url));
-      }
-      return { listings, complete: complete && projectUrls.size > 0 };
+    read: async (fetchText) => {
+      const html = await fetchText(TOBIN_RA_BOARD_URL);
+      if (!html) return { listings: [], complete: false };
+      const board = tobinBoardListings(html, TOBIN_RA_BOARD_URL);
+      return { listings: board.listings, complete: board.projectBlocks > 0 };
     },
   },
   {
@@ -438,6 +418,7 @@ export const UNDERGRAD_LIST_SOURCE_CONFIGS: readonly MentorSourceConfig[] = [
 const listingKey = (listing: MentorListing): string =>
   [
     listing.adviserEmail ? `email:${listing.adviserEmail}` : '',
+    listing.adviserProfileUrl ? `profile:${listing.adviserProfileUrl.toLowerCase()}` : '',
     `name:${listing.adviserName.toLowerCase()}`,
     (listing.department ?? '').toLowerCase(),
     (listing.departmentScope ?? []).join(',').toLowerCase(),
@@ -451,6 +432,30 @@ async function researcherForEmail(email: string): Promise<UserMatch | null> {
     .select('_id displayName profile identifiers')
     .lean();
   return researcher ? researcherToUserMatch(researcher, researcherNetid(researcher)) : null;
+}
+
+const profileUrlVariants = (url: string): string[] => {
+  const bare = url.replace(/\/+$/, '');
+  const http = bare.replace(/^https:\/\//, 'http://');
+  return [bare, `${bare}/`, http, `${http}/`];
+};
+
+const PROFILE_LINK_SOURCES: ReadonlySet<UndergradListSource> = new Set([
+  'tobin-research-assistantships',
+]);
+
+/** The one live researcher whose profile links include this exact page, or none. */
+async function soleResearcherForProfileUrl(url: string): Promise<UserMatch | null> {
+  const holders: any[] = await Researcher.find({
+    archived: { $ne: true },
+    'profileLinks.url': { $in: profileUrlVariants(url) },
+  })
+    .select('_id displayName profile identifiers')
+    .limit(2)
+    .lean();
+  return holders.length === 1
+    ? researcherToUserMatch(holders[0], researcherNetid(holders[0]))
+    : null;
 }
 
 /** The listed name and the matched researcher's name could be one person. */
@@ -477,15 +482,25 @@ async function liveNamesakeCount(listedName: string): Promise<number> {
 }
 
 /**
- * An email binds only when the researcher who holds it carries the name the list prints,
- * because a project card's contact email can belong to someone else in the group. A name
- * alone binds only when no second live researcher could carry it, and only inside the
- * departments the list states or plausibly draws from.
+ * An email or a Tobin sponsor's profile link binds only when the researcher who holds it
+ * carries the name the list prints, because a project card's contact email can belong to
+ * someone else in the group, and a profile link binds only when exactly one live researcher
+ * holds it. A name alone binds only when no second live researcher could carry it, and only
+ * inside the departments the list states or plausibly draws from.
  */
 export const defaultMentorResolver: MentorResolver = async (listing) => {
-  const byEmail = listing.adviserEmail ? await researcherForEmail(listing.adviserEmail) : null;
-  let owner = byEmail && listedNameAgrees(listing.adviserName, byEmail) ? byEmail : null;
-  const matchedByEmail = Boolean(owner);
+  const agrees = (candidate: UserMatch | null) =>
+    candidate && listedNameAgrees(listing.adviserName, candidate) ? candidate : null;
+  const byEmail = agrees(
+    listing.adviserEmail ? await researcherForEmail(listing.adviserEmail) : null,
+  );
+  const byProfile =
+    !byEmail && listing.adviserProfileUrl && PROFILE_LINK_SOURCES.has(listing.source)
+      ? agrees(await soleResearcherForProfileUrl(listing.adviserProfileUrl))
+      : null;
+  let owner = byEmail ?? byProfile;
+  const matchedByLink = Boolean(owner);
+  const matchedBy: 'email' | 'profile' | 'name' = !owner ? 'name' : byEmail ? 'email' : 'profile';
   if (!owner) {
     const resolution = await defaultAdvisorResolution(listing.adviserName);
     if (resolution.status === 'ambiguous') return { status: 'refused', reason: 'ambiguous' };
@@ -497,14 +512,14 @@ export const defaultMentorResolver: MentorResolver = async (listing) => {
     }
     owner = resolution.match;
   }
-  if (!matchedByEmail && UNDERGRAD_LIST_SOURCE_KIND[listing.source] === 'open') {
+  if (!matchedByLink && UNDERGRAD_LIST_SOURCE_KIND[listing.source] === 'open') {
     const held: any = await Researcher.findById(owner._id).select('profile.title').lean();
     if (leadTitlesAreAllEmeritus([held?.profile?.title])) {
       return { status: 'refused', reason: 'emeritus-on-current-list' };
     }
   }
   const scope = listing.department ? [listing.department] : (listing.departmentScope ?? []);
-  if (!matchedByEmail && scope.length > 0) {
+  if (!matchedByLink && scope.length > 0) {
     const own = await leadRowDepartmentsForOwner(owner);
     if (!departmentsAgree(scope, [...own.departments, ...own.affiliations])) {
       return { status: 'refused', reason: 'department-mismatch' };
@@ -516,7 +531,7 @@ export const defaultMentorResolver: MentorResolver = async (listing) => {
     status: 'matched',
     slug,
     researcherName: [owner.fname, owner.lname].filter(Boolean).join(' '),
-    matchedBy: matchedByEmail ? 'email' : 'name',
+    matchedBy,
   };
 };
 
