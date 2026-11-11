@@ -503,6 +503,16 @@ describe('an empty researcher email is filled from identity-verified evidence on
     expect(await storedEmail(researcher._id)).toBe(DIRECTORY_EMAIL);
   });
 
+  it('does not refuse on a dotted placeholder key that joins nobody', async () => {
+    const researcher = await seedResearcher();
+    await seedStaffDirectoryRecord(OWN_NETID, DIRECTORY_EMAIL, [OWN_NETID]);
+    await seedKeyStatingAddress('netid:placeholder.fixture', DIRECTORY_EMAIL);
+
+    await materializeEntity('user', { entityKey: OWN_NETID }, {});
+
+    expect(await storedEmail(researcher._id)).toBe(DIRECTORY_EMAIL);
+  });
+
   it('fails closed when the other key stating the address joins nobody', async () => {
     const researcher = await seedResearcher();
     await seedStaffDirectoryRecord(OWN_NETID, DIRECTORY_EMAIL, [OWN_NETID]);

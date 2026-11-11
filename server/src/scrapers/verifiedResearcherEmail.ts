@@ -1,6 +1,7 @@
 import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 import { escapeRegex } from '../utils/regex';
+import { looksLikeYaleNetid } from '../utils/yaleNetid';
 import { Researcher } from '../models/researcher';
 import { officialProfileDestinationStoredPattern } from '../services/leadProfileIdentity';
 import { identityWitnessesConflict } from '../services/officialProfileLinkIdentity';
@@ -166,7 +167,8 @@ async function personPageMarksDeparted(person: EmailEvidencePerson): Promise<boo
 
 /**
  * Whether live evidence states the address under a key the engine join resolves to anyone
- * but this person (#5731). A name-derived key that joins to the same researcher is the same
+ * but this person (#5731). Only a netid-shaped key is an identity witness: an email-local-part
+ * placeholder such as a dotted alias names nobody on its own, so it is skipped. A name-derived key that joins to the same researcher is the same
  * person and decides nothing; a key that joins to nobody, or cannot be told apart, fails
  * closed, because the address could then belong to someone the corpus has not resolved.
  */
@@ -186,6 +188,7 @@ async function anotherKeyStatesAddress(
   const personId = person._id === undefined || person._id === null ? '' : String(person._id);
   for (const key of keys) {
     if (typeof key !== 'string' || !key) continue;
+    if (!looksLikeYaleNetid(key.replace(/^netid:/i, ''))) continue;
     const joined = (await userIdentityJoinForKey(key))?.join?.researcher?._id;
     if (!joined || String(joined) !== personId) return true;
   }
