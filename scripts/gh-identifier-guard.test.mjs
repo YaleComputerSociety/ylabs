@@ -542,15 +542,39 @@ test('the shim names the missing guard, refuses posts, and passes other commands
   assert.equal(fs.readFileSync(log, 'utf8'), 'pr view 1\n');
 });
 
-test('restores a closing keyword written inside a code span, and nothing else (#5664)', () => {
+test('restores a line-leading closing keyword written inside a code span, and nothing else (#5664)', () => {
   const { text, count } = rewriteBacktickedClosingKeywords(
-    'Closes `#5622`. fixes: `YaleComputerSociety/ylabs#12`, Resolved `#7`, see `#9`, Closes #3.',
+    [
+      'Closes `#5622`',
+      'fixes: `YaleComputerSociety/ylabs#12`',
+      '  Resolved `#7`',
+      'Does not close `#8`; that stays open.',
+      'The bug fixed `#9` came back.',
+      'see `#10`',
+      'Closes #3',
+      '```',
+      'Closes `#11`',
+      '```',
+      'Fixes `#12`',
+    ].join('\n'),
   );
   assert.equal(
     text,
-    'Closes #5622. fixes: YaleComputerSociety/ylabs#12, Resolved #7, see `#9`, Closes #3.',
+    [
+      'Closes #5622',
+      'fixes: YaleComputerSociety/ylabs#12',
+      '  Resolved #7',
+      'Does not close `#8`; that stays open.',
+      'The bug fixed `#9` came back.',
+      'see `#10`',
+      'Closes #3',
+      '```',
+      'Closes `#11`',
+      '```',
+      'Fixes #12',
+    ].join('\n'),
   );
-  assert.equal(count, 3);
+  assert.equal(count, 4);
   assert.deepEqual(rewriteBacktickedClosingKeywords('No keyword here: `#9`.'), {
     text: 'No keyword here: `#9`.',
     count: 0,
@@ -560,12 +584,13 @@ test('restores a closing keyword written inside a code span, and nothing else (#
 test('rewrites every way a body reaches gh, and never edits the author file in place', () => {
   const files = {
     '/drafts/body.md': 'Body\n\nCloses `#41`\n',
-    '/drafts/input.json': '{"body":"Closes `#42`"}',
+    '/drafts/input.json': '{"title":"Closes `#2` in a title","body":"Body\\n\\nCloses `#42`"}',
+    '/drafts/not-json.txt': 'Closes `#45`',
   };
   const written = [];
   const deps = {
     readBodyFile: (file) => files[file],
-    readStdin: () => 'From stdin. Fixes `#43`',
+    readStdin: () => 'From stdin.\nFixes `#43`',
     writeTempFile: (text) => {
       written.push(text);
       return `/tmp/rewritten-${written.length}`;
@@ -592,7 +617,7 @@ test('rewrites every way a body reaches gh, and never edits the author file in p
   assert.equal(files['/drafts/body.md'], 'Body\n\nCloses `#41`\n');
   assert.deepEqual(planClosingKeywordRewrite(['issue', 'comment', '1', '-F', '-'], deps), {
     args: ['issue', 'comment', '1', '-F', '-'],
-    stdin: 'From stdin. Fixes #43',
+    stdin: 'From stdin.\nFixes #43',
     count: 1,
   });
   assert.deepEqual(
@@ -616,7 +641,17 @@ test('rewrites every way a body reaches gh, and never edits the author file in p
       .args,
     ['api', 'repos/x/y/pulls/1', '--input', '/tmp/rewritten-2'],
   );
-  assert.equal(written[1], '{"body":"Closes #42"}');
+  assert.deepEqual(JSON.parse(written[1]), {
+    title: 'Closes `#2` in a title',
+    body: 'Body\n\nCloses #42',
+  });
+  assert.deepEqual(
+    planClosingKeywordRewrite(
+      ['api', 'repos/x/y/pulls/1', '--input', '/drafts/not-json.txt'],
+      deps,
+    ),
+    { args: ['api', 'repos/x/y/pulls/1', '--input', '/drafts/not-json.txt'], count: 0 },
+  );
   assert.deepEqual(planClosingKeywordRewrite(['pr', 'create', '-b', 'Closes #40'], deps), {
     args: ['pr', 'create', '-b', 'Closes #40'],
     count: 0,

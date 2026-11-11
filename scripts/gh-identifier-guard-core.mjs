@@ -121,19 +121,43 @@ export const planGuard = (args, context) => {
 // "Closes `#5622`" merges with its issue left open. The no-mistakes gate writes its PR
 // bodies that way, and they reach GitHub through this guard, so the guard restores the
 // plain form before posting rather than leaving it to someone noticing (#5664).
-const BACKTICKED_CLOSING_KEYWORD_RE =
-  /\b(close[sd]?|fix(?:e[sd])?|resolve[sd]?)(\s*:?\s+)`((?:[\w.-]+\/[\w.-]+)?#\d+)`/gi;
+const LINE_LEADING_BACKTICKED_CLOSING_KEYWORD_RE =
+  /^([ \t]*)(close[sd]?|fix(?:e[sd])?|resolve[sd]?)([ \t]*:?[ \t]+)`((?:[\w.-]+\/[\w.-]+)?#\d+)`/i;
+const CODE_FENCE_RE = /^[ \t]*(?:```|~~~)/;
 
 export const rewriteBacktickedClosingKeywords = (text) => {
   let count = 0;
-  const rewritten = String(text).replace(
-    BACKTICKED_CLOSING_KEYWORD_RE,
-    (_match, keyword, gap, ref) => {
-      count += 1;
-      return `${keyword}${gap}${ref}`;
-    },
-  );
-  return { text: rewritten, count };
+  let insideFence = false;
+  const lines = String(text)
+    .split('\n')
+    .map((line) => {
+      if (CODE_FENCE_RE.test(line)) {
+        insideFence = !insideFence;
+        return line;
+      }
+      if (insideFence) return line;
+      return line.replace(
+        LINE_LEADING_BACKTICKED_CLOSING_KEYWORD_RE,
+        (_match, indent, keyword, gap, ref) => {
+          count += 1;
+          return `${indent}${keyword}${gap}${ref}`;
+        },
+      );
+    });
+  return { text: lines.join('\n'), count };
+};
+
+const rewriteJsonDocumentBody = (raw) => {
+  let document;
+  try {
+    document = JSON.parse(raw);
+  } catch {
+    return { text: raw, count: 0 };
+  }
+  if (typeof document?.body !== 'string') return { text: raw, count: 0 };
+  const result = rewriteBacktickedClosingKeywords(document.body);
+  if (result.count === 0) return { text: raw, count: 0 };
+  return { text: JSON.stringify({ ...document, body: result.text }), count: result.count };
 };
 
 const BODY_VALUE_FLAGS = ['-b', '--body'];
@@ -160,31 +184,33 @@ export const planClosingKeywordRewrite = (args, { readBodyFile, readStdin, write
   let stdin;
   let count = 0;
 
-  const rewriteText = (text) => {
-    const result = rewriteBacktickedClosingKeywords(text);
+  const rewriteText = (text, rewriter = rewriteBacktickedClosingKeywords) => {
+    const result = rewriter(text);
     count += result.count;
     return result;
   };
-  const rewriteFileArgument = (file) => {
+  const rewriteFileArgument = (file, rewriter) => {
     if (file === '-') {
-      const result = rewriteText(readStdin());
+      const result = rewriteText(readStdin(), rewriter);
       if (result.count > 0) stdin = result.text;
       return file;
     }
-    const result = rewriteText(readBodyFile(file));
+    const result = rewriteText(readBodyFile(file), rewriter);
     return result.count > 0 ? writeTempFile(result.text) : file;
   };
 
   const valueFlags = command.kind === 'api' ? API_FIELD_FLAGS : BODY_VALUE_FLAGS;
   const fileFlags = command.kind === 'api' ? API_INPUT_FLAGS : BODY_FILE_FLAGS;
+  const fileRewriter =
+    command.kind === 'api' ? rewriteJsonDocumentBody : rewriteBacktickedClosingKeywords;
 
   for (let i = 0; i < out.length; i += 1) {
     const fileFlag = splitFlag(out[i], fileFlags);
     if (fileFlag) {
       if (fileFlag.attached) {
-        out[i] = `${fileFlag.name}=${rewriteFileArgument(fileFlag.value)}`;
+        out[i] = `${fileFlag.name}=${rewriteFileArgument(fileFlag.value, fileRewriter)}`;
       } else if (i + 1 < out.length) {
-        out[i + 1] = rewriteFileArgument(out[i + 1]);
+        out[i + 1] = rewriteFileArgument(out[i + 1], fileRewriter);
         i += 1;
       }
       continue;
