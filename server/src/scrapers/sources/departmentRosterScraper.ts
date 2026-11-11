@@ -4205,7 +4205,14 @@ function entryToUserObservations(
   }
   if (personEmail) obs.push({ ...profileBase, field: 'email', value: personEmail });
   if (entry.title) {
-    obs.push({ ...titleBase, field: 'title', value: entry.title });
+    obs.push({
+      ...titleBase,
+      field: 'title',
+      value: entry.title,
+      ...(entry.titleFromProfilePage
+        ? { extraction: { source: 'profileTitleBlock' as const } }
+        : {}),
+    });
   }
   if (entry.profileUrl) {
     obs.push({ ...profileBase, field: 'profileUrls', value: { departmental: entry.profileUrl } });

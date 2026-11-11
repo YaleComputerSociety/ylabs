@@ -16,7 +16,11 @@ vi.mock('../../services/meiliSyncService', async () => {
 
 import { Observation } from '../../models/observation';
 import { Researcher } from '../../models/researcher';
-import { materializeEntity, userTitleEvidence } from '../entityMaterializer';
+import {
+  isFirstHandUserTitleRead,
+  materializeEntity,
+  userTitleEvidence,
+} from '../entityMaterializer';
 import {
   extractProfile as extractYseProfile,
   facultyToUserObservations as yseUserObservations,
@@ -208,6 +212,33 @@ describe("a researcher's own profile page decides the title (#5578)", () => {
       schoolRead(FIRST_HAND_RANK, '2026-10-01T00:00:00Z'),
       rosterRead(COPIED_RANK, OFFICIAL_PAGE),
     ]);
+
+    await expectFromEveryKeyInEveryOrder([NETID_KEY, SCHOOL_KEY], FIRST_HAND_RANK);
+  });
+
+  it('counts a roster title marked as read from the profile title block as first-hand', async () => {
+    await seed([
+      schoolRead(OLDER_FIRST_HAND_RANK, '2026-08-01T00:00:00Z'),
+      rosterRead(FIRST_HAND_RANK, OFFICIAL_PAGE),
+      backfillRead(COPIED_RANK),
+    ]);
+    await Observation.updateMany(
+      { sourceName: 'dept-faculty-roster', field: 'title' },
+      { $set: { extraction: { source: 'profileTitleBlock' } } },
+    );
+
+    await expectFromEveryKeyInEveryOrder([NETID_KEY, SCHOOL_KEY], FIRST_HAND_RANK);
+  });
+
+  it('does not count a marked roster title that cites a page other than the profile', async () => {
+    await seed([
+      schoolRead(FIRST_HAND_RANK, '2026-08-01T00:00:00Z'),
+      rosterRead(COPIED_RANK, ROSTER_LISTING),
+    ]);
+    await Observation.updateMany(
+      { sourceName: 'dept-faculty-roster', field: 'title' },
+      { $set: { extraction: { source: 'profileTitleBlock' } } },
+    );
 
     await expectFromEveryKeyInEveryOrder([NETID_KEY, SCHOOL_KEY], FIRST_HAND_RANK);
   });
@@ -453,6 +484,23 @@ describe('the first-hand title screen (#5578)', () => {
     );
 
     expect(kept.map((observation) => observation.value)).toEqual(['First Seen Title']);
+  });
+
+  it('requires the profile title block marker of a roster read only', () => {
+    expect(isFirstHandUserTitleRead({ sourceName: 'ysm-faculty-directory' })).toBe(true);
+    expect(isFirstHandUserTitleRead({ sourceName: 'dept-faculty-roster' })).toBe(false);
+    expect(
+      isFirstHandUserTitleRead({
+        sourceName: 'dept-faculty-roster',
+        extraction: { source: 'profileTitleBlock' },
+      }),
+    ).toBe(true);
+    expect(
+      isFirstHandUserTitleRead({
+        sourceName: 'official-profile-pi-backfill',
+        extraction: { source: 'profileTitleBlock' },
+      }),
+    ).toBe(false);
   });
 
   it("ignores a first-hand lane's read of a page that is not the researcher's", () => {

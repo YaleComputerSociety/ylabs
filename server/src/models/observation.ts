@@ -41,6 +41,27 @@ export const researchEntityObservationSubjects = [
   'researchGroup',
 ] as readonly string[] as readonly ObservedEntityType[];
 
+/**
+ * Which part of a page a lane read the value from, for a lane whose one source can state a
+ * value in more than one place. Recorded beside the value, never inside its identity: it is
+ * outside the fingerprint and every hash and gate key, so adding it to a lane's emit leaves
+ * every existing observation reading as unchanged (#5578, #5076).
+ */
+export const observationExtractionSources = ['profileTitleBlock'] as const;
+
+export type ObservationExtractionSource = (typeof observationExtractionSources)[number];
+
+export interface ObservationExtraction {
+  source: ObservationExtractionSource;
+}
+
+const observationExtractionSchema = new mongoose.Schema(
+  {
+    source: { type: String, required: true, enum: [...observationExtractionSources] },
+  },
+  { _id: false },
+);
+
 const observationSchema = new mongoose.Schema(
   {
     entityType: {
@@ -119,6 +140,10 @@ const observationSchema = new mongoose.Schema(
     },
     reslugAdoption: {
       type: Boolean,
+      required: false,
+    },
+    extraction: {
+      type: observationExtractionSchema,
       required: false,
     },
     rollback: {

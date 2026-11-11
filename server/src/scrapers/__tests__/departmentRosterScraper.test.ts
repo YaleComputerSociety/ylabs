@@ -4183,6 +4183,45 @@ describe('DepartmentRosterScraper.run', () => {
     });
   });
 
+  it('marks a title taken from the profile title block and leaves a listing title unmarked (#5578)', async () => {
+    const htmlFetcher = vi.fn(async (url: string) =>
+      url.endsWith('/people/faculty')
+        ? '<html><body>listing</body></html>'
+        : `<html><head><link rel="canonical" href="${new URL(url).pathname}" /></head><body>
+            <div class="person-title">Professor of Fixture Studies</div>
+            <a href="mailto:${url.split('/').pop()!.replace('-', '.')}@yale.edu">profile</a>
+          </body></html>`,
+    );
+    const configs: DeptConfig[] = [
+      {
+        deptKey: 'math',
+        deptName: 'Mathematics',
+        schoolName: 'FAS',
+        url: 'https://math.yale.edu/people/faculty',
+        paginated: false,
+        extractor: () => [
+          {
+            name: 'Rowan Listed',
+            profileUrl: 'https://math.yale.edu/people/rowan-listed',
+            title: 'Lecturer in Fixture Studies',
+          },
+          { name: 'Sage Profiled', profileUrl: 'https://math.yale.edu/people/sage-profiled' },
+        ],
+      },
+    ];
+
+    const { ctx, emitted } = makeContext();
+    await new DepartmentRosterScraper(configs, null, htmlFetcher).run(ctx);
+
+    const titleOf = (entityKey: string) =>
+      emitted.find(
+        (o) => o.entityType === 'user' && o.entityKey === entityKey && o.field === 'title',
+      );
+    expect(titleOf('netid:rowan.listed')?.extraction).toBeUndefined();
+    expect(titleOf('netid:sage.profiled')?.extraction).toEqual({ source: 'profileTitleBlock' });
+    expect(emitted.filter((o) => o.field !== 'title' && o.extraction !== undefined)).toEqual([]);
+  });
+
   it('preserves Scholar discovery without mirroring Engineering publications', async () => {
     const htmlFetcher = vi.fn(async (url: string) => {
       if (

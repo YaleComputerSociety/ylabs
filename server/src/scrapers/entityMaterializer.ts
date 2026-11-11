@@ -36,7 +36,11 @@ import {
   type ResearcherIdentityEvidenceSource,
 } from '../utils/researcherIdentity';
 import mongoose from 'mongoose';
-import { Observation, ObservedEntityType } from '../models/observation';
+import {
+  Observation,
+  ObservedEntityType,
+  type ObservationExtractionSource,
+} from '../models/observation';
 import {
   isOverSharedPersonWebsite,
   overSharedPersonWebsiteKeysForMaterialization,
@@ -7627,17 +7631,31 @@ function newestLaneReadOfUserTitles<T extends { field?: unknown; sourceName?: un
 
 /**
  * The lanes whose `user` title is read from the person's own official profile page's title
- * block, each verified against its extractor (#5578). Every other title lane copies that
- * page, reads another page, or cannot say which element it read: the roster cites the
- * profile page for a title its listing may have stated, the A-Z index reads a lab page's
- * contact widget, and the backfill takes the first title-classed element on the page.
- * The roster joins this list once its observations can mark a title taken from the
- * profile's title block.
+ * block, each verified against its extractor (#5578), mapped to the extraction marker a read
+ * must carry, if any. Every other title lane copies that page, reads another page, or cannot
+ * say which element it read: the A-Z index reads a lab page's contact widget, and the
+ * backfill takes the first title-classed element on the page. The roster reads either its
+ * listing or the profile, so only a read marked as taken from the profile's title block
+ * counts; an unmarked roster read, including every one stored before the marker, does not.
  */
-export const FIRST_HAND_USER_TITLE_SOURCES: ReadonlySet<string> = new Set([
-  'ysm-faculty-directory',
-  'yse-faculty-directory',
+export const FIRST_HAND_USER_TITLE_SOURCES: ReadonlyMap<
+  string,
+  ObservationExtractionSource | undefined
+> = new Map([
+  ['ysm-faculty-directory', undefined],
+  ['yse-faculty-directory', undefined],
+  ['dept-faculty-roster', 'profileTitleBlock'],
 ]);
+
+export function isFirstHandUserTitleRead(observation: {
+  sourceName?: unknown;
+  extraction?: { source?: unknown } | null;
+}): boolean {
+  const lane = textValue(observation.sourceName);
+  if (!FIRST_HAND_USER_TITLE_SOURCES.has(lane)) return false;
+  const requiredMarker = FIRST_HAND_USER_TITLE_SOURCES.get(lane);
+  return !requiredMarker || observation.extraction?.source === requiredMarker;
+}
 
 const CURATED_USER_TITLE_SOURCES: ReadonlySet<string> = new Set([
   'manual-admin-edit',
@@ -7647,7 +7665,7 @@ const CURATED_USER_TITLE_SOURCES: ReadonlySet<string> = new Set([
 function isFirstHandUserTitle(observation: any, officialPageKeys: ReadonlySet<string>): boolean {
   return (
     observation.field === 'title' &&
-    FIRST_HAND_USER_TITLE_SOURCES.has(textValue(observation.sourceName)) &&
+    isFirstHandUserTitleRead(observation) &&
     officialPageKeys.has(officialProfileIdentityUrlKey(observation.sourceUrl))
   );
 }

@@ -14,6 +14,12 @@ An append-only assertion: "at time T, source S claimed that entity E's field F h
 Nothing in the product reads an observation directly.
 Owner: `server/src/models/observation.ts`.
 
+**Extraction marker (`extraction`).**
+An optional record on an observation of which part of a page the lane read the value from, as `extraction.source`, an enum meant to grow.
+Today its one value is `profileTitleBlock`: `dept-faculty-roster` sets it on a title taken from the person's profile page enrichment, and the title rule counts a roster title as first-hand only when it carries that marker (#5578).
+It is never part of the observation's identity: it sits outside the fingerprint and every hash, dedupe key and gate key, so adding it to a lane leaves every existing observation reading as unchanged.
+Observations stored before the marker carry none, and none are backfilled.
+
 **Source.**
 A registered scraper, carrying a trust weight the resolver multiplies by.
 Registered in `server/src/scrapers/registry.ts`, with each scraper under `server/src/scrapers/sources/`.
