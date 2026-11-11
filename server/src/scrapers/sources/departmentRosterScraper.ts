@@ -3759,7 +3759,12 @@ function mergeProfileEnrichment(
     titleFromProfilePage: entry.title ? entry.titleFromProfilePage : Boolean(enrichment.title),
     email: entry.email || enrichment.email,
     labUrl: entry.labUrl || enrichment.labUrl,
-    labWebsiteButton: entry.labUrl ? entry.labWebsiteButton : enrichment.labWebsiteButton,
+    labWebsiteButton:
+      !entry.labUrl ||
+      (enrichment.labUrl &&
+        normalizeUrlForDedupe(enrichment.labUrl) === normalizeUrlForDedupe(entry.labUrl))
+        ? enrichment.labWebsiteButton
+        : entry.labWebsiteButton,
     labSlotAttestation: mergedLabSlotAttestation(entry, enrichment),
     orcid: entry.orcid || enrichment.orcid,
     bio: entry.bio || enrichment.bio,

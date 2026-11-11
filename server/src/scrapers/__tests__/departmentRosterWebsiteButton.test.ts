@@ -459,3 +459,75 @@ describe('a lab site the roster lists for several people', () => {
     ]);
   });
 });
+
+describe('a lab site the roster card and the profile button both carry', () => {
+  const SHARED_LAB = 'https://www.fixturesharedlab.example.org/';
+  const LEAD_URL = 'https://publichealth.yale.edu/profile/ada-fixture/';
+  const MEMBER_URL = 'https://publichealth.yale.edu/profile/bo-member/';
+
+  const pageFor = (url: string, personName: string, title: string, body: string): string =>
+    `<html><head><link rel="canonical" href="${url}"></head><body><main>
+      <article class="profile-details" aria-label="${personName}'s profile">
+        <h1 class="person-title">${personName}</h1>
+        <div class="professional-title">${title}</div>
+        ${body}
+      </article></main></body></html>`;
+
+  const pages: Record<string, string> = {
+    [LEAD_URL]: pageFor(
+      LEAD_URL,
+      'Ada Fixture',
+      'Associate Professor of Fixture Studies',
+      researchLabCard(button(SHARED_LAB, 'View Lab Website')).replace(
+        'Coastal Dynamics Lab',
+        'Fixture Lab',
+      ),
+    ),
+    [MEMBER_URL]: pageFor(
+      MEMBER_URL,
+      'Bo Member',
+      'Postdoctoral Associate',
+      `<ul><li><a href="${SHARED_LAB}">Fixture Lab</a></li></ul>`,
+    ),
+  };
+
+  it('keeps it for the lead whose profile button claims it', async () => {
+    const scraper = new DepartmentRosterScraper(
+      [
+        {
+          deptKey: 'fixture-health',
+          deptName: 'Fixture Health',
+          schoolName: 'Yale School of Fixtures',
+          url: 'https://publichealth.yale.edu/faculty/',
+          paginated: false,
+          extractor: vi.fn((): FacultyEntry[] => [
+            { name: 'Ada Fixture', profileUrl: LEAD_URL, labUrl: SHARED_LAB },
+            { name: 'Bo Member', profileUrl: MEMBER_URL, labUrl: SHARED_LAB },
+          ]),
+        },
+      ],
+      null,
+      async (url: string) => pages[url] ?? '<html><body></body></html>',
+    );
+    const emitted: ObservationInput[] = [];
+    await scraper.run({
+      scrapeRunId: 'test-run',
+      sourceId: 'test-source',
+      sourceName: 'dept-faculty-roster',
+      sourceWeight: 0.7,
+      options: { dryRun: true, useCache: false, release: false },
+      emit: async (obs) => {
+        emitted.push(...(Array.isArray(obs) ? obs : [obs]));
+      },
+      log: () => {},
+    });
+
+    const websites = emitted.filter(
+      (o) =>
+        (o.entityType === 'researchEntity' || o.entityType === 'user') &&
+        o.field === 'websiteUrl',
+    );
+    expect(websites.map((o) => o.value)).toEqual([SHARED_LAB]);
+    expect(websites[0].entityKey).toContain('ada-fixture');
+  });
+});
