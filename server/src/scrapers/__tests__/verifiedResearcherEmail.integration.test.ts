@@ -211,7 +211,7 @@ describe('an empty researcher email is filled from identity-verified evidence on
   );
 
   it('restores a replaced email to its prior value when the netid is rolled back', async () => {
-    await Researcher.init();
+    await Researcher.createIndexes();
     const stampedNetid = 'race456';
     await Account.create({
       netid: stampedNetid,
@@ -410,7 +410,7 @@ describe('an empty researcher email is filled from identity-verified evidence on
   });
 
   it('drops the filled email when the netid it was verified against is rolled back', async () => {
-    await Researcher.init();
+    await Researcher.createIndexes();
     const stampedNetid = 'race123';
     await Account.create({
       netid: stampedNetid,
