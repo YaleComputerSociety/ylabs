@@ -25,10 +25,13 @@ import { OrgUnit } from '../../models/orgUnit';
 import { ResearchEntity } from '../../models/researchEntity';
 import { materializeEntity } from '../entityMaterializer';
 import { resetOrgUnitCanonicalizerCache } from '../orgUnitCanonicalization';
+import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
 
 const ROSTER = 'dept-faculty-roster';
 const RECENT = new Date('2026-09-20T00:00:00Z');
 const LAST_TERM = new Date('2026-06-01T00:00:00Z');
+const SCOPED_RUN = new Date('2026-10-09T00:00:00Z');
+const AFTER_SCOPED_RUN = new Date('2026-10-10T00:00:00Z');
 
 describe('department roster appointments combine (#3621)', () => {
   let replSet: MongoMemoryReplSet;
@@ -69,6 +72,7 @@ describe('department roster appointments combine (#3621)', () => {
         ['History of Science, Medicine & Public Health'],
       ],
       ['early-modern-studies', 'Early Modern Studies', []],
+      ['medieval-studies', 'Medieval Studies', []],
     ] as const) {
       await OrgUnit.create({
         slug,
@@ -94,6 +98,49 @@ describe('department roster appointments combine (#3621)', () => {
       confidence: 0.7,
       observedAt,
       superseded: false,
+    });
+
+  const seedRosterSnapshot = (
+    deptKey: string,
+    deptName: string,
+    discoveredEntityKeys: string[],
+    readAt: Date,
+    overrides: Record<string, unknown> = {},
+  ) =>
+    Observation.create({
+      entityType: 'departmentRosterHealth',
+      entityKey: deptKey,
+      field: 'departmentRosterHealth',
+      value: {
+        deptKey,
+        deptName,
+        status: 'ok',
+        complete: true,
+        discoveredCount: discoveredEntityKeys.length,
+        discoveredEntityKeys,
+        read: {
+          pagesRead: 1,
+          readMode: 'html',
+          cacheAllowed: false,
+          pagesReusedWithinSweep: 0,
+          readAt: readAt.toISOString(),
+        },
+        ...overrides,
+      },
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: ROSTER,
+      sourceUrl: `https://${deptKey}.example.yale.edu/people/`,
+      confidence: 0.7,
+      observedAt: readAt,
+      superseded: false,
+    });
+
+  const seedMergedIn = (survivorId: unknown, slug = 'example-lead-roster-shell') =>
+    ResearchEntity.create({
+      slug,
+      name: 'Example Lead Faculty Research',
+      archived: true,
+      canonicalGroupId: survivorId,
     });
 
   const seedName = (entityKey: string) =>
@@ -224,10 +271,180 @@ describe('department roster appointments combine (#3621)', () => {
     await seedName('example-lead');
     await seedRosterRead('example-lead', ['History']);
     await seedRosterRead('example-lead', ['Early Modern Studies'], LAST_TERM);
+    await seedRosterSnapshot(
+      'early-modern-studies',
+      'Early Modern Studies',
+      ['another-faculty-member'],
+      SCOPED_RUN,
+    );
 
     await materializeEntity('researchEntity', { entityKey: 'example-lead' });
 
     expect(await departmentsOf('example-lead')).toEqual(['History']);
+  });
+
+  describe("a merged-in row's appointment whose roster was not read again (#5824)", () => {
+    const seedCrossListing = async (stored: string[] = ['History', 'Early Modern Studies']) => {
+      const survivor = await seedRow('example-lead', stored);
+      await seedMergedIn(survivor._id);
+      await seedName('example-lead');
+      await seedRosterRead('example-lead', ['History']);
+      return survivor;
+    };
+
+    it('keeps the appointment when a scoped run read only the home roster', async () => {
+      await seedCrossListing();
+      await seedRosterRead('example-lead-roster-shell', ['Early Modern Studies'], LAST_TERM);
+      await seedRosterSnapshot('history', 'History', ['example-lead'], RECENT);
+
+      await materializeEntity('researchEntity', { entityKey: 'example-lead' });
+
+      expect(await departmentsOf('example-lead')).toEqual(['History', 'Early Modern Studies']);
+    });
+
+    it('adds the appointment to a survivor that does not store it yet', async () => {
+      await seedCrossListing(['History']);
+      await seedRosterRead('example-lead-roster-shell', ['Early Modern Studies'], LAST_TERM);
+
+      await materializeEntity('researchEntity', { entityKey: 'example-lead' });
+
+      expect(await departmentsOf('example-lead')).toEqual(['History', 'Early Modern Studies']);
+    });
+
+    it('reads the merged-in appointment whichever identity form it is filed under', async () => {
+      const survivor = await seedCrossListing(['History']);
+      const byId = await seedMergedIn(survivor._id, 'example-lead-id-shell');
+      await seedRosterRead('example-lead-roster-shell', ['Early Modern Studies'], LAST_TERM);
+      await Observation.create({
+        entityType: 'researchEntity',
+        entityId: byId._id,
+        field: 'departments',
+        value: ['Medieval Studies'],
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: ROSTER,
+        sourceUrl: 'https://medieval.example.yale.edu/people/',
+        confidence: 0.7,
+        observedAt: LAST_TERM,
+        superseded: false,
+      });
+
+      await materializeEntity('researchEntity', { entityKey: 'example-lead' });
+
+      expect(await departmentsOf('example-lead')).toEqual([
+        'History',
+        'Early Modern Studies',
+        'Medieval Studies',
+      ]);
+    });
+
+    it('keeps the appointment while the later read of its roster still lists the merged-in key', async () => {
+      await seedCrossListing();
+      await seedRosterRead('example-lead-roster-shell', ['Early Modern Studies'], LAST_TERM);
+      await seedRosterSnapshot(
+        'early-modern-studies',
+        'Early Modern Studies',
+        ['example-lead-roster-shell'],
+        SCOPED_RUN,
+      );
+
+      await materializeEntity('researchEntity', { entityKey: 'example-lead' });
+
+      expect(await departmentsOf('example-lead')).toEqual(['History', 'Early Modern Studies']);
+    });
+
+    it('drops the appointment once its own roster is read in full without the row', async () => {
+      await seedCrossListing();
+      await seedRosterRead('example-lead-roster-shell', ['Early Modern Studies'], LAST_TERM);
+      await seedRosterSnapshot(
+        'early-modern-studies',
+        'Early Modern Studies',
+        ['another-faculty-member'],
+        SCOPED_RUN,
+      );
+
+      await materializeEntity('researchEntity', { entityKey: 'example-lead' });
+
+      expect(await departmentsOf('example-lead')).toEqual(['History']);
+    });
+
+    it('treats an incomplete read of its roster as no evidence of absence', async () => {
+      await seedCrossListing();
+      await seedRosterRead('example-lead-roster-shell', ['Early Modern Studies'], LAST_TERM);
+      await seedRosterSnapshot(
+        'early-modern-studies',
+        'Early Modern Studies',
+        ['another-faculty-member'],
+        SCOPED_RUN,
+        { status: 'partial-read', complete: false },
+      );
+
+      await materializeEntity('researchEntity', { entityKey: 'example-lead' });
+
+      expect(await departmentsOf('example-lead')).toEqual(['History', 'Early Modern Studies']);
+    });
+
+    it('never resurrects a superseded appointment on a merged-in row', async () => {
+      await seedCrossListing(['History']);
+      const retired = await seedRosterRead(
+        'example-lead-roster-shell',
+        ['Early Modern Studies'],
+        LAST_TERM,
+      );
+      await Observation.updateOne({ _id: retired._id }, { $set: { superseded: true } });
+
+      await materializeEntity('researchEntity', { entityKey: 'example-lead' });
+
+      expect(await departmentsOf('example-lead')).toEqual(['History']);
+    });
+
+    it('keeps a refused appointment refused', async () => {
+      await seedCrossListing(['History']);
+      await ResearchEntity.updateOne(
+        { slug: 'example-lead' },
+        {
+          $set: {
+            fieldValueRefusals: {
+              departments: [
+                {
+                  valueKey: fieldValueRefusalKey('departments', ['Early Modern Studies']),
+                  rule: 'operator_judgement',
+                  refusedBy: 'research-entity:refuse-field-value',
+                  refusedAt: AFTER_SCOPED_RUN,
+                },
+              ],
+            },
+          },
+        },
+      );
+      await seedRosterRead('example-lead-roster-shell', ['Early Modern Studies'], LAST_TERM);
+
+      await materializeEntity('researchEntity', { entityKey: 'example-lead' });
+
+      expect(await departmentsOf('example-lead')).toEqual(['History']);
+    });
+
+    it('never takes an appointment from a row that is not merged in', async () => {
+      await seedCrossListing(['History']);
+      await seedRow('unrelated-faculty-member', ['Early Modern Studies']);
+      await seedRosterRead('unrelated-faculty-member', ['Early Modern Studies'], LAST_TERM);
+
+      await materializeEntity('researchEntity', { entityKey: 'example-lead' });
+
+      expect(await departmentsOf('example-lead')).toEqual(['History']);
+    });
+
+    it('derives the same list on every resolve', async () => {
+      await seedCrossListing();
+      await seedRosterRead('example-lead-roster-shell', ['Early Modern Studies'], LAST_TERM);
+
+      await materializeEntity('researchEntity', { entityKey: 'example-lead' });
+      const first = await departmentsOf('example-lead');
+      await materializeEntity('researchEntity', { entityKey: 'example-lead-roster-shell' });
+      await materializeEntity('researchEntity', { entityKey: 'example-lead' });
+
+      expect(first).toEqual(['History', 'Early Modern Studies']);
+      expect(await departmentsOf('example-lead')).toEqual(first);
+    });
   });
 
   it('drops a superseded roster value', async () => {

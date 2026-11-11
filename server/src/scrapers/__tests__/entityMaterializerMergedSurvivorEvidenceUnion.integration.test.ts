@@ -96,6 +96,28 @@ describe('a merged survivor resolves over its tombstoned losers evidence (#3560)
     });
   };
 
+  const seedLawRosterReadWithoutTheRow = (readAt: Date) =>
+    Observation.create({
+      entityType: 'departmentRosterHealth',
+      entityKey: 'law',
+      field: 'departmentRosterHealth',
+      value: {
+        deptKey: 'law',
+        deptName: 'Law',
+        status: 'ok',
+        complete: true,
+        discoveredCount: 1,
+        discoveredEntityKeys: ['another-faculty-member'],
+        read: { pagesRead: 1, readMode: 'html', cacheAllowed: false, readAt: readAt.toISOString() },
+      },
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'dept-faculty-roster',
+      sourceUrl: 'https://law.example.yale.edu/people/',
+      confidence: 0.7,
+      observedAt: readAt,
+      superseded: false,
+    });
+
   const projectSurvivor = async (id: mongoose.Types.ObjectId) => {
     const doc = await ResearchEntity.findById(id).lean<ProjectedSurvivor>();
     return {
@@ -494,6 +516,7 @@ describe('a merged survivor resolves over its tombstoned losers evidence (#3560)
       'dept-faculty-roster',
       { confidence: 0.7, observedAt: new Date('2026-06-01T00:00:00Z') },
     );
+    await seedLawRosterReadWithoutTheRow(new Date('2026-06-01T00:00:00Z'));
     await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
     const stored = await ResearchEntity.findById(survivor._id).lean<{ departments?: string[] }>();
 
@@ -569,6 +592,7 @@ describe('a merged survivor resolves over its tombstoned losers evidence (#3560)
       });
       await Observation.updateMany({ entityType: 'user' }, { $set: { scrapeRunId: run._id } });
       resetInvalidatedScrapeRunCache();
+      await seedLawRosterReadWithoutTheRow(new Date('2026-04-01T00:00:00Z'));
 
       await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
       const stored = await ResearchEntity.findById(survivor._id).lean<{ departments?: string[] }>();
@@ -579,6 +603,7 @@ describe('a merged survivor resolves over its tombstoned losers evidence (#3560)
     it('drops a stale appointment no current read of that department dates', async () => {
       const survivor = await seedRosters(new Date('2026-03-01T00:00:00Z'));
       await seedPersonRead(['Other Studies'], new Date('2026-06-02T00:00:00Z'));
+      await seedLawRosterReadWithoutTheRow(new Date('2026-04-01T00:00:00Z'));
 
       await materializeEntity('researchEntity', { entityKey: 'example-lead-lab' });
       const stored = await ResearchEntity.findById(survivor._id).lean<{ departments?: string[] }>();
