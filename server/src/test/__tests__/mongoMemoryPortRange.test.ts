@@ -61,7 +61,6 @@ describe('in-memory MongoDB ports are split per vitest worker (#5646)', () => {
 
   it('reads the worker from VITEST_POOL_ID and refuses one the port space cannot hold', () => {
     expect(vitestPoolId({ VITEST_POOL_ID: '4' })).toBe(4);
-    expect(vitestPoolId({ VITEST_WORKER_ID: '2' })).toBe(2);
     expect(vitestPoolId({})).toBe(1);
     expect(() => vitestPoolId({ VITEST_POOL_ID: 'zero' })).toThrow('positive integer');
     expect(() => vitestPoolId({ VITEST_POOL_ID: String(MONGO_MEMORY_MAX_POOL_ID + 1) })).toThrow(

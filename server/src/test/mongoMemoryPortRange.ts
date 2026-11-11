@@ -25,7 +25,7 @@ export interface PortRange {
 }
 
 export function vitestPoolId(env: NodeJS.ProcessEnv = process.env): number {
-  const raw = env.VITEST_POOL_ID ?? env.VITEST_WORKER_ID ?? '1';
+  const raw = env.VITEST_POOL_ID ?? '1';
   const poolId = Number(raw);
   if (!Number.isInteger(poolId) || poolId < 1) {
     throw new Error(`VITEST_POOL_ID must be a positive integer, got "${raw}"`);
