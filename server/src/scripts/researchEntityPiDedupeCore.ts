@@ -31,6 +31,7 @@ export interface ResearchEntityPiDedupeRow {
   piLastName?: string;
   primaryAppointmentProfileUrl?: string;
   personLedEntityIds?: string[];
+  grantCoPiListedEntityIds?: string[];
   entities: Array<{
     id: string;
     slug?: string;
@@ -942,11 +943,15 @@ function bestDescriptionCarryFromEntities(
 function entityPersonIdSets(rows: ResearchEntityPiDedupeRow[]): Map<string, Set<string>> {
   const byEntity = new Map<string, Set<string>>();
   for (const row of rows) {
-    for (const entity of row.entities) {
-      if (!entity.id) continue;
-      const persons = byEntity.get(entity.id) || new Set<string>();
+    const entityIds = [
+      ...row.entities.map((entity) => entity.id),
+      ...(row.grantCoPiListedEntityIds || []),
+    ];
+    for (const entityId of entityIds) {
+      if (!entityId) continue;
+      const persons = byEntity.get(entityId) || new Set<string>();
       persons.add(row.userId);
-      byEntity.set(entity.id, persons);
+      byEntity.set(entityId, persons);
     }
   }
   return byEntity;
