@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { DETACHED_ROLE_ASSIGNMENT_REVIEW_STATUS } from '../models/roleAssignment';
+import { loadDirectoryNetidsByAddress } from '../scrapers/directoryContradictedProfileNetid';
 import { resolveNetidForRosterEmailAlias } from '../scrapers/entityMaterializer';
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -16,6 +17,7 @@ import {
   buildCanonicalNetidIndex,
   buildVerifiedPrimaryProfileIndex,
   decideShellMerge,
+  type DirectoryEmailCandidate,
   distinctPeoplePairKey,
   type NameVariantCandidate,
   withoutDistinctPeopleFolds,
@@ -544,6 +546,140 @@ async function loadNameVariantCandidates(
   return candidatesByShellId;
 }
 
+/**
+ * For each `NAME_ONLY` shell, the netids the Yale directory pairs with each address its own
+ * listings state about their subject: the listings its edges cite, on the rows those edges
+ * hold. Only the stated `emails` count, never a linked profile URL (#5811).
+ */
+async function loadListingAddressNetids(
+  RoleAssignment: mongoose.mongo.Collection,
+  ResearchEntities: mongoose.mongo.Collection,
+  Observations: mongoose.mongo.Collection,
+  shellIds: string[],
+): Promise<Map<string, Array<ReadonlySet<string>>>> {
+  const netidsByShellId = new Map<string, Array<ReadonlySet<string>>>();
+  if (shellIds.length === 0) return netidsByShellId;
+  const shellEdges = (await RoleAssignment.find(
+    {
+      archived: { $ne: true },
+      personId: { $in: shellIds.map((id) => new mongoose.Types.ObjectId(id)) },
+      'rosterProvenance.profileUrl': { $type: 'string' },
+    },
+    { projection: { personId: 1, target: 1, 'rosterProvenance.profileUrl': 1 } },
+  ).toArray()) as any[];
+  if (shellEdges.length === 0) return netidsByShellId;
+  const targetIds = [...new Set(shellEdges.map((edge) => idKey(edge.target?.id)).filter(Boolean))];
+  const slugByLiveTarget = new Map<string, string>(
+    (
+      await ResearchEntities.find(
+        {
+          _id: { $in: targetIds.map((id) => new mongoose.Types.ObjectId(id)) },
+          archived: { $ne: true },
+        },
+        { projection: { _id: 1, slug: 1 } },
+      ).toArray()
+    ).map((row: any) => [idKey(row._id), typeof row.slug === 'string' ? row.slug : '']),
+  );
+  const citedProfileUrls = [
+    ...new Set(shellEdges.map((edge) => String(edge.rosterProvenance.profileUrl))),
+  ];
+  const listingKeysByProfileUrl = new Map<string, Set<string>>();
+  for (const observation of (await Observations.find(
+    {
+      entityType: 'researchGroupMember',
+      field: 'profileUrl',
+      value: { $in: citedProfileUrls },
+      ...observationReadScope,
+    },
+    { projection: { entityKey: 1, value: 1 } },
+  ).toArray()) as any[]) {
+    const url = String(observation.value);
+    listingKeysByProfileUrl.set(
+      url,
+      (listingKeysByProfileUrl.get(url) ?? new Set()).add(String(observation.entityKey)),
+    );
+  }
+  const listingKeys = [
+    ...new Set([...listingKeysByProfileUrl.values()].flatMap((keys) => [...keys])),
+  ];
+  if (listingKeys.length === 0) return netidsByShellId;
+  const rowSlugsByListingKey = new Map<string, Set<string>>();
+  const addressesByListingKey = new Map<string, string[]>();
+  for (const observation of (await Observations.find(
+    {
+      entityType: 'researchGroupMember',
+      entityKey: { $in: listingKeys },
+      field: { $in: ['researchGroupKey', 'profileIdentityEvidence'] },
+      ...observationReadScope,
+    },
+    { projection: { entityKey: 1, field: 1, value: 1 } },
+  ).toArray()) as any[]) {
+    const key = String(observation.entityKey);
+    if (observation.field === 'researchGroupKey') {
+      rowSlugsByListingKey.set(
+        key,
+        (rowSlugsByListingKey.get(key) ?? new Set()).add(String(observation.value)),
+      );
+      continue;
+    }
+    const evidence = parseRosterMemberIdentityEvidence(observation.value);
+    if (evidence) {
+      addressesByListingKey.set(key, [
+        ...(addressesByListingKey.get(key) ?? []),
+        ...evidence.emails.map((email) => email.trim().toLowerCase()),
+      ]);
+    }
+  }
+  const directory = await loadDirectoryNetidsByAddress();
+  const seenAddressesByShellId = new Map<string, Set<string>>();
+  for (const edge of shellEdges) {
+    const shellId = idKey(edge.personId);
+    const slug = slugByLiveTarget.get(idKey(edge.target?.id));
+    if (!slug) continue;
+    const seen = seenAddressesByShellId.get(shellId) ?? new Set<string>();
+    seenAddressesByShellId.set(shellId, seen);
+    for (const key of listingKeysByProfileUrl.get(String(edge.rosterProvenance.profileUrl)) ?? []) {
+      if (!rowSlugsByListingKey.get(key)?.has(slug)) continue;
+      for (const address of addressesByListingKey.get(key) ?? []) {
+        const netids = directory.get(address);
+        if (!netids || netids.size === 0 || seen.has(address)) continue;
+        seen.add(address);
+        netidsByShellId.set(shellId, [...(netidsByShellId.get(shellId) ?? []), netids]);
+      }
+    }
+  }
+  return netidsByShellId;
+}
+
+function directoryEmailHoldersByNetid(
+  researcherIdentities: ReadonlyArray<{
+    id: string;
+    displayName?: unknown;
+    email?: unknown;
+    orcid?: unknown;
+    netid?: unknown;
+    title?: unknown;
+  }>,
+): Map<string, DirectoryEmailCandidate[]> {
+  const holders = new Map<string, DirectoryEmailCandidate[]>();
+  for (const identity of researcherIdentities) {
+    const netid = bareNetid(identity.netid);
+    if (!netid) continue;
+    holders.set(netid, [
+      ...(holders.get(netid) ?? []),
+      {
+        id: identity.id,
+        displayName: identity.displayName,
+        title: identity.title,
+        orcid: typeof identity.orcid === 'string' ? identity.orcid.trim() || undefined : undefined,
+        netid,
+        tier: researcherIdentityTier({ email: identity.email, netid: identity.netid }),
+      },
+    ]);
+  }
+  return holders;
+}
+
 /** An alias twin's `identifiers.netid` is the email local part, never a netid to hand on. */
 function withoutNetidIdentifier(
   snapshot: ResearcherAttributeSnapshot,
@@ -674,15 +810,24 @@ export async function dedupeAccountlessResearcherShells(options: {
     researcherIdentities,
   );
 
+  const nameOnlyShellIds = foldableShells
+    .filter((entry) => researcherIdentityTier(entry) === 'NAME_ONLY')
+    .map((entry) => entry.id);
   const nameVariantCandidatesByShellId = await loadNameVariantCandidates(
     RoleAssignment,
     mongoose.connection.collection('research_entities'),
     mongoose.connection.collection('observations'),
-    foldableShells
-      .filter((entry) => researcherIdentityTier(entry) === 'NAME_ONLY')
-      .map((entry) => entry.id),
+    nameOnlyShellIds,
     researcherIdentities,
   );
+
+  const listingAddressNetidsByShellId = await loadListingAddressNetids(
+    RoleAssignment,
+    mongoose.connection.collection('research_entities'),
+    mongoose.connection.collection('observations'),
+    nameOnlyShellIds,
+  );
+  const directoryEmailHolders = directoryEmailHoldersByNetid(researcherIdentities);
 
   const decidedTargetByShellId = new Map<string, string>();
   const foldsByMatchedIdentity = Object.fromEntries(
@@ -697,6 +842,8 @@ export async function dedupeAccountlessResearcherShells(options: {
       verifiedProfileIndex,
       sharedRowCandidatesByShellId.get(shell.id),
       nameVariantCandidatesByShellId.get(shell.id),
+      listingAddressNetidsByShellId.get(shell.id),
+      directoryEmailHolders,
     );
     byReason[decision.reason] += 1;
     if (decision.merge && decision.canonicalId && decision.canonicalId !== shell.id) {

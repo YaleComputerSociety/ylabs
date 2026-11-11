@@ -15,6 +15,7 @@ import {
   buildVerifiedPrimaryProfileIndex,
   planAccountlessClusterFolds,
   decideNameVariantSharedRowFold,
+  decideDirectoryEmailFold,
   distinctPeoplePairKey,
   nameVariantShape,
   withoutDistinctPeopleFolds,
@@ -1164,5 +1165,179 @@ describe('researchEntityIdsToRegateAfterFold (#5687)', () => {
       mergeTargetByShellId: new Map(),
     });
     expect(ids.size).toBe(0);
+  });
+});
+
+describe('directory-email fold (#5811)', () => {
+  const shell = (displayName: string, extra: Record<string, unknown> = {}) => ({
+    id: 'shell',
+    displayName,
+    ...extra,
+  });
+  const holder = (id: string, displayName: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    displayName,
+    netid: 'fx901',
+    tier: 'DIRECTORY' as const,
+    ...extra,
+  });
+  const paired = (...netids: string[]) => [new Set(netids)];
+  const holdersOf = (...entries: ReturnType<typeof holder>[]) => new Map([['fx901', entries]]);
+
+  it('folds a name-only shell into the one record holding the netid its listing address pairs with', () => {
+    expect(
+      decideDirectoryEmailFold(
+        shell('Avery Synthetic'),
+        paired('fx901'),
+        holdersOf(holder('1', 'Jordan Avery Synthetic')),
+      ),
+    ).toEqual({
+      merge: true,
+      canonicalId: '1',
+      reason: 'MERGEABLE',
+      matchedOn: 'directory-email',
+    });
+  });
+
+  it('folds a nickname the name matcher rejects, because the directory decides', () => {
+    const decision = decideShellMerge(
+      shell('Avi Synthetic'),
+      new Map(),
+      new Map(),
+      [],
+      new Map(),
+      [],
+      [],
+      paired('fx901'),
+      holdersOf(holder('1', 'Avery Synthetic')),
+    );
+    expect(decision).toMatchObject({ merge: true, canonicalId: '1', matchedOn: 'directory-email' });
+  });
+
+  it('plans nothing without a directory pairing, so a page address alone is no witness', () => {
+    expect(
+      decideDirectoryEmailFold(
+        shell('Avery Synthetic'),
+        [],
+        holdersOf(holder('1', 'Avery Synthetic')),
+      ),
+    ).toBeUndefined();
+    expect(
+      decideShellMerge(
+        shell('Avi Synthetic'),
+        new Map(),
+        new Map(),
+        [],
+        new Map(),
+        [],
+        [],
+        [],
+        holdersOf(holder('1', 'Avery Synthetic')),
+      ),
+    ).toMatchObject({ merge: false, reason: 'NO_CANONICAL' });
+  });
+
+  it('fails closed when the stated addresses pair with more than one netid', () => {
+    expect(
+      decideDirectoryEmailFold(
+        shell('Avery Synthetic'),
+        [new Set(['fx901']), new Set(['fx902'])],
+        holdersOf(holder('1', 'Avery Synthetic')),
+      ),
+    ).toMatchObject({ merge: false, reason: 'AMBIGUOUS_MULTIPLE_CANONICAL' });
+    expect(
+      decideDirectoryEmailFold(
+        shell('Avery Synthetic'),
+        paired('fx901', 'fx902'),
+        holdersOf(holder('1', 'Avery Synthetic')),
+      ),
+    ).toMatchObject({ merge: false, reason: 'AMBIGUOUS_MULTIPLE_CANONICAL' });
+  });
+
+  it('fails closed when two live records hold the paired netid', () => {
+    expect(
+      decideDirectoryEmailFold(
+        shell('Avery Synthetic'),
+        paired('fx901'),
+        holdersOf(
+          holder('1', 'Avery Synthetic'),
+          holder('2', 'Avery Synthetic', { tier: 'NETID' }),
+        ),
+      ),
+    ).toMatchObject({ merge: false, reason: 'AMBIGUOUS_MULTIPLE_CANONICAL' });
+  });
+
+  it('leaves a later arm free to fold when its own directory witness is ambiguous', () => {
+    const exactName = buildCanonicalNameIndex([
+      { id: '3', displayName: 'Avery Synthetic', email: 'avery.synthetic@example.test' },
+    ]);
+    const decideWith = (names: ReturnType<typeof buildCanonicalNameIndex>) =>
+      decideShellMerge(
+        shell('Avery Synthetic'),
+        names,
+        new Map(),
+        [],
+        new Map(),
+        [],
+        [],
+        [new Set(['fx901']), new Set(['fx902'])],
+        holdersOf(holder('1', 'Avery Synthetic')),
+      );
+    expect(decideWith(exactName)).toEqual({
+      merge: true,
+      canonicalId: '3',
+      reason: 'MERGEABLE',
+      matchedOn: 'name',
+    });
+    expect(decideWith(new Map())).toEqual({
+      merge: false,
+      reason: 'AMBIGUOUS_MULTIPLE_CANONICAL',
+      matchedOn: 'directory-email',
+    });
+  });
+
+  it('never folds two people with distinct ORCIDs', () => {
+    expect(
+      decideDirectoryEmailFold(
+        shell('Avery Synthetic', { orcid: '0000-0002-0000-0001' }),
+        paired('fx901'),
+        holdersOf(holder('1', 'Avery Synthetic', { orcid: '0000-0002-0000-0002' })),
+      ),
+    ).toMatchObject({ merge: false, reason: 'ORCID_CONFLICT' });
+  });
+
+  it('keeps the surname and rank vetoes', () => {
+    expect(
+      decideDirectoryEmailFold(
+        shell('Avery Fixture'),
+        paired('fx901'),
+        holdersOf(holder('1', 'Avery Synthetic')),
+      ),
+    ).toBeUndefined();
+    expect(
+      decideDirectoryEmailFold(
+        shell('Avery Synthetic', { title: 'Postdoctoral Associate' }),
+        paired('fx901'),
+        holdersOf(holder('1', 'Avery Synthetic', { title: 'Professor of Fixture Studies' })),
+      ),
+    ).toBeUndefined();
+  });
+
+  it('never treats a directory or netid record as the shell, so two directory records stay two', () => {
+    for (const identity of [{ email: 'avery.fixture@example.test' }, { netid: 'fx903' }]) {
+      expect(
+        decideDirectoryEmailFold(
+          shell('Avery Synthetic', identity),
+          paired('fx901'),
+          holdersOf(holder('1', 'Avery Synthetic')),
+        ),
+      ).toBeUndefined();
+    }
+  });
+
+  it('plans nothing when no live record holds the paired netid', () => {
+    expect(
+      decideDirectoryEmailFold(shell('Avery Synthetic'), paired('fx901'), new Map()),
+    ).toBeUndefined();
   });
 });

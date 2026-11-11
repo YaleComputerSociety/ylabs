@@ -143,6 +143,7 @@ export type ShellMergeReason =
 
 export const SHELL_FOLD_IDENTITIES = [
   'netid',
+  'directory-email',
   'roster-identity',
   'verified-profile',
   'shared-row',
@@ -666,6 +667,53 @@ export function decideNameVariantSharedRowFold(
   return { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn };
 }
 
+export interface DirectoryEmailCandidate extends CanonicalCandidate {
+  displayName?: unknown;
+  title?: unknown;
+}
+
+/**
+ * A `NAME_ONLY` shell is the record of the netid the Yale directory pairs with an address its
+ * own roster listing states about its subject, because the directory, not the page or the
+ * name, decides whose address it is (#5811). A nickname or a middle-position preferred name
+ * does not agree under the name matcher, so this arm takes only the surname and rank as
+ * vetoes. An address the directory does not pair is no witness, an address or a set of
+ * addresses pairing with more than one netid resolves to nobody, and so does a netid more
+ * than one live record holds. A directory record is never a shell here, so two directory
+ * records stay two people.
+ */
+export function decideDirectoryEmailFold(
+  shell: ShellIdentity,
+  listingAddressNetids: ReadonlyArray<ReadonlySet<string>>,
+  holdersByNetid: ReadonlyMap<string, ReadonlyArray<DirectoryEmailCandidate>>,
+): ShellMergeDecision | undefined {
+  if (researcherIdentityTier(shell) !== 'NAME_ONLY') return undefined;
+  const pairedNetids = new Set(listingAddressNetids.flatMap((netids) => [...netids]));
+  if (pairedNetids.size === 0) return undefined;
+  const matchedOn = 'directory-email' as const;
+  if (pairedNetids.size > 1) {
+    return { merge: false, reason: 'AMBIGUOUS_MULTIPLE_CANONICAL', matchedOn };
+  }
+  const [netid] = pairedNetids;
+  const holders = (holdersByNetid.get(netid) ?? []).filter(
+    (candidate) =>
+      candidate.id !== shell.id &&
+      identityTierStrength(candidate.tier) > identityTierStrength('NAME_ONLY'),
+  );
+  if (holders.length === 0) return undefined;
+  if (holders.length > 1) {
+    return { merge: false, reason: 'AMBIGUOUS_MULTIPLE_CANONICAL', matchedOn };
+  }
+  const [target] = holders;
+  if (!profileHolderSurnamesAgree(shell.displayName, target.displayName)) return undefined;
+  if (titlesStateConflictingRanks(shell.title, target.title)) return undefined;
+  const shellOrcid = cleanOrcid(shell.orcid);
+  if (shellOrcid && target.orcid && shellOrcid !== target.orcid) {
+    return { merge: false, reason: 'ORCID_CONFLICT', matchedOn };
+  }
+  return { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn };
+}
+
 /** The unordered key of a pair an operator recorded as two different people. */
 export const distinctPeoplePairKey = (left: string, right: string): string =>
   [left, right].sort().join('|');
@@ -695,9 +743,17 @@ export function decideShellMerge(
   verifiedProfileIndex: Map<string, VerifiedProfileCandidate[]> = new Map(),
   sharedRowCandidates: ReadonlyArray<SharedRowCandidate> = [],
   nameVariantCandidates: ReadonlyArray<NameVariantCandidate> = [],
+  listingAddressNetids: ReadonlyArray<ReadonlySet<string>> = [],
+  directoryEmailHolders: ReadonlyMap<string, ReadonlyArray<DirectoryEmailCandidate>> = new Map(),
 ): ShellMergeDecision {
   const byNetid = decideNetidFold(shell, canonicalNetidIndex);
   if (byNetid) return byNetid;
+  const byDirectoryEmail = decideDirectoryEmailFold(
+    shell,
+    listingAddressNetids,
+    directoryEmailHolders,
+  );
+  if (byDirectoryEmail?.merge) return byDirectoryEmail;
   const byRosterIdentity = decideRosterIdentityFold(shell, rosterIdentityCandidates);
   if (byRosterIdentity) return byRosterIdentity;
   const byVerifiedProfile = decideVerifiedProfileFold(shell, verifiedProfileIndex);
@@ -707,7 +763,8 @@ export function decideShellMerge(
   const byNameVariant = decideNameVariantSharedRowFold(shell, nameVariantCandidates);
   if (byNameVariant?.merge) return byNameVariant;
   const byName = decideExactNameFold(shell, canonicalNameIndex);
-  return byName.reason === 'NO_CANONICAL' && byNameVariant ? byNameVariant : byName;
+  if (byName.reason !== 'NO_CANONICAL') return byName;
+  return byNameVariant ?? byDirectoryEmail ?? byName;
 }
 
 function decideExactNameFold(
