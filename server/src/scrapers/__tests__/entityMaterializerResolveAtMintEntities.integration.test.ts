@@ -310,6 +310,31 @@ describe('resolve-at-mint for entities (C4_RESOLVE_AT_MINT_ENTITIES)', () => {
     expect(String(second.entityId)).toBe(String(first.entityId));
   });
 
+  it('default ON: a redirect to a row naming another lab does not fold the mint', async () => {
+    await seedResearchEntity('vale-lab', 'Vale Lab', 'https://valelab.example.edu/');
+    const first = await materializeEntity('researchEntity', { entityKey: 'vale-lab' });
+    await ResearchEntity.updateOne(
+      { _id: first.entityId },
+      {
+        $set: {
+          sourceLinkHealth: [
+            {
+              url: 'http://www.example.edu/retired-lab/',
+              healthStatus: 'HEALTHY',
+              redirectLandingUrl: 'https://valelab.example.edu/',
+            },
+          ],
+        },
+      },
+    );
+
+    await seedResearchEntity('orr-lab', 'Orr Lab', 'http://www.example.edu/retired-lab/');
+    const second = await materializeEntity('researchEntity', { entityKey: 'orr-lab' });
+
+    expect(await ResearchEntity.countDocuments({})).toBe(2);
+    expect(second.created).toBe(true);
+  });
+
   it('default ON: two labs at different paths of one host still mint two rows', async () => {
     await seedResearchEntity('lee-lab-a', 'Lee Lab', 'https://med.example.edu/lab/lee-a/');
     const first = await materializeEntity('researchEntity', { entityKey: 'lee-lab-a' });

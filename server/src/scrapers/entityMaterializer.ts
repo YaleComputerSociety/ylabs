@@ -188,6 +188,8 @@ import {
   type CanonicalResolution,
 } from './resolveCanonical';
 import {
+  entitiesShareLeadPersonName,
+  normalizeOrgDedupeName,
   normalizeWebsiteUrlIdentityKey,
   ORG_NAME_DEDUPE_ENTITY_TYPES,
   websiteUrlIdentityKeyVariants,
@@ -10781,10 +10783,32 @@ function buildEntityResolverSelf(obs: Array<{ field: string; value?: unknown }>)
   return { id: '', name: map.get('name') || undefined };
 }
 
+/**
+ * Resolve-at-mint runs no lead-person clustering, so a row reached only through a
+ * recorded redirect is a candidate only when it names the same lab or the same lead as
+ * the mint. A retired page that redirects to another host's root otherwise folds a mint
+ * into whatever row serves that root (#5638).
+ */
+function redirectCandidateAgreesOnName(
+  self: CandidateEntity | undefined,
+  candidateName: string | undefined,
+): boolean {
+  const selfName = (self?.name ?? '').trim();
+  const otherName = (candidateName ?? '').trim();
+  if (!selfName || !otherName) return false;
+  const selfOrgName = normalizeOrgDedupeName(selfName);
+  if (selfOrgName && selfOrgName === normalizeOrgDedupeName(otherName)) return true;
+  return entitiesShareLeadPersonName(
+    { name: selfName } as Parameters<typeof entitiesShareLeadPersonName>[0],
+    { name: otherName } as Parameters<typeof entitiesShareLeadPersonName>[1],
+  );
+}
+
 async function findEntityCandidatesByKey(
   resolverType: 'researchEntity' | 'fellowship',
   key: CanonicalKey,
   prefetch?: MaterializationReadSource,
+  self?: CandidateEntity,
 ): Promise<CandidateEntity[]> {
   if (resolverType === 'fellowship') {
     if (key.ns !== 'source-key') return [];
@@ -10815,19 +10839,33 @@ async function findEntityCandidatesByKey(
     const redirectVariants = (await websiteUrlIdentityKeyRedirectEquivalents(key.value)).flatMap(
       websiteUrlIdentityKeyVariants,
     );
-    const docs = (await ResearchEntity.find({
-      $or: [
-        { websiteUrl: { $in: directVariants } },
-        {
-          websiteUrl: { $in: redirectVariants },
-          entityType: { $nin: [...ORG_NAME_DEDUPE_ENTITY_TYPES] },
-        },
-      ],
+    type WebsiteCandidateDoc = { _id: unknown; name?: string; studentVisibilityTier?: string };
+    const select = '_id name studentVisibilityTier';
+    const direct = (await ResearchEntity.find({
+      websiteUrl: { $in: directVariants },
       archived: { $ne: true },
     })
-      .select('_id name studentVisibilityTier')
+      .select(select)
       .limit(2)
-      .lean()) as Array<{ _id: unknown; name?: string; studentVisibilityTier?: string }>;
+      .lean()) as WebsiteCandidateDoc[];
+    const redirected =
+      redirectVariants.length === 0
+        ? []
+        : ((await ResearchEntity.find({
+            websiteUrl: { $in: redirectVariants },
+            entityType: { $nin: [...ORG_NAME_DEDUPE_ENTITY_TYPES] },
+            archived: { $ne: true },
+          })
+            .select(select)
+            .limit(2)
+            .lean()) as WebsiteCandidateDoc[]);
+    const seen = new Set(direct.map((doc) => String(doc._id)));
+    const docs = [
+      ...direct,
+      ...redirected.filter(
+        (doc) => !seen.has(String(doc._id)) && redirectCandidateAgreesOnName(self, doc.name),
+      ),
+    ].slice(0, 2);
     return docs.map((doc) => ({
       id: String(doc._id),
       name: doc.name,
@@ -10859,10 +10897,12 @@ async function resolveCanonicalForEntityMint(
   // observations into an existing canonical enriches it and re-gates it rather
   // than archiving any existing public row, so no live entity is demoted. The
   // guard stays wired for any caller that does supply a would-be tier.
+  const resolverSelf = buildEntityResolverSelf(obs);
   return resolveCanonical(
-    { type: resolverType, keys, self: buildEntityResolverSelf(obs) },
+    { type: resolverType, keys, self: resolverSelf },
     {
-      findCandidatesByKey: (_type, key) => findEntityCandidatesByKey(resolverType, key, prefetch),
+      findCandidatesByKey: (_type, key) =>
+        findEntityCandidatesByKey(resolverType, key, prefetch, resolverSelf),
     },
   );
 }
