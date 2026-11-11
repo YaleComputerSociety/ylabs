@@ -7319,33 +7319,6 @@ function deriveUserIdentityFields(materializationObs: any[], now: Date) {
   };
 }
 
-const REFUSING_RESEARCHER_CACHE_TTL_MS = 60_000;
-let refusingResearchers: { at: number; byId: Map<string, unknown> } | undefined;
-
-export function resetRefusingResearcherCache(): void {
-  refusingResearchers = undefined;
-}
-
-// One small read per minute rather than one per resolve: few people carry a refusal.
-async function liveRefusalsOfResearcher(researcherId: unknown): Promise<unknown | undefined> {
-  if (researcherId === undefined || researcherId === null) return undefined;
-  const now = Date.now();
-  if (!refusingResearchers || now - refusingResearchers.at > REFUSING_RESEARCHER_CACHE_TTL_MS) {
-    const rows = (await Researcher.find({ fieldValueRefusals: { $exists: true } })
-      .select('_id fieldValueRefusals')
-      .lean()) as Array<{ _id: unknown; fieldValueRefusals?: unknown }>;
-    refusingResearchers = {
-      at: now,
-      byId: new Map(
-        rows
-          .filter((row) => researcherHasLiveRefusals(row.fieldValueRefusals))
-          .map((row) => [String(row._id), row.fieldValueRefusals]),
-      ),
-    };
-  }
-  return refusingResearchers.byId.get(String(researcherId));
-}
-
 export async function joinUserIdentityToExistingResearcher(
   identifier: { entityId?: string; entityKey?: string },
   obs: any[],
@@ -7416,8 +7389,7 @@ export async function joinUserIdentityToExistingResearcher(
   if (!researcher && !account && observedEmail) {
     const candidate = await researcherTheObservedEmailNames(observedEmail, displayName);
     const emailResearcher =
-      candidate &&
-      !researcherRefusesValue(await liveRefusalsOfResearcher(candidate._id), 'email', observedEmail)
+      candidate && !researcherRefusesValue(candidate.fieldValueRefusals, 'email', observedEmail)
         ? candidate
         : null;
     if (emailResearcher) {
@@ -7461,8 +7433,8 @@ export async function joinUserIdentityToExistingResearcher(
       if (researcher) identityJoin = 'official-profile-page';
     }
   }
-  const refusals = researcher ? await liveRefusalsOfResearcher(researcher._id) : undefined;
-  const served = refusals
+  const refusals = researcher?.fieldValueRefusals;
+  const served = researcherHasLiveRefusals(refusals)
     ? deriveUserIdentityFields(
         withoutResearcherRefusedObservations(materializationObs, refusals),
         now,
@@ -7743,6 +7715,9 @@ async function materializeUserIdentityToResearcher(
   }
 
   const now = new Date();
+  const refusesProfileLink = (link: ResearcherProfileLink | undefined): boolean =>
+    Boolean(link) &&
+    researcherRefusesValue(researcher.fieldValueRefusals, 'profileLink', link?.url);
   const existingLinkKinds = new Set(
     (researcher.profileLinks || []).map((link: ResearcherProfileLink) => link.kind),
   );
@@ -7751,6 +7726,7 @@ async function materializeUserIdentityToResearcher(
     : undefined;
   const officialLink =
     composedOfficialLink &&
+    !refusesProfileLink(composedOfficialLink) &&
     !(await officialProfileLinkHeldByConflictingIdentity(composedOfficialLink.url, researcher))
       ? composedOfficialLink
       : undefined;
@@ -7770,13 +7746,17 @@ async function materializeUserIdentityToResearcher(
   const scholarUrl = profileUrls
     ? canonicalScholarCitationUrl(profileUrls.googleScholar)
     : undefined;
-  if (scholarUrl && !existingLinkKinds.has('GOOGLE_SCHOLAR')) {
-    researcher.profileLinks.push(scholarProfileLink(scholarUrl, now));
+  const scholarLink = scholarUrl ? scholarProfileLink(scholarUrl, now) : undefined;
+  if (scholarLink && !refusesProfileLink(scholarLink) && !existingLinkKinds.has('GOOGLE_SCHOLAR')) {
+    researcher.profileLinks.push(scholarLink);
     fieldsWritten += 1;
   }
   if (orcid) {
     const currentOrcidLink = orcidProfileLink(orcid, now);
-    if (priorOrcidLinks.every((link) => link.url !== currentOrcidLink.url)) {
+    if (
+      !refusesProfileLink(currentOrcidLink) &&
+      priorOrcidLinks.every((link) => link.url !== currentOrcidLink.url)
+    ) {
       researcher.profileLinks = [
         ...(researcher.profileLinks || []).filter(
           (link: ResearcherProfileLink) => link.kind !== 'ORCID',
@@ -7802,7 +7782,9 @@ async function materializeUserIdentityToResearcher(
       .map((link) => link.url);
     researcher.profileLinks = [
       ...links.filter((link) => link.kind !== 'ORCID'),
-      ...(identifierOrcid ? [orcidProfileLink(identifierOrcid.toUpperCase(), now)] : []),
+      ...(identifierOrcid ? [orcidProfileLink(identifierOrcid.toUpperCase(), now)] : []).filter(
+        (link) => !refusesProfileLink(link),
+      ),
     ];
     fieldsWritten += 1;
     conflicts += 1;

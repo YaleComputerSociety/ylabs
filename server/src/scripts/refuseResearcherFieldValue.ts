@@ -63,6 +63,9 @@ export interface RefuseResearcherFieldValueArgs {
   confirm: boolean;
 }
 
+const unknownArgumentLabel = (arg: string): string =>
+  arg.startsWith('--') ? arg.split('=')[0] : 'a positional argument';
+
 export function parseRefuseResearcherFieldValueArgs(
   argv: string[],
 ): RefuseResearcherFieldValueArgs {
@@ -90,7 +93,7 @@ export function parseRefuseResearcherFieldValueArgs(
     else if (arg.startsWith('--evidence-url=')) args.evidenceUrl = valueOf(arg, '--evidence-url=');
     else if (arg.startsWith('--source-name=')) args.sourceName = valueOf(arg, '--source-name=');
     else if (arg.startsWith('--rule=')) args.rule = valueOf(arg, '--rule=') as never;
-    else throw new Error(`Unknown ${SCRIPT_NAME} argument: ${arg}`);
+    else throw new Error(`Unknown ${SCRIPT_NAME} argument: ${unknownArgumentLabel(arg)}`);
   }
   return args;
 }

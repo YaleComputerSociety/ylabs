@@ -20,7 +20,7 @@ import {
   type RefuseResearcherFieldValueArgs,
 } from '../../scripts/refuseResearcherFieldValue';
 import { planFieldValueRefusal } from '../../utils/researchEntityFieldValueRefusals';
-import { materializeEntity, resetRefusingResearcherCache } from '../entityMaterializer';
+import { materializeEntity } from '../entityMaterializer';
 import { resetOverSharedPersonWebsiteKeysCache } from '../overSharedPersonWebsite';
 
 const OWNER_PAGE = 'https://medicine.yale.edu/profile/fixture-quillsby-person/';
@@ -64,7 +64,6 @@ describe('a person-record refusal holds on every resolve (#5641)', () => {
       await db.collection(name).deleteMany({});
     }
     resetOverSharedPersonWebsiteKeysCache();
-    resetRefusingResearcherCache();
   });
 
   const observation = (
@@ -115,10 +114,7 @@ describe('a person-record refusal holds on every resolve (#5641)', () => {
     (await Researcher.findById(id).lean<{ profile?: { websiteUrl?: string } }>())?.profile
       ?.websiteUrl;
 
-  const resolveOwner = () => {
-    resetRefusingResearcherCache();
-    return materializeEntity('user', { entityKey: OWNER_KEY }, {});
-  };
+  const resolveOwner = () => materializeEntity('user', { entityKey: OWNER_KEY }, {});
 
   it('clears the stored value when recorded, on a person no identity resolves to', async () => {
     const unreachable = await person(REFUSED_SITE);
@@ -191,8 +187,68 @@ describe('a person-record refusal holds on every resolve (#5641)', () => {
       profileLinks: [],
     });
 
-    resetRefusingResearcherCache();
     const result = await materializeEntity('user', { entityKey: key }, {});
     expect(String(result.entityId ?? '')).not.toBe(String(holder._id));
+  });
+
+  const storedLinkUrls = async (id: unknown) =>
+    ((await Researcher.findById(id).lean<any>())?.profileLinks ?? []).map(
+      (link: { url: string }) => link.url,
+    );
+
+  it('refuses one Google Scholar profile without refusing another person-identified by its query', async () => {
+    const scholarLink = (user: string) => ({
+      kind: 'GOOGLE_SCHOLAR',
+      purpose: 'SCHOLARLY',
+      url: `https://scholar.google.com/citations?user=${user}`,
+      verifiedAt: new Date('2026-01-01T00:00:00Z'),
+      healthStatus: 'UNKNOWN',
+    });
+    const owner = await person();
+    await Researcher.updateOne(
+      { _id: owner._id },
+      { $push: { profileLinks: scholarLink('FixtureOwn01') } },
+    );
+
+    const otherPersons = await refuseResearcherFieldValue(
+      refusalArgs(owner._id, {
+        field: 'profileLink',
+        value: scholarLink('FixtureElse9').url,
+        rule: 'other_persons_page',
+      }),
+    );
+    expect(otherPersons).toMatchObject({
+      storedValueIsTheRefusedValue: false,
+      pulledProfileLinks: 0,
+    });
+    expect(await storedLinkUrls(owner._id)).toContain(scholarLink('FixtureOwn01').url);
+
+    const own = await refuseResearcherFieldValue(
+      refusalArgs(owner._id, {
+        field: 'profileLink',
+        value: scholarLink('FixtureOwn01').url,
+        rule: 'other_persons_page',
+      }),
+    );
+    expect(own).toMatchObject({ storedValueIsTheRefusedValue: true, pulledProfileLinks: 1 });
+    expect(await storedLinkUrls(owner._id)).not.toContain(scholarLink('FixtureOwn01').url);
+  });
+
+  it('never re-adds a refused ORCID link the orcid evidence composes', async () => {
+    const orcid = '0000-0002-1825-0097';
+    const orcidUrl = `https://orcid.org/${orcid}`;
+    await seedOwner([observation('orcid', orcid, 'dept-faculty-roster')]);
+    const owner = await person();
+    await resolveOwner();
+    expect(await storedLinkUrls(owner._id)).toContain(orcidUrl);
+
+    await refuseResearcherFieldValue(
+      refusalArgs(owner._id, { field: 'profileLink', value: orcidUrl, rule: 'other_persons_page' }),
+    );
+    await resolveOwner();
+    expect(await storedLinkUrls(owner._id)).not.toContain(orcidUrl);
+    const second = await resolveOwner();
+    expect(second.fieldsWritten).toBe(0);
+    expect(await storedLinkUrls(owner._id)).not.toContain(orcidUrl);
   });
 });

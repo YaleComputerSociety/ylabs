@@ -82,14 +82,20 @@ export const FIELD_VALUE_REFUSALS_PATH = 'fieldValueRefusals';
  * each other. Anything else compares on trimmed, case-folded text, because a
  * refusal that missed on a trailing space would read as a clean row.
  */
-// `profileLink` and `imageUrl` are the person-record URL fields (#5641); no research row
-// field carries either name.
-const URL_VALUED_FIELDS: ReadonlySet<string> = new Set([
-  'websiteUrl',
-  'website',
-  'profileLink',
-  'imageUrl',
-]);
+const URL_VALUED_FIELDS: ReadonlySet<string> = new Set(['websiteUrl', 'website']);
+
+// The person-record URL fields (#5641) keep the query, because a query names the page there:
+// every Google Scholar profile is `scholar.google.com/citations?user=<id>`.
+const QUERY_IDENTIFIED_URL_FIELDS: ReadonlySet<string> = new Set(['profileLink', 'imageUrl']);
+
+function queryIdentifiedUrlKey(text: string): string {
+  const pageKey = foldDefaultDocumentLeaf(normalizeWebsiteUrlIdentityKey(text));
+  if (!pageKey) return text.toLowerCase();
+  const params = new URL(text).searchParams;
+  params.sort();
+  const query = params.toString();
+  return query ? `${pageKey}?${query}` : pageKey;
+}
 
 export { foldDefaultDocumentLeaf };
 
@@ -134,6 +140,7 @@ export function fieldValueRefusalKey(field: string, value: unknown): string {
   if (typeof value !== 'string') return JSON.stringify(value);
   const text = collapseRefusalWhitespace(value);
   if (!text) return '';
+  if (QUERY_IDENTIFIED_URL_FIELDS.has(field)) return queryIdentifiedUrlKey(text);
   if (!URL_VALUED_FIELDS.has(field)) return text.toLowerCase();
   return foldDefaultDocumentLeaf(normalizeWebsiteUrlIdentityKey(text) || text.toLowerCase());
 }

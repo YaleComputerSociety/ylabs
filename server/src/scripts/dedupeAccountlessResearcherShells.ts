@@ -42,6 +42,7 @@ import {
   withCopiedRefusals,
 } from './dedupeAccountlessResearcherShellsCore';
 import { isLocalPartNetid } from '../utils/localPartNetid';
+import { planResearcherRefusedStoredValueClear } from '../utils/researcherFieldValueRefusals';
 import {
   isLikelyOfficialPersonProfileUrl,
   normalizeOfficialProfileDestination,
@@ -1013,9 +1014,23 @@ export async function dedupeAccountlessResearcherShells(options: {
   for (const canonicalId of canonicalIds) {
     const setFields = canonicalSetFills.get(canonicalId) ?? {};
     const appendedLinks = canonicalAppendedLinks.get(canonicalId) ?? [];
+    const mergedState = canonicalMergeState.get(canonicalId);
+    const refusedStoredValues = mergedState
+      ? planResearcherRefusedStoredValueClear(mergedState)
+      : { unset: [], profileLinkUrlsToPull: [] };
+    const refusedLinkUrls = new Set(refusedStoredValues.profileLinkUrlsToPull);
     const update: Record<string, unknown> = {};
+    if (refusedLinkUrls.size) {
+      setFields.profileLinks = (mergedState?.profileLinks ?? []).filter(
+        (link) => !refusedLinkUrls.has(String(link.url)),
+      );
+    } else if (appendedLinks.length) {
+      update.$push = { profileLinks: { $each: appendedLinks } };
+    }
     if (Object.keys(setFields).length) update.$set = setFields;
-    if (appendedLinks.length) update.$push = { profileLinks: { $each: appendedLinks } };
+    if (refusedStoredValues.unset.length) {
+      update.$unset = Object.fromEntries(refusedStoredValues.unset.map((path) => [path, '']));
+    }
     if (!Object.keys(update).length) continue;
     canonicalUnionOps.push({
       updateOne: {

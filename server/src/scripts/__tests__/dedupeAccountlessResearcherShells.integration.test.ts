@@ -267,6 +267,7 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
     const survivor = new mongoose.Types.ObjectId();
     const refusingShell = new mongoose.Types.ObjectId();
     const refusedSite = 'https://school.example.test/about/fixture-fund-story/';
+    const refusedDepartment = 'Department of Fixture Stories';
     const refusal = (valueKey: string) => ({
       valueKey,
       rule: 'over_shared_value',
@@ -281,6 +282,7 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
         displayName: 'Ines Fixture',
         archived: false,
         identifiers: { email: 'directory.fixture9@example.test' },
+        profile: { primaryDepartment: refusedDepartment },
       },
       {
         _id: refusingShell,
@@ -290,6 +292,7 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
         fieldValueRefusals: {
           websiteUrl: [refusal('school.example.test/about/fixture-fund-story')],
           title: [refusal('fixture professor')],
+          primaryDepartment: [refusal('department of fixture stories')],
         },
       },
     ]);
@@ -299,10 +302,19 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
     const kept = await db.collection('researchers').findOne({ _id: survivor });
     expect(kept!.profile?.websiteUrl).toBeUndefined();
     expect(kept!.profile?.title).toBeUndefined();
-    expect(Object.keys(kept!.fieldValueRefusals ?? {}).sort()).toEqual(['title', 'websiteUrl']);
+    expect(kept!.profile?.primaryDepartment).toBeUndefined();
+    expect(Object.keys(kept!.fieldValueRefusals ?? {}).sort()).toEqual([
+      'primaryDepartment',
+      'title',
+      'websiteUrl',
+    ]);
     const shell = await db.collection('researchers').findOne({ _id: refusingShell });
     expect(shell!.archived).toBe(true);
-    expect(Object.keys(shell!.fieldValueRefusals ?? {}).sort()).toEqual(['title', 'websiteUrl']);
+    expect(Object.keys(shell!.fieldValueRefusals ?? {}).sort()).toEqual([
+      'primaryDepartment',
+      'title',
+      'websiteUrl',
+    ]);
   });
 
   it('moves the shell ORCID link with its ORCID so neither row fails the schema (#4501)', async () => {
