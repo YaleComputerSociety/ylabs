@@ -1273,6 +1273,10 @@ Every other rule names a condition a later reader can re-derive - a dead page ca
 `planFieldValueRefusal` enforces it rather than the CLI's argument parser, so every writer inherits the fence.
 `fieldLockProvenance.operator_decision` still has no writer and keeps none: a judgement recorded as a lock cannot be revisited and, as the 2026-09-24 census showed, carries no reason at all in practice.
 
+Several `user` keys can join one researcher, and each resolves only its own evidence, so a person's display fields (`displayName`, `title`, `primaryDepartment`, `imageUrl`, `websiteUrl`) need one precedence across keys (#5706).
+The researcher records, per field, the key that wrote it with its identity join and resolved confidence (`profileFieldWriters`), and a key writes the field only when it is that writer, no writer is recorded, or it outranks the writer: the join first (netid, then official profile page, then email, then name), then confidence, then the key itself.
+A full pass therefore settles on the same values in any order and a second pass writes nothing; a writer that resolves no value releases the field without clearing it.
+
 A person record refuses a value the same way (#5641): `Researcher.fieldValueRefusals` holds the same record at `websiteUrl`, `title`, `primaryDepartment`, `imageUrl`, `email`, `orcid` and `profileLink` (one link, by URL), keyed by the same `fieldValueRefusalKey`.
 That key keeps the query string for `profileLink` and `imageUrl`, because a query names the page there and every Google Scholar profile shares one host and path.
 `yarn --cwd server researcher:refuse-field-value --researcher=<id>` records or withdraws one, dry-run by default, and clears the stored value in the same write, because a person no identity resolves to is reached by nothing else.
