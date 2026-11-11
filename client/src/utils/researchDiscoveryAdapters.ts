@@ -1,5 +1,5 @@
 import type { PathwaySearchHit } from '../types/pathway';
-import { undergradInvitationFromEntity } from './undergradInvitation';
+import { undergradInvitationFromEntity, WELCOMES_UNDERGRADS_LABEL } from './undergradInvitation';
 import type { ResearchEntity } from '../types/researchEntity';
 import {
   isGenericResearchHomeDescription,
@@ -389,6 +389,7 @@ export const buildWayInBadgesFromEntity = (entity: ResearchEntity | undefined): 
   const badges: string[] = [];
   const invitation = undergradInvitationFromEntity(entity);
   if (invitation) badges.push(invitation.label);
+  else if (entity.welcomesUndergrads === true) badges.push(WELCOMES_UNDERGRADS_LABEL);
   // The badge reads the served flag rather than re-deriving it here, so it
   // cannot disagree with the `hostsUndergrads` browse filter or saved plans,
   // which read the same server predicate (#3593).

@@ -46,7 +46,10 @@ import {
   entityHasHostedUndergraduates,
   withoutAdviseeProgramsMovedToMentors,
 } from './hostedUndergraduates';
-import { publicUndergradListEvidence } from './undergradListEvidenceServing';
+import {
+  entityHasUndergradListSignal,
+  publicUndergradListEvidence,
+} from './undergradListEvidenceServing';
 import { RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE } from '../scrapers/undergradEvidenceQuoteValidation';
 import { quotePageIsAboutAnotherEntity } from '../scrapers/undergradQuoteRelevance';
 import { quoteListsPeopleWithTheirContactDetails } from '../scrapers/contactInstructionQuoteAdmission';
@@ -538,6 +541,8 @@ export function publicUndergradInvitation(
 
 type UndergradInvitationHolder = Parameters<typeof quotePageIsAboutAnotherEntity>[1] & {
   undergradInvitation?: unknown;
+  undergradListEvidence?: unknown;
+  wayInWithheld?: unknown;
 };
 
 export const servedUndergradInvitationLevel = (
@@ -545,8 +550,12 @@ export const servedUndergradInvitationLevel = (
 ): UndergradInvitationLevel | undefined =>
   publicUndergradInvitation(group.undergradInvitation, group)?.level;
 
-export const entityWelcomesUndergraduates = (group: UndergradInvitationHolder): boolean =>
-  servedUndergradInvitationLevel(group) !== undefined;
+export const entityWelcomesUndergraduates = (
+  group: UndergradInvitationHolder,
+  reviewedSources?: ReadonlySet<string>,
+): boolean =>
+  servedUndergradInvitationLevel(group) !== undefined ||
+  entityHasUndergradListSignal(group, 'welcomes', reviewedSources);
 
 const OPTIONAL_PUBLIC_RESEARCH_ENTITY_FIELDS = [
   'shortDescription',
@@ -747,6 +756,9 @@ function derivePublicResearchEntityDto(
 
   if (options.hasHostedUndergraduates ?? entityHasHostedUndergraduates(group)) {
     dto.hasUndergradHostingEvidence = true;
+  }
+  if (!wayInWithheld && entityWelcomesUndergraduates(group)) {
+    dto.welcomesUndergrads = true;
   }
   Object.assign(dto, servedCreativePracticeFlag(creativePractice));
 
