@@ -362,6 +362,13 @@ import {
   mergedRowEvidenceIdentity,
   observationBelongsToMergedRow,
 } from './mergedRowEvidenceIdentity';
+import {
+  isPersonRow,
+  leadsTheRowIsNamedAfter,
+  mergedRedirectAdmission,
+  type MergedRedirectAdmission,
+  type MergedRedirectLead,
+} from './mergedRedirectIdentity';
 import { stripInvisibleFormatCharacters } from '../utils/invisibleFormatCharacters';
 import { servablePersonTitle, stripTitleFieldLabel } from '../utils/titleHygiene';
 import type { ReportPostMaterializationMetrics } from './runReport';
@@ -6700,6 +6707,7 @@ export interface MergedSurvivorEvidence {
   loserRosterAppointments: any[];
   survivorReadOnARoster: boolean;
   mergedInSourceUrlValues: string[];
+  redirectRefusedObservations: number;
 }
 
 /**
@@ -6737,6 +6745,117 @@ function routedObservationsForKeysAndIds(
   return [...byId.values()];
 }
 
+function yaleNetidsListedBy(observations: readonly any[]): string[] {
+  const netids = new Set<string>();
+  for (const observation of observations) {
+    const value = textValue(observation.value).toLowerCase();
+    if (observation.field === 'inferredPiUserKey') {
+      const userKey = userEntityKeyForInferredPiUserKey(value);
+      if (userKey.startsWith('netid:')) netids.add(userKey.slice('netid:'.length));
+    } else if (observation.field === 'contactEmail' || observation.field === 'email') {
+      const local = value.match(YALE_EMAIL_PATTERN)?.[1];
+      if (local) netids.add(local);
+    }
+  }
+  return [...netids];
+}
+
+function profileDestinationsListedBy(observations: readonly any[]): string[] {
+  const pages = observations.flatMap((observation: any) => [
+    observation.sourceUrl,
+    ...(observation.field === 'sourceUrls'
+      ? Array.isArray(observation.value)
+        ? observation.value
+        : [observation.value]
+      : []),
+  ]);
+  return uniqueStrings(
+    pages.map((page) => normalizeOfficialProfileDestination(textValue(page))).filter(Boolean),
+  );
+}
+
+async function leadsOfRowForRedirectWitness(survivorId: unknown): Promise<MergedRedirectLead[]> {
+  const leadIds = (await RoleAssignment.distinct('personId', {
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': survivorId,
+    role: { $in: SITE_LEAD_ROLES },
+    state: { $ne: 'HISTORICAL' },
+    archived: { $ne: true },
+  })) as unknown[];
+  if (leadIds.length === 0) return [];
+  const leads = (await Researcher.find({ _id: { $in: leadIds }, archived: { $ne: true } })
+    .select('displayName identifiers.netid profileLinks.url')
+    .lean()) as any[];
+  return leads.map((lead) => ({
+    displayName: lead.displayName,
+    netid: lead.identifiers?.netid,
+    profileDestinations: (Array.isArray(lead.profileLinks) ? lead.profileLinks : [])
+      .map((link: any) => normalizeOfficialProfileDestination(textValue(link?.url)))
+      .filter(Boolean),
+  }));
+}
+
+export interface MergedRedirectRefusals {
+  slugs: ReadonlySet<string>;
+  refuses: (observation: any) => boolean;
+  admissions: Partial<Record<MergedRedirectAdmission, number>>;
+}
+
+/**
+ * The merged-away person listings a person survivor refuses (#5771). A refused listing's
+ * observations stay filed under its own key, exactly as an unresolvable tombstone chain
+ * leaves them, so nothing about the merge itself is rewritten.
+ */
+export async function mergedRedirectRefusedListings(
+  survivor: { _id?: unknown; name?: unknown; entityType?: unknown; kind?: unknown },
+  mergedInRows: readonly MergedInResearchEntityRow[],
+  observations: readonly any[],
+): Promise<MergedRedirectRefusals> {
+  const admissions: Partial<Record<MergedRedirectAdmission, number>> = {};
+  const none = { slugs: new Set<string>(), refuses: () => false, admissions };
+  if (!isPersonRow(survivor) || mergedInRows.length === 0) return none;
+  const listings = (await ResearchEntity.find({ _id: { $in: mergedInRows.map((row) => row._id) } })
+    .select('_id slug name entityType kind')
+    .lean()) as any[];
+  const personListings = listings.filter((listing) => isPersonRow(listing));
+  if (personListings.length === 0) return none;
+  const namedLeads = leadsTheRowIsNamedAfter(
+    survivor,
+    await leadsOfRowForRedirectWitness(survivor._id),
+  );
+  const refusedSlugs = new Set<string>();
+  const refusedIds = new Set<string>();
+  for (const listing of personListings) {
+    const slug = textValue(listing.slug);
+    const id = String(listing._id);
+    const filedUnderListing = observations.filter(
+      (observation: any) =>
+        (slug && textValue(observation.entityKey) === slug) ||
+        normalizeMaterializerObjectId(observation.entityId) === id,
+    );
+    const admission = mergedRedirectAdmission(survivor, namedLeads, {
+      slug,
+      name: listing.name,
+      entityType: listing.entityType,
+      kind: listing.kind,
+      netids: yaleNetidsListedBy(filedUnderListing),
+      pageDestinations: profileDestinationsListedBy(filedUnderListing),
+    });
+    admissions[admission] = (admissions[admission] ?? 0) + 1;
+    if (admission !== 'refused') continue;
+    if (slug) refusedSlugs.add(slug);
+    refusedIds.add(id);
+  }
+  if (refusedIds.size === 0) return none;
+  return {
+    slugs: refusedSlugs,
+    admissions,
+    refuses: (observation: any) =>
+      refusedSlugs.has(textValue(observation.entityKey)) ||
+      refusedIds.has(normalizeMaterializerObjectId(observation.entityId) ?? ''),
+  };
+}
+
 /**
  * Resolves a live survivor over its own observations plus those of every row whose
  * tombstone chain reaches it (#3560), so a survivor-key and a loser-key materialize
@@ -6746,20 +6865,21 @@ function routedObservationsForKeysAndIds(
 export async function mergedSurvivorEvidence(
   entityType: ObservedEntityType,
   survivor: { _id?: unknown; slug?: unknown; [field: string]: unknown },
-  loadedObservations: any[],
+  unscreenedLoadedObservations: any[],
   prefetch?: MaterializationReadSource,
 ): Promise<MergedSurvivorEvidence> {
   const survivorId = toMaterializerObjectId(survivor._id);
   const unmerged = {
-    observations: loadedObservations,
+    observations: unscreenedLoadedObservations,
     mergedInKeys: [],
     mergedInRows: [],
-    evidenceObservations: loadedObservations,
+    evidenceObservations: unscreenedLoadedObservations,
     survivorLaneOwnsWebsite: false,
     droppedLoserWebsiteValues: [],
     loserRosterAppointments: [],
     survivorReadOnARoster: false,
     mergedInSourceUrlValues: [],
+    redirectRefusedObservations: 0,
   };
   if (!survivorId) return unmerged;
   if (prefetch?.hasNoMergedInRows(survivorId)) return unmerged;
@@ -6769,7 +6889,9 @@ export async function mergedSurvivorEvidence(
   const survivorSlug = textValue(survivor.slug);
   const identity = mergedRowEvidenceIdentity({ _id: survivorId, slug: survivorSlug }, mergedInRows);
 
-  const alreadyIncluded = new Set(loadedObservations.map((observation) => String(observation._id)));
+  const alreadyIncluded = new Set(
+    unscreenedLoadedObservations.map((observation) => String(observation._id)),
+  );
   const candidateKeys = [...identity.entityKeys];
   const candidateIds = mergedInRows.map((row) => row._id);
   const candidates =
@@ -6784,7 +6906,23 @@ export async function mergedSurvivorEvidence(
       !alreadyIncluded.has(String(observation._id)) &&
       observationBelongsToMergedRow(identity, observation),
   );
-  const { kept } = partitionObservationsByInvalidatedRun(added, await invalidatedScrapeRunIds());
+  const { kept: unscreenedKept } = partitionObservationsByInvalidatedRun(
+    added,
+    await invalidatedScrapeRunIds(),
+  );
+  const refusedListings = await mergedRedirectRefusedListings(survivor, mergedInRows, [
+    ...unscreenedLoadedObservations,
+    ...unscreenedKept,
+  ]);
+  const loadedObservations = unscreenedLoadedObservations.filter(
+    (observation) => !refusedListings.refuses(observation),
+  );
+  const kept = unscreenedKept.filter((observation: any) => !refusedListings.refuses(observation));
+  const redirectRefusedObservations =
+    unscreenedLoadedObservations.length +
+    unscreenedKept.length -
+    loadedObservations.length -
+    kept.length;
 
   const loserOrigin = (observation: any) => mergedInMemberOf(identity, observation);
   const survivorIsLowTrustShell = isLowTrustAreaShellSlug(survivorSlug);
@@ -6913,6 +7051,7 @@ export async function mergedSurvivorEvidence(
   for (const [field, value] of Object.entries(storedSurvivor)) {
     if (CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS.includes(field)) continue;
     const backingLoserSlug = backingLoserSlugByObservationId.get(provenanceObservationId(field));
+    if (backingLoserSlug !== undefined && refusedListings.slugs.has(backingLoserSlug)) continue;
     if (backingLoserSlug !== undefined) {
       backingLoserSlugByField.set(field, backingLoserSlug);
       continue;
@@ -7017,6 +7156,7 @@ export async function mergedSurvivorEvidence(
     ),
     loserRosterAppointments,
     survivorReadOnARoster,
+    redirectRefusedObservations,
   };
 }
 
@@ -7092,7 +7232,7 @@ async function observationsMergedIntoLiveSurvivor(
     routedSurvivor?.hit
       ? routedSurvivor.value
       : await ResearchEntity.findOne({ ...lookup, archived: { $ne: true } })
-          .select('_id slug name fieldValueRefusals manuallyLockedFields')
+          .select('_id slug name entityType kind fieldValueRefusals manuallyLockedFields')
           .lean()
   ) as Parameters<typeof mergedSurvivorEvidence>[1] | null;
   if (!survivor) return [];
@@ -7371,7 +7511,7 @@ async function mergedSurvivorTakesLoserLeadAttribution(
   const canonical = await resolveResearchEntityCanonicalByTombstone(loser);
   if (!canonical) return false;
   const survivor = (await ResearchEntity.findOne({ _id: canonical._id, archived: { $ne: true } })
-    .select('_id slug name fieldValueRefusals manuallyLockedFields')
+    .select('_id slug name entityType kind fieldValueRefusals manuallyLockedFields')
     .lean()) as Parameters<typeof mergedSurvivorEvidence>[1] | null;
   if (!survivor) return false;
   const { kept: ownObservations } = partitionObservationsByInvalidatedRun(
@@ -11806,6 +11946,21 @@ async function materializeEntityUnderRemovalGuard(
     entityDoc.canonicalGroupId
   ) {
     const tombstoneCanonical = await resolveResearchEntityCanonicalByTombstone(entityDoc);
+    const refusedRedirect =
+      tombstoneCanonical &&
+      (await mergedRedirectRefusedListings(tombstoneCanonical, [entityDoc], obs));
+    if (refusedRedirect && obs.every((observation: any) => refusedRedirect.refuses(observation))) {
+      return {
+        entityType,
+        entityId: materializerDocumentId(entityDoc._id),
+        entityKey: identifier.entityKey,
+        fieldsWritten: 0,
+        conflicts: 0,
+        created: false,
+        resolved: {},
+        skipped: 'merge-redirect-identity-refused',
+      };
+    }
     if (tombstoneCanonical) {
       entityDoc = tombstoneCanonical;
       entityIdString = String(tombstoneCanonical._id);
