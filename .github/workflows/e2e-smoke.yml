@@ -146,10 +146,13 @@ jobs:
       # install is retried with backoff, and then the job proves Chromium really
       # launches: the runner image already carries a browser's libraries, so a
       # mirror outage passes only when nothing is missing, and a missing library
-      # still fails here, before the smoke runs.
+      # still fails here, before the smoke runs. During the outage one attempt
+      # spends about ten minutes on DNS timeouts, so each attempt is bounded to
+      # keep every retry inside the job timeout.
       - name: Install Playwright Chromium
         env:
           PLAYWRIGHT_DEPS_RETRY_DELAYS: '15 45 90'
+          PLAYWRIGHT_DEPS_ATTEMPT_SECONDS: '90'
         run: |
           for attempt in $(seq 1 300); do
             [ -s /tmp/playwright-install.exit ] && break
@@ -160,7 +163,7 @@ jobs:
           deps_installed=false
           for delay in 0 $PLAYWRIGHT_DEPS_RETRY_DELAYS; do
             sleep "$delay"
-            if npx playwright install-deps chromium; then
+            if timeout "$PLAYWRIGHT_DEPS_ATTEMPT_SECONDS" npx playwright install-deps chromium; then
               deps_installed=true
               break
             fi

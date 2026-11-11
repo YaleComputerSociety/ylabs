@@ -1385,8 +1385,14 @@ test('the smoke waits for the background Playwright install and fails when it fa
         `#!/bin/sh\necho "node launch" >> "${dir}/npx.calls"\nexit ${launchExit}\n`,
         { mode: 0o755 },
       );
+      fs.writeFileSync(
+        path.join(stubBin, 'timeout'),
+        `#!/bin/sh\necho "$1" >> "${dir}/timeout.calls"\nshift\nexec "$@"\n`,
+        { mode: 0o755 },
+      );
       const env = {
         ...process.env,
+        ...steps[waitAt].env,
         PATH: `${stubBin}:${process.env.PATH}`,
         PLAYWRIGHT_DEPS_RETRY_DELAYS: '0 0',
       };
@@ -1425,6 +1431,25 @@ test('the smoke waits for the background Playwright install and fails when it fa
       mirrorsDown.calls.filter((call) => call.includes('install-deps')).length,
       3,
       'the system dependency install is retried with backoff',
+    );
+
+    fs.rmSync(`${dir}/timeout.calls`, { force: true });
+    run({ downloadExit: 0, depsExit: 1, launchExit: 0 });
+    const attemptBounds = fs
+      .readFileSync(`${dir}/timeout.calls`, 'utf8')
+      .trim()
+      .split('\n')
+      .map(Number);
+    assert.equal(attemptBounds.length, 3, 'every dependency install attempt is time-bounded');
+    const workflowDelays = steps[waitAt].env.PLAYWRIGHT_DEPS_RETRY_DELAYS.split(' ').map(Number);
+    const worstCaseSeconds =
+      (workflowDelays.length + 1) * attemptBounds[0] +
+      workflowDelays.reduce((sum, delay) => sum + delay, 0);
+    const restOfJobSeconds = 5 * 60;
+    assert.ok(
+      worstCaseSeconds + restOfJobSeconds <=
+        yaml.load(e2eSmokeWorkflow).jobs['student-journey-smoke']['timeout-minutes'] * 60,
+      'every retry must fit inside the job timeout with room left for the smokes',
     );
 
     assert.notEqual(
