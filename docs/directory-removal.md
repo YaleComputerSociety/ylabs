@@ -86,8 +86,40 @@ Those deletions are reported apart, as `facultyResearchProfileRowsToDelete`, `fa
 An apply deletes the row's other observations before the pointers that identify it, so a rerun after an interrupted apply still finds the row, and a second run after a complete apply deletes nothing.
 The removal entry has to stay after a purge, or the next sweep has nothing refusing the person.
 
+## Renaming a co-led row
+
+A row whose slug contains a removed co-lead's name takes a new slug with no redirect, so the old URL answers 404 (#4160).
+`yarn --cwd server directory-removal:reslug` does it, a dry run unless given `--apply`.
+It takes no identifier, matches every active entry in `directory_removals`, and refuses when the list is empty or no key is configured.
+It reports counts only.
+
+It finds the removed researchers by identifier, the way the serving layer does, and reads the rows where one of them holds a live lead role edge.
+A row qualifies when it is live, at least one other live lead remains, and its slug carries the removed lead's name.
+A row whose every lead is removed is already suppressed by the gate and keeps its slug.
+The name is matched by the full-name tokens, or by the surname alone when the slug carries the removed person's surname without their given name and no remaining lead has that surname.
+The new slug keeps the lane prefix and strips those tokens (`server/src/services/directoryRemovalSlugNames.ts`).
+When what is left says nothing distinctive, the remaining leads' surnames stand in.
+A slug held by any live or archived row, or by any `mergedFrom` entry, takes a numbered `-2`, `-3` suffix.
+
+The old slug goes into no `mergedFrom`, redirect or archived tombstone.
+A lane still emits the old key, so before renaming the row the command stamps the row's `entityId` onto every observation filed under the old key with no id.
+When no row holds a key, the materializer adopts the one live row that key's observations name by id (`server/src/scrapers/renamedResearchEntityAdoption.ts`), and a roster member filed under the old key attaches to that row the same way.
+The materializer never renames an existing row (`projectedSlugWouldRenameExistingResearchEntity`), so a later pass keeps the new slug.
+As a refusal rather than a lock, no pass may create a research row whose slug carries a removed researcher's full name, and that refusal counts as `removed_by_request`.
+A second apply finds nothing to rename.
+
+Other places that hold a slug:
+
+- The search document is keyed by id and re-synced by the command, so no document is left under the old slug.
+- Saved research and research plans store the row's id, never its slug, so nothing there is rewritten.
+- The page shell's share metadata and canonical URL are built from the slug the request asked for, so the old slug falls through to the not-found shell; a shell already cached under it in a running process expires within five minutes.
+- There is no sitemap, and `robots.txt` admits only link-preview crawlers.
+- Analytics and entity correction reports keep the slug they recorded, because they are operator records rather than served surfaces.
+
+It runs on Development only, through ylabs-manager, as `OPENAI_API_KEY= yarn --cwd server directory-removal:reslug` until the final description batch lands.
+Unlike the purge, it needs no Beta or Production run: `research_entities` reaches them as a whole-collection copy at promotion, their search indexes are rebuilt from that copy, research plans there store ids, and no lane writes there.
+
 ## Known limits
 
 - Prose matching is by the person's current display name and by name digests over two to four word windows, so a spelling with a middle initial or a nickname is missed.
-- A row whose slug contains a removed co-lead's name keeps its URL until the slug migration lands; the owner decided it gets a new slug with no redirect.
 - Meilisearch ranks on the documents it holds, so a removed name can still rank a row until the next reindex, even though the served row is re-read from Mongo and redacted.

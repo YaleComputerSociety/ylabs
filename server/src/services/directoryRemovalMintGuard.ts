@@ -18,6 +18,7 @@ export const REMOVED_BY_REQUEST = 'removed_by_request' as const;
 export interface DirectoryRemovalMintGuard {
   readonly active: boolean;
   refusesPerson(person: DirectoryRemovalPerson | null | undefined): boolean;
+  removedResearcherNames(): Promise<readonly string[]>;
   recordRefusal(): void;
   readonly refusals: number;
 }
@@ -28,10 +29,16 @@ export function createDirectoryRemovalMintGuard(
   assertDirectoryRemovalMatchable(matcher);
   const active = matcher.state !== 'inert';
   let refusals = 0;
+  let removedNames: Promise<readonly string[]> | undefined;
   return {
     active,
     refusesPerson(person) {
       return active && Boolean(person) && matcher.isRemovedPerson(person);
+    },
+    removedResearcherNames() {
+      if (!active) return Promise.resolve([]);
+      removedNames ??= namesOfRemovedResearchers(matcher);
+      return removedNames;
     },
     recordRefusal() {
       refusals += 1;
@@ -40,6 +47,16 @@ export function createDirectoryRemovalMintGuard(
       return refusals;
     },
   };
+}
+
+async function namesOfRemovedResearchers(matcher: DirectoryRemovalMatcher): Promise<string[]> {
+  const researchers = await Researcher.find({ archived: { $ne: true } })
+    .select('displayName identifiers profileLinks.url')
+    .lean<Array<DirectoryRemovalPerson>>();
+  return researchers
+    .filter((researcher) => matcher.isRemovedPerson(researcher))
+    .map((researcher) => researcher.displayName)
+    .filter((name): name is string => typeof name === 'string' && name.trim().length > 0);
 }
 
 export async function loadDirectoryRemovalMintGuard(

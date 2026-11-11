@@ -207,6 +207,10 @@ import {
   withDirectoryRemovalMintGuard,
 } from '../services/directoryRemovalMintGuard';
 import {
+  liveResearchEntityNamedByKeyObservations,
+  researchEntityMintSlugNamesARemovedResearcher,
+} from './renamedResearchEntityAdoption';
+import {
   materializeAccessForResearchGroup,
   type AccessObservation,
   type AccessSignalChangePlan,
@@ -3547,14 +3551,15 @@ async function materializeRosterMember(
     'researchEntity',
     researchGroupKey,
   );
-  const entity: any = routedRosterHome?.hit
-    ? routedRosterHome.value
-    : await ResearchEntity.findOne({
-        slug: researchGroupKey,
-        archived: { $ne: true },
-      })
-        .select('_id')
-        .lean();
+  const entity: any =
+    (routedRosterHome?.hit
+      ? routedRosterHome.value
+      : await ResearchEntity.findOne({
+          slug: researchGroupKey,
+          archived: { $ne: true },
+        })
+          .select('_id')
+          .lean()) ?? (await liveResearchEntityNamedByKeyObservations(researchGroupKey));
   if (!entity?._id) {
     return {
       entityType: 'researchGroupMember',
@@ -11026,6 +11031,10 @@ async function materializeEntityUnderRemovalGuard(
     obs,
     options.chunkPrefetch,
   );
+  if (isResearchEntityObservationType(entityType) && !entityDoc && !identifier.entityId) {
+    const renamed = await liveResearchEntityNamedByKeyObservations(identifier.entityKey);
+    if (renamed?._id) entityDoc = await Model.findById(renamed._id).lean();
+  }
   if (
     entityDoc?.archived === true &&
     options.treatArchivedResearchEntitiesAsAbsent?.has(String(entityDoc._id))
@@ -11792,7 +11801,8 @@ async function materializeEntityUnderRemovalGuard(
     }
     if (
       isResearchEntityObservationType(entityType) &&
-      (await facultyResearchProfileMintIsRemovedByRequest(insert, materializationObs))
+      ((await facultyResearchProfileMintIsRemovedByRequest(insert, materializationObs)) ||
+        (await researchEntityMintSlugNamesARemovedResearcher(keyValue)))
     ) {
       return {
         entityType,
