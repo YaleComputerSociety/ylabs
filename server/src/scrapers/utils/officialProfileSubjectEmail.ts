@@ -46,16 +46,15 @@ function tokenNamesALabOrProgram(token: string): boolean {
   return SUBJECT_ROLE_TOKENS.has(token);
 }
 
-function tokenLeadsWithARoleWord(token: string): boolean {
-  if (NETID_SHAPE.test(token)) return false;
-  return ROLE_LEADING_WORDS.some((word) => token.length > word.length && token.startsWith(word));
+function leadingRoleWord(token: string): string | undefined {
+  if (NETID_SHAPE.test(token)) return undefined;
+  return ROLE_LEADING_WORDS.find((word) => token.length > word.length && token.startsWith(word));
 }
 
-function localPartCarriesTheSubjectName(localPart: string, displayName: string): boolean {
-  const joined = localPart.replace(/[._+-]+/g, '');
+function tokenCarriesTheSubjectName(token: string, roleWord: string, displayName: string): boolean {
   return nameTokens(displayName)
-    .filter((token) => token.length >= 3)
-    .some((token) => joined.includes(token));
+    .filter((name) => name.length >= 3 && !roleWord.includes(name))
+    .some((name) => token.includes(name));
 }
 
 /**
@@ -69,8 +68,9 @@ export function localPartNamesASubjectRole(localPart: string, displayName: strin
   if (localPartNamesARole(localPart)) return true;
   const tokens = localPartTokens(localPart);
   if (tokens.some(tokenNamesALabOrProgram)) return true;
-  if (tokens.length !== 1 || !tokenLeadsWithARoleWord(tokens[0])) return false;
-  return !localPartCarriesTheSubjectName(localPart, displayName);
+  if (tokens.length !== 1) return false;
+  const roleWord = leadingRoleWord(tokens[0]);
+  return roleWord !== undefined && !tokenCarriesTheSubjectName(tokens[0], roleWord, displayName);
 }
 
 export function admissibleSubjectAddress(value: unknown, displayName: string): string {
