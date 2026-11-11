@@ -84,17 +84,20 @@ export type ResearcherFieldWriteDecision =
 /**
  * Whether this key writes `field`. A key that holds the field but resolves no candidate now
  * releases it, so a sibling can take the field over; the stored value itself is left alone.
+ * A value that outranks the stored one, such as a person's own website over the profile page
+ * a better-joined key wrote (#5845), writes whatever the writer rank.
  */
 export function decideResearcherFieldWrite(
   writers: unknown,
   field: ResearcherGatedField,
   candidate: ResearcherFieldWriter,
   hasValue: boolean,
+  valueOutranksStored = false,
 ): ResearcherFieldWriteDecision {
   const current = storedWriter(writers, field);
   const holdsField = current?.userKey === candidate.userKey;
   if (!hasValue) return { write: false, releaseWriter: holdsField };
-  if (current && !holdsField && !writerOutranks(candidate, current)) {
+  if (current && !holdsField && !valueOutranksStored && !writerOutranks(candidate, current)) {
     return { write: false, releaseWriter: false };
   }
   const writerChanged =
