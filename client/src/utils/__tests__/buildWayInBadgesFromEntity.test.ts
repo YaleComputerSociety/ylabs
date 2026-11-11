@@ -15,6 +15,12 @@ describe('buildWayInBadgesFromEntity', () => {
     expect(buildWayInBadgesFromEntity(undefined)).toEqual([]);
   });
 
+  it('shows the welcomes badge from the served flag when no page invitation is served (#5362)', () => {
+    expect(buildWayInBadgesFromEntity(entity({ welcomesUndergrads: true }))).toEqual([
+      'Welcomes undergrads',
+    ]);
+  });
+
   it('reads undergraduate evidence from the served hosted flag (#3593)', () => {
     expect(buildWayInBadgesFromEntity(entity({ hasUndergradHostingEvidence: true }))).toEqual([
       'Undergrad evidence',

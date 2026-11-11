@@ -3,6 +3,7 @@ import {
   type OfficialRosterUndergraduateStatus,
 } from '../models/storedVocabularies';
 import { RETIRED_UNDERGRAD_QUOTE_CACHE_SOURCE } from '../scrapers/undergradEvidenceQuoteValidation';
+import { entityHasUndergradListSignal } from './undergradListEvidenceServing';
 
 const MAX_ROSTER_UNDERGRADUATE_NAME_LENGTH = 80;
 
@@ -100,13 +101,19 @@ export function hasPastUndergradAdvisees(value: unknown): boolean {
  * whose pages load but no longer yield it, so a roster cannot keep the flag alive after its page
  * stops naming anyone; a read that fails on every page keeps the last successful roster.
  */
-export function entityHasHostedUndergraduates(entity: {
-  pastUndergradAdvisees?: unknown;
-  currentUndergradCount?: unknown;
-  fieldProvenance?: { currentUndergradCount?: { sourceName?: unknown } };
-  rosterEnrichment?: unknown;
-}): boolean {
+export function entityHasHostedUndergraduates(
+  entity: {
+    pastUndergradAdvisees?: unknown;
+    currentUndergradCount?: unknown;
+    fieldProvenance?: { currentUndergradCount?: { sourceName?: unknown } };
+    rosterEnrichment?: unknown;
+    undergradListEvidence?: unknown;
+    wayInWithheld?: unknown;
+  },
+  reviewedSources?: ReadonlySet<string>,
+): boolean {
   if (hasPastUndergradAdvisees(entity.pastUndergradAdvisees)) return true;
+  if (entityHasUndergradListSignal(entity, 'hosted', reviewedSources)) return true;
   if (rosterListsUndergraduates(entity.rosterEnrichment)) return true;
   const count = Number(entity.currentUndergradCount);
   return (
