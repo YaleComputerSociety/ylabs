@@ -124,8 +124,8 @@ const Privacy = () => {
             <li>
               Your netid is removed from the events y/labs sends, and PostHog knows you only by a
               random id plus your role at Yale. Web addresses are sent without their search terms,
-              but if you arrive from a search engine, the words you searched for there can still
-              reach PostHog.
+              and if you arrive from a search engine, the words you searched for there are removed
+              before anything reaches PostHog.
             </li>
             <li>
               PostHog stores nothing in your browser: no cookie and no local storage. It does not
