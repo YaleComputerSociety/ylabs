@@ -584,6 +584,7 @@ The aliases `email`, `emailSupport`, `title`, `primaryDepartment`, `imageUrl` an
 The scope is expanded before it is applied (`expandUserMaterializerScope` in `server/src/scrapers/userMaterializerFieldScope.ts`).
 A display value also writes its own writer record, so `displayName` brings `profileFieldWriters.displayName` and `profile.title` brings `profileFieldWriters.title`.
 `profileFieldWriters` alone re-records only the writer entries and leaves every display value as stored, even where the resolve would change it.
+`profile.title` is decided by the first-hand title rule (#5830) and written outside the writer precedence, so `--only-fields=profile.title` writes exactly the title that rule derives, together with any change to the own-key fallback writer record `profileFieldWriters.title`, and every other scope drops a planned title change and reports it.
 `identifiers.email` and `identifiers.emailSupport` are one closure in `USER_MATERIALIZER_DERIVED_FIELD_GROUPS`, because the support marker records the address it was computed for.
 
 The resolve runs unchanged, then the planned document is compared with the stored one path by path (`changedResearcherPaths`).

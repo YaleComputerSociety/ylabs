@@ -28,6 +28,7 @@ import { materializeEntity, materializeFromRun } from '../entityMaterializer';
 import { resetDirectoryNetidsByAddressCache } from '../directoryContradictedProfileNetid';
 import { resetInvalidatedScrapeRunCache } from '../invalidatedScrapeRuns';
 import { resetOverSharedPersonWebsiteKeysCache } from '../overSharedPersonWebsite';
+import { recordFullCoverageRun } from './fullCoverageRunFixture';
 
 const NETID = 'zz5816a';
 const KEY = `netid:${NETID}`;
@@ -35,6 +36,11 @@ const EMAIL_NETID = 'zz5816b';
 const EMAIL_KEY = `netid:${EMAIL_NETID}`;
 const PAGE_EMAIL = 'avery.synthetic5816@yale.edu';
 const OWN_PAGE = 'https://medicine.yale.edu/profile/avery-synthetic5816/';
+const PROFILE_PAGE = 'https://medicine.yale.edu/profile/avery-synthetic5816a/';
+const FIRST_HAND_TITLE = 'Associate Professor of Fixture Medicine';
+const ROSTER_TITLE = 'Professor of Fixture Studies';
+const STORED_TITLE = 'Lecturer in Fixtures';
+const NOW = new Date('2026-11-10T00:00:00Z');
 const MINT_KEY = 'dept:fixture5816:avery-synthetic';
 const NAMING_SLUG = 'fixture-5816-lab';
 
@@ -44,6 +50,7 @@ describe('a user materialize scoped to named fields writes only that scope (#581
   beforeAll(async () => {
     replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
     await mongoose.connect(replSet.getUri());
+    await Observation.syncIndexes();
   });
 
   afterAll(async () => {
@@ -85,7 +92,7 @@ describe('a user materialize scoped to named fields writes only that scope (#581
     for (const [field, value] of [
       ['fname', 'Avery'],
       ['lname', 'Synthetic'],
-      ['title', 'Professor of Fixture Studies'],
+      ['title', ROSTER_TITLE],
       ['primaryDepartment', 'Fixture Studies'],
       ['imageUrl', 'https://fixture5816.example.edu/photos/avery.jpg'],
       ['websiteUrl', 'https://avery-synthetic5816.example.edu/'],
@@ -339,6 +346,81 @@ describe('a user materialize scoped to named fields writes only that scope (#581
     const unscoped = await materializeEntity('user', { entityKey: MINT_KEY }, {});
     expect(unscoped.created).toBe(true);
     expect(await Researcher.countDocuments({})).toBe(1);
+  });
+
+  const seedFirstHandTitleResearcher = async () => {
+    const researcher = await seedResearcher({
+      profile: { title: STORED_TITLE },
+      profileLinks: [
+        {
+          kind: 'YALE_OFFICIAL',
+          purpose: 'PRIMARY_IDENTITY',
+          url: PROFILE_PAGE,
+          verifiedAt: new Date('2026-01-01T00:00:00Z'),
+          healthStatus: 'UNKNOWN',
+        },
+      ],
+    });
+    const scrapeRunId = new mongoose.Types.ObjectId();
+    const observedAt = new Date('2026-10-01T00:00:00Z');
+    await recordFullCoverageRun('ysm-faculty-directory', scrapeRunId, observedAt);
+    await observation({
+      entityKey: KEY,
+      scrapeRunId,
+      sourceName: 'ysm-faculty-directory',
+      sourceUrl: PROFILE_PAGE,
+      observedAt,
+      field: 'title',
+      value: FIRST_HAND_TITLE,
+    });
+    await seedProfileEvidence(KEY);
+    return researcher;
+  };
+
+  const resolveAt = (onlyFields: string[] | undefined, dryRun = false) =>
+    materializeEntity(
+      'user',
+      { entityKey: KEY },
+      { dryRun, now: NOW, ...(onlyFields ? { userWriteOnlyFields: onlyFields } : {}) },
+    );
+
+  it('leaves a stored title byte-identical under a non-title scope that plans a title change', async () => {
+    const researcher = await seedFirstHandTitleResearcher();
+    const unscopedPlan = await resolveAt(undefined, true);
+    expect(unscopedPlan.plannedPaths).toEqual(expect.arrayContaining(['profile']));
+    const before = await stored(researcher._id);
+
+    const applied = await resolveAt(['websiteUrl']);
+
+    expect(applied.droppedPaths).toContain('profile.title');
+    expect(applied.plannedPaths).not.toContain('profile.title');
+    const after = await stored(researcher._id);
+    expect(after.profile.title).toBe(STORED_TITLE);
+    expect(withoutPaths(after, applied.plannedPaths ?? [])).toEqual(
+      withoutPaths(before, applied.plannedPaths ?? []),
+    );
+  });
+
+  it("writes the first-hand title rule's title under a title-only scope and nothing else", async () => {
+    const researcher = await seedFirstHandTitleResearcher();
+    const before = await stored(researcher._id);
+
+    const planned = await resolveAt(['profile.title'], true);
+    expect(planned.plannedPaths).toEqual(['profile.title']);
+    expect(planned.droppedPaths).toEqual(
+      expect.arrayContaining(['displayName', 'profile.primaryDepartment']),
+    );
+
+    const applied = await resolveAt(['profile.title']);
+    expect(applied.plannedPaths).toEqual(['profile.title']);
+    const after = await stored(researcher._id);
+    expect(after.profile.title).toBe(FIRST_HAND_TITLE);
+    expect(after.profile.title).not.toBe(ROSTER_TITLE);
+    expect(withoutPaths(after, ['profile.title'])).toEqual(withoutPaths(before, ['profile.title']));
+
+    const second = await resolveAt(['profile.title']);
+    expect(second.plannedPaths).toEqual([]);
+    expect(second.fieldsWritten).toBe(0);
   });
 
   it('changes nothing about an unscoped resolve', async () => {
