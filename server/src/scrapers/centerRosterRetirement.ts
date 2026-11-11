@@ -61,6 +61,7 @@ import {
 } from './centerRelationshipTarget';
 import { officialProfileIdentityKey } from './utils/rosterMembershipKey';
 import { attributedArchiveSet } from '../models/entityArchival';
+import { liveResearchEntityNamedByKeyObservations } from './renamedResearchEntityAdoption';
 
 export const CENTERS_INSTITUTES_SOURCE_NAME = 'centers-institutes-index';
 export const CENTER_ROSTER_HEALTH_ENTITY_TYPE = 'centerRosterHealth' as const;
@@ -772,9 +773,11 @@ export async function loadCenterRosterRetirementInputs(
   reads?: CenterRosterRead[],
   lane: CenterRosterLane = CENTERS_INSTITUTES_ROSTER_LANE,
 ): Promise<CenterRosterRetirementInputs | null> {
-  const entity = (await ResearchEntity.findOne({ slug: centerEntityKey, archived: { $ne: true } })
+  const entity = ((await ResearchEntity.findOne({ slug: centerEntityKey, archived: { $ne: true } })
     .select('_id')
-    .lean()) as { _id?: unknown } | null;
+    .lean()) ?? (await liveResearchEntityNamedByKeyObservations(centerEntityKey))) as {
+    _id?: unknown;
+  } | null;
   const centerEntityId = serializedDocumentId(entity?._id) || '';
   if (!centerEntityId) return null;
   return {

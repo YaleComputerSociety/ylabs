@@ -119,6 +119,7 @@ import {
   resolveSourceConcurrency,
 } from '../utils/mapWithConcurrency';
 import { postChatCompletion } from '../../utils/modelClient';
+import { liveResearchEntityIdForLaneKey } from '../renamedResearchEntityAdoption';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 10_000;
@@ -533,7 +534,10 @@ function latestLaneQuoteObservation(
  */
 export const defaultLiveEvidenceQuoteLoader: LiveEvidenceQuoteLoaderFn = async (entityKey) => {
   if (isBenchmarkModeActive() || mongoose.connection.readyState !== 1) return null;
-  const survivor = await ResearchEntity.findOne({ slug: entityKey, archived: { $ne: true } })
+  const survivor = await ResearchEntity.findOne({
+    _id: await liveResearchEntityIdForLaneKey(entityKey),
+    archived: { $ne: true },
+  })
     .select(`_id fieldProvenance.${UNDERGRAD_EVIDENCE_QUOTE_FIELD}`)
     .lean<{
       _id: mongoose.Types.ObjectId;

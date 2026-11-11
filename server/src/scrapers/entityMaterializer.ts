@@ -212,6 +212,10 @@ import {
   withDirectoryRemovalMintGuard,
 } from '../services/directoryRemovalMintGuard';
 import {
+  liveResearchEntityNamedByKeyObservations,
+  researchEntityMintSlugNamesARemovedResearcher,
+} from './renamedResearchEntityAdoption';
+import {
   materializeAccessForResearchGroup,
   type AccessObservation,
   type AccessSignalChangePlan,
@@ -3553,14 +3557,15 @@ async function materializeRosterMember(
     'researchEntity',
     researchGroupKey,
   );
-  const entity: any = routedRosterHome?.hit
-    ? routedRosterHome.value
-    : await ResearchEntity.findOne({
-        slug: researchGroupKey,
-        archived: { $ne: true },
-      })
-        .select('_id')
-        .lean();
+  const entity: any =
+    (routedRosterHome?.hit
+      ? routedRosterHome.value
+      : await ResearchEntity.findOne({
+          slug: researchGroupKey,
+          archived: { $ne: true },
+        })
+          .select('_id')
+          .lean()) ?? (await liveResearchEntityNamedByKeyObservations(researchGroupKey));
   if (!entity?._id) {
     return {
       entityType: 'researchGroupMember',
@@ -5241,12 +5246,16 @@ export async function resolveRelationshipTarget(
       entityKey: targetEntityKey,
       entityType: 'FACULTY_RESEARCH_AREA',
     })) as ResolvedRelationshipTargetRow | null;
-  const target = (await researchEntityModel
+  const target = ((await researchEntityModel
     .findOne(
       { slug: targetEntityKey, archived: { $ne: true } },
       { _id: 1, name: 1, slug: 1, entityType: 1 },
     )
-    .lean()) as ResolvedRelationshipTargetRow | null;
+    .lean()) ??
+    (await liveResearchEntityNamedByKeyObservations(
+      targetEntityKey,
+      '_id name slug entityType',
+    ))) as ResolvedRelationshipTargetRow | null;
   const namedTarget = canonicalFacultyResearchAreaTarget || target;
   return {
     canonicalFacultyResearchAreaTarget,
@@ -5389,9 +5398,11 @@ async function materializeResearchEntityRelationship(
   const researchEntityModel = deps.researchEntityModel || ResearchEntity;
   const relationshipModel = deps.relationshipModel || ResearchEntityRelationship;
 
-  const source = (await researchEntityModel
+  const source = ((await researchEntityModel
     .findOne({ slug: sourceEntityKey, archived: { $ne: true } }, { _id: 1 })
-    .lean()) as { _id?: unknown } | null;
+    .lean()) ?? (await liveResearchEntityNamedByKeyObservations(sourceEntityKey))) as {
+    _id?: unknown;
+  } | null;
   if (!source?._id) return skip('source-not-resolved');
 
   const { canonicalFacultyResearchAreaTarget, target, resolvedTarget } =
@@ -11124,6 +11135,12 @@ async function materializeEntityUnderRemovalGuard(
     obs,
     options.chunkPrefetch,
   );
+  let renamedFromKey: string | undefined;
+  if (isResearchEntityObservationType(entityType) && !entityDoc && !identifier.entityId) {
+    const renamed = await liveResearchEntityNamedByKeyObservations(identifier.entityKey);
+    if (renamed?._id) entityDoc = await Model.findById(renamed._id).lean();
+    if (entityDoc) renamedFromKey = identifier.entityKey;
+  }
   if (
     entityDoc?.archived === true &&
     options.treatArchivedResearchEntitiesAsAbsent?.has(String(entityDoc._id))
@@ -11360,7 +11377,11 @@ async function materializeEntityUnderRemovalGuard(
   let foreignContactWithheld = false;
   let siteSharedPageNames: ReadonlySet<string> = new Set<string>();
   if (isResearchEntityObservationType(entityType) && entityDoc) {
-    const rowKeyedObs = withoutForeignContactObservations(obs, entityDoc);
+    const rowKeyedObs = withoutForeignContactObservations(obs, {
+      _id: entityDoc._id,
+      slug: entityDoc.slug,
+      renamedFromKey,
+    });
     foreignContactWithheld = rowKeyedObs.length !== obs.length;
     obs = rowKeyedObs;
     if (obs.length === 0) {
@@ -11694,6 +11715,7 @@ async function materializeEntityUnderRemovalGuard(
   const readRowUnderOwnIdentity =
     Boolean(entityDoc) &&
     (mergedInKeys.length > 0 ||
+      Boolean(renamedFromKey) ||
       (Boolean(identifier.entityKey) &&
         identifier.entityKey ===
           textValue(entityType === 'fellowship' ? entityDoc?.sourceKey : entityDoc?.slug)) ||
@@ -11895,7 +11917,8 @@ async function materializeEntityUnderRemovalGuard(
     }
     if (
       isResearchEntityObservationType(entityType) &&
-      (await facultyResearchProfileMintIsRemovedByRequest(insert, materializationObs))
+      ((await facultyResearchProfileMintIsRemovedByRequest(insert, materializationObs)) ||
+        (await researchEntityMintSlugNamesARemovedResearcher(keyValue)))
     ) {
       return {
         entityType,
@@ -12114,12 +12137,13 @@ async function reconcileOfficialRosterSnapshotsFromRun(
       snapshotObservation.value,
     ) as OfficialRosterSnapshotForReconciliation;
     if (!snapshotObservation.entityKey) continue;
-    const entity: any = await ResearchEntity.findOne({
-      slug: snapshotObservation.entityKey,
-      archived: { $ne: true },
-    })
-      .select('_id')
-      .lean();
+    const entity: any =
+      (await ResearchEntity.findOne({
+        slug: snapshotObservation.entityKey,
+        archived: { $ne: true },
+      })
+        .select('_id')
+        .lean()) ?? (await liveResearchEntityNamedByKeyObservations(snapshotObservation.entityKey));
     if (!entity?._id) continue;
     const filter = buildOfficialRosterArchiveFilter(materializerDocumentId(entity._id), snapshot);
     if (!filter) continue;

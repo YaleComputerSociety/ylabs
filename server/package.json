@@ -166,6 +166,7 @@
     "research-entity:record-departure": "tsx src/scripts/recordResearchEntityDeparture.ts",
     "directory-removal:record": "tsx src/scripts/recordDirectoryRemoval.ts",
     "directory-removal:purge-observations": "tsx src/scripts/purgeDirectoryRemovalObservations.ts",
+    "directory-removal:reslug": "tsx src/scripts/reslugDirectoryRemovalCoLedRows.ts",
     "student-visibility:gate": "tsx src/scripts/studentVisibilityGate.ts",
     "student-visibility:override": "tsx src/scripts/studentVisibilityOverride.ts",
     "visibility:retire-stale-launch-overrides": "tsx src/scripts/retireStaleLaunchSuppressionOverrides.ts",

@@ -12,6 +12,7 @@ const CONTACT_FIELDS = new Set(RESEARCH_ENTITY_CONTACT_FIELDS);
 export interface ContactEvidenceRow {
   _id?: unknown;
   slug?: unknown;
+  renamedFromKey?: unknown;
 }
 
 interface KeyedObservation {
@@ -28,7 +29,10 @@ export function observationIsKeyedToRow(
   const entityId = idText(observation.entityId);
   if (entityId) return entityId === idText(row._id);
   const entityKey = idText(observation.entityKey);
-  return entityKey.length > 0 && entityKey === idText(row.slug);
+  return (
+    entityKey.length > 0 &&
+    (entityKey === idText(row.slug) || entityKey === idText(row.renamedFromKey))
+  );
 }
 
 export function isResearchEntityContactField(field: unknown): boolean {
