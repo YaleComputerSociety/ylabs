@@ -116,14 +116,11 @@ describe('the writer cache settles imported drafts without a model call (#5537)'
     expect(resolution.modelCalled).toBe(false);
     expect(model).not.toHaveBeenCalled();
 
-    const writes = carriedOverWrites(
-      writerWritesFor('synthesize', resolution.decision, { adoptedBodyStillSupported: false }),
-      {
-        carriedOver: false,
-        liveBody: liveWrittenBody(row.observations, 'coverage-synthesis-llm'),
-        description: undefined,
-      },
-    );
+    const writes = carriedOverWrites(writerWritesFor('synthesize', resolution.decision), {
+      carriedOver: false,
+      liveBody: liveWrittenBody(row.observations, 'coverage-synthesis-llm'),
+      description: undefined,
+    });
     expect(writes.writeBody).toBe(false);
     expect(await Observation.countDocuments({ field: 'fullDescription' })).toBe(0);
     expect(liveWrittenBody(row.observations, 'coverage-synthesis-llm')).toBeUndefined();

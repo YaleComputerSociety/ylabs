@@ -24,29 +24,24 @@ const ADOPTED =
   'Develops single-cell sequencing methods to study immune cell differentiation in human lymph node tissue, combining spatial transcriptomics with lineage tracing.';
 const REFUSED = { result: null, refusal: 'quality-bar' as const };
 
-describe('a refused draft does not retire the body already adopted', () => {
-  it('keeps the adopted body when it still clears every content arm', () => {
+describe('a refused draft keeps the body the row serves today', () => {
+  it('stores nothing but the hash on a refusal, whatever the adopted body', () => {
     expect(adoptedWrittenBodyStillSupported({ body: ADOPTED, snippets: SNIPPETS })).toBe(true);
-    expect(writerWritesFor('synthesize', REFUSED, { adoptedBodyStillSupported: true })).toEqual({
+    expect(writerWritesFor('synthesize', REFUSED)).toEqual({
       writeBody: false,
-      retireBody: false,
       recordHash: true,
     });
   });
 
-  it('still retires an adopted body the current evidence no longer supports', () => {
+  it('keeps the body when the evidence no longer supports it or is gone', () => {
     const unrelated = [{ text: 'Studies medieval Latin manuscripts and their scribal hands.' }];
     expect(adoptedWrittenBodyStillSupported({ body: ADOPTED, snippets: unrelated })).toBe(false);
-    expect(adoptedWrittenBodyStillSupported({ body: ADOPTED, snippets: [] })).toBe(false);
-    expect(adoptedWrittenBodyStillSupported({ body: '', snippets: SNIPPETS })).toBe(false);
-    expect(writerWritesFor('synthesize', REFUSED, { adoptedBodyStillSupported: false })).toEqual({
+    expect(writerWritesFor('synthesize', REFUSED)).toEqual({
       writeBody: false,
-      retireBody: true,
       recordHash: true,
     });
-    expect(writerWritesFor('no-evidence', null, { adoptedBodyStillSupported: true })).toEqual({
+    expect(writerWritesFor('no-evidence', null)).toEqual({
       writeBody: false,
-      retireBody: true,
       recordHash: false,
     });
   });

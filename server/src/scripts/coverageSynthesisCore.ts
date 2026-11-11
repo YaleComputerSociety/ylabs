@@ -117,7 +117,8 @@ export function parseCoverageSynthesisArgs(argv: string[]): CoverageSynthesisArg
     if (key === 'limit') args.limit = Number(value);
     else if (key === 'concurrency') args.concurrency = Number(value);
     else if (key === 'slugs') args.slugs = parseSlugList(value);
-    else if (key === 'deferMaterializeForRuns') args.deferMaterializeForRuns = parseRunIdList(value);
+    else if (key === 'deferMaterializeForRuns')
+      args.deferMaterializeForRuns = parseRunIdList(value);
     else args[key] = value;
   };
   for (let index = 0; index < argv.length; index += 1) {
@@ -612,37 +613,25 @@ export function deferSearchIndexWritesWhenSkipping(
 
 export interface WriterWrites {
   writeBody: boolean;
-  retireBody: boolean;
   recordHash: boolean;
 }
 
+const WRITES_NOTHING: WriterWrites = { writeBody: false, recordHash: false };
+
 /**
- * What one writer step stores. The written body is a derivation of the evidence it was
- * written from, so a body the current evidence no longer supports is retired rather than
- * left to outrank the copied fallback: when the row has no evidence left, and on a
- * refusal of the new draft unless the body already adopted still clears every content
- * arm against the same evidence (`adoptedWrittenBodyStillSupported`). The refusal judges
- * the draft, not the served body. A failed call judged nothing, so it records no hash and
- * the next run retries.
+ * What one writer step stores. The writer only adds bodies: a refused draft, a row with
+ * no evidence left and a failed store all leave the body the row serves today in place,
+ * because a refusal judges the new draft rather than the served body (#5537). A refusal
+ * still records its hash, so it is final under the same evidence, prompt and model. A
+ * failed call judged nothing, so it records no hash and the next run retries.
  */
 export function writerWritesFor(
   step: WriterStep,
   decision: CoverageSynthesisDecision | null,
-  options: { adoptedBodyStillSupported?: boolean } = {},
 ): WriterWrites {
-  if (step === 'evidence-unchanged') {
-    return { writeBody: false, retireBody: false, recordHash: false };
-  }
-  if (step === 'no-evidence') return { writeBody: false, retireBody: true, recordHash: false };
-  if (!decision || isCoverageSynthesisLlmFailure(decision.refusal)) {
-    return { writeBody: false, retireBody: false, recordHash: false };
-  }
-  if (decision.result) return { writeBody: true, retireBody: false, recordHash: true };
-  return {
-    writeBody: false,
-    retireBody: !options.adoptedBodyStillSupported,
-    recordHash: true,
-  };
+  if (step === 'evidence-unchanged' || step === 'no-evidence') return WRITES_NOTHING;
+  if (!decision || isCoverageSynthesisLlmFailure(decision.refusal)) return WRITES_NOTHING;
+  return { writeBody: Boolean(decision.result), recordHash: true };
 }
 
 export function carriedOverWrites(
@@ -658,15 +647,15 @@ export function carriedOverWrites(
 
 /**
  * A body the store refused leaves the row judged against evidence it no longer reflects,
- * so the prior written body is retired and no hash is recorded: the next run judges the
- * row again instead of reading it as unchanged.
+ * so no hash is recorded and the next run judges the row again instead of reading it as
+ * unchanged; the body the row serves today stays.
  */
 export function writerWritesAfterBodyAttempt(
   writes: WriterWrites,
   bodyStored: boolean,
 ): WriterWrites {
   if (!writes.writeBody || bodyStored) return writes;
-  return { writeBody: false, retireBody: true, recordHash: false };
+  return WRITES_NOTHING;
 }
 
 export const WRITER_EVIDENCE_FIELDS: readonly string[] = [

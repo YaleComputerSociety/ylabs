@@ -6,11 +6,7 @@ import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { Observation } from '../models/observation';
-import {
-  appendObservations,
-  getSourceByName,
-  retireObservations,
-} from '../scrapers/observationStore';
+import { appendObservations, getSourceByName } from '../scrapers/observationStore';
 import { contentHashObservation } from '../scrapers/contentHashGate';
 import { resetDescriptionOwnershipCitersCache } from '../scrapers/descriptionOwnershipResolverScreen';
 import {
@@ -145,7 +141,6 @@ export interface CoverageEntityReport {
   inputHash?: string;
   synthesized: boolean;
   written: boolean;
-  retired?: number;
   adopted?: boolean;
   observationDropped?: boolean;
   description?: string;
@@ -218,10 +213,13 @@ async function loadTargetEntities(args: ReturnType<typeof parseCoverageSynthesis
   return rows;
 }
 
+export const WRITTEN_ROW_FIELDS = ['fullDescription', 'shortDescription'];
+
 export function writtenRowMaterializeOptions(entityName: string) {
   return {
     dryRun: false,
     synthesizeCardDescription: defaultMaterializerCardSynthesizer(entityName),
+    writeOnlyFields: [...WRITTEN_ROW_FIELDS],
   };
 }
 
@@ -587,7 +585,6 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
   const materializedEntityIds: string[] = [];
   let written = 0;
   let observationDropped = 0;
-  let retired = 0;
   let adopted = 0;
   let entityErrors = 0;
 
@@ -728,17 +725,11 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
     if (!args.apply || !context) return;
     try {
       const liveBody = liveWrittenBody(observations, SOURCE_NAME);
-      let writes = carriedOverWrites(
-        writerWritesFor(planned, decision, {
-          adoptedBodyStillSupported: adoptedWrittenBodyStillSupported({
-            body: liveBody,
-            snippets,
-            researchAreas: entity.researchAreas,
-            entityType: entity.entityType,
-          }),
-        }),
-        { carriedOver, liveBody, description: decision?.result?.description },
-      );
+      let writes = carriedOverWrites(writerWritesFor(planned, decision), {
+        carriedOver,
+        liveBody,
+        description: decision?.result?.description,
+      });
       let changed = false;
       if (writes.writeBody && decision?.result) {
         const stored = await appendSynthesizedDescription(
@@ -758,20 +749,6 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
           changed = true;
         } else observationDropped += 1;
         writes = writerWritesAfterBodyAttempt(writes, stored);
-      }
-      if (writes.retireBody) {
-        const outcome = await retireObservations(
-          {
-            entityType: 'researchEntity',
-            sourceName: SOURCE_NAME,
-            field: 'fullDescription',
-            $or: anchors,
-          },
-          RETIRE_REASON,
-        );
-        report.retired = outcome.retired;
-        retired += outcome.retired;
-        if (outcome.retired > 0) changed = true;
       }
       const materializedId =
         changed && !materializeIsDeferred ? await materializeWrittenRow(entity) : undefined;
@@ -827,7 +804,6 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
     synthesisRefusals: summarizeCoverageSynthesisRefusals(reports),
     written,
     observationDropped,
-    retired,
     adopted,
     entityErrors,
     regated: regates.reduce((sum, entry) => sum + entry.scopedEntities, 0),

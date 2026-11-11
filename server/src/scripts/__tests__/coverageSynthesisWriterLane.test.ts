@@ -105,36 +105,32 @@ describe('the writer lane runs over every live row (#4788)', () => {
     expect(storedWriterEvidenceHash(hashes, 'coverage-synthesis-llm')).toBe('new');
   });
 
-  it('retires a written body the current evidence no longer supports', () => {
+  it('adds a body on an accepted draft and never retires the served one', () => {
     const accepted = {
       result: { description: 'Studies immune cells.', usedSnippetIndexes: [0], sourceUrls: [] },
       refusal: null,
     };
     expect(writerWritesFor('synthesize', accepted)).toEqual({
       writeBody: true,
-      retireBody: false,
       recordHash: true,
     });
     expect(writerWritesFor('synthesize', { result: null, refusal: 'quality-bar' })).toEqual({
       writeBody: false,
-      retireBody: true,
       recordHash: true,
     });
     expect(writerWritesFor('no-evidence', null)).toEqual({
       writeBody: false,
-      retireBody: true,
       recordHash: false,
     });
   });
 
-  it('retires the prior body and records no hash when the store refuses the new body', () => {
+  it('keeps the prior body and records no hash when the store refuses the new body', () => {
     const accepted = writerWritesFor('synthesize', {
       result: { description: 'Studies immune cells.', usedSnippetIndexes: [0], sourceUrls: [] },
       refusal: null,
     });
     expect(writerWritesAfterBodyAttempt(accepted, false)).toEqual({
       writeBody: false,
-      retireBody: true,
       recordHash: false,
     });
     expect(writerWritesAfterBodyAttempt(accepted, true)).toEqual(accepted);
@@ -143,12 +139,10 @@ describe('the writer lane runs over every live row (#4788)', () => {
   it('records nothing after a failed call, so the next run retries', () => {
     expect(writerWritesFor('synthesize', { result: null, refusal: 'llm-call-failed' })).toEqual({
       writeBody: false,
-      retireBody: false,
       recordHash: false,
     });
     expect(writerWritesFor('evidence-unchanged', null)).toEqual({
       writeBody: false,
-      retireBody: false,
       recordHash: false,
     });
   });
