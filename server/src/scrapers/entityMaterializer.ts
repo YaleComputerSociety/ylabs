@@ -7736,6 +7736,16 @@ async function withoutPagesNamingAnotherNetid<T extends { sourceUrl?: unknown }>
   );
 }
 
+async function officialPageNamesAnotherNetid(
+  pageUrl: string,
+  researcher: { identifiers?: { netid?: string } },
+): Promise<boolean> {
+  const netid = textValue(researcher.identifiers?.netid).toLowerCase();
+  if (!netid) return false;
+  const owners = await profilePageOwnerNetids([pageUrl], materializationReadScopeFilter());
+  return profilePageContradictsNetid(owners, pageUrl, netid);
+}
+
 async function withdrawScreenedOfficialProfileLinks(
   entityKey: string | undefined,
   screenedPageUrls: string[],
@@ -8101,7 +8111,8 @@ async function materializeUserIdentityToResearcher(
     !refusesProfileLink(composedOfficialLink) &&
     !(await officialProfileLinkHeldByConflictingIdentity(composedOfficialLink.url, researcher, {
       readScope: materializationReadScopeFilter(),
-    }))
+    })) &&
+    !(await officialPageNamesAnotherNetid(composedOfficialLink.url, researcher))
       ? composedOfficialLink
       : undefined;
   if (officialLink && !existingLinkKinds.has('YALE_OFFICIAL')) {

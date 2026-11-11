@@ -163,6 +163,16 @@ observationSchema.index(
   { partialFilterExpression: { field: 'inferredPiUserKey' } },
 );
 /**
+ * Every resolve of a researcher asks whether each live observation stating its stored ORCID or
+ * photo URL was read from a page that names another netid (#5737), so without this the lookup
+ * walks every live `user` observation of that field. Partial on the two fields because `value`
+ * is Mixed elsewhere; a query must carry `field` equality to one of them to use it.
+ */
+observationSchema.index(
+  { field: 1, value: 1, superseded: 1 },
+  { partialFilterExpression: { field: { $in: ['orcid', 'imageUrl'] } } },
+);
+/**
  * The repair queue's evidence lookup sends `sourceUrl: { $in: variants }` with a
  * descending `observedAt` sort and a limit, so `observedAt` is the second key to let
  * MongoDB merge the per-variant intervals in sort order instead of buffering the whole

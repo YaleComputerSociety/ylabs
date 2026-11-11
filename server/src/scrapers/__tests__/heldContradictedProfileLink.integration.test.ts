@@ -142,6 +142,40 @@ describe('a held official link to another netid person page is withdrawn on any 
     }
   });
 
+  it('does not re-stamp the withdrawn link from a roster that points at the page', async () => {
+    const holder = await seed();
+    await observe(HOLDER_KEY, 'dept-faculty-roster', 'https://dept.test/people/', {
+      profileUrls: { official: PAGE },
+    });
+
+    const first = await materializeEntity('user', { entityKey: HOLDER_KEY });
+    expect(first.fieldsWritten).toBeGreaterThan(0);
+    expect((await stored(holder._id))?.profileLinks ?? []).toEqual([]);
+
+    const second = await materializeEntity('user', { entityKey: HOLDER_KEY });
+    expect(second.fieldsWritten).toBe(0);
+    expect((await stored(holder._id))?.profileLinks ?? []).toEqual([]);
+  });
+
+  it('serves the stored-value lookup from an index rather than a field-wide scan', async () => {
+    await seed();
+    await Observation.syncIndexes();
+
+    for (const [field, value] of [
+      ['orcid', PAGE_ORCID],
+      ['imageUrl', PAGE_PHOTO],
+    ] as const) {
+      const plan = (await Observation.find({
+        entityType: 'user',
+        field,
+        superseded: false,
+        value: { $in: [value] },
+      }).explain('queryPlanner')) as any;
+      const winning = JSON.stringify(plan.queryPlanner?.winningPlan ?? plan[0]?.queryPlanner);
+      expect(winning).toContain('field_1_value_1_superseded_1');
+    }
+  });
+
   it('withdraws nothing on a dry run', async () => {
     const holder = await seed();
 
