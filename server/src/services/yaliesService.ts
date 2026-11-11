@@ -101,7 +101,6 @@ export interface YaliesEmployee {
   lname: string;
   email: string;
   title: string;
-  department: string;
 }
 
 export type StudentLoginSignal = Extract<
@@ -164,11 +163,6 @@ function employeeRecord(record: YaliesRecord, netid: string): YaliesEmployee {
     lname: text(record.last_name),
     email: text(record.email),
     title: text(record.title),
-    department:
-      text(record.unit_name) ||
-      text(record.primary_division_name) ||
-      text(record.organization_name) ||
-      text(record.primary_organization_name),
   };
 }
 

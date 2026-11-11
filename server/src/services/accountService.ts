@@ -20,10 +20,20 @@ export interface AccountLoginInput {
  */
 const RETIRED_PROFILE_PATHS = ['profile.college', 'profile.year', 'profile.major'];
 
+/**
+ * A login stores no department (#5741): accounts are login-only (#5000) and nothing reads it,
+ * so the schema keeps the field for old rows but no login writes it.
+ */
+const PROFILE_FIELDS_A_LOGIN_NEVER_STORES = new Set(['department']);
+
 const sanitizeLoginProfile = (profile?: AccountProfile): AccountProfile | undefined => {
   if (!profile) return undefined;
-  const entries = Object.entries(profile).filter(([, value]) =>
-    Array.isArray(value) ? value.length > 0 : typeof value === 'string' && value.trim().length > 0,
+  const entries = Object.entries(profile).filter(
+    ([key, value]) =>
+      !PROFILE_FIELDS_A_LOGIN_NEVER_STORES.has(key) &&
+      (Array.isArray(value)
+        ? value.length > 0
+        : typeof value === 'string' && value.trim().length > 0),
   );
   return entries.length > 0 ? (Object.fromEntries(entries) as AccountProfile) : undefined;
 };
