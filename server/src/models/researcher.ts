@@ -56,6 +56,11 @@ export interface ResearcherRecord {
   archived: boolean;
   dedupedIntoResearcherId?: mongoose.Types.ObjectId;
   dedupedAt?: Date;
+  /**
+   * Researchers an operator recorded as a different person from this one. Every researcher
+   * fold arm refuses a pair recorded here, so an unmerged pair is never folded again (#5592).
+   */
+  distinctFromResearcherIds?: mongoose.Types.ObjectId[];
 }
 
 const PROFILE_LINK_PURPOSE_BY_KIND: Record<
@@ -297,6 +302,10 @@ export const researcherSchema = new mongoose.Schema<ResearcherRecord>(
     dedupedAt: {
       type: Date,
       required: false,
+    },
+    distinctFromResearcherIds: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Researcher' }],
+      default: undefined,
     },
   },
   {

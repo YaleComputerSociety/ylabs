@@ -135,7 +135,13 @@ describe('canonical MongoDB validator registry', () => {
     // gate covers: no environment applies these validators (#752 declined), so a review
     // here approves what would be applied and asserts nothing about stored data (#3396).
     //
-    // Reviewed for #5492. The only drift is accounts gaining productAnalyticsId, an optional
+    // Reviewed for #5592. The only drift is researchers gaining distinctFromResearcherIds, an
+    // optional array of researcher objectIds that the researchers:record-distinct-people
+    // operator tool writes on both records of a pair judged to be different people, and that
+    // every researcher fold arm refuses. Researchers without a recorded pair carry none. No
+    // other collection or property changed.
+    //
+    // Reviewed for #5492 before that. The only drift is accounts gaining productAnalyticsId, an optional
     // lowercase version 4 UUID that the server assigns on a Production session's first
     // session check when product analytics is on, and that is the only identity PostHog
     // receives. Accounts that never reach that path carry none. No other collection or
@@ -216,6 +222,6 @@ describe('canonical MongoDB validator registry', () => {
     expect(
       canonicalMongoValidatorFingerprint(CANONICAL_MONGO_VALIDATORS),
       'The declared canonical validator contracts changed. This gate governs the declaration in canonicalMongoValidatorRegistry.ts and nothing else: no environment applies these validators, so a green run is not evidence that any collection is validated, and a red run is not an outage. Describe the drift in the comment above, then update the expected fingerprint. Only `yarn --cwd server model-refactor:validators-assert --environment <env>` reads the database.',
-    ).toBe('8660497460a6424071a60cf3bf255c185bde866a2739f91c967cf6d6bf763a44');
+    ).toBe('c11d576858b2c0efb181b8f43d3914c9bec210870a3c754578c343a873bb8de0');
   });
 });

@@ -20,6 +20,8 @@ const SWEEP_RUNNER = 'runScraperSweep.ts';
  */
 const OPERATOR_TOOLS: Record<string, string> = {
   'research-entity:refuse-field-value': 'records a per-row refusal, the layer-3 writer',
+  'researchers:record-distinct-people':
+    'records an operator judgement that two researcher records are different people (#5592)',
   'research-entity:apply-page-read-verdict':
     'applies a verdict an operator reached by reading a page',
   'research-entity:adopt-led-group-site':
