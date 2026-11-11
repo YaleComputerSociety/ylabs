@@ -53,11 +53,11 @@ const Privacy = () => {
 
         <Section id="browsing" title="If you browse without signing in">
           <p className={BODY_CLASS}>
-            y/labs keeps no record of who you are or what you looked at. It does set one cookie,
-            which carries only a random id used to limit how fast one browser can send requests, and
-            your browser keeps a few y/labs notes to itself: whether you were last signed in, which
-            first-save tips you have seen, and where to return after signing out. Two things still
-            leave your browser:
+            y/labs keeps no record of who you are or what you looked at. It does set a session
+            cookie and its signature, which carry only a random id used to limit how fast one
+            browser can send requests, and your browser keeps a few y/labs notes to itself: whether
+            you were last signed in, which first-save tips you have seen, and where to return after
+            signing out. Two things still leave your browser:
           </p>
           <ul className={LIST_CLASS}>
             <li>
@@ -76,17 +76,15 @@ const Privacy = () => {
           <p className={BODY_CLASS}>
             Sign-in goes through Yale CAS, so y/labs never sees your password. At each sign-in
             y/labs looks you up on Yalies and stores your netid, email address, first and last name,
-            and your role at Yale, such as student or faculty. Your saved research, plans, stages
-            and notes are stored with your account until you delete them or delete your account.
+            and your role at Yale, such as student or faculty. If you work at Yale, it also stores
+            your job title and department. Your saved research, plans, stages and notes are stored
+            with your account until you delete them or delete your account.
           </p>
           <p className={BODY_CLASS}>
-            If you ask to be removed from y/labs, the request stores only your netid, the listing it
-            matched, the request status, when it was made and decided, and which maintainer decided
-            it.
-          </p>
-          <p className={BODY_CLASS}>
-            Signing in adds your account to the same y/labs cookie, which keeps you signed in for up
-            to {SESSION_COOKIE_LIFETIME_DAYS} days.
+            Signing in adds your sign-in to the same session cookie, beside the random id, and keeps
+            you signed in for up to {SESSION_COOKIE_LIFETIME_DAYS} days. When you make a change that
+            needs it, such as deleting your data or asking to be removed, the cookie also holds a
+            random token that shows the request came from y/labs.
           </p>
         </Section>
 
@@ -148,19 +146,29 @@ const Privacy = () => {
             <>
               <p className={BODY_CLASS}>
                 On your dashboard, under Your data, you can download a copy of everything y/labs
-                keeps with your account, or delete it. Deleting takes effect at once and cannot be
-                undone, and y/labs asks you to enter your Yale password again first.
+                keeps with your account, or delete it. To delete it, you type &ldquo;delete my
+                data&rdquo; and y/labs asks you to enter your Yale password again. Deleting cannot
+                be undone. It usually takes effect at once; if it can&apos;t, for example because
+                your account is linked to an entry in the directory, y/labs tells you and you can
+                email us.
               </p>
               <ul className={LIST_CLASS}>
                 <li>
                   It removes your account, your saved research and plans, and your activity records,
                   including the text of your searches, and asks PostHog to delete what it collected
-                  about you. y/labs keeps only monthly counts of activity by type, with nothing that
-                  identifies you.
+                  about you. y/labs keeps monthly counts of activity by type, which do not identify
+                  you, and a record that the deletion happened, which names you only by a one-way
+                  hash of your netid.
                 </li>
                 <li>
                   Correction reports you sent are kept, because they are about public directory
-                  pages, with your name, netid and email removed.
+                  pages. Your name, netid and email are removed from them, but anything you typed in
+                  the note stays.
+                </li>
+                <li>
+                  If you were a y/labs administrator, your administrator access is revoked rather
+                  than deleted, and the records of administrator actions you took still name your
+                  netid.
                 </li>
                 <li>
                   If you also signed in to another copy of y/labs, such as its beta site, a
@@ -184,6 +192,24 @@ const Privacy = () => {
           </p>
         </Section>
 
+        <Section id="listed" title="If y/labs lists you">
+          <p className={BODY_CLASS}>
+            y/labs builds its directory from public Yale web pages, such as official profiles,
+            department and lab pages, and roster lists, and from public grant and publication
+            records. Maintainers refresh it from time to time, not on a fixed schedule.
+          </p>
+          <p className={BODY_CLASS}>
+            If something y/labs shows about you is wrong, sign in and use Report an issue with this
+            page on the listing.
+          </p>
+          <DirectoryRemovalRequestSentence className={BODY_CLASS} />
+          <p className={BODY_CLASS}>
+            If you ask to be removed from y/labs, the request stores only your netid, the listing it
+            matched, the request status, when it was made and decided, and which maintainer decided
+            it. A maintainer applies an accepted request within 7 days.
+          </p>
+        </Section>
+
         <Section id="questions" title="Questions">
           <p className={BODY_CLASS}>
             For general questions about this page, open an issue on the{' '}
@@ -198,7 +224,6 @@ const Privacy = () => {
             . Issues there are public, so do not include personal details in one; send anything
             about your own data to {PRIVACY_CONTACT_EMAIL}.
           </p>
-          <DirectoryRemovalRequestSentence className={BODY_CLASS} />
         </Section>
       </article>
     </div>
