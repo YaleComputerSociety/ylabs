@@ -74,22 +74,17 @@ describe('researchGroupController', () => {
     expect(res.status).toHaveBeenCalledWith(404);
   });
 
-  it('passes a requested member name through and drops an unusable one (#5584)', async () => {
+  it('serves the same capped detail whatever `?member=` names', async () => {
     mocks.getResearchGroupDetail.mockResolvedValue(null);
-    const res = () => ({ json: vi.fn(), status: vi.fn().mockReturnThis() }) as any;
-    const requested = async (member: unknown) => {
-      mocks.getResearchGroupDetail.mockClear();
-      await getResearchGroupBySlug(
-        { params: { slug: 'example-lab' }, query: { member } } as any,
-        res(),
-      );
-      return mocks.getResearchGroupDetail.mock.calls[0][1].requestedMemberName;
-    };
+    const req = { params: { slug: 'example-lab' }, query: { member: 'Example Member' } } as any;
+    const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
 
-    expect(await requested('  Example Member  ')).toBe('Example Member');
-    expect(await requested(['Example Member', 'Another Member'])).toBeUndefined();
-    expect(await requested('   ')).toBeUndefined();
-    expect(await requested('x'.repeat(121))).toBeUndefined();
+    await getResearchGroupBySlug(req, res);
+
+    expect(mocks.getResearchGroupDetail.mock.calls[0]).toStrictEqual([
+      'example-lab',
+      { includeWithheldForOperator: false },
+    ]);
   });
 
   it('lets an admin preview a research detail withheld from students', async () => {

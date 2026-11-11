@@ -899,8 +899,6 @@ export interface PastCapMemberObservation {
   memberRowRank: number | null;
   ownRowRank: number | null;
   hasOwnRow: boolean;
-  deepLinkServesMember: boolean;
-  deepLinkServesNonMember: boolean;
 }
 
 const pastCapEmptyReason =
@@ -942,19 +940,4 @@ export function checkOwnRowOutranksMemberRow(
     );
   }
   return buildInvariant(id, title, outranked === 0, detail);
-}
-
-export function checkMemberDeepLinkServesOnlyRosterMembers(
-  observations: readonly PastCapMemberObservation[],
-): InvariantResult {
-  const id = 'member-deep-link-serves-only-roster-members';
-  const title =
-    'A ?member= deep link shows a past-cap member of that row, and never shows a name the row does not list';
-  const unserved = observations.filter((observation) => !observation.deepLinkServesMember).length;
-  const injected = observations.filter((observation) => observation.deepLinkServesNonMember).length;
-  const detail = { queried: observations.length, unserved, injected };
-  if (observations.length === 0) {
-    return buildInconclusiveInvariant(id, title, pastCapEmptyReason, detail);
-  }
-  return buildInvariant(id, title, unserved === 0 && injected === 0, detail);
 }

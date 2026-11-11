@@ -4705,10 +4705,9 @@ export interface SearchableResearchEntityMember {
 }
 
 /**
- * The members a name search can match on a row, and so the only names its `?member=`
- * deep link may ask the detail page to show. It reads every current member, not the
+ * The members a name search can match on a row. It reads every current member, not the
  * detail page's display caps, because a member past the cap is still on the roster
- * (#5584); the detail route serves a requested past-cap member by this same rule.
+ * (#5584). The detail route stays capped and never serves a member past it.
  */
 export function searchableResearchEntityMembers(
   entity: Record<string, any>,
@@ -4805,48 +4804,9 @@ const operatorPreviewReasons = (
 
 export const memberNameKey = (name: string): string => personNameWords(name).join(' ');
 
-/**
- * A search card links a matched member as `?member=<name>`, and a member past the display
- * cap is not on the page it opens. Serve that one member, and only when the row's own
- * searchable roster holds them, so the parameter can land a deep link but cannot put an
- * arbitrary name on the page (#5584). The display cap is otherwise unchanged.
- */
-async function requestedPastCapMember<T extends { user: any; role: string }>(
-  entity: Record<string, any>,
-  rosterEntries: ResearchEntityRosterEntry[],
-  requestedMemberName: string | undefined,
-  shownMembers: readonly T[],
-): Promise<{ user: any; role: string; row: Record<string, any> } | undefined> {
-  const requestedKey = memberNameKey(requestedMemberName ?? '');
-  if (!requestedKey) return undefined;
-  if (shownMembers.some((member) => memberNameKey(memberDisplayName(member)) === requestedKey)) {
-    return undefined;
-  }
-  const now = new Date();
-  const match = searchableResearchEntityMembers(entity, rosterEntries, now).find(
-    (member) => memberNameKey(member.name) === requestedKey,
-  );
-  if (!match) return undefined;
-  const member = publicResearchEntityDetailRosterMembers(
-    entity,
-    rosterEntries,
-    now,
-    EVERY_CURRENT_MEMBER,
-  ).find(
-    (candidate) =>
-      candidate.role === match.role && memberNameKey(memberDisplayName(candidate)) === requestedKey,
-  );
-  if (!member) return undefined;
-  const [guarded] = await withPublicMemberImageGuards([member]);
-  return guarded;
-}
-
 export async function getResearchGroupDetail(
   slug: string,
-  {
-    includeWithheldForOperator = false,
-    requestedMemberName,
-  }: { includeWithheldForOperator?: boolean; requestedMemberName?: string } = {},
+  { includeWithheldForOperator = false }: { includeWithheldForOperator?: boolean } = {},
 ): Promise<{
   researchEntity: PublicResearchEntityDto;
   members: Array<{ user: any; role: string }>;
@@ -4933,16 +4893,7 @@ export async function getResearchGroupDetail(
       member.row?.sourceName !== OFFICIAL_ROSTER_SOURCE_NAME ||
       publicRosterMemberRows.has(member.row),
   );
-  const requestedMember = await requestedPastCapMember(
-    group as Record<string, any>,
-    rosterEntries,
-    requestedMemberName,
-    boundedMembersWithRows,
-  );
-  const shownMembersWithRows = requestedMember
-    ? [...boundedMembersWithRows, requestedMember]
-    : boundedMembersWithRows;
-  const members = shownMembersWithRows.map(({ row, ...member }) => {
+  const members = boundedMembersWithRows.map(({ row, ...member }) => {
     const rosterEvidence = isFreshVerifiedOfficialRosterRow(
       row,
       new Date(),

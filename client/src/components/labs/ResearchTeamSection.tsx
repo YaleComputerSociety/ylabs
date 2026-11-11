@@ -72,20 +72,6 @@ const memberNameKey = (value: string | undefined): string =>
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
 
-const withinTeamCapKeepingHighlighted = (
-  members: LabMember[],
-  highlightedMemberName: string | undefined,
-): LabMember[] => {
-  const shown = members.slice(0, MAX_PRESENTED_TEAM_MEMBERS);
-  const highlightedKey = memberNameKey(highlightedMemberName);
-  if (!highlightedKey) return shown;
-  const isHighlighted = (member: LabMember) =>
-    memberNameKey(displayName(member)) === highlightedKey;
-  if (shown.some(isHighlighted)) return shown;
-  const highlightedPastCap = members.slice(MAX_PRESENTED_TEAM_MEMBERS).find(isHighlighted);
-  return highlightedPastCap ? [...shown, highlightedPastCap] : shown;
-};
-
 const scrollHighlightedMemberIntoView = (node: HTMLLIElement | null) => {
   node?.scrollIntoView?.({ block: 'center' });
 };
@@ -366,12 +352,10 @@ export default function ResearchTeamSection({
 }) {
   const undergraduates = roster.undergraduates ?? [];
   const listsCurrentUndergraduates = undergraduates.some((member) => member.status === 'current');
-  const teamMembers = withinTeamCapKeepingHighlighted(
-    members
-      .filter((member) => Boolean(member.rosterEvidence))
-      .filter((member) => !(listsCurrentUndergraduates && member.role === 'undergrad')),
-    highlightedMemberName,
-  );
+  const teamMembers = members
+    .filter((member) => Boolean(member.rosterEvidence))
+    .filter((member) => !(listsCurrentUndergraduates && member.role === 'undergrad'))
+    .slice(0, MAX_PRESENTED_TEAM_MEMBERS);
   if (teamMembers.length === 0 && undergraduates.length === 0 && undergraduateLines.length === 0) {
     return null;
   }
