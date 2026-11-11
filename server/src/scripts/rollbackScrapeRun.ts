@@ -127,8 +127,12 @@ async function countAcrossBatches(
   return total;
 }
 
-function restorableFilter(batch: mongoose.Types.ObjectId[]): Record<string, unknown> {
+function restorableFilter(
+  run: RunDocument,
+  batch: mongoose.Types.ObjectId[],
+): Record<string, unknown> {
   return {
+    scrapeRunId: { $ne: run._id },
     superseded: true,
     supersededBy: { $in: batch },
     'rollback.rolledBackAt': { $exists: false },
@@ -172,7 +176,9 @@ async function planRollback(
       scrapeRunId: run._id,
       superseded: { $ne: true },
     }),
-    restorableObservations: await countAcrossBatches(runObservationIds, restorableFilter),
+    restorableObservations: await countAcrossBatches(runObservationIds, (batch) =>
+      restorableFilter(run, batch),
+    ),
     runObservationsSupersededFromOutside: supersededFromOutside,
     laterObservationsFromSource,
     refusals,
@@ -193,7 +199,7 @@ async function writeSnapshot(
     liveRunIds.push(String(row._id));
   }
   for (const batch of batches(runObservationIds)) {
-    for (const row of (await Observation.find(restorableFilter(batch), {
+    for (const row of (await Observation.find(restorableFilter(run, batch), {
       _id: 1,
       supersededBy: 1,
     }).lean()) as Array<{ _id: unknown; supersededBy?: unknown }>) {
@@ -260,7 +266,7 @@ export async function rollbackScrapeRun(
 
   let restored = 0;
   for (const batch of batches(runObservationIds)) {
-    const result = await Observation.updateMany(restorableFilter(batch), {
+    const result = await Observation.updateMany(restorableFilter(run, batch), {
       $set: { superseded: false },
       $unset: { supersededBy: 1 },
     });

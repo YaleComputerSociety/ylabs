@@ -125,6 +125,23 @@ describe('observations:rollback-scrape-run (#5735)', () => {
     expect((await ScrapeRun.findById(badRun).lean())?.invalidated).toBe(true);
   });
 
+  it('retires every row of a run that wrote the same field twice', async () => {
+    const before = await seedPriorState();
+    const badRun = await startRun();
+    await write(badRun, [['fixture-lab-a', 'name', 'Fixture Lab A First Rename']]);
+    await write(badRun, [['fixture-lab-a', 'name', 'Fixture Lab A Second Rename']]);
+
+    const plan = await rollbackScrapeRun({ runId: badRun, note: NOTE, apply: false });
+    expect(plan).toMatchObject({ runObservations: 2, restorableObservations: 1, refusals: [] });
+
+    const result = await rollbackScrapeRun({ runId: badRun, note: NOTE, apply: true });
+
+    expect(result).toMatchObject({ applied: true, restoredObservations: 1 });
+    const after = await dump();
+    expect(after.filter((row) => row.scrapeRunId !== badRun)).toEqual(before);
+    expect(after.filter((row) => row.scrapeRunId === badRun && !row.superseded)).toEqual([]);
+  });
+
   it('changes nothing on a second apply', async () => {
     await seedPriorState();
     const badRun = await writeBadRun();
