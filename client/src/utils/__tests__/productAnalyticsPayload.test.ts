@@ -470,9 +470,46 @@ describe('PostHog configuration', () => {
     });
 
     const serialized = JSON.stringify(sentException);
-    expect(serialized).toContain('synthetic failure for [redacted]');
+    expect(serialized).not.toContain('synthetic failure');
     expect(serialized).not.toContain(SYNTHETIC_NETID);
     expect(serialized).not.toContain(SYNTHETIC_QUERY);
+  });
+
+  it('sends only the exception type, never a message that could quote a search (#5621)', () => {
+    const beforeSend = config().before_send as (event: unknown) => { properties: any } | null;
+    const sentException = beforeSend({
+      uuid: 'exception-2',
+      event: '$exception',
+      properties: {
+        $exception_message: `No results for ${SYNTHETIC_QUERY}`,
+        $exception_list: [{ type: 'TypeError', value: `No results for ${SYNTHETIC_QUERY}` }],
+      },
+    })!;
+
+    expect(sentException.properties.$exception_list).toEqual([
+      { type: 'TypeError', value: 'TypeError' },
+    ]);
+    expect(sentException.properties).not.toHaveProperty('$exception_message');
+    expect(JSON.stringify(sentException)).not.toContain(SYNTHETIC_QUERY);
+  });
+
+  it('strips a query hidden behind an escaped quote in an elements chain, and from an outbound link (#5621)', () => {
+    const beforeSend = config().before_send as (event: never) => unknown;
+    const chain = `a:attr__href="?q=a\\"${SYNTHETIC_QUERY}"href="/research?x=\\"${SYNTHETIC_QUERY}"nth-child="1"`;
+    const scrubbed = beforeSend({
+      uuid: 'synthetic-chain',
+      event: '$autocapture',
+      properties: {
+        $elements_chain: chain,
+        $external_click_url: `https://example.edu/lab?ref=${SYNTHETIC_QUERY}`,
+      },
+    } as never) as { properties: Record<string, unknown> };
+
+    expect(JSON.stringify(scrubbed)).not.toContain(SYNTHETIC_QUERY);
+    expect(scrubbed.properties.$elements_chain).toBe(
+      'a:attr__href=""href="/research"nth-child="1"',
+    );
+    expect(scrubbed.properties.$external_click_url).toBe('https://example.edu/lab');
   });
 
   it('drops network bodies and headers and strips queries and the netid from recorded requests', () => {

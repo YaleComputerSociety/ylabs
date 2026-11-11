@@ -66,8 +66,10 @@ const URL_VALUE_KEYS = new Set([
   '$initial_referrer',
   '$session_entry_url',
   '$session_entry_referrer',
+  '$external_click_url',
 ]);
-const URL_ATTRIBUTE_IN_CHAIN = /(?<![A-Za-z0-9_])((?:attr__)?(?:href|src|action))="([^"]*)"/g;
+const URL_ATTRIBUTE_IN_CHAIN =
+  /(?<![A-Za-z0-9_])((?:attr__)?(?:href|src|action))="((?:[^"\\]|\\.)*)"/g;
 const withoutUrlQuery = (value: string) => value.replace(/[?#][\s\S]*$/, '');
 const SEARCH_ENGINE_PROPERTY = /(?:^\$?|_)(?:ph_keyword|search_engine)$/;
 
@@ -79,11 +81,11 @@ export const createRedactor = (netId?: string) => {
 
   const redactString = (value: string) => {
     const withoutQueries = value
-      .replace(URL_QUERY_OR_FRAGMENT, '$1')
       .replace(
         URL_ATTRIBUTE_IN_CHAIN,
         (_match, name: string, url: string) => `${name}="${withoutUrlQuery(url)}"`,
-      );
+      )
+      .replace(URL_QUERY_OR_FRAGMENT, '$1');
     return netIdPattern
       ? withoutQueries.replace(netIdPattern, (_match, lead: string) => `${lead}${REDACTED}`)
       : withoutQueries;
@@ -180,6 +182,20 @@ const withoutSearchEngineKeyword = (properties: Properties): Properties => {
   return cleaned;
 };
 
+// An exception message is free text and can quote what a student typed, so only the
+// exception's type is sent, never its message (#5621).
+const withoutExceptionMessages = (properties: Properties): Properties => {
+  const cleaned: Properties = { ...properties };
+  delete cleaned.$exception_message;
+  if (Array.isArray(cleaned.$exception_list)) {
+    cleaned.$exception_list = cleaned.$exception_list.map((exception: Record<string, unknown>) => ({
+      ...exception,
+      value: typeof exception?.type === 'string' ? exception.type : 'Error',
+    }));
+  }
+  return cleaned;
+};
+
 const PRODUCT_ANALYTICS_ID =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
@@ -218,7 +234,7 @@ export const buildPostHogConfig = ({
     const sanitized: CaptureResult = {
       ...event,
       properties: redactValue(
-        withoutSearchEngineKeyword(withoutElementText(event.properties)),
+        withoutExceptionMessages(withoutSearchEngineKeyword(withoutElementText(event.properties))),
       ) as Properties,
     };
     delete sanitized.$set;
