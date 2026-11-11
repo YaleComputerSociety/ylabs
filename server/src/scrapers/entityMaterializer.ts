@@ -5,6 +5,12 @@
  * For person identities, materializes a canonical Researcher/Account (lookup by
  * entityKey, e.g. netid).
  */
+import {
+  planResearcherRefusedStoredValueClear,
+  researcherHasLiveRefusals,
+  researcherRefusesValue,
+  withoutResearcherRefusedObservations,
+} from '../utils/researcherFieldValueRefusals';
 import { isGrantLaneObservationOutsideEnrichment } from './grantLaneSourceNames';
 import {
   comparablePageStatedName,
@@ -7282,18 +7288,7 @@ export interface UserIdentityJoinResult {
  * calls it too, so a PI key that names a `user` key reaches the same researcher the user
  * materializer enriches rather than a narrower netid-then-name lookup (#4697).
  */
-export async function joinUserIdentityToExistingResearcher(
-  identifier: { entityId?: string; entityKey?: string },
-  obs: any[],
-  now: Date = new Date(),
-): Promise<UserIdentityJoinResult> {
-  const keyNamesAnOfficeMailbox = userKeyNamesRoleOrUnitMailbox(identifier.entityKey, obs);
-  const materializationObs = keyNamesAnOfficeMailbox
-    ? []
-    : withoutOverSharedPersonWebsiteObservations(
-        obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o)),
-        await overSharedPersonWebsiteKeysForMaterialization(),
-      );
+function deriveUserIdentityFields(materializationObs: any[], now: Date) {
   const resolverObs: ResolverObservation[] = materializationObs.map((o: any) => ({
     field: o.field,
     value: o.value,
@@ -7307,11 +7302,6 @@ export async function joinUserIdentityToExistingResearcher(
     const value = textValue(resolvedValue(field));
     return value && servedUserNameField(field, value);
   };
-
-  const netid = keyNamesAnOfficeMailbox
-    ? undefined
-    : (normalizedAccountNetid(uniqueKeyValueForIdentifier('user', identifier.entityKey, obs)) ??
-      normalizedAccountNetid(resolvedValue('netid')));
   // Normalized before the name resolver reads it, not just before it is stored: an
   // invisible format character inside a surname makes the person match nobody (#2874).
   const displayName = stripInvisibleFormatCharacters(
@@ -7329,7 +7319,38 @@ export async function joinUserIdentityToExistingResearcher(
     resolvedValue('profileUrls') && typeof resolvedValue('profileUrls') === 'object'
       ? (resolvedValue('profileUrls') as Record<string, unknown>)
       : undefined;
+  return {
+    resolved,
+    displayName,
+    title,
+    primaryDepartment,
+    imageUrl,
+    websiteUrl,
+    orcid,
+    profileUrls,
+  };
+}
 
+export async function joinUserIdentityToExistingResearcher(
+  identifier: { entityId?: string; entityKey?: string },
+  obs: any[],
+  now: Date = new Date(),
+): Promise<UserIdentityJoinResult> {
+  const keyNamesAnOfficeMailbox = userKeyNamesRoleOrUnitMailbox(identifier.entityKey, obs);
+  const materializationObs = keyNamesAnOfficeMailbox
+    ? []
+    : withoutOverSharedPersonWebsiteObservations(
+        obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o)),
+        await overSharedPersonWebsiteKeysForMaterialization(),
+      );
+  const derived = deriveUserIdentityFields(materializationObs, now);
+  const { resolved, displayName } = derived;
+  const resolvedValue = (field: string): unknown => resolved[field]?.value;
+
+  const netid = keyNamesAnOfficeMailbox
+    ? undefined
+    : (normalizedAccountNetid(uniqueKeyValueForIdentifier('user', identifier.entityKey, obs)) ??
+      normalizedAccountNetid(resolvedValue('netid')));
   const observedEmail = normalizedAccountEmail(resolvedValue('email'));
 
   let account: any = netid ? await Account.findOne({ netid }).lean() : null;
@@ -7378,7 +7399,11 @@ export async function joinUserIdentityToExistingResearcher(
    */
   let identityJoinedOnEmailAlone = false;
   if (!researcher && !account && observedEmail) {
-    const emailResearcher = await researcherTheObservedEmailNames(observedEmail, displayName);
+    const candidate = await researcherTheObservedEmailNames(observedEmail, displayName);
+    const emailResearcher =
+      candidate && !researcherRefusesValue(candidate.fieldValueRefusals, 'email', observedEmail)
+        ? candidate
+        : null;
     if (emailResearcher) {
       researcher = emailResearcher;
       const emailResearcherNetid = normalizedAccountNetid(emailResearcher.identifiers?.netid);
@@ -7420,16 +7445,18 @@ export async function joinUserIdentityToExistingResearcher(
       if (researcher) identityJoin = 'official-profile-page';
     }
   }
+  const refusals = researcher?.fieldValueRefusals;
+  const served = researcherHasLiveRefusals(refusals)
+    ? deriveUserIdentityFields(
+        withoutResearcherRefusedObservations(materializationObs, refusals),
+        now,
+      )
+    : derived;
   return {
-    resolved,
+    ...served,
+    resolved: served.resolved,
     netid,
     displayName,
-    title,
-    primaryDepartment,
-    imageUrl,
-    websiteUrl,
-    orcid,
-    profileUrls,
     account,
     researcher,
     identityJoin,
@@ -7658,6 +7685,18 @@ async function materializeUserIdentityToResearcher(
     researcher.profile.websiteUrl = undefined;
     fieldsWritten += 1;
   }
+  const refusedStoredValues = planResearcherRefusedStoredValueClear(researcher);
+  for (const path of refusedStoredValues.unset) {
+    researcher.set(path, undefined);
+    fieldsWritten += 1;
+  }
+  if (refusedStoredValues.profileLinkUrlsToPull.length > 0) {
+    const refusedUrls = new Set(refusedStoredValues.profileLinkUrlsToPull);
+    researcher.profileLinks = (researcher.profileLinks || []).filter(
+      (link: ResearcherProfileLink) => !refusedUrls.has(String(link.url)),
+    );
+    fieldsWritten += refusedUrls.size;
+  }
   const priorOrcid: string | undefined = researcher.identifiers?.orcid;
   const priorOrcidLinks: ResearcherProfileLink[] = (researcher.profileLinks || []).filter(
     (link: ResearcherProfileLink) => link.kind === 'ORCID',
@@ -7688,6 +7727,9 @@ async function materializeUserIdentityToResearcher(
   }
 
   const now = new Date();
+  const refusesProfileLink = (link: ResearcherProfileLink | undefined): boolean =>
+    Boolean(link) &&
+    researcherRefusesValue(researcher.fieldValueRefusals, 'profileLink', link?.url);
   const existingLinkKinds = new Set(
     (researcher.profileLinks || []).map((link: ResearcherProfileLink) => link.kind),
   );
@@ -7696,6 +7738,7 @@ async function materializeUserIdentityToResearcher(
     : undefined;
   const officialLink =
     composedOfficialLink &&
+    !refusesProfileLink(composedOfficialLink) &&
     !(await officialProfileLinkHeldByConflictingIdentity(composedOfficialLink.url, researcher))
       ? composedOfficialLink
       : undefined;
@@ -7715,13 +7758,17 @@ async function materializeUserIdentityToResearcher(
   const scholarUrl = profileUrls
     ? canonicalScholarCitationUrl(profileUrls.googleScholar)
     : undefined;
-  if (scholarUrl && !existingLinkKinds.has('GOOGLE_SCHOLAR')) {
-    researcher.profileLinks.push(scholarProfileLink(scholarUrl, now));
+  const scholarLink = scholarUrl ? scholarProfileLink(scholarUrl, now) : undefined;
+  if (scholarLink && !refusesProfileLink(scholarLink) && !existingLinkKinds.has('GOOGLE_SCHOLAR')) {
+    researcher.profileLinks.push(scholarLink);
     fieldsWritten += 1;
   }
   if (orcid) {
     const currentOrcidLink = orcidProfileLink(orcid, now);
-    if (priorOrcidLinks.every((link) => link.url !== currentOrcidLink.url)) {
+    if (
+      !refusesProfileLink(currentOrcidLink) &&
+      priorOrcidLinks.every((link) => link.url !== currentOrcidLink.url)
+    ) {
       researcher.profileLinks = [
         ...(researcher.profileLinks || []).filter(
           (link: ResearcherProfileLink) => link.kind !== 'ORCID',
@@ -7747,7 +7794,9 @@ async function materializeUserIdentityToResearcher(
       .map((link) => link.url);
     researcher.profileLinks = [
       ...links.filter((link) => link.kind !== 'ORCID'),
-      ...(identifierOrcid ? [orcidProfileLink(identifierOrcid.toUpperCase(), now)] : []),
+      ...(identifierOrcid ? [orcidProfileLink(identifierOrcid.toUpperCase(), now)] : []).filter(
+        (link) => !refusesProfileLink(link),
+      ),
     ];
     fieldsWritten += 1;
     conflicts += 1;

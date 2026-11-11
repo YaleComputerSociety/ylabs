@@ -41,6 +41,11 @@ import { type ResearchHomeWebsiteUrlRefusal } from './researchHomeWebsiteUrl';
  */
 export const perRowFieldValueRefusalRules = [
   'wrong_owner',
+  // A person value live evidence asserts for so many subjects that it is nobody's own
+  // (#5645), on a person record no resolve reaches (#5641).
+  'over_shared_value',
+  // A person value read from another person's page (#5606, #5641).
+  'other_persons_page',
   'not_this_rows_research',
   'superseded_by_better_source',
   'operator_judgement',
@@ -78,6 +83,19 @@ export const FIELD_VALUE_REFUSALS_PATH = 'fieldValueRefusals';
  * refusal that missed on a trailing space would read as a clean row.
  */
 const URL_VALUED_FIELDS: ReadonlySet<string> = new Set(['websiteUrl', 'website']);
+
+// The person-record URL fields (#5641) keep the query, because a query names the page there:
+// every Google Scholar profile is `scholar.google.com/citations?user=<id>`.
+const QUERY_IDENTIFIED_URL_FIELDS: ReadonlySet<string> = new Set(['profileLink', 'imageUrl']);
+
+function queryIdentifiedUrlKey(text: string): string {
+  const pageKey = foldDefaultDocumentLeaf(normalizeWebsiteUrlIdentityKey(text));
+  if (!pageKey) return text.toLowerCase();
+  const params = new URL(text).searchParams;
+  params.sort();
+  const query = params.toString();
+  return query ? `${pageKey}?${query}` : pageKey;
+}
 
 export { foldDefaultDocumentLeaf };
 
@@ -122,6 +140,7 @@ export function fieldValueRefusalKey(field: string, value: unknown): string {
   if (typeof value !== 'string') return JSON.stringify(value);
   const text = collapseRefusalWhitespace(value);
   if (!text) return '';
+  if (QUERY_IDENTIFIED_URL_FIELDS.has(field)) return queryIdentifiedUrlKey(text);
   if (!URL_VALUED_FIELDS.has(field)) return text.toLowerCase();
   return foldDefaultDocumentLeaf(normalizeWebsiteUrlIdentityKey(text) || text.toLowerCase());
 }

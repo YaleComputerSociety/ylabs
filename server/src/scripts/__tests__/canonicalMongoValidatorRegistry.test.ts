@@ -116,7 +116,9 @@ describe('canonical MongoDB validator registry', () => {
   });
 
   it('does not close schemas to migration-era fields or invent unrelated validators', () => {
-    expect(JSON.stringify(CANONICAL_MONGO_VALIDATORS)).not.toContain('additionalProperties');
+    expect(JSON.stringify(CANONICAL_MONGO_VALIDATORS)).not.toContain(
+      '"additionalProperties":false',
+    );
     expect(CANONICAL_MONGO_VALIDATOR_COLLECTIONS).not.toContain('sources');
     expect(CANONICAL_MONGO_VALIDATOR_COLLECTIONS).not.toContain('student_engagement_events');
     expect(CANONICAL_MONGO_VALIDATOR_COLLECTIONS).not.toContain('research_entity_relationships');
@@ -135,7 +137,12 @@ describe('canonical MongoDB validator registry', () => {
     // gate covers: no environment applies these validators (#752 declined), so a review
     // here approves what would be applied and asserts nothing about stored data (#3396).
     //
-    // Reviewed for #5592. The only drift is researchers gaining distinctFromResearcherIds, an
+    // Reviewed for #5641. The only drift is researchers gaining fieldValueRefusals, an optional
+    // map from a refusable field to refused values, the same record research rows carry, that
+    // researcher:refuse-field-value and the researcher fold write and the user materializer
+    // reads. Researchers without a refusal carry none. No other collection or property changed.
+    //
+    // Reviewed for #5592 before that. The only drift is researchers gaining distinctFromResearcherIds, an
     // optional array of researcher objectIds that the researchers:record-distinct-people
     // operator tool writes on both records of a pair judged to be different people, and that
     // every researcher fold arm refuses. Researchers without a recorded pair carry none. No
@@ -222,6 +229,6 @@ describe('canonical MongoDB validator registry', () => {
     expect(
       canonicalMongoValidatorFingerprint(CANONICAL_MONGO_VALIDATORS),
       'The declared canonical validator contracts changed. This gate governs the declaration in canonicalMongoValidatorRegistry.ts and nothing else: no environment applies these validators, so a green run is not evidence that any collection is validated, and a red run is not an outage. Describe the drift in the comment above, then update the expected fingerprint. Only `yarn --cwd server model-refactor:validators-assert --environment <env>` reads the database.',
-    ).toBe('c11d576858b2c0efb181b8f43d3914c9bec210870a3c754578c343a873bb8de0');
+    ).toBe('781b8369ecb523061519487b0f6a5a7550dc3fffc3b405f47772d6cb3b1fddb5');
   });
 });

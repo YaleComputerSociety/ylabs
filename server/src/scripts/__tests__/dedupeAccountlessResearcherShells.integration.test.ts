@@ -263,6 +263,60 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
     expect((shell!.identifiers as { orcid?: string } | undefined)?.orcid).toBeUndefined();
   });
 
+  it("copies the shell's refusals to the survivor and never gap-fills a refused value (#5641)", async () => {
+    const survivor = new mongoose.Types.ObjectId();
+    const refusingShell = new mongoose.Types.ObjectId();
+    const refusedSite = 'https://school.example.test/about/fixture-fund-story/';
+    const refusedDepartment = 'Department of Fixture Stories';
+    const refusal = (valueKey: string) => ({
+      valueKey,
+      rule: 'over_shared_value',
+      refusedBy: 'synthetic fixture',
+      refusedAt: new Date('2026-11-11T00:00:00Z'),
+      note: 'synthetic fixture',
+    });
+    const db = mongoose.connection.db!;
+    await db.collection('researchers').insertMany([
+      {
+        _id: survivor,
+        displayName: 'Ines Fixture',
+        archived: false,
+        identifiers: { email: 'directory.fixture9@example.test' },
+        profile: { primaryDepartment: refusedDepartment },
+      },
+      {
+        _id: refusingShell,
+        displayName: 'Ines Fixture',
+        archived: false,
+        profile: { websiteUrl: refusedSite, title: 'Fixture Professor' },
+        fieldValueRefusals: {
+          websiteUrl: [refusal('school.example.test/about/fixture-fund-story')],
+          title: [refusal('fixture professor')],
+          primaryDepartment: [refusal('department of fixture stories')],
+        },
+      },
+    ]);
+
+    await dedupeAccountlessResearcherShells({ apply: true });
+
+    const kept = await db.collection('researchers').findOne({ _id: survivor });
+    expect(kept!.profile?.websiteUrl).toBeUndefined();
+    expect(kept!.profile?.title).toBeUndefined();
+    expect(kept!.profile?.primaryDepartment).toBeUndefined();
+    expect(Object.keys(kept!.fieldValueRefusals ?? {}).sort()).toEqual([
+      'primaryDepartment',
+      'title',
+      'websiteUrl',
+    ]);
+    const shell = await db.collection('researchers').findOne({ _id: refusingShell });
+    expect(shell!.archived).toBe(true);
+    expect(Object.keys(shell!.fieldValueRefusals ?? {}).sort()).toEqual([
+      'primaryDepartment',
+      'title',
+      'websiteUrl',
+    ]);
+  });
+
   it('moves the shell ORCID link with its ORCID so neither row fails the schema (#4501)', async () => {
     const orcid = '9999-9999-9999-9994';
     const orcidLink = {
