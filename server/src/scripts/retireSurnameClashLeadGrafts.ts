@@ -198,7 +198,7 @@ async function loadClashEntities(
 
 /**
  * For each entity, the records that archived duplicates which ever led it were folded
- * into, read from `dedupedIntoResearcherId` on every lead edge, archived or live.
+ * into, read from `dedupedIntoResearcherId` on every lead edge this repair did not detach.
  */
 async function loadArchivedDuplicateLeadTargets(
   entityIds: readonly unknown[],
@@ -207,6 +207,7 @@ async function loadArchivedDuplicateLeadTargets(
     role: { $in: LEAD_ROLES },
     'target.kind': 'RESEARCH_ENTITY',
     'target.id': { $in: entityIds },
+    reviewNotes: { $ne: DETACH_NOTE },
   })
     .select('personId target')
     .lean()) as unknown as Array<Record<string, any>>;

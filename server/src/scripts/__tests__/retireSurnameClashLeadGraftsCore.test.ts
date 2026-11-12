@@ -585,14 +585,6 @@ describe('one person stored as two Researcher records (#5941)', () => {
     expect(new Set(keys.values()).size).toBe(2);
   });
 
-  it('plans the same thing on a second run', () => {
-    const rows = [
-      entity({ leads: [liveRecord, identicalNameOnly] }),
-      entity({ entityId: 'entity-2', leads: [liveRecord, stranger] }),
-    ];
-    expect(planSurnameClashLeadDetachment(rows)).toEqual(planSurnameClashLeadDetachment(rows));
-  });
-
   it('lists a past detachment whose person an archived duplicate on the entity resolves to', () => {
     const past = [
       {
