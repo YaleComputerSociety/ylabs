@@ -1228,6 +1228,13 @@ The materializer declines and clears a `website` in `isWithheldResearchWebsiteUr
 The user materializer ignores and clears a member website that `isInadmissiblePersonWebsiteUrl` refuses (a course page or a bare course listing, a posting or patient-care page, or a map or directions link), and the roster accessor and member serializers never serve one.
 The client refuses the same pages as the website button and the headline actions, pinned to the server by `contracts/inadmissibleWebsitePages.cases.json`.
 That data operation is `research-entity:rematerialize` over the rows storing a withheld `website`, then user materialization of every `user` key that joins a researcher storing a refused member website.
+A page that a live `CORE_FACILITY` row holds as its own website is never a person's website or a person row's source (#5788).
+A profile can list the facility a person staffs as their website, and on the person's row that page duplicated the facility row, which the duplicate check then held as `suppressed`.
+`coreFacilityWebsiteKeysForMaterialization` in `scrapers/coreFacilityWebsites.ts` reads the live facility websites, and on a person's own row (a person-scoped row other than a lab) the materializer drops such a `website`, `websiteUrl` or `sourceUrls` value from the observations before it resolves, refuses it through the `core-facility-page-cited-by-person` arm of the write gate and the withheld set, and drops a stored citation.
+The user materializer ignores such a member website and clears a stored one.
+The facility row keeps its own website, a lab or organization row is not screened, and the rule is re-derived from the facility rows on every resolve, so it needs no lock and lapses if the facility row is archived.
+The person's role at the facility is not modelled (owner decision 2026-11-12).
+The data operation is `research-entity:rematerialize` over the person rows that store or observe a facility page, a re-gate of each facility row those rows held as a duplicate, and user materialization of the `user` keys that join a researcher storing one.
 
 ### Fellowship field absence: how a program lane withdraws a value (#4230)
 

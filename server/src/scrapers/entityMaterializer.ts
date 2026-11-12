@@ -74,6 +74,13 @@ import {
   type ObservationExtractionSource,
 } from '../models/observation';
 import {
+  coreFacilityWebsiteKeysForMaterialization,
+  isCoreFacilityWebsite,
+  withoutCoreFacilityCitationsOnPersonRow,
+  withoutCoreFacilityPagesOnPersonRow,
+  withoutCoreFacilityPersonWebsiteObservations,
+} from './coreFacilityWebsites';
+import {
   isOverSharedPersonWebsite,
   overSharedPersonWebsiteKeysForMaterialization,
   withoutOverSharedPersonWebsiteObservations,
@@ -8322,9 +8329,12 @@ export async function joinUserIdentityToExistingResearcher(
     ? []
     : withoutDepartmentHeadingObservations(
         withDirectoryExportDepartmentsDecoded(
-          withoutOverSharedPersonWebsiteObservations(
-            obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o)),
-            await overSharedPersonWebsiteKeysForMaterialization(),
+          withoutCoreFacilityPersonWebsiteObservations(
+            withoutOverSharedPersonWebsiteObservations(
+              obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o)),
+              await overSharedPersonWebsiteKeysForMaterialization(),
+            ),
+            await coreFacilityWebsiteKeysForMaterialization(),
           ),
           await catalogDepartment(),
         ),
@@ -9402,9 +9412,11 @@ async function materializeUserIdentityToResearcher(
     fieldsWritten += 1;
   }
   const overSharedWebsiteKeys = await overSharedPersonWebsiteKeysForMaterialization();
+  const coreFacilityWebsiteKeys = await coreFacilityWebsiteKeysForMaterialization();
   const isScreenedOutPersonWebsite = (value: unknown): boolean =>
     isInadmissiblePersonWebsiteUrl(value) ||
-    isOverSharedPersonWebsite(value, overSharedWebsiteKeys);
+    isOverSharedPersonWebsite(value, overSharedWebsiteKeys) ||
+    isCoreFacilityWebsite(value, coreFacilityWebsiteKeys);
   const storedWebsiteSurvivingScreens =
     isScreenedOutPersonWebsite(researcher.profile.websiteUrl) ||
     researcherRefusesValue(
@@ -9789,6 +9801,8 @@ export interface ProjectFromLogInput {
   manualValues: Record<string, unknown>;
   entityDoc: any;
   materializationObs: any[];
+  /** Websites live `CORE_FACILITY` rows hold, which a person's row may not cite (#5788). */
+  coreFacilityWebsiteKeys?: ReadonlySet<string>;
   /** Every person page the row's own live observations cite (#5764). */
   observedPersonPageUrls?: readonly string[];
   resolverObs: ResolverObservation[];
@@ -11378,6 +11392,7 @@ export async function projectFromLog(
     entityDoc,
     materializationObs,
     observedPersonPageUrls = [],
+    coreFacilityWebsiteKeys = new Set<string>(),
     resolverObs,
     fullDescriptionShellGated,
     undergradEvidenceQuoteWithdrawnBy = new Set<string>(),
@@ -12211,6 +12226,7 @@ export async function projectFromLog(
         displayName: set.displayName ?? entityDoc?.displayName,
         entityType: set.entityType ?? entityDoc?.entityType,
         kind: set.kind ?? derivedKind ?? entityDoc?.kind,
+        coreFacilityWebsiteKeys,
       },
       lockedFields: manuallyLockedFields,
     });
@@ -12253,6 +12269,7 @@ export async function projectFromLog(
         displayName: set.displayName ?? entityDoc?.displayName,
         entityType: set.entityType ?? entityDoc?.entityType,
         kind: set.kind ?? derivedKind ?? entityDoc?.kind,
+        coreFacilityWebsiteKeys,
       };
       const resolvedWriteRefusal =
         typeof set.websiteUrl === 'string' && set.websiteUrl.trim()
@@ -12475,6 +12492,16 @@ export async function projectFromLog(
       );
       if (keptCitations.length !== citedThisPass.length) {
         set.sourceUrls = keptCitations;
+        fieldsWritten++;
+      }
+      const withoutFacilityPages = withoutCoreFacilityPagesOnPersonRow(keptCitations, {
+        entityType: set.entityType ?? entityDoc?.entityType,
+        kind: set.kind ?? derivedKind ?? entityDoc?.kind,
+        coreFacilityWebsiteKeys,
+      });
+      if (withoutFacilityPages.length !== keptCitations.length) {
+        console.log('[core-facility-citation] dropped a facility page from a person row');
+        set.sourceUrls = withoutFacilityPages;
         fieldsWritten++;
       }
     }
@@ -13643,6 +13670,9 @@ async function materializeEntityUnderRemovalGuard(
         laneScopedRowIdentities,
       )
     : { observations: obs, withdrawnValues: [] };
+  const coreFacilityWebsiteKeys = isResearchEntityObservationType(entityType)
+    ? await coreFacilityWebsiteKeysForMaterialization()
+    : new Set<string>();
   const fellowshipEvidence =
     entityType === 'fellowship'
       ? preferFundFacetObservations(
@@ -13657,8 +13687,12 @@ async function materializeEntityUnderRemovalGuard(
     withoutFellowshipFieldsAssertedAbsent(
       withoutWithdrawnUndergradEvidenceQuotes(
         withoutUnpairedProfileHomeIdentity(
-          fellowshipEvidence.filter(
-            (o: any) => !shouldIgnoreObservationForEntityMaterialization(entityType, o),
+          withoutCoreFacilityCitationsOnPersonRow(
+            fellowshipEvidence.filter(
+              (o: any) => !shouldIgnoreObservationForEntityMaterialization(entityType, o),
+            ),
+            { entityType: entityDoc?.entityType, kind: entityDoc?.kind },
+            coreFacilityWebsiteKeys,
           ),
           entityDoc?.fieldValueRefusals,
         ),
@@ -13963,6 +13997,7 @@ async function materializeEntityUnderRemovalGuard(
     manualValues,
     entityDoc,
     materializationObs,
+    coreFacilityWebsiteKeys,
     observedPersonPageUrls: everyCitedPersonPageUrl(obs),
     // Every re-rank walk in the projection reads these, so they are the refusal-screened
     // set the resolver itself read: a walk over the unscreened set can adopt a value this
