@@ -806,7 +806,10 @@ describe('planAccountlessClusterFolds', () => {
     );
     expect(grouped.foldTargetById.get('30'.padStart(24, '0'))).toBe('29'.padStart(24, '0'));
     const nobodyProbed = planAccountlessClusterFolds(
-      [member('31', { profileLinks: unprobed }), member('32', { profileLinks: unprobed })],
+      [
+        member('31', { profileLinks: unprobed }),
+        member('32', { profileLinks: unprobed, displayName: 'Robin Fixture' }),
+      ],
       [],
     );
     expect(nobodyProbed.groups).toBe(0);
