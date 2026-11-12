@@ -143,6 +143,7 @@ describe('dedupeAccountlessResearcherShells (DB-backed)', () => {
       AMBIGUOUS_MULTIPLE_CANONICAL: 1,
       ORCID_CONFLICT: 1,
       NETID_CONFLICT: 0,
+      EMAIL_CONFLICT: 0,
       NO_IDENTITY_WITNESS: 0,
       VARIANT_SHAPE_NOT_ALLOWED: 0,
       STATED_MIDDLE_INITIAL_CONFLICT: 0,

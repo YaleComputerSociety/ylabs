@@ -18,6 +18,7 @@ import {
   buildCanonicalNameIndex,
   buildCanonicalNetidIndex,
   buildVerifiedPrimaryProfileIndex,
+  buildYaleOfficialProfileIndex,
   decideShellMerge,
   type DirectoryEmailCandidate,
   emaillessLocalPartTwinAliases,
@@ -1020,6 +1021,7 @@ export async function dedupeAccountlessResearcherShells(options: {
   const canonicalNetidIndex = buildCanonicalNetidIndex(researcherIdentities);
 
   const verifiedProfileIndex = buildVerifiedPrimaryProfileIndex(researcherIdentities);
+  const sharedOfficialProfileIndex = buildYaleOfficialProfileIndex(researcherIdentities);
 
   const foldableShells = researcherIdentities.filter(
     (entry) => researcherIdentityTier(entry) !== 'DIRECTORY',
@@ -1035,6 +1037,7 @@ export async function dedupeAccountlessResearcherShells(options: {
     AMBIGUOUS_MULTIPLE_CANONICAL: 0,
     ORCID_CONFLICT: 0,
     NETID_CONFLICT: 0,
+    EMAIL_CONFLICT: 0,
     NO_IDENTITY_WITNESS: 0,
     VARIANT_SHAPE_NOT_ALLOWED: 0,
     STATED_MIDDLE_INITIAL_CONFLICT: 0,
@@ -1097,6 +1100,7 @@ export async function dedupeAccountlessResearcherShells(options: {
       officialPageHolders,
       listingSubjectStatements.subjectOrcidsByShellId.get(shell.id),
       orcidOnlyHolders,
+      sharedOfficialProfileIndex,
     );
     byReason[decision.reason] += 1;
     if (decision.merge && decision.canonicalId && decision.canonicalId !== shell.id) {
@@ -1171,7 +1175,11 @@ export async function dedupeAccountlessResearcherShells(options: {
   );
   for (const [shellId, survivorId] of clusterPlan.foldTargetById) {
     mergeTargetByShellId.set(shellId, survivorId);
-    matchedIdentityByShellId.delete(shellId);
+    if (clusterPlan.sharedOfficialProfileFoldIds.has(shellId)) {
+      matchedIdentityByShellId.set(shellId, 'shared-official-profile');
+    } else {
+      matchedIdentityByShellId.delete(shellId);
+    }
   }
   const finalRefusal = withoutDistinctPeopleFolds(mergeTargetByShellId, distinctPeoplePairs);
   for (const shellId of [...mergeTargetByShellId.keys()]) {
