@@ -32,7 +32,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 const OVERRIDE_PROJECTION =
   '_id slug name archived studentVisibilityTier studentVisibilityOverrideTier studentVisibilitySuppressionReason manuallyLockedFields';
 
-export async function runStudentVisibilityOverride(
+export function assertStudentVisibilityOverrideAllowed(
   args: StudentVisibilityOverrideArgs,
   env: NodeJS.ProcessEnv = process.env,
 ) {
@@ -45,6 +45,14 @@ export async function runStudentVisibilityOverride(
   });
   const refusal = studentVisibilityOverrideWriteRefusal({ apply: args.apply, environment, env });
   if (refusal) throw new Error(refusal);
+  return guard;
+}
+
+export async function runStudentVisibilityOverride(
+  args: StudentVisibilityOverrideArgs,
+  env: NodeJS.ProcessEnv = process.env,
+) {
+  const guard = assertStudentVisibilityOverrideAllowed(args, env);
 
   const filter = 'slug' in args.target ? { slug: args.target.slug } : { _id: args.target.id };
   const entity = (await ResearchEntity.findOne(filter).select(OVERRIDE_PROJECTION).lean()) as any;
@@ -116,8 +124,9 @@ export async function runStudentVisibilityOverride(
   };
 }
 
-async function main(): Promise<void> {
-  const args = parseStudentVisibilityOverrideArgs(process.argv.slice(2));
+export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
+  const args = parseStudentVisibilityOverrideArgs(argv);
+  assertStudentVisibilityOverrideAllowed(args);
   await initializeConnections();
   try {
     console.log(JSON.stringify(await runStudentVisibilityOverride(args), null, 2));
