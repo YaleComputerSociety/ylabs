@@ -4,14 +4,15 @@ import { withoutDepartmentHeadingObservations } from '../departmentHeadingObserv
 const HEADING = 'Other Departments & Organizations';
 
 describe('withoutDepartmentHeadingObservations (#5795)', () => {
-  it('drops a heading primary and the heading entry of a departments list', () => {
+  it('drops a heading primary and every departments entry from the heading on', () => {
     expect(
       withoutDepartmentHeadingObservations([
         { field: 'primaryDepartment', value: HEADING },
         { field: 'departments', value: [HEADING, 'Fixture Center'] },
         { field: 'departments', value: [HEADING] },
+        { field: 'departments', value: ['Fixture Surgery', HEADING, 'Fixture Pathology'] },
       ]),
-    ).toEqual([{ field: 'departments', value: ['Fixture Center'] }]);
+    ).toEqual([{ field: 'departments', value: ['Fixture Surgery'] }]);
   });
 
   it('leaves every other observation as it is', () => {

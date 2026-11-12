@@ -11,8 +11,8 @@ interface DepartmentObservation {
  * are not the primary appointment either: on a measured YSPH page the primary unit is listed
  * under Appointments, and the first unit after the heading is a secondary one. The lane stops
  * reading the heading at scrape; this resolve-time derivation keeps observations stored before
- * that from speaking: the heading leaves every `departments` list and a `primaryDepartment`
- * that is the heading states nothing. No field is written.
+ * that from speaking: a `departments` list keeps only the units before the heading, and a
+ * `primaryDepartment` that is the heading states nothing. No field is written.
  */
 export function withoutDepartmentHeadingObservations<T extends DepartmentObservation>(
   observations: T[],
@@ -20,7 +20,9 @@ export function withoutDepartmentHeadingObservations<T extends DepartmentObserva
   const screened: T[] = [];
   for (const observation of observations) {
     if (observation.field === 'departments' && Array.isArray(observation.value)) {
-      const kept = observation.value.filter((value) => !isDepartmentHeadingChrome(value));
+      const headingIndex = observation.value.findIndex(isDepartmentHeadingChrome);
+      const kept =
+        headingIndex === -1 ? observation.value : observation.value.slice(0, headingIndex);
       if (kept.length === 0) continue;
       screened.push(
         kept.length === observation.value.length ? observation : { ...observation, value: kept },

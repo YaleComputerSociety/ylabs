@@ -9297,6 +9297,10 @@ async function materializeUserIdentityToResearcher(
     )
       ? undefined
       : researcher.profile.websiteUrl;
+  if (isDepartmentHeadingChrome(researcher.profile.primaryDepartment)) {
+    researcher.profile.primaryDepartment = undefined;
+    fieldsWritten += 1;
+  }
   for (const [key, value, confidence] of [
     ['primaryDepartment', primaryDepartment, resolvedConfidence('primaryDepartment')],
     ['imageUrl', imageUrl, resolvedConfidence('imageUrl')],
@@ -9317,10 +9321,6 @@ async function materializeUserIdentityToResearcher(
       researcher.profile[key] = bounded;
       fieldsWritten += 1;
     }
-  }
-  if (!primaryDepartment && isDepartmentHeadingChrome(researcher.profile.primaryDepartment)) {
-    researcher.profile.primaryDepartment = undefined;
-    fieldsWritten += 1;
   }
   if (researcher.profile.title) {
     const storedTitle = servablePersonTitle(researcher.profile.title);

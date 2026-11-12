@@ -43,12 +43,12 @@ describe('a stored affiliation group heading never resolves as a department (#57
     resetOverSharedPersonWebsiteKeysCache();
   });
 
-  const seedHeadingKey = () => {
-    const at = (field: string, value: unknown) => ({
+  const seedHeadingKey = (directoryDepartment?: string) => {
+    const at = (field: string, value: unknown, sourceName = 'official-profile-pi-backfill') => ({
       entityType: 'user',
       entityKey: KEY,
       sourceId: new mongoose.Types.ObjectId(),
-      sourceName: 'official-profile-pi-backfill',
+      sourceName,
       sourceUrl: 'https://fixture-school.example.edu/profile/fixture-quillsby/',
       confidence: 1,
       observedAt: new Date('2026-05-26T00:00:00Z'),
@@ -62,6 +62,9 @@ describe('a stored affiliation group heading never resolves as a department (#57
       at('lname', 'Quillsby'),
       at('primaryDepartment', HEADING),
       at('departments', [HEADING, 'Fixture Center']),
+      ...(directoryDepartment
+        ? [at('primaryDepartment', directoryDepartment, 'yale-directory')]
+        : []),
     ]);
   };
 
@@ -98,6 +101,17 @@ describe('a stored affiliation group heading never resolves as a department (#57
     expect(await departmentOf(person._id)).toBeUndefined();
 
     expect((await resolve()).fieldsWritten).toBe(0);
+  });
+
+  it('fills a stored heading department from a fill-only directory value, and a second resolve writes nothing', async () => {
+    const person = await seedPerson({ primaryDepartment: HEADING });
+    await seedHeadingKey('Fixture Directory Studies');
+
+    await resolve();
+    expect(await departmentOf(person._id)).toBe('Fixture Directory Studies');
+
+    expect((await resolve()).fieldsWritten).toBe(0);
+    expect(await departmentOf(person._id)).toBe('Fixture Directory Studies');
   });
 
   it('never writes the heading over a stored department', async () => {
