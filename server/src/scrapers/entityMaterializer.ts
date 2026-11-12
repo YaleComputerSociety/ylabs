@@ -12024,11 +12024,15 @@ function rederiveFacultyResearchNameFromItsLead(input: {
     leadPersonName: lead,
   });
   if (!leadsName) return 0;
+  const operatorOwnsTheHeading = RESEARCH_ENTITY_IDENTITY_NAME_FIELDS.some(
+    (field) =>
+      input.manuallyLockedFields.includes(field) || textValue(input.manualValues?.[field]),
+  );
+  if (operatorOwnsTheHeading) return 0;
   const siteDeclaredNames = new Set(input.siteDeclaredOwnNames.map(comparableName));
   let fieldsWritten = 0;
   for (const field of RESEARCH_ENTITY_IDENTITY_NAME_FIELDS) {
-    if (input.manuallyLockedFields.includes(field) || field in unset) continue;
-    if (textValue(input.manualValues?.[field])) continue;
+    if (field in unset) continue;
     const served = textValue(set[field] ?? entityDoc?.[field]);
     if (!served || served === leadsName || siteDeclaredNames.has(comparableName(served))) continue;
     const head = served.replace(FACULTY_RESEARCH_NAME_SUFFIX, '');
