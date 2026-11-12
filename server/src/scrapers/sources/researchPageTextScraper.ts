@@ -19,7 +19,7 @@ import {
 } from '../utils/mapWithConcurrency';
 import { isLikelyOfficialPersonProfileUrl } from '../../services/leadProfileIdentity';
 import {
-  personNameTokensFromEntityTitle,
+  leadingPersonNameTokensFromEntityTitle,
   personPageLeafNameTokens,
   personProfileSourceMatchesEntity,
 } from '../utils/personProfileEntityMatch';
@@ -211,7 +211,7 @@ function foldedTokens(value: string): string[] {
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
     .split(/[^a-z]+/)
-    .filter((token) => token.length >= 3);
+    .filter((token) => token.length >= 2);
 }
 
 function urlPathKey(value: string): string | null {
@@ -245,7 +245,7 @@ function subjectNameTokens(requestedUrl: string, row: CandidateDescriptionLab): 
   return new Set(
     [
       ...(personPageLeafNameTokens(urlPathLeaf(requestedUrl)) ?? []),
-      ...(personNameTokensFromEntityTitle(row.name) ?? []),
+      ...(leadingPersonNameTokensFromEntityTitle(row.name) ?? []),
     ].flatMap(foldedTokens),
   );
 }

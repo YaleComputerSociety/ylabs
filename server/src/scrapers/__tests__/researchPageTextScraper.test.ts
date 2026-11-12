@@ -382,6 +382,45 @@ describe("ResearchPageTextScraper refuses a person profile that landed on someon
     expect(pageTextObservation(emitted)).toBeDefined();
   });
 
+  function laneLandingFor(row: CandidateDescriptionLab, finalUrl: string, html: string) {
+    const fetchPage = vi.fn(async (url: string) =>
+      url === row.websiteUrl ? { url: finalUrl, html } : null,
+    );
+    return new ResearchPageTextScraper({
+      fetchPage,
+      rowFinder: async () => [row],
+      storedHashLoader: async () => undefined,
+    });
+  }
+
+  it("keeps a two-letter surname's profile that redirected to that person's own lab home", async () => {
+    const profile = 'https://engineering.yale.edu/research-and-faculty/faculty-directory/wren-li';
+    const labHome = 'https://li-lab.example.org/';
+    const row = {
+      ...personRow,
+      slug: 'faculty-research-area-wren-li',
+      name: 'Wren Li Faculty Research',
+      websiteUrl: profile,
+      sourceUrls: [profile],
+    };
+    const labPage = `<html><head><title>Li Lab</title></head><body><h1>Li Lab</h1><p>The lab builds soft actuators for underwater robots. ${filler}</p></body></html>`;
+    const { ctx, emitted } = makeContext();
+    await laneLandingFor(row, labHome, labPage).run(ctx);
+    const value = pageTextObservation(emitted)?.value as Array<{ url: string; text: string }>;
+    expect(value.map((entry) => entry.url)).toEqual([labHome]);
+  });
+
+  it('refuses a department root whose heading shares only a connector or topic word with the row title', async () => {
+    const row = {
+      ...personRow,
+      name: 'Quince Lab for Stratified Flows at Yale',
+    };
+    const centerRoot = `<html><head><title>Center for Engineering Research | Yale</title></head><body><h1>Center for Engineering Research</h1><p>The center convenes faculty across stratified flows, materials and data. ${filler}</p></body></html>`;
+    const { ctx, emitted } = makeContext();
+    await laneLandingFor(row, DEPARTMENT_ROOT, centerRoot).run(ctx);
+    expect(pageTextObservation(emitted)).toBeUndefined();
+  });
+
   it('keeps a lab site that redirected to a page naming nobody, because no profile was requested', async () => {
     const LAB = 'https://quince-lab.yale.edu/';
     const fetchPage = vi.fn(async (url: string) =>
