@@ -5,6 +5,7 @@
  * still allowing stale leases to be taken over after their expiry.
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 
 const scrapeJobLockSchema = new mongoose.Schema(
   {

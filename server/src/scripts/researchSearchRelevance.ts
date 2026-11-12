@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
+import { assertLiveMissRerankOffForUnleasedScript } from './liveMissRerankScriptGuard';
 import { searchResearchGroupsViaMeili } from '../services/researchGroupService';
 import { getMeiliIndex, resolveIndexName } from '../utils/meiliClient';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -413,7 +414,7 @@ function printSummary(report: ResearchSearchRelevanceReport): void {
   console.log('');
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const options = parseResearchSearchRelevanceArgs(process.argv.slice(2));
   assertResearchSearchRelevanceTarget({
     mongoUrl: process.env.MONGODBURL,
@@ -421,6 +422,7 @@ async function main(): Promise<void> {
   });
 
   await initializeConnections();
+  assertLiveMissRerankOffForUnleasedScript('research-search:relevance');
   await warmResearchSearchSpellingVocabulary();
   const databaseName = mongoose.connection.db?.databaseName || mongoose.connection.name || '';
   const index = await getMeiliIndex('researchentities');

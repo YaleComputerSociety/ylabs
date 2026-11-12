@@ -10,6 +10,7 @@
  * student queries with research rows, so they are never committed to the repository.
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 
 export const SEARCH_RERANK_CACHE_COLLECTION = 'search_rerank_cache';
 const SEARCH_RERANK_CACHE_COLLECTION_PATTERN = /^search_rerank_cache(?:_[a-z0-9]+)*$/;

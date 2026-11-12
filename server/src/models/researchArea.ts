@@ -2,6 +2,7 @@
  * Mongoose schema and model for research areas with field-based color mapping.
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 
 export enum ResearchField {
   COMPUTING_AI = 'Computing & Artificial Intelligence',

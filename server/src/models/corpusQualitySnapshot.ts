@@ -12,6 +12,7 @@
  * the promotion copy set, or every promotion would erase the history.
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 
 const ratioSchema = new mongoose.Schema(
   {

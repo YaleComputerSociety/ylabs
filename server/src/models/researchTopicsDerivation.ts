@@ -12,6 +12,7 @@
  * paid call, and a Development refresh must not clear it.
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 
 export const RESEARCH_TOPICS_DERIVATION_COLLECTION = 'research_topics_derivations';
 

@@ -5,6 +5,7 @@
  * The ConfidenceResolver aggregates Observations into a resolved value per (entity, field).
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 
 /**
  * The SUBJECT an observation is about. Disjoint from the product `entityType`

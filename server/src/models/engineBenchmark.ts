@@ -15,6 +15,7 @@
  * benchmark the target captured.
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 
 export const ENGINE_BENCHMARK_COLLECTION = 'engine_benchmarks';
 export const ENGINE_BENCHMARK_ROW_COLLECTION = 'engine_benchmark_rows';

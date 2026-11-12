@@ -2,6 +2,7 @@
  * Mongoose schema and model for fellowship/funding opportunity records.
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 import { registerHoldOverrideReasonGuard } from './holdOverrideReasonGuard';
 import { studentVisibilityFields } from './studentVisibility';
 import { sourceLinkHealthStatuses } from './storedVocabularies';

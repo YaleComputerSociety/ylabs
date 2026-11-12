@@ -5,6 +5,7 @@
  * tracks counts and errors, and supports rollback ("invalidate this run's observations").
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 import { scrapeRunInterruptionReasons, scrapeRunStatuses } from './storedVocabularies';
 
 const scrapeRunSchema = new mongoose.Schema(

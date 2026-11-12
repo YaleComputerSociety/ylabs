@@ -14,6 +14,7 @@ import { appendObservations, getSourceByName } from './observationStore';
 import { directoryRemovalObservationRun } from './directoryRemovalObservationGuard';
 import { currentProcessCodeSha } from './scrapeRunCodeIdentity';
 import { describeScrapeRunLaunch } from '../db/devWriteLease';
+import { declareDevDryLaneRun } from '../db/devWriteGuard';
 import type { ReturnedScrapeRunStatus } from './sourceCrawlStamp';
 import { currentScrapeRunOwner, startScrapeRunHeartbeat } from './scrapeRunLiveness';
 import { reapDeadScrapeRuns } from './staleScrapeRunReaper';
@@ -114,6 +115,7 @@ export class ScraperOrchestrator {
       throw new Error(`No Source row found with name "${name}". Run "yarn seed:sources" first.`);
     }
 
+    if (options.dryRun) declareDevDryLaneRun();
     await reapDeadScrapeRuns({
       detectedBy: 'orchestrator-run-start',
       callerLockOwnerId: ownership.lockOwnerId,

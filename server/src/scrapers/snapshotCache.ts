@@ -4,6 +4,7 @@
  * Used by scrapers when --use-cache is passed. Idempotent reruns won't re-hit external APIs
  * during dev. Production runs (--release) bypass the cache by default.
  */
+import { DevWriteRefusedError } from '../db/devWriteGuard';
 import { ScrapeSnapshot } from '../models/scrapeSnapshot';
 import { escapeRegex } from '../utils/regex';
 import {
@@ -23,8 +24,9 @@ export async function getCached<T = unknown>(
   if (benchmark.handled) return benchmark.payload as T | null;
   const row = await ScrapeSnapshot.findOne({ sourceName, requestKey }).lean();
   if (!row) return null;
+  // An expired row is a miss and is left for the expiresAt TTL index to remove, because an
+  // unleased lane run may only insert into this collection (#5871).
   if ((row as any).expiresAt && new Date((row as any).expiresAt).getTime() < Date.now()) {
-    await ScrapeSnapshot.deleteOne({ _id: (row as any)._id });
     return null;
   }
   return (row as any).payload as T;
@@ -49,11 +51,37 @@ export async function setCached<T = unknown>(
   ttlMs: number = DEFAULT_TTL_MS,
 ): Promise<void> {
   if (benchmarkCacheWrite(sourceName, requestKey, payload)) return;
-  const expiresAt = new Date(Date.now() + ttlMs);
-  await ScrapeSnapshot.updateOne(
-    { sourceName, requestKey },
-    { $set: { sourceName, requestKey, payload, fetchedAt: new Date(), expiresAt } },
-    { upsert: true },
+  const entry = {
+    sourceName,
+    requestKey,
+    payload,
+    fetchedAt: new Date(),
+    expiresAt: new Date(Date.now() + ttlMs),
+  };
+  if (!(await ScrapeSnapshot.exists({ sourceName, requestKey }))) {
+    try {
+      await ScrapeSnapshot.create(entry);
+      return;
+    } catch (error) {
+      if ((error as { code?: number })?.code !== DUPLICATE_KEY) throw error;
+    }
+  }
+  try {
+    await ScrapeSnapshot.updateOne({ sourceName, requestKey }, { $set: entry });
+  } catch (error) {
+    if (!(error instanceof DevWriteRefusedError)) throw error;
+    warnRefreshRefusedOnce(sourceName);
+  }
+}
+
+const DUPLICATE_KEY = 11000;
+let refreshRefusedWarned = false;
+
+function warnRefreshRefusedOnce(sourceName: string) {
+  if (refreshRefusedWarned) return;
+  refreshRefusedWarned = true;
+  console.warn(
+    `[snapshot-cache] ${sourceName}: an existing cache entry was kept, because a run without the Development apply lease may only insert fetch cache rows (#5871).`,
   );
 }
 
