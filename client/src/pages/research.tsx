@@ -1647,6 +1647,7 @@ const Research = () => {
   const reservesProgramsHandoffSlot =
     programsHandoffApplies && searchLoading && activeClusters.length === 0;
   const showsProgramsHandoffSlot = showsProgramsHandoff || reservesProgramsHandoffSlot;
+  const appliedSchoolFilter = activeSearchRequest?.filters.school?.[0];
   const defaultClusters = useMemo(
     () => clustersForEntities(defaultResearchEntities),
     [clustersForEntities, defaultResearchEntities],
@@ -2425,6 +2426,7 @@ const Research = () => {
                               onSelect={exploreHome}
                               variant="compact"
                               openSource="search"
+                              filteredSchool={appliedSchoolFilter}
                             />
                           ))}
                         </div>
@@ -2484,6 +2486,7 @@ const Research = () => {
                       clusters={moreTopicClusters}
                       accessFilter={moreTopicResults.accessFilter}
                       onSelect={exploreHome}
+                      filteredSchool={appliedSchoolFilter}
                     />
                   </div>
                 )}
