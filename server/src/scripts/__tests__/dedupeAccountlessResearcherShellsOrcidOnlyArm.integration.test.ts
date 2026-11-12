@@ -13,8 +13,8 @@ const db = () => mongoose.connection.db!;
 const PROFILE_URL = 'https://medicine.yale.edu/fixturecenter/profile/avery-synth/';
 const ROW_SLUG = 'fixture-center';
 const LISTING_KEY = 'centers:fixture-center:avery-synth';
-const SUBJECT_ORCID = '0000-0002-1825-0097';
-const OTHER_ORCID = '0000-0001-5109-3700';
+const SUBJECT_ORCID = '9999-9000-9999-9005';
+const OTHER_ORCID = '9999-9000-9999-0019';
 
 const orcidLink = (orcid: string) => `<a href="https://orcid.org/${orcid}/">ORCID</a>`;
 const profilePage = (subject: string, outside = '') =>

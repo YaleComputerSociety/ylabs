@@ -244,7 +244,7 @@ describe('extractProfile', () => {
     const several = extractProfile(
       profileHtml({
         fullName: 'Jordan Rivers',
-        orcids: ['0000-0002-1825-0097', '0000-0001-5109-3700'],
+        orcids: ['9999-9000-9999-9005', '9999-9000-9999-0019'],
       }),
       RIVERS,
     );
@@ -252,11 +252,11 @@ describe('extractProfile', () => {
     const repeated = extractProfile(
       profileHtml({
         fullName: 'Jordan Rivers',
-        orcids: ['0000-0002-1825-0097', '0000-0002-1825-0097'],
+        orcids: ['9999-9000-9999-9005', '9999-9000-9999-9005'],
       }),
       RIVERS,
     );
-    expect(repeated?.orcid).toBe('0000-0002-1825-0097');
+    expect(repeated?.orcid).toBe('9999-9000-9999-9005');
   });
 
   it('drops MeSH geographic descriptors, which tag a study site rather than a topic', () => {

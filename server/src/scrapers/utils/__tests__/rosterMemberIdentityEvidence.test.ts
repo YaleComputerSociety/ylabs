@@ -412,8 +412,8 @@ describe('extractRosterMemberIdentityEvidence ignores a lone co-author card (#56
 });
 
 describe('subject-scoped ORCID (#5932)', () => {
-  const SUBJECT_ORCID = '0000-0002-1825-0097';
-  const OTHER_ORCID = '0000-0001-5109-3700';
+  const SUBJECT_ORCID = '9999-9000-9999-9005';
+  const OTHER_ORCID = '9999-9000-9999-0019';
   const profile = (subjectSection: string, elsewhere = '') =>
     page(
       '',
@@ -545,11 +545,11 @@ describe('ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION (#5677)', () => {
         email: 'avery.synthetic@yale.edu',
         identifier: [
           { propertyID: 'NetID', value: 'AS123' },
-          { propertyID: 'ORCID', value: '0000-0002-1694-233X' },
+          { propertyID: 'ORCID', value: '9999-9000-9999-006X' },
         ],
       })}</script></head><body><main>
         <h1>Avery Synthetic</h1>
-        <a href="https://orcid.org/0000-0002-1694-233X">ORCID</a>
+        <a href="https://orcid.org/9999-9000-9999-006X">ORCID</a>
         <a href="https://law.yale.edu/avery-synthetic">Profile</a>
         <a href="https://divinity.yale.edu/faculty-and-research/yds-faculty/avery-synthetic">Avery Synthetic</a>
         <a href="mailto:center.contact@yale.edu">Office</a>
@@ -577,7 +577,7 @@ describe('ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION (#5677)', () => {
         ],
         emails: ['avery.synthetic@yale.edu'],
         netids: ['as123'],
-        orcid: '0000-0002-1694-233X',
+        orcid: '9999-9000-9999-006X',
       },
       {
         pageUrl: PAGE,

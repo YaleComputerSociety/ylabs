@@ -8,8 +8,8 @@ vi.mock('../../utils/ssrfGuard', async (importOriginal) => ({
 import { profileEnrichmentFromHtml } from '../sources/departmentRosterScraper';
 
 const PROFILE_URL = 'https://publichealth.yale.edu/profile/ada-fixture/';
-const SUBJECT_ORCID = '0000-0002-1825-0097';
-const OTHER_ORCID = '0000-0001-5109-3700';
+const SUBJECT_ORCID = '9999-9000-9999-9005';
+const OTHER_ORCID = '9999-9000-9999-0019';
 
 const profilePage = (subject: string, outside = ''): string => `
   <html><head><title>Ada Fixture | Yale School of Public Health</title><link rel="canonical" href="${PROFILE_URL}"></head><body>
