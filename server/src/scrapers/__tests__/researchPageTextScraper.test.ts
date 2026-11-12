@@ -421,6 +421,16 @@ describe("ResearchPageTextScraper refuses a person profile that landed on someon
     expect(pageTextObservation(emitted)).toBeUndefined();
   });
 
+  it('refuses a department root whose news heading names another person sharing only the given name', async () => {
+    const newsCardRoot = departmentPage.replace(
+      '</h1>',
+      '</h1><h2>Marlow Brightwater wins teaching award</h2>',
+    );
+    const { ctx, emitted } = makeContext();
+    await laneLanding(DEPARTMENT_ROOT, newsCardRoot).run(ctx);
+    expect(pageTextObservation(emitted)).toBeUndefined();
+  });
+
   it('keeps a lab site that redirected to a page naming nobody, because no profile was requested', async () => {
     const LAB = 'https://quince-lab.yale.edu/';
     const fetchPage = vi.fn(async (url: string) =>

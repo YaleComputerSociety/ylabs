@@ -241,13 +241,13 @@ function urlPathLeaf(value: string): string {
   }
 }
 
-function subjectNameTokens(requestedUrl: string, row: CandidateDescriptionLab): Set<string> {
-  return new Set(
-    [
-      ...(personPageLeafNameTokens(urlPathLeaf(requestedUrl)) ?? []),
-      ...(leadingPersonNameTokensFromEntityTitle(row.name) ?? []),
-    ].flatMap(foldedTokens),
-  );
+function subjectSurnameTokens(requestedUrl: string, row: CandidateDescriptionLab): Set<string> {
+  const nameTokens =
+    personPageLeafNameTokens(urlPathLeaf(requestedUrl)) ??
+    leadingPersonNameTokensFromEntityTitle(row.name) ??
+    [];
+  const surname = nameTokens[nameTokens.length - 1];
+  return new Set(surname ? foldedTokens(surname) : []);
 }
 
 /**
@@ -269,7 +269,7 @@ export function capturedPageLeftTheRequestedPersonProfile(
   );
   const landing = landedUrls.find((url) => !isLikelyOfficialPersonProfileUrl(url));
   if (!landing) return false;
-  const subject = subjectNameTokens(requestedUrl, row);
+  const subject = subjectSurnameTokens(requestedUrl, row);
   if (subject.size === 0) return true;
   const headingText = $(HEADING_SELECTORS)
     .map((_, element) => $(element).attr('content') ?? $(element).text())
