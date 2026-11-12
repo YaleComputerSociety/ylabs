@@ -12,6 +12,7 @@ import {
 } from './devWriteLease';
 import { assertDevelopmentWritesGuarded } from './devWriteGuard';
 import { watchMongoClientProgress } from './devWriteProgress';
+import { enableScriptDiagnosticReportOnSignal } from './scriptDiagnosticReport';
 
 // `bufferTimeoutMS` is a Mongoose connection option the driver's own type does not
 // declare, so the shape is spelled out here rather than inferred.
@@ -66,10 +67,9 @@ export const mongoOptions: MongoConnectOptions = {
 };
 
 export const SCRIPT_SOCKET_TIMEOUT_MS = 10 * 60_000;
-// A pool as small as the materializer's own concurrency starved itself: rows that hold a
-// connection while awaiting a nested query left every other read queued forever (#5880). The
-// pool keeps head-room above MAX_MATERIALIZATION_CONCURRENCY, and a checkout that cannot get a
-// connection within the wait budget fails loudly instead of hanging.
+// A mitigation, not a measured cause (#5945): an in-memory reproduction never needed more than
+// 3 connections and recovered from every flap at a pool of 10. The head-room and the bounded
+// checkout make a checkout that cannot be served fail loudly instead of waiting forever.
 export const SCRIPT_MAX_POOL_SIZE = 40;
 export const SCRIPT_POOL_WAIT_TIMEOUT_MS = 2 * 60_000;
 // The documented override for the few scripts whose single operation is a whole-
@@ -114,6 +114,7 @@ export async function connectScriptMongo(
   url: string,
   extra?: ScriptMongoConnectOptions,
 ): Promise<typeof mongoose> {
+  enableScriptDiagnosticReportOnSignal();
   const connected = await mongoose.connect(url, scriptMongoConnectOptions(extra));
   watchMongoClientProgress(connected.connection.getClient());
   await installDevelopmentWriteGuards(connected.connection);
@@ -124,6 +125,7 @@ export async function createScriptMongoConnection(
   url: string,
   extra?: ScriptMongoConnectOptions,
 ): Promise<mongoose.Connection> {
+  enableScriptDiagnosticReportOnSignal();
   const connection = await mongoose
     .createConnection(url, scriptMongoConnectOptions(extra))
     .asPromise();
@@ -542,6 +544,7 @@ export async function initializeConnections(
     throw new Error('MONGODBURL is required');
   }
   activeConnectOptions = connectOptions;
+  if (connectOptions !== mongoOptions) enableScriptDiagnosticReportOnSignal();
   await mongoose.connect(url, connectOptions);
   watchMongoClientProgress(mongoose.connection.getClient());
   await installDevelopmentWriteGuards(mongoose.connection);

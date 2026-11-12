@@ -147,6 +147,33 @@ describe('connecting and reconnecting', () => {
     );
   });
 
+  describe('the stall diagnostic report (#5945)', () => {
+    const signalListenersBefore = process.listeners('SIGUSR2');
+
+    const resetSignalListeners = () => {
+      process.removeAllListeners('SIGUSR2');
+      for (const listener of signalListenersBefore) process.on('SIGUSR2', listener);
+    };
+
+    afterEach(resetSignalListeners);
+
+    it('is armed on SIGUSR2 for an entry point that connects on the script budget', async () => {
+      process.removeAllListeners('SIGUSR2');
+
+      await connectBudgets(() => initializeConnections());
+
+      expect(process.listenerCount('SIGUSR2')).toBe(1);
+    });
+
+    it('is left alone for the serving process, which keeps the default SIGUSR2 behaviour', async () => {
+      process.removeAllListeners('SIGUSR2');
+
+      await connectBudgets(() => initializeConnections(mongoOptions));
+
+      expect(process.listenerCount('SIGUSR2')).toBe(0);
+    });
+  });
+
   it('keeps the serving process on the serving budget across a reconnect', async () => {
     const [initial, reconnect] = await connectBudgets(() => initializeConnections(mongoOptions));
 
