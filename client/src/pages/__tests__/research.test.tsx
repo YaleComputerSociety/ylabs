@@ -929,6 +929,82 @@ describe('Research page', () => {
     expect(screen.getByRole('button', { name: 'Remove Type: Core facility' })).toBeTruthy();
   });
 
+  it('round-trips the Creative practice type through the URL (#5141)', async () => {
+    mockSearchResponses((url) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse([researchEntity], {
+        facetDistribution: {
+          entityType: { FACULTY_RESEARCH_AREA: 2133, CREATIVE_PRACTICE: 16 },
+        },
+      });
+    });
+
+    const { unmount } = render(
+      <MemoryRouter initialEntries={['/research?q=violin']}>
+        <ConfigContext.Provider
+          value={{ ...defaultConfigContext, isLoading: false, isLoaded: true, departments }}
+        >
+          <LocationDisplay />
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    fireEvent.change(screen.getByLabelText('Filter by type'), {
+      target: { value: 'CREATIVE_PRACTICE' },
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId('location').textContent).toBe(
+        '/research?q=violin&type=CREATIVE_PRACTICE',
+      ),
+    );
+    unmount();
+
+    render(
+      <MemoryRouter initialEntries={['/research?q=violin&type=CREATIVE_PRACTICE']}>
+        <ConfigContext.Provider
+          value={{ ...defaultConfigContext, isLoading: false, isLoaded: true, departments }}
+        >
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    await waitFor(() =>
+      expect(
+        mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search').at(-1)?.[1],
+      ).toEqual(expect.objectContaining({ filters: { entityType: ['CREATIVE_PRACTICE'] } })),
+    );
+    expect(screen.getByRole('button', { name: 'Remove Type: Creative practice' })).toBeTruthy();
+  });
+
+  it('drops a Creative practice type the server could not apply from the URL and the chips', async () => {
+    mockSearchResponses((url) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse([researchEntity], { appliedFilters: { entityType: [] } });
+    });
+
+    render(
+      <MemoryRouter initialEntries={['/research?q=violin&type=CREATIVE_PRACTICE']}>
+        <ConfigContext.Provider
+          value={{ ...defaultConfigContext, isLoading: false, isLoaded: true, departments }}
+        >
+          <LocationDisplay />
+          <Research />
+        </ConfigContext.Provider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByRole('heading', { name: 'AI Safety Lab' });
+    await waitFor(() =>
+      expect(screen.getByTestId('location').textContent).toBe('/research?q=violin'),
+    );
+    expect(screen.queryByRole('button', { name: /Remove Type/ })).toBeNull();
+  });
+
   // A retired type (#2219) is the same confidently-labelled empty result set as a
   // typo: nothing mints it, so a chip asserting it would sit over zero rows.
   it('ignores a type deep link naming a retired entityType', async () => {

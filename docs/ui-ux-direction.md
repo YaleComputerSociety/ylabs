@@ -56,7 +56,7 @@ Primary UX ingredients:
 Research filter behavior:
 
 - Type, school, and department selections are URL-backed (`type`, `school`, `department`) so reload, sharing, and browser navigation preserve them.
-  The type axis accepts only the canonical `researchEntityTypes` enum, so a typo or retired value is ignored rather than rendered as a confidently labelled empty result set; see `docs/decisions.md` 2026-09-22 (#2195).
+  The type axis accepts only the canonical `researchEntityTypes` enum plus Creative practice (#5141), so a typo or retired value is ignored rather than rendered as a confidently labelled empty result set; see `docs/decisions.md` 2026-09-22 (#2195).
 - Active selections appear as individually removable chips, with a clear-all action and an active count on the Filters control.
 - The control opens as a non-modal desktop disclosure and an accessible, focus-contained mobile sheet.
 - Type, school, and department facet choices come from positive counts for the current query, while an active value remains available even if a later distribution omits it.

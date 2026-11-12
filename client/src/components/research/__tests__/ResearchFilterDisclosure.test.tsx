@@ -533,6 +533,47 @@ describe('ResearchFilterDisclosure', () => {
     ]);
   });
 
+  it('offers Creative practice beside Faculty research with the count it returns (#5141)', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    const { props } = renderFilters({
+      facetDistribution: {
+        entityType: { FACULTY_RESEARCH_AREA: 2133, CREATIVE_PRACTICE: 16, LAB: 1322 },
+      },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    const typeSelect = screen.getByLabelText('Filter by type') as HTMLSelectElement;
+    expect(Array.from(typeSelect.options).map((option) => option.textContent)).toEqual([
+      'All types',
+      'Creative practice (16)',
+      'Faculty research (2133)',
+      'Lab (1322)',
+    ]);
+
+    fireEvent.change(typeSelect, { target: { value: 'CREATIVE_PRACTICE' } });
+    expect(props.onEntityTypeChange).toHaveBeenCalledWith('CREATIVE_PRACTICE');
+  });
+
+  it('hides Creative practice when no result would match it, as it hides every empty type', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    renderFilters({
+      facetDistribution: { entityType: { FACULTY_RESEARCH_AREA: 40, CREATIVE_PRACTICE: 0 } },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    const typeSelect = screen.getByLabelText('Filter by type') as HTMLSelectElement;
+    expect(Array.from(typeSelect.options).map((option) => option.value)).toEqual([
+      '',
+      'FACULTY_RESEARCH_AREA',
+    ]);
+  });
+
+  it('names a selected Creative practice filter on its chip', () => {
+    renderFilters({ facetDistribution: {}, selectedEntityType: 'CREATIVE_PRACTICE' });
+
+    expect(screen.getByRole('button', { name: 'Remove Type: Creative practice' })).toBeTruthy();
+  });
+
   it('keeps a selected entityType clearable through a labelled chip when its facet is gone', () => {
     const { props } = renderFilters({
       facetDistribution: {},

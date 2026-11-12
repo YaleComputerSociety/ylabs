@@ -991,7 +991,7 @@ describe('researchEntitySearchIndexService', () => {
     );
   });
 
-  it('rebuilds the index in pages and applies settings before documents', async () => {
+  it('rebuilds the index in pages and applies settings once the documents are written', async () => {
     const calls: Array<{ kind: string; payload?: unknown }> = [];
     const fakeIndex = {
       updateSettings: async (settings: unknown) => {
@@ -1028,8 +1028,8 @@ describe('researchEntitySearchIndexService', () => {
       clearedExisting: false,
     });
     expect(result.swap).toBeUndefined();
-    expect(calls.map((call) => call.kind)).toEqual(['settings', 'documents']);
-    expect(calls[1].payload).toMatchObject({
+    expect(calls.map((call) => call.kind)).toEqual(['documents', 'settings']);
+    expect(calls[0].payload).toMatchObject({
       options: { primaryKey: RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY },
     });
   });
@@ -1082,7 +1082,7 @@ describe('researchEntitySearchIndexService', () => {
         getIndex: async () => fakeIndex as any,
         fetchPage,
         fetchMemberNames: async () => new Map(),
-        fetchEmeritusWayIn: async () => new Map(),
+        fetchServedLeads: async () => new Map(),
       });
 
     const prev = process.env.OPENAI_API_KEY;
@@ -1124,7 +1124,7 @@ describe('researchEntitySearchIndexService', () => {
         fetchPage: async (page: number) =>
           page === 1 ? [{ _id: 'e1', name: 'Sample Lab', archived: false }] : [],
         fetchMemberNames: async () => new Map(),
-        fetchEmeritusWayIn: async () => new Map(),
+        fetchServedLeads: async () => new Map(),
       });
     const prev = process.env.OPENAI_API_KEY;
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -1185,7 +1185,7 @@ describe('researchEntitySearchIndexService', () => {
           fetchPage: async (page: number) =>
             page === 1 ? [{ _id: 'e1', name: 'Sample Lab', archived: false }] : [],
           fetchMemberNames: async () => new Map(),
-          fetchEmeritusWayIn: async () => new Map(),
+          fetchServedLeads: async () => new Map(),
         });
         expect(result.indexedDocumentCount).toBe(1);
       }
@@ -1223,7 +1223,7 @@ describe('researchEntitySearchIndexService', () => {
           getIndex: async () => fakeIndex as any,
           fetchPage: async () => [],
           fetchMemberNames: async () => new Map(),
-          fetchEmeritusWayIn: async () => new Map(),
+          fetchServedLeads: async () => new Map(),
         }),
       ).rejects.toThrow(/resetEmbedders task 2 did not succeed.*index_not_found/s);
     } finally {
@@ -1256,7 +1256,7 @@ describe('researchEntitySearchIndexService', () => {
         getIndex: async () => fakeIndex as any,
         fetchPage: async () => [],
         fetchMemberNames: async () => new Map(),
-        fetchEmeritusWayIn: async () => new Map(),
+        fetchServedLeads: async () => new Map(),
       }),
     ).rejects.toThrow(/updateEmbedders task 2 did not succeed.*invalid_document_fields/s);
 
@@ -1297,9 +1297,9 @@ describe('researchEntitySearchIndexService', () => {
         getIndex: async () => fakeIndex as any,
         fetchPage: async () => [],
         fetchMemberNames: async () => new Map(),
-        fetchEmeritusWayIn: async () => new Map(),
+        fetchServedLeads: async () => new Map(),
       }),
-    ).rejects.toThrow(/updateSettings task 1 cannot be confirmed/);
+    ).rejects.toThrow(/updateEmbedders task 2 cannot be confirmed/);
 
     if (prev !== undefined) process.env.OPENAI_API_KEY = prev;
     else delete process.env.OPENAI_API_KEY;
@@ -1335,7 +1335,7 @@ describe('researchEntitySearchIndexService', () => {
               },
             ]
           : [],
-      fetchEmeritusWayIn: async () => new Map(),
+      fetchServedLeads: async () => new Map(),
       fetchMemberNames: async (entities: any[]) => {
         expect(entities.map((entity) => entity._id)).toEqual([entityId]);
         return new Map([
@@ -1383,7 +1383,7 @@ describe('researchEntitySearchIndexService', () => {
       fetchPage: async (page: number) =>
         page === 1 ? [{ _id: 'e1', name: 'Sample Lab', archived: false }] : [],
       fetchMemberNames: async () => new Map(),
-      fetchEmeritusWayIn: async () => new Map(),
+      fetchServedLeads: async () => new Map(),
     }).then(
       (result) => ({ threw: false, indexed: result.indexedDocumentCount, message: '' }),
       (error: Error) => ({ threw: true, indexed: 0, message: error.message }),
@@ -1415,12 +1415,12 @@ describe('researchEntitySearchIndexService', () => {
       fetchPage: async (page: number) =>
         page === 1 ? [{ _id: 'e1', name: 'Sample Lab', archived: false }] : [],
       fetchMemberNames: async () => new Map(),
-      fetchEmeritusWayIn: async () => new Map(),
+      fetchServedLeads: async () => new Map(),
     });
 
     expect(timeouts).toHaveLength(2);
     for (const timeout of timeouts) expect(Number.isFinite(timeout)).toBe(true);
-    expect(timeouts[1]).toBe(MEILI_REBUILD_DOCUMENT_TASK_WAIT_TIMEOUT_MS);
+    expect(timeouts[0]).toBe(MEILI_REBUILD_DOCUMENT_TASK_WAIT_TIMEOUT_MS);
   });
 
   it('rejects unsafe rebuild page sizes before configuring the index', async () => {
@@ -1880,7 +1880,7 @@ describe('rebuildResearchEntitySearchIndex replacing the whole index (#4151)', (
       },
       fetchPage: async (page: number) => (page === 1 ? rows : []),
       fetchMemberNames: async () => new Map(),
-      fetchEmeritusWayIn: async () => new Map(),
+      fetchServedLeads: async () => new Map(),
       fetchChangedSince: async () => changedDuringBuild,
     });
 
@@ -2090,7 +2090,7 @@ describe('rebuildResearchEntitySearchIndex archived exclusion', () => {
       pageSize: 50,
       getIndex: async () => fakeIndex as any,
       fetchMemberNames: async () => new Map(),
-      fetchEmeritusWayIn: async () => new Map(),
+      fetchServedLeads: async () => new Map(),
     });
     return indexedIds;
   };

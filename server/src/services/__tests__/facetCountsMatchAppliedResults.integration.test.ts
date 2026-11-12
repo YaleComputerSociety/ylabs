@@ -38,6 +38,7 @@ type IndexDocument = {
   studentVisibilityTier: string;
   kind: string;
   entityType: string;
+  researchType?: string;
   schools: string[];
   departments: string[];
   researchAreas: string[];
@@ -168,6 +169,7 @@ const toHit = (document: IndexDocument, rankingScoreDetails: Record<string, unkn
   id: document.id,
   kind: document.kind,
   entityType: document.entityType,
+  researchType: document.researchType,
   schools: document.schools,
   departments: document.departments,
   researchAreas: document.researchAreas,
@@ -366,6 +368,7 @@ describe('a research filter option count is the number of results applying it re
       document.welcomesUndergrads = built?.welcomesUndergrads === true;
       if (built?.mentorsUndergrads === true) document.mentorsUndergrads = true;
       document.undergradInvitationRank = built?.undergradInvitationRank ?? 0;
+      document.researchType = built?.researchType;
       indexDocuments.push(document);
       return row;
     });

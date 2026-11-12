@@ -13,6 +13,7 @@ const row = (hexSuffix: string, name: string) => ({
   _id: `64b000000000000000000${hexSuffix}`,
   name,
   slug: `synthetic-${hexSuffix}`,
+  entityType: 'LAB',
   researchAreas: ['synthetic topic'],
   studentVisibilityTier: 'student_ready',
 });
@@ -67,7 +68,7 @@ const run = (index: ReturnType<typeof fakeIndex>, rows: any[], apply: boolean) =
     getIndex: async () => index as any,
     fetchPage: async (page) => (page === 1 ? rows : []),
     fetchMemberNames: async () => new Map(),
-    fetchEmeritusWayIn: async () => new Map(),
+    fetchServedLeads: async () => new Map(),
     warmVocabulary: async () => undefined,
   });
 
@@ -107,7 +108,7 @@ describe('reconcileResearchEntitySearchIndex', () => {
     expect(index.deleted).toEqual([[String(orphan._id)]]);
   });
 
-  it('applies drifted settings in place before writing, and leaves matching settings alone', async () => {
+  it('applies drifted settings in place, and leaves matching settings alone', async () => {
     const expected = getResearchEntitySearchIndexSettings();
     const drifted = fakeIndex(indexedBefore(), {
       settings: {
@@ -123,6 +124,37 @@ describe('reconcileResearchEntitySearchIndex', () => {
     const matching = fakeIndex(indexedBefore());
     await run(matching, rows, true);
     expect(matching.settingsUpdates).toEqual([]);
+  });
+
+  it('declares a new filterable attribute only once every changed document carries it', async () => {
+    const expected = getResearchEntitySearchIndexSettings();
+    const indexedBeforeTheField = indexedBefore().map(
+      ({ researchType: _researchType, creativePractice: _creativePractice, ...doc }) => doc,
+    );
+    const index = fakeIndex(indexedBeforeTheField, {
+      settings: {
+        ...expected,
+        filterableAttributes: expected.filterableAttributes.filter(
+          (attribute: string) => attribute !== 'researchType',
+        ),
+      },
+    });
+    const storedWhenDeclared: Record<string, any>[] = [];
+    const updateSettings = index.updateSettings;
+    index.updateSettings = async (next) => {
+      storedWhenDeclared.push(...index.stored.values());
+      return updateSettings(next);
+    };
+
+    await run(index, rows, true);
+
+    expect(index.settingsUpdates).toEqual([expected]);
+    expect(storedWhenDeclared.map((doc) => doc.slug).sort()).toEqual([
+      'synthetic-001',
+      'synthetic-002',
+      'synthetic-003',
+    ]);
+    expect(storedWhenDeclared.map((doc) => doc.researchType)).toEqual(['LAB', 'LAB', 'LAB']);
   });
 
   it('changes no settings on a dry run', async () => {
@@ -213,7 +245,7 @@ describe('reconcile failure part-way', () => {
         getIndex: async () => failing as any,
         fetchPage: async (page) => (page === 1 ? rows : []),
         fetchMemberNames: async () => new Map(),
-        fetchEmeritusWayIn: async () => new Map(),
+        fetchServedLeads: async () => new Map(),
         warmVocabulary: async () => undefined,
       }),
     ).rejects.toThrow(/stopped part-way: the live index holds 1 of 3 upserts/);

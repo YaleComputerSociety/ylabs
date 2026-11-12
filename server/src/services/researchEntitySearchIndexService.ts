@@ -43,7 +43,13 @@ import { decideServedResearchAreas } from '../utils/servedResearchAreaGuards';
 import { meshDescriptorOnlyTerms } from '../scrapers/utils/meshNonSubjectDescriptors';
 import { entityHasHostedUndergraduates } from './hostedUndergraduates';
 import { servedEmeritusWayInFlags, type EmeritusWayInDecision } from './emeritusLeadWayIn';
-import { entityWelcomesUndergraduates, servedUndergradInvitationLevel } from './researchEntityDto';
+import {
+  decideServedResearchEntityCreativePractice,
+  entityWelcomesUndergraduates,
+  researchEntityListServedSource,
+  servedUndergradInvitationLevel,
+} from './researchEntityDto';
+import { CREATIVE_PRACTICE_RESEARCH_TYPE, RESEARCH_TYPE_INDEX_FIELD } from './researchGroupFilters';
 import { entityMentorsUndergraduates } from './undergradListEvidenceServing';
 import { isExcludedFromSearchIndex, RESEARCHER_REMOVED_REASON } from './directoryRemovalReason';
 import {
@@ -57,6 +63,7 @@ import {
   personScopedResearchEntityNameNamesSomethingElseByUrlPath,
   isExternalScholarlyPlatformLinkLabelName,
   namesAResearchGroupRatherThanAPerson,
+  IDENTITY_LEAD_DIRECTS_ORGANIZATION,
 } from '../utils/researchHomeNameIdentityAuthority';
 import {
   RESEARCH_ENTITY_MEILI_DISABLE_ON_WORDS,
@@ -108,6 +115,8 @@ const RESEARCH_ENTITY_SEARCH_INDEX_SETTINGS = {
     'mentorsUndergrads',
     'worksWithUndergrads',
     'studentVisibilityTier',
+    'researchType',
+    'creativePractice',
   ],
   sortableAttributes: [
     'browseRankScore',
@@ -170,7 +179,7 @@ export interface ResearchEntitySearchIndexRebuildOptions {
   getClient?: () => Promise<ResearchEntitySearchIndexAdminClient>;
   fetchPage?: (page: number, pageSize: number) => Promise<any[]>;
   fetchMemberNames?: (entities: any[]) => Promise<ResearchEntitySearchMemberNameMap>;
-  fetchEmeritusWayIn?: (entities: any[]) => Promise<ResearchEntitySearchEmeritusWayInMap>;
+  fetchServedLeads?: (entities: any[]) => Promise<ResearchEntitySearchServedLeadMap>;
   fetchChangedSince?: (since: Date) => Promise<any[]>;
   /**
    * Injectable for the same reason the index and the page fetch are: a rebuild test has no
@@ -207,10 +216,13 @@ export type ResearchEntitySearchEmeritusWayIn = Pick<
   'emeritusLed' | 'wayInWithheld'
 >;
 
-export type ResearchEntitySearchEmeritusWayInMap = ReadonlyMap<
-  string,
-  ResearchEntitySearchEmeritusWayIn
->;
+export interface ResearchEntitySearchServedLead {
+  leadMemberNames?: readonly string[];
+  identityLeadDirectsOrganization?: boolean;
+  emeritusWayIn?: ResearchEntitySearchEmeritusWayIn;
+}
+
+export type ResearchEntitySearchServedLeadMap = ReadonlyMap<string, ResearchEntitySearchServedLead>;
 
 export function getResearchEntitySearchIndexSettings() {
   return {
@@ -486,18 +498,33 @@ export async function fetchResearchEntitySearchMemberNames(
 }
 
 // Read through the call the browse and detail routes make, so the undergraduate filters cannot
-// count a row whose card withholds its way in (#5620). A read that could not decide fails the
-// build rather than indexing a flag the card would contradict.
-export async function fetchResearchEntitySearchEmeritusWayIn(
+// count a row whose card withholds its way in (#5620), and the Type facet cannot bucket a row
+// apart from the creative practice label its card serves (#5141). A read that could not decide
+// fails the build rather than indexing a flag the card would contradict.
+export async function fetchResearchEntitySearchServedLeads(
   entities: any[],
-): Promise<ResearchEntitySearchEmeritusWayInMap> {
+): Promise<ResearchEntitySearchServedLeadMap> {
   if (entities.length === 0) return new Map();
   const { optionalPublicLeadMemberNames } = await import('./researchGroupService');
   const read = await optionalPublicLeadMemberNames(entities, { withEmeritusWayIn: true });
   if (read.unavailable) {
-    throw new Error('The emeritus way-in read failed, so the index documents were not built.');
+    throw new Error('The served lead read failed, so the index documents were not built.');
   }
-  return read.emeritusWayInByEntityId ?? new Map();
+  const entityIds = new Set([
+    ...read.byEntityId.keys(),
+    ...(read.emeritusWayInByEntityId?.keys() ?? []),
+    ...(read.identityLeadDirectorEntityIds ?? []),
+  ]);
+  return new Map(
+    [...entityIds].map((entityId) => [
+      entityId,
+      {
+        leadMemberNames: read.byEntityId.get(entityId),
+        identityLeadDirectsOrganization: read.identityLeadDirectorEntityIds?.has(entityId) === true,
+        emeritusWayIn: read.emeritusWayInByEntityId?.get(entityId),
+      },
+    ]),
+  );
 }
 
 const sanitizeResearchEntityIndexDocument = (out: Record<string, any>) => {
@@ -641,10 +668,30 @@ const presentOnlyWhenTrue = (flags: Record<string, boolean>): Record<string, tru
       .map(([key]) => [key, true]),
   );
 
+// The browse card's label decision, composed exactly as the browse route serves a hit, so the
+// Type facet bucket and the card label cannot disagree (#5141). `journey:eval` calls it too.
+export const researchEntitySearchResearchType = (
+  doc: any,
+  servedLead?: ResearchEntitySearchServedLead,
+): string | undefined => {
+  const leadMemberNames = servedLead?.leadMemberNames;
+  const hit = servedLead?.identityLeadDirectsOrganization
+    ? { ...doc, [IDENTITY_LEAD_DIRECTS_ORGANIZATION]: true }
+    : doc;
+  const servesCreativePractice = decideServedResearchEntityCreativePractice(
+    {
+      ...researchEntityListServedSource(hit, leadMemberNames, false),
+      ...servedEmeritusWayInFlags(servedLead?.emeritusWayIn),
+    },
+    leadMemberNames,
+  ).creativePractice;
+  return servesCreativePractice ? CREATIVE_PRACTICE_RESEARCH_TYPE : doc?.entityType;
+};
+
 export function buildResearchEntitySearchIndexDocument(
   doc: any,
   memberNames?: ResearchEntitySearchMemberNameFields,
-  emeritusWayIn?: ResearchEntitySearchEmeritusWayIn,
+  servedLead?: ResearchEntitySearchServedLead,
 ): Record<string, any> | null {
   if (!doc) return null;
   const rawId = doc._id ?? doc.id;
@@ -652,7 +699,9 @@ export function buildResearchEntitySearchIndexDocument(
   const id = serializedDocumentId(rawId);
   if (!id) return null;
 
-  const servedRow = { ...doc, ...servedEmeritusWayInFlags(emeritusWayIn) };
+  const servedRow = { ...doc, ...servedEmeritusWayInFlags(servedLead?.emeritusWayIn) };
+  const researchType = researchEntitySearchResearchType(doc, servedLead);
+  const creativePractice = researchType === CREATIVE_PRACTICE_RESEARCH_TYPE;
   const undergradSignals = {
     hosts: entityHasHostedUndergraduates(servedRow),
     welcomes: entityWelcomesUndergraduates(servedRow),
@@ -673,6 +722,7 @@ export function buildResearchEntitySearchIndexDocument(
         undergradSignals.hosts || undergradSignals.welcomes || undergradSignals.mentors,
     }),
     undergradInvitationRank: undergradInvitationRank(servedUndergradInvitationLevel(servedRow)),
+    ...presentOnlyWhenTrue({ creativePractice }),
   };
   if (memberNames) {
     out.leadProfessorNames = memberNames.leadProfessorNames;
@@ -707,6 +757,7 @@ export function buildResearchEntitySearchIndexDocument(
   out.sortTitle = researchEntitySortTitle(out);
   out.sortTitleQualifier = researchEntitySortTitleQualifier(out);
   out.browseTiebreakKey = researchEntityBrowseTiebreakKey(id);
+  out[RESEARCH_TYPE_INDEX_FIELD] = researchType;
 
   // Ordering constraint: topic aliases have to come off the sanitized document,
   // never the raw one. `studentSearchTerms` is a `searchableAttributes` entry, so
@@ -741,7 +792,7 @@ export function buildResearchEntitySearchIndexDocument(
 export function buildResearchEntitySearchIndexDocuments(
   docs: any[],
   memberNamesByEntityId: ResearchEntitySearchMemberNameMap = new Map(),
-  emeritusWayInByEntityId: ResearchEntitySearchEmeritusWayInMap = new Map(),
+  servedLeadByEntityId: ResearchEntitySearchServedLeadMap = new Map(),
 ): Record<string, any>[] {
   return docs
     .map((doc) => {
@@ -749,7 +800,7 @@ export function buildResearchEntitySearchIndexDocuments(
       return buildResearchEntitySearchIndexDocument(
         doc,
         memberNamesByEntityId.get(id),
-        emeritusWayInByEntityId.get(id),
+        servedLeadByEntityId.get(id),
       );
     })
     .filter((doc): doc is Record<string, any> => doc !== null);
@@ -760,17 +811,17 @@ export async function buildResearchEntitySearchIndexDocumentsWithMemberNames(
   fetchMemberNames: (
     entities: any[],
   ) => Promise<ResearchEntitySearchMemberNameMap> = fetchResearchEntitySearchMemberNames,
-  fetchEmeritusWayIn: (
+  fetchServedLeads: (
     entities: any[],
-  ) => Promise<ResearchEntitySearchEmeritusWayInMap> = fetchResearchEntitySearchEmeritusWayIn,
+  ) => Promise<ResearchEntitySearchServedLeadMap> = fetchResearchEntitySearchServedLeads,
 ): Promise<Record<string, any>[]> {
-  const [serving, memberNamesByEntityId, emeritusWayInByEntityId] = await Promise.all([
+  const [serving, memberNamesByEntityId, servedLeadByEntityId] = await Promise.all([
     freshDirectoryRemovalServing(),
     fetchMemberNames(docs),
-    fetchEmeritusWayIn(docs),
+    fetchServedLeads(docs),
   ]);
   return redactWithheldNamesDeep(
-    buildResearchEntitySearchIndexDocuments(docs, memberNamesByEntityId, emeritusWayInByEntityId),
+    buildResearchEntitySearchIndexDocuments(docs, memberNamesByEntityId, servedLeadByEntityId),
     serving,
   );
 }
@@ -1148,7 +1199,7 @@ async function addEveryResearchEntityDocument(
   pageSize: number,
   fetchPage: (page: number, pageSize: number) => Promise<any[]>,
   fetchMemberNames: (entities: any[]) => Promise<ResearchEntitySearchMemberNameMap>,
-  fetchEmeritusWayIn: (entities: any[]) => Promise<ResearchEntitySearchEmeritusWayInMap>,
+  fetchServedLeads: (entities: any[]) => Promise<ResearchEntitySearchServedLeadMap>,
 ): Promise<ResearchEntitySearchIndexPopulateResult> {
   let page = 1;
   let fetchedDocumentCount = 0;
@@ -1164,7 +1215,7 @@ async function addEveryResearchEntityDocument(
     const indexDocs = await buildResearchEntitySearchIndexDocumentsWithMemberNames(
       docs,
       fetchMemberNames,
-      fetchEmeritusWayIn,
+      fetchServedLeads,
     );
     if (indexDocs.length > 0) {
       const addTask = await index.addDocuments(indexDocs, {
@@ -1204,7 +1255,7 @@ async function catchUpLiveIndexWithRowsChangedDuringBuild(
   liveIndex: any,
   changedRows: any[],
   fetchMemberNames: (entities: any[]) => Promise<ResearchEntitySearchMemberNameMap>,
-  fetchEmeritusWayIn: (entities: any[]) => Promise<ResearchEntitySearchEmeritusWayInMap>,
+  fetchServedLeads: (entities: any[]) => Promise<ResearchEntitySearchServedLeadMap>,
 ): Promise<ResearchEntitySearchIndexCatchUpResult> {
   const archivedIds = changedRows
     .filter((row) => isExcludedFromSearchIndex(row))
@@ -1222,7 +1273,7 @@ async function catchUpLiveIndexWithRowsChangedDuringBuild(
   const indexDocs = await buildResearchEntitySearchIndexDocumentsWithMemberNames(
     changedRows.filter((row) => !isExcludedFromSearchIndex(row)),
     fetchMemberNames,
-    fetchEmeritusWayIn,
+    fetchServedLeads,
   );
   if (indexDocs.length > 0) {
     await assertMeiliTaskSucceeded(
@@ -1356,19 +1407,13 @@ export async function rebuildResearchEntitySearchIndex(
   await (options.warmVocabulary || warmControlledVocabularyHeadings)();
   const fetchPage = options.fetchPage || fetchResearchEntityPage;
   const fetchMemberNames = options.fetchMemberNames || fetchResearchEntitySearchMemberNames;
-  const fetchEmeritusWayIn = options.fetchEmeritusWayIn || fetchResearchEntitySearchEmeritusWayIn;
+  const fetchServedLeads = options.fetchServedLeads || fetchResearchEntitySearchServedLeads;
   const fetchChangedSince = options.fetchChangedSince || fetchResearchEntitiesChangedSince;
   const liveUid = resolveIndexName(RESEARCH_ENTITY_SEARCH_INDEX_NAME);
   const targetsPrefixedIndex = liveUid !== RESEARCH_ENTITY_SEARCH_INDEX_NAME;
   const openAiApiKey = usableOpenAiApiKey();
   const populate = (index: any) =>
-    addEveryResearchEntityDocument(
-      index,
-      pageSize,
-      fetchPage,
-      fetchMemberNames,
-      fetchEmeritusWayIn,
-    );
+    addEveryResearchEntityDocument(index, pageSize, fetchPage, fetchMemberNames, fetchServedLeads);
 
   let outcome: ResearchEntitySearchIndexPopulateResult & {
     swap?: ResearchEntitySearchIndexSwapResult;
@@ -1385,15 +1430,15 @@ export async function rebuildResearchEntitySearchIndex(
           liveIndex,
           await fetchChangedSince(startedAt),
           fetchMemberNames,
-          fetchEmeritusWayIn,
+          fetchServedLeads,
         ),
       swapConfirmation: options.swapConfirmation,
     });
   } else {
     const index = await (options.getIndex || getMeiliIndex)(RESEARCH_ENTITY_SEARCH_INDEX_NAME);
-    await applyResearchEntitySearchIndexSettings(index);
     await applyResearchEntitySearchEmbedderSetting(index, openAiApiKey, targetsPrefixedIndex);
     outcome = await populate(index);
+    await applyResearchEntitySearchIndexSettings(index);
   }
 
   const finishedAt = new Date();
@@ -1421,7 +1466,7 @@ export interface ResearchEntitySearchIndexReconcileOptions {
   getIndex?: typeof getMeiliIndex;
   fetchPage?: (page: number, pageSize: number) => Promise<any[]>;
   fetchMemberNames?: (entities: any[]) => Promise<ResearchEntitySearchMemberNameMap>;
-  fetchEmeritusWayIn?: (entities: any[]) => Promise<ResearchEntitySearchEmeritusWayInMap>;
+  fetchServedLeads?: (entities: any[]) => Promise<ResearchEntitySearchServedLeadMap>;
   warmVocabulary?: () => Promise<unknown>;
 }
 
@@ -1478,7 +1523,7 @@ async function buildEveryCorpusIndexDocument(
   pageSize: number,
   fetchPage: (page: number, pageSize: number) => Promise<any[]>,
   fetchMemberNames: (entities: any[]) => Promise<ResearchEntitySearchMemberNameMap>,
-  fetchEmeritusWayIn: (entities: any[]) => Promise<ResearchEntitySearchEmeritusWayInMap>,
+  fetchServedLeads: (entities: any[]) => Promise<ResearchEntitySearchServedLeadMap>,
 ): Promise<Record<string, any>[]> {
   const corpus: Record<string, any>[] = [];
   for (let page = 1; ; page += 1) {
@@ -1488,7 +1533,7 @@ async function buildEveryCorpusIndexDocument(
       ...(await buildResearchEntitySearchIndexDocumentsWithMemberNames(
         rows,
         fetchMemberNames,
-        fetchEmeritusWayIn,
+        fetchServedLeads,
       )),
     );
     if (rows.length < pageSize) break;
@@ -1499,9 +1544,10 @@ async function buildEveryCorpusIndexDocument(
 /**
  * Brings the live index in line with the corpus by writing only the difference, so a stale
  * Development index costs embeddings for the rows that changed rather than for all of them.
- * Drifted index settings are applied in place first: they hold no embedder, so a new searchable
- * field costs no re-embedding. An embedder or document-template change still needs the
- * replacing rebuild (#5023).
+ * Drifted index settings are applied in place after the documents: they hold no embedder, so a
+ * new searchable field costs no re-embedding, and a reader that switches on a newly declared
+ * attribute never sees it before the documents carry it (#5141). An embedder or
+ * document-template change still needs the replacing rebuild (#5023).
  */
 export async function reconcileResearchEntitySearchIndex(
   options: ResearchEntitySearchIndexReconcileOptions = {},
@@ -1523,7 +1569,7 @@ export async function reconcileResearchEntitySearchIndex(
     pageSize,
     options.fetchPage || fetchResearchEntityPage,
     options.fetchMemberNames || fetchResearchEntitySearchMemberNames,
-    options.fetchEmeritusWayIn || fetchResearchEntitySearchEmeritusWayIn,
+    options.fetchServedLeads || fetchResearchEntitySearchServedLeads,
   );
   if (corpus.length === 0) {
     throw new Error(
@@ -1551,9 +1597,6 @@ export async function reconcileResearchEntitySearchIndex(
   }
 
   if (options.apply) {
-    if (researchEntitySearchIndexSettingsDrift(await index.getSettings()).length > 0) {
-      await applyResearchEntitySearchIndexSettings(index);
-    }
     let upsertedSoFar = 0;
     try {
       for (let start = 0; start < changed.length; start += pageSize) {
@@ -1585,6 +1628,9 @@ export async function reconcileResearchEntitySearchIndex(
         `Reconcile stopped part-way: the live index holds ${upsertedSoFar} of ${changed.length} upserts and ${deletes}, so it mixes old and new documents. Re-run the reconcile or the replacing rebuild. Cause: ${sanitizeLogValue(error)}`,
         { cause: error },
       );
+    }
+    if (researchEntitySearchIndexSettingsDrift(await index.getSettings()).length > 0) {
+      await applyResearchEntitySearchIndexSettings(index);
     }
   }
 

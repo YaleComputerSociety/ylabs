@@ -113,13 +113,16 @@ import {
 import {
   buildResearchGroupFilterString,
   candidateMatchesStudentFilters,
+  entityTypesForStoredRows,
   HOSTS_UNDERGRADS_INDEX_FIELD,
+  RESEARCH_TYPE_INDEX_FIELD,
   WELCOMES_UNDERGRADS_INDEX_FIELD,
   MENTORS_UNDERGRADS_INDEX_FIELD,
   WORKS_WITH_UNDERGRADS_INDEX_FIELD,
   ResearchGroupFilterInput,
   tallyCandidateFacetDistribution,
   visibilityScopeOnly,
+  withResearchTypeFilter,
 } from './researchGroupFilters';
 import {
   entityHasHostedUndergraduates,
@@ -705,6 +708,7 @@ const RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES = [
   'id',
   'kind',
   'entityType',
+  RESEARCH_TYPE_INDEX_FIELD,
   'schools',
   'departments',
   'researchAreas',
@@ -1057,6 +1061,7 @@ const sanitizeResearchGroupSearchFilters = (
 ): ResearchGroupFilterInput => ({
   kind: boundedResearchFilterValues(filters.kind),
   entityType: boundedResearchFilterValues(filters.entityType),
+  researchType: boundedResearchFilterValues(filters.researchType),
   school: boundedResearchFilterValues(filters.school),
   departments: boundedResearchFilterValues(filters.departments),
   researchAreas: boundedResearchFilterValues(filters.researchAreas),
@@ -1198,7 +1203,9 @@ const mongoFilterFromResearchFilters = (
   };
 
   if (filters.kind?.length) mongoFilter.kind = { $in: filters.kind };
-  if (filters.entityType?.length) mongoFilter.entityType = { $in: filters.entityType };
+  if (filters.entityType?.length) {
+    mongoFilter.entityType = { $in: entityTypesForStoredRows(filters.entityType) };
+  }
   if (filters.school?.length) mongoFilter.schools = { $in: filters.school };
   if (filters.departments?.length) mongoFilter.departments = { $in: filters.departments };
   if (filters.researchAreas?.length) mongoFilter.researchAreas = { $in: filters.researchAreas };
@@ -1740,19 +1747,21 @@ export const promoteExactAliasFieldMatches = <T>(hits: T[], aliasTerms: string[]
 // dropped; every other active filter still constrains the distribution. See
 // issue #1080.
 export const DISJUNCTIVE_RESEARCH_FACETS: ReadonlyArray<{
-  filterKey: 'school' | 'departments' | 'researchAreas' | 'entityType';
-  meiliField: 'schools' | 'departments' | 'researchAreas' | 'entityType';
+  filterKey: 'school' | 'departments' | 'researchAreas' | 'entityType' | 'researchType';
+  meiliField: 'schools' | 'departments' | 'researchAreas' | 'entityType' | 'researchType';
 }> = [
   { filterKey: 'school', meiliField: 'schools' },
   { filterKey: 'departments', meiliField: 'departments' },
   { filterKey: 'researchAreas', meiliField: 'researchAreas' },
   { filterKey: 'entityType', meiliField: 'entityType' },
+  { filterKey: 'researchType', meiliField: RESEARCH_TYPE_INDEX_FIELD },
 ];
 
 export const RESEARCH_ENTITY_SEARCH_FACET_FIELDS = [
   'schools',
   'departments',
   'entityType',
+  RESEARCH_TYPE_INDEX_FIELD,
   HOSTS_UNDERGRADS_INDEX_FIELD,
   WELCOMES_UNDERGRADS_INDEX_FIELD,
   MENTORS_UNDERGRADS_INDEX_FIELD,
@@ -1815,6 +1824,25 @@ const liveIndexFilterability = async (
     withMeiliAvailabilityGuard(meiliIndex, 'optional'),
   );
   return (field) => filterable === null || filterable.has(field);
+};
+
+// The Type facet is one axis: `researchType` once the index declares it, else the
+// `entityType` it refines, never both, so the client reads a single partition.
+export const researchFacetFieldsForIndex = (isFilterable: (field: string) => boolean): string[] =>
+  RESEARCH_ENTITY_SEARCH_FACET_FIELDS.filter(
+    (field) =>
+      isFilterable(field) && !(field === 'entityType' && isFilterable(RESEARCH_TYPE_INDEX_FIELD)),
+  );
+
+export const withoutUnavailableResearchTypes = (
+  filters: ResearchGroupFilterInput,
+  isFilterable: (field: string) => boolean,
+): { filters: ResearchGroupFilterInput; dropped?: AppliedStudentFilters } => {
+  const requested = filters.entityType ?? [];
+  if (requested.length === 0 || isFilterable(RESEARCH_TYPE_INDEX_FIELD)) return { filters };
+  const kept = withResearchTypeFilter(filters, false);
+  if ((kept.entityType ?? []).length === requested.length) return { filters };
+  return { filters: kept, dropped: { entityType: kept.entityType ?? [] } };
 };
 
 export const withoutUnfilterableToggles = (
@@ -2140,13 +2168,19 @@ export async function searchResearchGroupsViaMeili(
   const acronym: AcronymRewriteChoice = { rewriteAcronym: options.rewriteAcronym !== false };
   const searchQuery = searchedAcronymForm(spelling.query, acronym);
   const studentFilters = await resolveStudentFiltersAgainstCorpus(filters, options);
-  const filterableToggles = answersFromMongoBrowse(searchQuery, options)
-    ? { filters: studentFilters.filters, dropped: undefined }
-    : withoutUnfilterableToggles(
-        studentFilters.filters,
-        await liveIndexFilterability(await getMeiliSearchIndex('researchentities')),
-      );
-  const droppedToggleFilters = filterableToggles.dropped;
+  const isFilterable = answersFromMongoBrowse(searchQuery, options)
+    ? undefined
+    : await liveIndexFilterability(await getMeiliSearchIndex('researchentities'));
+  const filterableToggles = isFilterable
+    ? withoutUnfilterableToggles(studentFilters.filters, isFilterable)
+    : { filters: studentFilters.filters, dropped: undefined };
+  const availableResearchTypes = isFilterable
+    ? withoutUnavailableResearchTypes(filterableToggles.filters, isFilterable)
+    : { filters: filterableToggles.filters, dropped: undefined };
+  const droppedToggleFilters =
+    filterableToggles.dropped || availableResearchTypes.dropped
+      ? { ...filterableToggles.dropped, ...availableResearchTypes.dropped }
+      : undefined;
   const rerankQueryKey =
     readsSearchRerankCache() && normalizeResearchSearchQuery(query).raw !== ''
       ? searchRerankCacheQueryKey(query, filters, acronym)
@@ -2235,8 +2269,11 @@ async function searchResearchGroupsForQuery(
   const meiliIndex = await getMeiliSearchIndex('researchentities');
   const liveFilterable = await liveIndexFilterability(meiliIndex);
   const sanitizedFilters = sanitizeResearchGroupSearchFilters(filters || {});
-  const safeFilters = withoutUnfilterableToggles(sanitizedFilters, liveFilterable).filters;
-  const facetFields = RESEARCH_ENTITY_SEARCH_FACET_FIELDS.filter(liveFilterable);
+  const safeFilters = withResearchTypeFilter(
+    withoutUnfilterableToggles(sanitizedFilters, liveFilterable).filters,
+    liveFilterable(RESEARCH_TYPE_INDEX_FIELD),
+  );
+  const facetFields = researchFacetFieldsForIndex(liveFilterable);
   const ordersHiringFirst =
     safeFilters.welcomesUndergrads === true &&
     !sort.sortBy &&
@@ -2889,6 +2926,7 @@ async function searchResearchGroupsForQuery(
     const {
       schools,
       researchAreas,
+      [RESEARCH_TYPE_INDEX_FIELD]: researchType,
       [HOSTS_UNDERGRADS_INDEX_FIELD]: hostingEvidence,
       [WELCOMES_UNDERGRADS_INDEX_FIELD]: invitationEvidence,
       [MENTORS_UNDERGRADS_INDEX_FIELD]: mentoringEvidence,
@@ -2900,6 +2938,7 @@ async function searchResearchGroupsForQuery(
       ...rest,
       ...(cleanedResearchAreas ? { researchAreas: cleanedResearchAreas } : {}),
       ...(schools ? { school: schools } : {}),
+      ...(researchType ? { entityType: researchType } : {}),
       ...(hostingEvidence ? { hostsUndergrads: { true: hostingEvidence.true ?? 0 } } : {}),
       ...(invitationEvidence ? { welcomesUndergrads: { true: invitationEvidence.true ?? 0 } } : {}),
       ...(mentoringEvidence ? { mentorsUndergrads: { true: mentoringEvidence.true ?? 0 } } : {}),
@@ -3023,7 +3062,7 @@ async function searchResearchGroupsForQuery(
     !withRerankCandidateFingerprints &&
     serviceCoreDemotionExemption({
       answeredAsNameSearch: keywordLegTopHitNamesTheQuery,
-      filters: safeFilters,
+      filters: sanitizedFilters,
     }) === null;
   const pageRowIds = (hits: any[]): string[] =>
     hits

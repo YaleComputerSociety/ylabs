@@ -11,7 +11,7 @@ import {
   TAKING_UNDERGRADS_NOW_FILTER_LABEL,
   UNDERGRADS_FILTER_COMBINATION_NOTE,
   UNDERGRADS_FILTER_GROUP_LABEL,
-  isKnownResearchEntityType,
+  isKnownResearchTypeFilterValue,
   researchEntityTypeFilterLabel,
 } from '../../utils/researchEntityCopy';
 import useMediaQuery from '../../hooks/useMediaQuery';
@@ -314,7 +314,7 @@ const ResearchFilterDisclosure = ({
   const positiveEntityTypes = useMemo(
     () =>
       positiveFacetOptions(facetDistribution.entityType)
-        .filter((option) => isKnownResearchEntityType(option.value))
+        .filter((option) => isKnownResearchTypeFilterValue(option.value))
         .map((option) => ({ ...option, label: researchEntityTypeFilterLabel(option.value) }))
         .sort((a, b) => a.label.localeCompare(b.label)),
     [facetDistribution.entityType],
