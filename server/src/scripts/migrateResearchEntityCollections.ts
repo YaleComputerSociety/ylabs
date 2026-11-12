@@ -440,8 +440,8 @@ async function dropLegacyCollections(db: MongoDb) {
   return { before, dropped, after };
 }
 
-async function main() {
-  const args = parseResearchEntityCollectionMigrationArgs(process.argv.slice(2));
+export async function runResearchEntityCollectionMigration(argv: string[]) {
+  const args = parseResearchEntityCollectionMigrationArgs(argv);
   const guard = assertResearchEntityCollectionMigrationWriteAllowed(
     args,
     process.env,
@@ -493,7 +493,7 @@ const isDirectRun = process.argv[1]
   : false;
 
 if (isDirectRun) {
-  main()
+  runResearchEntityCollectionMigration(process.argv.slice(2))
     .catch((error) => {
       console.error(
         'Failed to migrate dependent ResearchEntity collections:',
