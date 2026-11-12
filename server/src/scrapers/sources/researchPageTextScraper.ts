@@ -252,8 +252,8 @@ function subjectSurnameTokens(requestedUrl: string, row: CandidateDescriptionLab
 
 /**
  * A requested person profile that answered with a page outside any person-profile path,
- * whose headings name nobody the row is about, is a department, program or region root a
- * retired profile redirected to, so its text is not the row's research (#5947). A
+ * whose headings do not name the subject's surname, is a department, program or region
+ * root a retired profile redirected to, so its text is not the row's research (#5947). A
  * redirect to the same person's own other page names them in a heading and is kept.
  */
 export function capturedPageLeftTheRequestedPersonProfile(
