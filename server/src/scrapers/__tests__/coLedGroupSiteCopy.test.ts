@@ -213,3 +213,41 @@ describe('dept-faculty-roster on a co-led group site', () => {
     expect(mint(indexWith('fixture-group', [SLOAN, MORROW])).entityType).toBe('LAB');
   });
 });
+
+describe('dept-faculty-roster on a co-led group site in a department without personal rows', () => {
+  const dept = {
+    deptKey: 'fixture',
+    deptName: 'Fixture Studies',
+    schoolName: 'Yale Faculty of Arts and Sciences',
+    rosterUrl: 'https://fixture.example.edu/people/faculty',
+    emitPersonalResearchEntities: false,
+  } as never;
+  const mint = (labUrl: string, index: CoLedSiteIndex) => {
+    const entry = { name: 'Jordan Rivers', email: RIVERS_EMAIL, labUrl, topics: ['Epilepsy'] };
+    return rosterResearchEntityMint(
+      entry,
+      dept,
+      'https://fixture.example.edu/people/faculty',
+      'dept:fixture:jordan-rivers',
+      () => false,
+      coLedGroupSiteFor(index, 'dept-fixture-jordan-rivers', { email: entry.email }),
+    ).observations;
+  };
+
+  it('mints no personal row for a co-led site the link does not assert as a lab', () => {
+    const plainSite = 'https://medicine.example.edu/research/fixture-collective/';
+    const index: CoLedSiteIndex = new Map([
+      [
+        'medicine.example.edu/research/fixture-collective',
+        [{ slug: 'fixture-group', leads: [RIVERS, SLOAN] }],
+      ],
+    ]);
+    expect(mint(plainSite, index)).toEqual([]);
+  });
+
+  it('re-types the lab copy of a co-led site the link asserts as a lab', () => {
+    const observed = byField(mint(GROUP_SITE, indexWith('fixture-group', [RIVERS, SLOAN])));
+    expect(observed.entityType).toBe('FACULTY_RESEARCH_AREA');
+    expect(observed.websiteUrl).toBe(GROUP_SITE);
+  });
+});

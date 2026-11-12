@@ -4605,16 +4605,14 @@ function entryToResearchEntityObservationsUnscreened(
   // (#3452). Withdrawal needs a positive verdict, never silence - see
   // `labUrlIsUnusableForResearchHome`.
   const linksCoLedGroupSite = Boolean(entry.labUrl) && labUrlIsCoLedGroupSite(entry.labUrl!);
-  const isExplicitLab =
-    Boolean(entry.labUrl) &&
-    isLikelyExplicitLabWebsite(entry) &&
-    !labUrlIsUnusable(entry.labUrl!) &&
-    !linksCoLedGroupSite;
+  const linkAssertsLab =
+    Boolean(entry.labUrl) && isLikelyExplicitLabWebsite(entry) && !labUrlIsUnusable(entry.labUrl!);
+  const isExplicitLab = linkAssertsLab && !linksCoLedGroupSite;
   const profileCitationUrl = officialProfileCitationUrl(entry);
   const statedLabName =
     profileCitationUrl && !linksCoLedGroupSite ? entry.statedLabName : undefined;
   const admittedOnlyByStatedLabName =
-    !isExplicitLab && !linksCoLedGroupSite && dept.emitPersonalResearchEntities === false;
+    !linkAssertsLab && dept.emitPersonalResearchEntities === false;
   if (admittedOnlyByStatedLabName && !statedLabName) return [];
   const labUrl = admittedOnlyByStatedLabName ? undefined : entry.labUrl;
 
