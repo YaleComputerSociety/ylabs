@@ -17,7 +17,7 @@ describe('buildWayInBadgesFromEntity', () => {
 
   it('shows the welcomes badge from the served flag when no page invitation is served (#5362)', () => {
     expect(buildWayInBadgesFromEntity(entity({ welcomesUndergrads: true }))).toEqual([
-      'Welcomes undergrads',
+      'Taking undergrads now',
     ]);
   });
 
@@ -36,7 +36,7 @@ describe('buildWayInBadgesFromEntity', () => {
     });
     expect(
       buildWayInBadgesFromEntity(entity({ undergradListEvidence: [listEntry('mentors')] })),
-    ).toEqual(['Mentors undergrads']);
+    ).toEqual(['Advises undergrad research']);
     expect(
       buildWayInBadgesFromEntity(
         entity({ undergradListEvidence: [listEntry('hosted'), listEntry('welcomes')] }),
@@ -61,7 +61,7 @@ describe('buildWayInBadgesFromEntity', () => {
           },
         }),
       ),
-    ).toEqual(['Welcomes undergrads, recruiting now', 'Undergrad evidence']);
+    ).toEqual(['Taking undergrads now, recruiting', 'Undergrad evidence']);
     expect(
       buildWayInBadgesFromEntity(
         entity({
@@ -72,7 +72,7 @@ describe('buildWayInBadgesFromEntity', () => {
           },
         }),
       ),
-    ).toEqual(['Welcomes undergrads']);
+    ).toEqual(['Taking undergrads now']);
   });
 
   it('shows no invitation badge without a citable page', () => {

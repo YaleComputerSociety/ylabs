@@ -8,7 +8,7 @@ import {
 describe('deriveUndergraduateAccessStatus', () => {
   it('reports a past-tense hosting badge that never implies current availability', () => {
     const status = deriveUndergraduateAccessStatus({ hasUndergradHostingEvidence: true });
-    expect(status).toEqual({ tone: 'evidence', label: 'Has hosted undergrads before' });
+    expect(status).toEqual({ tone: 'evidence', label: 'Has had undergrads before' });
     expect(status?.label).not.toMatch(/open|now|currently/i);
   });
 

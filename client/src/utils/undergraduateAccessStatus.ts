@@ -1,3 +1,5 @@
+import { HAS_HAD_UNDERGRADS_FILTER_LABEL } from './researchEntityCopy';
+
 export interface UndergraduateAccessFields {
   hasUndergradHostingEvidence?: boolean | null;
 }
@@ -16,7 +18,7 @@ export const deriveUndergraduateAccessStatus = (
   fields: UndergraduateAccessFields,
 ): UndergraduateAccessStatus | null =>
   fields.hasUndergradHostingEvidence
-    ? { tone: 'evidence', label: 'Has hosted undergrads before' }
+    ? { tone: 'evidence', label: HAS_HAD_UNDERGRADS_FILTER_LABEL }
     : null;
 
 export const undergraduateAccessSortRank = (status: UndergraduateAccessStatus | null): number =>

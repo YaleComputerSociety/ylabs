@@ -57,7 +57,7 @@ describe('ResearchFilterDisclosure', () => {
     renderFilters({ variant: 'sidebar', facetDistribution: undergradCounts });
 
     const group = screen.getByRole('group', { name: 'Undergrads' });
-    expect(group).toHaveAccessibleDescription('Shows rows matching all ticked options');
+    expect(group).toHaveAccessibleDescription('Shows research matching every ticked option');
     expect(
       within(group)
         .getAllByRole('checkbox')
@@ -187,7 +187,7 @@ describe('ResearchFilterDisclosure', () => {
     expect(within(group).getAllByRole('checkbox')).toHaveLength(1);
     expect(screen.getByRole('checkbox', { name: 'Has had undergrads before (3)' })).toBeEnabled();
     expect(group).not.toHaveAccessibleDescription();
-    expect(screen.queryByText('Shows rows matching all ticked options')).toBeNull();
+    expect(screen.queryByText('Shows research matching every ticked option')).toBeNull();
   });
 
   it('moves desktop focus to the first select when every Undergrads option is disabled', async () => {

@@ -12,6 +12,7 @@ Decision (coordinator, 2026-11-12, posted on #5963): one group titled "Undergrad
 In a cold simulated test of ten students, the current labels could not be told apart, with "Works with" and "Welcomes" the most confused pair, while all ten picked the right option from the proposed labels, of which only the mentors one was reworded afterwards, to name the advising students asked about.
 Ticking several keeps the existing server semantics, which match all ticked options, and the group says so, because 8 of the 10 students already expected ticking more to narrow.
 Each option shows the count ticking it would leave under the current selection, from the existing facet mechanism.
+The card and detail badges take the same words, so a filter and the badge it returns read alike: "Taking undergrads now" ("Taking undergrads now, recruiting" for the `actively_hiring` level, keeping the #5484 rule that both levels start with the filter's words), "Has had undergrads" and "Advises undergrad research" (coordinator, 2026-11-12).
 The stored signals are unchanged; the server gained only a `mentorsUndergrads` request filter and facet on the index field #5603 already declared filterable, and it still accepts `worksWithUndergrads`, which an old link no longer ticks.
 
 ## 2026-11-12: A Card-Length Written Body Serves As Its Own Card (#5537)

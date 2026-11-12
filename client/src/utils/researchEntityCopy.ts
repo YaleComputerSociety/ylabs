@@ -1,4 +1,5 @@
 import { researchEntityTypes, type ResearchEntityType } from '../types/researchGroup';
+import { WELCOMES_UNDERGRADS_LABEL } from './undergradInvitation';
 
 const KIND_LABELS: Record<string, string> = {
   lab: 'Lab',
@@ -412,12 +413,12 @@ export const sanitizeFacultyResearchCopy = (
     .replace(/(^|[.!?]\s+)this research\b/g, '$1This research');
 };
 
-export const HOSTED_UNDERGRADUATES_LABEL = 'Hosted undergrads';
-export const MENTORS_UNDERGRADUATES_LABEL = 'Mentors undergrads';
+export const HOSTED_UNDERGRADUATES_LABEL = 'Has had undergrads';
+export const MENTORS_UNDERGRADUATES_LABEL = 'Advises undergrad research';
 export const UNDERGRADS_FILTER_GROUP_LABEL = 'Undergrads';
-export const TAKING_UNDERGRADS_NOW_FILTER_LABEL = 'Taking undergrads now';
-export const HAS_HAD_UNDERGRADS_FILTER_LABEL = 'Has had undergrads before';
-export const ADVISES_UNDERGRAD_RESEARCH_FILTER_LABEL = 'Advises undergrad research';
+export const TAKING_UNDERGRADS_NOW_FILTER_LABEL = WELCOMES_UNDERGRADS_LABEL;
+export const HAS_HAD_UNDERGRADS_FILTER_LABEL = `${HOSTED_UNDERGRADUATES_LABEL} before`;
+export const ADVISES_UNDERGRAD_RESEARCH_FILTER_LABEL = MENTORS_UNDERGRADUATES_LABEL;
 export const ADVISES_UNDERGRAD_RESEARCH_FILTER_HINT = 'e.g. supervised senior theses';
-export const UNDERGRADS_FILTER_COMBINATION_NOTE = 'Shows rows matching all ticked options';
+export const UNDERGRADS_FILTER_COMBINATION_NOTE = 'Shows research matching every ticked option';
 export const NO_HOSTED_UNDERGRADUATE_EVIDENCE_NOTE = 'Missing evidence is not proof there is none.';

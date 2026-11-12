@@ -379,7 +379,7 @@ describe('SavedResearchPlans', () => {
     await screen.findByText('Bare Lab');
     expect(screen.queryByText('Open now')).toBeNull();
     expect(screen.queryByText('Not currently available')).toBeNull();
-    expect(screen.queryByText('Has hosted undergrads before')).toBeNull();
+    expect(screen.queryByText('Has had undergrads before')).toBeNull();
   });
 
   it('labels kind and title through the shared owners the profile page uses', async () => {
