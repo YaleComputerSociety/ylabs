@@ -687,6 +687,18 @@ export function isWeakCardLine(card: unknown, context: { researchAreas?: unknown
 // Under the 200-character render, so a line that runs a little long still fits.
 export const CARD_SYNTHESIS_MAX_CHARACTERS = 170;
 
+/**
+ * A body short enough to be its own card: within the length a synthesized card is held
+ * to and shown whole on the browse card. A written body of this length satisfies the
+ * card requirement by itself (owner decision 2026-11-12, #5537).
+ */
+export function bodyFitsAsItsOwnCard(body: unknown): boolean {
+  const text = textValue(body);
+  return (
+    Boolean(text) && text.length <= CARD_SYNTHESIS_MAX_CHARACTERS && cardLineFitsBrowseCard(text)
+  );
+}
+
 // A character limit alone loses to the system prompt's "under 30 words": the model
 // returned the same 206-character line on both attempts. A word budget plus what to
 // leave out fit 12 of 12 cut Development cards on 2026-10-04 (#4834).

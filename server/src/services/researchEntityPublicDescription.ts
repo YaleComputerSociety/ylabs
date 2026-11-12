@@ -4,6 +4,7 @@ import {
   isCardPageFragment,
   isThinButAccurateBody,
   withMemoizedDescriptionQuality,
+  type DescriptionQualityFlag,
   type ResearchEntityDescriptionQuality,
 } from '../utils/researchEntityDescriptionQuality';
 import {
@@ -47,7 +48,11 @@ import {
   sanitizeResearchEntityDescription,
   sanitizeResearchEntityShortDescription,
 } from '../utils/descriptionHygiene';
-import { resolveServedShortDescription } from '../utils/groundedCardSynthesis';
+import {
+  bodyFitsAsItsOwnCard,
+  resolveServedShortDescription,
+} from '../utils/groundedCardSynthesis';
+import { WRITTEN_DESCRIPTION_SOURCE_NAME } from '../utils/writtenDescriptionSource';
 import { stripBodyChrome } from '../utils/researchBodyChromeStrip';
 import { decideCreativePractice } from '../utils/creativePracticeDescription';
 import {
@@ -409,7 +414,12 @@ function derivePublicDescriptionRepresentation({
     isProgramLike: programLike,
     entityType: sanitizedEntity.entityType,
   });
-  const quality = withThinButAccurateBodyUsable(strictQuality, programLike);
+  const quality = withWrittenBodyServedAsItsOwnCard(
+    withThinButAccurateBodyUsable(strictQuality, programLike),
+    sanitizedEntity,
+    servedCard,
+    programLike,
+  );
   // The public DTO runs a second read-time hygiene pass over the served copy
   // (`sanitizeResearchEntityShortDescription`/`sanitizeResearchEntityDescription`)
   // that the quality assessment above does not, so a card can clear the quality
@@ -558,6 +568,41 @@ function withThinButAccurateBodyUsable(
   };
   const cardComplete = short.isUseful || (programLike && !short.text);
   return { ...quality, full, short, cardState: cardComplete ? 'complete' : quality.cardState };
+}
+
+const CARD_RESTATES_BODY_FLAGS: ReadonlySet<DescriptionQualityFlag> = new Set([
+  'same-as-full',
+  'copied-first-sentence',
+]);
+
+const comparableText = (value: unknown): string => textValue(value).toLowerCase();
+
+/**
+ * A written body that fits the card limits is its own card (owner decision 2026-11-12,
+ * #5537), so a served card that is that body is not refused for restating it. Every
+ * other card check still applies, and a body longer than a card keeps the refusal.
+ */
+function servesWrittenBodyAsItsOwnCard(entity: Record<string, any>, servedCard: unknown): boolean {
+  const body = textValue(entity.fullDescription);
+  return (
+    entity.fieldProvenance?.fullDescription?.sourceName === WRITTEN_DESCRIPTION_SOURCE_NAME &&
+    bodyFitsAsItsOwnCard(body) &&
+    comparableText(servedCard) === comparableText(body)
+  );
+}
+
+function withWrittenBodyServedAsItsOwnCard(
+  quality: ResearchEntityDescriptionQuality,
+  entity: Record<string, any>,
+  servedCard: unknown,
+  programLike: boolean,
+): ResearchEntityDescriptionQuality {
+  if (!servesWrittenBodyAsItsOwnCard(entity, servedCard)) return quality;
+  const flags = quality.short.flags.filter((flag) => !CARD_RESTATES_BODY_FLAGS.has(flag));
+  if (flags.length === quality.short.flags.length) return quality;
+  const short = { ...quality.short, flags, isUseful: flags.length === 0 };
+  const cardComplete = quality.full.isUseful && (short.isUseful || (programLike && !short.text));
+  return { ...quality, short, cardState: cardComplete ? 'complete' : quality.cardState };
 }
 
 const CITATION_LIKE_CARD =

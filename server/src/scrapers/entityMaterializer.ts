@@ -136,6 +136,7 @@ import {
 } from '../utils/researchHomeDescriptionSelection';
 import {
   isWeakCardLine,
+  bodyFitsAsItsOwnCard,
   cardLineFitsBrowseCard,
   cardGroundingScore,
   isUngroundedSynthesizedCard,
@@ -923,28 +924,59 @@ export function isRefusedWrittenBodyCard(
   body: string,
   researchAreas: unknown,
 ): boolean {
-  const areas = Array.isArray(researchAreas) ? researchAreas : [];
-  const chipSummary = buildResearchAreasCardSummary(areas);
   return (
     !card ||
     card.toLowerCase() === body.toLowerCase() ||
     isFullDescriptionRestatementOfShortDescription(body, card) ||
+    isTopicChipEchoCard(card, researchAreas)
+  );
+}
+
+function isTopicChipEchoCard(card: string, researchAreas: unknown): boolean {
+  const areas = Array.isArray(researchAreas) ? researchAreas : [];
+  const chipSummary = buildResearchAreasCardSummary(areas);
+  return (
     (!!chipSummary && card.toLowerCase() === chipSummary.toLowerCase()) ||
     isStudiesResearchAreaEchoDescription(card, areas) ||
     isResearchAreaEchoDescription(card)
   );
 }
 
-export function isAcceptableWrittenBodyCard(input: {
+interface WrittenBodyCardCheckInput {
   card: string;
   body: string;
   researchAreas: unknown;
   servingBarAccepts: (card: string) => boolean;
   requireGrounding: boolean;
   evidenceTexts?: readonly string[];
-}): boolean {
+}
+
+export function isAcceptableWrittenBodyCard(input: WrittenBodyCardCheckInput): boolean {
   return (
     !isRefusedWrittenBodyCard(input.card, input.body, input.researchAreas) &&
+    passesWrittenBodyCardContentChecks(input)
+  );
+}
+
+/**
+ * A written body that fits the card limits and passes every content check a card is held
+ * to serves as its own card (owner decision 2026-11-12, #5537). The #4788 refusal of a
+ * card that restates its body is not applied, because here the card is the body; a body
+ * longer than a card still refuses a card that restates it.
+ */
+export function isAcceptableBodyAsItsOwnCard(
+  input: Omit<WrittenBodyCardCheckInput, 'card' | 'requireGrounding'>,
+): boolean {
+  const body = textValue(input.body);
+  return (
+    bodyFitsAsItsOwnCard(body) &&
+    !isTopicChipEchoCard(body, input.researchAreas) &&
+    passesWrittenBodyCardContentChecks({ ...input, card: body, requireGrounding: false })
+  );
+}
+
+function passesWrittenBodyCardContentChecks(input: WrittenBodyCardCheckInput): boolean {
+  return (
     withoutUnsupportedMethodClauses(input.card, [input.body, ...(input.evidenceTexts ?? [])])
       .stripped === 0 &&
     !statesPersonalPastFraming(input.card) &&
@@ -1033,6 +1065,7 @@ export type WrittenBodyCardChoice =
   | { kind: 'observed'; card: string; index: number }
   | { kind: 'derived'; card: string }
   | { kind: 'synthesized'; card: string }
+  | { kind: 'body'; card: string }
   | { kind: 'none' };
 
 /**
@@ -1052,7 +1085,8 @@ export function writtenBodyCardShowsWhole(card: string, body: unknown): boolean 
  * candidate (stored, then each copied card observation, then the body's own lead
  * sentence) that shows whole on the browse card; else a synthesized line that shows whole;
  * else the first acceptable candidate even though the browse card cuts it; else a
- * synthesized line that does not show whole; else no card rather than a wrong one.
+ * synthesized line that does not show whole; else the body itself when it fits as its own
+ * card (`isAcceptableBodyAsItsOwnCard`); else no card rather than a wrong one.
  *
  * Synthesis is spent only when a candidate showing whole on the browse card is missing and the
  * caller hands over `synthesize`, at most WRITTEN_BODY_CARD_SYNTHESIS_ATTEMPTS calls. The
@@ -1108,7 +1142,10 @@ export async function resolveWrittenBodyCard(input: {
     if (candidates[0]) return candidates[0];
     if (longSynthesized) return { kind: 'synthesized', card: longSynthesized };
   }
-  return candidates[0] ?? { kind: 'none' };
+  if (candidates[0]) return candidates[0];
+  return isAcceptableBodyAsItsOwnCard(input)
+    ? { kind: 'body', card: textValue(input.body) }
+    : { kind: 'none' };
 }
 
 export async function resolveMaterializedShortDescription(
@@ -11618,8 +11655,17 @@ export async function projectFromLog(
           input.nameIdentityAuthority.leadPersonName,
         );
       const cardEvidenceTexts = cardDescriptionEvidence(resolverObs);
+      const storedCardIsTheBodyAsItsOwnCard =
+        storedCard === fullDescription &&
+        isAcceptableBodyAsItsOwnCard({
+          body: fullDescription,
+          researchAreas: writtenBodyResearchAreas,
+          servingBarAccepts,
+          evidenceTexts: cardEvidenceTexts,
+        });
       const storedCardUnacceptable =
         !!storedCard &&
+        !storedCardIsTheBodyAsItsOwnCard &&
         !isAcceptableWrittenBodyCard({
           card: storedCard,
           body: fullDescription,
@@ -11660,7 +11706,11 @@ export async function projectFromLog(
         );
         if (provenance) set['fieldProvenance.shortDescription'] = provenance;
         fieldsWritten++;
-      } else if (choice.kind === 'derived' || choice.kind === 'synthesized') {
+      } else if (
+        choice.kind === 'derived' ||
+        choice.kind === 'synthesized' ||
+        choice.kind === 'body'
+      ) {
         groundedShortDescription = choice.card;
       } else if (choice.kind === 'none' && storedCardUnacceptable) {
         unset.shortDescription = '';
