@@ -3369,6 +3369,7 @@ export type RosterMemberIdentity = (
   misattributedProfileUrlHolderId?: mongoose.Types.ObjectId;
   vetoedProfileUrlHolderIds?: mongoose.Types.ObjectId[];
   profileUrlNamesAnotherSiteLead?: boolean;
+  evidenceNamesOneOtherResearcher?: boolean;
 };
 
 async function liveResearcherById(researcherId: unknown): Promise<any | null> {
@@ -3532,7 +3533,11 @@ async function resolveRosterMemberIdentityFromEvidence(
     named.filter((researcher) => observedPersonNameAgreesWith(researcher.displayName, listedName)),
   );
   if (agreeing.length === 0) {
-    return { researcher: null, unresolved: 'evidence-names-someone-else' };
+    return {
+      researcher: null,
+      unresolved: 'evidence-names-someone-else',
+      ...(named.length === 1 ? { evidenceNamesOneOtherResearcher: true } : {}),
+    };
   }
   if (agreeing.length > 1) return { researcher: null, unresolved: 'evidence-ambiguous' };
   return { researcher: agreeing[0], basis: 'identity-evidence' };
@@ -3650,6 +3655,25 @@ async function endListingEdgesUnderTheOtherScreenedRole(
     { $set: { state: 'HISTORICAL', endedAt: provenance?.observedAt ?? new Date() } },
   );
   return ended.modifiedCount ?? 0;
+}
+
+/**
+ * A listing whose own member page names exactly one identified researcher by email, URL or
+ * netid, under a name the listed name does not agree with, is that researcher under a
+ * variant name far more often than a stranger: a blind sample of the 20 such centers
+ * listings found 19 the same person and none different. Minting it name-only made the twin
+ * the shell dedupe cannot fold on the name, so the listing writes nothing until the
+ * conflict is resolved by a fold (#5677).
+ */
+function listingWouldMintAnIdentityConflict(
+  plan: RosterMemberCanonicalPlan,
+  identity: RosterMemberIdentity,
+): boolean {
+  if (identity.researcher || plan.personReferenceId) return false;
+  if (!identity.evidenceNamesOneOtherResearcher) return false;
+  return SOURCES_THAT_REFUSE_A_NAMESAKE_MINT.has(
+    textValue(plan.facts.rosterProvenance?.sourceName),
+  );
 }
 
 async function listingWouldMintANamesake(
@@ -3996,6 +4020,18 @@ async function materializeRosterMember(
     for (const vetoedHolderId of identity.vetoedProfileUrlHolderIds ?? []) {
       await endMisattributedProfileUrlHolderEdges(researchEntityId, plan, vetoedHolderId);
     }
+  }
+  if (listingWouldMintAnIdentityConflict(plan, identity)) {
+    return {
+      entityType: 'researchGroupMember',
+      entityId: materializerDocumentId(entity._id),
+      entityKey: identifier.entityKey,
+      fieldsWritten: 0,
+      conflicts: 0,
+      created: false,
+      resolved,
+      skipped: 'unresolved-identity-conflict',
+    };
   }
   if (await listingWouldMintANamesake(plan, identity)) {
     return {

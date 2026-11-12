@@ -811,6 +811,43 @@ describe(
       expect((await liveEdgesOf(avery)).map((row) => row.role)).toEqual(['DIRECTOR']);
     });
 
+    it('mints no twin when the member page email names one identified researcher under another name (#5677)', async () => {
+      const holder = await accountHolder('Avery', { email: 'avery.synthetic@yale.edu' });
+      const listing = {
+        name: 'Avery Synthetic Quillon',
+        role: 'core-faculty' as const,
+        profileUrl: centerProfileUrl('Avery'),
+      };
+
+      await runLane(
+        { [centerProfileUrl('Avery')]: profilePage({ email: 'avery.synthetic@yale.edu' }) },
+        [listing],
+      );
+
+      expect(await Researcher.countDocuments({ displayName: 'Avery Synthetic Quillon' })).toBe(0);
+      expect(await liveEdgesOf(holder)).toHaveLength(0);
+    });
+
+    it('still mints the listed person when the member page email names no identified researcher (#5677)', async () => {
+      await accountHolder('Blair', { email: 'blair.synthetic@yale.edu' });
+      const listing = {
+        name: 'Avery Synthetic Quillon',
+        role: 'core-faculty' as const,
+        profileUrl: centerProfileUrl('Avery'),
+      };
+
+      await runLane(
+        { [centerProfileUrl('Avery')]: profilePage({ email: 'avery.synthetic@yale.edu' }) },
+        [listing],
+      );
+
+      const minted = (await Researcher.findOne({
+        displayName: 'Avery Synthetic Quillon',
+      }).lean()) as any;
+      expect(minted).toBeTruthy();
+      expect(await liveEdgesOf(minted._id)).toHaveLength(1);
+    });
+
     it('still records a listing no identified researcher shares a name with', async () => {
       await runLane({ [centerProfileUrl('Casey')]: profilePage() });
 
