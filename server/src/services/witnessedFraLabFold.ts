@@ -34,7 +34,13 @@ export interface WitnessedFoldEntity {
   archived?: boolean;
   leadVerification?: {
     state?: string;
-    leads?: Array<{ personId?: unknown; role?: string; verdict?: string; matchedBy?: string }>;
+    leads?: Array<{
+      personId?: unknown;
+      role?: string;
+      verdict?: string;
+      matchedBy?: string;
+      namedOnPage?: boolean;
+    }>;
   } | null;
 }
 
@@ -66,7 +72,13 @@ export type FoldRefusalReason =
   | 'row-not-live'
   | 'no-shared-lead-edge'
   | 'several-own-labs'
-  | 'witnesses-disagree';
+  | 'witnesses-disagree'
+  | 'planned-by-eponymous-lane'
+  | 'lab-already-folding'
+  | 'row-not-loaded'
+  | 'no-merge-group'
+  | 'refused-as-distinct-people'
+  | 'deferred-by-cap';
 
 export interface FoldRefusal {
   facultyRowId: string;
@@ -83,13 +95,13 @@ const isLab = (entity: WitnessedFoldEntity | undefined) => typeOf(entity) === 'L
 
 /**
  * A profile link on the lab page confirms only that the page links the person, which a
- * page naming a different overseer also does, so it is not a witness that the person runs
- * the lab. On Development the one fold it produced was a pair a blind ballot refused.
+ * page naming a different overseer also does, and a surname in the site address does not
+ * read the page at all, so neither is a witness that the person runs the lab. On
+ * Development the one fold a profile link alone produced was a pair a blind ballot refused.
+ * The lane records the name match beside a profile link, so a page that does both counts.
  */
-const PAGE_MATCHES_THAT_NAME_THE_LEAD: ReadonlySet<string> = new Set([
-  'NAMED_ON_PAGE',
-  'SURNAME_IN_SITE_URL',
-]);
+const pageNamesTheLead = (lead: { matchedBy?: string; namedOnPage?: boolean }) =>
+  lead.namedOnPage === true || lead.matchedBy === 'NAMED_ON_PAGE';
 
 function labPageNamesPersonAsPi(lab: WitnessedFoldEntity, personId: string): boolean {
   const verification = lab.leadVerification;
@@ -99,7 +111,7 @@ function labPageNamesPersonAsPi(lab: WitnessedFoldEntity, personId: string): boo
       String(lead.personId) === personId &&
       lead.role === 'PI' &&
       lead.verdict === 'CONFIRMED' &&
-      PAGE_MATCHES_THAT_NAME_THE_LEAD.has(String(lead.matchedBy || '')),
+      pageNamesTheLead(lead),
   );
 }
 
@@ -124,6 +136,7 @@ export function selectWitnessedFraLabFolds(input: {
     Boolean(entity) && entity?.archived !== true;
   const candidates = new Map<string, WitnessedFold[]>();
   const refusals: FoldRefusal[] = [];
+  const rowsWithSeveralOwnLabs = new Set<string>();
   const propose = (fold: WitnessedFold) =>
     candidates.set(fold.facultyRowId, [...(candidates.get(fold.facultyRowId) ?? []), fold]);
 
@@ -173,7 +186,6 @@ export function selectWitnessedFraLabFolds(input: {
       return (
         isLab(lab) &&
         live(lab) &&
-        byEntity.get(id)?.has('PI') &&
         evidencedPiEdges.has(`${personId}:${id}`) &&
         !isOrganizationalHomeEntity(lab as WitnessedFoldEntity) &&
         labPageNamesPersonAsPi(lab as WitnessedFoldEntity, personId)
@@ -182,7 +194,7 @@ export function selectWitnessedFraLabFolds(input: {
     if (ownLabs.length === 0) continue;
     for (const facultyRowId of ownRows) {
       if (ownLabs.length > 1) {
-        refusals.push({ facultyRowId, reason: 'several-own-labs' });
+        rowsWithSeveralOwnLabs.add(facultyRowId);
         continue;
       }
       propose({ personId, facultyRowId, labId: ownLabs[0], witness: 'lab-page-names-pi' });
@@ -197,6 +209,9 @@ export function selectWitnessedFraLabFolds(input: {
       continue;
     }
     folds.push(proposed.find((fold) => fold.witness === 'ballot') ?? proposed[0]);
+  }
+  for (const facultyRowId of rowsWithSeveralOwnLabs) {
+    if (!candidates.has(facultyRowId)) refusals.push({ facultyRowId, reason: 'several-own-labs' });
   }
   return {
     folds: folds.sort((a, b) => a.facultyRowId.localeCompare(b.facultyRowId)),

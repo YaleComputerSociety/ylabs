@@ -207,6 +207,65 @@ describe('a faculty research row folds into its lead’s own lab only on a witne
     expect(folds).toEqual([]);
   });
 
+  it('folds on a lab page that links the person’s profile and also names them', () => {
+    const { folds } = selectWitnessedFraLabFolds({
+      entities: entities(
+        facultyRow,
+        lab({
+          leadVerification: {
+            state: 'verified',
+            leads: [
+              {
+                personId: 'ada',
+                role: 'PI',
+                verdict: 'CONFIRMED',
+                matchedBy: 'OFFICIAL_PROFILE_LINK',
+                namedOnPage: true,
+              },
+            ],
+          },
+        }),
+      ),
+      edges: [edge('ada', 'faculty-row'), edge('ada', 'own-lab')],
+    });
+    expect(folds.map((fold) => [fold.labId, fold.witness])).toEqual([
+      ['own-lab', 'lab-page-names-pi'],
+    ]);
+  });
+
+  it('does not fold when only the site address carries the person’s surname', () => {
+    const { folds } = selectWitnessedFraLabFolds({
+      entities: entities(
+        facultyRow,
+        lab({
+          leadVerification: {
+            state: 'verified',
+            leads: [
+              {
+                personId: 'ada',
+                role: 'PI',
+                verdict: 'CONFIRMED',
+                matchedBy: 'SURNAME_IN_SITE_URL',
+              },
+            ],
+          },
+        }),
+      ),
+      edges: [edge('ada', 'faculty-row'), edge('ada', 'own-lab')],
+    });
+    expect(folds).toEqual([]);
+  });
+
+  it('folds on the ballot without also refusing the row for its several page-witness labs', () => {
+    const { folds, refusals } = selectWitnessedFraLabFolds({
+      entities: entities(facultyRow, lab(), lab({ id: 'second-lab', slug: 'second-lab' })),
+      edges: [edge('ada', 'faculty-row'), edge('ada', 'own-lab'), edge('ada', 'second-lab')],
+      ballotPairs: [{ label: 'P95', facultyRowId: 'faculty-row', labId: 'own-lab' }],
+    });
+    expect(folds.map((fold) => [fold.labId, fold.witness])).toEqual([['own-lab', 'ballot']]);
+    expect(refusals).toEqual([]);
+  });
+
   it('does not fold on the page witness when the person’s PI edge on the lab carries no evidence', () => {
     const { folds } = selectWitnessedFraLabFolds({
       entities: entities(facultyRow, lab()),

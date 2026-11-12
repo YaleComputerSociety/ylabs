@@ -29,6 +29,7 @@ import {
   selectWitnessedFraLabFolds,
   type BallotFoldPair,
   type FoldRefusal,
+  type FoldRefusalReason,
   type WitnessedFold,
   type WitnessedFoldContext,
 } from '../services/witnessedFraLabFold';
@@ -202,19 +203,21 @@ export interface RunEponymousFraLabMergeStageOptions {
   }) => Promise<WitnessedFoldContext>;
 }
 
+type EponymousFraLabMergeGroup = ReturnType<typeof selectEponymousFraLabMergeGroups>[number];
+
 /**
  * The witnessed folds of a faculty research row into its lead's own lab, as merge groups
- * built from that lead's scope row. A fold whose row the lead's scope does not hold, or that
- * touches a row an eponymous group already plans, is left out.
+ * built from that lead's scope row. A fold that cannot be planned is reported as a refusal
+ * with its reason, never dropped silently.
  */
 async function witnessedFoldGroups(
   rows: ResearchEntityPiDedupeRow[],
   eponymousGroups: ReturnType<typeof selectEponymousFraLabMergeGroups>,
   options: RunEponymousFraLabMergeStageOptions,
 ): Promise<{
-  groups: ReturnType<typeof selectEponymousFraLabMergeGroups>;
-  folds: WitnessedFold[];
+  foldByGroup: Map<EponymousFraLabMergeGroup, WitnessedFold>;
   refusals: FoldRefusal[];
+  drop: (fold: WitnessedFold, reason: FoldRefusalReason) => void;
 }> {
   const context = await (options.loadWitnessContext ?? loadWitnessedFoldContext)({
     personIds: rows.map((row) => row.userId),
@@ -241,13 +244,30 @@ async function witnessedFoldGroups(
         }
       : null;
   };
-  const groups: ReturnType<typeof selectEponymousFraLabMergeGroups> = [];
-  const kept: WitnessedFold[] = [];
+  const foldByGroup = new Map<EponymousFraLabMergeGroup, WitnessedFold>();
+  const folding = new Set<string>();
+  const drop = (fold: WitnessedFold, reason: FoldRefusalReason) =>
+    refusals.push({
+      facultyRowId: fold.facultyRowId,
+      labId: fold.labId,
+      ...(fold.label ? { label: fold.label } : {}),
+      reason,
+    });
   for (const fold of folds) {
-    if (planned.has(fold.facultyRowId) || planned.has(fold.labId)) continue;
+    if (planned.has(fold.facultyRowId) || planned.has(fold.labId)) {
+      drop(fold, 'planned-by-eponymous-lane');
+      continue;
+    }
+    if (folding.has(fold.facultyRowId) || folding.has(fold.labId)) {
+      drop(fold, 'lab-already-folding');
+      continue;
+    }
     const lab = asScopeEntity(fold.labId);
     const facultyRow = asScopeEntity(fold.facultyRowId);
-    if (!lab || !facultyRow) continue;
+    if (!lab || !facultyRow) {
+      drop(fold, 'row-not-loaded');
+      continue;
+    }
     const group = buildPinnedCanonicalMergeGroup(
       {
         userId: fold.personId,
@@ -257,13 +277,15 @@ async function witnessedFoldGroups(
       fold.labId,
       [fold.facultyRowId],
     );
-    if (!group) continue;
-    planned.add(fold.facultyRowId);
-    planned.add(fold.labId);
-    groups.push(group);
-    kept.push(fold);
+    if (!group) {
+      drop(fold, 'no-merge-group');
+      continue;
+    }
+    folding.add(fold.facultyRowId);
+    folding.add(fold.labId);
+    foldByGroup.set(group, fold);
   }
-  return { groups, folds: kept, refusals };
+  return { foldByGroup, refusals, drop };
 }
 
 export async function runEponymousFraLabMergeStage(
@@ -277,9 +299,16 @@ export async function runEponymousFraLabMergeStage(
   const witnessed = await witnessedFoldGroups(rows, eponymousGroups, options);
   const { kept: plannedGroups, refused: distinctPeopleRefusals } = await partitionByDistinctPeople([
     ...eponymousGroups,
-    ...witnessed.groups,
+    ...witnessed.foldByGroup.keys(),
   ]);
   const cappedGroups = plannedGroups.slice(0, Math.max(0, options.maxMerges));
+  const capped = new Set(cappedGroups);
+  const kept = new Set(plannedGroups);
+  const witnessedFolds: WitnessedFold[] = [];
+  for (const [group, fold] of witnessed.foldByGroup) {
+    if (capped.has(group)) witnessedFolds.push(fold);
+    else witnessed.drop(fold, kept.has(group) ? 'deferred-by-cap' : 'refused-as-distinct-people');
+  }
 
   let appliedMergeCount = 0;
   let visibilityRecomputed = 0;
@@ -330,7 +359,7 @@ export async function runEponymousFraLabMergeStage(
     canonicalIndexSyncFailures,
     researchPlanCarry,
     researchPlansThatWouldMove: researchPlansThatWouldMove(researchPlanCarry),
-    witnessedFolds: witnessed.folds,
+    witnessedFolds,
     witnessedFoldRefusals: witnessed.refusals,
   };
 }
