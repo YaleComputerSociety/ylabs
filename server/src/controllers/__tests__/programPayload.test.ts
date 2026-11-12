@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { publicProgramForReader } from '../programPayload';
+import { publicProgramForReader, withProgramAudience } from '../programPayload';
 import { publicFellowshipForStudent } from '../../services/fellowshipService';
 
 const specificPage =
@@ -586,6 +586,73 @@ describe('publicProgramForReader department research guidance (#4285)', () => {
 
     expect(payload.departmentResearchGuidance).toBe(false);
     expect(payload.applicationLink).toBe('https://fixture.yale.edu/undergraduate/apply-form');
+  });
+});
+
+describe('department guidance kind on the served payloads (#5298)', () => {
+  const studentPayload = (program: Record<string, unknown>) =>
+    publicProgramForReader(publicFellowshipForStudent(program));
+  const seniorEssayGuide = {
+    _id: '6a6f84d074dd496b1d43b191',
+    title: 'Fixture Studies Senior Essay',
+    programKind: 'DEPARTMENT_SENIOR_ESSAY_GUIDE',
+    sourcePageTitle: 'The Senior Essay',
+    sourceUrl: specificPage,
+    applicationLink: 'https://fixture.yale.edu/undergraduate/senior-essay-form',
+    links: [],
+  };
+
+  it('serves senior essay guidance as guidance with its kind and no application link', () => {
+    const payload = studentPayload(seniorEssayGuide);
+
+    expect(payload.departmentResearchGuidance).toBe(true);
+    expect(payload.departmentGuidanceKind).toBe('senior_essay');
+    expect(payload.applicationLink).toBeUndefined();
+    expect(payload.sourceUrl).toBe(specificPage);
+  });
+
+  it('serves research guidance with the research kind', () => {
+    const payload = studentPayload({
+      ...seniorEssayGuide,
+      programKind: 'DEPARTMENT_RESEARCH_GUIDE',
+      sourcePageTitle: 'Undergraduate Research',
+    });
+
+    expect(payload.departmentResearchGuidance).toBe(true);
+    expect(payload.departmentGuidanceKind).toBe('research');
+  });
+
+  it('serves a senior essay kind that states an application cycle as an application, with no kind', () => {
+    const payload = studentPayload({
+      ...seniorEssayGuide,
+      deadline: new Date('2099-02-01T00:00:00Z'),
+    });
+
+    expect(payload.departmentResearchGuidance).toBe(false);
+    expect(payload).not.toHaveProperty('departmentGuidanceKind');
+    expect(payload.applicationLink).toBe(
+      'https://fixture.yale.edu/undergraduate/senior-essay-form',
+    );
+  });
+
+  it('never serves a kind the guidance flag does not back', () => {
+    const payload = publicProgramForReader({
+      ...seniorEssayGuide,
+      departmentResearchGuidance: false,
+      departmentGuidanceKind: 'senior_essay',
+    });
+
+    expect(payload).not.toHaveProperty('departmentGuidanceKind');
+  });
+
+  it('carries the kind through the search payload', () => {
+    expect(withProgramAudience(seniorEssayGuide)).toMatchObject({
+      departmentResearchGuidance: true,
+      departmentGuidanceKind: 'senior_essay',
+    });
+    expect(
+      withProgramAudience({ ...seniorEssayGuide, programKind: 'FELLOWSHIP_FUNDING' }),
+    ).not.toHaveProperty('departmentGuidanceKind');
   });
 });
 

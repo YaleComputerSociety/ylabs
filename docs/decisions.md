@@ -5,6 +5,32 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-11-12: Senior Essay Pages Are Served As Their Own Kind Of Department Guidance (#5298)
+
+This refines the 2026-10-01 entry below (#4285), which held senior-essay pages back from `/programs` and asked for each department's own research page "rather than the predicate widened".
+In the humanities and most social sciences the senior essay is the research a Yale undergraduate does, and its page is where the department explains how to work with an adviser, so holding it left those majors with no department guidance at all.
+The owner approved options 2 and 1 of #5298 together on 2026-11-12, kept Economics on its research-assistant program, and deferred the detail-page cue (option 4).
+
+Decided:
+
+- **A second guidance kind, earned separately.** `programKind: 'DEPARTMENT_SENIOR_ESSAY_GUIDE'` is admitted when the page's own title (`sourcePageTitle`) names a senior essay, a senior project or a senior requirement, names no application, deadline, registration, form, prospectus, funding, grant, award, prize, fellowship, internship, summer, news, event or graduate audience, and the record states no deadline, opening date or accepting-applications evidence.
+  The research-guidance predicate is unchanged, so a requirement page is never called research guidance and no page can earn both kinds.
+  The programs gate admits it with its own reason, `department_senior_essay_guidance`.
+- **One section, two labels.** Both kinds are filed under "Department research guidance" on `/programs` and both are matched by the "Department guidance" quick filter.
+  The served `departmentResearchGuidance` flag stays true for both, so every guard that withholds application affordances covers both, and the served `departmentGuidanceKind` (`research` or `senior_essay`) names which label to show.
+  A senior-essay guide carries the badge "Senior essay guidance", "Not an application", no deadline or urgency banner, and the one action "Read the department's senior essay guidance".
+- **Re-point the lane where a department publishes a better page.** Earth and Planetary Sciences now reads its own research-opportunities page in place of its program overview, and Political Science and History, which publish no undergraduate research page, read their senior-essay pages.
+  The lane titles its senior-essay records "<Department> Senior Essay" (or Senior Project, or Senior Requirement) rather than calling them research.
+- **Economics stays on its research-assistant program.** Its senior-essay page is still read only for the course-credit route, not served as guidance.
+- **No detail-page cue yet.** Option 4 waits until coverage is measured on the served catalog.
+
+Measured on Development on 2026-11-11 as a write-free dry run: the lane run with every MongoDB write refused, the classifier and the programs gate evaluated over the stored rows with the lane's would-be values, and the served catalog read through `searchProgramsController` as a signed-out student.
+Before, 173 programs are served, 11 of them research guidance.
+After the lane run and a gate recompute, 12 more are admitted and none is withdrawn: 11 senior-essay guides (7 humanities, 3 social science, 1 science) and 1 research guide from the re-pointed Earth and Planetary Sciences page, so 185 programs and 23 guides.
+The existing 11 research guides keep their kind and tier, and the gate with the new code over the stored rows changes no tier.
+5 configured pages still earn neither kind: a labs list, two general undergraduate-program pages, a senior-essay registration form, and a capstone-faculty list.
+This is a stored-data change, delivered by a lane run and a programs gate recompute on Development and then a re-read of `/programs`.
+
 ## 2026-11-11: A Lead Their Department Lists As Emeritus Is Emeritus (#5835)
 
 The coordinator decided that a lead whom their own department's official emeritus page lists, and whose own page is not freshly read as a current appointment, is emeritus for the 2026-10-02 rule below, so the row is labelled and claims no way in without current activity.

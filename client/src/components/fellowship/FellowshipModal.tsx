@@ -16,9 +16,9 @@ import {
   programAudienceLabel,
 } from '../../utils/fellowshipStatus';
 import {
-  DEPARTMENT_RESEARCH_GUIDANCE_ACTION,
   DEPARTMENT_RESEARCH_GUIDANCE_BADGE_CLASS,
-  DEPARTMENT_RESEARCH_GUIDANCE_LABEL,
+  departmentGuidanceCopy,
+  departmentGuidanceKindOf,
   departmentResearchGuidanceHref,
   entryModeLabel,
   isDepartmentResearchGuidance,
@@ -166,10 +166,12 @@ const FellowshipModal = ({
   if (!isOpen || !fellowship) return null;
   const guidance = isDepartmentResearchGuidance(fellowship);
   const guidanceHref = guidance ? departmentResearchGuidanceHref(fellowship) : undefined;
+  const guidanceCopy = departmentGuidanceCopy(fellowship);
+  const seniorEssayGuidance = departmentGuidanceKindOf(fellowship) === 'senior_essay';
   const cycleStatus = getFellowshipCycleStatus(fellowship);
   const statusBadge = guidance
     ? {
-        label: DEPARTMENT_RESEARCH_GUIDANCE_LABEL,
+        label: guidanceCopy.label,
         className: DEPARTMENT_RESEARCH_GUIDANCE_BADGE_CLASS,
       }
     : cycleStatus;
@@ -292,7 +294,7 @@ const FellowshipModal = ({
                 </h2>
                 <p id="program-detail-description" className="sr-only">
                   {guidance
-                    ? "Department research guidance, which is not an application, and a link to the department's page."
+                    ? `${guidanceCopy.label}, which is not an application, and a link to the department's page.`
                     : 'Program details, eligibility, deadlines, and application actions.'}
                 </p>
               </div>
@@ -308,8 +310,8 @@ const FellowshipModal = ({
                       trackGuidanceClick(fellowship.id, guidanceHref);
                     }}
                     className={iconActionClass}
-                    aria-label={DEPARTMENT_RESEARCH_GUIDANCE_ACTION}
-                    title={DEPARTMENT_RESEARCH_GUIDANCE_ACTION}
+                    aria-label={guidanceCopy.action}
+                    title={guidanceCopy.action}
                   >
                     <ExternalLinkIcon size={18} />
                   </a>
@@ -389,12 +391,11 @@ const FellowshipModal = ({
                   <section>
                     <h3 className={sectionHeadingClass}>What this is</h3>
                     <div className="space-y-2 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] p-3">
-                      <p className="text-sm font-medium text-ink">
-                        {DEPARTMENT_RESEARCH_GUIDANCE_LABEL}
-                      </p>
+                      <p className="text-sm font-medium text-ink">{guidanceCopy.label}</p>
                       <p className="text-sm leading-relaxed text-ink-soft">
-                        The department's own advice on finding a faculty mentor and getting started
-                        in research. It is a guide, not an application.
+                        {seniorEssayGuidance
+                          ? "The department's own explanation of how its majors write a senior essay with a faculty adviser. It is a guide, not an application."
+                          : "The department's own advice on finding a faculty mentor and getting started in research. It is a guide, not an application."}
                       </p>
                       {audienceLabel && (
                         <div>
@@ -864,7 +865,7 @@ const FellowshipModal = ({
                       onClick={() => trackGuidanceClick(fellowship.id, guidanceHref)}
                       className="yr-pressable inline-flex min-h-[44px] items-center rounded-control bg-brand px-6 py-2.5 text-sm font-medium text-white transition-colors hover:bg-brand-navy yr-focus-ring"
                     >
-                      {DEPARTMENT_RESEARCH_GUIDANCE_ACTION}
+                      {guidanceCopy.action}
                       <ExternalLinkIcon className="ml-2" size={16} />
                     </a>
                   </div>

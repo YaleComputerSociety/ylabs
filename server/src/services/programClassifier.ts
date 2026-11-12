@@ -4,7 +4,10 @@ import type {
   ProgramKind,
   ProgramRole,
 } from '../models/fellowship';
-import { isDepartmentResearchGuidancePage } from './departmentResearchGuidance';
+import {
+  isDepartmentResearchGuidancePage,
+  isDepartmentSeniorEssayGuidancePage,
+} from './departmentResearchGuidance';
 import { classifyProgramResearchRelevance } from './programResearchRelevance';
 
 export interface ProgramClassificationInput {
@@ -50,6 +53,7 @@ const STARTS_RESEARCH_KINDS: ReadonlySet<ProgramKind> = new Set([
   'RA_PROGRAM',
   'MENTOR_MATCHING',
   'DEPARTMENT_RESEARCH_GUIDE',
+  'DEPARTMENT_SENIOR_ESSAY_GUIDE',
 ]);
 
 const FUNDS_RESEARCH_KINDS: ReadonlySet<ProgramKind> = new Set([
@@ -608,6 +612,21 @@ function classifyProgramKind(input: ProgramClassificationInput): KindClassificat
       bestNextStep:
         "Use the department's guide to find faculty whose research fits your interests, then contact them directly.",
       prepSteps: ['Faculty research fit', 'Short introduction email'],
+    };
+  }
+
+  if (isDepartmentSeniorEssayGuidancePage(input)) {
+    return {
+      programCategory: 'RECURRING_PROGRAM',
+      programKind: 'DEPARTMENT_SENIOR_ESSAY_GUIDE',
+      entryMode: 'CONTACT_FACULTY',
+      studentFacingCategory: 'Senior essay guidance',
+      requiresMentorBeforeApply: false,
+      mentorMatching: false,
+      undergraduateOnly: true,
+      bestNextStep:
+        "Read the department's senior essay guidance to learn how its majors choose a topic and find a faculty adviser.",
+      prepSteps: ['Senior essay topic', 'Faculty adviser fit'],
     };
   }
 

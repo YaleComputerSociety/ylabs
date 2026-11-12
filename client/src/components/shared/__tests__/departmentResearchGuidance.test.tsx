@@ -197,3 +197,121 @@ describe('department research guidance (#4285)', () => {
     expect(programBoardSectionOf(guidance, 'closed')).toBe('guidance');
   });
 });
+
+const SENIOR_ESSAY_PAGE = 'https://fixture.yale.edu/undergraduate/senior-essay';
+
+const seniorEssayGuidance = createFellowship({
+  ...guidance,
+  _id: 'synthetic-senior-essay-guidance',
+  title: 'Fixture Humanities Senior Essay',
+  programKind: 'DEPARTMENT_SENIOR_ESSAY_GUIDE',
+  departmentGuidanceKind: 'senior_essay',
+  studentFacingCategory: 'Senior essay guidance',
+  summary: 'How majors in this department write a senior essay with a faculty adviser.',
+  sourceUrl: SENIOR_ESSAY_PAGE,
+  applicationLink: SENIOR_ESSAY_PAGE,
+});
+
+const seniorEssayItem: BrowsableItem = { type: 'fellowship', data: seniorEssayGuidance };
+
+const SENIOR_ESSAY_ACTION = "Read the department's senior essay guidance";
+
+const expectSeniorEssayAction = (link: HTMLElement) => {
+  expect(link.getAttribute('href')).toBe(SENIOR_ESSAY_PAGE);
+  expect(link.getAttribute('target')).toBe('_blank');
+  expect(link.getAttribute('rel')).toContain('noopener');
+};
+
+describe('department senior essay guidance (#5298)', () => {
+  it('keeps the served kind through the client mapper and drops an unknown one', () => {
+    expect(seniorEssayGuidance.departmentGuidanceKind).toBe('senior_essay');
+    expect(
+      createFellowship({ ...guidance, departmentGuidanceKind: 'something-else' })
+        .departmentGuidanceKind,
+    ).toBeUndefined();
+  });
+
+  it('renders a browse card labelled as senior essay guidance with no application affordance', () => {
+    const { container } = withContexts(
+      <BrowseCard
+        item={seniorEssayItem}
+        isFavorite={false}
+        onOpenModal={vi.fn()}
+        onToggleFavorite={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Senior essay guidance')).toBeTruthy();
+    expect(screen.queryByText('Department guidance')).toBeNull();
+    expect(screen.getByText('Not an application')).toBeTruthy();
+    expect(container.textContent).not.toMatch(APPLICATION_AFFORDANCE);
+    expect(screen.queryByRole('link', { name: "Read the department's guidance" })).toBeNull();
+    const action = screen.getByRole('link', { name: SENIOR_ESSAY_ACTION });
+    expectSeniorEssayAction(action);
+    expect(action.className).toContain('min-h-11');
+  });
+
+  it('renders a list row labelled as senior essay guidance at the text-size floor', () => {
+    const { container } = withContexts(
+      <BrowseListItem
+        item={seniorEssayItem}
+        isFavorite
+        onOpenModal={vi.fn()}
+        onToggleFavorite={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Senior essay guidance').className).toContain('text-xs');
+    expect(container.textContent).not.toMatch(APPLICATION_AFFORDANCE);
+    expectSeniorEssayAction(screen.getByRole('link', { name: SENIOR_ESSAY_ACTION }));
+    expect(undersizedRenderedTextClasses(container)).toEqual([]);
+  });
+
+  it('renders the detail modal as senior essay guidance with no application process', () => {
+    withContexts(
+      <FellowshipModal
+        fellowship={seniorEssayGuidance}
+        isOpen
+        onClose={vi.fn()}
+        isFavorite={false}
+        toggleFavorite={vi.fn()}
+      />,
+    );
+
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.textContent).not.toMatch(APPLICATION_AFFORDANCE);
+    expect(within(dialog).getAllByText('Senior essay guidance').length).toBeGreaterThan(0);
+    expect(within(dialog).queryByText('Department research guidance')).toBeNull();
+    expect(dialog.textContent).toContain('how its majors write a senior essay');
+    expect(within(dialog).queryByText('Key dates')).toBeNull();
+    expect(within(dialog).queryByText('Application process')).toBeNull();
+    const actions = within(dialog).getAllByRole('link', { name: SENIOR_ESSAY_ACTION });
+    expect(actions.length).toBeGreaterThan(0);
+    actions.forEach(expectSeniorEssayAction);
+  });
+
+  it('files senior essay guidance in the same board section as research guidance', () => {
+    expect(programBoardSectionOf(seniorEssayGuidance, 'closed')).toBe('guidance');
+  });
+
+  it('keeps a senior essay kind the server did not serve as guidance on its application affordances', () => {
+    const application = createFellowship({
+      ...seniorEssayGuidance,
+      _id: 'synthetic-unserved-senior-essay',
+      departmentResearchGuidance: false,
+      deadline: '2999-06-01T00:00:00.000Z',
+      isAcceptingApplications: true,
+    });
+    withContexts(
+      <BrowseCard
+        item={{ type: 'fellowship', data: application }}
+        isFavorite={false}
+        onOpenModal={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText(/^Due /)).toBeTruthy();
+    expect(screen.queryByText('Not an application')).toBeNull();
+    expect(screen.queryByRole('link', { name: SENIOR_ESSAY_ACTION })).toBeNull();
+  });
+});

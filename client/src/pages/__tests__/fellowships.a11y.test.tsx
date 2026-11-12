@@ -223,4 +223,40 @@ describe('fellowships surface accessibility', () => {
     await screen.findByRole('dialog');
     await expectNoAxeViolations(modal.container);
   });
+
+  it('has no serious or critical axe violations for senior essay guidance (#5298)', async () => {
+    const seniorEssay = baseFellowship({
+      id: 'senior-essay',
+      title: 'Fixture Senior Essay Page',
+      programKind: 'DEPARTMENT_SENIOR_ESSAY_GUIDE',
+      departmentResearchGuidance: true,
+      departmentGuidanceKind: 'senior_essay',
+      entryMode: 'CONTACT_FACULTY',
+      studentFacingCategory: 'Senior essay guidance',
+      requiresMentorBeforeApply: false,
+      isAcceptingApplications: false,
+      deadline: null,
+      sourceUrl: 'https://fixture.yale.edu/undergraduate/senior-essay',
+    });
+    const { container } = renderPage([baseFellowship(), seniorEssay]);
+    await screen.findByText('Fixture Senior Essay Page');
+    await expectNoAxeViolations(container);
+    cleanup();
+
+    const modal = render(
+      <MemoryRouter>
+        <FellowshipSearchContext.Provider value={defaultFellowshipSearchContext}>
+          <FellowshipModal
+            fellowship={seniorEssay}
+            isOpen
+            isFavorite={false}
+            onClose={vi.fn()}
+            toggleFavorite={vi.fn()}
+          />
+        </FellowshipSearchContext.Provider>
+      </MemoryRouter>,
+    );
+    await screen.findByRole('dialog');
+    await expectNoAxeViolations(modal.container);
+  });
 });

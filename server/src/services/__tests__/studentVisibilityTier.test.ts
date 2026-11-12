@@ -3293,6 +3293,62 @@ describe('a department research guidance page (#4285)', () => {
   });
 });
 
+describe('a department senior essay guidance page (#5298)', () => {
+  const seniorEssayGuide = {
+    title: 'Fixture Studies Senior Essay',
+    studentFacingCategory: 'Senior essay guidance',
+    programKind: 'DEPARTMENT_SENIOR_ESSAY_GUIDE',
+    entryMode: 'CONTACT_FACULTY',
+    summary:
+      'The department explains how its majors choose a senior essay topic and work with a faculty adviser.',
+    sourceUrl: 'https://fixture.yale.edu/undergraduate/senior-essay',
+    sourcePageTitle: 'The Senior Essay',
+    applicationLink: 'https://fixture.yale.edu/undergraduate/senior-essay',
+    undergraduateOnly: true,
+  };
+
+  it('is served as guidance under its own reason when its page title names a senior essay', () => {
+    const result = computeProgramStudentVisibility(seniorEssayGuide);
+    expect(result.tier).toBe('student_ready');
+    expect(result.reasons).toContain('department_senior_essay_guidance');
+    expect(result.reasons).not.toContain('department_research_guidance');
+    expect(result.reasons).not.toContain('application_route');
+    expect(result.reasons).not.toContain('application_link_is_info_page');
+  });
+
+  it('stays held when the record states an application cycle', () => {
+    const result = computeProgramStudentVisibility({
+      ...seniorEssayGuide,
+      deadline: new Date('2099-02-01T00:00:00Z'),
+    });
+    expect(result.reasons).not.toContain('department_senior_essay_guidance');
+  });
+
+  it('stays held when its page title names an application, a deadline, funding or a form', () => {
+    for (const sourcePageTitle of [
+      'Senior Essay Application',
+      'Senior Essay Deadlines',
+      'Senior Essay Grants',
+      'Senior Essay Registration Form',
+      'Undergraduate Program',
+    ]) {
+      const result = computeProgramStudentVisibility({ ...seniorEssayGuide, sourcePageTitle });
+      expect(result.tier).not.toBe('student_ready');
+      expect(result.reasons).not.toContain('department_senior_essay_guidance');
+    }
+  });
+
+  it('stays held when the research guide kind carries a senior essay page title', () => {
+    const result = computeProgramStudentVisibility({
+      ...seniorEssayGuide,
+      programKind: 'DEPARTMENT_RESEARCH_GUIDE',
+    });
+    expect(result.tier).not.toBe('student_ready');
+    expect(result.reasons).not.toContain('department_senior_essay_guidance');
+    expect(result.reasons).not.toContain('department_research_guidance');
+  });
+});
+
 describe('a stored card that repeats a useful body', () => {
   const lead = [
     { role: 'pi', userId: 'robin-fixture', user: { fname: 'Robin', lname: 'Fixture' } },

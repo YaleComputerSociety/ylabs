@@ -21,12 +21,16 @@ export const PROGRAM_AUDIENCES = [
 ] as const;
 export type ProgramAudience = (typeof PROGRAM_AUDIENCES)[number];
 
+export const DEPARTMENT_GUIDANCE_KINDS = ['research', 'senior_essay'] as const;
+export type DepartmentGuidanceKind = (typeof DEPARTMENT_GUIDANCE_KINDS)[number];
+
 export type Fellowship = {
   id: string;
   programCategory: string;
   programKind: string;
   programRole?: string;
   departmentResearchGuidance?: boolean;
+  departmentGuidanceKind?: DepartmentGuidanceKind;
   entryMode: string;
   studentFacingCategory: string;
   requiresMentorBeforeApply: boolean;

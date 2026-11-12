@@ -167,8 +167,9 @@ Owner: `server/src/utils/creativePracticeDescription.ts`; `docs/decisions.md` 20
 **Department research guidance.**
 A department's own page on how an undergraduate gets into research there, served on `/programs` with no application affordance and the action "Read the department's guidance".
 Stored as `programKind: 'DEPARTMENT_RESEARCH_GUIDE'`, earned only by the page's own title (`sourcePageTitle`) on a record that states no application cycle, and admitted by the programs gate with the reason `department_research_guidance`.
-The served `departmentResearchGuidance` flag carries that same predicate to the client, so a row whose kind alone reads as guidance keeps its application affordances.
-Owner: `server/src/services/departmentResearchGuidance.ts`; `docs/decisions.md` 2026-10-01 holds the decision.
+Its second kind is senior essay guidance, a department's own page on its senior essay, senior project or senior requirement, stored as `programKind: 'DEPARTMENT_SENIOR_ESSAY_GUIDE'`, earned by its own title predicate, admitted with the reason `department_senior_essay_guidance`, labelled "Senior essay guidance" and served in the same section with the action "Read the department's senior essay guidance".
+The served `departmentResearchGuidance` flag is true for either kind and carries the same predicates to the client, so a row whose kind alone reads as guidance keeps its application affordances, and the served `departmentGuidanceKind` (`research` or `senior_essay`) chooses the label.
+Owner: `server/src/services/departmentResearchGuidance.ts`; `docs/decisions.md` 2026-10-01 and 2026-11-12 hold the decision.
 
 ## Environments and operations
 

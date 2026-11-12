@@ -610,6 +610,57 @@ describe('classifyProgram internship identity (#2925)', () => {
       ).not.toBe('DEPARTMENT_RESEARCH_GUIDE');
     });
 
+    it('reads a page titled as a senior essay as senior essay guidance, a way in (#5298)', () => {
+      expect(
+        classifyProgram({
+          title: 'Fixture Studies Senior Essay',
+          sourcePageTitle: 'The Senior Essay',
+          description: 'Majors write a senior essay with a faculty adviser over the senior year.',
+        }),
+      ).toMatchObject({
+        programKind: 'DEPARTMENT_SENIOR_ESSAY_GUIDE',
+        programRole: 'STARTS_RESEARCH',
+        entryMode: 'CONTACT_FACULTY',
+        studentFacingCategory: 'Senior essay guidance',
+        undergraduateOnly: true,
+      });
+    });
+
+    it('does not read senior essay guidance from the lane-authored record title alone (#5298)', () => {
+      expect(classifyProgram({ title: 'Fixture Studies Senior Essay' }).programKind).not.toBe(
+        'DEPARTMENT_SENIOR_ESSAY_GUIDE',
+      );
+    });
+
+    it('does not read a senior essay page that states an application cycle as guidance (#5298)', () => {
+      expect(
+        classifyProgram({
+          title: 'Fixture Studies Senior Essay',
+          sourcePageTitle: 'Senior Essay',
+          deadline: new Date('2099-02-01T00:00:00Z'),
+        }).programKind,
+      ).not.toBe('DEPARTMENT_SENIOR_ESSAY_GUIDE');
+    });
+
+    it('keeps a senior essay funding page as funding rather than guidance (#5298)', () => {
+      expect(
+        classifyProgram({
+          title: 'Fixture Senior Essay Grants',
+          sourcePageTitle: 'Senior Essay Grants',
+          description: 'Grants fund the research costs of a senior essay.',
+        }).programKind,
+      ).toBe('SENIOR_THESIS_FUNDING');
+    });
+
+    it('does not read a senior essay registration form as guidance (#5298)', () => {
+      expect(
+        classifyProgram({
+          title: 'Fixture Studies Senior Essay',
+          sourcePageTitle: 'Senior Essay Instructions and Registration Form',
+        }).programKind,
+      ).not.toBe('DEPARTMENT_SENIOR_ESSAY_GUIDE');
+    });
+
     it('does not read a guidance page that states an application cycle as a guide (#4285)', () => {
       expect(
         classifyProgram({
