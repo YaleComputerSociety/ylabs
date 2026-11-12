@@ -305,7 +305,7 @@ With no owner label the report says `unmeasured: no owner labels` rather than a 
 OPENAI_API_KEY= yarn --cwd server lane:scorecard --benchmark=<benchmark-id> --lead-ballot=<directory>
 ```
 
-The directory holds `ballot.md`, whose items each carry one `Verdict: [ ] correct lead  [ ] not the lead  [ ] can't tell` line, and `key.json`, which maps each blind item number to its `entityKey` and `personId` and names the benchmark the ballot was drawn from.
+The directory holds `ballot.md`, whose items each open with a `## Item <n>` heading and carry one `Verdict: [ ] correct lead  [ ] not the lead  [ ] can't tell` line, and `key.json`, which maps each blind item number to its `entityKey` and `personId` and names the benchmark the ballot was drawn from.
 It must sit outside the repository, because a ballot quotes pages that name people, and the flag refuses a path inside it.
 The reader refuses an item that marks more than one box, a ballot missing a keyed item, and an item the key does not name, and it leaves an unmarked item unlabelled rather than reading it as "can't tell".
 A ballot applies only to the benchmark it was drawn from, and the run refuses a ballot whose benchmark it does not replay; the report counts the labelled leads that replay no longer judges as `labelsNotReplayed`.
