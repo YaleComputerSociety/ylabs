@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { isFoldableNameVariant } from '../canonicalMembershipMaterializer';
 
-describe('isFoldableNameVariant (#5897)', () => {
+describe('isFoldableNameVariant (#5923)', () => {
   it('reads a middle initial or middle name added or dropped as one person', () => {
     expect(isFoldableNameVariant('Avery Synthetic', 'Avery Q. Synthetic')).toBe(true);
     expect(isFoldableNameVariant('Avery Quinn Synthetic', 'Avery Q Synthetic')).toBe(true);

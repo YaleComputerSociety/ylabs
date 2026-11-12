@@ -387,7 +387,7 @@ describe(
       expect(served.filter((name) => name === 'Devon Synthetic')).toHaveLength(1);
     });
 
-    it('mints no twin of an identified person listed under a middle initial or nickname (#5897)', async () => {
+    it('mints no twin of an identified person listed under a middle initial or nickname (#5923)', async () => {
       await accountHolder('Avery', { displayName: 'Avery Q Synthetic' });
       await accountHolder('Katherine', { displayName: 'Katherine Synthetic' });
 
@@ -400,7 +400,7 @@ describe(
       expect(await Researcher.countDocuments({ displayName: 'Kate Synthetic' })).toBe(0);
     });
 
-    it('finds an identified holder written with accents or a hyphen the listing omits (#5897)', async () => {
+    it('finds an identified holder written with accents or a hyphen the listing omits (#5923)', async () => {
       await accountHolder('Avery', { displayName: 'Avery Q Synthétic' });
       await accountHolder('Blair', { displayName: 'Blair Syn-Thetic' });
 
@@ -413,7 +413,7 @@ describe(
       expect(await Researcher.countDocuments({ displayName: 'Blair Synthetic' })).toBe(0);
     });
 
-    it('still mints a person who only shares an identified researcher surname (#5897)', async () => {
+    it('still mints a person who only shares an identified researcher surname (#5923)', async () => {
       await accountHolder('Blair', { displayName: 'Blair Synthetic' });
 
       await runLane({}, [member('Casey')]);
