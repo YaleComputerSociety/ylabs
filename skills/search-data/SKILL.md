@@ -837,7 +837,7 @@ The text index weighted a title word like a description word, and the page then 
   Under any other sort they stay in the deadline sections, and the page says some programs mention all but one of the words and points to the Recommended sort that lists them apart.
   `history senior essay` used to serve three loosely related awards and none of the residential-college senior research grants, which say "senior" and "essay" but never "history".
 - Ranking: every-word matches first, then subject matches, then the one-word-short fallback; within each, a title equal to the query, then a title carrying the query as a phrase, then a title carrying every word, then a weighted field score (title 8, summary, competition type, purpose and student-facing category 3, eligibility 2, long text 1), then the requested sort.
-  Under a citizenship filter, programs that state their citizenship rule come first within each of those tiers (#5299, `docs/decisions.md` 2026-11-12).
+  Under a citizenship filter, programs that state their citizenship rule come first within the best matches and within the close matches (#5299, `docs/decisions.md` 2026-11-12).
 
 The page keeps that order: a result set that answers a search renders as one "Best matches" section, with archive records still apart, instead of deadline sections, because each card already shows whether it is open, closing soon or closed.
 `resultsRankedByRelevance` in the client reducer records whether the current results answered a search; an explicit sort choice still regroups and sorts as before.

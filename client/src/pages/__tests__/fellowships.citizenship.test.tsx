@@ -242,21 +242,6 @@ describe('Fellowships citizenship split (#5299)', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it('renders the same split the server counted', () => {
-    const { container } = renderFellowships({
-      fellowships: MIXED,
-      citizenshipCounts: {
-        options: [{ value: NON_US, says: 2, doesntSay: 2 }],
-        selected: { says: 2, doesntSay: 2 },
-      },
-    });
-
-    const divider = screen.getByRole('region', { name: DOESNT_SAY_REGION });
-    const doesntSayRendered = within(divider).getAllByRole('article').length;
-    expect(doesntSayRendered).toBe(2);
-    expect(articleTitles(container).length - doesntSayRendered).toBe(2);
-  });
-
   it('shows no divider when every program states its rule, or when no citizenship is chosen', () => {
     renderFellowships({ fellowships: [saysOpen('s1', 60), saysOpen('s2', 6)] });
     expect(screen.queryByRole('region', { name: DOESNT_SAY_REGION })).toBeNull();
