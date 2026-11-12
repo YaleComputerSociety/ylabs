@@ -354,7 +354,11 @@ import {
   withoutForeignContactObservations,
 } from './rowKeyedContactEvidence';
 import { planUnsourcedProvenanceWebsiteUrlClear } from './unsourcedProvenanceWebsiteClear';
-import { isPersonScopedResearchEntityShape } from '../models/storedVocabularies';
+import {
+  CANONICAL_FACULTY_RESEARCH_ENTITY_TYPE,
+  isLegacyFacultyResearchEntityType,
+  isPersonScopedResearchEntityShape,
+} from '../models/storedVocabularies';
 import {
   isPersonRowForProfileHomeClaims,
   profileHomeClaimKey,
@@ -4343,15 +4347,131 @@ async function endContradictedPageLeadEdges(
   return ended;
 }
 
+export interface InferredPiLeadEdge {
+  id: string;
+  personId: string;
+  sourceName?: string;
+  sourceUrl?: string;
+}
+
+export interface InferredPiEvidenceRead {
+  personId: string;
+  sourceName?: string;
+  sourceUrl?: string;
+  live: boolean;
+}
+
+/**
+ * A grant-inferred lead edge cites the observation that last asserted it. Once every read of
+ * that citation is superseded, rolled back or from an invalidated run, and nothing live on the
+ * row still names the person as lead, the edge has no evidence left and stops being a lead.
+ * This is derivation on the resolve: it writes no field and needs no lock, and an edge with
+ * no recorded citation, or one whose citation was never read here, is left alone (#5979).
+ */
+export function inferredPiEdgesWithOnlyRetiredEvidence(
+  edges: readonly InferredPiLeadEdge[],
+  evidence: readonly InferredPiEvidenceRead[],
+  plannedLeadPersonIds: ReadonlySet<string>,
+): string[] {
+  return edges
+    .filter((edge) => {
+      if (!edge.sourceName || plannedLeadPersonIds.has(edge.personId)) return false;
+      const personReads = evidence.filter((read) => read.personId === edge.personId);
+      if (personReads.some((read) => read.live)) return false;
+      return personReads.some(
+        (read) =>
+          read.sourceName === edge.sourceName && (read.sourceUrl || '') === (edge.sourceUrl || ''),
+      );
+    })
+    .map((edge) => edge.id);
+}
+
+async function endInferredPiEdgesWithOnlyRetiredEvidence(
+  researchEntityId: string,
+  observations: MaterializerObservationLike[],
+  plannedLeadPersonIds: ReadonlySet<string>,
+): Promise<number> {
+  const entityObjectId = toMaterializerObjectId(researchEntityId);
+  if (!entityObjectId) return 0;
+  const edgeDocs = (await RoleAssignment.find({
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': entityObjectId,
+    role: 'PI',
+    'rosterProvenance.sourceName': { $nin: [null, ''] },
+    state: { $ne: 'HISTORICAL' },
+    archived: { $ne: true },
+  })
+    .select('_id personId rosterProvenance')
+    .lean()) as Array<{
+    _id: unknown;
+    personId?: unknown;
+    rosterProvenance?: { sourceName?: string; sourceUrl?: string };
+  }>;
+  const edges: InferredPiLeadEdge[] = edgeDocs
+    .map((edge) => ({
+      id: String(edge._id),
+      personId: String(edge.personId ?? ''),
+      sourceName: textValue(edge.rosterProvenance?.sourceName),
+      sourceUrl: textValue(edge.rosterProvenance?.sourceUrl),
+    }))
+    .filter((edge) => edge.personId && !plannedLeadPersonIds.has(edge.personId));
+  if (edges.length === 0) return 0;
+  const row = (await ResearchEntity.findById(entityObjectId).select('slug').lean()) as {
+    slug?: string;
+  } | null;
+  const entityKeys = uniqueStrings([
+    textValue(row?.slug),
+    ...observations.map((observation) =>
+      textValue((observation as { entityKey?: unknown }).entityKey),
+    ),
+  ]).filter(Boolean);
+  const reads = (await Observation.find({
+    field: 'inferredPiUserId',
+    value: { $in: uniqueStrings(edges.map((edge) => edge.personId)) },
+    $or: [
+      { entityId: { $in: [entityObjectId, String(entityObjectId)] } },
+      ...(entityKeys.length > 0 ? [{ entityKey: { $in: entityKeys } }] : []),
+    ],
+  })
+    .select('value sourceName sourceUrl superseded rollback scrapeRunId')
+    .lean()) as any[];
+  const invalidatedRuns = new Set(await invalidatedScrapeRunIds());
+  const evidence: InferredPiEvidenceRead[] = reads.map((read) => ({
+    personId: textValue(read.value),
+    sourceName: textValue(read.sourceName),
+    sourceUrl: textValue(read.sourceUrl),
+    live:
+      read.superseded !== true &&
+      !read.rollback?.rolledBackAt &&
+      !invalidatedRuns.has(read.scrapeRunId == null ? '' : String(read.scrapeRunId)),
+  }));
+  const retired = inferredPiEdgesWithOnlyRetiredEvidence(edges, evidence, plannedLeadPersonIds);
+  if (retired.length === 0) return 0;
+  const result = await RoleAssignment.updateMany(
+    {
+      _id: { $in: retired.map((id) => toMaterializerObjectId(id)).filter(Boolean) },
+      state: { $ne: 'HISTORICAL' },
+    },
+    { $set: { state: 'HISTORICAL', endedAt: new Date() } },
+  );
+  return result.modifiedCount ?? 0;
+}
+
 export async function materializeInferredPiMembership(
   researchEntityId: string,
   observations: MaterializerObservationLike[],
 ): Promise<void> {
   const screened = await contradictedPageLeadObservations(observations);
-  for (const facts of await planInferredPiMembership(researchEntityId, observations, screened)) {
+  const planned = await planInferredPiMembership(researchEntityId, observations, screened);
+  for (const facts of planned) {
     await materializeCanonicalPiMembership(researchEntityId, facts);
   }
   await endContradictedPageLeadEdges(researchEntityId, contradictedPageLeadEdges(screened));
+  await endInferredPiEdgesWithOnlyRetiredEvidence(
+    researchEntityId,
+    observations,
+    new Set(planned.map((facts) => facts.personId)),
+  );
 }
 
 type RosterEmailAliasResolution =
@@ -12892,18 +13012,47 @@ function redirectCandidateAgreesOnName(
  * dedupe lane, which refuses distinct leads (#5684), decides those once edges exist. A
  * missed fold there is recovered on the next pass, a wrong one is not (#5688).
  */
+function firstStatedText(obs: Array<{ field: string; value?: unknown }>, field: string): string {
+  const hit = obs.find((o) => o.field === field && typeof o.value === 'string' && o.value.trim());
+  return hit ? String(hit.value).trim() : '';
+}
+
 function mintIsPersonLed(
   obs: Array<{ field: string; value?: unknown }>,
   entityKey: string | undefined,
 ): boolean {
-  const first = (field: string): string => {
-    const hit = obs.find((o) => o.field === field && typeof o.value === 'string' && o.value.trim());
-    return hit ? String(hit.value).trim() : '';
-  };
-  const entityType = first('entityType');
-  const kind = first('kind');
+  const entityType = firstStatedText(obs, 'entityType');
+  const kind = firstStatedText(obs, 'kind');
   if (entityType || kind) return isPersonScopedResearchEntityShape({ entityType, kind });
-  return entityKeyPersonTokens(first('slug') || entityKey).length > 0;
+  return entityKeyPersonTokens(firstStatedText(obs, 'slug') || entityKey).length > 0;
+}
+
+const FACULTY_RESEARCH_KINDS: ReadonlySet<string> = new Set(['individual', 'solo']);
+
+function isFacultyResearchShape(shape: { entityType?: unknown; kind?: unknown }): boolean {
+  const entityType = textValue(shape.entityType);
+  if (entityType) {
+    return (
+      entityType === CANONICAL_FACULTY_RESEARCH_ENTITY_TYPE ||
+      isLegacyFacultyResearchEntityType(entityType)
+    );
+  }
+  return FACULTY_RESEARCH_KINDS.has(textValue(shape.kind).toLowerCase());
+}
+
+/**
+ * A lab or organization stated by its own observations is never folded into a faculty
+ * research row through a shared website, whatever the recorded verdicts say: the row is one
+ * person's own, and a shared lab site folded into it carried the other co-lead's edge onto it
+ * (#5979). The lab mints its own row instead.
+ */
+function mintStatesNonFacultyResearchShape(
+  obs: Array<{ field: string; value?: unknown }>,
+): boolean {
+  const entityType = firstStatedText(obs, 'entityType');
+  const kind = firstStatedText(obs, 'kind');
+  if (!entityType && !kind) return false;
+  return !isFacultyResearchShape({ entityType, kind });
 }
 
 async function findEntityCandidatesByKey(
@@ -12912,6 +13061,7 @@ async function findEntityCandidatesByKey(
   prefetch?: MaterializationReadSource,
   self?: CandidateEntity,
   mintPersonLed = false,
+  mintIsNotFacultyResearch = false,
 ): Promise<CandidateEntity[]> {
   if (resolverType === 'fellowship') {
     if (key.ns !== 'source-key') return [];
@@ -12954,6 +13104,7 @@ async function findEntityCandidatesByKey(
       .select(select)
       .limit(2)
       .lean()) as WebsiteCandidateDoc[];
+    if (mintIsNotFacultyResearch && direct.some(isFacultyResearchShape)) return [];
     const redirectVariants =
       direct.length > 0 || mintPersonLed
         ? []
@@ -13022,6 +13173,7 @@ async function resolveCanonicalForEntityMint(
           prefetch,
           resolverSelf,
           mintIsPersonLed(obs, entityKey),
+          mintStatesNonFacultyResearchShape(obs),
         ),
     },
   );

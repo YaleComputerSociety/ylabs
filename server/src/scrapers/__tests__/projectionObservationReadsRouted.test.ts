@@ -64,6 +64,11 @@ const REVIEWED_UNROUTED_READS: ReadonlyArray<{ fn: string; reason: string }> = [
       'Called from `materializeRosterMember`, the `researchGroupMember` materializer, so the benchmark never makes this read: it replays `researchEntity` rows only. It is also a search by value across every listing that carries one profile URL, whose purpose is to find listings other than the one being projected, so an entity-keyed source cannot answer it.',
   },
   {
+    fn: 'endInferredPiEdgesWithOnlyRetiredEvidence',
+    reason:
+      "Reached only from `materializeInferredPiMembership`, which the projection calls inside `if (!options.dryRun)` and the reclaim stage calls directly, so the benchmark, which replays with `dryRun: true`, never makes this read. It reads every `inferredPiUserId` observation naming the people the row's current PI edges cite, retired reads included, to tell an edge whose citation is all retired from one whose citation was never read on the row (#5979).",
+  },
+  {
     fn: 'leadPiInheritanceEvidence',
     reason:
       'A read-after-write check: it reads back the observations `assertLeadPiInheritanceObservations` just wrote in this same pass, to tell an accepted assertion from a refused one. Frozen input would answer about the state BEFORE the write, so routing it would make the check lie.',
@@ -116,6 +121,11 @@ const REVIEWED_UNROUTED_ENTITY_READS: ReadonlyArray<{ fn: string; reason: string
     fn: 'planInferredPiMembership',
     reason:
       "Reads the row's own name for the eponym check on the two PI-key routes #4697 adds, only after the original walk resolves nobody. Reached from the projection inside `if (!options.dryRun)` and from the reclaim stage, so the benchmark, which replays with `dryRun: true`, never makes this read.",
+  },
+  {
+    fn: 'endInferredPiEdgesWithOnlyRetiredEvidence',
+    reason:
+      "Reads the row's own slug to widen the citation lookup to observations keyed by it. Reached only from `materializeInferredPiMembership`, which the projection calls inside `if (!options.dryRun)` and the reclaim stage calls directly, so the benchmark, which replays with `dryRun: true`, never makes this read (#5979).",
   },
   {
     fn: 'inheritSchoolFromLeadPi',

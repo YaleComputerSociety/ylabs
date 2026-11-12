@@ -439,6 +439,65 @@ describe('resolve-at-mint for entities (C4_RESOLVE_AT_MINT_ENTITIES)', () => {
     expect(await ResearchEntity.countDocuments({})).toBe(2);
   });
 
+  const stateShape = async (slug: string, field: 'entityType' | 'kind', value: string) =>
+    Observation.create({
+      entityType: 'researchEntity',
+      entityKey: slug,
+      field,
+      value,
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'synthetic-lab-directory',
+      sourceUrl: LAB_URL,
+      confidence: 0.9,
+      observedAt: new Date('2026-03-01T00:00:00Z'),
+      superseded: false,
+    });
+
+  it("default ON: a lab sharing a faculty research row's website mints its own row (#5979)", async () => {
+    await seedResearchEntity('ysm-faculty-ada-quill', 'Ada Quill Faculty Research', LAB_URL);
+    await stateShape('ysm-faculty-ada-quill', 'entityType', 'FACULTY_RESEARCH_AREA');
+    const facultyRow = await materializeEntity('researchEntity', {
+      entityKey: 'ysm-faculty-ada-quill',
+    });
+
+    await seedResearchEntity('ysm-shared-imaging', 'Shared Imaging', LAB_URL);
+    await stateShape('ysm-shared-imaging', 'kind', 'lab');
+    const lab = await materializeEntity('researchEntity', { entityKey: 'ysm-shared-imaging' });
+
+    expect(lab.created).toBe(true);
+    expect(String(lab.entityId)).not.toBe(String(facultyRow.entityId));
+    expect(await ResearchEntity.countDocuments({})).toBe(2);
+    const stored = await ResearchEntity.findById(facultyRow.entityId).lean();
+    expect(stored?.name).toBe('Ada Quill Faculty Research');
+  });
+
+  it('default ON: a lab sharing another lab row website still folds into it', async () => {
+    await seedResearchEntity('smith-lab-a', 'Smith Lab', LAB_URL);
+    await stateShape('smith-lab-a', 'entityType', 'LAB');
+    const first = await materializeEntity('researchEntity', { entityKey: 'smith-lab-a' });
+
+    await seedResearchEntity('smith-lab-b', 'Smith Lab', LAB_URL);
+    await stateShape('smith-lab-b', 'kind', 'lab');
+    const second = await materializeEntity('researchEntity', { entityKey: 'smith-lab-b' });
+
+    expect(second.created).toBe(false);
+    expect(String(second.entityId)).toBe(String(first.entityId));
+    expect(await ResearchEntity.countDocuments({})).toBe(1);
+  });
+
+  it('default ON: a faculty research mint still folds into the faculty research row it shares a website with', async () => {
+    await seedResearchEntity('ysm-faculty-ada-quill', 'Ada Quill Faculty Research', LAB_URL);
+    await stateShape('ysm-faculty-ada-quill', 'entityType', 'FACULTY_RESEARCH_AREA');
+    const first = await materializeEntity('researchEntity', { entityKey: 'ysm-faculty-ada-quill' });
+
+    await seedResearchEntity('dept-two-ada-quill', 'Ada Quill Faculty Research', LAB_URL);
+    await stateShape('dept-two-ada-quill', 'entityType', 'FACULTY_RESEARCH_AREA');
+    const second = await materializeEntity('researchEntity', { entityKey: 'dept-two-ada-quill' });
+
+    expect(String(second.entityId)).toBe(String(first.entityId));
+    expect(await ResearchEntity.countDocuments({})).toBe(1);
+  });
+
   it('default ON: an exact url match still folds a person-led mint', async () => {
     await seedResearchEntity('smith-lab-a', 'Smith Lab', 'https://smithlab.example.edu/');
     const first = await materializeEntity('researchEntity', { entityKey: 'smith-lab-a' });
