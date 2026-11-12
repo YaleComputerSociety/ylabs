@@ -19,7 +19,7 @@ export const ROSTER_MEMBER_IDENTITY_EVIDENCE_FIELD = 'profileIdentityEvidence';
  * serves the old extractor's output for every cached page (#5677). A test pins it to the
  * extractor's output on a fixture corpus, so a change here or in a dependency fails until bumped.
  */
-export const ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION = 4;
+export const ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION = 5;
 
 const MAX_LINKED_PROFILE_URLS = 40;
 const MAX_EMAILS = 5;
@@ -412,19 +412,19 @@ export function singleStatedOrcid(candidates: Iterable<unknown>): string | undef
 const NON_SUBJECT_ORCID_BLOCK_LABEL =
   /(?:^|[\s_-])(?:related|co-?authors?|collaborat|colleague|publication|citation|bibliograph|media-contact|press|breadcrumb)/i;
 const NON_SUBJECT_ORCID_TAGS = new Set(['nav', 'footer', 'aside']);
+const NON_RENDERED_TAGS = new Set([
+  'script',
+  'style',
+  'noscript',
+  'template',
+  'iframe',
+  'noembed',
+  'noframes',
+]);
 const ORCID_IN_TEXT = /\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{3}[\dX]\b/gi;
 const STATES_ORCID_HREF = /orcid\.org|^orcid:/i;
 
 const collapsedText = (value: string): string => value.replace(/\s+/g, ' ').trim();
-
-function pageTitleNamesMember($: cheerio.CheerioAPI, memberName: string): boolean {
-  return [$('meta[property="og:title"]').attr('content'), $('title').first().text()].some(
-    (title) => {
-      const leading = collapsedText(title ?? '').split(/\s+[|\u2013\u2014-]\s+/)[0];
-      return Boolean(leading) && namesAgree(leading, memberName);
-    },
-  );
-}
 
 function subjectProfileNode($: cheerio.CheerioAPI, memberName: string): AnyNode | undefined {
   const heading = ['h1', 'h2']
@@ -434,9 +434,8 @@ function subjectProfileNode($: cheerio.CheerioAPI, memberName: string): AnyNode 
         .first(),
     )
     .find((candidate) => candidate.length > 0);
-  if (heading) return heading.closest('article, main').get(0) ?? heading.closest('body').get(0);
-  if (!pageTitleNamesMember($, memberName)) return undefined;
-  return $('main').get(0) ?? $('body').get(0);
+  if (!heading) return undefined;
+  return heading.closest('article, main').get(0) ?? heading.closest('body').get(0);
 }
 
 function isNonSubjectOrcidBlock(el: Element): boolean {
@@ -452,7 +451,8 @@ function subjectNodeOrcidCandidates(subjectNode: AnyNode): string[] {
       candidates.push(...(node.data.match(ORCID_IN_TEXT) ?? []));
       return;
     }
-    if (!isTag(node) || isNonSubjectOrcidBlock(node)) return;
+    if (!isTag(node) || NON_RENDERED_TAGS.has(node.tagName.toLowerCase())) return;
+    if (isNonSubjectOrcidBlock(node)) return;
     const href = node.tagName.toLowerCase() === 'a' ? (node.attribs.href ?? '') : '';
     if (STATES_ORCID_HREF.test(href)) candidates.push(href);
     node.children.forEach(visit);
@@ -464,9 +464,9 @@ function subjectNodeOrcidCandidates(subjectNode: AnyNode): string[] {
 /**
  * The ORCID the page's subject node states, read only when it states exactly one (#5932). The
  * subject node is the article (or main, or else the body) holding the heading that names the
- * member, or the page's main content when its title names the member; an ORCID link or a
- * written iD in navigation, a footer, an aside, or a related-people, co-author or publication
- * block belongs to someone else, and so does an ORCID on a page that never names the member.
+ * member in an h1 or h2; an ORCID link or a written iD in navigation, a footer, an aside, a
+ * related-people, co-author or publication block, or text a browser never renders (a script,
+ * style, noscript, template or iframe body) belongs to someone else or to no one, and so does an ORCID on a page whose headings never name the member.
  */
 export function subjectProfileOrcid($: cheerio.CheerioAPI, memberName: string): string | undefined {
   if (!memberName) return undefined;
