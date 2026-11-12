@@ -47,6 +47,17 @@ describe('a stated middle initial that differs vetoes a name match (#5979)', () 
   it('does not read a nickname in parentheses or quotes as a middle name', () => {
     expect(statedMiddleInitialsConflict('Quinn (Bo) L.', 'Quinn L.')).toBe(false);
     expect(statedMiddleInitialsConflict('Quinn "Bo" L.', 'Quinn L.')).toBe(false);
+    expect(statedMiddleInitialsConflict("Quinn 'Bo' L.", 'Quinn L.')).toBe(false);
+    expect(statedMiddleInitialsConflict('Quinn \u2018Bo\u2019 L.', 'Quinn L.')).toBe(false);
+    expect(statedMiddleInitialsConflict("Quinn 'Bo' A.", 'Quinn L.')).toBe(true);
+  });
+
+  it('reads the middle initial after a compound given name both names share', () => {
+    expect(statedMiddleInitialsConflict('Quinn-Bo A.', 'Quinn-Bo L.')).toBe(true);
+    expect(statedMiddleInitialsConflict('Quinn Bo A.', 'Quinn Bo L.')).toBe(true);
+    expect(observedPersonNameAgreesWith('Quinn-Bo L. Fixture', 'Quinn-Bo A. Fixture')).toBe(false);
+    expect(statedMiddleInitialsConflict('Quinn-Bo A.', 'Quinn-Bo')).toBe(false);
+    expect(statedMiddleInitialsConflict('Quinn-Bo A.', 'Quinn-Bo a')).toBe(false);
   });
 
   it('compares middle initials only between names of one first given name and surname', () => {
@@ -281,8 +292,13 @@ describe('a page email is filed under a netid only when something ties the two (
 
   it('re-derives the same filing on a second run', () => {
     const identity = pageIdentity('example.unrelated@yale.edu');
-    expect(identityToUserObservations(identity, researcher)).toEqual(
-      identityToUserObservations(identity, researcher),
-    );
+    const firstRun = identityToUserObservations(identity, researcher);
+    const secondRun = identityToUserObservations(identity, researcher);
+    for (const run of [firstRun, secondRun]) {
+      const fields = run.map((o) => o.field);
+      expect(fields).not.toContain('email');
+      expect(fields).toEqual(expect.arrayContaining(['fname', 'lname']));
+    }
+    expect(secondRun).toEqual(firstRun);
   });
 });

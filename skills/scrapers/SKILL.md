@@ -254,7 +254,8 @@ Four earlier mechanisms each broke on a stored title, and the module's test file
   The local-part arm is weak evidence, so it is also refused when the page's person and the netid's researcher, or the local part and the researcher, state different middle initials.
   A page name whose initials agree with the netid ties the page to the person, not the address to the netid, so it files the page's other fields but never its address; a refusal withdraws nothing already stored.
 - Every name comparison on the identity path treats two different stated middle initials as two people (`statedMiddleInitialsConflict` in `utils/piNameMatch.ts`, #5979): `givenNamesEquivalent`, and through it `observedPersonNameAgreesWith`, `resolveResearcherIdForPersonName` and `listedPersonIsTheNamedLead`.
-  A name with no middle initial still matches one with any, and case, punctuation or a spelled-out middle name never conflicts.
+  A name with no middle initial still matches one with any, and case, punctuation, a spelled-out middle name or a quoted or parenthesized nickname never conflicts.
+  The middle initial is read after every given-name token both names share, so a hyphenated or two-word first name does not mask a differing middle initial.
   Because a record stored without a middle initial agrees with every namesake, the person-name and official-profile-page joins in `joinUserIdentityToExistingResearcher` also compare the observed name with the names stated at the record's own official page and at every page stating its ORCID (`utils/personPageStatedNames.ts`), and refuse on a conflict.
   The names read for a page are every name the keys citing that page state, not only those cited at the page, because a roster key states its name at the listing and cites the profile page only on its profile fields.
   `groupNamesStateConflictingMiddleInitials` is the list form for a lane that vets a whole group, so a new caller reuses this rule rather than writing its own.
