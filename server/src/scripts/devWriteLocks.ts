@@ -51,7 +51,9 @@ export function devLockState(record: DevWriteLeaseRecord, now: Date): DevLockSta
 /**
  * The latest progress any live lease of an owner recorded. A parent and the children that joined
  * its lease share one owner id, and a child that holds only host leases records its progress there,
- * so judging each lease alone would flag the parent's apply lease while its children work.
+ * so judging the apply lease alone would flag it while its children work. Host and source leases
+ * are each held by one process, so they are judged by their own progress: borrowing a sibling's
+ * would hide a hung child behind a busy one.
  */
 function latestProgressByOwner(records: DevWriteLeaseRecord[], now: Date): Map<string, number> {
   const latest = new Map<string, number>();
@@ -68,7 +70,12 @@ function progressFields(
   now: Date,
   ownerProgress: Map<string, number>,
 ): Pick<DevLockRow, 'progressAt' | 'progressCount' | 'minutesWithoutProgress' | 'stalled'> {
-  const latest = record.ownerId ? ownerProgress.get(record.ownerId) : undefined;
+  const latest =
+    devLockKind(record.sourceName) === 'apply' && record.ownerId
+      ? ownerProgress.get(record.ownerId)
+      : record.progressAt
+        ? new Date(record.progressAt).getTime()
+        : undefined;
   const recorded = {
     ...(record.progressAt ? { progressAt: new Date(record.progressAt).toISOString() } : {}),
     ...(typeof record.progressCount === 'number' ? { progressCount: record.progressCount } : {}),

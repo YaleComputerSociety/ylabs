@@ -320,11 +320,12 @@ describe('dev:locks progress', () => {
     ...overrides,
   });
 
-  it("judges a lease by its owner's newest progress, so children working under a parent keep it unflagged", () => {
+  it("judges the apply lease by its owner's newest progress and every other lease by its own", () => {
     const rows = describeDevLocks(
       [
         record({ sourceName: DEV_APPLY_LEASE_NAME, progressAt: new Date(START - 40 * MINUTE) }),
         record({ sourceName: 'host:busy.example.edu', progressAt: new Date(START - 2 * MINUTE) }),
+        record({ sourceName: 'host:hung.example.edu', progressAt: new Date(START - 17 * MINUTE) }),
         record({
           sourceName: 'host:other.example.edu',
           ownerId: 'other-owner',
@@ -338,6 +339,7 @@ describe('dev:locks progress', () => {
     expect(rows.map((row) => [row.name, row.minutesWithoutProgress, row.stalled])).toEqual([
       [DEV_APPLY_LEASE_NAME, 2, false],
       ['host:busy.example.edu', 2, false],
+      ['host:hung.example.edu', 17, true],
       ['host:other.example.edu', 16, true],
       ['legacy-holder', undefined, undefined],
     ]);

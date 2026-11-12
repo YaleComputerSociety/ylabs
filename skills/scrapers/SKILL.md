@@ -391,7 +391,9 @@ It replaces the convention of announcing each write to the session that sequence
   The counter is `db/devWriteProgress.ts`, fed by the driver's command monitoring, which script connections turn on (`monitorCommands: true` in `scriptMongoConnectOptions`, and on the own clients of `development:refresh-from-beta` and `model-refactor:validators`), and by the release of each host slot in `scrape run`.
   Liveness traffic is not progress: any command on `scrape_job_locks`, an update that only moves `heartbeatAt`, `leaseExpiresAt`, `progressAt`, `progressCount` or `updatedAt` (lease, source-lock and `scrape_runs` heartbeats), and the driver's `ping`, `hello`, `endSessions` and `killCursors`.
   Each heartbeat writes `progressAt` (`$max`, because a parent and the children that joined its lease renew one document) and adds the new count to `progressCount`, in the same single `updateMany`.
-- `dev:locks` shows `no progress for N min` for each live lease, measured from the newest `progressAt` among the live leases of that owner, so a sweep's apply lease reads busy while its children fetch through host leases.
+- `dev:locks` shows `no progress for N min` for each live lease.
+  The apply lease is measured from the newest `progressAt` among the live leases of its owner, so a sweep's apply lease reads busy while its children fetch through host leases.
+  A host or source lease is measured from its own `progressAt`, so a hung child is flagged even while its siblings under the same owner keep working.
   At 15 minutes (`DEV_WRITE_LEASE_STALLED_MS`) it flags the row `STALLED`, and `--json` carries `minutesWithoutProgress`, `stalled`, `progressAt` and `progressCount`.
   A row written by code older than #5880 has no `progressAt` and shows `-`.
 - A holder with no progress for 20 minutes (`DEV_WRITE_LEASE_NO_PROGRESS_STOP_MS`) stops itself through the same path as a missed renewal deadline, at the next tick or the next fetch, with `reason: 'no-progress'` and a message listing every lease it held, its last progress time and the minutes without progress.
