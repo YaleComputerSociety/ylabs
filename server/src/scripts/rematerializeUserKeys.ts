@@ -34,6 +34,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { materializeEntity } from '../scrapers/entityMaterializer';
+import { withResearcherSearchInputResync } from '../services/researcherLinkedSearchResync';
 import { expandUserMaterializerScope } from '../scrapers/userMaterializerFieldScope';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
@@ -91,12 +92,20 @@ async function main(): Promise<void> {
   await initializeConnections();
   try {
     const passes: UserKeyPassRow[][] = [];
+    const linkedRowIndexSyncFailures: number[] = [];
     for (let pass = 1; pass <= args.passes; pass += 1) {
-      const rows: UserKeyPassRow[] = [];
-      for (const key of keys) rows.push(await visit(key, args.apply, args.onlyFields));
+      const { value: rows, failedEntityIds } = await withResearcherSearchInputResync(async () => {
+        const passRows: UserKeyPassRow[] = [];
+        for (const key of keys) passRows.push(await visit(key, args.apply, args.onlyFields));
+        return passRows;
+      });
       passes.push(rows);
+      linkedRowIndexSyncFailures.push(failedEntityIds.length);
     }
-    const summaries = passes.map((rows, index) => summarizeUserKeyPass(index + 1, rows));
+    const summaries = passes.map((rows, index) => ({
+      ...summarizeUserKeyPass(index + 1, rows),
+      linkedRowIndexSyncFailures: linkedRowIndexSyncFailures[index],
+    }));
     const report = {
       generatedAt: new Date().toISOString(),
       mode: args.apply ? 'apply' : 'dry-run',
