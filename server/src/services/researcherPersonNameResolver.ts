@@ -142,11 +142,10 @@ export async function resolveResearcherIdForPersonName(
     return { status: surnameOnlyMatch(candidates.length) };
   }
 
-  const firstToken = first.split(/\s+/)[0]?.replace(/\./g, '') || first;
   const exact = candidates.filter(
     ({ parsed }) =>
       parsed.first.toLowerCase() === first.toLowerCase() ||
-      givenNamesEquivalent(firstToken, parsed.first),
+      givenNamesEquivalent(first, parsed.first),
   );
   if (exact.length === 1) {
     return { status: 'matched', researcherId: asResearcherId(exact[0].candidate._id) };

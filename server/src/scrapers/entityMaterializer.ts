@@ -464,8 +464,12 @@ import { isEphemeralDeployHostUrl, isSelfReferentialUrl } from '../utils/urlSafe
 import { evidenceAssertsALab } from './utils/labClaimEvidence';
 import { normalizePersonNameCasing } from './utils/personNameCasing';
 import { sanitizePersonGivenName, sanitizePersonName } from '../utils/personNameHygiene';
-import { observedPersonNameAgreesWith } from './utils/personNameAgreement';
-import { SURNAME_FETCH_LIMIT, surnameFetchRegex } from './utils/piNameMatch';
+import {
+  anyNamesStateConflictingMiddleInitials,
+  observedPersonNameAgreesWith,
+} from './utils/personNameAgreement';
+import { namesStatedAtPersonPages, personPagesStatingOrcid } from './utils/personPageStatedNames';
+import { SURNAME_FETCH_LIMIT, statesMiddleInitial, surnameFetchRegex } from './utils/piNameMatch';
 import {
   parseRosterMemberIdentityEvidence,
   ROSTER_MEMBER_IDENTITY_EVIDENCE_FIELD,
@@ -8060,6 +8064,29 @@ function officialPersonPagesContradictNameMatch(observations: any[], candidate: 
   );
 }
 
+async function identityPagesNameAnotherMiddleInitial(
+  candidate: any,
+  observedDisplayName: string,
+): Promise<boolean> {
+  if (!statesMiddleInitial(splitName(observedDisplayName).first)) return false;
+  const officialPages = (Array.isArray(candidate?.profileLinks) ? candidate.profileLinks : [])
+    .filter((link: ResearcherProfileLink) => link?.kind === 'YALE_OFFICIAL')
+    .map((link: ResearcherProfileLink) => textValue(link.url))
+    .filter(Boolean);
+  const orcidPages = await personPagesStatingOrcid(
+    Observation.collection,
+    textValue(candidate?.identifiers?.orcid),
+  );
+  const statedNames = await namesStatedAtPersonPages(Observation.collection, [
+    ...officialPages,
+    ...orcidPages,
+  ]);
+  return anyNamesStateConflictingMiddleInitials(
+    [candidate?.displayName, ...statedNames],
+    [observedDisplayName],
+  );
+}
+
 /**
  * A roster stores the lead it names as `netid:<alias>`, the bare alias or the Yale address
  * (#4697), and `userEntityKeyForInferredPiUserKey` reads all three as one `user` key. Matching
@@ -8496,6 +8523,7 @@ export async function joinUserIdentityToExistingResearcher(
       if (
         nameMatch &&
         !officialPersonPagesContradictNameMatch(materializationObs, nameMatch) &&
+        !(await identityPagesNameAnotherMiddleInitial(nameMatch, displayName)) &&
         !embeddedNetidContradictsCandidate(
           netidsEmbeddedInUserEvidence(identifier.entityKey, materializationObs),
           nameMatch.identifiers?.netid,
@@ -8566,7 +8594,11 @@ export async function joinUserIdentityToExistingResearcher(
     );
     if (urlResearcher && observedPersonNameAgreesWith(urlResearcher.displayName, displayName)) {
       const pageMatch = await Researcher.findById(urlResearcher._id);
-      if (pageMatch && !(await directoryGivesKeyEmailsToAnotherNetid(pageMatch))) {
+      if (
+        pageMatch &&
+        !(await identityPagesNameAnotherMiddleInitial(pageMatch, displayName)) &&
+        !(await directoryGivesKeyEmailsToAnotherNetid(pageMatch))
+      ) {
         researcher = pageMatch;
         identityJoinedOnOfficialProfileUrlAlone = true;
         identityJoin = 'official-profile-page';

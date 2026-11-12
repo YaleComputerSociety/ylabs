@@ -3210,7 +3210,7 @@ describe('officialProfilePiBackfillScraper', () => {
     );
 
     const obs = identityToUserObservations(identity!, {
-      netid: 'fixture106',
+      netid: 'jf106',
       email: 'jules.fixture@yale.edu',
     });
 
@@ -3235,7 +3235,7 @@ describe('officialProfilePiBackfillScraper', () => {
           bio,
           researchInterests: [],
         },
-        { netid: 'fixture106', email: 'jules.fixture@yale.edu' },
+        { netid: 'jf106', email: 'jules.fixture@yale.edu' },
       );
 
       expect(obs.find((o) => o.field === 'bio')).toBeUndefined();
@@ -3254,7 +3254,7 @@ describe('officialProfilePiBackfillScraper', () => {
         bio: 'Jules Fixture studies translational cancer biology and develops clinical research programs for gastrointestinal oncology. For more on this research, refer to Dr. Fixture complete Google Scholar profile.',
         researchInterests: [],
       },
-      { netid: 'fixture106', email: 'jules.fixture@yale.edu' },
+      { netid: 'jf106', email: 'jules.fixture@yale.edu' },
     );
 
     expect(obs.find((o) => o.field === 'bio')).toBeUndefined();
@@ -3279,7 +3279,7 @@ describe('officialProfilePiBackfillScraper', () => {
           departments: [],
           researchInterests,
         },
-        { netid: 'fixture106', email: 'jules.fixture@yale.edu' },
+        { netid: 'jf106', email: 'jules.fixture@yale.edu' },
       );
 
       expect(obs.find((o) => o.field === 'bio')).toBeUndefined();
@@ -3302,7 +3302,7 @@ describe('officialProfilePiBackfillScraper', () => {
         researchInterests: ['Cancer biology', 'Translational oncology'],
         orcid: SYNTHETIC_ORCID_1,
       },
-      { netid: 'fixture106', email: 'jules.fixture@yale.edu' },
+      { netid: 'jf106', email: 'jules.fixture@yale.edu' },
       {
         includeProfileEnrichment: true,
         includeIdentityEnrichment: false,
@@ -3310,7 +3310,7 @@ describe('officialProfilePiBackfillScraper', () => {
     );
 
     expect(obs.map((o) => o.field).sort()).toEqual(['imageUrl', 'orcid']);
-    expect(obs.every((o) => o.entityKey === 'netid:fixture106')).toBe(true);
+    expect(obs.every((o) => o.entityKey === 'netid:jf106')).toBe(true);
   });
 
   it('no longer emits a user bio from inline-email profile prose', () => {
@@ -3509,12 +3509,12 @@ describe('officialProfilePiBackfillScraper', () => {
     });
 
     const obs = identityToUserObservations(identity!, {
-      netid: 'fixture106',
+      netid: 'jf106',
       email: 'jules.fixture@yale.edu',
     });
 
     expect(obs.every((o) => o.entityType === 'user')).toBe(true);
-    expect(obs.every((o) => o.entityKey === 'netid:fixture106')).toBe(true);
+    expect(obs.every((o) => o.entityKey === 'netid:jf106')).toBe(true);
     expect(obs.map((o) => o.field)).toEqual(
       expect.arrayContaining(['netid', 'fname', 'lname', 'email', 'profileUrls', 'imageUrl']),
     );
@@ -3534,7 +3534,7 @@ describe('officialProfilePiBackfillScraper', () => {
     });
 
     const obs = identityToUserObservations(identity!, {
-      netid: 'fixture106',
+      netid: 'jf106',
       email: 'jules.fixture@yale.edu',
     });
 
@@ -3734,7 +3734,7 @@ describe('officialProfilePiBackfillScraper', () => {
 
     const obs = identityToResearchEntityPiObservations(
       identity!,
-      { _id: '64f000000000000000000020', netid: 'fixture106', email: 'jules.fixture@yale.edu' },
+      { _id: '64f000000000000000000020', netid: 'jf106', email: 'jules.fixture@yale.edu' },
       {
         _id: '64f000000000000000000010',
         name: 'Jules Fixture Research Area',
@@ -3799,7 +3799,7 @@ describe('officialProfilePiBackfillScraper', () => {
     );
 
     const obs = identityToUserObservations(identity!, {
-      netid: 'fixture106',
+      netid: 'jf106',
       email: 'jules.fixture@yale.edu',
     });
 
@@ -3825,7 +3825,7 @@ describe('officialProfilePiBackfillScraper', () => {
     );
 
     const obs = identityToUserObservations(identity!, {
-      netid: 'fixture106',
+      netid: 'jf106',
       email: 'jules.fixture@yale.edu',
     });
 
@@ -3851,7 +3851,7 @@ describe('officialProfilePiBackfillScraper', () => {
     );
 
     const obs = identityToUserObservations(identity!, {
-      netid: 'fixture106',
+      netid: 'jf106',
       email: 'jules.fixture@yale.edu',
     });
 
@@ -3873,7 +3873,7 @@ describe('officialProfilePiBackfillScraper', () => {
       ]),
       vi.fn(async () => ({
         _id: '64f000000000000000000020',
-        netid: 'fixture106',
+        netid: 'jf106',
         email: 'jules.fixture@yale.edu',
       })),
       vi.fn(async () => [
@@ -3915,7 +3915,7 @@ describe('officialProfilePiBackfillScraper', () => {
       entitySelector,
       vi.fn(async () => ({
         _id: '64f000000000000000000020',
-        netid: 'fixture106',
+        netid: 'jf106',
         email: 'jules.fixture@yale.edu',
       })),
     );
@@ -3995,7 +3995,7 @@ describe('officialProfilePiBackfillScraper', () => {
       ]),
       vi.fn(async () => ({
         _id: '64f000000000000000000020',
-        netid: 'fixture106',
+        netid: 'jf106',
         email: '',
       })),
       vi.fn(async () => []),
@@ -4053,6 +4053,7 @@ describe('officialProfilePiBackfillScraper', () => {
       _id: 'res-harold',
       netid: 'hs7',
       email: 'harper.sanchez@yale.edu',
+      displayName: 'Harper Sanchez',
     });
   });
 
@@ -4063,7 +4064,7 @@ describe('officialProfilePiBackfillScraper', () => {
       vi.fn(async () => []),
       vi.fn(async () => ({
         _id: '64f000000000000000000020',
-        netid: 'fixture106',
+        netid: 'jf106',
         email: 'jules.fixture@yale.edu',
       })),
       vi.fn(async () => []),
@@ -4114,7 +4115,7 @@ describe('officialProfilePiBackfillScraper', () => {
       vi.fn(async () => []),
       vi.fn(async () => ({
         _id: '64f000000000000000000020',
-        netid: 'fixture106',
+        netid: 'jf106',
         email: 'jules.fixture@yale.edu',
       })),
       vi.fn(async () => []),
@@ -4156,7 +4157,7 @@ describe('officialProfilePiBackfillScraper', () => {
       vi.fn(async () => []),
       vi.fn(async () => ({
         _id: '64f000000000000000000020',
-        netid: 'fixture106',
+        netid: 'jf106',
         email: 'jules.fixture@yale.edu',
       })),
       vi.fn(async () => []),
@@ -4364,7 +4365,7 @@ describe('officialProfilePiBackfillScraper', () => {
       vi.fn(async () => [
         {
           _id: 'user-1',
-          netid: 'fixture106',
+          netid: 'jf106',
           email: 'jules.fixture@yale.edu',
           name: 'Jules Fixture',
           slug: 'jules-fixture',
@@ -4406,7 +4407,7 @@ describe('officialProfilePiBackfillScraper', () => {
       );
     const visibleUser = {
       _id: 'user-departure',
-      netid: 'fixture106',
+      netid: 'jf106',
       email: 'jules.fixture@yale.edu',
       name: 'Jules Fixture',
       slug: 'jules-fixture',
@@ -4507,7 +4508,7 @@ describe('officialProfilePiBackfillScraper', () => {
       expect(departureObservations(first)).toEqual([
         expect.objectContaining({
           entityType: 'user',
-          entityKey: 'netid:fixture106',
+          entityKey: 'netid:jf106',
           field: 'profileInMemoriam',
           value: true,
           sourceUrl: profileUrl,
@@ -4528,7 +4529,7 @@ describe('officialProfilePiBackfillScraper', () => {
   describe('a visible roster person whose stored email only a legacy account copy backs (#5627)', () => {
     const visibleUser = {
       _id: 'user-legacy-email',
-      netid: 'fixture106',
+      netid: 'jf106',
       email: 'jules.legacy@yale.edu',
       name: 'Jules Fixture',
       slug: 'jules-fixture',
@@ -4555,7 +4556,7 @@ describe('officialProfilePiBackfillScraper', () => {
       expect(emailObservationsOf(emitted)).toEqual([
         expect.objectContaining({
           entityType: 'user',
-          entityKey: 'netid:fixture106',
+          entityKey: 'netid:jf106',
           field: 'email',
           value: 'jules.fixture@yale.edu',
           sourceUrl: profileUrl,
@@ -5696,7 +5697,7 @@ describe('OfficialProfilePiBackfillScraper.run profile prefetch (#3568)', () => 
   const users = [
     {
       _id: 'user-1',
-      netid: 'fixture106',
+      netid: 'jf106',
       email: 'jules.fixture@yale.edu',
       name: 'Jules Fixture',
       slug: 'jules-fixture',

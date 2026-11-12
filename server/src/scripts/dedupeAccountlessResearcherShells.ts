@@ -61,6 +61,7 @@ import {
   normalizeOfficialProfileDestination,
 } from '../services/leadProfileIdentity';
 import { parseRosterMemberIdentityEvidence } from '../scrapers/utils/rosterMemberIdentityEvidence';
+import { namesStatedAtPersonPagesByPage } from '../scrapers/utils/personPageStatedNames';
 
 dotenv.config({ quiet: true });
 
@@ -296,9 +297,25 @@ async function loadRosterIdentityCandidates(
   return candidatesByShellId;
 }
 
+interface SharedRowCandidateLoad {
+  candidatesByShellId: Map<string, SharedRowCandidate[]>;
+  statedNamesByShellId: Map<string, string[]>;
+}
+
+const officialPersonPagesOf = (profileLinks: unknown): string[] =>
+  (Array.isArray(profileLinks) ? profileLinks : [])
+    .filter((link: any) => link?.kind === 'YALE_OFFICIAL' && isPersonProfileDestination(link?.url))
+    .map((link: any) => String(link.url));
+
+const namesStatedAtPages = (
+  pages: readonly string[],
+  namesByPage: ReadonlyMap<string, string[]>,
+): string[] => [...new Set(pages.flatMap((page) => namesByPage.get(page) ?? []))];
+
 async function loadSharedRowCandidates(
   RoleAssignment: mongoose.mongo.Collection,
   ResearchEntities: mongoose.mongo.Collection,
+  Observations: mongoose.mongo.Collection,
   shellIds: string[],
   researcherIdentities: ReadonlyArray<{
     id: string;
@@ -307,20 +324,23 @@ async function loadSharedRowCandidates(
     orcid?: unknown;
     netid?: unknown;
     title?: unknown;
+    profileLinks?: unknown;
   }>,
-): Promise<Map<string, SharedRowCandidate[]>> {
+): Promise<SharedRowCandidateLoad> {
   const candidatesByShellId = new Map<string, SharedRowCandidate[]>();
-  if (shellIds.length === 0) return candidatesByShellId;
+  const statedNamesByShellId = new Map<string, string[]>();
+  const empty = { candidatesByShellId, statedNamesByShellId };
+  if (shellIds.length === 0) return empty;
   const projection = { projection: { personId: 1, target: 1 } };
   const shellEdges = (await RoleAssignment.find(
     {
       ...LIVE_ROSTER_EDGE_FILTER,
       personId: { $in: shellIds.map((id) => new mongoose.Types.ObjectId(id)) },
     },
-    projection,
+    { projection: { personId: 1, target: 1, 'rosterProvenance.profileUrl': 1 } },
   ).toArray()) as any[];
   const targetIds = [...new Set(shellEdges.map((edge) => idKey(edge.target?.id)).filter(Boolean))];
-  if (targetIds.length === 0) return candidatesByShellId;
+  if (targetIds.length === 0) return empty;
   const liveTargets = new Set(
     (
       await ResearchEntities.find(
@@ -368,7 +388,40 @@ async function loadSharedRowCandidates(
     }
     candidatesByShellId.set(shellId, list);
   }
-  return candidatesByShellId;
+  const shellPagesById = new Map<string, Set<string>>();
+  for (const shellId of candidatesByShellId.keys()) {
+    shellPagesById.set(
+      shellId,
+      new Set(officialPersonPagesOf(identityById.get(shellId)?.profileLinks)),
+    );
+  }
+  for (const edge of shellEdges) {
+    const pages = shellPagesById.get(idKey(edge.personId));
+    const profileUrl = edge.rosterProvenance?.profileUrl;
+    if (pages && isPersonProfileDestination(profileUrl)) pages.add(String(profileUrl));
+  }
+  const candidateIds = new Set(
+    [...candidatesByShellId.values()].flatMap((list) => list.map((candidate) => candidate.id)),
+  );
+  const candidatePagesById = new Map(
+    [...candidateIds].map((id) => [id, officialPersonPagesOf(identityById.get(id)?.profileLinks)]),
+  );
+  const namesByPage = await namesStatedAtPersonPagesByPage(Observations, [
+    ...[...shellPagesById.values()].flatMap((pages) => [...pages]),
+    ...[...candidatePagesById.values()].flat(),
+  ]);
+  for (const [shellId, pages] of shellPagesById) {
+    statedNamesByShellId.set(shellId, namesStatedAtPages([...pages], namesByPage));
+  }
+  for (const list of candidatesByShellId.values()) {
+    for (const candidate of list) {
+      candidate.statedNames = namesStatedAtPages(
+        candidatePagesById.get(candidate.id) ?? [],
+        namesByPage,
+      );
+    }
+  }
+  return { candidatesByShellId, statedNamesByShellId };
 }
 
 const observationReadScope = { superseded: { $ne: true } };
@@ -984,6 +1037,7 @@ export async function dedupeAccountlessResearcherShells(options: {
     NETID_CONFLICT: 0,
     NO_IDENTITY_WITNESS: 0,
     VARIANT_SHAPE_NOT_ALLOWED: 0,
+    STATED_MIDDLE_INITIAL_CONFLICT: 0,
   };
 
   const rosterIdentityCandidatesByShellId = await loadRosterIdentityCandidates(
@@ -992,9 +1046,10 @@ export async function dedupeAccountlessResearcherShells(options: {
     researcherIdentities,
   );
 
-  const sharedRowCandidatesByShellId = await loadSharedRowCandidates(
+  const sharedRowLoad = await loadSharedRowCandidates(
     RoleAssignment,
     mongoose.connection.collection('research_entities'),
+    mongoose.connection.collection('observations'),
     foldableShells.map((entry) => entry.id),
     researcherIdentities,
   );
@@ -1029,12 +1084,12 @@ export async function dedupeAccountlessResearcherShells(options: {
   const matchedIdentityByShellId = new Map<string, ShellFoldIdentity>();
   for (const shell of foldableShells) {
     const decision = decideShellMerge(
-      shell,
+      { ...shell, statedNames: sharedRowLoad.statedNamesByShellId.get(shell.id) },
       canonicalIndex,
       canonicalNetidIndex,
       rosterIdentityCandidatesByShellId.get(shell.id),
       verifiedProfileIndex,
-      sharedRowCandidatesByShellId.get(shell.id),
+      sharedRowLoad.candidatesByShellId.get(shell.id),
       nameVariantCandidatesByShellId.get(shell.id),
       listingSubjectStatements.netidsByShellId.get(shell.id),
       directoryEmailHolders,
