@@ -935,7 +935,7 @@ describe('runScraperSweep', () => {
   });
 
   it('runs the researcher email-support pass after every stage that can mint a researcher or change an address, directly before the gate (#5713)', () => {
-    const names = buildDevelopmentPostRunStages('/tmp/development-sweep', {
+    const names: string[] = buildDevelopmentPostRunStages('/tmp/development-sweep', {
       dedupeResearchers: true,
     }).map((stage) => stage.name);
     const emailSupport = names.indexOf('researcher-email-support');

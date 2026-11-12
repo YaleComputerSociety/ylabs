@@ -85,7 +85,6 @@
   "research-homes:inherit-lead-department",
   "research:backfill-yale-status-cache",
   "research:quality-search-review",
-  "researchers:compute-email-support",
   "researchers:repair-person-name-noise",
   "researchers:repoint-wrong-person-official-profile-links",
   "retire:bibliographic-mirror",
