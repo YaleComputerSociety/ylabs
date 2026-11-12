@@ -103,6 +103,12 @@ export interface LabRelatedResearchEntitySummary {
   creativePractice?: boolean;
 }
 
+export interface LabAlsoLedResearchEntities {
+  leadName: string;
+  leadPublicKey?: string;
+  researchEntities: LabRelatedResearchEntitySummary[];
+}
+
 export interface LabRelationshipCollectionMeta {
   returned: number;
   truncated: boolean;
@@ -132,5 +138,6 @@ export interface LabDetailPayload {
   affiliatedResearchEntities?: LabRelatedResearchEntitySummary[];
   affiliatedResearchEntitiesMeta?: LabRelationshipCollectionMeta;
   similarResearchEntities?: LabRelatedResearchEntitySummary[];
+  alsoLedResearchEntitiesByLead?: LabAlsoLedResearchEntities[];
   operatorPreview?: ResearchDetailOperatorPreview;
 }
