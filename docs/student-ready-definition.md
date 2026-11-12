@@ -188,6 +188,9 @@ Two person-scoped rows sharing the page, a person-named row that only carries an
 When organizations share the page beside a person-scoped row, they group among themselves and the person-scoped row stays out of their group.
 Measured on Development on 2026-10-17 through a full gate dry run before and after the change: 4 groups on a person page paired an organizational row with a person-scoped row, and exactly 3 rows changed tier, all held before and none served: one organization and one faculty research row moved to `student_ready`, and one lab moved to `operator_review`, where `missing_lead` still holds it.
 The fourth group's person-scoped row stays held, because it collides with the organization on the organization's own site as well.
+A row that holds a live `wrong_owner` refusal of a URL on its `websiteUrl` or `website` is no claimant of that URL, even though the materializer still carries it on `sourceUrls`, because the refusal says the address is not the row's own (#5858).
+A withdrawn refusal, or a refusal under any other rule, leaves the row a claimant.
+`entityClaimedDuplicateUrls` in `server/src/services/studentVisibilityGateService.ts` owns the filter, and `lead_is_staff_of_served_lab` above holds the staff rows it releases that would otherwise give a served lab a second card.
 
 ### Which row is canonical when several cite one URL
 
