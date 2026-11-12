@@ -29,6 +29,7 @@ import { isBiographyRatherThanResearch } from '../utils/biographyRatherThanResea
 import { isPlaceholderEntityName } from '../utils/researchHomeNameIdentityAuthority';
 import { containsHtmlTagMarkup } from '../utils/descriptionHygiene';
 import { isSourcePageNarrationDescription } from '../utils/researchEntityDescriptionText';
+import { WRITTEN_DESCRIPTION_SOURCE_NAME } from '../utils/writtenDescriptionSource';
 import { YALE_FELLOWSHIP_DATABASE_SOURCE } from './fellowshipSourcePrecedence';
 import { PAGE_QUOTED_RESEARCH_TOPICS_SOURCE } from './utils/pageQuotedResearchTopics';
 
@@ -95,7 +96,7 @@ const ADMIN_EDIT_SOURCE = 'manual-admin-edit';
 // to when the writer refused, has not run, or its body fails a content gate. A PI's own
 // edit is not copied page text, so it is the one source the written body does not
 // outrank.
-export const WRITTEN_DESCRIPTION_SOURCE_NAME = 'coverage-synthesis-llm';
+export { WRITTEN_DESCRIPTION_SOURCE_NAME };
 const WRITTEN_DESCRIPTION_SOURCES = new Set([WRITTEN_DESCRIPTION_SOURCE_NAME]);
 const WRITTEN_DESCRIPTION_FIELDS = new Set(['fullDescription']);
 const WRITTEN_DESCRIPTION_PEER_SOURCES = new Set(['manual-pi-edit']);

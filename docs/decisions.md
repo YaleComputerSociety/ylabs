@@ -5,6 +5,14 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-11-12: A Card-Length Written Body Serves As Its Own Card (#5537)
+
+This refines the #4788 rule that a written body's card must not restate its body.
+Decision (ylabs-manager, 2026-11-12, option 1 "body-as-card" of the design comment on #5537): a written body that passes every content check and fits the card length limits satisfies the card requirement on both the serving and the student-visibility gate paths.
+The materializer stores such a body as its card only when no other card candidate is acceptable, and a body longer than a card still refuses a card that merely restates it.
+A copied body keeps today's behaviour, and the detail page already shows one description, so the text is not shown twice.
+Measured before building: of the 101 rows held out of the batch, 77 have a written body that fits as a browse card, and a blind two-grader check of 20 of them found 2 not useful, within the bar of at most 2.
+
 ## 2026-11-12: The Program Citizenship Filter Lists Stated Rules First And Counts Both Groups (#5299)
 
 This refines the citizenship labels of #5235 and keeps the 2026-11-10 region entry below (#5533): citizenship still keeps programs that state no rule, and its options still say "or not stated".
