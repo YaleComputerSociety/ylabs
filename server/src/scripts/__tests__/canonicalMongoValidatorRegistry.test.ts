@@ -137,7 +137,12 @@ describe('canonical MongoDB validator registry', () => {
     // gate covers: no environment applies these validators (#752 declined), so a review
     // here approves what would be applied and asserts nothing about stored data (#3396).
     //
-    // Reviewed for #5627. The only drift is researchers.identifiers gaining emailSupport, an
+    // Reviewed for #5741. The only drift is researchers.profileFieldWriters entries gaining fillOnly,
+    // an optional boolean recording that the writer's value is backed only by a source that may
+    // fill the field but never outrank another source, as the directory department is. Writers
+    // recorded before it carry none. No other collection or property changed.
+    //
+    // Reviewed for #5627 before that. The only drift is researchers.identifiers gaining emailSupport, an
     // optional object of supported (boolean), sources (array of strings) and computedForEmail
     // (lowercased string), which the user materializer computes on every resolve and
     // researchers:compute-email-support computes for every researcher holding an email.
@@ -241,6 +246,6 @@ describe('canonical MongoDB validator registry', () => {
     expect(
       canonicalMongoValidatorFingerprint(CANONICAL_MONGO_VALIDATORS),
       'The declared canonical validator contracts changed. This gate governs the declaration in canonicalMongoValidatorRegistry.ts and nothing else: no environment applies these validators, so a green run is not evidence that any collection is validated, and a red run is not an outage. Describe the drift in the comment above, then update the expected fingerprint. Only `yarn --cwd server model-refactor:validators-assert --environment <env>` reads the database.',
-    ).toBe('23a6621b27558a5d345a3f14d0340d587bbf8dddf55ab39448b75d673a928029');
+    ).toBe('2da28babc839efb86399cf26e47ba918d2078ccc85976d05b8887888f874b637');
   });
 });
