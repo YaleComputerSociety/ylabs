@@ -39,7 +39,6 @@ function startStalledScriptWithAWorker(): {
     env: {
       ...process.env,
       TMPDIR: reportDirectory,
-      MONGODBURL: `mongodb://user:${CANARY_VALUE}@127.0.0.1:1/none`,
       SCRIPT_REPORT_CANARY: CANARY_VALUE,
     },
   });
