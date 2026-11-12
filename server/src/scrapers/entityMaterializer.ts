@@ -82,6 +82,7 @@ import {
 } from '../models/fieldProvenanceBacking';
 import {
   derivedResearchAreaProvenance,
+  loadResearchTopicsDerivation,
   researchPageTopicsStateFor,
   storedDerivedResearchAreasAreStale,
   type DerivedResearchAreaCandidate,
@@ -13625,7 +13626,11 @@ async function materializeEntityUnderRemovalGuard(
   // `namesakeScreened` before the derived candidate is appended here, so the hand-off
   // can never drop it.
   const researchPageTopics = isResearchEntityObservationType(entityType)
-    ? await researchPageTopicsStateFor(obs)
+    ? await researchPageTopicsStateFor(
+        obs,
+        loadResearchTopicsDerivation,
+        storedResearchAreasProvenance(entityDoc),
+      )
     : {};
   const derivedResearchAreas = researchPageTopics.candidate;
   const storedDerivedResearchAreasStale = storedDerivedResearchAreasAreStale(

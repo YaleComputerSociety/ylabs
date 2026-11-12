@@ -291,6 +291,63 @@ describe('materializeEntity applies a cached research page topics derivation (#5
     );
   });
 
+  describe('when re-observed page text has no reading yet (#5882)', () => {
+    const rotated = [
+      {
+        url: HOME,
+        text: 'News: the lab welcomes a new postdoc. We study how coastal kelp forests recover after marine heatwaves.',
+      },
+    ];
+
+    it('keeps the stored list its own reading still quotes, on every pass', async () => {
+      await seedDerivation(pages);
+      await storeDerivedList(researchPageTextHash(pages));
+      await seedPageText(rotated);
+      await seedMesh();
+      const provenanceBefore = (await persisted())?.fieldProvenance?.researchAreas;
+
+      for (const pass of [1, 2]) {
+        await materializeEntity('researchEntity', { entityKey: SLUG });
+        const row = await persisted();
+        expect(row?.researchAreas, `pass ${pass}`).toEqual(derivedTopics);
+        expect(row?.fieldProvenance?.researchAreas, `pass ${pass}`).toEqual(provenanceBefore);
+      }
+      expect(await ResearchTopicsDerivation.countDocuments({})).toBe(1);
+    });
+
+    it('drops only the stored topics the new text no longer supports', async () => {
+      await seedDerivation(pages);
+      await storeDerivedList(researchPageTextHash(pages));
+      await seedPageText([
+        { url: HOME, text: 'We study how coastal kelp forests recover after storms.' },
+      ]);
+      await seedMesh();
+
+      await materializeEntity('researchEntity', { entityKey: SLUG });
+
+      const row = await persisted();
+      expect(row?.researchAreas).toEqual(['Kelp forests', 'Marine ecology']);
+      expect(row?.fieldProvenance?.researchAreas?.sourceName).toBe(
+        RESEARCH_PAGE_TOPICS_DERIVED_SOURCE_NAME,
+      );
+    });
+
+    it('lets a rival take the field when the new text supports none of the stored topics', async () => {
+      await seedDerivation(pages);
+      await storeDerivedList(researchPageTextHash(pages));
+      await seedPageText([
+        { url: HOME, text: 'We now study seagrass meadows and how they store blue carbon.' },
+      ]);
+      await seedMesh();
+
+      await materializeEntity('researchEntity', { entityKey: SLUG });
+
+      const row = await persisted();
+      expect(row?.researchAreas).toEqual(meshTopics);
+      expect(row?.fieldProvenance?.researchAreas?.sourceName).toBe('ysm-mesh-keyword');
+    });
+  });
+
   it('is a no-op on a second pass over the same evidence', async () => {
     await seedPageText(pages);
     await seedDerivation(pages);
