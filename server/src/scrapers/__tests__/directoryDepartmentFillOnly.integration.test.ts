@@ -162,47 +162,4 @@ describe('a directory department only fills an empty field (#5741)', () => {
 
     expect(await departmentOf(person._id)).toBe(OFFICIAL_DEPARTMENT);
   });
-
-  it('keeps a stored department that a page heading read as a department would replace', async () => {
-    const person = await seedPerson({ primaryDepartment: OFFICIAL_DEPARTMENT });
-    const key = `netid:${NETID}`;
-    const at = (field: string, value: unknown) =>
-      observation(
-        key,
-        'official-profile-pi-backfill',
-        'https://fixture-school.example.edu/profile/fixture-quillsby/',
-        field,
-        value,
-      );
-    await Observation.insertMany([
-      at('fname', 'Fixture'),
-      at('lname', 'Quillsby'),
-      at('primaryDepartment', 'Other Departments & Organizations'),
-    ]);
-
-    await resolve(key);
-    await resolve(key);
-
-    expect(await departmentOf(person._id)).toBe(OFFICIAL_DEPARTMENT);
-  });
-
-  it('fills an empty department from a directory export unit, decoded, and only fills', async () => {
-    const at = (field: string, value: unknown) =>
-      observation(DIRECTORY_KEY, 'yale-directory-csv', 'file:fixture_directory.csv', field, value);
-    await Observation.insertMany([
-      at('netid', NETID),
-      at('fname', 'Fixture'),
-      at('lname', 'Quillsby'),
-      at('primaryDepartment', 'MEDNEU Multiple Sclerosis'),
-    ]);
-    const person = await seedPerson();
-
-    await resolve(DIRECTORY_KEY);
-    expect(await departmentOf(person._id)).toBe('Neurology');
-
-    await seedOfficialKey();
-    await resolve(OFFICIAL_KEY);
-    await resolve(DIRECTORY_KEY);
-    expect(await departmentOf(person._id)).toBe(OFFICIAL_DEPARTMENT);
-  });
 });

@@ -429,7 +429,7 @@ export function personToObservations(
   const imageUrl = (person.image && String(person.image).trim()) || '';
   const orcid = (person.orcid && String(person.orcid).trim()) || '';
 
-  const primaryDept = directoryUnitDepartment(person.unit, person.unit_class) ?? '';
+  const primaryDept = directoryUnitDepartment(person.unit) ?? '';
 
   // Profile URLs: Yalies returns a single `url` field on faculty records.
   const profileUrls: Record<string, string> = {};

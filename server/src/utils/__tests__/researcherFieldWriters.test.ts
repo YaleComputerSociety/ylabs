@@ -78,9 +78,6 @@ describe('researcher field writer precedence (#5706)', () => {
     expect(isFillOnlyFieldValue('primaryDepartment', ['yale-directory'])).toBe(true);
     expect(
       isFillOnlyFieldValue('primaryDepartment', ['yale-directory', 'yale-directory-csv']),
-    ).toBe(true);
-    expect(
-      isFillOnlyFieldValue('primaryDepartment', ['yale-directory', 'dept-faculty-roster']),
     ).toBe(false);
     expect(isFillOnlyFieldValue('primaryDepartment', [])).toBe(false);
     expect(isFillOnlyFieldValue('title', ['yale-directory'])).toBe(false);

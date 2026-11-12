@@ -35,7 +35,7 @@ export type ResearcherGatedField = ResearcherWriterField | typeof OWN_KEY_FALLBA
 const FILL_ONLY_SOURCES_BY_FIELD: Readonly<
   Partial<Record<ResearcherGatedField, ReadonlySet<string>>>
 > = {
-  primaryDepartment: new Set(['yale-directory', 'yale-directory-csv']),
+  primaryDepartment: new Set(['yale-directory']),
 };
 
 export function isFillOnlyFieldValue(
