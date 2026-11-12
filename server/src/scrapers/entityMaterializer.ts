@@ -707,6 +707,12 @@ interface MaterializeOptions {
    */
   keepPostProjectionEvidence?: boolean;
   accessSignalsOnly?: boolean;
+  /**
+   * Resolve only the row's lead edges from its inferred-lead evidence, projecting no field. A
+   * field-scoped pass skips edges because its report compares fields (#3874), so this is the
+   * one scope that reaches them; a dry run reports the plan instead of writing it.
+   */
+  leadEdgesOnly?: boolean;
   onlyReconcileFieldProvenance?: boolean;
   /**
    * Observed entity types a run materialize leaves untouched (#5890). Their rows are neither read
@@ -1289,6 +1295,7 @@ interface MaterializeResult {
   /** Fellowship fields this pass cleared because no live observation states them (#4586). */
   fellowshipUnbackedClears?: string[];
   accessSignalChanges?: AccessSignalChangePlan;
+  leadEdgeResolution?: LeadEdgeResolution;
 }
 
 /**
@@ -4350,32 +4357,59 @@ export function contradictedPageLeadEdges(
  * cites the page as its source, and the page no longer says this person leads the row. Only the
  * backfill's edge citing that page is ended, so a lead edge any other evidence wrote stays.
  */
-async function endContradictedPageLeadEdges(
+async function contradictedPageLeadEdgesToEnd(
   researchEntityId: string,
   edges: readonly ContradictedPageLeadEdge[],
-): Promise<number> {
+): Promise<LeadEdgeToEnd[]> {
   const entityObjectId = toMaterializerObjectId(researchEntityId);
-  if (!entityObjectId || edges.length === 0) return 0;
-  let ended = 0;
+  if (!entityObjectId || edges.length === 0) return [];
+  const ended: LeadEdgeToEnd[] = [];
   for (const edge of edges) {
     const personId = toMaterializerObjectId(edge.personId);
     if (!personId) continue;
-    const result = await RoleAssignment.updateMany(
-      {
-        personId,
-        'target.kind': 'RESEARCH_ENTITY',
-        'target.id': entityObjectId,
-        role: 'PI',
-        'rosterProvenance.sourceName': OFFICIAL_PROFILE_PI_BACKFILL_SOURCE,
-        'rosterProvenance.sourceUrl': edge.sourceUrl,
-        state: { $ne: 'HISTORICAL' },
-        archived: { $ne: true },
-      },
-      { $set: { state: 'HISTORICAL', endedAt: new Date() } },
-    );
-    ended += result.modifiedCount ?? 0;
+    const docs = (await RoleAssignment.find({
+      personId,
+      'target.kind': 'RESEARCH_ENTITY',
+      'target.id': entityObjectId,
+      role: 'PI',
+      'rosterProvenance.sourceName': OFFICIAL_PROFILE_PI_BACKFILL_SOURCE,
+      'rosterProvenance.sourceUrl': edge.sourceUrl,
+      state: { $ne: 'HISTORICAL' },
+      archived: { $ne: true },
+    })
+      .select('_id')
+      .lean()) as Array<{ _id: unknown }>;
+    for (const doc of docs) {
+      ended.push({ edgeId: String(doc._id), personId: edge.personId, reason: 'contradicted-page' });
+    }
   }
   return ended;
+}
+
+export type LeadEdgeEndReason =
+  'contradicted-page' | 'retired-evidence' | 'contradicted-sourceless';
+
+export interface LeadEdgeToEnd {
+  edgeId: string;
+  personId: string;
+  reason: LeadEdgeEndReason;
+}
+
+export interface LeadEdgeResolution {
+  asserted: Array<{ personId: string; sourceName: string; sourceUrl: string; isNewEdge: boolean }>;
+  ended: LeadEdgeToEnd[];
+}
+
+async function endLeadEdges(
+  edges: readonly LeadEdgeToEnd[],
+  extraFilter: object = {},
+): Promise<void> {
+  const ids = edges.map((edge) => toMaterializerObjectId(edge.edgeId)).filter(Boolean);
+  if (ids.length === 0) return;
+  await RoleAssignment.updateMany(
+    { _id: { $in: ids }, state: { $ne: 'HISTORICAL' }, ...extraFilter },
+    { $set: { state: 'HISTORICAL', endedAt: new Date() } },
+  );
 }
 
 export interface InferredPiLeadEdge {
@@ -4417,13 +4451,13 @@ export function inferredPiEdgesWithOnlyRetiredEvidence(
     .map((edge) => edge.id);
 }
 
-async function endInferredPiEdgesWithOnlyRetiredEvidence(
+async function retiredEvidenceLeadEdgesToEnd(
   researchEntityId: string,
   observations: MaterializerObservationLike[],
   plannedLeadPersonIds: ReadonlySet<string>,
-): Promise<number> {
+): Promise<LeadEdgeToEnd[]> {
   const entityObjectId = toMaterializerObjectId(researchEntityId);
-  if (!entityObjectId) return 0;
+  if (!entityObjectId) return [];
   const edgeDocs = (await RoleAssignment.find({
     'target.kind': 'RESEARCH_ENTITY',
     'target.id': entityObjectId,
@@ -4446,7 +4480,7 @@ async function endInferredPiEdgesWithOnlyRetiredEvidence(
       sourceUrl: textValue(edge.rosterProvenance?.sourceUrl),
     }))
     .filter((edge) => edge.personId && !plannedLeadPersonIds.has(edge.personId));
-  if (edges.length === 0) return 0;
+  if (edges.length === 0) return [];
   const row = (await ResearchEntity.findById(entityObjectId).select('slug').lean()) as {
     slug?: string;
   } | null;
@@ -4476,35 +4510,76 @@ async function endInferredPiEdgesWithOnlyRetiredEvidence(
       !read.rollback?.rolledBackAt &&
       !invalidatedRuns.has(read.scrapeRunId == null ? '' : String(read.scrapeRunId)),
   }));
-  const retired = inferredPiEdgesWithOnlyRetiredEvidence(edges, evidence, plannedLeadPersonIds);
-  if (retired.length === 0) return 0;
-  const result = await RoleAssignment.updateMany(
-    {
-      _id: { $in: retired.map((id) => toMaterializerObjectId(id)).filter(Boolean) },
-      state: { $ne: 'HISTORICAL' },
-    },
-    { $set: { state: 'HISTORICAL', endedAt: new Date() } },
+  const personById = new Map(edges.map((edge) => [edge.id, edge.personId]));
+  return inferredPiEdgesWithOnlyRetiredEvidence(edges, evidence, plannedLeadPersonIds).map(
+    (edgeId) => ({ edgeId, personId: personById.get(edgeId) ?? '', reason: 'retired-evidence' }),
   );
-  return result.modifiedCount ?? 0;
+}
+
+/**
+ * The row's lead edges as its inferred-lead evidence decides them. Each step reads the edges
+ * the step before it left, so an apply writes in the order the steps run, and a dry run reads
+ * the stored edges without the assertions it would have made.
+ */
+export async function resolveLeadEdges(
+  researchEntityId: string,
+  observations: MaterializerObservationLike[],
+  options: { apply: boolean },
+): Promise<LeadEdgeResolution> {
+  const screened = await contradictedPageLeadObservations(observations);
+  const planned = await planInferredPiMembership(researchEntityId, observations, screened);
+  const entityObjectId = toMaterializerObjectId(researchEntityId);
+  const ledBefore = new Set(
+    entityObjectId && planned.length > 0
+      ? (
+          (await RoleAssignment.find({
+            'target.kind': 'RESEARCH_ENTITY',
+            'target.id': entityObjectId,
+            role: 'PI',
+            state: { $ne: 'HISTORICAL' },
+            archived: { $ne: true },
+          })
+            .select('personId')
+            .lean()) as Array<{ personId?: unknown }>
+        ).map((edge) => String(edge.personId ?? ''))
+      : [],
+  );
+  if (options.apply) {
+    for (const facts of planned) {
+      await materializeCanonicalPiMembership(researchEntityId, facts);
+    }
+  }
+  const ended: LeadEdgeToEnd[] = [];
+  const end = async (edges: LeadEdgeToEnd[], extraFilter?: object) => {
+    ended.push(...edges);
+    if (options.apply) await endLeadEdges(edges, extraFilter);
+  };
+  await end(
+    await contradictedPageLeadEdgesToEnd(researchEntityId, contradictedPageLeadEdges(screened)),
+  );
+  const plannedLeadPersonIds = new Set(planned.map((facts) => facts.personId));
+  await end(
+    await retiredEvidenceLeadEdgesToEnd(researchEntityId, observations, plannedLeadPersonIds),
+  );
+  await end(await sourcelessLeadEdgesToEnd(researchEntityId, observations, plannedLeadPersonIds), {
+    'rosterProvenance.sourceName': { $in: [null, ''] },
+  });
+  return {
+    asserted: planned.map((facts) => ({
+      personId: facts.personId,
+      sourceName: facts.sourceName,
+      sourceUrl: facts.sourceUrl,
+      isNewEdge: !ledBefore.has(facts.personId),
+    })),
+    ended,
+  };
 }
 
 export async function materializeInferredPiMembership(
   researchEntityId: string,
   observations: MaterializerObservationLike[],
 ): Promise<void> {
-  const screened = await contradictedPageLeadObservations(observations);
-  const planned = await planInferredPiMembership(researchEntityId, observations, screened);
-  for (const facts of planned) {
-    await materializeCanonicalPiMembership(researchEntityId, facts);
-  }
-  await endContradictedPageLeadEdges(researchEntityId, contradictedPageLeadEdges(screened));
-  const plannedLeadPersonIds = new Set(planned.map((facts) => facts.personId));
-  await endInferredPiEdgesWithOnlyRetiredEvidence(
-    researchEntityId,
-    observations,
-    plannedLeadPersonIds,
-  );
-  await endContradictedSourcelessLeadEdges(researchEntityId, observations, plannedLeadPersonIds);
+  await resolveLeadEdges(researchEntityId, observations, { apply: true });
 }
 
 export interface SourcelessLeadEdgeRow extends ResearchHomeCandidate {
@@ -4562,13 +4637,13 @@ export function contradictedSourcelessLeadEdgeIds(input: {
     .map((edge) => edge.id);
 }
 
-async function endContradictedSourcelessLeadEdges(
+async function sourcelessLeadEdgesToEnd(
   researchEntityId: string,
   observations: MaterializerObservationLike[],
   plannedLeadPersonIds: ReadonlySet<string>,
-): Promise<number> {
+): Promise<LeadEdgeToEnd[]> {
   const entityObjectId = toMaterializerObjectId(researchEntityId);
-  if (!entityObjectId) return 0;
+  if (!entityObjectId) return [];
   const edgeDocs = (await RoleAssignment.find({
     'target.kind': 'RESEARCH_ENTITY',
     'target.id': entityObjectId,
@@ -4587,7 +4662,7 @@ async function endContradictedSourcelessLeadEdges(
     personId: String(edge.personId ?? ''),
     hasRecordedSource: Boolean(textValue(edge.rosterProvenance?.sourceName)),
   }));
-  if (!edges.some((edge) => !edge.hasRecordedSource)) return 0;
+  if (!edges.some((edge) => !edge.hasRecordedSource)) return [];
   const directorRead = await resolveInferredDirector(observations);
   const liveLeadPersonIds =
     'director' in directorRead
@@ -4596,7 +4671,7 @@ async function endContradictedSourcelessLeadEdges(
   const row = (await ResearchEntity.findById(entityObjectId)
     .select(`${RESEARCH_HOME_CANDIDATE_FIELDS} leadVerification`)
     .lean()) as SourcelessLeadEdgeRow | null;
-  if (!row) return 0;
+  if (!row) return [];
   const people = (await Researcher.find({
     _id: { $in: uniqueStrings(edges.map((edge) => edge.personId)) },
   })
@@ -4608,16 +4683,12 @@ async function endContradictedSourcelessLeadEdges(
     people: new Map(people.map((person) => [String(person._id), person])),
     plannedLeadPersonIds: liveLeadPersonIds,
   });
-  if (ended.length === 0) return 0;
-  const result = await RoleAssignment.updateMany(
-    {
-      _id: { $in: ended.map((id) => toMaterializerObjectId(id)).filter(Boolean) },
-      state: { $ne: 'HISTORICAL' },
-      'rosterProvenance.sourceName': { $in: [null, ''] },
-    },
-    { $set: { state: 'HISTORICAL', endedAt: new Date() } },
-  );
-  return result.modifiedCount ?? 0;
+  const personById = new Map(edges.map((edge) => [edge.id, edge.personId]));
+  return ended.map((edgeId) => ({
+    edgeId,
+    personId: personById.get(edgeId) ?? '',
+    reason: 'contradicted-sourceless',
+  }));
 }
 
 type RosterEmailAliasResolution =
@@ -14071,6 +14142,41 @@ async function materializeEntityUnderRemovalGuard(
     (observation: any) =>
       evidenceMemberOf(rowEvidenceIdentity, observation) ?? rowEvidenceIdentity.rowMember,
   );
+
+  if (options.leadEdgesOnly && isResearchEntityObservationType(entityType)) {
+    if (!entityDoc || !entityIdString) {
+      return {
+        entityType,
+        ...identifier,
+        fieldsWritten: 0,
+        conflicts: 0,
+        created: false,
+        resolved: {},
+        skipped: 'no-row-keyed-evidence',
+      };
+    }
+    const leadEdgeResolution = await resolveLeadEdges(entityIdString, materializationObs, {
+      apply: !options.dryRun,
+    });
+    let leadEdgeIndexStale = false;
+    if (!options.dryRun) {
+      const browseRank = await recomputeBrowseRankForEntities([entityIdString]);
+      leadEdgeIndexStale =
+        browseRank.updated > 0 &&
+        browseRank.indexSyncFailures + (browseRank.indexSyncDeferred ?? 0) > 0;
+    }
+    return {
+      entityType,
+      entityId: entityIdString,
+      entityKey: identifier.entityKey,
+      fieldsWritten: 0,
+      conflicts: 0,
+      created: false,
+      resolved: {},
+      leadEdgeResolution,
+      ...(leadEdgeIndexStale ? { indexSyncFailed: true as const } : {}),
+    };
+  }
 
   // #3500 bars a shared page at ingest, so no lane stores a new one. It cannot reach
   // what is already stored, and the resolver ranks every live observation, so a
