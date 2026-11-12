@@ -13,6 +13,7 @@ vi.mock('../../services/studentVisibilityGateService', () => ({
 import {
   buildEponymousFraLabMergePairs,
   countCenterGuardedPis,
+  parseBallotFoldPairs,
   parseEponymousFraLabMergeStageArgs,
   planEponymousFraLabMerges,
   runEponymousFraLabMergeStage,
@@ -333,5 +334,22 @@ describe('runEponymousFraLabMergeStage', () => {
     expect(applyMergeGroup).not.toHaveBeenCalled();
     expect(delta.plannedMergeCount).toBe(0);
     expect(delta.refusedAsDistinctPeopleCount).toBe(1);
+  });
+});
+
+describe('ballot fold pairs (#5969)', () => {
+  it('reads the ballot pairs file flag and refuses an incomplete pair', () => {
+    expect(
+      parseEponymousFraLabMergeStageArgs([
+        '--since=2026-01-01T00:00:00Z',
+        '--ballot-pairs',
+        '/tmp/ballot.json',
+      ]).ballotPairsFile,
+    ).toBe('/tmp/ballot.json');
+    expect(parseBallotFoldPairs([{ label: 'P99', facultyRowId: 'a', labId: 'b' }])).toEqual([
+      { label: 'P99', facultyRowId: 'a', labId: 'b' },
+    ]);
+    expect(() => parseBallotFoldPairs([{ label: 'P99', facultyRowId: 'a' }])).toThrow(/labId/);
+    expect(() => parseBallotFoldPairs({})).toThrow(/JSON array/);
   });
 });

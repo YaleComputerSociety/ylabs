@@ -23,6 +23,15 @@ import {
   selectEponymousFraLabMergeGroups,
 } from '../services/researchEntityEponymousMergeService';
 import { isOrganizationalHomeEntity } from '../utils/profileAreaDuplicateRisk';
+import { buildPinnedCanonicalMergeGroup } from './researchEntityPiDedupeCore';
+import {
+  loadWitnessedFoldContext,
+  selectWitnessedFraLabFolds,
+  type BallotFoldPair,
+  type FoldRefusal,
+  type WitnessedFold,
+  type WitnessedFoldContext,
+} from '../services/witnessedFraLabFold';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { connectScriptMongo } from '../db/connections';
@@ -71,6 +80,8 @@ export interface EponymousFraLabMergeDelta {
   canonicalIndexSyncFailures: number;
   researchPlanCarry: ResearchPlanCarryReport;
   researchPlansThatWouldMove: number;
+  witnessedFolds: WitnessedFold[];
+  witnessedFoldRefusals: FoldRefusal[];
 }
 
 function scopeEntitiesById(rows: ResearchEntityPiDedupeRow[]): Map<string, ScopeEntity> {
@@ -184,6 +195,75 @@ export interface RunEponymousFraLabMergeStageOptions {
   }) => Promise<{ canonicalEntityId?: string; researchPlanCarry?: ResearchPlanCarryReport }>;
   previewResearchPlanCarry?: typeof previewResearchPlanCarryForMergeGroups;
   partitionByDistinctPeople?: typeof partitionMergeGroupsByDistinctPeopleVerdict;
+  ballotPairs?: readonly BallotFoldPair[];
+  loadWitnessContext?: (input: {
+    personIds: readonly string[];
+    ballotPairs?: readonly BallotFoldPair[];
+  }) => Promise<WitnessedFoldContext>;
+}
+
+/**
+ * The witnessed folds of a faculty research row into its lead's own lab, as merge groups
+ * built from that lead's scope row. A fold whose row the lead's scope does not hold, or that
+ * touches a row an eponymous group already plans, is left out.
+ */
+async function witnessedFoldGroups(
+  rows: ResearchEntityPiDedupeRow[],
+  eponymousGroups: ReturnType<typeof selectEponymousFraLabMergeGroups>,
+  options: RunEponymousFraLabMergeStageOptions,
+): Promise<{
+  groups: ReturnType<typeof selectEponymousFraLabMergeGroups>;
+  folds: WitnessedFold[];
+  refusals: FoldRefusal[];
+}> {
+  const context = await (options.loadWitnessContext ?? loadWitnessedFoldContext)({
+    personIds: rows.map((row) => row.userId),
+    ballotPairs: options.ballotPairs,
+  });
+  const { folds, refusals } = selectWitnessedFraLabFolds({
+    entities: context.entities,
+    edges: context.edges,
+    ballotPairs: options.ballotPairs,
+  });
+  const planned = new Set(
+    eponymousGroups.flatMap((group) => [group.canonicalEntityId, ...group.duplicateEntityIds]),
+  );
+  const asScopeEntity = (id: string) => {
+    const entity = context.entities.get(id);
+    return entity
+      ? {
+          id,
+          slug: entity.slug,
+          name: entity.name,
+          kind: entity.kind,
+          entityType: entity.entityType,
+          ...(entity.mergeFields ?? {}),
+        }
+      : null;
+  };
+  const groups: ReturnType<typeof selectEponymousFraLabMergeGroups> = [];
+  const kept: WitnessedFold[] = [];
+  for (const fold of folds) {
+    if (planned.has(fold.facultyRowId) || planned.has(fold.labId)) continue;
+    const lab = asScopeEntity(fold.labId);
+    const facultyRow = asScopeEntity(fold.facultyRowId);
+    if (!lab || !facultyRow) continue;
+    const group = buildPinnedCanonicalMergeGroup(
+      {
+        userId: fold.personId,
+        normalizedName: `same-pi:${fold.personId}`,
+        entities: [lab, facultyRow] as ResearchEntityPiDedupeRow['entities'],
+      },
+      fold.labId,
+      [fold.facultyRowId],
+    );
+    if (!group) continue;
+    planned.add(fold.facultyRowId);
+    planned.add(fold.labId);
+    groups.push(group);
+    kept.push(fold);
+  }
+  return { groups, folds: kept, refusals };
 }
 
 export async function runEponymousFraLabMergeStage(
@@ -193,9 +273,12 @@ export async function runEponymousFraLabMergeStage(
   const rows = await loadRows({ sinceIso: options.sinceIso, limit: options.limit });
   const partitionByDistinctPeople =
     options.partitionByDistinctPeople ?? partitionMergeGroupsByDistinctPeopleVerdict;
-  const { kept: plannedGroups, refused: distinctPeopleRefusals } = await partitionByDistinctPeople(
-    selectEponymousFraLabMergeGroups(rows),
-  );
+  const eponymousGroups = selectEponymousFraLabMergeGroups(rows);
+  const witnessed = await witnessedFoldGroups(rows, eponymousGroups, options);
+  const { kept: plannedGroups, refused: distinctPeopleRefusals } = await partitionByDistinctPeople([
+    ...eponymousGroups,
+    ...witnessed.groups,
+  ]);
   const cappedGroups = plannedGroups.slice(0, Math.max(0, options.maxMerges));
 
   let appliedMergeCount = 0;
@@ -247,6 +330,8 @@ export async function runEponymousFraLabMergeStage(
     canonicalIndexSyncFailures,
     researchPlanCarry,
     researchPlansThatWouldMove: researchPlansThatWouldMove(researchPlanCarry),
+    witnessedFolds: witnessed.folds,
+    witnessedFoldRefusals: witnessed.refusals,
   };
 }
 
@@ -256,6 +341,7 @@ interface EponymousFraLabMergeStageArgs {
   sinceIso?: string;
   maxMerges: number;
   output?: string;
+  ballotPairsFile?: string;
 }
 
 export function parseEponymousFraLabMergeStageArgs(argv: string[]): EponymousFraLabMergeStageArgs {
@@ -297,6 +383,15 @@ export function parseEponymousFraLabMergeStageArgs(argv: string[]): EponymousFra
       index += 1;
       continue;
     }
+    if (arg.startsWith('--ballot-pairs=')) {
+      args.ballotPairsFile = arg.slice('--ballot-pairs='.length).trim();
+      continue;
+    }
+    if (arg === '--ballot-pairs') {
+      args.ballotPairsFile = (argv[index + 1] || '').trim();
+      index += 1;
+      continue;
+    }
     if (arg.startsWith('--output=')) {
       args.output = resolveSafeJsonReportOutputPath(arg.slice('--output='.length));
       continue;
@@ -309,6 +404,26 @@ export function parseEponymousFraLabMergeStageArgs(argv: string[]): EponymousFra
     throw new Error(`Unknown ${SCRIPT_NAME} argument: ${arg}`);
   }
   return args;
+}
+
+/**
+ * The ballot-confirmed pairs an operator supplies: a JSON array of
+ * `{ label, facultyRowId, labId }`. The label is the ballot's own neutral label and the
+ * recorded evidence for the fold; a pair without both ids is refused rather than skipped.
+ */
+export function parseBallotFoldPairs(raw: unknown): BallotFoldPair[] {
+  if (!Array.isArray(raw)) throw new Error('--ballot-pairs must hold a JSON array');
+  return raw.map((entry, index) => {
+    const pair = (entry ?? {}) as Record<string, unknown>;
+    const text = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
+    const label = text(pair.label);
+    const facultyRowId = text(pair.facultyRowId);
+    const labId = text(pair.labId);
+    if (!label || !facultyRowId || !labId) {
+      throw new Error(`--ballot-pairs entry ${index} needs label, facultyRowId and labId`);
+    }
+    return { label, facultyRowId, labId };
+  });
 }
 
 function parseMaxMerges(raw: string): number {
@@ -340,6 +455,9 @@ async function main(): Promise<void> {
       apply: args.apply,
       maxMerges: args.maxMerges,
       sinceIso: args.sinceIso,
+      ballotPairs: args.ballotPairsFile
+        ? parseBallotFoldPairs(JSON.parse(fs.readFileSync(args.ballotPairsFile, 'utf8')))
+        : undefined,
     });
     const report = {
       generatedAt: new Date().toISOString(),

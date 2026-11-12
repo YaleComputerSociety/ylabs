@@ -285,6 +285,17 @@ A profile page slug that carries nursing credentials (`-phd-mph-bsn`, `-aprn-fnp
 The plain `--shared-person-id` mode stays operator-only.
 The stage runs under the same flag and contract as the URL stages and writes `development-shared-person-name-agreed-dedupe.json`.
 
+### A faculty research row that restates its lead's own lab
+
+`research-entity:merge-eponymous-fra` also folds a faculty research row into its lead's own lab on a witness, not on name shape (#5969).
+The eponymous lane folds only a person-named shell, and a blind ballot found faculty research rows restating their lead's lab that carry their own names and sites, so name shape never reached them.
+Two witnesses count, both in `services/witnessedFraLabFold.ts`.
+The lab's own page witness: the person holds the lab's PI edge, the stored lab-site lead verification confirms that person as PI, and the verification shows no contradiction; it re-derives on every run, so it is a lane.
+The ballot witness: `--ballot-pairs <file.json>` (an array of `{ label, facultyRowId, labId }`) names pairs an operator's blind ballot confirmed, and each folds only when one researcher holds a lead edge on both rows; the label is the recorded evidence.
+A co-director is not the lab's PI, so a co-director's separate lab never folds a row on the page witness.
+A row with two candidate labs, or whose ballot and page witnesses disagree, is refused with the reason in `witnessedFoldRefusals`, and a fold touching a row the eponymous lane already plans is left to that lane.
+The merge repoints every non-repeated lead edge onto the lab, so a co-directed lab keeps all its co-directors.
+
 ## Durable canonical redirect (permanent, delete-safe merge)
 
 Every merge stamps the collapsed shell with `canonicalGroupId`, pointing at the survivor. That archived row IS the durable mapping (#3027): its slug keeps occupying the unique index so a re-scrape of the still-live source cannot re-mint the duplicate, and the materializer follows the tombstone to write that evidence into the survivor. The separate `research_entity_redirects` ledger it used to also write was retired.

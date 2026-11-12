@@ -732,6 +732,23 @@ function buildGroupFromCluster(
   };
 }
 
+/**
+ * A merge group for a canonical a witness already chose, so the group carries the same
+ * merged departments, topics, sources and description as every other lane's group.
+ */
+export function buildPinnedCanonicalMergeGroup(
+  row: ResearchEntityPiDedupeRow,
+  canonicalEntityId: string,
+  duplicateEntityIds: readonly string[],
+): ResearchEntityPiDedupeGroup | null {
+  const wanted = new Set([canonicalEntityId, ...duplicateEntityIds]);
+  const entities = row.entities.filter((entity) => wanted.has(entity.id));
+  if (entities.length !== wanted.size) return null;
+  return buildGroupFromCluster(withoutPrimaryAppointmentPreference(row), entities, (entity) =>
+    entity.id === canonicalEntityId ? Number.MAX_SAFE_INTEGER : canonicalScore(entity),
+  );
+}
+
 function carriedCanonicalIdentity(
   canonical: ResearchEntityPiDedupeRow['entities'][number],
   entities: ResearchEntityPiDedupeRow['entities'],
