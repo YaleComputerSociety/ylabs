@@ -1,3 +1,4 @@
+import { normalizeOrcid } from '../../utils/orcid';
 import { officialProfileUrlSpellings } from './officialProfileIdentityUrlKey';
 
 export interface UserNameObservation {
@@ -67,17 +68,28 @@ async function liveUserObservations(
     .toArray()) as UserNameObservation[];
 }
 
+const orcidSpellingPattern = (normalized: string): RegExp =>
+  new RegExp(normalized.replace(/-/g, '').split('').join('[\\s-]*'), 'i');
+
 export async function personPagesStatingOrcid(
   observations: ObservationCollectionLike,
   orcid: string,
 ): Promise<string[]> {
-  if (!orcid) return [];
+  const normalized = normalizeOrcid(orcid);
+  if (!normalized) return [];
   const statements = await liveUserObservations(
     observations,
-    { field: 'orcid', value: orcid },
-    { sourceUrl: 1 },
+    { field: 'orcid', value: { $regex: orcidSpellingPattern(normalized) } },
+    { value: 1, sourceUrl: 1 },
   );
-  return [...new Set(statements.map((statement) => text(statement.sourceUrl)).filter(Boolean))];
+  return [
+    ...new Set(
+      statements
+        .filter((statement) => normalizeOrcid(statement.value) === normalized)
+        .map((statement) => text(statement.sourceUrl))
+        .filter(Boolean),
+    ),
+  ];
 }
 
 export async function namesStatedAtPersonPagesByPage(
@@ -88,39 +100,26 @@ export async function namesStatedAtPersonPagesByPage(
   for (const page of new Set(pageUrls.filter(Boolean))) {
     for (const spelling of officialProfileUrlSpellings(page)) pageBySpelling.set(spelling, page);
   }
-  const keysByPage = new Map<string, Set<string>>();
+  const observationsByPage = new Map<string, UserNameObservation[]>();
   for (const batch of chunks([...pageBySpelling.keys()])) {
-    const citing = await liveUserObservations(
-      observations,
-      { sourceUrl: { $in: batch }, entityKey: { $exists: true, $nin: [null, ''] } },
-      { entityKey: 1, sourceUrl: 1 },
-    );
-    for (const observation of citing) {
-      const page = pageBySpelling.get(text(observation.sourceUrl));
-      const key = text(observation.entityKey);
-      if (!page || !key) continue;
-      keysByPage.set(page, (keysByPage.get(page) ?? new Set()).add(key));
-    }
-  }
-  const allKeys = [...new Set([...keysByPage.values()].flatMap((keys) => [...keys]))];
-  const nameObservationsByKey = new Map<string, UserNameObservation[]>();
-  for (const batch of chunks(allKeys)) {
     const named = await liveUserObservations(
       observations,
-      { entityKey: { $in: batch }, field: { $in: PERSON_NAME_FIELDS } },
+      {
+        sourceUrl: { $in: batch },
+        entityKey: { $exists: true, $nin: [null, ''] },
+        field: { $in: PERSON_NAME_FIELDS },
+      },
       { entityKey: 1, field: 1, value: 1, sourceUrl: 1 },
     );
     for (const observation of named) {
-      const key = text(observation.entityKey);
-      nameObservationsByKey.set(key, [...(nameObservationsByKey.get(key) ?? []), observation]);
+      const page = pageBySpelling.get(text(observation.sourceUrl));
+      if (!page || !text(observation.entityKey)) continue;
+      observationsByPage.set(page, [...(observationsByPage.get(page) ?? []), observation]);
     }
   }
   const namesByPage = new Map<string, string[]>();
-  for (const [page, keys] of keysByPage) {
-    namesByPage.set(
-      page,
-      statedPersonNamesFrom([...keys].flatMap((key) => nameObservationsByKey.get(key) ?? [])),
-    );
+  for (const [page, pageObservations] of observationsByPage) {
+    namesByPage.set(page, statedPersonNamesFrom(pageObservations));
   }
   return namesByPage;
 }

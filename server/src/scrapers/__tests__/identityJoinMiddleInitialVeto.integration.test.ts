@@ -23,7 +23,8 @@ import { resetDirectoryNetidsByAddressCache } from '../directoryContradictedProf
 const RECORD_NETID = 'qf5979';
 const OWN_PAGE = 'https://som.yale.edu/faculty-research/faculty-directory/quinn-fixture';
 const ORCID_PAGE = 'https://medicine.yale.edu/profile/quinn-fixture/';
-const UNISSUED_ORCID_STAND_IN = 'orcid-stand-in-5979';
+const UNISSUED_ORCID = '0000-0000-0000-0001';
+const ELSEWHERE_PAGE = 'https://medicine.yale.edu/lab/quinn-fixture-elsewhere/';
 const KEY = 'dept:som:quinn-a-fixture';
 
 const observation = (
@@ -45,14 +46,14 @@ const observation = (
   observedAt: new Date('2026-09-01T00:00:00Z'),
 });
 
-const seedOrcidPageStating = async (givenName: string) => {
+const seedOrcidPageStating = async (givenName: string, orcidSpelling = UNISSUED_ORCID) => {
   await Observation.create([
     observation('netid:quinn.fixture', 'fname', givenName, ORCID_PAGE, 'ysm-faculty-directory'),
     observation('netid:quinn.fixture', 'lname', 'Fixture', ORCID_PAGE, 'ysm-faculty-directory'),
     observation(
       'netid:quinn.fixture',
       'orcid',
-      UNISSUED_ORCID_STAND_IN,
+      orcidSpelling,
       ORCID_PAGE,
       'ysm-faculty-directory',
     ),
@@ -104,7 +105,7 @@ describe('a name join refuses a record whose identity pages state another middle
     )._id;
     await Researcher.collection.updateOne(
       { _id: recordId },
-      { $set: { 'identifiers.orcid': UNISSUED_ORCID_STAND_IN } },
+      { $set: { 'identifiers.orcid': UNISSUED_ORCID } },
     );
   });
 
@@ -133,6 +134,28 @@ describe('a name join refuses a record whose identity pages state another middle
       const join = await joinKeyNamed('Quinn Fixture');
 
       expect(String(join.researcher?._id)).toBe(String(recordId));
+    });
+
+    it('finds the page stating the record ORCID in another spelling', async () => {
+      await seedOrcidPageStating('Quinn L.', 'https://orcid.org/0000000000000001');
+
+      const join = await joinKeyNamed('Quinn A. Fixture');
+
+      expect(join.researcher).toBeNull();
+      expect(join.identityJoin).toBeUndefined();
+    });
+
+    it('reads only the names observed at the record pages, not those a citing key holds from elsewhere', async () => {
+      await seedOrcidPageStating('Quinn A.');
+      await Observation.create([
+        observation('netid:quinn.fixture', 'fname', 'Quinn L.', ELSEWHERE_PAGE),
+        observation('netid:quinn.fixture', 'lname', 'Fixture', ELSEWHERE_PAGE),
+      ]);
+
+      const join = await joinKeyNamed('Quinn A. Fixture');
+
+      expect(String(join.researcher?._id)).toBe(String(recordId));
+      expect(join.identityJoin).toBe('person-name');
     });
 
     it('re-derives the same refusal on a second run', async () => {

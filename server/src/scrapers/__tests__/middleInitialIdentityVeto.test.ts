@@ -2,7 +2,6 @@ import mongoose from 'mongoose';
 import { describe, expect, it } from 'vitest';
 import { givenNamesEquivalent, statedMiddleInitialsConflict } from '../utils/piNameMatch';
 import {
-  groupNamesStateConflictingMiddleInitials,
   listedPersonIsTheNamedLead,
   namesStateConflictingMiddleInitials,
   observedPersonNameAgreesWith,
@@ -55,16 +54,6 @@ describe('a stated middle initial that differs vetoes a name match (#5979)', () 
       false,
     );
     expect(namesStateConflictingMiddleInitials('Quinn A. Fixture', 'Quinn Fixture')).toBe(false);
-    expect(
-      groupNamesStateConflictingMiddleInitials([
-        'Quinn Fixture',
-        'Quinn A. Fixture',
-        'Quinn L. Fixture',
-      ]),
-    ).toBe(true);
-    expect(groupNamesStateConflictingMiddleInitials(['Quinn Fixture', 'Quinn A. Fixture'])).toBe(
-      false,
-    );
   });
 
   it('composes a page name from the fname and lname one key read from one page', () => {
