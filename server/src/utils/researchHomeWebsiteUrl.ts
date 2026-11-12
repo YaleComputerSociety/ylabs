@@ -8,6 +8,7 @@ import {
 } from './servedFieldContributionLabels';
 import { isPersonScopedResearchEntityShape } from '../models/storedVocabularies';
 import { isYaleHostname } from './yaleHost';
+import { websiteShareKey } from './websiteShareKey';
 
 const URL_MAXLENGTH = 2048;
 
@@ -669,6 +670,7 @@ export interface ResearchEntityHostOwnerIdentity {
   displayName?: unknown;
   entityType?: unknown;
   kind?: unknown;
+  coreFacilityWebsiteKeys?: ReadonlySet<string>;
 }
 
 /**
@@ -1152,6 +1154,29 @@ export function isUmbrellaPageCitedByPerson(
 }
 
 /**
+ * A page a live `CORE_FACILITY` row holds as its own website, cited by a person's own row.
+ * The facility's page is the facility's research home, so on a person's row it duplicates the
+ * facility row and names a service the person staffs rather than their research (#5788).
+ * A lab is not a person's row here: a lab citing the facility it runs is a different question.
+ * With no facility keys the arm cannot fire, so serve-time callers keep their behaviour.
+ */
+export function isPersonOwnResearchRowShape(entity?: ResearchEntityHostOwnerIdentity): boolean {
+  if (!isPersonScopedHostTenant(entity)) return false;
+  const entityType = textValue(entity?.entityType).toUpperCase();
+  return entityType ? entityType !== 'LAB' : textValue(entity?.kind).toLowerCase() !== 'lab';
+}
+
+export function isCoreFacilityPageCitedByPerson(
+  value: unknown,
+  entity?: ResearchEntityHostOwnerIdentity,
+): boolean {
+  const keys = entity?.coreFacilityWebsiteKeys;
+  if (!keys || keys.size === 0 || !isPersonOwnResearchRowShape(entity)) return false;
+  const key = websiteShareKey(value);
+  return Boolean(key && keys.has(key));
+}
+
+/**
  * A department's audience-recruitment, hiring, programme or course page, which describes
  * what the department offers rather than one lab or person, so it is never the source of a
  * row's description. A research group's own host, its `/lab/` path on a shared school
@@ -1244,6 +1269,7 @@ export function isWithheldResearchWebsiteUrl(
   return (
     isMultiTenantAcademicHostRootUrl(value, entity) ||
     isUmbrellaPageCitedByPerson(value, entity) ||
+    isCoreFacilityPageCitedByPerson(value, entity) ||
     isPressOrNewsHostUrl(value) ||
     isMapOrDirectionsUrl(value) ||
     isInstitutionalPublicityPageUrl(value) ||
@@ -1829,6 +1855,7 @@ export type ResearchHomeWebsiteUrlRefusal =
   | 'press-or-news-host'
   | 'multi-tenant-host-root'
   | 'umbrella-page-cited-by-person'
+  | 'core-facility-page-cited-by-person'
   | 'unparseable'
   | 'non-http-protocol'
   | 'file-or-document'
@@ -1878,6 +1905,7 @@ const WRITE_BLOCKING_RESEARCH_HOME_WEBSITE_URL_REFUSALS: ReadonlySet<string> = n
   'press-or-news-host',
   'multi-tenant-host-root',
   'umbrella-page-cited-by-person',
+  'core-facility-page-cited-by-person',
   'cms-profile-path',
   'host-denylist',
   'google-sites-not-a-home',
@@ -1980,6 +2008,9 @@ export function researchHomeWebsiteUrlDecision(
   if (isPatientCarePageCitedAsResearchWebsite(raw, entity)) return refuse('patient-care-page');
   if (isMultiTenantAcademicHostRootUrl(raw, entity)) return refuse('multi-tenant-host-root');
   if (isUmbrellaPageCitedByPerson(raw, entity)) return refuse('umbrella-page-cited-by-person');
+  if (isCoreFacilityPageCitedByPerson(raw, entity)) {
+    return refuse('core-facility-page-cited-by-person');
+  }
   try {
     const url = new URL(raw);
     url.hash = '';

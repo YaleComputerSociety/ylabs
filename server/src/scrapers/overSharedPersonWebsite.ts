@@ -1,4 +1,5 @@
 import { Observation } from '../models/observation';
+import { websiteShareKey } from '../utils/websiteShareKey';
 
 /**
  * A URL asserted as the own website of this many different people is nobody's own
@@ -24,19 +25,7 @@ export interface PersonWebsiteObservationLike {
   entityKey?: unknown;
 }
 
-export function personWebsiteShareKey(value: unknown): string | undefined {
-  if (typeof value !== 'string' || !value.trim()) return undefined;
-  let url: URL;
-  try {
-    url = new URL(value.trim());
-  } catch {
-    return undefined;
-  }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined;
-  const host = url.hostname.toLowerCase().replace(/^www\./, '');
-  const path = url.pathname.replace(/\/+$/, '').toLowerCase();
-  return `${host}${path}${url.search}`;
-}
+export const personWebsiteShareKey = websiteShareKey;
 
 function subjectOf(observation: PersonWebsiteObservationLike): string | undefined {
   const subject = observation.entityId ?? observation.entityKey;
