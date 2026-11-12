@@ -50,6 +50,7 @@ interface ResearchFilterDisclosureProps {
   resultCountPending?: boolean;
   onShowResults?: () => void;
   isLoadingOptions?: boolean;
+  trailingControl?: ReactNode;
 }
 
 const resultCountFormatter = new Intl.NumberFormat('en-US');
@@ -270,6 +271,7 @@ const ResearchFilterDisclosure = ({
   resultCountPending = false,
   onShowResults,
   isLoadingOptions = false,
+  trailingControl,
 }: ResearchFilterDisclosureProps) => {
   const isSidebar = variant === 'sidebar';
   const [uncontrolledIsOpen, setUncontrolledIsOpen] = useState(false);
@@ -689,7 +691,9 @@ const ResearchFilterDisclosure = ({
   }
 
   return (
-    <div className="mt-3 flex min-w-0 max-w-full items-center gap-2">
+    <div
+      className={`flex min-w-0 max-w-full items-center gap-2 ${trailingControl ? 'mt-1' : 'mt-3'}`}
+    >
       <div className="relative min-w-0 max-w-full shrink-0">
         <button
           ref={triggerRef}
@@ -813,6 +817,7 @@ const ResearchFilterDisclosure = ({
       </div>
 
       {activeChips(true)}
+      {trailingControl && <div className="ml-auto shrink-0">{trailingControl}</div>}
     </div>
   );
 };

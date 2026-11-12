@@ -17,6 +17,8 @@ interface SortMenuProps<Value extends string> {
   sortDirection: SortDirection;
   onChange: (value: Value) => void;
   onToggleSortDirection: () => void;
+  shortLabelOnPhone?: boolean;
+  menuAlign?: 'start' | 'end';
 }
 
 const clampIndex = (index: number, length: number) => Math.min(Math.max(index, 0), length - 1);
@@ -29,6 +31,8 @@ const SortMenu = <Value extends string>({
   sortDirection,
   onChange,
   onToggleSortDirection,
+  shortLabelOnPhone = false,
+  menuAlign = 'start',
 }: SortMenuProps<Value>) => {
   const [isOpen, setIsOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -40,6 +44,7 @@ const SortMenu = <Value extends string>({
     0,
   );
   const currentLabel = options[selectedIndex]?.label ?? '';
+  const showsBareSortOnPhone = shortLabelOnPhone && value === directionlessValue;
 
   const open = (index = selectedIndex) => {
     setActiveIndex(clampIndex(index, options.length));
@@ -123,10 +128,15 @@ const SortMenu = <Value extends string>({
           onClick={() => (isOpen ? close() : open())}
           onKeyDown={isOpen ? handleOpenKeyDown : handleClosedKeyDown}
           onBlur={close}
-          className="flex min-h-[44px] min-w-[150px] cursor-pointer select-none items-center justify-between whitespace-nowrap px-3 text-ink-soft yr-focus-ring-inset"
+          className={`flex min-h-[44px] cursor-pointer select-none items-center justify-between whitespace-nowrap px-3 text-ink-soft yr-focus-ring-inset ${shortLabelOnPhone ? 'sm:min-w-[150px]' : 'min-w-[150px]'}`}
         >
-          <span className="mr-1 text-muted">Sort:</span>
-          <span className="truncate">{currentLabel}</span>
+          <span className={`mr-1 text-muted ${shortLabelOnPhone ? 'max-sm:hidden' : ''}`}>
+            Sort:
+          </span>
+          {showsBareSortOnPhone && <span className="sm:hidden">Sort</span>}
+          <span className={`truncate ${showsBareSortOnPhone ? 'max-sm:hidden' : ''}`}>
+            {currentLabel}
+          </span>
           <ChevronDownIcon
             className={`ml-2 h-4 w-4 transition-transform ${isOpen ? 'rotate-180' : ''}`}
           />
@@ -159,7 +169,7 @@ const SortMenu = <Value extends string>({
 
       <div
         hidden={!isOpen}
-        className="absolute left-0 top-full z-50 mt-1 min-w-[180px] overflow-hidden rounded-overlay border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] shadow-yr-overlay"
+        className={`absolute top-full z-50 mt-1 ${menuAlign === 'end' ? 'right-0' : 'left-0'} min-w-[180px] overflow-hidden rounded-overlay border border-[var(--yr-line-strong)] bg-[var(--yr-panel)] shadow-yr-overlay`}
       >
         <ul
           id={listboxId}

@@ -17,6 +17,7 @@ interface ResearchSortDropdownProps {
   hasQuery: boolean;
   onSortByChange: (value: ResearchSortField) => void;
   onToggleSortDirection: () => void;
+  inFilterBar?: boolean;
 }
 
 const ResearchSortDropdown = ({
@@ -25,6 +26,7 @@ const ResearchSortDropdown = ({
   hasQuery,
   onSortByChange,
   onToggleSortDirection,
+  inFilterBar = false,
 }: ResearchSortDropdownProps) => (
   <SortMenu
     subject="research"
@@ -34,6 +36,8 @@ const ResearchSortDropdown = ({
     sortDirection={sortOrder}
     onChange={onSortByChange}
     onToggleSortDirection={onToggleSortDirection}
+    shortLabelOnPhone={inFilterBar}
+    menuAlign={inFilterBar ? 'end' : 'start'}
   />
 );
 

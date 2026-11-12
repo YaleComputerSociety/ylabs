@@ -734,8 +734,8 @@ await step(
         return bar ? Math.round(bar.getBoundingClientRect().height) : null;
       });
       assert(
-        barHeight !== null && barHeight <= 72,
-        `The sticky filter bar is ${barHeight}px tall at 390x664 with one filter active; it should stay one row (72px or less) so results keep the screen (#5305).`,
+        barHeight !== null && barHeight <= 84,
+        `The sticky filter bar is ${barHeight}px tall at 390x664 with one filter active; it should stay one control row under the result summary (84px or less) so results keep the screen (#5305, #5166).`,
       );
       const chipOverflow = await phonePage.evaluate(() => {
         const strip = document.querySelector('[aria-label="Active research filters"]');
@@ -888,6 +888,177 @@ await step('a session answering late does not shift the browse page', async () =
   ]) {
     await assertLateSessionKeepsBrowseStable(viewport, syntheticAdminSession);
     await assertLateSessionKeepsBrowseStable(viewport, syntheticStudentSession);
+  }
+});
+
+const PHONE_SEARCH_QUERY = 'neural circuits';
+const syntheticWatchedProgram = (index) => ({
+  _id: `e2e-watched-program-${index}`,
+  title: `Watched Program Fixture ${index}`,
+  summary: 'Synthetic watched program for the phone search smoke.',
+  description: 'Synthetic watched program for the phone search smoke.',
+  programCategory: 'FELLOWSHIP',
+  programKind: 'RESEARCH_FUNDING',
+  isAcceptingApplications: true,
+  deadline: new Date(Date.now() + (index + 3) * 86400000).toISOString(),
+});
+
+const withPhoneSearchPage = async (viewport, session, { holdSession = false } = {}, fn) => {
+  const phoneContext = await browser.newContext({ viewport, deviceScaleFactor: 1 });
+  let releaseSession = () => {};
+  const sessionReleased = new Promise((resolve) => {
+    releaseSession = resolve;
+  });
+  try {
+    await phoneContext.route('**/api/check', async (route) => {
+      if (holdSession) await sessionReleased;
+      await route.fulfill({ json: session });
+    });
+    await phoneContext.route('**/api/research/search**', (route) =>
+      route.fulfill({
+        json: {
+          researchEntities: Array.from({ length: 8 }, (_, index) => syntheticLayoutEntity(index)),
+          estimatedTotalHits: 8,
+          page: 1,
+          pageSize: 24,
+          facetDistribution: {},
+        },
+      }),
+    );
+    await phoneContext.route('**/api/users/watchedPrograms**', (route) =>
+      route.fulfill({
+        json: { watchedPrograms: [syntheticWatchedProgram(0), syntheticWatchedProgram(1)] },
+      }),
+    );
+    await phoneContext.route('**/api/users/watchedProgramPlans**', (route) =>
+      route.fulfill({ json: { watchedProgramPlans: {} } }),
+    );
+    await phoneContext.route('**/api/analytics/**', (route) => route.fulfill({ status: 204 }));
+    const phonePage = await phoneContext.newPage();
+    await withFailureContextOf(phonePage, () => fn(phonePage, releaseSession));
+  } finally {
+    releaseSession();
+    await phoneContext.close();
+  }
+};
+
+const firstSearchResultTop = (targetPage) =>
+  targetPage
+    .getByRole('region', { name: 'Search results' })
+    .getByRole('link', { name: 'Layout Fixture 0' })
+    .first()
+    .evaluate((link) => Math.round(link.getBoundingClientRect().top));
+
+const PHONE_SEARCH_PERSONAS = [
+  ['a guest', { auth: false }],
+  ['a signed-in student with a watched deadline', syntheticStudentSession],
+];
+
+await step('a phone search puts the first result title on the first screen', async () => {
+  for (const viewport of [
+    { width: 390, height: 664 },
+    { width: 375, height: 667 },
+  ]) {
+    for (const [persona, session] of PHONE_SEARCH_PERSONAS) {
+      await withPhoneSearchPage(viewport, session, {}, async (phonePage) => {
+        await phonePage.goto(`${baseUrl}/research`, { waitUntil: 'domcontentloaded' });
+        await phonePage.getByRole('link', { name: 'Layout Fixture 0' }).first().waitFor({
+          timeout: 20000,
+        });
+        if (session.auth) {
+          await phonePage
+            .getByRole('link', { name: /watched program/ })
+            .first()
+            .waitFor({ timeout: 20000 });
+        }
+        const searchInput = phonePage.getByLabel(SEARCH_INPUT_LABEL);
+        await searchInput.fill(PHONE_SEARCH_QUERY);
+        await searchInput.press('Enter');
+        await phonePage
+          .getByRole('region', { name: 'Search results' })
+          .getByRole('link', { name: 'Layout Fixture 0' })
+          .first()
+          .waitFor({ timeout: 20000 });
+        await phonePage.waitForTimeout(500);
+        const titleTop = await firstSearchResultTop(phonePage);
+        record('phone search first result', {
+          persona,
+          viewport: `${viewport.width}x${viewport.height}`,
+          firstResultTitleTop: titleTop,
+        });
+        assert(
+          titleTop < viewport.height,
+          `After a search at ${viewport.width}x${viewport.height} for ${persona}, the first result title starts at y=${titleTop}, below the first screen (#5166).`,
+        );
+        if (session.auth) {
+          assert(
+            !(await phonePage.getByText(SIGNED_IN_NOTICE).isVisible()),
+            `The signed-in notice still shows after a phone search for ${persona} (#5166).`,
+          );
+        } else {
+          assert(
+            await phonePage.getByRole('link', { name: 'Log in with Yale CAS' }).isVisible(),
+            `The guest log-in prompt is missing after a phone search at ${viewport.width}px (#5166).`,
+          );
+        }
+      });
+    }
+  }
+});
+
+const SEARCH_SESSION_SHIFT_BUDGET = 0.01;
+
+await step('a session answering late does not shift a phone search', async () => {
+  const viewport = { width: 375, height: 667 };
+  for (const [persona, session] of PHONE_SEARCH_PERSONAS) {
+    await withPhoneSearchPage(
+      viewport,
+      session,
+      { holdSession: true },
+      async (phonePage, releaseSession) => {
+        await phonePage.addInitScript(() => {
+          window.__searchShifts = [];
+          new PerformanceObserver((list) => {
+            for (const entry of list.getEntries()) {
+              if (entry.hadRecentInput) continue;
+              window.__searchShifts.push({ startTime: entry.startTime, value: entry.value });
+            }
+          }).observe({ type: 'layout-shift', buffered: true });
+        });
+        await phonePage.goto(`${baseUrl}/research?q=${encodeURIComponent(PHONE_SEARCH_QUERY)}`, {
+          waitUntil: 'domcontentloaded',
+        });
+        await phonePage
+          .getByRole('region', { name: 'Search results' })
+          .getByRole('link', { name: 'Layout Fixture 0' })
+          .first()
+          .waitFor({ timeout: 20000 });
+        await phonePage.waitForTimeout(1000);
+        const sessionAnsweredAt = await phonePage.evaluate(() => performance.now());
+        releaseSession();
+        await phonePage
+          .getByRole('link', { name: session.auth ? /watched program/ : 'Log in with Yale CAS' })
+          .first()
+          .waitFor({ state: 'visible', timeout: 20000 });
+        await phonePage.waitForTimeout(1000);
+        const total = await phonePage.evaluate(
+          (since) =>
+            window.__searchShifts
+              .filter((shift) => shift.startTime >= since)
+              .reduce((sum, shift) => sum + shift.value, 0),
+          sessionAnsweredAt,
+        );
+        record('phone search layout shift with a late session', {
+          persona,
+          width: viewport.width,
+          cumulativeLayoutShift: Number(total.toFixed(4)),
+        });
+        assert(
+          total < SEARCH_SESSION_SHIFT_BUDGET,
+          `A phone search at ${viewport.width}px shifted by ${total.toFixed(3)} (budget ${SEARCH_SESSION_SHIFT_BUDGET}) once a late session check answered for ${persona} (#4222, #5166).`,
+        );
+      },
+    );
   }
 });
 

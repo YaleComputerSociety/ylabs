@@ -1231,6 +1231,16 @@ const Research = () => {
   };
 
   const hasSubmittedSearch = submittedQuery.trim().length > 0;
+  const [searchPaintedBeforeSession, setSearchPaintedBeforeSession] = useState<string | null>(null);
+  if (isAuthLoading && hasSubmittedSearch && searchPaintedBeforeSession !== submittedQuery) {
+    setSearchPaintedBeforeSession(submittedQuery);
+  } else if (
+    !isAuthLoading &&
+    searchPaintedBeforeSession !== null &&
+    searchPaintedBeforeSession !== submittedQuery
+  ) {
+    setSearchPaintedBeforeSession(null);
+  }
   const programsHandoffQuery =
     departmentSearch || submittedQuery === FILTERED_RESULT_QUERY_LABEL ? '' : submittedQuery.trim();
 
@@ -1888,6 +1898,15 @@ const Research = () => {
   const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
   const isWideFilterLayout = useMediaQuery('(min-width: 1280px)');
   const isCompactViewport = useMediaQuery('(max-width: 639px)');
+  const compactsSearchHeader = isCompactViewport && hasSubmittedSearch;
+  const hasApproachingWatchedDeadline = isAuthenticated && watchedDeadlineApproachingCount > 0;
+  const sessionSlotHoldsDeadline = compactsSearchHeader && hasApproachingWatchedDeadline;
+  // A search painted before the session answered keeps the slot at the guest copy's height,
+  // so the answer never moves the results (#4222); only a search submitted once the session
+  // is known may collapse it on a phone (#5166).
+  const sessionSlotReservesGuestCopy =
+    !compactsSearchHeader || !isAuthenticated || searchPaintedBeforeSession === submittedQuery;
+  const showsSessionSlot = sessionSlotReservesGuestCopy || sessionSlotHoldsDeadline;
   const searchPlaceholder = isCompactViewport
     ? 'Topic, professor, or lab'
     : isWideFilterLayout
@@ -2061,12 +2080,77 @@ const Research = () => {
     </div>
   );
 
+  const watchedDeadlineNotice = (withNotStartedEmphasis: boolean) => (
+    <>
+      <Link
+        to="/dashboard?tab=programs"
+        aria-label={approachingDeadlineAriaLabel(
+          watchedDeadlineApproachingCount,
+          watchedDeadlineNotStartedCount,
+        )}
+        className="-my-1.5 inline-block py-1.5 font-semibold underline underline-offset-2 hover:text-amber-700 yr-focus-ring"
+      >
+        {approachingDeadlineLabel(watchedDeadlineApproachingCount)}
+      </Link>
+      {withNotStartedEmphasis && notStartedEmphasis(watchedDeadlineNotStartedCount) && (
+        <> - {notStartedEmphasis(watchedDeadlineNotStartedCount)}.</>
+      )}
+    </>
+  );
+
+  const searchResultSummary = (layoutClassName: string) => (
+    <p
+      ref={resultSummaryRef}
+      tabIndex={-1}
+      role="status"
+      aria-live="polite"
+      aria-atomic="true"
+      className={`font-medium text-ink-soft focus:outline-none ${layoutClassName}`}
+    >
+      {resultSummary(
+        activeResults,
+        queryCorrection?.correctedQuery ?? acronymRewrite?.rewrittenQuery ?? submittedQuery,
+        searchLoading,
+        departmentSearch?.label,
+        searchTotal,
+        searchDegraded,
+      )}
+    </p>
+  );
+
+  const searchSpellingNotice = searchLoading ? null : queryCorrection ? (
+    <SearchSpellingNotice
+      originalQuery={queryCorrection.originalQuery}
+      onSearchOriginal={searchOriginalSpelling}
+    />
+  ) : acronymRewrite ? (
+    <SearchSpellingNotice
+      originalQuery={acronymRewrite.originalQuery}
+      correctedQuery={acronymRewrite.rewrittenQuery}
+      searchedLabel="Searching for"
+      onSearchOriginal={searchLiteralAcronym}
+    />
+  ) : null;
+
+  const searchSortDropdown = (inFilterBar: boolean) => (
+    <ResearchSortDropdown
+      sortBy={sortBy}
+      sortOrder={sortOrder}
+      hasQuery={Boolean(submittedQuery)}
+      onSortByChange={(field) => applyResearchSort(field)}
+      onToggleSortDirection={toggleResearchSortDirection}
+      inFilterBar={inFilterBar}
+    />
+  );
+
   return (
     <div className="yr-page min-h-[calc(100vh-8rem)]">
       <div className="mx-auto w-full max-w-(--breakpoint-2xl) px-5 py-5 sm:py-8 lg:px-8">
         <div className="grid grid-cols-1 gap-5 sm:gap-6 xl:grid-cols-[22rem_minmax(0,1fr)] xl:items-start xl:gap-8">
           <header className="yr-panel rounded-card p-4 sm:p-6 xl:p-5 xl:sticky xl:top-6 xl:max-h-[calc(100vh-8rem)] xl:overflow-y-auto">
-            <h1 className="yr-display max-w-3xl text-[1.75rem] font-semibold leading-tight text-ink sm:text-5xl sm:leading-none xl:text-3xl xl:leading-9">
+            <h1
+              className={`yr-display max-w-3xl text-[1.75rem] font-semibold leading-tight text-ink sm:text-5xl sm:leading-none xl:text-3xl xl:leading-9 ${compactsSearchHeader ? 'sr-only' : ''}`}
+            >
               Find Yale research that fits you.
             </h1>
             <p
@@ -2077,7 +2161,10 @@ const Research = () => {
               course topic, method, or question.
             </p>
 
-            <form onSubmit={onSubmit} className="mt-3 sm:mt-7 xl:mt-4">
+            <form
+              onSubmit={onSubmit}
+              className={compactsSearchHeader ? undefined : 'mt-3 sm:mt-7 xl:mt-4'}
+            >
               <label
                 htmlFor="research-search"
                 className="mb-2 block text-sm font-semibold text-ink"
@@ -2144,24 +2231,12 @@ const Research = () => {
               </p>
             </form>
 
-            {isAuthenticated && watchedDeadlineApproachingCount > 0 && (
+            {hasApproachingWatchedDeadline && !sessionSlotHoldsDeadline && (
               <div
                 className="mt-4 rounded-card border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-relaxed text-amber-900"
                 role="status"
               >
-                <Link
-                  to="/dashboard?tab=programs"
-                  aria-label={approachingDeadlineAriaLabel(
-                    watchedDeadlineApproachingCount,
-                    watchedDeadlineNotStartedCount,
-                  )}
-                  className="-my-1.5 inline-block py-1.5 font-semibold underline underline-offset-2 hover:text-amber-700 yr-focus-ring"
-                >
-                  {approachingDeadlineLabel(watchedDeadlineApproachingCount)}
-                </Link>
-                {notStartedEmphasis(watchedDeadlineNotStartedCount) && (
-                  <> - {notStartedEmphasis(watchedDeadlineNotStartedCount)}.</>
-                )}
+                {watchedDeadlineNotice(true)}
               </div>
             )}
 
@@ -2189,40 +2264,50 @@ const Research = () => {
                 {trustTierFilterChips}
               </section>
             )}
-            <div
-              aria-hidden={isAuthLoading || undefined}
-              className={`mt-3 grid rounded-card border border-line-brand bg-brand-soft px-3 py-2 text-sm leading-relaxed text-brand-navy sm:mt-4 xl:hidden ${isAuthLoading ? 'invisible' : ''}`}
-            >
-              <p
-                aria-hidden={isAuthenticated || undefined}
-                className={`col-start-1 row-start-1 ${isAuthenticated ? 'invisible' : ''}`}
+            {showsSessionSlot && (
+              <div
+                aria-hidden={isAuthLoading || undefined}
+                className={`mt-3 grid rounded-card border px-3 py-2 text-sm leading-relaxed sm:mt-4 xl:hidden ${sessionSlotHoldsDeadline ? 'items-center border-amber-200 bg-amber-50 text-amber-900' : 'border-line-brand bg-brand-soft text-brand-navy'} ${isAuthLoading ? 'invisible' : ''}`}
               >
-                You&apos;re browsing as a guest.{' '}
-                <Link
-                  to="/login"
-                  state={{ from: `${location.pathname}${location.search}` }}
-                  tabIndex={isAuthenticated ? -1 : undefined}
-                  className="yr-focus-ring -my-1.5 inline-block rounded-control py-1.5 font-semibold underline underline-offset-2 hover:text-[var(--yr-navy)]"
-                >
-                  Log in with Yale CAS
-                </Link>{' '}
-                to save research and reach out.
-              </p>
-              <p
-                aria-hidden={!isAuthenticated || undefined}
-                className={`col-start-1 row-start-1 ${isAuthenticated ? '' : 'invisible'}`}
-              >
-                You&apos;re signed in. Research you save is on{' '}
-                <Link
-                  to="/dashboard"
-                  tabIndex={isAuthenticated ? undefined : -1}
-                  className="yr-focus-ring -my-1.5 inline-block rounded-control py-1.5 font-semibold underline underline-offset-2 hover:text-[var(--yr-navy)]"
-                >
-                  your dashboard
-                </Link>
-                , ready to compare.
-              </p>
-            </div>
+                {sessionSlotReservesGuestCopy && (
+                  <p
+                    aria-hidden={isAuthenticated || undefined}
+                    className={`col-start-1 row-start-1 ${isAuthenticated ? 'invisible' : ''}`}
+                  >
+                    You&apos;re browsing as a guest.{' '}
+                    <Link
+                      to="/login"
+                      state={{ from: `${location.pathname}${location.search}` }}
+                      tabIndex={isAuthenticated ? -1 : undefined}
+                      className="yr-focus-ring -my-1.5 inline-block rounded-control py-1.5 font-semibold underline underline-offset-2 hover:text-[var(--yr-navy)]"
+                    >
+                      Log in with Yale CAS
+                    </Link>{' '}
+                    to save research and reach out.
+                  </p>
+                )}
+                {sessionSlotHoldsDeadline ? (
+                  <p role="status" className="col-start-1 row-start-1">
+                    {watchedDeadlineNotice(false)}
+                  </p>
+                ) : (
+                  <p
+                    aria-hidden={!isAuthenticated || undefined}
+                    className={`col-start-1 row-start-1 ${isAuthenticated ? '' : 'invisible'}`}
+                  >
+                    You&apos;re signed in. Research you save is on{' '}
+                    <Link
+                      to="/dashboard"
+                      tabIndex={isAuthenticated ? undefined : -1}
+                      className="yr-focus-ring -my-1.5 inline-block rounded-control py-1.5 font-semibold underline underline-offset-2 hover:text-[var(--yr-navy)]"
+                    >
+                      your dashboard
+                    </Link>
+                    , ready to compare.
+                  </p>
+                )}
+              </div>
+            )}
           </header>
 
           <div className="min-w-0">
@@ -2327,62 +2412,31 @@ const Research = () => {
                 ref={resultsSectionRef}
                 aria-busy={searchLoading}
                 aria-label="Search results"
+                className="max-xl:pt-3"
               >
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="min-w-0">
-                    <p
-                      ref={resultSummaryRef}
-                      tabIndex={-1}
-                      role="status"
-                      aria-live="polite"
-                      aria-atomic="true"
-                      className="text-sm font-medium text-ink-soft focus:outline-none"
-                    >
-                      {resultSummary(
-                        activeResults,
-                        queryCorrection?.correctedQuery ??
-                          acronymRewrite?.rewrittenQuery ??
-                          submittedQuery,
-                        searchLoading,
-                        departmentSearch?.label,
-                        searchTotal,
-                        searchDegraded,
-                      )}
-                    </p>
-                    {queryCorrection && !searchLoading && (
-                      <SearchSpellingNotice
-                        originalQuery={queryCorrection.originalQuery}
-                        onSearchOriginal={searchOriginalSpelling}
-                      />
-                    )}
-                    {acronymRewrite && !queryCorrection && !searchLoading && (
-                      <SearchSpellingNotice
-                        originalQuery={acronymRewrite.originalQuery}
-                        correctedQuery={acronymRewrite.rewrittenQuery}
-                        searchedLabel="Searching for"
-                        onSearchOriginal={searchLiteralAcronym}
-                      />
-                    )}
+                {isWideFilterLayout ? (
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      {searchResultSummary('text-sm')}
+                      {searchSpellingNotice}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {searchSortDropdown(false)}
+                    </div>
                   </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <ResearchSortDropdown
-                      sortBy={sortBy}
-                      sortOrder={sortOrder}
-                      hasQuery={Boolean(submittedQuery)}
-                      onSortByChange={(field) => applyResearchSort(field)}
-                      onToggleSortDirection={toggleResearchSortDirection}
-                    />
-                  </div>
-                </div>
-
-                {!isWideFilterLayout && (
-                  <ResearchStickyFilterBar>
-                    <ResearchFilterDisclosure
-                      {...researchFilterProps}
-                      isOpen={isFilterPanelOpen}
-                      onOpenChange={setIsFilterPanelOpen}
-                    />
-                  </ResearchStickyFilterBar>
+                ) : (
+                  <>
+                    <ResearchStickyFilterBar>
+                      {searchResultSummary('truncate text-sm leading-5')}
+                      <ResearchFilterDisclosure
+                        {...researchFilterProps}
+                        isOpen={isFilterPanelOpen}
+                        onOpenChange={setIsFilterPanelOpen}
+                        trailingControl={searchSortDropdown(true)}
+                      />
+                    </ResearchStickyFilterBar>
+                    {searchSpellingNotice}
+                  </>
                 )}
 
                 {searchDegraded && !searchLoading && activeClusters.length > 0 && (
