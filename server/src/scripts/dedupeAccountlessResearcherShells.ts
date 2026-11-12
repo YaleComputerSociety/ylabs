@@ -27,6 +27,7 @@ import {
   type OfficialPageHolders,
   type OfficialPageStatement,
   officialPageWitnessDestination,
+  orcidOnlyHoldersByOrcid,
   planShellEdgeMoves,
   distinctPeoplePairKey,
   type NameVariantCandidate,
@@ -557,19 +558,28 @@ async function loadNameVariantCandidates(
   return candidatesByShellId;
 }
 
+interface ListingSubjectStatements {
+  netidsByShellId: Map<string, Array<ReadonlySet<string>>>;
+  subjectOrcidsByShellId: Map<string, string[]>;
+}
+
 /**
- * For each `NAME_ONLY` shell, the netids the Yale directory pairs with each address its own
- * listings state about their subject: the listings its edges cite, on the rows those edges
- * hold. Only the stated `emails` count, never a linked profile URL (#5811).
+ * For each `NAME_ONLY` shell, what its own listings state about their subject: the listings its
+ * edges cite, on the rows those edges hold. The netids are those the Yale directory pairs with
+ * each stated address, and only the stated `emails` count for them, never a linked profile URL
+ * (#5811). The ORCIDs are the subject-scoped `orcid` each listing's identity evidence states,
+ * which the extractor writes only when the subject node states exactly one (#5932).
  */
-async function loadListingAddressNetids(
+async function loadListingSubjectStatements(
   RoleAssignment: mongoose.mongo.Collection,
   ResearchEntities: mongoose.mongo.Collection,
   Observations: mongoose.mongo.Collection,
   shellIds: string[],
-): Promise<Map<string, Array<ReadonlySet<string>>>> {
+): Promise<ListingSubjectStatements> {
   const netidsByShellId = new Map<string, Array<ReadonlySet<string>>>();
-  if (shellIds.length === 0) return netidsByShellId;
+  const subjectOrcidsByShellId = new Map<string, string[]>();
+  const statements = { netidsByShellId, subjectOrcidsByShellId };
+  if (shellIds.length === 0) return statements;
   const shellEdges = (await RoleAssignment.find(
     {
       archived: { $ne: true },
@@ -578,7 +588,7 @@ async function loadListingAddressNetids(
     },
     { projection: { personId: 1, target: 1, 'rosterProvenance.profileUrl': 1 } },
   ).toArray()) as any[];
-  if (shellEdges.length === 0) return netidsByShellId;
+  if (shellEdges.length === 0) return statements;
   const targetIds = [...new Set(shellEdges.map((edge) => idKey(edge.target?.id)).filter(Boolean))];
   const slugByLiveTarget = new Map<string, string>(
     (
@@ -613,9 +623,10 @@ async function loadListingAddressNetids(
   const listingKeys = [
     ...new Set([...listingKeysByProfileUrl.values()].flatMap((keys) => [...keys])),
   ];
-  if (listingKeys.length === 0) return netidsByShellId;
+  if (listingKeys.length === 0) return statements;
   const rowSlugsByListingKey = new Map<string, Set<string>>();
   const addressesByListingKey = new Map<string, string[]>();
+  const orcidsByListingKey = new Map<string, string[]>();
   for (const observation of (await Observations.find(
     {
       entityType: 'researchGroupMember',
@@ -639,6 +650,9 @@ async function loadListingAddressNetids(
         ...(addressesByListingKey.get(key) ?? []),
         ...evidence.emails.map((email) => email.trim().toLowerCase()),
       ]);
+      if (evidence.orcid) {
+        orcidsByListingKey.set(key, [...(orcidsByListingKey.get(key) ?? []), evidence.orcid]);
+      }
     }
   }
   const directory = await loadDirectoryNetidsByAddress();
@@ -651,6 +665,10 @@ async function loadListingAddressNetids(
     seenAddressesByShellId.set(shellId, seen);
     for (const key of listingKeysByProfileUrl.get(String(edge.rosterProvenance.profileUrl)) ?? []) {
       if (!rowSlugsByListingKey.get(key)?.has(slug)) continue;
+      for (const orcid of orcidsByListingKey.get(key) ?? []) {
+        const orcids = subjectOrcidsByShellId.get(shellId) ?? [];
+        if (!orcids.includes(orcid)) subjectOrcidsByShellId.set(shellId, [...orcids, orcid]);
+      }
       for (const address of addressesByListingKey.get(key) ?? []) {
         const netids = directory.get(address);
         if (!netids || netids.size === 0 || seen.has(address)) continue;
@@ -659,7 +677,7 @@ async function loadListingAddressNetids(
       }
     }
   }
-  return netidsByShellId;
+  return statements;
 }
 
 const ORCID_PATTERN = /\d{4}-\d{4}-\d{4}-\d{3}[\dX]/i;
@@ -989,7 +1007,7 @@ export async function dedupeAccountlessResearcherShells(options: {
     researcherIdentities,
   );
 
-  const listingAddressNetidsByShellId = await loadListingAddressNetids(
+  const listingSubjectStatements = await loadListingSubjectStatements(
     RoleAssignment,
     mongoose.connection.collection('research_entities'),
     mongoose.connection.collection('observations'),
@@ -1002,6 +1020,7 @@ export async function dedupeAccountlessResearcherShells(options: {
     foldableShells.filter((entry) => researcherIdentityTier(entry) === 'NAME_ONLY'),
   );
   const officialPageHolders = officialPageHoldersOf(researcherIdentities);
+  const orcidOnlyHolders = orcidOnlyHoldersByOrcid(researcherIdentities);
 
   const decidedTargetByShellId = new Map<string, string>();
   const matchedIdentityByShellId = new Map<string, ShellFoldIdentity>();
@@ -1014,10 +1033,12 @@ export async function dedupeAccountlessResearcherShells(options: {
       verifiedProfileIndex,
       sharedRowCandidatesByShellId.get(shell.id),
       nameVariantCandidatesByShellId.get(shell.id),
-      listingAddressNetidsByShellId.get(shell.id),
+      listingSubjectStatements.netidsByShellId.get(shell.id),
       directoryEmailHolders,
       officialPageStatementsByShellId.get(shell.id),
       officialPageHolders,
+      listingSubjectStatements.subjectOrcidsByShellId.get(shell.id),
+      orcidOnlyHolders,
     );
     byReason[decision.reason] += 1;
     if (decision.merge && decision.canonicalId && decision.canonicalId !== shell.id) {

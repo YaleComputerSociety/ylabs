@@ -41,7 +41,7 @@ import { clampDescriptionLength } from '../../utils/descriptionHygiene';
 import { forEachInOrderWithPrefetch } from '../utils/boundedConcurrency';
 import { fetchFailureStatusCode } from '../utils/fetchFailure';
 import { flattenHtmlToText } from '../utils/htmlText';
-import { normalizeOrcid } from '../../utils/orcid';
+import { singleStatedOrcid } from '../utils/rosterMemberIdentityEvidence';
 import {
   classifyHarvestedResearchHomeName,
   isLabShapedResearchHome,
@@ -273,15 +273,15 @@ function extractPersonEmail(rawEmail: unknown, name: string): string | undefined
   return email;
 }
 
+/**
+ * The profile's own ORCID list names its subject's iD only when it holds exactly one: a list of
+ * several does not say which is the subject's, so its first entry is no evidence (#5932).
+ */
 function extractOrcid(research: Record<string, unknown>): string | undefined {
   const entries = Array.isArray(research.orcids)
     ? (research.orcids as Record<string, unknown>[])
     : [];
-  for (const entry of entries) {
-    const normalized = normalizeOrcid(textValue(entry.url) || textValue(entry.text));
-    if (normalized) return normalized;
-  }
-  return undefined;
+  return singleStatedOrcid(entries.map((entry) => textValue(entry.url) || textValue(entry.text)));
 }
 
 function extractLabWebsite(

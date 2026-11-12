@@ -4116,8 +4116,10 @@ describe('DepartmentRosterScraper.run', () => {
   it('follows official profile pages for canonical profile URLs and lab websites', async () => {
     const profileHtml = `
       <html><head>
+        <title>Ada Lovelace | Mathematics</title>
         <link rel="canonical" href="/people/ada-lovelace" />
       </head><body>
+        <h1>Ada Lovelace</h1>
         <div class="person-title">Associate Professor of Applied Mathematics</div>
         <div class="profile-body">Ada works on computation, algebraic geometry, and foundations of mathematical modeling.</div>
         <div class="research-interests"><a href="/topics/algebraic-geometry">Algebraic Geometry</a><a href="/topics/topology">Topology</a></div>

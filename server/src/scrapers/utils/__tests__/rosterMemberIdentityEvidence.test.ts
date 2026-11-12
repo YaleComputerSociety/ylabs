@@ -4,6 +4,7 @@ import {
   extractRosterMemberIdentityEvidence,
   isYaleHostedUrl,
   parseRosterMemberIdentityEvidence,
+  singleStatedOrcid,
 } from '../rosterMemberIdentityEvidence';
 
 const PAGE_URL = 'https://fixture.yale.edu/center/profile/avery-synthetic/';
@@ -410,6 +411,90 @@ describe('extractRosterMemberIdentityEvidence ignores a lone co-author card (#56
   });
 });
 
+describe('subject-scoped ORCID (#5932)', () => {
+  const SUBJECT_ORCID = '0000-0002-1825-0097';
+  const OTHER_ORCID = '0000-0001-5109-3700';
+  const profile = (subjectSection: string, elsewhere = '') =>
+    page(
+      '',
+      `<main><article class="profile-details"><header><h1>${MEMBER}, PhD</h1></header>` +
+        `<div class="profile-details-section-content__sidebar">${subjectSection}</div>` +
+        `</article>${elsewhere}</main>`,
+    );
+  const orcidLink = (orcid: string) => `<a href="https://orcid.org/${orcid}/">ORCID</a>`;
+
+  it("states the subject's ORCID when the subject node states exactly one", () => {
+    const evidence = extractRosterMemberIdentityEvidence(
+      profile(`<section class="research-section-orcid">${orcidLink(SUBJECT_ORCID)}</section>`),
+      PAGE_URL,
+      MEMBER,
+    );
+    expect(evidence.orcid).toBe(SUBJECT_ORCID);
+  });
+
+  it("never reads a co-author's ORCID as the subject's", () => {
+    const coAuthors = `<div class="co-authors"><a href="/profile/casey-coauthor/">Casey Coauthor</a>${orcidLink(OTHER_ORCID)}</div>`;
+    expect(
+      extractRosterMemberIdentityEvidence(
+        profile(coAuthors, `<aside>${orcidLink(SUBJECT_ORCID)}</aside>`),
+        PAGE_URL,
+        MEMBER,
+      ).orcid,
+    ).toBeUndefined();
+  });
+
+  it('states no ORCID when the subject node lists more than one', () => {
+    const list = `<section class="research-section-orcid-list"><h3>ORCIDs</h3><ul><li>${orcidLink(SUBJECT_ORCID)}</li><li>${orcidLink(OTHER_ORCID)}</li></ul></section>`;
+    expect(
+      extractRosterMemberIdentityEvidence(profile(list), PAGE_URL, MEMBER).orcid,
+    ).toBeUndefined();
+  });
+
+  it('states no ORCID on a page whose heading names someone else', () => {
+    const html = page(
+      '',
+      `<main><article><h1>Casey Coauthor</h1>${orcidLink(SUBJECT_ORCID)}</article></main>`,
+    );
+    expect(extractRosterMemberIdentityEvidence(html, PAGE_URL, MEMBER).orcid).toBeUndefined();
+  });
+
+  it('reads an ORCID from Person metadata naming the member', () => {
+    const jsonLd = {
+      '@type': 'Person',
+      name: MEMBER,
+      identifier: { '@type': 'PropertyValue', propertyID: 'ORCID', value: SUBJECT_ORCID },
+    };
+    const evidence = extractRosterMemberIdentityEvidence(
+      page(`<script type="application/ld+json">${JSON.stringify(jsonLd)}</script>`, ''),
+      PAGE_URL,
+      MEMBER,
+    );
+    expect(evidence.orcid).toBe(SUBJECT_ORCID);
+  });
+
+  it('round-trips the ORCID through the parser, and an ORCID alone is evidence', () => {
+    const parsed = parseRosterMemberIdentityEvidence({
+      pageUrl: PAGE_URL,
+      linkedProfileUrls: [],
+      emails: [],
+      netids: [],
+      orcid: `https://orcid.org/${SUBJECT_ORCID}`,
+    });
+    expect(parsed?.orcid).toBe(SUBJECT_ORCID);
+    expect(
+      parseRosterMemberIdentityEvidence({ ...parsed, orcid: 'not-an-orcid' })?.orcid,
+    ).toBeUndefined();
+  });
+
+  it('names an iD from a list only when the list holds exactly one distinct iD', () => {
+    expect(singleStatedOrcid([SUBJECT_ORCID, `https://orcid.org/${SUBJECT_ORCID}/`])).toBe(
+      SUBJECT_ORCID,
+    );
+    expect(singleStatedOrcid([SUBJECT_ORCID, OTHER_ORCID])).toBeUndefined();
+    expect(singleStatedOrcid([])).toBeUndefined();
+  });
+});
+
 describe('ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION (#5677)', () => {
   const PAGE = 'https://center.yale.edu/people/avery-synthetic';
   const CORPUS: Array<{ html: string; memberName: string }> = [
@@ -419,7 +504,10 @@ describe('ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION (#5677)', () => {
         '@type': 'Person',
         name: 'Avery Synthetic',
         email: 'avery.synthetic@yale.edu',
-        identifier: { propertyID: 'NetID', value: 'AS123' },
+        identifier: [
+          { propertyID: 'NetID', value: 'AS123' },
+          { propertyID: 'ORCID', value: '0000-0002-1694-233X' },
+        ],
       })}</script></head><body><main>
         <a href="https://law.yale.edu/avery-synthetic">Profile</a>
         <a href="https://divinity.yale.edu/faculty-and-research/yds-faculty/avery-synthetic">Avery Synthetic</a>
@@ -437,7 +525,7 @@ describe('ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION (#5677)', () => {
     },
   ];
   const PINNED = {
-    version: 3,
+    version: 4,
     outputs: [
       {
         pageUrl: PAGE,
@@ -448,6 +536,7 @@ describe('ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION (#5677)', () => {
         ],
         emails: ['avery.synthetic@yale.edu'],
         netids: ['as123'],
+        orcid: '0000-0002-1694-233X',
       },
       {
         pageUrl: PAGE,
