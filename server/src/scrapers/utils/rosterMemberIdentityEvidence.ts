@@ -466,7 +466,8 @@ function subjectNodeOrcidCandidates(subjectNode: AnyNode): string[] {
  * subject node is the article (or main, or else the body) holding the heading that names the
  * member in an h1 or h2; an ORCID link or a written iD in navigation, a footer, an aside, a
  * related-people, co-author or publication block, or text a browser never renders (a script,
- * style, noscript, template or iframe body) belongs to someone else or to no one, and so does an ORCID on a page whose headings never name the member.
+ * style, noscript, template, iframe, noembed or noframes body) belongs to someone else or to no
+ * one, and so does an ORCID on a page whose headings never name the member.
  */
 export function subjectProfileOrcid($: cheerio.CheerioAPI, memberName: string): string | undefined {
   if (!memberName) return undefined;
