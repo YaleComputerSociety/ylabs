@@ -100,10 +100,11 @@ describe('resolveResearcherIdForPersonName', () => {
       ['Ali Quennard', 'Alice Quennard'],
       ['Christo Quennard', 'Christopher Quennard'],
     ]) {
+      const storedCandidate = candidate(stored);
       const result = await resolveResearcherIdForPersonName(observed, {
-        deps: depsFor([candidate(stored)]),
+        deps: depsFor([storedCandidate]),
       });
-      expect(result).toEqual({ status: 'ambiguous' });
+      expect(result).toEqual({ status: 'ambiguous', ambiguousCandidates: [storedCandidate] });
     }
   });
 
@@ -124,18 +125,20 @@ describe('resolveResearcherIdForPersonName', () => {
 
   it('does not mark a name when one candidate could be the same person (#4388)', async () => {
     for (const other of ['M. Quillfeather', 'M. J. Quillfeather']) {
+      const couldBeTheSamePerson = candidate(other);
       const result = await resolveResearcherIdForPersonName('Mara Quillfeather', {
-        deps: depsFor([candidate('Jonas Quillfeather'), candidate(other)]),
+        deps: depsFor([candidate('Jonas Quillfeather'), couldBeTheSamePerson]),
       });
-      expect(result).toEqual({ status: 'ambiguous' });
+      expect(result).toEqual({ status: 'ambiguous', ambiguousCandidates: [couldBeTheSamePerson] });
     }
   });
 
   it('is ambiguous when two candidates share surname and given name', async () => {
+    const twins = [candidate('John Smith'), candidate('John Smith')];
     const result = await resolveResearcherIdForPersonName('John Smith', {
-      deps: depsFor([candidate('John Smith'), candidate('John Smith')]),
+      deps: depsFor([...twins, candidate('Jane Smith')]),
     });
-    expect(result).toEqual({ status: 'ambiguous' });
+    expect(result).toEqual({ status: 'ambiguous', ambiguousCandidates: twins });
   });
 
   it('fails closed on a surname-only source name with any candidate', async () => {

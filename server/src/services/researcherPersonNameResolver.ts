@@ -16,11 +16,13 @@ export interface ResearcherPersonNameResolution {
   status: ResearcherPersonNameResolutionStatus;
   researcherId?: mongoose.Types.ObjectId;
   everyCandidateNamesSomeoneElse?: boolean;
+  ambiguousCandidates?: ResearcherNameCandidate[];
 }
 
 export interface ResearcherNameCandidate {
   _id: mongoose.Types.ObjectId | string;
   displayName?: string;
+  identifiers?: { email?: string };
 }
 
 export interface ResearcherPersonNameResolverDeps {
@@ -34,7 +36,7 @@ const defaultFindResearchersBySurname = async (
 ): Promise<ResearcherNameCandidate[]> =>
   (await Researcher.find(
     { displayName: surnameRegex, archived: { $ne: true } },
-    { _id: 1, displayName: 1 },
+    { _id: 1, displayName: 1, 'identifiers.email': 1 },
   )
     .limit(SURNAME_FETCH_LIMIT)
     .lean()) as ResearcherNameCandidate[];
@@ -148,14 +150,19 @@ export async function resolveResearcherIdForPersonName(
   if (exact.length === 1) {
     return { status: 'matched', researcherId: asResearcherId(exact[0].candidate._id) };
   }
-  if (exact.length > 1) return { status: 'ambiguous' };
+  if (exact.length > 1) {
+    return { status: 'ambiguous', ambiguousCandidates: exact.map(({ candidate }) => candidate) };
+  }
   // No prefix rule: a complete short given name is a prefix of a stranger's longer one (#5324).
 
   if (candidates.length === 0) return { status: 'absent' };
-  const everyCandidateNamesSomeoneElse = candidates.every(
-    ({ parsed }) => !givenNamesCouldNameOnePerson(first, parsed.first),
+  const couldBeThisPerson = candidates.filter(({ parsed }) =>
+    givenNamesCouldNameOnePerson(first, parsed.first),
   );
-  return everyCandidateNamesSomeoneElse
-    ? { status: 'ambiguous', everyCandidateNamesSomeoneElse }
-    : { status: 'ambiguous' };
+  return couldBeThisPerson.length === 0
+    ? { status: 'ambiguous', everyCandidateNamesSomeoneElse: true }
+    : {
+        status: 'ambiguous',
+        ambiguousCandidates: couldBeThisPerson.map(({ candidate }) => candidate),
+      };
 }
