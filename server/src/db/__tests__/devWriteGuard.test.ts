@@ -1,6 +1,11 @@
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+
 import { MongoClient, type Db } from 'mongodb';
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import ts from 'typescript';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import {
@@ -34,6 +39,11 @@ import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { ScrapeRun } from '../../models/scrapeRun';
 import { WeeklySweepRun } from '../../models/weeklySweepRun';
+import { hermeticChildEnvironment } from '../../test/hermeticEnvironment';
+
+const SERVER_SRC = path.resolve(__dirname, '../..');
+const SCRATCH_SCRIPT = path.resolve(__dirname, 'fixtures/scratchModelDelete.ts');
+const GUARD_MODULE = '../db/devWriteGuard';
 
 let memoryServer: MongoMemoryServer;
 let client: MongoClient;
@@ -163,6 +173,36 @@ describe('a scratch script that imports a model and connects on its own', () => 
     await mongoose.connect(uriFor('Development'));
     expect(await Probe.countDocuments()).toBe(2);
     expect(await Probe.aggregate([{ $match: {} }])).toHaveLength(2);
+  });
+});
+
+describe('a scratch script run as its own process', () => {
+  const runScratchScript = (env: NodeJS.ProcessEnv) => {
+    const result = spawnSync(
+      process.execPath,
+      ['--import', 'tsx', SCRATCH_SCRIPT, uriFor('Development')],
+      { cwd: path.resolve(SERVER_SRC, '..'), encoding: 'utf8', env: hermeticChildEnvironment(env) },
+    );
+    expect(result.status, result.stderr).toBe(0);
+    return result.stdout.trim();
+  };
+
+  it('is refused when it imports one model, connects with mongoose.connect and deletes', async () => {
+    const dev = database('Development');
+    await seed(dev, SearchRerankCache.collection.collectionName, 3);
+
+    expect(runScratchScript({ [DEV_WRITE_LEASE_SWITCH_ENV]: '' })).toBe(
+      'REFUSED DevWriteRefusedError',
+    );
+    expect(await count(dev, SearchRerankCache.collection.collectionName)).toBe(3);
+  });
+
+  it('deletes through the same script once the guard is switched off, so the refusal is the guard', async () => {
+    const dev = database('Development');
+    await seed(dev, SearchRerankCache.collection.collectionName, 3);
+
+    expect(runScratchScript({ [DEV_WRITE_LEASE_SWITCH_ENV]: 'off' })).toBe('DELETED 3');
+    expect(await count(dev, SearchRerankCache.collection.collectionName)).toBe(0);
   });
 });
 
@@ -397,6 +437,35 @@ describe('every model carries the guard', () => {
       .modelNames()
       .filter((name) => !schemaHasDevWriteGuard(mongoose.model(name).schema));
     expect(mongoose.modelNames().length).toBeGreaterThan(30);
+    expect(unguarded).toEqual([]);
+  });
+
+  it('is imported for its side effect before every model compiles, so importing any one model installs it', () => {
+    const modelFiles = fs
+      .readdirSync(path.join(SERVER_SRC, 'models'))
+      .filter((name) => name.endsWith('.ts'))
+      .map((name) => path.join(SERVER_SRC, 'models', name));
+    const compiling = modelFiles.filter((file) =>
+      /mongoose\.model[(<]/.test(fs.readFileSync(file, 'utf8')),
+    );
+    expect(compiling.length).toBeGreaterThan(30);
+    const unguarded = compiling
+      .filter((file) => {
+        const source = ts.createSourceFile(
+          file,
+          fs.readFileSync(file, 'utf8'),
+          ts.ScriptTarget.Latest,
+          true,
+        );
+        return !source.statements.some(
+          (statement) =>
+            ts.isImportDeclaration(statement) &&
+            !statement.importClause &&
+            ts.isStringLiteral(statement.moduleSpecifier) &&
+            statement.moduleSpecifier.text === GUARD_MODULE,
+        );
+      })
+      .map((file) => path.relative(SERVER_SRC, file));
     expect(unguarded).toEqual([]);
   });
 

@@ -142,6 +142,13 @@ describe('evaluate, capture and import modes (#5537)', () => {
     expect(assertWriterCacheModeAllowed('capture-evidence', 'cluster/Prod')).toEqual({
       writesDevelopmentCache: false,
     });
+    expect(
+      assertWriterCacheModeAllowed('import-derivations', 'cluster/Development', {
+        evaluate: false,
+        importDerivations: '/tmp/external-drafts.json',
+        validateOnly: true,
+      }),
+    ).toEqual({ writesDevelopmentCache: false });
   });
 
   it('folds the card pass into the writer as a read-only mode', () => {

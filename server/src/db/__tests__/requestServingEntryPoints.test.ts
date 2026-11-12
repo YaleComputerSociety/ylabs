@@ -1,13 +1,63 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import ts from 'typescript';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 
 import tsupConfig from '../../../tsup.config';
 import { isRequestServingProcess, resetDevWriteGuardStateForTests } from '../devWriteGuard';
 
 const SERVER_ROOT = path.resolve(__dirname, '../../..');
+const SERVER_SRC = path.join(SERVER_ROOT, 'src');
 const REPO_ROOT = path.dirname(SERVER_ROOT);
+const DECLARATION = 'declareRequestServingProcess';
+const MODEL_WRITE_METHODS = new Set([
+  'save',
+  'create',
+  'insertMany',
+  'insertOne',
+  'bulkWrite',
+  'updateOne',
+  'updateMany',
+  'replaceOne',
+  'findOneAndUpdate',
+  'findOneAndReplace',
+  'findOneAndDelete',
+  'deleteOne',
+  'deleteMany',
+]);
+
+const SWEEP_RUNNER_JOBS: Record<string, 'holds-apply-lease-for-run' | 'writes-nothing'> = {
+  'scrape:sweep:weekly-development': 'holds-apply-lease-for-run',
+  'scrape:sweep:rerun-source': 'holds-apply-lease-for-run',
+  'scrape:probe-hosts': 'writes-nothing',
+};
+
+const productionSources = (dir: string): string[] =>
+  fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      return ['__tests__', 'node_modules', 'test'].includes(entry.name)
+        ? []
+        : productionSources(full);
+    }
+    return entry.name.endsWith('.ts') && !/\.(test|spec|d)\.ts$/.test(entry.name) ? [full] : [];
+  });
+
+function calledNames(file: string): string[] {
+  const source = ts.createSourceFile(file, read(file), ts.ScriptTarget.Latest, true);
+  const names: string[] = [];
+  const visit = (node: ts.Node) => {
+    if (ts.isCallExpression(node)) {
+      const callee = node.expression;
+      if (ts.isIdentifier(callee)) names.push(callee.text);
+      if (ts.isPropertyAccessExpression(callee)) names.push(callee.name.text);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return names;
+}
 
 const read = (file: string) => fs.readFileSync(file, 'utf8');
 const serverScripts = (): Record<string, string> =>
@@ -116,6 +166,14 @@ describe('the API server entry point', () => {
     expect(connectStates).toEqual([true]);
   });
 
+  it('is the only production module that declares a process request-serving', () => {
+    const declaring = productionSources(SERVER_SRC)
+      .filter((file) => file !== path.join(SERVER_SRC, 'db', 'devWriteGuard.ts'))
+      .filter((file) => calledNames(file).includes(DECLARATION))
+      .map((file) => path.relative(SERVER_SRC, file));
+    expect(declaring).toEqual(['index.ts']);
+  });
+
   it('is the one module every request-serving command runs', () => {
     expect(tsupConfig).toMatchObject({ entry: ['src/index.ts'], outDir: 'build' });
     const servingScripts = Object.entries(serverScripts())
@@ -150,6 +208,29 @@ describe('every deployed service is classified as request-serving or a script', 
     for (const service of Object.values(DEPLOYED_SERVICES)) {
       if (service.kind !== 'request-serving') continue;
       expect(service.runs).toBe('yarn --cwd server start');
+    }
+  });
+
+  it('runs only sweep-runner jobs that hold the apply lease for the run or write nothing', () => {
+    const entrypoint = read(path.join(REPO_ROOT, 'deploy', 'sweep-runner', 'entrypoint.sh'));
+    const jobs = new Set([
+      ...[...entrypoint.matchAll(/yarn --cwd server ([a-z][\w:-]+)/g)].map(([, job]) => job),
+      ...[...entrypoint.matchAll(/job_script="([\w:-]+)"/g)].map(([, job]) => job),
+    ]);
+    expect([...jobs].sort()).toEqual(Object.keys(SWEEP_RUNNER_JOBS).sort());
+
+    for (const [job, kind] of Object.entries(SWEEP_RUNNER_JOBS)) {
+      const file = serverScripts()[job]?.match(/tsx (src\/\S+\.ts)/)?.[1];
+      expect(file, job).toBeTruthy();
+      const called = calledNames(path.join(SERVER_ROOT, file!));
+      if (kind === 'holds-apply-lease-for-run') {
+        expect(called, job).toContain('holdDevApplyLeaseForRun');
+      } else {
+        expect(
+          called.filter((name) => MODEL_WRITE_METHODS.has(name)),
+          job,
+        ).toEqual([]);
+      }
     }
   });
 });

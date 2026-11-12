@@ -304,7 +304,7 @@ export function assertWriterCacheModeAllowed(
       `research-entity:coverage-synthesis --${mode} is restricted to a Development database (got ${dbLabel})`,
     );
   }
-  return { writesDevelopmentCache: true };
+  return { writesDevelopmentCache: !(mode === 'import-derivations' && args?.validateOnly) };
 }
 
 /**
