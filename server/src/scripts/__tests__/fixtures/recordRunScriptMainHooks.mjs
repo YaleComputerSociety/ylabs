@@ -1,4 +1,5 @@
 import { registerHooks } from 'node:module';
+import { URL } from 'node:url';
 
 const REAL_CONNECTIONS = new URL('../../../db/connections.ts', import.meta.url).href;
 const RECORDING_CONNECTIONS = new URL('./recordingConnections.ts', import.meta.url).href;
