@@ -242,7 +242,7 @@ ylabs scraper CLI
 
   list                                       List registered scrapers
   run --source <name> [--apply] [flags]      Run a scraper (a dry run without --apply)
-  materialize --run <runId> [--apply --confirm-materialize] [--output <path>] [--only-fields <paths>]
+  materialize --run <runId> [--apply --confirm-materialize] [--output <path>] [--only-fields <paths>] [--skip-entity-types <types>]
                                              Materialize observations from a previous run
   report --run <runId> [--output <path>]     Print or save a QA report for a ScrapeRun
   prune-observations [flags]                 Prune old unreferenced superseded Observation rows
@@ -278,6 +278,8 @@ Materialize flags:
   --confirm-materialize
                        Required with --apply when standalone materialize writes.
   --output <path>      Save the materialize result, visibility gate, and run report JSON
+  --skip-entity-types <types>
+                       Comma-separated observed entity types the run materialize leaves untouched
   --only-fields <paths>
                        Write only these researcher paths on the run's user rows:
                        displayName, profile.title, profile.primaryDepartment,
@@ -485,12 +487,18 @@ Concurrency:
         ScraperCliPreflight,
         { command: 'materialize' }
       >;
-      const { runId, confirmMaterialize, onlyFields, guard } = materializePreflight;
+      const { runId, confirmMaterialize, onlyFields, skipEntityTypes, guard } =
+        materializePreflight;
       const fieldScoped = onlyFields.length > 0;
       console.log(`Materializing observations from run ${runId}...`);
       if (fieldScoped) {
         console.log(
           `Field-scoped user materialize: ${onlyFields.join(', ')}. Only user rows are materialized, no researcher is minted, and no run reconciliation or visibility gate runs.`,
+        );
+      }
+      if (skipEntityTypes.length > 0) {
+        console.log(
+          `Skipping entity types: ${skipEntityTypes.join(', ')}. Their rows are not materialized; every other observed type and the run reconciliation still run.`,
         );
       }
       for (const warning of guard.warnings) console.warn(`WARNING: ${warning}`);
@@ -499,6 +507,7 @@ Concurrency:
         const result = await materializeFromRun(runId, {
           dryRun: guard.options.dryRun,
           ...(fieldScoped ? { userWriteOnlyFields: onlyFields } : {}),
+          ...(skipEntityTypes.length > 0 ? { skipEntityTypes } : {}),
         });
         console.log(JSON.stringify(withoutUserFieldScopeRows(result), null, 2));
         const report = await getScrapeRunReport(runId);
@@ -533,6 +542,7 @@ Concurrency:
                 ...guard.options,
                 confirmMaterialize,
                 ...(fieldScoped ? { onlyFields } : {}),
+                ...(skipEntityTypes.length > 0 ? { skipEntityTypes } : {}),
                 output: typeof flags.output === 'string' ? flags.output : undefined,
               },
             },

@@ -662,6 +662,11 @@ interface MaterializeOptions {
   accessSignalsOnly?: boolean;
   onlyReconcileFieldProvenance?: boolean;
   /**
+   * Observed entity types a run materialize leaves untouched (#5890). Their rows are neither read
+   * into a projection nor written; the run's other types and its reconciliation still run.
+   */
+  skipEntityTypes?: readonly string[];
+  /**
    * Ignore the named locks, each only if it is revisitable on this row, so the
    * projection reports what the engine would derive for them today. Off everywhere
    * but the release operation, which reads `plannedSet` and leaves every lock the
@@ -15001,6 +15006,12 @@ async function materializeFromRunUnderRemovalGuard(
       },
     },
   ]);
+  if (options.skipEntityTypes?.length) {
+    const skipped = new Set(options.skipEntityTypes);
+    for (let index = distinct.length - 1; index >= 0; index -= 1) {
+      if (skipped.has(distinct[index]._id?.entityType)) distinct.splice(index, 1);
+    }
+  }
   const materializationOrder: Record<string, number> = {
     user: 0,
     researchEntity: 1,

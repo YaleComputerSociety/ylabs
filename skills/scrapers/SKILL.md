@@ -902,6 +902,7 @@ Start an address pattern with the non-address lookbehind `(?<![a-z0-9._%+-])` ra
   Only the browse-rank recompute and the search-index sync still follow a scoped write, because both are caches of the stored row.
   A new post-projection step that writes anything must take the same decision, since the rematerialize report compares fields and cannot see an edge or a signal.
   - The `user` materializer has its own scope, `userWriteOnlyFields`, reached by `--only-fields` on `observations:rematerialize-user-keys` and `scrape materialize --run` (#5816).
+  - `scrape materialize --run <id> --skip-entity-types researchEntity` projects a run's roster listings, relationships and center roster retirement while leaving the research rows it observed byte-identical, so a roster fix can land without also writing those rows' pending drift; unknown types are refused, and it cannot be combined with `--only-fields` (#5890).
   It diffs the planned researcher against the stored one, writes only in-scope paths and reports the rest as `droppedPaths`, never mints, and on a run skips every non-`user` row, every run reconciliation and the visibility gate.
   A new write on the user arm is scoped automatically if it lands on the researcher document; a write anywhere else must check `userWriteScope` itself, as the screened-page withdrawal does.
   See "A user materialize scoped to named researcher fields" in `docs/research-data-pipeline.md`.

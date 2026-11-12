@@ -6,6 +6,7 @@ import {
 } from './scraperEnvironment';
 import type { ScraperOptions } from './types';
 import { parseUserOnlyFieldsList } from './userMaterializerFieldScope';
+import { observedEntityTypes, type ObservedEntityType } from '../models/observation';
 
 export interface ScraperCliOutputMetadata {
   command: string;
@@ -25,6 +26,7 @@ export type ScraperCliPreflight =
       runId: string;
       confirmMaterialize: boolean;
       onlyFields: string[];
+      skipEntityTypes: ObservedEntityType[];
       guard: ScraperCommandGuardResult;
     }
   | {
@@ -341,6 +343,17 @@ export function buildScraperCliPreflight(
         : parseUserOnlyFieldsList(
             typeof flags['only-fields'] === 'string' ? flags['only-fields'] : undefined,
           );
+    const skipEntityTypes =
+      flags['skip-entity-types'] === undefined
+        ? []
+        : parseSkipEntityTypesList(
+            typeof flags['skip-entity-types'] === 'string' ? flags['skip-entity-types'] : undefined,
+          );
+    if (skipEntityTypes.length > 0 && onlyFields.length > 0) {
+      throw new Error(
+        '--skip-entity-types and --only-fields cannot be combined: --only-fields already materializes user rows only.',
+      );
+    }
     if (onlyFields.length > 0 && typeof flags.output !== 'string') {
       throw new Error(
         '--only-fields requires --output <path>: the per-key planned and dropped paths are written there.',
@@ -368,6 +381,7 @@ export function buildScraperCliPreflight(
       runId,
       confirmMaterialize,
       onlyFields,
+      skipEntityTypes,
       guard,
     };
   }
@@ -397,4 +411,26 @@ export function buildScraperCliPreflight(
   }
 
   return { command };
+}
+
+/**
+ * The entity types a run materialize leaves untouched, so a roster fix can be projected without
+ * also writing the pending drift on the rows it observes (#5890).
+ */
+export function parseSkipEntityTypesList(value: string | undefined): ObservedEntityType[] {
+  const types = String(value ?? '')
+    .split(',')
+    .map((type) => type.trim())
+    .filter(Boolean);
+  if (types.length === 0) {
+    throw new Error('--skip-entity-types requires a comma-separated list of entity types');
+  }
+  for (const type of types) {
+    if (!(observedEntityTypes as readonly string[]).includes(type)) {
+      throw new Error(
+        `Unknown --skip-entity-types entity type: ${type}. Known: ${observedEntityTypes.join(', ')}`,
+      );
+    }
+  }
+  return Array.from(new Set(types)) as ObservedEntityType[];
 }
