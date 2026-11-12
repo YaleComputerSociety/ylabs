@@ -1,4 +1,5 @@
 import { holdDevApplyLeaseOnDb } from '../db/devWriteLease';
+import { watchMongoClientProgress } from '../db/devWriteProgress';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import { MongoClient, type AnyBulkWriteOperation, type Db, type Document } from 'mongodb';
@@ -582,12 +583,13 @@ async function main(): Promise<void> {
   const options = parseBetaToDevelopmentOptions(process.argv.slice(2));
   assertSafeBetaToDevelopmentOptions(options);
 
-  const betaClient = new MongoClient(options.betaUrl);
-  const developmentClient = new MongoClient(options.developmentUrl);
+  const betaClient = new MongoClient(options.betaUrl, { monitorCommands: true });
+  const developmentClient = new MongoClient(options.developmentUrl, { monitorCommands: true });
   let releaseDevWriteLease: () => Promise<void> = async () => undefined;
   try {
     await betaClient.connect();
     await developmentClient.connect();
+    watchMongoClientProgress(betaClient);
     const betaDb = betaClient.db();
     const developmentDb = developmentClient.db();
     if (options.mode === 'apply') {

@@ -9,6 +9,7 @@ import {
   DEV_APPLY_LEASE_NAME,
   DEV_HOST_LEASE_PREFIX,
   DEV_WRITE_LEASE_ENVIRONMENT,
+  DEV_WRITE_LEASE_STALLED_MS,
   devWriteLeaseCollection,
   resolveDevWriteLeaseTarget,
   type DevWriteLeaseRecord,
@@ -29,6 +30,10 @@ export interface DevLockRow {
   command?: string;
   acquiredAt?: string;
   heartbeatAgeSeconds?: number;
+  progressAt?: string;
+  progressCount?: number;
+  minutesWithoutProgress?: number;
+  stalled?: boolean;
 }
 
 export function devLockKind(name: string): DevLockKind {
@@ -43,8 +48,43 @@ export function devLockState(record: DevWriteLeaseRecord, now: Date): DevLockSta
   return expires > now.getTime() ? 'live' : 'stale';
 }
 
+/**
+ * The latest progress any live lease of an owner recorded. A parent and the children that joined
+ * its lease share one owner id, and a child that holds only host leases records its progress there,
+ * so judging each lease alone would flag the parent's apply lease while its children work.
+ */
+function latestProgressByOwner(records: DevWriteLeaseRecord[], now: Date): Map<string, number> {
+  const latest = new Map<string, number>();
+  for (const record of records) {
+    if (!record.ownerId || !record.progressAt || devLockState(record, now) !== 'live') continue;
+    const at = new Date(record.progressAt).getTime();
+    latest.set(record.ownerId, Math.max(at, latest.get(record.ownerId) ?? at));
+  }
+  return latest;
+}
+
+function progressFields(
+  record: DevWriteLeaseRecord,
+  now: Date,
+  ownerProgress: Map<string, number>,
+): Pick<DevLockRow, 'progressAt' | 'progressCount' | 'minutesWithoutProgress' | 'stalled'> {
+  const latest = record.ownerId ? ownerProgress.get(record.ownerId) : undefined;
+  const recorded = {
+    ...(record.progressAt ? { progressAt: new Date(record.progressAt).toISOString() } : {}),
+    ...(typeof record.progressCount === 'number' ? { progressCount: record.progressCount } : {}),
+  };
+  if (latest === undefined || devLockState(record, now) !== 'live') return recorded;
+  const withoutProgressMs = Math.max(0, now.getTime() - latest);
+  return {
+    ...recorded,
+    minutesWithoutProgress: Math.floor(withoutProgressMs / 60_000),
+    stalled: withoutProgressMs >= DEV_WRITE_LEASE_STALLED_MS,
+  };
+}
+
 export function describeDevLocks(records: DevWriteLeaseRecord[], now: Date): DevLockRow[] {
   const order: Record<DevLockKind, number> = { apply: 0, host: 1, source: 2 };
+  const ownerProgress = latestProgressByOwner(records, now);
   return records
     .map((record) => ({
       name: record.sourceName,
@@ -61,6 +101,7 @@ export function describeDevLocks(records: DevWriteLeaseRecord[], now: Date): Dev
             ),
           }
         : {}),
+      ...progressFields(record, now, ownerProgress),
     }))
     .sort((a, b) => order[a.kind] - order[b.kind] || a.name.localeCompare(b.name));
 }
@@ -79,7 +120,13 @@ export function parseDevLocksArgs(argv: string[]): DevLocksArgs {
   return args;
 }
 
-function formatTable(rows: DevLockRow[]): string {
+export function describeProgress(row: DevLockRow): string {
+  if (row.minutesWithoutProgress === undefined) return '-';
+  const quiet = `no progress for ${row.minutesWithoutProgress} min`;
+  return row.stalled ? `STALLED, ${quiet}` : quiet;
+}
+
+export function formatDevLocksTable(rows: DevLockRow[]): string {
   if (rows.length === 0) return 'No Development write leases or source locks are recorded.';
   return rows
     .map((row) =>
@@ -88,7 +135,8 @@ function formatTable(rows: DevLockRow[]): string {
         row.state.padEnd(8),
         row.name.padEnd(40),
         (row.ownerLabel || row.ownerId || '-').padEnd(30),
-        row.heartbeatAgeSeconds === undefined ? '-' : `${row.heartbeatAgeSeconds}s`,
+        (row.heartbeatAgeSeconds === undefined ? '-' : `${row.heartbeatAgeSeconds}s`).padEnd(6),
+        describeProgress(row).padEnd(34),
         row.command ?? '',
       ].join('  '),
     )
@@ -117,7 +165,7 @@ async function main(): Promise<void> {
       .find({ environment: DEV_WRITE_LEASE_ENVIRONMENT } as Record<string, unknown>)
       .toArray();
     const rows = describeDevLocks(records, now);
-    console.log(args.json ? JSON.stringify(rows, null, 2) : formatTable(rows));
+    console.log(args.json ? JSON.stringify(rows, null, 2) : formatDevLocksTable(rows));
   } finally {
     await mongoose.disconnect();
   }

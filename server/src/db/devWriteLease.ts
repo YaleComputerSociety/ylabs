@@ -10,6 +10,13 @@ import {
   recordDevWriteLaunch,
   redactLaunchArgv,
 } from './devWriteLaunch';
+import {
+  devWriteProgress,
+  resetDevWriteProgressForTests,
+  setDevWriteProgressClock,
+  startDevWriteProgressClock,
+  watchMongoClientProgress,
+} from './devWriteProgress';
 
 /**
  * One apply-class write to Development at a time, and one lane run per fetched host (#5756).
@@ -35,6 +42,13 @@ export const DEV_WRITE_LEASE_RENEWAL_DEADLINE_MS = (DEV_WRITE_LEASE_TTL_MS * 2) 
 /** A dead-pid takeover also needs the holder's heartbeat this stale, so a misread pid probe cannot take a live lease. */
 export const DEV_WRITE_LEASE_DEAD_OWNER_HEARTBEAT_AGE_MS = 2 * DEV_WRITE_LEASE_HEARTBEAT_MS;
 export const DEV_HOST_LEASE_IDLE_RELEASE_MS = 10 * 60_000;
+/** `dev:locks` flags a live lease whose owner has completed no work for this long (#5880). */
+export const DEV_WRITE_LEASE_STALLED_MS = 15 * 60_000;
+/**
+ * A holder that completes no work for this long stops before its next write (#5880). It must stay
+ * above the 10-minute script socket timeout, so one legitimately slow operation can never trip it.
+ */
+export const DEV_WRITE_LEASE_NO_PROGRESS_STOP_MS = 20 * 60_000;
 export const DEV_WRITE_LEASE_OWNER_ENV = 'DEV_WRITE_LEASE_OWNER';
 export const DEV_WRITE_LEASE_SWITCH_ENV = 'DEV_WRITE_LEASE';
 export { DEV_WRITE_OWNER_LABEL_ENV };
@@ -118,6 +132,8 @@ export interface DevWriteLeaseRecord {
   acquiredAt?: Date;
   heartbeatAt?: Date;
   leaseExpiresAt?: Date;
+  progressAt?: Date;
+  progressCount?: number;
 }
 
 export class DevWriteLeaseHeldError extends Error {
@@ -129,9 +145,12 @@ export class DevWriteLeaseHeldError extends Error {
     const heartbeatAge = holder.heartbeatAt
       ? `${Math.round((now.getTime() - new Date(holder.heartbeatAt).getTime()) / 1000)} s ago`
       : 'never';
+    const progress = holder.progressAt
+      ? `, no progress for ${Math.floor((now.getTime() - new Date(holder.progressAt).getTime()) / 60_000)} min`
+      : '';
     super(
       `Development write lease "${leaseName}" is held by ${holder.ownerLabel || holder.ownerId || 'an unidentified owner'}` +
-        ` running "${holder.command || 'an unrecorded command'}" (last heartbeat ${heartbeatAge}).` +
+        ` running "${holder.command || 'an unrecorded command'}" (last heartbeat ${heartbeatAge}${progress}).` +
         ' Nothing was written. Wait for it to finish, or read `yarn --cwd server dev:locks`.',
     );
     this.name = 'DevWriteLeaseHeldError';
@@ -236,6 +255,8 @@ export async function acquireDevWriteLease(
     acquiredAt: at,
     heartbeatAt: at,
     leaseExpiresAt: new Date(at.getTime() + DEV_WRITE_LEASE_TTL_MS),
+    progressAt: at,
+    progressCount: 0,
   };
   const takeoverable = current && !isLiveFor(current, at);
   const holderHeartbeatStale =
@@ -342,7 +363,14 @@ export interface DevWriteLeaseStaleRenewal {
 
 export type DevWriteLeaseStop =
   | { reason: 'lost'; leases: string[]; message: string }
-  | { reason: 'renewal-failed'; leases: DevWriteLeaseStaleRenewal[]; message: string };
+  | { reason: 'renewal-failed'; leases: DevWriteLeaseStaleRenewal[]; message: string }
+  | {
+      reason: 'no-progress';
+      leases: string[];
+      lastProgressAt: Date;
+      withoutProgressMs: number;
+      message: string;
+    };
 
 interface DevWriteLeaseRuntime {
   now: () => Date;
@@ -365,6 +393,7 @@ let runtime: DevWriteLeaseRuntime = defaultRuntime;
 
 export function setDevWriteLeaseRuntimeForTests(overrides: Partial<DevWriteLeaseRuntime>) {
   runtime = { ...defaultRuntime, ...overrides };
+  setDevWriteProgressClock(runtime.now);
 }
 
 interface HeldLeaseState {
@@ -381,6 +410,9 @@ let mintedOwner: { db: Db; ownerId: string } | undefined;
 let heartbeatTimer: NodeJS.Timeout | undefined;
 let tickInFlight: Promise<void> | undefined;
 let stopped = false;
+const reportedProgressCounts = new Map<string, number>();
+let progressUnobservable = false;
+let heldForChildProcesses = false;
 
 class DevWriteLeaseTimeoutError extends Error {
   constructor(timeoutMs: number) {
@@ -404,12 +436,17 @@ async function withinTimeout<T>(operation: Promise<T>, timeoutMs: number): Promi
 
 const boundedOptions = (timeoutMs: number) => ({ maxTimeMS: timeoutMs, timeoutMS: timeoutMs });
 
+interface ProgressReport {
+  progressAt: Date;
+  newProgress: number;
+}
+
 async function renewLeases(
   db: Db,
   ownerId: string,
   names: string[],
   at: Date,
-  { timeoutMs }: { timeoutMs: number },
+  { timeoutMs, progress }: { timeoutMs: number; progress?: ProgressReport },
 ): Promise<Set<string>> {
   const collection = devWriteLeaseCollection(db);
   const filter = { _id: { $in: names.map(leaseId) }, ownerId, locked: true };
@@ -421,6 +458,14 @@ async function renewLeases(
           heartbeatAt: at,
           leaseExpiresAt: new Date(at.getTime() + DEV_WRITE_LEASE_TTL_MS),
         },
+        // $max because a parent and the children that joined its lease renew the same document,
+        // and one process's older progress must not overwrite another's newer progress.
+        ...(progress
+          ? {
+              $max: { progressAt: progress.progressAt },
+              $inc: { progressCount: progress.newProgress },
+            }
+          : {}),
       },
       boundedOptions(timeoutMs),
     ),
@@ -490,6 +535,38 @@ function stopIfRenewalOverdue(states: Iterable<HeldLeaseState> = heldLeases.valu
   return true;
 }
 
+const progressStopArmed = () => !progressUnobservable && !heldForChildProcesses;
+
+/**
+ * Stops a holder that has completed no work for `DEV_WRITE_LEASE_NO_PROGRESS_STOP_MS`, through the
+ * same stop as a missed renewal deadline. Nobody else may take a lease that is still heartbeating,
+ * so the hung holder ending itself is what frees it.
+ */
+function stopIfNoProgress(): boolean {
+  if (!progressStopArmed() || heldLeases.size === 0) return false;
+  const { lastAt } = devWriteProgress();
+  if (!lastAt) return false;
+  const withoutProgressMs = runtime.now().getTime() - lastAt.getTime();
+  if (withoutProgressMs < DEV_WRITE_LEASE_NO_PROGRESS_STOP_MS) return false;
+  const leases = [...heldLeases.keys()];
+  const minutes = Math.floor(withoutProgressMs / 60_000);
+  stopProcess({
+    reason: 'no-progress',
+    leases,
+    lastProgressAt: lastAt,
+    withoutProgressMs,
+    message: [
+      `No progress for ${minutes} min while holding ${leases.length} Development write lease(s); stopping before the next write, because a holder whose work has hung keeps every other Development write waiting while its heartbeat runs.`,
+      `Last progress (a completed database command or fetch) at ${lastAt.toISOString()}. Leases held:`,
+      ...leases.map(
+        (name) =>
+          `  "${name}": last progress ${lastAt.toISOString()}, ${minutes} min without progress`,
+      ),
+    ].join('\n'),
+  });
+  return true;
+}
+
 function groupByOwner(states: HeldLeaseState[]) {
   const groups = new Map<Db, Map<string, HeldLeaseState[]>>();
   for (const state of states) {
@@ -546,13 +623,21 @@ async function releaseIdleHostLeases(at: Date) {
 
 async function renewHeldLeases(at: Date) {
   const lost: string[] = [];
+  const { count, lastAt } = devWriteProgress();
   await Promise.all(
     groupByOwner([...heldLeases.values()]).map(async ({ db, ownerId, members }) => {
       const names = members.map(({ lease }) => lease.name);
       try {
         const renewed = await renewLeases(db, ownerId, names, at, {
           timeoutMs: runtime.heartbeatTimeoutMs,
+          progress: lastAt
+            ? {
+                progressAt: lastAt,
+                newProgress: count - (reportedProgressCounts.get(ownerId) ?? 0),
+              }
+            : undefined,
         });
+        reportedProgressCounts.set(ownerId, count);
         for (const state of members) {
           if (renewed.has(state.lease.name)) state.lastRenewedAt = at;
           else lost.push(state.lease.name);
@@ -572,7 +657,7 @@ export function runDevWriteLeaseHeartbeatTick(): Promise<void> {
     try {
       await releaseIdleHostLeases(runtime.now());
       await renewHeldLeases(runtime.now());
-      stopIfRenewalOverdue();
+      if (!stopIfRenewalOverdue()) stopIfNoProgress();
     } catch (error) {
       runtime.log(
         `Development write lease heartbeat tick failed: ${(error as Error)?.message ?? error}.`,
@@ -630,6 +715,8 @@ async function holdLease(
     mintedOwner ??= { db: connection.db, ownerId: lease.ownerId };
   }
   const at = runtime.now();
+  startDevWriteProgressClock(at);
+  if (!watchMongoClientProgress(connection.db.client)) progressUnobservable = true;
   heldLeases.set(name, {
     lease,
     db: connection.db,
@@ -701,6 +788,15 @@ export async function holdDevApplyLeaseOnDb(
   return lease ? releaseHeldDevWriteLeases : async () => undefined;
 }
 
+/**
+ * For an orchestrator that holds the apply lease while child processes do the writing. Its own
+ * process completes little work, so it is never stopped for lack of progress; each child that writes
+ * joins the lease and is judged by its own progress.
+ */
+export function markDevWriteLeaseHeldForChildProcesses() {
+  heldForChildProcesses = true;
+}
+
 let armedHostLeaseConnection: { connection: ConnectionDescriptor; command: string } | undefined;
 const pendingHostLeases = new Map<string, Promise<HeldDevWriteLease>>();
 
@@ -735,7 +831,9 @@ export async function ensureDevHostLease(host: string): Promise<void> {
   const armed = armedHostLeaseConnection;
   if (!armed || !host) return;
   const name = devHostLeaseName(host);
-  if (stopped || stopIfRenewalOverdue()) throw new DevWriteLeaseStoppedError(name);
+  if (stopped || stopIfRenewalOverdue() || stopIfNoProgress()) {
+    throw new DevWriteLeaseStoppedError(name);
+  }
   const held = heldLeases.get(name);
   if (held) {
     held.lastUsedAt = runtime.now();
@@ -763,6 +861,10 @@ export function resetDevWriteLeaseStateForTests() {
   mintedOwner = undefined;
   tickInFlight = undefined;
   stopped = false;
+  reportedProgressCounts.clear();
+  progressUnobservable = false;
+  heldForChildProcesses = false;
+  resetDevWriteProgressForTests();
   runtime = defaultRuntime;
   removeInterruptRelease?.();
   removeInterruptRelease = undefined;

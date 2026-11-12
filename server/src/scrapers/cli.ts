@@ -85,6 +85,7 @@ import {
   recordDevApplyIntent,
   releaseHeldDevWriteLeases,
 } from '../db/devWriteLease';
+import { recordDevWriteProgress } from '../db/devWriteProgress';
 import { SCRAPE_RUN_SOCKET_TIMEOUT_MS } from './scrapeRunProgress';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -218,10 +219,10 @@ export function scraperCliBanner(preflight: ScraperCliPreflight): string | undef
   return guard.banner;
 }
 
-const devHostLeaseLimiter: HostSlotLimiter = {
+export const devHostLeaseLimiter: HostSlotLimiter = {
   async acquire(host) {
     await ensureDevHostLease(host);
-    return () => undefined;
+    return recordDevWriteProgress;
   },
 };
 

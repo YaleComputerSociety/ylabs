@@ -8,8 +8,10 @@ import {
   recordDevApplyIntent,
   labelSweepRunnerOwner,
   releaseHeldDevWriteLeases,
+  markDevWriteLeaseHeldForChildProcesses,
 } from './devWriteLease';
 import { assertDevelopmentWritesGuarded } from './devWriteGuard';
+import { watchMongoClientProgress } from './devWriteProgress';
 
 // `bufferTimeoutMS` is a Mongoose connection option the driver's own type does not
 // declare, so the shape is spelled out here rather than inferred.
@@ -93,6 +95,9 @@ export function scriptMongoConnectOptions(
     maxPoolSize: SCRIPT_MAX_POOL_SIZE,
     serverSelectionTimeoutMS: 30000,
     bufferTimeoutMS: 30000,
+    // A Development write-lease holder counts its completed commands as progress (#5880), which
+    // the driver reports only to a client created with command monitoring on.
+    monitorCommands: true,
     ...extra,
     autoIndex: false,
     autoCreate: false,
@@ -104,6 +109,7 @@ export async function connectScriptMongo(
   extra?: ScriptMongoConnectOptions,
 ): Promise<typeof mongoose> {
   const connected = await mongoose.connect(url, scriptMongoConnectOptions(extra));
+  watchMongoClientProgress(connected.connection.getClient());
   await installDevelopmentWriteGuards(connected.connection);
   return connected;
 }
@@ -115,6 +121,7 @@ export async function createScriptMongoConnection(
   const connection = await mongoose
     .createConnection(url, scriptMongoConnectOptions(extra))
     .asPromise();
+  watchMongoClientProgress(connection.getClient());
   await installDevelopmentWriteGuards(connection);
   return connection;
 }
@@ -136,6 +143,7 @@ export async function holdDevApplyLeaseForRun(
   if (!url || devWriteLeaseSwitchedOff()) return async () => undefined;
   labelSweepRunnerOwner(scriptName);
   recordDevApplyIntent(scriptName);
+  markDevWriteLeaseHeldForChildProcesses();
   const connection = await createScriptMongoConnection(url);
   return async () => {
     await connection.close();
@@ -227,6 +235,7 @@ export function triggerReconnect(): Promise<void> {
 
       await mongoose.disconnect();
       await mongoose.connect(primaryUrl, activeConnectOptions);
+      watchMongoClientProgress(mongoose.connection.getClient());
       console.log('MongoDB: reconnected');
     } catch (err) {
       console.error('MongoDB: reconnect failed:', (err as Error)?.message ?? err);
@@ -528,6 +537,7 @@ export async function initializeConnections(
   }
   activeConnectOptions = connectOptions;
   await mongoose.connect(url, connectOptions);
+  watchMongoClientProgress(mongoose.connection.getClient());
   await installDevelopmentWriteGuards(mongoose.connection);
   console.log(`Connected to database 🚀`);
   // Deliberately non-fatal. An unbuilt index is a performance problem, and
