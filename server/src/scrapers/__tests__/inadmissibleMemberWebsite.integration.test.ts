@@ -21,6 +21,7 @@ const OWNER_PAGE = 'https://medicine.yale.edu/profile/fixture-quillsby-person/';
 const PATIENT_CARE_PAGE = 'https://medicine.example.edu/fixturedept/clinical-service/fixture/';
 const PERSONAL_SITE = 'https://fixtureperson.example.org/';
 const DIRECTIONS_LINK = 'https://www.google.com/maps?daddr=1.5,-2.5&directionsMode=driving';
+const PROGRAMME_COURSES = 'https://fixturedept.example.edu/fixtureprogramme/courses';
 
 describe("a lead's member website never stores a patient-care, course or posting page (#5376)", () => {
   let replSet: MongoMemoryReplSet;
@@ -124,6 +125,30 @@ describe("a lead's member website never stores a patient-care, course or posting
 
   it('replaces a stored directions link with an admissible observed website (#5657)', async () => {
     const owner = await person(DIRECTIONS_LINK);
+
+    await materialize(PERSONAL_SITE);
+
+    expect(await storedWebsite(owner._id)).toBe(PERSONAL_SITE);
+  });
+
+  it('clears a stored programme courses listing, and a second resolve writes nothing (#5860)', async () => {
+    const owner = await person(PROGRAMME_COURSES);
+
+    await materialize(PROGRAMME_COURSES);
+    expect(await storedWebsite(owner._id)).toBeUndefined();
+
+    const second = await materializeEntity(
+      'user',
+      { entityKey: 'dept:fixture:fixture-person' },
+      {},
+    );
+    expect(String(second.entityId)).toBe(String(owner._id));
+    expect(second.fieldsWritten).toBe(0);
+    expect(await storedWebsite(owner._id)).toBeUndefined();
+  });
+
+  it('replaces a stored programme courses listing with an admissible observed website (#5860)', async () => {
+    const owner = await person(PROGRAMME_COURSES);
 
     await materialize(PERSONAL_SITE);
 

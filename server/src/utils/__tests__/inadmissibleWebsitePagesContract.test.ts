@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { describe, expect, it } from 'vitest';
 import {
+  isCourseListingPageUrl,
   isCoursePageUrl,
   isInadmissiblePersonWebsiteUrl,
   isMapOrDirectionsUrl,
@@ -12,7 +13,7 @@ import {
 
 /**
  * Server half of the shared course, posting, patient-care and map or directions page contract
- * (#5376, #5657).
+ * (#5376, #5657), and of the bare course listing only a person website refuses (#5860).
  *
  * See the client half in `client/src/utils/__tests__/inadmissibleWebsitePagesContract.test.ts`.
  */
@@ -29,7 +30,7 @@ interface UrlCase {
 type Category = 'patientCare' | 'course' | 'posting' | 'mapOrDirections';
 
 const contract = JSON.parse(fs.readFileSync(CONTRACT_PATH, 'utf8')) as Record<
-  Category,
+  Category | 'courseListing',
   { refused: UrlCase[]; kept: UrlCase[] }
 >;
 
@@ -60,6 +61,28 @@ describe('inadmissible website page contract (server)', () => {
     contract[category].kept.forEach((testCase) => {
       it(`keeps as ${category}: ${testCase.name}`, () => {
         expect(RULES[category](testCase.url)).toBe(false);
+        expect(isInadmissiblePersonWebsiteUrl(testCase.url)).toBe(false);
+      });
+    });
+  });
+
+  describe('courseListing', () => {
+    it('covers every section of courseListing', () => {
+      expect(contract.courseListing.refused.length).toBeGreaterThan(0);
+      expect(contract.courseListing.kept.length).toBeGreaterThan(0);
+    });
+
+    contract.courseListing.refused.forEach((testCase) => {
+      it(`refuses as a person website only: ${testCase.name}`, () => {
+        expect(isCourseListingPageUrl(testCase.url)).toBe(true);
+        expect(isInadmissiblePersonWebsiteUrl(testCase.url)).toBe(true);
+        expect(isCoursePageUrl(testCase.url)).toBe(false);
+      });
+    });
+
+    contract.courseListing.kept.forEach((testCase) => {
+      it(`keeps as courseListing: ${testCase.name}`, () => {
+        expect(isCourseListingPageUrl(testCase.url)).toBe(false);
         expect(isInadmissiblePersonWebsiteUrl(testCase.url)).toBe(false);
       });
     });
