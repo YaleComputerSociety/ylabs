@@ -133,11 +133,10 @@ It fails when a demoted row outranks a research row, and splits each such row by
 A walk that stops short of the browse total, a browse that serves no core, and a violation while the corpus fingerprint moved are inconclusive.
 Measured on Development on 2026-11-11 before the backfill, it failed with all 63 demoted rows outranking a research row and all 63 attributed to a score not yet rescored; computed through the new scorer in memory, every demoted row sits below every research row.
 
-## The live-miss rerank flag wastes model calls on Development
+## The live-miss rerank flag is refused on Development
 
-`journey:eval` and `research-search:relevance` do not refuse up front on Development while `SEARCH_RERANK_LIVE_MISS_ENABLED=true`, and the run proceeds to completion.
-Each missed query queues an in-process live-miss job that makes its model call and only then tries to write `search_rerank_cache`, which a script holding no Development write lease may not write (#5871).
-The guard refuses that write, the queue logs `job failed` and marks the key failed for the day, so every eligible miss pays for a model call and caches nothing.
+`journey:eval` and `research-search:relevance` refuse up front on Development while `SEARCH_RERANK_LIVE_MISS_ENABLED=true`, right after connecting and before any search runs, so nothing is written and no model call is paid (`server/src/scripts/liveMissRerankScriptGuard.ts`).
+Without that refusal each missed query would queue an in-process live-miss job that makes its model call and only then tries to write `search_rerank_cache`, which a script holding no Development write lease may not write (#5871), so every eligible miss would pay for a call and cache nothing.
 Neither script takes `--apply` or records an apply intent, so neither can take the lease itself.
 Measure with the flag unset, which is the default.
 To write the rerank cache on purpose, use the committed writer with the lease: `DEV_WRITE_OWNER=<your session name> yarn --cwd server research-search:seed-rerank-cache --apply`, whose apply guard takes the lease, or run the write from a process that already holds or joined the lease (`holdDevApplyLeaseForRun`, or a child launched by a lease holder that records its own apply intent).

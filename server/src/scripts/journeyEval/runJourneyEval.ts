@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../../db/connections';
+import { assertLiveMissRerankOffForUnleasedScript } from '../liveMissRerankScriptGuard';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { resolveSafeJsonReportOutputPath } from '../scriptWriteGuards';
 import {
@@ -356,6 +357,7 @@ async function buildContext(args: JourneyEvalArgs): Promise<JourneyEvalContext> 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   await initializeConnections();
+  assertLiveMissRerankOffForUnleasedScript('journey:eval');
   await warmResearchSearchSpellingVocabulary();
   const context = await buildContext(args);
   const programContext = await buildProgramJourneyContext({
