@@ -1,7 +1,6 @@
 /**
  * MongoDB connection management and model initialization.
  */
-import os from 'os';
 import mongoose from 'mongoose';
 import {
   acquireIntendedDevApplyLease,
@@ -13,6 +12,7 @@ import {
 } from './devWriteLease';
 import { assertDevelopmentWritesGuarded } from './devWriteGuard';
 import { watchMongoClientProgress } from './devWriteProgress';
+import { enableScriptDiagnosticReportOnSignal } from './scriptDiagnosticReport';
 
 // `bufferTimeoutMS` is a Mongoose connection option the driver's own type does not
 // declare, so the shape is spelled out here rather than inferred.
@@ -109,21 +109,6 @@ export function scriptMongoConnectOptions(
     autoIndex: false,
     autoCreate: false,
   };
-}
-
-export const SCRIPT_DIAGNOSTIC_REPORT_SIGNAL = 'SIGUSR2';
-
-// A stalled script shows no stack of its own, so `kill -USR2 <pid>` writes a Node diagnostic
-// report of its pending handles to the temp directory (#5880). Environment variables are
-// excluded because they hold the database credentials.
-export function enableScriptDiagnosticReportOnSignal(
-  report: NodeJS.ProcessReport | undefined = process.report,
-): void {
-  if (!report) return;
-  report.excludeEnv = true;
-  report.directory = os.tmpdir();
-  report.signal = SCRIPT_DIAGNOSTIC_REPORT_SIGNAL;
-  report.reportOnSignal = true;
 }
 
 export async function connectScriptMongo(
