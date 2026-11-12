@@ -240,6 +240,30 @@ describe('NSF PI email settles an ambiguous PI name', () => {
     });
   });
 
+  it('credits only the awards whose own NSF PI email witnesses the candidate', async () => {
+    const holder = candidate('tamsin.doublet@yale.edu');
+    const namesakeAward = award({
+      ...AMBIGUOUS_PI_AWARD,
+      id: '2400002',
+      piEmail: 'tdoublet@yale.edu',
+    });
+    const unaddressedAward = award({ ...AMBIGUOUS_PI_AWARD, id: '2400003', piEmail: undefined });
+    const scraper = new NsfAwardScraper({
+      fetchPage: vi.fn().mockResolvedValue({
+        awards: [AMBIGUOUS_PI_AWARD, namesakeAward, unaddressedAward],
+      }) as any,
+      resolveResearcherId: async () => ({
+        status: 'ambiguous' as const,
+        ambiguousCandidates: [holder, candidate()],
+      }),
+      researchHomeResolver: rowPerResearcher,
+      expDateStart: '11/12/2021',
+    });
+    const { ctx, emitted } = buildContext();
+    await scraper.run(ctx);
+    expect(grantIdsByRow(emitted)).toEqual({ [`row-${holder._id}`]: ['2400001'] });
+  });
+
   it('never accepts a partial email or a name alone', () => {
     const holder = candidate('tamsin.doublet@yale.edu');
     expect(emailWitnessedCandidateId([holder], ['doublet@yale.edu'])).toBeUndefined();

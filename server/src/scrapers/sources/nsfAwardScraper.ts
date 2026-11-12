@@ -361,7 +361,7 @@ export async function findUserForPi(
 }
 
 export type NsfPiUserResolution =
-  | { status: 'matched'; userId: string; witness?: 'email' }
+  | { status: 'matched'; userId: string; witnessEmail?: string }
   | { status: 'absent' }
   | { status: 'ambiguous' };
 
@@ -370,17 +370,26 @@ function wholeEmailAddress(value: string | undefined): string | undefined {
   return /^[^\s@]+@[^\s@]+$/.test(address) ? address : undefined;
 }
 
+function emailWitnessedCandidate(
+  candidates: ResearcherNameCandidate[],
+  awardEmails: Array<string | undefined>,
+): { userId: string; email: string } | undefined {
+  const witnesses = new Set(awardEmails.map(wholeEmailAddress).filter(Boolean));
+  if (witnesses.size === 0) return undefined;
+  const witnessed = candidates.flatMap((candidate) => {
+    const stored = wholeEmailAddress(candidate.identifiers?.email);
+    return stored !== undefined && witnesses.has(stored)
+      ? [{ userId: String(candidate._id), email: stored }]
+      : [];
+  });
+  return witnessed.length === 1 ? witnessed[0] : undefined;
+}
+
 export function emailWitnessedCandidateId(
   candidates: ResearcherNameCandidate[],
   awardEmails: Array<string | undefined>,
 ): string | undefined {
-  const witnesses = new Set(awardEmails.map(wholeEmailAddress).filter(Boolean));
-  if (witnesses.size === 0) return undefined;
-  const witnessed = candidates.filter((candidate) => {
-    const stored = wholeEmailAddress(candidate.identifiers?.email);
-    return stored !== undefined && witnesses.has(stored);
-  });
-  return witnessed.length === 1 ? String(witnessed[0]._id) : undefined;
+  return emailWitnessedCandidate(candidates, awardEmails)?.userId;
 }
 
 export async function resolveUserForPi(
@@ -393,12 +402,12 @@ export async function resolveUserForPi(
   const resolveResearcherId = deps.resolveResearcherId ?? resolveResearcherIdForPersonName;
   const resolution = await resolveResearcherId([first, last].filter(Boolean).join(' '));
   if (resolution.status === 'ambiguous') {
-    const witnessedId = emailWitnessedCandidateId(
+    const witnessed = emailWitnessedCandidate(
       resolution.ambiguousCandidates ?? [],
       pi.emails ?? [],
     );
-    return witnessedId
-      ? { status: 'matched', userId: witnessedId, witness: 'email' }
+    return witnessed
+      ? { status: 'matched', userId: witnessed.userId, witnessEmail: witnessed.email }
       : { status: 'ambiguous' };
   }
   if (resolution.status !== 'matched' || !resolution.researcherId) return { status: 'absent' };
@@ -686,14 +695,18 @@ export class NsfAwardScraper implements IScraper {
         },
         resolverDeps,
       );
-      if (person.status === 'matched' && person.witness === 'email') emailWitnessedPis++;
+      const witnessEmail = person.status === 'matched' ? person.witnessEmail : undefined;
+      if (witnessEmail) emailWitnessedPis++;
+      const awards = witnessEmail
+        ? group.awards.filter((award) => wholeEmailAddress(award.piEmail) === witnessEmail)
+        : group.awards;
       const target = await resolveGrantEnrichmentTarget(person, researchHomeResolver);
       countGrantAttach(tally, target);
       if (target.status !== 'enrich') return;
       const row = rows.get(target.slug) ?? { researcherIds: new Set<string>(), credited: [] };
       row.researcherIds.add(target.researcherId);
       row.credited.push(
-        ...group.awards.map((award) => ({ award, role, researcherId: target.researcherId })),
+        ...awards.map((award) => ({ award, role, researcherId: target.researcherId })),
       );
       rows.set(target.slug, row);
     };
