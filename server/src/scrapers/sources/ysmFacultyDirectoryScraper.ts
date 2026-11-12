@@ -81,6 +81,12 @@ import {
   type LabUrlEvidenceLoader,
   type LabUrlIsUnusable,
 } from '../utils/labUrlEvidence';
+import {
+  coLedGroupSiteFor,
+  loadCoLedSiteIndex,
+  type CoLedSiteIndexLoader,
+  type LabUrlIsCoLedGroupSite,
+} from '../utils/coLedGroupSites';
 
 const DIRECTORY_URL = 'https://medicine.yale.edu/faculty/faculty-directory/facultylist/';
 const SOURCE_KEY = 'ysm-faculty-directory';
@@ -505,6 +511,7 @@ export function facultyToResearchEntityObservations(
   fallbackUserKey: string,
   knownPersonSurnames: ReadonlySet<string>,
   labUrlIsUnusable: LabUrlIsUnusable = () => false,
+  labUrlIsCoLedGroupSite: LabUrlIsCoLedGroupSite = () => false,
 ): ObservationInput[] {
   const linkedSite = classifyProfileLabWebsite(profile, knownPersonSurnames);
   if (!profile.labUrl && profile.researchAreas.length === 0 && !profile.description) return [];
@@ -529,7 +536,9 @@ export function facultyToResearchEntityObservations(
   const linksAnOrganization =
     Boolean(linkedSite.adoptableName) &&
     !isLabShapedResearchHome(linkedSite.adoptableName, profile.labUrl);
-  const hasLab = linkIsOwnSite && !linksPersonalWebsite && !linksAnOrganization;
+  const linksCoLedGroupSite = linkIsOwnSite && labUrlIsCoLedGroupSite(profile.labUrl!);
+  const hasLab =
+    linkIsOwnSite && !linksPersonalWebsite && !linksAnOrganization && !linksCoLedGroupSite;
 
   const slug = researchEntityKeyOf(profile);
   const entityName = hasLab
@@ -647,6 +656,7 @@ export class YsmFacultyDirectoryScraper implements IScraper {
     private readonly pause: (ms: number) => Promise<void> = (ms) =>
       new Promise((resolve) => setTimeout(resolve, ms)),
     private readonly probePage?: LanePageProbe,
+    private readonly coLedSiteIndexLoader: CoLedSiteIndexLoader = loadCoLedSiteIndex,
   ) {}
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -688,6 +698,7 @@ export class YsmFacultyDirectoryScraper implements IScraper {
     const labUrlEvidenceBySlug = await this.labUrlEvidenceLoader(
       limited.map((faculty) => `ysm-faculty-${faculty.slug}`),
     );
+    const coLedSites = await this.coLedSiteIndexLoader();
 
     let totalObs = 0;
     let profilesScanned = 0;
@@ -779,6 +790,11 @@ export class YsmFacultyDirectoryScraper implements IScraper {
           entityKey,
           directorySurnames,
           labUrlUnusabilityFor(labUrlEvidenceBySlug, `ysm-faculty-${profile.slug}`),
+          coLedGroupSiteFor(coLedSites, `ysm-faculty-${profile.slug}`, {
+            email: profile.email,
+            netid: netidFromEmail(profile.email) ?? undefined,
+            profileUrl: profile.profileUrl,
+          }),
         );
         if (entityObs.length > 0) {
           await ctx.emit(entityObs);

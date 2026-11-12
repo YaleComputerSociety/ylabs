@@ -39,6 +39,12 @@ import {
   type LabUrlVerdictFor,
 } from '../utils/labUrlEvidence';
 import {
+  coLedGroupSiteFor,
+  loadCoLedSiteIndex,
+  type CoLedSiteIndexLoader,
+  type LabUrlIsCoLedGroupSite,
+} from '../utils/coLedGroupSites';
+import {
   isLikelyPersonSpecificYaleEmail,
   netidFromEmail,
   normalizeName,
@@ -378,6 +384,7 @@ export function facultyToResearchEntityObservations(
   fallbackUserKey: string,
   labUrlVerdict: LabUrlVerdictFor = () => 'usable',
   rowAlreadyExists = false,
+  labUrlIsCoLedGroupSite: LabUrlIsCoLedGroupSite = () => false,
 ): ObservationInput[] {
   // A link's presence is not evidence that a lab exists. `hasLab` used to be
   // `Boolean(profile.labUrl)`, so a profile that still links a site the corpus
@@ -392,7 +399,8 @@ export function facultyToResearchEntityObservations(
   // `labUrlIsUnusableForResearchHome` for which verdicts count and why an absent
   // one keeps the lab.
   const linkedLabVerdict = profile.labUrl ? labUrlVerdict(profile.labUrl) : undefined;
-  const hasLab = linkedLabVerdict === 'usable';
+  const linkedLabIsUsable = linkedLabVerdict === 'usable';
+  const hasLab = linkedLabIsUsable && !labUrlIsCoLedGroupSite(profile.labUrl!);
   // A withdrawal on a dead link must also withdraw the websiteUrl this lane asserted
   // before it knew, or that observation stays live and the row keeps serving the dead
   // site under a "Faculty Research" name (#3452). Only deadness is stated: a refusal is
@@ -405,7 +413,7 @@ export function facultyToResearchEntityObservations(
   // retraction. A row that does not exist yet has nothing to demote, so it stays unminted.
   const carriesDeadWithdrawal = labLinkIsDead && rowAlreadyExists;
   if (
-    !hasLab &&
+    !linkedLabIsUsable &&
     !carriesDeadWithdrawal &&
     profile.researchAreas.length === 0 &&
     !profile.description
@@ -428,7 +436,9 @@ export function facultyToResearchEntityObservations(
 
   const slug = `yse-faculty-${profile.slug}`.slice(0, 100);
   const entityName = hasLab ? `${profile.name} Lab` : `${profile.name} Faculty Research`;
-  const sourceUrls = hasLab ? [profile.profileUrl, profile.labUrl!] : [profile.profileUrl];
+  const sourceUrls = linkedLabIsUsable
+    ? [profile.profileUrl, profile.labUrl!]
+    : [profile.profileUrl];
   const piUserKey = profile.email || fallbackUserKey;
   const base = {
     entityType: 'researchEntity' as const,
@@ -459,7 +469,7 @@ export function facultyToResearchEntityObservations(
   if (profile.programs.length > 0) {
     obs.push({ ...base, field: 'departments', value: profile.programs });
   }
-  if (hasLab) obs.push({ ...base, field: 'websiteUrl', value: profile.labUrl });
+  if (linkedLabIsUsable) obs.push({ ...base, field: 'websiteUrl', value: profile.labUrl });
   if (profile.researchAreas.length > 0) {
     obs.push({ ...base, field: 'researchAreas', value: profile.researchAreas });
   }
@@ -506,6 +516,7 @@ export class YseFacultyDirectoryScraper implements IScraper {
     private readonly htmlFetcher: HtmlFetcher = fetchHtml,
     private readonly labUrlEvidenceLoader: LabUrlEvidenceLoader = loadLabUrlEvidenceBySlug,
     private readonly labUrlProber: LabUrlProber = probeLabUrlIsPositivelyDead,
+    private readonly coLedSiteIndexLoader: CoLedSiteIndexLoader = loadCoLedSiteIndex,
   ) {}
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -541,6 +552,7 @@ export class YseFacultyDirectoryScraper implements IScraper {
     const labUrlEvidenceBySlug = await this.labUrlEvidenceLoader(
       limited.map((faculty) => `yse-faculty-${faculty.slug}`),
     );
+    const coLedSites = await this.coLedSiteIndexLoader();
 
     for (const faculty of limited) {
       let profileHtml: string;
@@ -569,6 +581,10 @@ export class YseFacultyDirectoryScraper implements IScraper {
           this.labUrlProber,
         ),
         labUrlEvidenceBySlug.has(`yse-faculty-${profile.slug}`),
+        coLedGroupSiteFor(coLedSites, `yse-faculty-${profile.slug}`, {
+          email: profile.email,
+          profileUrl: profile.profileUrl,
+        }),
       );
       if (entityObs.length > 0) {
         await ctx.emit(entityObs);
