@@ -9,6 +9,8 @@ import ts from 'typescript';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  DEV_DRY_LANE_RUN_COLLECTIONS,
+  DEV_LANE_RUN_COLLECTIONS,
   DEV_WRITE_GUARD_EXEMPT_COLLECTIONS,
   DevWriteRefusedError,
   UnguardedModelError,
@@ -39,6 +41,8 @@ import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { ScrapeRun } from '../../models/scrapeRun';
 import { WeeklySweepRun } from '../../models/weeklySweepRun';
+import { Source } from '../../models/source';
+import { ScraperOrchestrator } from '../../scrapers/orchestrator';
 import { hermeticChildEnvironment } from '../../test/hermeticEnvironment';
 
 const SERVER_SRC = path.resolve(__dirname, '../..');
@@ -62,6 +66,43 @@ async function seed(db: Db, collection: string, count = 2) {
 }
 
 const count = (db: Db, collection: string) => db.collection(collection).countDocuments();
+
+const WRITE_COMMANDS = new Set(['insert', 'update', 'delete', 'findAndModify']);
+const FIXTURE_LANE = 'dev-write-guard-fixture-lane';
+
+async function collectionsWrittenByLaneRun({ dryRun }: { dryRun: boolean }) {
+  await database('Development').collection(Source.collection.collectionName).insertOne({
+    name: FIXTURE_LANE,
+    displayName: 'Fixture lane',
+    defaultWeight: 0.8,
+    enabled: true,
+  });
+  if (mongoose.connection.readyState === 0) {
+    await mongoose.connect(uriFor('Development'), { monitorCommands: true });
+  }
+  const written = new Set<string>();
+  mongoose.connection.getClient().on('commandStarted', (event) => {
+    if (WRITE_COMMANDS.has(event.commandName))
+      written.add(String(event.command[event.commandName]));
+  });
+  const orchestrator = new ScraperOrchestrator();
+  orchestrator.register({
+    name: FIXTURE_LANE,
+    displayName: 'Fixture lane',
+    async run(ctx) {
+      await ctx.emit({
+        entityType: 'researchEntity',
+        entityKey: 'fixture-entity',
+        field: 'name',
+        value: 'Fixture Entity',
+        sourceUrl: 'https://example.edu/fixture',
+      });
+      return { observationCount: 1, entitiesObserved: 1 };
+    },
+  });
+  await orchestrator.run(FIXTURE_LANE, { dryRun, useCache: false, release: false });
+  return written;
+}
 
 function countingLeaseState() {
   const calls = { holdsApplyLease: 0, hostLeasesArmed: 0 };
@@ -297,27 +338,43 @@ describe('a writing lane run with armed host leases', () => {
     expect(rows.map(({ name }) => name).sort()).toEqual(['row-0', 'row-1']);
   });
 
-  it('writes every model a lane run records its run, fetch cache and model calls through', async () => {
-    const dev = database('Development');
-    const laneModels = [
-      models.Observation,
-      models.ScrapeRun,
-      models.ScrapeJobLock,
-      models.Source,
-      models.ScrapeSnapshot,
-      models.ModelCallUsage,
-    ] as unknown as mongoose.Model<unknown>[];
-    for (const model of laneModels) await seed(dev, model.collection.collectionName, 1);
-    await armLaneRun();
+  it('writes only lane collections during a real writing orchestrator run', async () => {
+    process.env[DEV_WRITE_LEASE_SWITCH_ENV] = 'off';
+    const written = await collectionsWrittenByLaneRun({ dryRun: false });
 
-    for (const model of laneModels) {
-      await model.deleteMany({});
-      expect(await count(dev, model.collection.collectionName), model.modelName).toBe(0);
-    }
+    expect(written).toContain(Observation.collection.collectionName);
+    expect([...written].filter((name) => !DEV_LANE_RUN_COLLECTIONS.has(name))).toEqual([]);
+  });
+
+  it('completes a real writing orchestrator run under armed host leases', async () => {
+    await armLaneRun();
+    await collectionsWrittenByLaneRun({ dryRun: false });
+
+    const runs = await database('Development')
+      .collection(ScrapeRun.collection.collectionName)
+      .find()
+      .toArray();
+    expect(runs.map(({ status }) => status)).toEqual(['success']);
+    expect(await count(database('Development'), Observation.collection.collectionName)).toBe(1);
   });
 });
 
 describe('a dry lane run', () => {
+  it('writes only dry lane collections during a real dry orchestrator run', async () => {
+    process.env[DEV_WRITE_LEASE_SWITCH_ENV] = 'off';
+    const written = await collectionsWrittenByLaneRun({ dryRun: true });
+
+    expect(written).toContain(ScrapeRun.collection.collectionName);
+    expect([...written].filter((name) => !DEV_DRY_LANE_RUN_COLLECTIONS.has(name))).toEqual([]);
+  });
+
+  it('completes a real dry orchestrator run with the guard on', async () => {
+    const result = await collectionsWrittenByLaneRun({ dryRun: true });
+
+    expect(result).toContain(ScrapeRun.collection.collectionName);
+    expect(await count(database('Development'), Observation.collection.collectionName)).toBe(0);
+  });
+
   it('writes its run bookkeeping but nothing a writing run owns', async () => {
     const dev = database('Development');
     await seed(dev, ScrapeRun.collection.collectionName, 1);
