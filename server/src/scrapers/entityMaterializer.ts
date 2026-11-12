@@ -27,6 +27,11 @@ import {
 import { isDepartmentHeadingChrome } from './utils/departmentHeadingChrome';
 import { withoutDepartmentHeadingObservations } from './departmentHeadingObservationScreen';
 import {
+  catalogDepartment,
+  storedDepartmentAfterExportDecode,
+  withDirectoryExportDepartmentsDecoded,
+} from './directoryExportDepartmentEvidence';
+import {
   changedResearcherPaths,
   expandUserMaterializerScope,
   partitionPlannedPaths,
@@ -8213,9 +8218,12 @@ export async function joinUserIdentityToExistingResearcher(
   const materializationObs = keyNamesAnOfficeMailbox
     ? []
     : withoutDepartmentHeadingObservations(
-        withoutOverSharedPersonWebsiteObservations(
-          obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o)),
-          await overSharedPersonWebsiteKeysForMaterialization(),
+        withDirectoryExportDepartmentsDecoded(
+          withoutOverSharedPersonWebsiteObservations(
+            obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o)),
+            await overSharedPersonWebsiteKeysForMaterialization(),
+          ),
+          await catalogDepartment(),
         ),
       );
   const derived = deriveUserIdentityFields(materializationObs, now);
@@ -9299,6 +9307,14 @@ async function materializeUserIdentityToResearcher(
       : researcher.profile.websiteUrl;
   if (isDepartmentHeadingChrome(researcher.profile.primaryDepartment)) {
     researcher.profile.primaryDepartment = undefined;
+    fieldsWritten += 1;
+  }
+  const storedDepartment = storedDepartmentAfterExportDecode(
+    researcher.profile.primaryDepartment,
+    await catalogDepartment(),
+  );
+  if (storedDepartment.changed) {
+    researcher.profile.primaryDepartment = storedDepartment.department;
     fieldsWritten += 1;
   }
   for (const [key, value, confidence] of [
