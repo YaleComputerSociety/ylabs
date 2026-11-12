@@ -4492,6 +4492,25 @@ function memberDisplayName(member: { user?: any }): string {
   ).trim();
 }
 
+/**
+ * The detail page's lead identity, reading fold and page-ORCID evidence only when the lead's own
+ * official profile gives no unique answer, so a single-lead row whose lead matches directly costs
+ * no extra query. A multi-lead row still reads evidence, because a second lead matching only
+ * through evidence must keep the match from being unique.
+ */
+export async function resolveResearchDetailLeadIdentity(
+  group: Record<string, any>,
+  members: Array<{ user: any; role: string; row?: any }>,
+  loadEvidence: typeof loadLeadMatchEvidence = loadLeadMatchEvidence,
+): Promise<ReturnType<typeof researchDetailLeadIdentity>> {
+  const direct = researchDetailLeadIdentity(group, members);
+  if (direct.leadIdentityStatus === 'under_review') return direct;
+  const leads = members.filter((member) => PUBLIC_LEAD_ROLES.has(member.role));
+  if (leads.length === 0) return direct;
+  if (direct.leadProfessorPublicKey && leads.length === 1) return direct;
+  return researchDetailLeadIdentity(group, members, await loadEvidence(group, leads));
+}
+
 export function researchDetailLeadIdentity(
   group: Record<string, any>,
   members: Array<{ user: any; role: string; row?: any }>,
@@ -5151,13 +5170,9 @@ export async function getResearchGroupDetail(
   const corroboratedMembers = dropUncorroboratedPhantomLeads(canonicalMembers);
   const imageGuardedMembersWithRows = await withPublicMemberImageGuards(corroboratedMembers);
   const dedupedMembersWithRows = dedupeSameNameLeadMembers(imageGuardedMembersWithRows, group);
-  const leadIdentity = researchDetailLeadIdentity(
+  const leadIdentity = await resolveResearchDetailLeadIdentity(
     group as Record<string, any>,
     dedupedMembersWithRows,
-    await loadLeadMatchEvidence(
-      entityOfficialPersonProfileDestinations(group as Record<string, any>),
-      dedupedMembersWithRows.filter((member) => PUBLIC_LEAD_ROLES.has(member.role)),
-    ),
   );
   const leadMemberNames = publicLeadMemberNames(dedupedMembersWithRows);
   const emeritusWayIn =
