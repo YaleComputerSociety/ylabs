@@ -118,6 +118,11 @@ const ENTITY_READ_CALL =
 
 const REVIEWED_UNROUTED_ENTITY_READS: ReadonlyArray<{ fn: string; reason: string }> = [
   {
+    fn: 'endContradictedSourcelessLeadEdges',
+    reason:
+      "Reads the row's own name, key, cited pages and stored site verdicts, after the projection write, to decide whether a lead edge with no recorded source is contradicted. Reached only from `materializeInferredPiMembership` inside `if (!options.dryRun)`, so the benchmark, which replays with `dryRun: true`, never makes this read (#5979).",
+  },
+  {
     fn: 'planInferredPiMembership',
     reason:
       "Reads the row's own name for the eponym check on the two PI-key routes #4697 adds, only after the original walk resolves nobody. Reached from the projection inside `if (!options.dryRun)` and from the reclaim stage, so the benchmark, which replays with `dryRun: true`, never makes this read.",
