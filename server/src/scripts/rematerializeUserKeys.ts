@@ -32,7 +32,7 @@ import fs from 'fs';
 import mongoose from 'mongoose';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { initializeConnections, runScriptMain } from '../db/connections';
+import { initializeConnections } from '../db/connections';
 import { materializeEntity } from '../scrapers/entityMaterializer';
 import { expandUserMaterializerScope } from '../scrapers/userMaterializerFieldScope';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -116,5 +116,8 @@ async function main(): Promise<void> {
 const invokedDirectly =
   process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 if (invokedDirectly) {
-  void runScriptMain(main);
+  main().catch((error) => {
+    console.error(sanitizeLogValue(error));
+    process.exit(1);
+  });
 }

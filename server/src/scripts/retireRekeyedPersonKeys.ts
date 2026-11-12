@@ -17,7 +17,7 @@ import fs from 'fs';
 import mongoose from 'mongoose';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { initializeConnections, runScriptMain } from '../db/connections';
+import { initializeConnections } from '../db/connections';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { materializationReadScopeFilter } from '../scrapers/entityMaterializer';
@@ -459,8 +459,8 @@ async function main(): Promise<void> {
 const invokedDirectly =
   process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 if (invokedDirectly) {
-  void runScriptMain(main, {
-    logFailure: (error) =>
-      console.error(sanitizeLogValue(error instanceof Error ? error.message : error)),
+  main().catch((error) => {
+    console.error(sanitizeLogValue(error instanceof Error ? error.message : error));
+    process.exit(1);
   });
 }

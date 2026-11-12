@@ -55,7 +55,7 @@ describe('writer evidence is text on a fetched page (#4867)', () => {
   it('cites a model-text value found near-verbatim in the stored copy of its page', () => {
     const page = `Home People ${MODEL_TEXT} Contact`;
     const snippets = buildWriterEvidenceSnippets(
-      [observation(MODEL_TEXT, 'lab-microsite-description-llm', 'https://marsh.example.edu/')],
+      [observation(MODEL_TEXT, 'fra-profile-research-synthesis', 'https://marsh.example.edu/')],
       [],
       { now: NOW, storedPageText: () => page },
     );
@@ -81,7 +81,7 @@ describe('writer evidence is text on a fetched page (#4867)', () => {
   });
 
   it('re-judges every row under the new contract', () => {
-    expect(WRITER_CONTRACT_VERSION).toBe('written-description-5537-v1');
+    expect(WRITER_CONTRACT_VERSION).toBe('written-description-5961-v2');
   });
 });
 

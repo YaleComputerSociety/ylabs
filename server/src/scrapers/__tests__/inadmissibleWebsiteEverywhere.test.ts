@@ -16,7 +16,6 @@ const PROFILE_PAGE = 'https://medicine.yale.edu/profile/fixture-quillsby-person/
 const LAB_SITE = 'https://medicine.example.edu/lab/fixture/';
 const DIRECTIONS_LINK = 'https://www.google.com/maps?daddr=1.5,-2.5&directionsMode=driving';
 const MAPS_SHORT_LINK = 'https://maps.app.goo.gl/FixtureShortCode';
-const PROGRAMME_COURSES = 'https://fixturedept.example.edu/fixtureprogramme/courses';
 
 describe('the legacy website field is cleared of what the payload withholds (#5376)', () => {
   it.each([PATIENT_CARE_PAGE, COURSE_PAGE, POSTING_PAGE])('clears a stored %s', (url) => {
@@ -135,19 +134,5 @@ describe("a lead's member website refuses course, posting and patient-care pages
   it('never serves a map or directions link as a member website (#5657)', () => {
     expect(servableMemberWebsite(DIRECTIONS_LINK, LAB_SITE)).toBe(LAB_SITE);
     expect(servableMemberWebsite(DIRECTIONS_LINK, MAPS_SHORT_LINK)).toBeUndefined();
-  });
-
-  it('ignores a bare courses listing observed as a person website, and never serves one (#5860)', () => {
-    for (const field of ['website', 'websiteUrl']) {
-      expect(
-        shouldIgnoreObservationForEntityMaterialization('user', {
-          field,
-          sourceName: 'dept-faculty-roster',
-          value: PROGRAMME_COURSES,
-        }),
-      ).toBe(true);
-    }
-    expect(servableMemberWebsite(PROGRAMME_COURSES, LAB_SITE)).toBe(LAB_SITE);
-    expect(servableMemberWebsite(PROGRAMME_COURSES)).toBeUndefined();
   });
 });

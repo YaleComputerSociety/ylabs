@@ -144,7 +144,7 @@ describe('materializeEntity prefers a fullDescription that is not thinner than t
     await seedEntity();
     await seedFull(
       LONGER_THAN_CARD_WINNER,
-      'lab-microsite-description-llm',
+      'ysm-faculty-directory',
       0.82,
       '2026-08-01T00:00:00Z',
     );

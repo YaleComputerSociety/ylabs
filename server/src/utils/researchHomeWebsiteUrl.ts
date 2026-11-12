@@ -1101,7 +1101,6 @@ const COURSE_CATALOG_HOSTS: ReadonlySet<string> = new Set(['courses.yale.edu', '
  * A course's own page describes a class, so it is never a research home, never names a
  * row and is never evidence about one (#5213). A bare `/courses` listing on a research
  * home's own site is left an ordinary citation, so a course slug must follow the segment.
- * A person's website refuses the bare listing too, through `isCourseListingPageUrl`.
  */
 export function isCoursePageUrl(value: unknown): boolean {
   const url = parseHttpUrl(value);
@@ -1111,17 +1110,6 @@ export function isCoursePageUrl(value: unknown): boolean {
   return segments.some(
     (segment, index) => COURSE_PAGE_PARENT_SEGMENT.test(segment) && index < segments.length - 1,
   );
-}
-
-/**
- * A bare `/courses` or `/course` listing, which a research home may cite as its own
- * teaching page but which lists classes rather than being anyone's own website (#5860).
- */
-export function isCourseListingPageUrl(value: unknown): boolean {
-  const url = parseHttpUrl(value);
-  if (!url) return false;
-  const lastSegment = url.pathname.split('/').filter(Boolean).pop();
-  return lastSegment !== undefined && COURSE_PAGE_PARENT_SEGMENT.test(lastSegment);
 }
 
 /**
@@ -1254,15 +1242,13 @@ export function isWithheldResearchWebsiteUrl(
 }
 
 /**
- * A page that is never a person's own website: a course page or a bare course listing, a
- * posting or a patient-care page (#5213, #5364, #5860), or a map or directions link
- * (#5657). Read on a lead's member website at the user materializer, the roster accessor
- * and the member serializers (#5376).
+ * A page that is never a person's own website: a course, a posting or a patient-care page
+ * (#5213, #5364), or a map or directions link (#5657). Read on a lead's member website at
+ * the user materializer, the roster accessor and the member serializers (#5376).
  */
 export function isInadmissiblePersonWebsiteUrl(value: unknown): boolean {
   return (
     isCoursePageUrl(value) ||
-    isCourseListingPageUrl(value) ||
     isPostingPageUrl(value) ||
     isPatientCarePageUrl(value) ||
     isMapOrDirectionsUrl(value)

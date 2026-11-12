@@ -6,17 +6,21 @@
  * entityKey, e.g. netid).
  */
 import {
+  LAB_SITE_DESCRIPTION_SOURCE,
   isPersonResearchRow,
   withLabSiteDescriptionsNarrowedToResearch,
 } from '../utils/researchStatementPassage';
+import { isLabSiteBodyGroundedOnItsPage, labSiteBodyPageUrls } from './utils/labSiteBodyGrounding';
 import {
   everyCitedPersonPageUrl,
   identityWithPersonPageUrls,
   withoutNamesakePersonPageDescriptions,
 } from './utils/namesakePersonPageDescriptions';
 import {
+  storedPageTextByUrl,
   withoutRefusedNonYaleMicrositeDescriptions,
   withoutRefusedNonYaleMicrositePageFields,
+  type StoredPageTextByUrl,
 } from './utils/nonYaleMicrositeDescriptionScreen';
 import { leadGrantAwardRecordKeys } from './utils/grantRecordPage';
 import { cachedCardFor } from './cardSynthesisDerivation';
@@ -9756,6 +9760,8 @@ export interface ProjectFromLogInput {
   /** Every person page the row's own live observations cite (#5764). */
   observedPersonPageUrls?: readonly string[];
   resolverObs: ResolverObservation[];
+  /** Stored page text by cited page, so a lab-site body is served only from its page (#5961). */
+  labSitePageTextByUrl?: StoredPageTextByUrl;
   derivedResearchAreas?: DerivedResearchAreaCandidate;
   storedDerivedResearchAreasStale?: boolean;
   fullDescriptionShellGated: boolean;
@@ -9936,6 +9942,98 @@ function adoptServableFullDescription(input: {
 
   set[field] = replacement.materialized;
   confidenceByField[field] = replacement.candidate.confidence;
+  if (replacement.provenance) set[`fieldProvenance.${field}`] = replacement.provenance;
+  return 1;
+}
+
+/**
+ * A lab-site body that is not on a stored copy of the page it cites yields to the row's
+ * written body, then to the next ranked body that is not such a copy and that serves
+ * (#4869, #5961). When nothing else serves, the stored body stays: an ungrounded body alone
+ * neither empties the field nor hides the row. A derivation on every resolve, so it writes
+ * no lock and a later re-capture of the page restores the body.
+ */
+function replaceUngroundedLabSiteBody(input: {
+  now: Date;
+  entityType: ObservedEntityType;
+  set: Record<string, unknown>;
+  confidenceByField: Record<string, number>;
+  entityDoc: any;
+  derivedKind: string | undefined;
+  resolverObs: ResolverObservation[];
+  manuallyLockedFields: string[];
+  manualValues: Record<string, unknown>;
+  materializationObs: MaterializerObservationLike[];
+  leadPersonName: string;
+  labSitePageTextByUrl: StoredPageTextByUrl;
+}): number {
+  const field = 'fullDescription';
+  if (input.manuallyLockedFields.includes(field)) return 0;
+  const { set, entityDoc } = input;
+  const servedValue = Object.hasOwn(set, field) ? set[field] : entityDoc?.[field];
+  const servedProvenance = (set[`fieldProvenance.${field}`] ??
+    entityDoc?.fieldProvenance?.[field]) as
+    { sourceName?: unknown; sourceUrl?: unknown } | undefined;
+  if (!textValue(servedValue) || servedProvenance?.sourceName !== LAB_SITE_DESCRIPTION_SOURCE) {
+    return 0;
+  }
+  const groundedOnItsPage = (body: unknown, citedUrl?: unknown): boolean =>
+    isLabSiteBodyGroundedOnItsPage({
+      body,
+      pageUrls:
+        typeof citedUrl === 'string' && citedUrl
+          ? [citedUrl]
+          : labSiteBodyPageUrls(body, input.materializationObs),
+      pageTextByUrl: input.labSitePageTextByUrl,
+    });
+  if (groundedOnItsPage(servedValue, servedProvenance.sourceUrl)) return 0;
+
+  const kind = set.kind ?? input.derivedKind ?? entityDoc?.kind;
+  const identity = {
+    name: set.name ?? entityDoc?.name,
+    displayName: set.displayName ?? entityDoc?.displayName,
+  };
+  const replacements = resolveFieldRanked(field, input.resolverObs, {
+    now: input.now,
+    manuallyLockedFields: input.manuallyLockedFields,
+    manualValues: input.manualValues,
+    descriptionEntityKind: descriptionEntityKindForResearchEntity(entityDoc),
+  })
+    .map((candidate) => ({
+      candidate,
+      provenance: fieldProvenanceForResolvedObservation(field, candidate, input.materializationObs),
+      materialized: sanitizeProjectedField(
+        input.entityType,
+        field,
+        textValue(candidate.value),
+        entityDoc?.[field],
+        { slug: entityDoc?.slug, name: identity.name, displayName: identity.displayName },
+      ),
+    }))
+    .filter(({ candidate, provenance, materialized }) => {
+      const text = textValue(materialized);
+      if (!text || text === textValue(servedValue)) return false;
+      if (
+        candidate.contributingSources.includes(LAB_SITE_DESCRIPTION_SOURCE) &&
+        !groundedOnItsPage(candidate.value, provenance?.sourceUrl)
+      ) {
+        return false;
+      }
+      return servingBarAcceptsFullDescription(
+        entityDoc,
+        { ...set, kind },
+        text,
+        input.leadPersonName,
+      );
+    });
+  const replacement =
+    replacements.find(({ candidate }) =>
+      candidate.contributingSources.includes(WRITTEN_DESCRIPTION_SOURCE_NAME),
+    ) ?? replacements[0];
+  if (!replacement) return 0;
+
+  set[field] = replacement.materialized;
+  input.confidenceByField[field] = replacement.candidate.confidence;
   if (replacement.provenance) set[`fieldProvenance.${field}`] = replacement.provenance;
   return 1;
 }
@@ -11487,6 +11585,20 @@ export async function projectFromLog(
       manualValues,
       materializationObs,
       leadPersonName: input.nameIdentityAuthority.leadPersonName,
+    });
+    fieldsWritten += replaceUngroundedLabSiteBody({
+      now: input.now,
+      entityType,
+      set,
+      confidenceByField,
+      entityDoc,
+      derivedKind,
+      resolverObs,
+      manuallyLockedFields,
+      manualValues,
+      materializationObs,
+      leadPersonName: input.nameIdentityAuthority.leadPersonName,
+      labSitePageTextByUrl: input.labSitePageTextByUrl ?? new Map(),
     });
     fieldsWritten += adoptServableShortDescription({
       now: input.now,
@@ -13932,6 +14044,7 @@ async function materializeEntityUnderRemovalGuard(
     // set the resolver itself read: a walk over the unscreened set can adopt a value this
     // row refuses, which the #3438 clear then blanks over an admissible rival (#3884).
     resolverObs: refusalScreen.kept,
+    labSitePageTextByUrl: storedPageTextByUrl(obs),
     derivedResearchAreas,
     storedDerivedResearchAreasStale,
     fullDescriptionShellGated,

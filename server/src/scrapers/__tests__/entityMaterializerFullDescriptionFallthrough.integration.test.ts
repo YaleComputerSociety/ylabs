@@ -215,7 +215,7 @@ describe('materializeEntity falls through to the best quality-passing fullDescri
     await seedEntity({ name: 'Park Laboratory' });
     await seedFull(
       CLEAN_WINNER_FULL,
-      'lab-microsite-description-llm',
+      'ysm-faculty-directory',
       0.95,
       '2026-02-01T00:00:00Z',
     );

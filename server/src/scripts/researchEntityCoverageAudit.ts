@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
-import { initializeConnections, runScriptMain } from '../db/connections';
+import { initializeConnections } from '../db/connections';
 import { Signal } from '../models/signal';
 import { accessSignalTypes } from '../models/researchAccessTypes';
 import { Observation } from '../models/observation';
@@ -20,7 +20,6 @@ import {
   type CoverageObservationFlags,
 } from './researchEntityCoverageAuditCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
-import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   assertPhase0SummaryOnlyConfiguredTarget,
   assertPhase0SummaryOnlyConnectedTarget,
@@ -29,6 +28,7 @@ import {
   type Phase0SummaryOnlyEnvironment,
   type Phase0SummaryOnlyMetadata,
 } from './phase0SummaryOnlyAudit';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -525,5 +525,12 @@ async function main(): Promise<void> {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
-  void runScriptMain(main, { logFailure: (error) => console.error(sanitizeLogValue(error)) });
+  main()
+    .catch((error) => {
+      console.error(sanitizeLogValue(error));
+      process.exitCode = 1;
+    })
+    .finally(async () => {
+      await mongoose.disconnect();
+    });
 }

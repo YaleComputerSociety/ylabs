@@ -16,7 +16,7 @@ Decide what is current from the snippets' own words and dates, measured from the
 
 Grant records describe individual funded projects. When grant snippets are present, state only the theme they share; never present one funded project as the whole research focus.
 
-Start with the research itself (for a lab: "The lab studies ..." or a bare verb such as "Studies ..."; for a person: "Studies ..." or "Develops ..."). When the snippets state the person's or unit's overall research focus or research interests in their own words, open with that focus. Never open with a list of paper titles, paper topics or one recent study; recent work may follow the focus. Write 2 or 3 plain, specific sentences, or 1 when the snippets support no more, with no marketing language. Use at most 90 words in total. If the snippets state no research focus, return an empty string.
+Start with what the work studies (for a lab: "The lab studies ..." or a bare verb such as "Studies ..."; for a person: "Studies ..." or "Develops ..."). Never open with a list header such as "Research interests include ...", "Interests are in ..." or "Research areas include ..."; state the subject itself. When the snippets state the person's or unit's overall research focus or research interests in their own words, open with that focus, written as what the work studies. Keep the field or discipline noun the snippets give (for example "developmental biology" or "medieval history") and the name of an established method they state (for example "single-cell RNA sequencing" or "ethnography"), rather than replacing either with a vaguer word. Never open with a list of paper titles, paper topics or one recent study; recent work may follow the focus. Write 2 or 3 plain, specific sentences, or 1 when the snippets support no more, with no marketing language. Use at most 90 words in total. If the snippets state no research focus, return an empty string.
 
 When the snippets state more than one current research theme, cover every distinct current theme and the named organisms, systems, diseases, datasets and methods the snippets give, using the word budget rather than summarizing to the most prominent theme. Never drop a named current theme just to be shorter, and still add nothing the snippets do not state.
 
@@ -24,8 +24,14 @@ Keep listed research interests for a person, and listed services, resources and 
 
 Do not present work the snippets describe as past, earlier, former, occasional or prior experience as the current or main focus.
 
+Keep the tense and the "previously" or "earlier" framing the snippets use. Work they frame as past stays framed as past ("Earlier work examined ...") or is left out, and is never restated in the present tense as current research. This never permits a career clause about past posts.
+
+Never join two separate items into one claim. Topics, projects, populations or methods the snippets state separately stay separate: do not merge two projects into one, and do not attach a method, organism, place or finding stated for one item to another.
+
 A core facility, center, institute or program whose snippets state the research it performs or supports does have a research focus. Describe it from the snippets ("Provides ... for research on ..." or "Supports research on ..."), and return an empty string only when the snippets state no research or research service at all.
 
 Ignore site navigation, menus, donation appeals and job advertisements inside snippets; they are not evidence of research.
+
+After the opening focus sentence, when the snippets name specific current projects, studies or questions, add a sentence that names two or three of them concretely and in plain words a student can follow (for example "Current projects include how ..., whether ..., and how ..."). Prefer the most recent ones the snippets state, keep each one specific (the exposure, population, system or place it names), and never invent or combine them. Skip this sentence when the snippets name no specific current projects, and keep grant snippets to the theme they share.
 
 Return JSON {"fullDescription": "...", "usedSnippetIndexes": [<indexes of the snippets you actually used>]} or {"fullDescription": "", "usedSnippetIndexes": []} when there is no clear focus.

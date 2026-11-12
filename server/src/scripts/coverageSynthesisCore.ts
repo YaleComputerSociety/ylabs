@@ -1,5 +1,7 @@
 import { isPersonResearchRow } from '../utils/researchStatementPassage';
-import { withoutRefusedNonYaleMicrositeDescriptions } from '../scrapers/utils/nonYaleMicrositeDescriptionScreen';
+import { storedPageTextByUrl } from '../scrapers/utils/nonYaleMicrositeDescriptionScreen';
+import { normalizeEvidenceUrl } from '../scrapers/utils/sharedEvidenceUrls';
+import { descriptionPageNamesRowLead } from '../scrapers/sources/labMicrositeDescriptionLLMExtractor';
 import { withoutNamesakePersonPageDescriptions } from '../scrapers/utils/namesakePersonPageDescriptions';
 import type { ResearchEntityIdentity } from '../scrapers/utils/personProfileEntityMatch';
 import { SOURCE_CONTENT_HASH_FIELD } from '../scrapers/contentHashGate';
@@ -13,6 +15,7 @@ import {
   gatherCoverageSnippets,
   isCoverageSynthesisLlmFailure,
   type CoverageObservationLike,
+  type EvidencePageAdmission,
   type CoverageSnippet,
   type CoverageSynthesisDecision,
   type StoredPageTextLookup,
@@ -570,6 +573,43 @@ const namesakeScreenIdentity = (
 });
 
 /**
+ * Whether a page the writer would read names the row's lead, by the lane's own rule
+ * (`descriptionPageNamesRowLead`, #4873), so a person-named row is never written from a
+ * department homepage or another unit's page that does not name its lead.
+ */
+export function writerEvidencePageNamesRowLead(
+  observations: readonly CoverageObservationLike[],
+  options: WriterEvidenceOptions,
+  isPersonRow: boolean,
+): EvidencePageAdmission {
+  const personNames = (options.leadNames ?? []).filter(
+    (name): name is string => typeof name === 'string' && name.trim() !== '',
+  );
+  if (personNames.length === 0) return () => true;
+  const pageTextByUrl = storedPageTextByUrl(observations);
+  const kind = isPersonRow ? 'individual' : options.kind;
+  return (pageUrl, text) => {
+    const pageText = [
+      pageTextByUrl.get(normalizeEvidenceUrl(pageUrl)),
+      options.storedPageText?.(pageUrl),
+      text,
+    ]
+      .filter(Boolean)
+      .join('\n');
+    return personNames.some((personName) =>
+      descriptionPageNamesRowLead({
+        personName,
+        websiteUrl: options.websiteUrl,
+        rowName: options.identity?.name,
+        kind,
+        pageUrl,
+        pageText,
+      }),
+    );
+  };
+}
+
+/**
  * The writer's evidence: page text the row carries, ordered by `orderWriterEvidence`,
  * and grant records only when that page text is absent or thin. A grant read comes from
  * the row's recorded grants, which carry the role and dates the grant rule needs; a
@@ -588,21 +628,14 @@ export function buildWriterEvidenceSnippets(
           namesakeScreenIdentity(options.identity),
         )
       : observations;
-  const ownedMicrositeEvidence = isPersonRow
-    ? withoutRefusedNonYaleMicrositeDescriptions(
-        ownPersonEvidence,
-        options.leadNames ?? [],
-        observations,
-      )
-    : ownPersonEvidence;
   const admissible = refusedResolverObservations(
-    withOnlyCurrentResearchPageText(ownedMicrositeEvidence),
+    withOnlyCurrentResearchPageText(ownPersonEvidence),
     options.fieldValueRefusals,
   ).kept;
   const ordered = orderWriterEvidence(admissible, options.websiteUrl);
   const pageObservations = ordered.filter((obs) => !isGrantEvidenceSource(obs.sourceName));
   const fromPages = gatherCoverageSnippets(pageObservations, options.storedPageText, {
-    narrowLabSiteDescriptions: isPersonRow,
+    admitsPage: writerEvidencePageNamesRowLead(observations, options, isPersonRow),
   });
   if (hasOwnResearchProse(fromPages)) return fromPages;
   const room = MAX_COVERAGE_SNIPPETS - fromPages.length;

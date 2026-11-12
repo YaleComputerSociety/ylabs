@@ -25,7 +25,7 @@ import {
  * Part of the writer's input hash, so a change to the code-side refusal arms re-judges
  * every row once.
  */
-export const WRITER_CONTRACT_VERSION = 'written-description-5537-v1';
+export const WRITER_CONTRACT_VERSION = 'written-description-5961-v2';
 
 export const WRITER_MATERIAL_CHANGE_MIN_JACCARD = 0.9;
 

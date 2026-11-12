@@ -12,7 +12,7 @@ import {
 
 /**
  * Client half of the shared course, posting, patient-care and map or directions page contract
- * (#5376, #5657), and of the bare course listing only a person website refuses (#5860).
+ * (#5376, #5657).
  *
  * See the server half in `server/src/utils/__tests__/inadmissibleWebsitePagesContract.test.ts`.
  */
@@ -31,7 +31,7 @@ interface UrlCase {
 type Category = 'patientCare' | 'course' | 'posting' | 'mapOrDirections';
 
 const contract = JSON.parse(fs.readFileSync(CONTRACT_PATH, 'utf8')) as Record<
-  Category | 'courseListing',
+  Category,
   { refused: UrlCase[]; kept: UrlCase[] }
 >;
 
@@ -76,13 +76,6 @@ describe('inadmissible website page contract (client)', () => {
     }
     for (const testCase of contract.course.refused) {
       expect(isRefusedResearchWebsitePageUrl(testCase.url, 'CENTER')).toBe(true);
-    }
-  });
-
-  it('keeps a bare course listing as a research website, as the server does', () => {
-    for (const testCase of contract.courseListing.refused) {
-      expect(isCoursePageSourceUrl(testCase.url)).toBe(false);
-      expect(isRefusedResearchWebsitePageUrl(testCase.url, 'LAB')).toBe(false);
     }
   });
 });

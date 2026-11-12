@@ -6,12 +6,18 @@ const RESEARCH =
   'The research examines how estuarine sediment moves during storm surges, combining field cores from tidal marshes with numerical models of channel erosion and deposition.';
 const LEAD_NAMES = ['Quillon Varnadore'];
 
-const micrositeDescription = (sourceUrl: string, value = RESEARCH) => ({
+const profileDescription = (sourceUrl: string, value = RESEARCH) => ({
   field: 'fullDescription',
   value,
-  sourceName: 'lab-microsite-description-llm',
+  sourceName: 'ysm-faculty-directory',
   sourceUrl,
-  ingestVerifiedAgainstPage: true,
+});
+
+const researchPage = (url: string, text = RESEARCH) => ({
+  field: 'researchPageText',
+  value: [{ url, text }],
+  sourceName: 'research-page-text',
+  sourceUrl: url,
 });
 
 const texts = (
@@ -21,25 +27,40 @@ const texts = (
 
 const PERSON_ROW = { entityType: 'FACULTY_RESEARCH_AREA', leadNames: LEAD_NAMES };
 
-describe('writer evidence screens non-Yale microsite descriptions by lead ownership (#5777)', () => {
-  it('drops a person row description from a non-Yale page that does not confirm the lead', () => {
+describe('writer evidence comes only from a page that names the row lead (#4873, #5961)', () => {
+  it('refuses a Yale department page that never names the lead', () => {
     expect(
-      texts([micrositeDescription('https://coastal-foundation.example.org/about')], PERSON_ROW),
+      texts([profileDescription('https://geology.yale.edu/research/overview')], PERSON_ROW),
     ).toEqual([]);
   });
 
-  it('keeps a description whose non-Yale page carries the lead surname in its address', () => {
+  it('refuses stored page text from a page that never names the lead', () => {
+    expect(texts([researchPage('https://geology.yale.edu/research/overview')], PERSON_ROW)).toEqual(
+      [],
+    );
+  });
+
+  it('refuses a non-Yale page that does not confirm the lead', () => {
     expect(
-      texts([micrositeDescription('https://varnadorelab.example.org/research')], PERSON_ROW),
+      texts([profileDescription('https://coastal-foundation.example.org/about')], PERSON_ROW),
+    ).toEqual([]);
+  });
+
+  it('keeps a page whose address carries the lead surname', () => {
+    expect(
+      texts(
+        [profileDescription('https://medicine.yale.edu/profile/quillon-varnadore/')],
+        PERSON_ROW,
+      ),
     ).toEqual([RESEARCH]);
   });
 
-  it('keeps a description whose stored page text names the lead', () => {
+  it('keeps a page whose stored text names the lead', () => {
     const pageUrl = 'https://tidewater-collaborative.example.org/team/';
     expect(
       texts(
         [
-          micrositeDescription('https://tidewater-collaborative.example.org/team'),
+          profileDescription('https://tidewater-collaborative.example.org/team'),
           {
             field: 'researchPageText',
             value: [{ url: pageUrl, text: 'Principal investigator: Quillon Varnadore.' }],
@@ -52,24 +73,38 @@ describe('writer evidence screens non-Yale microsite descriptions by lead owners
     ).toContain(RESEARCH);
   });
 
-  it('keeps a description from a Yale-hosted page', () => {
+  it("keeps a page under the row's own Yale website", () => {
     expect(
-      texts([micrositeDescription('https://medicine.yale.edu/lab/estuary/')], PERSON_ROW),
+      texts([researchPage('https://estuary.yale.edu/research')], {
+        ...PERSON_ROW,
+        websiteUrl: 'https://estuary.yale.edu/',
+      }),
     ).toEqual([RESEARCH]);
   });
 
-  it('leaves a lab row unaffected', () => {
+  it('leaves a lab named for its work unaffected', () => {
     expect(
-      texts([micrositeDescription('https://coastal-foundation.example.org/about')], {
+      texts([profileDescription('https://geology.yale.edu/research/overview')], {
         entityType: 'LAB',
+        identity: { name: 'Estuarine Dynamics Laboratory' },
         leadNames: LEAD_NAMES,
       }),
     ).toEqual([RESEARCH]);
   });
 
-  it('keeps the description when the row has no lead name to check', () => {
+  it('screens a lab named for its lead', () => {
     expect(
-      texts([micrositeDescription('https://coastal-foundation.example.org/about')], {
+      texts([profileDescription('https://geology.yale.edu/research/overview')], {
+        entityType: 'LAB',
+        identity: { name: 'Varnadore Lab' },
+        leadNames: LEAD_NAMES,
+      }),
+    ).toEqual([]);
+  });
+
+  it('keeps the evidence when the row has no lead name to check', () => {
+    expect(
+      texts([profileDescription('https://geology.yale.edu/research/overview')], {
         entityType: 'FACULTY_RESEARCH_AREA',
       }),
     ).toEqual([RESEARCH]);
@@ -79,7 +114,7 @@ describe('writer evidence screens non-Yale microsite descriptions by lead owners
     const row = {
       slug: 'estuary-fixture',
       entity: { slug: 'estuary-fixture', entityType: 'FACULTY_RESEARCH_AREA' },
-      observations: [micrositeDescription('https://coastal-foundation.example.org/about')],
+      observations: [profileDescription('https://coastal-foundation.example.org/about')],
       mergedInObservations: [],
     };
     const file = (rows: unknown[]) =>

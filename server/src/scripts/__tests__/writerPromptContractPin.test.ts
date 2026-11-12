@@ -3,9 +3,10 @@ import { COVERAGE_SYNTHESIS_PROMPT_HASH } from '../../scrapers/prompts';
 import { WRITER_CONTRACT_VERSION } from '../writtenDescriptionDerivationCore';
 
 const WRITER_PROMPT_PIN = {
-  contract: 'written-description-5537-v1',
-  promptHash: 'a5f60a5118f59515571fb01f116a013df789327251688e5e29589af3297ab897',
-  carryOverReason: 'first pin of the #5537 writer prompt (#5833)',
+  contract: 'written-description-5961-v2',
+  promptHash: '8097edfbfecc4236e4990e74b52e36e61e3cd0b9618c579f691020b012524f7b',
+  carryOverReason:
+    'v2 contract (#5961): new prompt rules and a narrower evidence read, so every row is re-drafted rather than carried over',
 };
 
 const DECIDE_ON_A_PROMPT_EDIT = [

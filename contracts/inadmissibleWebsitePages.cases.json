@@ -1,5 +1,5 @@
 {
-  "$comment": "Shared behavioural contract for the course, posting, patient-care and map or directions page categories (#5213, #5364, #5376, #5657), plus the bare course listing a person website refuses while a research row keeps it as an ordinary citation (#5860). server/src/utils/researchHomeWebsiteUrl.ts and client/src/utils/researchDetailSources.ts carry independent copies of the same rules, because the server refuses the page as a stored website and as a lead's member website while the client refuses it as the detail page's website button and headline action. Both suites read this table, so a divergence fails on both sides. Every host label and path leaf below is synthetic except the named clinical-practice and course-catalog hosts.",
+  "$comment": "Shared behavioural contract for the course, posting, patient-care and map or directions page categories (#5213, #5364, #5376, #5657). server/src/utils/researchHomeWebsiteUrl.ts and client/src/utils/researchDetailSources.ts carry independent copies of the same rules, because the server refuses the page as a stored website and as a lead's member website while the client refuses it as the detail page's website button and headline action. Both suites read this table, so a divergence fails on both sides. Every host label and path leaf below is synthetic except the named clinical-practice and course-catalog hosts.",
   "patientCare": {
     "refused": [
       { "name": "a clinical-practice department page", "url": "https://www.yalemedicine.org/departments/example-care-center" },
@@ -27,6 +27,7 @@
       { "name": "a course-catalog host", "url": "https://courses.yale.edu/?details&srcdb=example" }
     ],
     "kept": [
+      { "name": "a bare courses listing", "url": "https://examplelab.example.edu/courses" },
       { "name": "a research page whose segment merely contains course", "url": "https://exampledept.example.edu/research/coursework-and-examples/" }
     ]
   },
@@ -39,18 +40,6 @@
     "kept": [
       { "name": "a lab site root", "url": "https://examplelab.example.org/" },
       { "name": "a page whose segment merely contains a posting word", "url": "https://examplelab.example.org/careers-in-science-outreach/" }
-    ]
-  },
-  "courseListing": {
-    "refused": [
-      { "name": "a department programme's courses listing", "url": "https://exampledept.example.edu/exampleprogram/courses" },
-      { "name": "a bare course listing with a trailing slash", "url": "https://exampledept.example.edu/course/" },
-      { "name": "a lab's own courses listing", "url": "https://examplelab.example.edu/courses" }
-    ],
-    "kept": [
-      { "name": "a lab site root", "url": "https://examplelab.example.edu/" },
-      { "name": "a research page whose segment merely contains course", "url": "https://exampledept.example.edu/research/coursework-and-examples/" },
-      { "name": "a page whose segment merely starts with courses", "url": "https://examplelab.example.edu/courses-and-outreach" }
     ]
   },
   "mapOrDirections": {
