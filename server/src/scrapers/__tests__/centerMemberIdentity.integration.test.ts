@@ -588,6 +588,81 @@ describe(
       expect((await liveEdgesOf(avery)).map((edge) => edge.role)).toEqual(['CORE_FACULTY']);
     });
 
+    it('plans but never applies center roster retirement when it is skipped (#5890)', async () => {
+      const avery = await accountHolder('Avery', { officialUrl: officialProfileUrl('Avery') });
+      const staleLead = await edgeOn(avery, 'DIRECTOR');
+      const pages = {
+        [centerProfileUrl('Avery')]: profilePage({ canonical: officialProfileUrl('Avery') }),
+      };
+      const skip = { skipEntityTypes: ['researchEntity'], skipCenterRosterRetirement: true };
+      const rolledBackBefore = await Observation.countDocuments({
+        'rollback.rolledBackAt': { $exists: true },
+      });
+
+      await runLane(pages, ROSTER, skip);
+      await runLane(pages, ROSTER, skip);
+
+      expect((await edgeById(staleLead))?.state).not.toBe('HISTORICAL');
+      expect(await Observation.countDocuments({ 'rollback.rolledBackAt': { $exists: true } })).toBe(
+        rolledBackBefore,
+      );
+      expect((await liveEdgesOf(avery)).map((row) => row.role).sort()).toEqual([
+        'CORE_FACULTY',
+        'DIRECTOR',
+      ]);
+    });
+
+    it('still applies a staff remap when center roster retirement is skipped (#5890)', async () => {
+      const blair = await accountHolder('Blair', { officialUrl: officialProfileUrl('Blair') });
+      await runLane({
+        [centerProfileUrl('Blair')]: profilePage({ canonical: officialProfileUrl('Blair') }),
+      });
+      expect((await liveEdgesOf(blair)).map((edge) => edge.role)).toEqual(['CORE_FACULTY']);
+
+      await runLane(
+        {
+          [centerProfileUrl('Blair')]: profilePage({
+            canonical: officialProfileUrl('Blair'),
+            title: 'Grants and Finance Manager',
+          }),
+        },
+        ROSTER,
+        { skipEntityTypes: ['researchEntity'], skipCenterRosterRetirement: true },
+      );
+
+      expect((await liveEdgesOf(blair)).map((edge) => edge.role)).toEqual(['STAFF']);
+    });
+
+    it('rewrites a listing that moved to an aliased profile path without a second edge (#5890)', async () => {
+      const casey = await accountHolder('Casey', { officialUrl: officialProfileUrl('Casey') });
+      await runLane({
+        [centerProfileUrl('Casey')]: profilePage({ canonical: officialProfileUrl('Casey') }),
+      });
+      const before = await liveEdgesOf(casey);
+      const movedRoster = ROSTER.map((entry) =>
+        entry.name === 'Casey Synthetic'
+          ? {
+              ...entry,
+              profileUrl: `https://fixture-center.yale.edu/program/center/profile/casey-synthetic/`,
+            }
+          : entry,
+      );
+
+      await runLane(
+        {
+          'https://fixture-center.yale.edu/program/center/profile/casey-synthetic/': profilePage({
+            canonical: officialProfileUrl('Casey'),
+          }),
+        },
+        movedRoster,
+        { skipEntityTypes: ['researchEntity'], skipCenterRosterRetirement: true },
+      );
+
+      const after = await liveEdgesOf(casey);
+      expect(after).toHaveLength(1);
+      expect(after.map((edge) => edge.role)).toEqual(before.map((edge) => edge.role));
+    });
+
     it('still runs center roster retirement when center rows are skipped (#5890)', async () => {
       const avery = await accountHolder('Avery', { officialUrl: officialProfileUrl('Avery') });
       const staleLead = await edgeOn(avery, 'DIRECTOR');
