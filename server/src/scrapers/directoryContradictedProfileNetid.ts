@@ -1,9 +1,9 @@
-import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 import {
   normalizeOfficialProfileDestination,
   officialProfileDestinationIndexedPatterns,
 } from '../services/leadProfileIdentity';
+import { mongooseConnectionWasOpened } from '../utils/mongooseConnectionWasOpened';
 
 export const OFFICIAL_PROFILE_PI_BACKFILL_SOURCE = 'official-profile-pi-backfill';
 
@@ -71,7 +71,7 @@ export function resetDirectoryNetidsByAddressCache(): void {
  * which leaves every screen open rather than refusing on silence.
  */
 export async function loadDirectoryNetidsByAddress(): Promise<DirectoryNetidsByAddress> {
-  if (mongoose.connection.readyState !== 1) return new Map();
+  if (!mongooseConnectionWasOpened()) return new Map();
   if (cachedDirectory && Date.now() - cachedDirectory.loadedAt < DIRECTORY_CACHE_TTL_MS) {
     return cachedDirectory.value;
   }
@@ -252,7 +252,7 @@ export async function profilePageOwnerNetids(
     const indexed = officialProfileDestinationIndexedPatterns(String(url ?? ''));
     if (destination && indexed.length > 0) patterns.set(destination, indexed);
   }
-  if (patterns.size === 0 || mongoose.connection.readyState !== 1) return none;
+  if (patterns.size === 0 || !mongooseConnectionWasOpened()) return none;
   const statedEmails = (await Observation.find(
     {
       entityType: 'user',

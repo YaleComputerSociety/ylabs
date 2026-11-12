@@ -134,6 +134,7 @@ import { officialProfileIdentityKey, rosterMembershipKey } from '../utils/roster
 import { type OfficialProfilePageIdentity } from '../../services/officialProfileLinkIdentity';
 import { normalizeOfficialProfileDestination } from '../../services/leadProfileIdentity';
 import { isDepartmentHeadingChrome } from '../utils/departmentHeadingChrome';
+import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
 
 const SOURCE_NAME = 'official-profile-pi-backfill';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
@@ -986,7 +987,7 @@ const YALE_DIRECTORY_SOURCE_NAMES = ['yale-directory', 'yale-directory-csv'];
  * empty set, which leaves the guard where it was rather than refusing on silence.
  */
 export async function loadYaleDirectoryNetids(): Promise<ReadonlySet<string>> {
-  if (mongoose.connection.readyState !== 1) return new Set();
+  if (!mongooseConnectionWasOpened()) return new Set();
   const keys = (await Observation.distinct('entityKey', {
     entityType: 'user',
     sourceName: { $in: YALE_DIRECTORY_SOURCE_NAMES },
@@ -4950,7 +4951,7 @@ export async function selectOrganizationDirectorProfileTargets(
   limit: number,
   targetKeys: string[] = [],
 ): Promise<Array<Record<string, any>>> {
-  if (mongoose.connection.readyState !== 1) return [];
+  if (!mongooseConnectionWasOpened()) return [];
   const entities = await recentlyObservedResearchEntities(
     {
       archived: { $ne: true },
@@ -5304,8 +5305,8 @@ interface FetchedProfile {
  * a unit test or an offline replay, judges eponyms with no roster rather than waiting on a
  * buffered query.
  */
-async function loadKnownPersonSurnameRosterWhenConnected(): Promise<ReadonlySet<string>> {
-  if (mongoose.connection.readyState !== 1) return NO_SURNAME_ROSTER;
+export async function loadKnownPersonSurnameRosterWhenConnected(): Promise<ReadonlySet<string>> {
+  if (!mongooseConnectionWasOpened()) return NO_SURNAME_ROSTER;
   return loadKnownPersonSurnameRoster();
 }
 

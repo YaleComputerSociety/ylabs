@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 import { slugNamesPersonByFullName } from '../services/directoryRemovalSlugNames';
 import { currentDirectoryRemovalMintGuard } from '../services/directoryRemovalMintGuard';
+import { mongooseConnectionWasOpened } from '../utils/mongooseConnectionWasOpened';
 
 // Raw collection on purpose: importing the ResearchEntity model here would register it on
 // the ingest path and auto-build its unique slug index on a default connection (#5716).
@@ -26,7 +27,7 @@ export async function liveResearchEntityNamedByKeyObservations(
   entityKey: string | undefined,
   select = '_id',
 ): Promise<Record<string, unknown> | null> {
-  if (!entityKey || mongoose.connection.readyState !== 1) return null;
+  if (!entityKey || !mongooseConnectionWasOpened()) return null;
   const ids = await Observation.distinct('entityId', {
     entityType: 'researchEntity',
     entityKey,
@@ -62,7 +63,7 @@ export async function withRenamedResearchEntityIds<T extends KeyedInput>(
   const keys = [
     ...new Set(inputs.filter(isKeyOnlyResearchEntityInput).map((input) => input.entityKey!)),
   ];
-  if (keys.length === 0 || mongoose.connection.readyState !== 1) return [...inputs];
+  if (keys.length === 0 || !mongooseConnectionWasOpened()) return [...inputs];
   const held = new Set(
     (
       await researchEntities()
@@ -118,7 +119,7 @@ export async function withRenamedResearchEntityIds<T extends KeyedInput>(
 }
 
 export async function liveResearchEntityIdForLaneKey(entityKey: string): Promise<unknown> {
-  if (mongoose.connection.readyState !== 1) return null;
+  if (!mongooseConnectionWasOpened()) return null;
   const held = await researchEntities().findOne(
     { slug: entityKey, archived: { $ne: true } },
     { projection: { _id: 1 } },
@@ -135,7 +136,7 @@ export async function liveResearchEntityIdForLaneKey(entityKey: string): Promise
 export async function reslugAdoptedKeyNamesOnlyArchivedRows(
   entityKey: string | undefined,
 ): Promise<boolean> {
-  if (!entityKey || mongoose.connection.readyState !== 1) return false;
+  if (!entityKey || !mongooseConnectionWasOpened()) return false;
   const ids = await Observation.distinct('entityId', {
     entityType: 'researchEntity',
     entityKey,

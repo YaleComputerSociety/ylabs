@@ -30,7 +30,6 @@
  *   - ctx.options.limit — caps the *number of PIs processed*, not raw grants.
  */
 import axios from 'axios';
-import mongoose from 'mongoose';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { getCached, setCached } from '../snapshotCache';
 import {
@@ -58,6 +57,7 @@ import {
 } from '../utils/grantInvestigators';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
+import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
 
 export const REPORTER_ENDPOINT = 'https://api.reporter.nih.gov/v2/projects/search';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
@@ -992,8 +992,8 @@ export function relistedLegacyGrantObservations(
   return { observations: out, listed, unmatched };
 }
 
-async function defaultLoadLegacyGrantObservations(): Promise<LegacyGrantObservation[]> {
-  if (mongoose.connection.readyState !== 1) return [];
+export async function defaultLoadLegacyGrantObservations(): Promise<LegacyGrantObservation[]> {
+  if (!mongooseConnectionWasOpened()) return [];
   const rows = (await Observation.find({
     sourceName: 'nih-reporter',
     entityType: 'researchEntity',
