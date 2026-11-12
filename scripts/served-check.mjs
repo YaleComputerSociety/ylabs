@@ -14,10 +14,11 @@ const SERVER_ROOT = path.join(REPO_ROOT, 'server');
 const READY_TIMEOUT_MS = 180_000;
 const READY_POLL_MS = 1_000;
 const STOP_GRACE_MS = 10_000;
-const SERVED_CHECK_PROFILES = new Set(['development', 'local']);
+const SERVED_CHECK_PROFILE = 'development';
+const INTERRUPT_EXIT_CODES = { SIGINT: 130, SIGTERM: 143 };
 
 export const USAGE = [
-  'Usage: node scripts/served-check.mjs [--profile development|local] [--api <loopback origin>] <GET path>...',
+  'Usage: node scripts/served-check.mjs [--api <loopback origin>] <GET path>...',
   '',
   'Reads each path as an anonymous visitor and prints one JSON line per path.',
   'Without --api it starts its own short-lived API on a free port with LOCAL_AUTH_BYPASS=false',
@@ -28,22 +29,18 @@ export const USAGE = [
 ].join('\n');
 
 export function parseServedCheckArgs(argv) {
-  const options = { profileName: 'development', apiBase: undefined, paths: [] };
+  const options = { apiBase: undefined, paths: [] };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (arg === '--profile' || arg === '--api') {
+    if (arg === '--api') {
       const value = argv[index + 1];
       if (value === undefined) throw new Error(`${arg} needs a value.\n\n${USAGE}`);
-      if (arg === '--profile') options.profileName = value;
-      else options.apiBase = loopbackApiBase(value);
+      options.apiBase = loopbackApiBase(value);
       index += 1;
       continue;
     }
     if (arg.startsWith('--')) throw new Error(`Unknown option ${arg}.\n\n${USAGE}`);
     options.paths.push(servedApiPath(arg));
-  }
-  if (!SERVED_CHECK_PROFILES.has(options.profileName)) {
-    throw new Error(`--profile must be development or local.\n\n${USAGE}`);
   }
   if (options.paths.length === 0) throw new Error(`Name at least one path.\n\n${USAGE}`);
   return options;
@@ -193,8 +190,24 @@ const DEFAULT_SERVER_COMMAND = [
   'src/index.ts',
 ];
 
-async function startCheckServer(profileName, serverCommand = DEFAULT_SERVER_COMMAND) {
-  const { childEnv } = profileChildEnvironment({ profileName, processEnv: process.env });
+function stopOnInterrupt(child) {
+  const handlers = Object.entries(INTERRUPT_EXIT_CODES).map(([signal, exitCode]) => {
+    const handler = () => {
+      stopProcessGroup(child).finally(() => process.exit(exitCode));
+    };
+    process.once(signal, handler);
+    return [signal, handler];
+  });
+  return () => {
+    for (const [signal, handler] of handlers) process.removeListener(signal, handler);
+  };
+}
+
+async function startCheckServer(serverCommand = DEFAULT_SERVER_COMMAND) {
+  const { childEnv } = profileChildEnvironment({
+    profileName: SERVED_CHECK_PROFILE,
+    processEnv: process.env,
+  });
   const port = await freeLoopbackPort();
   const logDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ylabs-served-check-'));
   const logFile = path.join(logDir, 'server.log');
@@ -207,15 +220,23 @@ async function startCheckServer(profileName, serverCommand = DEFAULT_SERVER_COMM
     detached: true,
   });
   fs.closeSync(logFd);
+  const releaseInterruptHandlers = stopOnInterrupt(child);
+  const stop = async () => {
+    try {
+      await stopProcessGroup(child);
+    } finally {
+      releaseInterruptHandlers();
+    }
+  };
   const apiBase = `http://localhost:${port}`;
   console.error(`Check server: pid ${child.pid}, ${apiBase}, bypass off, log ${logFile}`);
   try {
     await waitUntilListening(port, child, logFile);
   } catch (error) {
-    await stopProcessGroup(child);
+    await stop();
     throw error;
   }
-  return { apiBase, stop: () => stopProcessGroup(child) };
+  return { apiBase, stop };
 }
 
 export async function runServedCheck(argv, { serverCommand, write } = {}) {
@@ -224,7 +245,7 @@ export async function runServedCheck(argv, { serverCommand, write } = {}) {
     await readServedPaths({ apiBase: options.apiBase, paths: options.paths, write });
     return;
   }
-  const server = await startCheckServer(options.profileName, serverCommand);
+  const server = await startCheckServer(serverCommand);
   try {
     await readServedPaths({ apiBase: server.apiBase, paths: options.paths, write });
   } finally {

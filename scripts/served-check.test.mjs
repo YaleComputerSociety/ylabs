@@ -137,7 +137,6 @@ test('an anonymous API has each served path read and reported', async () => {
 
 test('arguments accept only /api/ paths and a loopback --api origin', () => {
   assert.deepEqual(parseServedCheckArgs(['/api/research/x']), {
-    profileName: 'development',
     apiBase: undefined,
     paths: ['/api/research/x'],
   });
@@ -147,10 +146,7 @@ test('arguments accept only /api/ paths and a loopback --api origin', () => {
     /must start with \/api\//,
   );
   assert.throws(() => parseServedCheckArgs(['--api', 'https://example.com', '/api/x']), /loopback/);
-  assert.throws(
-    () => parseServedCheckArgs(['--profile', 'production', '/api/x']),
-    /development or local/,
-  );
+  assert.throws(() => parseServedCheckArgs(['--profile', 'local', '/api/x']), /Unknown option/);
 });
 
 const FAKE_SERVER_SOURCE = `
@@ -182,5 +178,73 @@ test('a self-started check server runs with the bypass off even when server/.env
     assert.equal(status, 200);
     assert.equal(body.bypass, 'false');
     assert.notEqual(body.port, '4038');
+  });
+});
+
+test('a self-started check run leaves no signal listeners behind', async () => {
+  await withSyntheticDevelopmentProfile(async (dir) => {
+    const serverScript = path.join(dir, 'fake-server.cjs');
+    fs.writeFileSync(serverScript, FAKE_SERVER_SOURCE);
+    const before = [process.listenerCount('SIGINT'), process.listenerCount('SIGTERM')];
+    await runServedCheck(['/api/research/synthetic-row'], {
+      serverCommand: [process.execPath, serverScript],
+      write: () => {},
+    });
+    assert.deepEqual([process.listenerCount('SIGINT'), process.listenerCount('SIGTERM')], before);
+  });
+});
+
+const processIsAlive = (pid) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const waitFor = async (predicate, timeoutMs = 15_000) => {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return true;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return false;
+};
+
+test('interrupting a run during server startup stops the check server it started', async () => {
+  await withSyntheticDevelopmentProfile(async (dir) => {
+    const pidFile = path.join(dir, 'server.pid');
+    const serverScript = path.join(dir, 'never-listening-server.cjs');
+    fs.writeFileSync(
+      serverScript,
+      `require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid));\nsetInterval(() => {}, 1000);\n`,
+    );
+    const runnerScript = path.join(dir, 'runner.mjs');
+    fs.writeFileSync(
+      runnerScript,
+      [
+        `import { PROFILES } from ${JSON.stringify(new URL('./run-data-profile.mjs', import.meta.url).href)};`,
+        `import { runServedCheck } from ${JSON.stringify(new URL('./served-check.mjs', import.meta.url).href)};`,
+        `PROFILES.development.file = ${JSON.stringify(path.join(dir, '.env'))};`,
+        `await runServedCheck(['/api/research/synthetic-row'], { serverCommand: [${JSON.stringify(process.execPath)}, ${JSON.stringify(serverScript)}] });`,
+        '',
+      ].join('\n'),
+    );
+    const { spawn } = await import('node:child_process');
+    const runner = spawn(process.execPath, [runnerScript], { stdio: 'ignore' });
+    const exited = new Promise((resolve) => runner.once('exit', (code) => resolve(code)));
+    try {
+      assert.ok(await waitFor(() => fs.existsSync(pidFile) && fs.readFileSync(pidFile, 'utf8')));
+      const serverPid = Number(fs.readFileSync(pidFile, 'utf8'));
+      assert.ok(processIsAlive(serverPid));
+      runner.kill('SIGINT');
+      assert.equal(await exited, 130);
+      assert.ok(await waitFor(() => !processIsAlive(serverPid)));
+    } finally {
+      if (runner.exitCode === null) runner.kill('SIGKILL');
+      const serverPid = fs.existsSync(pidFile) ? Number(fs.readFileSync(pidFile, 'utf8')) : 0;
+      if (serverPid && processIsAlive(serverPid)) process.kill(serverPid, 'SIGKILL');
+    }
   });
 });

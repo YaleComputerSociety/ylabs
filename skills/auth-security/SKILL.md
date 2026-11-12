@@ -136,10 +136,9 @@ A served check, meaning "what does a student see on this route", is read-only, s
 1. It starts its own short-lived API on a free port with `LOCAL_AUTH_BYPASS=false`, `CORPUS_SNAPSHOT_DISABLED=true`, no gate-refresh interval and no scraper write flag, set for that one process only, so your dev server and every `.env` file keep the bypass.
 It takes the rest of its env from the same data profile as `yarn dev:server` (`profileChildEnvironment` in `scripts/run-data-profile.mjs`); a bare `yarn dev:server` cannot be the check server beside your own, because `server/.env` wins for `PORT`.
 2. Before any served read it requires a cookieless `GET /api/check` to answer `200 {"auth":false}`, and fails closed otherwise, reading nothing.
-3. It reads each path with no cookie, prints one JSON line per path, and stops the process group it started.
+3. It reads each path with no cookie, prints one JSON line per path, and stops the process group it started, including when the run is interrupted with Ctrl-C or `SIGTERM`.
 
 `--api <loopback origin>` reads an API you already run instead, under the same fail-closed `/api/check` guard, so it refuses a dev server that has the bypass on; that first `/api/check` is still a bypass login on such a server, which is why the default starts its own.
-`--profile local` targets the local database instead of Development.
 `scripts/served-check.test.mjs` pins the forced-off bypass and own port over a synthetic `server/.env` that turns it on, the refusal before any served path is read, and a real spawned check server seeing `LOCAL_AUTH_BYPASS=false`.
 The manual equivalent is `LOCAL_AUTH_BYPASS=false yarn dev:server` and the same `/api/check` precondition before reading.
 A cookieless request with the bypass off resolves no user, so the auth path writes no account, no admin grant and no analytics event, and the route serves the anonymous student view, which withholds every row outside `student_ready`.
