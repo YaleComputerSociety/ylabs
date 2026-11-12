@@ -28,6 +28,7 @@ export type ScraperCliPreflight =
       confirmMaterialize: boolean;
       onlyFields: string[];
       skipEntityTypes: ObservedEntityType[];
+      skipCenterRosterRetirement: boolean;
       guard: ScraperCommandGuardResult;
     }
   | {
@@ -383,6 +384,7 @@ export function buildScraperCliPreflight(
       confirmMaterialize,
       onlyFields,
       skipEntityTypes,
+      skipCenterRosterRetirement: !!flags['skip-center-roster-retirement'],
       guard,
     };
   }

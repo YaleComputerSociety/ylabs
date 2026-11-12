@@ -668,6 +668,11 @@ interface MaterializeOptions {
    */
   skipEntityTypes?: readonly string[];
   /**
+   * Plan center roster retirement without applying it, for every center roster lane, so a run
+   * whose roster read is known to miss listed members can still project its listings (#5890).
+   */
+  skipCenterRosterRetirement?: boolean;
+  /**
    * Ignore the named locks, each only if it is revisitable on this row, so the
    * projection reports what the engine would derive for them today. Off everywhere
    * but the release operation, which reads `plannedSet` and leaves every lock the
@@ -15107,10 +15112,12 @@ async function materializeFromRunUnderRemovalGuard(
     );
   }
   const rosterMembersArchived = await reconcileOfficialRosterSnapshotsFromRun(scrapeRunId, options);
+  const centerRosterRetirementDryRun =
+    options.dryRun === true || options.skipCenterRosterRetirement === true;
   const centerRosterRetirement = await reconcileCenterRosterRetirementsFromRun(
     scrapeRunId,
     centerRosterRetirementDeps(options),
-    { dryRun: options.dryRun },
+    { dryRun: centerRosterRetirementDryRun },
   );
   if (centerRosterRetirement.outcome !== 'no-center-roster-read') {
     logCenterRosterRetirement(centerRosterRetirement);
@@ -15118,7 +15125,7 @@ async function materializeFromRunUnderRemovalGuard(
   const centerAffiliationRetirement = await reconcileCenterRosterRetirementsFromRun(
     scrapeRunId,
     centerRosterRetirementDeps(options, CENTER_AFFILIATION_ROSTER_LANE),
-    { dryRun: options.dryRun, lane: CENTER_AFFILIATION_ROSTER_LANE },
+    { dryRun: centerRosterRetirementDryRun, lane: CENTER_AFFILIATION_ROSTER_LANE },
   );
   if (centerAffiliationRetirement.outcome !== 'no-center-roster-read') {
     logCenterRosterRetirement(centerAffiliationRetirement, CENTER_AFFILIATION_ROSTER_LANE);
@@ -15126,7 +15133,7 @@ async function materializeFromRunUnderRemovalGuard(
   const centerAffiliationCodeRetirement = await reconcileCenterRosterRetirementsFromRun(
     scrapeRunId,
     centerRosterRetirementDeps(options, CENTER_AFFILIATION_CODE_ROSTER_LANE),
-    { dryRun: options.dryRun, lane: CENTER_AFFILIATION_CODE_ROSTER_LANE },
+    { dryRun: centerRosterRetirementDryRun, lane: CENTER_AFFILIATION_CODE_ROSTER_LANE },
   );
   if (centerAffiliationCodeRetirement.outcome !== 'no-center-roster-read') {
     logCenterRosterRetirement(centerAffiliationCodeRetirement, CENTER_AFFILIATION_CODE_ROSTER_LANE);

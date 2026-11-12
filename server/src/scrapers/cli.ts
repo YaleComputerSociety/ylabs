@@ -243,7 +243,7 @@ ylabs scraper CLI
 
   list                                       List registered scrapers
   run --source <name> [--apply] [flags]      Run a scraper (a dry run without --apply)
-  materialize --run <runId> [--apply --confirm-materialize] [--output <path>] [--only-fields <paths>] [--skip-entity-types <types>]
+  materialize --run <runId> [--apply --confirm-materialize] [--output <path>] [--only-fields <paths>] [--skip-entity-types <types>] [--skip-center-roster-retirement]
                                              Materialize observations from a previous run
   report --run <runId> [--output <path>]     Print or save a QA report for a ScrapeRun
   prune-observations [flags]                 Prune old unreferenced superseded Observation rows
@@ -281,6 +281,8 @@ Materialize flags:
   --output <path>      Save the materialize result, visibility gate, and run report JSON
   --skip-entity-types <types>
                        Comma-separated observed entity types the run materialize leaves untouched
+  --skip-center-roster-retirement
+                       Plan and report center roster retirement without applying it
   --only-fields <paths>
                        Write only these researcher paths on the run's user rows:
                        displayName, profile.title, profile.primaryDepartment,
@@ -488,14 +490,25 @@ Concurrency:
         ScraperCliPreflight,
         { command: 'materialize' }
       >;
-      const { runId, confirmMaterialize, onlyFields, skipEntityTypes, guard } =
-        materializePreflight;
+      const {
+        runId,
+        confirmMaterialize,
+        onlyFields,
+        skipEntityTypes,
+        skipCenterRosterRetirement,
+        guard,
+      } = materializePreflight;
       const fieldScoped = onlyFields.length > 0;
       const visibilityGateCollection = visibilityGateCollectionAfterSkipping(skipEntityTypes);
       console.log(`Materializing observations from run ${runId}...`);
       if (fieldScoped) {
         console.log(
           `Field-scoped user materialize: ${onlyFields.join(', ')}. Only user rows are materialized, no researcher is minted, and no run reconciliation or visibility gate runs.`,
+        );
+      }
+      if (skipCenterRosterRetirement) {
+        console.log(
+          'Center roster retirement is planned and reported but not applied (--skip-center-roster-retirement).',
         );
       }
       if (skipEntityTypes.length > 0) {
@@ -510,6 +523,7 @@ Concurrency:
           dryRun: guard.options.dryRun,
           ...(fieldScoped ? { userWriteOnlyFields: onlyFields } : {}),
           ...(skipEntityTypes.length > 0 ? { skipEntityTypes } : {}),
+          ...(skipCenterRosterRetirement ? { skipCenterRosterRetirement } : {}),
         });
         console.log(JSON.stringify(withoutUserFieldScopeRows(result), null, 2));
         const report = await getScrapeRunReport(runId);
@@ -550,6 +564,7 @@ Concurrency:
                 confirmMaterialize,
                 ...(fieldScoped ? { onlyFields } : {}),
                 ...(skipEntityTypes.length > 0 ? { skipEntityTypes } : {}),
+                ...(skipCenterRosterRetirement ? { skipCenterRosterRetirement } : {}),
                 output: typeof flags.output === 'string' ? flags.output : undefined,
               },
             },
