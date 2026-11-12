@@ -306,7 +306,8 @@ describe('a holder whose progress cannot be judged', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const unmonitored = unmonitoredClient.db('Development');
     await holdApplyLease(unmonitored);
-    await holdApplyLease(unmonitored);
+    armDevHostLeases(descriptor(unmonitored), 'scrape run', LEASE_ON);
+    await ensureDevHostLease('next.example.edu');
 
     await tickMinutes(30);
 
