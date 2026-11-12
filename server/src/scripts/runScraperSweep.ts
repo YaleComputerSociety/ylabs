@@ -1659,7 +1659,8 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     // Relational like the stage above: whether a roster website is a group site depends on
     // which other people the lane gave it to. Ordered before `refusal-lane-attribution` so
     // the refusals it records are attributed the same sweep, and it plans nothing once the
-    // lane's shared claims are retired (#3615).
+    // lane's shared claims are retired (#3615). It re-derives its own refusals each run and
+    // withdraws one the evidence no longer supports, never an operator's (#5838).
     name: 'shared-roster-website-retire',
     command: 'observations:retire-shared-roster-websites',
     artifactName: 'development-shared-roster-website-retire.json',
