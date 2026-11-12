@@ -211,3 +211,7 @@ export function withoutSchoolMenuBlocks(text: string): string {
   closeRun();
   return kept.join('\n');
 }
+
+export function withoutResearchPageChromeMenusAndListings(text: string): string {
+  return withoutPublicationListings(withoutSchoolMenuBlocks(withoutResearchPageChrome(text)));
+}
