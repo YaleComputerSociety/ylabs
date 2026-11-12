@@ -31,7 +31,6 @@ export interface DevLockRow {
   acquiredAt?: string;
   heartbeatAgeSeconds?: number;
   progressAt?: string;
-  progressCount?: number;
   minutesWithoutProgress?: number;
   stalled?: boolean;
 }
@@ -67,12 +66,11 @@ function progressFields(
   record: DevWriteLeaseRecord,
   now: Date,
   ownerProgress: Map<string, number>,
-): Pick<DevLockRow, 'progressAt' | 'progressCount' | 'minutesWithoutProgress' | 'stalled'> {
+): Pick<DevLockRow, 'progressAt' | 'minutesWithoutProgress' | 'stalled'> {
   const latest = record.ownerId ? ownerProgress.get(record.ownerId) : undefined;
-  const recorded = {
-    ...(record.progressAt ? { progressAt: new Date(record.progressAt).toISOString() } : {}),
-    ...(typeof record.progressCount === 'number' ? { progressCount: record.progressCount } : {}),
-  };
+  const recorded = record.progressAt
+    ? { progressAt: new Date(record.progressAt).toISOString() }
+    : {};
   if (latest === undefined || devLockState(record, now) !== 'live') return recorded;
   const withoutProgressMs = Math.max(0, now.getTime() - latest);
   return {

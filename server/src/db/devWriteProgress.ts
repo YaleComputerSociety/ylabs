@@ -9,7 +9,9 @@ import type {
  * Counts the work a Development write-lease holder actually completes (#5880), so a holder whose
  * heartbeat keeps its lease live while its work is hung can be told apart from a busy one.
  *
- * Progress is a successful database command or a settled fetch. Liveness traffic is not progress:
+ * Progress is a settled database command or a settled fetch, and a holder with a counted command
+ * in flight is progressing until that command ends, because a script connection has no socket
+ * timeout and one index build can outlast any no-progress window. Liveness traffic is not progress:
  * commands on the lease collection, writes that only move heartbeat fields, and driver keep-alive
  * and session housekeeping commands would advance the counter of a process that does nothing else.
  */
@@ -30,10 +32,9 @@ const HEARTBEAT_FIELDS = new Set([
   'heartbeatAt',
   'leaseExpiresAt',
   'progressAt',
-  'progressCount',
   'updatedAt',
 ]);
-const HEARTBEAT_OPERATORS = new Set(['$set', '$max', '$inc']);
+const HEARTBEAT_OPERATORS = new Set(['$set', '$max']);
 
 function commandCollection(command: Document, commandName: string): string | undefined {
   const target = command[commandName];
@@ -68,21 +69,15 @@ export function countsAsDevWriteProgress(commandName: string, command: Document)
   return true;
 }
 
-export interface DevWriteProgressSnapshot {
-  count: number;
-  lastAt?: Date;
-}
-
 let clock: () => Date = () => new Date();
-let count = 0;
 let lastAt: Date | undefined;
+let commandsInFlight = 0;
 
 export function setDevWriteProgressClock(now: () => Date) {
   clock = now;
 }
 
 export function recordDevWriteProgress(): void {
-  count += 1;
   lastAt = clock();
 }
 
@@ -91,8 +86,8 @@ export function startDevWriteProgressClock(at: Date): void {
   lastAt ??= at;
 }
 
-export function devWriteProgress(): DevWriteProgressSnapshot {
-  return { count, ...(lastAt ? { lastAt } : {}) };
+export function lastDevWriteProgressAt(): Date | undefined {
+  return commandsInFlight > 0 ? clock() : lastAt;
 }
 
 interface CommandMonitoringClient {
@@ -114,7 +109,7 @@ const commandKey = (event: {
 }) => `${event.address}|${event.connectionId ?? ''}|${event.requestId}`;
 
 /**
- * Counts every successful non-liveness command on a client. It returns whether the client emits
+ * Tracks every non-liveness command on a client from start to end. It returns whether the client emits
  * command events at all: one created without `monitorCommands` cannot show progress, so a holder
  * that writes through it must not be judged by a counter that never moves.
  */
@@ -125,20 +120,23 @@ export function watchMongoClientProgress(client: unknown): boolean {
   watchedClients.add(client);
   const counted = new Set<string>();
   const emitter = client as CommandMonitoringClient;
+  const settle = (event: CommandSucceededEvent | CommandFailedEvent) => {
+    if (!counted.delete(commandKey(event))) return;
+    commandsInFlight -= 1;
+    recordDevWriteProgress();
+  };
   emitter.on('commandStarted', (event) => {
-    if (countsAsDevWriteProgress(event.commandName, event.command)) counted.add(commandKey(event));
+    if (!countsAsDevWriteProgress(event.commandName, event.command)) return;
+    counted.add(commandKey(event));
+    commandsInFlight += 1;
   });
-  emitter.on('commandSucceeded', (event) => {
-    if (counted.delete(commandKey(event))) recordDevWriteProgress();
-  });
-  emitter.on('commandFailed', (event) => {
-    counted.delete(commandKey(event));
-  });
+  emitter.on('commandSucceeded', settle);
+  emitter.on('commandFailed', settle);
   return true;
 }
 
 export function resetDevWriteProgressForTests() {
   clock = () => new Date();
-  count = 0;
   lastAt = undefined;
+  commandsInFlight = 0;
 }

@@ -11,7 +11,7 @@ import {
   redactLaunchArgv,
 } from './devWriteLaunch';
 import {
-  devWriteProgress,
+  lastDevWriteProgressAt,
   resetDevWriteProgressForTests,
   setDevWriteProgressClock,
   startDevWriteProgressClock,
@@ -44,10 +44,7 @@ export const DEV_WRITE_LEASE_DEAD_OWNER_HEARTBEAT_AGE_MS = 2 * DEV_WRITE_LEASE_H
 export const DEV_HOST_LEASE_IDLE_RELEASE_MS = 10 * 60_000;
 /** `dev:locks` flags a live lease whose owner has completed no work for this long (#5880). */
 export const DEV_WRITE_LEASE_STALLED_MS = 15 * 60_000;
-/**
- * A holder that completes no work for this long stops before its next write (#5880). It must stay
- * above the 10-minute script socket timeout, so one legitimately slow operation can never trip it.
- */
+/** A holder that completes no work and has no command in flight for this long stops before its next write (#5880). */
 export const DEV_WRITE_LEASE_NO_PROGRESS_STOP_MS = 20 * 60_000;
 export const DEV_WRITE_LEASE_OWNER_ENV = 'DEV_WRITE_LEASE_OWNER';
 export const DEV_WRITE_LEASE_SWITCH_ENV = 'DEV_WRITE_LEASE';
@@ -133,7 +130,6 @@ export interface DevWriteLeaseRecord {
   heartbeatAt?: Date;
   leaseExpiresAt?: Date;
   progressAt?: Date;
-  progressCount?: number;
 }
 
 export class DevWriteLeaseHeldError extends Error {
@@ -256,7 +252,6 @@ export async function acquireDevWriteLease(
     heartbeatAt: at,
     leaseExpiresAt: new Date(at.getTime() + DEV_WRITE_LEASE_TTL_MS),
     progressAt: at,
-    progressCount: 0,
   };
   const takeoverable = current && !isLiveFor(current, at);
   const holderHeartbeatStale =
@@ -410,7 +405,6 @@ let mintedOwner: { db: Db; ownerId: string } | undefined;
 let heartbeatTimer: NodeJS.Timeout | undefined;
 let tickInFlight: Promise<void> | undefined;
 let stopped = false;
-const reportedProgressCounts = new Map<string, number>();
 let progressUnobservable = false;
 let heldForChildProcesses = false;
 
@@ -436,17 +430,12 @@ async function withinTimeout<T>(operation: Promise<T>, timeoutMs: number): Promi
 
 const boundedOptions = (timeoutMs: number) => ({ maxTimeMS: timeoutMs, timeoutMS: timeoutMs });
 
-interface ProgressReport {
-  progressAt: Date;
-  newProgress: number;
-}
-
 async function renewLeases(
   db: Db,
   ownerId: string,
   names: string[],
   at: Date,
-  { timeoutMs, progress }: { timeoutMs: number; progress?: ProgressReport },
+  { timeoutMs, progressAt }: { timeoutMs: number; progressAt?: Date },
 ): Promise<Set<string>> {
   const collection = devWriteLeaseCollection(db);
   const filter = { _id: { $in: names.map(leaseId) }, ownerId, locked: true };
@@ -460,12 +449,7 @@ async function renewLeases(
         },
         // $max because a parent and the children that joined its lease renew the same document,
         // and one process's older progress must not overwrite another's newer progress.
-        ...(progress
-          ? {
-              $max: { progressAt: progress.progressAt },
-              $inc: { progressCount: progress.newProgress },
-            }
-          : {}),
+        ...(progressAt ? { $max: { progressAt } } : {}),
       },
       boundedOptions(timeoutMs),
     ),
@@ -544,7 +528,7 @@ const progressStopArmed = () => !progressUnobservable && !heldForChildProcesses;
  */
 function stopIfNoProgress(): boolean {
   if (!progressStopArmed() || heldLeases.size === 0) return false;
-  const { lastAt } = devWriteProgress();
+  const lastAt = lastDevWriteProgressAt();
   if (!lastAt) return false;
   const withoutProgressMs = runtime.now().getTime() - lastAt.getTime();
   if (withoutProgressMs < DEV_WRITE_LEASE_NO_PROGRESS_STOP_MS) return false;
@@ -623,21 +607,15 @@ async function releaseIdleHostLeases(at: Date) {
 
 async function renewHeldLeases(at: Date) {
   const lost: string[] = [];
-  const { count, lastAt } = devWriteProgress();
+  const progressAt = lastDevWriteProgressAt();
   await Promise.all(
     groupByOwner([...heldLeases.values()]).map(async ({ db, ownerId, members }) => {
       const names = members.map(({ lease }) => lease.name);
       try {
         const renewed = await renewLeases(db, ownerId, names, at, {
           timeoutMs: runtime.heartbeatTimeoutMs,
-          progress: lastAt
-            ? {
-                progressAt: lastAt,
-                newProgress: count - (reportedProgressCounts.get(ownerId) ?? 0),
-              }
-            : undefined,
+          progressAt,
         });
-        reportedProgressCounts.set(ownerId, count);
         for (const state of members) {
           if (renewed.has(state.lease.name)) state.lastRenewedAt = at;
           else lost.push(state.lease.name);
@@ -861,7 +839,6 @@ export function resetDevWriteLeaseStateForTests() {
   mintedOwner = undefined;
   tickInFlight = undefined;
   stopped = false;
-  reportedProgressCounts.clear();
   progressUnobservable = false;
   heldForChildProcesses = false;
   resetDevWriteProgressForTests();
