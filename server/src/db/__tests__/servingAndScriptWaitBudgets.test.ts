@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   SCRIPT_MAX_POOL_SIZE,
   SCRIPT_SOCKET_TIMEOUT_MS,
+  WHOLE_COLLECTION_OPERATION_SOCKET_OPTIONS,
   initializeConnections,
   mongoOptions,
   scriptMongoConnectOptions,
@@ -52,6 +53,12 @@ describe('an operator entry point', () => {
     expect(SCRIPT_MAX_POOL_SIZE).toBeLessThanOrEqual(10);
   });
 
+  it('lets a whole-collection operation opt back into no socket timeout', () => {
+    expect(
+      scriptMongoConnectOptions(WHOLE_COLLECTION_OPERATION_SOCKET_OPTIONS).socketTimeoutMS,
+    ).toBe(0);
+  });
+
   it('still lets a caller ask for its own budget', () => {
     expect(scriptMongoConnectOptions({ serverSelectionTimeoutMS: 1000 })).toMatchObject({
       serverSelectionTimeoutMS: 1000,
@@ -89,6 +96,47 @@ describe('connecting and reconnecting', () => {
       maxPoolSize: SCRIPT_MAX_POOL_SIZE,
     });
     expect(reconnect).toEqual(initial);
+  });
+
+  const socketTimeoutAScriptConnectsWith = async (run: () => Promise<unknown>) => {
+    process.env.MONGODBURL = 'mongodb://127.0.0.1:1/budget-test';
+    const refused = new Error('connection refused by the test');
+    const connect = vi.spyOn(mongoose, 'connect').mockRejectedValue(refused);
+    vi.spyOn(mongoose, 'disconnect').mockResolvedValue(undefined);
+    vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    await expect(run()).rejects.toBe(refused);
+    expect(connect).toHaveBeenCalledTimes(1);
+    return connect.mock.calls[0][1]?.socketTimeoutMS;
+  };
+
+  it.each([
+    [
+      'the declared index build',
+      async () => (await import('../../scripts/buildMongoIndexes')).runBuildMongoIndexes([]),
+    ],
+    [
+      'the collection naming migration',
+      async () =>
+        (await import('../../scripts/migrateMongoNaming')).migrateMongoNaming({ apply: false }),
+    ],
+    [
+      'the dependent collection migration',
+      async () =>
+        (
+          await import('../../scripts/migrateResearchEntityCollections')
+        ).runResearchEntityCollectionMigration([]),
+    ],
+  ])('connects %s with no socket timeout', async (_name, run) => {
+    expect(await socketTimeoutAScriptConnectsWith(run)).toBe(0);
+  });
+
+  it('connects an ordinary script with the bounded socket timeout', async () => {
+    const { runLoginSignalTallyReport } = await import('../../scripts/loginSignalTallyReport');
+
+    expect(await socketTimeoutAScriptConnectsWith(() => runLoginSignalTallyReport([]))).toBe(
+      SCRIPT_SOCKET_TIMEOUT_MS,
+    );
   });
 
   it('keeps the serving process on the serving budget across a reconnect', async () => {

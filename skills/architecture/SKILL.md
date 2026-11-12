@@ -164,6 +164,7 @@ The timer stops come before the disconnect, and that order is load-bearing: the 
 The serving process and an operator script want opposite things from the driver, so `server/src/db/connections.ts` gives them different budgets.
 `mongoOptions` is the serving budget: 5 s to select a server, a 5 s Mongoose command buffer, and a 20 s socket ceiling.
 `scriptMongoConnectOptions` restores the long ones, 30 s selection and a 10-minute socket ceiling (`SCRIPT_SOCKET_TIMEOUT_MS`), because a sweep that starts during a replica-set election should wait for it rather than abort.
+The three scripts whose single operation is a whole-collection index build, rename or `$merge` (`buildMongoIndexes`, `migrateMongoNaming`, `migrateResearchEntityCollections`) opt back into no socket timeout with `WHOLE_COLLECTION_OPERATION_SOCKET_OPTIONS`; a test pins that list.
 The script socket ceiling is long but finite: with none, an operation on a socket the cluster dropped waited forever while the write lease kept renewing (#5880).
 Scripts also cap their pool at 10 connections (`SCRIPT_MAX_POOL_SIZE`), because Development, Beta and Production share one free-tier cluster with a connection cap and many script processes run at once; the serving budget keeps the driver's pool default.
 `initializeConnections()` connects with the script budget by default, because nearly every caller is an operator entry point, and `server/src/index.ts` is the one caller that passes `mongoOptions`.

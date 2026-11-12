@@ -383,6 +383,8 @@ It replaces the convention of announcing each write to the session that sequence
   It is read-only: a crashed holder's lease frees itself by expiry, or at once for a holder on the same machine.
 - A script connection waits at most 10 minutes on one socket, so an operation on a socket the cluster dropped fails instead of hanging while the lease keeps renewing (#5880).
   The script and serving budgets are owned by the request-path database waits section of `skills/architecture/SKILL.md`.
+  The three scripts whose single operation is a whole-collection index build, rename or `$merge` (`buildMongoIndexes`, `migrateMongoNaming`, `migrateResearchEntityCollections`) opt back into no socket timeout through `WHOLE_COLLECTION_OPERATION_SOCKET_OPTIONS`, and a test runs each of them and an ordinary script to pin which socket budget they connect with.
+  The copy, promotion, refresh and scoreboard scripts connect through their own `MongoClient` and are unaffected.
 - `DEV_WRITE_LEASE=off` switches the lease off; the test harness sets it for every suite.
 - `development:refresh-from-beta` keeps `scrape_job_locks`, which is now a preserved environment-local collection, because the refresh holds its own lease there.
 
