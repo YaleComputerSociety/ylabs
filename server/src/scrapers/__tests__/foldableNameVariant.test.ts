@@ -1,0 +1,27 @@
+import { describe, expect, it } from 'vitest';
+import { isFoldableNameVariant } from '../canonicalMembershipMaterializer';
+
+describe('isFoldableNameVariant (#5897)', () => {
+  it('reads a middle initial or middle name added or dropped as one person', () => {
+    expect(isFoldableNameVariant('Avery Synthetic', 'Avery Q. Synthetic')).toBe(true);
+    expect(isFoldableNameVariant('Avery Quinn Synthetic', 'Avery Q Synthetic')).toBe(true);
+  });
+
+  it('reads a hyphenated and an unhyphenated spelling as one person', () => {
+    expect(isFoldableNameVariant('Avery Synthetic-Fixture', 'Avery Synthetic Fixture')).toBe(true);
+  });
+
+  it('reads an equivalent given name as one person', () => {
+    expect(isFoldableNameVariant('Kate Synthetic', 'Katherine Synthetic')).toBe(true);
+  });
+
+  it('never reads two different given names under one surname as one person', () => {
+    expect(isFoldableNameVariant('Avery Synthetic', 'Blair Synthetic')).toBe(false);
+    expect(isFoldableNameVariant('Avery Q Synthetic', 'Avery R Synthetic')).toBe(false);
+    expect(isFoldableNameVariant('Avery Synthetic', 'Avery Fixture')).toBe(false);
+  });
+
+  it('leaves an exact match to the exact comparison', () => {
+    expect(isFoldableNameVariant('Avery Synthetic', 'avery synthetic')).toBe(false);
+  });
+});

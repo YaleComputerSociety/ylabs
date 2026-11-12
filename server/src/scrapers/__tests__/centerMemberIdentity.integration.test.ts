@@ -387,6 +387,27 @@ describe(
       expect(served.filter((name) => name === 'Devon Synthetic')).toHaveLength(1);
     });
 
+    it('mints no twin of an identified person listed under a middle initial or nickname (#5897)', async () => {
+      await accountHolder('Avery', { displayName: 'Avery Q Synthetic' });
+      await accountHolder('Katherine', { displayName: 'Katherine Synthetic' });
+
+      await runLane({}, [
+        member('Avery'),
+        { name: 'Kate Synthetic', role: 'core-faculty', profileUrl: centerProfileUrl('Kate') },
+      ]);
+
+      expect(await Researcher.countDocuments({ displayName: 'Avery Synthetic' })).toBe(0);
+      expect(await Researcher.countDocuments({ displayName: 'Kate Synthetic' })).toBe(0);
+    });
+
+    it('still mints a person who only shares an identified researcher surname (#5897)', async () => {
+      await accountHolder('Blair', { displayName: 'Blair Synthetic' });
+
+      await runLane({}, [member('Casey')]);
+
+      expect(await Researcher.countDocuments({ displayName: 'Casey Synthetic' })).toBe(1);
+    });
+
     it('does not join a namesake the evidence does not reach, nor a person it names under another name', async () => {
       const avery = await accountHolder('Avery');
       const averyEdge = await edgeOn(avery, 'CORE_FACULTY');
