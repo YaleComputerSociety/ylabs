@@ -23,7 +23,7 @@ const SECTION_PARENTS: ReadonlyArray<readonly [string, RegExp, string]> = [
     /^(?:Cardiology|General Medicine Other|Infectious Diseases|Pulmonary Other|Digestive Diseases Other|Nephrology Other)$/,
     'Internal Medicine',
   ],
-  ['MEDCCC', /^Medical Oncology$/, 'Internal Medicine'],
+  ['MEDCCC', /^(?:Medical Oncology|Hematology)$/, 'Internal Medicine'],
   ['MEDPED', /^(?:Neonatology|Infectious Disease)$/, 'Pediatrics'],
   [
     'MEDOBG',
@@ -41,7 +41,6 @@ const SECTION_PARENTS: ReadonlyArray<readonly [string, RegExp, string]> = [
 const UNSURE_UNITS: ReadonlySet<string> = new Set([
   'MEDCSC Developmental Disabilities',
   'MEDNEU Neurology Neuroscience',
-  'MEDCCC Hematology',
 ]);
 
 export type DirectoryExportDepartment =
