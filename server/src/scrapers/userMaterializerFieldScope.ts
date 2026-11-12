@@ -7,6 +7,13 @@ import {
 
 export const PROFILE_FIELD_WRITERS_PATH = 'profileFieldWriters';
 
+/**
+ * The ORCID entries of `profileLinks`, addressed apart from the rest of the array. The schema
+ * requires an ORCID link to match `identifiers.orcid`, so an ORCID scope writes both, and it
+ * must leave every other link as stored.
+ */
+export const ORCID_PROFILE_LINK_PATH = 'profileLinks.ORCID';
+
 export const USER_MATERIALIZER_SCOPE_FIELDS = [
   'displayName',
   'profile.title',
@@ -15,6 +22,7 @@ export const USER_MATERIALIZER_SCOPE_FIELDS = [
   'profile.websiteUrl',
   'identifiers.email',
   'identifiers.emailSupport',
+  'identifiers.orcid',
   'profileLinks',
   PROFILE_FIELD_WRITERS_PATH,
   ...[...RESEARCHER_WRITER_FIELDS, OWN_KEY_FALLBACK_TITLE_FIELD].map(
@@ -25,6 +33,7 @@ export const USER_MATERIALIZER_SCOPE_FIELDS = [
 export const USER_MATERIALIZER_FIELD_ALIASES: Readonly<Record<string, string>> = {
   email: 'identifiers.email',
   emailSupport: 'identifiers.emailSupport',
+  orcid: 'identifiers.orcid',
   title: 'profile.title',
   primaryDepartment: 'profile.primaryDepartment',
   imageUrl: 'profile.imageUrl',
@@ -39,6 +48,7 @@ export const USER_MATERIALIZER_FIELD_ALIASES: Readonly<Record<string, string>> =
  */
 export const USER_MATERIALIZER_DERIVED_FIELD_GROUPS: ReadonlyArray<readonly string[]> = [
   ['identifiers.email', 'identifiers.emailSupport'],
+  ['identifiers.orcid', ORCID_PROFILE_LINK_PATH],
 ];
 
 const WRITER_FIELD_BY_VALUE_PATH: Readonly<Record<string, ResearcherGatedField>> = {
@@ -155,9 +165,75 @@ export function changedResearcherPaths(
       }
       continue;
     }
+    if (key === 'profileLinks') {
+      changed.push(...changedProfileLinkPaths(left, right));
+      continue;
+    }
     if (!isDeepStrictEqual(comparable(left), comparable(right))) changed.push(key);
   }
   return changed.sort();
+}
+
+type ProfileLinkLike = { kind?: unknown };
+const isOrcidLink = (link: unknown): boolean => (link as ProfileLinkLike)?.kind === 'ORCID';
+const linkList = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
+
+function changedProfileLinkPaths(before: unknown, after: unknown): string[] {
+  const left = linkList(before);
+  const right = linkList(after);
+  const differs = (keep: (link: unknown) => boolean) =>
+    !isDeepStrictEqual(comparable(left.filter(keep)), comparable(right.filter(keep)));
+  return [
+    ...(differs((link) => !isOrcidLink(link)) ? ['profileLinks'] : []),
+    ...(differs(isOrcidLink) ? [ORCID_PROFILE_LINK_PATH] : []),
+  ];
+}
+
+function withPlannedOrcidLinks(storedLinks: unknown, plannedLinks: unknown): unknown[] {
+  const stored = linkList(storedLinks);
+  const planned = linkList(plannedLinks).filter(isOrcidLink);
+  const firstOrcid = stored.findIndex(isOrcidLink);
+  const others = stored.filter((link) => !isOrcidLink(link));
+  const at = firstOrcid < 0 ? others.length : firstOrcid;
+  return [...others.slice(0, at), ...planned, ...others.slice(at)];
+}
+
+/**
+ * The stored path and value of each write a scoped plan makes. `profileLinks.ORCID` is not a
+ * stored path: it writes the stored `profileLinks` with only its ORCID entries replaced by the
+ * planned ones, and a scope that also admits the whole `profileLinks` writes the planned array.
+ */
+export function scopedResearcherWrites(
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+  paths: readonly string[],
+): Array<{ path: string; value: unknown }> {
+  const kept = new Set(paths);
+  const writes: Array<{ path: string; value: unknown }> = [];
+  for (const path of [...kept].sort()) {
+    if (path !== ORCID_PROFILE_LINK_PATH) {
+      writes.push({ path, value: valueAtPath(after, path) });
+    } else if (!kept.has('profileLinks')) {
+      writes.push({
+        path: 'profileLinks',
+        value: withPlannedOrcidLinks(before.profileLinks, after.profileLinks),
+      });
+    }
+  }
+  return writes;
+}
+
+/**
+ * Mongoose 9 `modifiedPaths()` repeats a single nested subdocument's parent segment after a
+ * document-level set of a new nested subdocument (`identifiers.identifiers.emailSupport.*` for
+ * `identifiers.emailSupport`). The save delta writes the real path and no researcher path
+ * repeats its parent, so a dry-run report drops the echo rather than show a path no write makes.
+ */
+export function withoutRepeatedParentPaths(paths: readonly string[]): string[] {
+  return paths.filter((path) => {
+    const [first, second] = path.split('.');
+    return second === undefined || first !== second;
+  });
 }
 
 export function partitionPlannedPaths(
@@ -182,13 +258,13 @@ export function valueAtPath(document: Record<string, unknown>, path: string): un
 }
 
 export function scopedResearcherUpdate(
+  before: Record<string, unknown>,
   after: Record<string, unknown>,
   paths: readonly string[],
 ): { $set?: Record<string, unknown>; $unset?: Record<string, ''> } {
   const set: Record<string, unknown> = {};
   const unset: Record<string, ''> = {};
-  for (const path of paths) {
-    const value = valueAtPath(after, path);
+  for (const { path, value } of scopedResearcherWrites(before, after, paths)) {
     if (value === undefined || value === null) unset[path] = '';
     else set[path] = value;
   }

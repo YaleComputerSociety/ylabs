@@ -597,13 +597,16 @@ The browse-rank recompute and the search-index sync still run, because each is a
 It is accepted by `yarn --cwd server observations:rematerialize-user-keys` and by `yarn --cwd server scrape materialize --run <runId>`, which then also requires `--output`.
 Without the flag both commands behave exactly as before.
 
-The accepted researcher paths are `displayName`, `profile.title`, `profile.primaryDepartment`, `profile.imageUrl`, `profile.websiteUrl`, `identifiers.email`, `identifiers.emailSupport`, `profileLinks`, `profileFieldWriters` and `profileFieldWriters.<field>`.
-The aliases `email`, `emailSupport`, `title`, `primaryDepartment`, `imageUrl` and `websiteUrl` name the same paths, and any other name is refused with `Unsupported --only-fields field`.
+The accepted researcher paths are `displayName`, `profile.title`, `profile.primaryDepartment`, `profile.imageUrl`, `profile.websiteUrl`, `identifiers.email`, `identifiers.emailSupport`, `identifiers.orcid`, `profileLinks`, `profileFieldWriters` and `profileFieldWriters.<field>`.
+The aliases `email`, `emailSupport`, `orcid`, `title`, `primaryDepartment`, `imageUrl` and `websiteUrl` name the same paths, and any other name is refused with `Unsupported --only-fields field`.
 The scope is expanded before it is applied (`expandUserMaterializerScope` in `server/src/scrapers/userMaterializerFieldScope.ts`).
 A display value also writes its own writer record, so `displayName` brings `profileFieldWriters.displayName` and `profile.title` brings `profileFieldWriters.title`.
 `profileFieldWriters` alone re-records only the writer entries and leaves every display value as stored, even where the resolve would change it.
 `profile.title` is decided by the first-hand title rule (#5830) and written outside the writer precedence, so `--only-fields=profile.title` writes exactly the title that rule derives, together with any change to the own-key fallback writer record `profileFieldWriters.title`, and every other scope drops a planned title change and reports it.
 `identifiers.email` and `identifiers.emailSupport` are one closure in `USER_MATERIALIZER_DERIVED_FIELD_GROUPS`, because the support marker records the address it was computed for.
+`identifiers.orcid` is one closure with `profileLinks.ORCID`, the ORCID entries of `profileLinks`, because the schema refuses an ORCID link that does not match `identifiers.orcid` (#5711, #5991).
+`profileLinks.ORCID` is not a stored path: writing it replaces only the ORCID entries of the stored `profileLinks` and leaves every other link as stored, so `--only-fields=orcid` clears an implausible stored ORCID together with its link and nothing else.
+A change to the ORCID entries is reported as `profileLinks.ORCID` and a change to any other link as `profileLinks`, and a `profileLinks` scope admits both.
 
 The resolve runs unchanged, then the planned document is compared with the stored one path by path (`changedResearcherPaths`).
 A changed path inside the scope is reported under `plannedPaths` and written with one `$set`/`$unset` of exactly those paths, after the stored document with only those paths applied passes the schema validators.
@@ -1131,6 +1134,9 @@ Every row whose stored value is cleared goes back through `planStudentVisibility
 Two entry points. The sweep lane, `reconcileFieldRetractionsFromRun`, runs at the end of `materializeFromRun` after every entity has been projected, and is gated by `SCRAPER_FIELD_RETRACTION=true`; unlike the two older reconcilers, a dry run still plans and reports, because the drop-guard fraction has to be readable before a pass that deletes evidence is authorized.
 The operator lane, `yarn --cwd server observations:reconcile-field-retractions`, needs no fresh scrape: the evidence that a field stopped being asserted is already in the log.
 It is dry-run by default, and apply requires `--confirm-field-retraction` plus a planned count within `--max-apply` (default 200).
+A person whose `user` field it retires is re-derived through a user materialize scoped to that field (`userRederiveOnlyFields`): a retired `email` writes only `identifiers.email` and `identifiers.emailSupport`, and a retired `orcid` only `identifiers.orcid` and `profileLinks.ORCID`.
+A retired field with no user materializer scope refuses the whole run, dry run included, rather than re-derive unscoped.
+The report lists each planned re-derive under `plannedUserRederives` with the union in `plannedUserRederivePathSet`, and each applied one under `rederivedUsers` with the union of written paths in `rederivedUserPathSet`.
 Both entry points also run the page-scoped `user` `email` and `orcid` contract, `userFieldRetractionContracts` (#5711, #5991), for the sources that declare it; `skills/scrapers/SKILL.md` describes it.
 Retention bounds how far back witnesses reach - `observations:prune-dead` keeps the last 3 runs per source - and losing older witnesses only ever makes the lane more conservative.
 

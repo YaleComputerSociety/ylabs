@@ -6,6 +6,10 @@
  * to act. It exists separately from the sweep lane because the corpus-wide effect
  * of a first pass has to be readable (and refusable) before it is applied, and
  * because the sweep only ever reconciles the one source it just ran.
+ *
+ * A person whose user field it retires is re-derived through a user materialize scoped to that
+ * field (#5711, #5991), so a retired email rewrites only the email pair and a retired ORCID only
+ * the ORCID and its link; a field it cannot scope refuses the run before anything is written.
  */
 import dotenv from 'dotenv';
 import fs from 'fs';
@@ -19,10 +23,16 @@ import {
   fieldRetractionContracts,
   reconcileFieldRetractions,
   reconcileUserFieldRetractions,
+  retractedFieldsBySubject,
   userFieldRetractionContractFor,
   type FieldRetractionResult,
   type UserFieldRetractionResult,
+  type UserSubjectRederiver,
 } from '../scrapers/fieldRetraction';
+import {
+  canonicalUserMaterializerField,
+  expandUserMaterializerScope,
+} from '../scrapers/userMaterializerFieldScope';
 
 dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -99,6 +109,69 @@ export function totalPlannedRetractions(
   );
 }
 
+/**
+ * The `--only-fields` a re-derive after retracting `retractedFields` passes, so retiring an
+ * email rewrites only the email pair and retiring an ORCID only the ORCID and its link. Throws
+ * on a field with no user materializer scope: an unscoped re-derive would write every other
+ * planned path on the row, so a field this cannot scope is refused rather than widened.
+ */
+export function userRederiveOnlyFields(retractedFields: readonly string[]): string[] {
+  if (retractedFields.length === 0) throw new Error('A user re-derive needs a retracted field.');
+  return [...new Set(retractedFields)].sort().map((field) => {
+    const scoped = canonicalUserMaterializerField(field);
+    if (!scoped) {
+      throw new Error(
+        `Retracted user field ${JSON.stringify(field)} has no user materializer scope; refusing an unscoped re-derive.`,
+      );
+    }
+    return scoped;
+  });
+}
+
+export function plannedUserRederives(results: readonly UserFieldRetractionResult[]) {
+  return results.flatMap((result) =>
+    [...retractedFieldsBySubject(result.retractions)].map(([entityKey, retractedFields]) => {
+      const onlyFields = userRederiveOnlyFields(retractedFields);
+      return {
+        sourceName: result.sourceName,
+        entityKey,
+        retractedFields,
+        onlyFields,
+        plannedPaths: expandUserMaterializerScope(onlyFields),
+      };
+    }),
+  );
+}
+
+export interface ScopedUserRederiveRow {
+  entityKey: string;
+  onlyFields: string[];
+  fieldsWritten: number;
+  plannedPaths: string[];
+  droppedPaths: string[];
+}
+
+export function scopedUserRederiver(
+  materialize: (
+    entityKey: string,
+    onlyFields: readonly string[],
+  ) => Promise<{ fieldsWritten?: number; plannedPaths?: string[]; droppedPaths?: string[] }>,
+  rows: ScopedUserRederiveRow[],
+): UserSubjectRederiver {
+  return async ({ entityKey }, retractedFields) => {
+    const onlyFields = userRederiveOnlyFields(retractedFields);
+    const result = await materialize(entityKey, onlyFields);
+    rows.push({
+      entityKey,
+      onlyFields,
+      fieldsWritten: Number(result?.fieldsWritten ?? 0),
+      plannedPaths: result?.plannedPaths ?? [],
+      droppedPaths: result?.droppedPaths ?? [],
+    });
+    return result;
+  };
+}
+
 function userRetractionSources(sources: string[]): string[] {
   return sources.filter((sourceName) => userFieldRetractionContractFor(sourceName));
 }
@@ -121,6 +194,8 @@ async function main() {
     plannedUser.push(await reconcileUserFieldRetractions({ sourceName, dryRun: true }));
   }
 
+  const userRederives = plannedUserRederives(plannedUser);
+
   if (args.apply) {
     if (!args.confirm) {
       throw new Error('--confirm-field-retraction is required when --apply is set.');
@@ -135,6 +210,12 @@ async function main() {
 
   const applied: FieldRetractionResult[] = [];
   const appliedUser: UserFieldRetractionResult[] = [];
+  const rederivedUserRows: ScopedUserRederiveRow[] = [];
+  const rederive = scopedUserRederiver(
+    (entityKey, onlyFields) =>
+      materializeEntity('user', { entityKey }, { dryRun: false, userWriteOnlyFields: onlyFields }),
+    rederivedUserRows,
+  );
   if (args.apply) {
     for (const sourceName of args.sources) {
       applied.push(await reconcileFieldRetractions({ sourceName, dryRun: false }));
@@ -144,7 +225,7 @@ async function main() {
         await reconcileUserFieldRetractions({
           sourceName,
           dryRun: false,
-          rederive: (identifier) => materializeEntity('user', identifier, { dryRun: false }),
+          rederive,
         }),
       );
     }
@@ -181,6 +262,10 @@ async function main() {
       frozenFields: result.frozenFields,
       plannedRetractions: result.retractions.length,
     })),
+    plannedUserRederives: userRederives,
+    plannedUserRederivePathSet: [
+      ...new Set(userRederives.flatMap((row) => row.plannedPaths)),
+    ].sort(),
     appliedUser: appliedUser.map((result) => ({
       sourceName: result.sourceName,
       outcome: result.outcome,
@@ -190,6 +275,8 @@ async function main() {
       rederivedSubjects: result.rederivedSubjects,
       rederiveErrors: result.rederiveErrors,
     })),
+    rederivedUsers: rederivedUserRows,
+    rederivedUserPathSet: [...new Set(rederivedUserRows.flatMap((row) => row.plannedPaths))].sort(),
   };
 
   if (args.output) {
