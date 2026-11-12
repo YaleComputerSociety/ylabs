@@ -1299,7 +1299,7 @@ describe('researchEntitySearchIndexService', () => {
         fetchMemberNames: async () => new Map(),
         fetchServedLeads: async () => new Map(),
       }),
-    ).rejects.toThrow(/updateSettings task 1 cannot be confirmed/);
+    ).rejects.toThrow(/updateEmbedders task 2 cannot be confirmed/);
 
     if (prev !== undefined) process.env.OPENAI_API_KEY = prev;
     else delete process.env.OPENAI_API_KEY;
@@ -1420,7 +1420,7 @@ describe('researchEntitySearchIndexService', () => {
 
     expect(timeouts).toHaveLength(2);
     for (const timeout of timeouts) expect(Number.isFinite(timeout)).toBe(true);
-    expect(timeouts[1]).toBe(MEILI_REBUILD_DOCUMENT_TASK_WAIT_TIMEOUT_MS);
+    expect(timeouts[0]).toBe(MEILI_REBUILD_DOCUMENT_TASK_WAIT_TIMEOUT_MS);
   });
 
   it('rejects unsafe rebuild page sizes before configuring the index', async () => {
