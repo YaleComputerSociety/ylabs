@@ -278,3 +278,60 @@ describe('every prompt that writes a card or a body carries the shared rules (#4
     }
   });
 });
+
+describe('stripping a sentence-opening method clause never leaves a fragment (#5537 audit)', () => {
+  const EVIDENCE = [
+    'The group studies coastal flooding and how towns recover after storms, working with harbour authorities, insurers and planning boards.',
+  ];
+
+  it('ends an opening clause at its subject instead of taking the main clause with it', () => {
+    const body =
+      'Studies coastal flooding and how towns recover after storms. Using surveys and agent-based models, the work spans harbour authorities, insurers, and planning boards.';
+    const outcome = withoutUnsupportedMethodClauses(body, EVIDENCE);
+    expect(outcome.text).toBe(
+      'Studies coastal flooding and how towns recover after storms. The work spans harbour authorities, insurers, and planning boards.',
+    );
+  });
+
+  it('drops a sentence left opening on "to" after its clause and subject went', () => {
+    const body =
+      'Studies coastal flooding and how towns recover after storms. Through partnerships with coastal towns, the group works to develop and evaluate recovery plans for harbours.';
+    const outcome = withoutUnsupportedMethodClauses(body, EVIDENCE);
+    expect(outcome.text).not.toMatch(/\.\s+[a-z]/);
+    expect(outcome.text?.startsWith('Studies coastal flooding')).toBe(true);
+  });
+
+  it('keeps a sentence whose mid-sentence clause strips cleanly', () => {
+    const body =
+      'Studies how towns recover after storms using agent-based models. Works with harbour authorities, insurers and planning boards.';
+    const outcome = withoutUnsupportedMethodClauses(body, EVIDENCE);
+    expect(outcome.text).toBe(
+      'Studies how towns recover after storms. Works with harbour authorities, insurers and planning boards.',
+    );
+  });
+
+  it('runs a stripped clause past a single-letter abbreviation instead of ending inside it', () => {
+    const body =
+      'Studies coastal flooding through archival records left by U.S. harbour boards in the twentieth century. The group models storm recovery, using the nematode C. elegans as a stress model for recovery biology.';
+    const outcome = withoutUnsupportedMethodClauses(body, EVIDENCE);
+    expect(outcome.text).not.toMatch(/(?<!\b[A-Za-z])\.\s+[a-z]/);
+    expect(outcome.text).toContain('U.S. harbour boards');
+    expect(outcome.text).not.toMatch(/(?<!C\. )elegans/);
+  });
+
+  it('keeps the main clause after an opening method clause that ends at its subject', () => {
+    const body =
+      'Studies coastal flooding and how towns recover after storms. Using drone imaging of tidal marshes, it maps where harbour defences fail.';
+    const outcome = withoutUnsupportedMethodClauses(body, EVIDENCE);
+    expect(outcome.text).toBe(
+      'Studies coastal flooding and how towns recover after storms. It maps where harbour defences fail.',
+    );
+  });
+
+  it('drops a sentence the strip leaves without a subject rather than capitalizing a fragment', () => {
+    const body =
+      'Studies coastal flooding and how towns recover after storms. Using surveys of harbour boards, insurers and planning boards to map where defences fail.';
+    const outcome = withoutUnsupportedMethodClauses(body, EVIDENCE);
+    expect(outcome.text).toBe('Studies coastal flooding and how towns recover after storms.');
+  });
+});

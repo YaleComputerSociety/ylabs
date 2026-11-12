@@ -309,12 +309,15 @@ function textHeadBefore(text: string): string | undefined {
  * Where a method clause stops. Beyond punctuation, an infinitive ("to link ..."), a
  * purpose ("for ..."), a second finite verb ("and examines ...") or a dash starts what
  * the method is used for, which is the claim the clause modifies rather than the method.
+ * A comma before a subject (", it studies", ", the lab builds") closes an opening clause.
+ * A period after a single letter is an initial or an abbreviation ("U.S.", "C. elegans"),
+ * not the end of the clause.
  * An en dash joining two words ("text\u2013image") is a compound, and an "-ous" adjective or a
  * plural noun before a preposition ("and heterogeneous catalysis", "and markups to")
  * is a further list item rather than a second verb, so neither ends the clause.
  */
 const CLAUSE_END =
-  /[;:!?()\u2014]|(?<!\w)\u2013|\u2013(?!\w)|\.(?=\s|$)|,\s*(?:and\s+)?(?:which|while|to|as|where|that|with|including|such\s+as)\b|,\s*(?:and\s+)?[a-z]+ing\b|\s+(?:to|for|in\s+order\s+to)\s+|\s+and\s+(?![a-z]+(?:ous|ss|is|us|ics)\b)[a-z]+(?:es|s)\s+(?!(?:and|or|to|for|of|in|on|at|with|from|by)\b)[a-z]/i;
+  /[;:!?()\u2014]|(?<!\w)\u2013|\u2013(?!\w)|(?<!\b[A-Za-z])\.(?=\s|$)|,\s*(?:and\s+)?(?:which|while|to|as|where|that|with|including|such\s+as)\b|,\s*(?:and\s+)?[a-z]+ing\b|,\s*(?=(?:it|they|he|she|we|the\s+(?:lab|group|work|team|project|research))\s)|\s+(?:to|for|in\s+order\s+to)\s+|\s+and\s+(?![a-z]+(?:ous|ss|is|us|ics)\b)[a-z]+(?:es|s)\s+(?!(?:and|or|to|for|of|in|on|at|with|from|by)\b)[a-z]/i;
 
 /**
  * "through" also reads a span of time or development ("from infancy through early
@@ -366,6 +369,22 @@ function withItsElaboration(sentence: string, bodyEnd: number): number {
   return elaborationEnd === -1 ? sentence.length : bodyEnd + elaborationEnd;
 }
 
+/**
+ * A clause that opens its sentence ("Using X, the work spans A, B and C") has no reliable
+ * end, so stripping it can take the main clause with it and leave a fragment such as
+ * "and C." or "to develop ...". A stripped sentence that no longer opens as one is dropped
+ * whole rather than served as a fragment.
+ */
+const OPENS_ON_SUBJECT =
+  /^,\s*(?:it|they|he|she|we|the\s+(?:lab|group|work|team|project|research))\s/i;
+
+const withOpeningCapital = (text: string): string =>
+  text.replace(/^[a-z]/, (letter) => letter.toUpperCase());
+
+function opensAsSentence(sentence: string): boolean {
+  return /^[\s"'“(]*[A-Z0-9]/.test(sentence);
+}
+
 export interface MethodClauseOutcome {
   text: string | null;
   stripped: number;
@@ -415,9 +434,13 @@ export function withoutUnsupportedMethodClauses(
       }
     }
     for (const [start, end] of removals.reverse()) {
-      result = `${result.slice(0, start)}${result.slice(end)}`;
+      result =
+        start === 0 && OPENS_ON_SUBJECT.test(result.slice(end))
+          ? withOpeningCapital(result.slice(end).replace(/^[\s,]+/, ''))
+          : `${result.slice(0, start)}${result.slice(end)}`;
       stripped += 1;
     }
+    if (removals.length > 0 && !opensAsSentence(result)) return '';
     return withoutDanglingFragment(result)
       .replace(/(?:[\s,]+(?:while|and|or|by|to|for|with|of|in|from))+\s*(?=[.;:!?)]|$)/gi, '')
       .replace(/\s*,\s*(?=[.;:!?)]|$)/g, '')
