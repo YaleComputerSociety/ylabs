@@ -51,6 +51,8 @@ import {
   collectRematerializeEntityReports,
   observationValueIsMaterializable,
   parseRematerializeResearchEntitiesArgs,
+  isLeadEdgesScope,
+  summarizeLeadEdgeChanges,
   rematerializeComparedFields,
   rematerializeEntityReportFromChanges,
   rematerializeFailureMessage,
@@ -233,6 +235,42 @@ async function processAccessSignalsSlug(
   return {
     ...report,
     accessSignalChanges: result.accessSignalChanges,
+    ...(result.skipped ? { skipped: result.skipped } : {}),
+  };
+}
+
+async function processLeadEdgesSlug(
+  slug: string,
+  apply: boolean,
+  includeArchived: boolean,
+): Promise<RematerializeEntityReport> {
+  const before = await loadComparedFields(slug, ['_id', 'slug', 'studentVisibilityTier']);
+  if (!before) return { slug, found: false, changes: [] };
+  const redirectCanonical = await resolveResearchEntityCanonicalIdentity({
+    slug,
+    entityId: before._id ? String(before._id) : undefined,
+  });
+  const skipReason = rematerializeSkipReasonForEntity(
+    before,
+    includeArchived,
+    redirectCanonical?._id ? String(redirectCanonical._id) : undefined,
+  );
+  const report: RematerializeEntityReport = {
+    slug,
+    found: true,
+    entityId: before._id ? String(before._id) : undefined,
+    studentVisibilityTierBefore: before.studentVisibilityTier,
+    changes: [],
+  };
+  if (skipReason) return { ...report, skipped: skipReason };
+  const result = await materializeEntity(
+    'researchEntity',
+    { entityKey: slug },
+    { dryRun: !apply, leadEdgesOnly: true },
+  );
+  return {
+    ...report,
+    leadEdgeResolution: result.leadEdgeResolution,
     ...(result.skipped ? { skipped: result.skipped } : {}),
   };
 }
@@ -443,17 +481,19 @@ async function main() {
   const entities = await collectRematerializeEntityReports(slugs, (slug) =>
     args.accessSignals
       ? processAccessSignalsSlug(slug, args.apply, args.includeArchived)
-      : rematerializeSlug(
-          slug,
-          args.apply,
-          args.onlyFields,
-          args.includeArchived,
-          args.unbackedProvenance,
-          args.foreignContact,
-          args.resynthesizeCutCards,
-          args.cardModel,
-          args.resynthesizeWeakCards,
-        ),
+      : isLeadEdgesScope(args.onlyFields)
+        ? processLeadEdgesSlug(slug, args.apply, args.includeArchived)
+        : rematerializeSlug(
+            slug,
+            args.apply,
+            args.onlyFields,
+            args.includeArchived,
+            args.unbackedProvenance,
+            args.foreignContact,
+            args.resynthesizeCutCards,
+            args.cardModel,
+            args.resynthesizeWeakCards,
+          ),
   );
   const failed = entities.filter((entity) => entity.error);
 
@@ -491,6 +531,9 @@ async function main() {
     accessSignalsMode: args.accessSignals,
     discoveredAccessSignalCount: discoveredAccessSignalSlugs?.length,
     accessSignalChanges: args.accessSignals ? summarizeAccessSignalChanges(entities) : undefined,
+    leadEdgeChanges: isLeadEdgesScope(args.onlyFields)
+      ? summarizeLeadEdgeChanges(entities)
+      : undefined,
     retiredProvenanceEntries: provenanceReconciliation?.retired,
     relinkedProvenanceEntries: provenanceReconciliation?.relinked,
     onlyFields: args.onlyFields,

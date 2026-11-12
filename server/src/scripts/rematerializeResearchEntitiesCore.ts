@@ -11,6 +11,7 @@ import {
 } from '../scrapers/entityMaterializer';
 import { fieldProvenanceEntryIsUnbacked } from '../scrapers/neverBackedFieldProvenance';
 import type { AccessSignalChangePlan } from '../scrapers/accessMaterializer';
+import type { LeadEdgeResolution } from '../scrapers/entityMaterializer';
 
 export interface RematerializeResearchEntitiesArgs {
   slugs: string[];
@@ -117,6 +118,12 @@ function parseSlugList(value: string | undefined): string[] {
   return Array.from(new Set(slugs));
 }
 
+export const LEAD_EDGES_SCOPE = 'leadEdges';
+
+export function isLeadEdgesScope(onlyFields: readonly string[]): boolean {
+  return onlyFields.includes(LEAD_EDGES_SCOPE);
+}
+
 function parseOnlyFieldsList(value: string | undefined): string[] {
   if (!value) throw new Error('--only-fields requires a comma-separated list of fields');
   const fields = value
@@ -125,6 +132,7 @@ function parseOnlyFieldsList(value: string | undefined): string[] {
     .filter(Boolean);
   if (fields.length === 0) throw new Error('--only-fields requires at least one field');
   for (const field of fields) {
+    if (field === LEAD_EDGES_SCOPE) continue;
     if (!(REMATERIALIZE_TRACKED_FIELDS as readonly string[]).includes(field)) {
       throw new Error(`Unsupported --only-fields field: ${field}`);
     }
@@ -274,6 +282,21 @@ export function parseRematerializeResearchEntitiesArgs(
   }
   if (args.foreignContact && (args.unbackedProvenance || args.reclaimStrandedField)) {
     throw new Error('--foreign-contact writes contact fields only, so it runs on its own');
+  }
+  if (
+    isLeadEdgesScope(args.onlyFields) &&
+    (args.onlyFields.length > 1 ||
+      args.accessSignals ||
+      args.unbackedProvenance ||
+      args.foreignContact ||
+      args.unbackedResearchAreas ||
+      args.reclaimStrandedField ||
+      args.resynthesizeCutCards ||
+      args.resynthesizeWeakCards)
+  ) {
+    throw new Error(
+      `--only-fields=${LEAD_EDGES_SCOPE} resolves lead edges only, so it runs on its own`,
+    );
   }
   if (args.foreignContact && args.onlyFields.length > 0) {
     throw new Error('--foreign-contact is already scoped to the contact fields');
@@ -599,6 +622,7 @@ export interface RematerializeEntityReport {
   clearedContactFields?: string[];
   unbackedResearchAreas?: UnbackedResearchAreaOutcome;
   accessSignalChanges?: AccessSignalChangePlan;
+  leadEdgeResolution?: LeadEdgeResolution;
   cardSynthesisPending?: true;
   skipped?: string;
   error?: string;
@@ -761,6 +785,34 @@ export interface RematerializeRegateCandidate {
   skipped?: string;
   changes: RematerializeReportedChange[];
   accessSignalChanges?: AccessSignalChangePlan;
+  leadEdgeResolution?: LeadEdgeResolution;
+}
+
+function leadEdgesChanged(resolution: LeadEdgeResolution | undefined): boolean {
+  return Boolean(
+    resolution &&
+    (resolution.ended.length > 0 || resolution.asserted.some((edge) => edge.isNewEdge)),
+  );
+}
+
+export function summarizeLeadEdgeChanges(reports: readonly RematerializeRegateCandidate[]): {
+  entitiesChanged: number;
+  edgesCreated: number;
+  endedByReason: Record<string, number>;
+} {
+  const endedByReason: Record<string, number> = {};
+  let entitiesChanged = 0;
+  let edgesCreated = 0;
+  for (const report of reports) {
+    if (!leadEdgesChanged(report.leadEdgeResolution)) continue;
+    entitiesChanged += 1;
+    edgesCreated +=
+      report.leadEdgeResolution?.asserted.filter((edge) => edge.isNewEdge).length ?? 0;
+    for (const edge of report.leadEdgeResolution?.ended ?? []) {
+      endedByReason[edge.reason] = (endedByReason[edge.reason] ?? 0) + 1;
+    }
+  }
+  return { entitiesChanged, edgesCreated, endedByReason };
 }
 
 function accessSignalsChanged(changes: AccessSignalChangePlan | undefined): boolean {
@@ -796,7 +848,8 @@ export function selectRematerializeRegateEntityIds(
     if (!report.found || report.skipped || !report.entityId) continue;
     if (
       rematerializeChangeAffectsVisibilityGate(report.changes) ||
-      accessSignalsChanged(report.accessSignalChanges)
+      accessSignalsChanged(report.accessSignalChanges) ||
+      leadEdgesChanged(report.leadEdgeResolution)
     ) {
       entityIds.add(report.entityId);
     }

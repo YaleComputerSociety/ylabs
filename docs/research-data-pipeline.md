@@ -581,6 +581,7 @@ On resolve, a PI edge whose cited `inferredPiUserId` reads on the row are all su
 A lead edge with no recorded source (a legacy membership the 2026-08-17 identity migration copied) is kept until a current lane contradicts it (owner decision on #5979, option (a)).
 On resolve it is ended (`state: HISTORICAL`) only when nothing live names the person as lead, meaning no live PI or director read resolves to them and the row's site does not confirm them by their own profile link or the site address, and either the site's verdict for them is `CONTRADICTED`, or the row is named for another person who holds a lead edge a lane recorded while the row is not named for this one.
 A site verdict of `CONFIRMED` by `NAMED_ON_PAGE` does not protect the edge on such a row, because a blind ballot found a mention was a trainee on another person's lab; a co-lead confirmed by their own profile link, and a center PI on a row named for nobody, are kept.
+Neither retirement reaches the stored corpus through a field-scoped rematerialize, which skips lead edges by design (#3874); `research-entity:rematerialize --only-fields=leadEdges` resolves the named rows' lead edges and nothing else, and its dry run plans each edge change.
 The writer's `eligibleWriterGrants` reads only `pi` entries, so a held entry is not description evidence until its lane re-reads it.
 A served grant page is cited for a lane's contribution (`servedGrantPageUrl`) whatever its role, because every served entry is a lead's award or a held one.
 A lane that adds a funder another lane already reports must use the same `agency` label, or the two copies stay apart.
@@ -588,6 +589,7 @@ The Crossref grant lane stores each funder's own Crossref name as `agency`, so i
 A scoped pass also scopes what runs after the projection (#3874).
 Lead-PI school inheritance (`lead-pi-school-inheritance`) runs only when the expanded scope names `school` or `departments`, and otherwise appends no observation and writes no field; before this, a pass scoped to `researchAreas` wrote `departments` on 2 Development rows.
 The inferred-PI and inferred-director lead edges, the access-signal upserts, and the department-roster shell fold are skipped, because they write no field and the report compares fields, so any write they made would be invisible.
+`leadEdges` is the one `--only-fields` value outside the tracked-field allowlist: it projects no field and resolves only the named rows' lead edges, runs on its own, and is the scope a lead-edge fix needs (#5992).
 The dedupe merge's fill-only pass (`rematerializeMergeCanonicalFillOnly`) is the one scoped caller that keeps them, through `keepPostProjectionEvidence`, because it exists to carry the merged-in evidence onto the survivor.
 The browse-rank recompute and the search-index sync still run, because each is a cache recomputed from the row as stored and must follow the scoped write.
 
