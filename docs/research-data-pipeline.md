@@ -1115,6 +1115,7 @@ Every row whose stored value is cleared goes back through `planStudentVisibility
 Two entry points. The sweep lane, `reconcileFieldRetractionsFromRun`, runs at the end of `materializeFromRun` after every entity has been projected, and is gated by `SCRAPER_FIELD_RETRACTION=true`; unlike the two older reconcilers, a dry run still plans and reports, because the drop-guard fraction has to be readable before a pass that deletes evidence is authorized.
 The operator lane, `yarn --cwd server observations:reconcile-field-retractions`, needs no fresh scrape: the evidence that a field stopped being asserted is already in the log.
 It is dry-run by default, and apply requires `--confirm-field-retraction` plus a planned count within `--max-apply` (default 200).
+Both entry points also run the page-scoped `user` `email` contract, `userFieldRetractionContracts` (#5711), for the sources that declare it; `skills/scrapers/SKILL.md` describes it.
 Retention bounds how far back witnesses reach - `observations:prune-dead` keeps the last 3 runs per source - and losing older witnesses only ever makes the lane more conservative.
 
 A tombstoned loser's evidence is carried rather than re-keyed: the loser's observation bundle stays active while `mergedSurvivorEvidence` resolves the survivor over it (#3560), and it retires on the loser's own key, through the retraction path above, when a source that reads that key or the survivor's stops stating the field.
