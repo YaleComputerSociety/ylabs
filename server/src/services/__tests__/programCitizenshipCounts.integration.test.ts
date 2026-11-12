@@ -68,7 +68,7 @@ describe('the programs citizenship split (#5299)', () => {
     await memoryServer?.stop();
   });
 
-  it('keeps the says-open and doesn\'t-say programs and drops the says-closed one', async () => {
+  it("keeps the says-open and doesn't-say programs and drops the says-closed one", async () => {
     const result = await searchFellowships({ citizenshipStatus: [NON_US], pageSize: 50 });
     expect(splitOf(titlesOf(result))).toEqual({ says: 3, doesntSay: 3 });
     expect(titlesOf(result)).not.toContain('Fixture Echo Restricted Grant');
