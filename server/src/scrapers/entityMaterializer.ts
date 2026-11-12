@@ -41,8 +41,11 @@ import {
   expandUserMaterializerScope,
   partitionPlannedPaths,
   scopedResearcherUpdate,
+  scopedResearcherWrites,
+  ORCID_PROFILE_LINK_PATH,
   userScopeAdmits,
   valueAtPath,
+  withoutRepeatedParentPaths,
 } from './userMaterializerFieldScope';
 import {
   planResearcherRefusedStoredValueClear,
@@ -9166,17 +9169,17 @@ function scopeScreenedPageWithdrawal(
   scope: readonly string[],
 ): { plan: ScreenedPageWithdrawal; plannedPaths: string[]; droppedPaths: string[] } {
   const planned = [
-    ...(plan.officialLinkUrls.length > 0 || plan.orcid ? ['profileLinks'] : []),
-    ...(plan.orcid ? ['identifiers.orcid'] : []),
+    ...(plan.officialLinkUrls.length > 0 ? ['profileLinks'] : []),
+    ...(plan.orcid ? [ORCID_PROFILE_LINK_PATH, 'identifiers.orcid'] : []),
     ...(plan.imageUrl ? ['profile.imageUrl'] : []),
   ];
   const { kept, dropped } = partitionPlannedPaths(planned, scope);
-  const keepsLinks = kept.includes('profileLinks');
   return {
     plan: {
       researcherId: plan.researcherId,
-      officialLinkUrls: keepsLinks ? plan.officialLinkUrls : [],
-      ...(plan.orcid && (keepsLinks || kept.includes('identifiers.orcid'))
+      officialLinkUrls: kept.includes('profileLinks') ? plan.officialLinkUrls : [],
+      ...(plan.orcid &&
+      (kept.includes(ORCID_PROFILE_LINK_PATH) || kept.includes('identifiers.orcid'))
         ? { orcid: plan.orcid }
         : {}),
       ...(plan.imageUrl && kept.includes('profile.imageUrl') ? { imageUrl: plan.imageUrl } : {}),
@@ -9294,9 +9297,14 @@ async function writeScopedResearcherPlan(input: {
   if (input.dryRun) return result(kept.length);
   if (kept.length === 0) return result(0);
   const candidate = Researcher.hydrate(input.storedResearcher);
-  for (const path of kept) candidate.set(path, valueAtPath(planned, path));
+  for (const { path, value } of scopedResearcherWrites(input.storedResearcher, planned, kept)) {
+    candidate.set(path, value);
+  }
   await candidate.validate();
-  await Researcher.updateOne({ _id: input.researcher._id }, scopedResearcherUpdate(planned, kept));
+  await Researcher.updateOne(
+    { _id: input.researcher._id },
+    scopedResearcherUpdate(input.storedResearcher, planned, kept),
+  );
   if (researcherSearchDocumentInputsChanged(input.storedResearcher, candidate)) {
     await noteResearcherSearchInputChange(input.researcher._id);
   }
@@ -9863,7 +9871,7 @@ async function materializeUserIdentityToResearcher(
       conflicts,
       created,
       resolved,
-      plannedPaths: researcher.modifiedPaths?.() ?? [],
+      plannedPaths: withoutRepeatedParentPaths(researcher.modifiedPaths?.() ?? []),
       ...(identityJoin ? { identityJoin } : {}),
     };
   }

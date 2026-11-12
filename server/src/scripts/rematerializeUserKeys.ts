@@ -19,10 +19,12 @@
  * `droppedPathSet`, so "nothing outside the scope" is a check that `plannedPathSet` is a
  * subset of the printed `scope`. Accepted paths: displayName, profile.title,
  * profile.primaryDepartment, profile.imageUrl, profile.websiteUrl, identifiers.email,
- * identifiers.emailSupport, profileLinks, profileFieldWriters and profileFieldWriters.<field>;
- * aliases email, emailSupport, title, primaryDepartment, imageUrl and websiteUrl. A display
- * value also writes its own writer record, `profileFieldWriters` alone writes only writer
- * records, and identifiers.email and identifiers.emailSupport are written together.
+ * identifiers.emailSupport, identifiers.orcid, profileLinks, profileFieldWriters and
+ * profileFieldWriters.<field>; aliases email, emailSupport, orcid, title, primaryDepartment,
+ * imageUrl and websiteUrl. A display value also writes its own writer record,
+ * `profileFieldWriters` alone writes only writer records, identifiers.email and
+ * identifiers.emailSupport are written together, and identifiers.orcid is written with only the
+ * ORCID entries of profileLinks (`profileLinks.ORCID`).
  *
  *   yarn --cwd server observations:rematerialize-user-keys --keys-file=<keys.json> \
  *     --only-fields=identifiers.email --output=<tmp>.json

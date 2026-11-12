@@ -287,9 +287,11 @@ Materialize flags:
                        Write only these researcher paths on the run's user rows:
                        displayName, profile.title, profile.primaryDepartment,
                        profile.imageUrl, profile.websiteUrl, identifiers.email,
-                       identifiers.emailSupport, profileLinks, profileFieldWriters
-                       (or profileFieldWriters.<field>); aliases email, emailSupport,
-                       title, primaryDepartment, imageUrl, websiteUrl. Planned paths
+                       identifiers.emailSupport, identifiers.orcid, profileLinks,
+                       profileFieldWriters (or profileFieldWriters.<field>); aliases
+                       email, emailSupport, orcid, title, primaryDepartment, imageUrl,
+                       websiteUrl. identifiers.orcid also writes only the ORCID
+                       entries of profileLinks. Planned paths
                        outside the scope are dropped and reported; other entity
                        types, mints, run reconciliations and the visibility gate
                        are skipped. Per-key paths go to --output only.

@@ -1693,7 +1693,23 @@ export function planUserFieldRetractions(input: {
   return { retractions, frozenFields, counts };
 }
 
-export type UserSubjectRederiver = (identifier: { entityKey: string }) => Promise<unknown>;
+/** `retractedFields` names the user fields this reconcile retired for the subject, sorted. */
+export type UserSubjectRederiver = (
+  identifier: { entityKey: string },
+  retractedFields: readonly string[],
+) => Promise<unknown>;
+
+export function retractedFieldsBySubject(
+  retractions: readonly PlannedUserFieldRetraction[],
+): Map<string, string[]> {
+  const fields = new Map<string, Set<string>>();
+  for (const planned of retractions) {
+    const subject = fields.get(planned.entityKey) ?? new Set<string>();
+    subject.add(planned.field);
+    fields.set(planned.entityKey, subject);
+  }
+  return new Map([...fields].map(([entityKey, set]) => [entityKey, [...set].sort()]));
+}
 
 export interface UserFieldRetractionResult {
   outcome: 'source-not-retraction-capable' | 'no-candidates' | 'planned' | 'reconciled';
@@ -1859,9 +1875,9 @@ export async function reconcileUserFieldRetractions(options: {
     applied.retiredObservations += retired;
   }
   if (!options.rederive) return applied;
-  for (const entityKey of new Set(plan.retractions.map((planned) => planned.entityKey))) {
+  for (const [entityKey, retractedFields] of retractedFieldsBySubject(plan.retractions)) {
     try {
-      await options.rederive({ entityKey });
+      await options.rederive({ entityKey }, retractedFields);
       applied.rederivedSubjects += 1;
     } catch (error) {
       applied.rederiveErrors += 1;
