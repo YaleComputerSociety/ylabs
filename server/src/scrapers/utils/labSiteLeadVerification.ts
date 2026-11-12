@@ -380,6 +380,7 @@ export interface LabSiteLeadJudgement {
   verdict: LabSiteLeadVerdict;
   matchedBy: LabSiteLeadMatchReason;
   evidenceUrl: string;
+  namedOnPage?: boolean;
   contradictedBy?: LabSiteLeadContradictionShape;
 }
 
@@ -559,19 +560,27 @@ export function judgeLeadAgainstSite(
   const base = { personId: lead.personId, role: lead.role };
   const leadSlugs = lead.officialProfileUrls.map(profileSlugFromUrl).filter(Boolean);
   const linkedSlug = leadSlugs.find((slug) => siteSlugs.has(slug));
+  const namedInVisibleText =
+    siteNamesPerson(visiblePageText(reading.html), lead.displayName) ||
+    siteNamesInitialAndSurname(reading.html, lead.displayName);
+  const namedOnPageMark = namedInVisibleText ? { namedOnPage: true } : {};
   if (linkedSlug) {
     const evidenceUrl =
       lead.officialProfileUrls.find((url) => profileSlugFromUrl(url) === linkedSlug) || '';
-    return { ...base, verdict: 'CONFIRMED', matchedBy: 'OFFICIAL_PROFILE_LINK', evidenceUrl };
+    return {
+      ...base,
+      verdict: 'CONFIRMED',
+      matchedBy: 'OFFICIAL_PROFILE_LINK',
+      evidenceUrl,
+      ...namedOnPageMark,
+    };
   }
-  if (
-    siteNamesPerson(haystack, lead.displayName) ||
-    siteNamesInitialAndSurname(reading.html, lead.displayName)
-  ) {
+  if (namedInVisibleText || siteNamesPerson(haystack, lead.displayName)) {
     return {
       ...base,
       verdict: 'CONFIRMED',
       matchedBy: 'NAMED_ON_PAGE',
+      ...namedOnPageMark,
       evidenceUrl: reading.visitedUrls[0] || reading.website,
     };
   }

@@ -389,6 +389,20 @@ describe('judgeLeadAgainstSite', () => {
     });
   });
 
+  it('records that the page also names the lead beside a profile-link confirmation', () => {
+    const linkedAndNamed = judge(
+      lead(),
+      '<p>Robin Quill directs the lab.</p><a href="/lab/quill/profile/robin-quill/">Profile</a>',
+    );
+    expect(linkedAndNamed).toMatchObject({
+      matchedBy: 'OFFICIAL_PROFILE_LINK',
+      namedOnPage: true,
+    });
+    const linkedOnly = judge(lead(), '<a href="/lab/quill/profile/robin-quill/">Profile</a>');
+    expect(linkedOnly.matchedBy).toBe('OFFICIAL_PROFILE_LINK');
+    expect(linkedOnly.namedOnPage).toBeUndefined();
+  });
+
   it('confirms on being named, when no profile is linked', () => {
     const result = judge(lead(), '<p>The lab of Robin Quill studies things.</p>');
     expect(result.verdict).toBe('CONFIRMED');

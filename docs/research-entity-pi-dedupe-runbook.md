@@ -285,6 +285,20 @@ A profile page slug that carries nursing credentials (`-phd-mph-bsn`, `-aprn-fnp
 The plain `--shared-person-id` mode stays operator-only.
 The stage runs under the same flag and contract as the URL stages and writes `development-shared-person-name-agreed-dedupe.json`.
 
+### A faculty research row that restates its lead's own lab
+
+`research-entity:merge-eponymous-fra` also folds a faculty research row into its lead's own lab on a witness, not on name shape (#5969).
+The eponymous lane folds only a person-named shell, and a blind ballot found faculty research rows restating their lead's lab that carry their own names and sites, so name shape never reached them.
+Two witnesses count, both in `services/witnessedFraLabFold.ts`.
+The lab's own page witness: the person holds the lab's PI edge, that edge carries evidence (a source or a confidence above zero), the stored lab-site lead verification confirms that person as PI and records that the page names them (`matchedBy` `NAMED_ON_PAGE`, or `namedOnPage` beside a profile-link confirmation), and the verification shows no contradiction; it re-derives on every run, so it is a lane.
+A confirmation by a profile link alone, or by the surname in the site's address, is not a witness, because a page naming a different overseer also links the person and an address does not read the page; measured on Development on 2026-11-12, the only fold that link alone produced was a pair a blind ballot refused, and it rested on a legacy PI edge with no source and confidence zero.
+The lane sets `namedOnPage` from the page's visible text only, never from a link's own slug, and a lab's stored verification carries it only after the lab-site verification lane has re-read that lab, so run that lane before the fold on Development.
+The ballot witness: `--ballot-pairs <file.json>` (an array of `{ label, facultyRowId, labId }`) names pairs an operator's blind ballot confirmed, and each folds only when one researcher holds a lead edge on both rows; the label is the recorded evidence.
+A co-director is not the lab's PI, so a co-director's separate lab never folds a row on the page witness.
+A row with two candidate labs, or whose ballot and page witnesses disagree, is refused with the reason in `witnessedFoldRefusals`; a fold touching a row the eponymous lane already plans is left to that lane, and that, a second row folding into a lab already folding, a row that did not load, a fold the distinct-people verdicts refuse, and a fold the `--max-merges` cap defers are each reported there with their own reason, so `witnessedFolds` lists only the folds this run plans.
+The merge repoints every non-repeated lead edge onto the lab, so a co-directed lab keeps all its co-directors.
+The recorded distinct-people verdicts still refuse a fold whose rows' leads include a pair recorded as two people, even when both already co-lead the lab.
+
 ## Durable canonical redirect (permanent, delete-safe merge)
 
 Every merge stamps the collapsed shell with `canonicalGroupId`, pointing at the survivor. That archived row IS the durable mapping (#3027): its slug keeps occupying the unique index so a re-scrape of the still-live source cannot re-mint the duplicate, and the materializer follows the tombstone to write that evidence into the survivor. The separate `research_entity_redirects` ledger it used to also write was retired.
