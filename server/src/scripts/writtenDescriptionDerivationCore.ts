@@ -131,6 +131,15 @@ export function remapUsedSnippetIndexes(
   return [...remapped].sort((a, b) => a - b);
 }
 
+export interface SupersededWriterDraft {
+  writer: string;
+  rawOutput: CoverageSynthesisLLMResult;
+  derivedAt: Date;
+  at: Date;
+  reason: string;
+  decidedBy: string;
+}
+
 export interface StoredWrittenDescriptionDerivation extends WriterEvidenceFingerprint {
   inputHash: string;
   promptHash: string;
@@ -138,6 +147,7 @@ export interface StoredWrittenDescriptionDerivation extends WriterEvidenceFinger
   writer: string;
   rawOutput: CoverageSynthesisLLMResult;
   derivedAt: Date;
+  supersedes?: SupersededWriterDraft[];
 }
 
 export interface WrittenDescriptionDerivationStore {
@@ -150,7 +160,7 @@ export const mongoWrittenDescriptionDerivationStore: WrittenDescriptionDerivatio
     if (!mongooseConnectionWasOpened()) return null;
     return (await WrittenDescriptionDerivation.findOne({ inputHash })
       .select(
-        '-_id inputHash promptHash model writer rawOutput snippetSentenceHashes researchPageHeadingHashes derivedAt',
+        '-_id inputHash promptHash model writer rawOutput snippetSentenceHashes researchPageHeadingHashes derivedAt supersedes',
       )
       .lean()) as StoredWrittenDescriptionDerivation | null;
   },

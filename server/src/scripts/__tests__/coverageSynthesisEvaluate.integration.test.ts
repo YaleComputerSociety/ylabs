@@ -12,7 +12,11 @@ import {
   snippetsFromRowEvidence,
   writerEvidenceFileOf,
 } from '../coverageSynthesisEvidence';
-import { runDerivationImport, runWriterEvaluation } from '../coverageSynthesisEvaluate';
+import {
+  runDerivationImport,
+  runDerivationSupersede,
+  runWriterEvaluation,
+} from '../coverageSynthesisEvaluate';
 import {
   mongoWrittenDescriptionDerivationStore,
   writerInputHash,
@@ -268,5 +272,202 @@ describe('writer evaluate and import modes against MongoDB (#5537)', () => {
     expect(report.rows[0]).toMatchObject({ outcome: 'accepted', stored: false });
     expect(await WrittenDescriptionDerivation.countDocuments()).toBe(0);
     expect(await Observation.countDocuments()).toBe(observationsBefore);
+  });
+});
+
+describe('superseding one accepted writer draft against MongoDB (#5934)', () => {
+  let replSet: MongoMemoryReplSet;
+  const CORRECTED =
+    'Studies how coral reefs recover after marine heatwaves and bleaching events. Field surveys follow coral colonies and reef fish across the Caribbean.';
+  const decidedAt = new Date('2026-11-12T00:00:00Z');
+
+  beforeAll(async () => {
+    replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    await mongoose.connect(replSet.getUri());
+    await WrittenDescriptionDerivation.init();
+  });
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await replSet?.stop();
+  });
+
+  beforeEach(async () => {
+    const db = mongoose.connection.db;
+    if (!db) throw new Error('no db');
+    for (const name of ['observations', 'research_entities', 'written_description_derivations']) {
+      await db.collection(name).deleteMany({});
+    }
+    await ResearchEntity.create({
+      slug: SLUG,
+      name: 'Reef Lab Fixture',
+      kind: 'lab',
+      entityType: 'LAB',
+      websiteUrl: 'https://reef-lab.example.org/',
+      studentVisibilityTier: 'operator_review',
+      archived: false,
+    });
+    await Observation.create({
+      entityType: 'researchEntity',
+      entityKey: SLUG,
+      field: 'researchPageText',
+      value: [{ url: PAGE_URL, text: PAGE_TEXT }],
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'research-page-text',
+      sourceUrl: PAGE_URL,
+      confidence: 0.85,
+      observedAt: new Date('2026-11-01T00:00:00Z'),
+      superseded: false,
+    });
+    const imported = await runDerivationImport({
+      rows: await loadRows(),
+      drafts: [
+        { slug: SLUG, writer: 'claude-agent:1', fullDescription: GOOD, usedSnippetIndexes: [0] },
+      ],
+      store,
+      evidenceNow: new Date(),
+      validateOnly: false,
+    });
+    expect(imported.rows[0]).toMatchObject({ outcome: 'accepted', stored: true });
+  });
+
+  const supersede = async (overrides: Partial<Parameters<typeof runDerivationSupersede>[0]> = {}) =>
+    runDerivationSupersede({
+      slug: SLUG,
+      rows: await loadRows(),
+      drafts: [
+        {
+          slug: SLUG,
+          writer: 'claude-agent:correction-1',
+          fullDescription: CORRECTED,
+          usedSnippetIndexes: [0],
+        },
+      ],
+      store,
+      evidenceNow: new Date(),
+      apply: true,
+      reason: 'fuses two separate claims',
+      decidedBy: 'operator',
+      now: decidedAt,
+      ...overrides,
+    });
+
+  it('replaces the stored draft for the row and records the draft it superseded', async () => {
+    const observationsBefore = await Observation.countDocuments();
+    const report = await supersede();
+    expect(report).toMatchObject({
+      outcome: 'accepted',
+      blockedBy: null,
+      stored: true,
+      before: { writer: 'claude-agent:1', fullDescription: GOOD },
+      after: { writer: 'claude-agent:correction-1', fullDescription: CORRECTED },
+    });
+    const entries = await WrittenDescriptionDerivation.find().lean();
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      inputHash: report.inputHash,
+      writer: 'claude-agent:correction-1',
+      rawOutput: { fullDescription: CORRECTED },
+      supersedes: [
+        {
+          writer: 'claude-agent:1',
+          rawOutput: { fullDescription: GOOD, usedSnippetIndexes: [0] },
+          at: decidedAt,
+          reason: 'fuses two separate claims',
+          decidedBy: 'operator',
+        },
+      ],
+    });
+    expect(await Observation.countDocuments()).toBe(observationsBefore);
+
+    const evaluated = await runWriterEvaluation({
+      rows: await loadRows(),
+      store,
+      drafting: writerModelThroughCache({ callLLM: modelReturning('never read'), store }),
+      evidenceNow: new Date(),
+    });
+    expect(evaluated.rows[0]).toMatchObject({
+      step: 'cache-hit',
+      writer: 'claude-agent:correction-1',
+      description: CORRECTED,
+    });
+  });
+
+  it('keeps every earlier superseded draft when the row is superseded again', async () => {
+    await supersede();
+    const second = await supersede({
+      drafts: [
+        {
+          slug: SLUG,
+          writer: 'claude-agent:correction-2',
+          fullDescription: GOOD,
+          usedSnippetIndexes: [0],
+        },
+      ],
+      reason: 'second correction',
+    });
+    expect(second).toMatchObject({ stored: true, before: { fullDescription: CORRECTED } });
+    const entry = await WrittenDescriptionDerivation.findOne().lean();
+    expect(entry?.supersedes?.map((previous) => previous.writer)).toEqual([
+      'claude-agent:1',
+      'claude-agent:correction-1',
+    ]);
+  });
+
+  it('reports the replacement without writing on a dry run', async () => {
+    const report = await supersede({ apply: false });
+    expect(report).toMatchObject({ outcome: 'accepted', blockedBy: null, stored: false });
+    const entry = await WrittenDescriptionDerivation.findOne().lean();
+    expect(entry).toMatchObject({ writer: 'claude-agent:1', rawOutput: { fullDescription: GOOD } });
+    expect(entry?.supersedes).toBeUndefined();
+  });
+
+  it('does not replace the stored draft with a draft the checks refuse', async () => {
+    const report = await supersede({
+      drafts: [
+        {
+          slug: SLUG,
+          writer: 'claude-agent:correction-1',
+          fullDescription: `We study coral. ${GOOD}`,
+          usedSnippetIndexes: [0],
+        },
+      ],
+    });
+    expect(report).toMatchObject({
+      outcome: 'refused',
+      blockedBy: 'refused',
+      stored: false,
+      refusalReasons: ['first-person'],
+      before: { writer: 'claude-agent:1', fullDescription: GOOD },
+    });
+    const entry = await WrittenDescriptionDerivation.findOne().lean();
+    expect(entry).toMatchObject({ writer: 'claude-agent:1', rawOutput: { fullDescription: GOOD } });
+  });
+
+  it('refuses a drafts file with more than one draft, or a draft for another row', async () => {
+    const draft = {
+      slug: SLUG,
+      writer: 'claude-agent:correction-1',
+      fullDescription: CORRECTED,
+      usedSnippetIndexes: [0],
+    };
+    await expect(supersede({ drafts: [draft, { ...draft, slug: 'kelp-lab' }] })).rejects.toThrow(
+      /exactly one entry/,
+    );
+    await expect(supersede({ drafts: [draft, draft] })).rejects.toThrow(/exactly one entry/);
+    await expect(supersede({ drafts: [{ ...draft, slug: 'kelp-lab' }] })).rejects.toThrow(
+      /exactly one entry/,
+    );
+    await expect(supersede({ reason: ' ' })).rejects.toThrow(/--reason and --decided-by/);
+    await expect(supersede({ decidedBy: '' })).rejects.toThrow(/--reason and --decided-by/);
+    const entry = await WrittenDescriptionDerivation.findOne().lean();
+    expect(entry).toMatchObject({ writer: 'claude-agent:1' });
+  });
+
+  it('refuses when the row holds no stored draft to supersede', async () => {
+    await WrittenDescriptionDerivation.deleteMany({});
+    const report = await supersede();
+    expect(report).toMatchObject({ blockedBy: 'no-stored-draft', stored: false, before: null });
+    expect(await WrittenDescriptionDerivation.countDocuments()).toBe(0);
   });
 });

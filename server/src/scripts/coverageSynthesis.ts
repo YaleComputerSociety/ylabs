@@ -71,7 +71,11 @@ import {
   writerEvidenceFileOf,
   type WriterRowEvidence,
 } from './coverageSynthesisEvidence';
-import { runDerivationImport, runWriterEvaluation } from './coverageSynthesisEvaluate';
+import {
+  runDerivationImport,
+  runDerivationSupersede,
+  runWriterEvaluation,
+} from './coverageSynthesisEvaluate';
 import {
   type CardRequest,
   collectCardRequests,
@@ -440,6 +444,31 @@ async function runCardPassMode(
   );
 }
 
+async function runSupersedeDraftMode(
+  args: ReturnType<typeof parseCoverageSynthesisArgs>,
+  dbLabel: string,
+): Promise<void> {
+  const [slug] = args.slugs;
+  const drafts = parseImportedWriterDrafts(
+    readJsonInputFile(args.importDerivations as string, '--import-derivations'),
+  );
+  const { rows, evidenceNow } = await rowEvidenceFor(args, [slug]);
+  const report = await runDerivationSupersede({
+    slug,
+    rows,
+    drafts,
+    store: mongoWrittenDescriptionDerivationStore,
+    evidenceNow,
+    apply: args.apply,
+    reason: args.reason ?? '',
+    decidedBy: args.decidedBy ?? '',
+  });
+  const summary = { mode: 'supersede-draft', db: dbLabel, ...report };
+  if (args.output) writeJsonReport(args.output, '--output', summary);
+  console.log(JSON.stringify(summary, null, 2));
+  if (report.blockedBy) process.exitCode = 1;
+}
+
 async function runReadOnlyMode(
   mode: ReadOnlyMode,
   args: ReturnType<typeof parseCoverageSynthesisArgs>,
@@ -460,6 +489,10 @@ async function runReadOnlyMode(
     console.log(
       JSON.stringify({ mode, db: dbLabel, captured: rows.length, missingSlugs }, null, 2),
     );
+    return;
+  }
+  if (mode === 'supersede-draft') {
+    await runSupersedeDraftMode(args, dbLabel);
     return;
   }
   if (!args.output)

@@ -200,3 +200,65 @@ describe('evaluate, capture and import modes (#5537)', () => {
     expect(mode(['--print-writer-prompt'])).toBe('print-writer-prompt');
   });
 });
+
+describe('supersede one accepted writer draft (#5934)', () => {
+  const mode = (argv: string[]) => coverageSynthesisModeOf(parseCoverageSynthesisArgs(argv));
+  const complete = [
+    '--supersede-draft',
+    '--slugs=reef-lab',
+    '--import-derivations=/tmp/d.json',
+    '--evidence-file=/tmp/e.json',
+    '--reason=fuses two paper titles',
+    '--decided-by=operator',
+  ];
+
+  it('accepts one named row with a reason and a decider, dry run or apply', () => {
+    expect(mode(complete)).toBe('supersede-draft');
+    expect(mode([...complete, '--apply'])).toBe('supersede-draft');
+    expect(parseCoverageSynthesisArgs(complete)).toMatchObject({
+      reason: 'fuses two paper titles',
+      decidedBy: 'operator',
+      apply: false,
+    });
+  });
+
+  it('refuses more than one slug, a slugs file, or no slug', () => {
+    const without = complete.filter((token) => !token.startsWith('--slugs='));
+    expect(() => mode([...without, '--slugs=reef-lab,kelp-lab'])).toThrow(/exactly one --slugs/);
+    expect(() => mode(without)).toThrow(/exactly one --slugs/);
+    expect(() => mode([...complete, '--slugs-file=/tmp/rows.txt'])).toThrow(
+      /refused with --slugs-file/,
+    );
+    expect(() => mode([...complete, '--all'])).toThrow(/refused with --all/);
+  });
+
+  it('requires a reason, a decider and a drafts file', () => {
+    expect(() => mode(complete.filter((token) => !token.startsWith('--reason=')))).toThrow(
+      /requires --reason and --decided-by/,
+    );
+    expect(() => mode(complete.filter((token) => !token.startsWith('--decided-by=')))).toThrow(
+      /requires --reason and --decided-by/,
+    );
+    expect(() => mode([...complete, '--reason=  '])).toThrow(/requires --reason/);
+    expect(() =>
+      mode(complete.filter((token) => !token.startsWith('--import-derivations='))),
+    ).toThrow(/requires --import-derivations/);
+  });
+
+  it('writes the cache only with --apply and only on a Development database', () => {
+    const dryRun = parseCoverageSynthesisArgs(complete);
+    const apply = parseCoverageSynthesisArgs([...complete, '--apply']);
+    expect(() => assertWriterCacheModeAllowed('supersede-draft', 'cluster/Prod', apply)).toThrow(
+      /Development/,
+    );
+    expect(() => assertWriterCacheModeAllowed('supersede-draft', 'cluster/Beta', dryRun)).toThrow(
+      /Development/,
+    );
+    expect(assertWriterCacheModeAllowed('supersede-draft', 'cluster/Development', dryRun)).toEqual({
+      writesDevelopmentCache: false,
+    });
+    expect(assertWriterCacheModeAllowed('supersede-draft', 'cluster/Development', apply)).toEqual({
+      writesDevelopmentCache: true,
+    });
+  });
+});
