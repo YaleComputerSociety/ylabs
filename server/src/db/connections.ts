@@ -1,6 +1,7 @@
 /**
  * MongoDB connection management and model initialization.
  */
+import os from 'os';
 import mongoose from 'mongoose';
 import {
   acquireIntendedDevApplyLease,
@@ -110,10 +111,26 @@ export function scriptMongoConnectOptions(
   };
 }
 
+export const SCRIPT_DIAGNOSTIC_REPORT_SIGNAL = 'SIGUSR2';
+
+// A stalled script shows no stack of its own, so `kill -USR2 <pid>` writes a Node diagnostic
+// report of its pending handles to the temp directory (#5880). Environment variables are
+// excluded because they hold the database credentials.
+export function enableScriptDiagnosticReportOnSignal(
+  report: NodeJS.ProcessReport | undefined = process.report,
+): void {
+  if (!report) return;
+  report.excludeEnv = true;
+  report.directory = os.tmpdir();
+  report.signal = SCRIPT_DIAGNOSTIC_REPORT_SIGNAL;
+  report.reportOnSignal = true;
+}
+
 export async function connectScriptMongo(
   url: string,
   extra?: ScriptMongoConnectOptions,
 ): Promise<typeof mongoose> {
+  enableScriptDiagnosticReportOnSignal();
   const connected = await mongoose.connect(url, scriptMongoConnectOptions(extra));
   watchMongoClientProgress(connected.connection.getClient());
   await installDevelopmentWriteGuards(connected.connection);
@@ -124,6 +141,7 @@ export async function createScriptMongoConnection(
   url: string,
   extra?: ScriptMongoConnectOptions,
 ): Promise<mongoose.Connection> {
+  enableScriptDiagnosticReportOnSignal();
   const connection = await mongoose
     .createConnection(url, scriptMongoConnectOptions(extra))
     .asPromise();
