@@ -186,7 +186,7 @@ It arms an unref'd watchdog first (`SCRIPT_EXIT_WATCHDOG_MS`, 30 s).
 A process still alive at that bound logs `work completed; process held the event loop open: <handle types and counts>` from `process.getActiveResourcesInfo()` and exits `SCRIPT_EXIT_HELD_OPEN`, which is 3.
 Exit 3 means the work completed and some handle leaked, so cron and sessions can tell it from exit 1, which is a failure; an exit code the script already set, such as a refusal's 1, is kept rather than replaced by 3.
 A thrown error is logged through `sanitizeLogValue` (or the script's own `logFailure`), the connections are closed within the same bound, and the process exits 1.
-`server/src/scripts/__tests__/longScriptEntryPointsUseRunScriptMain.test.ts` lists the long entry points with a reason each and fails when one stops using it, so a new long script belongs on that list.
+`server/src/scripts/__tests__/longScriptEntryPointsUseRunScriptMain.test.ts` lists the long entry points by package script name with a reason each, runs each one, and fails when one does not hand `main` to `runScriptMain`, so a new long script belongs on that list.
 `server/src/db/__tests__/runScriptMain.integration.test.ts` drives real child processes for the held-open, clean, throwing and second-connection cases.
 Long Development runs need the laptop lid open or AC power: `caffeinate -i` prevents idle sleep only, not clamshell sleep.
 A run that spans a sleep looks hung (its log shows a disconnect and reconnects on each maintenance wake, but no progress), so re-run it.
