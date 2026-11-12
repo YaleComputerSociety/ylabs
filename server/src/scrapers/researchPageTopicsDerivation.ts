@@ -19,7 +19,7 @@ import {
 import {
   RESEARCH_PAGE_TEXT_FIELD,
   RESEARCH_PAGE_TEXT_SOURCE,
-  researchPageTextEntriesWithoutChrome,
+  researchPageTextEntriesForTopics,
   type ResearchPageTextEntry,
 } from './utils/researchPageText';
 import { mongooseConnectionWasOpened } from '../utils/mongooseConnectionWasOpened';
@@ -161,7 +161,7 @@ export async function researchPageTopicsStateFor(
 ): Promise<ResearchPageTopicsState> {
   const current = currentResearchPageTextObservation(observations);
   if (!current) return {};
-  const pages = researchPageTextEntriesWithoutChrome(current.value);
+  const pages = researchPageTextEntriesForTopics(current.value);
   const currentTextHash = researchPageTextHash(pages);
   if (pages.length === 0) return { currentTextHash };
   const inputHash = researchTopicsDerivationInputHash(pages);

@@ -255,6 +255,7 @@
     "research-entity:coverage-synthesis": "tsx src/scripts/coverageSynthesis.ts",
     "research-topics:derive": "tsx src/scripts/deriveResearchTopics.ts",
     "research-topics:rekey-stripped": "tsx src/scripts/rekeyResearchTopicsToStrippedText.ts",
+    "research-topics:rekey-topic-text": "tsx src/scripts/rekeyResearchTopicsToTopicText.ts",
     "research-search:seed-rerank-cache": "tsx src/scripts/seedSearchRerankCache.ts",
     "research-entity:grant-corpus-synthesis": "tsx src/scripts/grantCorpusSynthesis.ts",
     "scraper-llm:description-ab": "tsx src/scripts/descriptionPromptAbHarness.ts",

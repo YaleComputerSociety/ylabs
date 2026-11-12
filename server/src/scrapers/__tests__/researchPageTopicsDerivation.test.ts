@@ -244,6 +244,60 @@ describe('re-validating a stored derived list when the current text has no readi
     });
   });
 
+  describe('against a school site theme menu (#5939)', () => {
+    const themeMenu = [
+      'About Us',
+      'Who We Are',
+      'Research at a Glance',
+      'Antimicrobial Resistance',
+      'Vector-Borne Diseases',
+      'Emerging Infections',
+      'Climate Change and Health',
+      'Health Equity',
+      'Find People',
+      'Contact Us',
+      'News & Events',
+      'Degree Programs',
+    ];
+    const menuPage = (body: string[]) => [{ url: HOME, text: [...themeMenu, ...body].join('\n') }];
+    const before = menuPage([pages[0].text]);
+    const menuReading = {
+      inputHash: researchTopicsDerivationInputHash(before),
+      extractedTopics: [
+        { topic: 'Kelp forests', quote: 'how coastal kelp forests recover', url: HOME },
+        {
+          topic: 'Antimicrobial resistance',
+          quote: 'Antimicrobial Resistance Vector-Borne Diseases',
+          url: HOME,
+        },
+        { topic: 'Health equity', quote: 'Climate Change and Health Health Equity', url: HOME },
+      ],
+      extractedField: null,
+    };
+
+    it('never keeps a stored topic only the menu states', async () => {
+      const rotatedWithMenu = menuPage([`News: a new seminar. ${pages[0].text}`]);
+      const state = await researchPageTopicsStateFor(
+        [pageTextObservation(rotatedWithMenu)],
+        cacheOf([menuReading]),
+        storedFor(before),
+      );
+      expect(state.revalidatesStoredList).toBe(true);
+      expect(state.candidate?.value).toEqual(['Kelp forests']);
+    });
+
+    it('withdraws the list when the subject text under the menu is empty', async () => {
+      const stored = storedFor(before);
+      const state = await researchPageTopicsStateFor(
+        [pageTextObservation(menuPage(['Last updated on December 1.']))],
+        cacheOf([menuReading]),
+        stored,
+      );
+      expect(state.candidate).toBeUndefined();
+      expect(storedDerivedResearchAreasAreStale(stored, state)).toBe(true);
+    });
+  });
+
   it('gives the same answer on a second pass over the same evidence', async () => {
     const lookup = cacheOf([priorReading]);
     const stored = storedFor(pages);
