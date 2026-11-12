@@ -19,6 +19,12 @@ describe('the v2 writer prompt states its rules (#5961)', () => {
       'when the snippets name specific current projects, studies or questions, add a sentence that names two or three of them',
     );
     expect(COVERAGE_SYNTHESIS_PROMPT).toContain('"Current projects include how ..., whether ...');
+    expect(COVERAGE_SYNTHESIS_PROMPT).toContain(
+      'Name something as a current project only when the snippets call it current, ongoing or in progress, or date it within about the last 5 years',
+    );
+    expect(COVERAGE_SYNTHESIS_PROMPT).toContain(
+      "never present a paper's topic as a current project because of its title alone",
+    );
   });
 
   it('never joins two separate items into one claim', () => {

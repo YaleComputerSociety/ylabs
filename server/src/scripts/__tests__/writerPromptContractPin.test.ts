@@ -4,9 +4,9 @@ import { WRITER_CONTRACT_VERSION } from '../writtenDescriptionDerivationCore';
 
 const WRITER_PROMPT_PIN = {
   contract: 'written-description-5961-v2',
-  promptHash: '8097edfbfecc4236e4990e74b52e36e61e3cd0b9618c579f691020b012524f7b',
+  promptHash: '1096a2b67758e4db650bcac337bc90e06effc1766f928dc6004b315042838c78',
   carryOverReason:
-    'v2 contract (#5961): new prompt rules and a narrower evidence read, so every row is re-drafted rather than carried over',
+    'v2 contract (#5961): new prompt rules and a narrower evidence read, so every row is re-drafted rather than carried over; the recent-work projects rule lands before any v2 draft is imported, so nothing carries over under the earlier v2 prompt',
 };
 
 const DECIDE_ON_A_PROMPT_EDIT = [
