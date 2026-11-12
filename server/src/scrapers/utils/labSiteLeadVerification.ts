@@ -722,3 +722,42 @@ export function unreachableLabSiteVerification(
     observedAt: observedAt.toISOString(),
   };
 }
+
+export interface LabSiteLeadVerdictRow {
+  entityKey: string;
+  personId: string;
+  role: string;
+  verdict: LabSiteLeadVerdict;
+  matchedBy: LabSiteLeadMatchReason;
+  contradictedBy?: LabSiteLeadContradictionShape;
+  rowState: LabSiteVerificationState;
+}
+
+const isOneOf = <T extends string>(values: readonly T[], value: unknown): value is T =>
+  typeof value === 'string' && (values as readonly string[]).includes(value);
+
+/**
+ * One row per lead the lane judged on this entity. An unreachable or malformed
+ * verification judged nobody, so it yields no row rather than a guessed verdict.
+ */
+export function perLeadVerdicts(entityKey: string, verification: unknown): LabSiteLeadVerdictRow[] {
+  const record = verification as Partial<LabSiteLeadVerification> | null | undefined;
+  if (!entityKey || !record || !isOneOf(labSiteVerificationStates, record.state)) return [];
+  const rowState = record.state;
+  const leads = Array.isArray(record.leads) ? record.leads : [];
+  return leads.flatMap((lead) => {
+    const personId = textValue(lead?.personId);
+    if (!personId || !isOneOf(labSiteLeadVerdicts, lead.verdict)) return [];
+    return [
+      {
+        entityKey,
+        personId,
+        role: textValue(lead.role),
+        verdict: lead.verdict,
+        matchedBy: isOneOf(labSiteLeadMatchReasons, lead.matchedBy) ? lead.matchedBy : 'NONE',
+        ...(lead.contradictedBy ? { contradictedBy: lead.contradictedBy } : {}),
+        rowState,
+      },
+    ];
+  });
+}

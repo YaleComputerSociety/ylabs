@@ -3,6 +3,13 @@ import type { ObservedEntityType } from '../models/observation';
 import { classificationFromObservedFacts } from '../scrapers/fellowshipClassificationDerivation';
 import { isRefusedObservationField } from '../scrapers/observationFieldSanitizer';
 import {
+  LAB_SITE_LEAD_VERIFICATION_SOURCE,
+  labSiteVerificationStates,
+  perLeadVerdicts,
+  type LabSiteLeadVerdictRow,
+  type LabSiteVerificationState,
+} from '../scrapers/utils/labSiteLeadVerification';
+import {
   observationAssertsRefusedValue,
   refusalLaneEvidenceFields,
 } from '../utils/researchEntityFieldValueRefusals';
@@ -700,4 +707,162 @@ export function benchmarksToReplay<
     } else replay.push(benchmark);
   }
   return { replay, superseded, retired };
+}
+
+export const LEAD_VERIFICATION_FIELD = 'leadVerification';
+export const LEAD_VERIFICATION_UNMEASURED = 'unmeasured: no owner labels';
+
+export const ownerLeadVerdicts = ['correct_lead', 'not_the_lead', 'cant_tell'] as const;
+export type OwnerLeadVerdict = (typeof ownerLeadVerdicts)[number];
+
+/** One owner judgement of whether a candidate lead leads the row, read from the owner ballot. */
+export interface OwnerLeadLabel {
+  entityKey: string;
+  personId: string;
+  ownerVerdict: OwnerLeadVerdict;
+}
+
+export interface LeadVerdictPrecision {
+  judged: number;
+  agreed: number;
+  precision: number | null;
+}
+
+export interface LeadVerificationOwnerScore {
+  ownerLabels: number;
+  labelsNotReplayed: number;
+  leadsUnlabelled: number;
+  cantTell: number;
+  confirmed: LeadVerdictPrecision;
+  contradicted: LeadVerdictPrecision;
+  unstated: { judged: number; correctLead: number; notTheLead: number };
+}
+
+export interface LeadVerificationScore {
+  rows: Record<LabSiteVerificationState, number>;
+  leads: { CONFIRMED: number; CONTRADICTED: number; UNSTATED: number };
+  perLead: LabSiteLeadVerdictRow[];
+  precision: typeof LEAD_VERIFICATION_UNMEASURED | LeadVerificationOwnerScore;
+}
+
+export const scoresLeadVerification = (sourceName: string): boolean =>
+  sourceName === LAB_SITE_LEAD_VERIFICATION_SOURCE;
+
+const leadPairKey = (entityKey: string, personId: string) => `${entityKey}\u0000${personId}`;
+
+const precisionOf = (judged: number, agreed: number): LeadVerdictPrecision => ({
+  judged,
+  agreed,
+  precision: judged > 0 ? agreed / judged : null,
+});
+
+/**
+ * Scores the lane per lead rather than per row (#4941). A `CONFIRMED` verdict is right when
+ * the owner judged the person the lead, a `CONTRADICTED` one when the owner judged them not
+ * the lead, and an `UNSTATED` one makes no claim, so it is reported as the owner's split
+ * rather than as a precision. Only owner labels are read: with none, precision is
+ * unmeasured, never computed against an agent's labels or the lane's own verdicts.
+ */
+export function scoreLeadVerificationPerLead(
+  observations: readonly PlannedObservation[],
+  ownerLabels: readonly OwnerLeadLabel[] = [],
+  slugByEntityId: ReadonlyMap<string, string> = new Map(),
+): LeadVerificationScore {
+  const rows = Object.fromEntries(labSiteVerificationStates.map((state) => [state, 0])) as Record<
+    LabSiteVerificationState,
+    number
+  >;
+  const perLead: LabSiteLeadVerdictRow[] = [];
+  for (const observation of observations) {
+    if (text(observation.entityType) !== 'researchEntity') continue;
+    if (text(observation.field) !== LEAD_VERIFICATION_FIELD) continue;
+    const entityKey =
+      text(observation.entityKey) || slugByEntityId.get(idText(observation.entityId)) || '';
+    const state = (observation.value as { state?: unknown } | null)?.state;
+    if (entityKey && labSiteVerificationStates.includes(state as LabSiteVerificationState))
+      rows[state as LabSiteVerificationState] += 1;
+    perLead.push(...perLeadVerdicts(entityKey, observation.value));
+  }
+  perLead.sort(
+    (a, b) => a.entityKey.localeCompare(b.entityKey) || a.personId.localeCompare(b.personId),
+  );
+  const leads = { CONFIRMED: 0, CONTRADICTED: 0, UNSTATED: 0 };
+  for (const lead of perLead) leads[lead.verdict] += 1;
+  if (ownerLabels.length === 0)
+    return { rows, leads, perLead, precision: LEAD_VERIFICATION_UNMEASURED };
+
+  const labelByPair = new Map<string, OwnerLeadLabel>();
+  for (const label of ownerLabels) {
+    const key = leadPairKey(label.entityKey, label.personId);
+    if (labelByPair.has(key))
+      throw new Error(`two owner labels for one lead on ${label.entityKey}`);
+    labelByPair.set(key, label);
+  }
+  const replayedPairs = new Set(perLead.map((lead) => leadPairKey(lead.entityKey, lead.personId)));
+  let confirmedJudged = 0;
+  let confirmedAgreed = 0;
+  let contradictedJudged = 0;
+  let contradictedAgreed = 0;
+  const unstated = { judged: 0, correctLead: 0, notTheLead: 0 };
+  let leadsUnlabelled = 0;
+  let cantTell = 0;
+  for (const lead of perLead) {
+    const label = labelByPair.get(leadPairKey(lead.entityKey, lead.personId));
+    if (!label) {
+      leadsUnlabelled += 1;
+      continue;
+    }
+    if (label.ownerVerdict === 'cant_tell') {
+      cantTell += 1;
+      continue;
+    }
+    const ownerSaysLead = label.ownerVerdict === 'correct_lead';
+    if (lead.verdict === 'CONFIRMED') {
+      confirmedJudged += 1;
+      if (ownerSaysLead) confirmedAgreed += 1;
+    } else if (lead.verdict === 'CONTRADICTED') {
+      contradictedJudged += 1;
+      if (!ownerSaysLead) contradictedAgreed += 1;
+    } else {
+      unstated.judged += 1;
+      if (ownerSaysLead) unstated.correctLead += 1;
+      else unstated.notTheLead += 1;
+    }
+  }
+  return {
+    rows,
+    leads,
+    perLead,
+    precision: {
+      ownerLabels: ownerLabels.length,
+      labelsNotReplayed: ownerLabels.filter(
+        (label) => !replayedPairs.has(leadPairKey(label.entityKey, label.personId)),
+      ).length,
+      leadsUnlabelled,
+      cantTell,
+      confirmed: precisionOf(confirmedJudged, confirmedAgreed),
+      contradicted: precisionOf(contradictedJudged, contradictedAgreed),
+      unstated,
+    },
+  };
+}
+
+/**
+ * Whether a benchmark is the one an owner ballot was drawn from or a recapture of it. An
+ * owner label judges who leads a row rather than one frozen page, so it still applies after a
+ * recapture, and `labelsNotReplayed` counts the leads the recapture no longer judges.
+ */
+export function benchmarkDescendsFrom(
+  benchmarkId: string,
+  ancestorId: string,
+  supersedesById: ReadonlyMap<string, string | undefined>,
+): boolean {
+  const visited = new Set<string>();
+  let current: string | undefined = benchmarkId;
+  while (current && !visited.has(current)) {
+    if (current === ancestorId) return true;
+    visited.add(current);
+    current = supersedesById.get(current);
+  }
+  return false;
 }
