@@ -10,7 +10,12 @@ import {
   type DescriptionCardJudge,
 } from '../descriptionCardRefreshGuard';
 import { appendObservations } from '../observationStore';
+import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
 
+vi.mock('../../utils/mongooseConnectionWasOpened', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../utils/mongooseConnectionWasOpened')>()),
+  mongooseConnectionWasOpened: vi.fn(() => false),
+}));
 vi.mock('../../services/researchEntityMembershipAccessor', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../services/researchEntityMembershipAccessor')>()),
   getResearchEntityRosterByEntityId: vi.fn(),
@@ -159,7 +164,7 @@ describe('createDescriptionCardJudge', () => {
     "Correct Person's research examines molecular dynamics and cellular signaling across complex biological systems.";
 
   it("judges the pair against the row's own leads, as the gate does", async () => {
-    vi.spyOn(mongoose.connection, 'readyState', 'get').mockReturnValue(1);
+    vi.mocked(mongooseConnectionWasOpened).mockReturnValue(true);
     vi.spyOn(ResearchEntity, 'findOne').mockReturnValue({
       select: () => ({
         lean: async () => ({
@@ -194,8 +199,8 @@ describe('createDescriptionCardJudge', () => {
     expect(await judge(judgedSubject, { fullDescription: WRONG_SUBJECT }, {})).toBe(false);
   });
 
-  it('cannot judge without a connected database', async () => {
-    vi.spyOn(mongoose.connection, 'readyState', 'get').mockReturnValue(0);
+  it('cannot judge in a process that never opened a database connection', async () => {
+    vi.mocked(mongooseConnectionWasOpened).mockReturnValue(false);
     const findOne = vi.spyOn(ResearchEntity, 'findOne');
     expect(
       await createDescriptionCardJudge()(subject, { fullDescription: GOOD }, {}),

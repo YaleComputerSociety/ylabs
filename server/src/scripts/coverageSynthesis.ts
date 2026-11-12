@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
+import { countConnectionDrops } from '../utils/mongooseConnectionWasOpened';
 import { ResearchEntity } from '../models/researchEntity';
 import { Observation } from '../models/observation';
 import { appendObservations, getSourceByName } from '../scrapers/observationStore';
@@ -556,6 +557,7 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
   const drafting = callLLM ? writerModelThroughCache({ callLLM, store }) : null;
 
   await initializeConnections();
+  const connectionDrops = countConnectionDrops();
 
   const entities = await loadTargetEntities(args);
   const verifiedRunIds = await loadIngestVerifiedRunIds();
@@ -818,6 +820,7 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
     observationDropped,
     adopted,
     entityErrors,
+    connectionDrops: { ...connectionDrops },
     regated: regates.reduce((sum, entry) => sum + entry.scopedEntities, 0),
     tierChanged: regates.reduce((sum, entry) => sum + entry.tierChanged, 0),
     indexSyncFailures: regates.reduce((sum, entry) => sum + entry.indexSyncFailures, 0),

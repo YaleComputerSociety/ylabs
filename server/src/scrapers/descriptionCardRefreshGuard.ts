@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import type { ObservationInput } from './types';
+import { mongooseConnectionWasOpened } from '../utils/mongooseConnectionWasOpened';
 
 export interface DescriptionPair {
   fullDescription?: unknown;
@@ -29,7 +30,7 @@ export function createDescriptionCardJudge(): DescriptionCardJudge {
     return rows.get(cacheKey)!;
   };
   return async (subject, pair, context) => {
-    if (mongoose.connection.readyState !== 1) return undefined;
+    if (!mongooseConnectionWasOpened()) return undefined;
     const row = await loadRow(subject);
     if (!row) return undefined;
     const { buildResearchEntityPublicDescriptionRepresentation } =
