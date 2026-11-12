@@ -6,7 +6,7 @@
  *
  *   yarn --cwd server role-assignments:detach-edge --edge=<id> --note='<why>'
  *   yarn --cwd server role-assignments:detach-edge --edge=<id> --note='<why>' \
- *     --snapshot=./tmp/<file>.json --apply --confirm-detach-role-edge
+ *     --decided-by=owner|agent --snapshot=./tmp/<file>.json --apply --confirm-detach-role-edge
  */
 import dotenv from 'dotenv';
 import fs from 'fs';
@@ -27,11 +27,15 @@ const SCRIPT_NAME = 'role-assignments:detach-edge';
 const CONFIRM_FLAG = '--confirm-detach-role-edge';
 const MAX_NOTE_LENGTH = 500;
 const MAX_ACTOR_LENGTH = 120;
+const DETACHMENT_DECIDERS = ['owner', 'agent'] as const;
+
+export type DetachmentDecidedBy = (typeof DETACHMENT_DECIDERS)[number];
 
 export interface DetachRoleAssignmentEdgeArgs {
   edgeId: string;
   note: string;
   actor?: string;
+  decidedBy?: DetachmentDecidedBy;
   snapshot?: string;
   apply: boolean;
   confirmed: boolean;
@@ -44,7 +48,11 @@ export function parseDetachRoleAssignmentEdgeArgs(
   const value = (name: string) =>
     argv.find((arg) => arg.startsWith(`--${name}=`))?.slice(name.length + 3);
   for (const arg of argv) {
-    if (!/^--(edge|note|snapshot|actor)=/.test(arg) && arg !== '--apply' && arg !== CONFIRM_FLAG) {
+    if (
+      !/^--(edge|note|snapshot|actor|decided-by)=/.test(arg) &&
+      arg !== '--apply' &&
+      arg !== CONFIRM_FLAG
+    ) {
       throw new Error(`Unknown ${SCRIPT_NAME} argument: ${arg}`);
     }
   }
@@ -61,13 +69,19 @@ export function parseDetachRoleAssignmentEdgeArgs(
   const actor = String(value('actor') ?? env.DEV_WRITE_OWNER ?? '').trim();
   if (actor.length > MAX_ACTOR_LENGTH)
     throw new Error(`--actor must be at most ${MAX_ACTOR_LENGTH} characters`);
+  const decidedBy = value('decided-by');
+  if (decidedBy !== undefined && !DETACHMENT_DECIDERS.includes(decidedBy as DetachmentDecidedBy))
+    throw new Error('--decided-by must be owner or agent');
   const apply = argv.includes('--apply');
   const snapshot = value('snapshot');
   if (apply && !snapshot) throw new Error(`${SCRIPT_NAME} --apply requires --snapshot=<path>`);
+  if (apply && !decidedBy)
+    throw new Error(`${SCRIPT_NAME} --apply requires --decided-by=owner or --decided-by=agent`);
   return {
     edgeId: edgeId.toLowerCase(),
     note,
     ...(actor ? { actor } : {}),
+    ...(decidedBy ? { decidedBy: decidedBy as DetachmentDecidedBy } : {}),
     ...(snapshot ? { snapshot: resolveSafeJsonReportOutputPath(snapshot) } : {}),
     apply,
     confirmed: argv.includes(CONFIRM_FLAG),
@@ -86,7 +100,10 @@ export interface DetachRoleAssignmentEdgeResult {
 
 /** Detaches one live edge; a missing, archived or already disputed edge is left untouched. */
 export async function detachRoleAssignmentEdge(
-  args: Pick<DetachRoleAssignmentEdgeArgs, 'edgeId' | 'note' | 'actor' | 'snapshot' | 'apply'>,
+  args: Pick<
+    DetachRoleAssignmentEdgeArgs,
+    'edgeId' | 'note' | 'actor' | 'decidedBy' | 'snapshot' | 'apply'
+  >,
   regate: (rowId: string) => Promise<unknown> = (rowId) =>
     runStudentVisibilityGate({ collection: 'research', mode: 'apply', recordIds: [rowId] }),
 ): Promise<DetachRoleAssignmentEdgeResult> {
@@ -116,8 +133,15 @@ export async function detachRoleAssignmentEdge(
   const result = await RoleAssignment.updateOne(
     { _id, ...LIVE_ROLE_EDGE_FILTER },
     args.actor
-      ? { $set: { ...detachment, reviewedBy: args.actor, reviewedAt: new Date() } }
-      : { $set: detachment, $unset: { reviewedBy: '', reviewedAt: '' } },
+      ? {
+          $set: {
+            ...detachment,
+            reviewedBy: args.actor,
+            reviewedByAgent: args.decidedBy === 'agent',
+            reviewedAt: new Date(),
+          },
+        }
+      : { $set: detachment, $unset: { reviewedBy: '', reviewedByAgent: '', reviewedAt: '' } },
   );
   const detached = (result.modifiedCount ?? 0) === 1;
   const rowId = edge.target?.kind === 'RESEARCH_ENTITY' ? String(edge.target.id) : '';

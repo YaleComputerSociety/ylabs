@@ -5,6 +5,7 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RoleAssignment } from '../../models/roleAssignment';
+import { detachRoleAssignmentEdge } from '../detachRoleAssignmentEdge';
 import {
   parseRestoreDetachedRoleAssignmentEdgeArgs,
   restoreDetachedRoleAssignmentEdge,
@@ -16,6 +17,7 @@ const STAGE_NOTE =
 const RESTORE_NOTE = 'the stage predicate misfired on a name-variant merge';
 const AGENT_ACTOR = 'ylabs-fixture-session';
 const SYNTHETIC_OWNER_NETID = 'zz9993';
+const NON_NETID_OWNER_LABEL = 'ylabs-review-session-2026';
 
 let server: MongoMemoryServer;
 const db = () => mongoose.connection.db!;
@@ -131,7 +133,55 @@ describe('role-assignments:restore-detached-edge (#5968)', () => {
     const seeded = await seedDetachedEdge({
       reviewNotes: 'center page lists a different lead',
       reviewedBy: AGENT_ACTOR,
+      reviewedByAgent: true,
     });
+    const result = await restoreDetachedRoleAssignmentEdge(applyArgs(seeded), vi.fn());
+    expect(result).toMatchObject({ decider: 'stage-or-agent', restored: true });
+    expect((await storedEdge(seeded.edgeId)).reviewedByAgent).toBeUndefined();
+  });
+
+  it.each([
+    ['decided by the owner', 'owner' as const],
+    ['with no recorded decider', undefined],
+  ])(
+    'refuses an edge detach-edge detached %s under a session label that is not netid-shaped',
+    async (_case, decidedBy) => {
+      const seeded = await seedDetachedEdge({ archived: false, reviewStatus: 'UNREVIEWED' });
+      await detachRoleAssignmentEdge(
+        {
+          edgeId: seeded.edgeId,
+          note: 'center page lists a different lead',
+          actor: NON_NETID_OWNER_LABEL,
+          ...(decidedBy ? { decidedBy } : {}),
+          apply: true,
+        },
+        vi.fn(),
+      );
+      const before = await storedEdge(seeded.edgeId);
+      const regate = vi.fn();
+      const result = await restoreDetachedRoleAssignmentEdge(applyArgs(seeded), regate);
+      expect(result).toMatchObject({
+        decider: 'owner',
+        refusal: 'detachment-decided-by-owner',
+        restored: false,
+      });
+      expect(regate).not.toHaveBeenCalled();
+      expect(await storedEdge(seeded.edgeId)).toEqual(before);
+    },
+  );
+
+  it('restores an edge detach-edge detached as decided by an agent', async () => {
+    const seeded = await seedDetachedEdge({ archived: false, reviewStatus: 'UNREVIEWED' });
+    await detachRoleAssignmentEdge(
+      {
+        edgeId: seeded.edgeId,
+        note: 'center page lists a different lead',
+        actor: AGENT_ACTOR,
+        decidedBy: 'agent',
+        apply: true,
+      },
+      vi.fn(),
+    );
     const result = await restoreDetachedRoleAssignmentEdge(applyArgs(seeded), vi.fn());
     expect(result).toMatchObject({ decider: 'stage-or-agent', restored: true });
   });
@@ -368,9 +418,25 @@ describe('who decided a detachment', () => {
   it.each([
     [{ reviewNotes: STAGE_NOTE }, 'stage-or-agent'],
     [{ reviewNotes: 'Retired as a lead claim (#2880, #1897).' }, 'stage-or-agent'],
-    [{ reviewNotes: 'center lists another lead', reviewedBy: AGENT_ACTOR }, 'stage-or-agent'],
+    [
+      { reviewNotes: 'center lists another lead', reviewedBy: AGENT_ACTOR, reviewedByAgent: true },
+      'stage-or-agent',
+    ],
+    [{ reviewNotes: 'center lists another lead', reviewedBy: NON_NETID_OWNER_LABEL }, 'owner'],
+    [{ reviewNotes: STAGE_NOTE, reviewedBy: AGENT_ACTOR, reviewedByAgent: false }, 'owner'],
     [{ reviewNotes: STAGE_NOTE, reviewedBy: SYNTHETIC_OWNER_NETID }, 'owner'],
-    [{ reviewNotes: 'the owner said this is wrong (#5000)', reviewedBy: AGENT_ACTOR }, 'owner'],
+    [
+      { reviewNotes: STAGE_NOTE, reviewedBy: SYNTHETIC_OWNER_NETID, reviewedByAgent: true },
+      'owner',
+    ],
+    [
+      {
+        reviewNotes: 'the owner said this is wrong (#5000)',
+        reviewedBy: AGENT_ACTOR,
+        reviewedByAgent: true,
+      },
+      'owner',
+    ],
     [{ reviewNotes: 'wrong lead' }, 'unattributed'],
     [{}, 'unattributed'],
   ])('classifies %j as %s', (edge, decider) => {

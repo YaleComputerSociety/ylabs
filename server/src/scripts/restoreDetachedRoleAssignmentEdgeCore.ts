@@ -20,6 +20,7 @@ export interface DetachedRoleEdgeReviewRecord {
   reviewStatus?: unknown;
   reviewNotes?: unknown;
   reviewedBy?: unknown;
+  reviewedByAgent?: unknown;
   personId?: unknown;
   target?: { kind?: unknown; id?: unknown } | null;
 }
@@ -50,7 +51,11 @@ export function classifyDetachmentDecider(edge: DetachedRoleEdgeReviewRecord): D
   const note = text(edge.reviewNotes);
   const reviewer = text(edge.reviewedBy);
   if (OWNER_OR_OPERATOR_WORD.test(note) || OWNER_OR_OPERATOR_WORD.test(reviewer)) return 'owner';
-  if (reviewer) return looksLikeYaleNetid(reviewer) ? 'owner' : 'stage-or-agent';
+  if (reviewer) {
+    return edge.reviewedByAgent === true && !looksLikeYaleNetid(reviewer)
+      ? 'stage-or-agent'
+      : 'owner';
+  }
   return REPAIR_ISSUE_CITATION.test(note) ? 'stage-or-agent' : 'unattributed';
 }
 

@@ -67,6 +67,7 @@ export interface RoleAssignmentRecord {
   reviewStatus: RoleAssignmentReviewStatus;
   reviewNotes?: string;
   reviewedBy?: string;
+  reviewedByAgent?: boolean;
   reviewedAt?: Date;
   rosterProvenance?: RoleAssignmentRosterProvenance;
   archived: boolean;
@@ -150,6 +151,10 @@ export const roleAssignmentSchema = new mongoose.Schema<RoleAssignmentRecord>(
       type: String,
       trim: true,
       maxlength: 120,
+    },
+    reviewedByAgent: {
+      type: Boolean,
+      required: false,
     },
     reviewedAt: {
       type: Date,

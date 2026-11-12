@@ -183,6 +183,7 @@ export async function restoreDetachedRoleAssignmentEdge(
       'target.id': new mongoose.Types.ObjectId(args.expectedTargetId),
       reviewNotes: edge.reviewNotes ?? null,
       reviewedBy: edge.reviewedBy ?? null,
+      reviewedByAgent: edge.reviewedByAgent ?? null,
     },
     {
       $set: {
@@ -192,6 +193,7 @@ export async function restoreDetachedRoleAssignmentEdge(
         reviewedBy: args.actor,
         reviewedAt: now(),
       },
+      $unset: { reviewedByAgent: '' },
     },
   );
   const restored = (result.modifiedCount ?? 0) === 1;
