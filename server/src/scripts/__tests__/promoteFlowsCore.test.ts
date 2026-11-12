@@ -238,8 +238,7 @@ describe('promote:beta', () => {
     const created = harness.renderCalls.find((call) => call.method === 'POST')!;
     expect(created.url).toBe('https://api.render.com/v1/services/crn-beta1/jobs');
     expect(JSON.parse(created.body!)).toEqual({
-      startCommand:
-        'yarn --cwd server promote:remote-phase --environment beta --confirm-beta-backup',
+      startCommand: 'yarn --cwd server promote:remote-phase --environment beta',
     });
     expect(harness.logs.join('\n')).not.toContain('rnd_test_key');
   });

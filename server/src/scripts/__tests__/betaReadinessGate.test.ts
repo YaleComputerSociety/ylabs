@@ -5,30 +5,24 @@ import { describe, expect, it } from 'vitest';
 import {
   buildBetaReadinessCommands,
   buildBetaReadinessGateOutput,
+  buildBetaReadinessGates,
   betaReadinessExitCode,
   parseBetaReadinessGateArgs,
   writeBetaReadinessGateOutput,
 } from '../betaReadinessGate';
 
 describe('betaReadinessGate CLI helpers', () => {
-  it('parses the backup confirmation and output flags', () => {
-    expect(
-      parseBetaReadinessGateArgs([
-        '--confirm-beta-backup',
-        '--output',
-        '/tmp/ylabs-beta-readiness.json',
-      ]),
-    ).toEqual({
-      confirmBetaBackup: true,
+  it('parses the output flag', () => {
+    expect(parseBetaReadinessGateArgs(['--output', '/tmp/ylabs-beta-readiness.json'])).toEqual({
       output: '/tmp/ylabs-beta-readiness.json',
     });
     expect(() => parseBetaReadinessGateArgs(['prod'])).toThrow(
       /Unknown Beta readiness gate argument: prod/,
     );
-    expect(() => parseBetaReadinessGateArgs(['--output', '--confirm-beta-backup'])).toThrow(
+    expect(() => parseBetaReadinessGateArgs(['--output', '--strict'])).toThrow(
       /--output requires a path/,
     );
-    expect(() => parseBetaReadinessGateArgs(['--output=--confirm-beta-backup'])).toThrow(
+    expect(() => parseBetaReadinessGateArgs(['--output=--strict'])).toThrow(
       /--output requires a path/,
     );
     expect(() => parseBetaReadinessGateArgs(['--output=/var/tmp/beta-readiness.json'])).toThrow(
@@ -48,12 +42,42 @@ describe('betaReadinessGate CLI helpers', () => {
     );
   });
 
-  it('defaults to an unconfirmed backup when no flag is passed', () => {
-    expect(parseBetaReadinessGateArgs([])).toEqual({ confirmBetaBackup: false });
+  it('refuses the retired backup confirmation flag, which verified nothing (#5556)', () => {
+    expect(() => parseBetaReadinessGateArgs(['--confirm-beta-backup'])).toThrow(
+      /Unknown Beta readiness gate argument: --confirm-beta-backup/,
+    );
+    expect(parseBetaReadinessGateArgs([])).toEqual({});
+  });
+
+  it('reports no backup gate, so no row can read ready on an operator assertion (#5556)', () => {
+    const gates = buildBetaReadinessGates({
+      legacyCollectionCounts: { research_groups: 0 },
+      missingSources: [],
+    });
+
+    expect(Object.keys(gates).sort()).toEqual(['canonicalMigration', 'sourceMetadata']);
+    expect(JSON.stringify(gates)).not.toMatch(/backup|restore point/i);
+  });
+
+  it('blocks the migration and source gates on the evidence they read', () => {
+    const gates = buildBetaReadinessGates({
+      legacyCollectionCounts: { research_groups: 2, applications: 0 },
+      missingSources: ['nih-reporter'],
+    });
+
+    expect(gates.canonicalMigration.status).toBe('blocked');
+    expect(gates.sourceMetadata).toMatchObject({
+      status: 'blocked',
+      missingSources: ['nih-reporter'],
+    });
+    expect(
+      buildBetaReadinessGates({ legacyCollectionCounts: {}, missingSources: [] }).sourceMetadata
+        .status,
+    ).toBe('ready');
   });
 
   it('exits non-zero whenever any gate is blocked, with no flag needed (#3723)', () => {
-    expect(betaReadinessExitCode(['betaBackup'])).toBe(1);
+    expect(betaReadinessExitCode(['sourceMetadata'])).toBe(1);
     expect(betaReadinessExitCode(['sourceMetadata', 'canonicalMigration'])).toBe(1);
     expect(betaReadinessExitCode([])).toBe(0);
   });
@@ -65,7 +89,7 @@ describe('betaReadinessGate CLI helpers', () => {
       {
         ready: false,
         gates: {
-          betaBackup: { status: 'blocked' },
+          sourceMetadata: { status: 'blocked' },
         },
       },
       output,
@@ -74,7 +98,7 @@ describe('betaReadinessGate CLI helpers', () => {
     expect(JSON.parse(fs.readFileSync(output, 'utf8'))).toMatchObject({
       ready: false,
       gates: {
-        betaBackup: { status: 'blocked' },
+        sourceMetadata: { status: 'blocked' },
       },
     });
     expect(() =>
@@ -87,14 +111,13 @@ describe('betaReadinessGate CLI helpers', () => {
       {
         ready: false,
         gates: {
-          betaBackup: { status: 'blocked' },
+          sourceMetadata: { status: 'blocked' },
         },
       },
       {
         environment: 'beta',
         db: 'Beta',
         options: {
-          confirmBetaBackup: true,
           output: '/tmp/ylabs-beta-readiness.json',
         },
       },
@@ -103,12 +126,11 @@ describe('betaReadinessGate CLI helpers', () => {
     expect(output).toEqual({
       ready: false,
       gates: {
-        betaBackup: { status: 'blocked' },
+        sourceMetadata: { status: 'blocked' },
       },
       environment: 'beta',
       db: 'Beta',
       options: {
-        confirmBetaBackup: true,
         output: '/tmp/ylabs-beta-readiness.json',
       },
     });
