@@ -11,6 +11,7 @@ import {
   parseRekeyTopicTextArgs,
   REKEY_TOPIC_TEXT_CONFIRM_FLAG,
   rekeyResearchTopicsToTopicText,
+  topicTextRekeyChunk,
 } from '../rekeyResearchTopicsToTopicTextCore';
 
 const url = (name: string) => `https://synthetic-${name}.example.edu/research`;
@@ -144,6 +145,30 @@ describe('research-topics:rekey-topic-text (#5882)', () => {
     expect(rerun.alreadyRekeyed).toBe(3);
   });
 
+  it('plans only the remainder after an apply stopped part way', async () => {
+    const { store, inserted } = memoryStore(readings());
+    let writes = 0;
+    const stopping: RekeyResearchTopicsStore = {
+      find: store.find,
+      insert: async (record) => {
+        if (writes === 1) throw new Error('stopped');
+        writes += 1;
+        await store.insert(record);
+      },
+    };
+    await expect(
+      rekeyResearchTopicsToTopicText({ rows, store: stopping, apply: true }),
+    ).rejects.toThrow('stopped');
+    expect(inserted).toHaveLength(1);
+
+    const rerun = await rekeyResearchTopicsToTopicText({ rows, store, apply: false });
+    expect(rerun.alreadyRekeyed).toBe(1);
+    expect(rerun.wouldRekey).toBe(2);
+    expect(
+      rerun.rows.filter((row) => row.outcome === 'would-rekey').map((row) => row.entityKey),
+    ).toEqual(['synthetic-rotated', 'synthetic-listed']);
+  });
+
   it('requires the confirm flag to apply', () => {
     expect(() => parseRekeyTopicTextArgs(['--apply'])).toThrow(REKEY_TOPIC_TEXT_CONFIRM_FLAG);
     expect(parseRekeyTopicTextArgs(['--apply', REKEY_TOPIC_TEXT_CONFIRM_FLAG])).toMatchObject({
@@ -151,5 +176,17 @@ describe('research-topics:rekey-topic-text (#5882)', () => {
     });
     expect(parseRekeyTopicTextArgs([])).toMatchObject({ apply: false });
     expect(() => parseRekeyTopicTextArgs(['--all'])).toThrow();
+  });
+
+  it('runs one chunk of the rows at a time', () => {
+    const args = parseRekeyTopicTextArgs(['--offset=2', '--limit=3']);
+    expect(args).toMatchObject({ offset: 2, limit: 3 });
+    expect(topicTextRekeyChunk(rows, args).map((row) => row.entityKey)).toEqual([
+      'synthetic-rewritten',
+      'synthetic-clean',
+      'synthetic-listed',
+    ]);
+    expect(topicTextRekeyChunk(rows, parseRekeyTopicTextArgs(['--offset=5']))).toHaveLength(1);
+    expect(() => parseRekeyTopicTextArgs(['--limit=-1'])).toThrow('--limit');
   });
 });

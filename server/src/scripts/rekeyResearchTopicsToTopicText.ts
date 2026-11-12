@@ -25,6 +25,7 @@ import type { RekeyResearchTopicsStore } from './rekeyResearchTopicsToStrippedTe
 import {
   parseRekeyTopicTextArgs,
   rekeyResearchTopicsToTopicText,
+  topicTextRekeyChunk,
   type TopicTextRekeyRow,
 } from './rekeyResearchTopicsToTopicTextCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
@@ -105,7 +106,7 @@ async function main() {
   );
   await initializeConnections();
   const report = await rekeyResearchTopicsToTopicText({
-    rows: await loadRowsWithPriorText(),
+    rows: topicTextRekeyChunk(await loadRowsWithPriorText(), args),
     store: mongoRekeyStore,
     apply: args.apply,
   });

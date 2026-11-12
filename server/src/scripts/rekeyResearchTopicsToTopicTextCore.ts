@@ -17,17 +17,29 @@ export const REKEY_TOPIC_TEXT_CONFIRM_FLAG = '--confirm-research-topics-topic-te
 export interface RekeyTopicTextArgs {
   apply: boolean;
   confirm: boolean;
+  offset: number;
+  limit?: number;
   output?: string;
 }
 
+const nonNegativeInteger = (flag: string, raw: string): number => {
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 0) throw new Error(`${flag} needs a whole number.`);
+  return value;
+};
+
 export function parseRekeyTopicTextArgs(argv: readonly string[]): RekeyTopicTextArgs {
-  const args: RekeyTopicTextArgs = { apply: false, confirm: false };
+  const args: RekeyTopicTextArgs = { apply: false, confirm: false, offset: 0 };
   for (const arg of argv) {
     if (arg === '--') continue;
     if (arg === '--apply') args.apply = true;
     else if (arg === '--dry-run') args.apply = false;
     else if (arg === REKEY_TOPIC_TEXT_CONFIRM_FLAG) args.confirm = true;
-    else if (arg.startsWith('--output=')) args.output = arg.slice('--output='.length);
+    else if (arg.startsWith('--offset=')) {
+      args.offset = nonNegativeInteger('--offset', arg.slice('--offset='.length));
+    } else if (arg.startsWith('--limit=')) {
+      args.limit = nonNegativeInteger('--limit', arg.slice('--limit='.length));
+    } else if (arg.startsWith('--output=')) args.output = arg.slice('--output='.length);
     else throw new Error(`Unknown research-topics:rekey-topic-text argument: ${arg}`);
   }
   if (args.apply && !args.confirm) {
@@ -42,6 +54,14 @@ export interface TopicTextRekeyRow {
   value: unknown;
   /** Superseded page-text values of the same row, newest first. */
   priorValues?: readonly unknown[];
+}
+
+/** One chunk of the rows in load order, so a long apply can run as several short processes. */
+export function topicTextRekeyChunk<T>(
+  rows: readonly T[],
+  args: Pick<RekeyTopicTextArgs, 'offset' | 'limit'>,
+): T[] {
+  return rows.slice(args.offset, args.limit === undefined ? undefined : args.offset + args.limit);
 }
 
 export type TopicTextRekeyOutcome =
