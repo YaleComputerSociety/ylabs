@@ -115,6 +115,7 @@ import {
   candidateMatchesStudentFilters,
   HOSTS_UNDERGRADS_INDEX_FIELD,
   WELCOMES_UNDERGRADS_INDEX_FIELD,
+  MENTORS_UNDERGRADS_INDEX_FIELD,
   WORKS_WITH_UNDERGRADS_INDEX_FIELD,
   ResearchGroupFilterInput,
   tallyCandidateFacetDistribution,
@@ -709,6 +710,7 @@ const RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES = [
   'researchAreas',
   HOSTS_UNDERGRADS_INDEX_FIELD,
   WELCOMES_UNDERGRADS_INDEX_FIELD,
+  MENTORS_UNDERGRADS_INDEX_FIELD,
   WORKS_WITH_UNDERGRADS_INDEX_FIELD,
   UNDERGRAD_INVITATION_RANK_FIELD,
   MESH_DESCRIPTOR_ONLY_TERMS_FIELD,
@@ -1060,6 +1062,7 @@ const sanitizeResearchGroupSearchFilters = (
   researchAreas: boundedResearchFilterValues(filters.researchAreas),
   hostsUndergrads: filters.hostsUndergrads === true ? true : undefined,
   welcomesUndergrads: filters.welcomesUndergrads === true ? true : undefined,
+  mentorsUndergrads: filters.mentorsUndergrads === true ? true : undefined,
   worksWithUndergrads: filters.worksWithUndergrads === true ? true : undefined,
   studentVisibilityTier: boundedResearchFilterValues(filters.studentVisibilityTier),
 });
@@ -1074,6 +1077,7 @@ const SEARCH_RERANK_CACHE_FILTER_LISTS = [
 const SEARCH_RERANK_CACHE_FILTER_TOGGLES = [
   'hostsUndergrads',
   'welcomesUndergrads',
+  'mentorsUndergrads',
   'worksWithUndergrads',
 ] as const;
 
@@ -1751,6 +1755,7 @@ export const RESEARCH_ENTITY_SEARCH_FACET_FIELDS = [
   'entityType',
   HOSTS_UNDERGRADS_INDEX_FIELD,
   WELCOMES_UNDERGRADS_INDEX_FIELD,
+  MENTORS_UNDERGRADS_INDEX_FIELD,
   WORKS_WITH_UNDERGRADS_INDEX_FIELD,
 ];
 
@@ -1766,14 +1771,16 @@ const POOL_TALLIED_RESEARCH_FACETS: ReadonlyArray<{
   })),
   { filterKey: 'hostsUndergrads', indexField: HOSTS_UNDERGRADS_INDEX_FIELD },
   { filterKey: 'welcomesUndergrads', indexField: WELCOMES_UNDERGRADS_INDEX_FIELD },
+  { filterKey: 'mentorsUndergrads', indexField: MENTORS_UNDERGRADS_INDEX_FIELD },
   { filterKey: 'worksWithUndergrads', indexField: WORKS_WITH_UNDERGRADS_INDEX_FIELD },
 ];
 
 const TOGGLE_FILTERS_AHEAD_OF_INDEX: ReadonlyArray<{
-  filterKey: 'welcomesUndergrads' | 'worksWithUndergrads';
+  filterKey: 'welcomesUndergrads' | 'mentorsUndergrads' | 'worksWithUndergrads';
   indexField: string;
 }> = [
   { filterKey: 'welcomesUndergrads', indexField: WELCOMES_UNDERGRADS_INDEX_FIELD },
+  { filterKey: 'mentorsUndergrads', indexField: MENTORS_UNDERGRADS_INDEX_FIELD },
   { filterKey: 'worksWithUndergrads', indexField: WORKS_WITH_UNDERGRADS_INDEX_FIELD },
 ];
 
@@ -2018,6 +2025,7 @@ const readsSearchRerankCache = (): boolean =>
 const MORE_TOPIC_RESULTS_ACCESS_TOGGLES = [
   'hostsUndergrads',
   'welcomesUndergrads',
+  'mentorsUndergrads',
   'worksWithUndergrads',
 ] as const;
 type MoreTopicResultsAccessToggle = (typeof MORE_TOPIC_RESULTS_ACCESS_TOGGLES)[number];
@@ -2034,6 +2042,9 @@ const carriesAccessToggleEvidence = (
   if (toggle === 'hostsUndergrads') return hosts;
   if (toggle === 'welcomesUndergrads') return welcomes;
   const listed = (entity as { undergradListEvidence?: unknown }).undergradListEvidence;
+  if (toggle === 'mentorsUndergrads') {
+    return entityMentorsUndergraduates({ undergradListEvidence: listed });
+  }
   return hosts || welcomes || (Array.isArray(listed) && listed.length > 0);
 };
 
@@ -2074,6 +2085,7 @@ async function optionalMoreTopicResults({
     ...filters,
     hostsUndergrads: undefined,
     welcomesUndergrads: undefined,
+    mentorsUndergrads: undefined,
     worksWithUndergrads: undefined,
   };
   const shownIds = new Set(
@@ -2300,6 +2312,10 @@ async function searchResearchGroupsForQuery(
       .filter(
         (entity) =>
           sanitizedFilters.welcomesUndergrads !== true || entityWelcomesUndergraduates(entity),
+      )
+      .filter(
+        (entity) =>
+          sanitizedFilters.mentorsUndergrads !== true || entityMentorsUndergraduates(entity),
       )
       .filter(
         (entity) =>
@@ -2875,6 +2891,7 @@ async function searchResearchGroupsForQuery(
       researchAreas,
       [HOSTS_UNDERGRADS_INDEX_FIELD]: hostingEvidence,
       [WELCOMES_UNDERGRADS_INDEX_FIELD]: invitationEvidence,
+      [MENTORS_UNDERGRADS_INDEX_FIELD]: mentoringEvidence,
       [WORKS_WITH_UNDERGRADS_INDEX_FIELD]: worksWithEvidence,
       ...rest
     } = rawDistribution;
@@ -2885,6 +2902,7 @@ async function searchResearchGroupsForQuery(
       ...(schools ? { school: schools } : {}),
       ...(hostingEvidence ? { hostsUndergrads: { true: hostingEvidence.true ?? 0 } } : {}),
       ...(invitationEvidence ? { welcomesUndergrads: { true: invitationEvidence.true ?? 0 } } : {}),
+      ...(mentoringEvidence ? { mentorsUndergrads: { true: mentoringEvidence.true ?? 0 } } : {}),
       ...(worksWithEvidence ? { worksWithUndergrads: { true: worksWithEvidence.true ?? 0 } } : {}),
     };
   };

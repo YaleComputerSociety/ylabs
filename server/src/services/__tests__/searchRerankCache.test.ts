@@ -79,6 +79,18 @@ describe('searchRerankCacheQueryKey', () => {
     );
   });
 
+  it('gives the mentors-undergraduates toggle its own key and leaves the unticked key alone (#5963)', () => {
+    expect(searchRerankCacheQueryKey('ecology', { mentorsUndergrads: true })).not.toBe(
+      searchRerankCacheQueryKey('ecology', {}),
+    );
+    expect(searchRerankCacheQueryKey('ecology', { mentorsUndergrads: true })).not.toBe(
+      searchRerankCacheQueryKey('ecology', { worksWithUndergrads: true }),
+    );
+    expect(searchRerankCacheQueryKey('ecology', { mentorsUndergrads: false })).toBe(
+      searchRerankCacheQueryKey('ecology', {}),
+    );
+  });
+
   it('keeps an operator visibility scope and an unset toggle out of the key', () => {
     expect(
       searchRerankCacheQueryKey('ecology', {

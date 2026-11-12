@@ -1490,6 +1490,7 @@ describe('searchResearchGroupsViaMeili', () => {
           'entityType',
           'hasUndergradHostingEvidence',
           'welcomesUndergrads',
+          'mentorsUndergrads',
           'worksWithUndergrads',
         ],
       }),
@@ -2559,6 +2560,7 @@ describe('searchResearchGroupsViaMeili', () => {
       'researchAreas',
       'hasUndergradHostingEvidence',
       'welcomesUndergrads',
+      'mentorsUndergrads',
       'worksWithUndergrads',
       'undergradInvitationRank',
       'meshDescriptorOnlyTerms',
@@ -2978,6 +2980,7 @@ describe('searchResearchGroupsViaMeili', () => {
       entityType: { LAB: 2, FACULTY_RESEARCH_AREA: 1 },
       hostsUndergrads: { true: 0 },
       welcomesUndergrads: { true: 0 },
+      mentorsUndergrads: { true: 0 },
       worksWithUndergrads: { true: 0 },
     });
   });
@@ -3800,6 +3803,51 @@ describe('searchResearchGroupsViaMeili', () => {
     expect(mocks.search).not.toHaveBeenCalled();
     expect(result.researchEntities.map((entity) => entity._id)).toEqual(['quoted-lab']);
     expect(result.appliedFilters).toBeUndefined();
+  });
+
+  it('keeps only rows whose mentors entry is served when weakest-first browse filters on mentors (#5963)', async () => {
+    const mentorsEntry = {
+      source: 'cs-senior-projects',
+      kind: 'advised',
+      count: 2,
+      sourceUrl: 'https://projects.example.edu/senior-projects/',
+    };
+    mocks.researchEntityFind.mockReturnValue(
+      queryResult([
+        {
+          _id: '67d8928150621bcef434a1f1',
+          slug: 'mentoring-lab',
+          name: 'Mentoring Lab',
+          websiteUrl: 'https://mentoring.example.edu/',
+          undergradListEvidence: [mentorsEntry],
+          sourceUrls: [],
+          departments: [],
+          researchAreas: [],
+        },
+        {
+          _id: '67d8928150621bcef434a1f2',
+          slug: 'unreviewed-source-lab',
+          name: 'Unreviewed Source Lab',
+          websiteUrl: 'https://mentoring.example.edu/',
+          undergradListEvidence: [{ ...mentorsEntry, source: 'not-a-reviewed-source' }],
+          sourceUrls: [],
+          departments: [],
+          researchAreas: [],
+        },
+      ]),
+    );
+
+    const result = await searchResearchGroupsViaMeili(
+      '',
+      { mentorsUndergrads: true },
+      1,
+      10,
+      {},
+      { includeNonPublic: true, lowQualityFirst: true },
+    );
+
+    expect(mocks.search).not.toHaveBeenCalled();
+    expect(result.researchEntities.map((entity) => entity._id)).toEqual(['mentoring-lab']);
   });
 });
 

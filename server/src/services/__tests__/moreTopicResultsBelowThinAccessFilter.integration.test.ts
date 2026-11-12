@@ -48,6 +48,7 @@ type IndexDocument = {
   researchAreas: string[];
   hasUndergradHostingEvidence: boolean;
   welcomesUndergrads: boolean;
+  mentorsUndergrads?: true;
   undergradInvitationRank: number;
   leadProfessorNames: string[];
   searchText: string;
@@ -58,6 +59,7 @@ type SyntheticRow = {
   topic: string;
   hosts: boolean;
   welcomes: boolean;
+  mentors?: boolean;
   leadName?: string;
   staleIndexHostingFlag?: boolean;
 };
@@ -74,6 +76,7 @@ const syntheticRows: SyntheticRow[] = [
     topic: THIN_TOPIC,
     hosts: index % 8 === 3,
     welcomes: index === 3 || index % 10 === 6,
+    mentors: index % 9 === 4,
     staleIndexHostingFlag: index === 5,
   })),
   ...Array.from({ length: SEMANTIC_LEG_FILLER_ROWS }, () => ({
@@ -185,6 +188,7 @@ const toHit = (
   researchAreas: document.researchAreas,
   hasUndergradHostingEvidence: document.hasUndergradHostingEvidence,
   welcomesUndergrads: document.welcomesUndergrads,
+  mentorsUndergrads: document.mentorsUndergrads,
   undergradInvitationRank: document.undergradInvitationRank,
   _rankingScoreDetails: rankingScoreDetails,
   ...(params.showMatchesPosition
@@ -329,6 +333,18 @@ describe('a topic search thinned by an access filter lists more research on the 
               },
             }
           : {}),
+        ...(synthetic.mentors
+          ? {
+              undergradListEvidence: [
+                {
+                  source: 'cs-senior-projects',
+                  kind: 'advised',
+                  count: 2,
+                  sourceUrl: `https://example.yale.edu/synthetic-senior-projects-${index}/`,
+                },
+              ],
+            }
+          : {}),
       };
       const built = buildResearchEntitySearchIndexDocument(row);
       const onTopic = synthetic.topic !== OFF_TOPIC;
@@ -344,6 +360,7 @@ describe('a topic search thinned by an access filter lists more research on the 
         hasUndergradHostingEvidence:
           synthetic.staleIndexHostingFlag === true || built?.hasUndergradHostingEvidence === true,
         welcomesUndergrads: built?.welcomesUndergrads === true,
+        ...(built?.mentorsUndergrads === true ? { mentorsUndergrads: true as const } : {}),
         undergradInvitationRank: built?.undergradInvitationRank ?? 0,
         leadProfessorNames: synthetic.leadName ? [synthetic.leadName] : [],
         searchText: `synthetic ${synthetic.topic} study ${index}`,
@@ -408,6 +425,27 @@ describe('a topic search thinned by an access filter lists more research on the 
     expect(
       filtered.moreTopicResults?.some((entity) => entity.undergradInvitation !== undefined),
     ).toBe(false);
+  });
+
+  it('follows a thin mentors-filtered page with rows that carry no mentors entry (#5963)', async () => {
+    const filtered = await search(THIN_TOPIC, { mentorsUndergrads: true });
+    const unfiltered = await search(THIN_TOPIC, {}, { pageSize: 100 });
+    const shown = new Set(idsOf(filtered.researchEntities));
+    const servesMentors = (entity: any) =>
+      entity.undergradListEvidence?.some((entry: any) => entry.signal === 'mentors') === true;
+    const more = filtered.moreTopicResults ?? [];
+
+    expect(filtered.estimatedTotalHits).toBeGreaterThan(0);
+    expect(filtered.estimatedTotalHits).toBeLessThan(10);
+    expect(filtered.researchEntities.every(servesMentors)).toBe(true);
+    expect(idsOf(more)).toEqual(
+      idsOf(
+        unfiltered.researchEntities.filter(
+          (entity) => !shown.has(String(entity._id)) && !servesMentors(entity),
+        ),
+      ).slice(0, 10),
+    );
+    expect(more.some((entity) => entity.hasUndergradHostingEvidence === true)).toBe(true);
   });
 
   it('never repeats a filtered row, even one whose served card does not carry the badge', async () => {

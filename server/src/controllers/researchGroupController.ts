@@ -62,7 +62,7 @@ const OPERATOR_ALLOWED_SORT_FIELDS: ResearchGroupSearchSort['sortBy'][] = [
   'updatedAt',
 ];
 
-const parseFilters = (raw: unknown): ResearchGroupFilterInput => {
+export const parseFilters = (raw: unknown): ResearchGroupFilterInput => {
   if (!raw || typeof raw !== 'object') return {};
   const r = raw as Record<string, unknown>;
   const filters: ResearchGroupFilterInput = {};
@@ -88,6 +88,10 @@ const parseFilters = (raw: unknown): ResearchGroupFilterInput => {
 
   if (r.welcomesUndergrads === true) {
     filters.welcomesUndergrads = true;
+  }
+
+  if (r.mentorsUndergrads === true) {
+    filters.mentorsUndergrads = true;
   }
 
   if (r.worksWithUndergrads === true) {

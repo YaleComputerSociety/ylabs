@@ -1,8 +1,10 @@
 import type { UndergradInvitation, UndergradInvitationLevel } from '../types/researchGroup';
 import { safeHttpUrl } from './url';
 
-export const ACTIVELY_HIRING_LABEL = 'Welcomes undergrads, recruiting now';
-export const WELCOMES_UNDERGRADS_LABEL = 'Welcomes undergrads';
+// Card badges use the browse filter's own words, so changing one also changes the Undergrads
+// filter options in researchEntityCopy.ts (#5963).
+export const WELCOMES_UNDERGRADS_LABEL = 'Taking undergrads now';
+export const ACTIVELY_HIRING_LABEL = `${WELCOMES_UNDERGRADS_LABEL}, recruiting`;
 
 export const UNDERGRAD_INVITATION_LABELS: Record<UndergradInvitationLevel, string> = {
   actively_hiring: ACTIVELY_HIRING_LABEL,

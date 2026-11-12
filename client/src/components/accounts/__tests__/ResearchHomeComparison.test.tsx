@@ -123,9 +123,9 @@ describe('ResearchHomeComparison', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText('Has hosted undergrads before')).toBeTruthy();
+    expect(await screen.findByText('Has had undergrads before')).toBeTruthy();
     expect(screen.getByText('Has advised undergrads (2023–2025)')).toBeTruthy();
-    expect(screen.getByText('Welcomes undergrads')).toBeTruthy();
+    expect(screen.getByText('Taking undergrads now')).toBeTruthy();
     expect(screen.getByText(/Undergraduates join the lab each summer/)).toBeTruthy();
     expect(
       screen

@@ -94,6 +94,7 @@ export const RESEARCH_FILTER_KINDS = [
   'research_type',
   'hosts_undergrads',
   'welcomes_undergrads',
+  'mentors_undergrads',
   'works_with_undergrads',
   'current_availability',
   'compensation',

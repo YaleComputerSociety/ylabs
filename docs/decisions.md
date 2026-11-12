@@ -5,6 +5,17 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-11-12: Browse Folds Its Undergraduate Filters Into One "Undergrads" Group That Matches All Ticked Options (#5963)
+
+This replaces the three undergraduate toggles of #5362 and #5441.
+Decision (coordinator, 2026-11-12, posted on #5963): one group titled "Undergrads" holds "Taking undergrads now" (the welcomes signal), "Has had undergrads before" (the hosted signal) and "Advises undergrad research" (the mentors signal, hinted "e.g. supervised senior theses"), and the "Works with undergrads" umbrella is removed.
+In a cold simulated test of ten students, the current labels could not be told apart, with "Works with" and "Welcomes" the most confused pair, while all ten picked the right option from the proposed labels, of which only the mentors one was reworded afterwards, to name the advising students asked about.
+Ticking several keeps the existing server semantics, which match all ticked options, and the group says so, because 8 of the 10 students already expected ticking more to narrow.
+Each option shows the count ticking it would leave under the current selection, from the existing facet mechanism.
+The card and detail badges take the same words, so a filter and the badge it returns read alike: "Taking undergrads now" ("Taking undergrads now, recruiting" for the `actively_hiring` level, keeping the #5484 rule that both levels start with the filter's words), "Has had undergrads" and "Advises undergrad research" (coordinator, 2026-11-12).
+The owner kept #5449, no sidebar scrollbar at 1280x720, and kept the group open by default, so the wide sidebar compacts instead: 28px rows, the helper line and the advises hint as info tips, and tighter gaps, which brought the sidebar from 666px to 566px of a 590px budget on Development data (owner, 2026-11-12).
+The stored signals are unchanged; the server gained only a `mentorsUndergrads` request filter and facet on the index field #5603 already declared filterable, and it still accepts `worksWithUndergrads`, which an old link no longer ticks.
+
 ## 2026-11-12: A Card-Length Written Body Serves As Its Own Card (#5537)
 
 This refines the #4788 rule that a written body's card must not restate its body.

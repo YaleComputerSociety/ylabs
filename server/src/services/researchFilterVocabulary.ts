@@ -15,6 +15,7 @@ export type ResearchFilterVocabulary = Record<VocabularyFilterKey, ReadonlyMap<s
 
 export type AppliedStudentFilters = Partial<Record<VocabularyFilterKey, string[]>> & {
   welcomesUndergrads?: false;
+  mentorsUndergrads?: false;
   worksWithUndergrads?: false;
 };
 

@@ -303,7 +303,7 @@ const assertWideSidebarFits = async (visitorContext, visitor) => {
         await sidebar.getByLabel(`Filter by ${axis}`).waitFor({ timeout: 20000 });
       }
       const hostedToggle = sidebar.getByRole('checkbox', {
-        name: /^Hosted undergrads \([1-9][\d,]*\)$/,
+        name: /^Has had undergrads before \([1-9][\d,]*\)$/,
       });
       await hostedToggle.waitFor({ timeout: 20000 });
       await assertSidebarFits('while browsing');
