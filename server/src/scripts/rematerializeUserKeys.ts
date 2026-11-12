@@ -27,6 +27,7 @@
  *   yarn --cwd server observations:rematerialize-user-keys --keys-file=<keys.json> \
  *     --only-fields=identifiers.email --output=<tmp>.json
  */
+import { startLongRunProgress } from '../utils/longRunProgress';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import mongoose from 'mongoose';
@@ -93,7 +94,19 @@ async function main(): Promise<void> {
     const passes: UserKeyPassRow[][] = [];
     for (let pass = 1; pass <= args.passes; pass += 1) {
       const rows: UserKeyPassRow[] = [];
-      for (const key of keys) rows.push(await visit(key, args.apply, args.onlyFields));
+      const progress = startLongRunProgress(
+        `rematerialize-user-keys pass ${pass}/${args.passes}`,
+        keys.length,
+      );
+      try {
+        for (const key of keys) {
+          const row = await visit(key, args.apply, args.onlyFields);
+          rows.push(row);
+          progress.tick(Boolean(row.error));
+        }
+      } finally {
+        progress.stop();
+      }
       passes.push(rows);
     }
     const summaries = passes.map((rows, index) => summarizeUserKeyPass(index + 1, rows));

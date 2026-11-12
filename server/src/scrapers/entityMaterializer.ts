@@ -5,6 +5,7 @@
  * For person identities, materializes a canonical Researcher/Account (lookup by
  * entityKey, e.g. netid).
  */
+import { startLongRunProgress } from '../utils/longRunProgress';
 import {
   isPersonResearchRow,
   withLabSiteDescriptionsNarrowedToResearch,
@@ -15327,12 +15328,12 @@ async function materializeUserRowsInFieldScope(
   });
   const scopeRows: UserFieldScopeRow[] = [];
   let conflicts = 0;
-  const reportProgress = fieldScopeProgressReporter(userRows.length);
+  const progress = startLongRunProgress('field-scoped-user-materialize', userRows.length);
   const { linkedRowIndexSyncFailedEntityIds } = await materializeObservedEntitiesInChunks(
     userRows,
     options,
     (row, outcome) => {
-      reportProgress('error' in outcome);
+      progress.tick('error' in outcome);
       scopeRows.push(
         userFieldScopeRow({ entityKey: row.entityKey, entityId: row.entityId }, outcome),
       );
@@ -15340,7 +15341,7 @@ async function materializeUserRowsInFieldScope(
     },
     MATERIALIZATION_CHUNK_SIZE,
     1,
-  );
+  ).finally(() => progress.stop());
   const summary = summarizeUserFieldScopeRows(onlyFields, scopeRows);
   return {
     materialized: scopeRows.filter((row) => !row.error).length,

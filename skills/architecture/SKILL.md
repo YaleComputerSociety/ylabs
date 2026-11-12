@@ -191,6 +191,7 @@ A thrown error is logged through `sanitizeLogValue` (or the script's own `logFai
 Long Development runs need the laptop lid open or AC power: `caffeinate -i` prevents idle sleep only, not clamshell sleep.
 A run that spans a sleep looks hung (its log shows a disconnect and reconnects on each maintenance wake, but no progress), so re-run it.
 That is separate from exit 3, which is a process that finished its work while awake and still would not exit.
+Long user-key runs (`observations:rematerialize-user-keys` and the field-scoped user materialize) print a start line before the first key and a heartbeat every minute while no key completes (`startLongRunProgress`), so a slow prefetch reads as alive and a stuck one shows where it stopped.
 
 A request that could not reach the database answers `503` with a `Retry-After`, never `500`, and `isMongoUnavailableError` is the one predicate that decides it.
 Every arm except a lost topology is still reported to error tracking, because a socket timeout against a reachable database is a slow query that needs fixing rather than an outage.
