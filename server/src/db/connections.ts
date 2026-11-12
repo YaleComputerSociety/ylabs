@@ -64,7 +64,12 @@ export const mongoOptions: MongoConnectOptions = {
 };
 
 export const SCRIPT_SOCKET_TIMEOUT_MS = 10 * 60_000;
-export const SCRIPT_MAX_POOL_SIZE = 10;
+// A pool as small as the materializer's own concurrency starved itself: rows that hold a
+// connection while awaiting a nested query left every other read queued forever (#5880). The
+// pool keeps head-room above MAX_MATERIALIZATION_CONCURRENCY, and a checkout that cannot get a
+// connection within the wait budget fails loudly instead of hanging.
+export const SCRIPT_MAX_POOL_SIZE = 40;
+export const SCRIPT_POOL_WAIT_TIMEOUT_MS = 2 * 60_000;
 // The documented override for the few scripts whose single operation is a whole-
 // collection index build, rename or $merge: those can legitimately outlast the
 // ceiling, so they opt back into no socket timeout by passing these options.
@@ -91,6 +96,7 @@ export function scriptMongoConnectOptions(
     // Development, Beta and Production share one free-tier cluster with a
     // connection cap, and many script processes run at once (#5880).
     maxPoolSize: SCRIPT_MAX_POOL_SIZE,
+    waitQueueTimeoutMS: SCRIPT_POOL_WAIT_TIMEOUT_MS,
     serverSelectionTimeoutMS: 30000,
     bufferTimeoutMS: 30000,
     ...extra,
