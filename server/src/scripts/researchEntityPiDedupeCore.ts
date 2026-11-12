@@ -1076,15 +1076,17 @@ export function buildNameAgreedSharedPersonResearchEntityDedupePlan(
       const key = `${entityType}::${name}`;
       clusters.set(key, [...(clusters.get(key) || []), entity]);
     }
-    return [...clusters.values()].flatMap((entities) =>
-      joinsFacultyResearchRowToLab(entities)
-        ? sharedPersonGroup(
-            withoutPrimaryAppointmentPreference(row),
-            entities,
-            labTypedRowFirstScore,
-          )
-        : sharedPersonGroup(row, entities),
-    );
+    return [...clusters.values()]
+      .filter((entities) => !namesStateConflictingMiddleInitials(entities.map((e) => e.name)))
+      .flatMap((entities) =>
+        joinsFacultyResearchRowToLab(entities)
+          ? sharedPersonGroup(
+              withoutPrimaryAppointmentPreference(row),
+              entities,
+              labTypedRowFirstScore,
+            )
+          : sharedPersonGroup(row, entities),
+      );
   });
 }
 
@@ -1110,6 +1112,26 @@ export function buildNameAgreedSharedPersonAndRosterMailboxDedupePlan(
       ![group.canonicalEntityId, ...group.duplicateEntityIds].some((id) => excluded.has(id)),
   );
   return [...leadPlan, ...mailboxPlan];
+}
+
+/**
+ * Whether two row names state different middle initials. The name key drops a lone
+ * initial so that a roster printing one and another omitting it still agree, which also
+ * lets two different people who share a given name and surname agree. Two stated initials
+ * that differ say they are two people, so the group is refused on that, and not on
+ * whatever their cited profile pages happen to parse to (#5969).
+ */
+export function namesStateConflictingMiddleInitials(
+  names: ReadonlyArray<string | undefined>,
+): boolean {
+  const stated = names
+    .map((name) =>
+      foldedNameWords(name)
+        .filter((word) => word.length === 1)
+        .join(''),
+    )
+    .filter(Boolean);
+  return new Set(stated).size > 1;
 }
 
 const LAB_NAME_WORDS: ReadonlySet<string> = new Set(['lab', 'labs', 'laboratory', 'laboratories']);
@@ -1314,8 +1336,11 @@ function hostMappedPersonPageSlug(parsed: URL): string {
   return mapped ? leaf : '';
 }
 
+// A school of nursing directory appends every nursing credential to the person's slug, and
+// stripping stops at the first suffix this list does not know, so a missing nursing
+// credential read one person's two profile pages as two different people (#5969).
 const PERSON_PROFILE_CREDENTIAL_SUFFIX =
-  /-(?:phd|md|mph|ms|msc|mba|ma|dvm|rn|do|dds|scd|edd|jd|jr|sr|ii|iii|iv)$/;
+  /-(?:phd|md|mph|ms|msc|mba|ma|dvm|rn|do|dds|scd|edd|jd|jr|sr|ii|iii|iv|bsn|msn|dnp|aprn|fnp|np|anp|pnp|pmhnp|agpcnp|agacnp|whnp|nnp|cnm|cns|crna|ccrn|achpn|fpcn|faan|faha|faanp|faap|facp|bc|c)$/;
 
 // A collection page, not a person. `/people/<x>` is a person on some directories and
 // a listing subpage on others, and a lab-microsite crawl puts both into `sourceUrls`.

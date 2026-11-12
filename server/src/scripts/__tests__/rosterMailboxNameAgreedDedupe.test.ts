@@ -97,10 +97,10 @@ describe('name-agreed dedupe over roster mailbox groups (#5969)', () => {
     const plan = buildNameAgreedSharedPersonAndRosterMailboxDedupePlan(
       [
         leadRow('researcher-1', [
-          fra('ysm-faculty-ada-alpha', 'Ada Q. Alpha Faculty Research', {
+          fra('ysm-faculty-ada-alpha', 'Ada Alpha Faculty Research', {
             sourceUrls: ['https://medicine.yale.edu/profile/ada-alpha/'],
           }),
-          fra('dept-som-ada-r-alpha', 'Ada R. Alpha Faculty Research', {
+          fra('dept-som-ada-r-alpha', 'Ada Alpha Faculty Research', {
             sourceUrls: ['https://som.yale.edu/profile/ada-alpha-quill/'],
           }),
         ]),
