@@ -1,7 +1,30 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+const storedOrcidStatements = vi.hoisted(() => [] as Array<{ sourceUrl: string; value: string }>);
+
+vi.mock('../../models/observation', () => ({
+  Observation: {
+    find: (query: { sourceUrl: { $in: Array<RegExp | string> } }) => {
+      const matches = storedOrcidStatements.filter((statement) =>
+        query.sourceUrl.$in.some((candidate) =>
+          candidate instanceof RegExp
+            ? candidate.test(statement.sourceUrl)
+            : candidate === statement.sourceUrl,
+        ),
+      );
+      return { select: () => ({ lean: async () => matches }) };
+    },
+  },
+}));
+
+vi.mock('../../models/researcher', () => ({
+  Researcher: { find: () => ({ select: () => ({ lean: async () => [] }) }) },
+}));
+
 import {
   EMPTY_LEAD_MATCH_EVIDENCE,
   foldedProfileDestinationsFromRecords,
+  loadLeadMatchEvidence,
   pageOrcidByDestinationFromStatements,
   type LeadMatchEvidence,
 } from '../leadMatchEvidence';
@@ -165,5 +188,25 @@ describe('lead match evidence (#5970)', () => {
     expect(run()).toEqual(first);
     expect(first.leadProfessorPublicKey).toEqual(expect.any(String));
     expect(records[0].profileLinks).toHaveLength(1);
+  });
+
+  it('loads a destination ORCID stored under a section-prefixed alias of the profile page', async () => {
+    storedOrcidStatements.splice(0, storedOrcidStatements.length, {
+      sourceUrl: 'https://medicine.yale.edu/fixture-section/profile/fixture-lead/?tab=bio',
+      value: LEAD_ORCID,
+    });
+    const leads = leadOnSchoolB(LEAD_ORCID);
+    const loaded = await loadLeadMatchEvidence(destinations, leads);
+    const identity = researchDetailLeadIdentity(initiative, leads, loaded);
+    expect(identity.leadProfessorPublicKey).toEqual(expect.any(String));
+  });
+
+  it('does not load an ORCID stored under a different profile page on the same site', async () => {
+    storedOrcidStatements.splice(0, storedOrcidStatements.length, {
+      sourceUrl: 'https://medicine.yale.edu/profile/fixture-lead-other/',
+      value: LEAD_ORCID,
+    });
+    const loaded = await loadLeadMatchEvidence(destinations, leadOnSchoolB(LEAD_ORCID));
+    expect(loaded.pageOrcidByDestination.size).toBe(0);
   });
 });

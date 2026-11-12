@@ -5,6 +5,7 @@ import { normalizeOrcid } from '../utils/orcid';
 import {
   isLikelyOfficialPersonProfileUrl,
   normalizeOfficialProfileDestination,
+  officialProfileDestinationIndexedPatterns,
 } from './leadProfileIdentity';
 
 /**
@@ -90,11 +91,8 @@ export function foldedProfileDestinationsFromRecords(
   return byLeadId;
 }
 
-function destinationUrlVariants(destination: string): string[] {
-  return ['https://', 'http://', 'https://www.', 'http://www.'].flatMap((scheme) => [
-    `${scheme}${destination}`,
-    `${scheme}${destination}/`,
-  ]);
+function storedSourceUrlPatterns(destination: string): RegExp[] {
+  return officialProfileDestinationIndexedPatterns(`https://${destination}`);
 }
 
 export async function loadLeadMatchEvidence(
@@ -123,7 +121,7 @@ export async function loadLeadMatchEvidence(
           entityType: 'user',
           field: 'orcid',
           superseded: { $ne: true },
-          sourceUrl: { $in: [...destinations].flatMap(destinationUrlVariants) },
+          sourceUrl: { $in: [...destinations].flatMap(storedSourceUrlPatterns) },
         })
           .select('sourceUrl value')
           .lean()
