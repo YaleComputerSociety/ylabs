@@ -1472,7 +1472,10 @@ export async function reconcileFieldRetractions(options: {
  *
  * A person's email is read from one page, so a read here is every row a lane wrote for
  * one subject from one `sourceUrl` in one run, and a retraction retires only that lane's
- * email rows filed under that same page. The absence claim itself is the completeness
+ * email rows filed under that same page. Reads are matched to an email row by page alone,
+ * whatever person key they carry: a lane that keys a person by the address they state
+ * re-keys them the read the address disappears, so the claim lands under a new key, and a
+ * claim that the page states no address at all is true of every row filed under it. The absence claim itself is the completeness
  * witness: a lane states `assertsNoValueFor: ['email']` only after it parsed the page in
  * full and found no address of any kind on it (`pageStatesNoEmailAddress`), so a claim
  * cannot come from a partial read, and every other read of the page counts as a later
@@ -1595,15 +1598,14 @@ export function planUserFieldRetractions(input: {
   const retractableFields = new Set(input.contract.retractableFields);
   const readsByPage = new Map<string, FieldRetractionCompleteRead[]>();
   for (const read of input.reads) {
-    const pageKey = userPageReadKey(read.entityKey, read.sourceUrl);
-    const group = readsByPage.get(pageKey) ?? [];
+    const group = readsByPage.get(read.sourceUrl) ?? [];
     group.push({
-      entityKey: pageKey,
+      entityKey: read.entityKey,
       scrapeRunId: read.scrapeRunId,
       observedAt: read.observedAt,
       assertsNoValueFor: read.assertsNoValueFor,
     });
-    readsByPage.set(pageKey, group);
+    readsByPage.set(read.sourceUrl, group);
   }
 
   const counts = emptyUserCounts();
@@ -1617,7 +1619,7 @@ export function planUserFieldRetractions(input: {
     assertingPagesByField.set(observation.field, asserting.add(pageKey));
     const verdict = classifyFieldRetraction({
       observation,
-      completeReads: readsByPage.get(pageKey) ?? [],
+      completeReads: readsByPage.get(observation.sourceUrl) ?? [],
       minCompleteReads: input.minCompleteReads,
     });
     if (verdict === 'source-has-not-reread') counts.sourceHasNotReread += 1;
@@ -1733,18 +1735,18 @@ async function loadActiveUserRetractableObservations(
  */
 async function loadUserPageReads(
   sourceName: string,
-  entityKeys: readonly string[],
+  sourceUrls: readonly string[],
 ): Promise<UserPageRead[]> {
   const reads: UserPageRead[] = [];
-  for (let start = 0; start < entityKeys.length; start += USER_READ_KEY_CHUNK) {
+  for (let start = 0; start < sourceUrls.length; start += USER_READ_KEY_CHUNK) {
     const groups = (await Observation.aggregate([
       {
         $match: {
           entityType: 'user',
           sourceName,
-          entityKey: { $in: entityKeys.slice(start, start + USER_READ_KEY_CHUNK) },
+          sourceUrl: { $in: sourceUrls.slice(start, start + USER_READ_KEY_CHUNK) },
           scrapeRunId: { $exists: true, $ne: null },
-          sourceUrl: { $exists: true, $ne: null },
+          entityKey: { $exists: true, $ne: null },
         },
       },
       {
@@ -1810,7 +1812,7 @@ export async function reconcileUserFieldRetractions(options: {
   );
   if (activeObservations.length === 0) return result('no-candidates');
   const reads = await loadUserPageReads(options.sourceName, [
-    ...new Set(activeObservations.map((observation) => observation.entityKey)),
+    ...new Set(activeObservations.map((observation) => observation.sourceUrl)),
   ]);
   const plan = planUserFieldRetractions({
     sourceName: options.sourceName,

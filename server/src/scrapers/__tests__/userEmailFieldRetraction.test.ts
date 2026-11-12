@@ -105,6 +105,22 @@ describe('user email field retraction planning (#5711)', () => {
     expect(plan.counts.sourceHasNotReread).toBe(1);
   });
 
+  it('retracts when the attesting reads file the person under a re-keyed key on the same page', () => {
+    const rekeyed = (runDay: number): UserPageRead => ({
+      ...read(runDay, ['email']),
+      entityKey: 'dept:economics:rowan-quillfeather',
+    });
+    const plan = planUserFieldRetractions({
+      sourceName: SOURCE,
+      contract,
+      reads: [read(1), rekeyed(2), rekeyed(3)],
+      activeObservations: [emailRow()],
+    });
+    expect(plan.retractions).toEqual([
+      { entityKey: KEY, sourceUrl: PAGE, field: 'email', observationIds: ['obs-email'] },
+    ]);
+  });
+
   it('does not count a claim from the run that stated the address', () => {
     const plan = planUserFieldRetractions({
       sourceName: SOURCE,

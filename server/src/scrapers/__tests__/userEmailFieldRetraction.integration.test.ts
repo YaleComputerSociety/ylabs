@@ -248,7 +248,7 @@ describe('a dropped email retires by attested omission (#5711)', () => {
     });
   };
 
-  it('dept-faculty-roster: attests on the profile page its email rows use, and the claim is page-scoped', async () => {
+  it('dept-faculty-roster: attests on the profile page its email rows use, and two claims retire the address the person was keyed by', async () => {
     rosterProfile.contact =
       '<a href="mailto:sable.inkwright@yale.edu">sable.inkwright@yale.edu</a>';
     await scrapeRoster();
@@ -271,6 +271,10 @@ describe('a dropped email retires by attested omission (#5711)', () => {
     expect(new Set(claims.map((claim) => `${claim.field} ${claim.sourceUrl}`))).toEqual(
       new Set([`profileUrls ${emailRow?.sourceUrl}`]),
     );
+
+    const reconciled = await reconcileUserFieldRetractions({ sourceName: ROSTER_SOURCE });
+    expect(reconciled.retiredObservations).toBe(1);
+    expect(await liveEmails(ROSTER_SOURCE)).toEqual([]);
   });
 
   it('dept-faculty-roster: claims nothing while the profile still shows any address', async () => {
