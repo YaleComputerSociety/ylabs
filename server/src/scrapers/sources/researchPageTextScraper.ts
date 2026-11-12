@@ -1,3 +1,4 @@
+import * as cheerio from 'cheerio';
 import mongoose from 'mongoose';
 import { ResearchEntity } from '../../models/researchEntity';
 import { serializedDocumentId } from '../../utils/idSerialization';
@@ -16,7 +17,12 @@ import {
   mapWithConcurrency,
   resolveSourceConcurrency,
 } from '../utils/mapWithConcurrency';
-import { personProfileSourceMatchesEntity } from '../utils/personProfileEntityMatch';
+import { isLikelyOfficialPersonProfileUrl } from '../../services/leadProfileIdentity';
+import {
+  leadingPersonNameTokensFromEntityTitle,
+  personPageLeafNameTokens,
+  personProfileSourceMatchesEntity,
+} from '../utils/personProfileEntityMatch';
 import {
   RESEARCH_PAGE_TEXT_CONTRACT,
   RESEARCH_PAGE_TEXT_FIELD,
@@ -197,6 +203,81 @@ function isPersonProfileUrl(url: string): boolean {
   }
 }
 
+const HEADING_SELECTORS = 'title, h1, h2, meta[property="og:title"]';
+
+function foldedTokens(value: string): string[] {
+  return value
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter((token) => token.length >= 2);
+}
+
+function urlPathKey(value: string): string | null {
+  try {
+    const url = new URL(value);
+    return `${url.hostname.replace(/^www\./, '').toLowerCase()}${url.pathname.replace(/\/+$/, '').toLowerCase()}`;
+  } catch {
+    return null;
+  }
+}
+
+function canonicalLinkUrl($: cheerio.CheerioAPI, pageUrl: string): string | null {
+  const href = $('link[rel="canonical"]').attr('href')?.trim();
+  if (!href) return null;
+  try {
+    return new URL(href, pageUrl).toString();
+  } catch {
+    return null;
+  }
+}
+
+function urlPathLeaf(value: string): string {
+  try {
+    return new URL(value).pathname.split('/').filter(Boolean).pop() ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function subjectSurnameTokens(requestedUrl: string, row: CandidateDescriptionLab): Set<string> {
+  const nameTokens =
+    personPageLeafNameTokens(urlPathLeaf(requestedUrl)) ??
+    leadingPersonNameTokensFromEntityTitle(row.name) ??
+    [];
+  const surname = nameTokens[nameTokens.length - 1];
+  return new Set(surname ? foldedTokens(surname) : []);
+}
+
+/**
+ * A requested person profile that answered with a page outside any person-profile path,
+ * whose headings do not name the subject's surname, is a department, program or region
+ * root a retired profile redirected to, so its text is not the row's research (#5947). A
+ * redirect to the same person's own other page names them in a heading and is kept.
+ */
+export function capturedPageLeftTheRequestedPersonProfile(
+  requestedUrl: string,
+  page: FetchedDescriptionPage,
+  row: CandidateDescriptionLab,
+): boolean {
+  if (!isLikelyOfficialPersonProfileUrl(requestedUrl)) return false;
+  const requestedKey = urlPathKey(requestedUrl);
+  const $ = cheerio.load(page.html);
+  const landedUrls = [page.url, canonicalLinkUrl($, page.url)].filter(
+    (url): url is string => Boolean(url) && urlPathKey(url as string) !== requestedKey,
+  );
+  const landing = landedUrls.find((url) => !isLikelyOfficialPersonProfileUrl(url));
+  if (!landing) return false;
+  const subject = subjectSurnameTokens(requestedUrl, row);
+  if (subject.size === 0) return true;
+  const headingText = $(HEADING_SELECTORS)
+    .map((_, element) => $(element).attr('content') ?? $(element).text())
+    .get()
+    .join(' ');
+  return !foldedTokens(headingText).some((token) => subject.has(token));
+}
+
 const uniqueStrings = (values: readonly (string | undefined)[]): string[] =>
   Array.from(new Set(values.map((value) => (value ?? '').trim()).filter(Boolean)));
 
@@ -244,6 +325,12 @@ export class ResearchPageTextScraper implements IScraper {
     try {
       const page = await this.fetchPage(url);
       if (!page?.html) return null;
+      if (capturedPageLeftTheRequestedPersonProfile(url, page, row)) {
+        ctx.log(
+          `[${row.slug || 'candidate'}] research page refused: profile landed off the subject`,
+        );
+        return null;
+      }
       return personProfileSourceMatchesEntity(page.url, row) ? page : null;
     } catch (error) {
       ctx.log(`[${row.slug || 'candidate'}] research page skipped: ${sanitizeLogValue(error)}`);
