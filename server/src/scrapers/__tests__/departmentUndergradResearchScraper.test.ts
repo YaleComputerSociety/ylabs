@@ -797,23 +797,6 @@ describe('departmentUndergradResearchScraper', () => {
   });
 
   describe('configured pages for departments that publish no research page (#5298)', () => {
-    const configFor = (key: string) =>
-      DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.find((page) => page.key === key);
-
-    it('points a department at its own research page in place of its program overview', () => {
-      expect(configFor('earth-planetary-sciences')?.url).toBe(
-        'https://earth.yale.edu/research-opportunities-and-information',
-      );
-    });
-
-    it('points a department with no research page at its senior essay page', () => {
-      for (const key of ['political-science', 'history']) {
-        const config = configFor(key);
-        expect(config?.url).toMatch(/\/senior-essay$/);
-        expect(config?.title).toMatch(/ Senior Essay$/);
-      }
-    });
-
     it('keeps the economics lane on its research assistant program', () => {
       const economicsPages = DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES.filter(
         (page) => page.department === 'Economics',

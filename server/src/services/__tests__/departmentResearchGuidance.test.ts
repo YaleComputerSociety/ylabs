@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   departmentGuidanceKindOf,
   departmentGuidanceReason,
-  isDepartmentGuidance,
   isDepartmentResearchGuidance,
   isDepartmentResearchGuidancePage,
   isDepartmentSeniorEssayGuidancePage,
@@ -166,8 +165,8 @@ describe('department guidance kind (#5298)', () => {
       sourcePageTitle: 'Senior Project',
     };
     expect(isDepartmentResearchGuidance(seniorEssay)).toBe(false);
-    expect(isDepartmentGuidance(seniorEssay)).toBe(true);
-    expect(isDepartmentGuidance({ ...seniorEssay, deadline: new Date() })).toBe(false);
+    expect(departmentGuidanceKindOf(seniorEssay)).toBe('senior_essay');
+    expect(departmentGuidanceKindOf({ ...seniorEssay, deadline: new Date() })).toBeNull();
   });
 
   it('records each kind under its own gate reason', () => {

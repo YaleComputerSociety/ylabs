@@ -108,10 +108,6 @@ export function departmentGuidanceKindOf(
   return null;
 }
 
-export function isDepartmentGuidance(program: StoredGuidanceFacts): boolean {
-  return departmentGuidanceKindOf(program) !== null;
-}
-
 export function departmentGuidanceReason(kind: DepartmentGuidanceKind): string {
   return kind === 'senior_essay'
     ? DEPARTMENT_SENIOR_ESSAY_GUIDANCE_REASON
