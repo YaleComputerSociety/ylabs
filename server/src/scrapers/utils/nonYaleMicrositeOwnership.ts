@@ -1,10 +1,12 @@
 import { isPersonalNameDomainWebsite } from '../../utils/personalNameWebsite';
 import { personSurnamesFromDisplayNames } from '../../utils/researchHomeNameIdentityAuthority';
 import { isYaleHostname } from '../../utils/yaleHost';
+import { isLeadGrantAwardRecordPage } from './grantRecordPage';
 import { surnamesCompatible } from './piNameMatch';
 
 export interface MicrositeLeadIdentity {
   names: readonly (string | undefined | null)[];
+  grantAwardRecordKeys?: ReadonlySet<string>;
 }
 
 export interface NonYaleMicrositeOwnershipInput {
@@ -17,7 +19,8 @@ export type NonYaleMicrositeOwnershipVerdict =
   | { decision: 'not_applicable'; reason: 'yale_host' | 'no_lead_surname' }
   | {
       decision: 'admit';
-      reason: 'surname_in_url' | 'personal_name_domain' | 'text_names_lead';
+      reason:
+        'lead_grant_award_record' | 'surname_in_url' | 'personal_name_domain' | 'text_names_lead';
     }
   | { decision: 'refuse'; reason: 'lead_not_confirmed' };
 
@@ -133,7 +136,11 @@ export const isYaleHostedPage = (pageUrl: string): boolean => {
  * describe that lead's row (#5777). A non-Yale page reached only because a roster lane stored
  * it as the row's website carries no identity of its own, so it is admitted only when the lead
  * is confirmed by the page itself: the lead's surname in its address, a personal-name domain,
- * or its text naming the lead. Yale-hosted pages are outside this rule.
+ * or its text naming the lead. A federal award record (NIH RePORTER, NSF, NEH, OSTI) is also
+ * admitted when its award is one the row's own `recentGrants` credit to the lead as `pi` or
+ * `copi`, because the grant lane's verified attribution is the ownership evidence there and a
+ * record page rarely names its investigators in its stored text. Yale-hosted pages are outside
+ * this rule.
  */
 export function nonYaleMicrositeOwnership(
   input: NonYaleMicrositeOwnershipInput,
@@ -143,6 +150,9 @@ export function nonYaleMicrositeOwnership(
     (name): name is string => typeof name === 'string' && leadSurname(name) !== '',
   );
   if (leadNames.length === 0) return { decision: 'not_applicable', reason: 'no_lead_surname' };
+  if (isLeadGrantAwardRecordPage(input.sourceUrl, input.lead.grantAwardRecordKeys ?? new Set())) {
+    return { decision: 'admit', reason: 'lead_grant_award_record' };
+  }
   if (leadNames.some((name) => urlCarriesSurname(input.sourceUrl, name))) {
     return { decision: 'admit', reason: 'surname_in_url' };
   }

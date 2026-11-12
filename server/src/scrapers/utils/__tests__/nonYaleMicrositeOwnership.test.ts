@@ -118,6 +118,59 @@ describe('nonYaleMicrositeOwnership', () => {
       }),
     ).toEqual({ decision: 'refuse', reason: 'lead_not_confirmed' });
   });
+
+  describe('a federal award record page (#5920)', () => {
+    const AWARD_PAGE = 'https://reporter.nih.gov/project-details/90000001';
+    const RECORD_TEXT =
+      'Project details. Abstract: estuarine sediment transport during storm surges.';
+    const withLeadGrants = (keys: string[]) => ({ ...lead, grantAwardRecordKeys: new Set(keys) });
+
+    it('admits the record of an award the row credits to the lead', () => {
+      expect(
+        nonYaleMicrositeOwnership({
+          sourceUrl: AWARD_PAGE,
+          text: RECORD_TEXT,
+          lead: withLeadGrants(['nih-reporter:90000001']),
+        }),
+      ).toEqual({ decision: 'admit', reason: 'lead_grant_award_record' });
+    });
+
+    it('refuses the record of an award the row does not credit to the lead', () => {
+      expect(
+        nonYaleMicrositeOwnership({
+          sourceUrl: AWARD_PAGE,
+          text: RECORD_TEXT,
+          lead: withLeadGrants(['nih-reporter:90000002']),
+        }),
+      ).toEqual({ decision: 'refuse', reason: 'lead_not_confirmed' });
+    });
+
+    it('judges a record by its text when the row carries no lead grants', () => {
+      expect(nonYaleMicrositeOwnership({ sourceUrl: AWARD_PAGE, text: RECORD_TEXT, lead })).toEqual(
+        {
+          decision: 'refuse',
+          reason: 'lead_not_confirmed',
+        },
+      );
+      expect(
+        nonYaleMicrositeOwnership({
+          sourceUrl: AWARD_PAGE,
+          text: `${RECORD_TEXT} Contact PI: Quillon Varnadore.`,
+          lead,
+        }),
+      ).toEqual({ decision: 'admit', reason: 'text_names_lead' });
+    });
+
+    it('never admits a page that is not an award record, whatever the lead grants', () => {
+      expect(
+        nonYaleMicrositeOwnership({
+          sourceUrl: 'https://coastal-foundation.example.org/about',
+          text: 'The foundation funds coastal restoration projects across the region.',
+          lead: withLeadGrants(['nih-reporter:90000001']),
+        }),
+      ).toEqual({ decision: 'refuse', reason: 'lead_not_confirmed' });
+    });
+  });
 });
 
 describe('ownership name helpers', () => {

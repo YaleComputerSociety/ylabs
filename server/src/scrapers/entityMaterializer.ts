@@ -14,7 +14,11 @@ import {
   identityWithPersonPageUrls,
   withoutNamesakePersonPageDescriptions,
 } from './utils/namesakePersonPageDescriptions';
-import { withoutRefusedNonYaleMicrositeDescriptions } from './utils/nonYaleMicrositeDescriptionScreen';
+import {
+  withoutRefusedNonYaleMicrositeDescriptions,
+  withoutRefusedNonYaleMicrositePageFields,
+} from './utils/nonYaleMicrositeDescriptionScreen';
+import { leadGrantAwardRecordKeys } from './utils/grantRecordPage';
 import { cachedCardFor } from './cardSynthesisDerivation';
 import { withoutModelCalls } from '../utils/modelClient';
 import {
@@ -2469,6 +2473,25 @@ export function aggregateResearchEntityGrantEvidence(
     recentGrantCount: eligibleAwards.length,
     fundingAgencies: [...agencies.values()],
   };
+}
+
+async function researchEntityGrantEvidence(
+  entityIdString: string | undefined,
+  materializationObs: MaterializerObservationLike[],
+): Promise<ReturnType<typeof aggregateResearchEntityGrantEvidence>> {
+  if (!entityIdString || !grantEvidenceRecordsInvestigators(materializationObs)) {
+    return aggregateResearchEntityGrantEvidence(materializationObs);
+  }
+  const grantLeadPersonIds = new Set(
+    ((await loadResearchEntityLeadPersonIds([entityIdString])).get(entityIdString) ?? []).filter(
+      Boolean,
+    ),
+  );
+  return aggregateResearchEntityGrantEvidence(
+    materializationObs,
+    grantLeadPersonIds,
+    await loadProvablyNotALead(grantLeadPersonIds, materializationObs),
+  );
 }
 
 const successfulRosterSnapshot = (value: unknown): Record<string, unknown> | undefined => {
@@ -13721,18 +13744,29 @@ async function materializeEntityUnderRemovalGuard(
     ? (options.nameIdentityAuthority?.leadPersonName ??
       (await loadResearchEntityLeadPersonName(entityDoc?._id ?? entityIdString)))
     : '';
+  const micrositeLeadNames = micrositeLeadName ? [micrositeLeadName] : [];
+  const grantEvidence = isResearchEntityObservationType(entityType)
+    ? await researchEntityGrantEvidence(entityIdString, materializationObs)
+    : undefined;
+  const micrositeLeadGrantAwardRecordKeys = leadGrantAwardRecordKeys(grantEvidence?.recentGrants);
   const micrositeOwnershipScreened = isPersonResearchEntityRow
-    ? withoutRefusedNonYaleMicrositeDescriptions(
-        namesakeScreened,
-        micrositeLeadName ? [micrositeLeadName] : [],
+    ? withoutRefusedNonYaleMicrositePageFields(
+        withoutRefusedNonYaleMicrositeDescriptions(
+          namesakeScreened,
+          micrositeLeadNames,
+          obs,
+          micrositeLeadGrantAwardRecordKeys,
+        ),
+        micrositeLeadNames,
         obs,
+        micrositeLeadGrantAwardRecordKeys,
       )
     : namesakeScreened;
   if (micrositeOwnershipScreened.length < namesakeScreened.length) {
     console.log(
       `[description-microsite-ownership] ${entityType} ${entityIdString || identifier.entityKey || ''}: dropped ${
         namesakeScreened.length - micrositeOwnershipScreened.length
-      } lab-site description candidate(s) citing a non-Yale page not confirmed as the lead's`,
+      } lab-site candidate(s) citing a non-Yale page not confirmed as the lead's`,
     );
   }
 
@@ -13787,22 +13821,7 @@ async function materializeEntityUnderRemovalGuard(
     descriptionEntityKind,
     now: projectionNow,
   });
-  if (isResearchEntityObservationType(entityType)) {
-    const grantLeadPersonIds =
-      entityIdString && grantEvidenceRecordsInvestigators(materializationObs)
-        ? new Set(
-            (
-              (await loadResearchEntityLeadPersonIds([entityIdString])).get(entityIdString) ?? []
-            ).filter(Boolean),
-          )
-        : new Set<string>();
-    const grantEvidence = aggregateResearchEntityGrantEvidence(
-      materializationObs,
-      grantLeadPersonIds,
-      entityIdString && grantEvidenceRecordsInvestigators(materializationObs)
-        ? await loadProvablyNotALead(grantLeadPersonIds, materializationObs)
-        : NO_INVESTIGATOR_IS_PROVABLY_NOT_A_LEAD,
-    );
+  if (grantEvidence) {
     if (grantEvidence.recentGrants && resolved.recentGrants) {
       resolved.recentGrants.value = grantEvidence.recentGrants;
     }
