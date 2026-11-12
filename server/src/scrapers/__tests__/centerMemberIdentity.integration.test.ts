@@ -848,6 +848,34 @@ describe(
       expect(await liveEdgesOf(minted._id)).toHaveLength(1);
     });
 
+    it('still mints the listed person when the member page names two identified researchers under other names (#5677)', async () => {
+      const first = await accountHolder('Blair', { netid: 'bq71', email: 'bq71@yale.edu' });
+      const second = await accountHolder('Casey', { netid: 'cq72', email: 'cq72@yale.edu' });
+      const listing = {
+        name: 'Avery Synthetic Quillon',
+        role: 'core-faculty' as const,
+        profileUrl: centerProfileUrl('Avery'),
+      };
+
+      await runLane(
+        {
+          [centerProfileUrl('Avery')]: profilePage({
+            email: 'bq71@yale.edu',
+            assistantEmail: 'cq72@yale.edu',
+          }),
+        },
+        [listing],
+      );
+
+      const minted = (await Researcher.findOne({
+        displayName: 'Avery Synthetic Quillon',
+      }).lean()) as any;
+      expect(minted).toBeTruthy();
+      expect(await liveEdgesOf(minted._id)).toHaveLength(1);
+      expect(await liveEdgesOf(first)).toHaveLength(0);
+      expect(await liveEdgesOf(second)).toHaveLength(0);
+    });
+
     it('still records a listing no identified researcher shares a name with', async () => {
       await runLane({ [centerProfileUrl('Casey')]: profilePage() });
 
