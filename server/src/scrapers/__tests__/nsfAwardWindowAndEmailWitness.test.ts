@@ -27,7 +27,7 @@ const STARTED_BEFORE_WINDOW_STILL_RUNNING = award({
   id: '1900001',
   piFirstName: 'Orla',
   piLastName: 'Longrun',
-  piEmail: 'orla.longrun@yale.edu',
+  piEmail: 'orla.longrun.pi@yale.edu',
   startDate: '07/01/2019',
   expDate: '06/30/2027',
 });
@@ -36,7 +36,7 @@ const ENDED_BEFORE_WINDOW = award({
   id: '1500001',
   piFirstName: 'Edda',
   piLastName: 'Pastend',
-  piEmail: 'edda.pastend@yale.edu',
+  piEmail: 'edda.pastend.pi@yale.edu',
   startDate: '01/01/2015',
   expDate: '06/30/2021',
 });
@@ -45,7 +45,7 @@ const STARTED_INSIDE_WINDOW = award({
   id: '2300001',
   piFirstName: 'Nell',
   piLastName: 'Recentia',
-  piEmail: 'nell.recentia@yale.edu',
+  piEmail: 'nell.recentia.pi@yale.edu',
   startDate: '09/01/2023',
   expDate: '08/31/2026',
 });
@@ -176,7 +176,7 @@ describe('NSF PI email settles an ambiguous PI name', () => {
     id: '2400001',
     piFirstName: 'Tamsin',
     piLastName: 'Doublet',
-    piEmail: 'Tamsin.Doublet@Yale.edu',
+    piEmail: 'Tamsin.Doublet.pi@Yale.edu',
     startDate: '01/01/2024',
     expDate: '12/31/2027',
   });
@@ -203,8 +203,8 @@ describe('NSF PI email settles an ambiguous PI name', () => {
   };
 
   it('attaches when exactly one ambiguous candidate stores the NSF PI email', async () => {
-    const holder = candidate('tamsin.doublet@yale.edu');
-    const { emitted, result } = await runWith([candidate('t.doublet@yale.edu'), holder]);
+    const holder = candidate('tamsin.doublet.pi@yale.edu');
+    const { emitted, result } = await runWith([candidate('t.doublet.pi@yale.edu'), holder]);
     expect(grantIdsByRow(emitted)).toEqual({ [`row-${holder._id}`]: ['2400001'] });
     expect(emitted.find((o) => o.field === 'inferredPiUserId')?.value).toBe(String(holder._id));
     expect(result.notes).toMatch(/1 ambiguous PI name\(s\) settled by the NSF PI email/);
@@ -213,9 +213,9 @@ describe('NSF PI email settles an ambiguous PI name', () => {
 
   it('stays unattached when no ambiguous candidate stores the NSF PI email', async () => {
     const { emitted, result } = await runWith([
-      candidate('t.doublet@yale.edu'),
+      candidate('t.doublet.pi@yale.edu'),
       candidate(),
-      candidate('doublet@yale.edu'),
+      candidate('doublet.pi@yale.edu'),
     ]);
     expect(emitted).toEqual([]);
     expect(result.notes).toMatch(/1 resolved to several researchers/);
@@ -223,15 +223,18 @@ describe('NSF PI email settles an ambiguous PI name', () => {
 
   it('stays unattached when two ambiguous candidates store the NSF PI email', async () => {
     const { emitted, result } = await runWith([
-      candidate('tamsin.doublet@yale.edu'),
-      candidate('TAMSIN.DOUBLET@YALE.EDU'),
+      candidate('tamsin.doublet.pi@yale.edu'),
+      candidate('TAMSIN.DOUBLET.PI@YALE.EDU'),
     ]);
     expect(emitted).toEqual([]);
     expect(result.notes).toMatch(/1 resolved to several researchers/);
   });
 
   it('re-derives the same attachment on a second run', async () => {
-    const candidates = [candidate('t.doublet@yale.edu'), candidate('tamsin.doublet@yale.edu')];
+    const candidates = [
+      candidate('t.doublet.pi@yale.edu'),
+      candidate('tamsin.doublet.pi@yale.edu'),
+    ];
     const first = await runWith(candidates);
     const second = await runWith(candidates);
     expect(second.emitted).toEqual(first.emitted);
@@ -241,11 +244,11 @@ describe('NSF PI email settles an ambiguous PI name', () => {
   });
 
   it('credits only the awards whose own NSF PI email witnesses the candidate', async () => {
-    const holder = candidate('tamsin.doublet@yale.edu');
+    const holder = candidate('tamsin.doublet.pi@yale.edu');
     const namesakeAward = award({
       ...AMBIGUOUS_PI_AWARD,
       id: '2400002',
-      piEmail: 'tdoublet@yale.edu',
+      piEmail: 'tdoublet.pi@yale.edu',
     });
     const unaddressedAward = award({ ...AMBIGUOUS_PI_AWARD, id: '2400003', piEmail: undefined });
     const scraper = new NsfAwardScraper({
@@ -265,15 +268,15 @@ describe('NSF PI email settles an ambiguous PI name', () => {
   });
 
   it('never accepts a partial email or a name alone', () => {
-    const holder = candidate('tamsin.doublet@yale.edu');
-    expect(emailWitnessedCandidateId([holder], ['doublet@yale.edu'])).toBeUndefined();
-    expect(emailWitnessedCandidateId([holder], ['tamsin.doublet@yale.edu.au'])).toBeUndefined();
+    const holder = candidate('tamsin.doublet.pi@yale.edu');
+    expect(emailWitnessedCandidateId([holder], ['doublet.pi@yale.edu'])).toBeUndefined();
+    expect(emailWitnessedCandidateId([holder], ['tamsin.doublet.pi@yale.edu.au'])).toBeUndefined();
     expect(emailWitnessedCandidateId([holder], ['tamsin.doublet'])).toBeUndefined();
     expect(emailWitnessedCandidateId([candidate('tamsin.doublet')], ['tamsin.doublet'])).toBe(
       undefined,
     );
     expect(emailWitnessedCandidateId([holder], [undefined, ''])).toBeUndefined();
-    expect(emailWitnessedCandidateId([holder], [' Tamsin.Doublet@yale.EDU '])).toBe(
+    expect(emailWitnessedCandidateId([holder], [' Tamsin.Doublet.pi@yale.EDU '])).toBe(
       String(holder._id),
     );
   });
