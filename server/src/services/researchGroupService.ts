@@ -105,6 +105,12 @@ import {
   resolveLeadOfficialProfileUrl,
 } from './leadProfileIdentity';
 import {
+  EMPTY_LEAD_MATCH_EVIDENCE,
+  leadMatchesDestinationThroughEvidence,
+  loadLeadMatchEvidence,
+  type LeadMatchEvidence,
+} from './leadMatchEvidence';
+import {
   buildResearchGroupFilterString,
   candidateMatchesStudentFilters,
   HOSTS_UNDERGRADS_INDEX_FIELD,
@@ -4489,6 +4495,7 @@ function memberDisplayName(member: { user?: any }): string {
 export function researchDetailLeadIdentity(
   group: Record<string, any>,
   members: Array<{ user: any; role: string; row?: any }>,
+  leadMatchEvidence: LeadMatchEvidence = EMPTY_LEAD_MATCH_EVIDENCE,
 ): { leadIdentityStatus: 'verified' | 'under_review'; leadProfessorPublicKey?: string } {
   const leadMembers = members.filter((member) => PUBLIC_LEAD_ROLES.has(member.role));
   if (leadMembers.some((member) => member.row?.reviewStatus === 'DISPUTED')) {
@@ -4498,10 +4505,12 @@ export function researchDetailLeadIdentity(
     return { leadIdentityStatus: 'under_review' };
   }
   const entityProfileDestinations = entityOfficialPersonProfileDestinations(group);
-  const matchingMembers = leadMembers.filter((member) =>
-    entityProfileDestinations.has(
-      normalizeOfficialProfileDestination(resolveLeadOfficialProfileUrl(member)),
-    ),
+  const matchingMembers = leadMembers.filter(
+    (member) =>
+      entityProfileDestinations.has(
+        normalizeOfficialProfileDestination(resolveLeadOfficialProfileUrl(member)),
+      ) ||
+      leadMatchesDestinationThroughEvidence(member, entityProfileDestinations, leadMatchEvidence),
   );
 
   if (detectProfileIdentityRisk({ entity: group, leadMembers })) {
@@ -5145,6 +5154,10 @@ export async function getResearchGroupDetail(
   const leadIdentity = researchDetailLeadIdentity(
     group as Record<string, any>,
     dedupedMembersWithRows,
+    await loadLeadMatchEvidence(
+      entityOfficialPersonProfileDestinations(group as Record<string, any>),
+      dedupedMembersWithRows.filter((member) => PUBLIC_LEAD_ROLES.has(member.role)),
+    ),
   );
   const leadMemberNames = publicLeadMemberNames(dedupedMembersWithRows);
   const emeritusWayIn =

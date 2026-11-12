@@ -534,6 +534,8 @@ Current behavior:
 - Contact is derived at read time, never stored: public payloads expose only the official-profile link-out and never non-public scraped emails.
 
 Public research detail payloads derive `leadIdentityStatus` and the optional `leadProfessorPublicKey` on the server from canonical identity checks and a unique match between entity-owned official-profile evidence and a lead member.
+A lead member also matches an entity-owned official-profile destination when that destination is an official profile link of a researcher record folded into the lead (`dedupedIntoResearcherId`), or when the destination page's stored observations state exactly one distinct ORCID and it is the lead's ORCID (#5970).
+A researcher keeps one verified link per kind, so after a fold the folded record still holds the second school's official profile, and the match reads it there rather than copying it onto the survivor.
 These evidence fields do not select one person for display when an entity has multiple principal investigators.
 The detail page shows exactly one verified principal investigator once as the full card in the decision summary, shows multiple principal investigators together in a dedicated plural section, and withholds the card while lead identity is under review.
 
