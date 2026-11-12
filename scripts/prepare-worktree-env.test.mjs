@@ -123,7 +123,11 @@ const git = (cwd, ...args) => {
 test('new-agent-worktree.sh produces a worktree with private env files and its own ports', () => {
   const primaryRoot = makeTempDir('ylabs-helper-primary-');
   const worktreeParent = makeTempDir('ylabs-helper-worktrees-');
-  for (const file of ['scripts/new-agent-worktree.sh', 'scripts/prepare-worktree-env.mjs']) {
+  for (const file of [
+    'scripts/new-agent-worktree.sh',
+    'scripts/prepare-worktree-env.mjs',
+    'scripts/worktree-port-probe.mjs',
+  ]) {
     writeFile(path.join(primaryRoot, file), fs.readFileSync(path.join(repoRoot, file), 'utf8'));
   }
   writeFile(
@@ -186,7 +190,11 @@ test('new-agent-worktree.sh produces a worktree with private env files and its o
 test('new-agent-worktree.sh never reuses an API port another worktree already holds', () => {
   const primaryRoot = makeTempDir('ylabs-helper-primary-');
   const worktreeParent = makeTempDir('ylabs-helper-worktrees-');
-  for (const file of ['scripts/new-agent-worktree.sh', 'scripts/prepare-worktree-env.mjs']) {
+  for (const file of [
+    'scripts/new-agent-worktree.sh',
+    'scripts/prepare-worktree-env.mjs',
+    'scripts/worktree-port-probe.mjs',
+  ]) {
     writeFile(path.join(primaryRoot, file), fs.readFileSync(path.join(repoRoot, file), 'utf8'));
   }
   const guardInstaller = path.join(primaryRoot, 'scripts', 'install-gh-identifier-guard.sh');
