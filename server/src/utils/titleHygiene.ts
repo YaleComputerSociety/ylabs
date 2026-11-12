@@ -9,7 +9,9 @@
  * PII-severity contact-block shape: an unredacted email plus a phone number
  * ("Phone:"/"Tel:"/"Fax:") and street address concatenated into the title, and
  * observed that any title beyond a short role string (over ~140 chars) is
- * scraped junk. These guards fail closed: title extraction and render yield a
+ * scraped junk; #5832 retired that length heuristic, because long genuine
+ * appointment lists exist, so only defect shapes and the storage bound refuse a
+ * title now. These guards fail closed: title extraction and render yield a
  * real title or nothing.
  *
  * Deliberately separate from `descriptionHygiene`: that module governs
