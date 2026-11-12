@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   buildNameAgreedSharedPersonResearchEntityDedupePlan,
   groupConflatesDistinctPersonProfiles,
-  namesStateConflictingMiddleInitials,
   personProfileIdentityFromUrl,
   type ResearchEntityPiDedupeRow,
 } from '../researchEntityPiDedupeCore';
@@ -50,33 +49,6 @@ describe('namesakes under one lead are refused on a stated reason (#5969)', () =
     userId: 'researcher-1',
     normalizedName: 'same-pi:researcher-1',
     entities,
-  });
-
-  it('two names stating different middle initials are two people', () => {
-    expect(
-      namesStateConflictingMiddleInitials([
-        'Ada Q. Alpha Faculty Research',
-        'Ada R. Alpha Faculty Research',
-      ]),
-    ).toBe(true);
-    expect(
-      namesStateConflictingMiddleInitials([
-        'Ada Q. Alpha Faculty Research',
-        'Ada Alpha Faculty Research',
-      ]),
-    ).toBe(false);
-    expect(
-      namesStateConflictingMiddleInitials([
-        'Ada Q. Alpha Faculty Research',
-        'Ada Q Alpha Research',
-      ]),
-    ).toBe(false);
-  });
-
-  it('reads a leading first initial as a given name and not as a middle initial', () => {
-    expect(namesStateConflictingMiddleInitials(['A. Alpha Lab', 'Ada Q. Alpha Lab'])).toBe(false);
-    expect(namesStateConflictingMiddleInitials(['Q. Alpha Lab', 'A. Q. Alpha Lab'])).toBe(false);
-    expect(namesStateConflictingMiddleInitials(['A. Q. Alpha Lab', 'A. R. Alpha Lab'])).toBe(true);
   });
 
   it('still groups an eponymous lab titled by first initial with one stating a middle initial', () => {

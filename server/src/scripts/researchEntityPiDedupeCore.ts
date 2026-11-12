@@ -23,6 +23,7 @@ import {
   sourceUrlToResearchHomeWebsiteUrl,
 } from '../utils/researchHomeWebsiteUrl';
 import { personPagePrefixesForHost } from '../utils/yalePersonPagePrefix';
+import { groupNamesStateConflictingMiddleInitials } from '../scrapers/utils/personNameAgreement';
 
 export interface ResearchEntityPiDedupeRow {
   userId: string;
@@ -1077,7 +1078,12 @@ export function buildNameAgreedSharedPersonResearchEntityDedupePlan(
       clusters.set(key, [...(clusters.get(key) || []), entity]);
     }
     return [...clusters.values()]
-      .filter((entities) => !namesStateConflictingMiddleInitials(entities.map((e) => e.name)))
+      .filter(
+        (entities) =>
+          !groupNamesStateConflictingMiddleInitials(
+            entities.map((e) => entityNameWordsWithoutKindNouns(e.name).join(' ')),
+          ),
+      )
       .flatMap((entities) =>
         joinsFacultyResearchRowToLab(entities)
           ? sharedPersonGroup(
@@ -1112,29 +1118,6 @@ export function buildNameAgreedSharedPersonAndRosterMailboxDedupePlan(
       ![group.canonicalEntityId, ...group.duplicateEntityIds].some((id) => excluded.has(id)),
   );
   return [...leadPlan, ...mailboxPlan];
-}
-
-/**
- * Whether two row names state different middle initials. The name key drops a lone
- * initial so that a roster printing one and another omitting it still agree, which also
- * lets two different people who share a given name and surname agree. Two stated initials
- * that differ say they are two people, so the group is refused on that, and not on
- * whatever their cited profile pages happen to parse to (#5969).
- */
-export function namesStateConflictingMiddleInitials(
-  names: ReadonlyArray<string | undefined>,
-): boolean {
-  const stated = names.map(statedMiddleInitials).filter(Boolean);
-  return new Set(stated).size > 1;
-}
-
-function statedMiddleInitials(name: string | undefined): string {
-  const words = foldedNameWords(name);
-  const givenNameIndex = words[0] === 'the' ? 1 : 0;
-  return words
-    .slice(givenNameIndex + 1)
-    .filter((word) => word.length === 1)
-    .join('');
 }
 
 const LAB_NAME_WORDS: ReadonlySet<string> = new Set(['lab', 'labs', 'laboratory', 'laboratories']);
