@@ -2959,9 +2959,8 @@ function extractDepartments($: cheerio.CheerioAPI): string[] {
   const values: string[] = [];
   $('[class*="department"]').each((_i, el) => {
     const value = textValue($(el).text());
-    if (value && value.length < 160 && !isDepartmentHeadingChrome(value)) {
-      values.push(value);
-    }
+    if (isDepartmentHeadingChrome(value)) return false;
+    if (value && value.length < 160) values.push(value);
   });
   return uniqueStrings(values).slice(0, 5);
 }
