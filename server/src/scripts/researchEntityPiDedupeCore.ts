@@ -1124,14 +1124,17 @@ export function buildNameAgreedSharedPersonAndRosterMailboxDedupePlan(
 export function namesStateConflictingMiddleInitials(
   names: ReadonlyArray<string | undefined>,
 ): boolean {
-  const stated = names
-    .map((name) =>
-      foldedNameWords(name)
-        .filter((word) => word.length === 1)
-        .join(''),
-    )
-    .filter(Boolean);
+  const stated = names.map(statedMiddleInitials).filter(Boolean);
   return new Set(stated).size > 1;
+}
+
+function statedMiddleInitials(name: string | undefined): string {
+  const words = foldedNameWords(name);
+  const givenNameIndex = words[0] === 'the' ? 1 : 0;
+  return words
+    .slice(givenNameIndex + 1)
+    .filter((word) => word.length === 1)
+    .join('');
 }
 
 const LAB_NAME_WORDS: ReadonlySet<string> = new Set(['lab', 'labs', 'laboratory', 'laboratories']);

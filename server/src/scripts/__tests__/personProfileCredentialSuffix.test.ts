@@ -41,10 +41,7 @@ describe('nursing credentials do not split one person into two profiles (#5969)'
   });
 
   it('never strips a credential that would leave fewer than two name tokens', () => {
-    expect(personProfileIdentityFromUrl(`${NURSING}/alpha-bsn`)).toBe(
-      personProfileIdentityFromUrl(`${NURSING}/alpha-bsn`),
-    );
-    expect(personProfileIdentityFromUrl(`${NURSING}/alpha-bsn`)).not.toBe('alpha');
+    expect(personProfileIdentityFromUrl(`${NURSING}/alpha-bsn`)).toBe('alpha-bsn');
   });
 });
 
@@ -74,6 +71,26 @@ describe('namesakes under one lead are refused on a stated reason (#5969)', () =
         'Ada Q Alpha Research',
       ]),
     ).toBe(false);
+  });
+
+  it('reads a leading first initial as a given name and not as a middle initial', () => {
+    expect(namesStateConflictingMiddleInitials(['A. Alpha Lab', 'Ada Q. Alpha Lab'])).toBe(false);
+    expect(namesStateConflictingMiddleInitials(['Q. Alpha Lab', 'A. Q. Alpha Lab'])).toBe(false);
+    expect(namesStateConflictingMiddleInitials(['A. Q. Alpha Lab', 'A. R. Alpha Lab'])).toBe(true);
+  });
+
+  it('still groups an eponymous lab titled by first initial with one stating a middle initial', () => {
+    const plan = buildNameAgreedSharedPersonResearchEntityDedupePlan([
+      {
+        ...row([
+          { id: 'initial-row', slug: 'initial-row', name: 'A. Alpha Lab', entityType: 'LAB' },
+          { id: 'middle-row', slug: 'middle-row', name: 'Ada Q. Alpha Lab', entityType: 'LAB' },
+        ]),
+        piFirstName: 'Ada',
+        piLastName: 'Alpha',
+      },
+    ]);
+    expect(plan).toHaveLength(1);
   });
 
   it('refuses the namesake pair even when one cited page is a department page and not a person', () => {
