@@ -20,6 +20,7 @@ import {
   type CoverageObservationFlags,
 } from './researchEntityCoverageAuditCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   assertPhase0SummaryOnlyConfiguredTarget,
   assertPhase0SummaryOnlyConnectedTarget,
@@ -524,5 +525,5 @@ async function main(): Promise<void> {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
-  void runScriptMain(main);
+  void runScriptMain(main, { logFailure: (error) => console.error(sanitizeLogValue(error)) });
 }

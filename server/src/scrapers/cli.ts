@@ -723,5 +723,5 @@ async function disconnectWithin(deadlineMs: number): Promise<void> {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
-  void runScriptMain(main);
+  void runScriptMain(main, { logFailure: (err) => console.error(sanitizeLogValue(err)) });
 }

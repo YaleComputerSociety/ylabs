@@ -297,7 +297,7 @@ test('operator scripts sanitize raw caught error messages before logging', () =>
 
   for (const file of files) {
     const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
-    assert.match(source, /sanitizeLogValue|runScriptMain\(main\)/);
+    assert.match(source, /sanitizeLogValue/);
     assert.doesNotMatch(
       source,
       /console\.error\(error instanceof Error \? error\.message : error\)/,
@@ -6812,7 +6812,7 @@ test('scraper entrypoint fatal logs sanitize caught exceptions', () => {
   for (const file of scraperEntrypoints) {
     const source = fs.readFileSync(new URL(file, import.meta.url), 'utf8');
     assert.match(source, /import \{ sanitizeLogValue \} from '\.\.\/utils\/logSanitizer'/);
-    assert.match(source, /console\.error\(sanitizeLogValue\(err\)\)|runScriptMain\(main\)/);
+    assert.match(source, /console\.error\(sanitizeLogValue\(err\)\)/);
     assert.doesNotMatch(source, /console\.error\(err\)/);
   }
 });
