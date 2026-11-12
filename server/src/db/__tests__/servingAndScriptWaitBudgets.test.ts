@@ -2,11 +2,14 @@ import mongoose from 'mongoose';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  SCRIPT_MAX_POOL_SIZE,
+  SCRIPT_SOCKET_TIMEOUT_MS,
   initializeConnections,
   mongoOptions,
   scriptMongoConnectOptions,
   triggerReconnect,
 } from '../connections';
+import { SCRAPE_RUN_SOCKET_TIMEOUT_MS } from '../../scrapers/scrapeRunProgress';
 
 const PROXY_REQUEST_CEILING_MS = 100000;
 const SLOWEST_SERVED_REQUEST_MS = 10000;
@@ -21,17 +24,32 @@ describe('the serving process wait budget', () => {
     expect(Number(mongoOptions.socketTimeoutMS)).toBeGreaterThan(SLOWEST_SERVED_REQUEST_MS);
     expect(Number(mongoOptions.socketTimeoutMS)).toBeLessThan(PROXY_REQUEST_CEILING_MS);
   });
+
+  it('keeps its own socket budget and the driver pool default, untouched by the script bounds', () => {
+    expect(mongoOptions.socketTimeoutMS).toBe(20000);
+    expect(mongoOptions).not.toHaveProperty('maxPoolSize');
+  });
 });
 
 describe('an operator entry point', () => {
-  it('keeps the long waits a batch needs', () => {
+  it('keeps the long waits a batch needs, but never an unbounded socket wait', () => {
     const scriptOptions = scriptMongoConnectOptions();
 
-    expect(scriptOptions.socketTimeoutMS).toBe(0);
+    expect(scriptOptions.socketTimeoutMS).toBe(SCRIPT_SOCKET_TIMEOUT_MS);
+    expect(SCRIPT_SOCKET_TIMEOUT_MS).toBeGreaterThan(0);
+    expect(SCRIPT_SOCKET_TIMEOUT_MS).toBeGreaterThanOrEqual(SCRAPE_RUN_SOCKET_TIMEOUT_MS);
+    expect(Number(scriptOptions.socketTimeoutMS)).toBeGreaterThan(
+      Number(mongoOptions.socketTimeoutMS),
+    );
     expect(Number(scriptOptions.serverSelectionTimeoutMS)).toBeGreaterThan(
       Number(mongoOptions.serverSelectionTimeoutMS),
     );
     expect(scriptOptions.bufferTimeoutMS).toBeGreaterThan(mongoOptions.bufferTimeoutMS);
+  });
+
+  it('opens a small pool, so many concurrent scripts stay inside the shared cluster connection cap', () => {
+    expect(scriptMongoConnectOptions().maxPoolSize).toBe(SCRIPT_MAX_POOL_SIZE);
+    expect(SCRIPT_MAX_POOL_SIZE).toBeLessThanOrEqual(10);
   });
 
   it('still lets a caller ask for its own budget', () => {
@@ -66,7 +84,10 @@ describe('connecting and reconnecting', () => {
   it('gives an entry point that connects without a budget the script waits, reconnect included', async () => {
     const [initial, reconnect] = await connectBudgets(() => initializeConnections());
 
-    expect(initial).toMatchObject({ socketTimeoutMS: 0 });
+    expect(initial).toMatchObject({
+      socketTimeoutMS: SCRIPT_SOCKET_TIMEOUT_MS,
+      maxPoolSize: SCRIPT_MAX_POOL_SIZE,
+    });
     expect(reconnect).toEqual(initial);
   });
 
