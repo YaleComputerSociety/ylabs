@@ -991,6 +991,7 @@ export interface FieldRetractionResult {
   regatedEntities: number;
   retractions: PlannedFieldRetraction[];
   withheld?: WithheldFieldRetraction[];
+  userFieldRetraction?: UserFieldRetractionResult;
 }
 
 const emptyCounts = (): FieldRetractionCounts => ({
@@ -1466,9 +1467,390 @@ export async function reconcileFieldRetractions(options: {
   };
 }
 
+/**
+ * The same contract for `user` subjects, for `email` only (#5711).
+ *
+ * A person's email is read from one page, so a read here is every row a lane wrote for
+ * one subject from one `sourceUrl` in one run, and a retraction retires only that lane's
+ * email rows filed under that same page. The absence claim itself is the completeness
+ * witness: a lane states `assertsNoValueFor: ['email']` only after it parsed the page in
+ * full and found no address of any kind on it (`pageStatesNoEmailAddress`), so a claim
+ * cannot come from a partial read, and every other read of the page counts as a later
+ * read that declined to say the address is gone. The two-read quorum and the drop guard
+ * apply unchanged.
+ *
+ * Nothing stored is cleared here. A person's served email is derived from the live email
+ * evidence of every lane, so retiring the stale rows and re-deriving the subject through
+ * the engine is the whole operation, and a rival lane still stating the address keeps it.
+ */
+export const USER_FIELD_RETRACTION_ROLLBACK_REASON =
+  'field retraction: the same lane re-read this page for this person and stated it carries no email address (#5711)';
+
+export interface UserFieldRetractionContract {
+  retractableFields: readonly string[];
+  notes: string;
+}
+
+export const userFieldRetractionContracts: Readonly<Record<string, UserFieldRetractionContract>> = {
+  'official-profile-pi-backfill': {
+    retractableFields: ['email'],
+    notes:
+      'States assertsNoValueFor: [email] on every identity row of a full read only when the profile yielded no person-specific address and the page states no address of any kind, in a link, text, script or attribute, plain or obfuscated. An address its person-specific filter refused is still on the page, so it claims nothing.',
+  },
+  'dept-faculty-roster': {
+    retractableFields: ['email'],
+    notes:
+      "States assertsNoValueFor: [email] on the profileUrls row, filed under the profile page its email rows use, only when the person's own profile was read and named them, that page states no address of any kind, and the roster card yielded none. A shared roster address it withheld records refused, and an unread or refused profile claims nothing.",
+  },
+};
+
+export function assertUserFieldRetractionContractsAreDeclarable(
+  contracts: Readonly<Record<string, UserFieldRetractionContract>> = userFieldRetractionContracts,
+): void {
+  for (const [sourceName, contract] of Object.entries(contracts)) {
+    if (contract.retractableFields.length === 0) {
+      throw new Error(`${sourceName} declares no retractable user field.`);
+    }
+    for (const field of contract.retractableFields) {
+      if (field !== 'email') {
+        throw new Error(
+          `${sourceName} declares user field ${JSON.stringify(field)}; only email has a page-scoped absence claim.`,
+        );
+      }
+      assertDeclarableRetractionField(field, 'retractable');
+    }
+  }
+}
+
+assertUserFieldRetractionContractsAreDeclarable();
+
+export function userFieldRetractionContractFor(
+  sourceName: string,
+): UserFieldRetractionContract | undefined {
+  return Object.prototype.hasOwnProperty.call(userFieldRetractionContracts, sourceName)
+    ? userFieldRetractionContracts[sourceName]
+    : undefined;
+}
+
+export function userPageReadKey(entityKey: string, sourceUrl: string): string {
+  return `${entityKey}\u0000${sourceUrl}`;
+}
+
+export interface UserFieldRetractionCandidateObservation extends FieldRetractionCandidateObservation {
+  sourceUrl: string;
+}
+
+export interface UserPageRead {
+  entityKey: string;
+  sourceUrl: string;
+  scrapeRunId: string;
+  observedAt: Date;
+  assertsNoValueFor: readonly string[];
+}
+
+export interface PlannedUserFieldRetraction {
+  entityKey: string;
+  sourceUrl: string;
+  field: string;
+  observationIds: string[];
+}
+
+export interface UserFieldRetractionCounts {
+  /** Distinct (subject, page) pairs holding a live assertion for a retractable field. */
+  candidateSubjectPages: number;
+  candidateObservations: number;
+  sourceHasNotReread: number;
+  /** The lane re-read the page and did NOT state it carries no address. */
+  absenceNotWitnessed: number;
+  awaitingSecondCompleteRead: number;
+  retractedObservations: number;
+  retractedSubjects: number;
+}
+
+export interface UserFieldRetractionPlan {
+  retractions: PlannedUserFieldRetraction[];
+  frozenFields: FrozenFieldRetraction[];
+  counts: UserFieldRetractionCounts;
+}
+
+const emptyUserCounts = (): UserFieldRetractionCounts => ({
+  candidateSubjectPages: 0,
+  candidateObservations: 0,
+  sourceHasNotReread: 0,
+  absenceNotWitnessed: 0,
+  awaitingSecondCompleteRead: 0,
+  retractedObservations: 0,
+  retractedSubjects: 0,
+});
+
+export function planUserFieldRetractions(input: {
+  sourceName: string;
+  contract: UserFieldRetractionContract;
+  reads: readonly UserPageRead[];
+  activeObservations: readonly UserFieldRetractionCandidateObservation[];
+  minCompleteReads?: number;
+  maxAbsentFraction?: number;
+  dropGuardMinPopulation?: number;
+}): UserFieldRetractionPlan {
+  const retractableFields = new Set(input.contract.retractableFields);
+  const readsByPage = new Map<string, FieldRetractionCompleteRead[]>();
+  for (const read of input.reads) {
+    const pageKey = userPageReadKey(read.entityKey, read.sourceUrl);
+    const group = readsByPage.get(pageKey) ?? [];
+    group.push({
+      entityKey: pageKey,
+      scrapeRunId: read.scrapeRunId,
+      observedAt: read.observedAt,
+      assertsNoValueFor: read.assertsNoValueFor,
+    });
+    readsByPage.set(pageKey, group);
+  }
+
+  const counts = emptyUserCounts();
+  const assertingPagesByField = new Map<string, Set<string>>();
+  const retractedByPageField = new Map<string, PlannedUserFieldRetraction>();
+  for (const observation of input.activeObservations) {
+    if (!retractableFields.has(observation.field)) continue;
+    const pageKey = userPageReadKey(observation.entityKey, observation.sourceUrl);
+    counts.candidateObservations += 1;
+    const asserting = assertingPagesByField.get(observation.field) ?? new Set<string>();
+    assertingPagesByField.set(observation.field, asserting.add(pageKey));
+    const verdict = classifyFieldRetraction({
+      observation,
+      completeReads: readsByPage.get(pageKey) ?? [],
+      minCompleteReads: input.minCompleteReads,
+    });
+    if (verdict === 'source-has-not-reread') counts.sourceHasNotReread += 1;
+    else if (verdict === 'absence-not-witnessed') counts.absenceNotWitnessed += 1;
+    else if (verdict === 'awaiting-second-complete-read') counts.awaitingSecondCompleteRead += 1;
+    else {
+      const key = `${pageKey}\u0000${observation.field}`;
+      const planned = retractedByPageField.get(key) ?? {
+        entityKey: observation.entityKey,
+        sourceUrl: observation.sourceUrl,
+        field: observation.field,
+        observationIds: [],
+      };
+      planned.observationIds.push(observation.observationId);
+      retractedByPageField.set(key, planned);
+    }
+  }
+  counts.candidateSubjectPages = new Set(
+    [...assertingPagesByField.values()].flatMap((pages) => [...pages]),
+  ).size;
+
+  const frozenFields: FrozenFieldRetraction[] = [];
+  const frozen = new Set<string>();
+  for (const field of retractableFields) {
+    const absentPages = [...retractedByPageField.values()].filter(
+      (planned) => planned.field === field,
+    ).length;
+    if (absentPages === 0) continue;
+    const assertingPages = assertingPagesByField.get(field)?.size ?? 0;
+    if (
+      !passesFieldRetractionDropGuard(
+        absentPages,
+        assertingPages,
+        input.maxAbsentFraction,
+        input.dropGuardMinPopulation,
+      )
+    ) {
+      frozen.add(field);
+      frozenFields.push({
+        sourceName: input.sourceName,
+        field,
+        absentEntities: absentPages,
+        assertingEntities: assertingPages,
+      });
+    }
+  }
+
+  const retractions = [...retractedByPageField.values()].filter(
+    (planned) => !frozen.has(planned.field),
+  );
+  counts.retractedObservations = retractions.reduce(
+    (sum, planned) => sum + planned.observationIds.length,
+    0,
+  );
+  counts.retractedSubjects = new Set(retractions.map((planned) => planned.entityKey)).size;
+  return { retractions, frozenFields, counts };
+}
+
+export type UserSubjectRederiver = (identifier: { entityKey: string }) => Promise<unknown>;
+
+export interface UserFieldRetractionResult {
+  outcome: 'source-not-retraction-capable' | 'no-candidates' | 'planned' | 'reconciled';
+  sourceName: string;
+  dryRun: boolean;
+  counts: UserFieldRetractionCounts;
+  frozenFields: FrozenFieldRetraction[];
+  retractions: PlannedUserFieldRetraction[];
+  retiredObservations: number;
+  rederivedSubjects: number;
+  rederiveErrors: number;
+}
+
+const USER_READ_KEY_CHUNK = 1000;
+
+async function loadActiveUserRetractableObservations(
+  sourceName: string,
+  retractableFields: readonly string[],
+): Promise<UserFieldRetractionCandidateObservation[]> {
+  const rows = (await Observation.find({
+    entityType: 'user',
+    sourceName,
+    field: { $in: [...retractableFields] },
+    superseded: { $ne: true },
+    'rollback.rolledBackAt': { $exists: false },
+    scrapeRunId: { $exists: true, $ne: null },
+  })
+    .select('_id entityKey entityId field value scrapeRunId observedAt sourceUrl')
+    .lean()) as any[];
+  const observations: UserFieldRetractionCandidateObservation[] = [];
+  for (const row of rows) {
+    const observationId = serializedDocumentId(row._id) || '';
+    const entityKey = observationEntityKey(row);
+    const scrapeRunId = serializedDocumentId(row.scrapeRunId) || '';
+    const sourceUrl = typeof row.sourceUrl === 'string' ? row.sourceUrl.trim() : '';
+    if (!observationId || !entityKey || !scrapeRunId || !sourceUrl) continue;
+    if (!(row.observedAt instanceof Date)) continue;
+    observations.push({
+      observationId,
+      entityKey,
+      field: row.field,
+      value: row.value,
+      scrapeRunId,
+      observedAt: row.observedAt,
+      sourceUrl,
+    });
+  }
+  return observations;
+}
+
+/**
+ * Superseded rows are included for the reason `loadCompleteReads` gives: an unchanged row
+ * supersedes its predecessor every run, so only the full log keeps one read per run.
+ */
+async function loadUserPageReads(
+  sourceName: string,
+  entityKeys: readonly string[],
+): Promise<UserPageRead[]> {
+  const reads: UserPageRead[] = [];
+  for (let start = 0; start < entityKeys.length; start += USER_READ_KEY_CHUNK) {
+    const groups = (await Observation.aggregate([
+      {
+        $match: {
+          entityType: 'user',
+          sourceName,
+          entityKey: { $in: entityKeys.slice(start, start + USER_READ_KEY_CHUNK) },
+          scrapeRunId: { $exists: true, $ne: null },
+          sourceUrl: { $exists: true, $ne: null },
+        },
+      },
+      {
+        $group: {
+          _id: { entityKey: '$entityKey', sourceUrl: '$sourceUrl', scrapeRunId: '$scrapeRunId' },
+          observedAt: { $max: '$observedAt' },
+          assertsNoValueFor: { $push: '$assertsNoValueFor' },
+        },
+      },
+    ])) as Array<{
+      _id: { entityKey?: unknown; sourceUrl?: unknown; scrapeRunId: unknown };
+      observedAt: Date;
+      assertsNoValueFor?: unknown[];
+    }>;
+    for (const group of groups) {
+      const entityKey = typeof group._id.entityKey === 'string' ? group._id.entityKey.trim() : '';
+      const sourceUrl = typeof group._id.sourceUrl === 'string' ? group._id.sourceUrl.trim() : '';
+      const scrapeRunId = serializedDocumentId(group._id.scrapeRunId) || '';
+      if (!entityKey || !sourceUrl || !scrapeRunId || !(group.observedAt instanceof Date)) continue;
+      const asserted = new Set<string>();
+      for (const entry of group.assertsNoValueFor ?? []) {
+        if (!Array.isArray(entry)) continue;
+        for (const field of entry) if (typeof field === 'string' && field) asserted.add(field);
+      }
+      reads.push({
+        entityKey,
+        sourceUrl,
+        scrapeRunId,
+        observedAt: group.observedAt,
+        assertsNoValueFor: [...asserted],
+      });
+    }
+  }
+  return reads;
+}
+
+export async function reconcileUserFieldRetractions(options: {
+  sourceName: string;
+  dryRun?: boolean;
+  rederive?: UserSubjectRederiver;
+}): Promise<UserFieldRetractionResult> {
+  const dryRun = options.dryRun === true;
+  const result = (
+    outcome: UserFieldRetractionResult['outcome'],
+    plan?: UserFieldRetractionPlan,
+  ): UserFieldRetractionResult => ({
+    outcome,
+    sourceName: options.sourceName,
+    dryRun,
+    counts: plan?.counts ?? emptyUserCounts(),
+    frozenFields: plan?.frozenFields ?? [],
+    retractions: plan?.retractions ?? [],
+    retiredObservations: 0,
+    rederivedSubjects: 0,
+    rederiveErrors: 0,
+  });
+  const contract = userFieldRetractionContractFor(options.sourceName);
+  if (!contract) return result('source-not-retraction-capable');
+
+  const activeObservations = await loadActiveUserRetractableObservations(
+    options.sourceName,
+    contract.retractableFields,
+  );
+  if (activeObservations.length === 0) return result('no-candidates');
+  const reads = await loadUserPageReads(options.sourceName, [
+    ...new Set(activeObservations.map((observation) => observation.entityKey)),
+  ]);
+  const plan = planUserFieldRetractions({
+    sourceName: options.sourceName,
+    contract,
+    reads,
+    activeObservations,
+  });
+  for (const frozen of plan.frozenFields) {
+    console.warn(
+      `[field-retraction] frozen user ${sanitizeLogValue(frozen.sourceName)}.${sanitizeLogValue(frozen.field)}: ${frozen.absentEntities} of ${frozen.assertingEntities} asserting pages would retract (above the drop guard)`,
+    );
+  }
+  if (dryRun) return result('planned', plan);
+
+  const applied = result('reconciled', plan);
+  const observationIds = plan.retractions.flatMap((planned) => planned.observationIds);
+  if (observationIds.length === 0) return applied;
+  const { retired } = await retireObservations(
+    { _id: { $in: observationIds.map((id) => new mongoose.Types.ObjectId(id)) } },
+    USER_FIELD_RETRACTION_ROLLBACK_REASON,
+  );
+  applied.retiredObservations = retired;
+  if (!options.rederive) return applied;
+  for (const entityKey of new Set(plan.retractions.map((planned) => planned.entityKey))) {
+    try {
+      await options.rederive({ entityKey });
+      applied.rederivedSubjects += 1;
+    } catch (error) {
+      applied.rederiveErrors += 1;
+      console.warn(
+        `[field-retraction] re-derive failed for one user subject: ${sanitizeLogValue((error as Error)?.message ?? String(error))}`,
+      );
+    }
+  }
+  return applied;
+}
+
 export async function reconcileFieldRetractionsFromRun(
   scrapeRunId: string,
-  options: { dryRun?: boolean } = {},
+  options: { dryRun?: boolean; rederiveUser?: UserSubjectRederiver } = {},
 ): Promise<FieldRetractionResult> {
   const dryRun = options.dryRun === true;
   if (!fieldRetractionEnabled()) return emptyResult('disabled', dryRun);
@@ -1483,5 +1865,12 @@ export async function reconcileFieldRetractionsFromRun(
   } | null;
   const sourceName = typeof run?.sourceName === 'string' ? run.sourceName : '';
   if (!sourceName) return emptyResult('unknown-run', dryRun);
-  return reconcileFieldRetractions({ sourceName, dryRun });
+  const result = await reconcileFieldRetractions({ sourceName, dryRun });
+  if (!userFieldRetractionContractFor(sourceName)) return result;
+  const userFieldRetraction = await reconcileUserFieldRetractions({
+    sourceName,
+    dryRun,
+    rederive: options.rederiveUser,
+  });
+  return { ...result, userFieldRetraction };
 }

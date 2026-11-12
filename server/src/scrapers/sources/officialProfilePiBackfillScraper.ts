@@ -115,6 +115,7 @@ import {
   FOREIGN_BLOCK_LABEL,
   namesTheSamePerson,
 } from '../utils/officialProfileSubjectEmail';
+import { pageStatesNoEmailAddress } from '../utils/pageStatesNoEmailAddress';
 import { forEachInOrderWithPrefetch } from '../utils/boundedConcurrency';
 import { ORGANIZATIONAL_ENTITY_TYPES } from '../../utils/researchEntityOrganizational';
 import { PERSON_SCOPED_RESEARCH_ENTITY_TYPES } from '../../models/storedVocabularies';
@@ -179,6 +180,8 @@ export interface OfficialProfileIdentity {
   orcid?: string;
   suppressDerivedBio?: boolean;
   emailOnly?: boolean;
+  /** The page states no email address at all, so the lane may attest none (#5711). */
+  statesNoEmailAddress?: boolean;
   inMemoriam?: boolean;
   appointmentEndedOn?: string;
 }
@@ -3735,6 +3738,7 @@ export function extractOfficialProfileIdentity(
     ...(profileNetidSlug ? { profileNetid: profileNetidSlug } : {}),
     orcid: extractOrcid($),
     ...(bio ? {} : hasSuppressedProfileBioText($) ? { suppressDerivedBio: true } : {}),
+    ...(!email && pageStatesNoEmailAddress($) ? { statesNoEmailAddress: true } : {}),
     ...profileDepartureEvidence(html, profiles, new Date(), displayName),
   };
 }
@@ -3898,6 +3902,7 @@ export function identityToUserObservations(
   const emittedIdentityObservations = includeIdentityEnrichment
     ? identityObservations
     : identityObservations.filter(([field]) => includeEmail && field === 'email');
+  const attestsNoEmail = includeEmail && !identity.email && identity.statesNoEmailAddress === true;
   const observations: ObservationInput[] = emittedIdentityObservations.map(([field, value]) => ({
     entityType: 'user',
     entityKey: `netid:${netid}`,
@@ -3905,6 +3910,7 @@ export function identityToUserObservations(
     value,
     sourceUrl: identity.canonicalUrl,
     confidenceOverride: 0.95,
+    ...(attestsNoEmail ? { assertsNoValueFor: ['email'] } : {}),
   }));
 
   const departureBase = {

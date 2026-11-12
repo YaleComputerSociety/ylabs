@@ -75,6 +75,7 @@ import {
   isInProfileRelatedLinksList,
 } from '../utils/profilePublicityRegions';
 import { rosterProfileSubjectEmail } from '../utils/rosterProfileSubjectEmail';
+import { pageStatesNoEmailAddress } from '../utils/pageStatesNoEmailAddress';
 import {
   isMeshIndexedProfileUrl,
   withoutMeshNonSubjectDescriptors,
@@ -299,6 +300,15 @@ export interface FacultyEntry {
   titleFromProfilePage?: boolean;
   /** Email address if present (used to derive netid). */
   email?: string;
+  /**
+   * What this run can say about the person's email when `email` is absent (#5711).
+   *
+   * `empty` is a positive claim: the person's own profile page was read and states no
+   * address of any kind, and the roster card yielded none. `refused` says an address
+   * was seen and withheld, which is the opposite of the page having dropped one.
+   * Absent means no claim. Only `empty` may reach `assertsNoValueFor: ['email']`.
+   */
+  emailSlotAttestation?: 'empty' | 'refused';
   /** External lab / personal website URL discovered on the listing. */
   labUrl?: string;
   /**
@@ -3497,6 +3507,7 @@ export function profileEnrichmentFromHtml(
     | 'profileUrl'
     | 'name'
     | 'email'
+    | 'emailSlotAttestation'
     | 'labUrl'
     | 'labSlotAttestation'
     | 'labWebsiteButton'
@@ -3666,6 +3677,7 @@ export function profileEnrichmentFromHtml(
     profileSourceUrl: canonicalUrl,
     name: declaredName,
     email,
+    ...(!email && pageStatesNoEmailAddress($) ? { emailSlotAttestation: 'empty' as const } : {}),
     title,
     labUrl,
     ...(labUrl ? {} : { labSlotAttestation: labUrlCandidateRefused ? 'refused' : 'empty' }),
@@ -3725,6 +3737,19 @@ function mergedLabSlotAttestation(
   return undefined;
 }
 
+/**
+ * An `empty` email claim needs the profile page to state no address and the roster card
+ * to have yielded none; a refusal from either side wins, as it does for the lab slot.
+ */
+function mergedEmailSlotAttestation(
+  entry: Pick<FacultyEntry, 'email' | 'emailSlotAttestation'>,
+  enrichment: Pick<Partial<FacultyEntry>, 'email' | 'emailSlotAttestation'>,
+): FacultyEntry['emailSlotAttestation'] {
+  if (entry.email || enrichment.email) return undefined;
+  if (entry.emailSlotAttestation === 'refused') return 'refused';
+  return enrichment.emailSlotAttestation === 'empty' ? 'empty' : undefined;
+}
+
 function mergeProfileEnrichment(
   entry: FacultyEntry,
   enrichment: Partial<
@@ -3733,6 +3758,7 @@ function mergeProfileEnrichment(
       | 'profileUrl'
       | 'name'
       | 'email'
+      | 'emailSlotAttestation'
       | 'labUrl'
       | 'labSlotAttestation'
       | 'labWebsiteButton'
@@ -3761,6 +3787,7 @@ function mergeProfileEnrichment(
     title: entry.title || enrichment.title,
     titleFromProfilePage: entry.title ? entry.titleFromProfilePage : Boolean(enrichment.title),
     email: entry.email || enrichment.email,
+    emailSlotAttestation: mergedEmailSlotAttestation(entry, enrichment),
     labUrl: entry.labUrl || enrichment.labUrl,
     labWebsiteButton:
       !entry.labUrl ||
@@ -4125,7 +4152,7 @@ export function withoutSharedRosterEmails<T extends { entry: FacultyEntry }>(
   return items.map((item) => {
     const email = normalizedRosterEmail(item.entry.email);
     if (!email || (peopleByEmail.get(email)?.size ?? 0) < 2) return item;
-    return { ...item, entry: { ...item.entry, email: undefined } };
+    return { ...item, entry: { ...item.entry, email: undefined, emailSlotAttestation: 'refused' } };
   });
 }
 
@@ -4267,6 +4294,12 @@ export async function loadUserKeysWithALiveFacultyTitle(
   );
 }
 
+function rosterAttestsNoEmail(entry: FacultyEntry): boolean {
+  return (
+    !entry.email && entry.profileReadOutcome === 'read' && entry.emailSlotAttestation === 'empty'
+  );
+}
+
 function entryToUserObservations(
   entry: FacultyEntry,
   dept: DeptConfig,
@@ -4323,7 +4356,12 @@ function entryToUserObservations(
     });
   }
   if (entry.profileUrl) {
-    obs.push({ ...profileBase, field: 'profileUrls', value: { departmental: entry.profileUrl } });
+    obs.push({
+      ...profileBase,
+      field: 'profileUrls',
+      value: { departmental: entry.profileUrl },
+      ...(rosterAttestsNoEmail(entry) ? { assertsNoValueFor: ['email'] } : {}),
+    });
   }
   if (entry.imageUrl) obs.push({ ...profileBase, field: 'imageUrl', value: entry.imageUrl });
   if (entry.labUrl) obs.push({ ...profileBase, field: 'website', value: entry.labUrl });
