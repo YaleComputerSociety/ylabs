@@ -18,6 +18,18 @@ const rawWriterOutputSchema = new mongoose.Schema(
   { _id: false },
 );
 
+const supersededWriterDraftSchema = new mongoose.Schema(
+  {
+    writer: { type: String, required: true },
+    rawOutput: { type: rawWriterOutputSchema, required: true },
+    derivedAt: { type: Date, required: true },
+    at: { type: Date, required: true },
+    reason: { type: String, required: true },
+    decidedBy: { type: String, required: true },
+  },
+  { _id: false },
+);
+
 const writtenDescriptionDerivationSchema = new mongoose.Schema(
   {
     inputHash: { type: String, required: true },
@@ -28,6 +40,7 @@ const writtenDescriptionDerivationSchema = new mongoose.Schema(
     snippetSentenceHashes: { type: [[String]], default: [] },
     researchPageHeadingHashes: { type: [String], default: [] },
     derivedAt: { type: Date, required: true, default: () => new Date() },
+    supersedes: { type: [supersededWriterDraftSchema], default: undefined },
   },
   { timestamps: false },
 );

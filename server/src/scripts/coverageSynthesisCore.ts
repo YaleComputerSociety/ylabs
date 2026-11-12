@@ -44,6 +44,7 @@ export interface CoverageSynthesisArgs {
   printWriterPrompt: boolean;
   synthesizeCards: boolean;
   cacheOnly: boolean;
+  supersedeDraft: boolean;
   deferMaterializeForRuns: string[];
   slugsFile?: string;
   captureEvidence?: string;
@@ -51,6 +52,8 @@ export interface CoverageSynthesisArgs {
   evidenceFile?: string;
   importDerivations?: string;
   output?: string;
+  reason?: string;
+  decidedBy?: string;
 }
 
 export const DEFAULT_COVERAGE_SYNTHESIS_LIMIT = 25;
@@ -67,6 +70,8 @@ const VALUE_FLAGS = {
   '--evidence-file': 'evidenceFile',
   '--import-derivations': 'importDerivations',
   '--output': 'output',
+  '--reason': 'reason',
+  '--decided-by': 'decidedBy',
   '--defer-materialize-for-runs': 'deferMaterializeForRuns',
 } as const;
 
@@ -113,6 +118,7 @@ export function parseCoverageSynthesisArgs(argv: string[]): CoverageSynthesisArg
     printWriterPrompt: false,
     synthesizeCards: false,
     cacheOnly: false,
+    supersedeDraft: false,
     deferMaterializeForRuns: [],
   };
   const setValue = (flag: ValueFlag, value: string) => {
@@ -150,6 +156,7 @@ export function parseCoverageSynthesisArgs(argv: string[]): CoverageSynthesisArg
     else if (token === '--print-writer-prompt') args.printWriterPrompt = true;
     else if (token === '--synthesize-cards') args.synthesizeCards = true;
     else if (token === '--cache-only') args.cacheOnly = true;
+    else if (token === '--supersede-draft') args.supersedeDraft = true;
   }
   if (!Number.isFinite(args.limit) || args.limit <= 0)
     args.limit = DEFAULT_COVERAGE_SYNTHESIS_LIMIT;
@@ -164,6 +171,7 @@ export type CoverageSynthesisMode =
   | 'print-writer-prompt'
   | 'capture-evidence'
   | 'import-derivations'
+  | 'supersede-draft'
   | 'evaluate'
   | 'synthesize-cards'
   | 'write';
@@ -218,7 +226,50 @@ function assertCardPassArgs(args: CoverageSynthesisArgs): void {
   }
 }
 
+/**
+ * The one path that replaces a stored writer draft, so it names exactly one row and
+ * records who decided and why; there is no bulk form by design (#5934).
+ */
+function assertSupersedeDraftArgs(args: CoverageSynthesisArgs): void {
+  const refused = [
+    args.all ? '--all' : null,
+    args.slugsFile ? '--slugs-file' : null,
+    args.evaluate ? '--evaluate' : null,
+    args.captureEvidence ? '--capture-evidence' : null,
+    args.captureCardRequests ? '--capture-card-requests' : null,
+    args.validateOnly ? '--validate-only' : null,
+    args.synthesizeCards ? '--synthesize-cards' : null,
+    args.printWriterPrompt ? '--print-writer-prompt' : null,
+    args.rederiveCards ? '--rederive-cards' : null,
+    args.reinstateRetiredBodies ? '--reinstate-retired-bodies' : null,
+  ].filter(Boolean);
+  if (refused.length > 0) {
+    throw new Error(
+      `research-entity:coverage-synthesis --supersede-draft is refused with ${refused.join(', ')}`,
+    );
+  }
+  if (new Set(args.slugs).size !== 1) {
+    throw new Error(
+      'research-entity:coverage-synthesis --supersede-draft requires exactly one --slugs=<slug>',
+    );
+  }
+  if (!args.importDerivations) {
+    throw new Error(
+      'research-entity:coverage-synthesis --supersede-draft requires --import-derivations',
+    );
+  }
+  if (!args.reason?.trim() || !args.decidedBy?.trim()) {
+    throw new Error(
+      'research-entity:coverage-synthesis --supersede-draft requires --reason and --decided-by',
+    );
+  }
+}
+
 export function coverageSynthesisModeOf(args: CoverageSynthesisArgs): CoverageSynthesisMode {
+  if (args.supersedeDraft) {
+    assertSupersedeDraftArgs(args);
+    return 'supersede-draft';
+  }
   if (args.printWriterPrompt) return 'print-writer-prompt';
   if (args.synthesizeCards) {
     assertCardPassArgs(args);
@@ -291,12 +342,14 @@ export function assertWriterCacheModeAllowed(
   args?: Pick<
     CoverageSynthesisArgs,
     'evaluate' | 'importDerivations' | 'validateOnly' | 'captureEvidence'
-  >,
+  > &
+    Partial<Pick<CoverageSynthesisArgs, 'apply'>>,
 ): { writesDevelopmentCache: boolean } {
   const writesCardCache =
     mode === 'synthesize-cards' &&
     Boolean(args?.evaluate || (args?.importDerivations && !args.validateOnly));
-  if (mode !== 'evaluate' && mode !== 'import-derivations' && !writesCardCache) {
+  const writesWriterCache = ['evaluate', 'import-derivations', 'supersede-draft'].includes(mode);
+  if (!writesWriterCache && !writesCardCache) {
     return { writesDevelopmentCache: false };
   }
   if (!/\/development$/i.test(dbLabel)) {
@@ -304,6 +357,7 @@ export function assertWriterCacheModeAllowed(
       `research-entity:coverage-synthesis --${mode} is restricted to a Development database (got ${dbLabel})`,
     );
   }
+  if (mode === 'supersede-draft') return { writesDevelopmentCache: Boolean(args?.apply) };
   return { writesDevelopmentCache: !(mode === 'import-derivations' && args?.validateOnly) };
 }
 

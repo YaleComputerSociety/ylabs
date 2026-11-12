@@ -15,6 +15,7 @@ import {
   resolveWrittenDescription,
   type ImportedDraftOutcome,
   type ImportedWriterDraft,
+  type StoredWrittenDescriptionDerivation,
   type WriterDrafting,
   type WriterInputs,
   type WrittenDescriptionDerivationStore,
@@ -206,4 +207,118 @@ export async function runDerivationImport(input: {
     byOutcome: countByStep(rows.map((row) => ({ step: row.outcome }))),
     stored: rows.filter((row) => row.stored).length,
   };
+}
+
+export type DraftSupersedeBlock =
+  'missing-row' | 'no-evidence' | 'refused' | 'no-stored-draft' | 'unchanged';
+
+export interface DraftSupersedeReport {
+  slug: string;
+  apply: boolean;
+  reason: string;
+  decidedBy: string;
+  outcome: ImportedDraftOutcome | 'missing-row';
+  blockedBy: DraftSupersedeBlock | null;
+  stored: boolean;
+  inputHash?: string;
+  before: { writer: string; fullDescription: string } | null;
+  after: { writer: string; fullDescription: string };
+  refusalReasons: CoverageSynthesisRefusal[];
+  refusalDetails?: CoverageSynthesisRefusalDetails;
+}
+
+const sameRawOutput = (
+  left: StoredWrittenDescriptionDerivation['rawOutput'],
+  right: StoredWrittenDescriptionDerivation['rawOutput'],
+): boolean =>
+  left.fullDescription === right.fullDescription &&
+  JSON.stringify(left.usedSnippetIndexes) === JSON.stringify(right.usedSnippetIndexes);
+
+export async function runDerivationSupersede(input: {
+  slug: string;
+  rows: readonly WriterRowEvidence[];
+  drafts: readonly ImportedWriterDraft[];
+  store: WrittenDescriptionDerivationStore;
+  evidenceNow: Date;
+  apply: boolean;
+  reason: string;
+  decidedBy: string;
+  inputs?: WriterInputs;
+  now?: Date;
+}): Promise<DraftSupersedeReport> {
+  const reason = input.reason.trim();
+  const decidedBy = input.decidedBy.trim();
+  if (!reason || !decidedBy) {
+    throw new Error('--supersede-draft requires --reason and --decided-by');
+  }
+  if (input.drafts.length !== 1 || input.drafts[0].slug !== input.slug) {
+    throw new Error(
+      `--supersede-draft requires a drafts file holding exactly one entry, for the named slug (got ${input.drafts.length})`,
+    );
+  }
+  const [draft] = input.drafts;
+  const now = input.now ?? new Date();
+  const report: DraftSupersedeReport = {
+    slug: input.slug,
+    apply: input.apply,
+    reason,
+    decidedBy,
+    outcome: 'missing-row',
+    blockedBy: 'missing-row',
+    stored: false,
+    before: null,
+    after: { writer: draft.writer, fullDescription: draft.fullDescription },
+    refusalReasons: [],
+  };
+  const row = input.rows.find((candidate) => candidate.slug === input.slug);
+  if (!row) return report;
+  const verdict = await judgeImportedWriterDraft(
+    subjectOf(row, snippetsFromRowEvidence(row, input.evidenceNow)),
+    draft,
+    { inputs: input.inputs, derivedAt: now },
+  );
+  report.outcome = verdict.outcome;
+  report.inputHash = verdict.inputHash;
+  report.refusalReasons = verdict.decision?.refusal ? [verdict.decision.refusal] : [];
+  if (verdict.decision?.refusalDetails) report.refusalDetails = verdict.decision.refusalDetails;
+  const existing = verdict.inputHash ? await input.store.find(verdict.inputHash) : null;
+  if (existing) {
+    report.before = {
+      writer: existing.writer,
+      fullDescription: existing.rawOutput.fullDescription,
+    };
+  }
+  if (verdict.outcome !== 'accepted' || !verdict.record) {
+    report.blockedBy = verdict.outcome === 'no-evidence' ? 'no-evidence' : 'refused';
+    return report;
+  }
+  if (!existing) {
+    report.blockedBy = 'no-stored-draft';
+    return report;
+  }
+  if (
+    existing.writer === draft.writer &&
+    sameRawOutput(existing.rawOutput, verdict.record.rawOutput)
+  ) {
+    report.blockedBy = 'unchanged';
+    return report;
+  }
+  report.blockedBy = null;
+  if (!input.apply) return report;
+  await input.store.save({
+    ...verdict.record,
+    supersedes: [
+      ...(existing.supersedes ?? []),
+      {
+        writer: existing.writer,
+        rawOutput: existing.rawOutput,
+        derivedAt: existing.derivedAt,
+        at: now,
+        reason,
+        decidedBy,
+      },
+    ],
+  });
+  report.stored = true;
+  return report;
 }
