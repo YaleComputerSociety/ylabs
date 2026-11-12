@@ -171,7 +171,9 @@ describe('argument parsing', () => {
       backupRef: 'snap-1',
       skipRemotePhase: false,
       fullSearchRebuild: false,
+      help: false,
     });
+    expect(parsePromoteBetaArgs(['--help']).help).toBe(true);
     expect(parsePromoteBetaArgs(['--full-search-rebuild']).fullSearchRebuild).toBe(true);
     expect(parsePromoteProductionArgs(['--full-search-rebuild']).fullSearchRebuild).toBe(true);
     expect(() => parsePromoteBetaArgs(['--backup-ref'])).toThrow('--backup-ref requires a value');

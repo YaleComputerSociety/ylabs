@@ -18,6 +18,34 @@ export const RENDER_SERVICE_ID_VARIABLES: Record<PromotionTarget, string> = {
 
 export const RENDER_API_KEY_VARIABLE = 'RENDER_API_KEY';
 
+export const NO_BACKUP_ACKNOWLEDGEMENT = 'none-acknowledged';
+
+export const BACKUP_REF_REQUIRED_MESSAGE = `--backup-ref is required: pass the reference of a Beta backup you took before this mirror, or pass --backup-ref ${NO_BACKUP_ACKNOWLEDGEMENT} to acknowledge that no off-cluster Beta backup exists (#4148). promote:beta records the value as your acknowledgement and does not check it.`;
+
+export const PROMOTE_BETA_USAGE = [
+  'Usage: yarn promote:beta --backup-ref <reference | none-acknowledged> [options]',
+  '',
+  "  --backup-ref <value>        Required to apply. Records the operator's acknowledgement of the",
+  '                              Beta backup position before the mirror replaces Beta. Pass the',
+  '                              reference of a backup you took, or none-acknowledged when no',
+  '                              off-cluster Beta backup exists (#4148). The value is logged as',
+  '                              stated by the operator; promote:beta does not check it.',
+  '  --weekly-run <id>           A weekly_sweep_runs id that covers a sweep mode (repeatable).',
+  '  --allow-without-weekly-run  Skip the weekly run coverage check.',
+  '  --skip-remote-phase         Mirror only; run the Beta gate and reindex by hand.',
+  '  --full-search-rebuild       Rebuild the Beta search index instead of reconciling it.',
+  '  --dry-run                   Plan only; write nothing and start no Render job.',
+  '  --yes                       Skip the typed confirmation for a scripted run.',
+  '  --help                      Print this text.',
+].join('\n');
+
+export function backupRefAcknowledgementLine(backupRef: string): string {
+  if (backupRef === NO_BACKUP_ACKNOWLEDGEMENT) {
+    return `Backup acknowledgement (--backup-ref ${NO_BACKUP_ACKNOWLEDGEMENT}): the operator acknowledged that no off-cluster Beta backup exists (#4148), so this mirror has no restore point. Recorded as stated; nothing was checked.`;
+  }
+  return `Backup acknowledgement (--backup-ref): the operator named "${backupRef}" as the Beta backup taken before this mirror. Recorded as stated; promote:beta did not check it.`;
+}
+
 const DATASET_VERSION_PATTERN = /^prod-promote-\d{4}-\d{2}-\d{2}-lane-a-beta-copy$/;
 
 export interface PromoteBetaArgs {
@@ -28,6 +56,7 @@ export interface PromoteBetaArgs {
   backupRef?: string;
   skipRemotePhase: boolean;
   fullSearchRebuild: boolean;
+  help: boolean;
 }
 
 export interface PromoteProductionArgs {
@@ -52,11 +81,13 @@ export function parsePromoteBetaArgs(argv: string[]): PromoteBetaArgs {
     allowWithoutWeeklyRun: false,
     skipRemotePhase: false,
     fullSearchRebuild: false,
+    help: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--') continue;
     if (arg === '--dry-run') args.dryRun = true;
+    else if (arg === '--help') args.help = true;
     else if (arg === '--yes') args.yes = true;
     else if (arg === '--allow-without-weekly-run') args.allowWithoutWeeklyRun = true;
     else if (arg === '--skip-remote-phase') args.skipRemotePhase = true;

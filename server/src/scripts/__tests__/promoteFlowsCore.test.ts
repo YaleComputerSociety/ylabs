@@ -341,7 +341,49 @@ describe('promote:beta', () => {
     const harness = newHarness();
     expect(await runPromoteBeta([], betaDeps(harness))).toBe(1);
     expect(harness.errors[0]).toContain('--backup-ref is required');
+    expect(harness.errors[0]).toContain('--backup-ref none-acknowledged');
     expect(harness.prompts).toEqual([]);
+    expect(yarnScripts(harness)).toHaveLength(1);
+    expect(harness.renderCalls.some((call) => call.method === 'POST')).toBe(false);
+  });
+
+  it('accepts none-acknowledged and logs it as an acknowledgement that no backup exists', async () => {
+    const harness = newHarness();
+    const code = await runPromoteBeta(
+      ['--backup-ref', 'none-acknowledged', '--yes'],
+      betaDeps(harness),
+    );
+    expect(code).toBe(0);
+    const line = harness.logs.find((entry) => entry.startsWith('Backup acknowledgement'));
+    expect(line).toContain('acknowledged that no off-cluster Beta backup exists (#4148)');
+    expect(line).toContain('nothing was checked');
+    expect(line).not.toMatch(/\bverified\b|backup taken/i);
+    expect(yarnScripts(harness)).toHaveLength(2);
+  });
+
+  it('accepts a named backup reference and logs it as stated, not as checked', async () => {
+    const harness = newHarness();
+    const code = await runPromoteBeta(
+      ['--backup-ref', 'dump-artifact-1', '--yes'],
+      betaDeps(harness),
+    );
+    expect(code).toBe(0);
+    const line = harness.logs.find((entry) => entry.startsWith('Backup acknowledgement'));
+    expect(line).toContain('the operator named "dump-artifact-1"');
+    expect(line).toContain('did not check it');
+    expect(line).not.toMatch(/\bverified\b/i);
+  });
+
+  it('prints help that describes --backup-ref as an acknowledgement and writes nothing', async () => {
+    const harness = newHarness();
+    expect(await runPromoteBeta(['--help'], betaDeps(harness))).toBe(0);
+    const help = harness.logs.join('\n');
+    expect(help).toContain('--backup-ref <value>');
+    expect(help).toContain('none-acknowledged');
+    expect(help).toContain('does not check it');
+    expect(help).not.toMatch(/\bverified\b|\bverifies\b|backup taken/i);
+    expect(yarnScripts(harness)).toEqual([]);
+    expect(harness.renderCalls).toEqual([]);
   });
 
   it('fails when the Render gate job fails', async () => {

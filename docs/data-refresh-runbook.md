@@ -587,8 +587,11 @@ It prints which run satisfied each mode.
 3. Runs the Phase 2 plan, `beta:refresh-from-development`, and prints each collection's copy count against Beta's current count.
 4. Checks the Render operator service through the Render API: it must exist, be running, deploy `beta`, and use the repository root as its root directory.
 It then compares the operator's live deploy with the `beta` head on GitHub and reports whether the apply will deploy it first.
-5. Prints the Phase 3 sequence the Render job will run, then requires `--backup-ref <reference>` and a typed `yes` (or `--yes` for a scripted run).
-The script logs the reference and verifies nothing about it, and no Beta restore point exists yet (#4148), so the reference is not evidence that one does.
+5. Prints the Phase 3 sequence the Render job will run, then requires `--backup-ref <reference | none-acknowledged>` and a typed `yes` (or `--yes` for a scripted run).
+`--backup-ref` records the operator's acknowledgement of Beta's backup position, not a check of it.
+Pass the reference of a backup you took before the mirror, or pass `--backup-ref none-acknowledged` to acknowledge that no off-cluster Beta backup exists, which is the current state (#4148).
+The script writes the value into the promotion log as a `Backup acknowledgement` line stated by the operator and checks nothing about it, so a logged reference is not evidence that a restore point exists.
+Without the flag the apply is refused, and the refusal names `none-acknowledged`.
 6. Deploys the operator service at the `beta` head when its live build is older, and waits until that deploy is live, before writing anything; a deploy that fails, is canceled or times out stops the promotion with Beta untouched.
 Then it applies the mirror and stops unless it reports `"status": "applied"`.
 7. Starts a Render one-off job on the Beta operator service running `yarn --cwd server promote:remote-phase --environment beta`, and polls it every 20 seconds for up to 4 hours.
@@ -612,11 +615,14 @@ It refuses when `PFR3_MEILI_RESTORE_POINT` is not set; pass the restore point ta
 
 ```bash
 yarn promote:beta --dry-run
-yarn promote:beta --backup-ref <beta-backup-reference>
+yarn promote:beta --backup-ref none-acknowledged
 yarn promote:production --dry-run
 yarn promote:production
 ```
 
+Run both from a checkout at or after the pull request that made `--backup-ref` an acknowledgement (#5937).
+An older checkout logs the value as a "Beta backup reference" as if it named a real backup, and a checkout from before #5935 also starts the Beta remote phase with `--confirm-beta-backup`, which the current remote phase refuses as an unknown argument.
+`yarn promote:beta --help` prints the flags; replace `none-acknowledged` with a real backup reference only when you took one.
 `--dry-run` runs every read and check, prints both plans, and starts no Render job; it exits nonzero and lists what an apply would refuse on.
 `--skip-remote-phase` applies the copy and stops, for when the gate and reindex must be run from the Render shell instead.
 Every child command writes its output to a numbered log file in the run's temporary directory, which the command prints first, and a failed step prints its last 20 lines.

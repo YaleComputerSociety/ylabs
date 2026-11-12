@@ -3,7 +3,7 @@ import { connectScriptMongo } from '../db/connections';
 import { WeeklySweepRun } from '../models/weeklySweepRun';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { isDirectScriptInvocation } from './directScriptInvocation';
-import { WEEKLY_RUN_LOOKBACK } from './promoteCore';
+import { PROMOTE_BETA_USAGE, WEEKLY_RUN_LOOKBACK, parsePromoteBetaArgs } from './promoteCore';
 import { runPromoteBeta } from './promoteFlowsCore';
 import { baseRuntimeDeps } from './promoteRuntime';
 import {
@@ -14,6 +14,10 @@ import { heldSweepSourceLocks } from './weeklyDevelopmentSweep';
 import type { StoredWeeklySweepRun } from './weeklySweepRunsReportCore';
 
 export async function promoteBetaMain(argv: string[]): Promise<number> {
+  if (parsePromoteBetaArgs(argv).help) {
+    console.log(PROMOTE_BETA_USAGE);
+    return 0;
+  }
   const mirrorOptions = parseDevelopmentToBetaOptions([]);
   assertSafeDevelopmentToBetaOptions(mirrorOptions);
   await connectScriptMongo(mirrorOptions.developmentUrl);
