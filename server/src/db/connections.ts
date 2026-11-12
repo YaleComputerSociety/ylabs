@@ -7,6 +7,7 @@ import {
   devWriteLeaseSwitchedOff,
   recordDevApplyIntent,
   labelSweepRunnerOwner,
+  releaseHeldDevWriteLeases,
   markDevWriteLeaseHeldForChildProcesses,
 } from './devWriteLease';
 import { assertDevelopmentWritesGuarded, releaseDevWriteLeasesWhenClosed } from './devWriteGuard';
