@@ -846,23 +846,3 @@ export function scoreLeadVerificationPerLead(
     },
   };
 }
-
-/**
- * Whether a benchmark is the one an owner ballot was drawn from or a recapture of it. An
- * owner label judges who leads a row rather than one frozen page, so it still applies after a
- * recapture, and `labelsNotReplayed` counts the leads the recapture no longer judges.
- */
-export function benchmarkDescendsFrom(
-  benchmarkId: string,
-  ancestorId: string,
-  supersedesById: ReadonlyMap<string, string | undefined>,
-): boolean {
-  const visited = new Set<string>();
-  let current: string | undefined = benchmarkId;
-  while (current && !visited.has(current)) {
-    if (current === ancestorId) return true;
-    visited.add(current);
-    current = supersedesById.get(current);
-  }
-  return false;
-}

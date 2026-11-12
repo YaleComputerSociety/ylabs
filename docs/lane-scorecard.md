@@ -308,7 +308,7 @@ OPENAI_API_KEY= yarn --cwd server lane:scorecard --benchmark=<benchmark-id> --le
 The directory holds `ballot.md`, whose items each carry one `Verdict: [ ] correct lead  [ ] not the lead  [ ] can't tell` line, and `key.json`, which maps each blind item number to its `entityKey` and `personId` and names the benchmark the ballot was drawn from.
 It must sit outside the repository, because a ballot quotes pages that name people, and the flag refuses a path inside it.
 The reader refuses an item that marks more than one box, a ballot missing a keyed item, and an item the key does not name, and it leaves an unmarked item unlabelled rather than reading it as "can't tell".
-A ballot applies to the benchmark it was drawn from and to every recapture of it, because a label judges who leads the row rather than one frozen page, and the report counts the labelled leads a recapture no longer judges as `labelsNotReplayed`.
+A ballot applies only to the benchmark it was drawn from, and the run refuses a ballot whose benchmark it does not replay; the report counts the labelled leads that replay no longer judges as `labelsNotReplayed`.
 
 `confirmed.precision` is the share of `CONFIRMED` leads the owner judged the correct lead, and `contradicted.precision` the share of `CONTRADICTED` leads the owner judged not the lead.
 An `UNSTATED` verdict claims nothing, so `unstated` reports how the owner split those leads instead of a precision; it is the number #4941 asks for before anything reads `leadVerification` on a served row with no confirmed lead.

@@ -7,7 +7,6 @@ import {
 } from '../../scrapers/utils/labSiteLeadVerification';
 import {
   LEAD_VERIFICATION_UNMEASURED,
-  benchmarkDescendsFrom,
   scoreLeadVerificationPerLead,
   scoresLeadVerification,
   type OwnerLeadLabel,
@@ -132,9 +131,11 @@ describe('scoreLeadVerificationPerLead (#4941)', () => {
     expect(score.precision).toBe(LEAD_VERIFICATION_UNMEASURED);
   });
 
-  it('never reads the lane verdicts themselves as labels', () => {
-    const asIfLabelled = scoreLeadVerificationPerLead(syntheticReplay(), []);
-    expect(asIfLabelled.precision).toBe('unmeasured: no owner labels');
+  it('never scores the lane against its own verdicts when every lead is confirmed', () => {
+    const [confirmed] = syntheticReplay();
+    const score = scoreLeadVerificationPerLead([confirmed]);
+    expect(score.perLead.map((row) => row.verdict)).toEqual(['CONFIRMED']);
+    expect(score.precision).toBe('unmeasured: no owner labels');
   });
 
   it('scores confirmed and contradicted verdicts against the owner, and splits unstated', () => {
@@ -197,32 +198,5 @@ describe('scoreLeadVerificationPerLead (#4941)', () => {
     expect(scoreLeadVerificationPerLead(syntheticReplay(), labels)).toEqual(
       scoreLeadVerificationPerLead([...syntheticReplay()].reverse(), labels),
     );
-  });
-});
-
-describe('benchmarkDescendsFrom', () => {
-  const lineage = new Map<string, string | undefined>([
-    ['gold-v1', undefined],
-    ['gold-v2', 'gold-v1'],
-    ['gold-v3', 'gold-v2'],
-    ['other', undefined],
-  ]);
-
-  it('applies a ballot to its own benchmark and to every recapture of it', () => {
-    expect(benchmarkDescendsFrom('gold-v2', 'gold-v2', lineage)).toBe(true);
-    expect(benchmarkDescendsFrom('gold-v3', 'gold-v2', lineage)).toBe(true);
-  });
-
-  it('never applies a ballot to an ancestor or an unrelated benchmark', () => {
-    expect(benchmarkDescendsFrom('gold-v1', 'gold-v2', lineage)).toBe(false);
-    expect(benchmarkDescendsFrom('other', 'gold-v2', lineage)).toBe(false);
-  });
-
-  it('stops on a supersedes cycle', () => {
-    const cycle = new Map([
-      ['a', 'b'],
-      ['b', 'a'],
-    ]);
-    expect(benchmarkDescendsFrom('a', 'c', cycle)).toBe(false);
   });
 });

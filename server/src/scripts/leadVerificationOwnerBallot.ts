@@ -49,7 +49,7 @@ function verdictLines(markdown: string): Map<number, string> {
 
 function markedVerdict(item: number, line: string): OwnerLeadVerdict | undefined {
   const checked = BOX_VERDICTS.filter(([wording]) => {
-    const box = line.match(new RegExp(`\\[([^\\]]?)\\]\\s*${wording.replace("'", "['’]")}`, 'i'));
+    const box = line.match(new RegExp(`\\[([^\\]]?)\\]\\s*${wording}`, 'i'));
     if (!box) throw new Error(`ballot item ${item} has no "${wording}" box`);
     return box[1].trim() !== '';
   });

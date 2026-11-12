@@ -24,7 +24,6 @@ import {
 } from './laneBenchmarkRun';
 import {
   allowedReplayMisses,
-  benchmarkDescendsFrom,
   goldRegressions,
   goldBaselineReplay,
   staleReplayReason,
@@ -248,20 +247,10 @@ async function main(): Promise<void> {
     retired,
   } = benchmarksToReplay(stored, options.benchmarkId);
 
-  const lineage = ownerBallot
-    ? new Map(
-        (
-          (await LaneBenchmark.find({})
-            .select('benchmarkId supersedes')
-            .lean()) as unknown as Array<Pick<StoredBenchmark, 'benchmarkId' | 'supersedes'>>
-        ).map((row) => [row.benchmarkId, row.supersedes]),
-      )
-    : new Map<string, string | undefined>();
-  const ballotApplies = (benchmarkId: string) =>
-    Boolean(ownerBallot && benchmarkDescendsFrom(benchmarkId, ownerBallot.benchmarkId, lineage));
+  const ballotApplies = (benchmarkId: string) => ownerBallot?.benchmarkId === benchmarkId;
   if (ownerBallot && !benchmarks.some((benchmark) => ballotApplies(benchmark.benchmarkId)))
     throw new Error(
-      `--lead-ballot was drawn from ${ownerBallot.benchmarkId}, which no replayed benchmark descends from`,
+      `--lead-ballot was drawn from ${ownerBallot.benchmarkId}, which this run does not replay`,
     );
   const codeSha = currentCodeSha();
   const databaseName = mongoose.connection.db?.databaseName ?? 'unknown';

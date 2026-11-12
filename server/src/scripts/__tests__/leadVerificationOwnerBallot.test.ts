@@ -44,17 +44,6 @@ describe('parseOwnerLeadBallot', () => {
     });
   });
 
-  it("accepts a typographic apostrophe in can't tell", () => {
-    const ballot = [
-      item(1, 'Verdict: [ ] correct lead  [ ] not the lead  [x] can’t tell'),
-      item(2, blank),
-      item(3, blank),
-    ].join('\n');
-    expect(parseOwnerLeadBallot(ballot, key).labels).toEqual([
-      { entityKey: 'row-b', personId: 'p-2', ownerVerdict: 'cant_tell' },
-    ]);
-  });
-
   it('refuses an item that marks two verdicts', () => {
     const ballot = [
       item(1, "Verdict: [x] correct lead  [x] not the lead  [ ] can't tell"),
