@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNod
 import { ChevronDownIcon, CloseIcon, FiltersIcon } from '../shared/icons';
 
 import ActiveFilterChip from './ActiveFilterChip';
+import InfoTip from '../shared/InfoTip';
 import {
   ADVISES_UNDERGRAD_RESEARCH_FILTER_HINT,
   ADVISES_UNDERGRAD_RESEARCH_FILTER_LABEL,
@@ -81,6 +82,7 @@ interface UndergraduateToggleProps {
   countSuffix: string;
   checked: boolean;
   noEvidenceNoteId: string;
+  compact: boolean;
   inputRef?: (node: HTMLElement | null) => void;
   onChange?: (value: boolean) => void;
 }
@@ -92,6 +94,7 @@ const UndergraduateToggle = ({
   countSuffix,
   checked,
   noEvidenceNoteId,
+  compact,
   inputRef,
   onChange,
 }: UndergraduateToggleProps) => {
@@ -101,8 +104,10 @@ const UndergraduateToggle = ({
     [hint ? hintId : null, noEvidence ? noEvidenceNoteId : null].filter(Boolean).join(' ') ||
     undefined;
   return (
-    <div className="min-w-0">
-      <label className="flex min-h-11 min-w-0 items-center gap-3 text-sm font-medium text-ink">
+    <div className={compact ? 'flex min-w-0 items-center gap-1' : 'min-w-0'}>
+      <label
+        className={`flex min-w-0 items-center gap-3 text-sm font-medium text-ink ${compact ? 'min-h-7' : 'min-h-11'}`}
+      >
         <input
           ref={inputRef}
           type="checkbox"
@@ -117,7 +122,10 @@ const UndergraduateToggle = ({
           {countSuffix}
         </span>
       </label>
-      {hint && (
+      {hint && compact && (
+        <InfoTip label={`About ${label}`} text={hint} tipId={hintId} align="end" />
+      )}
+      {hint && !compact && (
         <p id={hintId} className="-mt-3 ml-8 text-xs leading-snug text-muted">
           {hint}
         </p>
@@ -490,21 +498,31 @@ const ResearchFilterDisclosure = ({
   const filterFields = (
     <fieldset className="min-w-0 border-0 p-0">
       <legend className="sr-only">Narrow research results</legend>
-      <div className={`min-w-0 ${isSidebar ? 'space-y-3' : 'space-y-4'}`}>
+      <div className={`min-w-0 ${isSidebar ? 'space-y-2' : 'space-y-4'}`}>
         {undergradOptions.length > 0 && (
           <fieldset
             aria-describedby={undergradOptions.length > 1 ? undergradsCombinationNoteId : undefined}
             className="min-w-0 border-0 p-0"
           >
-            <legend className="text-sm font-semibold text-ink">
+            <legend
+              className={`text-sm font-semibold text-ink ${isSidebar ? 'float-left leading-6' : ''}`}
+            >
               {UNDERGRADS_FILTER_GROUP_LABEL}
             </legend>
-            {undergradOptions.length > 1 && (
+            {undergradOptions.length > 1 && isSidebar && (
+              <InfoTip
+                label={`About ${UNDERGRADS_FILTER_GROUP_LABEL}`}
+                text={UNDERGRADS_FILTER_COMBINATION_NOTE}
+                tipId={undergradsCombinationNoteId}
+                className="ml-1"
+              />
+            )}
+            {undergradOptions.length > 1 && !isSidebar && (
               <p id={undergradsCombinationNoteId} className="text-xs leading-snug text-muted">
                 {UNDERGRADS_FILTER_COMBINATION_NOTE}
               </p>
             )}
-            <div className="min-w-0">
+            <div className={`min-w-0 ${isSidebar ? 'clear-left' : ''}`}>
               {undergradOptions.map((option) => (
                 <UndergraduateToggle
                   key={option.field}
@@ -514,13 +532,17 @@ const ResearchFilterDisclosure = ({
                   countSuffix={facetCountSuffix(option.count)}
                   checked={option.checked}
                   noEvidenceNoteId={undergradsNoEvidenceNoteId}
+                  compact={isSidebar}
                   inputRef={firstVisibleField === option.field ? setFirstFieldNode : undefined}
                   onChange={option.onChange}
                 />
               ))}
             </div>
             {someUndergradOptionLacksEvidence && (
-              <p id={undergradsNoEvidenceNoteId} className="mt-1 text-xs leading-snug text-muted">
+              <p
+                id={undergradsNoEvidenceNoteId}
+                className={`text-xs leading-snug text-muted ${isSidebar ? '' : 'mt-1'}`}
+              >
                 {NO_HOSTED_UNDERGRADUATE_EVIDENCE_NOTE}
               </p>
             )}
@@ -704,7 +726,7 @@ const ResearchFilterDisclosure = ({
             Applying filters…
           </p>
         )}
-        <div className="mt-4 min-w-0 space-y-4">
+        <div className="mt-3 min-w-0 space-y-4">
           {facetCountWarning}
           {filterFields}
         </div>

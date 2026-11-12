@@ -70,6 +70,38 @@ describe('ResearchFilterDisclosure', () => {
     expect(screen.queryByRole('checkbox', { name: /Works with undergrads/ })).toBeNull();
   });
 
+  it('compacts the wide sidebar: helper line and hint become tips, rows lose the 44px floor (#5963)', () => {
+    renderFilters({ variant: 'sidebar', facetDistribution: undergradCounts });
+
+    const group = screen.getByRole('group', { name: 'Undergrads' });
+    expect(group).toHaveAccessibleDescription('Shows research matching every ticked option');
+    expect(screen.queryByRole('tooltip')).toBeNull();
+    expect(screen.getByRole('button', { name: 'About Undergrads' })).toHaveAccessibleDescription(
+      'Shows research matching every ticked option',
+    );
+    const advises = screen.getByRole('checkbox', { name: 'Advises undergrad research (9)' });
+    expect(advises).toHaveAccessibleDescription('e.g. supervised senior theses');
+    expect(advises.closest('label')?.className).toContain('min-h-7');
+
+    fireEvent.focus(screen.getByRole('button', { name: 'About Advises undergrad research' }));
+    expect(screen.getByRole('tooltip').textContent).toBe('e.g. supervised senior theses');
+  });
+
+  it('keeps 44px rows and visible lines in the filter sheet (#5963)', () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: false }) as typeof window.matchMedia;
+    renderFilters({ facetDistribution: undergradCounts });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    const dialog = screen.getByRole('dialog', { name: 'Research filters' });
+    expect(within(dialog).getByText('Shows research matching every ticked option')).toBeVisible();
+    expect(within(dialog).getByText('e.g. supervised senior theses')).toBeVisible();
+    expect(within(dialog).queryByRole('button', { name: /^About / })).toBeNull();
+    const advises = within(dialog).getByRole('checkbox', {
+      name: 'Advises undergrad research (9)',
+    });
+    expect(advises.closest('label')?.className).toContain('min-h-11');
+  });
+
   it('describes the advises option with its hint (#5963)', () => {
     renderFilters({ variant: 'sidebar', facetDistribution: undergradCounts });
 
