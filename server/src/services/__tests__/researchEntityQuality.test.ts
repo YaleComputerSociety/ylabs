@@ -26,6 +26,40 @@ describe('buildResearchEntityQualitySummary', () => {
     expect(summary.score).toBeGreaterThanOrEqual(90);
   });
 
+  it.each([
+    ['a teaching line', 'Teaches undergraduate courses on glaciology and sea level rise.'],
+    ['a glued dateline', 'May 11, 2021In Defense of Ice Models, using glaciology records.'],
+  ])('labels a blank body missing even when %s fills the card', (_shape, card) => {
+    const summary = buildResearchEntityQualitySummary({
+      entity: {
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+        fullDescription: '',
+        shortDescription: card,
+        sourceUrls: ['https://example.yale.edu/profile/fixture'],
+      },
+    });
+
+    expect(summary.descriptionState).toBe('missing');
+    expect(summary.repairFlags).toContain('missing_description');
+    expect(summary.repairFlags).not.toContain('thin_description');
+  });
+
+  it('keeps a short body labelled thin', () => {
+    const summary = buildResearchEntityQualitySummary({
+      entity: {
+        entityType: 'FACULTY_RESEARCH_AREA',
+        kind: 'individual',
+        fullDescription: 'Glaciology.',
+        shortDescription: 'Teaches undergraduate courses on glaciology and sea level rise.',
+        sourceUrls: ['https://example.yale.edu/profile/fixture'],
+      },
+    });
+
+    expect(summary.descriptionState).toBe('thin');
+    expect(summary.repairFlags).toContain('thin_description');
+  });
+
   it('does not count a postdoc-only lead as attached, since a postdoc cannot host a student', () => {
     const summary = buildResearchEntityQualitySummary({
       entity: {

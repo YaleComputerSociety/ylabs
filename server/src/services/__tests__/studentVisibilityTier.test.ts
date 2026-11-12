@@ -3782,3 +3782,57 @@ describe('a person-scoped biography that states no research', () => {
     expect(result.reasons).not.toContain('biography_without_research');
   });
 });
+
+describe('a blank body beside a card', () => {
+  const visibility = (shortDescription: string) =>
+    computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'blank-body-card-fixture',
+        name: 'Robin Fixture Faculty Research',
+        slug: 'robin-fixture-research',
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        fullDescription: '',
+        shortDescription,
+        sourceUrls: ['https://example.yale.edu/profile/robin-fixture'],
+      },
+      leadMembers: [
+        { role: 'pi', userId: 'robin-fixture', user: { fname: 'Robin', lname: 'Fixture' } },
+      ],
+    });
+
+  it('records the hold as a missing description rather than a thin one', () => {
+    const result = visibility('Teaches undergraduate courses on glaciology and sea level rise.');
+    expect(result.reasons).toContain('missing_description');
+    expect(result.reasons).not.toContain('thin_description');
+    expect(result.tier).toBe('operator_review');
+  });
+
+  it('stays a suppressed biography shell, not a directory shell, when no lead is attached', () => {
+    const result = computeResearchEntityStudentVisibility({
+      entity: {
+        _id: 'blank-body-card-shell-fixture',
+        name: 'Robin Fixture Faculty Research',
+        slug: 'robin-fixture-research',
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        websiteUrl: 'https://example.yale.edu/humans/faculty',
+        sourceUrls: ['https://example.yale.edu/humans/faculty'],
+        fullDescription: '',
+        shortDescription: 'Teaches undergraduate courses on glaciology and sea level rise.',
+        researchAreas: [],
+      },
+      leadMembers: [],
+      accessSignalCount: 0,
+      actionablePathwayCount: 0,
+      openPostedOpportunityCount: 0,
+    });
+
+    expect(result.tier).toBe('suppressed');
+    expect(result.reasons).toEqual(
+      expect.arrayContaining(['profile_biography_shell', 'missing_description']),
+    );
+    expect(result.reasons).not.toContain('generic_directory_shell');
+    expect(result.reasons).not.toContain('thin_description');
+  });
+});
