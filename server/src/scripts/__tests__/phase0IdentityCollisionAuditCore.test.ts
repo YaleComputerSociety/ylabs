@@ -4,6 +4,9 @@ import {
   buildStrongIdentityComponents,
   normalizePhase0IdentityValue,
 } from '../phase0IdentityCollisionAuditCore';
+import { syntheticPersonOrcid } from '../../test/syntheticOrcid';
+
+const SYNTHETIC_ORCID_1 = syntheticPersonOrcid(500);
 
 const BASE_INPUT = {
   environment: 'development' as const,
@@ -43,13 +46,13 @@ describe('buildPhase0IdentityCollisionAuditReport', () => {
           id: 'joined-one',
           fname: 'Jordan',
           lname: 'Lee',
-          orcid: '9999-9999-9999-9994',
+          orcid: SYNTHETIC_ORCID_1,
         },
         {
           id: 'joined-two',
           fname: 'Jordan',
           lname: 'Lee',
-          orcid: '9999-9999-9999-9994',
+          orcid: SYNTHETIC_ORCID_1,
         },
       ],
     });
@@ -183,14 +186,12 @@ describe('buildPhase0IdentityCollisionAuditReport', () => {
   });
 
   it('canonicalizes governed ORCID, OpenAlex, and Google Scholar identity forms', () => {
-    expect(normalizePhase0IdentityValue('orcid', 'https://orcid.org/9999-9999-9999-9994/')).toBe(
-      '9999-9999-9999-9994',
+    expect(normalizePhase0IdentityValue('orcid', `https://orcid.org/${SYNTHETIC_ORCID_1}/`)).toBe(
+      SYNTHETIC_ORCID_1,
     );
-    expect(normalizePhase0IdentityValue('orcid', '9999-9999-9999-9994')).toBe(
-      '9999-9999-9999-9994',
-    );
-    expect(normalizePhase0IdentityValue('orcid', 'orcid:9999-9999-9999-9994')).toBe(
-      '9999-9999-9999-9994',
+    expect(normalizePhase0IdentityValue('orcid', SYNTHETIC_ORCID_1)).toBe(SYNTHETIC_ORCID_1);
+    expect(normalizePhase0IdentityValue('orcid', `orcid:${SYNTHETIC_ORCID_1}`)).toBe(
+      SYNTHETIC_ORCID_1,
     );
     expect(normalizePhase0IdentityValue('openAlexId', 'https://openalex.org/A12345')).toBe(
       'a12345',
@@ -212,13 +213,13 @@ describe('buildPhase0IdentityCollisionAuditReport', () => {
           id: 'orcid-url',
           fname: 'Alex',
           lname: 'Rivera',
-          orcid: 'https://orcid.org/9999-9999-9999-9994',
+          orcid: `https://orcid.org/${SYNTHETIC_ORCID_1}`,
         },
         {
           id: 'orcid-bare',
           fname: 'Alex',
           lname: 'Rivera',
-          orcid: 'orcid:9999-9999-9999-9994',
+          orcid: `orcid:${SYNTHETIC_ORCID_1}`,
         },
       ],
     });

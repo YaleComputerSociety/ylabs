@@ -3,6 +3,10 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { resetDirectoryNetidsByAddressCache } from '../../scrapers/directoryContradictedProfileNetid';
 import { dedupeAccountlessResearcherShells } from '../dedupeAccountlessResearcherShells';
+import { syntheticPersonOrcid } from '../../test/syntheticOrcid';
+
+const SYNTHETIC_ORCID_1 = syntheticPersonOrcid(500);
+const SYNTHETIC_ORCID_2 = syntheticPersonOrcid(501);
 
 const db = () => mongoose.connection.db!;
 
@@ -138,7 +142,7 @@ describe('dedupeAccountlessResearcherShells twin arms (#5606)', () => {
       const holder = await seedHolder('Avery Synth', {
         netid: 'fx901',
         email: 'avery.synth@yale.edu',
-        orcid: '0000-0002-0000-0001',
+        orcid: SYNTHETIC_ORCID_1,
       });
       const row = await seedRow('lab-fixture');
       const shell = await seedShell('Avi Synth');
@@ -161,7 +165,7 @@ describe('dedupeAccountlessResearcherShells twin arms (#5606)', () => {
           pageObservation(
             'https://medicine.yale.edu/profile/avery-synth/',
             'orcid',
-            '0000-0002-0000-0001',
+            SYNTHETIC_ORCID_1,
             'fixture:avery-synth',
           ),
         );
@@ -181,7 +185,7 @@ describe('dedupeAccountlessResearcherShells twin arms (#5606)', () => {
       await seedHolder('Avery Synth', {
         netid: 'fx901',
         email: 'avery.synth@yale.edu',
-        orcid: '0000-0002-0000-0001',
+        orcid: SYNTHETIC_ORCID_1,
       });
       const row = await seedRow('lab-fixture');
       const shell = await seedShell('Avi Synth');
@@ -204,7 +208,7 @@ describe('dedupeAccountlessResearcherShells twin arms (#5606)', () => {
           pageObservation(
             'https://medicine.yale.edu/profile/avery-synth/',
             'orcid',
-            '0000-0002-0000-0001',
+            SYNTHETIC_ORCID_1,
             'fixture:avery-synth',
           ),
         );
@@ -219,7 +223,7 @@ describe('dedupeAccountlessResearcherShells twin arms (#5606)', () => {
       await seedHolder('Avery Synth', {
         netid: 'fx901',
         email: 'asynth9@yale.edu',
-        orcid: '0000-0002-0000-0001',
+        orcid: SYNTHETIC_ORCID_1,
       });
       const row = await seedRow('lab-fixture');
       const shell = await seedShell('Avery L. Synth');
@@ -241,7 +245,7 @@ describe('dedupeAccountlessResearcherShells twin arms (#5606)', () => {
         .collection('observations')
         .insertMany([
           pageObservation(schoolPage, 'email', 'avery.synth@yale.edu', 'netid:avery.synth'),
-          pageObservation(schoolPage, 'orcid', '0000-0002-0000-0001', 'netid:avery.synth'),
+          pageObservation(schoolPage, 'orcid', SYNTHETIC_ORCID_1, 'netid:avery.synth'),
         ]);
 
       const result = await dedupeAccountlessResearcherShells({ apply: true });
@@ -254,7 +258,7 @@ describe('dedupeAccountlessResearcherShells twin arms (#5606)', () => {
       await seedHolder('Avery Synth', {
         netid: 'fx901',
         email: 'avery.synth@yale.edu',
-        orcid: '0000-0002-0000-0001',
+        orcid: SYNTHETIC_ORCID_1,
       });
       const shell = await seedShell('Avi Synth', {
         profileLinks: [
@@ -269,8 +273,8 @@ describe('dedupeAccountlessResearcherShells twin arms (#5606)', () => {
       await db()
         .collection('observations')
         .insertMany([
-          pageObservation(SHELL_PAGE, 'orcid', '0000-0002-0000-0001', 'fixture:a'),
-          pageObservation(SHELL_PAGE, 'orcid', '0000-0002-0000-0002', 'fixture:b'),
+          pageObservation(SHELL_PAGE, 'orcid', SYNTHETIC_ORCID_1, 'fixture:a'),
+          pageObservation(SHELL_PAGE, 'orcid', SYNTHETIC_ORCID_2, 'fixture:b'),
         ]);
 
       const result = await dedupeAccountlessResearcherShells({ apply: true });
@@ -305,7 +309,7 @@ describe('dedupeAccountlessResearcherShells twin arms (#5606)', () => {
   describe('inverted display name in the accountless cluster', () => {
     it('folds "Surname, Given" with "Given Surname" in one department, once', async () => {
       const survivor = await seedShell('Avery Synth', {
-        identifiers: { orcid: '0000-0002-0000-0001' },
+        identifiers: { orcid: SYNTHETIC_ORCID_1 },
         profile: { primaryDepartment: 'Fixture Studies', title: 'Lecturer' },
       });
       const inverted = await seedShell('Synth, Avery', {

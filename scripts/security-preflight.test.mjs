@@ -274,8 +274,8 @@ test('test fixtures do not contain known real Yale identifiers', () => {
         false,
         `${file} contains an ORCID fixture that could be a real person's iD: ${orcid}. ` +
           `It is checksum-valid and inside ORCID's allocated space. Use a value outside ` +
-          `that space instead, such as ${SYNTHETIC_ORCID_EXAMPLE}, which still passes the ` +
-          `checksum so it exercises a serve path that requires a valid iD.`,
+          `that space, such as ${SYNTHETIC_ORCID_EXAMPLE}, for a non-person iD, or build a ` +
+          `plausible one at runtime with syntheticPersonOrcid.`,
       );
     }
   }

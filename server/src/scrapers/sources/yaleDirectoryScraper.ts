@@ -44,6 +44,7 @@ import { Researcher } from '../../models/researcher';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 import { directoryUnitDepartment } from '../utils/directoryUnitDepartment';
 import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
+import { plausiblePersonOrcid } from '../../utils/orcid';
 
 dotenv.config({ quiet: true });
 
@@ -427,7 +428,7 @@ export function personToObservations(
     (person.school && String(person.school).trim()) ||
     '';
   const imageUrl = (person.image && String(person.image).trim()) || '';
-  const orcid = (person.orcid && String(person.orcid).trim()) || '';
+  const orcid = plausiblePersonOrcid(person.orcid);
 
   const primaryDept = directoryUnitDepartment(person.unit) ?? '';
 

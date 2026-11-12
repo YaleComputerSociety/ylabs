@@ -7,14 +7,18 @@ import {
   extractRosterMemberIdentityEvidence,
 } from '../../scrapers/utils/rosterMemberIdentityEvidence';
 import { dedupeAccountlessResearcherShells } from '../dedupeAccountlessResearcherShells';
+import { syntheticPersonOrcid } from '../../test/syntheticOrcid';
+
+const SYNTHETIC_ORCID_1 = syntheticPersonOrcid(500);
+const SYNTHETIC_ORCID_2 = syntheticPersonOrcid(501);
 
 const db = () => mongoose.connection.db!;
 
 const PROFILE_URL = 'https://medicine.yale.edu/fixturecenter/profile/avery-synth/';
 const ROW_SLUG = 'fixture-center';
 const LISTING_KEY = 'centers:fixture-center:avery-synth';
-const SUBJECT_ORCID = '9999-9000-9999-9005';
-const OTHER_ORCID = '9999-9000-9999-0019';
+const SUBJECT_ORCID = SYNTHETIC_ORCID_1;
+const OTHER_ORCID = SYNTHETIC_ORCID_2;
 
 const orcidLink = (orcid: string) => `<a href="https://orcid.org/${orcid}/">ORCID</a>`;
 const profilePage = (subject: string, outside = '') =>

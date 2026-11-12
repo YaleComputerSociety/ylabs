@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest';
+import * as cheerio from 'cheerio';
+import { syntheticPersonOrcid, withOrcidCheckDigit } from '../../../test/syntheticOrcid';
 import {
   ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION,
   extractRosterMemberIdentityEvidence,
   isYaleHostedUrl,
   parseRosterMemberIdentityEvidence,
   singleStatedOrcid,
+  subjectProfileStatesNoOrcid,
 } from '../rosterMemberIdentityEvidence';
 
 const PAGE_URL = 'https://fixture.yale.edu/center/profile/avery-synthetic/';
@@ -412,8 +415,8 @@ describe('extractRosterMemberIdentityEvidence ignores a lone co-author card (#56
 });
 
 describe('subject-scoped ORCID (#5932)', () => {
-  const SUBJECT_ORCID = '9999-9000-9999-9005';
-  const OTHER_ORCID = '9999-9000-9999-0019';
+  const SUBJECT_ORCID = syntheticPersonOrcid(1);
+  const OTHER_ORCID = syntheticPersonOrcid(2);
   const profile = (subjectSection: string, elsewhere = '') =>
     page(
       '',
@@ -563,6 +566,8 @@ describe('subject-scoped ORCID (#5932)', () => {
 
 describe('ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION (#5677)', () => {
   const PAGE = 'https://center.yale.edu/people/avery-synthetic';
+  const PINNED_ORCID = syntheticPersonOrcid(6);
+  const NOSCRIPT_ORCID = syntheticPersonOrcid(19);
   const CORPUS: Array<{ html: string; memberName: string }> = [
     {
       memberName: 'Avery Synthetic',
@@ -572,11 +577,11 @@ describe('ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION (#5677)', () => {
         email: 'avery.synthetic@yale.edu',
         identifier: [
           { propertyID: 'NetID', value: 'AS123' },
-          { propertyID: 'ORCID', value: '9999-9000-9999-006X' },
+          { propertyID: 'ORCID', value: PINNED_ORCID },
         ],
       })}</script></head><body><main>
         <h1>Avery Synthetic</h1>
-        <a href="https://orcid.org/9999-9000-9999-006X">ORCID</a>
+        <a href="https://orcid.org/${PINNED_ORCID}">ORCID</a>
         <a href="https://law.yale.edu/avery-synthetic">Profile</a>
         <a href="https://divinity.yale.edu/faculty-and-research/yds-faculty/avery-synthetic">Avery Synthetic</a>
         <a href="mailto:center.contact@yale.edu">Office</a>
@@ -594,19 +599,26 @@ describe('ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION (#5677)', () => {
     {
       memberName: 'Avery Synthetic',
       html: `<html><head><title>Avery Synthetic | Synthetic Center</title></head><body><main>
-        <h2>Contact</h2><a href="https://orcid.org/9999-9000-9999-006X">ORCID</a>
+        <h2>Contact</h2><a href="https://orcid.org/${PINNED_ORCID}">ORCID</a>
       </main></body></html>`,
     },
     {
       memberName: 'Avery Synthetic',
       html: `<html><body><main><h1>Avery Synthetic</h1>
-        <noscript>9999-9000-9999-0019</noscript>
-        <a href="https://orcid.org/9999-9000-9999-006X">ORCID</a>
+        <noscript>${NOSCRIPT_ORCID}</noscript>
+        <a href="https://orcid.org/${PINNED_ORCID}">ORCID</a>
+      </main></body></html>`,
+    },
+    {
+      memberName: 'Avery Synthetic',
+      html: `<html><body><main><h1>Avery Synthetic</h1>
+        <div class="year-filter"><span>2025-2024-2023-2022</span></div>
+        <p>${NOSCRIPT_ORCID}</p>
       </main></body></html>`,
     },
   ];
   const PINNED = {
-    version: 5,
+    version: 6,
     outputs: [
       {
         pageUrl: PAGE,
@@ -617,7 +629,7 @@ describe('ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION (#5677)', () => {
         ],
         emails: ['avery.synthetic@yale.edu'],
         netids: ['as123'],
-        orcid: '9999-9000-9999-006X',
+        orcid: PINNED_ORCID,
       },
       {
         pageUrl: PAGE,
@@ -631,8 +643,9 @@ describe('ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION (#5677)', () => {
         linkedProfileUrls: [PAGE],
         emails: [],
         netids: [],
-        orcid: '9999-9000-9999-006X',
+        orcid: PINNED_ORCID,
       },
+      { pageUrl: PAGE, linkedProfileUrls: [PAGE], emails: [], netids: [] },
     ],
   };
 
@@ -644,5 +657,70 @@ describe('ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION (#5677)', () => {
       { version: ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION, outputs },
       'The extractor output changed: bump ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION so cached evidence from the old extractor is not served, then pin the new version and outputs here.',
     ).toEqual(PINNED);
+  });
+});
+
+describe('an ORCID is read only from a link or an ORCID label, and only a plausible one (#5991)', () => {
+  const SUBJECT_ORCID = syntheticPersonOrcid(11);
+  const YEAR_RUN = '2025-2024-2023-2022';
+  const OUT_OF_RANGE = withOrcidCheckDigit('000000035000001');
+  const profile = (subjectSection: string) =>
+    page(
+      '',
+      `<main><article class="profile-details"><header><h1>${MEMBER}, PhD</h1></header>` +
+        `<div class="profile-details-section-content__main">${subjectSection}</div>` +
+        `</article></main>`,
+    );
+  const orcidOf = (section: string) =>
+    extractRosterMemberIdentityEvidence(profile(section), PAGE_URL, MEMBER).orcid;
+  const statesNoOrcid = (section: string) =>
+    subjectProfileStatesNoOrcid(cheerio.load(profile(section)), MEMBER);
+
+  it('reads no ORCID from a year run rendered in the subject node', () => {
+    const years = `<div class="filters"><span>${YEAR_RUN}</span></div>`;
+    expect(orcidOf(years)).toBeUndefined();
+    expect(statesNoOrcid(years)).toBe(true);
+  });
+
+  it('reads no ORCID from a bare checksum-valid run with no ORCID label', () => {
+    expect(orcidOf(`<p>Grant number ${SUBJECT_ORCID}</p>`)).toBeUndefined();
+    expect(orcidOf(`<ul><li>${SUBJECT_ORCID}</li></ul>`)).toBeUndefined();
+  });
+
+  it('reads a labelled ORCID in the same text, a preceding label, or an ORCID-classed element', () => {
+    expect(orcidOf(`<p>ORCID: ${SUBJECT_ORCID}</p>`)).toBe(SUBJECT_ORCID);
+    expect(orcidOf(`<p><strong>ORCID iD</strong> ${SUBJECT_ORCID}</p>`)).toBe(SUBJECT_ORCID);
+    expect(orcidOf(`<dl><dt>ORCID</dt><dd>${SUBJECT_ORCID}</dd></dl>`)).toBe(SUBJECT_ORCID);
+    expect(orcidOf(`<span class="field--orcid">${SUBJECT_ORCID}</span>`)).toBe(SUBJECT_ORCID);
+    expect(statesNoOrcid(`<p>ORCID: ${SUBJECT_ORCID}</p>`)).toBe(false);
+  });
+
+  it('reads an orcid.org link', () => {
+    const link = `<a href="https://orcid.org/${SUBJECT_ORCID}">Profile</a>`;
+    expect(orcidOf(link)).toBe(SUBJECT_ORCID);
+    expect(statesNoOrcid(link)).toBe(false);
+  });
+
+  it('refuses a labelled or linked value outside the issued range, and claims nothing either way', () => {
+    expect(orcidOf(`<p>ORCID: ${OUT_OF_RANGE}</p>`)).toBeUndefined();
+    expect(orcidOf(`<a href="https://orcid.org/${OUT_OF_RANGE}">ORCID</a>`)).toBeUndefined();
+    expect(orcidOf(`<p>ORCID: ${YEAR_RUN}</p>`)).toBeUndefined();
+    expect(statesNoOrcid(`<p>ORCID: ${OUT_OF_RANGE}</p>`)).toBe(false);
+  });
+
+  it('keeps the plausible subject iD beside a refused one', () => {
+    expect(orcidOf(`<p>ORCID: ${SUBJECT_ORCID}</p><span>${YEAR_RUN}</span>`)).toBe(SUBJECT_ORCID);
+    expect(singleStatedOrcid([SUBJECT_ORCID, YEAR_RUN, OUT_OF_RANGE])).toBe(SUBJECT_ORCID);
+  });
+
+  it('drops a stored implausible ORCID when evidence is parsed back', () => {
+    const parsed = parseRosterMemberIdentityEvidence({
+      pageUrl: PAGE_URL,
+      linkedProfileUrls: [],
+      emails: [],
+      netids: [],
+      orcid: YEAR_RUN,
+    });
+    expect(parsed).toBeNull();
   });
 });

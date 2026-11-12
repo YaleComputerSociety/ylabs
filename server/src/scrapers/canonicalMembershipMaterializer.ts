@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { Researcher, isValidOrcid } from '../models/researcher';
+import { isPlausiblePersonOrcid } from '../utils/orcid';
 import {
   isRosterIdentityBasis,
   pinRoleAssignmentUpsertToLiveEdge,
@@ -52,7 +53,7 @@ const normalizedNetid = (value: unknown): string | undefined => {
 
 const normalizedOrcid = (value: unknown): string | undefined => {
   const orcid = trimmed(value).toUpperCase();
-  return orcid && isValidOrcid(orcid) ? orcid : undefined;
+  return orcid && isValidOrcid(orcid) && isPlausiblePersonOrcid(orcid) ? orcid : undefined;
 };
 
 const ORGANIZATIONAL_MAILBOX_LOCAL_PARTS = new Set<string>([

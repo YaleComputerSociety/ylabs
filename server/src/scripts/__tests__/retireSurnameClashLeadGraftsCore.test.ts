@@ -10,6 +10,9 @@ import {
   type SurnameClashEntityRow,
   type SurnameClashLeadRow,
 } from '../retireSurnameClashLeadGraftsCore';
+import { syntheticPersonOrcid } from '../../test/syntheticOrcid';
+
+const SYNTHETIC_ORCID_1 = syntheticPersonOrcid(500);
 
 const lead = (over: Partial<SurnameClashLeadRow> = {}): SurnameClashLeadRow => ({
   assignmentId: 'assignment-1',
@@ -401,9 +404,9 @@ describe('identity evidence for a clash member (#5941)', () => {
     expect(
       researcherCarriesIdentityEvidence({ identifiers: { email: 'robin@example.test' } }),
     ).toBe(true);
-    expect(
-      researcherCarriesIdentityEvidence({ identifiers: { orcid: '9999-9000-9999-9005' } }),
-    ).toBe(true);
+    expect(researcherCarriesIdentityEvidence({ identifiers: { orcid: SYNTHETIC_ORCID_1 } })).toBe(
+      true,
+    );
   });
 
   it('no longer anchors a researcher on a title or a department alone', () => {
@@ -480,7 +483,7 @@ describe('one person stored as two Researcher records (#5941)', () => {
     for (const shared of [
       { netid: 'rq111' },
       { email: 'Robin.Quimby@example.test' },
-      { orcid: '9999-9000-9999-9005' },
+      { orcid: SYNTHETIC_ORCID_1 },
     ]) {
       const plan = planSurnameClashLeadDetachment([
         entity({

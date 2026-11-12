@@ -66,6 +66,9 @@ import {
 } from '../utils/scraperHelpers';
 import type { ScraperContext, ObservationInput } from '../types';
 import { isYaleOfficialProfileUrl } from '../../scripts/backfillResearcherOfficialProfileLinksCore';
+import { syntheticPersonOrcid } from '../../test/syntheticOrcid';
+
+const SYNTHETIC_ORCID_1 = syntheticPersonOrcid(500);
 
 // ---------------------------------------------------------------------------
 // Helper sample HTML
@@ -4123,7 +4126,7 @@ describe('DepartmentRosterScraper.run', () => {
         <div class="person-title">Associate Professor of Applied Mathematics</div>
         <div class="profile-body">Ada works on computation, algebraic geometry, and foundations of mathematical modeling.</div>
         <div class="research-interests"><a href="/topics/algebraic-geometry">Algebraic Geometry</a><a href="/topics/topology">Topology</a></div>
-        <a href="https://orcid.org/0000-0000-0000-0001">ORCID</a>
+        <a href="https://orcid.org/${SYNTHETIC_ORCID_1}">ORCID</a>
         <a href="https://scholar.google.com/citations?user=adaCandidate">Google Scholar</a>
         <a href="mailto:ada.lovelace@yale.edu">ada.lovelace@yale.edu</a>
         <a href="https://lovelacelab.yale.edu">Lab Website</a>
@@ -4179,7 +4182,7 @@ describe('DepartmentRosterScraper.run', () => {
       'Associate Professor of Applied Mathematics',
     );
     expect(userObs.find((o) => o.field === 'website')?.value).toBe('https://lovelacelab.yale.edu/');
-    expect(userObs.find((o) => o.field === 'orcid')?.value).toBe('0000-0000-0000-0001');
+    expect(userObs.find((o) => o.field === 'orcid')?.value).toBe(SYNTHETIC_ORCID_1);
     expect(userObs.find((o) => o.field === 'bio')?.sourceUrl).toBe(
       'https://math.yale.edu/people/ada-lovelace',
     );

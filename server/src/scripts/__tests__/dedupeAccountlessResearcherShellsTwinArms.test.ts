@@ -16,6 +16,11 @@ import {
   type OfficialPageCandidate,
   type OfficialPageHolders,
 } from '../dedupeAccountlessResearcherShellsCore';
+import { syntheticPersonOrcid } from '../../test/syntheticOrcid';
+
+const SYNTHETIC_ORCID_1 = syntheticPersonOrcid(500);
+const SYNTHETIC_ORCID_2 = syntheticPersonOrcid(501);
+const SYNTHETIC_ORCID_3 = syntheticPersonOrcid(502);
 
 describe('uninvertedPersonName (#5606)', () => {
   it('reads a "Surname, Given" display name in reading order', () => {
@@ -152,30 +157,30 @@ describe('decideOfficialPageWitnessFold (#5606)', () => {
   });
 
   it('folds on the one ORCID a page states', () => {
-    const holder = directoryHolder({ orcid: '0000-0002-0000-0001' });
+    const holder = directoryHolder({ orcid: SYNTHETIC_ORCID_1 });
     expect(
       decideOfficialPageWitnessFold(
         shell,
-        [{ emails: [], orcids: ['0000-0002-0000-0001'] }],
+        [{ emails: [], orcids: [SYNTHETIC_ORCID_1] }],
         holdersOf(holder),
       )?.merge,
     ).toBe(true);
   });
 
   it('takes no ORCID witness from a page that states two distinct ORCIDs', () => {
-    const holder = directoryHolder({ orcid: '0000-0002-0000-0001' });
+    const holder = directoryHolder({ orcid: SYNTHETIC_ORCID_1 });
     expect(
       decideOfficialPageWitnessFold(
         shell,
-        [{ emails: [], orcids: ['0000-0002-0000-0001', '0000-0002-0000-0002'] }],
+        [{ emails: [], orcids: [SYNTHETIC_ORCID_1, SYNTHETIC_ORCID_2] }],
         holdersOf(holder),
       ),
     ).toBeUndefined();
   });
 
   it("takes no ORCID witness from a page whose stated email is not the holder's", () => {
-    const holder = directoryHolder({ orcid: '0000-0002-0000-0001' });
-    const page = { emails: ['avery.other@yale.edu'], orcids: ['0000-0002-0000-0001'] };
+    const holder = directoryHolder({ orcid: SYNTHETIC_ORCID_1 });
+    const page = { emails: ['avery.other@yale.edu'], orcids: [SYNTHETIC_ORCID_1] };
     expect(decideOfficialPageWitnessFold(shell, [page], holdersOf(holder))).toBeUndefined();
     expect(
       decideOfficialPageWitnessFold(
@@ -217,14 +222,10 @@ describe('decideOfficialPageWitnessFold (#5606)', () => {
   });
 
   it('never folds two distinct ORCIDs, and never treats a directory record as a shell', () => {
-    const holders = holdersOf(directoryHolder({ orcid: '0000-0002-0000-0001' }));
+    const holders = holdersOf(directoryHolder({ orcid: SYNTHETIC_ORCID_1 }));
     const statements = [{ emails: ['fx901@yale.edu'], orcids: [] }];
     expect(
-      decideOfficialPageWitnessFold(
-        { ...shell, orcid: '0000-0002-0000-0009' },
-        statements,
-        holders,
-      ),
+      decideOfficialPageWitnessFold({ ...shell, orcid: SYNTHETIC_ORCID_3 }, statements, holders),
     ).toMatchObject({ merge: false, reason: 'ORCID_CONFLICT' });
     expect(
       decideOfficialPageWitnessFold(
@@ -271,14 +272,14 @@ describe('emaillessLocalPartTwinAliases (#5606)', () => {
           { id: 'twin', netid: 'avery.synth', displayName: twinName, orcid: twinOrcid },
         ],
         researcherByNetid: new Map([
-          ['fx901', { id: 'holder', displayName: 'Avery Synth', orcid: '0000-0002-0000-0001' }],
+          ['fx901', { id: 'holder', displayName: 'Avery Synth', orcid: SYNTHETIC_ORCID_1 }],
         ]),
         aliasNetidByTwinNetid: new Map([['avery.synth', 'fx901']]),
         loginNetids: new Set(),
       });
     expect(plan('A. B. Avery Synth').targetByTwinResearcherId.get('twin')).toBe('holder');
     expect(plan('Avery Synthe').refusals['names-disagree']).toBe(1);
-    expect(plan('Avery Synth', '0000-0002-0000-0009').refusals['orcid-conflict']).toBe(1);
+    expect(plan('Avery Synth', SYNTHETIC_ORCID_3).refusals['orcid-conflict']).toBe(1);
   });
 });
 
@@ -293,7 +294,7 @@ describe('accountless cluster on an inverted display name (#5606)', () => {
 
   it('groups "Surname, Given" with "Given Surname" in one department', () => {
     const plan = planAccountlessClusterFolds(
-      [member('a', 'Avery Synth', { orcid: '0000-0002-0000-0001' }), member('b', 'Synth, Avery')],
+      [member('a', 'Avery Synth', { orcid: SYNTHETIC_ORCID_1 }), member('b', 'Synth, Avery')],
       [],
     );
     expect(plan.foldedGroups).toBe(1);

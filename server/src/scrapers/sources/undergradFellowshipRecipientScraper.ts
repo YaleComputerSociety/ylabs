@@ -65,7 +65,7 @@ import { Researcher } from '../../models/researcher';
 import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
 import { ResearchEntity } from '../../models/researchEntity';
 import { RoleAssignment } from '../../models/roleAssignment';
-import { normalizeOrcid } from '../../utils/orcid';
+import { plausiblePersonOrcid } from '../../utils/orcid';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { researcherNetid } from '../../utils/researcherIdentity';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
@@ -351,7 +351,7 @@ export const manualRecipientCsvExtractor: RecipientExtractor = (csv, ctx) => {
     out.push({
       studentName: valueFor(record, ['studentName', 'student', 'recipientName', 'recipient']),
       advisorName,
-      advisorOrcid: normalizeOrcid(valueFor(record, ['advisorOrcid', 'orcid'])) || undefined,
+      advisorOrcid: plausiblePersonOrcid(valueFor(record, ['advisorOrcid', 'orcid'])) || undefined,
       projectTitle:
         valueFor(record, ['projectTitle', 'project', 'title', 'researchTitle']) || undefined,
       sourceUrl: valueFor(record, ['sourceUrl', 'source', 'sourceLink', 'url']) || undefined,
@@ -758,7 +758,7 @@ export function aggregateAdviseesByAdvisor(
   const out = new Map<string, AdvisorAggregateRow>();
   for (const r of recipients) {
     const cleaned = normalizeName(r.advisorName);
-    const advisorOrcid = normalizeOrcid(r.advisorOrcid);
+    const advisorOrcid = plausiblePersonOrcid(r.advisorOrcid);
     if (!cleaned && !advisorOrcid) continue;
     const { last } = splitName(cleaned);
     if (!last && !advisorOrcid) continue;
@@ -856,9 +856,8 @@ export function researcherToUserMatch(researcher: any, netid: string): UserMatch
 }
 
 export const defaultAdvisorResearcherResolver: AdvisorResearcherResolver = async (name, orcid) => {
-  if (orcid) {
-    const cleaned = normalizeOrcid(orcid);
-    if (!cleaned) return null;
+  const cleaned = plausiblePersonOrcid(orcid);
+  if (cleaned) {
     const researcher: any = await Researcher.findOne({
       'identifiers.orcid': cleaned.toUpperCase(),
       archived: { $ne: true },
@@ -1431,7 +1430,7 @@ export class UndergradFellowshipRecipientScraper implements IScraper {
   ): Promise<AdviserPairVerdict> {
     const sourceDepartments = recipient.sourceDepartments ?? config.adviserDepartments;
     const advisorName = normalizeName(recipient.advisorName);
-    const advisorOrcid = normalizeOrcid(recipient.advisorOrcid);
+    const advisorOrcid = plausiblePersonOrcid(recipient.advisorOrcid);
     const resolution = await cachedLookup(
       caches.resolutions,
       advisorOrcid ? `orcid:${advisorOrcid}` : `name:${slugify(advisorName)}`,

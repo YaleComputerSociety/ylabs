@@ -16,7 +16,8 @@ import {
 } from '../../services/researchEntityMembershipAccessor';
 import { VisibilityReleaseQueueItem } from '../../models/visibilityReleaseQueueItem';
 import { publicStudentVisibilityTiers } from '../../models/studentVisibility';
-import { normalizeOrcid } from '../../utils/orcid';
+import { plausiblePersonOrcid } from '../../utils/orcid';
+import { singlePlausibleOrcid, statedOrcidCandidates } from '../utils/statedOrcid';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { researcherEmail, researcherNetid } from '../../utils/researcherIdentity';
 import { looksLikeYaleNetid } from '../../utils/yaleNetid';
@@ -3094,21 +3095,13 @@ function clipOfficialProfileBio(value: string): string {
   return wordBoundary ? `${wordBoundary}.` : prefix;
 }
 
+// A page that lists several ORCIDs does not say which is its owner's: a common name's YSM
+// profile lists namesakes' ORCIDs, and taking the first gave one Yale researcher another
+// university's ORCID (#4994). A bare digit run anywhere in the body is no ORCID either: an ISSN
+// and page range in a citation passes the checksum by chance (#5991).
 function extractOrcid($: cheerio.CheerioAPI): string | undefined {
-  const candidates: string[] = [];
-  $('a[href*="orcid.org"], a[href^="orcid:"]').each((_i, el) => {
-    candidates.push($(el).attr('href') || '', $(el).text());
-  });
-  const bodyMatches =
-    $('body')
-      .text()
-      .match(/\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{3}[\dX]\b/gi) || [];
-  candidates.push(...bodyMatches);
-  // A page that lists several ORCIDs does not say which is its owner's: a common name's YSM
-  // profile lists namesakes' ORCIDs, and taking the first gave one Yale researcher another
-  // university's ORCID (#4994).
-  const distinct = [...new Set(candidates.map(normalizeOrcid).filter(Boolean))];
-  return distinct.length === 1 ? distinct[0] : undefined;
+  const body = $('body').get(0);
+  return body ? singlePlausibleOrcid(statedOrcidCandidates(body)) : undefined;
 }
 
 /**
@@ -3252,9 +3245,9 @@ export async function orcidWitnessedByAnotherPage(
   person: Record<string, any>,
   profileUrl: string,
 ): Promise<boolean> {
-  const pageOrcid = normalizeOrcid(identity.orcid);
+  const pageOrcid = plausiblePersonOrcid(identity.orcid);
   const netid = textValue(person.netid).toLowerCase();
-  if (!pageOrcid || !netid || normalizeOrcid(person.storedOrcid) !== pageOrcid) return false;
+  if (!pageOrcid || !netid || plausiblePersonOrcid(person.storedOrcid) !== pageOrcid) return false;
   const researcherId = idValue(person._id);
   const observations = (await Observation.find({
     field: 'orcid',
@@ -3272,7 +3265,7 @@ export async function orcidWitnessedByAnotherPage(
   );
   return observations.some(
     (observation) =>
-      normalizeOrcid(observation.value) === pageOrcid &&
+      plausiblePersonOrcid(observation.value) === pageOrcid &&
       Boolean(textValue(observation.sourceUrl)) &&
       !thisPage.has(normalizeOfficialProfileUrl(observation.sourceUrl)),
   );

@@ -29,6 +29,11 @@ import {
   netidForRosterEmailAlias,
   planInferredPiMembership,
 } from '../entityMaterializer';
+import { syntheticPersonOrcid } from '../../test/syntheticOrcid';
+
+const SYNTHETIC_ORCID_1 = syntheticPersonOrcid(500);
+const SYNTHETIC_ORCID_2 = syntheticPersonOrcid(501);
+const SYNTHETIC_ORCID_3 = syntheticPersonOrcid(502);
 
 describe('materializeEntity gates directory identity: enrich-only, never mints Account or Researcher', () => {
   let replSet: MongoMemoryReplSet;
@@ -217,7 +222,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
 
   it('yields a colliding ORCID to its existing holder instead of crashing the source', async () => {
     await Researcher.createIndexes();
-    const sharedOrcid = '9999-9999-9999-9994';
+    const sharedOrcid = SYNTHETIC_ORCID_1;
 
     const holder = await Researcher.create({
       displayName: 'Original Holder',
@@ -269,8 +274,8 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
 
   it('keeps the researcher own ORCID and link when the directory ORCID is already claimed', async () => {
     await Researcher.createIndexes();
-    const claimedOrcid = '9999-9999-9999-9994';
-    const ownOrcid = '9999-9000-9999-9005';
+    const claimedOrcid = SYNTHETIC_ORCID_1;
+    const ownOrcid = SYNTHETIC_ORCID_2;
 
     const holder = await Researcher.create({
       displayName: 'Original Holder',
@@ -305,8 +310,8 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
 
   it('moves the ORCID profile link with the identifier when the directory resolves a new ORCID', async () => {
     await Researcher.createIndexes();
-    const priorOrcid = '9999-9000-9999-9005';
-    const nextOrcid = '9999-9001-9999-9010';
+    const priorOrcid = SYNTHETIC_ORCID_2;
+    const nextOrcid = SYNTHETIC_ORCID_3;
 
     const enrichTarget = await attachedResearcher('moved1', 'Morgan Mover', {
       identifiers: { orcid: priorOrcid },
@@ -334,7 +339,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
 
     it('drops an orphaned ORCID link when the observed ORCID collides and no identifier stays', async () => {
       await Researcher.createIndexes();
-      const claimedOrcid = '9999-9999-9999-9994';
+      const claimedOrcid = SYNTHETIC_ORCID_1;
       await Researcher.create({
         displayName: 'Canonical Holder',
         identifiers: { orcid: claimedOrcid },
@@ -366,8 +371,8 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
 
     it('derives the ORCID link from the stored identifier when the stored link names another ORCID', async () => {
       await Researcher.createIndexes();
-      const ownOrcid = '9999-9000-9999-9005';
-      const strayOrcid = '9999-9001-9999-9010';
+      const ownOrcid = SYNTHETIC_ORCID_2;
+      const strayOrcid = SYNTHETIC_ORCID_3;
       const account = await Account.create({
         netid: 'stray1',
         email: 'stray1@yale.edu',
@@ -391,7 +396,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
 
     it('plans the reconciled link on a dry run without writing it', async () => {
       await Researcher.createIndexes();
-      const strayOrcid = '9999-9001-9999-9010';
+      const strayOrcid = SYNTHETIC_ORCID_3;
       const account = await Account.create({
         netid: 'dryorphan1',
         email: 'dryorphan1@yale.edu',

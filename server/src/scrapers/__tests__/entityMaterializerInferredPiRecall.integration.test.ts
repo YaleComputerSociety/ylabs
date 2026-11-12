@@ -9,6 +9,9 @@ import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
 import { ResearchEntity } from '../../models/researchEntity';
 import { materializeInferredPiMembership } from '../entityMaterializer';
+import { syntheticPersonOrcid } from '../../test/syntheticOrcid';
+
+const SYNTHETIC_ORCID_1 = syntheticPersonOrcid(500);
 
 type LeanRole = { role: string; state: string; personId: mongoose.Types.ObjectId };
 
@@ -206,7 +209,7 @@ describe('materializeInferredPiMembership resolves leads for users with non-cano
     const entity = await seedEntity('synthetic-recall-orcid');
     const researcher = await seedCanonicalResearcher({
       displayName: 'Sam Lee',
-      orcid: '9999-9002-9999-9026',
+      orcid: SYNTHETIC_ORCID_1,
     });
 
     await materializeInferredPiMembership(String(entity._id), [

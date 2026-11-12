@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { isValidOrcid, Researcher } from '../models/researcher';
+import { isPlausiblePersonOrcid } from '../utils/orcid';
 import { splitName } from '../scrapers/utils/scraperHelpers';
 import {
   givenNamesCouldNameOnePerson,
@@ -64,7 +65,7 @@ export function normalizeOrcid(value: unknown): string | undefined {
     .trim()
     .replace(/^https?:\/\/(?:www\.)?orcid\.org\//i, '')
     .toUpperCase();
-  return isValidOrcid(bare) ? bare : undefined;
+  return isValidOrcid(bare) && isPlausiblePersonOrcid(bare) ? bare : undefined;
 }
 
 const asResearcherId = (value: ResearcherNameCandidate['_id']): mongoose.Types.ObjectId =>

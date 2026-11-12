@@ -1468,7 +1468,7 @@ export async function reconcileFieldRetractions(options: {
 }
 
 /**
- * The same contract for `user` subjects, for `email` only (#5711).
+ * The same contract for `user` subjects, for `email` (#5711) and `orcid` (#5991).
  *
  * A person's email is read from one page, so a read here is every row a lane wrote for
  * one subject from one `sourceUrl` in one run, and a retraction retires only that lane's
@@ -1489,6 +1489,21 @@ export async function reconcileFieldRetractions(options: {
 export const USER_FIELD_RETRACTION_ROLLBACK_REASON =
   'field retraction: the same lane re-read this page for this person and stated it carries no email address (#5711)';
 
+export const USER_ORCID_FIELD_RETRACTION_ROLLBACK_REASON =
+  'field retraction: the same lane re-read this page for this person and stated it carries no ORCID (#5991)';
+
+const USER_FIELD_RETRACTION_ROLLBACK_REASONS: Readonly<Record<string, string>> = {
+  email: USER_FIELD_RETRACTION_ROLLBACK_REASON,
+  orcid: USER_ORCID_FIELD_RETRACTION_ROLLBACK_REASON,
+};
+
+/**
+ * The user fields a lane may claim absent from a page it read in full. `orcid` joined
+ * `email` in #5991: a lane states `assertsNoValueFor: ['orcid']` only when the subject node
+ * of the person's own page states no ORCID link and nothing labelled ORCID.
+ */
+const PAGE_SCOPED_USER_ABSENCE_FIELDS: ReadonlySet<string> = new Set(['email', 'orcid']);
+
 export interface UserFieldRetractionContract {
   retractableFields: readonly string[];
   notes: string;
@@ -1501,9 +1516,9 @@ export const userFieldRetractionContracts: Readonly<Record<string, UserFieldRetr
       'States assertsNoValueFor: [email] on every identity row of a full read only when the profile yielded no person-specific address and the page states no address of any kind, in a link, text, script or attribute, plain or obfuscated. An address its person-specific filter refused is still on the page, so it claims nothing.',
   },
   'dept-faculty-roster': {
-    retractableFields: ['email'],
+    retractableFields: ['email', 'orcid'],
     notes:
-      "States assertsNoValueFor: [email] on the profileUrls row, filed under the profile page its email rows use, only when the person's own profile was read and named them, that page states no address of any kind, and the roster card yielded none. A shared roster address it withheld records refused, and an unread or refused profile claims nothing.",
+      "States assertsNoValueFor: [email] on the profileUrls row, filed under the profile page its email rows use, only when the person's own profile was read and named them, that page states no address of any kind, and the roster card yielded none. A shared roster address it withheld records refused, and an unread or refused profile claims nothing. States assertsNoValueFor: [orcid] on the same row only when that read page's subject node states no ORCID link and nothing labelled ORCID (#5991); a page whose ORCID the reader refused still states one, so it claims nothing.",
   },
 };
 
@@ -1515,9 +1530,9 @@ export function assertUserFieldRetractionContractsAreDeclarable(
       throw new Error(`${sourceName} declares no retractable user field.`);
     }
     for (const field of contract.retractableFields) {
-      if (field !== 'email') {
+      if (!PAGE_SCOPED_USER_ABSENCE_FIELDS.has(field)) {
         throw new Error(
-          `${sourceName} declares user field ${JSON.stringify(field)}; only email has a page-scoped absence claim.`,
+          `${sourceName} declares user field ${JSON.stringify(field)}; only ${[...PAGE_SCOPED_USER_ABSENCE_FIELDS].join(' and ')} have a page-scoped absence claim.`,
         );
       }
       assertDeclarableRetractionField(field, 'retractable');
@@ -1828,13 +1843,21 @@ export async function reconcileUserFieldRetractions(options: {
   if (dryRun) return result('planned', plan);
 
   const applied = result('reconciled', plan);
-  const observationIds = plan.retractions.flatMap((planned) => planned.observationIds);
-  if (observationIds.length === 0) return applied;
-  const { retired } = await retireObservations(
-    { _id: { $in: observationIds.map((id) => new mongoose.Types.ObjectId(id)) } },
-    USER_FIELD_RETRACTION_ROLLBACK_REASON,
-  );
-  applied.retiredObservations = retired;
+  const observationIdsByField = new Map<string, string[]>();
+  for (const planned of plan.retractions) {
+    const ids = observationIdsByField.get(planned.field) ?? [];
+    ids.push(...planned.observationIds);
+    observationIdsByField.set(planned.field, ids);
+  }
+  if (observationIdsByField.size === 0) return applied;
+  for (const [field, observationIds] of observationIdsByField) {
+    if (observationIds.length === 0) continue;
+    const { retired } = await retireObservations(
+      { _id: { $in: observationIds.map((id) => new mongoose.Types.ObjectId(id)) } },
+      USER_FIELD_RETRACTION_ROLLBACK_REASONS[field] ?? USER_FIELD_RETRACTION_ROLLBACK_REASON,
+    );
+    applied.retiredObservations += retired;
+  }
   if (!options.rederive) return applied;
   for (const entityKey of new Set(plan.retractions.map((planned) => planned.entityKey))) {
     try {

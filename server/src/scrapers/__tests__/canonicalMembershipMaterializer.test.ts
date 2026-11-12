@@ -19,6 +19,10 @@ import {
   resolveOrCreateResearcherIdForIdentity,
 } from '../canonicalMembershipMaterializer';
 import { getResearchEntityRoster } from '../../services/researchEntityMembershipAccessor';
+import { syntheticPersonOrcid } from '../../test/syntheticOrcid';
+
+const SYNTHETIC_ORCID_1 = syntheticPersonOrcid(500);
+const SYNTHETIC_ORCID_2 = syntheticPersonOrcid(501);
 
 type WithObjectId<T> = T & { _id: mongoose.Types.ObjectId };
 
@@ -158,7 +162,7 @@ describe('canonical membership materialization (integration)', () => {
   });
 
   const entityId = () => new mongoose.Types.ObjectId().toString();
-  const ORCID = '9999-9999-9999-9994';
+  const ORCID = SYNTHETIC_ORCID_1;
 
   it('creates a Researcher holding the identity and a CURRENT RoleAssignment, but no Account, for a netid-backed member', async () => {
     const id = entityId();
@@ -573,7 +577,7 @@ describe('canonical membership materialization (integration)', () => {
     const id = entityId();
     await Researcher.create({
       displayName: 'Zeta Six',
-      identifiers: { orcid: '9999-9000-9999-9005' },
+      identifiers: { orcid: SYNTHETIC_ORCID_2 },
       profileLinks: [],
       archived: false,
     });

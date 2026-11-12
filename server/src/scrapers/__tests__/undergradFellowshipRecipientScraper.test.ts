@@ -33,6 +33,9 @@ import {
   starsSymposiumPiExtractor,
 } from '../sources/undergradFellowshipRecipientScraper';
 import type { ObservationInput, ScraperContext } from '../types';
+import { syntheticPersonOrcid } from '../../test/syntheticOrcid';
+
+const SYNTHETIC_ORCID_1 = syntheticPersonOrcid(500);
 
 // ---------------------------------------------------------------------------
 // Sample HTML fixtures
@@ -266,22 +269,22 @@ describe('aggregateAdviseesByAdvisor', () => {
       {
         studentName: 'A',
         advisorName: 'Dr. Riley Roster',
-        advisorOrcid: 'https://orcid.org/0000-0001-2345-6789',
+        advisorOrcid: `https://orcid.org/${SYNTHETIC_ORCID_1}`,
         year: 2025,
         sourceUrl: 'https://example.invalid/source-a',
       },
       {
         studentName: 'B',
         advisorName: 'Riley Roster',
-        advisorOrcid: '0000-0001-2345-6789',
+        advisorOrcid: SYNTHETIC_ORCID_1,
         year: 2025,
         sourceUrl: 'https://example.invalid/source-b',
       },
     ];
     const out = aggregateAdviseesByAdvisor(recipients, 'STARS II');
     expect(out.size).toBe(1);
-    const row = out.get('orcid:0000-0001-2345-6789')!;
-    expect(row.advisorOrcid).toBe('0000-0001-2345-6789');
+    const row = out.get(`orcid:${SYNTHETIC_ORCID_1}`)!;
+    expect(row.advisorOrcid).toBe(SYNTHETIC_ORCID_1);
     expect(row.advisees[0].count).toBe(2);
     expect(Array.from(row.sourceUrls).sort()).toEqual([
       'https://example.invalid/source-a',
@@ -408,7 +411,7 @@ describe('manualRecipientCsvExtractor', () => {
   it('parses reviewed accepted-input provenance columns', () => {
     const csv = [
       'studentName,advisorName,advisorOrcid,year,projectTitle,sourceUrl,sourcePage,reviewNote',
-      'Ada Lovelace,Riley Roster,https://orcid.org/0000-0001-2345-6789,2025,RNA,https://example.yale.edu/stars.pdf,text-block-1,Reviewed against official PDF',
+      `Ada Lovelace,Riley Roster,https://orcid.org/${SYNTHETIC_ORCID_1},2025,RNA,https://example.yale.edu/stars.pdf,text-block-1,Reviewed against official PDF`,
     ].join('\n');
 
     expect(
@@ -419,7 +422,7 @@ describe('manualRecipientCsvExtractor', () => {
       {
         studentName: 'Ada Lovelace',
         advisorName: 'Riley Roster',
-        advisorOrcid: '0000-0001-2345-6789',
+        advisorOrcid: SYNTHETIC_ORCID_1,
         year: 2025,
         projectTitle: 'RNA',
         sourceUrl: 'https://example.yale.edu/stars.pdf',
@@ -870,19 +873,19 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
         path.join(tmpDir, 'stars-ii.csv'),
         [
           'studentName,advisorName,advisorOrcid,year,projectTitle,sourceUrl,reviewNote',
-          '"Ada Lovelace","Wrong Display Name","0000-0001-2345-6789",2025,"RNA switches","https://example.yale.edu/stars-2025.pdf","Reviewed against official PDF"',
+          `"Ada Lovelace","Wrong Display Name","${SYNTHETIC_ORCID_1}",2025,"RNA switches","https://example.yale.edu/stars-2025.pdf","Reviewed against official PDF"`,
         ].join('\n'),
         'utf8',
       );
       const advisorResolver = vi.fn(async (_name: string, orcid?: string) => {
-        if (orcid === '0000-0001-2345-6789') {
+        if (orcid === SYNTHETIC_ORCID_1) {
           return {
             _id: 'u-roster',
             netid: 'rr1',
             fname: 'Riley',
             lname: 'Roster',
             primaryDepartment: 'MCDB',
-            orcid: '0000-0001-2345-6789',
+            orcid: SYNTHETIC_ORCID_1,
           };
         }
         return null;
@@ -911,7 +914,7 @@ describe('UndergradFellowshipRecipientScraper.run', () => {
       const result = await scraper.run(ctx);
 
       expect(result.entitiesObserved).toBe(1);
-      expect(advisorResolver).toHaveBeenCalledWith(expect.anything(), '0000-0001-2345-6789');
+      expect(advisorResolver).toHaveBeenCalledWith(expect.anything(), SYNTHETIC_ORCID_1);
       expect(emitted.find((o) => o.field === 'pastUndergradAdvisees')?.entityKey).toBe(
         'roster-lab-rr1',
       );

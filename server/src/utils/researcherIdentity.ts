@@ -1,3 +1,5 @@
+import { isPlausiblePersonOrcid } from './orcid';
+
 export interface ResearcherIdentitySource {
   identifiers?: { netid?: unknown; email?: unknown } | null;
 }
@@ -28,8 +30,8 @@ export interface ResearcherIdentityEvidenceSource {
 }
 
 /**
- * Whether a researcher carries any identity beyond a name: a netid, a directory email, an
- * ORCID, or a Yale official profile link. A roster listing that two name-agreeing records
+ * Whether a researcher carries any identity beyond a name: a netid, a directory email, a
+ * plausible ORCID, or a Yale official profile link. A roster listing that two name-agreeing records
  * share resolves to the one carrying identity, never to its name-only twin (#5592).
  */
 export function researcherCarriesIdentityEvidence(
@@ -37,7 +39,8 @@ export function researcherCarriesIdentityEvidence(
 ): boolean {
   const identifiers = researcher.identifiers ?? {};
   if (
-    [identifiers.netid, identifiers.email, identifiers.orcid].some((value) => trimmedText(value))
+    [identifiers.netid, identifiers.email].some((value) => trimmedText(value)) ||
+    isPlausiblePersonOrcid(identifiers.orcid)
   ) {
     return true;
   }

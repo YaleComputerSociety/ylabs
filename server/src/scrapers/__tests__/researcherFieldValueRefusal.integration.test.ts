@@ -22,6 +22,10 @@ import {
 import { planFieldValueRefusal } from '../../utils/researchEntityFieldValueRefusals';
 import { materializeEntity } from '../entityMaterializer';
 import { resetOverSharedPersonWebsiteKeysCache } from '../overSharedPersonWebsite';
+import { syntheticPersonOrcid } from '../../test/syntheticOrcid';
+
+const SYNTHETIC_ORCID_1 = syntheticPersonOrcid(500);
+const SYNTHETIC_ORCID_2 = syntheticPersonOrcid(501);
 
 const OWNER_PAGE = 'https://medicine.yale.edu/profile/fixture-quillsby-person/';
 const REFUSED_SITE = 'https://school.example.edu/about/fixture-stories/fixture-fund-story/';
@@ -235,7 +239,7 @@ describe('a person-record refusal holds on every resolve (#5641)', () => {
   });
 
   it('never re-adds a refused ORCID link the orcid evidence composes', async () => {
-    const orcid = '9999-9000-9999-9005';
+    const orcid = SYNTHETIC_ORCID_1;
     const orcidUrl = `https://orcid.org/${orcid}`;
     await seedOwner([observation('orcid', orcid, 'dept-faculty-roster')]);
     const owner = await person();
@@ -253,7 +257,7 @@ describe('a person-record refusal holds on every resolve (#5641)', () => {
   });
 
   it('keeps a refused ORCID out of the identifiers and the links on every resolve', async () => {
-    const orcid = '9999-9000-9999-9013';
+    const orcid = SYNTHETIC_ORCID_2;
     const orcidUrl = `https://orcid.org/${orcid}`;
     await seedOwner([observation('orcid', orcid, 'dept-faculty-roster')]);
     const owner = await person();

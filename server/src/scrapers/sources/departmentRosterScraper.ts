@@ -27,7 +27,10 @@ import axios from 'axios';
 import { Observation } from '../../models/observation';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
-import { subjectProfileOrcid } from '../utils/rosterMemberIdentityEvidence';
+import {
+  subjectProfileOrcid,
+  subjectProfileStatesNoOrcid,
+} from '../utils/rosterMemberIdentityEvidence';
 import { wordpressAuthorProfileBiography } from '../utils/wordpressAuthorProfile';
 import type { AnyNode } from 'domhandler';
 import {
@@ -343,6 +346,12 @@ export interface FacultyEntry {
   labWebsiteButton?: { cardTitle: string };
   /** ORCID extracted from an official Yale profile page. */
   orcid?: string;
+  /**
+   * `empty` is a positive claim that the person's own profile was read, named them, and its
+   * subject node states no ORCID of any kind (#5991). Only `empty` may reach
+   * `assertsNoValueFor: ['orcid']`; a page whose ORCID the reader refused claims nothing.
+   */
+  orcidSlotAttestation?: 'empty';
   /** Short bio or research summary extracted from an official Yale profile page. */
   bio?: string;
   /** Grounded research-home description deterministically extracted from the PI's official profile page (#481 lever). */
@@ -3502,6 +3511,7 @@ export function profileEnrichmentFromHtml(
     | 'labWebsiteButton'
     | 'title'
     | 'orcid'
+    | 'orcidSlotAttestation'
     | 'bio'
     | 'researchInterests'
     | 'topics'
@@ -3672,6 +3682,9 @@ export function profileEnrichmentFromHtml(
     ...(labUrl ? {} : { labSlotAttestation: labUrlCandidateRefused ? 'refused' : 'empty' }),
     ...(labWebsiteButton ? { labWebsiteButton } : {}),
     orcid: declaredName ? subjectProfileOrcid($, declaredName) : undefined,
+    ...(declaredName && subjectProfileStatesNoOrcid($, declaredName)
+      ? { orcidSlotAttestation: 'empty' as const }
+      : {}),
     bio,
     researchHomeDescription: officialProse?.fullDescription,
     researchHomeShortDescription: officialProse?.shortDescription || undefined,
@@ -3753,6 +3766,7 @@ function mergeProfileEnrichment(
       | 'labWebsiteButton'
       | 'title'
       | 'orcid'
+      | 'orcidSlotAttestation'
       | 'bio'
       | 'researchInterests'
       | 'topics'
@@ -3786,6 +3800,8 @@ function mergeProfileEnrichment(
         : entry.labWebsiteButton,
     labSlotAttestation: mergedLabSlotAttestation(entry, enrichment),
     orcid: entry.orcid || enrichment.orcid,
+    orcidSlotAttestation:
+      entry.orcid || enrichment.orcid ? undefined : enrichment.orcidSlotAttestation,
     bio: entry.bio || enrichment.bio,
     researchHomeDescription: entry.researchHomeDescription || enrichment.researchHomeDescription,
     researchHomeShortDescription:
@@ -4289,6 +4305,19 @@ function rosterAttestsNoEmail(entry: FacultyEntry): boolean {
   );
 }
 
+function rosterAttestsNoOrcid(entry: FacultyEntry): boolean {
+  return (
+    !entry.orcid && entry.profileReadOutcome === 'read' && entry.orcidSlotAttestation === 'empty'
+  );
+}
+
+export function rosterAbsenceClaims(entry: FacultyEntry): string[] {
+  return [
+    ...(rosterAttestsNoEmail(entry) ? ['email'] : []),
+    ...(rosterAttestsNoOrcid(entry) ? ['orcid'] : []),
+  ];
+}
+
 function entryToUserObservations(
   entry: FacultyEntry,
   dept: DeptConfig,
@@ -4349,7 +4378,9 @@ function entryToUserObservations(
       ...profileBase,
       field: 'profileUrls',
       value: { departmental: entry.profileUrl },
-      ...(rosterAttestsNoEmail(entry) ? { assertsNoValueFor: ['email'] } : {}),
+      ...(rosterAbsenceClaims(entry).length > 0
+        ? { assertsNoValueFor: rosterAbsenceClaims(entry) }
+        : {}),
     });
   }
   if (entry.imageUrl) obs.push({ ...profileBase, field: 'imageUrl', value: entry.imageUrl });

@@ -6,6 +6,9 @@ import {
   resolveResearcherIdForPersonName,
   type ResearcherNameCandidate,
 } from '../researcherPersonNameResolver';
+import { syntheticPersonOrcid } from '../../test/syntheticOrcid';
+
+const SYNTHETIC_ORCID_1 = syntheticPersonOrcid(500);
 
 const candidate = (displayName: string): ResearcherNameCandidate => ({
   _id: new mongoose.Types.ObjectId(),
@@ -170,7 +173,7 @@ describe('resolveResearcherIdForPersonName', () => {
 });
 
 describe('resolveResearcherIdForOrcid', () => {
-  const ORCID = '0000-0000-0000-0028';
+  const ORCID = SYNTHETIC_ORCID_1;
 
   it('normalizes a bare or URL ORCID and rejects a bad checksum', () => {
     expect(normalizeOrcid(`https://orcid.org/${ORCID}`)).toBe(ORCID);
