@@ -184,31 +184,31 @@ describe('a page email is filed under a netid only when something ties the two (
   });
 
   it('admits an address the directory pairs with the netid', () => {
-    const identity = pageIdentity('bo.unrelated@yale.edu');
-    const directory = directoryPairing('bo.unrelated@yale.edu', NETID);
+    const identity = pageIdentity('example.unrelated@yale.edu');
+    const directory = directoryPairing('example.unrelated@yale.edu', NETID);
     expect(pageEmailNetidTie(identity, researcher, directory)).toEqual({
       tie: 'directory-pairs-netid',
     });
     expect(emailsFiled(identity, { directoryNetidsByAddress: directory })).toEqual([
-      'bo.unrelated@yale.edu',
+      'example.unrelated@yale.edu',
     ]);
   });
 
   it('admits an address on a page that states the netid', () => {
-    const identity = pageIdentity('bo.unrelated@yale.edu', { profileNetid: NETID });
+    const identity = pageIdentity('example.unrelated@yale.edu', { profileNetid: NETID });
     expect(pageEmailNetidTie(identity, researcher, undefined)).toEqual({
       tie: 'page-states-netid',
     });
-    expect(emailsFiled(identity)).toEqual(['bo.unrelated@yale.edu']);
+    expect(emailsFiled(identity)).toEqual(['example.unrelated@yale.edu']);
   });
 
   it('admits an address on a page whose ORCID another page filed under the netid', () => {
-    const identity = pageIdentity('bo.unrelated@yale.edu');
+    const identity = pageIdentity('example.unrelated@yale.edu');
     expect(pageEmailNetidTie(identity, researcher, undefined, true)).toEqual({
       tie: 'page-orcid-witnessed-for-netid',
     });
     expect(emailsFiled(identity, { pageOrcidWitnessedForNetid: true })).toEqual([
-      'bo.unrelated@yale.edu',
+      'example.unrelated@yale.edu',
     ]);
   });
 
@@ -249,7 +249,7 @@ describe('a page email is filed under a netid only when something ties the two (
   });
 
   it('refuses an address nothing ties to the netid, but still files the page name', () => {
-    const identity = pageIdentity('bo.unrelated@yale.edu');
+    const identity = pageIdentity('example.unrelated@yale.edu');
     expect(pageEmailNetidTie(identity, researcher, undefined)).toEqual({ refusal: 'untied' });
     const filed = identityToUserObservations(identity, researcher).map((o) => o.field);
     expect(filed).not.toContain('email');
@@ -257,7 +257,7 @@ describe('a page email is filed under a netid only when something ties the two (
   });
 
   it('re-derives the same filing on a second run', () => {
-    const identity = pageIdentity('bo.unrelated@yale.edu');
+    const identity = pageIdentity('example.unrelated@yale.edu');
     expect(identityToUserObservations(identity, researcher)).toEqual(
       identityToUserObservations(identity, researcher),
     );
