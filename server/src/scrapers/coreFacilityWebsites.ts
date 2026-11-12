@@ -8,7 +8,7 @@ import { websiteShareKey } from '../utils/websiteShareKey';
 /**
  * The websites live `CORE_FACILITY` rows hold as their own (#5788). A person's profile can list
  * the facility they staff as their website; on the person's row that page is the facility's
- * research home rather than the person's, so every resolve refuses it there. The set is read
+ * own website rather than the person's, so every resolve refuses it there. The set is read
  * from the rows on each resolve, so it follows facility rows as they are created or archived
  * and nothing is written to the person rows to make the refusal stick.
  */

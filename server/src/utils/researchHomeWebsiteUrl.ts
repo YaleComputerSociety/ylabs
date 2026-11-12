@@ -1155,7 +1155,7 @@ export function isUmbrellaPageCitedByPerson(
 
 /**
  * A page a live `CORE_FACILITY` row holds as its own website, cited by a person's own row.
- * The facility's page is the facility's research home, so on a person's row it duplicates the
+ * The facility's page is the facility's own website, so on a person's row it duplicates the
  * facility row and names a service the person staffs rather than their research (#5788).
  * A lab is not a person's row here: a lab citing the facility it runs is a different question.
  * With no facility keys the arm cannot fire, so serve-time callers keep their behaviour.
