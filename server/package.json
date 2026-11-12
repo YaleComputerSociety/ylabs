@@ -34,6 +34,8 @@
     "research-entity:union-stranded-merge-funding": "tsx src/scripts/unionStrandedMergeFunding.ts",
     "role-assignments:detach-edge": "tsx src/scripts/detachRoleAssignmentEdge.ts",
     "role-assignments:restore-detached-edge": "tsx src/scripts/restoreDetachedRoleAssignmentEdge.ts",
+    "researchers:unfold-shell": "tsx src/scripts/unfoldResearcherShell.ts",
+    "observations:supersede": "tsx src/scripts/supersedeObservations.ts",
     "observations:rollback-scrape-run": "tsx src/scripts/rollbackScrapeRun.ts",
     "researchers:record-distinct-people": "tsx src/scripts/recordDistinctResearchers.ts",
     "researchers:compute-email-support": "tsx src/scripts/computeResearcherEmailSupport.ts",

@@ -375,6 +375,32 @@ Only the lifecycle flag is written; every field is then derived from the row's o
 Every archive records an `archivedReason`, because `archivedEntityUpdate` requires one.
 If unmerges become common, that reason is how an engine pass could automate step 5: it would find rows archived only by a merge whose redirect was later broken.
 
+## Reversing a wrong researcher fold
+
+A `researchers:dedupe-accountless-shells` fold can join two different people, for example a name-only shell folded into a same-surname record through the shared-row arm (#5995).
+Reversing one is an operator judgement about that record, and three audited operator tools perform its writes (#6018).
+Each is for one-row judgements, not a bulk repair path, is a dry run by default, and on apply needs its confirm flag, `ALLOW_NON_PROD_SCRAPER_WRITES=true` and an actor (`--actor` or `DEV_WRITE_OWNER`, which must be a netid or `agent:<name>`, so a bare session label is refused), and takes the Development write lease through its apply guard.
+
+1. Decide which person keeps the record from the official pages, and detach the other person's lead edges from it with `role-assignments:detach-edge`.
+2. `researchers:unfold-shell --shell=<id> --expect-survivor=<id> --note='<why>' --apply --confirm-unfold-shell` un-archives the shell, clears its `dedupedIntoResearcherId` and `dedupedAt`, and records the shell and the survivor as distinct people in the same write, so no fold arm re-joins them on the next sweep.
+It writes an `admin_audit_events` record (`researcher.unfold_shell`) holding the pre-image of the shell, the survivor and every shell edge, and the ids of the edges the fold archived (`foldArchivedEdgeIds`: archived, no `DISPUTED` verdict, no note, on a target and role the survivor also holds).
+A second run is a no-op that reports the earlier audit id.
+It refuses, writing nothing, when the shell was folded again after an earlier unfold (`shell-refolded-after-unfold`), when the survivor was itself folded or is archived, when the survivor differs from `--expect-survivor`, and when the record was never folded or a folded shell is not archived.
+It cannot recover what the fold moved onto the survivor, such as a gap-filled identifier or an edge it re-pointed, because the fold recorded none of that; those come back through the lanes or through `researcher:refuse-field-value` and `role-assignments:detach-edge` on the survivor.
+3. Restore each edge the fold archived with `role-assignments:restore-detached-edge --edge=<id> --unfold-audit=<audit id> ...` (below in [`research-model.md`](research-model.md)).
+4. Refuse the other person's values on each record with `researcher:refuse-field-value`.
+5. `observations:supersede --ids=<id>,<id> --reason='<why>' --apply --confirm-supersede-observations` supersedes the residue: the live observations about the other person filed under the kept record's keys, queried in both identity forms.
+It takes at most 25 ids per run and a required `--reason`, stored in `rollback.reason` with `rollback.rolledBackAt`, and writes one `observation.supersede` audit record per observation holding its pre-image; a second run is a no-op.
+It refuses the whole run when an id does not exist or backs an owner-decided value.
+6. Rematerialize both records' keys, gate the touched rows, run `yarn development:search:sync`, and re-read the served pages.
+
+Owner decisions are recorded in these places, and `observations:supersede` reads the two an observation can back:
+
+- an operator-authored source (`OPERATOR_AUTHORED_SOURCE_NAMES`, the `isManualLock` seeds `manual-admin-edit` and `manual-pi-edit`, plus `operator-led-group-verdict`), whose observation is itself the decision, and which also carries a visibility override asserted through `manual-admin-edit`: refused as `operator-authored-source`;
+- a `manuallyLockedFields` entry whose `fieldProvenance` cites the observation: refused as `backs-a-locked-field`;
+- a `fieldValueRefusals` entry on a row or a person, which rejects a value rather than resting on an observation, so superseding the observation it rejects agrees with it;
+- a `DISPUTED` role edge, a `distinctFromResearcherIds` verdict and a `studentVisibilityOverrideTier`, none of which cites an observation.
+
 ## Deleting inert merge residue
 
 `research-entity:cleanup-archived` physically deletes an archived row, and every arm of its plan is fail-closed.

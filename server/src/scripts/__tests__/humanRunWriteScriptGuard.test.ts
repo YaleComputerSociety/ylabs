@@ -24,6 +24,10 @@ const OPERATOR_TOOLS: Record<string, string> = {
     'records an operator refusal of one value on one person record, the person-record counterpart of the layer-3 writer (#5641)',
   'role-assignments:detach-edge':
     'detaches one role edge an operator judged wrong after reading the pages, as a DISPUTED verdict no lane re-attaches (#5614)',
+  'researchers:unfold-shell':
+    'reverses one researcher fold an operator judged to have joined two different people, with the pre-image in an audit record (#6018)',
+  'observations:supersede':
+    'supersedes at most 25 named observations an operator read and judged wrong for one row, refusing owner-decided values, with an audit record per observation (#6018)',
   'role-assignments:restore-detached-edge':
     'restores one role edge a repair stage or an agent detached as DISPUTED, the audited inverse of detach-edge; clearing a DISPUTED verdict is a review judgement on one edge that no lane may make (#5968)',
   'observations:rollback-scrape-run':

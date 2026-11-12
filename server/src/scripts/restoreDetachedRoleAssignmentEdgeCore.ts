@@ -13,7 +13,19 @@ export type DetachedRoleEdgeRestoreRefusal =
   | 'target-does-not-resolve'
   | 'detachment-decided-by-owner'
   | 'detachment-decider-unattributed'
-  | 'live-twin-edge-exists';
+  | 'live-twin-edge-exists'
+  | 'unfold-audit-not-found'
+  | 'unfold-audit-names-another-shell'
+  | 'edge-not-fold-archived-by-that-unfold'
+  | 'unfold-no-longer-stands';
+
+export interface UnfoldAuditTie {
+  auditFound: boolean;
+  auditShellId: string;
+  foldArchivedEdgeIds: readonly string[];
+  shellStillUnfolded: boolean;
+  isLatestUnfoldOfShell: boolean;
+}
 
 export interface DetachedRoleEdgeReviewRecord {
   archived?: unknown;
@@ -32,6 +44,8 @@ export interface DetachedRoleEdgeRestoreInputs {
   liveTwinEdgeExists: boolean;
   expectedPersonId?: string;
   expectedTargetId?: string;
+  edgeId?: string;
+  unfoldTie?: UnfoldAuditTie;
 }
 
 export interface DetachedRoleEdgeRestorePlan {
@@ -62,14 +76,40 @@ export function classifyDetachmentDecider(edge: DetachedRoleEdgeReviewRecord): D
 export const isArchivedAsDisputed = (edge: DetachedRoleEdgeReviewRecord): boolean =>
   edge.archived === true && edge.reviewStatus === DETACHED_ROLE_ASSIGNMENT_REVIEW_STATUS;
 
+export const isArchivedByFold = (edge: DetachedRoleEdgeReviewRecord): boolean =>
+  edge.archived === true &&
+  edge.reviewStatus !== DETACHED_ROLE_ASSIGNMENT_REVIEW_STATUS &&
+  !text(edge.reviewNotes) &&
+  !text(edge.reviewedBy);
+
+function unfoldTieRefusal(
+  edge: DetachedRoleEdgeReviewRecord,
+  edgeId: string,
+  tie: UnfoldAuditTie,
+): DetachedRoleEdgeRestoreRefusal | null {
+  if (!tie.auditFound) return 'unfold-audit-not-found';
+  if (idText(tie.auditShellId) !== idText(edge.personId)) return 'unfold-audit-names-another-shell';
+  if (!isArchivedByFold(edge) || !tie.foldArchivedEdgeIds.map(idText).includes(idText(edgeId))) {
+    return 'edge-not-fold-archived-by-that-unfold';
+  }
+  if (!tie.shellStillUnfolded || !tie.isLatestUnfoldOfShell) return 'unfold-no-longer-stands';
+  return null;
+}
+
 export function planDetachedRoleEdgeRestore(
   input: DetachedRoleEdgeRestoreInputs,
 ): DetachedRoleEdgeRestorePlan {
   const { edge } = input;
   if (!edge) return { refusal: 'edge-not-found' };
-  const decider = classifyDetachmentDecider(edge);
+  if (input.unfoldTie) {
+    const tieRefusal = unfoldTieRefusal(edge, input.edgeId ?? '', input.unfoldTie);
+    if (tieRefusal) return { refusal: tieRefusal };
+  }
+  const decider = input.unfoldTie ? 'stage-or-agent' : classifyDetachmentDecider(edge);
   const refuse = (refusal: DetachedRoleEdgeRestoreRefusal) => ({ decider, refusal });
-  if (!isArchivedAsDisputed(edge)) return refuse('edge-not-archived-as-disputed');
+  if (!input.unfoldTie && !isArchivedAsDisputed(edge)) {
+    return refuse('edge-not-archived-as-disputed');
+  }
   if (input.expectedPersonId && idText(edge.personId) !== idText(input.expectedPersonId)) {
     return refuse('person-does-not-match-expected');
   }

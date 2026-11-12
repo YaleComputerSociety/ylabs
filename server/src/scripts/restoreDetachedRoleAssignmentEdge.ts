@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections, runScriptMain } from '../db/connections';
+import { AdminAuditEvent } from '../models/adminAuditEvent';
 import { OrgUnit } from '../models/orgUnit';
 import { ResearchEntity } from '../models/researchEntity';
 import { Researcher } from '../models/researcher';
@@ -15,8 +16,13 @@ import {
   planDetachedRoleEdgeRestore,
   type DetachedRoleEdgeRestoreRefusal,
   type DetachmentDecider,
+  type UnfoldAuditTie,
 } from './restoreDetachedRoleAssignmentEdgeCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import {
+  UNFOLD_SHELL_AUDIT_ACTION,
+  UNFOLD_SHELL_AUDIT_TARGET_TYPE,
+} from './unfoldResearcherShellCore';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(here, '../../.env'), quiet: true });
@@ -26,7 +32,15 @@ const CONFIRM_FLAG = '--confirm-restore-role-edge';
 const MAX_NOTE_LENGTH = 500;
 const MAX_ACTOR_LENGTH = 120;
 const OBJECT_ID_PATTERN = /^[0-9a-f]{24}$/i;
-const VALUE_FLAGS = ['edge', 'note', 'snapshot', 'actor', 'expect-person', 'expect-target'];
+const VALUE_FLAGS = [
+  'edge',
+  'note',
+  'snapshot',
+  'actor',
+  'expect-person',
+  'expect-target',
+  'unfold-audit',
+];
 const RESTORED_REVIEW_STATUS = 'UNREVIEWED';
 
 export interface RestoreDetachedRoleAssignmentEdgeArgs {
@@ -35,6 +49,7 @@ export interface RestoreDetachedRoleAssignmentEdgeArgs {
   actor?: string;
   expectedPersonId?: string;
   expectedTargetId?: string;
+  unfoldAuditId?: string;
   snapshot?: string;
   apply: boolean;
   confirmed: boolean;
@@ -80,6 +95,7 @@ export function parseRestoreDetachedRoleAssignmentEdgeArgs(
   }
   const expectedPersonId = objectIdArg('expect-person', value('expect-person'));
   const expectedTargetId = objectIdArg('expect-target', value('expect-target'));
+  const unfoldAuditId = objectIdArg('unfold-audit', value('unfold-audit'));
   const apply = argv.includes('--apply');
   const snapshot = value('snapshot');
   if (apply) {
@@ -99,6 +115,7 @@ export function parseRestoreDetachedRoleAssignmentEdgeArgs(
     ...(actor ? { actor } : {}),
     ...(expectedPersonId ? { expectedPersonId } : {}),
     ...(expectedTargetId ? { expectedTargetId } : {}),
+    ...(unfoldAuditId ? { unfoldAuditId } : {}),
     ...(snapshot ? { snapshot: resolveSafeJsonReportOutputPath(snapshot, '--snapshot') } : {}),
     apply,
     confirmed: argv.includes(CONFIRM_FLAG),
@@ -116,6 +133,43 @@ export interface RestoreDetachedRoleAssignmentEdgeResult {
   regatedRow: boolean;
 }
 
+async function loadUnfoldAuditTie(auditId: string): Promise<UnfoldAuditTie> {
+  const audit = (await AdminAuditEvent.findOne({
+    _id: new mongoose.Types.ObjectId(auditId),
+    action: UNFOLD_SHELL_AUDIT_ACTION,
+    targetType: UNFOLD_SHELL_AUDIT_TARGET_TYPE,
+  }).lean()) as any;
+  if (!audit) {
+    return {
+      auditFound: false,
+      auditShellId: '',
+      foldArchivedEdgeIds: [],
+      shellStillUnfolded: false,
+      isLatestUnfoldOfShell: false,
+    };
+  }
+  const shellId = String(audit.targetId ?? '');
+  const shell = mongoose.isValidObjectId(shellId)
+    ? ((await Researcher.findOne({ _id: shellId })
+        .select('archived dedupedIntoResearcherId')
+        .lean()) as any)
+    : null;
+  const laterUnfold = await AdminAuditEvent.exists({
+    _id: { $ne: audit._id },
+    action: UNFOLD_SHELL_AUDIT_ACTION,
+    targetType: UNFOLD_SHELL_AUDIT_TARGET_TYPE,
+    targetId: shellId,
+    timestamp: { $gt: audit.timestamp },
+  });
+  return {
+    auditFound: true,
+    auditShellId: shellId,
+    foldArchivedEdgeIds: (audit.metadata?.foldArchivedEdgeIds ?? []).map(String),
+    shellStillUnfolded: Boolean(shell) && shell.archived !== true && !shell.dedupedIntoResearcherId,
+    isLatestUnfoldOfShell: !laterUnfold,
+  };
+}
+
 async function targetResolves(target: { kind?: string; id?: unknown } | undefined) {
   if (!target?.id) return false;
   if (target.kind === 'RESEARCH_ENTITY') {
@@ -128,7 +182,14 @@ async function targetResolves(target: { kind?: string; id?: unknown } | undefine
 export async function restoreDetachedRoleAssignmentEdge(
   args: Pick<
     RestoreDetachedRoleAssignmentEdgeArgs,
-    'edgeId' | 'note' | 'actor' | 'expectedPersonId' | 'expectedTargetId' | 'snapshot' | 'apply'
+    | 'edgeId'
+    | 'note'
+    | 'actor'
+    | 'expectedPersonId'
+    | 'expectedTargetId'
+    | 'unfoldAuditId'
+    | 'snapshot'
+    | 'apply'
   >,
   regate: (rowId: string) => Promise<unknown> = (rowId) =>
     runStudentVisibilityGate({ collection: 'research', mode: 'apply', recordIds: [rowId] }),
@@ -158,6 +219,8 @@ export async function restoreDetachedRoleAssignmentEdge(
     liveTwinEdgeExists,
     expectedPersonId: args.expectedPersonId,
     expectedTargetId: args.expectedTargetId,
+    edgeId: args.edgeId,
+    ...(args.unfoldAuditId ? { unfoldTie: await loadUnfoldAuditTie(args.unfoldAuditId) } : {}),
   });
   const shape = {
     found: true,
@@ -178,7 +241,9 @@ export async function restoreDetachedRoleAssignmentEdge(
     {
       _id,
       archived: true,
-      reviewStatus: DETACHED_ROLE_ASSIGNMENT_REVIEW_STATUS,
+      reviewStatus: args.unfoldAuditId
+        ? (edge.reviewStatus ?? null)
+        : DETACHED_ROLE_ASSIGNMENT_REVIEW_STATUS,
       personId: new mongoose.Types.ObjectId(args.expectedPersonId),
       'target.id': new mongoose.Types.ObjectId(args.expectedTargetId),
       reviewNotes: edge.reviewNotes ?? null,
