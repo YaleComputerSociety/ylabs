@@ -10,6 +10,7 @@ import {
 } from '../services/sourceLinkHealth';
 import { isBenchmarkModeActive, isBenchmarkReplayActive } from './snapshotBenchmarkMode';
 import type { ObservationInput, ScraperContext } from './types';
+import { mongooseConnectionWasOpened } from '../utils/mongooseConnectionWasOpened';
 
 export const LANE_PAGE_HEALTH_FIELD = 'lanePageHealth';
 
@@ -234,7 +235,7 @@ export async function loadLanePageHealthObservations(
   entity: Pick<ObservationInput, 'entityType' | 'entityId' | 'entityKey'>,
 ): Promise<LanePageObservation[]> {
   if (!entity.entityId && !entity.entityKey) return [];
-  if (isBenchmarkModeActive() || mongoose.connection.readyState !== 1) return [];
+  if (isBenchmarkModeActive() || !mongooseConnectionWasOpened()) return [];
   return Observation.find({
     entityType: entity.entityType,
     sourceName,
@@ -483,7 +484,7 @@ export async function emitLanePageHealthForCitedPages(
   scope?: CitedLanePageScope,
 ): Promise<CitedLanePageHealthResult> {
   const result: CitedLanePageHealthResult = { gone: 0, restored: 0 };
-  if (isBenchmarkModeActive() || mongoose.connection.readyState !== 1) return result;
+  if (isBenchmarkModeActive() || !mongooseConnectionWasOpened()) return result;
   const cited = await Observation.find({
     sourceName: ctx.sourceName,
     entityType: 'researchEntity',

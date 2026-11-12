@@ -31,7 +31,6 @@
  *     so operators see them.
  */
 import axios from 'axios';
-import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import { listYalies, YaliesPerson } from '../../services/yaliesService';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
@@ -43,6 +42,7 @@ import {
 import { getCached, setCached } from '../snapshotCache';
 import { Researcher } from '../../models/researcher';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
+import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
 
 dotenv.config({ quiet: true });
 
@@ -504,7 +504,7 @@ export function corpusPersonEmailObservations(
 
 export async function loadCorpusResearcherNetids(): Promise<ReadonlySet<string>> {
   // Unconnected reads as an empty corpus, which backs nobody rather than blocking the faculty sync.
-  if (mongoose.connection.readyState !== 1) return new Set();
+  if (!mongooseConnectionWasOpened()) return new Set();
   const netids = (await Researcher.distinct('identifiers.netid', {
     archived: { $ne: true },
   })) as unknown[];

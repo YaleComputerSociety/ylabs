@@ -1,4 +1,3 @@
-import mongoose from 'mongoose';
 import { Researcher } from '../models/researcher';
 import { officialProfileDestinationStoredPattern } from './leadProfileIdentity';
 import {
@@ -8,6 +7,7 @@ import {
 } from '../scrapers/directoryContradictedProfileNetid';
 import { normalizeOfficialProfileDestination } from './leadProfileIdentity';
 import { looksLikeYaleNetid } from '../utils/yaleNetid';
+import { mongooseConnectionWasOpened } from '../utils/mongooseConnectionWasOpened';
 
 export interface PersonIdentityWitnesses {
   _id?: unknown;
@@ -127,7 +127,7 @@ export async function officialProfileLinkHeldByConflictingIdentity(
   const pattern = officialProfileDestinationStoredPattern(typeof url === 'string' ? url : '');
   if (!pattern) return false;
   // The writers run connected; an unconnected caller has no holder to read.
-  if (mongoose.connection.readyState !== 1) return false;
+  if (!mongooseConnectionWasOpened()) return false;
   const holders = (await Researcher.find({
     archived: { $ne: true },
     profileLinks: { $elemMatch: { kind: 'YALE_OFFICIAL', url: pattern } },

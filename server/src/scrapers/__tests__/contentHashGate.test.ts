@@ -1,6 +1,6 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
-import mongoose from 'mongoose';
 import { Observation } from '../../models/observation';
+import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
 import {
   computeContentHash,
   computePageSetTextDigest,
@@ -11,6 +11,11 @@ import {
   loadStoredLaneDescription,
   SOURCE_CONTENT_HASH_FIELD,
 } from '../contentHashGate';
+
+vi.mock('../../utils/mongooseConnectionWasOpened', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../utils/mongooseConnectionWasOpened')>()),
+  mongooseConnectionWasOpened: vi.fn(() => false),
+}));
 
 describe('computeContentHash', () => {
   it('is deterministic for identical input', () => {
@@ -296,8 +301,8 @@ describe('loadStoredLaneDescription', () => {
   });
 
   it('answers undefined instead of throwing when the lookup fails, so paid output is still emitted', async () => {
-    vi.spyOn(mongoose.connection, 'readyState', 'get').mockReturnValue(1);
-    vi.spyOn(Observation, 'findOne').mockReturnValue({
+    vi.mocked(mongooseConnectionWasOpened).mockReturnValueOnce(true);
+    const findOne = vi.spyOn(Observation, 'findOne').mockReturnValue({
       sort: () => ({
         select: () => ({ lean: () => Promise.reject(new Error('connection reset')) }),
       }),
@@ -309,5 +314,6 @@ describe('loadStoredLaneDescription', () => {
         entityId: 'entity-1',
       }),
     ).resolves.toBeUndefined();
+    expect(findOne).toHaveBeenCalledTimes(1);
   });
 });

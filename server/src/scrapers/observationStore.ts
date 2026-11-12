@@ -55,6 +55,7 @@ import {
   planRunScopedEmailSupersede,
   type RunScopedEmailRow,
 } from './runScopedEmailSupersede';
+import { mongooseConnectionWasOpened } from '../utils/mongooseConnectionWasOpened';
 
 export const QUALITY_GUARDED_PROSE_FIELDS = new Set(['fullDescription', 'shortDescription']);
 
@@ -310,11 +311,11 @@ export function observationEntityIdentityFilter(query: {
   return alternatives.length === 1 ? alternatives[0] : { $or: alternatives };
 }
 
-const loadActiveProseValue: ActiveProseLoader = async (query) => {
+export const loadActiveProseValue: ActiveProseLoader = async (query) => {
   // Fail open when no DB connection is available (e.g. unit tests that mock
   // insertMany): the guard must never hang or block a write, only prevent a
   // proven regression.
-  if (mongoose.connection.readyState !== 1) return undefined;
+  if (!mongooseConnectionWasOpened()) return undefined;
   const identity = observationEntityIdentityFilter(query);
   if (!identity) return undefined;
   const filter: Record<string, unknown> = {
@@ -942,7 +943,7 @@ function runScopedEmailRow(doc: {
   };
 }
 
-async function retireEmailsANewerReadReplaced(
+export async function retireEmailsANewerReadReplaced(
   landedDocs: Array<{
     _id: unknown;
     entityType: string;
@@ -959,7 +960,7 @@ async function retireEmailsANewerReadReplaced(
       Boolean(doc.sourceUrl) &&
       Boolean(observationEntityIdentityFilter(doc)),
   );
-  if (emailDocs.length === 0 || mongoose.connection.readyState !== 1) return 0;
+  if (emailDocs.length === 0 || !mongooseConnectionWasOpened()) return 0;
 
   const clauses = new Map<string, Record<string, unknown>>();
   for (const doc of emailDocs) {

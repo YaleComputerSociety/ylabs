@@ -7,7 +7,6 @@
  * This module makes no model call and never fetches. `research-topics:derive` is the only
  * writer of the cache; the materializer only reads it.
  */
-import mongoose from 'mongoose';
 import { computeContentHash } from './contentHashGate';
 import { RESEARCH_PAGE_TOPICS_PROMPT_HASH } from './prompts';
 import { ResearchTopicsDerivation } from '../models/researchTopicsDerivation';
@@ -23,6 +22,7 @@ import {
   researchPageTextEntriesWithoutChrome,
   type ResearchPageTextEntry,
 } from './utils/researchPageText';
+import { mongooseConnectionWasOpened } from '../utils/mongooseConnectionWasOpened';
 
 export const RESEARCH_PAGE_TOPICS_MODEL = 'gpt-5-mini';
 export const RESEARCH_PAGE_TOPICS_DERIVED_CONFIDENCE = 0.85;
@@ -118,7 +118,7 @@ export type ResearchTopicsDerivationLookup = (
  * contributes nothing rather than blocking the resolve.
  */
 export const loadResearchTopicsDerivation: ResearchTopicsDerivationLookup = async (inputHash) => {
-  if (mongoose.connection.readyState !== 1) return null;
+  if (!mongooseConnectionWasOpened()) return null;
   const row = (await ResearchTopicsDerivation.findOne({ inputHash })
     .select('inputHash extractedTopics extractedField')
     .lean()) as StoredResearchTopicsDerivation | null;
