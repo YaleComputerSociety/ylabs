@@ -1,4 +1,5 @@
 import { plausiblePersonOrcid } from '../utils/orcid';
+import { DETACHED_ROLE_ASSIGNMENT_REVIEW_STATUS } from '../models/roleAssignment';
 import { orcidProfileLinksAgreeWithIdentifier } from '../models/researcher';
 import type { FieldValueRefusal } from '../utils/researchEntityFieldValueRefusals';
 import {
@@ -1961,6 +1962,8 @@ export interface FoldPlanEdge {
   targetId?: unknown;
   role?: unknown;
   state?: unknown;
+  archived?: unknown;
+  reviewStatus?: unknown;
 }
 
 export interface ShellEdgeMoves {
@@ -1968,40 +1971,160 @@ export interface ShellEdgeMoves {
   archivedRedundant: string[];
 }
 
+const isCurrentFoldEdge = (edge: FoldPlanEdge): boolean =>
+  edge.archived !== true && edge.state !== 'HISTORICAL';
+
+const holdsCurrentClaim = (edge: FoldPlanEdge): boolean =>
+  isCurrentFoldEdge(edge) || edge.reviewStatus === DETACHED_ROLE_ASSIGNMENT_REVIEW_STATUS;
+
 /**
  * Where each folding shell's live edges go: onto the survivor, or archived as redundant when the
- * survivor already claims the same target and role. A survivor edge an operator detached still
- * claims its key, because repointing onto it would hand the survivor a live copy of the edge the
- * detachment took away, the twin bypass #3152 records.
+ * survivor already claims the same target and role. A current shell edge is redundant only beside
+ * a current survivor edge: the survivor's ended edge on that key is a past appointment, and
+ * archiving the shell's current edge against it leaves the person with history only (#5990). A
+ * survivor edge an operator detached still claims its key, because repointing onto it would hand
+ * the survivor a live copy of the edge the detachment took away, the twin bypass #3152 records.
+ * A historical shell edge is redundant beside any survivor edge on the key.
  */
 export function planShellEdgeMoves(
   shellEdges: ReadonlyArray<FoldPlanEdge>,
   survivorClaimEdges: ReadonlyArray<FoldPlanEdge>,
   mergeTargetByShellId: ReadonlyMap<string, string>,
 ): Map<string, ShellEdgeMoves> {
-  const claimedKeysBySurvivor = new Map<string, Set<string>>();
+  const currentKeysBySurvivor = new Map<string, Set<string>>();
+  const anyKeysBySurvivor = new Map<string, Set<string>>();
+  const claim = (claims: Map<string, Set<string>>, survivorId: string, key: string) =>
+    claims.set(survivorId, (claims.get(survivorId) ?? new Set<string>()).add(key));
   for (const edge of survivorClaimEdges) {
-    const keys = claimedKeysBySurvivor.get(edge.personId) ?? new Set<string>();
-    keys.add(roleAssignmentEdgeKey(edge));
-    claimedKeysBySurvivor.set(edge.personId, keys);
+    const key = roleAssignmentEdgeKey(edge);
+    claim(anyKeysBySurvivor, edge.personId, key);
+    if (holdsCurrentClaim(edge)) claim(currentKeysBySurvivor, edge.personId, key);
   }
   const movesByShell = new Map<string, ShellEdgeMoves>();
   for (const edge of shellEdges) {
     const survivorId = mergeTargetByShellId.get(edge.personId);
     if (!survivorId) continue;
     const moves = movesByShell.get(edge.personId) ?? { repointed: [], archivedRedundant: [] };
-    const claimed = claimedKeysBySurvivor.get(survivorId) ?? new Set<string>();
     const key = roleAssignmentEdgeKey(edge);
-    if (claimed.has(key)) {
+    const current = isCurrentFoldEdge(edge);
+    const claims = current ? currentKeysBySurvivor : anyKeysBySurvivor;
+    if (claims.get(survivorId)?.has(key)) {
       moves.archivedRedundant.push(edge.id);
     } else {
       moves.repointed.push(edge.id);
-      claimed.add(key);
-      claimedKeysBySurvivor.set(survivorId, claimed);
+      claim(anyKeysBySurvivor, survivorId, key);
+      if (current) claim(currentKeysBySurvivor, survivorId, key);
     }
     movesByShell.set(edge.personId, moves);
   }
   return movesByShell;
+}
+
+export interface FoldedShell {
+  id: string;
+  survivorId: string;
+  dedupedAt?: unknown;
+}
+
+export interface FoldedShellEdge extends FoldPlanEdge {
+  endedAt?: unknown;
+  reviewNotes?: unknown;
+  reviewedBy?: unknown;
+  reviewedAt?: unknown;
+}
+
+export interface SurvivorHistoryEdge extends FoldPlanEdge {
+  endedAt?: unknown;
+}
+
+export interface FoldedShellEdgeHeal {
+  edgeId: string;
+  shellId: string;
+  survivorId: string;
+  targetId: string;
+  role: string;
+}
+
+const timeOf = (value: unknown): number => {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'string' || typeof value === 'number') return new Date(value).getTime();
+  return Number.NaN;
+};
+
+const untouchedByReview = (edge: FoldedShellEdge, auditedEdgeIds: ReadonlySet<string>): boolean =>
+  (edge.reviewStatus === undefined ||
+    edge.reviewStatus === null ||
+    edge.reviewStatus === 'UNREVIEWED') &&
+  !edge.reviewNotes &&
+  !edge.reviewedBy &&
+  !edge.reviewedAt &&
+  !auditedEdgeIds.has(edge.id);
+
+/**
+ * The current memberships an earlier fold archived as redundant beside a survivor edge that had
+ * already ended (#5990), re-pointed onto the survivor so the person is a current member again.
+ * An edge qualifies when its shell was folded into a live survivor, it never ended, nobody
+ * reviewed, detached or audited it, its row is live, the survivor holds no current edge of any
+ * role on that row, and the survivor's edge on the same target and role ended no later than the
+ * fold. Of several shells that lost one membership, only the latest fold's edge is considered, so
+ * when that edge is ineligible no earlier fold's twin is restored in its place.
+ * A healed edge is current on the survivor, so a second run finds nothing to heal.
+ */
+export function planFoldedShellEdgeHeals(input: {
+  foldedShells: ReadonlyArray<FoldedShell>;
+  archivedShellEdges: ReadonlyArray<FoldedShellEdge>;
+  survivorEdges: ReadonlyArray<SurvivorHistoryEdge>;
+  liveSurvivorIds: ReadonlySet<string>;
+  liveTargetIds: ReadonlySet<string>;
+  auditedEdgeIds: ReadonlySet<string>;
+}): FoldedShellEdgeHeal[] {
+  const shellById = new Map(input.foldedShells.map((shell) => [shell.id, shell]));
+  const occupiedTargets = new Set<string>();
+  const endedAtByKey = new Map<string, number[]>();
+  for (const edge of input.survivorEdges) {
+    const target = String(edge.targetId ?? '');
+    if (holdsCurrentClaim(edge)) occupiedTargets.add(`${edge.personId}|${target}`);
+    const ended = timeOf(edge.endedAt);
+    if (edge.archived !== true && edge.state === 'HISTORICAL' && Number.isFinite(ended)) {
+      const key = `${edge.personId}|${roleAssignmentEdgeKey(edge)}`;
+      endedAtByKey.set(key, [...(endedAtByKey.get(key) ?? []), ended]);
+    }
+  }
+  const latestByMembership = new Map<
+    string,
+    { edge: FoldedShellEdge; shell: FoldedShell; foldedAt: number }
+  >();
+  for (const edge of input.archivedShellEdges) {
+    const shell = shellById.get(edge.personId);
+    if (!shell) continue;
+    if (edge.archived !== true || edge.state === 'HISTORICAL') continue;
+    if (edge.targetKind !== 'RESEARCH_ENTITY' || typeof edge.role !== 'string') continue;
+    const foldedAt = timeOf(shell.dedupedAt);
+    if (!Number.isFinite(foldedAt)) continue;
+    const membership = `${shell.survivorId}|${roleAssignmentEdgeKey(edge)}`;
+    const previous = latestByMembership.get(membership);
+    if (previous && previous.foldedAt >= foldedAt) continue;
+    latestByMembership.set(membership, { edge, shell, foldedAt });
+  }
+  const heals: FoldedShellEdgeHeal[] = [];
+  for (const [membership, { edge, shell, foldedAt }] of latestByMembership) {
+    if (!input.liveSurvivorIds.has(shell.survivorId) || edge.endedAt) continue;
+    if (!untouchedByReview(edge, input.auditedEdgeIds)) continue;
+    const target = String(edge.targetId ?? '');
+    if (!input.liveTargetIds.has(target)) continue;
+    if (occupiedTargets.has(`${shell.survivorId}|${target}`)) continue;
+    const survivorEndings = endedAtByKey.get(membership);
+    if (!survivorEndings?.length) continue;
+    if (!survivorEndings.every((ended) => ended <= foldedAt)) continue;
+    heals.push({
+      edgeId: edge.id,
+      shellId: shell.id,
+      survivorId: shell.survivorId,
+      targetId: target,
+      role: String(edge.role),
+    });
+  }
+  return heals.sort((left, right) => left.edgeId.localeCompare(right.edgeId));
 }
 
 const isCurrentLeadEdge = (edge: FoldPlanEdge, leadRoles: ReadonlySet<string>): boolean =>

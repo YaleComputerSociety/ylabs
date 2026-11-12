@@ -5,7 +5,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { LEAD_ROLE_CANONICAL_VALUES } from '../models/canonicalRoleMapping';
-import { DETACHED_ROLE_ASSIGNMENT_REVIEW_STATUS } from '../models/roleAssignment';
+import {
+  DETACHED_ROLE_ASSIGNMENT_REVIEW_STATUS,
+  roleAssignmentReattachWrite,
+} from '../models/roleAssignment';
 import { loadDirectoryNetidsByAddress } from '../scrapers/directoryContradictedProfileNetid';
 import { resolveNetidForRosterEmailAlias } from '../scrapers/entityMaterializer';
 import { loadDistinctPeopleVerdictIndex } from '../services/distinctPeopleVerdicts';
@@ -37,6 +40,8 @@ import {
   officialPageWitnessDestination,
   orcidOnlyHoldersByOrcid,
   planShellEdgeMoves,
+  planFoldedShellEdgeHeals,
+  type FoldedShellEdgeHeal,
   distinctPeoplePairKey,
   type NameVariantCandidate,
   withoutDistinctPeopleFolds,
@@ -83,6 +88,7 @@ export interface ResearcherDedupeStageDelta {
   shellsMerged: number;
   roleAssignmentsRepointed: number;
   roleAssignmentsArchivedRedundant: number;
+  roleAssignmentsHealed: number;
   rosterChangedEntities: number;
   regatedEntities: number;
   profileLinksAppended: number;
@@ -199,6 +205,9 @@ export interface DedupeAccountlessResearcherShellsResult {
   };
   roleAssignmentsRepointed: number;
   roleAssignmentsArchivedRedundant: number;
+  /** Current edges an earlier fold archived beside an ended survivor edge, now on the survivor. */
+  roleAssignmentsHealed: number;
+  heals: FoldedShellEdgeHeal[];
   /** Entities whose roster the merges edited, and so the population the re-gate covers. */
   rosterChangedEntities: number;
   regatedEntities: number;
@@ -1163,6 +1172,110 @@ async function planAliasTwinFoldsFor(
   });
 }
 
+export async function planHealsForFoldedShells(input: {
+  Researcher: mongoose.mongo.Collection;
+  RoleAssignment: mongoose.mongo.Collection;
+  liveResearcherIds: ReadonlySet<string>;
+  foldingResearcherIds: ReadonlySet<string>;
+  onlyShellIds?: ReadonlyArray<string>;
+}): Promise<FoldedShellEdgeHeal[]> {
+  const foldedShells = (
+    (await input.Researcher.find(
+      { archived: true, dedupedIntoResearcherId: { $ne: null } },
+      { projection: { dedupedIntoResearcherId: 1, dedupedAt: 1 } },
+    ).toArray()) as any[]
+  )
+    .map((doc) => ({
+      id: idKey(doc._id),
+      survivorId: idKey(doc.dedupedIntoResearcherId),
+      dedupedAt: doc.dedupedAt,
+    }))
+    .filter(
+      (shell) =>
+        input.liveResearcherIds.has(shell.survivorId) &&
+        !input.foldingResearcherIds.has(shell.survivorId),
+    );
+  if (foldedShells.length === 0) return [];
+  const archivedShellEdges = (
+    (await input.RoleAssignment.find({
+      personId: { $in: foldedShells.map((shell) => new mongoose.Types.ObjectId(shell.id)) },
+      archived: true,
+      state: { $ne: 'HISTORICAL' },
+      'target.kind': 'RESEARCH_ENTITY',
+    }).toArray()) as any[]
+  ).map((ra) => ({
+    id: idKey(ra._id),
+    personId: idKey(ra.personId),
+    targetKind: ra.target?.kind,
+    targetId: idKey(ra.target?.id),
+    role: ra.role,
+    state: ra.state,
+    archived: ra.archived,
+    endedAt: ra.endedAt,
+    reviewStatus: ra.reviewStatus,
+    reviewNotes: ra.reviewNotes,
+    reviewedBy: ra.reviewedBy,
+    reviewedAt: ra.reviewedAt,
+  }));
+  if (archivedShellEdges.length === 0) return [];
+  const targetObjectIds = [...new Set(archivedShellEdges.map((edge) => edge.targetId))]
+    .filter((id) => mongoose.Types.ObjectId.isValid(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+  const survivorObjectIds = [...new Set(foldedShells.map((shell) => shell.survivorId))].map(
+    (id) => new mongoose.Types.ObjectId(id),
+  );
+  const survivorEdges = (
+    (await input.RoleAssignment.find({
+      personId: { $in: survivorObjectIds },
+      'target.kind': 'RESEARCH_ENTITY',
+      'target.id': { $in: targetObjectIds },
+    }).toArray()) as any[]
+  ).map((ra) => ({
+    id: idKey(ra._id),
+    personId: idKey(ra.personId),
+    targetKind: ra.target?.kind,
+    targetId: idKey(ra.target?.id),
+    role: ra.role,
+    state: ra.state,
+    archived: ra.archived,
+    reviewStatus: ra.reviewStatus,
+    endedAt: ra.endedAt,
+  }));
+  const liveTargetIds = new Set(
+    (
+      (await mongoose.connection
+        .collection('research_entities')
+        .find(
+          { _id: { $in: targetObjectIds }, archived: { $ne: true } },
+          { projection: { _id: 1 } },
+        )
+        .toArray()) as any[]
+    ).map((doc) => idKey(doc._id)),
+  );
+  const auditedEdgeIds = new Set(
+    (
+      (await mongoose.connection
+        .collection('admin_audit_events')
+        .find(
+          { targetId: { $in: archivedShellEdges.map((edge) => edge.id) } },
+          { projection: { targetId: 1 } },
+        )
+        .toArray()) as any[]
+    ).map((doc) => idKey(doc.targetId)),
+  );
+  const heals = planFoldedShellEdgeHeals({
+    foldedShells,
+    archivedShellEdges,
+    survivorEdges,
+    liveSurvivorIds: input.liveResearcherIds,
+    liveTargetIds,
+    auditedEdgeIds,
+  });
+  if (!input.onlyShellIds) return heals;
+  const scopedShellIds = new Set(input.onlyShellIds);
+  return heals.filter((heal) => scopedShellIds.has(heal.shellId));
+}
+
 export async function dedupeAccountlessResearcherShells(options: {
   apply: boolean;
   onlyShellIds?: ReadonlyArray<string>;
@@ -1477,6 +1590,8 @@ export async function dedupeAccountlessResearcherShells(options: {
     targetId: ra.target?.id,
     role: ra.role,
     state: ra.state,
+    archived: ra.archived,
+    reviewStatus: ra.reviewStatus,
   });
   const shellFoldEdges = (shellRoleAssignments as any[]).map(asFoldPlanEdge);
   const survivorClaimEdges = (canonicalRoleAssignments as any[]).map(asFoldPlanEdge);
@@ -1664,6 +1779,52 @@ export async function dedupeAccountlessResearcherShells(options: {
     });
   }
 
+  const repointedTargetsBySurvivor = new Set<string>();
+  const shellEdgeById = new Map(shellFoldEdges.map((edge) => [edge.id, edge]));
+  for (const merge of merges) {
+    for (const edgeId of merge.repointed) {
+      const edge = shellEdgeById.get(edgeId);
+      if (edge) repointedTargetsBySurvivor.add(`${merge.canonicalId}|${idKey(edge.targetId)}`);
+    }
+  }
+  const heals = (
+    await planHealsForFoldedShells({
+      Researcher,
+      RoleAssignment,
+      liveResearcherIds: new Set(researcherIdentities.map((identity) => identity.id)),
+      foldingResearcherIds: new Set(mergeTargetByShellId.keys()),
+      ...(options.onlyShellIds ? { onlyShellIds: options.onlyShellIds } : {}),
+    })
+  ).filter((heal) => !repointedTargetsBySurvivor.has(`${heal.survivorId}|${heal.targetId}`));
+  for (const heal of heals) {
+    const reattach = roleAssignmentReattachWrite(
+      {
+        _id: new mongoose.Types.ObjectId(heal.edgeId),
+        personId: new mongoose.Types.ObjectId(heal.shellId),
+        archived: true,
+        state: { $ne: 'HISTORICAL' },
+      },
+      'UNREVIEWED',
+    );
+    roleAssignmentOps.push({
+      updateOne: {
+        filter: reattach.filter,
+        update: {
+          $set: {
+            ...(reattach.update.$set as Record<string, unknown>),
+            personId: new mongoose.Types.ObjectId(heal.survivorId),
+          },
+        },
+      },
+    });
+    rosterChangedEntityIds.add(heal.targetId);
+  }
+  if (onlyShellsNotPlanned) {
+    const healedShellIds = new Set(heals.map((heal) => heal.shellId));
+    const stillNotPlanned = onlyShellsNotPlanned.filter((id) => !healedShellIds.has(id));
+    onlyShellsNotPlanned.splice(0, onlyShellsNotPlanned.length, ...stillNotPlanned);
+  }
+
   const canonicalIds = new Set<string>([
     ...canonicalAppendedLinks.keys(),
     ...canonicalSetFills.keys(),
@@ -1720,6 +1881,7 @@ export async function dedupeAccountlessResearcherShells(options: {
       survivorEdges: canonicalRoleAssignments as FoldRegateEdge[],
       mergeTargetByShellId,
     });
+    for (const heal of heals) regateEntityIds.add(heal.targetId);
     if (regateEntityIds.size > 0) {
       await runStudentVisibilityGate({
         collection: 'research',
@@ -1760,6 +1922,8 @@ export async function dedupeAccountlessResearcherShells(options: {
     },
     roleAssignmentsRepointed,
     roleAssignmentsArchivedRedundant,
+    roleAssignmentsHealed: heals.length,
+    heals,
     rosterChangedEntities: rosterChangedEntityIds.size,
     regatedEntities,
     attributeUnion,
