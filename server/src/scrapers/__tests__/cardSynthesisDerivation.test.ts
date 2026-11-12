@@ -7,7 +7,11 @@ import {
   type CardSynthesisDerivationStore,
   type StoredCardSynthesisDerivation,
 } from '../cardSynthesisDerivation';
-import { runCardImport, type CardRequest } from '../../scripts/cardSynthesisCore';
+import {
+  parseCardRequests,
+  runCardImport,
+  type CardRequest,
+} from '../../scripts/cardSynthesisCore';
 
 const BODY =
   'The Tidepool Lab studies how coastal kelp forests recover after marine heatwaves, using long-term field surveys of kelp canopy and sea urchin grazing across rocky shores.';
@@ -120,5 +124,68 @@ describe('imported cards (#5537)', () => {
     });
     expect(validated.rows[0]).toMatchObject({ outcome: 'refused', stored: false });
     expect(untouched.entries.size).toBe(0);
+  });
+
+  it('refuses at import a card the written-body card bar would refuse at materialize', async () => {
+    const cardLengthBody =
+      'The Tidepool Lab studies how coastal kelp forests recover after marine heatwaves, using field surveys of kelp canopy.';
+    const restatement =
+      'Studies how coastal kelp forests recover after marine heatwaves, using field surveys of kelp canopy.';
+    const chipBody =
+      'The Shoreline Lab studies marine ecology and kelp forests through long-term field surveys along rocky shores.';
+    const chipEcho = 'Studies marine ecology and kelp forests.';
+    const barRequests = parseCardRequests([
+      { slug: 'tidepool-lab', entityName: 'Tidepool Lab', fullDescription: cardLengthBody },
+      {
+        slug: 'shoreline-lab',
+        entityName: 'Shoreline Lab',
+        fullDescription: chipBody,
+        researchAreas: ['Marine Ecology', 'Kelp Forests'],
+      },
+      { slug: 'kelp-lab', entityName: 'Kelp Lab', fullDescription: BODY },
+    ]);
+    expect(barRequests[1].researchAreas).toEqual(['Marine Ecology', 'Kelp Forests']);
+    const store = memoryStore();
+    const report = await runCardImport({
+      requests: barRequests,
+      drafts: [
+        { slug: 'tidepool-lab', writer: 'claude-agent:1', card: restatement },
+        { slug: 'shoreline-lab', writer: 'claude-agent:1', card: chipEcho },
+        { slug: 'kelp-lab', writer: 'claude-agent:1', card: CARD },
+        { slug: 'absent-lab', writer: 'claude-agent:1', card: CARD },
+      ],
+      store,
+      validateOnly: false,
+    });
+    for (const row of report.rows.slice(0, 2)) {
+      expect(row).toMatchObject({
+        outcome: 'refused',
+        refusalReason: 'written-body-card-bar',
+        stored: true,
+        card: '',
+      });
+    }
+    expect(store.entries.get(cardInputHash(cardLengthBody))?.rawCards).toEqual([restatement]);
+    expect(report.rows[2]).toMatchObject({ outcome: 'accepted', stored: true, card: CARD });
+    expect(report.rows[2].refusalReason).toBeUndefined();
+    expect(report.byReason).toEqual({
+      'written-body-card-bar': 2,
+      accepted: 1,
+      'missing-request': 1,
+    });
+  });
+
+  it('names the card synthesizer as the reason when its own checks refuse a card', async () => {
+    const report = await runCardImport({
+      requests,
+      drafts: [{ slug: 'tidepool-lab', writer: 'claude-agent:1', card: BAD_CARD }],
+      store: memoryStore(),
+      validateOnly: true,
+    });
+    expect(report.rows[0]).toMatchObject({
+      outcome: 'refused',
+      refusalReason: 'card-synthesis-checks',
+    });
+    expect(report.byReason).toEqual({ 'card-synthesis-checks': 1 });
   });
 });
