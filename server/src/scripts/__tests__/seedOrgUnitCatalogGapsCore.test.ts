@@ -365,9 +365,13 @@ describe('ORG_UNIT_CATALOG_GAPS', () => {
     expect(ROSTER_GAPS.length).toBeGreaterThan(0);
     expect(OFFICIAL_GAPS.length).toBeGreaterThan(0);
     expect(MEDICINE_GAPS.length).toBeGreaterThan(0);
-    expect(ROSTER_GAPS.length + OFFICIAL_GAPS.length + MEDICINE_GAPS.length).toBe(
-      ORG_UNIT_CATALOG_GAPS.length,
+    const nursingGaps = ORG_UNIT_CATALOG_GAPS.filter((gap) =>
+      gap.source.includes('NURS - Nursing'),
     );
+    expect(nursingGaps.length).toBe(2);
+    expect(
+      ROSTER_GAPS.length + OFFICIAL_GAPS.length + MEDICINE_GAPS.length + nursingGaps.length,
+    ).toBe(ORG_UNIT_CATALOG_GAPS.length);
   });
 });
 
@@ -637,5 +641,47 @@ describe('planOrgUnitCatalogGapSeed official-index gaps', () => {
       'BBS',
     ]);
     expect(result.values).toEqual(['Astronomy', 'Biological & Biomedical Sciences']);
+  });
+});
+
+describe('planOrgUnitCatalogGapSeed Nursing as a school-level department (#5796)', () => {
+  const nursingGaps = ORG_UNIT_CATALOG_GAPS.filter((gap) => gap.source.includes('NURS - Nursing'));
+  const withNursingSchool: ExistingOrgUnitRow[] = [
+    {
+      id: 'ysn',
+      name: 'School of Nursing',
+      slug: 'yale-school-of-nursing',
+      kind: 'SCHOOL',
+      aliases: ['YSN', 'Yale School of Nursing', 'Nursing'],
+    },
+  ];
+
+  it('moves the bare label off the school and creates the department under it', () => {
+    const plan = planOrgUnitCatalogGapSeed(withNursingSchool, nursingGaps);
+    expect(plan.blocked).toEqual([]);
+    expect(plan.rows).toEqual([
+      expect.objectContaining({
+        action: 'remove-aliases',
+        targetSlug: 'yale-school-of-nursing',
+        removedAliases: ['Nursing'],
+      }),
+      expect.objectContaining({
+        action: 'create-department',
+        name: 'Nursing',
+        slug: 'nursing',
+        parentName: 'School of Nursing',
+        aliases: ['NURS'],
+      }),
+    ]);
+  });
+
+  it('is idempotent once the department exists and the school no longer carries the label', () => {
+    const applied: ExistingOrgUnitRow[] = [
+      { ...withNursingSchool[0], aliases: ['YSN', 'Yale School of Nursing'] },
+      { id: 'nursing', name: 'Nursing', slug: 'nursing', kind: 'DEPARTMENT', aliases: ['NURS'] },
+    ];
+    const plan = planOrgUnitCatalogGapSeed(applied, nursingGaps);
+    expect(plan.rows).toEqual([]);
+    expect(plan.blocked).toEqual([]);
   });
 });
