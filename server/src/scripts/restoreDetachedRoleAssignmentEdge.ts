@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
-import { initializeConnections } from '../db/connections';
+import { initializeConnections, runScriptMain } from '../db/connections';
 import { OrgUnit } from '../models/orgUnit';
 import { ResearchEntity } from '../models/researchEntity';
 import { Researcher } from '../models/researcher';
@@ -235,8 +235,7 @@ export async function runRestoreDetachedRoleAssignmentEdgeCommand(
 const invokedDirectly =
   process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 if (invokedDirectly) {
-  runRestoreDetachedRoleAssignmentEdgeCommand(process.argv.slice(2)).catch((error) => {
-    console.error(sanitizeLogValue(error));
-    process.exit(1);
+  void runScriptMain(() => runRestoreDetachedRoleAssignmentEdgeCommand(process.argv.slice(2)), {
+    logFailure: (error) => console.error(sanitizeLogValue(error)),
   });
 }
