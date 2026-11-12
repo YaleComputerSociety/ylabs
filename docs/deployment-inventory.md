@@ -143,7 +143,7 @@ A one-off job runs on the operator service's latest build with that service's cu
 | `MEILISEARCH_WRITE_API_KEY` | `ylabs-beta-reindex` | `ylabs-prod-reindex` | The rebuild fails before the swap, and the serving index is unchanged. | Yes |
 | `OPENAI_API_KEY` | Yes | Yes | A rebuild of an index with a stored embedder is refused, rather than silently serving keyword-only search. | Yes |
 | `PFR3_MEILI_RESTORE_POINT` | No | Per promotion, passed on the job's start command by `promote:production --meili-restore-point` rather than stored | `promote:remote-phase` refuses for Production. | No |
-| `CONFIRM_PROD_SCRAPE` | No | Set by the job command | The Production reindex refuses at the write, after the preflight has printed. | No |
+| `CONFIRM_PROD_SCRAPE` | No | Set by the job command | The Production reindex with `--confirm` refuses before connecting. | No |
 
 ## Weekly Sweep Cron Variables (`ylabs-scraper`)
 

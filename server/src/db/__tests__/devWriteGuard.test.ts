@@ -23,13 +23,19 @@ import {
   setDevWriteGuardLeaseStateForTests,
 } from '../devWriteGuard';
 import {
+  DEV_APPLY_LEASE_NAME,
   DEV_WRITE_LEASE_COLLECTION,
   DEV_WRITE_LEASE_OWNER_ENV,
   DEV_WRITE_LEASE_SWITCH_ENV,
+  DevWriteLeaseHeldError,
+  DevWriteOwnerMissingError,
   armDevHostLeases,
+  holdsDevApplyLease,
   recordDevApplyIntent,
   releaseHeldDevWriteLeases,
   resetDevWriteLeaseStateForTests,
+  setDevWriteLeaseRuntimeForTests,
+  type DevWriteLeaseStop,
 } from '../devWriteLease';
 import {
   connectScriptMongo,
@@ -52,6 +58,7 @@ import { hermeticChildEnvironment } from '../../test/hermeticEnvironment';
 
 const SERVER_SRC = path.resolve(__dirname, '../..');
 const SCRATCH_SCRIPT = path.resolve(__dirname, 'fixtures/scratchModelDelete.ts');
+const LATE_INTENT_SCRIPT = path.resolve(__dirname, 'fixtures/applyIntentAfterConnect.ts');
 const GUARD_MODULE = '../db/devWriteGuard';
 
 let memoryServer: MongoMemoryServer;
@@ -326,6 +333,215 @@ describe('a script that holds the Development write lease', () => {
   });
 });
 
+const OTHER_OWNER_LABEL = 'other-session';
+const OTHER_OWNER_COMMAND = 'fixture:apply --apply';
+
+async function seedLeaseHeldByAnotherOwner(db: Db) {
+  const now = new Date();
+  await db
+    .collection<Record<string, unknown> & { _id: string }>(DEV_WRITE_LEASE_COLLECTION)
+    .insertOne({
+      _id: `development:${DEV_APPLY_LEASE_NAME}`,
+      environment: 'development',
+      sourceName: DEV_APPLY_LEASE_NAME,
+      locked: true,
+      ownerId: 'other-host:1:fixture',
+      ownerHost: 'other-host',
+      ownerPid: 1,
+      ownerLabel: OTHER_OWNER_LABEL,
+      command: OTHER_OWNER_COMMAND,
+      acquiredAt: now,
+      heartbeatAt: now,
+      leaseExpiresAt: new Date(now.getTime() + 60_000),
+    });
+}
+
+const liveApplyLeases = (db: Db) =>
+  db
+    .collection(DEV_WRITE_LEASE_COLLECTION)
+    .find({ sourceName: DEV_APPLY_LEASE_NAME, locked: true })
+    .toArray();
+
+describe('a script that records its apply intent only after it connected (#5971)', () => {
+  let stops: DevWriteLeaseStop[];
+
+  beforeEach(() => {
+    stops = [];
+    setDevWriteLeaseRuntimeForTests({ stop: (stop) => stops.push(stop) });
+  });
+
+  async function connectThenRecordIntent() {
+    await connectScriptMongo(uriFor('Development'));
+    expect(holdsDevApplyLease()).toBe(false);
+    recordDevApplyIntent('fixture:late-intent', ['--apply']);
+  }
+
+  it('takes the lease at its first write, and the write lands', async () => {
+    const dev = database('Development');
+    await seed(dev, SearchRerankCache.collection.collectionName, 3);
+
+    await connectThenRecordIntent();
+    await SearchRerankCache.deleteMany({});
+
+    expect(await count(dev, SearchRerankCache.collection.collectionName)).toBe(0);
+    expect(holdsDevApplyLease()).toBe(true);
+    const [lease] = await liveApplyLeases(dev);
+    expect(lease).toMatchObject({
+      ownerLabel: 'test-session',
+      command: 'fixture:late-intent --apply',
+    });
+    expect(stops).toEqual([]);
+  });
+
+  it('takes one lease for concurrent first writes', async () => {
+    const dev = database('Development');
+    await seed(dev, 'dev_write_guard_probes', 2);
+    await seed(dev, SearchRerankCache.collection.collectionName, 2);
+
+    await connectThenRecordIntent();
+    await Promise.all([Probe.deleteMany({}), SearchRerankCache.deleteMany({})]);
+
+    expect(await count(dev, 'dev_write_guard_probes')).toBe(0);
+    expect(await count(dev, SearchRerankCache.collection.collectionName)).toBe(0);
+    expect(await liveApplyLeases(dev)).toHaveLength(1);
+  });
+
+  it('releases the lease it took when the connection closes', async () => {
+    const dev = database('Development');
+    await connectThenRecordIntent();
+    await Probe.create({ name: 'new' });
+    expect(await liveApplyLeases(dev)).toHaveLength(1);
+
+    await mongoose.disconnect();
+
+    expect(await liveApplyLeases(dev)).toHaveLength(0);
+    expect(holdsDevApplyLease()).toBe(false);
+  });
+
+  it('is refused at its first write while another owner holds the lease, and stops', async () => {
+    const dev = database('Development');
+    await seed(dev, SearchRerankCache.collection.collectionName, 3);
+    await seedLeaseHeldByAnotherOwner(dev);
+
+    await connectThenRecordIntent();
+    const refusal = await SearchRerankCache.deleteMany({}).catch((error: unknown) => error);
+
+    expect(refusal).toBeInstanceOf(DevWriteLeaseHeldError);
+    expect((refusal as Error).message).toContain(
+      `held by ${OTHER_OWNER_LABEL} running "${OTHER_OWNER_COMMAND}"`,
+    );
+    expect(await count(dev, SearchRerankCache.collection.collectionName)).toBe(3);
+    expect(stops).toHaveLength(1);
+    expect(stops[0]).toMatchObject({ reason: 'refused', leases: [DEV_APPLY_LEASE_NAME] });
+    expect(stops[0].message).toContain(
+      `held by ${OTHER_OWNER_LABEL} running "${OTHER_OWNER_COMMAND}"`,
+    );
+  });
+
+  it('leaves no partial write in any collection when its first and every later write are refused', async () => {
+    const dev = database('Development');
+    await seed(dev, SearchRerankCache.collection.collectionName, 3);
+    await seed(dev, 'dev_write_guard_probes', 2);
+    await seedLeaseHeldByAnotherOwner(dev);
+
+    await connectThenRecordIntent();
+    const writes = [
+      () => SearchRerankCache.deleteMany({}),
+      () => Probe.create({ name: 'new' }),
+      () => Probe.updateMany({}, { $set: { name: 'changed' } }),
+      () => Probe.bulkWrite([{ deleteMany: { filter: {} } }]),
+    ];
+    for (const write of writes) {
+      await expect(write()).rejects.toBeInstanceOf(DevWriteLeaseHeldError);
+    }
+
+    await dev.collection(DEV_WRITE_LEASE_COLLECTION).deleteMany({});
+    await expect(Probe.deleteMany({})).rejects.toBeInstanceOf(DevWriteLeaseHeldError);
+
+    expect(await count(dev, SearchRerankCache.collection.collectionName)).toBe(3);
+    const rows = await dev.collection('dev_write_guard_probes').find().sort({ n: 1 }).toArray();
+    expect(rows.map(({ name }) => name)).toEqual(['row-0', 'row-1']);
+    expect(await liveApplyLeases(dev)).toHaveLength(0);
+    expect(stops).toHaveLength(1);
+  });
+
+  it('is refused at its first write without an owner label', async () => {
+    const dev = database('Development');
+    await seed(dev, 'dev_write_guard_probes', 2);
+    delete process.env.DEV_WRITE_OWNER;
+
+    await connectThenRecordIntent();
+
+    await expect(Probe.deleteMany({})).rejects.toBeInstanceOf(DevWriteOwnerMissingError);
+    expect(await count(dev, 'dev_write_guard_probes')).toBe(2);
+    expect(await liveApplyLeases(dev)).toHaveLength(0);
+    expect(stops).toMatchObject([{ reason: 'refused' }]);
+  });
+
+  it('still refuses a script that never recorded an apply intent, taking no lease', async () => {
+    const dev = database('Development');
+    await seed(dev, 'dev_write_guard_probes', 2);
+
+    await connectScriptMongo(uriFor('Development'));
+
+    await expect(Probe.deleteMany({})).rejects.toBeInstanceOf(DevWriteRefusedError);
+    expect(await count(dev, 'dev_write_guard_probes')).toBe(2);
+    expect(await count(dev, DEV_WRITE_LEASE_COLLECTION)).toBe(0);
+    expect(stops).toEqual([]);
+  });
+});
+
+describe('an apply script run as its own process that connects before its apply guard runs', () => {
+  const runLateIntentScript = (env: NodeJS.ProcessEnv) => {
+    const result = spawnSync(process.execPath, ['--import', 'tsx', LATE_INTENT_SCRIPT], {
+      cwd: path.resolve(SERVER_SRC, '..'),
+      encoding: 'utf8',
+      env: hermeticChildEnvironment({
+        MONGODBURL: uriFor('Development'),
+        [DEV_WRITE_LEASE_SWITCH_ENV]: '',
+        ...env,
+      }),
+    });
+    const outcome = result.stdout
+      .split('\n')
+      .filter((line) => /^(DELETED|REFUSED) /.test(line))
+      .join('\n');
+    return { status: result.status, outcome, stderr: result.stderr };
+  };
+
+  it('takes the lease at its first write, writes, and releases the lease on disconnect', async () => {
+    const dev = database('Development');
+    await seed(dev, SearchRerankCache.collection.collectionName, 3);
+
+    const run = runLateIntentScript({ DEV_WRITE_OWNER: 'test-session' });
+
+    expect(run.outcome, run.stderr).toBe('DELETED 3 LEASED true');
+    expect(await count(dev, SearchRerankCache.collection.collectionName)).toBe(0);
+    const [lease] = await dev
+      .collection(DEV_WRITE_LEASE_COLLECTION)
+      .find({ sourceName: DEV_APPLY_LEASE_NAME })
+      .toArray();
+    expect(lease).toMatchObject({
+      locked: false,
+      releaseReason: 'success',
+      command: expect.stringContaining('fixture:apply-intent-after-connect'),
+    });
+  });
+
+  it('stops before its first write while another owner holds the lease', async () => {
+    const dev = database('Development');
+    await seed(dev, SearchRerankCache.collection.collectionName, 3);
+    await seedLeaseHeldByAnotherOwner(dev);
+
+    const run = runLateIntentScript({ DEV_WRITE_OWNER: 'test-session' });
+
+    expect(run.status).toBe(1);
+    expect(run.outcome).toBe('');
+    expect(run.stderr).toContain(`held by ${OTHER_OWNER_LABEL} running "${OTHER_OWNER_COMMAND}"`);
+    expect(await count(dev, SearchRerankCache.collection.collectionName)).toBe(3);
+  });
+});
+
 describe('a writing lane run with armed host leases', () => {
   async function armLaneRun() {
     await mongoose.connect(uriFor('Development'));
@@ -564,8 +780,10 @@ describe('a dry lane run', () => {
     expect(await count(dev, 'dev_write_guard_probes')).toBe(0);
   });
 
-  it('grants nothing to a process that recorded an apply intent', async () => {
+  it('grants no dry allowance to a process that recorded an apply intent, which must take the apply lease', async () => {
     const dev = database('Development');
+    await seedLeaseHeldByAnotherOwner(dev);
+    setDevWriteLeaseRuntimeForTests({ stop: () => undefined });
     recordDevApplyIntent('scrape run', ['--apply']);
     await mongoose.connect(uriFor('Development'));
     declareDevDryLaneRun();
@@ -578,7 +796,7 @@ describe('a dry lane run', () => {
         status: 'running',
         startedAt: new Date(),
       }),
-    ).rejects.toBeInstanceOf(DevWriteRefusedError);
+    ).rejects.toBeInstanceOf(DevWriteLeaseHeldError);
     expect(await count(dev, ScrapeRun.collection.collectionName)).toBe(0);
   });
 });

@@ -2,17 +2,20 @@ import mongoose from 'mongoose';
 
 import {
   DEV_WRITE_LEASE_SWITCH_ENV,
+  acquireIntendedDevApplyLeaseAtFirstWrite,
   devHostLeasesArmed,
   devWriteLeaseSwitchedOff,
   hasDevApplyIntent,
   holdsDevApplyLease,
+  releaseHeldDevWriteLeases,
   resolveDevWriteLeaseTarget,
 } from './devWriteLease';
 
 /**
  * Refuses a Mongoose model write to Development from a script process that holds no Development
- * write lease (#5871). Every model file imports this module before it compiles its model, so the
- * global plugin is part of every model. Raw driver handles skip Mongoose middleware;
+ * write lease (#5871). A process that recorded an apply intent after it connected takes the lease
+ * at its first write instead (#5971). Every model file imports this module before it compiles its
+ * model, so the global plugin is part of every model. Raw driver handles skip Mongoose middleware;
  * rawResearchEntityWriteGuard.test.ts keeps those to a reviewed list.
  */
 
@@ -177,6 +180,36 @@ function refusal(model: GuardedModel, operation: string, reason: string) {
   );
 }
 
+const RELEASES_LEASES_ON_CLOSE = Symbol.for('ylabs.devWriteGuard.releasesLeasesOnClose');
+type LeaseReleasingConnection = mongoose.Connection & { [RELEASES_LEASES_ON_CLOSE]?: true };
+
+/** Releases this process's Development write leases before the connection that took them closes. */
+export function releaseDevWriteLeasesWhenClosed(connection: mongoose.Connection): void {
+  const marked = connection as LeaseReleasingConnection;
+  if (marked[RELEASES_LEASES_ON_CLOSE]) return;
+  marked[RELEASES_LEASES_ON_CLOSE] = true;
+  const close = connection.close.bind(connection);
+  connection.close = (async (...args: Parameters<typeof close>) => {
+    await releaseHeldDevWriteLeases();
+    return close(...args);
+  }) as typeof connection.close;
+}
+
+async function tookApplyLeaseAtFirstWrite(
+  model: GuardedModel,
+  databaseName: string,
+): Promise<boolean> {
+  const connection = model.db;
+  if (!connection.db) return false;
+  const took = await acquireIntendedDevApplyLeaseAtFirstWrite({
+    db: connection.db,
+    databaseName,
+    host: connection.host,
+  });
+  if (took) releaseDevWriteLeasesWhenClosed(connection);
+  return took;
+}
+
 const listed = (collections: ReadonlySet<string>) => [...collections].join(', ');
 
 const idKey = (value: unknown): string | undefined =>
@@ -281,6 +314,7 @@ export async function assertDevModelWriteAllowed(
     if (dryRefusal) throw dryRefusal;
     return;
   }
+  if (hasDevApplyIntent() && (await tookApplyLeaseAtFirstWrite(model, databaseName))) return;
   throw refusal(
     model,
     write.operation,

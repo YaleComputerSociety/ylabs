@@ -91,9 +91,8 @@ export function parseReindexArgs(argv) {
 }
 
 // Required only for a production apply. `assertScriptApplyAllowed` refuses a
-// production write without it, and it fires AFTER the preflight and the index
-// reconcile plan have printed, so a run without it reads as working and then
-// stops at the last moment. That is the one-error-per-run discovery this module
+// production write without it, but only once the reindex itself starts, one
+// missing variable per run. That is the one-error-per-run discovery this module
 // exists to remove, so the requirement is reported up front with the others.
 export const PRODUCTION_APPLY_ENV_VARS = Object.freeze([
   {
