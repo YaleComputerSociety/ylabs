@@ -78,6 +78,10 @@ Working memory holds roughly four to seven chunks (Miller's Law, and the more mo
 If they have to open both and remember the first, the comparison surface is the fix, not a better card.
 The dashboard Compare dialog (`ResearchHomeComparison.tsx`) is that surface, and it leads with the two facts students compare on: undergraduate evidence (the hosting status, advised undergraduates, and the cited quote, labelled exactly as the detail page labels it) and how to get involved, resolved through the detail page's own `resolveResearchDetailActionLinks` so the two surfaces cannot offer different ways in (#5106).
 It has no commitment or pay row, because those facts were retired rather than left unfilled (#3088).
+- Both dashboard plan lists open most recently saved first, keyed on the plan's `createdAt`, so a fresh save lands on top (#5168).
+A row saved again after the undo window keeps its first save time, a known limit accepted over adding a stored `savedAt`.
+Above each list a stage filter, with a "Waiting to hear back" preset (Contacted and Applied on saved research, Applied alone on watched programs), and a sort select ("Recently saved", "Stage", and on programs "Deadline") are held in `?stage=` and `?sort=` for the active tab and cleared on a tab switch (`client/src/utils/dashboardPlanListView.ts`).
+A row whose stage changes under a filter stays on screen until the filter changes, so the select the student just used never vanishes from under focus.
 - **Hick's Law**: decision time grows with the number and complexity of options.
 Every filter added to the rail costs every student a little, and pays back only the students who use it.
 - Before adding a facet, check NN/g's test (`nngroup.com/articles/filters-vs-facets/`): faceted navigation costs interface work *and* metadata on every row forever, so confirm the dimension is one students actually sort by.

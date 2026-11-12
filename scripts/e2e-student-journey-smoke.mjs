@@ -9,6 +9,7 @@ import {
   waitForSearchResultsToSettle,
 } from './e2e-smoke-search-state.mjs';
 import { assertWatchedProgramApplicationStages } from './e2e-smoke-program-application-stages.mjs';
+import { assertDashboardPlanListView } from './e2e-smoke-dashboard-plan-list-view.mjs';
 
 const LOCAL_SMOKE_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]']);
 const DEPLOYED_SMOKE_HOSTS = new Set([
@@ -2130,6 +2131,22 @@ await step('a short program facet shows in full and the filter popover paints on
 
 await step('a watched program records each application stage', async () => {
   await assertWatchedProgramApplicationStages({
+    browser,
+    baseUrl,
+    session: syntheticStudentSession,
+    viewports: [
+      { width: 375, height: 812 },
+      { width: 1280, height: 800 },
+    ],
+    assert,
+    record,
+    screenshot,
+    withFailureContextOf,
+  });
+});
+
+await step('a student sorts and filters dashboard plans', async () => {
+  await assertDashboardPlanListView({
     browser,
     baseUrl,
     session: syntheticStudentSession,

@@ -201,6 +201,20 @@ describe('normalizeResearchPlanUpdate', () => {
 });
 
 describe('researchPlanViewFromDoc', () => {
+  it('serves the time a plan was first saved beside the time it last changed', () => {
+    const view = researchPlanViewFromDoc({
+      createdAt: new Date('2026-03-01T12:00:00.000Z'),
+      updatedAt: '2026-04-02T08:30:00.000Z',
+    });
+    expect(view.createdAt).toBe('2026-03-01T12:00:00.000Z');
+    expect(view.updatedAt).toBe('2026-04-02T08:30:00.000Z');
+  });
+
+  it('omits createdAt when the stored value is missing or unparseable', () => {
+    expect(researchPlanViewFromDoc({}).createdAt).toBeUndefined();
+    expect(researchPlanViewFromDoc({ createdAt: 'not-a-date' }).createdAt).toBeUndefined();
+  });
+
   it('preserves deadlines whose dueAt is a persisted Date object', () => {
     const view = researchPlanViewFromDoc({
       deadlines: [{ label: 'app due', dueAt: new Date('2026-09-01T00:00:00.000Z') }],

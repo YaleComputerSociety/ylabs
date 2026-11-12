@@ -155,6 +155,7 @@ export default [
   {
     files: [
       'scripts/e2e-student-journey-smoke.mjs',
+      'scripts/e2e-smoke-dashboard-plan-list-view.mjs',
       'scripts/e2e-merge-tombstone-smoke.mjs',
       'scripts/research-detail-professor-audit.mjs',
       'scripts/unified-research-search-audit.mjs',

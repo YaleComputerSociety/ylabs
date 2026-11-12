@@ -6,6 +6,7 @@ import { normalizeResearchPlanStage, type ResearchPlanStage } from '../utils/res
 export interface ServedPlanDetail {
   privateNotes?: string;
   stage?: string;
+  createdAt?: string;
   updatedAt?: string;
 }
 

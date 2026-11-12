@@ -55,6 +55,17 @@ import {
 } from '../../utils/watchedDeadlineSummary';
 import { CalendarIcon, EditIcon } from '../shared/icons';
 import useLoadEffect from '../../hooks/useLoadEffect';
+import PlanListControls, { PlanFilterEmptyState } from './PlanListControls';
+import {
+  DEFAULT_PLAN_LIST_VIEW,
+  compareNewestSavedFirst,
+  compareStageOrder,
+  countPlansByStage,
+  orderStably,
+  planMatchesStageFilter,
+  type PlanListView,
+  type PlanStageFilter,
+} from '../../utils/dashboardPlanListView';
 import usePlanDetailSync, {
   isPlanVersionConflict,
   type ServedPlanDetail,
@@ -69,7 +80,12 @@ interface ProgramWatchProps {
     approachingCount?: number;
     notStartedCount?: number;
   }) => void;
+  listView?: PlanListView;
+  onListViewChange?: (view: PlanListView) => void;
 }
+
+const PLAN_LIST_ID = 'watched-programs';
+const PLAN_LIST_NOUN = 'watched programs';
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error' | 'conflict';
 
@@ -107,7 +123,11 @@ export const watchedProgramDeadlineSummary = (
   };
 };
 
-const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
+const ProgramWatch = ({
+  onSummaryChange,
+  listView = DEFAULT_PLAN_LIST_VIEW,
+  onListViewChange,
+}: ProgramWatchProps) => {
   const {
     favIds: watchedIds,
     loaded: watchedIdsLoaded,
@@ -118,6 +138,11 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
   const [programs, setPrograms] = useState<Fellowship[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [stages, setStages] = useState<Record<string, ResearchPlanStage>>({});
+  const [savedAt, setSavedAt] = useState<Record<string, string | undefined>>({});
+  const [keptInView, setKeptInView] = useState<{ filter: PlanStageFilter; ids: string[] }>({
+    filter: DEFAULT_PLAN_LIST_VIEW.stageFilter,
+    ids: [],
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [programsLoadFailed, setProgramsLoadFailed] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -220,7 +245,9 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
         >;
         const loadedNotes: Record<string, string> = {};
         const loadedStages: Record<string, ResearchPlanStage> = {};
+        const loadedSavedAt: Record<string, string | undefined> = {};
         for (const program of loadedPrograms) {
+          loadedSavedAt[program.id] = plans[program.id]?.createdAt;
           if (merging && loadedProgramIdsRef.current.has(program.id)) continue;
           loadedNotes[program.id] = plans[program.id]?.privateNotes || '';
           loadedStages[program.id] = normalizeResearchPlanStage(plans[program.id]?.stage);
@@ -234,6 +261,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
         setPrograms(loadedPrograms);
         setNotes((current) => (merging ? { ...loadedNotes, ...current } : loadedNotes));
         setStages((current) => (merging ? { ...loadedStages, ...current } : loadedStages));
+        setSavedAt(loadedSavedAt);
         return true;
       } catch {
         if (!ticket.isCurrent() || merging) return false;
@@ -241,6 +269,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
         setPrograms([]);
         setNotes({});
         setStages({});
+        setSavedAt({});
         setProgramsLoadFailed(true);
         return false;
       } finally {
@@ -316,6 +345,40 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
     });
   }, [watchedCount, nextDeadline, deadlineUrgency, onSummaryChange]);
 
+  const stageOf = useCallback(
+    (programId: string): ResearchPlanStage => stages[programId] || DEFAULT_RESEARCH_PLAN_STAGE,
+    [stages],
+  );
+
+  const orderedPrograms = useMemo(() => {
+    if (listView.sort === 'deadline') return visiblePrograms;
+    return orderStably(visiblePrograms, (a, b) =>
+      listView.sort === 'stage'
+        ? compareStageOrder(stageOf(a.id), stageOf(b.id))
+        : compareNewestSavedFirst(savedAt[a.id], savedAt[b.id]),
+    );
+  }, [visiblePrograms, stageOf, savedAt, listView.sort]);
+
+  const stageCounts = useMemo(
+    () =>
+      countPlansByStage(
+        visiblePrograms.map((program) => stageOf(program.id)),
+        'program',
+      ),
+    [visiblePrograms, stageOf],
+  );
+
+  const shownPrograms = useMemo(() => {
+    const kept = keptInView.filter === listView.stageFilter ? keptInView.ids : [];
+    return orderedPrograms.filter(
+      (program) =>
+        planMatchesStageFilter(stageOf(program.id), listView.stageFilter, 'program') ||
+        kept.includes(program.id),
+    );
+  }, [orderedPrograms, stageOf, listView.stageFilter, keptInView]);
+
+  const changeListView = (view: PlanListView) => onListViewChange?.(view);
+
   const upcomingDeadlineEventsByProgramId = useMemo(() => {
     const events = upcomingProgramDeadlineEvents(visiblePrograms);
     return new Map(events.map((event) => [event.programId, event]));
@@ -356,6 +419,11 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
     async (programId: string, nextStage: ResearchPlanStage) => {
       const previousStage = stages[programId] || DEFAULT_RESEARCH_PLAN_STAGE;
       if (previousStage === nextStage) return;
+      setKeptInView((current) =>
+        current.filter === listView.stageFilter
+          ? { filter: current.filter, ids: [...current.ids, programId] }
+          : { filter: listView.stageFilter, ids: [programId] },
+      );
       setStages((current) => ({ ...current, [programId]: nextStage }));
       setStageStatuses((statuses) => ({ ...statuses, [programId]: 'saving' }));
       try {
@@ -385,7 +453,7 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
         setStageStatuses((statuses) => ({ ...statuses, [programId]: 'error' }));
       }
     },
-    [stages, writePlan, takeServerStage],
+    [stages, writePlan, takeServerStage, listView.stageFilter],
   );
 
   const openModal = (program: Fellowship) => {
@@ -442,103 +510,126 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
           onRetry={retryLoad}
         />
       ) : visiblePrograms.length > 0 ? (
-        <ul>
-          {visiblePrograms.map((program) => {
-            const status = noteSaveStatuses[program.id];
-            const isEditing = editingId === program.id;
-            const note = notes[program.id] || '';
-            const stage = stages[program.id] || DEFAULT_RESEARCH_PLAN_STAGE;
-            return (
-              <li key={program.id} className="mb-2">
-                <BrowseListItem
-                  item={fellowshipToBrowsable(program)}
-                  isFavorite={watchedIds.includes(program.id)}
-                  onToggleFavorite={(event) => {
-                    event.stopPropagation();
-                    toggleWatch(program);
-                  }}
-                  onOpenModal={() => openModal(program)}
-                  hideDeadlineUrgency={programDeadlineIsSettled(stage)}
-                  footer={
-                    <>
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
-                          <span className="text-xs font-medium text-muted">Application stage</span>
-                          <ResearchPlanStageControl
-                            stage={stage}
-                            onChange={(nextStage) => void changeStage(program.id, nextStage)}
-                            controlLabel={`Application stage for ${program.title}`}
-                            status={stageStatuses[program.id]}
-                            surface="program"
-                          />
-                        </div>
-                        <div className="flex flex-row gap-1">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setEditingId((current) =>
-                                current === program.id ? null : program.id,
-                              )
-                            }
-                            aria-expanded={isEditing}
-                            aria-label={
-                              isEditing
-                                ? `Hide note for ${program.title}`
-                                : note
-                                  ? `Edit note for ${program.title}`
-                                  : `Add note for ${program.title}`
-                            }
-                            title={isEditing ? 'Hide note' : note ? 'Edit note' : 'Add note'}
-                            className={`inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-control border p-2 transition-colors yr-focus-ring ${
-                              note
-                                ? 'border-gold bg-gold-soft text-ink-soft hover:bg-[var(--yr-parchment)]'
-                                : 'border-[var(--yr-line)] text-muted hover:border-[var(--yr-line-strong)] hover:text-ink-soft'
-                            }`}
-                          >
-                            <EditIcon size={16} />
-                          </button>
-                          {upcomingDeadlineEventsByProgramId.has(program.id) && (
-                            <button
-                              type="button"
-                              onClick={() => addProgramDeadlineToCalendar(program)}
-                              aria-label={`Add ${program.title} deadline to calendar`}
-                              title="Add deadline to calendar"
-                              className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-control border border-[var(--yr-line)] p-2 text-muted transition-colors hover:border-[var(--yr-line-strong)] hover:text-ink-soft yr-focus-ring"
-                            >
-                              <CalendarIcon size={16} />
-                            </button>
+        <>
+          <PlanListControls
+            surface="program"
+            idPrefix={PLAN_LIST_ID}
+            view={listView}
+            counts={stageCounts}
+            shownCount={shownPrograms.length}
+            pluralNoun={PLAN_LIST_NOUN}
+            onChange={changeListView}
+          />
+          {shownPrograms.length === 0 ? (
+            <PlanFilterEmptyState
+              idPrefix={PLAN_LIST_ID}
+              surface="program"
+              stageFilter={listView.stageFilter}
+              pluralNoun={PLAN_LIST_NOUN}
+              onShowAll={() => changeListView({ ...listView, stageFilter: 'all' })}
+            />
+          ) : (
+            <ul>
+              {shownPrograms.map((program) => {
+                const status = noteSaveStatuses[program.id];
+                const isEditing = editingId === program.id;
+                const note = notes[program.id] || '';
+                const stage = stages[program.id] || DEFAULT_RESEARCH_PLAN_STAGE;
+                return (
+                  <li key={program.id} className="mb-2">
+                    <BrowseListItem
+                      item={fellowshipToBrowsable(program)}
+                      isFavorite={watchedIds.includes(program.id)}
+                      onToggleFavorite={(event) => {
+                        event.stopPropagation();
+                        toggleWatch(program);
+                      }}
+                      onOpenModal={() => openModal(program)}
+                      hideDeadlineUrgency={programDeadlineIsSettled(stage)}
+                      footer={
+                        <>
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+                              <span className="text-xs font-medium text-muted">
+                                Application stage
+                              </span>
+                              <ResearchPlanStageControl
+                                stage={stage}
+                                onChange={(nextStage) => void changeStage(program.id, nextStage)}
+                                controlLabel={`Application stage for ${program.title}`}
+                                status={stageStatuses[program.id]}
+                                surface="program"
+                              />
+                            </div>
+                            <div className="flex flex-row gap-1">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setEditingId((current) =>
+                                    current === program.id ? null : program.id,
+                                  )
+                                }
+                                aria-expanded={isEditing}
+                                aria-label={
+                                  isEditing
+                                    ? `Hide note for ${program.title}`
+                                    : note
+                                      ? `Edit note for ${program.title}`
+                                      : `Add note for ${program.title}`
+                                }
+                                title={isEditing ? 'Hide note' : note ? 'Edit note' : 'Add note'}
+                                className={`inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-control border p-2 transition-colors yr-focus-ring ${
+                                  note
+                                    ? 'border-gold bg-gold-soft text-ink-soft hover:bg-[var(--yr-parchment)]'
+                                    : 'border-[var(--yr-line)] text-muted hover:border-[var(--yr-line-strong)] hover:text-ink-soft'
+                                }`}
+                              >
+                                <EditIcon size={16} />
+                              </button>
+                              {upcomingDeadlineEventsByProgramId.has(program.id) && (
+                                <button
+                                  type="button"
+                                  onClick={() => addProgramDeadlineToCalendar(program)}
+                                  aria-label={`Add ${program.title} deadline to calendar`}
+                                  title="Add deadline to calendar"
+                                  className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-control border border-[var(--yr-line)] p-2 text-muted transition-colors hover:border-[var(--yr-line-strong)] hover:text-ink-soft yr-focus-ring"
+                                >
+                                  <CalendarIcon size={16} />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          {isEditing && (
+                            <div className="mt-2">
+                              <textarea
+                                aria-label={`Note for ${program.title}`}
+                                value={note}
+                                onChange={(event) => {
+                                  const value = event.target.value;
+                                  setNotes((current) => ({ ...current, [program.id]: value }));
+                                  scheduleNoteSave(program.id, value);
+                                }}
+                                onBlur={() => void saveNote(program.id, note)}
+                                maxLength={MAX_PROGRAM_NOTE_LENGTH}
+                                placeholder="Add a private note about this program…"
+                                rows={2}
+                                className="w-full rounded-control border border-[var(--yr-line-control)] px-3 py-2 text-base yr-focus-ring focus:border-[var(--yr-blue)]"
+                              />
+                              <PlanNoteSaveStatusText status={status} />
+                            </div>
                           )}
-                        </div>
-                      </div>
-                      {isEditing && (
-                        <div className="mt-2">
-                          <textarea
-                            aria-label={`Note for ${program.title}`}
-                            value={note}
-                            onChange={(event) => {
-                              const value = event.target.value;
-                              setNotes((current) => ({ ...current, [program.id]: value }));
-                              scheduleNoteSave(program.id, value);
-                            }}
-                            onBlur={() => void saveNote(program.id, note)}
-                            maxLength={MAX_PROGRAM_NOTE_LENGTH}
-                            placeholder="Add a private note about this program…"
-                            rows={2}
-                            className="w-full rounded-control border border-[var(--yr-line-control)] px-3 py-2 text-base yr-focus-ring focus:border-[var(--yr-blue)]"
-                          />
-                          <PlanNoteSaveStatusText status={status} />
-                        </div>
-                      )}
-                      {!isEditing && note && (
-                        <p className="mt-2 truncate text-xs italic text-muted">Note: {note}</p>
-                      )}
-                    </>
-                  }
-                />
-              </li>
-            );
-          })}
-        </ul>
+                          {!isEditing && note && (
+                            <p className="mt-2 truncate text-xs italic text-muted">Note: {note}</p>
+                          )}
+                        </>
+                      }
+                    />
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </>
       ) : (
         <div className="rounded-card border border-dashed border-[var(--yr-line-strong)] bg-[var(--yr-panel-muted)] p-5 text-center">
           <h3 className="text-base font-semibold text-ink">No watched programs yet</h3>

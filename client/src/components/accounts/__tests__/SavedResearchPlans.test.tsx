@@ -699,12 +699,12 @@ describe('SavedResearchPlans', () => {
     await screen.findByText('No saved research plans yet');
   });
 
-  it('orders closed homes after active ones so the pipeline reads at a glance', async () => {
+  it('orders closed homes after active ones when sorted by stage', async () => {
     withStagedPlans({ id1: { stage: 'CLOSED' }, id2: { stage: 'EXPLORING' } });
 
     render(
       <MemoryRouter>
-        <SavedResearchPlans />
+        <SavedResearchPlans listView={{ stageFilter: 'all', sort: 'stage' }} />
       </MemoryRouter>,
     );
 

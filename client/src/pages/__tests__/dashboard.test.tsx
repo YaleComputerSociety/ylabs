@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import UserContext from '../../contexts/UserContext';
 import Dashboard from '../dashboard';
+import type { PlanListView } from '../../utils/dashboardPlanListView';
 
 type ProgramSummary = {
   count: number | null;
@@ -20,13 +21,30 @@ let programSummary: ProgramSummary = { count: 1 };
 vi.mock('../../components/accounts/SavedResearchPlans', () => {
   const MockSavedResearchPlans = ({
     onCountChange,
+    listView,
+    onListViewChange,
   }: {
     onCountChange?: (count: number | null) => void;
+    listView?: PlanListView;
+    onListViewChange?: (view: PlanListView) => void;
   }) => {
     useEffect(() => {
       onCountChange?.(savedResearchCount);
     }, [onCountChange]);
-    return <section>Saved research plans</section>;
+    return (
+      <section>
+        Saved research plans
+        <output data-testid="research-list-view">
+          {listView ? `${listView.stageFilter}|${listView.sort}` : ''}
+        </output>
+        <button
+          type="button"
+          onClick={() => onListViewChange?.({ stageFilter: 'waiting', sort: 'stage' })}
+        >
+          Show research waiting by stage
+        </button>
+      </section>
+    );
   };
 
   return { default: MockSavedResearchPlans };
@@ -35,13 +53,22 @@ vi.mock('../../components/accounts/SavedResearchPlans', () => {
 vi.mock('../../components/accounts/ProgramWatch', () => {
   const MockProgramWatch = ({
     onSummaryChange,
+    listView,
   }: {
     onSummaryChange?: (summary: ProgramSummary) => void;
+    listView?: PlanListView;
   }) => {
     useEffect(() => {
       onSummaryChange?.(programSummary);
     }, [onSummaryChange]);
-    return <section>Watched programs list</section>;
+    return (
+      <section>
+        Watched programs list
+        <output data-testid="program-list-view">
+          {listView ? `${listView.stageFilter}|${listView.sort}` : ''}
+        </output>
+      </section>
+    );
   };
 
   return { default: MockProgramWatch };
@@ -281,5 +308,71 @@ describe('Dashboard page', () => {
     ).toBeNull();
     expect(screen.queryByRole('link', { name: 'View public profile' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Faculty Profile Preview' })).toBeNull();
+  });
+
+  describe('plan list stage filter and sort in the URL', () => {
+    const LocationProbe = () => <output data-testid="location">{useLocation().search}</output>;
+    const renderAt = (entry: string) =>
+      render(
+        <MemoryRouter initialEntries={[entry]}>
+          <UserContext.Provider
+            value={{
+              isLoading: false,
+              isAuthenticated: true,
+              user: { netId: 'user1', userType: 'student', userConfirmed: true } as any,
+              checkContext: vi.fn(),
+            }}
+          >
+            <Dashboard />
+            <LocationProbe />
+          </UserContext.Provider>
+        </MemoryRouter>,
+      );
+
+    it('defaults both lists to every stage, most recently saved first', () => {
+      renderAt('/dashboard');
+
+      expect(screen.getByTestId('research-list-view').textContent).toBe('all|recent');
+      expect(screen.getByTestId('program-list-view').textContent).toBe('all|recent');
+    });
+
+    it('reads ?stage= and ?sort= for the active tab only', () => {
+      renderAt('/dashboard?tab=programs&stage=waiting&sort=deadline');
+
+      expect(screen.getByTestId('program-list-view').textContent).toBe('waiting|deadline');
+      expect(screen.getByTestId('research-list-view').textContent).toBe('all|recent');
+    });
+
+    it('falls back to the default for a value the tab does not offer', () => {
+      renderAt('/dashboard?stage=awarded&sort=deadline');
+
+      expect(screen.getByTestId('research-list-view').textContent).toBe('all|recent');
+    });
+
+    it('accepts a stage the tab offers', () => {
+      renderAt('/dashboard?tab=programs&stage=not_selected');
+
+      expect(screen.getByTestId('program-list-view').textContent).toBe('NOT_SELECTED|recent');
+    });
+
+    it('writes a change to the URL and clears it on a tab switch', () => {
+      renderAt('/dashboard');
+
+      fireEvent.click(screen.getByRole('button', { name: 'Show research waiting by stage' }));
+      expect(screen.getByTestId('location').textContent).toBe('?stage=waiting&sort=stage');
+      expect(screen.getByTestId('research-list-view').textContent).toBe('waiting|stage');
+
+      fireEvent.click(screen.getByRole('tab', { name: 'Watched programs (1)' }));
+      expect(screen.getByTestId('location').textContent).toBe('?tab=programs');
+      expect(screen.getByTestId('program-list-view').textContent).toBe('all|recent');
+    });
+
+    it('keeps the filter when the active tab is chosen again', () => {
+      renderAt('/dashboard?stage=contacted');
+
+      fireEvent.click(screen.getByRole('tab', { name: 'Saved research (2)' }));
+      expect(screen.getByTestId('location').textContent).toBe('?stage=contacted');
+      expect(screen.getByTestId('research-list-view').textContent).toBe('CONTACTED|recent');
+    });
   });
 });

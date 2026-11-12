@@ -35,10 +35,20 @@ import {
   DEFAULT_RESEARCH_PLAN_STAGE,
   isActiveResearchPlanStage,
   normalizeResearchPlanStage,
-  researchPlanStageOrder,
   type ResearchPlanStage,
 } from '../../utils/researchPlanStages';
 import useLoadEffect from '../../hooks/useLoadEffect';
+import PlanListControls, { PlanFilterEmptyState } from './PlanListControls';
+import {
+  DEFAULT_PLAN_LIST_VIEW,
+  compareNewestSavedFirst,
+  compareStageOrder,
+  countPlansByStage,
+  orderStably,
+  planMatchesStageFilter,
+  type PlanListView,
+  type PlanStageFilter,
+} from '../../utils/dashboardPlanListView';
 import usePlanDetailSync, {
   isPlanVersionConflict,
   type ServedPlanDetail,
@@ -47,7 +57,12 @@ import usePlanDetailSync, {
 
 interface SavedResearchPlansProps {
   onCountChange?: (count: number | null) => void;
+  listView?: PlanListView;
+  onListViewChange?: (view: PlanListView) => void;
 }
+
+const PLAN_LIST_ID = 'saved-research-plans';
+const PLAN_LIST_NOUN = 'saved research plans';
 
 interface SavedResearchEntity {
   _id: string;
@@ -115,7 +130,11 @@ const ACCESS_BADGE_CLASS: Record<UndergraduateAccessStatus['tone'], string> = {
   evidence: 'border-blue-200 bg-[var(--yr-blue-soft)] text-[var(--yr-blue)]',
 };
 
-const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
+const SavedResearchPlans = ({
+  onCountChange,
+  listView = DEFAULT_PLAN_LIST_VIEW,
+  onListViewChange,
+}: SavedResearchPlansProps) => {
   const {
     favIds: savedSlugs,
     loaded: savedSlugsLoaded,
@@ -127,6 +146,11 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
   const [unavailable, setUnavailable] = useState<UnavailableSavedResearchEntity[]>([]);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [stages, setStages] = useState<Record<string, ResearchPlanStage>>({});
+  const [savedAt, setSavedAt] = useState<Record<string, string | undefined>>({});
+  const [keptInView, setKeptInView] = useState<{ filter: PlanStageFilter; ids: string[] }>({
+    filter: DEFAULT_PLAN_LIST_VIEW.stageFilter,
+    ids: [],
+  });
   const [isLoading, setIsLoading] = useState(true);
   const [plansLoadFailed, setPlansLoadFailed] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -233,7 +257,9 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
         >;
         const loadedNotes: Record<string, string> = {};
         const loadedStages: Record<string, ResearchPlanStage> = {};
+        const loadedSavedAt: Record<string, string | undefined> = {};
         for (const entity of loadedEntities) {
+          loadedSavedAt[entity._id] = plans[entity._id]?.createdAt;
           if (merging && loadedIdsRef.current.has(entity._id)) continue;
           loadedNotes[entity._id] = plans[entity._id]?.privateNotes || '';
           loadedStages[entity._id] = normalizeResearchPlanStage(plans[entity._id]?.stage);
@@ -248,6 +274,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
         setUnavailable(loadedUnavailable);
         setNotes((current) => (merging ? { ...loadedNotes, ...current } : loadedNotes));
         setStages((current) => (merging ? { ...loadedStages, ...current } : loadedStages));
+        setSavedAt(loadedSavedAt);
         return true;
       } catch {
         if (!ticket.isCurrent() || merging) return false;
@@ -256,6 +283,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
         setUnavailable([]);
         setNotes({});
         setStages({});
+        setSavedAt({});
         setPlansLoadFailed(true);
         return false;
       } finally {
@@ -296,6 +324,11 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
     async (entityId: string, nextStage: ResearchPlanStage) => {
       const previousStage = stages[entityId] || DEFAULT_RESEARCH_PLAN_STAGE;
       if (previousStage === nextStage) return;
+      setKeptInView((current) =>
+        current.filter === listView.stageFilter
+          ? { filter: current.filter, ids: [...current.ids, entityId] }
+          : { filter: listView.stageFilter, ids: [entityId] },
+      );
       setStages((current) => ({ ...current, [entityId]: nextStage }));
       setStageStatuses((statuses) => ({ ...statuses, [entityId]: 'saving' }));
       try {
@@ -325,7 +358,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
         setStageStatuses((statuses) => ({ ...statuses, [entityId]: 'error' }));
       }
     },
-    [stages, writePlan, takeServerStage],
+    [stages, writePlan, takeServerStage, listView.stageFilter],
   );
 
   /**
@@ -404,26 +437,44 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
 
   const orderedEntities = useMemo(
     () =>
-      visibleEntities
-        .map((entity, index) => ({ entity, index }))
-        .sort((a, b) => {
-          const stageDelta =
-            researchPlanStageOrder(stageOf(a.entity._id)) -
-            researchPlanStageOrder(stageOf(b.entity._id));
-          if (stageDelta !== 0) return stageDelta;
-          const accessDelta =
-            undergraduateAccessSortRank(accessStatuses.get(a.entity._id) || null) -
-            undergraduateAccessSortRank(accessStatuses.get(b.entity._id) || null);
-          if (accessDelta !== 0) return accessDelta;
-          return a.index - b.index;
-        })
-        .map(({ entity }) => entity),
-    [visibleEntities, stageOf, accessStatuses],
+      orderStably(visibleEntities, (a, b) =>
+        listView.sort === 'stage'
+          ? compareStageOrder(stageOf(a._id), stageOf(b._id)) ||
+            undergraduateAccessSortRank(accessStatuses.get(a._id) || null) -
+              undergraduateAccessSortRank(accessStatuses.get(b._id) || null)
+          : compareNewestSavedFirst(savedAt[a._id], savedAt[b._id]),
+      ),
+    [visibleEntities, stageOf, accessStatuses, savedAt, listView.sort],
   );
+
+  const stageCounts = useMemo(
+    () =>
+      countPlansByStage(
+        visibleEntities.map((entity) => stageOf(entity._id)),
+        'research',
+      ),
+    [visibleEntities, stageOf],
+  );
+
+  const shownEntities = useMemo(() => {
+    const kept = keptInView.filter === listView.stageFilter ? keptInView.ids : [];
+    return orderedEntities.filter(
+      (entity) =>
+        planMatchesStageFilter(stageOf(entity._id), listView.stageFilter, 'research') ||
+        kept.includes(entity._id),
+    );
+  }, [orderedEntities, stageOf, listView.stageFilter, keptInView]);
+
+  const changeListView = (view: PlanListView) => onListViewChange?.(view);
 
   const selectableIds = useMemo(
     () => new Set(visibleEntities.map((entity) => entity._id)),
     [visibleEntities],
+  );
+
+  const shownIds = useMemo(
+    () => new Set(shownEntities.map((entity) => entity._id)),
+    [shownEntities],
   );
 
   const selectedEntities = useMemo(
@@ -438,6 +489,7 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
   const toggleCompareSelection = (entityId: string) => {
     setSelectedForCompare((current) => {
       if (current.includes(entityId)) return current.filter((id) => id !== entityId);
+      if (!shownIds.has(entityId)) return current;
       const visibleSelectedCount = current.filter((id) => selectableIds.has(id)).length;
       if (visibleSelectedCount >= MAX_COMPARE_ENTITIES) return current;
       return [...current, entityId];
@@ -559,9 +611,29 @@ const SavedResearchPlans = ({ onCountChange }: SavedResearchPlansProps) => {
         </div>
       )}
 
-      {visibleEntities.length > 0 ? (
+      {visibleEntities.length > 0 && (
+        <PlanListControls
+          surface="research"
+          idPrefix={PLAN_LIST_ID}
+          view={listView}
+          counts={stageCounts}
+          shownCount={shownEntities.length}
+          pluralNoun={PLAN_LIST_NOUN}
+          onChange={changeListView}
+        />
+      )}
+
+      {visibleEntities.length > 0 && shownEntities.length === 0 ? (
+        <PlanFilterEmptyState
+          idPrefix={PLAN_LIST_ID}
+          surface="research"
+          stageFilter={listView.stageFilter}
+          pluralNoun={PLAN_LIST_NOUN}
+          onShowAll={() => changeListView({ ...listView, stageFilter: 'all' })}
+        />
+      ) : visibleEntities.length > 0 ? (
         <ul>
-          {orderedEntities.map((entity) => {
+          {shownEntities.map((entity) => {
             const status = noteSaveStatuses[entity._id];
             const accessStatus = accessStatuses.get(entity._id) || null;
             const isEditing = editingId === entity._id;
