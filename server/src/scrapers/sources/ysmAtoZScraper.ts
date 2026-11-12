@@ -28,6 +28,15 @@ import {
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { getCached, setCached } from '../snapshotCache';
 import {
+  memberIdentityEvidenceFor,
+  readRosterMemberIdentityEvidence,
+  type MemberPageFetcher,
+} from '../utils/rosterMemberProfileRead';
+import {
+  ROSTER_MEMBER_IDENTITY_EVIDENCE_FIELD,
+  type RosterMemberIdentityEvidence,
+} from '../utils/rosterMemberIdentityEvidence';
+import {
   labSlugFromMicrositeUrl,
   YSM_LAB_INDEX_HEALTH_ENTITY_KEY,
   YSM_LAB_INDEX_HEALTH_FIELD,
@@ -572,6 +581,7 @@ export function labResearchFacultyToObservations(
   lab: RawLab,
   profile: ResearchFacultyProfile | null,
   sourceUrl: string,
+  identityEvidence?: RosterMemberIdentityEvidence,
 ): ObservationInput[] {
   if (!profile) return [];
   const nameHint = nameHintFromProfileName(profile.name);
@@ -595,6 +605,13 @@ export function labResearchFacultyToObservations(
     { ...base, field: 'profileUrl', value: profile.profileUrl },
   ];
   if (profile.title) observations.push({ ...base, field: 'title', value: profile.title });
+  if (identityEvidence) {
+    observations.push({
+      ...base,
+      field: ROSTER_MEMBER_IDENTITY_EVIDENCE_FIELD,
+      value: identityEvidence,
+    });
+  }
   const userObservations = profileContactWidgetUserObservations(profile, nameHint, sourceUrl);
   observations.push(...userObservations.observations);
   if (userObservations.entityKey) {
@@ -698,7 +715,23 @@ export class YsmAtoZScraper implements IScraper {
   readonly name = 'ysm-atoz-index';
   readonly displayName = 'YSM A-to-Z Lab Websites';
 
-  constructor(private readonly probePage?: LanePageProbe) {}
+  constructor(
+    private readonly probePage?: LanePageProbe,
+    private readonly memberPageFetcher: MemberPageFetcher | null = null,
+  ) {}
+
+  private async memberIdentityEvidence(
+    profile: ResearchFacultyProfile | null,
+    ctx: ScraperContext,
+  ): Promise<RosterMemberIdentityEvidence | undefined> {
+    if (!profile || !this.memberPageFetcher) return undefined;
+    const evidence = await readRosterMemberIdentityEvidence([profile], {
+      sourceName: this.name,
+      useCache: ctx.options.useCache,
+      fetchPage: this.memberPageFetcher,
+    });
+    return memberIdentityEvidenceFor(evidence, profile);
+  }
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
     const offsetOption = ctx.options.offset;
@@ -776,7 +809,12 @@ export class YsmAtoZScraper implements IScraper {
           ? extractSoleResearchFacultyProfile(researchFacultyHtml, researchFacultyUrl)
           : null;
         observations.push(
-          ...labResearchFacultyToObservations(lab, researchFacultyProfile, researchFacultyUrl),
+          ...labResearchFacultyToObservations(
+            lab,
+            researchFacultyProfile,
+            researchFacultyUrl,
+            await this.memberIdentityEvidence(researchFacultyProfile, ctx),
+          ),
         );
         piUserId = await findPiUserId(nameHintFromProfileName(researchFacultyProfile?.name || ''), {
           allowUnknownExactName: true,
@@ -786,7 +824,14 @@ export class YsmAtoZScraper implements IScraper {
       }
       if (!piUserId && homepageHtml) {
         const contactWidgetProfile = extractProfileContactWidgetProfile(homepageHtml, lab.url);
-        observations.push(...labResearchFacultyToObservations(lab, contactWidgetProfile, lab.url));
+        observations.push(
+          ...labResearchFacultyToObservations(
+            lab,
+            contactWidgetProfile,
+            lab.url,
+            await this.memberIdentityEvidence(contactWidgetProfile, ctx),
+          ),
+        );
         piUserId = await findPiUserId(nameHintFromProfileName(contactWidgetProfile?.name || ''), {
           allowUnknownExactName: true,
         });

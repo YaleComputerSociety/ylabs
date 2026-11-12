@@ -582,6 +582,35 @@ describe('labResearchFacultyToObservations', () => {
     slug: 'ysm-garg',
   };
 
+  it('emits the member page identity evidence on the listing when the lane read it (#5927)', () => {
+    const evidence = {
+      pageUrl: 'https://medicine.yale.edu/profile/skylar-lab/',
+      linkedProfileUrls: [],
+      emails: ['skylar.lab@yale.edu'],
+      netids: [],
+    };
+    const profile = {
+      name: 'Skylar Lab',
+      profileUrl: 'https://medicine.yale.edu/profile/skylar-lab/',
+      title: '',
+    };
+
+    const withEvidence = labResearchFacultyToObservations(lab, profile, lab.url, evidence);
+    const withoutEvidence = labResearchFacultyToObservations(lab, profile, lab.url);
+
+    expect(withEvidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          entityType: 'researchGroupMember',
+          entityKey: 'ysm-garg:research-faculty:skylar-lab',
+          field: 'profileIdentityEvidence',
+          value: evidence,
+        }),
+      ]),
+    );
+    expect(withoutEvidence.some((obs) => obs.field === 'profileIdentityEvidence')).toBe(false);
+  });
+
   it('emits official profile user identity and PI key observations for a person-specific widget email', () => {
     const observations = labResearchFacultyToObservations(
       lab,

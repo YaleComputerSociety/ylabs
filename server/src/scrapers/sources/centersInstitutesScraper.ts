@@ -47,14 +47,18 @@ import {
   organizationTextNamesUnit,
 } from '../utils/organizationUnitNaming';
 import {
+  fetchMemberProfilePage,
+  memberIdentityEvidenceCacheKey,
+  type MemberPageFetcher,
+} from '../utils/rosterMemberProfileRead';
+import {
   extractRosterMemberIdentityEvidence,
   isYaleHostedUrl,
-  ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION,
   ROSTER_MEMBER_IDENTITY_EVIDENCE_FIELD,
   type RosterMemberIdentityEvidence,
 } from '../utils/rosterMemberIdentityEvidence';
 import { mapWithConcurrency } from '../utils/mapWithConcurrency';
-import { fetchPageWithPolicy, retryOnRetryableStatus } from '../utils/httpFetch';
+import { retryOnRetryableStatus } from '../utils/httpFetch';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
@@ -99,7 +103,6 @@ const MAX_PAGES_PER_CENTER = 30;
 const CONSECUTIVE_REPEATED_PAGES_TO_STOP = 2;
 const MEMBER_PROFILE_FETCH_CONCURRENCY = 4;
 const MEMBER_PROFILE_TITLE_CACHE_PREFIX = 'member-profile-title:v1:';
-const MEMBER_IDENTITY_EVIDENCE_CACHE_PREFIX = `member-identity-evidence:v${ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION}:`;
 
 export type CenterKind = 'center' | 'institute' | 'program' | 'initiative' | 'core_facility';
 export type MemberRole = 'director' | 'co-director' | 'core-faculty' | 'affiliated';
@@ -1682,13 +1685,7 @@ function pageUrlForIndex(baseUrl: string, pageIndex: number): string {
   }
 }
 
-export type MemberPageFetcher = (url: string) => Promise<string>;
-
-// medicine.yale.edu answers a burst of member pages with 403, so these go through the shared
-// per-host limiter and its 403/429/5xx backoff rather than the roster fetch.
-async function fetchMemberProfilePage(url: string): Promise<string> {
-  return (await fetchPageWithPolicy(url, { timeoutMs: FETCH_TIMEOUT_MS })).html;
-}
+export type { MemberPageFetcher };
 
 async function fetchHtml(url: string, useCache: boolean, sourceName: string): Promise<string> {
   const safeUrl = await assertPublicHttpUrl(url);
@@ -2434,7 +2431,7 @@ export class CentersInstitutesScraper implements IScraper {
     ctx: ScraperContext,
   ): Promise<MemberProfileRead | undefined> {
     const profileUrl = member.profileUrl || '';
-    const evidenceKey = `${MEMBER_IDENTITY_EVIDENCE_CACHE_PREFIX}${profileUrl}#${member.name}`;
+    const evidenceKey = memberIdentityEvidenceCacheKey(profileUrl, member.name);
     const titleKey = `${MEMBER_PROFILE_TITLE_CACHE_PREFIX}${profileUrl}`;
     if (ctx.options.useCache) {
       const evidence = await getCached<RosterMemberIdentityEvidence>(this.name, evidenceKey);
