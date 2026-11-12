@@ -47,6 +47,7 @@ import { DepartmentEmeritusListingScraper } from './sources/departmentEmeritusLi
 import { CenterMemberProfileResearchScraper } from './sources/centerMemberProfileResearchScraper';
 import { CenterProfileResearchRowsScraper } from './sources/centerProfileResearchRowsScraper';
 import { ResearchPageTextScraper } from './sources/researchPageTextScraper';
+import { fetchMemberProfilePage } from './utils/rosterMemberProfileRead';
 
 export function buildOrchestrator(): ScraperOrchestrator {
   const o = new ScraperOrchestrator();
@@ -55,7 +56,7 @@ export function buildOrchestrator(): ScraperOrchestrator {
   // the CLI, cron, or a sweep. Historical source rows, observations, stored collections,
   // and the guarded materializer remain for rollback; verified Google Scholar and ORCID
   // profile identity links are kept on Researcher. See issues #207 and #260.
-  o.register(new YsmAtoZScraper());
+  o.register(new YsmAtoZScraper(undefined, fetchMemberProfilePage));
   o.register(new YsmMeshKeywordScraper());
   o.register(new YsmFacultyDirectoryScraper());
   o.register(new YseCentersScraper());
@@ -89,7 +90,12 @@ export function buildOrchestrator(): ScraperOrchestrator {
   o.register(new CenterAffiliationRosterScraper());
   o.register(new OfficialProfilePiBackfillScraper());
   o.register(
-    new OfficialResearchHomeRosterScraper(undefined, undefined, createUndergradRosterDeriver()),
+    new OfficialResearchHomeRosterScraper(
+      undefined,
+      undefined,
+      createUndergradRosterDeriver(),
+      fetchMemberProfilePage,
+    ),
   );
   o.register(new ResearchAreaSourceExtractor());
   o.register(new LabSiteLeadVerificationScraper());

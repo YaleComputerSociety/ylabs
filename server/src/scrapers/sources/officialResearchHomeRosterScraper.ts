@@ -16,6 +16,15 @@ import { extractElementTextWithLineBreaks } from '../utils/htmlText';
 import { createHash } from 'crypto';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { getCached, setCached } from '../snapshotCache';
+import {
+  memberIdentityEvidenceFor,
+  readRosterMemberIdentityEvidence,
+  type MemberPageFetcher,
+} from '../utils/rosterMemberProfileRead';
+import {
+  ROSTER_MEMBER_IDENTITY_EVIDENCE_FIELD,
+  type RosterMemberIdentityEvidence,
+} from '../utils/rosterMemberIdentityEvidence';
 import type {
   OfficialRosterConfigOrigin,
   OfficialRosterUndergraduateStatus,
@@ -2348,6 +2357,7 @@ export function officialRosterObservations(
   config: OfficialRosterConfig,
   roster: ExtractedOfficialRoster,
   configOrigin: OfficialRosterConfigOrigin = 'static',
+  memberIdentityEvidence: ReadonlyMap<string, RosterMemberIdentityEvidence> = new Map(),
 ): ObservationInput[] {
   const statusValue = {
     state: roster.state,
@@ -2410,6 +2420,14 @@ export function officialRosterObservations(
       },
       { ...base, field: 'sourceName', value: OFFICIAL_RESEARCH_HOME_ROSTER_SOURCE },
     );
+    const identityEvidence = memberIdentityEvidenceFor(memberIdentityEvidence, member);
+    if (identityEvidence) {
+      observations.push({
+        ...base,
+        field: ROSTER_MEMBER_IDENTITY_EVIDENCE_FIELD,
+        value: identityEvidence,
+      });
+    }
   }
   return observations;
 }
@@ -2572,6 +2590,7 @@ export class OfficialResearchHomeRosterScraper implements IScraper {
       useCache: boolean,
     ) => Promise<string> = fetchRosterPage,
     private readonly deriveRosters: OfficialRosterDeriver | null = null,
+    private readonly memberPageFetcher: MemberPageFetcher | null = null,
   ) {}
 
   async run(context: ScraperContext): Promise<ScraperResult> {
@@ -2602,7 +2621,19 @@ export class OfficialResearchHomeRosterScraper implements IScraper {
             context.log(`${config.researchEntityKey}: optional alumni page fetch failed`);
           }
         }
-        const observations = officialRosterObservations(config, roster);
+        const memberIdentityEvidence = this.memberPageFetcher
+          ? await readRosterMemberIdentityEvidence(roster.members, {
+              sourceName: this.name,
+              useCache: context.options.useCache,
+              fetchPage: this.memberPageFetcher,
+            })
+          : new Map<string, RosterMemberIdentityEvidence>();
+        const observations = officialRosterObservations(
+          config,
+          roster,
+          'static',
+          memberIdentityEvidence,
+        );
         await context.emit(observations);
         observationCount += observations.length;
         entitiesObserved += 1 + roster.members.length;
