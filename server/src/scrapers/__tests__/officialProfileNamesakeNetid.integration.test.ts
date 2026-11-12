@@ -151,6 +151,7 @@ describe('the official profile backfill never stamps a namesake netid (#5370)', 
       _id: String(owner._id),
       netid: OWNER_NETID,
       email: ADDRESS,
+      displayName: 'Rowan Fixture',
     });
   });
 

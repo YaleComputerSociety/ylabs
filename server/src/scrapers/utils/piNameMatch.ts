@@ -125,7 +125,24 @@ function givenTokens(name: string | undefined | null): string[] {
     .filter(Boolean);
 }
 
+const NICKNAME_ASIDE = /\([^)]*\)|"[^"]*"|\u201c[^\u201d]*\u201d/g;
+
+function statedMiddleInitial(givenName: string): string {
+  return givenTokens(String(givenName || '').replace(NICKNAME_ASIDE, ' '))[1]?.[0] ?? '';
+}
+
+export function statesMiddleInitial(givenName: string): boolean {
+  return Boolean(statedMiddleInitial(givenName));
+}
+
+export function statedMiddleInitialsConflict(a: string, b: string): boolean {
+  const left = statedMiddleInitial(a);
+  const right = statedMiddleInitial(b);
+  return Boolean(left && right && left !== right);
+}
+
 export function givenNamesEquivalent(a: string, b: string): boolean {
+  if (statedMiddleInitialsConflict(a, b)) return false;
   const fa = givenTokens(a)[0] || '';
   const fb = givenTokens(b)[0] || '';
   if (!fa || !fb) return false;

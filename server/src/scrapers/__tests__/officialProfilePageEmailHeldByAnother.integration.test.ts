@@ -12,7 +12,7 @@ import type { ObservationInput } from '../types';
 
 const PAGE = 'https://medicine.yale.edu/profile/blair-synthetic/';
 const PAGE_EMAIL = 'blair.synthetic5606@yale.edu';
-const KEY_NETID = 'zzk5606';
+const KEY_NETID = 'bs5606k';
 
 const pageHtml = `<html><head><title>Blair Synthetic | Yale School of Medicine</title></head><body>
 <h1>Blair Synthetic, PhD</h1>

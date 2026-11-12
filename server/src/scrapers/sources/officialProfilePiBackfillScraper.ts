@@ -20,7 +20,11 @@ import { normalizeOrcid } from '../../utils/orcid';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { researcherEmail, researcherNetid } from '../../utils/researcherIdentity';
 import { looksLikeYaleNetid } from '../../utils/yaleNetid';
-import { observedPersonNameAgreesWith } from '../utils/personNameAgreement';
+import {
+  namesStateConflictingMiddleInitials,
+  observedPersonNameAgreesWith,
+} from '../utils/personNameAgreement';
+import { statedMiddleInitialsConflict } from '../utils/piNameMatch';
 import {
   directoryContradictsNetidForAddress,
   loadDirectoryNetidsByAddress,
@@ -207,12 +211,15 @@ export interface ExistingProfileUser {
   _id?: string;
   netid: string;
   email?: string;
+  displayName?: string;
 }
 
 interface IdentityToUserObservationOptions {
   includeProfileEnrichment?: boolean;
   includeIdentityEnrichment?: boolean;
   includeEmail?: boolean;
+  directoryNetidsByAddress?: DirectoryNetidsByAddress;
+  pageOrcidWitnessedForNetid?: boolean;
 }
 
 export interface OfficialProfileResearchHome {
@@ -3170,6 +3177,62 @@ function initialsAgreeWithNetid(name: string, netidLetters: string): boolean {
   );
 }
 
+export function emailLocalPartAgreesWithNetid(email: string, netid: string): boolean {
+  const localPart = textValue(email).toLowerCase().split('@')[0] || '';
+  const bareNetid = textValue(netid).toLowerCase();
+  const netidLetters = bareNetid.match(/^[a-z]+/)?.[0] ?? '';
+  return (
+    (Boolean(bareNetid) && localPart.includes(bareNetid)) ||
+    initialsAgreeWithNetid(localPart.replace(/\d+/g, ''), netidLetters)
+  );
+}
+
+function emailLocalPartGivenName(email: string): string {
+  const tokens = letterTokens(textValue(email).split('@')[0] || '');
+  return tokens.length >= 3 && tokens[1].length === 1 ? `${tokens[0]} ${tokens[1]}` : '';
+}
+
+export type PageEmailNetidTie =
+  | 'netid-mailbox'
+  | 'directory-pairs-netid'
+  | 'page-states-netid'
+  | 'page-orcid-witnessed-for-netid'
+  | 'local-part-agrees-with-netid';
+
+export type PageEmailNetidRefusal =
+  'directory-pairs-another-netid' | 'middle-initial-conflict' | 'untied';
+
+export function pageEmailNetidTie(
+  identity: Pick<OfficialProfileIdentity, 'email' | 'displayName' | 'profileNetid'>,
+  existingUser: Pick<ExistingProfileUser, 'netid' | 'displayName'>,
+  directory: DirectoryNetidsByAddress | undefined,
+  pageOrcidWitnessedForNetid = false,
+): { tie: PageEmailNetidTie } | { refusal: PageEmailNetidRefusal } {
+  const email = textValue(identity.email).toLowerCase();
+  const netid = textValue(existingUser.netid).toLowerCase();
+  if (email === `${netid}@yale.edu`) return { tie: 'netid-mailbox' };
+  const pairedNetids = directory?.get(email);
+  if (pairedNetids?.has(netid)) return { tie: 'directory-pairs-netid' };
+  if (pairedNetids && pairedNetids.size > 0) return { refusal: 'directory-pairs-another-netid' };
+  if (identity.profileNetid && expectedNetidMatchesProfileNetid(netid, identity.profileNetid)) {
+    return { tie: 'page-states-netid' };
+  }
+  if (pageOrcidWitnessedForNetid) return { tie: 'page-orcid-witnessed-for-netid' };
+  if (!emailLocalPartAgreesWithNetid(email, netid)) return { refusal: 'untied' };
+  const researcherName = textValue(existingUser.displayName);
+  const researcherGiven = splitName(researcherName).first;
+  const localPartGiven = emailLocalPartGivenName(email);
+  if (
+    namesStateConflictingMiddleInitials(identity.displayName, researcherName) ||
+    (localPartGiven &&
+      researcherGiven &&
+      statedMiddleInitialsConflict(localPartGiven, researcherGiven))
+  ) {
+    return { refusal: 'middle-initial-conflict' };
+  }
+  return { tie: 'local-part-agrees-with-netid' };
+}
+
 /**
  * Whether the whole local part of the address names the person, in either name order, the
  * sense #5736 gives a person address: a word fused onto the name does not count.
@@ -3212,15 +3275,11 @@ export function visibleBioNetidInitialsCheck(
   const netid = textValue(person.netid).toLowerCase();
   const netidLetters = netid.match(/^[a-z]+/)?.[0] ?? '';
   const email = textValue(identity.email).toLowerCase();
-  const localPart = email.split('@')[0] || '';
   const pageNameAgrees = initialsAgreeWithNetid(
     normalizeName(textValue(identity.displayName)),
     netidLetters,
   );
-  const addressAgrees =
-    !email ||
-    (Boolean(netid) && localPart.includes(netid)) ||
-    initialsAgreeWithNetid(localPart.replace(/\d+/g, ''), netidLetters);
+  const addressAgrees = !email || emailLocalPartAgreesWithNetid(email, netid);
   const directoryWitness = directoryPairsAddressWithEntityNetid(email, person, directory);
   const wholeNameAddressWitness = addressLocalPartWhollyNamesPerson(
     email,
@@ -3865,8 +3924,17 @@ export function identityToUserObservations(
   }
   const { first, last } = splitName(identity.displayName);
   if (!first || !last) return [];
+  const emailTiedToNetid =
+    Boolean(identity.email) &&
+    'tie' in
+      pageEmailNetidTie(
+        identity,
+        existingUser,
+        options.directoryNetidsByAddress,
+        options.pageOrcidWitnessedForNetid,
+      );
   if (identity.emailOnly) {
-    return identity.email && (options.includeEmail ?? options.includeIdentityEnrichment ?? true)
+    return emailTiedToNetid && (options.includeEmail ?? options.includeIdentityEnrichment ?? true)
       ? [
           {
             entityType: 'user',
@@ -3891,7 +3959,7 @@ export function identityToUserObservations(
     ['fname', first],
     ['lname', last],
   ];
-  if (identity.email) identityObservations.push(['email', identity.email]);
+  if (emailTiedToNetid) identityObservations.push(['email', identity.email]);
   if (includeProfileEnrichment) {
     if (identity.title) identityObservations.push(['title', identity.title]);
     identityObservations.push(['profileUrls', profileUrls]);
@@ -5264,7 +5332,14 @@ export async function resolveExistingUserForIdentity(
   ) {
     return null;
   }
-  return netid ? { _id: idValue(user._id), netid, email: textValue(user.email) } : null;
+  return netid
+    ? {
+        _id: idValue(user._id),
+        netid,
+        email: textValue(user.email),
+        displayName: textValue(user.displayName),
+      }
+    : null;
 }
 
 /**
@@ -5609,6 +5684,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
                     _id: idValue(entity._id),
                     netid: textValue(entity.netid),
                     email: textValue(entity.email),
+                    displayName: textValue(entity.name || entity.displayName),
                   }
                 : null;
             const directoryNetidsByAddress = visibleExistingUser
@@ -5619,11 +5695,15 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
               yaleDirectoryNetids,
               ...(directoryNetidsByAddress ? { directoryNetidsByAddress } : {}),
             });
+            const pageOrcidWitnessedForNetid =
+              !!identity &&
+              !!visibleExistingUser &&
+              (await orcidWitnessedByAnotherPage(identity, entity, profileUrl));
             const unwitnessedNetidMismatch =
               !!identity &&
               !!visibleExistingUser &&
               visibleBioNetidInitialsCheck(identity, entity, directoryNetidsByAddress).refused &&
-              !(await orcidWitnessedByAnotherPage(identity, entity, profileUrl));
+              !pageOrcidWitnessedForNetid;
             if (identity && unwitnessedNetidMismatch) {
               ctx.log('Refused an unwitnessed netid-initials mismatch', {
                 entityId: officialProfileDocumentId(entity._id),
@@ -5645,6 +5725,9 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
                     includeProfileEnrichment: runVisibleProfileBioBackfill,
                     includeIdentityEnrichment: !runVisibleProfileBioBackfill,
                     includeEmail: true,
+                    directoryNetidsByAddress:
+                      directoryNetidsByAddress ?? (await loadDirectoryNetidsByAddress()),
+                    pageOrcidWitnessedForNetid,
                   }),
                 );
                 if (runQueuedPiBackfill && statesAnAppointment(identity)) {

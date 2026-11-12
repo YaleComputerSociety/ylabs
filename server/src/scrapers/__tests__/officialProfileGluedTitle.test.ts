@@ -40,7 +40,7 @@ describe('an official profile title that absorbed its neighbouring fields (#5701
 
     expect(identity).not.toBeNull();
     expect(identity?.title).toBe('');
-    const observations = identityToUserObservations(identity!, { netid: 'zz5701q' });
+    const observations = identityToUserObservations(identity!, { netid: 'qf5701' });
     expect(observations.map((o) => o.field).sort()).toEqual(
       ['email', 'fname', 'lname', 'netid', 'profileUrls'].sort(),
     );

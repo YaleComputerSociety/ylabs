@@ -7,7 +7,10 @@ import {
   type ResearcherRefusableField,
 } from '../utils/researcherFieldValueRefusals';
 import { officialProfileIdentityUrlKey } from '../scrapers/utils/officialProfileIdentityUrlKey';
-import { observedPersonNameAgreesWith } from '../scrapers/utils/personNameAgreement';
+import {
+  anyNamesStateConflictingMiddleInitials,
+  observedPersonNameAgreesWith,
+} from '../scrapers/utils/personNameAgreement';
 import { surnamesCompatible } from '../scrapers/utils/piNameMatch';
 import { splitName } from '../scrapers/utils/scraperHelpers';
 import { canonicalPersonName } from '../scrapers/utils/personNameCasing';
@@ -183,7 +186,8 @@ export type ShellMergeReason =
   | 'ORCID_CONFLICT'
   | 'NETID_CONFLICT'
   | 'NO_IDENTITY_WITNESS'
-  | 'VARIANT_SHAPE_NOT_ALLOWED';
+  | 'VARIANT_SHAPE_NOT_ALLOWED'
+  | 'STATED_MIDDLE_INITIAL_CONFLICT';
 
 export const SHELL_FOLD_IDENTITIES = [
   'netid',
@@ -212,6 +216,7 @@ export interface ShellIdentity extends ResearcherIdentityLike {
   orcid?: unknown;
   profileLinks?: unknown;
   title?: unknown;
+  statedNames?: readonly string[];
 }
 
 export interface VerifiedProfileCandidate extends CanonicalCandidate {
@@ -325,6 +330,7 @@ export interface RosterIdentityCandidate extends CanonicalCandidate {
 export interface SharedRowCandidate extends CanonicalCandidate {
   displayName?: unknown;
   title?: unknown;
+  statedNames?: readonly string[];
 }
 
 export interface NameVariantCandidate extends SharedRowCandidate {
@@ -634,15 +640,30 @@ function decideSharedRowFold(
   const shellName = typeof shell.displayName === 'string' ? shell.displayName : '';
   if (!shellName) return undefined;
   const shellStrength = identityTierStrength(researcherIdentityTier(shell));
+  const shellNames = [shellName, ...(shell.statedNames ?? [])];
   const agreeing = new Map<string, SharedRowCandidate>();
+  let statedNamesConflicted = false;
   for (const candidate of sharedRowCandidates) {
     if (candidate.id === shell.id) continue;
     if (identityTierStrength(candidate.tier) <= shellStrength) continue;
     if (!observedPersonNameAgreesWith(candidate.displayName, shellName)) continue;
     if (titlesStateConflictingRanks(shell.title, candidate.title)) continue;
+    if (
+      anyNamesStateConflictingMiddleInitials(shellNames, [
+        candidate.displayName,
+        ...(candidate.statedNames ?? []),
+      ])
+    ) {
+      statedNamesConflicted = true;
+      continue;
+    }
     agreeing.set(candidate.id, candidate);
   }
-  if (agreeing.size === 0) return undefined;
+  if (agreeing.size === 0) {
+    return statedNamesConflicted
+      ? { merge: false, reason: 'STATED_MIDDLE_INITIAL_CONFLICT', matchedOn: 'shared-row' }
+      : undefined;
+  }
   const strongestStrength = Math.max(
     ...[...agreeing.values()].map((candidate) => identityTierStrength(candidate.tier)),
   );

@@ -178,9 +178,14 @@ function visibleRun(html: string, url: string, netid = 'fk501') {
 const emailsOf = (emitted: ObservationInput[]) =>
   emitted.filter((observation) => observation.field === 'email').map((o) => o.value);
 
-async function expectRunTwiceIdentical(html: string, url: string, expected: string[]) {
-  const first = await visibleRun(html, url);
-  const second = await visibleRun(html, url);
+async function expectRunTwiceIdentical(
+  html: string,
+  url: string,
+  expected: string[],
+  netid?: string,
+) {
+  const first = await visibleRun(html, url, netid);
+  const second = await visibleRun(html, url, netid);
   expect(emailsOf(first)).toEqual(expected);
   expect(second.filter((o) => o.field === 'email')).toEqual(
     first.filter((o) => o.field === 'email'),
@@ -277,7 +282,7 @@ describe('the profile subject email read from more page shapes (#5669)', () => {
     });
 
     it('re-derives the same single observation on a second run', async () => {
-      await expectRunTwiceIdentical(html, ysmUrl, ['avery.example@example.org']);
+      await expectRunTwiceIdentical(html, ysmUrl, ['avery.example@example.org'], 'ae501');
     });
   });
 
@@ -329,7 +334,7 @@ describe('the profile subject email read from more page shapes (#5669)', () => {
 
     it('re-derives the same single observation on a second read', () => {
       const observe = () =>
-        identityToUserObservations(identityOf(html, centerUrl)!, { netid: 'fk501' }).filter(
+        identityToUserObservations(identityOf(html, centerUrl)!, { netid: 'ae501' }).filter(
           (o) => o.field === 'email',
         );
       expect(observe().map((o) => o.value)).toEqual(['avery.example@yale.edu']);
@@ -344,10 +349,10 @@ describe('the profile subject email read from more page shapes (#5669)', () => {
     });
 
     it('records only the address in the visible-profile email read', async () => {
-      const emitted = await visibleRun(html, ysmUrl);
+      const emitted = await visibleRun(html, ysmUrl, 'ae501');
       expect(emitted.filter((o) => o.entityType === 'user')).toEqual([
         expect.objectContaining({
-          entityKey: 'netid:fk501',
+          entityKey: 'netid:ae501',
           field: 'email',
           value: 'avery.example@yale.edu',
           sourceUrl: ysmUrl,
@@ -379,13 +384,13 @@ describe('the profile subject email read from more page shapes (#5669)', () => {
     it('emits only the email from an email-only identity', () => {
       const identity = identityOf(html, ysmUrl, { emailOnlyWithoutAdmissibleTitle: true });
       expect(identity?.emailOnly).toBe(true);
-      expect(identityToUserObservations(identity!, { netid: 'fk501' }).map((o) => o.field)).toEqual(
+      expect(identityToUserObservations(identity!, { netid: 'ae501' }).map((o) => o.field)).toEqual(
         ['email'],
       );
     });
 
     it('re-derives the same single observation on a second run', async () => {
-      await expectRunTwiceIdentical(html, ysmUrl, ['avery.example@yale.edu']);
+      await expectRunTwiceIdentical(html, ysmUrl, ['avery.example@yale.edu'], 'ae501');
     });
   });
 

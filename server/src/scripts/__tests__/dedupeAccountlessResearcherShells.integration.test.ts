@@ -137,6 +137,7 @@ describe('dedupeAccountlessResearcherShells (DB-backed)', () => {
       NETID_CONFLICT: 0,
       NO_IDENTITY_WITNESS: 0,
       VARIANT_SHAPE_NOT_ALLOWED: 0,
+      STATED_MIDDLE_INITIAL_CONFLICT: 0,
     });
     expect(result.shellsMerged).toBe(1);
     expect(result.roleAssignmentsRepointed).toBe(1);
