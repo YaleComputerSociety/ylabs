@@ -505,6 +505,11 @@ To reverse an observations-only run, use `yarn --cwd server observations:rollbac
 It invalidates the run, retires the run's live observations with a `rollback` record, and restores only the observations from outside the run whose `supersededBy` points at one of the run's observations (#5735).
 It refuses a run that was materialized, a run any of whose observations was superseded from outside it, and a run whose source has written observations from another run since it started, because in each case the pre-run state is no longer the right state to restore.
 
+To supersede a few observations an operator read and judged to be about the wrong person or row, use `yarn --cwd server observations:supersede --ids=<id>,<id> --reason='<why>'` (dry-run by default; `--apply --confirm-supersede-observations` with `ALLOW_NON_PROD_SCRAPER_WRITES=true` to write).
+It is an operator tool for one-row judgements, not a bulk repair path: it takes at most 25 ids, refuses any id that backs an owner-decided value, and audits each observation (#6018).
+A wrongness a predicate can express belongs in the lane or a class retirement script instead.
+To reverse one wrong researcher fold, use `researchers:unfold-shell`; the procedure is in `docs/research-entity-pi-dedupe-runbook.md` under "Reversing a wrong researcher fold".
+
 ## Exhaustive runs: bound every corpus-wide read
 
 An exhaustive lane run hands its read queries the whole corpus, so a query shape that works on a bounded run can fail on the sweep.
