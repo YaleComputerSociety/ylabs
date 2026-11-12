@@ -669,7 +669,7 @@ interface MaterializeOptions {
   skipEntityTypes?: readonly string[];
   /**
    * Plan center roster retirement without applying it, for every center roster lane, so a run
-   * whose roster read is known to miss listed members can still project its listings (#5890).
+   * whose roster read is known to miss listed members can still project its listings (#5897).
    */
   skipCenterRosterRetirement?: boolean;
   /**
