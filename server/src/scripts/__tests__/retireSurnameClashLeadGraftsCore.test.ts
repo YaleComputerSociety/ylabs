@@ -402,7 +402,7 @@ describe('identity evidence for a clash member (#5941)', () => {
       researcherCarriesIdentityEvidence({ identifiers: { email: 'robin@example.test' } }),
     ).toBe(true);
     expect(
-      researcherCarriesIdentityEvidence({ identifiers: { orcid: '0000-0002-1825-0097' } }),
+      researcherCarriesIdentityEvidence({ identifiers: { orcid: '9999-9000-9999-9005' } }),
     ).toBe(true);
   });
 
@@ -480,7 +480,7 @@ describe('one person stored as two Researcher records (#5941)', () => {
     for (const shared of [
       { netid: 'rq111' },
       { email: 'Robin.Quimby@example.test' },
-      { orcid: '0000-0002-1825-0097' },
+      { orcid: '9999-9000-9999-9005' },
     ]) {
       const plan = planSurnameClashLeadDetachment([
         entity({
