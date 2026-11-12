@@ -663,7 +663,12 @@ import {
   LEAD_ROLE_LEGACY_LABELS,
   LEGACY_ROLE_BY_CANONICAL,
 } from '../models/canonicalRoleMapping';
-import { rowIsNamedForPerson, type GrantTargetPerson } from './canonicalResearchHomeResolver';
+import {
+  RESEARCH_HOME_CANDIDATE_FIELDS,
+  rowIsNamedForPerson,
+  type GrantTargetPerson,
+  type ResearchHomeCandidate,
+} from './canonicalResearchHomeResolver';
 import { isYaleHostname } from '../utils/yaleHost';
 import {
   loadCurrentLeadPersonIdsByEntity,
@@ -4479,14 +4484,10 @@ export async function materializeInferredPiMembership(
     observations,
     plannedLeadPersonIds,
   );
-  await endContradictedSourcelessLeadEdges(researchEntityId, plannedLeadPersonIds);
+  await endContradictedSourcelessLeadEdges(researchEntityId, observations, plannedLeadPersonIds);
 }
 
-export interface SourcelessLeadEdgeRow {
-  slug?: unknown;
-  name?: unknown;
-  websiteUrl?: unknown;
-  sourceUrls?: unknown;
+export interface SourcelessLeadEdgeRow extends ResearchHomeCandidate {
   leadVerification?: {
     leads?: Array<{ personId?: unknown; verdict?: unknown; matchedBy?: unknown }>;
   };
@@ -4543,6 +4544,7 @@ export function contradictedSourcelessLeadEdgeIds(input: {
 
 async function endContradictedSourcelessLeadEdges(
   researchEntityId: string,
+  observations: MaterializerObservationLike[],
   plannedLeadPersonIds: ReadonlySet<string>,
 ): Promise<number> {
   const entityObjectId = toMaterializerObjectId(researchEntityId);
@@ -4566,8 +4568,13 @@ async function endContradictedSourcelessLeadEdges(
     hasRecordedSource: Boolean(textValue(edge.rosterProvenance?.sourceName)),
   }));
   if (!edges.some((edge) => !edge.hasRecordedSource)) return 0;
+  const directorRead = await resolveInferredDirector(observations);
+  const liveLeadPersonIds =
+    'director' in directorRead
+      ? new Set([...plannedLeadPersonIds, directorRead.director.researcherId])
+      : plannedLeadPersonIds;
   const row = (await ResearchEntity.findById(entityObjectId)
-    .select('slug name websiteUrl sourceUrls leadVerification')
+    .select(`${RESEARCH_HOME_CANDIDATE_FIELDS} leadVerification`)
     .lean()) as SourcelessLeadEdgeRow | null;
   if (!row) return 0;
   const people = (await Researcher.find({
@@ -4579,7 +4586,7 @@ async function endContradictedSourcelessLeadEdges(
     row,
     edges,
     people: new Map(people.map((person) => [String(person._id), person])),
-    plannedLeadPersonIds,
+    plannedLeadPersonIds: liveLeadPersonIds,
   });
   if (ended.length === 0) return 0;
   const result = await RoleAssignment.updateMany(
@@ -5474,21 +5481,25 @@ function preferredDirectorObservations(
   return codeLane.some((obs) => obs.field === 'inferredDirectorUserName') ? codeLane : observations;
 }
 
-export async function materializeInferredDirectorMembership(
-  researchEntityId: string,
-  observations: MaterializerObservationLike[],
-): Promise<InferredDirectorMaterializationResult> {
-  const empty: InferredDirectorMaterializationResult = {
-    written: false,
-    promoted: false,
-    removedDuplicates: 0,
-  };
-  if (!normalizeMaterializerObjectId(researchEntityId)) return empty;
+interface ResolvedInferredDirector {
+  researcherId: string;
+  name: string;
+  role: 'director' | 'co-director';
+  profileUrl: string;
+  roleSource: MaterializerObservationLike;
+  enrichment: Awaited<ReturnType<typeof canonicalResearcherIdentity>>;
+}
 
+async function resolveInferredDirector(
+  observations: MaterializerObservationLike[],
+): Promise<
+  | { director: ResolvedInferredDirector }
+  | { skipped: 'no-observation' | 'unresolved-user' | 'name-mismatch' }
+> {
   const directorObservations = preferredDirectorObservations(observations);
   const fieldObs = (field: string) => directorObservations.find((obs) => obs.field === field);
   const nameObs = fieldObs('inferredDirectorUserName');
-  if (!nameObs || !nameObs.value) return { ...empty, skipped: 'no-observation' };
+  if (!nameObs || !nameObs.value) return { skipped: 'no-observation' };
 
   const profileUrl = textValue(fieldObs('inferredDirectorProfileUrl')?.value);
   const roleRaw = textValue(fieldObs('inferredDirectorRole')?.value).toLowerCase();
@@ -5516,20 +5527,46 @@ export async function materializeInferredDirectorMembership(
   const researcher =
     (await findUniqueResearcherForRosterMember(lookupFields)) ||
     (await findUniqueResearcherByObservedDirectorName(name));
-  if (!researcher?._id) return { ...empty, skipped: 'unresolved-user' };
+  if (!researcher?._id) return { skipped: 'unresolved-user' };
 
   const researcherId = idValue(researcher._id);
-  const roleSource = fieldObs('inferredDirectorRole') || nameObs;
+  const enrichment = await canonicalResearcherIdentity(researcherId);
+  if (!observedPersonNameAgreesWith(enrichment.displayName, textValue(name))) {
+    return { skipped: 'name-mismatch' };
+  }
+  return {
+    director: {
+      researcherId,
+      name,
+      role,
+      profileUrl,
+      roleSource: fieldObs('inferredDirectorRole') || nameObs,
+      enrichment,
+    },
+  };
+}
+
+export async function materializeInferredDirectorMembership(
+  researchEntityId: string,
+  observations: MaterializerObservationLike[],
+): Promise<InferredDirectorMaterializationResult> {
+  const empty: InferredDirectorMaterializationResult = {
+    written: false,
+    promoted: false,
+    removedDuplicates: 0,
+  };
+  if (!normalizeMaterializerObjectId(researchEntityId)) return empty;
+
+  const resolution = await resolveInferredDirector(observations);
+  if ('skipped' in resolution) return { ...empty, skipped: resolution.skipped };
+  const { researcherId, name, role, profileUrl, roleSource } = resolution.director;
   const observedAt = roleSource.observedAt || new Date();
   const confidence = typeof roleSource.confidence === 'number' ? roleSource.confidence : 0.85;
   const sourceUrl = textValue(roleSource.sourceUrl);
   const sourceName = textValue(roleSource.sourceName);
 
   const directorResearcherId = researcherId;
-  const directorEnrichment = await canonicalResearcherIdentity(researcherId);
-  if (!observedPersonNameAgreesWith(directorEnrichment.displayName, textValue(name))) {
-    return { ...empty, skipped: 'name-mismatch' };
-  }
+  const directorEnrichment = resolution.director.enrichment;
   const roster = await getResearchEntityRoster(researchEntityId);
   const normalizedDirectorName = textValue(name).toLowerCase();
   const matchesDirector = (entry: ResearchEntityRosterEntry): boolean =>

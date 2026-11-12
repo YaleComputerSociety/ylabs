@@ -20,7 +20,7 @@ import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
-import { materializeEntity } from '../entityMaterializer';
+import { materializeEntity, materializeInferredPiMembership } from '../entityMaterializer';
 
 const PROFILE_HOST = 'https://medicine.yale.edu/profile';
 const SITE = 'https://medicine.yale.edu/lab/synthetic-habits/';
@@ -41,11 +41,17 @@ const seedResearcher = async (displayName: string, profileSlug: string) =>
     archived: false,
   });
 
-const seedRow = async (input: { slug: string; name: string; entityType: string }) => {
+const seedRow = async (input: {
+  slug: string;
+  name: string;
+  entityType: string;
+  website?: string;
+}) => {
   const row = await ResearchEntity.create({
     slug: input.slug,
     name: input.name,
     entityType: input.entityType,
+    ...(input.website ? { website: input.website } : {}),
     websiteUrl: SITE,
     sourceUrls: [SITE],
     studentVisibilityTier: 'student_ready',
@@ -138,13 +144,17 @@ describe('a lead edge with no recorded source ends only when a current lane cont
     }
   });
 
-  const seedOwnedLab = async (sourcelessVerdict: Verdict) => {
+  const seedOwnedLab = async (
+    sourcelessVerdict: Verdict,
+    rowNaming: { name?: string; website?: string } = {},
+  ) => {
     const owner = await seedResearcher('Ada Quill', 'ada-quill');
     const listed = await seedResearcher('Bo Nimbus', 'bo-nimbus');
     const row = await seedRow({
       slug: 'ysm-faculty-ada-quill',
-      name: 'Synthetic Habits Lab',
+      name: rowNaming.name ?? 'Synthetic Habits Lab',
       entityType: 'LAB',
+      website: rowNaming.website,
     });
     await seedLeadEdge(owner._id, row._id, 'PI', 'ysm-faculty-directory');
     await seedLeadEdge(listed._id, row._id, 'PI');
@@ -232,6 +242,84 @@ describe('a lead edge with no recorded source ends only when a current lane cont
       superseded: false,
     });
     await materializeEntity('researchEntity', { entityKey: row.slug }, {});
+
+    expect((await edgeStates(row._id)).get(String(listed._id))).toBe('live');
+  });
+
+  it('keeps a sourceless edge on a row whose title also names that person', async () => {
+    const { owner, listed, row } = await seedOwnedLab(
+      { verdict: 'CONFIRMED', matchedBy: 'NAMED_ON_PAGE' },
+      { name: 'Bo Nimbus Lab' },
+    );
+    await materializeEntity('researchEntity', { entityKey: row.slug }, {});
+
+    expect(await edgeStates(row._id)).toEqual(
+      new Map([
+        [String(owner._id), 'live'],
+        [String(listed._id), 'live'],
+      ]),
+    );
+  });
+
+  it("keeps a sourceless edge on a row whose stored website cites that person's profile", async () => {
+    const { owner, listed, row } = await seedOwnedLab(
+      { verdict: 'CONFIRMED', matchedBy: 'NAMED_ON_PAGE' },
+      { website: `${PROFILE_HOST}/bo-nimbus/` },
+    );
+    await materializeEntity('researchEntity', { entityKey: row.slug }, {});
+
+    expect(await edgeStates(row._id)).toEqual(
+      new Map([
+        [String(owner._id), 'live'],
+        [String(listed._id), 'live'],
+      ]),
+    );
+  });
+
+  it('keeps the sourceless edge of a person who also holds a recorded lead edge the row is named for', async () => {
+    const owner = await seedResearcher('Ada Quill', 'ada-quill');
+    const row = await seedRow({
+      slug: 'ysm-faculty-ada-quill',
+      name: 'Synthetic Habits Lab',
+      entityType: 'LAB',
+    });
+    await seedLeadEdge(owner._id, row._id, 'PI', 'ysm-faculty-directory');
+    await seedLeadEdge(owner._id, row._id, 'DIRECTOR');
+    await setVerdicts(row._id, [
+      { personId: owner._id, role: 'PI', verdict: 'CONTRADICTED', matchedBy: 'NONE' },
+    ]);
+    await materializeEntity('researchEntity', { entityKey: row.slug }, {});
+
+    const edges = await RoleAssignment.find({ 'target.id': row._id })
+      .select('role state')
+      .lean<Array<{ role: string; state?: string }>>();
+    expect(edges.map((edge) => [edge.role, edge.state]).sort()).toEqual([
+      ['DIRECTOR', 'CURRENT'],
+      ['PI', 'CURRENT'],
+    ]);
+  });
+
+  it('keeps a sourceless edge a live director read names, when only the PI lane runs', async () => {
+    const listed = await seedResearcher('Bo Nimbus', 'bo-nimbus');
+    const row = await seedRow({
+      slug: 'center-synthetic-leadership',
+      name: 'Synthetic Leadership Center',
+      entityType: 'CENTER',
+    });
+    await seedLeadEdge(listed._id, row._id, 'DIRECTOR');
+    await setVerdicts(row._id, [
+      { personId: listed._id, role: 'DIRECTOR', verdict: 'CONTRADICTED', matchedBy: 'NONE' },
+    ]);
+    await materializeInferredPiMembership(String(row._id), [
+      {
+        field: 'inferredDirectorUserName',
+        value: { fname: 'Bo', lname: 'Nimbus' },
+        sourceName: 'center-director',
+        sourceUrl: SITE,
+        confidence: 0.9,
+        observedAt: new Date('2026-06-01T00:00:00Z'),
+      },
+    ]);
 
     expect((await edgeStates(row._id)).get(String(listed._id))).toBe('live');
   });

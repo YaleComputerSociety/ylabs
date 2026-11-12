@@ -10,7 +10,7 @@ const listed = {
   profileLinks: [{ kind: 'YALE_OFFICIAL', url: 'https://medicine.yale.edu/profile/bo-nimbus/' }],
 };
 
-const plan = (plannedLeadPersonIds: ReadonlySet<string>) =>
+const plan = (plannedLeadPersonIds: ReadonlySet<string>, listedMatchedBy = 'NAMED_ON_PAGE') =>
   contradictedSourcelessLeadEdgeIds({
     row: {
       slug: 'ysm-faculty-ada-quill',
@@ -18,7 +18,7 @@ const plan = (plannedLeadPersonIds: ReadonlySet<string>) =>
       leadVerification: {
         leads: [
           { personId: 'owner', verdict: 'CONFIRMED', matchedBy: 'OFFICIAL_PROFILE_LINK' },
-          { personId: 'listed', verdict: 'CONFIRMED', matchedBy: 'NAMED_ON_PAGE' },
+          { personId: 'listed', verdict: 'CONFIRMED', matchedBy: listedMatchedBy },
         ],
       },
     },
@@ -40,5 +40,9 @@ describe('contradictedSourcelessLeadEdgeIds (#5979 C4)', () => {
 
   it('keeps it while a live lead read names the person', () => {
     expect(plan(new Set(['listed']))).toEqual([]);
+  });
+
+  it("keeps it when the site confirms the person by the site's own address", () => {
+    expect(plan(new Set(), 'SURNAME_IN_SITE_URL')).toEqual([]);
   });
 });

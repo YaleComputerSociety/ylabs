@@ -11,7 +11,7 @@ const GRANT_SHELL_SLUG = /^(?:nih|nsf|federal|doe|neh)-pi-/i;
 const GRANT_SOURCE_URL =
   /(?:reporter\.nih\.gov|api\.reporter\.nih\.gov|nsf\.gov\/awardsearch|api\.nsf\.gov|osti\.gov|(?:awardsearch|apps|securegrants)\.neh\.gov)/i;
 const CANONICAL_LEAD_ROLES = LEAD_ROLE_CANONICAL_VALUES;
-const RESEARCH_HOME_CANDIDATE_FIELDS =
+export const RESEARCH_HOME_CANDIDATE_FIELDS =
   'slug name entityType website websiteUrl sourceUrls archived';
 
 export interface ResearchHomeCandidate {
