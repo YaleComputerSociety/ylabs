@@ -179,6 +179,58 @@ describe('the non-Yale microsite page-field screen (#5920)', () => {
     ).toEqual([]);
   });
 
+  it('a home-cited value carrying another page or a multi-page summary does not confirm the home page', () => {
+    const homeMethods = {
+      sourceName: 'lab-microsite-description-llm',
+      field: 'methods',
+      value: ['sediment coring'],
+      sourceUrl: REFUSED_HOME,
+    };
+    const joinPageQuote = {
+      sourceName: 'lab-microsite-undergrad-llm',
+      field: 'undergradEvidenceQuote',
+      value: 'Undergraduates are welcome to join the group each semester.',
+      sourceUrl: REFUSED_JOIN,
+    };
+    const homeCitedAccessEvidence = {
+      sourceName: 'lab-microsite-undergrad-llm',
+      field: 'undergradAccessEvidence',
+      value: {
+        openToUndergrads: 'yes',
+        evidenceQuote: 'Undergraduates interested in working with Dr. Varnadore should email.',
+        sourceUrls: [REFUSED_HOME],
+        quoteSourceUrl: REFUSED_JOIN,
+        joinPageUrl: REFUSED_PEOPLE,
+        joinPageInvitation: 'Students who want to work with Quillon Varnadore can apply here.',
+      },
+      sourceUrl: REFUSED_HOME,
+    };
+    const multiPageSummary = {
+      sourceName: 'lab-microsite-undergrad-llm',
+      field: 'shortDescription',
+      value: 'The Quillon Varnadore group studies estuarine sediment.',
+      sourceUrl: REFUSED_HOME,
+    };
+    const peopleCount = {
+      sourceName: 'lab-microsite-undergrad-llm',
+      field: 'currentUndergradCount',
+      value: 2,
+      sourceUrl: REFUSED_PEOPLE,
+    };
+    const observations = [
+      homeMethods,
+      joinPageQuote,
+      homeCitedAccessEvidence,
+      multiPageSummary,
+      peopleCount,
+    ];
+    expect(withoutRefusedNonYaleMicrositePageFields(observations, LEAD_NAMES)).toEqual([
+      joinPageQuote,
+      multiPageSummary,
+      peopleCount,
+    ]);
+  });
+
   it("two people's pages on one shared host do not admit each other", () => {
     const sharedHost = 'https://sites.example.com';
     const otherPersonsPage = `${sharedHost}/view/another-group`;

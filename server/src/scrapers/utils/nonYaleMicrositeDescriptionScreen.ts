@@ -99,14 +99,32 @@ const observedTextOf = (value: unknown): string[] => {
   return [];
 };
 
+const isUndergradLaneMultiPageSummary = (observation: MicrositeDescriptionObservation): boolean =>
+  observation.sourceName === 'lab-microsite-undergrad-llm' &&
+  (observation.field === 'fullDescription' || observation.field === 'shortDescription');
+
+type PageText = readonly [page: unknown, text: unknown];
+
+function observedTextByPage(observation: MicrositeDescriptionObservation): PageText[] {
+  if (!isMicrositeLaneObservation(observation)) return [];
+  if (isUndergradLaneMultiPageSummary(observation)) return [];
+  if (observation.field === 'undergradAccessEvidence') {
+    const value = (observation.value ?? {}) as Record<string, unknown>;
+    return [
+      [value.quoteSourceUrl, value.evidenceQuote],
+      [value.joinPageUrl, value.joinPageInvitation],
+    ];
+  }
+  return [[observation.sourceUrl, observedTextOf(observation.value).join('\n')]];
+}
+
 function micrositeTextByPage(
   observations: readonly MicrositeDescriptionObservation[],
 ): StoredPageTextByUrl {
   const textByPage = new Map(storedPageTextByUrl(observations));
-  for (const observation of observations) {
-    if (!isMicrositeLaneObservation(observation)) continue;
-    const page = normalizeEvidenceUrl(observation.sourceUrl);
-    const text = observedTextOf(observation.value).join('\n');
+  for (const [pageUrl, observedText] of observations.flatMap(observedTextByPage)) {
+    const page = normalizeEvidenceUrl(pageUrl);
+    const text = observedTextOf(observedText).join('\n');
     if (page && text) textByPage.set(page, [textByPage.get(page), text].filter(Boolean).join('\n'));
   }
   return textByPage;
