@@ -584,7 +584,7 @@ const variantNameTokens = (value: unknown): string[] =>
  * first given name with only a middle initial or middle name added or dropped, the same name
  * written with and without a hyphen, or a given name `givenNamesEquivalent` accepts as the same
  * (Kate and Katherine, not two strangers who share a surname). Two different given names under
- * one surname are never a variant (#5897 pre-check: the broad first-name shape matched one
+ * one surname are never a variant (#5923: the broad first-name shape matched one
  * listing against 41 people).
  */
 export function isFoldableNameVariant(left: unknown, right: unknown): boolean {
@@ -626,7 +626,7 @@ const surnameSuffixPattern = (surname: string): RegExp => {
  * accountless-shell dedupe both make, the canonical display name compared without case or
  * spacing, so a mint it refuses is one dedupe would fold back by name (#3802). The variant arm
  * refuses the twins a roster lane would otherwise mint under a middle initial, a hyphenation or
- * a nickname of an identified person (#5897).
+ * a nickname of an identified person (#5923).
  */
 export async function identifiedResearcherHoldsDisplayName(displayName: unknown): Promise<boolean> {
   const tokens = canonicalPersonName(trimmed(displayName)).split(/\s+/).filter(Boolean);
