@@ -28,8 +28,9 @@ import {
   countsAsDevWriteProgress,
   devWriteProgress,
   recordDevWriteProgress,
+  watchMongoClientProgress,
 } from '../devWriteProgress';
-import { SCRAPE_RUN_SOCKET_TIMEOUT_MS } from '../../scrapers/scrapeRunProgress';
+import { SCRIPT_SOCKET_TIMEOUT_MS } from '../connections';
 import { describeDevLocks, formatDevLocksTable } from '../../scripts/devWriteLocks';
 
 const LEASE_ON: NodeJS.ProcessEnv = { DEV_WRITE_OWNER: 'test-session' };
@@ -40,6 +41,7 @@ const TICKS_PER_MINUTE = MINUTE / DEV_WRITE_LEASE_HEARTBEAT_MS;
 let memoryServer: MongoMemoryServer;
 let monitoredClient: MongoClient;
 let unmonitoredClient: MongoClient;
+let unboundedSocketClient: MongoClient;
 let db: Db;
 let at: number;
 let stops: DevWriteLeaseStop[];
@@ -70,13 +72,20 @@ async function tickMinutes(minutes: number, eachTick: () => Promise<void> = asyn
 
 beforeAll(async () => {
   memoryServer = await MongoMemoryServer.create();
-  monitoredClient = await MongoClient.connect(memoryServer.getUri(), { monitorCommands: true });
+  monitoredClient = await MongoClient.connect(memoryServer.getUri(), {
+    monitorCommands: true,
+    socketTimeoutMS: SCRIPT_SOCKET_TIMEOUT_MS,
+  });
   unmonitoredClient = await MongoClient.connect(memoryServer.getUri());
+  unboundedSocketClient = await MongoClient.connect(memoryServer.getUri(), {
+    monitorCommands: true,
+  });
 });
 
 afterAll(async () => {
   await monitoredClient?.close();
   await unmonitoredClient?.close();
+  await unboundedSocketClient?.close();
   await memoryServer?.stop();
 });
 
@@ -104,7 +113,7 @@ afterEach(async () => {
 
 describe('the no-progress window', () => {
   it('sits above the script socket timeout and the STALLED flag', () => {
-    expect(DEV_WRITE_LEASE_NO_PROGRESS_STOP_MS).toBeGreaterThan(SCRAPE_RUN_SOCKET_TIMEOUT_MS);
+    expect(DEV_WRITE_LEASE_NO_PROGRESS_STOP_MS).toBeGreaterThan(SCRIPT_SOCKET_TIMEOUT_MS);
     expect(DEV_WRITE_LEASE_NO_PROGRESS_STOP_MS).toBeGreaterThan(DEV_WRITE_LEASE_STALLED_MS);
   });
 });
@@ -285,6 +294,16 @@ describe('a holder whose progress cannot be judged', () => {
 
     await tickMinutes(30);
 
+    expect(stops).toEqual([]);
+  });
+
+  it('is flagged but never stopped when a connection it uses has no socket ceiling', async () => {
+    await holdApplyLease();
+    expect(watchMongoClientProgress(unboundedSocketClient)).toBe(true);
+
+    await tickMinutes(30);
+
+    expect(await applyLockRow()).toMatchObject({ minutesWithoutProgress: 30, stalled: true });
     expect(stops).toEqual([]);
   });
 });

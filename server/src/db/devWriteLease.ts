@@ -12,6 +12,7 @@ import {
 } from './devWriteLaunch';
 import {
   devWriteProgress,
+  longestWatchedSocketTimeout,
   resetDevWriteProgressForTests,
   setDevWriteProgressClock,
   startDevWriteProgressClock,
@@ -46,7 +47,8 @@ export const DEV_HOST_LEASE_IDLE_RELEASE_MS = 10 * 60_000;
 export const DEV_WRITE_LEASE_STALLED_MS = 15 * 60_000;
 /**
  * A holder that completes no work for this long stops before its next write (#5880). It must stay
- * above the 10-minute script socket timeout, so one legitimately slow operation can never trip it.
+ * above the 10-minute script socket timeout, so one legitimately slow operation can never trip it,
+ * and a holder with any watched client that has no socket ceiling below it is never stopped.
  */
 export const DEV_WRITE_LEASE_NO_PROGRESS_STOP_MS = 20 * 60_000;
 export const DEV_WRITE_LEASE_OWNER_ENV = 'DEV_WRITE_LEASE_OWNER';
@@ -535,7 +537,10 @@ function stopIfRenewalOverdue(states: Iterable<HeldLeaseState> = heldLeases.valu
   return true;
 }
 
-const progressStopArmed = () => !progressUnobservable && !heldForChildProcesses;
+const progressStopArmed = () =>
+  !progressUnobservable &&
+  !heldForChildProcesses &&
+  longestWatchedSocketTimeout() < DEV_WRITE_LEASE_NO_PROGRESS_STOP_MS;
 
 /**
  * Stops a holder that has completed no work for `DEV_WRITE_LEASE_NO_PROGRESS_STOP_MS`, through the

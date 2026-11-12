@@ -96,13 +96,26 @@ export function devWriteProgress(): DevWriteProgressSnapshot {
 }
 
 interface CommandMonitoringClient {
-  options?: { monitorCommands?: boolean };
+  options?: { monitorCommands?: boolean; socketTimeoutMS?: number };
   on(event: 'commandStarted', listener: (event: CommandStartedEvent) => void): unknown;
   on(event: 'commandSucceeded', listener: (event: CommandSucceededEvent) => void): unknown;
   on(event: 'commandFailed', listener: (event: CommandFailedEvent) => void): unknown;
 }
 
 const watchedClients = new WeakSet<object>();
+let longestWatchedSocketTimeoutMs = 0;
+
+const socketTimeoutMs = (client: CommandMonitoringClient): number => {
+  const timeout = client.options?.socketTimeoutMS;
+  return typeof timeout === 'number' && timeout > 0 ? timeout : Number.POSITIVE_INFINITY;
+};
+
+/**
+ * The longest socket timeout among the watched clients, infinite when any has none. One command on
+ * a client without a ceiling can legitimately run for any length of time, so silence there is not
+ * evidence of a hang.
+ */
+export const longestWatchedSocketTimeout = (): number => longestWatchedSocketTimeoutMs;
 
 export const clientMonitorsCommands = (client: unknown): boolean =>
   (client as CommandMonitoringClient | undefined)?.options?.monitorCommands === true;
@@ -121,7 +134,12 @@ const commandKey = (event: {
 export function watchMongoClientProgress(client: unknown): boolean {
   if (!client || typeof client !== 'object') return false;
   const monitored = clientMonitorsCommands(client);
-  if (!monitored || watchedClients.has(client)) return monitored;
+  if (!monitored) return false;
+  longestWatchedSocketTimeoutMs = Math.max(
+    longestWatchedSocketTimeoutMs,
+    socketTimeoutMs(client as CommandMonitoringClient),
+  );
+  if (watchedClients.has(client)) return true;
   watchedClients.add(client);
   const counted = new Set<string>();
   const emitter = client as CommandMonitoringClient;
@@ -141,4 +159,5 @@ export function resetDevWriteProgressForTests() {
   clock = () => new Date();
   count = 0;
   lastAt = undefined;
+  longestWatchedSocketTimeoutMs = 0;
 }
