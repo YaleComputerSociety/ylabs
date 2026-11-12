@@ -50,6 +50,7 @@ const award = (
 const CO_LEAD_PI = { profileId: 11, first: 'Avery', last: 'Colead' };
 const PARTNER_PI = { profileId: 22, first: 'Blair', last: 'Partner' };
 const SOLO_PI = { profileId: 44, first: 'Devon', last: 'Sololead' };
+const OTHER_PARTNER_PI = { profileId: 33, first: 'Casey', last: 'Otherpartner' };
 
 const coLeadSoleAward = award(1, 'R01GM000101', [{ ...CO_LEAD_PI, contact: true }]);
 const coLeadWithPartnerAward = award(2, 'R01GM000102', [
@@ -57,6 +58,10 @@ const coLeadWithPartnerAward = award(2, 'R01GM000102', [
   { ...PARTNER_PI, contact: false },
 ]);
 const partnerSoleAward = award(3, 'R01GM000103', [{ ...PARTNER_PI, contact: true }]);
+const coLeadWithOtherPartnerAward = award(5, 'R01GM000105', [
+  { ...CO_LEAD_PI, contact: true },
+  { ...OTHER_PARTNER_PI, contact: false },
+]);
 const soloLeadAward = award(4, 'R01GM000104', [{ ...SOLO_PI, contact: true }]);
 
 const officialLeadRows = new Map<string, OfficialLeadRow[]>([
@@ -126,7 +131,10 @@ const scraper = () =>
       rowResolution.get(researcherId) ?? { status: 'safe-shell' },
     officialLeadRowsLoader: async (researcherId) => officialLeadRows.get(researcherId) ?? [],
     lookupContactPiAffiliations: async () =>
-      new Map([[PARTNER_PI.profileId, { fiscalYear: 2025, atYale: true }]]),
+      new Map([
+        [PARTNER_PI.profileId, { fiscalYear: 2025, atYale: true }],
+        [OTHER_PARTNER_PI.profileId, { fiscalYear: 2025, atYale: true }],
+      ]),
     loadLegacyGrantObservations: async () => [],
   });
 
@@ -159,15 +167,18 @@ describe('co-led row selection', () => {
     expect(coLedAwardRowSlugs([coLeadWithPartnerAward], coLead, rows, lookup)).toEqual([
       'shared-with-partner',
     ]);
-    expect(coLedAwardRowSlugs([coLeadSoleAward], coLead, rows, lookup)).toEqual([
-      'shared-with-partner',
-      'shared-with-other-partner',
-    ]);
+  });
+
+  it('sends an award that shares no co-led row with another of its PIs nowhere', () => {
+    const rows = coLedOfficialLeadRows(officialLeadRows.get(coLead)!, coLead);
+    const lookup = (pi: { last_name?: string }) =>
+      pi.last_name ? researcherByLastName.get(pi.last_name) : undefined;
+    expect(coLedAwardRowSlugs([coLeadSoleAward], coLead, rows, lookup)).toEqual([]);
   });
 });
 
 describe('NihReporterScraper co-lead of several rows', () => {
-  it("attaches a co-lead's awards to their co-led rows and never to a solely-led row", async () => {
+  it("attaches a co-lead's shared award to the shared row and never to a solely-led row", async () => {
     stubYaleGrants([coLeadSoleAward, coLeadWithPartnerAward, partnerSoleAward, soloLeadAward]);
     const { ctx, emitted } = makeContext();
     const result = await scraper().run(ctx);
@@ -176,16 +187,33 @@ describe('NihReporterScraper co-lead of several rows', () => {
     const sharedId = String(coLeadWithPartnerAward.core_project_num);
     const partnerSoleId = String(partnerSoleAward.core_project_num);
     const grants = awardIdsBySlug(emitted);
-    expect(Object.keys(grants).sort()).toEqual([
-      'shared-with-other-partner',
-      'shared-with-partner',
-    ]);
-    expect(grants['shared-with-partner']).toEqual([coLeadSoleId, sharedId, partnerSoleId].sort());
-    expect(grants['shared-with-other-partner']).toEqual([coLeadSoleId]);
+    expect(Object.keys(grants)).toEqual(['shared-with-partner']);
+    expect(grants['shared-with-partner']).toEqual([sharedId, partnerSoleId].sort());
+    expect(Object.values(grants).flat()).not.toContain(coLeadSoleId);
     expect(result.notes).toMatch(/2 ambiguous row/);
     expect(result.notes).toMatch(
-      /1 PI\(s\) of an ambiguous row attached 2 award\(s\) to 2 co-led row/,
+      /1 PI\(s\) of an ambiguous row attached 1 award\(s\) to 1 co-led row\(s\), 1 refused/,
     );
+  });
+
+  it('attaches a shared award to a co-led row that only the co-lead path reaches', async () => {
+    stubYaleGrants([coLeadWithOtherPartnerAward, coLeadSoleAward]);
+    const { ctx, emitted } = makeContext();
+    await scraper().run(ctx);
+
+    expect(awardIdsBySlug(emitted)).toEqual({
+      'shared-with-other-partner': [String(coLeadWithOtherPartnerAward.core_project_num)],
+    });
+  });
+
+  it("attaches a co-lead's single-PI award to none of their rows", async () => {
+    stubYaleGrants([coLeadSoleAward]);
+    const { ctx, emitted } = makeContext();
+    const result = await scraper().run(ctx);
+
+    expect(emitted.filter((obs) => obs.field === 'recentGrants')).toEqual([]);
+    expect(result.entitiesObserved).toBe(0);
+    expect(result.notes).toMatch(/attached 0 award\(s\) to 0 co-led row\(s\), 1 refused/);
   });
 
   it('never names the co-lead as the inferred PI of a row they reach only as a co-lead', async () => {
@@ -200,16 +228,16 @@ describe('NihReporterScraper co-lead of several rows', () => {
   });
 
   it('records the co-lead as the contact investigator on the attached award', async () => {
-    stubYaleGrants([coLeadSoleAward]);
+    stubYaleGrants([coLeadWithPartnerAward]);
     const { ctx, emitted } = makeContext();
     await scraper().run(ctx);
 
     const grants = emitted.find(
-      (obs) => obs.field === 'recentGrants' && obs.entityKey === 'shared-with-other-partner',
+      (obs) => obs.field === 'recentGrants' && obs.entityKey === 'shared-with-partner',
     )?.value as Array<{ investigators?: Array<{ contact: boolean; researcherId?: string }> }>;
-    expect(grants[0].investigators).toEqual([
-      expect.objectContaining({ contact: true, researcherId: coLead }),
-    ]);
+    expect(grants[0].investigators).toEqual(
+      expect.arrayContaining([expect.objectContaining({ contact: true, researcherId: coLead })]),
+    );
   });
 
   it('emits the same observations on a second run', async () => {

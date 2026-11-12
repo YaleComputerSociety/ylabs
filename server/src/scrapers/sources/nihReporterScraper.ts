@@ -24,9 +24,10 @@
  *         A grant proves that a person is funded, never that a row should exist, so
  *         every other outcome is counted by reason and mints nothing (#3145, #3561).
  *       - A PI who leads several rows resolves to none of them. When some of those rows
- *         are co-led, each award goes to the co-led row it shares with another of the
- *         award's PIs, or else to every co-led row the PI leads, because on a genuinely
- *         co-led row each co-lead's awards belong to the row (#5779, #5846).
+ *         are co-led, an award goes only to the co-led row it shares with another of the
+ *         award's PIs, because on a genuinely co-led row each co-lead's awards belong to
+ *         the row (#5779, #5846). An award that shares no row with another of its PIs is
+ *         refused like any ambiguous row, since a grant must not show on a row it may not fund.
  *       - Emit grant evidence without replacing identity fields on the existing row.
  *
  * Honors:
@@ -758,10 +759,9 @@ export function coLedAwardRowSlugs(
       if (otherId && otherId !== researcherId) otherInvestigators.add(otherId);
     }
   }
-  const shared = coLedRows.filter((row) =>
-    row.leadPersonIds.some((personId) => otherInvestigators.has(personId)),
-  );
-  return (shared.length > 0 ? shared : coLedRows).map((row) => row.slug);
+  return coLedRows
+    .filter((row) => row.leadPersonIds.some((personId) => otherInvestigators.has(personId)))
+    .map((row) => row.slug);
 }
 
 export function piGrantsToObservations(
@@ -1288,16 +1288,21 @@ export class NihReporterScraper implements IScraper {
       }
     }
 
-    const coLedAttach = { awards: 0, rows: new Set<string>() };
+    const coLedAttach = { awards: 0, refused: 0, rows: new Set<string>() };
     for (const coLead of coLeadsOfSeveralRows) {
       for (const records of groupGrantsByProject(coLead.grants)) {
-        coLedAttach.awards++;
-        for (const slug of coLedAwardRowSlugs(
+        const slugs = coLedAwardRowSlugs(
           records,
           coLead.researcherId,
           coLead.coLedRows,
           researcherIdForPi,
-        )) {
+        );
+        if (slugs.length === 0) {
+          coLedAttach.refused++;
+          continue;
+        }
+        coLedAttach.awards++;
+        for (const slug of slugs) {
           const row = rows.get(slug) ?? { researcherIds: new Set<string>(), grants: [] };
           row.grants.push(...records);
           rows.set(slug, row);
@@ -1428,7 +1433,8 @@ export class NihReporterScraper implements IScraper {
       }); ` +
       `${rows.size} distinct row(s) enriched; ${grantAttachSummary(attach)}; ` +
       `${coLeadsOfSeveralRows.length} PI(s) of an ambiguous row attached ${coLedAttach.awards} award(s) ` +
-      `to ${coLedAttach.rows.size} co-led row(s); ` +
+      `to ${coLedAttach.rows.size} co-led row(s), ${coLedAttach.refused} refused (no co-led row shared ` +
+      `with another of the award's PIs); ` +
       `${ineligibleLeadTitle} held for a non-lead title; ` +
       `${corroboratedPis} PI(s) settled by a corroborating profile URL; ` +
       `legacy award PI lists ${relist.status}: ${relist.observations} observation(s) relisted, ` +

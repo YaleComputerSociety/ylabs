@@ -569,8 +569,9 @@ Anything unproven is held without a role: on Development a random sample of with
 On a genuinely co-led row each co-lead's awards belong to the row, so there is no per-lead grant rule.
 The NIH lane applies the same rule when it attaches awards (#5846).
 A credited PI who leads several live official rows resolves to no single row, so before the fix none of their awards reached any of those rows, including a row they co-lead.
-Such a PI's awards now go to the co-led rows they lead: an award goes to the co-led row it shares with another of its resolved PIs, and otherwise to every co-led row the PI leads.
-A PI whose several rows are all solely led still attaches nothing, because no ruling says which of their own rows an award belongs to.
+Such a PI's award now goes to a co-led row they lead only when another of the award's resolved PIs also leads that row.
+An award that shares no row with another of its PIs, including every single-PI award, is refused as before, because a grant must not show on a row it may not fund and nothing in the award says which of the PI's rows it funds.
+Measured on Development before this narrowing, all 12 new attachments came through the "every co-led row" fallback and none through a shared row (#5846).
 The attach writes grant evidence only: it adds no lead edge and never names the co-lead as the row's `inferredPiUserId`.
 The writer's `eligibleWriterGrants` reads only `pi` entries, so a held entry is not description evidence until its lane re-reads it.
 A served grant page is cited for a lane's contribution (`servedGrantPageUrl`) whatever its role, because every served entry is a lead's award or a held one.
