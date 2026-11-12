@@ -79,13 +79,7 @@ const APPLY_GUARD_EXEMPTIONS: Record<string, Exemption> = {
  * write skips that and would land unleased. Record the intent before connecting, or list the script
  * here with the reason that is safe.
  */
-const RECORDS_APPLY_INTENT_AFTER_CONNECTING: Record<string, Exemption> = {
-  'scripts/studentVisibilityOverride.ts': {
-    category: 'covered-elsewhere',
-    reason:
-      'fixed on its own by #5972 (issue #5966), which records the intent before connecting; its writes go through models, so the first-write acquisition already takes the lease until then',
-  },
-};
+const RECORDS_APPLY_INTENT_AFTER_CONNECTING: Record<string, Exemption> = {};
 
 const PACKAGE_JSON = path.resolve(SERVER_SRC, '..', 'package.json');
 

@@ -4,7 +4,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { initializeConnections } from '../../db/connections';
-import { DevWriteRefusedError, resetDevWriteGuardStateForTests } from '../../db/devWriteGuard';
+import { resetDevWriteGuardStateForTests } from '../../db/devWriteGuard';
 import { DEV_WRITE_LAUNCH_COLLECTION } from '../../db/devWriteLaunch';
 import {
   DEV_APPLY_LEASE_NAME,
@@ -125,16 +125,20 @@ describe('student-visibility:override under the Development write lease guard', 
     expect(leases[0]).toMatchObject({ locked: false, releaseReason: 'success' });
   });
 
-  it('is still refused by the guard when the connection opened before the apply guard ran', async () => {
+  it('takes the lease at its first write when the connection opened before the apply guard ran', async () => {
     await initializeConnections();
 
-    await expect(
-      runStudentVisibilityOverride(parseStudentVisibilityOverrideArgs(overrideArgv(APPLY))),
-    ).rejects.toBeInstanceOf(DevWriteRefusedError);
+    await runStudentVisibilityOverride(parseStudentVisibilityOverrideArgs(overrideArgv(APPLY)));
 
-    expect((await storedRow())?.studentVisibilitySuppressionReason).toBeUndefined();
-    expect(await auditEventCount()).toBe(0);
-    expect(await applyLeases()).toHaveLength(0);
+    expect((await storedRow())?.studentVisibilitySuppressionReason).toBe(REASON);
+    expect(await auditEventCount()).toBe(1);
+    expect(await applyLeases()).toEqual([expect.objectContaining({ locked: true })]);
+
+    await mongoose.disconnect();
+
+    expect(await applyLeases()).toEqual([
+      expect.objectContaining({ locked: false, releaseReason: 'success' }),
+    ]);
   });
 
   it('takes no lease and writes nothing on a dry run', async () => {
