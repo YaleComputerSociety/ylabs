@@ -10,6 +10,7 @@ import {
   releaseHeldDevWriteLeases,
   resolveDevWriteLeaseTarget,
 } from './devWriteLease';
+import { devWriteStopCleanupMayWrite, devWriteStopped, devWriteStopReason } from './devWriteStop';
 
 /**
  * Refuses a Mongoose model write to Development from a script process that holds no Development
@@ -272,13 +273,22 @@ function dryLaneRunRefusal(model: GuardedModel, write: DevModelWrite): Error | u
 }
 
 // Ordered so a request-serving process, a switched-off lease and any database other than
-// Development all return before lease state is read.
+// Development all return before lease state is read. A stopped process is refused before any of
+// that, and synchronously, because it stopped precisely when its database could not be trusted.
 export async function assertDevModelWriteAllowed(
   model: GuardedModel,
   write: DevModelWrite,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<void> {
   if (isRequestServingProcess()) return;
+  if (devWriteStopped()) {
+    if (devWriteStopCleanupMayWrite(model.collection.collectionName)) return;
+    throw refusal(
+      model,
+      write.operation,
+      `this process stopped itself (${devWriteStopReason()}) because its Development write lease is no longer confirmed, and only its own bounded stop cleanup may still write`,
+    );
+  }
   if (devWriteLeaseSwitchedOff(env)) return;
   const databaseName = await connectedDatabaseName(model.db);
   if (!databaseName) {

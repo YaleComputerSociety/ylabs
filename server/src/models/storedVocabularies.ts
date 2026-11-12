@@ -163,6 +163,9 @@ export const scrapeRunInterruptionReasons = [
   'heartbeat_stale',
   'legacy_abandoned',
   'stalled',
+  'lease_lost',
+  'lease_renewal_failed',
+  'lease_no_progress',
 ] as const;
 export type ScrapeRunInterruptionReason = (typeof scrapeRunInterruptionReasons)[number];
 
