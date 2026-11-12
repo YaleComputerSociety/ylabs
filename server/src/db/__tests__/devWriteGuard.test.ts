@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -63,6 +63,23 @@ const GUARD_MODULE = '../db/devWriteGuard';
 
 let memoryServer: MongoMemoryServer;
 let client: MongoClient;
+
+// Asynchronous on purpose: the in-memory mongod is this process's child and stalls once its log
+// pipe fills, so a parent blocked in spawnSync freezes the database the child script is using.
+const runTsxChild = (args: string[], env: NodeJS.ProcessEnv) =>
+  new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve, reject) => {
+    const child = spawn(process.execPath, ['--import', 'tsx', ...args], {
+      cwd: path.resolve(SERVER_SRC, '..'),
+      env: hermeticChildEnvironment(env),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => (stdout += chunk));
+    child.stderr.on('data', (chunk) => (stderr += chunk));
+    child.on('error', reject);
+    child.on('close', (status) => resolve({ status, stdout, stderr }));
+  });
 
 const database = (name: string): Db => client.db(name);
 const uriFor = (name: string) => `${memoryServer.getUri()}${name}`;
@@ -250,12 +267,8 @@ describe('a scratch script that imports a model and connects on its own', () => 
 });
 
 describe('a scratch script run as its own process', () => {
-  const runScratchScript = (env: NodeJS.ProcessEnv) => {
-    const result = spawnSync(
-      process.execPath,
-      ['--import', 'tsx', SCRATCH_SCRIPT, uriFor('Development')],
-      { cwd: path.resolve(SERVER_SRC, '..'), encoding: 'utf8', env: hermeticChildEnvironment(env) },
-    );
+  const runScratchScript = async (env: NodeJS.ProcessEnv) => {
+    const result = await runTsxChild([SCRATCH_SCRIPT, uriFor('Development')], env);
     expect(result.status, result.stderr).toBe(0);
     return result.stdout.trim();
   };
@@ -264,7 +277,7 @@ describe('a scratch script run as its own process', () => {
     const dev = database('Development');
     await seed(dev, SearchRerankCache.collection.collectionName, 3);
 
-    expect(runScratchScript({ [DEV_WRITE_LEASE_SWITCH_ENV]: '' })).toBe(
+    expect(await runScratchScript({ [DEV_WRITE_LEASE_SWITCH_ENV]: '' })).toBe(
       'REFUSED DevWriteRefusedError',
     );
     expect(await count(dev, SearchRerankCache.collection.collectionName)).toBe(3);
@@ -274,7 +287,7 @@ describe('a scratch script run as its own process', () => {
     const dev = database('Development');
     await seed(dev, SearchRerankCache.collection.collectionName, 3);
 
-    expect(runScratchScript({ [DEV_WRITE_LEASE_SWITCH_ENV]: 'off' })).toBe('DELETED 3');
+    expect(await runScratchScript({ [DEV_WRITE_LEASE_SWITCH_ENV]: 'off' })).toBe('DELETED 3');
     expect(await count(dev, SearchRerankCache.collection.collectionName)).toBe(0);
   });
 });
@@ -492,15 +505,11 @@ describe('a script that records its apply intent only after it connected (#5971)
 });
 
 describe('an apply script run as its own process that connects before its apply guard runs', () => {
-  const runLateIntentScript = (env: NodeJS.ProcessEnv) => {
-    const result = spawnSync(process.execPath, ['--import', 'tsx', LATE_INTENT_SCRIPT], {
-      cwd: path.resolve(SERVER_SRC, '..'),
-      encoding: 'utf8',
-      env: hermeticChildEnvironment({
-        MONGODBURL: uriFor('Development'),
-        [DEV_WRITE_LEASE_SWITCH_ENV]: '',
-        ...env,
-      }),
+  const runLateIntentScript = async (env: NodeJS.ProcessEnv) => {
+    const result = await runTsxChild([LATE_INTENT_SCRIPT], {
+      MONGODBURL: uriFor('Development'),
+      [DEV_WRITE_LEASE_SWITCH_ENV]: '',
+      ...env,
     });
     const outcome = result.stdout
       .split('\n')
@@ -513,7 +522,7 @@ describe('an apply script run as its own process that connects before its apply 
     const dev = database('Development');
     await seed(dev, SearchRerankCache.collection.collectionName, 3);
 
-    const run = runLateIntentScript({ DEV_WRITE_OWNER: 'test-session' });
+    const run = await runLateIntentScript({ DEV_WRITE_OWNER: 'test-session' });
 
     expect(run.outcome, run.stderr).toBe('DELETED 3 LEASED true');
     expect(await count(dev, SearchRerankCache.collection.collectionName)).toBe(0);
@@ -533,7 +542,7 @@ describe('an apply script run as its own process that connects before its apply 
     await seed(dev, SearchRerankCache.collection.collectionName, 3);
     await seedLeaseHeldByAnotherOwner(dev);
 
-    const run = runLateIntentScript({ DEV_WRITE_OWNER: 'test-session' });
+    const run = await runLateIntentScript({ DEV_WRITE_OWNER: 'test-session' });
 
     expect(run.status).toBe(1);
     expect(run.outcome).toBe('');
