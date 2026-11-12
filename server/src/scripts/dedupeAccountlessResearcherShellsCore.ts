@@ -15,10 +15,53 @@ import { sanitizePersonName } from '../utils/personNameHygiene';
 import { researcherHoldsDirectoryIdentity } from '../utils/researcherIdentity';
 import { looksLikeYaleNetid } from '../utils/yaleNetid';
 
+const INVERTED_NAME_TOKEN = /^[\p{L}][\p{L}'’.-]*$/u;
+
+/**
+ * A directory-style "Surname, Given" display name in reading order, so it names the same person
+ * as the "Given Surname" copy of the record (#5606). Only a one-token surname before a single
+ * comma, followed by one or two given-name tokens, is read as inverted: "Name Surname, PhD" and
+ * "Surname, Jr." keep their comma as roster noise, because a credential is never a given name.
+ */
+export function uninvertedPersonName(value: string): string {
+  const parts = value.split(',');
+  if (parts.length !== 2) return value;
+  const surnameTokens = parts[0].trim().split(/\s+/).filter(Boolean);
+  const givenTokens = parts[1].trim().split(/\s+/).filter(Boolean);
+  if (surnameTokens.length !== 1 || givenTokens.length < 1 || givenTokens.length > 2) return value;
+  const isNameToken = (token: string) =>
+    INVERTED_NAME_TOKEN.test(token) &&
+    !NAME_VARIANT_CREDENTIALS.has(token.toLowerCase().replace(/\./g, ''));
+  if (![...surnameTokens, ...givenTokens].every(isNameToken)) return value;
+  if (givenTokens[0].replace(/\./g, '').length < 2) return value;
+  return `${givenTokens.join(' ')} ${surnameTokens[0]}`;
+}
+
 export function normalizeResearcherName(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
-  const normalized = value.trim().toLowerCase().replace(/\s+/g, ' ');
+  const normalized = uninvertedPersonName(value.trim()).toLowerCase().replace(/\s+/g, ' ');
   return normalized.length > 0 ? normalized : undefined;
+}
+
+const SPACED_GIVEN_NAME_TOKEN = /^\p{L}{2,}$/u;
+
+/**
+ * The exact-name arm's key: the normalized name with the spaces inside a multi-part given name
+ * closed up, so a romanized given name written as one word or as two ("Jiyeon", "Ji Yeon") keys
+ * the same record. Only whole given-name words close up, never initials, so "J. R." stays apart.
+ */
+export function researcherNameMatchKey(value: unknown): string | undefined {
+  const normalized = normalizeResearcherName(value);
+  if (!normalized) return undefined;
+  const tokens = normalized.split(' ');
+  const givenTokens = tokens.slice(0, -1);
+  if (
+    givenTokens.length < 2 ||
+    !givenTokens.every((token) => SPACED_GIVEN_NAME_TOKEN.test(token))
+  ) {
+    return normalized;
+  }
+  return `${givenTokens.join('')} ${tokens[tokens.length - 1]}`;
 }
 
 const cleanOrcid = (value: unknown): string | undefined => {
@@ -117,7 +160,7 @@ export function buildCanonicalNameIndex(
 ): Map<string, CanonicalCandidate[]> {
   const index = new Map<string, CanonicalCandidate[]>();
   for (const entry of canonical) {
-    const name = normalizeResearcherName(entry.displayName);
+    const name = researcherNameMatchKey(entry.displayName);
     if (!name) continue;
     const list = index.get(name) ?? [];
     list.push({
@@ -144,6 +187,7 @@ export type ShellMergeReason =
 export const SHELL_FOLD_IDENTITIES = [
   'netid',
   'directory-email',
+  'official-page',
   'roster-identity',
   'verified-profile',
   'shared-row',
@@ -474,7 +518,8 @@ const GENERATIONAL_SUFFIX = /^(?:jr|sr|ii|iii|iv)$/i;
 // Copies of one record differ only in roster noise after the name: a credential after a
 // comma, a generational suffix, a trailing period.
 function surnameReadPastRosterNoise(displayName: unknown): string {
-  const beforeCredentials = (typeof displayName === 'string' ? displayName : '').split(',')[0];
+  const readingOrder = uninvertedPersonName(typeof displayName === 'string' ? displayName : '');
+  const beforeCredentials = readingOrder.split(',')[0];
   const tokens = beforeCredentials
     .split(/\s+/)
     .map((token) => token.replace(/\.+$/, ''))
@@ -511,7 +556,8 @@ const foldNameToken = (token: string): string =>
     .replace(/[^a-z']/g, '');
 
 function foldedNameTokens(displayName: unknown): string[] {
-  const beforeCredentials = (typeof displayName === 'string' ? displayName : '').split(',')[0];
+  const readingOrder = uninvertedPersonName(typeof displayName === 'string' ? displayName : '');
+  const beforeCredentials = readingOrder.split(',')[0];
   return beforeCredentials
     .split(/[\s-]+/)
     .map(foldNameToken)
@@ -714,6 +760,100 @@ export function decideDirectoryEmailFold(
   return { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn };
 }
 
+const YSM_LAB_MICROSITE_PROFILE =
+  /^(medicine\.yale\.edu)\/lab\/[a-z0-9-]+\/profile\/([a-z0-9-]+)$/i;
+
+/**
+ * The page a normalized official profile destination names, for the official-page arm only. A
+ * YSM lab microsite renders the member's school profile under the lab's path, so
+ * `medicine.yale.edu/lab/<lab>/profile/<slug>` is the same page as `medicine.yale.edu/profile/<slug>`
+ * with the same slug. Kept out of the shared destination normalizer, which other lanes key on.
+ */
+export function officialPageWitnessDestination(destination: string): string {
+  const microsite = YSM_LAB_MICROSITE_PROFILE.exec(destination);
+  return microsite ? `${microsite[1].toLowerCase()}/profile/${microsite[2]}` : destination;
+}
+
+export interface OfficialPageStatement {
+  emails: ReadonlyArray<string>;
+  orcids: ReadonlyArray<string>;
+  directoryNetids?: ReadonlyArray<string>;
+}
+
+export interface OfficialPageCandidate extends DirectoryEmailCandidate {
+  email?: string;
+}
+
+export interface OfficialPageHolders {
+  byEmail: ReadonlyMap<string, ReadonlyArray<OfficialPageCandidate>>;
+  byOrcid: ReadonlyMap<string, ReadonlyArray<OfficialPageCandidate>>;
+}
+
+/**
+ * Whether a page's stated emails leave room for the holder: it states none, or one of them is
+ * the holder's stored address, or the directory pairs one of them with the holder's netid.
+ */
+function pageEmailsAdmitHolder(
+  statement: OfficialPageStatement,
+  holder: OfficialPageCandidate,
+): boolean {
+  const emails = statement.emails.map((email) => email.trim().toLowerCase());
+  if (emails.length === 0) return true;
+  if (holder.email && emails.includes(holder.email)) return true;
+  return Boolean(holder.netid && statement.directoryNetids?.includes(holder.netid));
+}
+
+/**
+ * A `NAME_ONLY` shell is the directory-backed record whose stored email, or ORCID, an official
+ * profile page the shell cites states (#5606). The cited pages are the shell's own official links
+ * and the profile URLs its edges cite. A page lane's ORCID is not scoped to the page's subject,
+ * so a page stating more than one distinct ORCID is no ORCID witness, and neither is a page whose
+ * stated email belongs to someone other than the ORCID's holder: a record can carry an ORCID a
+ * lane copied from another person's page, which is the defect #5606 records. The page decides;
+ * the surname and rank only veto, and more than one witnessed directory record resolves to nobody.
+ */
+export function decideOfficialPageWitnessFold(
+  shell: ShellIdentity,
+  statements: ReadonlyArray<OfficialPageStatement>,
+  holders: OfficialPageHolders,
+): ShellMergeDecision | undefined {
+  if (researcherIdentityTier(shell) !== 'NAME_ONLY') return undefined;
+  const witnessed = new Map<string, OfficialPageCandidate>();
+  const addHolders = (
+    candidates: ReadonlyArray<OfficialPageCandidate> | undefined,
+    admits: (candidate: OfficialPageCandidate) => boolean = () => true,
+  ) => {
+    for (const candidate of candidates ?? []) {
+      if (candidate.id !== shell.id && candidate.tier === 'DIRECTORY' && admits(candidate)) {
+        witnessed.set(candidate.id, candidate);
+      }
+    }
+  };
+  for (const statement of statements) {
+    for (const email of statement.emails) {
+      addHolders(holders.byEmail.get(email.trim().toLowerCase()));
+    }
+    const orcids = new Set(statement.orcids.map(cleanOrcid).filter(Boolean) as string[]);
+    if (orcids.size === 1) {
+      addHolders(holders.byOrcid.get([...orcids][0]), (candidate) =>
+        pageEmailsAdmitHolder(statement, candidate),
+      );
+    }
+  }
+  if (witnessed.size === 0) return undefined;
+  const matchedOn = 'official-page' as const;
+  if (witnessed.size > 1)
+    return { merge: false, reason: 'AMBIGUOUS_MULTIPLE_CANONICAL', matchedOn };
+  const [target] = witnessed.values();
+  if (!profileHolderSurnamesAgree(shell.displayName, target.displayName)) return undefined;
+  if (titlesStateConflictingRanks(shell.title, target.title)) return undefined;
+  const shellOrcid = cleanOrcid(shell.orcid);
+  if (shellOrcid && target.orcid && shellOrcid !== target.orcid) {
+    return { merge: false, reason: 'ORCID_CONFLICT', matchedOn };
+  }
+  return { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn };
+}
+
 /** The unordered key of a pair an operator recorded as two different people. */
 export const distinctPeoplePairKey = (left: string, right: string): string =>
   [left, right].sort().join('|');
@@ -745,6 +885,8 @@ export function decideShellMerge(
   nameVariantCandidates: ReadonlyArray<NameVariantCandidate> = [],
   listingAddressNetids: ReadonlyArray<ReadonlySet<string>> = [],
   directoryEmailHolders: ReadonlyMap<string, ReadonlyArray<DirectoryEmailCandidate>> = new Map(),
+  officialPageStatements: ReadonlyArray<OfficialPageStatement> = [],
+  officialPageHolders: OfficialPageHolders = { byEmail: new Map(), byOrcid: new Map() },
 ): ShellMergeDecision {
   const byNetid = decideNetidFold(shell, canonicalNetidIndex);
   if (byNetid) return byNetid;
@@ -754,6 +896,12 @@ export function decideShellMerge(
     directoryEmailHolders,
   );
   if (byDirectoryEmail?.merge) return byDirectoryEmail;
+  const byOfficialPage = decideOfficialPageWitnessFold(
+    shell,
+    officialPageStatements,
+    officialPageHolders,
+  );
+  if (byOfficialPage?.merge) return byOfficialPage;
   const byRosterIdentity = decideRosterIdentityFold(shell, rosterIdentityCandidates);
   if (byRosterIdentity) return byRosterIdentity;
   const byVerifiedProfile = decideVerifiedProfileFold(shell, verifiedProfileIndex);
@@ -764,14 +912,14 @@ export function decideShellMerge(
   if (byNameVariant?.merge) return byNameVariant;
   const byName = decideExactNameFold(shell, canonicalNameIndex);
   if (byName.reason !== 'NO_CANONICAL') return byName;
-  return byNameVariant ?? byDirectoryEmail ?? byName;
+  return byNameVariant ?? byDirectoryEmail ?? byOfficialPage ?? byName;
 }
 
 function decideExactNameFold(
   shell: ShellIdentity,
   canonicalNameIndex: Map<string, CanonicalCandidate[]>,
 ): ShellMergeDecision {
-  const name = normalizeResearcherName(shell.displayName);
+  const name = researcherNameMatchKey(shell.displayName);
   if (!name) return { merge: false, reason: 'NO_NAME' };
 
   const shellStrength = identityTierStrength(researcherIdentityTier(shell));
@@ -1272,6 +1420,7 @@ export const ALIAS_TWIN_FOLD_REFUSALS = [
   'alias-unresolved',
   'no-real-researcher',
   'names-disagree',
+  'orcid-conflict',
 ] as const;
 export type AliasTwinFoldRefusal = (typeof ALIAS_TWIN_FOLD_REFUSALS)[number];
 
@@ -1279,6 +1428,7 @@ export interface AliasTwinResearcher {
   id: string;
   netid: string;
   displayName?: unknown;
+  orcid?: unknown;
 }
 
 export interface AliasTwinPlan {
@@ -1297,7 +1447,7 @@ export interface AliasTwinPlan {
  */
 export function planAliasTwinFolds(input: {
   twinResearchers: readonly AliasTwinResearcher[];
-  researcherByNetid: ReadonlyMap<string, { id: string; displayName?: unknown }>;
+  researcherByNetid: ReadonlyMap<string, { id: string; displayName?: unknown; orcid?: unknown }>;
   aliasNetidByTwinNetid: ReadonlyMap<string, string>;
   loginNetids: ReadonlySet<string>;
 }): AliasTwinPlan {
@@ -1327,7 +1477,134 @@ export function planAliasTwinFolds(input: {
       plan.refusals['names-disagree'] += 1;
       continue;
     }
+    const twinOrcid = cleanOrcid(twin.orcid);
+    const realOrcid = cleanOrcid(realResearcher.orcid);
+    if (twinOrcid && realOrcid && twinOrcid !== realOrcid) {
+      plan.refusals['orcid-conflict'] += 1;
+      continue;
+    }
     plan.targetByTwinResearcherId.set(twin.id, realResearcher.id);
   }
   return plan;
+}
+
+export interface EmaillessTwinIdentity {
+  id: string;
+  netid?: unknown;
+  email?: unknown;
+}
+
+const YALE_EMAIL_DOMAIN = '@yale.edu';
+
+/**
+ * A twin minted under an email local part before any email reached it holds that local part as
+ * its netid and stores no email, so `isLocalPartNetid` cannot see it (#5606). The local part is
+ * the witness when exactly one live directory-backed record stores the matching Yale address and
+ * holds a netid; that netid is the alias the twin resolves to. Two such records resolve to nobody.
+ */
+export function emaillessLocalPartTwinAliases(
+  researchers: ReadonlyArray<EmaillessTwinIdentity>,
+): Map<string, string> {
+  const realNetidsByAddress = new Map<string, Set<string>>();
+  for (const entry of researchers) {
+    const email = typeof entry.email === 'string' ? entry.email.trim().toLowerCase() : '';
+    const netid = bareNetid(entry.netid);
+    if (!email.endsWith(YALE_EMAIL_DOMAIN) || !netid) continue;
+    realNetidsByAddress.set(email, (realNetidsByAddress.get(email) ?? new Set()).add(netid));
+  }
+  const aliases = new Map<string, string>();
+  for (const entry of researchers) {
+    const netid = typeof entry.netid === 'string' ? entry.netid.trim().toLowerCase() : '';
+    const hasEmail = typeof entry.email === 'string' && entry.email.trim().length > 0;
+    if (hasEmail || !netid.includes('.') || netid.includes('@') || looksLikeYaleNetid(netid)) {
+      continue;
+    }
+    const realNetids = realNetidsByAddress.get(`${netid}${YALE_EMAIL_DOMAIN}`);
+    if (realNetids?.size === 1) aliases.set(netid, [...realNetids][0]);
+  }
+  return aliases;
+}
+
+export interface FoldPlanEdge {
+  id: string;
+  personId: string;
+  targetKind?: unknown;
+  targetId?: unknown;
+  role?: unknown;
+  state?: unknown;
+}
+
+export interface ShellEdgeMoves {
+  repointed: string[];
+  archivedRedundant: string[];
+}
+
+/**
+ * Where each folding shell's live edges go: onto the survivor, or archived as redundant when the
+ * survivor already claims the same target and role. A survivor edge an operator detached still
+ * claims its key, because repointing onto it would hand the survivor a live copy of the edge the
+ * detachment took away, the twin bypass #3152 records.
+ */
+export function planShellEdgeMoves(
+  shellEdges: ReadonlyArray<FoldPlanEdge>,
+  survivorClaimEdges: ReadonlyArray<FoldPlanEdge>,
+  mergeTargetByShellId: ReadonlyMap<string, string>,
+): Map<string, ShellEdgeMoves> {
+  const claimedKeysBySurvivor = new Map<string, Set<string>>();
+  for (const edge of survivorClaimEdges) {
+    const keys = claimedKeysBySurvivor.get(edge.personId) ?? new Set<string>();
+    keys.add(roleAssignmentEdgeKey(edge));
+    claimedKeysBySurvivor.set(edge.personId, keys);
+  }
+  const movesByShell = new Map<string, ShellEdgeMoves>();
+  for (const edge of shellEdges) {
+    const survivorId = mergeTargetByShellId.get(edge.personId);
+    if (!survivorId) continue;
+    const moves = movesByShell.get(edge.personId) ?? { repointed: [], archivedRedundant: [] };
+    const claimed = claimedKeysBySurvivor.get(survivorId) ?? new Set<string>();
+    const key = roleAssignmentEdgeKey(edge);
+    if (claimed.has(key)) {
+      moves.archivedRedundant.push(edge.id);
+    } else {
+      moves.repointed.push(edge.id);
+      claimed.add(key);
+      claimedKeysBySurvivor.set(survivorId, claimed);
+    }
+    movesByShell.set(edge.personId, moves);
+  }
+  return movesByShell;
+}
+
+const isCurrentLeadEdge = (edge: FoldPlanEdge, leadRoles: ReadonlySet<string>): boolean =>
+  typeof edge.role === 'string' && leadRoles.has(edge.role) && edge.state !== 'HISTORICAL';
+
+/**
+ * The folds that would archive the last live lead edge a research row has (#5606). A shell's lead
+ * edge is archived rather than repointed when the survivor's own edge on that row is detached, and
+ * when that shell's edge is the row's only live lead the fold leaves the row with no lead at all,
+ * so the fold is refused and the row waits for an operator to resolve the detachment.
+ */
+export function foldsArchivingOnlyLiveLead(input: {
+  movesByShell: ReadonlyMap<string, ShellEdgeMoves>;
+  shellEdges: ReadonlyArray<FoldPlanEdge>;
+  liveLeadEdges: ReadonlyArray<FoldPlanEdge>;
+  leadRoles: ReadonlySet<string>;
+}): Set<string> {
+  const archivedEdgeIds = new Set(
+    [...input.movesByShell.values()].flatMap((moves) => moves.archivedRedundant),
+  );
+  const remainingLeadsByTarget = new Map<string, number>();
+  for (const edge of input.liveLeadEdges) {
+    if (!isCurrentLeadEdge(edge, input.leadRoles) || archivedEdgeIds.has(edge.id)) continue;
+    const target = String(edge.targetId ?? '');
+    remainingLeadsByTarget.set(target, (remainingLeadsByTarget.get(target) ?? 0) + 1);
+  }
+  const refused = new Set<string>();
+  for (const edge of input.shellEdges) {
+    if (!archivedEdgeIds.has(edge.id) || !isCurrentLeadEdge(edge, input.leadRoles)) continue;
+    if ((remainingLeadsByTarget.get(String(edge.targetId ?? '')) ?? 0) === 0) {
+      refused.add(edge.personId);
+    }
+  }
+  return refused;
 }
