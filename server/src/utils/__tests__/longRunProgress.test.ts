@@ -6,14 +6,16 @@ function harness(totalKeys: number) {
   let clock = 0;
   const lines: string[] = [];
   let beat: (() => void) | undefined;
+  let beatEveryMs = Infinity;
   let stopped = false;
   const progress = startLongRunProgress('run', totalKeys, {
     everyKeys: 3,
     everyMs: 60_000,
     now: () => clock,
     log: (line) => lines.push(line),
-    setInterval: (callback) => {
+    setInterval: (callback, ms) => {
       beat = callback;
+      beatEveryMs = ms;
       return { unref: () => undefined };
     },
     clearInterval: () => {
@@ -24,8 +26,12 @@ function harness(totalKeys: number) {
     progress,
     lines,
     advance(ms: number) {
-      clock += ms;
-      beat?.();
+      const until = clock + ms;
+      while (clock + beatEveryMs <= until) {
+        clock += beatEveryMs;
+        beat?.();
+      }
+      clock = until;
     },
     stopped: () => stopped,
   };
@@ -41,13 +47,29 @@ describe('long-run progress', () => {
     const run = harness(10);
     run.advance(30_000);
     expect(run.lines).toHaveLength(1);
-    run.advance(31_000);
+    run.advance(29_000);
+    expect(run.lines).toHaveLength(1);
+    run.advance(1_000);
     expect(run.lines[1]).toBe(
-      '[run] still working: 0/10 keys, 61 s since the last key, 61 s elapsed',
+      '[run] still working: 0/10 keys, 60 s since the last key, 60 s elapsed',
     );
     run.progress.tick(false);
-    run.advance(70_000);
-    expect(run.lines.at(-1)).toMatch(/still working: 1\/10 keys, 70 s since the last key/);
+    run.advance(60_000);
+    expect(run.lines.at(-1)).toMatch(/still working: 1\/10 keys, 60 s since the last key/);
+  });
+
+  it('keeps the heartbeat a minute after a progress line that lands between timer firings', () => {
+    const run = harness(10);
+    run.advance(60_000);
+    run.progress.tick(false);
+    run.progress.tick(false);
+    run.advance(10_000);
+    run.progress.tick(false);
+    expect(run.lines.at(-1)).toBe('[run] 3/10 keys, 0 error(s), 70 s elapsed');
+    run.advance(60_000);
+    expect(run.lines.at(-1)).toBe(
+      '[run] still working: 3/10 keys, 60 s since the last key, 130 s elapsed',
+    );
   });
 
   it('reports every N keys and at the end, counting errors', () => {

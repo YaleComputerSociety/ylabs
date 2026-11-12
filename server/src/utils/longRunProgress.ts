@@ -1,5 +1,6 @@
 export const LONG_RUN_PROGRESS_EVERY_KEYS = 250;
 export const LONG_RUN_PROGRESS_EVERY_MS = 60_000;
+const HEARTBEAT_CHECK_MS = 1_000;
 
 export interface LongRunProgressOptions {
   everyKeys?: number;
@@ -41,7 +42,7 @@ export function startLongRunProgress(
     log(
       `[${label}] still working: ${done}/${totalKeys} keys, ${seconds(at - lastKeyAt)} s since the last key, ${seconds(at - startedAt)} s elapsed`,
     );
-  }, everyMs);
+  }, Math.min(everyMs, HEARTBEAT_CHECK_MS));
   heartbeat.unref?.();
   return {
     tick(errored) {
