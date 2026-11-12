@@ -19,10 +19,7 @@ let reportSequence = 0;
 export function writeScriptDiagnosticReport(directory: string = os.tmpdir()): string {
   const report = process.report.getReport() as ReportSection;
   reportSequence += 1;
-  const file = path.join(
-    directory,
-    `report.${Date.now()}.${process.pid}.${reportSequence}.json`,
-  );
+  const file = path.join(directory, `report.${Date.now()}.${process.pid}.${reportSequence}.json`);
   fs.writeFileSync(file, JSON.stringify(withoutEnvironment(report), null, 2), { mode: 0o600 });
   return file;
 }

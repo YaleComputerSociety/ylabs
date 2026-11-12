@@ -53,7 +53,10 @@ function startStalledScriptWithAWorker(): {
 function waitForOutput(stream: NodeJS.ReadableStream, pattern: RegExp): Promise<RegExpMatchArray> {
   return new Promise((resolve, reject) => {
     let seen = '';
-    const timer = setTimeout(() => reject(new Error(`timed out waiting for ${pattern}: ${seen}`)), 20_000);
+    const timer = setTimeout(
+      () => reject(new Error(`timed out waiting for ${pattern}: ${seen}`)),
+      20_000,
+    );
     stream.on('data', (chunk: Buffer) => {
       seen += chunk.toString();
       const match = seen.match(pattern);
