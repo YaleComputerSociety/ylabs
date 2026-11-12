@@ -212,7 +212,7 @@ describe('decideOfficialPageWitnessFold (#5606)', () => {
       ),
     ).toMatchObject({ merge: false, reason: 'ORCID_CONFLICT' });
     expect(
-      decideOfficialPageWitnessFold({ ...shell, email: 'other@yale.edu' }, statements, holders),
+      decideOfficialPageWitnessFold({ ...shell, email: 'avery.other@yale.edu' }, statements, holders),
     ).toBeUndefined();
   });
 });
@@ -230,7 +230,7 @@ describe('emaillessLocalPartTwinAliases (#5606)', () => {
     expect(
       emaillessLocalPartTwinAliases([
         holder,
-        { id: 'twin', netid: 'avery.synth', email: 'x@yale.edu' },
+        { id: 'twin', netid: 'avery.synth', email: 'avery.alt@yale.edu' },
       ]),
     ).toEqual(new Map());
     expect(emaillessLocalPartTwinAliases([holder, { id: 'twin', netid: 'fx901' }])).toEqual(

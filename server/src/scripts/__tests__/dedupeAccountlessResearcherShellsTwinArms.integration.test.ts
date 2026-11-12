@@ -218,7 +218,7 @@ describe('dedupeAccountlessResearcherShells twin arms (#5606)', () => {
     it("takes no ORCID witness from a lab path whose school page states another person's email", async () => {
       await seedHolder('Avery Synth', {
         netid: 'fx901',
-        email: 'asynth@yale.edu',
+        email: 'asynth9@yale.edu',
         orcid: '0000-0002-0000-0001',
       });
       const row = await seedRow('lab-fixture');
