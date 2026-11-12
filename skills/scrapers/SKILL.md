@@ -1487,8 +1487,12 @@ It supersedes only this lane's `websiteUrl` observations, keeps the URL on a row
 A row whose `manuallyLockedFields` contains `websiteUrl` still has the lane's claims superseded but is neither refused nor cleared, because the lock is an operator decision.
 The same person listed in two departments is not a sharer, because that is duplicate-row work rather than a wrong URL.
 A lab's members link their PI's lab from their own profiles, so the lane keeps a shared URL for a sharer whose profile presents it as a labelled lab-website button (`labWebsiteButton`) when the button's lab card names that person, or when every other sharer's stated title owns no research row (`ownsNoResearchEntityByTitle`); an unlabelled shared link, or a labelled one several faculty share under a card naming none of them, is still refused for all (#5819).
-The retire stage does not apply that exemption yet, because it reads stored claims and no claim records the button.
-So a row that stage already refused as `wrong_owner` stays refused, and the lane's next read does not restore its website; restoring one needs an operator to lift that row's refusal, and a later stage run that still counts a member's live claim refuses it again.
+The retire stage does not apply that exemption itself, because it reads stored claims and no claim records the button.
+Its refusals are a derivation rather than a verdict, so the stage re-derives them on every run (#5838).
+Each one it records carries `derivedBy: 'shared-roster-website-retire'`; one recorded before that marker counts as the stage's only when its `refusedBy`, `rule`, `sourceName` and note all match what the stage writes, and anything else, an operator refusal of the same value included, is never touched by a run.
+It withdraws its own refusal when another lane now asserts the value for the row, or when the lane re-asserted it on a read newer than the refusal and no other person's live claim shares it, which is how a lead whose labelled button the lane now keeps gets the website back.
+Without a newer read the refusal stands, because the stage's own retirement of the lane's claims is why none is live, and a row whose `websiteUrl` is locked is left alone.
+A withdrawal changes no stored field, so the website returns on the next materialize of the row.
 
 The cross-lane form of the same mistake is a member whose profile links the lab they work in: `dept-faculty-roster` reads any `/lab/<x>/` link as the member's own lab, and `ysm-faculty-directory` cannot refuse a topical slug, so the member's row becomes a second lab on another lead's page.
 No single lane can see it, because the owner's claim comes from a different lane, so the `borrowed-lab-website-retire` sweep stage (`yarn --cwd server observations:retire-borrowed-lab-websites`, #4980) refuses the person-directory claim as `wrong_owner` when another live row holds the page as its own `websiteUrl` and the two rows share no lead.

@@ -68,6 +68,7 @@ export interface FieldValueRefusal {
   sourceName?: string;
   attributedSourceNames?: string[];
   refusedBy: string;
+  derivedBy?: string;
   refusedAt: Date;
   note: string;
   evidenceUrl?: string;
@@ -201,6 +202,7 @@ export interface FieldValueRefusalDeclaration {
   rule: FieldValueRefusalRule;
   sourceName?: string;
   refusedBy: string;
+  derivedBy?: string;
   note?: string;
   evidenceUrl?: string;
   refusedAt?: Date;
@@ -240,11 +242,13 @@ export function planFieldValueRefusal(
     return { [fieldValueRefusalsPath(field)]: existing };
   }
   const sourceName = declaration.sourceName?.trim();
+  const derivedBy = declaration.derivedBy?.trim();
   const refusal: FieldValueRefusal = {
     valueKey,
     rule,
     ...(sourceName ? { sourceName } : {}),
     refusedBy: refusedBy.trim(),
+    ...(derivedBy ? { derivedBy } : {}),
     refusedAt: declaration.refusedAt ?? new Date(),
     note: declaration.note ?? '',
     ...(declaration.evidenceUrl ? { evidenceUrl: declaration.evidenceUrl } : {}),
@@ -272,6 +276,31 @@ export function planFieldValueRefusalWithdrawal(
   return {
     [fieldValueRefusalsPath(field)]: refusalList(currentFieldValueRefusals, field).map((refusal) =>
       refusal.valueKey === key && !refusal.withdrawnAt
+        ? { ...refusal, withdrawnAt, withdrawnReason: withdrawnReason.trim() }
+        : refusal,
+    ),
+  };
+}
+
+/**
+ * Withdraws only the live refusals of one value that `isOwn` claims, so a stage
+ * re-deriving its own refusals can never retire an operator's refusal of the same value.
+ */
+export function planOwnFieldValueRefusalWithdrawal(
+  currentFieldValueRefusals: unknown,
+  field: string,
+  valueKey: string,
+  isOwn: (refusal: FieldValueRefusal) => boolean,
+  withdrawnReason: string,
+  withdrawnAt: Date = new Date(),
+): Record<string, unknown> {
+  assertRefusableFieldName(field);
+  if (!withdrawnReason.trim()) {
+    throw new Error(`Withdrawing a refusal at ${field} requires a reason.`);
+  }
+  return {
+    [fieldValueRefusalsPath(field)]: refusalList(currentFieldValueRefusals, field).map((refusal) =>
+      refusal.valueKey === valueKey && !refusal.withdrawnAt && isOwn(refusal)
         ? { ...refusal, withdrawnAt, withdrawnReason: withdrawnReason.trim() }
         : refusal,
     ),

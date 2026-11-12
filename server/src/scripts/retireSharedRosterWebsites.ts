@@ -16,11 +16,17 @@ import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   fieldValueRefusalKey,
   planFieldValueRefusal,
+  planOwnFieldValueRefusalWithdrawal,
 } from '../utils/researchEntityFieldValueRefusals';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
+  isSharedRosterStageRefusal,
   planSharedRosterWebsiteRetirement,
   SHARED_ROSTER_WEBSITE_LANE,
+  SHARED_ROSTER_WEBSITE_REFUSAL_NOTE,
+  SHARED_ROSTER_WEBSITE_SCRIPT,
+  SHARED_ROSTER_WEBSITE_STAGE,
+  SHARED_ROSTER_WEBSITE_WITHDRAWAL_REASONS,
   type LaneWebsiteClaim,
   type SharedWebsiteRow,
 } from './retireSharedRosterWebsitesCore';
@@ -28,12 +34,10 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
-const SCRIPT_NAME = 'observations:retire-shared-roster-websites';
+const SCRIPT_NAME = SHARED_ROSTER_WEBSITE_SCRIPT;
 export const CONFIRM_FLAG = '--confirm-retire-shared-roster-websites';
 const ROLLBACK_REASON =
   'a website the roster lists for two or more different people is a group site, not this row own research website, which the lane itself now refuses (#3614, #3615)';
-const REFUSAL_NOTE =
-  'the department roster lists this website for two or more different people, so it is a group site rather than this row own research website, and no other lane asserts it for this row (#3615).';
 
 export function parseRetireSharedRosterWebsitesArgs(argv: string[]): {
   dryRun: boolean;
@@ -78,7 +82,23 @@ async function loadInputs() {
       value: doc.value,
       observedAt: new Date(doc.observedAt as string),
     }));
-  const slugs = [...new Set(claims.map((claim) => claim.entityKey))];
+  const refusingDocs = (await ResearchEntity.find({
+    archived: { $ne: true },
+    'fieldValueRefusals.websiteUrl': {
+      $elemMatch: {
+        withdrawnAt: { $exists: false },
+        $or: [{ derivedBy: SHARED_ROSTER_WEBSITE_STAGE }, { refusedBy: SCRIPT_NAME }],
+      },
+    },
+  })
+    .select('slug')
+    .lean()) as unknown as Array<Record<string, unknown>>;
+  const slugs = [
+    ...new Set([
+      ...claims.map((claim) => claim.entityKey),
+      ...refusingDocs.map((doc) => text(doc.slug)).filter(Boolean),
+    ]),
+  ];
 
   const personDocs = (await Observation.find({
     ...liveLane,
@@ -153,6 +173,27 @@ async function main(): Promise<void> {
   let regatedEntities = 0;
   let demotedFromStudentReady = 0;
   let indexSyncFailures = 0;
+  let refusalsWithdrawn = 0;
+  if (!options.dryRun) {
+    for (const withdrawal of outcome.withdrawals) {
+      const fresh = (await ResearchEntity.findById(withdrawal.entityId)
+        .select('fieldValueRefusals')
+        .lean()) as { fieldValueRefusals?: unknown } | null;
+      const result = await ResearchEntity.updateOne(
+        { _id: new mongoose.Types.ObjectId(withdrawal.entityId) },
+        {
+          $set: planOwnFieldValueRefusalWithdrawal(
+            fresh?.fieldValueRefusals,
+            'websiteUrl',
+            withdrawal.valueKey,
+            isSharedRosterStageRefusal,
+            SHARED_ROSTER_WEBSITE_WITHDRAWAL_REASONS[withdrawal.cause],
+          ),
+        },
+      );
+      if (result.modifiedCount > 0) refusalsWithdrawn += 1;
+    }
+  }
   if (!options.dryRun && plans.length > 0) {
     const ids = plans.flatMap((plan) => plan.supersedeObservationIds);
     const superseded = await Observation.updateMany(
@@ -177,7 +218,8 @@ async function main(): Promise<void> {
           rule: 'wrong_owner',
           sourceName: 'dept-faculty-roster',
           refusedBy: SCRIPT_NAME,
-          note: REFUSAL_NOTE,
+          derivedBy: SHARED_ROSTER_WEBSITE_STAGE,
+          note: SHARED_ROSTER_WEBSITE_REFUSAL_NOTE,
           evidenceUrl: plan.url,
         });
       }
@@ -227,6 +269,15 @@ async function main(): Promise<void> {
     ).length,
     plannedRefusals: plans.filter((plan) => plan.refuse).length,
     keptByOtherEvidence: outcome.keptByOtherEvidence,
+    standingStageRefusals: outcome.standingStageRefusals,
+    plannedWithdrawals: outcome.withdrawals.length,
+    plannedWithdrawalsByCause: Object.fromEntries(
+      Object.keys(SHARED_ROSTER_WEBSITE_WITHDRAWAL_REASONS).map((cause) => [
+        cause,
+        outcome.withdrawals.filter((withdrawal) => withdrawal.cause === cause).length,
+      ]),
+    ),
+    refusalsWithdrawn: options.dryRun ? null : refusalsWithdrawn,
     plannedObservations: plans.reduce((sum, plan) => sum + plan.supersedeObservationIds.length, 0),
     observationsSuperseded: options.dryRun ? null : observationsSuperseded,
     refusalsRecorded: options.dryRun ? null : refusalsRecorded,

@@ -13,6 +13,7 @@ import {
   liveFieldValueRefusals,
   planFieldValueRefusal,
   planFieldValueRefusalWithdrawal,
+  planOwnFieldValueRefusalWithdrawal,
   refusedResolverObservations,
   refusedValueRule,
   valueIsRefused,
@@ -220,6 +221,43 @@ describe('recording a refusal', () => {
 
   it('refuses a field name that would write somewhere else', () => {
     expect(() => fieldValueRefusalsPath('a.b')).toThrow(/unusable field name/);
+  });
+
+  it('records the stage that derives a refusal only when one is named (#5838)', () => {
+    const derived = planFieldValueRefusal(undefined, {
+      field: 'websiteUrl',
+      value: WRONG,
+      rule: 'wrong_owner',
+      refusedBy: 'repair:example',
+      derivedBy: 'example-stage',
+    })['fieldValueRefusals.websiteUrl'] as Array<Record<string, unknown>>;
+    const standing = planFieldValueRefusal(undefined, {
+      field: 'websiteUrl',
+      value: WRONG,
+      rule: 'wrong_owner',
+      refusedBy: 'repair:example',
+    })['fieldValueRefusals.websiteUrl'] as Array<Record<string, unknown>>;
+    expect(derived[0].derivedBy).toBe('example-stage');
+    expect(standing[0]).not.toHaveProperty('derivedBy');
+  });
+
+  it('withdraws only the refusals of a value its caller owns (#5838)', () => {
+    const own = { ...rowRefusing().fieldValueRefusals.websiteUrl[0], derivedBy: 'example-stage' };
+    const operator = { ...rowRefusing().fieldValueRefusals.websiteUrl[0], refusedBy: 'operator' };
+    const update = planOwnFieldValueRefusalWithdrawal(
+      { websiteUrl: [own, operator] },
+      'websiteUrl',
+      fieldValueRefusalKey('websiteUrl', WRONG),
+      (refusal) => refusal.derivedBy === 'example-stage',
+      'the evidence changed',
+      new Date('2026-09-30T00:00:00Z'),
+    );
+    const after = { websiteUrl: update['fieldValueRefusals.websiteUrl'] };
+    expect(liveFieldValueRefusals(after, 'websiteUrl')).toEqual([operator]);
+    expect(valueIsRefused(after, 'websiteUrl', WRONG)).toBe(true);
+    expect(() =>
+      planOwnFieldValueRefusalWithdrawal(after, 'websiteUrl', 'k', () => true, ' '),
+    ).toThrow(/requires a reason/);
   });
 
   it('will not withdraw without a reason', () => {
