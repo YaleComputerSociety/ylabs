@@ -61,7 +61,11 @@ import {
   loadLegacyKeyRows,
   type LegacyKeyRowLoader,
 } from '../rosterLegacyKeyAdoption';
-import { isDegreeToken, ROSTER_NAME_NORMALIZER_LEGACY_TOKENS } from '../../utils/degreeTokens';
+import {
+  DEGREE_TOKENS,
+  isDegreeToken,
+  ROSTER_NAME_NORMALIZER_LEGACY_TOKENS,
+} from '../../utils/degreeTokens';
 import {
   decideRosterAttach,
   loadRosterOwnerKeyRows,
@@ -302,6 +306,12 @@ const STATED_LAB_NAME_CONFIDENCE = 0.8;
 /** Minimal structured row produced by every per-department extractor. */
 export interface FacultyEntry {
   name: string;
+  /**
+   * The listing's text before the name normalizer ran, kept only when an earlier version
+   * of the normalizer's credential list reads it differently, so the lane can still derive
+   * the key that version minted (#5969).
+   */
+  nameAsListed?: string;
   /**
    * The name this row's slug and user key were first derived from, when the listing's
    * readable name differs from it. Identity continuity: re-keying an existing row
@@ -873,7 +883,9 @@ export const csRenderedExtractor: FacultyExtractor = (html, ctx) => {
     if (!/\/faculty\/|\/profile\/|people|directory/i.test(href)) return;
     if (!/^[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+)+/.test(text)) return;
 
-    const name = normalizeName(text.replace(/\s*,?\s*(Ph\.?D\.?|M\.?D\.?)$/i, ''));
+    const { name, ...listedName } = rosterListedName(
+      text.replace(/\s*,?\s*(Ph\.?D\.?|M\.?D\.?)$/i, ''),
+    );
     const key = `${name}:${href}`;
     if (!name || seen.has(key)) return;
     seen.add(key);
@@ -891,6 +903,7 @@ export const csRenderedExtractor: FacultyExtractor = (html, ctx) => {
 
     out.push({
       name,
+      ...listedName,
       profileUrl: absolutize(href, ctx.pageUrl),
       title,
       email,
@@ -917,7 +930,7 @@ export const csFacultyDataExtractor: FacultyDataExtractor = (payload, ctx) => {
     if (!isRecord(page) || !Array.isArray(page.facultyMembers)) continue;
     for (const member of page.facultyMembers) {
       if (!isRecord(member)) continue;
-      const name = normalizeName(stringValue(member.name) || '');
+      const { name, ...listedName } = rosterListedName(stringValue(member.name) || '');
       if (!name) continue;
       const url = stringValue(member.url);
       const profileUrl = url ? absolutize(url, ctx.pageUrl) : undefined;
@@ -932,6 +945,7 @@ export const csFacultyDataExtractor: FacultyDataExtractor = (payload, ctx) => {
           : undefined;
       out.push({
         name,
+        ...listedName,
         profileUrl,
         title,
         labUrl,
@@ -959,7 +973,7 @@ export const chemEnvFacultyExtractor: FacultyExtractor = (html, ctx) => {
   $('a.stories-item').each((_i, el) => {
     const card = $(el);
     const heading = card.find('h3').first();
-    const name = normalizeName(
+    const { name, ...listedName } = rosterListedName(
       cleanText(
         heading
           .contents()
@@ -976,6 +990,7 @@ export const chemEnvFacultyExtractor: FacultyExtractor = (html, ctx) => {
 
     out.push({
       name,
+      ...listedName,
       profileUrl,
       title,
       ...(imageUrl ? { imageUrl } : {}),
@@ -1002,7 +1017,7 @@ export const directoryListingCardExtractor: FacultyExtractor = (html, ctx) => {
   $('.directory-listing-card').each((_i, el) => {
     const card = $(el);
     const nameLink = card.find('.directory-listing-card__heading-link').first();
-    const name = normalizeName(cleanText(nameLink.text()));
+    const { name, ...listedName } = rosterListedName(cleanText(nameLink.text()));
     if (!name) return;
 
     const profileHref = nameLink.attr('href') || '';
@@ -1017,6 +1032,7 @@ export const directoryListingCardExtractor: FacultyExtractor = (html, ctx) => {
 
     out.push({
       name,
+      ...listedName,
       profileUrl,
       title,
       email,
@@ -1046,7 +1062,7 @@ export const referenceCardExtractor: FacultyExtractor = (html, ctx) => {
   $('.reference-card').each((_i, el) => {
     const card = $(el);
     const nameLink = card.find('.reference-card__heading-link').first();
-    const name = normalizeName(cleanText(nameLink.text()));
+    const { name, ...listedName } = rosterListedName(cleanText(nameLink.text()));
     const href = nameLink.attr('href') || '';
     if (!name || !href) return;
 
@@ -1059,6 +1075,7 @@ export const referenceCardExtractor: FacultyExtractor = (html, ctx) => {
 
     out.push({
       name,
+      ...listedName,
       ...(labUrl ? {} : { labSlotAttestation: 'refused' as const }),
       profileUrl: destinationUrl,
       title,
@@ -1088,7 +1105,7 @@ export const facultyLabsTableExtractor: FacultyExtractor = (html, ctx) => {
     const link = first.find('a[href]').first();
     const linkText = cleanText(link.text());
     // A trailing asterisk is a roster footnote marker, not part of the name.
-    const name = normalizeName(linkText.replace(/\*+$/, ''));
+    const { name, ...listedName } = rosterListedName(linkText.replace(/\*+$/, ''));
     const href = link.attr('href') || '';
     if (!name || !href) return;
 
@@ -1101,6 +1118,7 @@ export const facultyLabsTableExtractor: FacultyExtractor = (html, ctx) => {
 
     out.push({
       name,
+      ...listedName,
       ...(isPersonProfileOrDirectoryUrl(destinationUrl)
         ? { profileUrl: destinationUrl, labSlotAttestation: 'refused' as const }
         : { labUrl: destinationUrl }),
@@ -1174,7 +1192,7 @@ export const artPeopleListExtractor: FacultyExtractor = (html, ctx) => {
       .each((_j, el) => {
         const link = $(el).find('a[href]').first();
         const href = link.attr('href') || '';
-        const name = normalizeName(cleanText(link.find('p').first().text()));
+        const { name, ...listedName } = rosterListedName(cleanText(link.find('p').first().text()));
         if (!name || !href) return;
 
         const destinationUrl = absolutize(href, ctx.pageUrl);
@@ -1196,6 +1214,7 @@ export const artPeopleListExtractor: FacultyExtractor = (html, ctx) => {
         }
         byUrl.set(destinationUrl, {
           name,
+          ...listedName,
           profileUrl: destinationUrl,
           title,
           labUrl,
@@ -1255,12 +1274,15 @@ export const dramaWhoWeAreExtractor: FacultyExtractor = (html, ctx) => {
   const addEntry = (anchor: cheerio.Cheerio<AnyNode>, container: cheerio.Cheerio<AnyNode>) => {
     const postId = bioPostIdFromAttribute(anchor.attr('data-bio-id'));
     if (!postId || byPostId.has(postId)) return;
-    const name = normalizeName(cleanText(anchor.text()) || cleanText(anchor.attr('data-name')));
+    const { name, ...listedName } = rosterListedName(
+      cleanText(anchor.text()) || cleanText(anchor.attr('data-name')),
+    );
     if (!name) return;
     const title = cleanText(container.find('.role').first().text()) || undefined;
     const imageUrl = imageUrlFromElement(container, ctx.pageUrl);
     byPostId.set(postId, {
       name,
+      ...listedName,
       profileUrl: absolutize(`/?p=${postId}`, ctx.pageUrl),
       title,
       ...(imageUrl ? { imageUrl } : {}),
@@ -1305,7 +1327,7 @@ export const viewsTableRowExtractor: FacultyExtractor = (html, ctx) => {
     if (!nameCell.length) return;
 
     const nameLink = nameCell.find('a.username, a').first();
-    const name = normalizeName(cleanText(nameLink.text() || nameCell.text()));
+    const { name, ...listedName } = rosterListedName(cleanText(nameLink.text() || nameCell.text()));
     if (!name) return;
 
     const profileHref = nameLink.attr('href') || '';
@@ -1317,6 +1339,7 @@ export const viewsTableRowExtractor: FacultyExtractor = (html, ctx) => {
 
     out.push({
       name,
+      ...listedName,
       profileUrl,
       title,
       email,
@@ -1342,7 +1365,7 @@ export const profileGridItemExtractor: FacultyExtractor = (html, ctx) => {
 
   $('.profile-grid-item').each((_i, el) => {
     const card = $(el);
-    const name = normalizeName(
+    const { name, ...listedName } = rosterListedName(
       cleanText(card.find('.profile-grid-item__name--link').first().text()),
     );
     if (!name) return;
@@ -1363,7 +1386,7 @@ export const profileGridItemExtractor: FacultyExtractor = (html, ctx) => {
       ctx.pageUrl,
     );
 
-    out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
+    out.push({ name, ...listedName, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
   });
 
   return out;
@@ -1383,7 +1406,7 @@ export const nodeTeaserFacultyExtractor: FacultyExtractor = (html, ctx) => {
   $('article.node-teaser--faculty').each((_i, el) => {
     const card = $(el);
     const nameLink = card.find('.node-teaser__heading a').first();
-    const name = normalizeName(
+    const { name, ...listedName } = rosterListedName(
       cleanText(nameLink.text() || card.find('.node-teaser__heading').first().text()),
     );
     if (!name) return;
@@ -1393,7 +1416,7 @@ export const nodeTeaserFacultyExtractor: FacultyExtractor = (html, ctx) => {
     const title = cleanText(card.find('.node-teaser__job-title').first().text()) || undefined;
     const imageUrl = imageUrlFromElement(card.find('.node-teaser__image').first(), ctx.pageUrl);
 
-    out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
+    out.push({ name, ...listedName, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
   });
 
   return out;
@@ -1415,7 +1438,7 @@ export const jacksonProfileComponentExtractor: FacultyExtractor = (html, ctx) =>
   $('article.profile--component').each((_i, el) => {
     const card = $(el);
     const nameLink = card.find('.profile__content h3 a, .profile__content h3').first();
-    const name = normalizeName(cleanText(nameLink.text()));
+    const { name, ...listedName } = rosterListedName(cleanText(nameLink.text()));
     if (!name) return;
 
     const profileHref = card.find('.profile__content h3 a').first().attr('href') || '';
@@ -1423,7 +1446,7 @@ export const jacksonProfileComponentExtractor: FacultyExtractor = (html, ctx) =>
     const title = cleanText(card.find('.profile-positions').first().text()) || undefined;
     const imageUrl = imageUrlFromElement(card.find('.profile__media').first(), ctx.pageUrl);
 
-    out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
+    out.push({ name, ...listedName, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
   });
 
   return out;
@@ -1441,7 +1464,7 @@ export const lawPersonListingExtractor: FacultyExtractor = (html, ctx) => {
 
   $('article.node--type-person').each((_i, el) => {
     const card = $(el);
-    const name = normalizeName(
+    const { name, ...listedName } = rosterListedName(
       cleanText(card.find('.field--name-title').first().text() || card.find('h3 a').first().text()),
     );
     if (!name) return;
@@ -1451,7 +1474,7 @@ export const lawPersonListingExtractor: FacultyExtractor = (html, ctx) => {
     const title = cleanText(card.find('.field--name-field-title').first().text()) || undefined;
     const imageUrl = imageUrlFromElement(card, ctx.pageUrl);
 
-    out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
+    out.push({ name, ...listedName, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
   });
 
   return out;
@@ -1469,7 +1492,7 @@ export const nursingFacultyExtractor: FacultyExtractor = (html, ctx) => {
 
   $('.node-faculty-directory').each((_i, el) => {
     const card = $(el);
-    const name = normalizeName(
+    const { name, ...listedName } = rosterListedName(
       cleanText(card.find('.field-name-faculty-firstname-lastname').first().text()),
     );
     if (!name) return;
@@ -1488,7 +1511,7 @@ export const nursingFacultyExtractor: FacultyExtractor = (html, ctx) => {
       ) || undefined;
     const imageUrl = imageUrlFromElement(card.find('.field-name-field-photo').first(), ctx.pageUrl);
 
-    out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
+    out.push({ name, ...listedName, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
   });
 
   return out;
@@ -1511,7 +1534,7 @@ const nameFromPeopleSlug = (about: string): string => {
     .filter(Boolean)
     .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
     .join(' ');
-  return normalizeName(titleCased);
+  return normalizeRosterName(titleCased);
 };
 
 export const nodePersonCardExtractor: FacultyExtractor = (html, ctx) => {
@@ -1522,8 +1545,9 @@ export const nodePersonCardExtractor: FacultyExtractor = (html, ctx) => {
     const card = $(el);
     const about = card.attr('about') || card.find('a[href*="/people/"]').first().attr('href') || '';
     const altText = cleanText(card.find('img[alt]').first().attr('alt') || '');
-    const headingName = normalizeName(cleanText(card.find('.card-content h2').first().text()));
-    const captionFreeAltText = normalizeName(altText);
+    const headingText = cleanText(card.find('.card-content h2').first().text());
+    const headingName = normalizeRosterName(headingText);
+    const captionFreeAltText = normalizeRosterName(altText);
     const altName = isPhotoSceneDescription(captionFreeAltText) ? '' : captionFreeAltText;
     const name = headingName || altName || nameFromPeopleSlug(about);
     if (!name) return;
@@ -1545,6 +1569,7 @@ export const nodePersonCardExtractor: FacultyExtractor = (html, ctx) => {
 
     out.push({
       name,
+      ...listedNameFields(headingName ? headingText : altName ? altText : ''),
       ...(identityName ? { identityName } : {}),
       profileUrl,
       title,
@@ -1608,7 +1633,9 @@ export const fieldCollectionPersonExtractor: FacultyExtractor = (html, ctx) => {
     const card = $(el);
     const desc = card.find('.field-name-field-person-description').first();
     const nameLink = desc.find('h3 a').first();
-    const name = normalizeName(cleanText(nameLink.text() || desc.find('h3').first().text()));
+    const { name, ...listedName } = rosterListedName(
+      cleanText(nameLink.text() || desc.find('h3').first().text()),
+    );
     if (!name) return;
 
     const href = nameLink.attr('href') || '';
@@ -1619,7 +1646,7 @@ export const fieldCollectionPersonExtractor: FacultyExtractor = (html, ctx) => {
       ctx.pageUrl,
     );
 
-    out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
+    out.push({ name, ...listedName, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
   });
 
   return out;
@@ -1631,7 +1658,9 @@ export const wordpressUsersListExtractor: FacultyExtractor = (html, ctx) => {
 
   $('#grid__users-member .grid__user').each((_i, el) => {
     const card = $(el);
-    const name = normalizeName(cleanText(card.find('.grid__user__title').first().text()));
+    const { name, ...listedName } = rosterListedName(
+      cleanText(card.find('.grid__user__title').first().text()),
+    );
     if (!name) return;
 
     const href = card.find('a.grid__user__link').first().attr('href') || '';
@@ -1639,7 +1668,7 @@ export const wordpressUsersListExtractor: FacultyExtractor = (html, ctx) => {
     const title = cleanText(card.find('.grid__user__job-title').first().text()) || undefined;
     const imageUrl = imageUrlFromElement(card.find('.grid__user__image').first(), ctx.pageUrl);
 
-    out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
+    out.push({ name, ...listedName, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
   });
 
   return out;
@@ -1716,13 +1745,19 @@ export const facultyThumbnailExtractor: FacultyExtractor = (html, ctx) => {
     const href = card.find('a.blank-link, a[href*="/faculty/"]').first().attr('href') || '';
     if (!/\/faculty\/\d+-/.test(href)) return;
 
-    const name = normalizeName(nameFromFacultySlug(href));
+    const { name, ...listedName } = rosterListedName(nameFromFacultySlug(href));
     if (!name) return;
 
     const profileUrl = absolutize(href, ctx.pageUrl);
     const imageUrl = imageUrlFromElement(card, ctx.pageUrl);
 
-    out.push({ name, namePlaceholder: true, profileUrl, ...(imageUrl ? { imageUrl } : {}) });
+    out.push({
+      name,
+      ...listedName,
+      namePlaceholder: true,
+      profileUrl,
+      ...(imageUrl ? { imageUrl } : {}),
+    });
   });
 
   return out;
@@ -3792,10 +3827,13 @@ function mergeProfileEnrichment(
     >
   >,
 ): FacultyEntry {
-  const resolvedName =
-    entry.namePlaceholder && enrichment.name ? normalizeName(enrichment.name) : entry.name;
+  const enrichedName = entry.namePlaceholder && enrichment.name ? enrichment.name : '';
+  const resolvedName = enrichedName ? normalizeRosterName(enrichedName) : entry.name;
   return {
     ...entry,
+    ...(enrichedName && resolvedName
+      ? { nameAsListed: undefined, ...listedNameFields(enrichedName) }
+      : {}),
     name: resolvedName || entry.name,
     namePlaceholder: entry.namePlaceholder && resolvedName === entry.name ? true : undefined,
     profileUrl: enrichment.profileUrl || entry.profileUrl,
@@ -4122,7 +4160,7 @@ function profileClaimsSharedLabAsOwn(
 ): boolean {
   const button = item.entry.labWebsiteButton;
   if (!button) return false;
-  const nameTokens = identityTokens(normalizeName(item.entry.name));
+  const nameTokens = identityTokens(normalizeRosterName(item.entry.name));
   const familyNameTokens = nameTokens.length > 1 ? nameTokens.slice(1) : nameTokens;
   const cardTitleTokens = identityTokens(button.cardTitle);
   if (familyNameTokens.some((token) => cardTitleTokens.includes(token))) return true;
@@ -4336,7 +4374,7 @@ function entryToUserObservations(
   dept: DeptConfig,
   sourceUrl: string,
 ): { observations: ObservationInput[]; entityKey: string } {
-  const cleaned = normalizeName(entry.name);
+  const cleaned = normalizeRosterName(entry.name);
   const { first, last } = splitName(cleaned);
   const personEmail =
     isLikelyPersonSpecificYaleEmail(entry.email, cleaned) &&
@@ -4423,7 +4461,7 @@ function entryToUserObservations(
 }
 
 function isLikelyExplicitLabWebsite(entry: FacultyEntry): boolean {
-  return evidenceAssertsALab(normalizeName(entry.name), entry.labUrl);
+  return evidenceAssertsALab(normalizeRosterName(entry.name), entry.labUrl);
 }
 
 /**
@@ -4605,18 +4643,47 @@ export function rosterResearchEntitySlugForUserKey(userKey: string, dept: DeptCo
 export function legacyRosterResearchEntitySlug(
   entry: FacultyEntry,
   dept: DeptConfig,
-  version: keyof typeof ROSTER_NAME_NORMALIZER_LEGACY_TOKENS = 'v1',
+  version: LegacyNormalizerVersion = 'v1',
 ): string {
-  const legacyName = entry.identityName
-    ? slugify(entry.identityName)
-    : slugify(normalizeName(entry.name, ROSTER_NAME_NORMALIZER_LEGACY_TOKENS[version]));
+  const legacyName = legacyRosterIdentityNameSlug(entry, version);
   return deptResearchEntitySlug(legacyName || (entry.labUrl ? slugify(entry.labUrl) : ''), dept);
 }
 
-function legacyRosterOwnerKey(ownerKey: string, legacySlug: string, dept: DeptConfig): string {
+/** The person key the same earlier normalizer minted for an entry the lane keys by name. */
+export function legacyRosterOwnerKey(
+  ownerKey: string,
+  entry: FacultyEntry,
+  dept: DeptConfig,
+  version: LegacyNormalizerVersion = 'v1',
+): string {
   if (!ownerKey.startsWith('dept:')) return ownerKey;
-  const legacyNameSlug = legacySlug.slice(rosterResearchEntitySlugPrefix(dept).length);
-  return `dept:${namespacedDeptKey(dept.deptKey)}:${legacyNameSlug || 'unknown'}`;
+  const legacyName = legacyRosterIdentityNameSlug(entry, version);
+  return `dept:${namespacedDeptKey(dept.deptKey)}:${legacyName || 'unknown'}`;
+}
+
+type LegacyNormalizerVersion = keyof typeof ROSTER_NAME_NORMALIZER_LEGACY_TOKENS;
+
+function legacyRosterIdentityNameSlug(entry: FacultyEntry, version: LegacyNormalizerVersion) {
+  if (entry.identityName) return slugify(entry.identityName);
+  const listed = entry.nameAsListed ?? entry.name;
+  return slugify(normalizeName(listed, ROSTER_NAME_NORMALIZER_LEGACY_TOKENS[version]));
+}
+
+/** The roster lane's name normalizer, on the one credential list profile slugs share. */
+export function normalizeRosterName(name: string | undefined | null): string {
+  return normalizeName(name, DEGREE_TOKENS);
+}
+
+function listedNameFields(listed: string): Pick<FacultyEntry, 'nameAsListed'> {
+  const current = normalizeRosterName(listed);
+  const readsDifferentlyUnderAnEarlierList = Object.values(
+    ROSTER_NAME_NORMALIZER_LEGACY_TOKENS,
+  ).some((tokens) => normalizeName(listed, tokens) !== current);
+  return readsDifferentlyUnderAnEarlierList ? { nameAsListed: listed } : {};
+}
+
+function rosterListedName(listed: string): Pick<FacultyEntry, 'name' | 'nameAsListed'> {
+  return { name: normalizeRosterName(listed), ...listedNameFields(listed) };
 }
 
 const writtenAsACredential = (word: string): boolean =>
@@ -4628,7 +4695,7 @@ const writtenAsACredential = (word: string): boolean =>
  * that is spelled like a credential but written as a name ("Ma", "Do") is a name and stays.
  */
 export function rosterEntryGivenNameIsACredential(entry: FacultyEntry): boolean {
-  const words = normalizeName(entry.name).split(/\s+/).filter(Boolean);
+  const words = normalizeRosterName(entry.name).split(/\s+/).filter(Boolean);
   if (words.length < 2) return false;
   return isDegreeToken(words[0]) && writtenAsACredential(words[0]);
 }
@@ -4654,12 +4721,14 @@ export function withoutUnheldSceneIdentity(
 }
 
 function rosterEntryNameKey(entry: FacultyEntry): string {
-  const { first, last } = splitName(normalizeName(entry.name));
+  const { first, last } = splitName(normalizeRosterName(entry.name));
   return personNameKey(first, last);
 }
 
 function rosterIdentityNameSlug(entry: FacultyEntry): string {
-  return entry.identityName ? slugify(entry.identityName) : slugify(normalizeName(entry.name));
+  return entry.identityName
+    ? slugify(entry.identityName)
+    : slugify(normalizeRosterName(entry.name));
 }
 
 function entryToResearchEntityObservationsUnscreened(
@@ -4697,7 +4766,7 @@ function entryToResearchEntityObservationsUnscreened(
     (Boolean(statedLabName) || Boolean(groundedDescription) || topics.length > 0);
   if (!labUrl && !hasLabLessResearchEvidence) return [];
 
-  const cleanedName = normalizeName(entry.name);
+  const cleanedName = normalizeRosterName(entry.name);
   const slug = rosterResearchEntitySlug(entry, dept);
   if (!slug) return [];
   const entityName = cleanedName
@@ -4974,7 +5043,10 @@ export class DepartmentRosterScraper implements IScraper {
         enriched.push({ entry, personKey });
       }
       for (const key of await this.facultyTitledUserKeyLoader(
-        enriched.map(({ personKey }) => personKey),
+        enriched.flatMap(({ entry, personKey }) => [
+          personKey,
+          legacyRosterOwnerKey(personKey, entry, dept),
+        ]),
       )) {
         facultyTitledUserKeys.add(key);
       }
@@ -5003,11 +5075,22 @@ export class DepartmentRosterScraper implements IScraper {
           }
           continue;
         }
-        const { observations: typedUserObs, entityKey } = entryToUserObservations(
-          entry,
-          dept,
-          sourceUrl,
-        );
+        const currentSlug = rosterResearchEntitySlug(entry, dept);
+        const legacySlug = legacyRosterResearchEntitySlug(entry, dept);
+        const { observations: currentUserObs, entityKey: currentOwnerKey } =
+          entryToUserObservations(entry, dept, sourceUrl);
+        const adoption = decideLegacyKeyAdoption({
+          currentSlug,
+          legacySlug,
+          ownerKey: currentOwnerKey,
+          legacyOwnerKey: legacyRosterOwnerKey(currentOwnerKey, entry, dept),
+          rowsBySlug: legacyKeyRows,
+        });
+        const entityKey = adoption.kind === 'adopt' ? adoption.ownerKey : currentOwnerKey;
+        const typedUserObs =
+          entityKey === currentOwnerKey
+            ? currentUserObs
+            : currentUserObs.map((observation) => ({ ...observation, entityKey }));
         const userObs = holdUserTypingForRunEnd(
           typedUserObs,
           entityKey,
@@ -5025,21 +5108,12 @@ export class DepartmentRosterScraper implements IScraper {
               dept,
               sourceUrl,
               entityKey,
-              labUrlUnusabilityFor(labUrlEvidenceBySlug, rosterResearchEntitySlug(entry, dept)),
-              coLedGroupSiteFor(await coLedSiteIndex(), rosterResearchEntitySlug(entry, dept), {
+              labUrlUnusabilityFor(labUrlEvidenceBySlug, currentSlug),
+              coLedGroupSiteFor(await coLedSiteIndex(), currentSlug, {
                 email: entry.email,
                 profileUrl: officialProfileCitationUrl(entry),
               }),
             );
-        const currentSlug = rosterResearchEntitySlug(entry, dept);
-        const legacySlug = legacyRosterResearchEntitySlug(entry, dept);
-        const adoption = decideLegacyKeyAdoption({
-          currentSlug,
-          legacySlug,
-          ownerKey: entityKey,
-          legacyOwnerKey: legacyRosterOwnerKey(entityKey, legacySlug, dept),
-          rowsBySlug: legacyKeyRows,
-        });
         if (adoption.kind === 'adopt') {
           mint.observations = mint.observations.map((observation) => ({
             ...observation,
@@ -5116,8 +5190,10 @@ export class DepartmentRosterScraper implements IScraper {
           typeof labKey === 'string' && labKey
             ? labKey
             : mint.refusedByTitle
-              ? rosterResearchEntitySlug(entry, dept)
-              : '';
+              ? currentSlug
+              : adoption.kind === 'refuse'
+                ? adoption.legacySlug
+                : '';
         if (discoveredKey && !dept.crossListedProgramme) {
           const deptDiscovered = discoveredEntityKeysByDept.get(dept.deptKey) ?? new Set<string>();
           deptDiscovered.add(discoveredKey);

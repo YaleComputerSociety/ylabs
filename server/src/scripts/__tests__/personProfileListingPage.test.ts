@@ -85,3 +85,18 @@ describe('a directory listing for the row’s own department is not a second per
     ).toBe(false);
   });
 });
+
+describe('a board-certified nursing credential is stripped from a profile slug (#5969)', () => {
+  it('reads one nurse’s pages as one person whatever certification each slug carries', () => {
+    expect(
+      distinctPersonProfileIdentities([
+        'https://example.edu/profile/ada-alpha',
+        'https://example.edu/profile/ada-alpha-rn-bc',
+        'https://example.edu/profile/ada-alpha-msn-aprn-bc',
+        'https://example.edu/profile/ada-alpha-np-c',
+        'https://example.edu/profile/ada-alpha-anp-c',
+        'https://example.edu/profile/ada-alpha-dnp-agnp-c',
+      ]),
+    ).toEqual(['ada-alpha']);
+  });
+});

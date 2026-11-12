@@ -4,7 +4,8 @@
  * both strip these, so a credential missing here is missed by both, never by one only.
  *
  * Tokens are compact: lower case with dots, spaces and hyphens removed, so "Ph.D.", "PhD"
- * and "ph-d" are one token, and a compound such as "FNP-C" or "PMHNP-BC" is one token too.
+ * and "ph-d" are one token, and a board-certified compound such as "FNP-C" or "RN-BC" is one
+ * token too, which is the only way a profile slug's trailing "-c" or "-bc" is stripped.
  * Changing this list changes the key a roster mints from a name, so it also needs a frozen
  * copy of the old list in `ROSTER_NAME_NORMALIZER_LEGACY_TOKENS` for key continuity.
  */
@@ -36,6 +37,7 @@ export const DEGREE_TOKENS: ReadonlySet<string> = new Set([
   'dds',
   'do',
   'rn',
+  'rnbc',
   'bs',
   'ba',
   'bsc',
@@ -44,11 +46,14 @@ export const DEGREE_TOKENS: ReadonlySet<string> = new Set([
   'msn',
   'dnp',
   'aprn',
+  'aprnbc',
   'fnp',
   'fnpc',
   'fnpbc',
   'np',
+  'npc',
   'anp',
+  'anpc',
   'anpbc',
   'pnp',
   'pnpbc',
@@ -58,11 +63,15 @@ export const DEGREE_TOKENS: ReadonlySet<string> = new Set([
   'agpcnpbc',
   'agacnp',
   'agacnpbc',
+  'agnp',
+  'agnpc',
+  'agnpbc',
   'whnp',
   'whnpbc',
   'nnp',
   'nnpbc',
   'cnm',
+  'cnmbc',
   'cns',
   'crna',
   'ccrn',
@@ -100,7 +109,8 @@ export function isDegreeToken(
 /**
  * Version 1 of the roster name normalizer's credential list, frozen. A roster row's key was
  * minted from the name this list produced, so the lane derives the version 1 key to find a
- * row a later list change would otherwise strand under its old key.
+ * row a later list change would otherwise strand under its old key. It is also the default
+ * of the shared `normalizeName`, so every other lane keeps deriving the keys it minted.
  */
 export const ROSTER_NAME_NORMALIZER_LEGACY_TOKENS: Readonly<Record<'v1', ReadonlySet<string>>> =
   Object.freeze({

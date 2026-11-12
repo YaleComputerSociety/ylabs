@@ -25,7 +25,7 @@ export type LegacyKeyRowLoader = (slugs: string[]) => Promise<LegacyKeyRowsBySlu
 
 export type LegacyKeyAdoption =
   | { kind: 'none' }
-  | { kind: 'adopt'; legacySlug: string; entityId: string }
+  | { kind: 'adopt'; legacySlug: string; entityId: string; ownerKey: string }
   | {
       kind: 'refuse';
       legacySlug: string;
@@ -47,10 +47,9 @@ export function decideLegacyKeyAdoption(input: {
   if (legacy.liveRowIds.length > 1) return { kind: 'refuse', legacySlug, reason: 'several-rows' };
   if (!legacy.readByThisLane) return { kind: 'refuse', legacySlug, reason: 'another-source' };
   const owners = new Set(legacy.rosterOwnerKeys);
-  if (!owners.has(input.ownerKey) && !owners.has(input.legacyOwnerKey)) {
-    return { kind: 'refuse', legacySlug, reason: 'different-person' };
-  }
-  return { kind: 'adopt', legacySlug, entityId: legacy.liveRowIds[0] };
+  const ownerKey = [input.ownerKey, input.legacyOwnerKey].find((key) => owners.has(key));
+  if (!ownerKey) return { kind: 'refuse', legacySlug, reason: 'different-person' };
+  return { kind: 'adopt', legacySlug, entityId: legacy.liveRowIds[0], ownerKey };
 }
 
 /**

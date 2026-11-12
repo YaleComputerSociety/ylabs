@@ -5,7 +5,7 @@
  * and reusable across any scraper that needs to derive stable keys from messy
  * external data (names, emails, URLs).
  */
-import { DEGREE_TOKENS, isDegreeToken } from '../../utils/degreeTokens';
+import { isDegreeToken, ROSTER_NAME_NORMALIZER_LEGACY_TOKENS } from '../../utils/degreeTokens';
 import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatCharacters';
 import {
   isPersonNameCaption,
@@ -283,7 +283,7 @@ export function isLikelyPersonSpecificYaleEmail(
  */
 export function normalizeName(
   name: string | undefined | null,
-  credentialTokens: ReadonlySet<string> = DEGREE_TOKENS,
+  credentialTokens: ReadonlySet<string> = ROSTER_NAME_NORMALIZER_LEGACY_TOKENS.v1,
 ): string {
   if (!name) return '';
   return normalizeNameKeepingCaption(
@@ -325,7 +325,7 @@ function collapseNameWhitespace(name: string): string {
  */
 export function normalizeNameKeepingCaption(
   name: string | undefined | null,
-  credentialTokens: ReadonlySet<string> = DEGREE_TOKENS,
+  credentialTokens: ReadonlySet<string> = ROSTER_NAME_NORMALIZER_LEGACY_TOKENS.v1,
 ): string {
   if (!name) return '';
   let n = collapseNameWhitespace(name);
@@ -341,8 +341,9 @@ export function normalizeNameKeepingCaption(
   // Strip trailing credential clauses after the last comma, repeating so that stacked
   // degrees collapse fully ("Avery Sloan, MD, PhD" -> "Avery Sloan"). A degree missing
   // from the list is not a cosmetic miss: the clause stays on the name and `splitName`
-  // reads it as the surname (#2535). The list is the shared one in `degreeTokens.ts`, and
-  // changing it changes the key a roster mints from this name (#5969).
+  // reads it as the surname (#2535). The default is the frozen version 1 list, because other
+  // lanes derive keys from this name and have no key continuity; the roster lane passes the
+  // shared list in `degreeTokens.ts` (#5969).
   for (;;) {
     const clause = n.match(/,\s*([^,]+?)\s*$/);
     if (!clause || clause.index === undefined || !isDegreeToken(clause[1], credentialTokens)) break;
