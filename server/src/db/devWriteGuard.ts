@@ -4,6 +4,7 @@ import {
   DEV_WRITE_LEASE_SWITCH_ENV,
   devHostLeasesArmed,
   devWriteLeaseSwitchedOff,
+  hasDevApplyIntent,
   holdsDevApplyLease,
   resolveDevWriteLeaseTarget,
 } from './devWriteLease';
@@ -25,11 +26,22 @@ export const DEV_LANE_RUN_COLLECTIONS: ReadonlySet<string> = new Set([
   'model_call_usages',
 ]);
 
-/** A dry `scrape run` takes no lease by design (#5756) yet still records its run and fills the fetch cache. */
+/**
+ * A dry `scrape run` takes no lease by design (#5756) yet still records its run and fills the
+ * fetch cache, so it may insert here and update only the `scrape_runs` rows it inserted itself.
+ */
 export const DEV_DRY_LANE_RUN_COLLECTIONS: ReadonlySet<string> = new Set([
   'scrape_runs',
   'scrape_snapshots',
 ]);
+
+/** Append-only without the apply lease, in every allowance that admits them. */
+export const DEV_INSERT_ONLY_COLLECTIONS: ReadonlySet<string> = new Set([
+  'model_call_usages',
+  'scrape_snapshots',
+]);
+
+const OWN_ROW_COLLECTION = 'scrape_runs';
 
 /** Kept in step with DEV_APPLY_LEASE_EXEMPT_SCRIPTS, whose scripts append here during long applies by design. */
 export const DEV_WRITE_GUARD_EXEMPT_COLLECTIONS: ReadonlySet<string> = new Set([
@@ -114,10 +126,21 @@ export function setDevWriteGuardLeaseStateForTests(overrides: Partial<DevWriteGu
   leaseState = { ...defaultLeaseState, ...overrides };
 }
 
+const OWNED_ROWS = Symbol.for('ylabs.devWriteGuard.ownedDryRunRows');
+type OwnedRowsHolder = { [OWNED_ROWS]?: Set<string> };
+const ownedDryRunRows = (): Set<string> =>
+  ((globalThis as OwnedRowsHolder)[OWNED_ROWS] ??= new Set<string>());
+
 export function resetDevWriteGuardStateForTests() {
   leaseState = defaultLeaseState;
   delete processRoleHolder[PROCESS_ROLE];
+  ownedDryRunRows().clear();
 }
+
+export type DevModelWrite =
+  | { operation: string; kind: 'insert'; insertedId?: unknown }
+  | { operation: string; kind: 'update'; filter: unknown }
+  | { operation: string; kind: 'delete' | 'other' };
 
 interface GuardedModel {
   modelName: string;
@@ -156,11 +179,70 @@ function refusal(model: GuardedModel, operation: string, reason: string) {
 
 const listed = (collections: ReadonlySet<string>) => [...collections].join(', ');
 
+const idKey = (value: unknown): string | undefined =>
+  value === null || value === undefined ? undefined : String(value);
+
+function filteredIds(filter: unknown): string[] | undefined {
+  if (!filter || typeof filter !== 'object') return undefined;
+  const id = (filter as Record<string, unknown>)._id;
+  if (id && typeof id === 'object' && !mongoose.isValidObjectId(id)) {
+    const operators = id as Record<string, unknown>;
+    if ('$eq' in operators) return [idKey(operators.$eq)].filter(Boolean) as string[];
+    if (Array.isArray(operators.$in)) return operators.$in.map((value) => String(value));
+    return undefined;
+  }
+  const key = idKey(id);
+  return key ? [key] : undefined;
+}
+
+function updatesOnlyOwnRows(write: DevModelWrite): boolean {
+  if (write.kind !== 'update') return false;
+  const ids = filteredIds(write.filter);
+  const owned = ownedDryRunRows();
+  return Boolean(ids && ids.length > 0 && ids.every((id) => owned.has(id)));
+}
+
+function insertOnlyRefusal(model: GuardedModel, write: DevModelWrite): Error | undefined {
+  if (write.kind === 'insert') return undefined;
+  if (!DEV_INSERT_ONLY_COLLECTIONS.has(model.collection.collectionName)) return undefined;
+  return refusal(
+    model,
+    write.operation,
+    `${listed(DEV_INSERT_ONLY_COLLECTIONS)} are insert-only without the apply lease`,
+  );
+}
+
+function dryLaneRunRefusal(model: GuardedModel, write: DevModelWrite): Error | undefined {
+  const collectionName = model.collection.collectionName;
+  if (!DEV_DRY_LANE_RUN_COLLECTIONS.has(collectionName)) {
+    return refusal(
+      model,
+      write.operation,
+      `a dry lane run may write only ${listed(DEV_DRY_LANE_RUN_COLLECTIONS)}`,
+    );
+  }
+  if (write.kind === 'insert') {
+    if (collectionName === OWN_ROW_COLLECTION) {
+      const key = idKey(write.insertedId);
+      if (key) ownedDryRunRows().add(key);
+    }
+    return undefined;
+  }
+  if (collectionName === OWN_ROW_COLLECTION && updatesOnlyOwnRows(write)) return undefined;
+  return refusal(
+    model,
+    write.operation,
+    collectionName === OWN_ROW_COLLECTION
+      ? 'a dry lane run may update only the scrape_runs rows it inserted, matched by _id, and may delete none'
+      : `a dry lane run may only insert into ${collectionName}`,
+  );
+}
+
 // Ordered so a request-serving process, a switched-off lease and any database other than
 // Development all return before lease state is read.
 export async function assertDevModelWriteAllowed(
   model: GuardedModel,
-  operation: string,
+  write: DevModelWrite,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<void> {
   if (isRequestServingProcess()) return;
@@ -169,7 +251,7 @@ export async function assertDevModelWriteAllowed(
   if (!databaseName) {
     throw refusal(
       model,
-      operation,
+      write.operation,
       'the connection never opened, so this script could not tell whether it targets Development',
     );
   }
@@ -177,26 +259,31 @@ export async function assertDevModelWriteAllowed(
   if (target.kind !== 'development') return;
   if (leaseState.holdsApplyLease()) return;
   const collectionName = model.collection.collectionName;
-  if (DEV_WRITE_GUARD_EXEMPT_COLLECTIONS.has(collectionName)) return;
-  if (leaseState.hostLeasesArmed()) {
-    if (DEV_LANE_RUN_COLLECTIONS.has(collectionName)) return;
-    throw refusal(
-      model,
-      operation,
-      `a writing lane run may write only ${listed(DEV_LANE_RUN_COLLECTIONS)} without the apply lease`,
-    );
+  if (DEV_WRITE_GUARD_EXEMPT_COLLECTIONS.has(collectionName)) {
+    const insertOnly = insertOnlyRefusal(model, write);
+    if (insertOnly) throw insertOnly;
+    return;
   }
-  if (isDryLaneRun()) {
-    if (DEV_DRY_LANE_RUN_COLLECTIONS.has(collectionName)) return;
-    throw refusal(
-      model,
-      operation,
-      `a dry lane run may write only ${listed(DEV_DRY_LANE_RUN_COLLECTIONS)}`,
-    );
+  if (leaseState.hostLeasesArmed()) {
+    if (!DEV_LANE_RUN_COLLECTIONS.has(collectionName)) {
+      throw refusal(
+        model,
+        write.operation,
+        `a writing lane run may write only ${listed(DEV_LANE_RUN_COLLECTIONS)} without the apply lease`,
+      );
+    }
+    const insertOnly = insertOnlyRefusal(model, write);
+    if (insertOnly) throw insertOnly;
+    return;
+  }
+  if (isDryLaneRun() && !hasDevApplyIntent()) {
+    const dryRefusal = dryLaneRunRefusal(model, write);
+    if (dryRefusal) throw dryRefusal;
+    return;
   }
   throw refusal(
     model,
-    operation,
+    write.operation,
     `this script process holds no Development write lease (${DEV_WRITE_LEASE_SWITCH_ENV}=off is for the test harness only)`,
   );
 }
@@ -209,8 +296,20 @@ type GuardImplementationHolder = { [GUARD_IMPLEMENTATION]?: GuardImplementation 
 // evaluation keeps the guard reading the lease module the rest of the process now uses.
 (globalThis as GuardImplementationHolder)[GUARD_IMPLEMENTATION] = assertDevModelWriteAllowed;
 
-const guard: GuardImplementation = (model, operation, env) =>
-  (globalThis as GuardImplementationHolder)[GUARD_IMPLEMENTATION]!(model, operation, env);
+const guard: GuardImplementation = (model, write, env) =>
+  (globalThis as GuardImplementationHolder)[GUARD_IMPLEMENTATION]!(model, write, env);
+
+const isInsertOnlyBulkWrite = (operations: unknown): boolean =>
+  Array.isArray(operations) &&
+  operations.every(
+    (operation) =>
+      typeof operation === 'object' &&
+      operation !== null &&
+      Object.keys(operation).length === 1 &&
+      'insertOne' in operation,
+  );
+
+const DELETE_OPERATIONS = new Set(['deleteOne', 'deleteMany', 'findOneAndDelete']);
 
 const writesThroughPipeline = (pipeline: unknown[]): boolean =>
   pipeline.some(
@@ -226,24 +325,44 @@ type GuardedQuery = mongoose.Query<unknown, unknown> & { op?: string };
 export function devWriteGuardPlugin(schema: mongoose.Schema): void {
   schema.pre('save', async function guardDevSave(this: GuardedDocument) {
     if (this.$isSubdocument) return;
-    await guard(this.constructor as unknown as GuardedModel, 'save');
+    const model = this.constructor as unknown as GuardedModel;
+    await guard(
+      model,
+      this.isNew
+        ? { operation: 'save', kind: 'insert', insertedId: this._id }
+        : { operation: 'save', kind: 'update', filter: { _id: this._id } },
+    );
   });
   schema.pre('insertMany', async function guardDevInsertMany(this: GuardedModel) {
-    await guard(this, 'insertMany');
+    await guard(this, { operation: 'insertMany', kind: 'insert' });
   });
-  schema.pre('bulkWrite', async function guardDevBulkWrite(this: GuardedModel) {
-    await guard(this, 'bulkWrite');
-  });
+  schema.pre(
+    'bulkWrite',
+    async function guardDevBulkWrite(this: GuardedModel, operations: unknown) {
+      await guard(
+        this,
+        isInsertOnlyBulkWrite(operations)
+          ? { operation: 'bulkWrite', kind: 'insert' }
+          : { operation: 'bulkWrite', kind: 'other' },
+      );
+    },
+  );
   schema.pre(
     QUERY_WRITE_OPERATIONS,
     { document: false, query: true },
     async function guardDevQueryWrite(this: GuardedQuery) {
-      await guard(this.model as unknown as GuardedModel, this.op ?? 'write');
+      const operation = this.op ?? 'write';
+      await guard(
+        this.model as unknown as GuardedModel,
+        DELETE_OPERATIONS.has(operation)
+          ? { operation, kind: 'delete' }
+          : { operation, kind: 'update', filter: this.getFilter() },
+      );
     },
   );
   schema.pre('aggregate', async function guardDevAggregateWrite(this: mongoose.Aggregate<unknown>) {
     if (!writesThroughPipeline(this.pipeline())) return;
-    await guard(this.model() as unknown as GuardedModel, 'aggregate');
+    await guard(this.model() as unknown as GuardedModel, { operation: 'aggregate', kind: 'other' });
   });
 }
 

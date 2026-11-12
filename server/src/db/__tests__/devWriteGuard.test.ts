@@ -11,6 +11,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import {
   DEV_DRY_LANE_RUN_COLLECTIONS,
   DEV_LANE_RUN_COLLECTIONS,
+  DEV_INSERT_ONLY_COLLECTIONS,
   DEV_WRITE_GUARD_EXEMPT_COLLECTIONS,
   DevWriteRefusedError,
   UnguardedModelError,
@@ -42,6 +43,10 @@ import { ResearchEntity } from '../../models/researchEntity';
 import { ScrapeRun } from '../../models/scrapeRun';
 import { WeeklySweepRun } from '../../models/weeklySweepRun';
 import { Source } from '../../models/source';
+import { ScrapeJobLock } from '../../models/scrapeJobLock';
+import { ScrapeSnapshot } from '../../models/scrapeSnapshot';
+import { ModelCallUsage } from '../../models/modelCallUsage';
+import { getCached, setCached } from '../../scrapers/snapshotCache';
 import { ScraperOrchestrator } from '../../scrapers/orchestrator';
 import { hermeticChildEnvironment } from '../../test/hermeticEnvironment';
 
@@ -66,6 +71,26 @@ async function seed(db: Db, collection: string, count = 2) {
 }
 
 const count = (db: Db, collection: string) => db.collection(collection).countDocuments();
+
+const usageRecord = () => ({
+  caller: 'card-synthesis',
+  endpoint: 'chat.completions',
+  succeeded: true,
+  model: 'fixture-model',
+  promptTokens: 1,
+  completionTokens: 1,
+  reasoningTokens: 0,
+  durationMs: 1,
+  calledAt: new Date(),
+});
+
+const snapshotEntry = (requestKey: string) => ({
+  sourceName: 'fixture-source',
+  requestKey,
+  payload: { body: 'fixture' },
+  fetchedAt: new Date(),
+  expiresAt: new Date(Date.now() + 60_000),
+});
 
 const WRITE_COMMANDS = new Set(['insert', 'update', 'delete', 'findAndModify']);
 const FIXTURE_LANE = 'dev-write-guard-fixture-lane';
@@ -310,6 +335,88 @@ describe('a writing lane run with armed host leases', () => {
     );
   }
 
+  it('grants nothing before the host leases are armed', async () => {
+    const dev = database('Development');
+    await seed(dev, Observation.collection.collectionName, 1);
+    await mongoose.connect(uriFor('Development'));
+
+    await expect(Observation.deleteMany({})).rejects.toBeInstanceOf(DevWriteRefusedError);
+    await expect(ModelCallUsage.create(usageRecord())).resolves.toBeTruthy();
+    await expect(ScrapeSnapshot.create(snapshotEntry('unarmed'))).rejects.toBeInstanceOf(
+      DevWriteRefusedError,
+    );
+    expect(await count(dev, Observation.collection.collectionName)).toBe(1);
+    expect(await count(dev, ScrapeSnapshot.collection.collectionName)).toBe(0);
+  });
+
+  it('only inserts into the insert-only lane collections', async () => {
+    const dev = database('Development');
+    await armLaneRun();
+
+    await ModelCallUsage.create(usageRecord());
+    await ScrapeSnapshot.create(snapshotEntry('inserted'));
+    await ScrapeSnapshot.insertMany([snapshotEntry('inserted-many')]);
+    await ScrapeSnapshot.bulkWrite([{ insertOne: { document: snapshotEntry('bulk-inserted') } }]);
+    expect(await count(dev, ModelCallUsage.collection.collectionName)).toBe(1);
+    expect(await count(dev, ScrapeSnapshot.collection.collectionName)).toBe(3);
+
+    for (const write of [
+      () => ModelCallUsage.updateMany({}, { $set: { model: 'rewritten' } }),
+      () => ModelCallUsage.deleteMany({}),
+      () => ScrapeSnapshot.updateOne({ requestKey: 'inserted' }, { $set: { payload: 'x' } }),
+      () =>
+        ScrapeSnapshot.updateOne(
+          { requestKey: 'upserted' },
+          { $set: snapshotEntry('upserted') },
+          { upsert: true },
+        ),
+      () => ScrapeSnapshot.deleteOne({ requestKey: 'inserted' }),
+      () =>
+        ScrapeSnapshot.bulkWrite([
+          { insertOne: { document: snapshotEntry('mixed') } },
+          { deleteMany: { filter: {} } },
+        ]),
+    ]) {
+      await expect(write()).rejects.toBeInstanceOf(DevWriteRefusedError);
+    }
+    expect(await count(dev, ModelCallUsage.collection.collectionName)).toBe(1);
+    expect(await count(dev, ScrapeSnapshot.collection.collectionName)).toBe(3);
+    expect([...DEV_INSERT_ONLY_COLLECTIONS].sort()).toEqual(
+      [ModelCallUsage.collection.collectionName, ScrapeSnapshot.collection.collectionName].sort(),
+    );
+  });
+
+  it('keeps updating and deleting its other lane collections', async () => {
+    const dev = database('Development');
+    await seed(dev, ScrapeJobLock.collection.collectionName, 1);
+    await seed(dev, Source.collection.collectionName, 1);
+    await armLaneRun();
+
+    await ScrapeJobLock.updateMany({}, { $set: { name: 'renewed' } });
+    await Source.updateMany({}, { $set: { name: 'stamped' } });
+    await ScrapeJobLock.deleteMany({});
+
+    expect(await count(dev, ScrapeJobLock.collection.collectionName)).toBe(0);
+    expect((await dev.collection(Source.collection.collectionName).findOne())?.name).toBe(
+      'stamped',
+    );
+  });
+
+  it('keeps the fetch cache working by inserting, and keeps an entry it may not refresh', async () => {
+    const dev = database('Development');
+    await armLaneRun();
+
+    await setCached('fixture-source', 'page', { body: 'first' });
+    await setCached('fixture-source', 'page', { body: 'second' });
+    expect(await getCached('fixture-source', 'page')).toEqual({ body: 'first' });
+
+    await dev
+      .collection(ScrapeSnapshot.collection.collectionName)
+      .updateOne({ requestKey: 'page' }, { $set: { expiresAt: new Date(Date.now() - 1000) } });
+    expect(await getCached('fixture-source', 'page')).toBeNull();
+    expect(await count(dev, ScrapeSnapshot.collection.collectionName)).toBe(1);
+  });
+
   it('writes the lane collections without the apply lease', async () => {
     const dev = database('Development');
     await seed(dev, Observation.collection.collectionName, 2);
@@ -368,25 +475,111 @@ describe('a dry lane run', () => {
     expect([...written].filter((name) => !DEV_DRY_LANE_RUN_COLLECTIONS.has(name))).toEqual([]);
   });
 
-  it('completes a real dry orchestrator run with the guard on', async () => {
+  it('completes a real dry orchestrator run with the guard on, updating its own run row', async () => {
     const result = await collectionsWrittenByLaneRun({ dryRun: true });
 
     expect(result).toContain(ScrapeRun.collection.collectionName);
+    const runs = await database('Development')
+      .collection(ScrapeRun.collection.collectionName)
+      .find()
+      .toArray();
+    expect(runs.map(({ status }) => status)).toEqual(['success']);
     expect(await count(database('Development'), Observation.collection.collectionName)).toBe(0);
   });
 
-  it('writes its run bookkeeping but nothing a writing run owns', async () => {
+  async function dryRunWithOwnRow() {
+    await mongoose.connect(uriFor('Development'));
+    declareDevDryLaneRun();
+    return ScrapeRun.create({
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'fixture-source',
+      triggeredBy: 'cli',
+      status: 'running',
+      startedAt: new Date(),
+    });
+  }
+
+  it('updates the scrape_runs row it inserted, by _id, and nothing else there', async () => {
     const dev = database('Development');
-    await seed(dev, ScrapeRun.collection.collectionName, 1);
-    await seed(dev, Observation.collection.collectionName, 1);
+    const someoneElses = new mongoose.Types.ObjectId();
+    await dev.collection(ScrapeRun.collection.collectionName).insertOne({
+      _id: someoneElses,
+      sourceName: 'other-source',
+      status: 'running',
+    });
+    const own = await dryRunWithOwnRow();
+
+    await ScrapeRun.updateOne({ _id: own._id, status: 'running' }, { $set: { status: 'success' } });
+    await ScrapeRun.updateOne({ _id: String(own._id) }, { $set: { heartbeatAt: new Date() } });
+    own.set('status', 'partial');
+    await own.save();
+
+    for (const write of [
+      () => ScrapeRun.updateOne({ _id: someoneElses }, { $set: { status: 'failed' } }),
+      () => ScrapeRun.updateMany({ _id: { $in: [own._id, someoneElses] } }, { $set: { a: 1 } }),
+      () => ScrapeRun.updateMany({ status: 'running' }, { $set: { status: 'failed' } }),
+      () => ScrapeRun.updateOne({}, { $set: { status: 'failed' } }),
+      () => ScrapeRun.deleteOne({ _id: own._id }),
+      () => ScrapeRun.deleteMany({}),
+    ]) {
+      await expect(write()).rejects.toBeInstanceOf(DevWriteRefusedError);
+    }
+    const rows = await dev
+      .collection(ScrapeRun.collection.collectionName)
+      .find({}, { sort: { sourceName: 1 } })
+      .toArray();
+    expect(rows.map(({ sourceName, status }) => [sourceName, status])).toEqual([
+      ['fixture-source', 'partial'],
+      ['other-source', 'running'],
+    ]);
+  });
+
+  it('only inserts into the fetch cache', async () => {
+    const dev = database('Development');
+    await dryRunWithOwnRow();
+
+    await ScrapeSnapshot.create(snapshotEntry('dry'));
+    await expect(
+      ScrapeSnapshot.updateOne({ requestKey: 'dry' }, { $set: { payload: 'x' } }),
+    ).rejects.toBeInstanceOf(DevWriteRefusedError);
+    await expect(ScrapeSnapshot.deleteMany({})).rejects.toBeInstanceOf(DevWriteRefusedError);
+    expect(await count(dev, ScrapeSnapshot.collection.collectionName)).toBe(1);
+  });
+
+  it('refuses a write to any other collection', async () => {
+    const dev = database('Development');
+    await seed(dev, Source.collection.collectionName, 1);
+    await dryRunWithOwnRow();
+
+    for (const write of [
+      () => Observation.insertMany([{ entityType: 'researchEntity', entityKey: 'x' }]),
+      () => Source.updateMany({}, { $set: { name: 'x' } }),
+      () => ResearchEntity.deleteMany({}),
+      () => Probe.create({ name: 'dry' }),
+    ]) {
+      await expect(write()).rejects.toBeInstanceOf(DevWriteRefusedError);
+    }
+    expect(await count(dev, Observation.collection.collectionName)).toBe(0);
+    expect((await dev.collection(Source.collection.collectionName).findOne())?.name).toBe('row-0');
+    expect(await count(dev, 'dev_write_guard_probes')).toBe(0);
+  });
+
+  it('grants nothing to a process that recorded an apply intent', async () => {
+    const dev = database('Development');
+    recordDevApplyIntent('scrape run', ['--apply']);
     await mongoose.connect(uriFor('Development'));
     declareDevDryLaneRun();
 
-    await ScrapeRun.deleteMany({});
-    await expect(Observation.deleteMany({})).rejects.toBeInstanceOf(DevWriteRefusedError);
-
+    await expect(
+      ScrapeRun.create({
+        sourceId: new mongoose.Types.ObjectId(),
+        sourceName: 'fixture-source',
+        triggeredBy: 'cli',
+        status: 'running',
+        startedAt: new Date(),
+      }),
+    ).rejects.toBeInstanceOf(DevWriteRefusedError);
     expect(await count(dev, ScrapeRun.collection.collectionName)).toBe(0);
-    expect(await count(dev, Observation.collection.collectionName)).toBe(1);
   });
 });
 
@@ -455,9 +648,16 @@ describe('a process that is not guarded', () => {
 
     for (const model of exemptModels) {
       await seed(dev, model.collection.collectionName, 2);
+      if (DEV_INSERT_ONLY_COLLECTIONS.has(model.collection.collectionName)) {
+        await expect(model.deleteMany({})).rejects.toBeInstanceOf(DevWriteRefusedError);
+        expect(await count(dev, model.collection.collectionName)).toBe(2);
+        continue;
+      }
       await model.deleteMany({});
       expect(await count(dev, model.collection.collectionName)).toBe(0);
     }
+    await ModelCallUsage.create(usageRecord());
+    expect(await count(dev, ModelCallUsage.collection.collectionName)).toBe(3);
   });
 });
 
