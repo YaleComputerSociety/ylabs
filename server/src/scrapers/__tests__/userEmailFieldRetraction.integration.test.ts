@@ -249,12 +249,9 @@ describe('a dropped email retires by attested omission (#5711)', () => {
   };
 
   it('dept-faculty-roster: attests on the profile page its email rows use, and two claims retire the address the person was keyed by', async () => {
-    rosterProfile.contact =
-      '<a href="mailto:sable.fixture@yale.edu">sable.fixture@yale.edu</a>';
+    rosterProfile.contact = '<a href="mailto:sable.fixture@yale.edu">sable.fixture@yale.edu</a>';
     await scrapeRoster();
-    expect(await liveEmails(ROSTER_SOURCE)).toEqual([
-      'netid:sable.fixture sable.fixture@yale.edu',
-    ]);
+    expect(await liveEmails(ROSTER_SOURCE)).toEqual(['netid:sable.fixture sable.fixture@yale.edu']);
     const emailRow = await Observation.findOne({ sourceName: ROSTER_SOURCE, field: 'email' }).lean<{
       sourceUrl: string;
     }>();
