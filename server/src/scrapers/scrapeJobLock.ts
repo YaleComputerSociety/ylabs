@@ -422,15 +422,16 @@ export async function withScrapeJobLock<T>(
   const detachStopRelease = registerDevWriteStopCleanup({
     description: `${input.environment} source lock "${input.sourceName}"`,
     run: async () => {
+      released = true;
       heartbeat.stop();
-      const { released } = await deps.releaseScrapeJobLock({
+      const { released: releasedNow } = await deps.releaseScrapeJobLock({
         environment: input.environment,
         sourceName: input.sourceName,
         ownerId: input.ownerId,
         leaseMs: input.leaseMs,
         releaseReason: 'failure',
       });
-      return released ? 'released' : 'was no longer held by this process';
+      return releasedNow ? 'released' : 'was no longer held by this process';
     },
   });
 

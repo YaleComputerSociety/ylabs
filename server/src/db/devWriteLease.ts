@@ -424,12 +424,14 @@ function deferProcessExitsUntilCleanupEnds(): () => void {
   };
 }
 
+let stopCleanupEnded: Promise<void> | undefined;
+
 const defaultRuntime: DevWriteLeaseRuntime = {
   now: () => new Date(),
   heartbeatTimeoutMs: DEV_WRITE_LEASE_HEARTBEAT_TIMEOUT_MS,
   log: (message) => console.error(message),
   stop: (stop) => {
-    void stopAfterBoundedCleanup(stop);
+    stopCleanupEnded = stopAfterBoundedCleanup(stop);
   },
   exit: (code) => process.exit(code),
   sleep: sleepFor,
@@ -827,6 +829,7 @@ function ensureHeartbeat() {
 let removeInterruptRelease: (() => void) | undefined;
 
 export async function releaseHeldDevWriteLeases(): Promise<void> {
+  await stopCleanupEnded;
   if (heartbeatTimer) {
     clearInterval(heartbeatTimer);
     heartbeatTimer = undefined;
@@ -1050,6 +1053,7 @@ export function resetDevWriteLeaseStateForTests() {
   mintedOwner = undefined;
   tickInFlight = undefined;
   stopped = false;
+  stopCleanupEnded = undefined;
   reportedProgressCounts.clear();
   progressUnobservable = false;
   heldForChildProcesses = false;

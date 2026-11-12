@@ -63,7 +63,7 @@ const WRITE_METHODS = [
   'bulkWrite',
 ] as const;
 
-type Outage = 'none' | 'reject' | 'hang';
+type Outage = 'none' | 'reject' | 'hang' | 'closed';
 
 interface DriverWrite {
   collection: string;
@@ -112,7 +112,7 @@ function installOutage() {
         afterStop: devWriteStopped(),
         inStopCleanup: devWriteStopCleanupMayWrite(this.collectionName),
       });
-      if (outage === 'reject') {
+      if (outage === 'reject' || outage === 'closed') {
         return Promise.reject(new Error('connection to the database closed')) as never;
       }
       if (outage === 'hang') return new Promise<never>(() => undefined) as never;
@@ -392,6 +392,37 @@ describe('the database returning inside the cleanup window', () => {
       at - START - DEV_WRITE_LEASE_RENEWAL_DEADLINE_MS - DEV_WRITE_LEASE_HEARTBEAT_MS,
     ).toBeLessThan(DEV_WRITE_STOP_CLEANUP_WINDOW_MS);
     expect(await ScrapeRun.countDocuments({ status: 'running' })).toBe(0);
+  });
+
+  it('keeps its connection through the retries when the script tears down mid-cleanup', async () => {
+    useRuntime({ cleanupAttemptTimeoutMs: 200 });
+    const lane = await startLaneRunHoldingEverything();
+    let teardown: Promise<void> | undefined;
+    let exitsBeforeTeardownEnded: number | undefined;
+
+    outage = 'reject';
+    onSleep = (count) => {
+      if (count === 1) {
+        teardown = releaseHeldDevWriteLeases().then(() => {
+          exitsBeforeTeardownEnded = exitCodes.length;
+          outage = 'closed';
+        });
+      }
+      if (count === 2 && outage !== 'closed') outage = 'none';
+    };
+    await stopForMissedRenewals();
+    lane.release();
+    await lane.settled;
+    await exited;
+    await teardown;
+
+    expect(exitsBeforeTeardownEnded).toBe(1);
+    const report = logs.find((line) => line.startsWith('Cleanup after the stop'))!;
+    expect(report).toMatch(/3 cleaned, 0 not cleaned/);
+    outage = 'none';
+    expect(await db.collection('scrape_runs').findOne({ _id: lane.runId })).toMatchObject({
+      status: 'interrupted',
+    });
   });
 });
 
