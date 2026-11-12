@@ -90,32 +90,42 @@ const isMicrositeLaneObservation = (observation: MicrositeDescriptionObservation
   typeof observation.sourceName === 'string' &&
   MICROSITE_PAGE_DERIVED_FIELDS_BY_SOURCE.has(observation.sourceName);
 
+const isUrlText = (value: string): boolean => /^https?:\/\//i.test(value.trim());
+
 const observedTextOf = (value: unknown): string[] => {
-  if (typeof value === 'string') return [value];
+  if (typeof value === 'string') return isUrlText(value) ? [] : [value];
   if (Array.isArray(value)) return value.flatMap(observedTextOf);
   if (value && typeof value === 'object') return Object.values(value).flatMap(observedTextOf);
   return [];
 };
 
-function micrositeTextByUrl(
+const micrositeSiteOf = (pageUrl: unknown): string => {
+  const normalized = normalizeEvidenceUrl(pageUrl);
+  return normalized ? new URL(normalized).hostname : '';
+};
+
+export type MicrositeTextBySite = ReadonlyMap<string, string>;
+
+function micrositeTextBySite(
   observations: readonly MicrositeDescriptionObservation[],
-): StoredPageTextByUrl {
-  const textByUrl = new Map(storedPageTextByUrl(observations));
+): MicrositeTextBySite {
+  const textBySite = new Map<string, string>();
+  const append = (pageUrl: unknown, text: string) => {
+    const site = micrositeSiteOf(pageUrl);
+    if (site && text) textBySite.set(site, [textBySite.get(site), text].filter(Boolean).join('\n'));
+  };
+  for (const [pageUrl, text] of storedPageTextByUrl(observations)) append(pageUrl, text);
   for (const observation of observations) {
     if (!isMicrositeLaneObservation(observation)) continue;
-    const key =
-      typeof observation.sourceUrl === 'string' ? normalizeEvidenceUrl(observation.sourceUrl) : '';
-    if (!key) continue;
-    const text = observedTextOf(observation.value).join('\n');
-    if (text) textByUrl.set(key, [textByUrl.get(key), text].filter(Boolean).join('\n'));
+    append(observation.sourceUrl, observedTextOf(observation.value).join('\n'));
   }
-  return textByUrl;
+  return textBySite;
 }
 
 export function isRefusedNonYaleMicrositePageField(
   observation: MicrositeDescriptionObservation,
   leadNames: readonly (string | undefined | null)[],
-  pageTextByUrl: StoredPageTextByUrl = new Map(),
+  pageTextBySite: MicrositeTextBySite = new Map(),
 ): boolean {
   if (!isMicrositePageDerivedField(observation)) return false;
   const sourceUrl = typeof observation.sourceUrl === 'string' ? observation.sourceUrl : '';
@@ -123,7 +133,7 @@ export function isRefusedNonYaleMicrositePageField(
   return (
     nonYaleMicrositeOwnership({
       sourceUrl,
-      text: pageTextByUrl.get(normalizeEvidenceUrl(sourceUrl)) ?? '',
+      text: pageTextBySite.get(micrositeSiteOf(sourceUrl)) ?? '',
       lead: { names: leadNames },
     }).decision === 'refuse'
   );
@@ -134,8 +144,8 @@ export function withoutRefusedNonYaleMicrositePageFields<T extends MicrositeDesc
   leadNames: readonly (string | undefined | null)[],
   pageTextSource: readonly MicrositeDescriptionObservation[] = observations,
 ): T[] {
-  const pageTextByUrl = micrositeTextByUrl(pageTextSource);
+  const pageTextBySite = micrositeTextBySite(pageTextSource);
   return observations.filter(
-    (observation) => !isRefusedNonYaleMicrositePageField(observation, leadNames, pageTextByUrl),
+    (observation) => !isRefusedNonYaleMicrositePageField(observation, leadNames, pageTextBySite),
   );
 }

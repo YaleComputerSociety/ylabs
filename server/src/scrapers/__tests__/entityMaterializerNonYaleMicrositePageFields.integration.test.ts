@@ -13,6 +13,7 @@ import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
+import { deriveAccessArtifactsForResearchGroup } from '../accessMaterializer';
 import { materializeEntity } from '../entityMaterializer';
 
 const SLUG = 'estuary-microsite-page-fields-fixture';
@@ -157,6 +158,41 @@ describe('a non-Yale microsite page supplies no page-derived field unless it con
       NAMING_PAGE,
     );
     expect((await plannedPageFields()).methods).toEqual(METHODS);
+  });
+
+  it("a sub-page's quote is supplied when the same site's home page names the lead", async () => {
+    const naming = new URL(NAMING_PAGE);
+    const joinPage = `${naming.origin}/join`;
+    await observe(
+      'research-page-text',
+      'researchPageText',
+      [{ url: `${naming.origin}/`, text: 'Principal investigator: Quillon Varnadore.' }],
+      `${naming.origin}/`,
+    );
+    await observe(
+      'lab-microsite-undergrad-llm',
+      'undergradEvidenceQuote',
+      UNDERGRAD_QUOTE,
+      joinPage,
+    );
+    expect((await plannedPageFields()).undergradEvidenceQuote).toBe(UNDERGRAD_QUOTE);
+  });
+
+  const accessSignalTypes = async () => {
+    const entity = await ResearchEntity.findOne({ slug: SLUG }).lean();
+    const { artifacts } = await deriveAccessArtifactsForResearchGroup({
+      researchEntityId: String(entity?._id),
+      entityKey: SLUG,
+    });
+    return artifacts.accessSignals.map((signal) => signal.type);
+  };
+
+  it('a refused page backs no access signal, while a Yale-hosted page does', async () => {
+    await observe('lab-microsite-undergrad-llm', 'currentUndergradCount', 2, REFUSED_PAGE);
+    expect(await accessSignalTypes()).not.toContain('CURRENT_UNDERGRADS');
+    await Observation.deleteMany({});
+    await observe('lab-microsite-undergrad-llm', 'currentUndergradCount', 2, YALE_PAGE);
+    expect(await accessSignalTypes()).toContain('CURRENT_UNDERGRADS');
   });
 
   it('a Yale-hosted page still supplies every field', async () => {

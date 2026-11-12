@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { NO_SURNAME_ROSTER } from '../../../utils/researchHomeNameIdentityAuthority';
+import { descriptionExtractionToObservations } from '../../sources/labMicrositeDescriptionLLMExtractor';
+import { extractionToObservations } from '../../sources/labMicrositeUndergradLLMExtractor';
 import {
   MICROSITE_PAGE_DERIVED_FIELDS_BY_SOURCE,
   withoutRefusedNonYaleMicrositeDescriptions,
@@ -24,20 +27,156 @@ const fieldsOf = (observations: { sourceName: string; field: string }[]) =>
   observations.map((observation) => `${observation.sourceName}/${observation.field}`);
 
 describe('the non-Yale microsite page-field screen (#5920)', () => {
-  it('lists methods and every other field the microsite lanes derive from page text', () => {
-    expect(fieldsOf(everyPageDerivedField(REFUSED_PAGE))).toEqual([
-      'lab-microsite-description-llm/shortDescription',
-      'lab-microsite-description-llm/researchAreas',
-      'lab-microsite-description-llm/methods',
-      'lab-microsite-undergrad-llm/undergradAccessEvidence',
-      'lab-microsite-undergrad-llm/currentUndergradCount',
-      'lab-microsite-undergrad-llm/pastUndergradAdvisees',
-      'lab-microsite-undergrad-llm/undergradEvidenceQuote',
-      'lab-microsite-undergrad-llm/joinPageUrl',
-      'lab-microsite-undergrad-llm/undergradRoleEvidenceQuote',
-      'lab-microsite-undergrad-llm/contactInstructionsQuote',
-      'lab-microsite-undergrad-llm/undergradConstraintQuote',
+  const REFUSED_HOME = 'https://coastal-foundation.example.org/';
+  const REFUSED_JOIN = 'https://coastal-foundation.example.org/join';
+  const REFUSED_PEOPLE = 'https://coastal-foundation.example.org/people';
+
+  const laneOutputOnRefusedSite = () => [
+    ...descriptionExtractionToObservations(
+      {
+        fullDescription:
+          'The group studies how estuarine sediment moves during storm surges, combining tidal marsh cores with channel erosion models to forecast shoreline change.',
+        shortDescription:
+          'Investigates how estuarine sediment moves during storm surges and forecasts shoreline change.',
+        topics: ['coastal sediment transport', 'salt marsh carbon storage'],
+        methods: ['sediment coring', 'isotope ratio mass spectrometry'],
+        name: 'Coastal Foundation',
+      },
+      {
+        sourceUrl: REFUSED_HOME,
+        entityKey: 'estuary-page-field-oracle',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        knownPersonSurnames: NO_SURNAME_ROSTER,
+      },
+    ).map((observation) => ({ ...observation, sourceName: 'lab-microsite-description-llm' })),
+    ...extractionToObservations(
+      'estuary-page-field-oracle',
+      REFUSED_HOME,
+      {
+        openToUndergrads: 'yes',
+        currentUndergradCount: 1,
+        currentUndergradEvidenceQuotes: ['Riley Example, Yale College'],
+        evidenceQuote: 'We welcome students.',
+        evidenceSource: 'explicit_text',
+        joinPageUrl: REFUSED_JOIN,
+        undergradRoleQuote: 'Undergraduates help collect data.',
+        contactInstructionsQuote: 'Apply using the form on this page.',
+        explicitConstraintQuote: 'Prior Python experience preferred.',
+      },
+      new Date('2026-04-27T12:00:00Z'),
+      {
+        sourcePages: [
+          {
+            url: REFUSED_HOME,
+            text: 'We welcome students. Undergraduates help collect data. Apply using the form on this page. Prior Python experience preferred.',
+          },
+          { url: REFUSED_JOIN, text: 'Join the lab. Undergraduates are welcome.' },
+          { url: REFUSED_PEOPLE, text: 'People Riley Example, Yale College' },
+        ],
+      },
+    ).map((observation) => ({ ...observation, sourceName: 'lab-microsite-undergrad-llm' })),
+  ];
+
+  it('drops every field both lanes emit for a refused site except those the docs exclude', () => {
+    const documentedExclusions = new Set([
+      'lab-microsite-description-llm/fullDescription',
+      'lab-microsite-description-llm/description',
+      'lab-microsite-description-llm/entityType',
+      'lab-microsite-description-llm/kind',
+      'lab-microsite-description-llm/name',
+      'lab-microsite-description-llm/displayName',
+      'lab-microsite-undergrad-llm/fullDescription',
+      'lab-microsite-undergrad-llm/shortDescription',
+      'lab-microsite-undergrad-llm/sourceContentHash',
+      'lab-microsite-undergrad-llm/lanePageHealth',
+      'lab-microsite-undergrad-llm/lastObservedAt',
     ]);
+    const emitted = laneOutputOnRefusedSite();
+    const kept = fieldsOf(withoutRefusedNonYaleMicrositePageFields(emitted, LEAD_NAMES));
+    expect(kept.filter((field) => !documentedExclusions.has(field))).toEqual([]);
+    expect(fieldsOf(emitted).filter((field) => !kept.includes(field))).toEqual(
+      expect.arrayContaining([
+        'lab-microsite-description-llm/shortDescription',
+        'lab-microsite-description-llm/researchAreas',
+        'lab-microsite-description-llm/methods',
+        'lab-microsite-undergrad-llm/undergradAccessEvidence',
+        'lab-microsite-undergrad-llm/currentUndergradCount',
+        'lab-microsite-undergrad-llm/joinPageUrl',
+        'lab-microsite-undergrad-llm/undergradRoleEvidenceQuote',
+        'lab-microsite-undergrad-llm/contactInstructionsQuote',
+        'lab-microsite-undergrad-llm/undergradConstraintQuote',
+      ]),
+    );
+  });
+
+  it('a surname in a URL inside a lane value does not confirm the page', () => {
+    const observations = [
+      {
+        sourceName: 'lab-microsite-undergrad-llm',
+        field: 'undergradAccessEvidence',
+        value: {
+          openToUndergrads: 'yes',
+          evidenceQuote: 'We welcome students.',
+          sourceUrls: [REFUSED_HOME, 'https://coastal-foundation.example.org/people/varnadore'],
+          quoteSourceUrl: 'https://coastal-foundation.example.org/people/varnadore',
+          joinPageUrl: 'https://coastal-foundation.example.org/varnadore-join',
+        },
+        sourceUrl: REFUSED_HOME,
+      },
+      {
+        sourceName: 'lab-microsite-undergrad-llm',
+        field: 'joinPageUrl',
+        value: 'https://coastal-foundation.example.org/varnadore-join',
+        sourceUrl: REFUSED_HOME,
+      },
+    ];
+    expect(withoutRefusedNonYaleMicrositePageFields(observations, LEAD_NAMES)).toEqual([]);
+  });
+
+  it("a sub-page's fields are kept when another page on the same site names the lead", () => {
+    const subPageFields = [
+      {
+        sourceName: 'lab-microsite-undergrad-llm',
+        field: 'undergradEvidenceQuote',
+        value: 'Undergraduates are welcome to join the group each semester.',
+        sourceUrl: REFUSED_JOIN,
+      },
+      {
+        sourceName: 'lab-microsite-undergrad-llm',
+        field: 'joinPageUrl',
+        value: REFUSED_JOIN,
+        sourceUrl: REFUSED_JOIN,
+      },
+      {
+        sourceName: 'lab-microsite-undergrad-llm',
+        field: 'currentUndergradCount',
+        value: 2,
+        sourceUrl: REFUSED_PEOPLE,
+      },
+    ];
+    const homePageText = {
+      sourceName: 'research-page-text',
+      field: 'researchPageText',
+      value: [{ url: REFUSED_HOME, text: 'Directed by Quillon Varnadore.' }],
+      sourceUrl: REFUSED_HOME,
+    };
+    const otherSiteText = {
+      ...homePageText,
+      value: [{ url: SURNAME_PAGE, text: 'Directed by Quillon Varnadore.' }],
+      sourceUrl: SURNAME_PAGE,
+    };
+    expect(
+      withoutRefusedNonYaleMicrositePageFields(subPageFields, LEAD_NAMES, [
+        ...subPageFields,
+        homePageText,
+      ]),
+    ).toEqual(subPageFields);
+    expect(
+      withoutRefusedNonYaleMicrositePageFields(subPageFields, LEAD_NAMES, [
+        ...subPageFields,
+        otherSiteText,
+      ]),
+    ).toEqual([]);
   });
 
   it('a refused page supplies none of those fields', () => {
