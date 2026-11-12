@@ -21,12 +21,14 @@ interface ResearchMoreTopicResultsProps {
   clusters: ResearchCluster[];
   accessFilter: MoreTopicResultsAccessFilter;
   onSelect: (label: string) => void;
+  filteredSchool?: string;
 }
 
 const ResearchMoreTopicResults = ({
   clusters,
   accessFilter,
   onSelect,
+  filteredSchool,
 }: ResearchMoreTopicResultsProps) => {
   const headingId = useId();
   const noteId = useId();
@@ -51,6 +53,7 @@ const ResearchMoreTopicResults = ({
             onSelect={onSelect}
             variant="compact"
             openSource="search"
+            filteredSchool={filteredSchool}
           />
         ))}
       </div>
