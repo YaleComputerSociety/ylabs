@@ -589,6 +589,7 @@ The Crossref grant lane stores each funder's own Crossref name as `agency`, so i
 A scoped pass also scopes what runs after the projection (#3874).
 Lead-PI school inheritance (`lead-pi-school-inheritance`) runs only when the expanded scope names `school` or `departments`, and otherwise appends no observation and writes no field; before this, a pass scoped to `researchAreas` wrote `departments` on 2 Development rows.
 The inferred-PI and inferred-director lead edges, the access-signal upserts, and the department-roster shell fold are skipped, because they write no field and the report compares fields, so any write they made would be invisible.
+`leadEdges` is the one `--only-fields` value outside the tracked-field allowlist: it projects no field and resolves only the named rows' lead edges, runs on its own, and is the scope a lead-edge fix needs (#5992).
 The dedupe merge's fill-only pass (`rematerializeMergeCanonicalFillOnly`) is the one scoped caller that keeps them, through `keepPostProjectionEvidence`, because it exists to carry the merged-in evidence onto the survivor.
 The browse-rank recompute and the search-index sync still run, because each is a cache recomputed from the row as stored and must follow the scoped write.
 
