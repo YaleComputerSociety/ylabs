@@ -33,8 +33,7 @@ export interface RosterMemberToRead {
 export interface RosterMemberEvidenceReadOptions {
   sourceName: string;
   useCache: boolean;
-  fetchPage?: MemberPageFetcher;
-  limit?: number;
+  fetchPage: MemberPageFetcher;
 }
 
 /**
@@ -48,7 +47,6 @@ export async function readRosterMemberIdentityEvidence(
   members: readonly RosterMemberToRead[],
   options: RosterMemberEvidenceReadOptions,
 ): Promise<Map<string, RosterMemberIdentityEvidence>> {
-  const fetchPage = options.fetchPage ?? fetchMemberProfilePage;
   const seen = new Set<string>();
   const toRead = members
     .filter((member) => member.name && isYaleHostedUrl(member.profileUrl))
@@ -57,8 +55,7 @@ export async function readRosterMemberIdentityEvidence(
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
-    })
-    .slice(0, options.limit ?? Infinity);
+    });
   const evidenceByKey = new Map<string, RosterMemberIdentityEvidence>();
   await mapWithConcurrency(toRead, MEMBER_PROFILE_FETCH_CONCURRENCY, async (member) => {
     const profileUrl = member.profileUrl as string;
@@ -72,7 +69,7 @@ export async function readRosterMemberIdentityEvidence(
     }
     let html: string;
     try {
-      html = await fetchPage(profileUrl);
+      html = await options.fetchPage(profileUrl);
     } catch {
       return;
     }
