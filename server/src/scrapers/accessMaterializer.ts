@@ -34,12 +34,6 @@ import { isRecruitingOrContactPageUrl } from './undergradRosterEvidence';
 import { listResearchEntityMergedInRowsBySurvivor } from '../services/researchEntityCanonicalTombstone';
 import { observationIsKeyedToRow, type ContactEvidenceRow } from './rowKeyedContactEvidence';
 import { liveResearchEntityNamedByKeyObservations } from './renamedResearchEntityAdoption';
-import {
-  isMicrositePageDerivedField,
-  withoutRefusedNonYaleMicrositePageFields,
-} from './utils/nonYaleMicrositeDescriptionScreen';
-import { isPersonResearchRow } from '../utils/researchStatementPassage';
-import { loadResearchEntityLeadPersonName } from '../utils/researchHomeNameIdentityRoster';
 
 /**
  * Every access-signal type the materializer has a live emission path for. This
@@ -679,9 +673,7 @@ export async function deriveAccessArtifactsForResearchGroup(
       ].filter((clause) => Object.keys(clause).length > 0),
     }).lean()) as unknown as AccessObservation[]);
 
-  const entity = observations.some(
-    (obs) => obs.field === 'joinPageUrl' || isMicrositePageDerivedField(obs),
-  )
+  const entity = observations.some((obs) => obs.field === 'joinPageUrl')
     ? ((await ResearchEntity.findOne(
         { _id: researchEntityObjectId },
         { entityType: 1, kind: 1, websiteUrl: 1, departments: 1, name: 1, slug: 1 },
@@ -689,13 +681,7 @@ export async function deriveAccessArtifactsForResearchGroup(
     : null;
   const artifacts = deriveAccessArtifactsFromObservations(
     researchEntityId,
-    entity && isPersonResearchRow(entity)
-      ? withoutRefusedNonYaleMicrositePageFields(
-          observations,
-          [await loadResearchEntityLeadPersonName(researchEntityId)],
-          observations,
-        )
-      : observations,
+    observations,
     entity ?? undefined,
   );
 
