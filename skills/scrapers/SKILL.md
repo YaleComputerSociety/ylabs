@@ -1388,7 +1388,7 @@ Before minting, the lane reads the live roster rows keyed by the roster's own pe
 The witness is the person-specific Yale mailbox (`netid:<local part>`) only: a `dept:<roster>:<slug>` key is a name and never attaches, a role or unit mailbox never attaches, and a candidate row whose name lacks the entry's surname refuses the attach because the address is shared.
 A shared lead researcher id is not a witness, because a blind ballot found it wrong-person on 4 of 17 pairs.
 The target is the row minted by the roster of the lead's own official profile when exactly one candidate is, else the oldest row, so every roster derives the same target and a second run changes nothing; within one run the first roster to mint the person holds the target.
-The second roster's appointment is still recorded on the person's own observations; the row keeps the departments its own roster asserts.
+The second roster's appointment is still recorded on the person's own observations, and the second roster emits its `departments` observation onto the existing row, so the row's roster departments combine and browse by either department finds it; it emits no `school` onto that row, because `school` is single-valued and the row's own roster asserts it.
 `rosterMintWithdrawal.ts` keeps a withdrawn row that another department's newest admitted read still lists (`listed_by_another_roster`), so one roster finding nothing to mint cannot retire the row the other roster attached to.
 Rows split before this landed merge through the name-agreed lane, which also groups rows by that mailbox (`loadRosterMailboxCandidateRows`).
 

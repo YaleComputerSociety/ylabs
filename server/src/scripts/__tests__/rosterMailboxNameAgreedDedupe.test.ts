@@ -70,6 +70,16 @@ describe('name-agreed dedupe over roster mailbox groups (#5969)', () => {
     expect(members(plan)).toEqual([[a.id, b.id].sort()]);
   });
 
+  it('keeps a row more than one lead researcher leads out of the mailbox groups', () => {
+    const onAlpha = fra('dept-synthetic-alpha-ada-alpha', 'Ada Alpha Faculty Research');
+    const onBeta = fra('dept-synthetic-beta-ada-alpha', 'Ada Alpha Faculty Research');
+    const plan = buildNameAgreedSharedPersonAndRosterMailboxDedupePlan(
+      [leadRow('researcher-1', [onAlpha, onBeta]), leadRow('researcher-3', [onBeta])],
+      [mailboxRow('netid:ada.alpha', [onAlpha, onBeta])],
+    );
+    expect(plan).toEqual([]);
+  });
+
   it('a shared lead id alone does not merge two different people’s rows', () => {
     const plan = buildNameAgreedSharedPersonAndRosterMailboxDedupePlan(
       [

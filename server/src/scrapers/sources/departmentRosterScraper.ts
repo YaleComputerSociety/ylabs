@@ -4928,6 +4928,13 @@ export class DepartmentRosterScraper implements IScraper {
         const labKey = labObs[0]?.entityKey;
         if (attachedSlug) {
           attachedToExistingRow++;
+          const appointmentObs = mint.observations
+            .filter((observation) => observation.field === 'departments')
+            .map((observation) => ({ ...observation, entityKey: attachedSlug }));
+          if (appointmentObs.length > 0) {
+            await ctx.emit(appointmentObs);
+            observations += appointmentObs.length;
+          }
           const deptDiscovered = discoveredEntityKeysByDept.get(dept.deptKey) ?? new Set<string>();
           deptDiscovered.add(attachedSlug);
           deptDiscovered.add(ownSlug);

@@ -299,14 +299,34 @@ export function slugsListedByAnotherRoster(
   return listed;
 }
 
-async function loadAdmittedReadsOfEveryDept(): Promise<RosterMintWithdrawalRead[]> {
-  const rows = (await Observation.find({
-    entityType: 'departmentRosterHealth',
-    field: DEPARTMENT_ROSTER_HEALTH_FIELD,
-    'value.mintWithdrawalRecorded': true,
-  })
-    .select('entityKey value scrapeRunId observedAt')
-    .lean()) as Array<Record<string, unknown>>;
+async function loadAdmittedReadsOfOtherDepts(
+  deptKeys: readonly string[],
+  withdrawnSlugs: readonly string[],
+): Promise<RosterMintWithdrawalRead[]> {
+  const rows = (await Observation.aggregate([
+    {
+      $match: {
+        entityType: 'departmentRosterHealth',
+        field: DEPARTMENT_ROSTER_HEALTH_FIELD,
+        entityKey: { $nin: [...deptKeys] },
+        'value.mintWithdrawalRecorded': true,
+      },
+    },
+    {
+      $set: {
+        'value.discoveredEntityKeys': {
+          $filter: {
+            input: { $ifNull: ['$value.discoveredEntityKeys', []] },
+            cond: { $in: ['$$this', [...withdrawnSlugs]] },
+          },
+        },
+        'value.withdrawnEntityKeys': {
+          $cond: [{ $isArray: '$value.withdrawnEntityKeys' }, [], '$value.withdrawnEntityKeys'],
+        },
+      },
+    },
+    { $project: { entityKey: 1, value: 1, scrapeRunId: 1, observedAt: 1 } },
+  ])) as Array<Record<string, unknown>>;
   return rows
     .map((row) => rosterMintWithdrawalReadFromSnapshot(row))
     .filter((read): read is RosterMintWithdrawalRead => read !== null);
@@ -528,7 +548,10 @@ export async function reconcileRosterMintWithdrawalsFromRun(
   const rowEvidence = await loadRowEvidence([...withdrawnSlugToDept.keys()]);
   const listedByAnotherRoster =
     withdrawnSlugToDept.size > 0
-      ? slugsListedByAnotherRoster(withdrawnSlugToDept, await loadAdmittedReadsOfEveryDept())
+      ? slugsListedByAnotherRoster(withdrawnSlugToDept, [
+          ...reads,
+          ...(await loadAdmittedReadsOfOtherDepts(deptKeys, [...withdrawnSlugToDept.keys()])),
+        ])
       : new Set<string>();
   const archiveIds: string[] = [];
   for (const row of rowEvidence.sort((a, b) => a.slug.localeCompare(b.slug))) {

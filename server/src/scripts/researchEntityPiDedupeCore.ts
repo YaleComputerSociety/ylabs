@@ -1092,20 +1092,22 @@ export function buildNameAgreedSharedPersonResearchEntityDedupePlan(
  * The name-agreed plan over lead rows plus rows grouped by the roster mailbox they were
  * read under (#5969). One person on two rosters can end up with two lead researchers, and
  * every lead-keyed group is then blind to the pair. The mailbox rows run through the same
- * name-agreement builder, and a mailbox group touching a row a lead group already plans is
- * dropped so no row is planned twice.
+ * name-agreement builder, and a mailbox group touching a row a lead group already plans, or a
+ * row more than one lead researcher leads, is dropped so no row is planned twice and a
+ * multi-lead row stays out of the lane.
  */
 export function buildNameAgreedSharedPersonAndRosterMailboxDedupePlan(
   leadRows: ResearchEntityPiDedupeRow[],
   rosterMailboxRows: ResearchEntityPiDedupeRow[],
 ): ResearchEntityPiDedupeGroup[] {
   const leadPlan = buildNameAgreedSharedPersonResearchEntityDedupePlan(leadRows);
-  const planned = new Set(
-    leadPlan.flatMap((group) => [group.canonicalEntityId, ...group.duplicateEntityIds]),
-  );
+  const excluded = new Set([
+    ...multiPersonEntityIds(leadRows),
+    ...leadPlan.flatMap((group) => [group.canonicalEntityId, ...group.duplicateEntityIds]),
+  ]);
   const mailboxPlan = buildNameAgreedSharedPersonResearchEntityDedupePlan(rosterMailboxRows).filter(
     (group) =>
-      ![group.canonicalEntityId, ...group.duplicateEntityIds].some((id) => planned.has(id)),
+      ![group.canonicalEntityId, ...group.duplicateEntityIds].some((id) => excluded.has(id)),
   );
   return [...leadPlan, ...mailboxPlan];
 }

@@ -109,7 +109,8 @@ const runRosters = async (configs: DeptConfig[], rows: Map<string, RosterOwnerKe
       .filter((o) => o.entityType === 'departmentRosterHealth')
       .map((o) => [o.entityKey, o.value as any]),
   );
-  return { researchKeys, snapshots };
+  const researchObservations = emitted.filter((o) => o.entityType === 'researchEntity');
+  return { researchKeys, researchObservations, snapshots };
 };
 
 describe('one person on two rosters keeps one research row (#5969)', () => {
@@ -175,11 +176,14 @@ describe('one person on two rosters keeps one research row (#5969)', () => {
   });
 
   it('a second roster emits no row of its own and still lists both keys as discovered', async () => {
-    const { researchKeys, snapshots } = await runRosters(
+    const { researchKeys, researchObservations, snapshots } = await runRosters(
       [ROSTER_B],
       new Map([[OWNER_KEY, [rowOn(ROSTER_A)]]]),
     );
-    expect([...researchKeys]).toEqual([]);
+    expect([...researchKeys]).toEqual([rowOn(ROSTER_A).slug]);
+    expect(researchObservations.map((o) => [o.field, o.value])).toEqual([
+      ['departments', [ROSTER_B.deptName]],
+    ]);
     const snapshot = snapshots.get(ROSTER_B.deptKey);
     expect(snapshot.discoveredEntityKeys).toEqual(
       expect.arrayContaining([rowOn(ROSTER_A).slug, rosterResearchEntitySlug(PERSON, ROSTER_B)]),
@@ -188,8 +192,14 @@ describe('one person on two rosters keeps one research row (#5969)', () => {
   });
 
   it('two rosters read in one run before either row exists mint one row', async () => {
-    const { researchKeys } = await runRosters([ROSTER_A, ROSTER_B], new Map());
+    const { researchKeys, researchObservations } = await runRosters(
+      [ROSTER_A, ROSTER_B],
+      new Map(),
+    );
     expect(researchKeys.size).toBe(1);
+    expect(
+      researchObservations.filter((o) => o.field === 'departments').map((o) => o.value),
+    ).toEqual([[ROSTER_A.deptName], [ROSTER_B.deptName]]);
   });
 
   it('still mints a row per roster for a person with no mailbox key', async () => {
