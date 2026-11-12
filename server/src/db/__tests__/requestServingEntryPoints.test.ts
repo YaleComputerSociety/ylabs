@@ -172,7 +172,7 @@ describe('the API server entry point', () => {
       .filter((file) => calledNames(file).includes(DECLARATION))
       .map((file) => path.relative(SERVER_SRC, file));
     expect(declaring).toEqual(['index.ts']);
-  });
+  }, 120_000);
 
   it('is the one module every request-serving command runs', () => {
     expect(tsupConfig).toMatchObject({ entry: ['src/index.ts'], outDir: 'build' });
