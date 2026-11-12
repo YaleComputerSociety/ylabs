@@ -9,7 +9,7 @@ import { RoleAssignment } from '../models/roleAssignment';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
 import {
-  auditActorFor,
+  resolveAuditActor,
   foldArchivedShellEdgeIds,
   planResearcherShellUnfold,
   UNFOLD_SHELL_AUDIT_ACTION,
@@ -77,8 +77,8 @@ export function parseUnfoldResearcherShellArgs(
     throw new Error(`--note must be at most ${MAX_NOTE_LENGTH} characters`);
   }
   const expectedSurvivorId = objectIdArg('expect-survivor', value('expect-survivor'));
-  const actor = auditActorFor(value('actor') ?? env.DEV_WRITE_OWNER);
   const apply = argv.includes('--apply');
+  const actor = resolveAuditActor(value('actor'), env.DEV_WRITE_OWNER, apply);
   if (apply) {
     if (!expectedSurvivorId) {
       throw new Error(`${UNFOLD_SHELL_SCRIPT} --apply requires --expect-survivor=<id>`);

@@ -212,6 +212,17 @@ describe('observations:supersede arguments (#6018)', () => {
     expect(() => parseSupersedeObservationsArgs(['--all'], {})).toThrow(/Unknown/);
   });
 
+  it('lets a dry run ignore a bare session label in DEV_WRITE_OWNER but refuses it on apply', () => {
+    const [one] = ids(1);
+    const env = { DEV_WRITE_OWNER: 'ylabs-fixture-session' };
+    expect(
+      parseSupersedeObservationsArgs([`--ids=${one}`, '--reason=x'], env).actor,
+    ).toBeUndefined();
+    expect(() =>
+      parseSupersedeObservationsArgs([`--ids=${one}`, '--reason=x', '--apply'], env),
+    ).toThrow(/--actor/);
+  });
+
   it('says it is an operator tool for one-row judgements in its help', () => {
     expect(() => parseSupersedeObservationsArgs(['--help'], {})).toThrow(
       /operator tool for one-row judgements, not a bulk repair path/,

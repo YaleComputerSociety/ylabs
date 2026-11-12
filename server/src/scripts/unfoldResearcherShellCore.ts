@@ -109,3 +109,16 @@ export function auditActorFor(raw: string | undefined): string | undefined {
   if (isAuditableActor(actor)) return actor;
   throw new Error('--actor must be the operator netid or an agent identifier such as agent:<name>');
 }
+
+export function resolveAuditActor(
+  explicitActor: string | undefined,
+  envOwner: string | undefined,
+  apply: boolean,
+): string | undefined {
+  if (explicitActor !== undefined || apply) return auditActorFor(explicitActor ?? envOwner);
+  try {
+    return auditActorFor(envOwner);
+  } catch {
+    return undefined;
+  }
+}

@@ -311,6 +311,22 @@ describe('researchers:unfold-shell arguments (#6018)', () => {
     ).not.toThrow();
   });
 
+  it('lets a dry run ignore a bare session label in DEV_WRITE_OWNER but refuses it on apply', () => {
+    const env = { DEV_WRITE_OWNER: 'ylabs-fixture-session' };
+    expect(
+      parseUnfoldResearcherShellArgs([`--shell=${shell}`, '--note=x'], env).actor,
+    ).toBeUndefined();
+    expect(() =>
+      parseUnfoldResearcherShellArgs(
+        [`--shell=${shell}`, '--note=x', '--apply', `--expect-survivor=${survivor}`],
+        env,
+      ),
+    ).toThrow(/--actor/);
+    expect(() =>
+      parseUnfoldResearcherShellArgs([`--shell=${shell}`, '--note=x', '--actor=bad label!'], env),
+    ).toThrow(/--actor/);
+  });
+
   it('keeps a netid actor and refuses an actor it cannot audit', () => {
     expect(auditActorFor('zz9991')).toBe('zz9991');
     expect(auditActorFor('agent:ylabs-fixture')).toBe('agent:ylabs-fixture');

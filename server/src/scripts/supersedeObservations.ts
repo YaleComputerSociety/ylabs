@@ -18,7 +18,7 @@ import {
   SUPERSEDE_OBSERVATIONS_SCRIPT,
   type SupersedePlanEntry,
 } from './supersedeObservationsCore';
-import { auditActorFor } from './unfoldResearcherShellCore';
+import { resolveAuditActor } from './unfoldResearcherShellCore';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(here, '../../.env'), quiet: true });
@@ -83,8 +83,8 @@ export function parseSupersedeObservationsArgs(
   if (reason.length > MAX_REASON_LENGTH) {
     throw new Error(`--reason must be at most ${MAX_REASON_LENGTH} characters`);
   }
-  const actor = auditActorFor(value('actor') ?? env.DEV_WRITE_OWNER);
   const apply = argv.includes('--apply');
+  const actor = resolveAuditActor(value('actor'), env.DEV_WRITE_OWNER, apply);
   if (apply && !actor) {
     throw new Error(
       `${SUPERSEDE_OBSERVATIONS_SCRIPT} --apply requires an actor: set DEV_WRITE_OWNER or --actor`,
