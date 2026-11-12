@@ -267,6 +267,39 @@ describe('lead match evidence (#5970)', () => {
     expect(store.researcherQueries).toBe(1);
   });
 
+  it('serves no lead key when a second lead matches the row only through a folded record', async () => {
+    const secondLeadSchoolAProfile = 'https://medicine.yale.edu/profile/fixture-second-lead/';
+    const twoLeadRow = {
+      ...initiative,
+      sourceUrls: [SCHOOL_A_PROFILE, secondLeadSchoolAProfile],
+    };
+    const twoLeads = [
+      {
+        role: 'pi',
+        user: { displayName: 'Fixture Lead', profileUrls: { official: SCHOOL_A_PROFILE } },
+        row: { identityKey: LEAD_ID },
+      },
+      {
+        role: 'pi',
+        user: {
+          displayName: 'Fixture Second Lead',
+          profileUrls: {
+            official:
+              'https://engineering.yale.edu/research-and-faculty/faculty-directory/fixture-second-lead',
+          },
+        },
+        row: { identityKey: UNRELATED_ID },
+      },
+    ];
+    store.foldedRecords.push({
+      dedupedIntoResearcherId: UNRELATED_ID,
+      profileLinks: [{ kind: 'YALE_OFFICIAL', url: secondLeadSchoolAProfile }],
+    });
+    expect(await resolveResearchDetailLeadIdentity(twoLeadRow, twoLeads)).toEqual({
+      leadIdentityStatus: 'verified',
+    });
+  });
+
   it('serves no lead key when neither the fold nor the page vouches for the lead', async () => {
     store.foldedRecords.push({
       dedupedIntoResearcherId: UNRELATED_ID,
