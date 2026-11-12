@@ -122,6 +122,7 @@ SCRAPER_ENV=beta yarn --cwd server beta:readiness --output /tmp/ylabs-beta-readi
 The command is read-only: it reports the Mongo target, source metadata presence, and canonical migration residue, and it exits non-zero whenever any gate is blocked, so a script that runs it stops on a failed gate.
 The gate does not report on a Beta backup, because no Beta restore point exists yet: the Development-to-Beta mirror keeps no copy of what it replaces, and the off-cluster dump that would provide one is #4148.
 The `--confirm-beta-backup` flag and the `betaBackup` row it marked `ready` were removed because they verified nothing (#5556); passing the flag now fails as an unknown argument.
+`yarn promote:beta` still requires `--backup-ref`, but only as the operator's recorded acknowledgement: pass a real backup reference, or `none-acknowledged` while no off-cluster Beta backup exists, and the promotion log records it as stated without checking it (`docs/data-refresh-runbook.md`, "What `yarn promote:beta` does").
 Source metadata is not seeded on Beta: the Development-to-Beta refresh copies the `sources` collection with the rest of the corpus.
 
 Once the refresh has landed, rebuild the Beta search index with the guarded reindex in [`meilisearch-reindex-runbook.md`](./meilisearch-reindex-runbook.md), which refuses an empty Mongo target or a mismatched index prefix before it clears anything:

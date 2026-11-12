@@ -1,6 +1,9 @@
 import path from 'path';
 import {
+  BACKUP_REF_REQUIRED_MESSAGE,
   BETA_CONFIRMATION_WORD,
+  PROMOTE_BETA_USAGE,
+  backupRefAcknowledgementLine,
   PRODUCTION_CONFIRMATION_WORD,
   REMOTE_PHASE_RESULT_MARKER,
   RENDER_API_KEY_VARIABLE,
@@ -213,6 +216,10 @@ async function readReport<T>(
 
 export async function runPromoteBeta(argv: string[], deps: PromoteBetaDeps): Promise<number> {
   const args = parsePromoteBetaArgs(argv);
+  if (args.help) {
+    deps.log(PROMOTE_BETA_USAGE);
+    return 0;
+  }
   const problems: string[] = [];
 
   if (args.allowWithoutWeeklyRun) {
@@ -258,14 +265,10 @@ export async function runPromoteBeta(argv: string[], deps: PromoteBetaDeps): Pro
     deps.log('Dry run: nothing was written to Beta and no Render job was started.');
     return problems.length > 0 ? 1 : 0;
   }
-  if (!args.backupRef) {
-    problems.push(
-      '--backup-ref is required: name the Beta backup or restore point taken before this mirror',
-    );
-  }
+  if (!args.backupRef) problems.push(BACKUP_REF_REQUIRED_MESSAGE);
   if (problems.length > 0) return refuse(deps, problems);
 
-  deps.log(`Beta backup reference: ${args.backupRef}`);
+  deps.log(backupRefAcknowledgementLine(args.backupRef!));
   if (
     !args.yes &&
     !(await confirm(
