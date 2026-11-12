@@ -146,4 +146,37 @@ describe('a row re-reading its own page is not a foreign citer of it', () => {
 
     expect(await liveValues('fullDescription')).not.toContain(incoming);
   });
+  it('stores a lab description citing its own website that two differently named rows cite', async () => {
+    const db = mongoose.connection.db!;
+    await db
+      .collection('research_entities')
+      .updateOne(
+        { _id: OWN_ID },
+        { $set: { websiteUrl: OWN_PAGE, entityType: 'LAB', kind: 'lab' } },
+      );
+    await db.collection('research_entities').insertMany([
+      { slug: 'dept-example-member-a', name: 'Glacier Dynamics Group' },
+      { slug: 'dept-example-member-b', name: 'Urban Housing Policy Lab' },
+    ]);
+    for (const entityKey of ['dept-example-member-a', 'dept-example-member-b']) {
+      await appendObservations(
+        [
+          description(
+            'fullDescription',
+            { entityKey },
+            `Synthetic description for ${entityKey} about field research methods.`,
+          ),
+        ],
+        ctx(),
+      );
+    }
+
+    const incoming = 'The group studies coral reef recovery, combining field surveys with models.';
+    await appendObservations(
+      [description('fullDescription', { entityId: String(OWN_ID), entityKey: OWN_SLUG }, incoming)],
+      ctx(),
+    );
+
+    expect(await liveValues('fullDescription')).toContain(incoming);
+  });
 });

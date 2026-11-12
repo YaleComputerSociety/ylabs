@@ -13568,6 +13568,14 @@ async function materializeEntityUnderRemovalGuard(
     })),
     ownershipCiters,
     ownEntityKeys,
+    undefined,
+    isResearchEntityObservationType(entityType)
+      ? {
+          websiteUrl: entityDoc?.websiteUrl,
+          entityType: entityDoc?.entityType,
+          kind: entityDoc?.kind,
+        }
+      : undefined,
   );
   if (ownershipScreen.dropped.length > 0) {
     console.log(
