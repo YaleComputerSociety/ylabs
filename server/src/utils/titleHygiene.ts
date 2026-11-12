@@ -298,22 +298,8 @@ const FIELD_LABEL_PREFIX = /^(?:job\s+title|title|position|rank|appointment)\s*:
 export const stripTitleFieldLabel = (value: string): string =>
   value.replace(FIELD_LABEL_PREFIX, '');
 
-const SENTENCE_BOUNDARY = /(?<=[a-z]{4,}[.!?]["')\]]?)\s+(?=[A-Z])/;
-
-/**
- * Multi-sentence bio prose dumped into the title (#708). The boundary requires a four-plus-letter
- * lowercase word before the terminator and a capitalized next word, so degree abbreviations
- * ("Ph.D.") and chair initials are not sentences. An appointment list written as sentences names
- * a role in every sentence, so prose is three or more sentences with one that names none.
- */
-function isMultiSentenceBioProse(text: string): boolean {
-  const sentences = text.split(SENTENCE_BOUNDARY);
-  return sentences.length >= 3 && sentences.some((sentence) => !ROLE_WORD_PATTERN.test(sentence));
-}
-
 function hasPersonTitleDefectShape(text: string): boolean {
   return (
-    isMultiSentenceBioProse(text) ||
     isNavMenuChromeTitle(text) ||
     isSpaceSeparatedSiteMenu(text) ||
     isSectionLabelTitle(text) ||
@@ -351,8 +337,7 @@ const storableWhole = (title: string): string | undefined =>
  * never a defect here: a genuine list of appointments, joined by semicolons, commas or
  * sentences, is kept whole up to the storage bound. A title is refused or trimmed only for
  * a defect shape: glued biography (a lowercase finite verb such as "is" or "received", or a
- * personal pronoun, neither of which an appointment carries), multi-sentence prose with a
- * sentence that names no role, degree lines, contact details,
+ * personal pronoun, neither of which an appointment carries), degree lines, contact details,
  * a site menu, section label or page heading, or a title cut off at a dangling connective.
  * When the defect sits in a later appointment of a semicolon list, the leading clean
  * appointments are kept, whole and in order, and the defective appointment and everything
@@ -375,8 +360,7 @@ export function servablePersonTitle(value: string | null | undefined): string | 
  * emits exactly the title `servablePersonTitle` would store, so a long genuine appointment list
  * reaches the observation store whole instead of being refused for its length one step before
  * the materializer could keep it. Defect shapes (menus, section labels, page headings, contact
- * details, glued biography, multi-sentence bio prose, degree lines, truncation) are refused at
- * any length, and a title
+ * details, glued biography, degree lines, truncation) are refused at any length, and a title
  * past the storage bound is refused rather than cut.
  */
 export function sanitizePersonTitle(value: string | null | undefined): string | undefined {
