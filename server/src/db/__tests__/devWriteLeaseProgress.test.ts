@@ -3,7 +3,7 @@ import { createServer } from 'http';
 import type { AddressInfo } from 'net';
 import { MongoClient, type Db } from 'mongodb';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   DEV_APPLY_LEASE_NAME,
@@ -26,6 +26,7 @@ import {
   setDevWriteLeaseRuntimeForTests,
   type DevWriteLeaseRecord,
   type DevWriteLeaseStop,
+  UNMONITORED_LEASE_CLIENT_WARNING,
 } from '../devWriteLease';
 import {
   countsAsDevWriteProgress,
@@ -301,13 +302,32 @@ describe('a holder whose progress cannot be judged', () => {
     expect(stops).toEqual([]);
   });
 
-  it('is never stopped when its lease connection reports no commands', async () => {
+  it('is never stopped when its lease connection reports no commands, and says so loudly once', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     const unmonitored = unmonitoredClient.db('Development');
+    await holdApplyLease(unmonitored);
     await holdApplyLease(unmonitored);
 
     await tickMinutes(30);
 
     expect(stops).toEqual([]);
+    const warnings = warn.mock.calls.filter(([message]) =>
+      String(message).includes(UNMONITORED_LEASE_CLIENT_WARNING),
+    );
+    expect(warnings).toHaveLength(1);
+    expect(String(warnings[0][0])).toMatch(/monitorCommands: true/);
+    warn.mockRestore();
+  });
+
+  it('gives no warning for a lease held through a monitored connection', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    await holdApplyLease(monitoredClient.db('Development'));
+    expect(
+      warn.mock.calls.some(([message]) =>
+        String(message).includes(UNMONITORED_LEASE_CLIENT_WARNING),
+      ),
+    ).toBe(false);
+    warn.mockRestore();
   });
 
   it('is flagged but never stopped when a connection it uses has no socket ceiling', async () => {

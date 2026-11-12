@@ -415,6 +415,15 @@ let tickInFlight: Promise<void> | undefined;
 let stopped = false;
 const reportedProgressCounts = new Map<string, number>();
 let progressUnobservable = false;
+
+export const UNMONITORED_LEASE_CLIENT_WARNING =
+  'holds a Development write lease through a MongoDB client without command monitoring';
+
+function warnUnmonitoredLeaseClient(name: string, command: string) {
+  console.warn(
+    `WARNING: ${command} ${UNMONITORED_LEASE_CLIENT_WARNING} (lease "${name}"), so its progress cannot be seen and a hang will never self-stop. Connect through db/connections.ts, or create the client with monitorCommands: true.`,
+  );
+}
 let heldForChildProcesses = false;
 
 class DevWriteLeaseTimeoutError extends Error {
@@ -723,7 +732,10 @@ async function holdLease(
   const at = runtime.now();
   startDevWriteProgressClock(at);
   watchOutboundHttpProgress();
-  if (!watchMongoClientProgress(connection.db.client)) progressUnobservable = true;
+  if (!watchMongoClientProgress(connection.db.client)) {
+    if (!progressUnobservable) warnUnmonitoredLeaseClient(name, command);
+    progressUnobservable = true;
+  }
   heldLeases.set(name, {
     lease,
     db: connection.db,
