@@ -91,6 +91,7 @@ const HARD_BLOCKER_EMITTERS: Record<string, () => string[]> = {
   unusable_name: () => researchReasons({ entity: { name: 'n/a' } }),
   duplicate_risk: () => researchReasons({ duplicateRisk: true }),
   exact_url_duplicate_risk: () => researchReasons({ exactUrlDuplicateRisk: true }),
+  lead_is_staff_of_served_lab: () => researchReasons({ leadIsStaffOfServedLab: true }),
   profile_identity_risk: () =>
     researchReasons({
       entity: {
