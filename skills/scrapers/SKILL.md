@@ -1406,6 +1406,20 @@ The second roster's appointment is still recorded on the person's own observatio
 `rosterMintWithdrawal.ts` keeps a withdrawn row that another department's newest admitted read still lists (`listed_by_another_roster`), so one roster finding nothing to mint cannot retire the row the other roster attached to.
 Rows split before this landed merge through the name-agreed lane, which also groups rows by that mailbox (`loadRosterMailboxCandidateRows`).
 
+#### One credential list, and a list change never strands a row (#5969)
+
+`utils/degreeTokens.ts` holds the one list of credentials a name or a profile slug can carry; the roster name normalizer (`normalizeRosterName`) and `personProfileIdentityFromUrl` both read it, so a credential is stripped by both or by neither.
+Tokens are compact (dots, spaces and hyphens removed), so a compound such as "FNP-C" or "RN-BC" is one token, and a board-certified compound missing from the list is the one way a slug's trailing "-c" or "-bc" survives.
+A list change changes the key a roster mints from a name, so the list also keeps a frozen, version-tagged copy of every earlier list (`ROSTER_NAME_NORMALIZER_LEGACY_TOKENS`).
+The shared `normalizeName` defaults to the frozen version 1 list, because the other lanes that derive keys from it have no key continuity; only the roster lane reads the current list.
+Extractors store the normalized name, so an entry keeps the listing's text in `nameAsListed` whenever an earlier list reads it differently, and the earlier keys are derived from that text.
+The lane derives each entry's research key and person key under the previous version (`legacyRosterResearchEntitySlug`, `legacyRosterOwnerKey`) and, when no live row holds the new key, keeps writing to the row the old key holds, through its id, without renaming it (`decideLegacyKeyAdoption` in `scrapers/rosterLegacyKeyAdoption.ts`).
+On adoption the person's observations follow the person key the adopted row was read under, so no second person is minted beside it.
+It adopts only when exactly one live row answers to the old key, this lane read that row, and the lane read it for the same person key; otherwise it refuses and mints nothing for the entry, and a refusal records no withdrawal and keeps the old key in the discovered set, so the departure lane never reads a listed person as gone.
+When the 2026-11-12 list added bachelor's and nursing credentials, one live roster row in the corpus carried a newly listed credential after the name, and it is the one the adoption keeps writing to.
+A roster entry whose given-name position is a credential written as one ("PhD <surname>", "MD <surname>") names no person, so the lane mints no person and no research row from it, and records the withdrawal when the profile was read; a given name spelled like a credential but written as a name ("Ma", "Do") is a name.
+A one-word page whose slug is one of the row's own departments is that department's listing on a faculty directory that files people and subject filters under one path, so `distinctPersonProfileIdentities` does not read it as a second person; any other one-word page, a surname-only or netid slug, stays a person.
+
 #### The other roster gate: `research-homes:audit-rosters`
 
 An owner's refusal of one listed name or of one row's derived roster is stored in `officialRosterConfigs.ts` only as a digest, never as the name or the person-bearing key, because the file is public and a refusal is a judgement about a person.
