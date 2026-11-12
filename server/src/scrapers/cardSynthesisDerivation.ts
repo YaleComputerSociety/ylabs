@@ -1,5 +1,5 @@
-import mongoose from 'mongoose';
 import type { ResearchEntityType } from '../models/researchAccessTypes';
+import { mongooseConnectionWasOpened } from '../utils/mongooseConnectionWasOpened';
 import { CardSynthesisDerivation } from '../models/cardSynthesisDerivation';
 import { computeContentHash } from './contentHashGate';
 import {
@@ -57,7 +57,7 @@ export interface CardSynthesisDerivationStore {
 
 export const mongoCardSynthesisDerivationStore: CardSynthesisDerivationStore = {
   async find(inputHash) {
-    if (mongoose.connection.readyState !== 1) return null;
+    if (!mongooseConnectionWasOpened()) return null;
     return (await CardSynthesisDerivation.findOne({ inputHash })
       .select('-_id inputHash promptHash model writer rawCards derivedAt')
       .lean()) as StoredCardSynthesisDerivation | null;

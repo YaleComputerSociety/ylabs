@@ -1,5 +1,5 @@
-import mongoose from 'mongoose';
 import type { ResearchEntityType } from '../models/researchAccessTypes';
+import { mongooseConnectionWasOpened } from '../utils/mongooseConnectionWasOpened';
 import { WrittenDescriptionDerivation } from '../models/writtenDescriptionDerivation';
 import { computeContentHash } from '../scrapers/contentHashGate';
 import {
@@ -147,7 +147,7 @@ export interface WrittenDescriptionDerivationStore {
 
 export const mongoWrittenDescriptionDerivationStore: WrittenDescriptionDerivationStore = {
   async find(inputHash) {
-    if (mongoose.connection.readyState !== 1) return null;
+    if (!mongooseConnectionWasOpened()) return null;
     return (await WrittenDescriptionDerivation.findOne({ inputHash })
       .select(
         '-_id inputHash promptHash model writer rawOutput snippetSentenceHashes researchPageHeadingHashes derivedAt',

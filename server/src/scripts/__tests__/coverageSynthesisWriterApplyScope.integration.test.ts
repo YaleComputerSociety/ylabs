@@ -16,6 +16,7 @@ import { Source } from '../../models/source';
 import { WRITTEN_DESCRIPTION_SOURCE_NAME } from '../../scrapers/coverageSynthesis';
 import { runCoverageSynthesis } from '../coverageSynthesis';
 import { coverageSynthesisModeOf, parseCoverageSynthesisArgs } from '../coverageSynthesisCore';
+import { mongoWrittenDescriptionDerivationStore } from '../writtenDescriptionDerivationCore';
 
 const PAGE_TEXT = [
   'Coral Reef Recovery',
@@ -247,5 +248,30 @@ describe('the writer apply only adds bodies and writes only description fields (
         parseCoverageSynthesisArgs(['--apply', '--capture-card-requests', CARD_REQUESTS]),
       ),
     ).toThrow(/refused with --apply/);
+  });
+
+  it('counts a cache read the database could not answer as an error, never a miss', async () => {
+    const dropped = vi
+      .spyOn(mongoWrittenDescriptionDerivationStore, 'find')
+      .mockRejectedValue(new Error('Client must be connected before running operations'));
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const report = await run([
+        '--apply',
+        '--confirm-coverage-synthesis',
+        '--cache-only',
+        `--slugs=${ACCEPTED_ROW}`,
+        '--skip-index-sync',
+      ]);
+      expect(report.entityErrors).toBe(1);
+      expect(report.cacheMissesNoCall).toBe(0);
+      expect(report.written).toBe(0);
+      expect(report.connectionDrops).toEqual({ disconnected: 0, reconnected: 0 });
+    } finally {
+      dropped.mockRestore();
+      errors.mockRestore();
+    }
+    await connected();
+    expect(await liveWrittenBodies(ACCEPTED_ROW)).toHaveLength(1);
   });
 });
