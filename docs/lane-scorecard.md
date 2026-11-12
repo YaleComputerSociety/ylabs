@@ -116,7 +116,10 @@ Its scope is 60 rows: every live row whose stored `leadVerification.state` was `
 The lane planned a verdict for 46 of them, 5 `contradicted`, 39 `unstated` and 2 `unreachable`, over 77 frozen pages, all of which a replay serves.
 The other 14 keep a stored verdict the lane no longer reaches: 12 have no website left and 2 have only a `HISTORICAL` lead, so a first reader of `leadVerification` must not trust a stored verdict on a row the lane has stopped judging.
 Two replays on one head gave one fingerprint.
-It carries no gold labels yet; the per-lead hand labels and per-lead scoring are the remaining steps of #4251.
+It has since been recaptured over the same 60-row scope as `-v3` on 2026-10-11 and `-v4` on 2026-11-10.
+On 2026-11-12 `-v2` replayed unscored, asking for 3 pages it never froze, because the live corpus the lane takes its targets and leads from had moved.
+`-v4` judges 35 of the 60 rows and 38 leads, and two replays on one head gave one fingerprint.
+Its precision is scored per lead against owner labels, as "Lead verification per lead" below describes (#4941).
 `department-undergrad-research` reads a rendered page where its plain fetch is thin, and this benchmark was captured on a host with no renderer, so it measures only the plain-fetch path until it is recaptured where a renderer runs.
 Three lanes stay out, each for a reason a capture cannot remove:
 
@@ -287,3 +290,27 @@ If they do not, the lane depends on something the benchmark did not freeze, and 
 The collections are environment-local and listed in `NEVER_COPY_COLLECTIONS`, so a promotion never replaces a benchmark or its history.
 They are also listed in `PRESERVED_ENVIRONMENT_LOCAL_COLLECTIONS`, so the Development refresh never clears one either (#4034).
 Being unmirrored used to be the reason the refresh destroyed them, because the refresh cleared every collection Beta does not mirror; the allowlist is what makes "never mirrored" mean "kept" rather than "unprotected".
+
+### Lead verification per lead
+
+`lab-site-lead-verification` emits one `leadVerification` value per row, holding a verdict for each lead, so a field-level gold label cannot say which lead it was right about.
+The scorecard therefore reports `leadVerification` on that lane's results: the count of rows per state, the count of leads per verdict, and `perLead`, one entry per judged lead with its row, person id, role, verdict, and match reason (#4941).
+A row the lane could not read judged nobody, so it adds to the `unreachable` row count and to no lead.
+
+Precision is scored only against an owner's judgement of who leads each row, read from a filled owner ballot.
+Agent judgements are never read as labels, and neither are the lane's own verdicts, because a sample only an agent checked is not a measured precision.
+With no owner label the report says `unmeasured: no owner labels` rather than a rate.
+
+```bash
+OPENAI_API_KEY= yarn --cwd server lane:scorecard --benchmark=<benchmark-id> --lead-ballot=<directory>
+```
+
+The directory holds `ballot.md`, whose items each open with a `## Item <n>` heading and carry one `Verdict: [ ] correct lead  [ ] not the lead  [ ] can't tell` line, and `key.json`, which maps each blind item number to its `entityKey` and `personId` and names the benchmark the ballot was drawn from.
+It must sit outside the repository, because a ballot quotes pages that name people, and the flag refuses a path inside it.
+The reader refuses an item that marks more than one box, a ballot missing a keyed item, and an item the key does not name, and it leaves an unmarked item unlabelled rather than reading it as "can't tell".
+A ballot applies only to the benchmark it was drawn from, and the run refuses a ballot whose benchmark it does not replay; the report counts the labelled leads that replay no longer judges as `labelsNotReplayed`.
+
+`confirmed.precision` is the share of `CONFIRMED` leads the owner judged the correct lead, and `contradicted.precision` the share of `CONTRADICTED` leads the owner judged not the lead.
+An `UNSTATED` verdict claims nothing, so `unstated` reports how the owner split those leads instead of a precision; it is the number #4941 asks for before anything reads `leadVerification` on a served row with no confirmed lead.
+A "can't tell" counts in `cantTell` and nowhere else, and a rate is `null` when nothing was judged.
+The per-lead block is part of the report only, and a stored scorecard row does not carry it.
