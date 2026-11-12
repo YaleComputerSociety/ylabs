@@ -666,7 +666,9 @@ A missing entry, a failed read, a name query (`keywordLegTopHitIsNameMatch`), an
 Scores are produced offline and written by `research-search:seed-rerank-cache`, dry run by default, Development unless `--environment` names Beta or Production; the collection is environment-local and never committed, because it pairs real student queries with rows.
 Re-seed after a corpus-wide change; a stale entry only reorders rows search already returned.
 Behind `SEARCH_RERANK_LIVE_MISS_ENABLED=true` (off by default, independent of the serve flag) a miss is served in today's order and queues one in-process `gpt-5-mini` job for its key (`services/searchRerankLiveMiss.ts`, `services/searchRerankLiveMissJob.ts`, caller `search-rerank-live-miss`, #5549).
-`journey:eval` and `research-search:relevance` are refused on Development while `SEARCH_RERANK_LIVE_MISS_ENABLED=true`, because a missed query then queues a live-miss job that writes `search_rerank_cache` through its model, and a script holding no Development write lease may not write that collection (#5871).
+`journey:eval` and `research-search:relevance` do not refuse up front on Development while `SEARCH_RERANK_LIVE_MISS_ENABLED=true`, and the run proceeds to completion.
+Each missed query queues an in-process live-miss job that makes its model call and only then tries to write `search_rerank_cache`, which a script holding no Development write lease may not write (#5871).
+The guard refuses that write, the queue logs `job failed` and marks the key failed for the day, so every eligible miss pays for a model call and caches nothing.
 Neither script takes `--apply` or records an apply intent, so neither can take the lease itself.
 Measure with the flag unset, which is the default.
 To write the rerank cache on purpose, use the committed writer with the lease: `DEV_WRITE_OWNER=<your session name> yarn --cwd server research-search:seed-rerank-cache --apply`, whose apply guard takes the lease, or run the write from a process that already holds or joined the lease (`holdDevApplyLeaseForRun`, or a child launched by a lease holder that records its own apply intent).
