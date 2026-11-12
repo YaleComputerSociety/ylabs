@@ -5079,16 +5079,20 @@ export class DepartmentRosterScraper implements IScraper {
         const legacySlug = legacyRosterResearchEntitySlug(entry, dept);
         const { observations: currentUserObs, entityKey: currentOwnerKey } =
           entryToUserObservations(entry, dept, sourceUrl);
+        const legacyOwnerKey = legacyRosterOwnerKey(currentOwnerKey, entry, dept);
         const adoption = decideLegacyKeyAdoption({
           currentSlug,
           legacySlug,
           ownerKey: currentOwnerKey,
-          legacyOwnerKey: legacyRosterOwnerKey(currentOwnerKey, entry, dept),
+          legacyOwnerKey,
           rowsBySlug: legacyKeyRows,
         });
         const entityKey = adoption.kind === 'adopt' ? adoption.ownerKey : currentOwnerKey;
-        const typedUserObs =
-          entityKey === currentOwnerKey
+        const refusalWithholdsNewPersonKey =
+          adoption.kind === 'refuse' && legacyOwnerKey !== currentOwnerKey;
+        const typedUserObs = refusalWithholdsNewPersonKey
+          ? []
+          : entityKey === currentOwnerKey
             ? currentUserObs
             : currentUserObs.map((observation) => ({ ...observation, entityKey }));
         const userObs = holdUserTypingForRunEnd(

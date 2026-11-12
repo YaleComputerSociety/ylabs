@@ -242,6 +242,13 @@ describe('key continuity through a real extractor, which stores the normalized n
     expect(research).toEqual([]);
     expect(snapshot.discoveredEntityKeys).toContain(LEGACY_SLUG);
   });
+
+  it('mints no person under the new key when the old key is refused', async () => {
+    const rows = new Map([[LEGACY_SLUG, legacyRow({ liveRowIds: ['row-a', 'row-b'] })]]);
+    const { research, users } = await runRosterPage(nodePersonCardExtractor, PAGE, rows);
+    expect(research).toEqual([]);
+    expect(users).toEqual([]);
+  });
 });
 
 describe('a credential in the given-name position names no person (#5969)', () => {
