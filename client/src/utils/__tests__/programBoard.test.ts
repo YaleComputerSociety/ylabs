@@ -7,6 +7,9 @@ import {
   programCardFacts,
   PROGRAM_FACET_NOT_STATED_NOTE,
   PROGRAM_REGION_FILTER_NOTE,
+  citizenshipDoesntSayDescription,
+  citizenshipOptionCountsLabel,
+  programStatesCitizenship,
 } from '../programBoard';
 import { getFellowshipCycleStatus } from '../fellowshipCycle';
 import { createFellowship } from '../createFellowship';
@@ -144,5 +147,39 @@ describe('the region filter note says it returns only programs that name the reg
     expect(PROGRAM_REGION_FILTER_NOTE).not.toMatch(/not state|included/i);
     expect(PROGRAM_REGION_FILTER_NOTE).toMatch(/only programs that name this region/i);
     expect(PROGRAM_FACET_NOT_STATED_NOTE).toMatch(/do not state this are included/i);
+  });
+});
+
+describe('citizenship split copy (#5299)', () => {
+  it("counts says-open and doesn't-say with singular and plural wording", () => {
+    expect(citizenshipOptionCountsLabel({ says: 126, doesntSay: 38 })).toBe(
+      "126 say they are open, 38 don't say",
+    );
+    expect(citizenshipOptionCountsLabel({ says: 1, doesntSay: 1 })).toBe(
+      "1 says it is open, 1 doesn't say",
+    );
+    expect(citizenshipOptionCountsLabel({ says: 0, doesntSay: 0 })).toBe(
+      "0 say they are open, 0 don't say",
+    );
+  });
+
+  it("names every chosen citizenship in the doesn't-say description", () => {
+    expect(
+      citizenshipDoesntSayDescription([
+        'U.S. citizens are eligible',
+        'Non-U.S. citizens are eligible',
+        'U.S. permanent residents are eligible',
+      ]),
+    ).toContain('whether U.S. citizens, non-U.S. citizens, or U.S. permanent residents can apply');
+  });
+
+  it('treats a missing or empty citizenship list as not stated, like the card does', () => {
+    expect(programStatesCitizenship({ citizenshipStatus: [] })).toBe(false);
+    expect(programStatesCitizenship({ citizenshipStatus: undefined as unknown as string[] })).toBe(
+      false,
+    );
+    expect(programStatesCitizenship({ citizenshipStatus: ['U.S. citizens are eligible'] })).toBe(
+      true,
+    );
   });
 });

@@ -9,3 +9,26 @@ export const programFacetValueNotStated = (value: unknown): boolean =>
   value === undefined ||
   (typeof value === 'string' && value.trim() === '') ||
   (Array.isArray(value) && value.length === 0);
+
+export type ProgramMongoFilter = Record<string, any>;
+
+export const programFacetNotStatedClause = (field: string) => ({ [field]: { $in: [null, []] } });
+
+export const programFacetStatesValueClause = (field: string, values: readonly string[]) => ({
+  [field]: { $in: values },
+});
+
+// A program that states no value for a facet is unknown rather than excluded, so a facet
+// filter keeps it and the page says the official page decides (#5130, #5235), except for
+// the stated-only facets in PROGRAM_STATED_ONLY_FACET_FIELDS (#5533).
+export const programFacetFilterClause = (field: string, values: readonly string[]) =>
+  PROGRAM_STATED_ONLY_FACET_FIELDS.has(field)
+    ? programFacetStatesValueClause(field, values)
+    : {
+        $or: [programFacetStatesValueClause(field, values), programFacetNotStatedClause(field)],
+      };
+
+export const narrowedProgramFilter = (
+  filter: ProgramMongoFilter,
+  clause: Record<string, unknown>,
+): ProgramMongoFilter => ({ ...filter, $and: [...(filter.$and ?? []), clause] });

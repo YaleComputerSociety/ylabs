@@ -246,6 +246,7 @@ A card also states a citizenship restriction when the program has one, and the d
 The detail view says "not stated" for a missing year of study the same way (#5235).
 The year, term, purpose and citizenship filters keep a program that states no value for that facet, because unknown is not ineligible, and the filter says so (#5235).
 The region filter is the exception and returns only programs that name the chosen region, because 82% of programs state none, so keeping them meant the filter barely narrowed (#5533, `docs/decisions.md` 2026-11-10).
+Under a citizenship filter the board lists every program that states its rule first, then a "Doesn't say" divider holding the programs that state none, and each citizenship option shows how many say they are open and how many don't say (#5299, `docs/decisions.md` 2026-11-12).
 A program text's condition on international students' home country is shown under the citizenship answer (`programCitizenshipCondition`, #5235).
 Days left count New York calendar days, so a deadline later today reads "Due today" (#5158).
 When a program's own text ties exactly one date to the deadline and the served deadline's month and day appear nowhere in the text, the detail view says so and points to the official page, because the reader cannot tell which cycle each was written in (`programTextDeadlineConflict`, #5158).

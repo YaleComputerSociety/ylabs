@@ -100,6 +100,16 @@ export type Fellowship = {
 export type StudentVisibilityTier =
   'student_ready' | 'limited_but_safe' | 'operator_review' | 'suppressed';
 
+export type ProgramCitizenshipBucketCounts = {
+  says: number;
+  doesntSay: number;
+};
+
+export type ProgramCitizenshipCounts = {
+  options: Array<ProgramCitizenshipBucketCounts & { value: string }>;
+  selected: ProgramCitizenshipBucketCounts | null;
+};
+
 export type FellowshipFilterOptions = {
   programCategory: string[];
   programKind: string[];
