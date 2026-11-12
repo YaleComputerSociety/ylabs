@@ -45,28 +45,12 @@ const DOESNT_SAY = new Set([
   'Fixture Golf Absent Grant',
 ]);
 
-type SearchParams = Parameters<typeof searchFellowships>[0];
-
 const titlesOf = (result: { fellowships: Array<{ title?: string }> }) =>
   result.fellowships.map((fellowship) => String(fellowship.title));
 
-const allPages = async (params: SearchParams, pageSize: number) => {
-  const titles: string[] = [];
-  for (let page = 1; page <= 10; page += 1) {
-    const result = await searchFellowships({ ...params, page, pageSize });
-    titles.push(...titlesOf(result));
-    if (titles.length >= result.total) return { titles, total: result.total };
-  }
-  throw new Error('pagination did not reach the reported total');
-};
-
-const expectStatedFirst = (titles: string[]) => {
-  const firstDoesntSay = titles.findIndex((title) => DOESNT_SAY.has(title));
-  const lastSays = titles.reduce(
-    (last, title, index) => (DOESNT_SAY.has(title) ? last : index),
-    -1,
-  );
-  if (firstDoesntSay !== -1) expect(lastSays).toBeLessThan(firstDoesntSay);
+const splitOf = (titles: string[]) => {
+  const doesntSay = titles.filter((title) => DOESNT_SAY.has(title)).length;
+  return { says: titles.length - doesntSay, doesntSay };
 };
 
 let memoryServer: MongoMemoryServer | undefined;
@@ -84,34 +68,14 @@ describe('the programs citizenship split (#5299)', () => {
     await memoryServer?.stop();
   });
 
-  it('serves the says-open programs first, then the ones that do not say, and drops the says-closed one', async () => {
-    const result = await searchFellowships({
-      citizenshipStatus: [NON_US],
-      sortBy: 'title',
-      pageSize: 50,
-    });
-    expect(titlesOf(result)).toEqual([
-      'Fixture Alpha Open Grant',
-      'Fixture Charlie International Grant',
-      'Fixture Foxtrot Open Grant',
-      'Fixture Bravo Absent Grant',
-      'Fixture Delta Empty Grant',
-      'Fixture Golf Absent Grant',
-    ]);
+  it('keeps the says-open and doesn\'t-say programs and drops the says-closed one', async () => {
+    const result = await searchFellowships({ citizenshipStatus: [NON_US], pageSize: 50 });
+    expect(splitOf(titlesOf(result))).toEqual({ says: 3, doesntSay: 3 });
     expect(titlesOf(result)).not.toContain('Fixture Echo Restricted Grant');
-    expect(result.citizenshipCounts?.selected).toEqual({ says: 3, doesntSay: 3 });
     expect(result.total).toBe(6);
   });
 
-  it('keeps the stated-first order across pages that split the two groups', async () => {
-    const { titles, total } = await allPages({ citizenshipStatus: [NON_US], sortBy: 'title' }, 2);
-    expect(total).toBe(6);
-    expect(new Set(titles).size).toBe(titles.length);
-    expect(titles.slice(0, 3).every((title) => SAYS_OPEN_TO_NON_US.has(title))).toBe(true);
-    expect(titles.slice(3).every((title) => DOESNT_SAY.has(title))).toBe(true);
-  });
-
-  it('counts only the first page, so later pages do not repeat the split', async () => {
+  it('counts only the first page, so later pages do not repeat the counts', async () => {
     const second = await searchFellowships({ citizenshipStatus: [NON_US], page: 2, pageSize: 2 });
     expect(second.citizenshipCounts).toBeUndefined();
   });
@@ -124,13 +88,12 @@ describe('the programs citizenship split (#5299)', () => {
   it('counts each option as applying it alone returns, under a combined year filter', async () => {
     const combined = { yearOfStudy: [SOPHOMORE], pageSize: 50 };
     const unselected = await searchFellowships(combined);
-    expect(unselected.citizenshipCounts?.selected).toBeNull();
     const options = unselected.citizenshipCounts?.options ?? [];
     expect(options.map((option) => option.value)).toEqual([NON_US, US]);
     for (const option of options) {
       const applied = await searchFellowships({ ...combined, citizenshipStatus: [option.value] });
       expect(option.says + option.doesntSay).toBe(applied.total);
-      expect(applied.citizenshipCounts?.selected).toEqual({
+      expect(splitOf(titlesOf(applied))).toEqual({
         says: option.says,
         doesntSay: option.doesntSay,
       });
@@ -145,13 +108,10 @@ describe('the programs citizenship split (#5299)', () => {
     });
   });
 
-  it('orders stated first and counts the split the same way alongside a text query', async () => {
+  it('counts the split the same way alongside a text query', async () => {
     const searched = { query: 'coastal ecology', citizenshipStatus: [NON_US], pageSize: 50 };
     const result = await searchFellowships(searched);
-    const titles = titlesOf(result);
-    expect(titles).toHaveLength(6);
-    expectStatedFirst(titles);
-    expect(result.citizenshipCounts?.selected).toEqual({ says: 3, doesntSay: 3 });
+    expect(splitOf(titlesOf(result))).toEqual({ says: 3, doesntSay: 3 });
     const option = result.citizenshipCounts?.options.find((entry) => entry.value === NON_US);
     expect(option).toMatchObject({ says: 3, doesntSay: 3 });
     const usOption = result.citizenshipCounts?.options.find((entry) => entry.value === US);
@@ -175,7 +135,7 @@ describe('the programs citizenship split (#5299)', () => {
         'Fixture Golf Absent Grant',
       ]),
     );
-    expectStatedFirst(titles);
-    expect(result.citizenshipCounts?.selected).toEqual({ says: 2, doesntSay: 2 });
+    const nonUsOption = result.citizenshipCounts?.options.find((entry) => entry.value === NON_US);
+    expect(nonUsOption).toMatchObject(splitOf(titles));
   });
 });

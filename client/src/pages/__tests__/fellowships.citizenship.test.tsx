@@ -9,6 +9,7 @@ import FellowshipSearchContext, {
 } from '../../contexts/FellowshipSearchContext';
 import UserContext from '../../contexts/UserContext';
 import { Fellowship, ProgramCitizenshipCounts } from '../../types/types';
+import type { FellowshipQuickFilter } from '../../reducers/fellowshipSearchReducer';
 import Fellowships from '../fellowships';
 
 vi.stubGlobal(
@@ -120,8 +121,10 @@ const renderFellowships = ({
   selectedCitizenship = [NON_US],
   citizenshipCounts = null,
   resultsRankedByRelevance = false,
+  quickFilter = null,
 }: {
   fellowships: Fellowship[];
+  quickFilter?: FellowshipQuickFilter;
   selectedCitizenship?: string[];
   citizenshipCounts?: ProgramCitizenshipCounts | null;
   resultsRankedByRelevance?: boolean;
@@ -145,6 +148,7 @@ const renderFellowships = ({
             selectedCitizenship,
             citizenshipCounts,
             resultsRankedByRelevance,
+            quickFilter,
             filterOptions: {
               ...defaultFellowshipSearchContext.filterOptions,
               citizenshipStatus: [NON_US, US],
@@ -243,7 +247,6 @@ describe('Fellowships citizenship split (#5299)', () => {
       fellowships: MIXED,
       citizenshipCounts: {
         options: [{ value: NON_US, says: 2, doesntSay: 2 }],
-        selected: { says: 2, doesntSay: 2 },
       },
     });
 
@@ -303,7 +306,6 @@ describe('Fellowships citizenship split (#5299)', () => {
           { value: NON_US, says: 126, doesntSay: 38 },
           { value: US, says: 1, doesntSay: 1 },
         ],
-        selected: null,
       },
     });
 
@@ -331,6 +333,25 @@ describe('Fellowships citizenship split (#5299)', () => {
 
   it('leaves the option counts out until the server has counted them', async () => {
     renderFellowships({ fellowships: MIXED, selectedCitizenship: [] });
+
+    await userEvent.click(screen.getByRole('button', { name: /filters/i }));
+    const dialog = screen.getByRole('dialog', { name: 'Program filters' });
+    await userEvent.click(within(dialog).getByRole('button', { name: /citizenship/i }));
+
+    const nonUs = within(dialog).getByRole('checkbox', {
+      name: 'Open to non-U.S. citizens, or not stated',
+    });
+    expect(nonUs.hasAttribute('aria-describedby')).toBe(false);
+    expect(dialog.textContent).not.toMatch(/say they are open/);
+  });
+
+  it('leaves the option counts out while a quick filter narrows the list past what they count', async () => {
+    renderFellowships({
+      fellowships: MIXED,
+      selectedCitizenship: [],
+      quickFilter: 'closingSoon',
+      citizenshipCounts: { options: [{ value: NON_US, says: 126, doesntSay: 38 }] },
+    });
 
     await userEvent.click(screen.getByRole('button', { name: /filters/i }));
     const dialog = screen.getByRole('dialog', { name: 'Program filters' });

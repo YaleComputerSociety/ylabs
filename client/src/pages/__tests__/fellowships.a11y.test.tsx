@@ -154,7 +154,6 @@ describe('fellowships surface accessibility', () => {
         selectedCitizenship: ['Non-U.S. citizens are eligible'],
         citizenshipCounts: {
           options: [{ value: 'Non-U.S. citizens are eligible', says: 1, doesntSay: 1 }],
-          selected: { says: 1, doesntSay: 1 },
         },
         filterOptions: {
           ...defaultFellowshipSearchContext.filterOptions,

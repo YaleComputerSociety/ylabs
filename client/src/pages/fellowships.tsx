@@ -615,9 +615,10 @@ const Fellowships = () => {
   };
 
   const citizenshipOptionDetail = (value: string) => {
-    const counts = loadError
-      ? undefined
-      : citizenshipCounts?.options.find((option) => option.value === value);
+    const counts =
+      loadError || quickFilter
+        ? undefined
+        : citizenshipCounts?.options.find((option) => option.value === value);
     return counts ? citizenshipOptionCountsLabel(counts) : undefined;
   };
 

@@ -21,7 +21,6 @@ export interface ProgramCitizenshipOptionCounts extends ProgramCitizenshipBucket
 
 export interface ProgramCitizenshipCounts {
   options: ProgramCitizenshipOptionCounts[];
-  selected: ProgramCitizenshipBucketCounts | null;
 }
 
 type ProgramSort = Record<string, 1 | -1>;
@@ -34,24 +33,16 @@ export const withCitizenshipFilter = (
     ? filter
     : narrowedProgramFilter(filter, programFacetFilterClause(CITIZENSHIP_FIELD, values));
 
-export const statesCitizenshipFilter = (filter: ProgramMongoFilter, values: readonly string[]) =>
+const statesCitizenshipFilter = (filter: ProgramMongoFilter, values: readonly string[]) =>
   narrowedProgramFilter(filter, programFacetStatesValueClause(CITIZENSHIP_FIELD, values));
 
-export const doesntSayCitizenshipFilter = (filter: ProgramMongoFilter) =>
+const doesntSayCitizenshipFilter = (filter: ProgramMongoFilter) =>
   narrowedProgramFilter(filter, programFacetNotStatedClause(CITIZENSHIP_FIELD));
 
-export const programIdsMatching = async (filter: ProgramMongoFilter): Promise<Set<string>> =>
+const programIdsMatching = async (filter: ProgramMongoFilter): Promise<Set<string>> =>
   new Set((await Fellowship.distinct('_id', filter)).map(String));
 
-export const statedCitizenshipFirst = (
-  ids: readonly string[],
-  doesntSay: ReadonlySet<string>,
-): string[] => [
-  ...ids.filter((id) => !doesntSay.has(id)),
-  ...ids.filter((id) => doesntSay.has(id)),
-];
-
-export const bucketCountsOf = (
+const bucketCountsOf = (
   ids: readonly string[],
   doesntSay: ReadonlySet<string>,
 ): ProgramCitizenshipBucketCounts => {
