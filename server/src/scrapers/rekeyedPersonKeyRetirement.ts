@@ -24,6 +24,7 @@ import {
 } from './rekeyedPersonKeyPlan';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import type { ObservationInput, ScraperContext } from './types';
+import { mongooseConnectionWasOpened } from '../utils/mongooseConnectionWasOpened';
 
 const DIRECTORY_RECORD_SOURCES = ['yale-directory', 'yale-directory-csv'];
 const DIRECTORY_RECORD_FIELDS = ['fname', 'lname', 'primaryDepartment', 'secondaryDepartments'];
@@ -39,7 +40,7 @@ async function liveScope(): Promise<Record<string, unknown>> {
 }
 
 function databaseReady(): boolean {
-  return mongoose.connection.readyState === 1;
+  return mongooseConnectionWasOpened();
 }
 
 export async function loadLanePersonObservations(lane: string): Promise<LanePersonObservation[]> {

@@ -127,6 +127,7 @@ import {
   rowIsScopedToLead,
 } from '../utils/nonYaleMicrositeOwnership';
 import { liveResearchEntityIdForLaneKey } from '../renamedResearchEntityAdoption';
+import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 10_000;
@@ -540,7 +541,7 @@ function latestLaneQuoteObservation(
  * one quote and clear a different one.
  */
 export const defaultLiveEvidenceQuoteLoader: LiveEvidenceQuoteLoaderFn = async (entityKey) => {
-  if (isBenchmarkModeActive() || mongoose.connection.readyState !== 1) return null;
+  if (isBenchmarkModeActive() || !mongooseConnectionWasOpened()) return null;
   const survivor = await ResearchEntity.findOne({
     _id: await liveResearchEntityIdForLaneKey(entityKey),
     archived: { $ne: true },

@@ -1,6 +1,6 @@
-import mongoose from 'mongoose';
 import { LEAD_ROLE_LEGACY_LABELS } from '../models/canonicalRoleMapping';
 import type { ResearchEntityRosterEntry } from './researchEntityMembershipAccessor';
+import { mongooseConnectionWasOpened } from '../utils/mongooseConnectionWasOpened';
 
 const isCurrentLead = (entry: ResearchEntityRosterEntry): boolean =>
   entry.state !== 'HISTORICAL' && LEAD_ROLE_LEGACY_LABELS.has(entry.role);
@@ -20,7 +20,7 @@ export async function rostersWithDepartedLeadsRetired(
   const sharedRows = [...rosterByEntityId].filter(
     ([, entries]) => new Set(entries.filter(isCurrentLead).map((e) => String(e.personId))).size > 1,
   );
-  if (sharedRows.length === 0 || mongoose.connection.readyState !== 1) return result;
+  if (sharedRows.length === 0 || !mongooseConnectionWasOpened()) return result;
   // Loaded on use: the reader sits on the materializer's read scope, which the serving layer
   // must not pull in at module load.
   const { loadPersonPageDepartures, rowDepartureFromLeads } =

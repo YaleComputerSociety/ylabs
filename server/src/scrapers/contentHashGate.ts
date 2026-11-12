@@ -9,12 +9,12 @@
  * WorkPlanner freshness skip). Only --force-llm bypasses it.
  */
 import { createHash } from 'crypto';
-import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 import type { ObservedEntityType } from '../models/observation';
 import { sanitizeObservationField } from './observationFieldSanitizer';
 import { isBenchmarkModeActive } from './snapshotBenchmarkMode';
 import type { ObservationInput } from './types';
+import { mongooseConnectionWasOpened } from '../utils/mongooseConnectionWasOpened';
 
 export const SOURCE_CONTENT_HASH_FIELD = 'sourceContentHash';
 
@@ -92,7 +92,7 @@ export async function loadStoredContentHash(
   // Fail open when no DB connection is available (e.g. pure unit tests): a gate
   // lookup must never block or hang extraction, only skip re-work when it can
   // prove the content is unchanged.
-  if (mongoose.connection.readyState !== 1) return undefined;
+  if (!mongooseConnectionWasOpened()) return undefined;
   const filter: Record<string, unknown> = {
     entityType: entity.entityType,
     sourceName,
@@ -118,7 +118,7 @@ export async function loadStoredLaneDescription(
 ): Promise<string | undefined> {
   if (!entity.entityId && !entity.entityKey) return undefined;
   if (isBenchmarkModeActive()) return undefined;
-  if (mongoose.connection.readyState !== 1) return undefined;
+  if (!mongooseConnectionWasOpened()) return undefined;
   const filter: Record<string, unknown> = {
     entityType: entity.entityType,
     sourceName,
@@ -152,7 +152,7 @@ export async function loadStoredLaneDescriptionObservation(
 ): Promise<{ value: string; sourceUrl: string } | undefined> {
   if (!entity.entityId && !entity.entityKey) return undefined;
   if (isBenchmarkModeActive()) return undefined;
-  if (mongoose.connection.readyState !== 1) return undefined;
+  if (!mongooseConnectionWasOpened()) return undefined;
   try {
     const row = await Observation.findOne({
       entityType: entity.entityType,
@@ -187,7 +187,7 @@ export async function countAttestedEmptyLaneReads(
 ): Promise<number> {
   if (!entity.entityId && !entity.entityKey) return 0;
   if (isBenchmarkModeActive()) return 0;
-  if (mongoose.connection.readyState !== 1) return 0;
+  if (!mongooseConnectionWasOpened()) return 0;
   try {
     return await Observation.countDocuments({
       entityType: entity.entityType,

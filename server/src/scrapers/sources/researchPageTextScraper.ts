@@ -39,6 +39,7 @@ import {
   type CandidateDescriptionLabDoc,
   type FetchedDescriptionPage,
 } from './labMicrositeDescriptionLLMExtractor';
+import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
 
 const MAX_PAGES_PER_ROW = 6;
 const MAX_RESEARCH_SUBPAGES = 2;
@@ -71,8 +72,8 @@ export function isSharedListingCitation(
   );
 }
 
-async function loadConnectedEvidenceUrlCiterCounts(): Promise<ReadonlyMap<string, number>> {
-  if (mongoose.connection.readyState !== 1) return new Map();
+export async function loadConnectedEvidenceUrlCiterCounts(): Promise<ReadonlyMap<string, number>> {
+  if (!mongooseConnectionWasOpened()) return new Map();
   return loadEvidenceUrlCiterCounts();
 }
 

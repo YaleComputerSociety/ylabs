@@ -1,4 +1,3 @@
-import mongoose from 'mongoose';
 import { ResearchEntity } from '../../models/researchEntity';
 import { valueIsRefused } from '../../utils/researchEntityFieldValueRefusals';
 import {
@@ -7,6 +6,7 @@ import {
   isKnownDeadSourceUrl,
   isLikelyUnavailableSourceLink,
 } from '../../services/sourceLinkHealth';
+import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
 
 /**
  * What the corpus already knows about the URLs a row cites, for the lanes that
@@ -84,7 +84,7 @@ export async function loadLabUrlEvidenceBySlug(
   const bySlug = new Map<string, LabUrlEvidence>();
   const wanted = [...new Set(slugs.filter(Boolean))];
   if (wanted.length === 0) return bySlug;
-  if (mongoose.connection.readyState !== 1) return bySlug;
+  if (!mongooseConnectionWasOpened()) return bySlug;
   const rows = await ResearchEntity.find({ slug: { $in: wanted } })
     .select('slug fieldValueRefusals sourceLinkHealth')
     .lean();

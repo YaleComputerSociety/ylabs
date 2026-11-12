@@ -24,7 +24,6 @@
  * `--only` (filter by deptKey, e.g. `--only econ,mcdb`).
  */
 import axios from 'axios';
-import mongoose from 'mongoose';
 import { Observation } from '../../models/observation';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
@@ -142,6 +141,7 @@ import { hostnameIsWithin } from '../../utils/yaleHost';
 import { personNameKey } from '../rekeyedPersonKeyPlan';
 import { RekeyedPersonReads, settleRekeyedPersonReads } from '../rekeyedPersonKeyRetirement';
 import { isLabDirectoryListingUrl } from '../laneRefusedWebsiteUrl';
+import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
@@ -4271,7 +4271,7 @@ export async function loadUserKeysWithALiveFacultyTitle(
   entityKeys: string[],
 ): Promise<Set<string>> {
   const wanted = [...new Set(entityKeys.filter(Boolean))];
-  if (wanted.length === 0 || mongoose.connection.readyState !== 1) return new Set();
+  if (wanted.length === 0 || !mongooseConnectionWasOpened()) return new Set();
   const titles = await Observation.find(
     {
       sourceName: 'dept-faculty-roster',

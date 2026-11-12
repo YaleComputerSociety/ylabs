@@ -1,4 +1,3 @@
-import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 import { escapeRegex } from '../utils/regex';
 import { looksLikeYaleNetid } from '../utils/yaleNetid';
@@ -19,6 +18,7 @@ import {
   directoryContradictsNetidForAddress,
   netidOfNetidUserKey,
 } from './directoryContradictedProfileNetid';
+import { mongooseConnectionWasOpened } from '../utils/mongooseConnectionWasOpened';
 
 export const YALE_DIRECTORY_EMAIL_SOURCE = 'yale-directory';
 
@@ -57,7 +57,7 @@ export async function pageEmailHeldByAnotherResearcher(
   if (!address) return false;
   // Without a database connection the holder cannot be read; the lane only runs connected, and
   // its offline unit tests exercise extraction rather than identity ownership.
-  if (mongoose.connection.readyState !== 1) return false;
+  if (!mongooseConnectionWasOpened()) return false;
   const holders = (await Researcher.find({ archived: { $ne: true }, 'identifiers.email': address })
     .select('_id identifiers.netid')
     .limit(5)
