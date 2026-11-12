@@ -358,6 +358,25 @@ function methodClauseEnd(sentence: string, bodyStart: number): number {
 
 const CLAUSE_ELABORATION = /^,\s*(?:and\s+)?(?:including|such\s+as)\b/i;
 
+const MAX_DELETABLE_COMMAS = 1;
+const COORDINATED_AFTER_COMMA = /,[^,]*\b(?:and|or)\b/i;
+
+/**
+ * "through", "using" and "via" also open a topic list ("addresses learning through
+ * imitation, prospect theory, ..., and security design for investors"), and deleting it
+ * would fuse the words before the marker to the words after the list into a claim the
+ * text never made (#5948). A span of two or more commas is never deleted, counting the
+ * comma that ends it when the list runs on past the clause end, and neither is a
+ * coordinated list ("A, B and C", "X, and Y"), so the sentence stays as written for the
+ * writer's other checks to judge.
+ */
+function deletesAList(sentence: string, start: number, end: number): boolean {
+  const span = sentence.slice(start, end);
+  const runsOn = /^\s*,/.test(sentence.slice(end)) ? 1 : 0;
+  const listCommas = (span.match(/,/g) ?? []).length + runsOn;
+  return listCommas > MAX_DELETABLE_COMMAS || COORDINATED_AFTER_COMMA.test(span);
+}
+
 /**
  * Only the method clause goes, so the claim it modifies ("..., and examines Y", "to
  * understand Z") stays. An "including" or "such as" tail lists more of the same methods
@@ -429,7 +448,12 @@ export function withoutUnsupportedMethodClauses(
           textHeadBefore(sentence.slice(0, start)),
         )
       ) {
-        removals.push([start, withItsElaboration(sentence, bodyEnd)]);
+        const removalEnd = withItsElaboration(sentence, bodyEnd);
+        if (deletesAList(sentence, start, removalEnd)) {
+          OUTPUT_METHOD_MARKER.lastIndex = removalEnd;
+          continue;
+        }
+        removals.push([start, removalEnd]);
         OUTPUT_METHOD_MARKER.lastIndex = bodyEnd;
       }
     }

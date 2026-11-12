@@ -35,7 +35,7 @@ describe('a method clause must be a method the evidence states (#4914)', () => {
 
   it('strips publication topics turned into a means of study', () => {
     const outcome = withoutUnsupportedMethodClauses(
-      'Studies forest governance through environmental law, forestry history and environmental ethics.',
+      'Studies forest governance through environmental law and environmental ethics.',
       [
         'Studies forest governance. Publications address environmental law, the history of forestry sciences and environmental ethics.',
       ],
@@ -170,7 +170,7 @@ describe('the evidence states a method only where it names one (#4914 follow-up)
     const none = 'Studies fixture topics and fixture interests.';
     expect(
       strips(
-        'Develops fixture processes using plasma chemistry, electrochemistry, and heterogeneous catalysis for fixture conversion.',
+        'Develops fixture processes using plasma chemistry and heterogeneous catalysis for fixture conversion.',
         none,
       ).text,
     ).toBe('Develops fixture processes for fixture conversion.');
@@ -188,7 +188,7 @@ describe('the evidence states a method only where it names one (#4914 follow-up)
     ).toBe('Investigates fixture literature.');
     expect(
       strips(
-        'Studies fixture obesity using human metabolic investigations (MRI/MRS, clamps, stable isotopes, modeling).',
+        'Studies fixture obesity using human metabolic investigations (MRI/MRS, clamps).',
         none,
       ).text,
     ).toBe('Studies fixture obesity.');
@@ -221,7 +221,7 @@ describe('the written body refuses an unsupported method clause (#4914)', () => 
 
   it('refuses a body that is only the clause, naming that arm', async () => {
     const decision = await decide(
-      'Theoretical learning using statistics, optimization and game theory across theoretical machine learning research problems. Learning theory using statistics and optimization.',
+      'Theoretical learning using statistics and game theory across theoretical machine learning research problems. Learning theory using statistics and optimization.',
     );
     expect(decision.refusal).toBe('unsupported-method-clause');
   });
@@ -330,8 +330,56 @@ describe('stripping a sentence-opening method clause never leaves a fragment (#5
 
   it('drops a sentence the strip leaves without a subject rather than capitalizing a fragment', () => {
     const body =
-      'Studies coastal flooding and how towns recover after storms. Using surveys of harbour boards, insurers and planning boards to map where defences fail.';
+      'Studies coastal flooding and how towns recover after storms. Using surveys of harbour boards and insurers to map where defences fail.';
     const outcome = withoutUnsupportedMethodClauses(body, EVIDENCE);
     expect(outcome.text).toBe('Studies coastal flooding and how towns recover after storms.');
+  });
+});
+
+describe('the strip never deletes a topic list as a method clause (#5948)', () => {
+  const EVIDENCE = [
+    'The group studies decision making, learning and financial contracts for households and investors.',
+  ];
+
+  it('keeps a list after "through" rather than fusing the words around it', () => {
+    const body =
+      'Recent work addresses learning through imitation, prospect theory without commitment, contracting with limited liability, and optimal security design for risk-averse investors.';
+    const outcome = withoutUnsupportedMethodClauses(body, EVIDENCE);
+    expect(outcome.text).toBe(body);
+    expect(outcome.stripped).toBe(0);
+    expect(outcome.text).not.toMatch(/learning for risk-averse investors/);
+  });
+
+  it('keeps a three-item list whose removal would join the words before and after it', () => {
+    const body =
+      'Recent work addresses learning through imitation, prospect theory and optimal security design for risk-averse investors.';
+    expect(withoutUnsupportedMethodClauses(body, EVIDENCE).text).toBe(body);
+  });
+
+  it('keeps a span of two or more commas, at the sentence end or inside a parenthetical', () => {
+    for (const body of [
+      'Studies household finance using surveys, field trials, and archival records.',
+      'Studies household finance using laboratory measures (surveys, field trials, archival records).',
+      'Develops fixture processes using plasma chemistry, electrochemistry, and heterogeneous catalysis for fixture conversion.',
+      'Studies forest governance through environmental law, forestry history and environmental ethics.',
+      'Studies how investors choose, using drone imaging, and the contracts households sign.',
+    ]) {
+      expect(withoutUnsupportedMethodClauses(body, EVIDENCE).text).toBe(body);
+    }
+  });
+
+  it('still strips a short unsupported method clause', () => {
+    const opening = withoutUnsupportedMethodClauses(
+      'Studies household finance. Using drone imaging, it maps where investors lose money.',
+      EVIDENCE,
+    );
+    expect(opening.text).toBe('Studies household finance. It maps where investors lose money.');
+    expect(opening.stripped).toBe(1);
+    expect(
+      withoutUnsupportedMethodClauses(
+        'Studies household finance through drone imaging and satellite records.',
+        EVIDENCE,
+      ).text,
+    ).toBe('Studies household finance.');
   });
 });
