@@ -1,9 +1,15 @@
-import fs from 'node:fs';
+import { spawn } from 'node:child_process';
 import path from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { hermeticChildEnvironment } from '../../test/hermeticEnvironment';
+import { RUN_SCRIPT_MAIN_RECEIVED } from './fixtures/recordingConnections';
+
 const SERVER_ROOT = path.resolve(__dirname, '../../..');
+const RECORDING_HOOKS = path.join(__dirname, 'fixtures', 'recordRunScriptMainHooks.mjs');
+const CHAINING_ENTRY_POINT = path.join(__dirname, 'fixtures', 'entryPointChainingItsOwnExit.ts');
+const CHILD_RUN_CEILING_MS = 45_000;
 
 /**
  * Long-running operator entry points, and why each one must exit through runScriptMain (#5945).
@@ -28,59 +34,69 @@ const LONG_SCRIPT_ENTRY_POINTS: Record<string, string> = {
     'reprojects stored rows through the engine to census drift against what is stored',
 };
 
-const TSX_ENTRY = /^tsx\s+(\S+\.ts)\b/;
+interface RecordedRun {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+}
 
-const packageScripts = (): Record<string, string> =>
-  JSON.parse(fs.readFileSync(path.join(SERVER_ROOT, 'package.json'), 'utf8')).scripts;
+const recordingEnvironment = (): NodeJS.ProcessEnv => {
+  const env = hermeticChildEnvironment();
+  env.NODE_OPTIONS = [env.NODE_OPTIONS, `--import ${RECORDING_HOOKS}`].filter(Boolean).join(' ');
+  return env;
+};
 
-const entryPointFile = (command: string | undefined): string | undefined =>
-  command?.match(TSX_ENTRY)?.[1];
-
-const exitsThroughRunScriptMain = (source: string): boolean =>
-  /\brunScriptMain\(/.test(source) && !/\bmain\(\)\s*\.(?:catch|then|finally)\(/.test(source);
-
-describe('long script entry points exit through runScriptMain (#5945)', () => {
-  const scripts = packageScripts();
-
-  it('names only package scripts that run a tsx entry point', () => {
-    const unresolved = Object.keys(LONG_SCRIPT_ENTRY_POINTS).filter(
-      (name) => !entryPointFile(scripts[name]),
-    );
-    expect(unresolved).toEqual([]);
+const runRecorded = (command: string, args: string[]) =>
+  new Promise<RecordedRun>((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: SERVER_ROOT,
+      env: recordingEnvironment(),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => (stdout += chunk));
+    child.stderr.on('data', (chunk) => (stderr += chunk));
+    const ceiling = setTimeout(() => child.kill('SIGKILL'), CHILD_RUN_CEILING_MS);
+    child.on('error', reject);
+    child.on('close', (status) => {
+      clearTimeout(ceiling);
+      resolve({ status, stdout, stderr });
+    });
   });
 
+const handsMainToRunScriptMain = (run: RecordedRun): boolean =>
+  run.status === 0 && run.stdout.includes(RUN_SCRIPT_MAIN_RECEIVED);
+
+describe('long script entry points exit through runScriptMain (#5945)', () => {
   it('gives a reason for every entry point it lists', () => {
     expect(
       Object.entries(LONG_SCRIPT_ENTRY_POINTS).filter(([, reason]) => reason.trim().length === 0),
     ).toEqual([]);
   });
 
-  it('finds runScriptMain in every listed entry point', () => {
-    const offenders = Object.keys(LONG_SCRIPT_ENTRY_POINTS).filter((name) => {
-      const file = entryPointFile(scripts[name]);
-      if (!file) return true;
-      return !exitsThroughRunScriptMain(fs.readFileSync(path.join(SERVER_ROOT, file), 'utf8'));
-    });
-    expect(offenders).toEqual([]);
-  });
-});
+  it(
+    'hands main to runScriptMain when each listed package script runs',
+    async () => {
+      const names = Object.keys(LONG_SCRIPT_ENTRY_POINTS);
+      const runs = await Promise.all(names.map((name) => runRecorded('yarn', ['run', name])));
+      const offenders = names
+        .map((name, index) => ({ name, run: runs[index] }))
+        .filter(({ run }) => !handsMainToRunScriptMain(run))
+        .map(({ name, run }) => ({ name, status: run.status, stderr: run.stderr.slice(-500) }));
+      expect(offenders).toEqual([]);
+    },
+    CHILD_RUN_CEILING_MS + 15_000,
+  );
 
-describe('the runScriptMain entry point check', () => {
-  it('reads the file out of a tsx package script', () => {
-    expect(entryPointFile('tsx src/scripts/example.ts --flag')).toBe('src/scripts/example.ts');
-    expect(entryPointFile('node dist/example.js')).toBeUndefined();
-  });
+  it(
+    'does not record an entry point that imports runScriptMain but chains its own exit onto main',
+    async () => {
+      const run = await runRecorded(process.execPath, ['--import', 'tsx', CHAINING_ENTRY_POINT]);
 
-  it('accepts an entry point that hands main to runScriptMain', () => {
-    expect(exitsThroughRunScriptMain('if (direct) void runScriptMain(main);')).toBe(true);
-  });
-
-  it('refuses an entry point that still chains its own exit handling onto main', () => {
-    expect(exitsThroughRunScriptMain('main().catch((error) => {\n  process.exit(1);\n});')).toBe(
-      false,
-    );
-    expect(
-      exitsThroughRunScriptMain('void runScriptMain(other);\nmain()\n  .finally(close);'),
-    ).toBe(false);
-  });
+      expect(run.stdout).toContain('main ran without runScriptMain');
+      expect(handsMainToRunScriptMain(run)).toBe(false);
+    },
+    CHILD_RUN_CEILING_MS + 15_000,
+  );
 });
