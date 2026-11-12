@@ -543,7 +543,7 @@ So every scraper request carries three bounds, named in `utils/scraperFetchDeadl
 The orchestrator's `run`, `cli.ts` and `scrapeCanary` install it.
 It wraps the adapter rather than adding an interceptor so the clock starts at dispatch, after the host-slot limiter's wait, and a request queued behind other lanes on the same host is not charged for the queue.
 A per-request `adapter` (a sweep page reuse hit, a benchmark replay) never reaches the network and is left alone.
-An expired deadline rejects with an `AxiosError` coded `ETIMEDOUT` whose message names the overall deadline (`isScraperFetchDeadlineError`), so the lane's own page-error path records it as one failed fetch and the run continues.
+An expired deadline rejects with an `AxiosError` coded `ETIMEDOUT` whose message names the overall deadline, so the lane's own page-error path records it as one failed fetch and the run continues.
 A caller's own `signal` still cancels as a cancellation.
 The aborted request still publishes one of the HTTP settle channels, so the Development write lease (`DEV_WRITE_PROGRESS_HTTP_CHANNELS`) and `installAxiosScrapeRunProgress` both see it settle.
 

@@ -43,11 +43,6 @@ export interface ScraperFetchDeadlineOptions {
   overallDeadlineMs?: (readTimeoutMs: number) => number;
 }
 
-export const isScraperFetchDeadlineError = (error: unknown): boolean =>
-  error instanceof AxiosError &&
-  error.code === AxiosError.ETIMEDOUT &&
-  /overall deadline/.test(error.message);
-
 const deadlineExceeded = (
   config: InternalAxiosRequestConfig,
   overallMs: number,

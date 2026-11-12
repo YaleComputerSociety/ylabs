@@ -8,7 +8,6 @@ import {
   SCRAPER_FETCH_OVERALL_DEADLINE_MS,
   SCRAPER_FETCH_READ_TIMEOUT_MS,
   installScraperFetchDeadlines,
-  isScraperFetchDeadlineError,
   scraperFetchOverallDeadlineMs,
   scraperFetchReadTimeoutMs,
   withScraperFetchDeadline,
@@ -63,6 +62,11 @@ const deadlineClient = () =>
     }),
   });
 
+const failedOnOverallDeadline = (error: unknown): boolean =>
+  error instanceof AxiosError &&
+  error.code === AxiosError.ETIMEDOUT &&
+  error.message.includes('overall deadline');
+
 async function settleWithin<T>(work: Promise<T>): Promise<{ elapsedMs: number; error: unknown }> {
   const startedAt = Date.now();
   try {
@@ -74,27 +78,23 @@ async function settleWithin<T>(work: Promise<T>): Promise<{ elapsedMs: number; e
 }
 
 describe('the scraper fetch deadline constants', () => {
-  it('keeps every bound finite and the overall deadline above the read timeout', () => {
-    for (const bound of [
-      SCRAPER_FETCH_CONNECT_TIMEOUT_MS,
-      SCRAPER_FETCH_READ_TIMEOUT_MS,
-      SCRAPER_FETCH_OVERALL_DEADLINE_MS,
-    ]) {
-      expect(Number.isFinite(bound) && bound > 0).toBe(true);
-    }
-    expect(SCRAPER_FETCH_OVERALL_DEADLINE_MS).toBeGreaterThan(SCRAPER_FETCH_READ_TIMEOUT_MS);
+  it('match the documented connect, read and overall bounds', () => {
+    expect(SCRAPER_FETCH_CONNECT_TIMEOUT_MS).toBe(15_000);
+    expect(SCRAPER_FETCH_READ_TIMEOUT_MS).toBe(30_000);
+    expect(SCRAPER_FETCH_OVERALL_DEADLINE_MS).toBe(90_000);
   });
 
-  it('replaces a missing or infinite read timeout with the default', () => {
-    expect(scraperFetchReadTimeoutMs(undefined)).toBe(SCRAPER_FETCH_READ_TIMEOUT_MS);
-    expect(scraperFetchReadTimeoutMs(0)).toBe(SCRAPER_FETCH_READ_TIMEOUT_MS);
-    expect(scraperFetchReadTimeoutMs(Number.POSITIVE_INFINITY)).toBe(SCRAPER_FETCH_READ_TIMEOUT_MS);
+  it('replaces a missing or infinite read timeout with the documented 30 s default', () => {
+    expect(scraperFetchReadTimeoutMs(undefined)).toBe(30_000);
+    expect(scraperFetchReadTimeoutMs(0)).toBe(30_000);
+    expect(scraperFetchReadTimeoutMs(Number.POSITIVE_INFINITY)).toBe(30_000);
     expect(scraperFetchReadTimeoutMs(20_000)).toBe(20_000);
   });
 
-  it('gives a lane with a longer documented read timeout a connect budget on top', () => {
-    expect(scraperFetchOverallDeadlineMs(30_000)).toBe(SCRAPER_FETCH_OVERALL_DEADLINE_MS);
-    expect(scraperFetchOverallDeadlineMs(120_000)).toBe(120_000 + SCRAPER_FETCH_CONNECT_TIMEOUT_MS);
+  it('gives a lane with a longer documented read timeout the 15 s connect budget on top', () => {
+    expect(scraperFetchOverallDeadlineMs(30_000)).toBe(90_000);
+    expect(scraperFetchOverallDeadlineMs(80_000)).toBe(95_000);
+    expect(scraperFetchOverallDeadlineMs(120_000)).toBe(135_000);
   });
 });
 
@@ -104,7 +104,7 @@ describe('withScraperFetchDeadline', () => {
 
     const { elapsedMs, error } = await settleWithin(deadlineClient().get(url));
 
-    expect(isScraperFetchDeadlineError(error)).toBe(true);
+    expect(failedOnOverallDeadline(error)).toBe(true);
     expect((error as AxiosError).code).toBe(AxiosError.ETIMEDOUT);
     expect(elapsedMs).toBeLessThan(TEST_DEADLINE_MS + BOUND_SLACK_MS);
   }, 5_000);
@@ -114,7 +114,7 @@ describe('withScraperFetchDeadline', () => {
 
     const { elapsedMs, error } = await settleWithin(deadlineClient().get(url, { timeout: 4_000 }));
 
-    expect(isScraperFetchDeadlineError(error)).toBe(true);
+    expect(failedOnOverallDeadline(error)).toBe(true);
     expect(elapsedMs).toBeLessThan(TEST_DEADLINE_MS + BOUND_SLACK_MS);
   }, 5_000);
 
@@ -147,7 +147,7 @@ describe('withScraperFetchDeadline', () => {
     const { error } = await settleWithin(deadlineClient().get(url, { signal: caller.signal }));
 
     expect(axios.isCancel(error)).toBe(true);
-    expect(isScraperFetchDeadlineError(error)).toBe(false);
+    expect(failedOnOverallDeadline(error)).toBe(false);
   }, 5_000);
 
   it('lets the Development write lease see a timed-out request settle', async () => {
@@ -191,7 +191,7 @@ describe('installScraperFetchDeadlines', () => {
     const { error } = await settleWithin(instance.get(url));
     handle.detach();
 
-    expect(isScraperFetchDeadlineError(error)).toBe(true);
+    expect(failedOnOverallDeadline(error)).toBe(true);
     expect(instance.defaults.adapter).toBe(original);
   }, 5_000);
 
