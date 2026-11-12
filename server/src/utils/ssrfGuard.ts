@@ -17,6 +17,7 @@ import {
   isBenchmarkReplayActive,
 } from '../scrapers/snapshotBenchmarkMode';
 import { containsAsciiControl } from './asciiControl';
+import { ConnectDeadlineHttpAgent, ConnectDeadlineHttpsAgent } from './connectDeadlineAgents';
 
 const MAX_SSRF_PUBLIC_HTTP_URL_LENGTH = 2048;
 const hasUnsafePublicHttpUrlCharacter = (value: string): boolean =>
@@ -330,7 +331,7 @@ export const assertPublicHttpUrl = async (rawUrl: string): Promise<URL> => {
 
 type AgentConnectionCallback = (err: Error | null, stream: Duplex) => void;
 
-class SsrfSafeHttpAgent extends http.Agent {
+class SsrfSafeHttpAgent extends ConnectDeadlineHttpAgent {
   createConnection(options: http.ClientRequestArgs, callback?: AgentConnectionCallback) {
     if (isPrivateIpLiteralHost(options.host)) {
       callback?.(blockedAddressError(), undefined as unknown as Duplex);
@@ -340,7 +341,7 @@ class SsrfSafeHttpAgent extends http.Agent {
   }
 }
 
-class SsrfSafeHttpsAgent extends https.Agent {
+class SsrfSafeHttpsAgent extends ConnectDeadlineHttpsAgent {
   createConnection(options: https.RequestOptions, callback?: AgentConnectionCallback) {
     if (isPrivateIpLiteralHost(options.host)) {
       callback?.(blockedAddressError(), undefined as unknown as Duplex);
@@ -353,7 +354,8 @@ class SsrfSafeHttpsAgent extends https.Agent {
 /**
  * axios/http agents that refuse a private address on every (redirect) hop: a hostname is
  * checked by the connect-time lookup, and an IP-literal host, which Node connects to without
- * any lookup, is checked before the socket is opened.
+ * any lookup, is checked before the socket is opened. Each socket must also finish connecting
+ * (TLS included) within `OUTBOUND_CONNECT_TIMEOUT_MS`.
  */
 export const ssrfSafeAgents = (): {
   httpAgent: http.Agent;

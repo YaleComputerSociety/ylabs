@@ -59,6 +59,7 @@ async function main(): Promise<number> {
     output,
     hosts,
     { scraperHostSlotLimiter },
+    { installScraperFetchDeadlines },
   ] = await Promise.all([
     import('../scrapers/registry'),
     import('../scrapers/scraperCanary'),
@@ -67,7 +68,9 @@ async function main(): Promise<number> {
     import('../scrapers/scraperCliOutput'),
     import('../scrapers/utils/hostConcurrencyLimiter'),
     import('../scrapers/utils/scraperHostSlotLimiter'),
+    import('../scrapers/utils/scraperFetchDeadlines'),
   ]);
+  installScraperFetchDeadlines();
   hosts.installScraperHostConcurrencyInterceptor(scraperHostSlotLimiter());
 
   const mongoUrl = process.env.MONGODBURL;
