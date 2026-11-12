@@ -36,6 +36,7 @@ import {
   DESCRIPTION_SOURCE_MIN_FOREIGN_CITERS,
   OWNERSHIP_GUARDED_DESCRIPTION_FIELDS,
   OWNERSHIP_GUARDED_ENTITY_TYPE,
+  type DescriptionOwnershipSite,
   ownershipGuardedCitedUrls,
   refusesDescriptionOnSharedPage,
 } from './descriptionSourceOwnership';
@@ -83,9 +84,17 @@ const isObjectIdLike = (value: string): boolean => /^[a-f0-9]{24}$/i.test(value)
  * registers the model, and registration creates its indexes, which made two scripts'
  * "performs no writes and drops no index in dry-run mode" tests fail.
  */
-async function researchEntityNameRows(
-  keys: readonly string[],
-): Promise<Array<{ slug?: unknown; _id?: unknown; name?: unknown; displayName?: unknown }>> {
+async function researchEntityNameRows(keys: readonly string[]): Promise<
+  Array<{
+    slug?: unknown;
+    _id?: unknown;
+    name?: unknown;
+    displayName?: unknown;
+    websiteUrl?: unknown;
+    entityType?: unknown;
+    kind?: unknown;
+  }>
+> {
   const db = mongoose.connection?.db;
   if (!db || keys.length === 0) return [];
   const objectIds = keys.filter(isObjectIdLike).map((key) => new mongoose.Types.ObjectId(key));
@@ -98,7 +107,7 @@ async function researchEntityNameRows(
           ...(objectIds.length ? [{ _id: { $in: objectIds } }] : []),
         ],
       },
-      { projection: { slug: 1, name: 1, displayName: 1 } },
+      { projection: { slug: 1, name: 1, displayName: 1, websiteUrl: 1, entityType: 1, kind: 1 } },
     )
     .toArray() as any;
 }
@@ -434,6 +443,7 @@ interface ForeignDescriptionCiters {
   byUrl: Map<string, Map<string, string>>;
   canonicalKey: (key: string) => string;
   nameOf: (key: string) => string | undefined;
+  siteOf: (key: string) => DescriptionOwnershipSite | undefined;
 }
 
 /**
@@ -457,6 +467,7 @@ async function loadForeignDescriptionCiters(
     byUrl,
     canonicalKey: (key) => key,
     nameOf: () => undefined,
+    siteOf: () => undefined,
   };
   if (urls.length === 0) return unresolved;
 
@@ -505,12 +516,15 @@ async function loadForeignDescriptionCiters(
   ];
   const nameByKey = new Map<string, string>();
   const idByKey = new Map<string, string>();
+  const siteByKey = new Map<string, DescriptionOwnershipSite>();
   for (const row of await researchEntityNameRows(lookupKeys)) {
     const label = String((row as any).displayName || (row as any).name || '');
     const id = String((row as any)._id);
+    const site = { websiteUrl: row.websiteUrl, entityType: row.entityType, kind: row.kind };
     for (const key of [String((row as any).slug), id]) {
       nameByKey.set(key, label);
       idByKey.set(key, id);
+      siteByKey.set(key, site);
     }
   }
   const canonicalKey = (key: string) => idByKey.get(key) ?? key;
@@ -519,7 +533,12 @@ async function loadForeignDescriptionCiters(
     for (const key of keys) citers.set(canonicalKey(key), nameByKey.get(key) ?? '');
     byUrl.set(url, citers);
   }
-  return { byUrl, canonicalKey, nameOf: (key) => nameByKey.get(key) };
+  return {
+    byUrl,
+    canonicalKey,
+    nameOf: (key) => nameByKey.get(key),
+    siteOf: (key) => siteByKey.get(key),
+  };
 }
 
 const writesOwnershipGuardedDescriptionField = (doc: { entityType: string; field: string }) =>
@@ -645,7 +664,8 @@ export async function appendObservations(
       ? [...citers.entries()].filter(([key]) => key !== own).map(([, name]) => name)
       : [];
     const ownName = citers?.get(own) ?? foreignCiters.nameOf(storedCiterKey(obs));
-    if (refusesDescriptionOnSharedPage({ ...obs, ownName }, foreignNames))
+    const ownSite = foreignCiters.siteOf(storedCiterKey(obs));
+    if (refusesDescriptionOnSharedPage({ ...obs, ownName, ownSite }, foreignNames))
       ownershipRejected.push(obs);
     else ownedInputs.push(obs);
   }
