@@ -244,17 +244,18 @@ The two exhaustive Development modes (`development-full`, `development-increment
 17. `inferred-pi-lead-reclaim` (`data:materialize-inferred-pi-leads --all --apply`; ordered before the gate so the gate judges the leads it links in the same sweep; its result reports `materialized-lead` and `still-unresolved`, #3741; a key the original netid, alias-map and key-name walk cannot resolve falls back to the `user` materializer's own identity join, and a bare-alias or Yale-email key is read in `netid:` form, both refusing a researcher whose title cannot own a research row or who is not the person an eponymous lab name names, #4697)
 18. `profile-honors` (`research-entity:profile-honors --apply`; after the lead reclaim so a lead linked this sweep has its profile page read this sweep, writing only rows whose honors changed, #4771)
 19. `staff-minted-retirement` (`research-entity:retire-staff-minted-entities --apply`; archives a row whose person's title owns no research, re-read every sweep because a row minted before its title was on file is never revisited by its mint lane, so the roster lane may keep minting an unknown title; capped by `--max-apply`, ordered before the gate and the rebuild, #4983)
-20. `visibility-gate` (`student-visibility:gate --collection=all --apply`)
-21. `search-sync` (`meili:sync-research-entities --apply`)
-22. `lane-scorecard` (`lane:scorecard --apply`; replays each lane on its frozen benchmark, see [`lane-scorecard.md`](lane-scorecard.md))
-23. `engine-benchmark` (`engine:benchmark --apply --replays=2`; never `--capture`, see [`engine-benchmark.md`](engine-benchmark.md))
-24. `coverage-audit`
-25. `data-quality` (`beta:data-quality --strict`)
-26. `integrity-gate` (`scraper:integrity-gate --include-claim-gate`)
-27. `trust-contract` (`launch:trust-contract --mode=student-ready-only --strict`)
-28. `survivor-alias-derivation` (`research-entity:derive-survivor-aliases --apply --confirm-derive-survivor-aliases`; sets each live survivor's `mergedFrom` from the tombstones, see `docs/research-model.md`)
-29. `archived-cleanup` (`research-entity:cleanup-archived --merge-residue-only`; residue is deleted by default in Dev sweeps, disable with `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE=0`)
-30. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
+20. `researcher-email-support` (`researchers:compute-email-support --apply --confirm-compute-email-support`; computes `identifiers.emailSupport` for every live researcher holding a stored email, writing only a marker whose value changed; after every stage that mints a researcher or changes an address, and directly before the gate, so a researcher that newly becomes unreached is marked the same sweep, #5713)
+21. `visibility-gate` (`student-visibility:gate --collection=all --apply`)
+22. `search-sync` (`meili:sync-research-entities --apply`)
+23. `lane-scorecard` (`lane:scorecard --apply`; replays each lane on its frozen benchmark, see [`lane-scorecard.md`](lane-scorecard.md))
+24. `engine-benchmark` (`engine:benchmark --apply --replays=2`; never `--capture`, see [`engine-benchmark.md`](engine-benchmark.md))
+25. `coverage-audit`
+26. `data-quality` (`beta:data-quality --strict`)
+27. `integrity-gate` (`scraper:integrity-gate --include-claim-gate`)
+28. `trust-contract` (`launch:trust-contract --mode=student-ready-only --strict`)
+29. `survivor-alias-derivation` (`research-entity:derive-survivor-aliases --apply --confirm-derive-survivor-aliases`; sets each live survivor's `mergedFrom` from the tombstones, see `docs/research-model.md`)
+30. `archived-cleanup` (`research-entity:cleanup-archived --merge-residue-only`; residue is deleted by default in Dev sweeps, disable with `SCRAPER_SWEEP_DELETE_MERGE_RESIDUE=0`)
+31. `dead-data-prune` (`observations:prune-dead --apply`; opt-in, only when the sweep is run with `--prune-between-phases`)
 
 Three of these stages count standing defects and exit 1 whenever a count is above zero, so the sweep judges them from their artifact rather than their exit code (#4852, `server/src/scripts/sweepStageJudgement.ts`).
 `integrity-gate` records each of its `counts`, and `trust-contract` records `publicVisibilityViolations`, the total `violations`, and one `repairLane:<stage>` count per repair stage, absent lanes as 0.
@@ -2242,7 +2243,7 @@ The release queue is written by `yarn --cwd server student-visibility:gate`. Scr
 
 The gate recomputes visibility for the whole corpus on every run rather than tracking a version stamp.
 A per-plan write guard, `isStudentVisibilityGatePlanMateriallyChanged`, means only records whose recomputed plan actually changes are written, so an unconditional recompute stays cheap in writes (issue #2044 retired the former `STUDENT_VISIBILITY_VERSION` stamp and its stale-version sweep in favor of this model; do not reintroduce a version).
-The exhaustive Development sweep runs one full-corpus `--collection=all` apply gate as its `visibility-gate` post-run stage, immediately after the `inferred-pi-lead-reclaim` stage so the gate judges the leads that stage links in the same sweep (#3741).
+The exhaustive Development sweep runs one full-corpus `--collection=all` apply gate as its `visibility-gate` post-run stage, after the `inferred-pi-lead-reclaim` stage so the gate judges the leads that stage links in the same sweep (#3741).
 The gate keeps search consistent itself (issue #1958): `applyStudentVisibilityGatePlans` re-syncs entities to Meilisearch so the index reflects the freshly applied tiers without waiting for a separate rebuild, in addition to the sweep's explicit `search-sync` stage.
 That sync is keyed on a read of the index rather than on the plan's changed flag (#3049).
 After the corpus write the gate projects the indexed `studentVisibilityTier` for every planned row and syncs the materially-changed rows plus every row the index disagrees with, so a sync that failed during a Meilisearch outage is repaired by the next run instead of being invisible to it: a plan that has already been written is no longer materially changed, so the old plan-keyed arm had nothing left to push and reported a clean `changed: 0` over a permanently stale index.

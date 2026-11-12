@@ -294,6 +294,7 @@ export interface DevelopmentPostRunStage extends SweepStepTiming, PostRunStageDi
     | 'borrowed-lab-website-retire'
     | 'refusal-lane-attribution'
     | 'pi-attributed-researcher-mint'
+    | 'researcher-email-support'
     | 'inferred-pi-lead-reclaim'
     | 'profile-honors'
     | 'staff-minted-retirement'
@@ -1731,6 +1732,17 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     command: 'research-entity:retire-staff-minted-entities',
     artifactName: 'development-staff-minted-retirement.json',
     buildArgs: () => ['--apply', '--confirm-staff-minted-entity-retirement'],
+    isEnabled: () => true,
+  },
+  {
+    // After every stage that can mint a researcher or change an address, so each live
+    // researcher holding an email carries a current support marker before the corpus is
+    // promoted. The user materializer refreshes it only for a researcher a key reaches; this
+    // pass covers the rest and plans nothing once the corpus is settled (#5627).
+    name: 'researcher-email-support',
+    command: 'researchers:compute-email-support',
+    artifactName: 'development-researcher-email-support.json',
+    buildArgs: () => ['--apply', '--confirm-compute-email-support'],
     isEnabled: () => true,
   },
   {
