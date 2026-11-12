@@ -829,7 +829,7 @@ describe(
     });
 
     it('still mints the listed person when the member page email names no identified researcher (#5677)', async () => {
-      await accountHolder('Blair', { email: 'blair.synthetic@yale.edu' });
+      await accountHolder('Blair', { email: 'blair.synthetic5@yale.edu' });
       const listing = {
         name: 'Avery Synthetic Quillon',
         role: 'core-faculty' as const,
