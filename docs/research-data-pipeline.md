@@ -436,9 +436,9 @@ The contract now has six parts.
   It also sits above the 15-minute stale bound, which already budgets a lane holding the event loop for minutes on one huge page, and above the 10-minute socket timeout below.
   The sweep never re-runs a stalled source (`decideSweepSourceRetry`): its log also carries the failed heartbeats of the outage, which match the transient database signature, and a re-run would spend another window.
 - **A `scrape run` database read cannot wait forever.**
-  Scripts connect with no socket timeout, and the driver interrupts an operation in flight on a pooled connection only when a monitor check times out; a lost network fails the monitor with `getaddrinfo ENOTFOUND` instead, so an operation in flight on the dead socket had nothing to end it.
+  Scripts used to connect with no socket timeout, and the driver interrupts an operation in flight on a pooled connection only when a monitor check times out; a lost network fails the monitor with `getaddrinfo ENOTFOUND` instead, so an operation in flight on the dead socket had nothing to end it.
   That is the likeliest hang in #5086: after the loss, the lane logged no failure at all, while every request or query issued after the loss failed within 30 seconds.
-  `scrape run` therefore connects with a 10-minute socket timeout (`SCRAPE_RUN_SOCKET_TIMEOUT_MS`), so such an operation fails as a network timeout, which the driver's retryable reads and writes can try again, before the stall window would end the run.
+  `scrape run` therefore connects with a 10-minute socket timeout (`SCRAPE_RUN_SOCKET_TIMEOUT_MS`), and every script connection now has the same ceiling (#5880), so such an operation fails as a network timeout, which the driver's retryable reads and writes can try again, before the stall window would end the run.
 - **A run that died without a word is closed by a writer, not by a reader.**
   A `SIGKILL`, an out-of-memory kill or a host crash runs no handler, so its row stays `running` with a heartbeat that stops.
   `yarn --cwd server scrape-runs:reconcile-stale` is dry-run by default and reports every `running` row with a verdict.

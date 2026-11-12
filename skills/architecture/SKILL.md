@@ -163,7 +163,9 @@ The timer stops come before the disconnect, and that order is load-bearing: the 
 
 The serving process and an operator script want opposite things from the driver, so `server/src/db/connections.ts` gives them different budgets.
 `mongoOptions` is the serving budget: 5 s to select a server, a 5 s Mongoose command buffer, and a 20 s socket ceiling.
-`scriptMongoConnectOptions` restores the long ones, 30 s selection and no socket timeout, because a sweep that starts during a replica-set election should wait for it rather than abort.
+`scriptMongoConnectOptions` restores the long ones, 30 s selection and a 10-minute socket ceiling (`SCRIPT_SOCKET_TIMEOUT_MS`), because a sweep that starts during a replica-set election should wait for it rather than abort.
+The script socket ceiling is long but finite: with none, an operation on a socket the cluster dropped waited forever while the write lease kept renewing (#5880).
+Scripts also cap their pool at 10 connections (`SCRIPT_MAX_POOL_SIZE`), because Development, Beta and Production share one free-tier cluster with a connection cap and many script processes run at once; the serving budget keeps the driver's pool default.
 `initializeConnections()` connects with the script budget by default, because nearly every caller is an operator entry point, and `server/src/index.ts` is the one caller that passes `mongoOptions`.
 `triggerReconnect` reuses whichever budget the process connected with, so a reconnect never moves a script onto the serving budget or the server onto the script one.
 The numbers come from measurement rather than taste: a reachable database answers a detail request in under 10 ms, while the driver's 30 s and 60 s defaults turned an unreachable or hung one into a 30 s to 63 s wait that ended in a generic 500 (#4188).
