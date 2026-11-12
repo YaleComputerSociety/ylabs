@@ -2954,7 +2954,6 @@ function firstPersonSpecificYaleEmail(
 // match section-heading chrome ("Other Departments & Organizations") and
 // center/institute affiliations that are not academic departments, so only an
 // element explicitly classed "department" is trusted as a department signal.
-
 function extractDepartments($: cheerio.CheerioAPI): string[] {
   const values: string[] = [];
   $('[class*="department"]').each((_i, el) => {
