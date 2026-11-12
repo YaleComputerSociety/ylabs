@@ -75,6 +75,25 @@ describe('role-assignments:detach-edge (#5614)', () => {
     expect(JSON.parse(fs.readFileSync(snapshot, 'utf8')).edge.archived).toBe(false);
   });
 
+  it('records the actor who detached the edge, so a restore can tell an agent from the owner', async () => {
+    const { edgeId } = await seedEdge({ reviewedBy: 'ylabs-earlier-session' });
+    await detachRoleAssignmentEdge(
+      { edgeId, note: 'wrong person', actor: 'ylabs-fixture-session', apply: true },
+      vi.fn(),
+    );
+    const after = (await RoleAssignment.findById(edgeId).lean()) as any;
+    expect(after.reviewedBy).toBe('ylabs-fixture-session');
+    expect(after.reviewedAt).toBeInstanceOf(Date);
+  });
+
+  it('clears an earlier reviewer when the detachment names no actor', async () => {
+    const { edgeId } = await seedEdge({ reviewedBy: 'ylabs-earlier-session' });
+    await detachRoleAssignmentEdge({ edgeId, note: 'wrong person', apply: true }, vi.fn());
+    const after = (await RoleAssignment.findById(edgeId).lean()) as any;
+    expect(after).toMatchObject({ archived: true, reviewStatus: 'DISPUTED' });
+    expect(after.reviewedBy).toBeUndefined();
+  });
+
   it('cannot be re-attached by a lane re-asserting the same edge', async () => {
     const { edgeId, person, rowObjectId } = await seedEdge();
     await detachRoleAssignmentEdge({ edgeId, note: 'wrong person', apply: true }, vi.fn());
@@ -116,7 +135,15 @@ describe('role-assignments:detach-edge (#5614)', () => {
       parseDetachRoleAssignmentEdgeArgs([`--edge=${id}`, '--note=x', '--apply']),
     ).toThrow(/--snapshot/);
     expect(
-      parseDetachRoleAssignmentEdgeArgs([`--edge=${id}`, '--note=wrong person']),
+      parseDetachRoleAssignmentEdgeArgs([`--edge=${id}`, '--note=wrong person'], {}),
     ).toMatchObject({ edgeId: id, apply: false });
+    expect(
+      parseDetachRoleAssignmentEdgeArgs([`--edge=${id}`, '--note=x'], {
+        DEV_WRITE_OWNER: 'ylabs-fixture-session',
+      }),
+    ).toMatchObject({ actor: 'ylabs-fixture-session' });
+    expect(
+      parseDetachRoleAssignmentEdgeArgs([`--edge=${id}`, '--note=x', '--actor=ylabs-other'], {}),
+    ).toMatchObject({ actor: 'ylabs-other' });
   });
 });

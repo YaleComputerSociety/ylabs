@@ -26,20 +26,25 @@ dotenv.config({ path: path.resolve(here, '../../.env'), quiet: true });
 const SCRIPT_NAME = 'role-assignments:detach-edge';
 const CONFIRM_FLAG = '--confirm-detach-role-edge';
 const MAX_NOTE_LENGTH = 500;
+const MAX_ACTOR_LENGTH = 120;
 
 export interface DetachRoleAssignmentEdgeArgs {
   edgeId: string;
   note: string;
+  actor?: string;
   snapshot?: string;
   apply: boolean;
   confirmed: boolean;
 }
 
-export function parseDetachRoleAssignmentEdgeArgs(argv: string[]): DetachRoleAssignmentEdgeArgs {
+export function parseDetachRoleAssignmentEdgeArgs(
+  argv: string[],
+  env: NodeJS.ProcessEnv = process.env,
+): DetachRoleAssignmentEdgeArgs {
   const value = (name: string) =>
     argv.find((arg) => arg.startsWith(`--${name}=`))?.slice(name.length + 3);
   for (const arg of argv) {
-    if (!/^--(edge|note|snapshot)=/.test(arg) && arg !== '--apply' && arg !== CONFIRM_FLAG) {
+    if (!/^--(edge|note|snapshot|actor)=/.test(arg) && arg !== '--apply' && arg !== CONFIRM_FLAG) {
       throw new Error(`Unknown ${SCRIPT_NAME} argument: ${arg}`);
     }
   }
@@ -53,12 +58,16 @@ export function parseDetachRoleAssignmentEdgeArgs(argv: string[]): DetachRoleAss
   if (!note) throw new Error('--note is required: record why the edge is wrong');
   if (note.length > MAX_NOTE_LENGTH)
     throw new Error(`--note must be at most ${MAX_NOTE_LENGTH} characters`);
+  const actor = String(value('actor') ?? env.DEV_WRITE_OWNER ?? '').trim();
+  if (actor.length > MAX_ACTOR_LENGTH)
+    throw new Error(`--actor must be at most ${MAX_ACTOR_LENGTH} characters`);
   const apply = argv.includes('--apply');
   const snapshot = value('snapshot');
   if (apply && !snapshot) throw new Error(`${SCRIPT_NAME} --apply requires --snapshot=<path>`);
   return {
     edgeId: edgeId.toLowerCase(),
     note,
+    ...(actor ? { actor } : {}),
     ...(snapshot ? { snapshot: resolveSafeJsonReportOutputPath(snapshot) } : {}),
     apply,
     confirmed: argv.includes(CONFIRM_FLAG),
@@ -77,7 +86,7 @@ export interface DetachRoleAssignmentEdgeResult {
 
 /** Detaches one live edge; a missing, archived or already disputed edge is left untouched. */
 export async function detachRoleAssignmentEdge(
-  args: Pick<DetachRoleAssignmentEdgeArgs, 'edgeId' | 'note' | 'snapshot' | 'apply'>,
+  args: Pick<DetachRoleAssignmentEdgeArgs, 'edgeId' | 'note' | 'actor' | 'snapshot' | 'apply'>,
   regate: (rowId: string) => Promise<unknown> = (rowId) =>
     runStudentVisibilityGate({ collection: 'research', mode: 'apply', recordIds: [rowId] }),
 ): Promise<DetachRoleAssignmentEdgeResult> {
@@ -99,15 +108,16 @@ export async function detachRoleAssignmentEdge(
       mode: 0o600,
     });
   }
+  const detachment = {
+    archived: true,
+    reviewStatus: DETACHED_ROLE_ASSIGNMENT_REVIEW_STATUS,
+    reviewNotes: args.note,
+  };
   const result = await RoleAssignment.updateOne(
     { _id, ...LIVE_ROLE_EDGE_FILTER },
-    {
-      $set: {
-        archived: true,
-        reviewStatus: DETACHED_ROLE_ASSIGNMENT_REVIEW_STATUS,
-        reviewNotes: args.note,
-      },
-    },
+    args.actor
+      ? { $set: { ...detachment, reviewedBy: args.actor, reviewedAt: new Date() } }
+      : { $set: detachment, $unset: { reviewedBy: '', reviewedAt: '' } },
   );
   const detached = (result.modifiedCount ?? 0) === 1;
   const rowId = edge.target?.kind === 'RESEARCH_ENTITY' ? String(edge.target.id) : '';
