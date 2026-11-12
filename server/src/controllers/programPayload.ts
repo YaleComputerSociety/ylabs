@@ -11,7 +11,11 @@ import { isUnhelpfulProgramUrl } from '../utils/researchHomeWebsiteUrl';
 import { classifyProgram } from '../services/programClassifier';
 import { fellowshipClassificationInput } from '../scrapers/fellowshipClassificationDerivation';
 import { programAudience } from '../services/programAudience';
-import { isDepartmentResearchGuidance } from '../services/departmentResearchGuidance';
+import {
+  departmentGuidanceKindOf,
+  departmentGuidanceKinds,
+  type DepartmentGuidanceKind,
+} from '../services/departmentResearchGuidance';
 import { programTextDeadlineConflict } from '../utils/programDeadlineText';
 import { formatServedAwardAmount } from '../utils/awardAmountFormat';
 import { programCitizenshipCondition } from '../utils/programCitizenshipCondition';
@@ -174,18 +178,27 @@ export const PROGRAM_READER_FIELD_DECISIONS = {
 
 export type ProgramReaderDecidedField = keyof typeof PROGRAM_READER_FIELD_DECISIONS;
 
-export const withProgramAudience = (program: any) =>
-  program && typeof program === 'object'
-    ? {
-        ...program,
-        audience: programAudience(program),
-        departmentResearchGuidance: isDepartmentResearchGuidance(program),
-      }
-    : program;
+const servedDepartmentGuidanceKind = (program: any): DepartmentGuidanceKind | undefined =>
+  program.departmentResearchGuidance === true &&
+  (departmentGuidanceKinds as readonly unknown[]).includes(program.departmentGuidanceKind)
+    ? program.departmentGuidanceKind
+    : undefined;
+
+export const withProgramAudience = (program: any) => {
+  if (!program || typeof program !== 'object') return program;
+  const departmentGuidanceKind = departmentGuidanceKindOf(program);
+  return {
+    ...program,
+    audience: programAudience(program),
+    departmentResearchGuidance: departmentGuidanceKind !== null,
+    ...(departmentGuidanceKind ? { departmentGuidanceKind } : {}),
+  };
+};
 
 export const publicProgramForReader = (program: any) => {
   const id = serializedDocumentId(program._id) || serializedDocumentId(program.id) || '';
   const departmentResearchGuidance = program.departmentResearchGuidance === true;
+  const departmentGuidanceKind = servedDepartmentGuidanceKind(program);
   const summary = publicProgramDescription(program.summary);
   const description = publicProgramDescription(program.description);
   const applicationInformation = publicProgramDescription(program.applicationInformation);
@@ -198,6 +211,7 @@ export const publicProgramForReader = (program: any) => {
     programKind: program.programKind,
     programRole: program.programRole,
     departmentResearchGuidance,
+    ...(departmentGuidanceKind ? { departmentGuidanceKind } : {}),
     entryMode: program.entryMode,
     studentFacingCategory: program.studentFacingCategory,
     requiresMentorBeforeApply: program.requiresMentorBeforeApply,

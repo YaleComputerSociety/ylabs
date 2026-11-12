@@ -1361,6 +1361,12 @@ await step('a successful programs load keeps its layout when the data arrives', 
             programKind: 'FELLOWSHIP_FUNDING',
           })),
           { ...syntheticProgram(6), departmentResearchGuidance: true },
+          {
+            ...syntheticProgram(8),
+            programKind: 'DEPARTMENT_SENIOR_ESSAY_GUIDE',
+            departmentResearchGuidance: true,
+            departmentGuidanceKind: 'senior_essay',
+          },
           { ...syntheticProgram(7), studentFacingCategory: 'Archive / review' },
         ];
         await route.fulfill({ json: { results, total: results.length } });

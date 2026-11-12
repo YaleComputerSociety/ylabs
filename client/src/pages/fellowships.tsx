@@ -110,7 +110,7 @@ const quickFilterEmptyCopy = (quickFilter: FellowshipQuickFilter) => {
   if (quickFilter === 'guidance')
     return {
       title: 'No department research guidance matches',
-      body: 'No department guidance on getting started in research is in this filtered set. Clear the filter to see every program and guide.',
+      body: 'No department guidance on getting started in research or on the senior essay is in this filtered set. Clear the filter to see every program and guide.',
     };
   return {
     title: 'No programs match this filter',
@@ -271,7 +271,7 @@ const boardSections: Array<{
     key: 'guidance',
     title: 'Department research guidance',
     description:
-      "Each department's own advice on finding a faculty mentor and getting started in research. These are guides, not applications.",
+      "Each department's own advice on getting started in research, including its senior essay guidance where the senior essay is the research its majors do. These are guides, not applications.",
   },
   {
     key: 'noDates',

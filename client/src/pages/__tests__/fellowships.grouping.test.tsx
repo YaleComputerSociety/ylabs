@@ -451,6 +451,52 @@ describe('Fellowships grouping', () => {
       expect(screen.queryByText('Undated Fellowship')).not.toBeInTheDocument();
     });
 
+    it('files senior essay guidance in the same section as research guidance (#5298)', () => {
+      renderFellowships({
+        fellowships: [
+          ...board(),
+          makeFellowship({
+            id: 'senior-essay',
+            title: 'Fixture Senior Essay Page',
+            programKind: 'DEPARTMENT_SENIOR_ESSAY_GUIDE',
+            departmentResearchGuidance: true,
+            departmentGuidanceKind: 'senior_essay',
+            isAcceptingApplications: false,
+            deadline: null,
+            yearOfStudy: [],
+          }),
+        ],
+      });
+
+      const guidanceSection = screen.getByRole('region', { name: 'Department research guidance' });
+      expect(within(guidanceSection).getByText('Fixture Guidance Page')).toBeInTheDocument();
+      expect(within(guidanceSection).getByText('Fixture Senior Essay Page')).toBeInTheDocument();
+      expect(guidanceSection.textContent).toContain('senior essay guidance');
+      expect(screen.queryByRole('region', { name: 'Senior essay guidance' })).toBeNull();
+    });
+
+    it('keeps senior essay guidance in the guidance filter and out of applications only (#5298)', () => {
+      const seniorEssay = makeFellowship({
+        id: 'senior-essay',
+        title: 'Fixture Senior Essay Page',
+        programKind: 'DEPARTMENT_SENIOR_ESSAY_GUIDE',
+        departmentResearchGuidance: true,
+        departmentGuidanceKind: 'senior_essay',
+        isAcceptingApplications: false,
+        deadline: null,
+        yearOfStudy: [],
+      });
+      renderFellowships({ fellowships: [...board(), seniorEssay], quickFilter: 'guidance' });
+      expect(screen.getByText('Fixture Senior Essay Page')).toBeInTheDocument();
+      cleanup();
+
+      renderFellowships({
+        fellowships: [...board(), seniorEssay],
+        quickFilter: 'applicationsOnly',
+      });
+      expect(screen.queryByText('Fixture Senior Essay Page')).not.toBeInTheDocument();
+    });
+
     it('excludes guidance from applications only and from every application filter', () => {
       for (const quickFilter of ['applicationsOnly', 'noMentorFirst'] as const) {
         renderFellowships({ fellowships: board(), quickFilter });

@@ -22,7 +22,7 @@ import UserContext from '../../contexts/UserContext';
 import { useViewTracking } from '../../hooks/useViewTracking';
 import { programCardFacts } from '../../utils/programBoard';
 import {
-  DEPARTMENT_RESEARCH_GUIDANCE_ACTION,
+  departmentGuidanceCopy,
   departmentResearchGuidanceHref,
   isDepartmentResearchGuidance,
 } from '../../utils/programJourney';
@@ -127,8 +127,10 @@ const BrowseListItem = React.memo(
                   }}
                   className="yr-focus-ring relative z-[1] -my-2 inline-flex min-h-11 items-center gap-1 rounded-control text-sm font-semibold text-brand transition-colors hover:text-brand-navy"
                 >
-                  {DEPARTMENT_RESEARCH_GUIDANCE_ACTION}
-                  <ExternalLinkIcon size={14} />
+                  <span className="text-pretty">
+                    {departmentGuidanceCopy(item.data).action}
+                    <ExternalLinkIcon size={14} className="ml-1 inline-block align-[-2px]" />
+                  </span>
                 </a>
               )}
             </>
