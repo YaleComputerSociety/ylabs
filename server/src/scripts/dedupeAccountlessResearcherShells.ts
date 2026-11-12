@@ -1004,9 +1004,7 @@ export async function dedupeAccountlessResearcherShells(options: {
   const officialPageHolders = officialPageHoldersOf(researcherIdentities);
 
   const decidedTargetByShellId = new Map<string, string>();
-  const foldsByMatchedIdentity = Object.fromEntries(
-    SHELL_FOLD_IDENTITIES.map((identity) => [identity, 0]),
-  ) as Record<ShellFoldIdentity, number>;
+  const matchedIdentityByShellId = new Map<string, ShellFoldIdentity>();
   for (const shell of foldableShells) {
     const decision = decideShellMerge(
       shell,
@@ -1024,12 +1022,13 @@ export async function dedupeAccountlessResearcherShells(options: {
     byReason[decision.reason] += 1;
     if (decision.merge && decision.canonicalId && decision.canonicalId !== shell.id) {
       decidedTargetByShellId.set(shell.id, decision.canonicalId);
-      if (decision.matchedOn) foldsByMatchedIdentity[decision.matchedOn] += 1;
+      if (decision.matchedOn) matchedIdentityByShellId.set(shell.id, decision.matchedOn);
     }
   }
   const aliasTwinPlan = await planAliasTwinFoldsFor(researcherIdentities, loginNetids);
   for (const [twinId, realId] of aliasTwinPlan.targetByTwinResearcherId) {
     decidedTargetByShellId.set(twinId, realId);
+    matchedIdentityByShellId.delete(twinId);
   }
   const directRefusal = withoutDistinctPeopleFolds(decidedTargetByShellId, distinctPeoplePairs);
   const mergeTargetByShellId = resolveFinalMergeTargets(directRefusal.kept);
@@ -1093,6 +1092,7 @@ export async function dedupeAccountlessResearcherShells(options: {
   );
   for (const [shellId, survivorId] of clusterPlan.foldTargetById) {
     mergeTargetByShellId.set(shellId, survivorId);
+    matchedIdentityByShellId.delete(shellId);
   }
   const finalRefusal = withoutDistinctPeopleFolds(mergeTargetByShellId, distinctPeoplePairs);
   for (const shellId of [...mergeTargetByShellId.keys()]) {
@@ -1211,6 +1211,13 @@ export async function dedupeAccountlessResearcherShells(options: {
   }
   if (onlyShellsNotPlanned) {
     onlyShellsNotPlanned.push(...liveLeadRefusedFolds.map((refusal) => refusal.shellId));
+  }
+  const foldsByMatchedIdentity = Object.fromEntries(
+    SHELL_FOLD_IDENTITIES.map((identity) => [identity, 0]),
+  ) as Record<ShellFoldIdentity, number>;
+  for (const shellId of mergeTargetByShellId.keys()) {
+    const matchedOn = matchedIdentityByShellId.get(shellId);
+    if (matchedOn) foldsByMatchedIdentity[matchedOn] += 1;
   }
 
   const rosterChangedEntityIds = new Set<string>();

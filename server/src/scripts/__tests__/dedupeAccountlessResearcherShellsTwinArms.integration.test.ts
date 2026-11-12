@@ -390,11 +390,13 @@ describe('dedupeAccountlessResearcherShells twin arms (#5606)', () => {
         { shellId: String(shell), canonicalId: String(holder) },
       ]);
       expect(first.shellsMerged).toBe(0);
+      expect(first.foldsByMatchedIdentity.name).toBe(0);
       expect((await researcherState(shell)).archived).toBe(false);
       const edge = await db().collection('role_assignments').findOne({ _id: shellEdge });
       expect(edge!.archived).toBe(false);
       expect(String(edge!.personId)).toBe(String(shell));
       expect(second.liveLeadRefusedFolds).toHaveLength(1);
+      expect(second.foldsByMatchedIdentity.name).toBe(0);
     });
 
     it('lets the same spacing variant fold when the survivor still leads the row, once', async () => {
