@@ -40,6 +40,7 @@ import { loadConnectedEvidenceUrlCiterCounts } from '../sources/researchPageText
 import { loadCorpusResearcherNetids } from '../sources/yaleDirectoryScraper';
 import { loadLabUrlEvidenceBySlug } from '../utils/labUrlEvidence';
 import { pageEmailHeldByAnotherResearcher } from '../verifiedResearcherEmail';
+import { isMongoUnavailableError } from '../../db/connections';
 import { Observation } from '../../models/observation';
 import { rostersWithDepartedLeadsRetired } from '../../services/departedLeadServing';
 import { officialProfileLinkHeldByConflictingIdentity } from '../../services/officialProfileLinkIdentity';
@@ -290,7 +291,11 @@ describe('a read during a database reconnect fails closed rather than answering 
     });
 
     it.each(READS_THAT_THROW_DURING_A_RECONNECT)('%s', async (_name, read) => {
-      await expect(read()).rejects.toThrow();
+      const failure = await read().then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(isMongoUnavailableError(failure), String(failure)).toBe(true);
     });
   });
 });
