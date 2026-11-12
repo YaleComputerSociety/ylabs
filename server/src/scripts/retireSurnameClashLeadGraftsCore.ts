@@ -3,23 +3,19 @@ import {
   givenNamesCouldBeOneTransliteration,
   surnameCoreKey,
 } from '../scrapers/utils/piNameMatch';
-import {
-  researcherHoldsDirectoryIdentity,
-  researcherNetid,
-  type ResearcherIdentitySource,
-} from '../utils/researcherIdentity';
 
-export interface SurnameClashPersonRecord extends ResearcherIdentitySource {
-  profile?: { title?: unknown; primaryDepartment?: unknown } | null;
-}
-
-export function researcherIdentityAnchored(row: SurnameClashPersonRecord): boolean {
-  return Boolean(
-    researcherNetid(row) ||
-    researcherHoldsDirectoryIdentity(row) ||
-    String(row.profile?.title || '').trim() ||
-    String(row.profile?.primaryDepartment || '').trim(),
-  );
+/**
+ * What the corpus records about one lead's person beyond the name, read only to tell
+ * whether two clash members are one person stored as two Researcher records (#5941).
+ */
+export interface SurnameClashLeadIdentity {
+  netid?: string;
+  email?: string;
+  orcid?: string;
+  title?: string;
+  department?: string;
+  /** The live record an archived duplicate was folded into, read from `dedupedIntoResearcherId`. */
+  dedupedIntoPersonId?: string;
 }
 
 export interface SurnameClashLeadRow {
@@ -29,9 +25,11 @@ export interface SurnameClashLeadRow {
   reviewStatus?: string;
   /**
    * Whether the corpus knows this person as a Yale identity rather than as a bare
-   * name: a netid, a directory identity, a title, or a department.
+   * name, as `researcherCarriesIdentityEvidence` reads it (#5592). A title or a
+   * department alone is not identity: a name-only duplicate carries both (#5941).
    */
   identityAnchored: boolean;
+  identity?: SurnameClashLeadIdentity;
   /**
    * Whether this assignment cites the entity's own official roster page as verified
    * evidence, which is the corroboration a surname graft does not have. It is a
@@ -54,6 +52,7 @@ export interface SurnameClashEntityRow {
 
 export type SurnameClashRefusal =
   | 'no-surname-clash'
+  | 'one-person-recorded-twice'
   | 'identity-names-nobody-in-the-clash'
   | 'identity-names-more-than-one-of-the-clash'
   | 'named-lead-is-an-unanchored-shell'
@@ -104,6 +103,115 @@ export function surnameClashGroups(leads: readonly SurnameClashLeadRow[]): Surna
 const givenNamesNameOnePerson = (given: string, token: string): boolean =>
   givenNamesAgree(given, token) || givenNamesCouldBeOneTransliteration(given, token);
 
+const comparableText = (value: unknown): string =>
+  String(value ?? '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9@.]+/g, ' ')
+    .trim();
+
+const hardIdentityKeys = (lead: SurnameClashLeadRow): string[] =>
+  (['netid', 'email', 'orcid'] as const)
+    .map((field) => [field, comparableText(lead.identity?.[field])] as const)
+    .filter(([, value]) => value)
+    .map(([field, value]) => `${field}:${value}`);
+
+const isNameOnlyRecord = (lead: SurnameClashLeadRow): boolean =>
+  !lead.identityAnchored && hardIdentityKeys(lead).length === 0;
+
+const textsAgree = (left: unknown, right: unknown): boolean => {
+  const a = comparableText(left);
+  return Boolean(a) && a === comparableText(right);
+};
+
+/**
+ * The tight name match that lets a name-only record stand for a record carrying
+ * identity evidence: the first given names agree or are two romanisations of one name,
+ * the surnames are identical, and the title or the department agrees.
+ */
+function nameOnlyRecordTightlyMatches(
+  nameOnly: SurnameClashLeadRow,
+  anchored: SurnameClashLeadRow,
+): boolean {
+  const left = personNameTokens(nameOnly.displayName);
+  const right = personNameTokens(anchored.displayName);
+  if (left.length < 2 || right.length < 2 || left.at(-1) !== right.at(-1)) return false;
+  if (!givenNamesNameOnePerson(left[0], right[0])) return false;
+  return (
+    textsAgree(nameOnly.identity?.title, anchored.identity?.title) ||
+    textsAgree(nameOnly.identity?.department, anchored.identity?.department)
+  );
+}
+
+/**
+ * Maps every lead of a clash group to the person it is, so one person stored as two
+ * Researcher records reads as one person rather than as a clash with themselves (#5941).
+ *
+ * Records are one person when they share a netid, an email, or an ORCID, when a
+ * `dedupedIntoResearcherId` link joins them, or when a name-only record tightly matches
+ * exactly one person carrying identity evidence. Two netids never join: a pair that
+ * would bring two different netids into one person stays two people, so two
+ * same-surname colleagues are never folded together through a shared field.
+ */
+export function onePersonKeyByAssignment(
+  group: readonly SurnameClashLeadRow[],
+): Map<string, string> {
+  const parent = new Map<string, string>();
+  const netidsByRoot = new Map<string, Set<string>>();
+  const find = (key: string): string => {
+    let root = key;
+    while (parent.get(root) !== root) root = parent.get(root) as string;
+    parent.set(key, root);
+    return root;
+  };
+  const add = (key: string, netid?: string) => {
+    if (!parent.has(key)) {
+      parent.set(key, key);
+      netidsByRoot.set(key, new Set());
+    }
+    if (netid) netidsByRoot.get(find(key))?.add(netid);
+  };
+  const union = (left: string, right: string): void => {
+    const a = find(left);
+    const b = find(right);
+    if (a === b) return;
+    const netids = new Set([...(netidsByRoot.get(a) || []), ...(netidsByRoot.get(b) || [])]);
+    if (netids.size > 1) return;
+    parent.set(b, a);
+    netidsByRoot.set(a, netids);
+  };
+
+  const personKey = (lead: SurnameClashLeadRow) => `person:${lead.personId}`;
+  for (const lead of group) {
+    add(personKey(lead), comparableText(lead.identity?.netid) || undefined);
+  }
+  for (const lead of group) {
+    const dedupedInto = String(lead.identity?.dedupedIntoPersonId || '').trim();
+    const linkKeys = [
+      ...hardIdentityKeys(lead).filter((key) => !key.startsWith('netid:')),
+      ...(dedupedInto ? [`person:${dedupedInto}`] : []),
+    ];
+    const netid = comparableText(lead.identity?.netid);
+    if (netid) linkKeys.push(`netid:${netid}`);
+    for (const key of linkKeys) {
+      add(key, key.startsWith('netid:') ? netid : undefined);
+      union(personKey(lead), key);
+    }
+  }
+
+  for (const nameOnly of group.filter(isNameOnlyRecord)) {
+    const matchedPeople = new Set(
+      group
+        .filter((lead) => lead.identityAnchored && nameOnlyRecordTightlyMatches(nameOnly, lead))
+        .map((lead) => find(personKey(lead))),
+    );
+    if (matchedPeople.size === 1) union([...matchedPeople][0], personKey(nameOnly));
+  }
+
+  return new Map(group.map((lead) => [lead.assignmentId, find(personKey(lead))]));
+}
+
 /**
  * Whether the entity's own identity - its name and slug tokens - names this person.
  *
@@ -137,13 +245,16 @@ export function entityIdentityNamesPerson(
  * clash and read every other one as a namesake. Anything less, a second confirmation or
  * a lead the site said nothing about, leaves the clash undecided.
  */
-function siteNamedPersonIds(group: readonly SurnameClashLeadRow[]): Set<string> {
+function siteNamedPersonIds(
+  group: readonly SurnameClashLeadRow[],
+  personOf: (lead: SurnameClashLeadRow) => string,
+): Set<string> {
   const confirmed = new Set(
-    group.filter((lead) => lead.servedSiteVerdict === 'CONFIRMED').map((lead) => lead.personId),
+    group.filter((lead) => lead.servedSiteVerdict === 'CONFIRMED').map(personOf),
   );
   if (confirmed.size !== 1) return new Set();
   const othersAreNamesakes = group.every(
-    (lead) => confirmed.has(lead.personId) || lead.servedSiteVerdict === 'NAMESAKE',
+    (lead) => confirmed.has(personOf(lead)) || lead.servedSiteVerdict === 'NAMESAKE',
   );
   return othersAreNamesakes ? confirmed : new Set();
 }
@@ -159,7 +270,9 @@ function siteNamedPersonIds(group: readonly SurnameClashLeadRow[]): Set<string> 
  * Mere `rosterProvenance` presence is not a signal either, because 974 of 3,009
  * served sole PIs lack it and are correct.
  *
- * Fails closed six ways. An entity whose identity names nobody in the clash, or
+ * Fails closed seven ways. A clash whose members are all one person stored as two or
+ * more records (`onePersonKeyByAssignment`) is refused as needing a merge, because
+ * detaching there removes the person the entity is named after (#5941). An entity whose identity names nobody in the clash, or
  * more than one of them, is left alone: naming two is the name-variant case, which
  * is a merge rather than a detach. A bare-name survivor never evicts a
  * netid-backed record, because an unanchored shell beside an anchored record of the
@@ -189,13 +302,26 @@ export function planSurnameClashLeadDetachment(
     }
 
     for (const group of groups) {
+      const personKeys = onePersonKeyByAssignment(group);
+      const personOf = (lead: SurnameClashLeadRow) =>
+        personKeys.get(lead.assignmentId) || `person:${lead.personId}`;
+      if (new Set(group.map(personOf)).size === 1) {
+        refused.push({
+          entityId: entity.entityId,
+          reason: 'one-person-recorded-twice',
+          assignments: group.length,
+        });
+        continue;
+      }
       const identityNamedPersonIds = new Set(
         group
           .filter((lead) => entityIdentityNamesPerson(entity.identityTokens, lead.displayName))
-          .map((lead) => lead.personId),
+          .map(personOf),
       );
       const namedPersonIds =
-        identityNamedPersonIds.size > 0 ? identityNamedPersonIds : siteNamedPersonIds(group);
+        identityNamedPersonIds.size > 0
+          ? identityNamedPersonIds
+          : siteNamedPersonIds(group, personOf);
       if (namedPersonIds.size === 0) {
         refused.push({
           entityId: entity.entityId,
@@ -213,7 +339,7 @@ export function planSurnameClashLeadDetachment(
         continue;
       }
 
-      const unnamed = group.filter((lead) => !namedPersonIds.has(lead.personId));
+      const unnamed = group.filter((lead) => !namedPersonIds.has(personOf(lead)));
       const corroborated = unnamed.filter((lead) => lead.rosterVerified);
       if (corroborated.length > 0) {
         refused.push({
@@ -226,7 +352,7 @@ export function planSurnameClashLeadDetachment(
       if (candidates.length === 0) continue;
 
       const namedIsAnchored = group.some(
-        (lead) => namedPersonIds.has(lead.personId) && lead.identityAnchored,
+        (lead) => namedPersonIds.has(personOf(lead)) && lead.identityAnchored,
       );
       if (!namedIsAnchored && candidates.some((lead) => lead.identityAnchored)) {
         refused.push({
@@ -265,6 +391,7 @@ export function summarizeSurnameClashRefusals(
 ): Record<SurnameClashRefusal, number> {
   const counts: Record<SurnameClashRefusal, number> = {
     'no-surname-clash': 0,
+    'one-person-recorded-twice': 0,
     'identity-names-nobody-in-the-clash': 0,
     'identity-names-more-than-one-of-the-clash': 0,
     'named-lead-is-an-unanchored-shell': 0,
@@ -281,17 +408,26 @@ export interface PastSurnameClashDetachment {
   personId: string;
   displayName: string;
   identityTokens: readonly string[];
+  /**
+   * Whether an archived duplicate that led the same entity now resolves, through
+   * `dedupedIntoResearcherId`, to the detached person: the duplicate was the lead the
+   * repair kept, so the detached person was the lead the entity is named after (#5941).
+   */
+  entityLeadDuplicateResolvesToPerson?: boolean;
 }
 
 /**
- * The detachments this repair already made where the entity's identity now names the
- * detached person, which is the person read as a graft of themselves (#5853). It only
- * lists them: restoring an edge is a review verdict on that row, not a bulk write.
+ * The detachments this repair already made of the person the entity is named after:
+ * the entity's identity now names the detached person (#5853), or an archived
+ * duplicate that led the entity now resolves to them (#5941). It only lists them:
+ * restoring an edge is a review verdict on that row, not a bulk write.
  */
 export function pastDetachmentsOfTheNamedPerson(
   detachments: readonly PastSurnameClashDetachment[],
 ): PastSurnameClashDetachment[] {
-  return detachments.filter((detachment) =>
-    entityIdentityNamesPerson(detachment.identityTokens, detachment.displayName),
+  return detachments.filter(
+    (detachment) =>
+      detachment.entityLeadDuplicateResolvesToPerson === true ||
+      entityIdentityNamesPerson(detachment.identityTokens, detachment.displayName),
   );
 }
