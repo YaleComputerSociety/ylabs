@@ -3,8 +3,14 @@
  */
 import { programFacetFilterClause } from '../utils/programFacetFilters';
 import {
+  bucketCountsOf,
+  doesntSayCitizenshipFilter,
   programCitizenshipOptionCounts,
+  programIdsMatching,
+  statedCitizenshipFirst,
+  statesCitizenshipFilter,
   withCitizenshipFilter,
+  type ProgramCitizenshipBucketCounts,
   type ProgramCitizenshipCounts,
 } from './programCitizenshipCounts';
 import { correctProgramSearchQuerySpelling } from './programSearchSpellingVocabulary';
@@ -1059,6 +1065,7 @@ export const searchFellowships = async (params: {
     filter.yaleCollegeOnly = yaleCollegeOnly;
   }
   const filterWithoutCitizenship = filter;
+  const citizenshipFiltered = safeCitizenshipStatus.length > 0;
   const servedFilter = withCitizenshipFilter(filterWithoutCitizenship, safeCitizenshipStatus);
 
   const sortField = publicFellowshipSortField(sortBy, includeNonPublic);
@@ -1078,7 +1085,9 @@ export const searchFellowships = async (params: {
       ? { originalQuery: typedQuery, correctedQuery: safeQuery }
       : undefined;
 
-  const citizenshipCounts = async (): Promise<{ citizenshipCounts?: ProgramCitizenshipCounts }> =>
+  const citizenshipCounts = async (
+    selected: ProgramCitizenshipBucketCounts | null,
+  ): Promise<{ citizenshipCounts?: ProgramCitizenshipCounts }> =>
     page === 1
       ? {
           citizenshipCounts: {
@@ -1089,22 +1098,35 @@ export const searchFellowships = async (params: {
               query: safeQuery,
               sort: fieldSortOptions,
             }),
+            selected,
           },
         }
       : {};
 
   if (!safeQuery) {
-    const [fellowships, total] = await Promise.all([
-      Fellowship.find(servedFilter).sort(fieldSortOptions).skip(skip).limit(pageSize).lean(),
-      Fellowship.countDocuments(servedFilter),
-    ]);
+    const { fellowships, total, selected } = citizenshipFiltered
+      ? await browseStatedCitizenshipFirst({
+          filter: servedFilter,
+          values: safeCitizenshipStatus,
+          sort: fieldSortOptions,
+          skip,
+          limit: pageSize,
+        })
+      : await Promise.all([
+          Fellowship.find(servedFilter).sort(fieldSortOptions).skip(skip).limit(pageSize).lean(),
+          Fellowship.countDocuments(servedFilter),
+        ]).then(([pageFellowships, count]) => ({
+          fellowships: pageFellowships,
+          total: count,
+          selected: null,
+        }));
     return {
       fellowships: servePrograms(fellowships),
       total,
       page,
       pageSize,
       totalPages: Math.ceil(total / pageSize),
-      ...(await citizenshipCounts()),
+      ...(await citizenshipCounts(selected)),
     };
   }
 
@@ -1115,7 +1137,13 @@ export const searchFellowships = async (params: {
     .sort(fieldSortOptions)
     .lean()) as Array<Record<string, unknown>>;
   const ranked = rankProgramSearch(safeQuery, candidates);
-  const orderedIds = ranked.programs.map((candidate) => String(candidate._id));
+  const rankedIds = ranked.programs.map((candidate) => String(candidate._id));
+  const doesntSayIds = citizenshipFiltered
+    ? await programIdsMatching(doesntSayCitizenshipFilter(servedFilter))
+    : null;
+  const orderedIds = doesntSayIds
+    ? statedCitizenshipFirstWithinTiers(rankedIds, ranked.closeMatchesFrom, doesntSayIds)
+    : rankedIds;
   const pageIds = orderedIds.slice(skip, skip + pageSize);
   const pageDocuments = pageIds.length
     ? ((await Fellowship.find({ _id: { $in: pageIds } }).lean()) as any[])
@@ -1132,7 +1160,51 @@ export const searchFellowships = async (params: {
     ...(queryCorrection ? { queryCorrection } : {}),
     ...(ranked.missingOneWord ? { queryMatch: 'allButOneWord' as const } : {}),
     ...(ranked.closeMatchesFrom !== null ? { closeMatchesFrom: ranked.closeMatchesFrom } : {}),
-    ...(await citizenshipCounts()),
+    ...(await citizenshipCounts(doesntSayIds ? bucketCountsOf(orderedIds, doesntSayIds) : null)),
+  };
+};
+
+const statedCitizenshipFirstWithinTiers = (
+  rankedIds: readonly string[],
+  closeMatchesFrom: number | null,
+  doesntSayIds: ReadonlySet<string>,
+): string[] => {
+  const tierEnd = closeMatchesFrom ?? rankedIds.length;
+  return [
+    ...statedCitizenshipFirst(rankedIds.slice(0, tierEnd), doesntSayIds),
+    ...statedCitizenshipFirst(rankedIds.slice(tierEnd), doesntSayIds),
+  ];
+};
+
+const browseStatedCitizenshipFirst = async (params: {
+  filter: Record<string, unknown>;
+  values: readonly string[];
+  sort: Record<string, 1 | -1>;
+  skip: number;
+  limit: number;
+}) => {
+  const { filter, values, sort, skip, limit } = params;
+  const saysFilter = statesCitizenshipFilter(filter, values);
+  const doesntSayFilter = doesntSayCitizenshipFilter(filter);
+  const [says, doesntSay] = await Promise.all([
+    Fellowship.countDocuments(saysFilter),
+    Fellowship.countDocuments(doesntSayFilter),
+  ]);
+  const saysPage =
+    skip < says ? await Fellowship.find(saysFilter).sort(sort).skip(skip).limit(limit).lean() : [];
+  const remaining = limit - saysPage.length;
+  const doesntSayPage =
+    remaining > 0
+      ? await Fellowship.find(doesntSayFilter)
+          .sort(sort)
+          .skip(Math.max(0, skip - says))
+          .limit(remaining)
+          .lean()
+      : [];
+  return {
+    fellowships: [...saysPage, ...doesntSayPage],
+    total: says + doesntSay,
+    selected: { says, doesntSay },
   };
 };
 

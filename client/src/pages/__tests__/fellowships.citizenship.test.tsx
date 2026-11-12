@@ -247,6 +247,7 @@ describe('Fellowships citizenship split (#5299)', () => {
       fellowships: MIXED,
       citizenshipCounts: {
         options: [{ value: NON_US, says: 2, doesntSay: 2 }],
+        selected: { says: 2, doesntSay: 2 },
       },
     });
 
@@ -306,6 +307,7 @@ describe('Fellowships citizenship split (#5299)', () => {
           { value: NON_US, says: 126, doesntSay: 38 },
           { value: US, says: 1, doesntSay: 1 },
         ],
+        selected: null,
       },
     });
 
@@ -350,7 +352,7 @@ describe('Fellowships citizenship split (#5299)', () => {
       fellowships: MIXED,
       selectedCitizenship: [],
       quickFilter: 'closingSoon',
-      citizenshipCounts: { options: [{ value: NON_US, says: 126, doesntSay: 38 }] },
+      citizenshipCounts: { options: [{ value: NON_US, says: 126, doesntSay: 38 }], selected: null },
     });
 
     await userEvent.click(screen.getByRole('button', { name: /filters/i }));

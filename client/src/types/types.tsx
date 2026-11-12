@@ -107,6 +107,7 @@ export type ProgramCitizenshipBucketCounts = {
 
 export type ProgramCitizenshipCounts = {
   options: Array<ProgramCitizenshipBucketCounts & { value: string }>;
+  selected: ProgramCitizenshipBucketCounts | null;
 };
 
 export type FellowshipFilterOptions = {

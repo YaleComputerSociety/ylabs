@@ -13,7 +13,8 @@ Under a citizenship filter, the board and the ranked search results list every p
 Each citizenship option in the filter shows how many programs say they are open and how many don't say, as a description of the option rather than part of its name.
 Both counts come from the query the list itself runs, with the other filters and the text query applied and the citizenship clause replaced by that one option, the way `/research` counts a facet (#5101), so the two numbers add up to the total that applying the option returns.
 A text query is re-ranked for each option's own pool, because the ranking's close-match fallback depends on the pool.
-The server counts each option (`server/src/services/programCitizenshipCounts.ts`) and the client, which loads the whole served list, draws the divider from the same rule the card uses to say "Not stated", an empty citizenship list.
+The server orders the stated programs first within each relevance tier and pages across the boundary, so a page never puts a program that does not say ahead of one that does, and it returns the selected filter's own split beside the per-option counts (`server/src/services/programCitizenshipCounts.ts`).
+The client, which loads the whole served list, draws the divider from the same rule the card uses to say "Not stated", an empty citizenship list.
 The quick filters narrow the list in the client after the server counted it, so the option counts are hidden while a quick filter is on rather than shown wrong.
 Measured on Development on 2026-11-11 over 173 served programs: the non-U.S. option reads 127 say they are open and 39 don't say, and applying it returns 166 rows, 127 of them before the divider.
 
