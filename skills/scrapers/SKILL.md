@@ -387,6 +387,23 @@ It replaces the convention of announcing each write to the session that sequence
 - A heartbeat is never swallowed: a failed or timed-out renewal is logged with the lease names, and each lease records its last successful renewal.
   A lease that goes longer than `DEV_WRITE_LEASE_RENEWAL_DEADLINE_MS` (2 minutes, two fifths of the TTL) without one stops the process through the same path, at the next tick or the next fetch to any host, whichever comes first.
   The message lists exactly the stale leases, each with its last successful renewal time and how long it went without one, because fetches and writes on those hosts since then ran without a confirmed lease.
+- A heartbeat proves only that the holder's timer runs, not that its work does (#5880), so the holder also counts progress: every successful database command and every settled fetch.
+  The counter is `db/devWriteProgress.ts`, fed by the driver's command monitoring, which script connections turn on (`monitorCommands: true` in `scriptMongoConnectOptions`, and on the own clients of `development:refresh-from-beta` and `model-refactor:validators`), and by every outbound HTTP request that settles, success or error, which Node reports on the `http.client.*` and `undici:request:*` diagnostics channels for axios, `http`/`https` and the built-in `fetch` alike (`DEV_WRITE_PROGRESS_HTTP_CHANNELS`).
+  So an apply whose long phase is paid lookups or page probes with no database command in between reads as busy.
+  Liveness traffic is not progress: any command on `scrape_job_locks`, an update that only moves `heartbeatAt`, `leaseExpiresAt`, `progressAt`, `progressCount` or `updatedAt` (lease, source-lock and `scrape_runs` heartbeats), and the driver's `ping`, `hello`, `endSessions` and `killCursors`.
+  Each heartbeat writes `progressAt` (`$max`, because a parent and the children that joined its lease renew one document) and adds the new count to `progressCount`, in the same single `updateMany`.
+- `dev:locks` shows `no progress for N min` for each live lease.
+  The apply lease is measured from the newest `progressAt` among the live leases of its owner, so a sweep's apply lease reads busy while its children fetch through host leases.
+  A host or source lease is measured from its own `progressAt`, so a hung child is flagged even while its siblings under the same owner keep working.
+  At 15 minutes (`DEV_WRITE_LEASE_STALLED_MS`) it flags the row `STALLED`, and `--json` carries `minutesWithoutProgress`, `stalled`, `progressAt` and `progressCount`.
+  A row written by code older than #5880 has no `progressAt` and shows `-`.
+- A holder with no progress for 20 minutes (`DEV_WRITE_LEASE_NO_PROGRESS_STOP_MS`) stops itself through the same path as a missed renewal deadline, at the next tick or the next fetch, with `reason: 'no-progress'` and a message listing every lease it held, its last progress time and the minutes without progress.
+  Twenty minutes sits above the 10-minute script socket timeout (`SCRIPT_SOCKET_TIMEOUT_MS`), so a single legitimately slow operation on a bounded connection can never trip it.
+  Three holders are never judged this way, because silence cannot be told from work for them: a sweep runner holding the lease for its children (`markDevWriteLeaseHeldForChildProcesses`, set by `holdDevApplyLeaseForRun`), whose children are each judged by their own progress; a process whose lease client was created without command monitoring; and a process with any watched client whose socket has no ceiling below the stop window (`socketTimeoutMS: 0`, as in `WHOLE_COLLECTION_OPERATION_SOCKET_OPTIONS` or the own clients of `development:refresh-from-beta` and `model-refactor:validators`), because one command there can legitimately run longer than 20 minutes.
+  `dev:locks` still flags those holders `STALLED`, so an operator can look.
+  A command still in flight is never counted as progress: on a client with a ceiling it ends within 10 minutes, and on one without a ceiling the stop does not apply.
+- A `STALLED` lease that still heartbeats is **never** taken over by another owner.
+  Takeover stays expiry-based, or dead pid plus a heartbeat older than two intervals; the stalled holder ending itself is what frees the lease, and a refusal names how long the holder has gone without progress.
 - A `host:` lease the process took under its own owner id and has not fetched through for 10 minutes (`DEV_HOST_LEASE_IDLE_RELEASE_MS`) is released at a heartbeat tick with `releaseReason: 'idle'`, and taken again on the next fetch to that host.
   That re-acquisition can be refused because another run took the host meanwhile, which is the protection working.
   The `__dev-apply__` lease is never idle-released, and neither is a lease a child joined or took under an owner id inherited from its parent, because a sibling may still be fetching through it; the root owner releases those when it ends.
@@ -397,7 +414,7 @@ It replaces the convention of announcing each write to the session that sequence
   The lease row expires and is overwritten, so this collection is the durable answer to who changed Development and from which code; it is environment-local and preserved by the refresh from Beta.
   An apply whose launch record cannot be written is refused.
 - Every scrape run stores the same launch metadata on its `scrape_runs` row as `launch`, next to `codeSha`, with `devWriteLeaseOwnerId` when the run belongs to a held apply lease, such as a sweep's child.
-- `yarn --cwd server dev:locks` lists the apply, host and source leases with owner, command, heartbeat age and live, stale or released state (`--json` for machine output).
+- `yarn --cwd server dev:locks` lists the apply, host and source leases with owner, command, heartbeat age, progress and live, stale or released state (`--json` for machine output).
   It is read-only: a crashed holder's lease frees itself by expiry, or at once for a holder on the same machine.
 - A script connection waits at most 10 minutes on one socket, so an operation on a socket the cluster dropped fails instead of hanging while the lease keeps renewing (#5880).
   The script and serving budgets are owned by the request-path database waits section of `skills/architecture/SKILL.md`.

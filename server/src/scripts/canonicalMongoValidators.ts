@@ -571,7 +571,9 @@ export async function runCanonicalMongoValidators(
   const configuredDatabaseName = databaseNameFromMongoUrl(mongoUrl);
   assertOperatorEnvironmentMatchesDatabase(args.environment, configuredDatabaseName);
 
-  const client = options.client ?? (new MongoClient(mongoUrl) as unknown as ValidatorMongoClient);
+  const client =
+    options.client ??
+    (new MongoClient(mongoUrl, { monitorCommands: true }) as unknown as ValidatorMongoClient);
   let primaryError: unknown;
   let failed = false;
   let releaseDevWriteLease: () => Promise<void> = async () => undefined;
