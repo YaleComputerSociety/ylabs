@@ -497,6 +497,35 @@ async function adoptNoisyNameOnlyResearcherId(
   return adoptedId;
 }
 
+/**
+ * A name-only record the researcher fold already merged is archived, so the live lookups above
+ * miss it and the listing would mint a fresh copy of the same person, which the next fold merges
+ * again while the listing keeps ending the survivor's edge (#6019). The fold is identity evidence
+ * the name lookup lacks, so the listing follows it to the survivor, when every folded record of
+ * that name points at the same live survivor.
+ */
+async function liveSurvivorOfFoldedNamesake(
+  displayName: string,
+): Promise<mongoose.Types.ObjectId | undefined> {
+  const folded = (await Researcher.find({
+    displayName,
+    archived: true,
+    dedupedIntoResearcherId: { $ne: null },
+  })
+    .select('dedupedIntoResearcherId')
+    .limit(NOISY_NAME_ADOPTION_CANDIDATE_LIMIT)
+    .lean()) as Array<{ dedupedIntoResearcherId?: unknown }>;
+  const survivorIds = new Set(folded.map((record) => String(record.dedupedIntoResearcherId)));
+  if (survivorIds.size !== 1) return undefined;
+  const survivor = await Researcher.findOne({
+    _id: toObjectId([...survivorIds][0]),
+    archived: { $ne: true },
+  })
+    .select('_id')
+    .lean();
+  return toObjectId((survivor as { _id?: unknown } | null)?._id);
+}
+
 async function findOrCreateNameOnlyResearcherId(
   displayName: string,
 ): Promise<mongoose.Types.ObjectId | undefined> {
@@ -509,6 +538,8 @@ async function findOrCreateNameOnlyResearcherId(
   if (existingNameOnly) return toObjectId((existingNameOnly as { _id?: unknown })._id);
   const adopted = await adoptNoisyNameOnlyResearcherId(displayName);
   if (adopted) return adopted;
+  const survivor = await liveSurvivorOfFoldedNamesake(displayName);
+  if (survivor) return survivor;
   try {
     const created = await Researcher.create({ displayName, profileLinks: [], archived: false });
     return toObjectId(created._id);
