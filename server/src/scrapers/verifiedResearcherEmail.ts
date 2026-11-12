@@ -7,6 +7,7 @@ import { officialProfileDestinationStoredPattern } from '../services/leadProfile
 import { identityWitnessesConflict } from '../services/officialProfileLinkIdentity';
 import { isLikelyPersonSpecificYaleEmail } from './utils/scraperHelpers';
 import { loadPersonPageDepartures } from './personPageDeparture';
+import type { EndedAppointmentLeadMode } from '../utils/endedAppointmentLeadMode';
 import { materializationReadScopeFilter, userIdentityJoinForKey } from './entityMaterializer';
 import {
   invalidatedScrapeRunIds,
@@ -90,7 +91,7 @@ export type VerifiedEmailSource = 'yale-directory' | 'official-profile-page';
 
 export type VerifiedResearcherEmail =
   | { status: 'verified'; email: string; sources: VerifiedEmailSource[] }
-  | { status: 'none' }
+  | { status: 'none'; refusedBecause?: 'another-key-states-address' }
   | { status: 'conflicting'; emails: string[] };
 
 export type EmailObservation = {
@@ -159,10 +160,13 @@ export async function derivedResearcherEmail(
  * A person whose own official page marks them deceased or departed gets no fill and no
  * replacement (#5721): the address would be served as a way to reach someone who is gone.
  */
-async function personPageMarksDeparted(person: EmailEvidencePerson): Promise<boolean> {
+async function personPageMarksDeparted(
+  person: EmailEvidencePerson,
+  endedAppointmentMode?: EndedAppointmentLeadMode,
+): Promise<boolean> {
   const id = person._id === undefined || person._id === null ? '' : String(person._id);
   if (!id) return false;
-  return (await loadPersonPageDepartures([id], new Date())).has(id);
+  return (await loadPersonPageDepartures([id], new Date(), endedAppointmentMode)).has(id);
 }
 
 /**
@@ -223,6 +227,9 @@ export async function derivedResearcherEmailFrom(
   if (!stored) return verified.email;
   if (stored === verified.email) return undefined;
   if (!verified.sources.includes('official-profile-page')) return undefined;
+  // The ended-appointment mode governs hiding a row; a replacement moves a person's contact
+  // address, so an ended appointment on their own page refuses it whatever that mode is.
+  if (await personPageMarksDeparted(person, 'hide')) return undefined;
   if (yaleCandidateIsNotThePersonsOwnAddress(verified.email, person)) {
     return undefined;
   }
@@ -268,7 +275,9 @@ export async function verifiedResearcherEmailFrom(
   const emails = [...sourcesByEmail.keys()].sort();
   if (emails.length === 0) return { status: 'none' };
   if (emails.length > 1) return { status: 'conflicting', emails };
-  if (await anotherKeyStatesAddress(emails[0], person, netid)) return { status: 'none' };
+  if (await anotherKeyStatesAddress(emails[0], person, netid)) {
+    return { status: 'none', refusedBecause: 'another-key-states-address' };
+  }
   return {
     status: 'verified',
     email: emails[0],

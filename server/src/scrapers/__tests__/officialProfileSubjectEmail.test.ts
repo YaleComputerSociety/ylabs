@@ -493,3 +493,18 @@ describe("a role or shared mailbox inside the profile subject's own node (#5714)
     await expectRunTwiceIdentical(html, ysmUrl, []);
   });
 });
+
+describe("an office holder's mailbox is a role, the same word as a name is not (#5627)", () => {
+  it('reads the office title followed by a full name as a role mailbox', () => {
+    expect(localPartNamesASubjectRole('dean.ada.fixture', 'Ada Fixture')).toBe(true);
+    expect(localPartNamesASubjectRole('provost.ada.fixture', 'Ada Fixture')).toBe(true);
+  });
+
+  it('keeps a personal address that carries the word as a first name or surname', () => {
+    expect(localPartNamesASubjectRole('dean.fixture', 'Dean Fixture')).toBe(false);
+    expect(localPartNamesASubjectRole('ada.dean', 'Ada Dean')).toBe(false);
+    expect(localPartNamesASubjectRole('ada.fixture.dean', 'Ada Fixture Dean')).toBe(false);
+    expect(localPartNamesASubjectRole('deane.fixture', 'Deane Fixture')).toBe(false);
+    expect(localPartNamesASubjectRole('ada.deans', 'Ada Deans')).toBe(false);
+  });
+});
