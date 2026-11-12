@@ -7,6 +7,7 @@ import {
 import type { ScraperOptions } from './types';
 import { parseUserOnlyFieldsList } from './userMaterializerFieldScope';
 import { observedEntityTypes, type ObservedEntityType } from '../models/observation';
+import type { StudentVisibilityGateCollection } from '../services/studentVisibilityGateService';
 
 export interface ScraperCliOutputMetadata {
   command: string;
@@ -433,4 +434,15 @@ export function parseSkipEntityTypesList(value: string | undefined): ObservedEnt
     }
   }
   return Array.from(new Set(types)) as ObservedEntityType[];
+}
+
+export function visibilityGateCollectionAfterSkipping(
+  skipEntityTypes: readonly ObservedEntityType[],
+): StudentVisibilityGateCollection | undefined {
+  const gateResearch = !skipEntityTypes.includes('researchEntity');
+  const gatePrograms = !skipEntityTypes.includes('fellowship');
+  if (gateResearch && gatePrograms) return 'all';
+  if (gateResearch) return 'research';
+  if (gatePrograms) return 'programs';
+  return undefined;
 }

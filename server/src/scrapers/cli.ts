@@ -63,6 +63,7 @@ import {
   parseArgs,
   scrapeCliCompletionOutcome,
   unmaterializedWriteRunWarning,
+  visibilityGateCollectionAfterSkipping,
   type ScrapeCliCompletionOutcome,
   type ScraperCliPreflight,
 } from './cliHelpers';
@@ -490,6 +491,7 @@ Concurrency:
       const { runId, confirmMaterialize, onlyFields, skipEntityTypes, guard } =
         materializePreflight;
       const fieldScoped = onlyFields.length > 0;
+      const visibilityGateCollection = visibilityGateCollectionAfterSkipping(skipEntityTypes);
       console.log(`Materializing observations from run ${runId}...`);
       if (fieldScoped) {
         console.log(
@@ -498,7 +500,7 @@ Concurrency:
       }
       if (skipEntityTypes.length > 0) {
         console.log(
-          `Skipping entity types: ${skipEntityTypes.join(', ')}. Their rows are not materialized; every other observed type and the run reconciliation still run.`,
+          `Skipping entity types: ${skipEntityTypes.join(', ')}. Their rows are neither materialized nor re-gated; every other observed type and the run reconciliation still run.`,
         );
       }
       for (const warning of guard.warnings) console.warn(`WARNING: ${warning}`);
@@ -512,13 +514,18 @@ Concurrency:
         console.log(JSON.stringify(withoutUserFieldScopeRows(result), null, 2));
         const report = await getScrapeRunReport(runId);
         let visibilityGate: unknown | undefined;
-        if (!guard.options.dryRun && result.errors === 0 && !fieldScoped) {
+        if (
+          !guard.options.dryRun &&
+          result.errors === 0 &&
+          !fieldScoped &&
+          visibilityGateCollection
+        ) {
           const sourceName = (report as any).run?.sourceName;
           console.log(
             `\nRunning student visibility gate${sourceName ? ` for source ${sourceName}` : ''}...`,
           );
           visibilityGate = await runStudentVisibilityGate({
-            collection: 'all',
+            collection: visibilityGateCollection,
             mode: 'apply',
             sourceName,
           });
