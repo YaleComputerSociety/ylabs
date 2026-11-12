@@ -8,6 +8,8 @@ import type { CoverageObservationLike, CoverageSnippet } from '../scrapers/cover
 import { listResearchEntityMergedInRowsBySurvivor } from '../services/researchEntityCanonicalTombstone';
 import { containsAsciiControl } from '../utils/asciiControl';
 import { loadResearchEntityLeadPersonName } from '../utils/researchHomeNameIdentityRoster';
+import { withPublicDescriptionGateFields } from '../services/researchEntityPublicDescription';
+import type { ServingRowContext } from '../scrapers/utils/fullDescriptionServingBar';
 import {
   INGEST_VERIFIED_EXTRACTION_SOURCE,
   PAGE_GROUNDING_VERIFIED_SINCE,
@@ -20,6 +22,24 @@ import {
 
 export const WRITER_ENTITY_PROJECTION =
   'slug name entityType researchAreas recentGrants manuallyLockedFields shortDescription websiteUrl sourceUrls fieldValueRefusals';
+/**
+ * The writer's row read: its evidence fields, plus the serving bar's gate fields kept
+ * apart under `servingEntity`, so the serving bar judges a draft in the row the
+ * materializer judges it in while the evidence the writer reads stays exactly
+ * `WRITER_ENTITY_PROJECTION`.
+ */
+export const WRITER_ENTITY_READ_PROJECTION =
+  withPublicDescriptionGateFields(WRITER_ENTITY_PROJECTION);
+const WRITER_ENTITY_FIELDS = ['_id', ...WRITER_ENTITY_PROJECTION.split(/\s+/)];
+
+export function writerEntityRowOf(doc: Record<string, unknown>): WriterEntityRow {
+  const row: WriterEntityRow = {};
+  for (const field of WRITER_ENTITY_FIELDS) {
+    if (Object.hasOwn(doc, field)) row[field] = doc[field];
+  }
+  row.servingEntity = doc;
+  return row;
+}
 export const WRITER_OBSERVATION_PROJECTION =
   'field value sourceUrl sourceName confidence observedAt scrapeRunId superseded';
 
@@ -77,9 +97,24 @@ export async function loadWriterObservations(
 export async function loadWriterEntitiesBySlug(
   slugs: readonly string[],
 ): Promise<WriterEntityRow[]> {
-  return (await ResearchEntity.find({ slug: { $in: [...slugs] }, archived: { $ne: true } })
-    .select(WRITER_ENTITY_PROJECTION)
-    .lean()) as WriterEntityRow[];
+  const docs = (await ResearchEntity.find({ slug: { $in: [...slugs] }, archived: { $ne: true } })
+    .select(WRITER_ENTITY_READ_PROJECTION)
+    .lean()) as Record<string, unknown>[];
+  return docs.map(writerEntityRowOf);
+}
+
+export function writerServingRow(row: {
+  entity: WriterEntityRow;
+  leadNames?: readonly string[];
+}): ServingRowContext {
+  const servingEntity = row.entity.servingEntity;
+  return {
+    entity:
+      servingEntity && typeof servingEntity === 'object'
+        ? (servingEntity as Record<string, unknown>)
+        : row.entity,
+    leadPersonName: row.leadNames?.[0] ?? '',
+  };
 }
 
 export async function writerLeadNames(entityId: unknown): Promise<string[]> {

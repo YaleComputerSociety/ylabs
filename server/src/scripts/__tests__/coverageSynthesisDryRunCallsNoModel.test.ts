@@ -28,6 +28,7 @@ const subject = {
     },
   ],
   entityName: 'Kelp Lab',
+  servingRow: null,
 };
 
 describe('writer dry run calls no model', () => {

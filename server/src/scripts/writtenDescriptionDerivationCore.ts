@@ -14,6 +14,7 @@ import {
 } from '../scrapers/coverageSynthesis';
 import { COVERAGE_SYNTHESIS_PROMPT_HASH } from '../scrapers/prompts';
 import { RESEARCH_PAGE_TEXT_SOURCE } from '../scrapers/utils/researchPageText';
+import type { ServingRowContext } from '../scrapers/utils/fullDescriptionServingBar';
 import {
   WRITER_TEXT_NORMALIZER_VERSION,
   normalizeWriterText,
@@ -278,6 +279,8 @@ export interface WrittenDescriptionSubject {
   entityName: string;
   entityType?: ResearchEntityType;
   researchAreas?: unknown;
+  /** The row the serving bar judges a draft in; `null` declares that no row is available. */
+  servingRow: ServingRowContext | null;
 }
 
 export function judgeWriterDraft(
@@ -312,6 +315,7 @@ export async function resolveWrittenDescription(
     entityName: input.entityName,
     entityType: input.entityType,
     researchAreas: input.researchAreas,
+    servingRow: input.servingRow,
   };
   if (input.snippets.length === 0) {
     return { step: 'no-evidence', decision: null, modelCalled: false, refusalReasons: [] };

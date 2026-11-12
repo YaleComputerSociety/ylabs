@@ -17,6 +17,7 @@ import {
   materializeEntity,
 } from '../scrapers/entityMaterializer';
 import { mapWithConcurrency } from '../scrapers/utils/mapWithConcurrency';
+import type { ServingRowContext } from '../scrapers/utils/fullDescriptionServingBar';
 import { appendSynthesizedDescription } from './synthesizedDescriptionObservation';
 import {
   COVERAGE_CONFIDENCE,
@@ -61,10 +62,12 @@ import {
 import {
   loadIngestVerifiedRunIds,
   loadWriterEntitiesBySlug,
-  WRITER_ENTITY_PROJECTION,
+  WRITER_ENTITY_READ_PROJECTION,
+  writerEntityRowOf,
   loadWriterObservations,
   loadWriterRowEvidence,
   writerLeadNames,
+  writerServingRow,
   parseWriterEvidenceFile,
   readJsonInputFile,
   readSlugsFile,
@@ -185,19 +188,23 @@ export const summarizeCoverageSynthesisRefusals = (reports: CoverageEntityReport
 type EntityRow = Record<string, any>;
 
 async function loadTargetEntities(args: ReturnType<typeof parseCoverageSynthesisArgs>) {
-  const projection = WRITER_ENTITY_PROJECTION;
+  const projection = WRITER_ENTITY_READ_PROJECTION;
   if (args.rederiveCards) {
-    return (await ResearchEntity.find({
-      ...writtenBodyCardRepairFilter(SOURCE_NAME, { allWrittenRows: args.all }),
-      ...(args.slugs.length > 0 ? { slug: { $in: args.slugs } } : {}),
-    })
-      .select(projection)
-      .lean()) as EntityRow[];
+    return (
+      (await ResearchEntity.find({
+        ...writtenBodyCardRepairFilter(SOURCE_NAME, { allWrittenRows: args.all }),
+        ...(args.slugs.length > 0 ? { slug: { $in: args.slugs } } : {}),
+      })
+        .select(projection)
+        .lean()) as EntityRow[]
+    ).map(writerEntityRowOf);
   }
   if (args.slugs.length > 0) {
-    return (await ResearchEntity.find({ slug: { $in: args.slugs }, archived: { $ne: true } })
-      .select(projection)
-      .lean()) as EntityRow[];
+    return (
+      (await ResearchEntity.find({ slug: { $in: args.slugs }, archived: { $ne: true } })
+        .select(projection)
+        .lean()) as EntityRow[]
+    ).map(writerEntityRowOf);
   }
   const rows: EntityRow[] = [];
   let lastId: unknown;
@@ -214,7 +221,7 @@ async function loadTargetEntities(args: ReturnType<typeof parseCoverageSynthesis
       .select(projection)
       .lean()) as EntityRow[];
     if (chunk.length === 0) break;
-    rows.push(...chunk);
+    rows.push(...chunk.map(writerEntityRowOf));
     lastId = chunk[chunk.length - 1]._id;
     if (chunk.length < remaining) break;
   }
@@ -381,6 +388,25 @@ function writeJsonReport(output: string, flag: string, value: unknown): void {
   fs.writeFileSync(resolveSafeJsonReportOutputPath(output, flag), JSON.stringify(value, null, 2));
 }
 
+async function withServingRows(requests: readonly CardRequest[]): Promise<CardRequest[]> {
+  const unjudgeable = requests.filter((request) => !request.servingRow);
+  if (unjudgeable.length === 0) return [...requests];
+  const entities = await loadWriterEntitiesBySlug([
+    ...new Set(unjudgeable.map((request) => request.slug)),
+  ]);
+  const servingRowBySlug = new Map<string, ServingRowContext>();
+  for (const entity of entities) {
+    servingRowBySlug.set(
+      entity.slug,
+      writerServingRow({ entity, leadNames: await writerLeadNames(entity._id) }),
+    );
+  }
+  return requests.map((request) => {
+    const servingRow = request.servingRow ?? servingRowBySlug.get(request.slug);
+    return servingRow ? { ...request, servingRow } : request;
+  });
+}
+
 async function runCardPassMode(
   args: ReturnType<typeof parseCoverageSynthesisArgs>,
   dbLabel: string,
@@ -406,7 +432,7 @@ async function runCardPassMode(
         'research-entity:coverage-synthesis --synthesize-cards --import-derivations requires --output',
       );
     const report = await runCardImport({
-      requests,
+      requests: await withServingRows(requests),
       drafts: parseImportedCardDrafts(
         readJsonInputFile(args.importDerivations as string, '--import-derivations'),
       ),
@@ -650,6 +676,7 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
     const mergedInAnchors = (mergedInBySurvivor.get(String(entity._id)) ?? []).flatMap((row) =>
       writerObservationAnchors({ entityKey: row.slug, entityId: row._id }),
     );
+    const leadNames = await writerLeadNames(entity._id);
     const snippets = await buildWriterEvidenceSnippetsWithMergedInFill(
       observations,
       () => loadWriterObservations(mergedInAnchors, verifiedRunIds),
@@ -660,7 +687,7 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
         entityType: entity.entityType,
         kind: entity.kind,
         identity: entity,
-        leadNames: await writerLeadNames(entity._id),
+        leadNames,
       },
     );
     report.snippets = snippets.length;
@@ -732,6 +759,7 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
           entityName: typeof entity.name === 'string' ? entity.name : '',
           entityType: entity.entityType,
           researchAreas: entity.researchAreas,
+          servingRow: writerServingRow({ entity, leadNames }),
           previousInputHash: storedHash,
           store,
           drafting,
@@ -780,6 +808,7 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
         researchAreas: Array.isArray(entity.researchAreas)
           ? entity.researchAreas.filter((area): area is string => typeof area === 'string')
           : [],
+        servingRow: writerServingRow({ entity, leadNames }),
       });
     }
     if (!args.apply || !context) return;

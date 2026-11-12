@@ -33,6 +33,10 @@ import {
 } from './utils/researchPageText';
 import { isResearchPageHeadingLine } from './utils/writerEvidenceText';
 import { isClinicalPracticeAsResearch } from './utils/clinicalPracticeAsResearch';
+import {
+  servingBarAcceptsFullDescription,
+  type ServingRowContext,
+} from './utils/fullDescriptionServingBar';
 import { LAB_SITE_DESCRIPTION_SOURCE } from '../utils/researchStatementPassage';
 import { withoutResearchPageChromeMenusAndListings } from './utils/researchPageChrome';
 import {
@@ -267,6 +271,7 @@ export interface SynthesizeCoverageInput {
   researchAreas?: unknown;
   callLLM: CoverageSynthesisLLMFn;
   coverageWriterChecks?: boolean;
+  servingRow?: ServingRowContext | null;
 }
 
 export interface CoverageSynthesisResult {
@@ -305,7 +310,8 @@ export type CoverageSynthesisRefusal =
   | 'first-person'
   | 'fused-page-heading'
   | 'greeting-text'
-  | 'clinical-practice-as-research';
+  | 'clinical-practice-as-research'
+  | 'refused-by-serving-bar';
 
 /**
  * The verbs a synthesized body uses of its subject. Shared with the two internal
@@ -492,6 +498,7 @@ export function judgeWrittenDescription(input: {
   citedSnippetCount: number;
   citedSnippetIndexes?: readonly number[];
   coverageWriterChecks?: boolean;
+  servingRow?: ServingRowContext | null;
 }): WrittenDescriptionJudgement {
   const refuse = (refusal: CoverageSynthesisRefusal): WrittenDescriptionJudgement => ({
     description: null,
@@ -563,6 +570,20 @@ export function judgeWrittenDescription(input: {
     })
   ) {
     return refuse('clinical-practice-as-research');
+  }
+  // Last, so it counts only drafts every writer arm accepted. The materializer adopts a
+  // written body only through this same predicate, so a draft it refuses would be
+  // accepted here and then never served (#5982).
+  if (
+    input.servingRow &&
+    !servingBarAcceptsFullDescription(
+      input.servingRow.entity,
+      {},
+      description,
+      input.servingRow.leadPersonName,
+    )
+  ) {
+    return refuse('refused-by-serving-bar');
   }
   return { description, refusal: null };
 }
@@ -681,6 +702,7 @@ export async function coverageSynthesisDecision(
     citedSnippetCount: usedSnippetIndexes.length,
     citedSnippetIndexes: usedSnippetIndexes,
     coverageWriterChecks: input.coverageWriterChecks,
+    servingRow: input.servingRow,
   });
   if (judged.refusal || !judged.description) {
     return {
