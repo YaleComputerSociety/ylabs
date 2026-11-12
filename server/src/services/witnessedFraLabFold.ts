@@ -34,7 +34,7 @@ export interface WitnessedFoldEntity {
   archived?: boolean;
   leadVerification?: {
     state?: string;
-    leads?: Array<{ personId?: unknown; role?: string; verdict?: string }>;
+    leads?: Array<{ personId?: unknown; role?: string; verdict?: string; matchedBy?: string }>;
   } | null;
 }
 
@@ -42,6 +42,7 @@ export interface WitnessedFoldEdge {
   personId: string;
   entityId: string;
   role: string;
+  evidenced?: boolean;
 }
 
 export interface BallotFoldPair {
@@ -80,12 +81,25 @@ const isFacultyRow = (entity: WitnessedFoldEntity | undefined) =>
   FACULTY_ROW_TYPES.has(typeOf(entity));
 const isLab = (entity: WitnessedFoldEntity | undefined) => typeOf(entity) === 'LAB';
 
+/**
+ * A profile link on the lab page confirms only that the page links the person, which a
+ * page naming a different overseer also does, so it is not a witness that the person runs
+ * the lab. On Development the one fold it produced was a pair a blind ballot refused.
+ */
+const PAGE_MATCHES_THAT_NAME_THE_LEAD: ReadonlySet<string> = new Set([
+  'NAMED_ON_PAGE',
+  'SURNAME_IN_SITE_URL',
+]);
+
 function labPageNamesPersonAsPi(lab: WitnessedFoldEntity, personId: string): boolean {
   const verification = lab.leadVerification;
   if (!verification || verification.state === 'contradicted') return false;
   return (verification.leads || []).some(
     (lead) =>
-      String(lead.personId) === personId && lead.role === 'PI' && lead.verdict === 'CONFIRMED',
+      String(lead.personId) === personId &&
+      lead.role === 'PI' &&
+      lead.verdict === 'CONFIRMED' &&
+      PAGE_MATCHES_THAT_NAME_THE_LEAD.has(String(lead.matchedBy || '')),
   );
 }
 
@@ -96,6 +110,11 @@ export function selectWitnessedFraLabFolds(input: {
 }): { folds: WitnessedFold[]; refusals: FoldRefusal[] } {
   const leadEdges = input.edges.filter((edge) => LEAD_ROLES.has(edge.role));
   const rolesOf = new Map<string, Map<string, Set<string>>>();
+  const evidencedPiEdges = new Set(
+    leadEdges
+      .filter((edge) => edge.role === 'PI' && edge.evidenced === true)
+      .map((edge) => `${edge.personId}:${edge.entityId}`),
+  );
   for (const edge of leadEdges) {
     const byEntity = rolesOf.get(edge.personId) ?? new Map<string, Set<string>>();
     byEntity.set(edge.entityId, (byEntity.get(edge.entityId) ?? new Set()).add(edge.role));
@@ -155,6 +174,7 @@ export function selectWitnessedFraLabFolds(input: {
         isLab(lab) &&
         live(lab) &&
         byEntity.get(id)?.has('PI') &&
+        evidencedPiEdges.has(`${personId}:${id}`) &&
         !isOrganizationalHomeEntity(lab as WitnessedFoldEntity) &&
         labPageNamesPersonAsPi(lab as WitnessedFoldEntity, personId)
       );
@@ -182,6 +202,24 @@ export function selectWitnessedFraLabFolds(input: {
     folds: folds.sort((a, b) => a.facultyRowId.localeCompare(b.facultyRowId)),
     refusals,
   };
+}
+
+/**
+ * A lead edge the engine wrote from a lane read carries its source or a confidence. A
+ * legacy edge with neither is not evidence that the person leads the row, and on
+ * Development the page witness's one wrong fold rested on such an edge.
+ */
+export function edgeCarriesEvidence(edge: {
+  confidence?: unknown;
+  sourceName?: unknown;
+  rosterProvenance?: { sourceName?: unknown };
+}): boolean {
+  const named = (value: unknown) => typeof value === 'string' && value.trim().length > 0;
+  return (
+    (typeof edge.confidence === 'number' && edge.confidence > 0) ||
+    named(edge.sourceName) ||
+    named(edge.rosterProvenance?.sourceName)
+  );
 }
 
 export interface WitnessedFoldContext {
@@ -222,12 +260,20 @@ export async function loadWitnessedFoldContext(input: {
     ...liveLead,
     personId: { $in: objectIds(personIds) },
   })
-    .select('personId target.id role')
-    .lean()) as Array<{ personId?: unknown; target?: { id?: unknown }; role?: string }>;
+    .select('personId target.id role confidence sourceName rosterProvenance.sourceName')
+    .lean()) as Array<{
+    personId?: unknown;
+    target?: { id?: unknown };
+    role?: string;
+    confidence?: unknown;
+    sourceName?: unknown;
+    rosterProvenance?: { sourceName?: unknown };
+  }>;
   const edges = edgeDocs.map((edge) => ({
     personId: String(edge.personId),
     entityId: String(edge.target?.id),
     role: String(edge.role || ''),
+    evidenced: edgeCarriesEvidence(edge),
   }));
   const entityIds = [...new Set([...edges.map((edge) => edge.entityId), ...pairRowIds])];
   const docs = (await ResearchEntity.find({ _id: { $in: objectIds(entityIds) } })

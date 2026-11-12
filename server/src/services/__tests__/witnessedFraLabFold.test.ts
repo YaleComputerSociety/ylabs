@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  edgeCarriesEvidence,
   selectWitnessedFraLabFolds,
   type WitnessedFoldEdge,
   type WitnessedFoldEntity,
@@ -18,15 +19,21 @@ const lab = (overrides: Partial<WitnessedFoldEntity> = {}): WitnessedFoldEntity 
   entityType: 'LAB',
   leadVerification: {
     state: 'verified',
-    leads: [{ personId: 'ada', role: 'PI', verdict: 'CONFIRMED' }],
+    leads: [{ personId: 'ada', role: 'PI', verdict: 'CONFIRMED', matchedBy: 'NAMED_ON_PAGE' }],
   },
   ...overrides,
 });
 const entities = (...rows: WitnessedFoldEntity[]) => new Map(rows.map((row) => [row.id, row]));
-const edge = (personId: string, entityId: string, role = 'PI'): WitnessedFoldEdge => ({
+const edge = (
+  personId: string,
+  entityId: string,
+  role = 'PI',
+  evidenced = true,
+): WitnessedFoldEdge => ({
   personId,
   entityId,
   role,
+  evidenced,
 });
 
 describe('a faculty research row folds into its lead’s own lab only on a witness (#5969)', () => {
@@ -51,8 +58,13 @@ describe('a faculty research row folds into its lead’s own lab only on a witne
       leadVerification: {
         state: 'verified',
         leads: [
-          { personId: 'bram', role: 'PI', verdict: 'CONFIRMED' },
-          { personId: 'ada', role: 'CO_DIRECTOR', verdict: 'CONFIRMED' },
+          { personId: 'bram', role: 'PI', verdict: 'CONFIRMED', matchedBy: 'NAMED_ON_PAGE' },
+          {
+            personId: 'ada',
+            role: 'CO_DIRECTOR',
+            verdict: 'CONFIRMED',
+            matchedBy: 'NAMED_ON_PAGE',
+          },
         ],
       },
     });
@@ -170,5 +182,46 @@ describe('a faculty research row folds into its lead’s own lab only on a witne
         entities: entities({ ...facultyRow, archived: true }, lab()),
       }).folds,
     ).toEqual([]);
+  });
+
+  it('does not fold on a lab page that only links the person’s profile', () => {
+    const { folds } = selectWitnessedFraLabFolds({
+      entities: entities(
+        facultyRow,
+        lab({
+          leadVerification: {
+            state: 'verified',
+            leads: [
+              {
+                personId: 'ada',
+                role: 'PI',
+                verdict: 'CONFIRMED',
+                matchedBy: 'OFFICIAL_PROFILE_LINK',
+              },
+            ],
+          },
+        }),
+      ),
+      edges: [edge('ada', 'faculty-row'), edge('ada', 'own-lab')],
+    });
+    expect(folds).toEqual([]);
+  });
+
+  it('does not fold on the page witness when the person’s PI edge on the lab carries no evidence', () => {
+    const { folds } = selectWitnessedFraLabFolds({
+      entities: entities(facultyRow, lab()),
+      edges: [edge('ada', 'faculty-row'), edge('ada', 'own-lab', 'PI', false)],
+    });
+    expect(folds).toEqual([]);
+  });
+
+  it('reads an edge with a source or a confidence as evidence and a bare legacy edge as none', () => {
+    expect(edgeCarriesEvidence({ confidence: 0 })).toBe(false);
+    expect(edgeCarriesEvidence({})).toBe(false);
+    expect(edgeCarriesEvidence({ confidence: 0.7 })).toBe(true);
+    expect(edgeCarriesEvidence({ sourceName: 'dept-faculty-roster' })).toBe(true);
+    expect(edgeCarriesEvidence({ rosterProvenance: { sourceName: 'ysm-faculty-directory' } })).toBe(
+      true,
+    );
   });
 });
