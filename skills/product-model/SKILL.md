@@ -116,6 +116,8 @@ A page that serves a mirror's prose while hiding the mirror's citation is worse 
 It is derived at serve time from the lead's own lead-role edges (`LEAD_ROLE_CANONICAL_VALUES`, so a co-director counts and a core faculty or affiliated member does not), and a row is linked only when it passes the same gates as every detail rail and its own page resolves the same person as a verified lead.
 It is empty while the page's own lead is under review, and it never repeats a row the related or affiliated sections already link.
 A lab and its lead's faculty research profile are cross-linked through it rather than merged (owner decision, 2026-11-12).
+That cross-link rule covers distinct rows, a faculty research profile and a lab that carry different research.
+A true eponymous duplicate, a faculty research row that only restates its lead's own lab, still merges under the 2026-08-25 precedence through `research-entity:merge-eponymous-fra`.
 - Prefer official-source scraping and source-submission hints over faculty-maintained duplicate profiles or listings.
 - Treat the visible directory listing as a REST projection of `ResearchEntity`, not a reason to preserve the legacy `Listing` model.
 - Migrate legacy models vertically and remove each old reader and writer before deleting its storage.
