@@ -567,6 +567,11 @@ An award that lists no lead is withheld only when every listed investigator is p
 An investigator the lane credited to no researcher, typically a co-PI based at another institution, is never provably someone else, because a name alone proves nothing, so an award that lists one and no lead is held.
 Anything unproven is held without a role: on Development a random sample of withheld awards found duplicate researcher records of the lead, and the lead's initial under another given name, behind half of them.
 On a genuinely co-led row each co-lead's awards belong to the row, so there is no per-lead grant rule.
+The NIH lane applies the same rule when it attaches awards (#5846).
+A credited PI who leads several live official rows resolves to no single row, so before the fix none of their awards reached any of those rows, including a row they co-lead.
+Such a PI's awards now go to the co-led rows they lead: an award goes to the co-led row it shares with another of its resolved PIs, and otherwise to every co-led row the PI leads.
+A PI whose several rows are all solely led still attaches nothing, because no ruling says which of their own rows an award belongs to.
+The attach writes grant evidence only: it adds no lead edge and never names the co-lead as the row's `inferredPiUserId`.
 The writer's `eligibleWriterGrants` reads only `pi` entries, so a held entry is not description evidence until its lane re-reads it.
 A served grant page is cited for a lane's contribution (`servedGrantPageUrl`) whatever its role, because every served entry is a lead's award or a held one.
 A lane that adds a funder another lane already reports must use the same `agency` label, or the two copies stay apart.

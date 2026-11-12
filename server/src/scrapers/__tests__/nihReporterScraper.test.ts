@@ -790,6 +790,10 @@ describe('NihReporterScraper.run', () => {
             : { status: 'ambiguous' as const },
         loadResearcherProfileTitle: async () => undefined,
         researchHomeResolver: vi.fn().mockResolvedValue({ status: row }),
+        officialLeadRowsLoader: async (researcherId) => [
+          { slug: 'solely-led-first', leadPersonIds: [researcherId] },
+          { slug: 'solely-led-second', leadPersonIds: [researcherId] },
+        ],
       });
       const { ctx, emitted } = makeContext();
       const result = await scraper.run(ctx);
