@@ -138,7 +138,7 @@ Each gives its blue member a generic hue; every other `blue-` class in `src/` is
 | `ROLE_PILL_CLASSES` | `src/components/labs/LabMembersList.tsx` | twelve member roles |
 | `FIELD_COLORS` | `src/components/admin/AdminResearchAreas.tsx` | nine research fields |
 | `CATEGORY_COLORS` | `src/components/admin/AdminDepartments.tsx` | nine department categories |
-| `researchPlanStageMeta` | `src/utils/researchPlanStages.ts` | SAVED through APPLIED |
+| `researchPlanStageMeta` | `src/utils/researchPlanStages.ts` | SAVED through CLOSED, including the program results AWARDED and NOT_SELECTED |
 | fellowship cycle badge | `src/utils/fellowshipCycle.ts` | cycle states |
 | browsable kind badge | `src/types/browsable.ts` | entity kinds |
 | `toneClass` | `src/components/analytics/analyticsPresentation.tsx` | blue, green, amber, red |

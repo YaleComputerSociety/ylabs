@@ -1,17 +1,19 @@
 /**
- * Shared outreach-stage control for saved research and watched programs.
+ * Shared plan-stage control for saved research and watched programs.
  *
- * Renders the full ResearchPlan stage pipeline (SAVED through CLOSED) as a
- * single accessible, labeled select so a student can record where each home or
- * program sits in their outreach journey. The select is tinted by stage for
- * at-a-glance scanning, and an optional live status region mirrors the
- * note-save feedback used elsewhere on the account dashboard.
+ * Renders the stages a surface offers as a single accessible, labeled select:
+ * the outreach stages on a research card and the application stages on a
+ * program card. A plan stored at a stage its surface no longer offers keeps
+ * that stage listed and selected until the student picks another. The select
+ * is tinted by stage for at-a-glance scanning, and an optional live status
+ * region mirrors the note-save feedback used elsewhere on the account dashboard.
  */
 import {
-  researchPlanStages,
   researchPlanStageLabel,
   researchPlanStageMeta,
+  researchPlanStageOptions,
   type ResearchPlanStage,
+  type ResearchPlanStageSurface,
 } from '../../utils/researchPlanStages';
 
 export type PlanSaveStatus = 'idle' | 'saving' | 'saved' | 'error' | 'conflict';
@@ -21,6 +23,7 @@ interface ResearchPlanStageControlProps {
   onChange: (stage: ResearchPlanStage) => void;
   controlLabel: string;
   status?: PlanSaveStatus;
+  surface?: ResearchPlanStageSurface;
 }
 
 const statusMessage = (status?: PlanSaveStatus): string => {
@@ -43,6 +46,7 @@ const ResearchPlanStageControl = ({
   onChange,
   controlLabel,
   status,
+  surface = 'research',
 }: ResearchPlanStageControlProps) => {
   const message = statusMessage(status);
   return (
@@ -53,9 +57,9 @@ const ResearchPlanStageControl = ({
         onChange={(event) => onChange(event.target.value as ResearchPlanStage)}
         className={`min-h-[44px] rounded-control border px-3 text-base font-semibold transition-colors yr-focus-ring ${researchPlanStageMeta[stage].badgeClassName}`}
       >
-        {researchPlanStages.map((option) => (
+        {researchPlanStageOptions(surface, stage).map((option) => (
           <option key={option} value={option}>
-            {researchPlanStageLabel(option)}
+            {researchPlanStageLabel(option, surface)}
           </option>
         ))}
       </select>

@@ -5,8 +5,8 @@
  * canonical ResearchPlan PROGRAM targets (served by /users/watchedPrograms and
  * /users/watchedProgramPlans). Each watched program keeps its at-a-glance info
  * (deadline, accepting status, eligibility), a link to the program, a private
- * note, an outreach-stage control across the full ResearchPlan pipeline, and an
- * unwatch control. Watching is a personal bookmark; program content stays
+ * note, an application-stage control (Saved through a result such as Awarded or
+ * Not selected), and an unwatch control. Watching is a personal bookmark; program content stays
  * read-only.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -463,12 +463,13 @@ const ProgramWatch = ({ onSummaryChange }: ProgramWatchProps) => {
                     <>
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                         <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
-                          <span className="text-xs font-medium text-muted">Outreach stage</span>
+                          <span className="text-xs font-medium text-muted">Application stage</span>
                           <ResearchPlanStageControl
                             stage={stage}
                             onChange={(nextStage) => void changeStage(program.id, nextStage)}
-                            controlLabel={`Outreach stage for ${program.title}`}
+                            controlLabel={`Application stage for ${program.title}`}
                             status={stageStatuses[program.id]}
+                            surface="program"
                           />
                         </div>
                         <div className="flex flex-row gap-1">

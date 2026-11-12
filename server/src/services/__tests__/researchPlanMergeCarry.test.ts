@@ -48,6 +48,21 @@ describe('combineResearchPlans', () => {
     expect(backward.ok && backward.fields.stage).toBe('CONTACTED');
   });
 
+  it('ranks the application result stages after Applied and before Closed (#5139)', () => {
+    const furthest = (left: StoredResearchPlan['stage'], right: StoredResearchPlan['stage']) => {
+      const result = combineResearchPlans(
+        storedPlan({ stage: left }),
+        storedPlan({ stage: right }),
+        NOW,
+      );
+      return result.ok && result.fields.stage;
+    };
+    expect(furthest('APPLIED', 'AWARDED')).toBe('AWARDED');
+    expect(furthest('NOT_SELECTED', 'APPLIED')).toBe('NOT_SELECTED');
+    expect(furthest('AWARDED', 'CLOSED')).toBe('CLOSED');
+    expect(furthest('CLOSED', 'NOT_SELECTED')).toBe('CLOSED');
+  });
+
   it('keeps both sets of notes behind a visible separator', () => {
     const result = combineResearchPlans(
       storedPlan({ privateNotes: 'first plan notes' }),

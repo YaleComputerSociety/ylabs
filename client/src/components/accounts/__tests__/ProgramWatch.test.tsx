@@ -135,7 +135,7 @@ describe('ProgramWatch', () => {
     expect(
       (
         within(appliedCard).getByRole('combobox', {
-          name: /^Outreach stage for /,
+          name: /^Application stage for /,
         }) as HTMLSelectElement
       ).value,
     ).toBe('APPLIED');
@@ -177,7 +177,7 @@ describe('ProgramWatch', () => {
     expect(await screen.findByText('Saved', { selector: 'p' })).toBeTruthy();
   });
 
-  it('reads the persisted outreach stage for each watched program', async () => {
+  it('reads the persisted application stage for each watched program', async () => {
     withWatchedPrograms();
 
     render(
@@ -188,16 +188,117 @@ describe('ProgramWatch', () => {
 
     await screen.findByText('Summer Research Grant');
     const savedStage = screen.getByRole('combobox', {
-      name: 'Outreach stage for Summer Research Grant',
+      name: 'Application stage for Summer Research Grant',
     }) as HTMLSelectElement;
     const appliedStage = screen.getByRole('combobox', {
-      name: 'Outreach stage for Travel Fellowship',
+      name: 'Application stage for Travel Fellowship',
     }) as HTMLSelectElement;
     expect(savedStage.value).toBe('SAVED');
     expect(appliedStage.value).toBe('APPLIED');
   });
 
-  it('persists a full-pipeline stage change through the canonical plan stage', async () => {
+  it('offers exactly the application stages on a program card', async () => {
+    withWatchedPrograms();
+
+    render(
+      <MemoryRouter>
+        <ProgramWatch />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Summer Research Grant');
+    const stageSelect = screen.getByRole('combobox', {
+      name: 'Application stage for Summer Research Grant',
+    }) as HTMLSelectElement;
+    expect(Array.from(stageSelect.options, (option) => option.textContent)).toEqual([
+      'Saved',
+      'Preparing',
+      'Applied',
+      'Awarded',
+      'Not selected',
+      'No longer applying',
+    ]);
+    expect(Array.from(stageSelect.options, (option) => option.value)).toEqual([
+      'SAVED',
+      'PREPARING',
+      'APPLIED',
+      'AWARDED',
+      'NOT_SELECTED',
+      'CLOSED',
+    ]);
+    expect(screen.getAllByText('Application stage', { selector: 'span' })).toHaveLength(2);
+    expect(screen.queryByText('Outreach stage')).toBeNull();
+  });
+
+  it('keeps a program plan stored at an outreach stage selected until the student changes it', async () => {
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/watchedProgramIds') {
+        return Promise.resolve({ data: { watchedProgramIds: ['p1', 'p2'] } });
+      }
+      if (url === '/users/watchedPrograms') {
+        return Promise.resolve({
+          data: {
+            watchedPrograms: [
+              { _id: 'p1', id: 'p1', title: 'Exploring Grant' },
+              { _id: 'p2', id: 'p2', title: 'Contacted Grant' },
+            ],
+          },
+        });
+      }
+      if (url === '/users/watchedProgramPlans') {
+        return Promise.resolve({
+          data: {
+            watchedProgramPlans: { p1: { stage: 'EXPLORING' }, p2: { stage: 'CONTACTED' } },
+          },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    mockedAxios.put.mockResolvedValue({ data: { watchedProgramPlans: {} } });
+
+    render(
+      <MemoryRouter>
+        <ProgramWatch />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Exploring Grant');
+    const exploring = screen.getByRole('combobox', {
+      name: 'Application stage for Exploring Grant',
+    }) as HTMLSelectElement;
+    const contacted = screen.getByRole('combobox', {
+      name: 'Application stage for Contacted Grant',
+    }) as HTMLSelectElement;
+    expect(exploring.value).toBe('EXPLORING');
+    expect(exploring.selectedOptions[0].textContent).toBe('Exploring');
+    expect(Array.from(exploring.options, (option) => option.value)).toEqual([
+      'SAVED',
+      'EXPLORING',
+      'PREPARING',
+      'APPLIED',
+      'AWARDED',
+      'NOT_SELECTED',
+      'CLOSED',
+    ]);
+    expect(contacted.value).toBe('CONTACTED');
+    expect(contacted.selectedOptions[0].textContent).toBe('Contacted');
+
+    fireEvent.change(contacted, { target: { value: 'APPLIED' } });
+    await waitFor(() =>
+      expect(mockedAxios.put).toHaveBeenCalledWith('/users/watchedProgramPlans/p2', {
+        data: { plan: { stage: 'APPLIED' } },
+      }),
+    );
+    await waitFor(() =>
+      expect(Array.from(contacted.options, (option) => option.value)).not.toContain('CONTACTED'),
+    );
+  });
+
+  it.each([
+    ['AWARDED', 'Awarded'],
+    ['NOT_SELECTED', 'Not selected'],
+    ['CLOSED', 'No longer applying'],
+  ])('persists the %s application stage through the canonical plan stage', async (stage, label) => {
     withWatchedPrograms();
     mockedAxios.put.mockResolvedValue({ data: { watchedProgramPlans: {} } });
 
@@ -209,17 +310,70 @@ describe('ProgramWatch', () => {
 
     await screen.findByText('Summer Research Grant');
     const stageSelect = screen.getByRole('combobox', {
-      name: 'Outreach stage for Summer Research Grant',
-    });
-    fireEvent.change(stageSelect, { target: { value: 'CONTACTED' } });
+      name: 'Application stage for Summer Research Grant',
+    }) as HTMLSelectElement;
+    fireEvent.change(stageSelect, { target: { value: stage } });
 
     await waitFor(() =>
       expect(mockedAxios.put).toHaveBeenCalledWith('/users/watchedProgramPlans/p1', {
-        data: { plan: { stage: 'CONTACTED' } },
+        data: { plan: { stage } },
       }),
     );
-    expect((stageSelect as HTMLSelectElement).value).toBe('CONTACTED');
+    expect(stageSelect.value).toBe(stage);
+    expect(stageSelect.selectedOptions[0].textContent).toBe(label);
     expect(await screen.findByText('Saved', { selector: 'p' })).toBeTruthy();
+  });
+
+  it('counts no application result as closing soon', async () => {
+    const soon = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+    mockedAxios.get.mockImplementation((url: string) => {
+      if (url === '/users/watchedProgramIds') {
+        return Promise.resolve({ data: { watchedProgramIds: ['p1', 'p2', 'p3'] } });
+      }
+      if (url === '/users/watchedPrograms') {
+        return Promise.resolve({
+          data: {
+            watchedPrograms: [
+              { _id: 'p1', id: 'p1', title: 'Awarded Grant', deadline: soon },
+              { _id: 'p2', id: 'p2', title: 'Not Selected Grant', deadline: soon },
+              { _id: 'p3', id: 'p3', title: 'Open Grant', deadline: soon },
+            ].map((program) => ({ ...program, isAcceptingApplications: true })),
+          },
+        });
+      }
+      if (url === '/users/watchedProgramPlans') {
+        return Promise.resolve({
+          data: {
+            watchedProgramPlans: {
+              p1: { stage: 'AWARDED' },
+              p2: { stage: 'NOT_SELECTED' },
+              p3: { stage: 'PREPARING' },
+            },
+          },
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    const onSummaryChange = vi.fn();
+
+    render(
+      <MemoryRouter>
+        <ProgramWatch onSummaryChange={onSummaryChange} />
+      </MemoryRouter>,
+    );
+
+    const awardedCard = (await screen.findByText('Awarded Grant')).closest('li') as HTMLElement;
+    const notSelectedCard = screen.getByText('Not Selected Grant').closest('li') as HTMLElement;
+    expect(awardedCard.textContent).not.toMatch(/Closing soon|days left/);
+    expect(notSelectedCard.textContent).not.toMatch(/Closing soon|days left/);
+    await waitFor(() =>
+      expect(onSummaryChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          approachingCount: 1,
+          nextDeadlineLabel: expect.stringContaining('Open Grant'),
+        }),
+      ),
+    );
   });
 
   it('reverts the displayed stage and surfaces an error when a stage save fails', async () => {
@@ -234,7 +388,7 @@ describe('ProgramWatch', () => {
 
     await screen.findByText('Summer Research Grant');
     const stageSelect = screen.getByRole('combobox', {
-      name: 'Outreach stage for Summer Research Grant',
+      name: 'Application stage for Summer Research Grant',
     }) as HTMLSelectElement;
     fireEvent.change(stageSelect, { target: { value: 'APPLIED' } });
 
@@ -278,7 +432,7 @@ describe('ProgramWatch', () => {
 
     await waitFor(() => expect(mockedAxios.delete).toHaveBeenCalled());
     expect(
-      screen.queryByRole('combobox', { name: 'Outreach stage for Travel Fellowship' }),
+      screen.queryByRole('combobox', { name: 'Application stage for Travel Fellowship' }),
     ).toBeNull();
     const undo = await screen.findByRole('button', { name: 'Undo' });
     const region = undo.closest('[role="status"]');
@@ -300,7 +454,7 @@ describe('ProgramWatch', () => {
 
     await screen.findByText('Summer Research Grant');
     fireEvent.change(
-      screen.getByRole('combobox', { name: 'Outreach stage for Summer Research Grant' }),
+      screen.getByRole('combobox', { name: 'Application stage for Summer Research Grant' }),
       { target: { value: 'APPLIED' } },
     );
     await waitFor(() => expect(mockedAxios.put).toHaveBeenCalledTimes(1));
@@ -502,7 +656,7 @@ describe('ProgramWatch control containment', () => {
       const noteButton = screen.getByRole('button', {
         name: new RegExp(`^(Add|Edit) note for ${title}$`),
       });
-      const stageControl = screen.getByLabelText(`Outreach stage for ${title}`);
+      const stageControl = screen.getByLabelText(`Application stage for ${title}`);
       expect(card?.contains(noteButton)).toBe(true);
       expect(card?.contains(stageControl)).toBe(true);
     }
