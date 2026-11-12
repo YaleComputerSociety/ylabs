@@ -212,7 +212,11 @@ describe('decideOfficialPageWitnessFold (#5606)', () => {
       ),
     ).toMatchObject({ merge: false, reason: 'ORCID_CONFLICT' });
     expect(
-      decideOfficialPageWitnessFold({ ...shell, email: 'avery.other@yale.edu' }, statements, holders),
+      decideOfficialPageWitnessFold(
+        { ...shell, email: 'avery.other@yale.edu' },
+        statements,
+        holders,
+      ),
     ).toBeUndefined();
   });
 });
