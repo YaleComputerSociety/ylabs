@@ -15,6 +15,8 @@ export const researchPlanStages = [
   'PREPARING',
   'CONTACTED',
   'APPLIED',
+  'AWARDED',
+  'NOT_SELECTED',
   'CLOSED',
 ] as const;
 

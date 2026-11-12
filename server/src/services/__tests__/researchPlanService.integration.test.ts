@@ -214,6 +214,27 @@ describe('researchPlanService saved plans', () => {
     expect((await getWatchedProgramPlans(NETID))[programId].privateNotes).toBe('newer note');
   });
 
+  it('round-trips the application result stages on a watched program (#5139)', async () => {
+    const programId = PROGRAM_ID.toHexString();
+    await addWatchedPrograms(NETID, [programId]);
+
+    for (const stage of ['AWARDED', 'NOT_SELECTED'] as const) {
+      await updateWatchedProgramPlan(NETID, programId, { stage });
+      expect((await getWatchedProgramPlans(NETID))[programId].stage).toBe(stage);
+      expect((await findPlan(PROGRAM_ID))?.stage).toBe(stage);
+    }
+  });
+
+  it('keeps serving a watched-program plan stored at an outreach stage (#5139)', async () => {
+    const programId = PROGRAM_ID.toHexString();
+    await addWatchedPrograms(NETID, [programId]);
+
+    for (const stage of ['EXPLORING', 'CONTACTED'] as const) {
+      await updateWatchedProgramPlan(NETID, programId, { stage });
+      expect((await getWatchedProgramPlans(NETID))[programId].stage).toBe(stage);
+    }
+  });
+
   it('restores the watched-program plan when the student undoes an unwatch', async () => {
     const programId = PROGRAM_ID.toHexString();
     await addWatchedPrograms(NETID, [programId]);

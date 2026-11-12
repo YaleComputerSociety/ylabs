@@ -126,6 +126,10 @@ describe('savedResearchEntitySummary card parity with the detail card (#4248)', 
 describe('normalizeResearchPlanUpdate', () => {
   it('keeps only valid canonical stages', () => {
     expect(normalizeResearchPlanUpdate({ stage: 'CONTACTED' })).toEqual({ stage: 'CONTACTED' });
+    expect(normalizeResearchPlanUpdate({ stage: 'AWARDED' })).toEqual({ stage: 'AWARDED' });
+    expect(normalizeResearchPlanUpdate({ stage: 'NOT_SELECTED' })).toEqual({
+      stage: 'NOT_SELECTED',
+    });
     expect(normalizeResearchPlanUpdate({ stage: 'saved' })).toEqual({});
     expect(normalizeResearchPlanUpdate({ stage: 42 })).toEqual({});
   });

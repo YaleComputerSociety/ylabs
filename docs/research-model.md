@@ -238,7 +238,7 @@ Historical `paper` observations and source rows are retained as read-only archiv
 [`server/src/models/fellowship.ts`](../server/src/models/fellowship.ts) uses `programCategory` (`FELLOWSHIP` | `CENTER_INTERNSHIP` | `RECURRING_PROGRAM` | `SUMMER_RESEARCH_PROGRAM`), `programKind`, and `entryMode` enums, not a stored reference to any removed model.
 `programRole` is derived from `programKind` on every resolve (#3904): `STARTS_RESEARCH` for a program that gets a student started in research (structured, internship, RA and mentor-matching programs and a department's own undergraduate research guidance page, `DEPARTMENT_RESEARCH_GUIDE`, which is derived only from the page's own title and served as guidance rather than an application, #4285, and its senior essay page, `DEPARTMENT_SENIOR_ESSAY_GUIDE`, derived and served the same way under its own label, #5298), `FUNDS_RESEARCH` for funding for research a student has already arranged, `RECOGNIZES_RESEARCH` for an award for research already done (`RESEARCH_AWARD`), and `UNCLASSIFIED` for archive review.
 `/programs` is an application board, so it groups by application status rather than by role: due in the next 2 weeks, accepting applications, opening soon, the next cycle, department research guidance, and no dates posted (`client/src/utils/programBoard.ts`).
-The 2-week window is `PROGRAM_CLOSING_SOON_DAYS` in `client/src/utils/programClosingSoonWindow.ts`, shared by the board, the card's closing-soon badge and days-left banner, and the dashboard's approaching-deadline summary, and a watched program the student marked Applied or Closed shows that stage on its card instead of a deadline badge.
+The 2-week window is `PROGRAM_CLOSING_SOON_DAYS` in `client/src/utils/programClosingSoonWindow.ts`, shared by the board, the card's closing-soon badge and days-left banner, and the dashboard's approaching-deadline summary, and a watched program the student marked Applied, Awarded, Not selected, or No longer applying shows that stage on its card instead of a deadline badge.
 A program whose served deadline is stale sits under no dates posted and in no timing quick filter, because its window is unknown rather than open or closed (#4363).
 The role still decides the archive section, and each card states whether a mentor comes first, which is the distinction the role grouping carried.
 An award amount is served as whole dollars with a sign and separators ("Up to $500", "Maximum award of $7,500"), and the stored string is untouched (`formatServedAwardAmount`, #5205).
@@ -561,6 +561,13 @@ Program watching (the dashboard's Watched programs tab and the `/programs` watch
 A plan write to either `.../savedResearchEntityPlans/:id` or `.../watchedProgramPlans/:id` may name the version it was edited from as `plan.expectedUpdatedAt`; the server answers 409 when the stored plan is newer, so a stale dashboard tab cannot overwrite a stage or note written from another tab, and the dashboard reloads plan details whenever a tab becomes visible (#5241).
 
 Entity plans support user-owned intent, stage, note, checklist state and history, target deadline, acted-on date, and follow-up interval.
+
+A plan's `stage` is one shared enum, and each surface offers its own subset of it (#5139).
+A research card offers the outreach stages: Saved, Exploring, Preparing, Contacted, Applied and Closed.
+A program card offers the application stages: Saved, Preparing, Applied, Awarded, Not selected, and `CLOSED` labelled "No longer applying".
+`AWARDED` and `NOT_SELECTED` sit between `APPLIED` and `CLOSED`, so the merge carry, which keeps the further stage, still ranks Closed furthest.
+A plan stored at a stage its surface does not offer, such as a program at Exploring or Contacted, keeps that stage listed and selected until the student picks another, and no stored row is rewritten.
+The subsets and labels live in `client/src/utils/researchPlanStages.ts`.
 Keep these notes private to the owning account unless a future advising-share flow adds explicit visibility controls.
 
 Saved research cards include route-specific checklist templates keyed by planning intent.
