@@ -74,3 +74,23 @@ describe('an official profile title that absorbed its neighbouring fields (#5701
     expect(identity?.title).toBe('Professor of Fixture Biology');
   });
 });
+
+describe('an official profile that states a long genuine appointment list (#5832)', () => {
+  const appointmentList =
+    'Professor of Fixture Biology; Director, Center for Synthetic Methods in Placeholder Science; Professor of Statistics and Data Science; Associate Director, Fixture Program';
+
+  it('emits the whole list as the title, the same on a second read', () => {
+    expect(appointmentList.length).toBeGreaterThan(140);
+    const html = profilePage(`<div class="position">${appointmentList}</div>`);
+
+    const reads = [1, 2].map(() =>
+      extractOfficialProfileIdentity(html, profileUrl, entity, { requireEmail: false }),
+    );
+
+    for (const identity of reads) {
+      expect(identity?.title).toBe(appointmentList);
+      const observations = identityToUserObservations(identity!, { netid: 'zz5832q' });
+      expect(observations.find((o) => o.field === 'title')?.value).toBe(appointmentList);
+    }
+  });
+});
