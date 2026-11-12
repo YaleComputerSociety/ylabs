@@ -9,7 +9,9 @@
  * PII-severity contact-block shape: an unredacted email plus a phone number
  * ("Phone:"/"Tel:"/"Fax:") and street address concatenated into the title, and
  * observed that any title beyond a short role string (over ~140 chars) is
- * scraped junk. These guards fail closed: title extraction and render yield a
+ * scraped junk; #5832 retired that length heuristic, because long genuine
+ * appointment lists exist, so only defect shapes and the storage bound refuse a
+ * title now. These guards fail closed: title extraction and render yield a
  * real title or nothing.
  *
  * Deliberately separate from `descriptionHygiene`: that module governs
@@ -249,26 +251,6 @@ export function isPageHeadingTitle(value: string | null | undefined): boolean {
   );
 }
 
-function sentenceBoundaryCount(text: string): number {
-  return (text.match(/[a-z]{4,}[.!?]["')\]]?\s+[A-Z]/g) || []).length;
-}
-
-/**
- * Multi-sentence bio prose dumped into the title (#708: `hammer-lhammer`,
- * `smith-sbs9`). A title is a single short role phrase, so an overlong run of
- * words, or two or more real sentence boundaries, signals a bio paragraph
- * rather than a title. The boundary arm requires a four-plus-letter lowercase
- * word before the terminator and a capitalized next word, so degree
- * abbreviations ("Ph.D.") and endowed-chair initials ("...K. Lanman, Jr.
- * Professor") are not mistaken for sentences.
- */
-export function isBioProseTitle(value: string | null | undefined): boolean {
-  const text = normalizeTitleWhitespace(value);
-  if (!text) return false;
-  if (text.split(/\s+/).filter(Boolean).length > 30) return true;
-  return sentenceBoundaryCount(text) >= 2;
-}
-
 const BIOGRAPHY_CLAUSE =
   /\b(?:is|was) (?:a|an|the|currently|also|associate|assistant|professor|director|lecturer)\b|\b(?:received|earned|completed) (?:his|her|their|a|an|the)\b|\b(?:joined|joins) (?:the|yale)\b|\b(?:his|her|their) (?:research|work|scholarship)\b|\bstudies (?:the|how|why|whether)\b|\bfocuses on\b/;
 
@@ -305,8 +287,6 @@ export function isTruncatedPersonTitle(value: string | null | undefined): boolea
   return Boolean(text) && DANGLING_TITLE_CONNECTIVE.test(text);
 }
 
-export const MAX_PERSON_TITLE_LENGTH = 140;
-
 /**
  * The longest person title storage holds, and `researchers.profile.title`'s schema
  * `maxlength` (#5594). It is a storage bound, not a defect heuristic: the longest genuine
@@ -333,29 +313,6 @@ function hasPersonTitleDefectShape(text: string): boolean {
     hasDegreeLine(text) ||
     isTruncatedPersonTitle(text)
   );
-}
-
-/**
- * Fail-closed sanitizer for the short person `title` field, applied at both the
- * scraper write path and the member/PI card render path (#708). Returns a
- * normalized title with any leading scraped field label ("Title:", "Position:",
- * "Job Title:", "Rank:", "Appointment:") stripped (#4855), or undefined when
- * the candidate is navigation/menu chrome, a site section/directory label (#1257), a site menu read with spaces between
- * its items (#4046: six or more capitalized single words, no role word or title
- * connective, five or more of them menu items; person titles only, because
- * entity names such as a lab or program name legitimately run on menu words),
- * a raw email, a street-address
- * fragment, a phone/fax contact fragment, multi-sentence bio prose, a title cut off at a
- * dangling connective ("Professor of"), or simply
- * longer than a role string ever runs (#740's over-140-char scraped-junk
- * heuristic), so a corrupted title never lands in storage nor renders from
- * stale data (#708, #740, #1257).
- */
-export function sanitizePersonTitle(value: string | null | undefined): string | undefined {
-  const text = stripTitleFieldLabel(normalizeTitleWhitespace(value));
-  if (!text || text.length > MAX_PERSON_TITLE_LENGTH) return undefined;
-  if (hasPersonTitleDefectShape(text) || isBioProseTitle(text)) return undefined;
-  return text;
 }
 
 const PROSE_VERB =
@@ -398,4 +355,16 @@ export function servablePersonTitle(value: string | null | undefined): string | 
   const cleanCount = firstDefective === -1 ? appointments.length : firstDefective;
   const leading = appointments.slice(0, cleanCount).join('; ');
   return isCleanStoredAppointment(leading) ? storableWhole(leading) : undefined;
+}
+
+/**
+ * Fail-closed sanitizer for a scraped person `title` at ingest (#708, #740, #1257, #5832). It
+ * emits exactly the title `servablePersonTitle` would store, so a long genuine appointment list
+ * reaches the observation store whole instead of being refused for its length one step before
+ * the materializer could keep it. Defect shapes (menus, section labels, page headings, contact
+ * details, glued biography, degree lines, truncation) are refused at any length, and a title
+ * past the storage bound is refused rather than cut.
+ */
+export function sanitizePersonTitle(value: string | null | undefined): string | undefined {
+  return servablePersonTitle(value);
 }

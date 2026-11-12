@@ -7,7 +7,6 @@ import {
   hasPhoneContactFragment,
   hasRawEmailAddress,
   hasStreetAddressFragment,
-  isBioProseTitle,
   isNavMenuChromeTitle,
   isPageHeadingTitle,
   isSectionLabelTitle,
@@ -208,38 +207,6 @@ describe('isPageHeadingTitle (#5323)', () => {
   });
 });
 
-describe('isBioProseTitle', () => {
-  it('rejects a multi-sentence bio dumped into the title', () => {
-    expect(
-      isBioProseTitle(
-        'Her lab studies protein folding. She teaches biochemistry. She joined in 2004.',
-      ),
-    ).toBe(true);
-  });
-
-  it('keeps a real compound title with a trailing degree abbreviation', () => {
-    expect(isBioProseTitle('Professor of Immunobiology, Ph.D.')).toBe(false);
-  });
-
-  it('keeps an abbreviated rank title', () => {
-    expect(isBioProseTitle('Assoc. Prof. of Chemistry')).toBe(false);
-  });
-
-  it('keeps an endowed-chair title carrying a personal name with initials', () => {
-    expect(isBioProseTitle('The William K. Lanman, Jr. Professor of Molecular Biophysics')).toBe(
-      false,
-    );
-  });
-
-  it('keeps a long but single-phrase endowed-chair title', () => {
-    expect(
-      isBioProseTitle(
-        'Sterling Professor of Molecular, Cellular and Developmental Biology and Professor of Chemistry and of Physics',
-      ),
-    ).toBe(false);
-  });
-});
-
 describe('sanitizePersonTitle', () => {
   it('drops the issue #708 Yale Quantum Institute nav-menu blob', () => {
     expect(sanitizePersonTitle(YQI_NAV_MENU_TITLE)).toBeUndefined();
@@ -279,11 +246,7 @@ describe('sanitizePersonTitle', () => {
     ).toBeUndefined();
   });
 
-  it('drops a title longer than a role string ever runs (#740)', () => {
-    expect(sanitizePersonTitle(`Professor of ${'Molecular Biology '.repeat(10)}`)).toBeUndefined();
-  });
-
-  it('keeps a long but single-phrase endowed-chair title under the length cap', () => {
+  it('keeps a long but single-phrase endowed-chair title', () => {
     expect(
       sanitizePersonTitle(
         'Sterling Professor of Molecular, Cellular and Developmental Biology and Professor of Chemistry and of Physics',
@@ -524,4 +487,106 @@ describe('servablePersonTitle (#5594)', () => {
       expect(servablePersonTitle(value)).toBe(value);
     },
   );
+});
+
+describe('sanitizePersonTitle at ingest refuses by defect shape, never by length (#5832)', () => {
+  const longAppointmentList = [
+    'Fixture Endowed Professor of Synthetic Studies',
+    'Director, Center for Fixture Methods in Placeholder Science (CFMPS)',
+    'Professor of Statistics and Data Science',
+    'Associate Director, Global Placeholder Program, Fixture Cancer Center',
+  ].join('; ');
+
+  it.each([
+    ['a semicolon list of appointments', longAppointmentList],
+    [
+      'a comma-joined appointment title',
+      'Associate Professor of Fixture Studies and of Synthetic Methods, Director of the Fixture Center for Testing, and Chair of Placeholder Records',
+    ],
+    [
+      'an appointment list written as sentences',
+      'Avery B. and Casey Fixture Professor and Chair of Synthetic Studies. Professor of Genetics and Placeholder Pathology. Associate Dean for Fixture Scientist Development',
+    ],
+    [
+      'a long single-phrase endowed-chair title',
+      `Professor of ${'Molecular Biology '.repeat(10).trim()}`,
+    ],
+  ])('emits %s past 140 characters whole', (_shape, title) => {
+    expect(title.length).toBeGreaterThan(140);
+    expect(sanitizePersonTitle(title)).toBe(title);
+  });
+
+  const longTitle =
+    'Professor of Fixture Studies and of Synthetic Methods, Director of the Fixture Center for Testing';
+
+  it.each([
+    [
+      'a concatenated site menu',
+      `${longTitle} HomeAboutFixture CouncilResearchPeopleFacultyEventsNewsContact UsGiving`,
+    ],
+    [
+      'a breadcrumb trail',
+      `Home > People > Faculty > ${longTitle} and Placeholder Records Archive`,
+    ],
+    ['a raw email address', `${longTitle}, avery.synthetic@example.edu, Placeholder Records`],
+    ['a street address', `${longTitle}, Address: 21 Fixture St. New Haven, CT 06511`],
+    ['a phone number', `${longTitle}, Phone: 203-555-0100, Fixture Records Office`],
+    [
+      'a glued biography clause',
+      `${longTitle}. Avery received her doctorate from a fixture institution in synthetic methods`,
+    ],
+    [
+      'a lowercase finite verb',
+      `${longTitle}. Avery Synthetic directs the placeholder program for fixture records`,
+    ],
+    [
+      'a personal pronoun',
+      `${longTitle}, where she leads the placeholder program for fixture records and methods`,
+    ],
+    [
+      'a first-person clause',
+      `${longTitle} I study the history of synthetic poetry, primarily American and British`,
+    ],
+    [
+      'a degree line',
+      `${longTitle} Ph.D., Fixture University, 1999 M.A., Fixture College, 1995 placeholder`,
+    ],
+    ['a dangling connective', `${longTitle} and Professor of Placeholder Records and of`],
+  ])('refuses a long title carrying %s', (_shape, title) => {
+    expect(title.length).toBeGreaterThan(140);
+    expect(sanitizePersonTitle(title)).toBeUndefined();
+  });
+
+  it.each([
+    ['a section label', 'Research / Faculty'],
+    ['a plural roster heading', 'Research Affiliates'],
+  ])('still refuses %s', (_shape, title) => {
+    expect(sanitizePersonTitle(title)).toBeUndefined();
+  });
+
+  it('keeps the leading appointments of a list whose later appointment is glued biography', () => {
+    expect(
+      sanitizePersonTitle(
+        `${longAppointmentList}; Avery received her Ph.D. in synthetic methods from a fixture institution`,
+      ),
+    ).toBe(longAppointmentList);
+  });
+
+  it('refuses a clean title past the storage bound rather than cutting it', () => {
+    const overBound = `Professor of ${'Fixture '.repeat(130)}Studies`;
+    expect(overBound.length).toBeGreaterThan(MAX_STORED_PERSON_TITLE_LENGTH);
+    expect(sanitizePersonTitle(overBound)).toBeUndefined();
+  });
+
+  it('is idempotent, so a second pass over an emitted title changes nothing', () => {
+    for (const title of [
+      longAppointmentList,
+      `${longAppointmentList}; Avery received her Ph.D. in synthetic methods`,
+      'Title: Senior Lecturer, Film and Media Studies',
+      'Research / Faculty',
+    ]) {
+      const emitted = sanitizePersonTitle(title);
+      expect(sanitizePersonTitle(emitted)).toBe(emitted);
+    }
+  });
 });

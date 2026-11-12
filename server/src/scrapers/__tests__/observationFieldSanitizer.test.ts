@@ -51,7 +51,27 @@ describe('sanitizeObservationField', () => {
       });
     });
 
-    it('does not apply the person-title cap to a non-user title (fellowship name)', () => {
+    it('accepts a genuine appointment list longer than 140 characters (#5832)', () => {
+      const title =
+        'Professor of Fixture Studies; Director, Center for Synthetic Methods in Placeholder Science; Professor of Statistics and Data Science; Associate Director, Fixture Program';
+      expect(title.length).toBeGreaterThan(140);
+      expect(sanitizeObservationField('user', 'title', title)).toEqual({
+        value: title,
+        rejected: false,
+      });
+    });
+
+    it('rejects a long person title for its glued biography, not its length (#5832)', () => {
+      const result = sanitizeObservationField(
+        'user',
+        'title',
+        'Professor of Fixture Studies and of Synthetic Methods. Avery Synthetic is a professor whose research focuses on placeholder records',
+      );
+      expect(result.rejected).toBe(true);
+      expect(result.reason).toBe('person-title-furniture');
+    });
+
+    it('does not apply the person-title screen to a non-user title (fellowship name)', () => {
       const fellowshipName =
         'The Combined Interdisciplinary Undergraduate Summer Research Fellowship in Environmental and Computational Sciences Program';
       expect(sanitizeObservationField('fellowship', 'title', fellowshipName)).toEqual({

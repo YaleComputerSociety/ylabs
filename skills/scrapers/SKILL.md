@@ -540,7 +540,7 @@ Start an address pattern with the non-address lookbehind `(?<![a-z0-9._%+-])` ra
   `observations:retire-rekeyed-person-keys` is the dry-run-by-default backfill over the same planner for keys stored before the rule; see "Retiring the person keys a lane re-keyed" below.
 - `observationFieldSanitizer.ts` - shared ingest-time extraction sanitizer applied by `observationStore.appendObservations` to every observation from every source, so no scraper (present or future) can leak page furniture into a stored field (#1375).
   It composes the existing hygiene utilities rather than restating their rules:
-  - a `user` `title` runs through `sanitizePersonTitle` (rejected when it is nav/section furniture, or cut off at a dangling connective such as "Professor of", which the materializer also ignores so a complete title wins, #5109);
+  - a `user` `title` runs through `sanitizePersonTitle` (rejected when it is nav/section furniture, or cut off at a dangling connective such as "Professor of", which the materializer also ignores so a complete title wins, #5109); it emits exactly what `servablePersonTitle` would store, so length alone never refuses a title below the 1000-character storage bound (#5832);
   - a research-entity `name`/`displayName` is normalized and rejected when it is nav chrome, a section label, placeholder filler that identifies nothing (`isPlaceholderEntityName`: "n/a", "none", "unknown", "TBD"), a glued contact or street-address fragment, or literal HTML. The filler class is refused here, at the all-source choke point, rather than per source: #2367 had it guarded only inside the lab microsite extractor and a record reached students storing `name: "n/a"`. Extend the vocabulary in `isPlaceholderEntityName` (`utils/researchHomeNameIdentityAuthority.ts`), never in a scraper;
   - research-entity `researchAreas`/`topics`/`researchInterests` lists drop label/section leakage element-wise (rejected when nothing survives);
   - `fullDescription`/`shortDescription` are chrome-stripped and contact-redacted (rejected when only chrome remains);
@@ -2003,7 +2003,7 @@ That glued a department word onto the address after it, which passed the person 
 A page-wide address match starts only after a non-address character, and the title the lane emits is the first stated title that `sanitizePersonTitle` accepts, so a stated title that carries a contact block still marks the page as a profile but is never emitted.
 
 Measured by replaying the 3,661 saved backfill pages offline on 2026-11-11 against `beta`: no page lost an identity field; 40 more pages emit identity (31 email-only titleless pages, 9 pages whose address was glued before), 42 more `email` and 10 more `inferredPiUserId` observations, and one glued phantom key is gone.
-Of the titles, 25 changed (contact blocks, `Title:` labels and section labels stripped), 14 are no longer emitted (11 navigation menus, 1 bio sentence, 1 glued address, 1 multi-appointment title longer than `MAX_PERSON_TITLE_LENGTH`), and none was newly found.
+Of the titles, 25 changed (contact blocks, `Title:` labels and section labels stripped), 14 are no longer emitted (11 navigation menus, 1 bio sentence, 1 glued address, 1 multi-appointment title longer than the 140-character ingest cap that #5832 later retired), and none was newly found.
 A seeded sample of 10 newly emitted identities named the page's own person in all 10.
 
 #### Retiring what the glued reads left behind (#5720)
