@@ -373,7 +373,8 @@ export type DevWriteLeaseStop =
       lastProgressAt: Date;
       withoutProgressMs: number;
       message: string;
-    };
+    }
+  | { reason: 'refused'; leases: string[]; message: string };
 
 interface DevWriteLeaseRuntime {
   now: () => Date;
@@ -794,6 +795,39 @@ export async function acquireIntendedDevApplyLease(
   return lease;
 }
 
+let firstWriteApplyLease: Promise<HeldDevWriteLease | undefined> | undefined;
+let firstWriteApplyLeaseRefusal: Error | undefined;
+
+/**
+ * Run by the model write guard for a script that recorded its apply intent only after it connected,
+ * so the connect path took nothing. Takes the apply lease on the writing model's connection before
+ * that first write. A refusal is kept and the process stops, so no later write can land either.
+ */
+export async function acquireIntendedDevApplyLeaseAtFirstWrite(
+  connection: ConnectionDescriptor,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<boolean> {
+  if (firstWriteApplyLeaseRefusal) throw firstWriteApplyLeaseRefusal;
+  if (!applyIntent) return false;
+  if (heldLeases.has(DEV_APPLY_LEASE_NAME)) return true;
+  firstWriteApplyLease ??= acquireIntendedDevApplyLease(connection, env).finally(() => {
+    firstWriteApplyLease = undefined;
+  });
+  try {
+    await firstWriteApplyLease;
+  } catch (error) {
+    firstWriteApplyLeaseRefusal ??=
+      error instanceof Error ? error : new Error(String(error), { cause: error });
+    stopProcess({
+      reason: 'refused',
+      leases: [DEV_APPLY_LEASE_NAME],
+      message: `${firstWriteApplyLeaseRefusal.message} Stopping before the first write.`,
+    });
+    throw firstWriteApplyLeaseRefusal;
+  }
+  return heldLeases.has(DEV_APPLY_LEASE_NAME);
+}
+
 /**
  * For a script that writes Development through its own MongoClient rather than the shared connect
  * path: takes the apply lease on that client's database and returns the release.
@@ -873,6 +907,8 @@ export async function ensureDevHostLease(host: string): Promise<void> {
 
 export function resetDevWriteLeaseStateForTests() {
   applyIntent = undefined;
+  firstWriteApplyLease = undefined;
+  firstWriteApplyLeaseRefusal = undefined;
   armedHostLeaseConnection = undefined;
   pendingHostLeases.clear();
   heldLeases.clear();

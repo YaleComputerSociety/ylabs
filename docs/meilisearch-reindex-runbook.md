@@ -312,9 +312,8 @@ No output is the pass. Any match names a retired attribute the rebuilt index sti
 4. The Mongo target must match the resolved environment.
 5. A production rebuild requires `CONFIRM_PROD_SCRAPE=true`, that exact string.
 
-The fifth one is the one that bites, because it is checked last.
-The preflight and the index reconcile plan print first, so a production run without it looks like it is working and then refuses at the write.
-The wrapper now reports it alongside the other missing variables before anything starts, which is why `node scripts/reindex-search-index.mjs production --apply` is preferable to the raw `yarn` invocation.
+The fifth one is checked only with `--confirm`, before connecting (#5971); until then it was checked at the write, after the preflight and the index reconcile plan had printed, so a production run without it looked like it was working and then refused.
+The wrapper reports it alongside the other missing variables before anything starts, which is why `node scripts/reindex-search-index.mjs production --apply` is still preferable to the raw `yarn` invocation.
 
 It also refuses to run when the database reports **zero** non-archived entities, which is the guard against replacing a live index with an empty one because a Mongo copy had not landed yet.
 

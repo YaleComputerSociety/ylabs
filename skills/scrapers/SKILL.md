@@ -370,6 +370,11 @@ It replaces the convention of announcing each write to the session that sequence
   Nothing was written when that refusal prints.
 - The hook is `assertScriptApplyAllowed`: with `--apply` it records an apply intent, and the shared connect paths in `db/connections.ts` take the lease only for a process that recorded one.
   The API server, the Render web service and request-path code never record an intent, so they never read or wait on a lease; `devWriteLease.test.ts` connects through `initializeConnections` to a Development-named database and asserts no lease document appears.
+- Record the intent before connecting.
+  A script that connects first and records its intent afterwards takes nothing at connect, so the model write guard takes the lease at its first model write instead, on that model's connection, and releases it when that connection closes (#5971).
+  The owner label, the held-lease refusal, the heartbeat and the progress stop all still apply.
+  If that acquisition fails, the first write is refused before anything is written, every later write is refused with the same error, and the process stops with the lease-held message.
+  A raw driver write skips the guard, so it gets no such acquisition: `everyApplyPathReachesTheApplyGuard.test.ts` fails for an apply entry point that connects before recording its intent unless `RECORDS_APPLY_INTENT_AFTER_CONNECTING` names why that is safe.
 - The lease is taken only when the connected database resolves to Development (`resolveDevWriteLeaseTarget`).
   Beta, Production, test and localhost databases never read or write a lease document, and an apply against a remote database the resolver cannot place refuses rather than writing unguarded.
 - Scripts that write through their own client or connect path take it explicitly: `scrape run` that auto-materializes, `scrape materialize`, `scrape prune-observations`, the sweeps (`holdDevApplyLeaseForRun`), `development:refresh-from-beta` and `model-refactor:validators` (`holdDevApplyLeaseOnDb`), and the retire and backfill scripts that bypass the guard (`recordDevApplyIntent`).

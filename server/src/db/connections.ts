@@ -10,7 +10,7 @@ import {
   releaseHeldDevWriteLeases,
   markDevWriteLeaseHeldForChildProcesses,
 } from './devWriteLease';
-import { assertDevelopmentWritesGuarded } from './devWriteGuard';
+import { assertDevelopmentWritesGuarded, releaseDevWriteLeasesWhenClosed } from './devWriteGuard';
 import { watchMongoClientProgress } from './devWriteProgress';
 import { enableScriptDiagnosticReportOnSignal } from './scriptDiagnosticReport';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -170,12 +170,7 @@ async function installDevelopmentWriteGuards(connection: mongoose.Connection): P
   const descriptor = devWriteLeaseDescriptor(connection);
   if (!descriptor) return;
   const lease = await acquireIntendedDevApplyLease(descriptor);
-  if (!lease) return;
-  const close = connection.close.bind(connection);
-  connection.close = (async (...args: Parameters<typeof close>) => {
-    await releaseHeldDevWriteLeases();
-    return close(...args);
-  }) as typeof connection.close;
+  if (lease) releaseDevWriteLeasesWhenClosed(connection);
 }
 
 // Serialise reconnect attempts: if one is already in flight, later callers
