@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
-import { initializeConnections } from '../db/connections';
+import { initializeConnections, runScriptMain } from '../db/connections';
 import { recordDevApplyIntent } from '../db/devWriteLease';
 import { countConnectionDrops } from '../utils/mongooseConnectionWasOpened';
 import { ResearchEntity } from '../models/researchEntity';
@@ -888,12 +888,8 @@ const isDirectRun = process.argv[1]
   : false;
 
 if (isDirectRun) {
-  runCoverageSynthesis()
-    .catch((error) => {
-      console.error('Failed to run coverage synthesis:', sanitizeLogValue(error));
-      process.exitCode = 1;
-    })
-    .finally(async () => {
-      await mongoose.disconnect();
-    });
+  void runScriptMain(runCoverageSynthesis, {
+    logFailure: (error) =>
+      console.error('Failed to run coverage synthesis:', sanitizeLogValue(error)),
+  });
 }

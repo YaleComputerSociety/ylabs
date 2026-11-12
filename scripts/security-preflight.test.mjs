@@ -6817,6 +6817,19 @@ test('scraper entrypoint fatal logs sanitize caught exceptions', () => {
   }
 });
 
+test('runScriptMain logs a failed script through sanitizeLogValue by default', () => {
+  const source = fs.readFileSync(
+    new URL('../server/src/db/connections.ts', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(
+    source,
+    /const logScriptFailure = \(error: unknown\) => console\.error\(sanitizeLogValue\(error\)\)/,
+  );
+  assert.match(source, /\(options\.logFailure \?\? logScriptFailure\)\(error\)/);
+});
+
 test('user account routes set full private no-store response headers', () => {
   const routeSource = fs.readFileSync(
     new URL('../server/src/routes/users.ts', import.meta.url),

@@ -78,7 +78,7 @@ export {
   scrapeCliCompletionOutcome,
   unmaterializedWriteRunWarning,
 } from './cliHelpers';
-import { connectScriptMongo, devWriteLeaseDescriptor } from '../db/connections';
+import { connectScriptMongo, devWriteLeaseDescriptor, runScriptMain } from '../db/connections';
 import {
   armDevHostLeases,
   ensureDevHostLease,
@@ -723,8 +723,5 @@ async function disconnectWithin(deadlineMs: number): Promise<void> {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
-  main().catch((err) => {
-    console.error(sanitizeLogValue(err));
-    process.exit(1);
-  });
+  void runScriptMain(main, { logFailure: (err) => console.error(sanitizeLogValue(err)) });
 }
