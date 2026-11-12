@@ -62,6 +62,9 @@ export const mongoOptions: MongoConnectOptions = {
   minPoolSize: 1,
 };
 
+export const SCRIPT_SOCKET_TIMEOUT_MS = 10 * 60_000;
+export const SCRIPT_MAX_POOL_SIZE = 10;
+
 export type ScriptMongoConnectOptions = Omit<
   Partial<MongoConnectOptions>,
   'autoIndex' | 'autoCreate'
@@ -73,11 +76,16 @@ export function scriptMongoConnectOptions(
   return {
     ...mongoOptions,
     // A request-sized socket timeout suits the API, but an operator scan or a
-    // materialize can wait longer than a minute for one batch, so entry points
-    // keep the driver's no-timeout default. The serving process's fail-fast
-    // selection and buffer bounds are wrong here for the same reason: a sweep that
-    // starts while a replica set is electing should wait for it, not abort.
-    socketTimeoutMS: 0,
+    // materialize can wait longer than a minute for one batch, so scripts get a
+    // long ceiling rather than none: with no ceiling, an operation on a socket the
+    // cluster dropped waited forever while the write lease kept renewing (#5880).
+    // The serving process's fail-fast selection and buffer bounds are wrong here
+    // for the same reason: a sweep that starts while a replica set is electing
+    // should wait for it, not abort.
+    socketTimeoutMS: SCRIPT_SOCKET_TIMEOUT_MS,
+    // Development, Beta and Production share one free-tier cluster with a
+    // connection cap, and many script processes run at once (#5880).
+    maxPoolSize: SCRIPT_MAX_POOL_SIZE,
     serverSelectionTimeoutMS: 30000,
     bufferTimeoutMS: 30000,
     ...extra,
