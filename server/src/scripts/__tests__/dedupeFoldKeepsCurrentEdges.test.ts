@@ -111,6 +111,29 @@ describe('planFoldedShellEdgeHeals restores what an earlier fold archived (#5990
     expect(planned.map((heal) => heal.edgeId)).toEqual(['e-shell']);
   });
 
+  it('restores no earlier twin when the latest fold of the membership is ineligible', () => {
+    const earlierShell = {
+      id: 'shell-early',
+      survivorId: 'survivor',
+      dedupedAt: new Date('2026-11-05T00:00:00Z'),
+    };
+    const earlierEdge = { ...archivedCurrentEdge, id: 'e-early', personId: 'shell-early' };
+    const latestDisputed = { ...archivedCurrentEdge, reviewStatus: 'DISPUTED' };
+    expect(
+      heals({
+        foldedShells: [earlierShell, foldedShell],
+        archivedShellEdges: [earlierEdge, latestDisputed],
+      }),
+    ).toEqual([]);
+    expect(
+      heals({
+        foldedShells: [earlierShell, foldedShell],
+        archivedShellEdges: [earlierEdge, archivedCurrentEdge],
+        auditedEdgeIds: new Set(['e-shell']),
+      }),
+    ).toEqual([]);
+  });
+
   it('leaves an edge an operator detached', () => {
     expect(
       heals({ archivedShellEdges: [{ ...archivedCurrentEdge, reviewStatus: 'DISPUTED' }] }),

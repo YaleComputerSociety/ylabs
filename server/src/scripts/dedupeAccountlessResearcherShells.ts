@@ -1179,12 +1179,9 @@ export async function planHealsForFoldedShells(input: {
   foldingResearcherIds: ReadonlySet<string>;
   onlyShellIds?: ReadonlyArray<string>;
 }): Promise<FoldedShellEdgeHeal[]> {
-  const scope = input.onlyShellIds
-    ? { _id: { $in: input.onlyShellIds.map((id) => new mongoose.Types.ObjectId(id)) } }
-    : {};
   const foldedShells = (
     (await input.Researcher.find(
-      { ...scope, archived: true, dedupedIntoResearcherId: { $ne: null } },
+      { archived: true, dedupedIntoResearcherId: { $ne: null } },
       { projection: { dedupedIntoResearcherId: 1, dedupedAt: 1 } },
     ).toArray()) as any[]
   )
@@ -1266,7 +1263,7 @@ export async function planHealsForFoldedShells(input: {
         .toArray()) as any[]
     ).map((doc) => idKey(doc.targetId)),
   );
-  return planFoldedShellEdgeHeals({
+  const heals = planFoldedShellEdgeHeals({
     foldedShells,
     archivedShellEdges,
     survivorEdges,
@@ -1274,6 +1271,9 @@ export async function planHealsForFoldedShells(input: {
     liveTargetIds,
     auditedEdgeIds,
   });
+  if (!input.onlyShellIds) return heals;
+  const scopedShellIds = new Set(input.onlyShellIds);
+  return heals.filter((heal) => scopedShellIds.has(heal.shellId));
 }
 
 export async function dedupeAccountlessResearcherShells(options: {

@@ -2066,7 +2066,8 @@ const untouchedByReview = (edge: FoldedShellEdge, auditedEdgeIds: ReadonlySet<st
  * An edge qualifies when its shell was folded into a live survivor, it never ended, nobody
  * reviewed, detached or audited it, its row is live, the survivor holds no current edge of any
  * role on that row, and the survivor's edge on the same target and role ended no later than the
- * fold. Of several shells that lost one membership, the latest fold's edge is the one restored.
+ * fold. Of several shells that lost one membership, only the latest fold's edge is considered, so
+ * when that edge is ineligible no earlier fold's twin is restored in its place.
  * A healed edge is current on the survivor, so a second run finds nothing to heal.
  */
 export function planFoldedShellEdgeHeals(input: {
@@ -2089,37 +2090,41 @@ export function planFoldedShellEdgeHeals(input: {
       endedAtByKey.set(key, [...(endedAtByKey.get(key) ?? []), ended]);
     }
   }
-  const latestByMembership = new Map<string, { heal: FoldedShellEdgeHeal; foldedAt: number }>();
+  const latestByMembership = new Map<
+    string,
+    { edge: FoldedShellEdge; shell: FoldedShell; foldedAt: number }
+  >();
   for (const edge of input.archivedShellEdges) {
     const shell = shellById.get(edge.personId);
-    if (!shell || !input.liveSurvivorIds.has(shell.survivorId)) continue;
-    if (edge.archived !== true || edge.state === 'HISTORICAL' || edge.endedAt) continue;
+    if (!shell) continue;
+    if (edge.archived !== true || edge.state === 'HISTORICAL') continue;
     if (edge.targetKind !== 'RESEARCH_ENTITY' || typeof edge.role !== 'string') continue;
+    const foldedAt = timeOf(shell.dedupedAt);
+    if (!Number.isFinite(foldedAt)) continue;
+    const membership = `${shell.survivorId}|${roleAssignmentEdgeKey(edge)}`;
+    const previous = latestByMembership.get(membership);
+    if (previous && previous.foldedAt >= foldedAt) continue;
+    latestByMembership.set(membership, { edge, shell, foldedAt });
+  }
+  const heals: FoldedShellEdgeHeal[] = [];
+  for (const [membership, { edge, shell, foldedAt }] of latestByMembership) {
+    if (!input.liveSurvivorIds.has(shell.survivorId) || edge.endedAt) continue;
     if (!untouchedByReview(edge, input.auditedEdgeIds)) continue;
     const target = String(edge.targetId ?? '');
     if (!input.liveTargetIds.has(target)) continue;
     if (occupiedTargets.has(`${shell.survivorId}|${target}`)) continue;
-    const foldedAt = timeOf(shell.dedupedAt);
-    const survivorEndings = endedAtByKey.get(`${shell.survivorId}|${roleAssignmentEdgeKey(edge)}`);
-    if (!Number.isFinite(foldedAt) || !survivorEndings?.length) continue;
+    const survivorEndings = endedAtByKey.get(membership);
+    if (!survivorEndings?.length) continue;
     if (!survivorEndings.every((ended) => ended <= foldedAt)) continue;
-    const membership = `${shell.survivorId}|${roleAssignmentEdgeKey(edge)}`;
-    const previous = latestByMembership.get(membership);
-    if (previous && previous.foldedAt >= foldedAt) continue;
-    latestByMembership.set(membership, {
-      foldedAt,
-      heal: {
-        edgeId: edge.id,
-        shellId: shell.id,
-        survivorId: shell.survivorId,
-        targetId: target,
-        role: edge.role,
-      },
+    heals.push({
+      edgeId: edge.id,
+      shellId: shell.id,
+      survivorId: shell.survivorId,
+      targetId: target,
+      role: String(edge.role),
     });
   }
-  return [...latestByMembership.values()]
-    .map((entry) => entry.heal)
-    .sort((left, right) => left.edgeId.localeCompare(right.edgeId));
+  return heals.sort((left, right) => left.edgeId.localeCompare(right.edgeId));
 }
 
 const isCurrentLeadEdge = (edge: FoldPlanEdge, leadRoles: ReadonlySet<string>): boolean =>
