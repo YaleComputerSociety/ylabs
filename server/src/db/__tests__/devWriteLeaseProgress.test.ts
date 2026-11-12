@@ -1,4 +1,3 @@
-import { EventEmitter } from 'node:events';
 import { MongoClient, type Db } from 'mongodb';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -27,10 +26,10 @@ import {
 } from '../devWriteLease';
 import {
   countsAsDevWriteProgress,
-  lastDevWriteProgressAt,
+  devWriteProgress,
   recordDevWriteProgress,
-  watchMongoClientProgress,
 } from '../devWriteProgress';
+import { SCRAPE_RUN_SOCKET_TIMEOUT_MS } from '../../scrapers/scrapeRunProgress';
 import { describeDevLocks, formatDevLocksTable } from '../../scripts/devWriteLocks';
 
 const LEASE_ON: NodeJS.ProcessEnv = { DEV_WRITE_OWNER: 'test-session' };
@@ -104,7 +103,8 @@ afterEach(async () => {
 });
 
 describe('the no-progress window', () => {
-  it('sits above the STALLED flag', () => {
+  it('sits above the script socket timeout and the STALLED flag', () => {
+    expect(DEV_WRITE_LEASE_NO_PROGRESS_STOP_MS).toBeGreaterThan(SCRAPE_RUN_SOCKET_TIMEOUT_MS);
     expect(DEV_WRITE_LEASE_NO_PROGRESS_STOP_MS).toBeGreaterThan(DEV_WRITE_LEASE_STALLED_MS);
   });
 });
@@ -154,17 +154,19 @@ describe('a heartbeating holder that makes no progress', () => {
 
   it('counts none of its own heartbeats as progress', async () => {
     await holdApplyLease();
+    const before = devWriteProgress().count;
 
     await tickMinutes(10);
 
-    expect(lastDevWriteProgressAt()).toEqual(new Date(START));
+    expect(devWriteProgress().count).toBe(before);
     expect(await lease(DEV_APPLY_LEASE_NAME)).toMatchObject({
       heartbeatAt: now(),
       progressAt: new Date(START),
+      progressCount: before,
     });
     expect(stops).toEqual([]);
     await tickMinutes(10);
-    expect(lastDevWriteProgressAt()).toEqual(new Date(START));
+    expect(devWriteProgress().count).toBe(before);
     expect(stops).toMatchObject([{ reason: 'no-progress', leases: [DEV_APPLY_LEASE_NAME] }]);
   });
 
@@ -199,6 +201,7 @@ describe('a heartbeating holder that makes no progress', () => {
 describe('a holder making progress', () => {
   it('is never stopped or flagged over six hours of steady database work', async () => {
     await holdApplyLease();
+    const before = devWriteProgress().count;
     const work = db.collection('repair_work');
     let minute = 0;
 
@@ -214,54 +217,14 @@ describe('a holder making progress', () => {
 
     expect(stops).toEqual([]);
     const record = await lease(DEV_APPLY_LEASE_NAME);
+    expect(record?.progressCount).toBe(before + 6 * 12);
     expect(record?.progressAt?.getTime()).toBe(START + 6 * 60 * MINUTE);
-  });
-
-  it('is never stopped or flagged while one database command runs for an hour', async () => {
-    await holdApplyLease();
-    const slowClient = Object.assign(new EventEmitter(), { options: { monitorCommands: true } });
-    watchMongoClientProgress(slowClient);
-    const indexBuild = { address: 'cluster.example.net:27017', connectionId: 7, requestId: 1 };
-    slowClient.emit('commandStarted', {
-      ...indexBuild,
-      commandName: 'createIndexes',
-      command: { createIndexes: 'observations', indexes: [] },
-    });
-
-    await tickMinutes(60);
-    expect(stops).toEqual([]);
-    expect(await applyLockRow()).toMatchObject({ minutesWithoutProgress: 0, stalled: false });
-
-    slowClient.emit('commandSucceeded', { ...indexBuild, commandName: 'createIndexes' });
-    const finishedAt = now();
-    await tickMinutes(20);
-    expect(stops).toMatchObject([
-      { reason: 'no-progress', leases: [DEV_APPLY_LEASE_NAME], lastProgressAt: finishedAt },
-    ]);
-  });
-
-  it('stops once a long command fails and no further work completes', async () => {
-    await holdApplyLease();
-    const slowClient = Object.assign(new EventEmitter(), { options: { monitorCommands: true } });
-    watchMongoClientProgress(slowClient);
-    const indexBuild = { address: 'cluster.example.net:27017', connectionId: 7, requestId: 2 };
-    slowClient.emit('commandStarted', {
-      ...indexBuild,
-      commandName: 'createIndexes',
-      command: { createIndexes: 'observations', indexes: [] },
-    });
-    await tickMinutes(30);
-    slowClient.emit('commandFailed', { ...indexBuild, commandName: 'createIndexes' });
-
-    await tickMinutes(19.5);
-    expect(stops).toEqual([]);
-    await tickMinutes(0.5);
-    expect(stops).toMatchObject([{ reason: 'no-progress', leases: [DEV_APPLY_LEASE_NAME] }]);
   });
 
   it('counts a completed fetch as progress', async () => {
     const { devHostLeaseLimiter } = await import('../../scrapers/cli');
     await holdApplyLease();
+    const before = devWriteProgress().count;
     armDevHostLeases(descriptor(), 'scrape run', LEASE_ON);
     let minute = 0;
 
@@ -274,11 +237,10 @@ describe('a holder making progress', () => {
 
     expect(stops).toEqual([]);
     expect(await lease('host:lab.example.edu')).toMatchObject({
+      progressCount: 6,
       progressAt: new Date(START + 60 * MINUTE),
     });
-    expect(await lease(DEV_APPLY_LEASE_NAME)).toMatchObject({
-      progressAt: new Date(START + 60 * MINUTE),
-    });
+    expect(await lease(DEV_APPLY_LEASE_NAME)).toMatchObject({ progressCount: before + 6 });
 
     await devHostLeaseLimiter.acquire('lab.example.edu');
     await tickMinutes(20);
@@ -392,8 +354,9 @@ describe('what counts as progress', () => {
   });
 
   it('records a direct progress report', () => {
+    const before = devWriteProgress().count;
     at += MINUTE;
     recordDevWriteProgress();
-    expect(lastDevWriteProgressAt()).toEqual(now());
+    expect(devWriteProgress()).toEqual({ count: before + 1, lastAt: now() });
   });
 });
