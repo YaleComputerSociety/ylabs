@@ -99,33 +99,23 @@ const observedTextOf = (value: unknown): string[] => {
   return [];
 };
 
-const micrositeSiteOf = (pageUrl: unknown): string => {
-  const normalized = normalizeEvidenceUrl(pageUrl);
-  return normalized ? new URL(normalized).hostname : '';
-};
-
-export type MicrositeTextBySite = ReadonlyMap<string, string>;
-
-function micrositeTextBySite(
+function micrositeTextByPage(
   observations: readonly MicrositeDescriptionObservation[],
-): MicrositeTextBySite {
-  const textBySite = new Map<string, string>();
-  const append = (pageUrl: unknown, text: string) => {
-    const site = micrositeSiteOf(pageUrl);
-    if (site && text) textBySite.set(site, [textBySite.get(site), text].filter(Boolean).join('\n'));
-  };
-  for (const [pageUrl, text] of storedPageTextByUrl(observations)) append(pageUrl, text);
+): StoredPageTextByUrl {
+  const textByPage = new Map(storedPageTextByUrl(observations));
   for (const observation of observations) {
     if (!isMicrositeLaneObservation(observation)) continue;
-    append(observation.sourceUrl, observedTextOf(observation.value).join('\n'));
+    const page = normalizeEvidenceUrl(observation.sourceUrl);
+    const text = observedTextOf(observation.value).join('\n');
+    if (page && text) textByPage.set(page, [textByPage.get(page), text].filter(Boolean).join('\n'));
   }
-  return textBySite;
+  return textByPage;
 }
 
 export function isRefusedNonYaleMicrositePageField(
   observation: MicrositeDescriptionObservation,
   leadNames: readonly (string | undefined | null)[],
-  pageTextBySite: MicrositeTextBySite = new Map(),
+  pageTextByUrl: StoredPageTextByUrl = new Map(),
 ): boolean {
   if (!isMicrositePageDerivedField(observation)) return false;
   const sourceUrl = typeof observation.sourceUrl === 'string' ? observation.sourceUrl : '';
@@ -133,7 +123,7 @@ export function isRefusedNonYaleMicrositePageField(
   return (
     nonYaleMicrositeOwnership({
       sourceUrl,
-      text: pageTextBySite.get(micrositeSiteOf(sourceUrl)) ?? '',
+      text: pageTextByUrl.get(normalizeEvidenceUrl(sourceUrl)) ?? '',
       lead: { names: leadNames },
     }).decision === 'refuse'
   );
@@ -144,8 +134,8 @@ export function withoutRefusedNonYaleMicrositePageFields<T extends MicrositeDesc
   leadNames: readonly (string | undefined | null)[],
   pageTextSource: readonly MicrositeDescriptionObservation[] = observations,
 ): T[] {
-  const pageTextBySite = micrositeTextBySite(pageTextSource);
+  const pageTextByUrl = micrositeTextByPage(pageTextSource);
   return observations.filter(
-    (observation) => !isRefusedNonYaleMicrositePageField(observation, leadNames, pageTextBySite),
+    (observation) => !isRefusedNonYaleMicrositePageField(observation, leadNames, pageTextByUrl),
   );
 }

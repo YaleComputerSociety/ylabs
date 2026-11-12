@@ -159,7 +159,7 @@ describe('a non-Yale microsite page supplies no page-derived field unless it con
     expect((await plannedPageFields()).methods).toEqual(METHODS);
   });
 
-  it("a sub-page's quote is supplied when the same site's home page names the lead", async () => {
+  it('a sub-page quote is refused even when the same host home page names the lead', async () => {
     const naming = new URL(NAMING_PAGE);
     const joinPage = `${naming.origin}/join`;
     await observe(
@@ -174,7 +174,9 @@ describe('a non-Yale microsite page supplies no page-derived field unless it con
       UNDERGRAD_QUOTE,
       joinPage,
     );
-    expect((await plannedPageFields()).undergradEvidenceQuote).toBe(UNDERGRAD_QUOTE);
+    expect((await plannedPageFields()).undergradEvidenceQuote ?? '').not.toContain(
+      'sediment cores',
+    );
   });
 
   it('a Yale-hosted page still supplies every field', async () => {

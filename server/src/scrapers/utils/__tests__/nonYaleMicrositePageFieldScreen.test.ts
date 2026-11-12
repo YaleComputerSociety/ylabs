@@ -133,7 +133,7 @@ describe('the non-Yale microsite page-field screen (#5920)', () => {
     expect(withoutRefusedNonYaleMicrositePageFields(observations, LEAD_NAMES)).toEqual([]);
   });
 
-  it("a sub-page's fields are kept when another page on the same site names the lead", () => {
+  it('a page is judged on its own text, never on another page of the same host', () => {
     const subPageFields = [
       {
         sourceName: 'lab-microsite-undergrad-llm',
@@ -170,13 +170,39 @@ describe('the non-Yale microsite page-field screen (#5920)', () => {
         ...subPageFields,
         homePageText,
       ]),
-    ).toEqual(subPageFields);
+    ).toEqual([]);
     expect(
       withoutRefusedNonYaleMicrositePageFields(subPageFields, LEAD_NAMES, [
         ...subPageFields,
         otherSiteText,
       ]),
     ).toEqual([]);
+  });
+
+  it("two people's pages on one shared host do not admit each other", () => {
+    const sharedHost = 'https://sites.example.com';
+    const otherPersonsPage = `${sharedHost}/view/another-group`;
+    const leadsOwnPage = `${sharedHost}/view/estuary-group`;
+    const otherPersonsMethods = {
+      sourceName: 'lab-microsite-description-llm',
+      field: 'methods',
+      value: ['sediment coring'],
+      sourceUrl: otherPersonsPage,
+    };
+    const leadsOwnPageText = {
+      sourceName: 'research-page-text',
+      field: 'researchPageText',
+      value: [{ url: leadsOwnPage, text: 'Directed by Quillon Varnadore.' }],
+      sourceUrl: leadsOwnPage,
+    };
+    const leadsOwnMethods = { ...otherPersonsMethods, sourceUrl: leadsOwnPage };
+    expect(
+      withoutRefusedNonYaleMicrositePageFields([otherPersonsMethods, leadsOwnMethods], LEAD_NAMES, [
+        otherPersonsMethods,
+        leadsOwnMethods,
+        leadsOwnPageText,
+      ]),
+    ).toEqual([leadsOwnMethods]);
   });
 
   it('a refused page supplies none of those fields', () => {
