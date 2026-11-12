@@ -8,6 +8,7 @@
 import { startLongRunProgress } from '../utils/longRunProgress';
 import {
   isPersonResearchRow,
+  narrowedLabSiteDescriptionValue,
   withLabSiteDescriptionsNarrowedToResearch,
 } from '../utils/researchStatementPassage';
 import {
@@ -2973,13 +2974,28 @@ function fieldProvenanceForResolvedObservation(
 ): Record<string, unknown> | null {
   const resolvedValue = comparableObservationValue(resolved.value);
   const contributingSources = new Set(resolved.contributingSources);
-  const match = observations
-    .filter(
-      (obs) =>
-        obs._id && obs.field === field && obs.sourceName && contributingSources.has(obs.sourceName),
-    )
-    .find((obs) => comparableObservationValue(obs.value) === resolvedValue);
+  const candidates = observations.filter(
+    (obs) =>
+      obs._id && obs.field === field && obs.sourceName && contributingSources.has(obs.sourceName),
+  );
+  const match =
+    candidates.find((obs) => comparableObservationValue(obs.value) === resolvedValue) ??
+    candidates.find((obs) => observationNarrowsToResolvedValue(obs, resolvedValue));
   return match ? observationFieldProvenance(match, resolved.confidence) : null;
+}
+
+/**
+ * The resolver reads a person's lab-site description narrowed to its research passage, so its
+ * winner carries text no stored observation states verbatim. Matching on the raw value alone
+ * found no observation for that winner, and every adoption site then kept the provenance of
+ * the body it had just displaced.
+ */
+function observationNarrowsToResolvedValue(
+  obs: MaterializerObservationLike,
+  resolvedValue: string,
+): boolean {
+  const narrowed = narrowedLabSiteDescriptionValue(obs);
+  return !!narrowed && comparableObservationValue(narrowed) === resolvedValue;
 }
 
 function observationFieldProvenance(

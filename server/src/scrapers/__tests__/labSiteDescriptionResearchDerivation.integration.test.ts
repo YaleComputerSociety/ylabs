@@ -104,4 +104,30 @@ describe('lab-site descriptions resolve narrowed to research, as a derivation (#
     const result = await materializeEntity('researchEntity', { entityKey: SLUG }, { dryRun: true });
     expect(result.plannedSet?.fullDescription).toBe(RESEARCH);
   });
+
+  it('credits a narrowed lab-site winner to the observation it was narrowed from', async () => {
+    const labSite = await seed(`${OFF_TOPIC} ${RESEARCH}`);
+    const result = await materializeEntity('researchEntity', { entityKey: SLUG }, { dryRun: true });
+    expect(result.plannedSet?.fullDescription).toBe(RESEARCH);
+    expect(result.plannedSet?.['fieldProvenance.fullDescription']).toMatchObject({
+      sourceName: 'lab-microsite-description-llm',
+      observationId: labSite._id,
+    });
+  });
+
+  it("does not keep a displaced written body's provenance on the lab-site text that replaced it", async () => {
+    const topics = ['kelp forest recovery', 'sea urchin grazing', 'marine heatwaves'];
+    await ResearchEntity.updateOne({ slug: SLUG }, { $set: { researchAreas: topics } });
+    await seed(
+      'Studies kelp forest recovery, sea urchin grazing, and marine heatwaves.',
+      'coverage-synthesis-llm',
+    );
+    const labSite = await seed(`${OFF_TOPIC} ${RESEARCH}`);
+    const result = await materializeEntity('researchEntity', { entityKey: SLUG }, { dryRun: true });
+    expect(result.plannedSet?.fullDescription).toBe(RESEARCH);
+    expect(result.plannedSet?.['fieldProvenance.fullDescription']).toMatchObject({
+      sourceName: 'lab-microsite-description-llm',
+      observationId: labSite._id,
+    });
+  });
 });
