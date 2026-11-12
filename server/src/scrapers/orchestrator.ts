@@ -18,6 +18,7 @@ import { declareDevDryLaneRun } from '../db/devWriteGuard';
 import type { ReturnedScrapeRunStatus } from './sourceCrawlStamp';
 import { currentScrapeRunOwner, startScrapeRunHeartbeat } from './scrapeRunLiveness';
 import { reapDeadScrapeRuns } from './staleScrapeRunReaper';
+import { installScraperFetchDeadlines } from './utils/scraperFetchDeadlines';
 import {
   installAxiosScrapeRunProgress,
   recordScrapeRunProgress,
@@ -210,6 +211,7 @@ export class ScraperOrchestrator {
       },
     };
 
+    installScraperFetchDeadlines();
     installAxiosScrapeRunProgress();
     recordScrapeRunProgress();
     let stall: ScrapeRunStall | undefined;

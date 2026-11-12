@@ -526,6 +526,33 @@ Use `plainTextContent` (a byte-identical iterative `.text()`) or `extractElement
 A text the lane then pattern-matches for an address, a name or a title must keep block boundaries, so read it with `extractElementTextWithBlockSeparators`: `.text()` and `plainTextContent` join adjacent fields with nothing between them (#5720).
 Start an address pattern with the non-address lookbehind `(?<![a-z0-9._%+-])` rather than `\b` or nothing, so a glued word cannot become the front of the address.
 
+## Fetch deadlines: every request carries three bounds (#6015)
+
+An axios `timeout` is socket inactivity, not a request deadline.
+A peer that sends one byte inside every window resets it forever, which is how a `dept-faculty-roster` run once waited on one profile with no timer left that could end it.
+Node's `http`/`https` set no timeout at all by default.
+So every scraper request carries three bounds, named in `utils/scraperFetchDeadlines.ts`:
+
+| Bound | Constant | Value | Enforced by |
+|-------|----------|-------|-------------|
+| Connect (DNS, TCP, TLS) | `SCRAPER_FETCH_CONNECT_TIMEOUT_MS` (= `OUTBOUND_CONNECT_TIMEOUT_MS`) | 15 s | `ConnectDeadlineHttpAgent` / `ConnectDeadlineHttpsAgent` in `server/src/utils/connectDeadlineAgents.ts`, which `ssrfSafeAgents()` extends |
+| Read (socket inactivity) | `SCRAPER_FETCH_READ_TIMEOUT_MS` | 30 s, the default when a request sets none | axios `timeout` |
+| Overall (dispatch to settle) | `SCRAPER_FETCH_OVERALL_DEADLINE_MS` | 90 s, or the request's read timeout plus the connect budget when that is larger | `withScraperFetchDeadline` |
+
+`installScraperFetchDeadlines()` wraps the default axios instance's adapter, so every lane's direct `axios` call and the `fetchPageWithPolicy`, `postFormWithPolicy` and `fetchPublicHttpUrl` helpers are bounded with no per-lane edit.
+The orchestrator's `run`, `cli.ts` and `scrapeCanary` install it.
+It wraps the adapter rather than adding an interceptor so the clock starts at dispatch, after the host-slot limiter's wait, and a request queued behind other lanes on the same host is not charged for the queue.
+A per-request `adapter` (a sweep page reuse hit, a benchmark replay) never reaches the network and is left alone.
+An expired deadline rejects with an `AxiosError` coded `ETIMEDOUT` whose message names the overall deadline (`isScraperFetchDeadlineError`), so the lane's own page-error path records it as one failed fetch and the run continues.
+A caller's own `signal` still cancels as a cancellation.
+The aborted request still publishes one of the HTTP settle channels, so the Development write lease (`DEV_WRITE_PROGRESS_HTTP_CHANNELS`) and `installAxiosScrapeRunProgress` both see it settle.
+
+A per-lane override is a longer read timeout passed as `timeout`, and the overall deadline follows it; there is no way to make either bound infinite.
+A bulk grant API page (`doeScienceAwardScraper`, 120 s) is the documented case.
+The rendered fetch's seed redirect preflight carries its own wall-clock deadline equal to its 5 s socket timeout, and the Scrapling subprocess is bounded by its `execFile` timeout, which also closes the SSRF forward proxy's upstream sockets.
+New outbound HTTP outside axios must carry all three bounds itself.
+`__tests__/scraperFetchDeadlines.test.ts` pins never-responds, trickle, TLS-handshake-stall and fast-response behaviour against a local server, and `__tests__/departmentRosterFetchDeadline.test.ts` runs the roster lane end to end against a fake host.
+
 ## Infrastructure files
 
 - `cli.ts` - CLI entrypoint (`scrape run`, `scrape materialize`, `scrape report`, etc.)

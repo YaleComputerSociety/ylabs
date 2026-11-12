@@ -35,6 +35,7 @@ import {
 import { scraperHostSlotLimiter } from './utils/scraperHostSlotLimiter';
 import { installScraperHttpValidatorCache } from './utils/httpValidatorCache';
 import { installSweepPageReuse } from './utils/sweepPageReuse';
+import { installScraperFetchDeadlines } from './utils/scraperFetchDeadlines';
 import { materializeFromRun, withoutUserFieldScopeRows } from './entityMaterializer';
 import { ScrapeRun } from '../models/scrapeRun';
 import { getScrapeRunReport } from './runReport';
@@ -226,6 +227,7 @@ const devHostLeaseLimiter: HostSlotLimiter = {
 };
 
 export async function main(): Promise<void> {
+  installScraperFetchDeadlines();
   installScraperHostConcurrencyInterceptor(
     new ChainedHostSlotLimiter([devHostLeaseLimiter, scraperHostSlotLimiter()]),
   );
