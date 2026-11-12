@@ -323,3 +323,77 @@ describe('ResearchPageTextScraper reads only the row own pages (#5707)', () => {
     ).toBe(false);
   });
 });
+
+describe("ResearchPageTextScraper refuses a person profile that landed on someone else's page (#5947)", () => {
+  const PROFILE =
+    'https://engineering.yale.edu/research-and-faculty/faculty-directory/marlow-quince';
+  const DEPARTMENT_ROOT =
+    'https://engineering.yale.edu/academic-study/departments/applied-mathematics';
+  const OWN_OTHER_PAGE = 'https://quince-group.example.org/research/';
+  const personRow: CandidateDescriptionLab = {
+    _id: 'b'.repeat(24),
+    slug: 'faculty-research-area-marlow-quince',
+    name: 'Marlow Quince Faculty Research',
+    websiteUrl: PROFILE,
+    sourceUrls: [PROFILE],
+    entityType: 'FACULTY_RESEARCH_AREA',
+  };
+  const departmentPage = `<html><head><title>Applied Mathematics | Yale Engineering</title></head><body><h1>Applied Mathematics</h1><p>The department studies numerical analysis, dynamical systems and the mathematics of data. ${filler}</p></body></html>`;
+  const ownPage = `<html><head><title>Research | Quince Group</title></head><body><h1>Marlow Quince</h1><p>Our group studies turbulent mixing in stratified flows and the numerical methods that resolve it. ${filler}</p></body></html>`;
+
+  function laneLanding(finalUrl: string, html: string) {
+    const fetchPage = vi.fn(async (url: string) =>
+      url === PROFILE ? { url: finalUrl, html } : null,
+    );
+    return new ResearchPageTextScraper({
+      fetchPage,
+      rowFinder: async () => [personRow],
+      storedHashLoader: async () => undefined,
+    });
+  }
+
+  it('stores nothing from a profile that redirected to a department root naming nobody', async () => {
+    const { ctx, emitted } = makeContext();
+    await laneLanding(DEPARTMENT_ROOT, departmentPage).run(ctx);
+    expect(pageTextObservation(emitted)).toBeUndefined();
+  });
+
+  it('refuses a profile whose canonical link points at a department root', async () => {
+    const soft404 = departmentPage.replace(
+      '<head>',
+      `<head><link rel="canonical" href="${DEPARTMENT_ROOT}">`,
+    );
+    const { ctx, emitted } = makeContext();
+    await laneLanding(PROFILE, soft404).run(ctx);
+    expect(pageTextObservation(emitted)).toBeUndefined();
+  });
+
+  it("keeps a profile that redirected to the same person's own other page", async () => {
+    const { ctx, emitted } = makeContext();
+    await laneLanding(OWN_OTHER_PAGE, ownPage).run(ctx);
+    const value = pageTextObservation(emitted)?.value as Array<{ url: string; text: string }>;
+    expect(value.map((entry) => entry.url)).toEqual([OWN_OTHER_PAGE]);
+  });
+
+  it('keeps a profile that moved to another person-profile path', async () => {
+    const moved = 'https://engineering.yale.edu/people/marlow-quince';
+    const { ctx, emitted } = makeContext();
+    await laneLanding(moved, departmentPage).run(ctx);
+    expect(pageTextObservation(emitted)).toBeDefined();
+  });
+
+  it('keeps a lab site that redirected to a page naming nobody, because no profile was requested', async () => {
+    const LAB = 'https://quince-lab.yale.edu/';
+    const fetchPage = vi.fn(async (url: string) =>
+      url === LAB ? { url: DEPARTMENT_ROOT, html: departmentPage } : null,
+    );
+    const lane = new ResearchPageTextScraper({
+      fetchPage,
+      rowFinder: async () => [{ ...personRow, websiteUrl: LAB, sourceUrls: [LAB] }],
+      storedHashLoader: async () => undefined,
+    });
+    const { ctx, emitted } = makeContext();
+    await lane.run(ctx);
+    expect(pageTextObservation(emitted)).toBeDefined();
+  });
+});
