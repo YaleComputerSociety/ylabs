@@ -234,4 +234,18 @@ describe('materializeEntity names a faculty research row after its lead on every
 
     expect((await persisted()).name).toBe(PAGE_SPELLING_NAME);
   });
+
+  it('keeps the heading a student sees when an operator locked only the name', async () => {
+    const entity = await seedRosterRow({
+      displayName: PAGE_SPELLING_NAME,
+      manuallyLockedFields: ['name'],
+    });
+    await seedLead(entity._id);
+
+    await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+
+    const stored = await persisted();
+    expect(stored.name).toBe(PAGE_SPELLING_NAME);
+    expect(stored.displayName).toBe(PAGE_SPELLING_NAME);
+  });
 });
