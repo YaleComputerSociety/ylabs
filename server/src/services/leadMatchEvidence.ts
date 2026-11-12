@@ -3,9 +3,11 @@ import { Observation } from '../models/observation';
 import { Researcher } from '../models/researcher';
 import { normalizeOrcid } from '../utils/orcid';
 import {
+  entityOfficialPersonProfileDestinations,
+  entityOfficialPersonProfileUrls,
   isLikelyOfficialPersonProfileUrl,
   normalizeOfficialProfileDestination,
-  officialProfileDestinationIndexedPatterns,
+  officialProfileStoredUrlSpellings,
 } from './leadProfileIdentity';
 
 /**
@@ -91,21 +93,22 @@ export function foldedProfileDestinationsFromRecords(
   return byLeadId;
 }
 
-function storedSourceUrlPatterns(destination: string): RegExp[] {
-  return officialProfileDestinationIndexedPatterns(`https://${destination}`);
-}
-
 export async function loadLeadMatchEvidence(
-  destinations: ReadonlySet<string>,
+  entity: Record<string, any>,
   leads: ReadonlyArray<LeadMatchCandidate>,
 ): Promise<LeadMatchEvidence> {
+  const destinations = entityOfficialPersonProfileDestinations(entity);
   if (destinations.size === 0 || leads.length === 0) return EMPTY_LEAD_MATCH_EVIDENCE;
+  const storedUrlSpellings = [
+    ...new Set(entityOfficialPersonProfileUrls(entity).flatMap(officialProfileStoredUrlSpellings)),
+  ];
   const leadIds = new Set(
     leads
       .map((lead) => String(lead.row?.identityKey || ''))
       .filter((id) => mongoose.Types.ObjectId.isValid(id) && id.length === 24),
   );
-  const hasLeadOrcid = leads.some((lead) => normalizeOrcid(lead.user?.orcid));
+  const hasLeadOrcid =
+    storedUrlSpellings.length > 0 && leads.some((lead) => normalizeOrcid(lead.user?.orcid));
   const [foldedRecords, statements] = await Promise.all([
     leadIds.size > 0
       ? Researcher.find({
@@ -121,7 +124,7 @@ export async function loadLeadMatchEvidence(
           entityType: 'user',
           field: 'orcid',
           superseded: { $ne: true },
-          sourceUrl: { $in: [...destinations].flatMap(storedSourceUrlPatterns) },
+          sourceUrl: { $in: storedUrlSpellings },
         })
           .select('sourceUrl value')
           .lean()

@@ -577,18 +577,51 @@ export const officialProfileUrlFromRosterEntry = (entry: {
   return isLikelyOfficialPersonProfileUrl(entry.websiteUrl) ? String(entry.websiteUrl).trim() : '';
 };
 
+export const entityOfficialPersonProfileUrls = (entity: Record<string, any>): string[] =>
+  [
+    entity.websiteUrl,
+    entity.website,
+    ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
+    ...Object.values(safeProfileUrlObject(entity.profileUrls || entity.profile_urls)),
+  ]
+    .filter(isLikelyOfficialPersonProfileUrl)
+    .map((url) => String(url).trim());
+
 export const entityOfficialPersonProfileDestinations = (entity: Record<string, any>): Set<string> =>
   new Set(
-    [
-      entity.websiteUrl,
-      entity.website,
-      ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
-      ...Object.values(safeProfileUrlObject(entity.profileUrls || entity.profile_urls)),
-    ]
-      .filter(isLikelyOfficialPersonProfileUrl)
-      .map((url) => normalizeOfficialProfileDestination(String(url)))
+    entityOfficialPersonProfileUrls(entity)
+      .map((url) => normalizeOfficialProfileDestination(url))
       .filter(Boolean),
   );
+
+/**
+ * The stored spellings of one official profile URL that an equality lookup should try: the
+ * URL as given and its canonical path (a section-prefixed school profile collapses to the root
+ * profile), each with and without `www.`, `http`, and a trailing slash. Equality keeps the
+ * lookup on the `sourceUrl` index instead of a host-prefix regex scan (#5970 follow-up).
+ */
+export const officialProfileStoredUrlSpellings = (url: string): string[] => {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return [];
+  }
+  const host = parsed.hostname.replace(/^www\./, '').toLowerCase();
+  const path = parsed.pathname.replace(/\/+$/, '') || '/';
+  const paths = new Set([path, canonicalOfficialProfilePath(host, path)]);
+  const spellings = new Set<string>();
+  for (const candidatePath of paths) {
+    for (const scheme of ['https://', 'http://']) {
+      for (const prefix of ['', 'www.']) {
+        const base = `${scheme}${prefix}${host}${candidatePath === '/' ? '' : candidatePath}`;
+        spellings.add(base);
+        spellings.add(`${base}/`);
+      }
+    }
+  }
+  return [...spellings];
+};
 
 /**
  * A person-derived entity is one whose own identity links (name/site/sources)

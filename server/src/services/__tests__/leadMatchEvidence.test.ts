@@ -1,16 +1,18 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const storedOrcidStatements = vi.hoisted(() => [] as Array<{ sourceUrl: string; value: string }>);
+const store = vi.hoisted(() => ({
+  orcidStatements: [] as Array<{ sourceUrl: string; value: string }>,
+  foldedRecords: [] as Array<{ dedupedIntoResearcherId: string; profileLinks: unknown[] }>,
+  observationQueries: [] as Array<{ sourceUrl: { $in: unknown[] } }>,
+  researcherQueries: 0,
+}));
 
 vi.mock('../../models/observation', () => ({
   Observation: {
-    find: (query: { sourceUrl: { $in: Array<RegExp | string> } }) => {
-      const matches = storedOrcidStatements.filter((statement) =>
-        query.sourceUrl.$in.some((candidate) =>
-          candidate instanceof RegExp
-            ? candidate.test(statement.sourceUrl)
-            : candidate === statement.sourceUrl,
-        ),
+    find: (query: { sourceUrl: { $in: unknown[] } }) => {
+      store.observationQueries.push(query);
+      const matches = store.orcidStatements.filter((statement) =>
+        query.sourceUrl.$in.includes(statement.sourceUrl),
       );
       return { select: () => ({ lean: async () => matches }) };
     },
@@ -18,7 +20,12 @@ vi.mock('../../models/observation', () => ({
 }));
 
 vi.mock('../../models/researcher', () => ({
-  Researcher: { find: () => ({ select: () => ({ lean: async () => [] }) }) },
+  Researcher: {
+    find: () => {
+      store.researcherQueries += 1;
+      return { select: () => ({ lean: async () => store.foldedRecords }) };
+    },
+  },
 }));
 
 import {
@@ -29,7 +36,10 @@ import {
   type LeadMatchEvidence,
 } from '../leadMatchEvidence';
 import { entityOfficialPersonProfileDestinations } from '../leadProfileIdentity';
-import { researchDetailLeadIdentity } from '../researchGroupService';
+import {
+  researchDetailLeadIdentity,
+  resolveResearchDetailLeadIdentity,
+} from '../researchGroupService';
 
 const LEAD_ID = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 const UNRELATED_ID = 'bbbbbbbbbbbbbbbbbbbbbbbb';
@@ -65,6 +75,13 @@ const evidence = (overrides: Partial<LeadMatchEvidence>): LeadMatchEvidence => (
 });
 
 describe('lead match evidence (#5970)', () => {
+  beforeEach(() => {
+    store.orcidStatements.length = 0;
+    store.foldedRecords.length = 0;
+    store.observationQueries.length = 0;
+    store.researcherQueries = 0;
+  });
+
   it('drops the lead key when the lead only holds another school official profile', () => {
     expect(researchDetailLeadIdentity(initiative, leadOnSchoolB())).toEqual({
       leadIdentityStatus: 'verified',
@@ -190,23 +207,74 @@ describe('lead match evidence (#5970)', () => {
     expect(records[0].profileLinks).toHaveLength(1);
   });
 
-  it('loads a destination ORCID stored under a section-prefixed alias of the profile page', async () => {
-    storedOrcidStatements.splice(0, storedOrcidStatements.length, {
-      sourceUrl: 'https://medicine.yale.edu/fixture-section/profile/fixture-lead/?tab=bio',
-      value: LEAD_ORCID,
-    });
+  it('loads a page ORCID stored under the root profile when the row cites a section alias', async () => {
+    store.orcidStatements.push({ sourceUrl: SCHOOL_A_PROFILE, value: LEAD_ORCID });
+    const sectionCitingRow = {
+      ...initiative,
+      sourceUrls: ['https://medicine.yale.edu/fixture-section/profile/fixture-lead'],
+    };
     const leads = leadOnSchoolB(LEAD_ORCID);
-    const loaded = await loadLeadMatchEvidence(destinations, leads);
-    const identity = researchDetailLeadIdentity(initiative, leads, loaded);
+    const loaded = await loadLeadMatchEvidence(sectionCitingRow, leads);
+    const identity = researchDetailLeadIdentity(sectionCitingRow, leads, loaded);
     expect(identity.leadProfessorPublicKey).toEqual(expect.any(String));
   });
 
   it('does not load an ORCID stored under a different profile page on the same site', async () => {
-    storedOrcidStatements.splice(0, storedOrcidStatements.length, {
+    store.orcidStatements.push({
       sourceUrl: 'https://medicine.yale.edu/profile/fixture-lead-other/',
       value: LEAD_ORCID,
     });
-    const loaded = await loadLeadMatchEvidence(destinations, leadOnSchoolB(LEAD_ORCID));
+    const loaded = await loadLeadMatchEvidence(initiative, leadOnSchoolB(LEAD_ORCID));
     expect(loaded.pageOrcidByDestination.size).toBe(0);
+  });
+
+  it('looks up page ORCIDs by exact stored URL spellings, never by a pattern', async () => {
+    await loadLeadMatchEvidence(initiative, leadOnSchoolB(LEAD_ORCID));
+    expect(store.observationQueries).toHaveLength(1);
+    const spellings = store.observationQueries[0].sourceUrl.$in;
+    expect(spellings.every((value) => typeof value === 'string')).toBe(true);
+    expect(spellings).toContain(SCHOOL_A_PROFILE);
+    expect(
+      spellings.every((value) => String(value).includes('medicine.yale.edu/profile/fixture-lead')),
+    ).toBe(true);
+  });
+
+  it('issues no extra query when the lead matches the row through its own official profile', async () => {
+    const leadOnSchoolA = [
+      {
+        role: 'pi',
+        user: {
+          displayName: 'Fixture Lead',
+          profileUrls: { official: SCHOOL_A_PROFILE },
+          orcid: LEAD_ORCID,
+        },
+        row: { identityKey: LEAD_ID },
+      },
+    ];
+    const identity = await resolveResearchDetailLeadIdentity(initiative, leadOnSchoolA);
+    expect(identity.leadProfessorPublicKey).toEqual(expect.any(String));
+    expect(store.observationQueries).toHaveLength(0);
+    expect(store.researcherQueries).toBe(0);
+  });
+
+  it('keeps the lead of a row whose evidence names a profile folded into the lead', async () => {
+    store.foldedRecords.push({
+      dedupedIntoResearcherId: LEAD_ID,
+      profileLinks: [{ kind: 'YALE_OFFICIAL', url: SCHOOL_A_PROFILE }],
+    });
+    const identity = await resolveResearchDetailLeadIdentity(initiative, leadOnSchoolB());
+    expect(identity.leadProfessorPublicKey).toEqual(expect.any(String));
+    expect(store.researcherQueries).toBe(1);
+  });
+
+  it('serves no lead key when neither the fold nor the page vouches for the lead', async () => {
+    store.foldedRecords.push({
+      dedupedIntoResearcherId: UNRELATED_ID,
+      profileLinks: [{ kind: 'YALE_OFFICIAL', url: SCHOOL_A_PROFILE }],
+    });
+    store.orcidStatements.push({ sourceUrl: SCHOOL_A_PROFILE, value: OTHER_ORCID });
+    expect(await resolveResearchDetailLeadIdentity(initiative, leadOnSchoolB(LEAD_ORCID))).toEqual({
+      leadIdentityStatus: 'verified',
+    });
   });
 });
