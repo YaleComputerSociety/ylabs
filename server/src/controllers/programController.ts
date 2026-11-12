@@ -163,6 +163,7 @@ export const searchProgramsController = async (request: Request, response: Respo
     ...(result.queryCorrection ? { queryCorrection: result.queryCorrection } : {}),
     ...(result.queryMatch ? { queryMatch: result.queryMatch } : {}),
     ...(result.closeMatchesFrom !== undefined ? { closeMatchesFrom: result.closeMatchesFrom } : {}),
+    ...(result.citizenshipCounts ? { citizenshipCounts: result.citizenshipCounts } : {}),
   });
 };
 

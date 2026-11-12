@@ -2,7 +2,12 @@
  * React context for fellowship search, filter, and sort state.
  */
 import { createContext } from 'react';
-import { Fellowship, FellowshipFilterOptions, StudentVisibilityTier } from '../types/types';
+import {
+  Fellowship,
+  FellowshipFilterOptions,
+  ProgramCitizenshipCounts,
+  StudentVisibilityTier,
+} from '../types/types';
 import {
   FellowshipQuickFilter,
   ProgramSearchQueryCorrection,
@@ -16,6 +21,7 @@ export interface FellowshipSearchContextType {
   resultsRankedByRelevance: boolean;
   resultsMissOneWord: boolean;
   resultsCloseMatchesFrom: number | null;
+  citizenshipCounts: ProgramCitizenshipCounts | null;
   searchTypedSpelling: () => void;
 
   selectedYearOfStudy: string[];
@@ -81,6 +87,7 @@ export const defaultFellowshipSearchContext: FellowshipSearchContextType = {
   resultsRankedByRelevance: false,
   resultsMissOneWord: false,
   resultsCloseMatchesFrom: null,
+  citizenshipCounts: null,
   searchTypedSpelling: () => {},
   selectedYearOfStudy: [],
   selectedProgramCategory: [],

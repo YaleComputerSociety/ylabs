@@ -4,7 +4,12 @@
  * Mirrors searchReducer but for the fellowships listing flow. Extracted so
  * state transitions are testable without mounting the provider.
  */
-import { Fellowship, FellowshipFilterOptions, StudentVisibilityTier } from '../types/types';
+import {
+  Fellowship,
+  FellowshipFilterOptions,
+  ProgramCitizenshipCounts,
+  StudentVisibilityTier,
+} from '../types/types';
 import type { ProgramSearchUrlState } from '../utils/programSearchUrlState';
 
 export type FellowshipQuickFilter =
@@ -58,6 +63,7 @@ export interface FellowshipSearchState extends StudentProgramFilters {
   resultsRankedByRelevance: boolean;
   resultsMissOneWord: boolean;
   resultsCloseMatchesFrom: number | null;
+  citizenshipCounts: ProgramCitizenshipCounts | null;
   selectedStudentVisibilityTier: StudentVisibilityTier[];
   sortBy: string;
   sortOrder: number;
@@ -117,6 +123,7 @@ export type FellowshipSearchAction =
         queryCorrection?: ProgramSearchQueryCorrection | null;
         missOneWord?: boolean;
         closeMatchesFrom?: number | null;
+        citizenshipCounts?: ProgramCitizenshipCounts | null;
         rankedByRelevance?: boolean;
       };
     }
@@ -135,6 +142,7 @@ export const createInitialFellowshipSearchState = (
   resultsRankedByRelevance: false,
   resultsMissOneWord: false,
   resultsCloseMatchesFrom: null,
+  citizenshipCounts: null,
   ...createEmptyStudentProgramFilters(),
   selectedStudentVisibilityTier: [],
   sortBy: 'default',
@@ -291,6 +299,7 @@ export function fellowshipSearchReducer(
         rankedByRelevance,
         missOneWord,
         closeMatchesFrom,
+        citizenshipCounts,
       } = action.payload;
       const nextFellowships = append ? [...state.fellowships, ...fellowships] : fellowships;
       const nextTotal = total !== undefined ? total : nextFellowships.length;
@@ -311,6 +320,7 @@ export function fellowshipSearchReducer(
           : typeof closeMatchesFrom === 'number'
             ? closeMatchesFrom
             : null,
+        citizenshipCounts: append ? state.citizenshipCounts : (citizenshipCounts ?? null),
       };
     }
 
@@ -325,6 +335,7 @@ export function fellowshipSearchReducer(
         queryCorrection: null,
         resultsMissOneWord: false,
         resultsCloseMatchesFrom: null,
+        citizenshipCounts: null,
       };
 
     case 'LOAD_MORE_FAILURE':

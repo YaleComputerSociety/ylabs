@@ -1,4 +1,4 @@
-import { Fellowship } from '../types/types';
+import { Fellowship, type ProgramCitizenshipBucketCounts } from '../types/types';
 import { type FellowshipCycleCategory } from './fellowshipCycle';
 import { isDepartmentResearchGuidance, programRoleOf } from './programJourney';
 
@@ -99,6 +99,39 @@ export function citizenshipFilterOptionLabel(value: string): string {
   return CITIZENSHIP_FILTER_OPTION_LABELS[value] ?? `${value}, or not stated`;
 }
 
+export const PROGRAM_CITIZENSHIP_FILTER_NOTE =
+  'Programs that do not state this are included, listed after the ones that do. Check the official page.';
+
+export const CITIZENSHIP_DOESNT_SAY_TITLE = "Doesn't say";
+
+const CITIZENSHIP_GROUP_NOUNS: Record<string, string> = {
+  [US_CITIZENS_ELIGIBLE]: 'U.S. citizens',
+  [NON_US_CITIZENS_ELIGIBLE]: 'non-U.S. citizens',
+  [US_PERMANENT_RESIDENTS_ELIGIBLE]: 'U.S. permanent residents',
+};
+
+const citizenshipGroupNouns = (values: readonly string[]): string => {
+  const nouns = values.map((value) => CITIZENSHIP_GROUP_NOUNS[value] ?? value);
+  if (nouns.length <= 1) return nouns[0] ?? '';
+  if (nouns.length === 2) return `${nouns[0]} or ${nouns[1]}`;
+  return `${nouns.slice(0, -1).join(', ')}, or ${nouns[nouns.length - 1]}`;
+};
+
+export const programStatesCitizenship = (fellowship: Pick<Fellowship, 'citizenshipStatus'>) =>
+  (fellowship.citizenshipStatus?.length ?? 0) > 0;
+
+export function citizenshipOptionCountsLabel(counts: ProgramCitizenshipBucketCounts): string {
+  const says = counts.says === 1 ? '1 says it is open' : `${counts.says} say they are open`;
+  const doesntSay = counts.doesntSay === 1 ? "1 doesn't say" : `${counts.doesntSay} don't say`;
+  return `${says}, ${doesntSay}`;
+}
+
+export const citizenshipDoesntSayDescription = (selected: readonly string[]) =>
+  `These programs do not say whether ${citizenshipGroupNouns(selected)} can apply. Check the official page before you apply.`;
+
+export const citizenshipNoneSayNotice = (selected: readonly string[]) =>
+  `No program here says it is open to ${citizenshipGroupNouns(selected)}.`;
+
 export function programCitizenshipRestriction(
   fellowship: Pick<Fellowship, 'citizenshipStatus'>,
 ): string | null {
@@ -123,7 +156,7 @@ export function programCitizenshipSummary(
   if (statuses.includes(US_CITIZENS_ELIGIBLE) && statuses.includes(NON_US_CITIZENS_ELIGIBLE)) {
     return 'Open to U.S. and non-U.S. citizens';
   }
-  return statuses.length > 0 ? statuses.join(', ') : NOT_STATED_LABEL;
+  return programStatesCitizenship(fellowship) ? statuses.join(', ') : NOT_STATED_LABEL;
 }
 
 const CARD_AWARD_MAX_LENGTH = 28;

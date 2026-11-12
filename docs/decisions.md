@@ -5,6 +5,17 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-11-12: The Program Citizenship Filter Lists Stated Rules First And Counts Both Groups (#5299)
+
+This refines the citizenship labels of #5235 and keeps the 2026-11-10 region entry below (#5533): citizenship still keeps programs that state no rule, and its options still say "or not stated".
+Decision (owner, 2026-11-12): option 4 of #5299, chosen over two separate options, because the merged filter is honest and the student's missing piece was which group a program is in.
+Under a citizenship filter, the board and the ranked search results list every program that states its rule first, then a "Doesn't say" divider holding the programs that state none, each group keeping the board's timing sections or the search's relevance order.
+Each citizenship option in the filter shows how many programs say they are open and how many don't say, as a description of the option rather than part of its name.
+Both counts come from the query the list itself runs, with the other filters and the text query applied and the citizenship clause replaced by that one option, the way `/research` counts a facet (#5101), so the two numbers add up to the total that applying the option returns.
+A text query is re-ranked for each option's own pool, because the ranking's close-match fallback depends on the pool.
+The server orders the stated programs first within each relevance tier and pages across the boundary (`server/src/services/programCitizenshipCounts.ts`), and the client draws the divider from the same rule the card uses to say "Not stated", an empty citizenship list.
+Measured on Development on 2026-11-11 over 173 served programs: the non-U.S. option reads 127 say they are open and 39 don't say, and applying it returns 166 rows, 127 of them before the divider.
+
 ## 2026-11-12: Senior Essay Pages Are Served As Their Own Kind Of Department Guidance (#5298)
 
 This refines the 2026-10-01 entry below (#4285), which held senior-essay pages back from `/programs` and asked for each department's own research page "rather than the predicate widened".
