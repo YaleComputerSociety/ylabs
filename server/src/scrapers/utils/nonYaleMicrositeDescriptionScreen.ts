@@ -57,3 +57,85 @@ export function withoutRefusedNonYaleMicrositeDescriptions<
     (observation) => !isRefusedNonYaleMicrositeDescription(observation, leadNames, pageTextByUrl),
   );
 }
+
+export const MICROSITE_PAGE_DERIVED_FIELDS_BY_SOURCE: ReadonlyMap<
+  string,
+  ReadonlySet<string>
+> = new Map([
+  ['lab-microsite-description-llm', new Set(['shortDescription', 'researchAreas', 'methods'])],
+  [
+    'lab-microsite-undergrad-llm',
+    new Set([
+      'undergradAccessEvidence',
+      'currentUndergradCount',
+      'pastUndergradAdvisees',
+      'undergradEvidenceQuote',
+      'joinPageUrl',
+      'undergradRoleEvidenceQuote',
+      'contactInstructionsQuote',
+      'undergradConstraintQuote',
+    ]),
+  ],
+]);
+
+export const isMicrositePageDerivedField = (
+  observation: MicrositeDescriptionObservation,
+): boolean =>
+  typeof observation.sourceName === 'string' &&
+  typeof observation.field === 'string' &&
+  (MICROSITE_PAGE_DERIVED_FIELDS_BY_SOURCE.get(observation.sourceName)?.has(observation.field) ??
+    false);
+
+const isMicrositeLaneObservation = (observation: MicrositeDescriptionObservation): boolean =>
+  typeof observation.sourceName === 'string' &&
+  MICROSITE_PAGE_DERIVED_FIELDS_BY_SOURCE.has(observation.sourceName);
+
+const observedTextOf = (value: unknown): string[] => {
+  if (typeof value === 'string') return [value];
+  if (Array.isArray(value)) return value.flatMap(observedTextOf);
+  if (value && typeof value === 'object') return Object.values(value).flatMap(observedTextOf);
+  return [];
+};
+
+function micrositeTextByUrl(
+  observations: readonly MicrositeDescriptionObservation[],
+): StoredPageTextByUrl {
+  const textByUrl = new Map(storedPageTextByUrl(observations));
+  for (const observation of observations) {
+    if (!isMicrositeLaneObservation(observation)) continue;
+    const key =
+      typeof observation.sourceUrl === 'string' ? normalizeEvidenceUrl(observation.sourceUrl) : '';
+    if (!key) continue;
+    const text = observedTextOf(observation.value).join('\n');
+    if (text) textByUrl.set(key, [textByUrl.get(key), text].filter(Boolean).join('\n'));
+  }
+  return textByUrl;
+}
+
+export function isRefusedNonYaleMicrositePageField(
+  observation: MicrositeDescriptionObservation,
+  leadNames: readonly (string | undefined | null)[],
+  pageTextByUrl: StoredPageTextByUrl = new Map(),
+): boolean {
+  if (!isMicrositePageDerivedField(observation)) return false;
+  const sourceUrl = typeof observation.sourceUrl === 'string' ? observation.sourceUrl : '';
+  if (!sourceUrl) return false;
+  return (
+    nonYaleMicrositeOwnership({
+      sourceUrl,
+      text: pageTextByUrl.get(normalizeEvidenceUrl(sourceUrl)) ?? '',
+      lead: { names: leadNames },
+    }).decision === 'refuse'
+  );
+}
+
+export function withoutRefusedNonYaleMicrositePageFields<T extends MicrositeDescriptionObservation>(
+  observations: readonly T[],
+  leadNames: readonly (string | undefined | null)[],
+  pageTextSource: readonly MicrositeDescriptionObservation[] = observations,
+): T[] {
+  const pageTextByUrl = micrositeTextByUrl(pageTextSource);
+  return observations.filter(
+    (observation) => !isRefusedNonYaleMicrositePageField(observation, leadNames, pageTextByUrl),
+  );
+}

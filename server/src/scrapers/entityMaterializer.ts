@@ -14,7 +14,10 @@ import {
   identityWithPersonPageUrls,
   withoutNamesakePersonPageDescriptions,
 } from './utils/namesakePersonPageDescriptions';
-import { withoutRefusedNonYaleMicrositeDescriptions } from './utils/nonYaleMicrositeDescriptionScreen';
+import {
+  withoutRefusedNonYaleMicrositeDescriptions,
+  withoutRefusedNonYaleMicrositePageFields,
+} from './utils/nonYaleMicrositeDescriptionScreen';
 import { cachedCardFor } from './cardSynthesisDerivation';
 import { withoutModelCalls } from '../utils/modelClient';
 import {
@@ -13694,10 +13697,11 @@ async function materializeEntityUnderRemovalGuard(
     ? (options.nameIdentityAuthority?.leadPersonName ??
       (await loadResearchEntityLeadPersonName(entityDoc?._id ?? entityIdString)))
     : '';
+  const micrositeLeadNames = micrositeLeadName ? [micrositeLeadName] : [];
   const micrositeOwnershipScreened = isPersonResearchEntityRow
-    ? withoutRefusedNonYaleMicrositeDescriptions(
-        namesakeScreened,
-        micrositeLeadName ? [micrositeLeadName] : [],
+    ? withoutRefusedNonYaleMicrositePageFields(
+        withoutRefusedNonYaleMicrositeDescriptions(namesakeScreened, micrositeLeadNames, obs),
+        micrositeLeadNames,
         obs,
       )
     : namesakeScreened;
@@ -13705,7 +13709,7 @@ async function materializeEntityUnderRemovalGuard(
     console.log(
       `[description-microsite-ownership] ${entityType} ${entityIdString || identifier.entityKey || ''}: dropped ${
         namesakeScreened.length - micrositeOwnershipScreened.length
-      } lab-site description candidate(s) citing a non-Yale page not confirmed as the lead's`,
+      } lab-site candidate(s) citing a non-Yale page not confirmed as the lead's`,
     );
   }
 
