@@ -75,6 +75,11 @@ export async function runRetireDirectoryExportDepartments(options: {
 }): Promise<RetireDirectoryExportDepartmentsResult> {
   resetOrgUnitCanonicalizerCache();
   const canonicalDepartment = await catalogDepartment();
+  if (!canonicalDepartment) {
+    throw new Error(
+      'The org_units department catalog is unavailable, so no export code can be decoded; seed it first.',
+    );
+  }
 
   const observations = (await Observation.find({
     entityType: 'user',

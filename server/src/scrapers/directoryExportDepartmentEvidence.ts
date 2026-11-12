@@ -6,8 +6,19 @@ import {
 
 export const DIRECTORY_EXPORT_SOURCE = 'yale-directory-csv';
 
-export async function catalogDepartment(): Promise<CanonicalDepartment> {
+const CATALOG_AVAILABILITY_PROBE = 'Department Catalog Availability Probe';
+
+const noCatalogDepartment: CanonicalDepartment = () => undefined;
+
+/**
+ * The catalog department for a name, or null when `org_units` holds no department rows. The
+ * canonicalizer suspends fail-closed then, and an unavailable catalog must not read every export
+ * code as a non-department and clear it.
+ */
+export async function catalogDepartment(): Promise<CanonicalDepartment | null> {
   const canonicalizer = await getOrgUnitCanonicalizer();
+  const probe = canonicalizer.canonicalizeDepartments([CATALOG_AVAILABILITY_PROBE]);
+  if (probe.values.includes(CATALOG_AVAILABILITY_PROBE) && probe.unmatched.length > 0) return null;
   return (name: string) => {
     const canonical = canonicalizer.canonicalizeDepartments([name]);
     return canonical.values.length === 1 && canonical.unmatched.length === 0
@@ -28,8 +39,9 @@ interface DepartmentObservation {
  */
 export function withDirectoryExportDepartmentsDecoded<T extends DepartmentObservation>(
   observations: T[],
-  canonicalDepartment: CanonicalDepartment,
+  canonicalDepartment: CanonicalDepartment | null,
 ): T[] {
+  const decode = canonicalDepartment ?? noCatalogDepartment;
   const decoded: T[] = [];
   for (const observation of observations) {
     if (
@@ -39,7 +51,7 @@ export function withDirectoryExportDepartmentsDecoded<T extends DepartmentObserv
       decoded.push(observation);
       continue;
     }
-    const result = decodeDirectoryExportDepartment(observation.value, canonicalDepartment);
+    const result = decodeDirectoryExportDepartment(observation.value, decode);
     if (result.status === 'canonical') {
       decoded.push(
         result.department === observation.value
@@ -56,12 +68,13 @@ export function withDirectoryExportDepartmentsDecoded<T extends DepartmentObserv
 /**
  * The stored value a resolve keeps for a department the import seeded from the export: its
  * catalog department, nothing when it decodes to none, or the value unchanged when it is not an
- * export code at all.
+ * export code at all or the catalog is unavailable.
  */
 export function storedDepartmentAfterExportDecode(
   stored: unknown,
-  canonicalDepartment: CanonicalDepartment,
+  canonicalDepartment: CanonicalDepartment | null,
 ): { changed: false } | { changed: true; department: string | undefined } {
+  if (!canonicalDepartment) return { changed: false };
   const result = decodeDirectoryExportDepartment(stored, canonicalDepartment);
   if (result.status === 'not-export-code') return { changed: false };
   const department = result.status === 'canonical' ? result.department : undefined;

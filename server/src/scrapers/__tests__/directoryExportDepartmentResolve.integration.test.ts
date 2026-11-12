@@ -138,4 +138,14 @@ describe('a stored or stated directory export code resolves to a catalog departm
 
     expect((await resolve()).fieldsWritten).toBe(0);
   });
+
+  it('leaves a stored code alone when the department catalog is unavailable', async () => {
+    await OrgUnit.deleteMany({ kind: 'DEPARTMENT' });
+    resetOrgUnitCanonicalizerCache();
+    const person = await seedPerson({ primaryDepartment: 'ENVOTH Other Units' });
+    await seedKey('yale-directory');
+
+    await resolve();
+    expect(await departmentOf(person._id)).toBe('ENVOTH Other Units');
+  });
 });
