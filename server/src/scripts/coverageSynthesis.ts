@@ -413,7 +413,9 @@ async function runCardPassMode(
       validateOnly: args.validateOnly,
       ...report,
     });
-    console.log(JSON.stringify({ ...summary, stored: report.stored }, null, 2));
+    console.log(
+      JSON.stringify({ ...summary, stored: report.stored, byReason: report.byReason }, null, 2),
+    );
     return;
   }
   let callLLM: CardDraftFn | null = null;
@@ -740,6 +742,9 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
         entityName: typeof entity.name === 'string' ? entity.name : '',
         fullDescription: decision.result.description,
         evidenceTexts: snippets.map((snippet) => snippet.text),
+        researchAreas: Array.isArray(entity.researchAreas)
+          ? entity.researchAreas.filter((area): area is string => typeof area === 'string')
+          : [],
       });
     }
     if (!args.apply || !context) return;

@@ -1,4 +1,8 @@
-import { materializeEntity, type CardSynthesizer } from '../scrapers/entityMaterializer';
+import {
+  isRefusedWrittenBodyCard,
+  materializeEntity,
+  type CardSynthesizer,
+} from '../scrapers/entityMaterializer';
 import {
   cardInputHash,
   judgeImportedCard,
@@ -14,6 +18,13 @@ export interface CardRequest {
   entityName: string;
   fullDescription: string;
   evidenceTexts: string[];
+  researchAreas?: string[];
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
 }
 
 /**
@@ -29,6 +40,7 @@ export async function collectCardRequests(
     if (!slug) continue;
     const seen = new Set<string>();
     const entityName = typeof entity.name === 'string' ? entity.name : '';
+    const researchAreas = stringList(entity.researchAreas);
     const recorder: CardSynthesizer = async (fullDescription, evidenceTexts) => {
       const key = cardInputHash(fullDescription);
       if (!seen.has(key)) {
@@ -38,6 +50,7 @@ export async function collectCardRequests(
           entityName,
           fullDescription,
           evidenceTexts: [...(evidenceTexts ?? [])],
+          researchAreas,
         });
       }
       return '';
@@ -64,9 +77,8 @@ export function parseCardRequests(value: unknown): CardRequest[] {
       slug,
       entityName: typeof row.entityName === 'string' ? row.entityName : '',
       fullDescription,
-      evidenceTexts: Array.isArray(row.evidenceTexts)
-        ? row.evidenceTexts.filter((text): text is string => typeof text === 'string')
-        : [],
+      evidenceTexts: stringList(row.evidenceTexts),
+      researchAreas: stringList(row.researchAreas),
     };
   });
 }
@@ -128,10 +140,13 @@ export function parseImportedCardDrafts(value: unknown): ImportedCardDraft[] {
   });
 }
 
+export type CardImportRefusalReason = 'card-synthesis-checks' | 'written-body-card-bar';
+
 export interface CardImportRow {
   slug: string;
   writer: string;
   outcome: 'accepted' | 'refused' | 'missing-request';
+  refusalReason?: CardImportRefusalReason;
   stored: boolean;
   existingWriter?: string;
   inputHash?: string;
@@ -147,7 +162,7 @@ export async function runCardImport(input: {
   drafts: readonly ImportedCardDraft[];
   store: CardSynthesisDerivationStore;
   validateOnly: boolean;
-}): Promise<{ rows: CardImportRow[]; stored: number }> {
+}): Promise<{ rows: CardImportRow[]; stored: number; byReason: Record<string, number> }> {
   const bySlug = new Map(input.requests.map((request) => [request.slug, request]));
   const rows: CardImportRow[] = [];
   for (const draft of input.drafts) {
@@ -169,9 +184,19 @@ export async function runCardImport(input: {
       },
       draft,
     );
-    row.outcome = verdict.outcome;
     row.inputHash = verdict.inputHash;
-    row.card = verdict.card;
+    if (verdict.outcome === 'refused') {
+      row.outcome = 'refused';
+      row.refusalReason = 'card-synthesis-checks';
+    } else if (
+      isRefusedWrittenBodyCard(verdict.card, request.fullDescription, request.researchAreas)
+    ) {
+      row.outcome = 'refused';
+      row.refusalReason = 'written-body-card-bar';
+    } else {
+      row.outcome = 'accepted';
+      row.card = verdict.card;
+    }
     if (!verdict.record || input.validateOnly) continue;
     const existing = await input.store.find(verdict.record.inputHash);
     if (existing) {
@@ -181,5 +206,10 @@ export async function runCardImport(input: {
     await input.store.save(verdict.record);
     row.stored = true;
   }
-  return { rows, stored: rows.filter((row) => row.stored).length };
+  const byReason: Record<string, number> = {};
+  for (const row of rows) {
+    const reason = row.refusalReason ?? row.outcome;
+    byReason[reason] = (byReason[reason] ?? 0) + 1;
+  }
+  return { rows, stored: rows.filter((row) => row.stored).length, byReason };
 }
