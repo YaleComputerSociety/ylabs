@@ -50,13 +50,7 @@ const seedOrcidPageStating = async (givenName: string, orcidSpelling = UNISSUED_
   await Observation.create([
     observation('netid:quinn.fixture', 'fname', givenName, ORCID_PAGE, 'ysm-faculty-directory'),
     observation('netid:quinn.fixture', 'lname', 'Fixture', ORCID_PAGE, 'ysm-faculty-directory'),
-    observation(
-      'netid:quinn.fixture',
-      'orcid',
-      orcidSpelling,
-      ORCID_PAGE,
-      'ysm-faculty-directory',
-    ),
+    observation('netid:quinn.fixture', 'orcid', orcidSpelling, ORCID_PAGE, 'ysm-faculty-directory'),
   ]);
 };
 
