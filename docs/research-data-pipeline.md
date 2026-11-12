@@ -450,6 +450,7 @@ The contract now has six parts.
   `ScraperOrchestrator.run` calls `reapDeadScrapeRuns` (`server/src/scrapers/staleScrapeRunReaper.ts`) before it creates its `ScrapeRun`, with the same plan and the same status-only update as `scrape-runs:reconcile-stale --heartbeat-stale-only`: a heartbeat-stale row closes as `interrupted`, and a fresh heartbeat, a source lock held by anyone other than the caller, or a live owner process on this host keeps it.
   The caller's own lock does not count, so re-running a source closes its own dead predecessor.
   It writes only to Development, and a failed reap only warns, so it can never stop the run that called it.
+  On Development a dry run holds no apply lease, so the model write guard refuses its reap, which warns and carries on; only a writing lane run or a leased apply closes dead runs at start (#5871).
   The sweep stage below was the only automatic close, so while the scraper cron was suspended a CLI run killed after its last write read `running` for eight days, and a second one for twelve (#5628).
 - **The Development sweep reaps heartbeat-stale runs on every run.**
   Until this stage existed nothing scheduled the command, which is how the stuck rows accumulated.
