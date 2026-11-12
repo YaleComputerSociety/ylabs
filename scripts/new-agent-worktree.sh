@@ -76,10 +76,6 @@ if [ "${SKIP_INSTALL:-0}" != "1" ]; then
   bash "$WORKTREE_DIR/scripts/install-all.sh"
 fi
 
-port_in_use() {
-  command -v lsof >/dev/null 2>&1 && lsof -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
-}
-
 claimed_api_ports() {
   local tree
   while IFS= read -r tree; do
@@ -89,19 +85,10 @@ claimed_api_ports() {
   done < <(git -C "$REPO_ROOT" worktree list --porcelain | sed -n 's/^worktree //p')
 }
 
-find_free_port_offset() {
-  local offset="$1"
-  local claimed
-  claimed=" $(claimed_api_ports | tr '\n' ' ') "
-  while port_in_use "$((3000 + offset))" || port_in_use "$((4000 + offset))" ||
-    [[ "$claimed" == *" $((4000 + offset)) "* ]]; do
-    offset=$((offset + 1))
-  done
-  printf '%s' "$offset"
-}
-
 WORKTREE_COUNT="$(git -C "$REPO_ROOT" worktree list --porcelain | grep -c '^worktree ')"
-PORT_OFFSET="$(find_free_port_offset "$WORKTREE_COUNT")"
+PORT_OFFSET="$(node "$WORKTREE_DIR/scripts/worktree-port-probe.mjs" \
+  --start-offset "$WORKTREE_COUNT" \
+  --claimed-api-ports "$(claimed_api_ports | tr '\n' ' ')")"
 PORT="$((3000 + PORT_OFFSET))"
 SERVER_PORT="$((4000 + PORT_OFFSET))"
 
