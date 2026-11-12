@@ -11,17 +11,18 @@ import { RoleAssignment } from '../models/roleAssignment';
 import { researchEntityIdentityTokens } from '../scrapers/utils/personProfileEntityMatch';
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
 import { serializedDocumentId } from '../utils/idSerialization';
+import { researcherCarriesIdentityEvidence } from '../utils/researcherIdentity';
 import { servedSiteLeadVerdicts } from '../utils/leadContradictedByNamesake';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
   pastDetachmentsOfTheNamedPerson,
   planSurnameClashLeadDetachment,
-  researcherIdentityAnchored,
   summarizeSurnameClashRefusals,
   surnameClashGroups,
   type PastSurnameClashDetachment,
   type SurnameClashEntityRow,
+  type SurnameClashLeadIdentity,
   type SurnameClashLeadRow,
 } from './retireSurnameClashLeadGraftsCore';
 
@@ -61,11 +62,22 @@ export function parseRetireSurnameClashArgs(argv: string[]): RetireSurnameClashO
 interface PersonIdentity {
   displayName: string;
   identityAnchored: boolean;
+  identity: SurnameClashLeadIdentity;
+  archivedDuplicate: boolean;
 }
 
+const optionalText = (value: unknown): string | undefined => {
+  const text = typeof value === 'string' ? value.trim() : '';
+  return text || undefined;
+};
+
 async function loadPersonIdentities(): Promise<Map<string, PersonIdentity>> {
-  const researchers = (await Researcher.find({ archived: { $ne: true } })
-    .select('_id displayName identifiers profile.title profile.primaryDepartment')
+  const researchers = (await Researcher.find({
+    $or: [{ archived: { $ne: true } }, { dedupedIntoResearcherId: { $exists: true, $ne: null } }],
+  })
+    .select(
+      '_id displayName archived dedupedIntoResearcherId identifiers profileLinks.kind profile.title profile.primaryDepartment',
+    )
     .lean()) as unknown as Array<Record<string, any>>;
   const identities = new Map<string, PersonIdentity>();
   for (const row of researchers) {
@@ -75,10 +87,37 @@ async function loadPersonIdentities(): Promise<Map<string, PersonIdentity>> {
     if (!displayName) continue;
     identities.set(id, {
       displayName,
-      identityAnchored: researcherIdentityAnchored(row),
+      identityAnchored: researcherCarriesIdentityEvidence(row),
+      identity: {
+        netid: optionalText(row.identifiers?.netid),
+        email: optionalText(row.identifiers?.email),
+        orcid: optionalText(row.identifiers?.orcid),
+        title: optionalText(row.profile?.title),
+        department: optionalText(row.profile?.primaryDepartment),
+        dedupedIntoPersonId: serializedDocumentId(row.dedupedIntoResearcherId),
+      },
+      archivedDuplicate: row.archived === true,
     });
   }
   return identities;
+}
+
+/**
+ * An archived duplicate's live lead edge is read only beside a lead edge of the record
+ * it was folded into, where it is evidence that the clash is one person (#5941). Alone,
+ * it is not a clash member: the repair never judged archived records before.
+ */
+function withoutStrayArchivedDuplicates(
+  leads: readonly SurnameClashLeadRow[],
+  identities: ReadonlyMap<string, PersonIdentity>,
+): SurnameClashLeadRow[] {
+  const personIds = new Set(leads.map((lead) => lead.personId));
+  return leads.filter((lead) => {
+    const identity = identities.get(lead.personId);
+    if (!identity?.archivedDuplicate) return true;
+    const dedupedInto = identity.identity.dedupedIntoPersonId;
+    return Boolean(dedupedInto && personIds.has(dedupedInto));
+  });
 }
 
 async function loadClashEntities(
@@ -109,12 +148,17 @@ async function loadClashEntities(
         displayName: identity.displayName,
         reviewStatus: doc.reviewStatus ? String(doc.reviewStatus) : undefined,
         identityAnchored: identity.identityAnchored,
+        identity: identity.identity,
         rosterVerified:
           String(doc.rosterProvenance?.evidenceStatus || '')
             .trim()
             .toLowerCase() === 'verified',
       },
     ]);
+  }
+
+  for (const [entityId, leads] of leadsByEntityId) {
+    leadsByEntityId.set(entityId, withoutStrayArchivedDuplicates(leads, identities));
   }
 
   const clashEntityIds = [...leadsByEntityId.entries()]
@@ -152,6 +196,43 @@ async function loadClashEntities(
   return { rows, slugByEntityId };
 }
 
+/**
+ * For each entity, the records that archived duplicates which ever led it were folded
+ * into, read from `dedupedIntoResearcherId` on every lead edge, archived or live.
+ */
+async function loadArchivedDuplicateLeadTargets(
+  entityIds: readonly unknown[],
+): Promise<Map<string, Set<string>>> {
+  const edges = (await RoleAssignment.find({
+    role: { $in: LEAD_ROLES },
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': { $in: entityIds },
+  })
+    .select('personId target')
+    .lean()) as unknown as Array<Record<string, any>>;
+  const duplicates = (await Researcher.find({
+    _id: { $in: [...new Set(edges.map((edge) => edge.personId))] },
+    archived: true,
+    dedupedIntoResearcherId: { $exists: true, $ne: null },
+  })
+    .select('_id dedupedIntoResearcherId')
+    .lean()) as unknown as Array<Record<string, any>>;
+  const targetByDuplicateId = new Map(
+    duplicates.map((row) => [
+      serializedDocumentId(row._id),
+      serializedDocumentId(row.dedupedIntoResearcherId),
+    ]),
+  );
+  const targetsByEntityId = new Map<string, Set<string>>();
+  for (const edge of edges) {
+    const entityId = serializedDocumentId(edge.target?.id);
+    const target = targetByDuplicateId.get(serializedDocumentId(edge.personId));
+    if (!entityId || !target) continue;
+    targetsByEntityId.set(entityId, (targetsByEntityId.get(entityId) || new Set()).add(target));
+  }
+  return targetsByEntityId;
+}
+
 async function loadPastDetachments(): Promise<{
   detachments: PastSurnameClashDetachment[];
   slugByEntityId: Map<string, string>;
@@ -185,6 +266,9 @@ async function loadPastDetachments(): Promise<{
     .select('_id slug name displayName')
     .lean()) as unknown as Array<Record<string, any>>;
   const entityById = new Map(entities.map((entity) => [serializedDocumentId(entity._id), entity]));
+  const duplicateTargetsByEntityId = await loadArchivedDuplicateLeadTargets(
+    entities.map((entity) => entity._id),
+  );
 
   const detachments: PastSurnameClashDetachment[] = [];
   const slugByEntityId = new Map<string, string>();
@@ -205,6 +289,8 @@ async function loadPastDetachments(): Promise<{
         displayName: entity.displayName,
         slug: entity.slug,
       }),
+      entityLeadDuplicateResolvesToPerson:
+        duplicateTargetsByEntityId.get(entityId)?.has(personId) === true,
     });
     slugByEntityId.set(entityId, String(entity.slug || ''));
   }
