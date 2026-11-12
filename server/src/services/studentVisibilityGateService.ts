@@ -2282,11 +2282,13 @@ async function planResearchEntityGateUpdates(
 
   const leadRows = buildGateLeadRows(rosterByEntityId);
   const duplicateReferenceRosterByEntityId = needsDuplicateReferenceCorpus
-    ? rosterWithoutWithheldPeople(
-        await getResearchEntityRosterByEntityId(
-          duplicateReferenceEntities.map((entity: any) => entity._id),
+    ? await rostersWithDepartedLeadsRetired(
+        rosterWithoutWithheldPeople(
+          await getResearchEntityRosterByEntityId(
+            duplicateReferenceEntities.map((entity: any) => entity._id),
+          ),
+          serving,
         ),
-        serving,
       )
     : rosterByEntityId;
   const duplicateReferenceLeadRows = needsDuplicateReferenceCorpus
