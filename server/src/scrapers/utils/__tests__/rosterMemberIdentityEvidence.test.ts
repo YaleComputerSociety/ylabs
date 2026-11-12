@@ -482,23 +482,50 @@ describe('subject-scoped ORCID (#5932)', () => {
     ).toBe(SUBJECT_ORCID);
   });
 
-  it('reads the main content as the subject node when only the page title names the member', () => {
-    const titled = (body: string) =>
-      `<html><head><title>${MEMBER} | Synthetic Center</title></head><body><main>${body}</main></body></html>`;
-    expect(
-      extractRosterMemberIdentityEvidence(
-        titled(`<h2>Contact</h2>${orcidLink(SUBJECT_ORCID)}`),
-        PAGE_URL,
-        MEMBER,
-      ).orcid,
-    ).toBe(SUBJECT_ORCID);
-    expect(
-      extractRosterMemberIdentityEvidence(
-        `<html><head><title>Casey Coauthor | Synthetic Center</title></head><body><main>${orcidLink(SUBJECT_ORCID)}</main></body></html>`,
-        PAGE_URL,
-        MEMBER,
-      ).orcid,
-    ).toBeUndefined();
+  it('states no ORCID when only the page title names the member, since no heading scopes a subject node', () => {
+    const titledOnly = (head: string) =>
+      `<html><head>${head}</head><body><main><h2>Contact</h2>${orcidLink(SUBJECT_ORCID)}<p>ORCID: ${SUBJECT_ORCID}</p></main></body></html>`;
+    for (const head of [
+      `<title>${MEMBER} | Synthetic Center</title>`,
+      `<meta property="og:title" content="${MEMBER}"><title>${MEMBER}</title>`,
+    ]) {
+      expect(
+        extractRosterMemberIdentityEvidence(titledOnly(head), PAGE_URL, MEMBER).orcid,
+      ).toBeUndefined();
+    }
+  });
+
+  it('still states the ORCID when a heading names the member alongside the same title', () => {
+    const html = `<html><head><title>${MEMBER} | Synthetic Center</title></head><body><main><h2>${MEMBER}</h2>${orcidLink(SUBJECT_ORCID)}</main></body></html>`;
+    expect(extractRosterMemberIdentityEvidence(html, PAGE_URL, MEMBER).orcid).toBe(SUBJECT_ORCID);
+  });
+
+  it.each(['script', 'style', 'noscript', 'template', 'iframe', 'noembed', 'noframes'])(
+    'never reads an iD out of a <%s> body inside the subject node',
+    (tag) => {
+      const unrendered = `<${tag}>{"orcid":"${OTHER_ORCID}"} ${orcidLink(OTHER_ORCID)}</${tag}>`;
+      expect(
+        extractRosterMemberIdentityEvidence(profile(unrendered), PAGE_URL, MEMBER).orcid,
+      ).toBeUndefined();
+      expect(
+        extractRosterMemberIdentityEvidence(
+          profile(unrendered + orcidLink(SUBJECT_ORCID)),
+          PAGE_URL,
+          MEMBER,
+        ).orcid,
+      ).toBe(SUBJECT_ORCID);
+    },
+  );
+
+  it('derives the same subject ORCID when run twice over the same page', () => {
+    const html = profile(
+      `<noscript>${OTHER_ORCID}</noscript><p>ORCID: ${SUBJECT_ORCID}</p>`,
+      `<aside>${orcidLink(OTHER_ORCID)}</aside>`,
+    );
+    const first = extractRosterMemberIdentityEvidence(html, PAGE_URL, MEMBER);
+    const second = extractRosterMemberIdentityEvidence(html, PAGE_URL, MEMBER);
+    expect(first.orcid).toBe(SUBJECT_ORCID);
+    expect(second).toEqual(first);
   });
 
   it('keeps an ORCID inside a wrapper whose class only contains a block word mid-token', () => {
@@ -564,9 +591,22 @@ describe('ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION (#5677)', () => {
         <a href="https://medicine.yale.edu/profile/blair-synthetic/">Blair Synthetic</a>
       </main></body></html>`,
     },
+    {
+      memberName: 'Avery Synthetic',
+      html: `<html><head><title>Avery Synthetic | Synthetic Center</title></head><body><main>
+        <h2>Contact</h2><a href="https://orcid.org/9999-9000-9999-006X">ORCID</a>
+      </main></body></html>`,
+    },
+    {
+      memberName: 'Avery Synthetic',
+      html: `<html><body><main><h1>Avery Synthetic</h1>
+        <noscript>9999-9000-9999-0019</noscript>
+        <a href="https://orcid.org/9999-9000-9999-006X">ORCID</a>
+      </main></body></html>`,
+    },
   ];
   const PINNED = {
-    version: 4,
+    version: 5,
     outputs: [
       {
         pageUrl: PAGE,
@@ -584,6 +624,14 @@ describe('ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION (#5677)', () => {
         linkedProfileUrls: [PAGE, 'https://history.yale.edu/people/liz-synthetic'],
         emails: [],
         netids: [],
+      },
+      { pageUrl: PAGE, linkedProfileUrls: [PAGE], emails: [], netids: [] },
+      {
+        pageUrl: PAGE,
+        linkedProfileUrls: [PAGE],
+        emails: [],
+        netids: [],
+        orcid: '9999-9000-9999-006X',
       },
     ],
   };
