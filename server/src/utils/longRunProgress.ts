@@ -35,14 +35,17 @@ export function startLongRunProgress(
   let errors = 0;
   const seconds = (ms: number) => Math.round(ms / 1000);
   log(`[${label}] starting: ${totalKeys} keys`);
-  const heartbeat = arm(() => {
-    const at = now();
-    if (done >= totalKeys || at - lastLoggedAt < everyMs) return;
-    lastLoggedAt = at;
-    log(
-      `[${label}] still working: ${done}/${totalKeys} keys, ${seconds(at - lastKeyAt)} s since the last key, ${seconds(at - startedAt)} s elapsed`,
-    );
-  }, Math.min(everyMs, HEARTBEAT_CHECK_MS));
+  const heartbeat = arm(
+    () => {
+      const at = now();
+      if (done >= totalKeys || at - lastLoggedAt < everyMs) return;
+      lastLoggedAt = at;
+      log(
+        `[${label}] still working: ${done}/${totalKeys} keys, ${seconds(at - lastKeyAt)} s since the last key, ${seconds(at - startedAt)} s elapsed`,
+      );
+    },
+    Math.min(everyMs, HEARTBEAT_CHECK_MS),
+  );
   heartbeat.unref?.();
   return {
     tick(errored) {
