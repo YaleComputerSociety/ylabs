@@ -88,7 +88,7 @@ describe('NsfAwardScraper co-PI crediting', () => {
         status: 'canonical',
         slug: `row-${researcherId}`,
       }),
-      dateStart: '01/01/2020',
+      expDateStart: '01/01/2020',
     });
     const { ctx, emitted } = buildContext();
     const result = await scraper.run(ctx);
@@ -110,7 +110,7 @@ describe('NsfAwardScraper co-PI crediting', () => {
       fetchPage: vi.fn().mockResolvedValueOnce({ awards: [award('1', [YALE_CO_PI])] }) as any,
       resolveResearcherId: resolveEveryone,
       researchHomeResolver: async () => ({ status: 'canonical', slug: 'shared-row' }),
-      dateStart: '01/01/2020',
+      expDateStart: '01/01/2020',
     });
     const { ctx, emitted } = buildContext();
     await scraper.run(ctx);
