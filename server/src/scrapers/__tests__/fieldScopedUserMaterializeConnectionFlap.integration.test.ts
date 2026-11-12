@@ -23,7 +23,7 @@ const USERS = 120;
 const POOL_SIZE = 10;
 const FLAP_AFTER_COMMANDS = 400;
 const OUTAGE_MS = 2_000;
-const SETTLE_BOUND_MS = 60_000;
+const SETTLE_BOUND_MS = 25_000;
 const SCOPE = ['identifiers.email', 'identifiers.emailSupport'];
 
 class FlappingProxy {

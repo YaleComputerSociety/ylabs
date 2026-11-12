@@ -147,6 +147,37 @@ describe('connecting and reconnecting', () => {
     );
   });
 
+  describe('the stall diagnostic report (#5945)', () => {
+    const report = process.report as NodeJS.ProcessReport;
+    const before = {
+      reportOnSignal: report.reportOnSignal,
+      signal: report.signal,
+      directory: report.directory,
+      excludeEnv: report.excludeEnv,
+    };
+
+    afterEach(() => {
+      Object.assign(report, before);
+    });
+
+    it('is armed on SIGUSR2 for an entry point that connects on the script budget', async () => {
+      report.reportOnSignal = false;
+
+      await connectBudgets(() => initializeConnections());
+
+      expect(report.reportOnSignal).toBe(true);
+      expect(report.signal).toBe('SIGUSR2');
+    });
+
+    it('is left alone for the serving process, which keeps the default SIGUSR2 behaviour', async () => {
+      report.reportOnSignal = false;
+
+      await connectBudgets(() => initializeConnections(mongoOptions));
+
+      expect(report.reportOnSignal).toBe(false);
+    });
+  });
+
   it('keeps the serving process on the serving budget across a reconnect', async () => {
     const [initial, reconnect] = await connectBudgets(() => initializeConnections(mongoOptions));
 

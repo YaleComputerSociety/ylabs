@@ -560,6 +560,7 @@ export async function initializeConnections(
     throw new Error('MONGODBURL is required');
   }
   activeConnectOptions = connectOptions;
+  if (connectOptions !== mongoOptions) enableScriptDiagnosticReportOnSignal();
   await mongoose.connect(url, connectOptions);
   watchMongoClientProgress(mongoose.connection.getClient());
   await installDevelopmentWriteGuards(mongoose.connection);
