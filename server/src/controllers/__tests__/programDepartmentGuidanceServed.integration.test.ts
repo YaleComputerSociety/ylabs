@@ -8,37 +8,34 @@ import { getProgramById, searchProgramsController } from '../programController';
 const RESEARCH_GUIDE_URL = 'https://fixture.yale.edu/undergraduate/undergraduate-research';
 const SENIOR_ESSAY_GUIDE_URL = 'https://fixture.yale.edu/undergraduate/senior-essay';
 
-const servedGuide = (overrides: Record<string, unknown>) => ({
+const servedGuideFields = {
   summary: 'A synthetic department page used to exercise served department guidance.',
   sourceName: 'department-undergrad-research',
   archived: false,
   studentVisibilityTier: 'student_ready',
   entryMode: 'CONTACT_FACULTY',
   undergraduateOnly: true,
-  ...overrides,
-});
+} as const;
 
 const seedGuides = async () => {
-  const research = await Fellowship.create(
-    servedGuide({
-      title: 'Fixture Sciences Undergraduate Research',
-      programKind: 'DEPARTMENT_RESEARCH_GUIDE',
-      studentFacingCategory: 'Department research guidance',
-      sourcePageTitle: 'Undergraduate Research',
-      sourceUrl: RESEARCH_GUIDE_URL,
-      applicationLink: RESEARCH_GUIDE_URL,
-    }),
-  );
-  const seniorEssay = await Fellowship.create(
-    servedGuide({
-      title: 'Fixture Humanities Senior Essay',
-      programKind: 'DEPARTMENT_SENIOR_ESSAY_GUIDE',
-      studentFacingCategory: 'Senior essay guidance',
-      sourcePageTitle: 'The Senior Essay',
-      sourceUrl: SENIOR_ESSAY_GUIDE_URL,
-      applicationLink: SENIOR_ESSAY_GUIDE_URL,
-    }),
-  );
+  const research = await Fellowship.create({
+    ...servedGuideFields,
+    title: 'Fixture Sciences Undergraduate Research',
+    programKind: 'DEPARTMENT_RESEARCH_GUIDE',
+    studentFacingCategory: 'Department research guidance',
+    sourcePageTitle: 'Undergraduate Research',
+    sourceUrl: RESEARCH_GUIDE_URL,
+    applicationLink: RESEARCH_GUIDE_URL,
+  } as const);
+  const seniorEssay = await Fellowship.create({
+    ...servedGuideFields,
+    title: 'Fixture Humanities Senior Essay',
+    programKind: 'DEPARTMENT_SENIOR_ESSAY_GUIDE',
+    studentFacingCategory: 'Senior essay guidance',
+    sourcePageTitle: 'The Senior Essay',
+    sourceUrl: SENIOR_ESSAY_GUIDE_URL,
+    applicationLink: SENIOR_ESSAY_GUIDE_URL,
+  } as const);
   return { research, seniorEssay };
 };
 
