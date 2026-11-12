@@ -1,4 +1,4 @@
-import { Fellowship } from '../types/types';
+import { Fellowship, type DepartmentGuidanceKind } from '../types/types';
 import { isLikelyUnavailableSourceLink } from './researchDetailSources';
 import { safeHttpUrl } from './url';
 
@@ -10,6 +10,7 @@ const STARTS_RESEARCH_KINDS = new Set([
   'RA_PROGRAM',
   'MENTOR_MATCHING',
   'DEPARTMENT_RESEARCH_GUIDE',
+  'DEPARTMENT_SENIOR_ESSAY_GUIDE',
 ]);
 
 const FUNDS_RESEARCH_KINDS = new Set([
@@ -43,6 +44,43 @@ export const DEPARTMENT_RESEARCH_GUIDANCE_STATUS = 'Not an application';
 
 export const DEPARTMENT_RESEARCH_GUIDANCE_BADGE = 'Department guidance';
 
+export const DEPARTMENT_SENIOR_ESSAY_GUIDANCE_LABEL = 'Senior essay guidance';
+
+export const DEPARTMENT_SENIOR_ESSAY_GUIDANCE_ACTION =
+  "Read the department's senior essay guidance";
+
+export interface DepartmentGuidanceCopy {
+  label: string;
+  badge: string;
+  action: string;
+}
+
+const DEPARTMENT_GUIDANCE_COPY: Record<DepartmentGuidanceKind, DepartmentGuidanceCopy> = {
+  research: {
+    label: DEPARTMENT_RESEARCH_GUIDANCE_LABEL,
+    badge: DEPARTMENT_RESEARCH_GUIDANCE_BADGE,
+    action: DEPARTMENT_RESEARCH_GUIDANCE_ACTION,
+  },
+  senior_essay: {
+    label: DEPARTMENT_SENIOR_ESSAY_GUIDANCE_LABEL,
+    badge: DEPARTMENT_SENIOR_ESSAY_GUIDANCE_LABEL,
+    action: DEPARTMENT_SENIOR_ESSAY_GUIDANCE_ACTION,
+  },
+};
+
+export function departmentGuidanceKindOf(
+  fellowship: Pick<Fellowship, 'departmentResearchGuidance' | 'departmentGuidanceKind'>,
+): DepartmentGuidanceKind | null {
+  if (!isDepartmentResearchGuidance(fellowship)) return null;
+  return fellowship.departmentGuidanceKind === 'senior_essay' ? 'senior_essay' : 'research';
+}
+
+export function departmentGuidanceCopy(
+  fellowship: Pick<Fellowship, 'departmentResearchGuidance' | 'departmentGuidanceKind'>,
+): DepartmentGuidanceCopy {
+  return DEPARTMENT_GUIDANCE_COPY[departmentGuidanceKindOf(fellowship) ?? 'research'];
+}
+
 export const DEPARTMENT_RESEARCH_GUIDANCE_BADGE_CLASS =
   'border border-line-brand bg-brand-soft text-brand';
 
@@ -63,6 +101,7 @@ export function programKindLabel(kind: string): string {
     TRAVEL_RESEARCH_GRANT: 'Research travel grant',
     SENIOR_THESIS_FUNDING: 'Senior research funding',
     DEPARTMENT_RESEARCH_GUIDE: DEPARTMENT_RESEARCH_GUIDANCE_LABEL,
+    DEPARTMENT_SENIOR_ESSAY_GUIDE: DEPARTMENT_SENIOR_ESSAY_GUIDANCE_LABEL,
     RESEARCH_AWARD: 'Research award',
     OTHER: 'Program record',
   };

@@ -48,6 +48,7 @@ import {
   type LanePageProbe,
 } from '../lanePageHealth';
 import { statedAdministeringOffice } from '../utils/administeringOffice';
+import { pageTitleNamesSeniorEssayGuidance } from '../../services/departmentResearchGuidance';
 
 export const DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE = 'department-undergrad-research';
 
@@ -258,7 +259,7 @@ export const DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES: DepartmentUndergradRes
     },
     {
       key: 'earth-planetary-sciences',
-      url: 'https://earth.yale.edu/undergraduate-program',
+      url: 'https://earth.yale.edu/research-opportunities-and-information',
       department: 'Earth and Planetary Sciences',
       school: 'Yale Faculty of Arts and Sciences',
       parser: 'general-guidance',
@@ -266,19 +267,19 @@ export const DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES: DepartmentUndergradRes
     },
     {
       key: 'political-science',
-      url: 'https://politicalscience.yale.edu/academics/about-undergraduate-program',
+      url: 'https://politicalscience.yale.edu/academics/undergraduate-program/senior-essay',
       department: 'Political Science',
       school: 'Yale Faculty of Arts and Sciences',
       parser: 'general-guidance',
-      title: 'Political Science Undergraduate Research Opportunities',
+      title: 'Political Science Senior Essay',
     },
     {
       key: 'history',
-      url: 'https://history.yale.edu/academics/undergraduate-program',
+      url: 'https://history.yale.edu/undergraduate/senior-essay',
       department: 'History',
       school: 'Yale Faculty of Arts and Sciences',
       parser: 'general-guidance',
-      title: 'History Undergraduate Research',
+      title: 'History Senior Essay',
     },
     {
       key: 'neuroscience',
@@ -342,7 +343,7 @@ export const DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES: DepartmentUndergradRes
       department: 'Sociology',
       school: 'Yale Faculty of Arts and Sciences',
       parser: 'general-guidance',
-      title: 'Sociology Undergraduate Research',
+      title: 'Sociology Senior Project',
     },
     {
       key: 'biomedical-engineering',
@@ -358,7 +359,7 @@ export const DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES: DepartmentUndergradRes
       department: 'Statistics and Data Science',
       school: 'Yale Faculty of Arts and Sciences',
       parser: 'general-guidance',
-      title: 'Statistics and Data Science Senior Research',
+      title: 'Statistics and Data Science Senior Essay',
     },
     {
       key: 'english',
@@ -366,7 +367,7 @@ export const DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES: DepartmentUndergradRes
       department: 'English',
       school: 'Yale Faculty of Arts and Sciences',
       parser: 'general-guidance',
-      title: 'English Senior Essay Research',
+      title: 'English Senior Essay',
     },
     {
       key: 'comparative-literature',
@@ -374,7 +375,7 @@ export const DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES: DepartmentUndergradRes
       department: 'Comparative Literature',
       school: 'Yale Faculty of Arts and Sciences',
       parser: 'general-guidance',
-      title: 'Comparative Literature Senior Essay Research',
+      title: 'Comparative Literature Senior Essay',
     },
     {
       key: 'religious-studies',
@@ -382,7 +383,7 @@ export const DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES: DepartmentUndergradRes
       department: 'Religious Studies',
       school: 'Yale Faculty of Arts and Sciences',
       parser: 'general-guidance',
-      title: 'Religious Studies Senior Essay Research',
+      title: 'Religious Studies Senior Essay',
     },
     {
       key: 'american-studies',
@@ -390,7 +391,7 @@ export const DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES: DepartmentUndergradRes
       department: 'American Studies',
       school: 'Yale Faculty of Arts and Sciences',
       parser: 'general-guidance',
-      title: 'American Studies Senior Essay Research',
+      title: 'American Studies Senior Essay',
     },
     {
       key: 'womens-gender-sexuality-studies',
@@ -406,7 +407,7 @@ export const DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES: DepartmentUndergradRes
       department: 'Environmental Studies',
       school: 'Yale Faculty of Arts and Sciences',
       parser: 'general-guidance',
-      title: 'Environmental Studies Senior Essay Research',
+      title: 'Environmental Studies Senior Essay',
     },
     {
       key: 'global-affairs',
@@ -422,7 +423,7 @@ export const DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES: DepartmentUndergradRes
       department: 'History of Art',
       school: 'Yale Faculty of Arts and Sciences',
       parser: 'general-guidance',
-      title: 'History of Art Senior Essay Research',
+      title: 'History of Art Senior Essay',
     },
     {
       key: 'film-and-media-studies',
@@ -430,7 +431,7 @@ export const DEFAULT_DEPARTMENT_UNDERGRAD_RESEARCH_PAGES: DepartmentUndergradRes
       department: 'Film and Media Studies',
       school: 'Yale Faculty of Arts and Sciences',
       parser: 'general-guidance',
-      title: 'Film and Media Studies Senior Essay Research',
+      title: 'Film and Media Studies Senior Requirement',
     },
   ];
 
@@ -506,14 +507,18 @@ function usefulUndergradResearchSentences(text: string): string[] {
 function departmentGuidanceDescription(
   config: DepartmentUndergradResearchPageConfig,
   text: string,
+  pageTitle?: string,
 ): { fullDescription: string; shortDescription: string; evidenceQuote: string } {
   const sentences = usefulUndergradResearchSentences(text);
   const lead = `Supports undergraduate research in ${config.department}.`;
   const sourceBackedBody = sentences.slice(0, 3).join(' ');
+  const guidanceTopic = pageTitleNamesSeniorEssayGuidance(pageTitle)
+    ? "the department's guidance on the senior essay"
+    : 'department guidance on finding faculty research opportunities';
   return {
     fullDescription: conciseText(sourceBackedBody ? `${lead} ${sourceBackedBody}` : lead),
     shortDescription: conciseText(
-      `Supports undergraduate research in ${config.department} through department guidance on finding faculty research opportunities.`,
+      `Supports undergraduate research in ${config.department} through ${guidanceTopic}.`,
       240,
     ),
     evidenceQuote: conciseText(sentences.slice(0, 2).join(' ')),
@@ -707,7 +712,8 @@ export function parseGeneralDepartmentResearchPage(
   if (!pageHasUndergradResearchEvidence(`${pageContext} ${text}`)) return [];
 
   const title = config.title || `${config.department} Undergraduate Research`;
-  const description = departmentGuidanceDescription(config, text);
+  const pageTitle = pageOwnTitle($);
+  const description = departmentGuidanceDescription(config, text, pageTitle);
   return [
     {
       entityKey: departmentEntityKey(config),
@@ -722,7 +728,7 @@ export function parseGeneralDepartmentResearchPage(
       evidenceQuote: description.evidenceQuote,
       undergradAccessEvidence: true,
       contactRole: 'Faculty member for undergraduate research',
-      pageTitle: pageOwnTitle($),
+      pageTitle,
     },
   ];
 }

@@ -24,6 +24,13 @@ import {
   OWN_KEY_FALLBACK_TITLE_FIELD,
   type ResearcherGatedField,
 } from '../utils/researcherFieldWriters';
+import { isDepartmentHeadingChrome } from './utils/departmentHeadingChrome';
+import { withoutDepartmentHeadingObservations } from './departmentHeadingObservationScreen';
+import {
+  catalogDepartment,
+  storedDepartmentAfterExportDecode,
+  withDirectoryExportDepartmentsDecoded,
+} from './directoryExportDepartmentEvidence';
 import {
   changedResearcherPaths,
   expandUserMaterializerScope,
@@ -667,6 +674,11 @@ interface MaterializeOptions {
    * into a projection nor written; the run's other types and its reconciliation still run.
    */
   skipEntityTypes?: readonly string[];
+  /**
+   * Plan center roster retirement without applying it, for every center roster lane, so a run
+   * whose roster read is known to miss listed members can still project its listings (#5897).
+   */
+  skipCenterRosterRetirement?: boolean;
   /**
    * Ignore the named locks, each only if it is revisitable on this row, so the
    * projection reports what the engine would derive for them today. Off everywhere
@@ -8205,9 +8217,14 @@ export async function joinUserIdentityToExistingResearcher(
   const keyNamesAnOfficeMailbox = userKeyNamesRoleOrUnitMailbox(identifier.entityKey, obs);
   const materializationObs = keyNamesAnOfficeMailbox
     ? []
-    : withoutOverSharedPersonWebsiteObservations(
-        obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o)),
-        await overSharedPersonWebsiteKeysForMaterialization(),
+    : withoutDepartmentHeadingObservations(
+        withDirectoryExportDepartmentsDecoded(
+          withoutOverSharedPersonWebsiteObservations(
+            obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o)),
+            await overSharedPersonWebsiteKeysForMaterialization(),
+          ),
+          await catalogDepartment(),
+        ),
       );
   const derived = deriveUserIdentityFields(materializationObs, now);
   const { resolved, displayName } = derived;
@@ -9288,6 +9305,18 @@ async function materializeUserIdentityToResearcher(
     )
       ? undefined
       : researcher.profile.websiteUrl;
+  if (isDepartmentHeadingChrome(researcher.profile.primaryDepartment)) {
+    researcher.profile.primaryDepartment = undefined;
+    fieldsWritten += 1;
+  }
+  const storedDepartment = storedDepartmentAfterExportDecode(
+    researcher.profile.primaryDepartment,
+    await catalogDepartment(),
+  );
+  if (storedDepartment.changed) {
+    researcher.profile.primaryDepartment = storedDepartment.department;
+    fieldsWritten += 1;
+  }
   for (const [key, value, confidence] of [
     ['primaryDepartment', primaryDepartment, resolvedConfidence('primaryDepartment')],
     ['imageUrl', imageUrl, resolvedConfidence('imageUrl')],
@@ -15107,10 +15136,12 @@ async function materializeFromRunUnderRemovalGuard(
     );
   }
   const rosterMembersArchived = await reconcileOfficialRosterSnapshotsFromRun(scrapeRunId, options);
+  const centerRosterRetirementDryRun =
+    options.dryRun === true || options.skipCenterRosterRetirement === true;
   const centerRosterRetirement = await reconcileCenterRosterRetirementsFromRun(
     scrapeRunId,
     centerRosterRetirementDeps(options),
-    { dryRun: options.dryRun },
+    { dryRun: centerRosterRetirementDryRun },
   );
   if (centerRosterRetirement.outcome !== 'no-center-roster-read') {
     logCenterRosterRetirement(centerRosterRetirement);
@@ -15118,7 +15149,7 @@ async function materializeFromRunUnderRemovalGuard(
   const centerAffiliationRetirement = await reconcileCenterRosterRetirementsFromRun(
     scrapeRunId,
     centerRosterRetirementDeps(options, CENTER_AFFILIATION_ROSTER_LANE),
-    { dryRun: options.dryRun, lane: CENTER_AFFILIATION_ROSTER_LANE },
+    { dryRun: centerRosterRetirementDryRun, lane: CENTER_AFFILIATION_ROSTER_LANE },
   );
   if (centerAffiliationRetirement.outcome !== 'no-center-roster-read') {
     logCenterRosterRetirement(centerAffiliationRetirement, CENTER_AFFILIATION_ROSTER_LANE);
@@ -15126,7 +15157,7 @@ async function materializeFromRunUnderRemovalGuard(
   const centerAffiliationCodeRetirement = await reconcileCenterRosterRetirementsFromRun(
     scrapeRunId,
     centerRosterRetirementDeps(options, CENTER_AFFILIATION_CODE_ROSTER_LANE),
-    { dryRun: options.dryRun, lane: CENTER_AFFILIATION_CODE_ROSTER_LANE },
+    { dryRun: centerRosterRetirementDryRun, lane: CENTER_AFFILIATION_CODE_ROSTER_LANE },
   );
   if (centerAffiliationCodeRetirement.outcome !== 'no-center-roster-read') {
     logCenterRosterRetirement(centerAffiliationCodeRetirement, CENTER_AFFILIATION_CODE_ROSTER_LANE);

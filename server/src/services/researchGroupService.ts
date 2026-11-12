@@ -240,10 +240,12 @@ export interface PublicLeadMemberNameRead {
   identityLeadDirectorEntityIds?: ReadonlySet<string>;
   unavailable: boolean;
   emeritusWayInByEntityId?: ReadonlyMap<string, Readonly<EmeritusWayInDecision>>;
+  leadIdentityUnderReviewEntityIds?: ReadonlySet<string>;
 }
 
 export interface PublicLeadMemberNameReadOptions {
   withEmeritusWayIn?: boolean;
+  withLeadIdentityStatus?: boolean;
 }
 
 export const leadGuardedServingInput = <T extends Record<string, any>>(
@@ -266,6 +268,7 @@ export const optionalPublicLeadMemberNames = async (
   const byEntityId = new Map<string, readonly string[]>();
   const leadPersonIdsByEntityId = new Map<string, readonly string[]>();
   const identityLeadDirectorEntityIds = new Set<string>();
+  const leadIdentityUnderReviewEntityIds = new Set<string>();
   const emeritusCandidates: EmeritusWayInCandidate[] = [];
   const now = new Date();
   try {
@@ -285,6 +288,12 @@ export const optionalPublicLeadMemberNames = async (
       const leadPersonIds = leadPersonIdsOf(leadMembers);
       if (leadPersonIds.length > 0) leadPersonIdsByEntityId.set(entityId, leadPersonIds);
       if (identityLeadDirectsOrganization(leadMembers)) identityLeadDirectorEntityIds.add(entityId);
+      if (
+        options.withLeadIdentityStatus &&
+        researchDetailLeadIdentity(entity, leadMembers).leadIdentityStatus === 'under_review'
+      ) {
+        leadIdentityUnderReviewEntityIds.add(entityId);
+      }
       if (options.withEmeritusWayIn) {
         emeritusCandidates.push({ entity, leadTitles: leadTitlesOf(leadMembers, entity) });
       }
@@ -302,6 +311,7 @@ export const optionalPublicLeadMemberNames = async (
     identityLeadDirectorEntityIds,
     unavailable: false,
     ...(emeritusWayInByEntityId ? { emeritusWayInByEntityId } : {}),
+    ...(options.withLeadIdentityStatus ? { leadIdentityUnderReviewEntityIds } : {}),
   };
 };
 
@@ -3902,6 +3912,7 @@ type ServableEndpointRead = {
 
 const servableEntitiesById = async (
   entityIds: readonly string[],
+  projection: string = PUBLIC_RELATED_ENTITY_PROJECTION,
 ): Promise<Map<string, Record<string, any>>> => {
   if (entityIds.length === 0) return new Map();
   const entities = (await ResearchEntity.find({
@@ -3909,7 +3920,7 @@ const servableEntitiesById = async (
     archived: { $ne: true },
     ...servedStudentVisibilityTierFilter(),
   })
-    .select(PUBLIC_RELATED_ENTITY_PROJECTION)
+    .select(projection)
     .lean()) as any[];
   return new Map(
     withServablePublicResearchEntities(
@@ -4301,6 +4312,160 @@ export async function listSimilarResearchEntities(
       leadMemberNames,
     );
   });
+}
+
+const MAX_ALSO_LED_RESEARCH_ENTITIES = 6;
+const MAX_ALSO_LED_CANDIDATE_EDGES = 200;
+// The other row's own lead identity is judged before it is linked, and that judgement
+// reads the identity links the related-row projection leaves out. Without them a row
+// whose page holds its lead under review would read as verified here.
+const ALSO_LED_ENTITY_PROJECTION = `${PUBLIC_RELATED_ENTITY_PROJECTION} name displayName kind entityType websiteUrl website sourceUrls profileUrls`;
+
+export interface ResearchDetailPageLead {
+  personId: string;
+  name: string;
+  publicKey?: string;
+}
+
+export interface AlsoLedResearchEntitiesByLead {
+  leadName: string;
+  leadPublicKey?: string;
+  researchEntities: PublicResearchEntitySummaryDto[];
+}
+
+const lowerCaseKey = (value: unknown): string =>
+  String(value ?? '')
+    .trim()
+    .toLowerCase();
+
+const byServedNameThenSlug = (
+  left: PublicResearchEntitySummaryDto,
+  right: PublicResearchEntitySummaryDto,
+): number =>
+  left.name.localeCompare(right.name, 'en', { sensitivity: 'base' }) ||
+  left.slug.localeCompare(right.slug);
+
+const takeInTurns = <T>(lists: readonly T[][], limit: number): T[][] => {
+  const queues = lists.map((list) => [...list]);
+  const taken: T[][] = lists.map(() => []);
+  let total = 0;
+  while (total < limit && queues.some((queue) => queue.length > 0)) {
+    queues.forEach((queue, index) => {
+      if (total >= limit || queue.length === 0) return;
+      taken[index].push(queue.shift() as T);
+      total += 1;
+    });
+  }
+  return taken;
+};
+
+// A stored lead edge only nominates a row. It is linked only when the detail derivation
+// run on that row resolves the same person as a verified lead, so a link never claims a
+// lead the other page does not show.
+export async function listResearchEntitiesAlsoLedByPageLeads(
+  entityId: unknown,
+  pageLeads: readonly ResearchDetailPageLead[],
+  { excludeEntityKeys = [] }: { excludeEntityKeys?: Iterable<unknown> } = {},
+): Promise<AlsoLedResearchEntitiesByLead[]> {
+  const viewedEntityId = normalizeResearchGroupObjectId(entityId);
+  const leads = pageLeads.filter(
+    (lead, index) =>
+      Boolean(lead.personId) &&
+      pageLeads.findIndex((other) => other.personId === lead.personId) === index,
+  );
+  const leadPersonIds = leads
+    .map((lead) => normalizeResearchGroupObjectId(lead.personId))
+    .filter((personId): personId is string => Boolean(personId));
+  if (!viewedEntityId || leadPersonIds.length === 0) return [];
+
+  const leadEdges = (await RoleAssignment.find({
+    personId: { $in: leadPersonIds },
+    'target.kind': 'RESEARCH_ENTITY',
+    role: { $in: LEAD_ROLE_CANONICAL_VALUES },
+    state: { $ne: 'HISTORICAL' },
+    archived: { $ne: true },
+  })
+    .select('personId target')
+    .sort({ _id: 1 })
+    .limit(MAX_ALSO_LED_CANDIDATE_EDGES)
+    .lean()) as any[];
+  const candidateIds = Array.from(
+    new Set(
+      leadEdges
+        .map((edge) => normalizeResearchGroupObjectId(edge?.target?.id))
+        .filter((id): id is string => Boolean(id) && id !== viewedEntityId),
+    ),
+  );
+  const servableById = await servableEntitiesById(candidateIds, ALSO_LED_ENTITY_PROJECTION);
+  if (servableById.size === 0) return [];
+
+  const candidates = [...servableById.values()];
+  const leadRead = await optionalPublicLeadMemberNames(candidates, {
+    withLeadIdentityStatus: true,
+  });
+  if (leadRead.unavailable) return [];
+
+  const excludedKeys = new Set(
+    [viewedEntityId, ...excludeEntityKeys].map(lowerCaseKey).filter(Boolean),
+  );
+  const claimedKeys = new Set<string>();
+  const rowsByLead = leads.map((lead) =>
+    candidates
+      .filter((candidate) => {
+        const candidateId = researchGroupDocumentId(candidate._id);
+        return (
+          !leadRead.leadIdentityUnderReviewEntityIds?.has(candidateId) &&
+          Boolean(leadRead.leadPersonIdsByEntityId?.get(candidateId)?.includes(lead.personId))
+        );
+      })
+      .map((candidate) => {
+        const { entity, leadMemberNames } = leadGuardedServingInput(candidate, leadRead);
+        return toPublicResearchEntitySummaryDto(
+          detailServedSource(entity, leadMemberNames),
+          leadMemberNames,
+        );
+      })
+      .filter((summary) => {
+        const key = lowerCaseKey(summary.slug || summary.id);
+        if (!key || excludedKeys.has(key) || excludedKeys.has(lowerCaseKey(summary.id))) {
+          return false;
+        }
+        if (claimedKeys.has(key)) return false;
+        claimedKeys.add(key);
+        return true;
+      })
+      .sort(byServedNameThenSlug),
+  );
+
+  const cappedRowsByLead = takeInTurns(rowsByLead, MAX_ALSO_LED_RESEARCH_ENTITIES);
+  return leads.flatMap((lead, index) =>
+    cappedRowsByLead[index].length > 0
+      ? [
+          {
+            leadName: lead.name,
+            ...(lead.publicKey ? { leadPublicKey: lead.publicKey } : {}),
+            researchEntities: cappedRowsByLead[index],
+          },
+        ]
+      : [],
+  );
+}
+
+function pageLeadsOf(
+  members: Array<{ user: any; role: string; row?: Record<string, any> }>,
+): ResearchDetailPageLead[] {
+  return members
+    .filter((member) => PUBLIC_LEAD_ROLES.has(member.role) && member.row?.identityKey)
+    .map((member) => ({
+      personId: String(member.row?.identityKey),
+      name: memberDisplayName({ user: publicMemberUserForResearchDetail(member.user) }),
+      publicKey: publicMemberKeyForResearchDetail(
+        member.user,
+        member.role,
+        member.row?.identityKey,
+      ),
+    }))
+    .filter((lead) => Boolean(lead.name));
 }
 
 function normalizedMemberName(member: { user?: any }): string {
@@ -4941,6 +5106,7 @@ export async function getResearchGroupDetail(
   affiliatedResearchEntities: PublicResearchEntitySummaryDto[];
   affiliatedResearchEntitiesMeta: PublicRelationshipCollectionMeta;
   similarResearchEntities: PublicResearchEntitySummaryDto[];
+  alsoLedResearchEntitiesByLead: AlsoLedResearchEntitiesByLead[];
   operatorPreview?: ResearchDetailOperatorPreview;
 } | null> {
   // The research-area splitter reads the controlled vocabulary synchronously, so it has to be
@@ -5080,12 +5246,24 @@ export async function getResearchGroupDetail(
     await listResearchEntityRelationshipPayload((group as any)._id, {
       pageLeadPersonIds: leadPersonIdsOf(dedupedMembersWithRows),
     });
+  const relationshipEntityKeys = [
+    ...relationshipPayload.relatedResearchEntities,
+    ...relationshipPayload.affiliatedResearchEntities,
+  ].flatMap((related) => [related.slug, related.id]);
+  const alsoLedResearchEntitiesByLead =
+    leadIdentity.leadIdentityStatus === 'verified'
+      ? await listResearchEntitiesAlsoLedByPageLeads(
+          (group as any)._id,
+          pageLeadsOf(dedupedMembersWithRows),
+          { excludeEntityKeys: relationshipEntityKeys },
+        )
+      : [];
   const structuralRelationExclusionKeys = [
-    ...[
-      ...relationshipPayload.relatedResearchEntities,
-      ...relationshipPayload.affiliatedResearchEntities,
-    ].flatMap((related) => [related.slug, related.id]),
+    ...relationshipEntityKeys,
     ...pageLeadOwnResearchEntityKeys,
+    ...alsoLedResearchEntitiesByLead.flatMap((leadGroup) =>
+      leadGroup.researchEntities.flatMap((entity) => [entity.slug, entity.id]),
+    ),
   ];
   const similarResearchEntities = await listSimilarResearchEntities(group as Record<string, any>, {
     excludeEntityKeys: structuralRelationExclusionKeys,
@@ -5104,6 +5282,7 @@ export async function getResearchGroupDetail(
       accessSignals: publicAccessSignals,
       ...relationshipPayload,
       similarResearchEntities,
+      alsoLedResearchEntitiesByLead,
     },
     // The names this route already resolved. Every list surface passes its own through
     // `leadMemberNamesByEntityId`; the detail page computed them and then built its DTO

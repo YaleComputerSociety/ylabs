@@ -1,7 +1,18 @@
 /**
  * Service layer for fellowship CRUD, search, and filter operations.
  */
-import { PROGRAM_STATED_ONLY_FACET_FIELDS } from '../utils/programFacetFilters';
+import { programFacetFilterClause } from '../utils/programFacetFilters';
+import {
+  bucketCountsOf,
+  doesntSayCitizenshipFilter,
+  programCitizenshipOptionCounts,
+  programIdsMatching,
+  statedCitizenshipFirst,
+  statesCitizenshipFilter,
+  withCitizenshipFilter,
+  type ProgramCitizenshipBucketCounts,
+  type ProgramCitizenshipCounts,
+} from './programCitizenshipCounts';
 import { correctProgramSearchQuerySpelling } from './programSearchSpellingVocabulary';
 import { PROGRAM_SEARCH_FIELDS, rankProgramSearch } from './programSearchRelevance';
 import { BadRequestError, NotFoundError, ObjectIdError } from '../utils/errors';
@@ -26,7 +37,7 @@ import { Observation } from '../models/observation';
 import { clearedProgramStudentVisibilityVerdict } from '../models/entityArchival';
 import { programRoleForKind } from './programClassifier';
 import { programAudience } from './programAudience';
-import { isDepartmentResearchGuidance } from './departmentResearchGuidance';
+import { departmentGuidanceKindOf } from './departmentResearchGuidance';
 import { redactDirectContactInfo } from '../utils/contactRedaction';
 import { sanitizeCatalogDescription } from '../utils/descriptionHygiene';
 import { programLikeCardShortDescription } from '../utils/researchEntityDescriptionQuality';
@@ -497,7 +508,9 @@ export const publicFellowshipForStudent = (fellowship: any, now: Date = new Date
   }
 
   publicFellowship.audience = programAudience(fellowship);
-  publicFellowship.departmentResearchGuidance = isDepartmentResearchGuidance(fellowship);
+  const departmentGuidanceKind = departmentGuidanceKindOf(fellowship);
+  publicFellowship.departmentResearchGuidance = departmentGuidanceKind !== null;
+  if (departmentGuidanceKind) publicFellowship.departmentGuidanceKind = departmentGuidanceKind;
 
   const served = servedProgramDeadline(fellowship, now);
   if (served.deadline) publicFellowship.deadline = served.deadline;
@@ -908,16 +921,6 @@ export const deleteFellowship = async (id: any) => {
   }
 };
 
-// A program that states no value for a facet is unknown rather than excluded, so a facet
-// filter keeps it and the page says the official page decides (#5130, #5235), except for
-// the stated-only facets in PROGRAM_STATED_ONLY_FACET_FIELDS (#5533).
-const facetNotStated = (field: string) => ({ [field]: { $in: [null, []] } });
-
-const programFacetFilterClause = (field: string, values: readonly string[]) =>
-  PROGRAM_STATED_ONLY_FACET_FIELDS.has(field)
-    ? { [field]: { $in: values } }
-    : { $or: [{ [field]: { $in: values } }, facetNotStated(field)] };
-
 export const searchFellowships = async (params: {
   query?: string;
   page?: number;
@@ -1033,7 +1036,6 @@ export const searchFellowships = async (params: {
     ['termOfAward', safeTermOfAward],
     ['purpose', safePurpose],
     ['globalRegions', safeGlobalRegions],
-    ['citizenshipStatus', safeCitizenshipStatus],
   ] as const) {
     if (values.length === 0) continue;
     filter.$and = [...(filter.$and ?? []), programFacetFilterClause(field, values)];
@@ -1062,6 +1064,9 @@ export const searchFellowships = async (params: {
   if (typeof yaleCollegeOnly === 'boolean') {
     filter.yaleCollegeOnly = yaleCollegeOnly;
   }
+  const filterWithoutCitizenship = filter;
+  const citizenshipFiltered = safeCitizenshipStatus.length > 0;
+  const servedFilter = withCitizenshipFilter(filterWithoutCitizenship, safeCitizenshipStatus);
 
   const sortField = publicFellowshipSortField(sortBy, includeNonPublic);
   const fieldSortOptions: Record<string, any> = {
@@ -1080,28 +1085,65 @@ export const searchFellowships = async (params: {
       ? { originalQuery: typedQuery, correctedQuery: safeQuery }
       : undefined;
 
+  const citizenshipCounts = async (
+    selected: ProgramCitizenshipBucketCounts | null,
+  ): Promise<{ citizenshipCounts?: ProgramCitizenshipCounts }> =>
+    page === 1
+      ? {
+          citizenshipCounts: {
+            options: await programCitizenshipOptionCounts({
+              filterWithoutCitizenship,
+              offeredScope: { archived: false, ...publicFellowshipFilter() },
+              selected: safeCitizenshipStatus,
+              query: safeQuery,
+              sort: fieldSortOptions,
+            }),
+            selected,
+          },
+        }
+      : {};
+
   if (!safeQuery) {
-    const [fellowships, total] = await Promise.all([
-      Fellowship.find(filter).sort(fieldSortOptions).skip(skip).limit(pageSize).lean(),
-      Fellowship.countDocuments(filter),
-    ]);
+    const { fellowships, total, selected } = citizenshipFiltered
+      ? await browseStatedCitizenshipFirst({
+          filter: servedFilter,
+          values: safeCitizenshipStatus,
+          sort: fieldSortOptions,
+          skip,
+          limit: pageSize,
+        })
+      : await Promise.all([
+          Fellowship.find(servedFilter).sort(fieldSortOptions).skip(skip).limit(pageSize).lean(),
+          Fellowship.countDocuments(servedFilter),
+        ]).then(([pageFellowships, count]) => ({
+          fellowships: pageFellowships,
+          total: count,
+          selected: null,
+        }));
     return {
       fellowships: servePrograms(fellowships),
       total,
       page,
       pageSize,
       totalPages: Math.ceil(total / pageSize),
+      ...(await citizenshipCounts(selected)),
     };
   }
 
-  const candidates = (await Fellowship.find(filter, {
+  const candidates = (await Fellowship.find(servedFilter, {
     _id: 1,
     ...Object.fromEntries(PROGRAM_SEARCH_FIELDS.map((field) => [field, 1])),
   })
     .sort(fieldSortOptions)
     .lean()) as Array<Record<string, unknown>>;
   const ranked = rankProgramSearch(safeQuery, candidates);
-  const orderedIds = ranked.programs.map((candidate) => String(candidate._id));
+  const rankedIds = ranked.programs.map((candidate) => String(candidate._id));
+  const doesntSayIds = citizenshipFiltered
+    ? await programIdsMatching(doesntSayCitizenshipFilter(servedFilter))
+    : null;
+  const orderedIds = doesntSayIds
+    ? statedCitizenshipFirstWithinTiers(rankedIds, ranked.closeMatchesFrom, doesntSayIds)
+    : rankedIds;
   const pageIds = orderedIds.slice(skip, skip + pageSize);
   const pageDocuments = pageIds.length
     ? ((await Fellowship.find({ _id: { $in: pageIds } }).lean()) as any[])
@@ -1118,6 +1160,51 @@ export const searchFellowships = async (params: {
     ...(queryCorrection ? { queryCorrection } : {}),
     ...(ranked.missingOneWord ? { queryMatch: 'allButOneWord' as const } : {}),
     ...(ranked.closeMatchesFrom !== null ? { closeMatchesFrom: ranked.closeMatchesFrom } : {}),
+    ...(await citizenshipCounts(doesntSayIds ? bucketCountsOf(orderedIds, doesntSayIds) : null)),
+  };
+};
+
+const statedCitizenshipFirstWithinTiers = (
+  rankedIds: readonly string[],
+  closeMatchesFrom: number | null,
+  doesntSayIds: ReadonlySet<string>,
+): string[] => {
+  const tierEnd = closeMatchesFrom ?? rankedIds.length;
+  return [
+    ...statedCitizenshipFirst(rankedIds.slice(0, tierEnd), doesntSayIds),
+    ...statedCitizenshipFirst(rankedIds.slice(tierEnd), doesntSayIds),
+  ];
+};
+
+const browseStatedCitizenshipFirst = async (params: {
+  filter: Record<string, unknown>;
+  values: readonly string[];
+  sort: Record<string, 1 | -1>;
+  skip: number;
+  limit: number;
+}) => {
+  const { filter, values, sort, skip, limit } = params;
+  const saysFilter = statesCitizenshipFilter(filter, values);
+  const doesntSayFilter = doesntSayCitizenshipFilter(filter);
+  const [says, doesntSay] = await Promise.all([
+    Fellowship.countDocuments(saysFilter),
+    Fellowship.countDocuments(doesntSayFilter),
+  ]);
+  const saysPage =
+    skip < says ? await Fellowship.find(saysFilter).sort(sort).skip(skip).limit(limit).lean() : [];
+  const remaining = limit - saysPage.length;
+  const doesntSayPage =
+    remaining > 0
+      ? await Fellowship.find(doesntSayFilter)
+          .sort(sort)
+          .skip(Math.max(0, skip - says))
+          .limit(remaining)
+          .lean()
+      : [];
+  return {
+    fellowships: [...saysPage, ...doesntSayPage],
+    total: says + doesntSay,
+    selected: { says, doesntSay },
   };
 };
 

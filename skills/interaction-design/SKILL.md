@@ -49,6 +49,8 @@ This is the interaction-design reason the visibility gate exists, not just a dat
 The browse and search card (`ResearchHomeCard` compact variant) carries its scent in this order: the name as the profile link, then the kind, department and school on one line, then the lead, then the description, then the topics, then any access signal.
 A served undergraduate quote is left to the detail page, because it is the one item a student has to read and judge rather than scan (`docs/decisions.md`, 2026-10-12).
 The kind is omitted when the title already names it, so "Wu Lab" never reads "Lab · ...", while a faculty row titled with a person's name reads "Faculty research · ...".
+Under an active School filter every card names the selected school, because that filter matches any value of the multi-valued `schools` field (#5179).
+A row whose primary school is the selected one keeps that school on its line even when departments would crowd it out, and a row that matches only through a secondary appointment adds a line reading "Also in <school>" under it.
 The description ends at the last whole sentence that fits about 200 characters (`client/src/utils/cardSummary.ts`) rather than at a line clamp, so a card never stops mid-sentence unless no sentence fits.
 The card has no separate "View profile" action, because the title already names the destination and the whole card opens it.
 

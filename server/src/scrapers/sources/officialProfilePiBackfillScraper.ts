@@ -133,6 +133,7 @@ import {
 import { officialProfileIdentityKey, rosterMembershipKey } from '../utils/rosterMembershipKey';
 import { type OfficialProfilePageIdentity } from '../../services/officialProfileLinkIdentity';
 import { normalizeOfficialProfileDestination } from '../../services/leadProfileIdentity';
+import { isDepartmentHeadingChrome } from '../utils/departmentHeadingChrome';
 
 const SOURCE_NAME = 'official-profile-pi-backfill';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
@@ -2956,15 +2957,12 @@ function firstPersonSpecificYaleEmail(
 // match section-heading chrome ("Other Departments & Organizations") and
 // center/institute affiliations that are not academic departments, so only an
 // element explicitly classed "department" is trusted as a department signal.
-const DEPARTMENT_HEADING_CHROME_PATTERN = /^other\s+departments?\b/i;
-
 function extractDepartments($: cheerio.CheerioAPI): string[] {
   const values: string[] = [];
   $('[class*="department"]').each((_i, el) => {
     const value = textValue($(el).text());
-    if (value && value.length < 160 && !DEPARTMENT_HEADING_CHROME_PATTERN.test(value)) {
-      values.push(value);
-    }
+    if (isDepartmentHeadingChrome(value)) return false;
+    if (value && value.length < 160) values.push(value);
   });
   return uniqueStrings(values).slice(0, 5);
 }

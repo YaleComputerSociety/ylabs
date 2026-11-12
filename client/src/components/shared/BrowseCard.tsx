@@ -22,7 +22,7 @@ import UserContext from '../../contexts/UserContext';
 import { useViewTracking } from '../../hooks/useViewTracking';
 import { programCardFacts } from '../../utils/programBoard';
 import {
-  DEPARTMENT_RESEARCH_GUIDANCE_ACTION,
+  departmentGuidanceCopy,
   departmentResearchGuidanceHref,
   isDepartmentResearchGuidance,
 } from '../../utils/programJourney';
@@ -219,8 +219,10 @@ const BrowseCard = React.memo(
                   }}
                   className="yr-focus-ring -my-3 ml-auto inline-flex min-h-11 min-w-0 items-center gap-1 rounded-control text-right text-sm font-semibold text-brand transition-colors after:absolute after:inset-0 after:content-[''] hover:text-brand-navy [&:not(:disabled):active]:transform-none [&:not(:disabled):active]:filter-none"
                 >
-                  {DEPARTMENT_RESEARCH_GUIDANCE_ACTION}
-                  <ExternalLinkIcon size={14} />
+                  <span className="text-pretty">
+                    {departmentGuidanceCopy(item.data).action}
+                    <ExternalLinkIcon size={14} className="ml-1 inline-block align-[-2px]" />
+                  </span>
                 </a>
               ) : (
                 <button

@@ -73,8 +73,8 @@ import {
 import type { UpcomingDuplicateWindow } from './programUpcomingDuplicateWindow';
 import { RESEARCHER_REMOVED_REASON } from './directoryRemovalReason';
 import {
-  DEPARTMENT_RESEARCH_GUIDANCE_REASON,
-  isDepartmentResearchGuidance,
+  departmentGuidanceKindOf,
+  departmentGuidanceReason,
   statesApplicationCycle,
 } from './departmentResearchGuidance';
 
@@ -613,6 +613,7 @@ const ENTRY_PROGRAM_KINDS = new Set([
   'RA_PROGRAM',
   'MENTOR_MATCHING',
   'DEPARTMENT_RESEARCH_GUIDE',
+  'DEPARTMENT_SENIOR_ESSAY_GUIDE',
 ]);
 
 const ENTRY_PROGRAM_MODES = new Set([
@@ -1511,7 +1512,8 @@ export function computeProgramStudentVisibility(
   ];
   const sourceUrls = [sourceUrl, ...routeUrls];
   const hasOfficialSource = hasHttpUrl(sourceUrl);
-  const departmentResearchGuidance = isDepartmentResearchGuidance(program);
+  const departmentGuidanceKind = departmentGuidanceKindOf(program);
+  const departmentResearchGuidance = departmentGuidanceKind !== null;
   const applicationRouteIsInfoPage =
     !departmentResearchGuidance && isInfoPageWithoutApplicationCycle(program, routeUrls);
   const hasApplicationRoute =
@@ -1542,7 +1544,7 @@ export function computeProgramStudentVisibility(
 
   if (hasOfficialSource) reasons.push('official_source');
   else reasons.push('missing_official_source');
-  if (departmentResearchGuidance) reasons.push(DEPARTMENT_RESEARCH_GUIDANCE_REASON);
+  if (departmentGuidanceKind) reasons.push(departmentGuidanceReason(departmentGuidanceKind));
   else if (hasApplicationRoute) reasons.push('application_route');
   else reasons.push('missing_application_route');
   if (applicationRouteIsInfoPage) reasons.push('application_link_is_info_page');

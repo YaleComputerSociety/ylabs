@@ -111,7 +111,7 @@ describe('research_plan_update is emitted when a plan is persisted', () => {
       </MemoryRouter>,
     );
 
-    const select = await screen.findByLabelText('Outreach stage for Summer Research Grant');
+    const select = await screen.findByLabelText('Application stage for Summer Research Grant');
     fireEvent.change(select, { target: { value: 'APPLIED' } });
 
     await waitFor(() => expect(planUpdateCalls().length).toBe(1));
@@ -153,7 +153,7 @@ describe('research_plan_update is emitted when a plan is persisted', () => {
       </MemoryRouter>,
     );
 
-    const select = await screen.findByLabelText('Outreach stage for Summer Research Grant');
+    const select = await screen.findByLabelText('Application stage for Summer Research Grant');
     fireEvent.change(select, { target: { value: 'APPLIED' } });
 
     await waitFor(() => expect(planUpdateCalls().length).toBe(1));
@@ -173,7 +173,7 @@ describe('research_plan_update is emitted when a plan is persisted', () => {
       </MemoryRouter>,
     );
 
-    const select = await screen.findByLabelText('Outreach stage for Summer Research Grant');
+    const select = await screen.findByLabelText('Application stage for Summer Research Grant');
     fireEvent.change(select, { target: { value: 'APPLIED' } });
 
     await waitFor(() => expect(mockedAxios.put).toHaveBeenCalled());

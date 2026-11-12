@@ -476,6 +476,29 @@ describe('SavedResearchPlans', () => {
     expect(otherStage.value).toBe('SAVED');
   });
 
+  it('keeps the research outreach stages unchanged beside the program application stages', async () => {
+    withStagedPlans({ id1: {}, id2: {} });
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    await screen.findByText('Owner Lab');
+    const stageSelect = screen.getByRole('combobox', {
+      name: 'Outreach stage for Owner Lab',
+    }) as HTMLSelectElement;
+    expect(Array.from(stageSelect.options, (option) => option.textContent)).toEqual([
+      'Saved',
+      'Exploring',
+      'Preparing',
+      'Contacted',
+      'Applied',
+      'Closed',
+    ]);
+  });
+
   it('persists a stage change through the canonical plan and round-trips the value', async () => {
     withStagedPlans({ id1: {}, id2: {} });
     mockedAxios.put.mockResolvedValue({ data: { savedResearchEntityPlans: {} } });

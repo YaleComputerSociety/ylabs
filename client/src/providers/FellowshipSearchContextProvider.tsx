@@ -19,7 +19,7 @@ import axios from '../utils/axios';
 
 import FellowshipSearchContext from '../contexts/FellowshipSearchContext';
 import UserContext from '../contexts/UserContext';
-import { Fellowship, StudentVisibilityTier } from '../types/types';
+import { Fellowship, ProgramCitizenshipCounts, StudentVisibilityTier } from '../types/types';
 import { createFellowship } from '../utils/createFellowship';
 import { scrollViewportToTop } from '../utils/scrollViewportToTop';
 import { showWarningDialog } from '../utils/warningDialog';
@@ -82,6 +82,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
     resultsRankedByRelevance,
     resultsMissOneWord,
     resultsCloseMatchesFrom,
+    citizenshipCounts,
     selectedProgramCategory,
     selectedProgramKind,
     selectedEntryMode,
@@ -359,6 +360,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
       let queryCorrection = null;
       let missOneWord = false;
       let closeMatchesFrom: number | null = null;
+      let firstPageCitizenshipCounts: ProgramCitizenshipCounts | null = null;
 
       while (collected.length < reportedTotal) {
         const response = await axios.get(
@@ -376,6 +378,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
             typeof response.data.closeMatchesFrom === 'number'
               ? response.data.closeMatchesFrom
               : null;
+          firstPageCitizenshipCounts = response.data.citizenshipCounts ?? null;
         }
         reportedTotal =
           typeof response.data.total === 'number' ? response.data.total : collected.length;
@@ -383,26 +386,43 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
         currentPage += 1;
       }
 
-      return { collected, reportedTotal, queryCorrection, missOneWord, closeMatchesFrom };
+      return {
+        collected,
+        reportedTotal,
+        queryCorrection,
+        missOneWord,
+        closeMatchesFrom,
+        citizenshipCounts: firstPageCitizenshipCounts,
+      };
     };
 
     accumulate()
-      .then(({ collected, reportedTotal, queryCorrection, missOneWord, closeMatchesFrom }) => {
-        if (loadRequestIdRef.current !== requestId) return;
-        dispatch({
-          type: 'SEARCH_SUCCESS',
-          payload: {
-            fellowships: collected,
-            total: Number.isFinite(reportedTotal) ? reportedTotal : collected.length,
-            pageSize,
-            append: false,
-            queryCorrection,
-            rankedByRelevance,
-            missOneWord,
-            closeMatchesFrom,
-          },
-        });
-      })
+      .then(
+        ({
+          collected,
+          reportedTotal,
+          queryCorrection,
+          missOneWord,
+          closeMatchesFrom,
+          citizenshipCounts: loadedCitizenshipCounts,
+        }) => {
+          if (loadRequestIdRef.current !== requestId) return;
+          dispatch({
+            type: 'SEARCH_SUCCESS',
+            payload: {
+              fellowships: collected,
+              total: Number.isFinite(reportedTotal) ? reportedTotal : collected.length,
+              pageSize,
+              append: false,
+              queryCorrection,
+              rankedByRelevance,
+              missOneWord,
+              closeMatchesFrom,
+              citizenshipCounts: loadedCitizenshipCounts,
+            },
+          });
+        },
+      )
       .catch(() => {
         if (loadRequestIdRef.current !== requestId) return;
         console.error('Error loading programs.');
@@ -511,6 +531,7 @@ const FellowshipSearchContextProvider: FC<FellowshipSearchContextProviderProps> 
         resultsRankedByRelevance,
         resultsMissOneWord,
         resultsCloseMatchesFrom,
+        citizenshipCounts,
         searchTypedSpelling,
         selectedProgramCategory,
         setSelectedProgramCategory,

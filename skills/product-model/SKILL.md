@@ -64,7 +64,7 @@ Entity pages should answer:
 - Programs and fellowships live only on `/programs` (backed by the `Fellowship` collection), never in the `/research` corpus.
   A program is not a `ResearchEntity`: there is no `PROGRAM` `entityType`, and department "undergraduate research" pages materialize as `Fellowship` records, not research entities (see `docs/decisions.md` 2026-08-26).
   A program is lead-optional and surfaces an "Apply to this program" next step rather than the generic email-a-PI default.
-  The exception is department research guidance (`DEPARTMENT_RESEARCH_GUIDE`), a department's own page on getting into research, which `/programs` serves with no application affordance and the action "Read the department's guidance" (see `docs/glossary.md`).
+  The exception is department research guidance, in two kinds served in one section: a department's own page on getting into research (`DEPARTMENT_RESEARCH_GUIDE`, action "Read the department's guidance") and its own senior essay page (`DEPARTMENT_SENIOR_ESSAY_GUIDE`, labelled "Senior essay guidance", action "Read the department's senior essay guidance"), both with no application affordance (see `docs/glossary.md`).
   The distinct `researchPlanTargetKinds` `'PROGRAM'` is a saved-plan target for a program and is unrelated to any research-entity type.
 - `LAB` and `FACULTY_RESEARCH_AREA` are both first-class, and the line between them is organizational identity versus topical scope.
 A `LAB` is a named organization a student could join; a `FACULTY_RESEARCH_AREA` is the topic a professor works on.
@@ -112,6 +112,10 @@ A page that serves a mirror's prose while hiding the mirror's citation is worse 
 - Do not guess researcher-profile links from names or scrape their works, citations, or metrics for the directory.
 - Preserve source provenance for review and compact inline attribution of material access or opportunity claims.
 - Keep "Affiliated with" as a bounded detail-page section backed by first-class research-entity relationships.
+- A detail page lists the other research each verified lead also leads, under "Also led by <lead>", one section per lead and at most 6 rows in all (#5165).
+It is derived at serve time from the lead's own lead-role edges (`LEAD_ROLE_CANONICAL_VALUES`, so a co-director counts and a core faculty or affiliated member does not), and a row is linked only when it passes the same gates as every detail rail and its own page resolves the same person as a verified lead.
+It is empty while the page's own lead is under review, and it never repeats a row the related or affiliated sections already link.
+A lab and its lead's faculty research profile are cross-linked through it rather than merged (owner decision, 2026-11-12).
 - Prefer official-source scraping and source-submission hints over faculty-maintained duplicate profiles or listings.
 - Treat the visible directory listing as a REST projection of `ResearchEntity`, not a reason to preserve the legacy `Listing` model.
 - Migrate legacy models vertically and remove each old reader and writer before deleting its storage.

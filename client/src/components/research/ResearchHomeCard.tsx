@@ -6,6 +6,7 @@ import { CheckIcon } from '../shared/icons';
 import {
   buildWayInBadgesFromEntity,
   buildResearchHomeContextLine,
+  schoolFilterCardContext,
   type ResearchCluster,
 } from '../../utils/researchDiscoveryAdapters';
 import ArrowRightIcon from '../shared/ArrowRightIcon';
@@ -41,6 +42,7 @@ interface ResearchHomeCardProps {
   variant?: 'default' | 'compact';
   showAdminQuality?: boolean;
   openSource?: ResearchProfileOpenSource;
+  filteredSchool?: string;
 }
 
 const countLabel = (count: number, singular: string, plural: string): string =>
@@ -127,6 +129,7 @@ const ResearchHomeCard = ({
   variant = 'default',
   showAdminQuality = false,
   openSource,
+  filteredSchool,
 }: ResearchHomeCardProps) => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -167,7 +170,11 @@ const ResearchHomeCard = ({
   const secondaryAccessSignals = orderedAccessSignals.filter(
     (signal) => !UNDERGRAD_ACCESS_SIGNALS.has(signal),
   );
-  const contextLine = home.contextLine || buildResearchHomeContextLine(home.entities[0]);
+  const { contextLine, alsoInSchool } = schoolFilterCardContext(
+    home.entities[0],
+    filteredSchool,
+    home.contextLine || buildResearchHomeContextLine(home.entities[0]),
+  );
   const contextLineKeys = new Set(
     contextLine
       .split('·')
@@ -332,6 +339,10 @@ const ResearchHomeCard = ({
 
         {cardContextLine && (
           <p className="text-xs font-medium leading-relaxed text-muted">{cardContextLine}</p>
+        )}
+
+        {alsoInSchool && (
+          <p className="text-xs font-medium leading-relaxed text-muted">{alsoInSchool}</p>
         )}
 
         {leadName && (

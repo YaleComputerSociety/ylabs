@@ -54,14 +54,20 @@ import {
   isDepartmentResearchGuidance,
 } from '../utils/programJourney';
 import {
+  CITIZENSHIP_DOESNT_SAY_TITLE,
+  citizenshipDoesntSayDescription,
   citizenshipFilterOptionLabel,
+  citizenshipNoneSayNotice,
+  citizenshipOptionCountsLabel,
   emptyProgramBoardSummary,
   isOpenToFirstYears,
   needsMentorBeforeApplying,
   programBoardSectionOf,
   PROGRAM_BOARD_SECTIONS,
+  PROGRAM_CITIZENSHIP_FILTER_NOTE,
   PROGRAM_FACET_NOT_STATED_NOTE,
   PROGRAM_REGION_FILTER_NOTE,
+  programStatesCitizenship,
   type ProgramBoardSection,
   type ProgramBoardSummary,
 } from '../utils/programBoard';
@@ -76,23 +82,56 @@ const FIRST_PROGRAM_SAVE_KEY = 'yale-research.firstSave.program.v1';
 
 const SectionHeader = ({
   headingId,
+  headingLevel = 2,
   title,
   count,
   description,
 }: {
   headingId?: string;
+  headingLevel?: 2 | 3;
   title: string;
   count: number;
   description?: string;
-}) => (
-  <div className="mb-4 mt-10 border-t border-[var(--yr-line)] pt-5 first:mt-0 first:border-t-0 first:pt-0">
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <h2 id={headingId} className="yr-display text-2xl font-semibold text-ink">
-        {title}
-      </h2>
-      <span className="yr-pill yr-pill-blue yr-pill-compact px-2.5 py-1">{count}</span>
+}) => {
+  const Heading = headingLevel === 2 ? 'h2' : 'h3';
+  return (
+    <div className="mb-4 mt-10 border-t border-[var(--yr-line)] pt-5 first:mt-0 first:border-t-0 first:pt-0">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Heading
+          id={headingId}
+          className={`yr-display font-semibold text-ink ${headingLevel === 2 ? 'text-2xl' : 'text-xl'}`}
+        >
+          {title}
+        </Heading>
+        <span className="yr-pill yr-pill-blue yr-pill-compact px-2.5 py-1">{count}</span>
+      </div>
+      {description && <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">{description}</p>}
     </div>
-    {description && <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">{description}</p>}
+  );
+};
+
+const CITIZENSHIP_DOESNT_SAY_HEADING_ID = 'program-citizenship-doesnt-say';
+
+const programCountPhrase = (count: number) => `${count} ${count === 1 ? 'program' : 'programs'}`;
+
+const CitizenshipDoesntSayDivider = ({
+  count,
+  description,
+}: {
+  count: number;
+  description: string;
+}) => (
+  <div className="mb-6 mt-10 rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel-muted)] px-5 py-4 first:mt-0">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <h2 id={CITIZENSHIP_DOESNT_SAY_HEADING_ID} className="text-xl font-semibold text-ink">
+        {CITIZENSHIP_DOESNT_SAY_TITLE}
+        <span className="sr-only">, {programCountPhrase(count)}</span>
+      </h2>
+      <span aria-hidden="true" className="yr-num yr-pill yr-pill-compact px-2.5 py-1">
+        {count}
+      </span>
+    </div>
+    <p className="mt-1 max-w-3xl text-sm leading-6 text-muted">{description}</p>
   </div>
 );
 
@@ -110,7 +149,7 @@ const quickFilterEmptyCopy = (quickFilter: FellowshipQuickFilter) => {
   if (quickFilter === 'guidance')
     return {
       title: 'No department research guidance matches',
-      body: 'No department guidance on getting started in research is in this filtered set. Clear the filter to see every program and guide.',
+      body: 'No department guidance on getting started in research or on the senior essay is in this filtered set. Clear the filter to see every program and guide.',
     };
   return {
     title: 'No programs match this filter',
@@ -271,7 +310,7 @@ const boardSections: Array<{
     key: 'guidance',
     title: 'Department research guidance',
     description:
-      "Each department's own advice on finding a faculty mentor and getting started in research. These are guides, not applications.",
+      "Each department's own advice on getting started in research, including its senior essay guidance where the senior essay is the research its majors do. These are guides, not applications.",
   },
   {
     key: 'noDates',
@@ -440,6 +479,7 @@ const Fellowships = () => {
     resultsRankedByRelevance,
     resultsMissOneWord,
     resultsCloseMatchesFrom,
+    citizenshipCounts,
     searchTypedSpelling,
     fellowships,
     isLoading,
@@ -574,6 +614,14 @@ const Fellowships = () => {
     setSearchParams(withoutProgramParams, { replace: true });
   };
 
+  const citizenshipOptionDetail = (value: string) => {
+    const counts =
+      loadError || quickFilter
+        ? undefined
+        : citizenshipCounts?.options.find((option) => option.value === value);
+    return counts ? citizenshipOptionCountsLabel(counts) : undefined;
+  };
+
   const fellowshipFilterTabs: FilterTabConfig[] = [
     {
       key: 'studentFacingCategory',
@@ -650,7 +698,8 @@ const Fellowships = () => {
       label: 'Citizenship',
       options: filterOptions.citizenshipStatus,
       labelFn: citizenshipFilterOptionLabel,
-      note: PROGRAM_FACET_NOT_STATED_NOTE,
+      optionDetailFn: citizenshipOptionDetail,
+      note: PROGRAM_CITIZENSHIP_FILTER_NOTE,
       selected: selectedCitizenship,
       setSelected: setSelectedCitizenship,
     },
@@ -886,6 +935,63 @@ const Fellowships = () => {
     fellowships.length > 0 &&
     open.length === 0 &&
     closingSoon.length === 0;
+
+  const displaySections = showCloseMatches
+    ? closeMatchSections
+    : showSearchRanking
+      ? resultsCloseMatchesFrom === null
+        ? searchResultSections
+        : searchResultWithCloseMatchSections
+      : boardSections;
+  const citizenshipGrouped = selectedCitizenship.length > 0;
+  const citizenshipItemsFor =
+    (statesRule: boolean) =>
+    (key: ProgramDisplaySection): BrowsableItem[] =>
+      boardItems[key].filter(
+        (item) => item.type === 'fellowship' && programStatesCitizenship(item.data) === statesRule,
+      );
+  const citizenshipSaysItems = citizenshipItemsFor(true);
+  const citizenshipDoesntSayItems = citizenshipItemsFor(false);
+  const countAcrossDisplaySections = (itemsFor: (key: ProgramDisplaySection) => BrowsableItem[]) =>
+    displaySections.reduce((count, section) => count + itemsFor(section.key).length, 0);
+  const citizenshipSaysCount = citizenshipGrouped
+    ? countAcrossDisplaySections(citizenshipSaysItems)
+    : 0;
+  const citizenshipDoesntSayCount = citizenshipGrouped
+    ? countAcrossDisplaySections(citizenshipDoesntSayItems)
+    : 0;
+
+  const renderSections = (
+    itemsFor: (key: ProgramDisplaySection) => BrowsableItem[],
+    headingLevel: 2 | 3,
+    headingIdPrefix: string,
+  ) =>
+    displaySections.map((section) => {
+      const items = itemsFor(section.key);
+      return items.length > 0 ? (
+        <section key={section.key} aria-labelledby={`${headingIdPrefix}${section.key}`}>
+          <SectionHeader
+            headingId={`${headingIdPrefix}${section.key}`}
+            headingLevel={headingLevel}
+            title={section.title}
+            count={items.length}
+            description={section.description}
+          />
+          <BrowseGrid
+            items={items}
+            favIds={favFellowshipIds}
+            statusBadgeOverrides={settledStageBadges}
+            onToggleFavorite={handleToggleFavorite}
+            onOpenModal={handleOpenModal}
+            onAdminEdit={isAdmin ? handleAdminEdit : undefined}
+            isLoading={isLoading && page > 1}
+            emptyMessage={`No ${section.title.toLowerCase()} records`}
+            onLoadMore={handleLoadMore}
+            disableVirtualization
+          />
+        </section>
+      ) : null;
+    });
 
   const sentinelRef = useInfiniteScroll({
     searchExhausted,
@@ -1130,36 +1236,30 @@ const Fellowships = () => {
                     Sort by Recommended to see them listed apart as close matches.
                   </p>
                 )}
-                {(showCloseMatches
-                  ? closeMatchSections
-                  : showSearchRanking
-                    ? resultsCloseMatchesFrom === null
-                      ? searchResultSections
-                      : searchResultWithCloseMatchSections
-                    : boardSections
-                ).map((section) =>
-                  boardItems[section.key].length > 0 ? (
-                    <section key={section.key} aria-labelledby={`program-section-${section.key}`}>
-                      <SectionHeader
-                        headingId={`program-section-${section.key}`}
-                        title={section.title}
-                        count={boardItems[section.key].length}
-                        description={section.description}
-                      />
-                      <BrowseGrid
-                        items={boardItems[section.key]}
-                        favIds={favFellowshipIds}
-                        statusBadgeOverrides={settledStageBadges}
-                        onToggleFavorite={handleToggleFavorite}
-                        onOpenModal={handleOpenModal}
-                        onAdminEdit={isAdmin ? handleAdminEdit : undefined}
-                        isLoading={isLoading && page > 1}
-                        emptyMessage={`No ${section.title.toLowerCase()} records`}
-                        onLoadMore={handleLoadMore}
-                        disableVirtualization
-                      />
-                    </section>
-                  ) : null,
+                {citizenshipGrouped ? (
+                  <>
+                    {citizenshipSaysCount === 0 && citizenshipDoesntSayCount > 0 && (
+                      <p className="mb-6 rounded-card border border-line-brand bg-brand-soft px-4 py-3 text-sm text-brand-navy">
+                        {citizenshipNoneSayNotice(selectedCitizenship)}
+                      </p>
+                    )}
+                    {renderSections(citizenshipSaysItems, 2, 'program-section-')}
+                    {citizenshipDoesntSayCount > 0 && (
+                      <section aria-labelledby={CITIZENSHIP_DOESNT_SAY_HEADING_ID}>
+                        <CitizenshipDoesntSayDivider
+                          count={citizenshipDoesntSayCount}
+                          description={citizenshipDoesntSayDescription(selectedCitizenship)}
+                        />
+                        {renderSections(
+                          citizenshipDoesntSayItems,
+                          3,
+                          'program-section-doesnt-say-',
+                        )}
+                      </section>
+                    )}
+                  </>
+                ) : (
+                  renderSections((key) => boardItems[key], 2, 'program-section-')
                 )}
 
                 {!searchExhausted && <div ref={sentinelRef} className="h-10 w-full mt-4" />}

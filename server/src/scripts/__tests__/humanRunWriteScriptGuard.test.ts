@@ -64,6 +64,8 @@ const OPERATOR_TOOLS: Record<string, string> = {
     'retires the live observations of an operator-reviewed list of lane configs that exist on no git ref; the producing config is gone, so no lane run can supersede them, and the run-time scan of every ref is a check the sweep has no repository to make (#5807)',
   'observations:retire-rekeyed-person-keys':
     'a one-time backfill of the person keys a lane re-keyed before it retired them at write time; the lanes now retire a re-keyed key in the run that re-keys it, so no later run re-derives the stored backlog (#5817)',
+  'observations:retire-directory-export-departments':
+    'a one-time backfill for the frozen 2026-05-15 directory CSV export, which never runs again; the resolver now decodes its department codes on every resolve, so the sweep has nothing to re-derive (#5796)',
   'observations:nonfetching-lane-gone-pages':
     'a one-time backfill for lanes that never run again or read no page, so no lane or sweep stage can re-derive it (#4862)',
   'directory-removal:record':
@@ -117,7 +119,7 @@ const INSTRUMENTS_THAT_REFUSE_APPLY: Record<string, string> = {
  * stages. Lower it when one is converted or deleted. Raising it is the thing this guard exists
  * to make a visible, reviewed decision.
  */
-const PENDING_CONVERSION_CEILING = 109;
+const PENDING_CONVERSION_CEILING = 108;
 
 function commandsByScriptFile(): Map<string, string[]> {
   const scripts =

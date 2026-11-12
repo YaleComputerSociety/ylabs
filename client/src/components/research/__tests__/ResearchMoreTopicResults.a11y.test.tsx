@@ -1,6 +1,6 @@
-import { cleanup, render } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { afterEach, describe, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import ResearchMoreTopicResults, {
   type MoreTopicResultsAccessFilter,
@@ -24,21 +24,36 @@ const syntheticEntity = (index: number): ResearchEntity =>
     sourceUrls: [`https://example.yale.edu/synthetic-glacier-${index}`],
   }) as ResearchEntity;
 
-const clustersOf = (count: number) =>
+const SYNTHETIC_SECONDARY_SCHOOL = 'School of the Environment';
+
+const jointAppointmentEntity = (): ResearchEntity => ({
+  ...syntheticEntity(99),
+  schools: ['Faculty of Arts and Sciences', SYNTHETIC_SECONDARY_SCHOOL],
+});
+
+const clustersOf = (count: number, extra: ResearchEntity[] = []) =>
   buildGroupedSearchResults({
     query: '',
-    researchEntities: Array.from({ length: count }, (_, index) => syntheticEntity(index)),
+    researchEntities: [
+      ...Array.from({ length: count }, (_, index) => syntheticEntity(index)),
+      ...extra,
+    ],
     pathways: [],
   }).clusters;
 
-const renderSection = (accessFilter: MoreTopicResultsAccessFilter, count = 2) =>
+const renderSection = (
+  accessFilter: MoreTopicResultsAccessFilter,
+  count = 2,
+  options: { filteredSchool?: string; extra?: ResearchEntity[] } = {},
+) =>
   render(
     <MemoryRouter>
       <main>
         <ResearchMoreTopicResults
-          clusters={clustersOf(count)}
+          clusters={clustersOf(count, options.extra)}
           accessFilter={accessFilter}
           onSelect={vi.fn()}
+          filteredSchool={options.filteredSchool}
         />
       </main>
     </MemoryRouter>,
@@ -56,5 +71,14 @@ describe('ResearchMoreTopicResults accessibility', () => {
 
     const welcomes = renderSection('welcomesUndergrads');
     await expectNoAxeViolations(welcomes.container);
+  });
+
+  it('conforms when a School filter card names a secondary appointment', async () => {
+    const filtered = renderSection('hostsUndergrads', 1, {
+      filteredSchool: SYNTHETIC_SECONDARY_SCHOOL,
+      extra: [jointAppointmentEntity()],
+    });
+    expect(screen.getAllByText(`Also in ${SYNTHETIC_SECONDARY_SCHOOL}`)).toHaveLength(1);
+    await expectNoAxeViolations(filtered.container);
   });
 });

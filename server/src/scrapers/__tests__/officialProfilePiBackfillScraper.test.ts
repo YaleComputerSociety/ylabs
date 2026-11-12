@@ -3802,6 +3802,58 @@ describe('officialProfilePiBackfillScraper', () => {
     expect(obs.some((o) => o.field === 'departments')).toBe(false);
   });
 
+  it('never emits an affiliation group heading or a unit listed under it as a department (#5795)', () => {
+    const identity = extractOfficialProfileIdentity(
+      profileHtml.replace(
+        '<div class="department">Surgery</div>',
+        `
+          <div class="department">Surgery</div>
+          <div class="department">Other Departments &amp; Organizations</div>
+          <div class="department">Pathology</div>
+        `,
+      ),
+      profileUrl,
+      {
+        name: 'Jules Fixture Research Area',
+        slug: 'faculty-research-area-jules-fixture',
+      },
+    );
+
+    const obs = identityToUserObservations(identity!, {
+      netid: 'fixture106',
+      email: 'jules.fixture@yale.edu',
+    });
+
+    expect(obs.some((o) => o.value === 'Other Departments & Organizations')).toBe(false);
+    expect(obs.some((o) => o.value === 'Pathology')).toBe(false);
+    expect(obs.find((o) => o.field === 'primaryDepartment')?.value).toBe('Surgery');
+  });
+
+  it('emits no primaryDepartment when every unit is listed under the affiliation group heading (#5795)', () => {
+    const identity = extractOfficialProfileIdentity(
+      profileHtml.replace(
+        '<div class="department">Surgery</div>',
+        `
+          <div class="department">Other Departments &amp; Organizations</div>
+          <div class="department">Surgery</div>
+        `,
+      ),
+      profileUrl,
+      {
+        name: 'Jules Fixture Research Area',
+        slug: 'faculty-research-area-jules-fixture',
+      },
+    );
+
+    const obs = identityToUserObservations(identity!, {
+      netid: 'fixture106',
+      email: 'jules.fixture@yale.edu',
+    });
+
+    expect(identity!.departments).toEqual([]);
+    expect(obs.some((o) => o.field === 'primaryDepartment')).toBe(false);
+  });
+
   it('runs only the targeted queued Medicine profile backfill', async () => {
     const emitted: ObservationInput[] = [];
     const scraper = new OfficialProfilePiBackfillScraper(

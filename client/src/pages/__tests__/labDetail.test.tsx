@@ -2936,6 +2936,110 @@ describe('LabDetail page', () => {
     expect(screen.getByRole('link', { name: /Only Similar Lab/ })).toBeTruthy();
   });
 
+  it("lists each lead's other research under its own heading, linked to its profile", async () => {
+    renderLabDetail({
+      ...basePayload,
+      alsoLedResearchEntitiesByLead: [
+        {
+          leadName: 'Ada Fixture',
+          leadPublicKey: 'ada-fixture-pi',
+          researchEntities: [
+            {
+              id: 'ada-fixture-faculty-research',
+              slug: 'ada-fixture-faculty-research',
+              name: 'Ada Fixture Faculty Research',
+              kind: 'individual',
+              entityType: 'FACULTY_RESEARCH_AREA',
+              departments: ['Physics'],
+              blurb: 'Studies tidal sediment transport.',
+            },
+          ],
+        },
+        {
+          leadName: 'Devon Fixture',
+          researchEntities: [
+            {
+              id: 'fixture-shoreline-center',
+              slug: 'fixture-shoreline-center',
+              name: 'Fixture Shoreline Center',
+              kind: 'center',
+              entityType: 'CENTER',
+              departments: ['Physics'],
+            },
+          ],
+        },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    const firstSection = screen
+      .getByRole('heading', { name: 'Also led by Ada Fixture', level: 2 })
+      .closest('section') as HTMLElement;
+    expect(
+      within(firstSection)
+        .getByRole('link', { name: /Faculty research/ })
+        .getAttribute('href'),
+    ).toBe('/research/ada-fixture-faculty-research');
+    expect(
+      within(firstSection).getByRole('heading', { name: 'Ada Fixture', level: 3 }),
+    ).toBeTruthy();
+    expect(within(firstSection).getByText('Studies tidal sediment transport.')).toBeTruthy();
+    expect(within(firstSection).getAllByRole('listitem')).toHaveLength(1);
+    const secondSection = screen
+      .getByRole('heading', { name: 'Also led by Devon Fixture', level: 2 })
+      .closest('section') as HTMLElement;
+    expect(
+      within(secondSection)
+        .getByRole('link', { name: /Fixture Shoreline Center/ })
+        .getAttribute('href'),
+    ).toBe('/research/fixture-shoreline-center');
+  });
+
+  it("shows no lead's-other-research section when the lead leads nothing else", async () => {
+    renderLabDetail({ ...basePayload, alsoLedResearchEntitiesByLead: [] });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.queryByRole('heading', { name: /^Also led by/ })).toBeNull();
+  });
+
+  it('never repeats a row the related, affiliated, or similar sections already link', async () => {
+    const sharedEntity = {
+      id: 'fixture-shared-lab',
+      slug: 'fixture-shared-lab',
+      name: 'Fixture Shared Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      departments: ['Physics'],
+    };
+    const ledOnly = {
+      id: 'fixture-led-only-lab',
+      slug: 'fixture-led-only-lab',
+      name: 'Fixture Led Only Lab',
+      kind: 'lab',
+      entityType: 'LAB',
+      departments: ['Physics'],
+    };
+    renderLabDetail({
+      ...basePayload,
+      affiliatedResearchEntities: [sharedEntity],
+      similarResearchEntities: [ledOnly],
+      alsoLedResearchEntitiesByLead: [
+        { leadName: 'Ada Fixture', researchEntities: [sharedEntity, ledOnly] },
+        { leadName: 'Devon Fixture', researchEntities: [sharedEntity] },
+      ],
+    });
+
+    await screen.findByText(DEFAULT_ENTITY_NAME);
+
+    expect(screen.getAllByRole('link', { name: /Fixture Shared Lab/ })).toHaveLength(1);
+    expect(screen.getAllByRole('link', { name: /Fixture Led Only Lab/ })).toHaveLength(1);
+    expect(screen.getByRole('heading', { name: 'Also led by Ada Fixture' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: 'Also led by Devon Fixture' })).toBeNull();
+    expect(screen.queryByText('More like this')).toBeNull();
+  });
+
   it('does not render inferred student-fit preparation from topic metadata', async () => {
     renderLabDetail({
       ...basePayload,

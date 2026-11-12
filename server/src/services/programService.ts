@@ -26,5 +26,6 @@ export const searchPrograms = async (params: Parameters<typeof searchFellowships
     ...(result.queryCorrection ? { queryCorrection: result.queryCorrection } : {}),
     ...(result.queryMatch ? { queryMatch: result.queryMatch } : {}),
     ...(result.closeMatchesFrom !== undefined ? { closeMatchesFrom: result.closeMatchesFrom } : {}),
+    ...(result.citizenshipCounts ? { citizenshipCounts: result.citizenshipCounts } : {}),
   };
 };

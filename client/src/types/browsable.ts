@@ -13,8 +13,8 @@ import { newYorkCalendarDaysUntil, programDeadlineClosingInstant } from '../util
 import { getFellowshipApplicationStatus } from '../utils/fellowshipStatus';
 import {
   DEPARTMENT_RESEARCH_GUIDANCE_BADGE_CLASS,
-  DEPARTMENT_RESEARCH_GUIDANCE_BADGE,
   DEPARTMENT_RESEARCH_GUIDANCE_STATUS,
+  departmentGuidanceCopy,
   entryModeLabel,
   isDepartmentResearchGuidance,
   programKindLabel,
@@ -87,7 +87,7 @@ export function isItemOpen(item: BrowsableItem): boolean {
 export function getItemStatusBadge(item: BrowsableItem): { label: string; className: string } {
   if (isDepartmentResearchGuidance(item.data)) {
     return {
-      label: DEPARTMENT_RESEARCH_GUIDANCE_BADGE,
+      label: departmentGuidanceCopy(item.data).badge,
       className: DEPARTMENT_RESEARCH_GUIDANCE_BADGE_CLASS,
     };
   }

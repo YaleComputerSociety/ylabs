@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -140,6 +140,41 @@ describe('fellowships surface accessibility', () => {
     await expectNoAxeViolations(container);
   });
 
+  it('has no serious or critical axe violations for a list split by citizenship (#5299)', async () => {
+    const { container } = renderPage(
+      [
+        baseFellowship({
+          id: 'says-open',
+          title: 'Fixture Says Open Award',
+          citizenshipStatus: ['U.S. citizens are eligible', 'Non-U.S. citizens are eligible'],
+        }),
+        baseFellowship({ id: 'doesnt-say', title: 'Fixture Silent Award', citizenshipStatus: [] }),
+      ],
+      {
+        selectedCitizenship: ['Non-U.S. citizens are eligible'],
+        citizenshipCounts: {
+          options: [{ value: 'Non-U.S. citizens are eligible', says: 1, doesntSay: 1 }],
+          selected: { says: 1, doesntSay: 1 },
+        },
+        filterOptions: {
+          ...defaultFellowshipSearchContext.filterOptions,
+          citizenshipStatus: ['Non-U.S. citizens are eligible'],
+        },
+      },
+    );
+    await screen.findByText('Fixture Silent Award');
+    expect(screen.getByRole('heading', { name: "Doesn't say, 1 program" })).toBeTruthy();
+    await expectNoAxeViolations(container);
+
+    fireEvent.click(screen.getByRole('button', { name: /filters/i }));
+    const dialog = screen.getByRole('dialog', { name: 'Program filters' });
+    fireEvent.click(within(dialog).getByRole('button', { name: /citizenship/i }));
+    expect(
+      within(dialog).getByRole('checkbox', { name: 'Open to non-U.S. citizens, or not stated' }),
+    ).toBeTruthy();
+    await expectNoAxeViolations(container);
+  });
+
   it('has no serious or critical axe violations for an empty list', async () => {
     const { container } = renderPage([]);
     await expectNoAxeViolations(container);
@@ -212,6 +247,42 @@ describe('fellowships surface accessibility', () => {
         <FellowshipSearchContext.Provider value={defaultFellowshipSearchContext}>
           <FellowshipModal
             fellowship={guidance}
+            isOpen
+            isFavorite={false}
+            onClose={vi.fn()}
+            toggleFavorite={vi.fn()}
+          />
+        </FellowshipSearchContext.Provider>
+      </MemoryRouter>,
+    );
+    await screen.findByRole('dialog');
+    await expectNoAxeViolations(modal.container);
+  });
+
+  it('has no serious or critical axe violations for senior essay guidance (#5298)', async () => {
+    const seniorEssay = baseFellowship({
+      id: 'senior-essay',
+      title: 'Fixture Senior Essay Page',
+      programKind: 'DEPARTMENT_SENIOR_ESSAY_GUIDE',
+      departmentResearchGuidance: true,
+      departmentGuidanceKind: 'senior_essay',
+      entryMode: 'CONTACT_FACULTY',
+      studentFacingCategory: 'Senior essay guidance',
+      requiresMentorBeforeApply: false,
+      isAcceptingApplications: false,
+      deadline: null,
+      sourceUrl: 'https://fixture.yale.edu/undergraduate/senior-essay',
+    });
+    const { container } = renderPage([baseFellowship(), seniorEssay]);
+    await screen.findByText('Fixture Senior Essay Page');
+    await expectNoAxeViolations(container);
+    cleanup();
+
+    const modal = render(
+      <MemoryRouter>
+        <FellowshipSearchContext.Provider value={defaultFellowshipSearchContext}>
+          <FellowshipModal
+            fellowship={seniorEssay}
             isOpen
             isFavorite={false}
             onClose={vi.fn()}

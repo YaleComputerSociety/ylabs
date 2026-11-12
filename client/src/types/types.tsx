@@ -21,12 +21,16 @@ export const PROGRAM_AUDIENCES = [
 ] as const;
 export type ProgramAudience = (typeof PROGRAM_AUDIENCES)[number];
 
+export const DEPARTMENT_GUIDANCE_KINDS = ['research', 'senior_essay'] as const;
+export type DepartmentGuidanceKind = (typeof DEPARTMENT_GUIDANCE_KINDS)[number];
+
 export type Fellowship = {
   id: string;
   programCategory: string;
   programKind: string;
   programRole?: string;
   departmentResearchGuidance?: boolean;
+  departmentGuidanceKind?: DepartmentGuidanceKind;
   entryMode: string;
   studentFacingCategory: string;
   requiresMentorBeforeApply: boolean;
@@ -95,6 +99,16 @@ export type Fellowship = {
 
 export type StudentVisibilityTier =
   'student_ready' | 'limited_but_safe' | 'operator_review' | 'suppressed';
+
+export type ProgramCitizenshipBucketCounts = {
+  says: number;
+  doesntSay: number;
+};
+
+export type ProgramCitizenshipCounts = {
+  options: Array<ProgramCitizenshipBucketCounts & { value: string }>;
+  selected: ProgramCitizenshipBucketCounts | null;
+};
 
 export type FellowshipFilterOptions = {
   programCategory: string[];

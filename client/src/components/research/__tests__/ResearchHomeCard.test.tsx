@@ -109,6 +109,52 @@ describe('ResearchHomeCard', () => {
     expect(screen.queryByText('Led by emeritus faculty')).toBeNull();
   });
 
+  describe('under a School filter (#5179)', () => {
+    const jointAppointmentHome = () => {
+      const home = researchHome();
+      return {
+        ...home,
+        entities: [
+          { ...home.entities[0], schools: ['School of Medicine', 'School of Public Health'] },
+        ],
+      };
+    };
+
+    it('says how a row matching through a secondary appointment belongs to the school', () => {
+      render(
+        <MemoryRouter>
+          <ResearchHomeCard
+            home={jointAppointmentHome()}
+            filteredSchool="School of Public Health"
+          />
+        </MemoryRouter>,
+      );
+
+      expect(screen.getByText('Neuroscience · School of Medicine')).toBeTruthy();
+      expect(screen.getByText('Also in School of Public Health')).toBeTruthy();
+    });
+
+    it('adds no line when the primary school is the filtered school', () => {
+      render(
+        <MemoryRouter>
+          <ResearchHomeCard home={jointAppointmentHome()} filteredSchool="School of Medicine" />
+        </MemoryRouter>,
+      );
+
+      expect(screen.queryByText(/^Also in/)).toBeNull();
+    });
+
+    it('adds no line without a School filter', () => {
+      render(
+        <MemoryRouter>
+          <ResearchHomeCard home={jointAppointmentHome()} />
+        </MemoryRouter>,
+      );
+
+      expect(screen.queryByText(/^Also in/)).toBeNull();
+    });
+  });
+
   it('labels a creative practice card and never calls its lead a principal investigator (#4519)', async () => {
     const home = researchHome();
     const { container } = render(

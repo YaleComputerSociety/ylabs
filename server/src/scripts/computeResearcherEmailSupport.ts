@@ -5,8 +5,8 @@
  * carry one and no coverage count could ever read complete.
  *
  * Dry-run by default. `--apply` writes only a marker whose value changed, so a settled corpus
- * plans nothing. It is a manual step of the routine Development maintenance pass, run in the
- * same operation as the materialize (`docs/release-process.md`); a sweep stage waits on #5713.
+ * plans nothing. The Development sweep runs it as the `researcher-email-support` stage, directly
+ * before the visibility gate (#5713, `docs/research-data-pipeline.md`).
  */
 import dotenv from 'dotenv';
 import fs from 'fs';

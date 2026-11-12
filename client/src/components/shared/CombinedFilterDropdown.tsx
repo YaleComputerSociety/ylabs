@@ -4,7 +4,7 @@
  * The default presentation is an anchored, non-modal dropdown for shared listing filters.
  * Set `mobileSheet` for the Programs surface to use the labelled, focus-contained mobile sheet.
  */
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useId } from 'react';
 import VennDiagramToggle from '../navbar/VennDiagramToggle';
 import { CheckIcon, ChevronDownIcon, CloseIcon, TagIcon } from './icons';
 import useMediaQuery from '../../hooks/useMediaQuery';
@@ -28,6 +28,7 @@ export interface FilterTabConfig {
   setSelected: React.Dispatch<React.SetStateAction<string[]>>;
   searchable?: boolean;
   labelFn?: (item: string) => string;
+  optionDetailFn?: (item: string) => string | undefined;
   note?: string;
   colorFn?: (item: string) => { bg: string; text: string };
   maxDisplay?: number;
@@ -51,6 +52,7 @@ const CombinedFilterDropdown = ({
   const [isOpen, setIsOpen] = useState(false);
   const [activeTabKey, setActiveTabKey] = useState(tabs[0]?.key || '');
   const [searchTerms, setSearchTerms] = useState<Record<string, string>>({});
+  const optionIdPrefix = useId();
 
   const dropdownRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -272,10 +274,15 @@ const CombinedFilterDropdown = ({
 
             <fieldset className={optionListClassName(twoColumnOptions)}>
               <legend className="sr-only">{activeTab.label} filters</legend>
-              {getFilteredOptions(activeTab).map((option) => {
+              {getFilteredOptions(activeTab).map((option, optionIndex) => {
                 const isSelected = activeTab.selected.includes(option);
                 const colors = activeTab.colorFn?.(option);
                 const optionLabel = activeTab.labelFn ? activeTab.labelFn(option) : option;
+                const optionDetail = activeTab.optionDetailFn?.(option);
+                const optionIdBase = `${optionIdPrefix}-${activeTab.key}-${optionIndex}`;
+                const optionLabelId = optionDetail ? `${optionIdBase}-label` : undefined;
+                const optionDetailId = optionDetail ? `${optionIdBase}-detail` : undefined;
+                const optionLabelClassName = twoColumnOptions ? 'min-w-0 break-words' : 'truncate';
 
                 return (
                   <label
@@ -289,6 +296,8 @@ const CombinedFilterDropdown = ({
                     <input
                       type="checkbox"
                       checked={isSelected}
+                      aria-labelledby={optionLabelId}
+                      aria-describedby={optionDetailId}
                       onChange={() => {
                         activeTab.setSelected((prev) =>
                           isSelected ? prev.filter((v) => v !== option) : [...prev, option],
@@ -310,10 +319,17 @@ const CombinedFilterDropdown = ({
                       >
                         {optionLabel}
                       </span>
-                    ) : (
-                      <span className={twoColumnOptions ? 'min-w-0 break-words' : 'truncate'}>
-                        {optionLabel}
+                    ) : optionDetail ? (
+                      <span className="flex min-w-0 flex-col gap-0.5">
+                        <span id={optionLabelId} className={optionLabelClassName}>
+                          {optionLabel}
+                        </span>
+                        <span id={optionDetailId} className="yr-num text-xs text-muted">
+                          {optionDetail}
+                        </span>
                       </span>
+                    ) : (
+                      <span className={optionLabelClassName}>{optionLabel}</span>
                     )}
                   </label>
                 );
