@@ -114,9 +114,24 @@ function localPartTokens(localPart: string): string[] {
   return localPart.split(/[._-]+/).filter(Boolean);
 }
 
+/**
+ * An office holder's mailbox is the office title followed by the holder's full name
+ * (`dean.<first>.<last>`). The title alone stays a person's word, because Dean is a first
+ * name and a surname too: `dean.<last>` and `<first>.dean` are personal addresses.
+ */
+const OFFICE_HOLDER_PREFIXES = new Set(['dean', 'provost']);
+
+function localPartNamesAnOfficeHolderMailbox(tokens: readonly string[]): boolean {
+  return tokens.length >= 3 && OFFICE_HOLDER_PREFIXES.has(tokens[0]);
+}
+
 export function localPartNamesARole(localPart: string): boolean {
   if (ROLE_MAILBOX_TOKENS.has(localPart)) return true;
-  return localPartTokens(localPart).some((token) => ROLE_MAILBOX_TOKENS.has(token));
+  const tokens = localPartTokens(localPart);
+  return (
+    tokens.some((token) => ROLE_MAILBOX_TOKENS.has(token)) ||
+    localPartNamesAnOfficeHolderMailbox(tokens)
+  );
 }
 
 function yaleHostOf(pageUrl: string | undefined | null): string | null {

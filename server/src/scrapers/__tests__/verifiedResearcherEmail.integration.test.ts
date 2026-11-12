@@ -198,6 +198,18 @@ describe('an empty researcher email is filled from identity-verified evidence on
     expect(await storedEmail(researcher._id)).toBe(PERSON_PAGE_EMAIL);
   });
 
+  it("keeps the stored email when the page candidate is an office holder's mailbox", async () => {
+    const researcher = await seedResearcher({
+      displayName: 'Ada Fixture',
+      identifiers: { netid: OWN_NETID, email: LEGACY_EMAIL },
+    });
+    await seedOwnKeyPageEmail('dean.ada.fixture@yale.edu', OWN_PAGE);
+
+    await materializeEntity('user', { entityKey: `netid:${OWN_NETID}` }, {});
+
+    expect(await storedEmail(researcher._id)).toBe(LEGACY_EMAIL);
+  });
+
   it('keeps the stored email when page evidence states both addresses', async () => {
     const researcher = await seedResearcherWithStoredEmail();
     await seedOwnKeyPageEmail(PAGE_EMAIL, OWN_PAGE);
