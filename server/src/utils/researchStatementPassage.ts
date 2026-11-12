@@ -126,6 +126,21 @@ export const isNarrowedLabSiteDescription = (observation: {
   typeof observation.value === 'string';
 
 /**
+ * The value the resolver reads for a lab-site description observation on a person's row, or
+ * `null` for any other observation. An empty string means nothing of the value survives.
+ * Provenance matching reads it too, because the resolver's winner carries the narrowed text
+ * rather than the stored observation's own value.
+ */
+export function narrowedLabSiteDescriptionValue(observation: {
+  sourceName?: unknown;
+  field?: unknown;
+  value?: unknown;
+}): string | null {
+  if (!isNarrowedLabSiteDescription(observation)) return null;
+  return researchPassageWithoutClinicalService(observation.value as string);
+}
+
+/**
  * The resolver's view of the lab-site description observations, each narrowed to its research
  * passage and dropped when none is left. A derivation on every resolve: it writes no field and
  * no lock, so a fix to the predicate reaches every row on its next materialize.
@@ -134,8 +149,8 @@ export function withLabSiteDescriptionsNarrowedToResearch<
   T extends { sourceName?: unknown; field?: unknown; value?: unknown },
 >(observations: readonly T[]): T[] {
   return observations.flatMap((observation) => {
-    if (!isNarrowedLabSiteDescription(observation)) return [observation];
-    const passage = researchPassageWithoutClinicalService(observation.value as string);
+    const passage = narrowedLabSiteDescriptionValue(observation);
+    if (passage === null) return [observation];
     return passage ? [{ ...observation, value: passage }] : [];
   });
 }
