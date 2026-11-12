@@ -2,11 +2,12 @@ import mongoose from 'mongoose';
 import { describe, expect, it } from 'vitest';
 import { givenNamesEquivalent, statedMiddleInitialsConflict } from '../utils/piNameMatch';
 import {
+  groupNamesStateConflictingMiddleInitials,
   listedPersonIsTheNamedLead,
   namesStateConflictingMiddleInitials,
   observedPersonNameAgreesWith,
 } from '../utils/personNameAgreement';
-import { statedPersonNamesFrom } from '../utils/personPageStatedNames';
+import { orcidValueSpellings, statedPersonNamesFrom } from '../utils/personPageStatedNames';
 import { resolveResearcherIdForPersonName } from '../../services/researcherPersonNameResolver';
 import { decideShellMerge } from '../../scripts/dedupeAccountlessResearcherShellsCore';
 import {
@@ -54,6 +55,28 @@ describe('a stated middle initial that differs vetoes a name match (#5979)', () 
       false,
     );
     expect(namesStateConflictingMiddleInitials('Quinn A. Fixture', 'Quinn Fixture')).toBe(false);
+    expect(
+      groupNamesStateConflictingMiddleInitials([
+        'Quinn Fixture',
+        'Quinn A. Fixture',
+        'Quinn L. Fixture',
+      ]),
+    ).toBe(true);
+    expect(groupNamesStateConflictingMiddleInitials(['Quinn Fixture', 'Quinn A. Fixture'])).toBe(
+      false,
+    );
+  });
+
+  it('reads one ORCID in every spelling a lane stores it under', () => {
+    expect(orcidValueSpellings('aaaa-bbbb-cccc-dddd')).toEqual(
+      expect.arrayContaining([
+        'aaaa-bbbb-cccc-dddd',
+        'aaaabbbbccccdddd',
+        'https://orcid.org/aaaa-bbbb-cccc-dddd',
+        'https://orcid.org/aaaabbbbccccdddd',
+      ]),
+    );
+    expect(orcidValueSpellings('')).toEqual([]);
   });
 
   it('composes a page name from the fname and lname one key read from one page', () => {

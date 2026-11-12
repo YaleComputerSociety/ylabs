@@ -23,7 +23,8 @@ import { resetDirectoryNetidsByAddressCache } from '../directoryContradictedProf
 const RECORD_NETID = 'qf5979';
 const OWN_PAGE = 'https://som.yale.edu/faculty-research/faculty-directory/quinn-fixture';
 const ORCID_PAGE = 'https://medicine.yale.edu/profile/quinn-fixture/';
-const UNISSUED_ORCID = '0000-0000-0000-0001';
+const UNISSUED_ORCID = 'orcid-stand-in-5979';
+const OWN_PAGE_LISTING = 'https://som.yale.edu/faculty-research/faculty-directory/economics';
 const ELSEWHERE_PAGE = 'https://medicine.yale.edu/lab/quinn-fixture-elsewhere/';
 const KEY = 'dept:som:quinn-a-fixture';
 
@@ -131,7 +132,7 @@ describe('a name join refuses a record whose identity pages state another middle
     });
 
     it('finds the page stating the record ORCID in another spelling', async () => {
-      await seedOrcidPageStating('Quinn L.', 'https://orcid.org/0000000000000001');
+      await seedOrcidPageStating('Quinn L.', `https://orcid.org/${UNISSUED_ORCID}`);
 
       const join = await joinKeyNamed('Quinn A. Fixture');
 
@@ -139,7 +140,7 @@ describe('a name join refuses a record whose identity pages state another middle
       expect(join.identityJoin).toBeUndefined();
     });
 
-    it('reads only the names observed at the record pages, not those a citing key holds from elsewhere', async () => {
+    it('refuses when a key citing a record page states another middle initial at another page', async () => {
       await seedOrcidPageStating('Quinn A.');
       await Observation.create([
         observation('netid:quinn.fixture', 'fname', 'Quinn L.', ELSEWHERE_PAGE),
@@ -148,8 +149,31 @@ describe('a name join refuses a record whose identity pages state another middle
 
       const join = await joinKeyNamed('Quinn A. Fixture');
 
+      expect(join.researcher).toBeNull();
+    });
+
+    it('reads the name a key states at its listing when only its profile observations cite the record page', async () => {
+      await Observation.create([
+        observation('dept:som:quinn-l-fixture', 'fname', 'Quinn L.', OWN_PAGE_LISTING),
+        observation('dept:som:quinn-l-fixture', 'lname', 'Fixture', OWN_PAGE_LISTING),
+        observation('dept:som:quinn-l-fixture', 'profileUrls', { official: OWN_PAGE }, OWN_PAGE),
+      ]);
+
+      const join = await joinKeyNamed('Quinn A. Fixture');
+
+      expect(join.researcher).toBeNull();
+    });
+
+    it('still joins when the key citing the record page states the same middle initial at its listing', async () => {
+      await Observation.create([
+        observation('dept:som:quinn-a-fixture', 'fname', 'Quinn A.', OWN_PAGE_LISTING),
+        observation('dept:som:quinn-a-fixture', 'lname', 'Fixture', OWN_PAGE_LISTING),
+        observation('dept:som:quinn-a-fixture', 'profileUrls', { official: OWN_PAGE }, OWN_PAGE),
+      ]);
+
+      const join = await joinKeyNamed('Quinn A. Fixture');
+
       expect(String(join.researcher?._id)).toBe(String(recordId));
-      expect(join.identityJoin).toBe('person-name');
     });
 
     it('re-derives the same refusal on a second run', async () => {

@@ -68,28 +68,35 @@ async function liveUserObservations(
     .toArray()) as UserNameObservation[];
 }
 
-const orcidSpellingPattern = (normalized: string): RegExp =>
-  new RegExp(normalized.replace(/-/g, '').split('').join('[\\s-]*'), 'i');
+export function orcidValueSpellings(orcid: string): string[] {
+  const stated = normalizeOrcid(orcid) || text(orcid);
+  if (!stated) return [];
+  const compact = stated.replace(/-/g, '');
+  return [
+    ...new Set(
+      [stated, compact].flatMap((form) => [
+        form,
+        form.toLowerCase(),
+        `https://orcid.org/${form}`,
+        `http://orcid.org/${form}`,
+        `https://www.orcid.org/${form}`,
+      ]),
+    ),
+  ];
+}
 
 export async function personPagesStatingOrcid(
   observations: ObservationCollectionLike,
   orcid: string,
 ): Promise<string[]> {
-  const normalized = normalizeOrcid(orcid);
-  if (!normalized) return [];
+  const spellings = orcidValueSpellings(orcid);
+  if (spellings.length === 0) return [];
   const statements = await liveUserObservations(
     observations,
-    { field: 'orcid', value: { $regex: orcidSpellingPattern(normalized) } },
-    { value: 1, sourceUrl: 1 },
+    { field: 'orcid', value: { $in: spellings } },
+    { sourceUrl: 1 },
   );
-  return [
-    ...new Set(
-      statements
-        .filter((statement) => normalizeOrcid(statement.value) === normalized)
-        .map((statement) => text(statement.sourceUrl))
-        .filter(Boolean),
-    ),
-  ];
+  return [...new Set(statements.map((statement) => text(statement.sourceUrl)).filter(Boolean))];
 }
 
 export async function namesStatedAtPersonPagesByPage(
@@ -100,26 +107,39 @@ export async function namesStatedAtPersonPagesByPage(
   for (const page of new Set(pageUrls.filter(Boolean))) {
     for (const spelling of officialProfileUrlSpellings(page)) pageBySpelling.set(spelling, page);
   }
-  const observationsByPage = new Map<string, UserNameObservation[]>();
+  const keysByPage = new Map<string, Set<string>>();
   for (const batch of chunks([...pageBySpelling.keys()])) {
+    const citing = await liveUserObservations(
+      observations,
+      { sourceUrl: { $in: batch }, entityKey: { $exists: true, $nin: [null, ''] } },
+      { entityKey: 1, sourceUrl: 1 },
+    );
+    for (const observation of citing) {
+      const page = pageBySpelling.get(text(observation.sourceUrl));
+      const key = text(observation.entityKey);
+      if (!page || !key) continue;
+      keysByPage.set(page, (keysByPage.get(page) ?? new Set()).add(key));
+    }
+  }
+  const allKeys = [...new Set([...keysByPage.values()].flatMap((keys) => [...keys]))];
+  const nameObservationsByKey = new Map<string, UserNameObservation[]>();
+  for (const batch of chunks(allKeys)) {
     const named = await liveUserObservations(
       observations,
-      {
-        sourceUrl: { $in: batch },
-        entityKey: { $exists: true, $nin: [null, ''] },
-        field: { $in: PERSON_NAME_FIELDS },
-      },
+      { entityKey: { $in: batch }, field: { $in: PERSON_NAME_FIELDS } },
       { entityKey: 1, field: 1, value: 1, sourceUrl: 1 },
     );
     for (const observation of named) {
-      const page = pageBySpelling.get(text(observation.sourceUrl));
-      if (!page || !text(observation.entityKey)) continue;
-      observationsByPage.set(page, [...(observationsByPage.get(page) ?? []), observation]);
+      const key = text(observation.entityKey);
+      nameObservationsByKey.set(key, [...(nameObservationsByKey.get(key) ?? []), observation]);
     }
   }
   const namesByPage = new Map<string, string[]>();
-  for (const [page, pageObservations] of observationsByPage) {
-    namesByPage.set(page, statedPersonNamesFrom(pageObservations));
+  for (const [page, keys] of keysByPage) {
+    namesByPage.set(
+      page,
+      statedPersonNamesFrom([...keys].flatMap((key) => nameObservationsByKey.get(key) ?? [])),
+    );
   }
   return namesByPage;
 }

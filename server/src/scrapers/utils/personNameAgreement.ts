@@ -144,3 +144,9 @@ export function anyNamesStateConflictingMiddleInitials(
     rights.some((right) => namesStateConflictingMiddleInitials(left, right)),
   );
 }
+
+export function groupNamesStateConflictingMiddleInitials(names: readonly unknown[]): boolean {
+  return names.some((left, index) =>
+    names.slice(index + 1).some((right) => namesStateConflictingMiddleInitials(left, right)),
+  );
+}
