@@ -120,7 +120,11 @@ const profilePage = (
 
 const afterAMoment = () => new Promise((resolve) => setTimeout(resolve, 5));
 
-async function runLane(profiles: ProfilePages, roster: CenterMember[] = ROSTER): Promise<void> {
+async function runLane(
+  profiles: ProfilePages,
+  roster: CenterMember[] = ROSTER,
+  materializeOptions: Parameters<typeof materializeFromRun>[1] = {},
+): Promise<void> {
   await afterAMoment();
   const scrapeRunId = new mongoose.Types.ObjectId();
   await ScrapeRun.create({
@@ -152,7 +156,7 @@ async function runLane(profiles: ProfilePages, roster: CenterMember[] = ROSTER):
     sourceWeight: 0.8,
     dryRun: false,
   });
-  await materializeFromRun(String(scrapeRunId));
+  await materializeFromRun(String(scrapeRunId), materializeOptions);
 }
 
 const centerId = async () => {
@@ -559,6 +563,57 @@ describe(
 
       expect((await liveEdgesOf(casey)).map((edge) => edge.role)).toEqual(['CORE_FACULTY']);
       expect((await liveEdgesOf(devon)).map((edge) => edge.role)).toEqual(['CORE_FACULTY']);
+    });
+
+    it('leaves a skipped entity type byte-identical while listings still materialize (#5890)', async () => {
+      const avery = await accountHolder('Avery', { officialUrl: officialProfileUrl('Avery') });
+      const centerBefore = await ResearchEntity.findOne({ slug: CENTER_SLUG }).lean();
+      await ResearchEntity.updateOne(
+        { slug: CENTER_SLUG },
+        { $set: { name: 'A stale center name the lane would overwrite' } },
+      );
+      const staleCenter = await ResearchEntity.findOne({ slug: CENTER_SLUG }).lean();
+
+      await runLane(
+        { [centerProfileUrl('Avery')]: profilePage({ canonical: officialProfileUrl('Avery') }) },
+        ROSTER,
+        { skipEntityTypes: ['researchEntity'] },
+      );
+
+      const centerAfter = await ResearchEntity.findOne({ slug: CENTER_SLUG }).lean();
+      expect(JSON.parse(JSON.stringify(centerAfter))).toEqual(
+        JSON.parse(JSON.stringify(staleCenter)),
+      );
+      expect(centerBefore?.name).not.toBe('A stale center name the lane would overwrite');
+      expect((await liveEdgesOf(avery)).map((edge) => edge.role)).toEqual(['CORE_FACULTY']);
+    });
+
+    it('still runs center roster retirement when center rows are skipped (#5890)', async () => {
+      const avery = await accountHolder('Avery', { officialUrl: officialProfileUrl('Avery') });
+      const staleLead = await edgeOn(avery, 'DIRECTOR');
+      const pages = {
+        [centerProfileUrl('Avery')]: profilePage({ canonical: officialProfileUrl('Avery') }),
+      };
+      const skip = { skipEntityTypes: ['researchEntity'] };
+
+      await runLane(pages, ROSTER, skip);
+      await runLane(pages, ROSTER, skip);
+
+      expect((await edgeById(staleLead))?.state).toBe('HISTORICAL');
+      expect((await liveEdgesOf(avery)).map((row) => row.role)).toEqual(['CORE_FACULTY']);
+    });
+
+    it('still projects the center row when no type is skipped (#5890)', async () => {
+      await ResearchEntity.updateOne(
+        { slug: CENTER_SLUG },
+        { $set: { name: 'A stale center name the lane would overwrite' } },
+      );
+
+      await runLane({}, ROSTER);
+
+      expect((await ResearchEntity.findOne({ slug: CENTER_SLUG }).lean())?.name).not.toBe(
+        'A stale center name the lane would overwrite',
+      );
     });
 
     it('resolves to nobody when the evidence reaches two agreeing people', async () => {
