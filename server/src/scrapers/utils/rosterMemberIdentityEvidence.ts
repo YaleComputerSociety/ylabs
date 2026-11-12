@@ -1,5 +1,5 @@
 import * as cheerio from 'cheerio';
-import type { AnyNode } from 'domhandler';
+import { hasChildren, isTag, isText, type AnyNode, type Element } from 'domhandler';
 import { normalizeOfficialProfileDestination } from '../../services/leadProfileIdentity';
 import { isYaleProfileUrl } from '../yaleProfileDepartureEvidence';
 import { isLikelyPersonSpecificYaleEmail, splitName } from './scraperHelpers';
@@ -410,68 +410,68 @@ export function singleStatedOrcid(candidates: Iterable<unknown>): string | undef
 // Unlike the subject email reader, a sidebar is not foreign here: a school profile renders the
 // subject's own ORCID section in the profile's sidebar column.
 const NON_SUBJECT_ORCID_BLOCK_LABEL =
-  /related|co-?authors?|collaborat|colleague|publication|citation|bibliograph|media-contact|press|breadcrumb/i;
+  /(?:^|[\s_-])(?:related|co-?authors?|collaborat|colleague|publication|citation|bibliograph|media-contact|press|breadcrumb)/i;
 const NON_SUBJECT_ORCID_TAGS = new Set(['nav', 'footer', 'aside']);
+const ORCID_IN_TEXT = /\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{3}[\dX]\b/gi;
+const STATES_ORCID_HREF = /orcid\.org|^orcid:/i;
 
-function subjectProfileNode($: cheerio.CheerioAPI, memberName: string) {
-  const heading = $('h1')
-    .filter((_i, el) => namesAgree($(el).text().replace(/\s+/g, ' ').trim(), memberName))
-    .first();
-  return heading.closest('article, main').get(0) ?? heading.closest('body').get(0);
+const collapsedText = (value: string): string => value.replace(/\s+/g, ' ').trim();
+
+function pageTitleNamesMember($: cheerio.CheerioAPI, memberName: string): boolean {
+  return [$('meta[property="og:title"]').attr('content'), $('title').first().text()].some(
+    (title) => {
+      const leading = collapsedText(title ?? '').split(/\s+[|\u2013\u2014-]\s+/)[0];
+      return Boolean(leading) && namesAgree(leading, memberName);
+    },
+  );
 }
 
-function sitsInNonSubjectOrcidBlock(
-  $: cheerio.CheerioAPI,
-  el: AnyNode,
-  subjectNode: AnyNode,
-): boolean {
-  for (let node: AnyNode | null = el; node && node !== subjectNode; node = node.parent) {
-    if (node.type !== 'tag') continue;
-    const tag = $(node);
-    if (NON_SUBJECT_ORCID_TAGS.has(node.tagName.toLowerCase())) return true;
-    const label = [tag.attr('class'), tag.attr('id'), tag.attr('aria-label')].join(' ');
-    if (NON_SUBJECT_ORCID_BLOCK_LABEL.test(label)) return true;
-  }
-  return false;
+function subjectProfileNode($: cheerio.CheerioAPI, memberName: string): AnyNode | undefined {
+  const heading = ['h1', 'h2']
+    .map((tag) =>
+      $(tag)
+        .filter((_i, el) => namesAgree(collapsedText($(el).text()), memberName))
+        .first(),
+    )
+    .find((candidate) => candidate.length > 0);
+  if (heading) return heading.closest('article, main').get(0) ?? heading.closest('body').get(0);
+  if (!pageTitleNamesMember($, memberName)) return undefined;
+  return $('main').get(0) ?? $('body').get(0);
+}
+
+function isNonSubjectOrcidBlock(el: Element): boolean {
+  if (NON_SUBJECT_ORCID_TAGS.has(el.tagName.toLowerCase())) return true;
+  const label = [el.attribs.class, el.attribs.id, el.attribs['aria-label']].join(' ');
+  return NON_SUBJECT_ORCID_BLOCK_LABEL.test(label);
+}
+
+function subjectNodeOrcidCandidates(subjectNode: AnyNode): string[] {
+  const candidates: string[] = [];
+  const visit = (node: AnyNode): void => {
+    if (isText(node)) {
+      candidates.push(...(node.data.match(ORCID_IN_TEXT) ?? []));
+      return;
+    }
+    if (!isTag(node) || isNonSubjectOrcidBlock(node)) return;
+    const href = node.tagName.toLowerCase() === 'a' ? (node.attribs.href ?? '') : '';
+    if (STATES_ORCID_HREF.test(href)) candidates.push(href);
+    node.children.forEach(visit);
+  };
+  if (hasChildren(subjectNode)) subjectNode.children.forEach(visit);
+  return candidates;
 }
 
 /**
  * The ORCID the page's subject node states, read only when it states exactly one (#5932). The
  * subject node is the article (or main, or else the body) holding the heading that names the
- * member; an ORCID in navigation, a footer, an aside, or a related-people, co-author or
- * publication block belongs to someone else, and so does an ORCID on a page with no heading
- * naming the member. The page's own Person metadata counts only for a node naming the member.
+ * member, or the page's main content when its title names the member; an ORCID link or a
+ * written iD in navigation, a footer, an aside, or a related-people, co-author or publication
+ * block belongs to someone else, and so does an ORCID on a page that never names the member.
  */
-export function subjectProfileOrcid(
-  $: cheerio.CheerioAPI,
-  memberName: string,
-  people: ReadonlyArray<Record<string, unknown>> = jsonLdPeople($),
-): string | undefined {
+export function subjectProfileOrcid($: cheerio.CheerioAPI, memberName: string): string | undefined {
   if (!memberName) return undefined;
-  const candidates: unknown[] = [];
-  for (const person of subjectPeople(people, memberName)) {
-    if (!jsonLdPersonName(person)) continue;
-    candidates.push(...asList(person.sameAs), ...asList(person.url));
-    for (const identifier of asList(person.identifier)) {
-      if (!identifier || typeof identifier !== 'object') {
-        candidates.push(identifier);
-        continue;
-      }
-      const record = identifier as Record<string, unknown>;
-      if (/orcid/i.test(`${textOf(record.propertyID)} ${textOf(record.name)}`)) {
-        candidates.push(record.value);
-      }
-    }
-  }
   const subjectNode = subjectProfileNode($, memberName);
-  if (subjectNode) {
-    $(subjectNode)
-      .find('a[href*="orcid.org"], a[href^="orcid:"]')
-      .each((_i, el) => {
-        if (!sitsInNonSubjectOrcidBlock($, el, subjectNode)) candidates.push($(el).attr('href'));
-      });
-  }
-  return singleStatedOrcid(candidates);
+  return subjectNode ? singleStatedOrcid(subjectNodeOrcidCandidates(subjectNode)) : undefined;
 }
 
 export function extractRosterMemberIdentityEvidence(
@@ -481,7 +481,7 @@ export function extractRosterMemberIdentityEvidence(
 ): RosterMemberIdentityEvidence {
   const $ = cheerio.load(html);
   const people = jsonLdPeople($);
-  const orcid = subjectProfileOrcid($, memberName, people);
+  const orcid = subjectProfileOrcid($, memberName);
   return {
     pageUrl,
     linkedProfileUrls: linkedProfileUrls($, people, pageUrl, memberName),

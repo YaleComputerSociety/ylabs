@@ -46,4 +46,15 @@ describe('dept-faculty-roster subject ORCID (#5932)', () => {
       orcidOf(profilePage('', `<footer>${orcidLink(SUBJECT_ORCID)}</footer>`)),
     ).toBeUndefined();
   });
+
+  it('reads an iD the subject node writes out as text', () => {
+    expect(orcidOf(profilePage(`<p>ORCID: ${SUBJECT_ORCID}</p>`))).toBe(SUBJECT_ORCID);
+  });
+
+  it('reads the main content when only the page title names the subject', () => {
+    const titleOnly = `<html><head><title>Ada Fixture | Yale School of Public Health</title></head><body>
+      <main><h2 class="person-name">Ada Fixture</h2><div>${orcidLink(SUBJECT_ORCID)}</div></main>
+      <footer>${orcidLink(OTHER_ORCID)}</footer></body></html>`;
+    expect(orcidOf(titleOnly)).toBe(SUBJECT_ORCID);
+  });
 });

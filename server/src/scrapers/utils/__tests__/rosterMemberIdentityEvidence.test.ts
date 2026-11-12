@@ -458,7 +458,7 @@ describe('subject-scoped ORCID (#5932)', () => {
     expect(extractRosterMemberIdentityEvidence(html, PAGE_URL, MEMBER).orcid).toBeUndefined();
   });
 
-  it('reads an ORCID from Person metadata naming the member', () => {
+  it('never reads an ORCID from Person metadata outside the subject node', () => {
     const jsonLd = {
       '@type': 'Person',
       name: MEMBER,
@@ -469,7 +469,46 @@ describe('subject-scoped ORCID (#5932)', () => {
       PAGE_URL,
       MEMBER,
     );
-    expect(evidence.orcid).toBe(SUBJECT_ORCID);
+    expect(evidence.orcid).toBeUndefined();
+  });
+
+  it('reads an iD the subject node writes out as text', () => {
+    expect(
+      extractRosterMemberIdentityEvidence(
+        profile(`<p>ORCID: ${SUBJECT_ORCID}</p>`),
+        PAGE_URL,
+        MEMBER,
+      ).orcid,
+    ).toBe(SUBJECT_ORCID);
+  });
+
+  it('reads the main content as the subject node when only the page title names the member', () => {
+    const titled = (body: string) =>
+      `<html><head><title>${MEMBER} | Synthetic Center</title></head><body><main>${body}</main></body></html>`;
+    expect(
+      extractRosterMemberIdentityEvidence(
+        titled(`<h2>Contact</h2>${orcidLink(SUBJECT_ORCID)}`),
+        PAGE_URL,
+        MEMBER,
+      ).orcid,
+    ).toBe(SUBJECT_ORCID);
+    expect(
+      extractRosterMemberIdentityEvidence(
+        `<html><head><title>Casey Coauthor | Synthetic Center</title></head><body><main>${orcidLink(SUBJECT_ORCID)}</main></body></html>`,
+        PAGE_URL,
+        MEMBER,
+      ).orcid,
+    ).toBeUndefined();
+  });
+
+  it('keeps an ORCID inside a wrapper whose class only contains a block word mid-token', () => {
+    expect(
+      extractRosterMemberIdentityEvidence(
+        profile(`<div class="wordpress-block compressed">${orcidLink(SUBJECT_ORCID)}</div>`),
+        PAGE_URL,
+        MEMBER,
+      ).orcid,
+    ).toBe(SUBJECT_ORCID);
   });
 
   it('round-trips the ORCID through the parser, and an ORCID alone is evidence', () => {
@@ -509,6 +548,8 @@ describe('ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION (#5677)', () => {
           { propertyID: 'ORCID', value: '0000-0002-1694-233X' },
         ],
       })}</script></head><body><main>
+        <h1>Avery Synthetic</h1>
+        <a href="https://orcid.org/0000-0002-1694-233X">ORCID</a>
         <a href="https://law.yale.edu/avery-synthetic">Profile</a>
         <a href="https://divinity.yale.edu/faculty-and-research/yds-faculty/avery-synthetic">Avery Synthetic</a>
         <a href="mailto:center.contact@yale.edu">Office</a>
