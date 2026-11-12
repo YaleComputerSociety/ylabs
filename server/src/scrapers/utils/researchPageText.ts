@@ -4,7 +4,10 @@ import { isCurriculumVitaeRecordSentence } from '../../utils/careerBiographyDesc
 import { removeRelatedEntityTeaserCards } from '../../utils/relatedEntityTeaserCards';
 import { extractElementTextWithLineBreaks } from './htmlText';
 import { removeProfilePublicityRegions } from './profilePublicityRegions';
-import { withoutResearchPageChrome } from './researchPageChrome';
+import {
+  withoutResearchPageChrome,
+  withoutResearchPageChromeMenusAndListings,
+} from './researchPageChrome';
 
 export const RESEARCH_PAGE_TEXT_SOURCE = 'research-page-text';
 export const RESEARCH_PAGE_TEXT_FIELD = 'researchPageText';
@@ -181,7 +184,8 @@ export function capResearchPageText(
 
 /**
  * The stored value for a row's research pages: each page's research statement, contact
- * details redacted the way ingest redacts prose, a page whose text repeats an earlier one
+ * details redacted the way ingest redacts prose, the writer's chrome, menu and publication
+ * strips applied so the cap is spent on prose (#5894), a page whose text repeats an earlier one
  * (a `/people/` and a `/profile/` address of the same profile) kept once, then capped. Same pages in, same value
  * out.
  */
@@ -193,7 +197,9 @@ export function researchPageTextValue(
   for (const page of pages) {
     if (seenUrls.has(page.url)) continue;
     seenUrls.add(page.url);
-    const text = redactDirectContactInfo(researchStatementTextOfPage(page.html, page.url));
+    const text = withoutResearchPageChromeMenusAndListings(
+      redactDirectContactInfo(researchStatementTextOfPage(page.html, page.url)),
+    ).trim();
     if (text.length < MIN_RESEARCH_PAGE_TEXT_CHARS) continue;
     if (entries.some((entry) => entry.text === text)) continue;
     entries.push({ url: page.url, text });
@@ -216,12 +222,10 @@ export function researchPageTextEntries(value: unknown): ResearchPageTextEntry[]
 }
 
 /**
- * Stored page text with the site chrome removed (#5577). The lane stores exactly this, and
- * applies it after the cap, so for an unchanged page the new stored value equals this
- * function of the old one: the writer's hashed input (#5537) and the topic cache key stay
- * the same, and `research-topics:rekey-stripped` can move existing readings ahead of a
- * re-scrape. Changing the order or adding other stripping here forces a description
- * rewrite and a topic re-derive for every affected row.
+ * Stored page text with the site chrome removed (#5577). The lane applies it again after the
+ * cap, having stripped chrome, menus and publications before it (#5894), so on stored text it
+ * is a no-op and the topic cache key equals the stored value's. Changing the order or adding
+ * other stripping here forces a description rewrite and a topic re-derive for every affected row.
  */
 export function researchPageTextEntriesWithoutChrome(value: unknown): ResearchPageTextEntry[] {
   return researchPageTextEntries(value).flatMap((entry) => {

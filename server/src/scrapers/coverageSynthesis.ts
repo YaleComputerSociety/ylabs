@@ -34,11 +34,7 @@ import {
 import { isResearchPageHeadingLine } from './utils/writerEvidenceText';
 import { isClinicalPracticeAsResearch } from './utils/clinicalPracticeAsResearch';
 import { isNarrowedLabSiteDescription, researchPassageOf } from '../utils/researchStatementPassage';
-import {
-  withoutPublicationListings,
-  withoutResearchPageChrome,
-  withoutSchoolMenuBlocks,
-} from './utils/researchPageChrome';
+import { withoutResearchPageChromeMenusAndListings } from './utils/researchPageChrome';
 import {
   coversResearchPage,
   coversResearchPageProse,
@@ -209,13 +205,13 @@ function researchPageTextSnippets(obs: CoverageObservationLike): CoverageSnippet
   return researchPageTextEntries(obs.value).flatMap((page) =>
     isRejectedDescriptionSourceUrl(page.url)
       ? []
-      : researchPageTextSnippetTexts(
-          withoutPublicationListings(withoutSchoolMenuBlocks(withoutResearchPageChrome(page.text))),
-        ).map((text) => ({
-          text: writerEvidenceTextOf(text),
-          sourceUrl: page.url,
-          sourceName: RESEARCH_PAGE_TEXT_SOURCE,
-        })),
+      : researchPageTextSnippetTexts(withoutResearchPageChromeMenusAndListings(page.text)).map(
+          (text) => ({
+            text: writerEvidenceTextOf(text),
+            sourceUrl: page.url,
+            sourceName: RESEARCH_PAGE_TEXT_SOURCE,
+          }),
+        ),
   );
 }
 

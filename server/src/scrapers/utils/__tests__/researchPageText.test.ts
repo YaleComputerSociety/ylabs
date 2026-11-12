@@ -7,6 +7,7 @@ import {
   researchStatementTextOfPage,
   truncateAtSentenceBoundary,
 } from '../researchPageText';
+import { withoutResearchPageChromeMenusAndListings } from '../researchPageChrome';
 
 const HOME = 'https://tidepool-lab.example.org/';
 const RESEARCH = 'https://tidepool-lab.example.org/research/';
@@ -113,6 +114,38 @@ describe('researchPageTextValue', () => {
     expect(total).toBeLessThanOrEqual(MAX_RESEARCH_PAGE_TEXT_CHARS);
     expect(total).toBeGreaterThan(MAX_RESEARCH_PAGE_TEXT_CHARS - 200);
     for (const entry of value) expect(entry.text.endsWith('reefs.')).toBe(true);
+  });
+});
+
+describe('researchPageTextValue chrome before the cap', () => {
+  const PROSE_SENTENCE =
+    'The lab studies how kelp forest food webs reorganise after marine heatwaves on rocky reefs.';
+  const citationLines = Array.from(
+    { length: 260 },
+    (_, index) =>
+      `<p>Rivera AM, Chen JL, Okafor BT. Kelp canopy survey number ${index + 1} along the northern shore. J Coast Ecol. 2021;${index + 10}:45-67.</p>`,
+  ).join('');
+  const listingFirstHtml = `<html><body><h2>Welcome</h2>${citationLines}<p>${PROSE_SENTENCE} Field teams return to the same transects each summer to count urchins and canopy cover.</p></body></html>`;
+
+  it('keeps prose that sits after a long publication listing under the cap', () => {
+    const [entry] = researchPageTextValue([{ url: HOME, html: listingFirstHtml }]);
+    expect(entry.text).toContain(PROSE_SENTENCE);
+    expect(entry.text).not.toContain('Kelp canopy survey number');
+  });
+
+  it('stores text the writer strips leave unchanged', () => {
+    const value = researchPageTextValue([
+      { url: HOME, html: listingFirstHtml },
+      { url: RESEARCH, html: homeHtml },
+    ]);
+    for (const entry of value) {
+      expect(withoutResearchPageChromeMenusAndListings(entry.text)).toBe(entry.text);
+    }
+  });
+
+  it('leaves a page without chrome as the extraction produced it', () => {
+    const [entry] = researchPageTextValue([{ url: HOME, html: homeHtml }]);
+    expect(entry.text).toBe(researchStatementTextOfPage(homeHtml, HOME));
   });
 });
 

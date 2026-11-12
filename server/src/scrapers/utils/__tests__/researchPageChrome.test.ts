@@ -3,6 +3,7 @@ import { gatherCoverageSnippets } from '../../coverageSynthesis';
 import {
   withoutPublicationListings,
   withoutResearchPageChrome,
+  withoutResearchPageChromeMenusAndListings,
   withoutSchoolMenuBlocks,
 } from '../researchPageChrome';
 
@@ -223,5 +224,47 @@ describe('school menu blocks and page furniture (#5537)', () => {
     ).toEqual([PROSE]);
     const prose = 'The lab works with McDonald colleagues and the DeepMind team on reef models.';
     expect(withoutPublicationListings(prose)).toBe(prose);
+  });
+});
+
+describe('withoutResearchPageChromeMenusAndListings (#5894)', () => {
+  const page = [
+    'Skip to main content',
+    'Who We Are',
+    'Contact Us',
+    'News & Events',
+    'About Us',
+    'Find People',
+    'Degree Programs',
+    'How to Apply',
+    'Financial Aid',
+    'Office of the Dean',
+    'Organization Charts',
+    'Departments & Centers',
+    'Graduate Programs',
+    PROSE,
+    'Rivera AM, Chen JL. Coral recovery after heatwaves. J Reef Ecol. 2021;12:45-67.',
+    'Quick links',
+    'Our projects follow coral spawning and the acidification of shallow reefs.',
+  ].join('\n');
+
+  it('applies the chrome, school menu and publication strips the writer applies', () => {
+    expect(withoutResearchPageChromeMenusAndListings(page)).toBe(
+      withoutPublicationListings(withoutSchoolMenuBlocks(withoutResearchPageChrome(page))),
+    );
+    expect(withoutResearchPageChromeMenusAndListings(page).split('\n')).toEqual([
+      PROSE,
+      'Our projects follow coral spawning and the acidification of shallow reefs.',
+    ]);
+  });
+
+  it('changes nothing when applied a second time', () => {
+    const once = withoutResearchPageChromeMenusAndListings(page);
+    expect(withoutResearchPageChromeMenusAndListings(once)).toBe(once);
+  });
+
+  it('leaves prose without chrome unchanged', () => {
+    const prose = [PROSE, 'Our projects follow coral spawning on shallow reefs.'].join('\n');
+    expect(withoutResearchPageChromeMenusAndListings(prose)).toBe(prose);
   });
 });
