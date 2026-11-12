@@ -13,6 +13,7 @@ import {
 import { assertDevelopmentWritesGuarded } from './devWriteGuard';
 import { watchMongoClientProgress } from './devWriteProgress';
 import { enableScriptDiagnosticReportOnSignal } from './scriptDiagnosticReport';
+import { sanitizeLogValue } from '../utils/logSanitizer';
 
 // `bufferTimeoutMS` is a Mongoose connection option the driver's own type does not
 // declare, so the shape is spelled out here rather than inferred.
@@ -328,6 +329,81 @@ export function startMongoKeepAlive(intervalMs = 120000): void {
 export function stopMongoKeepAlive(): void {
   if (keepAliveTimer) clearInterval(keepAliveTimer);
   keepAliveTimer = null;
+}
+
+export const SCRIPT_EXIT_FAILED = 1;
+// Distinct from SCRIPT_EXIT_FAILED so cron and sessions can tell a script whose work completed but
+// whose process would not exit from one that failed (#5945).
+export const SCRIPT_EXIT_HELD_OPEN = 3;
+export const SCRIPT_EXIT_WATCHDOG_MS = 30_000;
+export const SCRIPT_HELD_OPEN_MESSAGE = 'work completed; process held the event loop open';
+
+export interface RunScriptMainOptions {
+  exitWatchdogMs?: number;
+  logFailure?: (error: unknown) => void;
+}
+
+const logScriptFailure = (error: unknown) => console.error(sanitizeLogValue(error));
+
+export function describeActiveResources(
+  resources: readonly string[] = process.getActiveResourcesInfo(),
+): string {
+  const counts = new Map<string, number>();
+  for (const resource of resources) counts.set(resource, (counts.get(resource) ?? 0) + 1);
+  if (counts.size === 0) return 'none reported';
+  return [...counts]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([resource, count]) => `${resource} x${count}`)
+    .join(', ');
+}
+
+// Leases are released before any connection closes, because the release is a write on one of them.
+export async function closeScriptConnections(): Promise<void> {
+  stopMongoKeepAlive();
+  await releaseHeldDevWriteLeases().catch(() => undefined);
+  await Promise.allSettled(mongoose.connections.map((connection) => connection.close()));
+}
+
+function exitCodeAlreadySet(): number {
+  const code = Number(process.exitCode ?? 0);
+  return Number.isInteger(code) ? code : SCRIPT_EXIT_FAILED;
+}
+
+function armExitWatchdog(timeoutMs: number): void {
+  const watchdog = setTimeout(() => {
+    console.error(`${SCRIPT_HELD_OPEN_MESSAGE}: ${describeActiveResources()}`);
+    process.exit(exitCodeAlreadySet() || SCRIPT_EXIT_HELD_OPEN);
+  }, timeoutMs);
+  watchdog.unref();
+}
+
+async function settleWithin(work: Promise<unknown>, timeoutMs: number): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  const deadline = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, timeoutMs);
+    timer.unref();
+  });
+  try {
+    await Promise.race([work, deadline]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function runScriptMain(
+  main: () => Promise<unknown>,
+  options: RunScriptMainOptions = {},
+): Promise<void> {
+  const watchdogMs = options.exitWatchdogMs ?? SCRIPT_EXIT_WATCHDOG_MS;
+  try {
+    await main();
+  } catch (error) {
+    (options.logFailure ?? logScriptFailure)(error);
+    await settleWithin(closeScriptConnections(), watchdogMs);
+    process.exit(SCRIPT_EXIT_FAILED);
+  }
+  armExitWatchdog(watchdogMs);
+  await closeScriptConnections();
 }
 
 export interface MongoIndexDrift {

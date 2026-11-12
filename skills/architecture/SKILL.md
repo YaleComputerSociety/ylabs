@@ -177,6 +177,21 @@ The numbers come from measurement rather than taste: a reachable database answer
 The socket ceiling stays above the slowest request this server makes and under the hosting platform's own request timeout.
 Any single in-process operation that legitimately needs longer than the socket ceiling belongs in a script or a child process, which is where the heavy audits already run.
 
+## Script exit and the held-open code
+
+A long operator script hands its entry point to `runScriptMain(main, options?)` in `server/src/db/connections.ts` instead of chaining `.catch`/`.finally` onto `main()` (#5945).
+It awaits `main` and never exits while it runs.
+On success it stops the keep-alive pass, releases held Development write leases, and closes every Mongoose connection, including ones from `createScriptMongoConnection`, and then lets the process exit on its own.
+It arms an unref'd watchdog first (`SCRIPT_EXIT_WATCHDOG_MS`, 30 s).
+A process still alive at that bound logs `work completed; process held the event loop open: <handle types and counts>` from `process.getActiveResourcesInfo()` and exits `SCRIPT_EXIT_HELD_OPEN`, which is 3.
+Exit 3 means the work completed and some handle leaked, so cron and sessions can tell it from exit 1, which is a failure; an exit code the script already set, such as a refusal's 1, is kept rather than replaced by 3.
+A thrown error is logged through `sanitizeLogValue` (or the script's own `logFailure`), the connections are closed within the same bound, and the process exits 1.
+`server/src/scripts/__tests__/longScriptEntryPointsUseRunScriptMain.test.ts` lists the long entry points with a reason each and fails when one stops using it, so a new long script belongs on that list.
+`server/src/db/__tests__/runScriptMain.integration.test.ts` drives real child processes for the held-open, clean, throwing and second-connection cases.
+Long Development runs need the laptop lid open or AC power: `caffeinate -i` prevents idle sleep only, not clamshell sleep.
+A run that spans a sleep looks hung (its log shows a disconnect and reconnects on each maintenance wake, but no progress), so re-run it.
+That is separate from exit 3, which is a process that finished its work while awake and still would not exit.
+
 A request that could not reach the database answers `503` with a `Retry-After`, never `500`, and `isMongoUnavailableError` is the one predicate that decides it.
 Every arm except a lost topology is still reported to error tracking, because a socket timeout against a reachable database is a slow query that needs fixing rather than an outage.
 A lost topology is reported too, but as the `mongo_topology_lost` warning, grouped into one issue and sent at most once per minute per process; the degraded-signal set is owned by the Error Reporting section of `docs/research-journey-analytics.md`.

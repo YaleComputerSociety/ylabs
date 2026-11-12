@@ -27,7 +27,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
-import { initializeConnections } from '../db/connections';
+import { initializeConnections, runScriptMain } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { Observation } from '../models/observation';
 import { Signal } from '../models/signal';
@@ -530,12 +530,8 @@ const isDirectRun = process.argv[1]
   : false;
 
 if (isDirectRun) {
-  main()
-    .catch((error) => {
-      console.error('Failed to rematerialize research entities:', sanitizeLogValue(error));
-      process.exitCode = 1;
-    })
-    .finally(async () => {
-      await mongoose.disconnect();
-    });
+  void runScriptMain(main, {
+    logFailure: (error) =>
+      console.error('Failed to rematerialize research entities:', sanitizeLogValue(error)),
+  });
 }

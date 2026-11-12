@@ -403,6 +403,8 @@ It replaces the convention of announcing each write to the session that sequence
   `dev:locks` still flags those holders `STALLED`, so an operator can look.
   The unmonitored-client exemption is temporary: the first lease such a process takes logs one warning naming the command and the lease and telling the caller to connect through `db/connections.ts` or set `monitorCommands: true`, so the caller gets converted rather than staying exempt.
   A command still in flight is never counted as progress: on a client with a ceiling it ends within 10 minutes, and on one without a ceiling the stop does not apply.
+- Long Development runs need the laptop lid open or AC power: `caffeinate -i` prevents idle sleep only, not clamshell sleep.
+  A run that spans a sleep looks hung (its log shows a disconnect and reconnects on each maintenance wake, but no progress), so re-run it.
 - A `STALLED` lease that still heartbeats is **never** taken over by another owner.
   Takeover stays expiry-based, or dead pid plus a heartbeat older than two intervals; the stalled holder ending itself is what frees the lease, and a refusal names how long the holder has gone without progress.
 - A `host:` lease the process took under its own owner id and has not fetched through for 10 minutes (`DEV_HOST_LEASE_IDLE_RELEASE_MS`) is released at a heartbeat tick with `releaseReason: 'idle'`, and taken again on the next fetch to that host.
