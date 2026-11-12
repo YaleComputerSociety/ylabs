@@ -74,6 +74,103 @@ describe('researchStatementTextOfPage', () => {
   });
 });
 
+describe('researchStatementTextOfPage div site menus', () => {
+  const PROSE =
+    'The group studies how coastal wetlands store carbon as sea levels rise along tidal marshes.';
+  const SECOND_PROSE =
+    'Field teams core marsh sediments each summer to date how much carbon each meadow buries.';
+  const pageWithMenu = (menu: string) =>
+    `<html><body><div class="site-chrome">${menu}</div><main><h2>Research overview</h2><p>${PROSE}</p><p>${SECOND_PROSE}</p></main></body></html>`;
+  const statementLines = (menu: string) =>
+    researchStatementTextOfPage(pageWithMenu(menu), HOME).split('\n');
+
+  const navigationPanelMenu = `<div class="base-header__navigation-panel"><div class="navigation-panel__wrapper navigation-panel__wrapper--hidden"><ul><li class="navigation-panel__grid-column-list-item"><div class="navigation-panel-sub-panel"><div class="navigation-panel-sub-panel__body"><ul>
+<li class="navigation-panel-sub-panel__body-list-item"><div class="navigation-panel-item"><a class="navigation-panel-item__option-text"><span class="navigation-panel-item__option-text-link">Antimicrobial Resistance Studies</span></a></div></li>
+<li class="navigation-panel-sub-panel__body-list-item"><div class="navigation-panel-item"><a class="navigation-panel-item__option-text"><span class="navigation-panel-item__option-text-link">Maternal and Child Health</span></a></div></li>
+</ul></div></div></li></ul></div></div>
+<div class="base-header__mobile-navigation-dropdown"><div class="mobile-navigation-dropdown"><p>Information For</p><ul><li><a>Prospective Students</a></li><li><a>Academic Calendar</a></li></ul></div></div>`;
+
+  const expandingDetailsMenu = `<div class="menu menu--main-menu"><ul class="menu__list menu__list--depth-0"><li class="menu__item menu__item--depth-0"><details class="menu__expand"><summary>Faculty Research Areas</summary><div class="menu__list-container"><ul class="menu__list menu__list--depth-1">
+<li class="menu__item menu__item--depth-1"><span class="menu__description">Financial Markets Research</span></li>
+<li class="menu__item menu__item--depth-1"><span class="menu__description">Accounting and Reporting</span></li>
+</ul></div></details></li></ul></div>`;
+
+  const superfishMenu = `<div class="region-menu"><ul id="superfish-1" class="menu sf-menu sf-main-menu sf-horizontal">
+<li class="sf-depth-1"><a>Undergraduate Program Overview</a><ul><li class="sf-depth-2"><a>Courses of Study</a></li></ul></li>
+<li class="sf-depth-1"><a>Graduate Program Overview</a></li>
+</ul></div>`;
+
+  it.each([
+    [
+      'a navigation panel mega-menu and its mobile dropdown',
+      navigationPanelMenu,
+      [
+        'Antimicrobial Resistance Studies',
+        'Maternal and Child Health',
+        'Prospective Students',
+        'Academic Calendar',
+      ],
+    ],
+    [
+      'an expanding details menu',
+      expandingDetailsMenu,
+      ['Faculty Research Areas', 'Financial Markets Research', 'Accounting and Reporting'],
+    ],
+    [
+      'a superfish menu',
+      superfishMenu,
+      ['Undergraduate Program Overview', 'Courses of Study', 'Graduate Program Overview'],
+    ],
+  ])('removes %s before the text is read and keeps the prose', (_shape, menu, menuLabels) => {
+    const lines = statementLines(menu);
+    for (const label of menuLabels) expect(lines).not.toContain(label);
+    expect(lines).toEqual(['Research overview', PROSE, SECOND_PROSE]);
+  });
+
+  it('keeps the stored value free of the menu labels', () => {
+    const [entry] = researchPageTextValue([
+      { url: HOME, html: pageWithMenu(navigationPanelMenu + expandingDetailsMenu + superfishMenu) },
+    ]);
+    expect(entry.text.split('\n')).toEqual(['Research overview', PROSE, SECOND_PROSE]);
+  });
+
+  it('keeps a heading inside an unrecognised menu in place with its list and the rest of the menu', () => {
+    const html = `<html><body>
+<div class="site-mega"><ul class="mega-menu">
+<li class="mega-menu__item"><a>Graduate Admissions Office</a></li>
+<li class="mega-menu__item"><a>Alumni Giving Office</a></li>
+<li class="mega-menu__item"><h3>Research Themes</h3><ul><li><a>Coastal Ecology Program</a></li><li><a>Ocean Chemistry Program</a></li></ul></li>
+</ul></div>
+<main><h2>Lab news</h2><p>${PROSE}</p><h2>Research projects</h2><p>We measure marsh sediment cores to date carbon burial over centuries.</p></main>
+</body></html>`;
+    expect(researchStatementTextOfPage(html, HOME).split('\n')).toEqual([
+      'Research projects',
+      'We measure marsh sediment cores to date carbon burial over centuries.',
+      'Graduate Admissions Office',
+      'Alumni Giving Office',
+      'Research Themes',
+      'Coastal Ecology Program',
+      'Ocean Chemistry Program',
+      'Lab news',
+      PROSE,
+    ]);
+  });
+
+  it('leaves a page with no menu as it was, topic lists in the content included', () => {
+    const html = `<html><body><main>
+<h2>Research Themes</h2><ul class="topic-list"><li>Coastal Ecology Program</li><li>Ocean Chemistry Program</li></ul>
+<h2>Lab overview</h2><p>${PROSE}</p>
+</main></body></html>`;
+    expect(researchStatementTextOfPage(html, HOME).split('\n')).toEqual([
+      'Research Themes',
+      'Coastal Ecology Program',
+      'Ocean Chemistry Program',
+      'Lab overview',
+      PROSE,
+    ]);
+  });
+});
+
 describe('researchPageTextValue', () => {
   it('redacts contact details the way ingest redacts prose', () => {
     const html = `<html><body><h2>About the lab</h2><p>We study tide pool invertebrates and how warming shifts their ranges along the coast. Questions go to lab@example.org or (203) 555-0123 during the week.</p></body></html>`;

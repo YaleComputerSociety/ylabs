@@ -1,4 +1,5 @@
 import * as cheerio from 'cheerio';
+import type { AnyNode } from 'domhandler';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
 import { isCurriculumVitaeRecordSentence } from '../../utils/careerBiographyDescription';
 import { removeRelatedEntityTeaserCards } from '../../utils/relatedEntityTeaserCards';
@@ -74,14 +75,31 @@ function isStatementLine(line: string): boolean {
   );
 }
 
+const NON_CONTENT_ELEMENTS =
+  'script, style, noscript, svg, iframe, nav, header, footer, aside, form, button, address';
+
+const DIV_SITE_MENU_SELECTORS: readonly string[] = [
+  '[class*="navigation-panel"]',
+  '[class*="mobile-navigation"]',
+  'details.menu__expand',
+  '.sf-menu',
+];
+
+const MENU_CONTAINER =
+  '[role="navigation"], [role="menu"], [role="menubar"], ul[class*="menu"], li[class*="menu"], details[class*="menu"]';
+
+function isInsideMenuContainer($: cheerio.CheerioAPI, element: AnyNode): boolean {
+  return $(element).parents(MENU_CONTAINER).length > 0;
+}
+
 function pageLinesWithHeadingMarks(html: string, pageUrl: string): string[] {
   const $ = cheerio.load(html);
-  $(
-    'script, style, noscript, svg, iframe, nav, header, footer, aside, form, button, address',
-  ).remove();
+  $(NON_CONTENT_ELEMENTS).remove();
+  $(DIV_SITE_MENU_SELECTORS.join(', ')).remove();
   removeProfilePublicityRegions($);
   removeRelatedEntityTeaserCards($, pageUrl);
   $('h1, h2, h3, h4, h5, h6').each((_index, element) => {
+    if (isInsideMenuContainer($, element)) return;
     $(element).prepend(PRIVATE_USE_HEADING_SENTINEL);
   });
   return extractElementTextWithLineBreaks($('body')[0] ?? $.root()[0])
