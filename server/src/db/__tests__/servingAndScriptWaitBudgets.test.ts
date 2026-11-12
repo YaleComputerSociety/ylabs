@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   SCRIPT_MAX_POOL_SIZE,
+  SCRIPT_POOL_WAIT_TIMEOUT_MS,
   SCRIPT_SOCKET_TIMEOUT_MS,
   WHOLE_COLLECTION_OPERATION_SOCKET_OPTIONS,
   initializeConnections,
@@ -11,6 +12,7 @@ import {
   triggerReconnect,
 } from '../connections';
 import { SCRAPE_RUN_SOCKET_TIMEOUT_MS } from '../../scrapers/scrapeRunProgress';
+import { MAX_MATERIALIZATION_CONCURRENCY } from '../../scrapers/entityMaterializer';
 
 const PROXY_REQUEST_CEILING_MS = 100000;
 const SLOWEST_SERVED_REQUEST_MS = 10000;
@@ -48,9 +50,14 @@ describe('an operator entry point', () => {
     expect(scriptOptions.bufferTimeoutMS).toBeGreaterThan(mongoOptions.bufferTimeoutMS);
   });
 
-  it('opens a small pool, so many concurrent scripts stay inside the shared cluster connection cap', () => {
-    expect(scriptMongoConnectOptions().maxPoolSize).toBe(SCRIPT_MAX_POOL_SIZE);
-    expect(SCRIPT_MAX_POOL_SIZE).toBeLessThanOrEqual(10);
+  it('keeps pool head-room above the materializer concurrency and bounds a checkout wait', () => {
+    const options = scriptMongoConnectOptions();
+    expect(options.maxPoolSize).toBe(SCRIPT_MAX_POOL_SIZE);
+    expect(SCRIPT_MAX_POOL_SIZE).toBeGreaterThanOrEqual(2 * MAX_MATERIALIZATION_CONCURRENCY);
+    expect(SCRIPT_MAX_POOL_SIZE).toBeLessThan(100);
+    expect(options.waitQueueTimeoutMS).toBe(SCRIPT_POOL_WAIT_TIMEOUT_MS);
+    expect(SCRIPT_POOL_WAIT_TIMEOUT_MS).toBeGreaterThan(0);
+    expect(SCRIPT_POOL_WAIT_TIMEOUT_MS).toBeLessThan(SCRIPT_SOCKET_TIMEOUT_MS);
   });
 
   it('lets a whole-collection operation opt back into no socket timeout', () => {
@@ -94,6 +101,7 @@ describe('connecting and reconnecting', () => {
     expect(initial).toMatchObject({
       socketTimeoutMS: SCRIPT_SOCKET_TIMEOUT_MS,
       maxPoolSize: SCRIPT_MAX_POOL_SIZE,
+      waitQueueTimeoutMS: SCRIPT_POOL_WAIT_TIMEOUT_MS,
     });
     expect(reconnect).toEqual(initial);
   });
