@@ -233,3 +233,19 @@ export function researchPageTextEntriesWithoutChrome(value: unknown): ResearchPa
     return text ? [{ url: entry.url, text }] : [];
   });
 }
+
+/**
+ * The pages a topic reading reads and is keyed on (#5882): the stored text through the
+ * writer's own strips (`withoutResearchPageChromeMenusAndListings`), so a site or theme menu
+ * is never quote evidence for a topic (#5939) and text the lane already stripped at capture
+ * (#5894) keeps its key. It is not folded into `researchPageTextEntriesWithoutChrome`, which
+ * would change the stored value and every row's `writerInputHash`. Changing it moves every
+ * topic cache key, so it needs a `research-topics:rekey-topic-text` run before the next
+ * materialize.
+ */
+export function researchPageTextEntriesForTopics(value: unknown): ResearchPageTextEntry[] {
+  return researchPageTextEntries(value).flatMap((entry) => {
+    const text = withoutResearchPageChromeMenusAndListings(entry.text).trim();
+    return text ? [{ url: entry.url, text }] : [];
+  });
+}

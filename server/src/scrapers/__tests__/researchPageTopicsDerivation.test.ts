@@ -144,6 +144,175 @@ describe('researchPageTopicsStateFor', () => {
   });
 });
 
+describe('re-validating a stored derived list when the current text has no reading (#5882)', () => {
+  const rotated = [
+    {
+      url: HOME,
+      text: 'News: the lab welcomes a new postdoc. We study how coastal kelp forests recover after marine heatwaves.',
+    },
+  ];
+  const storedFor = (forPages: typeof pages) => ({
+    sourceName: PAGE_QUOTED_RESEARCH_TOPICS_SOURCE,
+    sourceUrl: HOME,
+    confidence: 0.85,
+    derivationInputHash: researchTopicsDerivationInputHash(forPages),
+    derivationTextHash: researchPageTextHash(forPages),
+    derivationContract: PAGE_QUOTED_TOPICS_FILTER_CONTRACT,
+  });
+  const priorReading = { inputHash: researchTopicsDerivationInputHash(pages), ...extraction };
+
+  it('keeps the stored reading topics the current text still quotes', async () => {
+    const stored = storedFor(pages);
+    const state = await researchPageTopicsStateFor(
+      [pageTextObservation(rotated)],
+      cacheOf([priorReading]),
+      stored,
+    );
+    expect(state.revalidatesStoredList).toBe(true);
+    expect(state.currentTextHash).toBe(researchPageTextHash(rotated));
+    expect(state.candidate).toMatchObject({
+      value: ['Kelp forests', 'Marine heatwaves', 'Marine ecology'],
+      sourceName: PAGE_QUOTED_RESEARCH_TOPICS_SOURCE,
+      derivationInputHash: stored.derivationInputHash,
+      derivationTextHash: stored.derivationTextHash,
+      derivationContract: PAGE_QUOTED_TOPICS_FILTER_CONTRACT,
+    });
+    expect(storedDerivedResearchAreasAreStale(stored, state)).toBe(false);
+  });
+
+  it('drops a stored topic the current text no longer supports', async () => {
+    const withoutHeatwaves = [
+      { url: HOME, text: 'We study how coastal kelp forests recover after storms.' },
+    ];
+    const state = await researchPageTopicsStateFor(
+      [pageTextObservation(withoutHeatwaves)],
+      cacheOf([priorReading]),
+      storedFor(pages),
+    );
+    expect(state.candidate?.value).toEqual(['Kelp forests', 'Marine ecology']);
+    expect(state.candidate?.value).not.toContain('Marine heatwaves');
+  });
+
+  it('withdraws the stored list when no stored topic survives the current text', async () => {
+    const stored = storedFor(pages);
+    const changed = [
+      { url: HOME, text: 'We now study seagrass meadows and their carbon storage.' },
+    ];
+    const state = await researchPageTopicsStateFor(
+      [pageTextObservation(changed)],
+      cacheOf([priorReading]),
+      stored,
+    );
+    expect(state.candidate).toBeUndefined();
+    expect(state.revalidatesStoredList).toBeUndefined();
+    expect(storedDerivedResearchAreasAreStale(stored, state)).toBe(true);
+  });
+
+  it('leaves a row whose current text has its own reading on that reading', async () => {
+    const currentReading = {
+      inputHash: researchTopicsDerivationInputHash(rotated),
+      extractedTopics: [
+        { topic: 'Kelp forests', quote: 'how coastal kelp forests recover', url: HOME },
+      ],
+      extractedField: null,
+    };
+    const lookup = cacheOf([priorReading, currentReading]);
+    const stored = storedFor(pages);
+    const state = await researchPageTopicsStateFor([pageTextObservation(rotated)], lookup, stored);
+    expect(lookup).toHaveBeenCalledTimes(1);
+    expect(state.revalidatesStoredList).toBeUndefined();
+    expect(state.candidate).toMatchObject({
+      value: ['Kelp forests'],
+      derivationInputHash: currentReading.inputHash,
+      derivationTextHash: researchPageTextHash(rotated),
+    });
+    expect(storedDerivedResearchAreasAreStale(stored, state)).toBe(true);
+  });
+
+  it('re-validates nothing for a list another source is credited with or a missing reading', async () => {
+    const rotatedObservation = [pageTextObservation(rotated)];
+    expect(
+      await researchPageTopicsStateFor(rotatedObservation, cacheOf([priorReading]), {
+        sourceName: 'ysm-mesh-keyword',
+      }),
+    ).toEqual({ currentTextHash: researchPageTextHash(rotated) });
+    expect(
+      await researchPageTopicsStateFor(rotatedObservation, cacheOf([]), storedFor(pages)),
+    ).toEqual({ currentTextHash: researchPageTextHash(rotated) });
+    expect(await researchPageTopicsStateFor(rotatedObservation, cacheOf([priorReading]))).toEqual({
+      currentTextHash: researchPageTextHash(rotated),
+    });
+  });
+
+  describe('against a school site theme menu (#5939)', () => {
+    const themeMenu = [
+      'About Us',
+      'Who We Are',
+      'Research at a Glance',
+      'Antimicrobial Resistance',
+      'Vector-Borne Diseases',
+      'Emerging Infections',
+      'Climate Change and Health',
+      'Health Equity',
+      'Find People',
+      'Contact Us',
+      'News & Events',
+      'Degree Programs',
+    ];
+    const menuPage = (body: string[]) => [{ url: HOME, text: [...themeMenu, ...body].join('\n') }];
+    const before = menuPage([pages[0].text]);
+    const menuReading = {
+      inputHash: researchTopicsDerivationInputHash(before),
+      extractedTopics: [
+        { topic: 'Kelp forests', quote: 'how coastal kelp forests recover', url: HOME },
+        {
+          topic: 'Antimicrobial resistance',
+          quote: 'Antimicrobial Resistance Vector-Borne Diseases',
+          url: HOME,
+        },
+        { topic: 'Health equity', quote: 'Climate Change and Health Health Equity', url: HOME },
+      ],
+      extractedField: null,
+    };
+
+    it('never keeps a stored topic only the menu states', async () => {
+      const rotatedWithMenu = menuPage([`News: a new seminar. ${pages[0].text}`]);
+      const state = await researchPageTopicsStateFor(
+        [pageTextObservation(rotatedWithMenu)],
+        cacheOf([menuReading]),
+        storedFor(before),
+      );
+      expect(state.revalidatesStoredList).toBe(true);
+      expect(state.candidate?.value).toEqual(['Kelp forests']);
+    });
+
+    it('withdraws the list when the subject text under the menu is empty', async () => {
+      const stored = storedFor(before);
+      const state = await researchPageTopicsStateFor(
+        [pageTextObservation(menuPage(['Last updated on December 1.']))],
+        cacheOf([menuReading]),
+        stored,
+      );
+      expect(state.candidate).toBeUndefined();
+      expect(storedDerivedResearchAreasAreStale(stored, state)).toBe(true);
+    });
+  });
+
+  it('gives the same answer on a second pass over the same evidence', async () => {
+    const lookup = cacheOf([priorReading]);
+    const stored = storedFor(pages);
+    const first = await researchPageTopicsStateFor([pageTextObservation(rotated)], lookup, stored);
+    const restored = derivedResearchAreaProvenance(first.candidate!);
+    const second = await researchPageTopicsStateFor(
+      [pageTextObservation(rotated)],
+      lookup,
+      restored,
+    );
+    expect(restored).toEqual(stored);
+    expect(second).toEqual(first);
+  });
+});
+
 describe('storedDerivedResearchAreasAreStale', () => {
   const textHash = researchPageTextHash(pages);
   const stored = {

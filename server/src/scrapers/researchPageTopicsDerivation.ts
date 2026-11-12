@@ -19,7 +19,7 @@ import {
 import {
   RESEARCH_PAGE_TEXT_FIELD,
   RESEARCH_PAGE_TEXT_SOURCE,
-  researchPageTextEntriesWithoutChrome,
+  researchPageTextEntriesForTopics,
   type ResearchPageTextEntry,
 } from './utils/researchPageText';
 import { mongooseConnectionWasOpened } from '../utils/mongooseConnectionWasOpened';
@@ -141,44 +141,86 @@ export interface ResearchPageTopicsState {
   /** The hash of the row's current page text, absent when the row has no page-text reading. */
   currentTextHash?: string;
   candidate?: DerivedResearchAreaCandidate;
+  /** The candidate is the stored list's own reading, re-judged against the current text. */
+  revalidatesStoredList?: true;
 }
 
 /**
  * What the row's current page text and the cache say. A candidate exists only when the
- * cache holds a model reading of the CURRENT text and the quote check and post-filters,
- * run now against that stored text, leave at least one topic. It takes the page text's
- * own observation time, so the resolver ages it with its evidence.
+ * cache holds a model reading the quote check and post-filters, run now against the
+ * CURRENT stored text, leave at least one topic. That reading is the current text's own,
+ * or, when the current text has none yet, the reading behind the stored derived list: a
+ * page-text re-observation that only rotated news or menu lines must not hand the field to
+ * a weaker lane before anyone reads the new text (#5882). It takes the page text's own
+ * observation time, so the resolver ages it with its evidence.
  */
 export async function researchPageTopicsStateFor(
   observations: readonly ResearchPageTextObservationLike[],
   lookup: ResearchTopicsDerivationLookup = loadResearchTopicsDerivation,
+  storedProvenance?: unknown,
 ): Promise<ResearchPageTopicsState> {
   const current = currentResearchPageTextObservation(observations);
   if (!current) return {};
-  const pages = researchPageTextEntriesWithoutChrome(current.value);
+  const pages = researchPageTextEntriesForTopics(current.value);
   const currentTextHash = researchPageTextHash(pages);
   if (pages.length === 0) return { currentTextHash };
   const inputHash = researchTopicsDerivationInputHash(pages);
   const derivation = await lookup(inputHash);
-  if (!derivation || derivation.inputHash !== inputHash) return { currentTextHash };
+  if (derivation && derivation.inputHash === inputHash) {
+    const candidate = quotedCandidateFrom(derivation, pages, current, {
+      derivationInputHash: inputHash,
+      derivationTextHash: currentTextHash,
+    });
+    return candidate ? { currentTextHash, candidate } : { currentTextHash };
+  }
+  const stored = storedDerivedListProvenance(storedProvenance);
+  if (!stored || stored.derivationTextHash === currentTextHash) return { currentTextHash };
+  const storedReading = await lookup(stored.derivationInputHash);
+  if (!storedReading || storedReading.inputHash !== stored.derivationInputHash) {
+    return { currentTextHash };
+  }
+  const candidate = quotedCandidateFrom(storedReading, pages, current, stored);
+  return candidate
+    ? { currentTextHash, candidate, revalidatesStoredList: true }
+    : { currentTextHash };
+}
+
+interface DerivationHashes {
+  derivationInputHash: string;
+  derivationTextHash: string;
+}
+
+function storedDerivedListProvenance(storedProvenance: unknown): DerivationHashes | null {
+  if (!storedProvenance || typeof storedProvenance !== 'object') return null;
+  const record = storedProvenance as Record<string, unknown>;
+  if (record.sourceName !== PAGE_QUOTED_RESEARCH_TOPICS_SOURCE) return null;
+  const { derivationInputHash, derivationTextHash } = record;
+  if (typeof derivationInputHash !== 'string' || !derivationInputHash) return null;
+  if (typeof derivationTextHash !== 'string' || !derivationTextHash) return null;
+  return { derivationInputHash, derivationTextHash };
+}
+
+function quotedCandidateFrom(
+  derivation: StoredResearchTopicsDerivation,
+  pages: readonly ResearchPageTextEntry[],
+  current: ResearchPageTextObservationLike,
+  hashes: DerivationHashes,
+): DerivedResearchAreaCandidate | undefined {
   const result = derivePageQuotedResearchTopics(
     { topics: derivation.extractedTopics ?? [], field: derivation.extractedField ?? null },
     pages,
   );
-  if (result.topics.length === 0) return { currentTextHash };
+  if (result.topics.length === 0) return undefined;
   return {
-    currentTextHash,
-    candidate: {
-      field: 'researchAreas',
-      value: result.topics,
-      sourceName: PAGE_QUOTED_RESEARCH_TOPICS_SOURCE,
-      sourceUrl: result.mainTopicSourceUrl || pages[0].url,
-      confidence: RESEARCH_PAGE_TOPICS_DERIVED_CONFIDENCE,
-      observedAt: new Date(observedAtMillis(current)),
-      derivationInputHash: inputHash,
-      derivationTextHash: currentTextHash,
-      derivationContract: PAGE_QUOTED_TOPICS_FILTER_CONTRACT,
-    },
+    field: 'researchAreas',
+    value: result.topics,
+    sourceName: PAGE_QUOTED_RESEARCH_TOPICS_SOURCE,
+    sourceUrl: result.mainTopicSourceUrl || pages[0].url,
+    confidence: RESEARCH_PAGE_TOPICS_DERIVED_CONFIDENCE,
+    observedAt: new Date(observedAtMillis(current)),
+    derivationInputHash: hashes.derivationInputHash,
+    derivationTextHash: hashes.derivationTextHash,
+    derivationContract: PAGE_QUOTED_TOPICS_FILTER_CONTRACT,
   };
 }
 
@@ -191,7 +233,8 @@ export async function derivedResearchAreaCandidateFor(
 
 /**
  * A stored list credited to a derivation is withdrawn only when the row's current page text
- * differs from the text the list was derived from. A prompt, model or filter change leaves
+ * differs from the text the list was derived from and the list's own reading, re-judged
+ * against the current text, leaves no topic. A prompt, model or filter change leaves
  * it standing until a reading under the new inputs replaces it through normal resolution,
  * so a routine prompt edit withdraws nothing (owner decision on #5396). Without a reading
  * or a cache, as on Beta and Production, which receive rows by promotion without either,
@@ -207,6 +250,7 @@ export function storedDerivedResearchAreasAreStale(
       : {};
   if (record.sourceName !== PAGE_QUOTED_RESEARCH_TOPICS_SOURCE) return false;
   if (!state.currentTextHash) return false;
+  if (state.revalidatesStoredList) return false;
   return record.derivationTextHash !== state.currentTextHash;
 }
 
