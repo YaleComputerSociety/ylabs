@@ -991,7 +991,7 @@ describe('researchEntitySearchIndexService', () => {
     );
   });
 
-  it('rebuilds the index in pages and applies settings before documents', async () => {
+  it('rebuilds the index in pages and applies settings once the documents are written', async () => {
     const calls: Array<{ kind: string; payload?: unknown }> = [];
     const fakeIndex = {
       updateSettings: async (settings: unknown) => {
@@ -1028,8 +1028,8 @@ describe('researchEntitySearchIndexService', () => {
       clearedExisting: false,
     });
     expect(result.swap).toBeUndefined();
-    expect(calls.map((call) => call.kind)).toEqual(['settings', 'documents']);
-    expect(calls[1].payload).toMatchObject({
+    expect(calls.map((call) => call.kind)).toEqual(['documents', 'settings']);
+    expect(calls[0].payload).toMatchObject({
       options: { primaryKey: RESEARCH_ENTITY_SEARCH_INDEX_PRIMARY_KEY },
     });
   });

@@ -1436,9 +1436,9 @@ export async function rebuildResearchEntitySearchIndex(
     });
   } else {
     const index = await (options.getIndex || getMeiliIndex)(RESEARCH_ENTITY_SEARCH_INDEX_NAME);
-    await applyResearchEntitySearchIndexSettings(index);
     await applyResearchEntitySearchEmbedderSetting(index, openAiApiKey, targetsPrefixedIndex);
     outcome = await populate(index);
+    await applyResearchEntitySearchIndexSettings(index);
   }
 
   const finishedAt = new Date();
@@ -1544,9 +1544,10 @@ async function buildEveryCorpusIndexDocument(
 /**
  * Brings the live index in line with the corpus by writing only the difference, so a stale
  * Development index costs embeddings for the rows that changed rather than for all of them.
- * Drifted index settings are applied in place first: they hold no embedder, so a new searchable
- * field costs no re-embedding. An embedder or document-template change still needs the
- * replacing rebuild (#5023).
+ * Drifted index settings are applied in place after the documents: they hold no embedder, so a
+ * new searchable field costs no re-embedding, and a reader that switches on a newly declared
+ * attribute never sees it before the documents carry it (#5141). An embedder or
+ * document-template change still needs the replacing rebuild (#5023).
  */
 export async function reconcileResearchEntitySearchIndex(
   options: ResearchEntitySearchIndexReconcileOptions = {},
@@ -1596,9 +1597,6 @@ export async function reconcileResearchEntitySearchIndex(
   }
 
   if (options.apply) {
-    if (researchEntitySearchIndexSettingsDrift(await index.getSettings()).length > 0) {
-      await applyResearchEntitySearchIndexSettings(index);
-    }
     let upsertedSoFar = 0;
     try {
       for (let start = 0; start < changed.length; start += pageSize) {
@@ -1630,6 +1628,9 @@ export async function reconcileResearchEntitySearchIndex(
         `Reconcile stopped part-way: the live index holds ${upsertedSoFar} of ${changed.length} upserts and ${deletes}, so it mixes old and new documents. Re-run the reconcile or the replacing rebuild. Cause: ${sanitizeLogValue(error)}`,
         { cause: error },
       );
+    }
+    if (researchEntitySearchIndexSettingsDrift(await index.getSettings()).length > 0) {
+      await applyResearchEntitySearchIndexSettings(index);
     }
   }
 

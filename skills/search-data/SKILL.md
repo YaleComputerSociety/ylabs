@@ -158,7 +158,7 @@ Documents sync via `meiliSyncService.ts` after upserts.
 A retired index base name must be added there when its surface is removed, or `reindex:meili` reports the prefixed copy as `unknown` and keeps it, as `researchers` survived the removal of person search (#3946).
 Development has no index prefix, so `reindex:meili` does not reconcile it, and a retired unprefixed index there is deleted by hand.
 After copying Mongo data into Beta or Prod, run `reindex:meili` inside that Render service to update the prefixed `researchentities` index and delete any retired prefixed indexes.
-It reconciles only the changed documents when the live index's embedder matches the code (`compareResearchEntitySearchIndexToCode`), applying any drifted settings in place first (#5442), and rebuilds otherwise or with `--full` (#5107).
+It reconciles only the changed documents when the live index's embedder matches the code (`compareResearchEntitySearchIndexToCode`), applying any drifted settings in place after it writes the documents (#5442, #5141), and rebuilds otherwise or with `--full` (#5107).
 Rebuild scripts do full repopulation.
 A replacing rebuild (`--clear`, and every `reindex:meili --confirm`) never deletes documents from the serving index: it builds into a fresh `<index>_next` with the same settings and embedder, confirms its document count, swaps it in with one `swapIndexes` task, and deletes the old copy, so search is never empty or partial during a rebuild (#4151).
 A failure before the swap deletes the partial `_next` and leaves the serving index untouched, the next rebuild deletes a `_next` a lost shell left behind, and `planIndexReconcile` reports it under `staging` so it is never retired or reported as unknown.
@@ -234,7 +234,7 @@ Meilisearch refuses a whole search that names an attribute the index has not dec
 Search therefore reads the live index's filterable and sortable attributes through `readResearchEntitySearchFilterableAttributes` and `readResearchEntitySearchSortableAttributes`, each cached for five minutes, and asks only for facets and sorts the index declares.
 A requested toggle filter the index cannot apply is dropped and reported as `appliedFilters.<filter>: false`, and the client unchecks it and rewrites the URL, so the page never shows unfiltered rows under a filter chip.
 If the attributes cannot be read, search assumes the code's settings.
-Adding a filterable or sortable attribute applies once the reconciling sync (`development:search:sync`) or a rebuild has run, because the sync applies drifted settings in place before it upserts (#5442).
+Adding a filterable or sortable attribute applies once the reconciling sync (`development:search:sync`) or a rebuild has run, because the sync applies drifted settings in place once it has upserted the documents, so a reader that switches on a newly declared attribute never sees it before the documents carry it (#5442, #5141).
 
 ### A filter value nothing holds is dropped, not answered empty (#5146)
 
