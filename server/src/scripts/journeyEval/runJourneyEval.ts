@@ -354,7 +354,7 @@ async function buildContext(args: JourneyEvalArgs): Promise<JourneyEvalContext> 
   };
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
   await initializeConnections();
   assertLiveMissRerankOffForUnleasedScript('journey:eval');

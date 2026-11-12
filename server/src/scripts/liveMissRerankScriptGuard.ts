@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-import { devWriteLeaseSwitchedOff, resolveDevWriteLeaseTarget } from '../db/devWriteLease';
+import { resolveDevWriteLeaseTarget } from '../db/devWriteLease';
 import { isSearchRerankLiveMissEnabled } from '../services/searchRerankLiveMiss';
 
 export class LiveMissRerankRefusedError extends Error {
@@ -21,7 +21,7 @@ export function assertLiveMissRerankOffForUnleasedScript(
   connection: ConnectionTarget = mongoose.connection,
   env: NodeJS.ProcessEnv = process.env,
 ): void {
-  if (!isSearchRerankLiveMissEnabled(env) || devWriteLeaseSwitchedOff(env)) return;
+  if (!isSearchRerankLiveMissEnabled(env)) return;
   const databaseName = connection.db?.databaseName || connection.name;
   if (!databaseName) return;
   if (resolveDevWriteLeaseTarget({ databaseName, host: connection.host }).kind !== 'development') {

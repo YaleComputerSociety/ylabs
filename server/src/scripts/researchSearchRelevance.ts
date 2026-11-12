@@ -414,7 +414,7 @@ function printSummary(report: ResearchSearchRelevanceReport): void {
   console.log('');
 }
 
-async function main(): Promise<void> {
+export async function main(): Promise<void> {
   const options = parseResearchSearchRelevanceArgs(process.argv.slice(2));
   assertResearchSearchRelevanceTarget({
     mongoUrl: process.env.MONGODBURL,
