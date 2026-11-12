@@ -159,10 +159,17 @@ export function isAnotherPersonsFacultyResearchRow(
   person: GrantTargetPerson,
 ): boolean {
   if (!leadIsTheRecordSubjectFor(row.entityType)) return false;
-  if (rowCitesOfficialProfileSlug(row, officialProfileSlugs(person))) return false;
-  if (rowKeyNamesPerson(row.slug, person.displayName)) return false;
+  return !rowIsNamedForPerson(row, person);
+}
+
+export function rowIsNamedForPerson(
+  row: ResearchHomeCandidate,
+  person: GrantTargetPerson,
+): boolean {
+  if (rowCitesOfficialProfileSlug(row, officialProfileSlugs(person))) return true;
+  if (rowKeyNamesPerson(row.slug, person.displayName)) return true;
   const titledPerson = personNameFromEntityName(row.name);
-  return !(titledPerson && listedPersonIsTheNamedLead(person.displayName, titledPerson));
+  return Boolean(titledPerson && listedPersonIsTheNamedLead(person.displayName, titledPerson));
 }
 
 export interface LeadEdgeOnResearchHome {

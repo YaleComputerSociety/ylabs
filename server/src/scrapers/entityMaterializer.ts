@@ -659,9 +659,11 @@ import { isRevisitableFieldLockOnEntity } from '../utils/researchEntityFieldLock
 import { recordScrapeRunProgress } from './scrapeRunProgress';
 import {
   canonicalRoleForLegacy,
+  LEAD_ROLE_CANONICAL_VALUES,
   LEAD_ROLE_LEGACY_LABELS,
   LEGACY_ROLE_BY_CANONICAL,
 } from '../models/canonicalRoleMapping';
+import { rowIsNamedForPerson, type GrantTargetPerson } from './canonicalResearchHomeResolver';
 import { isYaleHostname } from '../utils/yaleHost';
 import {
   loadCurrentLeadPersonIdsByEntity,
@@ -4471,11 +4473,124 @@ export async function materializeInferredPiMembership(
     await materializeCanonicalPiMembership(researchEntityId, facts);
   }
   await endContradictedPageLeadEdges(researchEntityId, contradictedPageLeadEdges(screened));
+  const plannedLeadPersonIds = new Set(planned.map((facts) => facts.personId));
   await endInferredPiEdgesWithOnlyRetiredEvidence(
     researchEntityId,
     observations,
-    new Set(planned.map((facts) => facts.personId)),
+    plannedLeadPersonIds,
   );
+  await endContradictedSourcelessLeadEdges(researchEntityId, plannedLeadPersonIds);
+}
+
+export interface SourcelessLeadEdgeRow {
+  slug?: unknown;
+  name?: unknown;
+  websiteUrl?: unknown;
+  sourceUrls?: unknown;
+  leadVerification?: {
+    leads?: Array<{ personId?: unknown; verdict?: unknown; matchedBy?: unknown }>;
+  };
+}
+
+export interface RowLeadEdge {
+  id: string;
+  personId: string;
+  hasRecordedSource: boolean;
+}
+
+/**
+ * Owner decision on #5979 C4, option (a): a lead edge with no recorded source is kept until a
+ * current lane contradicts it. It is contradicted when nothing live names the person as lead
+ * (no live lead read resolves to them, and the row's site does not confirm them by their own
+ * profile link or the site address), and either the site's verdict for them is CONTRADICTED,
+ * or the row is named for another person who holds a lead edge a lane recorded while the row
+ * is not named for this one. A site that merely mentions the person confirms only that they
+ * appear there: a blind ballot found such a mention was a trainee on another person's lab.
+ */
+export function contradictedSourcelessLeadEdgeIds(input: {
+  row: SourcelessLeadEdgeRow;
+  edges: readonly RowLeadEdge[];
+  people: ReadonlyMap<string, GrantTargetPerson>;
+  plannedLeadPersonIds: ReadonlySet<string>;
+}): string[] {
+  const judgementFor = (personId: string) =>
+    (input.row.leadVerification?.leads ?? []).find(
+      (judgement) => String(judgement.personId ?? '') === personId,
+    );
+  const namedFor = (personId: string) => {
+    const person = input.people.get(personId);
+    return Boolean(person) && rowIsNamedForPerson(input.row, person!);
+  };
+  const recordedOwners = new Set(
+    input.edges
+      .filter((edge) => edge.hasRecordedSource && namedFor(edge.personId))
+      .map((edge) => edge.personId),
+  );
+  return input.edges
+    .filter((edge) => {
+      if (edge.hasRecordedSource || input.plannedLeadPersonIds.has(edge.personId)) return false;
+      if (recordedOwners.has(edge.personId)) return false;
+      const judgement = judgementFor(edge.personId);
+      if (judgement?.verdict === 'CONTRADICTED') return true;
+      if (judgement?.verdict === 'CONFIRMED' && judgement.matchedBy !== 'NAMED_ON_PAGE') {
+        return false;
+      }
+      const ownedByAnother = [...recordedOwners].some((owner) => owner !== edge.personId);
+      return ownedByAnother && !namedFor(edge.personId);
+    })
+    .map((edge) => edge.id);
+}
+
+async function endContradictedSourcelessLeadEdges(
+  researchEntityId: string,
+  plannedLeadPersonIds: ReadonlySet<string>,
+): Promise<number> {
+  const entityObjectId = toMaterializerObjectId(researchEntityId);
+  if (!entityObjectId) return 0;
+  const edgeDocs = (await RoleAssignment.find({
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': entityObjectId,
+    role: { $in: LEAD_ROLE_CANONICAL_VALUES },
+    state: { $ne: 'HISTORICAL' },
+    archived: { $ne: true },
+  })
+    .select('_id personId rosterProvenance')
+    .lean()) as Array<{
+    _id: unknown;
+    personId?: unknown;
+    rosterProvenance?: { sourceName?: string };
+  }>;
+  const edges: RowLeadEdge[] = edgeDocs.map((edge) => ({
+    id: String(edge._id),
+    personId: String(edge.personId ?? ''),
+    hasRecordedSource: Boolean(textValue(edge.rosterProvenance?.sourceName)),
+  }));
+  if (!edges.some((edge) => !edge.hasRecordedSource)) return 0;
+  const row = (await ResearchEntity.findById(entityObjectId)
+    .select('slug name websiteUrl sourceUrls leadVerification')
+    .lean()) as SourcelessLeadEdgeRow | null;
+  if (!row) return 0;
+  const people = (await Researcher.find({
+    _id: { $in: uniqueStrings(edges.map((edge) => edge.personId)) },
+  })
+    .select('_id displayName profileLinks')
+    .lean()) as Array<{ _id: unknown } & GrantTargetPerson>;
+  const ended = contradictedSourcelessLeadEdgeIds({
+    row,
+    edges,
+    people: new Map(people.map((person) => [String(person._id), person])),
+    plannedLeadPersonIds,
+  });
+  if (ended.length === 0) return 0;
+  const result = await RoleAssignment.updateMany(
+    {
+      _id: { $in: ended.map((id) => toMaterializerObjectId(id)).filter(Boolean) },
+      state: { $ne: 'HISTORICAL' },
+      'rosterProvenance.sourceName': { $in: [null, ''] },
+    },
+    { $set: { state: 'HISTORICAL', endedAt: new Date() } },
+  );
+  return result.modifiedCount ?? 0;
 }
 
 type RosterEmailAliasResolution =
