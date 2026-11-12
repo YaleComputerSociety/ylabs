@@ -4,6 +4,7 @@ import mongoose from 'mongoose';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
+import { LEAD_ROLE_CANONICAL_VALUES } from '../models/canonicalRoleMapping';
 import { DETACHED_ROLE_ASSIGNMENT_REVIEW_STATUS } from '../models/roleAssignment';
 import { loadDirectoryNetidsByAddress } from '../scrapers/directoryContradictedProfileNetid';
 import { resolveNetidForRosterEmailAlias } from '../scrapers/entityMaterializer';
@@ -19,6 +20,14 @@ import {
   buildVerifiedPrimaryProfileIndex,
   decideShellMerge,
   type DirectoryEmailCandidate,
+  emaillessLocalPartTwinAliases,
+  type FoldPlanEdge,
+  foldsArchivingOnlyLiveLead,
+  type OfficialPageCandidate,
+  type OfficialPageHolders,
+  type OfficialPageStatement,
+  officialPageWitnessDestination,
+  planShellEdgeMoves,
   distinctPeoplePairKey,
   type NameVariantCandidate,
   withoutDistinctPeopleFolds,
@@ -28,7 +37,6 @@ import {
   researcherAttributeUnionIsEmpty,
   researcherIdentityTier,
   resolveFinalMergeTargets,
-  roleAssignmentEdgeKey,
   rosterMembershipEdgeKey,
   RESEARCHER_UNIQUE_IDENTIFIER_FIELDS,
   shellProfileLinkKindsReleasedWith,
@@ -155,6 +163,8 @@ export interface DedupeAccountlessResearcherShellsResult {
   onlyShellsNotPlanned?: string[];
   /** Planned folds dropped because an operator recorded the pair as different people. */
   distinctPeopleRefusedFolds: number;
+  /** Planned folds dropped because they would archive a research row's last live lead edge. */
+  liveLeadRefusedFolds: Array<{ shellId: string; canonicalId: string }>;
   directoryIdentifiedResearchers: number;
   shellResearchers: number;
   netidBackedShellResearchers: number;
@@ -652,6 +662,137 @@ async function loadListingAddressNetids(
   return netidsByShellId;
 }
 
+const ORCID_PATTERN = /\d{4}-\d{4}-\d{4}-\d{3}[\dX]/i;
+
+const bareOrcid = (value: unknown): string | undefined =>
+  typeof value === 'string' ? ORCID_PATTERN.exec(value)?.[0].toUpperCase() : undefined;
+
+const officialPageWitnessKey = (url: unknown): string =>
+  typeof url === 'string' && url
+    ? officialPageWitnessDestination(normalizeOfficialProfileDestination(url))
+    : '';
+
+const destinationUrlVariants = (destination: string): string[] =>
+  ['https://', 'http://', 'https://www.', 'http://www.'].flatMap((prefix) => [
+    `${prefix}${destination}`,
+    `${prefix}${destination}/`,
+  ]);
+
+const CITABLE_PROFILE_HEALTH = new Set(['HEALTHY', 'UNKNOWN']);
+
+/**
+ * For each `NAME_ONLY` shell, what each official profile page it cites states: the shell's own
+ * official primary links that are not probed dead, and the profile URLs its live edges cite. The
+ * statements are the `email` and `orcid` values page lanes observed with that page as their source,
+ * read as values the page states and never through the key they were written under (#5606).
+ */
+async function loadOfficialPageStatements(
+  RoleAssignment: mongoose.mongo.Collection,
+  Observations: mongoose.mongo.Collection,
+  shells: ReadonlyArray<{ id: string; profileLinks?: unknown }>,
+): Promise<Map<string, OfficialPageStatement[]>> {
+  const statementsByShellId = new Map<string, OfficialPageStatement[]>();
+  if (shells.length === 0) return statementsByShellId;
+  const citedUrlsByShellId = new Map<string, Set<string>>();
+  const cite = (shellId: string, url: unknown) => {
+    if (typeof url !== 'string' || !isPersonProfileDestination(url)) return;
+    citedUrlsByShellId.set(shellId, (citedUrlsByShellId.get(shellId) ?? new Set()).add(url));
+  };
+  for (const shell of shells) {
+    for (const link of Array.isArray(shell.profileLinks) ? shell.profileLinks : []) {
+      if (link?.kind !== 'YALE_OFFICIAL' || link?.purpose !== 'PRIMARY_IDENTITY') continue;
+      if (link?.healthStatus && !CITABLE_PROFILE_HEALTH.has(String(link.healthStatus))) continue;
+      cite(shell.id, link.url);
+    }
+  }
+  for (const edge of (await RoleAssignment.find(
+    {
+      archived: { $ne: true },
+      personId: { $in: shells.map((shell) => new mongoose.Types.ObjectId(shell.id)) },
+      'rosterProvenance.profileUrl': { $type: 'string' },
+    },
+    { projection: { personId: 1, 'rosterProvenance.profileUrl': 1 } },
+  ).toArray()) as any[]) {
+    cite(idKey(edge.personId), edge.rosterProvenance?.profileUrl);
+  }
+  const destinations = new Set<string>();
+  for (const urls of citedUrlsByShellId.values()) {
+    for (const url of urls) {
+      destinations.add(normalizeOfficialProfileDestination(url));
+      destinations.add(officialPageWitnessKey(url));
+    }
+  }
+  if (destinations.size === 0) return statementsByShellId;
+  const statementByPage = new Map<string, { emails: Set<string>; orcids: Set<string> }>();
+  for (const observation of (await Observations.find(
+    {
+      entityType: 'user',
+      field: { $in: ['email', 'orcid'] },
+      sourceUrl: { $in: [...destinations].flatMap(destinationUrlVariants) },
+      ...observationReadScope,
+    },
+    { projection: { field: 1, value: 1, sourceUrl: 1 } },
+  ).toArray()) as any[]) {
+    const page = officialPageWitnessKey(observation.sourceUrl);
+    if (!page) continue;
+    const statement = statementByPage.get(page) ?? { emails: new Set(), orcids: new Set() };
+    if (observation.field === 'email' && typeof observation.value === 'string') {
+      statement.emails.add(observation.value.trim().toLowerCase());
+    } else {
+      const orcid = bareOrcid(observation.value);
+      if (orcid) statement.orcids.add(orcid);
+    }
+    statementByPage.set(page, statement);
+  }
+  const directory = await loadDirectoryNetidsByAddress();
+  for (const [shellId, urls] of citedUrlsByShellId) {
+    const pages = new Set([...urls].map(officialPageWitnessKey).filter(Boolean));
+    const statements = [...pages].flatMap((page) => {
+      const statement = statementByPage.get(page);
+      if (!statement) return [];
+      const emails = [...statement.emails];
+      const directoryNetids = [
+        ...new Set(emails.flatMap((email) => [...(directory.get(email) ?? [])])),
+      ];
+      return [{ emails, orcids: [...statement.orcids], directoryNetids }];
+    });
+    if (statements.length) statementsByShellId.set(shellId, statements);
+  }
+  return statementsByShellId;
+}
+
+function officialPageHoldersOf(
+  researcherIdentities: ReadonlyArray<{
+    id: string;
+    displayName?: unknown;
+    email?: unknown;
+    orcid?: unknown;
+    netid?: unknown;
+    title?: unknown;
+  }>,
+): OfficialPageHolders {
+  const byEmail = new Map<string, OfficialPageCandidate[]>();
+  const byOrcid = new Map<string, OfficialPageCandidate[]>();
+  for (const identity of researcherIdentities) {
+    const tier = researcherIdentityTier({ email: identity.email, netid: identity.netid });
+    if (tier !== 'DIRECTORY') continue;
+    const orcid = bareOrcid(identity.orcid);
+    const email = String(identity.email).trim().toLowerCase();
+    const candidate: OfficialPageCandidate = {
+      id: identity.id,
+      email,
+      displayName: identity.displayName,
+      title: identity.title,
+      orcid,
+      netid: bareNetid(identity.netid),
+      tier,
+    };
+    byEmail.set(email, [...(byEmail.get(email) ?? []), candidate]);
+    if (orcid) byOrcid.set(orcid, [...(byOrcid.get(orcid) ?? []), candidate]);
+  }
+  return { byEmail, byOrcid };
+}
+
 function directoryEmailHoldersByNetid(
   researcherIdentities: ReadonlyArray<{
     id: string;
@@ -698,14 +839,34 @@ async function planAliasTwinFoldsFor(
     displayName?: unknown;
     netid?: unknown;
     email?: unknown;
+    orcid?: unknown;
   }>,
   loginNetids: ReadonlySet<string>,
 ) {
-  const twinResearchers = researchers
-    .filter((entry) => isLocalPartNetid(entry))
-    .map((entry) => ({ id: entry.id, netid: String(entry.netid), displayName: entry.displayName }));
-  const aliasNetidByTwinNetid = new Map<string, string>();
+  const emaillessAliases = emaillessLocalPartTwinAliases(researchers);
+  const emaillessTwinNetid = (entry: { netid?: unknown }) =>
+    typeof entry.netid === 'string' ? entry.netid.trim().toLowerCase() : '';
+  const twinResearchers = [
+    ...researchers
+      .filter((entry) => isLocalPartNetid(entry))
+      .map((entry) => ({
+        id: entry.id,
+        netid: String(entry.netid),
+        displayName: entry.displayName,
+        orcid: entry.orcid,
+      })),
+    ...researchers
+      .filter((entry) => emaillessAliases.has(emaillessTwinNetid(entry)))
+      .map((entry) => ({
+        id: entry.id,
+        netid: emaillessTwinNetid(entry),
+        displayName: entry.displayName,
+        orcid: entry.orcid,
+      })),
+  ];
+  const aliasNetidByTwinNetid = new Map<string, string>(emaillessAliases);
   for (const twin of twinResearchers) {
+    if (aliasNetidByTwinNetid.has(twin.netid)) continue;
     const resolution = await resolveNetidForRosterEmailAlias(twin.netid);
     if (resolution.status === 'resolved') aliasNetidByTwinNetid.set(twin.netid, resolution.netid);
   }
@@ -714,7 +875,10 @@ async function planAliasTwinFoldsFor(
     researcherByNetid: new Map(
       researchers
         .filter((entry) => typeof entry.netid === 'string' && entry.netid)
-        .map((entry) => [String(entry.netid), { id: entry.id, displayName: entry.displayName }]),
+        .map((entry) => [
+          String(entry.netid),
+          { id: entry.id, displayName: entry.displayName, orcid: entry.orcid },
+        ]),
     ),
     aliasNetidByTwinNetid,
     loginNetids,
@@ -832,11 +996,15 @@ export async function dedupeAccountlessResearcherShells(options: {
     nameOnlyShellIds,
   );
   const directoryEmailHolders = directoryEmailHoldersByNetid(researcherIdentities);
+  const officialPageStatementsByShellId = await loadOfficialPageStatements(
+    RoleAssignment,
+    mongoose.connection.collection('observations'),
+    foldableShells.filter((entry) => researcherIdentityTier(entry) === 'NAME_ONLY'),
+  );
+  const officialPageHolders = officialPageHoldersOf(researcherIdentities);
 
   const decidedTargetByShellId = new Map<string, string>();
-  const foldsByMatchedIdentity = Object.fromEntries(
-    SHELL_FOLD_IDENTITIES.map((identity) => [identity, 0]),
-  ) as Record<ShellFoldIdentity, number>;
+  const matchedIdentityByShellId = new Map<string, ShellFoldIdentity>();
   for (const shell of foldableShells) {
     const decision = decideShellMerge(
       shell,
@@ -848,16 +1016,19 @@ export async function dedupeAccountlessResearcherShells(options: {
       nameVariantCandidatesByShellId.get(shell.id),
       listingAddressNetidsByShellId.get(shell.id),
       directoryEmailHolders,
+      officialPageStatementsByShellId.get(shell.id),
+      officialPageHolders,
     );
     byReason[decision.reason] += 1;
     if (decision.merge && decision.canonicalId && decision.canonicalId !== shell.id) {
       decidedTargetByShellId.set(shell.id, decision.canonicalId);
-      if (decision.matchedOn) foldsByMatchedIdentity[decision.matchedOn] += 1;
+      if (decision.matchedOn) matchedIdentityByShellId.set(shell.id, decision.matchedOn);
     }
   }
   const aliasTwinPlan = await planAliasTwinFoldsFor(researcherIdentities, loginNetids);
   for (const [twinId, realId] of aliasTwinPlan.targetByTwinResearcherId) {
     decidedTargetByShellId.set(twinId, realId);
+    matchedIdentityByShellId.delete(twinId);
   }
   const directRefusal = withoutDistinctPeopleFolds(decidedTargetByShellId, distinctPeoplePairs);
   const mergeTargetByShellId = resolveFinalMergeTargets(directRefusal.kept);
@@ -921,6 +1092,7 @@ export async function dedupeAccountlessResearcherShells(options: {
   );
   for (const [shellId, survivorId] of clusterPlan.foldTargetById) {
     mergeTargetByShellId.set(shellId, survivorId);
+    matchedIdentityByShellId.delete(shellId);
   }
   const finalRefusal = withoutDistinctPeopleFolds(mergeTargetByShellId, distinctPeoplePairs);
   for (const shellId of [...mergeTargetByShellId.keys()]) {
@@ -990,43 +1162,70 @@ export async function dedupeAccountlessResearcherShells(options: {
       }).toArray()
     : [];
 
-  const canonicalEdgeKeys = new Map<string, Set<string>>();
-  for (const ra of canonicalRoleAssignments as any[]) {
-    const personId = idKey(ra.personId);
-    const key = roleAssignmentEdgeKey({
-      targetKind: ra.target?.kind,
-      targetId: ra.target?.id,
-      role: ra.role,
+  const asFoldPlanEdge = (ra: any): FoldPlanEdge => ({
+    id: idKey(ra._id),
+    personId: idKey(ra.personId),
+    targetKind: ra.target?.kind,
+    targetId: ra.target?.id,
+    role: ra.role,
+    state: ra.state,
+  });
+  const shellFoldEdges = (shellRoleAssignments as any[]).map(asFoldPlanEdge);
+  const survivorClaimEdges = (canonicalRoleAssignments as any[]).map(asFoldPlanEdge);
+  const leadRoles = new Set<string>(LEAD_ROLE_CANONICAL_VALUES);
+  const shellLeadTargetIds = [
+    ...new Set(
+      shellFoldEdges
+        .filter((edge) => typeof edge.role === 'string' && leadRoles.has(edge.role))
+        .map((edge) => idKey(edge.targetId))
+        .filter(Boolean),
+    ),
+  ];
+  const liveLeadEdges = shellLeadTargetIds.length
+    ? (
+        (await RoleAssignment.find(
+          {
+            archived: { $ne: true },
+            role: { $in: [...leadRoles] },
+            'target.id': { $in: shellLeadTargetIds.map((id) => new mongoose.Types.ObjectId(id)) },
+          },
+          { projection: { personId: 1, target: 1, role: 1, state: 1 } },
+        ).toArray()) as any[]
+      ).map(asFoldPlanEdge)
+    : [];
+  const liveLeadRefusedFolds: Array<{ shellId: string; canonicalId: string }> = [];
+  let mergesByShell = planShellEdgeMoves(shellFoldEdges, survivorClaimEdges, mergeTargetByShellId);
+  for (;;) {
+    const refused = foldsArchivingOnlyLiveLead({
+      movesByShell: mergesByShell,
+      shellEdges: shellFoldEdges,
+      liveLeadEdges,
+      leadRoles,
     });
-    const set = canonicalEdgeKeys.get(personId) ?? new Set<string>();
-    set.add(key);
-    canonicalEdgeKeys.set(personId, set);
+    if (refused.size === 0) break;
+    for (const shellId of refused) {
+      liveLeadRefusedFolds.push({ shellId, canonicalId: mergeTargetByShellId.get(shellId)! });
+      mergeTargetByShellId.delete(shellId);
+    }
+    mergesByShell = planShellEdgeMoves(shellFoldEdges, survivorClaimEdges, mergeTargetByShellId);
+  }
+  if (onlyShellsNotPlanned) {
+    onlyShellsNotPlanned.push(...liveLeadRefusedFolds.map((refusal) => refusal.shellId));
+  }
+  const foldsByMatchedIdentity = Object.fromEntries(
+    SHELL_FOLD_IDENTITIES.map((identity) => [identity, 0]),
+  ) as Record<ShellFoldIdentity, number>;
+  for (const shellId of mergeTargetByShellId.keys()) {
+    const matchedOn = matchedIdentityByShellId.get(shellId);
+    if (matchedOn) foldsByMatchedIdentity[matchedOn] += 1;
   }
 
-  const mergesByShell = new Map<string, { repointed: string[]; archivedRedundant: string[] }>();
   const rosterChangedEntityIds = new Set<string>();
-  for (const ra of shellRoleAssignments as any[]) {
-    const shellId = idKey(ra.personId);
-    const canonicalId = mergeTargetByShellId.get(shellId);
-    if (!canonicalId) continue;
-    if (ra.target?.kind === 'RESEARCH_ENTITY' && idKey(ra.target?.id)) {
-      rosterChangedEntityIds.add(idKey(ra.target.id));
+  for (const edge of shellFoldEdges) {
+    if (!mergeTargetByShellId.has(edge.personId)) continue;
+    if (edge.targetKind === 'RESEARCH_ENTITY' && idKey(edge.targetId)) {
+      rosterChangedEntityIds.add(idKey(edge.targetId));
     }
-    const entry = mergesByShell.get(shellId) ?? { repointed: [], archivedRedundant: [] };
-    const edgeKey = roleAssignmentEdgeKey({
-      targetKind: ra.target?.kind,
-      targetId: ra.target?.id,
-      role: ra.role,
-    });
-    const canonicalEdges = canonicalEdgeKeys.get(canonicalId) ?? new Set<string>();
-    if (canonicalEdges.has(edgeKey)) {
-      entry.archivedRedundant.push(idKey(ra._id));
-    } else {
-      entry.repointed.push(idKey(ra._id));
-      canonicalEdges.add(edgeKey);
-      canonicalEdgeKeys.set(canonicalId, canonicalEdges);
-    }
-    mergesByShell.set(shellId, entry);
   }
 
   const merges: DedupeAccountlessResearcherShellsResult['merges'] = [];
@@ -1226,6 +1425,7 @@ export async function dedupeAccountlessResearcherShells(options: {
   return {
     mode: options.apply ? 'apply' : 'dry-run',
     distinctPeopleRefusedFolds,
+    liveLeadRefusedFolds,
     ...(onlyShellsNotPlanned ? { onlyShellsNotPlanned } : {}),
     directoryIdentifiedResearchers: researcherIdentities.length - foldableShells.length,
     shellResearchers: foldableShells.length,
