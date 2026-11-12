@@ -50,6 +50,13 @@ import {
   type LabUrlIsUnusable,
 } from '../utils/labUrlEvidence';
 import {
+  coLedGroupSiteFor,
+  loadCoLedSiteIndex,
+  type CoLedSiteIndex,
+  type CoLedSiteIndexLoader,
+  type LabUrlIsCoLedGroupSite,
+} from '../utils/coLedGroupSites';
+import {
   decideRosterAttach,
   loadRosterOwnerKeyRows,
   rosterHostOfUrl,
@@ -4467,6 +4474,7 @@ export function rosterResearchEntityMint(
   sourceUrl: string,
   ownerEntityKey: string,
   labUrlIsUnusable: LabUrlIsUnusable = () => false,
+  labUrlIsCoLedGroupSite: LabUrlIsCoLedGroupSite = () => false,
 ): { observations: ObservationInput[]; refusedByTitle: boolean } {
   const observations = entryToResearchEntityObservationsUnscreened(
     entry,
@@ -4474,6 +4482,7 @@ export function rosterResearchEntityMint(
     sourceUrl,
     ownerEntityKey,
     labUrlIsUnusable,
+    labUrlIsCoLedGroupSite,
   );
   // The screen sits at this choke point rather than at the one call site, so a
   // future caller cannot mint a research row for somebody who owns no research. A roster
@@ -4617,6 +4626,7 @@ function entryToResearchEntityObservationsUnscreened(
   sourceUrl: string,
   ownerEntityKey: string,
   labUrlIsUnusable: LabUrlIsUnusable = () => false,
+  labUrlIsCoLedGroupSite: LabUrlIsCoLedGroupSite = () => false,
 ): ObservationInput[] {
   // `isLikelyExplicitLabWebsite` reads the roster row. It cannot see what the
   // corpus has since decided about that URL, and a refusal is exactly the verdict
@@ -4625,11 +4635,15 @@ function entryToResearchEntityObservationsUnscreened(
   // `websiteUrl` while the name, kind, and `entityType` kept asserting the lab
   // (#3452). Withdrawal needs a positive verdict, never silence - see
   // `labUrlIsUnusableForResearchHome`.
-  const isExplicitLab =
+  const linksCoLedGroupSite = Boolean(entry.labUrl) && labUrlIsCoLedGroupSite(entry.labUrl!);
+  const linkAssertsLab =
     Boolean(entry.labUrl) && isLikelyExplicitLabWebsite(entry) && !labUrlIsUnusable(entry.labUrl!);
+  const isExplicitLab = linkAssertsLab && !linksCoLedGroupSite;
   const profileCitationUrl = officialProfileCitationUrl(entry);
-  const statedLabName = profileCitationUrl ? entry.statedLabName : undefined;
-  const admittedOnlyByStatedLabName = !isExplicitLab && dept.emitPersonalResearchEntities === false;
+  const statedLabName =
+    profileCitationUrl && !linksCoLedGroupSite ? entry.statedLabName : undefined;
+  const admittedOnlyByStatedLabName =
+    !linkAssertsLab && dept.emitPersonalResearchEntities === false;
   if (admittedOnlyByStatedLabName && !statedLabName) return [];
   const labUrl = admittedOnlyByStatedLabName ? undefined : entry.labUrl;
 
@@ -4758,6 +4772,7 @@ export class DepartmentRosterScraper implements IScraper {
     private readonly labUrlEvidenceLoader: LabUrlEvidenceLoader = loadLabUrlEvidenceBySlug,
     private readonly facultyTitledUserKeyLoader: FacultyTitledUserKeyLoader = loadUserKeysWithALiveFacultyTitle,
     private readonly rosterOwnerKeyRowLoader?: RosterOwnerKeyRowLoader,
+    private readonly coLedSiteIndexLoader: CoLedSiteIndexLoader = loadCoLedSiteIndex,
   ) {}
 
   private loadRosterOwnerKeyRows(): ReturnType<RosterOwnerKeyRowLoader> {
@@ -4851,6 +4866,8 @@ export class DepartmentRosterScraper implements IScraper {
     let rosterOwnerKeyRowsRead: ReturnType<RosterOwnerKeyRowLoader> | undefined;
     const rosterOwnerKeyRows = () => (rosterOwnerKeyRowsRead ??= this.loadRosterOwnerKeyRows());
     const rowsMintedThisRunByOwnerKey = new Map<string, RosterOwnerKeyRow>();
+    let coLedSitesRead: Promise<CoLedSiteIndex> | undefined;
+    const coLedSiteIndex = () => (coLedSitesRead ??= this.coLedSiteIndexLoader());
     let attachedToExistingRow = 0;
     const processEntries = async (
       entries: FacultyEntry[],
@@ -4941,6 +4958,10 @@ export class DepartmentRosterScraper implements IScraper {
               sourceUrl,
               entityKey,
               labUrlUnusabilityFor(labUrlEvidenceBySlug, rosterResearchEntitySlug(entry, dept)),
+              coLedGroupSiteFor(await coLedSiteIndex(), rosterResearchEntitySlug(entry, dept), {
+                email: entry.email,
+                profileUrl: officialProfileCitationUrl(entry),
+              }),
             );
         const ownSlug = rosterResearchEntitySlug(entry, dept);
         const attach =
