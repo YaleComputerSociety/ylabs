@@ -73,6 +73,8 @@ const YSM_DIRECTORY_SECTION_SOURCE =
   'Yale School of Medicine faculty directory section spelling, which prefixes a Pediatrics section and leaves the Internal Medicine section of the same name bare';
 const HR_DIRECTORY_SOURCE =
   'Yale HR/directory org string observed on researchers whose research home carries no department';
+const NURSING_SCHOOL_LEVEL_SOURCE =
+  'Yale directory export unit NURS - Nursing on researchers whose only department is the School of Nursing, kept as a school-level department the way Architecture sits under the School of Architecture (#5796)';
 
 export const ORG_UNIT_CATALOG_GAPS: readonly OrgUnitCatalogGap[] = [
   {
@@ -479,6 +481,23 @@ export const ORG_UNIT_CATALOG_GAPS: readonly OrgUnitCatalogGap[] = [
     targetName: 'Rheumatology, Allergy & Immunology',
     aliases: ['Rheumatology'],
     source: YSM_DIRECTORY_SECTION_SOURCE,
+  },
+  // The school row answered to the bare "Nursing" as an alias; a department of that name
+  // under it is the Architecture pattern, and the alias moves off the school first so the
+  // two rows never claim one label.
+  {
+    action: 'remove-aliases',
+    targetSlug: 'yale-school-of-nursing',
+    aliases: ['Nursing'],
+    source: NURSING_SCHOOL_LEVEL_SOURCE,
+  },
+  {
+    action: 'create-department',
+    name: 'Nursing',
+    slug: 'nursing',
+    parentName: 'School of Nursing',
+    aliases: ['NURS'],
+    source: NURSING_SCHOOL_LEVEL_SOURCE,
   },
 ];
 
