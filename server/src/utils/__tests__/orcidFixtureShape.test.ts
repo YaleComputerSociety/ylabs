@@ -10,7 +10,7 @@ import {
   orcidIsUnsafeForFixtures,
   SYNTHETIC_ORCID_EXAMPLE,
 } from '../../../../scripts/orcidFixtureShape.mjs';
-import { isIssuedOrcid, isValidOrcid } from '../orcid';
+import { isIssuedOrcid, isPlausiblePersonOrcid, isValidOrcid } from '../orcid';
 
 /**
  * Built from arithmetic rather than written as a literal, because a checksum-valid iD
@@ -33,6 +33,7 @@ const withCheckDigit = (fifteenDigits: string): string => {
 
 const insideAllocatedSpace = withCheckDigit('000000025000123');
 const atTheAllocationFloor = withCheckDigit('000000015000000');
+const insideTheNewerBlock = withCheckDigit('000900050000123');
 
 const table = [
   '9999-9000-9999-9005',
@@ -40,6 +41,7 @@ const table = [
   '1111-1111-1111-1115',
   insideAllocatedSpace,
   atTheAllocationFloor,
+  insideTheNewerBlock,
   '0000-0000-0000-0000',
   '0000-0002-0000-0000',
   'not-an-orcid',
@@ -59,7 +61,7 @@ describe('what the fixture rule refuses', () => {
    * named was checksum-valid and inside it, which is why the shape rule supersedes them.
    */
   it('refuses a checksum-valid iD inside the allocated space', () => {
-    for (const value of [insideAllocatedSpace, atTheAllocationFloor]) {
+    for (const value of [insideAllocatedSpace, atTheAllocationFloor, insideTheNewerBlock]) {
       expect(orcidChecksumIsValid(value)).toBe(true);
       expect(orcidIsInAllocatedSpace(value)).toBe(true);
       expect(orcidIsUnsafeForFixtures(value)).toBe(true);
@@ -89,12 +91,21 @@ describe('what the fixture rule refuses', () => {
   });
 
   /**
-   * The example has to stay usable for a test that needs a servable iD, or authors will
-   * reach for a real-looking one instead.
+   * Since #5991 the serve path refuses every iD outside ORCID's issued blocks, so the example
+   * is the non-person fixture: checksum-valid, never a person's, and NOT servable. A test that
+   * needs a servable iD builds one at runtime with `syntheticPersonOrcid`.
    */
-  it('keeps the example servable by the serve path', () => {
+  it('keeps the example checksum-valid but not servable', () => {
     expect(isValidOrcid(SYNTHETIC_ORCID_EXAMPLE)).toBe(true);
-    expect(isIssuedOrcid(SYNTHETIC_ORCID_EXAMPLE)).toBe(true);
+    expect(isIssuedOrcid(SYNTHETIC_ORCID_EXAMPLE)).toBe(false);
+  });
+
+  it('agrees with the serve path on what is allocated space', () => {
+    for (const value of table) {
+      expect(orcidIsInAllocatedSpace(value) && orcidChecksumIsValid(value)).toBe(
+        isPlausiblePersonOrcid(value),
+      );
+    }
   });
 
   it('accepts a checksum-invalid value, which cannot be anyone iD', () => {

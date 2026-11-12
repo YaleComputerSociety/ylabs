@@ -26,7 +26,7 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { getCached, setCached } from '../snapshotCache';
 import { clampDescriptionLength } from '../../utils/descriptionHygiene';
-import { normalizeOrcid } from '../../utils/orcid';
+import { plausiblePersonOrcid } from '../../utils/orcid';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
@@ -265,7 +265,7 @@ function extractOrcid($: cheerio.CheerioAPI): string | undefined {
   let orcid: string | undefined;
   $('a[href*="orcid.org"]').each((_i, a) => {
     if (orcid) return;
-    const normalized = normalizeOrcid($(a).attr('href') || '');
+    const normalized = plausiblePersonOrcid($(a).attr('href') || '');
     if (normalized) orcid = normalized;
   });
   return orcid;

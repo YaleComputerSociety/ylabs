@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { Observation } from '../models/observation';
 import { Researcher } from '../models/researcher';
-import { normalizeOrcid } from '../utils/orcid';
+import { plausiblePersonOrcid } from '../utils/orcid';
 import {
   entityOfficialPersonProfileDestinations,
   entityOfficialPersonProfileUrls,
@@ -43,7 +43,7 @@ export function leadMatchesDestinationThroughEvidence(
   if (foldedDestinations && [...foldedDestinations].some((url) => destinations.has(url))) {
     return true;
   }
-  const leadOrcid = normalizeOrcid(lead.user?.orcid);
+  const leadOrcid = plausiblePersonOrcid(lead.user?.orcid);
   if (!leadOrcid) return false;
   return [...destinations].some(
     (destination) => evidence.pageOrcidByDestination.get(destination) === leadOrcid,
@@ -58,7 +58,7 @@ export function pageOrcidByDestinationFromStatements(
   const orcidsByDestination = new Map<string, Set<string>>();
   for (const statement of statements) {
     const destination = normalizeOfficialProfileDestination(String(statement.sourceUrl || ''));
-    const orcid = normalizeOrcid(statement.value);
+    const orcid = plausiblePersonOrcid(statement.value);
     if (!destination || !orcid || !destinations.has(destination)) continue;
     const orcids = orcidsByDestination.get(destination) ?? new Set<string>();
     orcids.add(orcid);
@@ -108,7 +108,7 @@ export async function loadLeadMatchEvidence(
       .filter((id) => mongoose.Types.ObjectId.isValid(id) && id.length === 24),
   );
   const hasLeadOrcid =
-    storedUrlSpellings.length > 0 && leads.some((lead) => normalizeOrcid(lead.user?.orcid));
+    storedUrlSpellings.length > 0 && leads.some((lead) => plausiblePersonOrcid(lead.user?.orcid));
   const [foldedRecords, statements] = await Promise.all([
     leadIds.size > 0
       ? Researcher.find({

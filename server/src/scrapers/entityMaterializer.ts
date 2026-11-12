@@ -589,9 +589,9 @@ import {
   resolveResearcherIdForPersonName,
   type ResearcherPersonNameResolution,
 } from '../services/researcherPersonNameResolver';
+import { isPlausiblePersonOrcid, plausiblePersonOrcid } from '../utils/orcid';
 import {
   Researcher,
-  isValidOrcid,
   orcidProfileLinksAgreeWithIdentifier,
   researcherDisplayProfileSchema,
   type ResearcherDisplayProfile,
@@ -8390,15 +8390,15 @@ async function soleClaimedOfficialPageKeys(
  * materializer enriches rather than a narrower netid-then-name lookup (#4697).
  */
 function deriveUserIdentityFields(materializationObs: any[], now: Date) {
-  const resolverObs: ResolverObservation[] = userTitleEvidence(materializationObs).map(
-    (o: any) => ({
+  const resolverObs: ResolverObservation[] = userTitleEvidence(materializationObs)
+    .filter((o: any) => o.field !== 'orcid' || isPlausiblePersonOrcid(o.value))
+    .map((o: any) => ({
       field: o.field,
       value: o.value,
       sourceName: o.sourceName,
       confidence: o.confidence,
       observedAt: o.observedAt,
-    }),
-  );
+    }));
   const resolved = resolveAllFields(resolverObs, { now });
   const resolvedValue = (field: string): unknown => resolved[field]?.value;
   const servedUserName = (field: string): string => {
@@ -8420,8 +8420,7 @@ function deriveUserIdentityFields(materializationObs: any[], now: Date) {
   ]);
   const websiteUrl = textValue(websiteCandidate?.value) || undefined;
   const websiteUrlConfidence = websiteCandidate?.confidence;
-  const orcidCandidate = textValue(resolvedValue('orcid')).trim().toUpperCase();
-  const orcid = orcidCandidate && isValidOrcid(orcidCandidate) ? orcidCandidate : undefined;
+  const orcid = plausiblePersonOrcid(resolvedValue('orcid')) || undefined;
   const profileUrls =
     resolvedValue('profileUrls') && typeof resolvedValue('profileUrls') === 'object'
       ? (resolvedValue('profileUrls') as Record<string, unknown>)
@@ -9602,13 +9601,20 @@ async function materializeUserIdentityToResearcher(
     );
     fieldsWritten += refusedUrls.size;
   }
-  const priorOrcid: string | undefined = researcher.identifiers?.orcid;
-  const priorOrcidLinks: ResearcherProfileLink[] = (researcher.profileLinks || []).filter(
-    (link: ResearcherProfileLink) => link.kind === 'ORCID',
-  );
+  const storedOrcid: string | undefined = researcher.identifiers?.orcid;
+  const priorOrcid = isPlausiblePersonOrcid(storedOrcid) ? storedOrcid : undefined;
+  const storedOrcidIsImplausible = Boolean(storedOrcid) && !priorOrcid;
+  const priorOrcidLinks: ResearcherProfileLink[] = storedOrcidIsImplausible
+    ? []
+    : (researcher.profileLinks || []).filter(
+        (link: ResearcherProfileLink) => link.kind === 'ORCID',
+      );
   let orcidFieldsWritten = 0;
   if (orcid && priorOrcid !== orcid) {
     researcher.identifiers = { ...(researcher.identifiers || {}), orcid };
+    orcidFieldsWritten += 1;
+  } else if (storedOrcidIsImplausible) {
+    researcher.set('identifiers.orcid', undefined);
     orcidFieldsWritten += 1;
   }
   const priorNetid: string | undefined = researcher.identifiers?.netid;

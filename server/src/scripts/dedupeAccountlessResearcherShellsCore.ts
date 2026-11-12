@@ -1,4 +1,4 @@
-import { normalizeOrcid } from '../utils/orcid';
+import { plausiblePersonOrcid } from '../utils/orcid';
 import { orcidProfileLinksAgreeWithIdentifier } from '../models/researcher';
 import type { FieldValueRefusal } from '../utils/researchEntityFieldValueRefusals';
 import {
@@ -65,11 +65,7 @@ export function researcherNameMatchKey(value: unknown): string | undefined {
   return `${givenTokens.join('')} ${tokens[tokens.length - 1]}`;
 }
 
-const cleanOrcid = (value: unknown): string | undefined => {
-  if (typeof value !== 'string') return undefined;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
-};
+const cleanOrcid = (value: unknown): string | undefined => plausiblePersonOrcid(value) || undefined;
 
 const cleanNetid = (value: unknown): string | undefined => {
   if (typeof value !== 'string') return undefined;
@@ -883,7 +879,7 @@ export function orcidOnlyHoldersByOrcid(
   for (const researcher of researchers) {
     if (researcherIdentityTier(researcher) !== 'NAME_ONLY' || cleanNetid(researcher.netid))
       continue;
-    const orcid = normalizeOrcid(researcher.orcid);
+    const orcid = plausiblePersonOrcid(researcher.orcid);
     if (!orcid) continue;
     byOrcid.set(orcid, [
       ...(byOrcid.get(orcid) ?? []),
@@ -908,8 +904,8 @@ export function decideOrcidOnlyHolderFold(
   holdersByOrcid: ReadonlyMap<string, ReadonlyArray<OrcidOnlyHolder>>,
 ): ShellMergeDecision | undefined {
   if (researcherIdentityTier(shell) !== 'NAME_ONLY' || cleanNetid(shell.netid)) return undefined;
-  if (normalizeOrcid(shell.orcid)) return undefined;
-  const orcids = new Set(subjectOrcids.map(normalizeOrcid).filter(Boolean));
+  if (plausiblePersonOrcid(shell.orcid)) return undefined;
+  const orcids = new Set(subjectOrcids.map((orcid) => plausiblePersonOrcid(orcid)).filter(Boolean));
   if (orcids.size !== 1) return undefined;
   if (listingAddressNetids.some((netids) => netids.size > 0)) return undefined;
   const matchedOn = 'orcid-only-holder' as const;

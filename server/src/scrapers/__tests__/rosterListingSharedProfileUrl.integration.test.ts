@@ -5,6 +5,10 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Researcher } from '../../models/researcher';
 import type { ResolvedField } from '../confidenceResolver';
 import { resolveRosterMemberIdentity } from '../entityMaterializer';
+import { syntheticPersonOrcid } from '../../test/syntheticOrcid';
+
+const SYNTHETIC_ORCID_1 = syntheticPersonOrcid(500);
+const SYNTHETIC_ORCID_2 = syntheticPersonOrcid(501);
 
 let memoryServer: MongoMemoryServer | undefined;
 
@@ -95,7 +99,7 @@ describe('a roster listing two name-agreeing records reach, one name-only (#5592
   it('joins the record carrying identity, never its name-only twin', async () => {
     const identified = await Researcher.create({
       displayName: 'Avery Q. Synthetic',
-      identifiers: { orcid: '0000-0000-0000-0001' },
+      identifiers: { orcid: SYNTHETIC_ORCID_1 },
       profileLinks: [officialLink(SHARED_URL)],
     });
     await nameOnlyTwin('Avery Synthetic');
@@ -122,7 +126,7 @@ describe('a roster listing two name-agreeing records reach, one name-only (#5592
     await holder('Avery Synthetic');
     await Researcher.create({
       displayName: 'Avery Synthetic',
-      identifiers: { orcid: '0000-0000-0000-0028' },
+      identifiers: { orcid: SYNTHETIC_ORCID_2 },
       profile: { websiteUrl: SHARED_URL },
     });
     await nameOnlyTwin('Avery Synthetic');

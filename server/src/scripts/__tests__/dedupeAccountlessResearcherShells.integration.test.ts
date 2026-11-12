@@ -11,6 +11,14 @@ import {
   dedupeAccountlessResearcherShells,
   parseDedupeAccountlessResearcherShellsArgs,
 } from '../dedupeAccountlessResearcherShells';
+import { syntheticPersonOrcid } from '../../test/syntheticOrcid';
+
+const SYNTHETIC_ORCID_1 = syntheticPersonOrcid(500);
+const SYNTHETIC_ORCID_2 = syntheticPersonOrcid(501);
+const SYNTHETIC_ORCID_3 = syntheticPersonOrcid(502);
+const SYNTHETIC_ORCID_4 = syntheticPersonOrcid(503);
+const SYNTHETIC_ORCID_5 = syntheticPersonOrcid(504);
+const SYNTHETIC_ORCID_6 = syntheticPersonOrcid(505);
 
 const canonicalId = new mongoose.Types.ObjectId();
 const shellId = new mongoose.Types.ObjectId();
@@ -64,7 +72,7 @@ describe('dedupeAccountlessResearcherShells (DB-backed)', () => {
           { kind: 'GOOGLE_SCHOLAR', url: 'https://scholar.google.com/citations?user=abc' },
           { kind: 'YALE_OFFICIAL', url: 'https://shell.yale.edu' },
         ],
-        identifiers: { orcid: '0000-0001-2222-3333', googleScholarId: 'abc' },
+        identifiers: { orcid: SYNTHETIC_ORCID_1, googleScholarId: 'abc' },
         profile: {
           title: 'Adjunct',
           primaryDepartment: 'Immunobiology',
@@ -90,13 +98,13 @@ describe('dedupeAccountlessResearcherShells (DB-backed)', () => {
         _id: conflictCanonicalId,
         displayName: 'Kim Lee',
         archived: false,
-        identifiers: { orcid: '0000-0001-2222-3333', email: 'directory.fixture4@example.test' },
+        identifiers: { orcid: SYNTHETIC_ORCID_1, email: 'directory.fixture4@example.test' },
       },
       {
         _id: conflictShellId,
         displayName: 'Kim Lee',
         archived: false,
-        identifiers: { orcid: '0000-0001-0000-0000' },
+        identifiers: { orcid: SYNTHETIC_ORCID_2 },
       },
     ]);
 
@@ -151,7 +159,7 @@ describe('dedupeAccountlessResearcherShells (DB-backed)', () => {
     );
     expect(canonicalLinks.some((link) => link.kind === 'GOOGLE_SCHOLAR')).toBe(true);
     expect(canonical!.identifiers).toMatchObject({
-      orcid: '0000-0001-2222-3333',
+      orcid: SYNTHETIC_ORCID_1,
       googleScholarId: 'abc',
     });
     expect(canonical!.profile).toEqual({
@@ -192,7 +200,7 @@ describe('dedupeAccountlessResearcherShells (DB-backed)', () => {
     const canonical = await db.collection('researchers').findOne({ _id: canonicalId });
     expect(canonical!.profileLinks as unknown[]).toHaveLength(2);
     expect(canonical!.identifiers).toMatchObject({
-      orcid: '0000-0001-2222-3333',
+      orcid: SYNTHETIC_ORCID_1,
       googleScholarId: 'abc',
     });
   });
@@ -248,7 +256,7 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
         _id: orcidShell,
         displayName: 'Rosa Vega',
         archived: false,
-        identifiers: { orcid: '0000-0003-1111-2222' },
+        identifiers: { orcid: SYNTHETIC_ORCID_3 },
       },
     ]);
 
@@ -257,7 +265,7 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
     expect(result.attributeUnion.identifiersFilled.orcid).toBe(1);
 
     const canonical = await db.collection('researchers').findOne({ _id: canonicalOnly });
-    expect(canonical!.identifiers).toMatchObject({ orcid: '0000-0003-1111-2222' });
+    expect(canonical!.identifiers).toMatchObject({ orcid: SYNTHETIC_ORCID_3 });
 
     const shell = await db.collection('researchers').findOne({ _id: orcidShell });
     expect(shell!.archived).toBe(true);
@@ -319,7 +327,7 @@ describe('dedupeAccountlessResearcherShells (with schema unique indexes)', () =>
   });
 
   it('moves the shell ORCID link with its ORCID so neither row fails the schema (#4501)', async () => {
-    const orcid = '9999-9999-9999-9994';
+    const orcid = SYNTHETIC_ORCID_4;
     const orcidLink = {
       kind: 'ORCID',
       purpose: 'SCHOLARLY',
@@ -1106,8 +1114,8 @@ describe('dedupeAccountlessResearcherShells directory-email twins (#5811)', () =
 
   it('never folds two records carrying distinct ORCIDs', async () => {
     const { shell } = await seedPair({
-      shellIdentifiers: { orcid: '0000-0002-0000-0001' },
-      holderIdentifiers: { netid: 'fx901', email: ADDRESS, orcid: '0000-0002-0000-0002' },
+      shellIdentifiers: { orcid: SYNTHETIC_ORCID_5 },
+      holderIdentifiers: { netid: 'fx901', email: ADDRESS, orcid: SYNTHETIC_ORCID_6 },
     });
 
     const result = await dedupeAccountlessResearcherShells({ apply: true });

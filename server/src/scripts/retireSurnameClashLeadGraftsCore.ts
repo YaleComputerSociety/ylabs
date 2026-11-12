@@ -3,6 +3,7 @@ import {
   givenNamesCouldBeOneTransliteration,
   surnameCoreKey,
 } from '../scrapers/utils/piNameMatch';
+import { plausiblePersonOrcid } from '../utils/orcid';
 
 /**
  * What the corpus records about one lead's person beyond the name, read only to tell
@@ -111,9 +112,14 @@ const comparableText = (value: unknown): string =>
     .replace(/[^a-z0-9@.]+/g, ' ')
     .trim();
 
+const hardIdentityValue = (lead: SurnameClashLeadRow, field: 'netid' | 'email' | 'orcid') =>
+  field === 'orcid'
+    ? plausiblePersonOrcid(lead.identity?.orcid)
+    : comparableText(lead.identity?.[field]);
+
 const hardIdentityKeys = (lead: SurnameClashLeadRow): string[] =>
   (['netid', 'email', 'orcid'] as const)
-    .map((field) => [field, comparableText(lead.identity?.[field])] as const)
+    .map((field) => [field, hardIdentityValue(lead, field)] as const)
     .filter(([, value]) => value)
     .map(([field, value]) => `${field}:${value}`);
 

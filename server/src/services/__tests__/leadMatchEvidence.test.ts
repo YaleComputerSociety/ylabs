@@ -40,12 +40,17 @@ import {
   researchDetailLeadIdentity,
   resolveResearchDetailLeadIdentity,
 } from '../researchGroupService';
+import { syntheticPersonOrcid } from '../../test/syntheticOrcid';
+
+const SYNTHETIC_ORCID_1 = syntheticPersonOrcid(500);
+const SYNTHETIC_ORCID_2 = syntheticPersonOrcid(501);
+const SYNTHETIC_ORCID_3 = syntheticPersonOrcid(502);
 
 const LEAD_ID = 'aaaaaaaaaaaaaaaaaaaaaaaa';
 const UNRELATED_ID = 'bbbbbbbbbbbbbbbbbbbbbbbb';
-const LEAD_ORCID = '9999-9999-9999-9994';
-const OTHER_ORCID = '9999-9999-9999-9986';
-const THIRD_ORCID = '9999-9999-9999-9978';
+const LEAD_ORCID = SYNTHETIC_ORCID_1;
+const OTHER_ORCID = SYNTHETIC_ORCID_2;
+const THIRD_ORCID = SYNTHETIC_ORCID_3;
 const SCHOOL_A_PROFILE = 'https://medicine.yale.edu/profile/fixture-lead/';
 const SCHOOL_B_PROFILE =
   'https://engineering.yale.edu/research-and-faculty/faculty-directory/fixture-lead';

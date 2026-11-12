@@ -36,6 +36,9 @@ import {
   buildResearchEntityPiDedupePlan,
   samePiDuplicateEntityIdsRestrictedToPiLed,
 } from '../../scripts/researchEntityPiDedupeCore';
+import { syntheticPersonOrcid } from '../../test/syntheticOrcid';
+
+const SYNTHETIC_ORCID_1 = syntheticPersonOrcid(500);
 
 const safePlan = (
   overrides: Partial<StudentVisibilityGatePlan> = {},
@@ -906,7 +909,7 @@ describe('studentVisibilityGateService', () => {
       websiteUrl: 'https://medicine.yale.edu/psychiatry/research/fixture-mood/',
       sourceUrls: [
         directorProfileUrl,
-        'https://orcid.org/9999-9000-9999-9005',
+        `https://orcid.org/${SYNTHETIC_ORCID_1}`,
         'https://medicine.yale.edu/psychiatry/research/fixture-mood/',
       ],
       ...overrides,
@@ -931,7 +934,7 @@ describe('studentVisibilityGateService', () => {
 
     it("treats the director's ORCID record as a person page too", () => {
       const entities = [
-        personRow({ sourceUrls: ['https://orcid.org/9999-9000-9999-9005'] }),
+        personRow({ sourceUrls: [`https://orcid.org/${SYNTHETIC_ORCID_1}`] }),
         organizationRow(),
       ];
 

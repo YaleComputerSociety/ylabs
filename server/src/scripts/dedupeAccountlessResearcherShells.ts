@@ -55,6 +55,7 @@ import {
 } from './dedupeAccountlessResearcherShellsCore';
 import { isLocalPartNetid } from '../utils/localPartNetid';
 import { planResearcherRefusedStoredValueClear } from '../utils/researcherFieldValueRefusals';
+import { plausiblePersonOrcid } from '../utils/orcid';
 import {
   isLikelyOfficialPersonProfileUrl,
   normalizeOfficialProfileDestination,
@@ -682,8 +683,10 @@ async function loadListingSubjectStatements(
 
 const ORCID_PATTERN = /\d{4}-\d{4}-\d{4}-\d{3}[\dX]/i;
 
-const bareOrcid = (value: unknown): string | undefined =>
-  typeof value === 'string' ? ORCID_PATTERN.exec(value)?.[0].toUpperCase() : undefined;
+const bareOrcid = (value: unknown): string | undefined => {
+  const stated = typeof value === 'string' ? ORCID_PATTERN.exec(value)?.[0] : undefined;
+  return plausiblePersonOrcid(stated) || undefined;
+};
 
 const officialPageWitnessKey = (url: unknown): string =>
   typeof url === 'string' && url

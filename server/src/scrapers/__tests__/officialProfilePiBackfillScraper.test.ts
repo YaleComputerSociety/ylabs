@@ -39,6 +39,11 @@ import {
 import type { ObservationInput, ScraperContext } from '../types';
 import { ResearchEntity } from '../../models/researchEntity';
 import { Researcher } from '../../models/researcher';
+import { syntheticPersonOrcid } from '../../test/syntheticOrcid';
+
+const SYNTHETIC_ORCID_1 = syntheticPersonOrcid(500);
+const SYNTHETIC_ORCID_2 = syntheticPersonOrcid(501);
+const SYNTHETIC_ORCID_3 = syntheticPersonOrcid(502);
 
 const profileUrl = 'https://medicine.yale.edu/profile/jules-fixture/';
 const departmentPersonPageUrl =
@@ -3295,7 +3300,7 @@ describe('officialProfilePiBackfillScraper', () => {
         bio: 'Jules Fixture studies cancer biology and translational oncology, with a focus on identifying biomarkers and improving treatment strategies for patients with gastrointestinal malignancies.',
         imageUrl: 'https://ysm-res.cloudinary.com/image/upload/example/jules-fixture',
         researchInterests: ['Cancer biology', 'Translational oncology'],
-        orcid: '0000-0001-2345-6789',
+        orcid: SYNTHETIC_ORCID_1,
       },
       { netid: 'fixture106', email: 'jules.fixture@yale.edu' },
       {
@@ -5840,13 +5845,13 @@ describe('a profile page that names its own netid or several ORCIDs (#4994)', ()
 
   it('claims an ORCID only when the page carries exactly one', () => {
     const one = extractOfficialProfileIdentity(
-      pageFor(profileUrl, ['9999-9000-9999-9005']),
+      pageFor(profileUrl, [SYNTHETIC_ORCID_2]),
       profileUrl,
       entity,
     );
-    expect(one?.orcid).toBe('9999-9000-9999-9005');
+    expect(one?.orcid).toBe(SYNTHETIC_ORCID_2);
     const several = extractOfficialProfileIdentity(
-      pageFor(profileUrl, ['9999-9000-9999-9005', '9999-9000-9999-9013']),
+      pageFor(profileUrl, [SYNTHETIC_ORCID_2, SYNTHETIC_ORCID_3]),
       profileUrl,
       entity,
     );
