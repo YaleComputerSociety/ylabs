@@ -4360,6 +4360,7 @@ export function contradictedPageLeadEdges(
 async function contradictedPageLeadEdgesToEnd(
   researchEntityId: string,
   edges: readonly ContradictedPageLeadEdge[],
+  pendingAssertions?: PendingLeadAssertions,
 ): Promise<LeadEdgeToEnd[]> {
   const entityObjectId = toMaterializerObjectId(researchEntityId);
   if (!entityObjectId || edges.length === 0) return [];
@@ -4367,6 +4368,14 @@ async function contradictedPageLeadEdgesToEnd(
   for (const edge of edges) {
     const personId = toMaterializerObjectId(edge.personId);
     if (!personId) continue;
+    const pending = pendingAssertions?.get(edge.personId);
+    if (
+      pending &&
+      (pending.sourceName !== OFFICIAL_PROFILE_PI_BACKFILL_SOURCE ||
+        pending.sourceUrl !== edge.sourceUrl)
+    ) {
+      continue;
+    }
     const docs = (await RoleAssignment.find({
       personId,
       'target.kind': 'RESEARCH_ENTITY',
@@ -4393,6 +4402,13 @@ export interface LeadEdgeToEnd {
   edgeId: string;
   personId: string;
   reason: LeadEdgeEndReason;
+}
+
+type PendingLeadAssertions = ReadonlyMap<string, { sourceName: string; sourceUrl: string }>;
+
+interface DryRunLeadEdgeOverlay {
+  pendingAssertions: PendingLeadAssertions;
+  endedEdgeIds: ReadonlySet<string>;
 }
 
 export interface LeadEdgeResolution {
@@ -4550,20 +4566,44 @@ export async function resolveLeadEdges(
     }
   }
   const ended: LeadEdgeToEnd[] = [];
+  const endedEdgeIds = new Set<string>();
   const end = async (edges: LeadEdgeToEnd[], extraFilter?: object) => {
-    ended.push(...edges);
-    if (options.apply) await endLeadEdges(edges, extraFilter);
+    const fresh = edges.filter((edge) => !endedEdgeIds.has(edge.edgeId));
+    for (const edge of fresh) endedEdgeIds.add(edge.edgeId);
+    ended.push(...fresh);
+    if (options.apply) await endLeadEdges(fresh, extraFilter);
   };
+  const dryRunOverlay: DryRunLeadEdgeOverlay | undefined = options.apply
+    ? undefined
+    : {
+        pendingAssertions: new Map(
+          planned.map((facts) => [
+            facts.personId,
+            { sourceName: textValue(facts.sourceName), sourceUrl: textValue(facts.sourceUrl) },
+          ]),
+        ),
+        endedEdgeIds,
+      };
   await end(
-    await contradictedPageLeadEdgesToEnd(researchEntityId, contradictedPageLeadEdges(screened)),
+    await contradictedPageLeadEdgesToEnd(
+      researchEntityId,
+      contradictedPageLeadEdges(screened),
+      dryRunOverlay?.pendingAssertions,
+    ),
   );
   const plannedLeadPersonIds = new Set(planned.map((facts) => facts.personId));
   await end(
     await retiredEvidenceLeadEdgesToEnd(researchEntityId, observations, plannedLeadPersonIds),
   );
-  await end(await sourcelessLeadEdgesToEnd(researchEntityId, observations, plannedLeadPersonIds), {
-    'rosterProvenance.sourceName': { $in: [null, ''] },
-  });
+  await end(
+    await sourcelessLeadEdgesToEnd(
+      researchEntityId,
+      observations,
+      plannedLeadPersonIds,
+      dryRunOverlay,
+    ),
+    { 'rosterProvenance.sourceName': { $in: [null, ''] } },
+  );
   return {
     asserted: planned.map((facts) => ({
       personId: facts.personId,
@@ -4641,6 +4681,7 @@ async function sourcelessLeadEdgesToEnd(
   researchEntityId: string,
   observations: MaterializerObservationLike[],
   plannedLeadPersonIds: ReadonlySet<string>,
+  dryRunOverlay?: DryRunLeadEdgeOverlay,
 ): Promise<LeadEdgeToEnd[]> {
   const entityObjectId = toMaterializerObjectId(researchEntityId);
   if (!entityObjectId) return [];
@@ -4657,11 +4698,14 @@ async function sourcelessLeadEdgesToEnd(
     personId?: unknown;
     rosterProvenance?: { sourceName?: string };
   }>;
-  const edges: RowLeadEdge[] = edgeDocs.map((edge) => ({
+  const storedEdges: RowLeadEdge[] = edgeDocs.map((edge) => ({
     id: String(edge._id),
     personId: String(edge.personId ?? ''),
     hasRecordedSource: Boolean(textValue(edge.rosterProvenance?.sourceName)),
   }));
+  const edges = dryRunOverlay
+    ? leadEdgesAfterPendingAssertions(storedEdges, dryRunOverlay)
+    : storedEdges;
   if (!edges.some((edge) => !edge.hasRecordedSource)) return [];
   const directorRead = await resolveInferredDirector(observations);
   const liveLeadPersonIds =
@@ -4689,6 +4733,26 @@ async function sourcelessLeadEdgesToEnd(
     personId: personById.get(edgeId) ?? '',
     reason: 'contradicted-sourceless',
   }));
+}
+
+function leadEdgesAfterPendingAssertions(
+  edges: readonly RowLeadEdge[],
+  overlay: DryRunLeadEdgeOverlay,
+): RowLeadEdge[] {
+  const sourcedPersonIds = new Set(
+    [...overlay.pendingAssertions]
+      .filter(([, assertion]) => assertion.sourceName)
+      .map(([personId]) => personId),
+  );
+  const live = edges
+    .filter((edge) => !overlay.endedEdgeIds.has(edge.id))
+    .map((edge) =>
+      sourcedPersonIds.has(edge.personId) ? { ...edge, hasRecordedSource: true } : edge,
+    );
+  const inserted = [...sourcedPersonIds]
+    .filter((personId) => !live.some((edge) => edge.personId === personId))
+    .map((personId) => ({ id: `pending:${personId}`, personId, hasRecordedSource: true }));
+  return [...live, ...inserted];
 }
 
 type RosterEmailAliasResolution =
@@ -14160,10 +14224,18 @@ async function materializeEntityUnderRemovalGuard(
     });
     let leadEdgeIndexStale = false;
     if (!options.dryRun) {
-      const browseRank = await recomputeBrowseRankForEntities([entityIdString]);
-      leadEdgeIndexStale =
-        browseRank.updated > 0 &&
-        browseRank.indexSyncFailures + (browseRank.indexSyncDeferred ?? 0) > 0;
+      try {
+        const browseRank = await recomputeBrowseRankForEntities([entityIdString]);
+        leadEdgeIndexStale =
+          browseRank.updated > 0 &&
+          browseRank.indexSyncFailures + (browseRank.indexSyncDeferred ?? 0) > 0;
+      } catch (error) {
+        console.error(
+          'Failed to recompute browseRankScore:',
+          sanitizeLogValue({ entityId: entityIdString, error }),
+        );
+        leadEdgeIndexStale = true;
+      }
     }
     return {
       entityType,

@@ -320,4 +320,56 @@ describe('lead-edge resolution under a scope (#5992, #6001)', () => {
     ]);
     expect(await RoleAssignment.countDocuments({ personId: foreign.owner._id })).toBe(0);
   });
+
+  it('plans in a dry run the end an apply makes once a planned lead edge gains its source', async () => {
+    const owner = await seedResearcher('Ez Morrow', 'ez-morrow');
+    const other = await seedResearcher('Fi Lantern', 'fi-lantern');
+    const row = await seedRow(
+      'ysm-faculty-ez-morrow',
+      'Ez Morrow Faculty Research',
+      'FACULTY_RESEARCH_AREA',
+    );
+    await observe(row.slug, 'inferredPiUserId', owner._id.toString(), {
+      sourceName: 'nih-reporter',
+      sourceUrl: `${GRANT}2001`,
+    });
+    await seedEdge(owner._id, row._id);
+    await seedEdge(other._id, row._id);
+
+    const plan = (
+      await materializeEntity(
+        'researchEntity',
+        { entityKey: row.slug },
+        { leadEdgesOnly: true, dryRun: true },
+      )
+    ).leadEdgeResolution;
+    expect([...(await edgeStates(row._id)).values()]).toEqual(['live', 'live']);
+    const applied = (
+      await materializeEntity('researchEntity', { entityKey: row.slug }, { leadEdgesOnly: true })
+    ).leadEdgeResolution;
+
+    expect(applied?.ended).toEqual([
+      expect.objectContaining({ personId: String(other._id), reason: 'contradicted-sourceless' }),
+    ]);
+    expect(plan?.ended).toEqual(applied?.ended);
+    expect((await edgeStates(row._id)).get(String(other._id))).toBe('ended');
+  });
+
+  it('keeps the edge report and flags the index when the browse-rank recompute throws', async () => {
+    const foreign = await seedForeignGrantRow();
+    browseRank.recompute.mockRejectedValueOnce(new Error('synthetic recompute failure'));
+    const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const result = await materializeEntity(
+      'researchEntity',
+      { entityKey: foreign.row.slug },
+      { leadEdgesOnly: true },
+    );
+    errorLog.mockRestore();
+
+    expect(result.leadEdgeResolution?.ended.map((edge) => edge.personId)).toEqual([
+      String(foreign.colead._id),
+    ]);
+    expect(result.indexSyncFailed).toBe(true);
+    expect((await edgeStates(foreign.row._id)).get(String(foreign.colead._id))).toBe('ended');
+  });
 });
