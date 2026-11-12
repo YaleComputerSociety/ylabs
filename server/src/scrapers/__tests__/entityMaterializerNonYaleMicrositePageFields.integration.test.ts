@@ -210,4 +210,74 @@ describe('a non-Yale microsite page supplies no page-derived field unless it con
     expect(first.manuallyLockedFields ?? []).toEqual([]);
     expect(second).toEqual(first);
   });
+
+  describe('a federal award record page', () => {
+    const AWARD_PAGE = 'https://reporter.nih.gov/project-details/90000001';
+    const OTHER_AWARD_PAGE = 'https://reporter.nih.gov/project-details/90000002';
+
+    const seedLeadGrant = async (url: string, investigator: Record<string, unknown>) => {
+      const leadPerson = await Researcher.findOne({ displayName: 'Quillon Varnadore' }).lean();
+      const award = {
+        id: 'R01XX900001',
+        agency: 'NIGMS',
+        title: 'Synthetic estuary award',
+        abstract: '',
+        startDate: new Date('2025-01-01T00:00:00Z'),
+        endDate: new Date('2999-01-01T00:00:00Z'),
+        dollarAmount: 1,
+        url,
+        investigators: [{ profileId: 1, researcherId: String(leadPerson?._id), ...investigator }],
+      };
+      await observe('nih-reporter', 'recentGrants', [award], 'https://reporter.nih.gov/');
+    };
+
+    it('supplies every field when the row credits the award to the lead as pi', async () => {
+      await seedLeadGrant(AWARD_PAGE, { contact: true });
+      await seedMicrositePage(AWARD_PAGE);
+      expect(await plannedPageFields()).toEqual(supplied);
+    });
+
+    it('supplies every field when the row credits the award to the lead as copi', async () => {
+      await seedLeadGrant(AWARD_PAGE, { contact: false });
+      await seedMicrositePage(AWARD_PAGE);
+      expect(await plannedPageFields()).toEqual(supplied);
+    });
+
+    it('supplies no field when the page is the record of an award the lead does not hold', async () => {
+      await seedLeadGrant(OTHER_AWARD_PAGE, { contact: true });
+      await seedMicrositePage(AWARD_PAGE);
+      expect((await plannedPageFields()).methods).toBeUndefined();
+    });
+
+    it('supplies no field when the matching award does not credit the lead', async () => {
+      await seedLeadGrant(AWARD_PAGE, { contact: true, researcherId: undefined });
+      await seedMicrositePage(AWARD_PAGE);
+      expect((await plannedPageFields()).methods).toBeUndefined();
+    });
+
+    it('judges the record by its text when the row has no grants', async () => {
+      await seedMicrositePage(AWARD_PAGE);
+      expect((await plannedPageFields()).methods).toBeUndefined();
+      await observe(
+        'research-page-text',
+        'researchPageText',
+        [{ url: AWARD_PAGE, text: 'Contact PI: Quillon Varnadore.' }],
+        AWARD_PAGE,
+      );
+      expect((await plannedPageFields()).methods).toEqual(METHODS);
+    });
+
+    it('a second materialize re-derives the same admitted fields from the same evidence', async () => {
+      await seedLeadGrant(AWARD_PAGE, { contact: true });
+      await seedMicrositePage(AWARD_PAGE);
+      await materializeEntity('researchEntity', { entityKey: SLUG }, { dryRun: false });
+      const first = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<string, any>;
+      await materializeEntity('researchEntity', { entityKey: SLUG }, { dryRun: false });
+      const second = (await ResearchEntity.findOne({ slug: SLUG }).lean()) as Record<string, any>;
+      expect(first.methods).toEqual(METHODS);
+      expect(first.manuallyLockedFields ?? []).toEqual([]);
+      expect(second.methods).toEqual(first.methods);
+      expect(second.recentGrants?.map((grant: any) => grant.role)).toEqual(['pi']);
+    });
+  });
 });

@@ -359,4 +359,28 @@ describe('the non-Yale microsite page-field screen (#5920)', () => {
     expect(withoutRefusedNonYaleMicrositePageFields(once, LEAD_NAMES)).toEqual(once);
     expect(withoutRefusedNonYaleMicrositeDescriptions(once, LEAD_NAMES)).toEqual(once);
   });
+
+  it('both screens admit the record of an award the row credits to the lead, and only that one', () => {
+    const awardPage = 'https://reporter.nih.gov/project-details/90000001';
+    const description = {
+      sourceName: 'lab-microsite-description-llm',
+      field: 'fullDescription',
+      value:
+        'This project studies how estuarine sediment moves during storm surges, combining tidal marsh cores with channel erosion models.',
+      sourceUrl: awardPage,
+    };
+    const observations = [description, ...everyPageDerivedField(awardPage)];
+    const leadAward = new Set(['nih-reporter:90000001']);
+    const otherAward = new Set(['nih-reporter:90000002']);
+    const screened = (keys: ReadonlySet<string>) =>
+      withoutRefusedNonYaleMicrositePageFields(
+        withoutRefusedNonYaleMicrositeDescriptions(observations, LEAD_NAMES, observations, keys),
+        LEAD_NAMES,
+        observations,
+        keys,
+      );
+    expect(screened(leadAward)).toEqual(observations);
+    expect(screened(otherAward)).toEqual([]);
+    expect(screened(new Set())).toEqual([]);
+  });
 });
