@@ -5,6 +5,7 @@
  * For person identities, materializes a canonical Researcher/Account (lookup by
  * entityKey, e.g. netid).
  */
+import { startLongRunProgress } from '../utils/longRunProgress';
 import {
   isPersonResearchRow,
   withLabSiteDescriptionsNarrowedToResearch,
@@ -15309,43 +15310,6 @@ export function withoutUserFieldScopeRows<T extends { userFieldScope?: UserField
   return { ...counts, userFieldScope: summary };
 }
 
-export const FIELD_SCOPE_PROGRESS_EVERY_KEYS = 250;
-export const FIELD_SCOPE_PROGRESS_EVERY_MS = 60_000;
-
-export interface FieldScopeProgressOptions {
-  everyKeys?: number;
-  everyMs?: number;
-  now?: () => number;
-  log?: (line: string) => void;
-}
-
-export function fieldScopeProgressReporter(
-  totalKeys: number,
-  {
-    everyKeys = FIELD_SCOPE_PROGRESS_EVERY_KEYS,
-    everyMs = FIELD_SCOPE_PROGRESS_EVERY_MS,
-    now = Date.now,
-    log = (line) => console.info(line),
-  }: FieldScopeProgressOptions = {},
-): (errored: boolean) => void {
-  const startedAt = now();
-  let lastLoggedAt = startedAt;
-  let done = 0;
-  let errors = 0;
-  return (errored) => {
-    done += 1;
-    if (errored) errors += 1;
-    const at = now();
-    const finished = done === totalKeys;
-    if (!finished && done % everyKeys !== 0 && at - lastLoggedAt < everyMs) return;
-    lastLoggedAt = at;
-    const elapsedSeconds = Math.round((at - startedAt) / 1000);
-    log(
-      `[field-scoped-user-materialize] ${done}/${totalKeys} keys, ${errors} error(s), ${elapsedSeconds} s elapsed`,
-    );
-  };
-}
-
 async function materializeUserRowsInFieldScope(
   rows: ReadonlyArray<{ entityType: ObservedEntityType; entityId?: string; entityKey?: string }>,
   options: MaterializeOptions,
@@ -15359,12 +15323,12 @@ async function materializeUserRowsInFieldScope(
   });
   const scopeRows: UserFieldScopeRow[] = [];
   let conflicts = 0;
-  const reportProgress = fieldScopeProgressReporter(userRows.length);
+  const progress = startLongRunProgress('field-scoped-user-materialize', userRows.length);
   const { linkedRowIndexSyncFailedEntityIds } = await materializeObservedEntitiesInChunks(
     userRows,
     options,
     (row, outcome) => {
-      reportProgress('error' in outcome);
+      progress.tick('error' in outcome);
       scopeRows.push(
         userFieldScopeRow({ entityKey: row.entityKey, entityId: row.entityId }, outcome),
       );
@@ -15372,7 +15336,7 @@ async function materializeUserRowsInFieldScope(
     },
     MATERIALIZATION_CHUNK_SIZE,
     1,
-  );
+  ).finally(() => progress.stop());
   const summary = summarizeUserFieldScopeRows(onlyFields, scopeRows);
   return {
     materialized: scopeRows.filter((row) => !row.error).length,
