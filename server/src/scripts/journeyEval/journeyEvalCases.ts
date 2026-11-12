@@ -9,7 +9,12 @@ import { researchEntitySortTitle } from '../../utils/servedResearchEntityTitle';
 import {
   buildResearchEntitySearchIndexDocument,
   MESH_DESCRIPTOR_ONLY_TERMS_FIELD,
+  researchEntitySearchResearchType,
 } from '../../services/researchEntitySearchIndexService';
+import {
+  CREATIVE_PRACTICE_RESEARCH_TYPE,
+  RESEARCH_TYPE_INDEX_FIELD,
+} from '../../services/researchGroupFilters';
 import {
   expandNicknameInResearchNameQuery,
   meiliSortEntries,
@@ -55,6 +60,8 @@ import {
   checkTopicDropAttribution,
   checkAdvisesFilterServesAMentorsEntry,
   checkHostedFilterServesTheBadge,
+  checkTypeBucketCountsAgree,
+  checkTypeBucketsServeTheirLabel,
   checkWelcomesFilterServesTheBadge,
   resolvePagesToWalk,
   scoreQueryRelevance,
@@ -71,6 +78,7 @@ import {
   type RateResult,
   type SurvivorWebsiteObservation,
   type TopicDropObservation,
+  type TypeBucketTally,
 } from './journeyEvalMetrics';
 import {
   DEFAULT_TOP_K,
@@ -84,6 +92,7 @@ export interface ServedBrowseResult {
   estimatedTotalHits?: number;
   degraded?: unknown;
   facetDistribution?: Record<string, Record<string, number>>;
+  appliedFilters?: { entityType?: string[] };
 }
 
 export interface BrowseRequest {
@@ -105,6 +114,7 @@ export type ReadIndexedSortKeysFn = (
 
 export interface LeadMemberNameRead {
   byEntityId: ReadonlyMap<string, readonly string[]>;
+  identityLeadDirectorEntityIds?: ReadonlySet<string>;
   unavailable: boolean;
 }
 
@@ -369,6 +379,132 @@ const creativePracticeLabelAttribution: JourneyCase = {
         ),
       ],
       notes: { comparedRows: tally.comparable, skippedStaleIndex: tally.skippedStaleIndex },
+    };
+  },
+};
+
+const FACULTY_RESEARCH_TYPE = 'FACULTY_RESEARCH_AREA';
+
+interface TypeBucketWalk {
+  filterTotal: number;
+  rows: Array<Record<string, unknown>>;
+  indexLacksResearchType: boolean;
+  degradedPages: number;
+}
+
+const walkTypeBucket = async (
+  context: JourneyEvalContext,
+  bucket: string,
+): Promise<TypeBucketWalk> => {
+  const reachablePages = maxReachableResearchSearchPage(context.window);
+  const walk: TypeBucketWalk = {
+    filterTotal: 0,
+    rows: [],
+    indexLacksResearchType: false,
+    degradedPages: 0,
+  };
+  for (let page = 1; page <= reachablePages; page += 1) {
+    const result = await context.browse({
+      filters: { entityType: [bucket] },
+      page,
+      pageSize: context.window,
+    });
+    if (page === 1) {
+      walk.filterTotal = result.estimatedTotalHits ?? 0;
+      walk.indexLacksResearchType = result.appliedFilters?.entityType !== undefined;
+    }
+    if (result.degraded !== false) walk.degradedPages += 1;
+    const rows = servedRows(result);
+    walk.rows.push(...rows);
+    if (walk.indexLacksResearchType) break;
+    if (rows.length < context.window || walk.rows.length >= walk.filterTotal) break;
+  }
+  return walk;
+};
+
+const rowServesCreativePractice = (row: Record<string, unknown>): boolean =>
+  row.creativePractice === true;
+
+// A mislabelled row is attributed to a stale index document when its indexed research type is
+// not the one the index builder derives from the stored row now, through the same composition.
+const countStaleIndexMislabels = async (
+  context: JourneyEvalContext,
+  mislabelled: Array<Record<string, unknown>>,
+): Promise<{ attributed: number; leadNamesUnavailable: boolean }> => {
+  if (mislabelled.length === 0) return { attributed: 0, leadNamesUnavailable: false };
+  const keys = mislabelled.map(rowKey).filter(Boolean);
+  const [stored, indexed] = await Promise.all([
+    context.readStoredRows(keys),
+    context.readIndexedSortKeys(RESEARCH_TYPE_INDEX_FIELD, keys),
+  ]);
+  const leadNames = context.readLeadMemberNames
+    ? await context.readLeadMemberNames([...stored.values()])
+    : { byEntityId: new Map<string, readonly string[]>(), unavailable: false };
+  let attributed = 0;
+  for (const key of keys) {
+    const storedRow = stored.get(key);
+    if (!storedRow) continue;
+    const entityId = String(storedRow._id ?? '');
+    const derived = researchEntitySearchResearchType(storedRow, {
+      leadMemberNames: leadNames.byEntityId.get(entityId),
+      identityLeadDirectsOrganization: leadNames.identityLeadDirectorEntityIds?.has(entityId),
+    });
+    if (indexed.get(key) !== derived) attributed += 1;
+  }
+  return { attributed, leadNamesUnavailable: leadNames.unavailable };
+};
+
+const creativePracticeTypeFacetSplit: JourneyCase = {
+  id: 'creative-practice-type-facet-split',
+  title:
+    'Type = Creative practice returns exactly the rows whose cards read creative practice, and Faculty research none of them',
+  run: async (context) => {
+    const corpusBefore = await context.readCorpusFingerprint();
+    const unfiltered = await context.browse({ page: 1, pageSize: context.window });
+    const typeFacet = unfiltered.facetDistribution?.entityType ?? {};
+    const buckets = [
+      {
+        bucket: CREATIVE_PRACTICE_RESEARCH_TYPE,
+        mislabelledWhen: (row: Record<string, unknown>) => !rowServesCreativePractice(row),
+      },
+      { bucket: FACULTY_RESEARCH_TYPE, mislabelledWhen: rowServesCreativePractice },
+    ];
+    const tallies: TypeBucketTally[] = [];
+    let indexLacksResearchType = false;
+    let leadNamesUnavailable = false;
+    let degradedPages = 0;
+    for (const { bucket, mislabelledWhen } of buckets) {
+      const walk = await walkTypeBucket(context, bucket);
+      indexLacksResearchType ||= walk.indexLacksResearchType;
+      degradedPages += walk.degradedPages;
+      const mislabelled = walk.rows.filter(mislabelledWhen);
+      const staleIndex = await countStaleIndexMislabels(context, mislabelled);
+      leadNamesUnavailable ||= staleIndex.leadNamesUnavailable;
+      tallies.push({
+        bucket,
+        facetCount: typeFacet[bucket] ?? 0,
+        filterTotal: walk.filterTotal,
+        served: walk.rows.length,
+        mislabelled: mislabelled.length,
+        attributedToStaleIndex: staleIndex.attributed,
+      });
+    }
+    const corpusAfter = await context.readCorpusFingerprint();
+    const read = { tallies, indexLacksResearchType, leadNamesUnavailable };
+
+    return {
+      invariants: [
+        checkTypeBucketsServeTheirLabel(read, corpusBefore, corpusAfter),
+        checkTypeBucketCountsAgree(read, corpusBefore, corpusAfter),
+        buildInvariant(
+          'type-bucket-browse-is-not-degraded',
+          'A browse filtered to a Type bucket does not fall back to a degraded search path',
+          degradedPages === 0,
+          { degradedPages },
+        ),
+      ],
+      rates: [],
+      notes: { indexLacksResearchType },
     };
   },
 };
@@ -1640,6 +1776,7 @@ export const journeyCases: readonly JourneyCase[] = [
   coldBrowseCardContract,
   topicDropAttribution,
   creativePracticeLabelAttribution,
+  creativePracticeTypeFacetSplit,
   welcomesFilterServesTheBadge,
   hostedFilterServesTheBadge,
   advisesFilterServesAMentorsEntry,

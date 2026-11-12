@@ -15,7 +15,7 @@ import {
   stripLeadingPageChrome,
   neutralizeFirstPersonResearchCopy,
   sanitizeResearchEntityCopy,
-  isKnownResearchEntityType,
+  isKnownResearchTypeFilterValue,
   researchEntityTypeFilterLabel,
   summarySectionLabel,
   leadRoleLabelForEntity,
@@ -483,23 +483,33 @@ describe('relationshipTypeLabel', () => {
 // value through this accept-list, so drift from the canonical enum shows up as a
 // silently smaller type universe rather than an error (#2195).
 describe('research entity type filter axis', () => {
-  it('accepts exactly the canonical entity-type enum', () => {
-    expect(researchEntityTypes.filter((value) => !isKnownResearchEntityType(value))).toEqual([]);
+  it('accepts exactly the canonical entity-type enum plus creative practice', () => {
+    expect(researchEntityTypes.filter((value) => !isKnownResearchTypeFilterValue(value))).toEqual(
+      [],
+    );
+    expect(isKnownResearchTypeFilterValue('CREATIVE_PRACTICE')).toBe(true);
+  });
+
+  it('labels the creative practice bucket with the label its cards carry (#5141)', () => {
+    expect(researchEntityTypeFilterLabel('CREATIVE_PRACTICE')).toBe(
+      entityKindLabel({ entityType: 'FACULTY_RESEARCH_AREA', creativePractice: true }),
+    );
   });
 
   it('rejects a retired type, a typo, and an absent value', () => {
-    expect(isKnownResearchEntityType('FACULTY_RESEARCH')).toBe(false);
-    expect(isKnownResearchEntityType('INDIVIDUAL_RESEARCH')).toBe(false);
-    expect(isKnownResearchEntityType('CORE_FACILTY')).toBe(false);
-    expect(isKnownResearchEntityType('')).toBe(false);
-    expect(isKnownResearchEntityType(undefined)).toBe(false);
-    expect(isKnownResearchEntityType(null)).toBe(false);
+    expect(isKnownResearchTypeFilterValue('FACULTY_RESEARCH')).toBe(false);
+    expect(isKnownResearchTypeFilterValue('INDIVIDUAL_RESEARCH')).toBe(false);
+    expect(isKnownResearchTypeFilterValue('CORE_FACILTY')).toBe(false);
+    expect(isKnownResearchTypeFilterValue('')).toBe(false);
+    expect(isKnownResearchTypeFilterValue(undefined)).toBe(false);
+    expect(isKnownResearchTypeFilterValue(null)).toBe(false);
   });
 
   it('gives every accepted type one distinct label', () => {
-    const labels = researchEntityTypes.map((value) => researchEntityTypeFilterLabel(value));
+    const values = [...researchEntityTypes, 'CREATIVE_PRACTICE'];
+    const labels = values.map((value) => researchEntityTypeFilterLabel(value));
     expect(labels.some((label) => label.trim() === '')).toBe(false);
-    expect(new Set(labels).size).toBe(researchEntityTypes.length);
+    expect(new Set(labels).size).toBe(values.length);
   });
 
   it('falls back to the raw value rather than a generic label it cannot justify', () => {

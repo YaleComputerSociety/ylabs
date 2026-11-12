@@ -87,6 +87,7 @@ const indexHit = (id: string, position: number) => ({
   id,
   kind: 'lab',
   entityType: entityTypeOf(id),
+  researchType: entityTypeOf(id),
   schools: ['Synthetic School'],
   departments: ['Synthetic Department'],
   researchAreas: ['Coastal Ecology'],

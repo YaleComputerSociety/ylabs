@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
   buildResearchGroupFilterString,
   candidateMatchesStudentFilters,
+  entityTypesForStoredRows,
   tallyCandidateFacetDistribution,
+  withResearchTypeFilter,
 } from '../researchGroupFilters';
 
 describe('buildResearchGroupFilterString', () => {
@@ -376,5 +378,72 @@ describe('candidateMatchesStudentFilters with worksWithUndergrads (#5362)', () =
         },
       ),
     ).toBe(true);
+  });
+});
+
+describe('the Type filter on the derived research type (#5141)', () => {
+  const pooled = [
+    { id: 'practice', entityType: 'FACULTY_RESEARCH_AREA', researchType: 'CREATIVE_PRACTICE' },
+    { id: 'research', entityType: 'FACULTY_RESEARCH_AREA', researchType: 'FACULTY_RESEARCH_AREA' },
+    { id: 'lab', entityType: 'LAB', researchType: 'LAB' },
+  ];
+  const matchedIds = (filters: Parameters<typeof withResearchTypeFilter>[0]) =>
+    pooled
+      .filter((candidate) => candidateMatchesStudentFilters(candidate, filters))
+      .map((candidate) => candidate.id);
+
+  it('reads creative practice from the research type field', () => {
+    const filters = withResearchTypeFilter({ entityType: ['CREATIVE_PRACTICE'] }, true);
+
+    expect(buildResearchGroupFilterString(filters)).toBe(
+      'archived = false AND (researchType = "CREATIVE_PRACTICE")',
+    );
+    expect(matchedIds(filters)).toEqual(['practice']);
+  });
+
+  it('leaves the creative practice rows out of faculty research', () => {
+    const filters = withResearchTypeFilter({ entityType: ['FACULTY_RESEARCH_AREA'] }, true);
+
+    expect(buildResearchGroupFilterString(filters)).toBe(
+      'archived = false AND (researchType = "FACULTY_RESEARCH_AREA")',
+    );
+    expect(matchedIds(filters)).toEqual(['research']);
+  });
+
+  it('keeps the entity type filter, minus creative practice, on an index without the field', () => {
+    const filters = withResearchTypeFilter(
+      { entityType: ['CREATIVE_PRACTICE', 'LAB'], departments: ['Music'] },
+      false,
+    );
+
+    expect(filters).toEqual({ entityType: ['LAB'], departments: ['Music'] });
+    expect(buildResearchGroupFilterString(filters)).toBe(
+      'archived = false AND (entityType = "LAB") AND (departments = "Music")',
+    );
+  });
+
+  it('changes nothing when creative practice was the only type asked of an older index', () => {
+    const filters = withResearchTypeFilter({ entityType: ['creative_practice'] }, false);
+
+    expect(buildResearchGroupFilterString(filters)).toBe('archived = false');
+    expect(matchedIds(filters)).toEqual(['practice', 'research', 'lab']);
+  });
+
+  it('tallies one Type bucket per row, so the counts partition the pool', () => {
+    const distribution = tallyCandidateFacetDistribution(pooled, {}, [
+      { filterKey: 'researchType', indexField: 'researchType' },
+    ]);
+
+    expect(distribution.researchType).toEqual({
+      CREATIVE_PRACTICE: 1,
+      FACULTY_RESEARCH_AREA: 1,
+      LAB: 1,
+    });
+  });
+
+  it('widens creative practice to faculty research for a Mongo read, which stores no label', () => {
+    expect(entityTypesForStoredRows(['CREATIVE_PRACTICE', 'FACULTY_RESEARCH_AREA', 'LAB'])).toEqual(
+      ['FACULTY_RESEARCH_AREA', 'LAB'],
+    );
   });
 });

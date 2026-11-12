@@ -202,8 +202,10 @@ export interface ResearchGroupSearchResponse {
   queryCorrection?: ResearchSearchQueryCorrection;
   acronymRewrite?: ResearchSearchAcronymRewrite;
   // Set when the server changed a school or department filter value: it maps a value
-  // to the spelling the corpus holds and drops one no row holds.
+  // to the spelling the corpus holds and drops one no row holds. A type the live index
+  // cannot filter on yet comes back as the types it did apply (#5141).
   appliedFilters?: {
+    entityType?: string[];
     school?: string[];
     departments?: string[];
     welcomesUndergrads?: false;

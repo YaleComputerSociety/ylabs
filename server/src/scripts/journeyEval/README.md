@@ -91,6 +91,10 @@ A card that serves the label where the decision does not, or drops it where the 
 The share of cards labelled is a rate and never gates.
 Change the label inside `decideCreativePractice` in `server/src/utils/creativePracticeDescription.ts`, never at one surface, or this case reports the surfaces as disagreeing.
 
+The `creative-practice-type-facet-split` case walks every page of a browse filtered to Type = Creative practice and of one filtered to Faculty research, and asserts that every Creative practice row serves `creativePractice: true`, that no Faculty research row does, and that each filtered total equals its count in the unfiltered Type facet (#5141).
+A mislabelled row is attributed to a stale index document when its indexed `researchType` is not the one `researchEntitySearchResearchType` derives from the stored row now; only an unattributed one fails, and an attributed one makes the case inconclusive with a re-sync as the remedy.
+Both invariants are inconclusive when the live index does not yet declare `researchType` filterable, which the route reports through `appliedFilters.entityType` on the Creative practice browse, and when the corpus moved during a walk that disagreed.
+
 ## The default browse order is repeatable
 
 The `default-browse-order-is-repeatable` case walks the no-query browse twice and fails when the second walk serves a different order over an unchanged corpus (#4547).

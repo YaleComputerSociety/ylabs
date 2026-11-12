@@ -60,7 +60,7 @@ import type {
   ResearchSearchQueryCorrection,
 } from '../types/researchGroup';
 import { getUniqueDepartmentLabels } from '../utils/departmentNames';
-import { isKnownResearchEntityType } from '../utils/researchEntityCopy';
+import { isKnownResearchTypeFilterValue } from '../utils/researchEntityCopy';
 import { relaxResearchQuery } from '../utils/researchZeroResultRecovery';
 import { scrollViewportToTop } from '../utils/scrollViewportToTop';
 import { scrollBehavior } from '../utils/scrollBehavior';
@@ -153,7 +153,7 @@ const RETIRED_WORKS_WITH_UNDERGRADS_PARAM = 'works';
 
 const readEntityTypeParam = (params: URLSearchParams): string => {
   const value = (params.get('type') || '').trim();
-  return isKnownResearchEntityType(value) ? value : '';
+  return isKnownResearchTypeFilterValue(value) ? value : '';
 };
 
 const emptyGroupedResults = (query: string): GroupedResearchResults =>
@@ -948,7 +948,9 @@ const Research = () => {
         const department = appliedFilters.departments
           ? (appliedFilters.departments[0] ?? '')
           : (filters.departments?.[0] ?? '');
-        const entityType = filters.entityType?.[0] ?? '';
+        const entityType = appliedFilters.entityType
+          ? (appliedFilters.entityType[0] ?? '')
+          : (filters.entityType?.[0] ?? '');
         const hostsUndergrads = filters.hostsUndergrads === true;
         const welcomesUndergrads =
           filters.welcomesUndergrads === true && appliedFilters.welcomesUndergrads !== false;
@@ -962,6 +964,7 @@ const Research = () => {
           ...(welcomesUndergrads ? { welcomesUndergrads: true } : {}),
           ...(mentorsUndergrads ? { mentorsUndergrads: true } : {}),
         };
+        setSelectedEntityType(entityType);
         setSelectedSchool(school);
         setSelectedDepartment(department);
         setSelectedWelcomesUndergrads(welcomesUndergrads);

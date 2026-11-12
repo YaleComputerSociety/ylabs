@@ -14,6 +14,7 @@ type VocabularyFilterKey = (typeof VOCABULARY_FIELDS)[number]['filterKey'];
 export type ResearchFilterVocabulary = Record<VocabularyFilterKey, ReadonlyMap<string, string>>;
 
 export type AppliedStudentFilters = Partial<Record<VocabularyFilterKey, string[]>> & {
+  entityType?: string[];
   welcomesUndergrads?: false;
   mentorsUndergrads?: false;
   worksWithUndergrads?: false;

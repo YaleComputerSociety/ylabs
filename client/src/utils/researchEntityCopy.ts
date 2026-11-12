@@ -102,16 +102,26 @@ export const entityKindLabel = (entity?: ResearchEntityCopyInput | null): string
   return KIND_LABELS[effectiveEntityKind(entity)] || 'Research';
 };
 
+export const CREATIVE_PRACTICE_TYPE_FILTER_VALUE = 'CREATIVE_PRACTICE';
+
+const researchTypeFilterValues: readonly string[] = [
+  ...researchEntityTypes,
+  CREATIVE_PRACTICE_TYPE_FILTER_VALUE,
+];
+
+type ResearchTypeFilterValue = ResearchEntityType | typeof CREATIVE_PRACTICE_TYPE_FILTER_VALUE;
+
 /**
  * The Type filter axis needs one distinct label per stored type, which is a
  * different job from `entityKindLabel`: two types can share a kind
  * (`FACULTY_RESEARCH_AREA` and `FACULTY_PROJECT` are both `individual`), so a
  * kind label would put two options with identical text in the same select. The
- * axis also only accepts the canonical `researchEntityTypes` enum, never the
- * retired values `ENTITY_TYPE_TO_KIND` still labels for unmigrated rows (#2219),
- * because a filter value has to round-trip through the `?type=` URL param.
+ * axis also only accepts the canonical `researchEntityTypes` enum plus the
+ * creative practice bucket the index derives from the served body (#5141), never
+ * the retired values `ENTITY_TYPE_TO_KIND` still labels for unmigrated rows
+ * (#2219), because a filter value has to round-trip through the `?type=` URL param.
  */
-const RESEARCH_ENTITY_TYPE_FILTER_LABELS: Record<ResearchEntityType, string> = {
+const RESEARCH_ENTITY_TYPE_FILTER_LABELS: Record<ResearchTypeFilterValue, string> = {
   LAB: 'Lab',
   CENTER: 'Center',
   INSTITUTE: 'Institute',
@@ -119,19 +129,20 @@ const RESEARCH_ENTITY_TYPE_FILTER_LABELS: Record<ResearchEntityType, string> = {
   FACULTY_PROJECT: 'Faculty project',
   INITIATIVE: 'Initiative',
   CORE_FACILITY: 'Core facility',
+  CREATIVE_PRACTICE: CREATIVE_PRACTICE_KIND_LABEL,
 };
 
-// `researchEntityTypes` rather than the label map's keys, so the accept-list has
-// one source, and `includes` rather than `Object.hasOwn`, which is ES2022 while
+// A fixed list rather than the label map's keys, so the accept-list has one
+// source, and `includes` rather than `Object.hasOwn`, which is ES2022 while
 // Vite's default `modules` build target floors at es2020 and esbuild does not
 // polyfill a built-in method: this runs on every browse facet response, so an
 // ES2022 built-in here takes the Research page down on Safari 14 rather than
 // degrading.
-export const isKnownResearchEntityType = (value?: string | null): boolean =>
-  researchEntityTypes.includes(value as ResearchEntityType);
+export const isKnownResearchTypeFilterValue = (value?: string | null): boolean =>
+  researchTypeFilterValues.includes(value ?? '');
 
 export const researchEntityTypeFilterLabel = (entityType: string): string =>
-  RESEARCH_ENTITY_TYPE_FILTER_LABELS[entityType as ResearchEntityType] || entityType;
+  RESEARCH_ENTITY_TYPE_FILTER_LABELS[entityType as ResearchTypeFilterValue] || entityType;
 
 export const researchWebsiteLabel = (entity?: ResearchEntityCopyInput | null): string => {
   if (isCreativePracticeEntity(entity)) return 'website';
