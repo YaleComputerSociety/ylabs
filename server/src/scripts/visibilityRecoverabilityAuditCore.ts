@@ -45,6 +45,7 @@ export type RecoverabilityBucket = (typeof RECOVERABILITY_BUCKETS)[number];
 export const DECISION_BLOCKERS = new Set([
   'duplicate_risk',
   'exact_url_duplicate_risk',
+  'lead_is_staff_of_served_lab',
   'operator_override',
   'permanently_closed',
   'researcher_removed',

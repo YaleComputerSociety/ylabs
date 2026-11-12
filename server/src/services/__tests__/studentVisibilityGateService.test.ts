@@ -31,6 +31,7 @@ import {
   type StudentVisibilityGatePlan,
 } from '../studentVisibilityGateService';
 import { sourceCoverageRegistry } from '../../scrapers/sourceCoverageRegistry';
+import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
 import {
   buildResearchEntityPiDedupePlan,
   samePiDuplicateEntityIdsRestrictedToPiLed,
@@ -785,6 +786,62 @@ describe('studentVisibilityGateService', () => {
         duplicateRiskEntityIds,
       }),
     ]).toEqual(['atoz-owner']);
+  });
+
+  describe('a wrong_owner refusal of a url ends its claim in a duplicate contest (#5858)', () => {
+    const contestedUrl = 'https://example.edu/lab/coastal-sediment/';
+    const siteOwner = {
+      _id: 'site-owner',
+      slug: 'coastal-sediment-lab',
+      name: 'Coastal Sediment Lab',
+      entityType: 'LAB',
+      kind: 'lab',
+      websiteUrl: contestedUrl,
+    };
+    const refusal = (overrides: Record<string, unknown> = {}) => ({
+      valueKey: fieldValueRefusalKey('websiteUrl', contestedUrl),
+      rule: 'wrong_owner',
+      refusedBy: 'synthetic-operator',
+      refusedAt: new Date('2026-11-01T00:00:00Z'),
+      note: 'synthetic refusal',
+      ...overrides,
+    });
+    const citer = (refusals?: unknown[]) => ({
+      _id: 'refused-citer',
+      slug: 'coastal-sediment-staff-profile',
+      name: 'Coastal Sediment Staff Research',
+      entityType: 'LAB',
+      kind: 'lab',
+      sourceUrls: [contestedUrl],
+      ...(refusals ? { fieldValueRefusals: { websiteUrl: refusals } } : {}),
+    });
+    const groupedIds = (entities: any[]) =>
+      exactDuplicateUrlGroups(entities).map((group) =>
+        group.members.map((member: any) => member._id).sort(),
+      );
+
+    it('groups a row citing the site with the row that owns it when nothing is refused', () => {
+      expect(groupedIds([siteOwner, citer()])).toEqual([['refused-citer', 'site-owner']]);
+    });
+
+    it('does not group a row whose live wrong_owner refusal names the site it still cites', () => {
+      expect(groupedIds([siteOwner, citer([refusal()])])).toEqual([]);
+    });
+
+    it('keeps the pair grouped when the wrong_owner refusal was withdrawn', () => {
+      expect(
+        groupedIds([
+          siteOwner,
+          citer([refusal({ withdrawnAt: new Date('2026-11-05T00:00:00Z') })]),
+        ]),
+      ).toEqual([['refused-citer', 'site-owner']]);
+    });
+
+    it('keeps the pair grouped when the refusal carries a rule other than wrong_owner', () => {
+      expect(groupedIds([siteOwner, citer([refusal({ rule: 'confirmed_dead_page' })])])).toEqual([
+        ['refused-citer', 'site-owner'],
+      ]);
+    });
   });
 
   describe('a lead lab and a lead-less row carrying its name', () => {

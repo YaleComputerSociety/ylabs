@@ -101,6 +101,7 @@ export interface ResearchEntityStudentVisibilityInput {
   citationsSharedAcrossPersonRows?: boolean;
   relatedEntityAccessPathCount?: number;
   everyLeadRemovedByRequest?: boolean;
+  leadIsStaffOfServedLab?: boolean;
   /**
    * The one corpus fact the name-identity authority cannot derive from one record,
    * supplied here for the same reason `ResearchEntityNameIdentityAuthority` supplies
@@ -983,6 +984,11 @@ export const BIOGRAPHY_WITHOUT_RESEARCH_REASON = 'biography_without_research';
 // #4928). Separate from `biography_without_research` so each detector's hold is counted.
 export const CAREER_BIOGRAPHY_WITHOUT_RESEARCH_REASON = 'career_biography_without_research';
 
+// A row whose lead holds only a staff title and which links to another served row that
+// already represents the lab (#5876). Derived on every gate run by
+// `selectLeadIsStaffOfServedLabEntityIds`, because it compares rows and cannot be seen from one.
+export const LEAD_IS_STAFF_OF_SERVED_LAB_REASON = 'lead_is_staff_of_served_lab';
+
 // HARD blockers: genuine correctness/quality failures that would MISLEAD a
 // student, so any one holds a card out of `student_ready`. Grouped by the
 // correctness category each belongs to. The structural suppression shells
@@ -1002,6 +1008,7 @@ export const STUDENT_READY_HARD_BLOCKER_REASONS: ReadonlySet<string> = new Set([
   'unusable_name',
   'duplicate_risk',
   'exact_url_duplicate_risk',
+  LEAD_IS_STAFF_OF_SERVED_LAB_REASON,
   'profile_identity_risk',
   'generic_directory_shell',
   'profile_biography_shell',
@@ -1108,6 +1115,7 @@ export function computeResearchEntityStudentVisibility({
   citationsSharedAcrossPersonRows = false,
   relatedEntityAccessPathCount = 0,
   everyLeadRemovedByRequest = false,
+  leadIsStaffOfServedLab = false,
   knownPersonSurnames = NO_SURNAME_ROSTER,
 }: ResearchEntityStudentVisibilityInput): StudentVisibilityResult {
   const publicDescription = buildResearchEntityPublicDescriptionRepresentation({
@@ -1275,6 +1283,7 @@ export function computeResearchEntityStudentVisibility({
   if (everyLeadRemovedByRequest) reasons.push(RESEARCHER_REMOVED_REASON);
   if (exactUrlDuplicateRisk) reasons.push('exact_url_duplicate_risk');
   if (duplicateRisk || exactUrlDuplicateRisk) reasons.push('duplicate_risk');
+  if (leadIsStaffOfServedLab) reasons.push(LEAD_IS_STAFF_OF_SERVED_LAB_REASON);
   // `source_backed_description` is the one signal that claims a source backs the copy,
   // and `descriptionState` derives it from copy QUALITY alone - nothing in it consults
   // the cited page. So a description whose citation had died kept asserting the claim
@@ -1367,6 +1376,7 @@ export function computeResearchEntityStudentVisibility({
     uncorroboratedGrantOnly ||
     permanentlyClosed ||
     everyLeadRemovedByRequest ||
+    leadIsStaffOfServedLab ||
     reasons.includes('research_infrastructure_only')
   ) {
     computedTier = 'suppressed';

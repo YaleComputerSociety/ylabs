@@ -52,6 +52,7 @@ import {
   hasProfileAreaShellDuplicateRisk,
   isStudentReadyHardBlockerReason,
   isStudentVisibilitySignalReason,
+  LEAD_IS_STAFF_OF_SERVED_LAB_REASON,
   PUBLIC_DESCRIPTION_INVARIANT_FAILED_REASON,
 } from './studentVisibilityTier';
 import { loadKnownPersonSurnameRoster } from '../utils/researchHomeNameIdentityRoster';
@@ -79,6 +80,11 @@ import {
   officialProfileUrlFromRosterEntry,
 } from './leadProfileIdentity';
 import { nameDenotesOrganization } from '../utils/researchHomeNameIdentityAuthority';
+import {
+  liveFieldValueRefusals,
+  refusedValueRule,
+} from '../utils/researchEntityFieldValueRefusals';
+import { statesResearchOwningAppointment } from '../utils/researchHomeOwnership';
 import { servableOrcid } from '../utils/orcid';
 import {
   RE_DERIVED_ACCESS_SIGNAL_TYPES,
@@ -162,6 +168,7 @@ export interface ResearchEntityGateRowInput {
   citationsSharedAcrossPersonRows: boolean;
   relatedEntityAccessPathCount: number;
   everyLeadRemovedByRequest?: boolean;
+  leadIsStaffOfServedLab?: boolean;
 }
 
 export interface VisibilityQueueUpsert {
@@ -258,6 +265,7 @@ export const SUPPRESSION_REPAIR_REASONS: ReadonlySet<string> = new Set([
   PRIZE_FOR_COMPLETED_WORK_REASON,
   PROGRAM_LISTING_PAGE_REASON,
   'exact_url_duplicate_risk',
+  LEAD_IS_STAFF_OF_SERVED_LAB_REASON,
   'generic_directory_shell',
   'inactive_at_yale',
   'non_owner_grant_shell',
@@ -292,7 +300,7 @@ export const REVIEW_EXCEPTION_REPAIR_REASONS: ReadonlySet<string> = new Set(['fo
 // citation is a known 404. Composing the shared list means a future gate input is
 // inherited instead of waiting to be noticed a fourth time.
 export const researchEntityGateProjection = withPublicDescriptionGateFields(
-  '_id slug name displayName kind entityType website websiteUrl profileUrls sourceUrls sourceLinkHealth descriptionGrounding departments researchAreas shortDescription fullDescription profileSynthesisDescription descriptionSource activeAtYaleCache yaleStatusCache studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons studentVisibilitySuppressionReason leadVerification',
+  '_id slug name displayName kind entityType website websiteUrl profileUrls sourceUrls fieldValueRefusals sourceLinkHealth descriptionGrounding departments researchAreas shortDescription fullDescription profileSynthesisDescription descriptionSource activeAtYaleCache yaleStatusCache studentVisibilityTier studentVisibilityComputedTier studentVisibilityOverrideTier studentVisibilityReasons studentVisibilitySuppressionReason leadVerification',
 );
 
 /**
@@ -590,7 +598,7 @@ const isSchoolLandingPage = (url: URL, path: string): boolean =>
   Object.hasOwn(SCHOOL_PROFILE_HOSTS, hostWithoutWww(url.hostname)) &&
   schoolLandingPagePath.test(path);
 
-function normalizedExactDuplicateUrl(value: unknown): string {
+export function normalizedExactDuplicateUrl(value: unknown): string {
   const raw = unwrapMicrosoftSafeLinksUrl(value);
   if (!/^https?:\/\//i.test(raw)) return '';
   try {
@@ -643,6 +651,178 @@ const entityDuplicateUrls = (entity: any): string[] =>
       ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
     ]).map(normalizedExactDuplicateUrl),
   ).filter(isSpecificDuplicateSignalUrl);
+
+const WEBSITE_REFUSAL_FIELDS = ['websiteUrl', 'website'] as const;
+
+const refusesUrlAsWrongOwner = (entity: any, url: unknown): boolean =>
+  WEBSITE_REFUSAL_FIELDS.some(
+    (field) => refusedValueRule(entity.fieldValueRefusals, field, url) === 'wrong_owner',
+  );
+
+const hasWrongOwnerWebsiteRefusal = (entity: any): boolean =>
+  WEBSITE_REFUSAL_FIELDS.some((field) =>
+    liveFieldValueRefusals(entity.fieldValueRefusals, field).some(
+      (refusal) => refusal?.rule === 'wrong_owner',
+    ),
+  );
+
+const urlsRefusedAsWrongOwner = (entity: any): Set<string> =>
+  new Set(
+    uniqueStrings([
+      entity.websiteUrl,
+      entity.website,
+      ...(Array.isArray(entity.sourceUrls) ? entity.sourceUrls : []),
+    ])
+      .filter((value) => refusesUrlAsWrongOwner(entity, value))
+      .map(normalizedExactDuplicateUrl),
+  );
+
+// A row refused as the wrong owner of a URL still cites it, because the materializer
+// carries `sourceUrls` forward, but the refusal says the address is not this row's, so
+// the citation makes it no party to a contest over that address (#5858).
+const entityClaimedDuplicateUrls = (entity: any): string[] => {
+  const refused = urlsRefusedAsWrongOwner(entity);
+  return entityDuplicateUrls(entity).filter((url) => !refused.has(url));
+};
+
+export interface LeadIsStaffOfServedLabInput {
+  entities: readonly any[];
+  leadsByEntityId: ReadonlyMap<string, readonly any[]>;
+  rosterByEntityId: ReadonlyMap<string, readonly any[]>;
+  servedEntityIds: ReadonlySet<string>;
+  candidateEntityIds: Iterable<string>;
+}
+
+export type LeadIsStaffOfServedLabArm = 'website' | 'wrong_owner_refusal' | 'role_edge';
+
+export interface LeadIsStaffOfServedLabLink {
+  entityId: string;
+  arm: LeadIsStaffOfServedLabArm;
+}
+
+const gateLeadTitle = (lead: any): string =>
+  String(lead?.title || lead?.user?.title || '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const leadIsStaffTitled = (lead: any): boolean => {
+  const title = gateLeadTitle(lead);
+  return Boolean(title) && !statesResearchOwningAppointment(title);
+};
+
+const entityOwnSiteUrls = (entity: any): string[] =>
+  uniqueStrings([entity.websiteUrl, entity.website]);
+
+const entityNormalizedOwnSites = (entity: any): string[] =>
+  uniqueStrings(entityOwnSiteUrls(entity).map(normalizedExactDuplicateUrl)).filter(
+    isSpecificDuplicateSignalUrl,
+  );
+
+const STAFF_ROLE = 'staff';
+const LAB_ENTITY_TYPE = 'LAB';
+
+/**
+ * The served rows each candidate links to through the #5876 arms: its own website is
+ * that row's site, a live `wrong_owner` refusal on its website names that row's site, or
+ * its lead holds a staff edge on that row or any edge on a lab. Exported so a partial
+ * gate run can find the rows outside its page whose tiers it must know first.
+ */
+export function leadIsStaffOfServedLabLinks({
+  entities,
+  leadsByEntityId,
+  rosterByEntityId,
+  servedEntityIds,
+  candidateEntityIds,
+}: LeadIsStaffOfServedLabInput): Map<string, LeadIsStaffOfServedLabLink[]> {
+  const entityById = new Map(
+    entities.map((entity) => [studentVisibilityGateDocumentId(entity._id), entity]),
+  );
+  const servedSites = [...servedEntityIds]
+    .map((servedId) => ({ servedId, entity: entityById.get(servedId) }))
+    .filter(({ entity }) => entity && entityNormalizedOwnSites(entity).length > 0)
+    .map(({ servedId, entity }) => ({
+      servedId,
+      rawSites: entityOwnSiteUrls(entity),
+      normalizedSites: entityNormalizedOwnSites(entity),
+    }));
+  const servedIdsBySite = new Map<string, string[]>();
+  for (const { servedId, normalizedSites } of servedSites) {
+    for (const site of normalizedSites) {
+      servedIdsBySite.set(site, [...(servedIdsBySite.get(site) || []), servedId]);
+    }
+  }
+  const edgesByPersonId = new Map<string, Array<{ entityId: string; role: string }>>();
+  for (const [entityId, entries] of rosterByEntityId) {
+    for (const entry of entries) {
+      if (entry?.state === 'HISTORICAL') continue;
+      const personId = studentVisibilityGateDocumentId(entry?.personId);
+      if (!personId) continue;
+      edgesByPersonId.set(personId, [
+        ...(edgesByPersonId.get(personId) || []),
+        { entityId, role: String(entry.role || '') },
+      ]);
+    }
+  }
+
+  const linksByEntityId = new Map<string, LeadIsStaffOfServedLabLink[]>();
+  for (const id of new Set(candidateEntityIds)) {
+    const entity = entityById.get(id);
+    const leads = leadsByEntityId.get(id) || [];
+    if (!entity || leads.length === 0 || !leads.every(leadIsStaffTitled)) continue;
+    const links: LeadIsStaffOfServedLabLink[] = [];
+    for (const site of entityNormalizedOwnSites(entity)) {
+      for (const servedId of servedIdsBySite.get(site) || []) {
+        links.push({ entityId: servedId, arm: 'website' });
+      }
+    }
+    if (hasWrongOwnerWebsiteRefusal(entity)) {
+      for (const { servedId, rawSites } of servedSites) {
+        if (rawSites.some((site) => refusesUrlAsWrongOwner(entity, site))) {
+          links.push({ entityId: servedId, arm: 'wrong_owner_refusal' });
+        }
+      }
+    }
+    for (const lead of leads) {
+      for (const edge of edgesByPersonId.get(studentVisibilityGateDocumentId(lead.userId)) || []) {
+        if (!servedEntityIds.has(edge.entityId)) continue;
+        const target = entityById.get(edge.entityId);
+        if (edge.role === STAFF_ROLE || target?.entityType === LAB_ENTITY_TYPE) {
+          links.push({ entityId: edge.entityId, arm: 'role_edge' });
+        }
+      }
+    }
+    const linksToOthers = links.filter((link) => link.entityId !== id);
+    if (linksToOthers.length > 0) linksByEntityId.set(id, linksToOthers);
+  }
+  return linksByEntityId;
+}
+
+/**
+ * Rows held because the lead holds only a staff title and the row links to another
+ * served row that already represents the lab (#5876). A pair that links each other is
+ * left alone, because neither row is then the one that represents the lab. Derived on
+ * every gate run from the pass's own tiers, so it writes nothing and takes no lock.
+ */
+export function selectLeadIsStaffOfServedLabEntityIds(
+  input: LeadIsStaffOfServedLabInput,
+): Set<string> {
+  const candidateLinks = leadIsStaffOfServedLabLinks(input);
+  const linkedEntityIds = uniqueStrings(
+    [...candidateLinks.values()].flat().map((link) => link.entityId),
+  );
+  const reverseLinks = leadIsStaffOfServedLabLinks({
+    ...input,
+    candidateEntityIds: linkedEntityIds,
+  });
+  const held = new Set<string>();
+  for (const [id, links] of candidateLinks) {
+    const unreciprocated = links.some(
+      (link) => !(reverseLinks.get(link.entityId) || []).some((back) => back.entityId === id),
+    );
+    if (unreciprocated) held.add(id);
+  }
+  return held;
+}
 
 /**
  * Sources that publish a research home's own address, so they assert which row
@@ -898,7 +1078,7 @@ const membersClaimingUrl = (url: string, members: any[]): any[] => {
 export const exactDuplicateUrlGroups = (entities: any[]): ExactDuplicateUrlGroup[] => {
   const entitiesByUrl = new Map<string, any[]>();
   for (const entity of entities) {
-    for (const url of entityDuplicateUrls(entity)) {
+    for (const url of entityClaimedDuplicateUrls(entity)) {
       entitiesByUrl.set(url, [...(entitiesByUrl.get(url) || []), entity]);
     }
   }
@@ -1985,11 +2165,13 @@ const orderedByGateLabel = <T extends Record<string, any>>(
     return left < right ? -1 : 1;
   });
 
+type ResearchEntityGatePlanOptions = Pick<
+  StudentVisibilityGateOptions,
+  'sourceName' | 'recordIds' | 'limit' | 'suppressDuplicateRisk'
+> & { withoutLeadIsStaffOfServedLabHold?: boolean };
+
 async function planResearchEntityGateUpdates(
-  options: Pick<
-    StudentVisibilityGateOptions,
-    'sourceName' | 'recordIds' | 'limit' | 'suppressDuplicateRisk'
-  >,
+  options: ResearchEntityGatePlanOptions,
 ): Promise<StudentVisibilityGatePlan[]> {
   const match: Record<string, any> = { archived: { $ne: true } };
   if (options.recordIds?.length) match._id = { $in: options.recordIds };
@@ -2100,11 +2282,13 @@ async function planResearchEntityGateUpdates(
 
   const leadRows = buildGateLeadRows(rosterByEntityId);
   const duplicateReferenceRosterByEntityId = needsDuplicateReferenceCorpus
-    ? rosterWithoutWithheldPeople(
-        await getResearchEntityRosterByEntityId(
-          duplicateReferenceEntities.map((entity: any) => entity._id),
+    ? await rostersWithDepartedLeadsRetired(
+        rosterWithoutWithheldPeople(
+          await getResearchEntityRosterByEntityId(
+            duplicateReferenceEntities.map((entity: any) => entity._id),
+          ),
+          serving,
         ),
-        serving,
       )
     : rosterByEntityId;
   const duplicateReferenceLeadRows = needsDuplicateReferenceCorpus
@@ -2275,7 +2459,7 @@ async function planResearchEntityGateUpdates(
     duplicateRiskEntityIds,
   });
 
-  return entities.map((entity: any) => {
+  const planEntity = (entity: any, leadIsStaffOfServedLab: boolean): StudentVisibilityGatePlan => {
     const recordId = studentVisibilityGateDocumentId(entity._id);
     const leadMembers = leadsByEntityId.get(recordId) || [];
     const isDuplicateGroupSurvivor = duplicateGroupSurvivorEntityIds.has(recordId);
@@ -2300,6 +2484,7 @@ async function planResearchEntityGateUpdates(
       citationsSharedAcrossPersonRows: sharedCitationOnlyEntityIds.has(recordId),
       relatedEntityAccessPathCount: alternateAccessPathCounts.get(recordId) || 0,
       everyLeadRemovedByRequest: everyLeadRemovedEntityIds.has(recordId),
+      ...(leadIsStaffOfServedLab ? { leadIsStaffOfServedLab } : {}),
     };
     const result = computeResearchEntityStudentVisibility({
       entity,
@@ -2324,7 +2509,51 @@ async function planResearchEntityGateUpdates(
       holdWithoutRecordedReason: isHoldWithoutRecordedReason(entity),
       gateInput,
     };
-  });
+  };
+
+  const plans = entities.map((entity: any) => planEntity(entity, false));
+  if (options.withoutLeadIsStaffOfServedLabHold) return plans;
+
+  const pageEntityIds = plans.map((plan) => plan.recordId);
+  const pageEntityIdSet = new Set(pageEntityIds);
+  const holdInput = {
+    entities: duplicateReferenceEntities as any[],
+    leadsByEntityId: new Map([...duplicateReferenceLeadsByEntityId, ...leadsByEntityId]),
+    rosterByEntityId: new Map([...duplicateReferenceRosterByEntityId, ...rosterByEntityId]),
+    candidateEntityIds: pageEntityIds,
+  };
+  const everyReferenceEntityId = new Set(
+    (duplicateReferenceEntities as any[]).map((entity) =>
+      studentVisibilityGateDocumentId(entity._id),
+    ),
+  );
+  const servedEntityIds = new Set(
+    plans.filter((plan) => plan.tier === 'student_ready').map((plan) => plan.recordId),
+  );
+  const linkedOutsidePage = uniqueStrings(
+    [
+      ...leadIsStaffOfServedLabLinks({
+        ...holdInput,
+        servedEntityIds: everyReferenceEntityId,
+      }).values(),
+    ]
+      .flat()
+      .map((link) => link.entityId),
+  ).filter((id) => !pageEntityIdSet.has(id));
+  if (linkedOutsidePage.length > 0) {
+    const outsidePlans = await planResearchEntityGateUpdates({
+      recordIds: linkedOutsidePage,
+      suppressDuplicateRisk: options.suppressDuplicateRisk,
+      withoutLeadIsStaffOfServedLabHold: true,
+    });
+    for (const plan of outsidePlans) {
+      if (plan.tier === 'student_ready') servedEntityIds.add(plan.recordId);
+    }
+  }
+  const heldEntityIds = selectLeadIsStaffOfServedLabEntityIds({ ...holdInput, servedEntityIds });
+  return entities.map((entity: any, index: number) =>
+    heldEntityIds.has(plans[index].recordId) ? planEntity(entity, true) : plans[index],
+  );
 }
 
 export interface DuplicateProgramCopies {

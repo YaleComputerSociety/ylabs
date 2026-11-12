@@ -123,6 +123,15 @@ A row whose every lead states only one of those ranks, with no rank that owns re
 A lead with no stated title is not evidence for the hold.
 A row that already carries `missing_lead` does not also carry this reason, so the lead-attachment lanes, which act only when `missing_lead` is the sole hard blocker, still reach it.
 "Associate Research Scholar" is not in the list: neither the rank lattice nor the mint vocabulary assigns it a rank.
+- Lead is staff of a served lab: `lead_is_staff_of_served_lab`.
+Removed at `suppressed`, on the same terms as `exact_url_duplicate_risk`, because the lab the row describes already has its own served card (#5876).
+A row carries it when every gate lead states a non-empty title for which `statesResearchOwningAppointment` is false, and the row links to another row the same gate pass serves at `student_ready`.
+A row links to another by any of three arms: its own `websiteUrl` or `website` is that row's site under the gate's duplicate-URL normalization (`normalizedExactDuplicateUrl`); a live `wrong_owner` refusal on its website names that row's site, read through the same refusal reader the duplicate-URL grouping uses (#5858); or its lead holds a `staff` edge on that row, or any edge on a row typed `LAB`.
+A center or institute affiliation edge alone never links, and an empty title is never read as staff.
+A pair whose rows link each other by the same test is left alone, because neither row is then the one that represents the lab.
+"Served" is the tier this pass computes before the hold, so the hold is derived on every run, writes no field, and takes no lock; a pass scoped to some rows plans the linked rows outside its page first, so a scoped pass and a full pass agree.
+`selectLeadIsStaffOfServedLabEntityIds` in `server/src/services/studentVisibilityGateService.ts` owns the predicate.
+Measured on Development on 2026-11-11 through full gate dry runs with #5858 applied: 19 rows carry the reason, 7 of them served before the change and 10 of them among the 27 rows #5858 releases from duplicate grouping.
 - Redundant program copy: `duplicate_program`. A program row that is a second copy of a fund another row already serves. Removed at `suppressed`; `docs/research-data-pipeline.md` owns how the gate picks the copy it keeps (#3988).
 - Application container: `common_application_container`. A program row whose title names a common application, which admits to several funds that are each served as their own program and link it as their route. Removed at `suppressed`.
 - Not a current program: `external_award_cycle_stale`, `award_suspended`, `prize_for_completed_work`, `program_listing_page`. A program row that is an outside program whose office record skipped its only stated cycle, an award its own record says is suspended, a prize for completed work, or a catalog page listing programs served on their own. Removed at `suppressed`; `server/src/services/programApplicability.ts` owns each predicate and `docs/decisions.md` records the measurement (#4587).
@@ -179,6 +188,9 @@ Two person-scoped rows sharing the page, a person-named row that only carries an
 When organizations share the page beside a person-scoped row, they group among themselves and the person-scoped row stays out of their group.
 Measured on Development on 2026-10-17 through a full gate dry run before and after the change: 4 groups on a person page paired an organizational row with a person-scoped row, and exactly 3 rows changed tier, all held before and none served: one organization and one faculty research row moved to `student_ready`, and one lab moved to `operator_review`, where `missing_lead` still holds it.
 The fourth group's person-scoped row stays held, because it collides with the organization on the organization's own site as well.
+A row that holds a live `wrong_owner` refusal of a URL on its `websiteUrl` or `website` is no claimant of that URL, even though the materializer still carries it on `sourceUrls`, because the refusal says the address is not the row's own (#5858).
+A withdrawn refusal, or a refusal under any other rule, leaves the row a claimant.
+`entityClaimedDuplicateUrls` in `server/src/services/studentVisibilityGateService.ts` owns the filter, and `lead_is_staff_of_served_lab` above holds the staff rows it releases that would otherwise give a served lab a second card.
 
 ### Which row is canonical when several cite one URL
 
