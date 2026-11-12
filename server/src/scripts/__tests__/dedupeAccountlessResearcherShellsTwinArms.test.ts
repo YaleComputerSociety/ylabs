@@ -84,6 +84,21 @@ describe('officialPageWitnessDestination (#5606)', () => {
     ).not.toBe('medicine.yale.edu/profile/avery-synth');
   });
 
+  it('reads a YSM center copy of a profile as the school profile with the same slug (#5932)', () => {
+    expect(
+      officialPageWitnessDestination('medicine.yale.edu/fixturecenter/profile/avery-synth'),
+    ).toBe('medicine.yale.edu/profile/avery-synth');
+  });
+
+  it('never reads a deeper path or a different host as a center copy', () => {
+    for (const destination of [
+      'medicine.yale.edu/fixturecenter/people/profile/avery-synth',
+      'publichealth.yale.edu/fixturecenter/profile/avery-synth',
+    ]) {
+      expect(officialPageWitnessDestination(destination)).toBe(destination);
+    }
+  });
+
   it('leaves every other destination unchanged', () => {
     for (const destination of [
       'medicine.yale.edu/profile/avery-synth',

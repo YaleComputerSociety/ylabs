@@ -44,6 +44,7 @@ function profileHtml(options: {
   researchDescription?: string;
   labWebsite?: { name: string; url: string; description?: string };
   orcid?: string;
+  orcids?: string[];
   includeResearchSection?: boolean;
 }): string {
   const about: Record<string, unknown> = {
@@ -63,9 +64,10 @@ function profileHtml(options: {
         : '',
       meshKeywords: (options.meshKeywords ?? []).map((name, index) => ({ id: 1000 + index, name })),
       labWebsite: options.labWebsite ?? null,
-      orcids: options.orcid
-        ? [{ url: `https://orcid.org/${options.orcid}`, text: options.orcid }]
-        : [],
+      orcids: (options.orcids ?? (options.orcid ? [options.orcid] : [])).map((orcid) => ({
+        url: `https://orcid.org/${orcid}`,
+        text: orcid,
+      })),
     });
   }
   sections.push({
@@ -236,6 +238,25 @@ describe('extractProfile', () => {
     expect(profile?.bio).toContain('Yale School of Medicine');
     expect(profile?.labUrl).toBe('https://riverslab.example.org');
     expect(profile?.orcid).toBe('9999-9000-9999-9005');
+  });
+
+  it("takes no ORCID from a profile list holding several, since it does not say which is the subject's (#5932)", () => {
+    const several = extractProfile(
+      profileHtml({
+        fullName: 'Jordan Rivers',
+        orcids: ['9999-9000-9999-9005', '9999-9000-9999-0019'],
+      }),
+      RIVERS,
+    );
+    expect(several?.orcid).toBeUndefined();
+    const repeated = extractProfile(
+      profileHtml({
+        fullName: 'Jordan Rivers',
+        orcids: ['9999-9000-9999-9005', '9999-9000-9999-9005'],
+      }),
+      RIVERS,
+    );
+    expect(repeated?.orcid).toBe('9999-9000-9999-9005');
   });
 
   it('drops MeSH geographic descriptors, which tag a study site rather than a topic', () => {

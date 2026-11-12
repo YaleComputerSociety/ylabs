@@ -27,6 +27,7 @@ import axios from 'axios';
 import { Observation } from '../../models/observation';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
+import { subjectProfileOrcid } from '../utils/rosterMemberIdentityEvidence';
 import { wordpressAuthorProfileBiography } from '../utils/wordpressAuthorProfile';
 import type { AnyNode } from 'domhandler';
 import {
@@ -45,7 +46,6 @@ import {
   type LabUrlEvidenceLoader,
   type LabUrlIsUnusable,
 } from '../utils/labUrlEvidence';
-import { normalizeOrcid } from '../../utils/orcid';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatCharacters';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
@@ -3311,24 +3311,6 @@ function scholarProfileUrlFromHref(href: string, baseUrl: string): string | unde
   }
 }
 
-function extractOrcidFromHtml($: cheerio.CheerioAPI): string | undefined {
-  const candidates: string[] = [];
-  $('a[href*="orcid.org"], a[href^="orcid:"]').each((_i, el) => {
-    const href = $(el).attr('href') || '';
-    const text = $(el).text();
-    candidates.push(href, text);
-  });
-  const bodyText = extractElementTextWithBlockSeparators($('body')[0]);
-  const matches = bodyText.match(/\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{3}[\dX]\b/gi) || [];
-  candidates.push(...matches);
-
-  for (const candidate of candidates) {
-    const normalized = normalizeOrcid(candidate);
-    if (normalized) return normalized;
-  }
-  return undefined;
-}
-
 function isHeadingTag(node: cheerio.Cheerio<any>): boolean {
   return /^h[1-6]$/i.test(node.prop('tagName') || '');
 }
@@ -3682,7 +3664,7 @@ export function profileEnrichmentFromHtml(
     labUrl,
     ...(labUrl ? {} : { labSlotAttestation: labUrlCandidateRefused ? 'refused' : 'empty' }),
     ...(labWebsiteButton ? { labWebsiteButton } : {}),
-    orcid: extractOrcidFromHtml($),
+    orcid: declaredName ? subjectProfileOrcid($, declaredName) : undefined,
     bio,
     researchHomeDescription: officialProse?.fullDescription,
     researchHomeShortDescription: officialProse?.shortDescription || undefined,

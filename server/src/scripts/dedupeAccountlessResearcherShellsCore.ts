@@ -1,3 +1,4 @@
+import { normalizeOrcid } from '../utils/orcid';
 import { orcidProfileLinksAgreeWithIdentifier } from '../models/researcher';
 import type { FieldValueRefusal } from '../utils/researchEntityFieldValueRefusals';
 import {
@@ -188,6 +189,7 @@ export const SHELL_FOLD_IDENTITIES = [
   'netid',
   'directory-email',
   'official-page',
+  'orcid-only-holder',
   'roster-identity',
   'verified-profile',
   'shared-row',
@@ -760,17 +762,18 @@ export function decideDirectoryEmailFold(
   return { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn };
 }
 
-const YSM_LAB_MICROSITE_PROFILE =
-  /^(medicine\.yale\.edu)\/lab\/[a-z0-9-]+\/profile\/([a-z0-9-]+)$/i;
+const YSM_SITE_COPY_PROFILE =
+  /^(medicine\.yale\.edu)\/(?:lab\/)?[a-z0-9-]+\/profile\/([a-z0-9-]+)$/i;
 
 /**
  * The page a normalized official profile destination names, for the official-page arm only. A
- * YSM lab microsite renders the member's school profile under the lab's path, so
- * `medicine.yale.edu/lab/<lab>/profile/<slug>` is the same page as `medicine.yale.edu/profile/<slug>`
- * with the same slug. Kept out of the shared destination normalizer, which other lanes key on.
+ * YSM lab microsite or center site renders the member's school profile under its own path, so
+ * `medicine.yale.edu/lab/<lab>/profile/<slug>` and `medicine.yale.edu/<site>/profile/<slug>` are
+ * the same page as `medicine.yale.edu/profile/<slug>` with the same slug (#5932). Kept out of the
+ * shared destination normalizer, which other lanes key on.
  */
 export function officialPageWitnessDestination(destination: string): string {
-  const microsite = YSM_LAB_MICROSITE_PROFILE.exec(destination);
+  const microsite = YSM_SITE_COPY_PROFILE.exec(destination);
   return microsite ? `${microsite[1].toLowerCase()}/profile/${microsite[2]}` : destination;
 }
 
@@ -854,6 +857,74 @@ export function decideOfficialPageWitnessFold(
   return { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn };
 }
 
+export interface OrcidOnlyHolder {
+  id: string;
+  displayName?: unknown;
+  title?: unknown;
+}
+
+/**
+ * The records an ORCID-only fold can land on, by ORCID: a record whose only identity is a
+ * stored ORCID, with no netid and no directory email. A record holding a netid or a directory
+ * address is reached by the netid, directory-email and official-page arms instead, so a record
+ * that pairs one person's ORCID with another person's netid is never a target here.
+ */
+export function orcidOnlyHoldersByOrcid(
+  researchers: ReadonlyArray<{
+    id: string;
+    displayName?: unknown;
+    title?: unknown;
+    orcid?: unknown;
+    netid?: unknown;
+    email?: unknown;
+  }>,
+): Map<string, OrcidOnlyHolder[]> {
+  const byOrcid = new Map<string, OrcidOnlyHolder[]>();
+  for (const researcher of researchers) {
+    if (researcherIdentityTier(researcher) !== 'NAME_ONLY' || cleanNetid(researcher.netid))
+      continue;
+    const orcid = normalizeOrcid(researcher.orcid);
+    if (!orcid) continue;
+    byOrcid.set(orcid, [
+      ...(byOrcid.get(orcid) ?? []),
+      { id: researcher.id, displayName: researcher.displayName, title: researcher.title },
+    ]);
+  }
+  return byOrcid;
+}
+
+/**
+ * A `NAME_ONLY` shell with no ORCID is the ORCID-only record whose ORCID its own listings state
+ * as their subject's (#5932). The listing evidence states an ORCID only when the subject node
+ * of the page states exactly one, so a co-author's iD or a list of several is never read; two
+ * distinct stated iDs, or two records holding the one stated, resolve to nobody. A listing that
+ * also states an address the directory pairs with a netid names a directory-identified person,
+ * who is not an ORCID-only record, so it is no witness here (#5702). The surname and rank veto.
+ */
+export function decideOrcidOnlyHolderFold(
+  shell: ShellIdentity,
+  subjectOrcids: ReadonlyArray<string>,
+  listingAddressNetids: ReadonlyArray<ReadonlySet<string>>,
+  holdersByOrcid: ReadonlyMap<string, ReadonlyArray<OrcidOnlyHolder>>,
+): ShellMergeDecision | undefined {
+  if (researcherIdentityTier(shell) !== 'NAME_ONLY' || cleanNetid(shell.netid)) return undefined;
+  if (normalizeOrcid(shell.orcid)) return undefined;
+  const orcids = new Set(subjectOrcids.map(normalizeOrcid).filter(Boolean));
+  if (orcids.size !== 1) return undefined;
+  if (listingAddressNetids.some((netids) => netids.size > 0)) return undefined;
+  const matchedOn = 'orcid-only-holder' as const;
+  const holders = (holdersByOrcid.get([...orcids][0]) ?? []).filter(
+    (holder) => holder.id !== shell.id,
+  );
+  if (holders.length === 0) return undefined;
+  if (holders.length > 1)
+    return { merge: false, reason: 'AMBIGUOUS_MULTIPLE_CANONICAL', matchedOn };
+  const [target] = holders;
+  if (!profileHolderSurnamesAgree(shell.displayName, target.displayName)) return undefined;
+  if (titlesStateConflictingRanks(shell.title, target.title)) return undefined;
+  return { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn };
+}
+
 /** The unordered key of a pair an operator recorded as two different people. */
 export const distinctPeoplePairKey = (left: string, right: string): string =>
   [left, right].sort().join('|');
@@ -887,6 +958,8 @@ export function decideShellMerge(
   directoryEmailHolders: ReadonlyMap<string, ReadonlyArray<DirectoryEmailCandidate>> = new Map(),
   officialPageStatements: ReadonlyArray<OfficialPageStatement> = [],
   officialPageHolders: OfficialPageHolders = { byEmail: new Map(), byOrcid: new Map() },
+  listingSubjectOrcids: ReadonlyArray<string> = [],
+  orcidOnlyHolders: ReadonlyMap<string, ReadonlyArray<OrcidOnlyHolder>> = new Map(),
 ): ShellMergeDecision {
   const byNetid = decideNetidFold(shell, canonicalNetidIndex);
   if (byNetid) return byNetid;
@@ -902,6 +975,13 @@ export function decideShellMerge(
     officialPageHolders,
   );
   if (byOfficialPage?.merge) return byOfficialPage;
+  const byOrcidOnlyHolder = decideOrcidOnlyHolderFold(
+    shell,
+    listingSubjectOrcids,
+    listingAddressNetids,
+    orcidOnlyHolders,
+  );
+  if (byOrcidOnlyHolder?.merge) return byOrcidOnlyHolder;
   const byRosterIdentity = decideRosterIdentityFold(shell, rosterIdentityCandidates);
   if (byRosterIdentity) return byRosterIdentity;
   const byVerifiedProfile = decideVerifiedProfileFold(shell, verifiedProfileIndex);
@@ -912,7 +992,7 @@ export function decideShellMerge(
   if (byNameVariant?.merge) return byNameVariant;
   const byName = decideExactNameFold(shell, canonicalNameIndex);
   if (byName.reason !== 'NO_CANONICAL') return byName;
-  return byNameVariant ?? byDirectoryEmail ?? byOfficialPage ?? byName;
+  return byNameVariant ?? byDirectoryEmail ?? byOfficialPage ?? byOrcidOnlyHolder ?? byName;
 }
 
 function decideExactNameFold(
