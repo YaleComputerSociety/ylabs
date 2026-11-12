@@ -57,6 +57,12 @@ import {
   type LabUrlIsCoLedGroupSite,
 } from '../utils/coLedGroupSites';
 import {
+  decideLegacyKeyAdoption,
+  loadLegacyKeyRows,
+  type LegacyKeyRowLoader,
+} from '../rosterLegacyKeyAdoption';
+import { isDegreeToken, ROSTER_NAME_NORMALIZER_LEGACY_TOKENS } from '../../utils/degreeTokens';
+import {
   decideRosterAttach,
   loadRosterOwnerKeyRows,
   rosterHostOfUrl,
@@ -4591,6 +4597,42 @@ export function rosterResearchEntitySlugForUserKey(userKey: string, dept: DeptCo
   return nameSlug === 'unknown' ? '' : deptResearchEntitySlug(nameSlug, dept);
 }
 
+/**
+ * The key this lane minted for the entry under an earlier name normalizer, explicitly by
+ * version, so a later change to the credential list keeps writing to the row the old key
+ * holds instead of minting a second one (#5969).
+ */
+export function legacyRosterResearchEntitySlug(
+  entry: FacultyEntry,
+  dept: DeptConfig,
+  version: keyof typeof ROSTER_NAME_NORMALIZER_LEGACY_TOKENS = 'v1',
+): string {
+  const legacyName = entry.identityName
+    ? slugify(entry.identityName)
+    : slugify(normalizeName(entry.name, ROSTER_NAME_NORMALIZER_LEGACY_TOKENS[version]));
+  return deptResearchEntitySlug(legacyName || (entry.labUrl ? slugify(entry.labUrl) : ''), dept);
+}
+
+function legacyRosterOwnerKey(ownerKey: string, legacySlug: string, dept: DeptConfig): string {
+  if (!ownerKey.startsWith('dept:')) return ownerKey;
+  const legacyNameSlug = legacySlug.slice(rosterResearchEntitySlugPrefix(dept).length);
+  return `dept:${namespacedDeptKey(dept.deptKey)}:${legacyNameSlug || 'unknown'}`;
+}
+
+const writtenAsACredential = (word: string): boolean =>
+  /\./.test(word) || /[a-z][A-Z]/.test(word) || (word.length > 1 && word === word.toUpperCase());
+
+/**
+ * A roster entry whose given-name position holds a credential ("PhD <surname>") names no
+ * person, so the lane mints no person and no research row from it (#5969). A given name
+ * that is spelled like a credential but written as a name ("Ma", "Do") is a name and stays.
+ */
+export function rosterEntryGivenNameIsACredential(entry: FacultyEntry): boolean {
+  const words = normalizeName(entry.name).split(/\s+/).filter(Boolean);
+  if (words.length < 2) return false;
+  return isDegreeToken(words[0]) && writtenAsACredential(words[0]);
+}
+
 function deptResearchEntitySlug(nameSlug: string, dept: DeptConfig): string {
   if (!nameSlug) return '';
   return `${rosterResearchEntitySlugPrefix(dept)}${nameSlug}`.slice(0, 100);
@@ -4773,6 +4815,7 @@ export class DepartmentRosterScraper implements IScraper {
     private readonly facultyTitledUserKeyLoader: FacultyTitledUserKeyLoader = loadUserKeysWithALiveFacultyTitle,
     private readonly rosterOwnerKeyRowLoader?: RosterOwnerKeyRowLoader,
     private readonly coLedSiteIndexLoader: CoLedSiteIndexLoader = loadCoLedSiteIndex,
+    private readonly legacyKeyRowLoader: LegacyKeyRowLoader = loadLegacyKeyRows,
   ) {}
 
   private loadRosterOwnerKeyRows(): ReturnType<RosterOwnerKeyRowLoader> {
@@ -4869,6 +4912,8 @@ export class DepartmentRosterScraper implements IScraper {
     let coLedSitesRead: Promise<CoLedSiteIndex> | undefined;
     const coLedSiteIndex = () => (coLedSitesRead ??= this.coLedSiteIndexLoader());
     let attachedToExistingRow = 0;
+    let adoptedLegacyKeys = 0;
+    let refusedLegacyKeys = 0;
     const processEntries = async (
       entries: FacultyEntry[],
       dept: DeptConfig,
@@ -4933,8 +4978,31 @@ export class DepartmentRosterScraper implements IScraper {
       )) {
         facultyTitledUserKeys.add(key);
       }
+      const rekeyedSlugs = enriched.flatMap(({ entry }) => {
+        const current = rosterResearchEntitySlug(entry, dept);
+        const legacy = legacyRosterResearchEntitySlug(entry, dept);
+        return legacy && legacy !== current ? [current, legacy] : [];
+      });
+      const legacyKeyRows = rekeyedSlugs.length
+        ? await this.legacyKeyRowLoader(rekeyedSlugs)
+        : new Map();
 
       for (const { entry } of withoutSharedGroupWebsites(enriched)) {
+        if (rosterEntryGivenNameIsACredential(entry)) {
+          const withdrawnKey = rosterMintWithdrawnEntityKey(entry, dept, {
+            observations: [],
+            refusedByTitle: false,
+          });
+          if (withdrawnKey && !dept.crossListedProgramme) {
+            const deptWithdrawn = withdrawnEntityKeysByDept.get(dept.deptKey) ?? new Set<string>();
+            deptWithdrawn.add(withdrawnKey);
+            withdrawnEntityKeysByDept.set(dept.deptKey, deptWithdrawn);
+          }
+          if (!dept.crossListedProgramme && entry.profileReadOutcome === 'read') {
+            profilesReadByDept.set(dept.deptKey, (profilesReadByDept.get(dept.deptKey) ?? 0) + 1);
+          }
+          continue;
+        }
         const { observations: typedUserObs, entityKey } = entryToUserObservations(
           entry,
           dept,
@@ -4963,7 +5031,28 @@ export class DepartmentRosterScraper implements IScraper {
                 profileUrl: officialProfileCitationUrl(entry),
               }),
             );
-        const ownSlug = rosterResearchEntitySlug(entry, dept);
+        const currentSlug = rosterResearchEntitySlug(entry, dept);
+        const legacySlug = legacyRosterResearchEntitySlug(entry, dept);
+        const adoption = decideLegacyKeyAdoption({
+          currentSlug,
+          legacySlug,
+          ownerKey: entityKey,
+          legacyOwnerKey: legacyRosterOwnerKey(entityKey, legacySlug, dept),
+          rowsBySlug: legacyKeyRows,
+        });
+        if (adoption.kind === 'adopt') {
+          mint.observations = mint.observations.map((observation) => ({
+            ...observation,
+            entityKey: adoption.legacySlug,
+            entityId: adoption.entityId,
+            ...(observation.field === 'slug' ? { value: adoption.legacySlug } : {}),
+          }));
+          adoptedLegacyKeys++;
+        } else if (adoption.kind === 'refuse') {
+          mint.observations = [];
+          refusedLegacyKeys++;
+        }
+        const ownSlug = adoption.kind === 'adopt' ? adoption.legacySlug : currentSlug;
         const attach =
           mint.observations.length > 0 && !dept.crossListedProgramme
             ? decideRosterAttach({
@@ -5037,7 +5126,10 @@ export class DepartmentRosterScraper implements IScraper {
         if (!dept.crossListedProgramme && entry.profileReadOutcome === 'read') {
           profilesReadByDept.set(dept.deptKey, (profilesReadByDept.get(dept.deptKey) ?? 0) + 1);
         }
-        const withdrawnKey = attachedSlug ? '' : rosterMintWithdrawnEntityKey(entry, dept, mint);
+        const withdrawnKey =
+          attachedSlug || adoption.kind === 'refuse'
+            ? ''
+            : rosterMintWithdrawnEntityKey(entry, dept, mint);
         if (withdrawnKey) {
           const deptWithdrawn = withdrawnEntityKeysByDept.get(dept.deptKey) ?? new Set<string>();
           deptWithdrawn.add(withdrawnKey);
@@ -5362,6 +5454,11 @@ export class DepartmentRosterScraper implements IScraper {
     ctx.log(
       `Emitted ${totalObs} observations across ${totalFaculty} faculty / ${totalLabs} labs (${summary})`,
     );
+    if (adoptedLegacyKeys > 0 || refusedLegacyKeys > 0) {
+      ctx.log(
+        `${adoptedLegacyKeys} roster entries kept writing to the row their earlier key holds, ${refusedLegacyKeys} refused to mint beside an unmatched earlier-key row (#5969)`,
+      );
+    }
     if (attachedToExistingRow > 0) {
       ctx.log(
         `${attachedToExistingRow} roster entries attached to the person's existing row on another roster instead of minting a second row (#5969)`,
