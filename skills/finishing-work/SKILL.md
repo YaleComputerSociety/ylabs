@@ -69,6 +69,7 @@ Expect a lint error to turn the `checks` job red within seconds; the required `t
 Steps 12 and 13 gate at moderate. A low advisory below that gate is a judgement call, and the ones already judged are recorded in `docs/dependency-decisions.md` - read it before triaging a low Dependabot or audit PR. First check whether the patched version satisfies every parent's declared range: if it does, pin it in `resolutions` and the advisory is gone, and only if it does not is accepting it a judgement worth recording.
 
 None of the above verifies served output. When a change is meant to improve the copy students see, re-read the served surface with the scoreboard in `docs/served-corpus-scoreboard.md` (`yarn --cwd server research-entity:served-scoreboard --baseline <path.json>`). It is read-only, renders a fixed slug set through the real serve path, and prints the served text rather than a diff count, because a changed description is not necessarily a fixed one.
+To read one route as an anonymous student over HTTP, run `yarn served-check /api/<path>`, never a plain request against your own dev server: worktrees keep `LOCAL_AUTH_BYPASS=true`, so that request is the bypass admin and records a login on Development (#5886). The command starts its own short-lived API with the bypass off and refuses to read unless `GET /api/check` reports an anonymous session; see `skills/auth-security/SKILL.md`.
 
 ## Stop only what you started (#5222)
 

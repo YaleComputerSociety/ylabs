@@ -288,4 +288,43 @@ describe('development-only affordances are scoped to the developer machine', () 
     ).toBeNull();
     expect(localAuthBypassStartupNotice({ ...DEPLOYED_ENV, LOCAL_AUTH_BYPASS: 'true' })).toBeNull();
   });
+
+  it('shouts when the bypass is on against the shared Development database and stays quiet when off', async () => {
+    const { localAuthBypassStartupNotice } = await loadPassportModule(LOCAL_DEVELOPMENT_ENV);
+    const developmentDatabase = {
+      ...LOCAL_DEVELOPMENT_ENV,
+      MONGODBURL: 'mongodb+srv://synthetic-cluster.example.invalid/Development',
+    };
+
+    const developmentNotice = localAuthBypassStartupNotice({
+      ...developmentDatabase,
+      LOCAL_AUTH_BYPASS: 'true',
+    });
+    expect(developmentNotice).toMatch(
+      /LOCAL_AUTH_BYPASS IS ON AGAINST THE SHARED DEVELOPMENT DATABASE[\s\S]*no read from this server is an anonymous served check/,
+    );
+    expect(developmentNotice).toContain('yarn served-check');
+    expect(developmentNotice).not.toContain('synthetic-cluster');
+
+    expect(
+      localAuthBypassStartupNotice({
+        ...LOCAL_DEVELOPMENT_ENV,
+        MONGODBURL: 'mongodb+srv://synthetic-cluster.example.invalid/Unlabelled',
+        LOCAL_AUTH_BYPASS: 'true',
+      }),
+    ).toMatch(/LOCAL_AUTH_BYPASS IS ON AGAINST A DATABASE THAT IS NOT ON THIS MACHINE/);
+
+    const localNotice = localAuthBypassStartupNotice({
+      ...LOCAL_DEVELOPMENT_ENV,
+      MONGODBURL: 'mongodb://127.0.0.1:27017/ylabs_local',
+      LOCAL_AUTH_BYPASS: 'true',
+    });
+    expect(localNotice).toMatch(/LOCAL_AUTH_BYPASS is on/);
+    expect(localNotice).not.toMatch(/IS ON AGAINST/);
+
+    expect(
+      localAuthBypassStartupNotice({ ...developmentDatabase, LOCAL_AUTH_BYPASS: 'false' }),
+    ).toBeNull();
+    expect(localAuthBypassStartupNotice({ ...developmentDatabase })).toBeNull();
+  });
 });

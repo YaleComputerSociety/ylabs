@@ -128,18 +128,24 @@ Pass `?userType=admin|professor|faculty|graduate|unknown` for a different local 
 ### Testing locally as a non-admin student
 
 The copied `server/.env` that `scripts/new-agent-worktree.sh` writes sets `LOCAL_AUTH_BYPASS=true`, `LOCAL_AUTH_BYPASS_NETID=devadmin` and `LOCAL_AUTH_BYPASS_USER_TYPE=admin`, so every cookieless loopback request is the bootstrap admin by default.
+That is the owner's decision for local development, worktrees included, so worktree env files keep the bypass on and `WORKTREE_SWITCHED_OFF_SERVER_FLAGS` in `scripts/prepare-worktree-env.mjs` deliberately leaves it out (#5886).
 Admin authority comes from an active `AdminGrant` on the netid (`hasAdminAuthorityForUser`), never from `userType`.
 So an `x-dev-user-type: undergraduate` header alone does not make a student: the netid stays `devadmin`, which holds the grant, and the request keeps operator authority, including `operatorPreview` on withheld research rows (#5695).
-A served check, meaning "what does a student see on this route", is read-only, so run it this way (#5781):
+A served check, meaning "what does a student see on this route", is read-only, so run it with `yarn served-check /api/<path> [/api/<path> ...]` (`scripts/served-check.mjs`, #5886):
 
-1. Start the API with the bypass off: `LOCAL_AUTH_BYPASS=false yarn dev:server`.
-2. Confirm `GET /api/check` with no cookie returns `{"auth":false}` before any read.
-3. Read the route with no cookie.
+1. It starts its own short-lived API on a free port with `LOCAL_AUTH_BYPASS=false`, `CORPUS_SNAPSHOT_DISABLED=true`, no gate-refresh interval and no scraper write flag, set for that one process only, so your dev server and every `.env` file keep the bypass.
+It takes the rest of its env from the same data profile as `yarn dev:server` (`profileChildEnvironment` in `scripts/run-data-profile.mjs`); a bare `yarn dev:server` cannot be the check server beside your own, because `server/.env` wins for `PORT`.
+2. Before any served read it requires a cookieless `GET /api/check` to answer `200 {"auth":false}`, and fails closed otherwise, reading nothing.
+3. It reads each path with no cookie, prints one JSON line per path, and stops the process group it started.
 
+`--api <loopback origin>` reads an API you already run instead, under the same fail-closed `/api/check` guard, so it refuses a dev server that has the bypass on; that first `/api/check` is still a bypass login on such a server, which is why the default starts its own.
+`--profile local` targets the local database instead of Development.
+`scripts/served-check.test.mjs` pins the forced-off bypass and own port over a synthetic `server/.env` that turns it on, the refusal before any served path is read, and a real spawned check server seeing `LOCAL_AUTH_BYPASS=false`.
+The manual equivalent is `LOCAL_AUTH_BYPASS=false yarn dev:server` and the same `/api/check` precondition before reading.
 A cookieless request with the bypass off resolves no user, so the auth path writes no account, no admin grant and no analytics event, and the route serves the anonymous student view, which withholds every row outside `student_ready`.
 `server/src/__tests__/localStudentServedCheckWritesNothing.integration.test.ts` pins that against a real store, with the bypass-on run of the same requests as the control that proves the count can see a write.
 The test exercises `GET /api/check` and `GET /api/research/:slug`; `POST /api/research/search` records a site-search row only for a signed-in netid (`shouldRecordSiteSearch`), so an anonymous search records none either.
-When the API starts with the bypass on, it prints a `[auth] LOCAL_AUTH_BYPASS is on` warning (`localAuthBypassStartupNotice`).
+When the API starts with the bypass on, it prints a `[auth] LOCAL_AUTH_BYPASS is on` warning (`localAuthBypassStartupNotice`); when `MONGODBURL` names the Development database or any non-local host, it wraps that warning in a `LOCAL_AUTH_BYPASS IS ON AGAINST ...` banner naming the target class, never the URL, so a dev server on the shared database cannot be mistaken for an anonymous one.
 
 To test a signed-in student flow, which records a login, use one of these:
 

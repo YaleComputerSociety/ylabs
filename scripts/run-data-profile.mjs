@@ -159,11 +159,10 @@ export function childEnvironment({ processEnv, profile, values }) {
   };
 }
 
-export function run(argv = process.argv.slice(2)) {
-  const invocation = parseInvocation(argv);
-  const profile = PROFILES[invocation.profileName];
+export function profileChildEnvironment({ profileName, writesEnabled = false, processEnv }) {
+  const profile = PROFILES[profileName];
   if (!profile) {
-    throw new Error(`Unknown data profile "${invocation.profileName}". ${PROFILE_CHOICES}`);
+    throw new Error(`Unknown data profile "${profileName}". ${PROFILE_CHOICES}`);
   }
   if (!fs.existsSync(profile.file)) {
     const example = `${profile.file}.example`;
@@ -173,11 +172,11 @@ export function run(argv = process.argv.slice(2)) {
   }
 
   const values = dotenv.parse(fs.readFileSync(profile.file));
-  const { target } = validateProfileValues(invocation.profileName, values);
-  assertWritesAllowed(invocation.profileName, invocation.writesEnabled);
+  const { target } = validateProfileValues(profileName, values);
+  assertWritesAllowed(profileName, writesEnabled);
 
-  const childEnv = childEnvironment({ processEnv: process.env, profile, values });
-  if (invocation.writesEnabled) {
+  const childEnv = childEnvironment({ processEnv, profile, values });
+  if (writesEnabled) {
     childEnv.ALLOW_NON_PROD_SCRAPER_WRITES = 'true';
   } else {
     delete childEnv.ALLOW_NON_PROD_SCRAPER_WRITES;
@@ -185,7 +184,7 @@ export function run(argv = process.argv.slice(2)) {
   if (profile.meiliIndexPrefix) {
     childEnv.MEILISEARCH_INDEX_PREFIX = profile.meiliIndexPrefix;
   }
-  if (invocation.profileName === 'beta-operator') {
+  if (profileName === 'beta-operator') {
     childEnv.MEILISEARCH_HOST = 'http://127.0.0.1:7700';
     childEnv.MEILISEARCH_API_KEY = 'local_development_master_key';
     delete childEnv.MEILISEARCH_SEARCH_API_KEY;
@@ -197,6 +196,16 @@ export function run(argv = process.argv.slice(2)) {
   delete childEnv.PROD_MONGODBURL;
   delete childEnv.ATLAS_RESTORE_POINT;
   delete childEnv.CONFIRM_LANE_A_COPY;
+  return { childEnv, target };
+}
+
+export function run(argv = process.argv.slice(2)) {
+  const invocation = parseInvocation(argv);
+  const { childEnv, target } = profileChildEnvironment({
+    profileName: invocation.profileName,
+    writesEnabled: invocation.writesEnabled,
+    processEnv: process.env,
+  });
 
   console.log(
     `Data profile: ${invocation.profileName}; Mongo target: ${target.host}/${target.database}; writes: ${invocation.writesEnabled ? 'enabled' : 'guarded dry-run'}`,
