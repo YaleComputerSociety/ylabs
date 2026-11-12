@@ -414,8 +414,10 @@ export const sanitizeFacultyResearchCopy = (
 
 export const HOSTED_UNDERGRADUATES_LABEL = 'Hosted undergrads';
 export const MENTORS_UNDERGRADUATES_LABEL = 'Mentors undergrads';
-export const HOSTED_UNDERGRADUATES_CHIP_VALUE = 'Hosted before';
-export const WELCOMES_UNDERGRADUATES_CHIP_VALUE = 'Welcomes now';
-export const WORKS_WITH_UNDERGRADUATES_LABEL = 'Works with undergrads';
-export const WORKS_WITH_UNDERGRADUATES_CHIP_VALUE = 'Hosted, welcomes or mentors';
+export const UNDERGRADS_FILTER_GROUP_LABEL = 'Undergrads';
+export const TAKING_UNDERGRADS_NOW_FILTER_LABEL = 'Taking undergrads now';
+export const HAS_HAD_UNDERGRADS_FILTER_LABEL = 'Has had undergrads before';
+export const ADVISES_UNDERGRAD_RESEARCH_FILTER_LABEL = 'Advises undergrad research';
+export const ADVISES_UNDERGRAD_RESEARCH_FILTER_HINT = 'e.g. supervised senior theses';
+export const UNDERGRADS_FILTER_COMBINATION_NOTE = 'Shows rows matching all ticked options';
 export const NO_HOSTED_UNDERGRADUATE_EVIDENCE_NOTE = 'Missing evidence is not proof there is none.';

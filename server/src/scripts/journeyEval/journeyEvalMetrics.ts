@@ -335,23 +335,37 @@ export const checkWelcomesFilterServesTheBadge = (
   checkFilterRowsServeTheirBadge(
     {
       id: 'welcomes-filter-rows-serve-the-badge',
-      title: 'Every row the "Welcomes undergrads" filter returns serves the welcomes badge',
+      title: 'Every row the "Taking undergrads now" filter returns serves the welcomes badge',
     },
     tally,
     corpusBefore,
     corpusAfter,
   );
 
-export const checkWorksWithFilterServesASignal = (
+export const checkHostedFilterServesTheBadge = (
   tally: FilterBadgeTally,
   corpusBefore: CorpusFingerprint,
   corpusAfter: CorpusFingerprint,
 ): InvariantResult =>
   checkFilterRowsServeTheirBadge(
     {
-      id: 'works-with-filter-rows-serve-a-signal',
-      title:
-        'Every row the "Works with undergrads" filter returns serves hosted, welcomes or a mentors entry',
+      id: 'hosted-filter-rows-serve-the-badge',
+      title: 'Every row the "Has had undergrads before" filter returns serves the hosted badge',
+    },
+    tally,
+    corpusBefore,
+    corpusAfter,
+  );
+
+export const checkAdvisesFilterServesAMentorsEntry = (
+  tally: FilterBadgeTally,
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult =>
+  checkFilterRowsServeTheirBadge(
+    {
+      id: 'advises-filter-rows-serve-a-mentors-entry',
+      title: 'Every row the "Advises undergrad research" filter returns serves a mentors entry',
     },
     tally,
     corpusBefore,

@@ -180,6 +180,33 @@ describe('buildResearchGroupFilterString', () => {
     });
   });
 
+  describe('mentorsUndergrads filter (#5963)', () => {
+    it('true filters on the served mentors field', () => {
+      expect(buildResearchGroupFilterString({ mentorsUndergrads: true })).toBe(
+        'archived = false AND mentorsUndergrads = true',
+      );
+    });
+
+    it('false or unset adds no clause', () => {
+      expect(buildResearchGroupFilterString({ mentorsUndergrads: false })).toBe('archived = false');
+    });
+
+    it('combines with the other Undergrads options via AND, so ticking more narrows', () => {
+      expect(
+        buildResearchGroupFilterString({ welcomesUndergrads: true, mentorsUndergrads: true }),
+      ).toBe('archived = false AND welcomesUndergrads = true AND mentorsUndergrads = true');
+    });
+
+    it('drops its own clause when its facet is computed disjunctively', () => {
+      expect(
+        buildResearchGroupFilterString(
+          { mentorsUndergrads: true, hostsUndergrads: true },
+          { excludeField: 'mentorsUndergrads' },
+        ),
+      ).toBe('archived = false AND hasUndergradHostingEvidence = true');
+    });
+  });
+
   describe('worksWithUndergrads filter (#5362)', () => {
     it('true filters on the one index field that ORs hosted, welcomes and mentors', () => {
       expect(buildResearchGroupFilterString({ worksWithUndergrads: true })).toBe(
@@ -262,6 +289,29 @@ describe('candidateMatchesStudentFilters', () => {
     ).toBe(true);
   });
 
+  it('reads the mentors-undergraduates flag only when that filter is on (#5963)', () => {
+    expect(candidateMatchesStudentFilters(candidate, { mentorsUndergrads: true })).toBe(false);
+    expect(
+      candidateMatchesStudentFilters(
+        { ...candidate, mentorsUndergrads: true },
+        { mentorsUndergrads: true },
+      ),
+    ).toBe(true);
+    expect(
+      candidateMatchesStudentFilters(
+        { ...candidate, mentorsUndergrads: true },
+        { mentorsUndergrads: true, welcomesUndergrads: true },
+      ),
+    ).toBe(false);
+    expect(
+      candidateMatchesStudentFilters(
+        candidate,
+        { mentorsUndergrads: true },
+        { excludeField: 'mentorsUndergrads' },
+      ),
+    ).toBe(true);
+  });
+
   it('drops only the excluded field, so a facet can be counted disjunctively', () => {
     expect(
       candidateMatchesStudentFilters(
@@ -290,6 +340,24 @@ describe('tallyCandidateFacetDistribution', () => {
       departments: { Genetics: 1, Chemistry: 1 },
       entityType: { LAB: 2, CENTER: 1 },
     });
+  });
+  it('counts the mentors option over the rows the other ticked Undergrads options admit (#5963)', () => {
+    const pooled = [
+      { welcomesUndergrads: true, mentorsUndergrads: true },
+      { welcomesUndergrads: true },
+      { mentorsUndergrads: true },
+    ];
+    const facets = [
+      { filterKey: 'mentorsUndergrads' as const, indexField: 'mentorsUndergrads' },
+      { filterKey: 'welcomesUndergrads' as const, indexField: 'welcomesUndergrads' },
+    ];
+    expect(tallyCandidateFacetDistribution(pooled, {}, facets).mentorsUndergrads).toEqual({
+      true: 2,
+    });
+    expect(
+      tallyCandidateFacetDistribution(pooled, { welcomesUndergrads: true }, facets)
+        .mentorsUndergrads,
+    ).toEqual({ true: 1 });
   });
 });
 

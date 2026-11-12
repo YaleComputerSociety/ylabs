@@ -27,7 +27,7 @@ const renderFilters = (
     onDepartmentChange: vi.fn(),
     onHostsUndergradsChange: vi.fn(),
     onWelcomesUndergradsChange: vi.fn(),
-    onWorksWithUndergradsChange: vi.fn(),
+    onMentorsUndergradsChange: vi.fn(),
     onClearAll: vi.fn(),
     ...overrides,
   };
@@ -47,113 +47,150 @@ describe('ResearchFilterDisclosure', () => {
     expect(screen.queryByText('No additional filters can narrow these results.')).toBeNull();
   });
 
-  it('offers the hosted-undergraduates filter with the count it returns, and unchecks it', () => {
+  const undergradCounts = {
+    welcomesUndergrads: { true: 4 },
+    hostsUndergrads: { true: 7 },
+    mentorsUndergrads: { true: 9 },
+  };
+
+  it('groups the three Undergrads options under one legend, in order, with no umbrella (#5963)', () => {
+    renderFilters({ variant: 'sidebar', facetDistribution: undergradCounts });
+
+    const group = screen.getByRole('group', { name: 'Undergrads' });
+    expect(group).toHaveAccessibleDescription('Shows rows matching all ticked options');
+    expect(
+      within(group)
+        .getAllByRole('checkbox')
+        .map((box) => box.closest('label')?.textContent),
+    ).toEqual([
+      'Taking undergrads now (4)',
+      'Has had undergrads before (7)',
+      'Advises undergrad research (9)',
+    ]);
+    expect(screen.queryByRole('checkbox', { name: /Works with undergrads/ })).toBeNull();
+  });
+
+  it('describes the advises option with its hint (#5963)', () => {
+    renderFilters({ variant: 'sidebar', facetDistribution: undergradCounts });
+
+    expect(
+      screen.getByRole('checkbox', { name: 'Advises undergrad research (9)' }),
+    ).toHaveAccessibleDescription('e.g. supervised senior theses');
+    expect(
+      screen.getByRole('checkbox', { name: 'Taking undergrads now (4)' }),
+    ).not.toHaveAccessibleDescription();
+  });
+
+  it.each([
+    ['Taking undergrads now (4)', 'onWelcomesUndergradsChange', 'selectedWelcomesUndergrads'],
+    ['Has had undergrads before (7)', 'onHostsUndergradsChange', 'selectedHostsUndergrads'],
+    ['Advises undergrad research (9)', 'onMentorsUndergradsChange', 'selectedMentorsUndergrads'],
+  ] as const)('ticks and unticks %s through its own handler', (name, handler, selected) => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
     const { props, rerender } = renderFilters({
       variant: 'sidebar',
-      facetDistribution: {
-        entityType: { LAB: 12, CORE_FACILITY: 4 },
-        hostsUndergrads: { true: 7 },
-      },
+      facetDistribution: undergradCounts,
     });
 
-    const toggle = screen.getByRole('checkbox', {
-      name: 'Hosted undergrads (7)',
-    });
+    const toggle = screen.getByRole('checkbox', { name });
     expect(toggle).not.toBeChecked();
     fireEvent.click(toggle);
-    expect(props.onHostsUndergradsChange).toHaveBeenCalledWith(true);
+    expect(props[handler]).toHaveBeenCalledWith(true);
 
-    rerender(<ResearchFilterDisclosure {...props} selectedHostsUndergrads />);
-    const checked = screen.getByRole('checkbox', { name: 'Hosted undergrads (7)' });
+    rerender(<ResearchFilterDisclosure {...props} {...{ [selected]: true }} />);
+    const checked = screen.getByRole('checkbox', { name });
     expect(checked).toBeChecked();
+    expect(screen.getAllByRole('checkbox', { checked: true })).toHaveLength(1);
     fireEvent.click(checked);
-    expect(props.onHostsUndergradsChange).toHaveBeenCalledWith(false);
+    expect(props[handler]).toHaveBeenCalledWith(false);
   });
 
-  it('offers the welcomes-undergraduates filter with its count, and unchecks it', () => {
-    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
-    const { props, rerender } = renderFilters({
+  it('keeps an option that adding would empty in place, disabled, with the missing-evidence note (#5963)', () => {
+    renderFilters({
       variant: 'sidebar',
+      selectedWelcomesUndergrads: true,
       facetDistribution: {
-        hostsUndergrads: { true: 7 },
         welcomesUndergrads: { true: 4 },
+        hostsUndergrads: { true: 0 },
+        mentorsUndergrads: { true: 0 },
       },
     });
 
-    const toggle = screen.getByRole('checkbox', { name: 'Welcomes undergrads (4)' });
-    fireEvent.click(toggle);
-    expect(props.onWelcomesUndergradsChange).toHaveBeenCalledWith(true);
-
-    rerender(<ResearchFilterDisclosure {...props} selectedWelcomesUndergrads />);
-    const checked = screen.getByRole('checkbox', { name: 'Welcomes undergrads (4)' });
-    expect(checked).toBeChecked();
-    expect(screen.getByRole('checkbox', { name: 'Hosted undergrads (7)' })).not.toBeChecked();
-    fireEvent.click(checked);
-    expect(props.onWelcomesUndergradsChange).toHaveBeenCalledWith(false);
+    expect(screen.getByRole('checkbox', { name: 'Taking undergrads now (4)' })).toBeChecked();
+    const hosted = screen.getByRole('checkbox', { name: 'Has had undergrads before (0)' });
+    expect(hosted).toBeDisabled();
+    expect(hosted).toHaveAccessibleDescription('Missing evidence is not proof there is none.');
+    const advises = screen.getByRole('checkbox', { name: 'Advises undergrad research (0)' });
+    expect(advises).toBeDisabled();
+    expect(advises).toHaveAccessibleDescription(
+      'e.g. supervised senior theses Missing evidence is not proof there is none.',
+    );
+    expect(screen.getAllByText('Missing evidence is not proof there is none.')).toHaveLength(1);
   });
 
-  it('leads with one works-with-undergraduates filter above the two it combines (#5362)', () => {
-    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
-    const { props, rerender } = renderFilters({
+  it('keeps a ticked option checkable at zero, so it can always be removed', () => {
+    renderFilters({
       variant: 'sidebar',
+      selectedMentorsUndergrads: true,
+      facetDistribution: { mentorsUndergrads: { true: 0 }, hostsUndergrads: { true: 3 } },
+    });
+
+    const advises = screen.getByRole('checkbox', { name: 'Advises undergrad research (0)' });
+    expect(advises).toBeChecked();
+    expect(advises).toBeEnabled();
+    expect(screen.queryByText('Missing evidence is not proof there is none.')).toBeNull();
+  });
+
+  it('shows the option without a count when the counts could not load', () => {
+    renderFilters({
+      variant: 'sidebar',
+      hasFacetError: true,
+      facetDistribution: undergradCounts,
+    });
+
+    expect(screen.getByRole('checkbox', { name: 'Taking undergrads now' })).toBeEnabled();
+  });
+
+  it('moves desktop focus past a disabled Undergrads option to the first usable field', async () => {
+    window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
+    renderFilters({
       facetDistribution: {
-        hostsUndergrads: { true: 7 },
-        welcomesUndergrads: { true: 4 },
-        worksWithUndergrads: { true: 9 },
+        hostsUndergrads: { true: 0 },
+        mentorsUndergrads: { true: 3 },
+        entityType: { LAB: 12, CORE_FACILITY: 4 },
       },
     });
 
-    const toggles = screen
-      .getAllByRole('checkbox')
-      .map((box) => box.getAttribute('aria-label') ?? box.closest('label')?.textContent ?? '');
-    expect(toggles[0]).toMatch(/^Works with undergrads/);
-    const toggle = screen.getByRole('checkbox', { name: 'Works with undergrads (9)' });
-    fireEvent.click(toggle);
-    expect(props.onWorksWithUndergradsChange).toHaveBeenCalledWith(true);
-
-    rerender(<ResearchFilterDisclosure {...props} selectedWorksWithUndergrads />);
-    expect(screen.getByRole('checkbox', { name: 'Works with undergrads (9)' })).toBeChecked();
-    expect(screen.getByRole('checkbox', { name: 'Welcomes undergrads (4)' })).not.toBeChecked();
-    expect(screen.getByRole('checkbox', { name: 'Hosted undergrads (7)' })).not.toBeChecked();
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    const dialog = screen.getByRole('dialog', { name: 'Research filters' });
+    expect(
+      within(dialog).getByRole('checkbox', { name: 'Has had undergrads before (0)' }),
+    ).toBeDisabled();
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole('checkbox', { name: 'Advises undergrad research (3)' }),
+      ).toHaveFocus(),
+    );
   });
 
-  it('hides the works-with-undergraduates filter at zero unless it is already applied', () => {
-    const { props, rerender } = renderFilters({
+  it('hides a zero option while nothing is ticked, except hosted, and drops the combination line for one option', () => {
+    renderFilters({
       variant: 'sidebar',
-      facetDistribution: { worksWithUndergrads: { true: 0 }, hostsUndergrads: { true: 3 } },
+      facetDistribution: {
+        welcomesUndergrads: { true: 0 },
+        hostsUndergrads: { true: 3 },
+        mentorsUndergrads: { true: 0 },
+      },
     });
 
-    expect(screen.queryByRole('checkbox', { name: /^Works with undergrads/ })).toBeNull();
-
-    rerender(<ResearchFilterDisclosure {...props} selectedWorksWithUndergrads />);
-    expect(screen.getByRole('checkbox', { name: 'Works with undergrads (0)' })).toBeChecked();
+    const group = screen.getByRole('group', { name: 'Undergrads' });
+    expect(within(group).getAllByRole('checkbox')).toHaveLength(1);
+    expect(screen.getByRole('checkbox', { name: 'Has had undergrads before (3)' })).toBeEnabled();
+    expect(group).not.toHaveAccessibleDescription();
+    expect(screen.queryByText('Shows rows matching all ticked options')).toBeNull();
   });
 
-  it('hides the welcomes-undergraduates filter at zero unless it is already applied', () => {
-    const { props, rerender } = renderFilters({
-      variant: 'sidebar',
-      facetDistribution: { welcomesUndergrads: { true: 0 }, hostsUndergrads: { true: 3 } },
-    });
-
-    expect(screen.queryByRole('checkbox', { name: /^Welcomes undergrads/ })).toBeNull();
-    expect(screen.getByRole('checkbox', { name: 'Hosted undergrads (3)' })).toBeEnabled();
-
-    rerender(<ResearchFilterDisclosure {...props} selectedWelcomesUndergrads />);
-    expect(screen.getByRole('checkbox', { name: 'Welcomes undergrads (0)' })).toBeChecked();
-  });
-
-  it('shows the hosted-undergraduates filter at zero with a note that missing evidence is not absence', () => {
-    renderFilters({ variant: 'sidebar', facetDistribution: { hostsUndergrads: { true: 0 } } });
-
-    const toggle = screen.getByRole('checkbox', {
-      name: 'Hosted undergrads (0)',
-    });
-    expect(toggle).toBeDisabled();
-    expect(toggle).toHaveAccessibleDescription('Missing evidence is not proof there is none.');
-  });
-
-  it('moves desktop focus past a disabled hosted-undergraduates toggle to the first usable field', async () => {
+  it('moves desktop focus to the first select when every Undergrads option is disabled', async () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
     renderFilters({
       facetDistribution: {
@@ -164,7 +201,6 @@ describe('ResearchFilterDisclosure', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
     const dialog = screen.getByRole('dialog', { name: 'Research filters' });
-    expect(within(dialog).getByRole('checkbox', { name: 'Hosted undergrads (0)' })).toBeDisabled();
     await waitFor(() => expect(within(dialog).getByLabelText('Filter by type')).toHaveFocus());
   });
 
@@ -338,7 +374,9 @@ describe('ResearchFilterDisclosure', () => {
     window.matchMedia = vi.fn().mockReturnValue({ matches: true }) as typeof window.matchMedia;
     const { props } = renderFilters({ selectedWelcomesUndergrads: true });
 
-    fireEvent.click(screen.getByRole('button', { name: 'Remove Undergraduates: Welcomes now' }));
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Remove Undergrads: Taking undergrads now' }),
+    );
     expect(props.onWelcomesUndergradsChange).toHaveBeenCalledWith(false);
   });
 
@@ -479,8 +517,10 @@ describe('ResearchFilterDisclosure', () => {
   it('shows only the value on a chip beside the trigger so it fits a phone strip', () => {
     renderFilters({ selectedHostsUndergrads: true });
 
-    const chip = screen.getByRole('button', { name: 'Remove Undergraduates: Hosted before' });
-    expect(chip.textContent).toBe('Hosted undergrads');
+    const chip = screen.getByRole('button', {
+      name: 'Remove Undergrads: Has had undergrads before',
+    });
+    expect(chip.textContent).toBe('Has had undergrads before');
   });
 
   it('applies a department picked from the open list at once', () => {
