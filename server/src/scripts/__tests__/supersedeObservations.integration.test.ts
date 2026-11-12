@@ -1,13 +1,12 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdminAuditEvent } from '../../models/adminAuditEvent';
 import {
   assertSupersedeObservationsWriteAllowed,
   parseSupersedeObservationsArgs,
   supersedeObservations,
 } from '../supersedeObservations';
-import { OWNER_DECIDED_SOURCE_NAMES } from '../supersedeObservationsCore';
 
 const ACTOR = 'agent:ylabs-fixture';
 const REASON = 'states the other person of a split record';
@@ -103,6 +102,19 @@ describe('observations:supersede (#6018)', () => {
     expect(audits[0].metadata.runObservationIds).toEqual(ids);
   });
 
+  it('restores the observation when its audit record cannot be written, so a rerun audits it', async () => {
+    const id = await seedObservation();
+    const createAudit = vi
+      .spyOn(AdminAuditEvent, 'create')
+      .mockRejectedValueOnce(new Error('audit store unavailable'));
+    await expect(supersedeObservations(applyArgs([id]))).rejects.toThrow(/audit store unavailable/);
+    createAudit.mockRestore();
+    await expectUntouched([id]);
+    const rerun = await supersedeObservations(applyArgs([id]));
+    expect(rerun).toMatchObject({ refused: false, superseded: 1 });
+    expect(await AdminAuditEvent.countDocuments({ targetId: id })).toBe(1);
+  });
+
   it('is a no-op on a second run', async () => {
     const id = await seedObservation();
     await supersedeObservations(applyArgs([id]));
@@ -121,7 +133,7 @@ describe('observations:supersede (#6018)', () => {
     await expectUntouched([id]);
   });
 
-  it.each([...OWNER_DECIDED_SOURCE_NAMES])(
+  it.each(['manual-admin-edit', 'manual-pi-edit', 'operator-led-group-verdict'])(
     'refuses the whole run when an id comes from the operator-authored source %s',
     async (sourceName) => {
       const ordinary = await seedObservation();

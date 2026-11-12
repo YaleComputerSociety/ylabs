@@ -1,8 +1,6 @@
 import { DETACHED_ROLE_ASSIGNMENT_REVIEW_STATUS } from '../models/roleAssignment';
 import { isAuditableActor } from '../services/adminAuditService';
 
-const AGENT_LABEL_PATTERN = /^[a-z0-9][a-z0-9-]{1,40}$/;
-
 export const UNFOLD_SHELL_SCRIPT = 'researchers:unfold-shell';
 export const UNFOLD_SHELL_AUDIT_ACTION = 'researcher.unfold_shell';
 export const UNFOLD_SHELL_AUDIT_TARGET_TYPE = 'researcher';
@@ -109,7 +107,5 @@ export function auditActorFor(raw: string | undefined): string | undefined {
     .toLowerCase();
   if (!actor) return undefined;
   if (isAuditableActor(actor)) return actor;
-  if (AGENT_LABEL_PATTERN.test(actor) && isAuditableActor(`agent:${actor}`))
-    return `agent:${actor}`;
   throw new Error('--actor must be the operator netid or an agent identifier such as agent:<name>');
 }

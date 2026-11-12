@@ -296,7 +296,7 @@ describe('researchers:unfold-shell arguments (#6018)', () => {
   it('needs the confirm flag and ALLOW_NON_PROD_SCRAPER_WRITES before an apply', () => {
     const args = parseUnfoldResearcherShellArgs(
       [`--shell=${shell}`, '--note=x', '--apply', `--expect-survivor=${survivor}`],
-      { DEV_WRITE_OWNER: 'ylabs-fixture' },
+      { DEV_WRITE_OWNER: 'agent:ylabs-fixture' },
     );
     expect(args.actor).toBe('agent:ylabs-fixture');
     expect(() =>
@@ -313,6 +313,8 @@ describe('researchers:unfold-shell arguments (#6018)', () => {
 
   it('keeps a netid actor and refuses an actor it cannot audit', () => {
     expect(auditActorFor('zz9991')).toBe('zz9991');
+    expect(auditActorFor('agent:ylabs-fixture')).toBe('agent:ylabs-fixture');
     expect(() => auditActorFor('not a label!')).toThrow(/--actor/);
+    expect(() => auditActorFor('ylabs-fixture-session')).toThrow(/--actor/);
   });
 });

@@ -379,7 +379,7 @@ If unmerges become common, that reason is how an engine pass could automate step
 
 A `researchers:dedupe-accountless-shells` fold can join two different people, for example a name-only shell folded into a same-surname record through the shared-row arm (#5995).
 Reversing one is an operator judgement about that record, and three audited operator tools perform its writes (#6018).
-Each is for one-row judgements, not a bulk repair path, is a dry run by default, and on apply needs its confirm flag, `ALLOW_NON_PROD_SCRAPER_WRITES=true` and an actor (`--actor` or `DEV_WRITE_OWNER`, recorded as a netid or `agent:<name>`), and takes the Development write lease through its apply guard.
+Each is for one-row judgements, not a bulk repair path, is a dry run by default, and on apply needs its confirm flag, `ALLOW_NON_PROD_SCRAPER_WRITES=true` and an actor (`--actor` or `DEV_WRITE_OWNER`, which must be a netid or `agent:<name>`, so a bare session label is refused), and takes the Development write lease through its apply guard.
 
 1. Decide which person keeps the record from the official pages, and detach the other person's lead edges from it with `role-assignments:detach-edge`.
 2. `researchers:unfold-shell --shell=<id> --expect-survivor=<id> --note='<why>' --apply --confirm-unfold-shell` un-archives the shell, clears its `dedupedIntoResearcherId` and `dedupedAt`, and records the shell and the survivor as distinct people in the same write, so no fold arm re-joins them on the next sweep.

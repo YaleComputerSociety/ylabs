@@ -151,7 +151,7 @@ export async function supersedeObservations(
       { $set: { superseded: true, rollback: { rolledBackAt, reason: args.reason } } },
     );
     if ((write.modifiedCount ?? 0) !== 1) continue;
-    result.superseded += 1;
+    const before = byId.get(entry.id);
     const audit = await AdminAuditEvent.create({
       actorNetid: args.actor,
       action: SUPERSEDE_OBSERVATIONS_AUDIT_ACTION,
@@ -162,13 +162,37 @@ export async function supersedeObservations(
         script: SUPERSEDE_OBSERVATIONS_SCRIPT,
         runId,
         runObservationIds: args.ids,
-        before: byId.get(entry.id),
+        before,
       },
       timestamp: rolledBackAt,
+    }).catch(async (error: unknown) => {
+      await Observation.updateOne(
+        {
+          _id: new mongoose.Types.ObjectId(entry.id),
+          superseded: true,
+          'rollback.rolledBackAt': rolledBackAt,
+        },
+        restoreSupersedeFieldsUpdate(before),
+      );
+      throw error;
     });
+    result.superseded += 1;
     result.auditIds.push(String(audit._id));
   }
   return result;
+}
+
+function restoreSupersedeFieldsUpdate(before: any) {
+  const set: Record<string, unknown> = {};
+  const unset: Record<string, 1> = {};
+  for (const field of ['superseded', 'rollback'] as const) {
+    if (before?.[field] === undefined) unset[field] = 1;
+    else set[field] = before[field];
+  }
+  return {
+    ...(Object.keys(set).length ? { $set: set } : {}),
+    ...(Object.keys(unset).length ? { $unset: unset } : {}),
+  };
 }
 
 export async function runSupersedeObservationsCommand(

@@ -15,7 +15,7 @@ import {
 import { runSupersedeObservationsCommand, supersedeObservations } from '../supersedeObservations';
 import { runUnfoldResearcherShellCommand, unfoldResearcherShell } from '../unfoldResearcherShell';
 
-const SESSION = 'ylabs-fixture-session';
+const SESSION = 'agent:ylabs-fixture-session';
 const ENV_KEYS = [
   DEV_WRITE_LEASE_SWITCH_ENV,
   DEV_WRITE_LEASE_OWNER_ENV,
@@ -121,7 +121,7 @@ describe('unfold-shell and observations:supersede under the Development write le
     expect(await lease()).toMatchObject({ ownerLabel: SESSION });
     expect(String((await lease())?.command)).toContain('researchers:unfold-shell');
     const audit = await development().collection('admin_audit_events').findOne({});
-    expect(audit).toMatchObject({ actorNetid: `agent:${SESSION}`, targetId: seeded.shell });
+    expect(audit).toMatchObject({ actorNetid: SESSION, targetId: seeded.shell });
   });
 
   it('unfold-shell is refused by the model guard when it skips the apply guard', async () => {
@@ -131,7 +131,7 @@ describe('unfold-shell and observations:supersede under the Development write le
       shellId: seeded.shell,
       expectedSurvivorId: seeded.survivor,
       note: 'two different people',
-      actor: `agent:${SESSION}`,
+      actor: SESSION,
       apply: true,
     }).catch((error: unknown) => error);
     expect(refusal).toBeInstanceOf(DevWriteRefusedError);
@@ -173,7 +173,7 @@ describe('unfold-shell and observations:supersede under the Development write le
     const refusal = await supersedeObservations({
       ids: [id],
       reason: 'states the other person',
-      actor: `agent:${SESSION}`,
+      actor: SESSION,
       apply: true,
     }).catch((error: unknown) => error);
     expect(refusal).toBeInstanceOf(DevWriteRefusedError);
