@@ -15276,7 +15276,21 @@ async function materializeFromRunUnderRemovalGuard(
   // projection just resolved from rather than racing it (#2542). Unlike the two
   // lanes above, a dry run still plans and reports: an operator has to be able to
   // read the drop-guard fraction before authorizing a pass that deletes evidence.
-  const fieldRetractionResult = await reconcileFieldRetractionsFromRun(scrapeRunId, options);
+  const fieldRetractionResult = await reconcileFieldRetractionsFromRun(scrapeRunId, {
+    dryRun: options.dryRun,
+    rederiveUser: (identifier) => materializeEntity('user', identifier, { dryRun: false }),
+  });
+  if (fieldRetractionResult.userFieldRetraction) {
+    const userRetraction = fieldRetractionResult.userFieldRetraction;
+    console.info(
+      `[field-retraction] user ${userRetraction.outcome}: ${JSON.stringify({
+        ...userRetraction.counts,
+        retiredObservations: userRetraction.retiredObservations,
+        rederivedSubjects: userRetraction.rederivedSubjects,
+        rederiveErrors: userRetraction.rederiveErrors,
+      })}`,
+    );
+  }
   const expectedQuietRetractionOutcomes: FieldRetractionOutcome[] = [
     'reconciled',
     'planned',

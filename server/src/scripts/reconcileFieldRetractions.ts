@@ -14,10 +14,14 @@ import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { materializeEntity } from '../scrapers/entityMaterializer';
 import {
   fieldRetractionContracts,
   reconcileFieldRetractions,
+  reconcileUserFieldRetractions,
+  userFieldRetractionContractFor,
   type FieldRetractionResult,
+  type UserFieldRetractionResult,
 } from '../scrapers/fieldRetraction';
 
 dotenv.config({ quiet: true });
@@ -85,8 +89,18 @@ export function summarizePreFixAbsenceClaimExclusions(results: FieldRetractionRe
   );
 }
 
-export function totalPlannedRetractions(results: FieldRetractionResult[]): number {
-  return results.reduce((sum, result) => sum + result.retractions.length, 0);
+export function totalPlannedRetractions(
+  results: FieldRetractionResult[],
+  userResults: UserFieldRetractionResult[] = [],
+): number {
+  return (
+    results.reduce((sum, result) => sum + result.retractions.length, 0) +
+    userResults.reduce((sum, result) => sum + result.retractions.length, 0)
+  );
+}
+
+function userRetractionSources(sources: string[]): string[] {
+  return sources.filter((sourceName) => userFieldRetractionContractFor(sourceName));
 }
 
 async function main() {
@@ -102,12 +116,16 @@ async function main() {
   for (const sourceName of args.sources) {
     planned.push(await reconcileFieldRetractions({ sourceName, dryRun: true }));
   }
+  const plannedUser: UserFieldRetractionResult[] = [];
+  for (const sourceName of userRetractionSources(args.sources)) {
+    plannedUser.push(await reconcileUserFieldRetractions({ sourceName, dryRun: true }));
+  }
 
   if (args.apply) {
     if (!args.confirm) {
       throw new Error('--confirm-field-retraction is required when --apply is set.');
     }
-    const plannedCount = totalPlannedRetractions(planned);
+    const plannedCount = totalPlannedRetractions(planned, plannedUser);
     if (plannedCount > args.maxApply) {
       throw new Error(
         `Apply would retract ${plannedCount} field assertions, above --max-apply=${args.maxApply}.`,
@@ -116,9 +134,19 @@ async function main() {
   }
 
   const applied: FieldRetractionResult[] = [];
+  const appliedUser: UserFieldRetractionResult[] = [];
   if (args.apply) {
     for (const sourceName of args.sources) {
       applied.push(await reconcileFieldRetractions({ sourceName, dryRun: false }));
+    }
+    for (const sourceName of userRetractionSources(args.sources)) {
+      appliedUser.push(
+        await reconcileUserFieldRetractions({
+          sourceName,
+          dryRun: false,
+          rederive: (identifier) => materializeEntity('user', identifier, { dryRun: false }),
+        }),
+      );
     }
   }
 
@@ -146,6 +174,22 @@ async function main() {
       regatedEntities: result.regatedEntities,
     })),
     retractions: planned.flatMap((result) => result.retractions),
+    plannedUser: plannedUser.map((result) => ({
+      sourceName: result.sourceName,
+      outcome: result.outcome,
+      counts: result.counts,
+      frozenFields: result.frozenFields,
+      plannedRetractions: result.retractions.length,
+    })),
+    appliedUser: appliedUser.map((result) => ({
+      sourceName: result.sourceName,
+      outcome: result.outcome,
+      counts: result.counts,
+      frozenFields: result.frozenFields,
+      retiredObservations: result.retiredObservations,
+      rederivedSubjects: result.rederivedSubjects,
+      rederiveErrors: result.rederiveErrors,
+    })),
   };
 
   if (args.output) {

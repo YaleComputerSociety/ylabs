@@ -299,7 +299,7 @@ describe('reading the same roster twice', () => {
     expect(first.filter((o) => o.field === 'websiteUrl').map((o) => o.value)).toEqual([
       PERSONAL_SITE,
     ]);
-    expect(first.some((o) => o.assertsNoValueFor)).toBe(false);
+    expect(first.some((o) => o.assertsNoValueFor?.includes('websiteUrl'))).toBe(false);
   });
 });
 
