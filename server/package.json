@@ -80,6 +80,7 @@
     "observations:purge-miskeyed-profile-descriptions": "tsx src/scripts/purgeMiskeyedProfileDescriptions.ts",
     "observations:retire-affiliated-org-name-grafts": "tsx src/scripts/retireAffiliatedOrgNameGrafts.ts",
     "observations:retire-school-as-department": "tsx src/scripts/retireSchoolAsDepartmentObservations.ts",
+    "observations:retire-directory-export-departments": "tsx src/scripts/retireDirectoryExportDepartments.ts",
     "observations:retire-deploy-host-citations": "tsx src/scripts/retireEphemeralDeployHostCitations.ts",
     "observations:retire-organization-identity-websites": "tsx src/scripts/retireOrganizationIdentityWebsiteGrafts.ts",
     "observations:retire-shared-roster-websites": "tsx src/scripts/retireSharedRosterWebsites.ts",
