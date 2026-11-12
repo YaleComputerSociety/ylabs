@@ -17,6 +17,7 @@ import {
   setDevWriteProgressClock,
   startDevWriteProgressClock,
   watchMongoClientProgress,
+  watchOutboundHttpProgress,
 } from './devWriteProgress';
 
 /**
@@ -721,6 +722,7 @@ async function holdLease(
   }
   const at = runtime.now();
   startDevWriteProgressClock(at);
+  watchOutboundHttpProgress();
   if (!watchMongoClientProgress(connection.db.client)) progressUnobservable = true;
   heldLeases.set(name, {
     lease,

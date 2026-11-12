@@ -1,3 +1,6 @@
+import axios from 'axios';
+import { createServer } from 'http';
+import type { AddressInfo } from 'net';
 import { MongoClient, type Db } from 'mongodb';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -230,36 +233,46 @@ describe('a holder making progress', () => {
     expect(record?.progressAt?.getTime()).toBe(START + 6 * 60 * MINUTE);
   });
 
-  it('counts a completed fetch as progress', async () => {
-    const { devHostLeaseLimiter } = await import('../../scrapers/cli');
-    await holdApplyLease();
-    const before = devWriteProgress().count;
-    armDevHostLeases(descriptor(), 'scrape run', LEASE_ON);
-    let minute = 0;
-
-    await tickMinutes(60, async () => {
-      minute += 0.5;
-      if (minute % 10 !== 0) return;
-      const settled = await devHostLeaseLimiter.acquire('lab.example.edu');
-      settled();
+  it('counts every settled outbound request, through axios or fetch, as progress', async () => {
+    const server = createServer((request, response) => {
+      response.statusCode = request.url === '/missing' ? 404 : 200;
+      response.end('ok');
     });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    try {
+      await holdApplyLease();
+      const before = devWriteProgress().count;
+      const requests = [
+        () => axios.get(`${origin}/page`),
+        () => fetch(`${origin}/page`).then((response) => response.text()),
+        () => axios.get(`${origin}/missing`).catch(() => undefined),
+      ];
+      let minute = 0;
 
-    expect(stops).toEqual([]);
-    expect(await lease('host:lab.example.edu')).toMatchObject({
-      progressCount: 6,
-      progressAt: new Date(START + 60 * MINUTE),
-    });
-    expect(await lease(DEV_APPLY_LEASE_NAME)).toMatchObject({ progressCount: before + 6 });
+      await tickMinutes(60, async () => {
+        minute += 0.5;
+        if (minute % 10 === 0) await requests[(minute / 10) % requests.length]();
+      });
 
-    await devHostLeaseLimiter.acquire('lab.example.edu');
-    await tickMinutes(20);
-    expect(stops).toMatchObject([
-      {
-        reason: 'no-progress',
-        leases: [DEV_APPLY_LEASE_NAME],
-        lastProgressAt: new Date(START + 60 * MINUTE),
-      },
-    ]);
+      expect(stops).toEqual([]);
+      expect(devWriteProgress().count).toBe(before + 6);
+      expect(await lease(DEV_APPLY_LEASE_NAME)).toMatchObject({
+        progressCount: before + 6,
+        progressAt: new Date(START + 60 * MINUTE),
+      });
+
+      await tickMinutes(20);
+      expect(stops).toMatchObject([
+        {
+          reason: 'no-progress',
+          leases: [DEV_APPLY_LEASE_NAME],
+          lastProgressAt: new Date(START + 60 * MINUTE),
+        },
+      ]);
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
   });
 
   it('keeps the newest progress when a parent and its child renew the same lease', async () => {

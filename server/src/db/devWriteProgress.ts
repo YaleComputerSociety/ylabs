@@ -1,3 +1,4 @@
+import { subscribe } from 'node:diagnostics_channel';
 import type {
   CommandStartedEvent,
   CommandSucceededEvent,
@@ -9,7 +10,7 @@ import type {
  * Counts the work a Development write-lease holder actually completes (#5880), so a holder whose
  * heartbeat keeps its lease live while its work is hung can be told apart from a busy one.
  *
- * Progress is a successful database command or a settled fetch. Liveness traffic is not progress:
+ * Progress is a successful database command or a settled outbound HTTP request. Liveness traffic is not progress:
  * commands on the lease collection, writes that only move heartbeat fields, and driver keep-alive
  * and session housekeeping commands would advance the counter of a process that does nothing else.
  */
@@ -153,6 +154,27 @@ export function watchMongoClientProgress(client: unknown): boolean {
     counted.delete(commandKey(event));
   });
   return true;
+}
+
+/**
+ * Node publishes these when an outbound request settles, for `http`/`https` (axios and other
+ * clients) and for the built-in `fetch`, so every settled request counts without each script
+ * wiring its own HTTP client.
+ */
+export const DEV_WRITE_PROGRESS_HTTP_CHANNELS = [
+  'http.client.response.finish',
+  'http.client.request.error',
+  'undici:request:trailers',
+  'undici:request:error',
+] as const;
+
+let watchingOutboundHttp = false;
+
+export function watchOutboundHttpProgress(): void {
+  if (watchingOutboundHttp) return;
+  watchingOutboundHttp = true;
+  for (const channel of DEV_WRITE_PROGRESS_HTTP_CHANNELS)
+    subscribe(channel, recordDevWriteProgress);
 }
 
 export function resetDevWriteProgressForTests() {
