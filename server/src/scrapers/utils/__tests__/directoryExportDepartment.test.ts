@@ -28,6 +28,7 @@ describe('decodeDirectoryExportDepartment (#5796)', () => {
     ['MEDNEU Neurology - All', 'Neurology'],
     ['MEDINT Cardiology', 'Internal Medicine'],
     ['MEDCCC Medical Oncology', 'Internal Medicine'],
+    ['MEDCCC Hematology', 'Internal Medicine'],
     ['MEDPED Neonatology', 'Pediatrics'],
     ['MEDOBG Reproductive Sciences', 'Obstetrics, Gynecology & Reproductive Sciences'],
     ['MEDDRA Radiology', 'Radiology & Biomedical Imaging'],
@@ -51,7 +52,6 @@ describe('decodeDirectoryExportDepartment (#5796)', () => {
     'MEDINT Administration',
     'MEDCSC Developmental Disabilities',
     'MEDNEU Neurology Neuroscience',
-    'MEDCCC Hematology',
     'NURS - Nursing',
     'MEDINT Sleep Medicine',
   ])('refuses %j, which maps to no catalog department', (value) => {
