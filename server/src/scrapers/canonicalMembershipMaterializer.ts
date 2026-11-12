@@ -562,14 +562,6 @@ async function liveResearcherId(
   return toObjectId((live as { _id?: unknown } | null)?._id);
 }
 
-/**
- * Whether a name-only mint under this display name would stand beside a researcher who
- * already carries an identity (a netid or an ORCID) under the same name.
- *
- * The comparison is the one the mint and the accountless-shell dedupe both make, the
- * canonical display name compared without case or spacing, so the answer here is exactly
- * whether the mint would produce a row that dedupe folds back by name (#3802).
- */
 const IDENTIFIED_RESEARCHER_FILTER = {
   archived: { $ne: true },
   $or: [
@@ -577,8 +569,6 @@ const IDENTIFIED_RESEARCHER_FILTER = {
     { 'identifiers.orcid': { $exists: true, $nin: [null, ''] } },
   ],
 };
-
-const NAME_VARIANT_CANDIDATE_LIMIT = 50;
 
 const variantNameTokens = (value: unknown): string[] =>
   canonicalPersonName(trimmed(value))
@@ -606,17 +596,29 @@ export function isFoldableNameVariant(left: unknown, right: unknown): boolean {
   if (spacedA === spacedB) return false;
   if (spacedA.replace(/[\s-]+/g, '') === spacedB.replace(/[\s-]+/g, '')) return true;
   if (a[a.length - 1] !== b[b.length - 1]) return false;
-  const middleA = a.slice(1, -1);
-  const middleB = b.slice(1, -1);
-  if (a[0] === b[0]) {
-    if (middleA.length === 0 || middleB.length === 0) return true;
-    return middleA.every(
-      (token, i) => middleB[i] && (middleB[i] === token || middleB[i][0] === token[0]),
-    );
-  }
-  if (middleA.join(' ') !== middleB.join(' ')) return false;
-  return givenNamesEquivalent(a[0], b[0]);
+  if (!givenNamesEquivalent(a[0], b[0])) return false;
+  return middleNamesCompatible(a.slice(1, -1), b.slice(1, -1));
 }
+
+const middleTokenCompatible = (left: string, right: string): boolean =>
+  left === right ||
+  (left.length === 1 && right.startsWith(left)) ||
+  (right.length === 1 && left.startsWith(right));
+
+const middleNamesCompatible = (left: string[], right: string[]): boolean => {
+  const [shorter, longer] = left.length <= right.length ? [left, right] : [right, left];
+  return shorter.every((token, i) => middleTokenCompatible(token, longer[i]));
+};
+
+const LATIN_ACCENTED_LETTERS = '\u00C0-\u024F';
+const COMBINING_MARKS = '\u0300-\u036f';
+
+const surnameSuffixPattern = (surname: string): RegExp => {
+  const letters = Array.from(surname).map(
+    (letter) => `[${escapeRegex(letter)}${LATIN_ACCENTED_LETTERS}][${COMBINING_MARKS}]*`,
+  );
+  return new RegExp(`(?:^|[\\s-])${letters.join('[\\s-]?')}\\s*$`, 'i');
+};
 
 /**
  * Whether a researcher who already carries an identity (a netid or an ORCID) holds this name,
@@ -636,14 +638,13 @@ export async function identifiedResearcherHoldsDisplayName(displayName: unknown)
     .select('_id')
     .lean();
   if (namesake) return true;
-  const surname = variantNameTokens(displayName).pop();
+  const surname = variantNameTokens(tokens[tokens.length - 1]).join('');
   if (!surname || surname.length < 2) return false;
   const sameSurname = (await Researcher.find({
-    displayName: new RegExp(`${escapeRegex(surname)}\\s*$`, 'i'),
+    displayName: surnameSuffixPattern(surname),
     ...IDENTIFIED_RESEARCHER_FILTER,
   })
     .select('displayName')
-    .limit(NAME_VARIANT_CANDIDATE_LIMIT)
     .lean()) as Array<{ displayName?: unknown }>;
   return sameSurname.some((holder) => isFoldableNameVariant(displayName, holder.displayName));
 }

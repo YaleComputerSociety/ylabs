@@ -400,6 +400,19 @@ describe(
       expect(await Researcher.countDocuments({ displayName: 'Kate Synthetic' })).toBe(0);
     });
 
+    it('finds an identified holder written with accents or a hyphen the listing omits (#5897)', async () => {
+      await accountHolder('Avery', { displayName: 'Avery Q Synthétic' });
+      await accountHolder('Blair', { displayName: 'Blair Syn-Thetic' });
+
+      await runLane({}, [
+        member('Avery'),
+        { name: 'Blair Synthetic', role: 'core-faculty', profileUrl: centerProfileUrl('Blair') },
+      ]);
+
+      expect(await Researcher.countDocuments({ displayName: 'Avery Synthetic' })).toBe(0);
+      expect(await Researcher.countDocuments({ displayName: 'Blair Synthetic' })).toBe(0);
+    });
+
     it('still mints a person who only shares an identified researcher surname (#5897)', async () => {
       await accountHolder('Blair', { displayName: 'Blair Synthetic' });
 
