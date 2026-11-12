@@ -132,6 +132,7 @@ export interface ResearchPlanView {
   checklist: ResearchPlanChecklistItem[];
   deadlines: ResearchPlanDeadline[];
   exportPreferences: ResearchPlanExportPreferences;
+  createdAt?: string;
   updatedAt?: string;
 }
 
@@ -344,6 +345,7 @@ export const researchPlanViewFromDoc = (doc: Record<string, unknown>): ResearchP
     checklist: serializeStoredChecklist(doc.checklist),
     deadlines: serializeStoredDeadlines(doc.deadlines),
     exportPreferences: normalizeExportPreferences(doc.exportPreferences),
+    createdAt: planTimestampIso(doc.createdAt),
     updatedAt: planTimestampIso(doc.updatedAt),
   };
 };

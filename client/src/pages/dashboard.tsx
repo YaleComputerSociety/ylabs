@@ -27,6 +27,14 @@ import {
   ACCOUNT_DATA_DELETE_INTENT_PARAM,
   ACCOUNT_DATA_DELETE_INTENT_VALUE,
 } from '../utils/accountData';
+import {
+  DEFAULT_PLAN_LIST_VIEW,
+  clearPlanListView,
+  parsePlanListView,
+  writePlanListView,
+  type PlanListView,
+} from '../utils/dashboardPlanListView';
+import type { ResearchPlanStageSurface } from '../utils/researchPlanStages';
 
 type DashboardSurface = 'dashboard' | 'programs';
 
@@ -39,6 +47,10 @@ type ProgramSummary = {
 };
 
 const SURFACES: DashboardSurface[] = ['dashboard', 'programs'];
+const PLAN_STAGE_SURFACE: Record<DashboardSurface, ResearchPlanStageSurface> = {
+  dashboard: 'research',
+  programs: 'program',
+};
 const DEFAULT_SURFACE: DashboardSurface = 'dashboard';
 
 const surfaceFromParam = (value: string | null): DashboardSurface =>
@@ -55,6 +67,7 @@ const Dashboard = () => {
     setSearchParams(
       (current) => {
         const params = new URLSearchParams(current);
+        if (surfaceFromParam(params.get('tab')) !== next) clearPlanListView(params);
         if (next === DEFAULT_SURFACE) params.delete('tab');
         else params.set('tab', next);
         return params;
@@ -68,6 +81,21 @@ const Dashboard = () => {
     handleTabKeyDown,
     registerTab,
   } = useRovingTabs<DashboardSurface>(SURFACES, requestedSurface, writeSurfaceToUrl);
+  const requestedListView = parsePlanListView(searchParams, PLAN_STAGE_SURFACE[requestedSurface]);
+  const listViewFor = (target: DashboardSurface): PlanListView =>
+    target === requestedSurface ? requestedListView : DEFAULT_PLAN_LIST_VIEW;
+  const writeListViewToUrl = useCallback(
+    (view: PlanListView) =>
+      setSearchParams(
+        (current) => {
+          const params = new URLSearchParams(current);
+          writePlanListView(params, view);
+          return params;
+        },
+        { replace: true },
+      ),
+    [setSearchParams],
+  );
   const [followedSurface, setFollowedSurface] = useState(requestedSurface);
   if (followedSurface !== requestedSurface) {
     setFollowedSurface(requestedSurface);
@@ -155,7 +183,11 @@ const Dashboard = () => {
           tabIndex={0}
           className={surface === 'dashboard' ? '' : 'hidden'}
         >
-          <SavedResearchPlans onCountChange={setSavedResearchCount} />
+          <SavedResearchPlans
+            onCountChange={setSavedResearchCount}
+            listView={listViewFor('dashboard')}
+            onListViewChange={writeListViewToUrl}
+          />
         </div>
         <div
           id="dashboard-programs-panel"
@@ -164,7 +196,11 @@ const Dashboard = () => {
           tabIndex={0}
           className={surface === 'programs' ? '' : 'hidden'}
         >
-          <ProgramWatch onSummaryChange={setProgramSummary} />
+          <ProgramWatch
+            onSummaryChange={setProgramSummary}
+            listView={listViewFor('programs')}
+            onListViewChange={writeListViewToUrl}
+          />
         </div>
 
         {accountDataControlsEnabled && (
