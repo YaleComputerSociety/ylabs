@@ -46,6 +46,13 @@ import {
   type LabUrlEvidenceLoader,
   type LabUrlIsUnusable,
 } from '../utils/labUrlEvidence';
+import {
+  decideRosterAttach,
+  loadRosterOwnerKeyRows,
+  rosterHostOfUrl,
+  type RosterOwnerKeyRow,
+  type RosterOwnerKeyRowLoader,
+} from '../rosterOwnerKeyRows';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatCharacters';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
@@ -4524,6 +4531,19 @@ export function rosterResearchEntitySlugPrefix(dept: DeptConfig): string {
   return `dept-${namespacedDeptKey(dept.deptKey)}-`;
 }
 
+export function rosterResearchEntitySlugPrefixForSlug(
+  slug: string,
+  configs: readonly DeptConfig[] = DEFAULT_DEPT_CONFIGS,
+): string {
+  const [config] = rosterDeptConfigsForResearchEntitySlug(slug, configs);
+  return config ? rosterResearchEntitySlugPrefix(config) : '';
+}
+
+function rosterHostForSlugPrefix(prefix: string, configs: readonly DeptConfig[]): string {
+  const config = configs.find((candidate) => rosterResearchEntitySlugPrefix(candidate) === prefix);
+  return config ? rosterHostOfUrl(config.url) : '';
+}
+
 export function rosterResearchEntitySlugForUserKey(userKey: string, dept: DeptConfig): string {
   const prefix = `dept:${namespacedDeptKey(dept.deptKey)}:`;
   if (!userKey.startsWith(prefix)) return '';
@@ -4706,7 +4726,16 @@ export class DepartmentRosterScraper implements IScraper {
     private readonly htmlFetcher: HtmlFetcher = fetchHtml,
     private readonly labUrlEvidenceLoader: LabUrlEvidenceLoader = loadLabUrlEvidenceBySlug,
     private readonly facultyTitledUserKeyLoader: FacultyTitledUserKeyLoader = loadUserKeysWithALiveFacultyTitle,
+    private readonly rosterOwnerKeyRowLoader?: RosterOwnerKeyRowLoader,
   ) {}
+
+  private loadRosterOwnerKeyRows(): ReturnType<RosterOwnerKeyRowLoader> {
+    if (this.rosterOwnerKeyRowLoader) return this.rosterOwnerKeyRowLoader();
+    return loadRosterOwnerKeyRows(
+      (slug) => rosterResearchEntitySlugPrefixForSlug(slug, this.configs),
+      (prefix) => rosterHostForSlugPrefix(prefix, this.configs),
+    );
+  }
 
   /**
    * Read a roster page and record the attempt.
@@ -4788,6 +4817,10 @@ export class DepartmentRosterScraper implements IScraper {
     const withdrawnEntityKeysByDept = new Map<string, Set<string>>();
     const profilesReadByDept = new Map<string, number>();
     const rekeyReads = new RekeyedPersonReads(this.name);
+    let rosterOwnerKeyRowsRead: ReturnType<RosterOwnerKeyRowLoader> | undefined;
+    const rosterOwnerKeyRows = () => (rosterOwnerKeyRowsRead ??= this.loadRosterOwnerKeyRows());
+    const rowsMintedThisRunByOwnerKey = new Map<string, RosterOwnerKeyRow>();
+    let attachedToExistingRow = 0;
     const processEntries = async (
       entries: FacultyEntry[],
       dept: DeptConfig,
@@ -4878,8 +4911,43 @@ export class DepartmentRosterScraper implements IScraper {
               entityKey,
               labUrlUnusabilityFor(labUrlEvidenceBySlug, rosterResearchEntitySlug(entry, dept)),
             );
-        const labObs = mint.observations;
+        const ownSlug = rosterResearchEntitySlug(entry, dept);
+        const attach =
+          mint.observations.length > 0 && !dept.crossListedProgramme
+            ? decideRosterAttach({
+                ownerKey: entityKey,
+                ownSlug,
+                ownRosterPrefix: rosterResearchEntitySlugPrefix(dept),
+                personName: entry.identityName || entry.name,
+                rowsByOwnerKey: await rosterOwnerKeyRows(),
+                mintedThisRun: rowsMintedThisRunByOwnerKey,
+              })
+            : { targetSlug: ownSlug, reason: 'mint-own' as const };
+        const attachedSlug = attach.targetSlug !== ownSlug ? attach.targetSlug : '';
+        const labObs = attachedSlug ? [] : mint.observations;
         const labKey = labObs[0]?.entityKey;
+        if (attachedSlug) {
+          attachedToExistingRow++;
+          const appointmentObs = mint.observations
+            .filter((observation) => observation.field === 'departments')
+            .map((observation) => ({ ...observation, entityKey: attachedSlug }));
+          if (appointmentObs.length > 0) {
+            await ctx.emit(appointmentObs);
+            observations += appointmentObs.length;
+          }
+          const deptDiscovered = discoveredEntityKeysByDept.get(dept.deptKey) ?? new Set<string>();
+          deptDiscovered.add(attachedSlug);
+          deptDiscovered.add(ownSlug);
+          discoveredEntityKeysByDept.set(dept.deptKey, deptDiscovered);
+        } else if (labObs.length > 0 && labKey && !rowsMintedThisRunByOwnerKey.has(entityKey)) {
+          rowsMintedThisRunByOwnerKey.set(entityKey, {
+            id: '',
+            slug: labKey,
+            rosterPrefix: rosterResearchEntitySlugPrefix(dept),
+            mintedFromRosterHost: rosterHostOfUrl(dept.url),
+            leadPrimaryIdentityUrls: [],
+          });
+        }
         if (labObs.length > 0 && labKey && !seenLabKeys.has(labKey)) {
           seenLabKeys.add(labKey);
           await ctx.emit(labObs);
@@ -4917,7 +4985,7 @@ export class DepartmentRosterScraper implements IScraper {
         if (!dept.crossListedProgramme && entry.profileReadOutcome === 'read') {
           profilesReadByDept.set(dept.deptKey, (profilesReadByDept.get(dept.deptKey) ?? 0) + 1);
         }
-        const withdrawnKey = rosterMintWithdrawnEntityKey(entry, dept, mint);
+        const withdrawnKey = attachedSlug ? '' : rosterMintWithdrawnEntityKey(entry, dept, mint);
         if (withdrawnKey) {
           const deptWithdrawn = withdrawnEntityKeysByDept.get(dept.deptKey) ?? new Set<string>();
           deptWithdrawn.add(withdrawnKey);
@@ -5242,6 +5310,11 @@ export class DepartmentRosterScraper implements IScraper {
     ctx.log(
       `Emitted ${totalObs} observations across ${totalFaculty} faculty / ${totalLabs} labs (${summary})`,
     );
+    if (attachedToExistingRow > 0) {
+      ctx.log(
+        `${attachedToExistingRow} roster entries attached to the person's existing row on another roster instead of minting a second row (#5969)`,
+      );
+    }
 
     const breakageStatuses = new Set(['empty', 'extractor-error', 'rendered-extractor-error']);
     const brokenSources = perDept.filter((d) => breakageStatuses.has(d.status));
