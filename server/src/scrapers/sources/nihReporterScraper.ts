@@ -23,6 +23,10 @@
  *       - Resolve the one existing research row the canonical resolver names for them.
  *         A grant proves that a person is funded, never that a row should exist, so
  *         every other outcome is counted by reason and mints nothing (#3145, #3561).
+ *       - A PI who leads several rows resolves to none of them. When some of those rows
+ *         are co-led, each award goes to the co-led row it shares with another of the
+ *         award's PIs, or else to every co-led row the PI leads, because on a genuinely
+ *         co-led row each co-lead's awards belong to the row (#5779, #5846).
  *       - Emit grant evidence without replacing identity fields on the existing row.
  *
  * Honors:
@@ -33,8 +37,11 @@ import axios from 'axios';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { getCached, setCached } from '../snapshotCache';
 import {
+  coLedOfficialLeadRows,
+  loadOfficialLeadRowsForResearcher,
   resolveCanonicalResearchHomeForResearcher,
   type CanonicalResearchHomeResolution,
+  type OfficialLeadRow,
 } from '../canonicalResearchHomeResolver';
 import { Researcher } from '../../models/researcher';
 import { Observation } from '../../models/observation';
@@ -738,6 +745,25 @@ function researchHomeEligibleUserTitle(title: unknown): boolean {
   return true;
 }
 
+export function coLedAwardRowSlugs(
+  records: readonly NihGrant[],
+  researcherId: string,
+  coLedRows: readonly OfficialLeadRow[],
+  researcherIdForPi: NihPiResearcherLookup,
+): string[] {
+  const otherInvestigators = new Set<string>();
+  for (const record of records) {
+    for (const pi of record.principal_investigators || []) {
+      const otherId = researcherIdForPi(pi, record);
+      if (otherId && otherId !== researcherId) otherInvestigators.add(otherId);
+    }
+  }
+  const shared = coLedRows.filter((row) =>
+    row.leadPersonIds.some((personId) => otherInvestigators.has(personId)),
+  );
+  return (shared.length > 0 ? shared : coLedRows).map((row) => row.slug);
+}
+
 export function piGrantsToObservations(
   grants: NihGrant[],
   researcherId: string | undefined,
@@ -1093,6 +1119,7 @@ export interface NihReporterScraperOptions {
   resolveCorroborated?: typeof resolveResearcherIdByCorroboratedName;
   loadResearcherProfileTitle?: (researcherId: string) => Promise<string | undefined>;
   researchHomeResolver?: (researcherId: string) => Promise<CanonicalResearchHomeResolution>;
+  officialLeadRowsLoader?: (researcherId: string) => Promise<OfficialLeadRow[]>;
   lookupContactPiAffiliations?: ContactPiAffiliationLookup;
   loadLegacyGrantObservations?: LegacyGrantObservationLoader;
   lookupProjectsByNumber?: NihProjectNumberLookup;
@@ -1109,6 +1136,8 @@ export class NihReporterScraper implements IScraper {
       this.opts.fiscalYears || fiscalYearsEndingAt(ctx.options.referenceDate ?? new Date());
     const researchHomeResolver =
       this.opts.researchHomeResolver || resolveCanonicalResearchHomeForResearcher;
+    const officialLeadRowsLoader =
+      this.opts.officialLeadRowsLoader || loadOfficialLeadRowsForResearcher;
     const limitOption = ctx.options.limit;
     if (limitOption !== undefined && (!Number.isSafeInteger(limitOption) || limitOption < 1)) {
       throw new Error('--limit must be a safe positive integer');
@@ -1202,6 +1231,11 @@ export class NihReporterScraper implements IScraper {
     let totalObs = 0;
     let processed = 0;
     const rows = new Map<string, { researcherIds: Set<string>; grants: NihGrant[] }>();
+    const coLeadsOfSeveralRows: {
+      researcherId: string;
+      grants: NihGrant[];
+      coLedRows: OfficialLeadRow[];
+    }[] = [];
     const researcherIdByCreditedName = new Map<string, string>();
     const researcherIdForPi: NihPiResearcherLookup = (pi, grant) => {
       if (!isProfileId(pi.profile_id) || !creditedProfileIds.has(pi.profile_id)) return undefined;
@@ -1236,8 +1270,39 @@ export class NihReporterScraper implements IScraper {
         row.grants.push(...grants);
         rows.set(target.slug, row);
       }
+      if (
+        target.status === 'refused' &&
+        target.reason === 'ambiguousRow' &&
+        person.status === 'matched'
+      ) {
+        const coLedRows = coLedOfficialLeadRows(
+          await officialLeadRowsLoader(person.user._id),
+          person.user._id,
+        );
+        if (coLedRows.length > 0) {
+          coLeadsOfSeveralRows.push({ researcherId: person.user._id, grants, coLedRows });
+        }
+      }
       if (processed % 100 === 0 || processed === piEntries.length) {
         ctx.log(`progress: ${processed}/${piEntries.length} PIs (${attach.enriched} enriched)`);
+      }
+    }
+
+    const coLedAttach = { awards: 0, rows: new Set<string>() };
+    for (const coLead of coLeadsOfSeveralRows) {
+      for (const records of groupGrantsByProject(coLead.grants)) {
+        coLedAttach.awards++;
+        for (const slug of coLedAwardRowSlugs(
+          records,
+          coLead.researcherId,
+          coLead.coLedRows,
+          researcherIdForPi,
+        )) {
+          const row = rows.get(slug) ?? { researcherIds: new Set<string>(), grants: [] };
+          row.grants.push(...records);
+          rows.set(slug, row);
+          coLedAttach.rows.add(slug);
+        }
       }
     }
 
@@ -1362,6 +1427,8 @@ export class NihReporterScraper implements IScraper {
           : 'never a contact PI, so no affiliation evidence'
       }); ` +
       `${rows.size} distinct row(s) enriched; ${grantAttachSummary(attach)}; ` +
+      `${coLeadsOfSeveralRows.length} PI(s) of an ambiguous row attached ${coLedAttach.awards} award(s) ` +
+      `to ${coLedAttach.rows.size} co-led row(s); ` +
       `${ineligibleLeadTitle} held for a non-lead title; ` +
       `${corroboratedPis} PI(s) settled by a corroborating profile URL; ` +
       `legacy award PI lists ${relist.status}: ${relist.observations} observation(s) relisted, ` +

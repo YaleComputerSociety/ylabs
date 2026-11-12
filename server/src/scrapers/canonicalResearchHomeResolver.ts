@@ -151,3 +151,67 @@ export async function resolveCanonicalResearchHomeForResearcher(
     }),
   );
 }
+
+export interface OfficialLeadRow {
+  slug: string;
+  leadPersonIds: string[];
+}
+
+const isCurrentLiveEdge = (assignment: any): boolean =>
+  assignment.archived !== true && assignment.state !== 'HISTORICAL';
+
+export function coLedOfficialLeadRows(
+  rows: readonly OfficialLeadRow[],
+  researcherId: string,
+): OfficialLeadRow[] {
+  return rows.filter(
+    (row) =>
+      row.leadPersonIds.includes(researcherId) &&
+      row.leadPersonIds.some((personId) => personId !== researcherId),
+  );
+}
+
+export async function loadOfficialLeadRowsForResearcher(
+  researcherId: string,
+): Promise<OfficialLeadRow[]> {
+  if (!mongoose.isValidObjectId(researcherId)) return [];
+  const ownEdges = (await RoleAssignment.find({
+    personId: researcherId,
+    'target.kind': 'RESEARCH_ENTITY',
+    role: { $in: CANONICAL_LEAD_ROLES },
+  })
+    .select('target state archived')
+    .lean()) as any[];
+  const targetIds = Array.from(
+    new Set(
+      ownEdges
+        .filter(isCurrentLiveEdge)
+        .map((assignment) => String(assignment.target?.id || ''))
+        .filter(Boolean),
+    ),
+  );
+  if (targetIds.length === 0) return [];
+  const entities = (await ResearchEntity.find({ _id: { $in: targetIds } })
+    .select('slug website websiteUrl sourceUrls archived')
+    .lean()) as any[];
+  const officialRows = entities.filter(isOfficialResearchHomeCandidate);
+  if (officialRows.length === 0) return [];
+  const rowEdges = (await RoleAssignment.find({
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': { $in: officialRows.map((entity) => entity._id) },
+    role: { $in: CANONICAL_LEAD_ROLES },
+  })
+    .select('personId target state archived')
+    .lean()) as any[];
+  const leadsByTarget = new Map<string, Set<string>>();
+  for (const assignment of rowEdges.filter(isCurrentLiveEdge)) {
+    const targetId = String(assignment.target?.id || '');
+    const leads = leadsByTarget.get(targetId) ?? new Set<string>();
+    leads.add(String(assignment.personId));
+    leadsByTarget.set(targetId, leads);
+  }
+  return officialRows.map((entity) => ({
+    slug: text(entity.slug),
+    leadPersonIds: [...(leadsByTarget.get(String(entity._id)) ?? [])],
+  }));
+}
