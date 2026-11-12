@@ -133,12 +133,12 @@ describe('a dropped email retires by attested omission (#5711)', () => {
       const path = (req.url || '/').split('?')[0];
       const body =
         path === '/people/faculty'
-          ? `<html><body><main><ul><li><a class="person" href="/people/sable-inkwright">Sable Inkwright</a><span class="title">Professor of Economics</span></li></ul></main></body></html>`
-          : path === '/people/sable-inkwright'
-            ? `<!doctype html><html><head><title>Sable Inkwright | Economics</title><meta property="og:title" content="Sable Inkwright" /></head>
-<body><main><article><h1 class="node__title">Sable Inkwright</h1>
+          ? `<html><body><main><ul><li><a class="person" href="/people/sable-fixture">Sable Fixture</a><span class="title">Professor of Economics</span></li></ul></main></body></html>`
+          : path === '/people/sable-fixture'
+            ? `<!doctype html><html><head><title>Sable Fixture | Economics</title><meta property="og:title" content="Sable Fixture" /></head>
+<body><main><article><h1 class="node__title">Sable Fixture</h1>
 <dl class="node__contact-info"><dt>Email</dt><dd>${rosterProfile.contact}</dd></dl></article></main>
-<footer class="site-footer"><a href="mailto:econ.office@yale.edu">econ.office@yale.edu</a></footer></body></html>`
+<footer class="site-footer"><a href="mailto:econ.fixture.office@yale.edu">econ.fixture.office@yale.edu</a></footer></body></html>`
             : '';
       res.writeHead(body ? 200 : 404, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(body);
@@ -250,10 +250,10 @@ describe('a dropped email retires by attested omission (#5711)', () => {
 
   it('dept-faculty-roster: attests on the profile page its email rows use, and two claims retire the address the person was keyed by', async () => {
     rosterProfile.contact =
-      '<a href="mailto:sable.inkwright@yale.edu">sable.inkwright@yale.edu</a>';
+      '<a href="mailto:sable.fixture@yale.edu">sable.fixture@yale.edu</a>';
     await scrapeRoster();
     expect(await liveEmails(ROSTER_SOURCE)).toEqual([
-      'netid:sable.inkwright sable.inkwright@yale.edu',
+      'netid:sable.fixture sable.fixture@yale.edu',
     ]);
     const emailRow = await Observation.findOne({ sourceName: ROSTER_SOURCE, field: 'email' }).lean<{
       sourceUrl: string;
@@ -278,7 +278,7 @@ describe('a dropped email retires by attested omission (#5711)', () => {
   });
 
   it('dept-faculty-roster: claims nothing while the profile still shows any address', async () => {
-    rosterProfile.contact = 'Lab manager: econ.labmanager@yale.edu';
+    rosterProfile.contact = 'Lab manager: econ.fixture.labmanager@yale.edu';
     await scrapeRoster();
     await scrapeRoster();
     expect(
