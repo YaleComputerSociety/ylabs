@@ -55,6 +55,7 @@ import FavoriteButton from '../components/shared/FavoriteButton';
 import useFavorites from '../hooks/useFavorites';
 import useDocumentTitle from '../hooks/useDocumentTitle';
 import {
+  LabAlsoLedResearchEntities,
   LabEntityRelationship,
   LabMember,
   LabRelatedResearchEntitySummary,
@@ -260,6 +261,49 @@ const AffiliatedResearchEntitiesSection = ({
   </section>
 );
 
+const AlsoLedResearchEntitiesSection = ({
+  leadName,
+  researchEntities,
+  relatedProfileOpenState,
+}: {
+  leadName: string;
+  researchEntities: LabRelatedResearchEntitySummary[];
+  relatedProfileOpenState: RelatedProfileOpenState;
+}) => (
+  <section>
+    <SectionHeading>Also led by {leadName}</SectionHeading>
+    <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      {researchEntities.map((entity) => (
+        <li key={entity.slug || entity.id} className="flex">
+          <Link
+            to={`/research/${safeRouteSegment(entity.slug)}`}
+            state={relatedProfileOpenState}
+            className="block w-full rounded-card border border-[var(--yr-line)] bg-[var(--yr-panel)] p-4 [transition-property:color,background-color,border-color,box-shadow] hover:border-line-strong hover:shadow-yr-raised active:translate-y-px yr-focus-ring"
+          >
+            <div className="flex flex-wrap gap-2">
+              {uniqueCompact(
+                [entityKindLabel(entity), ...compactDepartmentLabels(entity.departments)],
+                3,
+              ).map((tag) => (
+                <span
+                  key={tag}
+                  className="rounded-full bg-[var(--yr-panel-muted)] px-2 py-1 text-xs font-medium text-ink-soft"
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+            <h3 className="mt-3 text-sm font-semibold text-ink">{researchEntityTitle(entity)}</h3>
+            {entity.blurb && (
+              <p className="mt-2 line-clamp-3 text-sm leading-relaxed text-muted">{entity.blurb}</p>
+            )}
+          </Link>
+        </li>
+      ))}
+    </ul>
+  </section>
+);
+
 const SimilarResearchEntitiesSection = ({
   similarResearchEntities,
   relatedProfileOpenState,
@@ -336,6 +380,25 @@ const dedupeResearchEntitySummaries = (
     deduped.push(entity);
   }
   return deduped;
+};
+
+const alsoLedResearchEntityGroups = (
+  groups: LabAlsoLedResearchEntities[],
+  alreadyShownKeys: ReadonlySet<string>,
+): LabAlsoLedResearchEntities[] => {
+  const claimed = new Set(alreadyShownKeys);
+  return groups.flatMap((leadGroup) => {
+    const leadName = (leadGroup.leadName || '').trim();
+    const researchEntities = (leadGroup.researchEntities || []).filter((entity) => {
+      const key = researchEntitySummaryKey(entity);
+      if (!entity.slug || !key || claimed.has(key)) return false;
+      claimed.add(key);
+      return true;
+    });
+    return leadName && researchEntities.length > 0
+      ? [{ ...leadGroup, leadName, researchEntities }]
+      : [];
+  });
 };
 
 const detailDescription = (group: any): string =>
@@ -1144,6 +1207,7 @@ const LabDetail = () => {
     relatedResearchEntities = [],
     affiliatedResearchEntities = [],
     similarResearchEntities = [],
+    alsoLedResearchEntitiesByLead = [],
     operatorPreview,
   } = payload;
   const group = legacyGroup ?? researchEntity;
@@ -1156,9 +1220,19 @@ const LabDetail = () => {
       researchEntitySummaryKey,
     ),
   );
+  const alsoLedGroups = alsoLedResearchEntityGroups(
+    alsoLedResearchEntitiesByLead,
+    structuralResearchEntityKeys,
+  );
+  const shownBesideSimilarKeys = new Set([
+    ...structuralResearchEntityKeys,
+    ...alsoLedGroups.flatMap((leadGroup) =>
+      leadGroup.researchEntities.map(researchEntitySummaryKey),
+    ),
+  ]);
   const dedupedSimilarResearchEntities = dedupeResearchEntitySummaries(
     similarResearchEntities,
-  ).filter((entity) => !structuralResearchEntityKeys.has(researchEntitySummaryKey(entity)));
+  ).filter((entity) => !shownBesideSimilarKeys.has(researchEntitySummaryKey(entity)));
   const hasRelatedResearchEntities = dedupedRelatedResearchEntities.length > 0;
   const hasAffiliatedResearchEntities = dedupedAffiliatedResearchEntities.length > 0;
   const hasSimilarResearchEntities = dedupedSimilarResearchEntities.length > 0;
@@ -1414,6 +1488,15 @@ const LabDetail = () => {
                 leadPersonNames={leadPersonNames}
                 highlightedMemberName={highlightedMemberName}
               />
+
+              {alsoLedGroups.map((leadGroup) => (
+                <AlsoLedResearchEntitiesSection
+                  key={leadGroup.leadPublicKey || leadGroup.leadName}
+                  leadName={leadGroup.leadName}
+                  researchEntities={leadGroup.researchEntities}
+                  relatedProfileOpenState={relatedProfileOpenState}
+                />
+              ))}
 
               <FellowshipRecipientsSection recipients={group.fellowshipRecipients} />
 

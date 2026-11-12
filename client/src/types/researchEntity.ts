@@ -173,5 +173,6 @@ export function normalizeResearchEntityDetailPayload(
     affiliatedRelationships: payload.affiliatedRelationships ?? [],
     affiliatedResearchEntities: payload.affiliatedResearchEntities ?? [],
     similarResearchEntities: payload.similarResearchEntities ?? [],
+    alsoLedResearchEntitiesByLead: payload.alsoLedResearchEntitiesByLead ?? [],
   };
 }
