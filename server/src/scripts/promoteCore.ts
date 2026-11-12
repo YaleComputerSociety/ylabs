@@ -310,7 +310,6 @@ export interface RemotePhaseStep {
 }
 
 export interface RemotePhaseOptions {
-  confirmBetaBackup: boolean;
   fullSearchRebuild?: boolean;
   meiliRestorePoint?: string;
 }
@@ -342,7 +341,7 @@ const VISIBILITY_GATE_ARGS = [
 
 export function remotePhaseSteps(
   target: PromotionTarget,
-  options: RemotePhaseOptions = { confirmBetaBackup: false },
+  options: RemotePhaseOptions = {},
 ): RemotePhaseStep[] {
   if (target === 'beta') {
     return [
@@ -404,12 +403,7 @@ export function remotePhaseSteps(
         label: 'beta readiness',
         cwd: 'server',
         command: 'yarn',
-        args: [
-          'beta:readiness',
-          ...(options.confirmBetaBackup ? ['--confirm-beta-backup'] : []),
-          '--output',
-          '/tmp/ylabs-beta-readiness-final.json',
-        ],
+        args: ['beta:readiness', '--output', '/tmp/ylabs-beta-readiness-final.json'],
       },
     ];
   }
@@ -481,7 +475,7 @@ export function remotePhaseEnvironmentProblems(
 
 export function remotePhaseStartCommand(
   target: PromotionTarget,
-  options: RemotePhaseOptions = { confirmBetaBackup: false },
+  options: RemotePhaseOptions = {},
 ): string {
   return [
     ...(target === 'production' && options.meiliRestorePoint
@@ -489,26 +483,22 @@ export function remotePhaseStartCommand(
       : []),
     'yarn --cwd server promote:remote-phase',
     `--environment ${target}`,
-    ...(target === 'beta' && options.confirmBetaBackup ? ['--confirm-beta-backup'] : []),
     ...(options.fullSearchRebuild ? ['--full-search-rebuild'] : []),
   ].join(' ');
 }
 
 export interface RemotePhaseArgs {
   environment: PromotionTarget;
-  confirmBetaBackup: boolean;
   fullSearchRebuild: boolean;
 }
 
 export function parseRemotePhaseArgs(argv: string[]): RemotePhaseArgs {
   let environment: PromotionTarget | undefined;
-  let confirmBetaBackup = false;
   let fullSearchRebuild = false;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--') continue;
-    if (arg === '--confirm-beta-backup') confirmBetaBackup = true;
-    else if (arg === '--full-search-rebuild') fullSearchRebuild = true;
+    if (arg === '--full-search-rebuild') fullSearchRebuild = true;
     else if (arg === '--environment') {
       const value = readValue(argv, index++, arg);
       if (value !== 'beta' && value !== 'production') {
@@ -518,10 +508,7 @@ export function parseRemotePhaseArgs(argv: string[]): RemotePhaseArgs {
     } else throw new Error(`Unknown promote:remote-phase argument: ${arg}`);
   }
   if (!environment) throw new Error('--environment beta|production is required');
-  if (confirmBetaBackup && environment !== 'beta') {
-    throw new Error('--confirm-beta-backup applies only to --environment beta');
-  }
-  return { environment, confirmBetaBackup, fullSearchRebuild };
+  return { environment, fullSearchRebuild };
 }
 
 export function formatRemotePhasePlan(

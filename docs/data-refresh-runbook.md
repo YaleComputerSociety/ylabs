@@ -55,7 +55,8 @@ Before relying on this runbook, the team must have:
 - Organization-owned GitHub, Render, MongoDB Atlas, and Meilisearch administration with at least two current administrators.
 - A team-owned Beta database user restricted to the `Beta` database and stored in the approved team secret manager.
 - Production credentials kept out of local scraper profiles and available only to approved promotion operators.
-- A shared record of the source list, expected observation ranges, artifact location, Beta backup, Production restore point, and final gate results for each refresh.
+- A shared record of the source list, expected observation ranges, artifact location, Production restore point, and final gate results for each refresh.
+No Beta restore point exists yet, so the record cannot carry one until the off-cluster dump in #4148 exists.
 
 Record the administrator count for each platform, by role, in the [ownership record](./deployment-inventory.md#ownership-record).
 
@@ -586,10 +587,11 @@ It prints which run satisfied each mode.
 3. Runs the Phase 2 plan, `beta:refresh-from-development`, and prints each collection's copy count against Beta's current count.
 4. Checks the Render operator service through the Render API: it must exist, be running, deploy `beta`, and use the repository root as its root directory.
 It then compares the operator's live deploy with the `beta` head on GitHub and reports whether the apply will deploy it first.
-5. Prints the Phase 3 sequence the Render job will run, then requires `--backup-ref <reference>`, naming the Beta backup or restore point taken before this mirror, and a typed `yes` (or `--yes` for a scripted run).
+5. Prints the Phase 3 sequence the Render job will run, then requires `--backup-ref <reference>` and a typed `yes` (or `--yes` for a scripted run).
+The script logs the reference and verifies nothing about it, and no Beta restore point exists yet (#4148), so the reference is not evidence that one does.
 6. Deploys the operator service at the `beta` head when its live build is older, and waits until that deploy is live, before writing anything; a deploy that fails, is canceled or times out stops the promotion with Beta untouched.
 Then it applies the mirror and stops unless it reports `"status": "applied"`.
-7. Starts a Render one-off job on the Beta operator service running `yarn --cwd server promote:remote-phase --environment beta --confirm-beta-backup`, and polls it every 20 seconds for up to 4 hours.
+7. Starts a Render one-off job on the Beta operator service running `yarn --cwd server promote:remote-phase --environment beta`, and polls it every 20 seconds for up to 4 hours.
 That job verifies the database names, re-gates visibility, runs strict data quality, the integrity gate, and the trust contract, updates the Beta index (a reconcile of the changed documents, applying any drifted settings in place, when its embedder matches the code, otherwise a full rebuild; `--full-search-rebuild` forces the rebuild), and runs `beta:readiness`, stopping at the first step that fails.
 The trust contract runs with `--fail-on-public-visibility-violation`, so it fails only when a student can see a row that should not be shown; the held rows in `operator_review` are a standing queue the strict mode would fail on every mirror (#5007).
 
@@ -820,13 +822,16 @@ Beta-to-Production copies Beta as is, so Production carries no archived rows eit
 It never writes to Meilisearch.
 The mirror replaces whole documents rather than merging fields, so a mirrored row can serve a worse individual field than the row it replaced even when the mirror is newer; [research-data-pipeline.md](research-data-pipeline.md) owns the known `websiteUrl` case and the repair command for it.
 
-Before changing Beta, record its backup or manual recovery artifact and run the Beta diagnostic from the Beta Render shell:
+No Beta restore point exists before a mirror: the Development-to-Beta mirror keeps no copy of what it replaces, and the off-cluster dump that would provide one is #4148.
+A bad mirror is recovered by mirroring an accepted Development dataset again.
+Run the Beta diagnostic from the Beta Render shell before changing Beta:
 
 ```bash
 SCRAPER_ENV=beta yarn --cwd server beta:readiness
 ```
 
-The diagnostic exits non-zero while any gate is blocked, and `betaBackup` stays blocked until `--confirm-beta-backup` is passed, so a non-zero exit without that flag is expected; read the other gates in the report.
+The diagnostic exits non-zero while any gate is blocked.
+It reports no backup gate: the `--confirm-beta-backup` flag and the `betaBackup` row it marked `ready` were removed because they verified nothing (#5556), and passing the flag now fails as an unknown argument.
 
 Generate and review the plan locally:
 
@@ -888,7 +893,7 @@ node scripts/reindex-search-index.mjs beta --apply
 Then run the Beta readiness gate, which exits non-zero when any gate is blocked:
 
 ```bash
-SCRAPER_ENV=beta   yarn --cwd server beta:readiness   --confirm-beta-backup   --output /tmp/ylabs-beta-readiness-final.json
+SCRAPER_ENV=beta   yarn --cwd server beta:readiness   --output /tmp/ylabs-beta-readiness-final.json
 ```
 
 Audit the Beta website after the gates pass.
@@ -1102,7 +1107,7 @@ The refresh is incomplete if any required artifact, restore point, or independen
 ## Recovery
 
 Local Development is disposable and can be reset from the accepted Beta snapshot or a new scrape.
-Beta recovery uses the recorded Beta backup or a fresh mirror from an accepted Development dataset.
+Beta recovery is a fresh mirror from an accepted Development dataset, because no Beta restore point exists yet (#4148).
 The only in-cluster Production restore point is the generation the last promotion replaced, restored with `production:promote-beta-copy --rollback <operationId>` (#4149); it lives on the same cluster, so it is no defence against losing the cluster, and no off-cluster restore point exists (#4148).
 Production-owned rows outside the promoted collections have no second copy, so beyond that rollback Production recovery is forward; [the incident runbook](./incident-runbook.md) owns it.
 Never use a Development database copy as a Production rollback.

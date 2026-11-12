@@ -31,14 +31,10 @@ describe('promote:remote-phase', () => {
   it('runs every Beta step in order and reports success', () => {
     const lines = capture();
     const ran: string[] = [];
-    const code = runRemotePhase(
-      ['--environment', 'beta', '--confirm-beta-backup'],
-      BETA_ENV,
-      (step) => {
-        ran.push(step.label);
-        return 0;
-      },
-    );
+    const code = runRemotePhase(['--environment', 'beta'], BETA_ENV, (step) => {
+      ran.push(step.label);
+      return 0;
+    });
     expect(code).toBe(0);
     expect(ran).toHaveLength(8);
     expect(resultLine(lines)).toMatchObject({ environment: 'beta', status: 'succeeded' });

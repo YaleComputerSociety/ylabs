@@ -116,11 +116,12 @@ Development held 5,291 terms with 638 approved as of 2026-08-29; Beta held none.
 Preparation, from the Beta Render shell:
 
 ```bash
-SCRAPER_ENV=beta yarn --cwd server beta:readiness --confirm-beta-backup --output /tmp/ylabs-beta-readiness.json
+SCRAPER_ENV=beta yarn --cwd server beta:readiness --output /tmp/ylabs-beta-readiness.json
 ```
 
 The command is read-only: it reports the Mongo target, source metadata presence, and canonical migration residue, and it exits non-zero whenever any gate is blocked, so a script that runs it stops on a failed gate.
-Pass `--confirm-beta-backup` only once a Beta backup or restore point exists; the backup gate reports `ready` because the operator said so.
+The gate does not report on a Beta backup, because no Beta restore point exists yet: the Development-to-Beta mirror keeps no copy of what it replaces, and the off-cluster dump that would provide one is #4148.
+The `--confirm-beta-backup` flag and the `betaBackup` row it marked `ready` were removed because they verified nothing (#5556); passing the flag now fails as an unknown argument.
 Source metadata is not seeded on Beta: the Development-to-Beta refresh copies the `sources` collection with the rest of the corpus.
 
 Once the refresh has landed, rebuild the Beta search index with the guarded reindex in [`meilisearch-reindex-runbook.md`](./meilisearch-reindex-runbook.md), which refuses an empty Mongo target or a mismatched index prefix before it clears anything:

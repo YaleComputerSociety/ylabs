@@ -189,10 +189,9 @@ describe('argument parsing', () => {
     ).toThrow('--dataset-version must look like');
   });
 
-  it('parses the remote phase and keeps the backup flag to beta', () => {
-    expect(parseRemotePhaseArgs(['--environment', 'beta', '--confirm-beta-backup'])).toEqual({
+  it('parses the remote phase environment and rebuild flag', () => {
+    expect(parseRemotePhaseArgs(['--environment', 'beta'])).toEqual({
       environment: 'beta',
-      confirmBetaBackup: true,
       fullSearchRebuild: false,
     });
     expect(
@@ -200,12 +199,29 @@ describe('argument parsing', () => {
         .fullSearchRebuild,
     ).toBe(true);
     expect(() => parseRemotePhaseArgs([])).toThrow('--environment beta|production is required');
-    expect(() =>
-      parseRemotePhaseArgs(['--environment', 'production', '--confirm-beta-backup']),
-    ).toThrow('applies only to --environment beta');
     expect(() => parseRemotePhaseArgs(['--environment', 'development'])).toThrow(
       'must be beta or production',
     );
+  });
+});
+
+describe('retired Beta backup confirmation (#5556)', () => {
+  it('refuses --confirm-beta-backup on the remote phase for either environment', () => {
+    for (const environment of ['beta', 'production']) {
+      expect(() =>
+        parseRemotePhaseArgs(['--environment', environment, '--confirm-beta-backup']),
+      ).toThrow('Unknown promote:remote-phase argument: --confirm-beta-backup');
+    }
+  });
+
+  it('never forwards a backup assertion to the Beta job or its readiness step', () => {
+    const steps = remotePhaseSteps('beta', { fullSearchRebuild: true });
+    const command = remotePhaseStartCommand('beta', { fullSearchRebuild: true });
+
+    expect(command).toBe(
+      'yarn --cwd server promote:remote-phase --environment beta --full-search-rebuild',
+    );
+    expect(JSON.stringify(steps)).not.toMatch(/backup/i);
   });
 });
 
@@ -256,7 +272,7 @@ describe('plan checks', () => {
 
 describe('remote phase', () => {
   it('runs the Beta gate before the reindex and readiness last', () => {
-    const labels = remotePhaseSteps('beta', { confirmBetaBackup: true }).map((step) => step.label);
+    const labels = remotePhaseSteps('beta').map((step) => step.label);
     expect(labels).toEqual([
       'verify database names',
       'retarget saved plans',
@@ -267,9 +283,11 @@ describe('remote phase', () => {
       'search reindex',
       'beta readiness',
     ]);
-    const readiness = remotePhaseSteps('beta', { confirmBetaBackup: true }).at(-1)!;
-    expect(readiness.args).toContain('--confirm-beta-backup');
-    expect(remotePhaseSteps('beta').at(-1)!.args).not.toContain('--confirm-beta-backup');
+    expect(remotePhaseSteps('beta').at(-1)!.args).toEqual([
+      'beta:readiness',
+      '--output',
+      '/tmp/ylabs-beta-readiness-final.json',
+    ]);
     const trust = remotePhaseSteps('beta').find((step) => step.label === 'trust contract')!;
     expect(trust.args).toContain('--fail-on-public-visibility-violation');
     expect(trust.args).not.toContain('--strict');
@@ -311,15 +329,14 @@ describe('remote phase', () => {
         expect.arrayContaining(['--apply', '--output', searchReindexResultFile(target)]),
       );
       expect(step.resultFile).toBe(searchReindexResultFile(target));
-      const forced = remotePhaseSteps(target, {
-        confirmBetaBackup: false,
-        fullSearchRebuild: true,
-      }).find((s) => s.label === 'search reindex')!;
+      const forced = remotePhaseSteps(target, { fullSearchRebuild: true }).find(
+        (s) => s.label === 'search reindex',
+      )!;
       expect(forced.args).toContain('--full');
     }
-    expect(
-      remotePhaseStartCommand('production', { confirmBetaBackup: false, fullSearchRebuild: true }),
-    ).toBe('yarn --cwd server promote:remote-phase --environment production --full-search-rebuild');
+    expect(remotePhaseStartCommand('production', { fullSearchRebuild: true })).toBe(
+      'yarn --cwd server promote:remote-phase --environment production --full-search-rebuild',
+    );
   });
 
   it('summarizes the reindex result for the phase report', () => {
@@ -348,8 +365,8 @@ describe('remote phase', () => {
   });
 
   it('builds the start command the Render job runs', () => {
-    expect(remotePhaseStartCommand('beta', { confirmBetaBackup: true })).toBe(
-      'yarn --cwd server promote:remote-phase --environment beta --confirm-beta-backup',
+    expect(remotePhaseStartCommand('beta')).toBe(
+      'yarn --cwd server promote:remote-phase --environment beta',
     );
     expect(remotePhaseStartCommand('production')).toBe(
       'yarn --cwd server promote:remote-phase --environment production',
@@ -435,7 +452,6 @@ describe('production restore point on the remote phase', () => {
     );
     expect(
       remotePhaseStartCommand('production', {
-        confirmBetaBackup: false,
         meiliRestorePoint: args.meiliRestorePoint,
       }),
     ).toBe(

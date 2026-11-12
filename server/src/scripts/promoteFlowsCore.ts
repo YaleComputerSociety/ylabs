@@ -250,10 +250,7 @@ export async function runPromoteBeta(argv: string[], deps: PromoteBetaDeps): Pro
     problems.push(...mirrorPlanProblems(plan.report));
   }
 
-  const remoteOptions = {
-    confirmBetaBackup: Boolean(args.backupRef),
-    fullSearchRebuild: args.fullSearchRebuild,
-  };
+  const remoteOptions = { fullSearchRebuild: args.fullSearchRebuild };
   if (!args.skipRemotePhase) deps.log(formatRemotePhasePlan('beta', remoteOptions));
 
   if (args.dryRun) {
@@ -359,7 +356,6 @@ export async function runPromoteProduction(
   if (!args.skipRemotePhase) {
     deps.log(
       formatRemotePhasePlan('production', {
-        confirmBetaBackup: false,
         fullSearchRebuild: args.fullSearchRebuild,
         meiliRestorePoint: args.meiliRestorePoint,
       }),
@@ -428,7 +424,6 @@ export async function runPromoteProduction(
     render.serviceId!,
     render.dashboardUrl,
     {
-      confirmBetaBackup: false,
       fullSearchRebuild: args.fullSearchRebuild,
       meiliRestorePoint: args.meiliRestorePoint,
     },
