@@ -6,6 +6,7 @@
  * paid draft, and a Development refresh must not clear it.
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 
 export const WRITTEN_DESCRIPTION_DERIVATION_COLLECTION = 'written_description_derivations';
 

@@ -11,6 +11,7 @@
  * would attribute one environment's deletions to another.
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 
 export const DELETED_ACCOUNT_EVENT_TALLY_COLLECTION = 'deleted_account_event_tallies';
 

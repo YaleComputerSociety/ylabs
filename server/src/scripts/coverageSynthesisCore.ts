@@ -292,16 +292,19 @@ export function assertWriterCacheModeAllowed(
     CoverageSynthesisArgs,
     'evaluate' | 'importDerivations' | 'validateOnly' | 'captureEvidence'
   >,
-): void {
+): { writesDevelopmentCache: boolean } {
   const writesCardCache =
     mode === 'synthesize-cards' &&
     Boolean(args?.evaluate || (args?.importDerivations && !args.validateOnly));
-  if (mode !== 'evaluate' && mode !== 'import-derivations' && !writesCardCache) return;
+  if (mode !== 'evaluate' && mode !== 'import-derivations' && !writesCardCache) {
+    return { writesDevelopmentCache: false };
+  }
   if (!/\/development$/i.test(dbLabel)) {
     throw new Error(
       `research-entity:coverage-synthesis --${mode} is restricted to a Development database (got ${dbLabel})`,
     );
   }
+  return { writesDevelopmentCache: !(mode === 'import-derivations' && args?.validateOnly) };
 }
 
 /**

@@ -2,6 +2,7 @@
  * Mongoose schema and model for analytics events tracking user activity.
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 
 export enum AnalyticsEventType {
   LOGIN = 'login',

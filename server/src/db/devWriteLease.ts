@@ -716,6 +716,14 @@ export function armDevHostLeases(
   armedHostLeaseConnection = { connection, command };
 }
 
+export function holdsDevApplyLease(): boolean {
+  return heldLeases.has(DEV_APPLY_LEASE_NAME);
+}
+
+export function devHostLeasesArmed(): boolean {
+  return armedHostLeaseConnection !== undefined;
+}
+
 export const devHostLeaseName = (host: string) =>
   `${DEV_HOST_LEASE_PREFIX}${host.trim().toLowerCase()}`;
 

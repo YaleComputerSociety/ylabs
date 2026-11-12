@@ -9,6 +9,7 @@
  * on Production must survive a promotion, and a Development refresh must not clear one.
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 
 export const DIRECTORY_REMOVAL_REQUEST_COLLECTION = 'directory_removal_requests';
 

@@ -2,6 +2,7 @@
  * Mongoose schema for explicit admin authority grants.
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 
 const adminGrantSchema = new mongoose.Schema(
   {

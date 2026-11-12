@@ -6,6 +6,7 @@
  * paid card draft, and a Development refresh must not clear it.
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 
 export const CARD_SYNTHESIS_DERIVATION_COLLECTION = 'card_synthesis_derivations';
 

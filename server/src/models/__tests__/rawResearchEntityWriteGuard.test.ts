@@ -37,7 +37,12 @@ const WRITTEN_ARGUMENT_BY_METHOD = new Map<string, number | null>([
   ['findOneAndUpdate', 1],
   ['findOneAndReplace', 1],
   ['rename', null],
+  ['deleteOne', null],
+  ['deleteMany', null],
+  ['findOneAndDelete', null],
+  ['drop', null],
 ]);
+const DELETING_METHODS = new Set(['deleteOne', 'deleteMany', 'findOneAndDelete', 'drop']);
 const NON_AUTHORING_PROPERTIES = new Set(['filter', '$unset', '$pull', '$pullAll']);
 const STORED_DOCUMENT_READS = new Set(['find', 'findOne', 'findById', 'aggregate', 'distinct']);
 const WRITING_STAGES = new Set(['$out', '$merge']);
@@ -139,6 +144,169 @@ const REVIEWED_RAW_RESEARCH_ENTITY_WRITERS: Record<
     sites: 2,
     reason:
       'copies whole collections from Beta into Development, so every document is one the model already accepted',
+  },
+};
+
+/**
+ * Every production file that writes any collection through a raw driver handle, the exact
+ * number of such sites, and why the write stays below the model. Raw writes skip the
+ * Development write guard (#5871), so each is reviewed here.
+ */
+const REVIEWED_RAW_DRIVER_WRITERS: Record<string, { sites: number; reason: string }> = {
+  'db/devWriteLaunch.ts': {
+    sites: 1,
+    reason:
+      'records the launch of a leased apply on the connection the script opened, before any model write, so the record lands on the database the lease guards',
+  },
+  'db/devWriteLease.ts': {
+    sites: 5,
+    reason:
+      'takes, renews and releases the Development write lease itself, through the connection the script opened, so the guard that reads the lease cannot sit in front of it',
+  },
+  'scripts/archiveLegacyAccessSignals.ts': {
+    sites: 1,
+    reason:
+      'archives legacy access signal rows in place with an attributed archive set, one legacy predicate at a time, behind its apply guard',
+  },
+  'scripts/archivedTombstoneMirror.ts': {
+    sites: 1,
+    reason:
+      "restores Development's own archived rows verbatim from the swap backup inside the staged swap, so it copies stored documents and must not be recast by the schema",
+  },
+  'scripts/cleanupArchivedResearchEntities.ts': {
+    sites: 1,
+    reason:
+      'deletes the dependent rows of archived entities across every collection in its reference specs by name, one writer for many collections, behind its apply guard',
+  },
+  'scripts/cleanupLegacyMongoCollections.ts': {
+    sites: 3,
+    reason:
+      'migrates and drops collections that no longer have a model, so no model exists to write through',
+  },
+  'scripts/dedupeAccountlessResearcherShells.ts': {
+    sites: 3,
+    reason:
+      'folds accountless researcher shells and their role edges with unordered bulk operations on the stored documents, behind its apply guard',
+  },
+  'scripts/dedupeResearchEntitiesByPi.ts': {
+    sites: 11,
+    reason:
+      'archives duplicates and relinks references across every collection in its reference specs by name, so one writer serves many collections behind its apply guard',
+  },
+  'scripts/directoryRemovalObservationPurge.ts': {
+    sites: 1,
+    reason:
+      'hard-deletes the observations of a removed person by id in batches through the same raw handle it reads them with, behind its apply guard',
+  },
+  'scripts/expireLegacyArchivedResearchPlans.ts': {
+    sites: 1,
+    reason:
+      'stamps a restore window with an update pipeline, which a model update cannot express, behind its apply guard',
+  },
+  'scripts/migrateMongoNaming.ts': {
+    sites: 5,
+    reason:
+      'renames and merges whole collections by name, a schema migration below the model that copies stored documents unchanged',
+  },
+  'scripts/migrateResearchEntities.ts': {
+    sites: 4,
+    reason:
+      'upserts each legacy document into the canonical collection and relinks references in collections without a current model, a migration below the schema',
+  },
+  'scripts/migrateResearchEntityCollections.ts': {
+    sites: 2,
+    reason:
+      'copies stored documents between collections by name and drops the retired one, a migration that preserves each document as stored',
+  },
+  'scripts/portGrantShellsToFacultyProfiles.ts': {
+    sites: 4,
+    reason:
+      'copies one stored research-entity document onto the faculty profile key it is ported to and restores the prior document verbatim when the merge defers',
+  },
+  'scripts/promoteAcceptedBetaCopy.ts': {
+    sites: 6,
+    reason:
+      'copies whole collections from the accepted Beta copy into Production staging, so every document is one the model already accepted; it writes Production only',
+  },
+  'scripts/purgeRetiredLoginProfileFields.ts': {
+    sites: 1,
+    reason:
+      'unsets login profile fields retired from the schema, which strict mode would silently drop from a model update',
+  },
+  'scripts/repairGluedSentenceBoundaries.ts': {
+    sites: 1,
+    reason:
+      'rewrites text fields across several collections in one bulk pass by name; it sets text values only, behind its apply guard',
+  },
+  'scripts/repairInvisibleFormatCharacters.ts': {
+    sites: 1,
+    reason:
+      'rewrites text fields across several collections in one bulk pass by name; it sets text values only, behind its apply guard',
+  },
+  'scripts/repairOrphanedObservationReferences.ts': {
+    sites: 6,
+    reason:
+      'relinks a missing observation id in whichever owner collection holds the reference and writes its own audit row, behind its apply guard',
+  },
+  'scripts/retireBibliographicMirror.ts': {
+    sites: 2,
+    reason:
+      'unsets fields and drops a collection retired from the schema, which strict mode would silently skip',
+  },
+  'scripts/retireDocumentedWayInField.ts': {
+    sites: 1,
+    reason:
+      'unsets fields retired from the schema, which strict mode would silently drop from a model update',
+  },
+  'scripts/retireResearchEntityResidueFields.ts': {
+    sites: 1,
+    reason:
+      'unsets fields retired from the schema, which strict mode would silently drop from a model update',
+  },
+  'scripts/retireStaleAccessSignalFields.ts': {
+    sites: 1,
+    reason:
+      'unsets fields retired from the schema, which strict mode would silently drop from a model update',
+  },
+  'scripts/retireStaleSavedPlanFields.ts': {
+    sites: 1,
+    reason:
+      'unsets fields retired from the schema, which strict mode would silently drop from a model update',
+  },
+  'scripts/retireUndergraduateLogisticsFields.ts': {
+    sites: 1,
+    reason:
+      'unsets fields retired from the schema, which strict mode would silently drop from a model update',
+  },
+  'scripts/signalConsolidationMigration.ts': {
+    sites: 1,
+    reason:
+      'upserts consolidated signals as planned documents in one bulk pass, a migration that writes the stored shape directly',
+  },
+  'scripts/stagedCollectionSwap.ts': {
+    sites: 10,
+    reason:
+      'swaps a staged collection into place by rename and keeps the replaced one as the retained previous generation, so every document it moves is already accepted',
+  },
+  'scripts/syncBetaToDevelopment.ts': {
+    sites: 4,
+    reason:
+      'copies whole collections from Beta into Development under the apply lease it holds on its own client, so every document is one the model already accepted',
+  },
+  'scripts/unionStrandedMergeFunding.ts': {
+    sites: 1,
+    reason:
+      'relinks stranded funding observations to their survivor key in place, an id relink that authors no evidence, behind its apply guard',
+  },
+  'services/accountDeletionRequestService.ts': {
+    sites: 1,
+    reason:
+      'marks a deletion request done on the source environment database the caller passes in, which no model on the default connection is bound to',
+  },
+  'services/researchPlanMergeCarry.ts': {
+    sites: 5,
+    reason:
+      'carries, replaces or merges saved research plans onto a merge survivor as one decision per plan, stamping the merge time itself; it runs inside the merge and materialize writers that call it',
   },
 };
 
@@ -789,6 +957,7 @@ function productionSourceFiles(root: string): string[] {
 }
 
 function reachesResearchEntities(site: RawWriteSite): boolean {
+  if (DELETING_METHODS.has(site.method)) return false;
   return site.collections.includes(RESEARCH_ENTITIES) || site.collections.includes(UNRESOLVED);
 }
 
@@ -1080,5 +1249,45 @@ describe('a raw write to research_entities is a reviewed exception, never a new 
       [...counts].sort(),
       'A key the guard cannot resolve could name a provenance entry. Write through the model, or review the site and record its count as unresolvedKeySites.',
     ).toEqual(reviewed.sort());
+  });
+});
+
+describe('a raw driver write to any collection is a reviewed exception, never a new default', () => {
+  const sites = corpusRawWriteSites();
+
+  it('finds raw writes beyond research_entities, so it cannot pass over an empty population', () => {
+    expect(sites.length).toBeGreaterThan(80);
+    expect(sites.some((site) => DELETING_METHODS.has(site.method))).toBe(true);
+  });
+
+  it('lists every file that writes through a raw handle, at its exact count', () => {
+    const counts = new Map<string, number>();
+    for (const site of sites) counts.set(site.file, (counts.get(site.file) ?? 0) + 1);
+    const unreviewed = [...counts]
+      .filter(([file, count]) => REVIEWED_RAW_DRIVER_WRITERS[file]?.sites !== count)
+      .map(([file, count]) => ({
+        file,
+        count,
+        sites: sites
+          .filter((site) => site.file === file)
+          .map((site) => `${site.line} ${site.method} ${site.collections.join(',')}`),
+      }));
+    expect(
+      unreviewed,
+      'A raw driver handle skips every Mongoose hook, including the Development write guard (#5871). Write through the model; if the write genuinely must stay raw, add the file to REVIEWED_RAW_DRIVER_WRITERS with its site count and the reason.',
+    ).toEqual([]);
+  });
+
+  it('keeps the reviewed list exact, so a converted writer leaves it', () => {
+    const files = new Set(sites.map((site) => site.file));
+    expect(Object.keys(REVIEWED_RAW_DRIVER_WRITERS).filter((file) => !files.has(file))).toEqual([]);
+  });
+
+  it('gives every reviewed raw writer a reason', () => {
+    expect(
+      Object.entries(REVIEWED_RAW_DRIVER_WRITERS)
+        .filter(([, entry]) => entry.reason.trim().length < 30)
+        .map(([file]) => file),
+    ).toEqual([]);
   });
 });

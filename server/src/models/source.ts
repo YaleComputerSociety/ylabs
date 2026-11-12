@@ -6,6 +6,7 @@
  * Observations from this source unless overridden per-observation.
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 import {
   sourceCoverageArtifactTypes,
   sourceCoverageEvidenceCategories,

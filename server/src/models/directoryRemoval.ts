@@ -10,6 +10,7 @@
  * and Production with the corpus they suppress (docs/release-process.md).
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 import { DIRECTORY_REMOVAL_DIGEST, directoryRemovalKinds } from '../utils/directoryRemovalDigest';
 
 export const DIRECTORY_REMOVAL_COLLECTION = 'directory_removals';

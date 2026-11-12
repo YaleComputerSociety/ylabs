@@ -363,6 +363,22 @@ It replaces the convention of announcing each write to the session that sequence
 - A child process inherits its parent's owner id through `DEV_WRITE_LEASE_OWNER`, so a sweep's `scrape run` children join the sweep's lease instead of being refused by it, and only the root owner releases it.
 - Append-only measurement writes are exempt (`DEV_APPLY_LEASE_EXEMPT_SCRIPTS`: `corpus:snapshot`, `gates:refresh`, the lane benchmark and scorecard scripts, `engine:benchmark`), because they write their own collections and are meant to run during a long apply.
 - A dry run never takes or reads the lease.
+- The lease is also enforced at the model, so a script that never calls the apply guard cannot write Development unleased (#5871).
+  `db/devWriteGuard.ts` registers a global Mongoose plugin that every model file imports before it compiles, so importing any one model installs it, even in a scratch script that connects with a plain `mongoose.connect`.
+  It refuses `save`, `insertMany`, `bulkWrite`, the update, replace and delete query writes, and an `aggregate` with `$out` or `$merge`, before anything is written, naming the model and collection and how to take the lease.
+- The guard acts only in a script process connected to a database that resolves to Development.
+  The API server entry point (`src/index.ts`) calls `declareRequestServingProcess()` before it connects, so the web services and every request path return before the guard reads anything; every other process is a script.
+  Beta, Production, test and localhost databases return before any lease state is read.
+- A script's Development write passes only when the process holds or joined the apply lease, or the collection is an append-only measurement collection (`DEV_WRITE_GUARD_EXEMPT_COLLECTIONS`, kept in step with `DEV_APPLY_LEASE_EXEMPT_SCRIPTS`, plus `model_call_usages`), or the lease is switched off.
+  Only while its host leases are armed, a writing lane run may also write `DEV_LANE_RUN_COLLECTIONS` (`observations`, `scrape_runs`, `scrape_job_locks`, `sources`, `scrape_snapshots`, `model_call_usages`) and nothing else, so it can never touch `research_entities` without the apply lease.
+  `model_call_usages` and `scrape_snapshots` are insert-only in every unleased allowance (`DEV_INSERT_ONLY_COLLECTIONS`): an update, upsert, delete or mixed bulk write there is refused, while the other four lane collections keep updates and deletes.
+  The fetch cache is insert-shaped to fit: `setCached` inserts a missing entry, an existing entry is refreshed only where the guard allows an update and otherwise kept with a one-line warning, and `getCached` treats an expired entry as a miss and leaves it to the `expiresAt` TTL index.
+  A dry orchestrator run declares itself a dry lane run, and only in a process that recorded no apply intent may it insert into `scrape_runs` and `scrape_snapshots`.
+  It may update only the `scrape_runs` rows it inserted itself, matched by `_id` in the update filter, which is how its heartbeat and final status land; any other `scrape_runs` update, every delete, and every write to another collection are refused.
+  A dry run therefore no longer closes another source's dead run at start (`reapDeadScrapeRuns` logs the refusal and carries on); a writing lane run or a leased apply still does.
+  A lane that starts writing a new collection must add it to that set, or its run is refused.
+- The connect paths in `db/connections.ts` also refuse a script's Development connection when a registered model lacks the guard, which only a model compiled before `db/devWriteGuard` loaded can.
+- Raw driver handles (`Model.collection.*`, `db.collection(...)`) skip Mongoose middleware, so `rawResearchEntityWriteGuard.test.ts` lists every production file that writes any collection through one, at its exact site count and with a reason; a new raw writer fails that suite until it is reviewed there.
 - A writing lane run against Development also takes a `host:<hostname>` lease before its first fetch to each host, so two lane runs cannot fetch one host at once.
 - The lease heartbeats every 30 seconds and expires 5 minutes after the last heartbeat, so an apply running for hours keeps it, and a crashed holder frees it within 5 minutes.
   A holder on the same machine whose process has exited is taken over once its heartbeat is older than two intervals (`DEV_WRITE_LEASE_DEAD_OWNER_HEARTBEAT_AGE_MS`), so a misread pid probe, such as a sandboxed `process.kill` answering `ESRCH`, can never take a lease that is still renewing.
@@ -407,7 +423,7 @@ A run whose work hangs stops heartbeating too (#5086): real work bumps the proce
 - Never ask "is anything running" with a bare `status: 'running'`.
   Use `classifyScrapeRunLiveness` (or `isAbandonedScrapeRun`) from `scrapeRunLiveness.ts`: only `live` (heartbeat within 15 minutes) means a writer is working, and a `running` row with no `heartbeatAt` predates the heartbeat and proves nothing.
 - `scrape_job_locks` is still the live-writer signal for a source, read through `findHeldScrapeJobLock`.
-- Every `scrape run` closes heartbeat-stale rows before it records its own (`reapDeadScrapeRuns`, #5628), so a dead row lasts only until the next run on Development.
+- Every writing `scrape run` closes heartbeat-stale rows before it records its own (`reapDeadScrapeRuns`, #5628), so a dead row lasts only until the next writing run on Development; a dry run's reap is refused by the model write guard (#5871).
 - Close dead rows with `yarn --cwd server scrape-runs:reconcile-stale`, which is dry-run by default.
   `--apply --confirm-reconcile-stale-scrape-runs` closes a row as `interrupted` only when its heartbeat is stale, or when it predates heartbeats and is older than 72 hours, and never when its heartbeat is fresh, its source lock is held, or its owner pid is alive on this host.
   It refuses every target except Development, and its bounds can be raised but not lowered.

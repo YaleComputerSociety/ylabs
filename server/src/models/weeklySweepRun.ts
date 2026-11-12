@@ -13,6 +13,7 @@
  * reason as `corpus_quality_snapshots`: a copied history is both misdated and lost.
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 import {
   weeklySweepCorpusSnapshotStatuses,
   weeklySweepModes,

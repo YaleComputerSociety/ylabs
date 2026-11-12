@@ -12,6 +12,7 @@
  * belongs to the environment that recorded it.
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 
 export const ACCOUNT_DELETION_REQUEST_COLLECTION = 'account_deletion_requests';
 

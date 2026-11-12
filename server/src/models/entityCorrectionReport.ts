@@ -4,6 +4,7 @@
  * user content; they only enqueue an admin review record.
  */
 import mongoose from 'mongoose';
+import '../db/devWriteGuard';
 
 export const EntityCorrectionReportCategory = [
   'wrong_description',

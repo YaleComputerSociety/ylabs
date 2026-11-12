@@ -9,6 +9,7 @@ import {
   labelSweepRunnerOwner,
   releaseHeldDevWriteLeases,
 } from './devWriteLease';
+import { assertDevelopmentWritesGuarded } from './devWriteGuard';
 
 // `bufferTimeoutMS` is a Mongoose connection option the driver's own type does not
 // declare, so the shape is spelled out here rather than inferred.
@@ -103,7 +104,7 @@ export async function connectScriptMongo(
   extra?: ScriptMongoConnectOptions,
 ): Promise<typeof mongoose> {
   const connected = await mongoose.connect(url, scriptMongoConnectOptions(extra));
-  await holdIntendedDevApplyLease(connected.connection);
+  await installDevelopmentWriteGuards(connected.connection);
   return connected;
 }
 
@@ -114,7 +115,7 @@ export async function createScriptMongoConnection(
   const connection = await mongoose
     .createConnection(url, scriptMongoConnectOptions(extra))
     .asPromise();
-  await holdIntendedDevApplyLease(connection);
+  await installDevelopmentWriteGuards(connection);
   return connection;
 }
 
@@ -142,11 +143,13 @@ export async function holdDevApplyLeaseForRun(
 }
 
 /**
- * Takes the Development write lease for a script whose apply guard recorded an apply intent (#5756),
- * and releases it before the connection closes. Without a recorded intent it does nothing, which is
+ * Refuses a script's Development connection whose models lack the model write guard (#5871), then
+ * takes the Development write lease for a script whose apply guard recorded an apply intent (#5756)
+ * and releases it before the connection closes. Without a recorded intent it takes nothing, which is
  * every request-path connection.
  */
-async function holdIntendedDevApplyLease(connection: mongoose.Connection): Promise<void> {
+async function installDevelopmentWriteGuards(connection: mongoose.Connection): Promise<void> {
+  assertDevelopmentWritesGuarded(connection);
   const descriptor = devWriteLeaseDescriptor(connection);
   if (!descriptor) return;
   const lease = await acquireIntendedDevApplyLease(descriptor);
@@ -525,7 +528,7 @@ export async function initializeConnections(
   }
   activeConnectOptions = connectOptions;
   await mongoose.connect(url, connectOptions);
-  await holdIntendedDevApplyLease(mongoose.connection);
+  await installDevelopmentWriteGuards(mongoose.connection);
   console.log(`Connected to database 🚀`);
   // Deliberately non-fatal. An unbuilt index is a performance problem, and
   // refusing to boot on one would turn a slow query into an outage on the very

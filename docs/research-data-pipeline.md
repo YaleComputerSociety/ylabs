@@ -451,6 +451,7 @@ The contract now has six parts.
   `ScraperOrchestrator.run` calls `reapDeadScrapeRuns` (`server/src/scrapers/staleScrapeRunReaper.ts`) before it creates its `ScrapeRun`, with the same plan and the same status-only update as `scrape-runs:reconcile-stale --heartbeat-stale-only`: a heartbeat-stale row closes as `interrupted`, and a fresh heartbeat, a source lock held by anyone other than the caller, or a live owner process on this host keeps it.
   The caller's own lock does not count, so re-running a source closes its own dead predecessor.
   It writes only to Development, and a failed reap only warns, so it can never stop the run that called it.
+  On Development a dry run holds no apply lease, so the model write guard refuses its reap, which warns and carries on; only a writing lane run or a leased apply closes dead runs at start (#5871).
   The sweep stage below was the only automatic close, so while the scraper cron was suspended a CLI run killed after its last write read `running` for eight days, and a second one for twelve (#5628).
 - **The Development sweep reaps heartbeat-stale runs on every run.**
   Until this stage existed nothing scheduled the command, which is how the stuck rows accumulated.
@@ -1482,6 +1483,7 @@ A body with no entry gets no new card, and the card resolution falls back to the
 `--capture-evidence <file>` freezes those card requests and `--evidence-file <file>` reads them instead of the database, and `--import-derivations <file> [--validate-only]` judges external cards (`[{ slug, writer, card }]`) by the same checks and stores every judged card, refused ones included, with its `writer` provenance unless an entry exists, because the verdict is taken again on every read.
 The import also applies the written-body card bar materialization applies (`isRefusedWrittenBodyCard`: a card that restates its body or re-lists its topics), so a card that passes the card checks but would leave the row with no card at materialize is reported `refused` with `refusalReason: 'written-body-card-bar'`, and the report's `byReason` counts every outcome by its reason.
 The collection is environment-local like the written-description cache.
+Every mode that writes either cache (`--evaluate`, `--import-derivations` without `--validate-only`, and the same two under `--synthesize-cards`) takes the Development write lease like an apply, so it needs an owner label and is refused while another apply holds the lease (#5871).
 `confidenceResolver` serves a servable written body (undemoted, clears the quality bar, not a biography, not narration) over every copied `fullDescription`, and the copied values stay ranked behind it as the fallback the materializer walks to when the written body fails a content gate.
 A `manual-pi-edit` value is the one source the written body does not outrank.
 `manual-admin-edit` decays and is reordered like any other source on `fullDescription`, `shortDescription` and `description`, and keeps its curated precedence on every other field.
