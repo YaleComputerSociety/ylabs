@@ -226,6 +226,12 @@ import {
   withDeferredIndexConfirmation,
 } from '../services/meiliSyncService';
 import {
+  noteResearcherSearchInputChange,
+  researcherSearchDocumentInputs,
+  researcherSearchDocumentInputsChanged,
+  withResearcherSearchInputResync,
+} from '../services/researcherLinkedSearchResync';
+import {
   listResearchEntityMergedInRows,
   listResearchEntityMergedInRowsBySurvivor,
   resolveResearchEntityCanonicalByTombstone,
@@ -9070,6 +9076,9 @@ async function writeScopedResearcherPlan(input: {
   for (const path of kept) candidate.set(path, valueAtPath(planned, path));
   await candidate.validate();
   await Researcher.updateOne({ _id: input.researcher._id }, scopedResearcherUpdate(planned, kept));
+  if (researcherSearchDocumentInputsChanged(input.storedResearcher, candidate)) {
+    await noteResearcherSearchInputChange(input.researcher._id);
+  }
   return result(kept.length);
 }
 
@@ -9110,6 +9119,9 @@ async function materializeUserIdentityToResearcher(
   const scope = userWriteScope(options);
   const storedResearcher: Record<string, unknown> | undefined =
     scope && researcher?._id ? researcherSnapshot(researcher) : undefined;
+  const searchInputsBeforeWrite = researcher?._id
+    ? researcherSearchDocumentInputs(researcher)
+    : undefined;
   const accountId: mongoose.Types.ObjectId | undefined = account?._id;
   let heldPageFieldsWithdrawn = 0;
   if (researcher?._id) {
@@ -9648,6 +9660,12 @@ async function materializeUserIdentityToResearcher(
   }
   if (created || researcherJoinIdentitySnapshot(researcher) !== joinIdentityBeforeWrite) {
     options.chunkPrefetch?.userIdentityJoins?.forgetAll();
+  }
+  if (
+    searchInputsBeforeWrite !== undefined &&
+    researcherSearchDocumentInputs(researcher) !== searchInputsBeforeWrite
+  ) {
+    await noteResearcherSearchInputChange(researcher._id);
   }
 
   return {
@@ -12990,9 +13008,18 @@ async function materializeEntityWithoutModelCalls(
   identifier: { entityId?: string; entityKey?: string },
   options: MaterializeOptions = {},
 ): Promise<MaterializeResult> {
-  return withDirectoryRemovalMintGuard(() =>
-    materializeEntityUnderRemovalGuard(entityType, identifier, options),
+  const { value: result, failedEntityIds } = await withResearcherSearchInputResync(() =>
+    withDirectoryRemovalMintGuard(() =>
+      materializeEntityUnderRemovalGuard(entityType, identifier, options),
+    ),
   );
+  if (failedEntityIds.length === 0) return result;
+  return {
+    ...result,
+    otherIndexSyncFailedEntityIds: [
+      ...new Set([...(result.otherIndexSyncFailedEntityIds ?? []), ...failedEntityIds]),
+    ],
+  };
 }
 
 async function materializeEntityUnderRemovalGuard(
@@ -14872,7 +14899,8 @@ export async function materializeObservedEntitiesInChunks(
   onRow: (row: ObservedEntityRow, outcome: ObservedEntityOutcome) => void,
   chunkSize: number = MATERIALIZATION_CHUNK_SIZE,
   concurrency: number = materializationConcurrencyFromEnv(),
-): Promise<void> {
+): Promise<{ linkedRowIndexSyncFailedEntityIds: Set<string> }> {
+  const linkedRowIndexSyncFailedEntityIds = new Set<string>();
   let start = 0;
   while (start < rows.length) {
     const entityType = rows[start].entityType;
@@ -14881,30 +14909,36 @@ export async function materializeObservedEntitiesInChunks(
       end += 1;
     }
     const chunk = rows.slice(start, end);
-    const chunkPrefetch = await loadChunkPrefetch(entityType, chunk);
-    if (concurrency <= 1) {
-      for (const row of chunk) await materializeChunkRow(row, options, chunkPrefetch, onRow);
-    } else {
-      const mergeGroups = chunkPrefetch
-        ? await loadChunkMergeGroups(chunk, chunkPrefetch)
-        : undefined;
-      const { independent, sequential, deptShellPersonByRow } = partitionChunkForConcurrency(
-        chunk,
-        chunkPrefetch,
-        mergeGroups,
-      );
-      const work = (row: ObservedEntityRow) =>
-        materializeChunkRow(row, options, chunkPrefetch, onRow);
-      await runWithConcurrency(independent, concurrency, work);
-      await runSequentialRowsWithDeptShellSpans(
-        sequential,
-        deptShellPersonByRow,
-        concurrency,
-        work,
-      );
-    }
+    const { failedEntityIds } = await withResearcherSearchInputResync(() =>
+      materializeChunk(chunk, entityType, options, onRow, concurrency),
+    );
+    for (const entityId of failedEntityIds) linkedRowIndexSyncFailedEntityIds.add(entityId);
     start = end;
   }
+  return { linkedRowIndexSyncFailedEntityIds };
+}
+
+async function materializeChunk(
+  chunk: readonly ObservedEntityRow[],
+  entityType: ObservedEntityType,
+  options: MaterializeOptions,
+  onRow: (row: ObservedEntityRow, outcome: ObservedEntityOutcome) => void,
+  concurrency: number,
+): Promise<void> {
+  const chunkPrefetch = await loadChunkPrefetch(entityType, chunk);
+  if (concurrency <= 1) {
+    for (const row of chunk) await materializeChunkRow(row, options, chunkPrefetch, onRow);
+    return;
+  }
+  const mergeGroups = chunkPrefetch ? await loadChunkMergeGroups(chunk, chunkPrefetch) : undefined;
+  const { independent, sequential, deptShellPersonByRow } = partitionChunkForConcurrency(
+    chunk,
+    chunkPrefetch,
+    mergeGroups,
+  );
+  const work = (row: ObservedEntityRow) => materializeChunkRow(row, options, chunkPrefetch, onRow);
+  await runWithConcurrency(independent, concurrency, work);
+  await runSequentialRowsWithDeptShellSpans(sequential, deptShellPersonByRow, concurrency, work);
 }
 
 interface MaterializeFromRunCounts {
@@ -15046,7 +15080,7 @@ async function materializeUserRowsInFieldScope(
   const scopeRows: UserFieldScopeRow[] = [];
   let conflicts = 0;
   const reportProgress = fieldScopeProgressReporter(userRows.length);
-  await materializeObservedEntitiesInChunks(
+  const { linkedRowIndexSyncFailedEntityIds } = await materializeObservedEntitiesInChunks(
     userRows,
     options,
     (row, outcome) => {
@@ -15067,7 +15101,7 @@ async function materializeUserRowsInFieldScope(
     conflicts,
     skipped: scopeRows.filter((row) => row.skipped).length,
     errors: summary.errors,
-    indexSyncFailures: 0,
+    indexSyncFailures: linkedRowIndexSyncFailedEntityIds.size,
     postMaterializationMetrics: emptyPostMaterializationMetrics(),
     userFieldScope: {
       ...summary,
@@ -15187,7 +15221,10 @@ async function materializeFromRunUnderRemovalGuard(
   let staleIndexRowsWithoutId = 0;
   const unbackedResearchAreaOutcomes: Partial<Record<UnbackedResearchAreaOutcome, number>> = {};
   const postMaterializationMetrics = emptyPostMaterializationMetrics();
-  const { failedDocumentIds } = await withDeferredIndexConfirmation(() =>
+  const {
+    value: { linkedRowIndexSyncFailedEntityIds },
+    failedDocumentIds,
+  } = await withDeferredIndexConfirmation(() =>
     materializeObservedEntitiesInChunks(
       distinct.map((row) => ({
         entityType: row._id.entityType,
@@ -15226,6 +15263,7 @@ async function materializeFromRunUnderRemovalGuard(
     ),
   );
   for (const documentId of failedDocumentIds) staleIndexEntityIds.add(documentId);
+  for (const entityId of linkedRowIndexSyncFailedEntityIds) staleIndexEntityIds.add(entityId);
   const indexSyncFailures = staleIndexEntityIds.size + staleIndexRowsWithoutId;
   if (Object.keys(unbackedResearchAreaOutcomes).length > 0) {
     console.info(

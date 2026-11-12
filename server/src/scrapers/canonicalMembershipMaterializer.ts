@@ -16,6 +16,7 @@ import {
   reviewStatusForLegacyMembership,
   roleStateForLegacyMembership,
 } from '../models/canonicalRoleMapping';
+import { noteResearcherSearchInputChange } from '../services/researcherLinkedSearchResync';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { sanitizePersonName } from '../utils/personNameHygiene';
 import { escapeRegex } from '../utils/regex';
@@ -489,6 +490,9 @@ async function adoptNoisyNameOnlyResearcherId(
   const adoptedId = toObjectId((adopted as { _id?: unknown } | undefined)?._id);
   if (!adoptedId) return undefined;
   await Researcher.updateOne({ _id: adoptedId }, { $set: { displayName } });
+  if ((adopted as { displayName?: unknown }).displayName !== displayName) {
+    await noteResearcherSearchInputChange(adoptedId);
+  }
   return adoptedId;
 }
 
