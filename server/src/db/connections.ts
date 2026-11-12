@@ -64,6 +64,10 @@ export const mongoOptions: MongoConnectOptions = {
 
 export const SCRIPT_SOCKET_TIMEOUT_MS = 10 * 60_000;
 export const SCRIPT_MAX_POOL_SIZE = 10;
+// The documented override for the few scripts whose single operation is a whole-
+// collection index build, rename or $merge: those can legitimately outlast the
+// ceiling, so they opt back into no socket timeout by passing these options.
+export const WHOLE_COLLECTION_OPERATION_SOCKET_OPTIONS = { socketTimeoutMS: 0 } as const;
 
 export type ScriptMongoConnectOptions = Omit<
   Partial<MongoConnectOptions>,

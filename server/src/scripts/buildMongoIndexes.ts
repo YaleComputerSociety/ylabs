@@ -22,6 +22,7 @@ import {
   reportUndeclaredMongoIndexes,
   reportUnbuildableDeclaredIndexSpecs,
   connectScriptMongo,
+  WHOLE_COLLECTION_OPERATION_SOCKET_OPTIONS,
 } from '../db/connections';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
 
@@ -79,7 +80,7 @@ async function main(): Promise<void> {
     mongoUrl,
   });
 
-  await connectScriptMongo(mongoUrl);
+  await connectScriptMongo(mongoUrl, WHOLE_COLLECTION_OPERATION_SOCKET_OPTIONS);
   try {
     const plans = planDeclaredIndexes(mongoose.connection);
     const declaredTotal = plans.reduce((sum, plan) => sum + plan.declaredIndexNames.length, 0);

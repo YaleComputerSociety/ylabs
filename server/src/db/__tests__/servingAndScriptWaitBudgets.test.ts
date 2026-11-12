@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   SCRIPT_MAX_POOL_SIZE,
   SCRIPT_SOCKET_TIMEOUT_MS,
+  WHOLE_COLLECTION_OPERATION_SOCKET_OPTIONS,
   initializeConnections,
   mongoOptions,
   scriptMongoConnectOptions,
@@ -50,6 +51,28 @@ describe('an operator entry point', () => {
   it('opens a small pool, so many concurrent scripts stay inside the shared cluster connection cap', () => {
     expect(scriptMongoConnectOptions().maxPoolSize).toBe(SCRIPT_MAX_POOL_SIZE);
     expect(SCRIPT_MAX_POOL_SIZE).toBeLessThanOrEqual(10);
+  });
+
+  it('lets a whole-collection operation opt back into no socket timeout, and only the scripts that run one do', async () => {
+    expect(
+      scriptMongoConnectOptions(WHOLE_COLLECTION_OPERATION_SOCKET_OPTIONS).socketTimeoutMS,
+    ).toBe(0);
+    const { readFileSync, readdirSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const scriptsDir = join(__dirname, '../../scripts');
+    const users = readdirSync(scriptsDir)
+      .filter((name) => name.endsWith('.ts'))
+      .filter((name) =>
+        readFileSync(join(scriptsDir, name), 'utf8').includes(
+          'WHOLE_COLLECTION_OPERATION_SOCKET_OPTIONS',
+        ),
+      )
+      .sort();
+    expect(users).toEqual([
+      'buildMongoIndexes.ts',
+      'migrateMongoNaming.ts',
+      'migrateResearchEntityCollections.ts',
+    ]);
   });
 
   it('still lets a caller ask for its own budget', () => {

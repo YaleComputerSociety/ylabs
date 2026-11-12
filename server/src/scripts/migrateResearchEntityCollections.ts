@@ -3,7 +3,11 @@ import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { initializeConnections } from '../db/connections';
+import {
+  initializeConnections,
+  WHOLE_COLLECTION_OPERATION_SOCKET_OPTIONS,
+  scriptMongoConnectOptions,
+} from '../db/connections';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 
@@ -444,7 +448,7 @@ async function main() {
     process.env.MONGODBURL,
   );
   const mode = args.mode;
-  await initializeConnections();
+  await initializeConnections(scriptMongoConnectOptions(WHOLE_COLLECTION_OPERATION_SOCKET_OPTIONS));
   const db = mongoose.connection.db;
   if (!db) throw new Error('MongoDB connection is not initialized');
 
