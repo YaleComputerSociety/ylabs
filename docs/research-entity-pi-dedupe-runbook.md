@@ -280,6 +280,8 @@ A faculty research row named any other way ("<Name> Research") keeps its own typ
 The lane also groups live roster rows by the person-specific Yale mailbox the roster read them under (`loadRosterMailboxCandidateRows`, #5969), because one person on two rosters can end up with two lead researchers and every lead-keyed group is then blind to the pair.
 Those groups go through the same name-agreement builder and the same conflated-profile quarantine and distinct-people verdicts, and a mailbox group that touches a row a lead group already plans, or a row that more than one lead researcher leads, is dropped.
 A merge repoints every non-repeated lead edge onto the survivor, so a co-directed row keeps all its co-directors.
+A group whose row names state two different middle initials is refused, because the name key drops a lone initial and two namesakes under one wrongly folded lead would otherwise agree (#5969).
+A profile page slug that carries nursing credentials (`-phd-mph-bsn`, `-aprn-fnp-c-faan`) reads as the same person as the plain slug, because stripping stopped at the first credential the suffix list did not know and the conflated-profile quarantine then read one person's two pages as two people.
 The plain `--shared-person-id` mode stays operator-only.
 The stage runs under the same flag and contract as the URL stages and writes `development-shared-person-name-agreed-dedupe.json`.
 

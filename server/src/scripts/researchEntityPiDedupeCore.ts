@@ -23,6 +23,7 @@ import {
   sourceUrlToResearchHomeWebsiteUrl,
 } from '../utils/researchHomeWebsiteUrl';
 import { personPagePrefixesForHost } from '../utils/yalePersonPagePrefix';
+import { groupNamesStateConflictingMiddleInitials } from '../scrapers/utils/personNameAgreement';
 
 export interface ResearchEntityPiDedupeRow {
   userId: string;
@@ -1076,15 +1077,22 @@ export function buildNameAgreedSharedPersonResearchEntityDedupePlan(
       const key = `${entityType}::${name}`;
       clusters.set(key, [...(clusters.get(key) || []), entity]);
     }
-    return [...clusters.values()].flatMap((entities) =>
-      joinsFacultyResearchRowToLab(entities)
-        ? sharedPersonGroup(
-            withoutPrimaryAppointmentPreference(row),
-            entities,
-            labTypedRowFirstScore,
-          )
-        : sharedPersonGroup(row, entities),
-    );
+    return [...clusters.values()]
+      .filter(
+        (entities) =>
+          !groupNamesStateConflictingMiddleInitials(
+            entities.map((e) => entityNameWordsWithoutKindNouns(e.name).join(' ')),
+          ),
+      )
+      .flatMap((entities) =>
+        joinsFacultyResearchRowToLab(entities)
+          ? sharedPersonGroup(
+              withoutPrimaryAppointmentPreference(row),
+              entities,
+              labTypedRowFirstScore,
+            )
+          : sharedPersonGroup(row, entities),
+      );
   });
 }
 
@@ -1314,8 +1322,11 @@ function hostMappedPersonPageSlug(parsed: URL): string {
   return mapped ? leaf : '';
 }
 
+// A school of nursing directory appends every nursing credential to the person's slug, and
+// stripping stops at the first suffix this list does not know, so a missing nursing
+// credential read one person's two profile pages as two different people (#5969).
 const PERSON_PROFILE_CREDENTIAL_SUFFIX =
-  /-(?:phd|md|mph|ms|msc|mba|ma|dvm|rn|do|dds|scd|edd|jd|jr|sr|ii|iii|iv)$/;
+  /-(?:phd|md|mph|ms|msc|mba|ma|dvm|rn|do|dds|scd|edd|jd|jr|sr|ii|iii|iv|bsn|msn|dnp|aprn|fnp|np|anp|pnp|pmhnp|agpcnp|agacnp|whnp|nnp|cnm|cns|crna|ccrn|achpn|fpcn|faan|faha|faanp|faap|facp|bc|c)$/;
 
 // A collection page, not a person. `/people/<x>` is a person on some directories and
 // a listing subpage on others, and a lab-microsite crawl puts both into `sourceUrls`.
