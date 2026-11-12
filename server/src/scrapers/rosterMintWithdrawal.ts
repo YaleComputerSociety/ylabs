@@ -195,7 +195,8 @@ export type RosterMintWithdrawalKeepReason =
   | 'has_website'
   | 'lead_edge_from_another_lane'
   | 'observation_from_another_lane'
-  | 'has_merged_in_rows';
+  | 'has_merged_in_rows'
+  | 'listed_by_another_roster';
 
 export interface RosterMintWithdrawalRowEvidence {
   studentVisibilityTier?: unknown;
@@ -272,6 +273,43 @@ export interface RosterMintWithdrawalResult {
     restored: number;
     indexDeleteFailures: number;
   };
+}
+
+/**
+ * The withdrawn slugs another department's newest admitted read still lists. A person on
+ * two rosters keeps one row, and the second roster lists that row rather than minting its
+ * own (#5969), so one roster finding nothing to mint must not retire a row the other still
+ * lists.
+ */
+export function slugsListedByAnotherRoster(
+  withdrawnSlugToDept: ReadonlyMap<string, string>,
+  reads: readonly RosterMintWithdrawalRead[],
+): Set<string> {
+  const newestByDept = new Map<string, RosterMintWithdrawalRead>();
+  for (const read of reads) {
+    const held = newestByDept.get(read.deptKey);
+    if (!held || read.observedAt > held.observedAt) newestByDept.set(read.deptKey, read);
+  }
+  const listed = new Set<string>();
+  for (const [slug, deptKey] of withdrawnSlugToDept) {
+    for (const read of newestByDept.values()) {
+      if (read.deptKey !== deptKey && read.discovered.has(slug)) listed.add(slug);
+    }
+  }
+  return listed;
+}
+
+async function loadAdmittedReadsOfEveryDept(): Promise<RosterMintWithdrawalRead[]> {
+  const rows = (await Observation.find({
+    entityType: 'departmentRosterHealth',
+    field: DEPARTMENT_ROSTER_HEALTH_FIELD,
+    'value.mintWithdrawalRecorded': true,
+  })
+    .select('entityKey value scrapeRunId observedAt')
+    .lean()) as Array<Record<string, unknown>>;
+  return rows
+    .map((row) => rosterMintWithdrawalReadFromSnapshot(row))
+    .filter((read): read is RosterMintWithdrawalRead => read !== null);
 }
 
 async function loadAdmittedReads(deptKeys: readonly string[]): Promise<RosterMintWithdrawalRead[]> {
@@ -488,9 +526,15 @@ export async function reconcileRosterMintWithdrawalsFromRun(
   }
 
   const rowEvidence = await loadRowEvidence([...withdrawnSlugToDept.keys()]);
+  const listedByAnotherRoster =
+    withdrawnSlugToDept.size > 0
+      ? slugsListedByAnotherRoster(withdrawnSlugToDept, await loadAdmittedReadsOfEveryDept())
+      : new Set<string>();
   const archiveIds: string[] = [];
   for (const row of rowEvidence.sort((a, b) => a.slug.localeCompare(b.slug))) {
-    const keepReason = rosterMintWithdrawalKeepReason(row.evidence);
+    const keepReason: RosterMintWithdrawalKeepReason | null = listedByAnotherRoster.has(row.slug)
+      ? 'listed_by_another_roster'
+      : rosterMintWithdrawalKeepReason(row.evidence);
     result.rows.push({
       entityId: row.entityId,
       slug: row.slug,

@@ -24,7 +24,7 @@ import {
   buildOfficialLabUrlResearchEntityDedupePlan,
   buildMultiPersonEntityQuarantine,
   buildOrgNameResearchEntityDedupePlan,
-  buildNameAgreedSharedPersonResearchEntityDedupePlan,
+  buildNameAgreedSharedPersonAndRosterMailboxDedupePlan,
   buildResearchEntityPiDedupePlan,
   buildSameNameDifferentPersonQuarantine,
   buildSharedPersonIdResearchEntityDedupePlan,
@@ -91,6 +91,8 @@ import {
   LEAD_ROLE_CANONICAL_VALUES,
   LEAD_ROLE_LEGACY_LABELS,
 } from '../models/canonicalRoleMapping';
+import { loadRosterOwnerKeyRows } from '../scrapers/rosterOwnerKeyRows';
+import { rosterResearchEntitySlugPrefixForSlug } from '../scrapers/sources/departmentRosterScraper';
 import { connectScriptMongo } from '../db/connections';
 import { loadGrantCoPiListedLeadsByEntity } from '../services/grantCoPiListedLeads';
 
@@ -1079,6 +1081,55 @@ function primaryAppointmentProfileUrlFromLinks(urls: unknown): string | undefine
   return urls
     .filter((url): url is string => typeof url === 'string')
     .find((url) => Boolean(personProfileIdentityFromUrl(url)));
+}
+
+/**
+ * Rows grouped by the roster mailbox they were read under, one group per person whose
+ * live roster rows sit on two or more rosters (#5969). The lead-keyed loader cannot see
+ * these when the person's rows resolved to two lead researchers.
+ */
+export async function loadRosterMailboxCandidateRows(): Promise<ResearchEntityPiDedupeRow[]> {
+  const byOwnerKey = await loadRosterOwnerKeyRows(
+    (slug) => rosterResearchEntitySlugPrefixForSlug(slug),
+    () => '',
+  );
+  const groups = [...byOwnerKey.entries()].filter(
+    ([, rows]) => new Set(rows.map((row) => row.rosterPrefix)).size >= 2,
+  );
+  if (groups.length === 0) return [];
+  const docs = (await ResearchEntity.find({
+    _id: { $in: groups.flatMap(([, rows]) => rows.map((row) => row.id)) },
+    archived: { $ne: true },
+  })
+    .select(
+      '_id slug name kind entityType websiteUrl fullDescription shortDescription sourceUrls departments researchAreas recentGrants recentGrantCount fundingAgencies fieldProvenance.slug.sourceUrl',
+    )
+    .lean()) as any[];
+  const byId = new Map(docs.map((doc) => [serializedDocumentId(doc._id) || '', doc]));
+  return groups.map(([ownerKey, rows]) => ({
+    userId: `roster-mailbox:${ownerKey}`,
+    normalizedName: `roster-mailbox:${ownerKey}`,
+    entities: rows
+      .map((row) => byId.get(row.id))
+      .filter(Boolean)
+      .map((entity: any) => ({
+        id: serializedDocumentId(entity._id) || '',
+        slug: entity.slug,
+        name: entity.name,
+        kind: entity.kind,
+        entityType: entity.entityType,
+        websiteUrl: entity.websiteUrl,
+        fullDescription: entity.fullDescription,
+        shortDescription: entity.shortDescription,
+        sourceUrls: entity.sourceUrls,
+        departments: entity.departments,
+        researchAreas: entity.researchAreas,
+        recentGrants: entity.recentGrants,
+        recentGrantCount: entity.recentGrantCount,
+        fundingAgencies: entity.fundingAgencies,
+        identitySourceUrl: entity.fieldProvenance?.slug?.sourceUrl,
+      })),
+  }));
 }
 
 export async function loadSamePiCandidateRows(
@@ -2952,6 +3003,8 @@ async function main() {
           includeNameOnly: !deleteDuplicates,
           includeRetiredPiLinks: deleteDuplicates,
         });
+  const rosterMailboxRows: ResearchEntityPiDedupeRow[] =
+    sharedPersonId && requireNameAgreement ? await loadRosterMailboxCandidateRows() : [];
   const rows = officialLabUrlOnly
     ? officialLabUrlRows
     : profileLabUrlOnly
@@ -2983,7 +3036,10 @@ async function main() {
                 ? buildWebsiteUrlResearchEntityDedupePlan(websiteUrlRows)
                 : sharedPersonId
                   ? requireNameAgreement
-                    ? buildNameAgreedSharedPersonResearchEntityDedupePlan(piRows)
+                    ? buildNameAgreedSharedPersonAndRosterMailboxDedupePlan(
+                        piRows,
+                        rosterMailboxRows,
+                      )
                     : buildSharedPersonIdResearchEntityDedupePlan(piRows)
                   : fundingOnly
                     ? buildFundingResearchEntityDedupePlan(piRows)

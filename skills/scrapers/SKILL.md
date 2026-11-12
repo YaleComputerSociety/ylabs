@@ -1380,6 +1380,18 @@ It restores a row it archived when a later read mints it again.
 A materialize pass applies it, a dry-run materialize plans it without writing, and `docs/decisions.md` records the owner decision.
 A first run on new code only records the first read, so the rows are withdrawn on the second.
 
+#### One person on two rosters keeps one row (#5969)
+
+The lane keys a research row by roster (`dept-<roster>-<name>`), so a person listed by two rosters used to get one row per roster.
+Measured on Development on 2026-11-12, 352 people had had roster rows on two or more rosters and 2 still had two live rows, both served, because their lead edges resolved to two researchers and every same-lead guard keys on the lead.
+Before minting, the lane reads the live roster rows keyed by the roster's own person key and, when the person already has a row on another roster, emits nothing for its own row and lists both the existing row and its own key as discovered (`decideRosterAttach` in `scrapers/rosterOwnerKeyRows.ts`).
+The witness is the person-specific Yale mailbox (`netid:<local part>`) only: a `dept:<roster>:<slug>` key is a name and never attaches, a role or unit mailbox never attaches, and a candidate row whose name lacks the entry's surname refuses the attach because the address is shared.
+A shared lead researcher id is not a witness, because a blind ballot found it wrong-person on 4 of 17 pairs.
+The target is the row minted by the roster of the lead's own official profile when exactly one candidate is, else the oldest row, so every roster derives the same target and a second run changes nothing; within one run the first roster to mint the person holds the target.
+The second roster's appointment is still recorded on the person's own observations; the row keeps the departments its own roster asserts.
+`rosterMintWithdrawal.ts` keeps a withdrawn row that another department's newest admitted read still lists (`listed_by_another_roster`), so one roster finding nothing to mint cannot retire the row the other roster attached to.
+Rows split before this landed merge through the name-agreed lane, which also groups rows by that mailbox (`loadRosterMailboxCandidateRows`).
+
 #### The other roster gate: `research-homes:audit-rosters`
 
 An owner's refusal of one listed name or of one row's derived roster is stored in `officialRosterConfigs.ts` only as a digest, never as the name or the person-bearing key, because the file is public and a refusal is a judgement about a person.
