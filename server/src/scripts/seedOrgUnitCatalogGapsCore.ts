@@ -66,7 +66,10 @@ export interface OrgUnitReactivateGap {
   source: string;
 }
 
-/** Archives a department row a later decision withdrew; a row already archived is satisfied. */
+/**
+ * Archives a department row a later decision withdrew; a row already archived or absent is
+ * satisfied, and a non-department target is refused.
+ */
 export interface OrgUnitRetireDepartmentGap {
   action: 'retire-department';
   targetSlug: string;
