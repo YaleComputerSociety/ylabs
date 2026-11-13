@@ -30,6 +30,8 @@ const OPERATOR_TOOLS: Record<string, string> = {
     'supersedes at most 25 named observations an operator read and judged wrong for one row, refusing owner-decided values, with an audit record per observation (#6018)',
   'role-assignments:restore-detached-edge':
     'restores one role edge a repair stage or an agent detached as DISPUTED, the audited inverse of detach-edge; clearing a DISPUTED verdict is a review judgement on one edge that no lane may make (#5968)',
+  'observations:retire-ids':
+    'retires a named set of observations from one scrape run an operator judged wrong, refusing owner-decided values and restoring predecessors only above a commit floor, with an audit record per batch (#6029)',
   'observations:rollback-scrape-run':
     'reverses one unmaterialized scrape run an operator judged harmful, restoring only the observations it superseded (#5735)',
   'researchers:record-distinct-people':
