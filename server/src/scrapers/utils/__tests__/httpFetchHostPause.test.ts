@@ -107,7 +107,7 @@ describe('fetchPageWithPolicy and a host that refuses', () => {
   it('does not let a page replayed from the local cache clear a host backoff (#6195)', async () => {
     let now = new Date('2026-11-13T12:00:00Z');
     setHostPauseStateForTests({ now: () => now });
-    recordHostBackoff('dept.example.edu', { status: 429 });
+    await recordHostBackoff('dept.example.edu', { status: 429 });
     now = new Date('2026-11-13T13:00:00Z');
 
     const replayed = vi.fn(async () => ({ ...ok, reused: true as const }));

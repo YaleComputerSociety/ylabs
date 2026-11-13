@@ -240,9 +240,13 @@ async function loadPreviousThrottledRows(): Promise<Record<string, readonly stri
 
 const THROTTLE_STATUSES: ReadonlySet<number> = new Set([403, 429, 503]);
 
-const isThrottle = (error: unknown): boolean =>
-  hostPauseInErrorChain(error) !== undefined ||
-  THROTTLE_STATUSES.has((error as { status?: unknown } | null)?.status as number);
+// A pause met before the request went is not this host throttling this row: the run never asked
+// it, because another row or another process on this machine already met the refusal (#6168).
+const isThrottle = (error: unknown): boolean => {
+  const pause = hostPauseInErrorChain(error);
+  if (pause) return pause.requestSent;
+  return THROTTLE_STATUSES.has((error as { status?: unknown } | null)?.status as number);
+};
 
 export interface HostReadOutcome {
   answered: number;

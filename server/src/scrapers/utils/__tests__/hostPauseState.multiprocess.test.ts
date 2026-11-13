@@ -1,5 +1,6 @@
 import { spawn } from 'child_process';
 import fs from 'fs';
+import http from 'http';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { hermeticChildEnvironment } from '../../../test/hermeticEnvironment';
@@ -7,14 +8,17 @@ import { MachineHostBudgetLimiter } from '../machineHostBudget';
 
 const BUDGET_CLIENT = path.resolve(__dirname, 'fixtures/machineHostBudgetClient.ts');
 const PAUSE_CLIENT = path.resolve(__dirname, 'fixtures/hostPauseClient.ts');
+const FETCH_CLIENT = path.resolve(__dirname, 'fixtures/hostPauseFetchClient.ts');
 const SERVER_ROOT = path.resolve(__dirname, '../../../..');
 const TIMER_SLACK_MS = 40;
 
 interface ClientLine {
-  event: 'granted' | 'refused' | 'recorded';
+  event: 'granted' | 'refused' | 'recorded' | 'fetched';
   startedAt?: number;
   grantedAt?: number;
   pausedUntil?: number;
+  storedPause?: number;
+  status?: number;
   error?: string;
   level?: number;
 }
@@ -153,4 +157,53 @@ describe('shared host backoff across real processes', () => {
     const gaps = grants.slice(1).map((at, index) => at - grants[index]);
     expect(Math.min(...gaps)).toBeGreaterThanOrEqual(1_200 - TIMER_SLACK_MS);
   }, 60_000);
+});
+
+// RFC 5737 reserves 192.0.2.0/24 for documentation, so the synthetic notice names an address that
+// can belong to nobody; a real notice names this machine and is never copied into the repository.
+const SYNTHETIC_NOTICE =
+  'Your address 192.0.2.10 has been blocked until Fri, 20 Nov 2099 07:32:40 +0000 for excessive requests.';
+
+describe('a pause one process recorded, read by a fresh process before any socket opens', () => {
+  it('refuses the paused host with no connection, and still connects for an unpaused one', async () => {
+    const connections: string[] = [];
+    const server = http.createServer((_request, response) => response.end('<html></html>'));
+    server.on('connection', (socket) => connections.push(String(socket.remoteAddress)));
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as { port: number };
+
+    const fetchArm = {
+      FIXTURE_HOST: '127.0.0.1',
+      FIXTURE_MODE: 'fetch',
+      FIXTURE_URL: `http://127.0.0.1:${port}/a`,
+    };
+
+    try {
+      const [allowed] = await runClient(fetchArm, FETCH_CLIENT);
+      expect(allowed).toMatchObject({ event: 'fetched', status: 200 });
+      expect(connections).toHaveLength(1);
+
+      const [recorded] = await runClient(
+        {
+          FIXTURE_HOST: '127.0.0.1',
+          FIXTURE_MODE: 'record-notice',
+          FIXTURE_NOTICE: SYNTHETIC_NOTICE,
+        },
+        FETCH_CLIENT,
+      );
+      expect(recorded).toMatchObject({ event: 'recorded' });
+
+      const [refused] = await runClient(fetchArm, FETCH_CLIENT);
+
+      expect(refused).toMatchObject({
+        event: 'refused',
+        error: 'HostPausedError',
+        pausedUntil: recorded.pausedUntil,
+        storedPause: recorded.pausedUntil,
+      });
+      expect(connections).toHaveLength(1);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  }, 120_000);
 });

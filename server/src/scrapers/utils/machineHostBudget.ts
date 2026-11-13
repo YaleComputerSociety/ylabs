@@ -268,7 +268,24 @@ interface Mutation<T> {
   write: boolean;
 }
 
-type SpacingOutcome = { remaining: number } | { stampedAt: number };
+type SpacingOutcome = { remaining: number } | { stamp: SpacingStamp };
+
+interface HostReservation {
+  at: number;
+  priorNextGrantAt: number;
+  nextGrantAt: number;
+}
+
+interface SpacingStamp {
+  priorLastGrantAt: number;
+  stampedAt: number;
+}
+
+/** What one grant moved in the shared ledger, so a replay that sent nothing can hand it back. */
+interface SpacingRefund {
+  reservation: HostReservation;
+  stamp: SpacingStamp;
+}
 
 type MachineHostGrantObserver = (host: string, stampedAt: number) => void;
 
@@ -372,27 +389,28 @@ export class MachineHostBudgetLimiter implements HostSlotLimiter {
     for (;;) {
       await this.waitOutShortPause(key);
       const id = `${this.pid}-${randomUUID()}`;
-      const grantAt = await this.reserve(key, id, budget);
+      const reservation = await this.reserve(key, id, budget);
       let releaseInner: HostSlotRelease | undefined;
+      let stamp: SpacingStamp;
       try {
-        await this.sleep(grantAt - this.now());
+        await this.sleep(reservation.at - this.now());
         if (this.activePauseMs(key) !== undefined) {
           await this.releaseSlot(key, id);
           continue;
         }
         releaseInner = await acquireInner();
-        await this.stampSpacing(key, budget);
+        stamp = await this.stampSpacing(key, budget);
       } catch (error) {
         releaseInner?.();
         await this.releaseSlot(key, id);
         throw error;
       }
       let released = false;
-      return () => {
+      return (outcome) => {
         if (released) return;
         released = true;
-        releaseInner?.();
-        void this.releaseSlot(key, id);
+        releaseInner?.(outcome);
+        void this.releaseSlot(key, id, outcome?.reused ? { reservation, stamp } : undefined);
       };
     }
   }
@@ -571,17 +589,18 @@ export class MachineHostBudgetLimiter implements HostSlotLimiter {
     return entry;
   }
 
-  private async stampSpacing(key: string, budget: HostThrottle): Promise<void> {
+  private async stampSpacing(key: string, budget: HostThrottle): Promise<SpacingStamp> {
     for (;;) {
       const outcome = await this.transact<SpacingOutcome>(key, (state, now) => {
         const gap = spacingAnchor(state, budget) + effectiveIntervalMs(state, budget, now) - now;
         if (gap > 0) return { result: { remaining: gap }, write: false };
+        const stamp: SpacingStamp = { priorLastGrantAt: state.lastGrantAt, stampedAt: now };
         state.lastGrantAt = now;
-        return { result: { stampedAt: now }, write: true };
+        return { result: { stamp }, write: true };
       });
-      if ('stampedAt' in outcome) {
-        grantObserver?.(key, outcome.stampedAt);
-        return;
+      if ('stamp' in outcome) {
+        grantObserver?.(key, outcome.stamp.stampedAt);
+        return outcome.stamp;
       }
       await this.sleep(outcome.remaining);
     }
@@ -606,10 +625,10 @@ export class MachineHostBudgetLimiter implements HostSlotLimiter {
     return path.join(this.directory, `${this.fileStem(host)}.json`);
   }
 
-  private async reserve(key: string, id: string, budget: HostThrottle): Promise<number> {
+  private async reserve(key: string, id: string, budget: HostThrottle): Promise<HostReservation> {
     const deadline = this.now() + this.acquireTimeoutMs;
     for (;;) {
-      const grantAt = await this.transact(key, (state, now) => {
+      const reservation = await this.transact<HostReservation | undefined>(key, (state, now) => {
         if (state.slots.length >= budget.concurrency) return { result: undefined, write: false };
         const at = Math.max(now, state.nextGrantAt);
         state.slots.push({
@@ -618,21 +637,41 @@ export class MachineHostBudgetLimiter implements HostSlotLimiter {
           grantedAt: at,
           expiresAt: at + MACHINE_HOST_SLOT_TTL_MS,
         });
+        const priorNextGrantAt = state.nextGrantAt;
         state.nextGrantAt = at + effectiveIntervalMs(state, budget, now);
-        return { result: at, write: true };
+        return {
+          result: { at, priorNextGrantAt, nextGrantAt: state.nextGrantAt },
+          write: true,
+        };
       });
-      if (grantAt !== undefined) return grantAt;
+      if (reservation !== undefined) return reservation;
       if (this.now() >= deadline) throw new HostSlotWaitTimeoutError(key, this.acquireTimeoutMs);
       await this.sleep(jittered(CAPACITY_POLL_MS, CAPACITY_POLL_JITTER_MS));
     }
   }
 
-  private async releaseSlot(key: string, id: string): Promise<void> {
+  /**
+   * Hands the slot back. With a refund the request never reached the host (a local cache answered),
+   * so this also gives back the spacing that grant reserved, and leaves `lastReleaseAt` alone: a
+   * one-at-a-time host spaces from the later of the last grant and the last response, and a replay
+   * is neither. The restore is conditional, so a grant that has already moved on keeps its spacing.
+   */
+  private async releaseSlot(key: string, id: string, refund?: SpacingRefund): Promise<void> {
     try {
       await this.transact(key, (state, now) => {
         const before = state.slots.length;
         state.slots = state.slots.filter((slot) => slot.id !== id);
-        if (state.slots.length === before) return { result: undefined, write: false };
+        const removed = state.slots.length !== before;
+        if (refund) {
+          if (state.lastGrantAt === refund.stamp.stampedAt) {
+            state.lastGrantAt = refund.stamp.priorLastGrantAt;
+          }
+          if (state.nextGrantAt === refund.reservation.nextGrantAt) {
+            state.nextGrantAt = refund.reservation.priorNextGrantAt;
+          }
+          return { result: undefined, write: true };
+        }
+        if (!removed) return { result: undefined, write: false };
         state.lastReleaseAt = now;
         return { result: undefined, write: true };
       });

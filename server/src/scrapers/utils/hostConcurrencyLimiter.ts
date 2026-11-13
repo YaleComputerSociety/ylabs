@@ -274,7 +274,11 @@ function recordHostOutcomeFromResponse(response: unknown): void {
     hostnameForLimiter(typed.config?.url, typed.config?.baseURL);
   if (!host || isHostBudgetExempt(host)) return;
   if (typed.status >= 200 && typed.status < 300) {
-    void recordHostSuccess(host);
+    void recordHostSuccess(host).catch((error: unknown) => {
+      console.warn(
+        `[host-pause] could not record a success from ${host}: ${(error as Error)?.message ?? error}`,
+      );
+    });
     return;
   }
   // The interceptor cannot wait, so a request already in flight may still reach the host before
@@ -323,7 +327,11 @@ export function installScraperHostConcurrencyInterceptor(
         );
       } catch (error) {
         if (!(error instanceof HostSlotWaitTimeoutError)) throw error;
-        throw new AxiosError(error.message, AxiosError.ETIMEDOUT, config);
+        const timedOut = new AxiosError(error.message, AxiosError.ETIMEDOUT, config);
+        // Keeps the original reachable, so a lane still reads this as a request never sent (#6258)
+        // rather than as a verdict on the page.
+        timedOut.cause = error;
+        throw timedOut;
       }
     }
     return config;
