@@ -200,6 +200,14 @@ export interface ScraperMetrics<TFetchMode extends string = ScraperFetchMode> {
   throttledRowsByHost?: Record<string, string[]>;
   /** research-page-text: rows left for a later run because their host was paused, by host. */
   deferredRowsByHost?: Record<string, { rows: number; resumesAt: string }>;
+  /**
+   * research-page-text: how each host it touched answered, so a host that was tried and refused
+   * can be told apart from one the run never asked (#6195).
+   */
+  hostReadOutcomes?: Record<
+    string,
+    { answered: number; refused: number; skipped: number; failed: number }
+  >;
   removedByRequest?: number;
   rekeyedPersonKeys?: RekeyedPersonKeyRunSummary;
   descriptionSlotAttestation?: {

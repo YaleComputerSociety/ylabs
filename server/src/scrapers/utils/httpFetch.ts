@@ -425,7 +425,7 @@ async function fetchPageLive(
     });
     if (pause) {
       backoff.settle('exhausted');
-      throw new HostPausedError(pause);
+      throw new HostPausedError(pause, true);
     }
     if (
       policy.retryable.has(result.status) &&

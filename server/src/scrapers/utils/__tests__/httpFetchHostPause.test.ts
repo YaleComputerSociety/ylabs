@@ -91,6 +91,18 @@ describe('fetchPageWithPolicy and a host that refuses', () => {
     expect(hostPausedUntil('dept.example.edu')).toEqual(FUTURE);
   });
 
+  it('marks the refusal that started a pause as sent, and a later refusal of a paused host as not sent (#6195)', async () => {
+    const request = vi.fn(async () => stated);
+
+    await expect(
+      fetchPageWithPolicy('https://dept.example.edu/people/a', { ...base, request }),
+    ).rejects.toMatchObject({ name: 'HostPausedError', requestSent: true });
+    await expect(
+      fetchPageWithPolicy('https://dept.example.edu/people/b', { ...base, request }),
+    ).rejects.toMatchObject({ name: 'HostPausedError', requestSent: false });
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
   it('records the pause under the host that answered after a redirect', async () => {
     const request = vi.fn(async () => stated);
 
