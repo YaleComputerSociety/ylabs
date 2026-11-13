@@ -119,6 +119,9 @@ export function parseImportResearchTopicsArgs(
   const rawSample = value('sample-for-grading');
   const rawChunkSize = value('chunk-size');
 
+  if (apply && argv.includes('--dry-run')) {
+    throw new Error('--dry-run and --apply contradict each other; pass one');
+  }
   if (apply && mode !== 'import') {
     throw new Error(`--apply imports readings; it does not combine with --${mode}`);
   }

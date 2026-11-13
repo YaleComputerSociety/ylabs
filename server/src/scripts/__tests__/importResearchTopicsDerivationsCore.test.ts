@@ -500,6 +500,18 @@ describe('parseImportResearchTopicsArgs and the apply guard', () => {
     );
   });
 
+  it('refuses --dry-run combined with --apply instead of applying', () => {
+    expect(() =>
+      parseImportResearchTopicsArgs(
+        ['--input=/tmp/r.json', '--dry-run', '--apply', IMPORT_RESEARCH_TOPICS_CONFIRM_FLAG],
+        env,
+      ),
+    ).toThrow(/--dry-run and --apply/);
+    expect(
+      parseImportResearchTopicsArgs(['--input=/tmp/r.json', '--dry-run'], env),
+    ).toMatchObject({ mode: 'import', apply: false });
+  });
+
   it('never reads a model API key in either import file', () => {
     for (const file of [
       'importResearchTopicsDerivations.ts',
