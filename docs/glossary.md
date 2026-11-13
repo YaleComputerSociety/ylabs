@@ -70,6 +70,11 @@ A recorded statement that one specific value is inadmissible for a field, keyed 
 A refusal blocks the write, so unlike a repair it survives a re-scrape without needing a lock, and it can be withdrawn.
 Owner: `fieldValueRefusalSchema` in `server/src/models/modelPrimitives.ts`.
 
+**Lane refusal (`refusedValues`).**
+Not the operator refusal above: a lane's own record, on a witness observation, that it saw one value on a page and refused it under a versioned classifier.
+It never blocks a write; field retraction uses it to retire the lane's older assertion of that identical value from the same page (#5803).
+Owner: `ObservationRefusedValue` in `server/src/scrapers/observationRefusals.ts`.
+
 **Suppression.**
 A tombstone on a record, not on a field.
 An absent `reason` is the resting state; a present one stops materializers resurrecting a record they would otherwise rewrite.

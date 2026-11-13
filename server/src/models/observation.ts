@@ -139,6 +139,31 @@ const observationSchema = new mongoose.Schema(
       type: [String],
       required: false,
     },
+    refusedValues: {
+      type: [
+        {
+          _id: false,
+          field: { type: String, required: true },
+          value: { type: String, required: true },
+          reason: { type: String, required: true },
+          classifier: { type: String, required: true },
+          classifierVersion: { type: Number, required: true },
+        },
+      ],
+      default: undefined,
+      required: false,
+    },
+    admittedUnder: {
+      type: [
+        {
+          _id: false,
+          classifier: { type: String, required: true },
+          version: { type: Number, required: true },
+        },
+      ],
+      default: undefined,
+      required: false,
+    },
     reslugAdoption: {
       type: Boolean,
       required: false,
