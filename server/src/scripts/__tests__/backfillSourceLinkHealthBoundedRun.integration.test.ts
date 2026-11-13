@@ -163,6 +163,77 @@ describe('link-health bounded runs (#6182)', () => {
     expect(kept).not.toHaveProperty('lastAttemptedAt');
   }, 120000);
 
+  const seedMultiLinkRow = async () => {
+    const CITED = 'https://cited.example.edu/paper/';
+    await ResearchEntity.updateOne(
+      { slug: 'fixture-big-5' },
+      {
+        $set: {
+          sourceUrls: [CITED],
+          sourceLinkHealth: [
+            { url: bigUrl(5), healthStatus: 'HEALTHY', httpStatusCode: 200, checkedAt: OLD },
+            { url: CITED, healthStatus: 'UNAVAILABLE', httpStatusCode: 404, checkedAt: OLD },
+          ],
+        },
+      },
+    );
+    return CITED;
+  };
+
+  it('keeps every unscoped stored verdict on a row that a url scope rewrites', async () => {
+    const CITED = await seedMultiLinkRow();
+    const seen: string[] = [];
+    await runSourceLinkHealthBackfill({
+      dryRun: false,
+      reprobeHealthyAfterDays: 7,
+      urlScope: [bigUrl(5)],
+      checkLink: async (url: string) => {
+        seen.push(url);
+        return { healthStatus: 'UNAVAILABLE', httpStatusCode: 410 };
+      },
+      paceDelayMs: 0,
+    });
+
+    expect(seen).toEqual([bigUrl(5)]);
+    const byUrl = new Map((await storedFor('fixture-big-5')).map((entry) => [entry.url, entry]));
+    expect(byUrl.get(bigUrl(5))).toMatchObject({
+      healthStatus: 'UNAVAILABLE',
+      httpStatusCode: 410,
+    });
+    const cited = byUrl.get(CITED);
+    expect(cited).toMatchObject({ healthStatus: 'UNAVAILABLE', httpStatusCode: 404 });
+    expect(new Date(cited!.checkedAt).getTime()).toBe(OLD.getTime());
+    expect(cited).not.toHaveProperty('lastAttemptedAt');
+  }, 120000);
+
+  it('keeps the stored verdicts a stopped host leaves unprobed on a row it rewrites', async () => {
+    const CITED = await seedMultiLinkRow();
+    await runSourceLinkHealthBackfill({
+      dryRun: false,
+      reprobeHealthyAfterDays: 7,
+      stopOnStatuses: [403],
+      hostConcurrency: 1,
+      checkLink: async (url: string) =>
+        url.includes('cited.example.edu')
+          ? { healthStatus: 'HEALTHY', httpStatusCode: 200 }
+          : { healthStatus: 'UNKNOWN', httpStatusCode: 403 },
+      paceDelayMs: 0,
+    });
+
+    const rows = await Promise.all(
+      Array.from({ length: BIG_COUNT }, (_v, i) => storedFor(`fixture-big-${i}`)),
+    );
+    const bigEntries = rows.flat().filter((entry) => String(entry.url).includes(BIG));
+    expect(bigEntries).toHaveLength(BIG_COUNT);
+    const untouched = bigEntries.filter(
+      (entry) => new Date(entry.checkedAt).getTime() === OLD.getTime() && !entry.lastAttemptedAt,
+    );
+    expect(untouched.length).toBeGreaterThanOrEqual(BIG_COUNT - 1);
+    const byUrl = new Map((await storedFor('fixture-big-5')).map((entry) => [entry.url, entry]));
+    expect(byUrl.has(bigUrl(5))).toBe(true);
+    expect(byUrl.get(CITED)).toMatchObject({ healthStatus: 'HEALTHY', httpStatusCode: 200 });
+  }, 120000);
+
   it('keeps a stored verdict when its probe throws instead of dropping it from the rewritten row', async () => {
     const SECOND = 'https://other.example.edu/page/';
     await ResearchEntity.updateOne(

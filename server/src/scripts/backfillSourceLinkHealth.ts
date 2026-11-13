@@ -769,10 +769,8 @@ export async function runSourceLinkHealthBackfill(options: {
         const signalSourceUrls = (signalRows as Array<{ sourceUrl?: unknown }>).map(
           (row) => row.sourceUrl,
         );
-        const collected = collectSourceLinkHealthCandidates(entity, signalSourceUrls);
-        const candidates = urlScopeOrder
-          ? collected.filter((url) => urlScopeOrder.has(url))
-          : collected;
+        const candidates = collectSourceLinkHealthCandidates(entity, signalSourceUrls);
+        if (urlScopeOrder && !candidates.some((url) => urlScopeOrder.has(url))) continue;
         if (candidates.length === 0) continue;
         const { toProbe, carried } =
           options.reprobeHealthyAfterDays === undefined
@@ -811,8 +809,9 @@ export async function runSourceLinkHealthBackfill(options: {
       }
     }
 
+    const inScope = (url: string): boolean => !urlScopeOrder || urlScopeOrder.has(url);
     const plannedProbes = orderPlannedProbes(
-      plans.flatMap((plan) => plan.toProbe),
+      plans.flatMap((plan) => plan.toProbe).filter(inScope),
       urlScopeOrder,
       options.samplePerHost !== undefined,
     );
@@ -834,9 +833,11 @@ export async function runSourceLinkHealthBackfill(options: {
     });
 
     for (const plan of plans) {
-      plan.tlsFallbacks = tlsFallbackCandidates(plan.candidates, healthCache);
+      plan.tlsFallbacks = tlsFallbackCandidates(plan.candidates.filter(inScope), healthCache);
       plan.httpsSpellings = httpsSpellingProbes(
-        [plan.entity.websiteUrl, plan.entity.website],
+        [plan.entity.websiteUrl, plan.entity.website].filter(
+          (url) => typeof url !== 'string' || inScope(url),
+        ),
         healthCache,
       );
     }
