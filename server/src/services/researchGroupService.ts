@@ -40,6 +40,10 @@ import {
 } from '../models/canonicalRoleMapping';
 import { Researcher, type ResearcherProfileLink } from '../models/researcher';
 import { Department, DepartmentCategory } from '../models/department';
+import {
+  catalogDepartmentWithAncestors,
+  getOrgUnitCanonicalizer,
+} from '../scrapers/orgUnitCanonicalization';
 import { resolveOrCreateResearcherIdUnlessRemoved } from '../scrapers/canonicalMembershipMaterializer';
 import { currentDirectoryRemovalMintGuard, REMOVED_BY_REQUEST } from './directoryRemovalMintGuard';
 import { judgeReDerivedAccessSignals } from '../scrapers/accessMaterializer';
@@ -474,15 +478,25 @@ function slugify(input: string): string {
     .slice(0, 80);
 }
 
-async function inferKindFromDepartment(deptName?: string): Promise<'lab' | 'individual'> {
-  if (!deptName) return 'lab';
-  const dept = await Department.findOne({
-    $or: [{ name: deptName }, { displayName: deptName }, { aliases: deptName }],
-  }).lean();
-  if (!dept) return 'lab';
-  const cat = (dept as any).primaryCategory as string | undefined;
-  if (cat && NON_LAB_CATEGORIES.has(cat)) return 'individual';
+async function inferKindFromDepartments(
+  deptNames: readonly string[],
+): Promise<'lab' | 'individual'> {
+  for (const deptName of deptNames) {
+    const dept = await Department.findOne({
+      $or: [{ name: deptName }, { displayName: deptName }, { aliases: deptName }],
+    }).lean();
+    if (!dept) continue;
+    const cat = (dept as any).primaryCategory as string | undefined;
+    return cat && NON_LAB_CATEGORIES.has(cat) ? 'individual' : 'lab';
+  }
   return 'lab';
+}
+
+async function ownerDepartmentsWithCatalogAncestors(primaryDepartment?: string): Promise<string[]> {
+  const primary = (primaryDepartment || '').trim();
+  if (!primary) return [];
+  const walked = catalogDepartmentWithAncestors(await getOrgUnitCanonicalizer(), primary);
+  return walked.length > 0 ? walked : [primary];
 }
 
 function ownerSlugSeed(owner: OwnerLike, kind: 'lab' | 'individual'): string {
@@ -556,7 +570,8 @@ export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
     }
   }
 
-  const kind = await inferKindFromDepartment(owner.primaryDepartment);
+  const ownerDepartments = await ownerDepartmentsWithCatalogAncestors(owner.primaryDepartment);
+  const kind = await inferKindFromDepartments(ownerDepartments);
   const slug = ownerSlugSeed(owner, kind);
   const name = ownerDisplayName(owner, kind);
 
@@ -568,7 +583,7 @@ export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
       entityType: mapResearchGroupKindToEntityType(kind),
       lastObservedAt: new Date(),
       sourceUrls: [],
-      departments: owner.primaryDepartment ? [owner.primaryDepartment] : [],
+      departments: ownerDepartments,
     },
   };
 

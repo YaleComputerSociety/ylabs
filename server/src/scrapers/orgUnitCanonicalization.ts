@@ -457,6 +457,20 @@ function withAncestorDepartments(
   return values;
 }
 
+/**
+ * A stated department as the catalog names it, followed by its department-altitude
+ * ancestors, so a stored section (#6202) reaches the department it sits under. Empty when
+ * the catalog does not name exactly one unit for the value.
+ */
+export function catalogDepartmentWithAncestors(
+  canonicalizer: OrgUnitCanonicalizer,
+  rawDepartment: string,
+): string[] {
+  const canonical = canonicalizer.canonicalizeDepartments([rawDepartment]);
+  if (canonical.values.length !== 1 || canonical.unmatched.length > 0) return [];
+  return withAncestorDepartments(canonicalizer, canonical.values);
+}
+
 async function buildCanonicalizerFromDatabase(): Promise<OrgUnitCanonicalizer> {
   const rows = await OrgUnit.find({
     archived: { $ne: true },
