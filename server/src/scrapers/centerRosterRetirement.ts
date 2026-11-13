@@ -517,6 +517,7 @@ export interface CenterRosterRead {
   membershipKeys: ReadonlySet<string>;
   relationshipKeys: ReadonlySet<string>;
   members: readonly CenterRosterReadMember[];
+  memberIdentities?: ReadonlySet<string>;
   sections?: CenterRosterReadSections;
 }
 
@@ -650,6 +651,9 @@ export function centerRosterReadFromSnapshot(
       members.map((member) => member.relationshipKey ?? '').filter(Boolean),
     ),
     members,
+    memberIdentities: new Set(
+      members.map((member) => comparableIdentity(member.membershipKey ?? '')).filter(Boolean),
+    ),
   };
 }
 
@@ -694,7 +698,8 @@ export function departedReadRunIds<Read extends CenterRosterRead>(
   for (const read of reads) {
     const listedCurrent = read.sections
       ? read.sections.currentIdentities.has(identity)
-      : read.members.some((member) => comparableIdentity(member.membershipKey ?? '') === identity);
+      : (read.memberIdentities?.has(identity) ??
+        read.members.some((member) => comparableIdentity(member.membershipKey ?? '') === identity));
     if (listedCurrent) anchor = Math.max(anchor, read.observedAt.getTime());
   }
   const runIds = new Set<string>();
