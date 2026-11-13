@@ -85,6 +85,7 @@ import type {
   ObservationInput,
   ScraperFetchMetric,
 } from '../types';
+import type { ObservationRefusedValue } from '../observationRefusals';
 import {
   isLikelyPersonSpecificYaleEmail,
   isRoleOrUnitMailbox,
@@ -306,6 +307,27 @@ const ROSTER_PROFILE_DESCRIPTION_CONFIDENCE = 0.55;
 const STATED_LAB_NAME_CONFIDENCE = 0.8;
 
 /** Minimal structured row produced by every per-department extractor. */
+export const ROSTER_LAB_WEBSITE_CLASSIFIER = 'dept-faculty-roster-lab-website';
+// Bump when a change to the profile lab-link rules refuses links an earlier version admitted, so
+// field retraction can tell this read's refusal from the older read that asserted the link (#5803).
+export const ROSTER_LAB_WEBSITE_CLASSIFIER_VERSION = 1;
+
+export type LabUrlRefusalReason =
+  | 'publicity_region_link'
+  | 'path_word_without_website_signal'
+  | 'national_laboratory'
+  | 'institutional_advancement'
+  | 'map_or_publicity_page'
+  | 'posting_course_care_or_listing_page'
+  | 'own_site_directory_page'
+  | 'offsite_person_profile'
+  | 'generic_lab_directory';
+
+export interface LabUrlRefusal {
+  url: string;
+  reason: LabUrlRefusalReason;
+}
+
 export interface FacultyEntry {
   name: string;
   /**
@@ -364,6 +386,8 @@ export interface FacultyEntry {
    * `departmentRosterLabSlotAttestation.test.ts` enforces by scanning this file.
    */
   labSlotAttestation?: 'empty' | 'refused';
+  /** The candidate lab links the profile read saw and declined, each with the rule that declined it (#5803). */
+  labUrlRefusals?: LabUrlRefusal[];
   /**
    * Set when the profile presented `labUrl` as its own labelled website button, with the
    * title of the lab card the button sits in (#5819).
@@ -3590,6 +3614,7 @@ export function profileEnrichmentFromHtml(
     | 'emailSlotAttestation'
     | 'labUrl'
     | 'labSlotAttestation'
+    | 'labUrlRefusals'
     | 'labWebsiteButton'
     | 'title'
     | 'orcid'
@@ -3622,6 +3647,11 @@ export function profileEnrichmentFromHtml(
   // path whose label names something else (#5819), so only a page that offered no
   // candidate leaves the slot claimable as empty (#3135).
   let labUrlCandidateRefused = false;
+  const labUrlRefusals: LabUrlRefusal[] = [];
+  const refuseCandidate = (url: string | undefined, reason: LabUrlRefusalReason) => {
+    labUrlCandidateRefused = true;
+    if (url) labUrlRefusals.push({ url, reason });
+  };
   const scholarCandidateProfileUrls: string[] = [];
   const profileHost = (() => {
     try {
@@ -3640,7 +3670,11 @@ export function profileEnrichmentFromHtml(
     // carries, so declining it is a refusal rather than an empty slot (#5819, #3135).
     if (isInProfilePublicityRegion(link) && !isProfileWebsiteButton(link)) {
       if (isInProfileRelatedLinksList(link) && WEBSITE_SIGNAL.test(link.text())) {
-        labUrlCandidateRefused = true;
+        const relatedHref = link.attr('href') || '';
+        refuseCandidate(
+          relatedHref ? absolutize(relatedHref, profileUrl) : undefined,
+          'publicity_region_link',
+        );
       }
       return;
     }
@@ -3687,22 +3721,22 @@ export function profileEnrichmentFromHtml(
       (WEBSITE_SIGNAL.test(parsed.pathname) && pathNamesALab(parsed.pathname)) ||
       (linkTextDescribesNothing(text) && pathNamesAWebsite);
     if (!hasWebsiteSignal) {
-      if (pathNamesAWebsite) labUrlCandidateRefused = true;
+      if (pathNamesAWebsite) refuseCandidate(absolute, 'path_word_without_website_signal');
       return;
     }
     if (NATIONAL_LABORATORY_TEXT.test(`${text} ${aria} ${titleAttr}`)) {
-      labUrlCandidateRefused = true;
+      refuseCandidate(absolute, 'national_laboratory');
       return;
     }
     if (isInstitutionalAdvancementUrl(absolute)) {
-      labUrlCandidateRefused = true;
+      refuseCandidate(absolute, 'institutional_advancement');
       return;
     }
     // The signal is exactly what a Locations card's `aria-label="Get <Name> Lab
     // directions"` spells, so this destination has to be judged on its own shape
     // rather than on the words the page wraps it in (#3184).
     if (isMapOrDirectionsUrl(absolute) || isInstitutionalPublicityPageUrl(absolute)) {
-      labUrlCandidateRefused = true;
+      refuseCandidate(absolute, 'map_or_publicity_page');
       return;
     }
     if (
@@ -3711,7 +3745,7 @@ export function profileEnrichmentFromHtml(
       isPatientCarePageUrl(absolute) ||
       isLabDirectoryListingUrl(absolute)
     ) {
-      labUrlCandidateRefused = true;
+      refuseCandidate(absolute, 'posting_course_care_or_listing_page');
       return;
     }
 
@@ -3719,16 +3753,16 @@ export function profileEnrichmentFromHtml(
     const isProfileSite = profileHost && candidateHost === profileHost;
     const isDirectoryPath = /\/(people|person|profile|faculty|directory)\//i.test(parsed.pathname);
     if (isProfileSite && isDirectoryPath) {
-      labUrlCandidateRefused = true;
+      refuseCandidate(absolute, 'own_site_directory_page');
       return;
     }
     if (isOffsiteInstitutionPersonProfileUrl(absolute)) {
-      labUrlCandidateRefused = true;
+      refuseCandidate(absolute, 'offsite_person_profile');
       return;
     }
 
     if (isGenericLabDirectoryUrl(absolute)) {
-      labUrlCandidateRefused = true;
+      refuseCandidate(absolute, 'generic_lab_directory');
       return;
     }
     labUrl = absolute;
@@ -3762,6 +3796,7 @@ export function profileEnrichmentFromHtml(
     title,
     labUrl,
     ...(labUrl ? {} : { labSlotAttestation: labUrlCandidateRefused ? 'refused' : 'empty' }),
+    ...(labUrlRefusals.length > 0 ? { labUrlRefusals } : {}),
     ...(labWebsiteButton ? { labWebsiteButton } : {}),
     orcid: declaredName ? subjectProfileOrcid($, declaredName) : undefined,
     ...(declaredName && subjectProfileStatesNoOrcid($, declaredName)
@@ -3834,7 +3869,46 @@ function mergedEmailSlotAttestation(
   return enrichment.emailSlotAttestation === 'empty' ? 'empty' : undefined;
 }
 
-function mergeProfileEnrichment(
+/**
+ * The links this read declined, as field-retraction refusals of `websiteUrl` (#5803). A link the
+ * read went on to assert is never also refused. When the read is filed under a page other than
+ * the one an admitted link is filed under (a lab-less read is filed under the profile, an
+ * admitted link under the roster listing), the refusal names that listing page as
+ * `assertedUnder`, which retraction honours only if the same run read it.
+ */
+export function rosterLabUrlRefusedValues(
+  refusals: readonly LabUrlRefusal[] | undefined,
+  assertedLabUrl: string | undefined,
+  pages: { witnessPage: string; admittedLinkPage: string },
+): ObservationRefusedValue[] {
+  const asserted = assertedLabUrl ? normalizeUrlForDedupe(assertedLabUrl) : '';
+  const assertedUnder =
+    pages.admittedLinkPage && pages.admittedLinkPage !== pages.witnessPage
+      ? pages.admittedLinkPage
+      : undefined;
+  return (refusals ?? [])
+    .filter((refusal) => normalizeUrlForDedupe(refusal.url) !== asserted)
+    .map((refusal) => ({
+      field: 'websiteUrl',
+      value: refusal.url,
+      reason: refusal.reason,
+      classifier: ROSTER_LAB_WEBSITE_CLASSIFIER,
+      classifierVersion: ROSTER_LAB_WEBSITE_CLASSIFIER_VERSION,
+      ...(assertedUnder ? { assertedUnder } : {}),
+    }));
+}
+
+function mergedLabUrlRefusals(
+  ...lists: Array<readonly LabUrlRefusal[] | undefined>
+): LabUrlRefusal[] | undefined {
+  const byUrl = new Map<string, LabUrlRefusal>();
+  for (const refusal of lists.flatMap((list) => list ?? [])) {
+    if (!byUrl.has(refusal.url)) byUrl.set(refusal.url, refusal);
+  }
+  return byUrl.size > 0 ? [...byUrl.values()] : undefined;
+}
+
+export function mergeProfileEnrichment(
   entry: FacultyEntry,
   enrichment: Partial<
     Pick<
@@ -3845,6 +3919,7 @@ function mergeProfileEnrichment(
       | 'emailSlotAttestation'
       | 'labUrl'
       | 'labSlotAttestation'
+      | 'labUrlRefusals'
       | 'labWebsiteButton'
       | 'title'
       | 'orcid'
@@ -3884,6 +3959,7 @@ function mergeProfileEnrichment(
         ? enrichment.labWebsiteButton
         : entry.labWebsiteButton,
     labSlotAttestation: mergedLabSlotAttestation(entry, enrichment),
+    labUrlRefusals: mergedLabUrlRefusals(entry.labUrlRefusals, enrichment.labUrlRefusals),
     orcid: entry.orcid || enrichment.orcid,
     orcidSlotAttestation:
       entry.orcid || enrichment.orcid ? undefined : enrichment.orcidSlotAttestation,
@@ -4865,6 +4941,10 @@ function entryToResearchEntityObservationsUnscreened(
   // Only a positively attested empty slot is an absence. A refusal, and silence from
   // a parse that never looked, both leave the claim unmade (#3135, #2647).
   const labSlotIsEmpty = !entry.labUrl && entry.labSlotAttestation === 'empty';
+  const refusedValues = rosterLabUrlRefusedValues(entry.labUrlRefusals, labUrl, {
+    witnessPage: base.sourceUrl,
+    admittedLinkPage: sourceUrl,
+  });
 
   const observations: ObservationInput[] = [
     {
@@ -4872,6 +4952,7 @@ function entryToResearchEntityObservationsUnscreened(
       field: 'slug',
       value: slug,
       ...(labSlotIsEmpty ? { assertsNoValueFor: ['websiteUrl'] } : {}),
+      ...(refusedValues.length > 0 ? { refusedValues } : {}),
     },
     ...identityObservations,
     ...(dept.crossListedProgramme
@@ -4880,7 +4961,21 @@ function entryToResearchEntityObservationsUnscreened(
     ...(dept.affiliatesOnly || dept.schoolWideDirectory
       ? []
       : [{ ...base, field: 'departments' as const, value: [dept.deptName] }]),
-    ...(labUrl ? [{ ...base, field: 'websiteUrl' as const, value: labUrl }] : []),
+    ...(labUrl
+      ? [
+          {
+            ...base,
+            field: 'websiteUrl' as const,
+            value: labUrl,
+            admittedUnder: [
+              {
+                classifier: ROSTER_LAB_WEBSITE_CLASSIFIER,
+                version: ROSTER_LAB_WEBSITE_CLASSIFIER_VERSION,
+              },
+            ],
+          },
+        ]
+      : []),
     {
       ...base,
       field: 'sourceUrls',
