@@ -3,7 +3,10 @@ import { describe, expect, it } from 'vitest';
 import {
   isDecisiveStoredVerdict,
   resolveSourceLinkHealthEntry,
+  sourceLinkVerdictSignature,
   storedSourceLinkHealthByUrl,
+  tallySourceLinkVerdictTransition,
+  type SourceLinkVerdictTransitionTally,
 } from '../backfillSourceLinkHealthCore';
 
 const URL_A = 'https://ysph.yale.edu/a/b/';
@@ -186,7 +189,12 @@ describe('resolveSourceLinkHealthEntry routing axis', () => {
       { url: URL_A, healthStatus: 'UNKNOWN', privateAddressHost: true, checkedAt: EARLIER },
       NOW,
     );
-    expect(resolved.entry).toEqual({ url: URL_A, healthStatus: 'UNKNOWN', checkedAt: NOW });
+    expect(resolved.entry).toEqual({
+      url: URL_A,
+      healthStatus: 'UNKNOWN',
+      checkedAt: EARLIER,
+      lastAttemptedAt: NOW,
+    });
   });
 
   it('keeps a preserved decisive verdict and the fresh routing fact together', () => {
@@ -329,5 +337,173 @@ describe('resolveSourceLinkHealthEntry https spelling (#5639)', () => {
       NOW,
     );
     expect(resolved.entry.httpsSpellingUrl).toBeUndefined();
+  });
+});
+
+describe('resolveSourceLinkHealthEntry on a probe that never reached the host', () => {
+  it('keeps a stored certificate failure when the guard refused a split-horizon host', () => {
+    const resolved = resolveSourceLinkHealthEntry(
+      URL_A,
+      { healthStatus: 'UNKNOWN', publicAddressHost: true },
+      { url: URL_A, healthStatus: 'UNKNOWN', tlsVerificationFailed: true, checkedAt: EARLIER },
+      NOW,
+    );
+    expect(resolved.preservedUnreachedVerdict).toBe(true);
+    expect(resolved.entry).toEqual({
+      url: URL_A,
+      healthStatus: 'UNKNOWN',
+      tlsVerificationFailed: true,
+      checkedAt: EARLIER,
+      lastAttemptedAt: NOW,
+    });
+  });
+
+  it('keeps the certificate failure on a stored HEALTHY verdict through a timeout', () => {
+    const resolved = resolveSourceLinkHealthEntry(
+      URL_A,
+      { healthStatus: 'UNKNOWN' },
+      {
+        url: URL_A,
+        healthStatus: 'HEALTHY',
+        httpStatusCode: 200,
+        tlsVerificationFailed: true,
+        checkedAt: EARLIER,
+      },
+      NOW,
+    );
+    expect(resolved.preservedDecisiveVerdict).toBe(true);
+    expect(resolved.entry).toEqual({
+      url: URL_A,
+      healthStatus: 'HEALTHY',
+      httpStatusCode: 200,
+      tlsVerificationFailed: true,
+      checkedAt: EARLIER,
+      lastAttemptedAt: NOW,
+    });
+  });
+
+  it('releases a stored private-address flag once public DNS answers a public address', () => {
+    const resolved = resolveSourceLinkHealthEntry(
+      URL_A,
+      { healthStatus: 'UNKNOWN', publicAddressHost: true },
+      { url: URL_A, healthStatus: 'UNKNOWN', privateAddressHost: true, checkedAt: EARLIER },
+      NOW,
+    );
+    expect(resolved.entry.privateAddressHost).toBeUndefined();
+  });
+
+  it('keeps a stored private-address flag when public DNS also answers private', () => {
+    const resolved = resolveSourceLinkHealthEntry(
+      URL_A,
+      { healthStatus: 'UNKNOWN', privateAddressHost: true },
+      { url: URL_A, healthStatus: 'UNKNOWN', privateAddressHost: true, checkedAt: EARLIER },
+      NOW,
+    );
+    expect(resolved.entry.privateAddressHost).toBe(true);
+  });
+
+  it('still lets a probe that reached the server replace a stored certificate failure', () => {
+    const resolved = resolveSourceLinkHealthEntry(
+      URL_A,
+      { healthStatus: 'UNKNOWN', httpStatusCode: 403 },
+      { url: URL_A, healthStatus: 'UNKNOWN', tlsVerificationFailed: true, checkedAt: EARLIER },
+      NOW,
+    );
+    expect(resolved.preservedUnreachedVerdict).toBeUndefined();
+    expect(resolved.entry).toEqual({
+      url: URL_A,
+      healthStatus: 'UNKNOWN',
+      httpStatusCode: 403,
+      checkedAt: NOW,
+    });
+  });
+
+  it('still records a probe classified as a dead link (a confirmed DNS negative) as gone', () => {
+    const resolved = resolveSourceLinkHealthEntry(
+      URL_A,
+      { healthStatus: 'UNAVAILABLE' },
+      { url: URL_A, healthStatus: 'HEALTHY', httpStatusCode: 200, checkedAt: EARLIER },
+      NOW,
+    );
+    expect(resolved.entry).toEqual({ url: URL_A, healthStatus: 'UNAVAILABLE', checkedAt: NOW });
+  });
+
+  it('writes the unreached probe when nothing is stored', () => {
+    const resolved = resolveSourceLinkHealthEntry(
+      URL_A,
+      { healthStatus: 'UNKNOWN' },
+      undefined,
+      NOW,
+    );
+    expect(resolved.preservedUnreachedVerdict).toBeUndefined();
+    expect(resolved.entry).toEqual({ url: URL_A, healthStatus: 'UNKNOWN', checkedAt: NOW });
+  });
+});
+
+describe('tallySourceLinkVerdictTransition', () => {
+  const emptyTally = (): SourceLinkVerdictTransitionTally => ({
+    verdictTransitions: {},
+    clearedTlsFlags: 0,
+    servedWebsitesLost: 0,
+    lostVerdictSamples: [],
+  });
+
+  it('ignores a renewed checkedAt on an unchanged verdict', () => {
+    const tally = emptyTally();
+    tallySourceLinkVerdictTransition(
+      tally,
+      { url: URL_A, healthStatus: 'HEALTHY', checkedAt: EARLIER },
+      { url: URL_A, healthStatus: 'HEALTHY', checkedAt: NOW },
+      true,
+    );
+    expect(tally).toEqual(emptyTally());
+  });
+
+  it('counts a cleared certificate failure', () => {
+    const tally = emptyTally();
+    tallySourceLinkVerdictTransition(
+      tally,
+      { url: URL_A, healthStatus: 'UNKNOWN', tlsVerificationFailed: true },
+      { url: URL_A, healthStatus: 'UNKNOWN' },
+      false,
+    );
+    expect(tally).toEqual({
+      verdictTransitions: { 'UNKNOWN+TLS->UNKNOWN': 1 },
+      clearedTlsFlags: 1,
+      servedWebsitesLost: 0,
+      lostVerdictSamples: [
+        { slug: '', url: URL_A, transition: 'UNKNOWN+TLS->UNKNOWN', servedWebsite: false },
+      ],
+    });
+  });
+
+  it('counts a served website that stops being followable, and only a served website', () => {
+    const tally = emptyTally();
+    const before = { url: URL_A, healthStatus: 'HEALTHY' as const, httpStatusCode: 200 };
+    const after = { url: URL_A, healthStatus: 'UNAVAILABLE' as const, httpStatusCode: 404 };
+    tallySourceLinkVerdictTransition(tally, before, after, true);
+    tallySourceLinkVerdictTransition(tally, before, after, false);
+    expect(tally.servedWebsitesLost).toBe(1);
+    expect(tally.verdictTransitions).toEqual({ 'HEALTHY->UNAVAILABLE': 2 });
+    expect(tally.lostVerdictSamples.map((sample) => sample.servedWebsite)).toEqual([true, false]);
+  });
+
+  it('does not list a first probe of an unprobed URL', () => {
+    const tally = emptyTally();
+    tallySourceLinkVerdictTransition(
+      tally,
+      undefined,
+      { url: URL_A, healthStatus: 'UNAVAILABLE', httpStatusCode: 404 },
+      true,
+    );
+    expect(tally.lostVerdictSamples).toEqual([]);
+    expect(tally.verdictTransitions).toEqual({ 'NONE->UNAVAILABLE': 1 });
+  });
+
+  it('labels a never-probed URL as NONE', () => {
+    expect(sourceLinkVerdictSignature(undefined)).toBe('NONE');
+    expect(
+      sourceLinkVerdictSignature({ url: URL_A, healthStatus: 'UNKNOWN', privateAddressHost: true }),
+    ).toBe('UNKNOWN+PRIVATE');
   });
 });

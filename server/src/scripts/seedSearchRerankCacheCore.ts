@@ -7,6 +7,10 @@ import {
   SearchRerankCache,
 } from '../models/searchRerankCache';
 import {
+  resolveResearchEntityCanonicalByTombstone,
+  type ResearchEntityTombstoneNode,
+} from '../services/researchEntityCanonicalTombstone';
+import {
   searchRerankCacheFilters,
   searchRerankCacheQueryKey,
   type SearchRerankCacheFilters,
@@ -74,12 +78,36 @@ export type SeedIndexTextHashReader = () => Promise<SeedIndexTextHashes | null>;
 export type SeedTextHashSource =
   'read-from-index' | 'index-unreachable' | 'index-of-another-environment' | 'not-requested';
 
+export type SeedSlugResolutionPath = 'direct' | 'merge' | 'redirect';
+
+export interface ResolvedSeedSlug {
+  entityId: string;
+  via: SeedSlugResolutionPath;
+}
+
+export const SEED_MERGE_COLLISION_REFUSAL_GRADE_GAP = 2;
+
+export interface SeedMergeCollision {
+  entryIndex: number;
+  survivorId: string;
+  scores: number[];
+}
+
+export interface SeedMergeCollisionReport {
+  count: number;
+  maxGap: number;
+  collisions: SeedMergeCollision[];
+}
+
 export interface SeedSearchRerankCacheReport {
   mode: 'apply' | 'dry-run';
   entries: number;
   scores: number;
   resolvedScores: number;
   unresolvedSlugs: number;
+  resolvedThroughMerge: number;
+  resolvedThroughRedirect: number;
+  mergeCollisions: SeedMergeCollisionReport;
   entriesWithNoResolvedScore: number;
   upserted: number;
   textHashes: SeedTextHashSource;
@@ -204,26 +232,109 @@ export function parseSeedInput(raw: unknown): SeedInputEntry[] {
   });
 }
 
-export async function resolveLiveSlugIds(slugs: readonly string[]): Promise<Map<string, string>> {
+async function resolveSlugsThroughStoredRedirects(
+  slugs: readonly string[],
+): Promise<Map<string, string>> {
   if (slugs.length === 0) return new Map();
-  const rows = (await ResearchEntity.find({ slug: { $in: [...slugs] }, archived: { $ne: true } })
-    .select('_id slug')
-    .lean()) as Array<{ _id: unknown; slug?: unknown }>;
-  const bySlug = new Map<string, string>();
-  for (const row of rows) {
+  const claimants = (await ResearchEntity.find({
+    archived: { $ne: true },
+    $or: [
+      { 'previousSlugs.slug': { $in: [...slugs] } },
+      { 'mergedFrom.slug': { $in: [...slugs] } },
+    ],
+  })
+    .select('_id previousSlugs.slug mergedFrom.slug')
+    .lean()) as Array<{
+    _id: unknown;
+    previousSlugs?: Array<{ slug?: unknown }>;
+    mergedFrom?: Array<{ slug?: unknown }>;
+  }>;
+  const wanted = new Set(slugs);
+  const claimantIdsBySlug = new Map<string, Set<string>>();
+  for (const row of claimants) {
     const entityId = serializedDocumentId(row._id);
-    if (typeof row.slug === 'string' && entityId) bySlug.set(row.slug, entityId);
+    if (!entityId) continue;
+    for (const alias of [...(row.previousSlugs ?? []), ...(row.mergedFrom ?? [])]) {
+      if (typeof alias.slug !== 'string' || !wanted.has(alias.slug)) continue;
+      const ids = claimantIdsBySlug.get(alias.slug) ?? new Set<string>();
+      ids.add(entityId);
+      claimantIdsBySlug.set(alias.slug, ids);
+    }
+  }
+  const bySlug = new Map<string, string>();
+  for (const [slug, ids] of claimantIdsBySlug) {
+    if (ids.size === 1) bySlug.set(slug, [...ids][0]);
   }
   return bySlug;
 }
 
+/**
+ * A slug resolves to its own live row, else to the live survivor its archived row's merge
+ * tombstone chain reaches, else, when no row carries it at all, to the one live row whose
+ * stored redirect (`previousSlugs` from a reslug, `mergedFrom` from a merge) names it.
+ */
+export async function resolveSeedSlugIds(
+  slugs: readonly string[],
+): Promise<Map<string, ResolvedSeedSlug>> {
+  if (slugs.length === 0) return new Map();
+  const rows = (await ResearchEntity.find({ slug: { $in: [...slugs] } })
+    .select('_id slug archived canonicalGroupId')
+    .lean()) as ResearchEntityTombstoneNode[];
+  const bySlug = new Map<string, ResolvedSeedSlug>();
+  const slugsWithARow = new Set<string>();
+  for (const row of rows) {
+    if (typeof row.slug !== 'string') continue;
+    slugsWithARow.add(row.slug);
+    if (row.archived === true) {
+      const survivor = await resolveResearchEntityCanonicalByTombstone(row);
+      const survivorId = survivor ? serializedDocumentId(survivor._id) : null;
+      if (survivorId) bySlug.set(row.slug, { entityId: survivorId, via: 'merge' });
+      continue;
+    }
+    const entityId = serializedDocumentId(row._id);
+    if (entityId) bySlug.set(row.slug, { entityId, via: 'direct' });
+  }
+  const redirected = await resolveSlugsThroughStoredRedirects(
+    slugs.filter((slug) => !slugsWithARow.has(slug)),
+  );
+  for (const [slug, entityId] of redirected) bySlug.set(slug, { entityId, via: 'redirect' });
+  return bySlug;
+}
+
+export interface RerankCachePlan {
+  planned: PlannedRerankCacheEntry[];
+  scores: number;
+  unresolvedSlugs: number;
+  resolvedThroughMerge: number;
+  resolvedThroughRedirect: number;
+  mergeCollisions: SeedMergeCollisionReport;
+}
+
+const scoresKeptPerRow = (
+  entryIndex: number,
+  resolved: ReadonlyArray<{ entityId: string; score: number }>,
+  collisions: SeedMergeCollision[],
+): Array<{ entityId: string; score: number }> => {
+  const scoresByEntityId = new Map<string, number[]>();
+  for (const { entityId, score } of resolved) {
+    scoresByEntityId.set(entityId, [...(scoresByEntityId.get(entityId) ?? []), score]);
+  }
+  return [...scoresByEntityId].map(([entityId, scores]) => {
+    if (scores.length > 1) collisions.push({ entryIndex, survivorId: entityId, scores });
+    return { entityId, score: Math.max(...scores) };
+  });
+};
+
 export function planRerankCacheEntries(
   entries: readonly SeedInputEntry[],
-  idBySlug: ReadonlyMap<string, string>,
-): { planned: PlannedRerankCacheEntry[]; scores: number; unresolvedSlugs: number } {
+  resolvedBySlug: ReadonlyMap<string, ResolvedSeedSlug>,
+): RerankCachePlan {
   const entryIndexByKey = new Map<string, number>();
   let scores = 0;
   let unresolvedSlugs = 0;
+  let resolvedThroughMerge = 0;
+  let resolvedThroughRedirect = 0;
+  const collisions: SeedMergeCollision[] = [];
   const planned = entries.map((entry, index) => {
     const queryKey = searchRerankCacheQueryKey(entry.query, entry.filters);
     const earlier = entryIndexByKey.get(queryKey);
@@ -233,21 +344,49 @@ export function planRerankCacheEntries(
     entryIndexByKey.set(queryKey, index);
     const resolved = Object.entries(entry.scores).flatMap(([slug, score]) => {
       scores += 1;
-      const entityId = idBySlug.get(slug);
-      if (!entityId) {
+      const resolution = resolvedBySlug.get(slug);
+      if (!resolution) {
         unresolvedSlugs += 1;
         return [];
       }
-      return [{ entityId, score }];
+      if (resolution.via === 'merge') resolvedThroughMerge += 1;
+      if (resolution.via === 'redirect') resolvedThroughRedirect += 1;
+      return [{ entityId: resolution.entityId, score }];
     });
     return {
       queryKey,
       queryText: entry.query.trim(),
       filters: searchRerankCacheFilters(entry.filters),
-      scores: resolved,
+      scores: scoresKeptPerRow(index, resolved, collisions),
     };
   });
-  return { planned, scores, unresolvedSlugs };
+  const refused = collisions.filter(
+    ({ scores: collided }) =>
+      Math.max(...collided) - Math.min(...collided) >= SEED_MERGE_COLLISION_REFUSAL_GRADE_GAP,
+  );
+  if (refused.length > 0) {
+    const indexes = [...new Set(refused.map((collision) => collision.entryIndex))];
+    const one = indexes.length === 1;
+    throw new Error(
+      `${one ? 'Entry' : 'Entries'} ${indexes.join(', ')} ${one ? 'scores' : 'score'} one row through two slugs ${SEED_MERGE_COLLISION_REFUSAL_GRADE_GAP} or more grade points apart and ${one ? 'needs' : 'need'} a re-score`,
+    );
+  }
+  return {
+    planned,
+    scores,
+    unresolvedSlugs,
+    resolvedThroughMerge,
+    resolvedThroughRedirect,
+    mergeCollisions: {
+      count: collisions.length,
+      maxGap: collisions.reduce(
+        (widest, { scores: collided }) =>
+          Math.max(widest, Math.max(...collided) - Math.min(...collided)),
+        0,
+      ),
+      collisions,
+    },
+  };
 }
 
 /**
@@ -353,8 +492,7 @@ export async function seedSearchRerankCache(options: {
   readIndexTextHashes?: SeedIndexTextHashReader | 'index-of-another-environment';
 }): Promise<SeedSearchRerankCacheReport> {
   const slugs = [...new Set(options.entries.flatMap((entry) => Object.keys(entry.scores)))];
-  const idBySlug = await resolveLiveSlugIds(slugs);
-  const plan = planRerankCacheEntries(options.entries, idBySlug);
+  const plan = planRerankCacheEntries(options.entries, await resolveSeedSlugIds(slugs));
   const { scores, unresolvedSlugs } = plan;
   const reader = options.readIndexTextHashes;
   const hashes = typeof reader === 'function' ? await reader() : null;
@@ -377,6 +515,9 @@ export async function seedSearchRerankCache(options: {
     scores,
     resolvedScores: scores - unresolvedSlugs,
     unresolvedSlugs,
+    resolvedThroughMerge: plan.resolvedThroughMerge,
+    resolvedThroughRedirect: plan.resolvedThroughRedirect,
+    mergeCollisions: plan.mergeCollisions,
     entriesWithNoResolvedScore: planned.filter((entry) => entry.scores.length === 0).length,
     upserted: 0,
     textHashes,
