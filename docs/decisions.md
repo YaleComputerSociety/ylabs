@@ -25,6 +25,7 @@ That rule was added after the first check, so the re-scored first 20 were treate
 On the 11 held-out rows, 8 still change: 7 pass and 1 fails (bar: at most 1), and 1 of 8 keeps a wrong secondary school.
 The rule steps aside when the row refuses the school the own profile's site names.
 Only first-hand `school` readings take part: a host-derived backfill reading is neither set aside nor kept as a secondary, after the full-corpus dry run showed 8 rows gaining a School of Medicine secondary from a backfill reading of a School of Medicine center page.
+This is deliberate on the primary too: a row whose only other `school` reading is host-derived keeps what the resolver picks, because letting the own profile outrank a derived reading is a second, unmeasured change, and both readings are host inferences; the stated Primary appointment from #6160 is the evidence that should settle those rows.
 
 ## 2026-11-13: A Profile's Home Department Is Its First Appointment, Never A Promoted Later One (#6070)
 
