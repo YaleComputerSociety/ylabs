@@ -7,9 +7,9 @@ vi.mock('axios', () => ({
   default: { request: (...args: unknown[]) => requestMock(...args) },
 }));
 
-vi.mock('../../utils/ssrfGuard', () => ({
+vi.mock('../../utils/ssrfGuard', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../utils/ssrfGuard')>()),
   assertPublicHttpUrl: async (url: string) => new URL(url),
-  SsrfBlockedError: class extends Error {},
   ssrfSafeAgents: () => ({ httpAgent: undefined, httpsAgent: undefined }),
 }));
 
