@@ -210,7 +210,7 @@ Take a number from the build (`yarn --cwd client build` prints per-chunk raw and
 
 ### Programs board load budget (#5160)
 
-The `/programs` board meets four lines, measured at p90 over 5 runs per condition:
+The `/programs` board meets four lines, measured at p90 over 5 runs per condition, where p90 over 5 runs is the slowest run:
 
 - The first program card waits on at most 1 API round trip.
 - Once the search response lands, the first card paints within 400ms at 375px wide with 4x CPU slowdown.
@@ -218,16 +218,17 @@ The `/programs` board meets four lines, measured at p90 over 5 runs per conditio
 - The search response is at most 100KB compressed, measured as the brotli body served to current browsers.
   A gzip-only client is outside this line.
 
-On 2026-11-13, at the merge that followed #5135, the board measured 1 round trip, 282ms, at most 4.38s, and 69KB brotli (105KB for a gzip-only client), so the card projection #5160 proposed was not built.
+On 2026-11-13, on beta at 5a3f8163b, the board measured 1 round trip, 282ms, at most 4.38s, and 69KB brotli (105KB for a gzip-only client), so the card projection #5160 proposed was not built.
 
 Measure the board the same way so the numbers stay comparable:
 
 - Use the production client build (`vite build` and `vite preview`), headless Chromium through the repo's Playwright, and a fresh browser per run.
-- Time to the first card is navigation until the first program card is visible in the DOM.
+- Time to the first card runs from navigation start until the first `section[aria-labelledby] .grid > *` element has a non-zero box.
   The page's LCP element is its intro paragraph, so read the first card, not LCP.
 - `/programs` is sign-in only, so a guest never sees a card.
   Mount the real programs router against Development with a synthetic student principal and no session.
-  `dev-login` writes an account and a login event.
+  Stub `/api/check` to return a synthetic student session and `/api/users/*` to return an empty watch list, as the student-journey smoke does.
+  Do not use `dev-login`, because it writes an account and a login event.
 - Apply the 2.5s condition as a Playwright route that delays every API response.
   Playwright's own interception adds a local cost that grows with body size, so treat a smaller-body gain under that condition as an upper bound.
 
