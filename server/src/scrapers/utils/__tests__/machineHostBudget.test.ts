@@ -19,6 +19,7 @@ import {
   type MachineHostBudgetLimiterOptions,
   type MachineHostBudgetState,
 } from '../machineHostBudget';
+import { SsrfBlockedError } from '../../../utils/ssrfGuard';
 
 const DEAD_PID = 4_000_001;
 const OTHER_LIVE_PID = 4_000_002;
@@ -145,6 +146,24 @@ describe('machine-wide spacing the host sees', () => {
     second();
 
     expect(clock - releasedAt).toBeGreaterThanOrEqual(YALE_HOST_DEFAULT_THROTTLE.minIntervalMs);
+  });
+
+  it('keeps a host with several slots spaced from the last grant, not drained by each response', async () => {
+    const limiter = budget();
+    const first = await limiter.acquire('lab.example.org');
+    const firstGrantAt = clock;
+    clock += 300;
+    first();
+    await vi.waitFor(() =>
+      expect(limiter.readState('lab.example.org')?.slots ?? [1]).toHaveLength(0),
+    );
+    const releasedAt = clock;
+
+    const second = await limiter.acquire('lab.example.org');
+    second();
+
+    expect(clock - firstGrantAt).toBeGreaterThanOrEqual(MACHINE_DEFAULT_HOST_BUDGET.minIntervalMs);
+    expect(clock - releasedAt).toBeLessThan(MACHINE_DEFAULT_HOST_BUDGET.minIntervalMs);
   });
 });
 
@@ -384,6 +403,52 @@ describe('fetchPageWithPolicy redirects', () => {
     expect(followUp[1].method).toBeUndefined();
     expect(followUp[1].body).toBeUndefined();
     expect(followUp[1].headers).not.toHaveProperty('Content-Type');
+  });
+
+  it('refuses a redirect whose target the SSRF guard blocks, without requesting it or retrying', async () => {
+    const { gate, hosts } = recordingGate();
+    const blockedTarget = 'https://internal.example.org/metadata';
+    const request = vi.fn<HttpRequestFn>(async (url) => ({
+      status: 302,
+      data: '',
+      finalUrl: url,
+      location: blockedTarget,
+    }));
+    const assertUrl = vi.fn(async (url: string) => {
+      if (url === blockedTarget) throw new SsrfBlockedError('blocked fixture target');
+      return { toString: () => url };
+    });
+
+    await expect(
+      fetchPageWithPolicy('https://alias.example.org/short', {
+        assertUrl,
+        request,
+        limiter: new HostRateLimiter({ minIntervalMs: 0, machineWide: () => gate }),
+      }),
+    ).rejects.toBeInstanceOf(SsrfBlockedError);
+
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request.mock.calls.map(([target]) => target)).not.toContain(blockedTarget);
+    expect(assertUrl).toHaveBeenCalledWith(blockedTarget);
+    expect(hosts).toEqual(['alias.example.org']);
+  });
+
+  it('fails at once, without sending or retrying, when no budget slot frees in time', async () => {
+    const request = vi.fn<HttpRequestFn>();
+    const acquire = vi.fn<HostSlotLimiter['acquire']>(async (host) => {
+      throw new HostSlotWaitTimeoutError(host, 1);
+    });
+
+    await expect(
+      fetchPageWithPolicy('https://lab.example.org/page', {
+        assertUrl: passthroughAssert,
+        request,
+        limiter: new HostRateLimiter({ minIntervalMs: 0, machineWide: () => ({ acquire }) }),
+      }),
+    ).rejects.toBeInstanceOf(HostSlotWaitTimeoutError);
+
+    expect(acquire).toHaveBeenCalledTimes(1);
+    expect(request).not.toHaveBeenCalled();
   });
 
   it('still returns a redirect status unchanged when the caller asked for no redirects', async () => {

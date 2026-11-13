@@ -12,6 +12,7 @@ import axios from 'axios';
 import { assertPublicHttpUrl, SsrfBlockedError, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import {
   HostConcurrencyLimiter,
+  HostSlotWaitTimeoutError,
   hostnameForLimiter,
   resolveHostRetryBudget,
   type HostSlotLimiter,
@@ -402,7 +403,11 @@ async function fetchPageLive(
 const isRedirectStatus = (status: number): boolean => status >= 300 && status < 400;
 
 function isRefusedBeforeSending(error: unknown): boolean {
-  return error instanceof SsrfBlockedError || error instanceof HostBudgetUnavailableError;
+  return (
+    error instanceof SsrfBlockedError ||
+    error instanceof HostBudgetUnavailableError ||
+    error instanceof HostSlotWaitTimeoutError
+  );
 }
 
 function tooManyRedirectsError(maxRedirects: number): Error & { code: string } {

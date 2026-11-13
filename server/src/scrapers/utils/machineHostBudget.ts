@@ -142,11 +142,14 @@ function parseState(raw: string, host: string): MachineHostBudgetState | undefin
   }
 }
 
-// A request can reach the host well after its grant (DNS, connect, a cold process), so the next
-// grant waits out the interval from the later of the last grant and the last response, which a
-// request has always reached the host before. At concurrency 1 that bounds the gap the host sees.
-const spacingAnchor = (state: MachineHostBudgetState): number =>
-  Math.max(state.lastGrantAt, state.lastReleaseAt ?? Number.MIN_SAFE_INTEGER);
+// A request can reach the host well after its grant (DNS, connect, a cold process), so at one in
+// flight the next grant waits out the interval from the later of the last grant and the last
+// response, which bounds the gap the host sees. With more slots every response would push the
+// anchor forward and drain the host before each grant, so those hosts space from the last grant.
+const spacingAnchor = (state: MachineHostBudgetState, budget: HostThrottle): number =>
+  budget.concurrency === 1
+    ? Math.max(state.lastGrantAt, state.lastReleaseAt ?? Number.MIN_SAFE_INTEGER)
+    : state.lastGrantAt;
 
 const freshState = (host: string, nextGrantAt = 0): MachineHostBudgetState => ({
   v: STATE_VERSION,
@@ -267,7 +270,7 @@ export class MachineHostBudgetLimiter implements HostSlotLimiter {
   private async stampSpacing(key: string, budget: HostThrottle): Promise<void> {
     for (;;) {
       const remaining = await this.transact(key, (state, now) => {
-        const gap = spacingAnchor(state) + budget.minIntervalMs - now;
+        const gap = spacingAnchor(state, budget) + budget.minIntervalMs - now;
         if (gap > 0) return { result: gap, write: false };
         state.lastGrantAt = now;
         return { result: 0, write: true };
