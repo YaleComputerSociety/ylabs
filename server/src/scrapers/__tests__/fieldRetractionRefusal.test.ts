@@ -108,6 +108,34 @@ describe('a source retracts a value it now refuses on the same page (#5803)', ()
     expect(result.counts.refusalSupportedObservations).toBe(1);
   });
 
+  it('retracts nothing when the refused URL differs only in its query string', () => {
+    const asserted = 'https://synthetic-lab.example.org/index.php?id=7';
+    const refused = 'https://synthetic-lab.example.org/index.php?id=5';
+    const reads = [
+      refusingRead('run-a', '2026-11-10T00:00:00Z', [refusal({ value: refused })]),
+      refusingRead('run-b', '2026-11-12T00:00:00Z', [refusal({ value: refused })]),
+    ];
+    const result = plan(reads, [assertion({ value: asserted })], CONTRACT, [
+      { ...entity, storedValues: { websiteUrl: asserted } },
+    ]);
+    expect(result.retractions).toEqual([]);
+    expect(result.counts.absenceNotWitnessed).toBe(1);
+  });
+
+  it('retracts nothing when the refusal was read from the same path with another query', () => {
+    const reads = [
+      refusingRead('run-a', '2026-11-10T00:00:00Z', [
+        refusal({ sourceUrl: `${LISTING_PAGE}?page=2` }),
+      ]),
+      refusingRead('run-b', '2026-11-12T00:00:00Z', [
+        refusal({ sourceUrl: `${LISTING_PAGE}?page=2` }),
+      ]),
+    ];
+    const result = plan(reads, [assertion({ sourceUrl: `${LISTING_PAGE}?page=1` })]);
+    expect(result.retractions).toEqual([]);
+    expect(result.counts.absenceNotWitnessed).toBe(1);
+  });
+
   it('retracts nothing when the refusal names a different URL', () => {
     const reads = [
       refusingRead('run-a', '2026-11-10T00:00:00Z', [refusal({ value: OTHER_LINK })]),

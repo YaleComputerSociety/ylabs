@@ -495,8 +495,8 @@ export function readRefusesObservation(
   context: RefusalRetractionContext,
 ): boolean {
   if (!(read.observedAt.getTime() > context.latestAdmissionAt.getTime())) return false;
-  const value = normalizedComparableValue(observation.value);
-  const page = normalizedComparableValue(observation.sourceUrl);
+  const value = identicalValueKey(observation.value);
+  const page = identicalValueKey(observation.sourceUrl);
   if (!value || !page) return false;
   return (read.refusals ?? []).some(
     (refusal) =>
@@ -505,8 +505,8 @@ export function readRefusesObservation(
         (declared) =>
           declared.field === refusal.field && declared.classifier === refusal.classifier,
       ) &&
-      normalizedComparableValue(refusal.value) === value &&
-      normalizedComparableValue(refusal.sourceUrl) === page &&
+      identicalValueKey(refusal.value) === value &&
+      identicalValueKey(refusal.sourceUrl) === page &&
       refusal.classifierVersion >
         admittedClassifierVersion(observation.admittedUnder, refusal.classifier),
   );
@@ -656,6 +656,12 @@ export function passesFieldRetractionDropGuard(
   if (assertingEntityCount <= 0) return false;
   if (assertingEntityCount < minPopulation) return true;
   return absentEntityCount <= maxFraction * assertingEntityCount;
+}
+
+function identicalValueKey(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value.trim();
+  return JSON.stringify(value);
 }
 
 function normalizedComparableValue(value: unknown): string {
@@ -1026,7 +1032,7 @@ export function planFieldRetractions(input: {
 function admissionKey(
   observation: Pick<FieldRetractionCandidateObservation, 'entityKey' | 'field' | 'value'>,
 ) {
-  return `${observation.entityKey}\u0000${observation.field}\u0000${normalizedComparableValue(observation.value)}`;
+  return `${observation.entityKey}\u0000${observation.field}\u0000${identicalValueKey(observation.value)}`;
 }
 
 function latestAdmissionByEntityFieldValue(
