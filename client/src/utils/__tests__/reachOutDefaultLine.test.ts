@@ -58,7 +58,7 @@ describe('reachOutLineParts (#5297, #5487)', () => {
     ).toEqual({
       lead: 'Most undergraduates get started by emailing the lead at ',
       contactLinkText: 'lead@example.test',
-      rest: ': name one project from this page and any related coursework, and ask if they have room for an undergraduate this term or next.',
+      rest: ': name a topic from this page and any related coursework, and ask if they have room for an undergraduate this term or next.',
     });
   });
 
@@ -114,6 +114,32 @@ describe('reachOutLineParts (#5297, #5487)', () => {
     });
     expect(line).not.toMatch(/senior essay/);
     expect(line).toContain('through the link below');
+  });
+
+  it('promises contact, not an email, when the only route is the block link (#6090)', () => {
+    const line = lineText({
+      entity: { entityType: 'INSTITUTE' },
+      contact: { kind: 'pageAction' },
+    });
+    expect(line).toMatch(
+      /^Most undergraduates get started by contacting the lead through the link below:/,
+    );
+    expect(line).not.toMatch(/emailing/);
+  });
+
+  it('never asks for a project the page does not list (#6090)', () => {
+    const contacts: ReachOutContact[] = [
+      { kind: 'leadCardEmail', email: 'lead@example.test' },
+      { kind: 'leadCardProfile' },
+      { kind: 'pageAction' },
+      { kind: 'directorySearch' },
+      { kind: 'officialPages' },
+    ];
+    for (const contact of contacts) {
+      for (const entityType of ['LAB', 'FACULTY_RESEARCH']) {
+        expect(lineText({ entity: { entityType }, contact })).not.toMatch(/project/);
+      }
+    }
   });
 
   it('makes no claim about the row and uses no em dash in any variant', () => {
