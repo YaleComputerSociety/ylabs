@@ -47,7 +47,7 @@ describe('leadTitlesAreRuledNonHostingRanks', () => {
   });
 });
 
-describe('the gate holds a ruled non-hosting lead at operator review', () => {
+describe('the gate reads a ruled non-hosting lead rank as a signal, not a hold (#6266)', () => {
   const entity = {
     slug: 'fixture-ruled-non-hosting-lab',
     name: 'Example Lab',
@@ -69,10 +69,10 @@ describe('the gate holds a ruled non-hosting lead at operator review', () => {
       actionablePathwayCount: 1,
     });
 
-  it('holds rather than serves or suppresses', () => {
-    const held = tierFor([lead('Clinical Fellow')]);
-    expect(held.tier).toBe('operator_review');
-    expect(held.reasons).toContain('lead_title_ruled_non_hosting_rank');
+  it('serves the row and records the rank as a signal', () => {
+    const signalled = tierFor([lead('Clinical Fellow')]);
+    expect(signalled.tier).toBe('student_ready');
+    expect(signalled.reasons).toContain('lead_title_ruled_non_hosting_rank');
     expect(tierFor([lead('Associate Professor of Astronomy')]).tier).toBe('student_ready');
   });
 

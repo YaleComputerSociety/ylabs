@@ -2924,7 +2924,7 @@ On top of both, every rank span the lattice finds must be one the owner ruled on
 A postdoc who also holds a lecturer or professor appointment keeps the row, because the lattice reads that appointment as owning research.
 The lattice reads every resident as one rank span, so a resident span counts as ruled only when the title says hospital resident; a bare resident, a chief resident, an intern, a trainee, a research fellow and a postgraduate fellow or researcher are not ruled and stay out of the population, alone or beside a ruled rank.
 Measured on Development on 2026-10-04, the second ruling plans 33 archives, none served: 16 led by a postgraduate associate, 10 by a clinical fellow, 4 by a staff affiliate and 2 by a hospital resident, with 1 more already suppressed.
-The pass refuses 4 rows of the same ranks, which the gate holds under `lead_title_ruled_non_hosting_rank` rather than serving them.
+The pass refuses 4 rows of the same ranks; the gate records `lead_title_ruled_non_hosting_rank` on them as a signal and no longer holds them (#6266).
 The pass reports the class as `non_hosting_trainee_title`.
 
 Administrative staff are a decided class too (2026-10-04), reported as `administrative_staff_title`, and they need two witnesses because an office title alone cannot say the person does no research.
