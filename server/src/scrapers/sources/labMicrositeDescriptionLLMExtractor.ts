@@ -240,6 +240,7 @@ export interface CandidateDescriptionLabDoc {
 export interface FetchedDescriptionPage {
   url: string;
   html: string;
+  reused?: true;
 }
 
 export interface DescriptionExtraction {

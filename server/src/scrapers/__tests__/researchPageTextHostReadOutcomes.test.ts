@@ -35,12 +35,9 @@ const ctx: ScraperContext = {
 
 const pause = { host: PARTNER_HOST, until: new Date('2099-11-20T07:32:40Z') };
 
-async function outcomesWhenPartner(failure: unknown) {
+async function outcomesFor(fetchPage: (url: string) => Promise<unknown>) {
   const lane = new ResearchPageTextScraper({
-    fetchPage: vi.fn(async (url: string) => {
-      if (url === PARTNER) throw failure;
-      return { url, html: page };
-    }),
+    fetchPage: vi.fn(fetchPage) as never,
     rowFinder: async () => [row],
     storedHashLoader: async () => undefined,
     storedReadingLoader: async () => ({ hosts: new Set<string>() }),
@@ -51,6 +48,12 @@ async function outcomesWhenPartner(failure: unknown) {
   const result = await lane.run(ctx);
   return (result.metrics as { hostReadOutcomes: Record<string, unknown> }).hostReadOutcomes;
 }
+
+const outcomesWhenPartner = (failure: unknown) =>
+  outcomesFor(async (url) => {
+    if (url === PARTNER) throw failure;
+    return { url, html: page };
+  });
 
 describe('research-page-text records how each host answered (#6195)', () => {
   it('counts a host that served a page as answered', async () => {
@@ -87,5 +90,30 @@ describe('research-page-text records how each host answered (#6195)', () => {
     });
     const outcomes = await outcomesWhenPartner(timeout);
     expect(outcomes[PARTNER_HOST]).toEqual({ answered: 0, refused: 0, skipped: 0, failed: 1 });
+  });
+
+  it('does not count a page replayed from the local cache as the host answering', async () => {
+    const outcomes = await outcomesFor(async (url) =>
+      url === PARTNER ? { url, html: page, reused: true } : { url, html: page },
+    );
+    expect(outcomes[PARTNER_HOST]).toBeUndefined();
+    expect(outcomes[HOME_HOST]).toMatchObject({ answered: 1 });
+  });
+
+  it('does not count a fetch that returned no page as an answer', async () => {
+    const outcomes = await outcomesFor(async (url) =>
+      url === PARTNER ? null : { url, html: page },
+    );
+    expect(outcomes[PARTNER_HOST]).toBeUndefined();
+  });
+
+  it('tallies a request that redirected to another host once, under the requested host', async () => {
+    const outcomes = await outcomesFor(async (url) =>
+      url === PARTNER
+        ? { url: 'https://moved.example.org/kelp/', html: page }
+        : { url, html: page },
+    );
+    expect(outcomes[PARTNER_HOST]).toMatchObject({ answered: 1 });
+    expect(outcomes['moved.example.org']).toBeUndefined();
   });
 });

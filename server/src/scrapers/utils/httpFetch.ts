@@ -9,6 +9,7 @@
  * throw after retries are exhausted, or catch and map to null.
  */
 import axios from 'axios';
+import { isSweepPageReuseHit } from './sweepPageReuseHit';
 import { assertPublicHttpUrl, SsrfBlockedError, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import {
   HostConcurrencyLimiter,
@@ -46,6 +47,7 @@ export interface FetchedHttpPage {
   html: string;
   status: number;
   setCookies?: string[];
+  reused?: true;
 }
 
 export interface HttpRequestResult {
@@ -55,7 +57,16 @@ export interface HttpRequestResult {
   retryAfterMs?: number;
   setCookies?: string[];
   location?: string;
+  reused?: true;
 }
+
+/**
+ * Whether a fetch result was replayed from a local cache rather than answered by its host: the
+ * one test every host-accounting path asks (#6195), so a replay never counts as the host
+ * answering, clears a backoff, or spends a request.
+ */
+export const isReusedResponse = (result: { reused?: unknown } | null | undefined): boolean =>
+  result?.reused === true;
 
 export interface HttpRequestConfig {
   timeoutMs: number;
@@ -264,6 +275,7 @@ export const defaultAxiosRequest: HttpRequestFn = async (url, config) => {
     retryAfterMs: parseRetryAfterMs(res.headers?.['retry-after']),
     setCookies: setCookieHeaders(res.headers?.['set-cookie']),
     ...(typeof location === 'string' && location ? { location } : {}),
+    ...(isSweepPageReuseHit(res.config) ? { reused: true as const } : {}),
   };
 };
 
@@ -408,12 +420,13 @@ async function fetchPageLive(
     const answeringHost = hostOf(result.finalUrl || safeUrl);
     if (result.status >= 200 && result.status < 300) {
       backoff.settle('recovered');
-      recordHostSuccess(answeringHost);
+      if (!isReusedResponse(result)) recordHostSuccess(answeringHost);
       return {
         url: result.finalUrl || safeUrl,
         html: result.data ?? '',
         status: result.status,
         ...(result.setCookies?.length ? { setCookies: result.setCookies } : {}),
+        ...(isReusedResponse(result) ? { reused: true as const } : {}),
       };
     }
     const pause = recordHostRefusal({

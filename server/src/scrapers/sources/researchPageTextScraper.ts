@@ -13,7 +13,7 @@ import {
   loadStoredContentHash,
   type ContentHashEntityRef,
 } from '../contentHashGate';
-import { HttpStatusError, fetchPageWithPolicy } from '../utils/httpFetch';
+import { HttpStatusError, fetchPageWithPolicy, isReusedResponse } from '../utils/httpFetch';
 import {
   DEFAULT_SOURCE_CONCURRENCY,
   mapWithConcurrency,
@@ -265,10 +265,12 @@ function recordHostReadOutcome(
 }
 
 /**
- * How a fetch attempt left its host (#6195): it answered (any status that is not a refusal,
- * a 404 included), refused (a throttle status, or a refusal that started a pause), was
- * skipped (paused before any request was sent), or failed in transport. Only an answer shows
- * the host is reading us again, and a skip is not evidence either way.
+ * How a fetch attempt left the host it was sent to (#6195), one tally per request under the
+ * requested host, or the paused host a pause names: it answered (any status that is not a
+ * refusal, a 404 included), refused (a throttle status, or a refusal that started a pause),
+ * was skipped (paused before any request was sent), or failed in transport. Only an answer
+ * shows the host is reading us again; a skip, and a page replayed from the local cache with no
+ * request, are not evidence either way, so a replay is not tallied.
  */
 function hostReadOutcomeOfError(error: unknown): keyof HostReadOutcome {
   const pause = hostPauseInErrorChain(error);
@@ -284,7 +286,11 @@ async function fetchPageOnce(url: string): Promise<FetchedDescriptionPage | null
     headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
     timeoutMs: 10_000,
   });
-  return { url: page.url, html: page.html };
+  return {
+    url: page.url,
+    html: page.html,
+    ...(isReusedResponse(page) ? { reused: true as const } : {}),
+  };
 }
 
 function defaultFetchPage(url: string): Promise<FetchedDescriptionPage | null> {
@@ -501,11 +507,8 @@ export class ResearchPageTextScraper implements IScraper {
   ) {
     try {
       const page = await this.fetchPage(url);
-      recordHostReadOutcome(hostOutcomes, pageHost(url), 'answered');
-      if (page?.url && pageHost(page.url) !== pageHost(url)) {
-        recordHostReadOutcome(hostOutcomes, pageHost(page.url), 'answered');
-      }
       if (!page?.html) return null;
+      if (!isReusedResponse(page)) recordHostReadOutcome(hostOutcomes, pageHost(url), 'answered');
       if (capturedPageLeftTheRequestedPersonProfile(url, page, row)) {
         ctx.log(
           `[${row.slug || 'candidate'}] research page refused: profile landed off the subject`,
