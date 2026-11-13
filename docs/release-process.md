@@ -371,7 +371,7 @@ These change whenever the seed file or the corpus changes, so read them as the s
 | `entries` | 382 | 382 |
 | `scores` | 10,974 | 10,974 |
 | `resolvedScores` | 10,958 | 10,958 |
-| `unresolvedSlugs` | 16 | 16 |
+| `unresolvedSlugs` (unresolved scores, not distinct slugs) | 16 | 16 |
 | `entriesWithNoResolvedScore` | 0 | 0 |
 | `textHashes` | `read-from-index` | `index-of-another-environment` |
 | `scoresWithTextHash` | 10,958 | 0 |
@@ -379,6 +379,7 @@ These change whenever the seed file or the corpus changes, so read them as the s
 | `upserted` on apply | 382 | 382 |
 
 The laptop column was measured by the same dry run on Development with `MEILISEARCH_INDEX_PREFIX=beta`, which is the mode a laptop seeding Beta or Production gets.
+Despite its name, `unresolvedSlugs` counts unresolved scores, one per scored row whose slug does not resolve, so the 16 above are 16 scores on 9 distinct slugs; compare a target's value against this column as a score count.
 The unrevised 2026-11-10 file, 347 entries, is refused by the key-collision check.
 On the 36 queries v4 added, a blind grade of the union of the unseeded and the reranked top 10 measured nDCG@10 +0.164 (95% CI +0.111 to +0.221), better on 33 and worse on 0, and the served re-read returned the reranked set on all 36.
 Through the search route, with the flag on and the public visibility scope, 20 sampled unfiltered multi-word seeded queries served a top 5 worth 284 of the 286 grade points the best five graded rows would score, and every one of the 20 served its graded rows in non-increasing grade order.
