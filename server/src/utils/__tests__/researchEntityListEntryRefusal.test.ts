@@ -125,6 +125,17 @@ describe('the refusal tool reports what a list-entry refusal would remove (#6012
     ).toEqual({ observations: 2, entries: 3, storedListCarriesEntry: true });
   });
 
+  it('reports nothing for a whole-list refusal, which removes no single entry', () => {
+    expect(
+      planListEntryRefusalRemoval({
+        field: 'sourceUrls',
+        value: [OWN_PAGE, FOREIGN_PAGE],
+        storedValue: [OWN_PAGE, FOREIGN_PAGE],
+        observationValues: [[OWN_PAGE, FOREIGN_PAGE]],
+      }),
+    ).toBeUndefined();
+  });
+
   it('reports nothing for a field that is not entry-refusable', () => {
     expect(
       planListEntryRefusalRemoval({

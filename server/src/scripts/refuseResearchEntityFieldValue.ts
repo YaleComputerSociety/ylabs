@@ -182,7 +182,7 @@ async function main(): Promise<void> {
       ? undefined
       : planListEntryRefusalRemoval({
           field: args.field,
-          value: String(args.value),
+          value: args.value,
           storedValue: row[args.field],
           observationValues: (
             await Observation.find({

@@ -406,11 +406,13 @@ export interface ListEntryRefusalRemoval {
 
 export function planListEntryRefusalRemoval(input: {
   field: string;
-  value: string;
+  value: unknown;
   observationValues: readonly unknown[];
   storedValue: unknown;
 }): ListEntryRefusalRemoval | undefined {
-  if (!ENTRY_REFUSABLE_LIST_FIELDS.has(input.field)) return undefined;
+  if (!ENTRY_REFUSABLE_LIST_FIELDS.has(input.field) || typeof input.value !== 'string') {
+    return undefined;
+  }
   const key = fieldValueRefusalKey(input.field, input.value);
   if (!key) return undefined;
   const matches = (entry: unknown) =>
