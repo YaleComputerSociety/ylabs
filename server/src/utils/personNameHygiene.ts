@@ -171,6 +171,12 @@ const TRAILING_CREDENTIAL_LIST_RE = new RegExp(
 
 const AMBIGUOUS_BARE_POST_NOMINALS = new Set(['MA', 'MS', 'RN', 'DO', 'JD']);
 
+const LONE_POST_NOMINAL_RE = new RegExp(`^(?:${POST_NOMINAL_TOKEN})\\.?$`, 'i');
+
+export function isPersonNamePostNominalToken(token: string): boolean {
+  return LONE_POST_NOMINAL_RE.test(token.trim());
+}
+
 // "MEd" is a degree but "Med" is also a given name, so only a title-cased lone token
 // is held back here; its interior capital is what marks the degree spelling.
 const TITLE_CASED_AMBIGUOUS_BARE_POST_NOMINALS = new Set(['MED']);

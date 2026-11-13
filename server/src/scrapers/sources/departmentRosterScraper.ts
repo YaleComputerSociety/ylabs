@@ -75,6 +75,7 @@ import {
   type RosterOwnerKeyRowLoader,
 } from '../rosterOwnerKeyRows';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
+import { isPersonNamePostNominalToken } from '../../utils/personNameHygiene';
 import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatCharacters';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import type {
@@ -4408,7 +4409,7 @@ function entryToUserObservations(
   sourceUrl: string,
 ): { observations: ObservationInput[]; entityKey: string } {
   const cleaned = normalizeRosterName(entry.name);
-  const { first, last } = splitName(cleaned);
+  const { first, last } = splitName(withoutTrailingPostNominals(cleaned));
   const personEmail =
     isLikelyPersonSpecificYaleEmail(entry.email, cleaned) &&
     !isRoleOrUnitMailbox(entry.email, rosterUnitMailboxTokens(entry, dept, sourceUrl))
@@ -4721,6 +4722,35 @@ function rosterListedName(listed: string): Pick<FacultyEntry, 'name' | 'nameAsLi
 
 const writtenAsACredential = (word: string): boolean =>
   /\./.test(word) || /[a-z][A-Z]/.test(word) || (word.length > 1 && word === word.toUpperCase());
+
+const NAME_TOKENS_LEFT_AFTER_A_POST_NOMINAL = 2;
+
+const writtenWithACredentialCapital = (word: string): boolean =>
+  /\./.test(word) || /.\p{Lu}/u.test(word) || (word.length > 1 && word === word.toUpperCase());
+
+const isWrittenPostNominal = (word: string): boolean =>
+  (isDegreeToken(word) || isPersonNamePostNominalToken(word)) &&
+  writtenWithACredentialCapital(word);
+
+/**
+ * A name with its trailing degrees removed when no comma sets them off ("<given> <surname>
+ * MD PhD"), which the comma-run rules cannot see and `splitName` would read as the surname
+ * (#6035). Only the name observations read it, so the person key and the row slug, both
+ * minted from the normalized name, keep their continuity. A shouty all-caps name, or one
+ * that would be left with fewer than a given name and a surname, keeps every token.
+ */
+export function withoutTrailingPostNominals(name: string): string {
+  const words = name.split(/\s+/).filter(Boolean);
+  const bare = (word: string) => word.replace(/[,;]+$/, '');
+  while (
+    words.length > NAME_TOKENS_LEFT_AFTER_A_POST_NOMINAL &&
+    /[a-z]/.test(words.slice(0, -1).join(' ')) &&
+    isWrittenPostNominal(bare(words[words.length - 1]))
+  ) {
+    words.pop();
+  }
+  return words.join(' ').replace(/[,;]+$/, '');
+}
 
 /**
  * A roster entry whose given-name position holds a credential ("PhD <surname>") names no

@@ -26,6 +26,8 @@ import { withoutModelCalls } from '../utils/modelClient';
 import {
   decideResearcherFieldWrite,
   isFillOnlyFieldValue,
+  isFillOnlyIdentityJoin,
+  writerHeldOnFillOnlyEvidence,
   researcherFieldWriter,
   OWN_KEY_FALLBACK_TITLE_FIELD,
   storedValueBackingDecidesPresence,
@@ -8758,6 +8760,7 @@ export interface UserIdentityJoinResult {
   resolved: ReturnType<typeof resolveAllFields>;
   netid: string | undefined;
   displayName: string;
+  displayNameSources: readonly string[];
   title: string | undefined;
   primaryDepartment: string | undefined;
   imageUrl: string | undefined;
@@ -8996,10 +8999,15 @@ function deriveUserIdentityFields(materializationObs: any[], now: Date) {
   };
   // Normalized before the name resolver reads it, not just before it is stored: an
   // invisible format character inside a surname makes the person match nobody (#2874).
+  const displayNameFields = servedUserName('displayName')
+    ? ['displayName']
+    : ['fname', 'lname'].filter((field) => servedUserName(field));
   const displayName = stripInvisibleFormatCharacters(
-    servedUserName('displayName') ||
-      [servedUserName('fname'), servedUserName('lname')].filter(Boolean).join(' ').trim(),
+    displayNameFields.map(servedUserName).join(' ').trim(),
   );
+  const displayNameSources = [
+    ...new Set(displayNameFields.flatMap((field) => resolved[field]?.contributingSources ?? [])),
+  ];
   const title = stripTitleFieldLabel(textValue(resolvedValue('title'))) || undefined;
   const primaryDepartment = textValue(resolvedValue('primaryDepartment')) || undefined;
   const imageUrl = textValue(resolvedValue('imageUrl')) || undefined;
@@ -9017,6 +9025,7 @@ function deriveUserIdentityFields(materializationObs: any[], now: Date) {
   return {
     resolved,
     displayName,
+    displayNameSources,
     title,
     primaryDepartment,
     imageUrl,
@@ -9181,6 +9190,7 @@ export async function joinUserIdentityToExistingResearcher(
     resolved: served.resolved,
     netid,
     displayName,
+    displayNameSources: derived.displayNameSources,
     account,
     researcher,
     identityJoin,
@@ -10065,6 +10075,52 @@ async function releaseFieldWritersThatNoLongerReach(
   }
 }
 
+/**
+ * A displayName writer recorded before a directory name became fill-only carries no flag, and
+ * its record does not say which sources composed the name. Read them back so the first pass
+ * after the change settles the same in either resolve order. Only a holder whose every live
+ * name observation is a directory one is marked; anything else keeps its recorded standing.
+ */
+async function recordLegacyDirectoryNameHolderAsFillOnly(
+  researcher: any,
+  materializingKey: string,
+  prefetch?: MaterializationReadSource,
+): Promise<void> {
+  const holder = researcher.profileFieldWriters?.get?.('displayName');
+  if (!holder?.userKey || holder.userKey === materializingKey) return;
+  if (writerHeldOnFillOnlyEvidence('displayName', holder)) return;
+  const routed = prefetch?.observationsForKey('user', holder.userKey);
+  const holderObservations = routed?.hit
+    ? (routed.value as any[])
+    : await Observation.find({
+        entityType: 'user',
+        entityKey: holder.userKey,
+        ...materializationReadScopeFilter(),
+        field: { $in: ['displayName', 'fname', 'lname'] },
+      })
+        .select('field sourceName superseded rollback')
+        .lean();
+  const nameSources = [
+    ...new Set(
+      holderObservations
+        .filter(
+          (observation: any) =>
+            ['displayName', 'fname', 'lname'].includes(observation.field) &&
+            observation.superseded !== true &&
+            !observation.rollback?.rolledBackAt,
+        )
+        .map((observation: any) => String(observation.sourceName ?? '')),
+    ),
+  ];
+  if (!isFillOnlyFieldValue('displayName', nameSources)) return;
+  researcher.profileFieldWriters.set('displayName', {
+    userKey: holder.userKey,
+    joinRank: holder.joinRank,
+    confidence: holder.confidence,
+    fillOnly: true,
+  });
+}
+
 function researcherJoinIdentitySnapshot(researcher: any): string {
   return JSON.stringify([
     researcher.displayName,
@@ -10147,6 +10203,7 @@ async function materializeUserIdentityToResearcher(
   const {
     resolved,
     displayName,
+    displayNameSources,
     title,
     primaryDepartment,
     imageUrl,
@@ -10314,26 +10371,37 @@ async function materializeUserIdentityToResearcher(
     researcher.profileFieldWriters?.get?.(OWN_KEY_FALLBACK_TITLE_FIELD),
   );
   if (writerKey) await releaseFieldWritersThatNoLongerReach(researcher, writerKey);
+  if (writerKey) {
+    await recordLegacyDirectoryNameHolderAsFillOnly(researcher, writerKey, options.chunkPrefetch);
+  }
   const resolvedConfidence = (...fields: string[]): unknown =>
     fields.map((field) => resolved[field]?.confidence).find((value) => value !== undefined);
   const storedFieldValue = (field: ResearcherGatedField): unknown =>
     field === 'displayName' ? researcher.displayName : researcher.profile?.[field];
+  const writesFillOnly = (field: ResearcherGatedField): boolean =>
+    isFillOnlyFieldValue(
+      field,
+      field === 'displayName' ? displayNameSources : resolved[field]?.contributingSources,
+    ) || isFillOnlyIdentityJoin(field, identityJoin);
+  const storedValueHeldOnlyOnFillOnlyEvidence = (field: ResearcherGatedField): boolean => {
+    const holder = researcher.profileFieldWriters?.get?.(field);
+    return (
+      writerHeldOnFillOnlyEvidence(field, holder) &&
+      holder?.userKey !== writerKey &&
+      !writesFillOnly(field)
+    );
+  };
   const settleFieldWriter = (
     field: ResearcherGatedField,
     value: string | undefined,
     confidence: unknown,
     valueOutranksStored = false,
-    storedValuePresent: boolean = Boolean(textValue(storedFieldValue(field))),
+    storedValuePresent: boolean = !created && Boolean(textValue(storedFieldValue(field))),
   ): boolean => {
     const decision = decideResearcherFieldWrite(
       researcher.profileFieldWriters,
       field,
-      researcherFieldWriter(
-        writerKey,
-        identityJoin,
-        confidence,
-        isFillOnlyFieldValue(field, resolved[field]?.contributingSources),
-      ),
+      researcherFieldWriter(writerKey, identityJoin, confidence, writesFillOnly(field)),
       Boolean(value),
       storedValuePresent,
       valueOutranksStored,
@@ -10456,7 +10524,11 @@ async function materializeUserIdentityToResearcher(
   ] as const) {
     const bounded = normalizedResearcherProfileText(key, value);
     const storedValue = researcher.profile[key];
-    if (key === 'websiteUrl' && websiteStandsBelowStored(bounded, storedWebsiteSurvivingScreens)) {
+    if (
+      key === 'websiteUrl' &&
+      websiteStandsBelowStored(bounded, storedWebsiteSurvivingScreens) &&
+      !storedValueHeldOnlyOnFillOnlyEvidence(key)
+    ) {
       continue;
     }
     const outranksStoredWebsite =
@@ -10464,7 +10536,7 @@ async function materializeUserIdentityToResearcher(
     const storedValuePresent = storedValueCountsAsPresent(
       researcher.profileFieldWriters,
       key,
-      Boolean(textValue(storedValue)),
+      Boolean(textValue(key === 'websiteUrl' ? storedWebsiteSurvivingScreens : storedValue)),
       key === 'primaryDepartment' ? storedDepartmentBacked : true,
     );
     if (

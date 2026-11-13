@@ -17,7 +17,13 @@
  * Above that rank sits a field-specific source rule: a value backed only by a fill-only source
  * for that field may fill an empty field but never outranks or ties a value any other source
  * backs, whatever the join. The Yale directory's department is its HR unit, which a person's own
- * official page contradicted in 6 of 10 hand-checked disagreements (#5741).
+ * official page contradicted in 6 of 10 hand-checked disagreements (#5741). Its name is first and
+ * last name only, which a blind grader judged worse than the stored profile or roster name in 15
+ * of 20 planned changes, so a directory name is fill-only too (#6035). A name, image or website
+ * from a key joined on the name alone is fill-only as well: the name is its only identity witness,
+ * and blind re-measures found every wrong-person and unsure rename, and a wrong website and an
+ * unsure image, on such a join (#6035). `primaryDepartment` is left out, because the roster
+ * departments that outrank a directory department mostly arrive on name-joined keys.
  */
 export const RESEARCHER_WRITER_FIELDS = [
   'displayName',
@@ -32,10 +38,13 @@ export const OWN_KEY_FALLBACK_TITLE_FIELD = 'title';
 
 export type ResearcherGatedField = ResearcherWriterField | typeof OWN_KEY_FALLBACK_TITLE_FIELD;
 
+const DIRECTORY_SOURCES: ReadonlySet<string> = new Set(['yale-directory', 'yale-directory-csv']);
+
 const FILL_ONLY_SOURCES_BY_FIELD: Readonly<
   Partial<Record<ResearcherGatedField, ReadonlySet<string>>>
 > = {
-  primaryDepartment: new Set(['yale-directory', 'yale-directory-csv']),
+  displayName: DIRECTORY_SOURCES,
+  primaryDepartment: DIRECTORY_SOURCES,
 };
 
 export function isFillOnlyFieldValue(
@@ -55,11 +64,38 @@ const JOIN_RANK: Readonly<Record<string, number>> = {
   'minted-from-pi-attribution': 1,
 };
 
+const FILL_ONLY_JOIN_RANK_CEILING_BY_FIELD: Readonly<
+  Partial<Record<ResearcherGatedField, number>>
+> = {
+  displayName: JOIN_RANK['person-name'],
+  imageUrl: JOIN_RANK['person-name'],
+  websiteUrl: JOIN_RANK['person-name'],
+};
+
+export function isFillOnlyIdentityJoin(
+  field: ResearcherGatedField,
+  identityJoin: string | undefined,
+): boolean {
+  const ceiling = FILL_ONLY_JOIN_RANK_CEILING_BY_FIELD[field];
+  if (ceiling === undefined) return false;
+  return (JOIN_RANK[identityJoin ?? ''] ?? 0) <= ceiling;
+}
+
 export interface ResearcherFieldWriter {
   userKey: string;
   joinRank: number;
   confidence: number;
   fillOnly?: boolean;
+}
+
+export function writerHeldOnFillOnlyEvidence(
+  field: ResearcherGatedField,
+  writer: Partial<ResearcherFieldWriter> | undefined,
+): boolean {
+  if (!writer?.userKey) return false;
+  if (writer.fillOnly === true) return true;
+  const ceiling = FILL_ONLY_JOIN_RANK_CEILING_BY_FIELD[field];
+  return ceiling !== undefined && (writer.joinRank ?? 0) <= ceiling;
 }
 
 export function researcherFieldWriter(
@@ -143,8 +179,11 @@ export type ResearcherFieldWriteDecision =
  * releases it, so a sibling can take the field over; the stored value itself is left alone.
  * A value that outranks the stored one, such as a person's own website over the profile page
  * a better-joined key wrote (#5845), writes whatever the writer rank.
- * A fill-only candidate with no recorded writer writes only into an empty field, because a
- * stored value with no writer was set by some other source before writers were recorded.
+ * A fill-only candidate never replaces a stored value with no writer, which some other source
+ * set before writers were recorded, nor one a key that is not fill-only holds. Against a holder
+ * that is fill-only too it ranks as usual, so fill-only keys settle among themselves in any order.
+ * A holder recorded before the fill-only flag existed counts as fill-only when its join would
+ * make it one now.
  * Callers pass `storedValuePresent` from `storedValueCountsAsPresent` (#6049).
  */
 export function decideResearcherFieldWrite(
@@ -155,20 +194,24 @@ export function decideResearcherFieldWrite(
   storedValuePresent = false,
   valueOutranksStored = false,
 ): ResearcherFieldWriteDecision {
-  const current = storedWriter(writers, field);
+  const recorded = storedWriter(writers, field);
+  const current =
+    recorded && writerHeldOnFillOnlyEvidence(field, recorded)
+      ? { ...recorded, fillOnly: true }
+      : recorded;
   const holdsField = current?.userKey === candidate.userKey;
   if (!hasValue) return { write: false, releaseWriter: holdsField };
-  if (candidate.fillOnly && !current && storedValuePresent) {
+  if (candidate.fillOnly && !holdsField && storedValuePresent && !current?.fillOnly) {
     return { write: false, releaseWriter: false };
   }
   if (current && !holdsField && !valueOutranksStored && !writerOutranks(candidate, current)) {
     return { write: false, releaseWriter: false };
   }
   const writerChanged =
-    !current ||
-    current.userKey !== candidate.userKey ||
-    current.joinRank !== candidate.joinRank ||
-    current.confidence !== candidate.confidence ||
-    Boolean(current.fillOnly) !== Boolean(candidate.fillOnly);
+    !recorded ||
+    recorded.userKey !== candidate.userKey ||
+    recorded.joinRank !== candidate.joinRank ||
+    recorded.confidence !== candidate.confidence ||
+    Boolean(recorded.fillOnly) !== Boolean(candidate.fillOnly);
   return { write: true, writer: candidate, writerChanged };
 }
