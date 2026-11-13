@@ -301,11 +301,11 @@ function departmentsFromAboutSection(about: Record<string, unknown>): string[] {
 /**
  * The home department a profile states: the catalog's name for its first appointment, when
  * the department catalog names it (#6070), so an alias spelling is stored as the catalog name
- * the way the official-profile backfill stores it (#6099). A later appointment is never promoted in its place (`docs/decisions.md`,
- * 2026-11-13), an organization is never one, and an appointment the catalog does not name (a
- * program, a center, a lab) is no department claim. With no catalog the lane emits none, failing
- * closed like the official-profile backfill (#6099), because it cannot tell a department from a
- * center then.
+ * the way the official-profile backfill stores it (#6099). A later appointment is never
+ * promoted in its place (`docs/decisions.md`, 2026-11-13), an organization is never one, and
+ * an appointment the catalog does not name (a program, a center, a lab) is no department claim.
+ * With no catalog the lane emits none, failing closed like the official-profile backfill (#6099),
+ * because it cannot tell a department from a center then.
  */
 export function ysmHomeDepartment(
   profile: Pick<YsmFacultyProfile, 'appointmentDepartments'>,

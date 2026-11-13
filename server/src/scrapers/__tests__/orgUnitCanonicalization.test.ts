@@ -133,7 +133,10 @@ describe('resolveOrgUnitCanonical', () => {
     const sharedIndex = buildOrgUnitResolverIndex(sharedAliasRows);
     expect(resolveOrgUnitCanonical(sharedIndex, 'Shared Alias')).toBeNull();
     expect(
-      resolveOrgUnitCanonical(buildOrgUnitResolverIndex([...sharedAliasRows].reverse()), 'Shared Alias'),
+      resolveOrgUnitCanonical(
+        buildOrgUnitResolverIndex([...sharedAliasRows].reverse()),
+        'Shared Alias',
+      ),
     ).toBeNull();
     expect(resolveOrgUnitCanonical(sharedIndex, 'Rhythm')?.name).toBe('Heart Rhythm');
     expect(resolveOrgUnitCanonical(sharedIndex, 'Failure')?.name).toBe('Heart Failure');
@@ -147,7 +150,12 @@ describe('resolveOrgUnitCanonical', () => {
 
   it('keeps an alias a single unit lists twice', () => {
     const repeatedIndex = buildOrgUnitResolverIndex([
-      { slug: 'heart-rhythm', name: 'Heart Rhythm', kind: 'SECTION' as const, aliases: ['Rhythm', 'rhythm'] },
+      {
+        slug: 'heart-rhythm',
+        name: 'Heart Rhythm',
+        kind: 'SECTION' as const,
+        aliases: ['Rhythm', 'rhythm'],
+      },
     ]);
     expect(resolveOrgUnitCanonical(repeatedIndex, 'Rhythm')?.name).toBe('Heart Rhythm');
   });
@@ -155,7 +163,12 @@ describe('resolveOrgUnitCanonical', () => {
   it('still lets an earlier unit name win over a later unit alias', () => {
     const precedenceIndex = buildOrgUnitResolverIndex([
       { slug: 'medicine', name: 'Medicine', kind: 'SCHOOL' as const },
-      { slug: 'internal-medicine', name: 'Internal Medicine', kind: 'DEPARTMENT' as const, aliases: ['Medicine'] },
+      {
+        slug: 'internal-medicine',
+        name: 'Internal Medicine',
+        kind: 'DEPARTMENT' as const,
+        aliases: ['Medicine'],
+      },
     ]);
     expect(resolveOrgUnitCanonical(precedenceIndex, 'Medicine')?.kind).toBe('SCHOOL');
   });
