@@ -1511,9 +1511,9 @@ export interface UserFieldRetractionContract {
 
 export const userFieldRetractionContracts: Readonly<Record<string, UserFieldRetractionContract>> = {
   'official-profile-pi-backfill': {
-    retractableFields: ['email'],
+    retractableFields: ['email', 'orcid'],
     notes:
-      'States assertsNoValueFor: [email] on every identity row of a full read only when the profile yielded no person-specific address and the page states no address of any kind, in a link, text, script or attribute, plain or obfuscated. An address its person-specific filter refused is still on the page, so it claims nothing.',
+      'States assertsNoValueFor: [email] on every identity row of a full read only when the profile yielded no person-specific address and the page states no address of any kind, in a link, text, script or attribute, plain or obfuscated. An address its person-specific filter refused is still on the page, so it claims nothing. States assertsNoValueFor: [orcid] on every row of a read that emits profile enrichment, the only reads that emit an orcid, only when the page body states no ORCID link and nothing labelled ORCID (#6003); a page whose ORCID the reader refused, as several namesakes or as an implausible labelled iD, still states one, so it claims nothing.',
   },
   'dept-faculty-roster': {
     retractableFields: ['email', 'orcid'],
