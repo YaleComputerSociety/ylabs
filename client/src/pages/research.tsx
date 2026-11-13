@@ -72,6 +72,8 @@ import {
   trackResearchEvent,
   trackResearchResultsView,
 } from '../utils/researchAnalytics';
+import ReachOutGuideLink from '../components/research/ReachOutGuideLink';
+import { GETTING_STARTED_LANDING_LINK_LABEL } from '../utils/gettingStartedGuide';
 import SearchClearButton, {
   SEARCH_INPUT_CLEAR_BUTTON_PADDING,
   SEARCH_INPUT_NATIVE_CANCEL_HIDDEN,
@@ -2243,6 +2245,10 @@ const Research = () => {
                 {searchHelpText}
               </p>
             </form>
+
+            {!hasSubmittedSearch && (
+              <ReachOutGuideLink label={GETTING_STARTED_LANDING_LINK_LABEL} />
+            )}
 
             {hasApproachingWatchedDeadline && !sessionSlotHoldsDeadline && (
               <div

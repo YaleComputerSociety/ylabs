@@ -106,6 +106,8 @@ Every surface, including an empty result set and an error, offers a next step.
 A question about getting in ("research for freshmen", "paid summer research") is answered by `/programs`, not by the research corpus, so `/research` links the same query there (`ResearchProgramsHandoff`, #4369): on every empty search, and above results when `queryCarriesProgramsIntent` matches.
 It is a link rather than a redirect, so a real research query that happens to say "summer" is never taken away from the student, and it carries no program data, so it cannot become the removed #1509 module again.
 The general "can I join, what is a PI, what do I write" questions have one answer for every row, so they live on one generic page, `/getting-started`, rather than in per-entity text (#5099).
+A student can reach it before opening any profile from two places only: one question-phrased line under the search box on the un-searched `/research` landing, at every width and for guests and signed-in students alike, and a link under a program's "Do you need a mentor first?" answer when the program requires a mentor (#6095).
+There is deliberately no nav item and no dashboard entry, because a nav label adds a choice to every page and sits behind the phone menu that students did not open early.
 Every detail page's "How to get involved" block ends with a link to it, including the minimal block a page shows when its lead card is the only way in, and a principal investigator heading carries a one-line explanation that links to its PI section.
 The page states only advice that holds for any group and points to Yale College's own mentor advice and the programs board for the rest.
 

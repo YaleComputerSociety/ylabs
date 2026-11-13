@@ -523,6 +523,27 @@ describe('Research page', () => {
     );
   });
 
+  it('offers the getting-started guide on the un-searched landing only (#6095)', async () => {
+    mockSearchResponses((url) =>
+      url === '/research/search'
+        ? researchSearchResponse([researchEntity])
+        : unexpectedSearchEndpoint(url),
+    );
+
+    const landing = renderResearch();
+    const guideLink = await screen.findByRole('link', {
+      name: 'New to research? How to get started',
+    });
+    expect(guideLink.getAttribute('href')).toBe('/getting-started');
+    expect(document.getElementById('research-search-context')?.contains(guideLink)).toBe(false);
+    landing.unmount();
+
+    renderResearch(departments, ['/research?q=ancient%20DNA']);
+    await screen.findByLabelText('Search y/labs');
+    await waitFor(() => expect(mockedAxios.post).toHaveBeenCalled());
+    expect(screen.queryByRole('link', { name: 'New to research? How to get started' })).toBeNull();
+  });
+
   it('restores a shared query from the research URL', async () => {
     mockSearchResponses((url, body) => {
       if (url !== '/research/search') return unexpectedSearchEndpoint(url);

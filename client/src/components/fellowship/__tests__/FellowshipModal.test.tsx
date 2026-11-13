@@ -116,6 +116,23 @@ const renderModalAt = (path: string, onClose: () => void) =>
     </MemoryRouter>,
   );
 
+describe('FellowshipModal mentor-first guide link (#6095)', () => {
+  it('links the getting-started guide under a mentor-first answer', () => {
+    renderModal({ requiresMentorBeforeApply: true });
+    const link = within(screen.getByRole('dialog')).getByRole('link', {
+      name: 'Need a mentor? How to reach out to a professor',
+    });
+    expect(link.getAttribute('href')).toBe('/getting-started');
+  });
+
+  it('offers no guide link when the program needs no mentor first', () => {
+    renderModal({ requiresMentorBeforeApply: false, entryMode: 'DIRECT_APPLY' });
+    expect(
+      within(screen.getByRole('dialog')).queryByRole('link', { name: /Need a mentor\?/ }),
+    ).toBeNull();
+  });
+});
+
 describe('FellowshipModal', () => {
   it('sets every section heading and field label in sentence case, with no internal field names', () => {
     renderModal({ requiresMentorBeforeApply: false, programKind: 'STRUCTURED_PROGRAM' });
