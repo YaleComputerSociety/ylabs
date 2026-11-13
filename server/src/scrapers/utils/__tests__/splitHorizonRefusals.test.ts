@@ -99,6 +99,7 @@ describe('split-horizon refusals are reported, never released (#6111)', () => {
       privateOnlyHosts: [{ host: internalHost, refusals: 1 }],
       unclassifiedHosts: [],
       splitHorizonRefusals: 3,
+      classificationBudgetMs: 60_000,
     });
     expect(splitHorizonRefusalWarning(report)).toContain(`${campusHost} (3)`);
     expect(splitHorizonRefusalWarning(report)).not.toContain(internalHost);
@@ -123,6 +124,7 @@ describe('split-horizon refusals are reported, never released (#6111)', () => {
     expect(splitHorizonRefusalWarning(report)).toContain(
       '20 other refused host(s) were not classified',
     );
+    expect(splitHorizonRefusalWarning(report)).toContain('within the 0.05 s budget');
   });
 
   it('asks at most the concurrency limit at once', async () => {
