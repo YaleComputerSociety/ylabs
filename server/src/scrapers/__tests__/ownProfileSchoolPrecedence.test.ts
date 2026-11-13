@@ -96,6 +96,21 @@ describe('withOwnProfileSchoolPrecedence (#6157)', () => {
     }
   });
 
+  it('takes no primary school from a host that also serves secondary appointees', () => {
+    const lawRoster = reading(
+      'school',
+      'Law School',
+      'https://law.yale.edu/fixture-faculty/people/',
+    );
+    const result = withOwnProfileSchoolPrecedence(
+      [lawRoster],
+      'https://medicine.yale.edu/profile/hollis-quintrell/',
+      canonicalizeSchool,
+    );
+    expect(result.dropped).toEqual([]);
+    expect(result.candidate).toBeUndefined();
+  });
+
   it('pins the derived reading to its evidence, so an unchanged row re-derives it identically', () => {
     const roster = reading('school', 'School of Medicine', ROSTER);
     const first = withOwnProfileSchoolPrecedence([roster], OWN_PROFILE, canonicalizeSchool);

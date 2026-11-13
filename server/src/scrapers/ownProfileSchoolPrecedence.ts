@@ -16,6 +16,17 @@ const SCHOOL_FIELD = 'school';
  */
 export const OWN_PROFILE_HOST_SCHOOL_CONFIDENCE = 0.6;
 
+/**
+ * Profile hosts that also serve a profile for every secondary appointee, so where such a page
+ * sits says nothing about the person's primary school. The School of Medicine's site publishes
+ * a profile for anyone holding any YSM appointment, with the appointment cards stating which is
+ * Primary (#5800); a person whose primary school is Law or Management therefore has a
+ * `medicine.yale.edu` profile too, and that host cannot stand in for their school (#6157).
+ */
+export const PROFILE_HOSTS_SERVING_SECONDARY_APPOINTEES: ReadonlySet<string> = new Set([
+  'medicine.yale.edu',
+]);
+
 export interface SchoolPrecedenceObservation {
   field?: unknown;
   value?: unknown;
@@ -90,6 +101,7 @@ export function withOwnProfileSchoolPrecedence<T extends SchoolPrecedenceObserva
   const ownSchool = siteSchoolOf(ownProfileUrl);
   const ownHost = hostOf(ownProfileUrl);
   if (!ownProfileUrl || !ownSchool || !ownHost) return unchanged;
+  if (PROFILE_HOSTS_SERVING_SECONDARY_APPOINTEES.has(ownHost)) return unchanged;
 
   const schoolReadings = observations.filter((observation) => observation.field === SCHOOL_FIELD);
   const fromOwnProfile = (observation: T) => textOf(observation.sourceUrl) === ownProfileUrl;
