@@ -12639,6 +12639,7 @@ export async function projectFromLog(
   if (
     derivedKind &&
     !manuallyLockedFields.includes('kind') &&
+    !valueIsRefused(entityDoc?.fieldValueRefusals, 'kind', derivedKind) &&
     (set.kind ?? entityDoc?.kind) !== derivedKind
   ) {
     set.kind = derivedKind;

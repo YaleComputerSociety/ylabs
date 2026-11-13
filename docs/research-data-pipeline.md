@@ -1401,7 +1401,7 @@ It also settles the projection's live-evidence test: a field whose every candida
 It has to reach every path that can write the field.
 The resolver screen alone did not hold: `deriveResearchEntityWebsiteUrl` promotes a cited `sourceUrl` into an empty `websiteUrl` slot and was gated only by `manuallyLockedFields`, which is precisely why clearing a wrong `websiteUrl` never stuck.
 A refusal that reaches one derivation path and not the other reaches neither.
-The materializer's type reclassifiers are such paths: each leaves the row as it is when the row refuses the `entityType` it would write or the `kind` that type maps to (`rowRefusesDerivedType`), not only when it refuses an observation the reclassifier reads (#6165).
+The materializer's type reclassifiers are such paths: each leaves the row as it is when the row refuses the `entityType` it would write or the `kind` that type maps to (`rowRefusesDerivedType`), not only when it refuses an observation the reclassifier reads, and the `kind` derived from the resolved or stored `entityType` is never written when the row refuses it (#6165).
 
 Clearing the stored value belongs to the operation, not to materialization, because a materializer that unsets a served field on a sweep is how a value disappears without a visibility re-gate.
 `yarn --cwd server research-entity:refuse-field-value` is per-row by construction, dry-run by default, clears the stored value only when it is the value being refused, and re-gates the row in that case.
