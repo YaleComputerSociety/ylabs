@@ -47,6 +47,28 @@ describe('a picture one source asserts for many different people is nobody’s p
     expect(isOverSharedPersonImage(OWN_PICTURE, keys)).toBe(false);
   });
 
+  it('counts one person read off several department rosters as one person', () => {
+    const keys = overSharedPersonImageKeys(
+      ['fixture-a', 'fixture-b', 'fixture-c'].map((roster) => ({
+        value: OWN_PICTURE,
+        entityKey: `dept:${roster}:person-0`,
+        sourceName: 'dept-faculty-roster',
+      })),
+    );
+    expect(isOverSharedPersonImage(OWN_PICTURE, keys)).toBe(false);
+  });
+
+  it('still marks a roster picture shared by different people on one roster', () => {
+    const keys = overSharedPersonImageKeys(
+      Array.from({ length: OVER_SHARED_PERSON_IMAGE_MIN_SUBJECTS }, (_, index) => ({
+        value: DEFAULT_PICTURE,
+        entityKey: `dept:fixture-a:person-${index}`,
+        sourceName: 'dept-faculty-roster',
+      })),
+    );
+    expect(isOverSharedPersonImage(DEFAULT_PICTURE, keys)).toBe(true);
+  });
+
   it('drops only the over-shared image observations', () => {
     const keys = overSharedPersonImageKeys(
       assertions(DEFAULT_PICTURE, OVER_SHARED_PERSON_IMAGE_MIN_SUBJECTS),

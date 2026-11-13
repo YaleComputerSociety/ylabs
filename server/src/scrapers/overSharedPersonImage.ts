@@ -8,7 +8,9 @@ import { profileImagePictureKey } from '../scripts/profileImageQualityAuditCore'
  * A read-only Development measurement on 2026-11-12 found 33 image URLs each stored on 3 or
  * more researchers, 201 researchers in all, read as site defaults. Subjects are counted
  * within one source, because each lane can key one person differently, so a count across
- * sources would read one person seen by three lanes as three people.
+ * sources would read one person seen by three lanes as three people. A department roster
+ * keys a person without a personal email per roster (`dept:<roster>:<name>`), so those keys
+ * are counted by name: one cross-listed person read off three rosters is one person.
  */
 export const OVER_SHARED_PERSON_IMAGE_MIN_SUBJECTS = 3;
 
@@ -24,9 +26,13 @@ export interface PersonImageObservationLike {
 export const personImageShareKey = (value: unknown): string | undefined =>
   (typeof value === 'string' && profileImagePictureKey(value)) || undefined;
 
+const PER_ROSTER_NAME_KEY = /^dept:.*:([^:]+)$/;
+
 function subjectOf(observation: PersonImageObservationLike): string | undefined {
   const subject = observation.entityId ?? observation.entityKey;
-  return subject === undefined || subject === null || subject === '' ? undefined : String(subject);
+  if (subject === undefined || subject === null || subject === '') return undefined;
+  const rosterName = PER_ROSTER_NAME_KEY.exec(String(subject))?.[1];
+  return rosterName ? `dept-name:${rosterName}` : String(subject);
 }
 
 export function overSharedPersonImageKeys(
