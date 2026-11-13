@@ -34,6 +34,7 @@ import {
   researchEntityLeadStateForMembers,
 } from './researchEntityQuality';
 import { studentVisibilityGateLeadRows } from './studentVisibilityGateService';
+import { TRANSPARENCY_ONLY_VISIBILITY_REASONS } from './studentVisibilityTier';
 import { LEAD_ROLE_CANONICAL_VALUES } from '../models/canonicalRoleMapping';
 import { recordAdminAuditEvent, type RecordAdminAuditEventInput } from './adminAuditService';
 import {
@@ -993,16 +994,15 @@ export function repairActionForStage(stage: VisibilityRepairStage, reasons: stri
   if (stage === 'suppression') {
     return 'Keep hidden unless a trusted source proves this record is current and undergraduate-relevant.';
   }
-  if (reasons.includes('formalization_only')) {
-    return 'Keep capped unless source evidence shows mentor matching, project placement, internship, RA program, or another real entry route.';
-  }
   return 'Queue for exception handling; no deterministic repair is available yet.';
 }
 
 export function buildVisibilityRepairPlan(
   item: VisibilityRepairQueueItemInput,
 ): VisibilityRepairPlan {
-  const blockerReasons = uniqueStrings(item.blockerReasons || []);
+  const blockerReasons = uniqueStrings(item.blockerReasons || []).filter(
+    (reason) => !TRANSPARENCY_ONLY_VISIBILITY_REASONS.has(reason),
+  );
   const repairStage = classifyVisibilityRepairStage(blockerReasons);
   const safeToAttempt = repairStage === 'source_description' || repairStage === 'pi_identity';
 
@@ -1797,11 +1797,8 @@ async function runVisibilityRepairQueueUnderRemovalGuard(
 
   const bucketSkipped: Record<string, number> = {};
   const routedPlans = allPlans.filter((plan) => {
-    // A reviewed cap is not a repair. `formalization_only` program items are capped at
-    // `limited_but_safe` on purpose, and because that is not a public tier the gate never
-    // resolves their queue rows, so they stay open forever and every sweep re-attempts
-    // them: they were the single largest blocked reason in a routed 500-item run.
-    // `acceptFormalizationReviewExceptions` is the script that closes them out.
+    // A review exception has no repair lane, so routing it would re-attempt the row on every
+    // sweep without changing it.
     if (plan.repairStage === 'review_exception') {
       bucketSkipped.review_exception = (bucketSkipped.review_exception || 0) + 1;
       return false;

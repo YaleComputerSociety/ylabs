@@ -394,7 +394,6 @@ const reviewDecisionReasons = new Set([
   'archive_review',
   'duplicate_risk',
   'exact_url_duplicate_risk',
-  'formalization_only',
   'not_undergraduate_relevant',
 ]);
 

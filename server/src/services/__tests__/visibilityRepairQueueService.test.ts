@@ -157,12 +157,12 @@ describe('visibilityRepairQueueService', () => {
     expect(classifyVisibilityRepairStage(['research_infrastructure_only'])).toBe('suppression');
     expect(classifyVisibilityRepairStage(['formalization_only'])).toBe('review_exception');
     expect(classifyVisibilityRepairStage(['formalization_only', 'application_source_only'])).toBe(
-      'review_exception',
+      'source_description',
     );
     expect(classifyVisibilityRepairStage(['unknown_reason'])).toBe('review_exception');
   });
 
-  it('does not auto-attempt formalization-only review exceptions', () => {
+  it('drops a stale formalization_only blocker when it re-plans a queue item (#6219)', () => {
     const plan = buildVisibilityRepairPlan(
       queueItem({
         collection: 'programs',
@@ -170,9 +170,18 @@ describe('visibilityRepairQueueService', () => {
       }),
     );
 
-    expect(plan.repairStage).toBe('review_exception');
-    expect(plan.safeToAttempt).toBe(false);
-    expect(plan.nextRepairAction).toContain('Keep capped');
+    expect(plan.blockerReasons).toEqual(['application_source_only']);
+    expect(plan.repairStage).toBe('source_description');
+    expect(plan.nextRepairAction).not.toMatch(/keep capped/i);
+  });
+
+  it('leaves a program no blocker when formalization_only was its only one (#6219)', () => {
+    const plan = buildVisibilityRepairPlan(
+      queueItem({ collection: 'programs', blockerReasons: ['formalization_only'] }),
+    );
+
+    expect(plan.blockerReasons).toEqual([]);
+    expect(plan.nextRepairAction).not.toMatch(/keep capped/i);
   });
 
   it('prioritizes source and description repair before PI identity', () => {

@@ -1497,7 +1497,7 @@ describe('studentVisibilityGateService', () => {
     expect(isBlockingVisibilityReason('non_owner_grant_shell')).toBe(true);
     expect(isBlockingVisibilityReason('research_infrastructure_only')).toBe(true);
     expect(isBlockingVisibilityReason('non_research_entity')).toBe(true);
-    expect(isBlockingVisibilityReason('formalization_only')).toBe(true);
+    expect(isBlockingVisibilityReason('formalization_only')).toBe(false);
     expect(isBlockingVisibilityReason('missing_lead')).toBe(true);
     expect(isBlockingVisibilityReason('missing_card_description')).toBe(true);
     expect(isBlockingVisibilityReason('lab_name_org_type_mismatch')).toBe(true);
@@ -1669,7 +1669,7 @@ describe('studentVisibilityGateService', () => {
     expect(deps.updateRecordVisibility.mock.calls[0][3]).toEqual({ timestamps: false });
   });
 
-  it('routes formalization-only programs to review exception instead of source repair', async () => {
+  it('queues a formalization-only program on its real blockers, not on formalization_only (#6219)', async () => {
     const deps = {
       updateRecordVisibility: vi.fn().mockResolvedValue(undefined),
       upsertOpenQueueItem: vi.fn().mockResolvedValue(undefined),
@@ -1701,8 +1701,8 @@ describe('studentVisibilityGateService', () => {
     expect(deps.upsertOpenQueueItem).toHaveBeenCalledWith(
       expect.objectContaining({
         collection: 'programs',
-        blockerReasons: ['formalization_only', 'application_source_only'],
-        repairStage: 'review_exception',
+        blockerReasons: ['application_source_only'],
+        repairStage: 'source_description',
       }),
     );
   });

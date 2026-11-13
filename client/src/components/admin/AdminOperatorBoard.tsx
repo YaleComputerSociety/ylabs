@@ -812,7 +812,6 @@ const queueDecisionPrompt = (reason: string): string => {
       return 'Can official source prose support student-facing copy?';
     case 'source_backed_description':
       return 'Is this ready to promote from evidence to student-facing copy?';
-    case 'formalization_only':
     case 'application_source_only':
       return 'Should this stay capped, or is there evidence of a real entry route?';
     case 'archive_review':

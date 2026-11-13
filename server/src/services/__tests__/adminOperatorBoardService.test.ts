@@ -33,7 +33,8 @@ describe('adminOperatorBoardService', () => {
     expect(classifyOperatorQueueReason('non_research_program')).toBe('blocking');
     expect(classifyOperatorQueueReason('profile_fallback_only')).toBe('blocking');
     expect(classifyOperatorQueueReason('not_undergraduate_relevant')).toBe('review');
-    expect(classifyOperatorQueueReason('formalization_only')).toBe('review');
+    expect(classifyOperatorQueueReason('formalization_only')).toBe('evidence');
+    expect(classifyOperatorQueueReason('formalization_only', 'programs')).toBe('evidence');
     expect(classifyOperatorQueueReason('application_source_only')).toBe('review');
     expect(classifyOperatorQueueReason('archive_review')).toBe('review');
     expect(classifyOperatorQueueReason('duplicate_risk')).toBe('review');
@@ -89,23 +90,17 @@ describe('adminOperatorBoardService', () => {
       'missing_lead',
     ];
     expect(splitOperatorSampleReasons(reasons, 'research')).toEqual({
-      blockerReasons: [
-        'missing_lead',
-        'formalization_only',
-        'application_source_only',
-        'operator_override',
-      ],
-      signalReasons: ['missing_official_source', 'official_source'],
+      blockerReasons: ['missing_lead', 'application_source_only', 'operator_override'],
+      signalReasons: ['formalization_only', 'missing_official_source', 'official_source'],
     });
     expect(splitOperatorSampleReasons(reasons, 'programs')).toEqual({
       blockerReasons: [
         'missing_lead',
-        'formalization_only',
         'application_source_only',
         'operator_override',
         'missing_official_source',
       ],
-      signalReasons: ['official_source'],
+      signalReasons: ['formalization_only', 'official_source'],
     });
     expect(splitOperatorSampleReasons(undefined, 'research')).toEqual({
       blockerReasons: [],
