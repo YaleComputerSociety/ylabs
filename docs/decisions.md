@@ -10,6 +10,7 @@ Track tactical work in GitHub issues and keep transient artifacts outside `docs/
 Decision (ylabs-manager, 2026-11-13).
 The `ysm-faculty-directory` lane takes a person's `primaryDepartment` from the profile's first appointment, and only when the department catalog names it; a later, secondary appointment is never promoted in its place, an organization never counts, and with no catalog the lane emits no department.
 That is the same fail-closed stance the official-profile backfill takes for its department (#6099), so neither profile lane promotes a later unit.
+The Yale directory lane takes the same stance (#6129): emit fails closed with no catalog; resolve-time screens treat a missing catalog as screen-nothing, so an outage can never drive the shared clear (#6065).
 Promotion was measured before it was refused: 47 researchers in the #6049 class (Otolaryngology spellings excluded) had a non-catalog first entry and a catalog department later in the stored list, and a seeded blind sample of 15 of them was graded by three graders against each person's live profile, 2-of-3 deciding which candidate was the home department.
 The promoted later unit won 6, the first entry won 2, 6 were unsure (most pages did not state the appointment in readable text) and 1 had no majority, short of the 12 of 15 the manager set as the bar for keeping promotion.
 A researcher whose first appointment is a program or center therefore states no department from this lane, and another lane's department or the directory fill decides the field.
