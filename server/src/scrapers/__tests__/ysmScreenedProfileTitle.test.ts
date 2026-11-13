@@ -94,21 +94,43 @@ const TRAINEE: RawYsmFaculty = {
   slug: 'harper-wren',
 };
 
-const traineePage = profileHtml({
-  fullName: 'Harper Wren',
-  headerTitles: ['Postdoctoral Associate'],
-  workdayTitle: 'Postdoctoral Associate',
-  email: 'harper.wren@yale.edu',
-  meshKeywords: ['Fixture Biology'],
-});
+const screenedPages = {
+  'subordinate rank': profileHtml({
+    fullName: 'Harper Wren',
+    headerTitles: ['Postdoctoral Associate'],
+    workdayTitle: 'Postdoctoral Associate',
+    email: 'fixture.trainee@example.org',
+    meshKeywords: ['Fixture Biology'],
+  }),
+  'non-research title': profileHtml({
+    fullName: 'Harper Wren',
+    headerTitles: ['Administrative Assistant'],
+    workdayTitle: 'Administrative Assistant',
+    email: 'fixture.trainee@example.org',
+    meshKeywords: ['Fixture Biology'],
+  }),
+  'no research section': profileHtml({
+    fullName: 'Harper Wren',
+    headerTitles: ['Associate Professor of Fixture Medicine'],
+    workdayTitle: 'Associate Professor of Fixture Medicine',
+    email: 'fixture.trainee@example.org',
+    includeResearchSection: false,
+  }),
+} as const;
+type ScreenedPath = keyof typeof screenedPages;
+const traineePage = screenedPages['subordinate rank'];
 
-const traineeKey = (): string => {
-  const profile = extractProfile(traineePage, TRAINEE);
+const keyOf = (page: string): string => {
+  const profile = extractProfile(page, TRAINEE);
   if (!profile) throw new Error('fixture profile did not parse');
   return facultyToUserObservations(profile).entityKey;
 };
+const traineeKey = (): string => keyOf(traineePage);
 
-async function runWith(titledKeys: ReadonlySet<string>): Promise<ObservationInput[]> {
+async function runWith(
+  titledKeys: ReadonlySet<string>,
+  page: string = traineePage,
+): Promise<ObservationInput[]> {
   const emitted: ObservationInput[] = [];
   const ctx: ScraperContext = {
     scrapeRunId: 'test-run',
@@ -128,7 +150,7 @@ async function runWith(titledKeys: ReadonlySet<string>): Promise<ObservationInpu
         { id: 'W', items: [{ url: '/profile/harper-wren/', text: TRAINEE.name }] },
       ]);
     }
-    if (url === TRAINEE.profileUrl) return traineePage;
+    if (url === TRAINEE.profileUrl) return page;
     throw new Error(`unexpected url ${url}`);
   });
   await new YsmFacultyDirectoryScraper(
@@ -143,6 +165,25 @@ async function runWith(titledKeys: ReadonlySet<string>): Promise<ObservationInpu
 }
 
 describe('a screened profile keeps its first-hand title fresh (#5801)', () => {
+  it.each(Object.keys(screenedPages) as ScreenedPath[])(
+    'on the %s path, emits exactly one title observation from the person own profile',
+    async (path) => {
+      const page = screenedPages[path];
+      const key = keyOf(page);
+      const emitted = await runWith(new Set([key]), page);
+      const title = extractProfile(page, TRAINEE)?.title;
+      expect(emitted).toEqual([
+        {
+          entityType: 'user',
+          entityKey: key,
+          sourceUrl: TRAINEE.profileUrl,
+          field: 'title',
+          value: title,
+        },
+      ]);
+    },
+  );
+
   it('re-emits only the title of a screened person this lane has titled before', async () => {
     const key = traineeKey();
     const userObservations = (await runWith(new Set([key]))).filter(
@@ -175,7 +216,11 @@ describe('a screened profile keeps its first-hand title fresh (#5801)', () => {
 
   it('refreshes nothing when the screened profile states no title', () => {
     const profile = extractProfile(
-      profileHtml({ fullName: 'Harper Wren', workdayTitle: null, email: 'harper.wren@yale.edu' }),
+      profileHtml({
+        fullName: 'Harper Wren',
+        workdayTitle: null,
+        email: 'fixture.trainee@example.org',
+      }),
       TRAINEE,
     );
     expect(profile).not.toBeNull();

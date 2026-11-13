@@ -14,6 +14,7 @@ export async function loadLaneTitledPersonKeys(sourceName: string): Promise<Read
     entityType: 'user',
     field: 'title',
     superseded: { $ne: true },
+    'rollback.rolledBackAt': { $exists: false },
   });
   return new Set(keys.map(String));
 }
