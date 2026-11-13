@@ -9211,7 +9211,7 @@ const personNameTokens = (value: unknown): string[] =>
 /**
  * The readings of keys outside the researcher's identity keys that state the stored value and
  * that the engine's own join (`userIdentityJoinForKey`) reaches the researcher from, which is
- * how a person-name-joined roster key backs a department (#6065). Read only when the identity
+ * how a person-name-joined roster key backs a department (#6049). Read only when the identity
  * keys did not settle the answer. Candidates come from the batch's value-to-keys map and are
  * narrowed to keys whose own `lname` reading shares a name token with the researcher, because
  * a name join needs the names to agree; the engine join alone decides which of them join. More

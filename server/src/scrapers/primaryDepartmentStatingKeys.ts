@@ -6,7 +6,7 @@ export type PrimaryDepartmentStatingKeys = ReadonlyMap<string, ReadonlySet<strin
 
 /**
  * Every `user` key that states each `primaryDepartment` value, live or superseded but not
- * rolled back, read in one pass so the #6065 backing read finds the keys stating a stored value
+ * rolled back, read in one pass so the #6049 backing read finds the keys stating a stored value
  * without an unindexed query per researcher.
  */
 export async function readPrimaryDepartmentStatingKeys(): Promise<PrimaryDepartmentStatingKeys> {
