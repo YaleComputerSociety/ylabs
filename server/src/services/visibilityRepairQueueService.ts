@@ -180,7 +180,7 @@ interface RepairDeps {
     metadata: { sourceUrl: string; sourceName: string; confidence: number },
   ) => Promise<void>;
   isRemovedByRequest?: (userId: string) => Promise<boolean>;
-  findLeadCandidateEntry?: (
+  findLeadCandidateEntry: (
     researchEntityId: string,
     userId: string,
   ) => Promise<{ holdsLiveLeadEdge: boolean; entry: Record<string, unknown> } | null>;
@@ -1277,38 +1277,28 @@ async function attemptResearchRepair(
         repairSource: sourceUrl,
       };
     }
-    const candidate = await deps.findLeadCandidateEntry?.(plan.recordId, userId);
-    const candidateBlocker = !candidate
-      ? ''
-      : candidate.holdsLiveLeadEdge
-        ? 'lead_candidate_already_leads'
-        : researchEntityLeadStateForMembers(studentVisibilityGateLeadRows([candidate.entry])) !==
-            'lead_attached'
-          ? 'lead_candidate_cannot_lead'
-          : '';
-    if (candidateBlocker) {
-      return {
-        plan,
-        applied: false,
-        status: 'blocked',
-        patchSummary: [],
-        remainingBlockers: uniqueStrings([...plan.blockerReasons, candidateBlocker]),
-        repairSource: sourceUrl,
-      };
-    }
+    const blocked = (reason: string): VisibilityRepairAttempt => ({
+      plan,
+      applied: false,
+      status: 'blocked',
+      patchSummary: [],
+      remainingBlockers: uniqueStrings([...plan.blockerReasons, reason]),
+      repairSource: sourceUrl,
+    });
     const protectedEdge = await deps.findProtectedLeadEdge?.(plan.recordId, userId);
     if (protectedEdge) {
-      return {
-        plan,
-        applied: false,
-        status: 'blocked',
-        patchSummary: [],
-        remainingBlockers: uniqueStrings([
-          ...plan.blockerReasons,
-          protectedEdge === 'disputed' ? 'lead_edge_disputed' : 'lead_edge_operator_ended',
-        ]),
-        repairSource: sourceUrl,
-      };
+      return blocked(
+        protectedEdge === 'disputed' ? 'lead_edge_disputed' : 'lead_edge_operator_ended',
+      );
+    }
+    const candidate = await deps.findLeadCandidateEntry(plan.recordId, userId);
+    if (!candidate) return blocked('lead_candidate_unreadable');
+    if (candidate.holdsLiveLeadEdge) return blocked('lead_candidate_already_leads');
+    if (
+      researchEntityLeadStateForMembers(studentVisibilityGateLeadRows([candidate.entry])) !==
+      'lead_attached'
+    ) {
+      return blocked('lead_candidate_cannot_lead');
     }
     if (mode === 'apply') {
       await deps.upsertResearchEntityMember(plan.recordId, userId, {

@@ -58,7 +58,7 @@ const seed = async (title: string) => {
   return { personId: person._id, rowId: row._id };
 };
 
-const repair = (rowId: mongoose.Types.ObjectId) =>
+const repair = (rowId: mongoose.Types.ObjectId, overrides: Record<string, unknown> = {}) =>
   attemptVisibilityRepair(
     buildVisibilityRepairPlan({
       _id: 'queue-1',
@@ -69,7 +69,7 @@ const repair = (rowId: mongoose.Types.ObjectId) =>
       sourceNames: ['ysm-faculty-directory'],
     }),
     'apply',
-    { ...defaultRepairDeps, runGate: vi.fn().mockResolvedValue({}) },
+    { ...defaultRepairDeps, runGate: vi.fn().mockResolvedValue({}), ...overrides },
   );
 
 const rawEdges = (rowId: mongoose.Types.ObjectId) =>
@@ -122,5 +122,35 @@ describe("the repair queue's PI identity stage asks the gate's lead test (#5979)
     const edges = await rawEdges(rowId);
     expect(edges).toHaveLength(1);
     expect(edges[0]).toMatchObject({ personId, role: 'PI', archived: false });
+  });
+
+  it('blocks when the candidate cannot be read, writing nothing', async () => {
+    const { rowId } = await seed('Associate Professor of Medicine');
+    const attempt = await repair(rowId, { findLeadCandidateEntry: async () => null });
+
+    expect(attempt).toMatchObject({ applied: false, status: 'blocked' });
+    expect(attempt.remainingBlockers).toEqual(
+      expect.arrayContaining(['missing_lead', 'lead_candidate_unreadable']),
+    );
+    expect(await rawEdges(rowId)).toEqual([]);
+  });
+
+  it('reports a disputed edge ahead of the lead test', async () => {
+    const { personId, rowId } = await seed('Postdoctoral Associate');
+    await mongoose.connection.db!.collection('role_assignments').insertOne({
+      personId,
+      target: { kind: 'RESEARCH_ENTITY', id: rowId },
+      role: 'PI',
+      state: 'UNKNOWN',
+      archived: true,
+      reviewStatus: 'DISPUTED',
+      confidence: 0.4,
+    });
+    const before = await rawEdges(rowId);
+    const attempt = await repair(rowId);
+
+    expect(attempt.remainingBlockers).toContain('lead_edge_disputed');
+    expect(attempt.remainingBlockers).not.toContain('lead_candidate_cannot_lead');
+    expect(await rawEdges(rowId)).toEqual(before);
   });
 });
