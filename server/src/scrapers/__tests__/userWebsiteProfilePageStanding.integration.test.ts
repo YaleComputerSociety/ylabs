@@ -119,7 +119,7 @@ describe("a person's profile or directory page never displaces their own website
     await clearCollections();
   });
 
-  it('keeps the lab site over a profile page a better-joined key asserts, in either order, and a second pass writes nothing', async () => {
+  it('serves the profile page a better-joined key asserts over a lab site only a name-joined key vouches for, in either order (#6035)', async () => {
     const websites: Array<string | undefined> = [];
     const secondPasses: number[][] = [];
     for (const order of [
@@ -140,7 +140,7 @@ describe("a person's profile or directory page never displaces their own website
       secondPasses.push(secondPass);
     }
 
-    expect(websites).toEqual([LAB_SITE, LAB_SITE]);
+    expect(websites).toEqual([PROFILE_PAGE, PROFILE_PAGE]);
     expect(secondPasses).toEqual([
       [0, 0],
       [0, 0],
@@ -192,7 +192,7 @@ describe("a person's profile or directory page never displaces their own website
     expect((await materialize(NAME_KEY)).fieldsWritten).toBe(0);
   });
 
-  it('lets a personal-name domain replace a stored directory page', async () => {
+  it('never lets a name-joined key replace a stored directory page, even with a personal-name domain (#6035)', async () => {
     await createResearcher(DIRECTORY_PAGE);
     await seedName(NETID_KEY);
     await seedName(NAME_KEY);
@@ -206,7 +206,7 @@ describe("a person's profile or directory page never displaces their own website
 
     await materialize(NAME_KEY);
 
-    expect(await storedWebsite()).toBe(PERSONAL_NAME_DOMAIN);
+    expect(await storedWebsite()).toBe(DIRECTORY_PAGE);
   });
 
   it.each([

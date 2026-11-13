@@ -151,7 +151,31 @@ describe('researcher field writer precedence (#5706)', () => {
     expect(isFillOnlyIdentityJoin('displayName', 'account-email')).toBe(false);
     expect(isFillOnlyIdentityJoin('displayName', 'official-profile-page')).toBe(false);
     expect(isFillOnlyIdentityJoin('displayName', 'account-netid')).toBe(false);
+    for (const field of ['imageUrl', 'websiteUrl'] as const) {
+      expect(isFillOnlyIdentityJoin(field, 'person-name')).toBe(true);
+      expect(isFillOnlyIdentityJoin(field, 'minted-from-pi-attribution')).toBe(true);
+      expect(isFillOnlyIdentityJoin(field, 'account-netid')).toBe(false);
+    }
+    expect(isFillOnlyIdentityJoin('title', 'person-name')).toBe(false);
     expect(isFillOnlyIdentityJoin('primaryDepartment', 'person-name')).toBe(false);
+  });
+
+  it('lets a name-joined key fill an empty image or website but never replace a stored one (#6035)', () => {
+    for (const field of ['imageUrl', 'websiteUrl'] as const) {
+      const byName = researcherFieldWriter(
+        'dept:a:fx',
+        'person-name',
+        1,
+        isFillOnlyIdentityJoin(field, 'person-name'),
+      );
+      expect(decideResearcherFieldWrite(undefined, field, byName, true, false)).toMatchObject({
+        write: true,
+      });
+      expect(decideResearcherFieldWrite(undefined, field, byName, true, true)).toEqual({
+        write: false,
+        releaseWriter: false,
+      });
+    }
   });
 
   it('lets a name-joined key fill an empty name but never replace a stored one (#6035)', () => {

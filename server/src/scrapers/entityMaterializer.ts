@@ -10021,6 +10021,15 @@ async function materializeUserIdentityToResearcher(
     fields.map((field) => resolved[field]?.confidence).find((value) => value !== undefined);
   const storedFieldValue = (field: ResearcherGatedField): unknown =>
     field === 'displayName' ? researcher.displayName : researcher.profile?.[field];
+  const writesFillOnly = (field: ResearcherGatedField): boolean =>
+    isFillOnlyFieldValue(
+      field,
+      field === 'displayName' ? displayNameSources : resolved[field]?.contributingSources,
+    ) || isFillOnlyIdentityJoin(field, identityJoin);
+  const storedValueHeldOnlyOnFillOnlyEvidence = (field: ResearcherGatedField): boolean => {
+    const holder = researcher.profileFieldWriters?.get?.(field);
+    return Boolean(holder?.fillOnly) && holder?.userKey !== writerKey && !writesFillOnly(field);
+  };
   const settleFieldWriter = (
     field: ResearcherGatedField,
     value: string | undefined,
@@ -10031,15 +10040,7 @@ async function materializeUserIdentityToResearcher(
     const decision = decideResearcherFieldWrite(
       researcher.profileFieldWriters,
       field,
-      researcherFieldWriter(
-        writerKey,
-        identityJoin,
-        confidence,
-        isFillOnlyFieldValue(
-          field,
-          field === 'displayName' ? displayNameSources : resolved[field]?.contributingSources,
-        ) || isFillOnlyIdentityJoin(field, identityJoin),
-      ),
+      researcherFieldWriter(writerKey, identityJoin, confidence, writesFillOnly(field)),
       Boolean(value),
       storedValuePresent,
       valueOutranksStored,
@@ -10148,7 +10149,11 @@ async function materializeUserIdentityToResearcher(
   ] as const) {
     const bounded = normalizedResearcherProfileText(key, value);
     const storedValue = researcher.profile[key];
-    if (key === 'websiteUrl' && websiteStandsBelowStored(bounded, storedWebsiteSurvivingScreens)) {
+    if (
+      key === 'websiteUrl' &&
+      websiteStandsBelowStored(bounded, storedWebsiteSurvivingScreens) &&
+      !storedValueHeldOnlyOnFillOnlyEvidence(key)
+    ) {
       continue;
     }
     const outranksStoredWebsite =
@@ -10156,7 +10161,7 @@ async function materializeUserIdentityToResearcher(
     const storedValuePresent = storedValueCountsAsPresent(
       researcher.profileFieldWriters,
       key,
-      Boolean(textValue(storedValue)),
+      Boolean(textValue(key === 'websiteUrl' ? storedWebsiteSurvivingScreens : storedValue)),
       key === 'primaryDepartment' ? storedDepartmentBacked : true,
     );
     if (

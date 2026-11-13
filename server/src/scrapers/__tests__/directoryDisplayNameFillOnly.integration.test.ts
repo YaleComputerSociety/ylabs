@@ -89,11 +89,11 @@ describe('a directory name never replaces a page name (#6035)', () => {
     return Observation.insertMany([at('fname', 'Fixture Q.'), at('lname', 'Quillsby-Marlow')]);
   };
 
-  const seedPerson = (displayName = FULL_NAME) =>
+  const seedPerson = (displayName = FULL_NAME, profile: Record<string, string> = {}) =>
     Researcher.create({
       displayName,
       identifiers: { netid: NETID },
-      profile: {},
+      profile,
       profileLinks: [],
       status: 'UNKNOWN',
       archived: false,
@@ -192,27 +192,28 @@ describe('a directory name never replaces a page name (#6035)', () => {
     seed: () => Promise<unknown>,
     storedName: string,
     keys: [string, string],
+    storedProfile: Record<string, string> = {},
   ) => {
-    const names = [];
+    const settled = [];
     for (const order of [keys, [keys[1], keys[0]]]) {
       const db = mongoose.connection.db!;
       for (const name of ['observations', 'researchers']) await db.collection(name).deleteMany({});
       await seed();
-      const person = await seedPerson(storedName);
+      const person = await seedPerson(storedName, storedProfile);
       const joined = [];
       for (const key of order) joined.push(String((await resolve(key)).entityId));
       expect(joined).toEqual([String(person._id), String(person._id)]);
       const second = [];
       for (const key of order) second.push((await resolve(key)).fieldsWritten);
       expect(second).toEqual([0, 0]);
-      names.push(await nameOf(person._id));
+      settled.push(await Researcher.findById(person._id).lean<any>());
     }
-    return names;
+    return settled;
   };
 
   it('never lets a key joined on the name alone replace a stored name, in either order', async () => {
     const nameKey = 'dept:fixture-studies:fixture-quillsby';
-    const names = await settledInEitherOrder(
+    const settled = await settledInEitherOrder(
       async () => {
         await seedDirectoryKey();
         await seedKey(nameKey, 'dept-faculty-roster', { fname: 'Fixture', lname: 'Quillsby' });
@@ -220,12 +221,15 @@ describe('a directory name never replaces a page name (#6035)', () => {
       'Fixture Q. Quillsby',
       [DIRECTORY_KEY, nameKey],
     );
-    expect(names).toEqual(['Fixture Q. Quillsby', 'Fixture Q. Quillsby']);
+    expect(settled.map((person) => person.displayName)).toEqual([
+      'Fixture Q. Quillsby',
+      'Fixture Q. Quillsby',
+    ]);
   });
 
   it('still lets a netid-joined profile key replace a shorter directory name, in either order', async () => {
     const profileKey = 'official-profile:fixture-quillsby-marlow';
-    const names = await settledInEitherOrder(
+    const settled = await settledInEitherOrder(
       async () => {
         await seedDirectoryKey();
         await seedKey(profileKey, 'official-profile-pi-backfill', {
@@ -236,6 +240,48 @@ describe('a directory name never replaces a page name (#6035)', () => {
       DIRECTORY_NAME,
       [DIRECTORY_KEY, profileKey],
     );
-    expect(names).toEqual([FULL_NAME, FULL_NAME]);
+    expect(settled.map((person) => person.displayName)).toEqual([FULL_NAME, FULL_NAME]);
+  });
+
+  const STORED_IMAGE = 'https://fixture-studies.example.edu/images/stored-headshot.jpg';
+  const STORED_WEBSITE = 'https://stored-fixture-lab.example.org/';
+
+  it('never lets a key joined on the name alone replace a stored image, in either order', async () => {
+    const nameKey = 'dept:fixture-studies:fixture-quillsby';
+    const settled = await settledInEitherOrder(
+      async () => {
+        await seedDirectoryKey();
+        await seedKey(nameKey, 'dept-faculty-roster', {
+          fname: 'Fixture',
+          lname: 'Quillsby',
+          imageUrl: 'https://fixture-studies.example.edu/images/listed-headshot.jpg',
+        });
+      },
+      DIRECTORY_NAME,
+      [DIRECTORY_KEY, nameKey],
+      { imageUrl: STORED_IMAGE },
+    );
+    expect(settled.map((person) => person.profile?.imageUrl)).toEqual([STORED_IMAGE, STORED_IMAGE]);
+  });
+
+  it('never lets a key joined on the name alone replace a stored website, in either order', async () => {
+    const nameKey = 'dept:fixture-studies:fixture-quillsby';
+    const settled = await settledInEitherOrder(
+      async () => {
+        await seedDirectoryKey();
+        await seedKey(nameKey, 'dept-faculty-roster', {
+          fname: 'Fixture',
+          lname: 'Quillsby',
+          websiteUrl: 'https://listed-fixture-lab.example.org/',
+        });
+      },
+      DIRECTORY_NAME,
+      [DIRECTORY_KEY, nameKey],
+      { websiteUrl: STORED_WEBSITE },
+    );
+    expect(settled.map((person) => person.profile?.websiteUrl)).toEqual([
+      STORED_WEBSITE,
+      STORED_WEBSITE,
+    ]);
   });
 });
