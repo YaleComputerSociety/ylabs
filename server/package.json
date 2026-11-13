@@ -62,6 +62,7 @@
     "research-entity:purge-same-name-area-grafts": "tsx src/scripts/purgeSameNameCollisionAreaGrafts.ts",
     "researcher:refuse-field-value": "tsx src/scripts/refuseResearcherFieldValue.ts",
     "research-entity:rematerialize": "tsx src/scripts/rematerializeResearchEntities.ts",
+    "research-entity:school-backing-report": "tsx src/scripts/storedSchoolBackingReport.ts",
     "research-entity:refuse-dead-website-values": "tsx src/scripts/refuseDeadWebsiteValues.ts",
     "research-entity:refuse-unasserted-descriptions": "tsx src/scripts/refuseUnassertedDescriptions.ts",
     "research-entity:refuse-field-value": "tsx src/scripts/refuseResearchEntityFieldValue.ts",
