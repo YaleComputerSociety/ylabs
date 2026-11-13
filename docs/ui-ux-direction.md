@@ -61,7 +61,7 @@ Research filter behavior:
 - The control opens as a non-modal desktop disclosure and an accessible, focus-contained mobile sheet.
 - Type, school, and department facet choices come from positive counts for the current query, while an active value remains available even if a later distribution omits it.
   A facet with a single positive value still renders, so a filtered list says which type, school, and department it holds (#5238).
-- The hosted-undergraduates toggle shows its count even at (0), disabled and out of the initial focus order, with a note that missing evidence is not proof there is none.
+- All three Undergrads options show once their counts arrive, including at (0); an option at (0) is unavailable rather than hidden, stays keyboard reachable and out of the initial focus target, and says "None match your other filters. Remove a filter to see more." (#6203, see `docs/decisions.md` 2026-11-12 on #5963).
 - When active filters emptied the results, the zero-result panel offers clearing them rather than a shorter query, and omits the coverage-gap sentence.
 - Missing, loading, or failed facet metadata must not disable base search, invent counts from total results, or expose hidden focusable controls.
 
