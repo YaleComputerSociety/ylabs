@@ -178,18 +178,18 @@ function candidateConflictsWith(
  * else leaves the tie standing, so a missing or one-sided witness fails closed (#5875).
  */
 function identityResolutionOfTie(
-  pool: readonly ResearcherNameCandidate[],
+  tied: readonly ResearcherNameCandidate[],
+  everyoneWhoCouldBeThisPerson: readonly ResearcherNameCandidate[],
   witnesses: IdentityWitnesses | undefined,
 ): ResearcherPersonNameResolution | undefined {
-  if (!witnesses || pool.length === 0) return undefined;
-  const agreeing = pool.filter((candidate) => candidateAgreesWith(candidate, witnesses));
+  if (!witnesses || tied.length === 0) return undefined;
+  const agreeing = tied.filter((candidate) => candidateAgreesWith(candidate, witnesses));
   if (agreeing.length === 1 && !candidateConflictsWith(agreeing[0], witnesses)) {
     return { status: 'matched', researcherId: asResearcherId(agreeing[0]._id) };
   }
-  if (
-    agreeing.length === 0 &&
-    pool.every((candidate) => candidateConflictsWith(candidate, witnesses))
-  ) {
+  const namesSomeoneElse = (candidate: ResearcherNameCandidate) =>
+    !candidateAgreesWith(candidate, witnesses) && candidateConflictsWith(candidate, witnesses);
+  if (tied.every(namesSomeoneElse) && everyoneWhoCouldBeThisPerson.every(namesSomeoneElse)) {
     return { status: 'ambiguous', everyCandidateNamesSomeoneElse: true };
   }
   return undefined;
@@ -246,23 +246,28 @@ export async function resolveResearcherIdForPersonName(
     return { status: 'matched', researcherId: asResearcherId(exact[0].candidate._id) };
   }
   const witnesses = identityWitnessesOf(netid, opts.identity);
+  const couldBeThisPerson = candidates
+    .filter(({ parsed }) => givenNamesCouldNameOnePerson(first, parsed.first))
+    .map(({ candidate }) => candidate);
   if (exact.length > 1) {
     const tied = exact.map(({ candidate }) => candidate);
     return (
-      identityResolutionOfTie(tied, witnesses) ?? { status: 'ambiguous', ambiguousCandidates: tied }
+      identityResolutionOfTie(tied, couldBeThisPerson, witnesses) ?? {
+        status: 'ambiguous',
+        ambiguousCandidates: tied,
+      }
     );
   }
   // No prefix rule: a complete short given name is a prefix of a stranger's longer one (#5324).
 
   if (candidates.length === 0) return { status: 'absent' };
-  const couldBeThisPerson = candidates.filter(({ parsed }) =>
-    givenNamesCouldNameOnePerson(first, parsed.first),
-  );
   if (couldBeThisPerson.length === 0) {
     return { status: 'ambiguous', everyCandidateNamesSomeoneElse: true };
   }
-  const tied = couldBeThisPerson.map(({ candidate }) => candidate);
   return (
-    identityResolutionOfTie(tied, witnesses) ?? { status: 'ambiguous', ambiguousCandidates: tied }
+    identityResolutionOfTie(couldBeThisPerson, couldBeThisPerson, witnesses) ?? {
+      status: 'ambiguous',
+      ambiguousCandidates: couldBeThisPerson,
+    }
   );
 }

@@ -276,6 +276,28 @@ describe('resolveResearcherIdForPersonName breaks a name tie only on identity ev
     expect(result).toEqual({ status: 'ambiguous', ambiguousCandidates: twins });
   });
 
+  it('keeps an exact tie refused while an initial-only namesake could still be this person', async () => {
+    const tiedA = withIdentity('Michael Quillfeather', { netid: 'mq1' });
+    const tiedB = withIdentity('Michael Quillfeather', { netid: 'mq2' });
+    const initialOnly = withIdentity('M. Quillfeather', {});
+    const result = await resolveResearcherIdForPersonName('Mike Quillfeather', {
+      netid: 'mq42',
+      deps: depsFor([tiedA, tiedB, initialOnly]),
+    });
+    expect(result).toEqual({ status: 'ambiguous', ambiguousCandidates: [tiedA, tiedB] });
+  });
+
+  it('marks an exact tie as someone else when every possible namesake holds another netid', async () => {
+    const tiedA = withIdentity('Michael Quillfeather', { netid: 'mq1' });
+    const tiedB = withIdentity('Michael Quillfeather', { netid: 'mq2' });
+    const initialOnly = withIdentity('M. Quillfeather', { netid: 'mq3' });
+    const result = await resolveResearcherIdForPersonName('Mike Quillfeather', {
+      netid: 'mq42',
+      deps: depsFor([tiedA, tiedB, initialOnly]),
+    });
+    expect(result).toEqual({ status: 'ambiguous', everyCandidateNamesSomeoneElse: true });
+  });
+
   it('reads a prefix-sharing namesake holding another netid as someone else', async () => {
     const namesake = withIdentity('Jonas Mar Quillfeather', { netid: 'jq7' });
     const result = await resolveResearcherIdForPersonName('Mara Quillfeather', {
