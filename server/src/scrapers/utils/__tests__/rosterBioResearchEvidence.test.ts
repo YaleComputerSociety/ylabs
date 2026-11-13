@@ -132,6 +132,8 @@ describe('roster biography research evidence', () => {
       'Their clinical interests include synthetic quill rash and related skin conditions.',
       'Their work focuses on advancing synthetic eye care across the region.',
       'They provide synthetic sleep clinic care to adults across the state.',
+      'Their interests focus on ways to provide gentle care to adults with synthetic heart fatigue.',
+      'Their work focuses on ways to help patients with synthetic marsh fever rest at home.',
       'They focus on caring for women with synthetic high-risk pregnancies.',
       'They try whatever synthetic remedy may help their patients.',
       'They treat the symptoms of synthetic winter cough in adults.',
@@ -167,7 +169,7 @@ describe('roster biography research evidence', () => {
   });
 
   it('drops a first-person sentence about research done in the past (#6083)', () => {
-    expect(keptBesideAnchor('I studied synthetic soil fungi as a graduate student.')).toBe(false);
+    expect(keptBesideAnchor('We investigated synthetic soil fungi in cold forests.')).toBe(false);
   });
 
   it('keeps a creative-practice sentence about care or patients (#6083)', () => {

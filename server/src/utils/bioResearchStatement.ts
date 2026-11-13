@@ -37,8 +37,8 @@ const NOT_RESEARCH_CONTENT_SENTENCE =
 const CLINICAL_SERVICE_SHAPES = [
   /\b(?:special|particular)\s+interests?\s+(?:is\s+|are\s+)?in\b/i,
   /\bclinical\s+(?:interests?|focus|expertise|specialt(?:y|ies))\s+(?:include|includes|are|is|lies?|focus(?:es)?)\b/i,
-  /\b(?:provid|deliver|offer)(?:s|es|ed|ing)?\b[^.]{0,80}\bcare\b/i,
-  /\b(?:provid|deliver|offer)(?:s|es|ed|ing)?\s+patients\b/i,
+  /\b(?:provid(?:e|es|ed|ing)|deliver(?:s|ed|ing)?|offer(?:s|ed|ing)?)\b[^.]{0,80}\bcare\b/i,
+  /\b(?:provid(?:e|es|ed|ing)|deliver(?:s|ed|ing)?|offer(?:s|ed|ing)?)\s+patients\b/i,
   /\badvancing\s+[\w\s-]{0,40}\bcare\b/i,
   /\bsupporting\s+patients\b/i,
   /\b(?:caring|cares)\s+for\b/i,
@@ -48,7 +48,7 @@ const CLINICAL_SERVICE_SHAPES = [
   /\b(?:treats|treating)\s+patients\b/i,
   /\bworks?\s+with\s+patients\s+to\b/i,
   /\beach\s+patient(?:['’]s)?\b/i,
-  /\bhelping\s+(?:each\s+)?(?:patients?|famil(?:y|ies))\b/i,
+  /\bhelp(?:s|ing)?\s+(?:each\s+)?(?:patients?|famil(?:y|ies))\b/i,
   /\bpartnering\s+with\s+patients\b/i,
   /\bgetting\s+patients\s+back\b/i,
 ];
@@ -81,8 +81,7 @@ export function isClinicalOnlyBiographySentence(sentence: string): boolean {
   return (
     [...CLINICAL_SERVICE_SHAPES, ...PATIENT_SERVICE_SHAPES].some((shape) => shape.test(sentence)) &&
     CLINICAL_VOCABULARY.test(sentence) &&
-    !STATES_INQUIRY.test(sentence) &&
-    !CREATIVE_PRACTICE.test(sentence)
+    !STATES_INQUIRY.test(sentence)
   );
 }
 
