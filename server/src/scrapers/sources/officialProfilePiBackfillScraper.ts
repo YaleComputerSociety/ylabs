@@ -234,6 +234,12 @@ interface IdentityToUserObservationOptions {
   includeProfileEnrichment?: boolean;
   includeIdentityEnrichment?: boolean;
   includeEmail?: boolean;
+  /**
+   * Keep the page's title when identity enrichment is off. A keyed re-read of named people is
+   * a fresh first-hand read of each person's own page, the one admissible title source (#5578,
+   * #5874), so it may refresh a stale title that an unkeyed bio pass leaves alone.
+   */
+  includeTitle?: boolean;
   directoryNetidsByAddress?: DirectoryNetidsByAddress;
   pageOrcidWitnessedForNetid?: boolean;
   canonicalDepartment?: CanonicalDepartment | null;
@@ -4114,9 +4120,12 @@ export function identityToUserObservations(
   }
 
   const includeEmail = options.includeEmail ?? includeIdentityEnrichment;
+  const includeTitle = options.includeTitle ?? false;
   const emittedIdentityObservations = includeIdentityEnrichment
     ? identityObservations
-    : identityObservations.filter(([field]) => includeEmail && field === 'email');
+    : identityObservations.filter(
+        ([field]) => (includeEmail && field === 'email') || (includeTitle && field === 'title'),
+      );
   const attestsNoEmail = includeEmail && !identity.email && identity.statesNoEmailAddress === true;
   const observations: ObservationInput[] = emittedIdentityObservations.map(([field, value]) => ({
     entityType: 'user',
@@ -5919,6 +5928,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
                     includeProfileEnrichment: runVisibleProfileBioBackfill,
                     includeIdentityEnrichment: !runVisibleProfileBioBackfill,
                     includeEmail: true,
+                    includeTitle: runVisibleProfileBioBackfill && targetKeys.length > 0,
                     directoryNetidsByAddress:
                       directoryNetidsByAddress ?? (await loadDirectoryNetidsByAddress()),
                     pageOrcidWitnessedForNetid,

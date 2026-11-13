@@ -596,6 +596,30 @@ describe('visible profile bio backfill selects by the person own official link (
       expect(userRows.every((o) => o.assertsNoValueFor?.includes('orcid'))).toBe(true);
     });
 
+    it('emits the page title for the named netids in a keyed run (#5874)', async () => {
+      await seedEveryone();
+      const emitted: ObservationInput[] = [];
+
+      await scraperReading(readPage).run(
+        keyedContext(emitted, ['visible-profile-bio-backfill', people.rosterKept.netid]),
+      );
+
+      const titles = emitted.filter((o) => o.entityType === 'user' && o.field === 'title');
+      expect(titles.map((o) => [o.entityKey, o.value])).toEqual([
+        [`netid:${people.rosterKept.netid}`, 'Associate Professor of Medicine'],
+      ]);
+    });
+
+    it('emits no title in an unkeyed visible run, as before (#5874)', async () => {
+      await seedEveryone();
+      const emitted: ObservationInput[] = [];
+
+      await scraperReading(readPage).run(keyedContext(emitted, ['visible-profile-bio-backfill']));
+
+      expect(emitted.filter((o) => o.entityType === 'user').length).toBeGreaterThan(0);
+      expect(emitted.filter((o) => o.entityType === 'user' && o.field === 'title')).toEqual([]);
+    });
+
     it('runs neither research-home nor organization-director selection in a keyed run', async () => {
       await seedEveryone();
       const researchHomeSelector = vi.fn(async () => []);
