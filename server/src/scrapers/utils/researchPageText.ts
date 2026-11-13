@@ -75,9 +75,28 @@ const MIN_RECOVERED_SENTENCE_WORDS = 8;
 const CITATION_FRAGMENT =
   /\b(?:doi|pmid|pmcid|isbn)\b|\b(?:19|20)\d{2}[a-z]?\s*[).]|\(\s*(?:19|20)\d{2}/i;
 
+// A past appointment told as a span of years: "taught at X from 1997-2018". It needs a career
+// verb bound to a post, and "worked" or "served" must name a post or an institution, so a
+// research sentence that spans years ("tracked kelp recovery from 1997 to 2018", "worked at
+// field sites from 2005 to 2015") is not one. Kept local to page text, because
+// isCurriculumVitaeRecordSentence also decides what a served description shows (#6201).
+const CAREER_POST_OR_INSTITUTION =
+  '(?:professor|lecturer|fellow|director|chair|dean|faculty|instructor|curator|editor|president|university|college|institute|hospital|school)';
+const CAREER_HISTORY_YEAR_RANGE_SENTENCE = new RegExp(
+  '\\b(?:(?:taught|lectured)\\s+(?:at|in)' +
+    `|(?:served\\s+(?:as|on|at|in)|worked\\s+(?:at|as))\\s+[^.]{0,60}?\\b${CAREER_POST_OR_INSTITUTION}` +
+    '|practi[cs]ed\\s+(?:at|as|in)|chaired\\s+the' +
+    '|directed\\s+the\\s+[^.]{0,60}?\\b(?:center|centre|program(?:me)?|institute|department|school|division|museum|clinic))' +
+    '\\b[^.]{0,120}?\\bfrom\\s+(?:19|20)\\d{2}\\s*(?:[-\\u2013\\u2014]|to|until|through)\\s*(?:(?:19|20)\\d{2}|present|now)\\b',
+  'i',
+);
+
+const isPageTextCvRecord = (text: string): boolean =>
+  isCurriculumVitaeRecordSentence(text) || CAREER_HISTORY_YEAR_RANGE_SENTENCE.test(text);
+
 const isRecoverableResearchSentence = (sentence: string): boolean =>
   wordCount(sentence) >= MIN_RECOVERED_SENTENCE_WORDS &&
-  !isCurriculumVitaeRecordSentence(sentence) &&
+  !isPageTextCvRecord(sentence) &&
   !isBibliographicCitationSentence(sentence) &&
   !CITATION_FRAGMENT.test(sentence);
 
@@ -93,9 +112,45 @@ function withoutCurriculumVitaeSentences(line: string): string {
   return splitDescriptionSentences(line).filter(isRecoverableResearchSentence).join(' ');
 }
 
-function statementTextOfLine(line: string): string {
+const SKIP_LINK_LINE = /^(?:skip|jump)\s+(?:to|past|over|content|navigation|main)\b/i;
+const ACCESSIBILITY_LINK_LINE =
+  /\b(?:accessibility\s+(?:statement|policy|notice|help|assistance|feedback|options|settings)|(?:report|request)\s+an?\s+(?:digital\s+)?accessibility\s+(?:issue|problem|barrier|accommodation)|screen\s+readers?\s+only)\b/i;
+const MAX_ACCESSIBILITY_LINE_WORDS = 12;
+const CONTACT_OR_LINK_LABEL_LINE =
+  /^(?:curriculum vitae|c\.?v\.?|r[e\u00e9]sum[e\u00e9]|(?:lab |personal )?web\s?site|home\s?page|e-?mail|phone|tel(?:ephone)?|fax|mobile|office|address|orcid|google scholar|twitter|linkedin|bluesky|github|researchgate)\s*:/i;
+
+const MAX_DROPPED_LABEL_VALUE_WORDS = 6;
+const LINK_OR_EMAIL_VALUE = /^(?:https?:\/\/|www\.|[\w.+-]+@[\w-]+\.)/i;
+
+/** A skip link or an accessibility link line (#6201). */
+function isSkipOrAccessibilityLine(line: string): boolean {
+  return (
+    SKIP_LINK_LINE.test(line) ||
+    (wordCount(line) <= MAX_ACCESSIBILITY_LINE_WORDS && ACCESSIBILITY_LINK_LINE.test(line))
+  );
+}
+
+/**
+ * The line without a leading contact or link label such as "Curriculum Vitae:" or "Website:"
+ * (#6201), or nothing when what follows the label is short, a link or an email address. On a
+ * profile those labels sit beside the name and title, and once a recovered biography lifts
+ * the row over the floor they would ride along into the stored text; a template that puts a
+ * label before a blurb keeps the blurb.
+ */
+function withoutContactOrLinkLabel(line: string): string {
+  const label = line.match(CONTACT_OR_LINK_LABEL_LINE);
+  if (!label) return line;
+  const value = line.slice(label[0].length).trim();
+  return wordCount(value) <= MAX_DROPPED_LABEL_VALUE_WORDS || LINK_OR_EMAIL_VALUE.test(value)
+    ? ''
+    : value;
+}
+
+function statementTextOfLine(rawLine: string): string {
+  if (isSkipOrAccessibilityLine(rawLine)) return '';
+  const line = withoutContactOrLinkLabel(rawLine);
   if (wordCount(line) < MIN_LINE_WORDS || isContactLine(line)) return '';
-  return isCurriculumVitaeRecordSentence(line) ? withoutCurriculumVitaeSentences(line) : line;
+  return isPageTextCvRecord(line) ? withoutCurriculumVitaeSentences(line) : line;
 }
 
 const NON_CONTENT_ELEMENTS =
@@ -103,11 +158,35 @@ const NON_CONTENT_ELEMENTS =
 
 const MAIN_CONTENT = 'main, article, [role="main"]';
 const MIN_HEADING_BLOCK_SUMMARY_WORDS = 12;
+const ENDS_AS_A_SENTENCE = /[.!?]["')\]\u2019\u201d]?$/;
 
 const isPageHeadingBlock = ($: cheerio.CheerioAPI, header: AnyNode): boolean =>
   $(header).attr('role') !== 'banner' &&
   $(header).parents(MAIN_CONTENT).length > 0 &&
   $(header).find('h1').length > 0;
+
+/**
+ * The prose a heading-block paragraph carries, held to the same rule as a recovered CV
+ * paragraph (#6201). A profile's heading block often puts its name, title, a skip link and
+ * "Website:" or "Curriculum Vitae:" labels in one paragraph split by line breaks, so each line
+ * is read on its own. When the paragraph has several lines, one that does not end as a sentence
+ * is a name, title or label. Only whole sentences passing that rule are kept, so a topical label
+ * such as "Research interests:" is not dropped as a label, but it stays only inside a line that
+ * ends as a sentence and only with a sentence of eight or more words.
+ */
+function headingBlockSummaryText(paragraph: AnyNode): string {
+  const lines = extractElementTextWithLineBreaks(paragraph)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return lines
+    .filter((line) => !isSkipOrAccessibilityLine(line))
+    .map(withoutContactOrLinkLabel)
+    .filter((line) => line && (lines.length === 1 || ENDS_AS_A_SENTENCE.test(line)))
+    .flatMap((line) => splitDescriptionSentences(line))
+    .filter(isRecoverableResearchSentence)
+    .join(' ');
+}
 
 /**
  * Removes every `header` except the summary paragraphs of the page's own heading block: the
@@ -123,11 +202,12 @@ function removeHeadersKeepingPageSummary($: cheerio.CheerioAPI): void {
     }
     const summary = $(header)
       .find('p')
-      .filter(
-        (_paragraph, paragraph) =>
-          wordCount($(paragraph).text()) >= MIN_HEADING_BLOCK_SUMMARY_WORDS,
-      )
-      .toArray();
+      .toArray()
+      .filter((paragraph) => wordCount($(paragraph).text()) >= MIN_HEADING_BLOCK_SUMMARY_WORDS)
+      .map((paragraph) => headingBlockSummaryText(paragraph))
+      .filter(Boolean)
+      .map((text) => $.html($('<p></p>').text(text)))
+      .join('');
     $(header).replaceWith(summary);
   });
 }
