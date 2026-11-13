@@ -23,6 +23,7 @@ export const NON_RESEARCH_HOME_KINDS = [
   'unlisted-program',
   // A row whose only content is a course a student takes, read off its course page (#5213).
   'course',
+  'company',
 ] as const;
 
 export type NonResearchHomeKind = (typeof NON_RESEARCH_HOME_KINDS)[number];
