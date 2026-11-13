@@ -11,6 +11,7 @@ import {
   SURNAME_FETCH_LIMIT,
 } from '../scrapers/utils/piNameMatch';
 import { plausiblePersonOrcid } from '../utils/orcid';
+import { researcherRefusesValue } from '../utils/researcherFieldValueRefusals';
 import { looksLikeYaleNetid } from '../utils/yaleNetid';
 
 export type ResearcherPersonNameResolutionStatus = 'matched' | 'absent' | 'ambiguous';
@@ -26,6 +27,7 @@ export interface ResearcherNameCandidate {
   _id: mongoose.Types.ObjectId | string;
   displayName?: string;
   identifiers?: { email?: string; netid?: string; orcid?: string };
+  fieldValueRefusals?: unknown;
 }
 
 /**
@@ -54,6 +56,7 @@ const defaultFindResearchersBySurname = async (
       'identifiers.email': 1,
       'identifiers.netid': 1,
       'identifiers.orcid': 1,
+      fieldValueRefusals: 1,
     },
   )
     .limit(SURNAME_FETCH_LIMIT)
@@ -143,12 +146,26 @@ function identityWitnessesOf(
   return { netid: yaleNetid, emails, orcid };
 }
 
+const ownEmail = (candidate: ResearcherNameCandidate): string => {
+  const email = normalizedEmail(candidate.identifiers?.email);
+  return email && !researcherRefusesValue(candidate.fieldValueRefusals, 'email', email)
+    ? email
+    : '';
+};
+
+const ownOrcid = (candidate: ResearcherNameCandidate): string => {
+  const orcid = plausiblePersonOrcid(candidate.identifiers?.orcid);
+  return orcid && !researcherRefusesValue(candidate.fieldValueRefusals, 'orcid', orcid)
+    ? orcid
+    : '';
+};
+
 function candidateAgreesWith(
   candidate: ResearcherNameCandidate,
   witnesses: IdentityWitnesses,
 ): boolean {
-  const email = normalizedEmail(candidate.identifiers?.email);
-  const orcid = plausiblePersonOrcid(candidate.identifiers?.orcid);
+  const email = ownEmail(candidate);
+  const orcid = ownOrcid(candidate);
   return (
     (Boolean(email) && witnesses.emails.has(email)) ||
     (Boolean(orcid) && orcid === witnesses.orcid) ||
@@ -161,7 +178,7 @@ function candidateConflictsWith(
   witnesses: IdentityWitnesses,
 ): boolean {
   const netid = normalizeNetid(candidate.identifiers?.netid);
-  const orcid = plausiblePersonOrcid(candidate.identifiers?.orcid);
+  const orcid = ownOrcid(candidate);
   return (
     (Boolean(witnesses.netid) &&
       Boolean(netid) &&
