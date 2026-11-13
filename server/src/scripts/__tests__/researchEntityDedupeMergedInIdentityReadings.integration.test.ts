@@ -103,7 +103,7 @@ describe('a PI-dedupe merge keeps merged-in identity readings off the survivor (
       {
         _id: twinId,
         slug: TWIN_SLUG,
-        name: 'Fixture Twin Center',
+        name: 'Fixture Twin Lab',
         kind: 'center',
         entityType: 'CENTER',
         school: 'School of Medicine',
@@ -136,7 +136,7 @@ describe('a PI-dedupe merge keeps merged-in identity readings off the survivor (
       0.7,
     );
 
-    await observe(twinId, TWIN_SLUG, 'name', 'Fixture Twin Center', TWIN_PAGE, 0.95);
+    await observe(twinId, TWIN_SLUG, 'name', 'Fixture Twin Lab', TWIN_PAGE, 0.95);
     await observe(twinId, TWIN_SLUG, 'school', 'School of Medicine', TWIN_PAGE, 0.95);
     await observe(twinId, TWIN_SLUG, 'entityType', 'CENTER', TWIN_PAGE, 0.95);
     await observe(twinId, TWIN_SLUG, 'kind', 'center', TWIN_PAGE, 0.95);
@@ -187,7 +187,7 @@ describe('a PI-dedupe merge keeps merged-in identity readings off the survivor (
 
   it('still lets the re-pointed name and website readings compete as the survivor own, as today', async () => {
     const planned = await plan();
-    expect(planned.name).toBe('Fixture Twin Center');
+    expect(planned.name).toBe('Fixture Twin Lab');
     expect(planned.websiteUrl).toBe(TWIN_PAGE);
   });
 });
