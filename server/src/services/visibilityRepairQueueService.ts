@@ -1544,7 +1544,7 @@ export async function attemptVisibilityRepair(
  */
 export const VISIBILITY_REPAIR_QUEUE_DRAIN_SORT = { firstSeenAt: 1, _id: 1 } as const;
 
-const defaultRepairDeps: RepairDeps = {
+export const defaultRepairDeps: RepairDeps = {
   async findOpenQueueItems(options) {
     const filter: Record<string, unknown> = { status: 'open' };
     if (options.collection && options.collection !== 'all') filter.collection = options.collection;

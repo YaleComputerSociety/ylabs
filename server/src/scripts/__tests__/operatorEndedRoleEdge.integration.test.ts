@@ -8,6 +8,7 @@ import { ResearchEntity } from '../../models/researchEntity';
 import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
 import { writeCanonicalMembership } from '../../scrapers/canonicalMembershipMaterializer';
+import { defaultRepairDeps } from '../../services/visibilityRepairQueueService';
 import {
   detachRoleAssignmentEdge,
   parseDetachRoleAssignmentEdgeArgs,
@@ -76,6 +77,16 @@ const reassertFromRoster = (rowId: mongoose.Types.ObjectId, personId: mongoose.T
     { displayName: 'Ada Quill', hasCanonicalSourceReference: true, resolvedPersonId: personId },
   );
 
+const reassertFromRepairQueue = (
+  rowId: mongoose.Types.ObjectId,
+  personId: mongoose.Types.ObjectId,
+) =>
+  defaultRepairDeps.upsertResearchEntityMember!(String(rowId), String(personId), {
+    sourceUrl: PAGE,
+    sourceName: 'visibility-repair-official-profile',
+    confidence: 0.7,
+  });
+
 const endAsHistorical = (edgeId: string, decidedBy: 'owner' | 'agent' = 'agent') =>
   detachRoleAssignmentEdge(
     {
@@ -142,6 +153,26 @@ describe('an operator-ended role edge (#5979)', () => {
     const edges = await edgesFor(personId);
     expect(edges).toHaveLength(1);
     expect(edges[0].state).not.toBe('HISTORICAL');
+    expect(edges[0].endedAt).toBeUndefined();
+  });
+
+  it('stays ended, with no twin, when the repair queue re-asserts the same PI edge', async () => {
+    const { edgeId, personId, rowId } = await seed();
+    await endAsHistorical(edgeId);
+    await reassertFromRepairQueue(rowId, personId);
+
+    const edges = await edgesFor(personId);
+    expect(edges).toHaveLength(1);
+    expect(edges[0]).toMatchObject({ state: 'HISTORICAL', endedAt: ENDED_AT });
+  });
+
+  it('lets the repair queue revive a lane-ended historical PI edge exactly as before', async () => {
+    const { personId, rowId } = await seed({ state: 'HISTORICAL', endedAt: ENDED_AT });
+    await reassertFromRepairQueue(rowId, personId);
+
+    const edges = await edgesFor(personId);
+    expect(edges).toHaveLength(1);
+    expect(edges[0].state).toBe('CURRENT');
     expect(edges[0].endedAt).toBeUndefined();
   });
 
