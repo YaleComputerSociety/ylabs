@@ -35,6 +35,15 @@ export const sourceCoverageRegistry = {
     notes:
       "Not a crawl: the materializer infers chips from a row's own stored name and description through the canonical research-area vocabulary, and records this name so the serve-time coherence guard has provenance to reconcile against. LOW because no page named the facet, only the subject.",
   },
+  'own-profile-host-school': {
+    priority: 0,
+    tier: 'DERIVED_OFFICIAL',
+    artifactTypes: ['ResearchEntity'],
+    evidenceCategories: ['ENTITY_IDENTITY'],
+    defaultConfidence: 'LOW',
+    notes:
+      "Not a crawl: where the lead's own official profile sits on a school's site, the materializer derives that school in place of a school reading from another school's site, re-derived on every resolve and recorded as fieldProvenance only (#6157). LOW because a host places a page rather than stating an appointment.",
+  },
   'research-page-topics-derived': {
     priority: 0,
     tier: 'DERIVED_OFFICIAL',

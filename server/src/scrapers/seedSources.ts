@@ -175,6 +175,15 @@ const SOURCES: SourceSeed[] = [
     cadence: 'event',
   },
   {
+    name: 'own-profile-host-school',
+    displayName: "School of the lead's own profile site (derived)",
+    description:
+      "The school whose site hosts the lead's own official profile, standing in for a roster from another school's site on `school`. Derived by the materializer on every resolve and recorded as fieldProvenance only, never as an observation (#6157).",
+    baseUrl: '',
+    defaultWeight: 0.6,
+    cadence: 'event',
+  },
+  {
     name: 'manual-admin-edit',
     displayName: 'Manual admin edit',
     description: 'Authoritative override applied when an admin edits an entity in the dashboard.',

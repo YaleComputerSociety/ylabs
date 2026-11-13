@@ -84,6 +84,7 @@ export const SCRIPT_DRIVEN_SOURCE_OWNERS: Record<string, string> = {
   // "command" is a materialize of that row rather than a lane an operator can run.
   'description-derived-research-area': 'materializer projection (scrape materialize)',
   'research-page-topics-derived': 'yarn --cwd server research-topics:derive',
+  'own-profile-host-school': 'materializer projection (scrape materialize)',
   'manual-admin-edit': 'admin dashboard entity edit',
   'manual-pi-edit': 'PI dashboard lab edit',
 };
