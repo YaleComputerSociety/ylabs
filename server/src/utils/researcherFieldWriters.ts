@@ -141,6 +141,8 @@ export type ResearcherFieldWriteDecision =
  * a better-joined key wrote (#5845), writes whatever the writer rank.
  * A fill-only candidate with no recorded writer writes only into an empty field, because a
  * stored value with no writer was set by some other source before writers were recorded.
+ * Callers pass `storedValuePresent` from `storedValueCountsAsPresent`, which reads a
+ * never-backed stored department as absent (#6049).
  */
 export function decideResearcherFieldWrite(
   writers: unknown,
