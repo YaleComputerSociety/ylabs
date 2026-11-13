@@ -46,6 +46,13 @@ export const HOST_THROTTLE_OVERRIDES: Readonly<Record<string, HostPoliteness>> =
   },
 };
 
+// Yale hosts answered about 2 requests a second with 403s (ysph, hold 3i), so any Yale host
+// without its own override gets one request at a time, 1.5 s apart, across the whole machine.
+export const YALE_HOST_DEFAULT_THROTTLE: HostThrottle = {
+  concurrency: 1,
+  minIntervalMs: 1_500,
+};
+
 function hostPoliteness(host: string | undefined): HostPoliteness | undefined {
   const key = host?.toLowerCase();
   return key && Object.hasOwn(HOST_THROTTLE_OVERRIDES, key)
@@ -283,6 +290,10 @@ export interface ScraperHostConcurrencyInterceptorOptions {
 
 const RELEASE_KEY = '__scraperHostRelease';
 let installed = false;
+
+export function isScraperHostConcurrencyInterceptorInstalled(): boolean {
+  return installed;
+}
 
 export function installScraperHostConcurrencyInterceptor(
   limiter: HostSlotLimiter = defaultHostConcurrencyLimiter,

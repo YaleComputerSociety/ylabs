@@ -209,7 +209,7 @@ None of these is a secret, and none belongs on a web service.
 | `SCRAPER_PER_HOST_CONCURRENCY`, `SCRAPER_ROSTER_LANE_CONCURRENCY` | Fetch pacing |
 | `MATERIALIZE_CONCURRENCY` | How many independent rows a materialize chunk writes at once; unset means 8, `1` is sequential, invalid means 1, capped at 16 |
 | `SCRAPER_HTTP_CACHE`, `SCRAPER_HTTP_CACHE_DIR`, `SCRAPER_HTTP_CACHE_MAX_MB`, `XDG_CACHE_HOME` | The HTTP validator cache and the host-slot broker |
-| `SCRAPER_MACHINE_HOST_SLOTS`, `SCRAPER_MACHINE_HOST_SLOT_DIR`, `SCRAPER_HOST_SLOT_ACQUIRE_TIMEOUT_MS`, `SCRAPER_HOST_SLOT_BROKER` | Machine-wide host-slot sharing; the sweep sets `SCRAPER_HOST_SLOT_BROKER` for its children |
+| `SCRAPER_MACHINE_HOST_SLOTS`, `SCRAPER_MACHINE_HOST_SLOT_DIR`, `SCRAPER_HOST_SLOT_ACQUIRE_TIMEOUT_MS`, `SCRAPER_HOST_SLOT_BROKER` | Machine-wide host-slot sharing (the file budget and the broker behind it); the sweep sets `SCRAPER_HOST_SLOT_BROKER` for its children |
 | `SCRAPER_SWEEP_PAGE_REUSE`, `SCRAPER_SWEEP_PAGE_REUSE_MAX_MB` | Sweep page reuse; the sweep sets `SCRAPER_SWEEP_PAGE_REUSE` for its children |
 | `SCRAPER_SWEEP_DEADLINE_AT` | Run deadline the weekly wrapper passes to `scrape:sweep`, so a source that failed on a transient database error is re-run only when the Render limit has room; never set it by hand |
 | `SCRAPER_REQUEST_LOG` | The opt-in per-request fetch log (`scrapers/utils/scraperRequestLog.ts`): a file path that receives one JSON line per outbound request from the shared fetch-deadline adapter, written owner-only; unset means no log |

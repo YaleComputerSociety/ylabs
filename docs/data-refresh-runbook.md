@@ -311,6 +311,7 @@ It refuses unless `MONGODBURL` names `Development`, `SCRAPER_ENV` resolves to de
 
 It always probes `medicine.yale.edu` and `ysph.yale.edu`, plus the four other Yale hosts that Development links to most, taking the first 40 distinct pages per host in `_id` order so two runs probe the same pages.
 Every page goes through `fetchPageWithPolicy`, with the shared per-host limiter and retry budget, two requests in flight per host, because a hand-rolled fetch measures the client rather than the host.
+The machine-wide host budget still applies, so a Yale host without an override gets 1 request in flight 1.5 s apart whatever the probe asks for; each host's row and its `HOST_PROBE_RESULT` entry record the in-flight count and spacing it actually received, and the result line names the requested count `requestedInFlight`.
 The table reports, per host, the requests made, how many were refused with 403 or 429 on the first attempt, how many refused requests the retry budget recovered, how many were still refused when it ran out, other failures such as a 404, median and p95 latency, and wall time.
 A request that succeeds after a transport error or a 5xx counts as ok, and one that is refused and then ends on a 404 or a 5xx counts as another failure.
 Latency is end-to-end per page, so it includes waiting for the shared per-host limiter and any retry backoff, which is also how the baseline below was measured.

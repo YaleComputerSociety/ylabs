@@ -9,12 +9,16 @@
  * throw after retries are exhausted, or catch and map to null.
  */
 import axios from 'axios';
-import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
+import { assertPublicHttpUrl, SsrfBlockedError, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import {
   HostConcurrencyLimiter,
+  HostSlotWaitTimeoutError,
   hostnameForLimiter,
   resolveHostRetryBudget,
+  type HostSlotLimiter,
 } from './hostConcurrencyLimiter';
+import { HostBudgetUnavailableError } from './machineHostBudget';
+import { machineHostSlotsForDirectRequest } from './scraperHostSlotLimiter';
 import {
   benchmarkCacheRead,
   benchmarkCacheWrite,
@@ -40,6 +44,7 @@ export interface HttpRequestResult {
   finalUrl: string;
   retryAfterMs?: number;
   setCookies?: string[];
+  location?: string;
 }
 
 export interface HttpRequestConfig {
@@ -58,6 +63,7 @@ export interface HostRateLimiterOptions {
   applyHostOverrides?: boolean;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
+  machineWide?: () => HostSlotLimiter | undefined;
 }
 
 const realSleep = (ms: number): Promise<void> =>
@@ -65,6 +71,7 @@ const realSleep = (ms: number): Promise<void> =>
 
 export class HostRateLimiter {
   private readonly slots: HostConcurrencyLimiter;
+  private readonly machineWide: () => HostSlotLimiter | undefined;
 
   constructor(options: HostRateLimiterOptions = {}) {
     this.slots = new HostConcurrencyLimiter(options.maxConcurrency ?? 2, {
@@ -73,12 +80,20 @@ export class HostRateLimiter {
       now: options.now,
       sleep: options.sleep,
     });
+    this.machineWide = options.machineWide ?? machineHostSlotsForDirectRequest;
   }
 
   async run<T>(host: string, fn: () => Promise<T>): Promise<T> {
     const release = await this.slots.acquire(host);
     try {
-      return await fn();
+      const machine = this.machineWide();
+      if (!machine) return await fn();
+      const releaseMachine = await machine.acquire(host);
+      try {
+        return await fn();
+      } finally {
+        releaseMachine();
+      }
     } finally {
       release();
     }
@@ -223,12 +238,14 @@ export const defaultAxiosRequest: HttpRequestFn = async (url, config) => {
         });
   const finalUrl =
     typeof res.request?.res?.responseUrl === 'string' ? res.request.res.responseUrl : url;
+  const location = res.headers?.location;
   return {
     status: res.status,
     data: typeof res.data === 'string' ? res.data : String(res.data ?? ''),
     finalUrl,
     retryAfterMs: parseRetryAfterMs(res.headers?.['retry-after']),
     setCookies: setCookieHeaders(res.headers?.['set-cookie']),
+    ...(typeof location === 'string' && location ? { location } : {}),
   };
 };
 
@@ -344,12 +361,19 @@ async function fetchPageLive(
     ...submission,
   };
 
+  const followHops = (): Promise<HttpRequestResult> =>
+    followRedirectsWithinBudget(safeUrl, config, { limiter, request, assertUrl });
+
   const backoff = new RetryBackoffBudget(policy);
   for (let attempt = 0; ; attempt += 1) {
     let result: HttpRequestResult;
     try {
-      result = await limiter.run(host, () => request(safeUrl, config));
+      result = await followHops();
     } catch (error) {
+      if (isRefusedBeforeSending(error)) {
+        backoff.settle('exhausted');
+        throw error;
+      }
       if (!(await backoff.waitAfterTransportFailure(attempt))) {
         backoff.settle('exhausted');
         throw error;
@@ -373,6 +397,94 @@ async function fetchPageLive(
     }
     backoff.settle('exhausted');
     throw new HttpStatusError(result.status, result.finalUrl || safeUrl);
+  }
+}
+
+const isRedirectStatus = (status: number): boolean => status >= 300 && status < 400;
+
+function isRefusedBeforeSending(error: unknown): boolean {
+  return (
+    error instanceof SsrfBlockedError ||
+    error instanceof HostBudgetUnavailableError ||
+    error instanceof HostSlotWaitTimeoutError
+  );
+}
+
+function tooManyRedirectsError(maxRedirects: number): Error & { code: string } {
+  return Object.assign(new Error(`Maximum number of redirects exceeded (${maxRedirects})`), {
+    code: 'ERR_FR_TOO_MANY_REDIRECTS',
+  });
+}
+
+const CROSS_ORIGIN_STRIPPED_HEADERS: ReadonlySet<string> = new Set([
+  'authorization',
+  'proxy-authorization',
+  'cookie',
+]);
+
+function withoutHeaders(
+  headers: Record<string, string>,
+  stripped: (name: string) => boolean,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(headers).filter(([name]) => !stripped(name.toLowerCase())),
+  );
+}
+
+function leavesCredentialScope(from: URL, to: URL): boolean {
+  const downgradesProtocol = to.protocol !== from.protocol && to.protocol !== 'https:';
+  const leavesHost = to.host !== from.host && !to.host.endsWith(`.${from.host}`);
+  return downgradesProtocol || leavesHost;
+}
+
+// The same method rewrite and credential stripping follow-redirects applies, so a manual hop
+// sends what axios would have.
+function configAfterRedirect(
+  config: HttpRequestConfig,
+  status: number,
+  from: string,
+  to: string,
+): HttpRequestConfig {
+  let next = config;
+  if (next.method === 'POST' && [301, 302, 303].includes(status)) {
+    const { body: _body, method: _method, ...rest } = next;
+    next = { ...rest, headers: withoutHeaders(next.headers, (name) => name === 'content-type') };
+  }
+  if (leavesCredentialScope(new URL(from), new URL(to))) {
+    next = {
+      ...next,
+      headers: withoutHeaders(next.headers, (name) => CROSS_ORIGIN_STRIPPED_HEADERS.has(name)),
+    };
+  }
+  return next;
+}
+
+/**
+ * Follows redirects one hop at a time, so every hop is charged to the host that receives it,
+ * where axios's own follow would send the hop on the first host's budget from a synchronous hook
+ * that cannot wait for a slot.
+ */
+async function followRedirectsWithinBudget(
+  startUrl: string,
+  config: HttpRequestConfig,
+  deps: {
+    limiter: HostRateLimiter;
+    request: HttpRequestFn;
+    assertUrl: (url: string) => Promise<{ toString(): string }>;
+  },
+): Promise<HttpRequestResult> {
+  let current = startUrl;
+  let hopConfig: HttpRequestConfig = { ...config, maxRedirects: 0 };
+  for (let redirects = 0; ; redirects += 1) {
+    const target = current;
+    const sent = hopConfig;
+    const result = await deps.limiter.run(hostOf(target), () => deps.request(target, sent));
+    if (config.maxRedirects === 0 || !isRedirectStatus(result.status) || !result.location) {
+      return { ...result, finalUrl: result.finalUrl || current };
+    }
+    if (redirects >= config.maxRedirects) throw tooManyRedirectsError(config.maxRedirects);
+    current = (await deps.assertUrl(new URL(result.location, target).toString())).toString();
+    hopConfig = configAfterRedirect(hopConfig, result.status, target, current);
   }
 }
 
@@ -465,8 +577,6 @@ export interface FetchPublicHttpUrlOptions {
   assertUrl?: (url: string) => Promise<URL>;
   request?: PublicHttpHopRequest;
 }
-
-const isRedirectStatus = (status: number): boolean => status >= 300 && status < 400;
 
 const defaultPublicHttpHopRequest: PublicHttpHopRequest = async (url, config) => {
   const agents = ssrfSafeAgents();

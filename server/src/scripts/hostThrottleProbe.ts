@@ -6,11 +6,20 @@ import {
   fetchPageWithPolicy,
   type HttpRequestFn,
 } from '../scrapers/utils/httpFetch';
-import { HOST_THROTTLE_OVERRIDES } from '../scrapers/utils/hostConcurrencyLimiter';
+import {
+  HOST_THROTTLE_OVERRIDES,
+  resolveHostThrottle,
+} from '../scrapers/utils/hostConcurrencyLimiter';
+import {
+  isMachineHostSlotSharingEnabled,
+  machineHostBudgetFor,
+  MACHINE_HOST_SLOTS_ENV,
+} from '../scrapers/utils/machineHostBudget';
 import { readCodeSha } from '../scrapers/scrapeRunCodeIdentity';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { isDirectScriptInvocation } from './directScriptInvocation';
 import {
+  appliedProbeLoad,
   ProbeUrlSampler,
   chooseProbeHosts,
   classifyProbeRequest,
@@ -22,9 +31,11 @@ import {
   PROBE_URLS_PER_HOST,
   type HostProbeRequestRecord,
   type HostProbeSummary,
+  type ProbeLoad,
 } from './hostThrottleProbeCore';
 
 const PER_HOST_IN_FLIGHT = 2;
+const PROBE_MIN_INTERVAL_MS = 400;
 
 interface UrlSource {
   collection: string;
@@ -73,7 +84,8 @@ async function probeUrl(url: string, limiter?: HostRateLimiter): Promise<HostPro
   const observingRequest: HttpRequestFn = async (target, config) => {
     try {
       const result = await defaultAxiosRequest(target, config);
-      statuses.push(result.status);
+      const isRedirectHop = result.status >= 300 && result.status < 400 && !!result.location;
+      if (!isRedirectHop) statuses.push(result.status);
       return result;
     } catch (error) {
       statuses.push(null);
@@ -93,10 +105,32 @@ async function probeUrl(url: string, limiter?: HostRateLimiter): Promise<HostPro
   };
 }
 
-function raisedLoadLimiter(host: string, inFlight: number): HostRateLimiter {
+function requestedProbeLoad(host: string, inFlight?: number): ProbeLoad {
+  if (inFlight) {
+    return {
+      inFlight,
+      minIntervalMs: HOST_THROTTLE_OVERRIDES[host]?.minIntervalMs ?? PROBE_MIN_INTERVAL_MS,
+    };
+  }
+  const shared = resolveHostThrottle(host, {
+    concurrency: PER_HOST_IN_FLIGHT,
+    minIntervalMs: PROBE_MIN_INTERVAL_MS,
+  });
+  return { inFlight: shared.concurrency, minIntervalMs: shared.minIntervalMs };
+}
+
+function raisedLoadLimiter(host: string, load: ProbeLoad): HostRateLimiter {
+  const inFlight = load.inFlight;
+  const machineLimit = machineHostBudgetFor(host).concurrency;
+  if (isMachineHostSlotSharingEnabled() && inFlight > machineLimit) {
+    // The machine-wide budget would cap the probe below the load it reports having tested.
+    throw new Error(
+      `--in-flight=${inFlight} exceeds the machine-wide budget of ${machineLimit} for ${host}; run the probe inside a host turn with ${MACHINE_HOST_SLOTS_ENV}=off to measure above it`,
+    );
+  }
   return new HostRateLimiter({
     maxConcurrency: inFlight,
-    minIntervalMs: HOST_THROTTLE_OVERRIDES[host]?.minIntervalMs ?? 400,
+    minIntervalMs: load.minIntervalMs,
     applyHostOverrides: false,
   });
 }
@@ -109,7 +143,12 @@ async function probeHost(
 ): Promise<HostProbeSummary> {
   const started = Date.now();
   const records: HostProbeRequestRecord[] = [];
-  const limiter = inFlight ? raisedLoadLimiter(host, inFlight) : undefined;
+  const requested = requestedProbeLoad(host, inFlight);
+  const limiter = inFlight ? raisedLoadLimiter(host, requested) : undefined;
+  const load = appliedProbeLoad(
+    requested,
+    isMachineHostSlotSharingEnabled() ? machineHostBudgetFor(host) : undefined,
+  );
   const workers = inFlight ?? PER_HOST_IN_FLIGHT;
   let next = 0;
   const worker = async () => {
@@ -123,11 +162,12 @@ async function probeHost(
   const summary = summarizeHostProbe({
     host,
     urlsInDevelopment,
+    load,
     records,
     wallTimeMs: Date.now() - started,
   });
   console.log(
-    `[host-probe] ${host}: ${summary.requests} requests, ${summary.firstAttemptRefused} refused on first attempt, ${summary.exhausted} still refused after retries`,
+    `[host-probe] ${host}: ${summary.inFlight} in flight ${summary.minIntervalMs} ms apart, ${summary.requests} requests, ${summary.firstAttemptRefused} refused on first attempt, ${summary.exhausted} still refused after retries`,
   );
   return summary;
 }
@@ -152,7 +192,7 @@ export async function runHostThrottleProbe(argv: string[]): Promise<number> {
   const { host: onlyHost, inFlight } = parsed.options;
   const hosts = onlyHost ? [onlyHost] : chooseProbeHosts(sampler.hostCounts());
   console.log(
-    `[host-probe] probing ${hosts.length} hosts, up to ${PROBE_URLS_PER_HOST} pages each at ${inFlight ?? PER_HOST_IN_FLIGHT} in flight, read-only`,
+    `[host-probe] probing ${hosts.length} hosts, up to ${PROBE_URLS_PER_HOST} pages each at up to ${inFlight ?? PER_HOST_IN_FLIGHT} in flight, read-only`,
   );
   const summaries = await Promise.all(
     hosts.map((host) =>
@@ -166,7 +206,7 @@ export async function runHostThrottleProbe(argv: string[]): Promise<number> {
       startedAt: startedAt.toISOString(),
       wallTimeMs,
       codeSha: readCodeSha() ?? null,
-      inFlight: inFlight ?? PER_HOST_IN_FLIGHT,
+      requestedInFlight: inFlight ?? PER_HOST_IN_FLIGHT,
       hosts: summaries,
     }),
   );
