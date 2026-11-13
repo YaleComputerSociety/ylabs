@@ -23,10 +23,11 @@ import { applyResearchEntityDedupeMergeGroup } from '../dedupeResearchEntitiesBy
 
 const SURVIVOR_SLUG = 'fixture-survivor-lab';
 const TWIN_SLUG = 'fixture-twin-center';
+const TWIN_NAME = 'Fixture Twin Lab';
 const SURVIVOR_PAGE = 'https://fixture-survivor.example.edu/';
 const TWIN_PAGE = 'https://fixture-twin.example.edu/';
 
-describe('a PI-dedupe merge keeps merged-in identity readings off the survivor (#6183)', () => {
+describe('a PI-dedupe merge makes re-pointed identity readings the survivor own (#6183)', () => {
   let replSet: MongoMemoryReplSet;
   let survivorId: mongoose.Types.ObjectId;
   let twinId: mongoose.Types.ObjectId;
@@ -79,6 +80,7 @@ describe('a PI-dedupe merge keeps merged-in identity readings off the survivor (
     for (const [slug, name] of [
       ['school-of-medicine', 'School of Medicine'],
       ['school-of-public-health', 'School of Public Health'],
+      ['school-of-nursing', 'School of Nursing'],
     ] as const) {
       await OrgUnit.create({ slug, name, kind: 'SCHOOL', status: 'ACTIVE' });
     }
@@ -103,7 +105,7 @@ describe('a PI-dedupe merge keeps merged-in identity readings off the survivor (
       {
         _id: twinId,
         slug: TWIN_SLUG,
-        name: 'Fixture Twin Lab',
+        name: TWIN_NAME,
         kind: 'center',
         entityType: 'CENTER',
         school: 'School of Medicine',
@@ -136,7 +138,7 @@ describe('a PI-dedupe merge keeps merged-in identity readings off the survivor (
       0.7,
     );
 
-    await observe(twinId, TWIN_SLUG, 'name', 'Fixture Twin Lab', TWIN_PAGE, 0.95);
+    await observe(twinId, TWIN_SLUG, 'name', TWIN_NAME, TWIN_PAGE, 0.95);
     await observe(twinId, TWIN_SLUG, 'school', 'School of Medicine', TWIN_PAGE, 0.95);
     await observe(twinId, TWIN_SLUG, 'entityType', 'CENTER', TWIN_PAGE, 0.95);
     await observe(twinId, TWIN_SLUG, 'kind', 'center', TWIN_PAGE, 0.95);
@@ -175,19 +177,26 @@ describe('a PI-dedupe merge keeps merged-in identity readings off the survivor (
   });
 
   it.each([
-    ['school', 'School of Public Health'],
-    ['entityType', 'LAB'],
-    ['kind', 'lab'],
-    ['inferredPiUserKey', 'netid:fixture-001'],
-  ])('resolves the survivor %s from its own readings only', async (field, own) => {
+    ['school', 'School of Medicine'],
+    ['entityType', 'CENTER'],
+    ['kind', 'center'],
+    ['inferredPiUserKey', 'netid:fixture-002'],
+  ])('resolves the survivor %s from the re-pointed merged-in reading', async (field, twin) => {
     const planned = await plan();
     const survivor = await stored();
-    expect(field in planned ? planned[field] : survivor?.[field]).toBe(own);
+    expect(field in planned ? planned[field] : survivor?.[field]).toBe(twin);
+  });
+
+  it('keeps a twin reading still keyed to the twin id off the survivor', async () => {
+    await observe(twinId, TWIN_SLUG, 'school', 'School of Nursing', TWIN_PAGE, 0.99);
+    const planned = await plan();
+    const survivor = await stored();
+    expect('school' in planned ? planned.school : survivor?.school).not.toBe('School of Nursing');
   });
 
   it('still lets the re-pointed name and website readings compete as the survivor own, as today', async () => {
     const planned = await plan();
-    expect(planned.name).toBe('Fixture Twin Lab');
+    expect(planned.name).toBe(TWIN_NAME);
     expect(planned.websiteUrl).toBe(TWIN_PAGE);
   });
 });
