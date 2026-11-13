@@ -655,6 +655,7 @@ import {
 import { reconcileFieldRetractionsFromRun, type FieldRetractionOutcome } from './fieldRetraction';
 import {
   entryIsRefused,
+  liveFieldValueRefusals,
   refusedResolverObservations,
   valueIsRefused,
 } from '../utils/researchEntityFieldValueRefusals';
@@ -11602,6 +11603,17 @@ function enforceResearchEntityNameAuthority(input: {
     authority: input.nameIdentityAuthority,
     siteStatedLab,
   });
+  fieldsWritten += composeFacultyResearchIdentityForAFullyRefusedPersonRow({
+    set,
+    unset,
+    confidenceByField,
+    entityDoc,
+    manuallyLockedFields: input.manuallyLockedFields,
+    manualValues: input.manualValues,
+    materializationObs: input.materializationObs,
+    authority: input.nameIdentityAuthority,
+    personRow,
+  });
   fieldsWritten += rederiveFacultyResearchNameFromItsLead({
     set,
     unset,
@@ -11990,6 +12002,64 @@ function reclassifyUnstatedOrganizationTypeOnFacultyResearchName(input: {
   set.entityType = 'FACULTY_RESEARCH_AREA';
   set.kind = mapEntityTypeToResearchGroupKind('FACULTY_RESEARCH_AREA');
   for (const field of ['entityType', 'kind']) {
+    delete set[`fieldProvenance.${field}`];
+    delete confidenceByField[field];
+    if (entityDoc?.fieldProvenance?.[field]) unset[`fieldProvenance.${field}`] = '';
+  }
+  return 1;
+}
+
+// A wrong_owner refusal of a colleague's grafted lab name and type leaves a person's own row
+// with no admissible name or type evidence, and the sole lead is the one identity that needs
+// none (#5979 C3).
+function composeFacultyResearchIdentityForAFullyRefusedPersonRow(input: {
+  set: Record<string, unknown>;
+  unset: Record<string, ''>;
+  confidenceByField: Record<string, number>;
+  entityDoc: any;
+  manuallyLockedFields: string[];
+  manualValues: Record<string, unknown>;
+  materializationObs: MaterializerObservationLike[];
+  authority: ResearchEntityNameIdentityAuthority;
+  personRow: boolean;
+}): number {
+  const { set, unset, confidenceByField, entityDoc, authority } = input;
+  const nameFields: readonly string[] = RESEARCH_ENTITY_IDENTITY_NAME_FIELDS;
+  const identityFields = ['entityType', 'kind', ...nameFields];
+  if (!input.personRow) return 0;
+  if (!textValue(authority.leadPersonName) || !textValue(authority.leadPersonId)) return 0;
+  if (identityFields.some((field) => input.manuallyLockedFields.includes(field))) return 0;
+  if (nameFields.some((field) => textValue(input.manualValues?.[field]))) return 0;
+  const refusals = entityDoc?.fieldValueRefusals;
+  if (!nameFields.some((field) => liveFieldValueRefusals(refusals, field).length > 0)) return 0;
+  const projected = documentAsProjected(set, unset, entityDoc);
+  const absentOrRefused = (field: string) =>
+    !textValue(projected[field]) || valueIsRefused(refusals, field, projected[field]);
+  if (!nameFields.every(absentOrRefused) || !absentOrRefused('entityType')) return 0;
+  const anyNameValueSurvives = input.materializationObs.some(
+    (observation) =>
+      nameFields.includes(String(observation.field)) &&
+      textValue(observation.value) &&
+      !valueIsRefused(refusals, String(observation.field), observation.value),
+  );
+  if (anyNameValueSurvives) return 0;
+  const facultyResearchIdentity = {
+    entityType: 'FACULTY_RESEARCH_AREA',
+    kind: mapEntityTypeToResearchGroupKind('FACULTY_RESEARCH_AREA'),
+  };
+  const leadsName = personScopedResearchEntityNameFromLeadPersonName({
+    ...facultyResearchIdentity,
+    slug: projected.slug,
+    leadPersonName: authority.leadPersonName,
+  });
+  if (!leadsName || valueIsRefused(refusals, 'name', leadsName)) return 0;
+
+  set.entityType = facultyResearchIdentity.entityType;
+  set.kind = facultyResearchIdentity.kind;
+  set.name = leadsName;
+  delete set.displayName;
+  if (textValue(entityDoc?.displayName)) unset.displayName = '';
+  for (const field of identityFields) {
     delete set[`fieldProvenance.${field}`];
     delete confidenceByField[field];
     if (entityDoc?.fieldProvenance?.[field]) unset[`fieldProvenance.${field}`] = '';
