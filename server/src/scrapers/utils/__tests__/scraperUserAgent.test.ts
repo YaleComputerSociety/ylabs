@@ -38,8 +38,10 @@ beforeEach(() => {
 });
 
 describe('SCRAPER_USER_AGENT', () => {
-  it('names the scraper and its information page only, and claims no browser or Yale domain', () => {
-    expect(SCRAPER_USER_AGENT).toBe('ylabs-scraper/1.0 (+https://yalelabs.io)');
+  it('names the scraper, its information page and the owner-chosen role contact, and claims no browser or Yale domain', () => {
+    expect(SCRAPER_USER_AGENT).toBe(
+      'ylabs-scraper/1.0 (+https://yalelabs.io; ycs.maintenance.ylabs@gmail.com)',
+    );
     expect(SCRAPER_USER_AGENT).not.toMatch(/Mozilla|Chrome|Safari|yale\.edu/i);
   });
 

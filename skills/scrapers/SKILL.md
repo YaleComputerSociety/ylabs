@@ -652,7 +652,7 @@ The known-dead URL skip (#6210) is not on `beta` yet; when it lands, the raw-axi
 
 #### One User-Agent (#6211)
 
-Every fetch path sends exactly `SCRAPER_USER_AGENT` from `utils/scraperUserAgent.ts`, which today is `ylabs-scraper/1.0 (+https://yalelabs.io)`.
+Every fetch path sends exactly `SCRAPER_USER_AGENT` from `utils/scraperUserAgent.ts`, which today is `ylabs-scraper/1.0 (+https://yalelabs.io; ycs.maintenance.ylabs@gmail.com)`, the owner's project role address.
 `SCRAPER_UA_INFO_URL` names the information page, and `SCRAPER_UA_CONTACT` is unset until the owner supplies a project or role address, never a person's.
 Setting it is a one-line change that appends `; <contact>` after the information page.
 `recheckDescriptionGrounding` reports `refused403` with a per-host breakdown in its report and console summary, so a firewall that refuses the honest User-Agent is counted rather than spoofed past.

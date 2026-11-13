@@ -1,6 +1,6 @@
 export const SCRAPER_UA_INFO_URL = 'https://yalelabs.io';
-// Only ever a project or role address, never a person's (#6211); unset until the owner names one.
-export const SCRAPER_UA_CONTACT: string | undefined = undefined;
+// Only ever a project or role address, never a person's (#6211); the owner chose this one on 2026-11-13.
+export const SCRAPER_UA_CONTACT: string | undefined = 'ycs.maintenance.ylabs@gmail.com';
 
 export function scraperUserAgentFor(contact: string | undefined): string {
   return `ylabs-scraper/1.0 (+${SCRAPER_UA_INFO_URL}${contact ? `; ${contact}` : ''})`;
