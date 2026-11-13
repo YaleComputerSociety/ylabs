@@ -48,7 +48,7 @@ import {
   applyStudentVisibilityGatePlans,
   planStudentVisibilityGate,
 } from '../services/studentVisibilityGateService';
-import { fetchPublicHttpUrl } from '../scrapers/utils/httpFetch';
+import { HttpStatusError, fetchPageWithPolicy } from '../scrapers/utils/httpFetch';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { planFieldValueRefusal } from '../utils/researchEntityFieldValueRefusals';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
@@ -86,19 +86,19 @@ const firstMatch = (html: string, pattern: RegExp): string => {
 
 async function readPageOverHttp(url: string): Promise<PageRead> {
   try {
-    const response = await fetchPublicHttpUrl(url, {
+    const page = await fetchPageWithPolicy(url, {
       timeoutMs: READ_TIMEOUT_MS,
       headers: { 'User-Agent': BROWSER_USER_AGENT, Accept: 'text/html' },
     });
-    const html = response.body;
+    const html = page.html;
     return {
-      status: String(response.status),
+      status: String(page.status),
       bytes: html.length,
       title: firstMatch(html, /<title[^>]*>([\s\S]*?)<\/title>/i),
       heading: firstMatch(html, /<h1[^>]*>([\s\S]*?)<\/h1>/i),
     };
-  } catch (err: any) {
-    const status = err?.response?.status ? String(err.response.status) : 'unreachable';
+  } catch (err: unknown) {
+    const status = err instanceof HttpStatusError ? String(err.status) : 'unreachable';
     return { status, bytes: 0, title: '', heading: '' };
   }
 }
@@ -110,6 +110,7 @@ export interface DeclaredPageTypeRetypeOptions {
   onlySlugs: ReadonlySet<string> | null;
   readPage?: (url: string) => Promise<PageRead>;
   pause?: (ms: number) => Promise<void>;
+  materialize?: (slug: string) => Promise<unknown>;
   log?: (line: string) => void;
 }
 
@@ -118,6 +119,11 @@ export async function runDeclaredPageTypeRetype(options: DeclaredPageTypeRetypeO
   const readPage = options.readPage ?? readPageOverHttp;
   const pause = options.pause ?? sleep;
   const log = options.log ?? ((line: string) => console.log(line));
+  const materialize =
+    options.materialize ??
+    ((slug: string) =>
+      materializeEntity('researchEntity', { entityKey: slug }, RETYPE_MATERIALIZE_SCOPE));
+  const rowsStillAssertingALab: string[] = [];
   const candidates = (await ResearchEntity.find({
     ...LIVE_ENTITY_FILTER,
     entityType: 'LAB',
@@ -214,8 +220,8 @@ export async function runDeclaredPageTypeRetype(options: DeclaredPageTypeRetypeO
 
       // Twice, with no lock anywhere: a refusal that only holds for one pass is the
       // frozen-field defect wearing a different name.
-      await materializeEntity('researchEntity', { entityKey: plan.slug }, RETYPE_MATERIALIZE_SCOPE);
-      await materializeEntity('researchEntity', { entityKey: plan.slug }, RETYPE_MATERIALIZE_SCOPE);
+      await materialize(plan.slug);
+      await materialize(plan.slug);
       rematerializedTwice += 1;
 
       const after = (await ResearchEntity.findOne({ slug: plan.slug })
@@ -226,9 +232,7 @@ export async function runDeclaredPageTypeRetype(options: DeclaredPageTypeRetypeO
         String(after?.kind ?? '').toLowerCase() === 'lab'
       ) {
         stillAssertingALabAfterTwoPasses += 1;
-        log(
-          `[declared-page-type] ${sanitizeLogValue(plan.slug)} still asserts a lab after two passes`,
-        );
+        rowsStillAssertingALab.push(plan.slug);
       }
     }
 
@@ -248,22 +252,25 @@ export async function runDeclaredPageTypeRetype(options: DeclaredPageTypeRetypeO
   }
 
   return {
-    mode: apply ? 'apply' : 'dry-run',
-    scopedToSlugs: options.onlySlugs ? options.onlySlugs.size : null,
-    servedLabRowsScanned: candidates.length,
-    contradictingTheirOwnHeading: contradicting.length,
-    pagesRead: rows.filter((row) => row.pageStatus === '200' && row.pageBytes >= 500).length,
-    planned: outcome.plans.length,
-    plannedByDeclaredType: plannedByType,
-    plannedRefusals: outcome.plans.map((plan) => ({
-      declaredType: plan.declaredType,
-      refusals: plan.refusals,
-    })),
-    refusedByReason,
-    refusalsRecorded,
-    typesSet,
-    rematerializedTwice,
-    stillAssertingALabAfterTwoPasses,
+    summary: {
+      mode: apply ? 'apply' : 'dry-run',
+      scopedToSlugs: options.onlySlugs ? options.onlySlugs.size : null,
+      servedLabRowsScanned: candidates.length,
+      contradictingTheirOwnHeading: contradicting.length,
+      pagesRead: rows.filter((row) => row.pageStatus === '200' && row.pageBytes >= 500).length,
+      planned: outcome.plans.length,
+      plannedByDeclaredType: plannedByType,
+      plannedRefusals: outcome.plans.map((plan) => ({
+        declaredType: plan.declaredType,
+        refusals: plan.refusals,
+      })),
+      refusedByReason,
+      refusalsRecorded,
+      typesSet,
+      rematerializedTwice,
+      stillAssertingALabAfterTwoPasses,
+    },
+    rowsStillAssertingALab,
   };
 }
 
@@ -292,7 +299,17 @@ async function main(): Promise<void> {
 
   await initializeConnections();
   try {
-    const summary = await runDeclaredPageTypeRetype({ apply, onlySlugs });
+    const { summary, rowsStillAssertingALab } = await runDeclaredPageTypeRetype({
+      apply,
+      onlySlugs,
+    });
+    if (args.outputFile) {
+      await fs.writeFile(
+        args.outputFile,
+        `${JSON.stringify({ ...summary, rowsStillAssertingALab }, null, 2)}\n`,
+        { mode: 0o600 },
+      );
+    }
     console.log(
       JSON.stringify({ script: SCRIPT_NAME, db: mongoose.connection.name, ...summary }, null, 2),
     );

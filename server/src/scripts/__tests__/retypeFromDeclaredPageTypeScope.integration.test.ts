@@ -16,6 +16,14 @@ vi.mock('../../services/researchEntityBrowseRankService', async () => {
   return { ...actual, recomputeBrowseRankForEntities: vi.fn().mockResolvedValue(undefined) };
 });
 
+const fetchPageWithPolicy = vi.hoisted(() => vi.fn());
+vi.mock('../../scrapers/utils/httpFetch', async () => {
+  const actual = await vi.importActual<typeof import('../../scrapers/utils/httpFetch')>(
+    '../../scrapers/utils/httpFetch',
+  );
+  return { ...actual, fetchPageWithPolicy };
+});
+
 import { ResearchEntity } from '../../models/researchEntity';
 import { runDeclaredPageTypeRetype, type PageRead } from '../retypeFromDeclaredPageType';
 import { parseDeclaredPageTypeRetypeArgs } from '../retypeFromDeclaredPageTypeCore';
@@ -61,7 +69,7 @@ describe('research-entity:retype-from-declared-page-type scope and dry run', () 
   it('reads only the rows named by --only-slugs', async () => {
     const readPage = vi.fn(async (_url: string) => centerPage);
 
-    const summary = await runDeclaredPageTypeRetype({
+    const { summary } = await runDeclaredPageTypeRetype({
       apply: false,
       onlySlugs: new Set(['synthetic-programme-one']),
       readPage,
@@ -77,7 +85,7 @@ describe('research-entity:retype-from-declared-page-type scope and dry run', () 
   });
 
   it('writes nothing on a dry run, though it plans the retype', async () => {
-    const summary = await runDeclaredPageTypeRetype({
+    const { summary } = await runDeclaredPageTypeRetype({
       apply: false,
       onlySlugs: new Set(['synthetic-programme-one']),
       readPage: async () => centerPage,
@@ -93,7 +101,7 @@ describe('research-entity:retype-from-declared-page-type scope and dry run', () 
   });
 
   it('retypes only the named row on an apply, through a type-scoped materialize', async () => {
-    const summary = await runDeclaredPageTypeRetype({
+    const { summary } = await runDeclaredPageTypeRetype({
       apply: true,
       onlySlugs: new Set(['synthetic-programme-one']),
       readPage: async () => centerPage,
@@ -106,6 +114,73 @@ describe('research-entity:retype-from-declared-page-type scope and dry run', () 
     expect(named.entityType).toBe('CENTER');
     expect(other.entityType).toBe('LAB');
     expect(other.fieldValueRefusals ?? {}).toEqual({});
+  });
+});
+
+describe('research-entity:retype-from-declared-page-type fetch path and output', () => {
+  let replSet: MongoMemoryReplSet;
+
+  beforeAll(async () => {
+    replSet = await MongoMemoryReplSet.create({ replSet: { count: 1 } });
+    await mongoose.connect(replSet.getUri());
+  });
+
+  afterAll(async () => {
+    await mongoose.disconnect();
+    await replSet?.stop();
+  });
+
+  beforeEach(async () => {
+    fetchPageWithPolicy.mockReset();
+    await mongoose.connection.db?.collection('research_entities').deleteMany({});
+    await ResearchEntity.create({
+      slug: 'synthetic-programme-one',
+      name: 'Fixture Membrane Dynamics',
+      entityType: 'LAB',
+      kind: 'lab',
+      websiteUrl: 'https://synthetic-programme-one.example.edu/',
+      studentVisibilityTier: 'student_ready',
+      archived: false,
+    });
+  });
+
+  it('reads pages through the shared fetch path, so a host pause applies', async () => {
+    fetchPageWithPolicy.mockResolvedValue({
+      url: 'https://synthetic-programme-one.example.edu/',
+      status: 200,
+      html: `<html><head><title>${centerPage.title}</title></head><body><h1>${centerPage.heading}</h1>${'x'.repeat(600)}</body></html>`,
+    });
+
+    const { summary } = await runDeclaredPageTypeRetype({
+      apply: false,
+      onlySlugs: new Set(['synthetic-programme-one']),
+      pause: async () => undefined,
+      log: () => undefined,
+    });
+
+    expect(fetchPageWithPolicy).toHaveBeenCalledWith(
+      'https://synthetic-programme-one.example.edu/',
+      expect.any(Object),
+    );
+    expect(summary.planned).toBe(1);
+  });
+
+  it('reports a row that still asserts a lab as a count, keeping its slug off the log', async () => {
+    const lines: string[] = [];
+    const { summary, rowsStillAssertingALab } = await runDeclaredPageTypeRetype({
+      apply: true,
+      onlySlugs: new Set(['synthetic-programme-one']),
+      readPage: async () => centerPage,
+      pause: async () => undefined,
+      log: (line) => lines.push(line),
+      materialize: async (slug) =>
+        ResearchEntity.updateOne({ slug }, { $set: { entityType: 'LAB', kind: 'lab' } }),
+    });
+
+    expect(summary.stillAssertingALabAfterTwoPasses).toBe(1);
+    expect(rowsStillAssertingALab).toEqual(['synthetic-programme-one']);
+    expect(lines.join('\n')).not.toContain('synthetic-programme-one');
+    expect(JSON.stringify(summary)).not.toContain('synthetic-programme-one');
   });
 });
 
