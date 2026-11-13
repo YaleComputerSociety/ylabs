@@ -29,7 +29,12 @@ import {
   assessResearchEntityDescriptionQuality,
   deriveShortDescriptionFromFullDescription,
 } from '../utils/researchEntityDescriptionQuality';
-import { buildResearchEntityQualitySummary } from './researchEntityQuality';
+import {
+  buildResearchEntityQualitySummary,
+  researchEntityLeadStateForMembers,
+} from './researchEntityQuality';
+import { studentVisibilityGateLeadRows } from './studentVisibilityGateService';
+import { LEAD_ROLE_CANONICAL_VALUES } from '../models/canonicalRoleMapping';
 import { recordAdminAuditEvent, type RecordAdminAuditEventInput } from './adminAuditService';
 import {
   STUDENT_VISIBILITY_OVERRIDE_AUDIT_ACTIONS,
@@ -175,6 +180,10 @@ interface RepairDeps {
     metadata: { sourceUrl: string; sourceName: string; confidence: number },
   ) => Promise<void>;
   isRemovedByRequest?: (userId: string) => Promise<boolean>;
+  findLeadCandidateEntry?: (
+    researchEntityId: string,
+    userId: string,
+  ) => Promise<{ holdsLiveLeadEdge: boolean; entry: Record<string, unknown> } | null>;
   findProtectedLeadEdge?: (
     researchEntityId: string,
     userId: string,
@@ -1268,6 +1277,25 @@ async function attemptResearchRepair(
         repairSource: sourceUrl,
       };
     }
+    const candidate = await deps.findLeadCandidateEntry?.(plan.recordId, userId);
+    const candidateBlocker = !candidate
+      ? ''
+      : candidate.holdsLiveLeadEdge
+        ? 'lead_candidate_already_leads'
+        : researchEntityLeadStateForMembers(studentVisibilityGateLeadRows([candidate.entry])) !==
+            'lead_attached'
+          ? 'lead_candidate_cannot_own_research_home'
+          : '';
+    if (candidateBlocker) {
+      return {
+        plan,
+        applied: false,
+        status: 'blocked',
+        patchSummary: [],
+        remainingBlockers: uniqueStrings([...plan.blockerReasons, candidateBlocker]),
+        repairSource: sourceUrl,
+      };
+    }
     const protectedEdge = await deps.findProtectedLeadEdge?.(plan.recordId, userId);
     if (protectedEdge) {
       return {
@@ -1647,6 +1675,42 @@ export const defaultRepairDeps: RepairDeps = {
     const removed = await researcherIsRemovedByRequest(guard, toVisibilityRepairObjectId(userId));
     if (removed) guard.recordRefusal();
     return removed;
+  },
+  async findLeadCandidateEntry(researchEntityId, userId) {
+    const entityObjectId = toVisibilityRepairObjectId(researchEntityId);
+    const personObjectId = toVisibilityRepairObjectId(userId);
+    if (!entityObjectId || !personObjectId) return null;
+    const person = (await Researcher.findById(personObjectId)
+      .select('_id displayName identifiers.netid profile.title')
+      .lean()) as {
+      _id: unknown;
+      displayName?: string;
+      identifiers?: { netid?: string };
+      profile?: { title?: string };
+    } | null;
+    if (!person) return null;
+    const holdsLiveLeadEdge = Boolean(
+      await RoleAssignment.exists({
+        personId: personObjectId,
+        'target.kind': 'RESEARCH_ENTITY',
+        'target.id': entityObjectId,
+        role: { $in: LEAD_ROLE_CANONICAL_VALUES },
+        state: { $ne: 'HISTORICAL' },
+        archived: { $ne: true },
+      }),
+    );
+    return {
+      holdsLiveLeadEdge,
+      entry: {
+        researchEntityId: entityObjectId,
+        role: 'pi',
+        state: 'UNKNOWN',
+        personId: person._id,
+        name: person.displayName,
+        ...(person.identifiers?.netid ? { netid: person.identifiers.netid } : {}),
+        ...(person.profile?.title ? { title: person.profile.title } : {}),
+      },
+    };
   },
   async findProtectedLeadEdge(researchEntityId, userId) {
     const entityObjectId = toVisibilityRepairObjectId(researchEntityId);
