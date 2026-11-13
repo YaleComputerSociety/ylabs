@@ -1400,6 +1400,7 @@ Pick the weakest flag the page actually earns, because a researcher stores exact
 |---------|------|---------------------------|---------------------|-----------------------|
 | The department's own faculty roster | none | yes | yes | yes |
 | A degree-granting interdisciplinary programme whose faculty are appointed elsewhere (Cognitive Science, Medieval Studies, Archaeological Studies, Early Modern Studies, Humanities) | `crossListedProgramme: true` | no | yes | no |
+| A center or program roster whose people belong to it but whose name is not a catalog department (Stem Cell Center, West Campus Institutes, the Physician Associate Program) | `withholdsHomeDepartment: true` | no | yes | yes |
 | An institute or center affiliates list (YIBS faculty affiliates, the MacMillan area-studies councils) | `affiliatesOnly: true` | no | no | yes |
 | A school's own whole-faculty directory, where `deptName` names the school (Public Health, Divinity, Law, Nursing, Art, Music, Architecture) | `schoolWideDirectory: true` | no | no | yes |
 
@@ -1407,6 +1408,9 @@ Pick the weakest flag the page actually earns, because a researcher stores exact
 The cost of getting this wrong is not a thin value but a lost one (#2838).
 `primaryDepartment` is not latest-wins, so the school-name row competes with the department roster's own row for the same person: 475 researchers stored a school as their home department, and it also defeated the #2802 lead-PI inheritance, which needs a canonical department and cannot resolve a school, so every entity those people led stayed out of the department facet.
 `observations:retire-school-as-department` is the repair, and it fails closed on ambiguity: it refuses any value the catalog also knows as a department, which is why the School of Music lane's "Music" survives (Yale's FAS Department of Music is real) and why Art and Architecture survive until their school-named `org_units` rows are retired.
+
+`withholdsHomeDepartment` is the narrowest flag: it withholds only the person's `primaryDepartment`, so membership, the `departments` label, the roster-health snapshot, withdrawn keys and roster-bio minting read the lane exactly as an unflagged one (#6071).
+A guard test holds every config `CONFIGS_EXPECTED_ABSENT_FROM_CATALOG` lists to a flag that withholds the home department, unless its `deptName` is itself a catalog department, and `scrapers/rosterHomeDepartmentScreen.ts` keeps the resolver from reading the readings those lanes stored before the flag.
 
 `crossListedProgramme` exists because adding five programme lanes without it overwrote the home department of 110 researchers, replacing Psychology, Linguistics, Philosophy and Computer Science with the programme name.
 That is #1427 in a milder form: the programme label itself is true and is what a student filters on, but the appointment claim behind `primaryDepartment` is not.
