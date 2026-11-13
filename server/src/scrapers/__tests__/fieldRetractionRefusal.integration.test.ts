@@ -50,14 +50,14 @@ const deadProbe = async () => ({ positivelyDead: true });
 async function appendRun(
   observations: ObservationInput[],
   observedAt: Date,
-  options: { useCache?: boolean } = {},
+  options: { useCache?: boolean; recordsCacheUse?: boolean } = {},
 ): Promise<string> {
   const run = await ScrapeRun.create({
     sourceId: SOURCE_ID,
     sourceName: SOURCE_NAME,
     status: 'success',
     startedAt: observedAt,
-    options: { useCache: options.useCache ?? false },
+    options: options.recordsCacheUse === false ? {} : { useCache: options.useCache ?? false },
   });
   await appendObservations(
     observations.map((observation) => ({ ...observation, observedAt })),
@@ -394,6 +394,16 @@ describe('a newer-version refusal retires the stale assertion end to end (#5803)
           new Date(iso),
         );
       }
+      expect(await plannedRetractions()).toEqual([]);
+    });
+
+    it('does not honour a named page in a run that recorded no cache setting', async () => {
+      await appendRun(refusalFiledUnderProfile(true), new Date('2026-11-10T00:00:00Z'), {
+        recordsCacheUse: false,
+      });
+      await appendRun(refusalFiledUnderProfile(true), new Date('2026-11-12T00:00:00Z'), {
+        recordsCacheUse: false,
+      });
       expect(await plannedRetractions()).toEqual([]);
     });
 
