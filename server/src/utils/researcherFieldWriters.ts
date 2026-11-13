@@ -19,10 +19,11 @@
  * backs, whatever the join. The Yale directory's department is its HR unit, which a person's own
  * official page contradicted in 6 of 10 hand-checked disagreements (#5741). Its name is first and
  * last name only, which a blind grader judged worse than the stored profile or roster name in 15
- * of 20 planned changes, so a directory name is fill-only too (#6035). Every writer field from
- * a key joined on the name alone is fill-only as well: the name is its only identity witness, and
- * blind re-measures found every wrong-person and unsure rename, and a wrong website and an unsure
- * image, on such a join (#6035).
+ * of 20 planned changes, so a directory name is fill-only too (#6035). A name, image or website
+ * from a key joined on the name alone is fill-only as well: the name is its only identity witness,
+ * and blind re-measures found every wrong-person and unsure rename, and a wrong website and an
+ * unsure image, on such a join (#6035). `primaryDepartment` is left out, because the roster
+ * departments that outrank a directory department mostly arrive on name-joined keys.
  */
 export const RESEARCHER_WRITER_FIELDS = [
   'displayName',
