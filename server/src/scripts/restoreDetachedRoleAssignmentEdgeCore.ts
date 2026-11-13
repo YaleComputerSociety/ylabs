@@ -17,7 +17,8 @@ export type DetachedRoleEdgeRestoreRefusal =
   | 'unfold-audit-not-found'
   | 'unfold-audit-names-another-shell'
   | 'edge-not-fold-archived-by-that-unfold'
-  | 'unfold-no-longer-stands';
+  | 'unfold-no-longer-stands'
+  | 'operator-end-decided-by-owner';
 
 export interface UnfoldAuditTie {
   auditFound: boolean;
@@ -35,6 +36,7 @@ export interface DetachedRoleEdgeReviewRecord {
   reviewedByAgent?: unknown;
   personId?: unknown;
   target?: { kind?: unknown; id?: unknown } | null;
+  operatorEnd?: { endedAt?: unknown; decidedBy?: unknown } | null;
 }
 
 export interface DetachedRoleEdgeRestoreInputs {
@@ -96,6 +98,34 @@ function unfoldTieRefusal(
   return null;
 }
 
+export const isOperatorEnded = (edge: DetachedRoleEdgeReviewRecord): boolean =>
+  Boolean(edge.operatorEnd && edge.operatorEnd.endedAt);
+
+/**
+ * An operator end is undone under the same rules as a detachment, except that the record
+ * names its own decider: an end the owner decided is the owner's to reverse.
+ */
+function planOperatorEndUndo(
+  input: DetachedRoleEdgeRestoreInputs,
+  edge: DetachedRoleEdgeReviewRecord,
+): DetachedRoleEdgeRestorePlan {
+  const decider: DetachmentDecider =
+    edge.operatorEnd?.decidedBy === 'agent' ? 'stage-or-agent' : 'owner';
+  const refuse = (refusal: DetachedRoleEdgeRestoreRefusal) => ({ decider, refusal });
+  if (input.expectedPersonId && idText(edge.personId) !== idText(input.expectedPersonId)) {
+    return refuse('person-does-not-match-expected');
+  }
+  if (input.expectedTargetId && idText(edge.target?.id) !== idText(input.expectedTargetId)) {
+    return refuse('target-does-not-match-expected');
+  }
+  if (!input.person) return refuse('person-does-not-resolve');
+  if (input.person.archived === true) return refuse('person-is-archived');
+  if (!input.targetResolves) return refuse('target-does-not-resolve');
+  if (decider === 'owner') return refuse('operator-end-decided-by-owner');
+  if (input.liveTwinEdgeExists) return refuse('live-twin-edge-exists');
+  return { decider, refusal: null };
+}
+
 export function planDetachedRoleEdgeRestore(
   input: DetachedRoleEdgeRestoreInputs,
 ): DetachedRoleEdgeRestorePlan {
@@ -105,6 +135,7 @@ export function planDetachedRoleEdgeRestore(
     const tieRefusal = unfoldTieRefusal(edge, input.edgeId ?? '', input.unfoldTie);
     if (tieRefusal) return { refusal: tieRefusal };
   }
+  if (!input.unfoldTie && isOperatorEnded(edge)) return planOperatorEndUndo(input, edge);
   const decider = input.unfoldTie ? 'stage-or-agent' : classifyDetachmentDecider(edge);
   const refuse = (refusal: DetachedRoleEdgeRestoreRefusal) => ({ decider, refusal });
   if (!input.unfoldTie && !isArchivedAsDisputed(edge)) {

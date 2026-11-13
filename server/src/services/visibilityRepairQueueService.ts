@@ -7,6 +7,7 @@ import {
 import { Fellowship } from '../models/fellowship';
 import { ResearchEntity } from '../models/researchEntity';
 import {
+  operatorEndedEdgeBlocksWrite,
   pinRoleAssignmentUpsertToLiveEdge,
   RoleAssignment,
   roleAssignmentReattachWrite,
@@ -1641,6 +1642,7 @@ const defaultRepairDeps: RepairDeps = {
       entityObjectId,
       metadata,
     );
+    if (await operatorEndedEdgeBlocksWrite(filter)) return;
     const liveFilter = await pinRoleAssignmentUpsertToLiveEdge(filter);
     const reattach = roleAssignmentReattachWrite(liveFilter, 'UNREVIEWED');
     await RoleAssignment.updateOne(liveFilter, update, options);

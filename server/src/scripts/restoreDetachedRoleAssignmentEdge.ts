@@ -13,6 +13,7 @@ import { LIVE_ROLE_EDGE_FILTER } from '../services/archivedResearchEntityRoleEdg
 import { runStudentVisibilityGate } from '../services/studentVisibilityGateService';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
+  isOperatorEnded,
   planDetachedRoleEdgeRestore,
   type DetachedRoleEdgeRestoreRefusal,
   type DetachmentDecider,
@@ -237,6 +238,38 @@ export async function restoreDetachedRoleAssignmentEdge(
   fs.writeFileSync(args.snapshot, `${JSON.stringify({ takenAt: now(), edge }, null, 2)}\n`, {
     mode: 0o600,
   });
+  if (isOperatorEnded(edge)) {
+    const undone = await RoleAssignment.updateOne(
+      {
+        _id,
+        personId: new mongoose.Types.ObjectId(args.expectedPersonId),
+        'target.id': new mongoose.Types.ObjectId(args.expectedTargetId),
+        'operatorEnd.recordedAt': edge.operatorEnd.recordedAt,
+      },
+      {
+        $set: {
+          state: edge.operatorEnd.previousState,
+          reviewNotes: args.note,
+          reviewedBy: args.actor,
+          reviewedAt: now(),
+          ...(edge.operatorEnd.previousEndedAt
+            ? { endedAt: edge.operatorEnd.previousEndedAt }
+            : {}),
+        },
+        $unset: {
+          operatorEnd: '',
+          reviewedByAgent: '',
+          ...(edge.operatorEnd.previousEndedAt ? {} : { endedAt: '' }),
+        },
+      },
+    );
+    if ((undone.modifiedCount ?? 0) !== 1) {
+      return { ...shape, refusal: 'edge-changed-since-read', ...unrestored };
+    }
+    const undoneRowId = edge.target?.kind === 'RESEARCH_ENTITY' ? String(edge.target.id) : '';
+    if (undoneRowId) await regate(undoneRowId);
+    return { ...shape, refusal: null, restored: true, regatedRow: Boolean(undoneRowId) };
+  }
   const result = await RoleAssignment.updateOne(
     {
       _id,

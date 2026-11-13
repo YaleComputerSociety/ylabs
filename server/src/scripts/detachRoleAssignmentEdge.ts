@@ -7,6 +7,15 @@
  *   yarn --cwd server role-assignments:detach-edge --edge=<id> --note='<why>'
  *   yarn --cwd server role-assignments:detach-edge --edge=<id> --note='<why>' \
  *     --decided-by=owner|agent --snapshot=./tmp/<file>.json --apply --confirm-detach-role-edge
+ *
+ * `--end-as-historical` records the other operator verdict: the person really held the role and
+ * no longer does. It ends the edge as `HISTORICAL` at the required `--ended-at` date, citing the
+ * page that says so (`--citation`), and writes an operator end record the evidence writers
+ * honour, so a lane that still lists the person cannot revive it (#5979).
+ *
+ *   yarn --cwd server role-assignments:detach-edge --edge=<id> --end-as-historical \
+ *     --ended-at=2025-12-31 --citation=<page url> --note='<why>' --decided-by=owner|agent \
+ *     --snapshot=./tmp/<file>.json --apply --confirm-detach-role-edge
  */
 import dotenv from 'dotenv';
 import fs from 'fs';
@@ -28,6 +37,7 @@ const CONFIRM_FLAG = '--confirm-detach-role-edge';
 const MAX_NOTE_LENGTH = 500;
 const MAX_ACTOR_LENGTH = 120;
 const DETACHMENT_DECIDERS = ['owner', 'agent'] as const;
+const END_AS_HISTORICAL_FLAG = '--end-as-historical';
 
 export type DetachmentDecidedBy = (typeof DETACHMENT_DECIDERS)[number];
 
@@ -37,6 +47,7 @@ export interface DetachRoleAssignmentEdgeArgs {
   actor?: string;
   decidedBy?: DetachmentDecidedBy;
   snapshot?: string;
+  endAsHistorical?: { endedAt: Date; citationUrl: string };
   apply: boolean;
   confirmed: boolean;
 }
@@ -49,8 +60,9 @@ export function parseDetachRoleAssignmentEdgeArgs(
     argv.find((arg) => arg.startsWith(`--${name}=`))?.slice(name.length + 3);
   for (const arg of argv) {
     if (
-      !/^--(edge|note|snapshot|actor|decided-by)=/.test(arg) &&
+      !/^--(edge|note|snapshot|actor|decided-by|ended-at|citation)=/.test(arg) &&
       arg !== '--apply' &&
+      arg !== END_AS_HISTORICAL_FLAG &&
       arg !== CONFIRM_FLAG
     ) {
       throw new Error(`Unknown ${SCRIPT_NAME} argument: ${arg}`);
@@ -77,15 +89,42 @@ export function parseDetachRoleAssignmentEdgeArgs(
   if (apply && !snapshot) throw new Error(`${SCRIPT_NAME} --apply requires --snapshot=<path>`);
   if (apply && !decidedBy)
     throw new Error(`${SCRIPT_NAME} --apply requires --decided-by=owner or --decided-by=agent`);
+  const endAsHistorical = argv.includes(END_AS_HISTORICAL_FLAG)
+    ? parseEndAsHistorical(value('ended-at'), value('citation'))
+    : undefined;
+  if (!endAsHistorical && (value('ended-at') !== undefined || value('citation') !== undefined)) {
+    throw new Error(`--ended-at and --citation only apply with ${END_AS_HISTORICAL_FLAG}`);
+  }
   return {
     edgeId: edgeId.toLowerCase(),
     note,
+    ...(endAsHistorical ? { endAsHistorical } : {}),
     ...(actor ? { actor } : {}),
     ...(decidedBy ? { decidedBy: decidedBy as DetachmentDecidedBy } : {}),
     ...(snapshot ? { snapshot: resolveSafeJsonReportOutputPath(snapshot) } : {}),
     apply,
     confirmed: argv.includes(CONFIRM_FLAG),
   };
+}
+
+function parseEndAsHistorical(
+  endedAtValue: string | undefined,
+  citationValue: string | undefined,
+): { endedAt: Date; citationUrl: string } {
+  const endedAtText = String(endedAtValue ?? '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(endedAtText)) {
+    throw new Error(`${END_AS_HISTORICAL_FLAG} requires --ended-at=YYYY-MM-DD`);
+  }
+  const endedAt = new Date(`${endedAtText}T00:00:00.000Z`);
+  if (Number.isNaN(endedAt.getTime()) || endedAt.toISOString().slice(0, 10) !== endedAtText) {
+    throw new Error('--ended-at must be a real calendar date');
+  }
+  if (endedAt.getTime() > Date.now()) throw new Error('--ended-at cannot be in the future');
+  const citationUrl = String(citationValue ?? '').trim();
+  if (!/^https?:\/\/\S+$/i.test(citationUrl) || citationUrl.length > 2048) {
+    throw new Error(`${END_AS_HISTORICAL_FLAG} requires --citation=<page url> stating the end`);
+  }
+  return { endedAt, citationUrl };
 }
 
 export interface DetachRoleAssignmentEdgeResult {
@@ -95,6 +134,8 @@ export interface DetachRoleAssignmentEdgeResult {
   state?: string;
   targetKind?: string;
   detached: boolean;
+  endedAsHistorical?: boolean;
+  refusal?: 'ended-before-started';
   regatedRow: boolean;
 }
 
@@ -102,7 +143,7 @@ export interface DetachRoleAssignmentEdgeResult {
 export async function detachRoleAssignmentEdge(
   args: Pick<
     DetachRoleAssignmentEdgeArgs,
-    'edgeId' | 'note' | 'actor' | 'decidedBy' | 'snapshot' | 'apply'
+    'edgeId' | 'note' | 'actor' | 'decidedBy' | 'snapshot' | 'apply' | 'endAsHistorical'
   >,
   regate: (rowId: string) => Promise<unknown> = (rowId) =>
     runStudentVisibilityGate({ collection: 'research', mode: 'apply', recordIds: [rowId] }),
@@ -118,12 +159,54 @@ export async function detachRoleAssignmentEdge(
     state: edge.state,
     targetKind: edge.target?.kind,
   };
+  if (
+    args.endAsHistorical &&
+    edge.startedAt &&
+    new Date(edge.startedAt) > args.endAsHistorical.endedAt
+  ) {
+    return { ...shape, detached: false, refusal: 'ended-before-started', regatedRow: false };
+  }
   if (!args.apply || !live) return { ...shape, detached: false, regatedRow: false };
   if (args.snapshot) {
     fs.mkdirSync(path.dirname(args.snapshot), { recursive: true });
     fs.writeFileSync(args.snapshot, `${JSON.stringify({ takenAt: new Date(), edge }, null, 2)}\n`, {
       mode: 0o600,
     });
+  }
+  if (args.endAsHistorical) {
+    const ended = await RoleAssignment.updateOne(
+      { _id, ...LIVE_ROLE_EDGE_FILTER, 'operatorEnd.endedAt': { $exists: false } },
+      {
+        $set: {
+          state: 'HISTORICAL',
+          endedAt: args.endAsHistorical.endedAt,
+          reviewNotes: args.note,
+          reviewedAt: new Date(),
+          ...(args.actor
+            ? { reviewedBy: args.actor, reviewedByAgent: args.decidedBy === 'agent' }
+            : {}),
+          operatorEnd: {
+            endedAt: args.endAsHistorical.endedAt,
+            reason: args.note,
+            citationUrl: args.endAsHistorical.citationUrl,
+            decidedBy: args.decidedBy ?? 'owner',
+            ...(args.actor ? { recordedBy: args.actor } : {}),
+            recordedAt: new Date(),
+            previousState: edge.state,
+            ...(edge.endedAt ? { previousEndedAt: edge.endedAt } : {}),
+          },
+        },
+      },
+    );
+    const endedAsHistorical = (ended.modifiedCount ?? 0) === 1;
+    const endedRowId = edge.target?.kind === 'RESEARCH_ENTITY' ? String(edge.target.id) : '';
+    if (endedAsHistorical && endedRowId) await regate(endedRowId);
+    return {
+      ...shape,
+      detached: false,
+      endedAsHistorical,
+      regatedRow: endedAsHistorical && Boolean(endedRowId),
+    };
   }
   const detachment = {
     archived: true,

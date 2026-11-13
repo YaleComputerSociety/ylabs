@@ -3,6 +3,7 @@ import { Researcher, isValidOrcid } from '../models/researcher';
 import { isPlausiblePersonOrcid } from '../utils/orcid';
 import {
   isRosterIdentityBasis,
+  operatorEndedEdgeBlocksWrite,
   pinRoleAssignmentUpsertToLiveEdge,
   RoleAssignment,
   roleAssignmentReattachWrite,
@@ -756,6 +757,7 @@ export type CanonicalMembershipOutcome =
   | 'refused-person'
   | 'refused-upsert-shape'
   | 'refused-duplicate-key'
+  | 'refused-operator-ended'
   | typeof REMOVED_BY_REQUEST;
 
 /**
@@ -845,6 +847,7 @@ export async function writeCanonicalMembership(
       rosterProvenance: facts.rosterProvenance,
     });
     if (!upsert) return refused('refused-upsert-shape');
+    if (await operatorEndedEdgeBlocksWrite(upsert.filter)) return refused('refused-operator-ended');
     const filter = await pinRoleAssignmentUpsertToLiveEdge(upsert.filter);
     const reattach = roleAssignmentReattachWrite(filter, reviewStatus);
     const before = await RoleAssignment.findOne(filter)
