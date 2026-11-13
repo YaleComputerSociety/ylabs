@@ -588,3 +588,40 @@ describe('programs that are not research by their own account (#6216)', () => {
     ).toBe(false);
   });
 });
+
+describe('a degree-course disclaimer negated after the match (#6216 review)', () => {
+  it.each([
+    'Support for graduate study is not available through this fund.',
+    'Tuition for graduate courses is not covered.',
+    "Postgraduate degree study can't be funded by this award.",
+  ])('does not withhold a research fund that says %s', (sentence) => {
+    expect(
+      classifyProgramResearchRelevance({
+        title: 'Fixture Research Fund',
+        purpose: ['Research'],
+        description: `Supports summer research projects. ${sentence}`,
+      }).reasons,
+    ).not.toContain('funds_degree_course_of_study');
+  });
+
+  it('still withholds a degree award whose only negated term is about renewal', () => {
+    const result = classifyProgramResearchRelevance({
+      title: 'Fixture Degree Scholarship',
+      programKind: 'TRAVEL_RESEARCH_GRANT',
+      purpose: ['Study', 'Research'],
+      description: 'Supports one year of postgraduate study abroad and is not renewable.',
+    });
+    expect(result.reasons).toContain('funds_degree_course_of_study');
+    expect(result.researchRelated).toBe(false);
+  });
+
+  it('withholds a degree award that names research only as its own purpose, as #4675 reads uses', () => {
+    expect(
+      classifyProgramResearchRelevance({
+        title: 'Fixture Degree Award',
+        purpose: ['Study', 'Research'],
+        description: 'The fund supports graduate study only for research projects.',
+      }).researchRelated,
+    ).toBe(false);
+  });
+});

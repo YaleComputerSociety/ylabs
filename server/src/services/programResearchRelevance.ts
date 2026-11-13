@@ -121,6 +121,21 @@ const DISCLAIMS_PRIMARY_RESEARCH_FOCUS =
 const FUNDS_DEGREE_COURSE_OF_STUDY =
   /\b(?:(?:support|supports|fund|funds|cover|covers|pay|pays)\s+(?:(?!research\b|(?:no|not|never|nor|without|cannot)\b|\w+n['’]t\b)[\w'-]+\s+){0,6}|tuition(?:\s+fees)?\s+for\s+(?:(?:a|an)\s+)?)(?:graduate|postgraduate|master['’]?s)\s+(?:degree\s+)?(?:courses?|programs?|programmes?|study)\b/i;
 
+// The clause-level negation check reads only before a match, so "Tuition for graduate courses
+// is not covered" would read as a promise of degree funding. Only predicates about the funding
+// itself count here: "is not renewable" is a term of a real degree award and must not exempt it.
+const FUNDING_DENIED_AFTER =
+  /^[^,:;]*?\b(?:(?:is|are)\s+not|isn['’]t|aren['’]t|cannot\s+be|can['’]t\s+be|will\s+not\s+be|won['’]t\s+be)\s+(?:available|covered|funded|supported|offered|provided|paid)\b/i;
+
+const fundsDegreeCourseIn = (fields: string[]): boolean =>
+  fields
+    .flatMap((field) => field.split(SENTENCE_BOUNDARY))
+    .some((sentence) => {
+      const match = FUNDS_DEGREE_COURSE_OF_STUDY.exec(sentence);
+      if (match === null || NEGATION.test(clauseBefore(sentence, match.index))) return false;
+      return !FUNDING_DENIED_AFTER.test(sentence.slice(match.index + match[0].length));
+    });
+
 const LANGUAGE_STUDY_PURPOSE = 'Language Study';
 
 // These lanes store `purpose` as inferPurpose output read from page prose rather than as a
@@ -177,7 +192,7 @@ export function classifyProgramResearchRelevance(
   const disclaimsPrimaryResearchFocus = disclaimerFields.some((field) =>
     DISCLAIMS_PRIMARY_RESEARCH_FOCUS.test(field),
   );
-  const fundsDegreeCourseOfStudy = affirmedIn(disclaimerFields, FUNDS_DEGREE_COURSE_OF_STUDY);
+  const fundsDegreeCourseOfStudy = fundsDegreeCourseIn(disclaimerFields);
 
   if (purposeResearch) reasons.push('research_purpose');
   if (kindResearch) reasons.push('research_program_kind');
