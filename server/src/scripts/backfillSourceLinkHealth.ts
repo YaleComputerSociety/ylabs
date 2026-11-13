@@ -406,7 +406,9 @@ export function orderPlannedProbes(
 }
 
 /**
- * Scales each sampled host's transitions to every due link on that host. A host probed in full
+ * Scales each sampled host's transitions to every due link on that host. Transitions are counted
+ * per row entry, so the scale is too: a link cited by several rows counts once per row on both
+ * sides (#6214, which fixes #6200 scaling row entries by unique links). A host probed in full
  * scales by one, so an unsampled run's projection equals its measurement.
  */
 export function projectSampledTransitions(
@@ -649,7 +651,9 @@ export async function runSourceLinkHealthBackfill(options: {
   const probesByHost = new Map<string, number>();
   const stoppedHosts = new Set<string>();
   const dueByHost = new Map<string, number>();
-  const observedDueByHost = new Map<string, number>();
+  const dueEntriesByHost = new Map<string, number>();
+  const observedEntriesByHost = new Map<string, number>();
+  const observedDueUrls = new Set<string>();
   const transitionsByHost = new Map<string, Record<string, number>>();
   const probeLimits = {
     probesByHost,
@@ -865,6 +869,11 @@ export async function runSourceLinkHealthBackfill(options: {
       const host = hostOf(url);
       dueByHost.set(host, (dueByHost.get(host) ?? 0) + 1);
     }
+    for (const url of plans.flatMap((plan) => plan.toProbe).filter(inScope)) {
+      if (healthCache.has(url)) continue;
+      const host = hostOf(url);
+      dueEntriesByHost.set(host, (dueEntriesByHost.get(host) ?? 0) + 1);
+    }
     await probeUncachedUrlsByHost(plannedProbes, healthCache, {
       checkLink,
       hostConcurrency,
@@ -951,7 +960,8 @@ export async function runSourceLinkHealthBackfill(options: {
           probedEntries += 1;
           const urlHost = hostOf(url);
           if (plannedProbeSet.has(url)) {
-            observedDueByHost.set(urlHost, (observedDueByHost.get(urlHost) ?? 0) + 1);
+            observedEntriesByHost.set(urlHost, (observedEntriesByHost.get(urlHost) ?? 0) + 1);
+            observedDueUrls.add(url);
           }
           const resolved = resolveSourceLinkHealthEntry(
             url,
@@ -1027,7 +1037,7 @@ export async function runSourceLinkHealthBackfill(options: {
   result.stoppedHosts = [...stoppedHosts].sort();
   if (options.samplePerHost !== undefined) {
     const dueLinks = [...dueByHost.values()].reduce((sum, count) => sum + count, 0);
-    const probedLinks = [...observedDueByHost.values()].reduce((sum, count) => sum + count, 0);
+    const probedLinks = observedDueUrls.size;
     result.dryRunSample = {
       perHost: options.samplePerHost,
       dueLinks,
@@ -1036,8 +1046,8 @@ export async function runSourceLinkHealthBackfill(options: {
     };
     result.projectedVerdictTransitions = projectSampledTransitions(
       transitionsByHost,
-      dueByHost,
-      observedDueByHost,
+      dueEntriesByHost,
+      observedEntriesByHost,
     );
   }
   result.pausedHosts = describeHostPauses(pausesSeen);

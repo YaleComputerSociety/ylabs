@@ -100,6 +100,43 @@ describe('link-health bounded runs (#6182)', () => {
     expect(result.projectedVerdictTransitions).toEqual({ 'HEALTHY->UNAVAILABLE': BIG_COUNT + 1 });
   }, 120000);
 
+  it('projects per row entry when each sampled link is cited by several rows (#6214)', async () => {
+    await ResearchEntity.deleteMany({});
+    const SHARED = 'shared.example.edu';
+    const sharedUrl = (i: number) => `https://${SHARED}/page/${i}/`;
+    const LINKS = 10;
+    const ROWS_PER_LINK = 3;
+    await ResearchEntity.create(
+      Array.from({ length: LINKS * ROWS_PER_LINK }, (_v, n) => {
+        const link = n % LINKS;
+        return {
+          slug: `fixture-shared-${n}`,
+          name: `Fixture Shared ${n}`,
+          entityType: 'LAB',
+          kind: 'lab',
+          websiteUrl: sharedUrl(link),
+          sourceLinkHealth: [
+            { url: sharedUrl(link), healthStatus: 'HEALTHY', httpStatusCode: 200, checkedAt: OLD },
+          ],
+        };
+      }),
+    );
+    const result = await runSourceLinkHealthBackfill({
+      dryRun: true,
+      reprobeHealthyAfterDays: 7,
+      samplePerHost: 2,
+      checkLink: async () => ({ healthStatus: 'UNAVAILABLE' as const, httpStatusCode: 404 }),
+      paceDelayMs: 0,
+    });
+
+    expect(result.probesByHost).toEqual({ [SHARED]: 2 });
+    expect(result.dryRunSample).toMatchObject({ dueLinks: LINKS, probedLinks: 2 });
+    expect(result.verdictTransitions).toEqual({ 'HEALTHY->UNAVAILABLE': 2 * ROWS_PER_LINK });
+    expect(result.projectedVerdictTransitions).toEqual({
+      'HEALTHY->UNAVAILABLE': LINKS * ROWS_PER_LINK,
+    });
+  }, 120000);
+
   it('draws the same sample on a repeat dry run', async () => {
     const first = recorder(() => ({ healthStatus: 'HEALTHY', httpStatusCode: 200 }));
     await runSourceLinkHealthBackfill({
