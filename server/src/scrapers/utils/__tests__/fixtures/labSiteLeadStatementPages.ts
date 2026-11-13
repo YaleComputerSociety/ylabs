@@ -617,4 +617,25 @@ export const LAB_SITE_LEAD_STATEMENT_FIXTURES: LabSiteLeadStatementFixture[] = [
       [QUILL]: { verdict: 'CONFIRMED' },
     },
   },
+  {
+    name: 'another unit people page listing the lead as a postdoc never lists the lead in a non-lead role',
+    rowName: 'Tidal Imaging Lab',
+    entityType: 'LAB',
+    website: 'https://medicine.yale.edu/coastal/people/',
+    pages: [
+      {
+        url: 'https://medicine.yale.edu/coastal/people/',
+        html: page(
+          'People | Coastal Medicine Section',
+          card('Robin Quill', 'Postdoctoral Fellow', '/profile/robin-quill/') +
+            card('Ada Brook', 'Lab Manager'),
+          'Coastal Medicine Section',
+        ),
+      },
+    ],
+    leads: [person(QUILL, 'Robin Quill', 'robin-quill')],
+    expected: {
+      [QUILL]: { verdict: 'CONFIRMED' },
+    },
+  },
 ];
