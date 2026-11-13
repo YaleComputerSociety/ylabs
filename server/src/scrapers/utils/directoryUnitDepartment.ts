@@ -45,7 +45,32 @@ export function isAdministrativeDirectoryUnit(unit: string): boolean {
   return ADMINISTRATIVE_UNIT_PATTERNS.some((pattern) => pattern.test(unit));
 }
 
-export function directoryUnitDepartment(unit: unknown): string | undefined {
+/**
+ * A unit class that names exactly one catalog department, measured on the Development directory
+ * (#6028). When the unit itself is an administrative bucket ("Department Administration",
+ * "Research Unit"), the class still says which department the person belongs to. A class not
+ * listed here, or one spanning several departments, leaves an administrative unit refused.
+ */
+const UNIT_CLASS_DEPARTMENTS: Readonly<Record<string, string>> = {
+  EASAPP: 'Applied Physics',
+  FASCHM: 'Chemistry',
+  FASEEB: 'Ecology & Evolutionary Biology',
+  FASEPS: 'Earth & Planetary Sciences',
+  FASLIN: 'Linguistics',
+  FASPSY: 'Psychology',
+  JACTEA: 'Global Affairs',
+  MEDCSC: 'Child Study Center',
+  MEDINT: 'Internal Medicine',
+};
+
+export function directoryUnitDepartment(unit: unknown, unitClass?: unknown): string | undefined {
+  const named = unitNamedDepartment(unit);
+  if (named || typeof unit !== 'string' || !unit.trim()) return named;
+  const classCode = typeof unitClass === 'string' ? unitClass.trim().toUpperCase() : '';
+  return UNIT_CLASS_DEPARTMENTS[classCode];
+}
+
+function unitNamedDepartment(unit: unknown): string | undefined {
   if (typeof unit !== 'string') return undefined;
   const collapsed = unit.replace(/\s+/g, ' ').trim();
   if (!collapsed) return undefined;

@@ -348,6 +348,18 @@ describe('YaleDirectoryScraper.run', () => {
     expect(keys.has('aaLast')).toBe(true);
   });
 
+  it('reads the department from the unit class when the unit is an administrative bucket (#6028)', () => {
+    const obs = personToObservations({
+      netid: 'pp01',
+      first_name: 'Fixture',
+      last_name: 'Mind',
+      title: 'Professor of Psychology',
+      unit_class: 'FASPSY',
+      unit: 'Department Administration',
+    });
+    expect(obs.find((o) => o.field === 'primaryDepartment')?.value).toBe('Psychology');
+  });
+
   it('starts at the zero-indexed first page, so the first page of records is read', async () => {
     process.env.YALIES_API_KEY = 'test-key';
     const onFirstPage = {
