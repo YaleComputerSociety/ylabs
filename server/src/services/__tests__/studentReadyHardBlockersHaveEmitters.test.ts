@@ -272,10 +272,6 @@ const HARD_BLOCKER_EMITTERS: Record<string, () => string[]> = {
         },
       },
     }),
-  lead_title_ruled_non_hosting_rank: () =>
-    researchReasons({
-      leadMembers: [{ userId: 'user-example-lead', role: 'pi', title: 'Clinical Fellow' }],
-    }),
   unbacked_lab_name: () =>
     researchReasons({
       entity: {
