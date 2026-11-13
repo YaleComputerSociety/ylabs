@@ -141,7 +141,7 @@ describe('roster biography research evidence', () => {
       'Their work focuses on care for patients with synthetic marsh fever.',
       'Their clinical interests include synthetic quill rash and cardiac devices.',
       'Their clinical interests include the early detection and treatment of synthetic glimmer fever.',
-      'They have a special interest in the early detection of synthetic quill rash.',
+      'They have a special interest in the early detection of synthetic skin cancer.',
       'Their work focuses on providing gentle care to patients with implanted cardiac devices.',
       'Their interests focus on building trusting bonds with patients and providing gentle care.',
     ]) {
