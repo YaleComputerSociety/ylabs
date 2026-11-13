@@ -163,14 +163,18 @@ describe('machine-wide host budget across real processes', () => {
     expect(smallestGrantGap(granted)).toBeGreaterThanOrEqual(400 - TIMER_SLACK_MS);
   }, 60_000);
 
-  it('holds an overridden Yale host to its own override rather than the Yale default', async () => {
+  it('never lets an override loosen the Yale default, and spaces each grant after the last response', async () => {
     const granted = await runPair(
-      { host: 'ysph.yale.edu', requests: 3, holdMs: 1_500, parallel: 3 },
+      { host: 'ysph.yale.edu', requests: 2, holdMs: 800, parallel: 2 },
       { FIXTURE_LAYERS: 'budget-only' },
     );
-    expect(peakInFlight(granted)).toBe(2);
-    expect(smallestGrantGap(granted)).toBeGreaterThanOrEqual(400 - TIMER_SLACK_MS);
-    expect(smallestGrantGap(granted)).toBeLessThan(1_500 - TIMER_SLACK_MS);
+    expect(peakInFlight(granted)).toBe(1);
+    const ordered = [...granted].sort((a, b) => a.start - b.start);
+    for (let index = 1; index < ordered.length; index += 1) {
+      expect(ordered[index].start - ordered[index - 1].end).toBeGreaterThanOrEqual(
+        1_500 - TIMER_SLACK_MS,
+      );
+    }
   }, 60_000);
 
   it('reclaims the slot of a holder that was killed, so the host is not blocked', async () => {

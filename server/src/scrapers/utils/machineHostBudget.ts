@@ -77,10 +77,14 @@ export function machineHostBudgetFor(host: string): HostThrottle {
   const override = Object.hasOwn(HOST_THROTTLE_OVERRIDES, key)
     ? HOST_THROTTLE_OVERRIDES[key]
     : undefined;
-  if (override) return { concurrency: override.concurrency, minIntervalMs: override.minIntervalMs };
-  return isExcludedHostname(key, YALE_DOMAINS)
+  const floor = isExcludedHostname(key, YALE_DOMAINS)
     ? YALE_HOST_DEFAULT_THROTTLE
     : MACHINE_DEFAULT_HOST_BUDGET;
+  if (!override) return floor;
+  return {
+    concurrency: Math.min(override.concurrency, floor.concurrency),
+    minIntervalMs: Math.max(override.minIntervalMs, floor.minIntervalMs),
+  };
 }
 
 export function isProcessAlive(pid: number): boolean {
@@ -104,6 +108,7 @@ export interface MachineHostBudgetState {
   host: string;
   nextGrantAt: number;
   lastGrantAt: number;
+  lastReleaseAt?: number;
   slots: MachineHostBudgetSlot[];
 }
 
@@ -128,6 +133,7 @@ function parseState(raw: string, host: string): MachineHostBudgetState | undefin
       parsed.host === host &&
       isFiniteNumber(parsed.nextGrantAt) &&
       isFiniteNumber(parsed.lastGrantAt) &&
+      (parsed.lastReleaseAt === undefined || isFiniteNumber(parsed.lastReleaseAt)) &&
       Array.isArray(parsed.slots) &&
       parsed.slots.every(isSlot);
     return valid ? parsed : undefined;
@@ -135,6 +141,12 @@ function parseState(raw: string, host: string): MachineHostBudgetState | undefin
     return undefined;
   }
 }
+
+// A request can reach the host well after its grant (DNS, connect, a cold process), so the next
+// grant waits out the interval from the later of the last grant and the last response, which a
+// request has always reached the host before. At concurrency 1 that bounds the gap the host sees.
+const spacingAnchor = (state: MachineHostBudgetState): number =>
+  Math.max(state.lastGrantAt, state.lastReleaseAt ?? Number.MIN_SAFE_INTEGER);
 
 const freshState = (host: string, nextGrantAt = 0): MachineHostBudgetState => ({
   v: STATE_VERSION,
@@ -255,7 +267,7 @@ export class MachineHostBudgetLimiter implements HostSlotLimiter {
   private async stampSpacing(key: string, budget: HostThrottle): Promise<void> {
     for (;;) {
       const remaining = await this.transact(key, (state, now) => {
-        const gap = state.lastGrantAt + budget.minIntervalMs - now;
+        const gap = spacingAnchor(state) + budget.minIntervalMs - now;
         if (gap > 0) return { result: gap, write: false };
         state.lastGrantAt = now;
         return { result: 0, write: true };
@@ -302,10 +314,12 @@ export class MachineHostBudgetLimiter implements HostSlotLimiter {
 
   private async releaseSlot(key: string, id: string): Promise<void> {
     try {
-      await this.transact(key, (state) => {
+      await this.transact(key, (state, now) => {
         const before = state.slots.length;
         state.slots = state.slots.filter((slot) => slot.id !== id);
-        return { result: undefined, write: state.slots.length !== before };
+        if (state.slots.length === before) return { result: undefined, write: false };
+        state.lastReleaseAt = now;
+        return { result: undefined, write: true };
       });
     } catch (error) {
       this.warn(

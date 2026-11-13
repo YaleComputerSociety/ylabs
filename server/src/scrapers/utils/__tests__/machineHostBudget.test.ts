@@ -13,6 +13,7 @@ import {
   MACHINE_DEFAULT_HOST_BUDGET,
   MACHINE_HOST_CORRUPT_STATE_PAUSE_MS,
   MACHINE_HOST_LOCK_STALE_MS,
+  isMachineHostSlotSharingEnabled,
   MachineHostBudgetLimiter,
   machineHostBudgetFor,
   type MachineHostBudgetLimiterOptions,
@@ -64,6 +65,14 @@ const heldBy = (host: string, pid: number, expiresAt: number): MachineHostBudget
   slots: [{ id: `${pid}-held`, pid, grantedAt: 0, expiresAt }],
 });
 
+const LOCK_TEST_TIMEOUT_MS = 5_000;
+
+const yieldingSleep = async (ms: number): Promise<void> => {
+  waits.push(ms);
+  clock += Math.max(1, ms);
+  await new Promise((resolve) => setImmediate(resolve));
+};
+
 const passthroughAssert = async (url: string) => ({ toString: () => url });
 
 describe('machine-wide budget per host', () => {
@@ -80,9 +89,62 @@ describe('machine-wide budget per host', () => {
     expect(machineHostBudgetFor('notyale.edu')).toEqual(MACHINE_DEFAULT_HOST_BUDGET);
   });
 
-  it('lets an explicit override win over the Yale default', () => {
-    const { concurrency, minIntervalMs } = HOST_THROTTLE_OVERRIDES['medicine.yale.edu'];
-    expect(machineHostBudgetFor('medicine.yale.edu')).toEqual({ concurrency, minIntervalMs });
+  it('lets an override only tighten the Yale default, never loosen it', () => {
+    for (const host of ['ysph.yale.edu', 'medicine.yale.edu']) {
+      const override = HOST_THROTTLE_OVERRIDES[host];
+      expect(override.minIntervalMs).toBeLessThan(YALE_HOST_DEFAULT_THROTTLE.minIntervalMs);
+      expect(machineHostBudgetFor(host)).toEqual(YALE_HOST_DEFAULT_THROTTLE);
+    }
+  });
+});
+
+describe('machine-wide budget switch', () => {
+  it('enforces the Yale budget when the switch is unset', async () => {
+    expect(isMachineHostSlotSharingEnabled({})).toBe(true);
+    const limiter = budget({ env: {} });
+
+    const first = await limiter.acquire('fixture-default.yale.edu');
+    first();
+    const second = await limiter.acquire('fixture-default.yale.edu');
+    second();
+
+    expect(waits.reduce((total, ms) => total + Math.max(0, ms), 0)).toBeGreaterThanOrEqual(
+      YALE_HOST_DEFAULT_THROTTLE.minIntervalMs,
+    );
+    expect(limiter.readState('fixture-default.yale.edu')).toBeDefined();
+  });
+
+  it.each(['off', '0', 'false', ' OFF '])('opts out only when the switch is %j', async (value) => {
+    expect(isMachineHostSlotSharingEnabled({ SCRAPER_MACHINE_HOST_SLOTS: value })).toBe(false);
+    const limiter = budget({ env: { SCRAPER_MACHINE_HOST_SLOTS: value } });
+
+    (await limiter.acquire('fixture-optout.yale.edu'))();
+    (await limiter.acquire('fixture-optout.yale.edu'))();
+
+    expect(waits.filter((ms) => ms > 0)).toEqual([]);
+    expect(limiter.readState('fixture-optout.yale.edu')).toBeUndefined();
+  });
+
+  it.each(['', 'on', '1', 'true', 'yes'])('stays on when the switch is %j', (value) => {
+    expect(isMachineHostSlotSharingEnabled({ SCRAPER_MACHINE_HOST_SLOTS: value })).toBe(true);
+  });
+});
+
+describe('machine-wide spacing the host sees', () => {
+  it('waits the interval after the last response, not just after the last grant', async () => {
+    const limiter = budget();
+    const first = await limiter.acquire('fixture-slow.yale.edu');
+    clock += 1_000;
+    first();
+    await vi.waitFor(() =>
+      expect(limiter.readState('fixture-slow.yale.edu')?.slots ?? [1]).toHaveLength(0),
+    );
+    const releasedAt = clock;
+
+    const second = await limiter.acquire('fixture-slow.yale.edu');
+    second();
+
+    expect(clock - releasedAt).toBeGreaterThanOrEqual(YALE_HOST_DEFAULT_THROTTLE.minIntervalMs);
   });
 });
 
@@ -155,31 +217,39 @@ describe('MachineHostBudgetLimiter reclaiming slots', () => {
     );
   });
 
-  it('breaks a lock left by a process that died inside its read-modify-write', async () => {
-    const limiter = budget();
-    fs.mkdirSync(limiter.directory, { recursive: true });
-    const lockPath = limiter.statePath('lab.example.org').replace(/\.json$/, '.lock');
-    fs.writeFileSync(lockPath, JSON.stringify({ pid: DEAD_PID, token: 'dead' }));
+  it(
+    'breaks a lock left by a process that died inside its read-modify-write',
+    async () => {
+      const limiter = budget({ sleep: yieldingSleep });
+      fs.mkdirSync(limiter.directory, { recursive: true });
+      const lockPath = limiter.statePath('lab.example.org').replace(/\.json$/, '.lock');
+      fs.writeFileSync(lockPath, JSON.stringify({ pid: DEAD_PID, token: 'dead' }));
 
-    const release = await limiter.acquire('lab.example.org');
+      const release = await limiter.acquire('lab.example.org');
 
-    expect(waits.filter((ms) => ms > 0)).toEqual([]);
-    release();
-  });
+      expect(waits.filter((ms) => ms > 0)).toEqual([]);
+      release();
+    },
+    LOCK_TEST_TIMEOUT_MS,
+  );
 
-  it(`breaks a live process's lock once it is older than ${MACHINE_HOST_LOCK_STALE_MS} ms`, async () => {
-    const limiter = budget();
-    fs.mkdirSync(limiter.directory, { recursive: true });
-    const lockPath = limiter.statePath('lab.example.org').replace(/\.json$/, '.lock');
-    fs.writeFileSync(lockPath, JSON.stringify({ pid: OTHER_LIVE_PID, token: 'paused' }));
-    const old = new Date(Date.now() - MACHINE_HOST_LOCK_STALE_MS - 1_000);
-    fs.utimesSync(lockPath, old, old);
+  it(
+    `breaks a live process's lock once it is older than ${MACHINE_HOST_LOCK_STALE_MS} ms`,
+    async () => {
+      const limiter = budget({ sleep: yieldingSleep });
+      fs.mkdirSync(limiter.directory, { recursive: true });
+      const lockPath = limiter.statePath('lab.example.org').replace(/\.json$/, '.lock');
+      fs.writeFileSync(lockPath, JSON.stringify({ pid: OTHER_LIVE_PID, token: 'paused' }));
+      const old = new Date(Date.now() - MACHINE_HOST_LOCK_STALE_MS - 1_000);
+      fs.utimesSync(lockPath, old, old);
 
-    const release = await limiter.acquire('lab.example.org');
+      const release = await limiter.acquire('lab.example.org');
 
-    release();
-    expect(limiter.readState('lab.example.org')).toBeDefined();
-  });
+      release();
+      expect(limiter.readState('lab.example.org')).toBeDefined();
+    },
+    LOCK_TEST_TIMEOUT_MS,
+  );
 });
 
 describe('fetchPageWithPolicy redirects', () => {
