@@ -1444,6 +1444,28 @@ export function materializerProjectionChangedPaths(
   return [...changed].sort();
 }
 
+const CREATED_DOCUMENT_METADATA_PATHS = new Set(['_id', '__v', 'createdAt', 'updatedAt']);
+
+function createdDocumentChangedPaths(
+  Model: mongoose.Model<any>,
+  insert: Record<string, unknown>,
+  schemaPaths: Iterable<string>,
+): string[] {
+  const projected = materializerProjectionChangedPaths(null, insert, {}, schemaPaths);
+  const created = new Model(insert).toObject() as Record<string, unknown>;
+  const schemaDefaults = Object.entries(created)
+    .filter(
+      ([path, value]) =>
+        value !== undefined &&
+        value !== null &&
+        !CREATED_DOCUMENT_METADATA_PATHS.has(path) &&
+        !MATERIALIZER_MANAGED_FIELDS.has(path) &&
+        !projected.some((planned) => planned === path || planned.startsWith(`${path}.`)),
+    )
+    .map(([path]) => path);
+  return [...new Set([...projected, ...schemaDefaults])].sort();
+}
+
 export function isMaterializerProjectionNoOp(
   entityDoc: Record<string, unknown>,
   set: Record<string, unknown>,
@@ -14930,12 +14952,17 @@ async function materializeEntityUnderRemovalGuard(
       : {}),
   };
 
-  const changedPaths = materializerProjectionChangedPaths(
-    entityDoc as Record<string, unknown> | null,
-    set,
-    entityDoc ? unset : {},
-    Object.keys(Model.schema?.paths ?? {}),
-  );
+  const schemaPaths = Object.keys(Model.schema?.paths ?? {});
+  const projectedMint = entityDoc ? undefined : projectionMint(entityType, identifier, obs, set);
+  const changedPaths =
+    projectedMint && !('unmintable' in projectedMint)
+      ? createdDocumentChangedPaths(Model, projectedMint.insert, schemaPaths)
+      : materializerProjectionChangedPaths(
+          entityDoc as Record<string, unknown> | null,
+          set,
+          entityDoc ? unset : {},
+          schemaPaths,
+        );
   const entityScalarUnchanged = Boolean(entityDoc) && changedPaths.length === 0;
 
   if (options.dryRun) {
@@ -14946,8 +14973,7 @@ async function materializeEntityUnderRemovalGuard(
       : options.onlyReconcileFieldProvenance
         ? 'no-scoped-fields'
         : undefined;
-    const plannedMint =
-      entityDoc || plannedWriteSkip ? undefined : projectionMint(entityType, identifier, obs, set);
+    const plannedMint = plannedWriteSkip ? undefined : projectedMint;
     const plannedMintRefusal =
       plannedMint && !('unmintable' in plannedMint)
         ? await projectionMintRefusal(entityType, plannedMint, materializationObs)
@@ -15031,7 +15057,7 @@ async function materializeEntityUnderRemovalGuard(
       }
     }
   } else {
-    const mint = projectionMint(entityType, identifier, obs, set);
+    const mint = projectedMint ?? projectionMint(entityType, identifier, obs, set);
     if ('unmintable' in mint) {
       throw new Error(`Cannot create new ${entityType}: ${mint.unmintable}`);
     }
