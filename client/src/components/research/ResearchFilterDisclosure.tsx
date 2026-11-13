@@ -9,6 +9,7 @@ import {
   HAS_HAD_UNDERGRADS_FILTER_LABEL,
   TAKING_UNDERGRADS_NOW_FILTER_LABEL,
   UNDERGRADS_FILTER_COMBINATION_NOTE,
+  NO_HOSTED_UNDERGRADUATE_EVIDENCE_NOTE,
   UNDERGRADS_FILTER_GROUP_LABEL,
   UNDERGRADS_OPTION_UNAVAILABLE_NOTE,
   isKnownResearchTypeFilterValue,
@@ -81,6 +82,7 @@ interface UndergraduateToggleProps {
   count: number | undefined;
   countSuffix: string;
   checked: boolean;
+  noEvidenceNoteId: string;
   compact: boolean;
   inputRef?: (node: HTMLElement | null) => void;
   onChange?: (value: boolean) => void;
@@ -98,6 +100,7 @@ const UndergraduateToggle = ({
   count,
   countSuffix,
   checked,
+  noEvidenceNoteId,
   compact,
   inputRef,
   onChange,
@@ -108,12 +111,17 @@ const UndergraduateToggle = ({
   const compactTipText = [hint, unavailable ? UNDERGRADS_OPTION_UNAVAILABLE_NOTE : null]
     .filter(Boolean)
     .join(' ');
-  const describedBy = compact
-    ? compactTipText
-      ? ownTipId
-      : undefined
-    : [hint ? ownTipId : null, unavailable ? unavailableNoteId : null].filter(Boolean).join(' ') ||
-      undefined;
+  const describedBy =
+    (compact
+      ? [compactTipText ? ownTipId : null, unavailable ? noEvidenceNoteId : null]
+      : [
+          hint ? ownTipId : null,
+          unavailable ? unavailableNoteId : null,
+          unavailable ? noEvidenceNoteId : null,
+        ]
+    )
+      .filter(Boolean)
+      .join(' ') || undefined;
   return (
     <div className={compact ? 'flex min-w-0 items-center gap-1' : 'min-w-0'}>
       <label
@@ -335,6 +343,7 @@ const ResearchFilterDisclosure = ({
   }, []);
   const panelId = useId();
   const undergradsCombinationNoteId = useId();
+  const undergradsNoEvidenceNoteId = useId();
 
   const positiveEntityTypes = useMemo(
     () =>
@@ -396,6 +405,7 @@ const ResearchFilterDisclosure = ({
     .filter((option) => Boolean(option.onChange) && (option.checked || option.count !== undefined));
   const undergradOptionIsUnavailable = (option: (typeof undergradOptions)[number]) =>
     isUnavailableUndergradOption(option.count, option.checked);
+  const someUndergradOptionLacksEvidence = undergradOptions.some(undergradOptionIsUnavailable);
   const activeCount =
     Number(Boolean(selectedEntityType)) +
     Number(Boolean(selectedSchool)) +
@@ -543,12 +553,21 @@ const ResearchFilterDisclosure = ({
                   count={option.count}
                   countSuffix={facetCountSuffix(option.count)}
                   checked={option.checked}
+                  noEvidenceNoteId={undergradsNoEvidenceNoteId}
                   compact={isSidebar}
                   inputRef={firstVisibleField === option.field ? setFirstFieldNode : undefined}
                   onChange={option.onChange}
                 />
               ))}
             </div>
+            {someUndergradOptionLacksEvidence && (
+              <p
+                id={undergradsNoEvidenceNoteId}
+                className={`text-xs leading-snug text-muted ${isSidebar ? '' : 'mt-1'}`}
+              >
+                {NO_HOSTED_UNDERGRADUATE_EVIDENCE_NOTE}
+              </p>
+            )}
           </fieldset>
         )}
         {showEntityType && (

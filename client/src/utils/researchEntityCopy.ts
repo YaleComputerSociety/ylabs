@@ -432,6 +432,7 @@ export const HAS_HAD_UNDERGRADS_FILTER_LABEL = `${HOSTED_UNDERGRADUATES_LABEL} b
 export const ADVISES_UNDERGRAD_RESEARCH_FILTER_LABEL = MENTORS_UNDERGRADUATES_LABEL;
 export const ADVISES_UNDERGRAD_RESEARCH_FILTER_HINT = 'e.g. supervised senior theses';
 export const UNDERGRADS_FILTER_COMBINATION_NOTE = 'Shows research matching every ticked option';
+export const NO_HOSTED_UNDERGRADUATE_EVIDENCE_NOTE = 'Missing evidence is not proof there is none.';
 export const UNDERGRADS_OPTION_UNAVAILABLE_NOTE =
   'None match your other filters. Remove a filter to see more.';
 export const FEW_CLOSE_MATCHES_NOTICE = 'Only a few close matches. Related results below.';
