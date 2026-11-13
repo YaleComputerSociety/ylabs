@@ -9817,6 +9817,7 @@ async function writeScopedResearcherPlan(input: {
     resolved: input.resolved,
     plannedPaths: kept,
     droppedPaths: dropped,
+    ...(kept.length === 0 ? { plannedWriteSkip: 'unchanged' as const } : { changedPaths: kept }),
     ...(input.identityJoin ? { identityJoin: input.identityJoin } : {}),
   });
   if (input.dryRun) return result(kept.length);
@@ -13852,21 +13853,35 @@ type ProjectionMintRefusal =
   | 'reslug-adopted-key-names-only-archived-rows'
   | typeof REMOVED_BY_REQUEST;
 
-async function projectionMintRefusal(
+interface ProjectionMint {
+  entityKey: string;
+  keyValue: string;
+  insert: Record<string, unknown>;
+}
+
+function projectionMint(
   entityType: ObservedEntityType,
   identifier: { entityId?: string; entityKey?: string },
   obs: any[],
-  materializationObs: MaterializerObservationLike[],
   set: Record<string, unknown>,
-): Promise<ProjectionMintRefusal | undefined> {
+): ProjectionMint | { unmintable: string } {
   const keyField = uniqueKeyFieldForIdentifier(entityType, identifier.entityKey);
-  if (!keyField || !identifier.entityKey) return undefined;
+  if (!keyField || !identifier.entityKey) {
+    return { unmintable: 'missing entityKey or no keyField defined' };
+  }
   const keyValue = uniqueKeyValueForIdentifier(entityType, identifier.entityKey, obs);
-  if (!keyValue) return undefined;
-  const insert: Record<string, unknown> = { ...set, [keyField]: keyValue };
+  if (!keyValue) return { unmintable: 'missing normalized unique key value' };
+  return { entityKey: identifier.entityKey, keyValue, insert: { ...set, [keyField]: keyValue } };
+}
+
+async function projectionMintRefusal(
+  entityType: ObservedEntityType,
+  { entityKey, keyValue, insert }: ProjectionMint,
+  materializationObs: MaterializerObservationLike[],
+): Promise<ProjectionMintRefusal | undefined> {
   if (!hasRequiredFieldsForCreate(entityType, insert)) return 'missing-required-fields';
   if (!isResearchEntityObservationType(entityType)) return undefined;
-  if (await reslugAdoptedKeyNamesOnlyArchivedRows(identifier.entityKey)) {
+  if (await reslugAdoptedKeyNamesOnlyArchivedRows(entityKey)) {
     return 'reslug-adopted-key-names-only-archived-rows';
   }
   if (
@@ -14931,10 +14946,12 @@ async function materializeEntityUnderRemovalGuard(
       : options.onlyReconcileFieldProvenance
         ? 'no-scoped-fields'
         : undefined;
+    const plannedMint =
+      entityDoc || plannedWriteSkip ? undefined : projectionMint(entityType, identifier, obs, set);
     const plannedMintRefusal =
-      entityDoc || plannedWriteSkip
-        ? undefined
-        : await projectionMintRefusal(entityType, identifier, obs, materializationObs, set);
+      plannedMint && !('unmintable' in plannedMint)
+        ? await projectionMintRefusal(entityType, plannedMint, materializationObs)
+        : undefined;
     return {
       entityType,
       entityId: entityIdString,
@@ -15014,22 +15031,12 @@ async function materializeEntityUnderRemovalGuard(
       }
     }
   } else {
-    const keyField = uniqueKeyFieldForIdentifier(entityType, identifier.entityKey);
-    if (!keyField || !identifier.entityKey) {
-      throw new Error(`Cannot create new ${entityType}: missing entityKey or no keyField defined`);
+    const mint = projectionMint(entityType, identifier, obs, set);
+    if ('unmintable' in mint) {
+      throw new Error(`Cannot create new ${entityType}: ${mint.unmintable}`);
     }
-    const keyValue = uniqueKeyValueForIdentifier(entityType, identifier.entityKey, obs);
-    if (!keyValue) {
-      throw new Error(`Cannot create new ${entityType}: missing normalized unique key value`);
-    }
-    const insert: Record<string, unknown> = { ...set, [keyField]: keyValue };
-    const mintRefusal = await projectionMintRefusal(
-      entityType,
-      identifier,
-      obs,
-      materializationObs,
-      set,
-    );
+    const { insert } = mint;
+    const mintRefusal = await projectionMintRefusal(entityType, mint, materializationObs);
     if (mintRefusal) {
       return {
         entityType,
@@ -15989,6 +15996,9 @@ async function materializeUserRowsInFieldScope(
   });
   const scopeRows: UserFieldScopeRow[] = [];
   let conflicts = 0;
+  let updated = 0;
+  let skipped = 0;
+  const changedUserPaths = new Set<string>();
   const progress = startLongRunProgress('field-scoped-user-materialize', userRows.length);
   const { linkedRowIndexSyncFailedEntityIds } = await materializeObservedEntitiesInChunks(
     userRows,
@@ -15998,7 +16008,15 @@ async function materializeUserRowsInFieldScope(
       scopeRows.push(
         userFieldScopeRow({ entityKey: row.entityKey, entityId: row.entityId }, outcome),
       );
-      if ('result' in outcome) conflicts += outcome.result.conflicts;
+      if (!('result' in outcome)) return;
+      const { result } = outcome;
+      conflicts += result.conflicts;
+      if (materializeRowOutcome(result) === 'skipped') {
+        skipped++;
+        return;
+      }
+      updated++;
+      for (const path of result.changedPaths ?? []) changedUserPaths.add(path);
     },
     MATERIALIZATION_CHUNK_SIZE,
     1,
@@ -16007,12 +16025,14 @@ async function materializeUserRowsInFieldScope(
   return {
     materialized: scopeRows.filter((row) => !row.error).length,
     created: 0,
-    updated: scopeRows.filter((row) => !row.error && !row.skipped).length,
+    updated,
     conflicts,
-    skipped: scopeRows.filter((row) => row.skipped).length,
+    skipped,
     errors: summary.errors,
     indexSyncFailures: linkedRowIndexSyncFailedEntityIds.size,
     postMaterializationMetrics: emptyPostMaterializationMetrics(),
+    changedPathsByEntityType:
+      changedUserPaths.size > 0 ? { user: [...changedUserPaths].sort() } : {},
     userFieldScope: {
       ...summary,
       rowsOutsideUserSkipped,
