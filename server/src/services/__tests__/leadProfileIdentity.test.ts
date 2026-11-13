@@ -847,6 +847,25 @@ describe('normalizeOfficialProfileDestination on a macmillan program-section per
     }
   });
 
+  it('reads a subprogram person path as the same destination (#5892)', () => {
+    expect(
+      normalizeOfficialProfileDestination(
+        'https://macmillan.yale.edu/middleeast/subprogram/person/avery-synthetic',
+      ),
+    ).toBe('macmillan.yale.edu/person/avery-synthetic');
+    const pattern = officialProfileDestinationStoredPattern(
+      'https://macmillan.yale.edu/person/avery-synthetic',
+    );
+    expect(
+      pattern?.test('https://macmillan.yale.edu/europe/subprogram/person/avery-synthetic'),
+    ).toBe(true);
+    expect(
+      officialProfileDestinationIndexedPatterns(
+        'https://macmillan.yale.edu/person/avery-synthetic',
+      )[0].test('https://macmillan.yale.edu/europe/subprogram/person/avery-synthetic/'),
+    ).toBe(true);
+  });
+
   it('keeps a different slug and other hosts distinct', () => {
     expect(
       normalizeOfficialProfileDestination(
