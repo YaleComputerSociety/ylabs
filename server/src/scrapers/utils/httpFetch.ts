@@ -39,6 +39,7 @@ import {
 } from './hostPause';
 import { recordHostSuccess } from './hostPauseState';
 import { withScrapeRunProgress } from '../scrapeRunProgress';
+import { recordKnownDeadUrlSkip, rememberGoneUrl } from './knownDeadUrls';
 
 export const SCRAPER_USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 
@@ -295,6 +296,18 @@ export class HttpStatusError extends Error {
   }
 }
 
+/**
+ * A request `fetchPageWithPolicy` never sent, because a recent link-health probe found the URL
+ * gone. It is the 404 or 410 the request would have answered, so every lane handles it exactly
+ * as it handles that status, with no request spent (#6210).
+ */
+export class KnownDeadUrlError extends HttpStatusError {
+  constructor(status: number, finalUrl: string) {
+    super(status, finalUrl);
+    this.name = 'KnownDeadUrlError';
+  }
+}
+
 interface FrozenFailedPage {
   failedStatus: number;
 }
@@ -332,11 +345,14 @@ export async function fetchPageWithPolicy(
     return frozen.payload as FetchedHttpPage;
   }
   if (isBenchmarkReplayActive()) refuseBenchmarkReplayNetwork();
+  const knownDeadStatus = recordKnownDeadUrlSkip(url);
+  if (knownDeadStatus !== undefined) throw new KnownDeadUrlError(knownDeadStatus, url);
   let page: FetchedHttpPage;
   try {
     page = await fetchPageLive(url, options);
   } catch (error) {
     if (error instanceof HttpStatusError) {
+      rememberGoneUrl(url, error.status);
       benchmarkCacheWrite(POLICY_FETCH_BENCHMARK_NAMESPACE, benchmarkKey, {
         failedStatus: error.status,
       } satisfies FrozenFailedPage);
