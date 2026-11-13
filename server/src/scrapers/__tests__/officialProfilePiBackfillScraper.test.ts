@@ -3904,6 +3904,37 @@ describe('officialProfilePiBackfillScraper', () => {
     expect(obs.some((o) => o.field === 'primaryDepartment')).toBe(false);
   });
 
+  describe('a department site profile-meta line is not an appointment (#6185)', () => {
+    const catalog = catalogNaming('Physics', 'Psychiatry');
+    const profileMetaPage = (extra = '') =>
+      profileHtml.replace(
+        '<div class="department">Surgery</div>',
+        `<div class="profile-meta"><div class="profile-meta__inner"><div class="profile-meta__content">
+           <div class="profile-meta__title-line">Professor</div>
+           <div class="profile-meta__department-line">Physics</div>
+         </div></div></div>${extra}`,
+      );
+    const identityOf = (html: string) =>
+      extractOfficialProfileIdentity(html, profileUrl, appointmentFixtureEntity)!;
+    const primaryDepartmentOf = (html: string) =>
+      identityToUserObservations(identityOf(html), appointmentFixtureUser, {
+        canonicalDepartment: catalog,
+      }).find((o) => o.field === 'primaryDepartment')?.value;
+
+    it('states no primary department from the host site department line', () => {
+      const html = profileMetaPage();
+
+      expect(identityOf(html).departments).toEqual([]);
+      expect(primaryDepartmentOf(html)).toBeUndefined();
+    });
+
+    it('still reads a Primary appointment card on the same page', () => {
+      const html = profileMetaPage(appointmentCard('Psychiatry', 'Primary'));
+
+      expect(primaryDepartmentOf(html)).toBe('Psychiatry');
+    });
+  });
+
   describe('primary department from the Appointments block (#5800)', () => {
     const catalog = catalogNaming('Psychiatry', 'Pathology', 'Internal Medicine');
     const identityOf = (html: string) =>
