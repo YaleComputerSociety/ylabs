@@ -372,7 +372,6 @@ describe('planOrgUnitCatalogGapSeed School of Medicine gaps', () => {
         slug: 'otolaryngology',
         kind: 'SECTION',
         aliases: ['Otolaryngology Surgery'],
-        parentOrgUnitId: 'surgery',
       },
     ];
     const plan = planOrgUnitCatalogGapSeed(catalog, MEDICINE_GAPS);
