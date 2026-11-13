@@ -1,8 +1,8 @@
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import path from 'node:path';
 
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 
 import { hermeticChildEnvironment } from '../../test/hermeticEnvironment';
 import {
@@ -18,6 +18,29 @@ const SCENARIO_CHILD = path.join(__dirname, 'fixtures', 'runScriptMainChild.ts')
 const USER_PROJECTION_CHILD = path.join(__dirname, 'fixtures', 'userProjectionScriptChild.ts');
 const CHILD_WATCHDOG_MS = 1_500;
 const CHILD_RUN_CEILING_MS = 25_000;
+const CHILD_TEST_TIMEOUT_MS = CHILD_RUN_CEILING_MS + 5_000;
+
+// A child outlives this worker unless something here stops it: the ceiling timer dies with the
+// worker when a run is aborted or a test times out, which orphaned children for hours (#6136).
+const liveChildren = new Set<ChildProcess>();
+
+const stopSurvivingChildren = (): void => {
+  for (const child of liveChildren) child.kill('SIGKILL');
+  liveChildren.clear();
+};
+
+process.once('exit', stopSurvivingChildren);
+
+const spawnTracked = (args: string[], env: NodeJS.ProcessEnv = {}): ChildProcess => {
+  const child = spawn(process.execPath, args, {
+    cwd: SERVER_ROOT,
+    env: hermeticChildEnvironment(env),
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  liveChildren.add(child);
+  child.on('close', () => liveChildren.delete(child));
+  return child;
+};
 
 interface ChildRun {
   status: number | null;
@@ -31,15 +54,11 @@ interface ChildRun {
 const runChild = (script: string, args: string[], env: NodeJS.ProcessEnv = {}) =>
   new Promise<ChildRun>((resolve, reject) => {
     const startedAt = Date.now();
-    const child = spawn(process.execPath, ['--import', 'tsx', script, ...args], {
-      cwd: SERVER_ROOT,
-      env: hermeticChildEnvironment(env),
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    const child = spawnTracked(['--import', 'tsx', script, ...args], env);
     let stdout = '';
     let stderr = '';
-    child.stdout.on('data', (chunk) => (stdout += chunk));
-    child.stderr.on('data', (chunk) => (stderr += chunk));
+    child.stdout?.on('data', (chunk) => (stdout += chunk));
+    child.stderr?.on('data', (chunk) => (stderr += chunk));
     const ceiling = setTimeout(() => child.kill('SIGKILL'), CHILD_RUN_CEILING_MS);
     child.on('error', reject);
     child.on('close', (status) => {
@@ -51,14 +70,17 @@ const runChild = (script: string, args: string[], env: NodeJS.ProcessEnv = {}) =
 const runScenario = (scenario: string, mongoUri = '') =>
   runChild(SCENARIO_CHILD, [scenario, String(CHILD_WATCHDOG_MS), mongoUri]);
 
-describe('runScriptMain exit handling (#5945)', () => {
+describe('runScriptMain exit handling (#5945)', { timeout: CHILD_TEST_TIMEOUT_MS }, () => {
   let memoryServer: MongoMemoryServer;
 
   beforeAll(async () => {
     memoryServer = await MongoMemoryServer.create();
   });
 
+  afterEach(stopSurvivingChildren);
+
   afterAll(async () => {
+    stopSurvivingChildren();
     await memoryServer?.stop();
   });
 
@@ -122,6 +144,20 @@ describe('runScriptMain exit handling (#5945)', () => {
     expect(run.stdout).toContain('projected 100 user keys');
     expect(run.status, run.stderr).toBe(0);
     expect(run.stderr).not.toContain(SCRIPT_HELD_OPEN_MESSAGE);
+  });
+});
+
+describe('spawned test children (#6136)', () => {
+  it('stops a child that would otherwise outlive the test', async () => {
+    const child = spawnTracked(['-e', 'setInterval(() => {}, 1000)']);
+    const closed = new Promise<NodeJS.Signals | null>((resolve) =>
+      child.on('close', (_status, signal) => resolve(signal)),
+    );
+
+    stopSurvivingChildren();
+
+    await expect(closed).resolves.toBe('SIGKILL');
+    expect(liveChildren.size).toBe(0);
   });
 });
 
