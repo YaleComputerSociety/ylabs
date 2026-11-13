@@ -5,6 +5,7 @@ import {
   extractProfile,
   facultyToUserObservations,
   facultyToResearchEntityObservations,
+  ysmHomeDepartment,
   REFUSED_PROFILE_RETRY_PAUSE_MS,
   type RawYsmFaculty,
 } from '../sources/ysmFacultyDirectoryScraper';
@@ -1189,5 +1190,64 @@ describe('YsmFacultyDirectoryScraper.run title-skip refusal (#4596)', () => {
   it('states nothing for a skipped profile with no lab link', async () => {
     const { emitted } = await runOne('Postdoctoral Associate');
     expect(emitted.filter((o) => o.entityType === 'researchEntity')).toEqual([]);
+  });
+});
+
+describe('the YSM home department comes only from a catalog-named appointment', () => {
+  const catalog = (name: string) =>
+    ['Surgery', 'Internal Medicine'].includes(name) ? name : undefined;
+  const html = profileHtml({
+    fullName: 'Jordan Rivers',
+    email: 'jordan.rivers@yale.edu',
+    appointments: [
+      { type: 'Primary', organizationName: 'Fixture Research Program' },
+      { type: 'Secondary', organizationName: 'Surgery' },
+    ],
+    organizations: [{ name: 'Fixture Center' }, { name: 'Internal Medicine' }],
+    meshKeywords: ['Heart Failure'],
+  });
+
+  it('keeps the organizations out of the appointments and in the departments label', () => {
+    const profile = extractProfile(html, RIVERS)!;
+    expect(profile.appointmentDepartments).toEqual(['Fixture Research Program', 'Surgery']);
+    expect(profile.departments).toEqual([
+      'Fixture Research Program',
+      'Surgery',
+      'Fixture Center',
+      'Internal Medicine',
+    ]);
+  });
+
+  it('emits the first appointment the catalog names, never an organization', () => {
+    const profile = extractProfile(html, RIVERS)!;
+    const { observations } = facultyToUserObservations(profile, catalog);
+    expect(observations.filter((o) => o.field === 'primaryDepartment').map((o) => o.value)).toEqual(
+      ['Surgery'],
+    );
+    expect(observations.find((o) => o.field === 'departments')?.value).toEqual(
+      profile.departments,
+    );
+  });
+
+  it('emits no home department when no appointment is a catalog department', () => {
+    const profile = extractProfile(
+      profileHtml({
+        fullName: 'Jordan Rivers',
+        email: 'jordan.rivers@yale.edu',
+        appointments: [{ type: 'Primary', organizationName: 'Fixture Research Program' }],
+        organizations: [{ name: 'Internal Medicine' }],
+        meshKeywords: ['Heart Failure'],
+      }),
+      RIVERS,
+    )!;
+    const { observations } = facultyToUserObservations(profile, catalog);
+    expect(observations.some((o) => o.field === 'primaryDepartment')).toBe(false);
+  });
+
+  it('keeps the first appointment when no catalog is available', () => {
+    expect(ysmHomeDepartment({ appointmentDepartments: ['Fixture Research Program'] }, null)).toBe(
+      'Fixture Research Program',
+    );
+    expect(ysmHomeDepartment({ appointmentDepartments: [] }, null)).toBeUndefined();
   });
 });

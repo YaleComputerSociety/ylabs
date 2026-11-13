@@ -39,6 +39,9 @@ import {
   type TitledPersonKeysLoader,
 } from '../utils/laneTitledPersonKeys';
 import axios from 'axios';
+import { catalogDepartment } from '../directoryExportDepartmentEvidence';
+import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
+import type { CanonicalDepartment } from '../utils/directoryExportDepartment';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
 import { clampDescriptionLength } from '../../utils/descriptionHygiene';
@@ -136,6 +139,12 @@ export interface YsmFacultyProfile {
   email?: string;
   orcid?: string;
   departments: string[];
+  /**
+   * The profile's stated appointments, primary first, without the `organizations` list the
+   * `departments` label carries (centers, houses, labs, societies). Only these can be a home
+   * department (#6070).
+   */
+  appointmentDepartments: string[];
   researchAreas: string[];
   description?: string;
   bio?: string;
@@ -265,12 +274,9 @@ export function parseYsmFacultyDirectory(html: string): RawYsmFaculty[] {
   return Array.from(bySlug.values());
 }
 
-function departmentsFromAboutSection(about: Record<string, unknown>): string[] {
+function appointmentDepartmentsFromAboutSection(about: Record<string, unknown>): string[] {
   const appointments = Array.isArray(about.appointments)
     ? (about.appointments as Record<string, unknown>[])
-    : [];
-  const organizations = Array.isArray(about.organizations)
-    ? (about.organizations as Record<string, unknown>[])
     : [];
   const primary = appointments
     .filter((a) => textValue(a.type) === 'Primary')
@@ -278,8 +284,32 @@ function departmentsFromAboutSection(about: Record<string, unknown>): string[] {
   const secondary = appointments
     .filter((a) => textValue(a.type) !== 'Primary')
     .map((a) => textValue(a.organizationName));
+  return uniqueStrings([...primary, ...secondary]).slice(0, MAX_DEPARTMENTS);
+}
+
+function departmentsFromAboutSection(about: Record<string, unknown>): string[] {
+  const organizations = Array.isArray(about.organizations)
+    ? (about.organizations as Record<string, unknown>[])
+    : [];
   const orgNames = organizations.map((o) => textValue(o.name));
-  return uniqueStrings([...primary, ...secondary, ...orgNames]).slice(0, MAX_DEPARTMENTS);
+  return uniqueStrings([...appointmentDepartmentsFromAboutSection(about), ...orgNames]).slice(
+    0,
+    MAX_DEPARTMENTS,
+  );
+}
+
+/**
+ * The home department a profile states: its first appointment the department catalog names
+ * (#6070). An organization is never one, and an appointment the catalog does not name (a
+ * program, a center, a lab) is no department claim. With no catalog available the first
+ * appointment stands, matching the resolver, which screens nothing then.
+ */
+export function ysmHomeDepartment(
+  profile: Pick<YsmFacultyProfile, 'appointmentDepartments'>,
+  canonicalDepartment: CanonicalDepartment | null,
+): string | undefined {
+  if (!canonicalDepartment) return profile.appointmentDepartments[0];
+  return profile.appointmentDepartments.find((appointment) => canonicalDepartment(appointment));
 }
 
 function extractPersonEmail(rawEmail: unknown, name: string): string | undefined {
@@ -375,6 +405,7 @@ export function extractProfile(html: string, faculty: RawYsmFaculty): YsmFaculty
     email: extractPersonEmail(getInTouch.email, name),
     orcid: extractOrcid(research),
     departments: departmentsFromAboutSection(about),
+    appointmentDepartments: appointmentDepartmentsFromAboutSection(about),
     researchAreas,
     description: clippedText(htmlToText(research.researchDescription)),
     bio: clippedText(htmlToText(about.bio)),
@@ -407,7 +438,10 @@ export function screenedProfileTitleObservations(
   return observations.filter((observation) => observation.field === 'title');
 }
 
-export function facultyToUserObservations(profile: YsmFacultyProfile): {
+export function facultyToUserObservations(
+  profile: YsmFacultyProfile,
+  canonicalDepartment: CanonicalDepartment | null = null,
+): {
   observations: ObservationInput[];
   entityKey: string;
 } {
@@ -422,8 +456,9 @@ export function facultyToUserObservations(profile: YsmFacultyProfile): {
   if (first) obs.push({ ...base, field: 'fname', value: first });
   if (last) obs.push({ ...base, field: 'lname', value: last });
   obs.push({ ...base, field: 'userType', value: classifyUserType(profile.screeningTitle) });
+  const homeDepartment = ysmHomeDepartment(profile, canonicalDepartment);
+  if (homeDepartment) obs.push({ ...base, field: 'primaryDepartment', value: homeDepartment });
   if (profile.departments.length > 0) {
-    obs.push({ ...base, field: 'primaryDepartment', value: profile.departments[0] });
     obs.push({ ...base, field: 'departments', value: profile.departments });
   }
   if (profile.email) obs.push({ ...base, field: 'email', value: profile.email });
@@ -683,6 +718,8 @@ export class YsmFacultyDirectoryScraper implements IScraper {
     private readonly probePage?: LanePageProbe,
     private readonly coLedSiteIndexLoader: CoLedSiteIndexLoader = loadCoLedSiteIndex,
     private readonly titledPersonKeysLoader: TitledPersonKeysLoader = loadLaneTitledPersonKeys,
+    private readonly catalogDepartmentLoader: () => Promise<CanonicalDepartment | null> = () =>
+      mongooseConnectionWasOpened() ? catalogDepartment() : Promise.resolve(null),
   ) {}
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -719,6 +756,7 @@ export class YsmFacultyDirectoryScraper implements IScraper {
     // cannot be narrowed to research roles here - a role needs the person's own
     // profile, and this run only fetches the limited slice (#2368/#2369).
     const directorySurnames = personSurnamesFromDisplayNames(roster.map((entry) => entry.name));
+    const canonicalDepartment = await this.catalogDepartmentLoader();
     const rekeyReads = new RekeyedPersonReads(SOURCE_KEY);
     rekeyReads.recordLaneNames(directoryNameCensus(roster));
     const labUrlEvidenceBySlug = await this.labUrlEvidenceLoader(
@@ -800,7 +838,10 @@ export class YsmFacultyDirectoryScraper implements IScraper {
         }
 
         researchersEnriched += 1;
-        const { observations: userObs, entityKey } = facultyToUserObservations(profile);
+        const { observations: userObs, entityKey } = facultyToUserObservations(
+          profile,
+          canonicalDepartment,
+        );
         await ctx.emit(userObs);
         rekeyReads.recordPerson(userObs);
         totalObs += userObs.length;
