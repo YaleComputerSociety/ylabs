@@ -1194,7 +1194,8 @@ const blockSeparatedText = (selection: cheerio.Cheerio<any>): string =>
 /**
  * One school's Drupal profile template states the appointment only as a bold line of its
  * contact-information field, not in any element classed as a title (#5874). Its bold lines are
- * read in order as whole paragraphs, so an appointment split across tags stays whole. A line
+ * read in order as whole paragraphs, so an appointment split across tags stays whole; a block
+ * that breaks lines with `<br>` is read one bold tag at a time instead. A line
  * naming an office or unit is refused, and reading stops at the first contact label, so a bold
  * phone, address, hours or office line after it is never read.
  */
@@ -1208,7 +1209,10 @@ function contactFieldAppointment($: cheerio.CheerioAPI): string {
   const boldLines = field
     .find('strong')
     .toArray()
-    .map((strong) => $(strong).closest('p, div').get(0) ?? strong)
+    .map((strong) => {
+      const block = $(strong).closest('p, div');
+      return block.length > 0 && block.find('br').length === 0 ? block.get(0)! : strong;
+    })
     .filter((line, index, lines) => lines.indexOf(line) === index);
   for (const line of boldLines) {
     const value = cleanOfficialProfileTitle(blockSeparatedText($(line)));

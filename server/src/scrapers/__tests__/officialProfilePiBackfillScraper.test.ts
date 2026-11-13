@@ -6085,6 +6085,24 @@ describe('the appointment on a Drupal contact-information profile template (#587
     );
   });
 
+  it('keeps a role that names an office later in the line', () => {
+    const html = profilePage(
+      contactField('<p><strong>Director of the Office of Fixture Programs</strong></p>'),
+    );
+    expect(officialProfilePageStatedFields(html).title).toBe(
+      'Director of the Office of Fixture Programs',
+    );
+  });
+
+  it('reads only the bold tag when the field breaks its lines with <br>', () => {
+    const html = profilePage(
+      contactField(
+        '<strong>Associate Professor of Nursing</strong><br>100 Fixture Street<br>email: <a href="mailto:robin.fixture@example.org">robin.fixture@example.org</a>',
+      ),
+    );
+    expect(officialProfilePageStatedFields(html).title).toBe('Associate Professor of Nursing');
+  });
+
   it('keeps a long genuine named-chair appointment whole (#5832)', () => {
     const chair = 'Fixture Family and Fixture Foundation Professor of Nursing';
     const html = profilePage(contactField(`<p><strong>${chair}</strong></p><p>Room 100</p>`));
