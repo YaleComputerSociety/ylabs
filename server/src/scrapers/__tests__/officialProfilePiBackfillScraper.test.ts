@@ -1605,6 +1605,48 @@ const outsideYaleNoSeparatorDeputyProfileHtml = `
   </html>
 `;
 
+const catalogNaming =
+  (...departments: string[]) =>
+  (name: string): string | undefined =>
+    departments.find((department) => department.toLowerCase() === name.toLowerCase());
+
+function appointmentCard(unit: string, appointmentType: string): string {
+  return `
+    <li class="content-layout-column-list-item">
+      <article class="card profile-details-appointment-card" aria-label="Professor ${appointmentType} in ${unit}">
+        <h4 class="profile-details-appointment-card__academic-unit">${unit}</h4>
+        <div class="profile-details-appointment-card__title">Professor</div>
+        <div class="profile-details-appointment-card__type">${appointmentType}</div>
+        <div class="profile-details-appointment-card__link"><a href="https://medicine.yale.edu/"><span class="link__label">${unit}</span></a></div>
+      </article>
+    </li>`;
+}
+
+function profileWithAppointments(cards: string): string {
+  return profileHtml.replace(
+    '<div class="department">Surgery</div>',
+    `
+      <section class="profile-details-content-section" aria-label="about Appointments" id="about-appointments">
+        <h3 class="profile-details-content-section__heading">Appointments</h3>
+        <div class="profile-details-content-section__content">
+          <div class="profile-details-appointment-list"><ul class="content-layout-column-list">${cards}</ul></div>
+          <h4 class="profile-details-organization-list__header">Other Departments &amp; Organizations</h4>
+          <div class="profile-details-organization-list__list"><ul>
+            <li class="organization-hyperlink-list__item"><a href="https://medicine.yale.edu/bbs/" class="hyperlink">Biological and Biomedical Sciences</a></li>
+            <li class="organization-hyperlink-list__item"><a href="https://medicine.yale.edu/pathology/" class="hyperlink">Pathology</a></li>
+          </ul></div>
+        </div>
+      </section>
+    `,
+  );
+}
+
+const appointmentFixtureEntity = {
+  name: 'Jules Fixture Research Area',
+  slug: 'faculty-research-area-jules-fixture',
+};
+const appointmentFixtureUser = { netid: 'jf106', email: 'jules.fixture@yale.edu' };
+
 function contextFor(emitted: ObservationInput[]): ScraperContext {
   return {
     scrapeRunId: 'run-1',
@@ -3533,10 +3575,11 @@ describe('officialProfilePiBackfillScraper', () => {
       slug: 'faculty-research-area-jules-fixture',
     });
 
-    const obs = identityToUserObservations(identity!, {
-      netid: 'jf106',
-      email: 'jules.fixture@yale.edu',
-    });
+    const obs = identityToUserObservations(
+      identity!,
+      { netid: 'jf106', email: 'jules.fixture@yale.edu' },
+      { canonicalDepartment: catalogNaming('Surgery', 'Pathology') },
+    );
 
     expect(obs.find((o) => o.field === 'primaryDepartment')).toEqual(
       expect.objectContaining({ value: 'Surgery', sourceUrl: profileUrl }),
@@ -3824,10 +3867,11 @@ describe('officialProfilePiBackfillScraper', () => {
       },
     );
 
-    const obs = identityToUserObservations(identity!, {
-      netid: 'jf106',
-      email: 'jules.fixture@yale.edu',
-    });
+    const obs = identityToUserObservations(
+      identity!,
+      { netid: 'jf106', email: 'jules.fixture@yale.edu' },
+      { canonicalDepartment: catalogNaming('Surgery', 'Pathology') },
+    );
 
     expect(obs.some((o) => o.value === 'Other Departments & Organizations')).toBe(false);
     expect(obs.some((o) => o.value === 'Pathology')).toBe(false);
@@ -3857,6 +3901,99 @@ describe('officialProfilePiBackfillScraper', () => {
 
     expect(identity!.departments).toEqual([]);
     expect(obs.some((o) => o.field === 'primaryDepartment')).toBe(false);
+  });
+
+  describe('primary department from the Appointments block (#5800)', () => {
+    const catalog = catalogNaming('Psychiatry', 'Pathology', 'Internal Medicine');
+    const identityOf = (html: string) =>
+      extractOfficialProfileIdentity(html, profileUrl, appointmentFixtureEntity)!;
+    const primaryDepartmentOf = (
+      html: string,
+      canonicalDepartment: ((name: string) => string | undefined) | null = catalog,
+    ) =>
+      identityToUserObservations(identityOf(html), appointmentFixtureUser, {
+        canonicalDepartment,
+      }).find((o) => o.field === 'primaryDepartment')?.value;
+
+    it('reads the Primary appointment unit, not a Secondary one or the affiliation list', () => {
+      const html = profileWithAppointments(
+        appointmentCard('Pathology', 'Secondary') + appointmentCard('Psychiatry', 'Primary'),
+      );
+
+      expect(identityOf(html).departments).toEqual(['Psychiatry']);
+      expect(primaryDepartmentOf(html)).toBe('Psychiatry');
+    });
+
+    it('states no department when the page lists only Secondary appointments', () => {
+      const html = profileWithAppointments(appointmentCard('Pathology', 'Secondary'));
+
+      expect(identityOf(html).departments).toEqual([]);
+      expect(primaryDepartmentOf(html)).toBeUndefined();
+    });
+
+    it('states the catalog spelling of the Primary unit', () => {
+      const html = profileWithAppointments(appointmentCard('internal medicine', 'Primary'));
+
+      expect(primaryDepartmentOf(html)).toBe('Internal Medicine');
+    });
+
+    it('fails closed on a Primary unit the catalog does not name, promoting nothing', () => {
+      const html = profileWithAppointments(
+        appointmentCard('Yale Cancer Center', 'Primary') +
+          appointmentCard('Pathology', 'Secondary'),
+      );
+
+      expect(primaryDepartmentOf(html)).toBeUndefined();
+    });
+
+    it('states no department when the catalog is unavailable or not supplied', () => {
+      const html = profileWithAppointments(appointmentCard('Psychiatry', 'Primary'));
+
+      expect(primaryDepartmentOf(html, null)).toBeUndefined();
+      expect(
+        identityToUserObservations(identityOf(html), appointmentFixtureUser).some(
+          (o) => o.field === 'primaryDepartment',
+        ),
+      ).toBe(false);
+    });
+
+    it('passes the run catalog to the department it emits', async () => {
+      const emitted: ObservationInput[] = [];
+      const catalogLoader = vi.fn(async () => catalog);
+      const profileTarget = {
+        _id: 'user-appointments',
+        netid: 'jf106',
+        email: 'jules.fixture@yale.edu',
+        fname: 'Jules',
+        lname: 'Fixture',
+        name: 'Jules Fixture',
+        slug: 'jules-fixture',
+        websiteUrl: profileUrl,
+      };
+      const scraper = new OfficialProfilePiBackfillScraper(
+        vi.fn(async () => profileWithAppointments(appointmentCard('Psychiatry', 'Primary'))),
+        vi.fn(async () => []),
+        vi.fn(async () => null),
+        vi.fn(async () => [profileTarget]),
+        vi.fn(async () => []),
+        vi.fn(async () => []),
+        0,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        catalogLoader,
+      );
+
+      await scraper.run(visibleBioContextFor(emitted));
+
+      expect(emitted.find((o) => o.field === 'primaryDepartment')).toEqual(
+        expect.objectContaining({ value: 'Psychiatry', entityKey: 'netid:jf106' }),
+      );
+      expect(catalogLoader).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('runs only the targeted queued Medicine profile backfill', async () => {
