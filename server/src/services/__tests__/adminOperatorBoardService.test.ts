@@ -6,6 +6,7 @@ import {
   deriveDataQualityGate,
   buildRecommendedNextActions,
   classifyOperatorQueueReason,
+  operatorQueueReasonMatch,
   splitOperatorSampleReasons,
   topQueueReasonsPerKind,
   derivePromotionStatus,
@@ -30,7 +31,6 @@ describe('adminOperatorBoardService', () => {
   it('separates blocking repair reasons from positive evidence signals', () => {
     expect(classifyOperatorQueueReason('missing_card_description')).toBe('blocking');
     expect(classifyOperatorQueueReason('public_description_invariant_failed')).toBe('blocking');
-    expect(classifyOperatorQueueReason('non_research_program')).toBe('blocking');
     expect(classifyOperatorQueueReason('profile_fallback_only')).toBe('blocking');
     expect(classifyOperatorQueueReason('not_undergraduate_relevant')).toBe('review');
     expect(classifyOperatorQueueReason('formalization_only')).toBe('review');
@@ -44,14 +44,30 @@ describe('adminOperatorBoardService', () => {
   });
 
   it('sends canonical hard blockers that need no operator decision to the repair lane', () => {
-    for (const hard of [
-      'public_description_invariant_failed',
-      'citations_identify_no_person',
-      'external_award_cycle_stale',
-    ]) {
+    for (const hard of ['public_description_invariant_failed', 'citations_identify_no_person']) {
       expect(classifyOperatorQueueReason(hard)).toBe('blocking');
       expect(classifyOperatorQueueReason(hard, 'programs')).toBe('blocking');
     }
+  });
+
+  it('groups reasons a blind sample confirmed as correctly withheld apart from must-fix work (#6204)', () => {
+    for (const withheld of ['non_research_program', 'external_award_cycle_stale']) {
+      expect(classifyOperatorQueueReason(withheld)).toBe('withheld');
+      expect(classifyOperatorQueueReason(withheld, 'programs')).toBe('withheld');
+    }
+    expect(classifyOperatorQueueReason('prize_for_completed_work', 'programs')).toBe('blocking');
+  });
+
+  it('counts a withheld row only under its withheld reasons, never as must-fix work (#6204)', () => {
+    expect(operatorQueueReasonMatch('non_research_program')).toEqual({
+      studentVisibilityReasons: 'non_research_program',
+    });
+    expect(operatorQueueReasonMatch('missing_application_route')).toEqual({
+      studentVisibilityReasons: {
+        $all: ['missing_application_route'],
+        $nin: ['non_research_program', 'external_award_cycle_stale'],
+      },
+    });
   });
 
   it('keeps the reasons the program tier still gates on as program blockers', () => {

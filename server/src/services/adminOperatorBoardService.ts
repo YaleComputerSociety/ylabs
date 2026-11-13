@@ -28,7 +28,7 @@ import {
   PROGRAM_LISTING_PAGE_REASON,
 } from './programApplicability';
 
-export type QueueKind = 'blocking' | 'evidence' | 'review';
+export type QueueKind = 'blocking' | 'evidence' | 'review' | 'withheld';
 import { gateScorecardArtifactPath, type GateScorecardName } from './gateScorecardArtifacts';
 import {
   readStoredGateScorecards,
@@ -403,10 +403,19 @@ const programStudentReadyGatingReasons = new Set([
   'missing_application_route',
 ]);
 
+// Each reason here was confirmed by a blind sample before joining (#6204); add one only the same way.
+export const CORRECTLY_WITHHELD_REASONS: ReadonlySet<string> = new Set([
+  'non_research_program',
+  EXTERNAL_AWARD_CYCLE_STALE_REASON,
+]);
+
+const CORRECTLY_WITHHELD_REASON_LIST = [...CORRECTLY_WITHHELD_REASONS];
+
 export function classifyOperatorQueueReason(
   reason: string,
   collection: OperatorQueueCollection = 'research',
 ): QueueKind {
+  if (CORRECTLY_WITHHELD_REASONS.has(reason)) return 'withheld';
   if (collection === 'programs' && programStudentReadyGatingReasons.has(reason)) return 'blocking';
   if (isStudentVisibilitySignalReason(reason)) return 'evidence';
   if (reviewDecisionReasons.has(reason)) return 'review';
@@ -1882,23 +1891,48 @@ async function countByTier(model: any, match: Record<string, unknown>) {
   return normalizeTierCounts(rows);
 }
 
+/**
+ * A row withheld by a confirmed verdict needs no other repair, so its remaining reasons
+ * count nowhere: only the withheld reasons themselves are counted on it.
+ */
+export function operatorQueueReasonMatch(reason: string): Record<string, unknown> {
+  return CORRECTLY_WITHHELD_REASONS.has(reason)
+    ? { studentVisibilityReasons: reason }
+    : { studentVisibilityReasons: { $all: [reason], $nin: CORRECTLY_WITHHELD_REASON_LIST } };
+}
+
 async function reasonCounts(
   model: any,
   collection: OperatorQueueCollection,
   match: Record<string, unknown>,
 ): Promise<Array<{ reason: string; count: number; kind: QueueKind }>> {
-  const rows = await model.aggregate([
-    { $match: match },
-    { $unwind: '$studentVisibilityReasons' },
-    { $group: { _id: '$studentVisibilityReasons', count: { $sum: 1 } } },
-    { $sort: { count: -1, _id: 1 } },
-    { $project: { _id: 0, reason: '$_id', count: 1 } },
+  const countReasons = (rowMatch: Record<string, unknown>, keep: (reason: string) => boolean) =>
+    model
+      .aggregate([
+        { $match: { ...match, ...rowMatch } },
+        { $unwind: '$studentVisibilityReasons' },
+        { $group: { _id: '$studentVisibilityReasons', count: { $sum: 1 } } },
+        { $project: { _id: 0, reason: '$_id', count: 1 } },
+      ])
+      .then((rows: Array<{ reason: string; count: number }>) =>
+        rows.filter((row) => keep(row.reason)),
+      );
+  const [withheld, actionable] = await Promise.all([
+    countReasons({ studentVisibilityReasons: { $in: CORRECTLY_WITHHELD_REASON_LIST } }, (reason) =>
+      CORRECTLY_WITHHELD_REASONS.has(reason),
+    ),
+    countReasons(
+      { studentVisibilityReasons: { $nin: CORRECTLY_WITHHELD_REASON_LIST } },
+      () => true,
+    ),
   ]);
 
-  return rows.map((row: { reason: string; count: number }) => ({
-    ...row,
-    kind: classifyOperatorQueueReason(row.reason, collection),
-  }));
+  return [...withheld, ...actionable]
+    .sort((a, b) => b.count - a.count || a.reason.localeCompare(b.reason))
+    .map((row) => ({
+      ...row,
+      kind: classifyOperatorQueueReason(row.reason, collection),
+    }));
 }
 
 const DISPLAYED_REASON_COUNTS = 12;
@@ -1908,7 +1942,7 @@ export function topQueueReasonsPerKind<T extends { count: number; kind: QueueKin
   rows: T[],
   perKind = QUEUES_PER_KIND_PER_COLLECTION,
 ): T[] {
-  const taken: Record<QueueKind, number> = { blocking: 0, evidence: 0, review: 0 };
+  const taken: Record<QueueKind, number> = { blocking: 0, evidence: 0, review: 0, withheld: 0 };
   return [...rows]
     .sort((a, b) => b.count - a.count)
     .filter((row) => {
@@ -1940,6 +1974,8 @@ const programReasonActions: Record<string, string> = {
   duplicate_program: 'Redundant copy of a fund already served by another row; keep suppressed.',
   common_application_container:
     'A common application admits to funds served as their own programs; keep suppressed.',
+  non_research_program:
+    'Not a research opportunity, such as a prize for completed work or a tuition scholarship; stays withheld.',
   [EXTERNAL_AWARD_CYCLE_STALE_REASON]:
     'Outside program whose office record skipped its only stated cycle; returns when the record states a current one.',
   [AWARD_SUSPENDED_REASON]:
@@ -2015,7 +2051,7 @@ async function buildQueueSummaries() {
       kind: row.kind,
       count: row.count,
       nextAction: researchReasonActions[row.reason] || 'Review samples and decide repair action.',
-      samples: (await sampleResearch({ studentVisibilityReasons: row.reason })).map(
+      samples: (await sampleResearch(operatorQueueReasonMatch(row.reason))).map(
         compactResearchSample,
       ),
     })),
@@ -2028,7 +2064,7 @@ async function buildQueueSummaries() {
       kind: row.kind,
       count: row.count,
       nextAction: programReasonActions[row.reason] || 'Review samples and decide repair action.',
-      samples: (await samplePrograms({ studentVisibilityReasons: row.reason })).map(
+      samples: (await samplePrograms(operatorQueueReasonMatch(row.reason))).map(
         compactProgramSample,
       ),
     })),
@@ -2040,7 +2076,7 @@ async function buildQueueSummaries() {
       acc[row.kind] += row.count;
       return acc;
     },
-    { blocking: 0, evidence: 0, review: 0 },
+    { blocking: 0, evidence: 0, review: 0, withheld: 0 },
   );
 
   return {
