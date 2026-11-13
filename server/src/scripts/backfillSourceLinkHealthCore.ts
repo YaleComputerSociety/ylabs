@@ -421,6 +421,21 @@ function resolveConnectionFailure(
  * or connection negative is not this: `classifyProbeOutcome` records it as
  * `UNAVAILABLE`, which is how a retired host retires (#2726, #2757).
  */
+/**
+ * Whether a decisive stored verdict survives a fresh `UNKNOWN` probe. It does, because an
+ * `UNKNOWN` asserts nothing, except where a certificate that fails verification contradicts a
+ * stored `HEALTHY` for this very URL: that verdict was written by a probe which never negotiated
+ * this spelling's TLS (#4080). A stored `UNAVAILABLE` still stands. Every caller that may replace
+ * a stored verdict with an `UNKNOWN` reads this one rule (#6258).
+ */
+export function storedVerdictSurvivesUnknownProbe(
+  fresh: { tlsVerificationFailed?: boolean },
+  stored: { healthStatus?: unknown } | undefined,
+): boolean {
+  if (!isDecisiveStoredVerdict(stored)) return false;
+  return !(fresh.tlsVerificationFailed && stored?.healthStatus === 'HEALTHY');
+}
+
 export function isUnreachedProbe(fresh: {
   healthStatus: SourceLinkHealthStatus;
   httpStatusCode?: number;
@@ -501,12 +516,7 @@ export function resolveSourceLinkHealthEntry(
       preservedUnreachedVerdict: true,
     };
   }
-  if (!isDecisiveStoredVerdict(stored))
-    return { entry: freshEntry, preservedDecisiveVerdict: false };
-  // A certificate that fails verification contradicts a stored HEALTHY for this very
-  // URL, so that verdict is not preserved: it was written by a probe that never
-  // negotiated this spelling's TLS (#4080). A stored UNAVAILABLE still stands.
-  if (fresh.tlsVerificationFailed && stored?.healthStatus === 'HEALTHY')
+  if (!storedVerdictSurvivesUnknownProbe(fresh, stored))
     return { entry: freshEntry, preservedDecisiveVerdict: false };
 
   const kept = stored as StoredSourceLinkHealthEntry;

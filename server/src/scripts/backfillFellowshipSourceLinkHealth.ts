@@ -7,7 +7,7 @@ import { initializeConnections } from '../db/connections';
 import { Fellowship } from '../models/fellowship';
 import { checkSourceLinkHealth, type SourceLinkHealth } from '../services/sourceLinkHealth';
 import { sanitizeLogValue } from '../utils/logSanitizer';
-import { isDecisiveStoredVerdict } from './backfillSourceLinkHealthCore';
+import { storedVerdictSurvivesUnknownProbe } from './backfillSourceLinkHealthCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import type {
   ResolverBreakerStats,
@@ -190,7 +190,13 @@ export async function runFellowshipSourceLinkHealthBackfill(options: {
   for (const { fellowship, url } of planned) {
     const health = healthCache.get(url);
     if (!health) continue;
-    if (health.healthStatus === 'UNKNOWN' && isDecisiveStoredVerdict(fellowship.sourceLinkHealth)) {
+    if (
+      health.healthStatus === 'UNKNOWN' &&
+      storedVerdictSurvivesUnknownProbe(
+        health,
+        fellowship.sourceLinkHealth as { healthStatus?: unknown },
+      )
+    ) {
       result.preservedDecisive += 1;
       continue;
     }

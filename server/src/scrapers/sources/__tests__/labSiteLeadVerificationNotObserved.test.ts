@@ -15,6 +15,33 @@ const CANDIDATE: LabSiteVerificationCandidate = {
   leads: [],
 };
 
+const LANDING_WITH_MEMBERS_LINK =
+  '<html><body><h1>Synthetic Tidepool Lab</h1><a href="/people/">Our people</a></body></html>';
+
+async function runWithSubpageError(error: unknown) {
+  const emitted: ObservationInput[] = [];
+  const scraper = new LabSiteLeadVerificationScraper(
+    async () => [CANDIDATE],
+    (website, useCache) =>
+      readLabSite(website, useCache, async (url) => {
+        if (url === CANDIDATE.website) {
+          return { url, finalUrl: url, html: LANDING_WITH_MEMBERS_LINK, httpStatusCode: 200 };
+        }
+        throw error;
+      }),
+  );
+  const context = {
+    sourceName: scraper.name,
+    options: {},
+    emit: async (observation: ObservationInput) => {
+      emitted.push(observation);
+    },
+    log: () => undefined,
+  } as unknown as ScraperContext;
+  const result = await scraper.run(context);
+  return { emitted, result };
+}
+
 async function runWithFetchError(error: unknown) {
   const emitted: ObservationInput[] = [];
   const scraper = new LabSiteLeadVerificationScraper(
@@ -69,6 +96,28 @@ describe('lab-site lead verification never records a fetch that observed nothing
 
     expect(emitted).toHaveLength(1);
     expect((emitted[0].value as { state: string }).state).toBe('unreachable');
+    expect(result.notes).toContain('deferredNotObserved=0');
+  });
+  it('defers the row when a members page our own pause refused might have named the lead', async () => {
+    const pause = new HostPausedError({
+      host: 'lab.example.edu',
+      until: new Date('2026-11-13T20:00:00Z'),
+    } as ConstructorParameters<typeof HostPausedError>[0]);
+
+    const { emitted, result } = await runWithSubpageError(pause);
+
+    expect(emitted).toEqual([]);
+    expect(result.notes).toContain('deferredNotObserved=1');
+  });
+
+  it('still judges the landing page when a members page answered 404, which is genuine absence', async () => {
+    const gone = Object.assign(new Error('Request failed with status code 404'), {
+      response: { status: 404 },
+    });
+
+    const { emitted, result } = await runWithSubpageError(gone);
+
+    expect(emitted).toHaveLength(1);
     expect(result.notes).toContain('deferredNotObserved=0');
   });
 });

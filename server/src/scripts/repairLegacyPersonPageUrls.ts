@@ -217,7 +217,12 @@ async function main() {
     candidates: planned.length,
     adopted: adopted.length,
     refusedByTitleGate: refused.filter((entry) => !entry.skippedReason).length,
-    skippedOriginalStillResolves: refused.filter((entry) => entry.skippedReason).length,
+    skippedOriginalStillResolves: refused.filter(
+      (entry) => entry.skippedReason === 'original still resolves',
+    ).length,
+    skippedOriginalNotConfirmedGone: refused.filter(
+      (entry) => entry.skippedReason === 'original not confirmed gone',
+    ).length,
     plannedFromUnverifiedOriginal: planned.filter((e) => e.originalHealth === 'unverified').length,
     adoptedServedRows: new Set(
       adopted.filter((e) => e.studentVisibilityTier === 'student_ready').map((e) => e.entitySlug),

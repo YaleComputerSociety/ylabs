@@ -225,9 +225,12 @@ export async function readLabSite(
     try {
       const subpage = await fetcher(subpageUrl, useCache);
       if (subpage.html) pages.push(subpage);
-    } catch {
-      // A missing members page is not evidence about the lead, so it is skipped
-      // rather than downgrading the landing page's own verdict.
+    } catch (error) {
+      // A members page the fetch never reached cannot be told apart from one that does not
+      // name the lead, and a landing page usually does not name the PI, so the whole row is
+      // deferred rather than judged on the pages that happened to answer (#6258). A members
+      // page that answered 404 is genuinely absent and is skipped as before.
+      if (isNotObserved(error)) return { html: '', visitedUrls: [], notObserved: true };
     }
   }
   return {

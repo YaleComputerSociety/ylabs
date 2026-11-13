@@ -1,3 +1,5 @@
+import { GONE_HTTP_STATUS_CODES } from './deadWebsiteValueRefusalCore';
+
 export interface DeadLabHomeCandidate {
   websiteUrl?: unknown;
   sourceUrls?: unknown;
@@ -10,8 +12,6 @@ export type DeadLabHomeVerdict =
   | 'address-refused'
   | 'not-confirmed-gone'
   | 'clear';
-
-const GONE_HTTP_STATUSES: ReadonlySet<number> = new Set([404, 410]);
 
 export const SSRF_REFUSED_PROBE = 'ssrf-refused' as const;
 
@@ -49,7 +49,7 @@ export function classifyLabHome(
   if (indexSegments.has(segment)) return 'in-index';
   if (httpStatus === 200) return 'live-not-in-index';
   if (httpStatus === SSRF_REFUSED_PROBE) return 'address-refused';
-  return typeof httpStatus === 'number' && GONE_HTTP_STATUSES.has(httpStatus)
+  return typeof httpStatus === 'number' && GONE_HTTP_STATUS_CODES.has(httpStatus)
     ? 'clear'
     : 'not-confirmed-gone';
 }
