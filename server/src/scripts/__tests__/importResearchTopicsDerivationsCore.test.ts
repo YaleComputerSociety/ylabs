@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import {
   RESEARCH_PAGE_TOPICS_PROMPT,
@@ -35,7 +34,6 @@ import {
   type ImportedTopicsStore,
 } from '../importResearchTopicsDerivationsCore';
 
-const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SLUG = 'tidepool-lab-fixture';
 const HOME = 'https://tidepool-lab.example.org/';
 const pages = [
@@ -106,6 +104,22 @@ describe('parseImportedTopicReadings', () => {
     ).toThrow(/openai writer/);
     expect(parseImportedTopicReadings(readingsFile())[0].writer).toBe(WRITER);
     expect(WRITER).toBe(`claude-agent:topics-${RESEARCH_PAGE_TOPICS_PROMPT_HASH.slice(0, 8)}`);
+  });
+
+  it('accepts only the agent writer named for the current prompt', () => {
+    const otherPromptWriter = `claude-agent:topics-${'0'.repeat(8)}`;
+    expect(WRITER).not.toBe(otherPromptWriter);
+    for (const writer of [
+      'openai/gpt-5-mini',
+      'gpt-5-mini',
+      'openai-agent',
+      'claude-agent:1',
+      otherPromptWriter,
+    ]) {
+      expect(() => parseImportedTopicReadings(readingsFile(undefined, { writer }))).toThrow(
+        /must name the writer claude-agent:topics-/,
+      );
+    }
   });
 
   it('refuses readings that answer a different prompt', () => {
@@ -257,6 +271,39 @@ describe('importResearchTopicReadings', () => {
     expect(refused.rows[0].outcome).toBe('refused');
   });
 
+  it('stores nothing for a reading the filters leave with no topics, so a later reading can fill the key', async () => {
+    const { store, records } = memoryStore();
+    for (const apply of [false, true]) {
+      const empty = await importOnce(
+        readingsFile([readingRow({ rawOutput: { topics: [], field: null } })]),
+        store,
+        { apply },
+      );
+      expect(empty.rows[0].outcome).toBe('refused');
+      expect(empty).toMatchObject({ stored: 0, plannedStores: 0, rowsWithTopicsAfterFilters: 0 });
+    }
+    const offPage = await importOnce(
+      readingsFile([
+        readingRow({
+          rawOutput: {
+            topics: [
+              { topic: 'Coastal kelp', quote: 'coastal kelp nurseries on deep reefs', url: HOME },
+            ],
+            field: null,
+          },
+        }),
+      ]),
+      store,
+    );
+    expect(offPage.rows[0].outcome).toBe('refused');
+    expect(records.size).toBe(0);
+    expect(store.has).not.toHaveBeenCalled();
+
+    const later = await importOnce(readingsFile(), store);
+    expect(later.rows[0].outcome).toBe('stored');
+    expect(records.size).toBe(1);
+  });
+
   it('counts a row with no current page text', async () => {
     const report = await importOnce(readingsFile(), memoryStore().store, { rowsOverride: [] });
     expect(report.noText).toBe(1);
@@ -389,16 +436,6 @@ describe('parseImportResearchTopicsArgs and the apply guard', () => {
   it('states the owner grading gate in its help text', () => {
     expect(IMPORT_RESEARCH_TOPICS_USAGE).toMatch(/three blind graders/);
     expect(IMPORT_RESEARCH_TOPICS_USAGE).toMatch(/0 topics unsupported/);
-  });
-
-  it('never reads a model API key', () => {
-    for (const file of [
-      'importResearchTopicsDerivations.ts',
-      'importResearchTopicsDerivationsCore.ts',
-    ]) {
-      const source = fs.readFileSync(path.join(HERE, '..', file), 'utf8');
-      expect(source).not.toMatch(/OPENAI_API_KEY|API_KEY|apiKey/);
-    }
   });
 });
 

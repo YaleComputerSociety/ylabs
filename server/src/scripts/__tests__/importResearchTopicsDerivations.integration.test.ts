@@ -54,7 +54,9 @@ import {
   buildResearchTopicsExport,
   importedTopicsWriterId,
   importResearchTopicReadings,
+  IMPORT_RESEARCH_TOPICS_CONFIRM_FLAG,
   parseImportedTopicReadings,
+  parseImportResearchTopicsArgs,
 } from '../importResearchTopicsDerivationsCore';
 
 const SLUG = 'tidepool-lab-fixture';
@@ -182,6 +184,38 @@ describe('research-topics:import-derivations against the cache and the materiali
     expect(row?.researchAreas).toEqual(['Kelp forests', 'Marine heatwaves', 'Marine ecology']);
     expect(row?.researchAreas).not.toContain('Coastal kelp');
     expect(modelCalls.chat).not.toHaveBeenCalled();
+  });
+
+  it('applies an import without reading any model API key or calling the model', async () => {
+    const keyReads: string[] = [];
+    const realEnv = process.env;
+    const recordingEnv = new Proxy(
+      { ...realEnv, DEV_WRITE_OWNER: 'import-fixture-owner' },
+      {
+        get(target, key, receiver) {
+          if (typeof key === 'string' && /API_KEY/i.test(key)) keyReads.push(key);
+          return Reflect.get(target, key, receiver);
+        },
+      },
+    );
+    process.env = recordingEnv;
+    try {
+      const args = parseImportResearchTopicsArgs([
+        '--input=/tmp/readings.json',
+        '--apply',
+        IMPORT_RESEARCH_TOPICS_CONFIRM_FLAG,
+      ]);
+      expect(args).toMatchObject({ mode: 'import', apply: true });
+      const report = await exportAndImport([
+        { topic: 'Kelp forests', quote: 'how coastal kelp forests recover', url: HOME },
+      ]);
+      expect(report.stored).toBe(1);
+    } finally {
+      process.env = realEnv;
+    }
+    expect(keyReads).toEqual([]);
+    expect(modelCalls.chat).not.toHaveBeenCalled();
+    expect(modelCalls.embedding).not.toHaveBeenCalled();
   });
 
   it('a second import never replaces the stored reading', async () => {

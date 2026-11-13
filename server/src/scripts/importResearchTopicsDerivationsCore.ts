@@ -25,7 +25,6 @@ import {
 
 export const IMPORT_RESEARCH_TOPICS_SCRIPT = 'research-topics:import-derivations';
 export const IMPORT_RESEARCH_TOPICS_CONFIRM_FLAG = '--confirm-research-topics-import';
-export const MAX_IMPORTED_WRITER_LENGTH = 120;
 export const MAX_GRADING_SAMPLE = 200;
 
 /**
@@ -43,7 +42,7 @@ export const IMPORT_RESEARCH_TOPICS_USAGE = [
   '  Import, dry run:        --input=<a.json[,b.json]> [--output=<path.json>]',
   `  Import, apply:          --input=<a.json[,b.json]> --apply ${IMPORT_RESEARCH_TOPICS_CONFIRM_FLAG} (Development only, DEV_WRITE_OWNER set, takes the Development write lease)`,
   '  Files are written mode 600 under a temp root or ~/Personal/ylabs-experiments (batch runs: descriptions/batch-run/).',
-  '  A readings file is {"writer": "claude-agent:topics-<first 8 of promptHash>", "promptHash", "rows": [{"slug", "inputHash", "rawOutput"}]}; an openai writer, a promptHash mismatch and a stale inputHash are refused.',
+  '  A readings file is {"writer": "claude-agent:topics-<first 8 of promptHash>", "promptHash", "rows": [{"slug", "inputHash", "rawOutput"}]}; an openai or any other writer, a promptHash mismatch, a stale inputHash and a reading with no topic left after the filters are refused.',
   `  ${IMPORT_RESEARCH_TOPICS_GRADING_GATE}`,
 ].join('\n');
 
@@ -337,14 +336,15 @@ export function parseImportedTopicReadings(
       'the readings file names an openai writer; import only readings made outside the lane',
     );
   }
-  if (writer.length > MAX_IMPORTED_WRITER_LENGTH) {
-    throw new Error(`the writer is longer than ${MAX_IMPORTED_WRITER_LENGTH} characters`);
-  }
   const promptHash = typeof file.promptHash === 'string' ? file.promptHash.trim() : '';
   if (promptHash !== currentPromptHash) {
     throw new Error(
       'the readings answer a different prompt than the lane uses now (promptHash mismatch); export again and re-read',
     );
+  }
+  const expectedWriter = importedTopicsWriterId(promptHash);
+  if (writer !== expectedWriter) {
+    throw new Error(`the readings file must name the writer ${expectedWriter}`);
   }
   const seen = new Set<string>();
   return (file.rows as unknown[]).map((entry, position) => {
@@ -491,10 +491,14 @@ export async function importResearchTopicReadings(input: {
     );
     row.topics = preview.topics;
     row.refusals = refusalCounts(preview.refusals);
-    if (preview.topics.length > 0) report.rowsWithTopicsAfterFilters += 1;
+    if (preview.topics.length === 0) {
+      row.outcome = 'refused';
+      continue;
+    }
+    report.rowsWithTopicsAfterFilters += 1;
 
     if (input.mode === 'validate-only') {
-      row.outcome = preview.topics.length > 0 ? 'accepted' : 'refused';
+      row.outcome = 'accepted';
       continue;
     }
     const store = input.store as ImportedTopicsStore;
