@@ -40,7 +40,8 @@ The pin stays exact, so a formatter release never reformats files inside an unre
 GHSA-ch52-4w7c-c8xp (npm 1240991) is a high advisory against every `http-cache-semantics` release through 4.2.0, the latest, so there is no version to move to.
 It is ignored by id in `.yarnrc.yml`, with the reasoning beside the entry.
 The flaw is a shared cache serving one user's stored response to another on `max-stale`.
-The only consumer is the scraper's `server/src/scrapers/utils/httpValidatorCache.ts`, which builds every policy with `shared: false`, never calls `satisfiesWithoutRevalidation`, always revalidates with a conditional request, and never serves a cached body to a site user, so that path is not reachable.
+The only consumer is the scraper's `server/src/scrapers/utils/httpValidatorCache.ts`, which builds every policy with `shared: false`, never calls `satisfiesWithoutRevalidation`, and never serves a cached body to a site user, so that path is not reachable.
+Since #6212 it replays a stored body without a request when its own `SCRAPER_HTTP_CACHE_REUSE_HOURS` window allows, but that decision reads only the local verification time and the stored `Cache-Control`, never the package's freshness or `max-stale` logic, and the body goes only to the scraper process that fetched it.
 The exit condition is a patched `http-cache-semantics` release; adopt it and remove the entry.
 A new consumer of the package that does serve from cache invalidates this judgement, so re-read it before adding one.
 
