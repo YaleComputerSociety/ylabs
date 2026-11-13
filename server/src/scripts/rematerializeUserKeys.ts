@@ -37,6 +37,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections, runScriptMain } from '../db/connections';
 import { materializeEntity } from '../scrapers/entityMaterializer';
+import { resetPrimaryDepartmentStatingKeysCache } from '../scrapers/primaryDepartmentStatingKeys';
 import { expandUserMaterializerScope } from '../scrapers/userMaterializerFieldScope';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
@@ -95,6 +96,7 @@ async function main(): Promise<void> {
   try {
     const passes: UserKeyPassRow[][] = [];
     for (let pass = 1; pass <= args.passes; pass += 1) {
+      resetPrimaryDepartmentStatingKeysCache();
       const rows: UserKeyPassRow[] = [];
       const progress = startLongRunProgress(
         `rematerialize-user-keys pass ${pass}/${args.passes}`,
