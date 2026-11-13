@@ -45,6 +45,11 @@ const PROMOTION_DATABASE_CHECK: Exemption = {
  * takes the lease or is classified here.
  */
 const APPLY_GUARD_EXEMPTIONS: Record<string, Exemption> = {
+  'scripts/seedHostPauseFromNotice.ts': {
+    category: 'covered-elsewhere',
+    reason:
+      'its --apply writes only the machine host-budget state file, never the Development database, so no Development write lease applies',
+  },
   'scripts/auditFacultyDepartureLane.ts': REFUSES_APPLY,
   'scripts/measureRetiredResearchEntityRemint.ts': REFUSES_APPLY,
   'scripts/auditPlansTheProjectionDeclines.ts': REFUSES_APPLY,
