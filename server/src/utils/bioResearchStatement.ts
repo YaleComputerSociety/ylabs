@@ -38,7 +38,7 @@ const CLINICAL_VOCABULARY =
   /\b(?:patients?|care|clinical(?:ly)?|clinicians?|medical|medicine|disorders?|diseases?|conditions?|syndromes?|symptoms?|treatment|therap(?:y|ies)|diagnos\w*|surg(?:ery|eries|ical)|nutrition|pain|injur(?:y|ies)|infections?|cancers?|tumou?rs?|neurological|psychiatric|mental\s+health)\b/i;
 
 const STATES_INQUIRY =
-  /\b(?:research\w*|lab(?:s|oratory|oratories)?|stud(?:y|ies|ying|ied)|investigat\w*|trials?|scien\w*|scholar\w*|examin\w*|explor\w*|analy[sz]\w*|evaluat\w*|measur\w*|experiment\w*|discover\w*|mechanisms?|data|cohorts?|outcomes|epidemiolog\w*|biomarkers?|interventions?|understand(?:ing)?\s+(?:the|how|why|what|whether)|how|technolog\w*|informatics|\w*ethic(?:s|al)|model(?:ing|ling)|(?:computational|statistical|mathematical|animal|mouse|murine|predictive)\s+models?)\b/i;
+  /\b(?:research\w*|lab(?:s|oratory|oratories)?|stud(?:y|ies|ying|ied)|investigat\w*|trials?|scien\w*|scholar\w*|examin\w*|explor\w*|analy[sz]\w*|evaluat\w*|measur\w*|experiment\w*|discover\w*|mechanisms?|data|cohorts?|outcomes|epidemiolog\w*|biomarkers?|interventions?|understand(?:ing)?\s+(?:the|how|why|what|whether)|how|technolog\w*|informatics|quality\s+of\s+care|health\s+services|disparit(?:y|ies)|equity|\w*ethic(?:s|al)|model(?:ing|ling)|(?:computational|statistical|mathematical|animal|mouse|murine|predictive)\s+models?)\b/i;
 
 export function isClinicalOnlyBiographySentence(sentence: string): boolean {
   return (

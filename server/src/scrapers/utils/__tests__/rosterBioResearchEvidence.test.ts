@@ -150,6 +150,8 @@ describe('roster biography research evidence', () => {
       'Her main interest is developing interventions to overcome barriers to care among synthetic populations.',
       'She has a particular interest in understanding the bioethical challenges of caring for critically ill patients.',
       'His laboratory studies the immune mechanisms of synthetic inflammatory bowel disease in patient cohorts.',
+      'Her work focuses on improving the quality of care for synthetic older adults with dementia.',
+      'Her work focuses on reducing disparities in care for patients with synthetic chronic kidney disease.',
     ]) {
       expect(keptBesideAnchor(sentence)).toBe(true);
     }

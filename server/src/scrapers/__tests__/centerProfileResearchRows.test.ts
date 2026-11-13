@@ -74,6 +74,20 @@ describe('planCenterProfileResearchRows', () => {
     expect(planned).toHaveLength(1);
   });
 
+  it('refuses a member whose only research-shaped profile sentence is clinical care (#6083)', () => {
+    const { planned, skipped } = planCenterProfileResearchRows(
+      [
+        candidate({
+          profileText:
+            'Her work focuses on advancing neurological care and supporting patients with complex synthetic needs.',
+        }),
+      ],
+      emptyCoverage,
+    );
+    expect(planned).toEqual([]);
+    expect(skipped.only_past_research).toBe(1);
+  });
+
   it('refuses a member with no netid, since the lead could not be resolved', () => {
     const { skipped } = planCenterProfileResearchRows(
       [candidate({ netid: undefined })],
