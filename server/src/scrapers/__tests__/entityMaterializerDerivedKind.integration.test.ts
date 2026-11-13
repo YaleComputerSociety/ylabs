@@ -18,6 +18,7 @@ vi.mock('../../services/researchEntityBrowseRankService', async () => {
 
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
+import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
 import { materializeEntity } from '../entityMaterializer';
 
 const ENTITY_KEY = 'synthetic-derived-kind-home';
@@ -93,6 +94,33 @@ describe('materializeEntity keeps the persisted kind derived from entityType (#2
     const doc = await persisted();
     expect(doc?.entityType).toBe('CENTER');
     expect(doc?.kind).toBe('center');
+  });
+
+  it('never derives a kind the row refuses from its entityType', async () => {
+    await seedEntity({
+      kind: 'lab',
+      entityType: 'CENTER',
+      fieldValueRefusals: {
+        kind: [
+          {
+            valueKey: fieldValueRefusalKey('kind', 'center'),
+            rule: 'superseded_by_better_source',
+            refusedBy: 'test',
+            refusedAt: new Date('2026-01-02T00:00:00Z'),
+            note: 'synthetic refusal',
+          },
+        ],
+      },
+    });
+    await seedObservation({
+      field: 'name',
+      value: 'Synthetic Derived Kind Home',
+      sourceName: 'centers-institutes-index',
+    });
+
+    await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+
+    expect((await persisted())?.kind).toBe('lab');
   });
 
   it('moves kind with entityType in the same pass when a source reclassifies the home', async () => {

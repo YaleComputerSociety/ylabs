@@ -11898,6 +11898,14 @@ function enforceResearchEntityNameAuthority(input: {
 const othersThan = (ids: ReadonlySet<string> | undefined, self: string): boolean =>
   [...(ids ?? [])].some((id) => id !== self);
 
+const rowRefusesDerivedType = (entityDoc: any, entityType: string): boolean =>
+  valueIsRefused(entityDoc?.fieldValueRefusals, 'entityType', entityType) ||
+  valueIsRefused(
+    entityDoc?.fieldValueRefusals,
+    'kind',
+    mapEntityTypeToResearchGroupKind(entityType),
+  );
+
 /**
  * A `FACULTY_RESEARCH_AREA` row whose own evidence says its lead runs a lab is that lab,
  * so it is re-derived as `LAB` under the lab's name on every resolve, with no lock.
@@ -11940,6 +11948,7 @@ function reclassifyEvidencedFacultyResearchAsLab(input: {
   }
 
   const labIdentity = { entityType: 'LAB', kind: mapEntityTypeToResearchGroupKind('LAB') };
+  if (rowRefusesDerivedType(entityDoc, labIdentity.entityType)) return 0;
   const nameIsFree = (name: string): boolean =>
     Boolean(name) &&
     !othersThan(roster.leadPersonIdsByLabName.get(normalizedLabRowName(name)), leadPersonId);
@@ -12062,6 +12071,7 @@ function reclassifySiteNamedResearchAsLab(input: {
   }
 
   const labIdentity = { entityType: 'LAB', kind: mapEntityTypeToResearchGroupKind('LAB') };
+  if (rowRefusesDerivedType(entityDoc, labIdentity.entityType)) return 0;
   set.entityType = labIdentity.entityType;
   set.kind = labIdentity.kind;
   for (const field of ['kind', ...RESEARCH_ENTITY_IDENTITY_NAME_FIELDS]) {
@@ -12183,6 +12193,7 @@ function reclassifyUnbackedLabAsFacultyResearch(input: {
     entityType: 'FACULTY_RESEARCH_AREA',
     kind: mapEntityTypeToResearchGroupKind('FACULTY_RESEARCH_AREA'),
   };
+  if (rowRefusesDerivedType(entityDoc, facultyResearchIdentity.entityType)) return 0;
   const eponym = textValue(projected.name).replace(/\s+lab(?:oratory)?$/i, '');
   if (!eponymNamesOnlyTheLead(eponym, input.leadPersonName)) return 0;
   const derivedName = personScopedResearchEntityNameFromLeadPersonName({
@@ -12256,6 +12267,7 @@ function reclassifyUnstatedOrganizationTypeOnFacultyResearchName(input: {
       !valueIsRefused(entityDoc?.fieldValueRefusals, 'entityType', observation.value),
   );
   if (typeIsStated) return 0;
+  if (rowRefusesDerivedType(entityDoc, 'FACULTY_RESEARCH_AREA')) return 0;
 
   set.entityType = 'FACULTY_RESEARCH_AREA';
   set.kind = mapEntityTypeToResearchGroupKind('FACULTY_RESEARCH_AREA');
@@ -12321,6 +12333,7 @@ function reclassifyWithdrawnProfileHomeOrganizationRetype(input: {
       input.materializationObs,
     ) && isLabShapedResearchHome(keptName);
   const personRowType = keepsItsOwnLabName ? 'LAB' : 'FACULTY_RESEARCH_AREA';
+  if (rowRefusesDerivedType(entityDoc, personRowType)) return false;
   set.entityType = personRowType;
   set.kind = mapEntityTypeToResearchGroupKind(personRowType);
   for (const field of ['entityType', 'kind']) {
@@ -12626,6 +12639,7 @@ export async function projectFromLog(
   if (
     derivedKind &&
     !manuallyLockedFields.includes('kind') &&
+    !valueIsRefused(entityDoc?.fieldValueRefusals, 'kind', derivedKind) &&
     (set.kind ?? entityDoc?.kind) !== derivedKind
   ) {
     set.kind = derivedKind;
