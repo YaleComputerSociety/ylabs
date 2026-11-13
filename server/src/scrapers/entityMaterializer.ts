@@ -12053,6 +12053,7 @@ function composeFacultyResearchIdentityForAFullyRefusedPersonRow(input: {
     leadPersonName: authority.leadPersonName,
   });
   if (!leadsName || valueIsRefused(refusals, 'name', leadsName)) return 0;
+  if (valueIsRefused(refusals, 'entityType', facultyResearchIdentity.entityType)) return 0;
 
   set.entityType = facultyResearchIdentity.entityType;
   set.kind = facultyResearchIdentity.kind;
@@ -12107,6 +12108,7 @@ function rederiveFacultyResearchNameFromItsLead(input: {
     const head = served.replace(FACULTY_RESEARCH_NAME_SUFFIX, '');
     if (head === served || !isBarePersonNameEntityName(head)) continue;
     if (!listedPersonIsTheNamedLead(head, lead)) continue;
+    if (valueIsRefused(entityDoc?.fieldValueRefusals, field, leadsName)) continue;
     set[field] = leadsName;
     delete set[`fieldProvenance.${field}`];
     delete confidenceByField[field];

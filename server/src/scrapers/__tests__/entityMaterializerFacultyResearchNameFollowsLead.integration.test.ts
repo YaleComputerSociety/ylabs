@@ -24,6 +24,7 @@ import {
   resetKnownPersonSurnameRosterCache,
   resetLabRowRosterCache,
 } from '../../utils/researchHomeNameIdentityRoster';
+import { fieldValueRefusalKey } from '../../utils/researchEntityFieldValueRefusals';
 import { materializeEntity } from '../entityMaterializer';
 
 const ENTITY_KEY = 'dept-test-rowan-fixture';
@@ -247,5 +248,26 @@ describe('materializeEntity names a faculty research row after its lead on every
     const stored = await persisted();
     expect(stored.name).toBe(PAGE_SPELLING_NAME);
     expect(stored.displayName).toBe(PAGE_SPELLING_NAME);
+  });
+
+  it("keeps the name when an operator refused the lead's name for it", async () => {
+    const entity = await seedRosterRow({
+      fieldValueRefusals: {
+        name: [
+          {
+            valueKey: fieldValueRefusalKey('name', LEADS_NAME),
+            rule: 'wrong_owner',
+            refusedBy: 'research-entity:refuse-field-value',
+            refusedAt: new Date('2026-11-01T00:00:00Z'),
+            note: 'synthetic fixture',
+          },
+        ],
+      },
+    });
+    await seedLead(entity._id);
+
+    await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
+
+    expect((await persisted()).name).toBe(PAGE_SPELLING_NAME);
   });
 });
