@@ -72,6 +72,8 @@ import {
   trackResearchEvent,
   trackResearchResultsView,
 } from '../utils/researchAnalytics';
+import ReachOutGuideLink from '../components/research/ReachOutGuideLink';
+import { GETTING_STARTED_LANDING_LINK_LABEL } from '../utils/gettingStartedGuide';
 import SearchClearButton, {
   SEARCH_INPUT_CLEAR_BUTTON_PADDING,
   SEARCH_INPUT_NATIVE_CANCEL_HIDDEN,
@@ -2244,6 +2246,10 @@ const Research = () => {
               </p>
             </form>
 
+            {!hasSubmittedSearch && !isWideFilterLayout && (
+              <ReachOutGuideLink label={GETTING_STARTED_LANDING_LINK_LABEL} />
+            )}
+
             {hasApproachingWatchedDeadline && !sessionSlotHoldsDeadline && (
               <div
                 className="mt-4 rounded-card border border-amber-200 bg-amber-50 px-3 py-2 text-sm leading-relaxed text-amber-900"
@@ -2339,6 +2345,9 @@ const Research = () => {
                     >
                       {researchProfileCountLabel(defaultSearchTotal)}
                     </p>
+                    {isWideFilterLayout && (
+                      <ReachOutGuideLink label={GETTING_STARTED_LANDING_LINK_LABEL} />
+                    )}
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-3">
                     <ResearchSortDropdown

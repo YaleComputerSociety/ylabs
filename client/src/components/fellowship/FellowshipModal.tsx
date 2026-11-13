@@ -44,6 +44,8 @@ import {
 import useModalDialog from '../../hooks/useModalDialog';
 import FavoriteButton, { watchControlLabel, watchControlVerb } from '../shared/FavoriteButton';
 import LongText from '../shared/LongText';
+import ReachOutGuideLink from '../research/ReachOutGuideLink';
+import { GETTING_STARTED_MENTOR_LINK_LABEL } from '../../utils/gettingStartedGuide';
 import { CloseIcon, ExternalLinkIcon, GlobeIcon, MailIcon } from '../shared/icons';
 import {
   noMentorFirstAnswer,
@@ -431,6 +433,9 @@ const FellowshipModal = ({
                       <div>
                         <span className="text-xs text-muted">Do you need a mentor first?</span>
                         <p className="text-sm font-medium text-ink">{mentorFirstAnswer}</p>
+                        {fellowship.requiresMentorBeforeApply && (
+                          <ReachOutGuideLink label={GETTING_STARTED_MENTOR_LINK_LABEL} />
+                        )}
                       </div>
                     </div>
                   </section>
