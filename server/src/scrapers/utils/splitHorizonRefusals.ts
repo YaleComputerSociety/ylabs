@@ -16,7 +16,50 @@ export interface HostRefusalCount {
 export interface SplitHorizonRefusalReport {
   splitHorizonHosts: HostRefusalCount[];
   privateOnlyHosts: HostRefusalCount[];
+  unclassifiedHosts: HostRefusalCount[];
   splitHorizonRefusals: number;
+}
+
+export const SPLIT_HORIZON_REPORT_BUDGET_MS = 60_000;
+export const SPLIT_HORIZON_REPORT_CONCURRENCY = 8;
+
+const BUDGET_SPENT = Symbol('budget-spent');
+
+/**
+ * Asks about each item with bounded concurrency inside one overall budget, so a resolver that
+ * never answers ends the report at the budget instead of hanging a run's tail (#5945). An item
+ * not answered in time is left out of the returned map.
+ */
+async function askWithinBudget<T>(
+  items: readonly string[],
+  ask: (item: string) => Promise<T>,
+  budgetMs: number,
+  concurrency: number,
+): Promise<Map<string, T>> {
+  const answers = new Map<string, T>();
+  if (items.length === 0) return answers;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const budgetSpent = new Promise<typeof BUDGET_SPENT>((resolve) => {
+    timer = setTimeout(() => resolve(BUDGET_SPENT), budgetMs);
+    timer.unref?.();
+  });
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < items.length) {
+      const item = items[next++];
+      const answer = await Promise.race([ask(item), budgetSpent]);
+      if (answer === BUDGET_SPENT) return;
+      answers.set(item, answer);
+    }
+  };
+  try {
+    await Promise.all(
+      Array.from({ length: Math.max(1, Math.min(concurrency, items.length)) }, worker),
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+  return answers;
 }
 
 const byRefusalsThenHost = (left: HostRefusalCount, right: HostRefusalCount): number =>
@@ -24,23 +67,41 @@ const byRefusalsThenHost = (left: HostRefusalCount, right: HostRefusalCount): nu
 
 /**
  * Splits this process's private-address refusals into hosts public DNS answers with a routable
- * address, which only this network cannot reach, and hosts that are private everywhere.
+ * address, which only this network cannot reach, hosts that are private everywhere, and hosts
+ * not answered within the budget, which are never reported as split-horizon.
  */
 export async function splitHorizonRefusalReport(
   counts: ReadonlyMap<string, number> = privateAddressRefusalCounts(),
   classify: (host: string) => Promise<OffCampusAddressing> = classifyOffCampusAddressing,
+  budgetMs = SPLIT_HORIZON_REPORT_BUDGET_MS,
+  concurrency = SPLIT_HORIZON_REPORT_CONCURRENCY,
 ): Promise<SplitHorizonRefusalReport> {
+  const answers = await askWithinBudget(
+    [...counts.keys()],
+    (host) => classify(host).catch((): OffCampusAddressing => 'private-address'),
+    budgetMs,
+    concurrency,
+  );
   const splitHorizonHosts: HostRefusalCount[] = [];
   const privateOnlyHosts: HostRefusalCount[] = [];
+  const unclassifiedHosts: HostRefusalCount[] = [];
   for (const [host, refusals] of counts) {
-    const addressing = await classify(host).catch((): OffCampusAddressing => 'private-address');
-    (addressing === 'public' ? splitHorizonHosts : privateOnlyHosts).push({ host, refusals });
+    const addressing = answers.get(host);
+    const bucket =
+      addressing === undefined
+        ? unclassifiedHosts
+        : addressing === 'public'
+          ? splitHorizonHosts
+          : privateOnlyHosts;
+    bucket.push({ host, refusals });
   }
-  splitHorizonHosts.sort(byRefusalsThenHost);
-  privateOnlyHosts.sort(byRefusalsThenHost);
+  for (const bucket of [splitHorizonHosts, privateOnlyHosts, unclassifiedHosts]) {
+    bucket.sort(byRefusalsThenHost);
+  }
   return {
     splitHorizonHosts,
     privateOnlyHosts,
+    unclassifiedHosts,
     splitHorizonRefusals: splitHorizonHosts.reduce((total, entry) => total + entry.refusals, 0),
   };
 }
@@ -49,7 +110,14 @@ const LISTED_HOSTS = 12;
 
 export function splitHorizonRefusalWarning(report: SplitHorizonRefusalReport): string | null {
   const hosts = report.splitHorizonHosts;
-  if (hosts.length === 0) return null;
+  const unclassified = report.unclassifiedHosts.length;
+  if (hosts.length === 0 && unclassified === 0) return null;
+  const notClassified = unclassified
+    ? ` ${unclassified} other refused host(s) were not classified within the ${SPLIT_HORIZON_REPORT_BUDGET_MS / 1000} s budget.`
+    : '';
+  if (hosts.length === 0) {
+    return `the SSRF guard refused private-address host(s) this run could not check against public DNS.${notClassified}`;
+  }
   const listed = hosts
     .slice(0, LISTED_HOSTS)
     .map(({ host, refusals }) => `${host} (${refusals})`)
@@ -59,7 +127,7 @@ export function splitHorizonRefusalWarning(report: SplitHorizonRefusalReport): s
     `the SSRF guard refused ${report.splitHorizonRefusals} request(s) to ${hosts.length} host(s) ` +
     `that this network's DNS resolves to private addresses while public DNS answers them publicly ` +
     `(split-horizon DNS): ${listed}${more}. This run did not read them; run from a network with ` +
-    `public DNS, such as the hosted sweep, to cover them.`
+    `public DNS, such as the hosted sweep, to cover them.${notClassified}`
   );
 }
 
@@ -77,17 +145,22 @@ export async function probeSplitHorizonNetwork(
   hosts: readonly string[] = SPLIT_HORIZON_PROBE_HOSTS,
   resolveHere: (host: string) => Promise<HostnameResolution> = classifyHostnameResolution,
   classify: (host: string) => Promise<OffCampusAddressing> = classifyOffCampusAddressing,
+  budgetMs = SPLIT_HORIZON_REPORT_BUDGET_MS,
 ): Promise<string[]> {
-  const splitHorizon: string[] = [];
-  for (const host of hosts) {
-    const here = await resolveHere(host).catch((): HostnameResolution => ({
-      kind: 'resolver-failure',
-    }));
-    if (here.kind !== 'private-address') continue;
-    const publicly = await classify(host).catch((): OffCampusAddressing => 'private-address');
-    if (publicly === 'public') splitHorizon.push(host);
-  }
-  return splitHorizon;
+  const answers = await askWithinBudget(
+    hosts,
+    async (host) => {
+      const here = await resolveHere(host).catch((): HostnameResolution => ({
+        kind: 'resolver-failure',
+      }));
+      if (here.kind !== 'private-address') return false;
+      const publicly = await classify(host).catch((): OffCampusAddressing => 'private-address');
+      return publicly === 'public';
+    },
+    budgetMs,
+    SPLIT_HORIZON_REPORT_CONCURRENCY,
+  );
+  return hosts.filter((host) => answers.get(host) === true);
 }
 
 export function splitHorizonNetworkWarning(splitHorizonHosts: readonly string[]): string | null {

@@ -97,6 +97,7 @@ describe('split-horizon refusals are reported, never released (#6111)', () => {
     expect(report).toEqual({
       splitHorizonHosts: [{ host: campusHost, refusals: 3 }],
       privateOnlyHosts: [{ host: internalHost, refusals: 1 }],
+      unclassifiedHosts: [],
       splitHorizonRefusals: 3,
     });
     expect(splitHorizonRefusalWarning(report)).toContain(`${campusHost} (3)`);
@@ -109,6 +110,51 @@ describe('split-horizon refusals are reported, never released (#6111)', () => {
     });
     expect(report.splitHorizonHosts).toEqual([]);
     expect(splitHorizonRefusalWarning(report)).toBeNull();
+  });
+
+  it('returns within its budget when public DNS never answers, and classifies nothing', async () => {
+    const counts = new Map(Array.from({ length: 20 }, (_, i) => [`host-${i}.example.edu`, 1]));
+    const started = Date.now();
+    const report = await splitHorizonRefusalReport(counts, () => new Promise(() => {}), 50, 8);
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(report.splitHorizonHosts).toEqual([]);
+    expect(report.privateOnlyHosts).toEqual([]);
+    expect(report.unclassifiedHosts).toHaveLength(20);
+    expect(splitHorizonRefusalWarning(report)).toContain(
+      '20 other refused host(s) were not classified',
+    );
+  });
+
+  it('asks at most the concurrency limit at once', async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const counts = new Map(Array.from({ length: 30 }, (_, i) => [`host-${i}.example.edu`, 1]));
+    const report = await splitHorizonRefusalReport(
+      counts,
+      async () => {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 2));
+        inFlight -= 1;
+        return 'public';
+      },
+      5_000,
+      8,
+    );
+    expect(peak).toBe(8);
+    expect(report.splitHorizonHosts).toHaveLength(30);
+  });
+
+  it('ends the network probe at its budget when DNS never answers', async () => {
+    const started = Date.now();
+    const hosts = await probeSplitHorizonNetwork(
+      [campusHost],
+      () => new Promise(() => {}),
+      async () => 'public',
+      50,
+    );
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(hosts).toEqual([]);
   });
 
   it('names the probe hosts this network answers privately and public DNS answers publicly', async () => {
