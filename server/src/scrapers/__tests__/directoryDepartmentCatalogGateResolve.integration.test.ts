@@ -114,6 +114,15 @@ describe('a directory department fills only when the catalog names it (#6129)', 
     expect(await departmentOf(person._id)).toBeUndefined();
   });
 
+  it('clears a stored center that only a directory reading states, and a second resolve writes nothing', async () => {
+    const person = await seedPerson('Council on Fixture Studies');
+    await seed('Council on Fixture Studies');
+
+    await resolve();
+    expect(await departmentOf(person._id)).toBeUndefined();
+    expect((await resolve()).fieldsWritten).toBe(0);
+  });
+
   it('fills the catalog name an acronym-suffixed unit decodes to, and a second resolve writes nothing', async () => {
     const person = await seedPerson(LEGACY);
     await seed('Biostatistics (BIS)');

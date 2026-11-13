@@ -11,7 +11,7 @@ export const DIRECTORY_EXPORT_CODE_PATTERN = /^(?:[A-Z]{4,}\s|[A-Z]{2,3}\s+-\s)/
 
 const HR_PREFIXED = /^([A-Z]{6})\s+(.+)$/;
 const SUBJECT_DASH = /^[A-Z]{2,4}\s+-\s+(.+)$/;
-const TRAILING_ACRONYM = /\s+\([A-Z&]{2,}\)$/;
+export const TRAILING_UNIT_ACRONYM = /\s+\([A-Z&]{2,}\)$/;
 
 const SECTION_PARENTS: ReadonlyArray<readonly [string, RegExp, string]> = [
   [
@@ -85,7 +85,7 @@ export function decodeDirectoryExportDepartment(
     ? [section[2]]
     : [directoryUnitDepartment(candidate.unit)]
         .filter((name): name is string => Boolean(name))
-        .flatMap((name) => [name, name.replace(TRAILING_ACRONYM, '')]);
+        .flatMap((name) => [name, name.replace(TRAILING_UNIT_ACRONYM, '')]);
 
   for (const name of names) {
     const department = canonicalDepartment(name);

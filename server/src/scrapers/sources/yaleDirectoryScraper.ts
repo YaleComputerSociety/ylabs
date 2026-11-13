@@ -44,13 +44,17 @@ import { Researcher } from '../../models/researcher';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 import { directoryUnitDepartment } from '../utils/directoryUnitDepartment';
 import { catalogDepartment } from '../directoryExportDepartmentEvidence';
-import type { CanonicalDepartment } from '../utils/directoryExportDepartment';
+import { YALE_DIRECTORY_SOURCE } from '../directoryDepartmentCatalogGate';
+import {
+  TRAILING_UNIT_ACRONYM,
+  type CanonicalDepartment,
+} from '../utils/directoryExportDepartment';
 import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
 import { plausiblePersonOrcid } from '../../utils/orcid';
 
 dotenv.config({ quiet: true });
 
-const SOURCE_NAME = 'yale-directory';
+const SOURCE_NAME = YALE_DIRECTORY_SOURCE;
 const SOURCE_URL = 'https://api.yalies.io/v2/people';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const PAGE_SIZE = 100;
@@ -401,15 +405,6 @@ export function classifyUserType(title: string | undefined | null): 'professor' 
 }
 
 /**
- * Pure mapping function. Takes one Yalies API record and returns the list of
- * ObservationInputs to emit for that person. Returns an empty array if the
- * record has no netid (we cannot key observations without it) or is not faculty.
- *
- * No I/O. Unit-testable.
- */
-const TRAILING_UNIT_ACRONYM = /\s+\([A-Z&]{2,}\)$/;
-
-/**
  * The home department the directory states, read against the catalog (#6129). A unit the
  * catalog names stands as the directory spells it; an acronym-suffixed spelling ("Biostatistics
  * (BIS)") or a section the catalog knows only by its coded HR form ("MEDINT Cardiology") is read
@@ -428,7 +423,6 @@ export function directoryHomeDepartment(
     typeof person.unit_class === 'string' ? person.unit_class.trim().toUpperCase() : '';
   const spellings = [
     named?.replace(TRAILING_UNIT_ACRONYM, ''),
-    unit.replace(TRAILING_UNIT_ACRONYM, ''),
     unitClass && unit ? `${unitClass} ${unit}` : undefined,
   ];
   for (const spelling of spellings) {
@@ -438,6 +432,13 @@ export function directoryHomeDepartment(
   return undefined;
 }
 
+/**
+ * Pure mapping function. Takes one Yalies API record and returns the list of
+ * ObservationInputs to emit for that person. Returns an empty array if the
+ * record has no netid (we cannot key observations without it) or is not faculty.
+ *
+ * No I/O. Unit-testable.
+ */
 export function personToObservations(
   person: YaliesPerson,
   sourceUrl: string = SOURCE_URL,

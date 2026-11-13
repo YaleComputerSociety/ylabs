@@ -2,10 +2,9 @@ import type {
   UserDepartmentObservation,
   UserDepartmentScreenContext,
 } from './userDepartmentObservationScreens';
+import { TRAILING_UNIT_ACRONYM } from './utils/directoryExportDepartment';
 
 export const YALE_DIRECTORY_SOURCE = 'yale-directory';
-
-const TRAILING_UNIT_ACRONYM = /\s+\([A-Z&]{2,}\)$/;
 
 /**
  * Resolve-time half of #6129: a `yale-directory` home department fills or replaces only when the
