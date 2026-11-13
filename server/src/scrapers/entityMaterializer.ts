@@ -9775,16 +9775,34 @@ async function releaseFieldWritersThatNoLongerReach(
 async function recordLegacyDirectoryNameHolderAsFillOnly(
   researcher: any,
   materializingKey: string,
+  prefetch?: MaterializationReadSource,
 ): Promise<void> {
   const holder = researcher.profileFieldWriters?.get?.('displayName');
   if (!holder?.userKey || holder.userKey === materializingKey) return;
   if (writerHeldOnFillOnlyEvidence('displayName', holder)) return;
-  const nameSources = (await Observation.distinct('sourceName', {
-    entityType: 'user',
-    entityKey: holder.userKey,
-    superseded: false,
-    field: { $in: ['displayName', 'fname', 'lname'] },
-  })) as string[];
+  const routed = prefetch?.observationsForKey('user', holder.userKey);
+  const holderObservations = routed?.hit
+    ? (routed.value as any[])
+    : await Observation.find({
+        entityType: 'user',
+        entityKey: holder.userKey,
+        ...materializationReadScopeFilter(),
+        field: { $in: ['displayName', 'fname', 'lname'] },
+      })
+        .select('field sourceName superseded rollback')
+        .lean();
+  const nameSources = [
+    ...new Set(
+      holderObservations
+        .filter(
+          (observation: any) =>
+            ['displayName', 'fname', 'lname'].includes(observation.field) &&
+            observation.superseded !== true &&
+            !observation.rollback?.rolledBackAt,
+        )
+        .map((observation: any) => String(observation.sourceName ?? '')),
+    ),
+  ];
   if (!isFillOnlyFieldValue('displayName', nameSources)) return;
   researcher.profileFieldWriters.set('displayName', {
     userKey: holder.userKey,
@@ -10046,7 +10064,9 @@ async function materializeUserIdentityToResearcher(
     researcher.profileFieldWriters?.get?.(OWN_KEY_FALLBACK_TITLE_FIELD),
   );
   if (writerKey) await releaseFieldWritersThatNoLongerReach(researcher, writerKey);
-  if (writerKey) await recordLegacyDirectoryNameHolderAsFillOnly(researcher, writerKey);
+  if (writerKey) {
+    await recordLegacyDirectoryNameHolderAsFillOnly(researcher, writerKey, options.chunkPrefetch);
+  }
   const resolvedConfidence = (...fields: string[]): unknown =>
     fields.map((field) => resolved[field]?.confidence).find((value) => value !== undefined);
   const storedFieldValue = (field: ResearcherGatedField): unknown =>
