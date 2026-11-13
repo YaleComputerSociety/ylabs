@@ -1,7 +1,11 @@
 import * as cheerio from 'cheerio';
 import type { AnyNode } from 'domhandler';
 import { redactDirectContactInfo } from '../../utils/contactRedaction';
-import { isCurriculumVitaeRecordSentence } from '../../utils/careerBiographyDescription';
+import {
+  isBibliographicCitationSentence,
+  isCurriculumVitaeRecordSentence,
+  splitDescriptionSentences,
+} from '../../utils/careerBiographyDescription';
 import { removeRelatedEntityTeaserCards } from '../../utils/relatedEntityTeaserCards';
 import { extractElementTextWithLineBreaks } from './htmlText';
 import { removeProfilePublicityRegions } from './profilePublicityRegions';
@@ -67,16 +71,66 @@ function isContactLine(line: string): boolean {
   return wordCount(line) <= MAX_CONTACT_LINE_WORDS && redactDirectContactInfo(line) !== line;
 }
 
-function isStatementLine(line: string): boolean {
-  return (
-    wordCount(line) >= MIN_LINE_WORDS &&
-    !isCurriculumVitaeRecordSentence(line) &&
-    !isContactLine(line)
-  );
+const MIN_RECOVERED_SENTENCE_WORDS = 8;
+const CITATION_FRAGMENT =
+  /\b(?:doi|pmid|pmcid|isbn)\b|\b(?:19|20)\d{2}[a-z]?\s*[).]|\(\s*(?:19|20)\d{2}/i;
+
+const isRecoverableResearchSentence = (sentence: string): boolean =>
+  wordCount(sentence) >= MIN_RECOVERED_SENTENCE_WORDS &&
+  !isCurriculumVitaeRecordSentence(sentence) &&
+  !isBibliographicCitationSentence(sentence) &&
+  !CITATION_FRAGMENT.test(sentence);
+
+/**
+ * A line the CV-record test flags, less its CV sentences (#6159). An extracted line is often
+ * a whole biography paragraph, and judging it as one sentence let a single "author of" or
+ * "appointed" drop the research sentences beside it. A line that is itself a citation stays
+ * dropped, and only whole prose sentences are recovered, because splitting a citation yields
+ * author, year and venue pieces the sentence-level test no longer recognises.
+ */
+function withoutCurriculumVitaeSentences(line: string): string {
+  if (isBibliographicCitationSentence(line)) return '';
+  return splitDescriptionSentences(line).filter(isRecoverableResearchSentence).join(' ');
+}
+
+function statementTextOfLine(line: string): string {
+  if (wordCount(line) < MIN_LINE_WORDS || isContactLine(line)) return '';
+  return isCurriculumVitaeRecordSentence(line) ? withoutCurriculumVitaeSentences(line) : line;
 }
 
 const NON_CONTENT_ELEMENTS =
-  'script, style, noscript, svg, iframe, nav, header, footer, aside, form, button, address';
+  'script, style, noscript, svg, iframe, nav, footer, aside, form, button, address';
+
+const MAIN_CONTENT = 'main, article, [role="main"]';
+const MIN_HEADING_BLOCK_SUMMARY_WORDS = 12;
+
+const isPageHeadingBlock = ($: cheerio.CheerioAPI, header: AnyNode): boolean =>
+  $(header).attr('role') !== 'banner' &&
+  $(header).parents(MAIN_CONTENT).length > 0 &&
+  $(header).find('h1').length > 0;
+
+/**
+ * Removes every `header` except the summary paragraphs of the page's own heading block: the
+ * header in the main content that holds the page's `h1`, where a center or program page often
+ * states what it does (#6159). Its link labels, photo buttons and name line are still removed,
+ * and so are banners and the headers of teaser cards, which carry no `h1`.
+ */
+function removeHeadersKeepingPageSummary($: cheerio.CheerioAPI): void {
+  $('header').each((_index, header) => {
+    if (!isPageHeadingBlock($, header)) {
+      $(header).remove();
+      return;
+    }
+    const summary = $(header)
+      .find('p')
+      .filter(
+        (_paragraph, paragraph) =>
+          wordCount($(paragraph).text()) >= MIN_HEADING_BLOCK_SUMMARY_WORDS,
+      )
+      .toArray();
+    $(header).replaceWith(summary);
+  });
+}
 
 const DIV_SITE_MENU_SELECTORS: readonly string[] = [
   '[class*="navigation-panel"]',
@@ -95,6 +149,7 @@ function isInsideMenuContainer($: cheerio.CheerioAPI, element: AnyNode): boolean
 function pageLinesWithHeadingMarks(html: string, pageUrl: string): string[] {
   const $ = cheerio.load(html);
   $(NON_CONTENT_ELEMENTS).remove();
+  removeHeadersKeepingPageSummary($);
   $(DIV_SITE_MENU_SELECTORS.join(', ')).remove();
   removeProfilePublicityRegions($);
   removeRelatedEntityTeaserCards($, pageUrl);
@@ -126,12 +181,12 @@ function pageSections(lines: readonly string[]): PageSection[] {
 
 /**
  * The text of a page's research statement, read with code: the page body without site
- * chrome, navigation, footers, contact blocks, publicity regions and other units' teaser
- * cards, with the sections a heading names as publications, a bibliography, a CV or contact
+ * chrome, navigation, headers other than the page's own summary, footers, contact blocks, publicity regions and other
+ * units' teaser cards, with the sections a heading names as publications, a bibliography, a CV or contact
  * details left out, and the sections a heading names as research placed first so the cap
  * keeps them. News, people and teaching sections stay, because a lab often states its
  * subject there; only their publication, CV and contact lines are dropped, wherever they
- * sit. Every line is kept only once.
+ * sit, a flagged paragraph keeping its research sentences. Every line is kept only once.
  */
 export function researchStatementTextOfPage(html: string, pageUrl: string): string {
   if (!html) return '';
@@ -145,9 +200,10 @@ export function researchStatementTextOfPage(html: string, pageUrl: string): stri
   const seen = new Set<string>();
   const kept: string[] = [];
   for (const line of ordered.flatMap((section) => section.lines)) {
-    if (!isStatementLine(line) || seen.has(line)) continue;
-    seen.add(line);
-    kept.push(line);
+    const statement = statementTextOfLine(line);
+    if (!statement || seen.has(statement)) continue;
+    seen.add(statement);
+    kept.push(statement);
   }
   return kept.join('\n');
 }
