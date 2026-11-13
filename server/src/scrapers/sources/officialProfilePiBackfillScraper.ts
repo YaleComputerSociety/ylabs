@@ -4523,7 +4523,7 @@ export async function fetchHtml(
     axios.get(safeUrlText, {
       timeout: FETCH_TIMEOUT_MS,
       maxRedirects: 5,
-      headers: { 'User-Agent': SCRAPER_USER_AGENT, Accept: 'text/html,application/xhtml+xml' },
+      headers: { Accept: 'text/html,application/xhtml+xml' },
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,
     }),

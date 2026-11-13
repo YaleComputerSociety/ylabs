@@ -19,6 +19,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 import { ResearchEntity } from '../models/researchEntity';
 import { Researcher } from '../models/researcher';
 import { RoleAssignment } from '../models/roleAssignment';
@@ -100,7 +101,7 @@ const researchHomeLimiter = new HostRateLimiter({
 async function readPage(url: string): Promise<LabSitePage | null> {
   try {
     const page = await fetchPageWithPolicy(url, {
-      headers: { 'User-Agent': SCRAPER_USER_AGENT, Accept: 'text/html,application/xhtml+xml' },
+      headers: { Accept: 'text/html,application/xhtml+xml' },
       timeoutMs: FETCH_TIMEOUT_MS,
       limiter: researchHomeLimiter,
     });
@@ -301,6 +302,7 @@ export async function runLabSiteNamedLeadAttachment(options: {
 }
 
 async function main() {
+  installScraperFetchHooks({ validatorCache: false });
   const args = parseArgs(process.argv.slice(2));
   const guard = assertScriptApplyAllowed({
     apply: args.apply,

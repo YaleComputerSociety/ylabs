@@ -2570,7 +2570,6 @@ async function fetchRosterPage(url: string, useCache: boolean): Promise<string> 
     axios.get(safeUrl.toString(), {
       timeout: 30_000,
       maxRedirects: 5,
-      headers: { 'User-Agent': SCRAPER_USER_AGENT },
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,
     }),

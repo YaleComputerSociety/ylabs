@@ -498,7 +498,6 @@ async function main(): Promise<void> {
     try {
       const response = await fetchPublicHttpUrl(entity.pageUrl, {
         timeoutMs: 20_000,
-        headers: { 'User-Agent': SCRAPER_USER_AGENT },
       });
       if (response.status < 200 || response.status >= 300) {
         throw new Error(`page answered ${response.status}`);

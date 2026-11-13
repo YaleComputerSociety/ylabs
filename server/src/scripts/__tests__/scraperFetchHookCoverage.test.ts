@@ -15,6 +15,8 @@ const INSTALLS_HOOKS = /\binstallScraperFetchHooks\(/;
 const INSTALLS_HOOKS_WITHOUT_VALIDATOR_CACHE =
   /\binstallScraperFetchHooks\(\{\s*validatorCache:\s*false\s*\}\)/;
 const SCRIPT_CONNECT = /\binitializeConnections\((?!\s*mongoOptions\b)/;
+const stripComments = (source: string): string =>
+  source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
 
 /**
  * Fetch paths the axios hooks cannot see, and why each is still paced. Each reason names the
@@ -37,6 +39,10 @@ const LIVENESS_CHECKS_WITHOUT_THE_PROBE: Record<string, string> = {
   'src/scripts/clearDeadLabResearchHomes.ts': 'it clears a lab home whose page no longer answers',
   'src/scripts/findLabWebsites.ts': 'it adopts a candidate lab site only when the page answers',
   'src/scripts/hostThrottleProbe.ts': 'it measures how a host answers right now',
+  'src/scripts/promoteFacultyResearchToLab.ts':
+    'it gates lab promotion on the candidate website answering',
+  'src/scripts/attachLabSiteNamedLeads.ts': 'it counts lab sites whose pages no longer answer',
+  'src/scripts/retypeFromDeclaredPageType.ts': 'it reports a page whose status is unreachable',
   'src/scripts/repairLegacyPersonPageUrls.ts':
     'it adopts a replacement person page only when the page answers',
 };
@@ -60,10 +66,11 @@ const packageScriptTargets = (): Set<string> => {
 };
 
 const isFetchingEntryPoint = (source: string, runByPackageScript: boolean): boolean =>
-  FETCHING_IMPORT.test(source) && (runByPackageScript || DIRECT_RUN.test(source));
+  FETCHING_IMPORT.test(stripComments(source)) &&
+  (runByPackageScript || DIRECT_RUN.test(stripComments(source)));
 
 const reachesFetchHooks = (source: string): boolean =>
-  INSTALLS_HOOKS.test(source) || SCRIPT_CONNECT.test(source);
+  INSTALLS_HOOKS.test(stripComments(source)) || SCRIPT_CONNECT.test(stripComments(source));
 
 const fetchingEntryPoints = (): string[] => {
   const packageTargets = packageScriptTargets();
@@ -134,7 +141,9 @@ describe('every fetching script entry point installs the scraper fetch hooks (#6
       ]),
     );
     expect(
-      livenessChecks.filter((file) => !INSTALLS_HOOKS_WITHOUT_VALIDATOR_CACHE.test(read(file))),
+      livenessChecks.filter(
+        (file) => !INSTALLS_HOOKS_WITHOUT_VALIDATOR_CACHE.test(stripComments(read(file))),
+      ),
     ).toEqual([]);
   });
 
@@ -158,7 +167,7 @@ describe('one honest User-Agent (#6211)', () => {
     ...listTypeScript(path.join(SERVER_ROOT, 'src')).map((file) =>
       path.relative(SERVER_ROOT, file),
     ),
-  ].filter((file) => !file.endsWith('scraperUserAgent.ts'));
+  ];
 
   it('sets no User-Agent header to anything but SCRAPER_USER_AGENT', () => {
     const offenders = sources.flatMap((file) =>

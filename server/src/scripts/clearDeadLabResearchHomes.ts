@@ -62,9 +62,7 @@ export function parseArgs(argv: string[]): Args {
 
 export async function httpStatus(url: string): Promise<LabHomeProbeStatus> {
   try {
-    const response = await fetchPublicHttpUrl(url, {
-      headers: { 'user-agent': SCRAPER_USER_AGENT },
-    });
+    const response = await fetchPublicHttpUrl(url, {});
     return response.status;
   } catch (error) {
     return isSsrfGuardRefusal(error) ? SSRF_REFUSED_PROBE : undefined;
@@ -73,7 +71,6 @@ export async function httpStatus(url: string): Promise<LabHomeProbeStatus> {
 
 async function loadIndexSegments(): Promise<Set<string>> {
   const response = await fetchPublicHttpUrl(INDEX_URL, {
-    headers: { 'user-agent': SCRAPER_USER_AGENT },
     timeoutMs: 30_000,
   });
   if (response.status !== 200) {

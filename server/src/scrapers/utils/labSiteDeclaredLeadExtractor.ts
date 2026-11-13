@@ -175,7 +175,6 @@ export function declaredLeadCandidateUrls(rootUrl: string, rootHtml: string): st
 const defaultFetchPage: LabSitePageFetcher = async (url) => {
   try {
     const page = await fetchPageWithPolicy(url, {
-      headers: { 'User-Agent': SCRAPER_USER_AGENT },
       timeoutMs: 10_000,
     });
     return { url: page.url, html: page.html };

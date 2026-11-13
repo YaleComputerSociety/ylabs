@@ -89,7 +89,6 @@ async function fetchPage(useCache: boolean): Promise<string> {
   const res = await retryOnRetryableStatus(() =>
     axios.get(safeUrl.toString(), {
       timeout: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': SCRAPER_USER_AGENT },
       maxRedirects: 5,
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,
@@ -112,7 +111,6 @@ async function fetchUrl(url: string, useCache: boolean): Promise<string> {
   const res = await retryOnRetryableStatus(() =>
     axios.get(safeUrlText, {
       timeout: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': SCRAPER_USER_AGENT },
       maxRedirects: 5,
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,

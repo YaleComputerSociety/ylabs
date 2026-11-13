@@ -1577,7 +1577,7 @@ export const defaultFetchPage: FetchPageFn = async (url) => {
   // preserve this path's null-on-failure contract by mapping any final error to null.
   try {
     const page = await fetchPageWithPolicy(url, {
-      headers: { 'User-Agent': SCRAPER_USER_AGENT, Accept: 'text/html,*/*' },
+      headers: { Accept: 'text/html,*/*' },
       timeoutMs: FETCH_TIMEOUT_MS,
     });
     return { url: page.url, html: page.html };

@@ -370,7 +370,7 @@ async function fetchCrossrefGrantPage(
       responseType: 'text',
       transformResponse: [(data) => data],
       maxRedirects: 0,
-      headers: { 'User-Agent': SCRAPER_USER_AGENT, Accept: 'application/json' },
+      headers: { Accept: 'application/json' },
     }),
   );
   const text = typeof res.data === 'string' ? res.data : String(res.data ?? '');

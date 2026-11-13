@@ -66,7 +66,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function fetchOnce(url: string): Promise<VerifiedDirectoryPage> {
   try {
     const response = await fetchPublicHttpUrl(url, {
-      headers: { 'user-agent': SCRAPER_USER_AGENT, accept: 'text/html,application/xhtml+xml' },
+      headers: { accept: 'text/html,application/xhtml+xml' },
     });
     if (response.status < 200 || response.status >= 300) {
       return { status: response.status, headingName: '' };

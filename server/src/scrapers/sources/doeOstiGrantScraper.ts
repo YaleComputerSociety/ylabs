@@ -299,7 +299,7 @@ async function fetchPage(
         sort: 'publication_date desc',
       },
       timeout: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': SCRAPER_USER_AGENT, Accept: 'application/json' },
+      headers: { Accept: 'application/json' },
     }),
   );
   const records: OstiRecord[] = Array.isArray(res.data) ? res.data : res.data?.records || [];

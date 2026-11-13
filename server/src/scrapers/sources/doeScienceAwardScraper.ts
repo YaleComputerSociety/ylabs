@@ -335,7 +335,6 @@ async function pamsRequest(
       maxRedirects: 0,
       data: form ? new URLSearchParams(form).toString() : undefined,
       headers: {
-        'User-Agent': SCRAPER_USER_AGENT,
         Accept: responseType === 'text' ? 'text/html,*/*' : '*/*',
         ...(form ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}),
         ...(jar.size > 0 ? { Cookie: cookieHeaderFrom(undefined, jar) } : {}),

@@ -360,7 +360,6 @@ async function defaultFetchPage(url: string): Promise<FetchedYsmPage | null> {
   const res = await retryOnRetryableStatus(() =>
     axios.get(safeUrlText, {
       timeout: 20_000,
-      headers: { 'User-Agent': SCRAPER_USER_AGENT },
       maxRedirects: 5,
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,

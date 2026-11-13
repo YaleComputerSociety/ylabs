@@ -152,7 +152,6 @@ async function fetchPage(useCache: boolean, pageReads: LanePageReads): Promise<s
   const res = await retryOnRetryableStatus(() =>
     axios.get(safeUrl.toString(), {
       timeout: 30000,
-      headers: { 'User-Agent': SCRAPER_USER_AGENT },
       maxRedirects: 5,
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,
@@ -183,7 +182,6 @@ async function fetchLabHomepage(
     const res = await retryOnRetryableStatus(() =>
       axios.get(safeUrlText, {
         timeout: 30000,
-        headers: { 'User-Agent': SCRAPER_USER_AGENT },
         maxRedirects: 5,
         httpAgent: agents.httpAgent,
         httpsAgent: agents.httpsAgent,

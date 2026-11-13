@@ -99,7 +99,7 @@ const GONE_STATUSES = new Set([404, 410]);
 export const defaultMentorFetchText: MentorFetchText = async (url) => {
   try {
     const page = await fetchPageWithPolicy(url, {
-      headers: { 'User-Agent': SCRAPER_USER_AGENT, Accept: '*/*' },
+      headers: { Accept: '*/*' },
       timeoutMs: 30_000,
     });
     return page.html;

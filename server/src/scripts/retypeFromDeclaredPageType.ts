@@ -40,6 +40,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 import { initializeConnections } from '../db/connections';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 import { LIVE_ENTITY_FILTER } from '../models/entityArchival';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
@@ -282,6 +283,7 @@ export async function readOnlySlugsFile(file: string): Promise<ReadonlySet<strin
 }
 
 async function main(): Promise<void> {
+  installScraperFetchHooks({ validatorCache: false });
   const args = parseDeclaredPageTypeRetypeArgs(process.argv.slice(2));
   const apply = args.apply;
   const guard = assertScriptApplyAllowed({

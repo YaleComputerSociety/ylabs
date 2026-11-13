@@ -11,7 +11,7 @@ import { fetchRecheckPage } from '../../../scripts/recheckDescriptionGrounding';
 import { resolveFinalUrls } from '../../../scripts/retireOrganizationIdentityWebsiteGrafts';
 import { readPageOverHttp } from '../../../scripts/retypeFromDeclaredPageType';
 import { fetchPageWithPolicy, fetchPublicHttpUrl } from '../httpFetch';
-import { SCRAPER_USER_AGENT, scraperUserAgentFor, withScraperUserAgent } from '../scraperUserAgent';
+import { SCRAPER_USER_AGENT, withScraperUserAgent } from '../scraperUserAgent';
 
 const sent: InternalAxiosRequestConfig[] = [];
 
@@ -43,12 +43,6 @@ describe('SCRAPER_USER_AGENT', () => {
       'ylabs-scraper/1.0 (+https://yalelabs.io; ycs.maintenance.ylabs@gmail.com)',
     );
     expect(SCRAPER_USER_AGENT).not.toMatch(/Mozilla|Chrome|Safari|yale\.edu/i);
-  });
-
-  it('adds a contact after the information page once one is set', () => {
-    expect(scraperUserAgentFor('scraper@example.org')).toBe(
-      'ylabs-scraper/1.0 (+https://yalelabs.io; scraper@example.org)',
-    );
   });
 
   it("replaces a caller's User-Agent in any letter case and keeps its other headers", () => {

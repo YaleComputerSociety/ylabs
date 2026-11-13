@@ -13,7 +13,6 @@ import {
 } from '../recheckDescriptionGroundingCore';
 import {
   assertRecheckDescriptionGroundingApplyAllowed,
-  formatRecheckRefusals,
   parseRecheckDescriptionGroundingArgs,
   probeDescriptionPage,
   summarizeRecheckRefusals,
@@ -366,25 +365,17 @@ describe('recheck-description-grounding refusal count (#6211)', () => {
     return pages;
   };
 
-  it('counts every fetch answered 403, by host, apart from other refusals and gone pages', async () => {
+  it('counts every fetch answered 403, by host, and ignores other refusals and gone pages', async () => {
     expect(summarizeRecheckRefusals(await probeAll())).toEqual({
       refused403: 3,
       refused403ByHost: { 'walled.example.edu': 2, 'other.example.org': 1 },
-      refusedOtherByStatus: { '429': 1 },
     });
-  });
-
-  it('prints the 403 count and its hosts on the console summary', async () => {
-    expect(formatRecheckRefusals(summarizeRecheckRefusals(await probeAll()))).toBe(
-      'refused403: 3 (walled.example.edu=2, other.example.org=1)\nrefusedOther: 429=1',
-    );
   });
 
   it('reports a run with no refusal as zero rather than omitting the count', () => {
     const refusals = summarizeRecheckRefusals(new Map());
 
-    expect(refusals.refused403).toBe(0);
-    expect(formatRecheckRefusals(refusals)).toBe('refused403: 0\nrefusedOther: none');
+    expect(refusals).toEqual({ refused403: 0, refused403ByHost: {} });
   });
 });
 

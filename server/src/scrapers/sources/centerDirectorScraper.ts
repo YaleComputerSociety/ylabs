@@ -77,7 +77,6 @@ const textValue = (value: unknown): string =>
 async function defaultFetchPage(url: string): Promise<{ url: string; html: string }> {
   const page = await fetchPageWithPolicy(url, {
     timeoutMs: 15_000,
-    headers: { 'User-Agent': SCRAPER_USER_AGENT },
     maxRedirects: 5,
   });
   return { url: page.url, html: page.html };

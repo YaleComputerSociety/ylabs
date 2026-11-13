@@ -284,7 +284,6 @@ function hostReadOutcomeOfError(error: unknown): keyof HostReadOutcome {
 
 async function fetchPageOnce(url: string): Promise<FetchedDescriptionPage | null> {
   const page = await fetchPageWithPolicy(url, {
-    headers: { 'User-Agent': SCRAPER_USER_AGENT },
     timeoutMs: 10_000,
   });
   return {

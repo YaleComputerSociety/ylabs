@@ -117,7 +117,6 @@ async function defaultFetchPage(url: string): Promise<FetchedPage | null> {
   const agents = ssrfSafeAgents();
   const res = await axios.get(safeUrlText, {
     timeout: 10_000,
-    headers: { 'User-Agent': SCRAPER_USER_AGENT },
     maxRedirects: 5,
     httpAgent: agents.httpAgent,
     httpsAgent: agents.httpsAgent,

@@ -70,7 +70,6 @@ export async function followHttpRedirects(
     let res: PublicHttpResponse;
     try {
       res = await fetchPublicHttpUrl(current, {
-        headers: { 'user-agent': SCRAPER_USER_AGENT },
         maxRedirects: 0,
       });
     } catch {

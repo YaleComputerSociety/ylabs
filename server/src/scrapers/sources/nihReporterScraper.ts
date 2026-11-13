@@ -845,7 +845,6 @@ async function fetchPage({
     axios.post(REPORTER_ENDPOINT, body, {
       timeout: FETCH_TIMEOUT_MS,
       headers: {
-        'User-Agent': SCRAPER_USER_AGENT,
         'Content-Type': 'application/json',
         Accept: 'application/json',
       },
@@ -882,7 +881,6 @@ async function fetchAffiliationPage(
       {
         timeout: FETCH_TIMEOUT_MS,
         headers: {
-          'User-Agent': SCRAPER_USER_AGENT,
           'Content-Type': 'application/json',
           Accept: 'application/json',
         },
@@ -1089,7 +1087,6 @@ async function fetchProjectsByNumber(
             {
               timeout: FETCH_TIMEOUT_MS,
               headers: {
-                'User-Agent': SCRAPER_USER_AGENT,
                 'Content-Type': 'application/json',
                 Accept: 'application/json',
               },

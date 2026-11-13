@@ -207,15 +207,10 @@ const hostOf = (url: string): string => {
 export interface RecheckRefusals {
   refused403: number;
   refused403ByHost: Record<string, number>;
-  refusedOtherByStatus: Record<string, number>;
 }
 
-const isRefusal = (
-  health: SourceLinkHealth,
-): health is SourceLinkHealth & { httpStatusCode: number } =>
-  health.healthStatus === 'UNKNOWN' &&
-  typeof health.httpStatusCode === 'number' &&
-  health.httpStatusCode >= 400;
+const isForbidden = (health: SourceLinkHealth): boolean =>
+  health.healthStatus === 'UNKNOWN' && health.httpStatusCode === 403;
 
 const sortedCounts = (counts: Map<string, number>): Record<string, number> =>
   Object.fromEntries(
@@ -226,35 +221,15 @@ export function summarizeRecheckRefusals(
   pages: Map<string, { health: SourceLinkHealth }>,
 ): RecheckRefusals {
   const forbiddenByHost = new Map<string, number>();
-  const otherByStatus = new Map<string, number>();
   for (const [url, { health }] of pages) {
-    if (!isRefusal(health)) continue;
-    if (health.httpStatusCode === 403) {
-      const host = hostOf(url);
-      forbiddenByHost.set(host, (forbiddenByHost.get(host) ?? 0) + 1);
-    } else {
-      const status = String(health.httpStatusCode);
-      otherByStatus.set(status, (otherByStatus.get(status) ?? 0) + 1);
-    }
+    if (!isForbidden(health)) continue;
+    const host = hostOf(url);
+    forbiddenByHost.set(host, (forbiddenByHost.get(host) ?? 0) + 1);
   }
   return {
     refused403: [...forbiddenByHost.values()].reduce((sum, count) => sum + count, 0),
     refused403ByHost: sortedCounts(forbiddenByHost),
-    refusedOtherByStatus: sortedCounts(otherByStatus),
   };
-}
-
-export function formatRecheckRefusals(refusals: RecheckRefusals): string {
-  const hosts = Object.entries(refusals.refused403ByHost)
-    .map(([host, count]) => `${host}=${count}`)
-    .join(', ');
-  const others = Object.entries(refusals.refusedOtherByStatus)
-    .map(([status, count]) => `${status}=${count}`)
-    .join(', ');
-  return [
-    `refused403: ${refusals.refused403}${hosts ? ` (${hosts})` : ''}`,
-    `refusedOther: ${others || 'none'}`,
-  ].join('\n');
 }
 
 export interface RecheckDescriptionGroundingResult extends RecheckRefusals {
@@ -421,7 +396,6 @@ async function main(): Promise<void> {
   }
 
   console.log(JSON.stringify(result, null, 2));
-  console.log(formatRecheckRefusals(result));
   if (options.output) {
     fs.writeFileSync(options.output, JSON.stringify(result, null, 2));
     console.log(`report -> ${sanitizeLogValue(options.output)}`);

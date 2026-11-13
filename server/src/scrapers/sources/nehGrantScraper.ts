@@ -385,7 +385,7 @@ async function fetchAwardSearchYear(
       responseType: 'text',
       transformResponse: [(data) => data],
       maxRedirects: 0,
-      headers: { 'User-Agent': SCRAPER_USER_AGENT, Accept: 'text/html,*/*' },
+      headers: { Accept: 'text/html,*/*' },
     }),
   );
   const html = typeof res.data === 'string' ? res.data : String(res.data ?? '');

@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { Source } from '../models/source';
@@ -428,6 +429,7 @@ export async function runFacultyResearchPromotion(options: {
 }
 
 async function main(): Promise<void> {
+  installScraperFetchHooks({ validatorCache: false });
   const options = parseFacultyResearchPromotionArgs(process.argv.slice(2));
   assertFacultyResearchPromotionApplyAllowed(options);
   const apply = !options.dryRun;

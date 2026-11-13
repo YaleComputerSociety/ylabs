@@ -443,7 +443,7 @@ async function fetchPage(
     axios.get(NSF_API_URL, {
       params,
       timeout: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': SCRAPER_USER_AGENT, Accept: 'application/json' },
+      headers: { Accept: 'application/json' },
     }),
   );
   const r = (res.data?.response ?? {}) as {

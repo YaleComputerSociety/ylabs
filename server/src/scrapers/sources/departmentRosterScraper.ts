@@ -3527,7 +3527,6 @@ async function fetchHtml(url: string, useCache: boolean, sourceName: string): Pr
   const res = await retryOnRetryableStatus(() =>
     axios.get(safeUrlText, {
       timeout: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': SCRAPER_USER_AGENT },
       maxRedirects: 5,
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,
@@ -3559,7 +3558,6 @@ async function fetchDeptData(
     axios.post(safeDataUrlText, body, {
       timeout: FETCH_TIMEOUT_MS,
       headers: {
-        'User-Agent': SCRAPER_USER_AGENT,
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       maxRedirects: 5,

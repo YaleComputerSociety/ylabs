@@ -62,7 +62,6 @@ export async function probe(url: string): Promise<{ status: number; title: strin
   try {
     const response = await fetchPublicHttpUrl(url, {
       timeoutMs: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': SCRAPER_USER_AGENT },
     });
     const ok = response.status >= 200 && response.status < 300;
     const body = ok ? response.body.slice(0, 4000) : '';
