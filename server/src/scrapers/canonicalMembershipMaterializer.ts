@@ -703,6 +703,18 @@ export async function resolveOrCreateResearcherIdUnlessRemoved(
     : personId;
 }
 
+export async function canonicalMemberIsRemovedByRequest(
+  identity: CanonicalMemberIdentity,
+  personId: mongoose.Types.ObjectId,
+  profileUrl?: string,
+): Promise<boolean> {
+  const guard = await currentDirectoryRemovalMintGuard();
+  return (
+    guard.refusesPerson(listedDirectoryRemovalPerson(identity, profileUrl)) ||
+    (await researcherIsRemovedByRequest(guard, personId, profileUrl))
+  );
+}
+
 export async function resolveOrCreateResearcherIdForIdentity(
   identity: CanonicalMemberIdentity,
 ): Promise<mongoose.Types.ObjectId | undefined> {
