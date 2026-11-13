@@ -4,8 +4,11 @@
  * `SEARCH_RERANK_CACHE_ENABLED` to reorder the top results with (#5448).
  *
  * The input is a JSON file outside the repository of `[{ query, filters, scores: { <slug>:
- * <0-3> } }]`. Slugs resolve to live research rows; an unresolved slug is counted and
- * skipped. It prints counts only, never a query or a slug.
+ * <0-3> } }]`. A slug resolves to its live row, else to the live survivor its archived
+ * row's merge tombstone reaches, else to the live row a stored redirect names; an
+ * unresolved slug is counted and skipped. Two slugs of one entry that reach one row keep
+ * the higher score, and a run whose two such scores are 2 or more points apart is
+ * refused. It prints counts only, never a query or a slug.
  *
  * Dry run by default. An apply needs `--apply --confirm-search-rerank-cache-seed
  * --index-version=<marker>` and writes Development unless `--environment=beta` or

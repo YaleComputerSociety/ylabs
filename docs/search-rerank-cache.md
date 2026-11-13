@@ -37,7 +37,17 @@ These searches are served exactly as without the flag:
 `yarn --cwd server research-search:seed-rerank-cache --input=<path>` reads a JSON file of `[{ "query": "...", "filters": { ... }, "scores": { "<slug>": <0-3> } }]`.
 The file must sit outside the repository, and the script refuses one inside it.
 It resolves each slug to a live research row, keys each entry with `searchRerankCacheQueryKey`, and refuses two entries that share a key.
+A slug resolves in this order (#6094):
+
+- to the live row that carries it;
+- else, when it names an archived row, to the live survivor that row's merge tombstone chain reaches, walked by the engine's own `resolveResearchEntityCanonicalByTombstone`, so a chain that cycles, points at a missing row, or ends on an archived row leaves the slug unresolved;
+- else, when no row carries it at all, to the one live row whose stored redirect names it: `previousSlugs` from a redirecting reslug (#5808) or `mergedFrom` from a merge (#5148); two live rows claiming the same slug leave it unresolved, and no slug is ever matched by name.
+
+Two slugs of one entry can then reach the same row.
+When their scores are within one grade point the higher one is kept and the pair is reported; when any two are 2 or more points apart the whole run is refused before anything is written, naming the entry, which needs a re-score.
 A dry run is the default and prints counts only: entries, scores, resolved scores, unresolved slugs, and entries left with no resolved score.
+`resolvedThroughMerge` and `resolvedThroughRedirect` count the resolved scores that took the second and third paths, and `mergeCollisions` gives the count of collapsed pairs with each one's entry index, survivor id and scores.
+`unresolvedSlugs` counts unresolved scores, not distinct slugs, and `resolvedScores` is `scores` less it, so a collapsed pair counts twice there and once among the scores stored.
 It also prints the staleness of the seeded entries already in the target cache (see Staleness).
 It never prints a query or a slug.
 An apply needs `--apply --confirm-search-rerank-cache-seed --index-version=<marker>` and upserts one document per key, replacing that key's scores.
