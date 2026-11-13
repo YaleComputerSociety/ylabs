@@ -5,6 +5,15 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-11-13: The Permanent-Resident Citizenship Option Includes Programs Open To Both Groups (#6092)
+
+This extends the 2026-11-12 citizenship entry below (#5299), whose stated-first order, "Doesn't say" divider and per-option counts are unchanged.
+Decision (2026-11-13, triage on #6092): the "Open to U.S. permanent residents, or not stated" option matches a program whose stated citizenship carries the permanent-resident value, or carries both "U.S. citizens are eligible" and "Non-U.S. citizens are eligible", because a program stated open to both groups is open to a permanent resident.
+A program stated open to non-U.S. citizens only does not match, because "international students only" programs commonly exclude permanent residents, so the rule stays conservative even though no served program had that shape when it was measured.
+The U.S. and non-U.S. options still match only their own stated value.
+This is a serve-time mapping: the stored values and the citizenship parser are unchanged, and one definition of which stated values satisfy an option (`server/src/utils/programCitizenshipOptions.ts`) drives the filter, the per-option counts and their "says" split, and the journey harness, so an option's two counts still add up to what applying it returns.
+Measured read-only on Development on 2026-11-13: 132 served programs state both groups, 5 state U.S. citizens and permanent residents, 4 state U.S. citizens only, 61 state nothing, and 0 state non-U.S. citizens only, so the option's "say they are open" count rises from 4 to the programs carrying either shape.
+
 ## 2026-11-12: Browse Folds Its Undergraduate Filters Into One "Undergrads" Group That Matches All Ticked Options (#5963)
 
 This replaces the three undergraduate toggles of #5362 and #5441.
