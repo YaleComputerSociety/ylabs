@@ -9,7 +9,7 @@ import { OUTBOUND_CONNECT_TIMEOUT_MS } from '../../utils/connectDeadlineAgents';
 import { DevWriteStoppedError, devWriteStopped } from '../../db/devWriteStop';
 import {
   requestOutcomeOf,
-  scraperRequestLogFromEnv,
+  processScraperRequestLog,
   type ScraperRequestLog,
 } from './scraperRequestLog';
 
@@ -140,7 +140,7 @@ export function installScraperFetchDeadlines(
   const original = instance.defaults.adapter;
   instance.defaults.adapter = withScraperFetchDeadline(axios.getAdapter(original), {
     ...options,
-    requestLog: options.requestLog ?? scraperRequestLogFromEnv(),
+    requestLog: options.requestLog ?? processScraperRequestLog(),
   });
   const handle: ScraperFetchDeadlineHandle = {
     detach: () => {

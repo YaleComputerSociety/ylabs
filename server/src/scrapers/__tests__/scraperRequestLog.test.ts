@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -6,7 +7,10 @@ import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import axios from 'axios';
-import { withScraperFetchDeadline } from '../utils/scraperFetchDeadlines';
+import {
+  installScraperFetchDeadlines,
+  withScraperFetchDeadline,
+} from '../utils/scraperFetchDeadlines';
 import {
   SCRAPER_REQUEST_LOG_ENV,
   createScraperRequestLog,
@@ -131,4 +135,69 @@ describe('the opt-in scraper request log (#6188)', () => {
       attempt: 1,
     });
   });
+  it('warns once and runs unlogged when the log path cannot be opened', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'request-log-'));
+    tempDirs.push(dir);
+    const unopenable = path.join(dir, 'missing-directory', 'requests.jsonl');
+    const warnings: string[] = [];
+
+    const log = scraperRequestLogFromEnv({ [SCRAPER_REQUEST_LOG_ENV]: unopenable }, (message) =>
+      warnings.push(message),
+    );
+
+    expect(log).toBeUndefined();
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('ENOENT');
+    expect(warnings[0]).not.toContain(dir);
+
+    const previous = process.env[SCRAPER_REQUEST_LOG_ENV];
+    process.env[SCRAPER_REQUEST_LOG_ENV] = unopenable;
+    const instance = axios.create();
+    try {
+      const handle = installScraperFetchDeadlines(instance);
+      handle.detach();
+    } finally {
+      if (previous === undefined) delete process.env[SCRAPER_REQUEST_LOG_ENV];
+      else process.env[SCRAPER_REQUEST_LOG_ENV] = previous;
+    }
+    expect(fs.existsSync(unopenable)).toBe(false);
+  });
+
+  it('keeps every line whole when two processes append to one log', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'request-log-'));
+    tempDirs.push(dir);
+    const file = path.join(dir, 'requests.jsonl');
+    const child = path.join(dir, 'append.ts');
+    const modulePath = path.resolve(__dirname, '../utils/scraperRequestLog.ts');
+    const linesPerProcess = 2000;
+    fs.writeFileSync(
+      child,
+      [
+        `import { scraperRequestLogFromEnv } from ${JSON.stringify(modulePath)};`,
+        'const log = scraperRequestLogFromEnv();',
+        `for (let i = 0; i < ${linesPerProcess}; i += 1) {`,
+        '  log?.record(`https://example.edu/page-${process.pid}-${i}`, new Date(), i, { status: 200 });',
+        '}',
+      ].join('\n'),
+    );
+    const run = () =>
+      new Promise<number | null>((resolve) => {
+        const proc = spawn(process.execPath, ['--import', 'tsx', child], {
+          cwd: path.resolve(__dirname, '../../..'),
+          env: { ...process.env, [SCRAPER_REQUEST_LOG_ENV]: file },
+          stdio: 'ignore',
+        });
+        proc.on('exit', resolve);
+      });
+
+    expect(await Promise.all([run(), run()])).toEqual([0, 0]);
+
+    const lines = fs.readFileSync(file, 'utf8').trim().split('\n');
+    expect(lines).toHaveLength(2 * linesPerProcess);
+    for (const line of lines) {
+      const entry = JSON.parse(line) as ScraperRequestLogEntry;
+      expect(entry.host).toBe('example.edu');
+      expect(entry.attempt).toBe(1);
+    }
+  }, 120000);
 });

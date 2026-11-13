@@ -76,10 +76,33 @@ export function createScraperRequestLog(write: (line: string) => void): ScraperR
  */
 export function scraperRequestLogFromEnv(
   env: NodeJS.ProcessEnv = process.env,
+  warn: (message: string) => void = console.warn,
 ): ScraperRequestLog | undefined {
   const target = env[SCRAPER_REQUEST_LOG_ENV]?.trim();
   if (!target) return undefined;
-  const fd = fs.openSync(target, 'a', 0o600);
-  fs.fchmodSync(fd, 0o600);
-  return createScraperRequestLog((line) => fs.writeSync(fd, line));
+  let fd: number | undefined;
+  try {
+    fd = fs.openSync(target, 'a', 0o600);
+    fs.fchmodSync(fd, 0o600);
+  } catch (error) {
+    if (fd !== undefined) fs.closeSync(fd);
+    warn(
+      `[scraper-request-log] ${SCRAPER_REQUEST_LOG_ENV} could not be opened (${openErrorCode(error)}); this run is not request-logged`,
+    );
+    return undefined;
+  }
+  const opened = fd;
+  return createScraperRequestLog((line) => fs.writeSync(opened, line));
+}
+
+let processRequestLog: { log: ScraperRequestLog | undefined } | undefined;
+
+export function processScraperRequestLog(): ScraperRequestLog | undefined {
+  processRequestLog ??= { log: scraperRequestLogFromEnv() };
+  return processRequestLog.log;
+}
+
+function openErrorCode(error: unknown): string {
+  const code = (error as { code?: unknown } | undefined)?.code;
+  return typeof code === 'string' && /^[A-Z0-9_]{1,40}$/.test(code) ? code : 'UNKNOWN';
 }
