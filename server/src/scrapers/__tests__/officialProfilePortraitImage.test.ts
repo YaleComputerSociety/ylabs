@@ -89,6 +89,27 @@ describe('official-profile-pi-backfill reads the profile headshot before the sha
     );
   });
 
+  it('takes the YaleSites profile-meta portrait over the full-size og:image original (#6063)', () => {
+    const page = 'https://earth.yale.edu/profile/rowan-quillfeather/';
+    const original = 'https://earth.yale.edu/sites/default/files/2024-06/fixture-portrait.jpg';
+    const rendition = (width: number) =>
+      `/sites/default/files/styles/2_3_${width}/public/2024-06/fixture-portrait.jpg?h=a1&amp;itok=r${width}`;
+    const html = profile(
+      page,
+      `<meta property="og:image" content="${original}" />
+       <meta name="twitter:image" content="${original}" />`,
+      `<div class="profile-meta" data-component-image-orientation="portrait">
+         <div class="profile-meta__inner"><div class="profile-meta__image">
+           <img loading="lazy" srcset="${rendition(175)} 175w, ${rendition(320)} 320w, ${rendition(480)} 480w"
+             sizes="(min-width: 1344px) 320px, 50vw" width="480" height="720"
+             src="${rendition(480)}" alt="Rowan Quillfeather" />
+         </div><div class="profile-meta__content"></div></div></div>`,
+    );
+    expect(imageOf(page, html)).toBe(
+      'https://earth.yale.edu/sites/default/files/styles/2_3_480/public/2024-06/fixture-portrait.jpg?h=a1&itok=r480',
+    );
+  });
+
   it('emits no image when the page shows no portrait, whatever its share images', () => {
     const page = 'https://economics.yale.edu/people/rowan-quillfeather';
     const building =
