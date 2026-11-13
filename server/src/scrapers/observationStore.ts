@@ -1181,6 +1181,10 @@ export const LATEST_WINS_FINGERPRINT_FIELDS_BY_ENTITY_TYPE: Readonly<
  *
  * The roster-bio lane re-reads the rows it minted and restates their biography evidence,
  * so a narrower reading, or its no-value assertion, replaces the earlier evidence (#6107).
+ *
+ * The YSM faculty directory mints one research row per profile and states one school for
+ * it, read from the profile's Primary appointment, so a changed school must replace the
+ * earlier one rather than leave the profile naming two schools (#6160).
  */
 export const LATEST_WINS_FINGERPRINT_FIELDS_BY_SOURCE: Readonly<
   Record<string, ReadonlySet<string>>
@@ -1193,6 +1197,7 @@ export const LATEST_WINS_FINGERPRINT_FIELDS_BY_SOURCE: Readonly<
   'dept-faculty-roster': new Set(['userType']),
   'lead-pi-school-inheritance': new Set(['school', 'departments']),
   'roster-bio-research-evidence': new Set(['researchInterestSummary']),
+  'ysm-faculty-directory': new Set(['school']),
 };
 
 export function usesLatestWinsFingerprint(input: {
