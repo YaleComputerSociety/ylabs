@@ -9297,6 +9297,50 @@ async function storedDepartmentReadingsOfEngineJoinedKeys(
     .lean()) as StoredDepartmentReading[];
 }
 
+interface StoredDepartmentBackingReads {
+  overEveryKey(): ReturnType<typeof storedDepartmentReadingsOverEveryKey>;
+  engineJoined(
+    stored: string,
+    canonicalDepartment: CanonicalDepartment,
+  ): ReturnType<typeof storedDepartmentReadingsOfEngineJoinedKeys>;
+}
+
+/**
+ * The cross-key and engine-joined backing reads for one researcher, read at most once per
+ * materialize pass, so the #6065 clear and the #6049 fill check share them.
+ */
+function storedDepartmentBackingReadsForPass(
+  researcher: any,
+  ownKey: UserKeyReference | undefined,
+): StoredDepartmentBackingReads {
+  let overEveryKey: ReturnType<typeof storedDepartmentReadingsOverEveryKey> | undefined;
+  const engineJoinedByStored = new Map<
+    string,
+    ReturnType<typeof storedDepartmentReadingsOfEngineJoinedKeys>
+  >();
+  const reads: StoredDepartmentBackingReads = {
+    overEveryKey: () => (overEveryKey ??= storedDepartmentReadingsOverEveryKey(researcher, ownKey)),
+    engineJoined: (stored, canonicalDepartment) => {
+      let joined = engineJoinedByStored.get(stored);
+      if (!joined) {
+        joined = reads
+          .overEveryKey()
+          .then(({ references }) =>
+            storedDepartmentReadingsOfEngineJoinedKeys(
+              researcher,
+              stored,
+              canonicalDepartment,
+              references,
+            ),
+          );
+        engineJoinedByStored.set(stored, joined);
+      }
+      return joined;
+    },
+  };
+  return reads;
+}
+
 /**
  * Whether some `primaryDepartment` observation, live or superseded, on any key that names the
  * researcher states its stored department (#6049), counting a key the engine joins by name too
@@ -9305,20 +9349,15 @@ async function storedDepartmentReadingsOfEngineJoinedKeys(
  */
 async function storedDepartmentBackedByAnyReading(
   researcher: any,
-  ownKey: UserKeyReference | undefined,
+  reads: StoredDepartmentBackingReads,
 ): Promise<boolean> {
   const stored = textValue(researcher.profile?.primaryDepartment);
   if (!stored) return true;
   const canonicalDepartment = await catalogDepartment();
   if (!canonicalDepartment) return true;
-  const { references, readings } = await storedDepartmentReadingsOverEveryKey(researcher, ownKey);
+  const { readings } = await reads.overEveryKey();
   if (storedDepartmentIsBacked(stored, readings, canonicalDepartment)) return true;
-  const joined = await storedDepartmentReadingsOfEngineJoinedKeys(
-    researcher,
-    stored,
-    canonicalDepartment,
-    references,
-  );
+  const joined = await reads.engineJoined(stored, canonicalDepartment);
   return joined === 'undetermined' || storedDepartmentIsBacked(stored, joined, canonicalDepartment);
 }
 
@@ -9330,21 +9369,16 @@ async function storedDepartmentBackedByAnyReading(
  */
 async function storedDepartmentRestsOnlyOnScreenedReadingsAcrossKeys(
   researcher: any,
-  ownKey: UserKeyReference | undefined,
+  reads: StoredDepartmentBackingReads,
   ownObservations: readonly any[],
   context: UserDepartmentScreenContext,
 ): Promise<boolean> {
   const stored = textValue(researcher.profile?.primaryDepartment);
   if (!stored || !context.canonicalDepartment) return false;
   if (storedDepartmentHasUnscreenedReading(stored, ownObservations, context)) return false;
-  const { references, readings } = await storedDepartmentReadingsOverEveryKey(researcher, ownKey);
+  const { readings } = await reads.overEveryKey();
   if (storedDepartmentHasUnscreenedReading(stored, readings, context)) return false;
-  const joined = await storedDepartmentReadingsOfEngineJoinedKeys(
-    researcher,
-    stored,
-    context.canonicalDepartment,
-    references,
-  );
+  const joined = await reads.engineJoined(stored, context.canonicalDepartment);
   if (joined === 'undetermined') return false;
   return storedDepartmentRestsOnlyOnScreenedReadings(stored, [...readings, ...joined], context);
 }
@@ -10274,14 +10308,18 @@ async function materializeUserIdentityToResearcher(
     researcher.profileFieldWriters?.delete('imageUrl');
     fieldsWritten += 1;
   }
+  const storedDepartmentBackingReads = storedDepartmentBackingReadsForPass(
+    researcher,
+    identifier.entityKey
+      ? { entityKey: identifier.entityKey }
+      : prefetchObjectIdString(identifier.entityId)
+        ? { entityId: prefetchObjectIdString(identifier.entityId) }
+        : undefined,
+  );
   if (
     await storedDepartmentRestsOnlyOnScreenedReadingsAcrossKeys(
       researcher,
-      identifier.entityKey
-        ? { entityKey: identifier.entityKey }
-        : prefetchObjectIdString(identifier.entityId)
-          ? { entityId: prefetchObjectIdString(identifier.entityId) }
-          : undefined,
+      storedDepartmentBackingReads,
       obs,
       { canonicalDepartment: await catalogDepartment() },
     )
@@ -10296,14 +10334,7 @@ async function materializeUserIdentityToResearcher(
     !isFillOnlyFieldValue('primaryDepartment', resolved.primaryDepartment?.contributingSources) ||
     researcher.profileFieldWriters?.get?.('primaryDepartment')
       ? true
-      : await storedDepartmentBackedByAnyReading(
-          researcher,
-          identifier.entityKey
-            ? { entityKey: identifier.entityKey }
-            : prefetchObjectIdString(identifier.entityId)
-              ? { entityId: prefetchObjectIdString(identifier.entityId) }
-              : undefined,
-        );
+      : await storedDepartmentBackedByAnyReading(researcher, storedDepartmentBackingReads);
   for (const [key, value, confidence] of [
     ['primaryDepartment', primaryDepartment, resolvedConfidence('primaryDepartment')],
     ['imageUrl', imageUrl, resolvedConfidence('imageUrl')],

@@ -233,6 +233,41 @@ describe('a stored department only screened readings back is cleared on resolve'
     expect((await stored(person._id))?.profile?.primaryDepartment).toBe('Fixture Studies');
   });
 
+  it('lets no directory fill replace a department a person-name-joined key states in another spelling', async () => {
+    const person = await seedPerson('Fixture Studies');
+    await seedScreenedKey(
+      reading('primaryDepartment', 'Fixture Directory Studies', 'yale-directory'),
+      ...rosterReadings('fixture studies', 'dept-faculty-roster'),
+    );
+
+    await resolve();
+    expect((await stored(person._id))?.profile?.primaryDepartment).toBe('Fixture Studies');
+  });
+
+  it('neither clears nor fills while more same-surname keys state the value than the engine join is asked about', async () => {
+    const person = await seedPerson('Fixture Studies');
+    const namesakes = Array.from({ length: 26 }, (_, index) => {
+      const key = `dept:fixture-studies:fixture-namesake-${index}`;
+      return [
+        reading(
+          'fname',
+          `Namesake${String.fromCharCode(97 + (index % 26))}`,
+          'dept-faculty-roster',
+          key,
+        ),
+        reading('lname', 'Quillsby', 'dept-faculty-roster', key),
+        reading('primaryDepartment', 'Fixture Studies', 'dept-faculty-roster', key),
+      ];
+    }).flat();
+    await Observation.insertMany(namesakes);
+    await seedScreenedKey(
+      reading('primaryDepartment', 'Fixture Directory Studies', 'yale-directory'),
+    );
+
+    await resolve();
+    expect((await stored(person._id))?.profile?.primaryDepartment).toBe('Fixture Studies');
+  });
+
   it('still lets the directory fill a never-backed department many other people state', async () => {
     const person = await seedPerson('Fixture Studies');
     const others = Array.from({ length: 30 }, (_, index) => {
