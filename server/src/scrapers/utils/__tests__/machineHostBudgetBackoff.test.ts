@@ -99,6 +99,18 @@ describe('recording host backoff', () => {
     expect(limiter.backoffState(HOST)?.level).toBe(0);
   });
 
+  it('escalates a steady stream of refusals 4 s apart, stepping once every 2 refusals', async () => {
+    const limiter = budget();
+    const start = clock;
+    const levels: number[] = [];
+    while (clock - start <= 30_000) {
+      await limiter.recordBackoff(HOST, { status: 429 });
+      levels.push(limiter.backoffState(HOST)!.level);
+      clock += 4_000;
+    }
+    expect(levels).toEqual([0, 0, 1, 1, 2, 2, 3, 3]);
+  });
+
   it('escalates a later refusal even while the pause still holds', async () => {
     const limiter = budget();
     await limiter.recordBackoff(HOST, { status: 429 });

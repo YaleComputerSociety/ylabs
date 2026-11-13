@@ -59,7 +59,8 @@ export const HOST_PAUSE_INLINE_WAIT_MS = 2_000;
 const MAX_RECORDED_BACKOFF_LEVEL = 30;
 
 // Concurrent workers can each hand back the same host's refusal, so refusals this close together
-// count as one step; a later refusal still escalates even while the host is paused.
+// count as one step; a later refusal still escalates even while the host is paused. The window
+// runs from the last step, not the last refusal, or a steady stream would slide it forever.
 export const HOST_BACKOFF_DEDUPE_MS = 5_000;
 const NO_HTTP_STATUS = 0;
 
@@ -417,7 +418,7 @@ export class MachineHostBudgetLimiter implements HostSlotLimiter {
         pausedUntil: until,
         lastStatus: Number.isInteger(verdict.status) ? verdict.status : NO_HTTP_STATUS,
         since: prior && !clean ? prior.since : now,
-        lastBackoffAt: now,
+        lastBackoffAt: alreadyStepped && prior ? prior.lastBackoffAt : now,
         ...(statedUntil ? { statedUntil } : {}),
       };
       return { result: until, write: true };
