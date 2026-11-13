@@ -68,7 +68,7 @@ export interface SourceLinkHealthBackfillOptions {
   excludeHosts: string[];
   /** A file naming the only links this run probes, one per line, probed in file order. */
   urlFile?: string;
-  /** Statuses that end probing of a host for the rest of the run, for example 403 and 429. */
+  /** Statuses that end probing of a host for the rest of the run; 403 and 429 by default. */
   stopOnStatuses: number[];
   /** Probe at most this many due links per host; a dry run defaults to a sample. */
   samplePerHost?: number;
@@ -116,7 +116,7 @@ export function parseSourceLinkHealthBackfillArgs(argv: string[]): SourceLinkHea
     staleOnly: false,
     httpWebsitesOnly: false,
     excludeHosts: [],
-    stopOnStatuses: [],
+    stopOnStatuses: [...DEFAULT_STOP_ON_STATUSES],
     fullDryRun: false,
     noProbeReuse: false,
   };
@@ -159,6 +159,8 @@ export function parseSourceLinkHealthBackfillArgs(argv: string[]): SourceLinkHea
       i += 1;
     } else if (arg.startsWith('--stop-on-status=')) {
       options.stopOnStatuses = parseStatusList(arg.slice('--stop-on-status='.length));
+    } else if (arg === '--no-stop-on-refusal') {
+      options.stopOnStatuses = [];
     } else if (arg.startsWith('--exclude-host=')) {
       options.excludeHosts.push(parseExcludedHost(arg.slice('--exclude-host='.length)));
     } else if (arg === '--exclude-host') {
@@ -321,6 +323,13 @@ export function sourceLinkHealthRunOptions(
  * re-run often while a pass is planned, and each one otherwise re-requests the same links (#6214).
  */
 export const DEFAULT_DRY_RUN_PROBE_REUSE_HOURS = 24;
+
+/**
+ * A host that refuses one probe is not asked again in the same pass, and its unprobed links keep
+ * their stored verdicts; the next pass tries it again (#6214). Probing on after a refusal only
+ * spends the host's patience, which is how one pass lengthened a school site's rate limit (#6166).
+ */
+export const DEFAULT_STOP_ON_STATUSES: readonly number[] = [403, 429];
 
 /**
  * How many due links per host a dry run probes by default. A dry run cannot change stored data,

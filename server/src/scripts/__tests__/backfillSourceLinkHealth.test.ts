@@ -45,6 +45,7 @@ describe('sourceLinkHealthRunOptions', () => {
       dryRun: false,
       limit: 100,
       staleOnly: true,
+      stopOnStatuses: [403, 429],
     });
   });
 
@@ -56,6 +57,7 @@ describe('sourceLinkHealthRunOptions', () => {
       httpWebsitesOnly: true,
       samplePerHost: DEFAULT_DRY_RUN_SAMPLE_PER_HOST,
       reuseProbesWithinMs: DEFAULT_REUSE_MS,
+      stopOnStatuses: [403, 429],
     });
   });
 
@@ -65,6 +67,7 @@ describe('sourceLinkHealthRunOptions', () => {
       staleOnly: false,
       samplePerHost: DEFAULT_DRY_RUN_SAMPLE_PER_HOST,
       reuseProbesWithinMs: DEFAULT_REUSE_MS,
+      stopOnStatuses: [403, 429],
     });
   });
 });
@@ -83,6 +86,7 @@ describe('--checked-before', () => {
       limit: 5000,
       staleOnly: false,
       checkedBefore: new Date('2026-09-10T21:00:00.000Z'),
+      stopOnStatuses: [403, 429],
     });
   });
 
@@ -107,6 +111,7 @@ describe('--checked-before', () => {
       staleOnly: false,
       samplePerHost: DEFAULT_DRY_RUN_SAMPLE_PER_HOST,
       reuseProbesWithinMs: DEFAULT_REUSE_MS,
+      stopOnStatuses: [403, 429],
     });
   });
 });
@@ -121,6 +126,7 @@ describe('--reprobe-healthy-after-days', () => {
       reprobeHealthyAfterDays: 7,
       samplePerHost: DEFAULT_DRY_RUN_SAMPLE_PER_HOST,
       reuseProbesWithinMs: DEFAULT_REUSE_MS,
+      stopOnStatuses: [403, 429],
     });
   });
 
@@ -269,5 +275,26 @@ describe('#6214 dry-run probe reuse flags', () => {
     expect(() =>
       parseSourceLinkHealthBackfillArgs([...apply, '--reuse-probes-within-hours=2']),
     ).toThrow(/dry run only/);
+  });
+});
+
+describe('#6214 stop a host at its first refusal by default', () => {
+  it('stops on 403 and 429 unless told otherwise', () => {
+    expect(
+      sourceLinkHealthRunOptions(parseSourceLinkHealthBackfillArgs([])).stopOnStatuses,
+    ).toEqual([403, 429]);
+    expect(
+      sourceLinkHealthRunOptions(
+        parseSourceLinkHealthBackfillArgs(['--apply', '--confirm-source-link-health', '--limit=1']),
+      ).stopOnStatuses,
+    ).toEqual([403, 429]);
+    expect(
+      sourceLinkHealthRunOptions(parseSourceLinkHealthBackfillArgs(['--stop-on-status=429']))
+        .stopOnStatuses,
+    ).toEqual([429]);
+    expect(
+      sourceLinkHealthRunOptions(parseSourceLinkHealthBackfillArgs(['--no-stop-on-refusal']))
+        .stopOnStatuses,
+    ).toBeUndefined();
   });
 });

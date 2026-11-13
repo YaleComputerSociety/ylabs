@@ -41,7 +41,8 @@ describe('probeSourceLink and a host that refuses', () => {
     const probe = await probeSourceLink('https://dept.example.edu/people/a');
 
     expect(probe).toMatchObject({ excludedHost: true, errorCode: EXCLUDED_HOST_ERROR_CODE });
-    expect(requestMock).toHaveBeenCalledTimes(2);
+    expect(requestMock).toHaveBeenCalledTimes(1);
+    expect(requestMock.mock.calls[0][0]).toMatchObject({ method: 'GET' });
     expect(hostPausedUntil('dept.example.edu')).toEqual(FUTURE);
   });
 
