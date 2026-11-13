@@ -878,6 +878,67 @@ describe('AdminOperatorBoard', () => {
     expect(screen.getAllByText(/^synthetic_blocker_/)).toHaveLength(4);
   });
 
+  it('groups correctly withheld programs apart from must-fix work (#6204)', async () => {
+    mockedAxios.get.mockResolvedValue({
+      data: {
+        generatedAt: '2026-05-29T22:30:00.000Z',
+        trustTiers: { research: [], programs: [] },
+        reasonCounts: { research: [], programs: [] },
+        queues: [
+          {
+            collection: 'programs',
+            reason: 'missing_official_source',
+            kind: 'blocking',
+            count: 7,
+            nextAction: 'Find and attach the official source URL.',
+            samples: [],
+          },
+          {
+            collection: 'programs',
+            reason: 'non_research_program',
+            kind: 'withheld',
+            count: 238,
+            nextAction: 'Not a research opportunity; stays withheld.',
+            samples: [],
+          },
+          {
+            collection: 'programs',
+            reason: 'external_award_cycle_stale',
+            kind: 'withheld',
+            count: 113,
+            nextAction: 'Returns when the record states a current cycle.',
+            samples: [],
+          },
+        ],
+        gates: {
+          dataQuality: {
+            status: 'manual',
+            command: 'yarn --cwd server beta:data-quality --include-samples',
+            note: 'Saved data-quality artifact is stale; rerun the gate before promotion.',
+          },
+          scraperIntegrity: {
+            status: 'unknown',
+            command: 'yarn --cwd server scraper:integrity-gate --include-samples',
+            latestRuns: [],
+          },
+        },
+        sourceFreshness: { windowDays: 30, riskCounts: { ok: 0, warn: 0, error: 0 }, rows: [] },
+      },
+    });
+
+    render(<AdminOperatorBoard />);
+
+    const withheld = await screen.findByRole('group', { name: 'Correctly Withheld' });
+    expect(within(withheld).getByText('non_research_program')).toBeTruthy();
+    expect(within(withheld).getByText('external_award_cycle_stale')).toBeTruthy();
+    expect(within(withheld).getByText('351')).toBeTruthy();
+
+    const mustFix = screen.getByText('Must Fix Before Promotion').closest('div.rounded-md');
+    expect(mustFix).toBeTruthy();
+    expect(within(mustFix as HTMLElement).queryByText('non_research_program')).toBeNull();
+    expect(within(mustFix as HTMLElement).getAllByText('7').length).toBeGreaterThan(0);
+  });
+
   it('shows stale saved data-quality gates as manual work', async () => {
     mockedAxios.get.mockResolvedValue({
       data: {

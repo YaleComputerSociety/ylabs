@@ -5,6 +5,16 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-11-13: Correctly Withheld Programs Are Not Repair Work (#6204)
+
+Decision (owner request, 2026-11-13).
+The `/analytics` Decision Lanes group `non_research_program` and `external_award_cycle_stale` as "Correctly Withheld", apart from "Must Fix Before Promotion", because they are verdicts that the row should be hidden rather than evidence still to find.
+A row carrying either reason counts only under it, so its other reasons, such as a missing application route, no longer count as must-fix work either.
+A blind check of stored captures on Development (3 graders, 2 of 3 agreeing) confirmed 17 of 20 sampled `non_research_program` rows and 19 of 20 `external_award_cycle_stale` rows as correctly withheld; the 20th states rolling applications, but it is also not research, so it stays withheld.
+The 3 wrong verdicts were funded creative and journalism projects, which the creative-practice decision counts as research; that is a lane bug, tracked in #6216, and is fixed in the lane rather than by keeping the reason in the repair queue.
+A reason joins the group only after a blind sample confirms it the same way; `prize_for_completed_work` and the other suppression verdicts have not been sampled and stay where they are.
+The set is `CORRECTLY_WITHHELD_REASONS` in `server/src/services/adminOperatorBoardService.ts`.
+
 ## 2026-11-13: A Refused Connection Retires A Live Link Only Once A Second Run Agrees (#6116)
 
 This refines the #2751 rule that a reachability failure confirmed by a second attempt retires a link, and leaves the #2726 DNS rule as it was.
