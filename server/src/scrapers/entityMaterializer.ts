@@ -8929,6 +8929,7 @@ export async function joinUserIdentityToExistingResearcher(
   if (!researcher && displayName) {
     const resolution = await resolveResearcherIdForPersonName(displayName, {
       netid: accountNetid ?? netid,
+      identity: { emails: keyEmails, orcid: derived.orcid },
     });
     personNameHeldByNobody =
       resolution.status === 'absent' ||
