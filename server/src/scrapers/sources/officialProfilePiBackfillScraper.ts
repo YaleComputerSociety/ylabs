@@ -2915,6 +2915,15 @@ const PROFILE_PORTRAIT_CONTAINERS = [
   '[class*="field-name-field-photo"]',
 ];
 
+const YSM_CLOUDINARY_VERSIONED_ASSET =
+  /^(https:\/\/ysm-res\.cloudinary\.com\/image\/upload\/(?:[^/]+\/)*?)(v\d+\/.+)$/;
+const YSM_AVATAR_TRANSFORM = 'c_limit,f_auto,q_auto,w_400';
+
+function sizedYsmPortrait(url: string): string {
+  const match = YSM_CLOUDINARY_VERSIONED_ASSET.exec(url);
+  return match ? `${match[1]}${YSM_AVATAR_TRANSFORM}/${match[2]}` : url;
+}
+
 function ysmProfileHeaderPortrait($: cheerio.CheerioAPI): string {
   const profileDetails = mainComponentsOf(ysmPageDataFrom($)).find(
     (component) => component.key === 'ProfileDetails',
@@ -2925,8 +2934,14 @@ function ysmProfileHeaderPortrait($: cheerio.CheerioAPI): string {
     ? image.imageVariants
     : [];
   const portraitCrop = variants.find((variant) => variant?.dimension === 'Rectangle');
-  return textValue(portraitCrop?.url) || textValue(image.url);
+  const portrait = textValue(portraitCrop?.url) || textValue(image.url);
+  return portrait ? sizedYsmPortrait(portrait) : '';
 }
+
+const isAdmissiblePortraitUrl = (value: string): boolean =>
+  /^https?:\/\//i.test(value) &&
+  isLikelyPublicProfileImageUrl(value) &&
+  !isSocialShareImageUrl(value);
 
 function profilePortraitImageUrl($: cheerio.CheerioAPI, profileUrl: string): string {
   const candidates = [
@@ -2937,7 +2952,20 @@ function profilePortraitImageUrl($: cheerio.CheerioAPI, profileUrl: string): str
     .map(textValue)
     .filter(Boolean)
     .map((value) => absolutize(value, profileUrl))
-    .find((value) => /^https?:\/\//i.test(value) && isLikelyPublicProfileImageUrl(value));
+    .find(isAdmissiblePortraitUrl);
+  return portrait || '';
+}
+
+const isJsonLdPerson = (profile: Record<string, any>): boolean =>
+  [profile['@type']].flat().some((type) => textValue(type).toLowerCase() === 'person');
+
+function jsonLdPersonPortrait(profiles: Array<Record<string, any>>, profileUrl: string): string {
+  const portrait = profiles
+    .filter(isJsonLdPerson)
+    .map((profile) => textValue(imageUrlFromJsonLdImage(profile.image)))
+    .filter(Boolean)
+    .map((value) => absolutize(value, profileUrl))
+    .find(isAdmissiblePortraitUrl);
   return portrait || '';
 }
 
@@ -2946,18 +2974,7 @@ function extractImageUrl(
   profiles: Array<Record<string, any>>,
   profileUrl: string,
 ): string {
-  const portrait = profilePortraitImageUrl($, profileUrl);
-  if (portrait) return portrait;
-  const candidates = [
-    ...profiles.map((profile) => imageUrlFromJsonLdImage(profile.image)),
-    $('meta[property="og:image:secure_url"]').first().attr('content') || '',
-    $('meta[property="og:image"]').first().attr('content') || '',
-    $('meta[name="twitter:image"]').first().attr('content') || '',
-  ]
-    .map(textValue)
-    .filter((value) => /^https?:\/\//i.test(value))
-    .map((value) => absolutize(value, profileUrl));
-  return candidates.find((value) => !isSocialShareImageUrl(value)) || candidates[0] || '';
+  return profilePortraitImageUrl($, profileUrl) || jsonLdPersonPortrait(profiles, profileUrl);
 }
 
 function extractEmail(

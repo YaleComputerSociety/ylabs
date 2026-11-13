@@ -84,27 +84,64 @@ describe('official-profile-pi-backfill reads the profile headshot before the sha
        <script type="application/ld+json">{"@type":"Person","name":"Rowan Quillfeather","image":{"@type":"ImageObject","url":"${share}"}}</script>`,
       `<script id='page-data' type='application/json'>${encoded}</script>`,
     );
-    expect(imageOf(page, html)).toBe(portraitCrop);
+    expect(imageOf(page, html)).toBe(
+      `https://ysm-res.cloudinary.com/image/upload/c_crop,x_0,y_0,w_800,h_1000/c_limit,f_auto,q_auto,w_400/v1/${publicId}`,
+    );
   });
 
-  it('still reads the meta image when the page shows no portrait', () => {
-    const page = 'https://medicine.yale.edu/profile/rowan-quillfeather/';
-    const share =
-      'https://ysm-res.cloudinary.com/image/upload/c_limit,f_jpg,h_630,q_auto,w_1200/v1/yms/prod/fixture-only-meta';
-    const html = profile(page, `<meta property="og:image" content="${share}" />`, '');
-    expect(imageOf(page, html)).toBe(share);
-  });
-
-  it('prefers a meta image that is not a share crop when the page shows no portrait', () => {
+  it('emits no image when the page shows no portrait, whatever its share images', () => {
     const page = 'https://economics.yale.edu/people/rowan-quillfeather';
-    const original =
-      'https://economics.yale.edu/sites/default/files/2023-10/rowan-quillfeather.jpg';
+    const building =
+      'https://economics.yale.edu/sites/default/files/2023-10/fixture-campus-building.jpg';
     const html = profile(
       page,
-      `<meta property="og:image" content="${ECON_SHARE}" />
-       <meta name="twitter:image" content="${original}" />`,
+      `<meta property="og:image" content="${building}" />
+       <meta property="og:image:secure_url" content="${building}" />
+       <meta name="twitter:image" content="${ECON_SHARE}" />
+       <script type="application/ld+json">{"@type":"Organization","name":"Fixture Department","image":"${building}"}</script>`,
       '',
     );
-    expect(imageOf(page, html)).toBe(original);
+    expect(imageOf(page, html)).toBeUndefined();
+  });
+
+  it('keeps a Person JSON-LD portrait and drops a Person JSON-LD share crop', () => {
+    const page = 'https://economics.yale.edu/people/rowan-quillfeather';
+    const portrait =
+      'https://economics.yale.edu/sites/default/files/styles/headshot/public/2023-10/rowan-quillfeather.jpg';
+    const personLd = (image: string) =>
+      `<script type="application/ld+json">{"@type":"Person","name":"Rowan Quillfeather","image":"${image}"}</script>`;
+    expect(imageOf(page, profile(page, personLd(portrait), ''))).toBe(portrait);
+    expect(imageOf(page, profile(page, personLd(ECON_SHARE), ''))).toBeUndefined();
+  });
+});
+
+describe('official-profile-pi-backfill reads the sized rendition the page renders (#6043)', () => {
+  const PAGE = 'https://history.yale.edu/people/rowan-quillfeather';
+  const ORIGINAL = '/sites/default/files/2023-10/rowan-quillfeather.jpg';
+  const STYLED =
+    '/sites/default/files/styles/headshot/public/2023-10/rowan-quillfeather.jpg?itok=h1';
+
+  it('takes the styled image a lazy img renders, not the original its link opens', () => {
+    const html = profile(
+      PAGE,
+      '',
+      `<div class="field field--name-field-profile-image"><a href="${ORIGINAL}">
+         <img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" data-src="${STYLED}" alt="Rowan Quillfeather" />
+       </a></div>`,
+    );
+    expect(imageOf(PAGE, html)).toBe(`https://history.yale.edu${STYLED}`);
+  });
+
+  it('takes the smallest srcset rendition when the img has no src', () => {
+    const html = profile(
+      PAGE,
+      '',
+      `<div class="node__headshot"><picture>
+         <img srcset="/sites/default/files/styles/headshot_x2/public/2023-10/rq.jpg 640w, /sites/default/files/styles/headshot/public/2023-10/rq.jpg 320w" alt="Rowan Quillfeather" />
+       </picture></div>`,
+    );
+    expect(imageOf(PAGE, html)).toBe(
+      'https://history.yale.edu/sites/default/files/styles/headshot/public/2023-10/rq.jpg',
+    );
   });
 });

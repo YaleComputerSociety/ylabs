@@ -18,6 +18,8 @@ import { Researcher } from '../../models/researcher';
 import { materializeEntity } from '../entityMaterializer';
 import {
   OVER_SHARED_PERSON_IMAGE_MIN_SUBJECTS,
+  isOverSharedPersonImage,
+  overSharedPersonImageKeysForMaterialization,
   resetOverSharedPersonImageKeysCache,
 } from '../overSharedPersonImage';
 import { resetOverSharedPersonWebsiteKeysCache } from '../overSharedPersonWebsite';
@@ -25,7 +27,7 @@ import { extractOfficialProfileIdentity } from '../sources/officialProfilePiBack
 
 const SOURCE = 'official-profile-pi-backfill';
 const SITE_DEFAULT =
-  'https://fixture-dept.yale.edu/sites/default/files/styles/social_media/public/campus-default.jpg';
+  'https://fixture-dept.yale.edu/sites/default/files/styles/headshot/public/campus-default.jpg';
 const OWN_PICTURE =
   'https://fixture-dept.yale.edu/sites/default/files/styles/headshot/public/owner-fixture.jpg';
 
@@ -38,11 +40,11 @@ const people = Array.from({ length: OVER_SHARED_PERSON_IMAGE_MIN_SUBJECTS }, (_,
 const profilePage = (person: (typeof people)[number]) =>
   `https://fixture-dept.yale.edu/people/fixture-person${person.lname.slice(-1)}`;
 
-const laneImageFor = (person: (typeof people)[number], ogImage: string): string | undefined => {
+const laneImageFor = (person: (typeof people)[number], pictured: string): string | undefined => {
   const page = profilePage(person);
-  const html = `<html><head><link rel="canonical" href="${page}" />
-    <meta property="og:image" content="${ogImage}" /></head>
+  const html = `<html><head><link rel="canonical" href="${page}" /></head>
     <body><main><h1>${person.fname} ${person.lname}</h1>
+    <div class="field field--name-field-profile-image"><img src="${pictured}" alt="" /></div>
     <div class="title">Professor of Fixture Studies</div>
     <div class="department">Fixture Studies</div></main></body></html>`;
   return extractOfficialProfileIdentity(
@@ -123,7 +125,7 @@ describe('a site default image read for different people is not written (#6043)'
   const materialize = (person: (typeof people)[number]) =>
     materializeEntity('user', { entityKey: `netid:${person.netid}` }, {});
 
-  it('writes no image when the lane read the same og:image for each different person', async () => {
+  it('writes no image when the lane read the same profile picture for each different person', async () => {
     const [owner, ...others] = people;
     for (const person of people) {
       expect(laneImageFor(person, SITE_DEFAULT)).toBe(SITE_DEFAULT);
@@ -131,6 +133,22 @@ describe('a site default image read for different people is not written (#6043)'
     }
     const ownerRow = await researcherFor(owner);
     await Promise.all(others.map((person) => researcherFor(person)));
+
+    await materialize(owner);
+
+    expect(await storedImage(ownerRow._id)).toBeUndefined();
+  });
+
+  it('refuses a picture one source read for different people under keys no researcher maps to', async () => {
+    const [owner] = people;
+    await seedPerson(owner, [{ value: SITE_DEFAULT }]);
+    await Observation.insertMany(
+      ['first', 'second'].map((label) => ({
+        ...observation(owner, 'imageUrl', SITE_DEFAULT),
+        entityKey: `email:fixture-${label}@example.edu`,
+      })),
+    );
+    const ownerRow = await researcherFor(owner);
 
     await materialize(owner);
 
@@ -178,5 +196,76 @@ describe('a site default image read for different people is not written (#6043)'
     await materialize(owner);
 
     expect(await storedImage(ownerRow._id)).toBe(OWN_PICTURE);
+  });
+
+  describe('a picture stored on three researchers with different identities', () => {
+    const LEGACY_DEFAULT =
+      'https://fixture-dept.yale.edu/sites/default/files/styles/portrait/public/legacy-default.jpg';
+
+    it('is cleared at resolve though no observation asserts it, and a second pass writes nothing', async () => {
+      const [owner, ...others] = people;
+      await seedPerson(owner, []);
+      const ownerRow = await researcherFor(owner, LEGACY_DEFAULT);
+      await Promise.all(others.map((person) => researcherFor(person, LEGACY_DEFAULT)));
+
+      const first = await materialize(owner);
+      expect(first.fieldsWritten).toBeGreaterThan(0);
+      expect(await storedImage(ownerRow._id)).toBeUndefined();
+
+      resetOverSharedPersonImageKeysCache();
+      const second = await materialize(owner);
+      expect(second.fieldsWritten).toBe(0);
+      expect(await storedImage(ownerRow._id)).toBeUndefined();
+    });
+
+    it('stays refused for the holders a run reaches after the first clear', async () => {
+      const [owner, next, last] = people;
+      await seedPerson(owner, []);
+      await seedPerson(next, []);
+      await researcherFor(owner, LEGACY_DEFAULT);
+      const nextRow = await researcherFor(next, LEGACY_DEFAULT);
+      await researcherFor(last, LEGACY_DEFAULT);
+
+      await materialize(owner);
+      await materialize(next);
+
+      expect(await storedImage(nextRow._id)).toBeUndefined();
+    });
+
+    it('keeps refusing a picture when a later read sees its stored copies cleared', async () => {
+      const rows = await Promise.all(people.map((person) => researcherFor(person, LEGACY_DEFAULT)));
+      const before = await overSharedPersonImageKeysForMaterialization(0);
+      expect(isOverSharedPersonImage(LEGACY_DEFAULT, before)).toBe(true);
+
+      await Researcher.updateMany(
+        { _id: { $in: rows.map((row) => row._id) } },
+        { $unset: { 'profile.imageUrl': '' } },
+      );
+      const after = await overSharedPersonImageKeysForMaterialization(60 * 60 * 1000);
+
+      expect(isOverSharedPersonImage(LEGACY_DEFAULT, after)).toBe(true);
+    });
+
+    it('keeps a picture only two researchers store', async () => {
+      const [owner, other] = people;
+      await seedPerson(owner, []);
+      const ownerRow = await researcherFor(owner, LEGACY_DEFAULT);
+      await researcherFor(other, LEGACY_DEFAULT);
+
+      await materialize(owner);
+
+      expect(await storedImage(ownerRow._id)).toBe(LEGACY_DEFAULT);
+    });
+
+    it('counts a researcher and an observation keyed by its own netid as one identity', async () => {
+      const [owner, other] = people;
+      await seedPerson(owner, [{ value: LEGACY_DEFAULT }]);
+      const ownerRow = await researcherFor(owner, LEGACY_DEFAULT);
+      await researcherFor(other, LEGACY_DEFAULT);
+
+      await materialize(owner);
+
+      expect(await storedImage(ownerRow._id)).toBe(LEGACY_DEFAULT);
+    });
   });
 });
