@@ -78,7 +78,7 @@ describe('planCenterProfileResearchRows', () => {
     const { planned, skipped } = planCenterProfileResearchRows(
       [
         candidate({
-          profileText: 'Their work focuses on advancing synthetic eye care across the region.',
+          profileText: 'Their work focuses on supporting patients after synthetic hip repair.',
         }),
       ],
       emptyCoverage,

@@ -130,12 +130,13 @@ describe('roster biography research evidence', () => {
     for (const sentence of [
       'They have a special interest in synthetic glimmer fever and the care of children with it.',
       'Their clinical interests include synthetic quill rash and related skin conditions.',
-      'Their work focuses on advancing synthetic eye care across the region.',
+      'Their work focuses on supporting patients after synthetic hip repair.',
       'They provide synthetic sleep clinic care to adults across the state.',
       'Their interests focus on ways to provide gentle care to adults with synthetic heart fatigue.',
       'Their work focuses on ways to help patients with synthetic marsh fever rest at home.',
       'They focus on caring for women with synthetic high-risk pregnancies.',
-      'They try whatever synthetic remedy may help their patients.',
+      'Their interests include advancing synthetic eye care across rural towns.',
+      'They serve their patients at three synthetic county clinics.',
       'They treat the symptoms of synthetic winter cough in adults.',
       'Their work focuses on care for patients with synthetic marsh fever.',
     ]) {
@@ -146,7 +147,7 @@ describe('roster biography research evidence', () => {
   it('refuses a biography whose only research-shaped sentences are clinical service (#6083)', () => {
     expect(
       deriveBioResearchStatement(
-        'Their work focuses on advancing synthetic eye care across the region.',
+        'Their work focuses on supporting patients after synthetic hip repair.',
       ).rejection,
     ).toBe('only_past_research');
   });
@@ -161,6 +162,7 @@ describe('roster biography research evidence', () => {
       'Their interests include the pathogenesis of synthetic infections in transplant patients.',
       'They study how patients with synthetic joint pain choose among treatments.',
       'Their research follows how their patients with synthetic tremor respond to new devices.',
+      'Their work focuses on tracking synthetic blood pressure trajectories in their patients.',
       'They develop machine learning methods that read the scans of their patients for synthetic stroke signs.',
       'They explore why treating the symptoms of synthetic winter cough often fails in teenagers.',
     ]) {
@@ -177,7 +179,9 @@ describe('roster biography research evidence', () => {
       'Their special interest is in music written for patients in hospice care.',
       'Their work focuses on writing plays about caregivers and patients in hospitals.',
       'They develop new choreography that engages themes of care and illness.',
-      'Their work focuses on documentary portraits of their patients in synthetic long-term care.',
+      'Their work focuses on portraits of their patients painted in synthetic long-term care.',
+      'Their work focuses on a documentary about their patients in synthetic long-term care.',
+      'Their work focuses on lullabies written for their patients on synthetic night wards.',
     ]) {
       expect(keptBesideAnchor(sentence)).toBe(true);
     }
