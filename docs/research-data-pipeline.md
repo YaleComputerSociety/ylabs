@@ -2123,7 +2123,7 @@ The saving depends on sweep cadence: a sweep run more than 7 days after the last
 Each link costs one `GET`, its body discarded unread; there is no `HEAD` first, because that doubled the requests for every link answering 4xx or 5xx and some servers refuse `HEAD` but answer `GET` (#6214).
 A 403 or 429 from a host stops probing that host for the rest of the pass, and its unprobed links keep their stored verdicts until the next pass; `--stop-on-status=<list>` replaces that list and `--no-stop-on-refusal` turns it off (#6214).
 A dry run samples 20 due links per host by default, and its `projectedVerdictTransitions` scales the sample per row entry rather than per distinct link, because one link is often cited by several rows (#6214).
-A dry run also reuses a probe result from a local cache, `~/.cache/ylabs/link-health-probes.json` (`YLABS_LINK_HEALTH_PROBE_CACHE` overrides the path), when that result is under 24 hours old, so repeated previews of one pass do not re-request the same links.
+A dry run also reuses a probe result from a local cache, `~/.cache/ylabs/link-health-probes.json`, when that result is under 24 hours old, so repeated previews of one pass do not re-request the same links.
 `--reuse-probes-within-hours=<n>` changes the window and `--no-probe-reuse` turns reuse off; a reused result does not count against the per-host sample, and the report counts them in `probesReused` with the oldest in `oldestReusedProbeAt`.
 An apply never reads the cache, so every stored verdict comes from a probe of that run, but it writes its own results there for the next dry run; a probe that never reached its host is not cached, and entries older than 7 days are dropped.
 

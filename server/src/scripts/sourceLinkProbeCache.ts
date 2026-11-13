@@ -16,10 +16,7 @@ export interface CachedSourceLinkProbe {
 export const SOURCE_LINK_PROBE_CACHE_RETENTION_MS = 7 * 24 * 60 * 60_000;
 
 export function defaultSourceLinkProbeCachePath(): string {
-  return (
-    process.env.YLABS_LINK_HEALTH_PROBE_CACHE ||
-    path.join(os.homedir(), '.cache', 'ylabs', 'link-health-probes.json')
-  );
+  return path.join(os.homedir(), '.cache', 'ylabs', 'link-health-probes.json');
 }
 
 export function readSourceLinkProbeCache(file: string): Map<string, CachedSourceLinkProbe> {
