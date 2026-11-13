@@ -19,7 +19,7 @@ import {
 } from './snapshotBenchmarkMode';
 import { getCached, setCached } from './snapshotCache';
 import { scraperHostSlotLimiter } from './utils/scraperHostSlotLimiter';
-import { hostnameForLimiter } from './utils/hostConcurrencyLimiter';
+import { acquireHostSlotWithin, hostnameForLimiter } from './utils/hostConcurrencyLimiter';
 import { retryOnRetryableResultStatus, type RetryPolicyOptions } from './utils/httpFetch';
 import {
   startSsrfGuardedForwardProxy,
@@ -469,7 +469,7 @@ function createLiveScraplingRenderedFetcher(
     const seedUrl = await assertPublicHttpUrl(request.url);
     const safeRequestUrl = seedUrl.toString();
     const timeoutMs = boundedRenderedFetchTimeout(request.timeoutMs, defaultTimeoutMs);
-    const releaseHostSlot = await scraperHostSlotLimiter().acquire(seedUrl.hostname);
+    const releaseHostSlot = await acquireHostSlotWithin(scraperHostSlotLimiter(), seedUrl.hostname);
     try {
       try {
         if (await seedRedirectCheck(seedUrl, timeoutMs)) {
