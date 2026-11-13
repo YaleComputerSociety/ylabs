@@ -102,6 +102,14 @@ describe('researchStatementTextOfPage drops a career-history year range from pag
     expect(text).toBe(BIO);
   });
 
+  it('keeps a collaborative research sentence that spans years', () => {
+    const research =
+      'The lab worked with fishing cooperatives in Maine from 2005 to 2015 to document lobster declines.';
+    expect(researchStatementTextOfPage(page(`${BIO} ${research}`), PAGE)).toBe(
+      `${BIO} ${research}`,
+    );
+  });
+
   it('keeps a research sentence that spans years', () => {
     const research =
       'The group tracked kelp recovery from 1997 to 2018 along northern rocky shores.';
@@ -129,6 +137,28 @@ describe('researchStatementTextOfPage drops skip and label lines anywhere on the
       PAGE,
     );
     expect(text).toBe(BIO);
+  });
+
+  it('keeps short accessibility topic lines and drops an accessibility link line', () => {
+    const text = researchStatementTextOfPage(
+      body([
+        BIO,
+        'Accessibility Research',
+        'Web accessibility for blind and low-vision users',
+        'Screen reader usability',
+        'Accessibility statement',
+        'Report an accessibility issue',
+      ]),
+      PAGE,
+    );
+    expect(text).toBe(
+      [
+        BIO,
+        'Accessibility Research',
+        'Web accessibility for blind and low-vision users',
+        'Screen reader usability',
+      ].join('\n'),
+    );
   });
 
   it('keeps a research sentence about accessibility', () => {

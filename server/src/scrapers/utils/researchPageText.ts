@@ -76,11 +76,12 @@ const CITATION_FRAGMENT =
   /\b(?:doi|pmid|pmcid|isbn)\b|\b(?:19|20)\d{2}[a-z]?\s*[).]|\(\s*(?:19|20)\d{2}/i;
 
 // A past appointment told as a span of years: "taught at X from 1997-2018". It needs a career
-// verb, so a research sentence that spans years ("tracked kelp recovery from 1997 to 2018") is
-// not one. Kept local to page text, because isCurriculumVitaeRecordSentence also decides what a
-// served description shows (#6201).
+// verb bound to a post, so a research sentence that spans years ("tracked kelp recovery from
+// 1997 to 2018", "worked with fishing cooperatives from 2005 to 2015") is not one. Kept local to
+// page text, because isCurriculumVitaeRecordSentence also decides what a served description
+// shows (#6201).
 const CAREER_HISTORY_YEAR_RANGE_SENTENCE =
-  /\b(?:taught|served|worked|lectured|directed|chaired|practi[cs]ed)\b[^.]{0,120}?\bfrom\s+(?:19|20)\d{2}\s*(?:[-\u2013\u2014]|to|until|through)\s*(?:(?:19|20)\d{2}|present|now)\b/i;
+  /\b(?:(?:taught|lectured)\s+(?:at|in)|served\s+(?:as|on|at|in)|worked\s+(?:at|as)|practi[cs]ed\s+(?:at|as|in)|chaired\s+the|directed\s+the\s+[^.]{0,60}?\b(?:center|centre|program(?:me)?|institute|department|school|division|museum|clinic))\b[^.]{0,120}?\bfrom\s+(?:19|20)\d{2}\s*(?:[-\u2013\u2014]|to|until|through)\s*(?:(?:19|20)\d{2}|present|now)\b/i;
 
 const isPageTextCvRecord = (text: string): boolean =>
   isCurriculumVitaeRecordSentence(text) || CAREER_HISTORY_YEAR_RANGE_SENTENCE.test(text);
@@ -104,7 +105,8 @@ function withoutCurriculumVitaeSentences(line: string): string {
 }
 
 const SKIP_LINK_LINE = /^(?:skip|jump)\s+(?:to|past|over|content|navigation|main)\b/i;
-const ACCESSIBILITY_LINE = /\b(?:screen readers?|accessibility)\b/i;
+const ACCESSIBILITY_LINK_LINE =
+  /\b(?:accessibility\s+(?:statement|policy|notice|help|assistance|feedback|options|settings)|(?:report|request)\s+an?\s+(?:digital\s+)?accessibility\s+(?:issue|problem|barrier|accommodation)|screen\s+readers?\s+only)\b/i;
 const MAX_ACCESSIBILITY_LINE_WORDS = 12;
 const CONTACT_OR_LINK_LABEL_LINE =
   /^(?:curriculum vitae|c\.?v\.?|r[e\u00e9]sum[e\u00e9]|(?:lab |personal )?web\s?site|home\s?page|e-?mail|phone|tel(?:ephone)?|fax|mobile|office|address|orcid|google scholar|twitter|linkedin|bluesky|github|researchgate)\s*:/i;
@@ -117,7 +119,7 @@ const CONTACT_OR_LINK_LABEL_LINE =
 function isSkipOrLabelLine(line: string): boolean {
   return (
     SKIP_LINK_LINE.test(line) ||
-    (wordCount(line) <= MAX_ACCESSIBILITY_LINE_WORDS && ACCESSIBILITY_LINE.test(line)) ||
+    (wordCount(line) <= MAX_ACCESSIBILITY_LINE_WORDS && ACCESSIBILITY_LINK_LINE.test(line)) ||
     CONTACT_OR_LINK_LABEL_LINE.test(line)
   );
 }
@@ -142,18 +144,13 @@ const isPageHeadingBlock = ($: cheerio.CheerioAPI, header: AnyNode): boolean =>
   $(header).find('h1').length > 0;
 
 /**
- * Removes every `header` except the summary paragraphs of the page's own heading block: the
- * header in the main content that holds the page's `h1`, where a center or program page often
- * states what it does (#6159). Its link labels, photo buttons and name line are still removed,
- * and so are banners and the headers of teaser cards, which carry no `h1`.
- */
-/**
  * The prose a heading-block paragraph carries, held to the same rule as a recovered CV
  * paragraph (#6201). A profile's heading block often puts its name, title, a skip link and
  * "Website:" or "Curriculum Vitae:" labels in one paragraph split by line breaks, so each line
  * is read on its own. When the paragraph has several lines, one that does not end as a sentence
- * is a name, title or label. Only whole research sentences are kept. A topical label such as
- * "Research interests:" stays, because it can be the row's research.
+ * is a name, title or label. Only whole sentences passing that rule are kept, so a topical label
+ * such as "Research interests:" is not dropped as a label, but it stays only inside a line that
+ * ends as a sentence and only with a sentence of eight or more words.
  */
 function headingBlockSummaryText(paragraph: AnyNode): string {
   const lines = extractElementTextWithLineBreaks(paragraph)
@@ -169,6 +166,12 @@ function headingBlockSummaryText(paragraph: AnyNode): string {
     .join(' ');
 }
 
+/**
+ * Removes every `header` except the summary paragraphs of the page's own heading block: the
+ * header in the main content that holds the page's `h1`, where a center or program page often
+ * states what it does (#6159). Its link labels, photo buttons and name line are still removed,
+ * and so are banners and the headers of teaser cards, which carry no `h1`.
+ */
 function removeHeadersKeepingPageSummary($: cheerio.CheerioAPI): void {
   $('header').each((_index, header) => {
     if (!isPageHeadingBlock($, header)) {
