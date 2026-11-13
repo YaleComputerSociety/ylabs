@@ -13,6 +13,9 @@ Environment:
                         Default: <parent of the repo>/ylabs-worktrees.
   SKIP_INSTALL=1        Skip dependency install (resolve deps manually).
 
+Installs hardlink package files from the shared Yarn store (nmMode: hardlinks-global in
+<worktree root>/.yarnrc.yml), so each worktree adds about 0.3 MB rather than 0.7 GB.
+
 Creates an isolated git worktree and branch for parallel agent work, installs
 dependencies and the gh identifier guard, reserves a free client dev-server port
 and a free API port, and copies server/.env and client/.env from the primary
@@ -70,6 +73,14 @@ if git -C "$REPO_ROOT" show-ref --verify --quiet "refs/remotes/${BASE_REMOTE}/${
 fi
 
 mkdir -p "$WORKTREE_ROOT"
+
+# Kept outside the repository so CI, Render and the primary checkout keep classic copies;
+# Yarn reads .yarnrc.yml from parent directories, so every worktree here inherits it.
+WORKTREE_ROOT_YARNRC="${WORKTREE_ROOT}/.yarnrc.yml"
+if ! grep -qs '^nmMode:' "$WORKTREE_ROOT_YARNRC"; then
+  printf 'nmMode: hardlinks-global\n' >> "$WORKTREE_ROOT_YARNRC"
+fi
+
 git -C "$REPO_ROOT" worktree add -b "$BRANCH" "$WORKTREE_DIR" "$BASE_REF"
 
 if [ "${SKIP_INSTALL:-0}" != "1" ]; then

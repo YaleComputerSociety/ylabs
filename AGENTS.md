@@ -232,6 +232,9 @@ It always writes `ALLOW_NON_PROD_SCRAPER_WRITES=` (off) into the copied `server/
 - Do not symlink `node_modules` between worktrees when running dev servers concurrently.
 They share Vite's `node_modules/.vite` cache and clobber each other.
 A real per-worktree install is the isolation boundary.
+- That install hardlinks package files from Yarn's shared store rather than copying them, because the helper writes `nmMode: hardlinks-global` into `<worktree root>/.yarnrc.yml`, which every install under that root inherits.
+Each worktree still gets its own `node_modules` directories, so `.vite` and other caches stay per-worktree, and a worktree costs about 0.3 MB of its own instead of about 0.7 GB.
+Never edit a file inside `node_modules` in place, because the same file is shared by every worktree; `scripts/verify-yarn-store.sh` checks that every store file still matches its content hash.
 - Run each worktree's API with `yarn dev:server` and its client dev server on its own port (`yarn dev --port <port>`) so they coexist, and test each at its own `localhost:<port>`.
 `compose.yaml` pins the Compose project name, so `yarn meili:up` from any worktree reuses the one local Meilisearch.
 - Stop only processes you started, by the PID you recorded or by your own reserved port (`lsof -ti tcp:<your port> -sTCP:LISTEN | xargs kill`).
