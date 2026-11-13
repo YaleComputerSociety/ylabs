@@ -4,6 +4,7 @@ import {
   SOURCE_LINK_HEALTH_FRESHNESS_DAYS,
   sourceLinkHealthKey,
 } from '../../services/sourceLinkHealth';
+import { sanitizeLogValue } from '../../utils/logSanitizer';
 import type { ScraperFetchMetrics, ScraperResult } from '../types';
 
 const MILLISECONDS_PER_DAY = 86_400_000;
@@ -128,9 +129,9 @@ export async function withKnownDeadUrlScope<T>(
     (error: unknown) => {
       loadFailed = true;
       console.warn(
-        `[known-dead-urls] stored link-health verdicts did not load, so this run skips nothing: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `[known-dead-urls] stored link-health verdicts did not load, so this run skips nothing: ${sanitizeLogValue(
+          error instanceof Error ? error.message : String(error),
+        )}`,
       );
       return new Map<string, number>();
     },
