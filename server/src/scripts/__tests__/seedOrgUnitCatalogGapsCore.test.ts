@@ -79,6 +79,8 @@ describe('planOrgUnitCatalogGapSeed roster gaps', () => {
       aliasUpdates: 4,
       aliasRemovals: 0,
       renames: 0,
+      reactivations: 0,
+      retirements: 0,
       satisfied: 0,
       blocked: 0,
     });
@@ -369,8 +371,14 @@ describe('ORG_UNIT_CATALOG_GAPS', () => {
       gap.source.includes('NURS - Nursing'),
     );
     expect(nursingGaps.length).toBe(2);
+    const ismGaps = ORG_UNIT_CATALOG_GAPS.filter((gap) => gap.source.includes('e15997a24'));
+    expect(ismGaps.length).toBe(1);
     expect(
-      ROSTER_GAPS.length + OFFICIAL_GAPS.length + MEDICINE_GAPS.length + nursingGaps.length,
+      ROSTER_GAPS.length +
+        OFFICIAL_GAPS.length +
+        MEDICINE_GAPS.length +
+        nursingGaps.length +
+        ismGaps.length,
     ).toBe(ORG_UNIT_CATALOG_GAPS.length);
   });
 });
@@ -644,44 +652,93 @@ describe('planOrgUnitCatalogGapSeed official-index gaps', () => {
   });
 });
 
-describe('planOrgUnitCatalogGapSeed Nursing as a school-level department (#5796)', () => {
+describe('planOrgUnitCatalogGapSeed Nursing stays a school label (#6028)', () => {
   const nursingGaps = ORG_UNIT_CATALOG_GAPS.filter((gap) => gap.source.includes('NURS - Nursing'));
-  const withNursingSchool: ExistingOrgUnitRow[] = [
-    {
-      id: 'ysn',
-      name: 'School of Nursing',
-      slug: 'yale-school-of-nursing',
-      kind: 'SCHOOL',
-      aliases: ['YSN', 'Yale School of Nursing', 'Nursing'],
-    },
-  ];
+  const nursingSchool: ExistingOrgUnitRow = {
+    id: 'ysn',
+    name: 'School of Nursing',
+    slug: 'yale-school-of-nursing',
+    kind: 'SCHOOL',
+    aliases: ['YSN', 'Yale School of Nursing'],
+  };
+  const nursingDepartment: ExistingOrgUnitRow = {
+    id: 'nursing',
+    name: 'Nursing',
+    slug: 'nursing',
+    kind: 'DEPARTMENT',
+    aliases: ['NURS'],
+  };
 
-  it('moves the bare label off the school and creates the department under it', () => {
-    const plan = planOrgUnitCatalogGapSeed(withNursingSchool, nursingGaps);
+  it('retires the department and returns the bare label to the school', () => {
+    const plan = planOrgUnitCatalogGapSeed([nursingSchool, nursingDepartment], nursingGaps);
     expect(plan.blocked).toEqual([]);
     expect(plan.rows).toEqual([
+      expect.objectContaining({ action: 'retire-department', targetSlug: 'nursing' }),
       expect.objectContaining({
-        action: 'remove-aliases',
-        targetSlug: 'yale-school-of-nursing',
-        removedAliases: ['Nursing'],
-      }),
-      expect.objectContaining({
-        action: 'create-department',
-        name: 'Nursing',
-        slug: 'nursing',
-        parentName: 'School of Nursing',
-        aliases: ['NURS'],
+        action: 'add-aliases',
+        targetName: 'School of Nursing',
+        addedAliases: ['Nursing'],
       }),
     ]);
   });
 
-  it('is idempotent once the department exists and the school no longer carries the label', () => {
-    const applied: ExistingOrgUnitRow[] = [
-      { ...withNursingSchool[0], aliases: ['YSN', 'Yale School of Nursing'] },
-      { id: 'nursing', name: 'Nursing', slug: 'nursing', kind: 'DEPARTMENT', aliases: ['NURS'] },
-    ];
-    const plan = planOrgUnitCatalogGapSeed(applied, nursingGaps);
+  it('is idempotent once applied, and a catalog that never had the department only regains the label', () => {
+    const applied = planOrgUnitCatalogGapSeed(
+      [
+        { ...nursingSchool, aliases: ['YSN', 'Yale School of Nursing', 'Nursing'] },
+        { ...nursingDepartment, archived: true, status: 'INACTIVE' },
+      ],
+      nursingGaps,
+    );
+    expect(applied.rows).toEqual([]);
+    const fresh = planOrgUnitCatalogGapSeed([nursingSchool], nursingGaps);
+    expect(fresh.rows).toEqual([
+      expect.objectContaining({ action: 'add-aliases', addedAliases: ['Nursing'] }),
+    ]);
+  });
+});
+
+describe('planOrgUnitCatalogGapSeed re-activates an accidentally archived school (#6028)', () => {
+  const ismGaps = ORG_UNIT_CATALOG_GAPS.filter((gap) => gap.source.includes('e15997a24'));
+  const archivedIsm: ExistingOrgUnitRow = {
+    id: 'ism',
+    name: 'Yale Institute of Sacred Music',
+    slug: 'institute-of-sacred-music',
+    kind: 'SCHOOL',
+    aliases: ['Institute of Sacred Music', 'ISM'],
+    archived: true,
+    status: 'INACTIVE',
+  };
+
+  it('re-activates the archived row', () => {
+    const plan = planOrgUnitCatalogGapSeed([archivedIsm], ismGaps);
+    expect(plan.rows).toEqual([
+      expect.objectContaining({
+        action: 'reactivate-org-unit',
+        targetSlug: 'institute-of-sacred-music',
+      }),
+    ]);
+  });
+
+  it('is idempotent once the row is live', () => {
+    const plan = planOrgUnitCatalogGapSeed(
+      [{ ...archivedIsm, archived: false, status: 'ACTIVE' }],
+      ismGaps,
+    );
     expect(plan.rows).toEqual([]);
-    expect(plan.blocked).toEqual([]);
+  });
+
+  it('refuses to re-activate when a live row already answers to its name', () => {
+    const plan = planOrgUnitCatalogGapSeed(
+      [
+        archivedIsm,
+        { id: 'dup', name: 'Institute of Sacred Music', slug: 'ism-live', kind: 'SCHOOL' },
+      ],
+      ismGaps,
+    );
+    expect(plan.rows).toEqual([]);
+    expect(plan.blocked).toEqual([
+      { gap: 'institute-of-sacred-music', reason: 'live row ism-live already answers to its name' },
+    ]);
   });
 });

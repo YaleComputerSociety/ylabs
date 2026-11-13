@@ -56,8 +56,33 @@ export interface OrgUnitAliasRemovalGap {
   source: string;
 }
 
+/**
+ * Returns an archived or INACTIVE row to the live catalog. Refused when a live row already
+ * answers to its name, so a re-activation can never create a duplicate.
+ */
+export interface OrgUnitReactivateGap {
+  action: 'reactivate-org-unit';
+  targetSlug: string;
+  source: string;
+}
+
+/**
+ * Archives a department row a later decision withdrew; a row already archived or absent is
+ * satisfied, and a non-department target is refused.
+ */
+export interface OrgUnitRetireDepartmentGap {
+  action: 'retire-department';
+  targetSlug: string;
+  source: string;
+}
+
 export type OrgUnitCatalogGap =
-  OrgUnitAliasGap | OrgUnitDepartmentGap | OrgUnitRenameGap | OrgUnitAliasRemovalGap;
+  | OrgUnitAliasGap
+  | OrgUnitDepartmentGap
+  | OrgUnitRenameGap
+  | OrgUnitAliasRemovalGap
+  | OrgUnitReactivateGap
+  | OrgUnitRetireDepartmentGap;
 
 const ROSTER_CONFIG_SOURCE = 'departmentRosterScraper DEFAULT_DEPT_CONFIGS';
 const OFFICIAL_INDEX_SOURCE = `Yale official department index ${OFFICIAL_DEPARTMENT_INDEX_URL}`;
@@ -73,8 +98,10 @@ const YSM_DIRECTORY_SECTION_SOURCE =
   'Yale School of Medicine faculty directory section spelling, which prefixes a Pediatrics section and leaves the Internal Medicine section of the same name bare';
 const HR_DIRECTORY_SOURCE =
   'Yale HR/directory org string observed on researchers whose research home carries no department';
+const ISM_REACTIVATION_SOURCE =
+  'Yale Institute of Sacred Music, listed as a live school by the original org-unit seed (e15997a24) and archived on 2026-08-22 with no recorded reason (#6028)';
 const NURSING_SCHOOL_LEVEL_SOURCE =
-  'Yale directory export unit NURS - Nursing on researchers whose only department is the School of Nursing, kept as a school-level department the way Architecture sits under the School of Architecture (#5796)';
+  'Yale directory export unit NURS - Nursing: the School of Nursing is a school and never a peer department (#1384, #2706), so its bare label stays on the school row (#5796, #6028)';
 
 export const ORG_UNIT_CATALOG_GAPS: readonly OrgUnitCatalogGap[] = [
   {
@@ -482,22 +509,26 @@ export const ORG_UNIT_CATALOG_GAPS: readonly OrgUnitCatalogGap[] = [
     aliases: ['Rheumatology'],
     source: YSM_DIRECTORY_SECTION_SOURCE,
   },
-  // The school row answered to the bare "Nursing" as an alias; a department of that name
-  // under it is the Architecture pattern, and the alias moves off the school first so the
-  // two rows never claim one label.
+  // #5924 created a Nursing department under the School of Nursing; the manager withdrew it
+  // to keep #1384 and #2706, under which a school is never a peer department, so the row is
+  // retired and the bare label returns to the school.
   {
-    action: 'remove-aliases',
-    targetSlug: 'yale-school-of-nursing',
-    aliases: ['Nursing'],
+    action: 'retire-department',
+    targetSlug: 'nursing',
     source: NURSING_SCHOOL_LEVEL_SOURCE,
   },
   {
-    action: 'create-department',
-    name: 'Nursing',
-    slug: 'nursing',
-    parentName: 'School of Nursing',
-    aliases: ['NURS'],
+    action: 'add-aliases',
+    targetName: 'School of Nursing',
+    aliases: ['Nursing'],
     source: NURSING_SCHOOL_LEVEL_SOURCE,
+  },
+  // The 2026-08-22 seed run archived this school with no recorded reason while the seed source
+  // still listed it as live (e15997a24), so it is a side effect rather than a decision (#6028).
+  {
+    action: 'reactivate-org-unit',
+    targetSlug: 'institute-of-sacred-music',
+    source: ISM_REACTIVATION_SOURCE,
   },
 ];
 
@@ -550,7 +581,25 @@ export interface OrgUnitSeedAliasRemovalPlan {
   source: string;
 }
 
+export interface OrgUnitSeedReactivatePlan {
+  action: 'reactivate-org-unit';
+  targetId: string;
+  targetSlug: string;
+  targetName: string;
+  source: string;
+}
+
+export interface OrgUnitSeedRetirePlan {
+  action: 'retire-department';
+  targetId: string;
+  targetSlug: string;
+  targetName: string;
+  source: string;
+}
+
 export type OrgUnitSeedPlanRow =
+  | OrgUnitSeedReactivatePlan
+  | OrgUnitSeedRetirePlan
   | OrgUnitSeedAliasPlan
   | OrgUnitSeedCreatePlan
   | OrgUnitSeedRenamePlan
@@ -622,6 +671,62 @@ export function planOrgUnitCatalogGapSeed(
     `${target.slug} is created by this run, so fold the change into its create gap`;
 
   for (const gap of gaps) {
+    if (gap.action === 'reactivate-org-unit') {
+      const target = working.find((row) => row.slug === gap.targetSlug);
+      if (!target) {
+        blocked.push({ gap: gap.targetSlug, reason: 'target org unit not found' });
+        continue;
+      }
+      if (target.archived !== true && target.status !== 'INACTIVE') {
+        satisfied.push(`${gap.targetSlug} active`);
+        continue;
+      }
+      const duplicate = live().find((row) =>
+        [row.name, row.slug, ...(row.aliases || [])].some((value) =>
+          [target.name, ...(target.aliases || [])].some((name) => sameMatchKey(value, name)),
+        ),
+      );
+      if (duplicate) {
+        blocked.push({
+          gap: gap.targetSlug,
+          reason: `live row ${duplicate.slug} already answers to its name`,
+        });
+        continue;
+      }
+      target.archived = false;
+      target.status = 'ACTIVE';
+      rows.push({
+        action: 'reactivate-org-unit',
+        targetId: target.id,
+        targetSlug: target.slug,
+        targetName: target.name,
+        source: gap.source,
+      });
+      continue;
+    }
+
+    if (gap.action === 'retire-department') {
+      const target = working.find((row) => row.slug === gap.targetSlug);
+      if (!target || target.archived === true) {
+        satisfied.push(`${gap.targetSlug} retired`);
+        continue;
+      }
+      if (target.kind !== 'DEPARTMENT') {
+        blocked.push({ gap: gap.targetSlug, reason: `${target.kind} is not a department` });
+        continue;
+      }
+      target.archived = true;
+      target.status = 'INACTIVE';
+      rows.push({
+        action: 'retire-department',
+        targetId: target.id,
+        targetSlug: target.slug,
+        targetName: target.name,
+        source: gap.source,
+      });
+      continue;
+    }
+
     if (gap.action === 'remove-aliases') {
       const target = working.find((row) => row.slug === gap.targetSlug);
       if (!target) {
@@ -793,6 +898,8 @@ export function summarizeOrgUnitSeedPlan(plan: OrgUnitSeedPlan): {
   aliasUpdates: number;
   aliasRemovals: number;
   renames: number;
+  reactivations: number;
+  retirements: number;
   satisfied: number;
   blocked: number;
 } {
@@ -801,6 +908,8 @@ export function summarizeOrgUnitSeedPlan(plan: OrgUnitSeedPlan): {
     aliasUpdates: plan.rows.filter((row) => row.action === 'add-aliases').length,
     aliasRemovals: plan.rows.filter((row) => row.action === 'remove-aliases').length,
     renames: plan.rows.filter((row) => row.action === 'rename-department').length,
+    reactivations: plan.rows.filter((row) => row.action === 'reactivate-org-unit').length,
+    retirements: plan.rows.filter((row) => row.action === 'retire-department').length,
     satisfied: plan.satisfied.length,
     blocked: plan.blocked.length,
   };
