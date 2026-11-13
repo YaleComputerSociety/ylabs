@@ -142,6 +142,17 @@ The existing 11 research guides keep their kind and tier, and the gate with the 
 5 configured pages still earn neither kind: a labs list, two general undergraduate-program pages, a senior-essay registration form, and a capstone-faculty list.
 This is a stored-data change, delivered by a lane run and a programs gate recompute on Development and then a re-read of `/programs`.
 
+## 2026-11-13: A Lead Whose Own Profile Page Says Emeritus Is Emeritus (#6081)
+
+This extends the #5835 entry below: besides a department's emeritus page, the freshest first-hand read of the person's own profile page can mark a lead emeritus.
+A read counts as the person's own page when its source URL is one of their profile links, or when it is a roster member's profile title and the member's identity evidence (a netid or Yale email exactly one live researcher holds, with a name that agrees) names them.
+The freshest decisive read wins: an emeritus-only title marks the lead emeritus, and a newer read naming a current faculty appointment leaves them current, which keeps #5835's rule that a fresh read of the person's own page wins.
+The Yale directory's title never counts, and the profile lane's title read can only show a current appointment, never make a lead emeritus, because it still stores captured navigation menus on some school sites (#6177).
+A read counts only when the observation's own entity is the person, their netid-keyed user row or a row whose own profile URL is that page, so a colleague's card title on a shared page in the person's profile links never counts.
+The result is recorded in the same `emeritusListedLeadIds` field on the rows the person already leads, so it never mints a row, an edge or a roster member.
+It reads emeritus only: the deceased marker (#5721) is a separate signal that hides the row and wins, and an emeritus creative-practice lead is labelled the same way as any other.
+`skills/scrapers/SKILL.md` owns the mechanics.
+
 ## 2026-11-11: A Lead Their Department Lists As Emeritus Is Emeritus (#5835)
 
 The coordinator decided that a lead whom their own department's official emeritus page lists, and whose own page is not freshly read as a current appointment, is emeritus for the 2026-10-02 rule below, so the row is labelled and claims no way in without current activity.

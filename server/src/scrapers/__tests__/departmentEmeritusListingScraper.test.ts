@@ -7,6 +7,7 @@ import {
   DepartmentEmeritusListingScraper,
   EMERITUS_LISTED_LEADS_FIELD,
   emeritusListingPeople,
+  ownPageTitlesSayEmeritus,
 } from '../sources/departmentEmeritusListingScraper';
 import type { ObservationInput, ScraperContext } from '../types';
 
@@ -70,6 +71,7 @@ describe('department emeritus listings (#5835)', () => {
           ? { researcherId: 'r-avery', slugs: ['avery-center', 'avery-row'] }
           : null,
       storedListingFinder: async () => new Map(),
+      ownProfileLeadFinder: async () => [],
     });
     await scraper.run(context(emitted));
     expect(emitted).toEqual([
@@ -100,6 +102,7 @@ describe('department emeritus listings (#5835)', () => {
             ? { researcherId: 'r-avery', slugs: ['shared-row'] }
             : null,
         storedListingFinder: stored,
+        ownProfileLeadFinder: async () => [],
       });
     const listsAvery = async () => page(['Avery Synthetic']);
 
@@ -132,6 +135,7 @@ describe('department emeritus listings (#5835)', () => {
       fetchText: async () => page([]),
       resolveLead: async () => null,
       storedListingFinder: stored,
+      ownProfileLeadFinder: async () => [],
     }).run(context(complete));
     expect(complete).toEqual([
       expect.objectContaining({
@@ -147,7 +151,78 @@ describe('department emeritus listings (#5835)', () => {
       fetchText: async () => null,
       resolveLead: async () => null,
       storedListingFinder: stored,
+      ownProfileLeadFinder: async () => [],
     }).run(context(partial));
     expect(partial).toEqual([]);
+  });
+
+  it('records a lead whose own profile page says emeritus beside the leads a page lists (#6081)', async () => {
+    const emitted: ObservationInput[] = [];
+    await new DepartmentEmeritusListingScraper({
+      pages: [PAGE],
+      fetchText: async () => page(['Avery Synthetic']),
+      resolveLead: async () => ({ researcherId: 'r-avery', slugs: ['shared-row'] }),
+      storedListingFinder: async () => new Map(),
+      ownProfileLeadFinder: async () => [
+        { researcherId: 'r-casey', slugs: ['casey-row', 'shared-row'] },
+      ],
+    }).run(context(emitted));
+    expect(emitted).toEqual([
+      expect.objectContaining({ entityKey: 'shared-row', value: ['r-avery', 'r-casey'] }),
+      expect.objectContaining({ entityKey: 'casey-row', value: ['r-casey'] }),
+    ]);
+  });
+});
+
+describe('ownPageTitlesSayEmeritus (#6081)', () => {
+  const read = (value: string, sourceName: string, observedAt: string) => ({
+    value,
+    sourceName,
+    observedAt,
+  });
+  const EMERITUS = 'Professor Emeritus of Fixture Studies';
+  const CURRENT = 'Professor of Fixture Studies';
+
+  it('marks a lead emeritus when the freshest decisive own-page read is emeritus only', () => {
+    expect(
+      ownPageTitlesSayEmeritus([read(EMERITUS, 'centers-institutes-index', '2026-11-11')]),
+    ).toBe(true);
+    expect(
+      ownPageTitlesSayEmeritus([
+        read(CURRENT, 'official-profile-pi-backfill', '2026-06-05'),
+        read(EMERITUS, 'centers-institutes-index', '2026-11-11'),
+      ]),
+    ).toBe(true);
+  });
+
+  it('lets a fresher current appointment on the own page win', () => {
+    expect(
+      ownPageTitlesSayEmeritus([
+        read(EMERITUS, 'centers-institutes-index', '2026-06-05'),
+        read(CURRENT, 'official-profile-pi-backfill', '2026-11-11'),
+      ]),
+    ).toBe(false);
+  });
+
+  it('never marks a lead emeritus from the profile lane alone, so a captured menu cannot', () => {
+    expect(
+      ownPageTitlesSayEmeritus([read(EMERITUS, 'official-profile-pi-backfill', '2026-11-11')]),
+    ).toBe(false);
+    expect(
+      ownPageTitlesSayEmeritus([
+        read(
+          'Faculty Directory Emeritus Faculty Part Time Lecturers Staff Directory',
+          'official-profile-pi-backfill',
+          '2026-11-11',
+        ),
+      ]),
+    ).toBe(false);
+  });
+
+  it('ignores reads that are neither emeritus only nor a current appointment', () => {
+    expect(
+      ownPageTitlesSayEmeritus([read('Fixture Studies', 'centers-institutes-index', '2026-11-11')]),
+    ).toBe(false);
+    expect(ownPageTitlesSayEmeritus([])).toBe(false);
   });
 });
