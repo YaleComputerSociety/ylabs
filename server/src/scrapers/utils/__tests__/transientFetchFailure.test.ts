@@ -8,7 +8,6 @@ const withCode = (code: string) => Object.assign(new Error(code), { code });
 
 describe('isTransientFetchFailure', () => {
   it.each([
-    new HttpStatusError(403),
     new HttpStatusError(429),
     new HttpStatusError(502),
     Object.assign(new Error('Request failed'), { response: { status: 503 } }),
@@ -21,9 +20,13 @@ describe('isTransientFetchFailure', () => {
   });
 
   it.each([
+    new HttpStatusError(403),
     new HttpStatusError(404),
     new HttpStatusError(410),
     Object.assign(new Error('Request failed'), { response: { status: 401 } }),
+    withCode('ECONNREFUSED'),
+    withCode('EHOSTUNREACH'),
+    withCode('ENETUNREACH'),
     withCode('ENOTFOUND'),
     withCode('CERT_HAS_EXPIRED'),
     new Error('refused a private address'),
