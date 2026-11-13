@@ -692,6 +692,12 @@ Its USD 1.00 daily ceiling counts the `search-rerank-live-miss` caller's spend o
 The eligibility gate reads the served result through the existing predicates (`keywordLegTopHitIsNameMatch`, empty `normalizeResearchSearchQuery` tokens, `servesNoKeywordRow`, fewer than 2 candidates), so do not add a lexical one beside it.
 `docs/search-rerank-cache.md` is the full contract.
 
+### A seeded entry can say a search has few close matches (#6094)
+
+`searchFewCloseMatches` in `services/searchRerankCache.ts` sets `fewCloseMatches` only from a fresh seeded entry's measured scores, and it never changes which rows are served or their order.
+Fire it only from a measured relevance score: a fitted similarity rule was rejected on held-out data (`docs/decisions.md`, 2026-11-13), so do not add a guessed signal beside it.
+`docs/search-rerank-cache.md` (Few close matches notice) is the full contract.
+
 ### A service core ranks below the research rows of its window (#5748)
 
 Cores stay listed and reachable, because a core can be a real way into research work (the 2026-09-23 reachability decision), but a topic query no longer serves one above the research a student could join.

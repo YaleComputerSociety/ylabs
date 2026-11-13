@@ -433,3 +433,4 @@ export const ADVISES_UNDERGRAD_RESEARCH_FILTER_LABEL = MENTORS_UNDERGRADUATES_LA
 export const ADVISES_UNDERGRAD_RESEARCH_FILTER_HINT = 'e.g. supervised senior theses';
 export const UNDERGRADS_FILTER_COMBINATION_NOTE = 'Shows research matching every ticked option';
 export const NO_HOSTED_UNDERGRADUATE_EVIDENCE_NOTE = 'Missing evidence is not proof there is none.';
+export const FEW_CLOSE_MATCHES_NOTICE = 'Only a few close matches. Related results below.';

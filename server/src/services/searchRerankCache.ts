@@ -167,6 +167,37 @@ export const searchRerankEntryKind = (entry: unknown): SearchRerankEntryKind => 
   return source === SEARCH_RERANK_SHADOW_SOURCE ? 'shadow' : 'served';
 };
 
+export const SEARCH_RERANK_CLOSE_MATCH_SCORE = 2;
+// Measured on 36 seeded Production queries: it fired on 10, every one with 0-2 relevant rows in its top 10, and raised no false alarm (#6094).
+export const SEARCH_FEW_CLOSE_MATCHES_MAX_COUNT = 3;
+
+export interface SearchFewCloseMatches {
+  closeMatchCount: number;
+}
+
+export function searchFewCloseMatches(
+  entry: Pick<SearchRerankCacheLookup, 'kind' | 'scoredTextHashes'>,
+  scoresById: SearchRerankScores,
+  servedPool: ReadonlyArray<RerankCandidate & Record<string, unknown>>,
+): SearchFewCloseMatches | null {
+  if (entry.kind !== 'seeded') return null;
+  if (
+    searchRerankEntryIsStale(
+      entry.scoredTextHashes,
+      searchRerankCandidateFingerprints(servedPool, SEARCH_RERANK_STALE_WINDOW),
+    )
+  ) {
+    return null;
+  }
+  const closeMatchIds = new Set(
+    servedPool
+      .map(rerankCandidateId)
+      .filter((id) => (scoresById.get(id) ?? 0) >= SEARCH_RERANK_CLOSE_MATCH_SCORE),
+  );
+  const closeMatchCount = closeMatchIds.size;
+  return closeMatchCount <= SEARCH_FEW_CLOSE_MATCHES_MAX_COUNT ? { closeMatchCount } : null;
+}
+
 const servesScores = (entry: unknown, kind: SearchRerankEntryKind): boolean => {
   if (kind === 'absent' || kind === 'shadow') return false;
   if (kind === 'seeded') return true;

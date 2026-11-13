@@ -67,6 +67,8 @@ import { getResearchSearchQueryVector } from './researchSearchQueryEmbedding';
 import {
   applyCachedRerank,
   isSearchRerankCacheEnabled,
+  searchFewCloseMatches,
+  type SearchFewCloseMatches,
   lookupSearchRerankCacheEntry,
   SEARCH_RERANK_STALE_WINDOW,
   SEARCH_RERANK_WINDOW,
@@ -659,6 +661,7 @@ export interface ResearchGroupSearchResult {
   acronymRewrite?: ResearchSearchAcronymRewrite;
   appliedFilters?: AppliedStudentFilters;
   moreTopicResults?: PublicResearchEntityDto[];
+  fewCloseMatches?: SearchFewCloseMatches;
 }
 
 const MAX_PAGE_SIZE = 100;
@@ -3055,6 +3058,10 @@ async function searchResearchGroupsForQuery(
   // queries already come back pre-paginated from Meilisearch, so they are used
   // as-is. See #1064.
   const rerankedPool = rerankScores ? applyCachedRerank(servedPool, rerankScores) : servedPool;
+  const fewCloseMatches =
+    rerankScores && rerankEntry
+      ? searchFewCloseMatches(rerankEntry, rerankScores, servedPool)
+      : null;
   // Runs after the cached rerank, which scores relevance rather than kind, so a cached
   // score cannot lift a core back above research rows; the rerank-candidate read skips it
   // so the rows it scores are the pre-demotion window the cache reorders (#5748).
@@ -3209,6 +3216,7 @@ async function searchResearchGroupsForQuery(
         pageSize: safePageSize,
         facetDistribution: facetDistribution ?? requestedFacetDistribution,
         degraded: degraded || leadMemberNameRead.unavailable || matchedMemberNameRead.unavailable,
+        ...(fewCloseMatches ? { fewCloseMatches } : {}),
       },
       {
         includeOperatorFields: safeOptions.includeNonPublic,

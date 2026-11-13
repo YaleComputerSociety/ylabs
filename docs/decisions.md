@@ -19,6 +19,15 @@ There is no nav item, because a nav label adds a choice to every page and sits b
 Neither link carries program data, so this is not the removed #1509 module.
 The student-journey smoke follows both links to the guide at 375px and 1440px.
 
+## 2026-11-13: A Search Says It Has Few Close Matches Only Where The Rerank Cache Measured It (#6094)
+
+Decision (five-agent consensus and ylabs-manager, 2026-11-13; the owner may veto): a search whose seeded rerank entry scores 3 or fewer rows of its served pool 2 or more carries `fewCloseMatches`, and `/research` says "Only a few close matches. Related results below." above the results.
+The notice never changes which rows are returned or their order.
+All five agents chose a notice over trimming, because prior decisions keep weak-but-real matches: #823 sets its hybrid cutoff low enough not to clip them, #3797 found that no absolute or relative score cutoff separates off-topic rows from real ones, and a thin but accurate row is never hidden.
+A cheap fitted similarity signal was measured and rejected: on 186 graded queries held out from the fit, 15 of its 31 firings were false alarms.
+The rule gated on the rerank cache's own measured relevance fired on 10 of 36 seeded Production queries, every one with 0 to 2 relevant rows in its top 10, with 0 false alarms.
+So it fires only from a seeded entry, never from a served, shadow or live-miss entry or from a guessed signal; `docs/search-rerank-cache.md` holds the contract.
+
 ## 2026-11-13: The Permanent-Resident Citizenship Option Includes Programs Open To Both Groups (#6092)
 
 This extends the 2026-11-12 citizenship entry below (#5299), whose stated-first order, "Doesn't say" divider and per-option counts are unchanged.
