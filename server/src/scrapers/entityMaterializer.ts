@@ -546,6 +546,7 @@ import {
   archiveCanonicalRoleAssignmentsForPersons,
   adoptUnprovenancedRoleAssignments,
   archiveSupersededCanonicalRoleAssignments,
+  canonicalMemberIsRemovedByRequest,
   identifiedResearcherHoldsDisplayName,
   materializeCanonicalMembership,
   nameOnlyResolutionName,
@@ -5637,8 +5638,7 @@ export interface InferredDirectorMaterializationResult {
     | 'no-observation'
     | 'unresolved-user'
     | 'name-mismatch'
-    | 'operator-ended'
-    | typeof REMOVED_BY_REQUEST;
+    | Exclude<CanonicalMembershipOutcome, 'created' | 'updated' | 'unchanged'>;
 }
 
 /**
@@ -5686,6 +5686,18 @@ interface ResolvedInferredDirector {
   profileUrl: string;
   roleSource: MaterializerObservationLike;
   enrichment: Awaited<ReturnType<typeof canonicalResearcherIdentity>>;
+}
+
+function inferredDirectorIdentity(director: ResolvedInferredDirector): CanonicalMemberIdentity {
+  const personId = toMaterializerObjectId(director.researcherId);
+  return {
+    netid: director.enrichment.netid,
+    email: director.enrichment.email,
+    orcid: director.enrichment.orcid,
+    displayName: director.name,
+    hasCanonicalSourceReference: true,
+    ...(personId ? { resolvedPersonId: personId } : {}),
+  };
 }
 
 async function resolveInferredDirector(
@@ -5769,6 +5781,16 @@ export async function resolveDirectorLeadEdge(
     role,
   };
   if (await operatorEndedEdgeBlocksWrite(triple)) return [];
+  if (
+    !options.apply &&
+    (await canonicalMemberIsRemovedByRequest(
+      inferredDirectorIdentity(resolution.director),
+      personId,
+      profileUrl || undefined,
+    ))
+  ) {
+    return [];
+  }
   const isNewEdge = !(await RoleAssignment.exists({
     ...triple,
     state: { $ne: 'HISTORICAL' },
@@ -5809,7 +5831,6 @@ export async function materializeInferredDirectorMembership(
   const sourceName = textValue(roleSource.sourceName);
 
   const directorResearcherId = researcherId;
-  const directorEnrichment = resolution.director.enrichment;
   const roster = await getResearchEntityRoster(researchEntityId);
   const normalizedDirectorName = textValue(name).toLowerCase();
   const matchesDirector = (entry: ResearchEntityRosterEntry): boolean =>
@@ -5825,14 +5846,7 @@ export async function materializeInferredDirectorMembership(
   ).length;
 
   const directorPersonId = toMaterializerObjectId(directorResearcherId);
-  const directorIdentity: CanonicalMemberIdentity = {
-    netid: directorEnrichment.netid,
-    email: directorEnrichment.email,
-    orcid: directorEnrichment.orcid,
-    displayName: name,
-    hasCanonicalSourceReference: true,
-    ...(directorPersonId ? { resolvedPersonId: directorPersonId } : {}),
-  };
+  const directorIdentity = inferredDirectorIdentity(resolution.director);
   const directorOutcome = await materializeCanonicalMembership(
     researchEntityId,
     {
@@ -5850,8 +5864,13 @@ export async function materializeInferredDirectorMembership(
     },
     directorIdentity,
   );
-  if (directorOutcome === REMOVED_BY_REQUEST) return { ...empty, skipped: REMOVED_BY_REQUEST };
-  if (directorOutcome === 'refused-operator-ended') return { ...empty, skipped: 'operator-ended' };
+  if (
+    directorOutcome !== 'created' &&
+    directorOutcome !== 'updated' &&
+    directorOutcome !== 'unchanged'
+  ) {
+    return { ...empty, skipped: directorOutcome };
+  }
 
   const supersededPersonId =
     directorPersonId ?? (await resolveCanonicalResearcherId(directorIdentity));

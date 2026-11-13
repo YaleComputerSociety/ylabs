@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../services/meiliSyncService', async () => {
   const actual = await vi.importActual<typeof import('../../services/meiliSyncService')>(
@@ -19,10 +19,15 @@ vi.mock('../../services/researchEntityBrowseRankService', async () => {
   };
 });
 
+import { DirectoryRemoval } from '../../models/directoryRemoval';
 import { ResearchEntity } from '../../models/researchEntity';
 import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
 import { ScrapeRun } from '../../models/scrapeRun';
+import {
+  DIRECTORY_REMOVAL_KEY_ENV,
+  directoryRemovalDigest,
+} from '../../utils/directoryRemovalDigest';
 import { materializeEntity } from '../entityMaterializer';
 import { appendObservations } from '../observationStore';
 import {
@@ -36,6 +41,7 @@ const CENTER_SLUG = 'center-synthetic-peace';
 const CENTER_NAME = 'Synthetic Peace Center';
 const CENTER_URL = 'https://synthetic.yale.edu/center/peace/';
 const PROFILE = 'https://medicine.yale.edu/profile/ada-quill/';
+const REMOVAL_KEY = 'synthetic-directory-removal-key-0123456789';
 
 let replSet: MongoMemoryReplSet;
 
@@ -57,9 +63,14 @@ beforeEach(async () => {
     'role_assignments',
     'researchers',
     'scrape_runs',
+    'directory_removals',
   ]) {
     await mongoose.connection.db!.collection(name).deleteMany({});
   }
+});
+
+afterEach(() => {
+  vi.unstubAllEnvs();
 });
 
 const seed = async () => {
@@ -222,6 +233,30 @@ describe('the leadEdges scope covers director membership (#6025)', () => {
     expect(plannedNewDirectors(plan)).toEqual([]);
     expect(await liveDirectorPersonIds(rowId)).toEqual([]);
     expect(await directorEdges(rowId)).toHaveLength(1);
+  });
+
+  it('agrees on zero for a director removed from the directory by request', async () => {
+    const { rowId } = await seed();
+    vi.stubEnv(DIRECTORY_REMOVAL_KEY_ENV, REMOVAL_KEY);
+    await DirectoryRemoval.create({
+      digest: directoryRemovalDigest(REMOVAL_KEY, 'profile_url', PROFILE)!,
+      kind: 'profile_url',
+      recordedAt: new Date(),
+    });
+    const plan = (
+      await materializeEntity(
+        'researchEntity',
+        { entityKey: CENTER_SLUG },
+        { leadEdgesOnly: true, dryRun: true },
+      )
+    ).leadEdgeResolution;
+    const applied = (
+      await materializeEntity('researchEntity', { entityKey: CENTER_SLUG }, { leadEdgesOnly: true })
+    ).leadEdgeResolution;
+
+    expect(plannedNewDirectors(plan)).toEqual([]);
+    expect(plannedNewDirectors(applied)).toEqual([]);
+    expect(await directorEdges(rowId)).toEqual([]);
   });
 
   it('is a no-op the second time', async () => {
