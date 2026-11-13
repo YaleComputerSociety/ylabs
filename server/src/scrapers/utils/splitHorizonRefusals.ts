@@ -18,6 +18,7 @@ export interface SplitHorizonRefusalReport {
   privateOnlyHosts: HostRefusalCount[];
   unclassifiedHosts: HostRefusalCount[];
   splitHorizonRefusals: number;
+  classificationBudgetMs: number;
 }
 
 export const SPLIT_HORIZON_REPORT_BUDGET_MS = 60_000;
@@ -103,6 +104,7 @@ export async function splitHorizonRefusalReport(
     privateOnlyHosts,
     unclassifiedHosts,
     splitHorizonRefusals: splitHorizonHosts.reduce((total, entry) => total + entry.refusals, 0),
+    classificationBudgetMs: budgetMs,
   };
 }
 
@@ -113,7 +115,7 @@ export function splitHorizonRefusalWarning(report: SplitHorizonRefusalReport): s
   const unclassified = report.unclassifiedHosts.length;
   if (hosts.length === 0 && unclassified === 0) return null;
   const notClassified = unclassified
-    ? ` ${unclassified} other refused host(s) were not classified within the ${SPLIT_HORIZON_REPORT_BUDGET_MS / 1000} s budget.`
+    ? ` ${unclassified} other refused host(s) were not classified within the ${report.classificationBudgetMs / 1000} s budget.`
     : '';
   if (hosts.length === 0) {
     return `the SSRF guard refused private-address host(s) this run could not check against public DNS.${notClassified}`;
