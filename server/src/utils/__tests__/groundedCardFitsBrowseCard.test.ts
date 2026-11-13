@@ -162,7 +162,7 @@ describe('card lines the serve chain keeps (#4809)', () => {
 describe('a card that ends on an abbreviation is cut, not finished', () => {
   it.each([
     'Studies the relationship between brain activity and consciousness in Dr.',
-    'Builds on models of cortical circuits described by Hansel et al.',
+    'Builds on models of cortical circuits described by Varnadore et al.',
     'Studies membrane transport in yeast, plants, e.g.',
     'Previously directed a program with Prof.',
   ])('refuses %s', (card) => {

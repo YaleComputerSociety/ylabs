@@ -208,3 +208,25 @@ describe("a page that names any of the row's leads is writer evidence (#6127)", 
     expect(texts([researchPage(coLeadPage)], withCoLead)).toEqual([]);
   });
 });
+
+describe('the lead-naming read, two more shapes', () => {
+  it('admits a non-Yale page whose address carries the lead surname when the page confirms the lead', () => {
+    const page = 'https://varnadore-lab.example.org/research';
+    expect(
+      texts(
+        [researchPage(page, `${RESEARCH} The lab is directed by Quillon Varnadore.`)],
+        PERSON_ROW,
+      ),
+    ).toEqual([`${RESEARCH} The lab is directed by Quillon Varnadore.`]);
+  });
+
+  it('admits a Yale page whose stored text names the lead', () => {
+    const page = 'https://geology.yale.edu/research/sediment-group';
+    expect(
+      texts(
+        [researchPage(page, `${RESEARCH} Principal investigator: Quillon Varnadore.`)],
+        PERSON_ROW,
+      ),
+    ).toEqual([`${RESEARCH} Principal investigator: Quillon Varnadore.`]);
+  });
+});
