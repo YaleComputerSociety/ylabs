@@ -1975,7 +1975,7 @@ const programReasonActions: Record<string, string> = {
   common_application_container:
     'A common application admits to funds served as their own programs; keep suppressed.',
   non_research_program:
-    'Not a research opportunity, such as a prize for completed work or a tuition scholarship; stays withheld. A funded creative-practice or journalism project here is a lane bug (#6216).',
+    'Not a research opportunity, such as a prize for completed work or a tuition scholarship; stays withheld.',
   [EXTERNAL_AWARD_CYCLE_STALE_REASON]:
     'Outside program whose office record skipped its only stated cycle; returns when the record states a current one.',
   [AWARD_SUSPENDED_REASON]:
