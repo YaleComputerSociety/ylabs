@@ -1,9 +1,10 @@
+import { OFFICIAL_PROFILE_PI_BACKFILL_SOURCE } from './directoryContradictedProfileNetid';
 import type {
   UserDepartmentObservation,
   UserDepartmentScreenContext,
 } from './userDepartmentObservationScreens';
 
-export const OFFICIAL_PROFILE_PI_BACKFILL_SOURCE = 'official-profile-pi-backfill';
+export { OFFICIAL_PROFILE_PI_BACKFILL_SOURCE } from './directoryContradictedProfileNetid';
 
 /**
  * Resolve-time half of #6074: a stored `official-profile-pi-backfill` home department the
