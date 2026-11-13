@@ -1294,7 +1294,14 @@ interface MaterializeResult {
   skipped?: string;
   plannedSet?: Record<string, unknown>;
   plannedUnset?: Record<string, ''>;
+  /**
+   * Why this row's write changes nothing, which `materializeRowOutcome` counts as a skip.
+   * Kept apart from `skipped`, which callers read as a refusal: a dry run that plans a
+   * card synthesis still writes on apply, which `rematerializeResearchEntities` decides
+   * for itself, and a `user` row that changes nothing is still a reached researcher.
+   */
   plannedWriteSkip?: 'no-scoped-fields' | 'unchanged';
+  changedPaths?: string[];
   plannedPaths?: string[];
   droppedPaths?: string[];
   identityJoin?: UserIdentityJoin;
@@ -1329,6 +1336,7 @@ const MATERIALIZED_DESCRIPTION_FIELDS = new Set([
   'description',
 ]);
 export const MATERIALIZER_MANAGED_FIELDS = new Set(['lastObservedAt', 'sourceContentHash']);
+const DRY_RUN_WOULD_MINT_RESEARCHER = 'dry-run-would-mint-researcher';
 const CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS = ['methods', 'inferredPiUserId'];
 
 function materializerValueAtPath(doc: Record<string, unknown> | null, path: string): unknown {
@@ -1414,23 +1422,35 @@ function plannedWriteSkipReason(
 // only undeclared entry in `CLEARABLE_ON_EMPTY_RESEARCH_ENTITY_FIELDS` and no row of
 // the corpus stores it. So the comparison stays on the side that writes, which is
 // the side that cannot skip a removal a row does need.
+export function materializerProjectionChangedPaths(
+  entityDoc: Record<string, unknown> | null,
+  set: Record<string, unknown>,
+  unset: Record<string, unknown>,
+  schemaPaths: Iterable<string>,
+): string[] {
+  const declared = [...schemaPaths];
+  const changed = new Set<string>();
+  for (const [path, value] of Object.entries(set)) {
+    if (MATERIALIZER_MANAGED_FIELDS.has(path)) continue;
+    if (!materializerProjectionPathIsStorable(declared, path)) continue;
+    if (!materializerValuesDeepEqual(materializerValueAtPath(entityDoc, path), value)) {
+      changed.add(path);
+    }
+  }
+  for (const path of Object.keys(unset)) {
+    const current = materializerValueAtPath(entityDoc, path);
+    if (current !== undefined && current !== null) changed.add(path);
+  }
+  return [...changed].sort();
+}
+
 export function isMaterializerProjectionNoOp(
   entityDoc: Record<string, unknown>,
   set: Record<string, unknown>,
   unset: Record<string, unknown>,
   schemaPaths: Iterable<string>,
 ): boolean {
-  const declared = [...schemaPaths];
-  for (const [path, value] of Object.entries(set)) {
-    if (MATERIALIZER_MANAGED_FIELDS.has(path)) continue;
-    if (!materializerProjectionPathIsStorable(declared, path)) continue;
-    if (!materializerValuesDeepEqual(materializerValueAtPath(entityDoc, path), value)) return false;
-  }
-  for (const path of Object.keys(unset)) {
-    const current = materializerValueAtPath(entityDoc, path);
-    if (current !== undefined && current !== null) return false;
-  }
-  return true;
+  return materializerProjectionChangedPaths(entityDoc, set, unset, schemaPaths).length === 0;
 }
 
 function isClearableStaleFieldValue(value: unknown): boolean {
@@ -9962,7 +9982,7 @@ async function materializeUserIdentityToResearcher(
       return skipped(REMOVED_BY_REQUEST);
     }
     if (options.dryRun) {
-      return skipped('dry-run-would-mint-researcher');
+      return skipped(DRY_RUN_WOULD_MINT_RESEARCHER);
     }
     researcher = new Researcher({
       displayName,
@@ -10403,6 +10423,8 @@ async function materializeUserIdentityToResearcher(
   // defeated `observations:materialize-pi-attributed-users`, whose default IS dry run
   // and whose `assertScriptApplyAllowed` guard is skipped unless `--apply` is passed,
   // so its "enriched" rows had already been written before an operator saw them.
+  const researcherChangedPaths = withoutRepeatedParentPaths(researcher.modifiedPaths?.() ?? []);
+  const researcherUnchanged = !created && researcherChangedPaths.length === 0;
   if (options.dryRun) {
     return {
       entityType: 'user',
@@ -10412,7 +10434,10 @@ async function materializeUserIdentityToResearcher(
       conflicts,
       created,
       resolved,
-      plannedPaths: withoutRepeatedParentPaths(researcher.modifiedPaths?.() ?? []),
+      plannedPaths: researcherChangedPaths,
+      ...(researcherUnchanged
+        ? { plannedWriteSkip: 'unchanged' as const }
+        : { changedPaths: researcherChangedPaths }),
       ...(identityJoin ? { identityJoin } : {}),
     };
   }
@@ -10455,6 +10480,9 @@ async function materializeUserIdentityToResearcher(
     conflicts,
     created,
     resolved,
+    ...(researcherUnchanged
+      ? { plannedWriteSkip: 'unchanged' as const }
+      : { changedPaths: researcherChangedPaths }),
     ...(identityJoin ? { identityJoin } : {}),
   };
 }
@@ -13819,6 +13847,37 @@ async function mintAdoptionJoinsDistinctPeople(
   );
 }
 
+type ProjectionMintRefusal =
+  | 'missing-required-fields'
+  | 'reslug-adopted-key-names-only-archived-rows'
+  | typeof REMOVED_BY_REQUEST;
+
+async function projectionMintRefusal(
+  entityType: ObservedEntityType,
+  identifier: { entityId?: string; entityKey?: string },
+  obs: any[],
+  materializationObs: MaterializerObservationLike[],
+  set: Record<string, unknown>,
+): Promise<ProjectionMintRefusal | undefined> {
+  const keyField = uniqueKeyFieldForIdentifier(entityType, identifier.entityKey);
+  if (!keyField || !identifier.entityKey) return undefined;
+  const keyValue = uniqueKeyValueForIdentifier(entityType, identifier.entityKey, obs);
+  if (!keyValue) return undefined;
+  const insert: Record<string, unknown> = { ...set, [keyField]: keyValue };
+  if (!hasRequiredFieldsForCreate(entityType, insert)) return 'missing-required-fields';
+  if (!isResearchEntityObservationType(entityType)) return undefined;
+  if (await reslugAdoptedKeyNamesOnlyArchivedRows(identifier.entityKey)) {
+    return 'reslug-adopted-key-names-only-archived-rows';
+  }
+  if (
+    (await facultyResearchProfileMintIsRemovedByRequest(insert, materializationObs)) ||
+    (await researchEntityMintSlugNamesARemovedResearcher(keyValue))
+  ) {
+    return REMOVED_BY_REQUEST;
+  }
+  return undefined;
+}
+
 export function materializeEntity(
   entityType: ObservedEntityType,
   identifier: { entityId?: string; entityKey?: string },
@@ -13962,9 +14021,9 @@ async function materializeEntityUnderRemovalGuard(
     }
     const result = await materializeUserIdentityToResearcher(identifier, userObs, options);
     const merged = scoped ? withScreenedWithdrawalPaths(result, withdrawal) : result;
-    return withdrawnLinks
-      ? { ...merged, fieldsWritten: merged.fieldsWritten + withdrawnLinks }
-      : merged;
+    if (!withdrawnLinks) return merged;
+    const { plannedWriteSkip: _changesNothingBeforeWithdrawal, ...written } = merged;
+    return { ...written, fieldsWritten: merged.fieldsWritten + withdrawnLinks };
   }
 
   if (entityType === 'orgUnit') {
@@ -13979,6 +14038,7 @@ async function materializeEntityUnderRemovalGuard(
       conflicts: 0,
       created: false,
       resolved: {},
+      skipped: 'no-materialized-form',
       postMaterializationMetrics: {
         entryPathways: 0,
         accessSignals: 0,
@@ -14855,27 +14915,39 @@ async function materializeEntityUnderRemovalGuard(
       : {}),
   };
 
-  const entityScalarUnchanged =
-    Boolean(entityDoc) &&
-    isMaterializerProjectionNoOp(
-      entityDoc as Record<string, unknown>,
-      set,
-      unset,
-      Object.keys(Model.schema?.paths ?? {}),
-    );
+  const changedPaths = materializerProjectionChangedPaths(
+    entityDoc as Record<string, unknown> | null,
+    set,
+    entityDoc ? unset : {},
+    Object.keys(Model.schema?.paths ?? {}),
+  );
+  const entityScalarUnchanged = Boolean(entityDoc) && changedPaths.length === 0;
 
   if (options.dryRun) {
+    const plannedWriteSkip: MaterializeResult['plannedWriteSkip'] = entityDoc
+      ? entityScalarUnchanged
+        ? plannedWriteSkipReason(set, unset)
+        : undefined
+      : options.onlyReconcileFieldProvenance
+        ? 'no-scoped-fields'
+        : undefined;
+    const plannedMintRefusal =
+      entityDoc || plannedWriteSkip
+        ? undefined
+        : await projectionMintRefusal(entityType, identifier, obs, materializationObs, set);
     return {
       entityType,
       entityId: entityIdString,
       entityKey: identifier.entityKey,
       fieldsWritten,
       conflicts,
-      created: !entityDoc,
+      created: !entityDoc && !plannedWriteSkip && !plannedMintRefusal,
       resolved,
       plannedSet: set,
       plannedUnset: unset,
-      ...(entityScalarUnchanged ? { plannedWriteSkip: plannedWriteSkipReason(set, unset) } : {}),
+      ...(plannedWriteSkip ? { plannedWriteSkip } : {}),
+      ...(plannedMintRefusal ? { skipped: plannedMintRefusal } : {}),
+      ...(plannedWriteSkip || plannedMintRefusal ? {} : { changedPaths }),
       ...reportedProjectionOutcomes,
     };
   }
@@ -14951,7 +15023,14 @@ async function materializeEntityUnderRemovalGuard(
       throw new Error(`Cannot create new ${entityType}: missing normalized unique key value`);
     }
     const insert: Record<string, unknown> = { ...set, [keyField]: keyValue };
-    if (!hasRequiredFieldsForCreate(entityType, insert)) {
+    const mintRefusal = await projectionMintRefusal(
+      entityType,
+      identifier,
+      obs,
+      materializationObs,
+      set,
+    );
+    if (mintRefusal) {
       return {
         entityType,
         entityId: undefined,
@@ -14960,38 +15039,7 @@ async function materializeEntityUnderRemovalGuard(
         conflicts: 0,
         created: false,
         resolved,
-        skipped: 'missing-required-fields',
-      };
-    }
-    if (
-      isResearchEntityObservationType(entityType) &&
-      (await reslugAdoptedKeyNamesOnlyArchivedRows(identifier.entityKey))
-    ) {
-      return {
-        entityType,
-        entityId: undefined,
-        entityKey: identifier.entityKey,
-        fieldsWritten: 0,
-        conflicts: 0,
-        created: false,
-        resolved,
-        skipped: 'reslug-adopted-key-names-only-archived-rows',
-      };
-    }
-    if (
-      isResearchEntityObservationType(entityType) &&
-      ((await facultyResearchProfileMintIsRemovedByRequest(insert, materializationObs)) ||
-        (await researchEntityMintSlugNamesARemovedResearcher(keyValue)))
-    ) {
-      return {
-        entityType,
-        entityId: undefined,
-        entityKey: identifier.entityKey,
-        fieldsWritten: 0,
-        conflicts: 0,
-        created: false,
-        resolved,
-        skipped: REMOVED_BY_REQUEST,
+        skipped: mintRefusal,
       };
     }
     let created_;
@@ -15142,7 +15190,7 @@ async function materializeEntityUnderRemovalGuard(
     ...reportedProjectionOutcomes,
     ...(indexStale ? { indexSyncFailed: true as const } : {}),
     ...(otherIndexSyncFailedEntityIds.length > 0 ? { otherIndexSyncFailedEntityIds } : {}),
-    ...(entityScalarUnchanged ? { skipped: 'unchanged' as const } : {}),
+    ...(entityScalarUnchanged ? { skipped: 'unchanged' as const } : { changedPaths }),
   };
 }
 
@@ -15832,7 +15880,24 @@ interface MaterializeFromRunCounts {
   errors: number;
   indexSyncFailures: number;
   postMaterializationMetrics: Required<ReportPostMaterializationMetrics>;
+  changedPathsByEntityType?: Record<string, string[]>;
   userFieldScope?: UserFieldScopeReport;
+}
+
+export type MaterializeRowOutcome = 'created' | 'updated' | 'skipped';
+
+/**
+ * One classification for both modes, so a dry run's counts are the apply's counts for
+ * the same input and a dry run after an apply plans nothing (#6075).
+ */
+export function materializeRowOutcome(result: {
+  created: boolean;
+  skipped?: string;
+  plannedWriteSkip?: string;
+}): MaterializeRowOutcome {
+  if (result.created || result.skipped === DRY_RUN_WOULD_MINT_RESEARCHER) return 'created';
+  if (result.skipped || result.plannedWriteSkip) return 'skipped';
+  return 'updated';
 }
 
 export interface UserFieldScopeRow {
@@ -16062,6 +16127,7 @@ async function materializeFromRunUnderRemovalGuard(
   let conflicts = 0;
   let skipped = 0;
   let errors = 0;
+  const changedPaths = new Map<string, Set<string>>();
   const staleIndexEntityIds = new Set<string>();
   let staleIndexRowsWithoutId = 0;
   const unbackedResearchAreaOutcomes: Partial<Record<UnbackedResearchAreaOutcome, number>> = {};
@@ -16088,9 +16154,15 @@ async function materializeFromRunUnderRemovalGuard(
         }
         const res = outcome.result;
         materialized++;
-        if (res.created) created++;
-        else if (!res.skipped) updated++;
-        if (res.skipped) skipped++;
+        const rowOutcome = materializeRowOutcome(res);
+        if (rowOutcome === 'created') created++;
+        else if (rowOutcome === 'updated') updated++;
+        else skipped++;
+        if (rowOutcome !== 'skipped' && res.changedPaths?.length) {
+          const typePaths = changedPaths.get(res.entityType) ?? new Set<string>();
+          for (const path of res.changedPaths) typePaths.add(path);
+          changedPaths.set(res.entityType, typePaths);
+        }
         conflicts += res.conflicts;
         if (res.indexSyncFailed) {
           if (res.entityId) staleIndexEntityIds.add(String(res.entityId));
@@ -16319,5 +16391,10 @@ async function materializeFromRunUnderRemovalGuard(
     errors,
     indexSyncFailures,
     postMaterializationMetrics,
+    changedPathsByEntityType: Object.fromEntries(
+      [...changedPaths.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([entityType, paths]) => [entityType, [...paths].sort()]),
+    ),
   };
 }
