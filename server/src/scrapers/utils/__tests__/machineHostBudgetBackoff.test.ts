@@ -220,7 +220,9 @@ describe('recording host success', () => {
       fs.chmodSync(limiter.directory, 0o700);
     }
 
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining(`could not reset the ${HOST} backoff`));
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining(`could not reset the ${HOST} backoff`),
+    );
     expect(limiter.backoffState(HOST)?.level).toBe(0);
   });
 });

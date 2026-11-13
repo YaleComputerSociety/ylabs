@@ -64,7 +64,11 @@ describe('recordHostRefusal', () => {
       host: 'b.example.edu',
     });
     expect(
-      await recordHostRefusal({ host: 'c.example.edu', status: 503, headers: { 'retry-after': '1200' } }),
+      await recordHostRefusal({
+        host: 'c.example.edu',
+        status: 503,
+        headers: { 'retry-after': '1200' },
+      }),
     ).toMatchObject({ host: 'c.example.edu' });
     expect((hostPausedUntil('c.example.edu')?.getTime() ?? 0) - Date.now()).toBeGreaterThan(
       19 * 60_000,

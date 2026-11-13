@@ -61,7 +61,15 @@ export const YALE_HOST_DEFAULT_THROTTLE: HostThrottle = {
   minIntervalMs: 1_500,
 };
 
-export type HostSlotRelease = () => void;
+/**
+ * How the request under a slot turned out, for the layers that keep a shared ledger. `reused` means
+ * a local cache answered and nothing reached the host, so the slot gives its spacing back (#6195).
+ */
+export interface HostSlotOutcome {
+  reused?: boolean;
+}
+
+export type HostSlotRelease = (outcome?: HostSlotOutcome) => void;
 
 export interface HostSlotLimiter {
   acquire(host: string): Promise<HostSlotRelease>;
