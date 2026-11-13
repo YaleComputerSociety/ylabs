@@ -10,7 +10,6 @@
  */
 import axios from 'axios';
 import { assertPublicHttpUrl, SsrfBlockedError, ssrfSafeAgents } from '../../utils/ssrfGuard';
-import { EXCLUDED_HOST_ERROR_CODE, isExcludedHostname } from '../../utils/excludedHosts';
 import {
   HostConcurrencyLimiter,
   hostnameForLimiter,
@@ -123,8 +122,6 @@ export interface FetchPageWithPolicyOptions extends RetryPolicyOptions {
   limiter?: HostRateLimiter;
   request?: HttpRequestFn;
   assertUrl?: (url: string) => Promise<{ toString(): string }>;
-  /** Hosts never to contact, including as a redirect target (`utils/excludedHosts.ts`). */
-  excludedHosts?: readonly string[];
 }
 
 export const DEFAULT_MAX_RETRIES = 3;
@@ -363,14 +360,8 @@ async function fetchPageLive(
     ...submission,
   };
 
-  const excludedHosts = options.excludedHosts ?? [];
   const followHops = (): Promise<HttpRequestResult> =>
-    followRedirectsWithinBudget(safeUrl, config, {
-      limiter,
-      request,
-      assertUrl,
-      excludedHosts,
-    });
+    followRedirectsWithinBudget(safeUrl, config, { limiter, request, assertUrl });
 
   const backoff = new RetryBackoffBudget(policy);
   for (let attempt = 0; ; attempt += 1) {
@@ -408,23 +399,10 @@ async function fetchPageLive(
   }
 }
 
-export class ExcludedHostFetchError extends Error {
-  readonly code = EXCLUDED_HOST_ERROR_CODE;
-
-  constructor(readonly url: string) {
-    super(`${url} is on an excluded host, so it was not fetched`);
-    this.name = 'ExcludedHostFetchError';
-  }
-}
-
 const isRedirectStatus = (status: number): boolean => status >= 300 && status < 400;
 
 function isRefusedBeforeSending(error: unknown): boolean {
-  return (
-    error instanceof SsrfBlockedError ||
-    error instanceof ExcludedHostFetchError ||
-    error instanceof HostBudgetUnavailableError
-  );
+  return error instanceof SsrfBlockedError || error instanceof HostBudgetUnavailableError;
 }
 
 function tooManyRedirectsError(maxRedirects: number): Error & { code: string } {
@@ -433,20 +411,53 @@ function tooManyRedirectsError(maxRedirects: number): Error & { code: string } {
   });
 }
 
-// The same method rewrite follow-redirects applies, so a manual hop sends what axios would have.
-function configAfterRedirect(config: HttpRequestConfig, status: number): HttpRequestConfig {
-  if (config.method !== 'POST' || ![301, 302, 303].includes(status)) return config;
-  const headers = Object.fromEntries(
-    Object.entries(config.headers).filter(([name]) => name.toLowerCase() !== 'content-type'),
+const CROSS_ORIGIN_STRIPPED_HEADERS: ReadonlySet<string> = new Set([
+  'authorization',
+  'proxy-authorization',
+  'cookie',
+]);
+
+function withoutHeaders(
+  headers: Record<string, string>,
+  stripped: (name: string) => boolean,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(headers).filter(([name]) => !stripped(name.toLowerCase())),
   );
-  const { body: _body, method: _method, ...rest } = config;
-  return { ...rest, headers };
+}
+
+function leavesCredentialScope(from: URL, to: URL): boolean {
+  const downgradesProtocol = to.protocol !== from.protocol && to.protocol !== 'https:';
+  const leavesHost = to.host !== from.host && !to.host.endsWith(`.${from.host}`);
+  return downgradesProtocol || leavesHost;
+}
+
+// The same method rewrite and credential stripping follow-redirects applies, so a manual hop
+// sends what axios would have.
+function configAfterRedirect(
+  config: HttpRequestConfig,
+  status: number,
+  from: string,
+  to: string,
+): HttpRequestConfig {
+  let next = config;
+  if (next.method === 'POST' && [301, 302, 303].includes(status)) {
+    const { body: _body, method: _method, ...rest } = next;
+    next = { ...rest, headers: withoutHeaders(next.headers, (name) => name === 'content-type') };
+  }
+  if (leavesCredentialScope(new URL(from), new URL(to))) {
+    next = {
+      ...next,
+      headers: withoutHeaders(next.headers, (name) => CROSS_ORIGIN_STRIPPED_HEADERS.has(name)),
+    };
+  }
+  return next;
 }
 
 /**
- * Follows redirects one hop at a time, so every hop is charged to the host that receives it and
- * an excluded host is refused before it is contacted, where axios's own follow would send the
- * hop on the first host's budget from a synchronous hook that cannot wait for a slot.
+ * Follows redirects one hop at a time, so every hop is charged to the host that receives it,
+ * where axios's own follow would send the hop on the first host's budget from a synchronous hook
+ * that cannot wait for a slot.
  */
 async function followRedirectsWithinBudget(
   startUrl: string,
@@ -455,23 +466,20 @@ async function followRedirectsWithinBudget(
     limiter: HostRateLimiter;
     request: HttpRequestFn;
     assertUrl: (url: string) => Promise<{ toString(): string }>;
-    excludedHosts: readonly string[];
   },
 ): Promise<HttpRequestResult> {
   let current = startUrl;
   let hopConfig: HttpRequestConfig = { ...config, maxRedirects: 0 };
   for (let redirects = 0; ; redirects += 1) {
-    const host = hostOf(current);
-    if (isExcludedHostname(host, deps.excludedHosts)) throw new ExcludedHostFetchError(current);
     const target = current;
     const sent = hopConfig;
-    const result = await deps.limiter.run(host, () => deps.request(target, sent));
+    const result = await deps.limiter.run(hostOf(target), () => deps.request(target, sent));
     if (config.maxRedirects === 0 || !isRedirectStatus(result.status) || !result.location) {
       return { ...result, finalUrl: result.finalUrl || current };
     }
     if (redirects >= config.maxRedirects) throw tooManyRedirectsError(config.maxRedirects);
-    current = (await deps.assertUrl(new URL(result.location, current).toString())).toString();
-    hopConfig = configAfterRedirect(hopConfig, result.status);
+    current = (await deps.assertUrl(new URL(result.location, target).toString())).toString();
+    hopConfig = configAfterRedirect(hopConfig, result.status, target, current);
   }
 }
 

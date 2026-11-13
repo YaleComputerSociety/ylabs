@@ -1,7 +1,6 @@
 import fs from 'fs';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { EXCLUDED_HOST_ERROR_CODE } from '../../../utils/excludedHosts';
 import {
   HOST_THROTTLE_OVERRIDES,
   HostSlotWaitTimeoutError,
@@ -222,18 +221,78 @@ describe('fetchPageWithPolicy redirects', () => {
     );
   });
 
-  it('refuses a hop into an excluded host before it is sent', async () => {
+  const credentialHeaders = {
+    'User-Agent': 'fixture-agent',
+    Cookie: 'Session=fixture',
+    Authorization: 'Bearer fixture',
+    'Proxy-Authorization': 'Basic fixture',
+  };
+
+  const headersSentTo = (request: HttpRequestFn, url: string) =>
+    vi.mocked(request).mock.calls.find(([target]) => target === url)?.[1].headers;
+
+  it('drops credentials on a hop to another host, as axios would', async () => {
     const request = redirectingRequest();
 
-    await expect(
-      fetchPageWithPolicy('https://alias.example.org/short', {
-        assertUrl: passthroughAssert,
-        request,
-        excludedHosts: ['pages.example.org'],
-        limiter: new HostRateLimiter({ minIntervalMs: 0, machineWide: () => undefined }),
-      }),
-    ).rejects.toMatchObject({ code: EXCLUDED_HOST_ERROR_CODE });
-    expect(request).toHaveBeenCalledTimes(1);
+    await fetchPageWithPolicy('https://alias.example.org/short', {
+      assertUrl: passthroughAssert,
+      request,
+      headers: credentialHeaders,
+      limiter: new HostRateLimiter({ minIntervalMs: 0, machineWide: () => undefined }),
+    });
+
+    expect(headersSentTo(request, 'https://alias.example.org/short')).toEqual(credentialHeaders);
+    expect(headersSentTo(request, 'https://pages.example.org/landing')).toEqual({
+      'User-Agent': 'fixture-agent',
+    });
+  });
+
+  it('keeps credentials on a hop to the same host or one of its subdomains', async () => {
+    const request = vi.fn<HttpRequestFn>(async (url) => {
+      if (url === 'https://portal.example.org/start') {
+        return { status: 302, data: '', finalUrl: url, location: '/next' };
+      }
+      if (url === 'https://portal.example.org/next') {
+        return {
+          status: 302,
+          data: '',
+          finalUrl: url,
+          location: 'https://www.portal.example.org/done',
+        };
+      }
+      return { status: 200, data: '<html>done</html>', finalUrl: url };
+    });
+
+    await fetchPageWithPolicy('https://portal.example.org/start', {
+      assertUrl: passthroughAssert,
+      request,
+      headers: credentialHeaders,
+      limiter: new HostRateLimiter({ minIntervalMs: 0, machineWide: () => undefined }),
+    });
+
+    expect(headersSentTo(request, 'https://portal.example.org/next')).toEqual(credentialHeaders);
+    expect(headersSentTo(request, 'https://www.portal.example.org/done')).toEqual(
+      credentialHeaders,
+    );
+  });
+
+  it('drops credentials on a hop that downgrades https to http on the same host', async () => {
+    const request = vi.fn<HttpRequestFn>(async (url) =>
+      url.startsWith('https://')
+        ? { status: 301, data: '', finalUrl: url, location: 'http://portal.example.org/plain' }
+        : { status: 200, data: '<html>plain</html>', finalUrl: url },
+    );
+
+    await fetchPageWithPolicy('https://portal.example.org/secure', {
+      assertUrl: passthroughAssert,
+      request,
+      headers: credentialHeaders,
+      limiter: new HostRateLimiter({ minIntervalMs: 0, machineWide: () => undefined }),
+    });
+
+    expect(headersSentTo(request, 'http://portal.example.org/plain')).toEqual({
+      'User-Agent': 'fixture-agent',
+    });
   });
 
   it('turns a redirected form post into a plain GET, as axios would', async () => {

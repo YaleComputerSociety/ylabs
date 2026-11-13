@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  appliedProbeLoad,
   HOST_PROBE_RESULT_MARKER,
   ProbeUrlSampler,
   chooseProbeHosts,
@@ -147,6 +148,7 @@ describe('summaries', () => {
     const summary = summarizeHostProbe({
       host: 'medicine.yale.edu',
       urlsInDevelopment: 900,
+      load: { inFlight: 1, minIntervalMs: 1_500 },
       wallTimeMs: 12_000,
       records: [
         { firstStatus: 200, attempts: 1, outcome: 'ok', latencyMs: 100 },
@@ -156,6 +158,8 @@ describe('summaries', () => {
       ],
     });
     expect(summary).toMatchObject({
+      inFlight: 1,
+      minIntervalMs: 1_500,
       requests: 4,
       attempts: 8,
       firstAttemptRefused: 2,
@@ -175,11 +179,37 @@ describe('summaries', () => {
       startedAt: '2026-10-03T00:00:00.000Z',
       wallTimeMs: 12_000,
       codeSha: null,
+      requestedInFlight: 2,
       hosts: [summary],
     });
     expect(line.startsWith(`${HOST_PROBE_RESULT_MARKER} `)).toBe(true);
-    expect(JSON.parse(line.slice(HOST_PROBE_RESULT_MARKER.length + 1)).hosts[0].host).toBe(
-      'medicine.yale.edu',
-    );
+    const parsed = JSON.parse(line.slice(HOST_PROBE_RESULT_MARKER.length + 1));
+    expect(parsed.requestedInFlight).toBe(2);
+    expect(parsed.hosts[0]).toMatchObject({
+      host: 'medicine.yale.edu',
+      inFlight: 1,
+      minIntervalMs: 1_500,
+    });
+  });
+});
+
+describe('applied probe load', () => {
+  it('reports the machine budget when it is tighter than the requested load', () => {
+    expect(
+      appliedProbeLoad(
+        { inFlight: 2, minIntervalMs: 400 },
+        { concurrency: 1, minIntervalMs: 1_500 },
+      ),
+    ).toEqual({ inFlight: 1, minIntervalMs: 1_500 });
+  });
+
+  it('reports the requested load when the machine budget is looser or switched off', () => {
+    expect(
+      appliedProbeLoad({ inFlight: 2, minIntervalMs: 400 }, { concurrency: 4, minIntervalMs: 400 }),
+    ).toEqual({ inFlight: 2, minIntervalMs: 400 });
+    expect(appliedProbeLoad({ inFlight: 3, minIntervalMs: 400 }, undefined)).toEqual({
+      inFlight: 3,
+      minIntervalMs: 400,
+    });
   });
 });
