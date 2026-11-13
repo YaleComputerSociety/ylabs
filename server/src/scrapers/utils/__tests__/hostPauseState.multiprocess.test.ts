@@ -6,7 +6,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { hermeticChildEnvironment } from '../../../test/hermeticEnvironment';
 import { MachineHostBudgetLimiter } from '../machineHostBudget';
 
-const BUDGET_CLIENT = path.resolve(__dirname, 'fixtures/machineHostBudgetClient.ts');
 const PAUSE_CLIENT = path.resolve(__dirname, 'fixtures/hostPauseClient.ts');
 const FETCH_CLIENT = path.resolve(__dirname, 'fixtures/hostPauseFetchClient.ts');
 const SERVER_ROOT = path.resolve(__dirname, '../../../..');

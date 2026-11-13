@@ -392,15 +392,3 @@ describe('failing closed', () => {
     await expect(limiter.acquire(HOST)).rejects.toBeInstanceOf(HostBudgetUnavailableError);
   });
 });
-
-async function grantGapMs(limiter: MachineHostBudgetLimiter, host: string): Promise<number> {
-  const first = await limiter.acquire(host);
-  const firstAt = clock;
-  first();
-  await new Promise((resolve) => setImmediate(resolve));
-  const second = await limiter.acquire(host);
-  const gap = clock - firstAt;
-  second();
-  await new Promise((resolve) => setImmediate(resolve));
-  return gap;
-}
