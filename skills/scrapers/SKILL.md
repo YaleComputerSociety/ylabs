@@ -607,6 +607,7 @@ Inside a scrape run, `fetchPageWithPolicy` sends no request for a URL whose newe
 It throws `KnownDeadUrlError`, an `HttpStatusError` carrying that status, so a lane handles the skip exactly as it handles the answer it would have got.
 A URL that answers 404 or 410 during the run is remembered and not requested again in that run, and the run's `fetchMetrics.knownDeadUrlSkip` counts skips by stored verdict and by in-run repeat separately.
 The reason is load, not correctness: a dead citation answers the same 404 every pass, and a burst of 404s is what an auto-ban rule on a Drupal department site counts.
+The match keeps the scheme and ignores only `www.` and a trailing slash, so a plain-HTTP 404 never skips the `https:` page, and a verdict load that fails runs the scrape with nothing skipped and `knownDeadUrlSkip.loadFailed` set.
 Only the link-health probe re-checks a dead URL, and it does not route through `fetchPageWithPolicy`; 401, 403, 429, 5xx, timeouts and unresolvable hosts never reach the skip, because link-health records none of them as gone.
 A per-request `adapter` (a sweep page reuse hit, a benchmark replay) never reaches the network and is left alone.
 An expired deadline rejects with an `AxiosError` coded `ETIMEDOUT` whose message names the overall deadline, so the lane's own page-error path records it as one failed fetch and the run continues.

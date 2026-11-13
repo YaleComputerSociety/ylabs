@@ -23,6 +23,7 @@ export interface KnownDeadUrlStats {
   skipped: number;
   skippedByStoredVerdict: number;
   skippedAsRepeatInRun: number;
+  loadFailed?: true;
 }
 
 interface KnownDeadUrlScope {
@@ -33,11 +34,25 @@ interface KnownDeadUrlScope {
 
 const scopeStorage = new AsyncLocalStorage<KnownDeadUrlScope>();
 
+/**
+ * `sourceLinkHealthKey` plus the scheme. Only `www.` and a trailing slash are cosmetic here: a
+ * plain-HTTP 404 must not skip the `https:` page, which a host often still serves.
+ */
+export function knownDeadUrlKey(url: unknown): string | null {
+  const key = sourceLinkHealthKey(url);
+  if (!key || typeof url !== 'string') return null;
+  try {
+    return `${new URL(url.trim()).protocol}//${key}`;
+  } catch {
+    return null;
+  }
+}
+
 const checkedAtMs = (verdict: StoredLinkVerdict): number =>
   new Date(verdict.checkedAt as string | number | Date).getTime();
 
 /**
- * The URLs a recent link-health probe found gone, keyed as `sourceLinkHealthKey` keys them.
+ * The URLs a recent link-health probe found gone, keyed by `knownDeadUrlKey`.
  *
  * Only a 404 or 410 counts, the two answers that say the resource is gone. 401, 403, 429, 5xx,
  * timeouts and unresolvable hosts are recorded as UNKNOWN or carry no status, so none of them
@@ -51,7 +66,7 @@ export function goneStatusByUrlKey(
   const horizonMs = nowMs - SOURCE_LINK_HEALTH_FRESHNESS_DAYS * MILLISECONDS_PER_DAY;
   const newest = new Map<string, { atMs: number; goneStatus?: number }>();
   for (const verdict of verdicts) {
-    const key = sourceLinkHealthKey(verdict.url);
+    const key = knownDeadUrlKey(verdict.url);
     const atMs = checkedAtMs(verdict);
     if (!key || !Number.isFinite(atMs) || atMs < horizonMs) continue;
     const current = newest.get(key);
@@ -107,13 +122,26 @@ export async function withKnownDeadUrlScope<T>(
   run: () => Promise<T>,
   loadVerdicts: () => Promise<Iterable<StoredLinkVerdict>> = loadStoredLinkVerdicts,
 ): Promise<{ value: T; stats: KnownDeadUrlStats }> {
-  const goneStatusByKey = goneStatusByUrlKey(await loadVerdicts());
+  let loadFailed = false;
+  const goneStatusByKey = await loadVerdicts().then(
+    (verdicts) => goneStatusByUrlKey(verdicts),
+    (error: unknown) => {
+      loadFailed = true;
+      console.warn(
+        `[known-dead-urls] stored link-health verdicts did not load, so this run skips nothing: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return new Map<string, number>();
+    },
+  );
   const stats: KnownDeadUrlStats = {
     known: goneStatusByKey.size,
     learned: 0,
     skipped: 0,
     skippedByStoredVerdict: 0,
     skippedAsRepeatInRun: 0,
+    ...(loadFailed ? { loadFailed: true as const } : {}),
   };
   const value = await scopeStorage.run({ goneStatusByKey, learnedKeys: new Set(), stats }, run);
   return { value, stats };
@@ -121,7 +149,7 @@ export async function withKnownDeadUrlScope<T>(
 
 export function knownDeadUrlStatus(url: string): number | undefined {
   const scope = scopeStorage.getStore();
-  const key = scope ? sourceLinkHealthKey(url) : null;
+  const key = scope ? knownDeadUrlKey(url) : null;
   return key ? scope?.goneStatusByKey.get(key) : undefined;
 }
 
@@ -134,7 +162,7 @@ export function recordKnownDeadUrlSkip(url: string): number | undefined {
   const scope = scopeStorage.getStore();
   if (status === undefined || !scope) return status;
   scope.stats.skipped += 1;
-  const key = sourceLinkHealthKey(url);
+  const key = knownDeadUrlKey(url);
   if (key && scope.learnedKeys.has(key)) scope.stats.skippedAsRepeatInRun += 1;
   else scope.stats.skippedByStoredVerdict += 1;
   return status;
@@ -146,7 +174,7 @@ export function recordKnownDeadUrlSkip(url: string): number | undefined {
  */
 export function rememberGoneUrl(url: string, status: number): void {
   const scope = scopeStorage.getStore();
-  const key = scope && RESOURCE_GONE_STATUSES.has(status) ? sourceLinkHealthKey(url) : null;
+  const key = scope && RESOURCE_GONE_STATUSES.has(status) ? knownDeadUrlKey(url) : null;
   if (!scope || !key || scope.goneStatusByKey.has(key)) return;
   scope.goneStatusByKey.set(key, status);
   scope.learnedKeys.add(key);
@@ -157,7 +185,7 @@ export function withKnownDeadUrlFetchMetrics(
   result: ScraperResult,
   stats: KnownDeadUrlStats,
 ): ScraperResult {
-  if (stats.skipped === 0) return result;
+  if (stats.skipped === 0 && !stats.loadFailed) return result;
   const fetchMetrics: ScraperFetchMetrics = result.fetchMetrics ?? {
     attempts: [],
     summary: {

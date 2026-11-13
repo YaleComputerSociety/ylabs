@@ -46,8 +46,8 @@ describe('goneStatusByUrlKey (#6210)', () => {
       NOW,
     );
     expect([...gone.keys()].sort()).toEqual([
-      'fixture-dept.yale.edu/people/fixture-gone-page-404',
-      'fixture-dept.yale.edu/people/fixture-gone-page-410',
+      'https://fixture-dept.yale.edu/people/fixture-gone-page-404',
+      'https://fixture-dept.yale.edu/people/fixture-gone-page-410',
     ]);
   });
 
@@ -77,7 +77,7 @@ describe('fetchPageWithPolicy inside a known-dead scope (#6210)', () => {
   it('sends no request for a known-dead URL and answers the 404 it would have got', async () => {
     const request = okRequest();
     const { value: error, stats } = await scope(() =>
-      fetchPageWithPolicy(`http://www.${DEAD.slice('https://'.length)}/`, {
+      fetchPageWithPolicy(`https://www.${DEAD.slice('https://'.length)}/`, {
         ...base,
         request,
       }).catch((e: unknown) => e),
@@ -118,6 +118,29 @@ describe('fetchPageWithPolicy inside a known-dead scope (#6210)', () => {
       skippedByStoredVerdict: 0,
       skippedAsRepeatInRun: 2,
     });
+  });
+
+  it('never lets a plain-HTTP 404 skip the https page', async () => {
+    const request = okRequest();
+    const { stats } = await withKnownDeadUrlScope(
+      () => fetchPageWithPolicy(DEAD, { ...base, request }),
+      async () => [verdict(DEAD.replace('https://', 'http://'), 'UNAVAILABLE', 404, 1)],
+    );
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(stats.skipped).toBe(0);
+  });
+
+  it('fails open when the stored verdicts cannot load, running the scrape and skipping nothing', async () => {
+    const request = okRequest();
+    const { value, stats } = await withKnownDeadUrlScope(
+      () => fetchPageWithPolicy(DEAD, { ...base, request }).then(() => 'ran'),
+      async () => {
+        throw new Error('fixture load failure');
+      },
+    );
+    expect(value).toBe('ran');
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(stats).toMatchObject({ known: 0, skipped: 0, loadFailed: true });
   });
 
   it('skips nothing outside a scrape-run scope', async () => {
