@@ -35,11 +35,11 @@ const read = (runDay: number, claims: string[] = []): UserPageRead => ({
 });
 
 describe('dept-faculty-roster may retract an ORCID its own page no longer states (#5991)', () => {
-  it('declares orcid beside email for the roster lane only', () => {
+  it('declares orcid beside email for the roster lane and the profile backfill (#6003)', () => {
     expect(contract.retractableFields).toEqual(['email', 'orcid']);
     expect(
       userFieldRetractionContractFor('official-profile-pi-backfill')?.retractableFields,
-    ).toEqual(['email']);
+    ).toEqual(['email', 'orcid']);
     expect(USER_ORCID_FIELD_RETRACTION_ROLLBACK_REASON).toMatch(/ORCID/);
   });
 

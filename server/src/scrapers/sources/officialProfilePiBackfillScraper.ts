@@ -17,7 +17,11 @@ import {
 import { VisibilityReleaseQueueItem } from '../../models/visibilityReleaseQueueItem';
 import { publicStudentVisibilityTiers } from '../../models/studentVisibility';
 import { plausiblePersonOrcid } from '../../utils/orcid';
-import { singlePlausibleOrcid, statedOrcidCandidates } from '../utils/statedOrcid';
+import {
+  singlePlausibleOrcid,
+  statedOrcidCandidates,
+  subtreeMentionsOrcid,
+} from '../utils/statedOrcid';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { researcherEmail, researcherNetid } from '../../utils/researcherIdentity';
 import { looksLikeYaleNetid } from '../../utils/yaleNetid';
@@ -195,6 +199,8 @@ export interface OfficialProfileIdentity {
   emailOnly?: boolean;
   /** The page states no email address at all, so the lane may attest none (#5711). */
   statesNoEmailAddress?: boolean;
+  /** The page states no ORCID link and nothing labelled ORCID, so the lane may attest none (#6003). */
+  statesNoOrcid?: boolean;
   inMemoriam?: boolean;
   appointmentEndedOn?: string;
 }
@@ -3178,6 +3184,13 @@ function extractOrcid($: cheerio.CheerioAPI): string | undefined {
   return body ? singlePlausibleOrcid(statedOrcidCandidates(body)) : undefined;
 }
 
+// A page whose ORCID the reader refused still states one, so only a page that mentions no ORCID
+// at all is a witness that the lane's earlier value is gone (#6003, the #5991 roster contract).
+function pageStatesNoOrcid($: cheerio.CheerioAPI): boolean {
+  const body = $('body').get(0);
+  return body ? !subtreeMentionsOrcid(body) : false;
+}
+
 /**
  * The Yale directory pairing the page's own address with the entity's own netid names the page's
  * person more strongly than display-name tokens do, so a compound given name spelled as one word
@@ -3843,6 +3856,7 @@ export function extractOfficialProfileIdentity(
       : '';
   const researchInterests = terseResearchFocus ? [terseResearchFocus] : extractedResearchInterests;
   const imageUrl = extractImageUrl($, profiles, profileUrl);
+  const orcid = extractOrcid($);
   return {
     canonicalUrl,
     fetchedUrl,
@@ -3854,7 +3868,8 @@ export function extractOfficialProfileIdentity(
     ...(bio ? { bio } : {}),
     researchInterests,
     ...(profileNetidSlug ? { profileNetid: profileNetidSlug } : {}),
-    orcid: extractOrcid($),
+    orcid,
+    ...(!orcid && pageStatesNoOrcid($) ? { statesNoOrcid: true } : {}),
     ...(bio ? {} : hasSuppressedProfileBioText($) ? { suppressDerivedBio: true } : {}),
     ...(!email && pageStatesNoEmailAddress($) ? { statesNoEmailAddress: true } : {}),
     ...profileDepartureEvidence(html, profiles, new Date(), displayName),
@@ -4089,7 +4104,17 @@ export function identityToUserObservations(
       });
     }
   }
-  return observations;
+  const attestsNoOrcid = includeProfileEnrichment && !identity.orcid && identity.statesNoOrcid;
+  return attestsNoOrcid
+    ? observations.map((observation) => withAbsenceClaim(observation, 'orcid'))
+    : observations;
+}
+
+function withAbsenceClaim(observation: ObservationInput, field: string): ObservationInput {
+  return {
+    ...observation,
+    assertsNoValueFor: [...new Set([...(observation.assertsNoValueFor ?? []), field])],
+  };
 }
 
 function shortOfficialProfileBio(value: string): string {
