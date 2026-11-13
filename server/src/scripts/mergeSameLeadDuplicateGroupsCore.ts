@@ -4,6 +4,7 @@ import {
   type UrlIdentityLaneVerdict,
 } from './researchEntityPiDedupeCore';
 import { normalizeWebsiteUrlIdentityKey } from '../utils/websiteUrlIdentityKey';
+import { isPersonScopedResearchEntityShape } from '../models/storedVocabularies';
 
 /**
  * Merge the duplicate-URL groups whose members share a lead person AND carry something
@@ -324,4 +325,16 @@ export const ownSiteIdentityPairs = <Row extends { _id: unknown; websiteUrl?: un
         ),
     )
     .map(([url, members]) => ({ url, members }));
+};
+
+const textOf = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
+
+/**
+ * A person's own research row, never a lab. `entityType` decides when present, because `kind`
+ * defaults to `lab` and a person's row can keep that default (#6206).
+ */
+export const isPersonsOwnResearchRow = (row: { entityType?: unknown; kind?: unknown }): boolean => {
+  const entityType = textOf(row.entityType).toUpperCase();
+  if (entityType) return entityType !== 'LAB' && isPersonScopedResearchEntityShape(row);
+  return isPersonScopedResearchEntityShape(row) && textOf(row.kind).toLowerCase() !== 'lab';
 };

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  isPersonsOwnResearchRow,
   ownSiteIdentityPairs,
   planSameLeadCorroboratedMerges,
   subjectTwinAnchor,
@@ -127,5 +128,19 @@ describe('own websites that differ only by www (#6206)', () => {
     );
 
     expect(pairs).toEqual([]);
+  });
+});
+
+describe("a person's own research row (#6206)", () => {
+  it('is decided by entityType, so a person row that kept the default kind is still one', () => {
+    expect(isPersonsOwnResearchRow({ entityType: 'FACULTY_RESEARCH_AREA', kind: 'lab' })).toBe(
+      true,
+    );
+    expect(isPersonsOwnResearchRow({ entityType: 'LAB', kind: 'lab' })).toBe(false);
+  });
+
+  it('falls back to kind only when entityType is absent', () => {
+    expect(isPersonsOwnResearchRow({ kind: 'individual' })).toBe(true);
+    expect(isPersonsOwnResearchRow({ kind: 'lab' })).toBe(false);
   });
 });

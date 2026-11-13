@@ -33,6 +33,7 @@ import { SAME_LEAD_MERGE_CARRIED_FIELDS } from './mergeSameLeadDuplicateGroupsCo
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import {
+  isPersonsOwnResearchRow,
   isShellSlug,
   ownSiteIdentityPairs,
   planSameLeadCorroboratedMerges,
@@ -42,7 +43,6 @@ import {
   summarizeSameLeadMergeHolds,
   type SameLeadMergeMember,
 } from './mergeSameLeadDuplicateGroupsCore';
-import { isPersonScopedResearchEntityShape } from '../models/storedVocabularies';
 import { planUrlIdentityLaneVerdicts } from './dedupeResearchEntitiesByPi';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -68,11 +68,6 @@ const fundingEvidenceKeys = (row: Record<string, any>): Set<string> => {
   return keys;
 };
 const text = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
-
-const isPersonsOwnResearchRow = (row: Record<string, any>): boolean =>
-  isPersonScopedResearchEntityShape(row) &&
-  text(row.entityType).toUpperCase() !== 'LAB' &&
-  text(row.kind).toLowerCase() !== 'lab';
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
