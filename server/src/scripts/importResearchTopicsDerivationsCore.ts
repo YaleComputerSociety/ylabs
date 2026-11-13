@@ -42,7 +42,7 @@ export const IMPORT_RESEARCH_TOPICS_USAGE = [
   '  Import, dry run:        --input=<a.json[,b.json]> [--output=<path.json>]',
   `  Import, apply:          --input=<a.json[,b.json]> --apply ${IMPORT_RESEARCH_TOPICS_CONFIRM_FLAG} (Development only, DEV_WRITE_OWNER set, takes the Development write lease)`,
   '  Files are written mode 600 under a temp root or ~/Personal/ylabs-experiments (batch runs: descriptions/batch-run/).',
-  '  A readings file is {"writer": "claude-agent:topics-<first 8 of promptHash>", "promptHash", "rows": [{"slug", "inputHash", "rawOutput"}]}; an openai or any other writer, a promptHash mismatch, a stale inputHash and a reading with no topic left after the filters are refused.',
+  '  A readings file is {"writer": "claude-agent:topics-<first 8 of promptHash>", "promptHash", "rows": [{"slug", "inputHash", "rawOutput"}]}; an openai or any other writer, a promptHash mismatch, and a stale inputHash are refused; a reading is stored raw and judged by the filters at resolve.',
   `  ${IMPORT_RESEARCH_TOPICS_GRADING_GATE}`,
 ].join('\n');
 
@@ -491,14 +491,10 @@ export async function importResearchTopicReadings(input: {
     );
     row.topics = preview.topics;
     row.refusals = refusalCounts(preview.refusals);
-    if (preview.topics.length === 0) {
-      row.outcome = 'refused';
-      continue;
-    }
-    report.rowsWithTopicsAfterFilters += 1;
+    if (preview.topics.length > 0) report.rowsWithTopicsAfterFilters += 1;
 
     if (input.mode === 'validate-only') {
-      row.outcome = 'accepted';
+      row.outcome = preview.topics.length > 0 ? 'accepted' : 'refused';
       continue;
     }
     const store = input.store as ImportedTopicsStore;

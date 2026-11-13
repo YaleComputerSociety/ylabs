@@ -271,37 +271,15 @@ describe('importResearchTopicReadings', () => {
     expect(refused.rows[0].outcome).toBe('refused');
   });
 
-  it('stores nothing for a reading the filters leave with no topics, so a later reading can fill the key', async () => {
+  it('stores a reading raw, so the filters judge it at resolve and a filter change re-judges it at no model cost', async () => {
     const { store, records } = memoryStore();
-    for (const apply of [false, true]) {
-      const empty = await importOnce(
-        readingsFile([readingRow({ rawOutput: { topics: [], field: null } })]),
-        store,
-        { apply },
-      );
-      expect(empty.rows[0].outcome).toBe('refused');
-      expect(empty).toMatchObject({ stored: 0, plannedStores: 0, rowsWithTopicsAfterFilters: 0 });
-    }
-    const offPage = await importOnce(
-      readingsFile([
-        readingRow({
-          rawOutput: {
-            topics: [
-              { topic: 'Coastal kelp', quote: 'coastal kelp nurseries on deep reefs', url: HOME },
-            ],
-            field: null,
-          },
-        }),
-      ]),
+    const report = await importOnce(
+      readingsFile([readingRow({ rawOutput: { topics: [], field: null } })]),
       store,
     );
-    expect(offPage.rows[0].outcome).toBe('refused');
-    expect(records.size).toBe(0);
-    expect(store.has).not.toHaveBeenCalled();
-
-    const later = await importOnce(readingsFile(), store);
-    expect(later.rows[0].outcome).toBe('stored');
-    expect(records.size).toBe(1);
+    expect(report.rows[0].outcome).toBe('stored');
+    expect(report).toMatchObject({ stored: 1, rowsWithTopicsAfterFilters: 0 });
+    expect([...records.values()][0]).toMatchObject({ extractedTopics: [] });
   });
 
   it('counts a row with no current page text', async () => {
