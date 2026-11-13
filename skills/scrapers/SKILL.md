@@ -1616,6 +1616,7 @@ Dedupe prefers the role-bearing card rather than the first card in the DOM, beca
 
 - A member the roster stops listing is retired by the lane itself, never by hand (#3781).
 Each read emits a `centerRosterHealth` snapshot of every member key, role claim and membership key it listed, and two admitted reads that omit a claim retire its observations and end this source's role edge for it, including a stale lead edge; `docs/research-data-pipeline.md` has the admission rules and the freeze guards.
+Since #6084 the snapshot also records the section each listing sits under: a person listed under a past or emeritus section in two reads in distinct runs is departed and their edge ends, while a person omitted from every section is retired only beside a departure witness from their own page, so a new extractor must file its cards under their headings rather than drop non-current sections.
 A read also adopts the provenance-less edges of a person it lists whose identity resolves to one researcher, through the profile URL or the member page's identity evidence, so that pass governs them too (#3799); adoption never follows a name and never touches an edge that names a source.
 So a config must keep one center entity key to itself, and a pager change must still end on the roster's own end, or the snapshot stops being admissible.
 - A config whose row a merge archived is read onto the live survivor (#4021).

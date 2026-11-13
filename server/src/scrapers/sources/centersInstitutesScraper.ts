@@ -36,7 +36,13 @@ import {
   buildCenterRosterHealthSnapshot,
   CENTER_ROSTER_HEALTH_ENTITY_TYPE,
   CENTER_ROSTER_HEALTH_FIELD,
+  centerRosterSectionEndsMembership,
+  resolveCenterRosterSections,
+  type CenterRosterMemberSection,
   type CenterRosterReadMember,
+  type CenterRosterSectionKind,
+  type CenterRosterSectionListing,
+  type CenterRosterSectionRecord,
   type CenterRosterStopReason,
 } from '../centerRosterRetirement';
 import { officialProfileIdentityKey, rosterMembershipKey } from '../utils/rosterMembershipKey';
@@ -95,6 +101,7 @@ import {
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { sanitizePersonTitle } from '../../utils/titleHygiene';
 import { statesAnyFacultyAppointment } from './yaleDirectoryScraper';
+import { titleHoldsOnlyEmeritusAppointments } from '../../services/emeritusLeadWayIn';
 import { screenedRosterRole } from '../rosterStaffTitleScreen';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
@@ -107,6 +114,13 @@ const MEMBER_PROFILE_TITLE_CACHE_PREFIX = 'member-profile-title:v1:';
 export type CenterKind = 'center' | 'institute' | 'program' | 'initiative' | 'core_facility';
 export type MemberRole = 'director' | 'co-director' | 'core-faculty' | 'affiliated';
 
+export interface CenterMemberSection {
+  label: string;
+  kind: CenterRosterSectionKind;
+}
+
+export type CenterMemberCurrentStatus = 'current' | 'past' | 'emeritus';
+
 /** A single person extracted from a center's people page. */
 export interface CenterMember {
   name: string;
@@ -115,6 +129,57 @@ export interface CenterMember {
   role?: MemberRole;
   identityEvidence?: RosterMemberIdentityEvidence;
   profileTitle?: string;
+  sections?: CenterMemberSection[];
+  currentStatus?: CenterMemberCurrentStatus;
+  sectionLabel?: string;
+  ownPageRead?: boolean;
+}
+
+const PAST_ROSTER_SECTION_LABEL =
+  /\b(?:alumni|alumnae|alumnus|alums?|former|past|previous|retired|in memoriam)\b/i;
+const EMERITUS_ROSTER_SECTION_LABEL = /\bemerit(?:us|a|i|ae)\b/i;
+const CURRENT_ROSTER_SECTION_LABEL = /\bcurrent\b/i;
+const NON_MEMBERSHIP_SECTION_LABEL =
+  /\b(?:events?|seminars?|talks?|lectures?|workshops?|conferences?|news|speakers?|publications?|projects?|courses?)\b/i;
+const STANDING_BODY_SECTION_LABEL =
+  /\b(?:boards?|councils?|committees?|panels?|trustees?|advisory|advisors?|advisers?|cabinet|association|network)\b/i;
+
+/**
+ * What a section heading or person-type filter label says about the people under it. Only a
+ * label that names a past or emeritus membership moves a listing out of current; a label
+ * that also says "current", names events, talks or news rather than members, or names a
+ * standing body such as an alumni board or council, never does.
+ */
+export function classifyCenterRosterSectionLabel(
+  label: string | undefined,
+): CenterRosterSectionKind {
+  const text = normalizedText(label);
+  if (!text) return 'unclassified';
+  if (NON_MEMBERSHIP_SECTION_LABEL.test(text)) return 'unclassified';
+  if (STANDING_BODY_SECTION_LABEL.test(text)) return 'unclassified';
+  if (CURRENT_ROSTER_SECTION_LABEL.test(text)) return 'current';
+  if (EMERITUS_ROSTER_SECTION_LABEL.test(text)) return 'emeritus';
+  if (PAST_ROSTER_SECTION_LABEL.test(text)) return 'past';
+  return 'current';
+}
+
+function withSection(member: CenterMember, section: CenterMemberSection | undefined): CenterMember {
+  if (!section?.label) return member;
+  const sections = member.sections ?? [];
+  if (sections.some((entry) => entry.label === section.label && entry.kind === section.kind)) {
+    return member;
+  }
+  member.sections = [...sections, section];
+  return member;
+}
+
+export function ownPageStatesCurrentAppointment(profileTitle: string | undefined): boolean {
+  const title = normalizedText(profileTitle);
+  return (
+    Boolean(title) &&
+    statesAnyFacultyAppointment(title) &&
+    !titleHoldsOnlyEmeritusAppointments(title)
+  );
 }
 
 export const ROSTER_MEMBER_PROFILE_TITLE_FIELD = 'profileTitle';
@@ -465,10 +530,40 @@ function inferRole(title: string | undefined, unitName?: string): MemberRole {
  *     <div class="node-teaser__professional-title">Title…</div>
  *   </article>
  */
+const SECTION_HEADINGS = 'h1, h2, h3, h4, h5, h6';
+const SITE_CHROME =
+  'nav, footer, aside, [role="navigation"], [role="banner"], [role="contentinfo"]';
+
+/**
+ * The heading each card sits under, in document order: the last content heading before
+ * the card, ignoring site chrome and headings inside a card. A flat listing with no such
+ * heading has no section, which reads as current exactly as before (#6084).
+ */
+function sectionHeadingsByCard(
+  $: cheerio.CheerioAPI,
+  cardSelector: string,
+): Map<unknown, CenterMemberSection> {
+  const byCard = new Map<unknown, CenterMemberSection>();
+  let current: CenterMemberSection | undefined;
+  $(`${SECTION_HEADINGS}, ${cardSelector}`).each((_i, el) => {
+    const element = $(el);
+    if (element.is(cardSelector)) {
+      if (current) byCard.set(el, current);
+      return;
+    }
+    if (element.closest(cardSelector).length > 0 || element.closest(SITE_CHROME).length > 0) return;
+    const label = normalizedText(element.text());
+    current = label ? { label, kind: classifyCenterRosterSectionLabel(label) } : undefined;
+  });
+  return byCard;
+}
+
 export const nodeTeaserPersonExtractor: CenterExtractor = (html, ctx) => {
   const $ = cheerio.load(html);
   const members: CenterMember[] = [];
-  $('article.node-teaser--person').each((_i, el) => {
+  const cardSelector = 'article.node-teaser--person';
+  const sectionByCard = sectionHeadingsByCard($, cardSelector);
+  $(cardSelector).each((_i, el) => {
     const card = $(el);
     const link = card.find('.node-teaser__heading a').first();
     const name = link.text().trim();
@@ -476,10 +571,47 @@ export const nodeTeaserPersonExtractor: CenterExtractor = (html, ctx) => {
     const href = link.attr('href') || '';
     const profileUrl = href ? absolutize(href, ctx.pageUrl) : undefined;
     const title = card.find('.node-teaser__professional-title').first().text().trim() || undefined;
-    members.push({ name, profileUrl, title, role: inferRole(title, ctx.centerName) });
+    members.push(
+      withSection(
+        { name, profileUrl, title, role: inferRole(title, ctx.centerName) },
+        sectionByCard.get(el),
+      ),
+    );
   });
   return { members };
 };
+
+/**
+ * The person-type filter a listing offers (`select[name="person_type"]` on the shared
+ * economics Drupal theme), whose options include Alumni and Emeritus Faculty. The unfiltered
+ * listing mixes every type with no section, so a filter is the only place the page says who
+ * is a past member.
+ */
+export interface PersonTypeFilterOption {
+  param: string;
+  value: string;
+  label: string;
+  kind: CenterRosterSectionKind;
+}
+
+export function personTypeFilterOptions(html: string): PersonTypeFilterOption[] {
+  const $ = cheerio.load(html);
+  const options: PersonTypeFilterOption[] = [];
+  const seen = new Set<string>();
+  $('select[name="person_type"] option').each((_i, el) => {
+    const value = normalizedText($(el).attr('value'));
+    const label = normalizedText($(el).text());
+    if (!value || value.toLowerCase() === 'all' || !label || seen.has(value)) return;
+    seen.add(value);
+    options.push({
+      param: 'person_type',
+      value,
+      label,
+      kind: classifyCenterRosterSectionLabel(label),
+    });
+  });
+  return options;
+}
 
 /**
  * Wu Tsai Institute (`wti.yale.edu/humans/faculty`).
@@ -739,8 +871,9 @@ function collectPeopleCards(
   root: cheerio.Cheerio<any>,
   ctx: ExtractorCtx,
   selectors: PeopleCardSelectors,
-  seen: Set<string>,
+  seen: Map<string, CenterMember>,
   members: CenterMember[],
+  section?: CenterMemberSection,
 ): void {
   root.find(selectors.card).each((_i, el) => {
     const card = $(el);
@@ -750,8 +883,11 @@ function collectPeopleCards(
     const href = link.attr('href') || '';
     // Two members can link the same lab site, so the name is part of the key (#3787).
     const dedupeKey = `${href}|${slugify(name)}`;
-    if (seen.has(dedupeKey)) return;
-    seen.add(dedupeKey);
+    const listed = seen.get(dedupeKey);
+    if (listed) {
+      withSection(listed, section);
+      return;
+    }
     const profileUrl = href ? absolutize(href, ctx.pageUrl) : undefined;
     const subheading = selectors.subheading
       ? card.find(selectors.subheading).first().text().replace(/\s+/g, ' ').trim()
@@ -760,12 +896,17 @@ function collectPeopleCards(
       ? card.find(selectors.snippet).first().text().replace(/\s+/g, ' ').trim()
       : '';
     const roleText = [subheading, snippet].filter(Boolean).join(' ') || undefined;
-    members.push({
-      name,
-      profileUrl,
-      title: subheading || undefined,
-      role: inferRole(roleText, ctx.centerName),
-    });
+    const member = withSection(
+      {
+        name,
+        profileUrl,
+        title: subheading || undefined,
+        role: inferRole(roleText, ctx.centerName),
+      },
+      section,
+    );
+    seen.set(dedupeKey, member);
+    members.push(member);
   });
 }
 
@@ -776,8 +917,7 @@ function extractPeopleCards(
 ): ExtractorResult {
   const $ = cheerio.load(html);
   const members: CenterMember[] = [];
-  const seen = new Set<string>();
-  collectPeopleCards($, $.root(), ctx, selectors, seen, members);
+  collectPeopleCards($, $.root(), ctx, selectors, new Map(), members);
   return { members };
 }
 
@@ -789,13 +929,19 @@ function extractPeopleCardsInSections(
 ): ExtractorResult {
   const $ = cheerio.load(html);
   const members: CenterMember[] = [];
-  const seen = new Set<string>();
+  const seen = new Map<string, CenterMember>();
   $(scope.heading).each((_i, headingEl) => {
     const headingText = $(headingEl).text().replace(/\s+/g, ' ').trim();
-    if (!headingText || !scope.keepHeading(headingText)) return;
+    if (!headingText) return;
+    const kind = classifyCenterRosterSectionLabel(headingText);
+    const endsMembership = centerRosterSectionEndsMembership(kind);
+    if (!endsMembership && !scope.keepHeading(headingText)) return;
     const sectionRoot = $(headingEl).closest(scope.root);
     const root = sectionRoot.length > 0 ? sectionRoot : $(headingEl).parent();
-    collectPeopleCards($, root, ctx, selectors, seen, members);
+    collectPeopleCards($, root, ctx, selectors, seen, members, {
+      label: headingText,
+      kind: endsMembership ? kind : 'current',
+    });
   });
   return { members };
 }
@@ -842,7 +988,7 @@ function extractPeopleCardsWhere(
     .filter((_i, el) => !keepCard($, $(el)))
     .remove();
   const members: CenterMember[] = [];
-  collectPeopleCards($, $.root(), ctx, selectors, new Set<string>(), members);
+  collectPeopleCards($, $.root(), ctx, selectors, new Map(), members);
   return { members };
 }
 
@@ -1005,17 +1151,23 @@ export const fdsUsersGridExtractor: CenterExtractor = (html, ctx) => {
 export const wordpressBlockParagraphRosterExtractor: CenterExtractor = (html, ctx) => {
   const $ = cheerio.load(html);
   const members: CenterMember[] = [];
-  const seen = new Set<string>();
-  let underFacultyHeading = false;
+  const seen = new Map<string, CenterMember>();
+  let section: CenterMemberSection | undefined;
   $('.entry-content')
     .find('h2, p.wp-block-paragraph')
     .each((_i, el) => {
       const block = $(el);
       if (el.tagName === 'h2') {
-        underFacultyHeading = FACULTY_ROSTER_SECTION_HEADING.test(block.text());
+        const label = normalizedText(block.text());
+        const kind = classifyCenterRosterSectionLabel(label);
+        section = centerRosterSectionEndsMembership(kind)
+          ? { label, kind }
+          : FACULTY_ROSTER_SECTION_HEADING.test(label)
+            ? { label, kind: 'current' }
+            : undefined;
         return;
       }
-      if (!underFacultyHeading || block.find('em').length === 0) return;
+      if (!section || block.find('em').length === 0) return;
       const link = block
         .find('a')
         .filter((_j, anchor) => $(anchor).text().trim().length > 0)
@@ -1023,14 +1175,23 @@ export const wordpressBlockParagraphRosterExtractor: CenterExtractor = (html, ct
       const name = link.text().replace(/\s+/g, ' ').trim();
       if (!name) return;
       const slug = slugify(name);
-      if (!slug || seen.has(slug)) return;
-      seen.add(slug);
+      if (!slug) return;
+      const listed = seen.get(slug);
+      if (listed) {
+        withSection(listed, section);
+        return;
+      }
       const href = link.attr('href') || '';
-      members.push({
-        name,
-        profileUrl: href ? absolutize(href, ctx.pageUrl) : undefined,
-        role: 'core-faculty',
-      });
+      const member = withSection(
+        {
+          name,
+          profileUrl: href ? absolutize(href, ctx.pageUrl) : undefined,
+          role: 'core-faculty',
+        },
+        section,
+      );
+      seen.set(slug, member);
+      members.push(member);
     });
   return { members };
 };
@@ -1819,6 +1980,12 @@ export function memberObservationsForEntityKey(
       ...(member.profileUrl ? { sourceUrl: member.profileUrl } : {}),
     });
   }
+  if (member.currentStatus) {
+    obs.push({ ...base, field: 'currentStatus', value: member.currentStatus });
+  }
+  if (member.sectionLabel) {
+    obs.push({ ...base, field: 'sectionLabel', value: member.sectionLabel });
+  }
   return obs;
 }
 
@@ -1895,10 +2062,88 @@ export interface CenterRosterReadOutcome {
   stopReason: CenterRosterStopReason;
 }
 
+interface ListingPagesRead {
+  members: CenterMember[];
+  childCenters: ChildCenter[];
+  /** Every card of every page read, before the cross-page dedupe, so each section is whole. */
+  listings: Array<{ member: CenterMember; pageIndex: number }>;
+  pagesFetched: number;
+  stopReason: CenterRosterStopReason;
+  firstPageUrl: string;
+  firstPageHtml: string;
+}
+
+export interface ListingStageRead extends ListingPagesRead {
+  key: string;
+  personTypeFilter: boolean;
+  /** A filter pass files every card under the filter's own label, whatever headings it has. */
+  filterSection?: CenterMemberSection;
+}
+
+export function personTypeFilterUrl(baseUrl: string, option: PersonTypeFilterOption): string {
+  try {
+    const url = new URL(baseUrl);
+    url.searchParams.set(option.param, option.value);
+    return url.toString();
+  } catch {
+    return baseUrl;
+  }
+}
+
+export function centerMemberKey(centerEntityKey: string, name: string): string {
+  const slug = slugify(normalizeName(name));
+  return centerEntityKey && slug ? `${centerEntityKey}:${slug}` : '';
+}
+
+export function centerRosterSectionListings(
+  centerEntityKey: string,
+  stages: readonly Pick<ListingStageRead, 'key' | 'listings' | 'filterSection'>[],
+): CenterRosterSectionListing[] {
+  return stages.flatMap((stage) =>
+    stage.listings.flatMap(({ member, pageIndex }) => {
+      const memberKey = centerMemberKey(centerEntityKey, member.name);
+      if (!memberKey) return [];
+      const sections: CenterMemberSection[] = stage.filterSection
+        ? [stage.filterSection]
+        : member.sections && member.sections.length > 0
+          ? member.sections
+          : [{ label: '', kind: 'unclassified' }];
+      return sections.map((section) => ({
+        memberKey,
+        label: section.label,
+        kind: section.kind,
+        stageKey: stage.key,
+        pageIndex,
+      }));
+    }),
+  );
+}
+
+/**
+ * The status a member's observations carry: only a past or emeritus section moves it out of
+ * current, and an emeritus listing loses to a current appointment the member's own page
+ * states, so such a member keeps its current edge (#5835, #6084).
+ */
+export function withResolvedSection(
+  member: CenterMember,
+  section: CenterRosterMemberSection | undefined,
+): CenterMember {
+  const kind = section?.kind ?? 'unclassified';
+  const ownPageWins = kind === 'emeritus' && ownPageStatesCurrentAppointment(member.profileTitle);
+  const currentStatus: CenterMemberCurrentStatus =
+    kind === 'past' ? 'past' : kind === 'emeritus' && !ownPageWins ? 'emeritus' : 'current';
+  return {
+    ...member,
+    currentStatus,
+    ...(section?.label ? { sectionLabel: section.label } : {}),
+  };
+}
+
 export function centerRosterReadMember(
   member: CenterMember,
   memberObs: readonly ObservationInput[],
   relationshipObs: readonly ObservationInput[],
+  section?: CenterRosterMemberSection,
 ): CenterRosterReadMember | null {
   const memberKey = memberObs[0]?.entityKey || '';
   if (!memberKey) return null;
@@ -1912,6 +2157,17 @@ export function centerRosterReadMember(
       edgeRole,
     ),
     relationshipKey: relationshipObs[0]?.entityKey || '',
+    ...(section
+      ? {
+          sectionKind: section.kind,
+          ...(section.label ? { sectionLabel: section.label } : {}),
+          sectionFingerprint: section.fingerprint,
+          ...(section.kind === 'emeritus' && member.currentStatus === 'current'
+            ? { ownPageCurrentAppointment: true }
+            : {}),
+          ...(section.kind === 'emeritus' && !member.ownPageRead ? { ownPageUnread: true } : {}),
+        }
+      : {}),
   };
 }
 
@@ -1920,7 +2176,11 @@ export function centerRosterHealthObservation(
   members: readonly CenterRosterReadMember[],
   sourceUrl: string,
   read: CenterRosterReadOutcome,
-  options: { cacheAllowed: boolean; readAt?: Date },
+  options: {
+    cacheAllowed: boolean;
+    readAt?: Date;
+    sections?: readonly CenterRosterSectionRecord[];
+  },
 ): ObservationInput {
   const readAt = options.readAt ?? new Date();
   const entityKey = centerEntityKey(config);
@@ -1937,6 +2197,7 @@ export function centerRosterHealthObservation(
       stopReason: read.stopReason,
       cacheAllowed: options.cacheAllowed,
       readAt,
+      ...(options.sections ? { sections: options.sections } : {}),
     }),
     sourceUrl,
     observedAt: readAt,
@@ -2055,25 +2316,48 @@ export class CentersInstitutesScraper implements IScraper {
       allChildCenters: ChildCenter[],
       sourceUrl: string,
       read: CenterRosterReadOutcome,
+      stages: readonly ListingStageRead[],
     ): Promise<void> => {
       const { observations: groupObs } = centerToGroupObservations(config, allMembers, sourceUrl);
       await ctx.emit(groupObs);
       totalObs += groupObs.length;
 
+      const entityKey = centerEntityKey(config);
       const seenMemberSlugs = new Set<string>();
-      const uniqueMembers = allMembers.filter((member) => {
+      const uniqueMembers = [
+        ...allMembers,
+        ...stages.filter((stage) => stage.personTypeFilter).flatMap((stage) => stage.members),
+      ].filter((member) => {
         const slug = slugify(normalizeName(member.name));
         if (!slug || seenMemberSlugs.has(slug)) return false;
         seenMemberSlugs.add(slug);
         return true;
       });
+      const { sections, memberSections } = resolveCenterRosterSections(
+        centerRosterSectionListings(entityKey, stages),
+        stages.map((stage) => ({
+          key: stage.key,
+          personTypeFilter: stage.personTypeFilter,
+          stopReason: stage.stopReason,
+        })),
+      );
       const listedMembers = await this.withMemberIdentityEvidence(
         config.centerKey,
         uniqueMembers,
         ctx,
       );
       const readMembers: CenterRosterReadMember[] = [];
-      for (const member of listedMembers) {
+      const listingsByKind: Record<CenterRosterSectionKind, number> = {
+        current: 0,
+        past: 0,
+        emeritus: 0,
+        unclassified: 0,
+      };
+      for (const listed of listedMembers) {
+        const section = memberSections.get(centerMemberKey(entityKey, listed.name));
+        if (!section) continue;
+        const member = withResolvedSection(listed, section);
+        listingsByKind[section?.kind ?? 'unclassified'] += 1;
         const memberObs = memberToObservations(member, config, sourceUrl);
         if (memberObs.length > 0) {
           await ctx.emit(memberObs);
@@ -2081,17 +2365,21 @@ export class CentersInstitutesScraper implements IScraper {
           totalMembers++;
         }
 
-        const relationshipObs = centerMemberRelationshipObservations(member, config, sourceUrl);
+        const relationshipObs =
+          member.currentStatus === 'current'
+            ? centerMemberRelationshipObservations(member, config, sourceUrl)
+            : [];
         if (relationshipObs.length > 0) {
           await ctx.emit(relationshipObs);
           totalObs += relationshipObs.length;
         }
-        const readMember = centerRosterReadMember(member, memberObs, relationshipObs);
+        const readMember = centerRosterReadMember(member, memberObs, relationshipObs, section);
         if (readMember) readMembers.push(readMember);
       }
 
       const snapshot = centerRosterHealthObservation(config, readMembers, sourceUrl, read, {
         cacheAllowed: Boolean(ctx.options.useCache),
+        sections,
       });
       await ctx.emit(snapshot);
       totalObs += 1;
@@ -2153,7 +2441,7 @@ export class CentersInstitutesScraper implements IScraper {
       }
 
       ctx.log(
-        `[${config.centerKey}] ${seenMemberSlugs.size} members, ${allChildCenters.length} child centers (${read.pagesRead} page(s), ${read.stopReason})`,
+        `[${config.centerKey}] ${seenMemberSlugs.size} members, ${allChildCenters.length} child centers (${read.pagesRead} page(s), ${read.stopReason}); sections: ${sections.length} (${stages.length - 1} person-type filter read(s)), listings ${listingsByKind.current} current, ${listingsByKind.unclassified} unlabelled, ${listingsByKind.past} past, ${listingsByKind.emeritus} emeritus`,
       );
       perCenter.push({
         key: config.centerKey,
@@ -2252,103 +2540,75 @@ export class CentersInstitutesScraper implements IScraper {
           continue;
         }
 
-        await emitCenterResults(config, result.members || [], result.childCenters || [], pageUrl, {
-          pagesRead: 1,
-          readMode: 'rendered',
-          stopReason: 'rendered-page',
-        });
+        const renderedMembers = result.members || [];
+        await emitCenterResults(
+          config,
+          renderedMembers,
+          result.childCenters || [],
+          pageUrl,
+          { pagesRead: 1, readMode: 'rendered', stopReason: 'rendered-page' },
+          [
+            {
+              key: '',
+              personTypeFilter: false,
+              stopReason: 'rendered-page',
+              pagesFetched: 1,
+              members: renderedMembers,
+              childCenters: result.childCenters || [],
+              listings: renderedMembers.map((member) => ({ member, pageIndex: 0 })),
+              firstPageUrl: pageUrl,
+              firstPageHtml: '',
+            },
+          ],
+        );
         centersProcessed++;
         continue;
       }
 
-      const allMembers: CenterMember[] = [];
-      const allChildCenters: ChildCenter[] = [];
-      const seenPaginationKeys = new Set<string>();
-      const seenPageSignatures = new Set<string>();
-      let firstPageUrl: string | null = null;
-      let pagesFetched = 0;
-      const maxPages = config.paginated ? MAX_PAGES_PER_CENTER : 1;
-      let consecutiveRepeatedPages = 0;
-      let stopReason: CenterRosterStopReason = 'page-cap';
-
-      for (let pageIdx = 0; pageIdx < maxPages; pageIdx++) {
-        const pageUrl = pageUrlForIndex(config.url, pageIdx);
-        if (!firstPageUrl) firstPageUrl = pageUrl;
-        let html: string;
-        try {
-          html = await this.readHtml(pageUrl, ctx.options.useCache, this.name);
-        } catch (err: any) {
-          ctx.log(
-            `[${config.centerKey}] fetch failed for configured page: ${sanitizeLogValue(err)}`,
-          );
-          stopReason = 'fetch-failed';
-          break;
-        }
-        pagesFetched++;
-        let result: ExtractorResult;
-        try {
-          result = config.extractor(html, { pageUrl, centerName: config.centerName });
-        } catch (err: any) {
-          ctx.log(
-            `[${config.centerKey}] extractor error on configured page: ${sanitizeLogValue(err)}`,
-          );
-          stopReason = 'extractor-error';
-          break;
-        }
-        const pageMembers = result.members ?? [];
-        const pageChildCenters = result.childCenters ?? [];
-        if (pageMembers.length === 0 && pageChildCenters.length === 0) {
-          stopReason = 'empty-page';
-          break;
-        }
-        const signature = centerRosterPageSignature(pageMembers, pageChildCenters);
-        const pageRepeated = seenPageSignatures.has(signature);
-        seenPageSignatures.add(signature);
-        const newMembers = pageMembers.filter((member) => {
-          const key = `member:${slugify(normalizeName(member.name))}`;
-          if (key === 'member:' || seenPaginationKeys.has(key)) return false;
-          seenPaginationKeys.add(key);
-          return true;
-        });
-        const newChildCenters = pageChildCenters.filter((child) => {
-          const key = `child:${slugify(child.name)}`;
-          if (key === 'child:' || seenPaginationKeys.has(key)) return false;
-          seenPaginationKeys.add(key);
-          return true;
-        });
-        if (pageRepeated) {
-          consecutiveRepeatedPages++;
-          if (!config.paginated || consecutiveRepeatedPages >= CONSECUTIVE_REPEATED_PAGES_TO_STOP) {
-            stopReason = config.paginated ? 'repeated-page' : 'not-paginated';
-            break;
-          }
-          continue;
-        }
-        consecutiveRepeatedPages = 0;
-        allMembers.push(...newMembers);
-        allChildCenters.push(...newChildCenters);
-        if (!config.paginated) {
-          stopReason = 'not-paginated';
-          break;
-        }
-      }
-
+      const rosterStage = await this.readListingStage(config, config.url, ctx);
       if (
-        pagesFetched === 0 ||
-        (stopReason === 'fetch-failed' && allMembers.length === 0 && allChildCenters.length === 0)
+        rosterStage.pagesFetched === 0 ||
+        (rosterStage.stopReason === 'fetch-failed' &&
+          rosterStage.members.length === 0 &&
+          rosterStage.childCenters.length === 0)
       ) {
         perCenter.push({ key: config.centerKey, status: 'fetch-failed', count: 0 });
         centersProcessed++;
         continue;
       }
+      const stages: ListingStageRead[] = [{ ...rosterStage, key: '', personTypeFilter: false }];
+      const filterOptions = personTypeFilterOptions(rosterStage.firstPageHtml);
+      if (filterOptions.some((option) => centerRosterSectionEndsMembership(option.kind))) {
+        for (const option of filterOptions) {
+          const filtered = await this.readListingStage(
+            config,
+            personTypeFilterUrl(config.url, option),
+            ctx,
+          );
+          stages.push({
+            ...filtered,
+            key: `${option.param}=${option.value}`,
+            personTypeFilter: true,
+            filterSection: { label: option.label, kind: option.kind },
+          });
+        }
+      }
+      const firstPageUrl = rosterStage.firstPageUrl;
+      const allMembers = rosterStage.members;
+      const allChildCenters = rosterStage.childCenters;
+      const stopReason = rosterStage.stopReason;
+      const pagesFetched = rosterStage.pagesFetched;
 
       const sourceUrl = firstPageUrl || config.url;
 
-      await emitCenterResults(config, allMembers, allChildCenters, sourceUrl, {
-        pagesRead: pagesFetched,
-        readMode: 'html',
-        stopReason,
-      });
+      await emitCenterResults(
+        config,
+        allMembers,
+        allChildCenters,
+        sourceUrl,
+        { pagesRead: pagesFetched, readMode: 'html', stopReason },
+        stages,
+      );
       centersProcessed++;
     }
 
@@ -2395,6 +2655,95 @@ export class CentersInstitutesScraper implements IScraper {
     };
   }
 
+  private async readListingStage(
+    config: CenterConfig,
+    baseUrl: string,
+    ctx: ScraperContext,
+  ): Promise<ListingPagesRead> {
+    const members: CenterMember[] = [];
+    const childCenters: ChildCenter[] = [];
+    const listings: ListingPagesRead['listings'] = [];
+    const seenPaginationKeys = new Set<string>();
+    const seenPageSignatures = new Set<string>();
+    let firstPageUrl: string | null = null;
+    let firstPageHtml = '';
+    let pagesFetched = 0;
+    const maxPages = config.paginated ? MAX_PAGES_PER_CENTER : 1;
+    let consecutiveRepeatedPages = 0;
+    let stopReason: CenterRosterStopReason = 'page-cap';
+
+    for (let pageIdx = 0; pageIdx < maxPages; pageIdx++) {
+      const pageUrl = pageUrlForIndex(baseUrl, pageIdx);
+      if (!firstPageUrl) firstPageUrl = pageUrl;
+      let html: string;
+      try {
+        html = await this.readHtml(pageUrl, ctx.options.useCache, this.name);
+      } catch (err: any) {
+        ctx.log(`[${config.centerKey}] fetch failed for configured page: ${sanitizeLogValue(err)}`);
+        stopReason = 'fetch-failed';
+        break;
+      }
+      pagesFetched++;
+      if (pageIdx === 0) firstPageHtml = typeof html === 'string' ? html : '';
+      let result: ExtractorResult;
+      try {
+        result = config.extractor(html, { pageUrl, centerName: config.centerName });
+      } catch (err: any) {
+        ctx.log(
+          `[${config.centerKey}] extractor error on configured page: ${sanitizeLogValue(err)}`,
+        );
+        stopReason = 'extractor-error';
+        break;
+      }
+      const pageMembers = result.members ?? [];
+      const pageChildCenters = result.childCenters ?? [];
+      if (pageMembers.length === 0 && pageChildCenters.length === 0) {
+        stopReason = 'empty-page';
+        break;
+      }
+      const signature = centerRosterPageSignature(pageMembers, pageChildCenters);
+      const pageRepeated = seenPageSignatures.has(signature);
+      seenPageSignatures.add(signature);
+      const newMembers = pageMembers.filter((member) => {
+        const key = `member:${slugify(normalizeName(member.name))}`;
+        if (key === 'member:' || seenPaginationKeys.has(key)) return false;
+        seenPaginationKeys.add(key);
+        return true;
+      });
+      const newChildCenters = pageChildCenters.filter((child) => {
+        const key = `child:${slugify(child.name)}`;
+        if (key === 'child:' || seenPaginationKeys.has(key)) return false;
+        seenPaginationKeys.add(key);
+        return true;
+      });
+      if (pageRepeated) {
+        consecutiveRepeatedPages++;
+        if (!config.paginated || consecutiveRepeatedPages >= CONSECUTIVE_REPEATED_PAGES_TO_STOP) {
+          stopReason = config.paginated ? 'repeated-page' : 'not-paginated';
+          break;
+        }
+        continue;
+      }
+      consecutiveRepeatedPages = 0;
+      members.push(...newMembers);
+      childCenters.push(...newChildCenters);
+      listings.push(...pageMembers.map((member) => ({ member, pageIndex: pageIdx })));
+      if (!config.paginated) {
+        stopReason = 'not-paginated';
+        break;
+      }
+    }
+    return {
+      members,
+      childCenters,
+      listings,
+      pagesFetched,
+      stopReason,
+      firstPageUrl: firstPageUrl || baseUrl,
+      firstPageHtml,
+    };
+  }
+
   private async withMemberIdentityEvidence(
     rosterKey: string,
     members: CenterMember[],
@@ -2419,6 +2768,7 @@ export class CentersInstitutesScraper implements IScraper {
       return {
         ...member,
         identityEvidence: read.evidence,
+        ownPageRead: true,
         ...(read.profileTitle ? { profileTitle: read.profileTitle } : {}),
       };
     });

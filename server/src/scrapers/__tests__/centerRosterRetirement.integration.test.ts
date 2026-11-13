@@ -60,6 +60,7 @@ import {
   type CenterConfig,
   type CenterMember,
   type HtmlFetcher,
+  type MemberPageFetcher,
 } from '../sources/centersInstitutesScraper';
 import type { ObservationInput, ScraperContext } from '../types';
 import { clearC4Flags } from './c4FlagTestEnv';
@@ -115,7 +116,11 @@ const afterAMoment = () => new Promise((resolve) => setTimeout(resolve, 5));
 
 async function runLane(
   pages: Page[],
-  options: { config?: CenterConfig; useCache?: boolean } = {},
+  options: {
+    config?: CenterConfig;
+    useCache?: boolean;
+    memberPageFetcher?: MemberPageFetcher;
+  } = {},
 ): Promise<string> {
   await afterAMoment();
   const scrapeRunId = new mongoose.Types.ObjectId();
@@ -137,9 +142,12 @@ async function runLane(
     },
     log: () => {},
   };
-  await new CentersInstitutesScraper([options.config ?? config()], null, fetcherFor(pages)).run(
-    ctx,
-  );
+  await new CentersInstitutesScraper(
+    [options.config ?? config()],
+    null,
+    fetcherFor(pages),
+    ...(options.memberPageFetcher ? [options.memberPageFetcher] : []),
+  ).run(ctx);
   await appendObservations(emitted, {
     scrapeRunId: String(scrapeRunId),
     sourceId: String(SOURCE_ID),
@@ -189,6 +197,17 @@ const servedMemberNames = async (): Promise<string[]> => {
 
 const withoutMember = (first: string) => ROSTER.filter((entry) => !entry.name.startsWith(first));
 
+const listedUnder = (
+  first: string,
+  label: string,
+  kind: 'past' | 'emeritus' = 'past',
+): CenterMember[] =>
+  ROSTER.map((entry) =>
+    entry.name.startsWith(first) ? { ...entry, sections: [{ label, kind }] } : entry,
+  );
+
+const alumni = (first: string) => listedUnder(first, 'Alumni');
+
 describe(
   'centers-institutes-index retires members its complete roster reads stop listing (#3781)',
   { timeout: 120000 },
@@ -226,38 +245,44 @@ describe(
       }
     });
 
-    it('keeps a member one complete read omits and retires it after the second', async () => {
+    it('holds a member two complete reads omit when no page witnesses a departure (#6084)', async () => {
+      await runLane([ROSTER]);
+      await runLane([withoutMember('Finley')]);
+      await runLane([withoutMember('Finley')]);
+      await runLane([withoutMember('Finley')]);
+
+      expect(await currentEdges('Finley')).toHaveLength(1);
+      expect(
+        await Observation.countDocuments({ 'rollback.reason': CENTER_ROSTER_RETIREMENT_REASON }),
+      ).toBe(0);
+      const served = await servedMemberNames();
+      expect(served.some((name) => name.startsWith('Finley'))).toBe(true);
+    });
+
+    it('ends a member listed under a past section in two runs, not one, and keeps the label (#6084)', async () => {
       await runLane([ROSTER]);
       expect(await currentEdges('Finley')).toHaveLength(1);
 
-      await runLane([withoutMember('Finley')]);
+      await runLane([alumni('Finley')]);
       expect(await currentEdges('Finley')).toHaveLength(1);
 
-      await runLane([withoutMember('Finley')]);
+      await runLane([alumni('Finley')]);
       expect(await currentEdges('Finley')).toHaveLength(0);
-      expect((await edgesFor('Finley'))[0]).toMatchObject({ state: 'HISTORICAL' });
+      expect((await edgesFor('Finley'))[0]).toMatchObject({
+        state: 'HISTORICAL',
+        rosterProvenance: { sectionLabel: 'Alumni' },
+      });
       expect(await currentEdges('Blair')).toHaveLength(1);
-
-      const retired = (await Observation.find({
-        entityKey: {
-          $regex: '^center-fixture-synthetic:(finley-synthetic|faculty-research-area-finley)',
-        },
-      }).lean()) as any[];
-      expect(retired.length).toBeGreaterThan(0);
-      for (const row of retired) {
-        expect(row.superseded).toBe(true);
-        expect(row.rollback?.reason).toBe(CENTER_ROSTER_RETIREMENT_REASON);
-      }
 
       const served = await servedMemberNames();
       expect(served.some((name) => name.startsWith('Finley'))).toBe(false);
       expect(served.some((name) => name.startsWith('Blair'))).toBe(true);
     });
 
-    it('does not resurrect a retired member on the next materialization or run', async () => {
+    it('does not resurrect a departed member on the next materialization or run', async () => {
       await runLane([ROSTER]);
-      await runLane([withoutMember('Finley')]);
-      await runLane([withoutMember('Finley')]);
+      await runLane([alumni('Finley')]);
+      await runLane([alumni('Finley')]);
       expect(await currentEdges('Finley')).toHaveLength(0);
 
       const result = await materializeEntity('researchGroupMember', {
@@ -265,18 +290,92 @@ describe(
       });
       expect(result.fieldsWritten).toBe(0);
       await materializeEntity('researchEntity', { entityKey: CENTER_SLUG });
-      await runLane([withoutMember('Finley')]);
+      await runLane([alumni('Finley')]);
       expect(await currentEdges('Finley')).toHaveLength(0);
     });
 
-    it('revives a retired member only when a later read lists it again', async () => {
+    it('revives a departed member only when a later read lists it as current again', async () => {
       await runLane([ROSTER]);
-      await runLane([withoutMember('Finley')]);
-      await runLane([withoutMember('Finley')]);
+      await runLane([alumni('Finley')]);
+      await runLane([alumni('Finley')]);
       expect(await currentEdges('Finley')).toHaveLength(0);
 
       await runLane([ROSTER]);
       expect(await currentEdges('Finley')).toHaveLength(1);
+    });
+
+    it('never mints an edge for a person first seen under a past or emeritus section', async () => {
+      const newcomer: CenterMember = {
+        ...member('Gale'),
+        sections: [{ label: 'Emeritus Faculty', kind: 'emeritus' }],
+      };
+      await runLane([[...ROSTER, newcomer]]);
+      await runLane([[...ROSTER, newcomer]]);
+      expect(await edgesFor('Gale')).toHaveLength(0);
+    });
+
+    it("ends an emeritus-listed edge with its label and leaves the person's own row alone", async () => {
+      const ownPage: MemberPageFetcher = async () =>
+        '<html><body><main><p class="profile-title">Professor Emeritus of Synthetic Studies</p></main></body></html>';
+      const yaleHosted = (roster: CenterMember[]) =>
+        roster.map((entry) =>
+          entry.name.startsWith('Blair')
+            ? { ...entry, profileUrl: 'https://fixture-center.yale.edu/people/blair-synthetic' }
+            : entry,
+        );
+      await runLane([yaleHosted(ROSTER)], { memberPageFetcher: ownPage });
+      const [blairEdge] = await currentEdges('Blair');
+      const { _id: _centerObjectId, ...centerFields } = (await ResearchEntity.findById(
+        await centerId(),
+      ).lean()) as any;
+      const ownRow = await ResearchEntity.create({
+        ...centerFields,
+        name: 'Synthetic Blair Research',
+        slug: 'synthetic-blair-research',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        studentVisibilityTier: 'student_ready',
+      });
+      const ownLead = await RoleAssignment.create({
+        personId: blairEdge.personId,
+        target: { kind: 'RESEARCH_ENTITY', id: ownRow._id },
+        role: 'PI',
+        state: 'CURRENT',
+        confidence: 0.9,
+        reviewStatus: 'UNREVIEWED',
+        archived: false,
+        rosterProvenance: { sourceName: 'official-profile-pi-backfill' },
+      });
+
+      const emeritus = yaleHosted(listedUnder('Blair', 'Emeritus Faculty', 'emeritus'));
+      await runLane([emeritus], { memberPageFetcher: ownPage });
+      await runLane([emeritus], { memberPageFetcher: ownPage });
+
+      expect(await currentEdges('Blair')).toHaveLength(0);
+      expect((await edgesFor('Blair'))[0]).toMatchObject({
+        state: 'HISTORICAL',
+        rosterProvenance: { sectionLabel: 'Emeritus Faculty' },
+      });
+      const lead = (await RoleAssignment.findById(ownLead._id).lean()) as any;
+      expect(lead.state).toBe('CURRENT');
+      expect(lead.archived).toBe(false);
+      const row = (await ResearchEntity.findById(ownRow._id).lean()) as any;
+      expect(row.archived).not.toBe(true);
+      expect(row.studentVisibilityTier).toBe('student_ready');
+    });
+
+    it('freezes the center when a whole roster flips to a past section', async () => {
+      await runLane([ROSTER]);
+      const flipped = ROSTER.map((entry, index) =>
+        index < 2
+          ? entry
+          : { ...entry, sections: [{ label: 'Former Members', kind: 'past' as const }] },
+      );
+      await runLane([flipped]);
+      await runLane([flipped]);
+
+      for (const first of ['Casey', 'Devon', 'Emery', 'Finley']) {
+        expect(await currentEdges(first)).toHaveLength(1);
+      }
     });
 
     it('ends a stale lead edge once two complete reads list the person under another role', async () => {
@@ -295,7 +394,7 @@ describe(
 
     it('re-syncs the center search document after the retirement ends its edges', async () => {
       await runLane([ROSTER]);
-      await runLane([withoutMember('Finley')]);
+      await runLane([alumni('Finley')]);
       const currentFinleyEdgesAtEachCenterSync: number[] = [];
       meiliMocks.syncEntities.mockImplementation(async (...args: unknown[]) => {
         const docs = args[1] as Array<{ slug?: unknown }>;
@@ -305,7 +404,7 @@ describe(
       });
 
       gateMocks.gateChangesNothing = true;
-      await runLane([withoutMember('Finley')]);
+      await runLane([alumni('Finley')]);
       gateMocks.gateChangesNothing = false;
 
       expect(await currentEdges('Finley')).toHaveLength(0);
@@ -736,7 +835,42 @@ describe(
       expect(current.map((row) => row.role)).toEqual(['CORE_FACULTY']);
     });
 
-    it("adopts a listed person's edge of the listed role in place, without a second edge", async () => {
+    const witnessDeparture = (first: string) =>
+      appendObservations(
+        [
+          {
+            entityType: 'user' as const,
+            entityKey: `netid:${first.toLowerCase()}syn`,
+            field: 'profileInMemoriam',
+            value: true,
+            sourceUrl: `https://fixture-center.example.edu/people/${first.toLowerCase()}-synthetic`,
+          },
+        ],
+        {
+          scrapeRunId: String(new mongoose.Types.ObjectId()),
+          sourceId: String(new mongoose.Types.ObjectId()),
+          sourceName: 'official-profile-pi-backfill',
+          sourceWeight: 0.8,
+          dryRun: false,
+        },
+      );
+
+    it("adopts a listed person's edge of the listed role in place, and holds it once omitted", async () => {
+      const casey = await listedAccountHolder('Casey');
+      await seedCenterWithoutAnAdmittedRead(withoutMember('Casey'));
+      const existing = await unprovenancedEdge(casey, 'CORE_FACULTY');
+
+      await runLane([ROSTER]);
+      const edges = await personEdges(casey);
+      expect(edges).toHaveLength(1);
+      expect(String(edges[0]._id)).toBe(String(existing));
+
+      await runLane([withoutMember('Casey')]);
+      await runLane([withoutMember('Casey')]);
+      expect((await edge(existing)).state).not.toBe('HISTORICAL');
+    });
+
+    it("ends an omitted person's edge once their own page witnesses the departure (#6084)", async () => {
       const casey = await listedAccountHolder('Casey');
       await seedCenterWithoutAnAdmittedRead(withoutMember('Casey'));
       const existing = await unprovenancedEdge(casey, 'CORE_FACULTY');
@@ -750,10 +884,20 @@ describe(
         membershipKey: `official-profile:${member('Casey').profileUrl}|core-faculty`,
       });
 
+      await witnessDeparture('Casey');
       await runLane([withoutMember('Casey')]);
       expect((await edge(existing)).state).not.toBe('HISTORICAL');
       await runLane([withoutMember('Casey')]);
       expect((await edge(existing)).state).toBe('HISTORICAL');
+
+      const retired = (await Observation.find({
+        entityKey: { $regex: '^center-fixture-synthetic:casey-synthetic' },
+      }).lean()) as any[];
+      expect(retired.length).toBeGreaterThan(0);
+      for (const row of retired) {
+        expect(row.superseded).toBe(true);
+        expect(row.rollback?.reason).toBe(CENTER_ROSTER_RETIREMENT_REASON);
+      }
     });
 
     it('adopts nothing for a person the roster does not list, or a namesake it cannot resolve', async () => {

@@ -38,6 +38,29 @@ A cheap fitted similarity signal was measured and rejected: on 186 graded querie
 The rule gated on the rerank cache's own measured relevance fired on 10 of 36 seeded Production queries, every one with 0 to 2 relevant rows in its top 10, with 0 false alarms.
 So it fires only from a seeded entry, never from a served, shadow or live-miss entry or from a guessed signal; `docs/search-rerank-cache.md` holds the contract.
 
+## 2026-11-13: A Center Roster's Emeritus Or Past Section Ends The Center Edge, And Omission Alone Retires Nothing (#6084)
+
+This extends the 2026-11-11 #5835 entry below to the Emeritus or Past section of an official Yale center roster; it does not apply #5835 unchanged, because a center section ends a membership edge where #5835 only labels a lead.
+Decision (5-agent consensus via the manager, 2026-11-13, posted on #6084; the owner may veto): `centers-institutes-index` records the section each listing sits under, and a listing under an Alumni, Former, Past, Previous, Retired or In Memoriam section, or under an Emeritus section, is positive evidence that the person is no longer a current member of that center.
+
+- **Emeritus section (3 of 5).** The listing ends the lane's current center edge as `HISTORICAL` and records the section label in `rosterProvenance.sectionLabel`.
+  The minority preferred keeping the edge with a label.
+  The person's own rows stay served and labelled under the 2026-10-02 emeritus rule (#4431), and the listing never mints a row, an edge or a roster member.
+  The #5835 rule that a fresh read of the person's own page as a current appointment wins is kept: an emeritus listing whose member page, read in the same run, states a current faculty appointment leaves the edge current.
+- **Past section, and former members stay unserved (Q1, 5 of 5).** A past listing ends the current edge as `HISTORICAL` the same way; the ended edge is not on the center's team, is not name-searchable, and is never a way in.
+- **Departed needs two reads (Q2, 5 of 5).** A person is departed only when two admitted reads in distinct runs list them under a past or emeritus section that was itself read to its end, after the last read that listed them as current.
+  One read withholds the edge's refresh and ends nothing, and a later current listing revives the edge through the ordinary upsert.
+- **Omission is not evidence (Q3, 5 of 5, #2647).** A person a contract read lists in no section is omitted, and an omitted claim retires only when the person's own page witnesses a departure (`personPageDeparture.ts`); otherwise it is held and counted as omitted-unwitnessed.
+  A listing under a past section that was not read to its end is omitted, never departed.
+- **A profile title alone ends nothing (Q6, 4 of 5).** A member-page `profileTitle` that holds only emeritus appointments never ends a center edge without a section that says so.
+
+Q4 (a center section as an official emeritus listing for `emeritusListedLeadIds`) and Q5 were not decided, so the change writes no `emeritusListedLeadIds`.
+Only `centers-institutes-index` adopts the contract; `bbs-research-track`, `center-affiliation-roster` and every snapshot written before the contract keep the plain two-read absence rule.
+The existing freeze guards cover departed and witnessed-omitted claims together, so a center whose whole roster flips to a past section freezes.
+Measured read-only on Development on 2026-11-13 from stored titles only, as a floor: 96 live edges this lane wrote sit on served center rows for people a stored title marks emeritus or former.
+This is a stored-data change: it is done when two lane re-runs in distinct runs, the verdict dry run, a scoped materialize and a served re-read have run on Development.
+`docs/research-data-pipeline.md` owns the mechanics.
+
 ## 2026-11-13: The Permanent-Resident Citizenship Option Includes Programs Open To Both Groups (#6092)
 
 This extends the 2026-11-12 citizenship entry below (#5299), whose stated-first order, "Doesn't say" divider and per-option counts are unchanged.

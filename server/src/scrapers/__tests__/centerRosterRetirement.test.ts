@@ -384,6 +384,8 @@ describe('the centers lane states what each roster read listed', () => {
         membershipKey: 'official-profile:https://fixture.example.edu/people/avery|core-faculty',
         relationshipKey:
           'center-fixture:faculty-research-area-avery-synthetic:MEMBER_RESEARCH_AREA',
+        sectionKind: 'unclassified',
+        sectionFingerprint: expect.any(String),
       },
       {
         memberKey: 'center-fixture:blair-synthetic',
@@ -391,6 +393,8 @@ describe('the centers lane states what each roster read listed', () => {
         membershipKey: 'official-profile:https://fixture.example.edu/people/blair|core-faculty',
         relationshipKey:
           'center-fixture:faculty-research-area-blair-synthetic:MEMBER_RESEARCH_AREA',
+        sectionKind: 'unclassified',
+        sectionFingerprint: expect.any(String),
       },
     ]);
   });

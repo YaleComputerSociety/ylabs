@@ -2132,14 +2132,26 @@ describe('wordpressBlockParagraphRosterExtractor (#5068)', () => {
 
   it('reads each faculty paragraph once, in page order, with the site it links', () => {
     const { members } = wordpressBlockParagraphRosterExtractor(FIXTURE, { pageUrl: PAGE_URL });
+    const faculty = [{ label: 'Faculty', kind: 'current' }];
     expect(members).toEqual([
-      { name: 'Alex Sample', profileUrl: 'https://alex-sample.example.edu/', role: 'core-faculty' },
+      {
+        name: 'Alex Sample',
+        profileUrl: 'https://alex-sample.example.edu/',
+        role: 'core-faculty',
+        sections: faculty,
+      },
       {
         name: 'Bailey Example',
         profileUrl: 'https://umbrella.example.edu/~bailey/',
         role: 'core-faculty',
+        sections: faculty,
       },
-      { name: 'Casey Placeholder', profileUrl: 'https://casey.example.edu/', role: 'core-faculty' },
+      {
+        name: 'Casey Placeholder',
+        profileUrl: 'https://casey.example.edu/',
+        role: 'core-faculty',
+        sections: faculty,
+      },
     ]);
   });
 
