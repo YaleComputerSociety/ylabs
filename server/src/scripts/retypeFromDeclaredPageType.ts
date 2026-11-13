@@ -22,11 +22,15 @@
  * returns throttled 403s rather than dead pages. A status with almost no body is the
  * host declining, not the page answering, and is recorded as unread.
  *
- *   yarn --cwd server research-entity:retype-from-declared-page-type
+ *   yarn --cwd server research-entity:retype-from-declared-page-type --dry-run [--only-slugs=<file>]
  *   yarn --cwd server research-entity:retype-from-declared-page-type --apply \
- *     --confirm-declared-page-type-retype
+ *     --confirm-declared-page-type-retype [--only-slugs=<file>]
+ *
+ * `--only-slugs` names the rows (one slug per line or comma) so a run reads only their
+ * pages. The apply rematerializes only the type closure, never the whole row.
  */
 import dotenv from 'dotenv';
+import { promises as fs } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
@@ -39,16 +43,17 @@ import { initializeConnections } from '../db/connections';
 import { LIVE_ENTITY_FILTER } from '../models/entityArchival';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
-import { materializeEntity } from '../scrapers/entityMaterializer';
+import { materializeEntity, withDerivedMaterializerFields } from '../scrapers/entityMaterializer';
 import {
   applyStudentVisibilityGatePlans,
   planStudentVisibilityGate,
 } from '../services/studentVisibilityGateService';
-import { fetchPublicHttpUrl } from '../scrapers/utils/httpFetch';
+import { HttpStatusError, fetchPageWithPolicy } from '../scrapers/utils/httpFetch';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { planFieldValueRefusal } from '../utils/researchEntityFieldValueRefusals';
 import { assertScriptApplyAllowed } from './scriptWriteGuards';
 import {
+  parseDeclaredPageTypeRetypeArgs,
   planDeclaredPageTypeRetypes,
   rowContradictsItsOwnType,
   type DeclaredTypeRow,
@@ -58,10 +63,11 @@ const SCRIPT_NAME = 'research-entity:retype-from-declared-page-type';
 const CONFIRM_FLAG = '--confirm-declared-page-type-retype';
 const BROWSER_USER_AGENT =
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
+const RETYPE_MATERIALIZE_SCOPE = { writeOnlyFields: withDerivedMaterializerFields(['entityType']) };
 const READ_SPACING_MS = 1500;
 const READ_TIMEOUT_MS = 25_000;
 
-interface PageRead {
+export interface PageRead {
   status: string;
   bytes: number;
   title: string;
@@ -78,191 +84,234 @@ const firstMatch = (html: string, pattern: RegExp): string => {
     .slice(0, 200);
 };
 
-async function readPage(url: string): Promise<PageRead> {
+async function readPageOverHttp(url: string): Promise<PageRead> {
   try {
-    const response = await fetchPublicHttpUrl(url, {
+    const page = await fetchPageWithPolicy(url, {
       timeoutMs: READ_TIMEOUT_MS,
       headers: { 'User-Agent': BROWSER_USER_AGENT, Accept: 'text/html' },
     });
-    const html = response.body;
+    const html = page.html;
     return {
-      status: String(response.status),
+      status: String(page.status),
       bytes: html.length,
       title: firstMatch(html, /<title[^>]*>([\s\S]*?)<\/title>/i),
       heading: firstMatch(html, /<h1[^>]*>([\s\S]*?)<\/h1>/i),
     };
-  } catch (err: any) {
-    const status = err?.response?.status ? String(err.response.status) : 'unreachable';
+  } catch (err: unknown) {
+    const status = err instanceof HttpStatusError ? String(err.status) : 'unreachable';
     return { status, bytes: 0, title: '', heading: '' };
   }
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+export interface DeclaredPageTypeRetypeOptions {
+  apply: boolean;
+  onlySlugs: ReadonlySet<string> | null;
+  readPage?: (url: string) => Promise<PageRead>;
+  pause?: (ms: number) => Promise<void>;
+  materialize?: (slug: string) => Promise<unknown>;
+  log?: (line: string) => void;
+}
+
+export async function runDeclaredPageTypeRetype(options: DeclaredPageTypeRetypeOptions) {
+  const apply = options.apply;
+  const readPage = options.readPage ?? readPageOverHttp;
+  const pause = options.pause ?? sleep;
+  const log = options.log ?? ((line: string) => console.log(line));
+  const materialize =
+    options.materialize ??
+    ((slug: string) =>
+      materializeEntity('researchEntity', { entityKey: slug }, RETYPE_MATERIALIZE_SCOPE));
+  const rowsStillAssertingALab: string[] = [];
+  const candidates = (await ResearchEntity.find({
+    ...LIVE_ENTITY_FILTER,
+    entityType: 'LAB',
+    studentVisibilityTier: 'student_ready',
+    ...(options.onlySlugs ? { slug: { $in: [...options.onlySlugs] } } : {}),
+  })
+    .select(
+      'slug name displayName entityType kind websiteUrl manuallyLockedFields fieldValueRefusals',
+    )
+    .lean()) as Array<Record<string, any>>;
+
+  const contradicting = candidates.filter((row) => rowContradictsItsOwnType(row));
+  const withASite = contradicting.filter((row) => String(row.websiteUrl ?? '').trim());
+  log(
+    `Scanned ${candidates.length} served LAB rows; ${contradicting.length} contradict their own heading; ${withASite.length} carry a site to read.`,
+  );
+
+  const typeObservations = (await Observation.find({
+    entityType: 'researchEntity',
+    entityKey: { $in: withASite.map((row) => String(row.slug)) },
+    field: { $in: ['entityType', 'kind'] },
+    superseded: { $ne: true },
+  })
+    .select('entityKey field value')
+    .lean()) as Array<Record<string, any>>;
+  const observationsBySlug = new Map<string, Array<{ field: string; value: string }>>();
+  for (const observation of typeObservations) {
+    const slug = String(observation.entityKey);
+    const entry = { field: String(observation.field), value: String(observation.value ?? '') };
+    observationsBySlug.set(slug, [...(observationsBySlug.get(slug) ?? []), entry]);
+  }
+
+  const rows: DeclaredTypeRow[] = [];
+  for (const row of withASite) {
+    const read = await readPage(String(row.websiteUrl));
+    rows.push({
+      slug: String(row.slug),
+      name: row.name,
+      displayName: row.displayName,
+      entityType: row.entityType,
+      kind: row.kind,
+      manuallyLockedFields: row.manuallyLockedFields,
+      typeObservations: observationsBySlug.get(String(row.slug)) ?? [],
+      pageStatus: read.status,
+      pageBytes: read.bytes,
+      pageTitle: read.title,
+      pageHeading: read.heading,
+    });
+    await pause(READ_SPACING_MS);
+  }
+
+  const outcome = planDeclaredPageTypeRetypes(rows);
+  const refusedByReason: Record<string, number> = {};
+  for (const entry of outcome.refused) {
+    refusedByReason[entry.reason] = (refusedByReason[entry.reason] ?? 0) + 1;
+  }
+  const plannedByType: Record<string, number> = {};
+  for (const plan of outcome.plans) {
+    plannedByType[plan.declaredType] = (plannedByType[plan.declaredType] ?? 0) + 1;
+  }
+
+  let refusalsRecorded = 0;
+  let typesSet = 0;
+  let rematerializedTwice = 0;
+  let stillAssertingALabAfterTwoPasses = 0;
+
+  if (apply && outcome.plans.length > 0) {
+    const docBySlug = new Map(withASite.map((row) => [String(row.slug), row]));
+    for (const plan of outcome.plans) {
+      const doc = docBySlug.get(plan.slug);
+      if (!doc) continue;
+      let refusals = doc.fieldValueRefusals;
+      const set: Record<string, unknown> = {};
+      for (const refusal of plan.refusals) {
+        const planned = planFieldValueRefusal(refusals, {
+          field: refusal.field,
+          value: refusal.value,
+          rule: 'superseded_by_better_source',
+          refusedBy: SCRIPT_NAME,
+          note: "the row's own site declares a different research-home type",
+          evidenceUrl: String(doc.websiteUrl ?? ''),
+        });
+        Object.assign(set, planned);
+        refusals = { ...(refusals ?? {}), ...planned };
+        refusalsRecorded += 1;
+      }
+      // The stored type is set in the same operation and before the rematerialize,
+      // because once the lab observations are refused the stored value is what the
+      // derivation reads. Setting it afterwards would let one pass serve an untyped
+      // row.
+      set.entityType = plan.declaredType;
+      await ResearchEntity.updateOne({ slug: plan.slug }, { $set: set });
+      typesSet += 1;
+
+      // Twice, with no lock anywhere: a refusal that only holds for one pass is the
+      // frozen-field defect wearing a different name.
+      await materialize(plan.slug);
+      await materialize(plan.slug);
+      rematerializedTwice += 1;
+
+      const after = (await ResearchEntity.findOne({ slug: plan.slug })
+        .select('entityType kind manuallyLockedFields')
+        .lean()) as Record<string, any> | null;
+      if (
+        String(after?.entityType ?? '').toUpperCase() === 'LAB' ||
+        String(after?.kind ?? '').toLowerCase() === 'lab'
+      ) {
+        stillAssertingALabAfterTwoPasses += 1;
+        rowsStillAssertingALab.push(plan.slug);
+      }
+    }
+
+    // Re-gate only the rows this run changed. Stripping or changing a served field
+    // without a re-gate is how a row's tier stops matching what it now holds.
+    const changed = (await ResearchEntity.find({
+      slug: { $in: outcome.plans.map((plan) => plan.slug) },
+    })
+      .select('_id')
+      .lean()) as Array<Record<string, any>>;
+    const gatePlans = await planStudentVisibilityGate({
+      collection: 'research',
+      mode: 'apply',
+      recordIds: changed.map((doc) => String(doc._id)),
+    });
+    await applyStudentVisibilityGatePlans(gatePlans);
+  }
+
+  return {
+    summary: {
+      mode: apply ? 'apply' : 'dry-run',
+      scopedToSlugs: options.onlySlugs ? options.onlySlugs.size : null,
+      servedLabRowsScanned: candidates.length,
+      contradictingTheirOwnHeading: contradicting.length,
+      pagesRead: rows.filter((row) => row.pageStatus === '200' && row.pageBytes >= 500).length,
+      planned: outcome.plans.length,
+      plannedByDeclaredType: plannedByType,
+      plannedRefusals: outcome.plans.map((plan) => ({
+        declaredType: plan.declaredType,
+        refusals: plan.refusals,
+      })),
+      refusedByReason,
+      refusalsRecorded,
+      typesSet,
+      rematerializedTwice,
+      stillAssertingALabAfterTwoPasses,
+    },
+    rowsStillAssertingALab,
+  };
+}
+
+export async function readOnlySlugsFile(file: string): Promise<ReadonlySet<string>> {
+  const slugs = (await fs.readFile(file, 'utf8'))
+    .split(/[\s,]+/)
+    .map((slug) => slug.trim())
+    .filter(Boolean);
+  if (slugs.length === 0) throw new Error(`${SCRIPT_NAME} --only-slugs file names no slug`);
+  return new Set(slugs);
+}
+
 async function main(): Promise<void> {
-  const argv = process.argv.slice(2);
-  const apply = argv.includes('--apply');
-  const confirmed = argv.includes(CONFIRM_FLAG);
+  const args = parseDeclaredPageTypeRetypeArgs(process.argv.slice(2));
+  const apply = args.apply;
   const guard = assertScriptApplyAllowed({
     scriptName: SCRIPT_NAME,
     apply,
     mongoUrl: process.env.MONGODBURL,
   });
-  if (apply && !confirmed) {
+  if (apply && !args.confirmed) {
     throw new Error(`${SCRIPT_NAME} --apply requires ${CONFIRM_FLAG}`);
   }
+  const onlySlugs = args.onlySlugsFile ? await readOnlySlugsFile(args.onlySlugsFile) : null;
   console.log(`Environment: ${guard.environment}; mode: ${apply ? 'apply' : 'dry-run'}`);
 
   await initializeConnections();
   try {
-    const candidates = (await ResearchEntity.find({
-      ...LIVE_ENTITY_FILTER,
-      entityType: 'LAB',
-      studentVisibilityTier: 'student_ready',
-    })
-      .select(
-        'slug name displayName entityType kind websiteUrl manuallyLockedFields fieldValueRefusals',
-      )
-      .lean()) as Array<Record<string, any>>;
-
-    const contradicting = candidates.filter((row) => rowContradictsItsOwnType(row));
-    const withASite = contradicting.filter((row) => String(row.websiteUrl ?? '').trim());
+    const { summary, rowsStillAssertingALab } = await runDeclaredPageTypeRetype({
+      apply,
+      onlySlugs,
+    });
+    if (args.outputFile) {
+      await fs.writeFile(
+        args.outputFile,
+        `${JSON.stringify({ ...summary, rowsStillAssertingALab }, null, 2)}\n`,
+        { mode: 0o600 },
+      );
+    }
     console.log(
-      `Scanned ${candidates.length} served LAB rows; ${contradicting.length} contradict their own heading; ${withASite.length} carry a site to read.`,
-    );
-
-    const typeObservations = (await Observation.find({
-      entityType: 'researchEntity',
-      entityKey: { $in: withASite.map((row) => String(row.slug)) },
-      field: { $in: ['entityType', 'kind'] },
-      superseded: { $ne: true },
-    })
-      .select('entityKey field value')
-      .lean()) as Array<Record<string, any>>;
-    const observationsBySlug = new Map<string, Array<{ field: string; value: string }>>();
-    for (const observation of typeObservations) {
-      const slug = String(observation.entityKey);
-      const entry = { field: String(observation.field), value: String(observation.value ?? '') };
-      observationsBySlug.set(slug, [...(observationsBySlug.get(slug) ?? []), entry]);
-    }
-
-    const rows: DeclaredTypeRow[] = [];
-    for (const row of withASite) {
-      const read = await readPage(String(row.websiteUrl));
-      rows.push({
-        slug: String(row.slug),
-        name: row.name,
-        displayName: row.displayName,
-        entityType: row.entityType,
-        kind: row.kind,
-        manuallyLockedFields: row.manuallyLockedFields,
-        typeObservations: observationsBySlug.get(String(row.slug)) ?? [],
-        pageStatus: read.status,
-        pageBytes: read.bytes,
-        pageTitle: read.title,
-        pageHeading: read.heading,
-      });
-      await sleep(READ_SPACING_MS);
-    }
-
-    const outcome = planDeclaredPageTypeRetypes(rows);
-    const refusedByReason: Record<string, number> = {};
-    for (const entry of outcome.refused) {
-      refusedByReason[entry.reason] = (refusedByReason[entry.reason] ?? 0) + 1;
-    }
-    const plannedByType: Record<string, number> = {};
-    for (const plan of outcome.plans) {
-      plannedByType[plan.declaredType] = (plannedByType[plan.declaredType] ?? 0) + 1;
-    }
-
-    let refusalsRecorded = 0;
-    let typesSet = 0;
-    let rematerializedTwice = 0;
-    let stillAssertingALabAfterTwoPasses = 0;
-
-    if (apply && outcome.plans.length > 0) {
-      const docBySlug = new Map(withASite.map((row) => [String(row.slug), row]));
-      for (const plan of outcome.plans) {
-        const doc = docBySlug.get(plan.slug);
-        if (!doc) continue;
-        let refusals = doc.fieldValueRefusals;
-        const set: Record<string, unknown> = {};
-        for (const refusal of plan.refusals) {
-          const planned = planFieldValueRefusal(refusals, {
-            field: refusal.field,
-            value: refusal.value,
-            rule: 'superseded_by_better_source',
-            refusedBy: SCRIPT_NAME,
-            note: "the row's own site declares a different research-home type",
-            evidenceUrl: String(doc.websiteUrl ?? ''),
-          });
-          Object.assign(set, planned);
-          refusals = { ...(refusals ?? {}), ...planned };
-          refusalsRecorded += 1;
-        }
-        // The stored type is set in the same operation and before the rematerialize,
-        // because once the lab observations are refused the stored value is what the
-        // derivation reads. Setting it afterwards would let one pass serve an untyped
-        // row.
-        set.entityType = plan.declaredType;
-        await ResearchEntity.updateOne({ slug: plan.slug }, { $set: set });
-        typesSet += 1;
-
-        // Twice, with no lock anywhere: a refusal that only holds for one pass is the
-        // frozen-field defect wearing a different name.
-        await materializeEntity('researchEntity', { entityKey: plan.slug }, {});
-        await materializeEntity('researchEntity', { entityKey: plan.slug }, {});
-        rematerializedTwice += 1;
-
-        const after = (await ResearchEntity.findOne({ slug: plan.slug })
-          .select('entityType kind manuallyLockedFields')
-          .lean()) as Record<string, any> | null;
-        if (
-          String(after?.entityType ?? '').toUpperCase() === 'LAB' ||
-          String(after?.kind ?? '').toLowerCase() === 'lab'
-        ) {
-          stillAssertingALabAfterTwoPasses += 1;
-          console.warn(
-            `[declared-page-type] ${sanitizeLogValue(plan.slug)} still asserts a lab after two passes`,
-          );
-        }
-      }
-
-      // Re-gate only the rows this run changed. Stripping or changing a served field
-      // without a re-gate is how a row's tier stops matching what it now holds.
-      const changed = (await ResearchEntity.find({
-        slug: { $in: outcome.plans.map((plan) => plan.slug) },
-      })
-        .select('_id')
-        .lean()) as Array<Record<string, any>>;
-      const gatePlans = await planStudentVisibilityGate({
-        collection: 'research',
-        mode: 'apply',
-        recordIds: changed.map((doc) => String(doc._id)),
-      });
-      await applyStudentVisibilityGatePlans(gatePlans);
-    }
-
-    console.log(
-      JSON.stringify(
-        {
-          script: SCRIPT_NAME,
-          mode: apply ? 'apply' : 'dry-run',
-          db: mongoose.connection.name,
-          servedLabRowsScanned: candidates.length,
-          contradictingTheirOwnHeading: contradicting.length,
-          pagesRead: rows.filter((row) => row.pageStatus === '200' && row.pageBytes >= 500).length,
-          planned: outcome.plans.length,
-          plannedByDeclaredType: plannedByType,
-          refusedByReason,
-          refusalsRecorded,
-          typesSet,
-          rematerializedTwice,
-          stillAssertingALabAfterTwoPasses,
-        },
-        null,
-        2,
-      ),
+      JSON.stringify({ script: SCRIPT_NAME, db: mongoose.connection.name, ...summary }, null, 2),
     );
   } finally {
     await mongoose.disconnect();
