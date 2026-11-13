@@ -1079,14 +1079,15 @@ function sameOfficialPersonPageForEntity(
 
 /**
  * "Education" is also a page section label, but it ends an appointment phrase such as
- * "Director of Clinical Education", which the label cut used to truncate (#6198). It counts as
- * part of the appointment only when an appointment word sits right before it and nothing that
- * reads as the education section (a degree, an institution, a year) follows it.
+ * "Director of Clinical Education", which the label cut used to truncate (#6198). It is kept
+ * only when an appointment word sits right before it AND what follows reads as the same title:
+ * nothing, a separator, or a known continuation. Anything else, such as a degree or an
+ * institution, is the education section, and the label cut applies as before.
  */
 const EDUCATION_INSIDE_APPOINTMENT =
   /\b(?:of|in|for|and|&|clinical|medical|graduate|continuing|nursing|health|dental|professional|interprofessional|undergraduate|residency|fellowship)\s+education$/i;
-const EDUCATION_SECTION_START =
-  /^\s*[,:;-]?\s*(?:(?:Ph\.?\s?D|M\.?\s?D|M\.?\s?S\.?\s?N|B\.?\s?S\.?\s?N|D\.?\s?N\.?\s?P|M\.?\s?P\.?\s?H|Dr\.?\s?P\.?\s?H|M\.?\s?B\.?\s?A|J\.?\s?D|Ed\.?\s?D|Psy\.?\s?D|Sc\.?\s?D|M\.?\s?Phil|R\.?\s?N|APRN|[BM]\.?\s?[AS]c?)\b|\d{4}\b|(?:[A-Z][\w.&'-]*\s+){1,5}(?:University|College|Institute)\b|(?:University|College)\b)/;
+const EDUCATION_TITLE_CONTINUES =
+  /^\s*(?:$|[;|]|(?:programs?|department|division|center|centre|office|unit|section|initiatives?|committee|and|&|at|YSN|YSM|YSPH)\b)/i;
 
 function cutAtProfileSectionLabel(value: string): string {
   const label = /\b(?:Bio|Biography|Education|Contact|Courses Taught|Curriculum Vitae)\b/gi;
@@ -1096,7 +1097,7 @@ function cutAtProfileSectionLabel(value: string): string {
     const isAppointmentEducation =
       /^education$/i.test(match[0]) &&
       EDUCATION_INSIDE_APPOINTMENT.test(value.slice(Math.max(0, index - 40), end)) &&
-      !EDUCATION_SECTION_START.test(value.slice(end));
+      EDUCATION_TITLE_CONTINUES.test(value.slice(end));
     if (!isAppointmentEducation) return value.slice(0, index);
   }
   return value;

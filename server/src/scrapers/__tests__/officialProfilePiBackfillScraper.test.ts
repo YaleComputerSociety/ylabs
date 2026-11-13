@@ -6169,6 +6169,15 @@ describe('profile content cards and section labels in the title read (#5594, #61
     );
   });
 
+  it('keeps an Education appointment that continues with its school abbreviation', () => {
+    const html = page(
+      '<div class="profile-title">Director of Clinical Education YSN Fixture Program</div>',
+    );
+    expect(officialProfilePageStatedFields(html).title).toBe(
+      'Director of Clinical Education YSN Fixture Program',
+    );
+  });
+
   it('keeps an appointment that ends in Education whole', () => {
     const html = page('<div class="profile-title">Director of Clinical Education</div>');
     expect(officialProfilePageStatedFields(html).title).toBe('Director of Clinical Education');
@@ -6178,6 +6187,9 @@ describe('profile content cards and section labels in the title read (#5594, #61
     ['Nursing', 'Associate Professor of Nursing Education MSN, Fixture University'],
     ['Health', 'Professor of Public Health Education PhD, Fixture University'],
     ['Medical', 'Professor of Medical Education MD 2004, Fixture School of Medicine'],
+    ['an unlisted degree', 'Associate Professor of Nursing Education DNSc, Fixture University'],
+    ['a School-of institution', 'Professor of Nursing Education Fixture School of Nursing, 2001'],
+    ['a lowercase degree', 'Professor of Health Education phd fixture university'],
   ])('cuts a %s appointment before an Education section that lists a degree', (_label, glued) => {
     const html = page(`<div class="profile-title">${glued}</div>`);
     expect(officialProfilePageStatedFields(html).title).toBe(glued.split(' Education ')[0]);
