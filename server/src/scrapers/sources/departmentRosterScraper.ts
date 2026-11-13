@@ -451,6 +451,16 @@ export interface DeptConfig {
    */
   affiliatesOnly?: boolean;
   /**
+   * When true, `deptName` names a center or program the catalog does not hold as a department
+   * (Stem Cell Center, West Campus Institutes, the Physician Associate Program), so the person's
+   * `primaryDepartment` is withheld and nothing else changes: membership, the `departments`
+   * label, the roster-health snapshot, withdrawn keys and roster-bio minting read the lane
+   * exactly as before (#6071). Narrower than `affiliatesOnly`, which also withholds the label
+   * and roster-bio minting, and than `crossListedProgramme`, which rank-gates rows and
+   * publishes no snapshot.
+   */
+  withholdsHomeDepartment?: boolean;
+  /**
    * When true, this page is a school's own whole-faculty directory rather than a
    * department roster, so `deptName` names the school and there is no department
    * to report. It is a separate flag from `affiliatesOnly` because these people
@@ -2390,6 +2400,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     paginated: false,
     extractor: profileGridItemExtractor,
     officialProfileOnly: true,
+    withholdsHomeDepartment: true,
   },
   {
     deptKey: 'physician-associate-program',
@@ -2398,6 +2409,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://medicine.yale.edu/pa/profession/meet-the-team/',
     paginated: false,
     extractor: profileGridItemExtractor,
+    withholdsHomeDepartment: true,
   },
   {
     deptKey: 'som',
@@ -2482,6 +2494,7 @@ export const DEFAULT_DEPT_CONFIGS: DeptConfig[] = [
     url: 'https://westcampus.yale.edu/about-us/faculty',
     paginated: false,
     extractor: referenceCardExtractor,
+    withholdsHomeDepartment: true,
   },
   {
     deptKey: 'art',
@@ -4428,7 +4441,7 @@ function entryToUserObservations(
     });
   }
   if (!dept.affiliatesOnly && !dept.schoolWideDirectory) {
-    if (!dept.crossListedProgramme) {
+    if (!dept.crossListedProgramme && !dept.withholdsHomeDepartment) {
       obs.push({ ...rosterBase, field: 'primaryDepartment', value: dept.deptName });
     }
     obs.push({ ...rosterBase, field: 'departments', value: [dept.deptName] });

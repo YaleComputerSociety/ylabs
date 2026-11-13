@@ -1,5 +1,6 @@
 import { withoutDepartmentHeadingObservations } from './departmentHeadingObservationScreen';
 import { withDirectoryExportDepartmentsDecoded } from './directoryExportDepartmentEvidence';
+import { withoutWithheldRosterHomeDepartments } from './rosterHomeDepartmentScreen';
 import type { CanonicalDepartment } from './utils/directoryExportDepartment';
 
 export interface UserDepartmentObservation {
@@ -25,6 +26,7 @@ export type UserDepartmentObservationScreen = <T extends UserDepartmentObservati
  * stored department only screened readings back is cleared by the screen that refused them.
  */
 export const USER_DEPARTMENT_OBSERVATION_SCREENS: ReadonlyArray<UserDepartmentObservationScreen> = [
+  (observations) => withoutWithheldRosterHomeDepartments(observations),
   (observations, { canonicalDepartment }) =>
     withDirectoryExportDepartmentsDecoded(observations, canonicalDepartment),
   (observations) => withoutDepartmentHeadingObservations(observations),
