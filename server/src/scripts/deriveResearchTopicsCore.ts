@@ -136,6 +136,7 @@ export interface ResearchTopicsDerivationRecord {
   inputHash: string;
   promptHash: string;
   model: string;
+  writer?: string;
   extractedTopics: QuotedTopic[];
   extractedField?: QuotedTopic;
   derivedAt: Date;

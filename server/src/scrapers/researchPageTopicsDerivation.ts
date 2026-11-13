@@ -4,8 +4,9 @@
  * only, it is cached by an input hash so a re-run makes no new paid call, and its output is
  * a derived candidate labelled with its own source name, never an observation.
  *
- * This module makes no model call and never fetches. `research-topics:derive` is the only
- * writer of the cache; the materializer only reads it.
+ * This module makes no model call and never fetches. `research-topics:derive` and the audited
+ * `research-topics:import-derivations` are the only writers of the cache; the materializer
+ * only reads it.
  */
 import { computeContentHash } from './contentHashGate';
 import { RESEARCH_PAGE_TOPICS_PROMPT_HASH } from './prompts';
