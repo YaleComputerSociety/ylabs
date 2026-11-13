@@ -93,6 +93,27 @@ describe('a name-only listing reaches the survivor of a folded record (#6019)', 
     expect([String(first._id), String(second._id)]).not.toContain(String(personId));
   });
 
+  it('resolves to none of them when a folded namesake past the twentieth points at another survivor (#6052)', async () => {
+    const first = await survivorRecord();
+    const second = await Researcher.create({
+      displayName: 'Avery K. Synth',
+      identifiers: { email: 'directory.fixture3@example.test' },
+      profileLinks: [],
+      archived: false,
+    });
+    for (let index = 0; index < 21; index += 1) await foldedInto(first._id);
+    await foldedInto(second._id);
+    const { personId } = await listOnce();
+    expect([String(first._id), String(second._id)]).not.toContain(String(personId));
+  });
+
+  it('still reaches the survivor when more than twenty folded namesakes all agree (#6052)', async () => {
+    const survivor = await survivorRecord();
+    for (let index = 0; index < 22; index += 1) await foldedInto(survivor._id);
+    const { personId } = await listOnce();
+    expect(String(personId)).toBe(String(survivor._id));
+  });
+
   it('keeps a live name-only record of that name ahead of the fold', async () => {
     const survivor = await survivorRecord();
     await foldedInto(survivor._id);

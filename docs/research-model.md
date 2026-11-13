@@ -404,6 +404,7 @@ Every run also heals that shape: an archived shell edge that never ended, that n
 Only the latest fold's edge per membership is considered, so when that edge is ineligible no earlier fold's twin is restored in its place, and a second run heals nothing.
 A listing with no identity evidence resolves by name to a live name-only record, and when there is none it follows the fold: an archived record of that exact name whose `dedupedIntoResearcherId` names one live survivor resolves to that survivor, rather than minting a new copy that the next fold would merge again while the listing ended the survivor's edge (#6019).
 Folded records of that name that point at different survivors, or at an archived one, resolve to none of them, and the listing mints a new record as before.
+The agreement is checked across every folded record of the name, not a capped read, so one disagreeing record among many still resolves to none (#6052).
 The directory-email arm exists because a roster listing can mint a name-only shell under a nickname or a middle-position preferred name that the name matcher rejects, while the listing's own page states the person's address (#5811).
 It folds a `NAME_ONLY` shell into the one live record holding the netid the Yale directory pairs with an address in the `emails` of the `profileIdentityEvidence` of a listing the shell's own edge cites, on that edge's row; a linked profile URL never counts.
 The directory decides, so the name only vetoes, on surname and rank.
