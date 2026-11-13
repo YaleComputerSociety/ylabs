@@ -18,6 +18,7 @@ import {
   planRosterBioResearchRows,
   rosterBioPersonNameKey,
   rosterBioProfileUrl,
+  rosterBioRereadObservation,
   rosterBioResearchObservations,
   type RosterBioCoveredIdentities,
   type RosterBioDepartment,
@@ -89,8 +90,10 @@ export async function loadRosterBioCoveredIdentities(): Promise<RosterBioCovered
   const slugs = new Set<string>();
   const personNames = new Set<string>();
   const personalRowIds = new Set<string>();
+  const liveSlugs = new Set<string>();
   for (const entity of entities) {
     slugs.add(entity.slug);
+    if (entity.archived !== true) liveSlugs.add(entity.slug);
     if (PERSONAL_RESEARCH_ROW_TYPES.includes(entity.entityType)) {
       personalRowIds.add(String(entity._id));
     }
@@ -110,6 +113,19 @@ export async function loadRosterBioCoveredIdentities(): Promise<RosterBioCovered
   for (const row of piKeys) {
     if (row.entityKey && slugs.has(row.entityKey) && typeof row.value === 'string') {
       personKeys.add(row.value);
+    }
+  }
+  const ownPiKeys = (await Observation.find({
+    sourceName: ROSTER_BIO_RESEARCH_EVIDENCE_SOURCE,
+    field: 'inferredPiUserKey',
+    superseded: false,
+  })
+    .select('entityKey value')
+    .lean()) as Array<{ entityKey?: string; value?: unknown }>;
+  const ownRowSlugsByPersonKey = new Map<string, string>();
+  for (const row of ownPiKeys) {
+    if (row.entityKey && liveSlugs.has(row.entityKey) && typeof row.value === 'string') {
+      ownRowSlugsByPersonKey.set(row.value, row.entityKey);
     }
   }
   // A person's research is already listed only through a row they lead. A membership of a
@@ -132,7 +148,7 @@ export async function loadRosterBioCoveredIdentities(): Promise<RosterBioCovered
     if (nameKey) personNames.add(nameKey);
     for (const link of researcher.profileLinks || []) urls.add(normalizeRosterBioUrl(link.url));
   }
-  return { urls, personKeys, personNames, slugs };
+  return { urls, personKeys, personNames, slugs, ownRowSlugsByPersonKey };
 }
 
 const configMintsPersonalRows = (config: DeptConfig): boolean =>
@@ -179,7 +195,8 @@ export function rosterBioDepartmentResolver(
 /**
  * Mints a faculty-research row for a roster person whose stored profile biography states
  * research they do now, which the roster lane alone does not, because it mints only
- * from a dedicated research section. Manual-only: the owner reviews a sample of the rows
+ * from a dedicated research section. It also re-reads the rows it minted, so a change to
+ * what counts as research evidence reaches them (#6107). Manual-only: the owner reviews a sample of the rows
  * a run produces before the lane joins the sweep.
  */
 export class RosterBioResearchEvidenceScraper implements IScraper {
@@ -191,7 +208,7 @@ export class RosterBioResearchEvidenceScraper implements IScraper {
       loadRosterBioPeople(),
       loadRosterBioCoveredIdentities(),
     ]);
-    const { planned, skipped } = planRosterBioResearchRows(
+    const { planned, reread, skipped } = planRosterBioResearchRows(
       people,
       covered,
       rosterBioDepartmentResolver(),
@@ -200,15 +217,21 @@ export class RosterBioResearchEvidenceScraper implements IScraper {
     const scoped = planned
       .filter((row) => !only || only.has(row.slug))
       .slice(0, ctx.options.limit ?? undefined);
-    ctx.log(`roster bios ${people.length}; planned ${planned.length}; emitting ${scoped.length}`, {
-      skipped,
-    });
-    const observations: ObservationInput[] = scoped.flatMap(rosterBioResearchObservations);
+    const rereadScoped = reread.filter((row) => !only || only.has(row.slug));
+    const withdrawn = rereadScoped.filter((row) => row.evidenceSentences.length === 0).length;
+    ctx.log(
+      `roster bios ${people.length}; planned ${planned.length}; emitting ${scoped.length}; re-read ${rereadScoped.length} own rows (${withdrawn} with no research statement)`,
+      { skipped },
+    );
+    const observations: ObservationInput[] = [
+      ...scoped.flatMap(rosterBioResearchObservations),
+      ...rereadScoped.map(rosterBioRereadObservation),
+    ];
     if (observations.length) await ctx.emit(observations);
     return {
       observationCount: observations.length,
-      entitiesObserved: scoped.length,
-      notes: `planned ${planned.length} of ${people.length} roster bios; skipped ${JSON.stringify(skipped)}`,
+      entitiesObserved: scoped.length + rereadScoped.length,
+      notes: `planned ${planned.length} of ${people.length} roster bios; re-read ${rereadScoped.length} own rows, ${withdrawn} with no research statement; skipped ${JSON.stringify(skipped)}`,
     };
   }
 }
