@@ -553,6 +553,19 @@ describe('programs that are not research by their own account (#6216)', () => {
     ).not.toContain('funds_degree_course_of_study');
   });
 
+  it.each([
+    "Funds summer research internships. The fund doesn't cover graduate study programs.",
+    'Funds summer research internships. The fund cannot cover graduate study programs.',
+  ])('keeps a research fund whose negated degree clause reads "%s"', (description) => {
+    expect(
+      classifyProgramResearchRelevance({
+        title: 'Summer Research Fund',
+        purpose: ['Research'],
+        description,
+      }).researchRelated,
+    ).toBe(true);
+  });
+
   it('keeps a degree award whose own text names research as an eligible use', () => {
     expect(
       classifyProgramResearchRelevance({
