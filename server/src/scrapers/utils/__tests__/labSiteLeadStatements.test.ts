@@ -64,6 +64,16 @@ describe('readListingTitle', () => {
     });
   });
 
+  it('reads a lead title qualified by a part of the row as about that part', () => {
+    for (const title of [
+      "Director, Center for Tidal Studies's Imaging Core",
+      'Director of the Center for Tidal Studies Outreach Program',
+    ]) {
+      expect(readListingTitle(title, aliases).lead, title).toBe('OTHER');
+    }
+    expect(readListingTitle('Director, Center for Tidal Studies, Yale', aliases).lead).toBe('ROW');
+  });
+
   it('never reads an associate, assistant or medical director as a lead title', () => {
     for (const title of ['Associate Director', 'Assistant Director', 'Medical Director']) {
       expect(readListingTitle(title, aliases).lead, title).toBeNull();
@@ -104,6 +114,28 @@ describe('subjectStatements', () => {
     expect(names('Robin Quill directs the Tidal Imaging Lab at the school.')).toEqual([
       'Robin Quill',
     ]);
+  });
+
+  it('ignores an active statement whose object is only a part of the row', () => {
+    for (const line of [
+      "Ada Brook oversees the lab's daily operations.",
+      'Ada Brook is the director of laboratory operations.',
+      'Ada Brook leads the lab outreach program.',
+      "Ada Brook directs the TIL's imaging core.",
+      'Ada Brook directs the Tidal Imaging Lab outreach program.',
+    ]) {
+      expect(names(line), line).toEqual([]);
+    }
+    expect(names('Robin Quill directs the lab since 2015.')).toEqual(['Robin Quill']);
+  });
+
+  it('ignores a fronted subject that is only a possession of the row', () => {
+    for (const line of [
+      "Led by Ada Brook, the lab's outreach program visits schools.",
+      "Led by Ada Brook, the TIL's outreach program visits schools.",
+    ]) {
+      expect(names(line), line).toEqual([]);
+    }
   });
 
   it('ignores a sentence whose subject is another unit', () => {

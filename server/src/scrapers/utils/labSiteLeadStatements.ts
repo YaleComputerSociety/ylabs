@@ -197,10 +197,26 @@ const isNonLeadRank = (text: string) =>
 
 const wordCount = (text: string) => text.split(/\s+/).filter(Boolean).length;
 
-const qualifierIsRow = (qualifier: string, aliases: readonly string[]): boolean => {
-  const folded = `${fold(qualifier).replace(/^the /, '')} `;
-  return aliases.some((alias) => folded.startsWith(`${alias} `));
+const ROW_KIND_NOUNS = ['lab', 'laboratory', 'group', 'center', 'centre'];
+
+const ROW_PHRASE_END =
+  /^(?:(?:lab|labs|laboratory|group|center|centre) )?(?:(?:at|in|of|on|since|and|which|that|where|who|for|from|with|within|to|is|was|has|had|its|their)\b|$)/;
+
+const ROW_POSSESSIVE = /^(?:(?:lab|labs|laboratory|group|center|centre) )?s\b/;
+
+const restAfterHead = (folded: string, head: string): string | null =>
+  folded === head || folded.startsWith(`${head} `) ? folded.slice(head.length).trim() : null;
+
+const phraseIsRow = (phrase: string, heads: readonly string[]): boolean => {
+  const folded = fold(phrase).replace(/^the /, '');
+  return heads.some((head) => {
+    const rest = restAfterHead(folded, head);
+    return rest !== null && ROW_PHRASE_END.test(rest);
+  });
 };
+
+const qualifierIsRow = (qualifier: string, aliases: readonly string[]): boolean =>
+  phraseIsRow(qualifier.split(/[,;(]/)[0], aliases);
 
 type ListingTitleLead = 'BARE' | 'ROW' | 'OTHER' | null;
 
@@ -300,11 +316,14 @@ const fronterSubjectNamesRow = (text: string, aliases: readonly string[], ownPag
     .split(/\s+/)
     .slice(0, 6)
     .join(' ');
-  if (ownPage && new RegExp(`^(?:${SELF_REFERENCE}|we)\\b`, 'i').test(head)) return true;
-  const folded = `${fold(head)} `;
-  return aliases.some(
-    (alias) => folded.startsWith(`the ${alias} `) || folded.startsWith(`${alias} `),
-  );
+  if (ownPage && new RegExp(`^(?:${SELF_REFERENCE}\\b(?!['’]s\\b)|we\\b)`, 'i').test(head)) {
+    return true;
+  }
+  const folded = fold(head).replace(/^the /, '');
+  return aliases.some((alias) => {
+    const rest = restAfterHead(folded, alias);
+    return rest !== null && !ROW_POSSESSIVE.test(rest);
+  });
 };
 
 /**
@@ -345,8 +364,7 @@ export function subjectStatements(
     for (const match of line.matchAll(pattern)) {
       const object = match[2] || '';
       const anchored =
-        aliases.some((alias) => ` ${fold(object)} `.startsWith(` ${alias} `)) ||
-        (ownPage && /^(?:lab|laboratory|group|center|centre)\b/i.test(object.trim()));
+        phraseIsRow(object, aliases) || (ownPage && phraseIsRow(object, ROW_KIND_NOUNS));
       if (anchored && personNameFromLine(match[1])) {
         found.push({ personName: match[1], pageUrl, form: 'SUBJECT', personEvidenced: true });
       }
