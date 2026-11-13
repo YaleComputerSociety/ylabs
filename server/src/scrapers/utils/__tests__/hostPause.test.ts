@@ -52,28 +52,28 @@ describe('statedPauseUntil', () => {
 });
 
 describe('recordHostRefusal', () => {
-  it('pauses a host at once for a stated date, or a 429 or 503 when no quick retries apply', () => {
+  it('pauses a host at once for a stated date, or a 429 or 503 when no quick retries apply', async () => {
     expect(
-      recordHostRefusal({
+      await recordHostRefusal({
         host: 'a.example.edu',
         status: 403,
         body: notice('Fri, 20 Nov 2099 07:32:40 +0000'),
       }),
     ).toEqual({ host: 'a.example.edu', until: new Date('2099-11-20T07:32:40Z') });
-    expect(recordHostRefusal({ host: 'b.example.edu', status: 429 })).toMatchObject({
+    expect(await recordHostRefusal({ host: 'b.example.edu', status: 429 })).toMatchObject({
       host: 'b.example.edu',
     });
     expect(
-      recordHostRefusal({ host: 'c.example.edu', status: 503, headers: { 'retry-after': '1200' } }),
+      await recordHostRefusal({ host: 'c.example.edu', status: 503, headers: { 'retry-after': '1200' } }),
     ).toMatchObject({ host: 'c.example.edu' });
     expect((hostPausedUntil('c.example.edu')?.getTime() ?? 0) - Date.now()).toBeGreaterThan(
       19 * 60_000,
     );
   });
 
-  it('leaves a short 429 to the request quick retries, and pauses for one that outlasts them', () => {
+  it('leaves a short 429 to the request quick retries, and pauses for one that outlasts them', async () => {
     expect(
-      recordHostRefusal({
+      await recordHostRefusal({
         host: 'a.example.edu',
         status: 429,
         retryAfterMs: 2_000,
@@ -81,7 +81,7 @@ describe('recordHostRefusal', () => {
       }),
     ).toBeUndefined();
     expect(
-      recordHostRefusal({
+      await recordHostRefusal({
         host: 'b.example.edu',
         status: 429,
         retryAfterMs: 60_000,
@@ -90,20 +90,20 @@ describe('recordHostRefusal', () => {
     ).toMatchObject({ host: 'b.example.edu' });
   });
 
-  it('leaves a plain 403 to the request quick retries', () => {
+  it('leaves a plain 403 to the request quick retries', async () => {
     expect(
-      recordHostRefusal({ host: 'dept.example.edu', status: 403, body: 'Forbidden' }),
+      await recordHostRefusal({ host: 'dept.example.edu', status: 403, body: 'Forbidden' }),
     ).toBeUndefined();
     expect(hostPausedUntil('dept.example.edu')).toBeUndefined();
 
-    recordTierOneExhausted('dept.example.edu', 403);
+    await recordTierOneExhausted('dept.example.edu', 403);
     expect(hostPausedUntil('dept.example.edu')).toBeDefined();
   });
 });
 
 describe('activeHostPause', () => {
-  it('covers its own www and trailing-dot spellings, never a parent, subdomain or sibling', () => {
-    recordHostBackoff('dept.example.edu', { status: 403, statedUntil: FUTURE });
+  it('covers its own www and trailing-dot spellings, never a parent, subdomain or sibling', async () => {
+    await recordHostBackoff('dept.example.edu', { status: 403, statedUntil: FUTURE });
 
     expect(activeHostPause('www.dept.example.edu')).toEqual({
       host: 'dept.example.edu',
@@ -115,8 +115,8 @@ describe('activeHostPause', () => {
     expect(activeHostPause('other.example.edu')).toBeUndefined();
   });
 
-  it('never lets one throttled www host pause the schools under the same domain', () => {
-    recordTierOneExhausted('www.yale.edu', 429);
+  it('never lets one throttled www host pause the schools under the same domain', async () => {
+    await recordTierOneExhausted('www.yale.edu', 429);
 
     expect(activeHostPause('www.yale.edu')).toBeDefined();
     for (const school of [
@@ -129,16 +129,16 @@ describe('activeHostPause', () => {
     }
   });
 
-  it('covers a single-label host such as localhost', () => {
-    recordHostBackoff('localhost', { status: 429 });
+  it('covers a single-label host such as localhost', async () => {
+    await recordHostBackoff('localhost', { status: 429 });
 
     expect(activeHostPause('localhost')).toMatchObject({ host: 'localhost' });
   });
 });
 
 describe('a redirect into a paused host', () => {
-  it('is refused by the redirect hook before the hop is sent, after any earlier hook', () => {
-    recordHostBackoff('dept.example.edu', { status: 403, statedUntil: FUTURE });
+  it('is refused by the redirect hook before the hop is sent, after any earlier hook', async () => {
+    await recordHostBackoff('dept.example.edu', { status: 403, statedUntil: FUTURE });
     const earlier: string[] = [];
     const hook = refuseRedirectIntoPausedHost((options) => {
       earlier.push(String(options.hostname));

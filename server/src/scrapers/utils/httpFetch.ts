@@ -437,7 +437,7 @@ async function fetchPageLive(
     const answeringHost = hostOf(result.finalUrl || safeUrl);
     if (result.status >= 200 && result.status < 300) {
       backoff.settle('recovered');
-      if (!isReusedResponse(result)) recordHostSuccess(answeringHost);
+      if (!isReusedResponse(result)) await recordHostSuccess(answeringHost);
       return {
         url: result.finalUrl || safeUrl,
         html: result.data ?? '',
@@ -446,7 +446,7 @@ async function fetchPageLive(
         ...(isReusedResponse(result) ? { reused: true as const } : {}),
       };
     }
-    const pause = recordHostRefusal({
+    const pause = await recordHostRefusal({
       host: answeringHost,
       status: result.status,
       body: result.data,
@@ -465,7 +465,7 @@ async function fetchPageLive(
     }
     backoff.settle('exhausted');
     if (policy.retryable.has(result.status)) {
-      recordTierOneExhausted(answeringHost, result.status, result.retryAfterMs);
+      await recordTierOneExhausted(answeringHost, result.status, result.retryAfterMs);
     }
     throw new HttpStatusError(result.status, result.finalUrl || safeUrl);
   }

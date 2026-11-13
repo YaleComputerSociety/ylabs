@@ -132,7 +132,7 @@ describe('fetchPageWithPolicy and a host that refuses', () => {
   });
 
   it('refuses a paused host under its www and trailing-dot spellings, and still fetches its subdomains', async () => {
-    recordHostBackoff('dept.example.edu', { status: 403, statedUntil: FUTURE });
+    await recordHostBackoff('dept.example.edu', { status: 403, statedUntil: FUTURE });
     const request = vi.fn(async () => ok);
 
     for (const url of ['https://www.dept.example.edu/a', 'https://dept.example.edu./b']) {
@@ -163,7 +163,7 @@ describe('fetchPageWithPolicy and a host that refuses', () => {
   it('fetches a host again once its pause has ended', async () => {
     vi.useFakeTimers({ now: new Date('2026-11-13T12:00:00Z'), toFake: ['Date'] });
     try {
-      recordHostBackoff('dept.example.edu', { status: 429 });
+      await recordHostBackoff('dept.example.edu', { status: 429 });
       const request = vi.fn(async () => ok);
       await expect(
         fetchPageWithPolicy('https://dept.example.edu/a', { ...base, request }),
@@ -179,7 +179,7 @@ describe('fetchPageWithPolicy and a host that refuses', () => {
   });
 
   it('refuses a redirect hop into a paused host before that hop is sent', async () => {
-    recordHostBackoff('dept.example.edu', { status: 403, statedUntil: FUTURE });
+    await recordHostBackoff('dept.example.edu', { status: 403, statedUntil: FUTURE });
     const request = vi.fn(async (target: string) =>
       target.startsWith('https://vanity.example.org/')
         ? { status: 301, data: '', finalUrl: '', location: 'https://www.dept.example.edu/lab' }

@@ -88,7 +88,7 @@ describe('the scraper axios interceptor and a host that refuses', () => {
   });
 
   it('refuses a redirect hop into a paused host before the hop is sent', async () => {
-    recordHostBackoff('localhost', { status: 403, statedUntil: new Date('2099-01-01T00:00:00Z') });
+    await recordHostBackoff('localhost', { status: 403, statedUntil: new Date('2099-01-01T00:00:00Z') });
 
     const failure = await axios
       .get(`http://127.0.0.1:${port}/moved`)

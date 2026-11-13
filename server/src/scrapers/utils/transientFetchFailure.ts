@@ -15,7 +15,6 @@ const TRANSIENT_ERROR_NAMES: ReadonlySet<string> = new Set([
   'DevWriteLeaseStoppedError',
   'DevWriteLeaseTimeoutError',
   'HostPausedError',
-  'HostPausedBudgetError',
 ]);
 
 const responseStatus = (error: unknown): number | undefined => {

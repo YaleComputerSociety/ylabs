@@ -16,6 +16,7 @@ import { machineHostSlotsForDirectRequest } from '../scrapers/utils/scraperHostS
 import { SCRAPER_USER_AGENT } from '../scrapers/utils/scraperUserAgent';
 import {
   activeHostPause,
+  hostPauseInErrorChain,
   recordHostRefusal,
   recordTierOneExhausted,
 } from '../scrapers/utils/hostPause';
@@ -731,7 +732,7 @@ export async function probeSourceLink(
         response.data.destroy();
       }
       if (response.status >= 400) {
-        const pause = recordHostRefusal({
+        const pause = await recordHostRefusal({
           host: hostnameForLimiter(resolvedUrl(response)) ?? safeUrl.hostname,
           status: response.status,
           headers: response.headers,
@@ -740,7 +741,7 @@ export async function probeSourceLink(
         });
         if (pause) return notObserved();
       } else {
-        recordHostSuccess(hostnameForLimiter(resolvedUrl(response)) ?? safeUrl.hostname);
+        await recordHostSuccess(hostnameForLimiter(resolvedUrl(response)) ?? safeUrl.hostname);
       }
       return {
         status: response.status,
@@ -761,6 +762,7 @@ export async function probeSourceLink(
       if (isExcludedHostRedirectError(error)) {
         return { errorCode: EXCLUDED_HOST_ERROR_CODE, requestedUrl, excludedHost: true };
       }
+      if (hostPauseInErrorChain(error)) return notObserved();
       void sanitizeLogValue(error);
       return {
         errorCode: typeof code === 'string' ? code : 'ERR_REQUEST_FAILED',
@@ -788,7 +790,7 @@ export async function probeSourceLink(
     result = await attempt();
   }
   if (result.status !== undefined && DEFAULT_RETRYABLE_STATUSES.has(result.status)) {
-    recordTierOneExhausted(
+    await recordTierOneExhausted(
       hostnameForLimiter(result.finalUrl) ?? safeUrl.hostname,
       result.status,
       result.retryAfterMs,
