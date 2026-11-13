@@ -56,18 +56,27 @@ const isActiveFacultyAppointment = (appointment: string): boolean =>
 // Scientist") states current research employment in the person's own words, and an emeritus
 // office beside an active chair ("President Emeritus and Sterling Professor") is not an
 // emeritus appointment at all, so neither counts.
-export function titleHoldsOnlyEmeritusAppointments(title: unknown): boolean {
+function titleAppointments(title: unknown): string[] {
   const text = normalizeTitle(title);
-  if (!text || !EMERITUS_WORD.test(text)) return false;
-  const appointments = text
+  if (!text) return [];
+  return text
     .split(/\s*;\s*/)
     .flatMap(appointmentsInClause)
     .map((appointment) => appointment.trim())
     .filter(Boolean);
+}
+
+export function titleHoldsOnlyEmeritusAppointments(title: unknown): boolean {
+  if (!EMERITUS_WORD.test(normalizeTitle(title))) return false;
+  const appointments = titleAppointments(title);
   return (
     appointments.some(isFacultyEmeritusAppointment) &&
     !appointments.some(isActiveFacultyAppointment)
   );
+}
+
+export function titleHoldsActiveFacultyAppointment(title: unknown): boolean {
+  return titleAppointments(title).some(isActiveFacultyAppointment);
 }
 
 // Every lead, not any: a co-led row with an active lead, or with a lead whose title is
