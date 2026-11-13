@@ -282,6 +282,7 @@ async function researcherForRosterMember(
   entityKey: string,
 ): Promise<any | null> {
   const rows: any[] = await Observation.find({
+    entityType: 'researchGroupMember',
     sourceName,
     entityKey,
     field: { $in: [ROSTER_MEMBER_IDENTITY_EVIDENCE_FIELD, 'inferredUserName'] },
@@ -345,12 +346,16 @@ async function readsOfThePerson(researcher: any, reads: any[]): Promise<OwnPageT
     const rows: any[] = await Observation.find({
       superseded: { $ne: true },
       field: { $in: OWN_PROFILE_URL_FIELDS },
-      $or: unresolved.map((read) => ({ sourceName: read.sourceName, entityKey: read.entityKey })),
+      $or: unresolved.map((read) => ({
+        entityType: read.entityType,
+        sourceName: read.sourceName,
+        entityKey: read.entityKey,
+      })),
     })
-      .select('sourceName entityKey value')
+      .select('entityType sourceName entityKey value')
       .lean();
     for (const row of rows) {
-      const key = `${row.sourceName}\u0000${row.entityKey}`;
+      const key = `${row.entityType}\u0000${row.sourceName}\u0000${row.entityKey}`;
       const urls = statedUrls.get(key) ?? new Set<string>();
       for (const url of statedProfileUrls(row.value)) if (bareUrl(url)) urls.add(bareUrl(url));
       statedUrls.set(key, urls);
@@ -360,7 +365,9 @@ async function readsOfThePerson(researcher: any, reads: any[]): Promise<OwnPageT
     (read) =>
       isOwnUserRow(read) ||
       Boolean(
-        statedUrls.get(`${read.sourceName}\u0000${read.entityKey}`)?.has(bareUrl(read.sourceUrl)),
+        statedUrls
+          .get(`${read.entityType}\u0000${read.sourceName}\u0000${read.entityKey}`)
+          ?.has(bareUrl(read.sourceUrl)),
       ),
   );
 }
@@ -401,7 +408,7 @@ export const defaultOwnProfileEmeritusLeadFinder: OwnProfileEmeritusLeadFinder =
   for (const [id, { researcher, members }] of ordered) {
     const memberReads = [...members].map((key) => {
       const [sourceName, entityKey] = key.split('\u0000');
-      return { sourceName, entityKey, field: 'profileTitle' };
+      return { entityType: 'researchGroupMember', sourceName, entityKey, field: 'profileTitle' };
     });
     const reads = (await Observation.find({
       superseded: { $ne: true },
