@@ -32,6 +32,18 @@ These searches are served exactly as without the flag:
 - A name query, detected by the same `keywordLegTopHitIsNameMatch` check that withholds semantic-only rows, because a name search already ranks the right row first.
 - A browse with no query, a search with an explicit sort, and a search Meilisearch pages itself (no configured embedder, the semantic leg unaffordable, or a whole-query shorthand searched keyword-only on topic fields).
 
+## Few close matches notice (#6094)
+
+A search can say that it has only a few close matches, and only where a seeded entry measured it.
+When `SEARCH_RERANK_CACHE_ENABLED=true` and the looked-up entry is seeded (`kind: 'seeded'`, an `indexVersion` starting with `full-`) and its scores were applied, search counts the rows of the whole served pool that the entry scores 2 or more (`SEARCH_RERANK_CLOSE_MATCH_SCORE`).
+The pool is every page of the search after the visibility scope and the student filters, the same population as `estimatedTotalHits`, so a scored row the pool no longer holds never counts.
+At 3 or fewer (`SEARCH_FEW_CLOSE_MATCHES_MAX_COUNT`), the result carries `fewCloseMatches: { closeMatchCount }` on every page of that search, and `/research` shows "Only a few close matches. Related results below." directly above the result list.
+The threshold is measured: on 36 seeded Production queries it fired on 10, every one with 0 to 2 relevant rows in its top 10, and raised no false alarm.
+
+The field is absent for a served, shadow or live-miss entry, with the flag off, when no entry was applied (no entry, a failed read, a name query that skips the rerank, a Meilisearch-paged search) and for a browse with no query.
+It never changes which rows are returned or their order, and the client never hides, collapses, filters or reorders a result because of it.
+`searchFewCloseMatches` in `server/src/services/searchRerankCache.ts` holds the rule, and `docs/decisions.md` (2026-11-13) records why a notice was chosen over trimming and why no cheaper signal fires it.
+
 ## Seeding
 
 `yarn --cwd server research-search:seed-rerank-cache --input=<path>` reads a JSON file of `[{ "query": "...", "filters": { ... }, "scores": { "<slug>": <0-3> } }]`.

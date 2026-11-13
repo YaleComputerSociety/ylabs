@@ -57,10 +57,14 @@ import {
 } from '../types/researchEntity';
 import type {
   ResearchSearchAcronymRewrite,
+  ResearchSearchFewCloseMatches,
   ResearchSearchQueryCorrection,
 } from '../types/researchGroup';
 import { getUniqueDepartmentLabels } from '../utils/departmentNames';
-import { isKnownResearchTypeFilterValue } from '../utils/researchEntityCopy';
+import {
+  FEW_CLOSE_MATCHES_NOTICE,
+  isKnownResearchTypeFilterValue,
+} from '../utils/researchEntityCopy';
 import { relaxResearchQuery } from '../utils/researchZeroResultRecovery';
 import { scrollViewportToTop } from '../utils/scrollViewportToTop';
 import { scrollBehavior } from '../utils/scrollBehavior';
@@ -180,6 +184,7 @@ interface ResearchEntitySearchPage {
   degraded?: boolean;
   queryCorrection?: ResearchSearchQueryCorrection;
   acronymRewrite?: ResearchSearchAcronymRewrite;
+  fewCloseMatches?: ResearchSearchFewCloseMatches;
   appliedFilters?: ResearchEntitySearchResponse['appliedFilters'];
   moreTopicResults?: ResearchEntity[];
 }
@@ -260,6 +265,7 @@ interface ResearchPageSnapshot {
   defaultSearchDegraded: boolean;
   queryCorrection: ResearchSearchQueryCorrection | null;
   acronymRewrite: ResearchSearchAcronymRewrite | null;
+  fewCloseMatches: ResearchSearchFewCloseMatches | null;
 }
 
 interface ResearchEntitySearchOptions {
@@ -327,6 +333,7 @@ const searchResearchEntities = async (
     degraded: normalized.degraded === true,
     queryCorrection: normalized.queryCorrection,
     acronymRewrite: normalized.acronymRewrite,
+    fewCloseMatches: normalized.fewCloseMatches,
     appliedFilters: normalized.appliedFilters,
     moreTopicResults: normalized.moreTopicResults,
   };
@@ -619,6 +626,9 @@ const Research = () => {
   const [acronymRewrite, setAcronymRewrite] = useState<ResearchSearchAcronymRewrite | null>(
     () => restoredSnapshot?.acronymRewrite ?? null,
   );
+  const [fewCloseMatches, setFewCloseMatches] = useState<ResearchSearchFewCloseMatches | null>(
+    () => restoredSnapshot?.fewCloseMatches ?? null,
+  );
   const [relaxedQuerySuggestion, setRelaxedQuerySuggestion] = useState<string | null>(null);
   const relaxProbeRequestIdRef = useRef(0);
   const relaxProbeAbortRef = useRef<AbortController | null>(null);
@@ -901,6 +911,7 @@ const Research = () => {
     setSearchDegraded(false);
     setQueryCorrection(null);
     setAcronymRewrite(null);
+    setFewCloseMatches(null);
     if (!options.preserveResults) {
       setGroupedResults(emptyGroupedResults(resultQueryLabel));
     }
@@ -1007,6 +1018,7 @@ const Research = () => {
       setSearchDegraded(researchEntitiesPage.degraded === true);
       setQueryCorrection(researchEntitiesPage.queryCorrection ?? null);
       setAcronymRewrite(researchEntitiesPage.acronymRewrite ?? null);
+      setFewCloseMatches(researchEntitiesPage.fewCloseMatches ?? null);
       setSearchResultSetId(requestId);
       setSearchResultResearchEntities(researchEntities);
       setMoreTopicResults(
@@ -1230,6 +1242,7 @@ const Research = () => {
     setSearchDegraded(false);
     setQueryCorrection(null);
     setAcronymRewrite(null);
+    setFewCloseMatches(null);
     setSearchLoading(false);
     setIsLoadingMore(false);
     writeResearchSearchParams(
@@ -1531,6 +1544,7 @@ const Research = () => {
       defaultSearchDegraded,
       queryCorrection,
       acronymRewrite,
+      fewCloseMatches,
     };
   }, [
     hasSubmittedSearch,
@@ -1571,6 +1585,7 @@ const Research = () => {
     defaultSearchDegraded,
     queryCorrection,
     acronymRewrite,
+    fewCloseMatches,
   ]);
 
   useEffect(() => {
@@ -2487,6 +2502,11 @@ const Research = () => {
                     </div>
                   ) : activeClusters.length > 0 ? (
                     <>
+                      {fewCloseMatches && !searchLoading && (
+                        <p className="mb-3 text-sm leading-relaxed text-muted">
+                          {FEW_CLOSE_MATCHES_NOTICE}
+                        </p>
+                      )}
                       <div
                         key={searchResultSetId}
                         aria-busy={isApplyingFilters}

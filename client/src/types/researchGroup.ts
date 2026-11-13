@@ -201,6 +201,7 @@ export interface ResearchGroupSearchResponse {
   degraded?: boolean;
   queryCorrection?: ResearchSearchQueryCorrection;
   acronymRewrite?: ResearchSearchAcronymRewrite;
+  fewCloseMatches?: ResearchSearchFewCloseMatches;
   // Set when the server changed a school or department filter value: it maps a value
   // to the spelling the corpus holds and drops one no row holds. A type the live index
   // cannot filter on yet comes back as the types it did apply (#5141).
@@ -222,4 +223,8 @@ export interface ResearchSearchQueryCorrection {
 export interface ResearchSearchAcronymRewrite {
   originalQuery: string;
   rewrittenQuery: string;
+}
+
+export interface ResearchSearchFewCloseMatches {
+  closeMatchCount: number;
 }
