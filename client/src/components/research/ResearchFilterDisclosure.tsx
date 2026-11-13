@@ -140,7 +140,7 @@ const UndergraduateToggle = ({
       </label>
       {compact && compactTipText && (
         <InfoTip
-          label={unavailable ? `Why ${label} is unavailable` : `About ${label}`}
+          label={tip ? `Why ${label} is unavailable` : `About ${label}`}
           text={compactTipText}
           tipId={ownTipId}
           align="end"
@@ -398,8 +398,6 @@ const ResearchFilterDisclosure = ({
   )
     .map((option) => ({ ...option, count: servedTrueCount(facetDistribution[option.field]) }))
     .filter((option) => Boolean(option.onChange) && (option.checked || option.count !== undefined));
-  const undergradOptionIsUnavailable = (option: (typeof undergradOptions)[number]) =>
-    isUnavailableUndergradOption(option.count, option.checked);
   // An option at zero is unavailable for one of three reasons, and only a narrowed
   // selection can be widened: with nothing but a query the student has no filter to
   // remove, and with neither a query nor a filter the zero is the served total, which
@@ -442,7 +440,7 @@ const ResearchFilterDisclosure = ({
   ];
   const firstVisibleField: FilterField | undefined = [
     ...undergradOptions
-      .filter((option) => !undergradOptionIsUnavailable(option))
+      .filter((option) => !isUnavailableUndergradOption(option.count, option.checked))
       .map((option) => option.field),
     ...visibleFields.slice(undergradOptions.length),
   ][0];

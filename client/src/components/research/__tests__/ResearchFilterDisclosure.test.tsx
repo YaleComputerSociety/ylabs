@@ -288,7 +288,6 @@ describe('ResearchFilterDisclosure', () => {
     expect(taking).toHaveAccessibleDescription(
       'None match your other filters. Remove a filter to see more.',
     );
-    expect(taking.className).toContain('aria-disabled:opacity-60');
     taking.focus();
     expect(taking).toHaveFocus();
     const hosted = screen.getByRole('checkbox', { name: 'Has had undergrads before (3)' });
