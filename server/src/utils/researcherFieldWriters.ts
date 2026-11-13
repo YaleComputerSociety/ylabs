@@ -19,7 +19,9 @@
  * backs, whatever the join. The Yale directory's department is its HR unit, which a person's own
  * official page contradicted in 6 of 10 hand-checked disagreements (#5741). Its name is first and
  * last name only, which a blind grader judged worse than the stored profile or roster name in 15
- * of 20 planned changes, so a directory name is fill-only too (#6035).
+ * of 20 planned changes, so a directory name is fill-only too (#6035). A name written by a key
+ * joined on the name alone is fill-only as well: its only identity witness is the name it would
+ * write, and a blind re-measure found every wrong-person and unsure rename on such a join.
  */
 export const RESEARCHER_WRITER_FIELDS = [
   'displayName',
@@ -59,6 +61,21 @@ const JOIN_RANK: Readonly<Record<string, number>> = {
   'person-name': 1,
   'minted-from-pi-attribution': 1,
 };
+
+const FILL_ONLY_JOIN_RANK_CEILING_BY_FIELD: Readonly<
+  Partial<Record<ResearcherGatedField, number>>
+> = {
+  displayName: JOIN_RANK['person-name'],
+};
+
+export function isFillOnlyIdentityJoin(
+  field: ResearcherGatedField,
+  identityJoin: string | undefined,
+): boolean {
+  const ceiling = FILL_ONLY_JOIN_RANK_CEILING_BY_FIELD[field];
+  if (ceiling === undefined) return false;
+  return (JOIN_RANK[identityJoin ?? ''] ?? 0) <= ceiling;
+}
 
 export interface ResearcherFieldWriter {
   userKey: string;

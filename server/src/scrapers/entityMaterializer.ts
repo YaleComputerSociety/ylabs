@@ -26,6 +26,7 @@ import { withoutModelCalls } from '../utils/modelClient';
 import {
   decideResearcherFieldWrite,
   isFillOnlyFieldValue,
+  isFillOnlyIdentityJoin,
   researcherFieldWriter,
   OWN_KEY_FALLBACK_TITLE_FIELD,
   storedValueCountsAsPresent,
@@ -10037,7 +10038,7 @@ async function materializeUserIdentityToResearcher(
         isFillOnlyFieldValue(
           field,
           field === 'displayName' ? displayNameSources : resolved[field]?.contributingSources,
-        ),
+        ) || isFillOnlyIdentityJoin(field, identityJoin),
       ),
       Boolean(value),
       storedValuePresent,

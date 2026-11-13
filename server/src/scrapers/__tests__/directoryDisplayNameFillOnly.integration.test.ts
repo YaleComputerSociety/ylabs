@@ -174,4 +174,68 @@ describe('a directory name never replaces a page name (#6035)', () => {
     expect((await resolve(DIRECTORY_KEY)).fieldsWritten).toBe(0);
     expect((await resolve(ROSTER_KEY)).fieldsWritten).toBe(0);
   });
+
+  const seedKey = (entityKey: string, sourceName: string, fields: Record<string, string>) =>
+    Observation.insertMany(
+      Object.entries(fields).map(([field, value]) =>
+        observation(
+          entityKey,
+          sourceName,
+          'https://fixture-studies.example.edu/people/',
+          field,
+          value,
+        ),
+      ),
+    );
+
+  const settledInEitherOrder = async (
+    seed: () => Promise<unknown>,
+    storedName: string,
+    keys: [string, string],
+  ) => {
+    const names = [];
+    for (const order of [keys, [keys[1], keys[0]]]) {
+      const db = mongoose.connection.db!;
+      for (const name of ['observations', 'researchers']) await db.collection(name).deleteMany({});
+      await seed();
+      const person = await seedPerson(storedName);
+      const joined = [];
+      for (const key of order) joined.push(String((await resolve(key)).entityId));
+      expect(joined).toEqual([String(person._id), String(person._id)]);
+      const second = [];
+      for (const key of order) second.push((await resolve(key)).fieldsWritten);
+      expect(second).toEqual([0, 0]);
+      names.push(await nameOf(person._id));
+    }
+    return names;
+  };
+
+  it('never lets a key joined on the name alone replace a stored name, in either order', async () => {
+    const nameKey = 'dept:fixture-studies:fixture-quillsby';
+    const names = await settledInEitherOrder(
+      async () => {
+        await seedDirectoryKey();
+        await seedKey(nameKey, 'dept-faculty-roster', { fname: 'Fixture', lname: 'Quillsby' });
+      },
+      'Fixture Q. Quillsby',
+      [DIRECTORY_KEY, nameKey],
+    );
+    expect(names).toEqual(['Fixture Q. Quillsby', 'Fixture Q. Quillsby']);
+  });
+
+  it('still lets a netid-joined profile key replace a shorter directory name, in either order', async () => {
+    const profileKey = 'official-profile:fixture-quillsby-marlow';
+    const names = await settledInEitherOrder(
+      async () => {
+        await seedDirectoryKey();
+        await seedKey(profileKey, 'official-profile-pi-backfill', {
+          netid: NETID,
+          displayName: FULL_NAME,
+        });
+      },
+      DIRECTORY_NAME,
+      [DIRECTORY_KEY, profileKey],
+    );
+    expect(names).toEqual([FULL_NAME, FULL_NAME]);
+  });
 });

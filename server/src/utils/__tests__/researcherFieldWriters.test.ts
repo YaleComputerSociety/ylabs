@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   decideResearcherFieldWrite,
   isFillOnlyFieldValue,
+  isFillOnlyIdentityJoin,
   researcherFieldWriter,
   storedValueCountsAsPresent,
   writerOutranks,
@@ -141,5 +142,43 @@ describe('researcher field writer precedence (#5706)', () => {
       write: false,
       releaseWriter: false,
     });
+  });
+
+  it('treats a name from a key joined on the name alone as fill-only (#6035)', () => {
+    expect(isFillOnlyIdentityJoin('displayName', 'person-name')).toBe(true);
+    expect(isFillOnlyIdentityJoin('displayName', 'minted-from-pi-attribution')).toBe(true);
+    expect(isFillOnlyIdentityJoin('displayName', undefined)).toBe(true);
+    expect(isFillOnlyIdentityJoin('displayName', 'account-email')).toBe(false);
+    expect(isFillOnlyIdentityJoin('displayName', 'official-profile-page')).toBe(false);
+    expect(isFillOnlyIdentityJoin('displayName', 'account-netid')).toBe(false);
+    expect(isFillOnlyIdentityJoin('primaryDepartment', 'person-name')).toBe(false);
+  });
+
+  it('lets a name-joined key fill an empty name but never replace a stored one (#6035)', () => {
+    const byName = researcherFieldWriter(
+      'dept:a:fx',
+      'person-name',
+      1,
+      isFillOnlyIdentityJoin('displayName', 'person-name'),
+    );
+    expect(decideResearcherFieldWrite(undefined, 'displayName', byName, true, false)).toEqual({
+      write: true,
+      writer: byName,
+      writerChanged: true,
+    });
+    expect(decideResearcherFieldWrite(undefined, 'displayName', byName, true, true)).toEqual({
+      write: false,
+      releaseWriter: false,
+    });
+    const byNetid = researcherFieldWriter('fx1', 'account-netid', 0.5);
+    expect(
+      decideResearcherFieldWrite(
+        new Map([['displayName', byNetid]]),
+        'displayName',
+        byName,
+        true,
+        true,
+      ),
+    ).toEqual({ write: false, releaseWriter: false });
   });
 });
