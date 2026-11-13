@@ -112,15 +112,43 @@ function withoutCurriculumVitaeSentences(line: string): string {
   return splitDescriptionSentences(line).filter(isRecoverableResearchSentence).join(' ');
 }
 
+const ENDS_AS_A_SENTENCE = /[.!?]["')\]\u2019\u201d]?$/;
 const SKIP_LINK_LINE = /^(?:skip|jump)\s+(?:to|past|over|content|navigation|main)\b/i;
 const ACCESSIBILITY_LINK_LINE =
   /\b(?:accessibility\s+(?:statement|policy|notice|help|assistance|feedback|options|settings)|(?:report|request)\s+an?\s+(?:digital\s+)?accessibility\s+(?:issue|problem|barrier|accommodation)|screen\s+readers?\s+only)\b/i;
 const MAX_ACCESSIBILITY_LINE_WORDS = 12;
-const CONTACT_OR_LINK_LABEL_LINE =
-  /^(?:curriculum vitae|c\.?v\.?|r[e\u00e9]sum[e\u00e9]|(?:lab |personal )?web\s?site|home\s?page|e-?mail|phone|tel(?:ephone)?|fax|mobile|office|address|orcid|google scholar|twitter|linkedin|bluesky|github|researchgate)\s*:/i;
+const CURRICULUM_VITAE_LABEL = String.raw`curriculum vitae|c\.?v\.?|r[e\u00e9]sum[e\u00e9]`;
+const CONTACT_OR_LINK_LABEL = String.raw`${CURRICULUM_VITAE_LABEL}|(?:lab |personal )?web\s?site|home\s?page|e-?mail|phone|tel(?:ephone)?|fax|mobile|office|address|orcid|google scholar|twitter|linkedin|bluesky|github|researchgate`;
+const CONTACT_OR_LINK_LABEL_LINE = new RegExp(`^(?:${CONTACT_OR_LINK_LABEL})\\s*:`, 'i');
+const IMAGE_CREDIT_LABEL_LINE =
+  /^(?:(?:photo(?:graph)?|image|picture|illustration|video|cover|header|banner)s?\s+)?credits?\s*:/i;
+const FILE_OR_DATE_NOTE = /\([^)]*\)/g;
+const BARE_LABEL_ORNAMENT = /\s*(?::|\.{2,}|\u2026|[|\u203a\u00bb\u2192>]+)\s*$/;
+const BARE_CONTACT_OR_LINK_LABEL_LINE = new RegExp(`^(?:${CONTACT_OR_LINK_LABEL})$`, 'i');
+const MONTH_OR_SEASON =
+  '(?:spring|summer|fall|autumn|winter|jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
+const LABEL_DATE = new RegExp(`(?:\\b${MONTH_OR_SEASON}\\s+)?\\b(?:19|20)\\d{2}\\b`, 'gi');
+const CURRICULUM_VITAE_LINK_QUALIFIER =
+  /^(?:my|the|full|short|complete|current|updated|academic|printable|downloadable|download|view|see|open)$/i;
+const CURRICULUM_VITAE_LINK_TAIL = new RegExp(`(?:^|\\s)(?:${CURRICULUM_VITAE_LABEL})$`, 'i');
+const OWNER_NAME_TOKEN = /^\p{Lu}[\p{L}'\u2019.-]*$/u;
+const MAX_CURRICULUM_VITAE_LINK_PREFIX_WORDS = 3;
 
 const MAX_DROPPED_LABEL_VALUE_WORDS = 6;
 const LINK_OR_EMAIL_VALUE = /^(?:https?:\/\/|www\.|[\w.+-]+@[\w-]+\.)/i;
+
+const LISTING_NOUN =
+  '(?:news|events|stories|posts|articles|updates|items|entries|publications|projects|results|videos|photos|press(?: releases)?|info(?:rmation)?)';
+const LISTING_NAVIGATION_LINE = new RegExp(
+  '^(?:' +
+    `(?:read|view|see|show|load|browse|learn)\\s+(?:more|less|all|full|the full|complete|entire)(?:\\s+[\\p{L}&'\u2019-]+){0,3}` +
+    `|(?:more|all|older|newer|previous|next)(?:\\s+[\\p{L}&'\u2019-]+){0,2}?\\s+${LISTING_NOUN}` +
+    ')\\s*(?:\\.{2,}|\u2026|[\u203a\u00bb\u2192>]+)?$',
+  'iu',
+);
+const IMAGE_BYLINE_LINE =
+  /^(?:photo(?:graph)?s?|images?|pictures?|illustrations?|artwork|video)\s+(?:by|courtesy(?:\s+of)?)\s+\S/i;
+const MAX_IMAGE_BYLINE_WORDS = 12;
 
 /** A skip link or an accessibility link line (#6201). */
 function isSkipOrAccessibilityLine(line: string): boolean {
@@ -130,6 +158,44 @@ function isSkipOrAccessibilityLine(line: string): boolean {
   );
 }
 
+const isListingNavigationLine = (line: string): boolean => LISTING_NAVIGATION_LINE.test(line);
+
+const isImageBylineLine = (line: string): boolean =>
+  IMAGE_BYLINE_LINE.test(line) &&
+  wordCount(line) <= MAX_IMAGE_BYLINE_WORDS &&
+  !ENDS_AS_A_SENTENCE.test(line);
+
+function isCurriculumVitaeLinkLine(line: string): boolean {
+  if (ENDS_AS_A_SENTENCE.test(line)) return false;
+  const core = line
+    .replace(FILE_OR_DATE_NOTE, ' ')
+    .replace(LABEL_DATE, ' ')
+    .replace(BARE_LABEL_ORNAMENT, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const tail = core.match(CURRICULUM_VITAE_LINK_TAIL);
+  if (!tail) return false;
+  const prefix = core.slice(0, tail.index).split(' ').filter(Boolean);
+  return (
+    prefix.length <= MAX_CURRICULUM_VITAE_LINK_PREFIX_WORDS &&
+    prefix.every(
+      (word) => CURRICULUM_VITAE_LINK_QUALIFIER.test(word) || OWNER_NAME_TOKEN.test(word),
+    )
+  );
+}
+
+const isBareContactOrLinkLabelLine = (line: string): boolean =>
+  BARE_CONTACT_OR_LINK_LABEL_LINE.test(
+    line
+      .replace(FILE_OR_DATE_NOTE, ' ')
+      .replace(BARE_LABEL_ORNAMENT, '')
+      .replace(/\s+/g, ' ')
+      .trim(),
+  ) || isCurriculumVitaeLinkLine(line);
+
+const isLinkOrCaptionLine = (line: string): boolean =>
+  isSkipOrAccessibilityLine(line) || isListingNavigationLine(line) || isImageBylineLine(line);
+
 /**
  * The line without a leading contact or link label such as "Curriculum Vitae:" or "Website:"
  * (#6201), or nothing when what follows the label is short, a link or an email address. On a
@@ -138,6 +204,14 @@ function isSkipOrAccessibilityLine(line: string): boolean {
  * label before a blurb keeps the blurb.
  */
 function withoutContactOrLinkLabel(line: string): string {
+  if (isBareContactOrLinkLabelLine(line)) return '';
+  const credit = line.match(IMAGE_CREDIT_LABEL_LINE);
+  if (credit) {
+    const value = line.slice(credit[0].length).trim();
+    return ENDS_AS_A_SENTENCE.test(value) && wordCount(value) > MAX_DROPPED_LABEL_VALUE_WORDS
+      ? value
+      : '';
+  }
   const label = line.match(CONTACT_OR_LINK_LABEL_LINE);
   if (!label) return line;
   const value = line.slice(label[0].length).trim();
@@ -147,7 +221,7 @@ function withoutContactOrLinkLabel(line: string): string {
 }
 
 function statementTextOfLine(rawLine: string): string {
-  if (isSkipOrAccessibilityLine(rawLine)) return '';
+  if (isLinkOrCaptionLine(rawLine)) return '';
   const line = withoutContactOrLinkLabel(rawLine);
   if (wordCount(line) < MIN_LINE_WORDS || isContactLine(line)) return '';
   return isPageTextCvRecord(line) ? withoutCurriculumVitaeSentences(line) : line;
@@ -158,7 +232,6 @@ const NON_CONTENT_ELEMENTS =
 
 const MAIN_CONTENT = 'main, article, [role="main"]';
 const MIN_HEADING_BLOCK_SUMMARY_WORDS = 12;
-const ENDS_AS_A_SENTENCE = /[.!?]["')\]\u2019\u201d]?$/;
 
 const isPageHeadingBlock = ($: cheerio.CheerioAPI, header: AnyNode): boolean =>
   $(header).attr('role') !== 'banner' &&
@@ -180,7 +253,7 @@ function headingBlockSummaryText(paragraph: AnyNode): string {
     .map((line) => line.trim())
     .filter(Boolean);
   return lines
-    .filter((line) => !isSkipOrAccessibilityLine(line))
+    .filter((line) => !isLinkOrCaptionLine(line))
     .map(withoutContactOrLinkLabel)
     .filter((line) => line && (lines.length === 1 || ENDS_AS_A_SENTENCE.test(line)))
     .flatMap((line) => splitDescriptionSentences(line))
