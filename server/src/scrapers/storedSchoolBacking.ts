@@ -5,28 +5,29 @@ import {
   type MergedInResearchEntityRow,
 } from '../services/researchEntityCanonicalTombstone';
 import { serializedDocumentId } from '../utils/idSerialization';
-import { shouldIgnoreObservationForEntityMaterialization } from './entityMaterializer';
+import {
+  shouldIgnoreObservationForEntityMaterialization,
+  SURVIVOR_OWNED_RESEARCH_ENTITY_FIELDS,
+} from './entityMaterializer';
 import {
   invalidatedScrapeRunIds,
   partitionObservationsByInvalidatedRun,
 } from './invalidatedScrapeRuns';
 import {
+  mergedInMemberOf,
   mergedRowEvidenceIdentity,
   mergedRowEvidenceQueryClauses,
   observationBelongsToMergedRow,
   type MergedRowEvidenceIdentity,
 } from './mergedRowEvidenceIdentity';
 import {
+  applyResearchEntityOrgUnitCanonicalization,
   orgUnitMatchKey,
-  schoolNameFromProfileHosts,
   type OrgUnitCanonicalizer,
 } from './orgUnitCanonicalization';
 import { liveResearchEntityNamedByKeyObservations } from './renamedResearchEntityAdoption';
 
-export type SchoolCanonicalizer = Pick<
-  OrgUnitCanonicalizer,
-  'canonicalizeSchool' | 'canonicalizeDepartments' | 'schoolForDepartment'
->;
+export type SchoolCanonicalizer = Pick<OrgUnitCanonicalizer, 'canonicalizeSchool'>;
 
 export interface SchoolBackingObservation {
   entityId?: unknown;
@@ -44,15 +45,26 @@ export interface SchoolBackingRow {
   slug?: unknown;
   school?: unknown;
   departments?: unknown;
+  entityType?: unknown;
   websiteUrl?: unknown;
   sourceUrls?: unknown;
+}
+
+/**
+ * A row's resolved `school` readings, split by whose they are. A merged-in row's reading of a
+ * survivor-owned field never reaches the survivor's resolve (`SURVIVOR_OWNED_RESEARCH_ENTITY_FIELDS`,
+ * #6096 review), so it is kept apart rather than counted as backing.
+ */
+export interface ResolvedSchoolReadings {
+  own: SchoolBackingObservation[];
+  mergedIn: SchoolBackingObservation[];
 }
 
 export const STORED_SCHOOL_BACKING_CLASSES = [
   'no-stored-school',
   'school-observation',
-  'department-derivation',
-  'profile-host',
+  'org-unit-derivation',
+  'merged-in-reading-only',
   'never-backed',
 ] as const;
 
@@ -93,50 +105,47 @@ export function storedSchoolIsBacked(
   );
 }
 
-function storedSchoolMatchesDepartmentDerivation(
-  row: SchoolBackingRow,
-  storedKeys: ReadonlySet<string>,
-  canonicalizer: SchoolCanonicalizer,
-): boolean {
-  const departments = canonicalizer.canonicalizeDepartments(stringList(row.departments)).values;
-  return departments.some((department) =>
-    schoolMatchKeys(canonicalizer.schoolForDepartment(department), canonicalizer).some((key) =>
-      storedKeys.has(key),
-    ),
-  );
-}
+type OrgUnitCanonicalization = typeof applyResearchEntityOrgUnitCanonicalization;
 
-function storedSchoolMatchesProfileHost(
+/**
+ * The school the engine's own org-unit canonicalization writes for this row when no reading
+ * states one: called exactly as the profile-host backfill calls it, with an empty school, so a
+ * cross-school center or institute that the engine leaves without a primary school reads as
+ * deriving none, and only the first derived school counts.
+ */
+export async function schoolDerivedByOrgUnitCanonicalization(
   row: SchoolBackingRow,
-  storedKeys: ReadonlySet<string>,
-  canonicalizer: SchoolCanonicalizer,
-): boolean {
-  const urls = [textOf(row.websiteUrl), ...stringList(row.sourceUrls)].filter(Boolean);
-  return schoolMatchKeys(schoolNameFromProfileHosts(urls), canonicalizer).some((key) =>
-    storedKeys.has(key),
-  );
+  canonicalize: OrgUnitCanonicalization = applyResearchEntityOrgUnitCanonicalization,
+): Promise<string> {
+  const set: Record<string, unknown> = { school: '' };
+  const profileUrls = [textOf(row.websiteUrl), ...stringList(row.sourceUrls)].filter(Boolean);
+  await canonicalize(set, row as Record<string, unknown>, profileUrls);
+  return textOf(set.school);
 }
 
 /**
- * What, if anything, still stands behind a row's stored school (#6096). A resolved `school`
- * reading, live or superseded, comes first; then the two derivations org-unit canonicalization
- * writes a school from when no reading states one (a stored department's parent school, and a
- * profile host); otherwise nothing a pass could re-derive backs it.
+ * What, if anything, still stands behind a row's stored school (#6096). The row's own resolved
+ * `school` reading, live or superseded, comes first; then the school org-unit canonicalization
+ * derives from the row; a merged-in row's reading backs nothing the engine reads, so it is its
+ * own class; otherwise nothing a pass could re-derive backs it.
  */
 export function storedSchoolBackingClass(
   row: SchoolBackingRow,
-  resolvedObservations: readonly Pick<SchoolBackingObservation, 'value'>[],
+  readings: ResolvedSchoolReadings,
   canonicalizer: SchoolCanonicalizer,
+  derivedSchool: string,
 ): StoredSchoolBackingClass {
-  const storedKeys = new Set(schoolMatchKeys(row.school, canonicalizer));
-  if (storedKeys.size === 0) return 'no-stored-school';
-  if (storedSchoolIsBacked(row.school, resolvedObservations, canonicalizer)) {
-    return 'school-observation';
+  if (schoolMatchKeys(row.school, canonicalizer).length === 0) return 'no-stored-school';
+  if (storedSchoolIsBacked(row.school, readings.own, canonicalizer)) return 'school-observation';
+  if (
+    derivedSchool &&
+    storedSchoolIsBacked(row.school, [{ value: derivedSchool }], canonicalizer)
+  ) {
+    return 'org-unit-derivation';
   }
-  if (storedSchoolMatchesDepartmentDerivation(row, storedKeys, canonicalizer)) {
-    return 'department-derivation';
+  if (storedSchoolIsBacked(row.school, readings.mergedIn, canonicalizer)) {
+    return 'merged-in-reading-only';
   }
-  if (storedSchoolMatchesProfileHost(row, storedKeys, canonicalizer)) return 'profile-host';
   return 'never-backed';
 }
 
@@ -203,25 +212,33 @@ async function renamedKeyRows(
   return byKey;
 }
 
+const mergedInReadingsDropped = SURVIVOR_OWNED_RESEARCH_ENTITY_FIELDS.has(SCHOOL_FIELD);
+
 /**
- * Every `school` reading, live or superseded but not rolled back and not from an invalidated
- * run, that the materializer resolves for each row (#6096): the row's own `entityId` and slug,
- * every merged-in row's id and slug (the engine's `mergedRowEvidenceIdentity`), and any old key
- * the engine adopts into the row by rename. Never a join on the current slug alone, which
- * misses the keyed readings most rows' schools came from.
+ * Every `school` reading, live or superseded but not rolled back, not from an invalidated run
+ * and not one the materializer ignores, that the engine relates to each row (#6096): the row's
+ * own `entityId` and slug, any old key the engine adopts into the row by rename, and, kept
+ * apart, every merged-in row's id and slug (the engine's `mergedRowEvidenceIdentity`), whose
+ * readings the survivor's resolve drops because `school` is survivor-owned.
+ *
+ * Two engine screens are deliberately not applied, and both could only move a row toward
+ * never-backed: the gone-page withdrawal and lane refusals at resolve, and the slug-scoped read
+ * of observations under the row's slug that carry another row's `entityId`.
  */
 export async function loadResolvedSchoolObservationsByRow(
   rows: readonly SchoolBackingRow[],
   deps: SchoolObservationResolutionDeps = {},
-): Promise<Map<string, SchoolBackingObservation[]>> {
+): Promise<Map<string, ResolvedSchoolReadings>> {
   const mergedInRowsBySurvivor =
     deps.mergedInRowsBySurvivor ??
     ((ids: readonly string[]) => listResearchEntityMergedInRowsBySurvivor([...ids]));
   const rowNamedByKeyObservations =
     deps.rowNamedByKeyObservations ?? defaultRowNamedByKeyObservations;
-  const byRow = new Map<string, SchoolBackingObservation[]>();
+  const byRow = new Map<string, ResolvedSchoolReadings>();
   const keyedRows = rows.filter((row) => serializedDocumentId(row._id));
-  for (const row of keyedRows) byRow.set(serializedDocumentId(row._id) as string, []);
+  for (const row of keyedRows) {
+    byRow.set(serializedDocumentId(row._id) as string, { own: [], mergedIn: [] });
+  }
 
   for (let start = 0; start < keyedRows.length; start += LOADER_CHUNK_SIZE) {
     const chunk = keyedRows.slice(start, start + LOADER_CHUNK_SIZE);
@@ -239,8 +256,13 @@ export async function loadResolvedSchoolObservationsByRow(
     const observations = await readSchoolObservations({ $or: clauses });
     for (const observation of observations) {
       for (const { rowId, identity } of identities) {
-        if (observationBelongsToMergedRow(identity, observation)) {
-          byRow.get(rowId)?.push(observation);
+        if (!observationBelongsToMergedRow(identity, observation)) continue;
+        const readings = byRow.get(rowId);
+        if (!readings) continue;
+        if (mergedInReadingsDropped && mergedInMemberOf(identity, observation)) {
+          readings.mergedIn.push(observation);
+        } else {
+          readings.own.push(observation);
         }
       }
     }
@@ -254,7 +276,7 @@ export async function loadResolvedSchoolObservationsByRow(
     });
     for (const observation of observations) {
       const rowId = renamed.get(textOf(observation.entityKey));
-      if (rowId) byRow.get(rowId)?.push(observation);
+      if (rowId) byRow.get(rowId)?.own.push(observation);
     }
   }
   return byRow;

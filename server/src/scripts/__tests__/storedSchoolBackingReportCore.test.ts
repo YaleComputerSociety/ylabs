@@ -6,48 +6,46 @@ import {
 } from '../storedSchoolBackingReportCore';
 
 const canonicalizer: SchoolCanonicalizer = {
-  canonicalizeSchool: (raw) => ({ value: String(raw), matched: true }),
-  canonicalizeDepartments: () => ({
-    values: [],
-    affiliationLabels: [],
-    unmatched: [],
-    dropped: [],
-  }),
-  schoolForDepartment: () => null,
+  canonicalizeSchool: (raw: unknown) => ({ value: String(raw), matched: true }),
 };
 
 describe('summarizeStoredSchoolBacking (#6096)', () => {
   it('counts served rows by class and splits never-backed and superseded-only by source', () => {
+    const lane = { school: { sourceName: 'fixture-lane' } };
     const rows = [
       { _id: 'live', school: 'Fixture School', served: true },
-      {
-        _id: 'superseded',
-        school: 'Fixture School',
-        served: true,
-        fieldProvenance: { school: { sourceName: 'fixture-lane' } },
-      },
+      { _id: 'superseded', school: 'Fixture School', served: true, fieldProvenance: lane },
+      { _id: 'derived', school: 'Fixture School', served: true },
+      { _id: 'merged-in', school: 'Fixture School', served: true },
       {
         _id: 'rival',
         school: 'Fixture School',
         served: true,
-        fieldProvenance: { school: { sourceName: 'fixture-lane' } },
+        fieldProvenance: lane,
         manuallyLockedFields: ['school'],
       },
       { _id: 'bare', school: 'Fixture School', served: true },
       { _id: 'held', school: 'Fixture School', served: false },
     ];
-    const observations = new Map([
-      ['live', [{ value: 'Fixture School' }]],
-      ['superseded', [{ value: 'Fixture School', superseded: true }]],
-      ['rival', [{ value: 'Other School' }]],
+    const readings = new Map([
+      ['live', { own: [{ value: 'Fixture School' }], mergedIn: [] }],
+      ['superseded', { own: [{ value: 'Fixture School', superseded: true }], mergedIn: [] }],
+      ['merged-in', { own: [], mergedIn: [{ value: 'Fixture School' }] }],
+      ['rival', { own: [{ value: 'Other School' }], mergedIn: [] }],
     ]);
+    const derived = new Map([['derived', 'Fixture School']]);
 
-    const summary = summarizeStoredSchoolBacking(rows, observations, canonicalizer);
+    const summary = summarizeStoredSchoolBacking(rows, readings, derived, canonicalizer);
 
-    expect(summary.rows).toBe(5);
-    expect(summary.servedRows).toBe(4);
-    expect(summary.servedByClass['school-observation']).toBe(2);
-    expect(summary.servedByClass['never-backed']).toBe(2);
+    expect(summary.rows).toBe(7);
+    expect(summary.servedRows).toBe(6);
+    expect(summary.servedByClass).toEqual({
+      'no-stored-school': 0,
+      'school-observation': 2,
+      'org-unit-derivation': 1,
+      'merged-in-reading-only': 1,
+      'never-backed': 2,
+    });
     expect(summary.byClass['never-backed']).toBe(3);
     expect(summary.servedBackedOnlyBySupersededReadings).toBe(1);
     expect(summary.servedBackedOnlyBySupersededReadingsByProvenanceSource).toEqual({

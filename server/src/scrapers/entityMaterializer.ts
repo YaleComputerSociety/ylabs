@@ -7453,7 +7453,7 @@ export async function entityKeyAnchoredObservationsExcludedByEntityIdScope(
 // A merged-in row's evidence enriches the survivor but never re-states who the
 // survivor is: its name, type, lead and visibility are the survivor's own, so a
 // loser's identity observations would re-open the merge decision on every resolve.
-const SURVIVOR_OWNED_RESEARCH_ENTITY_FIELDS = new Set([
+export const SURVIVOR_OWNED_RESEARCH_ENTITY_FIELDS = new Set([
   'name',
   'slug',
   'displayName',

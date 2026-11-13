@@ -3,6 +3,8 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
+import { ScrapeRun } from '../../models/scrapeRun';
+import { resetInvalidatedScrapeRunCache } from '../invalidatedScrapeRuns';
 import { loadResolvedSchoolObservationsByRow } from '../storedSchoolBacking';
 
 const STATED = 'Fixture School of Science';
@@ -23,6 +25,8 @@ describe('the school readings the engine resolves for a row (#6096)', () => {
   beforeEach(async () => {
     await Observation.collection.deleteMany({});
     await ResearchEntity.collection.deleteMany({});
+    await ScrapeRun.collection.deleteMany({});
+    resetInvalidatedScrapeRunCache();
   });
 
   const survivorId = new mongoose.Types.ObjectId();
@@ -49,12 +53,17 @@ describe('the school readings the engine resolves for a row (#6096)', () => {
       ...fields,
     });
 
-  const resolvedValuesFor = async () => {
+  const resolvedReadingsFor = async () => {
     const byRow = await loadResolvedSchoolObservationsByRow([
       { _id: survivorId, slug: 'fixture-survivor-lab' },
     ]);
-    return (byRow.get(String(survivorId)) ?? []).map((observation) => observation.sourceName);
+    const readings = byRow.get(String(survivorId)) ?? { own: [], mergedIn: [] };
+    return {
+      own: readings.own.map((observation) => observation.sourceName).sort(),
+      mergedIn: readings.mergedIn.map((observation) => observation.sourceName).sort(),
+    };
   };
+  const resolvedValuesFor = async () => (await resolvedReadingsFor()).own;
 
   beforeEach(async () => {
     await row({ _id: survivorId, slug: 'fixture-survivor-lab', archived: false });
@@ -80,14 +89,29 @@ describe('the school readings the engine resolves for a row (#6096)', () => {
     expect(await resolvedValuesFor()).toEqual(['superseded']);
   });
 
-  it('reads a merged-in row key and an entityId-anchored reading under a foreign key', async () => {
+  it('keeps a merged-in row reading apart, because the survivor owns its school', async () => {
     await reading({ entityKey: 'fixture-merged-shell', sourceName: 'merged-in-key' });
     await reading({
       entityKey: 'fixture-unrelated-key',
       entityId: survivorId,
       sourceName: 'entity-id-anchored',
     });
-    expect((await resolvedValuesFor()).sort()).toEqual(['entity-id-anchored', 'merged-in-key']);
+    expect(await resolvedReadingsFor()).toEqual({
+      own: ['entity-id-anchored'],
+      mergedIn: ['merged-in-key'],
+    });
+  });
+
+  it('drops a reading from an invalidated scrape run', async () => {
+    const runId = new mongoose.Types.ObjectId();
+    await ScrapeRun.collection.insertOne({ _id: runId, invalidated: true });
+    await reading({
+      entityKey: 'fixture-survivor-lab',
+      sourceName: 'invalidated-run',
+      scrapeRunId: runId,
+    });
+    await reading({ entityKey: 'fixture-survivor-lab', sourceName: 'kept-run' });
+    expect(await resolvedValuesFor()).toEqual(['kept-run']);
   });
 
   it('reads an old key the engine adopts into the row by rename, and no unrelated key', async () => {

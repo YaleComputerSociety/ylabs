@@ -2,7 +2,7 @@ import {
   STORED_SCHOOL_BACKING_CLASSES,
   storedSchoolBackingClass,
   storedSchoolIsBacked,
-  type SchoolBackingObservation,
+  type ResolvedSchoolReadings,
   type SchoolBackingRow,
   type SchoolCanonicalizer,
   type StoredSchoolBackingClass,
@@ -58,7 +58,8 @@ const schoolIsLocked = (row: StoredSchoolBackingReportRow): boolean =>
  */
 export function summarizeStoredSchoolBacking(
   rows: readonly StoredSchoolBackingReportRow[],
-  observationsByRow: ReadonlyMap<string, readonly SchoolBackingObservation[]>,
+  readingsByRow: ReadonlyMap<string, ResolvedSchoolReadings>,
+  derivedSchoolByRow: ReadonlyMap<string, string>,
   canonicalizer: SchoolCanonicalizer,
 ): StoredSchoolBackingSummary {
   const summary: StoredSchoolBackingSummary = {
@@ -77,8 +78,13 @@ export function summarizeStoredSchoolBacking(
   for (const row of rows) {
     const rowId = serializedDocumentId(row._id);
     if (!rowId) continue;
-    const observations = observationsByRow.get(rowId) ?? [];
-    const backing = storedSchoolBackingClass(row, observations, canonicalizer);
+    const readings = readingsByRow.get(rowId) ?? { own: [], mergedIn: [] };
+    const backing = storedSchoolBackingClass(
+      row,
+      readings,
+      canonicalizer,
+      derivedSchoolByRow.get(rowId) ?? '',
+    );
     summary.rows += 1;
     summary.byClass[backing] += 1;
     if (!row.served) continue;
@@ -91,7 +97,7 @@ export function summarizeStoredSchoolBacking(
       backing === 'school-observation' &&
       !storedSchoolIsBacked(
         row.school,
-        observations.filter((observation) => observation.superseded !== true),
+        readings.own.filter((observation) => observation.superseded !== true),
         canonicalizer,
       )
     ) {
@@ -103,7 +109,7 @@ export function summarizeStoredSchoolBacking(
     summary.servedNeverBackedByProvenanceSource[source] =
       (summary.servedNeverBackedByProvenanceSource[source] ?? 0) + 1;
     if (schoolIsLocked(row)) summary.servedNeverBackedSchoolLocked += 1;
-    if (observations.length > 0) summary.servedNeverBackedWithRivalReadings += 1;
+    if (readings.own.length > 0) summary.servedNeverBackedWithRivalReadings += 1;
     else summary.servedNeverBackedWithNoReadings += 1;
   }
   return summary;

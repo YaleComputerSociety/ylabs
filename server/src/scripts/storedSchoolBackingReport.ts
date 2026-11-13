@@ -6,8 +6,10 @@ import { initializeConnections, runScriptMain } from '../db/connections';
 import { ResearchEntity } from '../models/researchEntity';
 import { servesStudentVisibilityTier } from '../models/studentVisibility';
 import { getOrgUnitCanonicalizer } from '../scrapers/orgUnitCanonicalization';
+import { OrgUnit } from '../models/orgUnit';
 import {
   loadResolvedSchoolObservationsByRow,
+  schoolDerivedByOrgUnitCanonicalization,
   storedSchoolBackingClass,
   storedSchoolIsBacked,
 } from '../scrapers/storedSchoolBacking';
@@ -55,13 +57,28 @@ async function main(): Promise<void> {
   await initializeConnections();
   const rows = (await ResearchEntity.find({ archived: { $ne: true } })
     .select(
-      '_id slug school departments websiteUrl sourceUrls fieldProvenance.school manuallyLockedFields studentVisibilityTier studentVisibilityOverrideTier',
+      '_id slug school schools departments entityType websiteUrl sourceUrls fieldProvenance.school manuallyLockedFields studentVisibilityTier studentVisibilityOverrideTier',
     )
     .lean()) as Array<StoredSchoolBackingReportRow & Record<string, unknown>>;
+  if ((await OrgUnit.countDocuments({ kind: 'SCHOOL' })) === 0) {
+    throw new Error(
+      'The org-unit catalog holds no school, so every comparison would be raw-only and inflate never-backed. Seed org_units first.',
+    );
+  }
   const reportRows = rows.map((row) => ({ ...row, served: servesStudentVisibilityTier(row) }));
-  const observationsByRow = await loadResolvedSchoolObservationsByRow(reportRows);
+  const readingsByRow = await loadResolvedSchoolObservationsByRow(reportRows);
+  const derivedSchoolByRow = new Map<string, string>();
+  for (const row of reportRows) {
+    const id = serializedDocumentId(row._id);
+    if (id) derivedSchoolByRow.set(id, await schoolDerivedByOrgUnitCanonicalization(row));
+  }
   const canonicalizer = await getOrgUnitCanonicalizer();
-  const summary = summarizeStoredSchoolBacking(reportRows, observationsByRow, canonicalizer);
+  const summary = summarizeStoredSchoolBacking(
+    reportRows,
+    readingsByRow,
+    derivedSchoolByRow,
+    canonicalizer,
+  );
   const report = { generatedAt: new Date().toISOString(), issue: 6096, ...summary };
   console.log(JSON.stringify(report, null, 2));
   if (args.output) {
@@ -71,16 +88,23 @@ async function main(): Promise<void> {
   if (args.rowsOutput) {
     const listed = reportRows.flatMap((row) => {
       const id = serializedDocumentId(row._id) ?? '';
-      const observations = observationsByRow.get(id) ?? [];
-      const backing = storedSchoolBackingClass(row, observations, canonicalizer);
+      const readings = readingsByRow.get(id) ?? { own: [], mergedIn: [] };
+      const backing = storedSchoolBackingClass(
+        row,
+        readings,
+        canonicalizer,
+        derivedSchoolByRow.get(id) ?? '',
+      );
       const supersededOnly =
         backing === 'school-observation' &&
         !storedSchoolIsBacked(
           row.school,
-          observations.filter((observation) => observation.superseded !== true),
+          readings.own.filter((observation) => observation.superseded !== true),
           canonicalizer,
         );
-      if (backing !== 'never-backed' && !supersededOnly) return [];
+      if (backing !== 'never-backed' && backing !== 'merged-in-reading-only' && !supersededOnly) {
+        return [];
+      }
       return [{ id, slug: row.slug, served: row.served, backing, supersededOnly }];
     });
     fs.mkdirSync(path.dirname(args.rowsOutput), { recursive: true });
