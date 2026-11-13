@@ -1,6 +1,7 @@
 import { normalizeExcludedHost } from '../../utils/excludedHosts';
 import { HostPausedError, type HostPause } from './hostPausedError';
 import { hostPausedUntil, recordHostBackoff } from './hostPauseState';
+import { HostBudgetUnavailableError, type HostBackoffVerdict } from './machineHostBudget';
 
 export { HostPausedError, type HostPause } from './hostPausedError';
 
@@ -113,7 +114,7 @@ export async function recordHostRefusal(input: {
     HOST_PAUSE_STATUSES.has(input.status) &&
     (input.quickRetryWaitMs === undefined || (retryAfterMs ?? 0) > input.quickRetryWaitMs);
   if (!statedUntil && !outlastsQuickRetries) return undefined;
-  await recordHostBackoff(normalizeExcludedHost(input.host), {
+  await recordAnsweredRefusal(normalizeExcludedHost(input.host), {
     status: input.status,
     ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
     ...(statedUntil ? { statedUntil } : {}),
@@ -127,10 +128,21 @@ export async function recordTierOneExhausted(
   retryAfterMs?: number,
 ): Promise<void> {
   if (!host) return;
-  await recordHostBackoff(normalizeExcludedHost(host), {
+  await recordAnsweredRefusal(normalizeExcludedHost(host), {
     status,
     ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
   });
+}
+
+async function recordAnsweredRefusal(host: string, verdict: HostBackoffVerdict): Promise<void> {
+  try {
+    await recordHostBackoff(host, verdict);
+  } catch (error) {
+    if (!(error instanceof HostBudgetUnavailableError)) throw error;
+    console.warn(
+      `[host-pause] could not record a ${verdict.status} from ${host}: ${error.message}`,
+    );
+  }
 }
 
 /**

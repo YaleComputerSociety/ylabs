@@ -7,8 +7,6 @@ import {
   HOST_BACKOFF_CAP_MS,
   HOST_BACKOFF_JITTER_RATIO,
   HOST_BACKOFF_QUIET_RESET_MS,
-  HOST_CRAWL_DELAY_MAX_MS,
-  HOST_CRAWL_DELAY_TTL_MS,
   HOST_PAUSE_INLINE_WAIT_MS,
   HostBudgetUnavailableError,
   MACHINE_HOST_CORRUPT_STATE_PAUSE_MS,
@@ -65,14 +63,11 @@ describe('the host pause seam', () => {
         'HOST_BACKOFF_CAP_MS',
         'HOST_BACKOFF_JITTER_RATIO',
         'HOST_BACKOFF_QUIET_RESET_MS',
-        'HOST_CRAWL_DELAY_MAX_MS',
-        'HOST_CRAWL_DELAY_TTL_MS',
         'hostBackoffState',
         'hostPausedUntil',
         'recordHostBackoff',
         'recordHostSuccess',
         'resetHostPauseStateForTests',
-        'setHostMinInterval',
         'setHostPauseStateForTests',
       ].sort(),
     );
@@ -86,6 +81,7 @@ describe('recording host backoff', () => {
     for (let attempt = 0; attempt < 9; attempt += 1) {
       await limiter.recordBackoff(HOST, { status: 429 });
       pauses.push(pauseMs(limiter));
+      clock = limiter.pausedUntil(HOST)!.getTime();
     }
     expect(pauses).toEqual([
       30_000, 60_000, 120_000, 240_000, 480_000, 960_000, 1_920_000, 3_600_000, 3_600_000,
@@ -93,22 +89,23 @@ describe('recording host backoff', () => {
     expect(limiter.backoffState(HOST)).toMatchObject({ level: 8, lastStatus: 429 });
   });
 
-  it('keeps doubling to the cap when each refusal comes as its pause ends', async () => {
+  it('counts refusals that arrive while a pause holds as covered by it, not as further steps', async () => {
     const limiter = budget();
-    const pauses: number[] = [];
-    for (let attempt = 0; attempt < 9; attempt += 1) {
-      await limiter.recordBackoff(HOST, { status: 429 });
-      pauses.push(pauseMs(limiter));
-      clock = limiter.pausedUntil(HOST)!.getTime();
-    }
-    expect(pauses).toEqual([
-      30_000, 60_000, 120_000, 240_000, 480_000, 960_000, 1_920_000, 3_600_000, 3_600_000,
-    ]);
+    await limiter.recordBackoff(HOST, { status: 429 });
+    await limiter.recordBackoff(HOST, { status: 429 });
+    await limiter.recordBackoff(HOST, { status: 429 });
+    expect(pauseMs(limiter)).toBe(30_000);
+    expect(limiter.backoffState(HOST)?.level).toBe(0);
+
+    clock = limiter.pausedUntil(HOST)!.getTime();
+    await limiter.recordBackoff(HOST, { status: 429 });
+    expect(pauseMs(limiter)).toBe(60_000);
   });
 
   it('restarts at the base step only after a quiet window past the end of the pause', async () => {
     const limiter = budget();
     await limiter.recordBackoff(HOST, { status: 429 });
+    clock = limiter.pausedUntil(HOST)!.getTime();
     await limiter.recordBackoff(HOST, { status: 429 });
     const pauseEnd = limiter.pausedUntil(HOST)!.getTime();
 
@@ -185,6 +182,7 @@ describe('recording host success', () => {
   it('resets the level only after a quiet window past the end of the pause', async () => {
     const limiter = budget();
     await limiter.recordBackoff(HOST, { status: 429 });
+    clock = limiter.pausedUntil(HOST)!.getTime();
     await limiter.recordBackoff(HOST, { status: 429 });
     const pauseEnd = limiter.pausedUntil(HOST)!.getTime();
 
@@ -406,47 +404,3 @@ async function grantGapMs(limiter: MachineHostBudgetLimiter, host: string): Prom
   await new Promise((resolve) => setImmediate(resolve));
   return gap;
 }
-
-describe('a host crawl delay', () => {
-  it('widens the spacing of a host outside Yale', async () => {
-    const limiter = budget();
-    await limiter.setMinInterval(HOST, 3_000);
-    expect(await grantGapMs(limiter, HOST)).toBeGreaterThanOrEqual(3_000);
-  });
-
-  it('never lowers the Yale floor or an override', async () => {
-    const limiter = budget();
-    await limiter.setMinInterval('physics.yale.edu', 100);
-    await limiter.setMinInterval('ysph.yale.edu', 0);
-    expect(await grantGapMs(limiter, 'physics.yale.edu')).toBeGreaterThanOrEqual(1_500);
-    expect(await grantGapMs(limiter, 'ysph.yale.edu')).toBeGreaterThanOrEqual(400);
-  });
-
-  it('is clamped to ten seconds', async () => {
-    const limiter = budget();
-    await limiter.setMinInterval(HOST, 60_000);
-    expect(HOST_CRAWL_DELAY_MAX_MS).toBe(10_000);
-    expect(limiter.readState(HOST)?.crawlDelay?.ms).toBe(HOST_CRAWL_DELAY_MAX_MS);
-    const gap = await grantGapMs(limiter, HOST);
-    expect(gap).toBeGreaterThanOrEqual(10_000);
-    expect(gap).toBeLessThan(11_000);
-  });
-
-  it('is ignored once its day has passed', async () => {
-    const limiter = budget();
-    await limiter.setMinInterval(HOST, 5_000);
-    expect(HOST_CRAWL_DELAY_TTL_MS).toBe(86_400_000);
-    expect(limiter.readState(HOST)?.crawlDelay?.expiresAt).toBe(clock + HOST_CRAWL_DELAY_TTL_MS);
-    clock += HOST_CRAWL_DELAY_TTL_MS;
-    expect(await grantGapMs(limiter, HOST)).toBeLessThan(5_000);
-  });
-
-  it('keys the exact host, so www. is the same host and a sibling is untouched', async () => {
-    const limiter = budget();
-    await limiter.setMinInterval('www.crawl.example.org', 4_000);
-    expect(limiter.readState('crawl.example.org')?.crawlDelay?.ms).toBe(4_000);
-    expect(limiter.readState('other.example.org')?.crawlDelay).toBeUndefined();
-    expect(await grantGapMs(limiter, 'crawl.example.org')).toBeGreaterThanOrEqual(4_000);
-    expect(await grantGapMs(limiter, 'other.example.org')).toBeLessThan(4_000);
-  });
-});

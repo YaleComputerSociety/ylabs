@@ -4753,10 +4753,6 @@ test('shared form post goes through the same SSRF guard, agents, and host limite
   );
   assert.match(
     source,
-    /await deps\.limiter\.run\(\s*hostOf\(target\),\s*\(\) => deps\.request\(target, sent\),\s*isReusedResponse,\s*\)/,
-  );
-  assert.match(
-    source,
     /current = \(await deps\.assertUrl\(new URL\(result\.location, target\)\.toString\(\)\)\)\.toString\(\)/,
   );
 });

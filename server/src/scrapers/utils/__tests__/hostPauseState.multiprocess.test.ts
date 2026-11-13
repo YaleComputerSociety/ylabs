@@ -131,31 +131,7 @@ describe('shared host backoff across real processes', () => {
 
     const state = thisProcess().readState(host);
     expect(state?.backoff?.pausedUntil).toBe(far);
-    expect(state?.backoff?.level).toBe(3);
-  }, 60_000);
-
-  it('spaces two other processes by a crawl delay stricter than the budget', async () => {
-    const host = 'crawl-delay.example.org';
-    await thisProcess().setMinInterval(host, 1_200);
-    const plan = {
-      FIXTURE_HOST: host,
-      FIXTURE_REQUESTS: '2',
-      FIXTURE_HOLD_MS: '20',
-      FIXTURE_PARALLEL: '1',
-      FIXTURE_LAYERS: 'budget-only',
-    };
-
-    const lines = (
-      await Promise.all([runClient(plan, BUDGET_CLIENT), runClient(plan, BUDGET_CLIENT)])
-    ).flat();
-
-    const grants = lines
-      .filter((line) => (line.event as string) === 'released')
-      .map((line) => line.grantedAt as number)
-      .sort((a, b) => a - b);
-    expect(grants).toHaveLength(4);
-    const gaps = grants.slice(1).map((at, index) => at - grants[index]);
-    expect(Math.min(...gaps)).toBeGreaterThanOrEqual(1_200 - TIMER_SLACK_MS);
+    expect(state?.backoff?.level).toBe(0);
   }, 60_000);
 });
 

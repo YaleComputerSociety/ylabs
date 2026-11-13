@@ -56,9 +56,6 @@ export const HOST_BACKOFF_QUIET_RESET_MS = 600_000;
 export const HOST_BACKOFF_JITTER_RATIO = 0.1;
 /** A pause ending within this bound is waited out inside acquire; a longer one fails fast. */
 export const HOST_PAUSE_INLINE_WAIT_MS = 2_000;
-/** A robots.txt Crawl-delay can only widen a host's spacing, up to this bound, for a day. */
-export const HOST_CRAWL_DELAY_MAX_MS = 10_000;
-export const HOST_CRAWL_DELAY_TTL_MS = 24 * 60 * 60_000;
 const MAX_RECORDED_BACKOFF_LEVEL = 30;
 const NO_HTTP_STATUS = 0;
 
@@ -142,13 +139,6 @@ export interface MachineHostBudgetState {
   lastReleaseAt?: number;
   slots: MachineHostBudgetSlot[];
   backoff?: HostBackoffRecord;
-  crawlDelay?: HostCrawlDelayRecord;
-}
-
-export interface HostCrawlDelayRecord {
-  ms: number;
-  setAt: number;
-  expiresAt: number;
 }
 
 export interface HostBackoffVerdict {
@@ -190,25 +180,6 @@ function isBackoffRecord(value: unknown): value is HostBackoffRecord {
   );
 }
 
-function isCrawlDelayRecord(value: unknown): value is HostCrawlDelayRecord {
-  const record = value as HostCrawlDelayRecord;
-  return (
-    isFiniteNumber(record?.ms) &&
-    record.ms >= 0 &&
-    isFiniteNumber(record.setAt) &&
-    isFiniteNumber(record.expiresAt)
-  );
-}
-
-const effectiveIntervalMs = (
-  state: MachineHostBudgetState,
-  budget: HostThrottle,
-  now: number,
-): number =>
-  state.crawlDelay && state.crawlDelay.expiresAt > now
-    ? Math.max(budget.minIntervalMs, state.crawlDelay.ms)
-    : budget.minIntervalMs;
-
 // A paused host is sent nothing, so quiet counts from the end of the pause, never from the last
 // refusal; counting from the refusal would make every pause over the window look clean.
 const quietSince = (backoff: HostBackoffRecord): number =>
@@ -225,8 +196,7 @@ function parseState(raw: string, host: string): MachineHostBudgetState | undefin
       (parsed.lastReleaseAt === undefined || isFiniteNumber(parsed.lastReleaseAt)) &&
       Array.isArray(parsed.slots) &&
       parsed.slots.every(isSlot) &&
-      (parsed.backoff === undefined || isBackoffRecord(parsed.backoff)) &&
-      (parsed.crawlDelay === undefined || isCrawlDelayRecord(parsed.crawlDelay));
+      (parsed.backoff === undefined || isBackoffRecord(parsed.backoff));
     return valid ? parsed : undefined;
   } catch {
     return undefined;
@@ -426,7 +396,9 @@ export class MachineHostBudgetLimiter implements HostSlotLimiter {
     const pausedUntil = await this.transact(key, (state, now) => {
       const prior = state.backoff;
       const clean = prior !== undefined && now - quietSince(prior) >= HOST_BACKOFF_QUIET_RESET_MS;
-      const level = prior && !clean ? Math.min(prior.level + 1, MAX_RECORDED_BACKOFF_LEVEL) : 0;
+      const coveredByPause = prior !== undefined && !clean && prior.pausedUntil > now;
+      const stepped = prior && !clean ? prior.level + (coveredByPause ? 0 : 1) : 0;
+      const level = Math.min(stepped, MAX_RECORDED_BACKOFF_LEVEL);
       const exponential = Math.min(HOST_BACKOFF_CAP_MS, HOST_BACKOFF_BASE_MS * 2 ** level);
       const jitter = exponential * HOST_BACKOFF_JITTER_RATIO * (this.random() * 2 - 1);
       const retryAfterMs = isFiniteNumber(verdict.retryAfterMs) ? verdict.retryAfterMs : 0;
@@ -473,22 +445,6 @@ export class MachineHostBudgetLimiter implements HostSlotLimiter {
         `could not reset the ${key} backoff (${(error as Error)?.message ?? error}); its next pause starts from the recorded level`,
       );
     }
-  }
-
-  /**
-   * Records a host's own requested spacing (robots.txt Crawl-delay) for every process, clamped to
-   * `HOST_CRAWL_DELAY_MAX_MS` and kept for `HOST_CRAWL_DELAY_TTL_MS`. Spacing takes the larger of it
-   * and the budget's interval, so it never loosens an override or the Yale floor.
-   */
-  async setMinInterval(host: string, ms: number, at?: number): Promise<void> {
-    const key = host ? machineHostBudgetKey(host) : '';
-    if (!key || this.isBypassed() || !Number.isFinite(ms)) return;
-    const clamped = Math.min(HOST_CRAWL_DELAY_MAX_MS, Math.max(0, Math.round(ms)));
-    await this.transact(key, (state, now) => {
-      const setAt = at ?? now;
-      state.crawlDelay = { ms: clamped, setAt, expiresAt: setAt + HOST_CRAWL_DELAY_TTL_MS };
-      return { result: undefined, write: true };
-    });
   }
 
   /** When this exact host's pause ends, or undefined when it is not paused. One stat on a cache hit. */
@@ -592,7 +548,7 @@ export class MachineHostBudgetLimiter implements HostSlotLimiter {
   private async stampSpacing(key: string, budget: HostThrottle): Promise<SpacingStamp> {
     for (;;) {
       const outcome = await this.transact<SpacingOutcome>(key, (state, now) => {
-        const gap = spacingAnchor(state, budget) + effectiveIntervalMs(state, budget, now) - now;
+        const gap = spacingAnchor(state, budget) + budget.minIntervalMs - now;
         if (gap > 0) return { result: { remaining: gap }, write: false };
         const stamp: SpacingStamp = { priorLastGrantAt: state.lastGrantAt, stampedAt: now };
         state.lastGrantAt = now;
@@ -638,7 +594,7 @@ export class MachineHostBudgetLimiter implements HostSlotLimiter {
           expiresAt: at + MACHINE_HOST_SLOT_TTL_MS,
         });
         const priorNextGrantAt = state.nextGrantAt;
-        state.nextGrantAt = at + effectiveIntervalMs(state, budget, now);
+        state.nextGrantAt = at + budget.minIntervalMs;
         return {
           result: { at, priorNextGrantAt, nextGrantAt: state.nextGrantAt },
           write: true,
@@ -904,10 +860,6 @@ export function recordHostBackoff(
 
 export function recordHostSuccess(host: string): Promise<void> {
   return sharedMachineHostBudget().recordSuccess(host);
-}
-
-export function setHostMinInterval(host: string, ms: number, now?: number): Promise<void> {
-  return sharedMachineHostBudget().setMinInterval(host, ms, now);
 }
 
 export function hostPausedUntil(host: string): Date | undefined {
