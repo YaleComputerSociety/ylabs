@@ -68,6 +68,16 @@ export const browseCardSummary = (
 
 export const browseCardIsCutMidSentence = (card: string): boolean => card.endsWith(ELLIPSIS);
 
+export const endsOnNonTerminalAbbreviation = (value: string): boolean => {
+  const text = (value || '').replace(/\s+/g, ' ').trim();
+  if (!text.endsWith('.')) return false;
+  const lastWord = (text.slice(0, -1).match(/([A-Za-z.]+)$/)?.[1] || '').toLowerCase();
+  return (
+    NON_TERMINAL_ABBREVIATIONS.has(lastWord) ||
+    NON_TERMINAL_ABBREVIATIONS.has(lastWord.replace(/\./g, ''))
+  );
+};
+
 const SIX_WORDS = 6;
 
 export const browseCardHasSixWordsOrFewer = (card: string): boolean => {
