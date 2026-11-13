@@ -2120,6 +2120,15 @@ The gate itself reads no verdict age.
 `--full-link-health-reprobe` on the sweep, or running the backfill without the flag, probes every URL, which is the recovery path after a probe-rule change alongside `--checked-before`.
 The saving depends on sweep cadence: a sweep run more than 7 days after the last one re-probes almost everything.
 
+A refused or unroutable connection retires a live link only once two runs agree (#6116).
+`ECONNREFUSED`, `EHOSTUNREACH` and `ENETUNREACH` still classify as `UNAVAILABLE` after the probe's own second attempt, but over a stored `HEALTHY` or `REDIRECTED` verdict the backfill keeps that verdict, with its original `checkedAt`, and records the start of the run in `pendingConnectionFailureAt` and the probe time in `pendingConnectionFailureProbedAt`.
+A later run that sees the same failure records `UNAVAILABLE` only when both its start and its probe come at least six hours after the first run's (`CONNECTION_FAILURE_CONFIRMATION_GAP_MS`), because a resume minutes later, or a first probe late in a long run, is the same outage; the entry then keeps both run starts, `pendingConnectionFailureAt` and `confirmingConnectionFailureAt`, beside the first probe time.
+A failure inside the gap keeps the first time, a missing or unreadable time never confirms, a probe that reaches the host with any status or certificate result drops the marker, and a probe that reaches nothing keeps it.
+A `HEALTHY` verdict holding the marker is probed on the next sweep rather than carried by the 7-day window, and the report counts each held failure as `heldConnectionFailures`.
+A connect-time guard refusal of a private address is reported as `ERR_SSRF_BLOCKED`, a probe that reached nothing, so the stored verdict stands and nothing is held (#6150).
+A link on an `--exclude-host` host is never probed, so it is never held and gains no marker, and its carried entry keeps any marker it already had.
+`ENOTFOUND`, `404` and `410` still retire a link at once, and a connection failure over any other stored verdict records `UNAVAILABLE` as before.
+
 `client/src/utils/researchDetailSources.ts` mirrors the retiring-status set; changing the arms on either side requires updating the other copy.
 
 A stored entry carries a second, independent axis: `privateAddressHost`.

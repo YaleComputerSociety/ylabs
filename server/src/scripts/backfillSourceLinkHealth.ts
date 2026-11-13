@@ -315,6 +315,11 @@ export interface SourceLinkHealthBackfillResult {
    * host: a private or split-horizon refusal, a timeout or a reset.
    */
   preservedUnreachedVerdicts: number;
+  /**
+   * How many live verdicts a refused or unroutable connection did not retire because no
+   * earlier run had seen it yet; the next run confirms or clears each one (#6116).
+   */
+  heldConnectionFailures: number;
   /** Stored verdict changes as `<before>-><after>`; a renewed `checkedAt` alone is not one. */
   verdictTransitions: Record<string, number>;
   /** Certificate-failure flags the pass would remove. */
@@ -630,10 +635,16 @@ export async function runSourceLinkHealthBackfill(options: {
     ...(stopOnStatuses.size > 0 ? { stopOnStatuses } : {}),
     ...(options.samplePerHost !== undefined ? { maxProbesPerHost: options.samplePerHost } : {}),
   };
-  const checkLink =
+  const probeLink =
     options.checkLink ??
     ((url: string, requestGate?: HostSlotLimiter) =>
       checkSourceLinkHealth(url, requestGate, { excludedHosts: excludeHosts }));
+  const probedAtByUrl = new Map<string, Date>();
+  const checkLink = async (url: string, requestGate?: HostSlotLimiter) => {
+    const health = await probeLink(url, requestGate);
+    probedAtByUrl.set(url, new Date());
+    return health;
+  };
   const hostConcurrency = options.hostConcurrency ?? DEFAULT_SOURCE_LINK_HEALTH_HOST_CONCURRENCY;
   const paceDelayMs = options.paceDelayMs ?? DEFAULT_SOURCE_LINK_HEALTH_PACE_DELAY_MS;
   const sleep =
@@ -656,6 +667,7 @@ export async function runSourceLinkHealthBackfill(options: {
     errors: 0,
     preservedDecisiveVerdicts: 0,
     preservedUnreachedVerdicts: 0,
+    heldConnectionFailures: 0,
     verdictTransitions: {},
     clearedTlsFlags: 0,
     servedWebsitesLost: 0,
@@ -672,6 +684,7 @@ export async function runSourceLinkHealthBackfill(options: {
   };
 
   const healthCache = new Map<string, SourceLinkHealth>();
+  const runStartedAt = new Date();
 
   /**
    * Paged by `_id` rather than streamed from one long-lived cursor.
@@ -872,7 +885,6 @@ export async function runSourceLinkHealthBackfill(options: {
     } of plans) {
       const candidates = [...planned, ...tlsFallbacks];
       try {
-        const now = new Date();
         const storedByUrl = storedSourceLinkHealthByUrl(entity.sourceLinkHealth);
         const sourceLinkHealth: StoredSourceLinkHealthEntry[] = [];
         let probedEntries = 0;
@@ -908,9 +920,16 @@ export async function runSourceLinkHealthBackfill(options: {
           if (plannedProbeSet.has(url)) {
             observedDueByHost.set(urlHost, (observedDueByHost.get(urlHost) ?? 0) + 1);
           }
-          const resolved = resolveSourceLinkHealthEntry(url, health, storedByUrl.get(url), now);
+          const resolved = resolveSourceLinkHealthEntry(
+            url,
+            health,
+            storedByUrl.get(url),
+            probedAtByUrl.get(url) ?? new Date(),
+            runStartedAt,
+          );
           if (resolved.preservedDecisiveVerdict) result.preservedDecisiveVerdicts += 1;
           if (resolved.preservedUnreachedVerdict) result.preservedUnreachedVerdicts += 1;
+          if (resolved.heldConnectionFailure) result.heldConnectionFailures += 1;
           const verdictBefore = sourceLinkVerdictSignature(storedByUrl.get(url));
           const verdictAfter = sourceLinkVerdictSignature(resolved.entry);
           if (verdictBefore !== verdictAfter) {
