@@ -170,6 +170,11 @@ describe('subjectStatements', () => {
     }
   });
 
+  it('never reads a named center on a topic as the row', () => {
+    expect(names('Robin Quill directs the Center on Coastal Aging.')).toEqual([]);
+    expect(names('Robin Quill directs the Laboratory for Reef Genomics.')).toEqual([]);
+  });
+
   it('ignores a sentence whose subject is another unit', () => {
     expect(names('The Reef Core, led by Ada Brook, sequences samples.')).toEqual([]);
     expect(names('The section includes labs led by Ada Brook.')).toEqual([]);

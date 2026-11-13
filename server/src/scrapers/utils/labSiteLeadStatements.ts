@@ -302,7 +302,7 @@ const MODIFIER_PREPOSITION =
   '(?:in|of|at|within|from|for|with|across|on|by|to|into|throughout|beyond|outside|inside)';
 
 const PROPER_UNIT_NAME = new RegExp(
-  `^(?:the\\s+)?(?:Lab|Laboratory|Group|Center|Centre)\\s+(?:of|for)\\s+(?:the\\s+)?[A-Z]`,
+  `^(?:the\\s+)?(?:Lab|Laboratory|Group|Center|Centre)\\s+(?:of|for|on)\\s+(?:the\\s+)?[A-Z]`,
   'u',
 );
 
