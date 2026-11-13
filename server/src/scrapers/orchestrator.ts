@@ -15,6 +15,8 @@ import { directoryRemovalObservationRun } from './directoryRemovalObservationGua
 import { currentProcessCodeSha } from './scrapeRunCodeIdentity';
 import { describeScrapeRunLaunch } from '../db/devWriteLease';
 import { declareDevDryLaneRun } from '../db/devWriteGuard';
+import { registerDevWriteStopCleanup, type DevWriteStopReason } from '../db/devWriteStop';
+import type { ScrapeRunInterruptionReason } from '../models/storedVocabularies';
 import type { ReturnedScrapeRunStatus } from './sourceCrawlStamp';
 import { currentScrapeRunOwner, startScrapeRunHeartbeat } from './scrapeRunLiveness';
 import { reapDeadScrapeRuns } from './staleScrapeRunReaper';
@@ -231,6 +233,41 @@ export class ScraperOrchestrator {
       },
     });
     let interrupted = false;
+    const detachStopClose = registerDevWriteStopCleanup({
+      description: `scrape run ${scrapeRunId} (${source.name})`,
+      run: async (reason) => {
+        interrupted = true;
+        heartbeat.stop();
+        const at = new Date();
+        const interruptionReason = SCRAPE_RUN_INTERRUPTION_FOR_LEASE_STOP[reason];
+        const result = await ScrapeRun.updateOne(
+          { _id: run._id, status: 'running' },
+          {
+            $set: {
+              finishedAt: at,
+              status: 'interrupted',
+              observationCount,
+              entitiesObserved,
+              interruption: {
+                reason: interruptionReason,
+                detectedAt: at,
+                detectedBy: 'dev-write-lease-stop',
+              },
+              errors: [
+                ...errors,
+                {
+                  message: `Stopped by the Development write lease (${reason}) before the run finished`,
+                  at,
+                },
+              ],
+            },
+          },
+        );
+        return (result.matchedCount ?? 0) > 0
+          ? `closed as interrupted (${interruptionReason})`
+          : 'was no longer running';
+      },
+    });
     const detachInterrupt = onInterrupt(async (signal) => {
       interrupted = true;
       heartbeat.stop();
@@ -384,9 +421,20 @@ export class ScraperOrchestrator {
     } finally {
       heartbeat.stop();
       detachInterrupt();
+      detachStopClose();
     }
   }
 }
+
+const SCRAPE_RUN_INTERRUPTION_FOR_LEASE_STOP: Record<
+  DevWriteStopReason,
+  ScrapeRunInterruptionReason
+> = {
+  lost: 'lease_lost',
+  'renewal-failed': 'lease_renewal_failed',
+  'no-progress': 'lease_no_progress',
+  refused: 'lease_refused',
+};
 
 /**
  * The run's stored metrics: what the lane reported mid-run, then what it returned, then

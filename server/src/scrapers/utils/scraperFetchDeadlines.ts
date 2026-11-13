@@ -6,6 +6,7 @@ import axios, {
   type InternalAxiosRequestConfig,
 } from 'axios';
 import { OUTBOUND_CONNECT_TIMEOUT_MS } from '../../utils/connectDeadlineAgents';
+import { DevWriteStoppedError, devWriteStopped } from '../../db/devWriteStop';
 
 /**
  * The three bounds every scraper HTTP request carries. Changing one also requires updating
@@ -71,6 +72,7 @@ export function withScraperFetchDeadline(
 ): AxiosAdapter {
   const overallDeadlineMs = options.overallDeadlineMs ?? scraperFetchOverallDeadlineMs;
   return async (config) => {
+    if (devWriteStopped()) throw new DevWriteStoppedError('a scraper fetch');
     config.timeout = scraperFetchReadTimeoutMs(config.timeout);
     const overallMs = overallDeadlineMs(config.timeout);
     const callerSignal = config.signal;

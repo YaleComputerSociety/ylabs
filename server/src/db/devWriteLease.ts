@@ -3,6 +3,15 @@ import { hostname } from 'os';
 import type { Collection, Db } from 'mongodb';
 
 import { onInterrupt } from '../utils/interruptCleanup';
+import {
+  DEV_WRITE_STOP_CLEANUP_ATTEMPT_TIMEOUT_MS,
+  DEV_WRITE_STOP_CLEANUP_WINDOW_MS,
+  enterDevWriteStoppedMode,
+  registerDevWriteStopCleanup,
+  resetDevWriteStopForTests,
+  runDevWriteStopCleanups,
+  type DevWriteStopCleanupOutcome,
+} from './devWriteStop';
 import { operatorEnvironmentForDatabaseName } from './operatorDatabaseEnvironment';
 import {
   DEV_WRITE_OWNER_LABEL_ENV,
@@ -52,6 +61,8 @@ export const DEV_WRITE_LEASE_STALLED_MS = 15 * 60_000;
  * and a holder with any watched client that has no socket ceiling below it is never stopped.
  */
 export const DEV_WRITE_LEASE_NO_PROGRESS_STOP_MS = 20 * 60_000;
+/** A stopped holder exits with this code once its bounded cleanup ends, whatever the cleanup managed. */
+export const DEV_WRITE_LEASE_STOP_EXIT_CODE = 1;
 export const DEV_WRITE_LEASE_OWNER_ENV = 'DEV_WRITE_LEASE_OWNER';
 export const DEV_WRITE_LEASE_SWITCH_ENV = 'DEV_WRITE_LEASE';
 export { DEV_WRITE_OWNER_LABEL_ENV };
@@ -381,22 +392,63 @@ interface DevWriteLeaseRuntime {
   heartbeatTimeoutMs: number;
   log: (message: string) => void;
   stop: (stop: DevWriteLeaseStop) => void;
+  exit: (code: number) => void;
+  sleep: (ms: number) => Promise<void>;
+  deferExits: () => () => void;
+  cleanupWindowMs: number;
+  cleanupAttemptTimeoutMs: number;
 }
+
+const sleepFor = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Another path in the stopping process, such as a CLI catch that sees its refused fetch, may call
+ * `process.exit` while the bounded cleanup is still retrying, which would leave the run, the source
+ * lock and the leases behind exactly as before. So exits are held until the cleanup ends.
+ */
+function deferProcessExitsUntilCleanupEnds(): () => void {
+  const originalExit = process.exit;
+  let announced = false;
+  // Intentionally replaces process.exit for the length of the bounded cleanup only.
+  process.exit = ((code?: number | string | null) => {
+    if (!announced) {
+      announced = true;
+      console.error(
+        `Holding process.exit(${code ?? ''}) until the Development write lease stop cleanup ends; the process exits with code ${DEV_WRITE_LEASE_STOP_EXIT_CODE} then.`,
+      );
+    }
+    return undefined as never;
+  }) as typeof process.exit;
+  return () => {
+    process.exit = originalExit;
+  };
+}
+
+let stopCleanupEnded: Promise<void> | undefined;
 
 const defaultRuntime: DevWriteLeaseRuntime = {
   now: () => new Date(),
   heartbeatTimeoutMs: DEV_WRITE_LEASE_HEARTBEAT_TIMEOUT_MS,
   log: (message) => console.error(message),
-  stop: ({ message }) => {
-    console.error(message);
-    process.exit(1);
+  stop: (stop) => {
+    stopCleanupEnded = stopAfterBoundedCleanup(stop);
   },
+  exit: (code) => process.exit(code),
+  sleep: sleepFor,
+  deferExits: deferProcessExitsUntilCleanupEnds,
+  cleanupWindowMs: DEV_WRITE_STOP_CLEANUP_WINDOW_MS,
+  cleanupAttemptTimeoutMs: DEV_WRITE_STOP_CLEANUP_ATTEMPT_TIMEOUT_MS,
 };
 
 let runtime: DevWriteLeaseRuntime = defaultRuntime;
 
 export function setDevWriteLeaseRuntimeForTests(overrides: Partial<DevWriteLeaseRuntime>) {
-  runtime = { ...defaultRuntime, ...overrides };
+  runtime = {
+    ...defaultRuntime,
+    exit: () => undefined,
+    deferExits: () => () => undefined,
+    ...overrides,
+  };
   setDevWriteProgressClock(runtime.now);
 }
 
@@ -411,6 +463,7 @@ interface HeldLeaseState {
 const heldLeases = new Map<string, HeldLeaseState>();
 const pendingIdleReleases = new Map<string, Promise<void>>();
 let mintedOwner: { db: Db; ownerId: string } | undefined;
+let removeStopLeaseRelease: (() => void) | undefined;
 let heartbeatTimer: NodeJS.Timeout | undefined;
 let tickInFlight: Promise<void> | undefined;
 let stopped = false;
@@ -508,7 +561,86 @@ const quoted = (names: string[]) => names.map((name) => `"${name}"`).join(', ');
 function stopProcess(stop: DevWriteLeaseStop) {
   if (stopped) return;
   stopped = true;
+  enterDevWriteStoppedMode(stop.reason);
+  if (heartbeatTimer) {
+    clearInterval(heartbeatTimer);
+    heartbeatTimer = undefined;
+  }
   runtime.stop(stop);
+}
+
+function describeStopCleanup(
+  outcomes: DevWriteStopCleanupOutcome[],
+  joinedLeases: string[],
+): string {
+  const cleaned = outcomes.filter((outcome) => outcome.cleaned);
+  const notCleaned = outcomes.filter((outcome) => !outcome.cleaned);
+  const lines = [
+    `Cleanup after the stop (bounded to ${Math.round(runtime.cleanupWindowMs / 1000)} s): ${cleaned.length} cleaned, ${notCleaned.length + (joinedLeases.length > 0 ? 1 : 0)} not cleaned.`,
+    ...cleaned.map(({ description, detail }) => `  cleaned: ${description}: ${detail}`),
+    ...notCleaned.map(
+      ({ description, detail, attempts }) =>
+        `  not cleaned: ${description} after ${attempts} attempt(s), ${detail}; it is left to expire on its own.`,
+    ),
+  ];
+  if (joinedLeases.length > 0) {
+    lines.push(
+      `  not cleaned: ${joinedLeases.length} lease(s) joined from the parent owner (${quoted(joinedLeases)}); the parent owner releases them.`,
+    );
+  }
+  if (outcomes.length === 0 && joinedLeases.length === 0) {
+    lines.push('  nothing was registered for cleanup.');
+  }
+  return lines.join('\n');
+}
+
+/**
+ * The stop sequence after stopped mode is entered: print the stop report, run the bounded cleanup,
+ * report what it cleaned and what it left, and exit with the stop exit code. It exits even when the
+ * database never answers, at the end of the cleanup window.
+ */
+async function stopAfterBoundedCleanup(stop: DevWriteLeaseStop): Promise<void> {
+  runtime.log(stop.message);
+  const joinedLeases = [...heldLeases.values()]
+    .filter(({ lease }) => lease.ownerId !== mintedOwner?.ownerId)
+    .map(({ lease }) => lease.name);
+  const releaseExits = runtime.deferExits();
+  try {
+    const outcomes = await runDevWriteStopCleanups({
+      now: runtime.now,
+      sleep: runtime.sleep,
+      windowMs: runtime.cleanupWindowMs,
+      attemptTimeoutMs: runtime.cleanupAttemptTimeoutMs,
+    });
+    runtime.log(describeStopCleanup(outcomes, joinedLeases));
+  } catch (error) {
+    runtime.log(
+      `Cleanup after the stop failed: ${(error as Error)?.message ?? error}; what it did not reach is left to expire on its own.`,
+    );
+  } finally {
+    releaseExits();
+    runtime.exit(DEV_WRITE_LEASE_STOP_EXIT_CODE);
+  }
+}
+
+function registerStopLeaseRelease(db: Db, ownerId: string) {
+  removeStopLeaseRelease ??= registerDevWriteStopCleanup({
+    description: `Development write leases of owner ${ownerId}`,
+    run: async () => {
+      const result = await devWriteLeaseCollection(db).updateMany(
+        { environment: DEV_WRITE_LEASE_ENVIRONMENT, ownerId, locked: true } as Record<
+          string,
+          unknown
+        >,
+        {
+          $set: { locked: false, releasedAt: runtime.now(), releaseReason: 'stopped' },
+          $unset: { ownerId: '', leaseExpiresAt: '' },
+        },
+        boundedOptions(runtime.cleanupAttemptTimeoutMs),
+      );
+      return `released ${result.modifiedCount} lease(s)`;
+    },
+  });
 }
 
 function stopForLostLeases(names: string[]) {
@@ -669,6 +801,7 @@ async function renewHeldLeases(at: Date) {
 }
 
 export function runDevWriteLeaseHeartbeatTick(): Promise<void> {
+  if (stopped) return Promise.resolve();
   tickInFlight ??= (async () => {
     try {
       await releaseIdleHostLeases(runtime.now());
@@ -696,12 +829,15 @@ function ensureHeartbeat() {
 let removeInterruptRelease: (() => void) | undefined;
 
 export async function releaseHeldDevWriteLeases(): Promise<void> {
+  await stopCleanupEnded;
   if (heartbeatTimer) {
     clearInterval(heartbeatTimer);
     heartbeatTimer = undefined;
   }
   removeInterruptRelease?.();
   removeInterruptRelease = undefined;
+  removeStopLeaseRelease?.();
+  removeStopLeaseRelease = undefined;
   const leases = [...heldLeases.values()].map(({ lease }) => lease);
   heldLeases.clear();
   await Promise.allSettled([...pendingIdleReleases.values()]);
@@ -729,6 +865,7 @@ async function holdLease(
   if (!lease.joined) {
     process.env[DEV_WRITE_LEASE_OWNER_ENV] ??= lease.ownerId;
     mintedOwner ??= { db: connection.db, ownerId: lease.ownerId };
+    registerStopLeaseRelease(mintedOwner.db, mintedOwner.ownerId);
   }
   const at = runtime.now();
   startDevWriteProgressClock(at);
@@ -797,6 +934,10 @@ export async function acquireIntendedDevApplyLease(
 
 let firstWriteApplyLease: Promise<HeldDevWriteLease | undefined> | undefined;
 let firstWriteApplyLeaseRefusal: Error | undefined;
+
+export function devApplyLeaseFirstWriteRefusal(): Error | undefined {
+  return firstWriteApplyLeaseRefusal;
+}
 
 /**
  * Run by the model write guard for a script that recorded its apply intent only after it connected,
@@ -916,6 +1057,7 @@ export function resetDevWriteLeaseStateForTests() {
   mintedOwner = undefined;
   tickInFlight = undefined;
   stopped = false;
+  stopCleanupEnded = undefined;
   reportedProgressCounts.clear();
   progressUnobservable = false;
   heldForChildProcesses = false;
@@ -923,6 +1065,8 @@ export function resetDevWriteLeaseStateForTests() {
   runtime = defaultRuntime;
   removeInterruptRelease?.();
   removeInterruptRelease = undefined;
+  removeStopLeaseRelease = undefined;
+  resetDevWriteStopForTests();
   if (heartbeatTimer) clearInterval(heartbeatTimer);
   heartbeatTimer = undefined;
 }
