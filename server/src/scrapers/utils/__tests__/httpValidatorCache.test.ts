@@ -431,6 +431,56 @@ describe('reusing a recently verified body without a request (#6212)', () => {
     expect(seen).toHaveLength(2);
   });
 
+  it('never reuses a body whose stored response is no-store or private', async () => {
+    reuseClient(HOUR);
+    routes.set('/private', etagRoute('<p>synthetic</p>', '"v1"', { 'Cache-Control': 'private' }));
+    routes.set('/no-store', etagRoute('<p>synthetic</p>', '"v1"', { 'Cache-Control': 'no-store' }));
+
+    for (const route of ['/private', '/no-store']) {
+      await client.get(`${origin}${route}`, { responseType: 'text' });
+      await client.get(`${origin}${route}`, { responseType: 'text' });
+    }
+
+    expect(seen.map((request) => request.path)).toEqual([
+      '/private',
+      '/private',
+      '/no-store',
+      '/no-store',
+    ]);
+  });
+
+  it('never reuses a response that varies on anything but its encoding', async () => {
+    reuseClient(HOUR);
+    routes.set(
+      '/varies',
+      etagRoute('<p>synthetic</p>', '"v1"', { Vary: 'Accept-Encoding, User-Agent' }),
+    );
+    routes.set('/encoding', etagRoute('<p>synthetic</p>', '"v1"', { Vary: 'Accept-Encoding' }));
+
+    for (const route of ['/varies', '/encoding']) {
+      await client.get(`${origin}${route}`, { responseType: 'text' });
+      await client.get(`${origin}${route}`, { responseType: 'text' });
+    }
+
+    expect(seen.map((request) => request.path)).toEqual(['/varies', '/varies', '/encoding']);
+  });
+
+  it('never stores or reuses a request that carries credentials', async () => {
+    reuseClient(HOUR);
+    routes.set('/page', etagRoute('<p>synthetic</p>', '"v1"'));
+
+    for (const headers of [
+      { Authorization: 'Bearer synthetic' },
+      { Cookie: 'session=synthetic' },
+    ]) {
+      await client.get(`${origin}/page`, { responseType: 'text', headers });
+      await client.get(`${origin}/page`, { responseType: 'text', headers });
+    }
+
+    expect(seen).toHaveLength(4);
+    expect(seen.every((request) => request.ifNoneMatch === undefined)).toBe(true);
+  });
+
   it('reads the window from the environment, defaulting to twelve hours and failing to zero', () => {
     expect(httpCacheReuseMaxAgeMs({})).toBe(12 * HOUR);
     expect(httpCacheReuseMaxAgeMs({ SCRAPER_HTTP_CACHE_REUSE_HOURS: '0' })).toBe(0);

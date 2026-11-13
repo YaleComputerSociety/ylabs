@@ -22,7 +22,7 @@ import CachePolicy from 'http-cache-semantics';
 import type { ScraperFetchMetrics, ScraperResult } from '../types';
 import { SWEEP_PAGE_REUSE_HIT_KEY, isSweepPageReuseHit } from './sweepPageReuseHit';
 
-export const DEFAULT_HTTP_CACHE_MAX_BYTES = 2 * 1024 * 1024 * 1024;
+export const DEFAULT_HTTP_CACHE_MAX_BYTES = 1024 * 1024 * 1024;
 export const DEFAULT_HTTP_CACHE_MAX_ENTRY_BYTES = 8 * 1024 * 1024;
 export const DEFAULT_HTTP_CACHE_REUSE_HOURS = 12;
 export const HTTP_CACHE_HOST_SHARE = 0.2;
@@ -169,6 +169,7 @@ export class HttpValidatorStore {
   private readonly aliasesDir: string;
   private knownBytes: number | null = null;
   private evicting: Promise<void> | null = null;
+  private ownerOnly: Promise<void> | null = null;
 
   constructor(
     readonly directory: string,
@@ -257,8 +258,18 @@ export class HttpValidatorStore {
     }
   }
 
+  private restrictExistingDirectories(): Promise<void> {
+    this.ownerOnly ??= Promise.all(
+      [this.directory, this.entriesDir, this.aliasesDir].map((dir) =>
+        fs.chmod(dir, OWNER_ONLY_DIRECTORY_MODE).catch(() => undefined),
+      ),
+    ).then(() => undefined);
+    return this.ownerOnly;
+  }
+
   private async writeAtomic(file: string, contents: Buffer): Promise<number> {
     await fs.mkdir(path.dirname(file), { recursive: true, mode: OWNER_ONLY_DIRECTORY_MODE });
+    await this.restrictExistingDirectories();
     const temporary = `${file}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
     await fs.writeFile(temporary, contents, { mode: OWNER_ONLY_FILE_MODE });
     await fs.rename(temporary, file);
@@ -407,11 +418,15 @@ function lastVerifiedMs(entry: StoredHttpResponse): number {
   return Date.parse(entry.verifiedAt ?? entry.storedAt);
 }
 
-function forbidsReuseWithoutRevalidation(entry: StoredHttpResponse): boolean {
-  const cacheControl = String(
-    (entry.policy.resh as Record<string, unknown>)['cache-control'] ?? '',
-  );
-  return /\b(no-cache|no-store|must-revalidate)\b/i.test(cacheControl);
+export function forbidsReuseWithoutRevalidation(entry: StoredHttpResponse): boolean {
+  const headers = entry.policy.resh as Record<string, unknown>;
+  const cacheControl = String(headers['cache-control'] ?? '');
+  if (/\b(no-cache|no-store|must-revalidate|private)\b/i.test(cacheControl)) return true;
+  const vary = String(headers.vary ?? '')
+    .split(',')
+    .map((name) => name.trim().toLowerCase())
+    .filter(Boolean);
+  return vary.some((name) => name !== 'accept-encoding');
 }
 
 function storedBodyAdapter(entry: StoredHttpResponse): AxiosAdapter {
