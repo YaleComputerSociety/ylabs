@@ -10,7 +10,8 @@ Usage: scripts/new-agent-worktree.sh <branch-name> [base-branch]
 
 Environment:
   YLABS_WORKTREE_ROOT   Directory to hold worktrees.
-                        Default: <parent of the repo>/ylabs-worktrees.
+                        Default: <parent of the primary checkout>/ylabs-worktrees,
+                        also when run from inside another worktree.
   SKIP_INSTALL=1        Skip dependency install (resolve deps manually).
 
 Installs hardlink package files from the shared Yarn store (nmMode: hardlinks-global in
@@ -40,7 +41,7 @@ PRIMARY_ROOT="$(dirname "$(git -C "$REPO_ROOT" rev-parse --path-format=absolute 
 # Not /tmp: the repository's script write guards resolve their allowed output root from
 # os.tmpdir(), so a worktree living under /tmp makes artifact-path test files fail on a
 # clean checkout. Keep worktrees beside the primary checkout instead.
-WORKTREE_ROOT="${YLABS_WORKTREE_ROOT:-$(dirname "$REPO_ROOT")/ylabs-worktrees}"
+WORKTREE_ROOT="${YLABS_WORKTREE_ROOT:-$(dirname "$PRIMARY_ROOT")/ylabs-worktrees}"
 SLUG="$(printf '%s' "$BRANCH" | tr '/ ' '--')"
 WORKTREE_DIR="${WORKTREE_ROOT}/${SLUG}"
 
