@@ -144,6 +144,8 @@ import { type OfficialProfilePageIdentity } from '../../services/officialProfile
 import { normalizeOfficialProfileDestination } from '../../services/leadProfileIdentity';
 import { isDepartmentHeadingChrome } from '../utils/departmentHeadingChrome';
 import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
+import { catalogDepartment } from '../directoryExportDepartmentEvidence';
+import type { CanonicalDepartment } from '../utils/directoryExportDepartment';
 import { imageElementSource } from '../utils/imageElementSource';
 import {
   isLikelyPublicProfileImageUrl,
@@ -233,6 +235,7 @@ interface IdentityToUserObservationOptions {
   includeEmail?: boolean;
   directoryNetidsByAddress?: DirectoryNetidsByAddress;
   pageOrcidWitnessedForNetid?: boolean;
+  canonicalDepartment?: CanonicalDepartment | null;
 }
 
 export interface OfficialProfileResearchHome {
@@ -3037,9 +3040,12 @@ function firstPersonSpecificYaleEmail(
 
 // Broader selectors such as [class*="organization"]/[class*="affiliation"] also
 // match section-heading chrome ("Other Departments & Organizations") and
-// center/institute affiliations that are not academic departments, so only an
-// element explicitly classed "department" is trusted as a department signal.
+// center/institute affiliations that are not academic departments, so outside
+// an Appointments block only an element explicitly classed "department" is
+// trusted as a department signal.
 function extractDepartments($: cheerio.CheerioAPI): string[] {
+  const appointmentCards = $('.profile-details-appointment-card');
+  if (appointmentCards.length > 0) return primaryAppointmentUnits($, appointmentCards);
   const values: string[] = [];
   $('[class*="department"]').each((_i, el) => {
     const value = textValue($(el).text());
@@ -3047,6 +3053,27 @@ function extractDepartments($: cheerio.CheerioAPI): string[] {
     if (value && value.length < 160) values.push(value);
   });
   return uniqueStrings(values).slice(0, 5);
+}
+
+// A YSM or YSPH profile states each appointment as a card naming its academic unit and whether
+// it is the Primary or a Secondary appointment (#5800). Only a Primary unit is read, so a page
+// stating no Primary appointment yields no department rather than promoting a Secondary one.
+function primaryAppointmentUnits(
+  $: cheerio.CheerioAPI,
+  appointmentCards: cheerio.Cheerio<any>,
+): string[] {
+  const units: string[] = [];
+  appointmentCards.each((_i, card) => {
+    const appointmentType = textValue(
+      $(card).find('[class*="appointment-card__type"]').first().text(),
+    );
+    if (appointmentType.toLowerCase() !== 'primary') return;
+    const unit = textValue(
+      $(card).find('[class*="appointment-card__academic-unit"]').first().text(),
+    );
+    if (unit && unit.length < 160) units.push(unit);
+  });
+  return uniqueStrings(units).slice(0, 5);
 }
 
 function splitResearchInterestText(text: string): string[] {
@@ -4083,12 +4110,16 @@ export function identityToUserObservations(
         confidenceOverride: 0.9,
       });
     }
-    if (identity.departments.length > 0) {
+    const primaryDepartment = catalogPrimaryDepartment(
+      identity.departments,
+      options.canonicalDepartment,
+    );
+    if (primaryDepartment) {
       observations.push({
         entityType: 'user',
         entityKey: `netid:${netid}`,
         field: 'primaryDepartment',
-        value: identity.departments[0],
+        value: primaryDepartment,
         sourceUrl: identity.canonicalUrl,
         confidenceOverride: 0.85,
       });
@@ -4115,6 +4146,17 @@ function withAbsenceClaim(observation: ObservationInput, field: string): Observa
     ...observation,
     assertsNoValueFor: [...new Set([...(observation.assertsNoValueFor ?? []), field])],
   };
+}
+
+// Fails closed (#5796): with no catalog, or a first department the catalog does not name, the
+// lane states no primary department, and a later unit is never promoted in its place.
+function catalogPrimaryDepartment(
+  departments: string[],
+  canonicalDepartment: CanonicalDepartment | null | undefined,
+): string | undefined {
+  const [first] = departments;
+  if (!first || !canonicalDepartment) return undefined;
+  return canonicalDepartment(first);
 }
 
 function shortOfficialProfileBio(value: string): string {
@@ -5470,6 +5512,11 @@ export async function loadKnownPersonSurnameRosterWhenConnected(): Promise<Reado
   return loadKnownPersonSurnameRoster();
 }
 
+export async function loadCatalogDepartmentWhenConnected(): Promise<CanonicalDepartment | null> {
+  if (!mongooseConnectionWasOpened()) return null;
+  return catalogDepartment();
+}
+
 export class OfficialProfilePiBackfillScraper implements IScraper {
   readonly name = SOURCE_NAME;
   readonly displayName = 'Official profile PI backfill';
@@ -5515,6 +5562,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
       limit: number,
       targetKeys?: string[],
     ) => Promise<Array<Record<string, any>>> = selectOrganizationDirectorProfileTargets,
+    private readonly catalogDepartmentLoader: () => Promise<CanonicalDepartment | null> = loadCatalogDepartmentWhenConnected,
   ) {}
 
   private pageReads = new LanePageReads();
@@ -5579,6 +5627,9 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
     let knownPersonSurnames: Promise<ReadonlySet<string>> | null = null;
     const knownPersonSurnamesForRun = (): Promise<ReadonlySet<string>> =>
       (knownPersonSurnames ??= this.knownPersonSurnameLoader());
+    let canonicalDepartment: Promise<CanonicalDepartment | null> | null = null;
+    const canonicalDepartmentForRun = (): Promise<CanonicalDepartment | null> =>
+      (canonicalDepartment ??= this.catalogDepartmentLoader());
     const runOnlyWebsiteObservationBackfill =
       (runLeadDirectWebsiteBackfill || runSourceUrlWebsiteBackfill) &&
       !runQueuedPiBackfill &&
@@ -5813,6 +5864,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
                     directoryNetidsByAddress:
                       directoryNetidsByAddress ?? (await loadDirectoryNetidsByAddress()),
                     pageOrcidWitnessedForNetid,
+                    canonicalDepartment: await canonicalDepartmentForRun(),
                   }),
                 );
                 if (runQueuedPiBackfill && statesAnAppointment(identity)) {
@@ -5831,6 +5883,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
                     ...identityToUserObservations(identity, inferredUser, {
                       includeProfileEnrichment: true,
                       includeIdentityEnrichment: true,
+                      canonicalDepartment: await canonicalDepartmentForRun(),
                     }),
                   );
                   if (statesAnAppointment(identity)) {
@@ -5874,6 +5927,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
                     ...identityToUserObservations(identity, inferredUser, {
                       includeProfileEnrichment: true,
                       includeIdentityEnrichment: true,
+                      canonicalDepartment: await canonicalDepartmentForRun(),
                     }),
                     ...identityToResearchEntityPiKeyObservations(identity, inferredNetid, entity),
                   );
