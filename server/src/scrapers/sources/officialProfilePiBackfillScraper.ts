@@ -6,6 +6,7 @@ import axios from 'axios';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 import mongoose from 'mongoose';
 import * as cheerio from 'cheerio';
+import type { AnyNode } from 'domhandler';
 import { ResearchEntity } from '../../models/researchEntity';
 import { Observation } from '../../models/observation';
 import { Researcher } from '../../models/researcher';
@@ -1190,6 +1191,49 @@ const blockSeparatedText = (selection: cheerio.Cheerio<any>): string =>
     .map((el) => extractElementTextWithBlockSeparators(el))
     .join(' ');
 
+/**
+ * One school's Drupal profile template states the appointment only as a bold line of its
+ * contact-information field, not in any element classed as a title (#5874). Its bold lines are
+ * read in order as whole paragraphs, so an appointment split across tags stays whole; a block
+ * that breaks lines with `<br>` is read one bold tag at a time instead. A line
+ * naming an office or unit is refused, and reading stops at the first contact label, so a bold
+ * phone, address, hours or office line after it is never read.
+ */
+const CONTACT_FIELD_SELECTOR = '[class~="field-name-field-person-contact-information"]';
+const ORGANIZATIONAL_UNIT_LINE =
+  /^(?:the\s+)?(?:office|department|school|division|center|centre|program|institute)\s+(?:of|for)\b/i;
+const CONTACT_LABEL_LINE = /^(?:e-?mail|phone|tel(?:ephone)?|fax|office\s+hours|hours|address)\b/i;
+
+function contactFieldAppointment($: cheerio.CheerioAPI): string {
+  const field = $(CONTACT_FIELD_SELECTOR).first();
+  const boldLines = field
+    .find('strong')
+    .toArray()
+    .map((strong) => {
+      const block = $(strong).closest('p, div');
+      return block.length > 0 && block.find('br').length === 0 ? block.get(0)! : strong;
+    })
+    .filter((line, index, lines) => lines.indexOf(line) === index);
+  for (const line of boldLines) {
+    const value = cleanOfficialProfileTitle(blockSeparatedText($(line)));
+    if (!value) continue;
+    if (CONTACT_LABEL_LINE.test(value)) return '';
+    if (ORGANIZATIONAL_UNIT_LINE.test(value)) continue;
+    if (isAdmissibleOfficialProfileTitle(value)) return value;
+  }
+  return '';
+}
+
+/**
+ * Drupal blocks without a visible heading carry `block-without-title`, which `[class*="title"]`
+ * matches, so a whole navigation menu was read as the person's title (#5874, #5594).
+ */
+function classNamesATitle($: cheerio.CheerioAPI, element: AnyNode): boolean {
+  return ($(element).attr('class') ?? '')
+    .split(/\s+/)
+    .some((name) => name.includes('title') && !name.endsWith('without-title'));
+}
+
 function admissibleProfileTitles($: cheerio.CheerioAPI): string[] {
   const selectors = [
     '[class*="title"]',
@@ -1197,10 +1241,12 @@ function admissibleProfileTitles($: cheerio.CheerioAPI): string[] {
     '[class*="position"]',
     'meta[name="description"]',
   ];
-  const titles: string[] = [];
+  const contactAppointment = contactFieldAppointment($);
+  const titles: string[] = contactAppointment ? [contactAppointment] : [];
   for (const selector of selectors) {
     const elements = $(selector).toArray();
     for (const el of elements) {
+      if (selector === '[class*="title"]' && !classNamesATitle($, el)) continue;
       const value = cleanOfficialProfileTitle(
         blockSeparatedText($(el)) || $(el).attr('content') || '',
       );
