@@ -14,6 +14,9 @@ const CATALOG = new Map(
     'Environmental Health Sciences',
     'Psychiatry',
     'English Language & Literature',
+    'Emergency Medicine',
+    'Electrical & Computer Engineering',
+    'Earth & Planetary Sciences',
   ].map((name) => [name.toLowerCase(), name]),
 );
 const canonical = (name: string) => CATALOG.get(name.toLowerCase());
@@ -36,6 +39,9 @@ describe('decodeDirectoryExportDepartment (#5796)', () => {
     ['SPHDPT Chronic Disease Epidemiology (CDE)', 'Chronic Disease Epidemiology'],
     ['SPHDPT Environmental Health Sciences (EHS)', 'Environmental Health Sciences'],
     ['MEDPSY Psych Divisions-CNRU', 'Psychiatry'],
+    ['EM - Emergency Medicine', 'Emergency Medicine'],
+    ['ECE - Electrical & Computer Engineering', 'Electrical & Computer Engineering'],
+    ['EPS - Earth & Planetary Sciences', 'Earth & Planetary Sciences'],
   ])('reads %j as the catalog department %j', (value, department) => {
     expect(decode(value)).toEqual({ status: 'canonical', department });
   });
@@ -54,6 +60,8 @@ describe('decodeDirectoryExportDepartment (#5796)', () => {
     'MEDNEU Neurology Neuroscience',
     'NURS - Nursing',
     'MEDINT Sleep Medicine',
+    'LAW - Law',
+    'MGT - Management',
   ])('refuses %j, which maps to no catalog department', (value) => {
     expect(decode(value)).toEqual({ status: 'refused' });
   });
@@ -64,5 +72,7 @@ describe('decodeDirectoryExportDepartment (#5796)', () => {
       status: 'not-export-code',
     });
     expect(decode(undefined)).toEqual({ status: 'not-export-code' });
+    expect(decode('EM Fixture Studies')).toEqual({ status: 'not-export-code' });
+    expect(decode('A - Fixture Studies')).toEqual({ status: 'not-export-code' });
   });
 });
