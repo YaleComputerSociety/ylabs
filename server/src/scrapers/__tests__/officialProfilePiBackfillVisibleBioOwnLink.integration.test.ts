@@ -466,4 +466,194 @@ describe('visible profile bio backfill selects by the person own official link (
       ]);
     });
   });
+
+  describe('a keyed run re-reads only the named people (#6170)', () => {
+    const people = {
+      rosterKept: { netid: 'bf6170', name: 'Blake Fixture' },
+      rosterOther: { netid: 'cf6170', name: 'Casey Fixture' },
+      directKept: { netid: 'df6170', name: 'Drew Fixture' },
+      directOther: { netid: 'ef6170', name: 'Emery Fixture' },
+    };
+    type Person = (typeof people)[keyof typeof people];
+    const pageUrlOf = (person: Person) =>
+      `https://medicine.yale.edu/profile/${person.name.toLowerCase().replace(' ', '-')}/`;
+    const emailOf = (person: Person) =>
+      `${person.name.toLowerCase().replace(' ', '.')}6170@yale.edu`;
+    const everyone = Object.values(people);
+    const personAt = (url: string) => everyone.find((person) => pageUrlOf(person) === url);
+
+    const seedPerson = async (person: Person, withRole: boolean) => {
+      const researcher = await Researcher.create({
+        displayName: person.name,
+        identifiers: { netid: person.netid, email: emailOf(person) },
+        profileLinks: [officialLink(pageUrlOf(person))],
+        status: 'ACTIVE',
+        archived: false,
+      });
+      if (!withRole) return;
+      const entity = await ResearchEntity.create({
+        slug: `fixture-${person.netid}-lab`,
+        name: `${person.name} Fixture Lab`,
+        kind: 'lab',
+        studentVisibilityTier: 'student_ready',
+        archived: false,
+      });
+      await RoleAssignment.create({
+        personId: researcher._id,
+        target: { kind: 'RESEARCH_ENTITY', id: entity._id },
+        role: 'PI',
+        state: 'CURRENT',
+        confidence: 0.9,
+        archived: false,
+      });
+    };
+
+    const seedEveryone = async () => {
+      await seedPerson(people.rosterKept, true);
+      await seedPerson(people.rosterOther, true);
+      await seedPerson(people.directKept, false);
+      await seedPerson(people.directOther, false);
+    };
+
+    const readPage = vi.fn(async (url: string) => {
+      const person = personAt(url);
+      if (!person) throw new Error(`unexpected fetch ${url}`);
+      return personPage(url, person.name, emailOf(person));
+    });
+
+    const keyedContext = (
+      emitted: ObservationInput[],
+      only: string[],
+      limit?: number,
+    ): ScraperContext => {
+      const context = visibleBioContext(emitted);
+      return { ...context, options: { ...context.options, only, ...(limit ? { limit } : {}) } };
+    };
+
+    const netidsOf = (targets: Array<Record<string, any>>) =>
+      targets.map((target) => target.netid).sort();
+
+    beforeEach(() => {
+      readPage.mockClear();
+    });
+
+    it('selects every visible person when no key is given, as before', async () => {
+      await seedEveryone();
+
+      expect(netidsOf(await selectVisibleProfileBioTargets(10))).toEqual(
+        everyone.map((person) => person.netid).sort(),
+      );
+    });
+
+    it('keeps only the named netids in both the roster and the direct group', async () => {
+      await seedEveryone();
+
+      const targets = await selectVisibleProfileBioTargets(10, [
+        people.rosterKept.netid.toUpperCase(),
+        people.directKept.netid,
+      ]);
+
+      expect(netidsOf(targets)).toEqual([people.rosterKept.netid, people.directKept.netid]);
+    });
+
+    it('selects nothing for a key no target holds, never falling back to everyone', async () => {
+      await seedEveryone();
+
+      await expect(selectVisibleProfileBioTargets(10, ['zq0000'])).resolves.toEqual([]);
+    });
+
+    it('still honours the limit inside the keyed set', async () => {
+      await seedEveryone();
+
+      const targets = await selectVisibleProfileBioTargets(1, [
+        people.rosterKept.netid,
+        people.directKept.netid,
+      ]);
+
+      expect(targets).toHaveLength(1);
+    });
+
+    it('reads and emits only for the named netids, with the page-scoped ORCID absence claim', async () => {
+      await seedEveryone();
+      const emitted: ObservationInput[] = [];
+
+      await scraperReading(readPage).run(
+        keyedContext(emitted, [
+          'visible-profile-bio-backfill',
+          people.rosterKept.netid,
+          people.directKept.netid,
+        ]),
+      );
+
+      expect(readPage.mock.calls.map(([url]) => url).sort()).toEqual(
+        [pageUrlOf(people.rosterKept), pageUrlOf(people.directKept)].sort(),
+      );
+      const userRows = emitted.filter((o) => o.entityType === 'user');
+      expect([...new Set(userRows.map((o) => o.entityKey))].sort()).toEqual(
+        [`netid:${people.directKept.netid}`, `netid:${people.rosterKept.netid}`].sort(),
+      );
+      expect(userRows.length).toBeGreaterThan(0);
+      expect(userRows.every((o) => o.assertsNoValueFor?.includes('orcid'))).toBe(true);
+    });
+
+    it('runs neither research-home nor organization-director selection in a keyed run', async () => {
+      await seedEveryone();
+      const researchHomeSelector = vi.fn(async () => []);
+      const organizationDirectorSelector = vi.fn(async () => []);
+      const scraper = new OfficialProfilePiBackfillScraper(
+        readPage,
+        vi.fn(async () => []),
+        undefined,
+        selectVisibleProfileBioTargets,
+        researchHomeSelector,
+        vi.fn(async () => []),
+        0,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        organizationDirectorSelector,
+      );
+      const emitted: ObservationInput[] = [];
+
+      await scraper.run(
+        keyedContext(emitted, ['visible-profile-bio-backfill', people.rosterKept.netid]),
+      );
+
+      expect(researchHomeSelector).not.toHaveBeenCalled();
+      expect(organizationDirectorSelector).not.toHaveBeenCalled();
+      expect(new Set(emitted.map((o) => o.entityKey))).toEqual(
+        new Set([`netid:${people.rosterKept.netid}`]),
+      );
+    });
+
+    it('reads nothing in a keyed run whose key matches no target', async () => {
+      await seedEveryone();
+      const emitted: ObservationInput[] = [];
+
+      const result = await scraperReading(readPage).run(
+        keyedContext(emitted, ['visible-profile-bio-backfill', 'zq0000']),
+      );
+
+      expect(readPage).not.toHaveBeenCalled();
+      expect(emitted).toEqual([]);
+      expect(result).toMatchObject({ observationCount: 0 });
+    });
+
+    it('applies --limit to a keyed run', async () => {
+      await seedEveryone();
+      const emitted: ObservationInput[] = [];
+
+      await scraperReading(readPage).run(
+        keyedContext(
+          emitted,
+          ['visible-profile-bio-backfill', people.rosterKept.netid, people.directKept.netid],
+          1,
+        ),
+      );
+
+      expect(readPage).toHaveBeenCalledTimes(1);
+    });
+  });
 });
