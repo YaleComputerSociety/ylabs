@@ -102,4 +102,15 @@ describe('research-page-text when a cited page fails transiently', () => {
     expect(pageText(emitted)?.map((entry) => entry.url)).toEqual([HOME]);
     expect(result.notes).toContain('0 kept after a transient fetch failure');
   });
+
+  it('keeps the stored reading when a cited page is throttled after redirecting to a host the reading drew on', async () => {
+    const redirectedHost = 'research-hub.example.org';
+    const { result, emitted } = await run(
+      new HttpStatusError(403, `https://${redirectedHost}/kelp/`),
+      ['tidepool-lab.example.org', redirectedHost],
+    );
+
+    expect(emitted).toEqual([]);
+    expect(result.notes).toContain('1 kept after a transient fetch failure');
+  });
 });

@@ -12,7 +12,7 @@ import {
   loadStoredContentHash,
   type ContentHashEntityRef,
 } from '../contentHashGate';
-import { fetchPageWithPolicy } from '../utils/httpFetch';
+import { HttpStatusError, fetchPageWithPolicy } from '../utils/httpFetch';
 import {
   DEFAULT_SOURCE_CONCURRENCY,
   mapWithConcurrency,
@@ -379,7 +379,12 @@ export class ResearchPageTextScraper implements IScraper {
       }
       return personProfileSourceMatchesEntity(page.url, row) ? page : null;
     } catch (error) {
-      if (isTransientFetchFailure(error)) transientFailures.push(url);
+      if (isTransientFetchFailure(error)) {
+        transientFailures.push(url);
+        if (error instanceof HttpStatusError && error.finalUrl) {
+          transientFailures.push(error.finalUrl);
+        }
+      }
       ctx.log(`[${row.slug || 'candidate'}] research page skipped: ${sanitizeLogValue(error)}`);
       return null;
     }
