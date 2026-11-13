@@ -6,16 +6,14 @@ import {
   type HostSlotLimiter,
 } from './hostConcurrencyLimiter';
 import { BrokeredHostSlotLimiter, SCRAPER_HOST_SLOT_BROKER_ENV } from './hostSlotBroker';
-import { MachineHostBudgetLimiter } from './machineHostBudget';
+import { MachineHostBudgetLimiter, sharedMachineHostBudget } from './machineHostBudget';
 import { MachineHostSlotLimiter } from './machineHostSlotBroker';
 import { isBenchmarkReplayActive } from '../snapshotBenchmarkMode';
 
-let machineBudget: MachineHostBudgetLimiter | undefined;
 let machineWide: HostSlotLimiter | undefined;
 
 export function machineHostBudgetLimiter(): MachineHostBudgetLimiter {
-  machineBudget ??= new MachineHostBudgetLimiter({ isBypassed: isBenchmarkReplayActive });
-  return machineBudget;
+  return sharedMachineHostBudget();
 }
 
 /**

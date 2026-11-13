@@ -76,7 +76,7 @@ describe('source-link-health when a host is pausing this run', () => {
   afterEach(() => resetHostPauseStateForTests());
 
   it('keeps the stored verdict of every link it skips for a pause known before the run', async () => {
-    recordHostBackoff('banned.example.edu', { status: 403, statedUntil: PAUSED_UNTIL });
+    await recordHostBackoff('banned.example.edu', { status: 403, statedUntil: PAUSED_UNTIL });
     const seen: string[] = [];
 
     await runSourceLinkHealthBackfill({
@@ -104,7 +104,7 @@ describe('source-link-health when a host is pausing this run', () => {
       checkLink: async (url: string) => {
         seen.push(url);
         if (url.startsWith('https://banned.example.edu/')) {
-          recordHostBackoff('banned.example.edu', { status: 403, statedUntil: PAUSED_UNTIL });
+          await recordHostBackoff('banned.example.edu', { status: 403, statedUntil: PAUSED_UNTIL });
           return { healthStatus: 'UNKNOWN', httpStatusCode: 403 };
         }
         return { healthStatus: 'HEALTHY', httpStatusCode: 200 };
