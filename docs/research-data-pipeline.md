@@ -1431,6 +1431,7 @@ The field then resolves from what remains in the same pass, so a fill-only direc
 A new department screen goes in that list, so it both stops its readings from resolving and clears the values only they back.
 The `ysm-faculty-directory` lane takes a person's home department only from the profile's appointments, never from its `organizations` (centers, houses, labs, societies), choosing the first appointment the catalog names and emitting none otherwise; the `departments` label still carries both (#6070).
 Its screen in that list states nothing for a stored reading of the lane the catalog does not name.
+With no department catalog the lane keeps the first appointment, and the screen refuses nothing.
 
 A person record refuses a value the same way (#5641): `Researcher.fieldValueRefusals` holds the same record at `websiteUrl`, `title`, `primaryDepartment`, `imageUrl`, `email`, `orcid` and `profileLink` (one link, by URL), keyed by the same `fieldValueRefusalKey`.
 That key keeps the query string for `profileLink` and `imageUrl`, because a query names the page there and every Google Scholar profile shares one host and path.
