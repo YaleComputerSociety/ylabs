@@ -1619,6 +1619,7 @@ A clinical-service biography sentence is refused too (`isClinicalOnlyBiographySe
 The rule lives in `deriveBioResearchStatement`, so it also screens `center-profile-research-rows`.
 The row key is the one the owning lane would mint: the roster formula for a department roster, and `ysm-faculty-<profile slug>` for a medical school department, whose roster config is profile-only because the medical school directory lane mints its people.
 Every run also re-reads the live rows the lane minted (those carrying its own `inferredPiUserKey` observation) instead of skipping them as covered, so a change to what counts as research evidence reaches them (#6107).
+A run meant only to re-read those rows must pass `--only` with the lane's own slugs: nothing in the lane refuses a new mint, so an unscoped run also mints every newly eligible person.
 A re-read emits only `researchInterestSummary`: the current qualifying sentences, or the lane's own no-value assertion when the biography is removed or no longer states research, with `SCRAPER_FIELD_RETRACTION` left off; it mints no row, and a person another lane covers is still skipped.
 `researchInterestSummary` is latest-wins for this source (`LATEST_WINS_FINGERPRINT_FIELDS_BY_SOURCE`), so the newer reading supersedes the earlier one; rows written before that change carry value-bearing fingerprints, so run `observations:normalize-fingerprints` for this source and field after the first re-read.
 The lane is manual-only (see the list above).

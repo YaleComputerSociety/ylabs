@@ -7,9 +7,11 @@ import { ScrapeRun } from '../../models/scrapeRun';
 import { appendObservations } from '../observationStore';
 import {
   ROSTER_BIO_RESEARCH_EVIDENCE_SOURCE,
+  RosterBioResearchEvidenceScraper,
   loadRosterBioCoveredIdentities,
   loadRosterBioPeople,
 } from '../sources/rosterBioResearchEvidenceScraper';
+import type { ObservationInput, ScraperContext } from '../types';
 import {
   ROSTER_BIO_EVIDENCE_FIELD,
   planRosterBioResearchRows,
@@ -162,6 +164,111 @@ describe('a roster-bio re-read reaches an own row whose biography was removed (#
         value: '',
         assertsNoValueFor: [ROSTER_BIO_EVIDENCE_FIELD],
       }),
+    ]);
+  });
+});
+
+describe('the roster-bio re-read scope (#6107)', () => {
+  const OWN_KEY = 'dept:synthetic:own-fixture';
+  const OTHER_KEY = 'dept:synthetic:other-lane-fixture';
+  const ARCHIVED_KEY = 'dept:synthetic:archived-fixture';
+  const ABSENT_KEY = 'dept:synthetic:absent-fixture';
+  const OWN_SLUG = 'dept-synthetic-own-fixture';
+  const OTHER_SLUG = 'dept-synthetic-other-lane-fixture';
+  const ARCHIVED_SLUG = 'dept-synthetic-archived-fixture';
+  const ABSENT_SLUG = 'dept-synthetic-absent-fixture';
+
+  const insertObservation = (fields: Record<string, unknown>) =>
+    mongoose.connection.collection('observations').insertOne({
+      superseded: false,
+      observedAt: new Date(),
+      sourceUrl: PROFILE_URL,
+      entityType: 'researchEntity',
+      ...fields,
+    });
+
+  const rosterPerson = async (personKey: string, bio: string) => {
+    for (const [field, value] of Object.entries({
+      bio,
+      fname: 'Synthetic',
+      lname: personKey.split(':').pop(),
+      title: 'Professor of Synthetic Studies',
+      profileUrls: [PROFILE_URL],
+    })) {
+      await insertObservation({
+        sourceName: 'dept-faculty-roster',
+        entityType: 'user',
+        entityKey: personKey,
+        field,
+        value,
+      });
+    }
+  };
+
+  beforeEach(async () => {
+    for (const [slug, archived] of [
+      [OWN_SLUG, false],
+      [OTHER_SLUG, false],
+      [ARCHIVED_SLUG, true],
+      [ABSENT_SLUG, false],
+    ] as const) {
+      await ResearchEntity.create({
+        slug,
+        name: `Synthetic ${slug}`,
+        kind: 'individual',
+        entityType: 'FACULTY_RESEARCH_AREA',
+        archived,
+      });
+    }
+    for (const [slug, personKey, sourceName] of [
+      [OWN_SLUG, OWN_KEY, ROSTER_BIO_RESEARCH_EVIDENCE_SOURCE],
+      [OTHER_SLUG, OTHER_KEY, 'center-profile-research-rows'],
+      [ARCHIVED_SLUG, ARCHIVED_KEY, ROSTER_BIO_RESEARCH_EVIDENCE_SOURCE],
+      [ABSENT_SLUG, ABSENT_KEY, ROSTER_BIO_RESEARCH_EVIDENCE_SOURCE],
+    ]) {
+      await insertObservation({
+        sourceName,
+        entityKey: slug,
+        field: 'inferredPiUserKey',
+        value: personKey,
+      });
+    }
+    await rosterPerson(OWN_KEY, RESEARCH);
+    await rosterPerson(OTHER_KEY, RESEARCH);
+    await rosterPerson(ARCHIVED_KEY, RESEARCH);
+  });
+
+  it('counts only live rows this lane minted as its own', async () => {
+    const covered = await loadRosterBioCoveredIdentities();
+    expect([...(covered.ownRowSlugsByPersonKey?.entries() ?? [])].sort()).toEqual([
+      [ABSENT_KEY, ABSENT_SLUG],
+      [OWN_KEY, OWN_SLUG],
+    ]);
+  });
+
+  it('emits only the evidence field for its own rows, and nothing for an own row with no roster record', async () => {
+    const emitted: ObservationInput[] = [];
+    const ctx = {
+      scrapeRunId: String(new mongoose.Types.ObjectId()),
+      sourceId: String(SOURCE_ID),
+      sourceName: ROSTER_BIO_RESEARCH_EVIDENCE_SOURCE,
+      sourceWeight: 0.6,
+      options: {
+        dryRun: true,
+        useCache: false,
+        release: false,
+        only: [OWN_SLUG, OTHER_SLUG, ARCHIVED_SLUG, ABSENT_SLUG],
+      },
+      emit: async (observations: ObservationInput[]) => {
+        emitted.push(...observations);
+      },
+      log: () => {},
+    } as unknown as ScraperContext;
+
+    await new RosterBioResearchEvidenceScraper().run(ctx);
+
+    expect(emitted.map((observation) => [observation.entityKey, observation.field])).toEqual([
+      [OWN_SLUG, ROSTER_BIO_EVIDENCE_FIELD],
     ]);
   });
 });
