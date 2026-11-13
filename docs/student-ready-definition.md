@@ -116,14 +116,6 @@ The discriminator is the ABSENCE of a lab-named URL rather than the presence of 
 Maps to `rightLeadAttached`.
 The row's served website, as `lab-site-lead-verification` last read it, names a same-surname person whose given name cannot be an attached lead's under any alias rule, so the lab may be somebody else's (#4916, `docs/decisions.md` 2026-10-05).
 Held at `operator_review`, because which half is wrong, the lead or the website, needs a reading of the page.
-- Lead rank the owner ruled cannot host: `lead_title_ruled_non_hosting_rank`.
-Maps to `rightLeadAttached`.
-The owner's rule (2026-10-04) is that a person belongs in the directory if a student can do research with them, and the owner ruled that four ranks cannot: staff affiliate, clinical fellow, hospital resident, and postgraduate associate.
-`research-entity:retire-staff-minted-entities` archives the rows those ranks lead under `non_hosting_trainee_title`, but it refuses on any doubt because an archive is irreversible, so a row it refuses is held here at `operator_review` rather than served.
-A row whose every lead states only one of those ranks, with no rank that owns research beside it (`titleResearchOwnership`), carries the reason; the list lives in `server/src/utils/leadTitleRuledNonHostingRank.ts` and must stay in step with the retirement stage's ruled ranks.
-A lead with no stated title is not evidence for the hold.
-A row that already carries `missing_lead` does not also carry this reason, so the lead-attachment lanes, which act only when `missing_lead` is the sole hard blocker, still reach it.
-"Associate Research Scholar" is not in the list: neither the rank lattice nor the mint vocabulary assigns it a rank.
 - Lead is staff of a served lab: `lead_is_staff_of_served_lab`.
 Removed at `suppressed`, on the same terms as `exact_url_duplicate_risk`, because the lab the row describes already has its own served card (#5876).
 A row carries it when every gate lead states a non-empty title for which `statesResearchOwningAppointment` is false, and the row links to another row the same gate pass serves at `student_ready`.
@@ -325,6 +317,12 @@ They are the set `STUDENT_READY_SOFT_SIGNAL_REASONS`, and they are never repair 
   It is recorded in place of `missing_card_description`, so the row is served under the thin-but-accurate decision (2026-10-04) while the repair queue still records it as an evidence signal.
   A row whose served page fails the invariant, or that has no stored body, keeps today's tier.
 - `missing_facet_signal` - facets are query-scoped nice-to-haves, not a student-facing blocker.
+- `lead_title_ruled_non_hosting_rank` - every lead states only a rank the owner ruled cannot host (staff affiliate, clinical fellow, hospital resident, postgraduate associate, 2026-10-04), with no rank that owns research beside it (`titleResearchOwnership`).
+  It was a hard blocker mapped to `rightLeadAttached` until #6266 (2026-11-13), and is now a signal only, because whether a lead could host a student is a signal rather than a gate (#5407, 2026-10-20); `docs/decisions.md` records the vote.
+  `research-entity:retire-staff-minted-entities` still archives the rows those ranks lead under `non_hosting_trainee_title`, and refuses on any doubt because an archive is irreversible; a row it refuses is now served rather than held, since holding on doubt would invert that fail-safe.
+  The list lives in `server/src/utils/leadTitleRuledNonHostingRank.ts` and must stay in step with the retirement stage's ruled ranks.
+  A lead with no stated title does not carry it, and a row that already carries `missing_lead` does not also carry it.
+  "Associate Research Scholar" is not in the list: neither the rank lattice nor the mint vocabulary assigns it a rank.
 - `missing_alternate_access_path` - an organizational home is reachable through its own official page even without a separate engagement path.
   It stays soft on purpose: per #1802 the card is never withheld for unknown access evidence.
   It used to gate whether the materializer minted the organizational `REACH_OUT_PLAUSIBLE` signal (#1359, #2559).

@@ -5,6 +5,16 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-11-13: A Lead's Ruled Rank Is A Signal, Not A Serve-Time Gate (#6266)
+
+Decision (five-agent consensus under the owner's 2026-11-13 delegation, 4 of 5 keeping the rows served).
+The gate stops holding a row at `operator_review` because every lead states only a rank the owner ruled cannot host; `lead_title_ruled_non_hosting_rank` stays on the row as a soft signal.
+The vote turned on the 2026-10-20 decision (#5407) that whether someone could host a student is a signal rather than a gate, and that a title is evidence for those parts, never the rule; that decision postdates the 2026-10-04 rank rule.
+The serve-time hold reused the archive stage's predicate, where refusing on doubt is fail-safe because an archive is irreversible; at serve time the same predicate withheld a row on doubt instead of keeping it, which inverts that.
+The archive stage keeps the rank rule unchanged, as do `lead_is_staff_of_served_lab` and the duplicate and shell arms.
+It surfaced when #6146 let the YSM lane refresh screened profiles' own titles: for 11 researchers the corrected title would have tripped the hold on the one row each solely leads, and none of those rows carries a hosted-undergraduates signal.
+Measured on Development, 2026-11-13, gate dry run over 4,153 research rows: 2 rows change tier, both from `operator_review` to `student_ready`, and both were held by this reason alone; 1 more row carries it and stays `suppressed` as a duplicate; 0 rows leave `student_ready`.
+
 ## 2026-11-13: Correctly Withheld Programs Are Not Repair Work (#6204)
 
 Decision (owner request, 2026-11-13).
