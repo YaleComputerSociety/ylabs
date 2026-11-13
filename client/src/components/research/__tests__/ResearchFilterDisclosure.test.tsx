@@ -3,6 +3,7 @@ import { useState, type ComponentProps } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import ResearchFilterDisclosure from '../ResearchFilterDisclosure';
+import { candidatesIn, compileStylesheet } from '../../../testUtils/tailwind';
 
 const originalMatchMedia = window.matchMedia;
 
@@ -294,6 +295,35 @@ describe('ResearchFilterDisclosure', () => {
     expect(hosted).toBeEnabled();
     expect(hosted).not.toHaveAttribute('aria-disabled');
     expect(hosted).not.toHaveAccessibleDescription();
+  });
+
+  // A dim that only a class name proves is a dim nobody measured, so the control's own
+  // classes are compiled through the real Tailwind pipeline and the resolved opacity read.
+  it("dims an unavailable option's own control while its label keeps the muted token (#6203)", async () => {
+    renderFilters({
+      variant: 'sidebar',
+      selectedDepartment: 'Computer Science',
+      facetDistribution: {
+        welcomesUndergrads: { true: 0 },
+        hostsUndergrads: { true: 3 },
+        mentorsUndergrads: { true: 2 },
+      },
+    });
+
+    const taking = screen.getByRole('checkbox', { name: 'Taking undergrads now (0)' });
+    const label = taking.closest('label');
+    expect(label?.className).toContain('text-muted');
+    expect(label?.className).not.toContain('opacity');
+
+    const stylesheet = await compileStylesheet(candidatesIn(taking.outerHTML));
+    const dimmed: string[] = [];
+    stylesheet.walkDecls('opacity', (declaration) => {
+      const selector = (declaration.parent as { selector?: string })?.selector || '';
+      if (selector.includes('aria-disabled')) dimmed.push(declaration.value);
+    });
+    expect(dimmed).toHaveLength(1);
+    expect(Number(dimmed[0])).toBeGreaterThan(0);
+    expect(Number(dimmed[0])).toBeLessThan(1);
   });
 
   it('ignores a press on an unavailable option and reports nothing', () => {
