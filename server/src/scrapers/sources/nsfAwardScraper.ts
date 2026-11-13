@@ -69,7 +69,6 @@ import { awardDateOfCalendarDay } from '../../utils/awardCalendarDay';
 // ---------------------------------------------------------------------------
 
 export const NSF_API_URL = 'https://api.nsf.gov/services/v1/awards.json';
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 const PAGE_SIZE = 25; // NSF API max
 const MAX_PAGES = 200; // safety cap (5000 awards) — well above current ~400
@@ -443,7 +442,7 @@ async function fetchPage(
     axios.get(NSF_API_URL, {
       params,
       timeout: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+      headers: { Accept: 'application/json' },
     }),
   );
   const r = (res.data?.response ?? {}) as {

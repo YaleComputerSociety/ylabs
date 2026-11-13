@@ -15,6 +15,7 @@ import {
 } from '../../snapshotBenchmarkMode';
 import { fetchDescriptionPageWithTlsFallback } from '../../sources/labMicrositeDescriptionLLMExtractor';
 import { isTlsVerificationError } from '../../../utils/tlsVerificationErrors';
+import { SCRAPER_USER_AGENT } from '../scraperUserAgent';
 
 const passthroughAssert = async (url: string) => ({ toString: () => url });
 const noSleep = vi.fn(async () => {});
@@ -424,7 +425,7 @@ describe('postFormWithPolicy', () => {
       method: 'POST',
       body: '__VIEWSTATE=state&button=View+all',
       headers: {
-        'User-Agent': 'fixture-agent',
+        'User-Agent': SCRAPER_USER_AGENT,
         Cookie: 'Session=old',
         'Content-Type': 'application/x-www-form-urlencoded',
       },

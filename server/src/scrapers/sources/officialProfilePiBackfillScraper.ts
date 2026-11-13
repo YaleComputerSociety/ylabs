@@ -155,7 +155,6 @@ import {
 import { mainComponentsOf, ysmPageDataFrom } from './ysmFacultyDirectoryScraper';
 
 const SOURCE_NAME = 'official-profile-pi-backfill';
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 const PROFILE_FETCH_THROTTLE_MS = 150;
 const PROFILE_FETCH_LOOKAHEAD = 4;
@@ -4523,7 +4522,7 @@ export async function fetchHtml(
     axios.get(safeUrlText, {
       timeout: FETCH_TIMEOUT_MS,
       maxRedirects: 5,
-      headers: { 'User-Agent': USER_AGENT, Accept: 'text/html,application/xhtml+xml' },
+      headers: { Accept: 'text/html,application/xhtml+xml' },
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,
     }),

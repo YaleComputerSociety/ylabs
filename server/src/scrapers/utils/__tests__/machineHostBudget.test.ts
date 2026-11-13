@@ -20,6 +20,7 @@ import {
   type MachineHostBudgetState,
 } from '../machineHostBudget';
 import { SsrfBlockedError } from '../../../utils/ssrfGuard';
+import { SCRAPER_USER_AGENT } from '../scraperUserAgent';
 
 const DEAD_PID = 4_000_001;
 const OTHER_LIVE_PID = 4_000_002;
@@ -311,7 +312,7 @@ describe('fetchPageWithPolicy redirects', () => {
   });
 
   const credentialHeaders = {
-    'User-Agent': 'fixture-agent',
+    'User-Agent': SCRAPER_USER_AGENT,
     Cookie: 'Session=fixture',
     Authorization: 'Bearer fixture',
     'Proxy-Authorization': 'Basic fixture',
@@ -332,7 +333,7 @@ describe('fetchPageWithPolicy redirects', () => {
 
     expect(headersSentTo(request, 'https://alias.example.org/short')).toEqual(credentialHeaders);
     expect(headersSentTo(request, 'https://pages.example.org/landing')).toEqual({
-      'User-Agent': 'fixture-agent',
+      'User-Agent': SCRAPER_USER_AGENT,
     });
   });
 
@@ -380,7 +381,7 @@ describe('fetchPageWithPolicy redirects', () => {
     });
 
     expect(headersSentTo(request, 'http://portal.example.org/plain')).toEqual({
-      'User-Agent': 'fixture-agent',
+      'User-Agent': SCRAPER_USER_AGENT,
     });
   });
 

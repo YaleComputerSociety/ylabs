@@ -58,7 +58,6 @@ import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 
 const SOURCE_KEY = 'department-research-areas';
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 const RESEARCH_AREA_CONFIDENCE = 0.7;
 const MAX_CANDIDATE_SCAN = 4000;
@@ -557,7 +556,6 @@ async function defaultFetchPage(url: string, useCache: boolean): Promise<string 
   const res = await retryOnRetryableStatus(() =>
     axios.get(safeUrl.toString(), {
       timeout: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': USER_AGENT },
       maxRedirects: 5,
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,

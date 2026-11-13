@@ -51,6 +51,7 @@ import {
 } from './userEmailHygieneCore';
 import { auditStudentReadyPublicDescriptions } from '../services/researchEntityPublicDescriptionAuditService';
 import { connectScriptMongo } from '../db/connections';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -228,6 +229,7 @@ interface LiveLinkCheckResult {
 }
 
 async function main(): Promise<void> {
+  installScraperFetchHooks({ validatorCache: false });
   const options = parseBetaDataQualityArgs(process.argv.slice(2));
   const mongoUrl = process.env.MONGODBURL;
   if (!mongoUrl) {

@@ -13,6 +13,7 @@ import {
   withHostSlot,
 } from '../scrapers/utils/hostConcurrencyLimiter';
 import { machineHostSlotsForDirectRequest } from '../scrapers/utils/scraperHostSlotLimiter';
+import { SCRAPER_USER_AGENT } from '../scrapers/utils/scraperUserAgent';
 import {
   activeHostPause,
   recordHostRefusal,
@@ -675,6 +676,7 @@ export async function probeSourceLink(
       return axios.request({
         url: requestedUrl,
         method: 'GET',
+        headers: { 'User-Agent': SCRAPER_USER_AGENT },
         maxRedirects: 5,
         beforeRedirect: (redirectOptions, responseDetails) => {
           if (notContacted((redirectOptions as { hostname?: string })?.hostname)) {

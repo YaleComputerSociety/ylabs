@@ -104,7 +104,6 @@ import { statesAnyFacultyAppointment } from './yaleDirectoryScraper';
 import { titleHoldsOnlyEmeritusAppointments } from '../../services/emeritusLeadWayIn';
 import { screenedRosterRole } from '../rosterStaffTitleScreen';
 
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 const MAX_PAGES_PER_CENTER = 100;
 const CONSECUTIVE_REPEATED_PAGES_TO_STOP = 2;
@@ -1856,7 +1855,6 @@ async function fetchHtml(url: string, useCache: boolean, sourceName: string): Pr
   const res = await retryOnRetryableStatus(() =>
     axios.get(safeUrlText, {
       timeout: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': USER_AGENT },
       maxRedirects: 5,
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,

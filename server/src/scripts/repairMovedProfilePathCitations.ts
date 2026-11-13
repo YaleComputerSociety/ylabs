@@ -18,6 +18,7 @@ import {
   type ProbeVerdict,
   type StaleCitationObservation,
 } from './repairMovedProfilePathCitationsCore';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 
 dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -85,6 +86,7 @@ async function probeAll(urls: readonly string[]): Promise<Map<string, ProbeVerdi
 }
 
 async function main(): Promise<void> {
+  installScraperFetchHooks({ validatorCache: false });
   const args = parseArgs(process.argv.slice(2));
   assertScriptApplyAllowed({
     apply: args.apply,

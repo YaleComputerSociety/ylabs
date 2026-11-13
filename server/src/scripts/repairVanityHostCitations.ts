@@ -30,8 +30,7 @@ import {
   decideVanityRepair,
   planVanityRepairRow,
 } from './repairVanityHostCitationsCore';
-
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 
 export interface VanityRepairOptions {
   apply: boolean;
@@ -70,7 +69,6 @@ export async function followHttpRedirects(
     let res: PublicHttpResponse;
     try {
       res = await fetchPublicHttpUrl(current, {
-        headers: { 'user-agent': USER_AGENT },
         maxRedirects: 0,
       });
     } catch {
@@ -89,6 +87,7 @@ export async function followHttpRedirects(
 }
 
 async function main() {
+  installScraperFetchHooks({ validatorCache: false });
   const options = parseVanityRepairArgs(process.argv.slice(2));
   const guard = assertScriptApplyAllowed({
     apply: options.apply,

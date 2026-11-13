@@ -23,6 +23,7 @@ import {
   noteStoredSourceLinkVerdicts,
   probeUncachedUrlsByHost,
 } from './backfillSourceLinkHealth';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -224,6 +225,7 @@ export async function runFellowshipSourceLinkHealthBackfill(options: {
 }
 
 async function main(): Promise<void> {
+  installScraperFetchHooks({ validatorCache: false });
   const options = parseFellowshipSourceLinkHealthBackfillArgs(process.argv.slice(2));
   assertFellowshipSourceLinkHealthApplyAllowed(options);
   const apply = !options.dryRun;

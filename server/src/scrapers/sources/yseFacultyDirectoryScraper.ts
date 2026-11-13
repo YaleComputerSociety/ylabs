@@ -66,7 +66,6 @@ import { retryOnRetryableStatus } from '../utils/httpFetch';
 const DIRECTORY_URL = 'https://environment.yale.edu/directory/faculty';
 const SOURCE_KEY = 'yse-faculty-directory';
 const SCHOOL_NAME = 'Yale School of the Environment';
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 // The profile-page research prose is the faculty's own official description but
 // lives on a profile page, so it must rank at the profile-page description tier:
@@ -521,7 +520,6 @@ async function fetchHtml(url: string, useCache: boolean): Promise<string> {
   const res = await retryOnRetryableStatus(() =>
     axios.get(safeUrlText, {
       timeout: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': USER_AGENT },
       maxRedirects: 5,
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,

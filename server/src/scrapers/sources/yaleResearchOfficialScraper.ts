@@ -17,7 +17,6 @@ import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { schoolNameFromProfileHosts } from '../orgUnitCanonicalization';
 
 const SOURCE_NAME = 'yale-research-official';
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 const MAX_PAGES_PER_DIRECTORY = 20;
 
@@ -349,7 +348,6 @@ export async function fetchResearchYaleHtml(
   const res = await retryOnRetryableStatus(() =>
     axios.get(safeUrlText, {
       timeout: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': USER_AGENT },
       maxRedirects: 5,
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,

@@ -596,6 +596,13 @@ export async function logMissingMongoIndexes(
 
 let activeConnectOptions: MongoConnectOptions = mongoOptions;
 
+// Scripts only, because the serving process's outbound calls are not page fetches. Loaded lazily
+// because the hooks pull in models, which this layer must not import.
+async function installScriptFetchHooks(): Promise<void> {
+  const { installScraperFetchHooks } = await import('../scrapers/utils/scraperFetchHooks');
+  installScraperFetchHooks();
+}
+
 // Defaults to the script budget because nearly every caller is an operator entry
 // point; the serving process opts into mongoOptions explicitly. triggerReconnect
 // reuses whatever budget connected, so a reconnect never swaps one for the other.
@@ -615,7 +622,10 @@ export async function initializeConnections(
     throw new Error('MONGODBURL is required');
   }
   activeConnectOptions = connectOptions;
-  if (connectOptions !== mongoOptions) enableScriptDiagnosticReportOnSignal();
+  if (connectOptions !== mongoOptions) {
+    enableScriptDiagnosticReportOnSignal();
+    await installScriptFetchHooks();
+  }
   await mongoose.connect(url, connectOptions);
   watchMongoClientProgress(mongoose.connection.getClient());
   await installDevelopmentWriteGuards(mongoose.connection);

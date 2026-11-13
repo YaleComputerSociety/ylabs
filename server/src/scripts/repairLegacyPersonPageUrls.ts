@@ -14,6 +14,7 @@ import {
 } from './repairLegacyPersonPageUrlsCore';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { fetchPublicHttpUrl } from '../scrapers/utils/httpFetch';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 
 dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -60,7 +61,6 @@ export async function probe(url: string): Promise<{ status: number; title: strin
   try {
     const response = await fetchPublicHttpUrl(url, {
       timeoutMs: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': 'ylabs-link-repair/1.0 (+internal link verification)' },
     });
     const ok = response.status >= 200 && response.status < 300;
     const body = ok ? response.body.slice(0, 4000) : '';
@@ -179,6 +179,7 @@ async function applyRepairs(planned: PlannedRepair[]): Promise<{
 }
 
 async function main() {
+  installScraperFetchHooks({ validatorCache: false });
   const args = parseArgs(process.argv.slice(2));
   const guard = assertScriptApplyAllowed({
     apply: args.apply,

@@ -17,8 +17,9 @@
  * concurrency with a non-browser user agent, read 1,520 of 2,922 pages as 403, and
  * concluded that half the corpus had drifted; only 13 URLs were genuinely gone. So this
  * pass goes through `probeUncachedUrlsByHost` (serial within a host, parallel only
- * across hosts), sends a browser user agent, and `classifyDescriptionGrounding` cannot
- * return `ABSENT` without a 2xx body.
+ * across hosts), and `classifyDescriptionGrounding` cannot return `ABSENT` without a 2xx
+ * body. It sends the honest scraper user agent, so a firewall that refuses it is counted
+ * per host in `refused403` rather than spoofed past (#6211).
  */
 import dotenv from 'dotenv';
 import fs from 'fs';
@@ -57,16 +58,16 @@ import {
   isDecisiveGroundingVerdict,
   type DescriptionGroundingTarget,
 } from './recheckDescriptionGroundingCore';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
-// A browser user agent, because a WAF answering our scraper string with 403 is the
-// mechanism that produced this issue's retracted measurement.
-const RECHECK_USER_AGENT =
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const RECHECK_FETCH_TIMEOUT_MS = 15_000;
+
+export const fetchRecheckPage = (target: string) =>
+  fetchPageWithPolicy(target, { timeoutMs: RECHECK_FETCH_TIMEOUT_MS });
 
 export interface RecheckDescriptionGroundingOptions {
   dryRun: boolean;
@@ -195,7 +196,43 @@ export async function probeDescriptionPage(
   return health;
 }
 
-export interface RecheckDescriptionGroundingResult {
+const hostOf = (url: string): string => {
+  try {
+    return new URL(url).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+};
+
+export interface RecheckRefusals {
+  refused403: number;
+  refused403ByHost: Record<string, number>;
+}
+
+const isForbidden = (health: SourceLinkHealth): boolean =>
+  health.healthStatus === 'UNKNOWN' && health.httpStatusCode === 403;
+
+const sortedCounts = (counts: Map<string, number>): Record<string, number> =>
+  Object.fromEntries(
+    [...counts].sort(([a, countA], [b, countB]) => countB - countA || a.localeCompare(b)),
+  );
+
+export function summarizeRecheckRefusals(
+  pages: Map<string, { health: SourceLinkHealth }>,
+): RecheckRefusals {
+  const forbiddenByHost = new Map<string, number>();
+  for (const [url, { health }] of pages) {
+    if (!isForbidden(health)) continue;
+    const host = hostOf(url);
+    forbiddenByHost.set(host, (forbiddenByHost.get(host) ?? 0) + 1);
+  }
+  return {
+    refused403: [...forbiddenByHost.values()].reduce((sum, count) => sum + count, 0),
+    refused403ByHost: sortedCounts(forbiddenByHost),
+  };
+}
+
+export interface RecheckDescriptionGroundingResult extends RecheckRefusals {
   mode: 'dry-run' | 'apply';
   rowsWithGroundedLane: number;
   targets: number;
@@ -208,15 +245,8 @@ export interface RecheckDescriptionGroundingResult {
   unsupportedTargets: Array<{ field: string; host: string; storedLength: number }>;
 }
 
-const hostOf = (url: string): string => {
-  try {
-    return new URL(url).hostname.toLowerCase();
-  } catch {
-    return '';
-  }
-};
-
 async function main(): Promise<void> {
+  installScraperFetchHooks({ validatorCache: false });
   const options = parseRecheckDescriptionGroundingArgs(process.argv.slice(2));
   assertRecheckDescriptionGroundingApplyAllowed(options);
   assertScriptApplyAllowed({
@@ -285,11 +315,7 @@ async function main(): Promise<void> {
       checkLink: (url) =>
         probeDescriptionPage(url, pages, {
           checkLink: checkSourceLinkHealth,
-          fetchPage: (target) =>
-            fetchPageWithPolicy(target, {
-              headers: { 'User-Agent': RECHECK_USER_AGENT },
-              timeoutMs: RECHECK_FETCH_TIMEOUT_MS,
-            }),
+          fetchPage: fetchRecheckPage,
         }),
       hostConcurrency: DEFAULT_SOURCE_LINK_HEALTH_HOST_CONCURRENCY,
       paceDelayMs: DEFAULT_SOURCE_LINK_HEALTH_PACE_DELAY_MS,
@@ -300,6 +326,7 @@ async function main(): Promise<void> {
 
   const result: RecheckDescriptionGroundingResult = {
     mode: options.dryRun ? 'dry-run' : 'apply',
+    ...summarizeRecheckRefusals(pages),
     rowsWithGroundedLane,
     targets: pending.length,
     skippedFresh,

@@ -1,3 +1,4 @@
+import axios, { type AxiosRequestConfig } from 'axios';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import path from 'path';
@@ -33,6 +34,7 @@ import {
   type LabSiteSubject,
   type LabSiteVerdict,
 } from './findLabWebsitesCore';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 
 dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -118,67 +120,71 @@ function assertProviderAccepted(provider: string, status: number): void {
  * population is under 300 queries, which fits inside every provider's free
  * monthly allowance, so the preference order is by result quality rather than cost.
  */
+type SearchResponseBody = { results?: Array<{ url?: string }> };
+
+async function providerSearch(
+  provider: string,
+  request: AxiosRequestConfig,
+): Promise<SearchResponseBody | null> {
+  const response = await axios.request<SearchResponseBody>({
+    timeout: FETCH_TIMEOUT_MS,
+    validateStatus: () => true,
+    ...request,
+  });
+  assertProviderAccepted(provider, response.status);
+  return response.status >= 200 && response.status < 300 ? response.data : null;
+}
+
+const urlsOf = (body: SearchResponseBody | null): string[] =>
+  (body?.results || []).map((result) => result.url || '').filter(Boolean);
+
 async function search(queries: string[]): Promise<string[]> {
   const query = queries[0];
   const parallel = process.env.PARALLEL_API_KEY;
   if (parallel) {
-    const response = await fetch('https://api.parallel.ai/v1/search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': parallel },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      body: JSON.stringify({
-        objective: LAB_SITE_SEARCH_OBJECTIVE,
-        search_queries: queries,
-        mode: 'advanced',
+    return urlsOf(
+      await providerSearch('Parallel', {
+        method: 'POST',
+        url: 'https://api.parallel.ai/v1/search',
+        headers: { 'x-api-key': parallel },
+        data: { objective: LAB_SITE_SEARCH_OBJECTIVE, search_queries: queries, mode: 'advanced' },
       }),
-    });
-    assertProviderAccepted('Parallel', response.status);
-    if (!response.ok) return [];
-    const body = (await response.json()) as { results?: Array<{ url?: string }> };
-    return (body.results || []).map((result) => result.url || '').filter(Boolean);
+    );
   }
 
   const exa = process.env.EXA_API_KEY;
   if (exa) {
-    const response = await fetch('https://api.exa.ai/search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-api-key': exa },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      body: JSON.stringify({ query, numResults: MAX_RESULTS_PER_QUERY, type: 'auto' }),
-    });
-    assertProviderAccepted('Exa', response.status);
-    if (!response.ok) return [];
-    const body = (await response.json()) as { results?: Array<{ url?: string }> };
-    return (body.results || []).map((result) => result.url || '').filter(Boolean);
+    return urlsOf(
+      await providerSearch('Exa', {
+        method: 'POST',
+        url: 'https://api.exa.ai/search',
+        headers: { 'x-api-key': exa },
+        data: { query, numResults: MAX_RESULTS_PER_QUERY, type: 'auto' },
+      }),
+    );
   }
 
   const brave = process.env.BRAVE_SEARCH_API_KEY;
   if (brave) {
-    const response = await fetch(
-      `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${MAX_RESULTS_PER_QUERY}`,
-      {
+    return urlsOf(
+      await providerSearch('Brave', {
+        method: 'GET',
+        url: 'https://api.search.brave.com/res/v1/web/search',
+        params: { q: query, count: MAX_RESULTS_PER_QUERY },
         headers: { Accept: 'application/json', 'X-Subscription-Token': brave },
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      },
+      }),
     );
-    assertProviderAccepted('Brave', response.status);
-    if (!response.ok) return [];
-    const body = (await response.json()) as { web?: { results?: Array<{ url?: string }> } };
-    return (body.web?.results || []).map((result) => result.url || '').filter(Boolean);
   }
 
   const tavily = process.env.TAVILY_API_KEY;
   if (tavily) {
-    const response = await fetch('https://api.tavily.com/search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-      body: JSON.stringify({ api_key: tavily, query, max_results: MAX_RESULTS_PER_QUERY }),
-    });
-    assertProviderAccepted('Tavily', response.status);
-    if (!response.ok) return [];
-    const body = (await response.json()) as { results?: Array<{ url?: string }> };
-    return (body.results || []).map((result) => result.url || '').filter(Boolean);
+    return urlsOf(
+      await providerSearch('Tavily', {
+        method: 'POST',
+        url: 'https://api.tavily.com/search',
+        data: { api_key: tavily, query, max_results: MAX_RESULTS_PER_QUERY },
+      }),
+    );
   }
 
   throw new Error(
@@ -215,7 +221,6 @@ export async function fetchPage(
   try {
     const response = await fetchPublicHttpUrl(url, {
       timeoutMs: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': 'ylabs-lab-site-discovery/1.0 (+research home discovery)' },
     });
     const ok = response.status >= 200 && response.status < 300;
     const html = ok ? response.body.slice(0, MAX_HTML_BYTES) : '';
@@ -401,6 +406,7 @@ async function run(
 }
 
 async function main() {
+  installScraperFetchHooks({ validatorCache: false });
   const args = parseArgs(process.argv.slice(2));
   const guard = assertScriptApplyAllowed({
     apply: args.apply,

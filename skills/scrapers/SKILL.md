@@ -600,7 +600,7 @@ So every scraper request carries three bounds, named in `utils/scraperFetchDeadl
 | Overall (dispatch to settle) | `SCRAPER_FETCH_OVERALL_DEADLINE_MS` | 90 s, or the request's read timeout plus the connect budget when that is larger | `withScraperFetchDeadline` |
 
 `installScraperFetchDeadlines()` wraps the default axios instance's adapter, so every lane's direct `axios` call and the `fetchPageWithPolicy`, `postFormWithPolicy` and `fetchPublicHttpUrl` helpers are bounded with no per-lane edit.
-The orchestrator's `run`, `cli.ts` and `scrapeCanary` install it.
+A process installs it only through `installScraperFetchHooks()`; see "One install point for the fetch hooks" below.
 It wraps the adapter rather than adding an interceptor so the clock starts at dispatch, after the host-slot limiter's wait, and a request queued behind other lanes on the same host is not charged for the queue.
 
 Inside a scrape run, `fetchPageWithPolicy` sends no request for a URL whose newest stored link-health verdict, checked within `SOURCE_LINK_HEALTH_FRESHNESS_DAYS`, is a 404 or 410 (#6210, `scrapers/utils/knownDeadUrls.ts`).
@@ -624,11 +624,38 @@ Redaction decodes HTML entities and percent-escapes first, repeating until the t
 Token-looking values are redacted too, both inside a query string and in a body field named for a token, a session, a key, a password or a signature.
 The log is a local diagnostic rather than a publishable artefact, and two limits are why: a secret under a field name the pattern does not know, or an address written in a form the decode does not cover (a different encoding, or digits spelled out), would be kept.
 Read it locally, and quote a line into an issue or a PR only after checking it by eye.
-Only processes that install the adapter are logged: `cli.ts`, the orchestrator's `run` and `scrapeCanary`, which all reach it through `installScraperFetchDeadlines()` and the process-wide `processScraperRequestLog()`.
-Standalone scripts that fetch without installing it are not logged, among them `backfillSourceLinkHealth`, `backfillFellowshipSourceLinkHealth`, the `audit*` and `repair*` scripts and `verifyOfficialProfileLinks`, and neither are the browser fetches in `renderedFetch.ts`.
+Every process that installs the fetch hooks is logged through the process-wide `processScraperRequestLog()`, which since #6193 includes every script that fetches.
+The browser fetches in `renderedFetch.ts` are not logged.
 A log path that cannot be opened prints one warning naming only the error code and the run continues unlogged.
 A failed log write drops that line and never changes the request's response or error.
 Use it when a run has to be lined up against a host incident, such as a ban or a burst-limit hold.
+
+#### One install point for the fetch hooks (#6193)
+
+`installScraperFetchHooks()` in `utils/scraperFetchHooks.ts` is the only way a process installs the axios fetch hooks, and calling it again is a no-op.
+It installs, in this order, the User-Agent stamp, the host concurrency, budget and pause interceptor, the validator cache, and the deadline adapter that carries the request log.
+Axios runs request interceptors last-registered first, so the validator cache answers a reused body before the budget interceptor runs: a reused body takes no host slot, brings its own adapter, and never reaches the deadline adapter or the request log.
+The User-Agent stamp registers first, so it runs last, just before dispatch.
+`cli.ts`, the orchestrator's `run`, `scrapeCanary` and `laneBenchmarkRun` call it, and `initializeConnections` calls it for every script.
+The API server is the exception: it connects with `mongoOptions`, and `initializeConnections` installs nothing for it, because its outbound calls are not page fetches.
+A script that connects through `connectScriptMongo`, or not at all, calls it directly at the top of `main`.
+A script that checks whether a URL is live today passes `validatorCache: false`: the link-health backfills, every script that calls `checkSourceLinkHealth` or `probeSourceLink`, `hostThrottleProbe`, and the dead-link and live-link checks named in the guard test.
+`scrapeCanary` and `laneBenchmarkRun` pass it too, because each measures a lane against what the site serves now.
+A reused body would make a page that has since died read alive, so a refusal wins whichever call ran first and detaches a cache an earlier call installed.
+`src/scripts/__tests__/scraperFetchHookCoverage.test.ts`, in the `test:guards` suite, fails when a fetching script entry point reaches neither `installScraperFetchHooks` nor `initializeConnections`, or when a liveness check leaves the validator cache on.
+A request to a host on `MODEL_API_HOSTS_EXEMPT_FROM_HOST_BUDGET` (`utils/hostBudgetExempt.ts`) skips the host budget, pause and refusal record, because the provider meters model calls and the page budget would otherwise queue them four at a time.
+The list holds `api.openai.com`, the only model API host the codebase calls, since `modelClient.ts` is the only OpenAI caller and the Claude writer runs locally rather than over HTTP.
+The match is the exact hostname from `hostnameForLimiter`, with no config flag and no suffix match, so a scraped host, or a lookalike such as `api.openai.com.evil.example`, always takes a slot and has its refusals recorded.
+A new model provider host must be added to the list, or its calls queue behind the page budget.
+The rendered fetch is the documented exception: its headless browser runs in a Python child that no axios hook reaches, and it takes its own host slot before each render.
+#### One User-Agent (#6211)
+
+Every fetch path sends exactly `SCRAPER_USER_AGENT` from `utils/scraperUserAgent.ts`, which is `ylabs-scraper/1.0 (+https://yalelabs.io; ycs.maintenance.ylabs@gmail.com)`, naming the information page and the owner's project role address (a role address, never a person's).
+`withScraperUserAgent()` in the same file is the helper that replaces any User-Agent a caller passes with that constant.
+`recheckDescriptionGrounding` reports `refused403` with a per-host breakdown in its report and console summary, so a firewall that refuses the honest User-Agent is counted rather than spoofed past.
+`fetchPageWithPolicy`, `postFormWithPolicy` and `fetchPublicHttpUrl` replace any User-Agent a caller passes, the link-health probe and the rendered fetch's redirect preflight send it, and the fetch hooks stamp it on every other axios request.
+No fetch presents itself as a desktop browser or claims a Yale domain, and the guard test fails on a User-Agent header set to anything else.
+The Scrapling headless browser still sends its own browser User-Agent, as part of the rendered fetch exception above.
 
 The waits before dispatch carry their own bounds, because the overall clock deliberately does not run there (#6051):
 
@@ -1350,7 +1377,7 @@ New outbound HTTP outside axios must carry all three bounds itself.
   `fetchPageWithPolicy` follows redirects one hop at a time, charging each hop to the host that receives it; a redirected form post becomes a plain `GET`, and a hop to another host or from `https` to `http` drops `Cookie`, `Authorization` and `Proxy-Authorization`, as axios would.
   The link-health probe takes its slot for the first host only, because its redirect landing, `redirectStatuses` and soft-404 reading depend on axios's own follow; converting it is a follow-up, and so are the raw-axios lanes outside the CLI and the rendered fetch's in-browser redirects.
   `__tests__/machineHostBudget.multiprocess.test.ts` proves it with real processes, and `__tests__/machineHostBudget.test.ts` and `__tests__/httpFetchInterceptorSingleSlot.test.ts` prove the fail-safe, reclaim, redirect and single-slot rules.
-- `utils/httpValidatorCache.ts` - the shared HTTP validator cache (#3557), installed on the default axios instance by `cli.ts` right after the host-concurrency interceptor, so every lane that fetches with plain `axios` (including `fetchPageWithPolicy`) gets it with no per-lane edit.
+- `utils/httpValidatorCache.ts` - the shared HTTP validator cache (#3557), installed on the default axios instance by `installScraperFetchHooks()` right after the host-concurrency interceptor, so every lane and script that fetches with plain `axios` (including `fetchPageWithPolicy`) gets it with no per-lane edit.
   A successful `GET` of a text, HTML, JSON or XML page carrying an `ETag` or `Last-Modified` is stored, and the next fetch of that URL sends `If-None-Match` / `If-Modified-Since`.
   A `304` is converted back into the stored `200` body before the lane sees it, run through the caller's own `transformResponse`, so the lane parses and emits exactly as on a full download.
   Never change that into a skip: a skipped page leaves no complete-read witness for `fieldRetraction.ts` and reproduces the #3332 freeze described in `contentHashGate.ts`, where a lane or resolver improvement never reaches a page that stopped changing.
@@ -1359,11 +1386,11 @@ New outbound HTTP outside axios must carry all three bounds itself.
   `Cache-Control: no-store`, non-textual bodies, non-`GET` requests, requests carrying `Authorization`, `Cookie` or caller-set conditional headers, and pages with no validator are never stored, and `Set-Cookie` is never written to disk.
   It lives on the runner's local disk, never in Mongo: `SCRAPER_HTTP_CACHE_DIR` (default `$XDG_CACHE_HOME/ylabs/scraper-http-cache`, else `~/.cache/ylabs/scraper-http-cache`), bounded by `SCRAPER_HTTP_CACHE_MAX_MB` (default 1024; entries are gzipped under a directory per host, and eviction first trims any host over a fifth of the cap, then the least recently used), owner-only on disk, and disabled with `SCRAPER_HTTP_CACHE=off`.
   A page last verified with its origin within `SCRAPER_HTTP_CACHE_REUSE_HOURS` (default 12) is answered from the stored body with no request, and is marked like a sweep reuse hit so it takes no host slot; a response that says `no-cache`, `no-store`, `must-revalidate` or `private`, or that varies on more than `Accept-Encoding`, always revalidates, a request carrying `Authorization` or `Cookie` is never stored or reused, and `SCRAPER_HTTP_CACHE_REUSE_HOURS=0` forces fresh reads for a re-capture (#6212).
-  `--release` bypasses it: the CLI never installs the interceptor for a release run.
+  `--release` bypasses it: the CLI installs the hooks with `validatorCache: false` for a release run, and so does every script that checks whether a URL is live.
   The orchestrator attributes counters to the run through `AsyncLocalStorage` and records them as `fetchMetrics.httpCache` (`revalidations`, `notModified`, `reused`, `bytesSaved`, `bytesDownloaded`, `stored`, `refetched`, `storeErrors`) on the `ScrapeRun`; when the cache saw activity, a lane that reports no fetch attempts gets an empty `attempts` list beside it, which the run report reads the same as absent.
 - `utils/sweepPageReuse.ts` and `utils/sweepPageStore.ts` - within-sweep page reuse (#3568), on by default in the three exhaustive Development sweep modes and off with `--no-page-reuse`.
   The store is a bounded in-memory LRU of gzip-compressed pages held by the sweep parent's host slot broker (`SweepPageStore`, `SCRAPER_SWEEP_PAGE_REUSE_MAX_MB`, default 1024), so it is shared by every source child, discarded when the source phases end, and never written to Mongo, which is what #3536 forbids.
-  A child installs the interceptor in `cli.ts` after the validator cache only when the parent set `SCRAPER_SWEEP_PAGE_REUSE=1` beside `SCRAPER_HOST_SLOT_BROKER`, so a hand-run `scrape run` and the canaries are unchanged.
+  A child installs the interceptor in `cli.ts` after `installScraperFetchHooks()` only when the parent set `SCRAPER_SWEEP_PAGE_REUSE=1` beside `SCRAPER_HOST_SLOT_BROKER`, so a hand-run `scrape run` and the canaries are unchanged.
   It covers only the explicit `SWEEP_PAGE_REUSE_HOSTS` (`medicine.yale.edu` and `ysph.yale.edu`, deliberately listed rather than derived from `HOST_THROTTLE_OVERRIDES`), only a later `GET` of the same URL, and only a stored `200`; a redirected page is keyed by its final URL, and by the requested URL only when every hop was `301` or `308`.
   A hit takes no host slot and skips the validator cache, both through `isSweepPageReuseHit`; that ordering depends on the reuse interceptor being installed last, because axios runs request interceptors in reverse order.
   Provenance stays honest: a hit carries `x-ylabs-sweep-reused-fetched-at`, a run records `fetchMetrics.sweepPageReuse`, and a roster read records `pagesReusedWithinSweep` with fetch mode `http-sweep-reused`.

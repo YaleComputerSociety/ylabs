@@ -7,7 +7,6 @@
  */
 import * as cheerio from 'cheerio';
 import {
-  SCRAPER_USER_AGENT,
   fetchPageWithPolicy,
   fetchPublicHttpUrl,
   postFormWithPolicy,
@@ -159,7 +158,7 @@ export function createStaticFundSearchEnumerator(
       const cookie = jar.header();
       return {
         timeoutMs: options.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-        headers: { 'User-Agent': SCRAPER_USER_AGENT, ...(cookie ? { Cookie: cookie } : {}) },
+        headers: { ...(cookie ? { Cookie: cookie } : {}) },
         ...(options.request ? { request: options.request } : {}),
         ...(options.assertUrl ? { assertUrl: options.assertUrl } : {}),
         ...(options.sleep ? { sleep: options.sleep } : {}),

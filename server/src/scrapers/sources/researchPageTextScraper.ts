@@ -283,7 +283,6 @@ function hostReadOutcomeOfError(error: unknown): keyof HostReadOutcome {
 
 async function fetchPageOnce(url: string): Promise<FetchedDescriptionPage | null> {
   const page = await fetchPageWithPolicy(url, {
-    headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
     timeoutMs: 10_000,
   });
   return {

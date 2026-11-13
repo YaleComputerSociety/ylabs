@@ -29,7 +29,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'research-entity:attach-directory-named-leads';
-const UA = 'Mozilla/5.0 (compatible; ylabs-linkcheck)';
 const FETCH_SPACING_MS = 900;
 const THROTTLE_BACKOFF_MS = 8000;
 const THROTTLE_STATUSES = new Set([403, 429, 503]);
@@ -66,7 +65,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export async function fetchOnce(url: string): Promise<VerifiedDirectoryPage> {
   try {
     const response = await fetchPublicHttpUrl(url, {
-      headers: { 'user-agent': UA, accept: 'text/html,application/xhtml+xml' },
+      headers: { accept: 'text/html,application/xhtml+xml' },
     });
     if (response.status < 200 || response.status >= 300) {
       return { status: response.status, headingName: '' };

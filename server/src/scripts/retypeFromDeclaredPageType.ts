@@ -40,6 +40,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 import { initializeConnections } from '../db/connections';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 import { LIVE_ENTITY_FILTER } from '../models/entityArchival';
 import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
@@ -61,8 +62,6 @@ import {
 
 const SCRIPT_NAME = 'research-entity:retype-from-declared-page-type';
 const CONFIRM_FLAG = '--confirm-declared-page-type-retype';
-const BROWSER_USER_AGENT =
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 const RETYPE_MATERIALIZE_SCOPE = { writeOnlyFields: withDerivedMaterializerFields(['entityType']) };
 const READ_SPACING_MS = 1500;
 const READ_TIMEOUT_MS = 25_000;
@@ -84,11 +83,11 @@ const firstMatch = (html: string, pattern: RegExp): string => {
     .slice(0, 200);
 };
 
-async function readPageOverHttp(url: string): Promise<PageRead> {
+export async function readPageOverHttp(url: string): Promise<PageRead> {
   try {
     const page = await fetchPageWithPolicy(url, {
       timeoutMs: READ_TIMEOUT_MS,
-      headers: { 'User-Agent': BROWSER_USER_AGENT, Accept: 'text/html' },
+      headers: { Accept: 'text/html' },
     });
     const html = page.html;
     return {
@@ -284,6 +283,7 @@ export async function readOnlySlugsFile(file: string): Promise<ReadonlySet<strin
 }
 
 async function main(): Promise<void> {
+  installScraperFetchHooks({ validatorCache: false });
   const args = parseDeclaredPageTypeRetypeArgs(process.argv.slice(2));
   const apply = args.apply;
   const guard = assertScriptApplyAllowed({

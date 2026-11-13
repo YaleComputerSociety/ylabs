@@ -20,7 +20,7 @@ import type { ScrapeRunInterruptionReason } from '../models/storedVocabularies';
 import type { ReturnedScrapeRunStatus } from './sourceCrawlStamp';
 import { currentScrapeRunOwner, startScrapeRunHeartbeat } from './scrapeRunLiveness';
 import { reapDeadScrapeRuns } from './staleScrapeRunReaper';
-import { installScraperFetchDeadlines } from './utils/scraperFetchDeadlines';
+import { installScraperFetchHooks } from './utils/scraperFetchHooks';
 import {
   installAxiosScrapeRunProgress,
   recordScrapeRunProgress,
@@ -214,7 +214,7 @@ export class ScraperOrchestrator {
       },
     };
 
-    installScraperFetchDeadlines();
+    installScraperFetchHooks();
     installAxiosScrapeRunProgress();
     recordScrapeRunProgress();
     let stall: ScrapeRunStall | undefined;

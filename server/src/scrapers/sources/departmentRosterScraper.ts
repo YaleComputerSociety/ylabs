@@ -172,7 +172,6 @@ import { RekeyedPersonReads, settleRekeyedPersonReads } from '../rekeyedPersonKe
 import { isLabDirectoryListingUrl } from '../laneRefusedWebsiteUrl';
 import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
 
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 
 /**
@@ -3527,7 +3526,6 @@ async function fetchHtml(url: string, useCache: boolean, sourceName: string): Pr
   const res = await retryOnRetryableStatus(() =>
     axios.get(safeUrlText, {
       timeout: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': USER_AGENT },
       maxRedirects: 5,
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,
@@ -3559,7 +3557,6 @@ async function fetchDeptData(
     axios.post(safeDataUrlText, body, {
       timeout: FETCH_TIMEOUT_MS,
       headers: {
-        'User-Agent': USER_AGENT,
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       maxRedirects: 5,

@@ -43,6 +43,7 @@ import {
   type RefusedOfficialProfileLinkCandidate,
 } from './verifyOfficialProfileLinksCore';
 import { connectScriptMongo } from '../db/connections';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -490,6 +491,7 @@ export async function runVerifyOfficialProfileLinks(
 export type VerifyOfficialProfileLinksSnapshot = VerifyOfficialProfileLinksResult;
 
 async function main(): Promise<void> {
+  installScraperFetchHooks({ validatorCache: false });
   const options = parseVerifyOfficialProfileLinksArgs(process.argv.slice(2));
   assertVerifyOfficialProfileLinksApplyAllowed(options);
 

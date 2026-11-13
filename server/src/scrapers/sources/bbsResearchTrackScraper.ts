@@ -63,7 +63,6 @@ const SOURCE_KEY = 'bbs-research-track';
  */
 const BBS_TRACK_PI_ROLE = 'track-pi';
 const BBS_HOST = 'medicine.yale.edu';
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 const PROFILE_REFUSAL_STATUS_CODES: ReadonlySet<number> = new Set([403, 429]);
 export const BBS_REFUSED_PROFILE_RETRY_PAUSE_MS = 60_000;
@@ -718,7 +717,6 @@ async function defaultFetchPage(url: string, useCache: boolean): Promise<string 
   const res = await retryOnRetryableStatus(() =>
     axios.get(safeUrl.toString(), {
       timeout: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': USER_AGENT },
       maxRedirects: 5,
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,

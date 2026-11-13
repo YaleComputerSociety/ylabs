@@ -91,8 +91,6 @@ const ROLLBACK_REASON =
 const ORGANIZATION_ENTITY_TYPES = ['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY'];
 const WEBSITE_URL_REFUSAL_NOTE =
   "the organization's identity page stays in this row's `website` field and `sourceUrls`, and `resolveBackfillWebsiteUrl` promotes the first promotable candidate back into an empty slot, so a bare clear is undone on the next materialization; refusing the VALUE holds because the resolver screen drops refused observations and the citation-promotion path checks `valueIsRefused`, and unlike a lock it leaves the field open for a real research home (#2542, #3167).";
-const BROWSER_USER_AGENT =
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 export interface RetireOrganizationIdentityWebsitesArgs {
   apply: boolean;
@@ -163,17 +161,14 @@ interface PlannedRow {
 
 const servesGraftedWebsiteUrl = (row: PlannedRow): boolean => row.storedWebsiteUrl.length > 0;
 
-async function resolveFinalUrls(urls: string[]): Promise<Map<string, string>> {
+export async function resolveFinalUrls(urls: string[]): Promise<Map<string, string>> {
   const resolved = new Map<string, string>();
-  // Serial, with a browser user agent: a parallel probe of medicine.yale.edu gets
+  // Serial: a parallel probe of medicine.yale.edu gets
   // 403-throttled and a throttled page reads as a different page, which would make
   // the ownership comparison fail on exactly the rows the lane exists to repair.
   for (const url of urls) {
     try {
-      const page = await fetchPageWithPolicy(url, {
-        headers: { 'User-Agent': BROWSER_USER_AGENT },
-        timeoutMs: 20_000,
-      });
+      const page = await fetchPageWithPolicy(url, { timeoutMs: 20_000 });
       resolved.set(url, page.url);
     } catch (error) {
       console.warn(

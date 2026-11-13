@@ -69,7 +69,6 @@ import { awardDateOfCalendarDay } from '../../utils/awardCalendarDay';
 import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
 
 export const REPORTER_ENDPOINT = 'https://api.reporter.nih.gov/v2/projects/search';
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const GRANT_DESCRIPTION_MAX_CHARS = 420;
 const PAGE_SIZE = 500;
 const FETCH_TIMEOUT_MS = 60_000;
@@ -845,7 +844,6 @@ async function fetchPage({
     axios.post(REPORTER_ENDPOINT, body, {
       timeout: FETCH_TIMEOUT_MS,
       headers: {
-        'User-Agent': USER_AGENT,
         'Content-Type': 'application/json',
         Accept: 'application/json',
       },
@@ -882,7 +880,6 @@ async function fetchAffiliationPage(
       {
         timeout: FETCH_TIMEOUT_MS,
         headers: {
-          'User-Agent': USER_AGENT,
           'Content-Type': 'application/json',
           Accept: 'application/json',
         },
@@ -1089,7 +1086,6 @@ async function fetchProjectsByNumber(
             {
               timeout: FETCH_TIMEOUT_MS,
               headers: {
-                'User-Agent': USER_AGENT,
                 'Content-Type': 'application/json',
                 Accept: 'application/json',
               },

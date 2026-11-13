@@ -2569,7 +2569,6 @@ async function fetchRosterPage(url: string, useCache: boolean): Promise<string> 
     axios.get(safeUrl.toString(), {
       timeout: 30_000,
       maxRedirects: 5,
-      headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,
     }),

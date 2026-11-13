@@ -33,6 +33,7 @@ import {
   type HostProbeSummary,
   type ProbeLoad,
 } from './hostThrottleProbeCore';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 
 const PER_HOST_IN_FLIGHT = 2;
 const PROBE_MIN_INTERVAL_MS = 400;
@@ -173,6 +174,7 @@ async function probeHost(
 }
 
 export async function runHostThrottleProbe(argv: string[]): Promise<number> {
+  installScraperFetchHooks({ validatorCache: false });
   const parsed = parseHostProbeArgs(argv);
   const problems = [...parsed.problems, ...hostProbeEnvironmentProblems(process.env)];
   if (problems.length > 0) {

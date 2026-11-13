@@ -457,7 +457,6 @@ export async function yaleProfileUrlsForDepartureEvidence(
 const fetchYaleProfilePage = async (url: string): Promise<YaleProfilePage | null> => {
   const page = await fetchPageWithPolicy(url, {
     headers: {
-      'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)',
       Accept: 'text/html,application/xhtml+xml',
     },
   });
