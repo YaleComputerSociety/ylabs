@@ -280,7 +280,7 @@ describe('a newer-version refusal retires the stale assertion end to end (#5803)
     );
   });
 
-  it('a declared contract on no production source keeps the real lanes inert', async () => {
+  it('treats an unregistered source with no injected contract as not retraction-capable', async () => {
     await appendRun(witness(refusedStoredLink), new Date('2026-11-10T00:00:00Z'));
     await appendRun(witness(refusedStoredLink), new Date('2026-11-12T00:00:00Z'));
     const result = await reconcileFieldRetractions({

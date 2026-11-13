@@ -1136,7 +1136,7 @@ Identical here means equal after trimming whitespace, so a value or page that di
 That last condition is what makes a wrong refusal reversible: a later read that admits the value again files a newer assertion, and every earlier refusal stops counting.
 A refusal counts toward the same two-read quorum and drop guard as an absence claim, so one anomalous read cannot retract.
 The retired rows carry their own rollback reason, decided per observation, and the dry-run report's `refusalSupportedObservations` counts the observations whose quorum needed a refusal.
-A retraction whose every observation needed a refusal skips the sole-holder liveness probe, because the refused page still answers and the refusal is already the positive evidence the probe stands in for; a retraction that mixes refusals with absence claims is still probed.
+A retraction whose every observation met its quorum on refusals alone skips the sole-holder liveness probe, because the refused page still answers and the refusal is already the positive evidence the probe stands in for; a retraction that mixes refusals with absence claims is still probed, including one observation whose quorum one absence claim and one refusal met together.
 No production contract declares `refusalClassifiers` yet, so this path is inert until a lane emits refusals and its contract opts in; `dept-faculty-roster` is the first planned lane.
 Declaring a refusal classifier for any lane takes its own pull request, never a rider on the lane change that emits the refusals.
 That pull request carries a blind-graded precision sample of 20 live links the classifier refused, and it lands only with 0 WRONG, meaning no correct link refused.

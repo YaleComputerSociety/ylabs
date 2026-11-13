@@ -699,12 +699,14 @@ export interface PlannedFieldRetraction {
   maxEntitiesSharingAValue: number;
   /** The observations whose quorum a stamped refusal, not an absence claim, carried (#5803). */
   refusalObservationIds?: string[];
+  /** The observations whose quorum stamped refusals met on their own, with no absence claim counted. */
+  refusalQuorumObservationIds?: string[];
 }
 
 function isWhollyRefusalRetraction(retraction: PlannedFieldRetraction): boolean {
   return (
     retraction.observationIds.length > 0 &&
-    (retraction.refusalObservationIds?.length ?? 0) === retraction.observationIds.length
+    (retraction.refusalQuorumObservationIds?.length ?? 0) === retraction.observationIds.length
   );
 }
 
@@ -838,6 +840,7 @@ export function planFieldRetractions(input: {
       observationIds: string[];
       values: unknown[];
       refusalObservationIds: string[];
+      refusalQuorumObservationIds: string[];
     }
   >();
   for (const observation of input.activeObservations) {
@@ -870,6 +873,14 @@ export function planFieldRetractions(input: {
         completeReads,
         minCompleteReads: input.minCompleteReads,
       }) !== 'retract';
+    const retractedByRefusalQuorum =
+      retractedByRefusal &&
+      classifyFieldRetraction({
+        observation,
+        completeReads: completeReads.map((read) => ({ ...read, assertsNoValueFor: [] })),
+        minCompleteReads: input.minCompleteReads,
+        refusal,
+      }) === 'retract';
     if (retractedByRefusal) counts.refusalSupportedObservations += 1;
     const tally = counts.preFixAbsenceClaims[observation.field];
     if (
@@ -903,6 +914,9 @@ export function planFieldRetractions(input: {
       group.observationIds.push(observation.observationId);
       group.values.push(observation.value);
       if (retractedByRefusal) group.refusalObservationIds.push(observation.observationId);
+      if (retractedByRefusalQuorum) {
+        group.refusalQuorumObservationIds.push(observation.observationId);
+      }
     } else {
       retractedByKey.set(key, {
         entityKey: observation.entityKey,
@@ -910,6 +924,7 @@ export function planFieldRetractions(input: {
         observationIds: [observation.observationId],
         values: [observation.value],
         refusalObservationIds: retractedByRefusal ? [observation.observationId] : [],
+        refusalQuorumObservationIds: retractedByRefusalQuorum ? [observation.observationId] : [],
       });
     }
   }
@@ -1022,6 +1037,9 @@ export function planFieldRetractions(input: {
       maxEntitiesSharingAValue,
       ...(group.refusalObservationIds.length > 0
         ? { refusalObservationIds: group.refusalObservationIds }
+        : {}),
+      ...(group.refusalQuorumObservationIds.length > 0
+        ? { refusalQuorumObservationIds: group.refusalQuorumObservationIds }
         : {}),
     });
   }

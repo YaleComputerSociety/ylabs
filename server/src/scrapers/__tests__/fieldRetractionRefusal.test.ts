@@ -350,6 +350,30 @@ describe('the sole-holder liveness probe and a refusal (#5803)', () => {
     expect(screened.retained).toEqual([]);
     expect(screened.withheld).toHaveLength(1);
   });
+
+  it('still probes a quorum met by one absence read and one refusal read', async () => {
+    const reads: FieldRetractionCompleteRead[] = [
+      {
+        entityKey: ENTITY_KEY,
+        scrapeRunId: 'run-a',
+        observedAt: at('2026-11-10T00:00:00Z'),
+        assertsNoValueFor: ['websiteUrl'],
+        refusals: [],
+      },
+      refusingRead('run-b', '2026-11-12T00:00:00Z'),
+    ];
+    const [retraction] = plan(reads).retractions;
+    expect(retraction.observationIds).toEqual(['obs-old']);
+    expect(retraction.refusalObservationIds).toEqual(['obs-old']);
+    const probed: string[] = [];
+    const screened = await withholdSoleHolderRetractionsThatStillAnswer([retraction], (value) => {
+      probed.push(value);
+      return livePage();
+    });
+    expect(probed).toEqual([STORED_LINK]);
+    expect(screened.retained).toEqual([]);
+    expect(screened.withheld).toHaveLength(1);
+  });
 });
 
 describe('refusals loaded from witness rows', () => {
