@@ -6130,3 +6130,84 @@ describe('the appointment on a Drupal contact-information profile template (#587
     expect(officialProfilePageStatedFields(html).title).toBeUndefined();
   });
 });
+
+describe('profile content cards and section labels in the title read (#5594, #6198)', () => {
+  const page = (body: string) => `<!doctype html><html><head><title>Sam Fixture</title></head><body>
+    <main><h1>Sam Fixture</h1>${body}</main></body></html>`;
+
+  it.each([
+    [
+      'a news post',
+      '<div class="article-post"><div class="article-post__title-wrapper">Welcome New Faculty and Fellows (Fall 2026)</div></div>',
+    ],
+    [
+      'an award card',
+      '<div class="achievement-card"><div class="achievement-card__title">Young Investigator Award (2026)</div></div>',
+    ],
+    [
+      'a publication card',
+      '<div class="publication-card"><h3 class="publication-card__title">Faculty research advances in fixture science</h3></div>',
+    ],
+    [
+      'an event item',
+      '<ul><li class="event-list-item"><span class="event-list-item__title">Faculty Research Seminar</span></li></ul>',
+    ],
+    [
+      'a directory publication entry',
+      '<div class="pub--item"><span class="pub--title">Guide for students and faculty</span></div>',
+    ],
+  ])('never reads %s heading as the title', (_label, card) => {
+    expect(officialProfilePageStatedFields(page(card)).title).toBeUndefined();
+  });
+
+  it('reads the header appointment past a content card that precedes it', () => {
+    const html = page(
+      '<div class="article-post"><div class="article-post__title-wrapper">Welcome New Faculty (Fall 2026)</div></div><div class="profile-title">Associate Professor of Fixture Studies</div>',
+    );
+    expect(officialProfilePageStatedFields(html).title).toBe(
+      'Associate Professor of Fixture Studies',
+    );
+  });
+
+  it('keeps an Education appointment that continues with its school abbreviation', () => {
+    const html = page(
+      '<div class="profile-title">Director of Clinical Education YSN Fixture Program</div>',
+    );
+    expect(officialProfilePageStatedFields(html).title).toBe(
+      'Director of Clinical Education YSN Fixture Program',
+    );
+  });
+
+  it('keeps an appointment that ends in Education whole', () => {
+    const html = page('<div class="profile-title">Director of Clinical Education</div>');
+    expect(officialProfilePageStatedFields(html).title).toBe('Director of Clinical Education');
+  });
+
+  it.each([
+    ['Nursing', 'Associate Professor of Nursing Education MSN, Fixture University'],
+    ['Health', 'Professor of Public Health Education PhD, Fixture University'],
+    ['Medical', 'Professor of Medical Education MD 2004, Fixture School of Medicine'],
+    ['an unlisted degree', 'Associate Professor of Nursing Education DNSc, Fixture University'],
+    ['a School-of institution', 'Professor of Nursing Education Fixture School of Nursing, 2001'],
+    ['a lowercase degree', 'Professor of Health Education phd fixture university'],
+  ])('cuts a %s appointment before an Education section that lists a degree', (_label, glued) => {
+    const html = page(`<div class="profile-title">${glued}</div>`);
+    expect(officialProfilePageStatedFields(html).title).toBe(glued.split(' Education ')[0]);
+  });
+
+  it('keeps reading titles on a page whose own class names an article post', () => {
+    const html = `<!doctype html><html><body class="node-type-article-post"><main>
+      <h1>Sam Fixture</h1><div class="profile-title">Associate Professor of Fixture Studies</div>
+      </main></body></html>`;
+    expect(officialProfilePageStatedFields(html).title).toBe(
+      'Associate Professor of Fixture Studies',
+    );
+  });
+
+  it('still cuts a glued Education section label after the appointment', () => {
+    const html = page(
+      '<div class="profile-title">Professor of Fixture Studies Education PhD, Fixture University</div>',
+    );
+    expect(officialProfilePageStatedFields(html).title).toBe('Professor of Fixture Studies');
+  });
+});

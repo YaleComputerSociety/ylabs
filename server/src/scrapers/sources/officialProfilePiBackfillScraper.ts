@@ -1077,9 +1077,34 @@ function sameOfficialPersonPageForEntity(
   );
 }
 
+/**
+ * "Education" is also a page section label, but it ends an appointment phrase such as
+ * "Director of Clinical Education", which the label cut used to truncate (#6198). It is kept
+ * only when an appointment word sits right before it AND what follows reads as the same title:
+ * nothing, a separator, or a known continuation. Anything else, such as a degree or an
+ * institution, is the education section, and the label cut applies as before.
+ */
+const EDUCATION_INSIDE_APPOINTMENT =
+  /\b(?:of|in|for|and|&|clinical|medical|graduate|continuing|nursing|health|dental|professional|interprofessional|undergraduate|residency|fellowship)\s+education$/i;
+const EDUCATION_TITLE_CONTINUES =
+  /^\s*(?:$|[;|]|(?:programs?|department|division|center|centre|office|unit|section|initiatives?|committee|and|&|at|YSN|YSM|YSPH)\b)/i;
+
+function cutAtProfileSectionLabel(value: string): string {
+  const label = /\b(?:Bio|Biography|Education|Contact|Courses Taught|Curriculum Vitae)\b/gi;
+  for (const match of value.matchAll(label)) {
+    const index = match.index ?? 0;
+    const end = index + match[0].length;
+    const isAppointmentEducation =
+      /^education$/i.test(match[0]) &&
+      EDUCATION_INSIDE_APPOINTMENT.test(value.slice(Math.max(0, index - 40), end)) &&
+      EDUCATION_TITLE_CONTINUES.test(value.slice(end));
+    if (!isAppointmentEducation) return value.slice(0, index);
+  }
+  return value;
+}
+
 function cleanOfficialProfileTitle(value: string): string {
-  const cleaned = textValue(value)
-    .replace(/\b(?:Bio|Biography|Education|Contact|Courses Taught|Curriculum Vitae)\b[\s\S]*$/i, '')
+  const cleaned = cutAtProfileSectionLabel(textValue(value))
     .replace(/\s+\|.+$/g, '')
     .trim();
   if (!cleaned || cleaned.length > 220) return '';
@@ -1234,6 +1259,35 @@ function classNamesATitle($: cheerio.CheerioAPI, element: AnyNode): boolean {
     .some((name) => name.includes('title') && !name.endsWith('without-title'));
 }
 
+/**
+ * Content cards on a profile page (news posts, awards, publications, events) carry their own
+ * title-classed headings. When the header appointment fails the title pattern, a card heading
+ * containing an appointment word was read as the person's title (#5594). A card is matched by
+ * a class name that starts with the component name, so a page-level class that merely
+ * contains it (`node-type-article-post`) does not hide the whole page.
+ */
+const PROFILE_CONTENT_CARD_CLASS_PREFIXES = [
+  'article-post',
+  'achievement-card',
+  'publication-card',
+  'event-list-item',
+  'pub--',
+];
+
+function insideProfileContentCard($: cheerio.CheerioAPI, element: AnyNode): boolean {
+  return $(element)
+    .parents()
+    .addBack()
+    .toArray()
+    .some((node) =>
+      ($(node).attr('class') ?? '')
+        .split(/\s+/)
+        .some((name) =>
+          PROFILE_CONTENT_CARD_CLASS_PREFIXES.some((prefix) => name.startsWith(prefix)),
+        ),
+    );
+}
+
 function admissibleProfileTitles($: cheerio.CheerioAPI): string[] {
   const selectors = [
     '[class*="title"]',
@@ -1247,6 +1301,7 @@ function admissibleProfileTitles($: cheerio.CheerioAPI): string[] {
     const elements = $(selector).toArray();
     for (const el of elements) {
       if (selector === '[class*="title"]' && !classNamesATitle($, el)) continue;
+      if (selector !== 'meta[name="description"]' && insideProfileContentCard($, el)) continue;
       const value = cleanOfficialProfileTitle(
         blockSeparatedText($(el)) || $(el).attr('content') || '',
       );
