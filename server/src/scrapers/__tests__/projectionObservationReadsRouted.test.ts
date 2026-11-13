@@ -64,6 +64,11 @@ const REVIEWED_UNROUTED_READS: ReadonlyArray<{ fn: string; reason: string }> = [
       'Called only from the `user` materializer, when the identity keys did not settle a stored department, so the benchmark never makes this read: it replays `researchEntity` rows only. It finds keys outside the researcher identity keys by the department value they state, so an entity-keyed source cannot answer it (#5741).',
   },
   {
+    fn: 'engineJoinCandidateStatesStoredDepartmentThroughScreenedReading',
+    reason:
+      'Called only from the `user` materializer, for the #6065 screened-backing clear when no identity key backs the stored department, so the benchmark never makes this read: it replays `researchEntity` rows only. It reads the `primaryDepartment` readings of keys outside the researcher identity keys found by the department value they state, so an entity-keyed source cannot answer it.',
+  },
+  {
     fn: 'otherPersonPrintsAddress',
     reason:
       'Called only from `rosterAliasEmailMintIdentity`, the address-keyed mint gate on the `user` materializer, so the benchmark never makes this read: it replays `researchEntity` rows only. It is a search by value for other `user` keys printing one address, whose purpose is to find people other than the one being minted, so an entity-keyed source cannot answer it.',

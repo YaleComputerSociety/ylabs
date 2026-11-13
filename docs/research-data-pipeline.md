@@ -1420,7 +1420,7 @@ The candidates come from one value-to-keys map per materialize batch (`scrapers/
 More than 25 narrowed candidates read as undetermined, and nothing is then cleared or filled.
 A name join whose stored `lname` shares no token with the researcher's display name is a known gap of the narrowing: 5 of 297 non-identity engine-joined keys in a 2026-11-13 Development sample.
 The clear reads the same backing as #6049, person-name-joined keys included, so a value a roster states on such a key is never cleared unless that reading is screened too; when that read is undetermined, nothing is cleared.
-It reads the person-name-joined keys only once an identity key's screened reading states the value, so a value only such keys state is never cleared.
+A value only a person-name-joined key states is cleared when that key's reading is screened, and when no identity key states the value the engine join runs only once some candidate key states it through a screened reading, because otherwise nothing could be cleared.
 The field then resolves from what remains in the same pass, so a fill-only directory department can land, and a second pass writes nothing.
 A new department screen goes in that list, so it both stops its readings from resolving and clears the values only they back.
 

@@ -9237,6 +9237,43 @@ const personNameTokens = (value: unknown): string[] =>
         .filter((token) => token.length > 1)
     : [];
 
+async function engineJoinCandidateKeys(
+  stored: string,
+  canonicalDepartment: CanonicalDepartment,
+  known: readonly UserKeyReference[],
+): Promise<string[]> {
+  const statingKeys = await primaryDepartmentStatingKeysForMaterialization();
+  const knownKeys = new Set(known.map((reference) => textValue(reference.entityKey)));
+  return uniqueStrings(
+    [...statingKeys]
+      .filter(([value]) => storedDepartmentIsBacked(stored, [{ value }], canonicalDepartment))
+      .flatMap(([, keys]) => [...keys]),
+  ).filter((key) => !knownKeys.has(key));
+}
+
+async function engineJoinCandidateStatesStoredDepartmentThroughScreenedReading(
+  stored: string,
+  canonicalDepartment: CanonicalDepartment,
+  known: readonly UserKeyReference[],
+): Promise<boolean> {
+  const candidates = await engineJoinCandidateKeys(stored, canonicalDepartment, known);
+  if (candidates.length === 0) return false;
+  const readings = (await Observation.find(
+    {
+      entityType: 'user',
+      entityKey: { $in: candidates },
+      field: 'primaryDepartment',
+      ...NOT_ROLLED_BACK,
+    },
+    { field: 1, value: 1, sourceName: 1, sourceUrl: 1 },
+  )
+    .hint(USER_KEY_HINT)
+    .lean()) as StoredDepartmentReading[];
+  return readings.some((reading) =>
+    storedDepartmentRestsOnlyOnScreenedReadings(stored, [reading], { canonicalDepartment }),
+  );
+}
+
 /**
  * The readings of keys outside the researcher's identity keys that state the stored value and
  * that the engine's own join (`userIdentityJoinForKey`) reaches the researcher from, which is
@@ -9253,13 +9290,7 @@ async function storedDepartmentReadingsOfEngineJoinedKeys(
   canonicalDepartment: CanonicalDepartment,
   known: readonly UserKeyReference[],
 ): Promise<StoredDepartmentReading[] | 'undetermined'> {
-  const statingKeys = await primaryDepartmentStatingKeysForMaterialization();
-  const knownKeys = new Set(known.map((reference) => textValue(reference.entityKey)));
-  const candidates = uniqueStrings(
-    [...statingKeys]
-      .filter(([value]) => storedDepartmentIsBacked(stored, [{ value }], canonicalDepartment))
-      .flatMap(([, keys]) => [...keys]),
-  ).filter((key) => !knownKeys.has(key));
+  const candidates = await engineJoinCandidateKeys(stored, canonicalDepartment, known);
   if (candidates.length === 0) return [];
   const researcherTokens = new Set(personNameTokens(researcher.displayName));
   if (researcherTokens.size === 0) return [];
@@ -9366,7 +9397,9 @@ async function storedDepartmentBackedByAnyReading(
  * readings #6049 reads for backing, so a key's screened reading never clears a value another
  * key still states. The resolving key's own unscreened reading settles it without the
  * cross-key read. A value only a person-name-joined key backs is cleared too when that key's
- * reading is screened, since a center roster's own keys are often joined only by name.
+ * reading is screened, since a center roster's own keys are often joined only by name; with no
+ * identity-key backing, the engine join runs only once some candidate key states the value
+ * through a screened reading, because otherwise nothing could be cleared.
  */
 async function storedDepartmentRestsOnlyOnScreenedReadingsAcrossKeys(
   researcher: any,
@@ -9377,8 +9410,17 @@ async function storedDepartmentRestsOnlyOnScreenedReadingsAcrossKeys(
   const stored = textValue(researcher.profile?.primaryDepartment);
   if (!stored || !context.canonicalDepartment) return false;
   if (storedDepartmentHasUnscreenedReading(stored, ownObservations, context)) return false;
-  const { readings } = await reads.overEveryKey();
+  const { references, readings } = await reads.overEveryKey();
   if (storedDepartmentHasUnscreenedReading(stored, readings, context)) return false;
+  if (
+    !storedDepartmentRestsOnlyOnScreenedReadings(stored, readings, context) &&
+    !(await engineJoinCandidateStatesStoredDepartmentThroughScreenedReading(
+      stored,
+      context.canonicalDepartment,
+      references,
+    ))
+  )
+    return false;
   const joined = await reads.engineJoined(stored, context.canonicalDepartment);
   if (joined === 'undetermined') return false;
   return storedDepartmentRestsOnlyOnScreenedReadings(stored, [...readings, ...joined], context);
