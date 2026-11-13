@@ -3,6 +3,7 @@ import {
   type UrlIdentityLaneName,
   type UrlIdentityLaneVerdict,
 } from './researchEntityPiDedupeCore';
+import { normalizeWebsiteUrlIdentityKey } from '../utils/websiteUrlIdentityKey';
 
 /**
  * Merge the duplicate-URL groups whose members share a lead person AND carry something
@@ -35,7 +36,8 @@ export type SameLeadMergeHold =
   | 'quarantined-by-the-conflation-guard'
   | 'no-ownership-evidence-on-either-side';
 
-export type SameLeadCorroboration = 'name-agrees' | 'shell-versus-concrete';
+export type SameLeadCorroboration =
+  'name-agrees' | 'shell-versus-concrete' | 'leadless-or-member-led-twin';
 
 export interface SameLeadMergeMember {
   id: string;
@@ -45,6 +47,8 @@ export interface SameLeadMergeMember {
   hasIndexUrlAuthority: boolean;
   fundingRichness: number;
   isShell: boolean;
+  leadPersonIds?: readonly string[];
+  memberPersonIds?: readonly string[];
 }
 
 export interface SameLeadMergePlan {
@@ -90,6 +94,30 @@ export function corroborationFor(
   return null;
 }
 
+const leadsSitInside = (twin: SameLeadMergeMember, anchor: SameLeadMergeMember): boolean => {
+  const within = new Set([...(anchor.leadPersonIds ?? []), ...(anchor.memberPersonIds ?? [])]);
+  return (twin.leadPersonIds ?? []).every((personId) => within.has(personId));
+};
+
+/**
+ * One research home stored twice on its own site, where the twin has no lead or is led only
+ * by people of the anchor row (#6206). The name must agree and exactly one row may anchor,
+ * so two rows of two different PIs never fold here.
+ */
+export function subjectTwinAnchor(
+  members: readonly SameLeadMergeMember[],
+): SameLeadMergeMember | null {
+  if (members.length !== 2) return null;
+  const names = members.map((member) => normalizedMergeName(member.name));
+  if (!names[0] || names[0] !== names[1]) return null;
+  const anchors = members.filter(
+    (member) =>
+      (member.leadPersonIds?.length ?? 0) > 0 &&
+      members.every((other) => other === member || leadsSitInside(other, member)),
+  );
+  return anchors.length === 1 ? anchors[0] : null;
+}
+
 /**
  * The survivor, or null when the evidence does not choose one.
  *
@@ -131,6 +159,20 @@ export function planSameLeadCorroboratedMerges(
   const held: Array<{ url: string; reason: SameLeadMergeHold }> = [];
 
   for (const group of groups) {
+    const excludedUpstream = group.alreadyPlannedByUrlLane || group.quarantinedByConflationGuard;
+    const twinAnchor = excludedUpstream ? null : subjectTwinAnchor(group.members);
+    if (twinAnchor) {
+      const losers = group.members.filter((member) => member.id !== twinAnchor.id);
+      merges.push({
+        url: group.url,
+        corroboration: 'leadless-or-member-led-twin',
+        survivorId: twinAnchor.id,
+        loserIds: losers.map((member) => member.id),
+        survivorGainsFunding:
+          twinAnchor.fundingRichness === 0 && losers.some((member) => member.fundingRichness > 0),
+      });
+      continue;
+    }
     if (!group.everyMemberHasALead) {
       held.push({ url: group.url, reason: 'a-member-has-no-lead-so-the-test-is-vacuous' });
       continue;
@@ -241,3 +283,32 @@ export function sameLeadUrlLaneInputsReport(verdicts: readonly UrlIdentityLaneVe
     quarantinedGroups,
   }));
 }
+
+/**
+ * Pairs whose own websites differ only by `www.` or another spelling the identity key folds,
+ * which the gate's exact-URL groups never pair (#6206). Only two-row collisions are returned.
+ */
+export const ownSiteIdentityPairs = <Row extends { _id: unknown; websiteUrl?: unknown }>(
+  rows: readonly Row[],
+  alreadyGrouped: ReadonlySet<string>,
+): Array<{ url: string; members: Row[] }> => {
+  const byKey = new Map<string, Row[]>();
+  for (const row of rows) {
+    const key = normalizeWebsiteUrlIdentityKey(
+      typeof row.websiteUrl === 'string' ? row.websiteUrl.trim() : '',
+    );
+    if (key) byKey.set(key, [...(byKey.get(key) ?? []), row]);
+  }
+  return [...byKey.entries()]
+    .filter(([, members]) => members.length === 2)
+    .filter(
+      ([, members]) =>
+        !alreadyGrouped.has(
+          members
+            .map((m) => String(m._id))
+            .sort()
+            .join('|'),
+        ),
+    )
+    .map(([url, members]) => ({ url, members }));
+};
