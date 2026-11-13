@@ -106,16 +106,19 @@ export class HostRateLimiter {
     this.machineWide = options.machineWide ?? machineHostSlotsForDirectRequest;
   }
 
-  async run<T>(host: string, fn: () => Promise<T>): Promise<T> {
+  async run<T>(host: string, fn: () => Promise<T>, reused?: (value: T) => boolean): Promise<T> {
     const release = await this.slots.acquire(host);
     try {
       const machine = this.machineWide();
       if (!machine) return await fn();
       const releaseMachine = await machine.acquire(host);
+      let replayed = false;
       try {
-        return await fn();
+        const value = await fn();
+        replayed = reused?.(value) ?? false;
+        return value;
       } finally {
-        releaseMachine();
+        releaseMachine({ reused: replayed });
       }
     } finally {
       release();
@@ -437,7 +440,7 @@ async function fetchPageLive(
     const answeringHost = hostOf(result.finalUrl || safeUrl);
     if (result.status >= 200 && result.status < 300) {
       backoff.settle('recovered');
-      if (!isReusedResponse(result)) recordHostSuccess(answeringHost);
+      if (!isReusedResponse(result)) await recordHostSuccess(answeringHost);
       return {
         url: result.finalUrl || safeUrl,
         html: result.data ?? '',
@@ -446,7 +449,7 @@ async function fetchPageLive(
         ...(isReusedResponse(result) ? { reused: true as const } : {}),
       };
     }
-    const pause = recordHostRefusal({
+    const pause = await recordHostRefusal({
       host: answeringHost,
       status: result.status,
       body: result.data,
@@ -465,7 +468,7 @@ async function fetchPageLive(
     }
     backoff.settle('exhausted');
     if (policy.retryable.has(result.status)) {
-      recordTierOneExhausted(answeringHost, result.status, result.retryAfterMs);
+      await recordTierOneExhausted(answeringHost, result.status, result.retryAfterMs);
     }
     throw new HttpStatusError(result.status, result.finalUrl || safeUrl);
   }
@@ -473,13 +476,27 @@ async function fetchPageLive(
 
 const isRedirectStatus = (status: number): boolean => status >= 300 && status < 400;
 
-function isRefusedBeforeSending(error: unknown): boolean {
-  return (
-    error instanceof SsrfBlockedError ||
-    error instanceof HostPausedError ||
-    error instanceof HostBudgetUnavailableError ||
-    error instanceof HostSlotWaitTimeoutError
-  );
+/**
+ * Whether no verdict about the page may be read from this error: a guard refused it, its host is
+ * paused, the shared budget could not be read, or no slot came free (#6258). It does not mean no
+ * request reached the host, because a pause recorded from a refusal the host just sent is one of
+ * these too; read `HostPausedError.requestSent` for that. Walks the `cause` chain, because
+ * axios wraps an error thrown from a redirect hook.
+ */
+export function isRefusedBeforeSending(error: unknown): boolean {
+  let current: unknown = error;
+  for (let depth = 0; depth < 6 && current && typeof current === 'object'; depth += 1) {
+    if (
+      current instanceof SsrfBlockedError ||
+      current instanceof HostPausedError ||
+      current instanceof HostBudgetUnavailableError ||
+      current instanceof HostSlotWaitTimeoutError
+    ) {
+      return true;
+    }
+    current = (current as { cause?: unknown }).cause;
+  }
+  return false;
 }
 
 function tooManyRedirectsError(maxRedirects: number): Error & { code: string } {
@@ -552,7 +569,11 @@ async function followRedirectsWithinBudget(
     const sent = hopConfig;
     const pausedHop = activeHostPause(hostOf(target));
     if (pausedHop) throw new HostPausedError(pausedHop);
-    const result = await deps.limiter.run(hostOf(target), () => deps.request(target, sent));
+    const result = await deps.limiter.run(
+      hostOf(target),
+      () => deps.request(target, sent),
+      isReusedResponse,
+    );
     if (config.maxRedirects === 0 || !isRedirectStatus(result.status) || !result.location) {
       return { ...result, finalUrl: result.finalUrl || current };
     }

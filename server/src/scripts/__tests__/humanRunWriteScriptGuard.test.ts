@@ -19,6 +19,8 @@ const SWEEP_RUNNER = 'runScraperSweep.ts';
  * operator. Anything else that writes belongs in a lane or a sweep stage (#3524).
  */
 const OPERATOR_TOOLS: Record<string, string> = {
+  'host-pause:seed-from-notice':
+    "seeds one host's shared pause from a refusal notice an operator read, once, with the stated date parsed by the live path and no typed-in date (#6168)",
   'research-entity:refuse-field-value': 'records a per-row refusal, the layer-3 writer',
   'researcher:refuse-field-value':
     'records an operator refusal of one value on one person record, the person-record counterpart of the layer-3 writer (#5641)',

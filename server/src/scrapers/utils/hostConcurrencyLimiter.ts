@@ -9,72 +9,37 @@ import { recordHostSuccess } from './hostPauseState';
 import axios, { AxiosError } from 'axios';
 import { isSweepPageReuseHit } from './sweepPageReuseHit';
 import { isHostBudgetExempt } from './hostBudgetExempt';
+import {
+  DEFAULT_PER_HOST_CONCURRENCY,
+  HOST_SLOT_WAIT_TIMEOUT_MS,
+  HOST_THROTTLE_OVERRIDES,
+  HostSlotWaitTimeoutError,
+  type HostPoliteness,
+  type HostRetryBudget,
+  type HostSlotLimiter,
+  type HostSlotRelease,
+  type HostThrottle,
+} from './hostThrottlePolicy';
 
-export const DEFAULT_PER_HOST_CONCURRENCY = 4;
+export {
+  BAN_PRONE_HOST_RETRY_BUDGET,
+  DEFAULT_PER_HOST_CONCURRENCY,
+  HOST_SLOT_WAIT_TIMEOUT_MS,
+  HOST_THROTTLE_OVERRIDES,
+  HostSlotWaitTimeoutError,
+  REFUSAL_THROTTLED_HOST_RETRY_BUDGET,
+  YALE_HOST_DEFAULT_THROTTLE,
+  type HostPoliteness,
+  type HostRetryBudget,
+  type HostSlotLimiter,
+  type HostSlotRelease,
+  type HostThrottle,
+} from './hostThrottlePolicy';
 
 export function resolvePerHostConcurrency(env: NodeJS.ProcessEnv = process.env): number {
   const raw = Number(env.SCRAPER_PER_HOST_CONCURRENCY);
   return Number.isInteger(raw) && raw >= 1 ? raw : DEFAULT_PER_HOST_CONCURRENCY;
 }
-
-export interface HostThrottle {
-  concurrency: number;
-  minIntervalMs: number;
-}
-
-export interface HostRetryBudget {
-  maxRetries: number;
-  maxBackoffMs: number;
-  maxTotalBackoffMs: number;
-}
-
-export interface HostPoliteness extends HostThrottle {
-  retryBudget?: HostRetryBudget;
-}
-
-// These hosts refuse 30-50% of single requests at random (measured 2026-10-03), so a page
-// fails every attempt with probability p^(maxRetries + 1): 0.5^4 = 6% under the default
-// three retries, 0.5^9 = 0.2% under eight. The waits stay inside the slot throttle, and
-// maxTotalBackoffMs bounds one page even when every refusal names a long Retry-After.
-export const REFUSAL_THROTTLED_HOST_RETRY_BUDGET: HostRetryBudget = {
-  maxRetries: 8,
-  maxBackoffMs: 15_000,
-  maxTotalBackoffMs: 90_000,
-};
-
-// This host's own flood control paused this machine for seven days after one morning of lane
-// and link-health traffic (#6166). Every refused request counts against it, so it gets one request
-// at a time, spaced well apart, and fewer retries than the default rather than more.
-export const BAN_PRONE_HOST_RETRY_BUDGET: HostRetryBudget = {
-  maxRetries: 1,
-  maxBackoffMs: 15_000,
-  maxTotalBackoffMs: 15_000,
-};
-
-export const HOST_THROTTLE_OVERRIDES: Readonly<Record<string, HostPoliteness>> = {
-  'medicine.yale.edu': {
-    concurrency: 3,
-    minIntervalMs: 400,
-    retryBudget: REFUSAL_THROTTLED_HOST_RETRY_BUDGET,
-  },
-  'ysph.yale.edu': {
-    concurrency: 2,
-    minIntervalMs: 400,
-    retryBudget: REFUSAL_THROTTLED_HOST_RETRY_BUDGET,
-  },
-  'economics.yale.edu': {
-    concurrency: 1,
-    minIntervalMs: 1_500,
-    retryBudget: BAN_PRONE_HOST_RETRY_BUDGET,
-  },
-};
-
-// Yale hosts answered about 2 requests a second with 403s (ysph, hold 3i), so any Yale host
-// without its own override gets one request at a time, 1.5 s apart, across the whole machine.
-export const YALE_HOST_DEFAULT_THROTTLE: HostThrottle = {
-  concurrency: 1,
-  minIntervalMs: 1_500,
-};
 
 function hostPoliteness(host: string | undefined): HostPoliteness | undefined {
   const key = host?.toLowerCase();
@@ -97,12 +62,6 @@ export function resolveHostThrottle(
     concurrency: Math.min(defaults.concurrency, override.concurrency),
     minIntervalMs: Math.max(defaults.minIntervalMs, override.minIntervalMs),
   };
-}
-
-export type HostSlotRelease = () => void;
-
-export interface HostSlotLimiter {
-  acquire(host: string): Promise<HostSlotRelease>;
 }
 
 export class ChainedHostSlotLimiter implements HostSlotLimiter {
@@ -260,23 +219,6 @@ export async function withHostSlot<T>(
   }
 }
 
-/**
- * The longest a request waits for a host slot before it fails instead. A slot that is never
- * released, or a lease acquire that never answers, would otherwise hold every later request to
- * that host forever, with no fetch deadline running because the wait happens before dispatch.
- * Changing it also requires updating the "Fetch deadlines" table in `skills/scrapers/SKILL.md`.
- */
-export const HOST_SLOT_WAIT_TIMEOUT_MS = 10 * 60_000;
-
-export class HostSlotWaitTimeoutError extends Error {
-  readonly code = 'ETIMEDOUT';
-
-  constructor(host: string, timeoutMs: number) {
-    super(`no host slot for ${host} within ${timeoutMs} ms`);
-    this.name = 'HostSlotWaitTimeoutError';
-  }
-}
-
 /** A slot granted after the wait gave up is released at once, so a late grant never leaks. */
 export function acquireHostSlotWithin(
   limiter: HostSlotLimiter,
@@ -332,10 +274,25 @@ function recordHostOutcomeFromResponse(response: unknown): void {
     hostnameForLimiter(typed.config?.url, typed.config?.baseURL);
   if (!host || isHostBudgetExempt(host)) return;
   if (typed.status >= 200 && typed.status < 300) {
-    recordHostSuccess(host);
+    void recordHostSuccess(host).catch((error: unknown) => {
+      console.warn(
+        `[host-pause] could not record a success from ${host}: ${(error as Error)?.message ?? error}`,
+      );
+    });
     return;
   }
-  recordHostRefusal({ host, status: typed.status, headers: typed.headers, body: typed.data });
+  // The interceptor cannot wait, so a request already in flight may still reach the host before
+  // this pause lands; every later acquire reads it.
+  void recordHostRefusal({
+    host,
+    status: typed.status,
+    headers: typed.headers,
+    body: typed.data,
+  }).catch((error: unknown) => {
+    console.warn(
+      `[host-pause] could not record a ${typed.status} from ${host}: ${(error as Error)?.message ?? error}`,
+    );
+  });
 }
 
 const RELEASE_KEY = '__scraperHostRelease';
@@ -370,7 +327,11 @@ export function installScraperHostConcurrencyInterceptor(
         );
       } catch (error) {
         if (!(error instanceof HostSlotWaitTimeoutError)) throw error;
-        throw new AxiosError(error.message, AxiosError.ETIMEDOUT, config);
+        const timedOut = new AxiosError(error.message, AxiosError.ETIMEDOUT, config);
+        // Keeps the original reachable, so a lane still reads this as a request never sent (#6258)
+        // rather than as a verdict on the page.
+        timedOut.cause = error;
+        throw timedOut;
       }
     }
     return config;

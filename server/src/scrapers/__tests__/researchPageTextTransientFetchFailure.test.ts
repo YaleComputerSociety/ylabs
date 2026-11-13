@@ -1,10 +1,13 @@
+import fs from 'fs';
+import path from 'path';
 import { describe, expect, it, vi } from 'vitest';
 
 import { DevWriteLeaseHeldError } from '../../db/devWriteLease';
 import { ResearchPageTextScraper } from '../sources/researchPageTextScraper';
 import type { CandidateDescriptionLab } from '../sources/labMicrositeDescriptionLLMExtractor';
 import type { ObservationInput, ScraperContext } from '../types';
-import { HttpStatusError } from '../utils/httpFetch';
+import { fetchPageWithPolicy, HostRateLimiter, HttpStatusError } from '../utils/httpFetch';
+import { MachineHostBudgetLimiter } from '../utils/machineHostBudget';
 import { RESEARCH_PAGE_TEXT_FIELD, RESEARCH_PAGE_TEXT_SOURCE } from '../utils/researchPageText';
 import { HostPausedError } from '../utils/hostPause';
 
@@ -134,6 +137,63 @@ describe('research-page-text when a cited page fails transiently', () => {
     expect(result.metrics?.deferredRowsByHost).toEqual({
       'partner-site.example.org': { rows: 1, resumesAt: resumesAt.toISOString() },
     });
+  });
+
+  it('defers a row whose cited host the machine budget holds in a long pause, never counting it as throttled', async () => {
+    const directory = fs.mkdtempSync('/tmp/ylrpt-pause-');
+    try {
+      const budget = new MachineHostBudgetLimiter({
+        env: { SCRAPER_MACHINE_HOST_SLOTS: 'on' },
+        directory: path.join(directory, 'budget'),
+        warn: () => {},
+      });
+      const resumesAt = await budget.recordBackoff('partner-site.example.org', {
+        status: 403,
+        statedUntil: new Date(Date.now() + 7 * 24 * 60 * 60_000),
+      });
+      const request = vi.fn(async (url: string) => ({
+        status: 200,
+        data: pages[url] ?? '',
+        finalUrl: url,
+      }));
+      const emitted: ObservationInput[] = [];
+      const lane = new ResearchPageTextScraper({
+        fetchPage: (url: string) =>
+          fetchPageWithPolicy(url, {
+            assertUrl: async (target: string) => ({ toString: () => target }),
+            request,
+            sleep: async () => {},
+            limiter: new HostRateLimiter({ minIntervalMs: 0, machineWide: () => budget }),
+          }),
+        rowFinder: async () => [row],
+        storedHashLoader: async () => 'stored-hash',
+        storedReadingLoader: async () => ({ hosts: new Set(BOTH_HOSTS) }),
+        previousThrottledRowsLoader: async () => ({}),
+        citerCountsLoader: async () => new Map(),
+      });
+
+      const result = await lane.run({
+        scrapeRunId: 'test-run',
+        sourceId: 'test-source',
+        sourceName: RESEARCH_PAGE_TEXT_SOURCE,
+        sourceWeight: 0.85,
+        options: { dryRun: false, useCache: false, release: false },
+        emit: async (obs) => {
+          emitted.push(...(Array.isArray(obs) ? obs : [obs]));
+        },
+        log: () => undefined,
+      });
+
+      expect(request.mock.calls.map(([url]) => url)).toEqual([HOME]);
+      expect(emitted).toEqual([]);
+      expect(result.notes).toContain('1 deferred to a later run');
+      expect(result.metrics?.deferredRowsByHost).toEqual({
+        'partner-site.example.org': { rows: 1, resumesAt: resumesAt?.toISOString() },
+      });
+      expect(result.metrics?.throttledRowsByHost).toEqual({});
+    } finally {
+      fs.rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it('reads a deferred row again within the run once a short pause ends', async () => {
