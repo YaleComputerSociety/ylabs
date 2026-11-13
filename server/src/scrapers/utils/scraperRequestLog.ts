@@ -27,7 +27,7 @@ export interface ScraperRequestLog {
   ) => void;
 }
 
-export function requestUrlHash(url: string): string {
+function requestUrlHash(url: string): string {
   return crypto.createHash('sha256').update(url).digest('hex').slice(0, 16);
 }
 

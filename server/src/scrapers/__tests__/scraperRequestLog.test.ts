@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
@@ -9,7 +10,6 @@ import { withScraperFetchDeadline } from '../utils/scraperFetchDeadlines';
 import {
   SCRAPER_REQUEST_LOG_ENV,
   createScraperRequestLog,
-  requestUrlHash,
   scraperRequestLogFromEnv,
   type ScraperRequestLogEntry,
 } from '../utils/scraperRequestLog';
@@ -32,6 +32,9 @@ async function serve(handler: http.RequestListener): Promise<string> {
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
   return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 }
+
+const sha256Prefix = (text: string) =>
+  crypto.createHash('sha256').update(text).digest('hex').slice(0, 16);
 
 const capturingClient = () => {
   const lines: string[] = [];
@@ -62,7 +65,8 @@ describe('the opt-in scraper request log (#6188)', () => {
       { host: '127.0.0.1', status: 403, attempt: 1 },
       { host: '127.0.0.1', status: 403, attempt: 2 },
     ]);
-    expect(entries()[1].urlHash).toBe(requestUrlHash(blocked));
+    expect(entries()[1].urlHash).toBe(sha256Prefix(blocked));
+    expect(entries()[1].urlHash).not.toBe(sha256Prefix(`${base}/people/secret-page`));
     for (const entry of entries()) {
       expect(Number.isNaN(Date.parse(entry.at))).toBe(false);
       expect(entry.at.endsWith('Z')).toBe(true);
@@ -81,6 +85,24 @@ describe('the opt-in scraper request log (#6188)', () => {
     expect(entries()).toHaveLength(1);
     expect(entries()[0].status).toBeUndefined();
     expect(entries()[0].error).toBe('ECONNREFUSED');
+  });
+
+  it('returns the response and the real error when the log cannot be written', async () => {
+    const base = await serve((req, res) => {
+      res.writeHead(req.url === '/ok' ? 200 : 503);
+      res.end();
+    });
+    const failingLog = createScraperRequestLog(() => {
+      throw Object.assign(new Error('no space left on device'), { code: 'ENOSPC' });
+    });
+    const client = axios.create({
+      adapter: withScraperFetchDeadline(axios.getAdapter('http'), { requestLog: failingLog }),
+    });
+
+    await expect(client.get(`${base}/ok`)).resolves.toMatchObject({ status: 200 });
+    await expect(client.get(`${base}/down`)).rejects.toMatchObject({
+      response: { status: 503 },
+    });
   });
 
   it('writes nothing when no log is configured', async () => {
@@ -103,7 +125,7 @@ describe('the opt-in scraper request log (#6188)', () => {
     expect(JSON.parse(line)).toEqual({
       at: '2026-01-01T00:00:00.000Z',
       host: 'example.edu',
-      urlHash: requestUrlHash('https://example.edu/lab/people/'),
+      urlHash: sha256Prefix('https://example.edu/lab/people/'),
       status: 200,
       durationMs: 12,
       attempt: 1,

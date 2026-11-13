@@ -89,13 +89,18 @@ export function withScraperFetchDeadline(
     const timer = setTimeout(() => deadline.abort(), overallMs);
     config.signal = combinedSignal(callerSignal, deadline.signal);
     const dispatchedAt = new Date();
-    const logOutcome = (outcome: unknown) =>
-      options.requestLog?.record(
-        axios.getUri(config),
-        dispatchedAt,
-        Date.now() - dispatchedAt.getTime(),
-        requestOutcomeOf(outcome),
-      );
+    const logOutcome = (outcome: unknown) => {
+      try {
+        options.requestLog?.record(
+          axios.getUri(config),
+          dispatchedAt,
+          Date.now() - dispatchedAt.getTime(),
+          requestOutcomeOf(outcome),
+        );
+      } catch {
+        return;
+      }
+    };
     try {
       const response = await adapter(config);
       logOutcome(response);
