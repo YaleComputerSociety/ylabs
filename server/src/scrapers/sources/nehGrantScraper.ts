@@ -43,6 +43,7 @@ import { recentGrantPeriodsOf } from '../utils/recentGrantPeriods';
 import { withCreditedInvestigator, type GrantInvestigator } from '../utils/grantInvestigators';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
+import { awardDateOfCalendarDay } from '../../utils/awardCalendarDay';
 
 export const NEH_AWARD_SEARCH_BASE = 'https://awardsearch.neh.gov';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
@@ -174,8 +175,7 @@ export function parseNehDate(s: string | undefined | null): Date | undefined {
     .match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
   if (!m) return undefined;
   const [, mm, dd, yyyy] = m;
-  const d = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
-  return Number.isFinite(d.getTime()) ? d : undefined;
+  return awardDateOfCalendarDay(Number(yyyy), Number(mm), Number(dd));
 }
 
 export function parseAwardPeriod(s: string | undefined | null): { begin?: Date; end?: Date } {

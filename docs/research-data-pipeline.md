@@ -2705,6 +2705,10 @@ A lane's own `recentGrantCount` observation is never read: an award a lane count
 A lane's funder labels are kept only while that lane contributes at least one eligible award, filtered by the awards it backs, and a row whose every award is withheld stores a count of 0 and no funder.
 The stored list is what the lanes read and may hold awards that have since ended, because the NIH and NSF windows admit ended awards and a stored list ages between reads.
 The public DTO (`server/src/services/servedCurrentFunding.ts`) therefore re-reads each award's `endDate` on every request and serves an award as current funding only while its end day has not passed or it has no end date (#3924).
+Every grant lane stores an award date as UTC midnight of the source's calendar day, whatever the host's time zone, through `awardDateOfCalendarDay` in `server/src/utils/awardCalendarDay.ts` (#6041).
+An award stays current through the end of its last calendar day in America/New_York, inclusive, and `awardEndDayHasPassed` in the same file is the one check both the DTO and the emeritus running-funding arm (`server/src/services/emeritusLeadWayIn.ts`) call.
+It reads the stored date's UTC calendar day, so a date written before #6041 as New York local midnight (04:00Z or 05:00Z) names the same day.
+A renderer that ever shows an award date formats it with `timeZone: 'UTC'`, so the stored calendar day is the shown one.
 When the stored periods cover every award (their number equals the stored count), the served `recentGrantCount` is the number of distinct running awards across the periods and the list, so an award past the ten listed still counts and an ended one never does, and the agencies follow the running awards.
 Without such periods the list may be a sample, so the DTO restates the count from the running listed awards only when the stored count does not exceed the list, and otherwise omits the count once an award is dropped, rather than serve a number restated from a sample; when every listed award has ended it serves an empty list and omits both the count and the agencies.
 `recentGrantPeriods` is evidence for that count and is never served.

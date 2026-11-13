@@ -62,6 +62,7 @@ import {
 } from '../utils/grantInvestigators';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
+import { awardDateOfCalendarDay } from '../../utils/awardCalendarDay';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -173,8 +174,7 @@ export function parseNsfDate(s: string | undefined | null): Date | undefined {
     .match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (!m) return undefined;
   const [_all, mm, dd, yyyy] = m;
-  const d = new Date(Number(yyyy), Number(mm) - 1, Number(dd));
-  return Number.isFinite(d.getTime()) ? d : undefined;
+  return awardDateOfCalendarDay(Number(yyyy), Number(mm), Number(dd));
 }
 
 /**

@@ -65,6 +65,7 @@ import {
 } from '../utils/grantInvestigators';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
+import { awardDateOfCalendarDay } from '../../utils/awardCalendarDay';
 import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
 
 export const REPORTER_ENDPOINT = 'https://api.reporter.nih.gov/v2/projects/search';
@@ -409,7 +410,7 @@ function earliestDate(dates: readonly (Date | undefined)[]): Date | undefined {
 }
 
 function projectEndDate(records: readonly NihGrant[]): Date | undefined {
-  const endDates = records.map((record) => parseDate(record.project_end_date));
+  const endDates = records.map((record) => parseNihDate(record.project_end_date));
   if (endDates.some((date) => !date)) return undefined;
   return endDates.reduce<Date | undefined>(
     (latest, date) => (date && (!latest || date > latest) ? date : latest),
@@ -470,7 +471,7 @@ export function projectToRecord(
   return {
     ...grantToRecord(newest),
     id: nihAwardKey(newest),
-    startDate: earliestDate(records.map((record) => parseDate(record.project_start_date))),
+    startDate: earliestDate(records.map((record) => parseNihDate(record.project_start_date))),
     endDate: projectEndDate(records),
     ...withRecordedInvestigators(
       researcherIdForPi && nihAwardInvestigators(records, researcherIdForPi),
@@ -508,8 +509,8 @@ export function grantToRecord(grant: NihGrant): RecentGrantRecord {
     agency,
     title,
     abstract,
-    startDate: parseDate(grant.project_start_date),
-    endDate: parseDate(grant.project_end_date),
+    startDate: parseNihDate(grant.project_start_date),
+    endDate: parseNihDate(grant.project_end_date),
     dollarAmount,
     url,
     role: 'pi',
@@ -658,10 +659,13 @@ export function labDescriptionFromRecentGrants(records: RecentGrantRecord[]): st
   return '';
 }
 
-function parseDate(s: string | undefined): Date | undefined {
-  if (!s) return undefined;
-  const d = new Date(s);
-  return isNaN(d.getTime()) ? undefined : d;
+export function parseNihDate(s: string | undefined): Date | undefined {
+  const m = String(s ?? '')
+    .trim()
+    .match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return undefined;
+  const [, yyyy, mm, dd] = m;
+  return awardDateOfCalendarDay(Number(yyyy), Number(mm), Number(dd));
 }
 
 /**
