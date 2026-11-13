@@ -408,7 +408,12 @@ export const defaultOwnProfileEmeritusLeadFinder: OwnProfileEmeritusLeadFinder =
   for (const [id, { researcher, members }] of ordered) {
     const memberReads = [...members].map((key) => {
       const [sourceName, entityKey] = key.split('\u0000');
-      return { entityType: 'researchGroupMember', sourceName, entityKey, field: 'profileTitle' };
+      return {
+        entityType: 'researchGroupMember' as const,
+        sourceName,
+        entityKey,
+        field: 'profileTitle',
+      };
     });
     const reads = (await Observation.find({
       superseded: { $ne: true },
