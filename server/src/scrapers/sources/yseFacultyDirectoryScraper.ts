@@ -54,6 +54,10 @@ import { personNameKey } from '../rekeyedPersonKeyPlan';
 import { RekeyedPersonReads, settleRekeyedPersonReads } from '../rekeyedPersonKeyRetirement';
 import { asYaleNetid } from '../../utils/yaleNetid';
 import {
+  eponymousLabNameSurnameCandidates,
+  personSurnamesFromDisplayNames,
+} from '../../utils/researchHomeNameIdentityAuthority';
+import {
   mintsNoResearchEntityAsTeachingAppointment,
   ownsNoResearchEntityByTitle,
 } from './yaleDirectoryScraper';
@@ -234,14 +238,34 @@ function extractDescription($: cheerio.CheerioAPI): string | undefined {
 const GENERIC_RESEARCH_SITE_LABEL =
   /^(?:lab(?:oratory)?(?: website| site)?|website|personal(?: website| site| page)?|home ?page|research ?group(?: website| site)?|group(?: website| site)?)$/i;
 
+const SITE_NOUN_SUFFIX = /\s+(?:website|web\s*site|site|home\s*page|page)$/i;
+const OWN_LAB_LABEL_SHAPE =
+  /^(?:the\s+)?(?:[a-z][a-z'’-]*\s+)?[a-z][a-z'’-]*(?:['’]s)?\s+(?:lab|laboratory)$/i;
+
+function labelNamesOwnResearchSite(label: string, personName: string): boolean {
+  if (GENERIC_RESEARCH_SITE_LABEL.test(label)) return true;
+  if (!personName) return false;
+  const labName = label.replace(SITE_NOUN_SUFFIX, '');
+  if (!OWN_LAB_LABEL_SHAPE.test(labName)) return false;
+  const ownSurnames = personSurnamesFromDisplayNames([personName]);
+  return eponymousLabNameSurnameCandidates(labName).some((surname) => ownSurnames.has(surname));
+}
+
 /**
  * The "Links" section can list the faculty's own lab/personal research site, one
- * or more affiliated centers, an ORCID link, and a CV PDF. Only a generically
- * labeled self-site link ("Website" / "Lab Website") is treated as this person's
- * research home; a named-entity link (an affiliated center or institute) belongs
- * to a different research entity and is never adopted as this faculty's website.
+ * or more affiliated centers, an ORCID link, and a CV PDF. A generically labeled
+ * self-site link ("Website" / "Lab Website") or a lab named for this person
+ * ("<surname> Lab Website", #5827) is treated as this person's research home. Any
+ * other named-entity link (an affiliated center, institute or someone else's lab)
+ * belongs to a different research entity and is never adopted, and a longer
+ * free-text label is not widened, because a personal or outside company site must
+ * not seed a LAB row (#6097).
  */
-export function extractLabUrl($: cheerio.CheerioAPI, profileUrl: string): string | undefined {
+export function extractLabUrl(
+  $: cheerio.CheerioAPI,
+  profileUrl: string,
+  personName = '',
+): string | undefined {
   const section = sectionByEyebrow($, 'Links');
   if (!section) return undefined;
   let found: string | undefined;
@@ -249,7 +273,7 @@ export function extractLabUrl($: cheerio.CheerioAPI, profileUrl: string): string
     if (found) return;
     const link = $(a);
     const text = cleanText(link.text());
-    if (!GENERIC_RESEARCH_SITE_LABEL.test(text)) return;
+    if (!labelNamesOwnResearchSite(text, personName)) return;
     const href = link.attr('href') || '';
     if (/^mailto:|^tel:|^#|^javascript:/i.test(href)) return;
     const absolute = absolutize(href, profileUrl);
@@ -317,7 +341,7 @@ export function extractProfile(html: string, faculty: RawYseFaculty): YseFaculty
     researchAreas: extractResearchAreas($),
     programs: extractPrograms($),
     description: extractDescription($),
-    labUrl: extractLabUrl($, faculty.profileUrl),
+    labUrl: extractLabUrl($, faculty.profileUrl, name),
   };
 }
 
