@@ -27,6 +27,7 @@ import axios from 'axios';
 import { Observation } from '../../models/observation';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
+import { imageElementSource } from '../utils/imageElementSource';
 import {
   subjectProfileOrcid,
   subjectProfileStatesNoOrcid,
@@ -3030,23 +3031,8 @@ function hostnameOf(url: string): string {
   }
 }
 
-function firstImageUrlFromSrcset(value: string | undefined | null): string | undefined {
-  const first = String(value || '')
-    .split(',')
-    .map((part) => part.trim().split(/\s+/)[0])
-    .find(Boolean);
-  return first || undefined;
-}
-
 function imageUrlFromElement(node: cheerio.Cheerio<any>, baseUrl: string): string | undefined {
-  const img = node.find('img').first();
-  if (!img.length) return undefined;
-  const src =
-    img.attr('src') ||
-    img.attr('data-src') ||
-    firstImageUrlFromSrcset(img.attr('srcset')) ||
-    firstImageUrlFromSrcset(img.attr('data-srcset')) ||
-    '';
+  const src = imageElementSource(node);
   return src ? absolutize(src, baseUrl) : undefined;
 }
 

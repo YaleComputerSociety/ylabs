@@ -140,6 +140,12 @@ import { type OfficialProfilePageIdentity } from '../../services/officialProfile
 import { normalizeOfficialProfileDestination } from '../../services/leadProfileIdentity';
 import { isDepartmentHeadingChrome } from '../utils/departmentHeadingChrome';
 import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
+import { imageElementSource } from '../utils/imageElementSource';
+import {
+  isLikelyPublicProfileImageUrl,
+  isSocialShareImageUrl,
+} from '../../scripts/profileImageQualityAuditCore';
+import { mainComponentsOf, ysmPageDataFrom } from './ysmFacultyDirectoryScraper';
 
 const SOURCE_NAME = 'official-profile-pi-backfill';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
@@ -2896,19 +2902,79 @@ function imageUrlFromJsonLdImage(value: unknown): string {
   return textValue(record.url || record.contentUrl || record['@id']);
 }
 
+const PROFILE_PORTRAIT_CONTAINERS = [
+  '.node__headshot',
+  '.media--headshot',
+  '.node--faculty .node__header-media',
+  '.user-picture',
+  '[class*="field--name-field-profile-image"]',
+  '[class*="field-name-field-profile-image"]',
+  '[class*="field--name-field-headshot"]',
+  '[class*="field-name-field-headshot"]',
+  '[class*="field--name-field-photo"]',
+  '[class*="field-name-field-photo"]',
+];
+
+const YSM_CLOUDINARY_VERSIONED_ASSET =
+  /^(https:\/\/ysm-res\.cloudinary\.com\/image\/upload\/(?:[^/]+\/)*?)(v\d+\/.+)$/;
+const YSM_AVATAR_TRANSFORM = 'c_limit,f_auto,q_auto,w_400';
+
+function sizedYsmPortrait(url: string): string {
+  const match = YSM_CLOUDINARY_VERSIONED_ASSET.exec(url);
+  return match ? `${match[1]}${YSM_AVATAR_TRANSFORM}/${match[2]}` : url;
+}
+
+function ysmProfileHeaderPortrait($: cheerio.CheerioAPI): string {
+  const profileDetails = mainComponentsOf(ysmPageDataFrom($)).find(
+    (component) => component.key === 'ProfileDetails',
+  );
+  const image = (profileDetails?.model as Record<string, any> | undefined)?.header?.image;
+  if (!image || typeof image !== 'object') return '';
+  const variants: Array<Record<string, unknown>> = Array.isArray(image.imageVariants)
+    ? image.imageVariants
+    : [];
+  const portraitCrop = variants.find((variant) => variant?.dimension === 'Rectangle');
+  const portrait = textValue(portraitCrop?.url) || textValue(image.url);
+  return portrait ? sizedYsmPortrait(portrait) : '';
+}
+
+const isAdmissiblePortraitUrl = (value: string): boolean =>
+  /^https?:\/\//i.test(value) &&
+  isLikelyPublicProfileImageUrl(value) &&
+  !isSocialShareImageUrl(value);
+
+function profilePortraitImageUrl($: cheerio.CheerioAPI, profileUrl: string): string {
+  const candidates = [
+    ysmProfileHeaderPortrait($),
+    ...PROFILE_PORTRAIT_CONTAINERS.map((selector) => imageElementSource($(selector).first())),
+  ];
+  const portrait = candidates
+    .map(textValue)
+    .filter(Boolean)
+    .map((value) => absolutize(value, profileUrl))
+    .find(isAdmissiblePortraitUrl);
+  return portrait || '';
+}
+
+const isJsonLdPerson = (profile: Record<string, any>): boolean =>
+  [profile['@type']].flat().some((type) => textValue(type).toLowerCase() === 'person');
+
+function jsonLdPersonPortrait(profiles: Array<Record<string, any>>, profileUrl: string): string {
+  const portrait = profiles
+    .filter(isJsonLdPerson)
+    .map((profile) => textValue(imageUrlFromJsonLdImage(profile.image)))
+    .filter(Boolean)
+    .map((value) => absolutize(value, profileUrl))
+    .find(isAdmissiblePortraitUrl);
+  return portrait || '';
+}
+
 function extractImageUrl(
   $: cheerio.CheerioAPI,
   profiles: Array<Record<string, any>>,
   profileUrl: string,
 ): string {
-  const candidates = [
-    ...profiles.map((profile) => imageUrlFromJsonLdImage(profile.image)),
-    $('meta[property="og:image:secure_url"]').first().attr('content') || '',
-    $('meta[property="og:image"]').first().attr('content') || '',
-    $('meta[name="twitter:image"]').first().attr('content') || '',
-  ];
-  const candidate = candidates.map(textValue).find((value) => /^https?:\/\//i.test(value));
-  return candidate ? absolutize(candidate, profileUrl) : '';
+  return profilePortraitImageUrl($, profileUrl) || jsonLdPersonPortrait(profiles, profileUrl);
 }
 
 function extractEmail(

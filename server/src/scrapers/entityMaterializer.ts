@@ -90,6 +90,11 @@ import {
   overSharedPersonWebsiteKeysForMaterialization,
   withoutOverSharedPersonWebsiteObservations,
 } from './overSharedPersonWebsite';
+import {
+  isOverSharedPersonImage,
+  overSharedPersonImageKeysForMaterialization,
+  withoutOverSharedPersonImageObservations,
+} from './overSharedPersonImage';
 import { ResearchEntity } from '../models/researchEntity';
 import { websiteUrlIdentityKeyRedirectEquivalents } from '../services/websiteUrlRedirectLandings';
 import {
@@ -8893,7 +8898,10 @@ export async function joinUserIdentityToExistingResearcher(
         withDirectoryExportDepartmentsDecoded(
           withoutCoreFacilityPersonWebsiteObservations(
             withoutOverSharedPersonWebsiteObservations(
-              obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o)),
+              withoutOverSharedPersonImageObservations(
+                obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o)),
+                await overSharedPersonImageKeysForMaterialization(),
+              ),
               await overSharedPersonWebsiteKeysForMaterialization(),
             ),
             await coreFacilityWebsiteKeysForMaterialization(),
@@ -10008,6 +10016,16 @@ async function materializeUserIdentityToResearcher(
   );
   if (storedDepartment.changed) {
     researcher.profile.primaryDepartment = storedDepartment.department;
+    fieldsWritten += 1;
+  }
+  if (
+    isOverSharedPersonImage(
+      researcher.profile.imageUrl,
+      await overSharedPersonImageKeysForMaterialization(),
+    )
+  ) {
+    researcher.profile.imageUrl = undefined;
+    researcher.profileFieldWriters?.delete('imageUrl');
     fieldsWritten += 1;
   }
   for (const [key, value, confidence] of [

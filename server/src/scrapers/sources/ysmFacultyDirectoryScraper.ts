@@ -173,7 +173,10 @@ function decodeEmbeddedJson(raw: string): unknown | null {
 
 function parsePageData(html: string): Record<string, unknown> | null {
   if (!html) return null;
-  const $ = cheerio.load(html);
+  return ysmPageDataFrom(cheerio.load(html));
+}
+
+export function ysmPageDataFrom($: cheerio.CheerioAPI): Record<string, unknown> | null {
   const targeted = $('script#page-data').first().html();
   if (targeted) {
     const parsed = decodeEmbeddedJson(targeted);
@@ -190,7 +193,9 @@ function parsePageData(html: string): Record<string, unknown> | null {
   return found;
 }
 
-function mainComponentsOf(pageData: Record<string, unknown> | null): Record<string, unknown>[] {
+export function mainComponentsOf(
+  pageData: Record<string, unknown> | null,
+): Record<string, unknown>[] {
   const components = pageData?.mainComponents;
   return Array.isArray(components) ? (components as Record<string, unknown>[]) : [];
 }

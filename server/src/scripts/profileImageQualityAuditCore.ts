@@ -73,6 +73,19 @@ export function isNonPersonProfileImageUrl(value: unknown): boolean {
   ].some((pattern) => pattern.test(normalized));
 }
 
+const SOCIAL_SHARE_IMAGE_STYLE =
+  /\/styles\/[^/]*(?:social|open_?graph|og_image|share|twitter|facebook)[^/]*\//i;
+const CLOUDINARY_SHARE_SIZE_TRANSFORM =
+  /(?:^|[/,])w_1200,(?:[^/]*,)?h_630(?:[,/]|$)|(?:^|[/,])h_630,(?:[^/]*,)?w_1200(?:[,/]|$)/;
+
+export function isSocialShareImageUrl(value: unknown): boolean {
+  const normalized = normalizedProfileImageUrl(value);
+  if (!normalized) return false;
+  return (
+    SOCIAL_SHARE_IMAGE_STYLE.test(normalized) || CLOUDINARY_SHARE_SIZE_TRANSFORM.test(normalized)
+  );
+}
+
 const CLOUDINARY_VERSION_SEGMENT = /^v\d+$/;
 const DRUPAL_STYLE_PREFIX = /\/styles\/[^/]+\/public\//;
 const DRUPAL_USER_PICTURE = /^picture-(\d+)-\d+\.[a-z0-9]+$/i;

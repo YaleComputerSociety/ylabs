@@ -54,11 +54,11 @@ const profileHtml = `
     <head>
       <link rel="canonical" href="${profileUrl}" />
       <meta name="description" content="Professor of Surgery (Oncology)" />
-      <meta property="og:image" content="https://ysm-res.cloudinary.com/image/upload/example/jules-fixture" />
     </head>
     <body>
       <main>
         <h1>Jules Fixture</h1>
+        <div class="field field--name-field-profile-image"><img src="https://ysm-res.cloudinary.com/image/upload/example/jules-fixture" alt="" /></div>
         <div class="title">Professor of Surgery (Oncology)</div>
         <a href="mailto:jules.fixture@yale.edu">jules.fixture@yale.edu</a>
         <div class="department">Surgery</div>
