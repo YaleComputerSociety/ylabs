@@ -23,7 +23,6 @@ import { resetPrimaryDepartmentStatingKeysCache } from '../primaryDepartmentStat
 
 const NETID = 'fz123';
 const KEY = `netid:${NETID}`;
-const LEGACY = 'Fixture Legacy Studies';
 
 describe('a stored backfill home department the catalog does not name never resolves (#6074)', () => {
   let replSet: MongoMemoryReplSet;
