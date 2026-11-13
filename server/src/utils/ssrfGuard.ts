@@ -167,6 +167,32 @@ const NAME_DOES_NOT_EXIST_DNS_CODES = new Set(['ENOTFOUND', 'ENODATA']);
  */
 const NAME_LOOKUP_RETRY_DELAYS_MS = [250, 2_000, 10_000] as const;
 
+/**
+ * `dns.lookup` runs getaddrinfo on the libuv thread pool with no timeout of its own, and a
+ * resolver that stops answering (after a sleep or a network change) would hold the caller
+ * before any fetch deadline starts. An expired lookup is a resolver failure, never a negative.
+ */
+export const NAME_LOOKUP_TIMEOUT_MS = 10_000;
+
+class NameLookupTimeoutError extends Error {
+  readonly code = 'ETIMEOUT';
+}
+
+const lookupWithin = async (hostname: string, timeoutMs: number): Promise<LookupAddress[]> => {
+  let timer: NodeJS.Timeout | undefined;
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new NameLookupTimeoutError(`lookup of ${hostname} exceeded ${timeoutMs} ms`)),
+      timeoutMs,
+    );
+  });
+  try {
+    return await Promise.race([dns.lookup(hostname, { all: true }), expired]);
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 const nameDoesNotExist = (error: unknown): boolean => {
   const code = (error as { code?: unknown })?.code;
   return typeof code === 'string' && NAME_DOES_NOT_EXIST_DNS_CODES.has(code);
@@ -190,7 +216,7 @@ export const classifyHostnameResolution = async (
 
   const ask = async (): Promise<HostnameResolution> => {
     try {
-      return classifyLookupResult(await dns.lookup(clean, { all: true }));
+      return classifyLookupResult(await lookupWithin(clean, NAME_LOOKUP_TIMEOUT_MS));
     } catch (error) {
       return nameDoesNotExist(error) ? { kind: 'unresolvable' } : { kind: 'resolver-failure' };
     }

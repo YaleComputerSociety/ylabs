@@ -72,7 +72,10 @@ export function withScraperFetchDeadline(
 ): AxiosAdapter {
   const overallDeadlineMs = options.overallDeadlineMs ?? scraperFetchOverallDeadlineMs;
   return async (config) => {
-    if (devWriteStopped()) throw new DevWriteStoppedError('a scraper fetch');
+    // The host-slot interceptor releases a request's slot through the rejection's `config`.
+    if (devWriteStopped()) {
+      throw Object.assign(new DevWriteStoppedError('a scraper fetch'), { config });
+    }
     config.timeout = scraperFetchReadTimeoutMs(config.timeout);
     const overallMs = overallDeadlineMs(config.timeout);
     const callerSignal = config.signal;

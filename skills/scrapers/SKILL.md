@@ -576,11 +576,24 @@ An expired deadline rejects with an `AxiosError` coded `ETIMEDOUT` whose message
 A caller's own `signal` still cancels as a cancellation.
 The aborted request still publishes one of the HTTP settle channels, so the Development write lease (`DEV_WRITE_PROGRESS_HTTP_CHANNELS`) and `installAxiosScrapeRunProgress` both see it settle.
 
+The waits before dispatch carry their own bounds, because the overall clock deliberately does not run there (#6051):
+
+| Wait | Constant | Value | On expiry |
+|------|----------|-------|-----------|
+| Host slot (the interceptor's whole chain and the rendered fetch) | `HOST_SLOT_WAIT_TIMEOUT_MS` via `acquireHostSlotWithin` | 10 min | the request fails with an `ETIMEDOUT` `AxiosError`, and a slot granted later is released at once |
+| Machine-wide broker acquire | `SCRAPER_HOST_SLOT_ACQUIRE_TIMEOUT_MS` | 180 s | falls back to the process's own per-host cap |
+| Development lease acquire (each Mongo read or write) | `DEV_WRITE_LEASE_ACQUIRE_TIMEOUT_MS` | 30 s | the fetch that asked for the lease fails |
+| `assertPublicHttpUrl` name lookup | `NAME_LOOKUP_TIMEOUT_MS` | 10 s per attempt | a resolver failure, never a negative |
+
+`HostRateLimiter.run` and `withHostSlot` hold their slot only inside a `try`/`finally` around a bounded fetch, so their wait ends when a holder's fetch deadline does.
+A slot is returned through the rejection's `config`, so a refusal raised inside the adapter (the stopped-mode refusal) carries the request's `config`; without it each refused fetch kept its slot and the next request to that host waited on it.
+A single-page roster prints a counts-only `read <n> of <total> roster row(s) so far` line every `ROSTER_PROFILE_PROGRESS_EVERY` rows or `ROSTER_PROFILE_PROGRESS_INTERVAL_MS`, so a long official-profile read is visible to an idle watchdog rather than reading as a hang.
+
 A per-lane override is a longer read timeout passed as `timeout`, and the overall deadline follows it; there is no way to make either bound infinite.
 A bulk grant API page (`doeScienceAwardScraper`, 120 s) is the documented case.
 The rendered fetch's seed redirect preflight carries its own wall-clock deadline equal to its 5 s socket timeout, and the Scrapling subprocess is bounded by its `execFile` timeout, which also closes the SSRF forward proxy's upstream sockets.
 New outbound HTTP outside axios must carry all three bounds itself.
-`__tests__/scraperFetchDeadlines.test.ts` pins never-responds, trickle, TLS-handshake-stall and fast-response behaviour against a local server, and `__tests__/departmentRosterFetchDeadline.test.ts` runs the roster lane end to end against a fake host.
+`__tests__/scraperFetchDeadlines.test.ts` pins never-responds, trickle, TLS-handshake-stall and fast-response behaviour against a local server, `__tests__/departmentRosterFetchDeadline.test.ts` runs the roster lane end to end against a fake host, and `__tests__/departmentRosterHostSlotWait.test.ts` runs it with a profile host slot that is never freed and with the stopped-mode refusal.
 
 ## Infrastructure files
 

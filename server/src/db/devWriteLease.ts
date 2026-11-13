@@ -53,6 +53,8 @@ export const DEV_WRITE_LEASE_RENEWAL_DEADLINE_MS = (DEV_WRITE_LEASE_TTL_MS * 2) 
 /** A dead-pid takeover also needs the holder's heartbeat this stale, so a misread pid probe cannot take a live lease. */
 export const DEV_WRITE_LEASE_DEAD_OWNER_HEARTBEAT_AGE_MS = 2 * DEV_WRITE_LEASE_HEARTBEAT_MS;
 export const DEV_HOST_LEASE_IDLE_RELEASE_MS = 10 * 60_000;
+/** Each database read or write of a lease acquire fails past this, so a fetch never waits on it. */
+export const DEV_WRITE_LEASE_ACQUIRE_TIMEOUT_MS = 30_000;
 /** `dev:locks` flags a live lease whose owner has completed no work for this long (#5880). */
 export const DEV_WRITE_LEASE_STALLED_MS = 15 * 60_000;
 /**
@@ -250,7 +252,10 @@ export async function acquireDevWriteLease(
   const inherited = env[DEV_WRITE_LEASE_OWNER_ENV]?.trim();
   const ownerId = inherited || (deps.newOwnerId ?? (() => `${host}:${pid}:${randomUUID()}`))();
 
-  const current = await collection.findOne({ _id: leaseId(input.name) });
+  const current = await withinTimeout(
+    collection.findOne({ _id: leaseId(input.name) }),
+    DEV_WRITE_LEASE_ACQUIRE_TIMEOUT_MS,
+  );
   if (inherited && current?.ownerId === inherited && isLiveFor(current, now())) {
     return heldLease(input.name, inherited, deps.db, now, { releasable: false, acquired: false });
   }
@@ -286,31 +291,37 @@ export async function acquireDevWriteLease(
     !isAlive(current.ownerPid);
 
   if (!current) {
-    const inserted = await collection
-      .insertOne({
-        _id: leaseId(input.name),
-        environment: DEV_WRITE_LEASE_ENVIRONMENT,
-        sourceName: input.name,
-        ...fields,
-      } as DevWriteLeaseRecord)
-      .then(
-        () => true,
-        (error: { code?: number }) => {
-          if (error.code !== 11000) throw error;
-          return false;
-        },
-      );
+    const inserted = await withinTimeout(
+      collection
+        .insertOne({
+          _id: leaseId(input.name),
+          environment: DEV_WRITE_LEASE_ENVIRONMENT,
+          sourceName: input.name,
+          ...fields,
+        } as DevWriteLeaseRecord)
+        .then(
+          () => true,
+          (error: { code?: number }) => {
+            if (error.code !== 11000) throw error;
+            return false;
+          },
+        ),
+      DEV_WRITE_LEASE_ACQUIRE_TIMEOUT_MS,
+    );
     if (inserted) {
       return heldLease(input.name, ownerId, deps.db, now, { releasable, acquired: true });
     }
   } else if (takeoverable || deadLocalOwner) {
-    const result = await collection.updateOne(
-      {
-        _id: leaseId(input.name),
-        ownerId: current.ownerId,
-        leaseExpiresAt: current.leaseExpiresAt,
-      },
-      { $set: fields, $unset: { releasedAt: '', releaseReason: '' } },
+    const result = await withinTimeout(
+      collection.updateOne(
+        {
+          _id: leaseId(input.name),
+          ownerId: current.ownerId,
+          leaseExpiresAt: current.leaseExpiresAt,
+        },
+        { $set: fields, $unset: { releasedAt: '', releaseReason: '' } },
+      ),
+      DEV_WRITE_LEASE_ACQUIRE_TIMEOUT_MS,
     );
     if (result.matchedCount === 1) {
       if (current.locked) {
@@ -322,7 +333,13 @@ export async function acquireDevWriteLease(
     }
   }
   const unrecorded: DevWriteLeaseRecord = { _id: '', sourceName: input.name };
-  const holder = (await collection.findOne({ _id: leaseId(input.name) })) ?? current ?? unrecorded;
+  const holder =
+    (await withinTimeout(
+      collection.findOne({ _id: leaseId(input.name) }),
+      DEV_WRITE_LEASE_ACQUIRE_TIMEOUT_MS,
+    )) ??
+    current ??
+    unrecorded;
   if (holder.ownerId === ownerId && isLiveFor(holder, now())) {
     return heldLease(input.name, ownerId, deps.db, now, { releasable: false, acquired: false });
   }

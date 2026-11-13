@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { AxiosError } from 'axios';
 import { isSweepPageReuseHit } from './sweepPageReuseHit';
 
 export const DEFAULT_PER_HOST_CONCURRENCY = 4;
@@ -230,18 +230,80 @@ export async function withHostSlot<T>(
   }
 }
 
+/**
+ * The longest a request waits for a host slot before it fails instead. A slot that is never
+ * released, or a lease acquire that never answers, would otherwise hold every later request to
+ * that host forever, with no fetch deadline running because the wait happens before dispatch.
+ * Changing it also requires updating the "Fetch deadlines" table in `skills/scrapers/SKILL.md`.
+ */
+export const HOST_SLOT_WAIT_TIMEOUT_MS = 10 * 60_000;
+
+export class HostSlotWaitTimeoutError extends Error {
+  readonly code = 'ETIMEDOUT';
+
+  constructor(host: string, timeoutMs: number) {
+    super(`no host slot for ${host} within ${timeoutMs} ms`);
+    this.name = 'HostSlotWaitTimeoutError';
+  }
+}
+
+/** A slot granted after the wait gave up is released at once, so a late grant never leaks. */
+export function acquireHostSlotWithin(
+  limiter: HostSlotLimiter,
+  host: string,
+  timeoutMs: number = HOST_SLOT_WAIT_TIMEOUT_MS,
+): Promise<HostSlotRelease> {
+  return new Promise<HostSlotRelease>((resolve, reject) => {
+    let gaveUp = false;
+    const timer = setTimeout(() => {
+      gaveUp = true;
+      reject(new HostSlotWaitTimeoutError(host, timeoutMs));
+    }, timeoutMs);
+    limiter.acquire(host).then(
+      (release) => {
+        if (gaveUp) {
+          release();
+          return;
+        }
+        clearTimeout(timer);
+        resolve(release);
+      },
+      (error: unknown) => {
+        if (gaveUp) return;
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+export interface ScraperHostConcurrencyInterceptorOptions {
+  acquireTimeoutMs?: number;
+}
+
 const RELEASE_KEY = '__scraperHostRelease';
 let installed = false;
 
 export function installScraperHostConcurrencyInterceptor(
   limiter: HostSlotLimiter = defaultHostConcurrencyLimiter,
+  options: ScraperHostConcurrencyInterceptorOptions = {},
 ): void {
   if (installed) return;
   installed = true;
+  const acquireTimeoutMs = options.acquireTimeoutMs ?? HOST_SLOT_WAIT_TIMEOUT_MS;
   axios.interceptors.request.use(async (config) => {
     const host = hostnameForLimiter(config.url, config.baseURL);
     if (host && !isSweepPageReuseHit(config)) {
-      (config as unknown as Record<string, unknown>)[RELEASE_KEY] = await limiter.acquire(host);
+      try {
+        (config as unknown as Record<string, unknown>)[RELEASE_KEY] = await acquireHostSlotWithin(
+          limiter,
+          host,
+          acquireTimeoutMs,
+        );
+      } catch (error) {
+        if (!(error instanceof HostSlotWaitTimeoutError)) throw error;
+        throw new AxiosError(error.message, AxiosError.ETIMEDOUT, config);
+      }
     }
     return config;
   });
@@ -259,7 +321,7 @@ export function installScraperHostConcurrencyInterceptor(
       return response;
     },
     (error) => {
-      release(error?.config);
+      release(error?.config ?? error?.response?.config);
       return Promise.reject(error);
     },
   );

@@ -3481,6 +3481,40 @@ function extractResearchInterestsFromHtml($: cheerio.CheerioAPI, meshIndexed: bo
   return uniqueStrings(interests).slice(0, 20);
 }
 
+/**
+ * A single-page roster reads every row's profile before it emits anything, which on the largest
+ * medicine-school page is tens of minutes with nothing logged or written, and an idle watchdog
+ * reads that as a hang. So the lane prints a counts-only line at whichever of these comes first.
+ */
+export const ROSTER_PROFILE_PROGRESS_EVERY = 50;
+export const ROSTER_PROFILE_PROGRESS_INTERVAL_MS = 60_000;
+
+export function rosterProfileProgress(
+  deptKey: string,
+  total: number,
+  log: ScraperContext['log'],
+  now: () => number = Date.now,
+): { beforeRow: () => void } {
+  let rowsStarted = 0;
+  let rowsSinceLine = 0;
+  let lastLineAt = now();
+  return {
+    beforeRow() {
+      const rowsFinished = rowsStarted;
+      rowsStarted += 1;
+      if (rowsFinished === 0) return;
+      rowsSinceLine += 1;
+      const due =
+        rowsSinceLine >= ROSTER_PROFILE_PROGRESS_EVERY ||
+        now() - lastLineAt >= ROSTER_PROFILE_PROGRESS_INTERVAL_MS;
+      if (!due) return;
+      log(`[${deptKey}] read ${rowsFinished} of ${total} roster row(s) so far`);
+      rowsSinceLine = 0;
+      lastLineAt = now();
+    },
+  };
+}
+
 async function fetchHtml(url: string, useCache: boolean, sourceName: string): Promise<string> {
   const safeUrl = await assertPublicHttpUrl(url);
   const safeUrlText = safeUrl.toString();
@@ -5011,7 +5045,9 @@ export class DepartmentRosterScraper implements IScraper {
           .map((rosterEntry) => identityTokens(rosterEntry.name).at(-1))
           .filter((surname): surname is string => Boolean(surname)),
       );
+      const progress = rosterProfileProgress(dept.deptKey, entries.length, ctx.log);
       for (const rawEntry of entries) {
+        progress.beforeRow();
         if (totalFaculty + admitted.length >= limit) {
           truncatedByLimit = true;
           break;
