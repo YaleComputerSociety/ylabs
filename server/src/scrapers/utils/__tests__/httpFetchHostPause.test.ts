@@ -147,4 +147,20 @@ describe('fetchPageWithPolicy and a host that refuses', () => {
       vi.useRealTimers();
     }
   });
+
+  it('refuses a redirect hop into a paused host before that hop is sent', async () => {
+    recordHostBackoff('dept.example.edu', { status: 403, statedUntil: FUTURE });
+    const request = vi.fn(async (target: string) =>
+      target.startsWith('https://vanity.example.org/')
+        ? { status: 301, data: '', finalUrl: '', location: 'https://www.dept.example.edu/lab' }
+        : ok,
+    );
+
+    await expect(
+      fetchPageWithPolicy('https://vanity.example.org/lab', { ...base, request }),
+    ).rejects.toBeInstanceOf(HostPausedError);
+    expect(request.mock.calls.map(([target]) => target)).toEqual([
+      'https://vanity.example.org/lab',
+    ]);
+  });
 });
