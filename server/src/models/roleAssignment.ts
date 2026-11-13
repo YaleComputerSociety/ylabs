@@ -83,6 +83,7 @@ export interface RoleAssignmentOperatorEnd {
   recordedAt: Date;
   previousState: RoleAssignmentState;
   previousEndedAt?: Date;
+  firstObservedAt?: Date;
 }
 
 export const roleAssignmentTargetSchema = new mongoose.Schema<RoleAssignmentTarget>(
@@ -124,6 +125,9 @@ export const roleAssignmentSchema = new mongoose.Schema<RoleAssignmentRecord>(
       enum: [...roleAssignmentStates],
       default: 'UNKNOWN',
     },
+    // When a lane first saw the edge, never a start the source states: every writer sets it
+    // from its first observation or write time (#5979). A lane that parses stated start years
+    // must add a basis field before writing one here.
     startedAt: {
       type: Date,
       required: false,
@@ -183,6 +187,7 @@ export const roleAssignmentSchema = new mongoose.Schema<RoleAssignmentRecord>(
           recordedAt: { type: Date, required: true },
           previousState: { type: String, enum: [...roleAssignmentStates], required: true },
           previousEndedAt: { type: Date },
+          firstObservedAt: { type: Date },
         },
         { _id: false },
       ),

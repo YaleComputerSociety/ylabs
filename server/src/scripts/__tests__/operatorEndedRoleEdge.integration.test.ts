@@ -13,6 +13,7 @@ import {
   detachRoleAssignmentEdge,
   parseDetachRoleAssignmentEdgeArgs,
 } from '../detachRoleAssignmentEdge';
+import { getResearchEntityRoster } from '../../services/researchEntityMembershipAccessor';
 import { restoreDetachedRoleAssignmentEdge } from '../restoreDetachedRoleAssignmentEdge';
 
 const PAGE = 'https://synthetic.yale.edu/lab/humanitarian/about/';
@@ -232,12 +233,63 @@ describe('an operator-ended role edge (#5979)', () => {
     expect(after.state).toBe('HISTORICAL');
   });
 
-  it('refuses an end date before the edge started', async () => {
-    const { edgeId } = await seed({ startedAt: new Date('2026-06-01T00:00:00.000Z') });
+  it('ends before the first-observed date, keeping it in the record and serving no start', async () => {
+    const firstObserved = new Date('2026-05-14T00:00:00.000Z');
+    const { edgeId, rowId } = await seed({ startedAt: firstObserved });
     const result = await endAsHistorical(edgeId);
 
-    expect(result).toMatchObject({ refusal: 'ended-before-started', detached: false });
-    expect(((await RoleAssignment.findById(edgeId).lean()) as any).state).toBe('UNKNOWN');
+    expect(result).toMatchObject({ endedAsHistorical: true });
+    const stored = (await RoleAssignment.findById(edgeId).lean()) as any;
+    expect(stored).toMatchObject({ state: 'HISTORICAL', endedAt: ENDED_AT });
+    expect(stored.startedAt).toBeUndefined();
+    expect(stored.operatorEnd.firstObservedAt).toEqual(firstObserved);
+    const roster = await getResearchEntityRoster(rowId);
+    expect(roster).toHaveLength(1);
+    expect(roster[0].endedAt).toEqual(ENDED_AT);
+    expect(roster[0].startedAt).toBeUndefined();
+  });
+
+  it('keeps a first-observed date that precedes the end', async () => {
+    const { edgeId } = await seed();
+    await endAsHistorical(edgeId);
+
+    const stored = (await RoleAssignment.findById(edgeId).lean()) as any;
+    expect(stored.startedAt).toEqual(new Date('2020-01-01T00:00:00.000Z'));
+    expect(stored.operatorEnd.firstObservedAt).toEqual(new Date('2020-01-01T00:00:00.000Z'));
+  });
+
+  it('puts the first-observed date back when the end is undone', async () => {
+    const firstObserved = new Date('2026-05-14T00:00:00.000Z');
+    const { edgeId, personId, rowId } = await seed({ startedAt: firstObserved });
+    await endAsHistorical(edgeId);
+    await restoreDetachedRoleAssignmentEdge(
+      {
+        edgeId,
+        note: 'operator end was wrong',
+        actor: 'synthetic-operator',
+        expectedPersonId: String(personId),
+        expectedTargetId: String(rowId),
+        snapshot: snapshotPath(),
+        apply: true,
+      },
+      vi.fn().mockResolvedValue(undefined),
+    );
+
+    const after = (await RoleAssignment.findById(edgeId).lean()) as any;
+    expect(after.startedAt).toEqual(firstObserved);
+    expect(after.operatorEnd).toBeUndefined();
+  });
+
+  it('is a no-op the second time when the end precedes the first-observed date', async () => {
+    const { edgeId } = await seed({ startedAt: new Date('2026-05-14T00:00:00.000Z') });
+    await endAsHistorical(edgeId);
+    const first = (await RoleAssignment.findById(edgeId).lean()) as any;
+    const second = await endAsHistorical(edgeId);
+    const after = (await RoleAssignment.findById(edgeId).lean()) as any;
+
+    expect(second).toMatchObject({ detached: false, regatedRow: false });
+    expect(after.operatorEnd).toEqual(first.operatorEnd);
+    expect(after.startedAt).toBeUndefined();
   });
 });
 
