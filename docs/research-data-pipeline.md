@@ -1134,7 +1134,8 @@ The lane records it as a `refusedValues` entry (`field`, `value`, `reason`, `cla
 A complete read supports retracting an observation through a refusal only when every one of these holds: the contract lists the `(field, classifier)` pair in `refusalClassifiers`, the refused value is identical to the asserted one, the witness row's `sourceUrl` is the asserted observation's `sourceUrl`, the refusing version is strictly greater than the observation's `admittedUnder` version for that classifier (absent counts as 0), and the read is later than the newest observation from this source asserting that value.
 That last condition is what makes a wrong refusal reversible: a later read that admits the value again files a newer assertion, and every earlier refusal stops counting.
 A refusal counts toward the same two-read quorum and drop guard as an absence claim, so one anomalous read cannot retract.
-The retired rows carry their own rollback reason, and the dry-run report's `refusalSupportedObservations` counts the observations whose quorum needed a refusal.
+The retired rows carry their own rollback reason, decided per observation, and the dry-run report's `refusalSupportedObservations` counts the observations whose quorum needed a refusal.
+A retraction whose every observation needed a refusal skips the sole-holder liveness probe, because the refused page still answers and the refusal is already the positive evidence the probe stands in for; a retraction that mixes refusals with absence claims is still probed.
 No production contract declares `refusalClassifiers` yet, so this path is inert until a lane emits refusals and its contract opts in; `dept-faculty-roster` is the first planned lane.
 
 The stored value is cleared only when the retraction removed the last live observation for that field **and** the stored value is still the retracted one, folded through `normalizeWebsiteUrlIdentityKey`.

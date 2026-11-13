@@ -171,6 +171,23 @@ describe('a newer-version refusal retires the stale assertion end to end (#5803)
     expect(JSON.stringify(await Observation.find({}).sort({ _id: 1 }).lean())).toBe(snapshot);
   });
 
+  it('retires a refused sole-holder link even though its page still answers', async () => {
+    await appendRun(witness(refusedStoredLink), new Date('2026-11-10T00:00:00Z'));
+    await appendRun(witness(refusedStoredLink), new Date('2026-11-12T00:00:00Z'));
+
+    const result = await reconcileFieldRetractions({
+      sourceName: SOURCE_NAME,
+      contract: CONTRACT,
+      probeValue: async () => ({ positivelyDead: false }),
+    });
+    expect(result.counts.soleHolderValueWithheld).toBe(0);
+    expect(result.counts.retractedObservations).toBe(1);
+    expect((await Observation.findOne({ field: 'websiteUrl' }).lean())?.rollback?.reason).toBe(
+      FIELD_RETRACTION_REFUSAL_ROLLBACK_REASON,
+    );
+    expect((await ResearchEntity.findOne({ slug: ENTITY_KEY }).lean())?.websiteUrl).toBeUndefined();
+  });
+
   it('a later read that admits the value again keeps it live', async () => {
     await appendRun(witness(refusedStoredLink), new Date('2026-11-10T00:00:00Z'));
     await appendRun(witness(refusedStoredLink), new Date('2026-11-12T00:00:00Z'));

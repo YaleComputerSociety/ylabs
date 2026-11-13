@@ -3,6 +3,7 @@ import {
   assertFieldRetractionContractsAreDeclarable,
   planFieldRetractions,
   refusalsFromWitnessRows,
+  withholdSoleHolderRetractionsThatStillAnswer,
   type FieldRetractionCandidateObservation,
   type FieldRetractionCompleteRead,
   type FieldRetractionEntityState,
@@ -101,7 +102,7 @@ describe('a source retracts a value it now refuses on the same page (#5803)', ()
     expect(result.retractions[0]).toMatchObject({
       observationIds: ['obs-old'],
       clearsStoredValue: true,
-      retractedByRefusal: true,
+      refusalObservationIds: ['obs-old'],
     });
     expect(result.counts.refusalSupportedObservations).toBe(1);
   });
@@ -194,9 +195,68 @@ describe('a source retracts a value it now refuses on the same page (#5803)', ()
     }));
     const result = plan(reads);
     expect(result.retractions).toHaveLength(1);
-    expect(result.retractions[0].retractedByRefusal).toBeUndefined();
+    expect(result.retractions[0].refusalObservationIds).toBeUndefined();
     expect(result.counts.refusalSupportedObservations).toBe(0);
   });
+
+  it('labels only the observation whose quorum needed a refusal when absence retires a sibling', () => {
+    const absenceRead = (scrapeRunId: string, iso: string): FieldRetractionCompleteRead => ({
+      entityKey: ENTITY_KEY,
+      scrapeRunId,
+      observedAt: at(iso),
+      assertsNoValueFor: ['websiteUrl'],
+      refusals: [],
+    });
+    const reads = [
+      absenceRead('run-x', '2026-11-03T00:00:00Z'),
+      absenceRead('run-y', '2026-11-04T00:00:00Z'),
+      ...TWO_REFUSING_READS,
+    ];
+    const observations = [
+      assertion({
+        observationId: 'obs-absent',
+        value: OTHER_LINK,
+        scrapeRunId: 'run-older',
+        observedAt: at('2026-11-01T00:00:00Z'),
+      }),
+      assertion({ scrapeRunId: 'run-mid', observedAt: at('2026-11-06T00:00:00Z') }),
+    ];
+    const result = plan(reads, observations, CONTRACT, [
+      { ...entity, liveObservationCountByField: { websiteUrl: 2 } },
+    ]);
+    expect(result.retractions).toHaveLength(1);
+    expect(result.retractions[0].observationIds).toEqual(['obs-absent', 'obs-old']);
+    expect(result.retractions[0].refusalObservationIds).toEqual(['obs-old']);
+    expect(result.counts.refusalSupportedObservations).toBe(1);
+  });
+});
+
+describe('the sole-holder liveness probe and a refusal (#5803)', () => {
+  const livePage = async () => ({ positivelyDead: false });
+
+  it('retains a sole-holder retraction carried wholly by refusals without probing the still-live page', async () => {
+    const [retraction] = plan(TWO_REFUSING_READS).retractions;
+    const probed: string[] = [];
+    const screened = await withholdSoleHolderRetractionsThatStillAnswer([retraction], (value) => {
+      probed.push(value);
+      return livePage();
+    });
+    expect(screened.retained).toEqual([retraction]);
+    expect(screened.withheld).toEqual([]);
+    expect(probed).toEqual([]);
+  });
+
+  it('still withholds a sole-holder retraction that an absence claim carried while the page answers', async () => {
+    const reads = TWO_REFUSING_READS.map((read) => ({
+      ...read,
+      assertsNoValueFor: ['websiteUrl'],
+    }));
+    const [retraction] = plan(reads).retractions;
+    const screened = await withholdSoleHolderRetractionsThatStillAnswer([retraction], livePage);
+    expect(screened.retained).toEqual([]);
+    expect(screened.withheld).toHaveLength(1);
+  });
+});
 });
 
 describe('refusals loaded from witness rows', () => {

@@ -691,8 +691,15 @@ export interface PlannedFieldRetraction {
    */
   retractedValues: string[];
   maxEntitiesSharingAValue: number;
-  /** True when a stamped refusal, not an absence claim, carried the quorum (#5803). */
-  retractedByRefusal?: boolean;
+  /** The observations whose quorum a stamped refusal, not an absence claim, carried (#5803). */
+  refusalObservationIds?: string[];
+}
+
+function isWhollyRefusalRetraction(retraction: PlannedFieldRetraction): boolean {
+  return (
+    retraction.observationIds.length > 0 &&
+    (retraction.refusalObservationIds?.length ?? 0) === retraction.observationIds.length
+  );
 }
 
 export interface FrozenFieldRetraction {
@@ -824,7 +831,7 @@ export function planFieldRetractions(input: {
       field: string;
       observationIds: string[];
       values: unknown[];
-      retractedByRefusal: boolean;
+      refusalObservationIds: string[];
     }
   >();
   for (const observation of input.activeObservations) {
@@ -889,14 +896,14 @@ export function planFieldRetractions(input: {
     if (group) {
       group.observationIds.push(observation.observationId);
       group.values.push(observation.value);
-      group.retractedByRefusal ||= retractedByRefusal;
+      if (retractedByRefusal) group.refusalObservationIds.push(observation.observationId);
     } else {
       retractedByKey.set(key, {
         entityKey: observation.entityKey,
         field: observation.field,
         observationIds: [observation.observationId],
         values: [observation.value],
-        retractedByRefusal,
+        refusalObservationIds: retractedByRefusal ? [observation.observationId] : [],
       });
     }
   }
@@ -1007,7 +1014,9 @@ export function planFieldRetractions(input: {
       clearsStoredValue,
       retractedValues,
       maxEntitiesSharingAValue,
-      ...(group.retractedByRefusal ? { retractedByRefusal: true } : {}),
+      ...(group.refusalObservationIds.length > 0
+        ? { refusalObservationIds: group.refusalObservationIds }
+        : {}),
     });
   }
 
@@ -1072,6 +1081,10 @@ export interface WithheldFieldRetraction {
  * the value, because retraction is the one operation that removes something a
  * student can see.
  *
+ * A retraction whose every observation a refusal carried skips the probe: the lane
+ * saw that value on the page and refused it, which is the positive evidence the
+ * probe otherwise stands in for, and a refused page still answers `200` (#5803).
+ *
  * The probe is injected so the decision is testable without a network, and because
  * a concurrent writer can move `clearsStoredValue` between plan and apply, which
  * makes a stale flag expected rather than exceptional (#3135).
@@ -1090,7 +1103,9 @@ export async function withholdSoleHolderRetractionsThatStillAnswer(
   let probedValues = 0;
   for (const retraction of retractions) {
     if (
-      classifyRetractionValueOwnership(retraction.maxEntitiesSharingAValue) === 'shared-boilerplate'
+      classifyRetractionValueOwnership(retraction.maxEntitiesSharingAValue) ===
+        'shared-boilerplate' ||
+      isWhollyRefusalRetraction(retraction)
     ) {
       retained.push(retraction);
       continue;
@@ -1585,7 +1600,8 @@ export async function reconcileFieldRetractions(options: {
   ).length;
   plan.counts.soleHolderValueProbedDead = screened.retained.filter(
     (retraction) =>
-      classifyRetractionValueOwnership(retraction.maxEntitiesSharingAValue) === 'sole-holder',
+      classifyRetractionValueOwnership(retraction.maxEntitiesSharingAValue) === 'sole-holder' &&
+      !isWhollyRefusalRetraction(retraction),
   ).length;
   for (const entry of screened.withheld) {
     console.warn(
@@ -1606,13 +1622,16 @@ export async function reconcileFieldRetractions(options: {
     };
   }
 
+  const refusalObservationIds = new Set(
+    screened.retained.flatMap((retraction) => retraction.refusalObservationIds ?? []),
+  );
   for (const [byRefusal, reason] of [
     [false, FIELD_RETRACTION_ROLLBACK_REASON],
     [true, FIELD_RETRACTION_REFUSAL_ROLLBACK_REASON],
   ] as const) {
     const observationIds = screened.retained
-      .filter((retraction) => (retraction.retractedByRefusal === true) === byRefusal)
-      .flatMap((retraction) => retraction.observationIds);
+      .flatMap((retraction) => retraction.observationIds)
+      .filter((observationId) => refusalObservationIds.has(observationId) === byRefusal);
     if (observationIds.length === 0) continue;
     await retireObservations(
       { _id: { $in: observationIds.map((id) => new mongoose.Types.ObjectId(id)) } },
