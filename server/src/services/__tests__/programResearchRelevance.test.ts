@@ -490,3 +490,61 @@ describe('classifyProgramResearchRelevance', () => {
     });
   });
 });
+
+describe('programs that are not research by their own account (#6216)', () => {
+  it('withholds a structured program whose full source says research is not its main focus', () => {
+    const result = classifyProgramResearchRelevance({
+      title: 'First-Year Pathways Circle',
+      programKind: 'STRUCTURED_PROGRAM',
+      description: 'A cohort for first-year students interested in research careers in science.',
+      fullSourceDescription:
+        'The circle focuses on advising and networking but does not primarily focus on STEM research.',
+    });
+    expect(result.researchRelated).toBe(false);
+    expect(result.reasons).toContain('disclaims_primary_research_focus');
+  });
+
+  it('still serves a program that only says research experience is not required', () => {
+    expect(
+      classifyProgramResearchRelevance({
+        title: 'Summer Lab Fellowship',
+        purpose: ['Research'],
+        description: 'Fellows join a lab for ten weeks; prior research experience is not required.',
+      }).researchRelated,
+    ).toBe(true);
+  });
+
+  it('withholds a scholarship that pays for a graduate degree course of study', () => {
+    const result = classifyProgramResearchRelevance({
+      title: 'Fenwick Scholarship',
+      programKind: 'TRAVEL_RESEARCH_GRANT',
+      purpose: ['Study Abroad', 'Tuition Support', 'Research'],
+      description:
+        'The scholarship supports one-year postgraduate degree courses abroad and pays all tuition fees.',
+    });
+    expect(result.researchRelated).toBe(false);
+    expect(result.reasons).toContain('funds_degree_course_of_study');
+  });
+
+  it('keeps a degree award whose own text names research as an eligible use', () => {
+    expect(
+      classifyProgramResearchRelevance({
+        title: 'Fenwick Research Award',
+        purpose: ['Research'],
+        description:
+          'The award supports graduate study abroad and its funds may be used for research expenses.',
+      }).researchRelated,
+    ).toBe(true);
+  });
+
+  it('never serves a row on the full source text alone', () => {
+    expect(
+      classifyProgramResearchRelevance({
+        title: 'Alumni Mixer Grant',
+        purpose: ['Community or Public Service'],
+        description: 'Funds a networking evening.',
+        fullSourceDescription: 'Funds may be used for research expenses and lab supplies.',
+      }).researchRelated,
+    ).toBe(false);
+  });
+});

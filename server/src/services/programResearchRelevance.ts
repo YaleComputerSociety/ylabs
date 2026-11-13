@@ -19,6 +19,7 @@ export interface ProgramResearchRelevanceInput {
   summary?: string;
   description?: string;
   eligibility?: string;
+  fullSourceDescription?: string;
 }
 
 export interface ProgramResearchRelevanceResult {
@@ -111,6 +112,19 @@ const RESEARCH_AS_ELIGIBLE_USE =
 
 const DISCLAIMS_RESEARCH = /\bnon-research\b/i;
 
+// A program whose own text says research is not its main focus ("does not primarily focus on
+// STEM research") is advising or community, not research, whatever incidental research wording
+// it carries (#6216). A qualifier is required so "does not require research experience" never
+// matches.
+const DISCLAIMS_PRIMARY_RESEARCH_FOCUS =
+  /\bnot\s+(?:primarily|mainly|chiefly|principally)\s+(?:focus(?:ed|es)?\s+on\s+|about\s+|an?\s+)?(?:[\w-]+\s+){0,2}research\b/i;
+
+// An award that pays for a degree course of study (tuition for a graduate or postgraduate
+// degree) funds coursework toward a degree rather than research, unless its own text names
+// research as an eligible use (#6216, #4675).
+const FUNDS_DEGREE_COURSE_OF_STUDY =
+  /\b(?:support|supports|fund|funds|cover|covers)\s+(?:[\w-]+\s+){0,3}(?:graduate|postgraduate|master'?s)\s+(?:degree\s+)?(?:courses?|programs?|programmes?|study)\b/i;
+
 const LANGUAGE_STUDY_PURPOSE = 'Language Study';
 
 // These lanes store `purpose` as inferPurpose output read from page prose rather than as a
@@ -161,6 +175,15 @@ export function classifyProgramResearchRelevance(
   const textResearch = RESEARCH_TEXT.test(blob);
   const researchUseStated =
     !DISCLAIMS_RESEARCH.test(sourceProse) && affirmedIn(bodyFields, RESEARCH_AS_ELIGIBLE_USE);
+  // The full source text is read only for these two disclaimers, never as a research signal,
+  // so a page's longer copy can withhold a row that disclaims research but never serve one.
+  const disclaimerFields = [...bodyFields, text(input.fullSourceDescription)].filter(Boolean);
+  const disclaimsPrimaryResearchFocus = disclaimerFields.some((field) =>
+    DISCLAIMS_PRIMARY_RESEARCH_FOCUS.test(field),
+  );
+  const fundsDegreeCourseOfStudy = disclaimerFields.some((field) =>
+    FUNDS_DEGREE_COURSE_OF_STUDY.test(field),
+  );
 
   if (purposeResearch) reasons.push('research_purpose');
   if (kindResearch) reasons.push('research_program_kind');
@@ -170,6 +193,16 @@ export function classifyProgramResearchRelevance(
   if (facetSaysLanguageStudy) reasons.push('language_study_purpose');
   if (purposeUnbackedByProse) reasons.push('inferred_research_purpose_unbacked');
   if (researchUseStated) reasons.push('research_use_stated');
+  if (disclaimsPrimaryResearchFocus) reasons.push('disclaims_primary_research_focus');
+  if (fundsDegreeCourseOfStudy) reasons.push('funds_degree_course_of_study');
+
+  if (
+    (disclaimsPrimaryResearchFocus || fundsDegreeCourseOfStudy) &&
+    !inherentKind &&
+    !researchUseStated
+  ) {
+    return { researchRelated: false, reasons };
+  }
 
   // A title that explicitly disclaims research (e.g. "...Non-Research Projects", journalism,
   // language study, study/tuition scholarship), or a facet naming only language study, is not
