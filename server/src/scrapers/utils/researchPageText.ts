@@ -149,8 +149,8 @@ function isInsideMenuContainer($: cheerio.CheerioAPI, element: AnyNode): boolean
 function pageLinesWithHeadingMarks(html: string, pageUrl: string): string[] {
   const $ = cheerio.load(html);
   $(NON_CONTENT_ELEMENTS).remove();
-  removeHeadersKeepingPageSummary($);
   $(DIV_SITE_MENU_SELECTORS.join(', ')).remove();
+  removeHeadersKeepingPageSummary($);
   removeProfilePublicityRegions($);
   removeRelatedEntityTeaserCards($, pageUrl);
   $('h1, h2, h3, h4, h5, h6').each((_index, element) => {

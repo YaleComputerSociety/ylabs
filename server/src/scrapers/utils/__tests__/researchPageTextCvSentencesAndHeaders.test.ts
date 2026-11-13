@@ -99,6 +99,18 @@ describe('researchStatementTextOfPage removes only banner headers (#6159)', () =
     expect(text).toBe(CENTER_SUMMARY);
   });
 
+  it('does not lift a paragraph out of a site menu inside the heading block', () => {
+    const MENU_PARAGRAPH =
+      'Explore our programs, degrees, centers, events, news, giving opportunities and every school across the campus today.';
+    const text = researchStatementTextOfPage(
+      page(
+        `<main><header class="node__header"><h1>Coastal Center</h1><div class="navigation-panel"><p>${MENU_PARAGRAPH}</p></div><p>${CENTER_SUMMARY}</p></header></main>`,
+      ),
+      PAGE,
+    );
+    expect(text).toBe(CENTER_SUMMARY);
+  });
+
   it('still removes the site banner outside the main content', () => {
     const text = researchStatementTextOfPage(
       page(`<header><p>${BANNER}</p></header><main><p>${RESEARCH_SENTENCE}</p></main>`),
