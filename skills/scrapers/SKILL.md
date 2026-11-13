@@ -609,7 +609,14 @@ The aborted request still publishes one of the HTTP settle channels, so the Deve
 
 The same adapter carries an opt-in request log (#6188): set `SCRAPER_REQUEST_LOG=<path>` on a run and each request that reaches the network appends one JSON line to an owner-only (0600) file.
 A line holds the dispatch time in UTC, the host, `urlHash` (the first 16 hex characters of the SHA-256 of the full URL, so no path or query appears in clear), the HTTP status or the error code, `durationMs`, and `attempt`, the count of requests this process has sent to that URL.
-It never records headers, cookies, bodies or environment, and it records the adapter call, so while redirects are followed inside one adapter call a redirect chain is one line under the requested URL.
+It never records cookies or environment, and it records the adapter call, so while redirects are followed inside one adapter call a redirect chain is one line under the requested URL.
+A refused response (403 or 429) adds two fields, so a refusal can be diagnosed afterwards (#6215): `headers`, an allowlist only (`retry-after`, `content-type`, `server`, `date`, `cf-ray`, `cf-mitigated`, request-id style correlation ids, `x-ratelimit-*` and `ratelimit-*`), and `bodyPrefix`, the first 512 bytes of the body with control characters replaced.
+Both pass through `redactDiagnosticText` before they are written: every IPv4 and IPv6 address (bracketed, zone-id and IPv4-mapped forms included) becomes `[ip]`, every email address `[email]`, and every query string `?[query]`, because a ban notice can name this machine's address.
+Any other status writes neither field, and `set-cookie`, `cookie`, `authorization`, `www-authenticate` and `location` are never kept.
+Redaction decodes HTML entities and percent-escapes first, repeating until the text is stable, because a page can write an address as `192&#46;0&#46;2&#46;1` or `%2E`-separated and a single pass would leave a double escape behind.
+Token-looking values are redacted too, both inside a query string and in a body field named for a token, a session, a key, a password or a signature.
+The log is a local diagnostic rather than a publishable artefact, and two limits are why: a secret under a field name the pattern does not know, or an address written in a form the decode does not cover (a different encoding, or digits spelled out), would be kept.
+Read it locally, and quote a line into an issue or a PR only after checking it by eye.
 Only processes that install the adapter are logged: `cli.ts`, the orchestrator's `run` and `scrapeCanary`, which all reach it through `installScraperFetchDeadlines()` and the process-wide `processScraperRequestLog()`.
 Standalone scripts that fetch without installing it are not logged, among them `backfillSourceLinkHealth`, `backfillFellowshipSourceLinkHealth`, the `audit*` and `repair*` scripts and `verifyOfficialProfileLinks`, and neither are the browser fetches in `renderedFetch.ts`.
 A log path that cannot be opened prints one warning naming only the error code and the run continues unlogged.

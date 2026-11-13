@@ -76,7 +76,9 @@ describe('the opt-in scraper request log (#6188)', () => {
       expect(entry.at.endsWith('Z')).toBe(true);
       expect(entry.durationMs).toBeGreaterThanOrEqual(0);
     }
-    expect(lines.join('')).not.toMatch(/secret-page|token|synthetic/);
+    expect(lines.join('')).not.toMatch(/secret-page|token/);
+    expect(entries()[0]).not.toHaveProperty('bodyPrefix');
+    expect(entries()[1].bodyPrefix).toBe('<html>synthetic</html>');
   });
 
   it('records the error code of a request that never got a response', async () => {
