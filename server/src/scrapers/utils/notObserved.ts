@@ -1,5 +1,5 @@
 import { isExcludedHostRedirectError, EXCLUDED_HOST_ERROR_CODE } from '../../utils/excludedHosts';
-import { isSsrfGuardRefusal } from '../../utils/ssrfGuard';
+import { isSsrfGuardRefusal, SsrfBlockedError } from '../../utils/ssrfGuard';
 import { isRefusedBeforeSending } from './httpFetch';
 
 /**
@@ -53,7 +53,16 @@ const codeOf = (link: object): string | undefined => {
   return typeof code === 'string' ? code : undefined;
 };
 
+/**
+ * The SSRF guard's `unresolvable` refusal is a name the resolver confirmed absent after asking
+ * again, the same fact as `ENOTFOUND`, so link-health retires on it (#2709). Every other guard
+ * refusal describes our network position or our own rules, not the host.
+ */
+const isGuardConfirmedAbsentName = (link: object): boolean =>
+  link instanceof SsrfBlockedError && link.reason === 'unresolvable';
+
 function refusedByUs(link: object): boolean {
+  if (isGuardConfirmedAbsentName(link)) return false;
   return (
     isRefusedBeforeSending(link) ||
     isSsrfGuardRefusal(link) ||
@@ -78,6 +87,7 @@ export function isNotObserved(error: unknown): boolean {
   if (chain.some(refusedByUs)) return true;
   if (chain.some((link) => httpStatusOf(link) !== undefined)) return false;
   return !chain.some((link) => {
+    if (isGuardConfirmedAbsentName(link)) return true;
     const code = codeOf(link);
     return (
       code !== undefined &&

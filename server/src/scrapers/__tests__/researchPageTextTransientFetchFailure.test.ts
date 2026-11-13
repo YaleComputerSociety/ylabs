@@ -7,6 +7,10 @@ import type { ObservationInput, ScraperContext } from '../types';
 import { HttpStatusError } from '../utils/httpFetch';
 import { RESEARCH_PAGE_TEXT_FIELD, RESEARCH_PAGE_TEXT_SOURCE } from '../utils/researchPageText';
 import { HostPausedError } from '../utils/hostPause';
+import { HostSlotWaitTimeoutError } from '../utils/hostConcurrencyLimiter';
+import { HostBudgetUnavailableError } from '../utils/machineHostBudget';
+import { SsrfBlockedError } from '../../utils/ssrfGuard';
+import { excludedHostRedirectError } from '../../utils/excludedHosts';
 
 const HOME = 'https://tidepool-lab.example.org/';
 const PARTNER = 'https://partner-site.example.org/kelp/';
@@ -82,6 +86,19 @@ describe('research-page-text when a cited page fails transiently', () => {
       Object.assign(new Error('timeout of 10000ms exceeded'), { code: 'ECONNABORTED' }),
     ],
     ['a host lease another run holds', leaseHeld()],
+    [
+      'an SSRF guard refusal of a private address',
+      new SsrfBlockedError('blocked', 'private-address'),
+    ],
+    [
+      'a host budget that could not be read',
+      new HostBudgetUnavailableError('partner-site.example.org', '/tmp/x', new Error('EACCES')),
+    ],
+    [
+      'a host slot wait that timed out',
+      new HostSlotWaitTimeoutError('partner-site.example.org', 1000),
+    ],
+    ['a redirect into an excluded host', excludedHostRedirectError()],
   ])('keeps the stored reading after %s and counts the row', async (_label, failure) => {
     const { result, emitted } = await run(failure, BOTH_HOSTS);
 

@@ -44,13 +44,29 @@ describe('classifyLabHome', () => {
     ).toBe('clear');
   });
 
-  it('clears when the probe could not complete, since an unreachable home is not a way in', () => {
+  it('keeps the home when the probe observed nothing, such as a timeout or a host pause (#6258)', () => {
     expect(
       classifyLabHome(
         { websiteUrl: 'https://medicine.yale.edu/lab/gone/' },
         index('iwasaki'),
         undefined,
       ),
+    ).toBe('not-confirmed-gone');
+  });
+
+  it.each([403, 429, 500, 503])('keeps the home on a %s, which is not a gone page', (status) => {
+    expect(
+      classifyLabHome(
+        { websiteUrl: 'https://medicine.yale.edu/lab/gone/' },
+        index('iwasaki'),
+        status,
+      ),
+    ).toBe('not-confirmed-gone');
+  });
+
+  it('clears on a 410', () => {
+    expect(
+      classifyLabHome({ websiteUrl: 'https://medicine.yale.edu/lab/gone/' }, index('iwasaki'), 410),
     ).toBe('clear');
   });
 

@@ -13,6 +13,7 @@
  */
 import axios from 'axios';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
+import { isNotObserved } from '../utils/notObserved';
 import { LEAD_ROLE_CANONICAL_VALUES } from '../../models/canonicalRoleMapping';
 import { RoleAssignment } from '../../models/roleAssignment';
 import { Researcher } from '../../models/researcher';
@@ -197,6 +198,7 @@ interface LabSiteReading {
   httpStatusCode?: number;
   fromCache?: boolean;
   pages?: Array<{ url: string; html: string }>;
+  notObserved?: true;
 }
 
 /**
@@ -213,6 +215,7 @@ export async function readLabSite(
   try {
     landing = await fetcher(website, useCache);
   } catch (error) {
+    if (isNotObserved(error)) return { html: '', visitedUrls: [], notObserved: true };
     const status = (error as { response?: { status?: number } })?.response?.status;
     return status ? { html: '', visitedUrls: [], httpStatusCode: status } : null;
   }
@@ -273,6 +276,7 @@ export class LabSiteLeadVerificationScraper implements IScraper {
       limit: context.options.limit,
     });
     const tally = { verified: 0, partial: 0, contradicted: 0, unstated: 0, unreachable: 0 };
+    let deferredNotObserved = 0;
     let observationCount = 0;
     let contradictedLeads = 0;
     const pageReads = new LanePageReads();
@@ -280,6 +284,11 @@ export class LabSiteLeadVerificationScraper implements IScraper {
     for (const candidate of candidates) {
       const observedAt = context.options.referenceDate ?? new Date();
       const reading = await this.readSite(candidate.website, context.options.useCache);
+      if (reading?.notObserved) {
+        deferredNotObserved += 1;
+        context.log(`${candidate.slug}: deferred, the fetch observed nothing`);
+        continue;
+      }
       if (reading?.html) {
         if (!reading.fromCache) pageReads.recordRead(candidate.website, reading.visitedUrls[0]);
       } else if (reading)
@@ -328,7 +337,8 @@ export class LabSiteLeadVerificationScraper implements IScraper {
       entitiesObserved: candidates.length,
       notes:
         `verified=${tally.verified}; partial=${tally.partial}; contradicted=${tally.contradicted}; ` +
-        `unstated=${tally.unstated}; unreachable=${tally.unreachable}; contradictedLeads=${contradictedLeads}. ` +
+        `unstated=${tally.unstated}; unreachable=${tally.unreachable}; deferredNotObserved=${deferredNotObserved}; ` +
+        `contradictedLeads=${contradictedLeads}. ` +
         'Records verdicts only; no lead is attached, detached, or suppressed.',
     };
   }

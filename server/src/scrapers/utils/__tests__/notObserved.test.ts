@@ -24,6 +24,7 @@ describe('isNotObserved', () => {
     ['a host pause', pause],
     ['a host pause wrapped twice by a redirect hook', wrapped(pause)],
     ['an SSRF guard refusal', new SsrfBlockedError('blocked', 'private-address')],
+    ['an SSRF guard resolver failure', new SsrfBlockedError('no answer', 'resolver-failure')],
     [
       'a budget that could not be read',
       new HostBudgetUnavailableError('dept.example.edu', '/tmp/x', new Error('EACCES')),
@@ -54,6 +55,10 @@ describe('isNotObserved', () => {
       Object.assign(new Error('Request failed'), { response: { status: 500 } }),
     ],
     ['a DNS record confirmed absent', withCode('ENOTFOUND')],
+    [
+      'a name the SSRF guard confirmed absent before sending',
+      new SsrfBlockedError('no record', 'unresolvable'),
+    ],
     ['a refused connection', withCode('ECONNREFUSED')],
     ['an unroutable host', withCode('EHOSTUNREACH')],
     ['an unreachable network', withCode('ENETUNREACH')],

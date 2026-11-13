@@ -105,4 +105,21 @@ describe('program source-link-health resolver breaker (#4882)', () => {
       knownUnresolvableFailuresIgnored: HOSTS,
     });
   }, 120000);
+  it('keeps a stored dead verdict when the new probe learned nothing (#6258)', async () => {
+    await seedPrograms('unresolvable');
+    const startedAt = new Date();
+    const result = await runFellowshipSourceLinkHealthBackfill({
+      dryRun: false,
+      checkLink: async () => ({ healthStatus: 'UNKNOWN' as const, excludedHost: true as const }),
+      paceDelayMs: 0,
+      sleep: async () => undefined,
+      resolverControlProbe: async () => ({ healthy: true, detail: 'control answered HTTP 200' }),
+    });
+    expect(result.preservedDecisive).toBe(HOSTS);
+    expect(result.updated).toBe(0);
+    expect(await countCheckedSince(startedAt)).toBe(0);
+    expect(
+      await Fellowship.countDocuments({ 'sourceLinkHealth.healthStatus': 'UNAVAILABLE' }),
+    ).toBe(HOSTS);
+  }, 120000);
 });

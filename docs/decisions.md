@@ -15,6 +15,19 @@ The archive stage keeps the rank rule unchanged, as do `lead_is_staff_of_served_
 It surfaced when #6146 let the YSM lane refresh screened profiles' own titles: for 11 researchers the corrected title would have tripped the hold on the one row each solely leads, and none of those rows carries a hosted-undergraduates signal.
 Measured on Development, 2026-11-13, gate dry run over 4,153 research rows: 2 rows change tier, both from `operator_review` to `student_ready`, and both were held by this reason alone; 1 more row carries it and stays `suppressed` as a duplicate; 0 rows leave `student_ready`.
 
+## 2026-11-13: A Fetch That Observed Nothing Is Never Evidence (#6258)
+
+Decision (backlog agent, 2026-11-13, challenge upheld on #6258).
+A failed fetch is evidence about a page only when the page or its host answered.
+`isNotObserved` in `server/src/scrapers/utils/notObserved.ts` is the one line every lane and script draws, and no lane may turn a failure it covers into a verdict, an absence, a retraction, a cleared field or a lowered confidence.
+Not observed: a request our own code refused before sending (a host pause, the request budget, a slot wait, an excluded host, a write lease, and every SSRF guard refusal except `unresolvable`), a timeout, a reset, a temporary DNS failure, an abort, and any error that carries neither an HTTP status nor a host-level code.
+Observed: any HTTP status, the four host-level codes `ENOTFOUND`, `ECONNREFUSED`, `EHOSTUNREACH` and `ENETUNREACH`, the guard's `unresolvable` refusal (a name the resolver confirmed absent after asking again, the same fact as `ENOTFOUND`, #2709), and a TLS verification code.
+An observation still passes each lane's own confirmation rule: #2725 for DNS, #2751 for a second attempt agreeing on a refused connection, and #6116 for a second run before a refused connection retires a live link.
+Only a `404` or `410` says a page is gone; a `403`, `429` or `5xx` is observed but says nothing about absence, so a script that clears or replaces a stored value on a probe requires one of those two statuses.
+A lane that falls back to a stored value on a non-observation counts the row as deferred rather than writing.
+`server/src/scrapers/__tests__/notObservedNeverEvidenceGuard.test.ts` scans `scrapers/`, `scripts/` and `services/`: a file that both fetches and writes an absence must call `isNotObserved` (or `isTransientFetchFailure`, which delegates to it) or carry a reviewed reason naming its own confirmation rule.
+A stored status-less `UNAVAILABLE` is left as it is, because it is how a confirmed DNS negative retires a domain (#2726).
+
 ## 2026-11-13: Correctly Withheld Programs Are Not Repair Work (#6204)
 
 Decision (owner request, 2026-11-13).
