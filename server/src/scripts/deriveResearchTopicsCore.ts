@@ -2,8 +2,10 @@ import { openAiChatSampling } from '../utils/openAiChatSampling';
 import { RESEARCH_PAGE_TOPICS_PROMPT } from '../scrapers/prompts';
 import {
   CURRENT_RESEARCH_TOPICS_DERIVATION_INPUTS,
+  researchPageTextEntriesForRowTopics,
   researchTopicsDerivationInputHash,
   type ResearchTopicsDerivationInputs,
+  type TopicEvidenceRow,
 } from '../scrapers/researchPageTopicsDerivation';
 import {
   derivePageQuotedResearchTopics,
@@ -148,9 +150,11 @@ export interface StoredResearchPageTextRow {
   entityKey?: string;
   entityId?: string;
   value: unknown;
+  topicRow?: TopicEvidenceRow;
 }
 
-export type DeriveRowOutcome = 'no-text' | 'cached' | 'planned' | 'derived' | 'model-failed';
+export type DeriveRowOutcome =
+  'no-text' | 'no-lead-page' | 'cached' | 'planned' | 'derived' | 'model-failed';
 
 export interface DeriveRowReport {
   entityKey?: string;
@@ -169,6 +173,7 @@ export interface DeriveResearchTopicsReport {
   derived: number;
   derivedWithTopics: number;
   noText: number;
+  noLeadPage: number;
   modelFailures: number;
 }
 
@@ -210,6 +215,7 @@ export async function deriveResearchTopicsForRows(input: {
     derived: 0,
     derivedWithTopics: 0,
     noText: 0,
+    noLeadPage: 0,
     modelFailures: 0,
   };
 
@@ -257,9 +263,14 @@ export async function deriveResearchTopicsForRows(input: {
         outcome: 'no-text',
       };
       report.rows.push(row);
-      const pages = researchPageTextEntriesForTopics(stored.value);
+      const pages = researchPageTextEntriesForRowTopics(stored.value, stored.topicRow);
       if (pages.length === 0) {
-        report.noText += 1;
+        if (researchPageTextEntriesForTopics(stored.value).length > 0) {
+          row.outcome = 'no-lead-page';
+          report.noLeadPage += 1;
+        } else {
+          report.noText += 1;
+        }
         return;
       }
       const inputHash = researchTopicsDerivationInputHash(pages, inputs);

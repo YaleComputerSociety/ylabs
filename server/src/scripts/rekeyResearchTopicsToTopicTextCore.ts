@@ -1,8 +1,11 @@
-import { researchTopicsDerivationInputHash } from '../scrapers/researchPageTopicsDerivation';
+import {
+  researchPageTextEntriesForRowTopics,
+  researchTopicsDerivationInputHash,
+  type TopicEvidenceRow,
+} from '../scrapers/researchPageTopicsDerivation';
 import { derivePageQuotedResearchTopics } from '../scrapers/utils/pageQuotedResearchTopics';
 import {
   researchPageTextEntries,
-  researchPageTextEntriesForTopics,
   researchPageTextEntriesWithoutChrome,
   type ResearchPageTextEntry,
 } from '../scrapers/utils/researchPageText';
@@ -52,6 +55,7 @@ export interface TopicTextRekeyRow {
   entityKey?: string;
   entityId?: string;
   value: unknown;
+  topicRow?: TopicEvidenceRow;
   /** Superseded page-text values of the same row, newest first. */
   priorValues?: readonly unknown[];
 }
@@ -129,7 +133,7 @@ function readingCandidates(row: TopicTextRekeyRow, topicKey: string): ReadingCan
     { source: 'current-text', pages: researchPageTextEntriesWithoutChrome(row.value) },
   ];
   for (const prior of row.priorValues ?? []) {
-    const priorTopicPages = researchPageTextEntriesForTopics(prior);
+    const priorTopicPages = researchPageTextEntriesForRowTopics(prior, row.topicRow);
     if (priorTopicPages.length === 0 || keyOf(priorTopicPages) !== topicKey) continue;
     candidates.push(
       { source: 'prior-text', pages: researchPageTextEntriesWithoutChrome(prior) },
@@ -192,7 +196,7 @@ export async function rekeyResearchTopicsToTopicText(input: {
       outcome: 'no-reading',
     };
     report.rows.push(row);
-    const topicPages = researchPageTextEntriesForTopics(stored.value);
+    const topicPages = researchPageTextEntriesForRowTopics(stored.value, stored.topicRow);
     const topicKey = keyOf(topicPages);
     const strippedPages = researchPageTextEntriesWithoutChrome(stored.value);
     if (topicPages.length === 0) {

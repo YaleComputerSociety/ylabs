@@ -106,9 +106,11 @@ import {
 import {
   derivedResearchAreaProvenance,
   loadResearchTopicsDerivation,
+  currentResearchPageTextObservation,
   researchPageTopicsStateFor,
   storedDerivedResearchAreasAreStale,
   type DerivedResearchAreaCandidate,
+  type TopicEvidenceRow,
 } from './researchPageTopicsDerivation';
 import { RESEARCH_PAGE_TEXT_FIELD } from './utils/researchPageText';
 import {
@@ -204,6 +206,7 @@ import {
   type LabRowRoster,
   loadKnownPersonSurnameRoster,
   loadLabRowRoster,
+  loadResearchEntityLeadPersonDisplayNames,
   loadResearchEntityLeadPersonIds,
   loadResearchEntityLeadPersonName,
   loadResearchEntitySoleLeadPersonId,
@@ -2959,6 +2962,28 @@ function resolverObservationOfDerivedCandidate(
 
 const storedResearchAreasProvenance = (entityDoc: any): unknown =>
   objectRecord(entityDoc?.fieldProvenance).researchAreas;
+
+async function topicEvidenceRowFor(
+  entityDoc: any,
+  entityIdString: string,
+  observations: readonly any[],
+): Promise<TopicEvidenceRow> {
+  const row: TopicEvidenceRow = {
+    entityType: entityDoc?.entityType,
+    kind: entityDoc?.kind,
+    name: entityDoc?.name,
+    websiteUrl: entityDoc?.websiteUrl,
+  };
+  const needsLeadNames =
+    isPersonResearchRow(row) &&
+    Boolean(entityIdString) &&
+    Boolean(currentResearchPageTextObservation(observations));
+  if (!needsLeadNames) return row;
+  const leadNames = (await loadResearchEntityLeadPersonDisplayNames([entityIdString])).get(
+    entityIdString,
+  );
+  return { ...row, leadNames: leadNames ?? [] };
+}
 
 /**
  * A stored list credited to a page-topics derivation, and not shown stale, is backed by
@@ -14592,6 +14617,7 @@ async function materializeEntityUnderRemovalGuard(
         obs,
         loadResearchTopicsDerivation,
         storedResearchAreasProvenance(entityDoc),
+        await topicEvidenceRowFor(entityDoc, entityIdString || '', obs),
       )
     : {};
   const derivedResearchAreas = researchPageTopics.candidate;
