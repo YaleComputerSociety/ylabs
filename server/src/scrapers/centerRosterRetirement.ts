@@ -173,6 +173,11 @@ export interface CenterRosterReadMember {
    * over an emeritus section listing as the #5835 rule has a fresh own-page read win.
    */
   ownPageCurrentAppointment?: boolean;
+  /**
+   * The member's own page was not read in this run, so the #5835 own-page check could not
+   * run and an emeritus listing is only omitted, never departed.
+   */
+  ownPageUnread?: boolean;
 }
 
 export interface CenterRosterSectionRecord {
@@ -299,6 +304,7 @@ export function snapshotMembers(snapshot: CenterRosterHealthSnapshot): CenterRos
         ? { sectionFingerprint: text(entry.sectionFingerprint) }
         : {}),
       ...(entry.ownPageCurrentAppointment === true ? { ownPageCurrentAppointment: true } : {}),
+      ...(entry.ownPageUnread === true ? { ownPageUnread: true } : {}),
     }))
     .filter((entry) => entry.memberKey && entry.role);
 }
@@ -378,13 +384,17 @@ export function centerRosterSectionFingerprint(memberKeys: Iterable<string>): st
  * Groups a read's listings into sections and resolves the one section each member is read
  * under, failing closed toward current at every step:
  *
- * - A section whose fingerprint (its sorted member keys) another section of the same read
+ * - A section whose fingerprint (its sorted member keys) another section of the same pass
  *   shares is not a section of its own, so a repeated sidebar block never reads as a second
- *   section. Of the sections that share a fingerprint, the most current one stands.
+ *   section. Of the sections that share a fingerprint, the most current one stands. A filter
+ *   pass's fingerprint carries its stage, because a filter that lists exactly the unfiltered
+ *   roster is a second listing rather than a sidebar, and dropping either would leave its
+ *   members with no section.
  * - A member listed under a current or unlabelled section and under a past one is current.
  * - A person-type filter outranks the unfiltered listing, which mixes every type, but only
  *   when every filter pass reached its end: a filter left unfinished could hold the current
- *   listing that would have outranked a past one.
+ *   listing that would have outranked a past one. A member only a filter pass listed then
+ *   gets no section at all, so it is omitted rather than read under that filter.
  */
 export function resolveCenterRosterSections(
   listings: readonly CenterRosterSectionListing[],
@@ -421,7 +431,9 @@ export function resolveCenterRosterSections(
 
   const byFingerprint = new Map<string, RawSection[]>();
   for (const section of raw.values()) {
-    const fingerprint = centerRosterSectionFingerprint(section.memberKeys);
+    const fingerprint = centerRosterSectionFingerprint(
+      section.stageKey ? [`stage:${section.stageKey}`, ...section.memberKeys] : section.memberKeys,
+    );
     byFingerprint.set(fingerprint, [...(byFingerprint.get(fingerprint) ?? []), section]);
   }
   const standing: Array<RawSection & { fingerprint: string }> = [];
@@ -446,12 +458,8 @@ export function resolveCenterRosterSections(
   for (const memberKey of memberKeys) {
     const containing = standing.filter((section) => section.memberKeys.has(memberKey));
     const filtered = containing.filter(isFilterSection);
-    const candidates =
-      filtersUsable && filtered.length > 0
-        ? filtered
-        : containing.filter((section) => !isFilterSection(section)).length > 0
-          ? containing.filter((section) => !isFilterSection(section))
-          : filtered;
+    const unfiltered = containing.filter((section) => !isFilterSection(section));
+    const candidates = filtersUsable && filtered.length > 0 ? filtered : unfiltered;
     const chosen = [...candidates].sort(
       (left, right) =>
         SECTION_KIND_RANK[left.kind] - SECTION_KIND_RANK[right.kind] || left.order - right.order,
@@ -558,6 +566,7 @@ function memberSectionVerdict(
   const kind = member.sectionKind ?? 'unclassified';
   if (!centerRosterSectionEndsMembership(kind)) return 'listed';
   if (kind === 'emeritus' && member.ownPageCurrentAppointment) return 'listed';
+  if (kind === 'emeritus' && member.ownPageUnread) return 'omitted';
   const section = sectionsByFingerprint.get(member.sectionFingerprint ?? '');
   return section && section.kind === kind && section.complete ? 'departed' : 'omitted';
 }

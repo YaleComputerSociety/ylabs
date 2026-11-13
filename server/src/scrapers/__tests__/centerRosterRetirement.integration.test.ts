@@ -60,6 +60,7 @@ import {
   type CenterConfig,
   type CenterMember,
   type HtmlFetcher,
+  type MemberPageFetcher,
 } from '../sources/centersInstitutesScraper';
 import type { ObservationInput, ScraperContext } from '../types';
 import { clearC4Flags } from './c4FlagTestEnv';
@@ -115,7 +116,11 @@ const afterAMoment = () => new Promise((resolve) => setTimeout(resolve, 5));
 
 async function runLane(
   pages: Page[],
-  options: { config?: CenterConfig; useCache?: boolean } = {},
+  options: {
+    config?: CenterConfig;
+    useCache?: boolean;
+    memberPageFetcher?: MemberPageFetcher;
+  } = {},
 ): Promise<string> {
   await afterAMoment();
   const scrapeRunId = new mongoose.Types.ObjectId();
@@ -137,9 +142,12 @@ async function runLane(
     },
     log: () => {},
   };
-  await new CentersInstitutesScraper([options.config ?? config()], null, fetcherFor(pages)).run(
-    ctx,
-  );
+  await new CentersInstitutesScraper(
+    [options.config ?? config()],
+    null,
+    fetcherFor(pages),
+    ...(options.memberPageFetcher ? [options.memberPageFetcher] : []),
+  ).run(ctx);
   await appendObservations(emitted, {
     scrapeRunId: String(scrapeRunId),
     sourceId: String(SOURCE_ID),
@@ -307,7 +315,15 @@ describe(
     });
 
     it("ends an emeritus-listed edge with its label and leaves the person's own row alone", async () => {
-      await runLane([ROSTER]);
+      const ownPage: MemberPageFetcher = async () =>
+        '<html><body><main><p class="profile-title">Professor Emeritus of Synthetic Studies</p></main></body></html>';
+      const yaleHosted = (roster: CenterMember[]) =>
+        roster.map((entry) =>
+          entry.name.startsWith('Blair')
+            ? { ...entry, profileUrl: 'https://fixture-center.yale.edu/people/blair-synthetic' }
+            : entry,
+        );
+      await runLane([yaleHosted(ROSTER)], { memberPageFetcher: ownPage });
       const [blairEdge] = await currentEdges('Blair');
       const { _id: _centerObjectId, ...centerFields } = (await ResearchEntity.findById(
         await centerId(),
@@ -330,9 +346,9 @@ describe(
         rosterProvenance: { sourceName: 'official-profile-pi-backfill' },
       });
 
-      const emeritus = listedUnder('Blair', 'Emeritus Faculty', 'emeritus');
-      await runLane([emeritus]);
-      await runLane([emeritus]);
+      const emeritus = yaleHosted(listedUnder('Blair', 'Emeritus Faculty', 'emeritus'));
+      await runLane([emeritus], { memberPageFetcher: ownPage });
+      await runLane([emeritus], { memberPageFetcher: ownPage });
 
       expect(await currentEdges('Blair')).toHaveLength(0);
       expect((await edgesFor('Blair'))[0]).toMatchObject({
@@ -873,6 +889,15 @@ describe(
       expect((await edge(existing)).state).not.toBe('HISTORICAL');
       await runLane([withoutMember('Casey')]);
       expect((await edge(existing)).state).toBe('HISTORICAL');
+
+      const retired = (await Observation.find({
+        entityKey: { $regex: '^center-fixture-synthetic:casey-synthetic' },
+      }).lean()) as any[];
+      expect(retired.length).toBeGreaterThan(0);
+      for (const row of retired) {
+        expect(row.superseded).toBe(true);
+        expect(row.rollback?.reason).toBe(CENTER_ROSTER_RETIREMENT_REASON);
+      }
     });
 
     it('adopts nothing for a person the roster does not list, or a namesake it cannot resolve', async () => {

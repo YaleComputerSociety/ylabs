@@ -132,6 +132,7 @@ export interface CenterMember {
   sections?: CenterMemberSection[];
   currentStatus?: CenterMemberCurrentStatus;
   sectionLabel?: string;
+  ownPageRead?: boolean;
 }
 
 const PAST_ROSTER_SECTION_LABEL =
@@ -140,11 +141,14 @@ const EMERITUS_ROSTER_SECTION_LABEL = /\bemerit(?:us|a|i|ae)\b/i;
 const CURRENT_ROSTER_SECTION_LABEL = /\bcurrent\b/i;
 const NON_MEMBERSHIP_SECTION_LABEL =
   /\b(?:events?|seminars?|talks?|lectures?|workshops?|conferences?|news|speakers?|publications?|projects?|courses?)\b/i;
+const STANDING_BODY_SECTION_LABEL =
+  /\b(?:boards?|councils?|committees?|panels?|trustees?|advisory|advisors?|advisers?|cabinet|association|network)\b/i;
 
 /**
  * What a section heading or person-type filter label says about the people under it. Only a
  * label that names a past or emeritus membership moves a listing out of current; a label
- * that also says "current", or names events, talks or news rather than members, never does.
+ * that also says "current", names events, talks or news rather than members, or names a
+ * standing body such as an alumni board or council, never does.
  */
 export function classifyCenterRosterSectionLabel(
   label: string | undefined,
@@ -152,6 +156,7 @@ export function classifyCenterRosterSectionLabel(
   const text = normalizedText(label);
   if (!text) return 'unclassified';
   if (NON_MEMBERSHIP_SECTION_LABEL.test(text)) return 'unclassified';
+  if (STANDING_BODY_SECTION_LABEL.test(text)) return 'unclassified';
   if (CURRENT_ROSTER_SECTION_LABEL.test(text)) return 'current';
   if (EMERITUS_ROSTER_SECTION_LABEL.test(text)) return 'emeritus';
   if (PAST_ROSTER_SECTION_LABEL.test(text)) return 'past';
@@ -2160,6 +2165,7 @@ export function centerRosterReadMember(
           ...(section.kind === 'emeritus' && member.currentStatus === 'current'
             ? { ownPageCurrentAppointment: true }
             : {}),
+          ...(section.kind === 'emeritus' && !member.ownPageRead ? { ownPageUnread: true } : {}),
         }
       : {}),
   };
@@ -2349,6 +2355,7 @@ export class CentersInstitutesScraper implements IScraper {
       };
       for (const listed of listedMembers) {
         const section = memberSections.get(centerMemberKey(entityKey, listed.name));
+        if (!section) continue;
         const member = withResolvedSection(listed, section);
         listingsByKind[section?.kind ?? 'unclassified'] += 1;
         const memberObs = memberToObservations(member, config, sourceUrl);
@@ -2761,6 +2768,7 @@ export class CentersInstitutesScraper implements IScraper {
       return {
         ...member,
         identityEvidence: read.evidence,
+        ownPageRead: true,
         ...(read.profileTitle ? { profileTitle: read.profileTitle } : {}),
       };
     });

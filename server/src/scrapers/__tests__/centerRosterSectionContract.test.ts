@@ -71,6 +71,9 @@ describe('classifying center roster section labels (#6084)', () => {
     ['Current and Former Members', 'current'],
     ['Past Events', 'unclassified'],
     ['Former Speakers', 'unclassified'],
+    ['Alumni Advisory Board', 'unclassified'],
+    ['Alumni Council', 'unclassified'],
+    ['Former Students Steering Committee', 'unclassified'],
     ['', 'unclassified'],
   ])('reads %j as %s', (label, kind) => {
     expect(classifyCenterRosterSectionLabel(label)).toBe(kind);
@@ -253,6 +256,23 @@ describe('resolving the sections of one read', () => {
       false,
     );
   });
+
+  it('gives no section to a member only an unfinished set of filter passes listed', () => {
+    const { memberSections } = resolveCenterRosterSections(
+      [
+        listing('alpha', '', 'unclassified'),
+        listing('alpha', 'Faculty', 'current', 'person_type=1'),
+        listing('charlie', 'Alumni', 'past', 'person_type=2'),
+      ],
+      [
+        roster,
+        { key: 'person_type=1', personTypeFilter: true, stopReason: 'fetch-failed' },
+        { key: 'person_type=2', personTypeFilter: true, stopReason: 'empty-page' },
+      ],
+    );
+    expect(memberSections.has(`${CENTER}:charlie`)).toBe(false);
+    expect(memberSections.get(`${CENTER}:alpha`)?.kind).toBe('unclassified');
+  });
 });
 
 const readMember = (
@@ -409,6 +429,17 @@ describe('departed versus omitted under the section contract', () => {
     expect(result.observationIds).toEqual([]);
   });
 
+  it('reads an emeritus listing whose own page went unread as omitted, never departed', () => {
+    const unread = { ownPageUnread: true };
+    const result = plan([
+      contractRead('run-2', 2, withFoxtrotUnder(EMERITUS_SECTION, unread)),
+      contractRead('run-3', 3, withFoxtrotUnder(EMERITUS_SECTION, unread)),
+    ]);
+    expect(result.retiredEdges).toEqual([]);
+    expect(result.counts.departedEdges).toBe(0);
+    expect(result.counts.omittedUnwitnessedEdges).toBe(1);
+  });
+
   it('lets a current appointment the own page states win over an emeritus listing', () => {
     const ownPage = { ownPageCurrentAppointment: true };
     const result = plan([
@@ -508,6 +539,7 @@ describe('the lane emits currentStatus and the section snapshot', () => {
       <div class="node-teaser__heading"><a href="${YALE_PROFILE(slug)}"><span>${slug} Synthetic</span></a></div>
     </article>`;
 
+  const UNREADABLE = '\u0000unreadable';
   const config = (overrides: Partial<CenterConfig> = {}): CenterConfig => ({
     centerKey: 'fixture',
     centerName: 'Fixture Center',
@@ -528,6 +560,7 @@ describe('the lane emits currentStatus and the section snapshot', () => {
     const fetcher: HtmlFetcher = async (url) => pageFor(new URL(url));
     const memberPages = async (url: string) => {
       const slug = new URL(url).pathname.split('/').pop() || '';
+      if (profileTitles[slug] === UNREADABLE) throw new Error('socket hang up');
       return `<html><body><main><p class="profile-title">${profileTitles[slug] ?? ''}</p></main></body></html>`;
     };
     const emitted: ObservationInput[] = [];
@@ -646,5 +679,41 @@ describe('the lane emits currentStatus and the section snapshot', () => {
       return page(`${filter}${yaleTeaser('alpha')}${yaleTeaser('bravo')}`);
     });
     expect(fieldOf(emitted, 'bravo', 'currentStatus')).toBe('current');
+  });
+
+  it('emits nothing past for a member only a filter listed when another filter read fails', async () => {
+    const filter = `<select name="person_type"><option value="1">Faculty</option><option value="2">Alumni</option></select>`;
+    const emitted = await emittedBy(config({ paginated: true }), (url) => {
+      const type = url.searchParams.get('person_type');
+      const pageIndex = Number(url.searchParams.get('page') || '0');
+      if (type === '1') throw new Error('socket hang up');
+      if (pageIndex > 0) return page('');
+      if (type === '2') return page(yaleTeaser('charlie'));
+      return page(`${filter}${yaleTeaser('alpha')}`);
+    });
+    expect(fieldOf(emitted, 'charlie', 'currentStatus')).toBeUndefined();
+    expect(emitted.some((obs) => /charlie/.test(obs.entityKey ?? ''))).toBe(false);
+    const snapshot = snapshotOf(emitted);
+    expect(snapshot.members.some((member: any) => /charlie/.test(member.memberKey))).toBe(false);
+    const read = centerRosterReadFromSnapshot(snapshot, 'run-a', at(2), {
+      adoptsSectionContract: true,
+    });
+    expect(read?.sections?.departedMemberKeys.size).toBe(0);
+  });
+
+  it('marks an emeritus listing whose own page could not be read as unread', async () => {
+    const emitted = await emittedBy(
+      config(),
+      () => page(`<h2>Emeritus Faculty</h2>${yaleTeaser('alpha')}${yaleTeaser('bravo')}`),
+      { alpha: UNREADABLE, bravo: 'Professor Emeritus of Synthetic Studies' },
+    );
+    const members = snapshotOf(emitted).members;
+    expect(members.find((member: any) => /alpha/.test(member.memberKey))).toMatchObject({
+      sectionKind: 'emeritus',
+      ownPageUnread: true,
+    });
+    expect(
+      members.find((member: any) => /bravo/.test(member.memberKey))?.ownPageUnread,
+    ).toBeUndefined();
   });
 });
