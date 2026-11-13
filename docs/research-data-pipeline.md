@@ -1437,7 +1437,7 @@ The clear reads the same backing as #6049, person-name-joined keys included, so 
 A value only a person-name-joined key states is cleared when that key's reading is screened, and when no identity key states the value the engine join runs only once some candidate key states it through a screened reading, because otherwise nothing could be cleared.
 The field then resolves from what remains in the same pass, so a fill-only directory department can land, and a second pass writes nothing.
 A new department screen goes in that list, so it both stops its readings from resolving and clears the values only they back.
-The `ysm-faculty-directory` lane takes a person's home department only from the profile's first appointment, and only when the catalog names it, never promoting a later appointment and never reading its `organizations` (centers, houses, labs, societies); with no catalog it emits none, and the `departments` label still carries both (#6070, `docs/decisions.md` 2026-11-13).
+The `ysm-faculty-directory` lane takes a person's home department only from the profile's first appointment, and only when the catalog names it, storing the catalog's name rather than the profile's alias spelling (as #6099 does), never promoting a later appointment and never reading its `organizations` (centers, houses, labs, societies); with no catalog it emits none, and the `departments` label still carries both (#6070, `docs/decisions.md` 2026-11-13).
 Its screen in that list states nothing for a stored reading of the lane the catalog does not name.
 With no department catalog the screen refuses nothing, while the lane emits no department.
 

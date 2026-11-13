@@ -1225,6 +1225,24 @@ describe('the YSM home department comes only from a catalog-named appointment', 
     expect(observations.find((o) => o.field === 'departments')?.value).toEqual(profile.departments);
   });
 
+  it('emits the catalog name for a first appointment the profile spells as an alias', () => {
+    const aliasCatalog = (name: string) =>
+      name === 'Rheumatology' ? 'Rheumatology, Allergy & Immunology' : undefined;
+    const profile = extractProfile(
+      profileHtml({
+        fullName: 'Jordan Rivers',
+        email: 'jordan.rivers@yale.edu',
+        appointments: [{ type: 'Primary', organizationName: 'Rheumatology' }],
+        meshKeywords: ['Heart Failure'],
+      }),
+      RIVERS,
+    )!;
+    const { observations } = facultyToUserObservations(profile, aliasCatalog);
+    expect(observations.filter((o) => o.field === 'primaryDepartment').map((o) => o.value)).toEqual(
+      ['Rheumatology, Allergy & Immunology'],
+    );
+  });
+
   it('emits the first appointment when the catalog names it', () => {
     const profile = extractProfile(
       profileHtml({
