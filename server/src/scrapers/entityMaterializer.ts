@@ -10017,6 +10017,16 @@ async function materializeUserIdentityToResearcher(
     researcher.profile.primaryDepartment = storedDepartment.department;
     fieldsWritten += 1;
   }
+  if (
+    isOverSharedPersonImage(
+      researcher.profile.imageUrl,
+      await overSharedPersonImageKeysForMaterialization(),
+    )
+  ) {
+    researcher.profile.imageUrl = undefined;
+    researcher.profileFieldWriters?.delete('imageUrl');
+    fieldsWritten += 1;
+  }
   for (const [key, value, confidence] of [
     ['primaryDepartment', primaryDepartment, resolvedConfidence('primaryDepartment')],
     ['imageUrl', imageUrl, resolvedConfidence('imageUrl')],
@@ -10047,15 +10057,6 @@ async function materializeUserIdentityToResearcher(
   }
   if (isScreenedOutPersonWebsite(researcher.profile.websiteUrl)) {
     researcher.profile.websiteUrl = undefined;
-    fieldsWritten += 1;
-  }
-  if (
-    isOverSharedPersonImage(
-      researcher.profile.imageUrl,
-      await overSharedPersonImageKeysForMaterialization(),
-    )
-  ) {
-    researcher.profile.imageUrl = undefined;
     fieldsWritten += 1;
   }
   const refusedStoredValues = planResearcherRefusedStoredValueClear(researcher);

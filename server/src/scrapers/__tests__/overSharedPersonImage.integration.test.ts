@@ -246,6 +246,41 @@ describe('a site default image read for different people is not written (#6043)'
       expect(isOverSharedPersonImage(LEGACY_DEFAULT, after)).toBe(true);
     });
 
+    it('writes the materialized key its own picture when an outranking key wrote the cleared one', async () => {
+      const [owner, ...others] = people;
+      const siblingKey = 'email:outranking-key@example.edu';
+      await seedPerson(owner, [{ value: OWN_PICTURE }]);
+      await Observation.insertMany(
+        [
+          ['netid', owner.netid],
+          ['fname', owner.fname],
+          ['lname', owner.lname],
+        ].map(([field, value]) => ({ ...observation(owner, field, value), entityKey: siblingKey })),
+      );
+      const ownerRow = await researcherFor(owner, LEGACY_DEFAULT);
+      await Researcher.updateOne(
+        { _id: ownerRow._id },
+        {
+          $set: {
+            'profileFieldWriters.imageUrl': {
+              userKey: siblingKey,
+              joinRank: 99,
+              confidence: 1,
+            },
+          },
+        },
+      );
+      await Promise.all(others.map((person) => researcherFor(person, LEGACY_DEFAULT)));
+
+      await materialize(owner);
+      expect(await storedImage(ownerRow._id)).toBe(OWN_PICTURE);
+
+      resetOverSharedPersonImageKeysCache();
+      const second = await materialize(owner);
+      expect(second.fieldsWritten).toBe(0);
+      expect(await storedImage(ownerRow._id)).toBe(OWN_PICTURE);
+    });
+
     it('keeps a picture only two researchers store', async () => {
       const [owner, other] = people;
       await seedPerson(owner, []);
