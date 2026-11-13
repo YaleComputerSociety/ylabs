@@ -201,13 +201,13 @@ describe('defaultOwnProfileEmeritusLeadFinder (#6081)', () => {
   });
 
   it('records a lead whose roster profile page states their Yale email and an agreeing name', async () => {
-    const id = await lead('gale', { email: 'synthetic.gale@yale.edu' });
+    const id = await lead('gale', { email: 'fixture.gale@yale.edu' });
     await rosterMember(
       'center-fixture:gale',
       { fname: 'Synthetic', lname: 'Gale' },
       {
         netids: [],
-        emails: ['synthetic.gale@yale.edu'],
+        emails: ['fixture.gale@yale.edu'],
       },
     );
 
