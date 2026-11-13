@@ -130,11 +130,12 @@ describe('roster biography research evidence', () => {
     for (const sentence of [
       'They have a special interest in synthetic glimmer fever and the care of children with it.',
       'Their clinical interests include synthetic quill rash and related skin conditions.',
-      'Their work focuses on advancing synthetic heart care and supporting patients after discharge.',
-      'They offer patients prompt access to synthetic sleep clinic care close to home.',
+      'Their work focuses on advancing synthetic eye care across the region.',
+      'They provide synthetic sleep clinic care to adults across the state.',
       'They focus on caring for women with synthetic high-risk pregnancies.',
-      'They are interested in exploring every synthetic therapy that can help their patients.',
-      'Their work centres on combatting the symptoms of synthetic grief and working towards equity.',
+      'They try whatever synthetic remedy may help their patients.',
+      'They treat the symptoms of synthetic winter cough in adults.',
+      'Their work focuses on care for patients with synthetic marsh fever.',
     ]) {
       expect(keptBesideAnchor(sentence)).toBe(false);
     }
@@ -143,7 +144,7 @@ describe('roster biography research evidence', () => {
   it('refuses a biography whose only research-shaped sentences are clinical service (#6083)', () => {
     expect(
       deriveBioResearchStatement(
-        'Their work focuses on advancing synthetic heart care and supporting patients after discharge.',
+        'Their work focuses on advancing synthetic eye care across the region.',
       ).rejection,
     ).toBe('only_past_research');
   });
@@ -158,15 +159,15 @@ describe('roster biography research evidence', () => {
       'Their interests include the pathogenesis of synthetic infections in transplant patients.',
       'They study how patients with synthetic joint pain choose among treatments.',
       'Their research follows how their patients with synthetic tremor respond to new devices.',
+      'They develop machine learning methods that read the scans of their patients for synthetic stroke signs.',
+      'They explore why treating the symptoms of synthetic winter cough often fails in teenagers.',
     ]) {
       expect(keptBesideAnchor(sentence)).toBe(true);
     }
   });
 
   it('drops a first-person sentence about research done in the past (#6083)', () => {
-    expect(
-      keptBesideAnchor('I focused mainly on the role of synthetic proteins in cell division.'),
-    ).toBe(false);
+    expect(keptBesideAnchor('I studied synthetic soil fungi as a graduate student.')).toBe(false);
   });
 
   it('keeps a creative-practice sentence about care or patients (#6083)', () => {
@@ -174,6 +175,7 @@ describe('roster biography research evidence', () => {
       'Their special interest is in music written for patients in hospice care.',
       'Their work focuses on writing plays about caregivers and patients in hospitals.',
       'They develop new choreography that engages themes of care and illness.',
+      'Their work focuses on documentary portraits of their patients in synthetic long-term care.',
     ]) {
       expect(keptBesideAnchor(sentence)).toBe(true);
     }

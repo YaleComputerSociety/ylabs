@@ -42,15 +42,22 @@ const CLINICAL_SERVICE_SHAPES = [
   /\badvancing\s+[\w\s-]{0,40}\bcare\b/i,
   /\bsupporting\s+patients\b/i,
   /\b(?:caring|cares)\s+for\b/i,
+  /\bcare\s+for\s+patients\b/i,
   /\binterests?\s+include\s+(?:treating|managing|caring)\b/i,
   /\binterested\s+in\s+the\s+(?:management|treatment|care)\s+of\b/i,
   /\b(?:treats|treating)\s+patients\b/i,
   /\bworks?\s+with\s+patients\s+to\b/i,
-  /\beach\s+patient['’]s\b/i,
+  /\beach\s+patient(?:['’]s)?\b/i,
+  /\bhelping\s+(?:each\s+)?(?:patients?|famil(?:y|ies))\b/i,
+  /\bpartnering\s+with\s+patients\b/i,
+  /\bgetting\s+patients\s+back\b/i,
 ];
 
-const STRONG_CLINICAL_SERVICE_SHAPES = [
-  /\b(?:his|her|their)\s+patients\b/i,
+const PATIENT_SERVICE_PURPOSE =
+  /\b(?:help|helps|helping|serve|serves|serving|benefit|benefits)\s+(?:his|her|their)\s+(?:own\s+)?patients\b/i;
+
+const PATIENT_SERVICE_SHAPES = [
+  /\b(?:his|her|their)\s+(?:own\s+)?patients\b/i,
   /\b(?:combat\w*|treat(?:s|ing)?|alleviat\w*|reliev\w*)\s+(?:the\s+)?symptoms\b/i,
 ];
 
@@ -61,21 +68,18 @@ const CLINICAL_VOCABULARY =
   /\b(?:patients?|care|clinical(?:ly)?|clinicians?|medical|medicine|disorders?|diseases?|conditions?|syndromes?|symptoms?|treatment|therap(?:y|ies)|diagnos\w*|surg(?:ery|eries|ical)|nutrition|pain|injur(?:y|ies)|infections?|cancers?|tumou?rs?|neurological|psychiatric|mental\s+health|pregnanc(?:y|ies)|asthma|allerg(?:y|ies)|dermatolog\w*|cardiolog\w*|skin|nerves?|spin(?:e|al)|stimulation|anesthe\w*|procedures?|trauma)\b/i;
 
 const STATES_INQUIRY =
-  /\b(?:research\w*|lab(?:s|oratory|oratories)?|stud(?:y|ies|ying|ied)|investigat\w*|trials?|scien\w*|scholar\w*|examin\w*|explor\w*|analy[sz]\w*|evaluat\w*|measur\w*|experiment\w*|discover\w*|mechanisms?|data|cohorts?|outcomes|epidemiolog\w*|biomarkers?|interventions?|understand(?:ing)?\s+(?:the|how|why|what|whether)|how|technolog\w*|informatics|quality\s+of\s+care|health\s+services|disparit(?:y|ies)|equity|\w*ethic(?:s|al)|model(?:ing|ling)|(?:computational|statistical|mathematical|animal|mouse|murine|predictive)\s+models?|biolog\w*|genetic\w*|genomic\w*|immunolog\w*|pharmacolog\w*|pathogenesis|microbiome|circuits?|prevention|screening|polic(?:y|ies)|decision[-\s]making|safety|implementation|develop\w*\s+(?:and\s+test\s+)?(?:new\s+|novel\s+)?(?:tools?|devices?|sensors?|therap\w*|methods?|models?|algorithms?|interventions?|measures?|assays?|drugs?|vaccines?|gene)|test(?:s|ing)?\b)\b/i;
+  /\b(?:research\w*|lab(?:s|oratory|oratories)?|stud(?:y|ies|ying|ied)|investigat\w*|trials?|scien\w*|scholar\w*|examin\w*|explor\w*|analy[sz]\w*|evaluat\w*|measur\w*|experiment\w*|discover\w*|mechanisms?|data|cohorts?|outcomes|epidemiolog\w*|biomarkers?|interventions?|understand(?:ing)?\s+(?:the|how|why|what|whether)|how|technolog\w*|informatics|quality\s+of\s+care|health\s+services|disparit(?:y|ies)|\w*ethic(?:s|al)|model(?:ing|ling)|(?:computational|statistical|mathematical|animal|mouse|murine|predictive)\s+models?|biolog\w*|genes?|genetic\w*|genomic\w*|why|whether|compar(?:e|es|ing|ison|isons)|algorithms?|sequenc(?:e|es|ing)|(?:co-)?design(?:s|ing|ed)?|map(?:s|ping)?\s+(?:the|how|which|where)|improv(?:e|es|ing)\s+(?:the\s+)?(?:[\w-]+\s+){0,2}care|immunolog\w*|pharmacolog\w*|pathogenesis|microbiome|circuits?|prevention|screening|polic(?:y|ies)|decision[-\s]making|safety|implementation|develop\w*\s+(?:and\s+test\s+)?(?:new\s+|novel\s+)?(?:[\w-]+\s+){0,2}(?:tools?|devices?|sensors?|therap\w*|methods?|models?|algorithms?|interventions?|measures?|assays?|drugs?|vaccines?|gene)|test(?:s|ing)?\b)\b/i;
 
 const CREATIVE_PRACTICE =
-  /\b(?:music\w*|compos(?:e|es|er|ers|ing|ition|itions)|choreograph\w*|danc(?:e|es|er|ers|ing)|plays?|playwright\w*|theat(?:er|re)\w*|performance\s+art|performers?|artists?|artwork|paint\w*|sculpt\w*|poe(?:t|ts|try|ms?)|fiction|novels?|writ(?:e|es|ing)\s+(?:plays|poems|fiction|novels|music)|film\w*|photograph\w*|opera|songs?)\b/i;
+  /\b(?:music\w*|compos(?:e|es|er|ers|ing|ition|itions)|choreograph\w*|danc(?:e|es|er|ers|ing)|plays?|playwright\w*|theat(?:er|re)\w*|performance\s+art|performers?|artists?|artwork|paint\w*|sculpt\w*|poe(?:t|ts|try|ms?)|fiction|novels?|writ(?:e|es|ing)\s+(?:plays|poems|fiction|novels|music)|film\w*|photograph\w*|portrait\w*|documentar\w*|opera|songs?)\b/i;
 
 export function isClinicalOnlyBiographySentence(sentence: string): boolean {
   if (CREATIVE_PRACTICE.test(sentence)) return false;
-  if (
-    STRONG_CLINICAL_SERVICE_SHAPES.some((shape) => shape.test(sentence)) &&
-    !STATES_RESEARCH_EXPLICITLY.test(sentence)
-  ) {
+  if (PATIENT_SERVICE_PURPOSE.test(sentence) && !STATES_RESEARCH_EXPLICITLY.test(sentence)) {
     return true;
   }
   return (
-    CLINICAL_SERVICE_SHAPES.some((shape) => shape.test(sentence)) &&
+    [...CLINICAL_SERVICE_SHAPES, ...PATIENT_SERVICE_SHAPES].some((shape) => shape.test(sentence)) &&
     CLINICAL_VOCABULARY.test(sentence) &&
     !STATES_INQUIRY.test(sentence) &&
     !CREATIVE_PRACTICE.test(sentence)
