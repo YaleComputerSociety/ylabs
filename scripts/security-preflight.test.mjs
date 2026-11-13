@@ -4747,6 +4747,18 @@ test('shared form post goes through the same SSRF guard, agents, and host limite
     source,
     /await axios\.request\(\{\n\s+url,\n\s+method: 'POST',[^}]*?httpAgent: agents\.httpAgent,\n\s+httpsAgent: agents\.httpsAgent,/,
   );
+  assert.match(
+    source,
+    /followRedirectsWithinBudget\(safeUrl, config, \{ limiter, request, assertUrl \}\)/,
+  );
+  assert.match(
+    source,
+    /await deps\.limiter\.run\(hostOf\(target\), \(\) => deps\.request\(target, sent\)\)/,
+  );
+  assert.match(
+    source,
+    /current = \(await deps\.assertUrl\(new URL\(result\.location, target\)\.toString\(\)\)\)\.toString\(\)/,
+  );
 });
 
 test('student grants fund search enumerates only through the SSRF-guarded shared fetch policy', () => {
