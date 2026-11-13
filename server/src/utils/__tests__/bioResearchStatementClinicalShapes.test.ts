@@ -10,6 +10,9 @@ describe('clinical-service biography shapes the roster-bio rule refuses (#6151)'
     'She is known for giving her patients clear, practical guidance after surgery.',
     'She is dedicated to working with patients to restore mobility after joint replacement.',
     'Her aim is to benefit her patients with chronic pain through careful medication review.',
+    'He has successfully treated patients with sports injuries of the knee.',
+    'He treated his patients with chronic back pain using physical therapy.',
+    'She aims to manage her patients with diabetes without frequent hospital visits.',
   ])('refuses a clinical-only sentence: %s', (sentence) => {
     expect(isClinicalOnlyBiographySentence(sentence)).toBe(true);
   });
@@ -41,6 +44,11 @@ describe('clinical-service biography shapes the roster-bio rule refuses (#6151)'
     'His scheduling tool supports surgeons who have treated patients in rural clinics.',
     'Her app supports nurses who are managing patients with sepsis.',
     'Her dashboard alerts clinicians who are managing their patients after surgery.',
+    'Her work focuses on pharmacists managing patients on blood thinners.',
+    'His work focuses on residents who have treated patients during overnight shifts.',
+    'Their work focuses on a clinic that manages patients with sickle cell disease.',
+    'Her work focuses on spouses supporting their patients after a stroke.',
+    'His tool lets physicians usually quickly treat their patients with chest pain.',
   ])('keeps a sentence about another care-giver and their patients: %s', (sentence) => {
     expect(isClinicalOnlyBiographySentence(sentence)).toBe(false);
   });
@@ -48,6 +56,7 @@ describe('clinical-service biography shapes the roster-bio rule refuses (#6151)'
   it.each([
     'She writes plays about caring for a parent through a long illness.',
     'His play about the management of a family farm after a stroke premiered last spring.',
+    'She runs a play-reading series helping patients with aphasia rebuild speech.',
   ])('keeps creative practice about care: %s', (sentence) => {
     expect(isClinicalOnlyBiographySentence(sentence)).toBe(false);
   });
