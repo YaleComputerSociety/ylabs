@@ -177,19 +177,37 @@ export function isDroppedAdministrativeOrgUnit(raw: unknown): boolean {
 /**
  * Deterministic normalized-key -> canonical OrgUnit index over each row's name,
  * slug, and aliases. Earlier rows win on a key collision, so callers that want
- * schools to take precedence must order school rows first.
+ * schools to take precedence must order school rows first. An alias that two
+ * different units both claim names neither of them, so it is left out of the
+ * index and fails closed rather than resolving to whichever unit sorted first.
  */
 export function buildOrgUnitResolverIndex(
   rows: OrgUnitResolverRow[],
 ): Map<string, OrgUnitCanonical> {
   const index = new Map<string, OrgUnitCanonical>();
+  const aliasOwnerSlugByKey = new Map<string, string>();
+  const ambiguousAliasKeys = new Set<string>();
   for (const row of rows) {
     const canonical: OrgUnitCanonical = { name: row.name, slug: row.slug, kind: row.kind };
-    for (const value of [row.name, row.slug, ...(row.aliases || [])]) {
+    for (const value of [row.name, row.slug]) {
       const key = orgUnitMatchKey(value);
       if (key && !index.has(key)) index.set(key, canonical);
     }
+    for (const alias of row.aliases || []) {
+      const key = orgUnitMatchKey(alias);
+      if (!key) continue;
+      if (!index.has(key)) {
+        index.set(key, canonical);
+        aliasOwnerSlugByKey.set(key, row.slug);
+        continue;
+      }
+      const aliasOwnerSlug = aliasOwnerSlugByKey.get(key);
+      if (aliasOwnerSlug !== undefined && aliasOwnerSlug !== row.slug) {
+        ambiguousAliasKeys.add(key);
+      }
+    }
   }
+  for (const key of ambiguousAliasKeys) index.delete(key);
   return index;
 }
 
