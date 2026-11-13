@@ -1193,10 +1193,32 @@ const blockSeparatedText = (selection: cheerio.Cheerio<any>): string =>
 
 /**
  * One school's Drupal profile template states the appointment only as a bold line of its
- * contact-information field, not in any element classed as a title (#5874).
+ * contact-information field, not in any element classed as a title (#5874). Its bold lines are
+ * read in order as whole paragraphs, so an appointment split across tags stays whole. A line
+ * naming an office or unit is refused, and reading stops at the first contact label, so a bold
+ * phone, address, hours or office line after it is never read.
  */
-const CONTACT_FIELD_APPOINTMENT_SELECTOR =
-  '[class~="field-name-field-person-contact-information"] strong';
+const CONTACT_FIELD_SELECTOR = '[class~="field-name-field-person-contact-information"]';
+const ORGANIZATIONAL_UNIT_LINE =
+  /^(?:the\s+)?(?:office|department|school|division|center|centre|program|institute)\s+(?:of|for)\b/i;
+const CONTACT_LABEL_LINE = /^(?:e-?mail|phone|tel(?:ephone)?|fax|office\s+hours|hours|address)\b/i;
+
+function contactFieldAppointment($: cheerio.CheerioAPI): string {
+  const field = $(CONTACT_FIELD_SELECTOR).first();
+  const boldLines = field
+    .find('strong')
+    .toArray()
+    .map((strong) => $(strong).closest('p, div').get(0) ?? strong)
+    .filter((line, index, lines) => lines.indexOf(line) === index);
+  for (const line of boldLines) {
+    const value = cleanOfficialProfileTitle(blockSeparatedText($(line)));
+    if (!value) continue;
+    if (CONTACT_LABEL_LINE.test(value)) return '';
+    if (ORGANIZATIONAL_UNIT_LINE.test(value)) continue;
+    if (isAdmissibleOfficialProfileTitle(value)) return value;
+  }
+  return '';
+}
 
 /**
  * Drupal blocks without a visible heading carry `block-without-title`, which `[class*="title"]`
@@ -1210,13 +1232,13 @@ function classNamesATitle($: cheerio.CheerioAPI, element: AnyNode): boolean {
 
 function admissibleProfileTitles($: cheerio.CheerioAPI): string[] {
   const selectors = [
-    CONTACT_FIELD_APPOINTMENT_SELECTOR,
     '[class*="title"]',
     '[class*="appointment"]',
     '[class*="position"]',
     'meta[name="description"]',
   ];
-  const titles: string[] = [];
+  const contactAppointment = contactFieldAppointment($);
+  const titles: string[] = contactAppointment ? [contactAppointment] : [];
   for (const selector of selectors) {
     const elements = $(selector).toArray();
     for (const el of elements) {

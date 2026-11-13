@@ -110,7 +110,7 @@ const musicProfileHtml = `
       <main>
         <h1>Robin Fixture</h1>
         <div class="title">Professor of Composition</div>
-        <a href="mailto:robin.fixture@yale.edu">robin.fixture@yale.edu</a>
+        <a href="mailto:robin.fixture@example.org">robin.fixture@example.org</a>
         <div class="department">Composition</div>
         <section class="biography">
           Robin Fixture is a composer whose works span opera, orchestral music, and chamber music.
@@ -6026,7 +6026,7 @@ describe('the appointment on a Drupal contact-information profile template (#587
       contactField(`
         <p><strong>Associate Professor of Nursing</strong></p>
         <p>School Fixture - Room 100</p>
-        <p><strong>email:</strong> <a href="mailto:robin.fixture@yale.edu">robin.fixture@yale.edu</a></p>`),
+        <p><strong>email:</strong> <a href="mailto:robin.fixture@example.org">robin.fixture@example.org</a></p>`),
     );
     expect(officialProfilePageStatedFields(html).title).toBe('Associate Professor of Nursing');
   });
@@ -6039,6 +6039,49 @@ describe('the appointment on a Drupal contact-information profile template (#587
     );
     expect(officialProfilePageStatedFields(html).title).toBe(
       'Assistant Professor, Director of the Fixture Program',
+    );
+  });
+
+  it.each([
+    ['a phone number', '<p><strong>Phone: 203-555-0100</strong></p>'],
+    ['a street address', '<p><strong>100 Fixture Street, Room 200</strong></p>'],
+    ['office hours', '<p><strong>Office hours: Tuesday 2-4 pm</strong></p>'],
+    ['an office line naming faculty', '<p><strong>Office of Faculty Affairs</strong></p>'],
+    [
+      'a department line naming research',
+      '<p><strong>Department of Research Programs</strong></p>',
+    ],
+  ])('never reads %s as the appointment', (_label, boldLine) => {
+    const html = profilePage(contactField(`${boldLine}<p>Room 100</p>`));
+    expect(officialProfilePageStatedFields(html).title).toBeUndefined();
+  });
+
+  it('stops at the first contact label, so a later bold line is never the title', () => {
+    const html = profilePage(
+      contactField(
+        '<p><strong>Phone:</strong> 203-555-0100</p><p><strong>Director of Faculty Affairs</strong></p>',
+      ),
+    );
+    expect(officialProfilePageStatedFields(html).title).toBeUndefined();
+  });
+
+  it('reads past a bold office line to the appointment after it', () => {
+    const html = profilePage(
+      contactField(
+        '<p><strong>Office of Faculty Affairs</strong></p><p><strong>Senior Lecturer in Nursing</strong></p>',
+      ),
+    );
+    expect(officialProfilePageStatedFields(html).title).toBe('Senior Lecturer in Nursing');
+  });
+
+  it('keeps an appointment split across bold tags whole', () => {
+    const html = profilePage(
+      contactField(
+        '<p><strong>Lecturer in </strong><em>Fixture Studies</em><strong> and Nursing</strong></p>',
+      ),
+    );
+    expect(officialProfilePageStatedFields(html).title).toBe(
+      'Lecturer in Fixture Studies and Nursing',
     );
   });
 
@@ -6056,7 +6099,7 @@ describe('the appointment on a Drupal contact-information profile template (#587
   it('reads no title from a contact field whose bold lines are only labels', () => {
     const html = profilePage(
       contactField(
-        '<p>Room 100</p><p><strong>email:</strong> <a href="mailto:robin.fixture@yale.edu">robin.fixture@yale.edu</a></p>',
+        '<p>Room 100</p><p><strong>email:</strong> <a href="mailto:robin.fixture@example.org">robin.fixture@example.org</a></p>',
       ),
     );
     expect(officialProfilePageStatedFields(html).title).toBeUndefined();
