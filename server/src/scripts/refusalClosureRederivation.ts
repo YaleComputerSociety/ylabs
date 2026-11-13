@@ -111,7 +111,11 @@ export async function planRefusalClosureRederivation(input: {
       ? (input.row.manuallyLockedFields as string[])
       : [],
   );
-  const derived = await rederiveOrgUnitClosure(rowAfterClear);
+  const derived = Object.fromEntries(
+    Object.entries(await rederiveOrgUnitClosure(rowAfterClear)).filter(
+      ([field]) => field !== input.field,
+    ),
+  );
   const set = Object.fromEntries(Object.entries(derived).filter(([field]) => !locked.has(field)));
   return {
     outcome: 'rederived',

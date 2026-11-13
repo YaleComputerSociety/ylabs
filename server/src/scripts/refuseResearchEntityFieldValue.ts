@@ -210,14 +210,13 @@ export async function planRefuseFieldValueWrite(
       });
   const rederivedClosure =
     closureRederivation.outcome === 'rederived' ? closureRederivation.set : {};
-  const unsetsRefusedField = clearsStoredValue && !(args.field in rederivedClosure);
   return {
     refusedKey,
     clearsStoredValue,
     closureRederivation,
     write: {
       $set: { ...record, ...rederivedClosure },
-      ...(unsetsRefusedField ? { $unset: { [args.field]: '' as const } } : {}),
+      ...(clearsStoredValue ? { $unset: { [args.field]: '' as const } } : {}),
     },
     regates: clearsStoredValue || Object.keys(rederivedClosure).length > 0,
   };

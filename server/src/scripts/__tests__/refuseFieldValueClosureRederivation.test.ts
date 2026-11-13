@@ -159,6 +159,39 @@ describe('refusing a member of the org-unit closure (#6155)', () => {
     expect(plan.closureRederivation).toMatchObject({ siblingsCarryingAfter: ['schools'] });
   });
 
+  it('does not re-fill a refused schools value from the school the row still stores', async () => {
+    const row = {
+      _id: 'synthetic-row',
+      school: REFUSED_SCHOOL,
+      schools: [REFUSED_SCHOOL],
+      departments: [],
+    };
+
+    const plan = await planRefuseFieldValueWrite(row, refuse('schools', [REFUSED_SCHOOL]));
+    const after = rowAfterWrite(row, plan.write);
+
+    expect(plan.clearsStoredValue).toBe(true);
+    expect(plan.write.$unset).toEqual({ schools: '' });
+    expect(after.schools).toBeUndefined();
+  });
+
+  it('does not re-fill refused organization labels from a department it cannot match', async () => {
+    const unmatched = 'Fixture Unmatched Program';
+    const row = {
+      _id: 'synthetic-row',
+      school: OTHER_SCHOOL,
+      schools: [OTHER_SCHOOL],
+      departments: [BETA_DEPARTMENT, unmatched],
+      orgAffiliationLabels: [unmatched],
+    };
+
+    const plan = await planRefuseFieldValueWrite(row, refuse('orgAffiliationLabels', [unmatched]));
+    const after = rowAfterWrite(row, plan.write);
+
+    expect(plan.write.$unset).toEqual({ orgAffiliationLabels: '' });
+    expect(after.orgAffiliationLabels).toBeUndefined();
+  });
+
   it('writes nothing to the closure when the refused value is in no member', async () => {
     const row = {
       _id: 'synthetic-row',
