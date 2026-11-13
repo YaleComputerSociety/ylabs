@@ -22,6 +22,8 @@ describe('clinical-service biography shapes the roster-bio rule refuses (#6151)'
     'Her special interests include how sleep loss changes memory consolidation in shift workers.',
     'She studies how managing patients with diabetes in group visits changes long-term outcomes.',
     'She develops new strategies for managing patients with sepsis.',
+    'She is working with patients to better understand their experience of living with chronic pain.',
+    'He works with patients to learn which symptoms of their condition matter most to them.',
   ])('keeps a research sentence that also names patients or care: %s', (sentence) => {
     expect(isClinicalOnlyBiographySentence(sentence)).toBe(false);
   });
@@ -32,6 +34,9 @@ describe('clinical-service biography shapes the roster-bio rule refuses (#6151)'
     'His tool helps nurses quickly treat their patients with chest pain.',
     'Her app helps clinicians managing patients with heart failure stay on schedule.',
     'His scheduling tool supports surgeons who treated patients in rural clinics.',
+    'His scheduling tool supports surgeons who have treated patients in rural clinics.',
+    'Her app supports nurses who are managing patients with sepsis.',
+    'Her dashboard alerts clinicians who are managing their patients after surgery.',
   ])('keeps a sentence about another care-giver and their patients: %s', (sentence) => {
     expect(isClinicalOnlyBiographySentence(sentence)).toBe(false);
   });
