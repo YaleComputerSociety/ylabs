@@ -459,6 +459,8 @@ It replaces the convention of announcing each write to the session that sequence
   The `__dev-apply__` lease is never idle-released, and neither is a lease a child joined or took under an owner id inherited from its parent, because a sibling may still be fetching through it; the root owner releases those when it ends.
 - A lane that knows every host its rows will fetch hands each host back the moment its last row on that host finishes (#6073), with `releaseReason: 'host-done'`, instead of holding it until the run ends.
   `HostCompletionTracker` in `server/src/scrapers/utils/hostCompletion.ts` counts the rows left per host and calls `releaseDevHostLease`, which ends only the leases the idle release may end.
+  `orderRowsBySmallestSharedHost` runs rows that share no host first, then each shared host's rows as one group, smallest host first, so each shared host is handed back when its group ends.
+  The most shared host (`medicine.yale.edu`, on about two thirds of a full run's rows) finishes last and is held for any full run, so a lane waiting on it needs the run split into batches with a hand-off between them, which is an operations rule in the fleet's holds rather than code.
   `research-page-text` uses it, and a later fetch to a handed-back host takes it again through the normal acquire.
   Only a row's cited URLs are planned, so a fetch outside them, such as a page reached through a redirect, is not counted.
   A host reached only that way falls back to the idle release.

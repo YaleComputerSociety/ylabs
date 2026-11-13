@@ -50,6 +50,7 @@ import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOp
 import { isTransientFetchFailure } from '../utils/transientFetchFailure';
 import {
   HostCompletionTracker,
+  orderRowsBySmallestSharedHost,
   plannedHosts,
   type ReleaseFinishedHost,
 } from '../utils/hostCompletion';
@@ -532,10 +533,9 @@ export class ResearchPageTextScraper implements IScraper {
       DEFAULT_SOURCE_CONCURRENCY,
     );
     const citerCounts = await this.citerCountsLoader();
-    const planned = rows.map((row) => ({
-      row,
-      hosts: plannedHosts(citedResearchPageUrls(row, citerCounts)),
-    }));
+    const planned = orderRowsBySmallestSharedHost(
+      rows.map((row) => ({ row, hosts: plannedHosts(citedResearchPageUrls(row, citerCounts)) })),
+    );
     const hostCompletion = new HostCompletionTracker(planned, this.releaseFinishedHost);
     await mapWithConcurrency(planned, concurrency, async ({ row, hosts }) => {
       try {

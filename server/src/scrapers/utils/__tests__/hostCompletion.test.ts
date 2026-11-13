@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { HostCompletionTracker, plannedHosts } from '../hostCompletion';
+import {
+  HostCompletionTracker,
+  orderRowsBySmallestSharedHost,
+  plannedHosts,
+} from '../hostCompletion';
 
 const planned = (row: string, ...urls: string[]) => ({ row, hosts: plannedHosts(urls) });
 
@@ -9,6 +13,54 @@ describe('plannedHosts', () => {
     expect([
       ...plannedHosts(['https://WWW.Example.edu/a', 'https://www.example.edu/b', 'not a url']),
     ]).toEqual(['www.example.edu']);
+  });
+});
+
+describe('orderRowsBySmallestSharedHost', () => {
+  it('runs unshared rows first, then each shared host as one group, smallest first', () => {
+    const ordered = orderRowsBySmallestSharedHost([
+      planned('big-1', 'https://big.example.edu/1', 'https://lab-1.example.org/'),
+      planned('small-and-big', 'https://small.example.edu/a', 'https://big.example.edu/2'),
+      planned('alone', 'https://lab-2.example.org/'),
+      planned('big-3', 'https://big.example.edu/3'),
+      planned('small-only', 'https://small.example.edu/b'),
+      planned('no-hosts'),
+    ]);
+
+    expect(ordered.map(({ row }) => row)).toEqual([
+      'alone',
+      'no-hosts',
+      'small-and-big',
+      'small-only',
+      'big-1',
+      'big-3',
+    ]);
+  });
+
+  it('finishes the smaller shared host before the larger one starts its own group', async () => {
+    const rows = orderRowsBySmallestSharedHost([
+      planned('big-1', 'https://big.example.edu/1'),
+      planned('small-1', 'https://small.example.edu/1'),
+      planned('big-2', 'https://big.example.edu/2'),
+      planned('small-2', 'https://small.example.edu/2'),
+      planned('big-3', 'https://big.example.edu/3'),
+    ]);
+    const released: Array<[string, number]> = [];
+    let finished = 0;
+    const tracker = new HostCompletionTracker(rows, async (host) => {
+      released.push([host, finished]);
+    });
+
+    for (const { hosts } of rows) {
+      finished += 1;
+      tracker.rowFinished(hosts);
+    }
+    await tracker.settled();
+
+    expect(released).toEqual([
+      ['small.example.edu', 2],
+      ['big.example.edu', 5],
+    ]);
   });
 });
 

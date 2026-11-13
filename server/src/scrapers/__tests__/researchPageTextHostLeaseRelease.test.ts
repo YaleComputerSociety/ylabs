@@ -113,7 +113,13 @@ describe('research-page-text host leases', () => {
     };
     const lane = new ResearchPageTextScraper({
       fetchPage,
-      rowFinder: async () => [rowOn(FIRST_HOST, 1), rowOn(FIRST_HOST, 2), rowOn(SECOND_HOST, 3)],
+      rowFinder: async () => [
+        rowOn(FIRST_HOST, 1),
+        rowOn(FIRST_HOST, 2),
+        rowOn(SECOND_HOST, 3),
+        rowOn(SECOND_HOST, 4),
+        rowOn(SECOND_HOST, 5),
+      ],
       storedHashLoader: async () => undefined,
       citerCountsLoader: async () => new Map(),
     });
