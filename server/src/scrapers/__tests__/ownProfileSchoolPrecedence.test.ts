@@ -200,6 +200,21 @@ describe('withRetainedSecondarySchools (#6157)', () => {
     expect(set.schools).toEqual(['School of Public Health']);
   });
 
+  it('drops a refused school a department derived, whether or not the rule fired', () => {
+    const refusals = planFieldValueRefusal(undefined, {
+      field: 'school',
+      value: 'School of Medicine',
+      rule: 'operator_judgement',
+      refusedBy: 'fixture',
+      note: 'fixture refusal',
+    })['fieldValueRefusals.school'];
+    const set: Record<string, unknown> = {
+      schools: ['School of Medicine', 'Faculty of Arts and Sciences'],
+    };
+    withRetainedSecondarySchools(set, undefined, { school: refusals });
+    expect(set.schools).toEqual(['Faculty of Arts and Sciences']);
+  });
+
   it('adds nothing when the derived school did not win', () => {
     const set: Record<string, unknown> = {
       school: 'School of Nursing',

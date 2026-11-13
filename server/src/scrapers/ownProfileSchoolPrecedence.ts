@@ -188,26 +188,35 @@ export function ownProfileSchoolProvenanceFor(
 }
 
 /**
+ * The `schools` the org-unit canonicalization just built, finished at resolve (#6157, #6155).
+ *
  * A roster from another school's site is set aside as the PRIMARY school, but it still shows
  * the person holds an appointment there: a blind check found the own profile's school primary
- * on 16 of 20 changed rows while 13 of them also held the roster's school (#6157). So once the
- * derived school wins, every set-aside roster school the row does not refuse is kept after it
- * in the `schools` the org-unit canonicalization just built.
+ * on 16 of 20 changed rows while 13 of them also held the roster's school. So once the derived
+ * school wins, every set-aside roster school is kept after it.
+ *
+ * A school the row refuses is never in `schools`, whichever way it got there: kept from a
+ * roster here, or derived again from a stored department. The refusal is a judgement that the
+ * value is wrong for this row, and a department that really places the person there is a
+ * reason to withdraw the refusal, not to keep serving it (manager decision on #6155).
  */
 export function withRetainedSecondarySchools(
   set: Record<string, unknown>,
   candidate: OwnProfileSchoolCandidate | undefined,
   fieldValueRefusals: unknown,
 ): void {
-  if (!candidate || textOf(set.school) !== candidate.value || !Array.isArray(set.schools)) return;
+  if (!Array.isArray(set.schools)) return;
+  const refused = (school: string) =>
+    valueIsRefused(fieldValueRefusals, SCHOOL_FIELD, school) ||
+    valueIsRefused(fieldValueRefusals, 'schools', school);
   const schools = set.schools.map(textOf).filter(Boolean);
-  const present = new Set(schools.map((school) => orgUnitMatchKey(school)));
-  for (const school of candidate.retainedSchools) {
-    if (present.has(orgUnitMatchKey(school))) continue;
-    if (valueIsRefused(fieldValueRefusals, SCHOOL_FIELD, school)) continue;
-    if (valueIsRefused(fieldValueRefusals, 'schools', school)) continue;
-    schools.push(school);
-    present.add(orgUnitMatchKey(school));
+  if (candidate && textOf(set.school) === candidate.value) {
+    const present = new Set(schools.map((school) => orgUnitMatchKey(school)));
+    for (const school of candidate.retainedSchools) {
+      if (present.has(orgUnitMatchKey(school))) continue;
+      schools.push(school);
+      present.add(orgUnitMatchKey(school));
+    }
   }
-  set.schools = schools;
+  set.schools = schools.filter((school) => !refused(school));
 }

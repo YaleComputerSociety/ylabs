@@ -5,6 +5,15 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-11-13: A Person's Own Profile Outranks A Roster From Another School's Site On `school` (#6157)
+
+Decision (manager, 2026-11-13, posted on #6157): pre-promotion, in the engine's school resolution, not in a lane.
+A department roster states the school of the roster's own unit, so a person listed on another school's department page read as that school; a blind check of 20 served rows whose roster site and own profile site name different schools graded 13 wrong.
+Where the lead's own official profile sits on a school's site, a `school` reading from a different school's site does not override it unless the own profile names that school too, and the profile host's school is a derived candidate (`own-profile-host-school`) re-derived on every resolve.
+The roster's school is kept as a secondary in `schools`, because graders found the own profile's school primary on 16 of 20 changed rows while 13 of those also held the roster's school; replacing it outright failed the bar (14 of 20 losing a correct school).
+A host that serves a profile for every secondary appointee is not primary-school evidence: the School of Medicine's site publishes one for anyone holding any YSM appointment, with Primary or Secondary on the appointment cards (#5800).
+Judged out of sample on 8 changed rows the first sample had not seen: 7 kept the right primary with no correct school lost, 1 failed, and 1 kept a wrong secondary.
+
 ## 2026-11-13: A Profile's Home Department Is Its First Appointment, Never A Promoted Later One (#6070)
 
 Decision (ylabs-manager, 2026-11-13).

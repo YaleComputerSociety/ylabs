@@ -1678,6 +1678,12 @@ Each skipped entity records the synthesizer's own refusal (`synthesisRefusal`), 
 The materializer then derives the grounded `shortDescription` (`resolveMaterializedShortDescription`) and canonical `researchAreas` (`applyDescriptionResearchAreaDerivation`) from that description on the same pass, so no separate research-area LLM call is needed.
 The lane is dry-run-first, bounded by `--limit`, and apply is Development-only and requires `--confirm-grant-corpus-synthesis`; the source must be seeded first (`scrape:seed-sources`).
 
+A person's own profile outranks a roster from another school's site on `school` (#6157, `scrapers/ownProfileSchoolPrecedence.ts`).
+At resolve, where the lead's own official profile (`officialLeadProfileSourceUrl`) sits on a school's site (`SCHOOL_PROFILE_HOSTS`), a `school` reading taken from a different school's site is set aside unless the own profile itself states that school, and the profile host's school stands in as a derived candidate under the allowlisted derived provenance `own-profile-host-school`, pinned to its evidence's `observedAt` so an unchanged row converges.
+The set-aside roster school is kept after it as a secondary in `schools`, unless the row refuses it, because a blind check found the own profile's school primary on most changed rows while the person also held the roster's school.
+The rule changes nothing when another `school` reading shares the own profile's host, or when the own profile sits on a host that serves a profile for every secondary appointee (`PROFILE_HOSTS_SERVING_SECONDARY_APPOINTEES`: the School of Medicine's site, which publishes one for anyone holding any YSM appointment), because such a host says nothing about the person's primary school.
+A school the row refuses is never in `schools` at resolve, whether kept from a roster here or derived again from a stored department, because a department that really places the person there is a reason to withdraw the refusal rather than to keep serving the refused value (manager decision on #6155).
+
 PI-to-school inheritance runs as a materialize-time step in `entityMaterializer.inheritSchoolFromLeadPi`, right after the inferred PI/director membership is resolved.
 The lead supplies two org-unit fields, so the gate reports which of them the row still needs rather than one eligible/skip verdict (#2802).
 A row with no school and no department inherits both (`school-and-department`), the grant-derived shell population this started as.

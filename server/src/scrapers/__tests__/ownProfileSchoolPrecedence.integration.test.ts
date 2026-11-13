@@ -39,12 +39,22 @@ describe('the own profile school outranks a cross-school roster at resolve (#615
     await Observation.collection.deleteMany({});
     await ResearchEntity.collection.deleteMany({});
     await OrgUnit.collection.deleteMany({});
+    const schoolIds: Record<string, unknown> = {};
     for (const [slug, name] of [
       ['school-of-medicine', 'School of Medicine'],
       ['school-of-public-health', 'School of Public Health'],
     ] as const) {
-      await OrgUnit.create({ slug, name, kind: 'SCHOOL', status: 'ACTIVE' });
+      schoolIds[name] = (
+        await OrgUnit.create({ slug, name, kind: 'SCHOOL', status: 'ACTIVE' })
+      )._id;
     }
+    await OrgUnit.create({
+      slug: 'fixture-medicine-department',
+      name: 'Fixture Medicine Department',
+      kind: 'DEPARTMENT',
+      status: 'ACTIVE',
+      parentOrgUnitId: schoolIds['School of Medicine'],
+    });
     resetOrgUnitCanonicalizerCache();
     await ResearchEntity.create({
       slug: KEY,
@@ -137,6 +147,29 @@ describe('the own profile school outranks a cross-school roster at resolve (#615
 
     expect(planned.school).toBe('School of Public Health');
     expect(planned.schools).toEqual(['School of Public Health']);
+  });
+
+  it('keeps a refused school out of schools when both the roster and a department name it', async () => {
+    await seedRosterAndOwnProfile();
+    await ResearchEntity.updateOne(
+      { slug: KEY },
+      {
+        $set: {
+          departments: ['Fixture Medicine Department'],
+          ...planFieldValueRefusal(undefined, {
+            field: 'school',
+            value: 'School of Medicine',
+            rule: 'operator_judgement',
+            refusedBy: 'fixture',
+            note: 'fixture refusal',
+          }),
+        },
+      },
+    );
+    const planned = await plan();
+
+    expect(planned.school).toBe('School of Public Health');
+    expect(planned.schools ?? []).not.toContain('School of Medicine');
   });
 
   it('keeps the roster school when the own profile names it too', async () => {
