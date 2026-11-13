@@ -1382,6 +1382,10 @@ A refusal that reaches one derivation path and not the other reaches neither.
 
 Clearing the stored value belongs to the operation, not to materialization, because a materializer that unsets a served field on a sweep is how a value disappears without a visibility re-gate.
 `yarn --cwd server research-entity:refuse-field-value` is per-row by construction, dry-run by default, clears the stored value only when it is the value being refused, and re-gates the row in that case.
+A refused member of the org-unit closure in `MATERIALIZER_DERIVED_FIELD_GROUPS` (`school`, `schools`, `departments`, `orgAffiliationLabels`) also re-derives the rest of that closure in the same write, through `planOrgUnitBackfillRow` over the row as it stands after the clear, so a refused `school` does not stay served through `schools[0]` (#6155).
+A sibling keeps the refused value only when the row's remaining evidence, a department or a profile host, derives it again, and a locked sibling is left as stored.
+Re-recording a refusal made before #6155 is idempotent for the record and re-derives the closure, which is the repair for rows that already carry one.
+The grant and Yale-status closures derive from observations and researcher rows rather than stored fields, and `kind` maps `entityType` into another vocabulary, so the dry run reports those closures as `no-stored-state-derivation` and writes only the clear.
 `--withdraw` retires a refusal, because a rule can change and a judgement can be wrong.
 
 This is also layer 3's only writer, and `--rule=operator_judgement` is the one rule that demands both halves of its record: a `--note` saying why and a `--decided-by` saying whose.

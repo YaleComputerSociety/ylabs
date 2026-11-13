@@ -548,6 +548,7 @@ import { archiveResearchEntities } from '../services/archivedResearchEntityRoleE
 import {
   applyResearchEntityOrgUnitCanonicalization,
   getOrgUnitCanonicalizer,
+  researchEntityOrgUnitProfileUrls,
 } from './orgUnitCanonicalization';
 import {
   applyResearchEntityResearchAreaCanonicalization,
@@ -12895,18 +12896,7 @@ export async function projectFromLog(
     }
   }
   if (isResearchEntityObservationType(entityType)) {
-    const orgUnitProfileUrls = [
-      ...(typeof set.websiteUrl === 'string' && set.websiteUrl
-        ? [set.websiteUrl]
-        : typeof entityDoc?.websiteUrl === 'string' && entityDoc.websiteUrl
-          ? [entityDoc.websiteUrl]
-          : []),
-      ...(Array.isArray(set.sourceUrls)
-        ? set.sourceUrls
-        : Array.isArray(entityDoc?.sourceUrls)
-          ? entityDoc.sourceUrls
-          : []),
-    ].filter((url): url is string => typeof url === 'string');
+    const orgUnitProfileUrls = researchEntityOrgUnitProfileUrls(set, entityDoc);
     const canonicalizeResearchAreas =
       input.applyResearchEntityResearchAreaCanonicalization ??
       applyResearchEntityResearchAreaCanonicalization;
