@@ -477,9 +477,10 @@ async function fetchPageLive(
 const isRedirectStatus = (status: number): boolean => status >= 300 && status < 400;
 
 /**
- * Whether this error means the request never left this machine: a guard refused it, its host is
- * paused, the shared budget could not be read, or no slot came free. Such an error says nothing
- * about the page, so no lane may read a verdict from it (#6258). Walks the `cause` chain, because
+ * Whether no verdict about the page may be read from this error: a guard refused it, its host is
+ * paused, the shared budget could not be read, or no slot came free (#6258). It does not mean no
+ * request reached the host, because a pause recorded from a refusal the host just sent is one of
+ * these too; read `HostPausedError.requestSent` for that. Walks the `cause` chain, because
  * axios wraps an error thrown from a redirect hook.
  */
 export function isRefusedBeforeSending(error: unknown): boolean {
