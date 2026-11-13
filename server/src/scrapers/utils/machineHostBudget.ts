@@ -57,6 +57,10 @@ export const HOST_BACKOFF_JITTER_RATIO = 0.1;
 /** A pause ending within this bound is waited out inside acquire; a longer one fails fast. */
 export const HOST_PAUSE_INLINE_WAIT_MS = 2_000;
 const MAX_RECORDED_BACKOFF_LEVEL = 30;
+
+// Concurrent workers can each hand back the same host's refusal, so refusals this close together
+// count as one step; a later refusal still escalates even while the host is paused.
+export const HOST_BACKOFF_DEDUPE_MS = 5_000;
 const NO_HTTP_STATUS = 0;
 
 export function isMachineHostSlotSharingEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -396,8 +400,9 @@ export class MachineHostBudgetLimiter implements HostSlotLimiter {
     const pausedUntil = await this.transact(key, (state, now) => {
       const prior = state.backoff;
       const clean = prior !== undefined && now - quietSince(prior) >= HOST_BACKOFF_QUIET_RESET_MS;
-      const coveredByPause = prior !== undefined && !clean && prior.pausedUntil > now;
-      const stepped = prior && !clean ? prior.level + (coveredByPause ? 0 : 1) : 0;
+      const alreadyStepped =
+        prior !== undefined && !clean && now - prior.lastBackoffAt < HOST_BACKOFF_DEDUPE_MS;
+      const stepped = prior && !clean ? prior.level + (alreadyStepped ? 0 : 1) : 0;
       const level = Math.min(stepped, MAX_RECORDED_BACKOFF_LEVEL);
       const exponential = Math.min(HOST_BACKOFF_CAP_MS, HOST_BACKOFF_BASE_MS * 2 ** level);
       const jitter = exponential * HOST_BACKOFF_JITTER_RATIO * (this.random() * 2 - 1);

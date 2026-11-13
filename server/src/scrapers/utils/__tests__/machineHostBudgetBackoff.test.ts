@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fetchPageWithPolicy, HostRateLimiter, type HttpRequestFn } from '../httpFetch';
 import {
   HOST_BACKOFF_BASE_MS,
+  HOST_BACKOFF_DEDUPE_MS,
   HOST_BACKOFF_CAP_MS,
   HOST_BACKOFF_JITTER_RATIO,
   HOST_BACKOFF_QUIET_RESET_MS,
@@ -89,17 +90,25 @@ describe('recording host backoff', () => {
     expect(limiter.backoffState(HOST)).toMatchObject({ level: 8, lastStatus: 429 });
   });
 
-  it('counts refusals that arrive while a pause holds as covered by it, not as further steps', async () => {
+  it('counts concurrent workers handing back one refusal as a single step', async () => {
     const limiter = budget();
     await limiter.recordBackoff(HOST, { status: 429 });
+    clock += HOST_BACKOFF_DEDUPE_MS - 1;
     await limiter.recordBackoff(HOST, { status: 429 });
     await limiter.recordBackoff(HOST, { status: 429 });
-    expect(pauseMs(limiter)).toBe(30_000);
     expect(limiter.backoffState(HOST)?.level).toBe(0);
+  });
 
-    clock = limiter.pausedUntil(HOST)!.getTime();
+  it('escalates a later refusal even while the pause still holds', async () => {
+    const limiter = budget();
     await limiter.recordBackoff(HOST, { status: 429 });
-    expect(pauseMs(limiter)).toBe(60_000);
+    const firstPauseEnd = limiter.pausedUntil(HOST)!.getTime();
+    clock += HOST_BACKOFF_DEDUPE_MS;
+    await limiter.recordBackoff(HOST, { status: 429 });
+
+    expect(clock).toBeLessThan(firstPauseEnd);
+    expect(limiter.backoffState(HOST)?.level).toBe(1);
+    expect(limiter.pausedUntil(HOST)!.getTime()).toBeGreaterThan(firstPauseEnd);
   });
 
   it('restarts at the base step only after a quiet window past the end of the pause', async () => {

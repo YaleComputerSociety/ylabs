@@ -130,7 +130,7 @@ describe('shared host backoff across real processes', () => {
 
     const state = thisProcess().readState(host);
     expect(state?.backoff?.pausedUntil).toBe(far);
-    expect(state?.backoff?.level).toBe(0);
+    expect(state?.backoff?.level).toBeLessThan(3);
   }, 60_000);
 });
 
