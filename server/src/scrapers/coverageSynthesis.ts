@@ -125,12 +125,24 @@ export type StoredPageTextLookup = (sourceUrl: string | undefined) => string | u
  * is only widgets is never evidence, whichever lane stored it; a MeSH topic run is
  * (`withoutProfileTemplateWidgets`).
  */
+const DEPARTMENT_ROSTER_SOURCE = 'dept-faculty-roster';
+
+// Changing the roster's `rosterTopicDescription` template (departmentRosterScraper.ts)
+// requires updating this shape: the sentence is assembled from a department's topic tags,
+// not stated on any page, so it is never page-stated writer evidence (#5978).
+export const isRosterTopicTemplateDescription = (obs: CoverageObservationLike): boolean =>
+  obs.sourceName === DEPARTMENT_ROSTER_SOURCE &&
+  obs.field === 'fullDescription' &&
+  typeof obs.value === 'string' &&
+  /^Studies\s/.test(obs.value.trim());
+
 export function isWriterEvidenceObservation(
   obs: CoverageObservationLike,
   storedPageText: StoredPageTextLookup = () => undefined,
 ): boolean {
   if (obs.sourceName === WRITTEN_DESCRIPTION_SOURCE_NAME) return false;
   if (obs.sourceName === LAB_SITE_DESCRIPTION_SOURCE) return false;
+  if (isRosterTopicTemplateDescription(obs)) return false;
   if (typeof obs.value === 'string' && !withoutProfileTemplateWidgets(obs.value)) return false;
   if (isModelTextSource(obs.sourceName)) {
     if (obs.ingestVerifiedAgainstPage === true) return true;

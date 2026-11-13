@@ -245,7 +245,7 @@ describe('the writer refuses wrong attribution and past work (#4867)', () => {
 
 describe('a merge survivor reads its merged-in rows only to fill empty evidence', () => {
   const ROSTER_PROSE =
-    'Studies asymptotic decision theory, including shrinkage estimation, wavelet regression and the theory of high-dimensional covariance estimation.';
+    'His research addresses asymptotic decision theory, including shrinkage estimation, wavelet regression and the theory of high-dimensional covariance estimation.';
 
   it('writes from a merged-in row when the survivor carries no evidence of its own', async () => {
     const snippets = await buildWriterEvidenceSnippetsWithMergedInFill(
