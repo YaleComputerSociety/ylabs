@@ -49,7 +49,6 @@ import {
 } from '../lanePageHealth';
 import { statedAdministeringOffice } from '../utils/administeringOffice';
 import { pageTitleNamesSeniorEssayGuidance } from '../../services/departmentResearchGuidance';
-import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 export const DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE = 'department-undergrad-research';
 

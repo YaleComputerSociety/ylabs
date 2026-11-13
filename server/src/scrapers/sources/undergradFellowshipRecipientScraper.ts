@@ -95,7 +95,6 @@ import {
 } from '../orgUnitCanonicalization';
 import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
-import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 const FETCH_TIMEOUT_MS = 30_000;
 const MIN_FELLOWSHIP_RECIPIENT_YEAR = 1980;

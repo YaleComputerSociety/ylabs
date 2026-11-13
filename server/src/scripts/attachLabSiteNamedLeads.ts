@@ -48,7 +48,6 @@ import {
   type LabSiteNamedLeadRefusal,
   type OfficialProfileOwner,
 } from './attachLabSiteNamedLeadsCore';
-import { SCRAPER_USER_AGENT } from '../scrapers/utils/scraperUserAgent';
 
 dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

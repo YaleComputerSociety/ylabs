@@ -43,7 +43,6 @@ import {
   mapWithConcurrency,
   resolveSourceConcurrency,
 } from '../utils/mapWithConcurrency';
-import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 const SOURCE_KEY = 'research-area-source-extractor';
 const MAX_SCAN_CHARS = 40_000;

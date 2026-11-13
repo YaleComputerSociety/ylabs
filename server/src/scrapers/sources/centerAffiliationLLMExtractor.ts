@@ -46,7 +46,6 @@ import {
 } from './centersInstitutesScraper';
 import { fetchPageWithPolicy } from '../utils/httpFetch';
 import { postChatCompletion } from '../../utils/modelClient';
-import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 const SOURCE_KEY = CENTER_AFFILIATION_LLM_SOURCE_NAME;
 const AFFILIATION_READ_ROLE = 'affiliated';

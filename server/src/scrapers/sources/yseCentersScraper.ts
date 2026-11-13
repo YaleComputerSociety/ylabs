@@ -9,7 +9,6 @@ import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '
 import { mapResearchGroupKindToEntityType } from '../../models/researchAccessTypes';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
-import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 const PAGE_URL = 'https://environment.yale.edu/research/centers';
 const SOURCE_KEY = 'yse-centers-index';

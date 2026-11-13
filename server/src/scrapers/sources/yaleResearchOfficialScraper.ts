@@ -15,7 +15,6 @@ import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { schoolNameFromProfileHosts } from '../orgUnitCanonicalization';
-import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 const SOURCE_NAME = 'yale-research-official';
 const FETCH_TIMEOUT_MS = 30_000;

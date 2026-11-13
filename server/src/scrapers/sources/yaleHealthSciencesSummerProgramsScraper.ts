@@ -37,7 +37,6 @@ import {
 } from '../utils/programPageEvidence';
 import { parseProgramDate } from '../utils/programDeadline';
 import { boundedObservedFellowshipProse } from '../fellowshipProse';
-import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 export const YALE_HEALTH_SCIENCES_SUMMER_PROGRAMS_SOURCE = 'yale-health-sciences-summer-programs';
 

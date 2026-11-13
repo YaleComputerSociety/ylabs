@@ -68,7 +68,6 @@ import {
   researcherToUserMatch,
   type UserMatch,
 } from './undergradFellowshipRecipientScraper';
-import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 export const OFFICIAL_UNDERGRAD_LISTS_SOURCE = 'official-undergrad-lists';
 export const UNDERGRAD_LIST_EVIDENCE_FIELD = 'undergradListEvidence';

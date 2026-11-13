@@ -23,7 +23,6 @@ import {
   planDirectoryLeadAttachment,
   type VerifiedDirectoryPage,
 } from './attachDirectoryNamedLeadsCore';
-import { SCRAPER_USER_AGENT } from '../scrapers/utils/scraperUserAgent';
 
 dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

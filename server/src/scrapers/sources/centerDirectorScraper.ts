@@ -37,7 +37,6 @@ import {
   CENTER_DIRECTOR_SOURCE_NAME,
   centerDirectorReadSnapshotObservation,
 } from '../centerDirectorReadSnapshot';
-import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 export { CENTER_DIRECTOR_SOURCE_NAME };
 

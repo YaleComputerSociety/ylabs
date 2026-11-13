@@ -7,7 +7,6 @@
  */
 import * as cheerio from 'cheerio';
 import {
-  SCRAPER_USER_AGENT,
   fetchPageWithPolicy,
   fetchPublicHttpUrl,
   postFormWithPolicy,

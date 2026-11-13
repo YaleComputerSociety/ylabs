@@ -34,7 +34,6 @@ import {
   type LabSiteLeadCandidate,
   type LabSiteLeadVerification,
 } from '../utils/labSiteLeadVerification';
-import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 export { LAB_SITE_LEAD_VERIFICATION_SOURCE };
 

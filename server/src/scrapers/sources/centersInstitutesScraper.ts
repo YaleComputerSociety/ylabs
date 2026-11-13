@@ -103,7 +103,6 @@ import { sanitizePersonTitle } from '../../utils/titleHygiene';
 import { statesAnyFacultyAppointment } from './yaleDirectoryScraper';
 import { titleHoldsOnlyEmeritusAppointments } from '../../services/emeritusLeadWayIn';
 import { screenedRosterRole } from '../rosterStaffTitleScreen';
-import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 const FETCH_TIMEOUT_MS = 30_000;
 const MAX_PAGES_PER_CENTER = 100;

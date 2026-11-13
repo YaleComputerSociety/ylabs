@@ -56,7 +56,6 @@ import { facultyNameMatchKey } from './ysmMeshKeywordScraper';
 import { normalizeMatchUrl } from './bbsResearchTrackScraper';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
-import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 const SOURCE_KEY = 'department-research-areas';
 const FETCH_TIMEOUT_MS = 30_000;

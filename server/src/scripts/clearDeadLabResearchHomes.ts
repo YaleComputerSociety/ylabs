@@ -24,7 +24,6 @@ import {
 import { fetchPublicHttpUrl } from '../scrapers/utils/httpFetch';
 import { isSsrfGuardRefusal } from '../utils/ssrfGuard';
 import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
-import { SCRAPER_USER_AGENT } from '../scrapers/utils/scraperUserAgent';
 
 dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

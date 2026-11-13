@@ -31,7 +31,6 @@ import {
   planVanityRepairRow,
 } from './repairVanityHostCitationsCore';
 import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
-import { SCRAPER_USER_AGENT } from '../scrapers/utils/scraperUserAgent';
 
 export interface VanityRepairOptions {
   apply: boolean;

@@ -38,7 +38,6 @@ import {
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { fetchFailureMessage, fetchFailureStatusCode } from '../utils/fetchFailure';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
-import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 export const UNDERGRAD_RESEARCH_POSTING_SOURCE = 'undergrad-research-posting';
 

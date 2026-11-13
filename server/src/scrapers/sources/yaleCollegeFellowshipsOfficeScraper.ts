@@ -40,7 +40,6 @@ import {
 import { eligibilitySentences, eligibilityStatement } from '../utils/programEligibilityStatement';
 import { resolveFundYearOfStudy } from '../utils/fundYearOfStudy';
 import { externalAwardRecord, withoutRecordWindow } from '../utils/externalAwardRecord';
-import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 export const YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE = 'yale-college-fellowships-office';
 

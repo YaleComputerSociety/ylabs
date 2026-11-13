@@ -22,7 +22,6 @@ import {
   mapWithConcurrency,
   resolveSourceConcurrency,
 } from '../utils/mapWithConcurrency';
-import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 export { CENTER_AFFILIATION_ROSTER_SOURCE_NAME };
 

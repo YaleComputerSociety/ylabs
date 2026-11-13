@@ -153,7 +153,6 @@ import {
   isSocialShareImageUrl,
 } from '../../scripts/profileImageQualityAuditCore';
 import { mainComponentsOf, ysmPageDataFrom } from './ysmFacultyDirectoryScraper';
-import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 const SOURCE_NAME = 'official-profile-pi-backfill';
 const FETCH_TIMEOUT_MS = 30_000;

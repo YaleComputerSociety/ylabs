@@ -44,7 +44,6 @@ import { withCreditedInvestigator, type GrantInvestigator } from '../utils/grant
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 import { awardDateOfCalendarDay } from '../../utils/awardCalendarDay';
-import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 export const NEH_AWARD_SEARCH_BASE = 'https://awardsearch.neh.gov';
 const FETCH_TIMEOUT_MS = 60_000;

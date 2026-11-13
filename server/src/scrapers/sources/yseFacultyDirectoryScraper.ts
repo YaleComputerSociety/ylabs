@@ -62,7 +62,6 @@ import {
   ownsNoResearchEntityByTitle,
 } from './yaleDirectoryScraper';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
-import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 const DIRECTORY_URL = 'https://environment.yale.edu/directory/faculty';
 const SOURCE_KEY = 'yse-faculty-directory';

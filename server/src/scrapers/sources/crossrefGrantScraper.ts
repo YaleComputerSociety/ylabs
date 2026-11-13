@@ -47,7 +47,6 @@ import {
 } from '../utils/grantInvestigators';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
-import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 export const CROSSREF_GRANT_WORKS_URL = 'https://api.crossref.org/types/grant/works';
 const DOI_RESOLVER = 'https://doi.org/';

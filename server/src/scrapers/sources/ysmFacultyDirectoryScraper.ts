@@ -98,7 +98,6 @@ import {
   type CoLedSiteIndexLoader,
   type LabUrlIsCoLedGroupSite,
 } from '../utils/coLedGroupSites';
-import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 const DIRECTORY_URL = 'https://medicine.yale.edu/faculty/faculty-directory/facultylist/';
 const SOURCE_KEY = 'ysm-faculty-directory';

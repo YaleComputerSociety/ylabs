@@ -128,7 +128,6 @@ import {
 } from '../utils/nonYaleMicrositeOwnership';
 import { liveResearchEntityIdForLaneKey } from '../renamedResearchEntityAdoption';
 import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
-import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 const FETCH_TIMEOUT_MS = 10_000;
 const MAX_PROMPT_CHARS = 50_000;

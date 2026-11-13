@@ -25,7 +25,6 @@ import {
   type YaleProfileDepartureEvidence,
   type YaleProfilePage,
 } from './yaleProfileDepartureEvidence';
-import { SCRAPER_USER_AGENT } from './utils/scraperUserAgent';
 
 export const DEPARTMENT_ROSTER_HEALTH_FIELD = 'departmentRosterHealth';
 export const FACULTY_DEPARTURE_ENTITY_TYPES = ['FACULTY_RESEARCH_AREA', 'LAB'];

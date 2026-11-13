@@ -34,7 +34,6 @@ import {
   filterPersonCentricLabDescriptionPlanByManualLocks,
   type PersonCentricLabDescriptionAction,
 } from './personCentricLabDescriptionBackfillCore';
-import { SCRAPER_USER_AGENT } from '../scrapers/utils/scraperUserAgent';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

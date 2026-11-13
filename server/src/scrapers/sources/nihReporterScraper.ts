@@ -67,7 +67,6 @@ import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 import { awardDateOfCalendarDay } from '../../utils/awardCalendarDay';
 import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
-import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 export const REPORTER_ENDPOINT = 'https://api.reporter.nih.gov/v2/projects/search';
 const GRANT_DESCRIPTION_MAX_CHARS = 420;

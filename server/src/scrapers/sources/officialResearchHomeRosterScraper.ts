@@ -37,7 +37,6 @@ import {
 } from '../rosterStrikeDigests';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { derivedUndergradRostersServe } from '../../services/hostedUndergraduates';
-import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 export const OFFICIAL_RESEARCH_HOME_ROSTER_SOURCE = 'official-research-home-roster';
 export const OFFICIAL_ROSTER_REFRESH_OWNER = 'Yale Research data operations';

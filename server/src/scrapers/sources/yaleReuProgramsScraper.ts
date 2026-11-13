@@ -35,7 +35,6 @@ import {
 import { parseProgramDate } from '../utils/programDeadline';
 import { boundedObservedFellowshipProse } from '../fellowshipProse';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
-import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 export const YALE_REU_PROGRAMS_SOURCE = 'yale-reu-programs';
 

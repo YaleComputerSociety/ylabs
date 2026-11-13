@@ -63,7 +63,6 @@ import {
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 import { awardDateOfCalendarDay } from '../../utils/awardCalendarDay';
-import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 // ---------------------------------------------------------------------------
 // Constants

@@ -27,7 +27,6 @@ import {
 import { readFirstSheetRows } from '../utils/xlsxSheetRows';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
-import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 export const DOE_PAMS_AWARD_SEARCH_URL =
   'https://pamspublic.science.energy.gov/WebPAMSExternal/Interface/Awards/AwardSearchExternal.aspx';

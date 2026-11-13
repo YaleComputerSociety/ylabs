@@ -56,7 +56,6 @@ import {
 } from '../utils/mapWithConcurrency';
 import { fetchPageWithPolicy } from '../utils/httpFetch';
 import { postChatCompletion } from '../../utils/modelClient';
-import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 export const CENTER_DIRECTOR_LLM_SOURCE_NAME = 'center-director-llm';
 const SOURCE_KEY = CENTER_DIRECTOR_LLM_SOURCE_NAME;

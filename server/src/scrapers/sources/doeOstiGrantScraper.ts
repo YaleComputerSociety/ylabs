@@ -66,7 +66,6 @@ import { recentGrantPeriodsOf } from '../utils/recentGrantPeriods';
 import { withCreditedInvestigator, type GrantInvestigator } from '../utils/grantInvestigators';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
-import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 export const OSTI_ENDPOINT = 'https://www.osti.gov/api/v1/records';
 const FETCH_TIMEOUT_MS = 60_000;

@@ -52,7 +52,6 @@ import { facultyNameMatchKey, normalizeYsmProfileUrl } from './ysmMeshKeywordScr
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import type { BbsTrackHealthSnapshot } from '../bbsTrackRosterRetirement';
 import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
-import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 const SOURCE_KEY = 'bbs-research-track';
 

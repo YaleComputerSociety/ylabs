@@ -171,7 +171,6 @@ import { personNameKey } from '../rekeyedPersonKeyPlan';
 import { RekeyedPersonReads, settleRekeyedPersonReads } from '../rekeyedPersonKeyRetirement';
 import { isLabDirectoryListingUrl } from '../laneRefusedWebsiteUrl';
 import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
-import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 const FETCH_TIMEOUT_MS = 30_000;
 

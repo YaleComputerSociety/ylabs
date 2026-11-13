@@ -71,7 +71,6 @@ import {
 import { openAiChatSampling } from '../utils/openAiChatSampling';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { fetchPublicHttpUrl } from '../scrapers/utils/httpFetch';
-import { SCRAPER_USER_AGENT } from '../scrapers/utils/scraperUserAgent';
 import { connectScriptMongo } from '../db/connections';
 import { postChatCompletion } from '../utils/modelClient';
 import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';

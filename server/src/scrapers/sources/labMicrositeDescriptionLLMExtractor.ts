@@ -165,7 +165,6 @@ import {
   rowIsScopedToLead,
   urlHostAndPath,
 } from '../utils/nonYaleMicrositeOwnership';
-import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 const SOURCE_KEY = 'lab-microsite-description-llm';
 export const DEFAULT_MODEL = 'gpt-5-mini';

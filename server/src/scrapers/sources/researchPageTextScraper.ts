@@ -56,7 +56,6 @@ import {
   plannedHosts,
   type ReleaseFinishedHost,
 } from '../utils/hostCompletion';
-import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 const MAX_PAGES_PER_ROW = 6;
 const MAX_RESEARCH_SUBPAGES = 2;

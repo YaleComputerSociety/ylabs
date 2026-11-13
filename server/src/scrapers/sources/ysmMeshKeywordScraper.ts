@@ -29,7 +29,6 @@ import {
   type EntityWorkPlan,
   type WorkPlannerSourcePolicy,
 } from '../workPlanner';
-import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 const SOURCE_KEY = 'ysm-mesh-keyword';
 const YSM_ORG_ID = '113592';

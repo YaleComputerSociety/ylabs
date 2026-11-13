@@ -648,13 +648,10 @@ The list holds `api.openai.com`, the only model API host the codebase calls, sin
 The match is the exact hostname from `hostnameForLimiter`, with no config flag and no suffix match, so a scraped host, or a lookalike such as `api.openai.com.evil.example`, always takes a slot and has its refusals recorded.
 A new model provider host must be added to the list, or its calls queue behind the page budget.
 The rendered fetch is the documented exception: its headless browser runs in a Python child that no axios hook reaches, and it takes its own host slot before each render.
-The known-dead URL skip (#6210) is not on `beta` yet; when it lands, the raw-axios path takes it in this install point's request arm.
-
 #### One User-Agent (#6211)
 
-Every fetch path sends exactly `SCRAPER_USER_AGENT` from `utils/scraperUserAgent.ts`, which today is `ylabs-scraper/1.0 (+https://yalelabs.io; ycs.maintenance.ylabs@gmail.com)`, the owner's project role address.
-`SCRAPER_UA_INFO_URL` names the information page, and `SCRAPER_UA_CONTACT` holds the contact the owner chose on 2026-11-13, which is only ever a project or role address, never a person's.
-A contact is appended as `; <contact>` after the information page, so changing or clearing it is a one-line change.
+Every fetch path sends exactly `SCRAPER_USER_AGENT` from `utils/scraperUserAgent.ts`, which is `ylabs-scraper/1.0 (+https://yalelabs.io; ycs.maintenance.ylabs@gmail.com)`, naming the information page and the owner's project role address (a role address, never a person's).
+`withScraperUserAgent()` in the same file is the helper that replaces any User-Agent a caller passes with that constant.
 `recheckDescriptionGrounding` reports `refused403` with a per-host breakdown in its report and console summary, so a firewall that refuses the honest User-Agent is counted rather than spoofed past.
 `fetchPageWithPolicy`, `postFormWithPolicy` and `fetchPublicHttpUrl` replace any User-Agent a caller passes, the link-health probe and the rendered fetch's redirect preflight send it, and the fetch hooks stamp it on every other axios request.
 No fetch presents itself as a desktop browser or claims a Yale domain, and the guard test fails on a User-Agent header set to anything else.
