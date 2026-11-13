@@ -33,7 +33,8 @@ export function isTransientFetchFailure(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
   if (TRANSIENT_ERROR_NAMES.has((error as Error).name)) return true;
   const status = responseStatus(error);
-  if (status !== undefined) return status !== PERMANENTLY_BLOCKED_STATUS && DEFAULT_RETRYABLE_STATUSES.has(status);
+  if (status !== undefined)
+    return status !== PERMANENTLY_BLOCKED_STATUS && DEFAULT_RETRYABLE_STATUSES.has(status);
   const code = (error as { code?: unknown }).code;
   return typeof code === 'string' && TRANSIENT_TRANSPORT_CODES.has(code);
 }
