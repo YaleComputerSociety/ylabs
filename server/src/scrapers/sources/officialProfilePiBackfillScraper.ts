@@ -3089,15 +3089,23 @@ function firstPersonSpecificYaleEmail(
 // center/institute affiliations that are not academic departments, so outside
 // an Appointments block only an element explicitly classed "department" is
 // trusted as a department signal.
+// A YaleSites `profile-meta` department line names the site hosting the page, so every profile on
+// a department's own site reads as that department whatever the person's appointment is: all 63
+// live readings from one such host stated the host's department while 31 of those people hold
+// another (#6185). It states no appointment, so it is never read as one.
+const HOST_SITE_DEPARTMENT_LINE = '[class*="profile-meta__department-line"]';
+
 function extractDepartments($: cheerio.CheerioAPI): string[] {
   const appointmentCards = $('.profile-details-appointment-card');
   if (appointmentCards.length > 0) return primaryAppointmentUnits($, appointmentCards);
   const values: string[] = [];
-  $('[class*="department"]').each((_i, el) => {
-    const value = textValue($(el).text());
-    if (isDepartmentHeadingChrome(value)) return false;
-    if (value && value.length < 160) values.push(value);
-  });
+  $('[class*="department"]')
+    .not(HOST_SITE_DEPARTMENT_LINE)
+    .each((_i, el) => {
+      const value = textValue($(el).text());
+      if (isDepartmentHeadingChrome(value)) return false;
+      if (value && value.length < 160) values.push(value);
+    });
   return uniqueStrings(values).slice(0, 5);
 }
 
