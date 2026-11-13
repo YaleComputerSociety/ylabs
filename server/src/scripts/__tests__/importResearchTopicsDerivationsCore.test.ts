@@ -228,6 +228,48 @@ describe('importResearchTopicReadings', () => {
     });
   });
 
+  it('reads a person row through the same lead-naming page filter as research-topics:derive', async () => {
+    const topicRow = {
+      entityType: 'FACULTY_RESEARCH_AREA',
+      kind: 'individual',
+      name: 'Rowan Fixturewell Research',
+      leadNames: ['Rowan Fixturewell'],
+    };
+    const leadPage = {
+      url: 'https://fixture-dept.example.edu/people/rowan-fixturewell',
+      text: 'Professor Fixturewell studies how coastal kelp forests recover after marine heatwaves.',
+    };
+    const unitPage = {
+      url: 'https://fixture-dept.example.edu/research',
+      text: 'The department advances research in astrophysics and number theory.',
+    };
+    const personRows = [{ slug: SLUG, value: [leadPage, unitPage], topicRow }];
+
+    const derived = await deriveResearchTopicsForRows({
+      rows: [{ entityKey: SLUG, value: [leadPage, unitPage], topicRow }],
+      callModel: null,
+      store: { has: async () => false, save: async () => {} },
+    });
+    const [exported] = buildResearchTopicsExport(personRows, [SLUG]).rows;
+
+    expect(exported.inputHash).toBe(derived.rows[0].inputHash);
+    expect(exported.userMessage).not.toContain('number theory');
+
+    const { store, records } = memoryStore();
+    const report = await importResearchTopicReadings({
+      mode: 'import',
+      readings: parseImportedTopicReadings(
+        readingsFile([{ slug: SLUG, inputHash: exported.inputHash, rawOutput }]),
+      ),
+      rows: personRows,
+      store,
+      apply: true,
+    });
+    expect(report.staleInput).toBe(0);
+    expect(report.stored).toBe(1);
+    expect([...records.keys()]).toEqual([derived.rows[0].inputHash]);
+  });
+
   it('plans but stores nothing on a dry run, and reports the filtered preview with no model call', async () => {
     const { store, records } = memoryStore();
     const report = await importOnce(

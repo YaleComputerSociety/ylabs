@@ -105,9 +105,14 @@ async function existingSlugs(slugs: string[]): Promise<Set<string>> {
 
 async function scopedRows(slugs: string[], withLabels: boolean): Promise<ScopedPageTextRow[]> {
   const rows = await loadStoredPageTextRowsBySlug(slugs);
-  if (!withLabels) return rows.map(({ slug, value }) => ({ slug, value }));
+  if (!withLabels) return rows.map(({ slug, value, topicRow }) => ({ slug, value, topicRow }));
   const labels = await ownOrgUnitLabelsBySlug(slugs);
-  return rows.map(({ slug, value }) => ({ slug, value, ownOrgUnitLabels: labels.get(slug) ?? [] }));
+  return rows.map(({ slug, value, topicRow }) => ({
+    slug,
+    value,
+    topicRow,
+    ownOrgUnitLabels: labels.get(slug) ?? [],
+  }));
 }
 
 export const EXPERIMENTS_ARTIFACT_ROOT = path.join(os.homedir(), 'Personal', 'ylabs-experiments');

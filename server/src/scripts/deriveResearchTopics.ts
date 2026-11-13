@@ -106,6 +106,12 @@ export async function loadStoredPageTextRows(
     const entityKey = typeof current.entityKey === 'string' ? current.entityKey : undefined;
     return [{ entityId, entityKey, value: current.value }];
   });
+  return withTopicEvidenceRows(rows);
+}
+
+async function withTopicEvidenceRows<Row extends StoredResearchPageTextRow>(
+  rows: Row[],
+): Promise<Row[]> {
   const topicRows = await loadTopicEvidenceRows(rows);
   return rows.map((row) => {
     const topicRow =
@@ -207,7 +213,7 @@ export async function loadStoredPageTextRowsBySlug(slugs: string[]): Promise<Slu
   const slugById = new Map(
     entities.map((row) => [serializedDocumentId(row._id) ?? '', row.slug] as const),
   );
-  return currentPageTextRowsBySlug(observations, slugById, slugs);
+  return withTopicEvidenceRows(currentPageTextRowsBySlug(observations, slugById, slugs));
 }
 
 const mongoDerivationStore: ResearchTopicsDerivationStore = {

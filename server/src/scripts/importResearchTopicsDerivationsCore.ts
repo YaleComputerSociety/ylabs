@@ -3,9 +3,11 @@ import { computeContentHash } from '../scrapers/contentHashGate';
 import { RESEARCH_PAGE_TOPICS_PROMPT } from '../scrapers/prompts';
 import {
   CURRENT_RESEARCH_TOPICS_DERIVATION_INPUTS,
+  researchPageTextEntriesForRowTopics,
   researchPageTextHash,
   researchTopicsDerivationInputHash,
   type ResearchTopicsDerivationInputs,
+  type TopicEvidenceRow,
 } from '../scrapers/researchPageTopicsDerivation';
 import {
   derivePageQuotedResearchTopics,
@@ -14,10 +16,7 @@ import {
   type PageQuotedTopicExtraction,
   type TopicRefusalReason,
 } from '../scrapers/utils/pageQuotedResearchTopics';
-import {
-  researchPageTextEntriesForTopics,
-  type ResearchPageTextEntry,
-} from '../scrapers/utils/researchPageText';
+import { type ResearchPageTextEntry } from '../scrapers/utils/researchPageText';
 import {
   researchTopicsUserMessage,
   type ResearchTopicsDerivationRecord,
@@ -210,6 +209,7 @@ export function assertImportResearchTopicsApplyAllowed(
 export interface ScopedPageTextRow {
   slug: string;
   value: unknown;
+  topicRow?: TopicEvidenceRow;
   ownOrgUnitLabels?: readonly string[];
 }
 
@@ -279,7 +279,7 @@ export function buildResearchTopicsExport(
       continue;
     }
     const row = bySlug.get(slug);
-    const pages = row ? researchPageTextEntriesForTopics(row.value) : [];
+    const pages = row ? researchPageTextEntriesForRowTopics(row.value, row.topicRow) : [];
     if (pages.length === 0) {
       noText.push(slug);
       continue;
@@ -539,7 +539,9 @@ export async function importResearchTopicReadings(input: {
       continue;
     }
     const current = bySlug.get(reading.slug);
-    const pages = current ? researchPageTextEntriesForTopics(current.value) : [];
+    const pages = current
+      ? researchPageTextEntriesForRowTopics(current.value, current.topicRow)
+      : [];
     if (pages.length === 0) {
       report.noText += 1;
       continue;
@@ -650,7 +652,9 @@ export function gradingSampleOf(
   const bySlug = new Map(rows.map((row) => [row.slug, row]));
   const eligible = readings.flatMap((reading) => {
     const current = bySlug.get(reading.slug);
-    const pages = current ? researchPageTextEntriesForTopics(current.value) : [];
+    const pages = current
+      ? researchPageTextEntriesForRowTopics(current.value, current.topicRow)
+      : [];
     if (pages.length === 0) return [];
     if (reading.inputHash !== researchTopicsDerivationInputHash(pages, inputs)) return [];
     if (reading.malformedOutput || reading.extraction.topics.length === 0) return [];
