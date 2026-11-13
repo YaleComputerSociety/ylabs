@@ -2907,6 +2907,7 @@ const PROFILE_PORTRAIT_CONTAINERS = [
   '.media--headshot',
   '.node--faculty .node__header-media',
   '.user-picture',
+  '.profile-meta__image',
   '[class*="field--name-field-profile-image"]',
   '[class*="field-name-field-profile-image"]',
   '[class*="field--name-field-headshot"]',
