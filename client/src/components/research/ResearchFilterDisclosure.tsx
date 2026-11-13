@@ -11,6 +11,7 @@ import {
   UNDERGRADS_FILTER_COMBINATION_NOTE,
   UNDERGRADS_FILTER_GROUP_LABEL,
   UNDERGRADS_OPTION_UNAVAILABLE_NOTE,
+  UNDERGRAD_ZERO_QUERY_ONLY_TIP,
   isKnownResearchTypeFilterValue,
   researchEntityTypeFilterLabel,
 } from '../../utils/researchEntityCopy';
@@ -32,6 +33,7 @@ interface ResearchFilterDisclosureProps {
   selectedHostsUndergrads?: boolean;
   selectedWelcomesUndergrads?: boolean;
   selectedMentorsUndergrads?: boolean;
+  hasActiveQuery?: boolean;
   isApplying: boolean;
   hasFacetError: boolean;
   departmentLabel: (value: string) => string;
@@ -81,6 +83,7 @@ interface UndergraduateToggleProps {
   count: number | undefined;
   countSuffix: string;
   checked: boolean;
+  unavailableTip?: string;
   compact: boolean;
   inputRef?: (node: HTMLElement | null) => void;
   onChange?: (value: boolean) => void;
@@ -98,6 +101,7 @@ const UndergraduateToggle = ({
   count,
   countSuffix,
   checked,
+  unavailableTip,
   compact,
   inputRef,
   onChange,
@@ -105,14 +109,13 @@ const UndergraduateToggle = ({
   const ownTipId = useId();
   const unavailableNoteId = useId();
   const unavailable = isUnavailableUndergradOption(count, checked);
-  const compactTipText = [hint, unavailable ? UNDERGRADS_OPTION_UNAVAILABLE_NOTE : null]
-    .filter(Boolean)
-    .join(' ');
+  const tip = unavailable ? unavailableTip : undefined;
+  const compactTipText = [hint, tip].filter(Boolean).join(' ');
   const describedBy = compact
     ? compactTipText
       ? ownTipId
       : undefined
-    : [hint ? ownTipId : null, unavailable ? unavailableNoteId : null].filter(Boolean).join(' ') ||
+    : [hint ? ownTipId : null, tip ? unavailableNoteId : null].filter(Boolean).join(' ') ||
       undefined;
   return (
     <div className={compact ? 'flex min-w-0 items-center gap-1' : 'min-w-0'}>
@@ -128,7 +131,7 @@ const UndergraduateToggle = ({
           onChange={(event) => {
             if (!unavailable) onChange?.(event.target.checked);
           }}
-          className="yr-focus-ring h-5 w-5 shrink-0 rounded-control border-[var(--yr-line-strong)] accent-brand aria-disabled:cursor-not-allowed"
+          className="yr-focus-ring h-5 w-5 shrink-0 rounded-control border-[var(--yr-line-strong)] accent-brand aria-disabled:cursor-not-allowed aria-disabled:opacity-60"
         />
         <span className="yr-num min-w-0">
           {label}
@@ -148,12 +151,12 @@ const UndergraduateToggle = ({
           {hint}
         </p>
       )}
-      {unavailable && !compact && (
+      {tip && !compact && (
         <p
           id={unavailableNoteId}
           className={`${hint ? '' : '-mt-3 '}ml-8 text-xs leading-snug text-muted`}
         >
-          {UNDERGRADS_OPTION_UNAVAILABLE_NOTE}
+          {tip}
         </p>
       )}
     </div>
@@ -293,6 +296,7 @@ const ResearchFilterDisclosure = ({
   selectedHostsUndergrads = false,
   selectedWelcomesUndergrads = false,
   selectedMentorsUndergrads = false,
+  hasActiveQuery = false,
   isApplying,
   hasFacetError,
   departmentLabel,
@@ -396,6 +400,21 @@ const ResearchFilterDisclosure = ({
     .filter((option) => Boolean(option.onChange) && (option.checked || option.count !== undefined));
   const undergradOptionIsUnavailable = (option: (typeof undergradOptions)[number]) =>
     isUnavailableUndergradOption(option.count, option.checked);
+  // An option at zero is unavailable for one of three reasons, and only a narrowed
+  // selection can be widened: with nothing but a query the student has no filter to
+  // remove, and with neither a query nor a filter the zero is the served total, which
+  // has no agreed wording yet (#6203), so that state says nothing beyond the count.
+  const narrowedBySelection =
+    Boolean(selectedEntityType || selectedSchool || selectedDepartment) ||
+    selectedHostsUndergrads ||
+    selectedWelcomesUndergrads ||
+    selectedMentorsUndergrads ||
+    operatorActiveCount > 0;
+  const undergradUnavailableTip = narrowedBySelection
+    ? UNDERGRADS_OPTION_UNAVAILABLE_NOTE
+    : hasActiveQuery
+      ? UNDERGRAD_ZERO_QUERY_ONLY_TIP
+      : undefined;
   const activeCount =
     Number(Boolean(selectedEntityType)) +
     Number(Boolean(selectedSchool)) +
@@ -543,6 +562,7 @@ const ResearchFilterDisclosure = ({
                   count={option.count}
                   countSuffix={facetCountSuffix(option.count)}
                   checked={option.checked}
+                  unavailableTip={undergradUnavailableTip}
                   compact={isSidebar}
                   inputRef={firstVisibleField === option.field ? setFirstFieldNode : undefined}
                   onChange={option.onChange}

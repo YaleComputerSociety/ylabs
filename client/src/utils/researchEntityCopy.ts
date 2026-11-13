@@ -434,4 +434,5 @@ export const ADVISES_UNDERGRAD_RESEARCH_FILTER_HINT = 'e.g. supervised senior th
 export const UNDERGRADS_FILTER_COMBINATION_NOTE = 'Shows research matching every ticked option';
 export const UNDERGRADS_OPTION_UNAVAILABLE_NOTE =
   'None match your other filters. Remove a filter to see more.';
+export const UNDERGRAD_ZERO_QUERY_ONLY_TIP = 'None match this search.';
 export const FEW_CLOSE_MATCHES_NOTICE = 'Only a few close matches. Related results below.';

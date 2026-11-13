@@ -161,6 +161,58 @@ describe('ResearchFilterDisclosure', () => {
     );
   });
 
+  it.each([
+    [
+      'another filter is active',
+      { selectedDepartment: 'Computer Science' },
+      'None match your other filters. Remove a filter to see more.',
+    ],
+    [
+      'an Undergrads sibling is ticked',
+      { selectedHostsUndergrads: true },
+      'None match your other filters. Remove a filter to see more.',
+    ],
+    ['only a query is active', { hasActiveQuery: true }, 'None match this search.'],
+  ])('tells a zero option apart by what narrowed it when %s (#6203)', (_case, overrides, tip) => {
+    renderFilters({
+      variant: 'sidebar',
+      facetDistribution: {
+        welcomesUndergrads: { true: 0 },
+        hostsUndergrads: { true: 3 },
+        mentorsUndergrads: { true: 2 },
+      },
+      ...overrides,
+    });
+
+    const taking = screen.getByRole('checkbox', { name: 'Taking undergrads now (0)' });
+    expect(taking).toHaveAttribute('aria-disabled', 'true');
+    expect(taking).toHaveAccessibleDescription(tip);
+  });
+
+  // The served total being zero is neither a filter nor a search the student can widen,
+  // and its wording is still with the owner (#6203), so the option says only its count.
+  it('offers no reason for a zero option when neither a query nor a filter is active (#6203)', () => {
+    renderFilters({
+      variant: 'sidebar',
+      facetDistribution: {
+        welcomesUndergrads: { true: 0 },
+        hostsUndergrads: { true: 3 },
+        mentorsUndergrads: { true: 2 },
+      },
+    });
+
+    const taking = screen.getByRole('checkbox', { name: 'Taking undergrads now (0)' });
+    expect(taking).toHaveAttribute('aria-disabled', 'true');
+    expect(taking).not.toHaveAccessibleDescription();
+    expect(
+      screen.queryByText('None match your other filters. Remove a filter to see more.'),
+    ).toBeNull();
+    expect(screen.queryByText('None match this search.')).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: 'Why Taking undergrads now is unavailable' }),
+    ).toBeNull();
+  });
+
   it('keeps a ticked option checkable at zero, so it can always be removed', () => {
     renderFilters({
       variant: 'sidebar',
@@ -211,13 +263,14 @@ describe('ResearchFilterDisclosure', () => {
 
   it('always shows all three Undergrads options, an option at zero unavailable but focusable with its tip (#6203)', () => {
     renderFilters({
+      selectedDepartment: 'Computer Science',
       facetDistribution: {
         welcomesUndergrads: { true: 0 },
         hostsUndergrads: { true: 3 },
         mentorsUndergrads: { true: 0 },
       },
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Filters, 1 active' }));
 
     const group = screen.getByRole('group', { name: 'Undergrads' });
     expect(
@@ -235,6 +288,7 @@ describe('ResearchFilterDisclosure', () => {
     expect(taking).toHaveAccessibleDescription(
       'None match your other filters. Remove a filter to see more.',
     );
+    expect(taking.className).toContain('aria-disabled:opacity-60');
     taking.focus();
     expect(taking).toHaveFocus();
     const hosted = screen.getByRole('checkbox', { name: 'Has had undergrads before (3)' });
@@ -246,6 +300,7 @@ describe('ResearchFilterDisclosure', () => {
   it('ignores a press on an unavailable option and reports nothing', () => {
     const { props } = renderFilters({
       variant: 'sidebar',
+      selectedDepartment: 'Computer Science',
       facetDistribution: {
         welcomesUndergrads: { true: 0 },
         hostsUndergrads: { true: 3 },
