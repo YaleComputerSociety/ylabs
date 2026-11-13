@@ -134,6 +134,11 @@ Each option shows the count ticking it would leave under the current selection, 
 The card and detail badges take the same words, so a filter and the badge it returns read alike: "Taking undergrads now" ("Taking undergrads now, recruiting" for the `actively_hiring` level, keeping the #5484 rule that both levels start with the filter's words), "Has had undergrads" and "Advises undergrad research" (coordinator, 2026-11-12).
 The owner kept #5449, no sidebar scrollbar at 1280x720, and kept the group open by default, so the wide sidebar compacts instead: 28px rows, the helper line and the advises hint as info tips, and tighter gaps, which brought the sidebar from 666px to 566px of a 590px budget on Development data (owner, 2026-11-12).
 The stored signals are unchanged; the server gained only a `mentorsUndergrads` request filter and facet on the index field #5603 already declared filterable, and it still accepts `worksWithUndergrads`, which an old link no longer ticks.
+All three options always show once their counts arrive, and an option whose count is 0 stays in place, unavailable but focusable, with a tip saying why (owner, 2026-11-13, #6203).
+The tip wording depends on what drove the count to zero, because a student can only widen what they narrowed: "None match your other filters. Remove a filter to see more." when another filter or an Undergrads option is active, and "None match this search." when only a query is active (owner, 2026-11-13, relayed on #6261 after a peer review found the first wording false on a query-only page).
+A zero with neither a query nor a filter active is the served total, which the student cannot widen at all, so that state shows no tip and says only its count, pending the owner's wording.
+The tip replaces the "Missing evidence is not proof there is none." note rather than joining it: the owner answered on 2026-11-13 that the note is dropped, which overrode an earlier request to keep both.
+The sidebar stays at the 566px the line above records, inside the same budget, because the tip sits behind an info button there.
 
 ## 2026-11-12: A Card-Length Written Body Serves As Its Own Card (#5537)
 
@@ -354,6 +359,7 @@ Both steps of the badge count, "Actively hiring" and "Welcomes undergrads", beca
 The `welcomesUndergrads` index field is derived from `publicUndergradInvitation`, the predicate that decides whether the badge is served, when the index document is built, so the filter and the badge cannot disagree.
 Hosting in the past and welcoming now stay separate filters, because the owner treats them as different questions; with both on, a row must satisfy both.
 The toggle is hidden when no result carries the badge, unlike the hosted toggle's disabled zero state, because reaching out is the default for every Yale lab and "Welcomes undergrads (0)" would read as no lab taking undergraduates.
+That hiding is retired: since #6203 all three Undergrads options always show once their counts arrive, and an option at zero is unavailable in place rather than hidden, under the 2026-11-13 line in the #5963 entry above.
 Measured on Development on 2026-10-29 through the search route, 79 served rows carry an invitation badge, 19 "Actively hiring" and 60 "Welcomes undergrads", and none of them is an emeritus row whose way in is withheld.
 An emeritus row whose way in is withheld drops the badge at serve time, which the index cannot see, so such a row would match the filter without showing its badge; there are none today.
 Since #5620 the index builder reads the same serve-time emeritus decision, so such a row no longer matches the filter; measured on Development on 2026-11-10 before that fix, the filter returned 117 rows, every one serving the badge, and none of them emeritus-led.

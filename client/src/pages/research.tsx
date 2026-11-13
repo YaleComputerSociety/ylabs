@@ -1953,6 +1953,7 @@ const Research = () => {
     selectedMentorsUndergrads,
     isApplying: searchLoading,
     hasFacetError,
+    hasActiveQuery: hasSubmittedSearch,
     departmentLabel: departmentFacetLabel,
     onEntityTypeChange: (entityType: string) => applyStudentFilters({ entityType }),
     onSchoolChange: (school: string) => applyStudentFilters({ school }),
@@ -1979,6 +1980,7 @@ const Research = () => {
   const browseFilterProps = {
     ...researchFilterProps,
     facetDistribution: browseFacetDistribution,
+    hasActiveQuery: false,
     isApplying: false,
     isLoadingOptions: defaultSearchLoading,
     hasFacetError: false,

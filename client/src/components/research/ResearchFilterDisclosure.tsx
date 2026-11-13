@@ -7,10 +7,11 @@ import {
   ADVISES_UNDERGRAD_RESEARCH_FILTER_HINT,
   ADVISES_UNDERGRAD_RESEARCH_FILTER_LABEL,
   HAS_HAD_UNDERGRADS_FILTER_LABEL,
-  NO_HOSTED_UNDERGRADUATE_EVIDENCE_NOTE,
   TAKING_UNDERGRADS_NOW_FILTER_LABEL,
   UNDERGRADS_FILTER_COMBINATION_NOTE,
   UNDERGRADS_FILTER_GROUP_LABEL,
+  UNDERGRADS_OPTION_UNAVAILABLE_NOTE,
+  UNDERGRAD_ZERO_QUERY_ONLY_TIP,
   isKnownResearchTypeFilterValue,
   researchEntityTypeFilterLabel,
 } from '../../utils/researchEntityCopy';
@@ -32,6 +33,7 @@ interface ResearchFilterDisclosureProps {
   selectedHostsUndergrads?: boolean;
   selectedWelcomesUndergrads?: boolean;
   selectedMentorsUndergrads?: boolean;
+  hasActiveQuery?: boolean;
   isApplying: boolean;
   hasFacetError: boolean;
   departmentLabel: (value: string) => string;
@@ -81,53 +83,80 @@ interface UndergraduateToggleProps {
   count: number | undefined;
   countSuffix: string;
   checked: boolean;
-  noEvidenceNoteId: string;
+  unavailableTip?: string;
   compact: boolean;
   inputRef?: (node: HTMLElement | null) => void;
   onChange?: (value: boolean) => void;
 }
 
+const isUnavailableUndergradOption = (count: number | undefined, checked: boolean) =>
+  count === 0 && !checked;
+
+// An option no row would match stays focusable, so a keyboard or screen reader user can
+// reach it and hear why it is unavailable; a native disabled checkbox drops out of the
+// tab order and hides that reason.
 const UndergraduateToggle = ({
   label,
   hint,
   count,
   countSuffix,
   checked,
-  noEvidenceNoteId,
+  unavailableTip,
   compact,
   inputRef,
   onChange,
 }: UndergraduateToggleProps) => {
-  const hintId = useId();
-  const noEvidence = count === 0 && !checked;
-  const describedBy =
-    [hint ? hintId : null, noEvidence ? noEvidenceNoteId : null].filter(Boolean).join(' ') ||
-    undefined;
+  const ownTipId = useId();
+  const unavailableNoteId = useId();
+  const unavailable = isUnavailableUndergradOption(count, checked);
+  const tip = unavailable ? unavailableTip : undefined;
+  const compactTipText = [hint, tip].filter(Boolean).join(' ');
+  const describedBy = compact
+    ? compactTipText
+      ? ownTipId
+      : undefined
+    : [hint ? ownTipId : null, tip ? unavailableNoteId : null].filter(Boolean).join(' ') ||
+      undefined;
   return (
     <div className={compact ? 'flex min-w-0 items-center gap-1' : 'min-w-0'}>
       <label
-        className={`flex min-w-0 items-center gap-3 text-sm font-medium text-ink ${compact ? 'min-h-7' : 'min-h-11'}`}
+        className={`flex min-w-0 items-center gap-3 text-sm font-medium ${unavailable ? 'cursor-not-allowed text-muted' : 'text-ink'} ${compact ? 'min-h-7' : 'min-h-11'}`}
       >
         <input
           ref={inputRef}
           type="checkbox"
           checked={checked}
-          disabled={noEvidence}
+          aria-disabled={unavailable || undefined}
           aria-describedby={describedBy}
-          onChange={(event) => onChange?.(event.target.checked)}
-          className="yr-focus-ring h-5 w-5 shrink-0 rounded-control border-[var(--yr-line-strong)] accent-brand disabled:cursor-not-allowed"
+          onChange={(event) => {
+            if (!unavailable) onChange?.(event.target.checked);
+          }}
+          className="yr-focus-ring h-5 w-5 shrink-0 rounded-control border-[var(--yr-line-strong)] accent-brand aria-disabled:cursor-not-allowed aria-disabled:opacity-60"
         />
-        <span className={`yr-num min-w-0 ${noEvidence ? 'text-muted' : ''}`}>
+        <span className="yr-num min-w-0">
           {label}
           {countSuffix}
         </span>
       </label>
-      {hint && compact && (
-        <InfoTip label={`About ${label}`} text={hint} tipId={hintId} align="end" />
+      {compact && compactTipText && (
+        <InfoTip
+          label={tip ? `Why ${label} is unavailable` : `About ${label}`}
+          text={compactTipText}
+          tipId={ownTipId}
+          align="end"
+        />
       )}
       {hint && !compact && (
-        <p id={hintId} className="-mt-3 ml-8 text-xs leading-snug text-muted">
+        <p id={ownTipId} className="-mt-3 ml-8 text-xs leading-snug text-muted">
           {hint}
+        </p>
+      )}
+      {tip && !compact && (
+        <p
+          id={unavailableNoteId}
+          className={`${hint ? '' : '-mt-3 '}ml-8 text-xs leading-snug text-muted`}
+        >
+          {tip}
         </p>
       )}
     </div>
@@ -267,6 +296,7 @@ const ResearchFilterDisclosure = ({
   selectedHostsUndergrads = false,
   selectedWelcomesUndergrads = false,
   selectedMentorsUndergrads = false,
+  hasActiveQuery = false,
   isApplying,
   hasFacetError,
   departmentLabel,
@@ -309,7 +339,6 @@ const ResearchFilterDisclosure = ({
   }, []);
   const panelId = useId();
   const undergradsCombinationNoteId = useId();
-  const undergradsNoEvidenceNoteId = useId();
 
   const positiveEntityTypes = useMemo(
     () =>
@@ -342,8 +371,6 @@ const ResearchFilterDisclosure = ({
   const showEntityType = positiveEntityTypes.length > 0 || Boolean(selectedEntityType);
   const showSchool = positiveSchools.length > 0 || Boolean(selectedSchool);
   const showDepartment = positiveDepartments.length > 0 || Boolean(selectedDepartment);
-  const someUndergradOptionChecked =
-    selectedWelcomesUndergrads || selectedHostsUndergrads || selectedMentorsUndergrads;
   const undergradOptions = (
     [
       {
@@ -370,20 +397,22 @@ const ResearchFilterDisclosure = ({
     ] as const
   )
     .map((option) => ({ ...option, count: servedTrueCount(facetDistribution[option.field]) }))
-    // An option a ticked sibling drives to zero stays in place, disabled, so ticking one
-    // never moves the others; with nothing ticked a zero option is hidden, except hosted,
-    // which has always shown its zero with the missing-evidence note.
-    .filter(
-      (option) =>
-        Boolean(option.onChange) &&
-        (option.checked ||
-          Boolean(option.count) ||
-          (option.count === 0 &&
-            (option.field === 'hostsUndergrads' || someUndergradOptionChecked))),
-    );
-  const undergradOptionWithoutEvidence = (option: (typeof undergradOptions)[number]) =>
-    option.count === 0 && !option.checked;
-  const someUndergradOptionLacksEvidence = undergradOptions.some(undergradOptionWithoutEvidence);
+    .filter((option) => Boolean(option.onChange) && (option.checked || option.count !== undefined));
+  // An option at zero is unavailable for one of three reasons, and only a narrowed
+  // selection can be widened: with nothing but a query the student has no filter to
+  // remove, and with neither a query nor a filter the zero is the served total, which
+  // has no agreed wording yet (#6203), so that state says nothing beyond the count.
+  const narrowedBySelection =
+    Boolean(selectedEntityType || selectedSchool || selectedDepartment) ||
+    selectedHostsUndergrads ||
+    selectedWelcomesUndergrads ||
+    selectedMentorsUndergrads ||
+    operatorActiveCount > 0;
+  const undergradUnavailableTip = narrowedBySelection
+    ? UNDERGRADS_OPTION_UNAVAILABLE_NOTE
+    : hasActiveQuery
+      ? UNDERGRAD_ZERO_QUERY_ONLY_TIP
+      : undefined;
   const activeCount =
     Number(Boolean(selectedEntityType)) +
     Number(Boolean(selectedSchool)) +
@@ -411,7 +440,7 @@ const ResearchFilterDisclosure = ({
   ];
   const firstVisibleField: FilterField | undefined = [
     ...undergradOptions
-      .filter((option) => !undergradOptionWithoutEvidence(option))
+      .filter((option) => !isUnavailableUndergradOption(option.count, option.checked))
       .map((option) => option.field),
     ...visibleFields.slice(undergradOptions.length),
   ][0];
@@ -531,21 +560,13 @@ const ResearchFilterDisclosure = ({
                   count={option.count}
                   countSuffix={facetCountSuffix(option.count)}
                   checked={option.checked}
-                  noEvidenceNoteId={undergradsNoEvidenceNoteId}
+                  unavailableTip={undergradUnavailableTip}
                   compact={isSidebar}
                   inputRef={firstVisibleField === option.field ? setFirstFieldNode : undefined}
                   onChange={option.onChange}
                 />
               ))}
             </div>
-            {someUndergradOptionLacksEvidence && (
-              <p
-                id={undergradsNoEvidenceNoteId}
-                className={`text-xs leading-snug text-muted ${isSidebar ? '' : 'mt-1'}`}
-              >
-                {NO_HOSTED_UNDERGRADUATE_EVIDENCE_NOTE}
-              </p>
-            )}
           </fieldset>
         )}
         {showEntityType && (
