@@ -42,7 +42,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
-interface PageTextObservationRow {
+export interface PageTextObservationRow {
   entityId?: unknown;
   entityKey?: unknown;
   field?: string;
@@ -52,31 +52,42 @@ interface PageTextObservationRow {
   superseded?: boolean;
 }
 
-async function scopeClauses(slugs: string[]): Promise<Record<string, unknown>[]> {
+async function scopedEntityRows(slugs: string[]): Promise<Array<{ _id: unknown; slug: string }>> {
   if (slugs.length === 0) return [];
-  const rows = (await ResearchEntity.find({ slug: { $in: slugs } })
-    .select('_id')
-    .lean()) as Array<{ _id: unknown }>;
+  return (await ResearchEntity.find({ slug: { $in: slugs } })
+    .select('_id slug')
+    .lean()) as Array<{ _id: unknown; slug: string }>;
+}
+
+function scopeClausesFor(
+  slugs: string[],
+  rows: ReadonlyArray<{ _id: unknown }>,
+): Record<string, unknown>[] {
+  if (slugs.length === 0) return [];
   return [
     { entityKey: { $in: slugs } },
     ...(rows.length > 0 ? [{ entityId: { $in: rows.map((row) => row._id) } }] : []),
   ];
 }
 
+const livePageTextFilter = (clauses: Record<string, unknown>[]) => ({
+  entityType: 'researchEntity' as const,
+  sourceName: RESEARCH_PAGE_TEXT_SOURCE,
+  field: RESEARCH_PAGE_TEXT_FIELD,
+  superseded: false,
+  'rollback.rolledBackAt': { $exists: false },
+  ...(clauses.length > 0 ? { $or: clauses } : {}),
+});
+
+const PAGE_TEXT_SELECT = 'entityId entityKey field value sourceName observedAt superseded';
+
 export async function loadStoredPageTextRows(
   args: DeriveResearchTopicsArgs,
 ): Promise<StoredResearchPageTextRow[]> {
-  const clauses = await scopeClauses(args.slugs);
-  const query = Observation.find({
-    entityType: 'researchEntity',
-    sourceName: RESEARCH_PAGE_TEXT_SOURCE,
-    field: RESEARCH_PAGE_TEXT_FIELD,
-    superseded: false,
-    'rollback.rolledBackAt': { $exists: false },
-    ...(clauses.length > 0 ? { $or: clauses } : {}),
-  })
+  const clauses = scopeClausesFor(args.slugs, await scopedEntityRows(args.slugs));
+  const query = Observation.find(livePageTextFilter(clauses))
     .sort({ _id: 1 })
-    .select('entityId entityKey field value sourceName observedAt superseded');
+    .select(PAGE_TEXT_SELECT);
   if (args.slugs.length === 0 && !args.all) query.limit(args.limit);
   const observations = (await query.lean()) as PageTextObservationRow[];
 
@@ -95,6 +106,12 @@ export async function loadStoredPageTextRows(
     const entityKey = typeof current.entityKey === 'string' ? current.entityKey : undefined;
     return [{ entityId, entityKey, value: current.value }];
   });
+  return withTopicEvidenceRows(rows);
+}
+
+async function withTopicEvidenceRows<Row extends StoredResearchPageTextRow>(
+  rows: Row[],
+): Promise<Row[]> {
   const topicRows = await loadTopicEvidenceRows(rows);
   return rows.map((row) => {
     const topicRow =
@@ -150,6 +167,53 @@ async function loadTopicEvidenceRows(
     }
   }
   return { byId, bySlug };
+}
+
+export interface SlugPageTextRow extends StoredResearchPageTextRow {
+  slug: string;
+}
+
+/**
+ * The same live page-text observations `loadStoredPageTextRows` reads, grouped by slug across
+ * both identity forms, so a row observed under its id and under its key yields its one
+ * newest reading, as the materializer picks it.
+ */
+export function currentPageTextRowsBySlug(
+  observations: readonly PageTextObservationRow[],
+  slugById: ReadonlyMap<string, string>,
+  slugs: readonly string[],
+): SlugPageTextRow[] {
+  const wanted = new Set(slugs);
+  const bySlug = new Map<string, PageTextObservationRow[]>();
+  for (const observation of observations) {
+    const slug =
+      slugById.get(serializedDocumentId(observation.entityId) ?? '') ??
+      (typeof observation.entityKey === 'string' && wanted.has(observation.entityKey)
+        ? observation.entityKey
+        : '');
+    if (!slug) continue;
+    bySlug.set(slug, [...(bySlug.get(slug) ?? []), observation]);
+  }
+  return [...bySlug.entries()].flatMap(([slug, group]) => {
+    const current = currentResearchPageTextObservation(group);
+    if (!current) return [];
+    const entityId = serializedDocumentId(current.entityId) || undefined;
+    const entityKey = typeof current.entityKey === 'string' ? current.entityKey : undefined;
+    return [{ slug, entityId, entityKey, value: current.value }];
+  });
+}
+
+export async function loadStoredPageTextRowsBySlug(slugs: string[]): Promise<SlugPageTextRow[]> {
+  if (slugs.length === 0) return [];
+  const entities = await scopedEntityRows(slugs);
+  const observations = (await Observation.find(livePageTextFilter(scopeClausesFor(slugs, entities)))
+    .sort({ _id: 1 })
+    .select(PAGE_TEXT_SELECT)
+    .lean()) as PageTextObservationRow[];
+  const slugById = new Map(
+    entities.map((row) => [serializedDocumentId(row._id) ?? '', row.slug] as const),
+  );
+  return withTopicEvidenceRows(currentPageTextRowsBySlug(observations, slugById, slugs));
 }
 
 const mongoDerivationStore: ResearchTopicsDerivationStore = {
