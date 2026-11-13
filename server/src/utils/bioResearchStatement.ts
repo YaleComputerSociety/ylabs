@@ -281,11 +281,17 @@ function headNamesAConditionOrProcedure({
   writtenHead,
   modifiers,
   startsWithThe,
+  afterHead,
 }: ListItemHead): boolean {
   if (NAMED_CONDITION_PHRASE.test(headPhrase)) return true;
   if (!head) return false;
   if (HEADS_THAT_NAME_A_CONDITION_ONLY_WITH_A_MODIFIER.has(head)) {
-    return !startsWithThe && modifiers.length > 0 && writtenHead === writtenHead.toLowerCase();
+    return (
+      afterHead.trim() !== '' &&
+      !startsWithThe &&
+      modifiers.length > 0 &&
+      writtenHead === writtenHead.toLowerCase()
+    );
   }
   if (CARE_ACTIVITY_HEADS.has(head)) {
     return modifiers.some(
