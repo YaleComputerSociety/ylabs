@@ -53,12 +53,8 @@ function siblingsCarryingValue(
   field: string,
   refusedKey: string,
 ): string[] {
-  return closure.filter(
-    (sibling) =>
-      sibling !== field &&
-      storedEntries(row[sibling]).some(
-        (entry) => fieldValueRefusalKey(field, entry) === refusedKey,
-      ),
+  return closure.filter((sibling) =>
+    storedEntries(row[sibling]).some((entry) => fieldValueRefusalKey(field, entry) === refusedKey),
   );
 }
 
@@ -117,7 +113,7 @@ export async function planRefusalClosureRederivation(input: {
   const derived = Object.fromEntries(
     Object.entries(
       await rederiveOrgUnitClosure(rowAfterClear, input.fieldValueRefusalsAfterRecord),
-    ).filter(([field]) => field !== input.field),
+    ).filter(([field]) => !input.clearsStoredValue || field !== input.field),
   );
   const set = Object.fromEntries(Object.entries(derived).filter(([field]) => !locked.has(field)));
   return {

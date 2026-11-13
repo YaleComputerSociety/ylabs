@@ -12,6 +12,7 @@ import {
 } from '../../scrapers/entityMaterializer';
 import { disambiguatorLabels } from '../../utils/researchEntityDisplayNameDisambiguation';
 import { planOrgUnitBackfillRow } from '../backfillResearchEntityOrgUnitsCore';
+import { planSchoolProfileHostRow } from '../backfillSchoolFromProfileHostCore';
 import { planRefuseFieldValueWrite } from '../refuseResearchEntityFieldValue';
 
 const REFUSED_SCHOOL = 'Fixture School of Alpha';
@@ -186,6 +187,44 @@ describe('refusing a member of the org-unit closure (#6155)', () => {
     expect(after.schools).toBeUndefined();
   });
 
+  it('removes a school refused as one schools entry from school and schools alike', async () => {
+    const row = {
+      _id: 'synthetic-row',
+      school: REFUSED_SCHOOL,
+      schools: [REFUSED_SCHOOL],
+      departments: [],
+    };
+
+    const plan = await planRefuseFieldValueWrite(row, refuse('schools', REFUSED_SCHOOL));
+    const after = rowAfterWrite(row, plan.write);
+
+    expect(plan.clearsStoredValue).toBe(false);
+    expect(after.school).toBe('');
+    expect(after.schools).toEqual([]);
+    expect(cardSchool(after)).toBeFalsy();
+    expect(plan.regates).toBe(true);
+    expect(plan.closureRederivation).toMatchObject({
+      outcome: 'rederived',
+      siblingsCarryingBefore: ['school', 'schools'],
+      siblingsCarryingAfter: [],
+    });
+  });
+
+  it('removes a school refused as one schools entry when school stores another', async () => {
+    const row = {
+      _id: 'synthetic-row',
+      school: OTHER_SCHOOL,
+      schools: [OTHER_SCHOOL, REFUSED_SCHOOL],
+      departments: [BETA_DEPARTMENT, ALPHA_DEPARTMENT],
+    };
+
+    const plan = await planRefuseFieldValueWrite(row, refuse('schools', REFUSED_SCHOOL));
+    const after = rowAfterWrite(row, plan.write);
+
+    expect(after.school).toBe(OTHER_SCHOOL);
+    expect(after.schools).toEqual([OTHER_SCHOOL]);
+  });
+
   it('does not re-fill refused organization labels from a department it cannot match', async () => {
     const unmatched = 'Fixture Unmatched Program';
     const row = {
@@ -246,6 +285,65 @@ describe('a refused school stays out on the next derivation pass (#6155)', () =>
 
     expect(second.afterSchools).toEqual([OTHER_SCHOOL]);
     expect(second.update.schools).toBeUndefined();
+  });
+
+  it('the org-unit backfill clears a stored school refused as a schools entry', async () => {
+    const row = {
+      _id: 'synthetic-row',
+      school: REFUSED_SCHOOL,
+      schools: [REFUSED_SCHOOL],
+      departments: [],
+    };
+    const recorded = await planRefuseFieldValueWrite(row, refuse('schools', REFUSED_SCHOOL));
+    const refusals = rowAfterWrite(row, recorded.write).fieldValueRefusals;
+
+    const pass = await planOrgUnitBackfillRow({
+      id: String(row._id),
+      school: row.school,
+      schools: row.schools,
+      departments: row.departments,
+      fieldValueRefusals: refusals,
+    });
+
+    expect(pass.update).toMatchObject({ school: '', schools: [] });
+  });
+
+  it('the profile-host school backfill does not re-add it from the host', async () => {
+    const hostSchool = 'School of Medicine';
+    setOrgUnitCanonicalizerForTesting(
+      createOrgUnitCanonicalizer(
+        buildOrgUnitResolverIndex([
+          { slug: 'fixture-host-school', name: hostSchool, kind: 'SCHOOL' as const, aliases: [] },
+        ]),
+        new Map(),
+      ),
+    );
+    const row = {
+      _id: 'synthetic-row',
+      school: hostSchool,
+      schools: [hostSchool],
+      departments: [],
+      websiteUrl: 'https://medicine.yale.edu/profile/synthetic-profile/',
+    };
+    const after = rowAfterWrite(
+      row,
+      (await planRefuseFieldValueWrite(row, refuse('school', hostSchool))).write,
+    );
+
+    const pass = await planSchoolProfileHostRow(
+      {
+        id: String(after._id),
+        school: after.school,
+        schools: after.schools,
+        departments: after.departments,
+        websiteUrl: after.websiteUrl,
+        fieldValueRefusals: after.fieldValueRefusals,
+      },
+      new Date('2026-01-01T00:00:00.000Z'),
+    );
+
+    expect(after.schools).toEqual([]);
+    expect(pass).toBeNull();
   });
 
   it('a materialize resolving the same departments does not re-add it', async () => {

@@ -65,6 +65,7 @@ export async function planOrgUnitBackfillRow(
     profileUrls,
   );
   withoutRefusedSchools(set, entity.fieldValueRefusals);
+  if (hasSchool && !('school' in set)) set.school = entity.school ? '' : entity.school;
 
   const beforeDepartments = asStringArray(entity.departments);
   const afterDepartments = asStringArray(set.departments);
@@ -101,7 +102,7 @@ export async function planOrgUnitBackfillRow(
   );
 
   const update: Record<string, unknown> = {};
-  if (hasSchool && 'school' in set && set.school !== entity.school) update.school = set.school;
+  if (hasSchool && set.school !== entity.school) update.school = set.school;
   if (hasDepartments && !sameStringArray(beforeDepartments, afterDepartments)) {
     update.departments = afterDepartments;
   }
