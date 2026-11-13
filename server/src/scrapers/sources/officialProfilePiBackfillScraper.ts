@@ -4527,24 +4527,26 @@ export async function selectDirectVisibleProfileBioUserTargets(
   limit: number,
   excludedUserIds: Set<string>,
   identityEvidence?: VisibleBioIdentityEvidence,
+  onlyNetids?: ReadonlySet<string>,
 ): Promise<Array<Record<string, any>>> {
   if (limit <= 0) return [];
 
+  const candidates = Researcher.find({
+    archived: { $ne: true },
+    $and: [
+      { 'identifiers.netid': { $exists: true, $nin: ['', null] } },
+      ...(onlyNetids ? [{ 'identifiers.netid': { $in: [...onlyNetids] } }] : []),
+      {
+        $or: [
+          { 'profileLinks.kind': 'YALE_OFFICIAL' },
+          { 'profile.websiteUrl': { $exists: true, $nin: ['', null] } },
+        ],
+      },
+    ],
+  });
+  if (onlyNetids) candidates.collation({ locale: 'en', strength: 2 });
   const researchers = (await applyFiniteCandidateLimit(
-    Researcher.find({
-      archived: { $ne: true },
-      $and: [
-        { 'identifiers.netid': { $exists: true, $nin: ['', null] } },
-        {
-          $or: [
-            { 'profileLinks.kind': 'YALE_OFFICIAL' },
-            { 'profile.websiteUrl': { $exists: true, $nin: ['', null] } },
-          ],
-        },
-      ],
-    })
-      .select(PROFILE_USER_RESEARCHER_SELECT)
-      .sort({ updatedAt: 1 }),
+    candidates.select(PROFILE_USER_RESEARCHER_SELECT).sort({ updatedAt: 1 }),
     limit,
     4,
     50,
@@ -4553,6 +4555,7 @@ export async function selectDirectVisibleProfileBioUserTargets(
   const evidence = identityEvidence ?? (await loadVisibleBioIdentityEvidence());
   return profileUsersForResearchers(researchers)
     .filter((user) => user.netid && !excludedUserIds.has(idValue(user._id)))
+    .filter((user) => !onlyNetids || onlyNetids.has(textValue(user.netid).toLowerCase()))
     .map((user) => visibleBioTarget(user, visibleBioProfileUrlsForUser(user), [], evidence))
     .filter((target) => target.visibleBioProfileUrls.length > 0)
     .slice(0, limit);
@@ -4560,7 +4563,9 @@ export async function selectDirectVisibleProfileBioUserTargets(
 
 export async function selectVisibleProfileBioTargets(
   limit: number,
+  netids?: readonly string[],
 ): Promise<Array<Record<string, any>>> {
+  const onlyNetids = netids ? new Set(netids.map((netid) => netid.toLowerCase())) : undefined;
   const entities = await ResearchEntity.find({
     archived: { $ne: true },
     studentVisibilityTier: { $in: publicStudentVisibilityTiers },
@@ -4583,10 +4588,12 @@ export async function selectVisibleProfileBioTargets(
       entry,
     ]);
   }
-  const netids = uniqueStrings(rosterEntries.map((entry) => entry.netid));
+  const rosterNetids = uniqueStrings(rosterEntries.map((entry) => entry.netid)).filter(
+    (netid) => !onlyNetids || onlyNetids.has(netid.toLowerCase()),
+  );
 
   const [users, evidence] = await Promise.all([
-    profileUsersByNetids(netids),
+    profileUsersByNetids(rosterNetids),
     loadVisibleBioIdentityEvidence(),
   ]);
 
@@ -4620,6 +4627,7 @@ export async function selectVisibleProfileBioTargets(
       limit - memberTargets.length,
       excludedUserIds,
       evidence,
+      onlyNetids,
     )),
   ].slice(0, limit);
 }
@@ -5535,6 +5543,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
     ) => Promise<ExistingProfileUser | null> = resolveExistingUserForIdentity,
     private readonly visibleProfileSelector: (
       limit: number,
+      netids?: string[],
     ) => Promise<Array<Record<string, any>>> = selectVisibleProfileBioTargets,
     private readonly researchHomeProfileSelector: (
       limit: number,
@@ -5611,8 +5620,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
     const hasExplicitMode = onlyValues.some((value) => OFFICIAL_PROFILE_MODE_KEYS.has(value));
     const runQueuedPiBackfill =
       targetKeys.length === 0 && (only.size === 0 || only.has(QUEUED_PI_BACKFILL_KEY));
-    const runVisibleProfileBioBackfill =
-      targetKeys.length === 0 && only.has(VISIBLE_PROFILE_BIO_BACKFILL_KEY);
+    const runVisibleProfileBioBackfill = only.has(VISIBLE_PROFILE_BIO_BACKFILL_KEY);
     const runProfileDescriptionBackfill = only.has(PROFILE_DESCRIPTION_BACKFILL_KEY);
     const runLeadDirectWebsiteBackfill = only.has(LEAD_DIRECT_WEBSITE_BACKFILL_KEY);
     const runSourceUrlWebsiteBackfill = only.has(SOURCE_URL_WEBSITE_BACKFILL_KEY);
@@ -5670,7 +5678,11 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
         : (limitOption ?? 25);
     const selectedEntities = [
       ...(runQueuedPiBackfill ? await this.entitySelector(limit) : []),
-      ...(runVisibleProfileBioBackfill ? await this.visibleProfileSelector(limit) : []),
+      ...(runVisibleProfileBioBackfill
+        ? targetKeys.length > 0
+          ? await this.visibleProfileSelector(limit, targetKeys)
+          : await this.visibleProfileSelector(limit)
+        : []),
       ...(runProfileDescriptionBackfill
         ? await this.profileDescriptionSelector(limit, targetKeys)
         : []),
