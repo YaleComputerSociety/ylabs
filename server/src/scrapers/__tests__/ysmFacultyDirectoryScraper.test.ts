@@ -1218,13 +1218,31 @@ describe('the YSM home department comes only from a catalog-named appointment', 
     ]);
   });
 
-  it('emits the first appointment the catalog names, never an organization', () => {
+  it('never promotes a later appointment or an organization over a non-catalog first appointment', () => {
     const profile = extractProfile(html, RIVERS)!;
+    const { observations } = facultyToUserObservations(profile, catalog);
+    expect(observations.some((o) => o.field === 'primaryDepartment')).toBe(false);
+    expect(observations.find((o) => o.field === 'departments')?.value).toEqual(profile.departments);
+  });
+
+  it('emits the first appointment when the catalog names it', () => {
+    const profile = extractProfile(
+      profileHtml({
+        fullName: 'Jordan Rivers',
+        email: 'jordan.rivers@yale.edu',
+        appointments: [
+          { type: 'Primary', organizationName: 'Surgery' },
+          { type: 'Secondary', organizationName: 'Internal Medicine' },
+        ],
+        organizations: [{ name: 'Fixture Center' }],
+        meshKeywords: ['Heart Failure'],
+      }),
+      RIVERS,
+    )!;
     const { observations } = facultyToUserObservations(profile, catalog);
     expect(observations.filter((o) => o.field === 'primaryDepartment').map((o) => o.value)).toEqual(
       ['Surgery'],
     );
-    expect(observations.find((o) => o.field === 'departments')?.value).toEqual(profile.departments);
   });
 
   it('emits no home department when no appointment is a catalog department', () => {
@@ -1242,10 +1260,10 @@ describe('the YSM home department comes only from a catalog-named appointment', 
     expect(observations.some((o) => o.field === 'primaryDepartment')).toBe(false);
   });
 
-  it('keeps the first appointment when no catalog is available', () => {
-    expect(ysmHomeDepartment({ appointmentDepartments: ['Fixture Research Program'] }, null)).toBe(
-      'Fixture Research Program',
-    );
-    expect(ysmHomeDepartment({ appointmentDepartments: [] }, null)).toBeUndefined();
+  it('emits no home department when no catalog is available', () => {
+    expect(
+      ysmHomeDepartment({ appointmentDepartments: ['Fixture Research Program'] }, null),
+    ).toBeUndefined();
+    expect(ysmHomeDepartment({ appointmentDepartments: ['Surgery'] }, null)).toBeUndefined();
   });
 });

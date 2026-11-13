@@ -1429,9 +1429,9 @@ The clear reads the same backing as #6049, person-name-joined keys included, so 
 A value only a person-name-joined key states is cleared when that key's reading is screened, and when no identity key states the value the engine join runs only once some candidate key states it through a screened reading, because otherwise nothing could be cleared.
 The field then resolves from what remains in the same pass, so a fill-only directory department can land, and a second pass writes nothing.
 A new department screen goes in that list, so it both stops its readings from resolving and clears the values only they back.
-The `ysm-faculty-directory` lane takes a person's home department only from the profile's appointments, never from its `organizations` (centers, houses, labs, societies), choosing the first appointment the catalog names and emitting none otherwise; the `departments` label still carries both (#6070).
+The `ysm-faculty-directory` lane takes a person's home department only from the profile's first appointment, and only when the catalog names it, never promoting a later appointment and never reading its `organizations` (centers, houses, labs, societies); with no catalog it emits none, and the `departments` label still carries both (#6070, `docs/decisions.md` 2026-11-13).
 Its screen in that list states nothing for a stored reading of the lane the catalog does not name.
-With no department catalog the lane keeps the first appointment, and the screen refuses nothing.
+With no department catalog the screen refuses nothing, while the lane emits no department.
 
 A person record refuses a value the same way (#5641): `Researcher.fieldValueRefusals` holds the same record at `websiteUrl`, `title`, `primaryDepartment`, `imageUrl`, `email`, `orcid` and `profileLink` (one link, by URL), keyed by the same `fieldValueRefusalKey`.
 That key keeps the query string for `profileLink` and `imageUrl`, because a query names the page there and every Google Scholar profile shares one host and path.
