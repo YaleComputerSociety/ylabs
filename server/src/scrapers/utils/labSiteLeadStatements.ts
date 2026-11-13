@@ -298,6 +298,14 @@ function sentenceAround(line: string, index: number, length: number) {
   };
 }
 
+const MODIFIER_PREPOSITION =
+  '(?:in|of|at|within|from|for|with|across|on|by|to|into|throughout|beyond|outside|inside)';
+
+const PROPER_UNIT_NAME = new RegExp(
+  `^(?:the\\s+)?(?:Lab|Laboratory|Group|Center|Centre)\\s+(?:of|for|in|on)\\s+(?:the\\s+)?[A-Z]`,
+  'u',
+);
+
 const subjectBeforeNamesRow = (text: string, aliases: readonly string[], ownPage: boolean) => {
   const tail = text
     .replace(/[\s,]+$/, '')
@@ -305,9 +313,17 @@ const subjectBeforeNamesRow = (text: string, aliases: readonly string[], ownPage
     .replace(/[\s,]+$/, '');
   if (!tail) return false;
   const lastWords = tail.split(/\s+/).slice(-8).join(' ');
+  if (new RegExp(`\\b${MODIFIER_PREPOSITION}\\s+${SELF_REFERENCE}$`, 'i').test(lastWords)) {
+    return false;
+  }
   if (ownPage && new RegExp(`${SELF_REFERENCE}$`, 'i').test(lastWords)) return true;
   const folded = ` ${fold(lastWords)}`;
-  return aliases.some((alias) => folded.endsWith(` ${alias}`));
+  const modifierTail = new RegExp(` ${MODIFIER_PREPOSITION}(?: the)?$`);
+  return aliases.some(
+    (alias) =>
+      folded.endsWith(` ${alias}`) &&
+      !modifierTail.test(folded.slice(0, folded.length - alias.length - 1)),
+  );
 };
 
 const fronterSubjectNamesRow = (text: string, aliases: readonly string[], ownPage: boolean) => {
@@ -364,7 +380,8 @@ export function subjectStatements(
     for (const match of line.matchAll(pattern)) {
       const object = match[2] || '';
       const anchored =
-        phraseIsRow(object, aliases) || (ownPage && phraseIsRow(object, ROW_KIND_NOUNS));
+        phraseIsRow(object, aliases) ||
+        (ownPage && !PROPER_UNIT_NAME.test(object.trim()) && phraseIsRow(object, ROW_KIND_NOUNS));
       if (anchored && personNameFromLine(match[1])) {
         found.push({ personName: match[1], pageUrl, form: 'SUBJECT', personEvidenced: true });
       }

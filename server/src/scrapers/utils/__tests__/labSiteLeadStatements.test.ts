@@ -129,6 +129,26 @@ describe('subjectStatements', () => {
     expect(names('Robin Quill directs the lab since 2015.')).toEqual(['Robin Quill']);
   });
 
+  it('ignores a passive subject that only mentions the row in a modifier', () => {
+    for (const line of [
+      'Day-to-day operations in our lab are overseen by Ada Brook, our lab manager.',
+      'Imaging projects in the Tidal Imaging Lab are led by Ada Brook.',
+      'Field campaigns of the TIL are run by Ada Brook.',
+    ]) {
+      expect(names(line), line).toEqual([]);
+    }
+  });
+
+  it('ignores an active statement whose object is another named unit', () => {
+    for (const line of [
+      'Our collaborator Ada Brook is the director of the Center for Molecular Imaging.',
+      'Ada Brook directs the Laboratory of Clinical Genomics.',
+    ]) {
+      expect(names(line), line).toEqual([]);
+    }
+    expect(names('Robin Quill directs the lab at the school.')).toEqual(['Robin Quill']);
+  });
+
   it('ignores a fronted subject that is only a possession of the row', () => {
     for (const line of [
       "Led by Ada Brook, the lab's outreach program visits schools.",
