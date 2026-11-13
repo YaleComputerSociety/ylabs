@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { HostCompletionTracker, orderRowsByHostCompletion, plannedHosts } from '../hostCompletion';
+import { HostCompletionTracker, plannedHosts } from '../hostCompletion';
 
 const planned = (row: string, ...urls: string[]) => ({ row, hosts: plannedHosts(urls) });
 
@@ -9,20 +9,6 @@ describe('plannedHosts', () => {
     expect([
       ...plannedHosts(['https://WWW.Example.edu/a', 'https://www.example.edu/b', 'not a url']),
     ]).toEqual(['www.example.edu']);
-  });
-});
-
-describe('orderRowsByHostCompletion', () => {
-  it('runs every row on the most shared host first and keeps incoming order within a host', () => {
-    const ordered = orderRowsByHostCompletion([
-      planned('a', 'https://lab-a.example.edu/'),
-      planned('b', 'https://shared.example.edu/b', 'https://lab-b.example.edu/'),
-      planned('c', 'https://lab-c.example.edu/'),
-      planned('d', 'https://shared.example.edu/d'),
-      planned('e'),
-    ]);
-
-    expect(ordered.map(({ row }) => row)).toEqual(['b', 'd', 'a', 'c', 'e']);
   });
 });
 

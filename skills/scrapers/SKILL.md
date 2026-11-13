@@ -458,8 +458,12 @@ It replaces the convention of announcing each write to the session that sequence
   That re-acquisition can be refused because another run took the host meanwhile, which is the protection working.
   The `__dev-apply__` lease is never idle-released, and neither is a lease a child joined or took under an owner id inherited from its parent, because a sibling may still be fetching through it; the root owner releases those when it ends.
 - A lane that knows every host its rows will fetch hands each host back the moment its last row on that host finishes (#6073), with `releaseReason: 'host-done'`, instead of holding it until the run ends.
-  `HostCompletionTracker` in `server/src/scrapers/utils/hostCompletion.ts` counts the rows left per host and calls `releaseDevHostLease`, which ends only the leases the idle release may end; `orderRowsByHostCompletion` runs the rows on the most shared host first, so the medical school and public health hosts are freed early in a long run.
-  `research-page-text` uses it; a fetch outside the planned hosts, such as a redirect, falls back to the idle release, and a later fetch to a handed-back host takes it again through the normal acquire.
+  `HostCompletionTracker` in `server/src/scrapers/utils/hostCompletion.ts` counts the rows left per host and calls `releaseDevHostLease`, which ends only the leases the idle release may end.
+  `research-page-text` uses it, and a later fetch to a handed-back host takes it again through the normal acquire.
+  Only a row's cited URLs are planned, so a fetch outside them, such as a page reached through a redirect, is not counted.
+  A host reached only that way falls back to the idle release.
+  A host that is also planned is handed back when its last planned row finishes, even if another row is still reading it through a redirect; that row's next fetch then re-acquires the host and can be refused, leaving the row with fewer pages.
+  The heartbeat does not treat a lease handed back during a renewal as lost.
   The stop and end-of-run cleanup still release every lease the run holds.
 - `DEV_WRITE_OWNER=<session name>` is required: on Development, an apply or a writing lane run with no owner label is **refused** before it takes a lease or writes anything, so every launch record and refusal names who launched it.
   The sweep runners (`scrape:sweep`, the weekly Development sweep, the source rerun) set their own `sweep-runner:<script>@<host>` label when none is set, and their children inherit it.

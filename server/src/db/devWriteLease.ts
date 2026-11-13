@@ -828,7 +828,7 @@ async function renewHeldLeases(at: Date) {
         reportedProgressCounts.set(ownerId, count);
         for (const state of members) {
           if (renewed.has(state.lease.name)) state.lastRenewedAt = at;
-          else lost.push(state.lease.name);
+          else if (heldLeases.get(state.lease.name) === state) lost.push(state.lease.name);
         }
       } catch (error) {
         runtime.log(

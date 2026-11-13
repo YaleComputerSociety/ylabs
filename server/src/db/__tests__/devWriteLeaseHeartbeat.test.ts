@@ -370,6 +370,36 @@ describe('finished host leases', () => {
     expect(await lease('host:done.example.edu')).toMatchObject({ locked: true, ownerId });
   });
 
+  it('a host handed back while a renewal is in flight does not stop the run as lost', async () => {
+    await holdHosts(['done.example.edu', 'busy.example.edu']);
+    const updateMany = Collection.prototype.updateMany;
+    let handedBack = false;
+    vi.spyOn(Collection.prototype, 'updateMany').mockImplementation(async function (
+      this: Collection,
+      ...args: Parameters<Collection['updateMany']>
+    ) {
+      if (!handedBack) {
+        handedBack = true;
+        await releaseDevHostLease('done.example.edu');
+      }
+      return updateMany.apply(this, args);
+    });
+
+    advance(DEV_WRITE_LEASE_HEARTBEAT_MS);
+    await runDevWriteLeaseHeartbeatTick();
+
+    expect(handedBack).toBe(true);
+    expect(stops).toEqual([]);
+    expect(await lease('host:done.example.edu')).toMatchObject({
+      locked: false,
+      releaseReason: 'host-done',
+    });
+    expect(await lease('host:busy.example.edu')).toMatchObject({
+      locked: true,
+      heartbeatAt: now(),
+    });
+  });
+
   it('a finished host taken by another run is not touched by the end-of-run cleanup', async () => {
     await holdHosts(['done.example.edu', 'busy.example.edu']);
     await releaseDevHostLease('done.example.edu');
