@@ -127,6 +127,7 @@ import {
   type SourceLinkProbeResult,
 } from '../services/sourceLinkHealth';
 import { gitCommitIsAncestor, isFullCommitSha } from './scrapeRunCodeIdentity';
+import { userRederiveOnlyFields } from './userMaterializerFieldScope';
 import {
   admittedClassifierVersion,
   sanitizeClassifierAdmissions,
@@ -2124,9 +2125,25 @@ export async function reconcileUserFieldRetractions(options: {
   return applied;
 }
 
+export type ScopedUserMaterializer = (
+  identifier: { entityKey: string },
+  onlyFields: readonly string[],
+) => Promise<unknown>;
+
+/**
+ * The end-of-run re-derive is scoped exactly like the operator script's (#6008): a subject is
+ * re-materialized with only the retracted fields' paths, and a field with no user materializer
+ * scope throws inside the re-derive, so that subject is skipped and counted as a re-derive
+ * error rather than widened to an unscoped write of every planned path (#6009).
+ */
+export function scopedRunUserRederiver(materialize: ScopedUserMaterializer): UserSubjectRederiver {
+  return async (identifier, retractedFields) =>
+    materialize(identifier, userRederiveOnlyFields(retractedFields));
+}
+
 export async function reconcileFieldRetractionsFromRun(
   scrapeRunId: string,
-  options: { dryRun?: boolean; rederiveUser?: UserSubjectRederiver } = {},
+  options: { dryRun?: boolean; materializeUser?: ScopedUserMaterializer } = {},
 ): Promise<FieldRetractionResult> {
   const dryRun = options.dryRun === true;
   if (!fieldRetractionEnabled()) return emptyResult('disabled', dryRun);
@@ -2146,7 +2163,7 @@ export async function reconcileFieldRetractionsFromRun(
   const userFieldRetraction = await reconcileUserFieldRetractions({
     sourceName,
     dryRun,
-    rederive: options.rederiveUser,
+    rederive: options.materializeUser ? scopedRunUserRederiver(options.materializeUser) : undefined,
   });
   return { ...result, userFieldRetraction };
 }
