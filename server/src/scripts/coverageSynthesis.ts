@@ -8,7 +8,11 @@ import { recordDevApplyIntent } from '../db/devWriteLease';
 import { countConnectionDrops } from '../utils/mongooseConnectionWasOpened';
 import { ResearchEntity } from '../models/researchEntity';
 import { Observation } from '../models/observation';
-import { appendObservations, getSourceByName } from '../scrapers/observationStore';
+import {
+  appendObservations,
+  getSourceByName,
+  retireObservations,
+} from '../scrapers/observationStore';
 import { contentHashObservation } from '../scrapers/contentHashGate';
 import { resetDescriptionOwnershipCitersCache } from '../scrapers/descriptionOwnershipResolverScreen';
 import {
@@ -20,6 +24,13 @@ import { mapWithConcurrency } from '../scrapers/utils/mapWithConcurrency';
 import type { ServingRowContext } from '../scrapers/utils/fullDescriptionServingBar';
 import { appendSynthesizedDescription } from './synthesizedDescriptionObservation';
 import {
+  REFUSED_REDRAFT_RETIRE_REASON_PREFIX,
+  decideRefusedRedraftRetire,
+  fallbackServesAfterRetire,
+  refusedRedraftRetireReason,
+  type RefusedRedraftRetireOutcome,
+} from './refusedRedraftBodyRetire';
+import {
   COVERAGE_CONFIDENCE,
   COVERAGE_SYNTHESIS_MODEL,
   WRITTEN_DESCRIPTION_SOURCE_NAME,
@@ -28,6 +39,7 @@ import {
   coverageSynthesisDecision,
   countCoverageSynthesisRefusals,
   type CoverageSynthesisDecision,
+  type CoverageSnippet,
   type CoverageSynthesisRefusal,
   type CoverageSynthesisRefusalDetails,
   type CoverageSynthesisResult,
@@ -99,6 +111,7 @@ import {
   resolveWrittenDescription,
   writerInputHash,
   writerModelThroughCache,
+  WRITER_CONTRACT_VERSION,
   type WrittenDescriptionStep,
 } from './writtenDescriptionDerivationCore';
 import { regateRematerializedEntities } from './rematerializeResearchEntities';
@@ -159,6 +172,7 @@ export interface CoverageEntityReport {
   sourceUrls?: string[];
   synthesisRefusal?: CoverageSynthesisRefusal;
   refusalDetails?: CoverageSynthesisRefusalDetails;
+  refusedRedraftRetire?: RefusedRedraftRetireOutcome;
 }
 
 export async function synthesizeIntoCoverageReport(
@@ -246,6 +260,69 @@ async function materializeWrittenRow(entity: EntityRow): Promise<string | undefi
     writtenRowMaterializeOptions(typeof entity.name === 'string' ? entity.name : ''),
   );
   return typeof materialized.entityId === 'string' ? materialized.entityId : undefined;
+}
+
+async function settleRefusedRedraftBody(input: {
+  entity: EntityRow;
+  anchors: Record<string, unknown>[];
+  liveBody: string;
+  snippets: CoverageSnippet[];
+  refusal: CoverageSynthesisRefusal;
+  leadPersonName: string;
+  apply: boolean;
+  report: CoverageEntityReport;
+  materializedEntityIds: string[];
+}): Promise<void> {
+  const { entity, liveBody, report } = input;
+  const adoptedBodyStillSupported = adoptedWrittenBodyStillSupported({
+    body: liveBody,
+    snippets: input.snippets,
+    researchAreas: entity.researchAreas,
+    entityType: entity.entityType,
+  });
+  const adopted = adoptedBodyStillSupported
+    ? null
+    : ((await Observation.findOne({
+        entityType: 'researchEntity',
+        ...materializationReadScopeFilter(),
+        sourceName: SOURCE_NAME,
+        field: 'fullDescription',
+        value: liveBody,
+        $or: input.anchors,
+      })
+        .select('_id')
+        .lean()) as { _id: unknown } | null);
+  let fallbackServes = false;
+  if (adopted) {
+    const planned = await materializeEntity(
+      'researchEntity',
+      { entityKey: entity.slug },
+      {
+        dryRun: true,
+        writeOnlyFields: [...WRITTEN_ROW_FIELDS],
+        treatObservationIdsAsRetired: new Set([String(adopted._id)]),
+      },
+    );
+    fallbackServes = fallbackServesAfterRetire({
+      entityDoc: entity,
+      plannedSet: planned.plannedSet,
+      plannedUnset: planned.plannedUnset,
+      retiredBody: liveBody,
+      leadPersonName: input.leadPersonName,
+    });
+  }
+  const outcome = decideRefusedRedraftRetire({
+    adoptedBodyStillSupported: adoptedBodyStillSupported || !adopted,
+    fallbackServes,
+  });
+  report.refusedRedraftRetire = outcome;
+  if (outcome !== 'retire-with-fallback' || !input.apply || !adopted) return;
+  await retireObservations(
+    { _id: adopted._id },
+    refusedRedraftRetireReason(WRITER_CONTRACT_VERSION, input.refusal),
+  );
+  const materializedId = await materializeWrittenRow(entity);
+  if (materializedId) input.materializedEntityIds.push(materializedId);
 }
 
 async function servesWrittenBody(entityId: string): Promise<boolean> {
@@ -701,7 +778,14 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
         entityType: 'researchEntity',
         sourceName: SOURCE_NAME,
         field: 'fullDescription',
-        'rollback.reason': RETIRE_REASON,
+        $and: [
+          {
+            $or: [
+              { 'rollback.reason': RETIRE_REASON },
+              { 'rollback.reason': { $regex: `^${REFUSED_REDRAFT_RETIRE_REASON_PREFIX}:` } },
+            ],
+          },
+        ],
         $or: anchors,
       })
         .sort({ observedAt: -1 })
@@ -799,6 +883,25 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
     );
     if (materializeIsDeferred) deferMaterialize(report);
     const liveBody = liveWrittenBody(observations, SOURCE_NAME);
+    if (args.retireUnsupportedRefusedBodies && decision?.refusal && liveBody) {
+      try {
+        await settleRefusedRedraftBody({
+          entity,
+          anchors,
+          liveBody,
+          snippets,
+          refusal: decision.refusal,
+          leadPersonName: leadNames[0] ?? '',
+          apply: Boolean(args.apply && context),
+          report,
+          materializedEntityIds,
+        });
+      } catch (error) {
+        entityErrors += 1;
+        console.error(`[coverage-synthesis] ${entity.slug}: ${sanitizeLogValue(error)}`);
+        return;
+      }
+    }
     let writes = carriedOverWrites(writerWritesFor(planned, decision), {
       carriedOver,
       liveBody,
@@ -886,6 +989,13 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
     evidenceUnchanged: countBy('evidence-unchanged'),
     reinstated: countBy('reinstated'),
     reinstateRefused: countBy('reinstate-refused'),
+    refusedRedraftRetire: {
+      keptSupported: reports.filter((r) => r.refusedRedraftRetire === 'kept-supported').length,
+      retiredWithFallback: reports.filter((r) => r.refusedRedraftRetire === 'retire-with-fallback')
+        .length,
+      residualNoFallback: reports.filter((r) => r.refusedRedraftRetire === 'residual-no-fallback')
+        .length,
+    },
     noEvidence: countBy('no-evidence'),
     fullDescriptionLocked: countBy('fullDescription-locked'),
     synthesized: reports.filter((r) => r.synthesized).length,

@@ -45,6 +45,7 @@ export interface CoverageSynthesisArgs {
   skipIndexSync: boolean;
   ignoreEvidenceHash: boolean;
   reinstateRetiredBodies: boolean;
+  retireUnsupportedRefusedBodies: boolean;
   evaluate: boolean;
   validateOnly: boolean;
   printWriterPrompt: boolean;
@@ -119,6 +120,7 @@ export function parseCoverageSynthesisArgs(argv: string[]): CoverageSynthesisArg
     skipIndexSync: false,
     ignoreEvidenceHash: false,
     reinstateRetiredBodies: false,
+    retireUnsupportedRefusedBodies: false,
     evaluate: false,
     validateOnly: false,
     printWriterPrompt: false,
@@ -157,7 +159,9 @@ export function parseCoverageSynthesisArgs(argv: string[]): CoverageSynthesisArg
     else if (token === '--skip-index-sync') args.skipIndexSync = true;
     else if (token === '--ignore-evidence-hash') args.ignoreEvidenceHash = true;
     else if (token === '--reinstate-retired-bodies') args.reinstateRetiredBodies = true;
-    else if (token === '--evaluate') args.evaluate = true;
+    else if (token === '--retire-unsupported-refused-bodies') {
+      args.retireUnsupportedRefusedBodies = true;
+    } else if (token === '--evaluate') args.evaluate = true;
     else if (token === '--validate-only') args.validateOnly = true;
     else if (token === '--print-writer-prompt') args.printWriterPrompt = true;
     else if (token === '--synthesize-cards') args.synthesizeCards = true;
@@ -373,6 +377,11 @@ export function assertWriterCacheModeAllowed(
  * named `--slugs` set, which bounds the spend to rows an operator chose to re-judge.
  */
 export function assertIgnoreEvidenceHashScoped(args: CoverageSynthesisArgs): void {
+  if (args.retireUnsupportedRefusedBodies && args.reinstateRetiredBodies) {
+    throw new Error(
+      'research-entity:coverage-synthesis --retire-unsupported-refused-bodies is refused with --reinstate-retired-bodies',
+    );
+  }
   if (args.reinstateRetiredBodies && args.slugs.length === 0) {
     throw new Error(
       'research-entity:coverage-synthesis --reinstate-retired-bodies requires --slugs=<slug,...>',

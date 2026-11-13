@@ -671,6 +671,11 @@ interface MaterializeOptions {
    * row that still exists must never reach a write.
    */
   treatArchivedResearchEntitiesAsAbsent?: ReadonlySet<string>;
+  /**
+   * Plan as if these observations were already retired, so a dry run answers whether
+   * retiring one would still leave the row a value that serves. `dryRun` is required.
+   */
+  treatObservationIdsAsRetired?: ReadonlySet<string>;
   chunkPrefetch?: MaterializationReadSource;
   syncMeilisearch?: boolean;
   synthesizeCardDescription?: CardSynthesizer;
@@ -13085,6 +13090,9 @@ async function materializeEntityUnderRemovalGuard(
   if (options.treatArchivedResearchEntitiesAsAbsent && !options.dryRun) {
     throw new Error('materializeEntity treatArchivedResearchEntitiesAsAbsent requires dryRun');
   }
+  if (options.treatObservationIdsAsRetired && !options.dryRun) {
+    throw new Error('materializeEntity treatObservationIdsAsRetired requires dryRun');
+  }
   if (options.reviseRevisitableFieldLocks && !options.dryRun) {
     throw new Error('materializeEntity reviseRevisitableFieldLocks requires dryRun');
   }
@@ -13138,7 +13146,10 @@ async function materializeEntityUnderRemovalGuard(
     );
   }
 
-  let obs = withheldFiltered;
+  const treatedAsRetired = options.treatObservationIdsAsRetired;
+  let obs = treatedAsRetired
+    ? withheldFiltered.filter((observation: any) => !treatedAsRetired.has(String(observation._id)))
+    : withheldFiltered;
   if (obs.length === 0 && isResearchEntityObservationType(entityType)) {
     obs = await observationsMergedIntoLiveSurvivor(entityType, identifier, options.chunkPrefetch);
   }
