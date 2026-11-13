@@ -168,6 +168,7 @@ export interface CoverageEntityReport {
   written: boolean;
   adopted?: boolean;
   observationDropped?: boolean;
+  observationDroppedBy?: string[];
   description?: string;
   sourceUrls?: string[];
   synthesisRefusal?: CoverageSynthesisRefusal;
@@ -1002,6 +1003,11 @@ export async function runCoverageSynthesis(argv: string[] = process.argv.slice(2
     synthesisRefusals: summarizeCoverageSynthesisRefusals(reports),
     written,
     observationDropped,
+    observationDroppedBy: reports.reduce<Record<string, number>>((counts, entry) => {
+      for (const guard of entry.observationDroppedBy ?? [])
+        counts[guard] = (counts[guard] ?? 0) + 1;
+      return counts;
+    }, {}),
     adopted,
     entityErrors,
     connectionDrops: { ...connectionDrops },

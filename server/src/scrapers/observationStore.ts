@@ -613,10 +613,35 @@ async function dropCardLosingDescriptionRefreshes(
   return { rows, observations: held.size };
 }
 
+export type ObservationDropGuard =
+  | 'removedPersonRequest'
+  | 'uncitableHost'
+  | 'sharedPageOwnership'
+  | 'fieldSanitizer'
+  | 'retiredField'
+  | 'invalidEnum'
+  | 'selfDefeatingCard'
+  | 'regressiveProse'
+  | 'weakerProse'
+  | 'cardLoss'
+  | 'dryRun';
+
+export type ObservationDropCounts = Partial<Record<ObservationDropGuard, number>>;
+
+function observationDropCounts(counts: ObservationDropCounts): ObservationDropCounts {
+  return Object.fromEntries(
+    Object.entries(counts).filter(([, count]) => typeof count === 'number' && count > 0),
+  ) as ObservationDropCounts;
+}
+
 export async function appendObservations(
   inputs: ObservationInput[],
   ctx: AppendContext,
-  opts: { loadActiveProse?: ActiveProseLoader; judgeDescriptionCard?: DescriptionCardJudge } = {},
+  opts: {
+    loadActiveProse?: ActiveProseLoader;
+    judgeDescriptionCard?: DescriptionCardJudge;
+    reportDrops?: (droppedBy: ObservationDropCounts) => void;
+  } = {},
 ): Promise<{
   inserted: number;
   skipped: number;
@@ -627,6 +652,7 @@ export async function appendObservations(
   const removal = await withoutRemovedPeople(await withRenamedResearchEntityIds(inputs), ctx);
   const refusedByRequest = removal.refused.length > 0 ? { refusedByRequest: removal.refused } : {};
   if (removal.kept.length === 0) {
+    opts.reportDrops?.(observationDropCounts({ removedPersonRequest: removal.refused.length }));
     return { inserted: 0, skipped: 0, superseded: 0, ...refusedByRequest };
   }
   const loadActiveProse = opts.loadActiveProse ?? loadActiveProseValue;
@@ -829,7 +855,20 @@ export async function appendObservations(
     weakerProseGuarded +
     selfDefeatingCardGuarded +
     cardRegressionGuarded.observations;
+  const droppedBy = observationDropCounts({
+    removedPersonRequest: removal.refused.length,
+    uncitableHost: rejectedUncitableHost,
+    sharedPageOwnership: ownershipRejected.length,
+    fieldSanitizer: rejectedFurniture,
+    retiredField: rejectedRetiredField.length,
+    invalidEnum: rejectedInvalidEnum.length,
+    selfDefeatingCard: selfDefeatingCardGuarded,
+    regressiveProse: regressiveProseGuarded,
+    weakerProse: weakerProseGuarded,
+    cardLoss: cardRegressionGuarded.observations,
+  });
   if (keptInputs.length === 0) {
+    opts.reportDrops?.(droppedBy);
     return { inserted: 0, skipped: skippedCount, superseded: 0, ...refusedByRequest };
   }
 
@@ -869,10 +908,12 @@ export async function appendObservations(
   });
 
   if (ctx.dryRun) {
+    opts.reportDrops?.({ ...droppedBy, dryRun: docs.length });
     return { inserted: 0, skipped: docs.length + skippedCount, superseded: 0, ...refusedByRequest };
   }
 
   if (docs.some(writesOwnershipGuardedDescriptionField)) resetDescriptionOwnershipCitersCache();
+  opts.reportDrops?.(droppedBy);
   const landed = await insertDocumentsIdempotently(
     docs,
     {

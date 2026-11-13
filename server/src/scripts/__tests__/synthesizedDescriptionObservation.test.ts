@@ -51,9 +51,25 @@ describe('appendSynthesizedDescription (#3727)', () => {
       expect(stored).toBe(false);
       expect(report.written).toBe(false);
       expect(report.observationDropped).toBe(true);
-      expect(append).toHaveBeenCalledWith([observation], context);
+      expect(report.observationDroppedBy).toEqual(['unreported']);
+      expect(append).toHaveBeenCalledWith([observation], context, expect.anything());
     },
   );
+
+  it('names the guard that dropped the observation', async () => {
+    const report = coverageReport();
+    const stored = await appendSynthesizedDescription(
+      report,
+      observation,
+      context,
+      async (_inputs, _context, opts) => {
+        opts?.reportDrops?.({ weakerProse: 1 });
+        return { inserted: 0 };
+      },
+    );
+    expect(stored).toBe(false);
+    expect(report.observationDroppedBy).toEqual(['weakerProse']);
+  });
 
   it.each([
     ['coverage', coverageReport],
