@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import crypto from 'crypto';
 import fs from 'fs';
 import { isOnExcludedHost, normalizeExcludedHost } from '../utils/excludedHosts';
 import path from 'path';
@@ -36,6 +37,7 @@ import {
   storedSourceLinkHealthByUrl,
   isStoredUnresolvableVerdict,
   tallySourceLinkVerdictTransition,
+  sourceLinkVerdictSignature,
   type SourceLinkVerdictTransitionSample,
   type StoredSourceLinkHealthEntry,
   needsRecheckSince,
@@ -56,6 +58,14 @@ export interface SourceLinkHealthBackfillOptions {
   reprobeHealthyAfterDays?: number;
   checkedBefore?: Date;
   excludeHosts: string[];
+  /** A file naming the only links this run probes, one per line, probed in file order. */
+  urlFile?: string;
+  /** Statuses that end probing of a host for the rest of the run, for example 403 and 429. */
+  stopOnStatuses: number[];
+  /** Probe at most this many due links per host; a dry run defaults to a sample. */
+  samplePerHost?: number;
+  /** A dry run that sweeps every due link instead of sampling. */
+  fullDryRun: boolean;
   output?: string;
 }
 
@@ -66,16 +76,23 @@ export interface SourceLinkHealthBackfillOptions {
  */
 export function sourceLinkHealthBackfillStdoutSummary(result: SourceLinkHealthBackfillResult): Omit<
   SourceLinkHealthBackfillResult,
-  'samples' | 'lostVerdictSamples'
+  'samples' | 'lostVerdictSamples' | 'probesByHost' | 'stoppedHosts'
 > & {
   sampleCount: number;
   lostVerdictSampleCount: number;
+  hostsProbed: number;
+  maxProbesOnOneHost: number;
+  stoppedHostCount: number;
 } {
-  const { samples, lostVerdictSamples, ...counts } = result;
+  const { samples, lostVerdictSamples, probesByHost, stoppedHosts, ...counts } = result;
+  const probeCounts = Object.values(probesByHost);
   return {
     ...counts,
     sampleCount: samples.length,
     lostVerdictSampleCount: lostVerdictSamples.length,
+    hostsProbed: probeCounts.length,
+    maxProbesOnOneHost: probeCounts.length > 0 ? Math.max(...probeCounts) : 0,
+    stoppedHostCount: stoppedHosts.length,
   };
 }
 
@@ -88,6 +105,8 @@ export function parseSourceLinkHealthBackfillArgs(argv: string[]): SourceLinkHea
     staleOnly: false,
     httpWebsitesOnly: false,
     excludeHosts: [],
+    stopOnStatuses: [],
+    fullDryRun: false,
   };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
@@ -107,6 +126,20 @@ export function parseSourceLinkHealthBackfillArgs(argv: string[]): SourceLinkHea
     } else if (arg === '--checked-before') {
       options.checkedBefore = parseCheckedBefore(argv[i + 1]);
       i += 1;
+    } else if (arg === '--full-dry-run') {
+      options.fullDryRun = true;
+    } else if (arg.startsWith('--sample-per-host=')) {
+      options.samplePerHost = parsePositiveInt(
+        arg.slice('--sample-per-host='.length),
+        '--sample-per-host',
+      );
+    } else if (arg.startsWith('--url-file=')) {
+      options.urlFile = arg.slice('--url-file='.length);
+    } else if (arg === '--url-file') {
+      options.urlFile = argv[i + 1];
+      i += 1;
+    } else if (arg.startsWith('--stop-on-status=')) {
+      options.stopOnStatuses = parseStatusList(arg.slice('--stop-on-status='.length));
     } else if (arg.startsWith('--exclude-host=')) {
       options.excludeHosts.push(parseExcludedHost(arg.slice('--exclude-host='.length)));
     } else if (arg === '--exclude-host') {
@@ -128,12 +161,46 @@ export function parseSourceLinkHealthBackfillArgs(argv: string[]): SourceLinkHea
       throw new Error(`Unknown source-link-health backfill argument: ${arg}`);
     }
   }
+  if (options.fullDryRun && !options.dryRun) {
+    throw new Error(
+      '--full-dry-run applies to a dry run only; an apply always probes every due link.',
+    );
+  }
+  if (options.samplePerHost !== undefined && !options.dryRun) {
+    throw new Error('--sample-per-host applies to a dry run only.');
+  }
   if (options.staleOnly && options.reprobeHealthyAfterDays !== undefined) {
     throw new Error(
       '--stale-only and --reprobe-healthy-after-days are alternative scopes; pass one.',
     );
   }
   return options;
+}
+
+function parseStatusList(value: string): number[] {
+  const statuses = value.split(',').map((part) => Number(part.trim()));
+  if (
+    statuses.length === 0 ||
+    statuses.some((status) => !Number.isInteger(status) || status < 100 || status > 599)
+  ) {
+    throw new Error('--stop-on-status takes HTTP statuses such as 403,429');
+  }
+  return statuses;
+}
+
+/**
+ * Reads a `--url-file`: one link per line, blank lines and `#` lines ignored, order kept so a
+ * pass can put the links it must not lose first.
+ */
+export function readSourceLinkUrlFile(text: string): string[] {
+  return [
+    ...new Set(
+      text
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line && !line.startsWith('#')),
+    ),
+  ];
 }
 
 function parseExcludedHost(value: string | undefined): string {
@@ -184,6 +251,9 @@ export interface SourceLinkHealthRunOptions {
   reprobeHealthyAfterDays?: number;
   checkedBefore?: Date;
   excludeHosts?: string[];
+  urlScope?: string[];
+  stopOnStatuses?: number[];
+  samplePerHost?: number;
 }
 
 /**
@@ -205,8 +275,19 @@ export function sourceLinkHealthRunOptions(
     ...(options.excludeHosts.length > 0
       ? { excludeHosts: [...new Set(options.excludeHosts)] }
       : {}),
+    ...(options.stopOnStatuses.length > 0 ? { stopOnStatuses: options.stopOnStatuses } : {}),
+    ...(options.dryRun && !options.fullDryRun
+      ? { samplePerHost: options.samplePerHost ?? DEFAULT_DRY_RUN_SAMPLE_PER_HOST }
+      : {}),
   };
 }
+
+/**
+ * How many due links per host a dry run probes by default. A dry run cannot change stored data,
+ * so sweeping a whole host to preview an apply only spends that host's patience: four full dry
+ * runs sent one school host about 3,200 requests in five hours (#6182).
+ */
+export const DEFAULT_DRY_RUN_SAMPLE_PER_HOST = 20;
 
 export interface SourceLinkHealthBackfillResult {
   mode: 'dry-run' | 'apply';
@@ -245,6 +326,20 @@ export interface SourceLinkHealthBackfillResult {
    * forward untouched.
    */
   excludedHostLinks: number;
+  /** Candidate links left unprobed (sampled out, a stopped host, or a probe error): stored verdict kept. */
+  keptUnobservedLinks: number;
+  /**
+   * Present when the run sampled: the per-host cap, and how many due links it probed of how many.
+   * Every count in this result then describes the sample, and `projectedVerdictTransitions`
+   * scales it to every due link.
+   */
+  dryRunSample?: { perHost: number; dueLinks: number; probedLinks: number; hostsCapped: number };
+  /** `verdictTransitions` scaled per host to every due link; a projection, not a measurement. */
+  projectedVerdictTransitions?: Record<string, number>;
+  /** Probes sent per host. Kept out of stdout because a host can be a personal domain. */
+  probesByHost: Record<string, number>;
+  /** Hosts whose probing stopped on a `--stop-on-status` status. */
+  stoppedHosts: string[];
   /** Each lost or certificate-cleared verdict, for a gate to re-check by hand. */
   lostVerdictSamples: SourceLinkVerdictTransitionSample[];
   indexSyncFailures: number;
@@ -276,6 +371,48 @@ const hostOf = (url: string): string => {
     return '';
   }
 };
+
+const stableUrlRank = (url: string): string => crypto.createHash('sha1').update(url).digest('hex');
+
+/**
+ * The order planned probes go out in. A `--url-file` keeps the file's order, so a pass that may
+ * stop early on a refusal has already probed the links it must not lose. A sampled dry run orders
+ * each host's links by a stable hash, so its sample is seeded and repeatable.
+ */
+export function orderPlannedProbes(
+  urls: readonly string[],
+  urlScopeOrder: ReadonlyMap<string, number> | undefined,
+  sampled: boolean,
+): string[] {
+  const unique = [...new Set(urls)];
+  if (urlScopeOrder) {
+    return unique.sort((a, b) => (urlScopeOrder.get(a) ?? 0) - (urlScopeOrder.get(b) ?? 0));
+  }
+  if (sampled) return unique.sort((a, b) => stableUrlRank(a).localeCompare(stableUrlRank(b)));
+  return unique;
+}
+
+/**
+ * Scales each sampled host's transitions to every due link on that host. A host probed in full
+ * scales by one, so an unsampled run's projection equals its measurement.
+ */
+export function projectSampledTransitions(
+  transitionsByHost: ReadonlyMap<string, Record<string, number>>,
+  dueByHost: ReadonlyMap<string, number>,
+  observedDueByHost: ReadonlyMap<string, number>,
+): Record<string, number> {
+  const projected: Record<string, number> = {};
+  for (const [host, tally] of transitionsByHost) {
+    const observed = observedDueByHost.get(host) ?? 0;
+    const scale = observed > 0 ? (dueByHost.get(host) ?? observed) / observed : 1;
+    for (const [key, count] of Object.entries(tally)) {
+      projected[key] = (projected[key] ?? 0) + count * scale;
+    }
+  }
+  return Object.fromEntries(
+    Object.entries(projected).map(([key, value]) => [key, Math.round(value)]),
+  );
+}
 
 /**
  * The one resolver breaker wiring every link-health pass shares, so a pass cannot
@@ -346,8 +483,21 @@ export async function probeUncachedUrlsByHost(
      */
     resolverBreaker?: ResolverCircuitBreaker;
     hostThrottleFor?: (host: string) => HostThrottle | undefined;
+    /**
+     * The most probes this run may send one host, across every call that shares
+     * `probesByHost`. A dry run sets it so repeated dry runs cannot sweep a whole host (#6182).
+     */
+    maxProbesPerHost?: number;
+    /** Probes sent so far, by host; shared across calls so the cap covers fallbacks too. */
+    probesByHost?: Map<string, number>;
+    /** A status that ends this run's probing of a host, for example a 403 or 429. */
+    stopOnStatuses?: ReadonlySet<number>;
+    /** Hosts this run has stopped probing; shared across calls. */
+    stoppedHosts?: Set<string>;
   },
 ): Promise<void> {
+  const probesByHost = deps.probesByHost ?? new Map<string, number>();
+  const stoppedHosts = deps.stoppedHosts ?? new Set<string>();
   const byHost = new Map<string, string[]>();
   const queued = new Set<string>();
   for (const url of urls) {
@@ -361,10 +511,21 @@ export async function probeUncachedUrlsByHost(
   if (byHost.size === 0) return;
 
   const probe = async (url: string, requestGate?: HostSlotLimiter): Promise<void> => {
+    const host = hostOf(url);
+    if (stoppedHosts.has(host)) return;
+    const sent = probesByHost.get(host) ?? 0;
+    if (deps.maxProbesPerHost !== undefined && sent >= deps.maxProbesPerHost) return;
+    probesByHost.set(host, sent + 1);
     try {
       const health = await deps.checkLink(url, requestGate);
       healthCache.set(url, health);
       deps.result.checked += 1;
+      if (
+        typeof health.httpStatusCode === 'number' &&
+        deps.stopOnStatuses?.has(health.httpStatusCode)
+      ) {
+        stoppedHosts.add(host);
+      }
       // A verdict of UNAVAILABLE carrying no HTTP status is the shape a
       // resolution failure takes, and it is the only shape #2775 mis-recorded.
       if (health.healthStatus === 'UNAVAILABLE' && health.httpStatusCode === undefined) {
@@ -437,6 +598,9 @@ export async function runSourceLinkHealthBackfill(options: {
   reprobeHealthyAfterDays?: number;
   checkedBefore?: Date;
   excludeHosts?: string[];
+  urlScope?: string[];
+  stopOnStatuses?: number[];
+  samplePerHost?: number;
   checkLink?: (url: string, requestGate?: HostSlotLimiter) => Promise<SourceLinkHealth>;
   /**
    * Page size, overridable only so a test can cross a page boundary without seeding
@@ -451,6 +615,21 @@ export async function runSourceLinkHealthBackfill(options: {
   hostThrottleFor?: (host: string) => HostThrottle | undefined;
 }): Promise<SourceLinkHealthBackfillResult> {
   const excludeHosts = (options.excludeHosts ?? []).map(normalizeExcludedHost).filter(Boolean);
+  const urlScopeOrder = options.urlScope
+    ? new Map(options.urlScope.map((url, index) => [url, index] as const))
+    : undefined;
+  const stopOnStatuses = new Set(options.stopOnStatuses ?? []);
+  const probesByHost = new Map<string, number>();
+  const stoppedHosts = new Set<string>();
+  const dueByHost = new Map<string, number>();
+  const observedDueByHost = new Map<string, number>();
+  const transitionsByHost = new Map<string, Record<string, number>>();
+  const probeLimits = {
+    probesByHost,
+    stoppedHosts,
+    ...(stopOnStatuses.size > 0 ? { stopOnStatuses } : {}),
+    ...(options.samplePerHost !== undefined ? { maxProbesPerHost: options.samplePerHost } : {}),
+  };
   const checkLink =
     options.checkLink ??
     ((url: string, requestGate?: HostSlotLimiter) =>
@@ -482,6 +661,9 @@ export async function runSourceLinkHealthBackfill(options: {
     servedWebsitesLost: 0,
     lostVerdictSamples: [],
     excludedHostLinks: 0,
+    keptUnobservedLinks: 0,
+    probesByHost: {},
+    stoppedHosts: [],
     indexSyncFailures: 0,
     indexSyncDeferred: 0,
     resolver: resolverBreaker.stats,
@@ -588,6 +770,7 @@ export async function runSourceLinkHealthBackfill(options: {
           (row) => row.sourceUrl,
         );
         const candidates = collectSourceLinkHealthCandidates(entity, signalSourceUrls);
+        if (urlScopeOrder && !candidates.some((url) => urlScopeOrder.has(url))) continue;
         if (candidates.length === 0) continue;
         const { toProbe, carried } =
           options.reprobeHealthyAfterDays === undefined
@@ -626,24 +809,35 @@ export async function runSourceLinkHealthBackfill(options: {
       }
     }
 
-    await probeUncachedUrlsByHost(
-      plans.flatMap((plan) => plan.toProbe),
-      healthCache,
-      {
-        checkLink,
-        hostConcurrency,
-        paceDelayMs,
-        sleep,
-        result,
-        resolverBreaker,
-        hostThrottleFor: options.hostThrottleFor ?? measuredHostBudget,
-      },
+    const inScope = (url: string): boolean => !urlScopeOrder || urlScopeOrder.has(url);
+    const plannedProbes = orderPlannedProbes(
+      plans.flatMap((plan) => plan.toProbe).filter(inScope),
+      urlScopeOrder,
+      options.samplePerHost !== undefined,
     );
+    const plannedProbeSet = new Set(plannedProbes);
+    for (const url of plannedProbeSet) {
+      if (healthCache.has(url)) continue;
+      const host = hostOf(url);
+      dueByHost.set(host, (dueByHost.get(host) ?? 0) + 1);
+    }
+    await probeUncachedUrlsByHost(plannedProbes, healthCache, {
+      checkLink,
+      hostConcurrency,
+      paceDelayMs,
+      sleep,
+      result,
+      resolverBreaker,
+      hostThrottleFor: options.hostThrottleFor ?? measuredHostBudget,
+      ...probeLimits,
+    });
 
     for (const plan of plans) {
-      plan.tlsFallbacks = tlsFallbackCandidates(plan.candidates, healthCache);
+      plan.tlsFallbacks = tlsFallbackCandidates(plan.candidates.filter(inScope), healthCache);
       plan.httpsSpellings = httpsSpellingProbes(
-        [plan.entity.websiteUrl, plan.entity.website],
+        [plan.entity.websiteUrl, plan.entity.website].filter(
+          (url) => typeof url !== 'string' || inScope(url),
+        ),
         healthCache,
       );
     }
@@ -662,6 +856,7 @@ export async function runSourceLinkHealthBackfill(options: {
         result,
         resolverBreaker,
         hostThrottleFor: options.hostThrottleFor ?? measuredHostBudget,
+        ...probeLimits,
       },
     );
 
@@ -700,11 +895,30 @@ export async function runSourceLinkHealthBackfill(options: {
             sourceLinkHealth.push(carryForwardSourceLinkHealthEntry(url, carriedEntry));
             continue;
           }
-          if (!health) continue;
+          if (!health) {
+            const stored = storedByUrl.get(url);
+            if (stored) {
+              sourceLinkHealth.push(carryForwardSourceLinkHealthEntry(url, stored));
+              result.keptUnobservedLinks += 1;
+            }
+            continue;
+          }
           probedEntries += 1;
+          const urlHost = hostOf(url);
+          if (plannedProbeSet.has(url)) {
+            observedDueByHost.set(urlHost, (observedDueByHost.get(urlHost) ?? 0) + 1);
+          }
           const resolved = resolveSourceLinkHealthEntry(url, health, storedByUrl.get(url), now);
           if (resolved.preservedDecisiveVerdict) result.preservedDecisiveVerdicts += 1;
           if (resolved.preservedUnreachedVerdict) result.preservedUnreachedVerdicts += 1;
+          const verdictBefore = sourceLinkVerdictSignature(storedByUrl.get(url));
+          const verdictAfter = sourceLinkVerdictSignature(resolved.entry);
+          if (verdictBefore !== verdictAfter) {
+            const hostTally = transitionsByHost.get(urlHost) ?? {};
+            const key = `${verdictBefore}->${verdictAfter}`;
+            hostTally[key] = (hostTally[key] ?? 0) + 1;
+            transitionsByHost.set(urlHost, hostTally);
+          }
           tallySourceLinkVerdictTransition(
             result,
             storedByUrl.get(url),
@@ -757,6 +971,23 @@ export async function runSourceLinkHealthBackfill(options: {
     if (page.length < PAGE_SIZE) break;
   }
   result.resolver = resolverBreaker.stats;
+  result.probesByHost = Object.fromEntries([...probesByHost].sort());
+  result.stoppedHosts = [...stoppedHosts].sort();
+  if (options.samplePerHost !== undefined) {
+    const dueLinks = [...dueByHost.values()].reduce((sum, count) => sum + count, 0);
+    const probedLinks = [...observedDueByHost.values()].reduce((sum, count) => sum + count, 0);
+    result.dryRunSample = {
+      perHost: options.samplePerHost,
+      dueLinks,
+      probedLinks,
+      hostsCapped: [...dueByHost.values()].filter((count) => count > options.samplePerHost!).length,
+    };
+    result.projectedVerdictTransitions = projectSampledTransitions(
+      transitionsByHost,
+      dueByHost,
+      observedDueByHost,
+    );
+  }
   return result;
 }
 
@@ -776,7 +1007,14 @@ async function main(): Promise<void> {
 
   await initializeConnections();
   try {
-    const runOptions = sourceLinkHealthRunOptions(options);
+    const runOptions = {
+      ...sourceLinkHealthRunOptions(options),
+      ...(options.urlFile
+        ? {
+            urlScope: readSourceLinkUrlFile(fs.readFileSync(path.resolve(options.urlFile), 'utf8')),
+          }
+        : {}),
+    };
     const result = await runSourceLinkHealthBackfill(runOptions);
     const payload = {
       generatedAt: new Date().toISOString(),
