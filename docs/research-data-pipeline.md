@@ -1369,6 +1369,11 @@ It removes a value, not a field, which is what keeps it from being the lock agai
 `refusedResolverObservations` drops matching observations before `resolveAllFields` runs, so a better rival at the same field still wins and a field whose every candidate is refused resolves to nothing.
 The projection reads that same screened set rather than the unscreened one, so no re-rank walk can adopt a refused value that the #3438 stored-description clear would then blank over an admissible rival (#3884).
 That is every re-rank walk the projection runs rather than the description ones alone: the `fullDescription` fallback walk and the single-PI shell gate, the name-authority and department-naming walks, and the `researchAreas` readmission walk.
+On a list field in `ENTRY_REFUSABLE_LIST_FIELDS` (today `sourceUrls`) one entry can be refused on its own (#6012).
+`refusedResolverObservations` removes that entry from every list observation carrying it and keeps the others, dropping the observation only when every entry is refused, while a refusal of a whole list still matches only that exact list.
+An entry matches on its URL-folded key, which keeps the query as the person-record URL fields do so two citations differing only by query stay distinct, or on the plain-text key earlier refusals were recorded under, so a refusal stored before #6012 keeps working.
+The stored-citation readmission (`planStoredCitationReadmission`, #3476) skips a refused entry too; without that, the resolver dropped the entry and readmission put it straight back, which is why a scoped `--only-fields=sourceUrls` rematerialize had planned 0 changes for such a refusal.
+`research-entity:refuse-field-value` reports, under `listEntryRemoval`, how many live list observations and entries a refusal of one entry would remove and whether the stored list carries it; the stored list changes on the next materialize of the row.
 It also settles the projection's live-evidence test: a field whose every candidate is refused counts as having no live observation, so its stale stored value is clearable rather than pinned by the refused evidence.
 
 It has to reach every path that can write the field.
