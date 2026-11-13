@@ -3401,6 +3401,47 @@ export function visibleBioNetidInitialsCheck(
 }
 
 /**
+ * A page stating a person-specific address other than the one stored for the person, and other
+ * than the person's netid mailbox, is a namesake's page unless something besides the shared name
+ * ties it to them: the directory pairing the page's address with the person's netid, the page
+ * stating that netid, the page being one the person's own record links, or an ORCID another page
+ * witnessed (#5787). A shared name agrees with the netid's initials, so it is no witness here.
+ */
+export function visibleBioPageAddressContradictsPerson(
+  identity: Pick<OfficialProfileIdentity, 'email' | 'profileNetid' | 'canonicalUrl' | 'fetchedUrl'>,
+  person: Record<string, any>,
+  directory: DirectoryNetidsByAddress | undefined,
+  orcidWitness = false,
+): boolean {
+  const pageEmail = textValue(identity.email).toLowerCase();
+  const storedEmail = textValue(person.email).toLowerCase();
+  const netid = textValue(person.netid).toLowerCase();
+  if (!pageEmail || !storedEmail || pageEmail === storedEmail) return false;
+  if (storedEmail === `${netid}@yale.edu`) return false;
+  if (orcidWitness || directoryPairsAddressWithEntityNetid(pageEmail, person, directory)) {
+    return false;
+  }
+  if (identity.profileNetid && expectedNetidMatchesProfileNetid(netid, identity.profileNetid)) {
+    return false;
+  }
+  return !pageIsLinkedFromPersonsOwnRecord(identity, person);
+}
+
+function pageIsLinkedFromPersonsOwnRecord(
+  identity: Pick<OfficialProfileIdentity, 'canonicalUrl' | 'fetchedUrl'>,
+  person: Record<string, any>,
+): boolean {
+  const ownUrls = new Set(
+    uniqueStrings([person.websiteUrl, person.website, ...objectStringValues(person.profileUrls)])
+      .map(normalizeOfficialProfileUrl)
+      .filter(Boolean),
+  );
+  return [identity.canonicalUrl, identity.fetchedUrl]
+    .map(normalizeOfficialProfileUrl)
+    .some((url) => Boolean(url) && ownUrls.has(url));
+}
+
+/**
  * Whether the page states the person's stored ORCID and some other page already asserted that
  * ORCID about this person. An observation read from this same page is the page vouching for
  * itself, so it never counts, and neither does a stored address, which can have been copied
@@ -5838,8 +5879,9 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
             const unwitnessedNetidMismatch =
               !!identity &&
               !!visibleExistingUser &&
-              visibleBioNetidInitialsCheck(identity, entity, directoryNetidsByAddress).refused &&
-              !pageOrcidWitnessedForNetid;
+              !pageOrcidWitnessedForNetid &&
+              (visibleBioNetidInitialsCheck(identity, entity, directoryNetidsByAddress).refused ||
+                visibleBioPageAddressContradictsPerson(identity, entity, directoryNetidsByAddress));
             if (identity && unwitnessedNetidMismatch) {
               ctx.log('Refused an unwitnessed netid-initials mismatch', {
                 entityId: officialProfileDocumentId(entity._id),
