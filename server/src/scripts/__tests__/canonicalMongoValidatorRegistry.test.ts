@@ -137,7 +137,14 @@ describe('canonical MongoDB validator registry', () => {
     // gate covers: no environment applies these validators (#752 declined), so a review
     // here approves what would be applied and asserts nothing about stored data (#3396).
     //
-    // Reviewed for #5968. The only drift is role_assignments gaining reviewedBy, an optional
+    // Reviewed for #5979. The only drift is role_assignments gaining operatorEnd, an optional
+    // object of endedAt, reason, citationUrl, decidedBy ('owner' or 'agent'), recordedBy,
+    // recordedAt, previousState and previousEndedAt, which detach-edge --end-as-historical
+    // writes and restore-detached-edge clears, and which the canonical membership writer and
+    // the repair-queue PI writer read to refuse re-asserting that edge. Edges the tool has not
+    // ended carry none. No other collection or property changed.
+    //
+    // Reviewed for #5968 before that. The only drift is role_assignments gaining reviewedBy, an optional
     // bounded string naming who detached or restored the edge, reviewedByAgent, an optional
     // boolean recording whether that actor was an agent, and reviewedAt, an optional date,
     // which detach-edge and restore-detached-edge write so a restore can tell an agent's
@@ -262,6 +269,6 @@ describe('canonical MongoDB validator registry', () => {
     expect(
       canonicalMongoValidatorFingerprint(CANONICAL_MONGO_VALIDATORS),
       'The declared canonical validator contracts changed. This gate governs the declaration in canonicalMongoValidatorRegistry.ts and nothing else: no environment applies these validators, so a green run is not evidence that any collection is validated, and a red run is not an outage. Describe the drift in the comment above, then update the expected fingerprint. Only `yarn --cwd server model-refactor:validators-assert --environment <env>` reads the database.',
-    ).toBe('2b50a81a648e3681788683efcaa1ecd6d3a1520d4b581d19dd3c3d0d19f21008');
+    ).toBe('b456c778bf1d77608f65f60a9e6e3ab37a14de87040cf0d77165a15c6145f175');
   });
 });
