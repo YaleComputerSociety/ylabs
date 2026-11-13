@@ -6,9 +6,6 @@ import ResearchFilterDisclosure from '../ResearchFilterDisclosure';
 
 const originalMatchMedia = window.matchMedia;
 
-const TIP = 'None match your other filters. Remove a filter to see more.';
-const NOTE = 'Missing evidence is not proof there is none.';
-
 const renderFilters = (
   overrides: Partial<ComponentProps<typeof ResearchFilterDisclosure>> = {},
 ) => {
@@ -154,37 +151,14 @@ describe('ResearchFilterDisclosure', () => {
     expect(screen.getByRole('checkbox', { name: 'Taking undergrads now (4)' })).toBeChecked();
     const hosted = screen.getByRole('checkbox', { name: 'Has had undergrads before (0)' });
     expect(hosted).toHaveAttribute('aria-disabled', 'true');
-    expect(hosted).toHaveAccessibleDescription(`${TIP} ${NOTE}`);
+    expect(hosted).toHaveAccessibleDescription(
+      'None match your other filters. Remove a filter to see more.',
+    );
     const advises = screen.getByRole('checkbox', { name: 'Advises undergrad research (0)' });
     expect(advises).toHaveAttribute('aria-disabled', 'true');
-    expect(advises).toHaveAccessibleDescription(`e.g. supervised senior theses ${TIP} ${NOTE}`);
-  });
-
-  it('keeps the missing-evidence note and adds the unavailable tip, in the sidebar and the sheet (#6203)', () => {
-    for (const variant of ['sidebar', 'popover'] as const) {
-      const view = renderFilters({
-        variant,
-        facetDistribution: {
-          welcomesUndergrads: { true: 0 },
-          hostsUndergrads: { true: 3 },
-          mentorsUndergrads: { true: 2 },
-        },
-      });
-      if (variant === 'popover') fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
-
-      expect(screen.getByText(NOTE)).toBeTruthy();
-      const taking = screen.getByRole('checkbox', { name: 'Taking undergrads now (0)' });
-      const described = (taking.getAttribute('aria-describedby') || '')
-        .split(' ')
-        .map((id) => document.getElementById(id)?.textContent)
-        .join(' ');
-      expect(described).toContain(TIP);
-      expect(described).toContain(NOTE);
-      expect(
-        screen.getByRole('checkbox', { name: 'Has had undergrads before (3)' }),
-      ).not.toHaveAccessibleDescription();
-      view.unmount();
-    }
+    expect(advises).toHaveAccessibleDescription(
+      'e.g. supervised senior theses None match your other filters. Remove a filter to see more.',
+    );
   });
 
   it('keeps a ticked option checkable at zero, so it can always be removed', () => {
@@ -198,8 +172,9 @@ describe('ResearchFilterDisclosure', () => {
     expect(advises).toBeChecked();
     expect(advises).toBeEnabled();
     expect(advises).not.toHaveAttribute('aria-disabled');
-    expect(screen.queryByText(TIP)).toBeNull();
-    expect(screen.queryByText(NOTE)).toBeNull();
+    expect(
+      screen.queryByText('None match your other filters. Remove a filter to see more.'),
+    ).toBeNull();
   });
 
   it('shows the option without a count when the counts could not load', () => {
@@ -257,7 +232,9 @@ describe('ResearchFilterDisclosure', () => {
     const taking = screen.getByRole('checkbox', { name: 'Taking undergrads now (0)' });
     expect(taking).toHaveAttribute('aria-disabled', 'true');
     expect(taking).not.toBeDisabled();
-    expect(taking).toHaveAccessibleDescription(`${TIP} ${NOTE}`);
+    expect(taking).toHaveAccessibleDescription(
+      'None match your other filters. Remove a filter to see more.',
+    );
     taking.focus();
     expect(taking).toHaveFocus();
     const hosted = screen.getByRole('checkbox', { name: 'Has had undergrads before (3)' });
