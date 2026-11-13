@@ -129,6 +129,7 @@ export async function runOrgUnitBackfill(options: {
         : {}),
       schools: entity.schools,
       orgAffiliationLabels: entity.orgAffiliationLabels,
+      fieldValueRefusals: entity.fieldValueRefusals,
     });
     rows.push(row);
   }
