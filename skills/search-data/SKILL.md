@@ -334,7 +334,7 @@ The description term is a floor, not a length reward: text past 200 characters e
 It dropped a served-topics floor (met by 0.90 of served labs but 0.76 of faculty research rows, so a type demotion), a verified lead (0.90 of labs, 0.19 of faculty research rows, a type proxy), a lead ORCID (top band 88% School of Medicine, a school proxy), lead profile links, lead photo and verification recency (present on 94% to 99.8% of the tie, no separation), member count (96% at 0 or 1), and description length beyond the floor (gameable).
 The remaining top tie (923 of 3,505 served rows in simulation) is real: served rows are uniformly complete, so ordering inside it needs relevance to the student rather than another quality term.
 The grant term is computed but weighted 0, because the grant lanes are uneven: NIH RePORTER supplies most served grant evidence and no private-foundation, other-agency, or internal-award source exists, so any positive weight ordered the first page by coverage gaps rather than by the row (#4622).
-Grants stay visible on cards and profiles and stay filterable; only their rank weight is zero.
+Grants stay visible on cards and profiles; only their rank weight is zero.
 Decided 2026-11-13: grants stay at weight 0 in default browse permanently, and the earlier re-entry condition is retired (#4622).
 That condition restored the weight once every school's share of served rows with a current grant came within 10 percentage points of its share of all served rows, and it can never be met: the funder-lane work is finished (#4546, closed) and about 80% of served grant evidence is still NIH.
 Because a binary term in a strict sort forms its own top tier, a smaller positive weight would not reduce the skew either, so no tuned weight is a substitute.
