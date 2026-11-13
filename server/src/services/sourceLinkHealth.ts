@@ -1,5 +1,10 @@
 import axios from 'axios';
-import { assertPublicHttpUrl, SsrfBlockedError, ssrfSafeAgents } from '../utils/ssrfGuard';
+import {
+  assertPublicHttpUrl,
+  isSsrfGuardRefusal,
+  SsrfBlockedError,
+  ssrfSafeAgents,
+} from '../utils/ssrfGuard';
 import { DEFAULT_RETRYABLE_STATUSES } from '../scrapers/utils/httpFetch';
 import { type HostSlotLimiter, withHostSlot } from '../scrapers/utils/hostConcurrencyLimiter';
 import { sanitizeLogValue } from '../utils/logSanitizer';
@@ -76,6 +81,13 @@ export interface SourceLinkHealth {
    * as one page (#5638).
    */
   redirectLandingUrl?: string;
+  /**
+   * The `UNAVAILABLE` came from a host that refused or could not route a connection on
+   * both attempts, as opposed to a DNS record confirmed absent. Held in memory only and
+   * never stored: the backfill reads it to make a live link wait for a second run before
+   * a refused connection retires it (#6116).
+   */
+  connectionLevelFailure?: true;
 }
 
 export interface SourceLinkProbeResult {
@@ -109,6 +121,8 @@ export interface SourceLinkProbeResult {
  * the same confirm-before-recording rule #2725 established for DNS.
  */
 const DEAD_LINK_ERROR_CODES = new Set(['ENOTFOUND', 'ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH']);
+
+const CONNECTION_LEVEL_ERROR_CODES = new Set(['ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH']);
 
 /**
  * Only a status that asserts the resource is gone retires a link. Every other
@@ -360,8 +374,14 @@ export function classifySourceLinkHealth(probe: SourceLinkProbeResult): SourceLi
     ? redirectLandingOf(probe.requestedUrl, probe.finalUrl)
     : undefined;
   const landed = healthy && landedOnRequestedResource(probe.requestedUrl, probe.finalUrl);
+  const connectionLevelFailure =
+    verdict.healthStatus === 'UNAVAILABLE' &&
+    typeof verdict.httpStatusCode !== 'number' &&
+    !!probe.errorCode &&
+    CONNECTION_LEVEL_ERROR_CODES.has(probe.errorCode);
   const classified = {
     ...verdict,
+    ...(connectionLevelFailure ? { connectionLevelFailure: true as const } : {}),
     ...(httpsLandingUrl ? { httpsLandingUrl } : {}),
     ...(redirectLandingUrl ? { redirectLandingUrl } : {}),
     ...(landed ? { landedOnRequestedResource: true as const } : {}),
@@ -669,6 +689,11 @@ export async function probeSourceLink(
           : {}),
       };
     } catch (error) {
+      // The guard's connect-time lookup refuses a private address with the code
+      // EHOSTUNREACH, which is also a dead-link code. On a redirect into a host that
+      // split-horizon DNS answers privately on the Yale network, reporting that code
+      // retired a live page, so the guard's own refusal is reported as a refusal.
+      if (isSsrfGuardRefusal(error)) return { errorCode: 'ERR_SSRF_BLOCKED', requestedUrl };
       const code = (error as { code?: unknown })?.code;
       if (isExcludedHostRedirectError(error)) {
         return { errorCode: EXCLUDED_HOST_ERROR_CODE, requestedUrl, excludedHost: true };

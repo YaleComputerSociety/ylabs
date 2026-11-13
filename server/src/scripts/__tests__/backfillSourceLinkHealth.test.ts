@@ -145,6 +145,7 @@ describe('sourceLinkHealthBackfillStdoutSummary', () => {
       errors: 0,
       preservedDecisiveVerdicts: 0,
       preservedUnreachedVerdicts: 0,
+      heldConnectionFailures: 2,
       verdictTransitions: { 'HEALTHY->UNAVAILABLE': 1 },
       clearedTlsFlags: 0,
       servedWebsitesLost: 1,
@@ -180,6 +181,7 @@ describe('sourceLinkHealthBackfillStdoutSummary', () => {
       sampleCount: 1,
       lostVerdictSampleCount: 1,
       servedWebsitesLost: 1,
+      heldConnectionFailures: 2,
       verdictTransitions: { 'HEALTHY->UNAVAILABLE': 1 },
     });
   });

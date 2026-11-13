@@ -14,28 +14,22 @@ vi.mock('../../utils/publicDnsResolution', () => ({
   classifyOffCampusAddressing: (hostname: string) => classifyOffCampusAddressingMock(hostname),
 }));
 
-const { MockSsrfBlockedError, assertPublicHttpUrlMock } = vi.hoisted(() => {
-  class HoistedSsrfBlockedError extends Error {
-    readonly reason: string;
+const { assertPublicHttpUrlMock } = vi.hoisted(() => ({
+  assertPublicHttpUrlMock: vi.fn(async (url: string) => new URL(url)),
+}));
 
-    constructor(message: string, reason: string) {
-      super(message);
-      this.name = 'SsrfBlockedError';
-      this.reason = reason;
-      Object.setPrototypeOf(this, HoistedSsrfBlockedError.prototype);
-    }
-  }
-  return {
-    MockSsrfBlockedError: HoistedSsrfBlockedError,
-    assertPublicHttpUrlMock: vi.fn(async (url: string) => new URL(url)),
-  };
-});
-
-vi.mock('../../utils/ssrfGuard', () => ({
+vi.mock('../../utils/ssrfGuard', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../utils/ssrfGuard')>()),
   assertPublicHttpUrl: (url: string) => assertPublicHttpUrlMock(url),
-  SsrfBlockedError: MockSsrfBlockedError,
   ssrfSafeAgents: () => ({ httpAgent: undefined, httpsAgent: undefined }),
 }));
+
+import { SsrfBlockedError, type SsrfBlockedReason, ssrfSafeLookup } from '../../utils/ssrfGuard';
+
+const guardRefusalAtConnect = (): Promise<Error> =>
+  new Promise((resolve) => {
+    ssrfSafeLookup('127.0.0.1', {}, (error) => resolve(error as Error));
+  });
 
 import {
   SOURCE_LINK_HEALTH_FRESHNESS_DAYS,
@@ -54,6 +48,7 @@ import {
   hasLiveSourceCitation,
   httpsLandingOf,
 } from '../sourceLinkHealth';
+import { resolveSourceLinkHealthEntry } from '../../scripts/backfillSourceLinkHealthCore';
 
 const daysAgo = (days: number, now = new Date('2026-09-10T00:00:00.000Z')): Date =>
   new Date(now.getTime() - days * 86_400_000);
@@ -102,6 +97,7 @@ describe('classifySourceLinkHealth', () => {
     });
     expect(classifySourceLinkHealth({ errorCode: 'ECONNREFUSED' })).toEqual({
       healthStatus: 'UNAVAILABLE',
+      connectionLevelFailure: true,
     });
   });
 
@@ -144,9 +140,9 @@ describe('probeSourceLink', () => {
     classifyOffCampusAddressingMock.mockResolvedValue('private-address');
   });
 
-  const blockedWith = (reason: string) => {
+  const blockedWith = (reason: SsrfBlockedReason) => {
     assertPublicHttpUrlMock.mockRejectedValueOnce(
-      new MockSsrfBlockedError('URL resolves to a private or non-public address', reason),
+      new SsrfBlockedError('URL resolves to a private or non-public address', reason),
     );
   };
 
@@ -235,6 +231,45 @@ describe('probeSourceLink', () => {
     expect(requestMock).not.toHaveBeenCalled();
   });
 
+  const connectError = (code: string, message: string) =>
+    Object.assign(new Error(message), { code });
+
+  it('reports the guard refusing a private address at connect time as a refusal, not a dead host', async () => {
+    requestMock.mockRejectedValue(await guardRefusalAtConnect());
+    const probe = await probeSourceLink('https://redirects-inward.example.edu/profile');
+    expect(probe.errorCode).toBe('ERR_SSRF_BLOCKED');
+    expect(classifySourceLinkHealth(probe)).toEqual({ healthStatus: 'UNKNOWN' });
+  });
+
+  it('leaves a stored HEALTHY verdict untouched when the guard refuses at connect time', async () => {
+    requestMock.mockRejectedValue(await guardRefusalAtConnect());
+    const url = 'https://redirects-inward.example.edu/profile';
+    const stored = {
+      url,
+      healthStatus: 'HEALTHY' as const,
+      httpStatusCode: 200,
+      checkedAt: new Date('2026-11-01T00:00:00.000Z'),
+    };
+    const now = new Date('2026-11-13T00:00:00.000Z');
+
+    const health = classifySourceLinkHealth(await probeSourceLink(url));
+    const { entry } = resolveSourceLinkHealthEntry(url, health, stored, now);
+
+    expect(entry).toEqual({ ...stored, lastAttemptedAt: now });
+  });
+
+  it('still reports a genuine EHOSTUNREACH as a dead host', async () => {
+    requestMock.mockRejectedValue(
+      connectError('EHOSTUNREACH', 'connect EHOSTUNREACH 192.0.2.1:443'),
+    );
+    const probe = await probeSourceLink('https://gone-host.example.edu/profile');
+    expect(probe.errorCode).toBe('EHOSTUNREACH');
+    expect(classifySourceLinkHealth(probe)).toEqual({
+      healthStatus: 'UNAVAILABLE',
+      connectionLevelFailure: true,
+    });
+  });
+
   it('never asks public DNS about a refusal that is not a private address', async () => {
     blockedWith('resolver-failure');
     await probeSourceLink('https://slow-dns.example.edu/profile');
@@ -249,7 +284,7 @@ describe('probeSourceLink', () => {
   });
 
   it('keeps every other guard refusal inconclusive', async () => {
-    for (const reason of ['invalid-url', 'unsupported-scheme', 'credentials', 'port']) {
+    for (const reason of ['invalid-url', 'unsupported-scheme', 'credentials', 'port'] as const) {
       blockedWith(reason);
       const probe = await probeSourceLink('https://example.edu/profile');
       expect(probe, reason).toEqual({ errorCode: 'ERR_SSRF_BLOCKED' });
@@ -360,7 +395,10 @@ describe('probeSourceLink', () => {
       requestMock.mockRejectedValueOnce(failure());
       requestMock.mockRejectedValueOnce(failure());
       const confirmed = await probeSourceLink('https://down.example.edu/');
-      expect(classifySourceLinkHealth(confirmed)).toEqual({ healthStatus: 'UNAVAILABLE' });
+      expect(classifySourceLinkHealth(confirmed)).toEqual({
+        healthStatus: 'UNAVAILABLE',
+        connectionLevelFailure: true,
+      });
       expect(requestMock).toHaveBeenCalledTimes(2);
 
       requestMock.mockReset();

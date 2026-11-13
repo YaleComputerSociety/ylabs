@@ -5,6 +5,23 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-11-13: A Refused Connection Retires A Live Link Only Once A Second Run Agrees (#6116)
+
+This refines the #2751 rule that a reachability failure confirmed by a second attempt retires a link, and leaves the #2726 DNS rule as it was.
+Decision (ylabs-manager, 2026-11-13, scope ruling for #6116): an `ECONNREFUSED`, `EHOSTUNREACH` or `ENETUNREACH` probe failure over a stored `HEALTHY` or `REDIRECTED` verdict keeps that verdict on the first run that sees it, and records `UNAVAILABLE` only when a later, different run sees the same failure.
+The two attempts inside one probe are seconds apart, and on the 2026-11-13 Development dry run a cited page on a public university host went `HEALTHY` to `UNAVAILABLE` with no status code, then answered `200` minutes later.
+`ENOTFOUND` stays immediate, because a confirmed DNS negative is how a retired domain retires, and `404`, `410` and every connection failure over a verdict other than `HEALTHY` or `REDIRECTED` are unchanged.
+`classifyProbeOutcome` and `DEAD_LINK_ERROR_CODES` are unchanged too: the probe still calls the link `UNAVAILABLE`, and only the backfill decides when that verdict may replace a live one.
+The pending failure is stored on the link-health entry itself, as `pendingConnectionFailureAt` holding the start of the run that saw it, beside `lastAttemptedAt`.
+That is the least new shape: link health keeps its probe history on that entry already and has no observation lane, so an observation would add a collection vocabulary and a reader for one fact.
+It is not a field a lock makes stick, because the backfill writes it, reads it and re-derives it from every probe, so running the pass twice is what produces the answer.
+A probe that reaches the host, with any HTTP status or a certificate result, drops the marker; a probe that reaches nothing, such as a timeout, a reset or a guard refusal, keeps it, because it observed nothing about the host.
+The marker names the run rather than the probe, so re-resolving within one run never confirms itself, and a `HEALTHY` verdict holding it is re-probed rather than carried by the 7-day sweep window, or the confirming run would never come.
+The confirming run must start at least six hours after the first (`CONNECTION_FAILURE_CONFIRMATION_GAP_MS`, ylabs-manager, 2026-11-13), because a resume minutes later is the same outage rather than a second observation; a failure inside the gap keeps the first time, a missing or unreadable time never confirms, and the `UNAVAILABLE` entry keeps both run starts as `pendingConnectionFailureAt` and `confirmingConnectionFailureAt` so the retirement is auditable.
+The confirming probe must also come at least six hours after the first probe, recorded as `pendingConnectionFailureProbedAt`, because a run can reach a URL hours after it starts, and two run starts six hours apart could otherwise bracket two failures minutes apart.
+The cost is that a host which really is gone is recorded gone at least six hours and one sweep later.
+A connect-time guard refusal is a non-observation and the stored verdict stands, so it is not held: the guard's connect-time lookup reports a private address as `EHOSTUNREACH` with its own refusal message, the probe now recognises that refusal and reports `ERR_SSRF_BLOCKED`, and only a genuine connect failure is held under the six-hour rule (e3 review of #6187, 2026-11-13); this closes #6150.
+
 ## 2026-11-13: A Profile's Home Department Is Its First Appointment, Never A Promoted Later One (#6070)
 
 Decision (ylabs-manager, 2026-11-13).
