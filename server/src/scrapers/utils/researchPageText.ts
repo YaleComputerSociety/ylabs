@@ -75,9 +75,19 @@ const MIN_RECOVERED_SENTENCE_WORDS = 8;
 const CITATION_FRAGMENT =
   /\b(?:doi|pmid|pmcid|isbn)\b|\b(?:19|20)\d{2}[a-z]?\s*[).]|\(\s*(?:19|20)\d{2}/i;
 
+// A past appointment told as a span of years: "taught at X from 1997-2018". It needs a career
+// verb, so a research sentence that spans years ("tracked kelp recovery from 1997 to 2018") is
+// not one. Kept local to page text, because isCurriculumVitaeRecordSentence also decides what a
+// served description shows (#6201).
+const CAREER_HISTORY_YEAR_RANGE_SENTENCE =
+  /\b(?:taught|served|worked|lectured|directed|chaired|practi[cs]ed)\b[^.]{0,120}?\bfrom\s+(?:19|20)\d{2}\s*(?:[-\u2013\u2014]|to|until|through)\s*(?:(?:19|20)\d{2}|present|now)\b/i;
+
+const isPageTextCvRecord = (text: string): boolean =>
+  isCurriculumVitaeRecordSentence(text) || CAREER_HISTORY_YEAR_RANGE_SENTENCE.test(text);
+
 const isRecoverableResearchSentence = (sentence: string): boolean =>
   wordCount(sentence) >= MIN_RECOVERED_SENTENCE_WORDS &&
-  !isCurriculumVitaeRecordSentence(sentence) &&
+  !isPageTextCvRecord(sentence) &&
   !isBibliographicCitationSentence(sentence) &&
   !CITATION_FRAGMENT.test(sentence);
 
@@ -93,9 +103,30 @@ function withoutCurriculumVitaeSentences(line: string): string {
   return splitDescriptionSentences(line).filter(isRecoverableResearchSentence).join(' ');
 }
 
+const SKIP_LINK_LINE = /^(?:skip|jump)\s+(?:to|past|over|content|navigation|main)\b/i;
+const ACCESSIBILITY_LINE = /\b(?:screen readers?|accessibility)\b/i;
+const MAX_ACCESSIBILITY_LINE_WORDS = 12;
+const CONTACT_OR_LINK_LABEL_LINE =
+  /^(?:curriculum vitae|c\.?v\.?|r[e\u00e9]sum[e\u00e9]|(?:lab |personal )?web\s?site|home\s?page|e-?mail|phone|tel(?:ephone)?|fax|mobile|office|address|orcid|google scholar|twitter|linkedin|bluesky|github|researchgate)\s*:/i;
+
+/**
+ * A skip or accessibility link, or a contact or link label such as "Curriculum Vitae:" or
+ * "Website:" (#6201). On a profile they sit beside the name and title, and once a recovered
+ * biography lifts the row over the floor they would ride along into the stored text.
+ */
+function isSkipOrLabelLine(line: string): boolean {
+  return (
+    SKIP_LINK_LINE.test(line) ||
+    (wordCount(line) <= MAX_ACCESSIBILITY_LINE_WORDS && ACCESSIBILITY_LINE.test(line)) ||
+    CONTACT_OR_LINK_LABEL_LINE.test(line)
+  );
+}
+
 function statementTextOfLine(line: string): string {
-  if (wordCount(line) < MIN_LINE_WORDS || isContactLine(line)) return '';
-  return isCurriculumVitaeRecordSentence(line) ? withoutCurriculumVitaeSentences(line) : line;
+  if (wordCount(line) < MIN_LINE_WORDS || isContactLine(line) || isSkipOrLabelLine(line)) {
+    return '';
+  }
+  return isPageTextCvRecord(line) ? withoutCurriculumVitaeSentences(line) : line;
 }
 
 const NON_CONTENT_ELEMENTS =
@@ -103,6 +134,7 @@ const NON_CONTENT_ELEMENTS =
 
 const MAIN_CONTENT = 'main, article, [role="main"]';
 const MIN_HEADING_BLOCK_SUMMARY_WORDS = 12;
+const ENDS_AS_A_SENTENCE = /[.!?]["')\]\u2019\u201d]?$/;
 
 const isPageHeadingBlock = ($: cheerio.CheerioAPI, header: AnyNode): boolean =>
   $(header).attr('role') !== 'banner' &&
@@ -115,6 +147,28 @@ const isPageHeadingBlock = ($: cheerio.CheerioAPI, header: AnyNode): boolean =>
  * states what it does (#6159). Its link labels, photo buttons and name line are still removed,
  * and so are banners and the headers of teaser cards, which carry no `h1`.
  */
+/**
+ * The prose a heading-block paragraph carries, held to the same rule as a recovered CV
+ * paragraph (#6201). A profile's heading block often puts its name, title, a skip link and
+ * "Website:" or "Curriculum Vitae:" labels in one paragraph split by line breaks, so each line
+ * is read on its own. When the paragraph has several lines, one that does not end as a sentence
+ * is a name, title or label. Only whole research sentences are kept. A topical label such as
+ * "Research interests:" stays, because it can be the row's research.
+ */
+function headingBlockSummaryText(paragraph: AnyNode): string {
+  const lines = extractElementTextWithLineBreaks(paragraph)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+  return lines
+    .filter(
+      (line) => (lines.length === 1 || ENDS_AS_A_SENTENCE.test(line)) && !isSkipOrLabelLine(line),
+    )
+    .flatMap((line) => splitDescriptionSentences(line))
+    .filter(isRecoverableResearchSentence)
+    .join(' ');
+}
+
 function removeHeadersKeepingPageSummary($: cheerio.CheerioAPI): void {
   $('header').each((_index, header) => {
     if (!isPageHeadingBlock($, header)) {
@@ -123,11 +177,12 @@ function removeHeadersKeepingPageSummary($: cheerio.CheerioAPI): void {
     }
     const summary = $(header)
       .find('p')
-      .filter(
-        (_paragraph, paragraph) =>
-          wordCount($(paragraph).text()) >= MIN_HEADING_BLOCK_SUMMARY_WORDS,
-      )
-      .toArray();
+      .toArray()
+      .filter((paragraph) => wordCount($(paragraph).text()) >= MIN_HEADING_BLOCK_SUMMARY_WORDS)
+      .map((paragraph) => headingBlockSummaryText(paragraph))
+      .filter(Boolean)
+      .map((text) => $.html($('<p></p>').text(text)))
+      .join('');
     $(header).replaceWith(summary);
   });
 }
