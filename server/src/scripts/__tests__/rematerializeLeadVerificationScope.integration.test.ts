@@ -211,6 +211,10 @@ describe('--only-fields=leadVerification feeds a new verdict to the leadEdges re
     );
     await resolveLeadEdges(asked.row.slug);
 
+    for (const report of [dryRun, applied, secondDryRun]) {
+      expect(report.found).toBe(true);
+      expect(report.entityId).toBe(String(asked.row._id));
+    }
     expect(secondDryRun.changes).toEqual([]);
     expect(dryRun.changes.map((change) => change.field)).toEqual(['leadVerification']);
     expect(applied.changes.map((change) => change.field)).toEqual(['leadVerification']);
