@@ -3,7 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { isExcludedHostname, normalizeExcludedHost } from '../../utils/excludedHosts';
-import { isBenchmarkReplayActive } from '../snapshotBenchmarkMode';
+import { isBenchmarkReplayActive } from '../benchmarkModeState';
 import { HostPausedError } from './hostPausedError';
 import {
   DEFAULT_PER_HOST_CONCURRENCY,

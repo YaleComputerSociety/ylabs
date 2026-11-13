@@ -21,6 +21,17 @@
 import axios, { type AxiosResponse, type InternalAxiosRequestConfig } from 'axios';
 import crypto from 'crypto';
 import { FROZEN_MODEL_RESPONSE_HEADER, isModelEndpointUrl } from '../utils/modelClient';
+import {
+  type CaptureMode,
+  isBenchmarkModeActive,
+  isBenchmarkReplayActive,
+  isLiveModelReplayActive,
+  mode,
+  type ReplayMode,
+  setBenchmarkMode,
+} from './benchmarkModeState';
+
+export { isBenchmarkModeActive, isBenchmarkReplayActive, isLiveModelReplayActive };
 
 export interface CapturedPage {
   sourceName: string;
@@ -45,26 +56,6 @@ export class BenchmarkReplayNetworkError extends Error {
 }
 
 export const MODEL_RESPONSE_NAMESPACE = 'model-chat-completion';
-
-interface CaptureMode {
-  kind: 'capture';
-  pages: Map<string, CapturedPage>;
-  requested: Set<string>;
-  requestInterceptorId: number;
-  responseInterceptorId: number;
-}
-
-interface ReplayMode {
-  kind: 'replay';
-  pages: Map<string, unknown>;
-  served: Set<string>;
-  missed: Set<string>;
-  networkBlocks: number;
-  interceptorId: number;
-  liveModel: boolean;
-}
-
-let mode: CaptureMode | ReplayMode | null = null;
 
 export const benchmarkPageKey = (sourceName: string, requestKey: string): string =>
   `${sourceName}\u0000${requestKey}`;
@@ -127,7 +118,7 @@ export function beginBenchmarkCapture(): void {
     }
     return response;
   });
-  mode = capture;
+  setBenchmarkMode(capture);
 }
 
 export function finishBenchmarkCapture(): CapturedPage[] {
@@ -150,15 +141,9 @@ export function finishBenchmarkCaptureWithCoverage(): {
   const pages = [...mode.pages.values()];
   const frozen = new Set(mode.pages.keys());
   const unfrozenRequestCount = [...mode.requested].filter((key) => !frozen.has(key)).length;
-  mode = null;
+  setBenchmarkMode(null);
   return { pages, unfrozenRequestCount };
 }
-
-export const isBenchmarkReplayActive = (): boolean => mode?.kind === 'replay';
-
-export const isBenchmarkModeActive = (): boolean => mode !== null;
-
-export const isLiveModelReplayActive = (): boolean => mode?.kind === 'replay' && mode.liveModel;
 
 export function refuseBenchmarkReplayNetwork(config?: InternalAxiosRequestConfig): never {
   if (mode?.kind === 'replay') mode.networkBlocks += 1;
@@ -210,7 +195,7 @@ export function beginBenchmarkReplay(
     }
     return refuseBenchmarkReplayNetwork(config);
   });
-  mode = replay;
+  setBenchmarkMode(replay);
 }
 
 export function finishBenchmarkReplay(): {
@@ -232,7 +217,7 @@ export function finishBenchmarkReplay(): {
     networkBlocks: mode.networkBlocks,
     servedByNamespace,
   };
-  mode = null;
+  setBenchmarkMode(null);
   return outcome;
 }
 
