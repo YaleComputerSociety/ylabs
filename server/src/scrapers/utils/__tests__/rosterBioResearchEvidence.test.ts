@@ -119,6 +119,42 @@ describe('roster biography research evidence', () => {
     ).toBeDefined();
   });
 
+  const RESEARCH_ANCHOR =
+    'Her research focuses on how synthetic proteins fold in cold environments.';
+  const keptBesideAnchor = (sentence: string) =>
+    deriveBioResearchStatement(`${RESEARCH_ANCHOR} ${sentence}`).evidenceSentences.includes(
+      sentence,
+    );
+
+  it('drops a care, patient or clinical-interest sentence that states no research (#6083)', () => {
+    for (const sentence of [
+      'She has special interest in synthetic motility disorders such as achalasia, gastroparesis and bloating.',
+      'His work focuses on advancing neurological care and supporting patients with complex synthetic needs.',
+      'Her clinical interests include synthetic alopecia, inflammatory hair disorders, and general dermatology.',
+    ]) {
+      expect(keptBesideAnchor(sentence)).toBe(false);
+    }
+  });
+
+  it('refuses a biography whose only research-shaped sentences are clinical (#6083)', () => {
+    expect(
+      deriveBioResearchStatement(
+        'His work focuses on advancing neurological care and supporting patients with complex synthetic needs.',
+      ).rejection,
+    ).toBe('only_past_research');
+  });
+
+  it('keeps a research sentence that names clinical topics (#6083)', () => {
+    for (const sentence of [
+      'Her research examines how patients with synthetic arthritis decide which medication to try next.',
+      'Her main interest is developing interventions to overcome barriers to care among synthetic populations.',
+      'She has a particular interest in understanding the bioethical challenges of caring for critically ill patients.',
+      'His laboratory studies the immune mechanisms of synthetic inflammatory bowel disease in patient cohorts.',
+    ]) {
+      expect(keptBesideAnchor(sentence)).toBe(true);
+    }
+  });
+
   it('reads the given name from the profile URL when the roster put a credential there', () => {
     expect(
       rosterBioPersonName(

@@ -31,6 +31,23 @@ const NON_RESEARCH_ONLY_SENTENCE =
 const NOT_RESEARCH_CONTENT_SENTENCE =
   /\b(?:boards?\s+of|serves?\s+on|served|editor|editorial|reviewer|committee|council|task\s+force|president|co-?founder|founded|managing\s+partner|venture|funded\s+by|has\s+been\s+funded|grants?\s+from|book|forthcoming|to\s+appear|published\s+by|translations?|selected\s+publications|publications?\s*:|co-?edited|google\s+scholar|can\s+be\s+found|click|blogs?|website|administrative\s+roles?|appointment\s+as|private\s+practice|co-?authors?\s+of|co-?authored|has\s+appeared\s+in|appeared\s+in|appears\s+in|edited\s+by|in\s+press|new\s+york\s+times|washington\s+post|wall\s+street\s+journal|the\s+atlantic|npr\b|cares?\s+for\s+patients|(?:his|her|their)\s+practice|clinical\s+expertise|board[- ]certified|holds\s+an?\s+(?:MSc|MA|MS|BA|BS|PhD|MD)|studied\s+medicine|completed|graduated|has\s+joined|joined\s+the|enthusiasm\s+for|received\s+(?:his|her|their)|trained)\b/i;
 
+const CARE_OR_CLINICAL_INTEREST_FRAMING =
+  /\b(?:special\s+interests?\s+in|clinical\s+interests?|patients?|care)\b/i;
+
+const CLINICAL_VOCABULARY =
+  /\b(?:patients?|care|clinical(?:ly)?|clinicians?|medical|medicine|disorders?|diseases?|conditions?|syndromes?|symptoms?|treatment|therap(?:y|ies)|diagnos\w*|surg(?:ery|eries|ical)|nutrition|pain|injur(?:y|ies)|infections?|cancers?|tumou?rs?|neurological|psychiatric|mental\s+health)\b/i;
+
+const STATES_INQUIRY =
+  /\b(?:research\w*|lab(?:s|oratory|oratories)?|stud(?:y|ies|ying|ied)|investigat\w*|trials?|scien\w*|scholar\w*|examin\w*|explor\w*|analy[sz]\w*|evaluat\w*|measur\w*|experiment\w*|discover\w*|mechanisms?|data|cohorts?|outcomes|epidemiolog\w*|biomarkers?|interventions?|understand(?:ing)?\s+(?:the|how|why|what|whether)|how|technolog\w*|informatics|\w*ethic(?:s|al)|model(?:ing|ling)|(?:computational|statistical|mathematical|animal|mouse|murine|predictive)\s+models?)\b/i;
+
+export function isClinicalOnlyBiographySentence(sentence: string): boolean {
+  return (
+    CARE_OR_CLINICAL_INTEREST_FRAMING.test(sentence) &&
+    CLINICAL_VOCABULARY.test(sentence) &&
+    !STATES_INQUIRY.test(sentence)
+  );
+}
+
 const CITATION_FRAGMENT =
   /\beds?\.(?=[\s,)])|\((?:eds?|ed)\.?\)|\b\d+\s*\(\d+\)\s*[:,]|\bpp\.\s*\d|\bvol\.\s*\d|[“"][^”"]{8,}[”"]\s*,?\s*in\s+[A-Z]/;
 
@@ -106,6 +123,7 @@ export function deriveBioResearchStatement(
       !isNonResearchOnlySentence(sentence) &&
       !CLINICAL_SERVICE_FOCUS.test(sentence) &&
       !(CLINICAL_SPECIALTY_SENTENCE.test(sentence) && !SCHOLARLY_INQUIRY.test(sentence)) &&
+      !isClinicalOnlyBiographySentence(sentence) &&
       !DANGLING_REFERENCE_OPENER.test(sentence.trim()) &&
       !CITATION_FRAGMENT.test(sentence),
   );
