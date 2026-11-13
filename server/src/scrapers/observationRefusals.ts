@@ -4,6 +4,7 @@ export interface ObservationRefusedValue {
   reason: string;
   classifier: string;
   classifierVersion: number;
+  assertedUnder?: string;
 }
 
 export interface ObservationClassifierAdmission {
@@ -24,6 +25,15 @@ function positiveVersion(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : undefined;
 }
 
+function httpPageUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length > MAX_VALUE_LENGTH || !/^https?:\/\//i.test(trimmed)) {
+    return undefined;
+  }
+  return trimmed;
+}
+
 export function sanitizeRefusedValues(entries: unknown): ObservationRefusedValue[] {
   if (!Array.isArray(entries)) return [];
   const kept = new Map<string, ObservationRefusedValue>();
@@ -37,7 +47,15 @@ export function sanitizeRefusedValues(entries: unknown): ObservationRefusedValue
     const value = typeof candidate.value === 'string' ? candidate.value.trim() : '';
     if (!field || !reason || !classifier || !classifierVersion) continue;
     if (!value || value.length > MAX_VALUE_LENGTH) continue;
-    const refusal = { field, value, reason, classifier, classifierVersion };
+    const assertedUnder = httpPageUrl(candidate.assertedUnder);
+    const refusal = {
+      field,
+      value,
+      reason,
+      classifier,
+      classifierVersion,
+      ...(assertedUnder ? { assertedUnder } : {}),
+    };
     kept.set(JSON.stringify(refusal), refusal);
   }
   return [...kept.values()];
