@@ -17,6 +17,7 @@ import {
   isBenchmarkReplayActive,
 } from '../scrapers/snapshotBenchmarkMode';
 import { containsAsciiControl } from './asciiControl';
+import { ConnectDeadlineHttpAgent, ConnectDeadlineHttpsAgent } from './connectDeadlineAgents';
 
 const MAX_SSRF_PUBLIC_HTTP_URL_LENGTH = 2048;
 const hasUnsafePublicHttpUrlCharacter = (value: string): boolean =>
@@ -166,6 +167,32 @@ const NAME_DOES_NOT_EXIST_DNS_CODES = new Set(['ENOTFOUND', 'ENODATA']);
  */
 const NAME_LOOKUP_RETRY_DELAYS_MS = [250, 2_000, 10_000] as const;
 
+/**
+ * `dns.lookup` runs getaddrinfo on the libuv thread pool with no timeout of its own, and a
+ * resolver that stops answering (after a sleep or a network change) would hold the caller
+ * before any fetch deadline starts. An expired lookup is a resolver failure, never a negative.
+ */
+export const NAME_LOOKUP_TIMEOUT_MS = 10_000;
+
+class NameLookupTimeoutError extends Error {
+  readonly code = 'ETIMEOUT';
+}
+
+const lookupWithin = async (hostname: string, timeoutMs: number): Promise<LookupAddress[]> => {
+  let timer: NodeJS.Timeout | undefined;
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new NameLookupTimeoutError(`lookup of ${hostname} exceeded ${timeoutMs} ms`)),
+      timeoutMs,
+    );
+  });
+  try {
+    return await Promise.race([dns.lookup(hostname, { all: true }), expired]);
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 const nameDoesNotExist = (error: unknown): boolean => {
   const code = (error as { code?: unknown })?.code;
   return typeof code === 'string' && NAME_DOES_NOT_EXIST_DNS_CODES.has(code);
@@ -189,7 +216,7 @@ export const classifyHostnameResolution = async (
 
   const ask = async (): Promise<HostnameResolution> => {
     try {
-      return classifyLookupResult(await dns.lookup(clean, { all: true }));
+      return classifyLookupResult(await lookupWithin(clean, NAME_LOOKUP_TIMEOUT_MS));
     } catch (error) {
       return nameDoesNotExist(error) ? { kind: 'unresolvable' } : { kind: 'resolver-failure' };
     }
@@ -211,6 +238,28 @@ export const isPublicHostname = async (hostname: string): Promise<boolean> =>
 
 const BLOCKED_ADDRESS_MESSAGE = 'Blocked private or non-public address';
 
+const MAX_TRACKED_PRIVATE_ADDRESS_HOSTS = 500;
+const privateAddressRefusalsByHost = new Map<string, number>();
+
+/**
+ * Record-only: counts each private-address refusal by host so a run can report what this
+ * network kept it from reading (Yale's split-horizon DNS, #6111). It runs after the refusal is
+ * decided and never changes it.
+ */
+const notePrivateAddressRefusal = (hostname: string): void => {
+  const host = stripIpv6Brackets(hostname).toLowerCase();
+  if (!host || net.isIP(host)) return;
+  const seen = privateAddressRefusalsByHost.get(host);
+  if (seen === undefined && privateAddressRefusalsByHost.size >= MAX_TRACKED_PRIVATE_ADDRESS_HOSTS)
+    return;
+  privateAddressRefusalsByHost.set(host, (seen ?? 0) + 1);
+};
+
+export const privateAddressRefusalCounts = (): ReadonlyMap<string, number> =>
+  new Map(privateAddressRefusalsByHost);
+
+export const resetPrivateAddressRefusalCounts = (): void => privateAddressRefusalsByHost.clear();
+
 const blockedAddressError = (): NodeJS.ErrnoException => {
   const err = new Error(BLOCKED_ADDRESS_MESSAGE) as NodeJS.ErrnoException;
   err.code = 'EHOSTUNREACH';
@@ -228,6 +277,7 @@ export const ssrfSafeLookup: LookupFunction = (hostname, options, callback) => {
     .then((result) => {
       const records = Array.isArray(result) ? result : [result];
       if (records.length === 0 || records.some((record) => isPrivateAddress(record.address))) {
+        if (records.length > 0) notePrivateAddressRefusal(hostname);
         callback(blockedAddressError(), '', 0);
         return;
       }
@@ -322,6 +372,7 @@ export const assertPublicHttpUrl = async (rawUrl: string): Promise<URL> => {
   const resolution = await classifyHostnameResolution(parsed.hostname);
   if (isHostPropertyResolution(resolution.kind))
     freezeHostRefusal(parsed.hostname, resolution.kind);
+  if (resolution.kind === 'private-address') notePrivateAddressRefusal(parsed.hostname);
   if (resolution.kind !== 'public') {
     throw new SsrfBlockedError(NON_PUBLIC_ADDRESS_MESSAGE, resolution.kind);
   }
@@ -330,7 +381,7 @@ export const assertPublicHttpUrl = async (rawUrl: string): Promise<URL> => {
 
 type AgentConnectionCallback = (err: Error | null, stream: Duplex) => void;
 
-class SsrfSafeHttpAgent extends http.Agent {
+class SsrfSafeHttpAgent extends ConnectDeadlineHttpAgent {
   createConnection(options: http.ClientRequestArgs, callback?: AgentConnectionCallback) {
     if (isPrivateIpLiteralHost(options.host)) {
       callback?.(blockedAddressError(), undefined as unknown as Duplex);
@@ -340,7 +391,7 @@ class SsrfSafeHttpAgent extends http.Agent {
   }
 }
 
-class SsrfSafeHttpsAgent extends https.Agent {
+class SsrfSafeHttpsAgent extends ConnectDeadlineHttpsAgent {
   createConnection(options: https.RequestOptions, callback?: AgentConnectionCallback) {
     if (isPrivateIpLiteralHost(options.host)) {
       callback?.(blockedAddressError(), undefined as unknown as Duplex);
@@ -353,7 +404,8 @@ class SsrfSafeHttpsAgent extends https.Agent {
 /**
  * axios/http agents that refuse a private address on every (redirect) hop: a hostname is
  * checked by the connect-time lookup, and an IP-literal host, which Node connects to without
- * any lookup, is checked before the socket is opened.
+ * any lookup, is checked before the socket is opened. Each socket must also finish connecting
+ * (TLS included) within `OUTBOUND_CONNECT_TIMEOUT_MS`.
  */
 export const ssrfSafeAgents = (): {
   httpAgent: http.Agent;

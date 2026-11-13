@@ -51,7 +51,17 @@ const REVIEWED_UNROUTED_READS: ReadonlyArray<{ fn: string; reason: string }> = [
   {
     fn: 'userKeysNamingResearcherIdentity',
     reason:
-      "Called only from `researcherTitleOverEveryJoiningKey` on the `user` materializer, so the benchmark never makes this read: it replays `researchEntity` rows only. It searches by the researcher's netid, address and official pages for every person key that names them, whose purpose is to find keys other than the one being materialized, so an entity-keyed source cannot answer it; the chunk caches its answer per researcher instead (#5578).",
+      "Called from `researcherTitleOverEveryJoiningKey` and `storedDepartmentReadingsOverEveryKey` on the `user` materializer, so the benchmark never makes this read: it replays `researchEntity` rows only. It searches by the researcher's netid, address and official pages for every person key that names them, whose purpose is to find keys other than the one being materialized, so an entity-keyed source cannot answer it; the chunk caches its answer per researcher instead (#5578).",
+  },
+  {
+    fn: 'storedDepartmentReadingsOverEveryKey',
+    reason:
+      'Called only from the `user` materializer, for the #6049 backing read, so the benchmark never makes this read: it replays `researchEntity` rows only. It reads superseded `primaryDepartment` readings on every key that names the researcher, keys other than the one being resolved and readings a live-only read source does not hold, so an entity-keyed source cannot answer it.',
+  },
+  {
+    fn: 'storedDepartmentReadingsOfEngineJoinedKeys',
+    reason:
+      'Called only from the `user` materializer, when the identity keys did not settle a stored department, so the benchmark never makes this read: it replays `researchEntity` rows only. It finds keys outside the researcher identity keys by the department value they state, so an entity-keyed source cannot answer it (#5741).',
   },
   {
     fn: 'otherPersonPrintsAddress',
@@ -62,6 +72,11 @@ const REVIEWED_UNROUTED_READS: ReadonlyArray<{ fn: string; reason: string }> = [
     fn: 'listingsSharingProfileUrl',
     reason:
       'Called from `materializeRosterMember`, the `researchGroupMember` materializer, so the benchmark never makes this read: it replays `researchEntity` rows only. It is also a search by value across every listing that carries one profile URL, whose purpose is to find listings other than the one being projected, so an entity-keyed source cannot answer it.',
+  },
+  {
+    fn: 'retiredEvidenceLeadEdgesToEnd',
+    reason:
+      "Reached only from `resolveLeadEdges`, which the projection calls inside `if (!options.dryRun)`, the reclaim stage calls directly, and the `leadEdges` rematerialize scope calls in a dry run too; the benchmark replays a full projection with `dryRun: true` and no such scope, so it never makes this read. It reads every `inferredPiUserId` observation naming the people the row's current PI edges cite, retired reads included, to tell an edge whose citation is all retired from one whose citation was never read on the row (#5979).",
   },
   {
     fn: 'leadPiInheritanceEvidence',
@@ -113,9 +128,19 @@ const ENTITY_READ_CALL =
 
 const REVIEWED_UNROUTED_ENTITY_READS: ReadonlyArray<{ fn: string; reason: string }> = [
   {
+    fn: 'sourcelessLeadEdgesToEnd',
+    reason:
+      "Reads the row's own name, key, cited pages and stored site verdicts, after the projection write, to decide whether a lead edge with no recorded source is contradicted. Reached only from `resolveLeadEdges`, which the projection calls inside `if (!options.dryRun)` and the `leadEdges` rematerialize scope calls in a dry run too; the benchmark replays a full projection with `dryRun: true` and no such scope, so it never makes this read (#5979).",
+  },
+  {
     fn: 'planInferredPiMembership',
     reason:
       "Reads the row's own name for the eponym check on the two PI-key routes #4697 adds, only after the original walk resolves nobody. Reached from the projection inside `if (!options.dryRun)` and from the reclaim stage, so the benchmark, which replays with `dryRun: true`, never makes this read.",
+  },
+  {
+    fn: 'retiredEvidenceLeadEdgesToEnd',
+    reason:
+      "Reads the row's own slug to widen the citation lookup to observations keyed by it. Reached only from `resolveLeadEdges`, which the projection calls inside `if (!options.dryRun)`, the reclaim stage calls directly, and the `leadEdges` rematerialize scope calls in a dry run too; the benchmark replays a full projection with `dryRun: true` and no such scope, so it never makes this read (#5979).",
   },
   {
     fn: 'inheritSchoolFromLeadPi',

@@ -12,8 +12,11 @@ import {
   selectVisibleProfileBioTargets,
 } from '../sources/officialProfilePiBackfillScraper';
 import type { ObservationInput, ScraperContext } from '../types';
+import { syntheticPersonOrcid } from '../../test/syntheticOrcid';
 
-const OWN_NETID = 'zz5708a';
+const SYNTHETIC_ORCID_1 = syntheticPersonOrcid(500);
+
+const OWN_NETID = 'as5708a';
 const OTHER_NETID = 'zz5708b';
 const DIRECTORY_NAMESAKE_NETID = 'zc5708';
 const OWN_EMAIL = 'avery.synthetic5708@yale.edu';
@@ -358,7 +361,7 @@ describe('visible profile bio backfill selects by the person own official link (
       return emitted;
     };
 
-    const FIXTURE_ORCID = '9999-9000-9999-9005';
+    const FIXTURE_ORCID = SYNTHETIC_ORCID_1;
     const OTHER_PAGE_URL = 'https://ysph.yale.edu/profile/devon-fixture/';
 
     const seedOrcidObservation = async (netid: string, sourceUrl: string) =>
@@ -375,9 +378,19 @@ describe('visible profile bio backfill selects by the person own official link (
         superseded: false,
       });
 
-    it('emits when the netid takes its initials from a hyphenated surname', async () => {
+    it('files no address the netid does not tie when only the page name agrees with the netid (#5979)', async () => {
       const hyphenNetid = 'aj5708';
       const hyphenAddress = 'kestrel.fixture5708@yale.edu';
+      await seedNetidLead(hyphenNetid, 'Avery Jules-Fixture', RENAMED_PAGE_URL, hyphenAddress);
+
+      const emitted = await emittedFrom('Avery Jules-Fixture', RENAMED_PAGE_URL, hyphenAddress);
+
+      expect(emitted.filter((o) => o.field === 'email')).toEqual([]);
+    });
+
+    it('files the address when the netid takes its initials from a hyphenated surname and the address agrees', async () => {
+      const hyphenNetid = 'aj5708';
+      const hyphenAddress = 'avery.jules-fixture5708@yale.edu';
       await seedNetidLead(hyphenNetid, 'Avery Jules-Fixture', RENAMED_PAGE_URL, hyphenAddress);
 
       const emitted = await emittedFrom('Avery Jules-Fixture', RENAMED_PAGE_URL, hyphenAddress);

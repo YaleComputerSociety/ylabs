@@ -130,6 +130,41 @@ export async function loadResearchEntityLeadPersonIds(
 }
 
 /**
+ * Every live lead's display name for each of the given research entities, sorted, so two
+ * callers that judge the same row by "any of its leads" read the same set whatever order
+ * the assignments come back in.
+ */
+export async function loadResearchEntityLeadPersonDisplayNames(
+  researchEntityIds: readonly string[],
+): Promise<Map<string, string[]>> {
+  const personIdsByEntityId = await loadResearchEntityLeadPersonIds(researchEntityIds);
+  const personIds = [...new Set([...personIdsByEntityId.values()].flat().filter(Boolean))];
+  const displayNameByPersonId = new Map<string, string>();
+  if (personIds.length > 0) {
+    for (const person of (await Researcher.find({ _id: { $in: personIds } })
+      .select('displayName')
+      .lean()) as Array<{ _id?: unknown; displayName?: unknown }>) {
+      const personId = serializedDocumentId(person._id);
+      const displayName = String(person.displayName || '').trim();
+      if (personId && displayName) displayNameByPersonId.set(personId, displayName);
+    }
+  }
+  return new Map(
+    [...personIdsByEntityId.entries()].map(([entityId, ids]) => [
+      entityId,
+      [
+        ...new Set(
+          ids.flatMap((personId) => {
+            const displayName = displayNameByPersonId.get(personId);
+            return displayName ? [displayName] : [];
+          }),
+        ),
+      ].sort(),
+    ]),
+  );
+}
+
+/**
  * Lead display names for every research entity that has one, keyed by entity id,
  * for a batch caller that judges many records in one pass and must not pay a
  * lookup per record.

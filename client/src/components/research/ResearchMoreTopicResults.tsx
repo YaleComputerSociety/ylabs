@@ -4,7 +4,7 @@ import ResearchHomeCard from './ResearchHomeCard';
 import type { ResearchCluster } from '../../utils/researchDiscoveryAdapters';
 
 export type MoreTopicResultsAccessFilter =
-  'hostsUndergrads' | 'welcomesUndergrads' | 'worksWithUndergrads';
+  'hostsUndergrads' | 'welcomesUndergrads' | 'mentorsUndergrads';
 
 export const MORE_TOPIC_RESULTS_HEADING = 'More research on this topic';
 
@@ -13,8 +13,8 @@ export const MORE_TOPIC_RESULTS_NOTES: Record<MoreTopicResultsAccessFilter, stri
     "These don't list undergraduate researchers yet. Many still take students; reach out to ask.",
   welcomesUndergrads:
     "These don't say they welcome undergraduates yet. Many still take students; reach out to ask.",
-  worksWithUndergrads:
-    "These don't show undergraduate evidence yet. Many still take students; reach out to ask.",
+  mentorsUndergrads:
+    "These don't list undergraduates they advised yet. Many still take students; reach out to ask.",
 };
 
 interface ResearchMoreTopicResultsProps {

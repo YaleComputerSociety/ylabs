@@ -239,7 +239,10 @@ function hostOf(url: string): string {
 export const POLICY_FETCH_BENCHMARK_NAMESPACE = 'policy-fetch';
 
 export class HttpStatusError extends Error {
-  constructor(readonly status: number) {
+  constructor(
+    readonly status: number,
+    readonly finalUrl?: string,
+  ) {
     super(`Request failed with status code ${status}`);
     this.name = 'HttpStatusError';
   }
@@ -369,7 +372,7 @@ async function fetchPageLive(
       continue;
     }
     backoff.settle('exhausted');
-    throw new HttpStatusError(result.status);
+    throw new HttpStatusError(result.status, result.finalUrl || safeUrl);
   }
 }
 

@@ -221,7 +221,9 @@ describe('official-profile-pi-backfill attests a page with no address (#5711)', 
       { netid: 'rq1' },
       { includeEmail: false },
     );
-    expect(observations.some((observation) => observation.assertsNoValueFor)).toBe(false);
+    expect(
+      observations.some((observation) => observation.assertsNoValueFor?.includes('email')),
+    ).toBe(false);
   });
 });
 

@@ -207,7 +207,7 @@ The order is not cosmetic and two of the orderings are the opposite of what seem
 2. **Check for a collection that would copy nothing over existing documents.** Apply is blocked when `sourceCopyCount` is 0 and `targetCount` is above 0, because `copyCollection` deletes the whole target before inserting. Treat that blocker as a stop, not an obstacle.
 3. **Copy the data, before deploying the code.** The copy never touches Production's retired collections, so the currently deployed code keeps reading `users`, `entry_pathways`, `access_signals`, `contact_routes` and `research_entity_members` throughout. Data-first therefore has no broken window. Code-first has one: the current model reads `signals`, `accounts`, `researchers` and `role_assignments`, and a Production that has not received them yet cannot serve the visibility gate, browse ranking, login or person pages.
 4. **Re-point saved plans, then re-gate visibility.** The remote phase first runs `yarn --cwd server research-plans:retarget-merged --apply --confirm-research-plan-retarget`, which moves each Production plan saved on a merged research entity to its live survivor; plans are environment-local, so the merge Development recorded cannot carry them (#5208). Then `yarn --cwd server student-visibility:gate --collection=all --apply --confirm-student-visibility-apply --max-apply=100000`. Apply mode throws without `--max-apply`, and refuses to write without `--confirm-student-visibility-apply`. Freshly copied rows do not carry a usable tier until a gate pass runs, so skipping this leaves part of the corpus stuck at `operator_review` and invisible.
-5. **Update the search index, after the gate and not before.** `SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true yarn --cwd server reindex:meili --confirm`. When the live index's embedder matches the code it reconciles only the changed documents, applying any drifted settings in place (#5442), and otherwise it runs the full rebuild described below; `--full` forces the rebuild (#5107). Run it inside the Production Render shell because the private Meilisearch is not reachable from a laptop. `CONFIRM_PROD_SCRAPE=true` is not optional: the write guard refuses the rebuild without it, and it fires after the preflight and the index reconcile plan have already printed, so a run without it reads as working and stops at the last moment. Prefer `node scripts/reindex-search-index.mjs production --apply`, which reports every missing variable at once before anything starts. The gate writes tiers, so an index built before the gate carries pre-gate tiers. The rebuild applies the full settings object first, including `pagination.maxTotalHits`, so it also repairs an index left at Meilisearch's 1000-hit default. It builds into a fresh `prod_researchentities_next` index and swaps it in atomically once every document is confirmed, so student search keeps serving the previous index throughout and a failed rebuild changes nothing; the swap only protects against an incomplete rebuild and deletes the previous copy, so the restore point in `docs/data-refresh-runbook.md` is still required, the instance needs disk headroom for two copies, and the shell needs `OPENAI_API_KEY`, because a rebuild that cannot recreate the stored embedder is refused (#4151).
+5. **Update the search index, after the gate and not before.** `SCRAPER_ENV=production CONFIRM_PROD_SCRAPE=true yarn --cwd server reindex:meili --confirm`. When the live index's embedder matches the code it reconciles only the changed documents, applying any drifted settings in place (#5442), and otherwise it runs the full rebuild described below; `--full` forces the rebuild (#5107). Run it inside the Production Render shell because the private Meilisearch is not reachable from a laptop. `CONFIRM_PROD_SCRAPE=true` is not optional: with `--confirm` the write guard refuses the rebuild without it, before connecting (#5971). Prefer `node scripts/reindex-search-index.mjs production --apply`, which reports every missing variable at once before anything starts. The gate writes tiers, so an index built before the gate carries pre-gate tiers. The rebuild applies the full settings object first, including `pagination.maxTotalHits`, so it also repairs an index left at Meilisearch's 1000-hit default. It builds into a fresh `prod_researchentities_next` index and swaps it in atomically once every document is confirmed, so student search keeps serving the previous index throughout and a failed rebuild changes nothing; the swap only protects against an incomplete rebuild and deletes the previous copy, so the restore point in `docs/data-refresh-runbook.md` is still required, the instance needs disk headroom for two copies, and the shell needs `OPENAI_API_KEY`, because a rebuild that cannot recreate the stored embedder is refused (#4151).
 6. **Then reconcile and merge `main`**, which deploys the code. With `accountDataControls` on, the system now enforces the deletion settings rather than relying on this list: Production refuses self-serve deletion while `ACCOUNT_DELETION_AUDIT_HMAC_KEY`, `POSTHOG_PERSONAL_API_KEY` or `POSTHOG_PROJECT_ID` is missing, and the `Post-Promotion Verify` smoke fails on `api.ready.accountDeletion` until they are set ("Holding one feature instead of the whole release", #5624).
 
 Build any declared index the target is missing, on Beta after the Development copy and on Production after this one.
@@ -277,13 +277,16 @@ The Development-to-Beta mirror inserts each live row as read and rewrites only `
 It is still not the path.
 `search_rerank_cache` is in `NEVER_COPY_COLLECTIONS`, every copy refuses one, and no tool exports it.
 Development's collection also holds `shadow` entries and entries keyed before the acronym rewrite (#5643), which a re-seed from the file does not carry.
-What a re-seed loses is a score whose slug no longer resolves: on 2026-11-11 the revised file left 6 of 9,942 scores unresolved, and each of those rows takes the neutral 1.5.
+What a re-seed loses is a score whose slug no longer resolves: on 2026-11-13 the v4 file left 16 of 10,974 scores unresolved, on 9 slugs (6 rows merged into a survivor and 3 renamed), and each of those rows takes the neutral 1.5.
+The 3 renamed slugs are the ones the next revision rewrites to their current slugs, by the step below; the 6 merged rows have no current slug of their own to rewrite to.
 
 #### Before the first run: the seed file must key cleanly under current code
 
 Since #5643 a bare acronym keys as the phrase it stands for, so a file holding a bare acronym and its phrase as two entries is refused with `Entries <i> and <j> have the same query key`, before anything is read or written.
 The seed file Development was seeded from on 2026-11-10 holds one such pair, so it cannot seed any environment until it is revised.
-That revision is done: version v3 of the file, outside the repository, reseeded Development on 2026-11-11 under the marker `full-v3-2026-11-11`, so the steps below are the procedure for the next revision rather than a pending task.
+That revision is done: version v3 of the file reseeded Development on 2026-11-11 under the marker `full-v3-2026-11-11`.
+Version v4, v3 plus 36 multi-word topic queries students typed on Production and scored offline (#6094), reseeded Development on 2026-11-13 under `full-v4-2026-11-13` and is the file the next promotion seeds Beta and Production from.
+Both files live outside the repository, so the steps below are the procedure for the next revision rather than a pending task.
 Drop the bare acronym entry and keep the phrase entry, because the acronym is now searched as its phrase, so the phrase entry's scores are the ones scored against the pool the acronym is served.
 Revise the file outside the repository under a new version name and keep the previous version.
 While revising it, rewrite each slug that no longer resolves to the row's current slug, read through the `entityId` Development's cache stored for it, so the renamed rows keep their scores.
@@ -292,7 +295,7 @@ Then re-seed Development's own `search_rerank_cache` from the revised file, so i
 #### Commands
 
 Run every command from the repository root of a laptop checkout at current `beta`, with `<seed.json>` the revised file and `<marker>` the index version.
-Name the marker `full-<seed version>-<YYYY-MM-DD>` with the seeding date, for example `full-v3-2026-11-20`.
+Name the marker `full-<seed version>-<YYYY-MM-DD>` with the seeding date, for example `full-v5-2026-11-20`.
 The `full-` prefix is what marks an entry as seeded: the live-miss job never replaces such an entry, and the dry run counts it in `seededEntries`.
 Write each variable as a prefix on the command line itself, as below; in zsh an unquoted variable holding two assignments does not split, so the second never reaches the command.
 Neither target takes the Development write lease, because the lease skips a database that receives data only by promotion, so `DEV_WRITE_OWNER` is not needed here.
@@ -360,23 +363,25 @@ Removing them is optional, is a write against that environment that needs its ow
 
 #### Expected counts on a fresh copy of Development
 
-Measured on Development on 2026-11-11 with the v3 seed file, after Development's own cache was re-seeded from it.
+Measured on Development on 2026-11-13 with the v4 seed file, after Development's own cache was re-seeded from it.
 These change whenever the seed file or the corpus changes, so read them as the shape of a correct run rather than as values to match.
 
 | Count | Development dry run | Laptop seed of Beta or Production |
 | --- | --- | --- |
-| `entries` | 346 | 346 |
-| `scores` | 9,942 | 9,942 |
-| `resolvedScores` | 9,936 | 9,936 |
-| `unresolvedSlugs` | 6 | 6 |
+| `entries` | 382 | 382 |
+| `scores` | 10,974 | 10,974 |
+| `resolvedScores` | 10,958 | 10,958 |
+| `unresolvedSlugs` (unresolved scores, not distinct slugs) | 16 | 16 |
 | `entriesWithNoResolvedScore` | 0 | 0 |
 | `textHashes` | `read-from-index` | `index-of-another-environment` |
-| `scoresWithTextHash` | 9,936 | 0 |
-| `seededEntries`, `staleSeededEntries`, `seededEntriesWithoutTextHashes` | 346, 0, 0 | `null`, `null`, `null` |
-| `upserted` on apply | 346 | 346 |
+| `scoresWithTextHash` | 10,958 | 0 |
+| `seededEntries`, `staleSeededEntries`, `seededEntriesWithoutTextHashes` | 382, 0, 0 | `null`, `null`, `null` |
+| `upserted` on apply | 382 | 382 |
 
 The laptop column was measured by the same dry run on Development with `MEILISEARCH_INDEX_PREFIX=beta`, which is the mode a laptop seeding Beta or Production gets.
-The unrevised file, 347 entries, is refused by the key-collision check.
+Despite its name, `unresolvedSlugs` counts unresolved scores, one per scored row whose slug does not resolve, so the 16 above are 16 scores on 9 distinct slugs; compare a target's value against this column as a score count.
+The unrevised 2026-11-10 file, 347 entries, is refused by the key-collision check.
+On the 36 queries v4 added, a blind grade of the union of the unseeded and the reranked top 10 measured nDCG@10 +0.164 (95% CI +0.111 to +0.221), better on 33 and worse on 0, and the served re-read returned the reranked set on all 36.
 Through the search route, with the flag on and the public visibility scope, 20 sampled unfiltered multi-word seeded queries served a top 5 worth 284 of the 286 grade points the best five graded rows would score, and every one of the 20 served its graded rows in non-increasing grade order.
 An earlier rehearsal into a scratch collection, with the 2026-11-10 file less its bare acronym entry, changed the top 10 of 38 of 40 such queries against the unseeded order.
 
@@ -447,7 +452,7 @@ The user materializer refreshes `identifiers.emailSupport` only for a researcher
 3. Dry-run again with the command from step 1; it must plan 0.
 4. Count coverage: `yarn --cwd server researchers:email-support-coverage --environment=development` must read `unmarked: 0`, the precondition for any serve-time use of the marker.
 
-The scraper sweep runs this pass itself as the `researcher-email-support` stage, after `staff-minted-retirement` and directly before `visibility-gate` (#5713), so a sweep marks researchers that newly become unreached without a manual run.
+The scraper sweep runs this pass itself as the `researcher-email-support` stage, directly before `visibility-gate` (#5713; order in `docs/research-data-pipeline.md`), so a sweep marks researchers that newly become unreached without a manual run.
 Run the steps above by hand only for a Development materialize outside a sweep.
 
 ## Verifying a release

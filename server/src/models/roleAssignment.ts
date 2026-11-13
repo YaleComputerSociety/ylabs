@@ -66,8 +66,24 @@ export interface RoleAssignmentRecord {
   confidence: number;
   reviewStatus: RoleAssignmentReviewStatus;
   reviewNotes?: string;
+  reviewedBy?: string;
+  reviewedByAgent?: boolean;
+  reviewedAt?: Date;
   rosterProvenance?: RoleAssignmentRosterProvenance;
+  operatorEnd?: RoleAssignmentOperatorEnd;
   archived: boolean;
+}
+
+export interface RoleAssignmentOperatorEnd {
+  endedAt: Date;
+  reason: string;
+  citationUrl: string;
+  decidedBy: 'owner' | 'agent';
+  recordedBy?: string;
+  recordedAt: Date;
+  previousState: RoleAssignmentState;
+  previousEndedAt?: Date;
+  firstObservedAt?: Date;
 }
 
 export const roleAssignmentTargetSchema = new mongoose.Schema<RoleAssignmentTarget>(
@@ -109,6 +125,9 @@ export const roleAssignmentSchema = new mongoose.Schema<RoleAssignmentRecord>(
       enum: [...roleAssignmentStates],
       default: 'UNKNOWN',
     },
+    // When a lane first saw the edge, never a start the source states: every writer sets it
+    // from its first observation or write time (#5979). A lane that parses stated start years
+    // must add a basis field before writing one here.
     startedAt: {
       type: Date,
       required: false,
@@ -143,6 +162,37 @@ export const roleAssignmentSchema = new mongoose.Schema<RoleAssignmentRecord>(
       type: String,
       trim: true,
       maxlength: 500,
+    },
+    reviewedBy: {
+      type: String,
+      trim: true,
+      maxlength: 120,
+    },
+    reviewedByAgent: {
+      type: Boolean,
+      required: false,
+    },
+    reviewedAt: {
+      type: Date,
+      required: false,
+    },
+    operatorEnd: {
+      type: new mongoose.Schema<RoleAssignmentOperatorEnd>(
+        {
+          endedAt: { type: Date, required: true },
+          reason: { type: String, trim: true, required: true, maxlength: 500 },
+          citationUrl: { type: String, trim: true, required: true, maxlength: 2048 },
+          decidedBy: { type: String, enum: ['owner', 'agent'], required: true },
+          recordedBy: { type: String, trim: true, maxlength: 120 },
+          recordedAt: { type: Date, required: true },
+          previousState: { type: String, enum: [...roleAssignmentStates], required: true },
+          previousEndedAt: { type: Date },
+          firstObservedAt: { type: Date },
+        },
+        { _id: false },
+      ),
+      required: false,
+      default: undefined,
     },
     rosterProvenance: {
       type: new mongoose.Schema<RoleAssignmentRosterProvenance>(
@@ -213,6 +263,46 @@ export function roleAssignmentReattachWrite(
     filter: { ...upsertFilter, reviewStatus: { $ne: DETACHED_ROLE_ASSIGNMENT_REVIEW_STATUS } },
     update: { $set: { archived: false, reviewStatus } },
   };
+}
+
+/**
+ * An operator ended this exact `(personId, target, role)` edge after reading the pages: the
+ * person really held the role and no longer does. A lane re-reading a page that still lists
+ * them must not revive it or mint a twin beside it, so every evidence writer refuses the
+ * triple while the record stands, and only `role-assignments:restore-detached-edge` clears it.
+ */
+export async function operatorEndedEdgeBlocksWrite(
+  upsertFilter: Record<string, unknown>,
+): Promise<boolean> {
+  return Boolean(
+    await RoleAssignment.exists({ ...upsertFilter, 'operatorEnd.endedAt': { $exists: true } }),
+  );
+}
+
+export type ProtectedRoleEdge = 'operator-ended' | 'disputed';
+
+/**
+ * The refusal an existing `(personId, target, role)` edge records, if any, that a write must not
+ * touch. An operator-ended edge refuses always. A `DISPUTED` detachment refuses when no live edge
+ * matches, because the unpinned upsert would land on the detached edge and overwrite its state,
+ * provenance and `endedAt` while the reattach guard keeps it archived (#5979).
+ */
+export async function protectedRoleEdgeFor(
+  upsertFilter: Record<string, unknown>,
+): Promise<ProtectedRoleEdge | null> {
+  if (await operatorEndedEdgeBlocksWrite(upsertFilter)) return 'operator-ended';
+  const disputed = await RoleAssignment.exists({
+    ...upsertFilter,
+    archived: true,
+    reviewStatus: DETACHED_ROLE_ASSIGNMENT_REVIEW_STATUS,
+  });
+  if (!disputed) return null;
+  const live = await RoleAssignment.exists({
+    ...upsertFilter,
+    archived: { $ne: true },
+    state: { $ne: 'HISTORICAL' },
+  });
+  return live ? null : 'disputed';
 }
 
 export const RoleAssignment =

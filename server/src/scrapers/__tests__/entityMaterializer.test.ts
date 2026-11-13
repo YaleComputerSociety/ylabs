@@ -1681,6 +1681,12 @@ describe('leadPiSchoolInheritanceGate (#2158 PI->school, #2802 PI->department)',
     expect(leadPiSchoolInheritanceGate({ school: '', kind: 'institute' })).toBe('multi-pi-kind');
     expect(leadPiSchoolInheritanceGate({ school: '', kind: 'program' })).toBe('multi-pi-kind');
   });
+
+  it('lets a core facility inherit from its single lead, because that school has a source (#2195, #6036)', () => {
+    expect(leadPiSchoolInheritanceGate({ school: '', kind: 'core_facility' })).toBe(
+      'school-and-department',
+    );
+  });
 });
 
 describe('clearedWebsiteUrlIsWorthWriting (#2708)', () => {

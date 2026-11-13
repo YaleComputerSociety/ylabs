@@ -323,4 +323,60 @@ describe('roster mint withdrawal', () => {
     const present = await loadRunRosterPresence(secondRun, [snapshot.toObject()]);
     expect(present.has('dept-synthetic-studies-bare')).toBe(true);
   });
+
+  it.each([
+    ['in the same run', secondRun],
+    ['in an earlier run', firstRun],
+  ])(
+    'keeps a withdrawn row that another roster read %s still lists (#5969)',
+    async (_, otherRun) => {
+      for (const slug of listedSlugs) await seedLaneRow(slug);
+      const shared = await seedLaneRow('dept-synthetic-studies-shared');
+      for (const [runId, observedAt] of [
+        [firstRun, firstAt],
+        [secondRun, secondAt],
+      ] as const) {
+        await seedRead({ runId, observedAt, discovered: listedSlugs, withdrawn: [shared.slug] });
+      }
+      await Observation.create({
+        entityType: 'departmentRosterHealth',
+        entityKey: 'synthetic-other-studies',
+        field: 'departmentRosterHealth',
+        sourceId,
+        sourceName: 'dept-faculty-roster',
+        scrapeRunId: otherRun,
+        observedAt: secondAt,
+        confidence: 0.7,
+        superseded: false,
+        value: {
+          deptKey: 'synthetic-other-studies',
+          deptName: 'Synthetic Other Studies',
+          status: 'ok',
+          complete: true,
+          discoveredCount: 1,
+          discoveredEntityKeys: [shared.slug],
+          mintWithdrawalRecorded: true,
+          withdrawnEntityKeys: [],
+          profilesRead: 1,
+          read: {
+            pagesRead: 1,
+            readMode: 'html',
+            cacheAllowed: false,
+            readAt: secondAt.toISOString(),
+          },
+        },
+      });
+      const result = await reconcileRosterMintWithdrawalsFromRun(String(secondRun));
+      expect(result.rows).toEqual([
+        expect.objectContaining({
+          slug: shared.slug,
+          action: 'keep',
+          keepReason: 'listed_by_another_roster',
+        }),
+      ]);
+      expect(
+        await ResearchEntity.countDocuments({ _id: shared._id, archived: { $ne: true } }),
+      ).toBe(1);
+    },
+  );
 });

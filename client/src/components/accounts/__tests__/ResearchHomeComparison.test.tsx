@@ -123,9 +123,14 @@ describe('ResearchHomeComparison', () => {
       </MemoryRouter>,
     );
 
-    expect(await screen.findByText('Has hosted undergrads before')).toBeTruthy();
+    const hostedPill = await screen.findByText('Has had undergrads');
+    const [invitationPill, quoteCaption] = screen.getAllByText('Taking undergrads now');
+    expect(invitationPill.className).toContain('yr-pill-green');
+    expect(quoteCaption.tagName).toBe('FIGCAPTION');
+    expect(
+      invitationPill.compareDocumentPosition(hostedPill) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(screen.getByText('Has advised undergrads (2023–2025)')).toBeTruthy();
-    expect(screen.getByText('Welcomes undergrads')).toBeTruthy();
     expect(screen.getByText(/Undergraduates join the lab each summer/)).toBeTruthy();
     expect(
       screen

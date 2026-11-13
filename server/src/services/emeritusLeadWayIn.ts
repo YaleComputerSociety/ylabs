@@ -1,3 +1,4 @@
+import { awardEndDayHasPassed, storedAwardCalendarDay } from '../utils/awardCalendarDay';
 import { servedCurrentFunding } from './servedCurrentFunding';
 
 export const EMERITUS_WITHHELD_WAY_IN_SIGNAL_TYPES: ReadonlySet<string> = new Set([
@@ -80,8 +81,6 @@ export function leadTitlesAreAllEmeritus(leadTitles: readonly unknown[]): boolea
   return leadTitles.length > 0 && leadTitles.every(leadIsEmeritus);
 }
 
-const MS_PER_DAY = 86_400_000;
-
 export type EmeritusCurrentActivityEvidence = 'running_funding' | 'current_team';
 
 export interface EmeritusCurrentActivityInput {
@@ -98,9 +97,9 @@ const nihActivityCode = (awardId: unknown): string | undefined =>
 const isRunningResearchAward = (award: unknown, now: number): boolean => {
   if (!award || typeof award !== 'object') return false;
   const { endDate, id } = award as { endDate?: unknown; id?: unknown };
-  if (endDate === undefined || endDate === null || endDate === '') return false;
-  const endTime = new Date(endDate as string | number | Date).getTime();
-  if (!Number.isFinite(endTime) || endTime + MS_PER_DAY <= now) return false;
+  if (storedAwardCalendarDay(endDate) === undefined || awardEndDayHasPassed(endDate, now)) {
+    return false;
+  }
   const activityCode = nihActivityCode(id);
   return !activityCode || !NIH_CONFERENCE_ACTIVITY_CODES.has(activityCode);
 };

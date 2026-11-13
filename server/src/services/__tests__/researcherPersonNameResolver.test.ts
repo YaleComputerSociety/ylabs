@@ -6,6 +6,9 @@ import {
   resolveResearcherIdForPersonName,
   type ResearcherNameCandidate,
 } from '../researcherPersonNameResolver';
+import { syntheticPersonOrcid } from '../../test/syntheticOrcid';
+
+const SYNTHETIC_ORCID_1 = syntheticPersonOrcid(500);
 
 const candidate = (displayName: string): ResearcherNameCandidate => ({
   _id: new mongoose.Types.ObjectId(),
@@ -100,10 +103,11 @@ describe('resolveResearcherIdForPersonName', () => {
       ['Ali Quennard', 'Alice Quennard'],
       ['Christo Quennard', 'Christopher Quennard'],
     ]) {
+      const storedCandidate = candidate(stored);
       const result = await resolveResearcherIdForPersonName(observed, {
-        deps: depsFor([candidate(stored)]),
+        deps: depsFor([storedCandidate]),
       });
-      expect(result).toEqual({ status: 'ambiguous' });
+      expect(result).toEqual({ status: 'ambiguous', ambiguousCandidates: [storedCandidate] });
     }
   });
 
@@ -124,18 +128,20 @@ describe('resolveResearcherIdForPersonName', () => {
 
   it('does not mark a name when one candidate could be the same person (#4388)', async () => {
     for (const other of ['M. Quillfeather', 'M. J. Quillfeather']) {
+      const couldBeTheSamePerson = candidate(other);
       const result = await resolveResearcherIdForPersonName('Mara Quillfeather', {
-        deps: depsFor([candidate('Jonas Quillfeather'), candidate(other)]),
+        deps: depsFor([candidate('Jonas Quillfeather'), couldBeTheSamePerson]),
       });
-      expect(result).toEqual({ status: 'ambiguous' });
+      expect(result).toEqual({ status: 'ambiguous', ambiguousCandidates: [couldBeTheSamePerson] });
     }
   });
 
   it('is ambiguous when two candidates share surname and given name', async () => {
+    const twins = [candidate('John Smith'), candidate('John Smith')];
     const result = await resolveResearcherIdForPersonName('John Smith', {
-      deps: depsFor([candidate('John Smith'), candidate('John Smith')]),
+      deps: depsFor([...twins, candidate('Jane Smith')]),
     });
-    expect(result).toEqual({ status: 'ambiguous' });
+    expect(result).toEqual({ status: 'ambiguous', ambiguousCandidates: twins });
   });
 
   it('fails closed on a surname-only source name with any candidate', async () => {
@@ -167,7 +173,7 @@ describe('resolveResearcherIdForPersonName', () => {
 });
 
 describe('resolveResearcherIdForOrcid', () => {
-  const ORCID = '0000-0000-0000-0028';
+  const ORCID = SYNTHETIC_ORCID_1;
 
   it('normalizes a bare or URL ORCID and rejects a bad checksum', () => {
     expect(normalizeOrcid(`https://orcid.org/${ORCID}`)).toBe(ORCID);
@@ -193,5 +199,145 @@ describe('resolveResearcherIdForOrcid', () => {
       findResearcherByOrcid: async () => candidate('Avery Placeholder'),
     });
     expect(result).toEqual({ status: 'ambiguous' });
+  });
+});
+
+describe('resolveResearcherIdForPersonName breaks a name tie only on identity evidence (#5875)', () => {
+  const YEAR_RUN_ORCID = '2025-2024-2023-2022';
+  const withIdentity = (
+    displayName: string,
+    identifiers: ResearcherNameCandidate['identifiers'],
+  ): ResearcherNameCandidate => ({ ...candidate(displayName), identifiers });
+
+  it('joins the one tied candidate holding the observed email', async () => {
+    const holder = withIdentity('Mara Quillfeather', { email: 'mara.quillfeather@example.edu' });
+    const namesake = withIdentity('Mara Quillfeather', { email: 'm.q@example.org' });
+    const result = await resolveResearcherIdForPersonName('Mara Quillfeather', {
+      identity: { emails: [' Mara.Quillfeather@Example.edu '] },
+      deps: depsFor([namesake, holder]),
+    });
+    expect(result).toEqual({ status: 'matched', researcherId: holder._id });
+  });
+
+  it('joins the one tied candidate holding the observed plausible ORCID', async () => {
+    const holder = withIdentity('Mara Quillfeather', { orcid: SYNTHETIC_ORCID_1 });
+    const namesake = withIdentity('Mara Quillfeather', {});
+    const result = await resolveResearcherIdForPersonName('Mara Quillfeather', {
+      identity: { orcid: `https://orcid.org/${SYNTHETIC_ORCID_1}` },
+      deps: depsFor([holder, namesake]),
+    });
+    expect(result).toEqual({ status: 'matched', researcherId: holder._id });
+  });
+
+  it('keeps a tie refused when the key carries no identity evidence', async () => {
+    const twins = [
+      withIdentity('Mara Quillfeather', { email: 'one@example.edu', orcid: SYNTHETIC_ORCID_1 }),
+      withIdentity('Mara Quillfeather', { netid: 'zz9' }),
+    ];
+    const result = await resolveResearcherIdForPersonName('Mara Quillfeather', {
+      identity: { emails: [], orcid: undefined },
+      deps: depsFor(twins),
+    });
+    expect(result).toEqual({ status: 'ambiguous', ambiguousCandidates: twins });
+  });
+
+  it('refuses the year-run ORCID as a witness even though its check digit computes', async () => {
+    const holder = withIdentity('Mara Quillfeather', { orcid: YEAR_RUN_ORCID });
+    const namesake = withIdentity('Mara Quillfeather', {});
+    const result = await resolveResearcherIdForPersonName('Mara Quillfeather', {
+      identity: { orcid: YEAR_RUN_ORCID },
+      deps: depsFor([holder, namesake]),
+    });
+    expect(result).toEqual({ status: 'ambiguous', ambiguousCandidates: [holder, namesake] });
+  });
+
+  it('refuses a witnessed email when the same candidate holds another netid', async () => {
+    const holder = withIdentity('Mara Quillfeather', { email: 'shared@example.edu', netid: 'zz9' });
+    const namesake = withIdentity('Mara Quillfeather', {});
+    const result = await resolveResearcherIdForPersonName('Mara Quillfeather', {
+      netid: 'mq42',
+      identity: { emails: ['shared@example.edu'] },
+      deps: depsFor([holder, namesake]),
+    });
+    expect(result.status).toBe('ambiguous');
+    expect(result.researcherId).toBeUndefined();
+    expect(result.everyCandidateNamesSomeoneElse).toBeUndefined();
+  });
+
+  it('refuses when two tied candidates share the witnessed email', async () => {
+    const twins = [
+      withIdentity('Mara Quillfeather', { email: 'shared@example.edu' }),
+      withIdentity('Mara Quillfeather', { email: 'shared@example.edu' }),
+    ];
+    const result = await resolveResearcherIdForPersonName('Mara Quillfeather', {
+      identity: { emails: ['shared@example.edu'] },
+      deps: depsFor(twins),
+    });
+    expect(result).toEqual({ status: 'ambiguous', ambiguousCandidates: twins });
+  });
+
+  it('keeps an exact tie refused while an initial-only namesake could still be this person', async () => {
+    const tiedA = withIdentity('Michael Quillfeather', { netid: 'mq1' });
+    const tiedB = withIdentity('Michael Quillfeather', { netid: 'mq2' });
+    const initialOnly = withIdentity('M. Quillfeather', {});
+    const result = await resolveResearcherIdForPersonName('Mike Quillfeather', {
+      netid: 'mq42',
+      deps: depsFor([tiedA, tiedB, initialOnly]),
+    });
+    expect(result).toEqual({ status: 'ambiguous', ambiguousCandidates: [tiedA, tiedB] });
+  });
+
+  it('keeps an exact tie refused when every namesake holds another netid and the key has only a netid', async () => {
+    const tiedA = withIdentity('Michael Quillfeather', { netid: 'mq1' });
+    const tiedB = withIdentity('Michael Quillfeather', { netid: 'mq2' });
+    const initialOnly = withIdentity('M. Quillfeather', { netid: 'mq3' });
+    const result = await resolveResearcherIdForPersonName('Mike Quillfeather', {
+      netid: 'mq42',
+      deps: depsFor([tiedA, tiedB, initialOnly]),
+    });
+    expect(result).toEqual({ status: 'ambiguous', ambiguousCandidates: [tiedA, tiedB] });
+  });
+
+  it('reads a prefix-sharing namesake holding another netid as someone else', async () => {
+    const namesake = withIdentity('Jonas Mar Quillfeather', { netid: 'jq7' });
+    const result = await resolveResearcherIdForPersonName('Mara Quillfeather', {
+      netid: 'mq42',
+      deps: depsFor([namesake]),
+    });
+    expect(result).toEqual({ status: 'ambiguous', everyCandidateNamesSomeoneElse: true });
+  });
+
+  it('still keeps the prefix-sharing namesake a possible match without a witness', async () => {
+    const namesake = withIdentity('Jonas Mar Quillfeather', { netid: 'jq7' });
+    const result = await resolveResearcherIdForPersonName('Mara Quillfeather', {
+      deps: depsFor([namesake]),
+    });
+    expect(result).toEqual({ status: 'ambiguous', ambiguousCandidates: [namesake] });
+  });
+
+  it('converges on the minted record and stays there on every later pass', async () => {
+    const namesake = withIdentity('Jonas Mar Quillfeather', { netid: 'jq7' });
+    const opts = { netid: 'mq42', identity: { emails: ['mara.quillfeather@example.edu'] } };
+    const first = await resolveResearcherIdForPersonName('Mara Quillfeather', {
+      ...opts,
+      deps: depsFor([namesake]),
+    });
+    expect(first).toEqual({ status: 'ambiguous', everyCandidateNamesSomeoneElse: true });
+
+    const minted = withIdentity('Mara Quillfeather', {
+      netid: 'mq42',
+      email: 'mara.quillfeather@example.edu',
+    });
+    const afterMint = depsFor([namesake, minted], { mq42: minted._id as mongoose.Types.ObjectId });
+    const second = await resolveResearcherIdForPersonName('Mara Quillfeather', {
+      ...opts,
+      deps: afterMint,
+    });
+    const third = await resolveResearcherIdForPersonName('Mara Quillfeather', {
+      ...opts,
+      deps: afterMint,
+    });
+    expect(second).toEqual({ status: 'matched', researcherId: minted._id });
+    expect(third).toEqual(second);
   });
 });

@@ -179,7 +179,7 @@ describe('a dropped email retires by attested omission (#5711)', () => {
     await appendRun(PI_SOURCE, piRead(''));
     const applied = await reconcileUserFieldRetractions({ sourceName: PI_SOURCE, rederive });
     expect(applied).toMatchObject({ outcome: 'reconciled', retiredObservations: 1 });
-    expect(rederive).toHaveBeenCalledExactlyOnceWith({ entityKey: PI_KEY });
+    expect(rederive).toHaveBeenCalledExactlyOnceWith({ entityKey: PI_KEY }, ['email']);
     expect(await liveEmails(PI_SOURCE)).toEqual([]);
     expect(await liveEmails(RIVAL_SOURCE)).toEqual([`${PI_KEY} ${ADDRESS}`]);
     const retired = await Observation.findOne({ sourceName: PI_SOURCE, field: 'email' }).lean<{

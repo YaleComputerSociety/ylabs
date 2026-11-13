@@ -5,6 +5,7 @@
  * and reusable across any scraper that needs to derive stable keys from messy
  * external data (names, emails, URLs).
  */
+import { isDegreeToken, ROSTER_NAME_NORMALIZER_LEGACY_TOKENS } from '../../utils/degreeTokens';
 import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatCharacters';
 import {
   isPersonNameCaption,
@@ -280,9 +281,15 @@ export function isLikelyPersonSpecificYaleEmail(
  * Returns the cleaned name suitable for slugification or display. Returns an
  * empty string on falsy input.
  */
-export function normalizeName(name: string | undefined | null): string {
+export function normalizeName(
+  name: string | undefined | null,
+  credentialTokens: ReadonlySet<string> = ROSTER_NAME_NORMALIZER_LEGACY_TOKENS.v1,
+): string {
   if (!name) return '';
-  return normalizeNameKeepingCaption(stripPersonNameCaptionWrapper(collapseNameWhitespace(name)));
+  return normalizeNameKeepingCaption(
+    stripPersonNameCaptionWrapper(collapseNameWhitespace(name)),
+    credentialTokens,
+  );
 }
 
 const photoSceneOpenerPattern =
@@ -316,7 +323,10 @@ function collapseNameWhitespace(name: string): string {
  * user key were first minted from, before that rule existed, so identity continuity
  * can re-derive them unchanged (#4716).
  */
-export function normalizeNameKeepingCaption(name: string | undefined | null): string {
+export function normalizeNameKeepingCaption(
+  name: string | undefined | null,
+  credentialTokens: ReadonlySet<string> = ROSTER_NAME_NORMALIZER_LEGACY_TOKENS.v1,
+): string {
   if (!name) return '';
   let n = collapseNameWhitespace(name);
   // strip leading honorifics
@@ -328,21 +338,16 @@ export function normalizeNameKeepingCaption(name: string | undefined | null): st
     .replace(/[()]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  // Strip trailing credential clauses after the last comma, repeating so that
-  // stacked degrees collapse fully e.g. "Avery Sloan, MD, PhD" -> "Avery Sloan".
-  // A degree missing from this list is not a cosmetic miss: the clause stays on
-  // the name, `splitName` then reads the last credential as the surname, and the
-  // roster member is keyed and served under a surname that is a degree
-  // abbreviation ("Avery Sloan, MD, MHS" split to first "Avery Sloan, MD," and
-  // last "MHS", #2535). The `$` anchor is what keeps a longer degree from being
-  // eaten by a shorter prefix alternative, so MSc and MSCR survive the
-  // `m\.?\s*s\.?` branch.
-  const credentialClause =
-    /,\s*(ph\.?\s*d\.?|m\.?\s*d\.?|m\.?\s*p\.?\s*h\.?\s*s\.?|m\.?\s*p\.?\s*h\.?|j\.?\s*d\.?|sc\.?\s*d\.?|d\.?\s*phil\.?|dphil|dr\.?\s*p\.?\s*h\.?|ed\.?\s*d\.?|pharm\.?\s*d\.?|m\.?\s*s\.?\s*c\.?\s*r\.?|m\.?\s*s\.?\s*c\.?|m\.?\s*s\.?|m\.?\s*a\.?|m\.?\s*b\.?\s*a\.?|m\.?\s*h\.?\s*s\.?|m\.?\s*h\.?\s*a\.?|m\.?\s*phil\.?|m\.?\s*f\.?\s*a\.?|m\.?\s*l\.?\s*s\.?|l\.?\s*m\.?\s*s\.?\s*w\.?|l\.?\s*m\.?\s*f\.?\s*t\.?|esq\.?)\.?\s*$/i;
-  let stripped = n.replace(credentialClause, '');
-  while (stripped !== n) {
-    n = stripped;
-    stripped = n.replace(credentialClause, '');
+  // Strip trailing credential clauses after the last comma, repeating so that stacked
+  // degrees collapse fully ("Avery Sloan, MD, PhD" -> "Avery Sloan"). A degree missing
+  // from the list is not a cosmetic miss: the clause stays on the name and `splitName`
+  // reads it as the surname (#2535). The default is the frozen version 1 list, because other
+  // lanes derive keys from this name and have no key continuity; the roster lane passes the
+  // shared list in `degreeTokens.ts` (#5969).
+  for (;;) {
+    const clause = n.match(/,\s*([^,]+?)\s*$/);
+    if (!clause || clause.index === undefined || !isDegreeToken(clause[1], credentialTokens)) break;
+    n = n.slice(0, clause.index);
   }
   // strip trailing parenthetical/credential-like trailing tokens
   n = n

@@ -9,7 +9,12 @@ import { researchEntitySortTitle } from '../../utils/servedResearchEntityTitle';
 import {
   buildResearchEntitySearchIndexDocument,
   MESH_DESCRIPTOR_ONLY_TERMS_FIELD,
+  researchEntitySearchResearchType,
 } from '../../services/researchEntitySearchIndexService';
+import {
+  CREATIVE_PRACTICE_RESEARCH_TYPE,
+  RESEARCH_TYPE_INDEX_FIELD,
+} from '../../services/researchGroupFilters';
 import {
   expandNicknameInResearchNameQuery,
   meiliSortEntries,
@@ -53,8 +58,11 @@ import {
   checkSurvivorWebsiteAttribution,
   checkTitleSortOrdering,
   checkTopicDropAttribution,
+  checkAdvisesFilterServesAMentorsEntry,
+  checkHostedFilterServesTheBadge,
+  checkTypeBucketCountsAgree,
+  checkTypeBucketsServeTheirLabel,
   checkWelcomesFilterServesTheBadge,
-  checkWorksWithFilterServesASignal,
   resolvePagesToWalk,
   scoreQueryRelevance,
   tallyCreativePracticeLabels,
@@ -70,6 +78,7 @@ import {
   type RateResult,
   type SurvivorWebsiteObservation,
   type TopicDropObservation,
+  type TypeBucketTally,
 } from './journeyEvalMetrics';
 import {
   DEFAULT_TOP_K,
@@ -83,6 +92,7 @@ export interface ServedBrowseResult {
   estimatedTotalHits?: number;
   degraded?: unknown;
   facetDistribution?: Record<string, Record<string, number>>;
+  appliedFilters?: { entityType?: string[] };
 }
 
 export interface BrowseRequest {
@@ -104,6 +114,7 @@ export type ReadIndexedSortKeysFn = (
 
 export interface LeadMemberNameRead {
   byEntityId: ReadonlyMap<string, readonly string[]>;
+  identityLeadDirectorEntityIds?: ReadonlySet<string>;
   unavailable: boolean;
 }
 
@@ -372,9 +383,159 @@ const creativePracticeLabelAttribution: JourneyCase = {
   },
 };
 
-const welcomesFilterServesTheBadge: JourneyCase = {
-  id: 'welcomes-filter-serves-the-badge',
-  title: 'A row under the "Welcomes undergrads" filter shows the welcomes badge on its card',
+const FACULTY_RESEARCH_TYPE = 'FACULTY_RESEARCH_AREA';
+
+interface TypeBucketWalk {
+  filterTotal: number;
+  rows: Array<Record<string, unknown>>;
+  indexLacksResearchType: boolean;
+  degradedPages: number;
+}
+
+const walkTypeBucket = async (
+  context: JourneyEvalContext,
+  bucket: string,
+): Promise<TypeBucketWalk> => {
+  const reachablePages = maxReachableResearchSearchPage(context.window);
+  const walk: TypeBucketWalk = {
+    filterTotal: 0,
+    rows: [],
+    indexLacksResearchType: false,
+    degradedPages: 0,
+  };
+  for (let page = 1; page <= reachablePages; page += 1) {
+    const result = await context.browse({
+      filters: { entityType: [bucket] },
+      page,
+      pageSize: context.window,
+    });
+    if (page === 1) {
+      walk.filterTotal = result.estimatedTotalHits ?? 0;
+      walk.indexLacksResearchType = result.appliedFilters?.entityType !== undefined;
+    }
+    if (result.degraded !== false) walk.degradedPages += 1;
+    const rows = servedRows(result);
+    walk.rows.push(...rows);
+    if (walk.indexLacksResearchType) break;
+    if (rows.length < context.window || walk.rows.length >= walk.filterTotal) break;
+  }
+  return walk;
+};
+
+const rowServesCreativePractice = (row: Record<string, unknown>): boolean =>
+  row.creativePractice === true;
+
+// A mislabelled row is attributed to a stale index document when its indexed research type is
+// not the one the index builder derives from the stored row now, through the same composition.
+const countStaleIndexMislabels = async (
+  context: JourneyEvalContext,
+  mislabelled: Array<Record<string, unknown>>,
+): Promise<{ attributed: number; leadNamesUnavailable: boolean }> => {
+  if (mislabelled.length === 0) return { attributed: 0, leadNamesUnavailable: false };
+  const keys = mislabelled.map(rowKey).filter(Boolean);
+  const [stored, indexed] = await Promise.all([
+    context.readStoredRows(keys),
+    context.readIndexedSortKeys(RESEARCH_TYPE_INDEX_FIELD, keys),
+  ]);
+  const leadNames = context.readLeadMemberNames
+    ? await context.readLeadMemberNames([...stored.values()])
+    : { byEntityId: new Map<string, readonly string[]>(), unavailable: false };
+  let attributed = 0;
+  for (const key of keys) {
+    const storedRow = stored.get(key);
+    if (!storedRow) continue;
+    const entityId = String(storedRow._id ?? '');
+    const derived = researchEntitySearchResearchType(storedRow, {
+      leadMemberNames: leadNames.byEntityId.get(entityId),
+      identityLeadDirectsOrganization: leadNames.identityLeadDirectorEntityIds?.has(entityId),
+    });
+    if (indexed.get(key) !== derived) attributed += 1;
+  }
+  return { attributed, leadNamesUnavailable: leadNames.unavailable };
+};
+
+const creativePracticeTypeFacetSplit: JourneyCase = {
+  id: 'creative-practice-type-facet-split',
+  title:
+    'Type = Creative practice returns exactly the rows whose cards read creative practice, and Faculty research none of them',
+  run: async (context) => {
+    const corpusBefore = await context.readCorpusFingerprint();
+    const unfiltered = await context.browse({ page: 1, pageSize: context.window });
+    const typeFacet = unfiltered.facetDistribution?.entityType ?? {};
+    const buckets = [
+      {
+        bucket: CREATIVE_PRACTICE_RESEARCH_TYPE,
+        mislabelledWhen: (row: Record<string, unknown>) => !rowServesCreativePractice(row),
+      },
+      { bucket: FACULTY_RESEARCH_TYPE, mislabelledWhen: rowServesCreativePractice },
+    ];
+    const tallies: TypeBucketTally[] = [];
+    let indexLacksResearchType = false;
+    let leadNamesUnavailable = false;
+    let degradedPages = 0;
+    for (const { bucket, mislabelledWhen } of buckets) {
+      const walk = await walkTypeBucket(context, bucket);
+      indexLacksResearchType ||= walk.indexLacksResearchType;
+      degradedPages += walk.degradedPages;
+      const mislabelled = walk.rows.filter(mislabelledWhen);
+      const staleIndex = await countStaleIndexMislabels(context, mislabelled);
+      leadNamesUnavailable ||= staleIndex.leadNamesUnavailable;
+      tallies.push({
+        bucket,
+        facetCount: typeFacet[bucket] ?? 0,
+        filterTotal: walk.filterTotal,
+        served: walk.rows.length,
+        mislabelled: mislabelled.length,
+        attributedToStaleIndex: staleIndex.attributed,
+      });
+    }
+    const corpusAfter = await context.readCorpusFingerprint();
+    const read = { tallies, indexLacksResearchType, leadNamesUnavailable };
+
+    return {
+      invariants: [
+        checkTypeBucketsServeTheirLabel(read, corpusBefore, corpusAfter),
+        checkTypeBucketCountsAgree(read, corpusBefore, corpusAfter),
+        buildInvariant(
+          'type-bucket-browse-is-not-degraded',
+          'A browse filtered to a Type bucket does not fall back to a degraded search path',
+          degradedPages === 0,
+          { degradedPages },
+        ),
+      ],
+      rates: [],
+      notes: { indexLacksResearchType },
+    };
+  },
+};
+
+type FilterBadgeCheck = (
+  tally: { filterTotal: number; served: number; withoutBadge: number },
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+) => InvariantResult;
+
+interface UndergradFilterBadgeCaseSpec {
+  id: string;
+  title: string;
+  filterKey: UndergradOptionFilterKey;
+  optionLabel: string;
+  degradedInvariantId: string;
+  check: FilterBadgeCheck;
+  rowServesTheBadge: (row: Record<string, any>) => boolean;
+}
+
+const undergradFilterBadgeCase = ({
+  id,
+  title,
+  filterKey,
+  optionLabel,
+  degradedInvariantId,
+  check,
+  rowServesTheBadge,
+}: UndergradFilterBadgeCaseSpec): JourneyCase => ({
+  id,
+  title,
   run: async (context) => {
     const reachablePages = maxReachableResearchSearchPage(context.window);
     const corpusBefore = await context.readCorpusFingerprint();
@@ -385,7 +546,7 @@ const welcomesFilterServesTheBadge: JourneyCase = {
     let pagesWalked = 0;
     for (let page = 1; page <= reachablePages; page += 1) {
       const result = await context.browse({
-        filters: { welcomesUndergrads: true },
+        filters: { [filterKey]: true },
         page,
         pageSize: context.window,
       });
@@ -394,21 +555,17 @@ const welcomesFilterServesTheBadge: JourneyCase = {
       if (result.degraded !== false) degradedPages += 1;
       const rows = servedRows(result);
       served += rows.length;
-      withoutBadge += rows.filter((row) => row.welcomesUndergrads !== true).length;
+      withoutBadge += rows.filter((row) => !rowServesTheBadge(row)).length;
       if (rows.length < context.window || served >= filterTotal) break;
     }
     const corpusAfter = await context.readCorpusFingerprint();
 
     return {
       invariants: [
-        checkWelcomesFilterServesTheBadge(
-          { filterTotal, served, withoutBadge },
-          corpusBefore,
-          corpusAfter,
-        ),
+        check({ filterTotal, served, withoutBadge }, corpusBefore, corpusAfter),
         buildInvariant(
-          'welcomes-filtered-browse-is-not-degraded',
-          'A browse filtered to "Welcomes undergrads" does not fall back to a degraded search path',
+          degradedInvariantId,
+          `A browse filtered to "${optionLabel}" does not fall back to a degraded search path`,
           degradedPages === 0,
           { pagesWalked, degradedPages },
         ),
@@ -417,58 +574,98 @@ const welcomesFilterServesTheBadge: JourneyCase = {
       notes: { pagesWalked, walkedEveryFilteredRow: served >= filterTotal },
     };
   },
-};
+});
 
-const rowServesAnUndergradSignal = (row: Record<string, any>): boolean =>
-  row.hasUndergradHostingEvidence === true ||
-  row.welcomesUndergrads === true ||
-  (Array.isArray(row.undergradListEvidence) &&
-    row.undergradListEvidence.some((entry: any) => entry?.signal === 'mentors'));
+const rowServesAMentorsEntry = (row: Record<string, any>): boolean =>
+  Array.isArray(row.undergradListEvidence) &&
+  row.undergradListEvidence.some((entry: any) => entry?.signal === 'mentors');
 
-const worksWithFilterServesASignal: JourneyCase = {
-  id: 'works-with-filter-serves-a-signal',
+const welcomesFilterServesTheBadge = undergradFilterBadgeCase({
+  id: 'welcomes-filter-serves-the-badge',
+  title: 'A row under the "Taking undergrads now" filter shows the welcomes badge on its card',
+  filterKey: 'welcomesUndergrads',
+  optionLabel: 'Taking undergrads now',
+  degradedInvariantId: 'welcomes-filtered-browse-is-not-degraded',
+  check: checkWelcomesFilterServesTheBadge,
+  rowServesTheBadge: (row) => row.welcomesUndergrads === true,
+});
+
+const hostedFilterServesTheBadge = undergradFilterBadgeCase({
+  id: 'hosted-filter-serves-the-badge',
+  title: 'A row under the "Has had undergrads before" filter shows the hosted badge on its card',
+  filterKey: 'hostsUndergrads',
+  optionLabel: 'Has had undergrads before',
+  degradedInvariantId: 'hosted-filtered-browse-is-not-degraded',
+  check: checkHostedFilterServesTheBadge,
+  rowServesTheBadge: (row) => row.hasUndergradHostingEvidence === true,
+});
+
+const advisesFilterServesAMentorsEntry = undergradFilterBadgeCase({
+  id: 'advises-filter-serves-a-mentors-entry',
+  title: 'A row under the "Advises undergrad research" filter shows a mentors entry on its card',
+  filterKey: 'mentorsUndergrads',
+  optionLabel: 'Advises undergrad research',
+  degradedInvariantId: 'advises-filtered-browse-is-not-degraded',
+  check: checkAdvisesFilterServesAMentorsEntry,
+  rowServesTheBadge: rowServesAMentorsEntry,
+});
+
+export const UNDERGRAD_OPTION_FILTER_KEYS = [
+  'welcomesUndergrads',
+  'hostsUndergrads',
+  'mentorsUndergrads',
+] as const;
+type UndergradOptionFilterKey = (typeof UNDERGRAD_OPTION_FILTER_KEYS)[number];
+
+const undergradOptionCount = (result: ServedBrowseResult, filterKey: string): number =>
+  result.facetDistribution?.[filterKey]?.true ?? 0;
+
+const undergradOptionCountAgreement: JourneyCase = {
+  id: 'undergrad-option-count-agreement',
   title:
-    'A row under the "Works with undergrads" filter shows hosted, welcomes or mentors evidence on its card',
+    'Each Undergrads option count equals the total the browse returns with that option added to the current selection',
   run: async (context) => {
-    const reachablePages = maxReachableResearchSearchPage(context.window);
-    const corpusBefore = await context.readCorpusFingerprint();
-    let filterTotal = 0;
-    let served = 0;
-    let withoutBadge = 0;
-    let degradedPages = 0;
-    let pagesWalked = 0;
-    for (let page = 1; page <= reachablePages; page += 1) {
-      const result = await context.browse({
-        filters: { worksWithUndergrads: true },
-        page,
-        pageSize: context.window,
-      });
-      pagesWalked = page;
-      if (page === 1) filterTotal = result.estimatedTotalHits ?? 0;
-      if (result.degraded !== false) degradedPages += 1;
-      const rows = servedRows(result);
-      served += rows.length;
-      withoutBadge += rows.filter((row) => !rowServesAnUndergradSignal(row)).length;
-      if (rows.length < context.window || served >= filterTotal) break;
+    const selections: Array<Partial<Record<UndergradOptionFilterKey, true>>> = [
+      {},
+      ...UNDERGRAD_OPTION_FILTER_KEYS.map((filterKey) => ({ [filterKey]: true as const })),
+    ];
+    const observations: FacetAgreementObservation[] = [];
+    let degradedBrowses = 0;
+    for (const selection of selections) {
+      const selected = await context.browse({ filters: selection, page: 1, pageSize: 1 });
+      if (selected.degraded !== false) degradedBrowses += 1;
+      for (const filterKey of UNDERGRAD_OPTION_FILTER_KEYS) {
+        if (selection[filterKey]) continue;
+        const added = await context.browse({
+          filters: { ...selection, [filterKey]: true },
+          page: 1,
+          pageSize: 1,
+        });
+        if (added.degraded !== false) degradedBrowses += 1;
+        const selectionLabel = Object.keys(selection).join('+') || 'none';
+        observations.push({
+          value: `${selectionLabel} | +${filterKey}`,
+          facetCount: undergradOptionCount(selected, filterKey),
+          filteredTotal: added.estimatedTotalHits ?? -1,
+        });
+      }
     }
-    const corpusAfter = await context.readCorpusFingerprint();
 
     return {
       invariants: [
-        checkWorksWithFilterServesASignal(
-          { filterTotal, served, withoutBadge },
-          corpusBefore,
-          corpusAfter,
-        ),
+        checkFacetAgreement(observations, {
+          id: 'undergrad-option-count-agrees-with-added-total',
+          title:
+            'An Undergrads option count equals the total of the current selection with that option ticked',
+        }),
         buildInvariant(
-          'works-with-filtered-browse-is-not-degraded',
-          'A browse filtered to "Works with undergrads" does not fall back to a degraded search path',
-          degradedPages === 0,
-          { pagesWalked, degradedPages },
+          'undergrad-option-browse-is-not-degraded',
+          'A browse under the Undergrads options does not fall back to a degraded search path',
+          degradedBrowses === 0,
+          { checked: observations.length, degradedBrowses },
         ),
       ],
       rates: [],
-      notes: { pagesWalked, walkedEveryFilteredRow: served >= filterTotal },
     };
   },
 };
@@ -1579,8 +1776,11 @@ export const journeyCases: readonly JourneyCase[] = [
   coldBrowseCardContract,
   topicDropAttribution,
   creativePracticeLabelAttribution,
+  creativePracticeTypeFacetSplit,
   welcomesFilterServesTheBadge,
-  worksWithFilterServesASignal,
+  hostedFilterServesTheBadge,
+  advisesFilterServesAMentorsEntry,
+  undergradOptionCountAgreement,
   facetCountAgreement,
   textQueryFacetCountAgreement,
   paginationServesDistinctRows,

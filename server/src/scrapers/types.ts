@@ -2,6 +2,10 @@
  * Shared types for the scraper subsystem.
  */
 import type { ObservationExtraction, ObservedEntityType } from '../models/observation';
+import type {
+  ObservationClassifierAdmission,
+  ObservationRefusedValue,
+} from './observationRefusals';
 import type { WorkPlannerMetrics } from './workPlanner';
 import type { HttpValidatorCacheStats } from './utils/httpValidatorCache';
 import type { SweepPageReuseStats } from './utils/sweepPageReuse';
@@ -25,6 +29,15 @@ export interface ObservationInput {
    * permission to retire a prior assertion (#2647).
    */
   assertsNoValueFor?: string[];
+  /**
+   * Values this read SAW on the page and refused, each stamped with the classifier and
+   * version that refused it. Carried on a witness row; field retraction retires an
+   * assertion of the identical value from the same page only when the refusing version
+   * is newer than the one in `admittedUnder` on that assertion (#5803).
+   */
+  refusedValues?: ObservationRefusedValue[];
+  /** The classifier versions that admitted this value, compared against later refusals (#5803). */
+  admittedUnder?: ObservationClassifierAdmission[];
   reslugAdoption?: boolean;
   extraction?: ObservationExtraction;
 }

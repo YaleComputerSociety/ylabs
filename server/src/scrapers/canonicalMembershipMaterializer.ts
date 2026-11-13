@@ -1,7 +1,9 @@
 import mongoose from 'mongoose';
 import { Researcher, isValidOrcid } from '../models/researcher';
+import { isPlausiblePersonOrcid } from '../utils/orcid';
 import {
   isRosterIdentityBasis,
+  protectedRoleEdgeFor,
   pinRoleAssignmentUpsertToLiveEdge,
   RoleAssignment,
   roleAssignmentReattachWrite,
@@ -52,7 +54,7 @@ const normalizedNetid = (value: unknown): string | undefined => {
 
 const normalizedOrcid = (value: unknown): string | undefined => {
   const orcid = trimmed(value).toUpperCase();
-  return orcid && isValidOrcid(orcid) ? orcid : undefined;
+  return orcid && isValidOrcid(orcid) && isPlausiblePersonOrcid(orcid) ? orcid : undefined;
 };
 
 const ORGANIZATIONAL_MAILBOX_LOCAL_PARTS = new Set<string>([
@@ -496,6 +498,36 @@ async function adoptNoisyNameOnlyResearcherId(
   return adoptedId;
 }
 
+/**
+ * A name-only record the researcher fold already merged is archived, so the live lookups above
+ * miss it and the listing would mint a fresh copy of the same person, which the next fold merges
+ * again while the listing keeps ending the survivor's edge (#6019). The fold is identity evidence
+ * the name lookup lacks, so the listing follows it to the survivor, when every folded record of
+ * that name points at the same live survivor. Every folded record is compared, never a capped
+ * read, because one disagreeing record past a cap would join the listing to a guess (#6052).
+ */
+async function liveSurvivorOfFoldedNamesake(
+  displayName: string,
+): Promise<mongoose.Types.ObjectId | undefined> {
+  const survivorIds = new Set(
+    (
+      (await Researcher.distinct('dedupedIntoResearcherId', {
+        displayName,
+        archived: true,
+        dedupedIntoResearcherId: { $ne: null },
+      })) as unknown[]
+    ).map(String),
+  );
+  if (survivorIds.size !== 1) return undefined;
+  const survivor = await Researcher.findOne({
+    _id: toObjectId([...survivorIds][0]),
+    archived: { $ne: true },
+  })
+    .select('_id')
+    .lean();
+  return toObjectId((survivor as { _id?: unknown } | null)?._id);
+}
+
 async function findOrCreateNameOnlyResearcherId(
   displayName: string,
 ): Promise<mongoose.Types.ObjectId | undefined> {
@@ -508,6 +540,8 @@ async function findOrCreateNameOnlyResearcherId(
   if (existingNameOnly) return toObjectId((existingNameOnly as { _id?: unknown })._id);
   const adopted = await adoptNoisyNameOnlyResearcherId(displayName);
   if (adopted) return adopted;
+  const survivor = await liveSurvivorOfFoldedNamesake(displayName);
+  if (survivor) return survivor;
   try {
     const created = await Researcher.create({ displayName, profileLinks: [], archived: false });
     return toObjectId(created._id);
@@ -670,6 +704,18 @@ export async function resolveOrCreateResearcherIdUnlessRemoved(
     : personId;
 }
 
+export async function canonicalMemberIsRemovedByRequest(
+  identity: CanonicalMemberIdentity,
+  personId: mongoose.Types.ObjectId,
+  profileUrl?: string,
+): Promise<boolean> {
+  const guard = await currentDirectoryRemovalMintGuard();
+  return (
+    guard.refusesPerson(listedDirectoryRemovalPerson(identity, profileUrl)) ||
+    (await researcherIsRemovedByRequest(guard, personId, profileUrl))
+  );
+}
+
 export async function resolveOrCreateResearcherIdForIdentity(
   identity: CanonicalMemberIdentity,
 ): Promise<mongoose.Types.ObjectId | undefined> {
@@ -724,6 +770,8 @@ export type CanonicalMembershipOutcome =
   | 'refused-person'
   | 'refused-upsert-shape'
   | 'refused-duplicate-key'
+  | 'refused-operator-ended'
+  | 'refused-disputed-edge'
   | typeof REMOVED_BY_REQUEST;
 
 /**
@@ -813,6 +861,9 @@ export async function writeCanonicalMembership(
       rosterProvenance: facts.rosterProvenance,
     });
     if (!upsert) return refused('refused-upsert-shape');
+    const protectedEdge = await protectedRoleEdgeFor(upsert.filter);
+    if (protectedEdge === 'operator-ended') return refused('refused-operator-ended');
+    if (protectedEdge === 'disputed') return refused('refused-disputed-edge');
     const filter = await pinRoleAssignmentUpsertToLiveEdge(upsert.filter);
     const reattach = roleAssignmentReattachWrite(filter, reviewStatus);
     const before = await RoleAssignment.findOne(filter)

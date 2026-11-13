@@ -111,61 +111,171 @@ describe('checkWelcomesFilterServesTheBadge', () => {
   });
 });
 
-describe('works-with-filter-serves-a-signal case (#5620)', () => {
-  const worksWithCase = journeyCases.find(
-    (candidate) => candidate.id === 'works-with-filter-serves-a-signal',
-  )!;
+const caseInvariants = async (
+  caseId: string,
+  cards: Array<Record<string, unknown>>,
+  degraded = false,
+  requests: BrowseRequest[] = [],
+) => {
+  const journeyCase = journeyCases.find((candidate) => candidate.id === caseId)!;
+  return Object.fromEntries(
+    (
+      await journeyCase.run(syntheticContext(cards as never, 10, requests, degraded))
+    ).invariants.map((invariant) => [invariant.id, invariant]),
+  );
+};
 
-  const worksWithInvariants = async (cards: Array<Record<string, unknown>>, degraded = false) =>
-    Object.fromEntries(
-      (await worksWithCase.run(syntheticContext(cards as never, 10, [], degraded))).invariants.map(
-        (invariant) => [invariant.id, invariant],
-      ),
+const mentorsEntry = {
+  signal: 'mentors',
+  kind: 'advised',
+  source: 'x',
+  sourceUrl: 'https://x.example.edu/',
+};
+
+describe('the Undergrads group has no works-with case (#5963)', () => {
+  it('drops the umbrella case with the umbrella option', () => {
+    expect(journeyCases.map((candidate) => candidate.id)).not.toContain(
+      'works-with-filter-serves-a-signal',
+    );
+  });
+});
+
+describe('hosted-filter-serves-the-badge case (#5963)', () => {
+  it('browses under the hosted filter and passes when every card serves the hosted badge', async () => {
+    const requests: BrowseRequest[] = [];
+    const invariants = await caseInvariants(
+      'hosted-filter-serves-the-badge',
+      [{ slug: 'synthetic-hosted', hasUndergradHostingEvidence: true }],
+      false,
+      requests,
     );
 
-  it('passes when every card serves hosted, welcomes or a mentors entry', async () => {
-    const invariants = await worksWithInvariants([
-      { slug: 'synthetic-hosted', hasUndergradHostingEvidence: true },
-      { slug: 'synthetic-welcomes', welcomesUndergrads: true },
-      {
-        slug: 'synthetic-mentors',
-        undergradListEvidence: [
-          { signal: 'mentors', kind: 'advised', source: 'x', sourceUrl: 'https://x.example.edu/' },
-        ],
-      },
-    ]);
-
-    expect(invariants['works-with-filter-rows-serve-a-signal']).toMatchObject({ status: 'pass' });
+    expect(invariants['hosted-filter-rows-serve-the-badge']).toMatchObject({ status: 'pass' });
+    expect(invariants['hosted-filtered-browse-is-not-degraded']).toMatchObject({
+      status: 'pass',
+    });
+    expect(requests.map((request) => request.filters)).toEqual([{ hostsUndergrads: true }]);
   });
 
-  it('fails on a card that serves no undergraduate signal, such as a withheld advising-now entry', async () => {
-    const invariants = await worksWithInvariants([
+  it('fails on a card that serves only a welcomes badge', async () => {
+    const invariants = await caseInvariants('hosted-filter-serves-the-badge', [
       { slug: 'synthetic-hosted', hasUndergradHostingEvidence: true },
-      { slug: 'synthetic-withheld', undergradListEvidence: [] },
+      { slug: 'synthetic-welcomes', welcomesUndergrads: true },
     ]);
 
-    expect(invariants['works-with-filter-rows-serve-a-signal']).toMatchObject({ status: 'fail' });
+    expect(invariants['hosted-filter-rows-serve-the-badge']).toMatchObject({
+      status: 'fail',
+      detail: { served: 2, withoutBadge: 1 },
+    });
+  });
+});
+
+describe('advises-filter-serves-a-mentors-entry case (#5963)', () => {
+  it('browses under the mentors filter and passes when every card serves a mentors entry', async () => {
+    const requests: BrowseRequest[] = [];
+    const invariants = await caseInvariants(
+      'advises-filter-serves-a-mentors-entry',
+      [{ slug: 'synthetic-mentors', undergradListEvidence: [mentorsEntry] }],
+      false,
+      requests,
+    );
+
+    expect(invariants['advises-filter-rows-serve-a-mentors-entry']).toMatchObject({
+      status: 'pass',
+    });
+    expect(requests.map((request) => request.filters)).toEqual([{ mentorsUndergrads: true }]);
+  });
+
+  it('fails on a card whose advising-now entry was withheld, or that serves only hosting', async () => {
+    const invariants = await caseInvariants('advises-filter-serves-a-mentors-entry', [
+      { slug: 'synthetic-mentors', undergradListEvidence: [mentorsEntry] },
+      { slug: 'synthetic-withheld', undergradListEvidence: [] },
+      { slug: 'synthetic-hosted', hasUndergradHostingEvidence: true },
+    ]);
+
+    expect(invariants['advises-filter-rows-serve-a-mentors-entry']).toMatchObject({
+      status: 'fail',
+      detail: { served: 3, withoutBadge: 2 },
+    });
   });
 
   it('fails when the filtered browse is degraded, since a degraded card cannot withhold a way in', async () => {
-    const invariants = await worksWithInvariants(
-      [{ slug: 'synthetic-hosted', hasUndergradHostingEvidence: true }],
+    const invariants = await caseInvariants(
+      'advises-filter-serves-a-mentors-entry',
+      [{ slug: 'synthetic-mentors', undergradListEvidence: [mentorsEntry] }],
       true,
     );
 
-    expect(invariants['works-with-filtered-browse-is-not-degraded']).toMatchObject({
+    expect(invariants['advises-filtered-browse-is-not-degraded']).toMatchObject({
       status: 'fail',
       detail: { pagesWalked: 1, degradedPages: 1 },
     });
   });
+});
 
-  it('passes the degraded check when every filtered page is served by the full search path', async () => {
-    const invariants = await worksWithInvariants([
-      { slug: 'synthetic-hosted', hasUndergradHostingEvidence: true },
-    ]);
+describe('undergrad-option-count-agreement case (#5963)', () => {
+  const optionCase = journeyCases.find(
+    (candidate) => candidate.id === 'undergrad-option-count-agreement',
+  )!;
 
-    expect(invariants['works-with-filtered-browse-is-not-degraded']).toMatchObject({
+  type Row = { welcomesUndergrads?: true; hostsUndergrads?: true; mentorsUndergrads?: true };
+  const rows: Row[] = [
+    { welcomesUndergrads: true, hostsUndergrads: true },
+    { hostsUndergrads: true, mentorsUndergrads: true },
+    { mentorsUndergrads: true },
+    { welcomesUndergrads: true, mentorsUndergrads: true, hostsUndergrads: true },
+    {},
+  ];
+  const optionKeys = ['welcomesUndergrads', 'hostsUndergrads', 'mentorsUndergrads'] as const;
+
+  const allSemanticsContext = (countFor: (matching: Row[], key: keyof Row) => number) => {
+    const requests: BrowseRequest[] = [];
+    const context: JourneyEvalContext = {
+      ...syntheticContext([], 10),
+      browse: async (request) => {
+        requests.push(request);
+        const selection = (request.filters ?? {}) as Row;
+        const matching = rows.filter((row) =>
+          optionKeys.every((key) => selection[key] !== true || row[key] === true),
+        );
+        return {
+          researchEntities: [],
+          estimatedTotalHits: matching.length,
+          degraded: false,
+          facetDistribution: Object.fromEntries(
+            optionKeys.map((key) => [key, { true: countFor(matching, key) }]),
+          ),
+        };
+      },
+    };
+    return { context, requests };
+  };
+
+  const conjunctiveCount = (matching: Row[], key: keyof Row) =>
+    matching.filter((row) => row[key] === true).length;
+
+  it('passes when every option count is the total of the selection with that option ticked', async () => {
+    const { context, requests } = allSemanticsContext(conjunctiveCount);
+    const [agreement, notDegraded] = (await optionCase.run(context)).invariants;
+
+    expect(agreement).toMatchObject({
+      id: 'undergrad-option-count-agrees-with-added-total',
       status: 'pass',
+      detail: { checked: 9 },
     });
+    expect(notDegraded).toMatchObject({ status: 'pass' });
+    expect(requests.map((request) => request.filters)).toContainEqual({
+      welcomesUndergrads: true,
+      mentorsUndergrads: true,
+    });
+  });
+
+  it('fails when an option counts rows matching it alone instead of the whole selection', async () => {
+    const { context } = allSemanticsContext(
+      (_matching, key) => rows.filter((row) => row[key] === true).length,
+    );
+    const [agreement] = (await optionCase.run(context)).invariants;
+
+    expect(agreement.status).toBe('fail');
   });
 });

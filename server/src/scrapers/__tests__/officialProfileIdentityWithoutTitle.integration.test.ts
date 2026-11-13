@@ -14,7 +14,7 @@ import type { ObservationInput } from '../types';
 
 const PAGE = 'https://engineering.yale.edu/research-and-faculty/faculty-directory/avery-fixture/';
 const PAGE_EMAIL = 'avery.fixture5701@yale.edu';
-const OWNER_NETID = 'zz5701a';
+const OWNER_NETID = 'af5701a';
 const OTHER_NETID = 'zz5701b';
 const MEMBER_EMAIL = 'zzc5701@yale.edu';
 

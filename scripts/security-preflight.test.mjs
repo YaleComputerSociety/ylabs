@@ -274,8 +274,8 @@ test('test fixtures do not contain known real Yale identifiers', () => {
         false,
         `${file} contains an ORCID fixture that could be a real person's iD: ${orcid}. ` +
           `It is checksum-valid and inside ORCID's allocated space. Use a value outside ` +
-          `that space instead, such as ${SYNTHETIC_ORCID_EXAMPLE}, which still passes the ` +
-          `checksum so it exercises a serve path that requires a valid iD.`,
+          `that space, such as ${SYNTHETIC_ORCID_EXAMPLE}, for a non-person iD, or build a ` +
+          `plausible one at runtime with syntheticPersonOrcid.`,
       );
     }
   }
@@ -1238,6 +1238,16 @@ test('CI gates on ESLint errors, leaves warnings advisory, and lints before the 
   // gate CI enforces and verify:fast omits would surprise every author.
   assert.match(packageJson.scripts['verify:fast'], /yarn lint/);
   assert.match(packageJson.scripts.verify, /verify:fast/);
+});
+
+test('the ESLint heap is declared once, in the lint scripts, not in the CI step (#6115)', () => {
+  assert.match(packageJson.scripts.lint, /--max-old-space-size=\d+/);
+  assert.match(packageJson.scripts['lint:fix'], /--max-old-space-size=\d+/);
+  const lintStep = yaml
+    .load(ciWorkflow)
+    .jobs.checks.steps.find((step) => (step.run ?? '').trim() === 'yarn lint');
+  assert.ok(lintStep, 'the checks job must run yarn lint');
+  assert.equal(lintStep.env?.NODE_OPTIONS, undefined);
 });
 
 test('CI runs the server registration guards right after lint, beside the sharded suite', () => {
@@ -6815,6 +6825,19 @@ test('scraper entrypoint fatal logs sanitize caught exceptions', () => {
     assert.match(source, /console\.error\(sanitizeLogValue\(err\)\)/);
     assert.doesNotMatch(source, /console\.error\(err\)/);
   }
+});
+
+test('runScriptMain logs a failed script through sanitizeLogValue by default', () => {
+  const source = fs.readFileSync(
+    new URL('../server/src/db/connections.ts', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(
+    source,
+    /const logScriptFailure = \(error: unknown\) => console\.error\(sanitizeLogValue\(error\)\)/,
+  );
+  assert.match(source, /\(options\.logFailure \?\? logScriptFailure\)\(error\)/);
 });
 
 test('user account routes set full private no-store response headers', () => {

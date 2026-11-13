@@ -340,7 +340,7 @@ describe('ResearchHomeCard', () => {
       </MemoryRouter>,
     );
 
-    const lead = screen.getByText('Hosted undergrads');
+    const lead = screen.getByText('Has had undergrads');
     expect(lead.className).toContain('font-semibold');
     expect(lead.className).not.toContain('yr-pill');
     expect(screen.getByText('Open to inquiries').className).toContain('yr-pill');
@@ -351,7 +351,7 @@ describe('ResearchHomeCard', () => {
       <MemoryRouter>
         <ResearchHomeCard
           home={researchHome({
-            wayInBadges: ['Undergrad evidence', 'Welcomes undergrads, recruiting now'],
+            wayInBadges: ['Undergrad evidence', 'Taking undergrads now, recruiting'],
           })}
         />
       </MemoryRouter>,
@@ -361,7 +361,7 @@ describe('ResearchHomeCard', () => {
     const checked = Array.from(signals.querySelectorAll('span.font-semibold')).map(
       (node) => node.textContent,
     );
-    expect(checked).toEqual(['Welcomes undergrads, recruiting now', 'Hosted undergrads']);
+    expect(checked).toEqual(['Taking undergrads now, recruiting', 'Has had undergrads']);
   });
 
   it('tags a row that only mentors undergraduates, from its served list evidence (#5362)', () => {
@@ -392,7 +392,7 @@ describe('ResearchHomeCard', () => {
     const checked = Array.from(signals.querySelectorAll('span.font-semibold')).map(
       (node) => node.textContent,
     );
-    expect(checked).toEqual(['Mentors undergrads']);
+    expect(checked).toEqual(['Advises undergrad research']);
   });
 
   it('keeps student project evidence a pill even when it is the only signal', () => {

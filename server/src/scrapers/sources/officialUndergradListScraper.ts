@@ -120,9 +120,19 @@ interface MentorSourceConfig {
   read: (fetchText: MentorFetchText, now: Date) => Promise<SourceRead>;
 }
 
-const academicYearEnd = (termUrl: string): number | undefined => {
+const latestAcademicYearEnd = (now: Date) => now.getUTCFullYear() + 1;
+
+const isAfterLatestAcademicYearEnd = (year: number | undefined, now: Date) =>
+  year !== undefined && year > latestAcademicYearEnd(now);
+
+export const fullYearOfTwoDigitYear = (twoDigitYear: number, now: Date): number =>
+  isAfterLatestAcademicYearEnd(2000 + twoDigitYear, now)
+    ? 1900 + twoDigitYear
+    : 2000 + twoDigitYear;
+
+export const csArchiveTermAcademicYearEnd = (termUrl: string, now: Date): number | undefined => {
   const match = /\/(\d\d)-(\d\d)[ab]\/index\.html$/i.exec(termUrl);
-  return match ? 2000 + Number(match[2]) : undefined;
+  return match ? fullYearOfTwoDigitYear(Number(match[2]), now) : undefined;
 };
 
 const withinLookback = (year: number | undefined, now: Date) =>
@@ -134,7 +144,7 @@ const csArchive =
     const index = await fetchText(indexUrl);
     if (index === null) return { listings: [], complete: false };
     const terms = csArchiveTermUrls(index, indexUrl).filter((url) =>
-      withinLookback(academicYearEnd(url), now),
+      withinLookback(csArchiveTermAcademicYearEnd(url, now), now),
     );
     const listings: MentorListing[] = [];
     let complete = terms.length > 0;
@@ -591,8 +601,11 @@ export async function planMentorMatches(input: {
     }
     if (read.complete) completeSources.add(config.source);
     else partialFailures.push(`${config.source}: not every page could be read`);
-    stats.listings = read.listings.length;
-    for (const raw of read.listings) {
+    const listings = read.listings.filter(
+      (listing) => !isAfterLatestAcademicYearEnd(listing.year, input.now),
+    );
+    stats.listings = listings.length;
+    for (const raw of listings) {
       const listing =
         config.departmentScope && !raw.department
           ? { ...raw, departmentScope: config.departmentScope }

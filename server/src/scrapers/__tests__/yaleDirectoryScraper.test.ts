@@ -20,6 +20,7 @@ import {
   YaleDirectoryScraper,
 } from '../sources/yaleDirectoryScraper';
 import type { ObservationInput, ScraperContext } from '../types';
+import { syntheticPersonOrcid, withOrcidCheckDigit } from '../../test/syntheticOrcid';
 
 // Mock the yaliesService so the scraper doesn't make real HTTP calls. We also
 // mock the snapshot cache so tests don't need MongoDB. vi.mock factories are
@@ -133,7 +134,7 @@ describe('personToObservations', () => {
       unit: 'MB and B-All',
       image: 'https://yalies.io/images/jdoe24.jpg',
       url: 'https://yalies.io/jdoe24',
-      orcid: '0000-0001-2345-6789',
+      orcid: syntheticPersonOrcid(),
     };
 
     const obs = personToObservations(sample, 'https://api.yalies.io/v2/people');
@@ -152,7 +153,7 @@ describe('personToObservations', () => {
     expect(byField.secondaryDepartments).toBeUndefined();
     expect(byField.school?.value).toBe('Yale Graduate School of Arts and Sciences');
     expect(byField.imageUrl?.value).toBe('https://yalies.io/images/jdoe24.jpg');
-    expect(byField.orcid?.value).toBe('0000-0001-2345-6789');
+    expect(byField.orcid?.value).toBe(syntheticPersonOrcid());
     expect(byField.profileUrls?.value).toEqual({ yalies: 'https://yalies.io/jdoe24' });
 
     // All observations should be keyed by netid + entityType=user.
@@ -240,6 +241,18 @@ describe('personToObservations', () => {
     expect(fields).not.toContain('imageUrl');
     expect(fields).not.toContain('profileUrls');
     expect(fields).not.toContain('secondaryDepartments');
+  });
+
+  it('emits no orcid when the directory value is checksum-valid but outside every issued block', () => {
+    const runOfFourYears = withOrcidCheckDigit('202520242023202');
+    const obs = personToObservations({
+      netid: 'yrs01',
+      first_name: 'Ana',
+      last_name: 'Lyst',
+      title: 'Professor of History',
+      orcid: runOfFourYears,
+    });
+    expect(obs.map((o) => o.field)).not.toContain('orcid');
   });
 });
 
@@ -333,6 +346,18 @@ describe('YaleDirectoryScraper.run', () => {
     const keys = new Set(emitted.map((o) => o.entityKey));
     expect(keys.size).toBe(201);
     expect(keys.has('aaLast')).toBe(true);
+  });
+
+  it('reads the department from the unit class when the unit is an administrative bucket (#6028)', () => {
+    const obs = personToObservations({
+      netid: 'pp01',
+      first_name: 'Fixture',
+      last_name: 'Mind',
+      title: 'Professor of Psychology',
+      unit_class: 'FASPSY',
+      unit: 'Department Administration',
+    });
+    expect(obs.find((o) => o.field === 'primaryDepartment')?.value).toBe('Psychology');
   });
 
   it('starts at the zero-indexed first page, so the first page of records is read', async () => {

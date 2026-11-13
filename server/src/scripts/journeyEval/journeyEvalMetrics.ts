@@ -335,23 +335,37 @@ export const checkWelcomesFilterServesTheBadge = (
   checkFilterRowsServeTheirBadge(
     {
       id: 'welcomes-filter-rows-serve-the-badge',
-      title: 'Every row the "Welcomes undergrads" filter returns serves the welcomes badge',
+      title: 'Every row the "Taking undergrads now" filter returns serves the welcomes badge',
     },
     tally,
     corpusBefore,
     corpusAfter,
   );
 
-export const checkWorksWithFilterServesASignal = (
+export const checkHostedFilterServesTheBadge = (
   tally: FilterBadgeTally,
   corpusBefore: CorpusFingerprint,
   corpusAfter: CorpusFingerprint,
 ): InvariantResult =>
   checkFilterRowsServeTheirBadge(
     {
-      id: 'works-with-filter-rows-serve-a-signal',
-      title:
-        'Every row the "Works with undergrads" filter returns serves hosted, welcomes or a mentors entry',
+      id: 'hosted-filter-rows-serve-the-badge',
+      title: 'Every row the "Has had undergrads before" filter returns serves the hosted badge',
+    },
+    tally,
+    corpusBefore,
+    corpusAfter,
+  );
+
+export const checkAdvisesFilterServesAMentorsEntry = (
+  tally: FilterBadgeTally,
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult =>
+  checkFilterRowsServeTheirBadge(
+    {
+      id: 'advises-filter-rows-serve-a-mentors-entry',
+      title: 'Every row the "Advises undergrad research" filter returns serves a mentors entry',
     },
     tally,
     corpusBefore,
@@ -386,6 +400,105 @@ export function checkCreativePracticeLabelAttribution(
   }
 
   return buildInvariant(id, title, tally.disagreeing === 0, { ...tally });
+}
+
+export interface TypeBucketTally {
+  bucket: string;
+  facetCount: number;
+  filterTotal: number;
+  served: number;
+  mislabelled: number;
+  attributedToStaleIndex: number;
+}
+
+export interface TypeBucketRead {
+  tallies: readonly TypeBucketTally[];
+  indexLacksResearchType: boolean;
+  leadNamesUnavailable: boolean;
+}
+
+const INDEX_LACKS_RESEARCH_TYPE =
+  'The live index does not declare researchType filterable, so the Type filter answered on entityType and creative practice was not selectable';
+
+export function checkTypeBucketsServeTheirLabel(
+  read: TypeBucketRead,
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult {
+  const id = 'type-bucket-rows-serve-its-label';
+  const title =
+    'Every row under Type = Creative practice serves the creative practice label, and no row under Faculty research does';
+  const detail = { tallies: read.tallies };
+
+  if (read.indexLacksResearchType) {
+    return buildInconclusiveInvariant(id, title, INDEX_LACKS_RESEARCH_TYPE, detail);
+  }
+  if (read.tallies.some((tally) => tally.served === 0)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'A Type bucket served no row, so zero mislabelled rows would be a green signal over an empty population',
+      detail,
+    );
+  }
+
+  const unexplained = read.tallies.reduce(
+    (sum, tally) => sum + tally.mislabelled - tally.attributedToStaleIndex,
+    0,
+  );
+  if (unexplained > 0 && corpusFingerprintMoved(corpusBefore, corpusAfter)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The corpus changed during the walk, so a row may disagree only because it was written after its index document',
+      { ...detail, unexplained, corpusBefore, corpusAfter },
+    );
+  }
+  if (unexplained > 0 && read.leadNamesUnavailable) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The lead-name read failed, so a mislabelled row could not be attributed',
+      { ...detail, unexplained },
+    );
+  }
+  if (unexplained === 0 && read.tallies.some((tally) => tally.attributedToStaleIndex > 0)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'Every mislabelled row is indexed under a research type its stored row no longer derives, so the index is behind the corpus; re-sync it',
+      detail,
+    );
+  }
+  return buildInvariant(id, title, unexplained === 0, { ...detail, unexplained });
+}
+
+export function checkTypeBucketCountsAgree(
+  read: TypeBucketRead,
+  corpusBefore: CorpusFingerprint,
+  corpusAfter: CorpusFingerprint,
+): InvariantResult {
+  const id = 'type-bucket-count-is-its-filtered-total';
+  const title =
+    'The Creative practice and Faculty research facet counts equal the totals their filters return';
+  const disagreements = read.tallies.filter((tally) => tally.facetCount !== tally.filterTotal);
+  const detail = {
+    tallies: read.tallies,
+    disagreements: disagreements.map((tally) => tally.bucket),
+  };
+
+  if (read.indexLacksResearchType) {
+    return buildInconclusiveInvariant(id, title, INDEX_LACKS_RESEARCH_TYPE, detail);
+  }
+  if (disagreements.length > 0 && corpusFingerprintMoved(corpusBefore, corpusAfter)) {
+    return buildInconclusiveInvariant(
+      id,
+      title,
+      'The corpus changed between the facet read and the filtered walks, so their counts describe different corpora',
+      { ...detail, corpusBefore, corpusAfter },
+    );
+  }
+  return buildInvariant(id, title, disagreements.length === 0, detail);
 }
 
 export type SurvivorWebsiteAttribution =

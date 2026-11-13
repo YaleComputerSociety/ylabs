@@ -421,10 +421,39 @@ describe('the centers lane states what each roster read listed', () => {
   });
 
   it('records a pager that never ended as incomplete', async () => {
-    const pages = Array.from({ length: 40 }, (_, index) => [person(`Member${index}`)]);
+    const pages = Array.from({ length: 120 }, (_, index) => [person(`Member${index}`)]);
     const { snapshots } = await snapshotsFrom(config({ paginated: true }), pages);
     expect((snapshots[0].value as any).read.stopReason).toBe('page-cap');
     expect(admissibilityOf(snapshots[0])).toBe('incomplete');
+  });
+
+  it('reads a listing longer than thirty pages to its own end (#5892)', async () => {
+    const pages = Array.from({ length: 53 }, (_, index) => [person(`Member${index}`)]);
+    const { snapshots } = await snapshotsFrom(config({ paginated: true }), pages);
+    expect((snapshots[0].value as any).read.stopReason).toBe('empty-page');
+    expect((snapshots[0].value as any).discoveredCount).toBe(53);
+    expect(admissibilityOf(snapshots[0])).toBe('read-listed-members');
+  });
+
+  it('keeps reading past pages whose people a repeated sidebar block already listed (#5892)', async () => {
+    const sidebar = [person('Avery'), person('Blair')];
+    const listedUnderProgram = (first: string): CenterMember => ({
+      ...person(first),
+      profileUrl: `https://fixture.example.edu/program/people/${first.toLowerCase()}`,
+    });
+    const { snapshots } = await snapshotsFrom(config({ paginated: true }), [
+      [...sidebar, person('Casey')],
+      [...sidebar, listedUnderProgram('Avery')],
+      [...sidebar, listedUnderProgram('Blair')],
+      [...sidebar, person('Devon')],
+      sidebar,
+      sidebar,
+      sidebar,
+    ]);
+    const members = (snapshots[0].value as any).members.map((entry: any) => entry.memberKey);
+    expect(members).toContain('center-fixture:devon-synthetic');
+    expect((snapshots[0].value as any).read.stopReason).toBe('repeated-page');
+    expect(admissibilityOf(snapshots[0])).toBe('read-listed-members');
   });
 
   it('records an empty roster page as listing nobody', async () => {
@@ -459,5 +488,102 @@ describe('the centers lane states what each roster read listed', () => {
     ]);
     expect(refused.snapshots).toEqual([]);
     expect(refused.fetched).toBe(0);
+  });
+});
+
+describe('a member a MacMillan program re-skinned is still listed (#5892)', () => {
+  const MACMILLAN = 'https://macmillan.yale.edu';
+  const governedAt = (slug: string, path: string): CenterRosterGovernedEdge => ({
+    edgeId: `edge-${slug}`,
+    personId: `person-${slug}`,
+    role: 'CORE_FACULTY',
+    membershipKey: `official-profile:${MACMILLAN}${path}|core-faculty`,
+    observedAt: at(1),
+  });
+  const listedAt = (slug: string, path: string): CenterRosterReadMember => ({
+    memberKey: `${CENTER}:${slug}`,
+    role: 'core-faculty',
+    membershipKey: `official-profile:${MACMILLAN}${path}|core-faculty`,
+    relationshipKey: `${CENTER}:faculty-research-area-${slug}:MEMBER_RESEARCH_AREA`,
+  });
+  const listing = (path: (slug: string) => string) =>
+    SLUGS.map((slug) => listedAt(slug, path(slug)));
+
+  it('keeps an edge whose person moved between the root, program and subprogram paths', () => {
+    const plan = planCenterRosterRetirement({
+      entityKey: CENTER,
+      memberObservations: [],
+      relationshipObservations: [],
+      edges: SLUGS.map((slug) => governedAt(slug, `/person/${slug}`)),
+      reads: [
+        read(
+          'run-2',
+          2,
+          listing((slug) => (slug === 'foxtrot' ? `/region/person/${slug}` : `/person/${slug}`)),
+        ),
+        read(
+          'run-3',
+          3,
+          listing((slug) =>
+            slug === 'foxtrot' ? `/region/subprogram/person/${slug}/` : `/person/${slug}`,
+          ),
+        ),
+      ],
+    });
+    expect(plan.verdict).toBe('nothing-to-retire');
+    expect(plan.retiredEdges).toEqual([]);
+    expect(plan.counts.edgesAwaitingSecondRead).toBe(0);
+  });
+
+  it('keeps a profile claim stated under another program path', () => {
+    const plan = planCenterRosterRetirement({
+      entityKey: CENTER,
+      memberObservations: SLUGS.map((slug) => ({
+        observationId: `${slug}-profileUrl-1`,
+        entityKey: `${CENTER}:${slug}`,
+        field: 'profileUrl',
+        value: `${MACMILLAN}/other-program/person/${slug}`,
+        scrapeRunId: 'run-1',
+        observedAt: at(1),
+        superseded: false,
+      })),
+      relationshipObservations: [],
+      edges: [],
+      reads: [
+        read(
+          'run-2',
+          2,
+          listing((slug) => `/person/${slug}`),
+        ),
+        read(
+          'run-3',
+          3,
+          listing((slug) => `/region/subprogram/person/${slug}`),
+        ),
+      ],
+    });
+    expect(plan.retiredProfileClaims).toEqual([]);
+  });
+
+  it('still retires a different node whose slug carries a numeric suffix', () => {
+    const plan = planCenterRosterRetirement({
+      entityKey: CENTER,
+      memberObservations: [],
+      relationshipObservations: [],
+      edges: SLUGS.map((slug) => governedAt(slug, `/person/${slug}`)),
+      reads: [
+        read(
+          'run-2',
+          2,
+          listing((slug) => (slug === 'foxtrot' ? `/region/person/${slug}-1` : `/person/${slug}`)),
+        ),
+        read(
+          'run-3',
+          3,
+          listing((slug) => (slug === 'foxtrot' ? `/region/person/${slug}-1` : `/person/${slug}`)),
+        ),
+      ],
+    });
+    expect(plan.retiredEdges.map((edge) => edge.edgeId)).toEqual(['edge-foxtrot']);
   });
 });

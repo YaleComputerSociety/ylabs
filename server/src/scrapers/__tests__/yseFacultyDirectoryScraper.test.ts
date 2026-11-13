@@ -209,6 +209,62 @@ describe('extractProfile', () => {
     expect(extractLabUrl(noLab, MEADOW.profileUrl)).toBeUndefined();
   });
 
+  describe('a Links entry labeled for this person', () => {
+    const profileLinking = (label: string, href = 'https://ownsite.example.org/') =>
+      cheerio.load(`<main>
+        <h1>Avery Quill</h1>
+        <div class="profile__info">
+          <div class="eyebrow">Links</div>
+          <ul><li><a href="${href}">${label}</a></li></ul>
+        </div>
+      </main>`);
+    const PROFILE_URL = 'https://environment.yale.edu/directory/faculty/avery-quill';
+
+    it.each([
+      'Quill Lab Website',
+      'Quill lab website',
+      'Quill Lab',
+      "Quill's Lab",
+      'The Quill Laboratory',
+    ])('adopts "%s" as the person own research site', (label) => {
+      expect(extractLabUrl(profileLinking(label), PROFILE_URL, 'Avery Quill')).toBe(
+        'https://ownsite.example.org/',
+      );
+    });
+
+    it.each([
+      'Marsh Lab Website',
+      'Coastal City Lab',
+      'Center for Fixture Chemistry website',
+      'Fixture Leadership (center homepage)',
+      'Link to personal website',
+      'Link to Fixture Consulting website',
+      'Quill Group',
+      'Quill Group LLC',
+      'Quill Labs',
+      'Quill Labs Inc.',
+      'Quill Lab LLC',
+      'Quill Consulting',
+      'Quill Lab Consulting website',
+    ])('does not adopt "%s", which names another entity', (label) => {
+      expect(extractLabUrl(profileLinking(label), PROFILE_URL, 'Avery Quill')).toBeUndefined();
+    });
+
+    it('does not adopt an eponymous lab label when the person name is unknown', () => {
+      expect(extractLabUrl(profileLinking('Quill Lab Website'), PROFILE_URL)).toBeUndefined();
+    });
+
+    it('passes the profile name through extractProfile', () => {
+      const html = profileLinking('Quill Lab Website').html();
+      const profile = extractProfile(html, {
+        name: 'Avery Quill',
+        profileUrl: PROFILE_URL,
+        slug: 'avery-quill',
+      } as Parameters<typeof extractProfile>[1]);
+      expect(profile.labUrl).toBe('https://ownsite.example.org/');
+    });
+  });
+
   it('drops faculty-type role links from the program list', () => {
     const $ = cheerio.load(PROFILE_WITH_LAB);
     expect(extractPrograms($)).toEqual(['The Forest School']);

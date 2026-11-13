@@ -70,6 +70,11 @@ A recorded statement that one specific value is inadmissible for a field, keyed 
 A refusal blocks the write, so unlike a repair it survives a re-scrape without needing a lock, and it can be withdrawn.
 Owner: `fieldValueRefusalSchema` in `server/src/models/modelPrimitives.ts`.
 
+**Lane refusal (`refusedValues`).**
+Not the operator refusal above: a lane's own record, on a witness observation, that it saw one value on a page and refused it under a versioned classifier.
+It never blocks a write; field retraction uses it to retire the lane's older assertion of that identical value from the same page (#5803).
+Owner: `ObservationRefusedValue` in `server/src/scrapers/observationRefusals.ts`.
+
 **Suppression.**
 A tombstone on a record, not on a field.
 An absent `reason` is the resting state; a present one stops materializers resurrecting a record they would otherwise rewrite.
@@ -161,7 +166,8 @@ Prefer it to a throwaway script.
 **Creative practice.**
 A served faculty row whose own body describes exhibitions, performances, compositions, productions, creative writing, design practice or an instrument's practice rather than research, in an arts department or school.
 It is served and labelled "Creative practice" on the browse card and the detail page, never withheld, and never described as a lab, a research group or an opening.
-The served `creativePractice` flag is derived at serve time and written to no field.
+The served `creativePractice` flag is derived at serve time and written to no stored field.
+It is also a kind in the `/research` Type facet: the search index derives it at index time from the same served body, through the same decision the browse card calls, so a row's facet bucket and its card label agree, and the option is hidden when its count is 0 (#5141).
 Owner: `server/src/utils/creativePracticeDescription.ts`; `docs/decisions.md` 2026-10-03 holds the decision.
 
 **Department research guidance.**

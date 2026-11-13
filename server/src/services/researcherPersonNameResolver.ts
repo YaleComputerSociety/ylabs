@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { isValidOrcid, Researcher } from '../models/researcher';
+import { isPlausiblePersonOrcid } from '../utils/orcid';
 import { splitName } from '../scrapers/utils/scraperHelpers';
 import {
   givenNamesCouldNameOnePerson,
@@ -9,6 +10,9 @@ import {
   surnamesCompatible,
   SURNAME_FETCH_LIMIT,
 } from '../scrapers/utils/piNameMatch';
+import { plausiblePersonOrcid } from '../utils/orcid';
+import { researcherRefusesValue } from '../utils/researcherFieldValueRefusals';
+import { looksLikeYaleNetid } from '../utils/yaleNetid';
 
 export type ResearcherPersonNameResolutionStatus = 'matched' | 'absent' | 'ambiguous';
 
@@ -16,11 +20,23 @@ export interface ResearcherPersonNameResolution {
   status: ResearcherPersonNameResolutionStatus;
   researcherId?: mongoose.Types.ObjectId;
   everyCandidateNamesSomeoneElse?: boolean;
+  ambiguousCandidates?: ResearcherNameCandidate[];
 }
 
 export interface ResearcherNameCandidate {
   _id: mongoose.Types.ObjectId | string;
   displayName?: string;
+  identifiers?: { email?: string; netid?: string; orcid?: string };
+  fieldValueRefusals?: unknown;
+}
+
+/**
+ * The person's own identifiers, read from the evidence that names them. A name alone never
+ * breaks a tie, so only these may (#5875).
+ */
+export interface PersonIdentityEvidence {
+  emails?: readonly unknown[];
+  orcid?: unknown;
 }
 
 export interface ResearcherPersonNameResolverDeps {
@@ -34,7 +50,14 @@ const defaultFindResearchersBySurname = async (
 ): Promise<ResearcherNameCandidate[]> =>
   (await Researcher.find(
     { displayName: surnameRegex, archived: { $ne: true } },
-    { _id: 1, displayName: 1 },
+    {
+      _id: 1,
+      displayName: 1,
+      'identifiers.email': 1,
+      'identifiers.netid': 1,
+      'identifiers.orcid': 1,
+      fieldValueRefusals: 1,
+    },
   )
     .limit(SURNAME_FETCH_LIMIT)
     .lean()) as ResearcherNameCandidate[];
@@ -62,7 +85,7 @@ export function normalizeOrcid(value: unknown): string | undefined {
     .trim()
     .replace(/^https?:\/\/(?:www\.)?orcid\.org\//i, '')
     .toUpperCase();
-  return isValidOrcid(bare) ? bare : undefined;
+  return isValidOrcid(bare) && isPlausiblePersonOrcid(bare) ? bare : undefined;
 }
 
 const asResearcherId = (value: ResearcherNameCandidate['_id']): mongoose.Types.ObjectId =>
@@ -101,9 +124,112 @@ function personNameParts(name: string): { first: string; last: string } {
   return { first, last };
 }
 
+interface IdentityWitnesses {
+  netid?: string;
+  emails: ReadonlySet<string>;
+  orcid: string;
+}
+
+const normalizedEmail = (value: unknown): string => {
+  const address = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  return /^[^\s@]+@[^\s@]+$/.test(address) ? address : '';
+};
+
+function identityWitnessesOf(
+  netid: string | undefined,
+  identity: PersonIdentityEvidence | undefined,
+): IdentityWitnesses | undefined {
+  const emails = new Set((identity?.emails ?? []).map(normalizedEmail).filter(Boolean));
+  const orcid = plausiblePersonOrcid(identity?.orcid);
+  const yaleNetid = netid && looksLikeYaleNetid(netid) ? netid : undefined;
+  if (!yaleNetid && emails.size === 0 && !orcid) return undefined;
+  return { netid: yaleNetid, emails, orcid };
+}
+
+const ownEmail = (candidate: ResearcherNameCandidate): string => {
+  const email = normalizedEmail(candidate.identifiers?.email);
+  return email && !researcherRefusesValue(candidate.fieldValueRefusals, 'email', email)
+    ? email
+    : '';
+};
+
+const ownOrcid = (candidate: ResearcherNameCandidate): string => {
+  const orcid = plausiblePersonOrcid(candidate.identifiers?.orcid);
+  return orcid && !researcherRefusesValue(candidate.fieldValueRefusals, 'orcid', orcid)
+    ? orcid
+    : '';
+};
+
+function candidateAgreesWith(
+  candidate: ResearcherNameCandidate,
+  witnesses: IdentityWitnesses,
+): boolean {
+  const email = ownEmail(candidate);
+  const orcid = ownOrcid(candidate);
+  return (
+    (Boolean(email) && witnesses.emails.has(email)) ||
+    (Boolean(orcid) && orcid === witnesses.orcid) ||
+    (Boolean(witnesses.netid) && normalizeNetid(candidate.identifiers?.netid) === witnesses.netid)
+  );
+}
+
+function candidateConflictsWith(
+  candidate: ResearcherNameCandidate,
+  witnesses: IdentityWitnesses,
+): boolean {
+  const netid = normalizeNetid(candidate.identifiers?.netid);
+  const orcid = ownOrcid(candidate);
+  return (
+    (Boolean(witnesses.netid) &&
+      Boolean(netid) &&
+      looksLikeYaleNetid(netid) &&
+      netid !== witnesses.netid) ||
+    (Boolean(witnesses.orcid) && Boolean(orcid) && orcid !== witnesses.orcid)
+  );
+}
+
+/**
+ * Breaks a name tie only on the person's own identifiers: exactly one candidate sharing an
+ * email, a plausible ORCID or a netid, and contradicting none, is this person. Anything else
+ * leaves the tie standing, so a missing or one-sided witness fails closed (#5875).
+ */
+function identityJoinOfTie(
+  tied: readonly ResearcherNameCandidate[],
+  witnesses: IdentityWitnesses | undefined,
+): ResearcherPersonNameResolution | undefined {
+  if (!witnesses) return undefined;
+  const agreeing = tied.filter((candidate) => candidateAgreesWith(candidate, witnesses));
+  if (agreeing.length === 1 && !candidateConflictsWith(agreeing[0], witnesses)) {
+    return { status: 'matched', researcherId: asResearcherId(agreeing[0]._id) };
+  }
+  return undefined;
+}
+
+/**
+ * Never reached from an exact tie: a record minted for a netid-only witness stores no netid,
+ * so the next pass would tie it with the same namesakes and never rejoin it (#5875).
+ */
+function identityResolutionOfNamesakes(
+  namesakes: readonly ResearcherNameCandidate[],
+  witnesses: IdentityWitnesses | undefined,
+): ResearcherPersonNameResolution | undefined {
+  const joined = identityJoinOfTie(namesakes, witnesses);
+  if (joined || !witnesses) return joined;
+  const namesSomeoneElse = (candidate: ResearcherNameCandidate) =>
+    !candidateAgreesWith(candidate, witnesses) && candidateConflictsWith(candidate, witnesses);
+  if (namesakes.every(namesSomeoneElse)) {
+    return { status: 'ambiguous', everyCandidateNamesSomeoneElse: true };
+  }
+  return undefined;
+}
+
 export async function resolveResearcherIdForPersonName(
   name: string,
-  opts: { netid?: string; deps?: Partial<ResearcherPersonNameResolverDeps> } = {},
+  opts: {
+    netid?: string;
+    identity?: PersonIdentityEvidence;
+    deps?: Partial<ResearcherPersonNameResolverDeps>;
+  } = {},
 ): Promise<ResearcherPersonNameResolution> {
   const findResearchersBySurname =
     opts.deps?.findResearchersBySurname ?? defaultFindResearchersBySurname;
@@ -139,23 +265,32 @@ export async function resolveResearcherIdForPersonName(
     return { status: surnameOnlyMatch(candidates.length) };
   }
 
-  const firstToken = first.split(/\s+/)[0]?.replace(/\./g, '') || first;
   const exact = candidates.filter(
     ({ parsed }) =>
       parsed.first.toLowerCase() === first.toLowerCase() ||
-      givenNamesEquivalent(firstToken, parsed.first),
+      givenNamesEquivalent(first, parsed.first),
   );
   if (exact.length === 1) {
     return { status: 'matched', researcherId: asResearcherId(exact[0].candidate._id) };
   }
-  if (exact.length > 1) return { status: 'ambiguous' };
+  const witnesses = identityWitnessesOf(netid, opts.identity);
+  if (exact.length > 1) {
+    const tied = exact.map(({ candidate }) => candidate);
+    return identityJoinOfTie(tied, witnesses) ?? { status: 'ambiguous', ambiguousCandidates: tied };
+  }
   // No prefix rule: a complete short given name is a prefix of a stranger's longer one (#5324).
 
   if (candidates.length === 0) return { status: 'absent' };
-  const everyCandidateNamesSomeoneElse = candidates.every(
-    ({ parsed }) => !givenNamesCouldNameOnePerson(first, parsed.first),
+  const couldBeThisPerson = candidates
+    .filter(({ parsed }) => givenNamesCouldNameOnePerson(first, parsed.first))
+    .map(({ candidate }) => candidate);
+  if (couldBeThisPerson.length === 0) {
+    return { status: 'ambiguous', everyCandidateNamesSomeoneElse: true };
+  }
+  return (
+    identityResolutionOfNamesakes(couldBeThisPerson, witnesses) ?? {
+      status: 'ambiguous',
+      ambiguousCandidates: couldBeThisPerson,
+    }
   );
-  return everyCandidateNamesSomeoneElse
-    ? { status: 'ambiguous', everyCandidateNamesSomeoneElse }
-    : { status: 'ambiguous' };
 }

@@ -5,6 +5,54 @@ Do not append continuation logs, security hardening transcripts, or task progres
 Track tactical work in GitHub issues and keep transient artifacts outside `docs/`.
 `docs/tasks/priority-roadmap.md` holds standing launch priorities, not the outstanding-work list.
 
+## 2026-11-13: The Getting-Started Guide Is Offered On The Research Landing And On Mentor-First Programs (#6095)
+
+Decision (5-agent consensus 5/5, 2026-11-13, posted on #6095; the owner may veto).
+`/getting-started` was linked only from inside a research detail page, so a student who had not yet opened a profile, or who started on `/programs`, could not find the page that answers a newcomer's first questions.
+In the 2026-11-13 simulated-student round the persona who reached it from a profile called it the best moment of the visit, and another first-year never found it before choosing a program.
+It is now offered in two places before a profile, and only there.
+One question-phrased line, "New to research? How to get started", is on the un-searched `/research` landing at every width, for guests and signed-in students alike.
+Below 1280px it sits under the search box, outside the context paragraph that phones hide and outside the session slot, so it never changes that slot's reserved height (#4222, #5166).
+At 1280px and wider it sits under the profile count at the top of the results instead, because a 44px line in the sticky sidebar pushed it to 618px of content in 590px at 1280x720, past the no-scrollbar fit the owner chose in #5963.
+A program whose answer to "Do you need a mentor first?" is yes carries "Need a mentor? How to reach out to a professor" under that answer, in the dialog rather than on the card, so no link nests inside another.
+There is no nav item, because a nav label adds a choice to every page and sits behind the phone menu, and no dashboard entry.
+Neither link carries program data, so this is not the removed #1509 module.
+The student-journey smoke follows both links to the guide at 375px and 1440px.
+
+## 2026-11-13: The Permanent-Resident Citizenship Option Includes Programs Open To Both Groups (#6092)
+
+This extends the 2026-11-12 citizenship entry below (#5299), whose stated-first order, "Doesn't say" divider and per-option counts are unchanged.
+Decision (2026-11-13, triage on #6092): the "Open to U.S. permanent residents, or not stated" option matches a program whose stated citizenship carries the permanent-resident value, or carries both "U.S. citizens are eligible" and "Non-U.S. citizens are eligible", because a program stated open to both groups is open to a permanent resident.
+A program stated open to non-U.S. citizens only does not match, because "international students only" programs commonly exclude permanent residents, so the rule stays conservative even though no served program had that shape when it was measured.
+The U.S. and non-U.S. options still match only their own stated value.
+This is a serve-time mapping: the stored values and the citizenship parser are unchanged, and one definition of which stated values satisfy an option (`server/src/utils/programCitizenshipOptions.ts`) drives the filter, the per-option counts and their "says" split, and the journey harness, so an option's two counts still add up to what applying it returns.
+Measured read-only on Development on 2026-11-13: 132 served programs state both groups, 5 state U.S. citizens and permanent residents, 4 state U.S. citizens only, 61 state nothing, and 0 state non-U.S. citizens only, so the option's "say they are open" count rises from 4 to the programs carrying either shape.
+
+## 2026-11-13: Lab-Site Lead Statements Count Only When Anchored To The Row (#5962)
+
+`lab-site-lead-verification` reads a lead statement (a person named with a lead title or a subject phrase such as "led by" or "overseen by") for or against an attached lead only when the statement is anchored to the row: its sentence names the row as subject, a qualified title names the row, or a bare title sits in a person card on the row's own page.
+The 60-character lead-role window it replaces could not tell which entity a phrase was about, so a "labs led by" sentence on a division page contradicted a lab's own PI and co-directors of one center contradicted each other.
+An anchored statement or a non-lead listing may overturn a presence confirmation, which fixes the #5979 hand-check defect of a postdoc confirmed because the team page names them (now `LISTED_IN_NON_LEAD_ROLE`).
+An anchored statement naming the lead confirms them first (`NAMED_AS_ROW_LEAD` when no presence arm did), so co-leads never contradict each other, and the namesake check keeps its position and inputs, so the gate's `NAMESAKE` set cannot move.
+The manager refused a rule 1b that would contradict a lead the anchored statements leave out, because an omission is never evidence (#2647); the cost is 2 correct gold-v4 contradictions, attached directors of one multi-director center whose site names only its other directors, which stay `UNSTATED`.
+Measured on the frozen gold-v4 pages: leads 9 confirmed, 1 contradicted, 28 unstated (before: 9, 3, 26), confirmed precision 9/9 and contradicted precision 1/1 against the agent-majority labels, with two replays giving one fingerprint.
+A blind 3-agent re-grade of the 12 replayable #5979 defect labels agreed with the single-agent hand-check on 10 and moved 2 to can't-tell, among them the row whose page says another person oversees the lab while listing the attached lead as its faculty contact, which therefore stays confirmed; on the 10 scorable labels confirmed precision moves from 9/10 to 9/9 and the one contradiction is right.
+The defect set measures precision on the defect predicate and never lane precision.
+Hand-grading every old-versus-new flip on a no-write frozen crawl of the lane's own page reads found 20 of the first 27 new contradictions wrong on its first 580 rows, so the rules carry guards measured on that crawl: a name read from a title must be shown to be a person, a lead the site already names is overturned only by a sentence or a row-qualified title, a lead listed under any lead word is never contradicted, a non-lead listing must sit among other people's cards and read as a short rank, and alumni, news, event and publication pages are skipped.
+On the full crawl (all 812 rows that are not faculty research profiles, 783 reachable, 1,023 judged leads) the final rules flip 11 leads: 8 new contradictions (6 correct, 2 can't tell, 0 wrong), 1 correct new confirmation, and the 2 accepted gold-v4 losses.
+A new `CONTRADICTED` verdict is a lead-edge input: the `leadEdges` resolve ends a lead edge with no recorded source when the site contradicts it (#6006), and 5 of the 8 new contradictions on that crawl are on such edges, all 5 graded correct: three core facility rows whose pages name a different director, and two labs whose people pages list the attached lead as a current or former postdoc.
+
+## 2026-11-12: Browse Folds Its Undergraduate Filters Into One "Undergrads" Group That Matches All Ticked Options (#5963)
+
+This replaces the three undergraduate toggles of #5362 and #5441.
+Decision (coordinator, 2026-11-12, posted on #5963): one group titled "Undergrads" holds "Taking undergrads now" (the welcomes signal), "Has had undergrads before" (the hosted signal) and "Advises undergrad research" (the mentors signal, hinted "e.g. supervised senior theses"), and the "Works with undergrads" umbrella is removed.
+In a cold simulated test of ten students, the current labels could not be told apart, with "Works with" and "Welcomes" the most confused pair, while all ten picked the right option from the proposed labels, of which only the mentors one was reworded afterwards, to name the advising students asked about.
+Ticking several keeps the existing server semantics, which match all ticked options, and the group says so, because 8 of the 10 students already expected ticking more to narrow.
+Each option shows the count ticking it would leave under the current selection, from the existing facet mechanism.
+The card and detail badges take the same words, so a filter and the badge it returns read alike: "Taking undergrads now" ("Taking undergrads now, recruiting" for the `actively_hiring` level, keeping the #5484 rule that both levels start with the filter's words), "Has had undergrads" and "Advises undergrad research" (coordinator, 2026-11-12).
+The owner kept #5449, no sidebar scrollbar at 1280x720, and kept the group open by default, so the wide sidebar compacts instead: 28px rows, the helper line and the advises hint as info tips, and tighter gaps, which brought the sidebar from 666px to 566px of a 590px budget on Development data (owner, 2026-11-12).
+The stored signals are unchanged; the server gained only a `mentorsUndergrads` request filter and facet on the index field #5603 already declared filterable, and it still accepts `worksWithUndergrads`, which an old link no longer ticks.
+
 ## 2026-11-12: The v2 Written-Description Contract (#5961)
 
 Decision (coordinating session, 2026-11-12): items A to F of the design comment on #5961 are approved as designed, and this entry records the code half.

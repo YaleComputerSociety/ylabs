@@ -16,11 +16,20 @@ import {
 } from '../../services/researchEntityMembershipAccessor';
 import { VisibilityReleaseQueueItem } from '../../models/visibilityReleaseQueueItem';
 import { publicStudentVisibilityTiers } from '../../models/studentVisibility';
-import { normalizeOrcid } from '../../utils/orcid';
+import { plausiblePersonOrcid } from '../../utils/orcid';
+import {
+  singlePlausibleOrcid,
+  statedOrcidCandidates,
+  subtreeMentionsOrcid,
+} from '../utils/statedOrcid';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { researcherEmail, researcherNetid } from '../../utils/researcherIdentity';
 import { looksLikeYaleNetid } from '../../utils/yaleNetid';
-import { observedPersonNameAgreesWith } from '../utils/personNameAgreement';
+import {
+  namesStateConflictingMiddleInitials,
+  observedPersonNameAgreesWith,
+} from '../utils/personNameAgreement';
+import { statedMiddleInitialsConflict } from '../utils/piNameMatch';
 import {
   directoryContradictsNetidForAddress,
   loadDirectoryNetidsByAddress,
@@ -135,6 +144,14 @@ import { type OfficialProfilePageIdentity } from '../../services/officialProfile
 import { normalizeOfficialProfileDestination } from '../../services/leadProfileIdentity';
 import { isDepartmentHeadingChrome } from '../utils/departmentHeadingChrome';
 import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
+import { catalogDepartment } from '../directoryExportDepartmentEvidence';
+import type { CanonicalDepartment } from '../utils/directoryExportDepartment';
+import { imageElementSource } from '../utils/imageElementSource';
+import {
+  isLikelyPublicProfileImageUrl,
+  isSocialShareImageUrl,
+} from '../../scripts/profileImageQualityAuditCore';
+import { mainComponentsOf, ysmPageDataFrom } from './ysmFacultyDirectoryScraper';
 
 const SOURCE_NAME = 'official-profile-pi-backfill';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
@@ -184,6 +201,8 @@ export interface OfficialProfileIdentity {
   emailOnly?: boolean;
   /** The page states no email address at all, so the lane may attest none (#5711). */
   statesNoEmailAddress?: boolean;
+  /** The page states no ORCID link and nothing labelled ORCID, so the lane may attest none (#6003). */
+  statesNoOrcid?: boolean;
   inMemoriam?: boolean;
   appointmentEndedOn?: string;
 }
@@ -207,12 +226,16 @@ export interface ExistingProfileUser {
   _id?: string;
   netid: string;
   email?: string;
+  displayName?: string;
 }
 
 interface IdentityToUserObservationOptions {
   includeProfileEnrichment?: boolean;
   includeIdentityEnrichment?: boolean;
   includeEmail?: boolean;
+  directoryNetidsByAddress?: DirectoryNetidsByAddress;
+  pageOrcidWitnessedForNetid?: boolean;
+  canonicalDepartment?: CanonicalDepartment | null;
 }
 
 export interface OfficialProfileResearchHome {
@@ -2888,19 +2911,80 @@ function imageUrlFromJsonLdImage(value: unknown): string {
   return textValue(record.url || record.contentUrl || record['@id']);
 }
 
+const PROFILE_PORTRAIT_CONTAINERS = [
+  '.node__headshot',
+  '.media--headshot',
+  '.node--faculty .node__header-media',
+  '.user-picture',
+  '.profile-meta__image',
+  '[class*="field--name-field-profile-image"]',
+  '[class*="field-name-field-profile-image"]',
+  '[class*="field--name-field-headshot"]',
+  '[class*="field-name-field-headshot"]',
+  '[class*="field--name-field-photo"]',
+  '[class*="field-name-field-photo"]',
+];
+
+const YSM_CLOUDINARY_VERSIONED_ASSET =
+  /^(https:\/\/ysm-res\.cloudinary\.com\/image\/upload\/(?:[^/]+\/)*?)(v\d+\/.+)$/;
+const YSM_AVATAR_TRANSFORM = 'c_limit,f_auto,q_auto,w_400';
+
+function sizedYsmPortrait(url: string): string {
+  const match = YSM_CLOUDINARY_VERSIONED_ASSET.exec(url);
+  return match ? `${match[1]}${YSM_AVATAR_TRANSFORM}/${match[2]}` : url;
+}
+
+function ysmProfileHeaderPortrait($: cheerio.CheerioAPI): string {
+  const profileDetails = mainComponentsOf(ysmPageDataFrom($)).find(
+    (component) => component.key === 'ProfileDetails',
+  );
+  const image = (profileDetails?.model as Record<string, any> | undefined)?.header?.image;
+  if (!image || typeof image !== 'object') return '';
+  const variants: Array<Record<string, unknown>> = Array.isArray(image.imageVariants)
+    ? image.imageVariants
+    : [];
+  const portraitCrop = variants.find((variant) => variant?.dimension === 'Rectangle');
+  const portrait = textValue(portraitCrop?.url) || textValue(image.url);
+  return portrait ? sizedYsmPortrait(portrait) : '';
+}
+
+const isAdmissiblePortraitUrl = (value: string): boolean =>
+  /^https?:\/\//i.test(value) &&
+  isLikelyPublicProfileImageUrl(value) &&
+  !isSocialShareImageUrl(value);
+
+function profilePortraitImageUrl($: cheerio.CheerioAPI, profileUrl: string): string {
+  const candidates = [
+    ysmProfileHeaderPortrait($),
+    ...PROFILE_PORTRAIT_CONTAINERS.map((selector) => imageElementSource($(selector).first())),
+  ];
+  const portrait = candidates
+    .map(textValue)
+    .filter(Boolean)
+    .map((value) => absolutize(value, profileUrl))
+    .find(isAdmissiblePortraitUrl);
+  return portrait || '';
+}
+
+const isJsonLdPerson = (profile: Record<string, any>): boolean =>
+  [profile['@type']].flat().some((type) => textValue(type).toLowerCase() === 'person');
+
+function jsonLdPersonPortrait(profiles: Array<Record<string, any>>, profileUrl: string): string {
+  const portrait = profiles
+    .filter(isJsonLdPerson)
+    .map((profile) => textValue(imageUrlFromJsonLdImage(profile.image)))
+    .filter(Boolean)
+    .map((value) => absolutize(value, profileUrl))
+    .find(isAdmissiblePortraitUrl);
+  return portrait || '';
+}
+
 function extractImageUrl(
   $: cheerio.CheerioAPI,
   profiles: Array<Record<string, any>>,
   profileUrl: string,
 ): string {
-  const candidates = [
-    ...profiles.map((profile) => imageUrlFromJsonLdImage(profile.image)),
-    $('meta[property="og:image:secure_url"]').first().attr('content') || '',
-    $('meta[property="og:image"]').first().attr('content') || '',
-    $('meta[name="twitter:image"]').first().attr('content') || '',
-  ];
-  const candidate = candidates.map(textValue).find((value) => /^https?:\/\//i.test(value));
-  return candidate ? absolutize(candidate, profileUrl) : '';
+  return profilePortraitImageUrl($, profileUrl) || jsonLdPersonPortrait(profiles, profileUrl);
 }
 
 function extractEmail(
@@ -2956,9 +3040,12 @@ function firstPersonSpecificYaleEmail(
 
 // Broader selectors such as [class*="organization"]/[class*="affiliation"] also
 // match section-heading chrome ("Other Departments & Organizations") and
-// center/institute affiliations that are not academic departments, so only an
-// element explicitly classed "department" is trusted as a department signal.
+// center/institute affiliations that are not academic departments, so outside
+// an Appointments block only an element explicitly classed "department" is
+// trusted as a department signal.
 function extractDepartments($: cheerio.CheerioAPI): string[] {
+  const appointmentCards = $('.profile-details-appointment-card');
+  if (appointmentCards.length > 0) return primaryAppointmentUnits($, appointmentCards);
   const values: string[] = [];
   $('[class*="department"]').each((_i, el) => {
     const value = textValue($(el).text());
@@ -2966,6 +3053,27 @@ function extractDepartments($: cheerio.CheerioAPI): string[] {
     if (value && value.length < 160) values.push(value);
   });
   return uniqueStrings(values).slice(0, 5);
+}
+
+// A YSM or YSPH profile states each appointment as a card naming its academic unit and whether
+// it is the Primary or a Secondary appointment (#5800). Only a Primary unit is read, so a page
+// stating no Primary appointment yields no department rather than promoting a Secondary one.
+function primaryAppointmentUnits(
+  $: cheerio.CheerioAPI,
+  appointmentCards: cheerio.Cheerio<any>,
+): string[] {
+  const units: string[] = [];
+  appointmentCards.each((_i, card) => {
+    const appointmentType = textValue(
+      $(card).find('[class*="appointment-card__type"]').first().text(),
+    );
+    if (appointmentType.toLowerCase() !== 'primary') return;
+    const unit = textValue(
+      $(card).find('[class*="appointment-card__academic-unit"]').first().text(),
+    );
+    if (unit && unit.length < 160) units.push(unit);
+  });
+  return uniqueStrings(units).slice(0, 5);
 }
 
 function splitResearchInterestText(text: string): string[] {
@@ -3094,21 +3202,20 @@ function clipOfficialProfileBio(value: string): string {
   return wordBoundary ? `${wordBoundary}.` : prefix;
 }
 
+// A page that lists several ORCIDs does not say which is its owner's: a common name's YSM
+// profile lists namesakes' ORCIDs, and taking the first gave one Yale researcher another
+// university's ORCID (#4994). A bare digit run anywhere in the body is no ORCID either: an ISSN
+// and page range in a citation passes the checksum by chance (#5991).
 function extractOrcid($: cheerio.CheerioAPI): string | undefined {
-  const candidates: string[] = [];
-  $('a[href*="orcid.org"], a[href^="orcid:"]').each((_i, el) => {
-    candidates.push($(el).attr('href') || '', $(el).text());
-  });
-  const bodyMatches =
-    $('body')
-      .text()
-      .match(/\b\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{3}[\dX]\b/gi) || [];
-  candidates.push(...bodyMatches);
-  // A page that lists several ORCIDs does not say which is its owner's: a common name's YSM
-  // profile lists namesakes' ORCIDs, and taking the first gave one Yale researcher another
-  // university's ORCID (#4994).
-  const distinct = [...new Set(candidates.map(normalizeOrcid).filter(Boolean))];
-  return distinct.length === 1 ? distinct[0] : undefined;
+  const body = $('body').get(0);
+  return body ? singlePlausibleOrcid(statedOrcidCandidates(body)) : undefined;
+}
+
+// A page whose ORCID the reader refused still states one, so only a page that mentions no ORCID
+// at all is a witness that the lane's earlier value is gone (#6003, the #5991 roster contract).
+function pageStatesNoOrcid($: cheerio.CheerioAPI): boolean {
+  const body = $('body').get(0);
+  return body ? !subtreeMentionsOrcid(body) : false;
 }
 
 /**
@@ -3170,6 +3277,62 @@ function initialsAgreeWithNetid(name: string, netidLetters: string): boolean {
   );
 }
 
+export function emailLocalPartAgreesWithNetid(email: string, netid: string): boolean {
+  const localPart = textValue(email).toLowerCase().split('@')[0] || '';
+  const bareNetid = textValue(netid).toLowerCase();
+  const netidLetters = bareNetid.match(/^[a-z]+/)?.[0] ?? '';
+  return (
+    (Boolean(bareNetid) && localPart.includes(bareNetid)) ||
+    initialsAgreeWithNetid(localPart.replace(/\d+/g, ''), netidLetters)
+  );
+}
+
+function emailLocalPartGivenName(email: string): string {
+  const tokens = letterTokens(textValue(email).split('@')[0] || '');
+  return tokens.length >= 3 && tokens[1].length === 1 ? `${tokens[0]} ${tokens[1]}` : '';
+}
+
+export type PageEmailNetidTie =
+  | 'netid-mailbox'
+  | 'directory-pairs-netid'
+  | 'page-states-netid'
+  | 'page-orcid-witnessed-for-netid'
+  | 'local-part-agrees-with-netid';
+
+export type PageEmailNetidRefusal =
+  'directory-pairs-another-netid' | 'middle-initial-conflict' | 'untied';
+
+export function pageEmailNetidTie(
+  identity: Pick<OfficialProfileIdentity, 'email' | 'displayName' | 'profileNetid'>,
+  existingUser: Pick<ExistingProfileUser, 'netid' | 'displayName'>,
+  directory: DirectoryNetidsByAddress | undefined,
+  pageOrcidWitnessedForNetid = false,
+): { tie: PageEmailNetidTie } | { refusal: PageEmailNetidRefusal } {
+  const email = textValue(identity.email).toLowerCase();
+  const netid = textValue(existingUser.netid).toLowerCase();
+  if (email === `${netid}@yale.edu`) return { tie: 'netid-mailbox' };
+  const pairedNetids = directory?.get(email);
+  if (pairedNetids?.has(netid)) return { tie: 'directory-pairs-netid' };
+  if (pairedNetids && pairedNetids.size > 0) return { refusal: 'directory-pairs-another-netid' };
+  if (identity.profileNetid && expectedNetidMatchesProfileNetid(netid, identity.profileNetid)) {
+    return { tie: 'page-states-netid' };
+  }
+  if (pageOrcidWitnessedForNetid) return { tie: 'page-orcid-witnessed-for-netid' };
+  if (!emailLocalPartAgreesWithNetid(email, netid)) return { refusal: 'untied' };
+  const researcherName = textValue(existingUser.displayName);
+  const researcherGiven = splitName(researcherName).first;
+  const localPartGiven = emailLocalPartGivenName(email);
+  if (
+    namesStateConflictingMiddleInitials(identity.displayName, researcherName) ||
+    (localPartGiven &&
+      researcherGiven &&
+      statedMiddleInitialsConflict(localPartGiven, researcherGiven))
+  ) {
+    return { refusal: 'middle-initial-conflict' };
+  }
+  return { tie: 'local-part-agrees-with-netid' };
+}
+
 /**
  * Whether the whole local part of the address names the person, in either name order, the
  * sense #5736 gives a person address: a word fused onto the name does not count.
@@ -3212,15 +3375,11 @@ export function visibleBioNetidInitialsCheck(
   const netid = textValue(person.netid).toLowerCase();
   const netidLetters = netid.match(/^[a-z]+/)?.[0] ?? '';
   const email = textValue(identity.email).toLowerCase();
-  const localPart = email.split('@')[0] || '';
   const pageNameAgrees = initialsAgreeWithNetid(
     normalizeName(textValue(identity.displayName)),
     netidLetters,
   );
-  const addressAgrees =
-    !email ||
-    (Boolean(netid) && localPart.includes(netid)) ||
-    initialsAgreeWithNetid(localPart.replace(/\d+/g, ''), netidLetters);
+  const addressAgrees = !email || emailLocalPartAgreesWithNetid(email, netid);
   const directoryWitness = directoryPairsAddressWithEntityNetid(email, person, directory);
   const wholeNameAddressWitness = addressLocalPartWhollyNamesPerson(
     email,
@@ -3252,9 +3411,9 @@ export async function orcidWitnessedByAnotherPage(
   person: Record<string, any>,
   profileUrl: string,
 ): Promise<boolean> {
-  const pageOrcid = normalizeOrcid(identity.orcid);
+  const pageOrcid = plausiblePersonOrcid(identity.orcid);
   const netid = textValue(person.netid).toLowerCase();
-  if (!pageOrcid || !netid || normalizeOrcid(person.storedOrcid) !== pageOrcid) return false;
+  if (!pageOrcid || !netid || plausiblePersonOrcid(person.storedOrcid) !== pageOrcid) return false;
   const researcherId = idValue(person._id);
   const observations = (await Observation.find({
     field: 'orcid',
@@ -3272,7 +3431,7 @@ export async function orcidWitnessedByAnotherPage(
   );
   return observations.some(
     (observation) =>
-      normalizeOrcid(observation.value) === pageOrcid &&
+      plausiblePersonOrcid(observation.value) === pageOrcid &&
       Boolean(textValue(observation.sourceUrl)) &&
       !thisPage.has(normalizeOfficialProfileUrl(observation.sourceUrl)),
   );
@@ -3724,6 +3883,7 @@ export function extractOfficialProfileIdentity(
       : '';
   const researchInterests = terseResearchFocus ? [terseResearchFocus] : extractedResearchInterests;
   const imageUrl = extractImageUrl($, profiles, profileUrl);
+  const orcid = extractOrcid($);
   return {
     canonicalUrl,
     fetchedUrl,
@@ -3735,7 +3895,8 @@ export function extractOfficialProfileIdentity(
     ...(bio ? { bio } : {}),
     researchInterests,
     ...(profileNetidSlug ? { profileNetid: profileNetidSlug } : {}),
-    orcid: extractOrcid($),
+    orcid,
+    ...(!orcid && pageStatesNoOrcid($) ? { statesNoOrcid: true } : {}),
     ...(bio ? {} : hasSuppressedProfileBioText($) ? { suppressDerivedBio: true } : {}),
     ...(!email && pageStatesNoEmailAddress($) ? { statesNoEmailAddress: true } : {}),
     ...profileDepartureEvidence(html, profiles, new Date(), displayName),
@@ -3865,8 +4026,17 @@ export function identityToUserObservations(
   }
   const { first, last } = splitName(identity.displayName);
   if (!first || !last) return [];
+  const emailTiedToNetid =
+    Boolean(identity.email) &&
+    'tie' in
+      pageEmailNetidTie(
+        identity,
+        existingUser,
+        options.directoryNetidsByAddress,
+        options.pageOrcidWitnessedForNetid,
+      );
   if (identity.emailOnly) {
-    return identity.email && (options.includeEmail ?? options.includeIdentityEnrichment ?? true)
+    return emailTiedToNetid && (options.includeEmail ?? options.includeIdentityEnrichment ?? true)
       ? [
           {
             entityType: 'user',
@@ -3891,7 +4061,7 @@ export function identityToUserObservations(
     ['fname', first],
     ['lname', last],
   ];
-  if (identity.email) identityObservations.push(['email', identity.email]);
+  if (emailTiedToNetid) identityObservations.push(['email', identity.email]);
   if (includeProfileEnrichment) {
     if (identity.title) identityObservations.push(['title', identity.title]);
     identityObservations.push(['profileUrls', profileUrls]);
@@ -3940,12 +4110,16 @@ export function identityToUserObservations(
         confidenceOverride: 0.9,
       });
     }
-    if (identity.departments.length > 0) {
+    const primaryDepartment = catalogPrimaryDepartment(
+      identity.departments,
+      options.canonicalDepartment,
+    );
+    if (primaryDepartment) {
       observations.push({
         entityType: 'user',
         entityKey: `netid:${netid}`,
         field: 'primaryDepartment',
-        value: identity.departments[0],
+        value: primaryDepartment,
         sourceUrl: identity.canonicalUrl,
         confidenceOverride: 0.85,
       });
@@ -3961,7 +4135,28 @@ export function identityToUserObservations(
       });
     }
   }
-  return observations;
+  const attestsNoOrcid = includeProfileEnrichment && !identity.orcid && identity.statesNoOrcid;
+  return attestsNoOrcid
+    ? observations.map((observation) => withAbsenceClaim(observation, 'orcid'))
+    : observations;
+}
+
+function withAbsenceClaim(observation: ObservationInput, field: string): ObservationInput {
+  return {
+    ...observation,
+    assertsNoValueFor: [...new Set([...(observation.assertsNoValueFor ?? []), field])],
+  };
+}
+
+// Fails closed (#5796): with no catalog, or a first department the catalog does not name, the
+// lane states no primary department, and a later unit is never promoted in its place.
+function catalogPrimaryDepartment(
+  departments: string[],
+  canonicalDepartment: CanonicalDepartment | null | undefined,
+): string | undefined {
+  const [first] = departments;
+  if (!first || !canonicalDepartment) return undefined;
+  return canonicalDepartment(first);
 }
 
 function shortOfficialProfileBio(value: string): string {
@@ -5264,7 +5459,14 @@ export async function resolveExistingUserForIdentity(
   ) {
     return null;
   }
-  return netid ? { _id: idValue(user._id), netid, email: textValue(user.email) } : null;
+  return netid
+    ? {
+        _id: idValue(user._id),
+        netid,
+        email: textValue(user.email),
+        displayName: textValue(user.displayName),
+      }
+    : null;
 }
 
 /**
@@ -5308,6 +5510,11 @@ interface FetchedProfile {
 export async function loadKnownPersonSurnameRosterWhenConnected(): Promise<ReadonlySet<string>> {
   if (!mongooseConnectionWasOpened()) return NO_SURNAME_ROSTER;
   return loadKnownPersonSurnameRoster();
+}
+
+export async function loadCatalogDepartmentWhenConnected(): Promise<CanonicalDepartment | null> {
+  if (!mongooseConnectionWasOpened()) return null;
+  return catalogDepartment();
 }
 
 export class OfficialProfilePiBackfillScraper implements IScraper {
@@ -5355,6 +5562,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
       limit: number,
       targetKeys?: string[],
     ) => Promise<Array<Record<string, any>>> = selectOrganizationDirectorProfileTargets,
+    private readonly catalogDepartmentLoader: () => Promise<CanonicalDepartment | null> = loadCatalogDepartmentWhenConnected,
   ) {}
 
   private pageReads = new LanePageReads();
@@ -5419,6 +5627,9 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
     let knownPersonSurnames: Promise<ReadonlySet<string>> | null = null;
     const knownPersonSurnamesForRun = (): Promise<ReadonlySet<string>> =>
       (knownPersonSurnames ??= this.knownPersonSurnameLoader());
+    let canonicalDepartment: Promise<CanonicalDepartment | null> | null = null;
+    const canonicalDepartmentForRun = (): Promise<CanonicalDepartment | null> =>
+      (canonicalDepartment ??= this.catalogDepartmentLoader());
     const runOnlyWebsiteObservationBackfill =
       (runLeadDirectWebsiteBackfill || runSourceUrlWebsiteBackfill) &&
       !runQueuedPiBackfill &&
@@ -5609,6 +5820,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
                     _id: idValue(entity._id),
                     netid: textValue(entity.netid),
                     email: textValue(entity.email),
+                    displayName: textValue(entity.name || entity.displayName),
                   }
                 : null;
             const directoryNetidsByAddress = visibleExistingUser
@@ -5619,11 +5831,15 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
               yaleDirectoryNetids,
               ...(directoryNetidsByAddress ? { directoryNetidsByAddress } : {}),
             });
+            const pageOrcidWitnessedForNetid =
+              !!identity &&
+              !!visibleExistingUser &&
+              (await orcidWitnessedByAnotherPage(identity, entity, profileUrl));
             const unwitnessedNetidMismatch =
               !!identity &&
               !!visibleExistingUser &&
               visibleBioNetidInitialsCheck(identity, entity, directoryNetidsByAddress).refused &&
-              !(await orcidWitnessedByAnotherPage(identity, entity, profileUrl));
+              !pageOrcidWitnessedForNetid;
             if (identity && unwitnessedNetidMismatch) {
               ctx.log('Refused an unwitnessed netid-initials mismatch', {
                 entityId: officialProfileDocumentId(entity._id),
@@ -5645,6 +5861,10 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
                     includeProfileEnrichment: runVisibleProfileBioBackfill,
                     includeIdentityEnrichment: !runVisibleProfileBioBackfill,
                     includeEmail: true,
+                    directoryNetidsByAddress:
+                      directoryNetidsByAddress ?? (await loadDirectoryNetidsByAddress()),
+                    pageOrcidWitnessedForNetid,
+                    canonicalDepartment: await canonicalDepartmentForRun(),
                   }),
                 );
                 if (runQueuedPiBackfill && statesAnAppointment(identity)) {
@@ -5663,6 +5883,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
                     ...identityToUserObservations(identity, inferredUser, {
                       includeProfileEnrichment: true,
                       includeIdentityEnrichment: true,
+                      canonicalDepartment: await canonicalDepartmentForRun(),
                     }),
                   );
                   if (statesAnAppointment(identity)) {
@@ -5706,6 +5927,7 @@ export class OfficialProfilePiBackfillScraper implements IScraper {
                     ...identityToUserObservations(identity, inferredUser, {
                       includeProfileEnrichment: true,
                       includeIdentityEnrichment: true,
+                      canonicalDepartment: await canonicalDepartmentForRun(),
                     }),
                     ...identityToResearchEntityPiKeyObservations(identity, inferredNetid, entity),
                   );

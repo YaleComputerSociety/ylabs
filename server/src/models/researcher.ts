@@ -369,6 +369,7 @@ researcherSchema.index({ 'identifiers.orcid': 1 }, { unique: true, sparse: true 
 researcherSchema.index({ 'identifiers.netid': 1 }, { unique: true, sparse: true });
 researcherSchema.index({ 'identifiers.email': 1 }, { sparse: true });
 researcherSchema.index({ displayName: 1, status: 1, archived: 1 });
+researcherSchema.index({ dedupedIntoResearcherId: 1 }, { sparse: true });
 /**
  * Identity by profile URL, which the roster member materializer, the PI backfill and the
  * repair queue all ask as one `$or` over these two paths. Both paths need their own index

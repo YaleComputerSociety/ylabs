@@ -47,14 +47,18 @@ import {
   organizationTextNamesUnit,
 } from '../utils/organizationUnitNaming';
 import {
+  fetchMemberProfilePage,
+  memberIdentityEvidenceCacheKey,
+  type MemberPageFetcher,
+} from '../utils/rosterMemberProfileRead';
+import {
   extractRosterMemberIdentityEvidence,
   isYaleHostedUrl,
-  ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION,
   ROSTER_MEMBER_IDENTITY_EVIDENCE_FIELD,
   type RosterMemberIdentityEvidence,
 } from '../utils/rosterMemberIdentityEvidence';
 import { mapWithConcurrency } from '../utils/mapWithConcurrency';
-import { fetchPageWithPolicy, retryOnRetryableStatus } from '../utils/httpFetch';
+import { retryOnRetryableStatus } from '../utils/httpFetch';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { extractElementTextWithBlockSeparators } from '../utils/htmlText';
@@ -95,11 +99,10 @@ import { screenedRosterRole } from '../rosterStaffTitleScreen';
 
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
-const MAX_PAGES_PER_CENTER = 30;
+const MAX_PAGES_PER_CENTER = 100;
 const CONSECUTIVE_REPEATED_PAGES_TO_STOP = 2;
 const MEMBER_PROFILE_FETCH_CONCURRENCY = 4;
 const MEMBER_PROFILE_TITLE_CACHE_PREFIX = 'member-profile-title:v1:';
-const MEMBER_IDENTITY_EVIDENCE_CACHE_PREFIX = `member-identity-evidence:v${ROSTER_MEMBER_IDENTITY_EVIDENCE_EXTRACTOR_VERSION}:`;
 
 export type CenterKind = 'center' | 'institute' | 'program' | 'initiative' | 'core_facility';
 export type MemberRole = 'director' | 'co-director' | 'core-faculty' | 'affiliated';
@@ -602,32 +605,6 @@ export const viewsFieldNameExtractor: CenterExtractor = (html, ctx) => {
 };
 
 /**
- * ISPS team directory (`/team/directory/...`):
- *   <div class="views-row …">
- *     <div class="field field-name-team-list-member-name">
- *       <strong><a href="/team/<slug>">Name</a></strong>
- *     </div>
- *     <div class="field field-name-field-team-member-creds">Title</div>
- *   </div>
- */
-export const ispsExtractor: CenterExtractor = (html, ctx) => {
-  const $ = cheerio.load(html);
-  const members: CenterMember[] = [];
-  $('.views-row').each((_i, el) => {
-    const row = $(el);
-    const link = row.find('.field-name-team-list-member-name a').first();
-    const name = link.text().trim();
-    if (!name) return;
-    const href = link.attr('href') || '';
-    const profileUrl = href ? absolutize(href, ctx.pageUrl) : undefined;
-    const title =
-      row.find('.field-name-field-team-member-creds').first().text().trim() || undefined;
-    members.push({ name, profileUrl, title, role: inferRole(title, ctx.centerName) });
-  });
-  return { members };
-};
-
-/**
  * YCGA people page on YSM (`/genetics/research/ycga/people/`).
  *   <a href="/genetics/profile/<slug>/" class="profile-grid-item__link-details" …>
  *     <span class="profile-grid-item__name …">Name, PhD</span>
@@ -884,18 +861,20 @@ export const yqiMemberReferenceCardExtractor: CenterExtractor = (html, ctx) =>
       .some((item) => $(item).text().trim() === YQI_MEMBER_CATEGORY),
   );
 
+const ISPS_FACULTY_FELLOWS_HEADING = /^faculty fellows$/i;
+
 /**
- * A leadership-and-staff page lists the center's directors beside deputy and
- * administrative staff, and only the directors are center members a student can
- * reach (#3787).
+ * ISPS moved its faculty directory to a YaleSites page (`isps.yale.edu/faculty`) whose
+ * sections are Faculty Fellows, External and Visiting Faculty Fellows, and a paginated
+ * Affiliated Faculty list. Only the Faculty Fellows section is the roster the retired
+ * `/team/directory/faculty-fellows` page published, so only it is read (#5892).
  */
-export const directoryListingLeadershipExtractor: CenterExtractor = (html, ctx) => {
-  const { members, ...rest } = extractPeopleCards(html, ctx, DIRECTORY_LISTING_CARD_SELECTORS);
-  return {
-    ...rest,
-    members: members.filter((member) => member.role === 'director'),
-  };
-};
+export const ispsFacultyFellowsExtractor: CenterExtractor = (html, ctx) =>
+  extractPeopleCardsInSections(html, ctx, DIRECTORY_LISTING_CARD_SELECTORS, {
+    heading: '.component-wrapper__heading',
+    root: '.component-wrapper',
+    keepHeading: (headingText) => ISPS_FACULTY_FELLOWS_HEADING.test(headingText),
+  });
 
 /**
  * YaleSites "reference-card" people block (Data-Intensive Social Science Center
@@ -1305,10 +1284,10 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     schoolName: '',
     kind: 'institute',
     departments: ['Political Science', 'Economics', 'Sociology'],
-    url: 'https://isps.yale.edu/team/directory/faculty-fellows',
+    url: 'https://isps.yale.edu/faculty',
     homeUrl: 'https://isps.yale.edu/',
-    paginated: true,
-    extractor: ispsExtractor,
+    paginated: false,
+    extractor: ispsFacultyFellowsExtractor,
   },
   {
     centerKey: 'macmillan',
@@ -1488,7 +1467,7 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
     url: 'https://whc.yale.edu/leadership-and-staff',
     homeUrl: 'https://whc.yale.edu/',
     paginated: false,
-    extractor: directoryListingLeadershipExtractor,
+    extractor: directoryListingCardExtractor,
   },
   {
     centerKey: 'ycga',
@@ -1671,6 +1650,26 @@ export const DEFAULT_CENTER_CONFIGS: CenterConfig[] = [
 // Internal: network + observation shaping
 // ---------------------------------------------------------------------------
 
+/**
+ * Order-independent identity of everything one roster page listed. A page is past the end
+ * only when the page itself repeats, never when its people were all seen before: MacMillan
+ * program listings carry a block of leadership cards on every page, and a later page of the
+ * real listing can hold only people that block or an earlier page already listed (#5892).
+ */
+export function centerRosterPageSignature(
+  members: readonly CenterMember[],
+  childCenters: readonly ChildCenter[] = [],
+): string {
+  const keys = [
+    ...members.map((member) => {
+      const profileUrl = member.profileUrl?.trim().toLowerCase().replace(/\/+$/, '');
+      return profileUrl ? `url:${profileUrl}` : `name:${slugify(normalizeName(member.name))}`;
+    }),
+    ...childCenters.map((child) => `child:${slugify(child.name)}`),
+  ];
+  return Array.from(new Set(keys)).sort().join('|');
+}
+
 function pageUrlForIndex(baseUrl: string, pageIndex: number): string {
   if (pageIndex === 0) return baseUrl;
   try {
@@ -1682,13 +1681,7 @@ function pageUrlForIndex(baseUrl: string, pageIndex: number): string {
   }
 }
 
-export type MemberPageFetcher = (url: string) => Promise<string>;
-
-// medicine.yale.edu answers a burst of member pages with 403, so these go through the shared
-// per-host limiter and its 403/429/5xx backoff rather than the roster fetch.
-async function fetchMemberProfilePage(url: string): Promise<string> {
-  return (await fetchPageWithPolicy(url, { timeoutMs: FETCH_TIMEOUT_MS })).html;
-}
+export type { MemberPageFetcher };
 
 async function fetchHtml(url: string, useCache: boolean, sourceName: string): Promise<string> {
   const safeUrl = await assertPublicHttpUrl(url);
@@ -2271,6 +2264,7 @@ export class CentersInstitutesScraper implements IScraper {
       const allMembers: CenterMember[] = [];
       const allChildCenters: ChildCenter[] = [];
       const seenPaginationKeys = new Set<string>();
+      const seenPageSignatures = new Set<string>();
       let firstPageUrl: string | null = null;
       let pagesFetched = 0;
       const maxPages = config.paginated ? MAX_PAGES_PER_CENTER : 1;
@@ -2307,6 +2301,9 @@ export class CentersInstitutesScraper implements IScraper {
           stopReason = 'empty-page';
           break;
         }
+        const signature = centerRosterPageSignature(pageMembers, pageChildCenters);
+        const pageRepeated = seenPageSignatures.has(signature);
+        seenPageSignatures.add(signature);
         const newMembers = pageMembers.filter((member) => {
           const key = `member:${slugify(normalizeName(member.name))}`;
           if (key === 'member:' || seenPaginationKeys.has(key)) return false;
@@ -2319,7 +2316,7 @@ export class CentersInstitutesScraper implements IScraper {
           seenPaginationKeys.add(key);
           return true;
         });
-        if (newMembers.length === 0 && newChildCenters.length === 0) {
+        if (pageRepeated) {
           consecutiveRepeatedPages++;
           if (!config.paginated || consecutiveRepeatedPages >= CONSECUTIVE_REPEATED_PAGES_TO_STOP) {
             stopReason = config.paginated ? 'repeated-page' : 'not-paginated';
@@ -2434,7 +2431,7 @@ export class CentersInstitutesScraper implements IScraper {
     ctx: ScraperContext,
   ): Promise<MemberProfileRead | undefined> {
     const profileUrl = member.profileUrl || '';
-    const evidenceKey = `${MEMBER_IDENTITY_EVIDENCE_CACHE_PREFIX}${profileUrl}#${member.name}`;
+    const evidenceKey = memberIdentityEvidenceCacheKey(profileUrl, member.name);
     const titleKey = `${MEMBER_PROFILE_TITLE_CACHE_PREFIX}${profileUrl}`;
     if (ctx.options.useCache) {
       const evidence = await getCached<RosterMemberIdentityEvidence>(this.name, evidenceKey);

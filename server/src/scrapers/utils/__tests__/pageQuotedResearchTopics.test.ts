@@ -258,6 +258,42 @@ describe('derivePageQuotedResearchTopics', () => {
     expect(supported.refusals.filter((refusal) => refusal.reason === 'over-limit')).toHaveLength(2);
   });
 
+  it('drops a topic or field that only restates an own department or school label (#5957)', () => {
+    const result = derivePageQuotedResearchTopics(
+      {
+        topics: [
+          quoted('Glioma', 'how glioma cells invade the brain', HOME),
+          quoted('Cell biology', 'Cell biology anchors the work'),
+          quoted('Primary cilium signaling', 'primary cilium signaling'),
+        ],
+        field: quoted('Cell biology', 'Cell biology anchors the work'),
+      },
+      pages,
+      ['Department of Cell Biology', 'School of Medicine'],
+    );
+    expect(result.topics).toEqual(['Glioma', 'Primary cilium signaling']);
+    expect(result.refusals).toEqual([
+      { topic: 'Cell biology', reason: 'own-org-unit-label' },
+      { topic: 'Cell biology', reason: 'own-org-unit-label' },
+    ]);
+  });
+
+  it('keeps a subfield that only shares a word with an own department label (#5957)', () => {
+    const result = derivePageQuotedResearchTopics(
+      {
+        topics: [
+          quoted('Glioma', 'how glioma cells invade the brain', HOME),
+          quoted('Cell biology', 'Cell biology anchors the work'),
+        ],
+        field: null,
+      },
+      pages,
+      ['Biology'],
+    );
+    expect(result.topics).toEqual(['Glioma', 'Cell biology']);
+    expect(result.refusals).toEqual([]);
+  });
+
   it('returns no topics when nothing survives, even when the field does', () => {
     expect(derivePageQuotedResearchTopics({ topics: [], field: null }, pages).topics).toEqual([]);
     const fieldOnly = derivePageQuotedResearchTopics(

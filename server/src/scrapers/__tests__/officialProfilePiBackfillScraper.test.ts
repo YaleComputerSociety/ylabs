@@ -39,6 +39,11 @@ import {
 import type { ObservationInput, ScraperContext } from '../types';
 import { ResearchEntity } from '../../models/researchEntity';
 import { Researcher } from '../../models/researcher';
+import { syntheticPersonOrcid } from '../../test/syntheticOrcid';
+
+const SYNTHETIC_ORCID_1 = syntheticPersonOrcid(500);
+const SYNTHETIC_ORCID_2 = syntheticPersonOrcid(501);
+const SYNTHETIC_ORCID_3 = syntheticPersonOrcid(502);
 
 const profileUrl = 'https://medicine.yale.edu/profile/jules-fixture/';
 const departmentPersonPageUrl =
@@ -49,11 +54,11 @@ const profileHtml = `
     <head>
       <link rel="canonical" href="${profileUrl}" />
       <meta name="description" content="Professor of Surgery (Oncology)" />
-      <meta property="og:image" content="https://ysm-res.cloudinary.com/image/upload/example/jules-fixture" />
     </head>
     <body>
       <main>
         <h1>Jules Fixture</h1>
+        <div class="field field--name-field-profile-image"><img src="https://ysm-res.cloudinary.com/image/upload/example/jules-fixture" alt="" /></div>
         <div class="title">Professor of Surgery (Oncology)</div>
         <a href="mailto:jules.fixture@yale.edu">jules.fixture@yale.edu</a>
         <div class="department">Surgery</div>
@@ -1599,6 +1604,48 @@ const outsideYaleNoSeparatorDeputyProfileHtml = `
     </body>
   </html>
 `;
+
+const catalogNaming =
+  (...departments: string[]) =>
+  (name: string): string | undefined =>
+    departments.find((department) => department.toLowerCase() === name.toLowerCase());
+
+function appointmentCard(unit: string, appointmentType: string): string {
+  return `
+    <li class="content-layout-column-list-item">
+      <article class="card profile-details-appointment-card" aria-label="Professor ${appointmentType} in ${unit}">
+        <h4 class="profile-details-appointment-card__academic-unit">${unit}</h4>
+        <div class="profile-details-appointment-card__title">Professor</div>
+        <div class="profile-details-appointment-card__type">${appointmentType}</div>
+        <div class="profile-details-appointment-card__link"><a href="https://medicine.yale.edu/"><span class="link__label">${unit}</span></a></div>
+      </article>
+    </li>`;
+}
+
+function profileWithAppointments(cards: string): string {
+  return profileHtml.replace(
+    '<div class="department">Surgery</div>',
+    `
+      <section class="profile-details-content-section" aria-label="about Appointments" id="about-appointments">
+        <h3 class="profile-details-content-section__heading">Appointments</h3>
+        <div class="profile-details-content-section__content">
+          <div class="profile-details-appointment-list"><ul class="content-layout-column-list">${cards}</ul></div>
+          <h4 class="profile-details-organization-list__header">Other Departments &amp; Organizations</h4>
+          <div class="profile-details-organization-list__list"><ul>
+            <li class="organization-hyperlink-list__item"><a href="https://medicine.yale.edu/bbs/" class="hyperlink">Biological and Biomedical Sciences</a></li>
+            <li class="organization-hyperlink-list__item"><a href="https://medicine.yale.edu/pathology/" class="hyperlink">Pathology</a></li>
+          </ul></div>
+        </div>
+      </section>
+    `,
+  );
+}
+
+const appointmentFixtureEntity = {
+  name: 'Jules Fixture Research Area',
+  slug: 'faculty-research-area-jules-fixture',
+};
+const appointmentFixtureUser = { netid: 'jf106', email: 'jules.fixture@yale.edu' };
 
 function contextFor(emitted: ObservationInput[]): ScraperContext {
   return {
@@ -3205,7 +3252,7 @@ describe('officialProfilePiBackfillScraper', () => {
     );
 
     const obs = identityToUserObservations(identity!, {
-      netid: 'fixture106',
+      netid: 'jf106',
       email: 'jules.fixture@yale.edu',
     });
 
@@ -3230,7 +3277,7 @@ describe('officialProfilePiBackfillScraper', () => {
           bio,
           researchInterests: [],
         },
-        { netid: 'fixture106', email: 'jules.fixture@yale.edu' },
+        { netid: 'jf106', email: 'jules.fixture@yale.edu' },
       );
 
       expect(obs.find((o) => o.field === 'bio')).toBeUndefined();
@@ -3249,7 +3296,7 @@ describe('officialProfilePiBackfillScraper', () => {
         bio: 'Jules Fixture studies translational cancer biology and develops clinical research programs for gastrointestinal oncology. For more on this research, refer to Dr. Fixture complete Google Scholar profile.',
         researchInterests: [],
       },
-      { netid: 'fixture106', email: 'jules.fixture@yale.edu' },
+      { netid: 'jf106', email: 'jules.fixture@yale.edu' },
     );
 
     expect(obs.find((o) => o.field === 'bio')).toBeUndefined();
@@ -3274,7 +3321,7 @@ describe('officialProfilePiBackfillScraper', () => {
           departments: [],
           researchInterests,
         },
-        { netid: 'fixture106', email: 'jules.fixture@yale.edu' },
+        { netid: 'jf106', email: 'jules.fixture@yale.edu' },
       );
 
       expect(obs.find((o) => o.field === 'bio')).toBeUndefined();
@@ -3295,9 +3342,9 @@ describe('officialProfilePiBackfillScraper', () => {
         bio: 'Jules Fixture studies cancer biology and translational oncology, with a focus on identifying biomarkers and improving treatment strategies for patients with gastrointestinal malignancies.',
         imageUrl: 'https://ysm-res.cloudinary.com/image/upload/example/jules-fixture',
         researchInterests: ['Cancer biology', 'Translational oncology'],
-        orcid: '0000-0001-2345-6789',
+        orcid: SYNTHETIC_ORCID_1,
       },
-      { netid: 'fixture106', email: 'jules.fixture@yale.edu' },
+      { netid: 'jf106', email: 'jules.fixture@yale.edu' },
       {
         includeProfileEnrichment: true,
         includeIdentityEnrichment: false,
@@ -3305,7 +3352,7 @@ describe('officialProfilePiBackfillScraper', () => {
     );
 
     expect(obs.map((o) => o.field).sort()).toEqual(['imageUrl', 'orcid']);
-    expect(obs.every((o) => o.entityKey === 'netid:fixture106')).toBe(true);
+    expect(obs.every((o) => o.entityKey === 'netid:jf106')).toBe(true);
   });
 
   it('no longer emits a user bio from inline-email profile prose', () => {
@@ -3504,12 +3551,12 @@ describe('officialProfilePiBackfillScraper', () => {
     });
 
     const obs = identityToUserObservations(identity!, {
-      netid: 'fixture106',
+      netid: 'jf106',
       email: 'jules.fixture@yale.edu',
     });
 
     expect(obs.every((o) => o.entityType === 'user')).toBe(true);
-    expect(obs.every((o) => o.entityKey === 'netid:fixture106')).toBe(true);
+    expect(obs.every((o) => o.entityKey === 'netid:jf106')).toBe(true);
     expect(obs.map((o) => o.field)).toEqual(
       expect.arrayContaining(['netid', 'fname', 'lname', 'email', 'profileUrls', 'imageUrl']),
     );
@@ -3528,10 +3575,11 @@ describe('officialProfilePiBackfillScraper', () => {
       slug: 'faculty-research-area-jules-fixture',
     });
 
-    const obs = identityToUserObservations(identity!, {
-      netid: 'fixture106',
-      email: 'jules.fixture@yale.edu',
-    });
+    const obs = identityToUserObservations(
+      identity!,
+      { netid: 'jf106', email: 'jules.fixture@yale.edu' },
+      { canonicalDepartment: catalogNaming('Surgery', 'Pathology') },
+    );
 
     expect(obs.find((o) => o.field === 'primaryDepartment')).toEqual(
       expect.objectContaining({ value: 'Surgery', sourceUrl: profileUrl }),
@@ -3729,7 +3777,7 @@ describe('officialProfilePiBackfillScraper', () => {
 
     const obs = identityToResearchEntityPiObservations(
       identity!,
-      { _id: '64f000000000000000000020', netid: 'fixture106', email: 'jules.fixture@yale.edu' },
+      { _id: '64f000000000000000000020', netid: 'jf106', email: 'jules.fixture@yale.edu' },
       {
         _id: '64f000000000000000000010',
         name: 'Jules Fixture Research Area',
@@ -3794,7 +3842,7 @@ describe('officialProfilePiBackfillScraper', () => {
     );
 
     const obs = identityToUserObservations(identity!, {
-      netid: 'fixture106',
+      netid: 'jf106',
       email: 'jules.fixture@yale.edu',
     });
 
@@ -3819,10 +3867,11 @@ describe('officialProfilePiBackfillScraper', () => {
       },
     );
 
-    const obs = identityToUserObservations(identity!, {
-      netid: 'fixture106',
-      email: 'jules.fixture@yale.edu',
-    });
+    const obs = identityToUserObservations(
+      identity!,
+      { netid: 'jf106', email: 'jules.fixture@yale.edu' },
+      { canonicalDepartment: catalogNaming('Surgery', 'Pathology') },
+    );
 
     expect(obs.some((o) => o.value === 'Other Departments & Organizations')).toBe(false);
     expect(obs.some((o) => o.value === 'Pathology')).toBe(false);
@@ -3846,12 +3895,105 @@ describe('officialProfilePiBackfillScraper', () => {
     );
 
     const obs = identityToUserObservations(identity!, {
-      netid: 'fixture106',
+      netid: 'jf106',
       email: 'jules.fixture@yale.edu',
     });
 
     expect(identity!.departments).toEqual([]);
     expect(obs.some((o) => o.field === 'primaryDepartment')).toBe(false);
+  });
+
+  describe('primary department from the Appointments block (#5800)', () => {
+    const catalog = catalogNaming('Psychiatry', 'Pathology', 'Internal Medicine');
+    const identityOf = (html: string) =>
+      extractOfficialProfileIdentity(html, profileUrl, appointmentFixtureEntity)!;
+    const primaryDepartmentOf = (
+      html: string,
+      canonicalDepartment: ((name: string) => string | undefined) | null = catalog,
+    ) =>
+      identityToUserObservations(identityOf(html), appointmentFixtureUser, {
+        canonicalDepartment,
+      }).find((o) => o.field === 'primaryDepartment')?.value;
+
+    it('reads the Primary appointment unit, not a Secondary one or the affiliation list', () => {
+      const html = profileWithAppointments(
+        appointmentCard('Pathology', 'Secondary') + appointmentCard('Psychiatry', 'Primary'),
+      );
+
+      expect(identityOf(html).departments).toEqual(['Psychiatry']);
+      expect(primaryDepartmentOf(html)).toBe('Psychiatry');
+    });
+
+    it('states no department when the page lists only Secondary appointments', () => {
+      const html = profileWithAppointments(appointmentCard('Pathology', 'Secondary'));
+
+      expect(identityOf(html).departments).toEqual([]);
+      expect(primaryDepartmentOf(html)).toBeUndefined();
+    });
+
+    it('states the catalog spelling of the Primary unit', () => {
+      const html = profileWithAppointments(appointmentCard('internal medicine', 'Primary'));
+
+      expect(primaryDepartmentOf(html)).toBe('Internal Medicine');
+    });
+
+    it('fails closed on a Primary unit the catalog does not name, promoting nothing', () => {
+      const html = profileWithAppointments(
+        appointmentCard('Yale Cancer Center', 'Primary') +
+          appointmentCard('Pathology', 'Secondary'),
+      );
+
+      expect(primaryDepartmentOf(html)).toBeUndefined();
+    });
+
+    it('states no department when the catalog is unavailable or not supplied', () => {
+      const html = profileWithAppointments(appointmentCard('Psychiatry', 'Primary'));
+
+      expect(primaryDepartmentOf(html, null)).toBeUndefined();
+      expect(
+        identityToUserObservations(identityOf(html), appointmentFixtureUser).some(
+          (o) => o.field === 'primaryDepartment',
+        ),
+      ).toBe(false);
+    });
+
+    it('passes the run catalog to the department it emits', async () => {
+      const emitted: ObservationInput[] = [];
+      const catalogLoader = vi.fn(async () => catalog);
+      const profileTarget = {
+        _id: 'user-appointments',
+        netid: 'jf106',
+        email: 'jules.fixture@yale.edu',
+        fname: 'Jules',
+        lname: 'Fixture',
+        name: 'Jules Fixture',
+        slug: 'jules-fixture',
+        websiteUrl: profileUrl,
+      };
+      const scraper = new OfficialProfilePiBackfillScraper(
+        vi.fn(async () => profileWithAppointments(appointmentCard('Psychiatry', 'Primary'))),
+        vi.fn(async () => []),
+        vi.fn(async () => null),
+        vi.fn(async () => [profileTarget]),
+        vi.fn(async () => []),
+        vi.fn(async () => []),
+        0,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        catalogLoader,
+      );
+
+      await scraper.run(visibleBioContextFor(emitted));
+
+      expect(emitted.find((o) => o.field === 'primaryDepartment')).toEqual(
+        expect.objectContaining({ value: 'Psychiatry', entityKey: 'netid:jf106' }),
+      );
+      expect(catalogLoader).toHaveBeenCalledTimes(1);
+    });
   });
 
   it('runs only the targeted queued Medicine profile backfill', async () => {
@@ -3868,7 +4010,7 @@ describe('officialProfilePiBackfillScraper', () => {
       ]),
       vi.fn(async () => ({
         _id: '64f000000000000000000020',
-        netid: 'fixture106',
+        netid: 'jf106',
         email: 'jules.fixture@yale.edu',
       })),
       vi.fn(async () => [
@@ -3910,7 +4052,7 @@ describe('officialProfilePiBackfillScraper', () => {
       entitySelector,
       vi.fn(async () => ({
         _id: '64f000000000000000000020',
-        netid: 'fixture106',
+        netid: 'jf106',
         email: 'jules.fixture@yale.edu',
       })),
     );
@@ -3990,7 +4132,7 @@ describe('officialProfilePiBackfillScraper', () => {
       ]),
       vi.fn(async () => ({
         _id: '64f000000000000000000020',
-        netid: 'fixture106',
+        netid: 'jf106',
         email: '',
       })),
       vi.fn(async () => []),
@@ -4048,6 +4190,7 @@ describe('officialProfilePiBackfillScraper', () => {
       _id: 'res-harold',
       netid: 'hs7',
       email: 'harper.sanchez@yale.edu',
+      displayName: 'Harper Sanchez',
     });
   });
 
@@ -4058,7 +4201,7 @@ describe('officialProfilePiBackfillScraper', () => {
       vi.fn(async () => []),
       vi.fn(async () => ({
         _id: '64f000000000000000000020',
-        netid: 'fixture106',
+        netid: 'jf106',
         email: 'jules.fixture@yale.edu',
       })),
       vi.fn(async () => []),
@@ -4109,7 +4252,7 @@ describe('officialProfilePiBackfillScraper', () => {
       vi.fn(async () => []),
       vi.fn(async () => ({
         _id: '64f000000000000000000020',
-        netid: 'fixture106',
+        netid: 'jf106',
         email: 'jules.fixture@yale.edu',
       })),
       vi.fn(async () => []),
@@ -4151,7 +4294,7 @@ describe('officialProfilePiBackfillScraper', () => {
       vi.fn(async () => []),
       vi.fn(async () => ({
         _id: '64f000000000000000000020',
-        netid: 'fixture106',
+        netid: 'jf106',
         email: 'jules.fixture@yale.edu',
       })),
       vi.fn(async () => []),
@@ -4359,7 +4502,7 @@ describe('officialProfilePiBackfillScraper', () => {
       vi.fn(async () => [
         {
           _id: 'user-1',
-          netid: 'fixture106',
+          netid: 'jf106',
           email: 'jules.fixture@yale.edu',
           name: 'Jules Fixture',
           slug: 'jules-fixture',
@@ -4401,7 +4544,7 @@ describe('officialProfilePiBackfillScraper', () => {
       );
     const visibleUser = {
       _id: 'user-departure',
-      netid: 'fixture106',
+      netid: 'jf106',
       email: 'jules.fixture@yale.edu',
       name: 'Jules Fixture',
       slug: 'jules-fixture',
@@ -4502,7 +4645,7 @@ describe('officialProfilePiBackfillScraper', () => {
       expect(departureObservations(first)).toEqual([
         expect.objectContaining({
           entityType: 'user',
-          entityKey: 'netid:fixture106',
+          entityKey: 'netid:jf106',
           field: 'profileInMemoriam',
           value: true,
           sourceUrl: profileUrl,
@@ -4523,7 +4666,7 @@ describe('officialProfilePiBackfillScraper', () => {
   describe('a visible roster person whose stored email only a legacy account copy backs (#5627)', () => {
     const visibleUser = {
       _id: 'user-legacy-email',
-      netid: 'fixture106',
+      netid: 'jf106',
       email: 'jules.legacy@yale.edu',
       name: 'Jules Fixture',
       slug: 'jules-fixture',
@@ -4550,7 +4693,7 @@ describe('officialProfilePiBackfillScraper', () => {
       expect(emailObservationsOf(emitted)).toEqual([
         expect.objectContaining({
           entityType: 'user',
-          entityKey: 'netid:fixture106',
+          entityKey: 'netid:jf106',
           field: 'email',
           value: 'jules.fixture@yale.edu',
           sourceUrl: profileUrl,
@@ -5691,7 +5834,7 @@ describe('OfficialProfilePiBackfillScraper.run profile prefetch (#3568)', () => 
   const users = [
     {
       _id: 'user-1',
-      netid: 'fixture106',
+      netid: 'jf106',
       email: 'jules.fixture@yale.edu',
       name: 'Jules Fixture',
       slug: 'jules-fixture',
@@ -5840,13 +5983,13 @@ describe('a profile page that names its own netid or several ORCIDs (#4994)', ()
 
   it('claims an ORCID only when the page carries exactly one', () => {
     const one = extractOfficialProfileIdentity(
-      pageFor(profileUrl, ['9999-9000-9999-9005']),
+      pageFor(profileUrl, [SYNTHETIC_ORCID_2]),
       profileUrl,
       entity,
     );
-    expect(one?.orcid).toBe('9999-9000-9999-9005');
+    expect(one?.orcid).toBe(SYNTHETIC_ORCID_2);
     const several = extractOfficialProfileIdentity(
-      pageFor(profileUrl, ['9999-9000-9999-9005', '9999-9000-9999-9013']),
+      pageFor(profileUrl, [SYNTHETIC_ORCID_2, SYNTHETIC_ORCID_3]),
       profileUrl,
       entity,
     );

@@ -69,6 +69,10 @@ const leadVerificationJudgementSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    namedOnPage: {
+      type: Boolean,
+      required: false,
+    },
     contradictedBy: {
       type: String,
       enum: [...labSiteLeadContradictionShapes],

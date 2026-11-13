@@ -29,6 +29,11 @@ import {
   netidForRosterEmailAlias,
   planInferredPiMembership,
 } from '../entityMaterializer';
+import { syntheticPersonOrcid } from '../../test/syntheticOrcid';
+
+const SYNTHETIC_ORCID_1 = syntheticPersonOrcid(500);
+const SYNTHETIC_ORCID_2 = syntheticPersonOrcid(501);
+const SYNTHETIC_ORCID_3 = syntheticPersonOrcid(502);
 
 describe('materializeEntity gates directory identity: enrich-only, never mints Account or Researcher', () => {
   let replSet: MongoMemoryReplSet;
@@ -217,7 +222,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
 
   it('yields a colliding ORCID to its existing holder instead of crashing the source', async () => {
     await Researcher.createIndexes();
-    const sharedOrcid = '9999-9999-9999-9994';
+    const sharedOrcid = SYNTHETIC_ORCID_1;
 
     const holder = await Researcher.create({
       displayName: 'Original Holder',
@@ -269,8 +274,8 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
 
   it('keeps the researcher own ORCID and link when the directory ORCID is already claimed', async () => {
     await Researcher.createIndexes();
-    const claimedOrcid = '9999-9999-9999-9994';
-    const ownOrcid = '9999-9000-9999-9005';
+    const claimedOrcid = SYNTHETIC_ORCID_1;
+    const ownOrcid = SYNTHETIC_ORCID_2;
 
     const holder = await Researcher.create({
       displayName: 'Original Holder',
@@ -305,8 +310,8 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
 
   it('moves the ORCID profile link with the identifier when the directory resolves a new ORCID', async () => {
     await Researcher.createIndexes();
-    const priorOrcid = '9999-9000-9999-9005';
-    const nextOrcid = '9999-9001-9999-9010';
+    const priorOrcid = SYNTHETIC_ORCID_2;
+    const nextOrcid = SYNTHETIC_ORCID_3;
 
     const enrichTarget = await attachedResearcher('moved1', 'Morgan Mover', {
       identifiers: { orcid: priorOrcid },
@@ -334,7 +339,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
 
     it('drops an orphaned ORCID link when the observed ORCID collides and no identifier stays', async () => {
       await Researcher.createIndexes();
-      const claimedOrcid = '9999-9999-9999-9994';
+      const claimedOrcid = SYNTHETIC_ORCID_1;
       await Researcher.create({
         displayName: 'Canonical Holder',
         identifiers: { orcid: claimedOrcid },
@@ -366,8 +371,8 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
 
     it('derives the ORCID link from the stored identifier when the stored link names another ORCID', async () => {
       await Researcher.createIndexes();
-      const ownOrcid = '9999-9000-9999-9005';
-      const strayOrcid = '9999-9001-9999-9010';
+      const ownOrcid = SYNTHETIC_ORCID_2;
+      const strayOrcid = SYNTHETIC_ORCID_3;
       const account = await Account.create({
         netid: 'stray1',
         email: 'stray1@yale.edu',
@@ -391,7 +396,7 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
 
     it('plans the reconciled link on a dry run without writing it', async () => {
       await Researcher.createIndexes();
-      const strayOrcid = '9999-9001-9999-9010';
+      const strayOrcid = SYNTHETIC_ORCID_3;
       const account = await Account.create({
         netid: 'dryorphan1',
         email: 'dryorphan1@yale.edu',
@@ -1008,6 +1013,93 @@ describe('materializeEntity gates directory identity: enrich-only, never mints A
 
       expect(result.skipped).toBe('directory-identity-without-research-signal');
       expect(await Researcher.countDocuments({ displayName: 'Ada Lovelace' })).toBe(0);
+    });
+
+    describe("a tie the name cannot break is broken by the key's own identity evidence (#5875)", () => {
+      const KEY = 'dept:physics:ada-lovelace';
+      const seedKeyField = (field: string, value: string) =>
+        Observation.create({
+          ...directoryObservationBase(KEY),
+          sourceName: 'dept-faculty-roster',
+          field,
+          value,
+        });
+      const seedTiedKey = async () => {
+        await seedNamingResearchEntity();
+        await seedRosterIdentity(KEY, 'Ada', 'Lovelace');
+        await seedPiAttribution(KEY);
+      };
+
+      it("joins the one tied researcher holding the key's own email", async () => {
+        await seedTiedKey();
+        const holder = await Researcher.create({
+          displayName: 'A. Lovelace',
+          identifiers: { email: 'ada.lovelace@example.edu' },
+        });
+        await Researcher.create({
+          displayName: 'A. B. Lovelace',
+          identifiers: { email: 'other.lovelace@example.edu' },
+        });
+        await seedKeyField('email', 'ada.lovelace@example.edu');
+
+        const result = await materializeEntity('user', { entityKey: KEY }, {});
+
+        expect(result.skipped).toBeUndefined();
+        expect(result.created).toBe(false);
+        expect(result.entityId).toBe(String(holder._id));
+        expect(await Researcher.countDocuments({})).toBe(2);
+      });
+
+      it("joins the one tied researcher holding the key's own plausible ORCID", async () => {
+        await seedTiedKey();
+        const holder = await Researcher.create({
+          displayName: 'A. Lovelace',
+          identifiers: { orcid: SYNTHETIC_ORCID_1 },
+        });
+        await Researcher.create({ displayName: 'A. B. Lovelace' });
+        await seedKeyField('orcid', SYNTHETIC_ORCID_1);
+
+        const result = await materializeEntity('user', { entityKey: KEY }, {});
+
+        expect(result.skipped).toBeUndefined();
+        expect(result.created).toBe(false);
+        expect(result.entityId).toBe(String(holder._id));
+        expect(await Researcher.countDocuments({})).toBe(2);
+      });
+
+      it('stays refused when the only witness is the year-run ORCID', async () => {
+        await seedTiedKey();
+        await Researcher.create({
+          displayName: 'A. Lovelace',
+          identifiers: { orcid: '2025-2024-2023-2022' },
+        });
+        await Researcher.create({ displayName: 'A. B. Lovelace' });
+        await seedKeyField('orcid', '2025-2024-2023-2022');
+
+        const result = await materializeEntity('user', { entityKey: KEY }, {});
+
+        expect(result.skipped).toBe('directory-identity-without-research-signal');
+        expect(await Researcher.countDocuments({})).toBe(2);
+      });
+
+      it('mints once when the only namesake holds another netid, and a second pass is a no-op', async () => {
+        await seedTiedKey();
+        await Researcher.create({
+          displayName: 'Jonas Ad Lovelace',
+          identifiers: { netid: 'jl7' },
+        });
+        await seedKeyField('netid', 'al42');
+
+        const first = await materializeEntity('user', { entityKey: KEY }, {});
+        const second = await materializeEntity('user', { entityKey: KEY }, {});
+
+        expect(first.skipped).toBeUndefined();
+        expect(first.created).toBe(true);
+        expect(second.skipped).toBeUndefined();
+        expect(second.created).toBe(false);
+        expect(second.entityId).toBe(first.entityId);
+        expect(await Researcher.countDocuments({ displayName: 'Ada Lovelace' })).toBe(1);
+      });
     });
 
     it('refuses a netid-shaped key, which the lead materializer cannot resolve back', async () => {

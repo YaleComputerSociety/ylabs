@@ -8,11 +8,13 @@
 export interface ResearchGroupFilterInput {
   kind?: string[];
   entityType?: string[];
+  researchType?: string[];
   school?: string[];
   departments?: string[];
   researchAreas?: string[];
   hostsUndergrads?: boolean;
   welcomesUndergrads?: boolean;
+  mentorsUndergrads?: boolean;
   worksWithUndergrads?: boolean;
   studentVisibilityTier?: string[];
 }
@@ -31,7 +33,7 @@ const orEqualsClause = (field: string, values: unknown[]): string | null => {
 };
 
 type StudentMultiValueFilterKey =
-  'kind' | 'entityType' | 'school' | 'departments' | 'researchAreas';
+  'kind' | 'entityType' | 'researchType' | 'school' | 'departments' | 'researchAreas';
 
 // The request field `school` filters on the multi-valued `schools` index field,
 // so a cross-school lab matches under every school it belongs to.
@@ -41,6 +43,7 @@ const STUDENT_MULTI_VALUE_FILTER_FIELDS: ReadonlyArray<{
 }> = [
   { filterKey: 'kind', indexField: 'kind' },
   { filterKey: 'entityType', indexField: 'entityType' },
+  { filterKey: 'researchType', indexField: 'researchType' },
   { filterKey: 'school', indexField: 'schools' },
   { filterKey: 'departments', indexField: 'departments' },
   { filterKey: 'researchAreas', indexField: 'researchAreas' },
@@ -48,7 +51,49 @@ const STUDENT_MULTI_VALUE_FILTER_FIELDS: ReadonlyArray<{
 
 export const HOSTS_UNDERGRADS_INDEX_FIELD = 'hasUndergradHostingEvidence';
 export const WELCOMES_UNDERGRADS_INDEX_FIELD = 'welcomesUndergrads';
+export const MENTORS_UNDERGRADS_INDEX_FIELD = 'mentorsUndergrads';
 export const WORKS_WITH_UNDERGRADS_INDEX_FIELD = 'worksWithUndergrads';
+export const RESEARCH_TYPE_INDEX_FIELD = 'researchType';
+export const CREATIVE_PRACTICE_RESEARCH_TYPE = 'CREATIVE_PRACTICE';
+
+const isCreativePracticeTypeValue = (value: string): boolean =>
+  value.trim().toUpperCase() === CREATIVE_PRACTICE_RESEARCH_TYPE;
+
+/**
+ * The Type filter arrives as `entityType` values plus `CREATIVE_PRACTICE`, and reads the
+ * derived `researchType` index field, so creative practice splits off faculty research and
+ * the Type counts partition the result set (#5141). An index that does not yet declare
+ * `researchType` filterable answers the old `entityType` filter, where creative practice
+ * cannot be selected, so its value is dropped rather than failing the search.
+ */
+export function withResearchTypeFilter(
+  filters: ResearchGroupFilterInput,
+  researchTypeFilterable: boolean,
+): ResearchGroupFilterInput {
+  const requested = filters.entityType ?? [];
+  if (requested.length === 0) return filters;
+  if (researchTypeFilterable) {
+    return {
+      ...filters,
+      entityType: undefined,
+      researchType: [...(filters.researchType ?? []), ...requested],
+    };
+  }
+  return {
+    ...filters,
+    entityType: requested.filter((value) => !isCreativePracticeTypeValue(value)),
+  };
+}
+
+/**
+ * Mongo stores no derived creative practice field, so a Mongo-answered browse can only
+ * widen `CREATIVE_PRACTICE` to the faculty research rows it is drawn from.
+ */
+export const entityTypesForStoredRows = (values: readonly string[]): string[] => [
+  ...new Set(
+    values.map((value) => (isCreativePracticeTypeValue(value) ? 'FACULTY_RESEARCH_AREA' : value)),
+  ),
+];
 
 export interface BuildResearchGroupFilterStringOptions {
   /** Omit this field's own clause, so its facet distribution can be computed disjunctively. */
@@ -82,6 +127,10 @@ export function buildResearchGroupFilterString(
 
   if (effectiveFilters.welcomesUndergrads === true) {
     parts.push(`${WELCOMES_UNDERGRADS_INDEX_FIELD} = true`);
+  }
+
+  if (effectiveFilters.mentorsUndergrads === true) {
+    parts.push(`${MENTORS_UNDERGRADS_INDEX_FIELD} = true`);
   }
 
   if (effectiveFilters.worksWithUndergrads === true) {
@@ -142,6 +191,9 @@ export function candidateMatchesStudentFilters(
   }
   if (options.excludeField !== 'welcomesUndergrads' && filters.welcomesUndergrads === true) {
     if (candidate[WELCOMES_UNDERGRADS_INDEX_FIELD] !== true) return false;
+  }
+  if (options.excludeField !== 'mentorsUndergrads' && filters.mentorsUndergrads === true) {
+    if (candidate[MENTORS_UNDERGRADS_INDEX_FIELD] !== true) return false;
   }
   if (options.excludeField !== 'worksWithUndergrads' && filters.worksWithUndergrads === true) {
     if (candidate[WORKS_WITH_UNDERGRADS_INDEX_FIELD] !== true) return false;

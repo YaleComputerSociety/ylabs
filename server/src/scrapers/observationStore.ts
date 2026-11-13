@@ -57,6 +57,7 @@ import {
   type RunScopedEmailRow,
 } from './runScopedEmailSupersede';
 import { mongooseConnectionWasOpened } from '../utils/mongooseConnectionWasOpened';
+import { sanitizeClassifierAdmissions, sanitizeRefusedValues } from './observationRefusals';
 
 export const QUALITY_GUARDED_PROSE_FIELDS = new Set(['fullDescription', 'shortDescription']);
 
@@ -64,6 +65,15 @@ export const QUALITY_GUARDED_PROSE_FIELDS = new Set(['fullDescription', 'shortDe
 // value-less latest-wins supersession are skipped, and the materializer reads the full
 // retained log and decides late (collapseLatestWins + the resolver's ranked prose
 // preference). Off by default so behavior is byte-identical to today.
+function refusalFieldsForStorage(obs: ObservationInput) {
+  const refusedValues = sanitizeRefusedValues(obs.refusedValues);
+  const admittedUnder = sanitizeClassifierAdmissions(obs.admittedUnder);
+  return {
+    ...(refusedValues.length > 0 ? { refusedValues } : {}),
+    ...(admittedUnder.length > 0 ? { admittedUnder } : {}),
+  };
+}
+
 export function c4LosslessIngestEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.C4_LOSSLESS_INGEST === 'true';
 }
@@ -894,6 +904,7 @@ export async function appendObservations(
       ...(obs.assertsNoValueFor && obs.assertsNoValueFor.length > 0
         ? { assertsNoValueFor: [...new Set(obs.assertsNoValueFor)] }
         : {}),
+      ...refusalFieldsForStorage(obs),
       ...(obs.reslugAdoption ? { reslugAdoption: true } : {}),
       ...(obs.extraction ? { extraction: { source: obs.extraction.source } } : {}),
       observationFingerprint: buildObservationFingerprint({
@@ -1203,6 +1214,11 @@ export const LATEST_WINS_FINGERPRINT_FIELDS_BY_ENTITY_TYPE: Readonly<
  * inferred from its name live beside the `CORE_FACILITY` every later read took from the
  * cores directory, and with one more `CENTER` vote from another lane the stale reading won
  * (#5749).
+ *
+ * Lead-school inheritance states one school and one department list per row per pass,
+ * derived from the lead's current appointment, so when the lead moves department the
+ * re-derived value must replace the lane's earlier one rather than stand beside it as a
+ * same-source conflict (#6053).
  */
 export const LATEST_WINS_FINGERPRINT_FIELDS_BY_SOURCE: Readonly<
   Record<string, ReadonlySet<string>>
@@ -1213,6 +1229,7 @@ export const LATEST_WINS_FINGERPRINT_FIELDS_BY_SOURCE: Readonly<
   'centers-institutes-index': new Set(['entityType', 'kind']),
   'center-member-profile-research': new Set(['researchSummary', 'bio']),
   'dept-faculty-roster': new Set(['userType']),
+  'lead-pi-school-inheritance': new Set(['school', 'departments']),
 };
 
 export function usesLatestWinsFingerprint(input: {

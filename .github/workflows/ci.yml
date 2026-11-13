@@ -89,8 +89,6 @@ jobs:
       # Changing this order also requires updating the step list in
       # skills/finishing-work/SKILL.md, which readers follow to predict CI.
       - name: Run ESLint (errors block, warnings advisory)
-        env:
-          NODE_OPTIONS: --max-old-space-size=6144
         run: yarn lint
 
       # Registration and inventory guards report in seconds, so a guard failure

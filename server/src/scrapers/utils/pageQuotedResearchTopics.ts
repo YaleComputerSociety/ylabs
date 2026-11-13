@@ -2,6 +2,7 @@ import { inflectionalStems, sharesAnInflectionalStem } from '../../utils/grounde
 import { sanitizeResearchAreaLabel } from '../../utils/researchAreaLabelHygiene';
 import { textScanForm } from '../researchAreaCanonicalization';
 import { RESEARCH_PAGE_TOPICS_DERIVED_SOURCE_NAME } from '../../models/fieldProvenanceBacking';
+import { restatesAnOwnOrgUnitLabel } from './ownOrgUnitLabelTopics';
 
 export const PAGE_QUOTED_RESEARCH_TOPICS_SOURCE = RESEARCH_PAGE_TOPICS_DERIVED_SOURCE_NAME;
 
@@ -9,7 +10,7 @@ export const PAGE_QUOTED_RESEARCH_TOPICS_SOURCE = RESEARCH_PAGE_TOPICS_DERIVED_S
  * Recorded on a derived list's provenance and kept out of the cache key. The filters below
  * re-judge the cached reading on every resolve, so a filter change re-derives at no model cost.
  */
-export const PAGE_QUOTED_TOPICS_FILTER_CONTRACT = 'page-quoted-topics-v1';
+export const PAGE_QUOTED_TOPICS_FILTER_CONTRACT = 'page-quoted-topics-v2';
 
 export const MAX_PAGE_QUOTED_TOPICS = 8;
 const MIN_QUOTE_WORDS = 2;
@@ -39,6 +40,7 @@ export type TopicRefusalReason =
   | 'unusable-label'
   | 'split-fragment'
   | 'acronym-only'
+  | 'own-org-unit-label'
   | 'duplicate'
   | 'generic-word'
   | 'over-limit'
@@ -311,6 +313,7 @@ function admitQuotedTopic(
   candidate: QuotedTopic,
   pages: readonly TopicSourcePage[],
   pageWords: ReadonlySet<string> | null,
+  ownOrgUnitLabels: readonly string[],
   refuse: (reason: TopicRefusalReason) => null,
 ): AdmittedTopic | null {
   const page = pageQuotedBy(candidate, pages);
@@ -325,6 +328,7 @@ function admitQuotedTopic(
   if (!label) return refuse('unusable-label');
   if (isSplitFragmentTopic(label)) return refuse('split-fragment');
   if (isUnsearchedAcronymTopic(label)) return refuse('acronym-only');
+  if (restatesAnOwnOrgUnitLabel(label, ownOrgUnitLabels)) return refuse('own-org-unit-label');
   return { label, url: page.url };
 }
 
@@ -334,18 +338,21 @@ function admitQuotedTopic(
  * survives. A topic whose quote is not on the page it names, or whose words the stored
  * pages do not carry, is dropped rather than repaired; the field topic needs only its quote,
  * because a discipline name is often the page's framing rather than its wording. A list in which only the field
- * survives is no list, so it returns no topics, as it does when nothing survives.
+ * survives is no list, so it returns no topics, as it does when nothing survives. A topic or
+ * field that only restates one of the row's own department, school or appointment labels is
+ * dropped (#5957).
  */
 export function derivePageQuotedResearchTopics(
   extraction: PageQuotedTopicExtraction,
   pages: readonly TopicSourcePage[],
+  ownOrgUnitLabels: readonly string[] = [],
 ): PageQuotedTopicsResult {
   const refusals: TopicRefusal[] = [];
   const pageWords = pageWordsOf(pages);
   const admitWith =
     (words: ReadonlySet<string> | null) =>
     (candidate: QuotedTopic): AdmittedTopic | null =>
-      admitQuotedTopic(candidate, pages, words, (reason) => {
+      admitQuotedTopic(candidate, pages, words, ownOrgUnitLabels, (reason) => {
         refusals.push({ topic: candidate.topic, reason });
         return null;
       });

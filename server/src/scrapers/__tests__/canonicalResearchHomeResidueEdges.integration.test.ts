@@ -1,7 +1,10 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { resolveCanonicalResearchHomeForResearcher } from '../canonicalResearchHomeResolver';
+import {
+  loadOfficialLeadRowsForResearcher,
+  resolveCanonicalResearchHomeForResearcher,
+} from '../canonicalResearchHomeResolver';
 
 const db = () => {
   const connection = mongoose.connection.db;
@@ -129,5 +132,34 @@ describe('resolveCanonicalResearchHomeForResearcher over merge and retirement re
     await expect(resolveCanonicalResearchHomeForResearcher(String(personId))).resolves.toEqual({
       status: 'ineligible',
     });
+  });
+
+  it('lists the live official rows a lead heads with only their current live co-leads (#5846)', async () => {
+    const personId = await seedPerson();
+    const partnerId = await seedPerson();
+    const departedId = await seedPerson();
+    const retiredId = await seedPerson();
+    const coLed = await seedRow({ slug: 'synthetic-co-led-lab', archived: false });
+    const own = await seedRow({ slug: 'synthetic-own-lab', archived: false });
+    const archivedRow = await seedRow({ slug: 'synthetic-archived-lab', archived: true });
+    await seedLeadEdge({ personId, rowId: coLed, archived: false });
+    await seedLeadEdge({ personId, rowId: own, archived: false });
+    await seedLeadEdge({ personId, rowId: archivedRow, archived: false });
+    await seedLeadEdge({ personId: partnerId, rowId: coLed, archived: false });
+    await seedLeadEdge({ personId: departedId, rowId: own, archived: false, state: 'HISTORICAL' });
+    await seedLeadEdge({ personId: retiredId, rowId: own, archived: true });
+
+    const rows = await loadOfficialLeadRowsForResearcher(String(personId));
+    expect(
+      rows
+        .map((row) => ({ slug: row.slug, leadPersonIds: [...row.leadPersonIds].sort() }))
+        .sort((a, b) => a.slug.localeCompare(b.slug)),
+    ).toEqual([
+      {
+        slug: 'synthetic-co-led-lab',
+        leadPersonIds: [String(personId), String(partnerId)].sort(),
+      },
+      { slug: 'synthetic-own-lab', leadPersonIds: [String(personId)] },
+    ]);
   });
 });

@@ -24,6 +24,7 @@ import {
 import { partitionStudentVisibilityReasons } from './studentVisibilityTier';
 import {
   pinRoleAssignmentUpsertToLiveEdge,
+  protectedRoleEdgeFor,
   RoleAssignment,
   roleAssignmentReattachWrite,
 } from '../models/roleAssignment';
@@ -105,14 +106,24 @@ import {
   resolveLeadOfficialProfileUrl,
 } from './leadProfileIdentity';
 import {
+  EMPTY_LEAD_MATCH_EVIDENCE,
+  leadMatchesDestinationThroughEvidence,
+  loadLeadMatchEvidence,
+  type LeadMatchEvidence,
+} from './leadMatchEvidence';
+import {
   buildResearchGroupFilterString,
   candidateMatchesStudentFilters,
+  entityTypesForStoredRows,
   HOSTS_UNDERGRADS_INDEX_FIELD,
+  RESEARCH_TYPE_INDEX_FIELD,
   WELCOMES_UNDERGRADS_INDEX_FIELD,
+  MENTORS_UNDERGRADS_INDEX_FIELD,
   WORKS_WITH_UNDERGRADS_INDEX_FIELD,
   ResearchGroupFilterInput,
   tallyCandidateFacetDistribution,
   visibilityScopeOnly,
+  withResearchTypeFilter,
 } from './researchGroupFilters';
 import {
   entityHasHostedUndergraduates,
@@ -577,6 +588,7 @@ export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
       role: 'PI',
     };
     const liveRoleFilter = await pinRoleAssignmentUpsertToLiveEdge(roleFilter);
+    if (await protectedRoleEdgeFor(roleFilter)) return { group, created: false };
     await RoleAssignment.updateOne(
       liveRoleFilter,
       {
@@ -698,11 +710,13 @@ const RESEARCH_ENTITY_SEARCH_CANDIDATE_ATTRIBUTES = [
   'id',
   'kind',
   'entityType',
+  RESEARCH_TYPE_INDEX_FIELD,
   'schools',
   'departments',
   'researchAreas',
   HOSTS_UNDERGRADS_INDEX_FIELD,
   WELCOMES_UNDERGRADS_INDEX_FIELD,
+  MENTORS_UNDERGRADS_INDEX_FIELD,
   WORKS_WITH_UNDERGRADS_INDEX_FIELD,
   UNDERGRAD_INVITATION_RANK_FIELD,
   MESH_DESCRIPTOR_ONLY_TERMS_FIELD,
@@ -1049,11 +1063,13 @@ const sanitizeResearchGroupSearchFilters = (
 ): ResearchGroupFilterInput => ({
   kind: boundedResearchFilterValues(filters.kind),
   entityType: boundedResearchFilterValues(filters.entityType),
+  researchType: boundedResearchFilterValues(filters.researchType),
   school: boundedResearchFilterValues(filters.school),
   departments: boundedResearchFilterValues(filters.departments),
   researchAreas: boundedResearchFilterValues(filters.researchAreas),
   hostsUndergrads: filters.hostsUndergrads === true ? true : undefined,
   welcomesUndergrads: filters.welcomesUndergrads === true ? true : undefined,
+  mentorsUndergrads: filters.mentorsUndergrads === true ? true : undefined,
   worksWithUndergrads: filters.worksWithUndergrads === true ? true : undefined,
   studentVisibilityTier: boundedResearchFilterValues(filters.studentVisibilityTier),
 });
@@ -1068,6 +1084,7 @@ const SEARCH_RERANK_CACHE_FILTER_LISTS = [
 const SEARCH_RERANK_CACHE_FILTER_TOGGLES = [
   'hostsUndergrads',
   'welcomesUndergrads',
+  'mentorsUndergrads',
   'worksWithUndergrads',
 ] as const;
 
@@ -1188,7 +1205,9 @@ const mongoFilterFromResearchFilters = (
   };
 
   if (filters.kind?.length) mongoFilter.kind = { $in: filters.kind };
-  if (filters.entityType?.length) mongoFilter.entityType = { $in: filters.entityType };
+  if (filters.entityType?.length) {
+    mongoFilter.entityType = { $in: entityTypesForStoredRows(filters.entityType) };
+  }
   if (filters.school?.length) mongoFilter.schools = { $in: filters.school };
   if (filters.departments?.length) mongoFilter.departments = { $in: filters.departments };
   if (filters.researchAreas?.length) mongoFilter.researchAreas = { $in: filters.researchAreas };
@@ -1730,21 +1749,24 @@ export const promoteExactAliasFieldMatches = <T>(hits: T[], aliasTerms: string[]
 // dropped; every other active filter still constrains the distribution. See
 // issue #1080.
 export const DISJUNCTIVE_RESEARCH_FACETS: ReadonlyArray<{
-  filterKey: 'school' | 'departments' | 'researchAreas' | 'entityType';
-  meiliField: 'schools' | 'departments' | 'researchAreas' | 'entityType';
+  filterKey: 'school' | 'departments' | 'researchAreas' | 'entityType' | 'researchType';
+  meiliField: 'schools' | 'departments' | 'researchAreas' | 'entityType' | 'researchType';
 }> = [
   { filterKey: 'school', meiliField: 'schools' },
   { filterKey: 'departments', meiliField: 'departments' },
   { filterKey: 'researchAreas', meiliField: 'researchAreas' },
   { filterKey: 'entityType', meiliField: 'entityType' },
+  { filterKey: 'researchType', meiliField: RESEARCH_TYPE_INDEX_FIELD },
 ];
 
 export const RESEARCH_ENTITY_SEARCH_FACET_FIELDS = [
   'schools',
   'departments',
   'entityType',
+  RESEARCH_TYPE_INDEX_FIELD,
   HOSTS_UNDERGRADS_INDEX_FIELD,
   WELCOMES_UNDERGRADS_INDEX_FIELD,
+  MENTORS_UNDERGRADS_INDEX_FIELD,
   WORKS_WITH_UNDERGRADS_INDEX_FIELD,
 ];
 
@@ -1760,14 +1782,16 @@ const POOL_TALLIED_RESEARCH_FACETS: ReadonlyArray<{
   })),
   { filterKey: 'hostsUndergrads', indexField: HOSTS_UNDERGRADS_INDEX_FIELD },
   { filterKey: 'welcomesUndergrads', indexField: WELCOMES_UNDERGRADS_INDEX_FIELD },
+  { filterKey: 'mentorsUndergrads', indexField: MENTORS_UNDERGRADS_INDEX_FIELD },
   { filterKey: 'worksWithUndergrads', indexField: WORKS_WITH_UNDERGRADS_INDEX_FIELD },
 ];
 
 const TOGGLE_FILTERS_AHEAD_OF_INDEX: ReadonlyArray<{
-  filterKey: 'welcomesUndergrads' | 'worksWithUndergrads';
+  filterKey: 'welcomesUndergrads' | 'mentorsUndergrads' | 'worksWithUndergrads';
   indexField: string;
 }> = [
   { filterKey: 'welcomesUndergrads', indexField: WELCOMES_UNDERGRADS_INDEX_FIELD },
+  { filterKey: 'mentorsUndergrads', indexField: MENTORS_UNDERGRADS_INDEX_FIELD },
   { filterKey: 'worksWithUndergrads', indexField: WORKS_WITH_UNDERGRADS_INDEX_FIELD },
 ];
 
@@ -1802,6 +1826,25 @@ const liveIndexFilterability = async (
     withMeiliAvailabilityGuard(meiliIndex, 'optional'),
   );
   return (field) => filterable === null || filterable.has(field);
+};
+
+// The Type facet is one axis: `researchType` once the index declares it, else the
+// `entityType` it refines, never both, so the client reads a single partition.
+export const researchFacetFieldsForIndex = (isFilterable: (field: string) => boolean): string[] =>
+  RESEARCH_ENTITY_SEARCH_FACET_FIELDS.filter(
+    (field) =>
+      isFilterable(field) && !(field === 'entityType' && isFilterable(RESEARCH_TYPE_INDEX_FIELD)),
+  );
+
+export const withoutUnavailableResearchTypes = (
+  filters: ResearchGroupFilterInput,
+  isFilterable: (field: string) => boolean,
+): { filters: ResearchGroupFilterInput; dropped?: AppliedStudentFilters } => {
+  const requested = filters.entityType ?? [];
+  if (requested.length === 0 || isFilterable(RESEARCH_TYPE_INDEX_FIELD)) return { filters };
+  const kept = withResearchTypeFilter(filters, false);
+  if ((kept.entityType ?? []).length === requested.length) return { filters };
+  return { filters: kept, dropped: { entityType: kept.entityType ?? [] } };
 };
 
 export const withoutUnfilterableToggles = (
@@ -2012,6 +2055,7 @@ const readsSearchRerankCache = (): boolean =>
 const MORE_TOPIC_RESULTS_ACCESS_TOGGLES = [
   'hostsUndergrads',
   'welcomesUndergrads',
+  'mentorsUndergrads',
   'worksWithUndergrads',
 ] as const;
 type MoreTopicResultsAccessToggle = (typeof MORE_TOPIC_RESULTS_ACCESS_TOGGLES)[number];
@@ -2028,6 +2072,9 @@ const carriesAccessToggleEvidence = (
   if (toggle === 'hostsUndergrads') return hosts;
   if (toggle === 'welcomesUndergrads') return welcomes;
   const listed = (entity as { undergradListEvidence?: unknown }).undergradListEvidence;
+  if (toggle === 'mentorsUndergrads') {
+    return entityMentorsUndergraduates({ undergradListEvidence: listed });
+  }
   return hosts || welcomes || (Array.isArray(listed) && listed.length > 0);
 };
 
@@ -2068,6 +2115,7 @@ async function optionalMoreTopicResults({
     ...filters,
     hostsUndergrads: undefined,
     welcomesUndergrads: undefined,
+    mentorsUndergrads: undefined,
     worksWithUndergrads: undefined,
   };
   const shownIds = new Set(
@@ -2122,13 +2170,19 @@ export async function searchResearchGroupsViaMeili(
   const acronym: AcronymRewriteChoice = { rewriteAcronym: options.rewriteAcronym !== false };
   const searchQuery = searchedAcronymForm(spelling.query, acronym);
   const studentFilters = await resolveStudentFiltersAgainstCorpus(filters, options);
-  const filterableToggles = answersFromMongoBrowse(searchQuery, options)
-    ? { filters: studentFilters.filters, dropped: undefined }
-    : withoutUnfilterableToggles(
-        studentFilters.filters,
-        await liveIndexFilterability(await getMeiliSearchIndex('researchentities')),
-      );
-  const droppedToggleFilters = filterableToggles.dropped;
+  const isFilterable = answersFromMongoBrowse(searchQuery, options)
+    ? undefined
+    : await liveIndexFilterability(await getMeiliSearchIndex('researchentities'));
+  const filterableToggles = isFilterable
+    ? withoutUnfilterableToggles(studentFilters.filters, isFilterable)
+    : { filters: studentFilters.filters, dropped: undefined };
+  const availableResearchTypes = isFilterable
+    ? withoutUnavailableResearchTypes(filterableToggles.filters, isFilterable)
+    : { filters: filterableToggles.filters, dropped: undefined };
+  const droppedToggleFilters =
+    filterableToggles.dropped || availableResearchTypes.dropped
+      ? { ...filterableToggles.dropped, ...availableResearchTypes.dropped }
+      : undefined;
   const rerankQueryKey =
     readsSearchRerankCache() && normalizeResearchSearchQuery(query).raw !== ''
       ? searchRerankCacheQueryKey(query, filters, acronym)
@@ -2217,8 +2271,11 @@ async function searchResearchGroupsForQuery(
   const meiliIndex = await getMeiliSearchIndex('researchentities');
   const liveFilterable = await liveIndexFilterability(meiliIndex);
   const sanitizedFilters = sanitizeResearchGroupSearchFilters(filters || {});
-  const safeFilters = withoutUnfilterableToggles(sanitizedFilters, liveFilterable).filters;
-  const facetFields = RESEARCH_ENTITY_SEARCH_FACET_FIELDS.filter(liveFilterable);
+  const safeFilters = withResearchTypeFilter(
+    withoutUnfilterableToggles(sanitizedFilters, liveFilterable).filters,
+    liveFilterable(RESEARCH_TYPE_INDEX_FIELD),
+  );
+  const facetFields = researchFacetFieldsForIndex(liveFilterable);
   const ordersHiringFirst =
     safeFilters.welcomesUndergrads === true &&
     !sort.sortBy &&
@@ -2294,6 +2351,10 @@ async function searchResearchGroupsForQuery(
       .filter(
         (entity) =>
           sanitizedFilters.welcomesUndergrads !== true || entityWelcomesUndergraduates(entity),
+      )
+      .filter(
+        (entity) =>
+          sanitizedFilters.mentorsUndergrads !== true || entityMentorsUndergraduates(entity),
       )
       .filter(
         (entity) =>
@@ -2867,8 +2928,10 @@ async function searchResearchGroupsForQuery(
     const {
       schools,
       researchAreas,
+      [RESEARCH_TYPE_INDEX_FIELD]: researchType,
       [HOSTS_UNDERGRADS_INDEX_FIELD]: hostingEvidence,
       [WELCOMES_UNDERGRADS_INDEX_FIELD]: invitationEvidence,
+      [MENTORS_UNDERGRADS_INDEX_FIELD]: mentoringEvidence,
       [WORKS_WITH_UNDERGRADS_INDEX_FIELD]: worksWithEvidence,
       ...rest
     } = rawDistribution;
@@ -2877,8 +2940,10 @@ async function searchResearchGroupsForQuery(
       ...rest,
       ...(cleanedResearchAreas ? { researchAreas: cleanedResearchAreas } : {}),
       ...(schools ? { school: schools } : {}),
+      ...(researchType ? { entityType: researchType } : {}),
       ...(hostingEvidence ? { hostsUndergrads: { true: hostingEvidence.true ?? 0 } } : {}),
       ...(invitationEvidence ? { welcomesUndergrads: { true: invitationEvidence.true ?? 0 } } : {}),
+      ...(mentoringEvidence ? { mentorsUndergrads: { true: mentoringEvidence.true ?? 0 } } : {}),
       ...(worksWithEvidence ? { worksWithUndergrads: { true: worksWithEvidence.true ?? 0 } } : {}),
     };
   };
@@ -2999,7 +3064,7 @@ async function searchResearchGroupsForQuery(
     !withRerankCandidateFingerprints &&
     serviceCoreDemotionExemption({
       answeredAsNameSearch: keywordLegTopHitNamesTheQuery,
-      filters: safeFilters,
+      filters: sanitizedFilters,
     }) === null;
   const pageRowIds = (hits: any[]): string[] =>
     hits
@@ -4486,9 +4551,29 @@ function memberDisplayName(member: { user?: any }): string {
   ).trim();
 }
 
+/**
+ * The detail page's lead identity, reading fold and page-ORCID evidence only when the lead's own
+ * official profile gives no unique answer, so a single-lead row whose lead matches directly costs
+ * no extra query. A multi-lead row still reads evidence, because a second lead matching only
+ * through evidence must keep the match from being unique.
+ */
+export async function resolveResearchDetailLeadIdentity(
+  group: Record<string, any>,
+  members: Array<{ user: any; role: string; row?: any }>,
+  loadEvidence: typeof loadLeadMatchEvidence = loadLeadMatchEvidence,
+): Promise<ReturnType<typeof researchDetailLeadIdentity>> {
+  const direct = researchDetailLeadIdentity(group, members);
+  if (direct.leadIdentityStatus === 'under_review') return direct;
+  const leads = members.filter((member) => PUBLIC_LEAD_ROLES.has(member.role));
+  if (leads.length === 0) return direct;
+  if (direct.leadProfessorPublicKey && leads.length === 1) return direct;
+  return researchDetailLeadIdentity(group, members, await loadEvidence(group, leads));
+}
+
 export function researchDetailLeadIdentity(
   group: Record<string, any>,
   members: Array<{ user: any; role: string; row?: any }>,
+  leadMatchEvidence: LeadMatchEvidence = EMPTY_LEAD_MATCH_EVIDENCE,
 ): { leadIdentityStatus: 'verified' | 'under_review'; leadProfessorPublicKey?: string } {
   const leadMembers = members.filter((member) => PUBLIC_LEAD_ROLES.has(member.role));
   if (leadMembers.some((member) => member.row?.reviewStatus === 'DISPUTED')) {
@@ -4498,10 +4583,12 @@ export function researchDetailLeadIdentity(
     return { leadIdentityStatus: 'under_review' };
   }
   const entityProfileDestinations = entityOfficialPersonProfileDestinations(group);
-  const matchingMembers = leadMembers.filter((member) =>
-    entityProfileDestinations.has(
-      normalizeOfficialProfileDestination(resolveLeadOfficialProfileUrl(member)),
-    ),
+  const matchingMembers = leadMembers.filter(
+    (member) =>
+      entityProfileDestinations.has(
+        normalizeOfficialProfileDestination(resolveLeadOfficialProfileUrl(member)),
+      ) ||
+      leadMatchesDestinationThroughEvidence(member, entityProfileDestinations, leadMatchEvidence),
   );
 
   if (detectProfileIdentityRisk({ entity: group, leadMembers })) {
@@ -5142,7 +5229,7 @@ export async function getResearchGroupDetail(
   const corroboratedMembers = dropUncorroboratedPhantomLeads(canonicalMembers);
   const imageGuardedMembersWithRows = await withPublicMemberImageGuards(corroboratedMembers);
   const dedupedMembersWithRows = dedupeSameNameLeadMembers(imageGuardedMembersWithRows, group);
-  const leadIdentity = researchDetailLeadIdentity(
+  const leadIdentity = await resolveResearchDetailLeadIdentity(
     group as Record<string, any>,
     dedupedMembersWithRows,
   );

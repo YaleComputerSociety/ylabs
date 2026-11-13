@@ -178,6 +178,11 @@ export interface ResearchEntityRosterScope {
   peopleHoldingCanonicalRoles?: readonly RoleAssignmentRole[];
 }
 
+const SERVABLE_RESEARCHER_FILTER = {
+  archived: { $ne: true },
+  dedupedIntoResearcherId: null,
+} as const;
+
 const peopleHoldingRolesInEntities = async (
   entityIds: mongoose.Types.ObjectId[],
   roles: readonly RoleAssignmentRole[],
@@ -217,7 +222,7 @@ export async function getResearchEntityRosterByEntityId(
 
   const personIds = uniqueObjectIds(assignments.map((assignment: any) => assignment.personId));
   const people = personIds.length
-    ? await Researcher.find({ _id: { $in: personIds }, archived: { $ne: true } })
+    ? await Researcher.find({ _id: { $in: personIds }, ...SERVABLE_RESEARCHER_FILTER })
         .select(
           '_id displayName profile profileLinks identifiers.orcid identifiers.netid identifiers.email',
         )

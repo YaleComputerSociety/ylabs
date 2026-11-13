@@ -119,6 +119,26 @@ describe('a stored or stated directory export code resolves to a catalog departm
     expect(await departmentOf(person._id)).toBe('History');
   });
 
+  it('decodes a stored two-letter subject code, and a second resolve writes nothing', async () => {
+    const person = await seedPerson({ primaryDepartment: 'FS - Fixture Studies' });
+    await seedKey('yale-directory');
+
+    await resolve();
+    expect(await departmentOf(person._id)).toBe('Fixture Studies');
+
+    expect((await resolve()).fieldsWritten).toBe(0);
+  });
+
+  it('clears a stored three-letter subject code that names a school', async () => {
+    const person = await seedPerson({ primaryDepartment: 'LAW - Law' });
+    await seedKey('yale-directory');
+
+    await resolve();
+    expect(await departmentOf(person._id)).toBeUndefined();
+
+    expect((await resolve()).fieldsWritten).toBe(0);
+  });
+
   it('clears a stored code that maps to no department, so the directory can fill it', async () => {
     const person = await seedPerson({ primaryDepartment: 'ENVOTH Other Units' });
     await seedKey('yale-directory', 'Fixture Studies');

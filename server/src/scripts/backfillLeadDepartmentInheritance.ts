@@ -64,6 +64,19 @@ export function parseLeadDepartmentBackfillArgs(argv: string[]): LeadDepartmentB
   return options;
 }
 
+// Selects inherited rows by provenance only: whether the value still agrees with the
+// lead's current department is `inheritSchoolFromLeadPi`'s decision, not this query's (#6053).
+export const LEAD_DEPARTMENT_INHERITANCE_CANDIDATE_FILTER = {
+  archived: { $ne: true },
+  $or: [
+    { departments: { $size: 0 } },
+    { departments: { $exists: false } },
+    { school: { $in: ['', null] } },
+    { 'fieldProvenance.school.sourceName': LEAD_PI_SCHOOL_INHERITANCE_SOURCE },
+    { 'fieldProvenance.departments.sourceName': LEAD_PI_SCHOOL_INHERITANCE_SOURCE },
+  ],
+};
+
 interface CandidateRow {
   _id: unknown;
   slug?: string;
@@ -77,7 +90,9 @@ interface CandidateRow {
  * entity, so a row materialized before its lead's department was known, or before
  * that department was in the `OrgUnit` catalog, never picks it up. Catalog work is
  * therefore invisible until this pass runs: adding an alias changes what a string
- * resolves to, not what any served row stores.
+ * resolves to, not what any served row stores. The Development sweep runs it as the
+ * `lead-department-inheritance` stage, after person-side materialization and before
+ * the visibility gate (#6033).
  */
 export async function runLeadDepartmentBackfill(options: {
   dryRun: boolean;
@@ -89,14 +104,7 @@ export async function runLeadDepartmentBackfill(options: {
 }> {
   resetOrgUnitCanonicalizerCache();
 
-  const query = ResearchEntity.find({
-    archived: { $ne: true },
-    $or: [
-      { departments: { $size: 0 } },
-      { departments: { $exists: false } },
-      { school: { $in: ['', null] } },
-    ],
-  })
+  const query = ResearchEntity.find(LEAD_DEPARTMENT_INHERITANCE_CANDIDATE_FILTER)
     .select('_id slug manuallyLockedFields')
     .sort({ _id: 1 });
   if (options.limit) query.limit(options.limit);

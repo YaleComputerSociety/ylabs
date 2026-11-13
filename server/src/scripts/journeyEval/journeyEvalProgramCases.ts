@@ -29,6 +29,7 @@ import {
   type ServedRowGateObservation,
 } from './journeyEvalProgramMetrics';
 import { attributeProgramServedFields } from './programServedFieldAttribution';
+import { programSatisfiesCitizenshipOption } from '../../utils/programCitizenshipOptions';
 import {
   PROGRAM_STATED_ONLY_FACET_FIELDS,
   programFacetValueNotStated,
@@ -141,6 +142,9 @@ export const rowCarriesFilterValue = (
   value: string,
 ): boolean => {
   const served = row[field];
+  if (field === 'citizenshipStatus') {
+    return Array.isArray(served) && programSatisfiesCitizenshipOption(served, value);
+  }
   return Array.isArray(served) ? served.includes(value) : served === value;
 };
 

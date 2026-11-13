@@ -5,7 +5,10 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeConnections } from '../db/connections';
 import { LEAD_ROLE_CANONICAL_VALUES } from '../models/canonicalRoleMapping';
-import { DETACHED_ROLE_ASSIGNMENT_REVIEW_STATUS } from '../models/roleAssignment';
+import {
+  DETACHED_ROLE_ASSIGNMENT_REVIEW_STATUS,
+  roleAssignmentReattachWrite,
+} from '../models/roleAssignment';
 import { loadDirectoryNetidsByAddress } from '../scrapers/directoryContradictedProfileNetid';
 import { resolveNetidForRosterEmailAlias } from '../scrapers/entityMaterializer';
 import { loadDistinctPeopleVerdictIndex } from '../services/distinctPeopleVerdicts';
@@ -18,6 +21,14 @@ import {
   buildCanonicalNameIndex,
   buildCanonicalNetidIndex,
   buildVerifiedPrimaryProfileIndex,
+  buildYaleOfficialProfileIndex,
+  CITED_OFFICIAL_PAGE_REFUSALS,
+  citedOfficialPageRefusal,
+  type CitedOfficialPageRefusal,
+  citedOfficialPageKey,
+  routeCitedOfficialPagePairs,
+  sharedOfficialProfileNamesAgree,
+  yaleOfficialPageWitnessKeys,
   decideShellMerge,
   type DirectoryEmailCandidate,
   emaillessLocalPartTwinAliases,
@@ -29,6 +40,8 @@ import {
   officialPageWitnessDestination,
   orcidOnlyHoldersByOrcid,
   planShellEdgeMoves,
+  planFoldedShellEdgeHeals,
+  type FoldedShellEdgeHeal,
   distinctPeoplePairKey,
   type NameVariantCandidate,
   withoutDistinctPeopleFolds,
@@ -55,11 +68,14 @@ import {
 } from './dedupeAccountlessResearcherShellsCore';
 import { isLocalPartNetid } from '../utils/localPartNetid';
 import { planResearcherRefusedStoredValueClear } from '../utils/researcherFieldValueRefusals';
+import { plausiblePersonOrcid } from '../utils/orcid';
 import {
   isLikelyOfficialPersonProfileUrl,
   normalizeOfficialProfileDestination,
 } from '../services/leadProfileIdentity';
 import { parseRosterMemberIdentityEvidence } from '../scrapers/utils/rosterMemberIdentityEvidence';
+import { namesStatedAtPersonPagesByPage } from '../scrapers/utils/personPageStatedNames';
+import { officialProfileUrlSpellings } from '../scrapers/utils/officialProfileIdentityUrlKey';
 
 dotenv.config({ quiet: true });
 
@@ -72,6 +88,7 @@ export interface ResearcherDedupeStageDelta {
   shellsMerged: number;
   roleAssignmentsRepointed: number;
   roleAssignmentsArchivedRedundant: number;
+  roleAssignmentsHealed: number;
   rosterChangedEntities: number;
   regatedEntities: number;
   profileLinksAppended: number;
@@ -181,8 +198,16 @@ export interface DedupeAccountlessResearcherShellsResult {
     folds: number;
     refusedGroups: Record<AccountlessClusterRefusal, number>;
   };
+  citedOfficialPage: {
+    witnessedPairs: number;
+    ambiguousShells: number;
+    refusals: Record<CitedOfficialPageRefusal, number>;
+  };
   roleAssignmentsRepointed: number;
   roleAssignmentsArchivedRedundant: number;
+  /** Current edges an earlier fold archived beside an ended survivor edge, now on the survivor. */
+  roleAssignmentsHealed: number;
+  heals: FoldedShellEdgeHeal[];
   /** Entities whose roster the merges edited, and so the population the re-gate covers. */
   rosterChangedEntities: number;
   regatedEntities: number;
@@ -295,9 +320,25 @@ async function loadRosterIdentityCandidates(
   return candidatesByShellId;
 }
 
+interface SharedRowCandidateLoad {
+  candidatesByShellId: Map<string, SharedRowCandidate[]>;
+  statedNamesByShellId: Map<string, string[]>;
+}
+
+const officialPersonPagesOf = (profileLinks: unknown): string[] =>
+  (Array.isArray(profileLinks) ? profileLinks : [])
+    .filter((link: any) => link?.kind === 'YALE_OFFICIAL' && isPersonProfileDestination(link?.url))
+    .map((link: any) => String(link.url));
+
+const namesStatedAtPages = (
+  pages: readonly string[],
+  namesByPage: ReadonlyMap<string, string[]>,
+): string[] => [...new Set(pages.flatMap((page) => namesByPage.get(page) ?? []))];
+
 async function loadSharedRowCandidates(
   RoleAssignment: mongoose.mongo.Collection,
   ResearchEntities: mongoose.mongo.Collection,
+  Observations: mongoose.mongo.Collection,
   shellIds: string[],
   researcherIdentities: ReadonlyArray<{
     id: string;
@@ -306,20 +347,23 @@ async function loadSharedRowCandidates(
     orcid?: unknown;
     netid?: unknown;
     title?: unknown;
+    profileLinks?: unknown;
   }>,
-): Promise<Map<string, SharedRowCandidate[]>> {
+): Promise<SharedRowCandidateLoad> {
   const candidatesByShellId = new Map<string, SharedRowCandidate[]>();
-  if (shellIds.length === 0) return candidatesByShellId;
+  const statedNamesByShellId = new Map<string, string[]>();
+  const empty = { candidatesByShellId, statedNamesByShellId };
+  if (shellIds.length === 0) return empty;
   const projection = { projection: { personId: 1, target: 1 } };
   const shellEdges = (await RoleAssignment.find(
     {
       ...LIVE_ROSTER_EDGE_FILTER,
       personId: { $in: shellIds.map((id) => new mongoose.Types.ObjectId(id)) },
     },
-    projection,
+    { projection: { personId: 1, target: 1, 'rosterProvenance.profileUrl': 1 } },
   ).toArray()) as any[];
   const targetIds = [...new Set(shellEdges.map((edge) => idKey(edge.target?.id)).filter(Boolean))];
-  if (targetIds.length === 0) return candidatesByShellId;
+  if (targetIds.length === 0) return empty;
   const liveTargets = new Set(
     (
       await ResearchEntities.find(
@@ -367,7 +411,40 @@ async function loadSharedRowCandidates(
     }
     candidatesByShellId.set(shellId, list);
   }
-  return candidatesByShellId;
+  const shellPagesById = new Map<string, Set<string>>();
+  for (const shellId of candidatesByShellId.keys()) {
+    shellPagesById.set(
+      shellId,
+      new Set(officialPersonPagesOf(identityById.get(shellId)?.profileLinks)),
+    );
+  }
+  for (const edge of shellEdges) {
+    const pages = shellPagesById.get(idKey(edge.personId));
+    const profileUrl = edge.rosterProvenance?.profileUrl;
+    if (pages && isPersonProfileDestination(profileUrl)) pages.add(String(profileUrl));
+  }
+  const candidateIds = new Set(
+    [...candidatesByShellId.values()].flatMap((list) => list.map((candidate) => candidate.id)),
+  );
+  const candidatePagesById = new Map(
+    [...candidateIds].map((id) => [id, officialPersonPagesOf(identityById.get(id)?.profileLinks)]),
+  );
+  const namesByPage = await namesStatedAtPersonPagesByPage(Observations, [
+    ...[...shellPagesById.values()].flatMap((pages) => [...pages]),
+    ...[...candidatePagesById.values()].flat(),
+  ]);
+  for (const [shellId, pages] of shellPagesById) {
+    statedNamesByShellId.set(shellId, namesStatedAtPages([...pages], namesByPage));
+  }
+  for (const list of candidatesByShellId.values()) {
+    for (const candidate of list) {
+      candidate.statedNames = namesStatedAtPages(
+        candidatePagesById.get(candidate.id) ?? [],
+        namesByPage,
+      );
+    }
+  }
+  return { candidatesByShellId, statedNamesByShellId };
 }
 
 const observationReadScope = { superseded: { $ne: true } };
@@ -558,6 +635,196 @@ async function loadNameVariantCandidates(
   return candidatesByShellId;
 }
 
+const LISTING_NAME_FIELDS = ['inferredUserName', 'name'];
+
+function listingStatedName(value: unknown): string {
+  if (typeof value === 'string') return value.trim();
+  if (!value || typeof value !== 'object') return '';
+  const { fname, lname } = value as Record<string, unknown>;
+  return [fname, lname]
+    .filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
+    .map((part) => part.trim())
+    .join(' ');
+}
+
+const PAIR_BLOCKING_REFUSALS: ReadonlySet<CitedOfficialPageRefusal> = new Set([
+  'listing-name-not-page-subject',
+  'third-page-holder',
+  'identifier-conflict',
+]);
+
+interface CitedOfficialPageLoad {
+  pairs: Array<[string, string]>;
+  refusals: Record<CitedOfficialPageRefusal, number>;
+}
+
+async function loadCitedOfficialPagePairs(
+  RoleAssignment: mongoose.mongo.Collection,
+  ResearchEntities: mongoose.mongo.Collection,
+  Observations: mongoose.mongo.Collection,
+  researcherIdentities: ReadonlyArray<{
+    id: string;
+    displayName?: unknown;
+    email?: unknown;
+    orcid?: unknown;
+    netid?: unknown;
+    profileLinks?: unknown;
+  }>,
+): Promise<CitedOfficialPageLoad> {
+  const refusals = Object.fromEntries(
+    CITED_OFFICIAL_PAGE_REFUSALS.map((refusal) => [refusal, 0]),
+  ) as Record<CitedOfficialPageRefusal, number>;
+  const holderIdsByPage = new Map<string, string[]>();
+  const holderUrlsByPage = new Map<string, Set<string>>();
+  for (const identity of researcherIdentities) {
+    for (const link of Array.isArray(identity.profileLinks) ? identity.profileLinks : []) {
+      if (link?.kind !== 'YALE_OFFICIAL') continue;
+      const page = citedOfficialPageKey(link.url);
+      if (!page) continue;
+      const holders = holderIdsByPage.get(page) ?? [];
+      if (!holders.includes(identity.id)) holderIdsByPage.set(page, [...holders, identity.id]);
+      holderUrlsByPage.set(page, (holderUrlsByPage.get(page) ?? new Set()).add(String(link.url)));
+    }
+  }
+  const identityById = new Map(researcherIdentities.map((entry) => [entry.id, entry]));
+  const citingEdges = (await RoleAssignment.find(
+    {
+      'target.kind': 'RESEARCH_ENTITY',
+      'rosterProvenance.profileUrl': { $nin: [null, ''] },
+      personId: {
+        $in: researcherIdentities.map((entry) => new mongoose.Types.ObjectId(entry.id)),
+      },
+    },
+    { projection: { personId: 1, target: 1, state: 1, archived: 1, rosterProvenance: 1 } },
+  ).toArray()) as any[];
+  const candidates: Array<{ edge: any; citerId: string; holderId: string; page: string }> = [];
+  for (const edge of citingEdges) {
+    const citerId = idKey(edge.personId);
+    const citer = identityById.get(citerId);
+    const page = citedOfficialPageKey(edge.rosterProvenance?.profileUrl);
+    if (!citer || !page) continue;
+    if (yaleOfficialPageWitnessKeys(citer.profileLinks).includes(page)) continue;
+    for (const holderId of holderIdsByPage.get(page) ?? []) {
+      if (holderId === citerId) continue;
+      const holder = identityById.get(holderId);
+      if (!holder || !sharedOfficialProfileNamesAgree(holder.displayName, citer.displayName)) {
+        continue;
+      }
+      candidates.push({ edge, citerId, holderId, page });
+    }
+  }
+  if (candidates.length === 0) return { pairs: [], refusals };
+
+  const targetIds = [...new Set(candidates.map(({ edge }) => idKey(edge.target?.id)))];
+  const liveTargets = new Set(
+    (
+      await ResearchEntities.find(
+        {
+          _id: { $in: targetIds.map((id) => new mongoose.Types.ObjectId(id)) },
+          archived: { $ne: true },
+        },
+        { projection: { _id: 1 } },
+      ).toArray()
+    ).map((row: any) => idKey(row._id)),
+  );
+  const citedUrls = [
+    ...new Set(candidates.map(({ edge }) => String(edge.rosterProvenance.profileUrl))),
+  ];
+  const citedUrlsBySpelling = new Map<string, Set<string>>();
+  for (const url of citedUrls) {
+    for (const spelling of officialProfileUrlSpellings(url)) {
+      citedUrlsBySpelling.set(spelling, (citedUrlsBySpelling.get(spelling) ?? new Set()).add(url));
+    }
+  }
+  const listingKeysByUrl = new Map<string, Set<string>>();
+  for (const observation of (await Observations.find(
+    {
+      entityType: 'researchGroupMember',
+      field: 'profileUrl',
+      value: { $in: [...citedUrlsBySpelling.keys()] },
+      ...observationReadScope,
+    },
+    { projection: { entityKey: 1, value: 1 } },
+  ).toArray()) as any[]) {
+    for (const url of citedUrlsBySpelling.get(String(observation.value)) ?? []) {
+      listingKeysByUrl.set(
+        url,
+        (listingKeysByUrl.get(url) ?? new Set()).add(String(observation.entityKey)),
+      );
+    }
+  }
+  const listingKeys = [...new Set([...listingKeysByUrl.values()].flatMap((keys) => [...keys]))];
+  const namesByListingKey = new Map<string, string[]>();
+  if (listingKeys.length > 0) {
+    for (const observation of (await Observations.find(
+      {
+        entityType: 'researchGroupMember',
+        entityKey: { $in: listingKeys },
+        field: { $in: LISTING_NAME_FIELDS },
+        ...observationReadScope,
+      },
+      { projection: { entityKey: 1, value: 1 } },
+    ).toArray()) as any[]) {
+      const name = listingStatedName(observation.value);
+      if (!name) continue;
+      const key = String(observation.entityKey);
+      namesByListingKey.set(key, [...(namesByListingKey.get(key) ?? []), name]);
+    }
+  }
+  const pages = [...new Set(candidates.map(({ page }) => page))];
+  const namesByPageUrl = await namesStatedAtPersonPagesByPage(
+    Observations,
+    pages.flatMap((page) => [...(holderUrlsByPage.get(page) ?? [])]),
+  );
+
+  const now = new Date();
+  const accepted = new Map<string, [string, string]>();
+  const blocked = new Set<string>();
+  for (const { edge, citerId, holderId, page } of candidates) {
+    const provenance = edge.rosterProvenance ?? {};
+    const liveListingNames = [
+      ...new Set(
+        [...(listingKeysByUrl.get(String(provenance.profileUrl)) ?? [])].flatMap(
+          (key) => namesByListingKey.get(key) ?? [],
+        ),
+      ),
+    ];
+    const refusal = citedOfficialPageRefusal({
+      holder: identityById.get(holderId)!,
+      citer: identityById.get(citerId)!,
+      listing: {
+        archived: edge.archived,
+        state: edge.state,
+        targetIsLive: liveTargets.has(idKey(edge.target?.id)),
+        sourceName: provenance.sourceName,
+        sourceUrl: provenance.sourceUrl,
+        profileUrl: provenance.profileUrl,
+        membershipKey: provenance.membershipKey,
+        freshnessExpiresAt: provenance.freshnessExpiresAt,
+        liveListingNames,
+      },
+      pageStatedNames: [
+        ...new Set(
+          [...(holderUrlsByPage.get(page) ?? [])].flatMap((url) => namesByPageUrl.get(url) ?? []),
+        ),
+      ],
+      pageHolderIds: holderIdsByPage.get(page) ?? [],
+      now,
+    });
+    const pairKey = distinctPeoplePairKey(citerId, holderId);
+    if (refusal) {
+      refusals[refusal] += 1;
+      if (PAIR_BLOCKING_REFUSALS.has(refusal)) blocked.add(pairKey);
+      continue;
+    }
+    accepted.set(pairKey, [citerId, holderId]);
+  }
+  return {
+    pairs: [...accepted].filter(([key]) => !blocked.has(key)).map(([, pair]) => pair),
+    refusals,
+  };
+}
+
 interface ListingSubjectStatements {
   netidsByShellId: Map<string, Array<ReadonlySet<string>>>;
   subjectOrcidsByShellId: Map<string, string[]>;
@@ -682,8 +949,10 @@ async function loadListingSubjectStatements(
 
 const ORCID_PATTERN = /\d{4}-\d{4}-\d{4}-\d{3}[\dX]/i;
 
-const bareOrcid = (value: unknown): string | undefined =>
-  typeof value === 'string' ? ORCID_PATTERN.exec(value)?.[0].toUpperCase() : undefined;
+const bareOrcid = (value: unknown): string | undefined => {
+  const stated = typeof value === 'string' ? ORCID_PATTERN.exec(value)?.[0] : undefined;
+  return plausiblePersonOrcid(stated) || undefined;
+};
 
 const officialPageWitnessKey = (url: unknown): string =>
   typeof url === 'string' && url
@@ -903,6 +1172,110 @@ async function planAliasTwinFoldsFor(
   });
 }
 
+export async function planHealsForFoldedShells(input: {
+  Researcher: mongoose.mongo.Collection;
+  RoleAssignment: mongoose.mongo.Collection;
+  liveResearcherIds: ReadonlySet<string>;
+  foldingResearcherIds: ReadonlySet<string>;
+  onlyShellIds?: ReadonlyArray<string>;
+}): Promise<FoldedShellEdgeHeal[]> {
+  const foldedShells = (
+    (await input.Researcher.find(
+      { archived: true, dedupedIntoResearcherId: { $ne: null } },
+      { projection: { dedupedIntoResearcherId: 1, dedupedAt: 1 } },
+    ).toArray()) as any[]
+  )
+    .map((doc) => ({
+      id: idKey(doc._id),
+      survivorId: idKey(doc.dedupedIntoResearcherId),
+      dedupedAt: doc.dedupedAt,
+    }))
+    .filter(
+      (shell) =>
+        input.liveResearcherIds.has(shell.survivorId) &&
+        !input.foldingResearcherIds.has(shell.survivorId),
+    );
+  if (foldedShells.length === 0) return [];
+  const archivedShellEdges = (
+    (await input.RoleAssignment.find({
+      personId: { $in: foldedShells.map((shell) => new mongoose.Types.ObjectId(shell.id)) },
+      archived: true,
+      state: { $ne: 'HISTORICAL' },
+      'target.kind': 'RESEARCH_ENTITY',
+    }).toArray()) as any[]
+  ).map((ra) => ({
+    id: idKey(ra._id),
+    personId: idKey(ra.personId),
+    targetKind: ra.target?.kind,
+    targetId: idKey(ra.target?.id),
+    role: ra.role,
+    state: ra.state,
+    archived: ra.archived,
+    endedAt: ra.endedAt,
+    reviewStatus: ra.reviewStatus,
+    reviewNotes: ra.reviewNotes,
+    reviewedBy: ra.reviewedBy,
+    reviewedAt: ra.reviewedAt,
+  }));
+  if (archivedShellEdges.length === 0) return [];
+  const targetObjectIds = [...new Set(archivedShellEdges.map((edge) => edge.targetId))]
+    .filter((id) => mongoose.Types.ObjectId.isValid(id))
+    .map((id) => new mongoose.Types.ObjectId(id));
+  const survivorObjectIds = [...new Set(foldedShells.map((shell) => shell.survivorId))].map(
+    (id) => new mongoose.Types.ObjectId(id),
+  );
+  const survivorEdges = (
+    (await input.RoleAssignment.find({
+      personId: { $in: survivorObjectIds },
+      'target.kind': 'RESEARCH_ENTITY',
+      'target.id': { $in: targetObjectIds },
+    }).toArray()) as any[]
+  ).map((ra) => ({
+    id: idKey(ra._id),
+    personId: idKey(ra.personId),
+    targetKind: ra.target?.kind,
+    targetId: idKey(ra.target?.id),
+    role: ra.role,
+    state: ra.state,
+    archived: ra.archived,
+    reviewStatus: ra.reviewStatus,
+    endedAt: ra.endedAt,
+  }));
+  const liveTargetIds = new Set(
+    (
+      (await mongoose.connection
+        .collection('research_entities')
+        .find(
+          { _id: { $in: targetObjectIds }, archived: { $ne: true } },
+          { projection: { _id: 1 } },
+        )
+        .toArray()) as any[]
+    ).map((doc) => idKey(doc._id)),
+  );
+  const auditedEdgeIds = new Set(
+    (
+      (await mongoose.connection
+        .collection('admin_audit_events')
+        .find(
+          { targetId: { $in: archivedShellEdges.map((edge) => edge.id) } },
+          { projection: { targetId: 1 } },
+        )
+        .toArray()) as any[]
+    ).map((doc) => idKey(doc.targetId)),
+  );
+  const heals = planFoldedShellEdgeHeals({
+    foldedShells,
+    archivedShellEdges,
+    survivorEdges,
+    liveSurvivorIds: input.liveResearcherIds,
+    liveTargetIds,
+    auditedEdgeIds,
+  });
+  if (!input.onlyShellIds) return heals;
+  const scopedShellIds = new Set(input.onlyShellIds);
+  return heals.filter((heal) => scopedShellIds.has(heal.shellId));
+}
+
 export async function dedupeAccountlessResearcherShells(options: {
   apply: boolean;
   onlyShellIds?: ReadonlyArray<string>;
@@ -964,6 +1337,7 @@ export async function dedupeAccountlessResearcherShells(options: {
   const canonicalNetidIndex = buildCanonicalNetidIndex(researcherIdentities);
 
   const verifiedProfileIndex = buildVerifiedPrimaryProfileIndex(researcherIdentities);
+  const sharedOfficialProfileIndex = buildYaleOfficialProfileIndex(researcherIdentities);
 
   const foldableShells = researcherIdentities.filter(
     (entry) => researcherIdentityTier(entry) !== 'DIRECTORY',
@@ -979,8 +1353,10 @@ export async function dedupeAccountlessResearcherShells(options: {
     AMBIGUOUS_MULTIPLE_CANONICAL: 0,
     ORCID_CONFLICT: 0,
     NETID_CONFLICT: 0,
+    EMAIL_CONFLICT: 0,
     NO_IDENTITY_WITNESS: 0,
     VARIANT_SHAPE_NOT_ALLOWED: 0,
+    STATED_MIDDLE_INITIAL_CONFLICT: 0,
   };
 
   const rosterIdentityCandidatesByShellId = await loadRosterIdentityCandidates(
@@ -989,9 +1365,10 @@ export async function dedupeAccountlessResearcherShells(options: {
     researcherIdentities,
   );
 
-  const sharedRowCandidatesByShellId = await loadSharedRowCandidates(
+  const sharedRowLoad = await loadSharedRowCandidates(
     RoleAssignment,
     mongoose.connection.collection('research_entities'),
+    mongoose.connection.collection('observations'),
     foldableShells.map((entry) => entry.id),
     researcherIdentities,
   );
@@ -1026,12 +1403,12 @@ export async function dedupeAccountlessResearcherShells(options: {
   const matchedIdentityByShellId = new Map<string, ShellFoldIdentity>();
   for (const shell of foldableShells) {
     const decision = decideShellMerge(
-      shell,
+      { ...shell, statedNames: sharedRowLoad.statedNamesByShellId.get(shell.id) },
       canonicalIndex,
       canonicalNetidIndex,
       rosterIdentityCandidatesByShellId.get(shell.id),
       verifiedProfileIndex,
-      sharedRowCandidatesByShellId.get(shell.id),
+      sharedRowLoad.candidatesByShellId.get(shell.id),
       nameVariantCandidatesByShellId.get(shell.id),
       listingSubjectStatements.netidsByShellId.get(shell.id),
       directoryEmailHolders,
@@ -1039,12 +1416,28 @@ export async function dedupeAccountlessResearcherShells(options: {
       officialPageHolders,
       listingSubjectStatements.subjectOrcidsByShellId.get(shell.id),
       orcidOnlyHolders,
+      sharedOfficialProfileIndex,
     );
     byReason[decision.reason] += 1;
     if (decision.merge && decision.canonicalId && decision.canonicalId !== shell.id) {
       decidedTargetByShellId.set(shell.id, decision.canonicalId);
       if (decision.matchedOn) matchedIdentityByShellId.set(shell.id, decision.matchedOn);
     }
+  }
+  const citedOfficialPageLoad = await loadCitedOfficialPagePairs(
+    RoleAssignment,
+    mongoose.connection.collection('research_entities'),
+    mongoose.connection.collection('observations'),
+    researcherIdentities,
+  );
+  const citedOfficialPageRouting = routeCitedOfficialPagePairs(
+    citedOfficialPageLoad.pairs,
+    new Map(researcherIdentities.map((entry) => [entry.id, researcherIdentityTier(entry)])),
+  );
+  for (const [shellId, targetId] of citedOfficialPageRouting.targetByShellId) {
+    if (decidedTargetByShellId.has(shellId)) continue;
+    decidedTargetByShellId.set(shellId, targetId);
+    matchedIdentityByShellId.set(shellId, 'cited-official-page');
   }
   const aliasTwinPlan = await planAliasTwinFoldsFor(researcherIdentities, loginNetids);
   for (const [twinId, realId] of aliasTwinPlan.targetByTwinResearcherId) {
@@ -1110,10 +1503,17 @@ export async function dedupeAccountlessResearcherShells(options: {
       liveRowIds: liveRowIdsByMember.get(entry.id) ?? [],
     })),
     researcherIdentities.filter((entry) => !clusterCandidateIds.has(entry.id)),
+    citedOfficialPageRouting.equalTierJoins,
   );
   for (const [shellId, survivorId] of clusterPlan.foldTargetById) {
     mergeTargetByShellId.set(shellId, survivorId);
-    matchedIdentityByShellId.delete(shellId);
+    if (clusterPlan.sharedOfficialProfileFoldIds.has(shellId)) {
+      matchedIdentityByShellId.set(shellId, 'shared-official-profile');
+    } else if (clusterPlan.citedOfficialPageFoldIds.has(shellId)) {
+      matchedIdentityByShellId.set(shellId, 'cited-official-page');
+    } else {
+      matchedIdentityByShellId.delete(shellId);
+    }
   }
   const finalRefusal = withoutDistinctPeopleFolds(mergeTargetByShellId, distinctPeoplePairs);
   for (const shellId of [...mergeTargetByShellId.keys()]) {
@@ -1190,6 +1590,8 @@ export async function dedupeAccountlessResearcherShells(options: {
     targetId: ra.target?.id,
     role: ra.role,
     state: ra.state,
+    archived: ra.archived,
+    reviewStatus: ra.reviewStatus,
   });
   const shellFoldEdges = (shellRoleAssignments as any[]).map(asFoldPlanEdge);
   const survivorClaimEdges = (canonicalRoleAssignments as any[]).map(asFoldPlanEdge);
@@ -1377,6 +1779,52 @@ export async function dedupeAccountlessResearcherShells(options: {
     });
   }
 
+  const repointedTargetsBySurvivor = new Set<string>();
+  const shellEdgeById = new Map(shellFoldEdges.map((edge) => [edge.id, edge]));
+  for (const merge of merges) {
+    for (const edgeId of merge.repointed) {
+      const edge = shellEdgeById.get(edgeId);
+      if (edge) repointedTargetsBySurvivor.add(`${merge.canonicalId}|${idKey(edge.targetId)}`);
+    }
+  }
+  const heals = (
+    await planHealsForFoldedShells({
+      Researcher,
+      RoleAssignment,
+      liveResearcherIds: new Set(researcherIdentities.map((identity) => identity.id)),
+      foldingResearcherIds: new Set(mergeTargetByShellId.keys()),
+      ...(options.onlyShellIds ? { onlyShellIds: options.onlyShellIds } : {}),
+    })
+  ).filter((heal) => !repointedTargetsBySurvivor.has(`${heal.survivorId}|${heal.targetId}`));
+  for (const heal of heals) {
+    const reattach = roleAssignmentReattachWrite(
+      {
+        _id: new mongoose.Types.ObjectId(heal.edgeId),
+        personId: new mongoose.Types.ObjectId(heal.shellId),
+        archived: true,
+        state: { $ne: 'HISTORICAL' },
+      },
+      'UNREVIEWED',
+    );
+    roleAssignmentOps.push({
+      updateOne: {
+        filter: reattach.filter,
+        update: {
+          $set: {
+            ...(reattach.update.$set as Record<string, unknown>),
+            personId: new mongoose.Types.ObjectId(heal.survivorId),
+          },
+        },
+      },
+    });
+    rosterChangedEntityIds.add(heal.targetId);
+  }
+  if (onlyShellsNotPlanned) {
+    const healedShellIds = new Set(heals.map((heal) => heal.shellId));
+    const stillNotPlanned = onlyShellsNotPlanned.filter((id) => !healedShellIds.has(id));
+    onlyShellsNotPlanned.splice(0, onlyShellsNotPlanned.length, ...stillNotPlanned);
+  }
+
   const canonicalIds = new Set<string>([
     ...canonicalAppendedLinks.keys(),
     ...canonicalSetFills.keys(),
@@ -1433,6 +1881,7 @@ export async function dedupeAccountlessResearcherShells(options: {
       survivorEdges: canonicalRoleAssignments as FoldRegateEdge[],
       mergeTargetByShellId,
     });
+    for (const heal of heals) regateEntityIds.add(heal.targetId);
     if (regateEntityIds.size > 0) {
       await runStudentVisibilityGate({
         collection: 'research',
@@ -1466,8 +1915,15 @@ export async function dedupeAccountlessResearcherShells(options: {
       folds: clusterPlan.foldTargetById.size,
       refusedGroups: clusterPlan.refusedGroups,
     },
+    citedOfficialPage: {
+      witnessedPairs: citedOfficialPageLoad.pairs.length,
+      ambiguousShells: citedOfficialPageRouting.ambiguousShellIds.size,
+      refusals: citedOfficialPageLoad.refusals,
+    },
     roleAssignmentsRepointed,
     roleAssignmentsArchivedRedundant,
+    roleAssignmentsHealed: heals.length,
+    heals,
     rosterChangedEntities: rosterChangedEntityIds.size,
     regatedEntities,
     attributeUnion,

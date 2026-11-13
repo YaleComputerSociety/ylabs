@@ -1,10 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
   parseArgs,
+  plannedUserRederives,
+  scopedUserRederiver,
   summarizePreFixAbsenceClaimExclusions,
   totalPlannedRetractions,
+  type ScopedUserRederiveRow,
 } from '../reconcileFieldRetractions';
-import { fieldRetractionContracts } from '../../scrapers/fieldRetraction';
+import { userRederiveOnlyFields } from '../../scrapers/userMaterializerFieldScope';
+import {
+  fieldRetractionContracts,
+  type UserFieldRetractionResult,
+} from '../../scrapers/fieldRetraction';
 
 describe('observations:reconcile-field-retractions arguments', () => {
   it('is dry-run by default and defaults to every declared source', () => {
@@ -111,5 +118,83 @@ describe('observations:reconcile-field-retractions arguments', () => {
         heldEntities: 2,
       },
     ]);
+  });
+});
+
+describe('observations:reconcile-field-retractions user re-derive scope (#5711, #5991)', () => {
+  const retraction = (entityKey: string, field: string) => ({
+    entityKey,
+    sourceUrl: 'https://fixture6001.example.edu/people/a',
+    field,
+    observationIds: [`obs-${entityKey}-${field}`],
+  });
+  const result = (retractions: ReturnType<typeof retraction>[]) =>
+    ({ sourceName: 'dept-faculty-roster', retractions }) as unknown as UserFieldRetractionResult;
+
+  it('scopes each retracted field to its own user materializer paths', () => {
+    expect(userRederiveOnlyFields(['email'])).toEqual(['identifiers.email']);
+    expect(userRederiveOnlyFields(['orcid'])).toEqual(['identifiers.orcid']);
+    expect(userRederiveOnlyFields(['orcid', 'email', 'email'])).toEqual([
+      'identifiers.email',
+      'identifiers.orcid',
+    ]);
+  });
+
+  it('refuses a field it cannot scope rather than re-deriving unscoped', () => {
+    expect(() => userRederiveOnlyFields(['netid'])).toThrow(/no user materializer scope/);
+    expect(() => userRederiveOnlyFields([])).toThrow(/needs a retracted field/);
+    expect(() => plannedUserRederives([result([retraction('k1', 'netid')])])).toThrow(
+      /refusing an unscoped re-derive/,
+    );
+  });
+
+  it('plans one scoped re-derive per subject with only the retracted paths', () => {
+    expect(
+      plannedUserRederives([
+        result([retraction('k1', 'email'), retraction('k2', 'orcid'), retraction('k2', 'email')]),
+      ]),
+    ).toEqual([
+      {
+        sourceName: 'dept-faculty-roster',
+        entityKey: 'k1',
+        retractedFields: ['email'],
+        onlyFields: ['identifiers.email'],
+        plannedPaths: ['identifiers.email', 'identifiers.emailSupport'],
+      },
+      {
+        sourceName: 'dept-faculty-roster',
+        entityKey: 'k2',
+        retractedFields: ['email', 'orcid'],
+        onlyFields: ['identifiers.email', 'identifiers.orcid'],
+        plannedPaths: [
+          'identifiers.email',
+          'identifiers.emailSupport',
+          'identifiers.orcid',
+          'profileLinks.ORCID',
+        ],
+      },
+    ]);
+  });
+
+  it('passes the scope to the materializer and records what it wrote', async () => {
+    const rows: ScopedUserRederiveRow[] = [];
+    const calls: Array<[string, readonly string[]]> = [];
+    const rederive = scopedUserRederiver(async (entityKey, onlyFields) => {
+      calls.push([entityKey, onlyFields]);
+      return { fieldsWritten: 2, plannedPaths: ['identifiers.orcid', 'profileLinks.ORCID'] };
+    }, rows);
+    await rederive({ entityKey: 'k2' }, ['orcid']);
+    expect(calls).toEqual([['k2', ['identifiers.orcid']]]);
+    expect(rows).toEqual([
+      {
+        entityKey: 'k2',
+        onlyFields: ['identifiers.orcid'],
+        fieldsWritten: 2,
+        plannedPaths: ['identifiers.orcid', 'profileLinks.ORCID'],
+        droppedPaths: [],
+      },
+    ]);
+    await expect(rederive({ entityKey: 'k3' }, ['netid'])).rejects.toThrow(/no user materializer/);
+    expect(calls).toHaveLength(1);
   });
 });

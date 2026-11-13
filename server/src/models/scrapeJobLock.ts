@@ -63,6 +63,12 @@ const scrapeJobLockSchema = new mongoose.Schema(
       type: Number,
       required: false,
     },
+    // Older writers take a lock over without touching ownerHost or ownerPid, so a dead-owner
+    // takeover trusts them only while this still names the current ownerId.
+    ownerProcessOwnerId: {
+      type: String,
+      required: false,
+    },
     ownerLabel: {
       type: String,
       required: false,

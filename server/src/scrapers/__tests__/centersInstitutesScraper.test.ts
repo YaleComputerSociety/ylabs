@@ -30,13 +30,13 @@ import {
   yighAffiliatedFacultyExtractor,
   childStudyCenterExtractor,
   viewsFieldNameExtractor,
-  ispsExtractor,
+  ispsFacultyFellowsExtractor,
   ycgaExtractor,
   profileGridLeadershipExtractor,
   directoryListingCardExtractor,
   referenceCardPeopleExtractor,
   yqiMemberReferenceCardExtractor,
-  directoryListingLeadershipExtractor,
+  centerRosterReadMember,
   naturalCarbonCaptureExtractor,
   customCardLabsExtractor,
   contentSpotlightFacultyExtractor,
@@ -182,38 +182,6 @@ const VIEWS_FIELD_HTML = `
   <div class="views-row">
     <div class="views-field views-field-name">
       <a href="/people/advisory-board" class="username">Advisory Board</a>
-    </div>
-  </div>
-</body></html>
-`;
-
-/** ISPS faculty fellows views-row layout. */
-const ISPS_HTML = `
-<html><body>
-  <div class="views-row views-row-1">
-    <div class="ds-1col node node-team-member view-mode-isps_teaser_extended">
-      <div class="field field-name-field-team-member-photo"><a href="/team/p-m-aronow"><img/></a></div>
-      <div class="field field-name-team-list-member-name">
-        <strong><a href="/team/p-m-aronow">P. M. Aronow</a></strong>
-      </div>
-      <div class="field field-name-field-team-member-creds">
-        Associate Professor of Statistics &amp; Data Science
-      </div>
-    </div>
-  </div>
-  <div class="views-row views-row-2">
-    <div class="ds-1col node node-team-member">
-      <div class="field field-name-team-list-member-name">
-        <strong><a href="/team/jordan-policy-fixture">Jordan Policy</a></strong>
-      </div>
-      <div class="field field-name-field-team-member-creds">
-        Director, American Political Economy Exchange
-      </div>
-    </div>
-  </div>
-  <div class="views-row views-row-3">
-    <div class="ds-1col node node-team-member">
-      <div class="field field-name-team-list-member-name"><strong><a></a></strong></div>
     </div>
   </div>
 </body></html>
@@ -466,19 +434,56 @@ describe('viewsFieldNameExtractor', () => {
   });
 });
 
-describe('ispsExtractor', () => {
-  it('extracts each views-row member, classifies director role, skips empty rows', () => {
-    const out = ispsExtractor(ISPS_HTML, {
-      pageUrl: 'https://isps.yale.edu/team/directory/faculty-fellows',
+describe('ispsFacultyFellowsExtractor (#5892)', () => {
+  const sectionOf = (heading: string, cards: string) => `
+    <div class="component-wrapper">
+      <div class="component-wrapper__inner">
+        <h2 class="component-wrapper__heading">${heading}</h2>
+        <div class="card-collection"><ul class="card-collection__cards">${cards}</ul></div>
+      </div>
+    </div>`;
+  const html = `<main>
+    ${sectionOf(
+      'Faculty Fellows',
+      `${directoryCard('Avery Example', '/profile/avery-example', 'Professor of Political Science')}
+       ${directoryCard('Blake Example', '/profile/blake-example', 'Director, Policy Lab and Professor of Economics')}`,
+    )}
+    ${sectionOf(
+      'External and Visiting Faculty Fellows',
+      directoryCard('Casey Example', '/profile/casey-example', 'Visiting Professor'),
+    )}
+    ${sectionOf(
+      'Affiliated Faculty',
+      directoryCard('Devon Example', '/profile/devon-example', 'Professor of Sociology'),
+    )}
+  </main>`;
+
+  it('reads the Faculty Fellows section of the YaleSites faculty page and nothing beside it', () => {
+    const members = ispsFacultyFellowsExtractor(html, {
+      pageUrl: 'https://isps.yale.edu/faculty',
+      centerName: 'Institution for Social and Policy Studies',
+    }).members;
+    expect(members.map((member) => [member.name, member.profileUrl, member.title])).toEqual([
+      [
+        'Avery Example',
+        'https://isps.yale.edu/profile/avery-example',
+        'Professor of Political Science',
+      ],
+      [
+        'Blake Example',
+        'https://isps.yale.edu/profile/blake-example',
+        'Director, Policy Lab and Professor of Economics',
+      ],
+    ]);
+  });
+
+  it('is the extractor the ISPS config reads its moved faculty page with', () => {
+    const config = DEFAULT_CENTER_CONFIGS.find((entry) => entry.centerKey === 'isps');
+    expect(config).toMatchObject({
+      url: 'https://isps.yale.edu/faculty',
+      paginated: false,
+      extractor: ispsFacultyFellowsExtractor,
     });
-    expect(out.members).toHaveLength(2);
-    expect(out.members[0]).toMatchObject({
-      name: 'P. M. Aronow',
-      profileUrl: 'https://isps.yale.edu/team/p-m-aronow',
-      role: 'core-faculty',
-    });
-    expect(out.members[0].title).toContain('Associate Professor');
-    expect(out.members[1]).toMatchObject({ name: 'Jordan Policy', role: 'director' });
   });
 });
 
@@ -579,22 +584,37 @@ describe('yqiMemberReferenceCardExtractor (#3787)', () => {
   });
 });
 
-describe('directoryListingLeadershipExtractor (#3787)', () => {
-  it('reads the directors of a leadership-and-staff page and drops deputy and admin staff', () => {
-    const html = `<ul>
-      ${directoryCard('Avery Example', '/profile/avery-example', 'Deputy Director')}
-      ${directoryCard('Blake Example', '/profile/blake-example', 'Operations Manager')}
-      ${directoryCard('Casey Example', '/profile/casey-example', 'Director')}
-      ${directoryCard('Devon Example', '/profile/devon-example', 'Senior Administrative Assistant')}
-    </ul>`;
+describe('a leadership-and-staff page is read whole, with titles (#5891)', () => {
+  const html = `<ul>
+    ${directoryCard('Avery Example', '/profile/avery-example', 'Deputy Director')}
+    ${directoryCard('Blake Example', '/profile/blake-example', 'Operations Manager')}
+    ${directoryCard('Casey Example', '/profile/casey-example', 'Director')}
+    ${directoryCard('Devon Example', '/profile/devon-example', 'Senior Administrative Assistant')}
+  </ul>`;
+  const config = DEFAULT_CENTER_CONFIGS.find((entry) => entry.centerKey === 'whitney-humanities')!;
+  const members = config.extractor(html, {
+    pageUrl: config.url,
+    centerName: config.centerName,
+  }).members;
 
-    const members = directoryListingLeadershipExtractor(html, {
-      pageUrl: 'https://whc.yale.edu/leadership-and-staff',
-    }).members;
-
-    expect(members.map((member) => [member.name, member.role])).toEqual([
-      ['Casey Example', 'director'],
+  it('lists every person on the page, each with their own stated title', () => {
+    expect(members.map((member) => [member.name, member.title, member.role])).toEqual([
+      ['Avery Example', 'Deputy Director', 'co-director'],
+      ['Blake Example', 'Operations Manager', 'core-faculty'],
+      ['Casey Example', 'Director', 'director'],
+      ['Devon Example', 'Senior Administrative Assistant', 'core-faculty'],
     ]);
+  });
+
+  it('screens the staff to a staff membership while the leaders keep their roles', () => {
+    const membershipRoles = members.map((member) => {
+      const memberObs = memberToObservations(member, config, config.url);
+      const relationshipObs = centerMemberRelationshipObservations(member, config, config.url);
+      return centerRosterReadMember(member, memberObs, relationshipObs)?.membershipKey?.split(
+        '|',
+      )[1];
+    });
+    expect(membershipRoles).toEqual(['co-director', 'staff', 'director', 'staff']);
   });
 });
 

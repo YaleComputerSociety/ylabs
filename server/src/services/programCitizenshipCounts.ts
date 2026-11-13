@@ -1,9 +1,8 @@
 import { Fellowship } from '../models/fellowship';
+import { citizenshipStatesOptionsClause } from '../utils/programCitizenshipOptions';
 import {
   narrowedProgramFilter,
-  programFacetFilterClause,
   programFacetNotStatedClause,
-  programFacetStatesValueClause,
   type ProgramMongoFilter,
 } from '../utils/programFacetFilters';
 import { PROGRAM_SEARCH_FIELDS, rankProgramSearch } from './programSearchRelevance';
@@ -32,10 +31,15 @@ export const withCitizenshipFilter = (
 ): ProgramMongoFilter =>
   values.length === 0
     ? filter
-    : narrowedProgramFilter(filter, programFacetFilterClause(CITIZENSHIP_FIELD, values));
+    : narrowedProgramFilter(filter, {
+        $or: [
+          citizenshipStatesOptionsClause(CITIZENSHIP_FIELD, values),
+          programFacetNotStatedClause(CITIZENSHIP_FIELD),
+        ],
+      });
 
 export const statesCitizenshipFilter = (filter: ProgramMongoFilter, values: readonly string[]) =>
-  narrowedProgramFilter(filter, programFacetStatesValueClause(CITIZENSHIP_FIELD, values));
+  narrowedProgramFilter(filter, citizenshipStatesOptionsClause(CITIZENSHIP_FIELD, values));
 
 export const doesntSayCitizenshipFilter = (filter: ProgramMongoFilter) =>
   narrowedProgramFilter(filter, programFacetNotStatedClause(CITIZENSHIP_FIELD));

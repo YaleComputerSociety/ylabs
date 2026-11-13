@@ -37,6 +37,7 @@ These are the tells that have actually been measured in this client, so check ea
 - **Vary radius by nesting.** A control inside a card should be tighter than the card. Uniform `rounded-md` on every box is a tell.
 - **Figures align.** Numbers in a column are tabular. Tables get this from a base rule; a standalone metric needs `.yr-num`.
 - **Pressed state, not just hover.** An interactive card or button needs an `:active` that moves, or it feels like a picture of a button.
+- **A selected control stays selected under the pointer.** A `peer-checked:` fill loses to a plain `hover:` fill, so a chip that sets its own hover fill also sets a `peer-checked:hover:` one; `checkedHoverContrastGuard.test.ts` enforces it (#6091).
 - **Sentence case in headings and labels**, not Title Case On Every Header.
 The `/programs` quick filters, board section titles, cycle badges, and program modal headings are held to it by `fellowships.test.tsx` and `FellowshipModal.test.tsx` (#4273).
 The research kind labels come from one source, `entityKindLabel` in `client/src/utils/researchEntityCopy.ts`, which returns sentence case ("Faculty research", "Core facility"), so the detail chip and the browse card never need their own case conversion (#5111).
@@ -162,6 +163,9 @@ A search painted before the session answered keeps the slot at the guest copy's 
 The student-journey smoke fails when the first result title starts below 390x664 or 375x667 for a guest or a signed-in student with a watched deadline, or when a late session shifts a phone search by 0.01 or more.
 - The wide-layout `/research` sidebar carries no active-filter chips, because each of its controls already shows its own state, and "Clear all filters" sits in its header row beside the active count: a chip row, a clear-all row and the "Search with the selected filters." helper line, which no layout shows any more because a filter applies as soon as it is chosen, made it 717px of a 590px sidebar at 1280x720 with one filter on (#5449).
 The student-journey smoke checks the sidebar fits for a signed-in student and for a guest, with a filter active as well as while browsing.
+The Undergrads group pays for itself in the wide sidebar only (#5963): its rows are 28px, its "Shows research matching every ticked option" line and the advises hint are `InfoTip` buttons (`components/shared/InfoTip.tsx`) that describe their controls through `aria-describedby` while closed, and the header and gaps are tighter at `xl`.
+Measured as a guest on Development data at 1280x720 on 2026-11-12, the sidebar holds 566px of content in 590px browsing or ticked, and 583px in the tallest real state, with the missing-evidence line showing; before the compaction it held 666px.
+The filter sheet keeps 44px rows and visible lines, because touch targets there come first and the sheet scrolls.
 - Public pages paint before the session check answers, so UI that mounts only for a resolved session must not land above content that is already painted.
 Reserve its slot when every viewer needs it, or place it where nothing follows it.
 The `/research` operator controls sit at the bottom of the wide-layout sidebar, and inside the closed "Filters" panel on narrower layouts, for this reason.

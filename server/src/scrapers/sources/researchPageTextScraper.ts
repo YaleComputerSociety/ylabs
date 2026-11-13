@@ -1,4 +1,6 @@
+import * as cheerio from 'cheerio';
 import mongoose from 'mongoose';
+import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
@@ -10,13 +12,18 @@ import {
   loadStoredContentHash,
   type ContentHashEntityRef,
 } from '../contentHashGate';
-import { fetchPageWithPolicy } from '../utils/httpFetch';
+import { HttpStatusError, fetchPageWithPolicy } from '../utils/httpFetch';
 import {
   DEFAULT_SOURCE_CONCURRENCY,
   mapWithConcurrency,
   resolveSourceConcurrency,
 } from '../utils/mapWithConcurrency';
-import { personProfileSourceMatchesEntity } from '../utils/personProfileEntityMatch';
+import { isLikelyOfficialPersonProfileUrl } from '../../services/leadProfileIdentity';
+import {
+  leadingPersonNameTokensFromEntityTitle,
+  personPageLeafNameTokens,
+  personProfileSourceMatchesEntity,
+} from '../utils/personProfileEntityMatch';
 import {
   RESEARCH_PAGE_TEXT_CONTRACT,
   RESEARCH_PAGE_TEXT_FIELD,
@@ -40,6 +47,7 @@ import {
   type FetchedDescriptionPage,
 } from './labMicrositeDescriptionLLMExtractor';
 import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
+import { isTransientFetchFailure } from '../utils/transientFetchFailure';
 
 const MAX_PAGES_PER_ROW = 6;
 const MAX_RESEARCH_SUBPAGES = 2;
@@ -126,6 +134,42 @@ export interface ResearchPageTextScraperDeps {
   rowFinder?: ResearchPageTextRowFinderFn;
   storedHashLoader?: StoredContentHashLoaderFn;
   citerCountsLoader?: () => Promise<ReadonlyMap<string, number>>;
+  storedReadingHostsLoader?: StoredReadingHostsLoaderFn;
+}
+
+export type StoredReadingHostsLoaderFn = (
+  entity: ContentHashEntityRef,
+) => Promise<ReadonlySet<string>>;
+
+const pageHost = (url: string): string => {
+  try {
+    return new URL(url).hostname.toLowerCase().replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+};
+
+/**
+ * The hosts of the pages the row's current stored reading was built from. Fails open like the
+ * content-hash gate: with no connection, or no stored reading, there is nothing to keep.
+ */
+async function loadStoredReadingHosts(entity: ContentHashEntityRef): Promise<ReadonlySet<string>> {
+  if (!entity.entityId && !entity.entityKey) return new Set();
+  if (!mongooseConnectionWasOpened()) return new Set();
+  const filter: Record<string, unknown> = {
+    entityType: entity.entityType,
+    sourceName: RESEARCH_PAGE_TEXT_SOURCE,
+    field: RESEARCH_PAGE_TEXT_FIELD,
+    superseded: false,
+  };
+  if (entity.entityId) filter.entityId = entity.entityId;
+  else filter.entityKey = entity.entityKey;
+  const stored = await Observation.findOne(filter).sort({ observedAt: -1 }).select('value').lean();
+  const value = (stored as { value?: unknown } | null)?.value;
+  if (!Array.isArray(value)) return new Set();
+  return new Set(
+    value.map((entry) => pageHost(String((entry as { url?: unknown })?.url ?? ''))).filter(Boolean),
+  );
 }
 
 async function fetchPageOnce(url: string): Promise<FetchedDescriptionPage | null> {
@@ -197,6 +241,81 @@ function isPersonProfileUrl(url: string): boolean {
   }
 }
 
+const HEADING_SELECTORS = 'title, h1, h2, meta[property="og:title"]';
+
+function foldedTokens(value: string): string[] {
+  return value
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .split(/[^a-z]+/)
+    .filter((token) => token.length >= 2);
+}
+
+function urlPathKey(value: string): string | null {
+  try {
+    const url = new URL(value);
+    return `${url.hostname.replace(/^www\./, '').toLowerCase()}${url.pathname.replace(/\/+$/, '').toLowerCase()}`;
+  } catch {
+    return null;
+  }
+}
+
+function canonicalLinkUrl($: cheerio.CheerioAPI, pageUrl: string): string | null {
+  const href = $('link[rel="canonical"]').attr('href')?.trim();
+  if (!href) return null;
+  try {
+    return new URL(href, pageUrl).toString();
+  } catch {
+    return null;
+  }
+}
+
+function urlPathLeaf(value: string): string {
+  try {
+    return new URL(value).pathname.split('/').filter(Boolean).pop() ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function subjectSurnameTokens(requestedUrl: string, row: CandidateDescriptionLab): Set<string> {
+  const nameTokens =
+    personPageLeafNameTokens(urlPathLeaf(requestedUrl)) ??
+    leadingPersonNameTokensFromEntityTitle(row.name) ??
+    [];
+  const surname = nameTokens[nameTokens.length - 1];
+  return new Set(surname ? foldedTokens(surname) : []);
+}
+
+/**
+ * A requested person profile that answered with a page outside any person-profile path,
+ * whose headings do not name the subject's surname, is a department, program or region
+ * root a retired profile redirected to, so its text is not the row's research (#5947). A
+ * redirect to the same person's own other page names them in a heading and is kept.
+ */
+export function capturedPageLeftTheRequestedPersonProfile(
+  requestedUrl: string,
+  page: FetchedDescriptionPage,
+  row: CandidateDescriptionLab,
+): boolean {
+  if (!isLikelyOfficialPersonProfileUrl(requestedUrl)) return false;
+  const requestedKey = urlPathKey(requestedUrl);
+  const $ = cheerio.load(page.html);
+  const landedUrls = [page.url, canonicalLinkUrl($, page.url)].filter(
+    (url): url is string => Boolean(url) && urlPathKey(url as string) !== requestedKey,
+  );
+  const landing = landedUrls.find((url) => !isLikelyOfficialPersonProfileUrl(url));
+  if (!landing) return false;
+  const subject = subjectSurnameTokens(requestedUrl, row);
+  if (subject.size === 0) return true;
+  const headingText = $(HEADING_SELECTORS)
+    .map((_, element) => $(element).attr('content') ?? $(element).text())
+    .get()
+    .join(' ');
+  return !foldedTokens(headingText).some((token) => subject.has(token));
+}
+
 const uniqueStrings = (values: readonly (string | undefined)[]): string[] =>
   Array.from(new Set(values.map((value) => (value ?? '').trim()).filter(Boolean)));
 
@@ -208,6 +327,7 @@ interface LaneCounts {
   rowsWithText: number;
   rowsWithoutText: number;
   noReadablePage: number;
+  keptAfterTransientFailure: number;
   contentUnchanged: number;
   charsStored: number;
 }
@@ -232,20 +352,39 @@ export class ResearchPageTextScraper implements IScraper {
   private readonly rowFinder: ResearchPageTextRowFinderFn;
   private readonly storedHashLoader: StoredContentHashLoaderFn;
   private readonly citerCountsLoader: () => Promise<ReadonlyMap<string, number>>;
+  private readonly storedReadingHostsLoader: StoredReadingHostsLoaderFn;
 
   constructor(deps: ResearchPageTextScraperDeps = {}) {
     this.fetchPage = deps.fetchPage || defaultFetchPage;
     this.rowFinder = deps.rowFinder || defaultRowFinder;
     this.storedHashLoader = deps.storedHashLoader || loadStoredContentHash;
     this.citerCountsLoader = deps.citerCountsLoader || loadConnectedEvidenceUrlCiterCounts;
+    this.storedReadingHostsLoader = deps.storedReadingHostsLoader || loadStoredReadingHosts;
   }
 
-  private async tryFetch(url: string, row: CandidateDescriptionLab, ctx: ScraperContext) {
+  private async tryFetch(
+    url: string,
+    row: CandidateDescriptionLab,
+    ctx: ScraperContext,
+    transientFailures: string[],
+  ) {
     try {
       const page = await this.fetchPage(url);
       if (!page?.html) return null;
+      if (capturedPageLeftTheRequestedPersonProfile(url, page, row)) {
+        ctx.log(
+          `[${row.slug || 'candidate'}] research page refused: profile landed off the subject`,
+        );
+        return null;
+      }
       return personProfileSourceMatchesEntity(page.url, row) ? page : null;
     } catch (error) {
+      if (isTransientFetchFailure(error)) {
+        transientFailures.push(url);
+        if (error instanceof HttpStatusError && error.finalUrl) {
+          transientFailures.push(error.finalUrl);
+        }
+      }
       ctx.log(`[${row.slug || 'candidate'}] research page skipped: ${sanitizeLogValue(error)}`);
       return null;
     }
@@ -262,6 +401,7 @@ export class ResearchPageTextScraper implements IScraper {
     row: CandidateDescriptionLab,
     ctx: ScraperContext,
     citerCounts: ReadonlyMap<string, number> = new Map(),
+    transientFailures: string[] = [],
   ): Promise<FetchedDescriptionPage[]> {
     const cited = uniqueStrings([
       row.websiteUrl,
@@ -276,7 +416,7 @@ export class ResearchPageTextScraper implements IScraper {
     const read = async (url: string): Promise<FetchedDescriptionPage | null> => {
       if (pages.length >= MAX_PAGES_PER_ROW) return null;
       if (pages.some((page) => page.url === url)) return null;
-      const page = await this.tryFetch(url, row, ctx);
+      const page = await this.tryFetch(url, row, ctx, transientFailures);
       if (!page || pages.some((fetched) => fetched.url === page.url)) return null;
       pages.push(page);
       return page;
@@ -307,17 +447,28 @@ export class ResearchPageTextScraper implements IScraper {
     counts: LaneCounts,
     citerCounts: ReadonlyMap<string, number>,
   ): Promise<ObservationInput[]> {
-    const fetched = await this.readCitedResearchPages(row, ctx, citerCounts);
-    if (fetched.length === 0) {
-      counts.noReadablePage += 1;
-      return [];
-    }
-    const value = researchPageTextValue(fetched);
+    const transientFailures: string[] = [];
+    const fetched = await this.readCitedResearchPages(row, ctx, citerCounts, transientFailures);
     const entityRef: ContentHashEntityRef = {
       entityType: 'researchEntity',
       entityId: serializedDocumentId(row._id) || undefined,
       entityKey: row.slug,
     };
+    if (transientFailures.length > 0) {
+      const storedHosts = await this.storedReadingHostsLoader(entityRef);
+      if (transientFailures.some((url) => storedHosts.has(pageHost(url)))) {
+        counts.keptAfterTransientFailure += 1;
+        ctx.log(
+          `[${row.slug || 'candidate'}] research page text kept: a cited page its stored reading drew on failed transiently, so this run leaves that reading for the next one`,
+        );
+        return [];
+      }
+    }
+    if (fetched.length === 0) {
+      counts.noReadablePage += 1;
+      return [];
+    }
+    const value = researchPageTextValue(fetched);
     const contentHash = researchPageTextContentHash(value);
     const storedHash = await this.storedHashLoader(this.name, entityRef);
     if (contentUnchanged(storedHash, contentHash, false)) {
@@ -356,6 +507,7 @@ export class ResearchPageTextScraper implements IScraper {
       rowsWithText: 0,
       rowsWithoutText: 0,
       noReadablePage: 0,
+      keptAfterTransientFailure: 0,
       contentUnchanged: 0,
       charsStored: 0,
     };
@@ -378,6 +530,7 @@ export class ResearchPageTextScraper implements IScraper {
       notes:
         `Research page text for ${counts.rowsWithText} of ${rows.length} rows: ` +
         `${counts.rowsWithoutText} read with no research text, ${counts.noReadablePage} with no readable page, ` +
+        `${counts.keptAfterTransientFailure} kept after a transient fetch failure, ` +
         `${counts.contentUnchanged} content unchanged, ${counts.charsStored} characters stored.`,
     };
   }

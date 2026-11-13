@@ -27,7 +27,11 @@ import axios from 'axios';
 import { Observation } from '../../models/observation';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 import * as cheerio from 'cheerio';
-import { subjectProfileOrcid } from '../utils/rosterMemberIdentityEvidence';
+import { imageElementSource } from '../utils/imageElementSource';
+import {
+  subjectProfileOrcid,
+  subjectProfileStatesNoOrcid,
+} from '../utils/rosterMemberIdentityEvidence';
 import { wordpressAuthorProfileBiography } from '../utils/wordpressAuthorProfile';
 import type { AnyNode } from 'domhandler';
 import {
@@ -46,6 +50,30 @@ import {
   type LabUrlEvidenceLoader,
   type LabUrlIsUnusable,
 } from '../utils/labUrlEvidence';
+import {
+  coLedGroupSiteFor,
+  loadCoLedSiteIndex,
+  type CoLedSiteIndex,
+  type CoLedSiteIndexLoader,
+  type LabUrlIsCoLedGroupSite,
+} from '../utils/coLedGroupSites';
+import {
+  decideLegacyKeyAdoption,
+  loadLegacyKeyRows,
+  type LegacyKeyRowLoader,
+} from '../rosterLegacyKeyAdoption';
+import {
+  DEGREE_TOKENS,
+  isDegreeToken,
+  ROSTER_NAME_NORMALIZER_LEGACY_TOKENS,
+} from '../../utils/degreeTokens';
+import {
+  decideRosterAttach,
+  loadRosterOwnerKeyRows,
+  rosterHostOfUrl,
+  type RosterOwnerKeyRow,
+  type RosterOwnerKeyRowLoader,
+} from '../rosterOwnerKeyRows';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { stripInvisibleFormatCharacters } from '../../utils/invisibleFormatCharacters';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
@@ -280,6 +308,12 @@ const STATED_LAB_NAME_CONFIDENCE = 0.8;
 export interface FacultyEntry {
   name: string;
   /**
+   * The listing's text before the name normalizer ran, kept only when an earlier version
+   * of the normalizer's credential list reads it differently, so the lane can still derive
+   * the key that version minted (#5969).
+   */
+  nameAsListed?: string;
+  /**
    * The name this row's slug and user key were first derived from, when the listing's
    * readable name differs from it. Identity continuity: re-keying an existing row
    * would retire it through the departure lane and mint a replacement without its
@@ -336,6 +370,12 @@ export interface FacultyEntry {
   labWebsiteButton?: { cardTitle: string };
   /** ORCID extracted from an official Yale profile page. */
   orcid?: string;
+  /**
+   * `empty` is a positive claim that the person's own profile was read, named them, and its
+   * subject node states no ORCID of any kind (#5991). Only `empty` may reach
+   * `assertsNoValueFor: ['orcid']`; a page whose ORCID the reader refused claims nothing.
+   */
+  orcidSlotAttestation?: 'empty';
   /** Short bio or research summary extracted from an official Yale profile page. */
   bio?: string;
   /** Grounded research-home description deterministically extracted from the PI's official profile page (#481 lever). */
@@ -844,7 +884,9 @@ export const csRenderedExtractor: FacultyExtractor = (html, ctx) => {
     if (!/\/faculty\/|\/profile\/|people|directory/i.test(href)) return;
     if (!/^[A-Z][A-Za-z.'-]+(?:\s+[A-Z][A-Za-z.'-]+)+/.test(text)) return;
 
-    const name = normalizeName(text.replace(/\s*,?\s*(Ph\.?D\.?|M\.?D\.?)$/i, ''));
+    const { name, ...listedName } = rosterListedName(
+      text.replace(/\s*,?\s*(Ph\.?D\.?|M\.?D\.?)$/i, ''),
+    );
     const key = `${name}:${href}`;
     if (!name || seen.has(key)) return;
     seen.add(key);
@@ -862,6 +904,7 @@ export const csRenderedExtractor: FacultyExtractor = (html, ctx) => {
 
     out.push({
       name,
+      ...listedName,
       profileUrl: absolutize(href, ctx.pageUrl),
       title,
       email,
@@ -888,7 +931,7 @@ export const csFacultyDataExtractor: FacultyDataExtractor = (payload, ctx) => {
     if (!isRecord(page) || !Array.isArray(page.facultyMembers)) continue;
     for (const member of page.facultyMembers) {
       if (!isRecord(member)) continue;
-      const name = normalizeName(stringValue(member.name) || '');
+      const { name, ...listedName } = rosterListedName(stringValue(member.name) || '');
       if (!name) continue;
       const url = stringValue(member.url);
       const profileUrl = url ? absolutize(url, ctx.pageUrl) : undefined;
@@ -903,6 +946,7 @@ export const csFacultyDataExtractor: FacultyDataExtractor = (payload, ctx) => {
           : undefined;
       out.push({
         name,
+        ...listedName,
         profileUrl,
         title,
         labUrl,
@@ -930,7 +974,7 @@ export const chemEnvFacultyExtractor: FacultyExtractor = (html, ctx) => {
   $('a.stories-item').each((_i, el) => {
     const card = $(el);
     const heading = card.find('h3').first();
-    const name = normalizeName(
+    const { name, ...listedName } = rosterListedName(
       cleanText(
         heading
           .contents()
@@ -947,6 +991,7 @@ export const chemEnvFacultyExtractor: FacultyExtractor = (html, ctx) => {
 
     out.push({
       name,
+      ...listedName,
       profileUrl,
       title,
       ...(imageUrl ? { imageUrl } : {}),
@@ -973,7 +1018,7 @@ export const directoryListingCardExtractor: FacultyExtractor = (html, ctx) => {
   $('.directory-listing-card').each((_i, el) => {
     const card = $(el);
     const nameLink = card.find('.directory-listing-card__heading-link').first();
-    const name = normalizeName(cleanText(nameLink.text()));
+    const { name, ...listedName } = rosterListedName(cleanText(nameLink.text()));
     if (!name) return;
 
     const profileHref = nameLink.attr('href') || '';
@@ -988,6 +1033,7 @@ export const directoryListingCardExtractor: FacultyExtractor = (html, ctx) => {
 
     out.push({
       name,
+      ...listedName,
       profileUrl,
       title,
       email,
@@ -1017,7 +1063,7 @@ export const referenceCardExtractor: FacultyExtractor = (html, ctx) => {
   $('.reference-card').each((_i, el) => {
     const card = $(el);
     const nameLink = card.find('.reference-card__heading-link').first();
-    const name = normalizeName(cleanText(nameLink.text()));
+    const { name, ...listedName } = rosterListedName(cleanText(nameLink.text()));
     const href = nameLink.attr('href') || '';
     if (!name || !href) return;
 
@@ -1030,6 +1076,7 @@ export const referenceCardExtractor: FacultyExtractor = (html, ctx) => {
 
     out.push({
       name,
+      ...listedName,
       ...(labUrl ? {} : { labSlotAttestation: 'refused' as const }),
       profileUrl: destinationUrl,
       title,
@@ -1059,7 +1106,7 @@ export const facultyLabsTableExtractor: FacultyExtractor = (html, ctx) => {
     const link = first.find('a[href]').first();
     const linkText = cleanText(link.text());
     // A trailing asterisk is a roster footnote marker, not part of the name.
-    const name = normalizeName(linkText.replace(/\*+$/, ''));
+    const { name, ...listedName } = rosterListedName(linkText.replace(/\*+$/, ''));
     const href = link.attr('href') || '';
     if (!name || !href) return;
 
@@ -1072,6 +1119,7 @@ export const facultyLabsTableExtractor: FacultyExtractor = (html, ctx) => {
 
     out.push({
       name,
+      ...listedName,
       ...(isPersonProfileOrDirectoryUrl(destinationUrl)
         ? { profileUrl: destinationUrl, labSlotAttestation: 'refused' as const }
         : { labUrl: destinationUrl }),
@@ -1145,7 +1193,7 @@ export const artPeopleListExtractor: FacultyExtractor = (html, ctx) => {
       .each((_j, el) => {
         const link = $(el).find('a[href]').first();
         const href = link.attr('href') || '';
-        const name = normalizeName(cleanText(link.find('p').first().text()));
+        const { name, ...listedName } = rosterListedName(cleanText(link.find('p').first().text()));
         if (!name || !href) return;
 
         const destinationUrl = absolutize(href, ctx.pageUrl);
@@ -1167,6 +1215,7 @@ export const artPeopleListExtractor: FacultyExtractor = (html, ctx) => {
         }
         byUrl.set(destinationUrl, {
           name,
+          ...listedName,
           profileUrl: destinationUrl,
           title,
           labUrl,
@@ -1226,12 +1275,15 @@ export const dramaWhoWeAreExtractor: FacultyExtractor = (html, ctx) => {
   const addEntry = (anchor: cheerio.Cheerio<AnyNode>, container: cheerio.Cheerio<AnyNode>) => {
     const postId = bioPostIdFromAttribute(anchor.attr('data-bio-id'));
     if (!postId || byPostId.has(postId)) return;
-    const name = normalizeName(cleanText(anchor.text()) || cleanText(anchor.attr('data-name')));
+    const { name, ...listedName } = rosterListedName(
+      cleanText(anchor.text()) || cleanText(anchor.attr('data-name')),
+    );
     if (!name) return;
     const title = cleanText(container.find('.role').first().text()) || undefined;
     const imageUrl = imageUrlFromElement(container, ctx.pageUrl);
     byPostId.set(postId, {
       name,
+      ...listedName,
       profileUrl: absolutize(`/?p=${postId}`, ctx.pageUrl),
       title,
       ...(imageUrl ? { imageUrl } : {}),
@@ -1276,7 +1328,7 @@ export const viewsTableRowExtractor: FacultyExtractor = (html, ctx) => {
     if (!nameCell.length) return;
 
     const nameLink = nameCell.find('a.username, a').first();
-    const name = normalizeName(cleanText(nameLink.text() || nameCell.text()));
+    const { name, ...listedName } = rosterListedName(cleanText(nameLink.text() || nameCell.text()));
     if (!name) return;
 
     const profileHref = nameLink.attr('href') || '';
@@ -1288,6 +1340,7 @@ export const viewsTableRowExtractor: FacultyExtractor = (html, ctx) => {
 
     out.push({
       name,
+      ...listedName,
       profileUrl,
       title,
       email,
@@ -1313,7 +1366,7 @@ export const profileGridItemExtractor: FacultyExtractor = (html, ctx) => {
 
   $('.profile-grid-item').each((_i, el) => {
     const card = $(el);
-    const name = normalizeName(
+    const { name, ...listedName } = rosterListedName(
       cleanText(card.find('.profile-grid-item__name--link').first().text()),
     );
     if (!name) return;
@@ -1334,7 +1387,7 @@ export const profileGridItemExtractor: FacultyExtractor = (html, ctx) => {
       ctx.pageUrl,
     );
 
-    out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
+    out.push({ name, ...listedName, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
   });
 
   return out;
@@ -1354,7 +1407,7 @@ export const nodeTeaserFacultyExtractor: FacultyExtractor = (html, ctx) => {
   $('article.node-teaser--faculty').each((_i, el) => {
     const card = $(el);
     const nameLink = card.find('.node-teaser__heading a').first();
-    const name = normalizeName(
+    const { name, ...listedName } = rosterListedName(
       cleanText(nameLink.text() || card.find('.node-teaser__heading').first().text()),
     );
     if (!name) return;
@@ -1364,7 +1417,7 @@ export const nodeTeaserFacultyExtractor: FacultyExtractor = (html, ctx) => {
     const title = cleanText(card.find('.node-teaser__job-title').first().text()) || undefined;
     const imageUrl = imageUrlFromElement(card.find('.node-teaser__image').first(), ctx.pageUrl);
 
-    out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
+    out.push({ name, ...listedName, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
   });
 
   return out;
@@ -1386,7 +1439,7 @@ export const jacksonProfileComponentExtractor: FacultyExtractor = (html, ctx) =>
   $('article.profile--component').each((_i, el) => {
     const card = $(el);
     const nameLink = card.find('.profile__content h3 a, .profile__content h3').first();
-    const name = normalizeName(cleanText(nameLink.text()));
+    const { name, ...listedName } = rosterListedName(cleanText(nameLink.text()));
     if (!name) return;
 
     const profileHref = card.find('.profile__content h3 a').first().attr('href') || '';
@@ -1394,7 +1447,7 @@ export const jacksonProfileComponentExtractor: FacultyExtractor = (html, ctx) =>
     const title = cleanText(card.find('.profile-positions').first().text()) || undefined;
     const imageUrl = imageUrlFromElement(card.find('.profile__media').first(), ctx.pageUrl);
 
-    out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
+    out.push({ name, ...listedName, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
   });
 
   return out;
@@ -1412,7 +1465,7 @@ export const lawPersonListingExtractor: FacultyExtractor = (html, ctx) => {
 
   $('article.node--type-person').each((_i, el) => {
     const card = $(el);
-    const name = normalizeName(
+    const { name, ...listedName } = rosterListedName(
       cleanText(card.find('.field--name-title').first().text() || card.find('h3 a').first().text()),
     );
     if (!name) return;
@@ -1422,7 +1475,7 @@ export const lawPersonListingExtractor: FacultyExtractor = (html, ctx) => {
     const title = cleanText(card.find('.field--name-field-title').first().text()) || undefined;
     const imageUrl = imageUrlFromElement(card, ctx.pageUrl);
 
-    out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
+    out.push({ name, ...listedName, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
   });
 
   return out;
@@ -1440,7 +1493,7 @@ export const nursingFacultyExtractor: FacultyExtractor = (html, ctx) => {
 
   $('.node-faculty-directory').each((_i, el) => {
     const card = $(el);
-    const name = normalizeName(
+    const { name, ...listedName } = rosterListedName(
       cleanText(card.find('.field-name-faculty-firstname-lastname').first().text()),
     );
     if (!name) return;
@@ -1459,7 +1512,7 @@ export const nursingFacultyExtractor: FacultyExtractor = (html, ctx) => {
       ) || undefined;
     const imageUrl = imageUrlFromElement(card.find('.field-name-field-photo').first(), ctx.pageUrl);
 
-    out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
+    out.push({ name, ...listedName, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
   });
 
   return out;
@@ -1482,7 +1535,7 @@ const nameFromPeopleSlug = (about: string): string => {
     .filter(Boolean)
     .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
     .join(' ');
-  return normalizeName(titleCased);
+  return normalizeRosterName(titleCased);
 };
 
 export const nodePersonCardExtractor: FacultyExtractor = (html, ctx) => {
@@ -1493,8 +1546,9 @@ export const nodePersonCardExtractor: FacultyExtractor = (html, ctx) => {
     const card = $(el);
     const about = card.attr('about') || card.find('a[href*="/people/"]').first().attr('href') || '';
     const altText = cleanText(card.find('img[alt]').first().attr('alt') || '');
-    const headingName = normalizeName(cleanText(card.find('.card-content h2').first().text()));
-    const captionFreeAltText = normalizeName(altText);
+    const headingText = cleanText(card.find('.card-content h2').first().text());
+    const headingName = normalizeRosterName(headingText);
+    const captionFreeAltText = normalizeRosterName(altText);
     const altName = isPhotoSceneDescription(captionFreeAltText) ? '' : captionFreeAltText;
     const name = headingName || altName || nameFromPeopleSlug(about);
     if (!name) return;
@@ -1516,6 +1570,7 @@ export const nodePersonCardExtractor: FacultyExtractor = (html, ctx) => {
 
     out.push({
       name,
+      ...listedNameFields(headingName ? headingText : altName ? altText : ''),
       ...(identityName ? { identityName } : {}),
       profileUrl,
       title,
@@ -1579,7 +1634,9 @@ export const fieldCollectionPersonExtractor: FacultyExtractor = (html, ctx) => {
     const card = $(el);
     const desc = card.find('.field-name-field-person-description').first();
     const nameLink = desc.find('h3 a').first();
-    const name = normalizeName(cleanText(nameLink.text() || desc.find('h3').first().text()));
+    const { name, ...listedName } = rosterListedName(
+      cleanText(nameLink.text() || desc.find('h3').first().text()),
+    );
     if (!name) return;
 
     const href = nameLink.attr('href') || '';
@@ -1590,7 +1647,7 @@ export const fieldCollectionPersonExtractor: FacultyExtractor = (html, ctx) => {
       ctx.pageUrl,
     );
 
-    out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
+    out.push({ name, ...listedName, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
   });
 
   return out;
@@ -1602,7 +1659,9 @@ export const wordpressUsersListExtractor: FacultyExtractor = (html, ctx) => {
 
   $('#grid__users-member .grid__user').each((_i, el) => {
     const card = $(el);
-    const name = normalizeName(cleanText(card.find('.grid__user__title').first().text()));
+    const { name, ...listedName } = rosterListedName(
+      cleanText(card.find('.grid__user__title').first().text()),
+    );
     if (!name) return;
 
     const href = card.find('a.grid__user__link').first().attr('href') || '';
@@ -1610,7 +1669,7 @@ export const wordpressUsersListExtractor: FacultyExtractor = (html, ctx) => {
     const title = cleanText(card.find('.grid__user__job-title').first().text()) || undefined;
     const imageUrl = imageUrlFromElement(card.find('.grid__user__image').first(), ctx.pageUrl);
 
-    out.push({ name, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
+    out.push({ name, ...listedName, profileUrl, title, ...(imageUrl ? { imageUrl } : {}) });
   });
 
   return out;
@@ -1687,13 +1746,19 @@ export const facultyThumbnailExtractor: FacultyExtractor = (html, ctx) => {
     const href = card.find('a.blank-link, a[href*="/faculty/"]').first().attr('href') || '';
     if (!/\/faculty\/\d+-/.test(href)) return;
 
-    const name = normalizeName(nameFromFacultySlug(href));
+    const { name, ...listedName } = rosterListedName(nameFromFacultySlug(href));
     if (!name) return;
 
     const profileUrl = absolutize(href, ctx.pageUrl);
     const imageUrl = imageUrlFromElement(card, ctx.pageUrl);
 
-    out.push({ name, namePlaceholder: true, profileUrl, ...(imageUrl ? { imageUrl } : {}) });
+    out.push({
+      name,
+      ...listedName,
+      namePlaceholder: true,
+      profileUrl,
+      ...(imageUrl ? { imageUrl } : {}),
+    });
   });
 
   return out;
@@ -2966,23 +3031,8 @@ function hostnameOf(url: string): string {
   }
 }
 
-function firstImageUrlFromSrcset(value: string | undefined | null): string | undefined {
-  const first = String(value || '')
-    .split(',')
-    .map((part) => part.trim().split(/\s+/)[0])
-    .find(Boolean);
-  return first || undefined;
-}
-
 function imageUrlFromElement(node: cheerio.Cheerio<any>, baseUrl: string): string | undefined {
-  const img = node.find('img').first();
-  if (!img.length) return undefined;
-  const src =
-    img.attr('src') ||
-    img.attr('data-src') ||
-    firstImageUrlFromSrcset(img.attr('srcset')) ||
-    firstImageUrlFromSrcset(img.attr('data-srcset')) ||
-    '';
+  const src = imageElementSource(node);
   return src ? absolutize(src, baseUrl) : undefined;
 }
 
@@ -3417,6 +3467,40 @@ function extractResearchInterestsFromHtml($: cheerio.CheerioAPI, meshIndexed: bo
   return uniqueStrings(interests).slice(0, 20);
 }
 
+/**
+ * A single-page roster reads every row's profile before it emits anything, which on the largest
+ * medicine-school page is tens of minutes with nothing logged or written, and an idle watchdog
+ * reads that as a hang. So the lane prints a counts-only line at whichever of these comes first.
+ */
+export const ROSTER_PROFILE_PROGRESS_EVERY = 50;
+export const ROSTER_PROFILE_PROGRESS_INTERVAL_MS = 60_000;
+
+export function rosterProfileProgress(
+  deptKey: string,
+  total: number,
+  log: ScraperContext['log'],
+  now: () => number = Date.now,
+): { beforeRow: () => void } {
+  let rowsStarted = 0;
+  let rowsSinceLine = 0;
+  let lastLineAt = now();
+  return {
+    beforeRow() {
+      const rowsFinished = rowsStarted;
+      rowsStarted += 1;
+      if (rowsFinished === 0) return;
+      rowsSinceLine += 1;
+      const due =
+        rowsSinceLine >= ROSTER_PROFILE_PROGRESS_EVERY ||
+        now() - lastLineAt >= ROSTER_PROFILE_PROGRESS_INTERVAL_MS;
+      if (!due) return;
+      log(`[${deptKey}] read ${rowsFinished} of ${total} roster row(s) so far`);
+      rowsSinceLine = 0;
+      lastLineAt = now();
+    },
+  };
+}
+
 async function fetchHtml(url: string, useCache: boolean, sourceName: string): Promise<string> {
   const safeUrl = await assertPublicHttpUrl(url);
   const safeUrlText = safeUrl.toString();
@@ -3495,6 +3579,7 @@ export function profileEnrichmentFromHtml(
     | 'labWebsiteButton'
     | 'title'
     | 'orcid'
+    | 'orcidSlotAttestation'
     | 'bio'
     | 'researchInterests'
     | 'topics'
@@ -3665,6 +3750,9 @@ export function profileEnrichmentFromHtml(
     ...(labUrl ? {} : { labSlotAttestation: labUrlCandidateRefused ? 'refused' : 'empty' }),
     ...(labWebsiteButton ? { labWebsiteButton } : {}),
     orcid: declaredName ? subjectProfileOrcid($, declaredName) : undefined,
+    ...(declaredName && subjectProfileStatesNoOrcid($, declaredName)
+      ? { orcidSlotAttestation: 'empty' as const }
+      : {}),
     bio,
     researchHomeDescription: officialProse?.fullDescription,
     researchHomeShortDescription: officialProse?.shortDescription || undefined,
@@ -3746,6 +3834,7 @@ function mergeProfileEnrichment(
       | 'labWebsiteButton'
       | 'title'
       | 'orcid'
+      | 'orcidSlotAttestation'
       | 'bio'
       | 'researchInterests'
       | 'topics'
@@ -3758,10 +3847,13 @@ function mergeProfileEnrichment(
     >
   >,
 ): FacultyEntry {
-  const resolvedName =
-    entry.namePlaceholder && enrichment.name ? normalizeName(enrichment.name) : entry.name;
+  const enrichedName = entry.namePlaceholder && enrichment.name ? enrichment.name : '';
+  const resolvedName = enrichedName ? normalizeRosterName(enrichedName) : entry.name;
   return {
     ...entry,
+    ...(enrichedName && resolvedName
+      ? { nameAsListed: undefined, ...listedNameFields(enrichedName) }
+      : {}),
     name: resolvedName || entry.name,
     namePlaceholder: entry.namePlaceholder && resolvedName === entry.name ? true : undefined,
     profileUrl: enrichment.profileUrl || entry.profileUrl,
@@ -3779,6 +3871,8 @@ function mergeProfileEnrichment(
         : entry.labWebsiteButton,
     labSlotAttestation: mergedLabSlotAttestation(entry, enrichment),
     orcid: entry.orcid || enrichment.orcid,
+    orcidSlotAttestation:
+      entry.orcid || enrichment.orcid ? undefined : enrichment.orcidSlotAttestation,
     bio: entry.bio || enrichment.bio,
     researchHomeDescription: entry.researchHomeDescription || enrichment.researchHomeDescription,
     researchHomeShortDescription:
@@ -4086,7 +4180,7 @@ function profileClaimsSharedLabAsOwn(
 ): boolean {
   const button = item.entry.labWebsiteButton;
   if (!button) return false;
-  const nameTokens = identityTokens(normalizeName(item.entry.name));
+  const nameTokens = identityTokens(normalizeRosterName(item.entry.name));
   const familyNameTokens = nameTokens.length > 1 ? nameTokens.slice(1) : nameTokens;
   const cardTitleTokens = identityTokens(button.cardTitle);
   if (familyNameTokens.some((token) => cardTitleTokens.includes(token))) return true;
@@ -4282,12 +4376,25 @@ function rosterAttestsNoEmail(entry: FacultyEntry): boolean {
   );
 }
 
+function rosterAttestsNoOrcid(entry: FacultyEntry): boolean {
+  return (
+    !entry.orcid && entry.profileReadOutcome === 'read' && entry.orcidSlotAttestation === 'empty'
+  );
+}
+
+export function rosterAbsenceClaims(entry: FacultyEntry): string[] {
+  return [
+    ...(rosterAttestsNoEmail(entry) ? ['email'] : []),
+    ...(rosterAttestsNoOrcid(entry) ? ['orcid'] : []),
+  ];
+}
+
 function entryToUserObservations(
   entry: FacultyEntry,
   dept: DeptConfig,
   sourceUrl: string,
 ): { observations: ObservationInput[]; entityKey: string } {
-  const cleaned = normalizeName(entry.name);
+  const cleaned = normalizeRosterName(entry.name);
   const { first, last } = splitName(cleaned);
   const personEmail =
     isLikelyPersonSpecificYaleEmail(entry.email, cleaned) &&
@@ -4342,7 +4449,9 @@ function entryToUserObservations(
       ...profileBase,
       field: 'profileUrls',
       value: { departmental: entry.profileUrl },
-      ...(rosterAttestsNoEmail(entry) ? { assertsNoValueFor: ['email'] } : {}),
+      ...(rosterAbsenceClaims(entry).length > 0
+        ? { assertsNoValueFor: rosterAbsenceClaims(entry) }
+        : {}),
     });
   }
   if (entry.imageUrl) obs.push({ ...profileBase, field: 'imageUrl', value: entry.imageUrl });
@@ -4372,7 +4481,7 @@ function entryToUserObservations(
 }
 
 function isLikelyExplicitLabWebsite(entry: FacultyEntry): boolean {
-  return evidenceAssertsALab(normalizeName(entry.name), entry.labUrl);
+  return evidenceAssertsALab(normalizeRosterName(entry.name), entry.labUrl);
 }
 
 /**
@@ -4429,6 +4538,7 @@ export function rosterResearchEntityMint(
   sourceUrl: string,
   ownerEntityKey: string,
   labUrlIsUnusable: LabUrlIsUnusable = () => false,
+  labUrlIsCoLedGroupSite: LabUrlIsCoLedGroupSite = () => false,
 ): { observations: ObservationInput[]; refusedByTitle: boolean } {
   const observations = entryToResearchEntityObservationsUnscreened(
     entry,
@@ -4436,6 +4546,7 @@ export function rosterResearchEntityMint(
     sourceUrl,
     ownerEntityKey,
     labUrlIsUnusable,
+    labUrlIsCoLedGroupSite,
   );
   // The screen sits at this choke point rather than at the one call site, so a
   // future caller cannot mint a research row for somebody who owns no research. A roster
@@ -4524,11 +4635,89 @@ export function rosterResearchEntitySlugPrefix(dept: DeptConfig): string {
   return `dept-${namespacedDeptKey(dept.deptKey)}-`;
 }
 
+export function rosterResearchEntitySlugPrefixForSlug(
+  slug: string,
+  configs: readonly DeptConfig[] = DEFAULT_DEPT_CONFIGS,
+): string {
+  const [config] = rosterDeptConfigsForResearchEntitySlug(slug, configs);
+  return config ? rosterResearchEntitySlugPrefix(config) : '';
+}
+
+function rosterHostForSlugPrefix(prefix: string, configs: readonly DeptConfig[]): string {
+  const config = configs.find((candidate) => rosterResearchEntitySlugPrefix(candidate) === prefix);
+  return config ? rosterHostOfUrl(config.url) : '';
+}
+
 export function rosterResearchEntitySlugForUserKey(userKey: string, dept: DeptConfig): string {
   const prefix = `dept:${namespacedDeptKey(dept.deptKey)}:`;
   if (!userKey.startsWith(prefix)) return '';
   const nameSlug = userKey.slice(prefix.length);
   return nameSlug === 'unknown' ? '' : deptResearchEntitySlug(nameSlug, dept);
+}
+
+/**
+ * The key this lane minted for the entry under an earlier name normalizer, explicitly by
+ * version, so a later change to the credential list keeps writing to the row the old key
+ * holds instead of minting a second one (#5969).
+ */
+export function legacyRosterResearchEntitySlug(
+  entry: FacultyEntry,
+  dept: DeptConfig,
+  version: LegacyNormalizerVersion = 'v1',
+): string {
+  const legacyName = legacyRosterIdentityNameSlug(entry, version);
+  return deptResearchEntitySlug(legacyName || (entry.labUrl ? slugify(entry.labUrl) : ''), dept);
+}
+
+/** The person key the same earlier normalizer minted for an entry the lane keys by name. */
+export function legacyRosterOwnerKey(
+  ownerKey: string,
+  entry: FacultyEntry,
+  dept: DeptConfig,
+  version: LegacyNormalizerVersion = 'v1',
+): string {
+  if (!ownerKey.startsWith('dept:')) return ownerKey;
+  const legacyName = legacyRosterIdentityNameSlug(entry, version);
+  return `dept:${namespacedDeptKey(dept.deptKey)}:${legacyName || 'unknown'}`;
+}
+
+type LegacyNormalizerVersion = keyof typeof ROSTER_NAME_NORMALIZER_LEGACY_TOKENS;
+
+function legacyRosterIdentityNameSlug(entry: FacultyEntry, version: LegacyNormalizerVersion) {
+  if (entry.identityName) return slugify(entry.identityName);
+  const listed = entry.nameAsListed ?? entry.name;
+  return slugify(normalizeName(listed, ROSTER_NAME_NORMALIZER_LEGACY_TOKENS[version]));
+}
+
+/** The roster lane's name normalizer, on the one credential list profile slugs share. */
+export function normalizeRosterName(name: string | undefined | null): string {
+  return normalizeName(name, DEGREE_TOKENS);
+}
+
+function listedNameFields(listed: string): Pick<FacultyEntry, 'nameAsListed'> {
+  const current = normalizeRosterName(listed);
+  const readsDifferentlyUnderAnEarlierList = Object.values(
+    ROSTER_NAME_NORMALIZER_LEGACY_TOKENS,
+  ).some((tokens) => normalizeName(listed, tokens) !== current);
+  return readsDifferentlyUnderAnEarlierList ? { nameAsListed: listed } : {};
+}
+
+function rosterListedName(listed: string): Pick<FacultyEntry, 'name' | 'nameAsListed'> {
+  return { name: normalizeRosterName(listed), ...listedNameFields(listed) };
+}
+
+const writtenAsACredential = (word: string): boolean =>
+  /\./.test(word) || /[a-z][A-Z]/.test(word) || (word.length > 1 && word === word.toUpperCase());
+
+/**
+ * A roster entry whose given-name position holds a credential ("PhD <surname>") names no
+ * person, so the lane mints no person and no research row from it (#5969). A given name
+ * that is spelled like a credential but written as a name ("Ma", "Do") is a name and stays.
+ */
+export function rosterEntryGivenNameIsACredential(entry: FacultyEntry): boolean {
+  const words = normalizeRosterName(entry.name).split(/\s+/).filter(Boolean);
+  if (words.length < 2) return false;
+  return isDegreeToken(words[0]) && writtenAsACredential(words[0]);
 }
 
 function deptResearchEntitySlug(nameSlug: string, dept: DeptConfig): string {
@@ -4552,12 +4741,14 @@ export function withoutUnheldSceneIdentity(
 }
 
 function rosterEntryNameKey(entry: FacultyEntry): string {
-  const { first, last } = splitName(normalizeName(entry.name));
+  const { first, last } = splitName(normalizeRosterName(entry.name));
   return personNameKey(first, last);
 }
 
 function rosterIdentityNameSlug(entry: FacultyEntry): string {
-  return entry.identityName ? slugify(entry.identityName) : slugify(normalizeName(entry.name));
+  return entry.identityName
+    ? slugify(entry.identityName)
+    : slugify(normalizeRosterName(entry.name));
 }
 
 function entryToResearchEntityObservationsUnscreened(
@@ -4566,6 +4757,7 @@ function entryToResearchEntityObservationsUnscreened(
   sourceUrl: string,
   ownerEntityKey: string,
   labUrlIsUnusable: LabUrlIsUnusable = () => false,
+  labUrlIsCoLedGroupSite: LabUrlIsCoLedGroupSite = () => false,
 ): ObservationInput[] {
   // `isLikelyExplicitLabWebsite` reads the roster row. It cannot see what the
   // corpus has since decided about that URL, and a refusal is exactly the verdict
@@ -4574,11 +4766,15 @@ function entryToResearchEntityObservationsUnscreened(
   // `websiteUrl` while the name, kind, and `entityType` kept asserting the lab
   // (#3452). Withdrawal needs a positive verdict, never silence - see
   // `labUrlIsUnusableForResearchHome`.
-  const isExplicitLab =
+  const linksCoLedGroupSite = Boolean(entry.labUrl) && labUrlIsCoLedGroupSite(entry.labUrl!);
+  const linkAssertsLab =
     Boolean(entry.labUrl) && isLikelyExplicitLabWebsite(entry) && !labUrlIsUnusable(entry.labUrl!);
+  const isExplicitLab = linkAssertsLab && !linksCoLedGroupSite;
   const profileCitationUrl = officialProfileCitationUrl(entry);
-  const statedLabName = profileCitationUrl ? entry.statedLabName : undefined;
-  const admittedOnlyByStatedLabName = !isExplicitLab && dept.emitPersonalResearchEntities === false;
+  const statedLabName =
+    profileCitationUrl && !linksCoLedGroupSite ? entry.statedLabName : undefined;
+  const admittedOnlyByStatedLabName =
+    !linkAssertsLab && dept.emitPersonalResearchEntities === false;
   if (admittedOnlyByStatedLabName && !statedLabName) return [];
   const labUrl = admittedOnlyByStatedLabName ? undefined : entry.labUrl;
 
@@ -4590,7 +4786,7 @@ function entryToResearchEntityObservationsUnscreened(
     (Boolean(statedLabName) || Boolean(groundedDescription) || topics.length > 0);
   if (!labUrl && !hasLabLessResearchEvidence) return [];
 
-  const cleanedName = normalizeName(entry.name);
+  const cleanedName = normalizeRosterName(entry.name);
   const slug = rosterResearchEntitySlug(entry, dept);
   if (!slug) return [];
   const entityName = cleanedName
@@ -4706,7 +4902,18 @@ export class DepartmentRosterScraper implements IScraper {
     private readonly htmlFetcher: HtmlFetcher = fetchHtml,
     private readonly labUrlEvidenceLoader: LabUrlEvidenceLoader = loadLabUrlEvidenceBySlug,
     private readonly facultyTitledUserKeyLoader: FacultyTitledUserKeyLoader = loadUserKeysWithALiveFacultyTitle,
+    private readonly rosterOwnerKeyRowLoader?: RosterOwnerKeyRowLoader,
+    private readonly coLedSiteIndexLoader: CoLedSiteIndexLoader = loadCoLedSiteIndex,
+    private readonly legacyKeyRowLoader: LegacyKeyRowLoader = loadLegacyKeyRows,
   ) {}
+
+  private loadRosterOwnerKeyRows(): ReturnType<RosterOwnerKeyRowLoader> {
+    if (this.rosterOwnerKeyRowLoader) return this.rosterOwnerKeyRowLoader();
+    return loadRosterOwnerKeyRows(
+      (slug) => rosterResearchEntitySlugPrefixForSlug(slug, this.configs),
+      (prefix) => rosterHostForSlugPrefix(prefix, this.configs),
+    );
+  }
 
   /**
    * Read a roster page and record the attempt.
@@ -4788,6 +4995,14 @@ export class DepartmentRosterScraper implements IScraper {
     const withdrawnEntityKeysByDept = new Map<string, Set<string>>();
     const profilesReadByDept = new Map<string, number>();
     const rekeyReads = new RekeyedPersonReads(this.name);
+    let rosterOwnerKeyRowsRead: ReturnType<RosterOwnerKeyRowLoader> | undefined;
+    const rosterOwnerKeyRows = () => (rosterOwnerKeyRowsRead ??= this.loadRosterOwnerKeyRows());
+    const rowsMintedThisRunByOwnerKey = new Map<string, RosterOwnerKeyRow>();
+    let coLedSitesRead: Promise<CoLedSiteIndex> | undefined;
+    const coLedSiteIndex = () => (coLedSitesRead ??= this.coLedSiteIndexLoader());
+    let attachedToExistingRow = 0;
+    let adoptedLegacyKeys = 0;
+    let refusedLegacyKeys = 0;
     const processEntries = async (
       entries: FacultyEntry[],
       dept: DeptConfig,
@@ -4816,7 +5031,9 @@ export class DepartmentRosterScraper implements IScraper {
           .map((rosterEntry) => identityTokens(rosterEntry.name).at(-1))
           .filter((surname): surname is string => Boolean(surname)),
       );
+      const progress = rosterProfileProgress(dept.deptKey, entries.length, ctx.log);
       for (const rawEntry of entries) {
+        progress.beforeRow();
         if (totalFaculty + admitted.length >= limit) {
           truncatedByLimit = true;
           break;
@@ -4848,17 +5065,58 @@ export class DepartmentRosterScraper implements IScraper {
         enriched.push({ entry, personKey });
       }
       for (const key of await this.facultyTitledUserKeyLoader(
-        enriched.map(({ personKey }) => personKey),
+        enriched.flatMap(({ entry, personKey }) => [
+          personKey,
+          legacyRosterOwnerKey(personKey, entry, dept),
+        ]),
       )) {
         facultyTitledUserKeys.add(key);
       }
+      const rekeyedSlugs = enriched.flatMap(({ entry }) => {
+        const current = rosterResearchEntitySlug(entry, dept);
+        const legacy = legacyRosterResearchEntitySlug(entry, dept);
+        return legacy && legacy !== current ? [current, legacy] : [];
+      });
+      const legacyKeyRows = rekeyedSlugs.length
+        ? await this.legacyKeyRowLoader(rekeyedSlugs)
+        : new Map();
 
       for (const { entry } of withoutSharedGroupWebsites(enriched)) {
-        const { observations: typedUserObs, entityKey } = entryToUserObservations(
-          entry,
-          dept,
-          sourceUrl,
-        );
+        if (rosterEntryGivenNameIsACredential(entry)) {
+          const withdrawnKey = rosterMintWithdrawnEntityKey(entry, dept, {
+            observations: [],
+            refusedByTitle: false,
+          });
+          if (withdrawnKey && !dept.crossListedProgramme) {
+            const deptWithdrawn = withdrawnEntityKeysByDept.get(dept.deptKey) ?? new Set<string>();
+            deptWithdrawn.add(withdrawnKey);
+            withdrawnEntityKeysByDept.set(dept.deptKey, deptWithdrawn);
+          }
+          if (!dept.crossListedProgramme && entry.profileReadOutcome === 'read') {
+            profilesReadByDept.set(dept.deptKey, (profilesReadByDept.get(dept.deptKey) ?? 0) + 1);
+          }
+          continue;
+        }
+        const currentSlug = rosterResearchEntitySlug(entry, dept);
+        const legacySlug = legacyRosterResearchEntitySlug(entry, dept);
+        const { observations: currentUserObs, entityKey: currentOwnerKey } =
+          entryToUserObservations(entry, dept, sourceUrl);
+        const legacyOwnerKey = legacyRosterOwnerKey(currentOwnerKey, entry, dept);
+        const adoption = decideLegacyKeyAdoption({
+          currentSlug,
+          legacySlug,
+          ownerKey: currentOwnerKey,
+          legacyOwnerKey,
+          rowsBySlug: legacyKeyRows,
+        });
+        const entityKey = adoption.kind === 'adopt' ? adoption.ownerKey : currentOwnerKey;
+        const refusalWithholdsNewPersonKey =
+          adoption.kind === 'refuse' && legacyOwnerKey !== currentOwnerKey;
+        const typedUserObs = refusalWithholdsNewPersonKey
+          ? []
+          : entityKey === currentOwnerKey
+            ? currentUserObs
+            : currentUserObs.map((observation) => ({ ...observation, entityKey }));
         const userObs = holdUserTypingForRunEnd(
           typedUserObs,
           entityKey,
@@ -4876,10 +5134,61 @@ export class DepartmentRosterScraper implements IScraper {
               dept,
               sourceUrl,
               entityKey,
-              labUrlUnusabilityFor(labUrlEvidenceBySlug, rosterResearchEntitySlug(entry, dept)),
+              labUrlUnusabilityFor(labUrlEvidenceBySlug, currentSlug),
+              coLedGroupSiteFor(await coLedSiteIndex(), currentSlug, {
+                email: entry.email,
+                profileUrl: officialProfileCitationUrl(entry),
+              }),
             );
-        const labObs = mint.observations;
+        if (adoption.kind === 'adopt') {
+          mint.observations = mint.observations.map((observation) => ({
+            ...observation,
+            entityKey: adoption.legacySlug,
+            entityId: adoption.entityId,
+            ...(observation.field === 'slug' ? { value: adoption.legacySlug } : {}),
+          }));
+          adoptedLegacyKeys++;
+        } else if (adoption.kind === 'refuse') {
+          mint.observations = [];
+          refusedLegacyKeys++;
+        }
+        const ownSlug = adoption.kind === 'adopt' ? adoption.legacySlug : currentSlug;
+        const attach =
+          mint.observations.length > 0 && !dept.crossListedProgramme
+            ? decideRosterAttach({
+                ownerKey: entityKey,
+                ownSlug,
+                ownRosterPrefix: rosterResearchEntitySlugPrefix(dept),
+                personName: entry.identityName || entry.name,
+                rowsByOwnerKey: await rosterOwnerKeyRows(),
+                mintedThisRun: rowsMintedThisRunByOwnerKey,
+              })
+            : { targetSlug: ownSlug, reason: 'mint-own' as const };
+        const attachedSlug = attach.targetSlug !== ownSlug ? attach.targetSlug : '';
+        const labObs = attachedSlug ? [] : mint.observations;
         const labKey = labObs[0]?.entityKey;
+        if (attachedSlug) {
+          attachedToExistingRow++;
+          const appointmentObs = mint.observations
+            .filter((observation) => observation.field === 'departments')
+            .map((observation) => ({ ...observation, entityKey: attachedSlug }));
+          if (appointmentObs.length > 0) {
+            await ctx.emit(appointmentObs);
+            observations += appointmentObs.length;
+          }
+          const deptDiscovered = discoveredEntityKeysByDept.get(dept.deptKey) ?? new Set<string>();
+          deptDiscovered.add(attachedSlug);
+          deptDiscovered.add(ownSlug);
+          discoveredEntityKeysByDept.set(dept.deptKey, deptDiscovered);
+        } else if (labObs.length > 0 && labKey && !rowsMintedThisRunByOwnerKey.has(entityKey)) {
+          rowsMintedThisRunByOwnerKey.set(entityKey, {
+            id: '',
+            slug: labKey,
+            rosterPrefix: rosterResearchEntitySlugPrefix(dept),
+            mintedFromRosterHost: rosterHostOfUrl(dept.url),
+            leadPrimaryIdentityUrls: [],
+          });
+        }
         if (labObs.length > 0 && labKey && !seenLabKeys.has(labKey)) {
           seenLabKeys.add(labKey);
           await ctx.emit(labObs);
@@ -4907,8 +5216,10 @@ export class DepartmentRosterScraper implements IScraper {
           typeof labKey === 'string' && labKey
             ? labKey
             : mint.refusedByTitle
-              ? rosterResearchEntitySlug(entry, dept)
-              : '';
+              ? currentSlug
+              : adoption.kind === 'refuse'
+                ? adoption.legacySlug
+                : '';
         if (discoveredKey && !dept.crossListedProgramme) {
           const deptDiscovered = discoveredEntityKeysByDept.get(dept.deptKey) ?? new Set<string>();
           deptDiscovered.add(discoveredKey);
@@ -4917,7 +5228,10 @@ export class DepartmentRosterScraper implements IScraper {
         if (!dept.crossListedProgramme && entry.profileReadOutcome === 'read') {
           profilesReadByDept.set(dept.deptKey, (profilesReadByDept.get(dept.deptKey) ?? 0) + 1);
         }
-        const withdrawnKey = rosterMintWithdrawnEntityKey(entry, dept, mint);
+        const withdrawnKey =
+          attachedSlug || adoption.kind === 'refuse'
+            ? ''
+            : rosterMintWithdrawnEntityKey(entry, dept, mint);
         if (withdrawnKey) {
           const deptWithdrawn = withdrawnEntityKeysByDept.get(dept.deptKey) ?? new Set<string>();
           deptWithdrawn.add(withdrawnKey);
@@ -5242,6 +5556,16 @@ export class DepartmentRosterScraper implements IScraper {
     ctx.log(
       `Emitted ${totalObs} observations across ${totalFaculty} faculty / ${totalLabs} labs (${summary})`,
     );
+    if (adoptedLegacyKeys > 0 || refusedLegacyKeys > 0) {
+      ctx.log(
+        `${adoptedLegacyKeys} roster entries kept writing to the row their earlier key holds, ${refusedLegacyKeys} refused to mint beside an unmatched earlier-key row (#5969)`,
+      );
+    }
+    if (attachedToExistingRow > 0) {
+      ctx.log(
+        `${attachedToExistingRow} roster entries attached to the person's existing row on another roster instead of minting a second row (#5969)`,
+      );
+    }
 
     const breakageStatuses = new Set(['empty', 'extractor-error', 'rendered-extractor-error']);
     const brokenSources = perDept.filter((d) => breakageStatuses.has(d.status));

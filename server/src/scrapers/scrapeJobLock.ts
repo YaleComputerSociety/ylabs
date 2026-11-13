@@ -4,10 +4,17 @@ import { hostname } from 'os';
 import { ScrapeJobLock } from '../models/scrapeJobLock';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import { onInterrupt } from '../utils/interruptCleanup';
+import { registerDevWriteStopCleanup } from '../db/devWriteStop';
+import { isLocalProcessAlive } from './scrapeRunLiveness';
 import type { ScraperEnvironment } from './scraperEnvironment';
 
 export const DEFAULT_SCRAPE_JOB_LOCK_LEASE_MS = 30 * 60 * 1000;
 export const DEFAULT_SCRAPE_JOB_LOCK_HEARTBEAT_MS = 60 * 1000;
+/**
+ * A dead-pid takeover also needs the holder's heartbeat this stale, the same rule as the
+ * Development write lease, so a misread pid probe cannot take a lock that is still renewing.
+ */
+export const SCRAPE_JOB_LOCK_DEAD_OWNER_HEARTBEAT_AGE_MS = 2 * DEFAULT_SCRAPE_JOB_LOCK_HEARTBEAT_MS;
 
 export type ScrapeJobLockReleaseReason = 'success' | 'failure' | 'manual';
 
@@ -17,6 +24,43 @@ export interface ScrapeJobLockInput {
   ownerId: string;
   now?: Date;
   leaseMs?: number;
+}
+
+export interface AcquireScrapeJobLockInput extends ScrapeJobLockInput {
+  ownerHost?: string;
+  ownerPid?: number;
+  isLocalProcessAlive?: (pid: number) => boolean;
+}
+
+export interface ScrapeJobLockHolderFacts {
+  locked?: boolean;
+  ownerId?: string;
+  ownerHost?: string;
+  ownerPid?: number;
+  ownerProcessOwnerId?: string;
+  heartbeatAt?: Date;
+}
+
+/**
+ * A held lock may be taken from a holder only when all of these hold: it was written on this host,
+ * its recorded pid is still the current owner's, that pid is not this process, its heartbeat is
+ * older than two intervals, and the pid is dead. A live pid is never taken over, however stale its
+ * heartbeat, and a lock written without a host and pid is left to its lease expiry.
+ */
+export function isDeadLocalScrapeJobLockOwner(
+  holder: ScrapeJobLockHolderFacts,
+  context: { host: string; pid: number; now: Date; isLocalProcessAlive: (pid: number) => boolean },
+): boolean {
+  if (holder.locked !== true || !holder.ownerId) return false;
+  if (holder.ownerHost !== context.host) return false;
+  if (typeof holder.ownerPid !== 'number' || holder.ownerPid === context.pid) return false;
+  if (holder.ownerProcessOwnerId !== holder.ownerId) return false;
+  const heartbeatStale =
+    !holder.heartbeatAt ||
+    context.now.getTime() - new Date(holder.heartbeatAt).getTime() >
+      SCRAPE_JOB_LOCK_DEAD_OWNER_HEARTBEAT_AGE_MS;
+  if (!heartbeatStale) return false;
+  return !context.isLocalProcessAlive(holder.ownerPid);
 }
 
 export type AcquireScrapeJobLockResult =
@@ -32,10 +76,13 @@ export type AcquireScrapeJobLockResult =
     };
 
 export async function acquireScrapeJobLock(
-  input: ScrapeJobLockInput,
+  input: AcquireScrapeJobLockInput,
 ): Promise<AcquireScrapeJobLockResult> {
   const now = input.now || new Date();
   const leaseExpiresAt = leaseExpiry(now, input.leaseMs);
+  const ownerHost = input.ownerHost ?? hostname();
+  const ownerPid = input.ownerPid ?? process.pid;
+  const ownerProcess = { ownerHost, ownerPid, ownerProcessOwnerId: input.ownerId };
   const filter = {
     environment: input.environment,
     sourceName: input.sourceName,
@@ -52,6 +99,7 @@ export async function acquireScrapeJobLock(
       acquiredAt: now,
       heartbeatAt: now,
       leaseExpiresAt,
+      ...ownerProcess,
     },
     $unset: {
       releasedAt: '',
@@ -70,6 +118,20 @@ export async function acquireScrapeJobLock(
     };
   }
 
+  const takenOver = await takeOverDeadLocalScrapeJobLock(input, update, {
+    host: ownerHost,
+    pid: ownerPid,
+    now,
+    isLocalProcessAlive: input.isLocalProcessAlive ?? isLocalProcessAlive,
+  });
+  if (takenOver) {
+    return {
+      acquired: true,
+      ownerId: input.ownerId,
+      lock: takenOver,
+    };
+  }
+
   try {
     const created = await ScrapeJobLock.create({
       _id: scrapeJobLockId(input.environment, input.sourceName),
@@ -80,6 +142,7 @@ export async function acquireScrapeJobLock(
       acquiredAt: now,
       heartbeatAt: now,
       leaseExpiresAt,
+      ...ownerProcess,
     });
     return {
       acquired: true,
@@ -96,6 +159,34 @@ export async function acquireScrapeJobLock(
     }
     throw error;
   }
+}
+
+async function takeOverDeadLocalScrapeJobLock(
+  input: AcquireScrapeJobLockInput,
+  update: Record<string, unknown>,
+  context: Parameters<typeof isDeadLocalScrapeJobLockOwner>[1],
+): Promise<unknown> {
+  const current = (await ScrapeJobLock.findOne({
+    environment: input.environment,
+    sourceName: input.sourceName,
+  }).lean()) as (ScrapeJobLockHolderFacts & { _id: string }) | null;
+  if (!current || !isDeadLocalScrapeJobLockOwner(current, context)) return null;
+  const taken = await ScrapeJobLock.findOneAndUpdate(
+    {
+      _id: current._id,
+      locked: true,
+      ownerId: current.ownerId,
+      heartbeatAt: current.heartbeatAt ?? { $exists: false },
+    },
+    update,
+    { returnDocument: 'after' },
+  );
+  if (taken) {
+    console.warn(
+      `Took over the ${input.environment} job lock for ${input.sourceName} from ${sanitizeLogValue(current.ownerId)}, whose process ${current.ownerPid} on this host had exited and whose heartbeat was older than ${SCRAPE_JOB_LOCK_DEAD_OWNER_HEARTBEAT_AGE_MS / 1000} s.`,
+    );
+  }
+  return taken;
 }
 
 export async function heartbeatScrapeJobLock(
@@ -328,6 +419,22 @@ export async function withScrapeJobLock<T>(
     deps,
   );
 
+  const detachStopRelease = registerDevWriteStopCleanup({
+    description: `${input.environment} source lock "${input.sourceName}"`,
+    run: async () => {
+      released = true;
+      heartbeat.stop();
+      const { released: releasedNow } = await deps.releaseScrapeJobLock({
+        environment: input.environment,
+        sourceName: input.sourceName,
+        ownerId: input.ownerId,
+        leaseMs: input.leaseMs,
+        releaseReason: 'failure',
+      });
+      return releasedNow ? 'released' : 'was no longer held by this process';
+    },
+  });
+
   // Without this, Ctrl-C or a `kill` leaves the row locked for the rest of the
   // lease and the operator's immediate retry is refused for up to 30 minutes.
   // `onInterrupt` re-raises the signal after the release so the exit status
@@ -351,6 +458,7 @@ export async function withScrapeJobLock<T>(
     throw error;
   } finally {
     detachInterruptRelease();
+    detachStopRelease();
     heartbeat.stop();
   }
 }

@@ -171,11 +171,27 @@ The cap stays above twice `MAX_MATERIALIZATION_CONCURRENCY`, and a checkout wait
 Both are a mitigation rather than a measured cause: an in-memory reproduction of a field-scoped user materialize never checked out more than 3 connections, and on a pool of 10 it recovered from socket resets, silent blackholes, refused reconnects, DNS failures, a server restart and a frozen replica set, with every pool clear followed by pool ready (#5945).
 `initializeConnections()` connects with the script budget by default, because nearly every caller is an operator entry point, and `server/src/index.ts` is the one caller that passes `mongoOptions`.
 A script that connects through `connectScriptMongo`, `createScriptMongoConnection`, or `initializeConnections` on the script budget writes a Node diagnostic report on `kill -USR2 <pid>`, to the temp directory and without environment variables, so a stalled script yields its pending handles and stack without a restart (#5945).
-A field-scoped user materialize (`scrape materialize --only-fields`) prints a `[field-scoped-user-materialize]` progress line every 250 keys or every minute, so a stall shows as the lines stopping.
 `triggerReconnect` reuses whichever budget the process connected with, so a reconnect never moves a script onto the serving budget or the server onto the script one.
 The numbers come from measurement rather than taste: a reachable database answers a detail request in under 10 ms, while the driver's 30 s and 60 s defaults turned an unreachable or hung one into a 30 s to 63 s wait that ended in a generic 500 (#4188).
 The socket ceiling stays above the slowest request this server makes and under the hosting platform's own request timeout.
 Any single in-process operation that legitimately needs longer than the socket ceiling belongs in a script or a child process, which is where the heavy audits already run.
+
+## Script exit and the held-open code
+
+A long operator script hands its entry point to `runScriptMain(main, options?)` in `server/src/db/connections.ts` instead of chaining `.catch`/`.finally` onto `main()` (#5945).
+It awaits `main` and never exits while it runs.
+On success it stops the keep-alive pass, releases held Development write leases, and closes every Mongoose connection, including ones from `createScriptMongoConnection`, and then lets the process exit on its own.
+It arms an unref'd watchdog first (`SCRIPT_EXIT_WATCHDOG_MS`, 30 s).
+A process still alive at that bound logs `work completed; process held the event loop open: <handle types and counts>` from `process.getActiveResourcesInfo()` and exits `SCRIPT_EXIT_HELD_OPEN`, which is 3.
+Exit 3 means the work completed and some handle leaked, so cron and sessions can tell it from exit 1, which is a failure; an exit code the script already set, such as a refusal's 1, is kept rather than replaced by 3.
+A thrown error is logged through `sanitizeLogValue` (or the script's own `logFailure`), the connections are closed within the same bound, and the process exits 1.
+`server/src/scripts/__tests__/longScriptEntryPointsUseRunScriptMain.test.ts` lists the long entry points by package script name with a reason each, runs each one, and fails when one does not hand `main` to `runScriptMain`, so a new long script belongs on that list.
+`server/src/db/__tests__/runScriptMain.integration.test.ts` drives real child processes for the held-open, clean, throwing and second-connection cases.
+Long Development runs need the laptop lid open or AC power: `caffeinate -i` prevents idle sleep only, not clamshell sleep.
+A run that spans a sleep looks hung (its log shows a disconnect and reconnects on each maintenance wake, but no progress), so re-run it.
+That is separate from exit 3, which is a process that finished its work while awake and still would not exit.
+Long user-key runs (`observations:rematerialize-user-keys`, and the field-scoped user materialize `scrape materialize --only-fields`) go through `startLongRunProgress` in `server/src/utils/longRunProgress.ts`.
+They print a start line with the key count before the first key, a progress line every 250 keys or every minute while keys complete, and a `still working` heartbeat every minute while no key completes, so a slow prefetch reads as alive and a stuck one shows how long since its last key.
 
 A request that could not reach the database answers `503` with a `Retry-After`, never `500`, and `isMongoUnavailableError` is the one predicate that decides it.
 Every arm except a lost topology is still reported to error tracking, because a socket timeout against a reachable database is a slow query that needs fixing rather than an outage.

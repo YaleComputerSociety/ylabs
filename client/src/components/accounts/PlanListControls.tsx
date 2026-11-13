@@ -84,7 +84,7 @@ const PlanListControls = ({
                   onChange={() => onChange({ ...view, stageFilter: filter })}
                   className="peer sr-only"
                 />
-                <span className="yr-focus-ring-peer yr-pressable inline-flex min-h-[44px] items-center gap-2 whitespace-nowrap rounded-control border border-[var(--yr-line-control)] bg-[var(--yr-panel)] px-3 text-sm text-ink-soft transition-colors hover:bg-[var(--yr-panel-muted)] peer-checked:border-brand peer-checked:bg-brand peer-checked:text-white">
+                <span className="yr-focus-ring-peer yr-pressable inline-flex min-h-[44px] items-center gap-2 whitespace-nowrap rounded-control border border-[var(--yr-line-control)] bg-[var(--yr-panel)] px-3 text-sm text-ink-soft transition-colors hover:bg-[var(--yr-panel-muted)] peer-checked:border-brand peer-checked:bg-brand peer-checked:text-white peer-checked:hover:bg-brand-navy">
                   {planStageFilterLabel(filter, surface)}
                   <span aria-hidden="true" className="yr-num text-xs opacity-80">
                     {count}

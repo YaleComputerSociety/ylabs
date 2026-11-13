@@ -10,6 +10,10 @@ import {
 } from '../sources/ysmFacultyDirectoryScraper';
 import { NO_SURNAME_ROSTER } from '../../utils/researchHomeNameIdentityAuthority';
 import type { ObservationInput, ScraperContext } from '../types';
+import { syntheticPersonOrcid } from '../../test/syntheticOrcid';
+
+const SYNTHETIC_ORCID_1 = syntheticPersonOrcid(500);
+const SYNTHETIC_ORCID_2 = syntheticPersonOrcid(501);
 
 const DIRECTORY_URL = 'https://medicine.yale.edu/faculty/faculty-directory/facultylist/';
 
@@ -226,7 +230,7 @@ describe('extractProfile', () => {
       researchDescription: 'Research on heart failure and cardiac remodeling mechanisms.',
       bio: 'Dr. Rivers received an MD from Yale School of Medicine.',
       labWebsite: { name: 'Rivers Lab', url: 'https://riverslab.example.org' },
-      orcid: '9999-9000-9999-9005',
+      orcid: SYNTHETIC_ORCID_1,
     });
     const profile = extractProfile(html, RIVERS);
     expect(profile?.name).toBe('Jordan Rivers');
@@ -237,14 +241,14 @@ describe('extractProfile', () => {
     expect(profile?.description).toContain('cardiac remodeling');
     expect(profile?.bio).toContain('Yale School of Medicine');
     expect(profile?.labUrl).toBe('https://riverslab.example.org');
-    expect(profile?.orcid).toBe('9999-9000-9999-9005');
+    expect(profile?.orcid).toBe(SYNTHETIC_ORCID_1);
   });
 
   it("takes no ORCID from a profile list holding several, since it does not say which is the subject's (#5932)", () => {
     const several = extractProfile(
       profileHtml({
         fullName: 'Jordan Rivers',
-        orcids: ['9999-9000-9999-9005', '9999-9000-9999-0019'],
+        orcids: [SYNTHETIC_ORCID_1, SYNTHETIC_ORCID_2],
       }),
       RIVERS,
     );
@@ -252,11 +256,11 @@ describe('extractProfile', () => {
     const repeated = extractProfile(
       profileHtml({
         fullName: 'Jordan Rivers',
-        orcids: ['9999-9000-9999-9005', '9999-9000-9999-9005'],
+        orcids: [SYNTHETIC_ORCID_1, SYNTHETIC_ORCID_1],
       }),
       RIVERS,
     );
-    expect(repeated?.orcid).toBe('9999-9000-9999-9005');
+    expect(repeated?.orcid).toBe(SYNTHETIC_ORCID_1);
   });
 
   it('drops MeSH geographic descriptors, which tag a study site rather than a topic', () => {

@@ -7,6 +7,8 @@ import {
 import { Fellowship } from '../models/fellowship';
 import { ResearchEntity } from '../models/researchEntity';
 import {
+  protectedRoleEdgeFor,
+  type ProtectedRoleEdge,
   pinRoleAssignmentUpsertToLiveEdge,
   RoleAssignment,
   roleAssignmentReattachWrite,
@@ -27,7 +29,12 @@ import {
   assessResearchEntityDescriptionQuality,
   deriveShortDescriptionFromFullDescription,
 } from '../utils/researchEntityDescriptionQuality';
-import { buildResearchEntityQualitySummary } from './researchEntityQuality';
+import {
+  buildResearchEntityQualitySummary,
+  researchEntityLeadStateForMembers,
+} from './researchEntityQuality';
+import { studentVisibilityGateLeadRows } from './studentVisibilityGateService';
+import { LEAD_ROLE_CANONICAL_VALUES } from '../models/canonicalRoleMapping';
 import { recordAdminAuditEvent, type RecordAdminAuditEventInput } from './adminAuditService';
 import {
   STUDENT_VISIBILITY_OVERRIDE_AUDIT_ACTIONS,
@@ -157,7 +164,7 @@ function toVisibilityRepairObjectId(value: unknown): mongoose.Types.ObjectId | u
   return id ? new mongoose.Types.ObjectId(id) : undefined;
 }
 
-interface RepairDeps {
+export interface RepairDeps {
   findOpenQueueItems: (
     options: VisibilityRepairQueueOptions,
   ) => Promise<VisibilityRepairQueueItemInput[]>;
@@ -173,6 +180,14 @@ interface RepairDeps {
     metadata: { sourceUrl: string; sourceName: string; confidence: number },
   ) => Promise<void>;
   isRemovedByRequest?: (userId: string) => Promise<boolean>;
+  findLeadCandidateEntry: (
+    researchEntityId: string,
+    userId: string,
+  ) => Promise<{ holdsLiveLeadEdge: boolean; entry: Record<string, unknown> } | null>;
+  findProtectedLeadEdge: (
+    researchEntityId: string,
+    userId: string,
+  ) => Promise<ProtectedRoleEdge | null>;
   updateResearchEntity: (id: string, patch: Record<string, unknown>) => Promise<void>;
   findProgram: (id: string) => Promise<Record<string, any> | null>;
   updateProgram: (id: string, patch: Record<string, unknown>) => Promise<void>;
@@ -1262,6 +1277,29 @@ async function attemptResearchRepair(
         repairSource: sourceUrl,
       };
     }
+    const blocked = (reason: string): VisibilityRepairAttempt => ({
+      plan,
+      applied: false,
+      status: 'blocked',
+      patchSummary: [],
+      remainingBlockers: uniqueStrings([...plan.blockerReasons, reason]),
+      repairSource: sourceUrl,
+    });
+    const protectedEdge = await deps.findProtectedLeadEdge(plan.recordId, userId);
+    if (protectedEdge) {
+      return blocked(
+        protectedEdge === 'disputed' ? 'lead_edge_disputed' : 'lead_edge_operator_ended',
+      );
+    }
+    const candidate = await deps.findLeadCandidateEntry(plan.recordId, userId);
+    if (!candidate) return blocked('lead_candidate_unreadable');
+    if (candidate.holdsLiveLeadEdge) return blocked('lead_candidate_already_leads');
+    if (
+      researchEntityLeadStateForMembers(studentVisibilityGateLeadRows([candidate.entry])) !==
+      'lead_attached'
+    ) {
+      return blocked('lead_candidate_cannot_lead');
+    }
     if (mode === 'apply') {
       await deps.upsertResearchEntityMember(plan.recordId, userId, {
         sourceUrl,
@@ -1543,7 +1581,7 @@ export async function attemptVisibilityRepair(
  */
 export const VISIBILITY_REPAIR_QUEUE_DRAIN_SORT = { firstSeenAt: 1, _id: 1 } as const;
 
-const defaultRepairDeps: RepairDeps = {
+export const defaultRepairDeps: RepairDeps = {
   async findOpenQueueItems(options) {
     const filter: Record<string, unknown> = { status: 'open' };
     if (options.collection && options.collection !== 'all') filter.collection = options.collection;
@@ -1628,6 +1666,54 @@ const defaultRepairDeps: RepairDeps = {
     if (removed) guard.recordRefusal();
     return removed;
   },
+  async findLeadCandidateEntry(researchEntityId, userId) {
+    const entityObjectId = toVisibilityRepairObjectId(researchEntityId);
+    const personObjectId = toVisibilityRepairObjectId(userId);
+    if (!entityObjectId || !personObjectId) return null;
+    const person = (await Researcher.findById(personObjectId)
+      .select('_id displayName identifiers.netid profile.title')
+      .lean()) as {
+      _id: unknown;
+      displayName?: string;
+      identifiers?: { netid?: string };
+      profile?: { title?: string };
+    } | null;
+    if (!person) return null;
+    const holdsLiveLeadEdge = Boolean(
+      await RoleAssignment.exists({
+        personId: personObjectId,
+        'target.kind': 'RESEARCH_ENTITY',
+        'target.id': entityObjectId,
+        role: { $in: LEAD_ROLE_CANONICAL_VALUES },
+        state: { $ne: 'HISTORICAL' },
+        archived: { $ne: true },
+      }),
+    );
+    return {
+      holdsLiveLeadEdge,
+      entry: {
+        researchEntityId: entityObjectId,
+        role: 'pi',
+        state: 'UNKNOWN',
+        personId: person._id,
+        name: person.displayName,
+        ...(person.identifiers?.netid ? { netid: person.identifiers.netid } : {}),
+        ...(person.profile?.title ? { title: person.profile.title } : {}),
+      },
+    };
+  },
+  async findProtectedLeadEdge(researchEntityId, userId) {
+    const entityObjectId = toVisibilityRepairObjectId(researchEntityId);
+    const personObjectId = toVisibilityRepairObjectId(userId);
+    if (!entityObjectId || !personObjectId) return null;
+    return protectedRoleEdgeFor(
+      buildVisibilityRepairPiRoleAssignmentUpsert(personObjectId, entityObjectId, {
+        sourceUrl: '',
+        sourceName: '',
+        confidence: 0,
+      }).filter,
+    );
+  },
   async upsertResearchEntityMember(researchEntityId, userId, metadata) {
     const entityObjectId = toVisibilityRepairObjectId(researchEntityId);
     const personObjectId = toVisibilityRepairObjectId(userId);
@@ -1641,6 +1727,7 @@ const defaultRepairDeps: RepairDeps = {
       entityObjectId,
       metadata,
     );
+    if (await protectedRoleEdgeFor(filter)) return;
     const liveFilter = await pinRoleAssignmentUpsertToLiveEdge(filter);
     const reattach = roleAssignmentReattachWrite(liveFilter, 'UNREVIEWED');
     await RoleAssignment.updateOne(liveFilter, update, options);

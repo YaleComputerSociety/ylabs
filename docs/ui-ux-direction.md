@@ -56,7 +56,7 @@ Primary UX ingredients:
 Research filter behavior:
 
 - Type, school, and department selections are URL-backed (`type`, `school`, `department`) so reload, sharing, and browser navigation preserve them.
-  The type axis accepts only the canonical `researchEntityTypes` enum, so a typo or retired value is ignored rather than rendered as a confidently labelled empty result set; see `docs/decisions.md` 2026-09-22 (#2195).
+  The type axis accepts only the canonical `researchEntityTypes` enum plus Creative practice (#5141), so a typo or retired value is ignored rather than rendered as a confidently labelled empty result set; see `docs/decisions.md` 2026-09-22 (#2195).
 - Active selections appear as individually removable chips, with a clear-all action and an active count on the Filters control.
 - The control opens as a non-modal desktop disclosure and an accessible, focus-contained mobile sheet.
 - Type, school, and department facet choices come from positive counts for the current query, while an active value remains available even if a later distribution omits it.
@@ -94,7 +94,7 @@ The page should answer:
 Primary UX ingredients:
 
 - Header with entity type, department/school, short description, and website, carrying no computed verdict or access-summary badge.
-  The one exception is an undergraduate invitation the lab's own page states, shown as "Welcomes undergrads, recruiting now" or "Welcomes undergrads" beside the quote that backs it (#5288).
+  The one exception is an undergraduate invitation the lab's own page states, shown as "Taking undergrads now, recruiting" or "Taking undergrads now" beside the quote that backs it (#5288, relabelled in #5963).
 - A Ways to approach or planning-context section before or near active opportunities.
 - Evidence section with source-backed snippets.
 - A deduped Sources section that shows each official source once and explains which pathways/evidence/routes it supports.

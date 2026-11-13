@@ -133,6 +133,44 @@ describe('longTextParagraphs', () => {
     expect(paragraphs.some((paragraph) => paragraph.includes('www.cpirt.yale.edu.'))).toBe(true);
   });
 
+  it('keeps a bare domain and its path whole across paragraph breaks', () => {
+    const text = [
+      'Funds may not be used for travel to restricted regions.',
+      'Before you book, go to travel.example.edu/travel-resources/travel-policy and register your trip.',
+      'Contact the office with questions.',
+      'Receipts are due within thirty days of return.',
+      'Unused funds must be returned to the program.',
+    ].join(' ');
+
+    const paragraphs = longTextParagraphs(text, {
+      minAutoSplitCharacters: 120,
+      sentencesPerParagraph: 3,
+    });
+
+    expect(paragraphs).toHaveLength(2);
+    expect(paragraphs[0]).toContain('go to travel.example.edu/travel-resources/travel-policy and');
+    expect(paragraphs[1]).toBe(
+      'Receipts are due within thirty days of return. Unused funds must be returned to the program.',
+    );
+  });
+
+  it('still ends a sentence at a bare domain that closes it', () => {
+    const text = [
+      'Details are posted at grants.example.org.',
+      'Applications open in the fall.',
+      'Awards are announced in the spring.',
+      'Recipients submit a short report.',
+      'Questions go to the program office.',
+    ].join(' ');
+
+    expect(
+      longTextParagraphs(text, { minAutoSplitCharacters: 120, sentencesPerParagraph: 3 }),
+    ).toEqual([
+      'Details are posted at grants.example.org. Applications open in the fall. Awards are announced in the spring.',
+      'Recipients submit a short report. Questions go to the program office.',
+    ]);
+  });
+
   it('does not add stray spacing inside a parenthesized bare URL', () => {
     const text = [
       'He has developed an online resource for teaching and learning R (www.intro2r.info).',

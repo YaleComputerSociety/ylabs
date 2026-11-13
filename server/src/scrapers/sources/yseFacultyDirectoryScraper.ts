@@ -26,7 +26,7 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import { getCached, setCached } from '../snapshotCache';
 import { clampDescriptionLength } from '../../utils/descriptionHygiene';
-import { normalizeOrcid } from '../../utils/orcid';
+import { plausiblePersonOrcid } from '../../utils/orcid';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
@@ -39,6 +39,12 @@ import {
   type LabUrlVerdictFor,
 } from '../utils/labUrlEvidence';
 import {
+  coLedGroupSiteFor,
+  loadCoLedSiteIndex,
+  type CoLedSiteIndexLoader,
+  type LabUrlIsCoLedGroupSite,
+} from '../utils/coLedGroupSites';
+import {
   isLikelyPersonSpecificYaleEmail,
   netidFromEmail,
   normalizeName,
@@ -47,6 +53,10 @@ import {
 import { personNameKey } from '../rekeyedPersonKeyPlan';
 import { RekeyedPersonReads, settleRekeyedPersonReads } from '../rekeyedPersonKeyRetirement';
 import { asYaleNetid } from '../../utils/yaleNetid';
+import {
+  eponymousLabNameSurnameCandidates,
+  personSurnamesFromDisplayNames,
+} from '../../utils/researchHomeNameIdentityAuthority';
 import {
   mintsNoResearchEntityAsTeachingAppointment,
   ownsNoResearchEntityByTitle,
@@ -228,14 +238,34 @@ function extractDescription($: cheerio.CheerioAPI): string | undefined {
 const GENERIC_RESEARCH_SITE_LABEL =
   /^(?:lab(?:oratory)?(?: website| site)?|website|personal(?: website| site| page)?|home ?page|research ?group(?: website| site)?|group(?: website| site)?)$/i;
 
+const SITE_NOUN_SUFFIX = /\s+(?:website|web\s*site|site|home\s*page|page)$/i;
+const OWN_LAB_LABEL_SHAPE =
+  /^(?:the\s+)?(?:[a-z][a-z'’-]*\s+)?[a-z][a-z'’-]*(?:['’]s)?\s+(?:lab|laboratory)$/i;
+
+function labelNamesOwnResearchSite(label: string, personName: string): boolean {
+  if (GENERIC_RESEARCH_SITE_LABEL.test(label)) return true;
+  if (!personName) return false;
+  const labName = label.replace(SITE_NOUN_SUFFIX, '');
+  if (!OWN_LAB_LABEL_SHAPE.test(labName)) return false;
+  const ownSurnames = personSurnamesFromDisplayNames([personName]);
+  return eponymousLabNameSurnameCandidates(labName).some((surname) => ownSurnames.has(surname));
+}
+
 /**
  * The "Links" section can list the faculty's own lab/personal research site, one
- * or more affiliated centers, an ORCID link, and a CV PDF. Only a generically
- * labeled self-site link ("Website" / "Lab Website") is treated as this person's
- * research home; a named-entity link (an affiliated center or institute) belongs
- * to a different research entity and is never adopted as this faculty's website.
+ * or more affiliated centers, an ORCID link, and a CV PDF. A generically labeled
+ * self-site link ("Website" / "Lab Website") or a lab named for this person
+ * ("<surname> Lab Website", #5827) is treated as this person's research home. Any
+ * other named-entity link (an affiliated center, institute or someone else's lab)
+ * belongs to a different research entity and is never adopted, and a longer
+ * free-text label is not widened, because a personal or outside company site must
+ * not seed a LAB row (#6097).
  */
-export function extractLabUrl($: cheerio.CheerioAPI, profileUrl: string): string | undefined {
+export function extractLabUrl(
+  $: cheerio.CheerioAPI,
+  profileUrl: string,
+  personName = '',
+): string | undefined {
   const section = sectionByEyebrow($, 'Links');
   if (!section) return undefined;
   let found: string | undefined;
@@ -243,7 +273,7 @@ export function extractLabUrl($: cheerio.CheerioAPI, profileUrl: string): string
     if (found) return;
     const link = $(a);
     const text = cleanText(link.text());
-    if (!GENERIC_RESEARCH_SITE_LABEL.test(text)) return;
+    if (!labelNamesOwnResearchSite(text, personName)) return;
     const href = link.attr('href') || '';
     if (/^mailto:|^tel:|^#|^javascript:/i.test(href)) return;
     const absolute = absolutize(href, profileUrl);
@@ -265,7 +295,7 @@ function extractOrcid($: cheerio.CheerioAPI): string | undefined {
   let orcid: string | undefined;
   $('a[href*="orcid.org"]').each((_i, a) => {
     if (orcid) return;
-    const normalized = normalizeOrcid($(a).attr('href') || '');
+    const normalized = plausiblePersonOrcid($(a).attr('href') || '');
     if (normalized) orcid = normalized;
   });
   return orcid;
@@ -311,7 +341,7 @@ export function extractProfile(html: string, faculty: RawYseFaculty): YseFaculty
     researchAreas: extractResearchAreas($),
     programs: extractPrograms($),
     description: extractDescription($),
-    labUrl: extractLabUrl($, faculty.profileUrl),
+    labUrl: extractLabUrl($, faculty.profileUrl, name),
   };
 }
 
@@ -378,6 +408,7 @@ export function facultyToResearchEntityObservations(
   fallbackUserKey: string,
   labUrlVerdict: LabUrlVerdictFor = () => 'usable',
   rowAlreadyExists = false,
+  labUrlIsCoLedGroupSite: LabUrlIsCoLedGroupSite = () => false,
 ): ObservationInput[] {
   // A link's presence is not evidence that a lab exists. `hasLab` used to be
   // `Boolean(profile.labUrl)`, so a profile that still links a site the corpus
@@ -392,7 +423,8 @@ export function facultyToResearchEntityObservations(
   // `labUrlIsUnusableForResearchHome` for which verdicts count and why an absent
   // one keeps the lab.
   const linkedLabVerdict = profile.labUrl ? labUrlVerdict(profile.labUrl) : undefined;
-  const hasLab = linkedLabVerdict === 'usable';
+  const linkedLabIsUsable = linkedLabVerdict === 'usable';
+  const hasLab = linkedLabIsUsable && !labUrlIsCoLedGroupSite(profile.labUrl!);
   // A withdrawal on a dead link must also withdraw the websiteUrl this lane asserted
   // before it knew, or that observation stays live and the row keeps serving the dead
   // site under a "Faculty Research" name (#3452). Only deadness is stated: a refusal is
@@ -405,7 +437,7 @@ export function facultyToResearchEntityObservations(
   // retraction. A row that does not exist yet has nothing to demote, so it stays unminted.
   const carriesDeadWithdrawal = labLinkIsDead && rowAlreadyExists;
   if (
-    !hasLab &&
+    !linkedLabIsUsable &&
     !carriesDeadWithdrawal &&
     profile.researchAreas.length === 0 &&
     !profile.description
@@ -428,7 +460,9 @@ export function facultyToResearchEntityObservations(
 
   const slug = `yse-faculty-${profile.slug}`.slice(0, 100);
   const entityName = hasLab ? `${profile.name} Lab` : `${profile.name} Faculty Research`;
-  const sourceUrls = hasLab ? [profile.profileUrl, profile.labUrl!] : [profile.profileUrl];
+  const sourceUrls = linkedLabIsUsable
+    ? [profile.profileUrl, profile.labUrl!]
+    : [profile.profileUrl];
   const piUserKey = profile.email || fallbackUserKey;
   const base = {
     entityType: 'researchEntity' as const,
@@ -459,7 +493,7 @@ export function facultyToResearchEntityObservations(
   if (profile.programs.length > 0) {
     obs.push({ ...base, field: 'departments', value: profile.programs });
   }
-  if (hasLab) obs.push({ ...base, field: 'websiteUrl', value: profile.labUrl });
+  if (linkedLabIsUsable) obs.push({ ...base, field: 'websiteUrl', value: profile.labUrl });
   if (profile.researchAreas.length > 0) {
     obs.push({ ...base, field: 'researchAreas', value: profile.researchAreas });
   }
@@ -506,6 +540,7 @@ export class YseFacultyDirectoryScraper implements IScraper {
     private readonly htmlFetcher: HtmlFetcher = fetchHtml,
     private readonly labUrlEvidenceLoader: LabUrlEvidenceLoader = loadLabUrlEvidenceBySlug,
     private readonly labUrlProber: LabUrlProber = probeLabUrlIsPositivelyDead,
+    private readonly coLedSiteIndexLoader: CoLedSiteIndexLoader = loadCoLedSiteIndex,
   ) {}
 
   async run(ctx: ScraperContext): Promise<ScraperResult> {
@@ -541,6 +576,7 @@ export class YseFacultyDirectoryScraper implements IScraper {
     const labUrlEvidenceBySlug = await this.labUrlEvidenceLoader(
       limited.map((faculty) => `yse-faculty-${faculty.slug}`),
     );
+    const coLedSites = await this.coLedSiteIndexLoader();
 
     for (const faculty of limited) {
       let profileHtml: string;
@@ -569,6 +605,10 @@ export class YseFacultyDirectoryScraper implements IScraper {
           this.labUrlProber,
         ),
         labUrlEvidenceBySlug.has(`yse-faculty-${profile.slug}`),
+        coLedGroupSiteFor(coLedSites, `yse-faculty-${profile.slug}`, {
+          email: profile.email,
+          profileUrl: profile.profileUrl,
+        }),
       );
       if (entityObs.length > 0) {
         await ctx.emit(entityObs);

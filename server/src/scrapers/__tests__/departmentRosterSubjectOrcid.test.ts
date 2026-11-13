@@ -6,10 +6,14 @@ vi.mock('../../utils/ssrfGuard', async (importOriginal) => ({
 }));
 
 import { profileEnrichmentFromHtml } from '../sources/departmentRosterScraper';
+import { syntheticPersonOrcid } from '../../test/syntheticOrcid';
+
+const SYNTHETIC_ORCID_1 = syntheticPersonOrcid(500);
+const SYNTHETIC_ORCID_2 = syntheticPersonOrcid(501);
 
 const PROFILE_URL = 'https://publichealth.yale.edu/profile/ada-fixture/';
-const SUBJECT_ORCID = '9999-9000-9999-9005';
-const OTHER_ORCID = '9999-9000-9999-0019';
+const SUBJECT_ORCID = SYNTHETIC_ORCID_1;
+const OTHER_ORCID = SYNTHETIC_ORCID_2;
 
 const profilePage = (subject: string, outside = ''): string => `
   <html><head><title>Ada Fixture | Yale School of Public Health</title><link rel="canonical" href="${PROFILE_URL}"></head><body>

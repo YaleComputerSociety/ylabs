@@ -230,6 +230,15 @@ describe('fetchPageWithPolicy', () => {
     expect(request).toHaveBeenCalledTimes(3);
   });
 
+  it('names the page a redirect landed on when it refuses', async () => {
+    const request = vi.fn(() =>
+      Promise.resolve({ status: 403, data: '', finalUrl: 'https://hub.example.edu/lab/x' }),
+    );
+    await expect(
+      fetchPageWithPolicy('https://vanity.example.org/', { ...base, request, maxRetries: 0 }),
+    ).rejects.toMatchObject({ status: 403, finalUrl: 'https://hub.example.edu/lab/x' });
+  });
+
   it('retries transient network errors and rethrows after the last attempt', async () => {
     const request = vi.fn(() => Promise.reject(new Error('ETIMEDOUT')));
     await expect(

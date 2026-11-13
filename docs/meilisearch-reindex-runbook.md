@@ -56,13 +56,13 @@ Meilisearch re-embeds a document only when its rendered `documentTemplate` chang
 The replacing rebuild builds every document into a fresh `_next` index, which has no vectors, so every rebuild re-embeds the whole corpus.
 Measured on 2026-10-12 (#5023): Development had 23 replacing rebuilds in nine days; one sync of a 4,224-document index after a sweep upserted 4,081 documents and deleted 4 in 25 seconds, and the next run upserted none.
 The sync refuses when the index has no stored embedder, when the corpus yields no documents, or when it would delete more than a fifth of the index.
-Before it writes, it applies any drifted index settings in place; the settings hold no embedder, so a new searchable attribute costs no embedding call (#5442).
+Once it has written the documents, it applies any drifted index settings in place; the settings hold no embedder, so a new searchable attribute costs no embedding call (#5442), and a newly filterable attribute is never declared before the documents carry it (#5141).
 Run the rebuild only when the embedder or its `documentTemplate` changed.
 
 ### Beta and Production choose between a reconcile and a rebuild (#5107)
 
 `reindex:meili --confirm` compares the live prefixed index with what the code would build before it writes anything, and prints the decision as `reindexMode`.
-When the live index exists and its embedder matches the code, it runs the same reconcile as `development:search:sync`: it applies any drifted settings in place, upserts only the documents whose canonical JSON differs, and deletes the ones with no live row, so unchanged documents keep their vectors.
+When the live index exists and its embedder matches the code, it runs the same reconcile as `development:search:sync`: it upserts only the documents whose canonical JSON differs, deletes the ones with no live row, and then applies any drifted settings in place, so unchanged documents keep their vectors.
 Otherwise it runs the replacing rebuild, and `--full` forces the rebuild.
 `compareResearchEntitySearchIndexToCode` decides: the settings compare key by key against `getResearchEntitySearchIndexSettings`, with attribute sets as sorted lists because Meilisearch returns them sorted, and the embedder compares by source, model, and document template, because Meilisearch redacts its stored key.
 A changed document shape needs no rebuild, because `addDocuments` replaces a whole document and the diff reaches every document whose shape changed.
@@ -312,9 +312,8 @@ No output is the pass. Any match names a retired attribute the rebuilt index sti
 4. The Mongo target must match the resolved environment.
 5. A production rebuild requires `CONFIRM_PROD_SCRAPE=true`, that exact string.
 
-The fifth one is the one that bites, because it is checked last.
-The preflight and the index reconcile plan print first, so a production run without it looks like it is working and then refuses at the write.
-The wrapper now reports it alongside the other missing variables before anything starts, which is why `node scripts/reindex-search-index.mjs production --apply` is preferable to the raw `yarn` invocation.
+The fifth one is checked only with `--confirm`, before connecting (#5971); until then it was checked at the write, after the preflight and the index reconcile plan had printed, so a production run without it looked like it was working and then refused.
+The wrapper reports it alongside the other missing variables before anything starts, which is why `node scripts/reindex-search-index.mjs production --apply` is still preferable to the raw `yarn` invocation.
 
 It also refuses to run when the database reports **zero** non-archived entities, which is the guard against replacing a live index with an empty one because a Mongo copy had not landed yet.
 

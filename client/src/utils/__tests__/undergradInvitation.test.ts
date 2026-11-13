@@ -14,7 +14,7 @@ describe('undergradInvitationFromEntity', () => {
       }),
     ).toEqual({
       level: 'welcomes_undergrads',
-      label: 'Welcomes undergrads',
+      label: 'Taking undergrads now',
       quote: 'We welcome undergraduate students.',
       sourceUrl: 'https://www.lab.example.edu/join',
       sourceHost: 'lab.example.edu',

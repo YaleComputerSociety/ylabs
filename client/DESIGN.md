@@ -256,6 +256,7 @@ A Tailwind ring sits at offset 0, so its outer edge is adjacent to the page, whe
 - All interactive controls have a minimum 44px touch target and a visible focus ring.
 The one exception is a link inside a sentence or a one-line notice, which meets WCAG 2.5.8 at 24px or more through `-my-1.5 inline-block py-1.5`, because a 44px box would overlap the neighbouring lines of text.
 Every standalone control still takes 44px.
+The one layout exception is the wide-layout `/research` sidebar's Undergrads group, whose checkbox rows take 28px and whose info tips take 24px, the WCAG 2.5.8 floor, so the sidebar fits 1280x720 without its own scrollbar (the owner chose to tighten the sidebar to fit rather than scroll or collapse it, 2026-11-12, #5963); the filter sheet below that layout keeps 44px rows.
 - A sort control is `SortMenu` from `src/components/shared/SortMenu.tsx`, a select-only combobox: Enter, Space, and the arrow keys open it on the current option, `aria-activedescendant` names the highlighted option, and Escape closes it with focus kept on the trigger.
 The research and program sort menus were two hand-rolled copies of one listbox, and both drifted off the keyboard contract, so do not write a third.
 - A transient alert or confirmation is `showAlert` or `confirmAction` from `src/utils/appDialogs.tsx`, which renders `src/components/shared/AppDialog.tsx` on an MUI `Dialog` with `role="alertdialog"`.

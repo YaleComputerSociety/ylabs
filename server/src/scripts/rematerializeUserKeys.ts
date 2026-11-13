@@ -19,21 +19,25 @@
  * `droppedPathSet`, so "nothing outside the scope" is a check that `plannedPathSet` is a
  * subset of the printed `scope`. Accepted paths: displayName, profile.title,
  * profile.primaryDepartment, profile.imageUrl, profile.websiteUrl, identifiers.email,
- * identifiers.emailSupport, profileLinks, profileFieldWriters and profileFieldWriters.<field>;
- * aliases email, emailSupport, title, primaryDepartment, imageUrl and websiteUrl. A display
- * value also writes its own writer record, `profileFieldWriters` alone writes only writer
- * records, and identifiers.email and identifiers.emailSupport are written together.
+ * identifiers.emailSupport, identifiers.orcid, profileLinks, profileFieldWriters and
+ * profileFieldWriters.<field>; aliases email, emailSupport, orcid, title, primaryDepartment,
+ * imageUrl and websiteUrl. A display value also writes its own writer record,
+ * `profileFieldWriters` alone writes only writer records, identifiers.email and
+ * identifiers.emailSupport are written together, and identifiers.orcid is written with only the
+ * ORCID entries of profileLinks (`profileLinks.ORCID`).
  *
  *   yarn --cwd server observations:rematerialize-user-keys --keys-file=<keys.json> \
  *     --only-fields=identifiers.email --output=<tmp>.json
  */
+import { startLongRunProgress } from '../utils/longRunProgress';
 import dotenv from 'dotenv';
 import fs from 'fs';
 import mongoose from 'mongoose';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { initializeConnections } from '../db/connections';
+import { initializeConnections, runScriptMain } from '../db/connections';
 import { materializeEntity } from '../scrapers/entityMaterializer';
+import { resetPrimaryDepartmentStatingKeysCache } from '../scrapers/primaryDepartmentStatingKeys';
 import { expandUserMaterializerScope } from '../scrapers/userMaterializerFieldScope';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
@@ -92,8 +96,21 @@ async function main(): Promise<void> {
   try {
     const passes: UserKeyPassRow[][] = [];
     for (let pass = 1; pass <= args.passes; pass += 1) {
+      resetPrimaryDepartmentStatingKeysCache();
       const rows: UserKeyPassRow[] = [];
-      for (const key of keys) rows.push(await visit(key, args.apply, args.onlyFields));
+      const progress = startLongRunProgress(
+        `rematerialize-user-keys pass ${pass}/${args.passes}`,
+        keys.length,
+      );
+      try {
+        for (const key of keys) {
+          const row = await visit(key, args.apply, args.onlyFields);
+          rows.push(row);
+          progress.tick(Boolean(row.error));
+        }
+      } finally {
+        progress.stop();
+      }
       passes.push(rows);
     }
     const summaries = passes.map((rows, index) => summarizeUserKeyPass(index + 1, rows));
@@ -116,8 +133,5 @@ async function main(): Promise<void> {
 const invokedDirectly =
   process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 if (invokedDirectly) {
-  main().catch((error) => {
-    console.error(sanitizeLogValue(error));
-    process.exit(1);
-  });
+  void runScriptMain(main);
 }

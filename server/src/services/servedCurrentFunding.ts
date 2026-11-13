@@ -1,4 +1,4 @@
-const MS_PER_DAY = 86_400_000;
+import { awardEndDayHasPassed } from '../utils/awardCalendarDay';
 
 export const CURRENT_FUNDING_FIELDS = [
   'recentGrants',
@@ -16,12 +16,9 @@ export function isCurrentFundingField(field: string): field is CurrentFundingFie
   return CURRENT_FUNDING_FIELD_SET.has(field);
 }
 
-function awardEndDayHasPassed(award: unknown, now: number): boolean {
+function awardHasEnded(award: unknown, now: number): boolean {
   if (!award || typeof award !== 'object') return false;
-  const endDate = (award as { endDate?: unknown }).endDate;
-  if (endDate === undefined || endDate === null || endDate === '') return false;
-  const endTime = new Date(endDate as string | number | Date).getTime();
-  return Number.isFinite(endTime) && endTime + MS_PER_DAY <= now;
+  return awardEndDayHasPassed((award as { endDate?: unknown }).endDate, now);
 }
 
 function agencyKey(value: unknown): string {
@@ -86,8 +83,8 @@ function servedFromDatedAwards(
   now: number,
 ): ServedCurrentFunding {
   const evidenceAwards = distinctAwards(periods, storedAwards);
-  const runningEvidence = evidenceAwards.filter((award) => !awardEndDayHasPassed(award, now));
-  const runningAwards = storedAwards.filter((award) => !awardEndDayHasPassed(award, now));
+  const runningEvidence = evidenceAwards.filter((award) => !awardHasEnded(award, now));
+  const runningAwards = storedAwards.filter((award) => !awardHasEnded(award, now));
   if (runningEvidence.length === 0) return { recentGrants: [] };
   const anAwardEnded = runningEvidence.length < evidenceAwards.length;
   return {
@@ -112,7 +109,7 @@ export function servedCurrentFunding(
   if (!Array.isArray(storedAwards)) return stored;
   const periods = periodsCoveringEveryAward(group);
   if (periods) return servedFromDatedAwards(group, storedAwards, periods, now);
-  const runningAwards = storedAwards.filter((award) => !awardEndDayHasPassed(award, now));
+  const runningAwards = storedAwards.filter((award) => !awardHasEnded(award, now));
   if (runningAwards.length === storedAwards.length) return stored;
   if (runningAwards.length === 0) return { recentGrants: [] };
   const storedListHoldsEveryAward =

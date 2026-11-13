@@ -159,9 +159,9 @@ const REVIEWED_RAW_DRIVER_WRITERS: Record<string, { sites: number; reason: strin
       'records the launch of a leased apply on the connection the script opened, before any model write, so the record lands on the database the lease guards',
   },
   'db/devWriteLease.ts': {
-    sites: 5,
+    sites: 6,
     reason:
-      'takes, renews and releases the Development write lease itself, through the connection the script opened, so the guard that reads the lease cannot sit in front of it',
+      'takes, renews and releases the Development write lease itself, through the connection the script opened, so the guard that reads the lease cannot sit in front of it; the sixth site releases them by owner id in the bounded stop cleanup (#6020)',
   },
   'scripts/archiveLegacyAccessSignals.ts': {
     sites: 1,

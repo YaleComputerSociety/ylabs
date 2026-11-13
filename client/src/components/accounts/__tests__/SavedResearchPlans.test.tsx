@@ -365,6 +365,33 @@ describe('SavedResearchPlans', () => {
     expect(screen.getByTestId('comparison').textContent).toContain('comparing 2');
   });
 
+  it('leads a saved card with the invitation the detail page shows (#6088)', async () => {
+    withAccessPlans([
+      {
+        _id: 'recruiting-id',
+        slug: 'recruiting-lab',
+        name: 'Recruiting Lab',
+        kind: 'lab',
+        departments: [],
+        undergradInvitationLevel: 'actively_hiring',
+        welcomesUndergrads: true,
+        hasUndergradHostingEvidence: true,
+      },
+    ]);
+
+    render(
+      <MemoryRouter>
+        <SavedResearchPlans />
+      </MemoryRouter>,
+    );
+
+    const invitation = await screen.findByText('Taking undergrads now, recruiting');
+    const hosted = screen.getByText('Has had undergrads');
+    expect(
+      invitation.compareDocumentPosition(hosted) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
   it('shows no availability badge when the access fields are absent', async () => {
     withAccessPlans([
       { _id: 'bare-id', slug: 'bare-lab', name: 'Bare Lab', kind: 'lab', departments: [] },
@@ -379,7 +406,8 @@ describe('SavedResearchPlans', () => {
     await screen.findByText('Bare Lab');
     expect(screen.queryByText('Open now')).toBeNull();
     expect(screen.queryByText('Not currently available')).toBeNull();
-    expect(screen.queryByText('Has hosted undergrads before')).toBeNull();
+    expect(screen.queryByText('Has had undergrads')).toBeNull();
+    expect(screen.queryByText('Taking undergrads now')).toBeNull();
   });
 
   it('labels kind and title through the shared owners the profile page uses', async () => {

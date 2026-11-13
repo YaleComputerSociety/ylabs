@@ -2,9 +2,10 @@ import { echoedQuery } from '../../utils/echoedQuery';
 import ActiveFilterChip from './ActiveFilterChip';
 import ResearchProgramsHandoff from './ResearchProgramsHandoff';
 import {
-  HOSTED_UNDERGRADUATES_CHIP_VALUE,
-  WELCOMES_UNDERGRADUATES_CHIP_VALUE,
-  WORKS_WITH_UNDERGRADUATES_CHIP_VALUE,
+  ADVISES_UNDERGRAD_RESEARCH_FILTER_LABEL,
+  HAS_HAD_UNDERGRADS_FILTER_LABEL,
+  TAKING_UNDERGRADS_NOW_FILTER_LABEL,
+  UNDERGRADS_FILTER_GROUP_LABEL,
   researchEntityTypeFilterLabel,
 } from '../../utils/researchEntityCopy';
 
@@ -16,14 +17,14 @@ interface ResearchZeroResultRecoveryProps {
   selectedDepartment: string;
   selectedHostsUndergrads?: boolean;
   selectedWelcomesUndergrads?: boolean;
-  selectedWorksWithUndergrads?: boolean;
+  selectedMentorsUndergrads?: boolean;
   departmentLabel: (value: string) => string;
   onRemoveEntityType: () => void;
   onRemoveSchool: () => void;
   onRemoveDepartment: () => void;
   onRemoveHostsUndergrads?: () => void;
   onRemoveWelcomesUndergrads?: () => void;
-  onRemoveWorksWithUndergrads?: () => void;
+  onRemoveMentorsUndergrads?: () => void;
   onClearAllFilters: () => void;
   relaxedQuery: string | null;
   onRelaxQuery: () => void;
@@ -42,14 +43,14 @@ const ResearchZeroResultRecovery = ({
   selectedDepartment,
   selectedHostsUndergrads = false,
   selectedWelcomesUndergrads = false,
-  selectedWorksWithUndergrads = false,
+  selectedMentorsUndergrads = false,
   departmentLabel,
   onRemoveEntityType,
   onRemoveSchool,
   onRemoveDepartment,
   onRemoveHostsUndergrads,
   onRemoveWelcomesUndergrads,
-  onRemoveWorksWithUndergrads,
+  onRemoveMentorsUndergrads,
   onClearAllFilters,
   relaxedQuery,
   onRelaxQuery,
@@ -94,25 +95,25 @@ const ResearchZeroResultRecovery = ({
               onRemove={onRemoveDepartment}
             />
           )}
-          {selectedWorksWithUndergrads && onRemoveWorksWithUndergrads && (
+          {selectedWelcomesUndergrads && onRemoveWelcomesUndergrads && (
             <ActiveFilterChip
-              axis="Undergraduates"
-              value={WORKS_WITH_UNDERGRADUATES_CHIP_VALUE}
-              onRemove={onRemoveWorksWithUndergrads}
+              axis={UNDERGRADS_FILTER_GROUP_LABEL}
+              value={TAKING_UNDERGRADS_NOW_FILTER_LABEL}
+              onRemove={onRemoveWelcomesUndergrads}
             />
           )}
           {selectedHostsUndergrads && onRemoveHostsUndergrads && (
             <ActiveFilterChip
-              axis="Undergraduates"
-              value={HOSTED_UNDERGRADUATES_CHIP_VALUE}
+              axis={UNDERGRADS_FILTER_GROUP_LABEL}
+              value={HAS_HAD_UNDERGRADS_FILTER_LABEL}
               onRemove={onRemoveHostsUndergrads}
             />
           )}
-          {selectedWelcomesUndergrads && onRemoveWelcomesUndergrads && (
+          {selectedMentorsUndergrads && onRemoveMentorsUndergrads && (
             <ActiveFilterChip
-              axis="Undergraduates"
-              value={WELCOMES_UNDERGRADUATES_CHIP_VALUE}
-              onRemove={onRemoveWelcomesUndergrads}
+              axis={UNDERGRADS_FILTER_GROUP_LABEL}
+              value={ADVISES_UNDERGRAD_RESEARCH_FILTER_LABEL}
+              onRemove={onRemoveMentorsUndergrads}
             />
           )}
         </div>

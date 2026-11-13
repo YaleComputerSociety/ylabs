@@ -1,4 +1,5 @@
-import { normalizeOrcid } from '../utils/orcid';
+import { plausiblePersonOrcid } from '../utils/orcid';
+import { DETACHED_ROLE_ASSIGNMENT_REVIEW_STATUS } from '../models/roleAssignment';
 import { orcidProfileLinksAgreeWithIdentifier } from '../models/researcher';
 import type { FieldValueRefusal } from '../utils/researchEntityFieldValueRefusals';
 import {
@@ -7,7 +8,12 @@ import {
   type ResearcherRefusableField,
 } from '../utils/researcherFieldValueRefusals';
 import { officialProfileIdentityUrlKey } from '../scrapers/utils/officialProfileIdentityUrlKey';
-import { observedPersonNameAgreesWith } from '../scrapers/utils/personNameAgreement';
+import {
+  anyNamesStateConflictingMiddleInitials,
+  groupNamesStateConflictingMiddleInitials,
+  namesStateConflictingMiddleInitials,
+  observedPersonNameAgreesWith,
+} from '../scrapers/utils/personNameAgreement';
 import { surnamesCompatible } from '../scrapers/utils/piNameMatch';
 import { splitName } from '../scrapers/utils/scraperHelpers';
 import { canonicalPersonName } from '../scrapers/utils/personNameCasing';
@@ -15,6 +21,7 @@ import { titleResearchOwnership } from '../scrapers/utils/titleResearchOwnership
 import { sanitizePersonName } from '../utils/personNameHygiene';
 import { researcherHoldsDirectoryIdentity } from '../utils/researcherIdentity';
 import { looksLikeYaleNetid } from '../utils/yaleNetid';
+import { isYaleHostedUrl } from '../scrapers/utils/rosterMemberIdentityEvidence';
 
 const INVERTED_NAME_TOKEN = /^[\p{L}][\p{L}'’.-]*$/u;
 
@@ -65,11 +72,7 @@ export function researcherNameMatchKey(value: unknown): string | undefined {
   return `${givenTokens.join('')} ${tokens[tokens.length - 1]}`;
 }
 
-const cleanOrcid = (value: unknown): string | undefined => {
-  if (typeof value !== 'string') return undefined;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
-};
+const cleanOrcid = (value: unknown): string | undefined => plausiblePersonOrcid(value) || undefined;
 
 const cleanNetid = (value: unknown): string | undefined => {
   if (typeof value !== 'string') return undefined;
@@ -182,8 +185,10 @@ export type ShellMergeReason =
   | 'AMBIGUOUS_MULTIPLE_CANONICAL'
   | 'ORCID_CONFLICT'
   | 'NETID_CONFLICT'
+  | 'EMAIL_CONFLICT'
   | 'NO_IDENTITY_WITNESS'
-  | 'VARIANT_SHAPE_NOT_ALLOWED';
+  | 'VARIANT_SHAPE_NOT_ALLOWED'
+  | 'STATED_MIDDLE_INITIAL_CONFLICT';
 
 export const SHELL_FOLD_IDENTITIES = [
   'netid',
@@ -194,6 +199,8 @@ export const SHELL_FOLD_IDENTITIES = [
   'verified-profile',
   'shared-row',
   'name-variant-shared-row',
+  'shared-official-profile',
+  'cited-official-page',
   'name',
 ] as const;
 export type ShellFoldIdentity = (typeof SHELL_FOLD_IDENTITIES)[number];
@@ -212,6 +219,7 @@ export interface ShellIdentity extends ResearcherIdentityLike {
   orcid?: unknown;
   profileLinks?: unknown;
   title?: unknown;
+  statedNames?: readonly string[];
 }
 
 export interface VerifiedProfileCandidate extends CanonicalCandidate {
@@ -325,6 +333,7 @@ export interface RosterIdentityCandidate extends CanonicalCandidate {
 export interface SharedRowCandidate extends CanonicalCandidate {
   displayName?: unknown;
   title?: unknown;
+  statedNames?: readonly string[];
 }
 
 export interface NameVariantCandidate extends SharedRowCandidate {
@@ -515,6 +524,252 @@ function decideVerifiedProfileFold(
   };
 }
 
+export function yaleOfficialProfileKeys(profileLinks: unknown): string[] {
+  if (!Array.isArray(profileLinks)) return [];
+  const keys = new Set<string>();
+  for (const link of profileLinks) {
+    if (!link || typeof link !== 'object') continue;
+    const { kind, url } = link as Record<string, unknown>;
+    if (kind !== 'YALE_OFFICIAL') continue;
+    const key = officialProfileIdentityUrlKey(url);
+    if (key) keys.add(key);
+  }
+  return [...keys];
+}
+
+export function sharedOfficialProfileNamesAgree(left: unknown, right: unknown): boolean {
+  if (typeof left !== 'string' || typeof right !== 'string' || !left.trim() || !right.trim()) {
+    return false;
+  }
+  return (
+    observedPersonNameAgreesWith(left, right) &&
+    observedPersonNameAgreesWith(right, left) &&
+    !namesStateConflictingMiddleInitials(left, right)
+  );
+}
+
+export interface StatedIdentifiers {
+  netid?: unknown;
+  email?: unknown;
+  orcid?: unknown;
+}
+
+export type ConflictingIdentifier = 'netid' | 'email' | 'orcid';
+
+const cleanEmail = (value: unknown): string | undefined => {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim().toLowerCase();
+  return trimmed.length > 0 ? trimmed : undefined;
+};
+
+export function conflictingIdentifier(
+  left: StatedIdentifiers,
+  right: StatedIdentifiers,
+): ConflictingIdentifier | undefined {
+  const differ = (a: string | undefined, b: string | undefined) => Boolean(a && b && a !== b);
+  if (differ(cleanNetid(left.netid), cleanNetid(right.netid))) return 'netid';
+  if (differ(cleanEmail(left.email), cleanEmail(right.email))) return 'email';
+  if (differ(cleanOrcid(left.orcid), cleanOrcid(right.orcid))) return 'orcid';
+  return undefined;
+}
+
+const CONFLICT_REASON: Record<ConflictingIdentifier, ShellMergeReason> = {
+  netid: 'NETID_CONFLICT',
+  email: 'EMAIL_CONFLICT',
+  orcid: 'ORCID_CONFLICT',
+};
+
+export interface SharedOfficialProfileCandidate extends CanonicalCandidate {
+  displayName?: unknown;
+  email?: unknown;
+}
+
+export function buildYaleOfficialProfileIndex(
+  entries: ReadonlyArray<VerifiedProfileEntry>,
+): Map<string, SharedOfficialProfileCandidate[]> {
+  const index = new Map<string, SharedOfficialProfileCandidate[]>();
+  for (const entry of entries) {
+    for (const key of yaleOfficialProfileKeys(entry.profileLinks)) {
+      const list = index.get(key) ?? [];
+      list.push({
+        id: entry.id,
+        orcid: cleanOrcid(entry.orcid),
+        netid: cleanNetid(entry.netid),
+        email: entry.email,
+        tier: researcherIdentityTier(entry),
+        displayName: entry.displayName,
+      });
+      index.set(key, list);
+    }
+  }
+  return index;
+}
+
+export function decideSharedOfficialProfileFold(
+  shell: ShellIdentity,
+  holdersByKey: ReadonlyMap<string, ReadonlyArray<SharedOfficialProfileCandidate>>,
+): ShellMergeDecision | undefined {
+  const shellStrength = identityTierStrength(researcherIdentityTier(shell));
+  const holders = new Map<string, SharedOfficialProfileCandidate>();
+  for (const key of yaleOfficialProfileKeys(shell.profileLinks)) {
+    for (const candidate of holdersByKey.get(key) ?? []) {
+      if (candidate.id === shell.id) continue;
+      if (identityTierStrength(candidate.tier) <= shellStrength) continue;
+      if (!sharedOfficialProfileNamesAgree(shell.displayName, candidate.displayName)) continue;
+      holders.set(candidate.id, candidate);
+    }
+  }
+  if (holders.size === 0) return undefined;
+  const matchedOn = 'shared-official-profile' as const;
+  const strongestStrength = Math.max(
+    ...[...holders.values()].map((candidate) => identityTierStrength(candidate.tier)),
+  );
+  const strongest = [...holders.values()].filter(
+    (candidate) => identityTierStrength(candidate.tier) === strongestStrength,
+  );
+  if (strongest.length > 1) {
+    return { merge: false, reason: 'AMBIGUOUS_MULTIPLE_CANONICAL', matchedOn };
+  }
+  const [target] = strongest;
+  const conflict = conflictingIdentifier(shell, target);
+  if (conflict) return { merge: false, reason: CONFLICT_REASON[conflict], matchedOn };
+  return { merge: true, canonicalId: target.id, reason: 'MERGEABLE', matchedOn };
+}
+
+export function citedOfficialPageKey(url: unknown): string {
+  const key = officialProfileIdentityUrlKey(url);
+  return key ? officialPageWitnessDestination(key) : '';
+}
+
+export function yaleOfficialPageWitnessKeys(profileLinks: unknown): string[] {
+  return [...new Set(yaleOfficialProfileKeys(profileLinks).map(officialPageWitnessDestination))];
+}
+
+export interface CitedOfficialPageRecord extends StatedIdentifiers {
+  id: string;
+  displayName?: unknown;
+}
+
+export interface CitingRosterListing {
+  archived?: unknown;
+  state?: unknown;
+  targetIsLive: boolean;
+  sourceName?: unknown;
+  sourceUrl?: unknown;
+  profileUrl?: unknown;
+  membershipKey?: unknown;
+  freshnessExpiresAt?: unknown;
+  liveListingNames: ReadonlyArray<string>;
+}
+
+export interface CitedOfficialPageWitness {
+  holder: CitedOfficialPageRecord;
+  citer: CitedOfficialPageRecord;
+  listing: CitingRosterListing;
+  pageStatedNames: ReadonlyArray<string>;
+  pageHolderIds: ReadonlyArray<string>;
+  now: Date;
+}
+
+export const CITED_OFFICIAL_PAGE_REFUSALS = [
+  'names-disagree',
+  'not-a-live-edge',
+  'row-not-live',
+  'no-live-listing',
+  'not-a-roster-listing',
+  'not-yale-hosted',
+  'stale-listing',
+  'cites-another-page',
+  'listing-name-not-page-subject',
+  'third-page-holder',
+  'identifier-conflict',
+] as const;
+export type CitedOfficialPageRefusal = (typeof CITED_OFFICIAL_PAGE_REFUSALS)[number];
+
+const nonBlank = (value: unknown): boolean => typeof value === 'string' && value.trim().length > 0;
+
+function listingNamePassesPageSubject(
+  listingName: string,
+  pageStatedNames: ReadonlyArray<string>,
+): boolean {
+  return (
+    pageStatedNames.some((stated) => sharedOfficialProfileNamesAgree(listingName, stated)) &&
+    !anyNamesStateConflictingMiddleInitials([listingName], pageStatedNames)
+  );
+}
+
+export function citedOfficialPageRefusal(
+  witness: CitedOfficialPageWitness,
+): CitedOfficialPageRefusal | undefined {
+  const { holder, citer, listing } = witness;
+  if (!sharedOfficialProfileNamesAgree(holder.displayName, citer.displayName)) {
+    return 'names-disagree';
+  }
+  if (listing.archived === true || listing.state === 'HISTORICAL') return 'not-a-live-edge';
+  if (!listing.targetIsLive) return 'row-not-live';
+  if (listing.liveListingNames.length === 0) return 'no-live-listing';
+  if (!nonBlank(listing.sourceName) || !nonBlank(listing.membershipKey)) {
+    return 'not-a-roster-listing';
+  }
+  if (!isYaleHostedUrl(listing.sourceUrl) || !isYaleHostedUrl(listing.profileUrl)) {
+    return 'not-yale-hosted';
+  }
+  const expiresAt =
+    listing.freshnessExpiresAt instanceof Date || typeof listing.freshnessExpiresAt === 'string'
+      ? new Date(listing.freshnessExpiresAt)
+      : undefined;
+  if (expiresAt && !Number.isNaN(expiresAt.getTime()) && expiresAt <= witness.now) {
+    return 'stale-listing';
+  }
+  if (!witness.pageHolderIds.includes(holder.id)) return 'cites-another-page';
+  if (
+    witness.pageStatedNames.length === 0 ||
+    !listing.liveListingNames.every((name) =>
+      listingNamePassesPageSubject(name, witness.pageStatedNames),
+    )
+  ) {
+    return 'listing-name-not-page-subject';
+  }
+  if (witness.pageHolderIds.some((id) => id !== holder.id && id !== citer.id)) {
+    return 'third-page-holder';
+  }
+  if (conflictingIdentifier(holder, citer)) return 'identifier-conflict';
+  return undefined;
+}
+
+export interface CitedOfficialPageRouting {
+  targetByShellId: Map<string, string>;
+  equalTierJoins: Array<[string, string]>;
+  ambiguousShellIds: Set<string>;
+}
+
+export function routeCitedOfficialPagePairs(
+  pairs: ReadonlyArray<readonly [string, string]>,
+  tierById: ReadonlyMap<string, ResearcherIdentityTier>,
+): CitedOfficialPageRouting {
+  const strongerTargets = new Map<string, Set<string>>();
+  const equalTierJoins: Array<[string, string]> = [];
+  for (const [left, right] of pairs) {
+    const leftTier = tierById.get(left);
+    const rightTier = tierById.get(right);
+    if (!leftTier || !rightTier || left === right) continue;
+    const difference = identityTierStrength(leftTier) - identityTierStrength(rightTier);
+    if (difference === 0) {
+      if (leftTier !== 'DIRECTORY') equalTierJoins.push([left, right]);
+      continue;
+    }
+    const [weaker, stronger] = difference < 0 ? [left, right] : [right, left];
+    strongerTargets.set(weaker, (strongerTargets.get(weaker) ?? new Set()).add(stronger));
+  }
+  const targetByShellId = new Map<string, string>();
+  const ambiguousShellIds = new Set<string>();
+  for (const [shellId, targets] of strongerTargets) {
+    if (targets.size === 1) targetByShellId.set(shellId, [...targets][0]);
+    else ambiguousShellIds.add(shellId);
+  }
+  return { targetByShellId, equalTierJoins, ambiguousShellIds };
+}
+
 const GENERATIONAL_SUFFIX = /^(?:jr|sr|ii|iii|iv)$/i;
 
 // Copies of one record differ only in roster noise after the name: a credential after a
@@ -634,15 +889,30 @@ function decideSharedRowFold(
   const shellName = typeof shell.displayName === 'string' ? shell.displayName : '';
   if (!shellName) return undefined;
   const shellStrength = identityTierStrength(researcherIdentityTier(shell));
+  const shellNames = [shellName, ...(shell.statedNames ?? [])];
   const agreeing = new Map<string, SharedRowCandidate>();
+  let statedNamesConflicted = false;
   for (const candidate of sharedRowCandidates) {
     if (candidate.id === shell.id) continue;
     if (identityTierStrength(candidate.tier) <= shellStrength) continue;
     if (!observedPersonNameAgreesWith(candidate.displayName, shellName)) continue;
     if (titlesStateConflictingRanks(shell.title, candidate.title)) continue;
+    if (
+      anyNamesStateConflictingMiddleInitials(shellNames, [
+        candidate.displayName,
+        ...(candidate.statedNames ?? []),
+      ])
+    ) {
+      statedNamesConflicted = true;
+      continue;
+    }
     agreeing.set(candidate.id, candidate);
   }
-  if (agreeing.size === 0) return undefined;
+  if (agreeing.size === 0) {
+    return statedNamesConflicted
+      ? { merge: false, reason: 'STATED_MIDDLE_INITIAL_CONFLICT', matchedOn: 'shared-row' }
+      : undefined;
+  }
   const strongestStrength = Math.max(
     ...[...agreeing.values()].map((candidate) => identityTierStrength(candidate.tier)),
   );
@@ -883,7 +1153,7 @@ export function orcidOnlyHoldersByOrcid(
   for (const researcher of researchers) {
     if (researcherIdentityTier(researcher) !== 'NAME_ONLY' || cleanNetid(researcher.netid))
       continue;
-    const orcid = normalizeOrcid(researcher.orcid);
+    const orcid = plausiblePersonOrcid(researcher.orcid);
     if (!orcid) continue;
     byOrcid.set(orcid, [
       ...(byOrcid.get(orcid) ?? []),
@@ -908,8 +1178,8 @@ export function decideOrcidOnlyHolderFold(
   holdersByOrcid: ReadonlyMap<string, ReadonlyArray<OrcidOnlyHolder>>,
 ): ShellMergeDecision | undefined {
   if (researcherIdentityTier(shell) !== 'NAME_ONLY' || cleanNetid(shell.netid)) return undefined;
-  if (normalizeOrcid(shell.orcid)) return undefined;
-  const orcids = new Set(subjectOrcids.map(normalizeOrcid).filter(Boolean));
+  if (plausiblePersonOrcid(shell.orcid)) return undefined;
+  const orcids = new Set(subjectOrcids.map((orcid) => plausiblePersonOrcid(orcid)).filter(Boolean));
   if (orcids.size !== 1) return undefined;
   if (listingAddressNetids.some((netids) => netids.size > 0)) return undefined;
   const matchedOn = 'orcid-only-holder' as const;
@@ -960,6 +1230,10 @@ export function decideShellMerge(
   officialPageHolders: OfficialPageHolders = { byEmail: new Map(), byOrcid: new Map() },
   listingSubjectOrcids: ReadonlyArray<string> = [],
   orcidOnlyHolders: ReadonlyMap<string, ReadonlyArray<OrcidOnlyHolder>> = new Map(),
+  sharedOfficialProfileIndex: ReadonlyMap<
+    string,
+    ReadonlyArray<SharedOfficialProfileCandidate>
+  > = new Map(),
 ): ShellMergeDecision {
   const byNetid = decideNetidFold(shell, canonicalNetidIndex);
   if (byNetid) return byNetid;
@@ -990,9 +1264,21 @@ export function decideShellMerge(
   if (bySharedRow) return bySharedRow;
   const byNameVariant = decideNameVariantSharedRowFold(shell, nameVariantCandidates);
   if (byNameVariant?.merge) return byNameVariant;
+  const bySharedOfficialProfile = decideSharedOfficialProfileFold(
+    shell,
+    sharedOfficialProfileIndex,
+  );
+  if (bySharedOfficialProfile?.merge) return bySharedOfficialProfile;
   const byName = decideExactNameFold(shell, canonicalNameIndex);
   if (byName.reason !== 'NO_CANONICAL') return byName;
-  return byNameVariant ?? byDirectoryEmail ?? byOfficialPage ?? byOrcidOnlyHolder ?? byName;
+  return (
+    byNameVariant ??
+    byDirectoryEmail ??
+    byOfficialPage ??
+    byOrcidOnlyHolder ??
+    bySharedOfficialProfile ??
+    byName
+  );
 }
 
 function decideExactNameFold(
@@ -1277,11 +1563,17 @@ export interface AccountlessClusterMember {
 }
 
 export type AccountlessClusterRefusal =
-  'NETID_CONFLICT' | 'ORCID_CONFLICT' | 'TITLE_CONFLICT' | 'SURNAME_CONFLICT';
+  | 'NETID_CONFLICT'
+  | 'ORCID_CONFLICT'
+  | 'TITLE_CONFLICT'
+  | 'SURNAME_CONFLICT'
+  | 'MIDDLE_INITIAL_CONFLICT';
 
 export interface AccountlessClusterPlan {
   /** Each folding member mapped to the survivor of its group. */
   foldTargetById: Map<string, string>;
+  sharedOfficialProfileFoldIds: Set<string>;
+  citedOfficialPageFoldIds: Set<string>;
   groups: number;
   foldedGroups: number;
   refusedGroups: Record<AccountlessClusterRefusal, number>;
@@ -1377,7 +1669,35 @@ function clusterRefusal(
   ) {
     return 'SURNAME_CONFLICT';
   }
+  if (groupNamesStateConflictingMiddleInitials(named)) return 'MIDDLE_INITIAL_CONFLICT';
   return undefined;
+}
+
+function sharedOfficialProfileJoins(
+  members: ReadonlyArray<AccountlessClusterMember>,
+  nonMembers: ReadonlyArray<Pick<AccountlessClusterMember, 'profileLinks'>>,
+): Array<[string, string]> {
+  const pagesHeldOutside = new Set(
+    nonMembers.flatMap((record) => yaleOfficialProfileKeys(record.profileLinks)),
+  );
+  const holdersByKey = new Map<string, AccountlessClusterMember[]>();
+  for (const member of members) {
+    for (const key of yaleOfficialProfileKeys(member.profileLinks)) {
+      if (pagesHeldOutside.has(key)) continue;
+      holdersByKey.set(key, [...(holdersByKey.get(key) ?? []), member]);
+    }
+  }
+  const joins: Array<[string, string]> = [];
+  for (const holders of holdersByKey.values()) {
+    holders.forEach((left, index) => {
+      for (const right of holders.slice(index + 1)) {
+        if (!sharedOfficialProfileNamesAgree(left.displayName, right.displayName)) continue;
+        if (conflictingIdentifier(left, right)) continue;
+        joins.push([left.id, right.id]);
+      }
+    });
+  }
+  return joins;
 }
 
 const objectIdSeconds = (id: string): number =>
@@ -1415,6 +1735,7 @@ export function accountlessClusterSurvivor(
 export function planAccountlessClusterFolds(
   members: ReadonlyArray<AccountlessClusterMember>,
   nonMembers: ReadonlyArray<Pick<AccountlessClusterMember, 'displayName' | 'profileLinks'>>,
+  citedOfficialPageJoins: ReadonlyArray<readonly [string, string]> = [],
 ): AccountlessClusterPlan {
   const healthyKeys = new Set(
     [...members, ...nonMembers].flatMap((record) =>
@@ -1449,6 +1770,22 @@ export function planAccountlessClusterFolds(
   for (const [noisyId, cleanId] of noisySpellingJoins(members, heldElsewhere.names)) {
     parent.set(find(noisyId), find(cleanId));
   }
+  const profileJoinedIds = new Set<string>();
+  for (const [leftId, rightId] of sharedOfficialProfileJoins(members, nonMembers)) {
+    if (find(leftId) !== find(rightId)) {
+      profileJoinedIds.add(leftId).add(rightId);
+      parent.set(find(leftId), find(rightId));
+    }
+  }
+  const memberIds = new Set(members.map((member) => member.id));
+  const citedPageJoinedIds = new Set<string>();
+  for (const [leftId, rightId] of citedOfficialPageJoins) {
+    if (!memberIds.has(leftId) || !memberIds.has(rightId)) continue;
+    if (find(leftId) !== find(rightId)) {
+      citedPageJoinedIds.add(leftId).add(rightId);
+      parent.set(find(leftId), find(rightId));
+    }
+  }
 
   const groupsByRoot = new Map<string, AccountlessClusterMember[]>();
   for (const member of members) {
@@ -1458,9 +1795,17 @@ export function planAccountlessClusterFolds(
 
   const plan: AccountlessClusterPlan = {
     foldTargetById: new Map(),
+    sharedOfficialProfileFoldIds: new Set(),
+    citedOfficialPageFoldIds: new Set(),
     groups: 0,
     foldedGroups: 0,
-    refusedGroups: { NETID_CONFLICT: 0, ORCID_CONFLICT: 0, TITLE_CONFLICT: 0, SURNAME_CONFLICT: 0 },
+    refusedGroups: {
+      NETID_CONFLICT: 0,
+      ORCID_CONFLICT: 0,
+      TITLE_CONFLICT: 0,
+      SURNAME_CONFLICT: 0,
+      MIDDLE_INITIAL_CONFLICT: 0,
+    },
   };
   for (const group of groupsByRoot.values()) {
     if (group.length < 2) continue;
@@ -1471,8 +1816,13 @@ export function planAccountlessClusterFolds(
       continue;
     }
     const survivor = accountlessClusterSurvivor(group);
+    const joinedBySharedProfile = group.some((member) => profileJoinedIds.has(member.id));
+    const joinedByCitedPage = group.some((member) => citedPageJoinedIds.has(member.id));
     for (const member of group) {
-      if (member.id !== survivor.id) plan.foldTargetById.set(member.id, survivor.id);
+      if (member.id === survivor.id) continue;
+      plan.foldTargetById.set(member.id, survivor.id);
+      if (joinedBySharedProfile) plan.sharedOfficialProfileFoldIds.add(member.id);
+      else if (joinedByCitedPage) plan.citedOfficialPageFoldIds.add(member.id);
     }
     plan.foldedGroups += 1;
   }
@@ -1612,6 +1962,8 @@ export interface FoldPlanEdge {
   targetId?: unknown;
   role?: unknown;
   state?: unknown;
+  archived?: unknown;
+  reviewStatus?: unknown;
 }
 
 export interface ShellEdgeMoves {
@@ -1619,40 +1971,160 @@ export interface ShellEdgeMoves {
   archivedRedundant: string[];
 }
 
+const isCurrentFoldEdge = (edge: FoldPlanEdge): boolean =>
+  edge.archived !== true && edge.state !== 'HISTORICAL';
+
+const holdsCurrentClaim = (edge: FoldPlanEdge): boolean =>
+  isCurrentFoldEdge(edge) || edge.reviewStatus === DETACHED_ROLE_ASSIGNMENT_REVIEW_STATUS;
+
 /**
  * Where each folding shell's live edges go: onto the survivor, or archived as redundant when the
- * survivor already claims the same target and role. A survivor edge an operator detached still
- * claims its key, because repointing onto it would hand the survivor a live copy of the edge the
- * detachment took away, the twin bypass #3152 records.
+ * survivor already claims the same target and role. A current shell edge is redundant only beside
+ * a current survivor edge: the survivor's ended edge on that key is a past appointment, and
+ * archiving the shell's current edge against it leaves the person with history only (#5990). A
+ * survivor edge an operator detached still claims its key, because repointing onto it would hand
+ * the survivor a live copy of the edge the detachment took away, the twin bypass #3152 records.
+ * A historical shell edge is redundant beside any survivor edge on the key.
  */
 export function planShellEdgeMoves(
   shellEdges: ReadonlyArray<FoldPlanEdge>,
   survivorClaimEdges: ReadonlyArray<FoldPlanEdge>,
   mergeTargetByShellId: ReadonlyMap<string, string>,
 ): Map<string, ShellEdgeMoves> {
-  const claimedKeysBySurvivor = new Map<string, Set<string>>();
+  const currentKeysBySurvivor = new Map<string, Set<string>>();
+  const anyKeysBySurvivor = new Map<string, Set<string>>();
+  const claim = (claims: Map<string, Set<string>>, survivorId: string, key: string) =>
+    claims.set(survivorId, (claims.get(survivorId) ?? new Set<string>()).add(key));
   for (const edge of survivorClaimEdges) {
-    const keys = claimedKeysBySurvivor.get(edge.personId) ?? new Set<string>();
-    keys.add(roleAssignmentEdgeKey(edge));
-    claimedKeysBySurvivor.set(edge.personId, keys);
+    const key = roleAssignmentEdgeKey(edge);
+    claim(anyKeysBySurvivor, edge.personId, key);
+    if (holdsCurrentClaim(edge)) claim(currentKeysBySurvivor, edge.personId, key);
   }
   const movesByShell = new Map<string, ShellEdgeMoves>();
   for (const edge of shellEdges) {
     const survivorId = mergeTargetByShellId.get(edge.personId);
     if (!survivorId) continue;
     const moves = movesByShell.get(edge.personId) ?? { repointed: [], archivedRedundant: [] };
-    const claimed = claimedKeysBySurvivor.get(survivorId) ?? new Set<string>();
     const key = roleAssignmentEdgeKey(edge);
-    if (claimed.has(key)) {
+    const current = isCurrentFoldEdge(edge);
+    const claims = current ? currentKeysBySurvivor : anyKeysBySurvivor;
+    if (claims.get(survivorId)?.has(key)) {
       moves.archivedRedundant.push(edge.id);
     } else {
       moves.repointed.push(edge.id);
-      claimed.add(key);
-      claimedKeysBySurvivor.set(survivorId, claimed);
+      claim(anyKeysBySurvivor, survivorId, key);
+      if (current) claim(currentKeysBySurvivor, survivorId, key);
     }
     movesByShell.set(edge.personId, moves);
   }
   return movesByShell;
+}
+
+export interface FoldedShell {
+  id: string;
+  survivorId: string;
+  dedupedAt?: unknown;
+}
+
+export interface FoldedShellEdge extends FoldPlanEdge {
+  endedAt?: unknown;
+  reviewNotes?: unknown;
+  reviewedBy?: unknown;
+  reviewedAt?: unknown;
+}
+
+export interface SurvivorHistoryEdge extends FoldPlanEdge {
+  endedAt?: unknown;
+}
+
+export interface FoldedShellEdgeHeal {
+  edgeId: string;
+  shellId: string;
+  survivorId: string;
+  targetId: string;
+  role: string;
+}
+
+const timeOf = (value: unknown): number => {
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === 'string' || typeof value === 'number') return new Date(value).getTime();
+  return Number.NaN;
+};
+
+const untouchedByReview = (edge: FoldedShellEdge, auditedEdgeIds: ReadonlySet<string>): boolean =>
+  (edge.reviewStatus === undefined ||
+    edge.reviewStatus === null ||
+    edge.reviewStatus === 'UNREVIEWED') &&
+  !edge.reviewNotes &&
+  !edge.reviewedBy &&
+  !edge.reviewedAt &&
+  !auditedEdgeIds.has(edge.id);
+
+/**
+ * The current memberships an earlier fold archived as redundant beside a survivor edge that had
+ * already ended (#5990), re-pointed onto the survivor so the person is a current member again.
+ * An edge qualifies when its shell was folded into a live survivor, it never ended, nobody
+ * reviewed, detached or audited it, its row is live, the survivor holds no current edge of any
+ * role on that row, and the survivor's edge on the same target and role ended no later than the
+ * fold. Of several shells that lost one membership, only the latest fold's edge is considered, so
+ * when that edge is ineligible no earlier fold's twin is restored in its place.
+ * A healed edge is current on the survivor, so a second run finds nothing to heal.
+ */
+export function planFoldedShellEdgeHeals(input: {
+  foldedShells: ReadonlyArray<FoldedShell>;
+  archivedShellEdges: ReadonlyArray<FoldedShellEdge>;
+  survivorEdges: ReadonlyArray<SurvivorHistoryEdge>;
+  liveSurvivorIds: ReadonlySet<string>;
+  liveTargetIds: ReadonlySet<string>;
+  auditedEdgeIds: ReadonlySet<string>;
+}): FoldedShellEdgeHeal[] {
+  const shellById = new Map(input.foldedShells.map((shell) => [shell.id, shell]));
+  const occupiedTargets = new Set<string>();
+  const endedAtByKey = new Map<string, number[]>();
+  for (const edge of input.survivorEdges) {
+    const target = String(edge.targetId ?? '');
+    if (holdsCurrentClaim(edge)) occupiedTargets.add(`${edge.personId}|${target}`);
+    const ended = timeOf(edge.endedAt);
+    if (edge.archived !== true && edge.state === 'HISTORICAL' && Number.isFinite(ended)) {
+      const key = `${edge.personId}|${roleAssignmentEdgeKey(edge)}`;
+      endedAtByKey.set(key, [...(endedAtByKey.get(key) ?? []), ended]);
+    }
+  }
+  const latestByMembership = new Map<
+    string,
+    { edge: FoldedShellEdge; shell: FoldedShell; foldedAt: number }
+  >();
+  for (const edge of input.archivedShellEdges) {
+    const shell = shellById.get(edge.personId);
+    if (!shell) continue;
+    if (edge.archived !== true || edge.state === 'HISTORICAL') continue;
+    if (edge.targetKind !== 'RESEARCH_ENTITY' || typeof edge.role !== 'string') continue;
+    const foldedAt = timeOf(shell.dedupedAt);
+    if (!Number.isFinite(foldedAt)) continue;
+    const membership = `${shell.survivorId}|${roleAssignmentEdgeKey(edge)}`;
+    const previous = latestByMembership.get(membership);
+    if (previous && previous.foldedAt >= foldedAt) continue;
+    latestByMembership.set(membership, { edge, shell, foldedAt });
+  }
+  const heals: FoldedShellEdgeHeal[] = [];
+  for (const [membership, { edge, shell, foldedAt }] of latestByMembership) {
+    if (!input.liveSurvivorIds.has(shell.survivorId) || edge.endedAt) continue;
+    if (!untouchedByReview(edge, input.auditedEdgeIds)) continue;
+    const target = String(edge.targetId ?? '');
+    if (!input.liveTargetIds.has(target)) continue;
+    if (occupiedTargets.has(`${shell.survivorId}|${target}`)) continue;
+    const survivorEndings = endedAtByKey.get(membership);
+    if (!survivorEndings?.length) continue;
+    if (!survivorEndings.every((ended) => ended <= foldedAt)) continue;
+    heals.push({
+      edgeId: edge.id,
+      shellId: shell.id,
+      survivorId: shell.survivorId,
+      targetId: target,
+      role: String(edge.role),
+    });
+  }
+  return heals.sort((left, right) => left.edgeId.localeCompare(right.edgeId));
 }
 
 const isCurrentLeadEdge = (edge: FoldPlanEdge, leadRoles: ReadonlySet<string>): boolean =>

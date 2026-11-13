@@ -8,6 +8,7 @@ import {
 } from './servedFieldContributionLabels';
 import { isPersonScopedResearchEntityShape } from '../models/storedVocabularies';
 import { isYaleHostname } from './yaleHost';
+import { websiteShareKey } from './websiteShareKey';
 
 const URL_MAXLENGTH = 2048;
 
@@ -669,6 +670,7 @@ export interface ResearchEntityHostOwnerIdentity {
   displayName?: unknown;
   entityType?: unknown;
   kind?: unknown;
+  coreFacilityWebsiteKeys?: ReadonlySet<string>;
 }
 
 /**
@@ -1101,6 +1103,7 @@ const COURSE_CATALOG_HOSTS: ReadonlySet<string> = new Set(['courses.yale.edu', '
  * A course's own page describes a class, so it is never a research home, never names a
  * row and is never evidence about one (#5213). A bare `/courses` listing on a research
  * home's own site is left an ordinary citation, so a course slug must follow the segment.
+ * A person's website refuses the bare listing too, through `isCourseListingPageUrl`.
  */
 export function isCoursePageUrl(value: unknown): boolean {
   const url = parseHttpUrl(value);
@@ -1110,6 +1113,17 @@ export function isCoursePageUrl(value: unknown): boolean {
   return segments.some(
     (segment, index) => COURSE_PAGE_PARENT_SEGMENT.test(segment) && index < segments.length - 1,
   );
+}
+
+/**
+ * A bare `/courses` or `/course` listing, which a research home may cite as its own
+ * teaching page but which lists classes rather than being anyone's own website (#5860).
+ */
+export function isCourseListingPageUrl(value: unknown): boolean {
+  const url = parseHttpUrl(value);
+  if (!url) return false;
+  const lastSegment = url.pathname.split('/').filter(Boolean).pop();
+  return lastSegment !== undefined && COURSE_PAGE_PARENT_SEGMENT.test(lastSegment);
 }
 
 /**
@@ -1137,6 +1151,29 @@ export function isUmbrellaPageCitedByPerson(
     isDepartmentHiringPageUrl(value) ||
     isDepartmentProgrammePageUrl(value)
   );
+}
+
+/**
+ * A page a live `CORE_FACILITY` row holds as its own website, cited by a person's own row.
+ * The facility's page is the facility's own website, so on a person's row it duplicates the
+ * facility row and names a service the person staffs rather than their research (#5788).
+ * A lab is not a person's row here: a lab citing the facility it runs is a different question.
+ * With no facility keys the arm cannot fire, so serve-time callers keep their behaviour.
+ */
+export function isPersonOwnResearchRowShape(entity?: ResearchEntityHostOwnerIdentity): boolean {
+  if (!isPersonScopedHostTenant(entity)) return false;
+  const entityType = textValue(entity?.entityType).toUpperCase();
+  return entityType ? entityType !== 'LAB' : textValue(entity?.kind).toLowerCase() !== 'lab';
+}
+
+export function isCoreFacilityPageCitedByPerson(
+  value: unknown,
+  entity?: ResearchEntityHostOwnerIdentity,
+): boolean {
+  const keys = entity?.coreFacilityWebsiteKeys;
+  if (!keys || keys.size === 0 || !isPersonOwnResearchRowShape(entity)) return false;
+  const key = websiteShareKey(value);
+  return Boolean(key && keys.has(key));
 }
 
 /**
@@ -1232,6 +1269,7 @@ export function isWithheldResearchWebsiteUrl(
   return (
     isMultiTenantAcademicHostRootUrl(value, entity) ||
     isUmbrellaPageCitedByPerson(value, entity) ||
+    isCoreFacilityPageCitedByPerson(value, entity) ||
     isPressOrNewsHostUrl(value) ||
     isMapOrDirectionsUrl(value) ||
     isInstitutionalPublicityPageUrl(value) ||
@@ -1242,13 +1280,15 @@ export function isWithheldResearchWebsiteUrl(
 }
 
 /**
- * A page that is never a person's own website: a course, a posting or a patient-care page
- * (#5213, #5364), or a map or directions link (#5657). Read on a lead's member website at
- * the user materializer, the roster accessor and the member serializers (#5376).
+ * A page that is never a person's own website: a course page or a bare course listing, a
+ * posting or a patient-care page (#5213, #5364, #5860), or a map or directions link
+ * (#5657). Read on a lead's member website at the user materializer, the roster accessor
+ * and the member serializers (#5376).
  */
 export function isInadmissiblePersonWebsiteUrl(value: unknown): boolean {
   return (
     isCoursePageUrl(value) ||
+    isCourseListingPageUrl(value) ||
     isPostingPageUrl(value) ||
     isPatientCarePageUrl(value) ||
     isMapOrDirectionsUrl(value)
@@ -1815,6 +1855,7 @@ export type ResearchHomeWebsiteUrlRefusal =
   | 'press-or-news-host'
   | 'multi-tenant-host-root'
   | 'umbrella-page-cited-by-person'
+  | 'core-facility-page-cited-by-person'
   | 'unparseable'
   | 'non-http-protocol'
   | 'file-or-document'
@@ -1864,6 +1905,7 @@ const WRITE_BLOCKING_RESEARCH_HOME_WEBSITE_URL_REFUSALS: ReadonlySet<string> = n
   'press-or-news-host',
   'multi-tenant-host-root',
   'umbrella-page-cited-by-person',
+  'core-facility-page-cited-by-person',
   'cms-profile-path',
   'host-denylist',
   'google-sites-not-a-home',
@@ -1966,6 +2008,9 @@ export function researchHomeWebsiteUrlDecision(
   if (isPatientCarePageCitedAsResearchWebsite(raw, entity)) return refuse('patient-care-page');
   if (isMultiTenantAcademicHostRootUrl(raw, entity)) return refuse('multi-tenant-host-root');
   if (isUmbrellaPageCitedByPerson(raw, entity)) return refuse('umbrella-page-cited-by-person');
+  if (isCoreFacilityPageCitedByPerson(raw, entity)) {
+    return refuse('core-facility-page-cited-by-person');
+  }
   try {
     const url = new URL(raw);
     url.hash = '';

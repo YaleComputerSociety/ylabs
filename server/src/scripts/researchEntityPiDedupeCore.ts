@@ -23,6 +23,8 @@ import {
   sourceUrlToResearchHomeWebsiteUrl,
 } from '../utils/researchHomeWebsiteUrl';
 import { personPagePrefixesForHost } from '../utils/yalePersonPagePrefix';
+import { DEGREE_TOKENS, GENERATIONAL_SUFFIX_TOKENS } from '../utils/degreeTokens';
+import { groupNamesStateConflictingMiddleInitials } from '../scrapers/utils/personNameAgreement';
 
 export interface ResearchEntityPiDedupeRow {
   userId: string;
@@ -731,6 +733,23 @@ function buildGroupFromCluster(
   };
 }
 
+/**
+ * A merge group for a canonical a witness already chose, so the group carries the same
+ * merged departments, topics, sources and description as every other lane's group.
+ */
+export function buildPinnedCanonicalMergeGroup(
+  row: ResearchEntityPiDedupeRow,
+  canonicalEntityId: string,
+  duplicateEntityIds: readonly string[],
+): ResearchEntityPiDedupeGroup | null {
+  const wanted = new Set([canonicalEntityId, ...duplicateEntityIds]);
+  const entities = row.entities.filter((entity) => wanted.has(entity.id));
+  if (entities.length !== wanted.size) return null;
+  return buildGroupFromCluster(withoutPrimaryAppointmentPreference(row), entities, (entity) =>
+    entity.id === canonicalEntityId ? Number.MAX_SAFE_INTEGER : canonicalScore(entity),
+  );
+}
+
 function carriedCanonicalIdentity(
   canonical: ResearchEntityPiDedupeRow['entities'][number],
   entities: ResearchEntityPiDedupeRow['entities'],
@@ -1076,16 +1095,47 @@ export function buildNameAgreedSharedPersonResearchEntityDedupePlan(
       const key = `${entityType}::${name}`;
       clusters.set(key, [...(clusters.get(key) || []), entity]);
     }
-    return [...clusters.values()].flatMap((entities) =>
-      joinsFacultyResearchRowToLab(entities)
-        ? sharedPersonGroup(
-            withoutPrimaryAppointmentPreference(row),
-            entities,
-            labTypedRowFirstScore,
-          )
-        : sharedPersonGroup(row, entities),
-    );
+    return [...clusters.values()]
+      .filter(
+        (entities) =>
+          !groupNamesStateConflictingMiddleInitials(
+            entities.map((e) => entityNameWordsWithoutKindNouns(e.name).join(' ')),
+          ),
+      )
+      .flatMap((entities) =>
+        joinsFacultyResearchRowToLab(entities)
+          ? sharedPersonGroup(
+              withoutPrimaryAppointmentPreference(row),
+              entities,
+              labTypedRowFirstScore,
+            )
+          : sharedPersonGroup(row, entities),
+      );
   });
+}
+
+/**
+ * The name-agreed plan over lead rows plus rows grouped by the roster mailbox they were
+ * read under (#5969). One person on two rosters can end up with two lead researchers, and
+ * every lead-keyed group is then blind to the pair. The mailbox rows run through the same
+ * name-agreement builder, and a mailbox group touching a row a lead group already plans, or a
+ * row more than one lead researcher leads, is dropped so no row is planned twice and a
+ * multi-lead row stays out of the lane.
+ */
+export function buildNameAgreedSharedPersonAndRosterMailboxDedupePlan(
+  leadRows: ResearchEntityPiDedupeRow[],
+  rosterMailboxRows: ResearchEntityPiDedupeRow[],
+): ResearchEntityPiDedupeGroup[] {
+  const leadPlan = buildNameAgreedSharedPersonResearchEntityDedupePlan(leadRows);
+  const excluded = new Set([
+    ...multiPersonEntityIds(leadRows),
+    ...leadPlan.flatMap((group) => [group.canonicalEntityId, ...group.duplicateEntityIds]),
+  ]);
+  const mailboxPlan = buildNameAgreedSharedPersonResearchEntityDedupePlan(rosterMailboxRows).filter(
+    (group) =>
+      ![group.canonicalEntityId, ...group.duplicateEntityIds].some((id) => excluded.has(id)),
+  );
+  return [...leadPlan, ...mailboxPlan];
 }
 
 const LAB_NAME_WORDS: ReadonlySet<string> = new Set(['lab', 'labs', 'laboratory', 'laboratories']);
@@ -1290,8 +1340,15 @@ function hostMappedPersonPageSlug(parsed: URL): string {
   return mapped ? leaf : '';
 }
 
-const PERSON_PROFILE_CREDENTIAL_SUFFIX =
-  /-(?:phd|md|mph|ms|msc|mba|ma|dvm|rn|do|dds|scd|edd|jd|jr|sr|ii|iii|iv)$/;
+// The trailing credential a profile slug carries, as one or two `-` segments ("phd",
+// "fnp-c"), from the shared list in `degreeTokens.ts` (#5969).
+function trailingCredentialSegments(slug: string): number {
+  const segments = slug.split('-');
+  const last = segments[segments.length - 1] || '';
+  if (GENERATIONAL_SUFFIX_TOKENS.has(last) || DEGREE_TOKENS.has(last)) return 1;
+  const lastTwo = segments.slice(-2).join('');
+  return segments.length >= 2 && DEGREE_TOKENS.has(lastTwo) ? 2 : 0;
+}
 
 // A collection page, not a person. `/people/<x>` is a person on some directories and
 // a listing subpage on others, and a lab-microsite crawl puts both into `sourceUrls`.
@@ -1381,8 +1438,9 @@ export function personProfileIdentityFromUrl(value: string | undefined): string 
   if (!rawSlug) return '';
   let slug = rawSlug.toLowerCase();
   for (;;) {
-    if (!PERSON_PROFILE_CREDENTIAL_SUFFIX.test(slug)) break;
-    const stripped = slug.replace(PERSON_PROFILE_CREDENTIAL_SUFFIX, '');
+    const credentialSegments = trailingCredentialSegments(slug);
+    if (credentialSegments === 0) break;
+    const stripped = slug.split('-').slice(0, -credentialSegments).join('-');
     if (personNameTokens(stripped).length < 2) break;
     slug = stripped;
   }
@@ -1392,11 +1450,34 @@ export function personProfileIdentityFromUrl(value: string | undefined): string 
   return tokens.join('-');
 }
 
-export function distinctPersonProfileIdentities(urls: readonly string[] | undefined): string[] {
+const departmentSlug = (value: unknown): string =>
+  typeof value === 'string'
+    ? value
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .replace(/&/g, ' and ')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '')
+    : '';
+
+/**
+ * The people a set of cited pages names. A one-word page whose slug is one of the row's own
+ * departments is that department's listing on a faculty directory that files people and
+ * subject filters under one path, not a second person (#5969). Any other one-word page,
+ * a surname-only or netid slug, stays a person, so a mononym cannot switch the refusal off.
+ */
+export function distinctPersonProfileIdentities(
+  urls: readonly string[] | undefined,
+  options: { departments?: readonly unknown[] } = {},
+): string[] {
+  const ownDepartments = new Set((options.departments || []).map(departmentSlug).filter(Boolean));
   const identities = new Set<string>();
   for (const url of urls || []) {
     const identity = personProfileIdentityFromUrl(url);
-    if (identity) identities.add(identity);
+    if (!identity) continue;
+    if (!identity.includes('-') && ownDepartments.has(identity)) continue;
+    identities.add(identity);
   }
   return Array.from(identities).sort();
 }
@@ -1421,9 +1502,14 @@ export function distinctPersonProfileIdentities(urls: readonly string[] | undefi
  * cannot see it because it keys on RoleAssignment links, which these rows do not carry.
  */
 export function groupConflatesDistinctPersonProfiles(
-  group: Pick<ResearchEntityPiDedupeGroup, 'mergedSourceUrls'>,
+  group: Pick<ResearchEntityPiDedupeGroup, 'mergedSourceUrls'> &
+    Partial<Pick<ResearchEntityPiDedupeGroup, 'mergedDepartments'>>,
 ): boolean {
-  return distinctPersonProfileIdentities(group.mergedSourceUrls).length > 1;
+  return (
+    distinctPersonProfileIdentities(group.mergedSourceUrls, {
+      departments: group.mergedDepartments,
+    }).length > 1
+  );
 }
 
 export function partitionPlanByPersonProfileConflation<
@@ -1440,7 +1526,9 @@ export function partitionPlanByPersonProfileConflation<
         canonicalEntityId: group.canonicalEntityId,
         canonicalSlug: group.canonicalSlug,
         duplicateSlugs: group.duplicateSlugs,
-        personProfileIdentities: distinctPersonProfileIdentities(group.mergedSourceUrls),
+        personProfileIdentities: distinctPersonProfileIdentities(group.mergedSourceUrls, {
+          departments: (group as Partial<ResearchEntityPiDedupeGroup>).mergedDepartments,
+        }),
       });
       continue;
     }

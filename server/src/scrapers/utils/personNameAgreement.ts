@@ -1,4 +1,9 @@
-import { givenNamesAgree, givenNamesEquivalent, surnamesCompatible } from './piNameMatch';
+import {
+  givenNamesAgree,
+  givenNamesEquivalent,
+  statedMiddleInitialsConflict,
+  surnamesCompatible,
+} from './piNameMatch';
 import { normalizeName, splitName } from './scraperHelpers';
 
 const textOf = (value: unknown): string =>
@@ -75,6 +80,7 @@ function sharedSurnameRuns(
 function givenNamesOfOnePerson(left: readonly string[], right: readonly string[]): boolean {
   const [leftFirst, rightFirst] = [left[0], right[0]];
   if (!leftFirst || !rightFirst) return false;
+  if (statedMiddleInitialsConflict(left.join(' '), right.join(' '))) return false;
   const initialOf = (initial: string, given: string) =>
     initial.length === 1 && given[0] === initial;
   if (initialOf(leftFirst, rightFirst) || initialOf(rightFirst, leftFirst)) return true;
@@ -116,4 +122,31 @@ export function listedPersonIsTheNamedLead(listedName: unknown, namedLeadName: u
   const surnameRuns = sharedSurnameRuns(left, right);
   if (!surnameRuns) return false;
   return givenNamesOfOnePerson(left.slice(0, -surnameRuns[0]), right.slice(0, -surnameRuns[1]));
+}
+
+const leadingGivenToken = (given: string): string => given.split(/\s+/)[0] ?? '';
+
+export function namesStateConflictingMiddleInitials(left: unknown, right: unknown): boolean {
+  const a = splitName(textOf(left));
+  const b = splitName(textOf(right));
+  if (!a.first || !a.last || !b.first || !b.last) return false;
+  if (!surnamesCompatible(a.last, b.last)) return false;
+  if (!statedMiddleInitialsConflict(a.first, b.first)) return false;
+  const [firstA, firstB] = [leadingGivenToken(a.first), leadingGivenToken(b.first)];
+  return firstA.toLowerCase() === firstB.toLowerCase() || givenNamesEquivalent(firstA, firstB);
+}
+
+export function anyNamesStateConflictingMiddleInitials(
+  lefts: readonly unknown[],
+  rights: readonly unknown[],
+): boolean {
+  return lefts.some((left) =>
+    rights.some((right) => namesStateConflictingMiddleInitials(left, right)),
+  );
+}
+
+export function groupNamesStateConflictingMiddleInitials(names: readonly unknown[]): boolean {
+  return names.some((left, index) =>
+    names.slice(index + 1).some((right) => namesStateConflictingMiddleInitials(left, right)),
+  );
 }

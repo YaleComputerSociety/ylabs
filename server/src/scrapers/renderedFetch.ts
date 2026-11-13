@@ -19,7 +19,7 @@ import {
 } from './snapshotBenchmarkMode';
 import { getCached, setCached } from './snapshotCache';
 import { scraperHostSlotLimiter } from './utils/scraperHostSlotLimiter';
-import { hostnameForLimiter } from './utils/hostConcurrencyLimiter';
+import { acquireHostSlotWithin, hostnameForLimiter } from './utils/hostConcurrencyLimiter';
 import { retryOnRetryableResultStatus, type RetryPolicyOptions } from './utils/httpFetch';
 import {
   startSsrfGuardedForwardProxy,
@@ -190,12 +190,13 @@ const defaultRenderedSeedRedirectCheck = (url: URL, timeoutMs: number): Promise<
   new Promise((resolvePromise, reject) => {
     const client = url.protocol === 'https:' ? https : http;
     const agents = ssrfSafeAgents();
+    const boundMs = Math.min(timeoutMs, MAX_RENDERED_SEED_REDIRECT_CHECK_MS);
     const req = client.request(
       url,
       {
         method: 'GET',
         agent: url.protocol === 'https:' ? agents.httpsAgent : agents.httpAgent,
-        timeout: Math.min(timeoutMs, MAX_RENDERED_SEED_REDIRECT_CHECK_MS),
+        timeout: boundMs,
         headers: {
           Range: 'bytes=0-0',
           'User-Agent': 'YaleResearchRenderedFetchPreflight/1.0',
@@ -207,9 +208,11 @@ const defaultRenderedSeedRedirectCheck = (url: URL, timeoutMs: number): Promise<
       },
     );
 
-    req.on('timeout', () => {
+    const abortCheck = () =>
       req.destroy(Object.assign(new Error('Timeout'), { name: 'AbortError' }));
-    });
+    const overallDeadline = setTimeout(abortCheck, boundMs);
+    req.once('close', () => clearTimeout(overallDeadline));
+    req.on('timeout', abortCheck);
     req.on('error', reject);
     req.end();
   });
@@ -466,7 +469,7 @@ function createLiveScraplingRenderedFetcher(
     const seedUrl = await assertPublicHttpUrl(request.url);
     const safeRequestUrl = seedUrl.toString();
     const timeoutMs = boundedRenderedFetchTimeout(request.timeoutMs, defaultTimeoutMs);
-    const releaseHostSlot = await scraperHostSlotLimiter().acquire(seedUrl.hostname);
+    const releaseHostSlot = await acquireHostSlotWithin(scraperHostSlotLimiter(), seedUrl.hostname);
     try {
       try {
         if (await seedRedirectCheck(seedUrl, timeoutMs)) {

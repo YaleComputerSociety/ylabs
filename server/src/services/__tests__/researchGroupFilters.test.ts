@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
   buildResearchGroupFilterString,
   candidateMatchesStudentFilters,
+  entityTypesForStoredRows,
   tallyCandidateFacetDistribution,
+  withResearchTypeFilter,
 } from '../researchGroupFilters';
 
 describe('buildResearchGroupFilterString', () => {
@@ -180,6 +182,33 @@ describe('buildResearchGroupFilterString', () => {
     });
   });
 
+  describe('mentorsUndergrads filter (#5963)', () => {
+    it('true filters on the served mentors field', () => {
+      expect(buildResearchGroupFilterString({ mentorsUndergrads: true })).toBe(
+        'archived = false AND mentorsUndergrads = true',
+      );
+    });
+
+    it('false or unset adds no clause', () => {
+      expect(buildResearchGroupFilterString({ mentorsUndergrads: false })).toBe('archived = false');
+    });
+
+    it('combines with the other Undergrads options via AND, so ticking more narrows', () => {
+      expect(
+        buildResearchGroupFilterString({ welcomesUndergrads: true, mentorsUndergrads: true }),
+      ).toBe('archived = false AND welcomesUndergrads = true AND mentorsUndergrads = true');
+    });
+
+    it('drops its own clause when its facet is computed disjunctively', () => {
+      expect(
+        buildResearchGroupFilterString(
+          { mentorsUndergrads: true, hostsUndergrads: true },
+          { excludeField: 'mentorsUndergrads' },
+        ),
+      ).toBe('archived = false AND hasUndergradHostingEvidence = true');
+    });
+  });
+
   describe('worksWithUndergrads filter (#5362)', () => {
     it('true filters on the one index field that ORs hosted, welcomes and mentors', () => {
       expect(buildResearchGroupFilterString({ worksWithUndergrads: true })).toBe(
@@ -262,6 +291,29 @@ describe('candidateMatchesStudentFilters', () => {
     ).toBe(true);
   });
 
+  it('reads the mentors-undergraduates flag only when that filter is on (#5963)', () => {
+    expect(candidateMatchesStudentFilters(candidate, { mentorsUndergrads: true })).toBe(false);
+    expect(
+      candidateMatchesStudentFilters(
+        { ...candidate, mentorsUndergrads: true },
+        { mentorsUndergrads: true },
+      ),
+    ).toBe(true);
+    expect(
+      candidateMatchesStudentFilters(
+        { ...candidate, mentorsUndergrads: true },
+        { mentorsUndergrads: true, welcomesUndergrads: true },
+      ),
+    ).toBe(false);
+    expect(
+      candidateMatchesStudentFilters(
+        candidate,
+        { mentorsUndergrads: true },
+        { excludeField: 'mentorsUndergrads' },
+      ),
+    ).toBe(true);
+  });
+
   it('drops only the excluded field, so a facet can be counted disjunctively', () => {
     expect(
       candidateMatchesStudentFilters(
@@ -291,6 +343,24 @@ describe('tallyCandidateFacetDistribution', () => {
       entityType: { LAB: 2, CENTER: 1 },
     });
   });
+  it('counts the mentors option over the rows the other ticked Undergrads options admit (#5963)', () => {
+    const pooled = [
+      { welcomesUndergrads: true, mentorsUndergrads: true },
+      { welcomesUndergrads: true },
+      { mentorsUndergrads: true },
+    ];
+    const facets = [
+      { filterKey: 'mentorsUndergrads' as const, indexField: 'mentorsUndergrads' },
+      { filterKey: 'welcomesUndergrads' as const, indexField: 'welcomesUndergrads' },
+    ];
+    expect(tallyCandidateFacetDistribution(pooled, {}, facets).mentorsUndergrads).toEqual({
+      true: 2,
+    });
+    expect(
+      tallyCandidateFacetDistribution(pooled, { welcomesUndergrads: true }, facets)
+        .mentorsUndergrads,
+    ).toEqual({ true: 1 });
+  });
 });
 
 describe('candidateMatchesStudentFilters with worksWithUndergrads (#5362)', () => {
@@ -308,5 +378,72 @@ describe('candidateMatchesStudentFilters with worksWithUndergrads (#5362)', () =
         },
       ),
     ).toBe(true);
+  });
+});
+
+describe('the Type filter on the derived research type (#5141)', () => {
+  const pooled = [
+    { id: 'practice', entityType: 'FACULTY_RESEARCH_AREA', researchType: 'CREATIVE_PRACTICE' },
+    { id: 'research', entityType: 'FACULTY_RESEARCH_AREA', researchType: 'FACULTY_RESEARCH_AREA' },
+    { id: 'lab', entityType: 'LAB', researchType: 'LAB' },
+  ];
+  const matchedIds = (filters: Parameters<typeof withResearchTypeFilter>[0]) =>
+    pooled
+      .filter((candidate) => candidateMatchesStudentFilters(candidate, filters))
+      .map((candidate) => candidate.id);
+
+  it('reads creative practice from the research type field', () => {
+    const filters = withResearchTypeFilter({ entityType: ['CREATIVE_PRACTICE'] }, true);
+
+    expect(buildResearchGroupFilterString(filters)).toBe(
+      'archived = false AND (researchType = "CREATIVE_PRACTICE")',
+    );
+    expect(matchedIds(filters)).toEqual(['practice']);
+  });
+
+  it('leaves the creative practice rows out of faculty research', () => {
+    const filters = withResearchTypeFilter({ entityType: ['FACULTY_RESEARCH_AREA'] }, true);
+
+    expect(buildResearchGroupFilterString(filters)).toBe(
+      'archived = false AND (researchType = "FACULTY_RESEARCH_AREA")',
+    );
+    expect(matchedIds(filters)).toEqual(['research']);
+  });
+
+  it('keeps the entity type filter, minus creative practice, on an index without the field', () => {
+    const filters = withResearchTypeFilter(
+      { entityType: ['CREATIVE_PRACTICE', 'LAB'], departments: ['Music'] },
+      false,
+    );
+
+    expect(filters).toEqual({ entityType: ['LAB'], departments: ['Music'] });
+    expect(buildResearchGroupFilterString(filters)).toBe(
+      'archived = false AND (entityType = "LAB") AND (departments = "Music")',
+    );
+  });
+
+  it('changes nothing when creative practice was the only type asked of an older index', () => {
+    const filters = withResearchTypeFilter({ entityType: ['creative_practice'] }, false);
+
+    expect(buildResearchGroupFilterString(filters)).toBe('archived = false');
+    expect(matchedIds(filters)).toEqual(['practice', 'research', 'lab']);
+  });
+
+  it('tallies one Type bucket per row, so the counts partition the pool', () => {
+    const distribution = tallyCandidateFacetDistribution(pooled, {}, [
+      { filterKey: 'researchType', indexField: 'researchType' },
+    ]);
+
+    expect(distribution.researchType).toEqual({
+      CREATIVE_PRACTICE: 1,
+      FACULTY_RESEARCH_AREA: 1,
+      LAB: 1,
+    });
+  });
+
+  it('widens creative practice to faculty research for a Mongo read, which stores no label', () => {
+    expect(entityTypesForStoredRows(['CREATIVE_PRACTICE', 'FACULTY_RESEARCH_AREA', 'LAB'])).toEqual(
+      ['FACULTY_RESEARCH_AREA', 'LAB'],
+    );
   });
 });

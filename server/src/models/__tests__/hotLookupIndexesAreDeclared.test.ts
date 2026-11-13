@@ -75,6 +75,11 @@ const researcherLookups: readonly HotLookup[] = [
     equalityFields: ['profile.websiteUrl'],
     thenReads: [],
   },
+  {
+    name: 'the research detail lookup of records folded into a served lead (#5970)',
+    equalityFields: ['dedupedIntoResearcherId'],
+    thenReads: [],
+  },
 ];
 
 describe('the hot observation and researcher lookups have a declared index (#3934)', () => {

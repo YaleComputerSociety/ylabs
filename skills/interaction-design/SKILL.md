@@ -76,8 +76,9 @@ Working memory holds roughly four to seven chunks (Miller's Law, and the more mo
 
 - Anything a student needs in order to compare two labs must be visible on both cards at once.
 If they have to open both and remember the first, the comparison surface is the fix, not a better card.
-The dashboard Compare dialog (`ResearchHomeComparison.tsx`) is that surface, and it leads with the two facts students compare on: undergraduate evidence (the hosting status, advised undergraduates, and the cited quote, labelled exactly as the detail page labels it) and how to get involved, resolved through the detail page's own `resolveResearchDetailActionLinks` so the two surfaces cannot offer different ways in (#5106).
+The dashboard Compare dialog (`ResearchHomeComparison.tsx`) is that surface, and it leads with the two facts students compare on: undergraduate evidence (the browse card's undergraduate badges in the browse card's order, led by "Taking undergrads now", then advised undergraduates and the cited quote, labelled exactly as the detail page labels it) and how to get involved, resolved through the detail page's own `resolveResearchDetailActionLinks` so the two surfaces cannot offer different ways in (#5106).
 It has no commitment or pay row, because those facts were retired rather than left unfilled (#3088).
+- A saved research card carries the same undergraduate badges, in the same order, as the browse card it was saved from, through one helper (`client/src/utils/undergraduateAccessStatus.ts`) that Compare shares, and the saved list serves the same welcome, invitation and advising predicates the browse index serves, so the shortlist never shows a weaker signal than the card a student acted on (#6088).
 - Both dashboard plan lists open most recently saved first, keyed on the plan's `createdAt`, so a fresh save lands on top (#5168).
 A row saved again after the undo window keeps its first save time, a known limit accepted over adding a stored `savedAt`.
 Above each list a stage filter, with a "Waiting to hear back" preset (Contacted and Applied on saved research, Applied alone on watched programs), and a sort select ("Recently saved", "Stage", and on programs "Deadline") are held in `?stage=` and `?sort=` for the active tab and cleared on a tab switch (`client/src/utils/dashboardPlanListView.ts`).
@@ -105,6 +106,8 @@ Every surface, including an empty result set and an error, offers a next step.
 A question about getting in ("research for freshmen", "paid summer research") is answered by `/programs`, not by the research corpus, so `/research` links the same query there (`ResearchProgramsHandoff`, #4369): on every empty search, and above results when `queryCarriesProgramsIntent` matches.
 It is a link rather than a redirect, so a real research query that happens to say "summer" is never taken away from the student, and it carries no program data, so it cannot become the removed #1509 module again.
 The general "can I join, what is a PI, what do I write" questions have one answer for every row, so they live on one generic page, `/getting-started`, rather than in per-entity text (#5099).
+A student can reach it before opening any profile from two places only: one question-phrased line on the un-searched `/research` landing, at every width and for guests and signed-in students alike (under the search box below 1280px, and under the profile count at the top of the results from 1280px, so the sticky sidebar keeps its fit), and a link under a program's "Do you need a mentor first?" answer when the program requires a mentor (#6095).
+There is deliberately no nav item and no dashboard entry, because a nav label adds a choice to every page and sits behind the phone menu that students did not open early.
 Every detail page's "How to get involved" block ends with a link to it, including the minimal block a page shows when its lead card is the only way in, and a principal investigator heading carries a one-line explanation that links to its PI section.
 The page states only advice that holds for any group and points to Yale College's own mentor advice and the programs board for the rest.
 
@@ -159,6 +162,7 @@ It came back on 2026-10-11 in the form the threshold called for.
 After #3592 kept only quotes found on a fetched page, the re-measure read 0.84 (0.71 to 0.92), which is middling rather than high, so the card shows the quote itself under "Mentions undergraduate research" with the page it is quoted from, and the student judges it.
 The label says less than the old one on purpose: only half the correct quotes show undergraduates were hosted, so "Has hosted undergraduate researchers" stays reserved for roster and advisee evidence (`docs/decisions.md`, 2026-10-11).
 On 2026-10-20 that badge was shortened to "Hosted undergrads" and given the same check as the two invitation badges, while student-project and contact signals stay pills (#5405).
+On 2026-11-12 every undergraduate badge took the browse filter's own words: "Taking undergrads now" (with ", recruiting" for an active opening), "Has had undergrads" and "Advises undergrad research" (#5963).
 On 2026-10-12 the quote left the card for the detail page, where it reads at full width below the topics, because on the card it was the heaviest block and the one a student could not scan (#5022).
 On 2026-10-18 the owner removed the quote from the detail page too (#5309): of 117 shown, about 43 were explicit invitations, and the rest were member bios that belong in the roster list or passing mentions a student cannot act on.
 

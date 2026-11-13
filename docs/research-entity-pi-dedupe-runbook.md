@@ -277,8 +277,27 @@ Every name whose strict key is the lead's name takes the eponymous key too, so a
 A topic word in the head keeps the strict key, and a row that more than one person record leads stays out of the lane.
 A faculty research row whose name is a lab name ("<Surname> Lab") counts as a `LAB` for the type half of the key, because one department roster mints the person a faculty research row and another school's lab index mints the lab under the same name; in such a mixed group the `LAB` row stays canonical regardless of which roster holds the lead's primary appointment (#5390).
 A faculty research row named any other way ("<Name> Research") keeps its own type and never joins a lab here.
+The lane also groups live roster rows by the person-specific Yale mailbox the roster read them under (`loadRosterMailboxCandidateRows`, #5969), because one person on two rosters can end up with two lead researchers and every lead-keyed group is then blind to the pair.
+Those groups go through the same name-agreement builder and the same conflated-profile quarantine and distinct-people verdicts, and a mailbox group that touches a row a lead group already plans, or a row that more than one lead researcher leads, is dropped.
+A merge repoints every non-repeated lead edge onto the survivor, so a co-directed row keeps all its co-directors.
+A group whose row names state two different middle initials is refused, because the name key drops a lone initial and two namesakes under one wrongly folded lead would otherwise agree (#5969).
+A profile page slug that carries nursing credentials (`-phd-mph-bsn`, `-aprn-fnp-c-faan`) reads as the same person as the plain slug, because stripping stopped at the first credential the suffix list did not know and the conflated-profile quarantine then read one person's two pages as two people; the list is now the one in `server/src/utils/degreeTokens.ts`, shared with the roster name normalizer, and `skills/scrapers/SKILL.md` owns its contract.
 The plain `--shared-person-id` mode stays operator-only.
 The stage runs under the same flag and contract as the URL stages and writes `development-shared-person-name-agreed-dedupe.json`.
+
+### A faculty research row that restates its lead's own lab
+
+`research-entity:merge-eponymous-fra` also folds a faculty research row into its lead's own lab on a witness, not on name shape (#5969).
+The eponymous lane folds only a person-named shell, and a blind ballot found faculty research rows restating their lead's lab that carry their own names and sites, so name shape never reached them.
+Two witnesses count, both in `services/witnessedFraLabFold.ts`.
+The lab's own page witness: the person holds the lab's PI edge, that edge carries evidence (a source or a confidence above zero), the stored lab-site lead verification confirms that person as PI and records that the page names them (`matchedBy` `NAMED_ON_PAGE`, or `namedOnPage` beside a profile-link confirmation), and the verification shows no contradiction; it re-derives on every run, so it is a lane.
+A confirmation by a profile link alone, or by the surname in the site's address, is not a witness, because a page naming a different overseer also links the person and an address does not read the page; measured on Development on 2026-11-12, the only fold that link alone produced was a pair a blind ballot refused, and it rested on a legacy PI edge with no source and confidence zero.
+The lane sets `namedOnPage` from the page's visible text only, never from a link's own slug, and a lab's stored verification carries it only after the lab-site verification lane has re-read that lab, so run that lane before the fold on Development.
+The ballot witness: `--ballot-pairs <file.json>` (an array of `{ label, facultyRowId, labId }`) names pairs an operator's blind ballot confirmed, and each folds only when one researcher holds a lead edge on both rows; the label is the recorded evidence.
+A co-director is not the lab's PI, so a co-director's separate lab never folds a row on the page witness.
+A row with two candidate labs, or whose ballot and page witnesses disagree, is refused with the reason in `witnessedFoldRefusals`; a fold touching a row the eponymous lane already plans is left to that lane, and that, a second row folding into a lab already folding, a row that did not load, a fold the distinct-people verdicts refuse, and a fold the `--max-merges` cap defers are each reported there with their own reason, so `witnessedFolds` lists only the folds this run plans.
+The merge repoints every non-repeated lead edge onto the lab, so a co-directed lab keeps all its co-directors.
+The recorded distinct-people verdicts still refuse a fold whose rows' leads include a pair recorded as two people, even when both already co-lead the lab.
 
 ## Durable canonical redirect (permanent, delete-safe merge)
 
@@ -355,6 +374,32 @@ Only the lifecycle flag is written; every field is then derived from the row's o
 
 Every archive records an `archivedReason`, because `archivedEntityUpdate` requires one.
 If unmerges become common, that reason is how an engine pass could automate step 5: it would find rows archived only by a merge whose redirect was later broken.
+
+## Reversing a wrong researcher fold
+
+A `researchers:dedupe-accountless-shells` fold can join two different people, for example a name-only shell folded into a same-surname record through the shared-row arm (#5995).
+Reversing one is an operator judgement about that record, and three audited operator tools perform its writes (#6018).
+Each is for one-row judgements, not a bulk repair path, is a dry run by default, and on apply needs its confirm flag, `ALLOW_NON_PROD_SCRAPER_WRITES=true` and an actor (`--actor` or `DEV_WRITE_OWNER`, which must be a netid or `agent:<name>`, so a bare session label is refused), and takes the Development write lease through its apply guard.
+
+1. Decide which person keeps the record from the official pages, and detach the other person's lead edges from it with `role-assignments:detach-edge`.
+2. `researchers:unfold-shell --shell=<id> --expect-survivor=<id> --note='<why>' --apply --confirm-unfold-shell` un-archives the shell, clears its `dedupedIntoResearcherId` and `dedupedAt`, and records the shell and the survivor as distinct people in the same write, so no fold arm re-joins them on the next sweep.
+It writes an `admin_audit_events` record (`researcher.unfold_shell`) holding the pre-image of the shell, the survivor and every shell edge, and the ids of the edges the fold archived (`foldArchivedEdgeIds`: archived, no `DISPUTED` verdict, no note, on a target and role the survivor also holds).
+A second run is a no-op that reports the earlier audit id.
+It refuses, writing nothing, when the shell was folded again after an earlier unfold (`shell-refolded-after-unfold`), when the survivor was itself folded or is archived, when the survivor differs from `--expect-survivor`, and when the record was never folded or a folded shell is not archived.
+It cannot recover what the fold moved onto the survivor, such as a gap-filled identifier or an edge it re-pointed, because the fold recorded none of that; those come back through the lanes or through `researcher:refuse-field-value` and `role-assignments:detach-edge` on the survivor.
+3. Restore each edge the fold archived with `role-assignments:restore-detached-edge --edge=<id> --unfold-audit=<audit id> ...` (below in [`research-model.md`](research-model.md)).
+4. Refuse the other person's values on each record with `researcher:refuse-field-value`.
+5. `observations:supersede --ids=<id>,<id> --reason='<why>' --apply --confirm-supersede-observations` supersedes the residue: the live observations about the other person filed under the kept record's keys, queried in both identity forms.
+It takes at most 25 ids per run and a required `--reason`, stored in `rollback.reason` with `rollback.rolledBackAt`, and writes one `observation.supersede` audit record per observation holding its pre-image; a second run is a no-op.
+It refuses the whole run when an id does not exist or backs an owner-decided value.
+6. Rematerialize both records' keys, gate the touched rows, run `yarn development:search:sync`, and re-read the served pages.
+
+Owner decisions are recorded in these places, and `observations:supersede` reads the two an observation can back:
+
+- an operator-authored source (`OPERATOR_AUTHORED_SOURCE_NAMES`, the `isManualLock` seeds `manual-admin-edit` and `manual-pi-edit`, plus `operator-led-group-verdict`), whose observation is itself the decision, and which also carries a visibility override asserted through `manual-admin-edit`: refused as `operator-authored-source`;
+- a `manuallyLockedFields` entry whose `fieldProvenance` cites the observation: refused as `backs-a-locked-field`;
+- a `fieldValueRefusals` entry on a row or a person, which rejects a value rather than resting on an observation, so superseding the observation it rejects agrees with it;
+- a `DISPUTED` role edge, a `distinctFromResearcherIds` verdict and a `studentVisibilityOverrideTier`, none of which cites an observation.
 
 ## Deleting inert merge residue
 

@@ -38,11 +38,13 @@ type IndexDocument = {
   studentVisibilityTier: string;
   kind: string;
   entityType: string;
+  researchType?: string;
   schools: string[];
   departments: string[];
   researchAreas: string[];
   hasUndergradHostingEvidence: boolean;
   welcomesUndergrads: boolean;
+  mentorsUndergrads?: true;
   undergradInvitationRank: number;
   searchText: string;
   similarity: number;
@@ -167,11 +169,13 @@ const toHit = (document: IndexDocument, rankingScoreDetails: Record<string, unkn
   id: document.id,
   kind: document.kind,
   entityType: document.entityType,
+  researchType: document.researchType,
   schools: document.schools,
   departments: document.departments,
   researchAreas: document.researchAreas,
   hasUndergradHostingEvidence: document.hasUndergradHostingEvidence,
   welcomesUndergrads: document.welcomesUndergrads,
+  mentorsUndergrads: document.mentorsUndergrads,
   undergradInvitationRank: document.undergradInvitationRank,
   _rankingScoreDetails: rankingScoreDetails,
 });
@@ -267,6 +271,9 @@ const withOption = (
   if (facet === 'welcomesUndergrads') {
     return value === 'true' ? { ...baseFilters, welcomesUndergrads: true } : null;
   }
+  if (facet === 'mentorsUndergrads') {
+    return value === 'true' ? { ...baseFilters, mentorsUndergrads: true } : null;
+  }
   const filterKey = FILTER_KEY_BY_FACET[facet];
   return filterKey ? { ...baseFilters, [filterKey]: [value] } : null;
 };
@@ -343,11 +350,25 @@ describe('a research filter option count is the number of results applying it re
               },
             }
           : {}),
+        ...(index % 5 === 2 || index % 4 === 1
+          ? {
+              undergradListEvidence: [
+                {
+                  source: 'cs-senior-projects',
+                  kind: 'advised',
+                  count: 2,
+                  sourceUrl: `https://example.yale.edu/synthetic-senior-projects-${index}/`,
+                },
+              ],
+            }
+          : {}),
       };
       const built = buildResearchEntitySearchIndexDocument(row);
       document.hasUndergradHostingEvidence = built?.hasUndergradHostingEvidence === true;
       document.welcomesUndergrads = built?.welcomesUndergrads === true;
+      if (built?.mentorsUndergrads === true) document.mentorsUndergrads = true;
       document.undergradInvitationRank = built?.undergradInvitationRank ?? 0;
+      document.researchType = built?.researchType;
       indexDocuments.push(document);
       return row;
     });
@@ -389,6 +410,60 @@ describe('a research filter option count is the number of results applying it re
     });
     await expectEveryOptionCountToEqualItsResults(QUERY, { hostsUndergrads: true });
     await expectEveryOptionCountToEqualItsResults(QUERY, { welcomesUndergrads: true });
+    await expectEveryOptionCountToEqualItsResults(QUERY, { mentorsUndergrads: true });
+  });
+
+  it('counts each Undergrads option as the result of adding it to the ticked ones, which AND (#5963)', async () => {
+    await expectEveryOptionCountToEqualItsResults('', {});
+    await expectEveryOptionCountToEqualItsResults('', { welcomesUndergrads: true });
+    await expectEveryOptionCountToEqualItsResults('', {
+      hostsUndergrads: true,
+      mentorsUndergrads: true,
+    });
+    await expectEveryOptionCountToEqualItsResults(QUERY, {
+      welcomesUndergrads: true,
+      mentorsUndergrads: true,
+    });
+
+    const both = await search('', { welcomesUndergrads: true, mentorsUndergrads: true }, 100);
+    const welcomesAndMentors = indexDocuments.filter(
+      (document) => document.welcomesUndergrads && document.mentorsUndergrads === true,
+    ).length;
+    const welcomesOrMentors = indexDocuments.filter(
+      (document) => document.welcomesUndergrads || document.mentorsUndergrads === true,
+    ).length;
+    expect(welcomesAndMentors).toBeGreaterThan(0);
+    expect(welcomesAndMentors).toBeLessThan(welcomesOrMentors);
+    expect(both.estimatedTotalHits).toBe(welcomesAndMentors);
+  });
+
+  it('filters to the rows whose served card carries a mentors entry, and counts them (#5963)', async () => {
+    const browse = await search('', {}, 100);
+    const applied = await search('', { mentorsUndergrads: true }, 100);
+    const mentoring = indexDocuments.filter((document) => document.mentorsUndergrads).length;
+
+    expect(mentoring).toBeGreaterThan(0);
+    expect(browse.facetDistribution?.mentorsUndergrads).toEqual({ true: mentoring });
+    expect(applied.estimatedTotalHits).toBe(mentoring);
+    expect(
+      applied.researchEntities.every((entity: any) =>
+        entity.undergradListEvidence?.some((entry: any) => entry.signal === 'mentors'),
+      ),
+    ).toBe(true);
+  });
+
+  it('keeps answering, and reports the dropped mentors toggle, on an index rebuilt before the field existed (#5963)', async () => {
+    liveFilterableAttributes = liveFilterableAttributes.filter(
+      (field) => field !== 'mentorsUndergrads',
+    );
+
+    const browse = await search('', {}, 100);
+    const requested = await search('', { mentorsUndergrads: true }, 100);
+    const unfiltered = await search('', {}, 100);
+
+    expect(browse.facetDistribution).not.toHaveProperty('mentorsUndergrads');
+    expect(requested.appliedFilters).toEqual({ mentorsUndergrads: false });
+    expect(requested.estimatedTotalHits).toBe(unfiltered.estimatedTotalHits);
   });
 
   it('keeps the query in force under a type filter instead of admitting every row of that type', async () => {

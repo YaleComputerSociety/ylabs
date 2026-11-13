@@ -22,6 +22,21 @@ import {
   resolveFinalMergeTargets,
   researchEntityIdsToRegateAfterFold,
 } from '../dedupeAccountlessResearcherShellsCore';
+import { syntheticPersonOrcid } from '../../test/syntheticOrcid';
+
+const SYNTHETIC_ORCID_1 = syntheticPersonOrcid(500);
+const SYNTHETIC_ORCID_2 = syntheticPersonOrcid(501);
+const SYNTHETIC_ORCID_3 = syntheticPersonOrcid(502);
+const SYNTHETIC_ORCID_4 = syntheticPersonOrcid(503);
+const SYNTHETIC_ORCID_5 = syntheticPersonOrcid(504);
+const SYNTHETIC_ORCID_6 = syntheticPersonOrcid(505);
+const SYNTHETIC_ORCID_7 = syntheticPersonOrcid(506);
+const SYNTHETIC_ORCID_8 = syntheticPersonOrcid(507);
+const SYNTHETIC_ORCID_9 = syntheticPersonOrcid(508);
+const SYNTHETIC_ORCID_10 = syntheticPersonOrcid(509);
+const SYNTHETIC_ORCID_11 = syntheticPersonOrcid(510);
+const SYNTHETIC_ORCID_12 = syntheticPersonOrcid(511);
+const SYNTHETIC_ORCID_13 = syntheticPersonOrcid(512);
 
 describe('normalizeResearcherName', () => {
   it('lowercases, trims, and collapses whitespace', () => {
@@ -62,7 +77,7 @@ describe('decideShellMerge', () => {
       id: 'canonical-roe',
       displayName: 'Jane Roe',
       email: 'account-roe@example.test',
-      orcid: '0000-0001-2222-3333',
+      orcid: SYNTHETIC_ORCID_1,
     },
     { id: 'canonical-doe', displayName: 'John Doe', email: 'account-doe@example.test' },
     { id: 'namesake-a', displayName: 'Sam Twin', email: 'account-twin-a@example.test' },
@@ -80,7 +95,7 @@ describe('decideShellMerge', () => {
 
   it('merges when shell orcid matches the canonical orcid', () => {
     expect(
-      decideShellMerge({ displayName: 'Jane Roe', orcid: '0000-0001-2222-3333' }, index),
+      decideShellMerge({ displayName: 'Jane Roe', orcid: SYNTHETIC_ORCID_1 }, index),
     ).toMatchObject({ merge: true, reason: 'MERGEABLE' });
   });
 
@@ -106,9 +121,10 @@ describe('decideShellMerge', () => {
   });
 
   it('excludes on ORCID conflict against the sole canonical', () => {
-    expect(
-      decideShellMerge({ displayName: 'Jane Roe', orcid: '0000-0001-0000-0000' }, index),
-    ).toEqual({ merge: false, reason: 'ORCID_CONFLICT' });
+    expect(decideShellMerge({ displayName: 'Jane Roe', orcid: SYNTHETIC_ORCID_2 }, index)).toEqual({
+      merge: false,
+      reason: 'ORCID_CONFLICT',
+    });
   });
 
   const netidIndex = buildCanonicalNameIndex([
@@ -231,7 +247,7 @@ describe('planResearcherAttributeUnion', () => {
   });
 
   it('never gap-fills or links an ORCID either side refuses (#5641)', () => {
-    const orcid = '9999-9000-9999-9021';
+    const orcid = SYNTHETIC_ORCID_3;
     const plan = planResearcherAttributeUnion(
       {
         profileLinks: [],
@@ -264,14 +280,14 @@ describe('planResearcherAttributeUnion', () => {
         profileLinks: [
           { kind: 'GOOGLE_SCHOLAR', url: 'https://scholar.google.com/citations?user=abc' },
         ],
-        identifiers: { orcid: '0000-0001-2222-3333', googleScholarId: 'abc' },
+        identifiers: { orcid: SYNTHETIC_ORCID_1, googleScholarId: 'abc' },
         profile: { title: 'Adjunct', primaryDepartment: 'Immunobiology', imageUrl: 'https://i/x' },
       },
     );
 
     expect(plan.profileLinksToAppend.map((link) => link.kind)).toEqual(['GOOGLE_SCHOLAR']);
     expect(plan.identifierGapFills).toEqual({
-      orcid: '0000-0001-2222-3333',
+      orcid: SYNTHETIC_ORCID_1,
       googleScholarId: 'abc',
     });
     expect(plan.profileGapFills).toEqual({
@@ -284,12 +300,12 @@ describe('planResearcherAttributeUnion', () => {
     const plan = planResearcherAttributeUnion(
       {
         profileLinks: [{ kind: 'YALE_OFFICIAL', url: 'https://canonical.yale.edu' }],
-        identifiers: { orcid: '0000-0001-2222-3333' },
+        identifiers: { orcid: SYNTHETIC_ORCID_1 },
         profile: { title: 'Professor', primaryDepartment: 'Physics' },
       },
       {
         profileLinks: [{ kind: 'YALE_OFFICIAL', url: 'https://shell.yale.edu' }],
-        identifiers: { orcid: '0000-0001-0000-0000' },
+        identifiers: { orcid: SYNTHETIC_ORCID_2 },
         profile: { title: 'Lecturer', primaryDepartment: 'Chemistry' },
       },
     );
@@ -300,22 +316,22 @@ describe('planResearcherAttributeUnion', () => {
   it('applies a plan into an evolving snapshot so a second shell sees prior fills', () => {
     const canonical = { profileLinks: [], identifiers: {}, profile: {} };
     const firstPlan = planResearcherAttributeUnion(canonical, {
-      profileLinks: [{ kind: 'ORCID', url: 'https://orcid.org/0000-0001-2222-3333' }],
-      identifiers: { orcid: '0000-0001-2222-3333' },
+      profileLinks: [{ kind: 'ORCID', url: `https://orcid.org/${SYNTHETIC_ORCID_1}` }],
+      identifiers: { orcid: SYNTHETIC_ORCID_1 },
     });
     const evolved = applyUnionPlanToSnapshot(canonical, firstPlan);
 
     const secondPlan = planResearcherAttributeUnion(evolved, {
-      profileLinks: [{ kind: 'ORCID', url: 'https://orcid.org/9999-9999-9999-9999' }],
-      identifiers: { orcid: '9999-9999-9999-9999' },
+      profileLinks: [{ kind: 'ORCID', url: `https://orcid.org/${SYNTHETIC_ORCID_4}` }],
+      identifiers: { orcid: SYNTHETIC_ORCID_4 },
     });
     expect(researcherAttributeUnionIsEmpty(secondPlan)).toBe(true);
   });
 });
 
 describe('planResearcherAttributeUnion keeps the ORCID link with its identifier (#4501)', () => {
-  const canonicalOrcid = '9999-9000-9999-9005';
-  const shellOrcid = '9999-9001-9999-9010';
+  const canonicalOrcid = SYNTHETIC_ORCID_5;
+  const shellOrcid = SYNTHETIC_ORCID_6;
   const orcidLink = (orcid: string) => ({ kind: 'ORCID', url: `https://orcid.org/${orcid}` });
 
   it('never appends a shell ORCID link that names another ORCID than the canonical holds', () => {
@@ -418,11 +434,11 @@ describe('decideShellMerge netid arm (#3166)', () => {
 
   it('refuses a netid fold when the two rows disagree on ORCID', () => {
     const index = buildCanonicalNetidIndex([
-      { id: 'twin', email: 'account-1@example.test', netid: 'ab12', orcid: '0000-0001-2222-3333' },
+      { id: 'twin', email: 'account-1@example.test', netid: 'ab12', orcid: SYNTHETIC_ORCID_1 },
     ]);
     expect(
       decideShellMerge(
-        { id: 'holder', displayName: 'Someone', netid: 'ab12', orcid: '0000-0001-0000-0000' },
+        { id: 'holder', displayName: 'Someone', netid: 'ab12', orcid: SYNTHETIC_ORCID_2 },
         emptyNameIndex,
         index,
       ),
@@ -635,7 +651,7 @@ describe('planAccountlessClusterFolds', () => {
         [],
       );
       const withOrcid = planAccountlessClusterFolds(
-        [member('1', { displayName: noisy }), member('2', { orcid: '0000-0000-0000-0001' })],
+        [member('1', { displayName: noisy }), member('2', { orcid: SYNTHETIC_ORCID_7 })],
         [],
       );
       expect(withNetid.foldTargetById.size).toBe(0);
@@ -718,7 +734,7 @@ describe('planAccountlessClusterFolds', () => {
         member(orcidCopy, {
           profileLinks: page(11),
           displayName: 'Sam McFixture',
-          orcid: '0000-0000-0000-0003',
+          orcid: SYNTHETIC_ORCID_8,
         }),
       ],
       [],
@@ -743,8 +759,8 @@ describe('planAccountlessClusterFolds', () => {
     expect(
       planAccountlessClusterFolds(
         [
-          member('14', { profileLinks: page(5), orcid: '0000-0000-0000-0001' }),
-          member('15', { profileLinks: page(5), orcid: '0000-0000-0000-0002' }),
+          member('14', { profileLinks: page(5), orcid: SYNTHETIC_ORCID_7 }),
+          member('15', { profileLinks: page(5), orcid: SYNTHETIC_ORCID_9 }),
         ],
         [],
       ).refusedGroups.ORCID_CONFLICT,
@@ -790,7 +806,10 @@ describe('planAccountlessClusterFolds', () => {
     );
     expect(grouped.foldTargetById.get('30'.padStart(24, '0'))).toBe('29'.padStart(24, '0'));
     const nobodyProbed = planAccountlessClusterFolds(
-      [member('31', { profileLinks: unprobed }), member('32', { profileLinks: unprobed })],
+      [
+        member('31', { profileLinks: unprobed }),
+        member('32', { profileLinks: unprobed, displayName: 'Robin Fixture' }),
+      ],
       [],
     );
     expect(nobodyProbed.groups).toBe(0);
@@ -889,8 +908,8 @@ describe('decideShellMerge shared-row fold (#4911)', () => {
 
   it('refuses a conflicting ORCID and a professor folded onto a trainee', () => {
     expect(
-      decide({ displayName: 'Avery Placeholder', orcid: '0000-0000-0000-0028' }, [
-        account('acct', 'Avery Placeholder', { orcid: '0000-0000-0000-0036' }),
+      decide({ displayName: 'Avery Placeholder', orcid: SYNTHETIC_ORCID_10 }, [
+        account('acct', 'Avery Placeholder', { orcid: SYNTHETIC_ORCID_11 }),
       ]),
     ).toEqual({ merge: false, reason: 'ORCID_CONFLICT', matchedOn: 'shared-row' });
     expect(
@@ -968,8 +987,8 @@ describe('planAccountlessClusterFolds shared-row key (#4939)', () => {
   it('still refuses a shared-row group whose records carry two different ORCIDs', () => {
     const plan = planAccountlessClusterFolds(
       [
-        member('a', { liveRowIds: ['row-1'], orcid: '0000-0000-0000-0028' }),
-        member('b', { liveRowIds: ['row-1'], orcid: '0000-0000-0000-0036' }),
+        member('a', { liveRowIds: ['row-1'], orcid: SYNTHETIC_ORCID_10 }),
+        member('b', { liveRowIds: ['row-1'], orcid: SYNTHETIC_ORCID_11 }),
       ],
       [],
     );
@@ -1091,8 +1110,8 @@ describe('name-variant shared-row fold (#5592)', () => {
 
   it('keeps the ORCID conflict refusal', () => {
     const decision = decideNameVariantSharedRowFold(
-      shell('Avery Synthetic', { orcid: '0000-0000-0000-0001' }),
-      [holder('1', 'Avery Q. Synthetic', { orcid: '0000-0000-0000-0028' })],
+      shell('Avery Synthetic', { orcid: SYNTHETIC_ORCID_7 }),
+      [holder('1', 'Avery Q. Synthetic', { orcid: SYNTHETIC_ORCID_10 })],
     );
     expect(decision).toMatchObject({ merge: false, reason: 'ORCID_CONFLICT' });
   });
@@ -1299,9 +1318,9 @@ describe('directory-email fold (#5811)', () => {
   it('never folds two people with distinct ORCIDs', () => {
     expect(
       decideDirectoryEmailFold(
-        shell('Avery Synthetic', { orcid: '0000-0002-0000-0001' }),
+        shell('Avery Synthetic', { orcid: SYNTHETIC_ORCID_12 }),
         paired('fx901'),
-        holdersOf(holder('1', 'Avery Synthetic', { orcid: '0000-0002-0000-0002' })),
+        holdersOf(holder('1', 'Avery Synthetic', { orcid: SYNTHETIC_ORCID_13 })),
       ),
     ).toMatchObject({ merge: false, reason: 'ORCID_CONFLICT' });
   });

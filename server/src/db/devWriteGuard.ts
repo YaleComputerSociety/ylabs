@@ -2,17 +2,22 @@ import mongoose from 'mongoose';
 
 import {
   DEV_WRITE_LEASE_SWITCH_ENV,
+  acquireIntendedDevApplyLeaseAtFirstWrite,
+  devApplyLeaseFirstWriteRefusal,
   devHostLeasesArmed,
   devWriteLeaseSwitchedOff,
   hasDevApplyIntent,
   holdsDevApplyLease,
+  releaseHeldDevWriteLeases,
   resolveDevWriteLeaseTarget,
 } from './devWriteLease';
+import { devWriteStopCleanupMayWrite, devWriteStopped, devWriteStopReason } from './devWriteStop';
 
 /**
  * Refuses a Mongoose model write to Development from a script process that holds no Development
- * write lease (#5871). Every model file imports this module before it compiles its model, so the
- * global plugin is part of every model. Raw driver handles skip Mongoose middleware;
+ * write lease (#5871). A process that recorded an apply intent after it connected takes the lease
+ * at its first write instead (#5971). Every model file imports this module before it compiles its
+ * model, so the global plugin is part of every model. Raw driver handles skip Mongoose middleware;
  * rawResearchEntityWriteGuard.test.ts keeps those to a reviewed list.
  */
 
@@ -177,6 +182,36 @@ function refusal(model: GuardedModel, operation: string, reason: string) {
   );
 }
 
+const RELEASES_LEASES_ON_CLOSE = Symbol.for('ylabs.devWriteGuard.releasesLeasesOnClose');
+type LeaseReleasingConnection = mongoose.Connection & { [RELEASES_LEASES_ON_CLOSE]?: true };
+
+/** Releases this process's Development write leases before the connection that took them closes. */
+export function releaseDevWriteLeasesWhenClosed(connection: mongoose.Connection): void {
+  const marked = connection as LeaseReleasingConnection;
+  if (marked[RELEASES_LEASES_ON_CLOSE]) return;
+  marked[RELEASES_LEASES_ON_CLOSE] = true;
+  const close = connection.close.bind(connection);
+  connection.close = (async (...args: Parameters<typeof close>) => {
+    await releaseHeldDevWriteLeases();
+    return close(...args);
+  }) as typeof connection.close;
+}
+
+async function tookApplyLeaseAtFirstWrite(
+  model: GuardedModel,
+  databaseName: string,
+): Promise<boolean> {
+  const connection = model.db;
+  if (!connection.db) return false;
+  const took = await acquireIntendedDevApplyLeaseAtFirstWrite({
+    db: connection.db,
+    databaseName,
+    host: connection.host,
+  });
+  if (took) releaseDevWriteLeasesWhenClosed(connection);
+  return took;
+}
+
 const listed = (collections: ReadonlySet<string>) => [...collections].join(', ');
 
 const idKey = (value: unknown): string | undefined =>
@@ -239,13 +274,24 @@ function dryLaneRunRefusal(model: GuardedModel, write: DevModelWrite): Error | u
 }
 
 // Ordered so a request-serving process, a switched-off lease and any database other than
-// Development all return before lease state is read.
+// Development all return before lease state is read. A stopped process is refused before any of
+// that, and synchronously, because it stopped precisely when its database could not be trusted.
 export async function assertDevModelWriteAllowed(
   model: GuardedModel,
   write: DevModelWrite,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<void> {
   if (isRequestServingProcess()) return;
+  if (devWriteStopped()) {
+    if (devWriteStopCleanupMayWrite(model.collection.collectionName)) return;
+    const firstWriteRefusal = devApplyLeaseFirstWriteRefusal();
+    if (firstWriteRefusal) throw firstWriteRefusal;
+    throw refusal(
+      model,
+      write.operation,
+      `this process stopped itself (${devWriteStopReason()}) because its Development write lease is no longer confirmed, and only its own bounded stop cleanup may still write`,
+    );
+  }
   if (devWriteLeaseSwitchedOff(env)) return;
   const databaseName = await connectedDatabaseName(model.db);
   if (!databaseName) {
@@ -281,6 +327,7 @@ export async function assertDevModelWriteAllowed(
     if (dryRefusal) throw dryRefusal;
     return;
   }
+  if (hasDevApplyIntent() && (await tookApplyLeaseAtFirstWrite(model, databaseName))) return;
   throw refusal(
     model,
     write.operation,

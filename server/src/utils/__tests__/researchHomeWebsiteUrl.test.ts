@@ -29,6 +29,8 @@ import {
   isOffsiteInstitutionPersonProfileUrl,
   isPostingPageUrl,
   isCoursePageUrl,
+  isInadmissiblePersonWebsiteUrl,
+  isWithheldResearchWebsiteUrl,
   isSameHostShallowChromeUrl,
   isSharedPeopleRosterUrl,
   isSiteNavigationOrFooterChromeUrl,
@@ -1808,5 +1810,26 @@ describe('a course page is never a research website', () => {
       'course-page',
     );
     expect(sourceUrlToResearchHomeWebsiteUrl(coursePage, FACULTY_ROW)).toBe('');
+  });
+
+  it("refuses a department programme's courses listing as a person's website (#5860)", () => {
+    const programmeCourses = 'https://fixturedept.yale.edu/fixtureprogramme/courses';
+    expect(isInadmissiblePersonWebsiteUrl(programmeCourses)).toBe(true);
+    expect(isInadmissiblePersonWebsiteUrl('https://fixturedept.yale.edu/course/')).toBe(true);
+    expect(isInadmissiblePersonWebsiteUrl('https://fixturelab.yale.edu/')).toBe(false);
+  });
+
+  it("still cites a lab's own courses listing as the lab's research website (#5213, #5860)", () => {
+    const labCourses = 'https://fixturelab.yale.edu/courses';
+    expect(isCoursePageUrl(labCourses)).toBe(false);
+    expect(isWithheldResearchWebsiteUrl(labCourses, LAB_ROW)).toBe(false);
+    expect(researchHomeWebsiteUrlWriteRefusal(labCourses, LAB_ROW)).toBeNull();
+  });
+
+  it("still refuses a course's own page everywhere (#5213, #5860)", () => {
+    expect(isInadmissiblePersonWebsiteUrl(coursePage)).toBe(true);
+    expect(isWithheldResearchWebsiteUrl(coursePage, LAB_ROW)).toBe(true);
+    expect(isWithheldResearchWebsiteUrl(coursePage, { entityType: 'CENTER' })).toBe(true);
+    expect(researchHomeWebsiteUrlWriteRefusal(coursePage, LAB_ROW)).toBe('course-page');
   });
 });

@@ -91,6 +91,46 @@ describe('researchPageTopicsStateFor', () => {
     expect(state.candidate?.observedAt.toISOString()).toBe('2026-10-01T00:00:00.000Z');
   });
 
+  it("drops a topic that restates the row's own observed department or school (#5957)", async () => {
+    const inputHash = researchTopicsDerivationInputHash(pages);
+    const lookup = cacheOf([{ inputHash, ...extraction }]);
+    const ownLabels = [
+      { field: 'departments', value: ['Marine Heatwaves'], superseded: false },
+      { field: 'school', value: 'School of the Environment', superseded: false },
+    ];
+    const state = await researchPageTopicsStateFor(
+      [pageTextObservation(pages), ...ownLabels],
+      lookup,
+    );
+    expect(state.candidate?.value).toEqual(['Kelp forests', 'Marine ecology']);
+    const retired = await researchPageTopicsStateFor(
+      [pageTextObservation(pages), { ...ownLabels[0], superseded: true }],
+      lookup,
+    );
+    expect(retired.candidate?.value).toEqual([
+      'Kelp forests',
+      'Marine heatwaves',
+      'Marine ecology',
+    ]);
+  });
+
+  it('keeps a topic that equals a program-named stored department (#5957 ruling)', async () => {
+    const inputHash = researchTopicsDerivationInputHash(pages);
+    const lookup = cacheOf([{ inputHash, ...extraction }]);
+    const state = await researchPageTopicsStateFor(
+      [
+        pageTextObservation(pages),
+        {
+          field: 'departments',
+          value: ['Marine Heatwaves Program', 'Kelp Forests'],
+          superseded: false,
+        },
+      ],
+      lookup,
+    );
+    expect(state.candidate?.value).toEqual(['Marine heatwaves', 'Marine ecology']);
+  });
+
   it('ignores a reading of text the row no longer carries', async () => {
     const staleHash = researchTopicsDerivationInputHash(pages);
     const lookup = cacheOf([{ inputHash: staleHash, ...extraction }]);

@@ -202,6 +202,9 @@ export function assertReindexMeiliEnvironment(
 async function main() {
   const options = parseReindexMeiliArgs(process.argv.slice(2));
   const preflight = assertReindexMeiliEnvironment();
+  const applyGuard = options.confirm
+    ? assertRebuildResearchEntitySearchIndexAllowed({ confirmMeiliRebuild: true })
+    : undefined;
 
   await initializeConnections();
   const database = mongoose.connection.db?.databaseName || preflight.database;
@@ -247,7 +250,7 @@ async function main() {
   });
   console.log(JSON.stringify({ reindexMode: decision }, null, 2));
 
-  if (!options.confirm) {
+  if (!applyGuard) {
     console.log(
       decision.mode === 'incremental'
         ? 'Dry run. Re-run with --confirm to write only the changed documents to the live index and delete retired indexes, or add --full to rebuild instead.'
@@ -257,7 +260,6 @@ async function main() {
   }
 
   if (decision.mode === 'incremental') {
-    const guard = assertRebuildResearchEntitySearchIndexAllowed({ confirmMeiliRebuild: true });
     const reconcileResult = await reconcileResearchEntitySearchIndex({
       apply: true,
       pageSize: options.pageSize,
@@ -270,7 +272,7 @@ async function main() {
       ...reconcileResult,
       mode: decision.mode,
       modeReason: decision.reason,
-      environment: guard.environment,
+      environment: applyGuard.environment,
       db: database,
       retiredIndexes: reconcile.retire,
     };
@@ -285,8 +287,6 @@ async function main() {
     confirmMeiliRebuild: true,
     output: options.output,
   };
-  const guard = assertRebuildResearchEntitySearchIndexAllowed({ confirmMeiliRebuild: true });
-
   const result = await rebuildResearchEntitySearchIndex(rebuildOptions);
 
   for (const uid of reconcile.retire) {
@@ -295,7 +295,7 @@ async function main() {
   }
 
   const output = buildRebuildResearchEntitySearchIndexOutput(result, {
-    environment: guard.environment,
+    environment: applyGuard.environment,
     db: database,
     options: rebuildOptions,
   });

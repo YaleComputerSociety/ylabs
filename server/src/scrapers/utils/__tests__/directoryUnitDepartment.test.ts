@@ -48,4 +48,28 @@ describe('directoryUnitDepartment (#5741)', () => {
     expect(directoryUnitDepartment(undefined)).toBeUndefined();
     expect(directoryUnitDepartment(42)).toBeUndefined();
   });
+
+  it.each([
+    ['Department Administration', 'FASPSY', 'Psychology'],
+    ['Research Unit', 'FASEPS', 'Earth & Planetary Sciences'],
+    ['Linguistics-Research Unit', 'FASLIN', 'Linguistics'],
+    ['Administration', 'MEDINT', 'Internal Medicine'],
+    ['Department Administration', 'faspsy', 'Psychology'],
+  ])(
+    'reads the administrative unit %j under class %j as %j (#6028)',
+    (unit, unitClass, department) => {
+      expect(directoryUnitDepartment(unit, unitClass)).toBe(department);
+    },
+  );
+
+  it('keeps an administrative unit refused when its class is unknown or absent (#6028)', () => {
+    expect(directoryUnitDepartment('Department Administration')).toBeUndefined();
+    expect(directoryUnitDepartment('Department Administration', 'FASXYZ')).toBeUndefined();
+    expect(directoryUnitDepartment('Other Units', 'ENVOTH')).toBeUndefined();
+    expect(directoryUnitDepartment('', 'FASPSY')).toBeUndefined();
+  });
+
+  it('lets a unit that names its own department win over its class (#6028)', () => {
+    expect(directoryUnitDepartment('Cardiology', 'MEDINT')).toBe('Cardiology');
+  });
 });

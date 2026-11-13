@@ -1,4 +1,8 @@
 import { spawn, spawnSync } from 'child_process';
+import {
+  probeSplitHorizonNetwork,
+  splitHorizonNetworkWarning,
+} from '../scrapers/utils/splitHorizonRefusals';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -295,6 +299,7 @@ export interface DevelopmentPostRunStage extends SweepStepTiming, PostRunStageDi
     | 'refusal-lane-attribution'
     | 'pi-attributed-researcher-mint'
     | 'researcher-email-support'
+    | 'lead-department-inheritance'
     | 'inferred-pi-lead-reclaim'
     | 'profile-honors'
     | 'staff-minted-retirement'
@@ -1329,6 +1334,7 @@ export function parseResearcherDedupeResult(artifact: unknown): PostRunStageDelt
       shellsMerged: Number(record.shellsMerged ?? 0),
       roleAssignmentsRepointed: Number(record.roleAssignmentsRepointed ?? 0),
       roleAssignmentsArchivedRedundant: Number(record.roleAssignmentsArchivedRedundant ?? 0),
+      roleAssignmentsHealed: Number(record.roleAssignmentsHealed ?? 0),
       rosterChangedEntities: Number(record.rosterChangedEntities ?? 0),
       regatedEntities: Number(record.regatedEntities ?? 0),
       profileLinksAppended: Number(attributeUnion.profileLinksAppended ?? 0),
@@ -1733,6 +1739,17 @@ export const DEVELOPMENT_POST_RUN_STAGE_DEFINITIONS: PostRunStageDefinition[] = 
     command: 'research-entity:retire-staff-minted-entities',
     artifactName: 'development-staff-minted-retirement.json',
     buildArgs: () => ['--apply', '--confirm-staff-minted-entity-retirement'],
+    isEnabled: () => true,
+  },
+  {
+    // After every stage that can link a lead or change a lead's department, and before the
+    // gate, so a department a person-side lane changed reaches the rows that person leads the
+    // same sweep. The materializer inherits only for a row a run re-materializes; this pass
+    // covers the rest and plans nothing once every reachable row holds both fields (#6033).
+    name: 'lead-department-inheritance',
+    command: 'research-homes:inherit-lead-department',
+    artifactName: 'development-lead-department-inheritance.json',
+    buildArgs: () => ['--apply', '--confirm-lead-department'],
     isEnabled: () => true,
   },
   {
@@ -2484,6 +2501,8 @@ export async function runScraperSweep(
   );
 
   if (isSweepPreflightEnabled(options)) {
+    const splitHorizonNetwork = splitHorizonNetworkWarning(await probeSplitHorizonNetwork());
+    if (splitHorizonNetwork) console.warn(`WARNING: ${splitHorizonNetwork}`);
     const pendingSources = sweepSources
       .map((source) => source.name)
       .filter((name) => !store.isDone(sourceStepId(name)));

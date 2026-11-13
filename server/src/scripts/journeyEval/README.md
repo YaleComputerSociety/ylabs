@@ -91,13 +91,17 @@ A card that serves the label where the decision does not, or drops it where the 
 The share of cards labelled is a rate and never gates.
 Change the label inside `decideCreativePractice` in `server/src/utils/creativePracticeDescription.ts`, never at one surface, or this case reports the surfaces as disagreeing.
 
+The `creative-practice-type-facet-split` case walks every page of a browse filtered to Type = Creative practice and of one filtered to Faculty research, and asserts that every Creative practice row serves `creativePractice: true`, that no Faculty research row does, and that each filtered total equals its count in the unfiltered Type facet (#5141).
+A mislabelled row is attributed to a stale index document when its indexed `researchType` is not the one `researchEntitySearchResearchType` derives from the stored row now; only an unattributed one fails, and an attributed one makes the case inconclusive with a re-sync as the remedy.
+Both invariants are inconclusive when the live index does not yet declare `researchType` filterable, which the route reports through `appliedFilters.entityType` on the Creative practice browse, and when the corpus moved during a walk that disagreed.
+
 ## The default browse order is repeatable
 
 The `default-browse-order-is-repeatable` case walks the no-query browse twice and fails when the second walk serves a different order over an unchanged corpus (#4547).
 Default browse breaks `browseRankScore` ties on the indexed `browseTiebreakKey`, a fixed hash of the row id, because the `lastObservedAt` tiebreak served the sweep's write order and reshuffled pages while a sweep ran.
 A reordering while the corpus fingerprint moved is inconclusive, since a rescored row legitimately moves.
 The case also fails when either walk is degraded, which is what an index that has not had `browseTiebreakKey` pushed to its sortable attributes returns.
-The school, leading department, and entity type split of the first page are notes, never a gate: they show which part of the corpus the ranking favours; the grant term is weighted 0 while grant coverage is uneven, and `skills/search-data/SKILL.md` records when it returns.
+The school, leading department, and entity type split of the first page are notes, never a gate: they show which part of the corpus the ranking favours; the grant term is weighted 0, and `skills/search-data/SKILL.md` records why.
 
 ## A sorted browse sorts on a fresh index
 
@@ -112,8 +116,10 @@ The two sorted cases are also the sample check that command and a laptop sweep's
 
 ## The welcomes filter serves the badge
 
-The `welcomes-filter-serves-the-badge` case walks every page of a browse filtered to "Welcomes undergrads" and asserts that every row it returns serves `welcomesUndergrads: true` on its card (#5620).
-The `works-with-filter-serves-a-signal` case does the same for "Works with undergrads", where a row passes when its card serves `hasUndergradHostingEvidence`, `welcomesUndergrads`, or an `undergradListEvidence` entry whose signal is `mentors`; the difference it finds is attributable to the emeritus way-in guard, which withholds an advising-now entry from the card (#5620).
+The `welcomes-filter-serves-the-badge` case walks every page of a browse filtered to "Taking undergrads now" (`welcomesUndergrads`) and asserts that every row it returns serves `welcomesUndergrads: true` on its card (#5620).
+The `hosted-filter-serves-the-badge` case does the same for "Has had undergrads before" (`hostsUndergrads`) against `hasUndergradHostingEvidence: true`, and `advises-filter-serves-a-mentors-entry` does it for "Advises undergrad research" (`mentorsUndergrads`) against an `undergradListEvidence` entry whose signal is `mentors`; the difference that one finds is attributable to the emeritus way-in guard, which withholds an advising-now entry from the card (#5620, #5963).
+The three replaced the `works-with-filter-serves-a-signal` case when the "Works with undergrads" option was retired (#5963).
+The `undergrad-option-count-agreement` case reads each option's count with none, then each one, of the three ticked, and asserts it equals the total the route returns with that option added, because the options combine with `AND` and the count is what ticking it would leave (#5963).
 The filter reads the index and the badge is decided at serve time, so a row the index counts and the card withholds, such as an emeritus-led row whose way in is withheld, is the disagreement this catches.
 A row without the badge while the corpus fingerprint moved is inconclusive, since it may have been written after its index document, and a filter that serves no row is inconclusive rather than a pass.
 Both cases also fail on a degraded filtered page, because a degraded card cannot apply the withheld decision and would agree with a stale index.
@@ -222,6 +228,7 @@ Each surface runs the same seven cases, with ids prefixed by the surface:
 - `<surface>-filter-options-agree-with-filtered-browse` reads the options `getProgramFilterOptions` offers, which is what `GET /api/programs/filters` returns, and asserts that every row a filtered browse serves carries the chosen value, checking the `--facet-values` highest-total options of each field.
   A row that states no value for the field also passes under year, term, purpose and citizenship, because those filters keep a program that states none (#5235); under region it fails, because the region filter returns only programs that name the region (owner decision 2026-11-10, #5533).
   Both sides read `PROGRAM_STATED_ONLY_FACET_FIELDS` in `server/src/utils/programFacetFilters.ts`, the set `searchFellowships` filters with, so the case never restates which facets keep not-stated rows; a row stating a different value fails under every filter.
+  A citizenship row "carries" an option when it satisfies it by `programSatisfiesCitizenshipOption` in `server/src/utils/programCitizenshipOptions.ts`, the definition the filter uses, so a program stated open to both U.S. and non-U.S. citizens carries the permanent-resident option and a non-U.S.-only one does not (#6092).
   Before #5533 the case counted the not-stated rows #5235 keeps as mismatches, 609 on `programs` and 418 on `fellowships`, and none of them stated a different value.
   The case also walks the cold browse and reports, per facet, the share of served rows that state no value, as rates that never gate.
   On 2026-11-10 that share on `programs` was 142 of 173 for region and 21 to 39 of 173 for the rest.

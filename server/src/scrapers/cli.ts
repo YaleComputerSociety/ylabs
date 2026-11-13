@@ -22,6 +22,10 @@
  *   --force-llm      Re-run paid LLM extraction even when source content is unchanged
  *   --auto-materialize   After successful run, immediately materialize observations
  */
+import {
+  splitHorizonRefusalReport,
+  splitHorizonRefusalWarning,
+} from './utils/splitHorizonRefusals';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -35,6 +39,7 @@ import {
 import { scraperHostSlotLimiter } from './utils/scraperHostSlotLimiter';
 import { installScraperHttpValidatorCache } from './utils/httpValidatorCache';
 import { installSweepPageReuse } from './utils/sweepPageReuse';
+import { installScraperFetchDeadlines } from './utils/scraperFetchDeadlines';
 import { materializeFromRun, withoutUserFieldScopeRows } from './entityMaterializer';
 import { ScrapeRun } from '../models/scrapeRun';
 import { getScrapeRunReport } from './runReport';
@@ -78,7 +83,7 @@ export {
   scrapeCliCompletionOutcome,
   unmaterializedWriteRunWarning,
 } from './cliHelpers';
-import { connectScriptMongo, devWriteLeaseDescriptor } from '../db/connections';
+import { connectScriptMongo, devWriteLeaseDescriptor, runScriptMain } from '../db/connections';
 import {
   armDevHostLeases,
   ensureDevHostLease,
@@ -226,6 +231,7 @@ const devHostLeaseLimiter: HostSlotLimiter = {
 };
 
 export async function main(): Promise<void> {
+  installScraperFetchDeadlines();
   installScraperHostConcurrencyInterceptor(
     new ChainedHostSlotLimiter([devHostLeaseLimiter, scraperHostSlotLimiter()]),
   );
@@ -287,9 +293,11 @@ Materialize flags:
                        Write only these researcher paths on the run's user rows:
                        displayName, profile.title, profile.primaryDepartment,
                        profile.imageUrl, profile.websiteUrl, identifiers.email,
-                       identifiers.emailSupport, profileLinks, profileFieldWriters
-                       (or profileFieldWriters.<field>); aliases email, emailSupport,
-                       title, primaryDepartment, imageUrl, websiteUrl. Planned paths
+                       identifiers.emailSupport, identifiers.orcid, profileLinks,
+                       profileFieldWriters (or profileFieldWriters.<field>); aliases
+                       email, emailSupport, orcid, title, primaryDepartment, imageUrl,
+                       websiteUrl. identifiers.orcid also writes only the ORCID
+                       entries of profileLinks. Planned paths
                        outside the scope are dropped and reported; other entity
                        types, mints, run reconciliations and the visibility gate
                        are skipped. Per-key paths go to --output only.
@@ -419,9 +427,13 @@ Concurrency:
           observationCount: report.observations.total,
         });
         if (deferredMaterialization) console.warn(`\nWARNING: ${deferredMaterialization}`);
+        const addressRefusals = await splitHorizonRefusalReport();
+        const splitHorizonWarning = splitHorizonRefusalWarning(addressRefusals);
+        if (splitHorizonWarning) console.warn(`\nWARNING: ${splitHorizonWarning}`);
+        const reportWithRefusals = { ...report, addressRefusals };
         const explainedReport = explainedObservations
           ? {
-              ...report,
+              ...reportWithRefusals,
               dryRunPreview: {
                 ...(report.dryRunPreview ?? {}),
                 observations: explainedObservations,
@@ -429,7 +441,7 @@ Concurrency:
                 explainTruncated: explainTruncated === true,
               },
             }
-          : report;
+          : reportWithRefusals;
         const output = await writeOptionalJsonOutput({
           outputPath: flags.output,
           payload: buildScraperCliOutputPayload(explainedReport, {
@@ -723,8 +735,5 @@ async function disconnectWithin(deadlineMs: number): Promise<void> {
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
-  main().catch((err) => {
-    console.error(sanitizeLogValue(err));
-    process.exit(1);
-  });
+  void runScriptMain(main, { logFailure: (err) => console.error(sanitizeLogValue(err)) });
 }

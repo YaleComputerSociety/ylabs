@@ -98,6 +98,7 @@ describe('official profile backfill reads researcher-held identity (#5000)', () 
       _id: String(researcher._id),
       netid: 'jf777',
       email: 'jules.fixture@example.test',
+      displayName: 'Jules Fixture',
     });
   });
 

@@ -4,12 +4,13 @@ import { directoryUnitDepartment } from './directoryUnitDepartment';
  * The 2026-05-15 Yale directory CSV export (`yale-directory-csv`) and the import that seeded
  * researchers from it stored the raw HR org-unit string as a department: an HR prefix
  * ("FASHIS History", "MEDNEU Multiple Sclerosis") or a subject-code dash form
- * ("HIST - History"). Decoded here to a catalog department or refused, never served raw (#5796).
+ * ("HIST - History", or with a two- or three-letter code "EM - Emergency Medicine"). Decoded
+ * here to a catalog department or refused, never served raw (#5796).
  */
-export const DIRECTORY_EXPORT_CODE_PATTERN = /^[A-Z]{4,}\s/;
+export const DIRECTORY_EXPORT_CODE_PATTERN = /^(?:[A-Z]{4,}\s|[A-Z]{2,3}\s+-\s)/;
 
 const HR_PREFIXED = /^([A-Z]{6})\s+(.+)$/;
-const SUBJECT_DASH = /^[A-Z]{4}\s+-\s+(.+)$/;
+const SUBJECT_DASH = /^[A-Z]{2,4}\s+-\s+(.+)$/;
 const TRAILING_ACRONYM = /\s+\([A-Z&]{2,}\)$/;
 
 const SECTION_PARENTS: ReadonlyArray<readonly [string, RegExp, string]> = [
