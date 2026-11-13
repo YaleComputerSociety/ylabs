@@ -46,7 +46,7 @@ A slug resolves in this order (#6094):
 Two slugs of one entry can then reach the same row.
 When their scores are within one grade point the higher one is kept and the pair is reported; when any two are 2 or more points apart the whole run is refused before anything is written, naming the entry, which needs a re-score.
 A dry run is the default and prints counts only: entries, scores, resolved scores, unresolved slugs, and entries left with no resolved score.
-`resolvedThroughMerge` and `resolvedThroughRedirect` count the resolved scores that took the second and third paths, and `mergeCollisions` gives the count of collapsed pairs with each one's entry index, survivor id and scores.
+`resolvedThroughMerge` and `resolvedThroughRedirect` count the resolved scores that took the second and third paths, and `mergeCollisions` gives the count of collapsed pairs, `maxGap`, the widest score gap among them, so a run's distance from the 2-point refusal margin is auditable, and each pair's entry index, survivor id and scores.
 `unresolvedSlugs` counts unresolved scores, not distinct slugs, and `resolvedScores` is `scores` less it, so a collapsed pair counts twice there and once among the scores stored.
 It also prints the staleness of the seeded entries already in the target cache (see Staleness).
 It never prints a query or a slug.
