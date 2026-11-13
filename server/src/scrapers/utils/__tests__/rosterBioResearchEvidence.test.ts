@@ -126,32 +126,45 @@ describe('roster biography research evidence', () => {
       sentence,
     );
 
-  it('drops a care, patient or clinical-interest sentence that states no research (#6083)', () => {
+  it('drops a clinical-service sentence that states no research (#6083)', () => {
     for (const sentence of [
-      'She has special interest in synthetic motility disorders such as achalasia, gastroparesis and bloating.',
-      'His work focuses on advancing neurological care and supporting patients with complex synthetic needs.',
-      'Her clinical interests include synthetic alopecia, inflammatory hair disorders, and general dermatology.',
+      'They have a special interest in synthetic glimmer fever and the care of children with it.',
+      'Their clinical interests include synthetic quill rash and related skin conditions.',
+      'Their work focuses on advancing synthetic heart care and supporting patients after discharge.',
+      'They offer patients prompt access to synthetic sleep clinic care close to home.',
+      'They focus on caring for women with synthetic high-risk pregnancies.',
     ]) {
       expect(keptBesideAnchor(sentence)).toBe(false);
     }
   });
 
-  it('refuses a biography whose only research-shaped sentences are clinical (#6083)', () => {
+  it('refuses a biography whose only research-shaped sentences are clinical service (#6083)', () => {
     expect(
       deriveBioResearchStatement(
-        'His work focuses on advancing neurological care and supporting patients with complex synthetic needs.',
+        'Their work focuses on advancing synthetic heart care and supporting patients after discharge.',
       ).rejection,
     ).toBe('only_past_research');
   });
 
-  it('keeps a research sentence that names clinical topics (#6083)', () => {
+  it('keeps a clinical research sentence that names patients or care (#6083)', () => {
     for (const sentence of [
-      'Her research examines how patients with synthetic arthritis decide which medication to try next.',
-      'Her main interest is developing interventions to overcome barriers to care among synthetic populations.',
-      'She has a particular interest in understanding the bioethical challenges of caring for critically ill patients.',
-      'His laboratory studies the immune mechanisms of synthetic inflammatory bowel disease in patient cohorts.',
-      'Her work focuses on improving the quality of care for synthetic older adults with dementia.',
-      'Her work focuses on reducing disparities in care among patients with synthetic chronic kidney disease.',
+      'Their work focuses on the genetics of synthetic glimmer fever in children and adult patients.',
+      'Their work focuses on reducing disparities in care for patients with synthetic kidney fatigue.',
+      'Their work focuses on improving quality of care for older adults with synthetic memory loss.',
+      'They develop wearable sensors to monitor patients with synthetic tremor at home.',
+      'Their work focuses on the immunology of synthetic sepsis in critically ill patients.',
+      'Their interests include the pathogenesis of synthetic infections in transplant patients.',
+      'They study how patients with synthetic joint pain choose among treatments.',
+    ]) {
+      expect(keptBesideAnchor(sentence)).toBe(true);
+    }
+  });
+
+  it('keeps a creative-practice sentence about care or patients (#6083)', () => {
+    for (const sentence of [
+      'Their special interest is in music written for patients in hospice care.',
+      'Their work focuses on writing plays about caregivers and patients in hospitals.',
+      'They develop new choreography that engages themes of care and illness.',
     ]) {
       expect(keptBesideAnchor(sentence)).toBe(true);
     }

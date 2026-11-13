@@ -79,13 +79,26 @@ describe('planCenterProfileResearchRows', () => {
       [
         candidate({
           profileText:
-            'Her work focuses on advancing neurological care and supporting patients with complex synthetic needs.',
+            'Their work focuses on advancing synthetic heart care and supporting patients after discharge.',
         }),
       ],
       emptyCoverage,
     );
     expect(planned).toEqual([]);
     expect(skipped.only_past_research).toBe(1);
+  });
+
+  it('keeps a member whose profile states clinical research (#6083)', () => {
+    const { planned } = planCenterProfileResearchRows(
+      [
+        candidate({
+          profileText:
+            'Their research examines the genetics of synthetic glimmer fever in children and adult patients.',
+        }),
+      ],
+      emptyCoverage,
+    );
+    expect(planned).toHaveLength(1);
   });
 
   it('refuses a member with no netid, since the lead could not be resolved', () => {
