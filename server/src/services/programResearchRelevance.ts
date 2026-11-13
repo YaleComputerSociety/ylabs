@@ -121,9 +121,14 @@ const DISCLAIMS_PRIMARY_RESEARCH_FOCUS =
 
 // An award that pays for a degree course of study (tuition for a graduate or postgraduate
 // degree) funds coursework toward a degree rather than research, unless its own text names
-// research as an eligible use (#6216, #4675).
+// research as an eligible use (#6216, #4675). The words between the verb and the degree phrase
+// may include neither "research" nor a negation. The window has to be wide enough for "funds one
+// year of a master's degree course"; that width otherwise matches "funds research for students in
+// a graduate program", which is research, and in "the fund does not cover graduate study" it
+// would start the match at the noun "fund" and carry the negation inside the gap, where the
+// clause-level negation check can no longer see it.
 const FUNDS_DEGREE_COURSE_OF_STUDY =
-  /\b(?:(?:support|supports|fund|funds|cover|covers|pay|pays)\s+(?:[\w-]+\s+){0,3}|tuition(?:\s+fees)?\s+for\s+(?:(?:a|an)\s+)?)(?:graduate|postgraduate|master['’]?s)\s+(?:degree\s+)?(?:courses?|programs?|programmes?|study)\b/i;
+  /\b(?:(?:support|supports|fund|funds|cover|covers|pay|pays)\s+(?:(?!research\b|no\b|not\b|never\b|nor\b|without\b)[\w'-]+\s+){0,6}|tuition(?:\s+fees)?\s+for\s+(?:(?:a|an)\s+)?)(?:graduate|postgraduate|master['’]?s)\s+(?:degree\s+)?(?:courses?|programs?|programmes?|study)\b/i;
 
 const LANGUAGE_STUDY_PURPOSE = 'Language Study';
 
