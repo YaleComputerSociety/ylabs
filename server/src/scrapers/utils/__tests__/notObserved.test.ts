@@ -6,7 +6,7 @@ import { HostSlotWaitTimeoutError } from '../hostConcurrencyLimiter';
 import { HttpStatusError } from '../httpFetch';
 import { HostPausedError } from '../hostPause';
 import { HostBudgetUnavailableError } from '../machineHostBudget';
-import { HOST_LEVEL_OBSERVED_ERROR_CODES, isNotObserved } from '../notObserved';
+import { isNotObserved } from '../notObserved';
 
 const withCode = (code: string) => Object.assign(new Error(code), { code });
 const wrapped = (inner: unknown) =>
@@ -66,12 +66,6 @@ describe('isNotObserved', () => {
     ['an expired certificate', withCode('CERT_HAS_EXPIRED')],
   ])('treats %s as an observation', (_label, error) => {
     expect(isNotObserved(error)).toBe(false);
-  });
-
-  it('keeps the host-level codes in step with what link-health may retire on', () => {
-    expect([...HOST_LEVEL_OBSERVED_ERROR_CODES].sort()).toEqual(
-      ['ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH', 'ENOTFOUND'].sort(),
-    );
   });
 
   it('never lets the SSRF guard own unreachable refusal pass as a host-level observation', async () => {

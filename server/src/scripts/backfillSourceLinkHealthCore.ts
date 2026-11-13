@@ -412,6 +412,14 @@ function resolveConnectionFailure(
   };
 }
 
+export function storedVerdictSurvivesUnknownProbe(
+  fresh: { tlsVerificationFailed?: boolean },
+  stored: { healthStatus?: unknown } | undefined,
+): boolean {
+  if (!isDecisiveStoredVerdict(stored)) return false;
+  return !(fresh.tlsVerificationFailed && stored?.healthStatus === 'HEALTHY');
+}
+
 /**
  * A probe that never got an answer from the host: no HTTP status and no TLS
  * handshake to judge. That covers a host the SSRF guard refused as private (on the
@@ -421,21 +429,6 @@ function resolveConnectionFailure(
  * or connection negative is not this: `classifyProbeOutcome` records it as
  * `UNAVAILABLE`, which is how a retired host retires (#2726, #2757).
  */
-/**
- * Whether a decisive stored verdict survives a fresh `UNKNOWN` probe. It does, because an
- * `UNKNOWN` asserts nothing, except where a certificate that fails verification contradicts a
- * stored `HEALTHY` for this very URL: that verdict was written by a probe which never negotiated
- * this spelling's TLS (#4080). A stored `UNAVAILABLE` still stands. Every caller that may replace
- * a stored verdict with an `UNKNOWN` reads this one rule (#6258).
- */
-export function storedVerdictSurvivesUnknownProbe(
-  fresh: { tlsVerificationFailed?: boolean },
-  stored: { healthStatus?: unknown } | undefined,
-): boolean {
-  if (!isDecisiveStoredVerdict(stored)) return false;
-  return !(fresh.tlsVerificationFailed && stored?.healthStatus === 'HEALTHY');
-}
-
 export function isUnreachedProbe(fresh: {
   healthStatus: SourceLinkHealthStatus;
   httpStatusCode?: number;

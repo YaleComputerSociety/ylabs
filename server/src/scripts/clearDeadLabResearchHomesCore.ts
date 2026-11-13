@@ -36,8 +36,7 @@ export function labSegment(url: unknown): string {
  * Index membership is valid POSITIVE evidence and invalid negative evidence: two
  * sampled rows are live, correctly titled, and absent from the index because they
  * are School of Public Health labs on the `medicine.yale.edu` host (#2626). So a
- * missing segment never condemns a row on its own; only a 404 or 410 does. A
- * timeout, a throttle or a host pause observed nothing about the page (#6258).
+ * missing segment never condemns a row on its own; only a 404 or 410 does.
  */
 export function classifyLabHome(
   entity: DeadLabHomeCandidate,

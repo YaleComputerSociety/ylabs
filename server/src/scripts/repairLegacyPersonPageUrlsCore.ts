@@ -137,11 +137,6 @@ export function isAdoptableProbe(
   return pageTitleNamesPerson(probe.title, entityName, candidateUrl);
 }
 
-/**
- * Why an unverified original citation must be kept, or undefined when its probe confirmed
- * it gone. Only a 404 or 410 confirms that; a throttle, a server error, a timeout or a
- * refused request observed nothing about the page, so it never licenses a replacement (#6258).
- */
 export function originalProbeKeepReason(status: number): string | undefined {
   if (GONE_HTTP_STATUS_CODES.has(status)) return undefined;
   if (status >= 200 && status < 400) return 'original still resolves';

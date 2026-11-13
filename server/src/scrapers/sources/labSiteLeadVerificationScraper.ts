@@ -14,6 +14,7 @@
 import axios from 'axios';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 import { isNotObserved } from '../utils/notObserved';
+import { isTransientFetchFailure } from '../utils/transientFetchFailure';
 import { LEAD_ROLE_CANONICAL_VALUES } from '../../models/canonicalRoleMapping';
 import { RoleAssignment } from '../../models/roleAssignment';
 import { Researcher } from '../../models/researcher';
@@ -215,7 +216,7 @@ export async function readLabSite(
   try {
     landing = await fetcher(website, useCache);
   } catch (error) {
-    if (isNotObserved(error)) return { html: '', visitedUrls: [], notObserved: true };
+    if (isTransientFetchFailure(error)) return { html: '', visitedUrls: [], notObserved: true };
     const status = (error as { response?: { status?: number } })?.response?.status;
     return status ? { html: '', visitedUrls: [], httpStatusCode: status } : null;
   }
@@ -226,10 +227,6 @@ export async function readLabSite(
       const subpage = await fetcher(subpageUrl, useCache);
       if (subpage.html) pages.push(subpage);
     } catch (error) {
-      // A members page the fetch never reached cannot be told apart from one that does not
-      // name the lead, and a landing page usually does not name the PI, so the whole row is
-      // deferred rather than judged on the pages that happened to answer (#6258). A members
-      // page that answered 404 is genuinely absent and is skipped as before.
       if (isNotObserved(error)) return { html: '', visitedUrls: [], notObserved: true };
     }
   }
