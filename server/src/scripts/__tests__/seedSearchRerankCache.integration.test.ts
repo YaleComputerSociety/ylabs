@@ -83,7 +83,7 @@ describe('research-search:seed-rerank-cache', () => {
       unresolvedSlugs: 2,
       resolvedThroughMerge: 0,
       resolvedThroughRedirect: 0,
-      mergeCollisions: { count: 0, collisions: [] },
+      mergeCollisions: { count: 0, maxGap: 0, collisions: [] },
       entriesWithNoResolvedScore: 1,
       upserted: 0,
       textHashes: 'not-requested',
@@ -400,6 +400,41 @@ describe('research-search:seed-rerank-cache resolution of merged and renamed slu
     ).toEqual([{ entityId: ids['synthetic-renamed-lab'], score: 2 }]);
   });
 
+  it('leaves a slug two live rows both claim as a former slug unresolved', async () => {
+    const claim = [
+      { slug: 'synthetic-contested-lab', renamedAt: new Date('2026-11-01'), reason: 'test' },
+    ];
+    await insertRow('synthetic-first-claimant-lab', { archived: false, previousSlugs: claim });
+    await insertRow('synthetic-second-claimant-lab', { archived: false, previousSlugs: claim });
+
+    const report = await dryRun({ 'synthetic-contested-lab': 2 });
+
+    expect(report).toMatchObject({
+      scores: 1,
+      resolvedScores: 0,
+      unresolvedSlugs: 1,
+      resolvedThroughRedirect: 0,
+    });
+  });
+
+  it('never redirects a slug that still has a row, even a dead-end archived one', async () => {
+    await insertRow('synthetic-claims-dead-end-lab', {
+      archived: false,
+      previousSlugs: [
+        { slug: 'synthetic-dead-end-lab', renamedAt: new Date('2026-11-01'), reason: 'test' },
+      ],
+    });
+
+    const report = await dryRun({ 'synthetic-dead-end-lab': 2 });
+
+    expect(report).toMatchObject({
+      scores: 1,
+      resolvedScores: 0,
+      unresolvedSlugs: 1,
+      resolvedThroughRedirect: 0,
+    });
+  });
+
   it('keeps the higher of two scores within a point that reach one row, and reports it', async () => {
     const scores = { 'synthetic-survivor-lab': 2, 'synthetic-merged-lab': 3 };
     const report = await dryRun(scores);
@@ -410,6 +445,7 @@ describe('research-search:seed-rerank-cache resolution of merged and renamed slu
       resolvedThroughMerge: 1,
       mergeCollisions: {
         count: 1,
+        maxGap: 1,
         collisions: [{ entryIndex: 0, survivorId: ids['synthetic-survivor-lab'], scores: [2, 3] }],
       },
     });
@@ -445,7 +481,7 @@ describe('research-search:seed-rerank-cache resolution of merged and renamed slu
       resolvedScores: 2,
       resolvedThroughMerge: 0,
       resolvedThroughRedirect: 0,
-      mergeCollisions: { count: 0, collisions: [] },
+      mergeCollisions: { count: 0, maxGap: 0, collisions: [] },
     });
     expect(await appliedScores({ 'synthetic-direct-lab': 1, 'synthetic-renamed-lab': 2 })).toEqual([
       { entityId: ids['synthetic-direct-lab'], score: 1 },

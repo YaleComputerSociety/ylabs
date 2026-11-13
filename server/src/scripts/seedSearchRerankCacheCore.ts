@@ -95,6 +95,7 @@ export interface SeedMergeCollision {
 
 export interface SeedMergeCollisionReport {
   count: number;
+  maxGap: number;
   collisions: SeedMergeCollision[];
 }
 
@@ -376,7 +377,15 @@ export function planRerankCacheEntries(
     unresolvedSlugs,
     resolvedThroughMerge,
     resolvedThroughRedirect,
-    mergeCollisions: { count: collisions.length, collisions },
+    mergeCollisions: {
+      count: collisions.length,
+      maxGap: collisions.reduce(
+        (widest, { scores: collided }) =>
+          Math.max(widest, Math.max(...collided) - Math.min(...collided)),
+        0,
+      ),
+      collisions,
+    },
   };
 }
 
