@@ -9,7 +9,10 @@ import { isYaleHostedPage } from '../scrapers/utils/nonYaleMicrositeOwnership';
 import type { CoverageObservationLike, CoverageSnippet } from '../scrapers/coverageSynthesis';
 import { listResearchEntityMergedInRowsBySurvivor } from '../services/researchEntityCanonicalTombstone';
 import { containsAsciiControl } from '../utils/asciiControl';
-import { loadResearchEntityLeadPersonName } from '../utils/researchHomeNameIdentityRoster';
+import {
+  loadResearchEntityLeadPersonDisplayNames,
+  loadResearchEntityLeadPersonName,
+} from '../utils/researchHomeNameIdentityRoster';
 import { withPublicDescriptionGateFields } from '../services/researchEntityPublicDescription';
 import type { ServingRowContext } from '../scrapers/utils/fullDescriptionServingBar';
 import {
@@ -154,9 +157,16 @@ export function writerServingRow(row: {
   };
 }
 
+/**
+ * Every live lead of the row, the materializer's lead first: the page filter admits a page
+ * that names any lead, as topic derivation does (#6127), and the serving bar reads the first.
+ */
 export async function writerLeadNames(entityId: unknown): Promise<string[]> {
   const leadName = await loadResearchEntityLeadPersonName(entityId);
-  return leadName ? [leadName] : [];
+  const id = entityId === undefined || entityId === null ? '' : String(entityId);
+  const allLeads = id ? ((await loadResearchEntityLeadPersonDisplayNames([id])).get(id) ?? []) : [];
+  const others = allLeads.filter((name) => name !== leadName);
+  return leadName ? [leadName, ...others] : others;
 }
 
 export async function loadWriterRowEvidence(

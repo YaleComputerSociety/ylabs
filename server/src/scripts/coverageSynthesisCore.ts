@@ -1,10 +1,7 @@
 import { isPersonResearchRow } from '../utils/researchStatementPassage';
 import { storedPageTextByUrl } from '../scrapers/utils/nonYaleMicrositeDescriptionScreen';
 import { normalizeEvidenceUrl } from '../scrapers/utils/sharedEvidenceUrls';
-import {
-  descriptionPageNamesRowLead,
-  isUnderOwnWebsite,
-} from '../scrapers/sources/labMicrositeDescriptionLLMExtractor';
+import { descriptionPageIsRowLeadsOwn } from '../scrapers/sources/labMicrositeDescriptionLLMExtractor';
 import { withoutNamesakePersonPageDescriptions } from '../scrapers/utils/namesakePersonPageDescriptions';
 import type { ResearchEntityIdentity } from '../scrapers/utils/personProfileEntityMatch';
 import { SOURCE_CONTENT_HASH_FIELD } from '../scrapers/contentHashGate';
@@ -612,9 +609,6 @@ export function writerEvidencePageNamesRowLead(
   const pageTextByUrl = storedPageTextByUrl(observations);
   const kind = isPersonRow ? 'individual' : options.kind;
   return (pageUrl, text) => {
-    if (options.websiteUrlStatedByYaleSource && isUnderOwnWebsite(pageUrl, options.websiteUrl)) {
-      return true;
-    }
     const pageText = [
       pageTextByUrl.get(normalizeEvidenceUrl(pageUrl)),
       options.storedPageText?.(pageUrl),
@@ -623,9 +617,10 @@ export function writerEvidencePageNamesRowLead(
       .filter(Boolean)
       .join('\n');
     return personNames.some((personName) =>
-      descriptionPageNamesRowLead({
+      descriptionPageIsRowLeadsOwn({
         personName,
         websiteUrl: options.websiteUrl,
+        websiteUrlStatedByYaleSource: options.websiteUrlStatedByYaleSource,
         rowName: options.identity?.name,
         kind,
         pageUrl,

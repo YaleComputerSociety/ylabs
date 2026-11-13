@@ -197,3 +197,14 @@ describe("a non-Yale page under the row's own website, which a Yale source state
     expect(snippetsFromRowEvidence(unstated, now)).toEqual([]);
   });
 });
+
+describe("a page that names any of the row's leads is writer evidence (#6127)", () => {
+  it('admits a page that names the second lead and refuses one that names neither', () => {
+    const coLeadPage = 'https://geology.yale.edu/research/coastal-group';
+    const withCoLead = { ...PERSON_ROW, leadNames: ['Quillon Varnadore', 'Teodora Halvorsen'] };
+    expect(
+      texts([researchPage(coLeadPage, `${RESEARCH} Led by Teodora Halvorsen.`)], withCoLead),
+    ).toEqual([`${RESEARCH} Led by Teodora Halvorsen.`]);
+    expect(texts([researchPage(coLeadPage)], withCoLead)).toEqual([]);
+  });
+});

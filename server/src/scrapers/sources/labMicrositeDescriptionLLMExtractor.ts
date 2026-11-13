@@ -1133,6 +1133,21 @@ export function descriptionPageNamesRowLead(
 }
 
 /**
+ * `descriptionPageNamesRowLead`, plus a page under the row's own website on any host when a
+ * live Yale-hosted observation states that website (#5961). The writer and topic derivation
+ * both judge pages through this, so the two cannot drift; the lane gate keeps the stricter
+ * `descriptionPageNamesRowLead` (#5818).
+ */
+export function descriptionPageIsRowLeadsOwn(
+  input: RowLead & { pageUrl: string; pageText: string; websiteUrlStatedByYaleSource?: boolean },
+): boolean {
+  if (input.websiteUrlStatedByYaleSource && isUnderOwnWebsite(input.pageUrl, input.websiteUrl)) {
+    return true;
+  }
+  return descriptionPageNamesRowLead(input);
+}
+
+/**
  * The refusal pass refuses a stored description only after `MIN_ATTESTED_EMPTY_READS` (2)
  * attested-empty reads in distinct runs, but the content-hash gate would stop the lane
  * after the first. So the first teaser read records a marked hash the next ordinary run
