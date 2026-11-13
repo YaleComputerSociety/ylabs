@@ -4,8 +4,13 @@ import { DEAD_LINK_ERROR_CODES } from '../../services/sourceLinkHealth';
 import { TLS_VERIFICATION_ERROR_CODES } from '../../utils/tlsVerificationErrors';
 import { isRefusedBeforeSending } from './httpFetch';
 
+/**
+ * `HostPausedBudgetError` is kept beside the current names on ylabs-ae's request (#6168): a stale
+ * process still running the pre-#6168 pause code raises it, and it is the same refusal.
+ */
 const NOT_OBSERVED_ERROR_NAMES: ReadonlySet<string> = new Set([
   'HostPausedError',
+  'HostPausedBudgetError',
   'DevWriteLeaseHeldError',
   'DevWriteLeaseStoppedError',
   'DevWriteLeaseTimeoutError',
@@ -39,6 +44,11 @@ const codeOf = (link: object): string | undefined => {
   return typeof code === 'string' ? code : undefined;
 };
 
+/**
+ * The SSRF guard's `unresolvable` refusal is a name the resolver confirmed absent after asking
+ * again, the same fact as `ENOTFOUND`, so link-health retires on it (#2709). Every other guard
+ * refusal describes our network position or our own rules, not the host.
+ */
 const isGuardConfirmedAbsentName = (link: object): boolean =>
   link instanceof SsrfBlockedError && link.reason === 'unresolvable';
 
@@ -53,6 +63,15 @@ function refusedByUs(link: object): boolean {
   );
 }
 
+/**
+ * Whether a failed fetch observed nothing about the page, so no lane may turn it into a verdict,
+ * an absence, a retraction or a lowered confidence (#6258). True for a request our own code
+ * refused before sending (a host pause, the SSRF guard, the request budget, an excluded host, a
+ * write lease) and for a failure that carries neither an HTTP status nor a host-level code: a
+ * timeout, a reset, a temporary DNS failure, an abort, or a plain error. An HTTP status, 404 and
+ * 410 included, a host-level code (link-health's `DEAD_LINK_ERROR_CODES`) or a TLS verification
+ * code is an observation, still subject to each lane's own confirmation rule.
+ */
 export function isNotObserved(error: unknown): boolean {
   const chain = errorChain(error);
   if (chain.length === 0) return true;

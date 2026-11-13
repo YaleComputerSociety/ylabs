@@ -25,6 +25,8 @@ Observed: any HTTP status, the four host-level codes `ENOTFOUND`, `ECONNREFUSED`
 An observation still passes each lane's own confirmation rule: #2725 for DNS, #2751 for a second attempt agreeing on a refused connection, and #6116 for a second run before a refused connection retires a live link.
 Only a `404` or `410` says a page is gone; a `403`, `429` or `5xx` is observed but says nothing about absence, so `clearDeadLabResearchHomes` and `repairLegacyPersonPageUrls` clear or replace a stored value on a probe only for one of those two statuses.
 A lane that falls back to a stored value on a non-observation counts the row as deferred rather than writing.
+A lane may still record what an observed status told it, so a throttled or erroring page is a reachability observation rather than a deferral; whether a throttle should also defer, and whether one unconfirmed probe may remove a value, are #6264's question.
+A redirect loop is an observation rather than a non-observation, because the host answered every hop, and #3135 keeps it as evidence that the cited address no longer serves the resource.
 `server/src/scrapers/__tests__/notObservedNeverEvidenceGuard.test.ts` scans `scrapers/`, `scripts/` and `services/`: a file that both fetches and writes an absence must call `isNotObserved` (or `isTransientFetchFailure`, which delegates to it) or carry a reviewed reason naming its own confirmation rule.
 A stored status-less `UNAVAILABLE` is left as it is, because it is how a confirmed DNS negative retires a domain (#2726).
 

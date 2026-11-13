@@ -1577,6 +1577,8 @@ async function loadEntityStates(
  * the operator path by the script's own apply guard plus confirm flag, so the same
  * action never has two switches that can disagree.
  */
+const REDIRECT_LOOP_ERROR_CODES = new Set(['ERR_FR_TOO_MANY_REDIRECTS', 'ERR_TOO_MANY_REDIRECTS']);
+
 const comparableRegistrableHost = (url: string | undefined): string | null => {
   if (!url) return null;
   try {
@@ -1588,9 +1590,9 @@ const comparableRegistrableHost = (url: string | undefined): string | null => {
 
 /**
  * A different question from "is the host up": does the address we cited still serve
- * the thing we cited? A landing on another registrable host answers no, deterministically
- * and repeatably, which is what separates it from the throttle and timeout that `UNKNOWN`
- * exists for.
+ * the thing we cited? A redirect loop and a landing on another registrable host both
+ * answer no, deterministically and repeatably, which is what separates them from the
+ * throttle and timeout that `UNKNOWN` exists for.
  *
  * A lapsed academic domain re-registered as an unrelated commercial site is the case
  * that forces this. It answers `200`, so reachability protects it, and it is worse
@@ -1599,6 +1601,7 @@ const comparableRegistrableHost = (url: string | undefined): string | null => {
  * new one has to be re-acquired as its own observation rather than inherited.
  */
 export function citedAddressNoLongerServesTheResource(probe: SourceLinkProbeResult): boolean {
+  if (probe.errorCode && REDIRECT_LOOP_ERROR_CODES.has(probe.errorCode)) return true;
   const status = probe.status;
   if (typeof status !== 'number' || status < 200 || status >= 300) return false;
   const requested = comparableRegistrableHost(probe.requestedUrl);
