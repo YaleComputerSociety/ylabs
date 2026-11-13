@@ -9,8 +9,9 @@ import { textScanForm } from '../researchAreaCanonicalization';
 export const OWN_ORG_UNIT_LABEL_FIELDS: ReadonlySet<string> = new Set(['departments', 'school']);
 
 const ORG_UNIT_NAME_PREFIX =
-  /^(?:the |yale |university |(?:department|dept|section|division|school|program|programme)s? (?:of|in|for|on) )/;
-const ORG_UNIT_NAME_SUFFIX = / (?:department|dept|section|division|program|programme)$/;
+  /^(?:the |yale |university |(?:department|dept|section|division|school)s? (?:of|in|for|on) )/;
+const ORG_UNIT_NAME_SUFFIX = / (?:department|dept|section|division)$/;
+const PROGRAM_WORD = / programm?e?s? /;
 
 function strippedRepeatedly(value: string, pattern: RegExp): string {
   let current = value;
@@ -36,12 +37,22 @@ function sameUnitWords(left: readonly string[], right: readonly string[]): boole
 }
 
 /**
+ * A program label is never a unit to restate: it reaches `departments` only as a non-catalog
+ * string, and a clinical program named for a disease is real topic signal (#5957 ruling).
+ */
+export function namesAProgram(label: string): boolean {
+  return PROGRAM_WORD.test(textScanForm(label));
+}
+
+/**
  * Whole-topic equality only (#5957 decision): a topic that merely shares a word with the
  * label, such as a subfield named after the department, is a real topic and is kept.
  */
 export function restatesAnOwnOrgUnitLabel(topic: string, ownLabels: readonly string[]): boolean {
   const topicWords = orgUnitLabelWords(topic);
-  return ownLabels.some((label) => sameUnitWords(topicWords, orgUnitLabelWords(label)));
+  return ownLabels.some(
+    (label) => !namesAProgram(label) && sameUnitWords(topicWords, orgUnitLabelWords(label)),
+  );
 }
 
 interface LabelObservationLike {
