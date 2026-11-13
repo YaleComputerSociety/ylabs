@@ -1240,6 +1240,16 @@ test('CI gates on ESLint errors, leaves warnings advisory, and lints before the 
   assert.match(packageJson.scripts.verify, /verify:fast/);
 });
 
+test('the ESLint heap is declared once, in the lint scripts, not in the CI step (#6115)', () => {
+  assert.match(packageJson.scripts.lint, /--max-old-space-size=\d+/);
+  assert.match(packageJson.scripts['lint:fix'], /--max-old-space-size=\d+/);
+  const lintStep = yaml
+    .load(ciWorkflow)
+    .jobs.checks.steps.find((step) => (step.run ?? '').trim() === 'yarn lint');
+  assert.ok(lintStep, 'the checks job must run yarn lint');
+  assert.equal(lintStep.env?.NODE_OPTIONS, undefined);
+});
+
 test('CI runs the server registration guards right after lint, beside the sharded suite', () => {
   const checksSteps = yaml.load(ciWorkflow).jobs.checks.steps.map((step) => step.run?.trim() ?? '');
   const guardAt = checksSteps.indexOf('yarn --cwd server test:guards');
