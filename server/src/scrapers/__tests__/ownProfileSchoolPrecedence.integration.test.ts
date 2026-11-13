@@ -92,7 +92,7 @@ describe('the own profile school outranks a cross-school roster at resolve (#615
     const planned = await plan();
 
     expect(planned.school).toBe('School of Public Health');
-    expect(planned.schools?.[0]).toBe('School of Public Health');
+    expect(planned.schools).toEqual(['School of Public Health', 'School of Medicine']);
     expect(planned['fieldProvenance.school']).toMatchObject({
       sourceName: OWN_PROFILE_HOST_SCHOOL_SOURCE_NAME,
       sourceUrl: OWN_PROFILE,
@@ -117,6 +117,26 @@ describe('the own profile school outranks a cross-school roster at resolve (#615
 
     expect(planned.school).not.toBe('School of Public Health');
     expect(planned.schools ?? []).not.toContain('School of Public Health');
+  });
+
+  it('keeps the own profile school primary but never retains a refused roster school', async () => {
+    await seedRosterAndOwnProfile();
+    await ResearchEntity.updateOne(
+      { slug: KEY },
+      {
+        $set: planFieldValueRefusal(undefined, {
+          field: 'school',
+          value: 'School of Medicine',
+          rule: 'operator_judgement',
+          refusedBy: 'fixture',
+          note: 'fixture refusal',
+        }),
+      },
+    );
+    const planned = await plan();
+
+    expect(planned.school).toBe('School of Public Health');
+    expect(planned.schools).toEqual(['School of Public Health']);
   });
 
   it('keeps the roster school when the own profile names it too', async () => {

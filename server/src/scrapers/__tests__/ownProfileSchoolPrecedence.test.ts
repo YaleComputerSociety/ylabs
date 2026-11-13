@@ -5,7 +5,9 @@ import {
   ownProfileSchoolPrecedenceAtResolve,
   ownProfileSchoolProvenanceFor,
   withOwnProfileSchoolPrecedence,
+  withRetainedSecondarySchools,
 } from '../ownProfileSchoolPrecedence';
+import { planFieldValueRefusal } from '../../utils/researchEntityFieldValueRefusals';
 
 const canonicalizeSchool = (raw: unknown) => ({ value: String(raw ?? '').trim() });
 
@@ -148,5 +150,47 @@ describe('ownProfileSchoolPrecedenceAtResolve (#6157)', () => {
     const result = await ownProfileSchoolPrecedenceAtResolve([departments], OWN_PROFILE);
     expect(result.observations).toEqual([departments]);
     expect(load).not.toHaveBeenCalled();
+  });
+});
+
+describe('withRetainedSecondarySchools (#6157)', () => {
+  const candidate = withOwnProfileSchoolPrecedence(
+    [reading('school', 'School of Medicine', ROSTER)],
+    OWN_PROFILE,
+    canonicalizeSchool,
+  ).candidate;
+
+  it('keeps the set-aside roster school after the own profile school', () => {
+    const set: Record<string, unknown> = {
+      school: 'School of Public Health',
+      schools: ['School of Public Health'],
+    };
+    withRetainedSecondarySchools(set, candidate, undefined);
+    expect(set.schools).toEqual(['School of Public Health', 'School of Medicine']);
+  });
+
+  it('never retains a school the row refuses', () => {
+    const refusals = planFieldValueRefusal(undefined, {
+      field: 'school',
+      value: 'School of Medicine',
+      rule: 'operator_judgement',
+      refusedBy: 'fixture',
+      note: 'fixture refusal',
+    })['fieldValueRefusals.school'];
+    const set: Record<string, unknown> = {
+      school: 'School of Public Health',
+      schools: ['School of Public Health'],
+    };
+    withRetainedSecondarySchools(set, candidate, { school: refusals });
+    expect(set.schools).toEqual(['School of Public Health']);
+  });
+
+  it('adds nothing when the derived school did not win', () => {
+    const set: Record<string, unknown> = {
+      school: 'School of Nursing',
+      schools: ['School of Nursing'],
+    };
+    withRetainedSecondarySchools(set, candidate, undefined);
+    expect(set.schools).toEqual(['School of Nursing']);
   });
 });

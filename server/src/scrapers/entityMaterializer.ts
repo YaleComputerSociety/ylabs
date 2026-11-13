@@ -554,6 +554,7 @@ import {
 import {
   ownProfileSchoolPrecedenceAtResolve,
   ownProfileSchoolProvenanceFor,
+  withRetainedSecondarySchools,
   type OwnProfileSchoolCandidate,
 } from './ownProfileSchoolPrecedence';
 import {
@@ -13080,6 +13081,7 @@ export async function projectFromLog(
     await (
       input.applyResearchEntityOrgUnitCanonicalization ?? applyResearchEntityOrgUnitCanonicalization
     )(set, entityDoc, orgUnitProfileUrls);
+    withRetainedSecondarySchools(set, input.ownProfileSchool, entityDoc?.fieldValueRefusals);
     await canonicalizeResearchAreas(set, set.departments ?? entityDoc?.departments);
     const observedResearchAreasWhollyRejected =
       hasNonEmptyStringArray(observedResearchAreas) && isEmptyArray(set.researchAreas);

@@ -1,4 +1,5 @@
 import { OWN_PROFILE_HOST_SCHOOL_SOURCE_NAME } from '../models/fieldProvenanceBacking';
+import { valueIsRefused } from '../utils/researchEntityFieldValueRefusals';
 import {
   getOrgUnitCanonicalizer,
   orgUnitMatchKey,
@@ -29,6 +30,8 @@ export interface OwnProfileSchoolCandidate {
   sourceUrl: string;
   confidence: number;
   observedAt: Date;
+  /** The schools the set-aside roster readings stated, kept as secondaries in `schools`. */
+  retainedSchools: string[];
 }
 
 export interface OwnProfileSchoolPrecedence<T> {
@@ -124,6 +127,11 @@ export function withOwnProfileSchoolPrecedence<T extends SchoolPrecedenceObserva
       sourceName: OWN_PROFILE_HOST_SCHOOL_SOURCE_NAME,
       sourceUrl: ownProfileUrl,
       confidence: OWN_PROFILE_HOST_SCHOOL_CONFIDENCE,
+      retainedSchools: [
+        ...new Set(
+          [...crossSchool].map((o) => canonicalizeSchool(o.value).value || textOf(o.value)),
+        ),
+      ].filter(Boolean),
       observedAt: newestObservedAt(
         observations.filter(fromOwnProfile).length > 0
           ? observations.filter(fromOwnProfile)
@@ -165,4 +173,29 @@ export function ownProfileSchoolProvenanceFor(
     observedAt: candidate.observedAt,
     confidence: candidate.confidence,
   };
+}
+
+/**
+ * A roster from another school's site is set aside as the PRIMARY school, but it still shows
+ * the person holds an appointment there: a blind check found the own profile's school primary
+ * on 16 of 20 changed rows while 13 of them also held the roster's school (#6157). So once the
+ * derived school wins, every set-aside roster school the row does not refuse is kept after it
+ * in the `schools` the org-unit canonicalization just built.
+ */
+export function withRetainedSecondarySchools(
+  set: Record<string, unknown>,
+  candidate: OwnProfileSchoolCandidate | undefined,
+  fieldValueRefusals: unknown,
+): void {
+  if (!candidate || textOf(set.school) !== candidate.value || !Array.isArray(set.schools)) return;
+  const schools = set.schools.map(textOf).filter(Boolean);
+  const present = new Set(schools.map((school) => orgUnitMatchKey(school)));
+  for (const school of candidate.retainedSchools) {
+    if (present.has(orgUnitMatchKey(school))) continue;
+    if (valueIsRefused(fieldValueRefusals, SCHOOL_FIELD, school)) continue;
+    if (valueIsRefused(fieldValueRefusals, 'schools', school)) continue;
+    schools.push(school);
+    present.add(orgUnitMatchKey(school));
+  }
+  set.schools = schools;
 }
