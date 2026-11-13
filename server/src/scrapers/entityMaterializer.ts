@@ -615,6 +615,7 @@ import {
 } from '../scripts/backfillResearcherOfficialProfileLinksCore';
 import { canonicalScholarCitationUrl } from '../scripts/promoteScholarCandidateProfileLinksCore';
 import {
+  operatorEndedEdgeBlocksWrite,
   RoleAssignment,
   type RoleAssignmentRole,
   type RoleAssignmentRosterProvenance,
@@ -4533,6 +4534,34 @@ async function retiredEvidenceLeadEdgesToEnd(
 }
 
 /**
+ * A lead an operator ended on this row is not asserted again, so the plan a dry run reports
+ * is the write an apply makes: the membership writer refuses the triple too (#5979).
+ */
+async function withoutOperatorEndedLeads(
+  researchEntityId: string,
+  planned: InferredPiLeadFacts[],
+): Promise<InferredPiLeadFacts[]> {
+  const entityObjectId = toMaterializerObjectId(researchEntityId);
+  if (!entityObjectId || planned.length === 0) return planned;
+  const kept: InferredPiLeadFacts[] = [];
+  for (const facts of planned) {
+    const personId = toMaterializerObjectId(facts.personId);
+    const role = canonicalRoleForLegacy(facts.legacyRole);
+    const blocked =
+      personId &&
+      role &&
+      (await operatorEndedEdgeBlocksWrite({
+        personId,
+        'target.kind': 'RESEARCH_ENTITY',
+        'target.id': entityObjectId,
+        role,
+      }));
+    if (!blocked) kept.push(facts);
+  }
+  return kept;
+}
+
+/**
  * The row's lead edges as its inferred-lead evidence decides them. Each step reads the edges
  * the step before it left, so an apply writes in the order the steps run, and a dry run reads
  * the stored edges without the assertions it would have made.
@@ -4543,7 +4572,10 @@ export async function resolveLeadEdges(
   options: { apply: boolean },
 ): Promise<LeadEdgeResolution> {
   const screened = await contradictedPageLeadObservations(observations);
-  const planned = await planInferredPiMembership(researchEntityId, observations, screened);
+  const planned = await withoutOperatorEndedLeads(
+    researchEntityId,
+    await planInferredPiMembership(researchEntityId, observations, screened),
+  );
   const entityObjectId = toMaterializerObjectId(researchEntityId);
   const ledBefore = new Set(
     entityObjectId && planned.length > 0
