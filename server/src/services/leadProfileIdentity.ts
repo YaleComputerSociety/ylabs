@@ -125,15 +125,15 @@ const YDS_LEGACY_FACULTY_PATH = /^\/faculty-and-research\/yds-faculty\/([a-z0-9-
 
 /**
  * `macmillan.yale.edu` serves one person under both `/person/<slug>` and
- * `/<program>/person/<slug>`, the same node under a program's skin, and center rosters moved
- * from the first form to the second between reads (#5677). Only an identical slug collapses:
- * a `-0` suffix is a different node.
+ * `/<program>/person/<slug>` or `/<program>/<subprogram>/person/<slug>`, the same node under a
+ * program's skin, and center rosters moved between those forms between reads (#5677, #5892).
+ * Only an identical slug collapses: a `-0` suffix is a different node.
  */
-const MACMILLAN_SECTION_PERSON_PATH = /^\/[a-z0-9-]+\/person\/([a-z0-9-]+)$/i;
+const MACMILLAN_SECTION_PERSON_PATH = /^(?:\/[a-z0-9-]+)+\/person\/([a-z0-9-]+)$/i;
 
 const MACMILLAN_ROOT_PERSON_PATH = /^\/person\/([a-z0-9-]+)$/i;
 
-const canonicalOfficialProfilePath = (host: string, path: string): string => {
+export const canonicalOfficialProfilePath = (host: string, path: string): string => {
   if (host === 'macmillan.yale.edu') {
     const sectioned = MACMILLAN_SECTION_PERSON_PATH.exec(path);
     return sectioned ? `/person/${sectioned[1]}` : path;
@@ -197,7 +197,7 @@ const officialProfileDestinationPatternParts = (
   const pathPattern = ysmProfile
     ? `(?:/[A-Za-z0-9-]+)?${anyCaseLiteral('/profile')}/${escapeRegex(ysmProfile[1])}`
     : macmillanPerson
-      ? `(?:/[A-Za-z0-9-]+)?${anyCaseLiteral('/person')}/${escapeRegex(macmillanPerson[1])}`
+      ? `(?:/[A-Za-z0-9-]+)*${anyCaseLiteral('/person')}/${escapeRegex(macmillanPerson[1])}`
       : ydsProfile
         ? `(?:/profile|${anyCaseLiteral('/faculty-and-research/yds-faculty')})/${escapeRegex(ydsProfile[1])}`
         : escapeRegex(path);

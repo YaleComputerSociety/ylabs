@@ -59,7 +59,10 @@ import {
   relationshipTargetIdentities,
   type RelationshipTargetIdentity,
 } from './centerRelationshipTarget';
-import { officialProfileIdentityKey } from './utils/rosterMembershipKey';
+import {
+  comparableRosterMembershipKey,
+  officialProfileIdentityKey,
+} from './utils/rosterMembershipKey';
 import { attributedArchiveSet } from '../models/entityArchival';
 import { liveResearchEntityNamedByKeyObservations } from './renamedResearchEntityAdoption';
 
@@ -299,10 +302,17 @@ export function centerRosterReadFromSnapshot(
       members
         .filter((member) => member.membershipKey)
         .map((member) =>
-          memberClaimKey(member.memberKey, identityPart(member.membershipKey ?? '')),
+          memberClaimKey(
+            member.memberKey,
+            comparableRosterMembershipKey(identityPart(member.membershipKey ?? '')),
+          ),
         ),
     ),
-    membershipKeys: new Set(members.map((member) => member.membershipKey ?? '').filter(Boolean)),
+    membershipKeys: new Set(
+      members
+        .map((member) => comparableRosterMembershipKey(member.membershipKey ?? ''))
+        .filter(Boolean),
+    ),
     relationshipKeys: new Set(
       members.map((member) => member.relationshipKey ?? '').filter(Boolean),
     ),
@@ -519,6 +529,7 @@ export function planCenterRosterRetirement(input: {
     field: string,
     claimOf: (value: string) => string,
     listedClaims: (read: CenterRosterRead) => ReadonlySet<string>,
+    comparableClaim: (claim: string) => string = (claim) => claim,
   ): string[] => {
     const claimGroups = groupObservations(
       input.memberObservations.filter(
@@ -529,10 +540,14 @@ export function planCenterRosterRetirement(input: {
     const retiredClaims: string[] = [];
     for (const group of claimGroups.values()) {
       if (retiredMemberKeys.has(group.latest.entityKey)) continue;
+      const listedKey = memberClaimKey(
+        group.latest.entityKey,
+        comparableClaim(claimOf(String(group.latest.value).trim())),
+      );
       const absent = absentReadRunIds(
         { observedAt: group.latest.observedAt, scrapeRunId: group.latest.scrapeRunId },
         input.reads,
-        (read) => listedClaims(read).has(group.key),
+        (read) => listedClaims(read).has(listedKey),
       );
       if (absent.length < minReads) continue;
       retiredClaims.push(group.key);
@@ -549,6 +564,7 @@ export function planCenterRosterRetirement(input: {
     'profileUrl',
     officialProfileIdentityKey,
     (read) => read.memberProfileClaims,
+    comparableRosterMembershipKey,
   );
 
   const relationshipGroups = liveGroups(
@@ -587,7 +603,7 @@ export function planCenterRosterRetirement(input: {
       continue;
     }
     const absent = absentReadRunIds({ observedAt: edge.observedAt }, input.reads, (read) =>
-      read.membershipKeys.has(edge.membershipKey),
+      read.membershipKeys.has(comparableRosterMembershipKey(edge.membershipKey)),
     );
     if (absent.length >= minReads) {
       retiredEdges.push({
@@ -880,7 +896,9 @@ export async function applyCenterRosterRetirementPlan(
   }
 
   const retiredIdentities = new Set(
-    plan.retiredEdges.map((edge) => identityPart(edge.membershipKey)),
+    plan.retiredEdges.map((edge) =>
+      comparableRosterMembershipKey(identityPart(edge.membershipKey)),
+    ),
   );
   const retiredClaimMemberKeys = new Set(
     [...plan.retiredRoleClaims, ...plan.retiredProfileClaims].map((claim) => claim.split('|')[0]),
@@ -893,7 +911,8 @@ export async function applyCenterRosterRetirementPlan(
   const stillListed = (latestRead?.members ?? []).filter(
     (member) =>
       retiredClaimMemberKeys.has(member.memberKey) ||
-      (member.membershipKey && retiredIdentities.has(identityPart(member.membershipKey))),
+      (member.membershipKey &&
+        retiredIdentities.has(comparableRosterMembershipKey(identityPart(member.membershipKey)))),
   );
   for (const memberKey of new Set(stillListed.map((member) => member.memberKey))) {
     await deps.rematerializeMemberKey(memberKey);
