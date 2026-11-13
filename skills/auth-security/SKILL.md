@@ -141,12 +141,24 @@ It takes the rest of its env from the same data profile as `yarn dev:server` (`p
 `--api <loopback origin>` reads an API you already run instead, under the same fail-closed `/api/check` guard, so it refuses a dev server that has the bypass on; that first `/api/check` is still a bypass login on such a server, which is why the default starts its own.
 `scripts/served-check.test.mjs` pins the forced-off bypass and own port over a synthetic `server/.env` that turns it on, the refusal before any served path is read, and a real spawned check server seeing `LOCAL_AUTH_BYPASS=false`.
 The manual equivalent is `LOCAL_AUTH_BYPASS=false yarn dev:server` and the same `/api/check` precondition before reading.
+
+`yarn served-check --as student <path>...` reads routes behind `isAuthenticated`, such as `/api/programs/search`, as a signed-in undergraduate (#6079).
+The identity is synthetic and held only in memory: `mintSyntheticStudent` in `server/src/utils/servedCheckStudentSession.ts` makes a random `zzsvck` netid typed `undergraduate` with `isAdmin: false`, and nothing ever writes it.
+It does not start `src/index.ts`; it runs `server/src/scripts/servedCheckStudent.ts`, which installs `installMongoWriteRefusal` before connecting, mounts the real `app` behind `studentSessionHook`, listens on `127.0.0.1` only, and reads each path through the full middleware and route stack.
+The hook sets `req.user` only for a loopback request carrying a 32-byte nonce the process minted in memory, so no secret, cookie or token exists outside that process, and nothing is printed or written to disk.
+It cannot be enabled in a deployed server: no environment variable turns it on, only the student entry imports the module, and the hook refuses to install where `requiresDeployedRuntimeSecurity` holds.
+Before the first read the run refuses, reading nothing, if the session is not a plain undergraduate, if an account already holds the netid, or if the netid holds an admin grant; it then requires `GET /api/check` through the real stack to resolve that same plain student.
+Admin routes still answer `403`, because `isAdmin` re-checks the grant by netid.
+The run ends with a `{"refusedWrites": [...]}` line naming every write the stack attempted and the refusal stopped; a first signed-in request normally attempts one, the daily visitor event in `passport.ts`.
+The check keeps the session cookie the stack issues in memory between its own requests, as a browser would, so that visitor event is attempted once per run rather than once per path.
+`server/src/__tests__/servedCheckStudentMode.integration.test.ts` pins the student read where an anonymous read gets `401`, the admin refusal, every elevated-session refusal, that a normally started `app` ignores the nonce header and that only the student entry imports the hook, and that the student path's writes are refused.
 A cookieless request with the bypass off resolves no user, so the auth path writes no account, no admin grant and no analytics event, and the route serves the anonymous student view, which withholds every row outside `student_ready`.
 `server/src/__tests__/localStudentServedCheckWritesNothing.integration.test.ts` pins that against a real store, with the bypass-on run of the same requests as the control that proves the count can see a write.
 The test exercises `GET /api/check` and `GET /api/research/:slug`; `POST /api/research/search` records a site-search row only for a signed-in netid (`shouldRecordSiteSearch`), so an anonymous search records none either.
 When the API starts with the bypass on, it prints a `[auth] LOCAL_AUTH_BYPASS is on` warning (`localAuthBypassStartupNotice`); when `MONGODBURL` names the Development database or any non-local host, it wraps that warning in a `LOCAL_AUTH_BYPASS IS ON AGAINST ...` banner naming the target class, never the URL, so a dev server on the shared database cannot be mistaken for an anonymous one.
 
-To test a signed-in student flow, which records a login, use one of these:
+To read what a signed-in student is served without writing anything, use `yarn served-check --as student <path>` above.
+To test a signed-in student flow that records a login, use one of these:
 
 - Run the API with the grant-less undergraduate dev-login netid as the bypass identity: `LOCAL_AUTH_BYPASS_NETID=test123 LOCAL_AUTH_BYPASS_USER_TYPE=undergraduate yarn dev:server`.
 - Turn the bypass off and sign in as the undergraduate: `LOCAL_AUTH_BYPASS=false yarn dev:server`, then open `/api/dev-login?userType=undergraduate`, which signs in `test123`.
