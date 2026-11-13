@@ -247,7 +247,7 @@ describe('a stored department only screened readings back is cleared on resolve'
     expect((await stored(person._id))?.profile?.primaryDepartment).toBe('Fixture Studies');
   });
 
-  it('leaves a value only a person-name-joined key states through a screened reading', async () => {
+  it('clears a value only a person-name-joined key states through a screened reading', async () => {
     const person = await seedPerson(SCREENED);
     await Observation.insertMany([
       reading('netid', NETID),
@@ -257,7 +257,7 @@ describe('a stored department only screened readings back is cleared on resolve'
     ]);
 
     await resolve();
-    expect((await stored(person._id))?.profile?.primaryDepartment).toBe(SCREENED);
+    expect((await stored(person._id))?.profile?.primaryDepartment).toBeUndefined();
   });
 
   it('never touches a never-backed stored department', async () => {
