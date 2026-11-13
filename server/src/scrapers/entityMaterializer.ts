@@ -5494,17 +5494,17 @@ export async function inheritSchoolFromLeadPi(
     // a School of the Environment row becoming School of Medicine because its PI is
     // appointed in Genetics. The row's own school is the better evidence.
     delete set.school;
-    delete set.schools;
+    if (!refreshesDepartments) delete set.schools;
   }
   const refreshed = [
     ...(refreshesSchool ? (['school'] as const) : []),
     ...(refreshesDepartments ? (['departments'] as const) : []),
   ];
-  if (refreshed.length > 0) {
+  if (refreshed.length > 0 && !writesDepartments) {
     // A refresh replaces only the inherited fields, so a department another source
-    // stated and the labels canonicalization would rebuild stay as stored.
+    // stated and the labels derived from it stay as stored.
+    delete set.departments;
     delete set.orgAffiliationLabels;
-    if (!writesDepartments) delete set.departments;
   }
   const derivedSchool = textValue(set.school);
   if (gate === 'school-and-department' && !derivedSchool) {

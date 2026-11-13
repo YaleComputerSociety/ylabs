@@ -22,7 +22,10 @@ import { ResearchEntity } from '../../models/researchEntity';
 import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
 import { Source } from '../../models/source';
-import { LEAD_PI_SCHOOL_INHERITANCE_SOURCE } from '../../scrapers/entityMaterializer';
+import {
+  LEAD_PI_SCHOOL_INHERITANCE_SOURCE,
+  inheritSchoolFromLeadPi,
+} from '../../scrapers/entityMaterializer';
 import { resetOrgUnitCanonicalizerCache } from '../../scrapers/orgUnitCanonicalization';
 import { runLeadDepartmentBackfill } from '../backfillLeadDepartmentInheritance';
 
@@ -306,7 +309,8 @@ describe('runLeadDepartmentBackfill as the lead-department-inheritance sweep sta
       const row = (await ResearchEntity.findById(entity._id).lean()) as Record<string, any>;
       expect(row.departments).toEqual(['Chemistry']);
       expect(row.school).toBe('School of Medicine');
-      expect(row.schools).toEqual(['School of Medicine']);
+      expect(row.schools).toEqual(['School of Medicine', 'Faculty of Arts and Sciences']);
+      expect(row.orgAffiliationLabels ?? []).not.toContain('Genetics');
       expect(row.fieldProvenance?.school?.sourceName).toBe('dept-faculty-roster');
       expect(row.fieldProvenance?.departments?.sourceName).toBe(LEAD_PI_SCHOOL_INHERITANCE_SOURCE);
     });
@@ -330,6 +334,61 @@ describe('runLeadDepartmentBackfill as the lead-department-inheritance sweep sta
         departments: ['Genetics'],
       });
       expect(await corpusSnapshot()).toEqual(before);
+    });
+
+    it('refuses at the engine to touch a school and department another source stated', async () => {
+      const { entity, researcher } = await seedRowLedBySingleLead(
+        'synthetic-lab',
+        { kind: 'lab' },
+        'Genetics',
+      );
+      await seedFieldFrom(entity, 'dept-faculty-roster', 'school', 'School of Medicine');
+      await seedFieldFrom(entity, 'dept-faculty-roster', 'departments', ['Genetics']);
+      await moveLead(researcher._id, 'Chemistry');
+      const before = await corpusSnapshot();
+
+      const result = await inheritSchoolFromLeadPi(String(entity._id));
+
+      expect(result).toEqual({ inherited: false, skipped: 'has-school-and-department' });
+      expect(await corpusSnapshot()).toEqual(before);
+    });
+
+    it('re-derives only the inherited school when another source stated the department', async () => {
+      const { entity, researcher } = await seedRowLedBySingleLead(
+        'synthetic-lab',
+        { kind: 'lab' },
+        'Genetics',
+      );
+      await seedFieldFrom(
+        entity,
+        LEAD_PI_SCHOOL_INHERITANCE_SOURCE,
+        'school',
+        'School of Medicine',
+      );
+      await seedFieldFrom(entity, 'dept-faculty-roster', 'departments', ['Genetics']);
+      const seeded = (await ResearchEntity.findById(entity._id).lean()) as Record<string, any>;
+      await moveLead(researcher._id, 'Chemistry');
+
+      const result = await inheritSchoolFromLeadPi(String(entity._id));
+
+      expect(result).toMatchObject({
+        inherited: true,
+        school: 'Faculty of Arts and Sciences',
+        refreshed: ['school'],
+      });
+      const row = (await ResearchEntity.findById(entity._id).lean()) as Record<string, any>;
+      expect(row.school).toBe('Faculty of Arts and Sciences');
+      expect(row.departments).toEqual(['Genetics']);
+      expect(row.fieldProvenance?.departments).toEqual(seeded.fieldProvenance?.departments);
+      expect(row.fieldProvenance?.school?.sourceName).toBe(LEAD_PI_SCHOOL_INHERITANCE_SOURCE);
+      expect(row.manuallyLockedFields ?? []).toEqual([]);
+      const liveDepartments = await Observation.find({
+        field: 'departments',
+        superseded: false,
+      }).lean<Array<{ sourceName?: string }>>();
+      expect(liveDepartments.map((observation) => observation.sourceName)).toEqual([
+        'dept-faculty-roster',
+      ]);
     });
 
     it('still skips a multi-PI kind whose stored values cite the lane', async () => {
