@@ -46,6 +46,7 @@ import {
   type FetchedDescriptionPage,
 } from './labMicrositeDescriptionLLMExtractor';
 import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
+import { isTransientFetchFailure } from '../utils/transientFetchFailure';
 
 const MAX_PAGES_PER_ROW = 6;
 const MAX_RESEARCH_SUBPAGES = 2;
@@ -289,6 +290,7 @@ interface LaneCounts {
   rowsWithText: number;
   rowsWithoutText: number;
   noReadablePage: number;
+  keptAfterTransientFailure: number;
   contentUnchanged: number;
   charsStored: number;
 }
@@ -321,7 +323,12 @@ export class ResearchPageTextScraper implements IScraper {
     this.citerCountsLoader = deps.citerCountsLoader || loadConnectedEvidenceUrlCiterCounts;
   }
 
-  private async tryFetch(url: string, row: CandidateDescriptionLab, ctx: ScraperContext) {
+  private async tryFetch(
+    url: string,
+    row: CandidateDescriptionLab,
+    ctx: ScraperContext,
+    transientFailures: string[],
+  ) {
     try {
       const page = await this.fetchPage(url);
       if (!page?.html) return null;
@@ -333,6 +340,7 @@ export class ResearchPageTextScraper implements IScraper {
       }
       return personProfileSourceMatchesEntity(page.url, row) ? page : null;
     } catch (error) {
+      if (isTransientFetchFailure(error)) transientFailures.push(url);
       ctx.log(`[${row.slug || 'candidate'}] research page skipped: ${sanitizeLogValue(error)}`);
       return null;
     }
@@ -349,6 +357,7 @@ export class ResearchPageTextScraper implements IScraper {
     row: CandidateDescriptionLab,
     ctx: ScraperContext,
     citerCounts: ReadonlyMap<string, number> = new Map(),
+    transientFailures: string[] = [],
   ): Promise<FetchedDescriptionPage[]> {
     const cited = uniqueStrings([
       row.websiteUrl,
@@ -363,7 +372,7 @@ export class ResearchPageTextScraper implements IScraper {
     const read = async (url: string): Promise<FetchedDescriptionPage | null> => {
       if (pages.length >= MAX_PAGES_PER_ROW) return null;
       if (pages.some((page) => page.url === url)) return null;
-      const page = await this.tryFetch(url, row, ctx);
+      const page = await this.tryFetch(url, row, ctx, transientFailures);
       if (!page || pages.some((fetched) => fetched.url === page.url)) return null;
       pages.push(page);
       return page;
@@ -394,17 +403,28 @@ export class ResearchPageTextScraper implements IScraper {
     counts: LaneCounts,
     citerCounts: ReadonlyMap<string, number>,
   ): Promise<ObservationInput[]> {
-    const fetched = await this.readCitedResearchPages(row, ctx, citerCounts);
-    if (fetched.length === 0) {
-      counts.noReadablePage += 1;
-      return [];
-    }
-    const value = researchPageTextValue(fetched);
+    const transientFailures: string[] = [];
+    const fetched = await this.readCitedResearchPages(row, ctx, citerCounts, transientFailures);
     const entityRef: ContentHashEntityRef = {
       entityType: 'researchEntity',
       entityId: serializedDocumentId(row._id) || undefined,
       entityKey: row.slug,
     };
+    if (transientFailures.length > 0) {
+      const storedHash = await this.storedHashLoader(this.name, entityRef);
+      if (storedHash !== undefined) {
+        counts.keptAfterTransientFailure += 1;
+        ctx.log(
+          `[${row.slug || 'candidate'}] research page text kept: ${transientFailures.length} cited page(s) failed transiently, so this run leaves the stored reading for the next one`,
+        );
+        return [];
+      }
+    }
+    if (fetched.length === 0) {
+      counts.noReadablePage += 1;
+      return [];
+    }
+    const value = researchPageTextValue(fetched);
     const contentHash = researchPageTextContentHash(value);
     const storedHash = await this.storedHashLoader(this.name, entityRef);
     if (contentUnchanged(storedHash, contentHash, false)) {
@@ -443,6 +463,7 @@ export class ResearchPageTextScraper implements IScraper {
       rowsWithText: 0,
       rowsWithoutText: 0,
       noReadablePage: 0,
+      keptAfterTransientFailure: 0,
       contentUnchanged: 0,
       charsStored: 0,
     };
@@ -465,6 +486,7 @@ export class ResearchPageTextScraper implements IScraper {
       notes:
         `Research page text for ${counts.rowsWithText} of ${rows.length} rows: ` +
         `${counts.rowsWithoutText} read with no research text, ${counts.noReadablePage} with no readable page, ` +
+        `${counts.keptAfterTransientFailure} kept after a transient fetch failure, ` +
         `${counts.contentUnchanged} content unchanged, ${counts.charsStored} characters stored.`,
     };
   }
