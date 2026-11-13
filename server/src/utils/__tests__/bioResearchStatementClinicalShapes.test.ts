@@ -21,7 +21,16 @@ describe('clinical-service biography shapes the roster-bio rule refuses (#6151)'
     'His clinical interests include glaucoma, and he builds retinal imaging tools that flag early nerve loss.',
     'Her special interests include how sleep loss changes memory consolidation in shift workers.',
     'She studies how managing patients with diabetes in group visits changes long-term outcomes.',
+    'She develops new strategies for managing patients with sepsis.',
   ])('keeps a research sentence that also names patients or care: %s', (sentence) => {
+    expect(isClinicalOnlyBiographySentence(sentence)).toBe(false);
+  });
+
+  it.each([
+    'Her app lets primary care physicians remotely manage their patients with heart failure.',
+    'The platform will enable clinicians to better support their patients after discharge.',
+    'His tool helps nurses quickly treat their patients with chest pain.',
+  ])('keeps a sentence about another care-giver and their patients: %s', (sentence) => {
     expect(isClinicalOnlyBiographySentence(sentence)).toBe(false);
   });
 
