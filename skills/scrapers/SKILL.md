@@ -42,6 +42,7 @@ They are separate lists on purpose, and the separation is load-bearing rather th
 
 Ask all three, through `ownsNoResearchEntityByTitle` unless you have a reason not to.
 A lane that asks a subset re-mints exactly the rows `research-entity:retire-staff-minted-entities` archives, and that is what #3410 was: the YSM mint asked two of the three, the department-roster and YSE mints asked none.
+A screen stops enrichment, not the person's own title: when `ysm-faculty-directory` screens a profile out (a non-research title, a subordinate rank, or no research section) and has titled that person before, it re-emits the title alone, so the first-hand read stays fresh for #5578's title resolution instead of freezing at the run before the screen applied; a person the lane never titled gains nothing (#5801, `screenedProfileTitleObservations`).
 
 Three call sites, two of which do not use the helper and say why:
 
