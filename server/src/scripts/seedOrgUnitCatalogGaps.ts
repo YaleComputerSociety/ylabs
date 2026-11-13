@@ -94,6 +94,15 @@ export async function runOrgUnitCatalogGapSeed(options: { dryRun: boolean }): Pr
         );
         continue;
       }
+      if (row.action === 'reactivate-org-unit' || row.action === 'retire-department') {
+        const live = row.action === 'reactivate-org-unit';
+        await OrgUnit.updateOne(
+          { _id: row.targetId },
+          { $set: { archived: !live, status: live ? 'ACTIVE' : 'INACTIVE' } },
+          { runValidators: true },
+        );
+        continue;
+      }
       if (row.action === 'rename-department') {
         await OrgUnit.updateOne(
           { _id: row.targetId },
