@@ -1682,16 +1682,10 @@ describe('leadPiSchoolInheritanceGate (#2158 PI->school, #2802 PI->department)',
     expect(leadPiSchoolInheritanceGate({ school: '', kind: 'program' })).toBe('multi-pi-kind');
   });
 
-  it('fails closed for a core facility, which legitimately has no school (#2195, #6033)', () => {
+  it('lets a core facility inherit from its single lead, because that school has a source (#2195, #6036)', () => {
     expect(leadPiSchoolInheritanceGate({ school: '', kind: 'core_facility' })).toBe(
-      'core-facility',
+      'school-and-department',
     );
-    expect(
-      leadPiSchoolInheritanceGate({ school: '', kind: 'lab', entityType: 'CORE_FACILITY' }),
-    ).toBe('core-facility');
-    expect(
-      leadPiSchoolInheritanceGate({ school: 'School of Medicine', kind: 'core_facility' }),
-    ).toBe('core-facility');
   });
 });
 

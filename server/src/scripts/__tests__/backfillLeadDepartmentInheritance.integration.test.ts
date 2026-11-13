@@ -110,7 +110,7 @@ describe('runLeadDepartmentBackfill as the lead-department-inheritance sweep sta
     observations: await Observation.countDocuments({}),
   });
 
-  it('leaves multi-PI kinds and core facilities school-less while a single-lead lab inherits', async () => {
+  it('leaves multi-PI kinds school-less while a single-lead lab and a single-lead core facility inherit', async () => {
     const { entity: lab } = await seedRowLedBySingleLead(
       'synthetic-lab',
       { kind: 'lab' },
@@ -120,6 +120,8 @@ describe('runLeadDepartmentBackfill as the lead-department-inheritance sweep sta
       seedRowLedBySingleLead('synthetic-center', { kind: 'center' }, 'Genetics'),
       seedRowLedBySingleLead('synthetic-institute', { kind: 'institute' }, 'Genetics'),
       seedRowLedBySingleLead('synthetic-program', { kind: 'program' }, 'Genetics'),
+    ]);
+    const cores = await Promise.all([
       seedRowLedBySingleLead('synthetic-core', { kind: 'core_facility' }, 'Genetics'),
       seedRowLedBySingleLead(
         'synthetic-core-by-type',
@@ -131,14 +133,20 @@ describe('runLeadDepartmentBackfill as the lead-department-inheritance sweep sta
     const result = await runLeadDepartmentBackfill({ dryRun: false });
 
     expect(result.mode).toBe('apply');
-    expect(result.summary.inherited).toBe(1);
-    expect(result.summary.skipped).toEqual({ 'multi-pi-kind': 3, 'core-facility': 2 });
+    expect(result.summary.inherited).toBe(3);
+    expect(result.summary.skipped).toEqual({ 'multi-pi-kind': 3 });
     expect(await orgUnitFieldsOf(lab._id)).toEqual({
       school: 'School of Medicine',
       departments: ['Genetics'],
     });
     for (const { entity } of excluded) {
       expect(await orgUnitFieldsOf(entity._id)).toEqual({ school: '', departments: [] });
+    }
+    for (const { entity } of cores) {
+      expect(await orgUnitFieldsOf(entity._id)).toEqual({
+        school: 'School of Medicine',
+        departments: ['Genetics'],
+      });
     }
   });
 
