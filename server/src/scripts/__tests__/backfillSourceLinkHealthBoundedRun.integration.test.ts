@@ -12,6 +12,14 @@ const bigUrl = (i: number) => `https://${BIG}/people/${i}/`;
 const SMALL_URL = `https://${SMALL}/lab/`;
 const BIG_COUNT = 40;
 
+const hostIs = (url: unknown, host: string): boolean => {
+  try {
+    return new URL(String(url)).hostname === host;
+  } catch {
+    return false;
+  }
+};
+
 const storedFor = async (slug: string) =>
   (((await ResearchEntity.findOne({ slug }).lean()) as { sourceLinkHealth?: any[] } | null)
     ?.sourceLinkHealth ?? []) as Array<Record<string, any>>;
@@ -64,7 +72,7 @@ describe('link-health bounded runs (#6182)', () => {
       },
     };
   };
-  const hostCount = (seen: string[], host: string) => seen.filter((u) => u.includes(host)).length;
+  const hostCount = (seen: string[], host: string) => seen.filter((u) => hostIs(u, host)).length;
 
   it('caps a sampled dry run per host and projects its transitions to every due link', async () => {
     const { seen, checkLink } = recorder(() => ({
@@ -214,7 +222,7 @@ describe('link-health bounded runs (#6182)', () => {
       stopOnStatuses: [403],
       hostConcurrency: 1,
       checkLink: async (url: string) =>
-        url.includes('cited.example.edu')
+        hostIs(url, 'cited.example.edu')
           ? { healthStatus: 'HEALTHY', httpStatusCode: 200 }
           : { healthStatus: 'UNKNOWN', httpStatusCode: 403 },
       paceDelayMs: 0,
@@ -223,7 +231,7 @@ describe('link-health bounded runs (#6182)', () => {
     const rows = await Promise.all(
       Array.from({ length: BIG_COUNT }, (_v, i) => storedFor(`fixture-big-${i}`)),
     );
-    const bigEntries = rows.flat().filter((entry) => String(entry.url).includes(BIG));
+    const bigEntries = rows.flat().filter((entry) => hostIs(entry.url, BIG));
     expect(bigEntries).toHaveLength(BIG_COUNT);
     const untouched = bigEntries.filter(
       (entry) => new Date(entry.checkedAt).getTime() === OLD.getTime() && !entry.lastAttemptedAt,
