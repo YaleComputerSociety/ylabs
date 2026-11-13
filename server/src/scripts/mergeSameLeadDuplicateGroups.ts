@@ -42,6 +42,7 @@ import {
   summarizeSameLeadMergeHolds,
   type SameLeadMergeMember,
 } from './mergeSameLeadDuplicateGroupsCore';
+import { isPersonScopedResearchEntityShape } from '../models/storedVocabularies';
 import { planUrlIdentityLaneVerdicts } from './dedupeResearchEntitiesByPi';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -67,6 +68,11 @@ const fundingEvidenceKeys = (row: Record<string, any>): Set<string> => {
   return keys;
 };
 const text = (value: unknown): string => (typeof value === 'string' ? value.trim() : '');
+
+const isPersonsOwnResearchRow = (row: Record<string, any>): boolean =>
+  isPersonScopedResearchEntityShape(row) &&
+  text(row.entityType).toUpperCase() !== 'LAB' &&
+  text(row.kind).toLowerCase() !== 'lab';
 
 async function main(): Promise<void> {
   const argv = process.argv.slice(2);
@@ -179,6 +185,7 @@ async function main(): Promise<void> {
         isShell: isShellSlug(String(member.slug)),
         leadPersonIds: [...(leadsByEntity.get(String(member._id)) ?? [])],
         memberPersonIds: [...(membersByEntity.get(String(member._id)) ?? [])],
+        isPersonsOwnRow: isPersonsOwnResearchRow(member),
       }));
       return {
         url: String((group as any).url ?? ''),

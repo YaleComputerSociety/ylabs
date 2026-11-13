@@ -50,6 +50,7 @@ export interface SameLeadMergeMember {
   isShell: boolean;
   leadPersonIds?: readonly string[];
   memberPersonIds?: readonly string[];
+  isPersonsOwnRow?: boolean;
 }
 
 export interface SameLeadMergePlan {
@@ -109,6 +110,9 @@ export function subjectTwinAnchor(
   members: readonly SameLeadMergeMember[],
 ): SameLeadMergeMember | null {
   if (members.length !== 2) return null;
+  // A person's own row normalizes to its lab's name, and an archived or detached lead edge makes
+  // it read as leadless, so that pair is the owner's per-row judgement, never this lane (#6206).
+  if (members.some((member) => member.isPersonsOwnRow)) return null;
   const names = members.map((member) => normalizedMergeName(member.name));
   if (!names[0] || names[0] !== names[1]) return null;
   const anchors = members.filter(

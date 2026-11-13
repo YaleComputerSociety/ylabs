@@ -82,6 +82,19 @@ describe('one lab stored twice on its own site (#6206)', () => {
     ]);
   });
 
+  it("holds a lead's own person row beside their lab even when it reads as leadless", () => {
+    const personRow = member({
+      id: 'b',
+      slug: 'faculty-research-area-avery',
+      name: 'Avery Faculty Research',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      isPersonsOwnRow: true,
+    });
+
+    expect(subjectTwinAnchor([anchor, personRow])).toBeNull();
+    expect(planSameLeadCorroboratedMerges([group([anchor, personRow])]).merges).toEqual([]);
+  });
+
   it('leaves a twin the conflation guard fences to that guard', () => {
     const outcome = planSameLeadCorroboratedMerges([
       group([anchor, member({ id: 'b' })], { quarantinedByConflationGuard: true }),
