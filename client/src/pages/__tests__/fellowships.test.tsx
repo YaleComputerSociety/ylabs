@@ -585,6 +585,64 @@ describe('Programs page', () => {
     }
   });
 
+  it('counts only the programs the active quick filter keeps in the status tiles', async () => {
+    const firstYear = ['First-Year Student'];
+    const fellowships = [
+      baseFellowship({
+        id: 'closing-first-year',
+        title: 'Closing First-Year Program',
+        isAcceptingApplications: true,
+        deadline: isoDaysFromNow(10),
+        yearOfStudy: firstYear,
+      }),
+      baseFellowship({
+        id: 'closing-junior',
+        title: 'Closing Junior Program',
+        isAcceptingApplications: true,
+        deadline: isoDaysFromNow(12),
+      }),
+      baseFellowship({
+        id: 'open-first-year',
+        title: 'Open First-Year Program',
+        isAcceptingApplications: true,
+        deadline: isoDaysFromNow(60),
+        yearOfStudy: firstYear,
+      }),
+      baseFellowship({
+        id: 'open-junior-a',
+        title: 'Open Junior Program A',
+        isAcceptingApplications: true,
+        deadline: isoDaysFromNow(70),
+      }),
+      baseFellowship({
+        id: 'open-junior-b',
+        title: 'Open Junior Program B',
+        isAcceptingApplications: true,
+        deadline: isoDaysFromNow(80),
+      }),
+      baseFellowship({
+        id: 'next-cycle-junior',
+        title: 'Next Cycle Junior Program',
+        isAcceptingApplications: false,
+        deadline: isoDaysFromNow(-30),
+      }),
+    ];
+    const tileCount = (tile: string) =>
+      screen.getByText(tile, { selector: 'dt' }).parentElement?.querySelector('.yr-num')
+        ?.textContent;
+
+    renderPage(fellowships, { quickFilter: 'firstYear' }, ['/programs?quick=firstYear']);
+
+    await waitFor(() => {
+      expect(screen.getByText('Open First-Year Program')).toBeTruthy();
+    });
+
+    expect(screen.queryByText('Open Junior Program A')).toBeNull();
+    expect(
+      ['Due soon', 'Open now', 'Opening soon', 'Next cycle'].map((tile) => tileCount(tile)),
+    ).toEqual(['1', '1', '0', '0']);
+  });
+
   it('puts an open program above every closed record on first paint', async () => {
     const fellowships = [
       ...Array.from({ length: 40 }, (_, index) =>
