@@ -59,6 +59,11 @@ const REVIEWED_UNROUTED_READS: ReadonlyArray<{ fn: string; reason: string }> = [
       'Called only from `materializeUserIdentityToResearcher`, the `user` materializer, so the benchmark never makes this read: it replays `researchEntity` rows only. It reads superseded `primaryDepartment` readings on every key that names the researcher, keys other than the one being resolved and readings a live-only read source does not hold, so an entity-keyed source cannot answer it (#6049).',
   },
   {
+    fn: 'recordLegacyDirectoryNameHolderAsFillOnly',
+    reason:
+      "Called only from `materializeUserIdentityToResearcher`, the `user` materializer, so the benchmark never makes this read: it replays `researchEntity` rows only. It reads the live name sources of the key that currently holds the researcher's `displayName`, a key other than the one being resolved, so an entity-keyed source cannot answer it (#6035).",
+  },
+  {
     fn: 'otherPersonPrintsAddress',
     reason:
       'Called only from `rosterAliasEmailMintIdentity`, the address-keyed mint gate on the `user` materializer, so the benchmark never makes this read: it replays `researchEntity` rows only. It is a search by value for other `user` keys printing one address, whose purpose is to find people other than the one being minted, so an entity-keyed source cannot answer it.',
