@@ -34,6 +34,7 @@ describe('special-interests list of conditions or procedures (#6192)', () => {
     'Her special interests include eczema and medieval law.',
     'His particular interests include trauma and loss.',
     'Her particular interests include the collective trauma of forced migration.',
+    'His particular interests include the great depression.',
     'His particular interests include empathy and nostalgia.',
     'Her particular interests include apoptosis and symbiosis.',
     'Her particular interests include the Roma.',
@@ -47,6 +48,30 @@ describe('special-interests list of conditions or procedures (#6192)', () => {
   it('keeps an interests-include-managing list that names no condition', () => {
     keeps('His interests include managing urban forests and river basins.');
   });
+});
+
+describe('a condition item placed outside clinical care (#6192)', () => {
+  it.each([
+    'His special interests include cholera in Victorian London.',
+    'Her special interests include syphilis during the Renaissance.',
+    'Her particular interests include gout in Georgian England.',
+    'His special interests include arthritis in Bronze Age skeletons.',
+    'Her special interests include melanoma in zebrafish.',
+    'Her special interests include diabetes and hypertension across low-income countries.',
+    'His special interests include obesity among farmworkers.',
+    'His special interests include asthma across the life course.',
+    'Her special interests include obesity within immigrant families.',
+    'Her special interests include equity within cancer care.',
+    'His special interests include fractures in museum collections.',
+  ])('keeps a condition set in a historical, animal, population or life-course context: %s', keeps);
+
+  it.each([
+    'His special interests include cholera and syphilis.',
+    'Her special interests include arthritis of the hand and wrist.',
+    'His special interests include occupational disorders of the upper extremity.',
+    'Her special interests include fractures in older adults.',
+    'His special interests include sepsis in children.',
+  ])('refuses a condition with no tail, a body-site tail or a patient-group tail: %s', refuses);
 });
 
 describe('special interest in the management of conditions (#6192)', () => {

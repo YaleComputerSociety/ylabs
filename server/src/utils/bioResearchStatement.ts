@@ -113,7 +113,8 @@ const CONDITION_HEAD_WORDS = new Set(
     'urology nephrology hematology endocrinology ophthalmology otolaryngology gynecology obstetrics',
     'orthopedics orthopaedics pediatrics geriatrics surgery surgeries arthroplasty arthroscopy',
     'endoscopy colonoscopy laparoscopy rhinoplasty ablation resection transplantation transplant',
-    'transplants implants implant injections fillers botox liposuction lift lifts',
+    'transplants implants implant injections fillers botox liposuction lift lifts cholera syphilis',
+    'tuberculosis malaria',
   ]
     .join(' ')
     .split(' '),
@@ -147,8 +148,20 @@ const CARE_ACTIVITY_HEADS = new Set(
 const PATIENT_GROUP_HEAD =
   /^(?:patients|children|adults|adolescents|athletes|women|men|individuals|people|infants)$/;
 
-const ANATOMY_WORD =
-  /\b(?:hand|hands|wrist|finger|elbow|shoulder|knee|hip|ankle|foot|feet|spine|spinal|back|neck|nerve|nerves|skin|hair|nail|nails|face|facial|breast|abdominal|wall|plexus|tendon|ligament|joint|joints|bone|bones|cartilage|eye|eyes|ear|ears|nose|nasal|sinus|throat|voice|vocal|heart|cardiac|lung|lungs|liver|kidney|bladder|bowel|colon|pelvic|pelvis|uterine|prostate|thyroid|brain|memory|hearing|vision|weight)\b/i;
+const ANATOMY_WORDS =
+  '(?:hand|hands|wrist|wrists|finger|fingers|elbow|elbows|shoulder|shoulders|knee|knees|hip|hips|ankle|ankles|foot|feet|spine|spinal|back|neck|nerve|nerves|skin|hair|nail|nails|face|facial|breast|abdominal|wall|plexus|tendon|tendons|ligament|ligaments|joint|joints|bone|bones|cartilage|eye|eyes|ear|ears|nose|nasal|sinus|sinuses|throat|voice|vocal|heart|cardiac|lung|lungs|liver|kidney|kidneys|bladder|bowel|colon|pelvic|pelvis|uterine|prostate|thyroid|brain|memory|hearing|vision|weight|extremity|extremities|limb|limbs)';
+
+const ANATOMY_WORD = new RegExp(`\\b${ANATOMY_WORDS}\\b`, 'i');
+
+const BODY_SITE_TAIL = new RegExp(
+  `^\\s+of\\s+(?:the\\s+)?(?:(?:upper|lower|left|right|inner|outer|middle|small|large)\\s+)?${ANATOMY_WORDS}(?:\\s+and\\s+(?:the\\s+)?${ANATOMY_WORDS})*$`,
+  'i',
+);
+
+const BARE_BODY_SITE = new RegExp(`^(?:the\\s+)?${ANATOMY_WORDS}$`, 'i');
+
+const PATIENT_GROUP_TAIL =
+  /^\s+in\s+(?:(?:older|elderly|young|younger|adult|pediatric|paediatric|school-age|teenage|elite|competitive|female|male|high-school|college)\s+){0,2}(?:patients|children|adults|adolescents|teens|teenagers|athletes|women|men|infants|newborns|neonates|veterans|runners)$/i;
 
 const NAMED_CONDITION_PHRASE =
   /\b(?:trigger\s+finger|tennis\s+elbow|golfer['’]?s\s+elbow|frozen\s+shoulder|carpal\s+tunnel|club\s*foot|cleft\s+(?:lip|palate)|hair\s+loss|memory\s+loss|hearing\s+loss|vision\s+loss|sleep\s+apnea)$/i;
@@ -172,7 +185,7 @@ const LEAD_THAT_MAKES_THE_BIOS_OWN_PERSON_THE_SUBJECT =
   /(?:^|[.;:!?]\s+|\b(?:he|she|they|i|we|focus(?:es|ed)?\s+on|interests?\s+(?:include|includes|are|is)|enjoys?|loves?|dedicated\s+to|committed\s+to|devoted\s+to|passionate\s+about|involves|includes)\s+)(?:(?:also|still|especially|particularly|primarily|\w+ly)\s+)?$/i;
 
 const ITEM_HEAD_BOUNDARY =
-  /\s(?:of|in|with|for|among|after|during|through|across|at|on|from|to|including|such|related|involving|following|and\s+its|via|using|by)\b/i;
+  /\s(?:of|in|with|for|among|after|during|through|across|at|on|from|to|within|including|such|related|involving|following|and\s+its|via|using|by)\b/i;
 
 const LEADING_DETERMINER = /^(?:the|a|an|all|various|complex|common|other|both|including)\s+/i;
 
@@ -193,6 +206,7 @@ const CARE_ACTIVITY_OF_OBJECT = /^\s+of\s+(.+)$/i;
 const MAX_NESTED_ITEM_DEPTH = 2;
 
 interface ListItemHead {
+  headPhrase: string;
   head: string;
   writtenHead: string;
   modifiers: string[];
@@ -211,6 +225,7 @@ function listItemHead(item: string): ListItemHead {
     .replace(/[’']s$/, '')
     .replace(/[^\p{L}-]/gu, '');
   return {
+    headPhrase: headPhrase.trim(),
     head: writtenHead.toLowerCase().split('-').pop() || '',
     writtenHead,
     modifiers: words.slice(0, -1).filter((word) => !LEADING_DETERMINER.test(`${word} `)),
@@ -235,34 +250,44 @@ function listItems(list: string): string[] {
     .filter((item) => item && !LIST_FILLER_ITEM.test(item));
 }
 
+function placesTheItemInClinicalCare(afterHead: string): boolean {
+  return !afterHead.trim() || BODY_SITE_TAIL.test(afterHead) || PATIENT_GROUP_TAIL.test(afterHead);
+}
+
+function rejoinBodySiteContinuations(items: string[]): string[] {
+  return items.reduce<string[]>((joined, item) => {
+    const previous = joined[joined.length - 1];
+    if (
+      previous &&
+      BARE_BODY_SITE.test(item) &&
+      BODY_SITE_TAIL.test(listItemHead(previous).afterHead)
+    ) {
+      joined[joined.length - 1] = `${previous} and ${item}`;
+    } else {
+      joined.push(item);
+    }
+    return joined;
+  }, []);
+}
+
 function everyItemIsACondition(list: string, depth: number): boolean {
-  const items = listItems(list);
+  const items = rejoinBodySiteContinuations(listItems(list));
   return items.length > 0 && items.every((item) => isConditionOrProcedureItem(item, depth));
 }
 
-function isConditionOrProcedureItem(item: string, depth = 0): boolean {
-  const trimmed = item.trim();
-  if (NAMED_CONDITION_PHRASE.test(trimmed.split(ITEM_HEAD_BOUNDARY)[0].trim())) return true;
-  const { head, writtenHead, modifiers, startsWithThe, afterHead } = listItemHead(item);
+function headNamesAConditionOrProcedure({
+  headPhrase,
+  head,
+  writtenHead,
+  modifiers,
+  startsWithThe,
+}: ListItemHead): boolean {
+  if (NAMED_CONDITION_PHRASE.test(headPhrase)) return true;
   if (!head) return false;
-  if (A_HISTORY_OF.test(trimmed)) {
-    return isConditionOrProcedureItem(trimmed.replace(A_HISTORY_OF, ''), depth + 1);
-  }
   if (HEADS_THAT_NAME_A_CONDITION_ONLY_WITH_A_MODIFIER.has(head)) {
     return !startsWithThe && modifiers.length > 0 && writtenHead === writtenHead.toLowerCase();
   }
-  if (PATIENT_GROUP_HEAD.test(head)) {
-    const withObject = PATIENT_GROUP_WITH_OBJECT.exec(afterHead);
-    return Boolean(
-      withObject &&
-      depth < MAX_NESTED_ITEM_DEPTH &&
-      everyItemIsACondition(withObject[1], depth + 1),
-    );
-  }
   if (CARE_ACTIVITY_HEADS.has(head)) {
-    const ofObject = CARE_ACTIVITY_OF_OBJECT.exec(afterHead);
-    if (ofObject && depth < MAX_NESTED_ITEM_DEPTH)
-      return everyItemIsACondition(ofObject[1], depth + 1);
     return modifiers.some(
       (modifier) =>
         isConditionWord(modifier.toLowerCase().replace(/[^\p{L}]/gu, '')) ||
@@ -270,6 +295,30 @@ function isConditionOrProcedureItem(item: string, depth = 0): boolean {
     );
   }
   return isConditionWord(head) && !isAcronym(writtenHead);
+}
+
+function isConditionOrProcedureItem(item: string, depth = 0): boolean {
+  const trimmed = item.trim();
+  if (A_HISTORY_OF.test(trimmed)) {
+    return isConditionOrProcedureItem(trimmed.replace(A_HISTORY_OF, ''), depth + 1);
+  }
+  const itemHead = listItemHead(trimmed);
+  if (PATIENT_GROUP_HEAD.test(itemHead.head)) {
+    const withObject = PATIENT_GROUP_WITH_OBJECT.exec(itemHead.afterHead);
+    return Boolean(
+      withObject &&
+      depth < MAX_NESTED_ITEM_DEPTH &&
+      everyItemIsACondition(withObject[1], depth + 1),
+    );
+  }
+  if (CARE_ACTIVITY_HEADS.has(itemHead.head)) {
+    const ofObject = CARE_ACTIVITY_OF_OBJECT.exec(itemHead.afterHead);
+    if (ofObject && depth < MAX_NESTED_ITEM_DEPTH)
+      return everyItemIsACondition(ofObject[1], depth + 1);
+  }
+  return (
+    placesTheItemInClinicalCare(itemHead.afterHead) && headNamesAConditionOrProcedure(itemHead)
+  );
 }
 
 function isListOfConditionsOrProcedures(list: string): boolean {
