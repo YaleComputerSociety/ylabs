@@ -24,6 +24,22 @@ describe('restatesAnOwnOrgUnitLabel', () => {
     ).toBe(true);
   });
 
+  it('keeps a topic named by a program appointment, in either word order (#5957)', () => {
+    expect(restatesAnOwnOrgUnitLabel('scleroderma', ['Scleroderma Program'])).toBe(false);
+    expect(restatesAnOwnOrgUnitLabel('liver cancer', ['Liver Cancer Programs'])).toBe(false);
+    expect(restatesAnOwnOrgUnitLabel('neuroinflammation', ['Program for Neuroinflammation'])).toBe(
+      false,
+    );
+    expect(restatesAnOwnOrgUnitLabel('sarcoma', ['Yale Program in Sarcoma'])).toBe(false);
+  });
+
+  it('still drops a topic that also restates a department beside a program', () => {
+    expect(
+      restatesAnOwnOrgUnitLabel('Cardiology', ['Cardiology Program', 'Section of Cardiology']),
+    ).toBe(true);
+    expect(restatesAnOwnOrgUnitLabel('Program Evaluation', ['Program Evaluation'])).toBe(true);
+  });
+
   it('keeps a subfield that only contains the department word', () => {
     expect(restatesAnOwnOrgUnitLabel('Molecular Biology', ['Biology'])).toBe(false);
     expect(restatesAnOwnOrgUnitLabel('Biology', ['Molecular Biology'])).toBe(false);

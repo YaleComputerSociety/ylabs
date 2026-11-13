@@ -39,9 +39,22 @@ function sameUnitWords(left: readonly string[], right: readonly string[]): boole
  * Whole-topic equality only (#5957 decision): a topic that merely shares a word with the
  * label, such as a subfield named after the department, is a real topic and is kept.
  */
+const PROGRAM_APPOINTMENT_LABEL =
+  /(?:^\s*(?:yale\s+)?(?:program|programme)s?\s+(?:in|of|for|on)\s)|(?:\s(?:program|programme)s?\s*$)/i;
+
+/**
+ * A "<X> Program" or "Program for <X>" appointment is named for what it studies, mostly a
+ * disease, so a topic equal to it is real topic signal rather than a restated department.
+ */
+export const namesAProgramAppointment = (label: string): boolean =>
+  PROGRAM_APPOINTMENT_LABEL.test(label);
+
 export function restatesAnOwnOrgUnitLabel(topic: string, ownLabels: readonly string[]): boolean {
   const topicWords = orgUnitLabelWords(topic);
-  return ownLabels.some((label) => sameUnitWords(topicWords, orgUnitLabelWords(label)));
+  return ownLabels.some(
+    (label) =>
+      !namesAProgramAppointment(label) && sameUnitWords(topicWords, orgUnitLabelWords(label)),
+  );
 }
 
 interface LabelObservationLike {

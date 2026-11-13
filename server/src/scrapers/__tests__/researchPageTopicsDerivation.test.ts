@@ -95,7 +95,7 @@ describe('researchPageTopicsStateFor', () => {
     const inputHash = researchTopicsDerivationInputHash(pages);
     const lookup = cacheOf([{ inputHash, ...extraction }]);
     const ownLabels = [
-      { field: 'departments', value: ['Marine Heatwaves Program'], superseded: false },
+      { field: 'departments', value: ['Department of Marine Heatwaves'], superseded: false },
       { field: 'school', value: 'School of the Environment', superseded: false },
     ];
     const state = await researchPageTopicsStateFor(
@@ -112,6 +112,19 @@ describe('researchPageTopicsStateFor', () => {
       'Marine heatwaves',
       'Marine ecology',
     ]);
+  });
+
+  it('keeps a topic named by an own "<X> Program" appointment (#5957)', async () => {
+    const inputHash = researchTopicsDerivationInputHash(pages);
+    const lookup = cacheOf([{ inputHash, ...extraction }]);
+    const state = await researchPageTopicsStateFor(
+      [
+        pageTextObservation(pages),
+        { field: 'departments', value: ['Marine Heatwaves Program'], superseded: false },
+      ],
+      lookup,
+    );
+    expect(state.candidate?.value).toEqual(['Kelp forests', 'Marine heatwaves', 'Marine ecology']);
   });
 
   it('ignores a reading of text the row no longer carries', async () => {

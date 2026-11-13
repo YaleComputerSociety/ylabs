@@ -10,7 +10,7 @@ export const PAGE_QUOTED_RESEARCH_TOPICS_SOURCE = RESEARCH_PAGE_TOPICS_DERIVED_S
  * Recorded on a derived list's provenance and kept out of the cache key. The filters below
  * re-judge the cached reading on every resolve, so a filter change re-derives at no model cost.
  */
-export const PAGE_QUOTED_TOPICS_FILTER_CONTRACT = 'page-quoted-topics-v2';
+export const PAGE_QUOTED_TOPICS_FILTER_CONTRACT = 'page-quoted-topics-v3';
 
 export const MAX_PAGE_QUOTED_TOPICS = 8;
 const MIN_QUOTE_WORDS = 2;
