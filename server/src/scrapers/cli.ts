@@ -22,6 +22,10 @@
  *   --force-llm      Re-run paid LLM extraction even when source content is unchanged
  *   --auto-materialize   After successful run, immediately materialize observations
  */
+import {
+  splitHorizonRefusalReport,
+  splitHorizonRefusalWarning,
+} from './utils/splitHorizonRefusals';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -423,9 +427,13 @@ Concurrency:
           observationCount: report.observations.total,
         });
         if (deferredMaterialization) console.warn(`\nWARNING: ${deferredMaterialization}`);
+        const addressRefusals = await splitHorizonRefusalReport();
+        const splitHorizonWarning = splitHorizonRefusalWarning(addressRefusals);
+        if (splitHorizonWarning) console.warn(`\nWARNING: ${splitHorizonWarning}`);
+        const reportWithRefusals = { ...report, addressRefusals };
         const explainedReport = explainedObservations
           ? {
-              ...report,
+              ...reportWithRefusals,
               dryRunPreview: {
                 ...(report.dryRunPreview ?? {}),
                 observations: explainedObservations,
@@ -433,7 +441,7 @@ Concurrency:
                 explainTruncated: explainTruncated === true,
               },
             }
-          : report;
+          : reportWithRefusals;
         const output = await writeOptionalJsonOutput({
           outputPath: flags.output,
           payload: buildScraperCliOutputPayload(explainedReport, {
