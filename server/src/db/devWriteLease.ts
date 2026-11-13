@@ -492,6 +492,7 @@ interface HeldLeaseState {
 const heldLeases = new Map<string, HeldLeaseState>();
 const pendingIdleReleases = new Map<string, Promise<void>>();
 let mintedOwner: { db: Db; ownerId: string } | undefined;
+let runOwnerId: string | undefined;
 let removeStopLeaseRelease: (() => void) | undefined;
 let heartbeatTimer: NodeJS.Timeout | undefined;
 let tickInFlight: Promise<void> | undefined;
@@ -883,6 +884,7 @@ export async function releaseHeldDevWriteLeases(): Promise<void> {
   await Promise.allSettled([...pendingIdleReleases.values()]);
   const owner = mintedOwner;
   mintedOwner = undefined;
+  runOwnerId = undefined;
   await Promise.all([
     ...leases.map((lease) => lease.release().catch(() => undefined)),
     owner
@@ -898,9 +900,13 @@ async function holdLease(
 ): Promise<HeldDevWriteLease> {
   const existing = heldLeases.get(name);
   if (existing) return existing.lease;
+  // Minted before the first await so concurrent first acquires share one owner, which the host-done
+  // and idle releases and the end-of-run cleanup all match on.
+  runOwnerId ??= `${hostname()}:${process.pid}:${randomUUID()}`;
+  const newOwnerId = runOwnerId;
   const lease = await acquireDevWriteLease(
     { name, command },
-    { db: connection.db, now: runtime.now },
+    { db: connection.db, now: runtime.now, newOwnerId: () => newOwnerId },
   );
   if (!lease.joined) {
     process.env[DEV_WRITE_LEASE_OWNER_ENV] ??= lease.ownerId;
@@ -1109,6 +1115,7 @@ export function resetDevWriteLeaseStateForTests() {
   heldLeases.clear();
   pendingIdleReleases.clear();
   mintedOwner = undefined;
+  runOwnerId = undefined;
   tickInFlight = undefined;
   stopped = false;
   stopCleanupEnded = undefined;

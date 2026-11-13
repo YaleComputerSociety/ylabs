@@ -48,12 +48,12 @@ const rowOn = (host: string, index: number): CandidateDescriptionLab => {
   };
 };
 
-const context = (): ScraperContext => ({
+const context = (sourceConcurrency = 1): ScraperContext => ({
   scrapeRunId: 'test-run',
   sourceId: 'test-source',
   sourceName: RESEARCH_PAGE_TEXT_SOURCE,
   sourceWeight: 0.85,
-  options: { dryRun: false, useCache: false, release: false, sourceConcurrency: 1 },
+  options: { dryRun: false, useCache: false, release: false, sourceConcurrency },
   emit: async () => undefined,
   log: () => undefined,
 });
@@ -134,6 +134,31 @@ describe('research-page-text host leases', () => {
         otherLaneAcquired: true,
       },
     ]);
+  });
+
+  it('hands back every host first taken by concurrent rows before the run ends', async () => {
+    const hosts = ['solo-one.example.edu', 'solo-two.example.edu', 'solo-three.example.edu'];
+    const lane = new ResearchPageTextScraper({
+      fetchPage: async (url: string) => {
+        await ensureDevHostLease(new URL(url).hostname);
+        return page(url);
+      },
+      rowFinder: async () => [
+        rowOn(hosts[0], 1),
+        rowOn(hosts[1], 2),
+        rowOn(hosts[2], 3),
+        rowOn(SECOND_HOST, 4),
+        rowOn(SECOND_HOST, 5),
+      ],
+      storedHashLoader: async () => undefined,
+      citerCountsLoader: async () => new Map(),
+    });
+
+    await lane.run(context(3));
+
+    for (const host of [...hosts, SECOND_HOST]) {
+      expect(await lease(host)).toMatchObject({ locked: false, releaseReason: 'host-done' });
+    }
   });
 
   it('leaves the stop and end-of-run cleanup to release every host still held', async () => {
