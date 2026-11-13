@@ -83,11 +83,16 @@ export const labSiteLeadMatchReasons = [
   'OFFICIAL_PROFILE_LINK',
   'NAMED_ON_PAGE',
   'SURNAME_IN_SITE_URL',
+  'NAMED_AS_ROW_LEAD',
   'NONE',
 ] as const;
 export type LabSiteLeadMatchReason = (typeof labSiteLeadMatchReasons)[number];
 
-export const labSiteLeadContradictionShapes = ['NAMESAKE', 'NAMED_AS_LEAD'] as const;
+export const labSiteLeadContradictionShapes = [
+  'NAMESAKE',
+  'NAMED_AS_LEAD',
+  'LISTED_IN_NON_LEAD_ROLE',
+] as const;
 export type LabSiteLeadContradictionShape = (typeof labSiteLeadContradictionShapes)[number];
 
 export const labSiteVerificationStates = [

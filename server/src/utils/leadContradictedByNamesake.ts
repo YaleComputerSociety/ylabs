@@ -14,9 +14,9 @@ export type ServedSiteLeadVerdict = 'CONFIRMED' | 'NAMESAKE';
 /**
  * The verdicts the row's own website gave its leads, keyed by person, read only when the
  * verified page is the page the row still serves. A verdict about a website the row no
- * longer serves says nothing about the row, and a lead contradicted by a person named
- * beside a lead-role phrase was measured mostly wrong (#3750), so only a confirmation and
- * a `NAMESAKE` contradiction are returned.
+ * longer serves says nothing about the row, and the gate reads no contradiction shape but
+ * `NAMESAKE` (#3750, #5962), so only a confirmation and a `NAMESAKE` contradiction are
+ * returned.
  */
 export function servedSiteLeadVerdicts(entity: {
   leadVerification?: unknown;
