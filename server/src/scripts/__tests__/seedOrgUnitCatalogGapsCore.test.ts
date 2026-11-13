@@ -346,6 +346,7 @@ describe('planOrgUnitCatalogGapSeed School of Medicine gaps', () => {
       'R&BI - Radiology & Biomedical Imaging',
       'NRSG - Neurosurgery',
       'SPHDPT Chronic Disease Epidemiology (CDE)',
+      'Otolaryngology\u2014Head & Neck Surgery',
     ]);
     expect(result.values).toEqual([
       'Surgical Oncology',
@@ -357,8 +358,31 @@ describe('planOrgUnitCatalogGapSeed School of Medicine gaps', () => {
       'Radiology & Biomedical Imaging',
       'Neurosurgery',
       'Chronic Disease Epidemiology',
+      'Otolaryngology',
     ]);
     expect(result.unmatched).toEqual([]);
+  });
+
+  it('adds the profile spelling to an Otolaryngology section the catalog already holds', () => {
+    const catalog: ExistingOrgUnitRow[] = [
+      ...medicineCatalog,
+      {
+        id: 'oto',
+        name: 'Otolaryngology',
+        slug: 'otolaryngology',
+        kind: 'SECTION',
+        aliases: ['Otolaryngology Surgery'],
+        parentOrgUnitId: 'surgery',
+      },
+    ];
+    const plan = planOrgUnitCatalogGapSeed(catalog, MEDICINE_GAPS);
+    expect(plan.blocked).toEqual([]);
+    expect(
+      plan.rows.find((row) => row.action === 'add-aliases' && row.targetId === 'oto'),
+    ).toMatchObject({ addedAliases: ['Otolaryngology - Head & Neck Surgery'] });
+    expect(
+      plan.rows.some((row) => row.action === 'create-department' && row.slug === 'otolaryngology'),
+    ).toBe(false);
   });
 });
 

@@ -96,6 +96,8 @@ const PEDIATRICS_SECTION_PAGES_SOURCE =
   'Yale School of Medicine Department of Pediatrics section pages https://medicine.yale.edu/pediatrics/sections/';
 const YSM_DIRECTORY_SECTION_SOURCE =
   'Yale School of Medicine faculty directory section spelling, which prefixes a Pediatrics section and leaves the Internal Medicine section of the same name bare';
+const YSM_OTOLARYNGOLOGY_APPOINTMENT_SOURCE =
+  'Yale School of Medicine faculty profile appointment spelling of the Surgery section, read on profiles whose same appointment list names Surgery and whose other lanes state Otolaryngology; the match key ignores the dash the profiles print (#6049 class)';
 const HR_DIRECTORY_SOURCE =
   'Yale HR/directory org string observed on researchers whose research home carries no department';
 const ISM_REACTIVATION_SOURCE =
@@ -383,8 +385,14 @@ export const ORG_UNIT_CATALOG_GAPS: readonly OrgUnitCatalogGap[] = [
     name: 'Otolaryngology',
     slug: 'otolaryngology',
     parentName: 'Surgery',
-    aliases: ['Otolaryngology Surgery'],
+    aliases: ['Otolaryngology Surgery', 'Otolaryngology - Head & Neck Surgery'],
     source: SURGERY_DIVISION_PAGES_SOURCE,
+  },
+  {
+    action: 'add-aliases',
+    targetName: 'Otolaryngology',
+    aliases: ['Otolaryngology - Head & Neck Surgery'],
+    source: YSM_OTOLARYNGOLOGY_APPOINTMENT_SOURCE,
   },
   {
     action: 'create-department',
@@ -828,10 +836,6 @@ export function planOrgUnitCatalogGapSeed(
         blocked.push({ gap: gap.targetName, reason: 'target org unit not found' });
         continue;
       }
-      if (pendingCreateIds.has(target.id)) {
-        blocked.push({ gap: gap.targetName, reason: pendingReason(target) });
-        continue;
-      }
       const currentAliases = target.aliases || [];
       const addedAliases = gap.aliases.filter(
         (alias) =>
@@ -840,6 +844,10 @@ export function planOrgUnitCatalogGapSeed(
       );
       if (addedAliases.length === 0) {
         satisfied.push(`${gap.targetName} aliases`);
+        continue;
+      }
+      if (pendingCreateIds.has(target.id)) {
+        blocked.push({ gap: gap.targetName, reason: pendingReason(target) });
         continue;
       }
       const aliases = [...currentAliases, ...addedAliases];
