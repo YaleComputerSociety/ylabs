@@ -647,6 +647,7 @@ import {
 } from './ysmLabDelistingReconciler';
 import { reconcileFieldRetractionsFromRun, type FieldRetractionOutcome } from './fieldRetraction';
 import {
+  entryIsRefused,
   refusedResolverObservations,
   valueIsRefused,
 } from '../utils/researchEntityFieldValueRefusals';
@@ -2719,6 +2720,7 @@ export function planStoredCitationReadmission(input: {
   entity: ResearchEntityHostOwnerIdentity;
   citationIdentity?: ResearchEntityIdentity | null;
   sourceLinkHealth?: unknown;
+  fieldValueRefusals?: unknown;
 }): string[] | null {
   const stored = Array.isArray(input.stored)
     ? input.stored.filter((url): url is string => typeof url === 'string' && Boolean(url.trim()))
@@ -2741,6 +2743,7 @@ export function planStoredCitationReadmission(input: {
       ) &&
       !planned.some((next) => isRetiredProfilePathForSamePerson(url, next)) &&
       !isKnownDeadSourceUrl(input.sourceLinkHealth, url) &&
+      !entryIsRefused(input.fieldValueRefusals, 'sourceUrls', url) &&
       !isDirectoryGraftCitation(url, input.entity) &&
       !(
         input.citationIdentity &&
@@ -13206,6 +13209,7 @@ export async function projectFromLog(
         Array.isArray(set.sourceUrls) ? (set.sourceUrls as unknown[]) : [],
       ),
       sourceLinkHealth: entityDoc?.sourceLinkHealth,
+      fieldValueRefusals: entityDoc?.fieldValueRefusals,
     });
     if (readmittedCitations) {
       set.sourceUrls = readmittedCitations;

@@ -83,7 +83,7 @@ export const FIELD_VALUE_REFUSALS_PATH = 'fieldValueRefusals';
  * each other. Anything else compares on trimmed, case-folded text, because a
  * refusal that missed on a trailing space would read as a clean row.
  */
-const URL_VALUED_FIELDS: ReadonlySet<string> = new Set(['websiteUrl', 'website']);
+const URL_VALUED_FIELDS: ReadonlySet<string> = new Set(['websiteUrl', 'website', 'sourceUrls']);
 
 // The person-record URL fields (#5641) keep the query, because a query names the page there:
 // every Google Scholar profile is `scholar.google.com/citations?user=<id>`.
@@ -328,10 +328,95 @@ export function refusedResolverObservations<T extends RefusableResolverObservati
   const refused: Array<{ field: string; rule: FieldValueRefusalRule }> = [];
   for (const observation of observations) {
     const rule = refusedValueRule(fieldValueRefusals, observation.field, observation.value);
-    if (rule) refused.push({ field: observation.field, rule });
-    else kept.push(observation);
+    if (rule) {
+      refused.push({ field: observation.field, rule });
+      continue;
+    }
+    const screened = withoutRefusedListEntries(fieldValueRefusals, observation);
+    refused.push(...screened.refused);
+    if (screened.kept) kept.push(screened.kept);
   }
   return { kept, refused };
+}
+
+export const ENTRY_REFUSABLE_LIST_FIELDS: ReadonlySet<string> = new Set(['sourceUrls']);
+
+function listEntryKeys(field: string, entry: string): string[] {
+  const textKey = collapseRefusalWhitespace(entry).toLowerCase();
+  return [...new Set([fieldValueRefusalKey(field, entry), textKey].filter(Boolean))];
+}
+
+function refusedListEntryRule(
+  fieldValueRefusals: unknown,
+  field: string,
+  entry: unknown,
+): FieldValueRefusalRule | undefined {
+  if (!ENTRY_REFUSABLE_LIST_FIELDS.has(field) || typeof entry !== 'string') return undefined;
+  const keys = listEntryKeys(field, entry);
+  return liveFieldValueRefusals(fieldValueRefusals, field).find((refusal) =>
+    keys.includes(refusal.valueKey),
+  )?.rule;
+}
+
+export function entryIsRefused(
+  fieldValueRefusals: unknown,
+  field: string,
+  entry: unknown,
+): boolean {
+  return refusedListEntryRule(fieldValueRefusals, field, entry) !== undefined;
+}
+
+function withoutRefusedListEntries<T extends RefusableResolverObservation>(
+  fieldValueRefusals: unknown,
+  observation: T,
+): { kept?: T; refused: Array<{ field: string; rule: FieldValueRefusalRule }> } {
+  if (!ENTRY_REFUSABLE_LIST_FIELDS.has(observation.field) || !Array.isArray(observation.value)) {
+    return { kept: observation, refused: [] };
+  }
+  const refused: Array<{ field: string; rule: FieldValueRefusalRule }> = [];
+  const remaining = observation.value.filter((entry) => {
+    const rule = refusedListEntryRule(fieldValueRefusals, observation.field, entry);
+    if (rule) refused.push({ field: observation.field, rule });
+    return !rule;
+  });
+  if (refused.length === 0) return { kept: observation, refused };
+  return remaining.length > 0
+    ? { kept: { ...observation, value: remaining }, refused }
+    : { refused };
+}
+
+export interface ListEntryRefusalRemoval {
+  observations: number;
+  entries: number;
+  storedListCarriesEntry: boolean;
+}
+
+export function planListEntryRefusalRemoval(input: {
+  field: string;
+  value: string;
+  observationValues: readonly unknown[];
+  storedValue: unknown;
+}): ListEntryRefusalRemoval | undefined {
+  if (!ENTRY_REFUSABLE_LIST_FIELDS.has(input.field)) return undefined;
+  const key = fieldValueRefusalKey(input.field, input.value);
+  if (!key) return undefined;
+  const matches = (entry: unknown) =>
+    typeof entry === 'string' && fieldValueRefusalKey(input.field, entry) === key;
+  let observations = 0;
+  let entries = 0;
+  for (const value of input.observationValues) {
+    if (!Array.isArray(value)) continue;
+    const hits = value.filter(matches).length;
+    if (hits > 0) {
+      observations += 1;
+      entries += hits;
+    }
+  }
+  return {
+    observations,
+    entries,
+    storedListCarriesEntry: Array.isArray(input.storedValue) && input.storedValue.some(matches),
+  };
 }
 
 const URL_EVIDENCE_FIELDS = ['websiteUrl', 'website', 'sourceUrls'];

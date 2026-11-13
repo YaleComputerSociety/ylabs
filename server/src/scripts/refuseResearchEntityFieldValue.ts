@@ -43,6 +43,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import mongoose from 'mongoose';
 import { initializeConnections } from '../db/connections';
+import { Observation } from '../models/observation';
 import { ResearchEntity } from '../models/researchEntity';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
@@ -50,6 +51,7 @@ import {
   liveFieldValueRefusals,
   planFieldValueRefusal,
   planFieldValueRefusalWithdrawal,
+  planListEntryRefusalRemoval,
   perRowFieldValueRefusalRules,
   type FieldValueRefusalRule,
 } from '../utils/researchEntityFieldValueRefusals';
@@ -176,6 +178,26 @@ async function main(): Promise<void> {
     const refusedKey = fieldValueRefusalKey(args.field, args.value);
     const storedKey = fieldValueRefusalKey(args.field, row[args.field]);
     const clearsStoredValue = !args.withdraw && storedKey !== '' && storedKey === refusedKey;
+    const listEntryRemoval = args.withdraw
+      ? undefined
+      : planListEntryRefusalRemoval({
+          field: args.field,
+          value: String(args.value),
+          storedValue: row[args.field],
+          observationValues: (
+            await Observation.find({
+              entityType: 'researchEntity',
+              field: args.field,
+              superseded: { $ne: true },
+              $or: [
+                { entityKey: String(row.slug) },
+                { entityId: row._id as mongoose.Types.ObjectId },
+              ],
+            })
+              .select('value')
+              .lean<Array<{ value?: unknown }>>()
+          ).map((observation) => observation.value),
+        });
     const update = args.withdraw
       ? planFieldValueRefusalWithdrawal(row.fieldValueRefusals, args.field, args.value, args.note)
       : planFieldValueRefusal(row.fieldValueRefusals, {
@@ -198,6 +220,7 @@ async function main(): Promise<void> {
           rule: args.withdraw ? undefined : args.rule,
           refusedKey,
           storedValueIsTheRefusedValue: clearsStoredValue,
+          ...(listEntryRemoval ? { listEntryRemoval } : {}),
           liveRefusalsBefore: liveFieldValueRefusals(row.fieldValueRefusals, args.field).length,
           alsoStillLocked: Array.isArray(row.manuallyLockedFields)
             ? (row.manuallyLockedFields as string[]).includes(args.field)
