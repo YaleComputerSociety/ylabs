@@ -81,6 +81,9 @@ describe('research-search:seed-rerank-cache', () => {
       scores: 4,
       resolvedScores: 2,
       unresolvedSlugs: 2,
+      resolvedThroughMerge: 0,
+      resolvedThroughRedirect: 0,
+      mergeCollisions: { count: 0, maxGap: 0, collisions: [] },
       entriesWithNoResolvedScore: 1,
       upserted: 0,
       textHashes: 'not-requested',
@@ -276,6 +279,214 @@ describe('research-search:seed-rerank-cache', () => {
         source: 'test',
       }),
     ).rejects.toThrow('same query key');
+  });
+});
+
+describe('research-search:seed-rerank-cache resolution of merged and renamed slugs', () => {
+  const ids: Record<string, string> = {};
+  const insertRow = async (slug: string, fields: Record<string, unknown> = {}) => {
+    const _id = new mongoose.Types.ObjectId();
+    await ResearchEntity.collection.insertOne({
+      _id,
+      slug,
+      name: `Synthetic ${slug}`,
+      kind: 'lab',
+      ...fields,
+    });
+    ids[slug] = _id.toHexString();
+    return _id;
+  };
+
+  beforeEach(async () => {
+    await SearchRerankCache.collection.deleteMany({});
+    await ResearchEntity.collection.deleteMany({});
+    const survivor = await insertRow('synthetic-survivor-lab', {
+      archived: false,
+      mergedFrom: [
+        { slug: 'synthetic-dropped-shell-lab', entityId: new mongoose.Types.ObjectId() },
+      ],
+    });
+    const middle = await insertRow('synthetic-middle-shell-lab', {
+      archived: true,
+      canonicalGroupId: survivor,
+    });
+    await insertRow('synthetic-merged-lab', { archived: true, canonicalGroupId: survivor });
+    await insertRow('synthetic-two-hop-lab', { archived: true, canonicalGroupId: middle });
+    const deadEnd = await insertRow('synthetic-dead-end-lab', { archived: true });
+    await insertRow('synthetic-to-dead-end-lab', { archived: true, canonicalGroupId: deadEnd });
+    await insertRow('synthetic-to-absent-lab', {
+      archived: true,
+      canonicalGroupId: new mongoose.Types.ObjectId(),
+    });
+    await insertRow('synthetic-renamed-lab', {
+      archived: false,
+      previousSlugs: [
+        { slug: 'synthetic-old-name-lab', renamedAt: new Date('2026-11-01'), reason: 'test' },
+      ],
+    });
+    await insertRow('synthetic-direct-lab', { archived: false });
+  });
+
+  const dryRun = (scores: Record<string, number>, query = 'synthetic topic') =>
+    seedSearchRerankCache({
+      entries: parseSeedInput([{ query, scores }]),
+      apply: false,
+      source: 'test',
+    });
+
+  const appliedScores = async (scores: Record<string, number>) => {
+    await seedSearchRerankCache({
+      entries: parseSeedInput([{ query: 'synthetic topic', scores }]),
+      apply: true,
+      indexVersion: 'full-synthetic-1',
+      source: 'test',
+    });
+    const stored = await SearchRerankCache.findOne({
+      queryKey: searchRerankCacheQueryKey('synthetic topic', {}),
+    }).lean();
+    return stored?.scores.map(({ entityId, score }: { entityId: string; score: number }) => ({
+      entityId,
+      score,
+    }));
+  };
+
+  it('resolves a merged-away slug to its live survivor, one hop or several', async () => {
+    const report = await dryRun({ 'synthetic-merged-lab': 2, 'synthetic-two-hop-lab': 2 });
+
+    expect(report).toMatchObject({
+      scores: 2,
+      resolvedScores: 2,
+      unresolvedSlugs: 0,
+      resolvedThroughMerge: 2,
+      resolvedThroughRedirect: 0,
+    });
+    expect(await appliedScores({ 'synthetic-merged-lab': 3 })).toEqual([
+      { entityId: ids['synthetic-survivor-lab'], score: 3 },
+    ]);
+  });
+
+  it('leaves a slug unresolved when its chain ends on an archived row or a missing one', async () => {
+    const report = await dryRun({
+      'synthetic-to-dead-end-lab': 2,
+      'synthetic-dead-end-lab': 2,
+      'synthetic-to-absent-lab': 2,
+    });
+
+    expect(report).toMatchObject({
+      scores: 3,
+      resolvedScores: 0,
+      unresolvedSlugs: 3,
+      resolvedThroughMerge: 0,
+      entriesWithNoResolvedScore: 1,
+    });
+  });
+
+  it('resolves a slug with no row through a stored redirect, and only through one', async () => {
+    const report = await dryRun({
+      'synthetic-old-name-lab': 2,
+      'synthetic-dropped-shell-lab': 1,
+      'synthetic-never-stored-lab': 3,
+    });
+
+    expect(report).toMatchObject({
+      scores: 3,
+      resolvedScores: 2,
+      unresolvedSlugs: 1,
+      resolvedThroughMerge: 0,
+      resolvedThroughRedirect: 2,
+    });
+    expect(
+      await appliedScores({ 'synthetic-old-name-lab': 2, 'synthetic-never-stored-lab': 3 }),
+    ).toEqual([{ entityId: ids['synthetic-renamed-lab'], score: 2 }]);
+  });
+
+  it('leaves a slug two live rows both claim as a former slug unresolved', async () => {
+    const claim = [
+      { slug: 'synthetic-contested-lab', renamedAt: new Date('2026-11-01'), reason: 'test' },
+    ];
+    await insertRow('synthetic-first-claimant-lab', { archived: false, previousSlugs: claim });
+    await insertRow('synthetic-second-claimant-lab', { archived: false, previousSlugs: claim });
+
+    const report = await dryRun({ 'synthetic-contested-lab': 2 });
+
+    expect(report).toMatchObject({
+      scores: 1,
+      resolvedScores: 0,
+      unresolvedSlugs: 1,
+      resolvedThroughRedirect: 0,
+    });
+  });
+
+  it('never redirects a slug that still has a row, even a dead-end archived one', async () => {
+    await insertRow('synthetic-claims-dead-end-lab', {
+      archived: false,
+      previousSlugs: [
+        { slug: 'synthetic-dead-end-lab', renamedAt: new Date('2026-11-01'), reason: 'test' },
+      ],
+    });
+
+    const report = await dryRun({ 'synthetic-dead-end-lab': 2 });
+
+    expect(report).toMatchObject({
+      scores: 1,
+      resolvedScores: 0,
+      unresolvedSlugs: 1,
+      resolvedThroughRedirect: 0,
+    });
+  });
+
+  it('keeps the higher of two scores within a point that reach one row, and reports it', async () => {
+    const scores = { 'synthetic-survivor-lab': 2, 'synthetic-merged-lab': 3 };
+    const report = await dryRun(scores);
+
+    expect(report).toMatchObject({
+      scores: 2,
+      resolvedScores: 2,
+      resolvedThroughMerge: 1,
+      mergeCollisions: {
+        count: 1,
+        maxGap: 1,
+        collisions: [{ entryIndex: 0, survivorId: ids['synthetic-survivor-lab'], scores: [2, 3] }],
+      },
+    });
+    expect(await appliedScores(scores)).toEqual([
+      { entityId: ids['synthetic-survivor-lab'], score: 3 },
+    ]);
+  });
+
+  it('refuses the whole run before any write when two such scores are 2 or more apart', async () => {
+    await expect(
+      seedSearchRerankCache({
+        entries: parseSeedInput([
+          { query: 'synthetic clean topic', scores: { 'synthetic-direct-lab': 3 } },
+          {
+            query: 'synthetic topic',
+            scores: { 'synthetic-survivor-lab': 3, 'synthetic-two-hop-lab': 1 },
+          },
+        ]),
+        apply: true,
+        indexVersion: 'full-synthetic-1',
+        source: 'test',
+      }),
+    ).rejects.toThrow(
+      'Entry 1 scores one row through two slugs 2 or more grade points apart and needs a re-score',
+    );
+    expect(await SearchRerankCache.countDocuments()).toBe(0);
+  });
+
+  it('leaves a score that resolves directly unaffected', async () => {
+    const report = await dryRun({ 'synthetic-direct-lab': 1, 'synthetic-renamed-lab': 2 });
+
+    expect(report).toMatchObject({
+      resolvedScores: 2,
+      resolvedThroughMerge: 0,
+      resolvedThroughRedirect: 0,
+      mergeCollisions: { count: 0, maxGap: 0, collisions: [] },
+    });
+    expect(await appliedScores({ 'synthetic-direct-lab': 1, 'synthetic-renamed-lab': 2 })).toEqual([
+      { entityId: ids['synthetic-direct-lab'], score: 1 },
+      { entityId: ids['synthetic-renamed-lab'], score: 2 },
+    ]);
   });
 });
 
