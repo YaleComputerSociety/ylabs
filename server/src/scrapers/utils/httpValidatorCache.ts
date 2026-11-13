@@ -6,10 +6,13 @@
 import { AsyncLocalStorage } from 'async_hooks';
 import { createHash, randomBytes } from 'crypto';
 import { promises as fs } from 'fs';
+import { promisify } from 'util';
+import { gunzip as gunzipCallback, gzip as gzipCallback } from 'zlib';
 import os from 'os';
 import path from 'path';
 import axios, {
   AxiosHeaders,
+  type AxiosAdapter,
   type AxiosInstance,
   type AxiosResponse,
   type AxiosResponseTransformer,
@@ -17,15 +20,24 @@ import axios, {
 } from 'axios';
 import CachePolicy from 'http-cache-semantics';
 import type { ScraperFetchMetrics, ScraperResult } from '../types';
-import { isSweepPageReuseHit } from './sweepPageReuseHit';
+import { SWEEP_PAGE_REUSE_HIT_KEY, isSweepPageReuseHit } from './sweepPageReuseHit';
 
-export const DEFAULT_HTTP_CACHE_MAX_BYTES = 512 * 1024 * 1024;
+export const DEFAULT_HTTP_CACHE_MAX_BYTES = 2 * 1024 * 1024 * 1024;
 export const DEFAULT_HTTP_CACHE_MAX_ENTRY_BYTES = 8 * 1024 * 1024;
+export const DEFAULT_HTTP_CACHE_REUSE_HOURS = 12;
+export const HTTP_CACHE_HOST_SHARE = 0.2;
 const EVICTION_TARGET_RATIO = 0.9;
-const ENTRY_FORMAT_VERSION = 1;
+const LEGACY_ENTRY_FORMAT_VERSION = 1;
+const ENTRY_FORMAT_VERSION = 2;
 const MEBIBYTE = 1024 * 1024;
+const HOUR_MS = 60 * 60 * 1000;
+const OWNER_ONLY_DIRECTORY_MODE = 0o700;
+const OWNER_ONLY_FILE_MODE = 0o600;
+const gzip = promisify(gzipCallback);
+const gunzip = promisify(gunzipCallback);
 
 export interface HttpValidatorCacheStats {
+  reused: number;
   revalidations: number;
   notModified: number;
   bytesSaved: number;
@@ -36,6 +48,7 @@ export interface HttpValidatorCacheStats {
 }
 
 export const emptyHttpValidatorCacheStats = (): HttpValidatorCacheStats => ({
+  reused: 0,
   revalidations: 0,
   notModified: 0,
   bytesSaved: 0,
@@ -102,6 +115,13 @@ function positiveMebibytes(raw: string | undefined, fallback: number): number {
 
 const DISABLED_VALUES = new Set(['0', 'false', 'off', 'no', 'disabled']);
 
+export function httpCacheReuseMaxAgeMs(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.SCRAPER_HTTP_CACHE_REUSE_HOURS?.trim();
+  if (raw === undefined || raw === '') return DEFAULT_HTTP_CACHE_REUSE_HOURS * HOUR_MS;
+  const hours = Number(raw);
+  return Number.isFinite(hours) && hours > 0 ? hours * HOUR_MS : 0;
+}
+
 export function resolveHttpValidatorCacheConfig(
   env: NodeJS.ProcessEnv = process.env,
 ): HttpValidatorCacheConfig {
@@ -122,11 +142,27 @@ export interface StoredHttpResponse {
   v: number;
   url: string;
   storedAt: string;
+  verifiedAt?: string;
   policy: CachePolicy.CachePolicyObject;
   body: string;
 }
 
 const sha256 = (value: string): string => createHash('sha256').update(value).digest('hex');
+
+interface CacheFile {
+  path: string;
+  size: number;
+  mtimeMs: number;
+  group: string;
+}
+
+const hostOf = (url: string): string => {
+  try {
+    return new URL(url).hostname.toLowerCase() || 'unknown-host';
+  } catch {
+    return 'unknown-host';
+  }
+};
 
 export class HttpValidatorStore {
   private readonly entriesDir: string;
@@ -137,6 +173,7 @@ export class HttpValidatorStore {
   constructor(
     readonly directory: string,
     readonly maxBytes: number = DEFAULT_HTTP_CACHE_MAX_BYTES,
+    readonly hostShare: number = HTTP_CACHE_HOST_SHARE,
   ) {
     this.entriesDir = path.join(directory, 'entries');
     this.aliasesDir = path.join(directory, 'aliases');
@@ -145,23 +182,18 @@ export class HttpValidatorStore {
   async lookup(requestUrl: string): Promise<StoredHttpResponse | null> {
     const aliased = await this.readText(this.aliasPath(requestUrl));
     const url = aliased?.trim() || requestUrl;
-    const raw = await this.readText(this.entryPath(url));
-    if (!raw) return null;
-    try {
-      const entry = JSON.parse(raw) as StoredHttpResponse;
-      if (entry.v !== ENTRY_FORMAT_VERSION || entry.url !== url) return null;
-      if (typeof entry.body !== 'string' || !entry.policy) return null;
-      return entry;
-    } catch {
-      return null;
-    }
+    const entry = (await this.readCompressed(url)) ?? (await this.readLegacy(url));
+    if (!entry || entry.url !== url) return null;
+    if (typeof entry.body !== 'string' || !entry.policy) return null;
+    return entry;
   }
 
   async save(requestUrl: string, entry: StoredHttpResponse): Promise<void> {
-    const serialized = JSON.stringify(entry);
-    const written = await this.writeAtomic(this.entryPath(entry.url), serialized);
+    const packed = await gzip(Buffer.from(JSON.stringify({ ...entry, v: ENTRY_FORMAT_VERSION })));
+    const written = await this.writeAtomic(this.entryPath(entry.url), packed);
+    await fs.rm(this.legacyEntryPath(entry.url), { force: true });
     if (requestUrl !== entry.url) {
-      await this.writeAtomic(this.aliasPath(requestUrl), entry.url);
+      await this.writeAtomic(this.aliasPath(requestUrl), Buffer.from(entry.url, 'utf8'));
     } else {
       await fs.rm(this.aliasPath(requestUrl), { force: true });
     }
@@ -175,6 +207,7 @@ export class HttpValidatorStore {
 
   async remove(url: string): Promise<void> {
     await fs.rm(this.entryPath(url), { force: true });
+    await fs.rm(this.legacyEntryPath(url), { force: true });
   }
 
   async totalBytes(): Promise<number> {
@@ -183,11 +216,37 @@ export class HttpValidatorStore {
   }
 
   private entryPath(url: string): string {
+    return path.join(this.entriesDir, hostOf(url), `${sha256(url)}.json.gz`);
+  }
+
+  private legacyEntryPath(url: string): string {
     return path.join(this.entriesDir, `${sha256(url)}.json`);
   }
 
   private aliasPath(url: string): string {
     return path.join(this.aliasesDir, sha256(url));
+  }
+
+  private async readCompressed(url: string): Promise<StoredHttpResponse | null> {
+    try {
+      const entry = JSON.parse(
+        (await gunzip(await fs.readFile(this.entryPath(url)))).toString('utf8'),
+      ) as StoredHttpResponse;
+      return entry.v === ENTRY_FORMAT_VERSION ? entry : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async readLegacy(url: string): Promise<StoredHttpResponse | null> {
+    const raw = await this.readText(this.legacyEntryPath(url));
+    if (!raw) return null;
+    try {
+      const entry = JSON.parse(raw) as StoredHttpResponse;
+      return entry.v === LEGACY_ENTRY_FORMAT_VERSION ? entry : null;
+    } catch {
+      return null;
+    }
   }
 
   private async readText(file: string): Promise<string | null> {
@@ -198,12 +257,12 @@ export class HttpValidatorStore {
     }
   }
 
-  private async writeAtomic(file: string, contents: string): Promise<number> {
-    await fs.mkdir(path.dirname(file), { recursive: true });
+  private async writeAtomic(file: string, contents: Buffer): Promise<number> {
+    await fs.mkdir(path.dirname(file), { recursive: true, mode: OWNER_ONLY_DIRECTORY_MODE });
     const temporary = `${file}.${process.pid}.${randomBytes(6).toString('hex')}.tmp`;
-    await fs.writeFile(temporary, contents, 'utf8');
+    await fs.writeFile(temporary, contents, { mode: OWNER_ONLY_FILE_MODE });
     await fs.rename(temporary, file);
-    return Buffer.byteLength(contents, 'utf8');
+    return contents.byteLength;
   }
 
   private async account(writtenBytes: number): Promise<void> {
@@ -218,9 +277,20 @@ export class HttpValidatorStore {
 
   private async evict(): Promise<void> {
     const files = (await this.listFiles()).sort((a, b) => a.mtimeMs - b.mtimeMs);
-    let total = files.reduce((sum, file) => sum + file.size, 0);
-    const target = Math.floor(this.maxBytes * EVICTION_TARGET_RATIO);
+    const kept = new Set(files);
+    const byGroup = new Map<string, number>();
+    for (const file of files) byGroup.set(file.group, (byGroup.get(file.group) ?? 0) + file.size);
+    const hostTarget = Math.floor(this.maxBytes * this.hostShare * EVICTION_TARGET_RATIO);
     for (const file of files) {
+      const groupBytes = byGroup.get(file.group) ?? 0;
+      if (groupBytes <= hostTarget) continue;
+      await fs.rm(file.path, { force: true });
+      byGroup.set(file.group, groupBytes - file.size);
+      kept.delete(file);
+    }
+    let total = [...kept].reduce((sum, file) => sum + file.size, 0);
+    const target = Math.floor(this.maxBytes * EVICTION_TARGET_RATIO);
+    for (const file of kept) {
       if (total <= target) break;
       await fs.rm(file.path, { force: true });
       total -= file.size;
@@ -228,26 +298,31 @@ export class HttpValidatorStore {
     this.knownBytes = total;
   }
 
-  private async listFiles(): Promise<Array<{ path: string; size: number; mtimeMs: number }>> {
-    const files: Array<{ path: string; size: number; mtimeMs: number }> = [];
-    for (const dir of [this.entriesDir, this.aliasesDir]) {
+  private async listFiles(): Promise<CacheFile[]> {
+    const files: CacheFile[] = [];
+    const collect = async (dir: string, group: string | null): Promise<void> => {
       let names: string[];
       try {
         names = await fs.readdir(dir);
       } catch {
-        continue;
+        return;
       }
       for (const name of names) {
         if (name.endsWith('.tmp')) continue;
         const file = path.join(dir, name);
         try {
           const stat = await fs.stat(file);
-          if (stat.isFile()) files.push({ path: file, size: stat.size, mtimeMs: stat.mtimeMs });
+          if (stat.isDirectory() && group === null) await collect(file, name);
+          else if (stat.isFile()) {
+            files.push({ path: file, size: stat.size, mtimeMs: stat.mtimeMs, group: group ?? dir });
+          }
         } catch {
           continue;
         }
       }
-    }
+    };
+    await collect(this.entriesDir, null);
+    await collect(this.aliasesDir, this.aliasesDir);
     return files;
   }
 }
@@ -268,6 +343,7 @@ interface RequestCacheState {
 type ConfigWithCacheState = InternalAxiosRequestConfig & {
   [STATE_KEY]?: RequestCacheState;
   [SKIP_KEY]?: boolean;
+  [SWEEP_PAGE_REUSE_HIT_KEY]?: boolean;
 };
 
 export const TEXTUAL_RESPONSE_TYPES = new Set([undefined, '', 'json', 'text', 'document']);
@@ -327,9 +403,32 @@ function toTransformList(
 
 const acceptsDefaultStatus = (status: number): boolean => status >= 200 && status < 300;
 
+function lastVerifiedMs(entry: StoredHttpResponse): number {
+  return Date.parse(entry.verifiedAt ?? entry.storedAt);
+}
+
+function forbidsReuseWithoutRevalidation(entry: StoredHttpResponse): boolean {
+  const cacheControl = String(
+    (entry.policy.resh as Record<string, unknown>)['cache-control'] ?? '',
+  );
+  return /\b(no-cache|no-store|must-revalidate)\b/i.test(cacheControl);
+}
+
+function storedBodyAdapter(entry: StoredHttpResponse): AxiosAdapter {
+  return async (config) => ({
+    data: entry.body,
+    status: 200,
+    statusText: 'OK',
+    headers: AxiosHeaders.from(entry.policy.resh as Record<string, string>),
+    config,
+    request: { res: { responseUrl: entry.url } },
+  });
+}
+
 export interface HttpValidatorCacheOptions {
   store: HttpValidatorStore;
   maxEntryBytes?: number;
+  reuseMaxAgeMs?: () => number;
   now?: () => Date;
   onStoreError?: (error: unknown) => void;
 }
@@ -345,6 +444,7 @@ export function attachHttpValidatorCache(
   const { store } = options;
   const maxEntryBytes = options.maxEntryBytes ?? DEFAULT_HTTP_CACHE_MAX_ENTRY_BYTES;
   const now = options.now ?? (() => new Date());
+  const reuseMaxAgeMs = options.reuseMaxAgeMs ?? (() => 0);
 
   const bump = (field: keyof HttpValidatorCacheStats, amount = 1): void => {
     const scoped = scopeStorage.getStore();
@@ -371,6 +471,22 @@ export function attachHttpValidatorCache(
       return config;
     }
 
+    const entry = await store.lookup(requestUrl).catch(() => null);
+    const maxAgeMs = reuseMaxAgeMs();
+    if (
+      entry &&
+      maxAgeMs > 0 &&
+      now().getTime() - lastVerifiedMs(entry) < maxAgeMs &&
+      !forbidsReuseWithoutRevalidation(entry)
+    ) {
+      cacheConfig[SWEEP_PAGE_REUSE_HIT_KEY] = true;
+      config.adapter = storedBodyAdapter(entry);
+      bump('reused');
+      bump('bytesSaved', Buffer.byteLength(entry.body, 'utf8'));
+      await store.touch(entry).catch(reportStoreError);
+      return config;
+    }
+
     const state: RequestCacheState = {
       requestUrl,
       requestHeaders,
@@ -388,7 +504,6 @@ export function attachHttpValidatorCache(
       ...toTransformList(state.originalTransformResponse),
     ];
 
-    const entry = await store.lookup(requestUrl).catch(() => null);
     if (entry) {
       const validators = CachePolicy.fromObject(entry.policy).revalidationHeaders({
         url: entry.url,
@@ -437,7 +552,9 @@ export function attachHttpValidatorCache(
     );
     bump('notModified');
     bump('bytesSaved', Buffer.byteLength(entry.body, 'utf8'));
-    await store.touch(entry).catch(reportStoreError);
+    await store
+      .save(state.requestUrl, { ...entry, verifiedAt: now().toISOString() })
+      .catch(reportStoreError);
     return { ...response, status: 200, statusText: 'OK', headers, data };
   };
 
@@ -470,6 +587,7 @@ export function attachHttpValidatorCache(
         v: ENTRY_FORMAT_VERSION,
         url: finalUrl,
         storedAt: now().toISOString(),
+        verifiedAt: now().toISOString(),
         policy: policy.toObject(),
         body,
       })
@@ -535,6 +653,7 @@ export function installScraperHttpValidatorCache(
   installedHandle = attachHttpValidatorCache(axios, {
     store: new HttpValidatorStore(config.directory, config.maxBytes),
     maxEntryBytes: config.maxEntryBytes,
+    reuseMaxAgeMs: () => httpCacheReuseMaxAgeMs(env),
     onStoreError: (error) => {
       if (warned) return;
       warned = true;

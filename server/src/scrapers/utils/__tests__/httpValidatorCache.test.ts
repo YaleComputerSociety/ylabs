@@ -3,12 +3,17 @@ import type { AddressInfo } from 'net';
 import os from 'os';
 import path from 'path';
 import { promises as fs } from 'fs';
+import { randomBytes } from 'crypto';
+import { gunzipSync } from 'zlib';
 import axios, { type AxiosInstance } from 'axios';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ssrfSafeAgents } from '../../../utils/ssrfGuard';
+import { isSweepPageReuseHit } from '../sweepPageReuseHit';
 import {
   attachHttpValidatorCache,
+  DEFAULT_HTTP_CACHE_MAX_BYTES,
   emptyHttpValidatorCacheStats,
+  httpCacheReuseMaxAgeMs,
   HttpValidatorStore,
   resolveHttpValidatorCacheConfig,
   withHttpCacheFetchMetrics,
@@ -297,17 +302,14 @@ describe('HttpValidatorStore', () => {
   });
 
   it('evicts the least recently used entries once the size bound is exceeded', async () => {
-    const store = new HttpValidatorStore(cacheDir, 2000);
-    const body = 'x'.repeat(600);
+    const store = new HttpValidatorStore(cacheDir, 2000, 1);
+    const body = randomBytes(675).toString('base64');
     await store.save('https://a.example.edu/', entry('https://a.example.edu/', body));
     await store.save('https://b.example.edu/', entry('https://b.example.edu/', body));
     const past = new Date(Date.now() - 60_000);
-    const entriesDir = path.join(cacheDir, 'entries');
-    for (const name of await fs.readdir(entriesDir)) {
-      const stored = JSON.parse(await fs.readFile(path.join(entriesDir, name), 'utf8'));
-      if (stored.url === 'https://a.example.edu/') {
-        await fs.utimes(path.join(entriesDir, name), past, past);
-      }
+    const hostDir = path.join(cacheDir, 'entries', 'a.example.edu');
+    for (const name of await fs.readdir(hostDir)) {
+      await fs.utimes(path.join(hostDir, name), past, past);
     }
 
     await store.save('https://c.example.edu/', entry('https://c.example.edu/', body));
@@ -321,9 +323,9 @@ describe('HttpValidatorStore', () => {
   it('ignores a corrupt entry rather than failing the fetch', async () => {
     const store = new HttpValidatorStore(cacheDir);
     await store.save('https://a.example.edu/', entry('https://a.example.edu/', 'ok'));
-    const entriesDir = path.join(cacheDir, 'entries');
-    const [name] = await fs.readdir(entriesDir);
-    await fs.writeFile(path.join(entriesDir, name), '{not json');
+    const hostDir = path.join(cacheDir, 'entries', 'a.example.edu');
+    const [name] = await fs.readdir(hostDir);
+    await fs.writeFile(path.join(hostDir, name), '{not json');
     expect(await store.lookup('https://a.example.edu/')).toBeNull();
   });
 });
@@ -333,7 +335,7 @@ describe('resolveHttpValidatorCacheConfig', () => {
     const config = resolveHttpValidatorCacheConfig({ XDG_CACHE_HOME: '/tmp/xdg' });
     expect(config.enabled).toBe(true);
     expect(config.directory).toBe(path.join('/tmp/xdg', 'ylabs', 'scraper-http-cache'));
-    expect(config.maxBytes).toBe(512 * 1024 * 1024);
+    expect(config.maxBytes).toBe(DEFAULT_HTTP_CACHE_MAX_BYTES);
   });
 
   it('honours the disable switch, directory, and size knobs', () => {
@@ -362,5 +364,133 @@ describe('withHttpCacheFetchMetrics', () => {
     const merged = withHttpCacheFetchMetrics({ observationCount: 0, entitiesObserved: 0 }, stats);
     expect(merged.fetchMetrics?.httpCache).toEqual(stats);
     expect(merged.fetchMetrics?.attempts).toEqual([]);
+  });
+});
+
+describe('reusing a recently verified body without a request (#6212)', () => {
+  const HOUR = 60 * 60 * 1000;
+
+  const reuseClient = (maxAgeMs: number, now: () => Date = () => new Date()) => {
+    handle.detach();
+    client = axios.create();
+    handle = attachHttpValidatorCache(client, {
+      store: new HttpValidatorStore(cacheDir),
+      reuseMaxAgeMs: () => maxAgeMs,
+      now,
+    });
+  };
+
+  it('answers a page stored inside the window from disk and sends nothing', async () => {
+    reuseClient(HOUR);
+    const body = '<html><body>synthetic reused page</body></html>';
+    routes.set('/page', etagRoute(body, '"v1"'));
+
+    const { value, stats } = await withHttpValidatorCacheScope(async () => {
+      await client.get(`${origin}/page`, { responseType: 'text' });
+      return client.get(`${origin}/page`, { responseType: 'text' });
+    });
+
+    expect(seen).toHaveLength(1);
+    expect(value.status).toBe(200);
+    expect(value.data).toBe(body);
+    expect(isSweepPageReuseHit(value.config)).toBe(true);
+    expect(stats).toMatchObject({ reused: 1, revalidations: 0, stored: 1 });
+  });
+
+  it('revalidates instead when the window is zero, as a re-capture forces', async () => {
+    reuseClient(0);
+    routes.set('/page', etagRoute('<p>synthetic</p>', '"v1"'));
+
+    await client.get(`${origin}/page`, { responseType: 'text' });
+    await client.get(`${origin}/page`, { responseType: 'text' });
+
+    expect(seen.map((request) => request.ifNoneMatch)).toEqual([undefined, '"v1"']);
+  });
+
+  it('revalidates a page verified before the window and reuses it again after a 304', async () => {
+    let clock = new Date('2026-01-01T00:00:00Z');
+    reuseClient(HOUR, () => clock);
+    routes.set('/page', etagRoute('<p>synthetic</p>', '"v1"'));
+
+    await client.get(`${origin}/page`, { responseType: 'text' });
+    clock = new Date('2026-01-01T02:00:00Z');
+    await client.get(`${origin}/page`, { responseType: 'text' });
+    clock = new Date('2026-01-01T02:30:00Z');
+    await client.get(`${origin}/page`, { responseType: 'text' });
+
+    expect(seen.map((request) => request.ifNoneMatch)).toEqual([undefined, '"v1"']);
+  });
+
+  it('never reuses a page whose response requires revalidation', async () => {
+    reuseClient(HOUR);
+    routes.set('/page', etagRoute('<p>synthetic</p>', '"v1"', { 'Cache-Control': 'no-cache' }));
+
+    await client.get(`${origin}/page`, { responseType: 'text' });
+    await client.get(`${origin}/page`, { responseType: 'text' });
+
+    expect(seen).toHaveLength(2);
+  });
+
+  it('reads the window from the environment, defaulting to twelve hours and failing to zero', () => {
+    expect(httpCacheReuseMaxAgeMs({})).toBe(12 * HOUR);
+    expect(httpCacheReuseMaxAgeMs({ SCRAPER_HTTP_CACHE_REUSE_HOURS: '0' })).toBe(0);
+    expect(httpCacheReuseMaxAgeMs({ SCRAPER_HTTP_CACHE_REUSE_HOURS: '2' })).toBe(2 * HOUR);
+    expect(httpCacheReuseMaxAgeMs({ SCRAPER_HTTP_CACHE_REUSE_HOURS: 'never' })).toBe(0);
+  });
+});
+
+describe('the compressed, owner-only, host-bounded store (#6212)', () => {
+  const entry = (url: string, body: string, v = 2): StoredHttpResponse => ({
+    v,
+    url,
+    storedAt: new Date(0).toISOString(),
+    policy: {} as StoredHttpResponse['policy'],
+    body,
+  });
+
+  it('writes each entry gzipped under its host, readable only by its owner', async () => {
+    const store = new HttpValidatorStore(cacheDir);
+    await store.save('https://a.example.edu/p', entry('https://a.example.edu/p', 'synthetic body'));
+
+    const hostDir = path.join(cacheDir, 'entries', 'a.example.edu');
+    const [name] = await fs.readdir(hostDir);
+    expect(name.endsWith('.json.gz')).toBe(true);
+    const stored = JSON.parse(gunzipSync(await fs.readFile(path.join(hostDir, name))).toString());
+    expect(stored.body).toBe('synthetic body');
+    expect((await fs.stat(path.join(hostDir, name))).mode & 0o777).toBe(0o600);
+    expect((await fs.stat(hostDir)).mode & 0o777).toBe(0o700);
+  });
+
+  it('still reads an uncompressed entry an older version stored', async () => {
+    const url = 'https://a.example.edu/legacy';
+    const { createHash } = await import('crypto');
+    const legacyPath = path.join(
+      cacheDir,
+      'entries',
+      `${createHash('sha256').update(url).digest('hex')}.json`,
+    );
+    await fs.mkdir(path.dirname(legacyPath), { recursive: true });
+    await fs.writeFile(legacyPath, JSON.stringify(entry(url, 'legacy body', 1)));
+
+    expect((await new HttpValidatorStore(cacheDir).lookup(url))?.body).toBe('legacy body');
+  });
+
+  it('trims a host past its share before evicting anyone else', async () => {
+    const body = () => randomBytes(1500).toString('base64');
+    const store = new HttpValidatorStore(cacheDir, 20_000, 0.25);
+    await store.save('https://quiet.example.edu/1', entry('https://quiet.example.edu/1', body()));
+    const past = new Date(Date.now() - 60_000);
+    const quietDir = path.join(cacheDir, 'entries', 'quiet.example.edu');
+    for (const name of await fs.readdir(quietDir)) {
+      await fs.utimes(path.join(quietDir, name), past, past);
+    }
+    for (let page = 0; page < 12; page += 1) {
+      const url = `https://busy.example.edu/${page}`;
+      await store.save(url, entry(url, body()));
+    }
+
+    expect(await store.lookup('https://quiet.example.edu/1')).not.toBeNull();
+    const busyDir = path.join(cacheDir, 'entries', 'busy.example.edu');
+    expect((await fs.readdir(busyDir)).length).toBeLessThan(12);
   });
 });
