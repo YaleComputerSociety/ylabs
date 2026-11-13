@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import { refusedResponseDiagnostics } from './refusedResponseDiagnostics';
 
 export const SCRAPER_REQUEST_LOG_ENV = 'SCRAPER_REQUEST_LOG';
 
@@ -11,11 +12,15 @@ export interface ScraperRequestLogEntry {
   error?: string;
   durationMs: number;
   attempt: number;
+  headers?: Record<string, string>;
+  bodyPrefix?: string;
 }
 
 export interface ScraperRequestOutcome {
   status?: number;
   error?: string;
+  headers?: Record<string, string>;
+  bodyPrefix?: string;
 }
 
 export interface ScraperRequestLog {
@@ -39,11 +44,24 @@ function requestHost(url: string): string {
   }
 }
 
+interface ResponseLike {
+  status?: unknown;
+  headers?: unknown;
+  data?: unknown;
+}
+
+function statusOutcome(response: ResponseLike & { status: number }): ScraperRequestOutcome {
+  const diagnostics = refusedResponseDiagnostics(response.status, response.headers, response.data);
+  return { status: response.status, ...(diagnostics ?? {}) };
+}
+
 export function requestOutcomeOf(result: unknown): ScraperRequestOutcome {
-  const response = (result as { response?: { status?: unknown } } | undefined)?.response;
-  if (typeof response?.status === 'number') return { status: response.status };
-  const status = (result as { status?: unknown } | undefined)?.status;
-  if (typeof status === 'number') return { status };
+  const response = (result as { response?: ResponseLike } | undefined)?.response;
+  if (typeof response?.status === 'number') {
+    return statusOutcome(response as ResponseLike & { status: number });
+  }
+  const status = (result as ResponseLike | undefined)?.status;
+  if (typeof status === 'number') return statusOutcome(result as ResponseLike & { status: number });
   const code = (result as { code?: unknown } | undefined)?.code;
   if (typeof code === 'string' && /^[A-Z0-9_]{1,40}$/.test(code)) return { error: code };
   return { error: 'UNKNOWN' };
@@ -64,6 +82,8 @@ export function createScraperRequestLog(write: (line: string) => void): ScraperR
         ...(outcome.error !== undefined ? { error: outcome.error } : {}),
         durationMs: Math.max(0, Math.round(durationMs)),
         attempt,
+        ...(outcome.headers !== undefined ? { headers: outcome.headers } : {}),
+        ...(outcome.bodyPrefix !== undefined ? { bodyPrefix: outcome.bodyPrefix } : {}),
       };
       write(`${JSON.stringify(entry)}\n`);
     },
@@ -72,7 +92,8 @@ export function createScraperRequestLog(write: (line: string) => void): ScraperR
 
 /**
  * Opt-in: `SCRAPER_REQUEST_LOG=<path>` appends one line per request to a file only its owner can
- * read, so a run can be lined up against a host incident without reading headers or bodies.
+ * read, so a run can be lined up against a host incident. Only a refused (403 or 429) response adds
+ * allowlisted headers and a redacted body prefix (`refusedResponseDiagnostics.ts`).
  */
 export function scraperRequestLogFromEnv(
   env: NodeJS.ProcessEnv = process.env,
