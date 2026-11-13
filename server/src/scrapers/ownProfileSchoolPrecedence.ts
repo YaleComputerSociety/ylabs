@@ -6,6 +6,7 @@ import {
   SCHOOL_PROFILE_HOSTS_SERVING_EVERY_APPOINTEE,
   schoolNameFromProfileHosts,
 } from './orgUnitCanonicalization';
+import { getSourceCoverage } from './sourceCoverageRegistry';
 
 export { OWN_PROFILE_HOST_SCHOOL_SOURCE_NAME };
 
@@ -20,6 +21,7 @@ export const OWN_PROFILE_HOST_SCHOOL_CONFIDENCE = 0.6;
 export interface SchoolPrecedenceObservation {
   field?: unknown;
   value?: unknown;
+  sourceName?: unknown;
   sourceUrl?: unknown;
   observedAt?: unknown;
 }
@@ -51,6 +53,9 @@ const hostOf = (value: unknown): string => {
   }
 };
 
+const isDerivedReading = (observation: SchoolPrecedenceObservation): boolean =>
+  getSourceCoverage(textOf(observation.sourceName))?.tier === 'DERIVED_OFFICIAL';
+
 const siteSchoolOf = (url: unknown): string => schoolNameFromProfileHosts([textOf(url)]) ?? '';
 
 const observedAtMs = (observation: SchoolPrecedenceObservation): number =>
@@ -78,6 +83,11 @@ const schoolKey = (
  * that school (a joint appointment it names), and the profile's host school stands in as a
  * derived candidate, re-derived on every resolve and never written back as an observation.
  *
+ * Only first-hand readings take part. A reading a backfill derived from a page's host
+ * (`DERIVED_OFFICIAL` in the source registry) is neither set aside nor kept as a secondary:
+ * it is the same inference this rule makes, from a weaker page, and on a host such as
+ * `medicine.yale.edu` it would add a school the person was never listed in.
+ *
  * Nothing changes when there is no own profile on a school's site, when the row refuses the
  * school that site names, when any other `school`
  * reading shares the own profile's host (that page is the roster's own site, not an independent
@@ -97,7 +107,9 @@ export function withOwnProfileSchoolPrecedence<T extends SchoolPrecedenceObserva
   if (valueIsRefused(fieldValueRefusals, SCHOOL_FIELD, derivedSchool)) return unchanged;
   if (SCHOOL_PROFILE_HOSTS_SERVING_EVERY_APPOINTEE.has(ownHost)) return unchanged;
 
-  const schoolReadings = observations.filter((observation) => observation.field === SCHOOL_FIELD);
+  const schoolReadings = observations.filter(
+    (observation) => observation.field === SCHOOL_FIELD && !isDerivedReading(observation),
+  );
   const fromOwnProfile = (observation: T) => textOf(observation.sourceUrl) === ownProfileUrl;
   if (
     schoolReadings.some(

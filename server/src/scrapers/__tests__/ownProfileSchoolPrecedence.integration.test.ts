@@ -208,4 +208,25 @@ describe('the own profile school outranks a cross-school roster at resolve (#615
       OWN_PROFILE_HOST_SCHOOL_SOURCE_NAME,
     );
   });
+
+  it('adds no school from a host-derived backfill reading on a row whose roster agrees with its profile', async () => {
+    await ResearchEntity.updateOne(
+      { slug: KEY },
+      { $set: { school: 'School of Public Health', schools: ['School of Public Health'] } },
+    );
+    await observe('school', 'School of Public Health', OWN_PROFILE, 'dept-faculty-roster');
+    await observe(
+      'school',
+      'School of Medicine',
+      'https://medicine.yale.edu/fixture-center/',
+      'school-profile-host-backfill',
+    );
+    await observe('inferredPiUserKey', 'netid:fixture-001', OWN_PROFILE, 'ysph-faculty-directory');
+    const planned = await plan();
+
+    expect(planned.schools ?? ['School of Public Health']).toEqual(['School of Public Health']);
+    expect(planned['fieldProvenance.school']?.sourceName).not.toBe(
+      OWN_PROFILE_HOST_SCHOOL_SOURCE_NAME,
+    );
+  });
 });

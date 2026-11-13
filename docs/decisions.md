@@ -24,6 +24,7 @@ The manager then chose option D:
 That rule was added after the first check, so the re-scored first 20 were treated as in-sample and did not count toward the verdict.
 On the 11 held-out rows, 8 still change: 7 pass and 1 fails (bar: at most 1), and 1 of 8 keeps a wrong secondary school.
 The rule steps aside when the row refuses the school the own profile's site names.
+Only first-hand `school` readings take part: a host-derived backfill reading is neither set aside nor kept as a secondary, after the full-corpus dry run showed 8 rows gaining a School of Medicine secondary from a backfill reading of a School of Medicine center page.
 
 ## 2026-11-13: A Profile's Home Department Is Its First Appointment, Never A Promoted Later One (#6070)
 

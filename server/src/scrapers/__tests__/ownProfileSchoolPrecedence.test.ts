@@ -128,6 +128,19 @@ describe('withOwnProfileSchoolPrecedence (#6157)', () => {
     expect(result.candidate).toBeUndefined();
   });
 
+  it('leaves a host-derived backfill reading alone, neither setting it aside nor keeping it', () => {
+    const hostBackfill = reading(
+      'school',
+      'School of Medicine',
+      'https://medicine.yale.edu/fixture-center/',
+      { sourceName: 'school-profile-host-backfill' },
+    );
+    const result = withOwnProfileSchoolPrecedence([hostBackfill], OWN_PROFILE, canonicalizeSchool);
+    expect(result.dropped).toEqual([]);
+    expect(result.observations).toEqual([hostBackfill]);
+    expect(result.candidate).toBeUndefined();
+  });
+
   it('pins the derived reading to its evidence, so an unchanged row re-derives it identically', () => {
     const roster = reading('school', 'School of Medicine', ROSTER);
     const first = withOwnProfileSchoolPrecedence([roster], OWN_PROFILE, canonicalizeSchool);
