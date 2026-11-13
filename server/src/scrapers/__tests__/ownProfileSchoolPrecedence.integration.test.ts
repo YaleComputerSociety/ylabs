@@ -116,6 +116,7 @@ describe('the own profile school outranks a cross-school roster at resolve (#615
     await ResearchEntity.updateOne(
       { slug: KEY },
       {
+        $unset: { school: '', schools: '' },
         $set: planFieldValueRefusal(undefined, {
           field: 'school',
           value: 'School of Public Health',
@@ -127,7 +128,7 @@ describe('the own profile school outranks a cross-school roster at resolve (#615
     );
     const planned = await plan();
 
-    expect(planned.school ?? 'School of Medicine').toBe('School of Medicine');
+    expect(planned.school).toBe('School of Medicine');
     expect(planned.schools ?? []).not.toContain('School of Public Health');
     expect(planned['fieldProvenance.school']?.sourceName).not.toBe(
       OWN_PROFILE_HOST_SCHOOL_SOURCE_NAME,
