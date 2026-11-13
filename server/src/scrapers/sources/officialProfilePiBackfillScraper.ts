@@ -140,6 +140,12 @@ import { type OfficialProfilePageIdentity } from '../../services/officialProfile
 import { normalizeOfficialProfileDestination } from '../../services/leadProfileIdentity';
 import { isDepartmentHeadingChrome } from '../utils/departmentHeadingChrome';
 import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
+import { imageElementSource } from '../utils/imageElementSource';
+import {
+  isLikelyPublicProfileImageUrl,
+  isSocialShareImageUrl,
+} from '../../scripts/profileImageQualityAuditCore';
+import { mainComponentsOf, ysmPageDataFrom } from './ysmFacultyDirectoryScraper';
 
 const SOURCE_NAME = 'official-profile-pi-backfill';
 const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
@@ -2896,19 +2902,62 @@ function imageUrlFromJsonLdImage(value: unknown): string {
   return textValue(record.url || record.contentUrl || record['@id']);
 }
 
+const PROFILE_PORTRAIT_CONTAINERS = [
+  '.node__headshot',
+  '.media--headshot',
+  '.node--faculty .node__header-media',
+  '.user-picture',
+  '[class*="field--name-field-profile-image"]',
+  '[class*="field-name-field-profile-image"]',
+  '[class*="field--name-field-headshot"]',
+  '[class*="field-name-field-headshot"]',
+  '[class*="field--name-field-photo"]',
+  '[class*="field-name-field-photo"]',
+];
+
+function ysmProfileHeaderPortrait($: cheerio.CheerioAPI): string {
+  const profileDetails = mainComponentsOf(ysmPageDataFrom($)).find(
+    (component) => component.key === 'ProfileDetails',
+  );
+  const image = (profileDetails?.model as Record<string, any> | undefined)?.header?.image;
+  if (!image || typeof image !== 'object') return '';
+  const variants: Array<Record<string, unknown>> = Array.isArray(image.imageVariants)
+    ? image.imageVariants
+    : [];
+  const portraitCrop = variants.find((variant) => variant?.dimension === 'Rectangle');
+  return textValue(portraitCrop?.url) || textValue(image.url);
+}
+
+function profilePortraitImageUrl($: cheerio.CheerioAPI, profileUrl: string): string {
+  const candidates = [
+    ysmProfileHeaderPortrait($),
+    ...PROFILE_PORTRAIT_CONTAINERS.map((selector) => imageElementSource($(selector).first())),
+  ];
+  const portrait = candidates
+    .map(textValue)
+    .filter(Boolean)
+    .map((value) => absolutize(value, profileUrl))
+    .find((value) => /^https?:\/\//i.test(value) && isLikelyPublicProfileImageUrl(value));
+  return portrait || '';
+}
+
 function extractImageUrl(
   $: cheerio.CheerioAPI,
   profiles: Array<Record<string, any>>,
   profileUrl: string,
 ): string {
+  const portrait = profilePortraitImageUrl($, profileUrl);
+  if (portrait) return portrait;
   const candidates = [
     ...profiles.map((profile) => imageUrlFromJsonLdImage(profile.image)),
     $('meta[property="og:image:secure_url"]').first().attr('content') || '',
     $('meta[property="og:image"]').first().attr('content') || '',
     $('meta[name="twitter:image"]').first().attr('content') || '',
-  ];
-  const candidate = candidates.map(textValue).find((value) => /^https?:\/\//i.test(value));
-  return candidate ? absolutize(candidate, profileUrl) : '';
+  ]
+    .map(textValue)
+    .filter((value) => /^https?:\/\//i.test(value))
+    .map((value) => absolutize(value, profileUrl));
+  return candidates.find((value) => !isSocialShareImageUrl(value)) || candidates[0] || '';
 }
 
 function extractEmail(
