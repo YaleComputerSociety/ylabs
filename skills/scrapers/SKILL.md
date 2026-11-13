@@ -295,6 +295,7 @@ The predicate matches a `course` or `courses` segment followed by a course slug,
 Measured on Development 2026-10-18, it matched 2 of 4,226 live rows, both `student_ready` `LAB` rows the roster lane minted for lecturers and the microsite lane named after a course, and 32 live observations, all on those two rows; the one live row named "Laboratory for <subject>" whose page is a real lab was untouched.
 Neither row was withdrawn: with the course evidence ignored each re-derives as its lecturer's `FACULTY_RESEARCH_AREA`, and the 2026-10-04 owner rule spares a lecturer row.
 `research-entity:withdraw-non-research-home-row --kind=course` is for a row whose only content is a course.
+`--kind=company` is for a row minted from a company's own site, such as a firm a faculty member runs, which no modelled research type describes (#4916); the lane class that mints such a row from a faculty member's outside website is #6097.
 
 A patient-care page is never a lab's or a person-scoped row's research website (`isPatientCarePageUrl`, `isPatientCarePageCitedAsResearchWebsite` in `utils/researchHomeWebsiteUrl.ts`, #5364).
 It matches any page on a clinical-practice or hospital host (`yalemedicine.org`, `ynhh.org`, `ynhhs.org`) and any page under a `patient`, `patients`, `for-patients`, `care`, `patient-care`, `patient-services` or `clinical-care`/`clinical-services` path segment, unless a path segment carries `research` or is `lab`/`labs`, so a research program under a clinics section or a `/lab/` microsite keeps its website.

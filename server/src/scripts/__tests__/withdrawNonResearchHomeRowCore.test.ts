@@ -111,3 +111,23 @@ describe('the course kind', () => {
     );
   });
 });
+
+describe('the company kind', () => {
+  it('is accepted by the withdrawal command and records the page as a company', () => {
+    const options = parseWithdrawalArgs([
+      '--slug=x',
+      '--kind=company',
+      '--evidence-url=https://example.invalid/',
+    ]);
+    expect(options.kind).toBe('company');
+    expect(withdrawalRefusalNote('company')).toBe(
+      'the page is a company, not a research home a student can join',
+    );
+  });
+
+  it('still refuses a kind outside the vocabulary', () => {
+    expect(() =>
+      parseWithdrawalArgs(['--slug=x', '--kind=firm', '--evidence-url=https://example.invalid/']),
+    ).toThrow(/--kind must be one of .*company/);
+  });
+});
