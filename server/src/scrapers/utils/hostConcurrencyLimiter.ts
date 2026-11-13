@@ -321,7 +321,7 @@ export function installScraperHostConcurrencyInterceptor(
       return response;
     },
     (error) => {
-      release(error?.config ?? error?.response?.config);
+      release(error?.config);
       return Promise.reject(error);
     },
   );

@@ -253,7 +253,10 @@ export async function acquireDevWriteLease(
   const ownerId = inherited || (deps.newOwnerId ?? (() => `${host}:${pid}:${randomUUID()}`))();
 
   const current = await withinTimeout(
-    collection.findOne({ _id: leaseId(input.name) }),
+    collection.findOne(
+      { _id: leaseId(input.name) },
+      boundedOptions(DEV_WRITE_LEASE_ACQUIRE_TIMEOUT_MS),
+    ),
     DEV_WRITE_LEASE_ACQUIRE_TIMEOUT_MS,
   );
   if (inherited && current?.ownerId === inherited && isLiveFor(current, now())) {
@@ -293,12 +296,15 @@ export async function acquireDevWriteLease(
   if (!current) {
     const inserted = await withinTimeout(
       collection
-        .insertOne({
-          _id: leaseId(input.name),
-          environment: DEV_WRITE_LEASE_ENVIRONMENT,
-          sourceName: input.name,
-          ...fields,
-        } as DevWriteLeaseRecord)
+        .insertOne(
+          {
+            _id: leaseId(input.name),
+            environment: DEV_WRITE_LEASE_ENVIRONMENT,
+            sourceName: input.name,
+            ...fields,
+          } as DevWriteLeaseRecord,
+          boundedOptions(DEV_WRITE_LEASE_ACQUIRE_TIMEOUT_MS),
+        )
         .then(
           () => true,
           (error: { code?: number }) => {
@@ -320,6 +326,7 @@ export async function acquireDevWriteLease(
           leaseExpiresAt: current.leaseExpiresAt,
         },
         { $set: fields, $unset: { releasedAt: '', releaseReason: '' } },
+        boundedOptions(DEV_WRITE_LEASE_ACQUIRE_TIMEOUT_MS),
       ),
       DEV_WRITE_LEASE_ACQUIRE_TIMEOUT_MS,
     );
@@ -335,7 +342,10 @@ export async function acquireDevWriteLease(
   const unrecorded: DevWriteLeaseRecord = { _id: '', sourceName: input.name };
   const holder =
     (await withinTimeout(
-      collection.findOne({ _id: leaseId(input.name) }),
+      collection.findOne(
+        { _id: leaseId(input.name) },
+        boundedOptions(DEV_WRITE_LEASE_ACQUIRE_TIMEOUT_MS),
+      ),
       DEV_WRITE_LEASE_ACQUIRE_TIMEOUT_MS,
     )) ??
     current ??

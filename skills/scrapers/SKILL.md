@@ -581,7 +581,7 @@ The waits before dispatch carry their own bounds, because the overall clock deli
 | Wait | Constant | Value | On expiry |
 |------|----------|-------|-----------|
 | Host slot (the interceptor's whole chain and the rendered fetch) | `HOST_SLOT_WAIT_TIMEOUT_MS` via `acquireHostSlotWithin` | 10 min | the request fails with an `ETIMEDOUT` `AxiosError`, and a slot granted later is released at once |
-| Machine-wide broker acquire | `SCRAPER_HOST_SLOT_ACQUIRE_TIMEOUT_MS` | 180 s | falls back to the process's own per-host cap |
+| Machine-wide broker acquire | `DEFAULT_MACHINE_ACQUIRE_TIMEOUT_MS` (env override `SCRAPER_HOST_SLOT_ACQUIRE_TIMEOUT_MS`) | 180 s | falls back to the process's own per-host cap |
 | Development lease acquire (each Mongo read or write) | `DEV_WRITE_LEASE_ACQUIRE_TIMEOUT_MS` | 30 s | the fetch that asked for the lease fails |
 | `assertPublicHttpUrl` name lookup | `NAME_LOOKUP_TIMEOUT_MS` | 10 s per attempt | a resolver failure, never a negative |
 
