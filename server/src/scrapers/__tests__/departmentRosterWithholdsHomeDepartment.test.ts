@@ -24,9 +24,9 @@ import { withUserDepartmentObservationsScreened } from '../userDepartmentObserva
 const withholdsHome = (config: DeptConfig): boolean =>
   Boolean(
     config.withholdsHomeDepartment ||
-      config.affiliatesOnly ||
-      config.schoolWideDirectory ||
-      config.crossListedProgramme,
+    config.affiliatesOnly ||
+    config.schoolWideDirectory ||
+    config.crossListedProgramme,
   );
 
 const CATALOG_DEPARTMENT_CONFIGS: Readonly<Record<string, string>> = {
@@ -85,9 +85,9 @@ describe('withholdsHomeDepartment on center and program rosters (#6071)', () => 
       value: 'West Campus Institutes',
       sourceName: 'dept-faculty-roster',
     };
-    expect(withUserDepartmentObservationsScreened([reading], { canonicalDepartment: null })).toEqual(
-      [],
-    );
+    expect(
+      withUserDepartmentObservationsScreened([reading], { canonicalDepartment: null }),
+    ).toEqual([]);
   });
 });
 
@@ -160,9 +160,9 @@ describe('a roster that withholds the home department changes nothing else', () 
       flagged.filter((o) => o.entityType === 'user').map((o) => o.entityKey),
     );
     expect(memberKeys.size).toBe(2);
-    expect(
-      flagged.filter((o) => o.entityType === 'user' && o.field === 'departments').length,
-    ).toBe(2);
+    expect(flagged.filter((o) => o.entityType === 'user' && o.field === 'departments').length).toBe(
+      2,
+    );
     expect(flagged.some((o) => o.entityType === 'departmentRosterHealth')).toBe(true);
   });
 
