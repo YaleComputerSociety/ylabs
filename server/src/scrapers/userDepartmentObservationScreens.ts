@@ -29,7 +29,7 @@ export type UserDepartmentObservationScreen = <T extends UserDepartmentObservati
  * stored department only screened readings back is cleared by the screen that refused them.
  */
 export const USER_DEPARTMENT_OBSERVATION_SCREENS: ReadonlyArray<UserDepartmentObservationScreen> = [
-  (observations) => withoutWithheldRosterHomeDepartments(observations),
+  withoutWithheldRosterHomeDepartments,
   (observations, { canonicalDepartment }) =>
     withDirectoryExportDepartmentsDecoded(observations, canonicalDepartment),
   withDirectoryDepartmentsCatalogGated,

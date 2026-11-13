@@ -29,6 +29,13 @@ const withholdsHome = (config: DeptConfig): boolean =>
     config.crossListedProgramme,
   );
 
+const WEST_CAMPUS_LIST_SPELLING =
+  'West Campus (Institute of Biomolecular Design & Discovery, Cancer Biology, Energy Sciences, Microbial Sciences, Nanobiology, Systems Biology, Preservation of Cultural Heritage)';
+const noCatalog = { canonicalDepartment: null };
+const surgeryCatalog = {
+  canonicalDepartment: (name: string) => (name === 'Surgery' ? name : undefined),
+};
+
 const CATALOG_DEPARTMENT_CONFIGS: Readonly<Record<string, string>> = {
   'wright-lab': 'Its deptName is Physics, the catalog department its people belong to.',
   'ysm-biomedical-informatics-data-science':
@@ -76,7 +83,52 @@ describe('withholdsHomeDepartment on center and program rosters (#6071)', () => 
       { field: 'departments', value: ['Stem Cell Center'], sourceName: 'dept-faculty-roster' },
       { field: 'primaryDepartment', value: 'Stem Cell Center', sourceName: 'fixture-lane' },
     ];
-    expect(withoutWithheldRosterHomeDepartments(readings)).toEqual(readings.slice(1));
+    expect(withoutWithheldRosterHomeDepartments(readings, noCatalog)).toEqual(readings.slice(1));
+  });
+
+  it('screens an uncatalogued roster reading, such as an earlier West Campus spelling', () => {
+    const readings = [
+      {
+        field: 'primaryDepartment',
+        value: WEST_CAMPUS_LIST_SPELLING,
+        sourceName: 'dept-faculty-roster',
+      },
+      { field: 'primaryDepartment', value: 'Surgery', sourceName: 'dept-faculty-roster' },
+      {
+        field: 'departments',
+        value: [WEST_CAMPUS_LIST_SPELLING],
+        sourceName: 'dept-faculty-roster',
+      },
+      { field: 'primaryDepartment', value: WEST_CAMPUS_LIST_SPELLING, sourceName: 'fixture-lane' },
+    ];
+    expect(withoutWithheldRosterHomeDepartments(readings, surgeryCatalog)).toEqual(
+      readings.slice(1),
+    );
+  });
+
+  it('screens only the withheld names when there is no catalog', () => {
+    const readings = [
+      { field: 'primaryDepartment', value: 'Stem Cell Center', sourceName: 'dept-faculty-roster' },
+      {
+        field: 'primaryDepartment',
+        value: WEST_CAMPUS_LIST_SPELLING,
+        sourceName: 'dept-faculty-roster',
+      },
+    ];
+    expect(withoutWithheldRosterHomeDepartments(readings, noCatalog)).toEqual(readings.slice(1));
+  });
+
+  it('screens a withheld name even when the catalog names it', () => {
+    const reading = {
+      field: 'primaryDepartment',
+      value: 'Stem Cell Center',
+      sourceName: 'dept-faculty-roster',
+    };
+    expect(
+      withoutWithheldRosterHomeDepartments([reading], {
+        canonicalDepartment: (name: string) => name,
+      }),
+    ).toEqual([]);
   });
 
   it('is one of the resolver department screens', () => {
@@ -88,6 +140,15 @@ describe('withholdsHomeDepartment on center and program rosters (#6071)', () => 
     expect(
       withUserDepartmentObservationsScreened([reading], { canonicalDepartment: null }),
     ).toEqual([]);
+  });
+
+  it('screens an uncatalogued roster reading through the resolver department screens', () => {
+    const reading = {
+      field: 'primaryDepartment',
+      value: WEST_CAMPUS_LIST_SPELLING,
+      sourceName: 'dept-faculty-roster',
+    };
+    expect(withUserDepartmentObservationsScreened([reading], surgeryCatalog)).toEqual([]);
   });
 });
 
