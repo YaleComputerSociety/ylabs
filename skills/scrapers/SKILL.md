@@ -603,6 +603,15 @@ An expired deadline rejects with an `AxiosError` coded `ETIMEDOUT` whose message
 A caller's own `signal` still cancels as a cancellation.
 The aborted request still publishes one of the HTTP settle channels, so the Development write lease (`DEV_WRITE_PROGRESS_HTTP_CHANNELS`) and `installAxiosScrapeRunProgress` both see it settle.
 
+The same adapter carries an opt-in request log (#6188): set `SCRAPER_REQUEST_LOG=<path>` on a run and each request that reaches the network appends one JSON line to an owner-only (0600) file.
+A line holds the dispatch time in UTC, the host, `urlHash` (the first 16 hex characters of the SHA-256 of the full URL, so no path or query appears in clear), the HTTP status or the error code, `durationMs`, and `attempt`, the count of requests this process has sent to that URL.
+It never records headers, cookies, bodies or environment, and it records the adapter call, so while redirects are followed inside one adapter call a redirect chain is one line under the requested URL.
+Only processes that install the adapter are logged: `cli.ts`, the orchestrator's `run` and `scrapeCanary`, which all reach it through `installScraperFetchDeadlines()` and the process-wide `processScraperRequestLog()`.
+Standalone scripts that fetch without installing it are not logged, among them `backfillSourceLinkHealth`, `backfillFellowshipSourceLinkHealth`, the `audit*` and `repair*` scripts and `verifyOfficialProfileLinks`, and neither are the browser fetches in `renderedFetch.ts`.
+A log path that cannot be opened prints one warning naming only the error code and the run continues unlogged.
+A failed log write drops that line and never changes the request's response or error.
+Use it when a run has to be lined up against a host incident, such as a ban or a burst-limit hold.
+
 The waits before dispatch carry their own bounds, because the overall clock deliberately does not run there (#6051):
 
 | Wait | Constant | Value | On expiry |
