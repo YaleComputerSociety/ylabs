@@ -58,6 +58,15 @@ describe('parseArgs', () => {
       ]),
     ).toThrow('Unknown argument');
   });
+
+  it.each(['--until', '--stated-until', '--paused-until', '--date', '--retry-after', '--at'])(
+    'takes no date from the operator, so %s is refused',
+    (flag) => {
+      const base = ['--host', 'dept.example.edu', '--body-file', '/tmp/n.txt'];
+      expect(() => parseArgs([...base, flag, '2099-01-01'])).toThrow('Unknown argument');
+      expect(() => parseArgs([...base, `${flag}=2099-01-01`])).toThrow('Unknown argument');
+    },
+  );
 });
 
 describe('seeding a host pause from a stored refusal notice', () => {
