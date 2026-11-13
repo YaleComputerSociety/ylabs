@@ -314,6 +314,42 @@ describe('the sole-holder liveness probe and a refusal (#5803)', () => {
     expect(screened.retained).toEqual([]);
     expect(screened.withheld).toHaveLength(1);
   });
+  it('still probes a retraction that mixes a refusal with an absence claim', async () => {
+    const absenceRead = (scrapeRunId: string, iso: string): FieldRetractionCompleteRead => ({
+      entityKey: ENTITY_KEY,
+      scrapeRunId,
+      observedAt: at(iso),
+      assertsNoValueFor: ['websiteUrl'],
+      refusals: [],
+    });
+    const reads = [
+      absenceRead('run-x', '2026-11-03T00:00:00Z'),
+      absenceRead('run-y', '2026-11-04T00:00:00Z'),
+      ...TWO_REFUSING_READS,
+    ];
+    const observations = [
+      assertion({
+        observationId: 'obs-absent',
+        value: OTHER_LINK,
+        scrapeRunId: 'run-older',
+        observedAt: at('2026-11-01T00:00:00Z'),
+      }),
+      assertion({ scrapeRunId: 'run-mid', observedAt: at('2026-11-06T00:00:00Z') }),
+    ];
+    const [retraction] = plan(reads, observations, CONTRACT, [
+      { ...entity, liveObservationCountByField: { websiteUrl: 2 } },
+    ]).retractions;
+    expect(retraction.refusalObservationIds).toEqual(['obs-old']);
+    expect(retraction.observationIds).toHaveLength(2);
+    const probed: string[] = [];
+    const screened = await withholdSoleHolderRetractionsThatStillAnswer([retraction], (value) => {
+      probed.push(value);
+      return livePage();
+    });
+    expect(probed.length).toBeGreaterThan(0);
+    expect(screened.retained).toEqual([]);
+    expect(screened.withheld).toHaveLength(1);
+  });
 });
 
 describe('refusals loaded from witness rows', () => {

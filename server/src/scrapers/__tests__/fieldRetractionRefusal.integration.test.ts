@@ -188,6 +188,66 @@ describe('a newer-version refusal retires the stale assertion end to end (#5803)
     expect((await ResearchEntity.findOne({ slug: ENTITY_KEY }).lean())?.websiteUrl).toBeUndefined();
   });
 
+  it('probes a mixed refusal and absence retraction and counts it like any sole holder', async () => {
+    const OTHER_LINK = 'https://other-synthetic-site.example.org/';
+    const absenceWitness = witness().map((row) =>
+      row.field === 'slug' ? { ...row, assertsNoValueFor: ['websiteUrl'] } : row,
+    );
+    await ResearchEntity.updateOne({ slug: ENTITY_KEY }, { $set: { websiteUrl: OTHER_LINK } });
+    await Observation.deleteMany({ field: 'websiteUrl' });
+    await appendRun(
+      [
+        ...witness(),
+        {
+          entityType: 'researchEntity',
+          entityKey: ENTITY_KEY,
+          field: 'websiteUrl',
+          value: OTHER_LINK,
+          sourceUrl: LISTING_PAGE,
+        },
+      ],
+      new Date('2026-11-02T00:00:00Z'),
+    );
+    await appendRun(absenceWitness, new Date('2026-11-03T00:00:00Z'));
+    await appendRun(absenceWitness, new Date('2026-11-04T00:00:00Z'));
+    await appendRun(
+      [
+        ...witness(),
+        {
+          entityType: 'researchEntity',
+          entityKey: ENTITY_KEY,
+          field: 'websiteUrl',
+          value: STORED_LINK,
+          sourceUrl: LISTING_PAGE,
+          admittedUnder: [{ classifier: CLASSIFIER, version: 1 }],
+        },
+      ],
+      new Date('2026-11-06T00:00:00Z'),
+    );
+    await appendRun(witness(refusedStoredLink), new Date('2026-11-10T00:00:00Z'));
+    await appendRun(witness(refusedStoredLink), new Date('2026-11-12T00:00:00Z'));
+
+    const live = await reconcileFieldRetractions({
+      sourceName: SOURCE_NAME,
+      contract: CONTRACT,
+      dryRun: true,
+      probeValue: async () => ({ positivelyDead: false }),
+    });
+    expect(live.counts.refusalSupportedObservations).toBe(1);
+    expect(live.counts.soleHolderValueWithheld).toBe(1);
+    expect(live.retractions).toEqual([]);
+
+    const dead = await reconcileFieldRetractions({
+      sourceName: SOURCE_NAME,
+      contract: CONTRACT,
+      dryRun: true,
+      probeValue: deadProbe,
+    });
+    expect(dead.counts.soleHolderValueWithheld).toBe(0);
+    expect(dead.counts.soleHolderValueProbedDead).toBe(1);
+    expect(dead.retractions).toHaveLength(1);
+  });
+
   it('a later read that admits the value again keeps it live', async () => {
     await appendRun(witness(refusedStoredLink), new Date('2026-11-10T00:00:00Z'));
     await appendRun(witness(refusedStoredLink), new Date('2026-11-12T00:00:00Z'));
