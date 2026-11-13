@@ -70,6 +70,9 @@ function parseReclaimStrandedField(value: string | undefined): ReclaimableStrand
  * `contactEmail`, `contactName` and `contactRole` are absent because
  * `publicResearchDetailGroup` withholds them from every served payload, so tracking
  * them would print a withheld contact into a report an operator pastes around.
+ * `leadVerification` is not served, but the gate and the `leadEdges` resolve read the
+ * stored value rather than the lane's observations, so a new verdict reaches neither
+ * until a `--only-fields=leadVerification` pass projects it (#5962).
  */
 export const REMATERIALIZE_TRACKED_FIELDS = [
   'name',
@@ -101,6 +104,7 @@ export const REMATERIALIZE_TRACKED_FIELDS = [
   'yaleStatusCache',
   'activeAtYaleCache',
   'yaleStatusReasonCache',
+  'leadVerification',
 ] as const;
 
 const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/i;
@@ -352,6 +356,13 @@ function normalizeForComparison(value: unknown): unknown {
   if (value === undefined || value === null) return null;
   if (Array.isArray(value)) {
     return value.map((entry) => withoutSubdocumentId(normalizeForComparison(entry)));
+  }
+  if (isPlainObject(value)) {
+    return withoutSubdocumentId(
+      Object.fromEntries(
+        Object.entries(value).map(([key, entry]) => [key, normalizeForComparison(entry)]),
+      ),
+    );
   }
   return value;
 }
