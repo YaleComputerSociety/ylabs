@@ -139,7 +139,6 @@ describe('roster biography research evidence', () => {
       'Their work focuses on serving their patients at three synthetic county clinics.',
       'Their work focuses on treating the symptoms of synthetic winter cough in adults.',
       'Their work focuses on care for patients with synthetic marsh fever.',
-      'Their work focuses on developing new sensors that help their patients walk.',
     ]) {
       expect(keptBesideAnchor(sentence)).toBe(false);
     }
@@ -164,6 +163,11 @@ describe('roster biography research evidence', () => {
       'They study how patients with synthetic joint pain choose among treatments.',
       'Their research follows how their patients with synthetic tremor respond to new devices.',
       'Their work focuses on tracking synthetic blood pressure trajectories in their patients.',
+      'Their work focuses on sensors that help their patients with synthetic tremor walk.',
+      'Their work focuses on developing new sensors that help their patients walk.',
+      'Their work focuses on getting patients back on their feet with a brace they engineer.',
+      'Their work focuses on getting patients back on their feet with braces they benchmark.',
+      'Their work focuses on getting patients back on their feet with a robotic brace.',
       'They develop machine learning methods that read the scans of their patients for synthetic stroke signs.',
       'They explore why treating the symptoms of synthetic winter cough often fails in teenagers.',
       'Their work focuses on tools that help clinicians help their patients quit synthetic smoking.',
@@ -176,14 +180,20 @@ describe('roster biography research evidence', () => {
     expect(keptBesideAnchor('We investigated synthetic soil fungi in cold forests.')).toBe(false);
   });
 
-  it('keeps a creative-practice sentence about care or patients (#6083)', () => {
+  it('keeps a creative-practice sentence that carries a clinical-service shape (#6083)', () => {
     for (const sentence of [
       'Their special interest is in music written for patients in hospice care.',
       'Their work focuses on writing plays about caregivers and patients in hospitals.',
       'They develop new choreography that engages themes of care and illness.',
-      'Their work focuses on portraits of their patients painted in synthetic long-term care.',
-      'Their work focuses on a documentary about their patients in synthetic long-term care.',
-      'Their work focuses on lullabies written for their patients on synthetic night wards.',
+      'Their work focuses on caring for patients through portraits made at the bedside.',
+      'Their work focuses on caring for patients through a documentary about the ward.',
+      'Their work focuses on caring for patients through lullabies sung on night wards.',
+      'Their work focuses on caring for patients through murals in clinic halls.',
+      'Their work focuses on caring for patients through a memoir of a year on the ward.',
+      'Their work focuses on caring for patients through essays about recovery.',
+      'Their work focuses on caring for patients through textiles woven with families.',
+      'Their work focuses on caring for patients through installations in waiting rooms.',
+      'Their work focuses on caring for patients through comedy performed on the ward.',
     ]) {
       expect(keptBesideAnchor(sentence)).toBe(true);
     }
