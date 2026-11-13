@@ -37,18 +37,16 @@ describe('loadLaneTitledPersonKeys (#5801)', () => {
   });
 
   it('returns only keys with a live, not rolled back title read from the lane', async () => {
-    await mongoose.connection
-      .db!.collection('observations')
-      .insertMany([
-        titleRead('ysm:live-title'),
-        titleRead('ysm:superseded-title', { superseded: true }),
-        titleRead('ysm:rolled-back-title', {
-          rollback: { rolledBackAt: new Date('2026-11-01T00:00:00Z') },
-        }),
-        titleRead('ysm:other-lane-title', { sourceName: 'dept-faculty-roster' }),
-        titleRead('ysm:other-field', { field: 'bio' }),
-        titleRead('ysm:research-row', { entityType: 'researchEntity' }),
-      ]);
+    await mongoose.connection.db!.collection('observations').insertMany([
+      titleRead('ysm:live-title'),
+      titleRead('ysm:superseded-title', { superseded: true }),
+      titleRead('ysm:rolled-back-title', {
+        rollback: { rolledBackAt: new Date('2026-11-01T00:00:00Z') },
+      }),
+      titleRead('ysm:other-lane-title', { sourceName: 'dept-faculty-roster' }),
+      titleRead('ysm:other-field', { field: 'bio' }),
+      titleRead('ysm:research-row', { entityType: 'researchEntity' }),
+    ]);
     expect([...(await loadLaneTitledPersonKeys(LANE))]).toEqual(['ysm:live-title']);
   });
 });
