@@ -213,29 +213,33 @@ export class MachineHostBudgetLimiter implements HostSlotLimiter {
     this.warn = options.warn ?? ((message) => console.warn(`[host-budget] ${message}`));
   }
 
-  async acquire(host: string): Promise<HostSlotRelease> {
+  acquire(host: string): Promise<HostSlotRelease> {
+    return this.acquireAround(host);
+  }
+
+  /**
+   * Takes this host's budget slot, then `inner`, and only then stamps the spacing, so however long
+   * `inner` takes to grant, the request still leaves at least the host's interval after the last.
+   */
+  async acquireAround(host: string, inner?: HostSlotLimiter): Promise<HostSlotRelease> {
     const key = host ? machineHostBudgetKey(host) : '';
-    if (!key || this.isBypassed()) return () => {};
+    const acquireInner = async (): Promise<HostSlotRelease> =>
+      inner ? inner.acquire(host) : () => {};
+    if (!key || this.isBypassed()) return acquireInner();
     if (!this.enabled) {
       this.logOptOut();
-      return () => {};
+      return acquireInner();
     }
     const budget = machineHostBudgetFor(key);
     const id = `${this.pid}-${randomUUID()}`;
-    let grantAt = await this.reserve(key, id, budget);
+    const grantAt = await this.reserve(key, id, budget);
+    let releaseInner: HostSlotRelease | undefined;
     try {
-      for (;;) {
-        await this.sleep(grantAt - this.now());
-        const remaining = await this.transact(key, (state, now) => {
-          const gap = state.lastGrantAt + budget.minIntervalMs - now;
-          if (gap > 0) return { result: gap, write: false };
-          state.lastGrantAt = now;
-          return { result: 0, write: true };
-        });
-        if (remaining <= 0) break;
-        grantAt = this.now() + remaining;
-      }
+      await this.sleep(grantAt - this.now());
+      releaseInner = await acquireInner();
+      await this.stampSpacing(key, budget);
     } catch (error) {
+      releaseInner?.();
       await this.releaseSlot(key, id);
       throw error;
     }
@@ -243,8 +247,22 @@ export class MachineHostBudgetLimiter implements HostSlotLimiter {
     return () => {
       if (released) return;
       released = true;
+      releaseInner?.();
       void this.releaseSlot(key, id);
     };
+  }
+
+  private async stampSpacing(key: string, budget: HostThrottle): Promise<void> {
+    for (;;) {
+      const remaining = await this.transact(key, (state, now) => {
+        const gap = state.lastGrantAt + budget.minIntervalMs - now;
+        if (gap > 0) return { result: gap, write: false };
+        state.lastGrantAt = now;
+        return { result: 0, write: true };
+      });
+      if (remaining <= 0) return;
+      await this.sleep(remaining);
+    }
   }
 
   /** Reads one host's state as the budget sees it, for tests and operator inspection. */

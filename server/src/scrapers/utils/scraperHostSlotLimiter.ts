@@ -11,7 +11,6 @@ import { MachineHostSlotLimiter } from './machineHostSlotBroker';
 import { isBenchmarkReplayActive } from '../snapshotBenchmarkMode';
 
 let machineBudget: MachineHostBudgetLimiter | undefined;
-let machineBroker: MachineHostSlotLimiter | undefined;
 let machineWide: HostSlotLimiter | undefined;
 
 export function machineHostBudgetLimiter(): MachineHostBudgetLimiter {
@@ -20,12 +19,16 @@ export function machineHostBudgetLimiter(): MachineHostBudgetLimiter {
 }
 
 /**
- * The file budget first, then the #4555 socket broker, so a process still running code that knows
- * only the broker meets this one there while every newer process also meets in the file budget.
+ * The file budget's slot first, then the #4555 socket broker, then the budget's spacing, so a
+ * process still running code that knows only the broker meets this one there while every newer
+ * process also meets in the file budget, and the broker's grant latency cannot shorten the spacing.
  */
 export function machineHostSlotLimiter(): HostSlotLimiter {
-  machineBroker ??= new MachineHostSlotLimiter({ isBypassed: isBenchmarkReplayActive });
-  machineWide ??= new ChainedHostSlotLimiter([machineHostBudgetLimiter(), machineBroker]);
+  if (!machineWide) {
+    const broker = new MachineHostSlotLimiter({ isBypassed: isBenchmarkReplayActive });
+    const budget = machineHostBudgetLimiter();
+    machineWide = { acquire: (host) => budget.acquireAround(host, broker) };
+  }
   return machineWide;
 }
 

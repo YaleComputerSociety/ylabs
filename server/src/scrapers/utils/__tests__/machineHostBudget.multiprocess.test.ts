@@ -143,6 +143,17 @@ describe('machine-wide host budget across real processes', () => {
     expect(smallestGrantGap(granted)).toBeGreaterThanOrEqual(1_500 - TIMER_SLACK_MS);
   }, 60_000);
 
+  it('keeps two layered processes on one Yale host 1.5 s apart after the broker also grants', async () => {
+    const granted = await runPair({
+      host: 'fixture-layered.yale.edu',
+      requests: 3,
+      holdMs: 100,
+      parallel: 3,
+    });
+    expect(peakInFlight(granted)).toBe(1);
+    expect(smallestGrantGap(granted)).toBeGreaterThanOrEqual(1_500 - TIMER_SLACK_MS);
+  }, 60_000);
+
   it('keeps a host outside Yale at four concurrent requests 400 ms apart', async () => {
     const granted = await runPair(
       { host: 'budget-fixture.example.org', requests: 4, holdMs: 2_000, parallel: 4 },
