@@ -15,7 +15,10 @@ import {
   getResearchGroupDetail,
   resolveArchivedResearchEntityCanonicalSlug,
 } from '../services/researchGroupService';
-import { SAME_LEAD_DUPLICATE_MERGE_ARCHIVE_REASON } from '../models/entityArchival';
+import {
+  SAME_LEAD_DUPLICATE_MERGE_ARCHIVE_REASON,
+  SUBJECT_TWIN_MERGE_ARCHIVE_REASON,
+} from '../models/entityArchival';
 import { archiveResearchEntities } from '../services/archivedResearchEntityRoleEdges';
 import { partitionMergeGroupsByDistinctPeopleVerdict } from '../services/distinctPeopleVerdicts';
 import { materializeEntity } from '../scrapers/entityMaterializer';
@@ -297,7 +300,10 @@ async function main(): Promise<void> {
       for (const loser of losers) {
         const archivedLoser = await archiveResearchEntities({
           ids: [loser._id],
-          archivedReason: SAME_LEAD_DUPLICATE_MERGE_ARCHIVE_REASON,
+          archivedReason:
+            merge.corroboration === 'leadless-or-member-led-twin'
+              ? SUBJECT_TWIN_MERGE_ARCHIVE_REASON
+              : SAME_LEAD_DUPLICATE_MERGE_ARCHIVE_REASON,
           set: { canonicalGroupId: survivor._id, lastObservedAt: now },
           survivorId: survivor._id,
           now,
