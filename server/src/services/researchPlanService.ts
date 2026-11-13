@@ -1,6 +1,8 @@
 import mongoose from 'mongoose';
 import { resolveResearchEntityCanonicalByTombstone } from './researchEntityCanonicalTombstone';
 import { entityHasHostedUndergraduates } from './hostedUndergraduates';
+import { servedEmeritusWayInFlags } from './emeritusLeadWayIn';
+import { entityMentorsUndergraduates } from './undergradListEvidenceServing';
 import { ResearchEntity, ResearchPlan } from '../models/index';
 import { readPrograms } from './programService';
 import {
@@ -25,8 +27,11 @@ import { sanitizeServedResearchEntityCopyFields } from '../utils/researchEntityD
 import { leadGuardedServingInput, optionalPublicLeadMemberNames } from './researchGroupService';
 import {
   decideServedResearchEntityCreativePractice,
+  entityWelcomesUndergraduates,
   servedResearchEntityCardForRow,
+  servedUndergradInvitationLevel,
 } from './researchEntityDto';
+import type { UndergradInvitationLevel } from '../models/storedVocabularies';
 import { serializedDocumentId } from '../utils/idSerialization';
 import { ConflictError, NotFoundError } from '../utils/errors';
 import { resolveAccountIdByNetid } from './accountService';
@@ -73,6 +78,9 @@ export interface SavedResearchEntitySummary {
   shortDescription?: string;
   description?: string;
   hasUndergradHostingEvidence?: boolean;
+  welcomesUndergrads?: true;
+  undergradInvitationLevel?: UndergradInvitationLevel;
+  mentorsUndergrads?: true;
   creativePractice?: true;
 }
 
@@ -160,7 +168,7 @@ export const boundSavedResearchEntitySummaryText = (
 // official-roster lead and make the saved card strip a name its own detail page
 // keeps (#2240).
 export const savedResearchEntityProjection = withPublicDescriptionGateFields(
-  '_id slug departments school pastUndergradAdvisees currentUndergradCount rosterEnrichment undergradListEvidence',
+  '_id slug departments school pastUndergradAdvisees currentUndergradCount rosterEnrichment undergradListEvidence undergradInvitation recentGrants recentGrantCount fundingAgencies',
 );
 
 const asBoolean = (value: unknown): boolean => value === true;
@@ -382,10 +390,25 @@ export const normalizeResearchPlanUpdate = (plan: ResearchPlanInput): Record<str
   return update;
 };
 
-const servedUndergraduateAccessFields = (
-  entity: any,
-): Pick<SavedResearchEntitySummary, 'hasUndergradHostingEvidence'> =>
-  entityHasHostedUndergraduates(entity) ? { hasUndergradHostingEvidence: true } : {};
+type SavedUndergraduateAccessFields = Pick<
+  SavedResearchEntitySummary,
+  | 'hasUndergradHostingEvidence'
+  | 'welcomesUndergrads'
+  | 'undergradInvitationLevel'
+  | 'mentorsUndergrads'
+>;
+
+// The same predicates the browse index serves, so a saved card can never claim more or
+// less than the card the student saved it from (#6088).
+const servedUndergraduateAccessFields = (entity: any): SavedUndergraduateAccessFields => {
+  const invitationLevel = servedUndergradInvitationLevel(entity);
+  return {
+    ...(entityHasHostedUndergraduates(entity) ? { hasUndergradHostingEvidence: true } : {}),
+    ...(entityWelcomesUndergraduates(entity) ? { welcomesUndergrads: true as const } : {}),
+    ...(invitationLevel ? { undergradInvitationLevel: invitationLevel } : {}),
+    ...(entityMentorsUndergraduates(entity) ? { mentorsUndergrads: true as const } : {}),
+  };
+};
 
 /**
  * A saved-list card, built through the same lead-name-aware sanitizer the browse card
@@ -522,10 +545,18 @@ const partitionSavedResearchEntities = async (
 const savedResearchEntityCards = async (
   servableEntities: Array<Record<string, any>>,
 ): Promise<SavedResearchEntitySummary[]> => {
-  const leadMemberNameRead = await optionalPublicLeadMemberNames(servableEntities);
+  const leadMemberNameRead = await optionalPublicLeadMemberNames(servableEntities, {
+    withEmeritusWayIn: true,
+  });
   return servableEntities.map((entity) => {
     const guarded = leadGuardedServingInput(entity, leadMemberNameRead);
-    return savedResearchEntitySummary(guarded.entity, guarded.leadMemberNames);
+    const emeritusWayIn = leadMemberNameRead.emeritusWayInByEntityId?.get(
+      serializedDocumentId(entity._id) || '',
+    );
+    return savedResearchEntitySummary(
+      { ...guarded.entity, ...servedEmeritusWayInFlags(emeritusWayIn) },
+      guarded.leadMemberNames,
+    );
   });
 };
 

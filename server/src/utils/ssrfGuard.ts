@@ -238,6 +238,28 @@ export const isPublicHostname = async (hostname: string): Promise<boolean> =>
 
 const BLOCKED_ADDRESS_MESSAGE = 'Blocked private or non-public address';
 
+const MAX_TRACKED_PRIVATE_ADDRESS_HOSTS = 500;
+const privateAddressRefusalsByHost = new Map<string, number>();
+
+/**
+ * Record-only: counts each private-address refusal by host so a run can report what this
+ * network kept it from reading (Yale's split-horizon DNS, #6111). It runs after the refusal is
+ * decided and never changes it.
+ */
+const notePrivateAddressRefusal = (hostname: string): void => {
+  const host = stripIpv6Brackets(hostname).toLowerCase();
+  if (!host || net.isIP(host)) return;
+  const seen = privateAddressRefusalsByHost.get(host);
+  if (seen === undefined && privateAddressRefusalsByHost.size >= MAX_TRACKED_PRIVATE_ADDRESS_HOSTS)
+    return;
+  privateAddressRefusalsByHost.set(host, (seen ?? 0) + 1);
+};
+
+export const privateAddressRefusalCounts = (): ReadonlyMap<string, number> =>
+  new Map(privateAddressRefusalsByHost);
+
+export const resetPrivateAddressRefusalCounts = (): void => privateAddressRefusalsByHost.clear();
+
 const blockedAddressError = (): NodeJS.ErrnoException => {
   const err = new Error(BLOCKED_ADDRESS_MESSAGE) as NodeJS.ErrnoException;
   err.code = 'EHOSTUNREACH';
@@ -255,6 +277,7 @@ export const ssrfSafeLookup: LookupFunction = (hostname, options, callback) => {
     .then((result) => {
       const records = Array.isArray(result) ? result : [result];
       if (records.length === 0 || records.some((record) => isPrivateAddress(record.address))) {
+        if (records.length > 0) notePrivateAddressRefusal(hostname);
         callback(blockedAddressError(), '', 0);
         return;
       }
@@ -349,6 +372,7 @@ export const assertPublicHttpUrl = async (rawUrl: string): Promise<URL> => {
   const resolution = await classifyHostnameResolution(parsed.hostname);
   if (isHostPropertyResolution(resolution.kind))
     freezeHostRefusal(parsed.hostname, resolution.kind);
+  if (resolution.kind === 'private-address') notePrivateAddressRefusal(parsed.hostname);
   if (resolution.kind !== 'public') {
     throw new SsrfBlockedError(NON_PUBLIC_ADDRESS_MESSAGE, resolution.kind);
   }

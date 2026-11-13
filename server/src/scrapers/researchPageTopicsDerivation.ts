@@ -4,8 +4,9 @@
  * only, it is cached by an input hash so a re-run makes no new paid call, and its output is
  * a derived candidate labelled with its own source name, never an observation.
  *
- * This module makes no model call and never fetches. `research-topics:derive` is the only
- * writer of the cache; the materializer only reads it.
+ * This module makes no model call and never fetches. `research-topics:derive` and the audited
+ * `research-topics:import-derivations` are the only writers of the cache; the materializer
+ * only reads it.
  */
 import { computeContentHash } from './contentHashGate';
 import { RESEARCH_PAGE_TOPICS_PROMPT_HASH } from './prompts';
@@ -19,9 +20,12 @@ import {
 import {
   RESEARCH_PAGE_TEXT_FIELD,
   RESEARCH_PAGE_TEXT_SOURCE,
+  researchPageTextEntries,
   researchPageTextEntriesForTopics,
   type ResearchPageTextEntry,
 } from './utils/researchPageText';
+import { descriptionPageNamesRowLead } from './sources/labMicrositeDescriptionLLMExtractor';
+import { isPersonResearchRow } from '../utils/researchStatementPassage';
 import { mongooseConnectionWasOpened } from '../utils/mongooseConnectionWasOpened';
 import { ownOrgUnitLabelsFromObservations } from './utils/ownOrgUnitLabelTopics';
 
@@ -38,6 +42,58 @@ export interface ResearchPageTextObservationLike {
   sourceUrl?: string | null;
   observedAt?: Date | string;
   superseded?: boolean;
+}
+
+/** What a topic reading needs to know about its row to judge whose page a page is. */
+export interface TopicEvidenceRow {
+  entityType?: unknown;
+  kind?: unknown;
+  name?: unknown;
+  websiteUrl?: unknown;
+  leadNames?: readonly (string | null | undefined)[];
+}
+
+const leadNamesOf = (row: TopicEvidenceRow): string[] =>
+  (row.leadNames ?? []).filter(
+    (name): name is string => typeof name === 'string' && name.trim() !== '',
+  );
+
+/**
+ * The pages a row's topic reading reads (#6110): `researchPageTextEntriesForTopics`, and on a
+ * person's research row only the pages that name one of its leads by the description lane's
+ * own rule (`descriptionPageNamesRowLead`), so a department, center or core landing page
+ * stored with a person's text never gives that person the unit's topics. The rule's
+ * own-website exception keeps a page under the row's website. A row of another kind, or a
+ * person row with no resolvable lead, reads every page, as the written description does.
+ * The derive script and the materializer must both read through this, or their keys diverge.
+ */
+export function researchPageTextEntriesForRowTopics(
+  value: unknown,
+  row?: TopicEvidenceRow,
+): ResearchPageTextEntry[] {
+  const pages = researchPageTextEntriesForTopics(value);
+  if (!row || !isPersonResearchRow(row)) return pages;
+  const leadNames = leadNamesOf(row);
+  if (leadNames.length === 0) return pages;
+  const storedTextByUrl = new Map<string, string>();
+  for (const entry of researchPageTextEntries(value)) {
+    storedTextByUrl.set(
+      entry.url,
+      [storedTextByUrl.get(entry.url), entry.text].filter(Boolean).join('\n'),
+    );
+  }
+  return pages.filter((page) =>
+    leadNames.some((personName) =>
+      descriptionPageNamesRowLead({
+        personName,
+        websiteUrl: row.websiteUrl,
+        rowName: row.name,
+        kind: 'individual',
+        pageUrl: page.url,
+        pageText: storedTextByUrl.get(page.url) ?? page.text,
+      }),
+    ),
+  );
 }
 
 export interface ResearchTopicsDerivationInputs {
@@ -153,16 +209,22 @@ export interface ResearchPageTopicsState {
  * or, when the current text has none yet, the reading behind the stored derived list: a
  * page-text re-observation that only rotated news or menu lines must not hand the field to
  * a weaker lane before anyone reads the new text (#5882). It takes the page text's own
- * observation time, so the resolver ages it with its evidence.
+ * observation time, so the resolver ages it with its evidence. When the row's lead filter
+ * leaves no page, the state carries no text hash, so the stored list is kept rather than
+ * withdrawn: a filter that removes all evidence is silence, not a reading of no topics.
  */
 export async function researchPageTopicsStateFor(
   observations: readonly ResearchPageTextObservationLike[],
   lookup: ResearchTopicsDerivationLookup = loadResearchTopicsDerivation,
   storedProvenance?: unknown,
+  row?: TopicEvidenceRow,
 ): Promise<ResearchPageTopicsState> {
   const current = currentResearchPageTextObservation(observations);
   if (!current) return {};
-  const pages = researchPageTextEntriesForTopics(current.value);
+  const pages = researchPageTextEntriesForRowTopics(current.value, row);
+  const leadFilterLeftNoEvidence =
+    pages.length === 0 && researchPageTextEntriesForTopics(current.value).length > 0;
+  if (leadFilterLeftNoEvidence) return {};
   const currentTextHash = researchPageTextHash(pages);
   if (pages.length === 0) return { currentTextHash };
   const inputHash = researchTopicsDerivationInputHash(pages);

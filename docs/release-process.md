@@ -277,22 +277,25 @@ The Development-to-Beta mirror inserts each live row as read and rewrites only `
 It is still not the path.
 `search_rerank_cache` is in `NEVER_COPY_COLLECTIONS`, every copy refuses one, and no tool exports it.
 Development's collection also holds `shadow` entries and entries keyed before the acronym rewrite (#5643), which a re-seed from the file does not carry.
-What a re-seed loses is a score whose slug no longer resolves: on 2026-11-11 the revised file left 6 of 9,942 scores unresolved, and each of those rows takes the neutral 1.5.
+What a re-seed loses is a score whose slug no longer resolves: on 2026-11-13 the v4 file left 16 of 10,974 scores unresolved, on 9 slugs (6 rows merged into a survivor and 3 renamed), and each of those rows takes the neutral 1.5.
+Since #6094 a slug whose row was merged away or renamed resolves to the live row that replaced it, through the merge tombstone or a stored redirect (`docs/search-rerank-cache.md`, "Seeding"), so only a slug with neither stays unresolved: on 2026-11-13 the v4 file left none of its 10,974 scores unresolved on Development.
 
 #### Before the first run: the seed file must key cleanly under current code
 
 Since #5643 a bare acronym keys as the phrase it stands for, so a file holding a bare acronym and its phrase as two entries is refused with `Entries <i> and <j> have the same query key`, before anything is read or written.
 The seed file Development was seeded from on 2026-11-10 holds one such pair, so it cannot seed any environment until it is revised.
-That revision is done: version v3 of the file, outside the repository, reseeded Development on 2026-11-11 under the marker `full-v3-2026-11-11`, so the steps below are the procedure for the next revision rather than a pending task.
+That revision is done: version v3 of the file reseeded Development on 2026-11-11 under the marker `full-v3-2026-11-11`.
+Version v4, v3 plus 36 multi-word topic queries students typed on Production and scored offline (#6094), reseeded Development on 2026-11-13 under `full-v4-2026-11-13` and is the file the next promotion seeds Beta and Production from.
+Both files live outside the repository, so the steps below are the procedure for the next revision rather than a pending task.
 Drop the bare acronym entry and keep the phrase entry, because the acronym is now searched as its phrase, so the phrase entry's scores are the ones scored against the pool the acronym is served.
 Revise the file outside the repository under a new version name and keep the previous version.
-While revising it, rewrite each slug that no longer resolves to the row's current slug, read through the `entityId` Development's cache stored for it, so the renamed rows keep their scores.
+While revising it, rewrite a slug only when the dry run still counts it in `unresolvedSlugs`: a merged or redirect-renamed row is already followed to its survivor, and a refused merge collision means re-scoring that entry rather than editing a slug.
 Then re-seed Development's own `search_rerank_cache` from the revised file, so its entries carry text hashes (the 2026-11-10 seed stored none), its keys match current code, and Development is a valid reference for the two reads below.
 
 #### Commands
 
 Run every command from the repository root of a laptop checkout at current `beta`, with `<seed.json>` the revised file and `<marker>` the index version.
-Name the marker `full-<seed version>-<YYYY-MM-DD>` with the seeding date, for example `full-v3-2026-11-20`.
+Name the marker `full-<seed version>-<YYYY-MM-DD>` with the seeding date, for example `full-v5-2026-11-20`.
 The `full-` prefix is what marks an entry as seeded: the live-miss job never replaces such an entry, and the dry run counts it in `seededEntries`.
 Write each variable as a prefix on the command line itself, as below; in zsh an unquoted variable holding two assignments does not split, so the second never reaches the command.
 Neither target takes the Development write lease, because the lease skips a database that receives data only by promotion, so `DEV_WRITE_OWNER` is not needed here.
@@ -300,11 +303,16 @@ Neither target takes the Development write lease, because the lease skips a data
 1. **Development reference, before the Development-to-Beta copy.**
    `OPENAI_API_KEY= ALLOW_NON_PROD_SCRAPER_WRITES= yarn --cwd server research-search:seed-rerank-cache --input=<seed.json>`
    It must read `textHashes: read-from-index` and `staleSeededEntries: 0`; a non-zero count means re-seed Development first.
-   Record `entries`, `scores` and `unresolvedSlugs`: the targets must report the same values.
+   Record `entries`, `scores`, `unresolvedSlugs` and `mergeCollisions.count`: the targets must report the same values.
+   `resolvedThroughMerge` and `resolvedThroughRedirect` may split differently on a target, because Beta and Production carry no archived rows and so reach a merged row through its survivor's `mergedFrom` rather than its tombstone; their sum must match.
 2. **Beta, after `yarn promote:beta` reports the mirror applied and its remote phase (gate, reindex, readiness) succeeded.**
    Dry run: `yarn --cwd server research-search:seed-rerank-cache --environment=beta --input=<seed.json>`
-   It must name a `db` ending in `/Beta`, read `textHashes: index-of-another-environment`, `entriesWithNoResolvedScore: 0`, and `entries`, `scores` and `unresolvedSlugs` equal to step 1.
+   It must name a `db` ending in `/Beta`, read `textHashes: index-of-another-environment`, `entriesWithNoResolvedScore: 0`, and `entries`, `scores`, `unresolvedSlugs` and `mergeCollisions.count` equal to step 1.
    A higher `unresolvedSlugs` than Development's means the target lacks live rows Development has, so stop and read the mirror report rather than seeding.
+   A lower `unresolvedSlugs` than Development's has two benign causes, and neither can be told from the count alone.
+   One is Development changing after the copy, for example a survivor archived or a merge chain broken since, so the target's `mergedFrom`, rebuilt from Development's tombstones at copy time, still reaches a row Development's own tombstone walk no longer does; here the target is the stale side, and re-promoting is the fix rather than seeding.
+   The other is a stale Development `mergedFrom` naming a slug that has no row, which gives that slug a second claimant on Development so it refuses the tie, while the target, rebuilt without that entry, resolves it through the one remaining `previousSlugs` claimant.
+   Any other lower count means the target is routing a slug to a row Development does not, so in every case stop and compare the two runs' `resolvedThroughMerge` and `resolvedThroughRedirect` before seeding.
    Apply: `yarn --cwd server research-search:seed-rerank-cache --environment=beta --input=<seed.json> --apply --confirm-search-rerank-cache-seed --index-version=<marker>`
    `upserted` must equal `entries`.
 3. **Production, after `yarn promote:production` reports the copy applied and its remote phase (re-gate, reindex, smoke) succeeded.**
@@ -326,6 +334,12 @@ In the Render dashboard, open the web service (Beta is `ylabs-gr4v.onrender.com`
 No rebuild is needed, because the server reads the variable at run time and it is not a `VITE_` build variable, but it reaches the process only on the restart a deploy performs.
 Leave `SEARCH_RERANK_LIVE_MISS_ENABLED`, `SEARCH_RERANK_LIVE_MISS_MODE` and `SEARCH_RERANK_CACHE_COLLECTION` unset, so the service serves seeded entries only, from `search_rerank_cache`.
 Set nothing on the operator services, which never answer a search.
+
+#### After a description batch
+
+A laptop seed carries no text hashes, so on Beta and Production the rerank cache cannot tell that a description batch changed the text its scores were measured on, and the "few close matches" notice keeps firing from those scores (`docs/search-rerank-cache.md`, "Few close matches notice").
+After a description batch reaches a target, re-score the affected seeded queries offline or re-seed that target from a revised file before the notice is relied on there.
+Development needs no extra step for correctness, because its seed stores hashes and the notice goes quiet on stale entries, but it serves the notice again only after its own re-seed.
 
 #### Verification
 
@@ -360,23 +374,28 @@ Removing them is optional, is a write against that environment that needs its ow
 
 #### Expected counts on a fresh copy of Development
 
-Measured on Development on 2026-11-11 with the v3 seed file, after Development's own cache was re-seeded from it.
+Measured on Development on 2026-11-13 with the v4 seed file, after Development's own cache was re-seeded from it.
 These change whenever the seed file or the corpus changes, so read them as the shape of a correct run rather than as values to match.
 
 | Count | Development dry run | Laptop seed of Beta or Production |
 | --- | --- | --- |
-| `entries` | 346 | 346 |
-| `scores` | 9,942 | 9,942 |
-| `resolvedScores` | 9,936 | 9,936 |
-| `unresolvedSlugs` | 6 | 6 |
+| `entries` | 382 | 382 |
+| `scores` | 10,974 | 10,974 |
+| `resolvedScores` | 10,958 | 10,958 |
+| `unresolvedSlugs` (unresolved scores, not distinct slugs) | 16 | 16 |
 | `entriesWithNoResolvedScore` | 0 | 0 |
 | `textHashes` | `read-from-index` | `index-of-another-environment` |
-| `scoresWithTextHash` | 9,936 | 0 |
-| `seededEntries`, `staleSeededEntries`, `seededEntriesWithoutTextHashes` | 346, 0, 0 | `null`, `null`, `null` |
-| `upserted` on apply | 346 | 346 |
+| `scoresWithTextHash` | 10,958 | 0 |
+| `seededEntries`, `staleSeededEntries`, `seededEntriesWithoutTextHashes` | 382, 0, 0 | `null`, `null`, `null` |
+| `upserted` on apply | 382 | 382 |
 
 The laptop column was measured by the same dry run on Development with `MEILISEARCH_INDEX_PREFIX=beta`, which is the mode a laptop seeding Beta or Production gets.
-The unrevised file, 347 entries, is refused by the key-collision check.
+Despite its name, `unresolvedSlugs` counts unresolved scores, one per scored row whose slug does not resolve, so the 16 above are 16 scores on 9 distinct slugs; compare a target's value against this column as a score count.
+The unrevised 2026-11-10 file, 347 entries, is refused by the key-collision check.
+On the 36 queries v4 added, a blind grade of the union of the unseeded and the reranked top 10 measured nDCG@10 +0.164 (95% CI +0.111 to +0.221), better on 33 and worse on 0, and the served re-read returned the reranked set on all 36.
+That table predates #6094, which follows merged and renamed slugs.
+The Development dry run with the v4 file on 2026-11-13, after #6094, read `entries` 382, `scores` 10,974, `resolvedScores` 10,974, `unresolvedSlugs` 0, `resolvedThroughMerge` 13, `resolvedThroughRedirect` 3, `mergeCollisions.count` 7 with none refused, `entriesWithNoResolvedScore` 0 and `scoresWithTextHash` 10,967, which is the resolved scores less the 7 collapsed pairs.
+Its laptop column was not measured.
 Through the search route, with the flag on and the public visibility scope, 20 sampled unfiltered multi-word seeded queries served a top 5 worth 284 of the 286 grade points the best five graded rows would score, and every one of the 20 served its graded rows in non-increasing grade order.
 An earlier rehearsal into a scratch collection, with the 2026-11-10 file less its bare acronym entry, changed the top 10 of 38 of 40 such queries against the unseeded order.
 

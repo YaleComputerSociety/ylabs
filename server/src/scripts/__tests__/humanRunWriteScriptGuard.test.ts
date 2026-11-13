@@ -109,6 +109,8 @@ const OPERATOR_TOOLS: Record<string, string> = {
     'promotion tooling, run by the remote phase in each serving environment after a copy (#5208)',
   'research-topics:derive':
     'buys a cached model reading of stored page text, a paid step an operator scopes and confirms (#5296); the engine applies the reading at materialization',
+  'research-topics:import-derivations':
+    'imports topic readings local agents made from the exported lane input, an owner-ordered substitute for the paid derive step that an operator scopes, grades and confirms; it never overwrites a reading, and the engine applies it at materialization through the same quote check',
   'research-search:seed-rerank-cache':
     'writes relevance scores an operator produced offline for real past queries, environment-local data seeded per environment and never derivable by a lane (#5448)',
   'model-refactor:validators':

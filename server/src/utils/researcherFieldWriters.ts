@@ -140,20 +140,24 @@ const storedWriter = (writers: unknown, field: string): ResearcherFieldWriter | 
 
 /**
  * Fields whose stored value is not present for writer precedence when no observation ever
- * stated it and no writer is recorded (#6049). Only `primaryDepartment`: a never-backed
- * stored name, image or website stays present, since a fill-only directory name replacing a
- * legacy fuller name measured worse (#6038).
+ * stated it and no writer is recorded. Empty: a fill-only directory value fills only an empty
+ * field (#6049). A blind three-grader check of 11 such replacements found the directory
+ * value right in 5, the stored value right in 2 and both wrong in 1, and a never-backed
+ * name, image or website measured worse when replaced (#6038). Adding a field here makes the
+ * materializer consult the never-backed read for it again.
  */
-const UNBACKED_STORED_VALUE_IS_ABSENT_FIELDS: ReadonlySet<ResearcherGatedField> = new Set([
-  'primaryDepartment',
-]);
+const UNBACKED_STORED_VALUE_IS_ABSENT_FIELDS: ReadonlySet<ResearcherGatedField> = new Set();
+
+/** Whether the never-backed read decides presence for `field`, so a caller can skip it. */
+export function storedValueBackingDecidesPresence(field: ResearcherGatedField): boolean {
+  return UNBACKED_STORED_VALUE_IS_ABSENT_FIELDS.has(field);
+}
 
 /**
- * Whether a stored value counts as present for writer precedence. A stored `primaryDepartment`
- * with no recorded writer that no observation, live or superseded, ever stated was set by no
- * source, so it is not present and a fill-only candidate lands on it (#6049). It only stops
- * blocking a fill: with no candidate the value stays, because a blind sample graded half of
- * such values right against the person's own page.
+ * Whether a stored value counts as present for writer precedence. A stored value on a field
+ * in `UNBACKED_STORED_VALUE_IS_ABSENT_FIELDS` with no recorded writer that no observation,
+ * live or superseded, ever stated would not be present, so a fill-only candidate would land
+ * on it. No field is listed, so every stored value stays present (#6049).
  */
 export function storedValueCountsAsPresent(
   writers: unknown,
@@ -180,8 +184,7 @@ export type ResearcherFieldWriteDecision =
  * that is fill-only too it ranks as usual, so fill-only keys settle among themselves in any order.
  * A holder recorded before the fill-only flag existed counts as fill-only when its join would
  * make it one now.
- * Callers pass `storedValuePresent` from `storedValueCountsAsPresent`, which reads a
- * never-backed stored department as absent (#6049).
+ * Callers pass `storedValuePresent` from `storedValueCountsAsPresent` (#6049).
  */
 export function decideResearcherFieldWrite(
   writers: unknown,

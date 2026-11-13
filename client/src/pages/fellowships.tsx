@@ -761,39 +761,34 @@ const Fellowships = () => {
     };
   });
 
-  const { closingSoon, open, nextCycleFilterCount, boardGroups, boardSummary, cycleOf } =
-    useMemo(() => {
-      const now = new Date();
-      const groups = Object.fromEntries(
-        PROGRAM_BOARD_SECTIONS.map((section) => [section, [] as Fellowship[]]),
-      ) as Record<ProgramBoardSection, Fellowship[]>;
-      const summary = emptyProgramBoardSummary();
-      const cycleOf = new Map<Fellowship, FellowshipCycleCategory>();
-      for (const f of fellowships) {
-        const cycle = getFellowshipCycleStatus(f, now).category;
-        cycleOf.set(f, cycle);
-        const section = programBoardSectionOf(f, cycle);
-        groups[section].push(f);
-        summary[section] += 1;
-      }
-      for (const key of PROGRAM_BOARD_SECTIONS) {
-        groups[key] =
-          sortBy === 'default'
-            ? sortFellowshipsForDisplay(groups[key], DEFAULT_SECTION_SORT[key], 'asc')
-            : sortFellowshipsForDisplay(groups[key], sortBy, sortDirection);
-      }
-      const nextCycleFilterCount = fellowships.filter((f) =>
-        NEXT_CYCLE_FILTER_CATEGORIES.includes(cycleOf.get(f)!),
-      ).length;
-      return {
-        closingSoon: groups.closingSoon,
-        open: groups.open,
-        nextCycleFilterCount,
-        boardGroups: groups,
-        boardSummary: summary,
-        cycleOf,
-      };
-    }, [fellowships, sortBy, sortDirection]);
+  const { closingSoon, open, nextCycleFilterCount, boardGroups, cycleOf } = useMemo(() => {
+    const now = new Date();
+    const groups = Object.fromEntries(
+      PROGRAM_BOARD_SECTIONS.map((section) => [section, [] as Fellowship[]]),
+    ) as Record<ProgramBoardSection, Fellowship[]>;
+    const cycleOf = new Map<Fellowship, FellowshipCycleCategory>();
+    for (const f of fellowships) {
+      const cycle = getFellowshipCycleStatus(f, now).category;
+      cycleOf.set(f, cycle);
+      groups[programBoardSectionOf(f, cycle)].push(f);
+    }
+    for (const key of PROGRAM_BOARD_SECTIONS) {
+      groups[key] =
+        sortBy === 'default'
+          ? sortFellowshipsForDisplay(groups[key], DEFAULT_SECTION_SORT[key], 'asc')
+          : sortFellowshipsForDisplay(groups[key], sortBy, sortDirection);
+    }
+    const nextCycleFilterCount = fellowships.filter((f) =>
+      NEXT_CYCLE_FILTER_CATEGORIES.includes(cycleOf.get(f)!),
+    ).length;
+    return {
+      closingSoon: groups.closingSoon,
+      open: groups.open,
+      nextCycleFilterCount,
+      boardGroups: groups,
+      cycleOf,
+    };
+  }, [fellowships, sortBy, sortDirection]);
 
   const toBrowsable = (fs: Fellowship[]): BrowsableItem[] =>
     fs.map((f) => ({ type: 'fellowship' as const, data: f }));
@@ -828,6 +823,12 @@ const Fellowships = () => {
     byKey.closeMatches = toBrowsable(ranked.filter((f) => closeMatchIds.has(f.id)));
     return byKey;
   }, [boardGroups, cycleOf, fellowships, quickFilter, resultsCloseMatchesFrom]);
+
+  const boardSummary = useMemo(() => {
+    const summary = emptyProgramBoardSummary();
+    for (const key of PROGRAM_BOARD_SECTIONS) summary[key] = boardItems[key].length;
+    return summary;
+  }, [boardItems]);
 
   const watchProgram = (programId: string) => {
     if (!localStorage.getItem(FIRST_PROGRAM_SAVE_KEY)) {

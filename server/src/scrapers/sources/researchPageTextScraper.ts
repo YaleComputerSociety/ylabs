@@ -1,5 +1,6 @@
 import * as cheerio from 'cheerio';
 import mongoose from 'mongoose';
+import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
@@ -11,7 +12,7 @@ import {
   loadStoredContentHash,
   type ContentHashEntityRef,
 } from '../contentHashGate';
-import { fetchPageWithPolicy } from '../utils/httpFetch';
+import { HttpStatusError, fetchPageWithPolicy } from '../utils/httpFetch';
 import {
   DEFAULT_SOURCE_CONCURRENCY,
   mapWithConcurrency,
@@ -46,6 +47,13 @@ import {
   type FetchedDescriptionPage,
 } from './labMicrositeDescriptionLLMExtractor';
 import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
+import { isTransientFetchFailure } from '../utils/transientFetchFailure';
+import {
+  HostCompletionTracker,
+  orderRowsBySmallestSharedHost,
+  plannedHosts,
+  type ReleaseFinishedHost,
+} from '../utils/hostCompletion';
 
 const MAX_PAGES_PER_ROW = 6;
 const MAX_RESEARCH_SUBPAGES = 2;
@@ -132,6 +140,43 @@ export interface ResearchPageTextScraperDeps {
   rowFinder?: ResearchPageTextRowFinderFn;
   storedHashLoader?: StoredContentHashLoaderFn;
   citerCountsLoader?: () => Promise<ReadonlyMap<string, number>>;
+  storedReadingHostsLoader?: StoredReadingHostsLoaderFn;
+  releaseFinishedHost?: ReleaseFinishedHost;
+}
+
+export type StoredReadingHostsLoaderFn = (
+  entity: ContentHashEntityRef,
+) => Promise<ReadonlySet<string>>;
+
+const pageHost = (url: string): string => {
+  try {
+    return new URL(url).hostname.toLowerCase().replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+};
+
+/**
+ * The hosts of the pages the row's current stored reading was built from. Fails open like the
+ * content-hash gate: with no connection, or no stored reading, there is nothing to keep.
+ */
+async function loadStoredReadingHosts(entity: ContentHashEntityRef): Promise<ReadonlySet<string>> {
+  if (!entity.entityId && !entity.entityKey) return new Set();
+  if (!mongooseConnectionWasOpened()) return new Set();
+  const filter: Record<string, unknown> = {
+    entityType: entity.entityType,
+    sourceName: RESEARCH_PAGE_TEXT_SOURCE,
+    field: RESEARCH_PAGE_TEXT_FIELD,
+    superseded: false,
+  };
+  if (entity.entityId) filter.entityId = entity.entityId;
+  else filter.entityKey = entity.entityKey;
+  const stored = await Observation.findOne(filter).sort({ observedAt: -1 }).select('value').lean();
+  const value = (stored as { value?: unknown } | null)?.value;
+  if (!Array.isArray(value)) return new Set();
+  return new Set(
+    value.map((entry) => pageHost(String((entry as { url?: unknown })?.url ?? ''))).filter(Boolean),
+  );
 }
 
 async function fetchPageOnce(url: string): Promise<FetchedDescriptionPage | null> {
@@ -281,6 +326,20 @@ export function capturedPageLeftTheRequestedPersonProfile(
 const uniqueStrings = (values: readonly (string | undefined)[]): string[] =>
   Array.from(new Set(values.map((value) => (value ?? '').trim()).filter(Boolean)));
 
+export function citedResearchPageUrls(
+  row: CandidateDescriptionLab,
+  citerCounts: ReadonlyMap<string, number>,
+): string[] {
+  return uniqueStrings([
+    row.websiteUrl,
+    ...(row.sourceUrls ?? []),
+    row.fullDescriptionSourceUrl,
+  ]).filter(
+    (url) =>
+      !isRefusedDescriptionLaneSourceUrl(url) && !isSharedListingCitation(url, row, citerCounts),
+  );
+}
+
 export function researchPageTextContentHash(value: readonly ResearchPageTextEntry[]): string {
   return computeVersionedContentHash(JSON.stringify(value), RESEARCH_PAGE_TEXT_CONTRACT, NO_MODEL);
 }
@@ -289,6 +348,7 @@ interface LaneCounts {
   rowsWithText: number;
   rowsWithoutText: number;
   noReadablePage: number;
+  keptAfterTransientFailure: number;
   contentUnchanged: number;
   charsStored: number;
 }
@@ -313,15 +373,24 @@ export class ResearchPageTextScraper implements IScraper {
   private readonly rowFinder: ResearchPageTextRowFinderFn;
   private readonly storedHashLoader: StoredContentHashLoaderFn;
   private readonly citerCountsLoader: () => Promise<ReadonlyMap<string, number>>;
+  private readonly storedReadingHostsLoader: StoredReadingHostsLoaderFn;
+  private readonly releaseFinishedHost?: ReleaseFinishedHost;
 
   constructor(deps: ResearchPageTextScraperDeps = {}) {
     this.fetchPage = deps.fetchPage || defaultFetchPage;
     this.rowFinder = deps.rowFinder || defaultRowFinder;
     this.storedHashLoader = deps.storedHashLoader || loadStoredContentHash;
     this.citerCountsLoader = deps.citerCountsLoader || loadConnectedEvidenceUrlCiterCounts;
+    this.storedReadingHostsLoader = deps.storedReadingHostsLoader || loadStoredReadingHosts;
+    this.releaseFinishedHost = deps.releaseFinishedHost;
   }
 
-  private async tryFetch(url: string, row: CandidateDescriptionLab, ctx: ScraperContext) {
+  private async tryFetch(
+    url: string,
+    row: CandidateDescriptionLab,
+    ctx: ScraperContext,
+    transientFailures: string[],
+  ) {
     try {
       const page = await this.fetchPage(url);
       if (!page?.html) return null;
@@ -333,6 +402,12 @@ export class ResearchPageTextScraper implements IScraper {
       }
       return personProfileSourceMatchesEntity(page.url, row) ? page : null;
     } catch (error) {
+      if (isTransientFetchFailure(error)) {
+        transientFailures.push(url);
+        if (error instanceof HttpStatusError && error.finalUrl) {
+          transientFailures.push(error.finalUrl);
+        }
+      }
       ctx.log(`[${row.slug || 'candidate'}] research page skipped: ${sanitizeLogValue(error)}`);
       return null;
     }
@@ -349,21 +424,15 @@ export class ResearchPageTextScraper implements IScraper {
     row: CandidateDescriptionLab,
     ctx: ScraperContext,
     citerCounts: ReadonlyMap<string, number> = new Map(),
+    transientFailures: string[] = [],
   ): Promise<FetchedDescriptionPage[]> {
-    const cited = uniqueStrings([
-      row.websiteUrl,
-      ...(row.sourceUrls ?? []),
-      row.fullDescriptionSourceUrl,
-    ]).filter(
-      (url) =>
-        !isRefusedDescriptionLaneSourceUrl(url) && !isSharedListingCitation(url, row, citerCounts),
-    );
+    const cited = citedResearchPageUrls(row, citerCounts);
     const labSiteUrl = cited.find((url) => !isPersonProfileUrl(url));
     const pages: FetchedDescriptionPage[] = [];
     const read = async (url: string): Promise<FetchedDescriptionPage | null> => {
       if (pages.length >= MAX_PAGES_PER_ROW) return null;
       if (pages.some((page) => page.url === url)) return null;
-      const page = await this.tryFetch(url, row, ctx);
+      const page = await this.tryFetch(url, row, ctx, transientFailures);
       if (!page || pages.some((fetched) => fetched.url === page.url)) return null;
       pages.push(page);
       return page;
@@ -394,17 +463,28 @@ export class ResearchPageTextScraper implements IScraper {
     counts: LaneCounts,
     citerCounts: ReadonlyMap<string, number>,
   ): Promise<ObservationInput[]> {
-    const fetched = await this.readCitedResearchPages(row, ctx, citerCounts);
-    if (fetched.length === 0) {
-      counts.noReadablePage += 1;
-      return [];
-    }
-    const value = researchPageTextValue(fetched);
+    const transientFailures: string[] = [];
+    const fetched = await this.readCitedResearchPages(row, ctx, citerCounts, transientFailures);
     const entityRef: ContentHashEntityRef = {
       entityType: 'researchEntity',
       entityId: serializedDocumentId(row._id) || undefined,
       entityKey: row.slug,
     };
+    if (transientFailures.length > 0) {
+      const storedHosts = await this.storedReadingHostsLoader(entityRef);
+      if (transientFailures.some((url) => storedHosts.has(pageHost(url)))) {
+        counts.keptAfterTransientFailure += 1;
+        ctx.log(
+          `[${row.slug || 'candidate'}] research page text kept: a cited page its stored reading drew on failed transiently, so this run leaves that reading for the next one`,
+        );
+        return [];
+      }
+    }
+    if (fetched.length === 0) {
+      counts.noReadablePage += 1;
+      return [];
+    }
+    const value = researchPageTextValue(fetched);
     const contentHash = researchPageTextContentHash(value);
     const storedHash = await this.storedHashLoader(this.name, entityRef);
     if (contentUnchanged(storedHash, contentHash, false)) {
@@ -443,6 +523,7 @@ export class ResearchPageTextScraper implements IScraper {
       rowsWithText: 0,
       rowsWithoutText: 0,
       noReadablePage: 0,
+      keptAfterTransientFailure: 0,
       contentUnchanged: 0,
       charsStored: 0,
     };
@@ -452,12 +533,21 @@ export class ResearchPageTextScraper implements IScraper {
       DEFAULT_SOURCE_CONCURRENCY,
     );
     const citerCounts = await this.citerCountsLoader();
-    await mapWithConcurrency(rows, concurrency, async (row) => {
-      const observations = await this.readRow(row, ctx, counts, citerCounts);
-      if (observations.length === 0) return;
-      await ctx.emit(observations);
-      observationCount += observations.length;
+    const planned = orderRowsBySmallestSharedHost(
+      rows.map((row) => ({ row, hosts: plannedHosts(citedResearchPageUrls(row, citerCounts)) })),
+    );
+    const hostCompletion = new HostCompletionTracker(planned, this.releaseFinishedHost);
+    await mapWithConcurrency(planned, concurrency, async ({ row, hosts }) => {
+      try {
+        const observations = await this.readRow(row, ctx, counts, citerCounts);
+        if (observations.length === 0) return;
+        await ctx.emit(observations);
+        observationCount += observations.length;
+      } finally {
+        hostCompletion.rowFinished(hosts);
+      }
     });
+    await hostCompletion.settled();
 
     return {
       observationCount,
@@ -465,6 +555,7 @@ export class ResearchPageTextScraper implements IScraper {
       notes:
         `Research page text for ${counts.rowsWithText} of ${rows.length} rows: ` +
         `${counts.rowsWithoutText} read with no research text, ${counts.noReadablePage} with no readable page, ` +
+        `${counts.keptAfterTransientFailure} kept after a transient fetch failure, ` +
         `${counts.contentUnchanged} content unchanged, ${counts.charsStored} characters stored.`,
     };
   }

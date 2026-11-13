@@ -60,6 +60,8 @@ Start the worktree with the two commands it prints, and log in through the dev-l
 The primary checkout is for review and integration only.
 Two people or agents sharing one checkout will switch branches under each other and serve the wrong code.
 Do not symlink `node_modules` between worktrees while running dev servers, because they share Vite's `node_modules/.vite` cache and clobber each other.
+The helper's installs hardlink package files from Yarn's shared store instead, which keeps `.vite` per worktree; never edit a file inside `node_modules` in place, because every worktree shares it.
+The helper runs `scripts/verify-yarn-store.sh` after its install; run it yourself after any later install as the check that no shared file was written in place.
 
 While writing the change:
 

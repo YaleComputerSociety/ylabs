@@ -211,3 +211,46 @@ describe('researchTopicsUserMessage', () => {
     );
   });
 });
+
+describe('deriveResearchTopicsForRows on a person row (#6110)', () => {
+  const LANDING = 'https://fixture-dept.yale.edu/research';
+  const landingPage = {
+    url: LANDING,
+    text: 'The department advances research in astrophysics, number theory and materials science.',
+  };
+  const leadPage = {
+    url: 'https://fixture-dept.yale.edu/labs/coastal-group',
+    text: 'Professor Quillfeather studies how coastal kelp forests recover after marine heatwaves.',
+  };
+  const topicRow = {
+    entityType: 'FACULTY_RESEARCH_AREA',
+    kind: 'individual',
+    name: 'Avery Quillfeather Research',
+    leadNames: ['Avery Quillfeather'],
+  };
+
+  it('reads only the pages that name the lead, and keys the reading on them', async () => {
+    const { store } = memoryStore();
+    const callModel = vi.fn(async () => ({ topics: [], field: null }));
+    const result = await deriveResearchTopicsForRows({
+      rows: [{ entityKey: 'fixture-person-row', value: [landingPage, leadPage], topicRow }],
+      callModel,
+      store,
+    });
+    expect(callModel).toHaveBeenCalledWith(expect.objectContaining({ pages: [leadPage] }));
+    expect(result.rows[0].inputHash).toBe(researchTopicsDerivationInputHash([leadPage]));
+  });
+
+  it('plans no call for a row whose only page is a landing page that does not name the lead', async () => {
+    const { store } = memoryStore();
+    const result = await deriveResearchTopicsForRows({
+      rows: [{ entityKey: 'fixture-person-row', value: [landingPage], topicRow }],
+      callModel: null,
+      store,
+    });
+    expect(result.plannedModelCalls).toBe(0);
+    expect(result.noLeadPage).toBe(1);
+    expect(result.noText).toBe(0);
+    expect(result.rows[0].outcome).toBe('no-lead-page');
+  });
+});

@@ -10,8 +10,12 @@ Usage: scripts/new-agent-worktree.sh <branch-name> [base-branch]
 
 Environment:
   YLABS_WORKTREE_ROOT   Directory to hold worktrees.
-                        Default: <parent of the repo>/ylabs-worktrees.
+                        Default: <parent of the primary checkout>/ylabs-worktrees,
+                        also when run from inside another worktree.
   SKIP_INSTALL=1        Skip dependency install (resolve deps manually).
+
+Installs hardlink package files from the shared Yarn store (nmMode: hardlinks-global in
+<worktree root>/.yarnrc.yml), so each worktree adds about 0.3 MB rather than 0.7 GB.
 
 Creates an isolated git worktree and branch for parallel agent work, installs
 dependencies and the gh identifier guard, reserves a free client dev-server port
@@ -37,7 +41,7 @@ PRIMARY_ROOT="$(dirname "$(git -C "$REPO_ROOT" rev-parse --path-format=absolute 
 # Not /tmp: the repository's script write guards resolve their allowed output root from
 # os.tmpdir(), so a worktree living under /tmp makes artifact-path test files fail on a
 # clean checkout. Keep worktrees beside the primary checkout instead.
-WORKTREE_ROOT="${YLABS_WORKTREE_ROOT:-$(dirname "$REPO_ROOT")/ylabs-worktrees}"
+WORKTREE_ROOT="${YLABS_WORKTREE_ROOT:-$(dirname "$PRIMARY_ROOT")/ylabs-worktrees}"
 SLUG="$(printf '%s' "$BRANCH" | tr '/ ' '--')"
 WORKTREE_DIR="${WORKTREE_ROOT}/${SLUG}"
 
@@ -70,10 +74,34 @@ if git -C "$REPO_ROOT" show-ref --verify --quiet "refs/remotes/${BASE_REMOTE}/${
 fi
 
 mkdir -p "$WORKTREE_ROOT"
+WORKTREE_ROOT_REAL="$(cd "$WORKTREE_ROOT" && pwd -P)"
+PRIMARY_ROOT_REAL="$(cd "$PRIMARY_ROOT" && pwd -P)"
+
+case "${PRIMARY_ROOT_REAL}/" in
+  "${WORKTREE_ROOT_REAL}/"*)
+    echo "ERROR: YLABS_WORKTREE_ROOT (${WORKTREE_ROOT_REAL}) contains the primary checkout." >&2
+    echo "Its .yarnrc.yml would switch the primary checkout and every sibling project to hardlinked installs." >&2
+    echo "Choose a root outside ${PRIMARY_ROOT_REAL}'s ancestors; no worktree was created." >&2
+    exit 1
+    ;;
+esac
+
+# Kept outside the repository so CI, Render and the primary checkout keep classic copies;
+# Yarn reads .yarnrc.yml from parent directories, so every worktree here inherits it.
+WORKTREE_ROOT_YARNRC="${WORKTREE_ROOT_REAL}/.yarnrc.yml"
+if ! grep -qs '^nmMode:' "$WORKTREE_ROOT_YARNRC"; then
+  printf 'nmMode: hardlinks-global\n' >> "$WORKTREE_ROOT_YARNRC"
+fi
+
 git -C "$REPO_ROOT" worktree add -b "$BRANCH" "$WORKTREE_DIR" "$BASE_REF"
 
 if [ "${SKIP_INSTALL:-0}" != "1" ]; then
   bash "$WORKTREE_DIR/scripts/install-all.sh"
+  if ! bash "$WORKTREE_DIR/scripts/verify-yarn-store.sh"; then
+    echo "ERROR: a shared Yarn store file no longer matches its content hash, so some worktree wrote into a hardlinked package file." >&2
+    echo "Find the writer before using this worktree; the worktree was created at ${WORKTREE_DIR}." >&2
+    exit 1
+  fi
 fi
 
 claimed_api_ports() {

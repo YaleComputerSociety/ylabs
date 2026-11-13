@@ -127,8 +127,8 @@ const ENRICHMENT_POINTS = {
   website: 8,
   methods: 5,
   substantialDescription: 3,
-  // Zero until grant coverage is even across schools: served grant evidence is mostly
-  // NIH, so any positive weight orders browse by our coverage gaps (#4622, #4546).
+  // Permanently zero (#4622): served grant evidence is mostly NIH, so any positive weight
+  // orders browse by our coverage gaps; see skills/search-data/SKILL.md.
   currentGrant: 0,
 } as const;
 

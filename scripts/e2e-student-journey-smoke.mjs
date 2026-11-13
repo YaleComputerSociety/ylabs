@@ -1293,6 +1293,47 @@ await step('every overlay dims the page with the one navy scrim', async () => {
   }
 });
 
+await step('the getting-started guide is reachable before a profile (#6095)', async () => {
+  const guideHeading = { level: 1, name: 'How to get started in research' };
+  for (const viewport of [
+    { width: 375, height: 812 },
+    { width: 1440, height: 900 },
+  ]) {
+    await withSyntheticBrowsePage(viewport, async (syntheticPage) => {
+      await syntheticPage.goto(`${baseUrl}/research`, { waitUntil: 'domcontentloaded' });
+      const landingLink = syntheticPage.getByRole('link', {
+        name: 'New to research? How to get started',
+      });
+      await landingLink.waitFor({ timeout: 20000 });
+      assert(
+        await landingLink.isVisible(),
+        `The research landing hides the getting-started link at ${viewport.width}px.`,
+      );
+      await landingLink.click();
+      await syntheticPage.getByRole('heading', guideHeading).waitFor({ timeout: 20000 });
+    });
+    await withSyntheticBrowsePage(viewport, async (syntheticPage) => {
+      await syntheticPage.route('**/api/programs/e2e-program-1', (route) =>
+        route.fulfill({
+          json: { program: { ...syntheticProgram(1), requiresMentorBeforeApply: true } },
+        }),
+      );
+      await syntheticPage.goto(`${baseUrl}/programs?program=e2e-program-1`, {
+        waitUntil: 'domcontentloaded',
+      });
+      const dialog = syntheticPage.getByRole('dialog').first();
+      await dialog.waitFor({ timeout: 20000 });
+      const mentorLink = dialog.getByRole('link', {
+        name: 'Need a mentor? How to reach out to a professor',
+      });
+      await mentorLink.scrollIntoViewIfNeeded();
+      await mentorLink.click();
+      await syntheticPage.getByRole('heading', guideHeading).waitFor({ timeout: 20000 });
+    });
+  }
+  record('getting-started entry points', { landing: 'ok', mentorFirstProgram: 'ok' });
+});
+
 const DIALOG_SHIFT_BUDGET = 0.01;
 const DIALOG_TOP_TOLERANCE = 16;
 

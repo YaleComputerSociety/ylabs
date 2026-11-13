@@ -248,6 +248,25 @@ describe('researchGroupController', () => {
     }
   });
 
+  it('sends the few close matches notice on every page of a search', async () => {
+    for (const page of [1, 2]) {
+      mocks.searchResearchGroupsViaMeili.mockResolvedValue({
+        researchEntities: [],
+        estimatedTotalHits: 40,
+        page,
+        pageSize: 10,
+        facetDistribution: {},
+        fewCloseMatches: { closeMatchCount: 2 },
+      });
+      const res = { json: vi.fn(), status: vi.fn().mockReturnThis() } as any;
+      await searchResearchGroups(
+        { body: { q: 'synthetic topic', page, pageSize: 10, filters: {} } } as any,
+        res,
+      );
+      expect(res.json.mock.calls[0][0].fewCloseMatches).toEqual({ closeMatchCount: 2 });
+    }
+  });
+
   it('omits facets rather than emptying them, so a client can tell "unchanged" from "none"', async () => {
     // An empty object is indistinguishable from "this result set has no facet
     // values", which would clear a populated filter panel.

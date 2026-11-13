@@ -30,17 +30,29 @@ import {
   writerHeldOnFillOnlyEvidence,
   researcherFieldWriter,
   OWN_KEY_FALLBACK_TITLE_FIELD,
+  storedValueBackingDecidesPresence,
   storedValueCountsAsPresent,
   type ResearcherGatedField,
 } from '../utils/researcherFieldWriters';
 import { isDepartmentHeadingChrome } from './utils/departmentHeadingChrome';
-import { withoutDepartmentHeadingObservations } from './departmentHeadingObservationScreen';
+import {
+  withUserDepartmentObservationsScreened,
+  type UserDepartmentScreenContext,
+} from './userDepartmentObservationScreens';
+import {
+  storedDepartmentHasUnscreenedReading,
+  storedDepartmentRestsOnlyOnScreenedReadings,
+} from './storedDepartmentScreenedBacking';
 import {
   catalogDepartment,
   storedDepartmentAfterExportDecode,
-  withDirectoryExportDepartmentsDecoded,
 } from './directoryExportDepartmentEvidence';
 import { storedDepartmentIsBacked } from './storedDepartmentBacking';
+import type { CanonicalDepartment } from './utils/directoryExportDepartment';
+import {
+  primaryDepartmentStatingKeysForMaterialization,
+  resetPrimaryDepartmentStatingKeysCache,
+} from './primaryDepartmentStatingKeys';
 import {
   changedResearcherPaths,
   expandUserMaterializerScope,
@@ -108,9 +120,11 @@ import {
 import {
   derivedResearchAreaProvenance,
   loadResearchTopicsDerivation,
+  currentResearchPageTextObservation,
   researchPageTopicsStateFor,
   storedDerivedResearchAreasAreStale,
   type DerivedResearchAreaCandidate,
+  type TopicEvidenceRow,
 } from './researchPageTopicsDerivation';
 import { RESEARCH_PAGE_TEXT_FIELD } from './utils/researchPageText';
 import {
@@ -206,6 +220,7 @@ import {
   type LabRowRoster,
   loadKnownPersonSurnameRoster,
   loadLabRowRoster,
+  loadResearchEntityLeadPersonDisplayNames,
   loadResearchEntityLeadPersonIds,
   loadResearchEntityLeadPersonName,
   loadResearchEntitySoleLeadPersonId,
@@ -646,6 +661,7 @@ import {
 } from './ysmLabDelistingReconciler';
 import { reconcileFieldRetractionsFromRun, type FieldRetractionOutcome } from './fieldRetraction';
 import {
+  entryIsRefused,
   refusedResolverObservations,
   valueIsRefused,
 } from '../utils/researchEntityFieldValueRefusals';
@@ -2718,6 +2734,7 @@ export function planStoredCitationReadmission(input: {
   entity: ResearchEntityHostOwnerIdentity;
   citationIdentity?: ResearchEntityIdentity | null;
   sourceLinkHealth?: unknown;
+  fieldValueRefusals?: unknown;
 }): string[] | null {
   const stored = Array.isArray(input.stored)
     ? input.stored.filter((url): url is string => typeof url === 'string' && Boolean(url.trim()))
@@ -2740,6 +2757,7 @@ export function planStoredCitationReadmission(input: {
       ) &&
       !planned.some((next) => isRetiredProfilePathForSamePerson(url, next)) &&
       !isKnownDeadSourceUrl(input.sourceLinkHealth, url) &&
+      !entryIsRefused(input.fieldValueRefusals, 'sourceUrls', url) &&
       !isDirectoryGraftCitation(url, input.entity) &&
       !(
         input.citationIdentity &&
@@ -2961,6 +2979,28 @@ function resolverObservationOfDerivedCandidate(
 
 const storedResearchAreasProvenance = (entityDoc: any): unknown =>
   objectRecord(entityDoc?.fieldProvenance).researchAreas;
+
+async function topicEvidenceRowFor(
+  entityDoc: any,
+  entityIdString: string,
+  observations: readonly any[],
+): Promise<TopicEvidenceRow> {
+  const row: TopicEvidenceRow = {
+    entityType: entityDoc?.entityType,
+    kind: entityDoc?.kind,
+    name: entityDoc?.name,
+    websiteUrl: entityDoc?.websiteUrl,
+  };
+  const needsLeadNames =
+    isPersonResearchRow(row) &&
+    Boolean(entityIdString) &&
+    Boolean(currentResearchPageTextObservation(observations));
+  if (!needsLeadNames) return row;
+  const leadNames = (await loadResearchEntityLeadPersonDisplayNames([entityIdString])).get(
+    entityIdString,
+  );
+  return { ...row, leadNames: leadNames ?? [] };
+}
 
 /**
  * A stored list credited to a page-topics derivation, and not shown stale, is backed by
@@ -8951,20 +8991,18 @@ export async function joinUserIdentityToExistingResearcher(
   const keyNamesAnOfficeMailbox = userKeyNamesRoleOrUnitMailbox(identifier.entityKey, obs);
   const materializationObs = keyNamesAnOfficeMailbox
     ? []
-    : withoutDepartmentHeadingObservations(
-        withDirectoryExportDepartmentsDecoded(
-          withoutCoreFacilityPersonWebsiteObservations(
-            withoutOverSharedPersonWebsiteObservations(
-              withoutOverSharedPersonImageObservations(
-                obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o)),
-                await overSharedPersonImageKeysForMaterialization(),
-              ),
-              await overSharedPersonWebsiteKeysForMaterialization(),
+    : withUserDepartmentObservationsScreened(
+        withoutCoreFacilityPersonWebsiteObservations(
+          withoutOverSharedPersonWebsiteObservations(
+            withoutOverSharedPersonImageObservations(
+              obs.filter((o: any) => !shouldIgnoreObservationForEntityMaterialization('user', o)),
+              await overSharedPersonImageKeysForMaterialization(),
             ),
-            await coreFacilityWebsiteKeysForMaterialization(),
+            await overSharedPersonWebsiteKeysForMaterialization(),
           ),
-          await catalogDepartment(),
+          await coreFacilityWebsiteKeysForMaterialization(),
         ),
+        { canonicalDepartment: await catalogDepartment() },
       );
   const derived = deriveUserIdentityFields(materializationObs, now);
   const { resolved, displayName } = derived;
@@ -9168,20 +9206,22 @@ async function userKeysNamingResearcherIdentity(
 
 const NOT_ROLLED_BACK = { 'rollback.rolledBackAt': { $exists: false } };
 
+interface StoredDepartmentReading {
+  field?: string;
+  value?: unknown;
+  sourceName?: string;
+  sourceUrl?: string;
+}
+
 /**
- * Whether some `primaryDepartment` observation, live or superseded, on any key that names the
- * researcher states its stored department (#6049). Keys are found over superseded readings
- * too, so a key whose every reading was retired still backs what it once stated. An unavailable
- * catalog reads as backed, so a spelling the decode cannot check is never cleared.
+ * Every `primaryDepartment` reading, live or superseded but not rolled back, on any key that
+ * names the researcher plus the key being resolved. Keys are found over superseded readings
+ * too, so a key whose every reading was retired still counts for what it once stated.
  */
-async function storedDepartmentBackedByAnyReading(
+async function storedDepartmentReadingsOverEveryKey(
   researcher: any,
   ownKey: UserKeyReference | undefined,
-): Promise<boolean> {
-  const stored = textValue(researcher.profile?.primaryDepartment);
-  if (!stored) return true;
-  const canonicalDepartment = await catalogDepartment();
-  if (!canonicalDepartment) return true;
+): Promise<{ references: UserKeyReference[]; readings: StoredDepartmentReading[] }> {
   const references = await userKeysNamingResearcherIdentity(researcher, NOT_ROLLED_BACK);
   if (ownKey) references.push(ownKey);
   const entityKeys = uniqueStrings(references.map((reference) => textValue(reference.entityKey)));
@@ -9191,12 +9231,213 @@ async function storedDepartmentBackedByAnyReading(
   const identity: Record<string, unknown>[] = [];
   if (entityKeys.length > 0) identity.push({ entityKey: { $in: entityKeys } });
   if (entityIds.length > 0) identity.push({ entityId: { $in: entityIds } });
-  if (identity.length === 0) return false;
+  if (identity.length === 0) return { references, readings: [] };
   const readings = (await Observation.find(
     { entityType: 'user', field: 'primaryDepartment', ...NOT_ROLLED_BACK, $or: identity },
-    { value: 1 },
-  ).lean()) as Array<{ value?: unknown }>;
-  return storedDepartmentIsBacked(stored, readings, canonicalDepartment);
+    { field: 1, value: 1, sourceName: 1, sourceUrl: 1 },
+  ).lean()) as StoredDepartmentReading[];
+  return { references, readings };
+}
+
+const ENGINE_JOINED_BACKING_KEY_CAP = 25;
+
+const personNameTokens = (value: unknown): string[] =>
+  typeof value === 'string'
+    ? value
+        .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .split(/[^a-z]+/)
+        .filter((token) => token.length > 1)
+    : [];
+
+async function engineJoinCandidateKeys(
+  stored: string,
+  canonicalDepartment: CanonicalDepartment,
+  known: readonly UserKeyReference[],
+): Promise<string[]> {
+  const statingKeys = await primaryDepartmentStatingKeysForMaterialization();
+  const knownKeys = new Set(known.map((reference) => textValue(reference.entityKey)));
+  return uniqueStrings(
+    [...statingKeys]
+      .filter(([value]) => storedDepartmentIsBacked(stored, [{ value }], canonicalDepartment))
+      .flatMap(([, keys]) => [...keys]),
+  ).filter((key) => !knownKeys.has(key));
+}
+
+async function engineJoinCandidateStatesStoredDepartmentThroughScreenedReading(
+  stored: string,
+  canonicalDepartment: CanonicalDepartment,
+  known: readonly UserKeyReference[],
+): Promise<boolean> {
+  const candidates = await engineJoinCandidateKeys(stored, canonicalDepartment, known);
+  if (candidates.length === 0) return false;
+  const readings = (await Observation.find(
+    {
+      entityType: 'user',
+      entityKey: { $in: candidates },
+      field: 'primaryDepartment',
+      ...NOT_ROLLED_BACK,
+    },
+    { field: 1, value: 1, sourceName: 1, sourceUrl: 1 },
+  )
+    .hint(USER_KEY_HINT)
+    .lean()) as StoredDepartmentReading[];
+  return readings.some((reading) =>
+    storedDepartmentRestsOnlyOnScreenedReadings(stored, [reading], { canonicalDepartment }),
+  );
+}
+
+/**
+ * The readings of keys outside the researcher's identity keys that state the stored value and
+ * that the engine's own join (`userIdentityJoinForKey`) reaches the researcher from, which is
+ * how a person-name-joined roster key backs a department (#6049). Read only when the identity
+ * keys did not settle the answer. Candidates come from the batch's value-to-keys map and are
+ * narrowed to keys whose own `lname` reading shares a name token with the researcher, because
+ * a name join needs the names to agree; the engine join alone decides which of them join. More
+ * than the cap of narrowed candidates is `undetermined`, which every caller reads
+ * conservatively.
+ */
+async function storedDepartmentReadingsOfEngineJoinedKeys(
+  researcher: any,
+  stored: string,
+  canonicalDepartment: CanonicalDepartment,
+  known: readonly UserKeyReference[],
+): Promise<StoredDepartmentReading[] | 'undetermined'> {
+  const candidates = await engineJoinCandidateKeys(stored, canonicalDepartment, known);
+  if (candidates.length === 0) return [];
+  const researcherTokens = new Set(personNameTokens(researcher.displayName));
+  if (researcherTokens.size === 0) return [];
+  const lastNames = (await Observation.find(
+    { entityType: 'user', entityKey: { $in: candidates }, field: 'lname', ...NOT_ROLLED_BACK },
+    { entityKey: 1, value: 1 },
+  )
+    .hint(USER_KEY_HINT)
+    .lean()) as Array<{ entityKey?: unknown; value?: unknown }>;
+  const named = uniqueStrings(
+    lastNames
+      .filter((reading) =>
+        personNameTokens(reading.value).some((token) => researcherTokens.has(token)),
+      )
+      .map((reading) => textValue(reading.entityKey)),
+  );
+  if (named.length > ENGINE_JOINED_BACKING_KEY_CAP) return 'undetermined';
+  const researcherId = String(researcher._id);
+  const joinedKeys: string[] = [];
+  for (const key of named) {
+    const join = await userIdentityJoinForKey(key);
+    if (String(join?.join?.researcher?._id ?? '') === researcherId) joinedKeys.push(key);
+  }
+  if (joinedKeys.length === 0) return [];
+  return (await Observation.find(
+    {
+      entityType: 'user',
+      entityKey: { $in: joinedKeys },
+      field: 'primaryDepartment',
+      ...NOT_ROLLED_BACK,
+    },
+    { field: 1, value: 1, sourceName: 1, sourceUrl: 1 },
+  )
+    .hint(USER_KEY_HINT)
+    .lean()) as StoredDepartmentReading[];
+}
+
+interface StoredDepartmentBackingReads {
+  overEveryKey(): ReturnType<typeof storedDepartmentReadingsOverEveryKey>;
+  engineJoined(
+    stored: string,
+    canonicalDepartment: CanonicalDepartment,
+  ): ReturnType<typeof storedDepartmentReadingsOfEngineJoinedKeys>;
+}
+
+/**
+ * The cross-key and engine-joined backing reads for one researcher, read at most once per
+ * materialize pass, so the #6065 clear and the #6049 fill check share them.
+ */
+function storedDepartmentBackingReadsForPass(
+  researcher: any,
+  ownKey: UserKeyReference | undefined,
+): StoredDepartmentBackingReads {
+  let overEveryKey: ReturnType<typeof storedDepartmentReadingsOverEveryKey> | undefined;
+  const engineJoinedByStored = new Map<
+    string,
+    ReturnType<typeof storedDepartmentReadingsOfEngineJoinedKeys>
+  >();
+  const reads: StoredDepartmentBackingReads = {
+    overEveryKey: () => (overEveryKey ??= storedDepartmentReadingsOverEveryKey(researcher, ownKey)),
+    engineJoined: (stored, canonicalDepartment) => {
+      let joined = engineJoinedByStored.get(stored);
+      if (!joined) {
+        joined = reads
+          .overEveryKey()
+          .then(({ references }) =>
+            storedDepartmentReadingsOfEngineJoinedKeys(
+              researcher,
+              stored,
+              canonicalDepartment,
+              references,
+            ),
+          );
+        engineJoinedByStored.set(stored, joined);
+      }
+      return joined;
+    },
+  };
+  return reads;
+}
+
+/**
+ * Whether some `primaryDepartment` observation, live or superseded, on any key that names the
+ * researcher states its stored department (#6049), counting a key the engine joins by name too
+ * (#5741). An unavailable catalog reads as backed, so a spelling the decode cannot check is
+ * never cleared.
+ */
+async function storedDepartmentBackedByAnyReading(
+  researcher: any,
+  reads: StoredDepartmentBackingReads,
+): Promise<boolean> {
+  const stored = textValue(researcher.profile?.primaryDepartment);
+  if (!stored) return true;
+  const canonicalDepartment = await catalogDepartment();
+  if (!canonicalDepartment) return true;
+  const { readings } = await reads.overEveryKey();
+  if (storedDepartmentIsBacked(stored, readings, canonicalDepartment)) return true;
+  const joined = await reads.engineJoined(stored, canonicalDepartment);
+  return joined === 'undetermined' || storedDepartmentIsBacked(stored, joined, canonicalDepartment);
+}
+
+/**
+ * Whether the stored department rests only on screened readings (#6065), over the same
+ * readings #6049 reads for backing, so a key's screened reading never clears a value another
+ * key still states. The resolving key's own unscreened reading settles it without the
+ * cross-key read. A value only a person-name-joined key backs is cleared too when that key's
+ * reading is screened, since a center roster's own keys are often joined only by name; with no
+ * identity-key backing, the engine join runs only once some candidate key states the value
+ * through a screened reading, because otherwise nothing could be cleared.
+ */
+async function storedDepartmentRestsOnlyOnScreenedReadingsAcrossKeys(
+  researcher: any,
+  reads: StoredDepartmentBackingReads,
+  ownObservations: readonly any[],
+  context: UserDepartmentScreenContext,
+): Promise<boolean> {
+  const stored = textValue(researcher.profile?.primaryDepartment);
+  if (!stored || !context.canonicalDepartment) return false;
+  if (storedDepartmentHasUnscreenedReading(stored, ownObservations, context)) return false;
+  const { references, readings } = await reads.overEveryKey();
+  if (storedDepartmentHasUnscreenedReading(stored, readings, context)) return false;
+  if (
+    !storedDepartmentRestsOnlyOnScreenedReadings(stored, readings, context) &&
+    !(await engineJoinCandidateStatesStoredDepartmentThroughScreenedReading(
+      stored,
+      context.canonicalDepartment,
+      references,
+    ))
+  )
+    return false;
+  const joined = await reads.engineJoined(stored, context.canonicalDepartment);
+  if (joined === 'undetermined') return false;
+  return storedDepartmentRestsOnlyOnScreenedReadings(stored, [...readings, ...joined], context);
 }
 
 async function liveObservationsOfUserKeys(
@@ -10182,20 +10423,34 @@ async function materializeUserIdentityToResearcher(
     researcher.profileFieldWriters?.delete('imageUrl');
     fieldsWritten += 1;
   }
+  const storedDepartmentBackingReads = storedDepartmentBackingReadsForPass(
+    researcher,
+    identifier.entityKey
+      ? { entityKey: identifier.entityKey }
+      : prefetchObjectIdString(identifier.entityId)
+        ? { entityId: prefetchObjectIdString(identifier.entityId) }
+        : undefined,
+  );
+  if (
+    await storedDepartmentRestsOnlyOnScreenedReadingsAcrossKeys(
+      researcher,
+      storedDepartmentBackingReads,
+      obs,
+      { canonicalDepartment: await catalogDepartment() },
+    )
+  ) {
+    researcher.profile.primaryDepartment = undefined;
+    researcher.profileFieldWriters?.delete?.('primaryDepartment');
+    fieldsWritten += 1;
+  }
   const storedDepartmentBacked =
+    !storedValueBackingDecidesPresence('primaryDepartment') ||
     !writerKey ||
     !primaryDepartment ||
     !isFillOnlyFieldValue('primaryDepartment', resolved.primaryDepartment?.contributingSources) ||
     researcher.profileFieldWriters?.get?.('primaryDepartment')
       ? true
-      : await storedDepartmentBackedByAnyReading(
-          researcher,
-          identifier.entityKey
-            ? { entityKey: identifier.entityKey }
-            : prefetchObjectIdString(identifier.entityId)
-              ? { entityId: prefetchObjectIdString(identifier.entityId) }
-              : undefined,
-        );
+      : await storedDepartmentBackedByAnyReading(researcher, storedDepartmentBackingReads);
   for (const [key, value, confidence] of [
     ['primaryDepartment', primaryDepartment, resolvedConfidence('primaryDepartment')],
     ['imageUrl', imageUrl, resolvedConfidence('imageUrl')],
@@ -13253,6 +13508,7 @@ export async function projectFromLog(
         Array.isArray(set.sourceUrls) ? (set.sourceUrls as unknown[]) : [],
       ),
       sourceLinkHealth: entityDoc?.sourceLinkHealth,
+      fieldValueRefusals: entityDoc?.fieldValueRefusals,
     });
     if (readmittedCitations) {
       set.sourceUrls = readmittedCitations;
@@ -14664,6 +14920,7 @@ async function materializeEntityUnderRemovalGuard(
         obs,
         loadResearchTopicsDerivation,
         storedResearchAreasProvenance(entityDoc),
+        await topicEvidenceRowFor(entityDoc, entityIdString || '', obs),
       )
     : {};
   const derivedResearchAreas = researchPageTopics.candidate;
@@ -15854,6 +16111,7 @@ export async function materializeObservedEntitiesInChunks(
   chunkSize: number = MATERIALIZATION_CHUNK_SIZE,
   concurrency: number = materializationConcurrencyFromEnv(),
 ): Promise<{ linkedRowIndexSyncFailedEntityIds: Set<string> }> {
+  resetPrimaryDepartmentStatingKeysCache();
   const linkedRowIndexSyncFailedEntityIds = new Set<string>();
   let start = 0;
   while (start < rows.length) {
@@ -16335,7 +16593,8 @@ async function materializeFromRunUnderRemovalGuard(
   // read the drop-guard fraction before authorizing a pass that deletes evidence.
   const fieldRetractionResult = await reconcileFieldRetractionsFromRun(scrapeRunId, {
     dryRun: options.dryRun,
-    rederiveUser: (identifier) => materializeEntity('user', identifier, { dryRun: false }),
+    materializeUser: (identifier, onlyFields) =>
+      materializeEntity('user', identifier, { dryRun: false, userWriteOnlyFields: onlyFields }),
   });
   if (fieldRetractionResult.userFieldRetraction) {
     const userRetraction = fieldRetractionResult.userFieldRetraction;

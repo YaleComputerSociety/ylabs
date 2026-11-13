@@ -19,8 +19,9 @@ import LoadingSpinner from '../shared/LoadingSpinner';
 import LoadErrorNotice from '../shared/LoadErrorNotice';
 import { safeRouteSegment } from '../../utils/url';
 import {
-  deriveUndergraduateAccessStatus,
+  deriveUndergraduateAccessStatuses,
   undergraduateAccessSortRank,
+  type UndergraduateAccessFields,
   type UndergraduateAccessStatus,
 } from '../../utils/undergraduateAccessStatus';
 import ResearchHomeComparison from './ResearchHomeComparison';
@@ -64,7 +65,7 @@ interface SavedResearchPlansProps {
 const PLAN_LIST_ID = 'saved-research-plans';
 const PLAN_LIST_NOUN = 'saved research plans';
 
-interface SavedResearchEntity {
+interface SavedResearchEntity extends UndergraduateAccessFields {
   _id: string;
   slug: string;
   name: string;
@@ -75,7 +76,6 @@ interface SavedResearchEntity {
   departments?: string[];
   school?: string;
   shortDescription?: string;
-  hasUndergradHostingEvidence?: boolean;
 }
 
 /**
@@ -127,8 +127,11 @@ const entitySubtitle = (entity: SavedResearchEntity): string => {
 };
 
 const ACCESS_BADGE_CLASS: Record<UndergraduateAccessStatus['tone'], string> = {
+  invitation: 'border-[var(--yr-green)] bg-[var(--yr-green-soft)] text-[var(--yr-green)]',
   evidence: 'border-blue-200 bg-[var(--yr-blue-soft)] text-[var(--yr-blue)]',
 };
+
+const NO_ACCESS_STATUSES: UndergraduateAccessStatus[] = [];
 
 const SavedResearchPlans = ({
   onCountChange,
@@ -422,10 +425,9 @@ const SavedResearchPlans = ({
   }, [visibleEntities, retainNoteSaves]);
 
   const accessStatuses = useMemo(() => {
-    const statuses = new Map<string, UndergraduateAccessStatus>();
+    const statuses = new Map<string, UndergraduateAccessStatus[]>();
     for (const entity of visibleEntities) {
-      const status = deriveUndergraduateAccessStatus(entity);
-      if (status) statuses.set(entity._id, status);
+      statuses.set(entity._id, deriveUndergraduateAccessStatuses(entity));
     }
     return statuses;
   }, [visibleEntities]);
@@ -440,8 +442,8 @@ const SavedResearchPlans = ({
       orderStably(visibleEntities, (a, b) =>
         listView.sort === 'stage'
           ? compareStageOrder(stageOf(a._id), stageOf(b._id)) ||
-            undergraduateAccessSortRank(accessStatuses.get(a._id) || null) -
-              undergraduateAccessSortRank(accessStatuses.get(b._id) || null)
+            undergraduateAccessSortRank(accessStatuses.get(a._id) || NO_ACCESS_STATUSES) -
+              undergraduateAccessSortRank(accessStatuses.get(b._id) || NO_ACCESS_STATUSES)
           : compareNewestSavedFirst(savedAt[a._id], savedAt[b._id]),
       ),
     [visibleEntities, stageOf, accessStatuses, savedAt, listView.sort],
@@ -635,7 +637,7 @@ const SavedResearchPlans = ({
         <ul>
           {shownEntities.map((entity) => {
             const status = noteSaveStatuses[entity._id];
-            const accessStatus = accessStatuses.get(entity._id) || null;
+            const entityAccessStatuses = accessStatuses.get(entity._id) || NO_ACCESS_STATUSES;
             const isEditing = editingId === entity._id;
             const note = notes[entity._id] || '';
             const stage = stageOf(entity._id);
@@ -677,15 +679,18 @@ const SavedResearchPlans = ({
                         {entitySubtitle(entity) && (
                           <p className="truncate text-xs text-muted">{entitySubtitle(entity)}</p>
                         )}
-                        {accessStatus && (
+                        {entityAccessStatuses.length > 0 && (
                           <p className="mt-1.5 flex flex-wrap items-center gap-1.5">
-                            <span
-                              className={`inline-flex items-center rounded-card border px-2 py-0.5 text-xs font-semibold ${
-                                ACCESS_BADGE_CLASS[accessStatus.tone]
-                              }`}
-                            >
-                              {accessStatus.label}
-                            </span>
+                            {entityAccessStatuses.map((accessStatus) => (
+                              <span
+                                key={accessStatus.label}
+                                className={`inline-flex items-center rounded-card border px-2 py-0.5 text-xs font-semibold ${
+                                  ACCESS_BADGE_CLASS[accessStatus.tone]
+                                }`}
+                              >
+                                {accessStatus.label}
+                              </span>
+                            ))}
                           </p>
                         )}
                       </div>

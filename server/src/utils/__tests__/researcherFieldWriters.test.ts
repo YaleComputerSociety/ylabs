@@ -4,6 +4,7 @@ import {
   isFillOnlyFieldValue,
   isFillOnlyIdentityJoin,
   researcherFieldWriter,
+  storedValueBackingDecidesPresence,
   storedValueCountsAsPresent,
   writerHeldOnFillOnlyEvidence,
   writerOutranks,
@@ -77,16 +78,28 @@ describe('researcher field writer precedence (#5706)', () => {
     ).toMatchObject({ write: true, writerChanged: true });
   });
 
-  it('reads a never-backed, never-written stored department as not present, so a fill-only value lands (#6049)', () => {
+  it('keeps a never-backed, never-written stored department present, so a fill-only value fills only an empty field (#6049)', () => {
     const directory = researcherFieldWriter('fx1', 'account-netid', 1, true);
     const present = storedValueCountsAsPresent(undefined, 'primaryDepartment', true, false);
-    expect(present).toBe(false);
+    expect(present).toBe(true);
     expect(
       decideResearcherFieldWrite(undefined, 'primaryDepartment', directory, true, present),
-    ).toMatchObject({ write: true, writerChanged: true });
-    expect(
-      decideResearcherFieldWrite(undefined, 'primaryDepartment', directory, false, present),
     ).toEqual({ write: false, releaseWriter: false });
+    expect(
+      decideResearcherFieldWrite(
+        undefined,
+        'primaryDepartment',
+        directory,
+        true,
+        storedValueCountsAsPresent(undefined, 'primaryDepartment', false, false),
+      ),
+    ).toMatchObject({ write: true, writerChanged: true });
+  });
+
+  it('consults the never-backed read for no field (#6049)', () => {
+    for (const field of ['primaryDepartment', 'displayName', 'imageUrl', 'websiteUrl'] as const) {
+      expect(storedValueBackingDecidesPresence(field)).toBe(false);
+    }
   });
 
   it('keeps a backed or written stored department present (#6049)', () => {

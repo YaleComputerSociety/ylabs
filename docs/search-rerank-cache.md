@@ -32,12 +32,41 @@ These searches are served exactly as without the flag:
 - A name query, detected by the same `keywordLegTopHitIsNameMatch` check that withholds semantic-only rows, because a name search already ranks the right row first.
 - A browse with no query, a search with an explicit sort, and a search Meilisearch pages itself (no configured embedder, the semantic leg unaffordable, or a whole-query shorthand searched keyword-only on topic fields).
 
+## Few close matches notice (#6094)
+
+A search can say that it has only a few close matches, and only where a seeded entry measured it.
+When `SEARCH_RERANK_CACHE_ENABLED=true` and the looked-up entry is seeded (`kind: 'seeded'`, an `indexVersion` starting with `full-`) and its scores were applied, search counts the rows of the whole served pool that the entry scores 2 or more (`SEARCH_RERANK_CLOSE_MATCH_SCORE`).
+The pool is every page of the search after the visibility scope and the student filters, the same population as `estimatedTotalHits`, so a scored row the pool no longer holds never counts.
+At 3 or fewer (`SEARCH_FEW_CLOSE_MATCHES_MAX_COUNT`), the result carries `fewCloseMatches: { closeMatchCount }` on every page of that search, and `/research` shows "Only a few close matches. Related results below." directly above the result list.
+The threshold is measured: on 36 seeded Production queries it fired on 10, every one with 0 to 2 relevant rows in its top 10, and raised no false alarm.
+
+A seeded entry the staleness check (`searchRerankEntryIsStale`) finds stale for the served pool never fires it, because a row it never scored or scored on older text was not measured.
+That text comparison needs the text hashes a seed stores, and only a seed run against the environment's own index stores them.
+On Development, whose cache is seeded against its own index, a description batch therefore makes the affected entries stale and the notice goes quiet on them until the next re-seed, which fails closed.
+On Beta and Production a laptop seed stores no hashes (`scoresWithTextHash: 0`), so only the unscored-rows half of the check runs there: after a description batch the notice keeps firing from scores measured against the earlier text.
+The #5537 pilot measured that a rewritten row's rerank score agrees with its earlier score no less often than an unchanged row's does (77.4% against 76.9%), so a pre-batch score is not known to be wrong, but it is no longer a measurement of the served text.
+So after a description batch, re-score or re-seed before the notice is relied on in those environments (`docs/release-process.md`).
+
+The field is absent for a served, shadow or live-miss entry, for a stale seeded entry, with the flag off, when no entry was applied (no entry, a failed read, a name query that skips the rerank, a Meilisearch-paged search) and for a browse with no query.
+It never changes which rows are returned or their order, and the client never hides, collapses, filters or reorders a result because of it.
+`searchFewCloseMatches` in `server/src/services/searchRerankCache.ts` holds the rule, and `docs/decisions.md` (2026-11-13) records why a notice was chosen over trimming and why no cheaper signal fires it.
+
 ## Seeding
 
 `yarn --cwd server research-search:seed-rerank-cache --input=<path>` reads a JSON file of `[{ "query": "...", "filters": { ... }, "scores": { "<slug>": <0-3> } }]`.
 The file must sit outside the repository, and the script refuses one inside it.
 It resolves each slug to a live research row, keys each entry with `searchRerankCacheQueryKey`, and refuses two entries that share a key.
+A slug resolves in this order (#6094):
+
+- to the live row that carries it;
+- else, when it names an archived row, to the live survivor that row's merge tombstone chain reaches, walked by the engine's own `resolveResearchEntityCanonicalByTombstone`, so a chain that cycles, points at a missing row, or ends on an archived row leaves the slug unresolved;
+- else, when no row carries it at all, to the one live row whose stored redirect names it: `previousSlugs` from a redirecting reslug (#5808) or `mergedFrom` from a merge (#5148); two live rows claiming the same slug leave it unresolved, and no slug is ever matched by name.
+
+Two slugs of one entry can then reach the same row.
+When their scores are within one grade point the higher one is kept and the pair is reported; when any two are 2 or more points apart the whole run is refused before anything is written, naming the entry, which needs a re-score.
 A dry run is the default and prints counts only: entries, scores, resolved scores, unresolved slugs, and entries left with no resolved score.
+`resolvedThroughMerge` and `resolvedThroughRedirect` count the resolved scores that took the second and third paths, and `mergeCollisions` gives the count of collapsed pairs, `maxGap`, the widest score gap among them, so a run's distance from the 2-point refusal margin is auditable, and each pair's entry index, survivor id and scores.
+`unresolvedSlugs` counts unresolved scores, not distinct slugs, and `resolvedScores` is `scores` less it, so a collapsed pair counts twice there and once among the scores stored.
 It also prints the staleness of the seeded entries already in the target cache (see Staleness).
 It never prints a query or a slug.
 An apply needs `--apply --confirm-search-rerank-cache-seed --index-version=<marker>` and upserts one document per key, replacing that key's scores.
