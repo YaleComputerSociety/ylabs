@@ -570,13 +570,16 @@ const ITEM_COLLECTION_PATH =
  * members went, so "Principal Investigator" there is a former trainee's later job, and a
  * news or event item says who led an initiative or a symposium, not the row.
  */
-function isNotAboutCurrentLeads($: cheerio.CheerioAPI, pageUrl: string): boolean {
-  let path = '';
+function pathnameOf(url: string): string {
   try {
-    path = new URL(pageUrl).pathname;
+    return new URL(url).pathname;
   } catch {
-    path = '';
+    return '';
   }
+}
+
+function isNotAboutCurrentLeads($: cheerio.CheerioAPI, pageUrl: string): boolean {
+  const path = pathnameOf(pageUrl);
   return (
     ITEM_COLLECTION_PATH.test(path) ||
     FORMER_MEMBERS.test(path) ||
