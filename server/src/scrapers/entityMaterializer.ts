@@ -616,7 +616,7 @@ import {
 } from '../scripts/backfillResearcherOfficialProfileLinksCore';
 import { canonicalScholarCitationUrl } from '../scripts/promoteScholarCandidateProfileLinksCore';
 import {
-  operatorEndedEdgeBlocksWrite,
+  protectedRoleEdgeFor,
   RoleAssignment,
   type RoleAssignmentRole,
   type RoleAssignmentRosterProvenance,
@@ -4541,10 +4541,11 @@ async function retiredEvidenceLeadEdgesToEnd(
 }
 
 /**
- * A lead an operator ended on this row is not asserted again, so the plan a dry run reports
- * is the write an apply makes: the membership writer refuses the triple too (#5979).
+ * A lead whose triple carries a refusal (an operator end, or a DISPUTED detachment with no live
+ * edge beside it) is not asserted again, so the plan a dry run reports is the write an apply
+ * makes: the membership writer refuses the triple too (#5979).
  */
-async function withoutOperatorEndedLeads(
+async function withoutProtectedLeads(
   researchEntityId: string,
   planned: InferredPiLeadFacts[],
 ): Promise<InferredPiLeadFacts[]> {
@@ -4557,12 +4558,12 @@ async function withoutOperatorEndedLeads(
     const blocked =
       personId &&
       role &&
-      (await operatorEndedEdgeBlocksWrite({
+      (await protectedRoleEdgeFor({
         personId,
         'target.kind': 'RESEARCH_ENTITY',
         'target.id': entityObjectId,
         role,
-      }));
+      })) !== null;
     if (!blocked) kept.push(facts);
   }
   return kept;
@@ -4579,7 +4580,7 @@ export async function resolveLeadEdges(
   options: { apply: boolean },
 ): Promise<LeadEdgeResolution> {
   const screened = await contradictedPageLeadObservations(observations);
-  const planned = await withoutOperatorEndedLeads(
+  const planned = await withoutProtectedLeads(
     researchEntityId,
     await planInferredPiMembership(researchEntityId, observations, screened),
   );
@@ -5780,7 +5781,7 @@ export async function resolveDirectorLeadEdge(
     'target.id': entityObjectId,
     role,
   };
-  if (await operatorEndedEdgeBlocksWrite(triple)) return [];
+  if ((await protectedRoleEdgeFor(triple)) !== null) return [];
   if (
     !options.apply &&
     (await canonicalMemberIsRemovedByRequest(

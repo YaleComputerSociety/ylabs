@@ -24,6 +24,7 @@ import {
 import { partitionStudentVisibilityReasons } from './studentVisibilityTier';
 import {
   pinRoleAssignmentUpsertToLiveEdge,
+  protectedRoleEdgeFor,
   RoleAssignment,
   roleAssignmentReattachWrite,
 } from '../models/roleAssignment';
@@ -587,6 +588,7 @@ export async function findOrCreateForOwner(owner: OwnerLike): Promise<{
       role: 'PI',
     };
     const liveRoleFilter = await pinRoleAssignmentUpsertToLiveEdge(roleFilter);
+    if (await protectedRoleEdgeFor(roleFilter)) return { group, created: false };
     await RoleAssignment.updateOne(
       liveRoleFilter,
       {

@@ -7,7 +7,8 @@ import {
 import { Fellowship } from '../models/fellowship';
 import { ResearchEntity } from '../models/researchEntity';
 import {
-  operatorEndedEdgeBlocksWrite,
+  protectedRoleEdgeFor,
+  type ProtectedRoleEdge,
   pinRoleAssignmentUpsertToLiveEdge,
   RoleAssignment,
   roleAssignmentReattachWrite,
@@ -174,6 +175,10 @@ interface RepairDeps {
     metadata: { sourceUrl: string; sourceName: string; confidence: number },
   ) => Promise<void>;
   isRemovedByRequest?: (userId: string) => Promise<boolean>;
+  findProtectedLeadEdge?: (
+    researchEntityId: string,
+    userId: string,
+  ) => Promise<ProtectedRoleEdge | null>;
   updateResearchEntity: (id: string, patch: Record<string, unknown>) => Promise<void>;
   findProgram: (id: string) => Promise<Record<string, any> | null>;
   updateProgram: (id: string, patch: Record<string, unknown>) => Promise<void>;
@@ -1263,6 +1268,20 @@ async function attemptResearchRepair(
         repairSource: sourceUrl,
       };
     }
+    const protectedEdge = await deps.findProtectedLeadEdge?.(plan.recordId, userId);
+    if (protectedEdge) {
+      return {
+        plan,
+        applied: false,
+        status: 'blocked',
+        patchSummary: [],
+        remainingBlockers: uniqueStrings([
+          ...plan.blockerReasons,
+          protectedEdge === 'disputed' ? 'lead_edge_disputed' : 'lead_edge_operator_ended',
+        ]),
+        repairSource: sourceUrl,
+      };
+    }
     if (mode === 'apply') {
       await deps.upsertResearchEntityMember(plan.recordId, userId, {
         sourceUrl,
@@ -1629,6 +1648,18 @@ export const defaultRepairDeps: RepairDeps = {
     if (removed) guard.recordRefusal();
     return removed;
   },
+  async findProtectedLeadEdge(researchEntityId, userId) {
+    const entityObjectId = toVisibilityRepairObjectId(researchEntityId);
+    const personObjectId = toVisibilityRepairObjectId(userId);
+    if (!entityObjectId || !personObjectId) return null;
+    return protectedRoleEdgeFor(
+      buildVisibilityRepairPiRoleAssignmentUpsert(personObjectId, entityObjectId, {
+        sourceUrl: '',
+        sourceName: '',
+        confidence: 0,
+      }).filter,
+    );
+  },
   async upsertResearchEntityMember(researchEntityId, userId, metadata) {
     const entityObjectId = toVisibilityRepairObjectId(researchEntityId);
     const personObjectId = toVisibilityRepairObjectId(userId);
@@ -1642,7 +1673,7 @@ export const defaultRepairDeps: RepairDeps = {
       entityObjectId,
       metadata,
     );
-    if (await operatorEndedEdgeBlocksWrite(filter)) return;
+    if (await protectedRoleEdgeFor(filter)) return;
     const liveFilter = await pinRoleAssignmentUpsertToLiveEdge(filter);
     const reattach = roleAssignmentReattachWrite(liveFilter, 'UNREVIEWED');
     await RoleAssignment.updateOne(liveFilter, update, options);

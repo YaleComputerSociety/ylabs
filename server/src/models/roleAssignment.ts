@@ -279,6 +279,32 @@ export async function operatorEndedEdgeBlocksWrite(
   );
 }
 
+export type ProtectedRoleEdge = 'operator-ended' | 'disputed';
+
+/**
+ * The refusal an existing `(personId, target, role)` edge records, if any, that a write must not
+ * touch. An operator-ended edge refuses always. A `DISPUTED` detachment refuses when no live edge
+ * matches, because the unpinned upsert would land on the detached edge and overwrite its state,
+ * provenance and `endedAt` while the reattach guard keeps it archived (#5979).
+ */
+export async function protectedRoleEdgeFor(
+  upsertFilter: Record<string, unknown>,
+): Promise<ProtectedRoleEdge | null> {
+  if (await operatorEndedEdgeBlocksWrite(upsertFilter)) return 'operator-ended';
+  const disputed = await RoleAssignment.exists({
+    ...upsertFilter,
+    archived: true,
+    reviewStatus: DETACHED_ROLE_ASSIGNMENT_REVIEW_STATUS,
+  });
+  if (!disputed) return null;
+  const live = await RoleAssignment.exists({
+    ...upsertFilter,
+    archived: { $ne: true },
+    state: { $ne: 'HISTORICAL' },
+  });
+  return live ? null : 'disputed';
+}
+
 export const RoleAssignment =
   mongoose.models.RoleAssignment ||
   mongoose.model<RoleAssignmentRecord>('RoleAssignment', roleAssignmentSchema, 'role_assignments');
