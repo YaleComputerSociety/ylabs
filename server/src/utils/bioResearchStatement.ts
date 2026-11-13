@@ -53,11 +53,19 @@ const CLINICAL_SERVICE_SHAPES = [
   /\bgetting\s+patients\s+back\b/i,
 ];
 
-const PATIENT_SERVICE_PURPOSE =
-  /\b(?:help|helps|helping|serve|serves|serving|benefit|benefits)\s+(?:his|her|their)\s+(?:own\s+)?patients\b/i;
+const NOT_AFTER_ANOTHER_CARE_GIVER =
+  '(?<!\\b(?:clinicians|physicians|providers|caregivers|doctors|nurses|surgeons|practitioners|teams|clinics|hospitals)\\s+(?:to\\s+)?)';
+
+const PATIENT_SERVICE_PURPOSE = new RegExp(
+  `${NOT_AFTER_ANOTHER_CARE_GIVER}\\b(?:help|helps|helping|serve|serves|serving|benefit|benefits)\\s+(?:his|her|their)\\s+(?:own\\s+)?patients\\b`,
+  'i',
+);
 
 const PATIENT_SERVICE_SHAPES = [
-  /\b(?:treat(?:s|ing)?|cares?\s+for|caring\s+for|sees|seeing|provid(?:e|es|ed|ing)\s+care\s+(?:to|for)|help(?:s|ing)?|serv(?:e|es|ing))\s+(?:all\s+)?(?:his|her|their)\s+(?:own\s+)?patients\b/i,
+  new RegExp(
+    `${NOT_AFTER_ANOTHER_CARE_GIVER}\\b(?:treat(?:s|ing)?|cares?\\s+for|caring\\s+for|sees|seeing|provid(?:e|es|ed|ing)\\s+care\\s+(?:to|for)|help(?:s|ing)?|serv(?:e|es|ing))\\s+(?:all\\s+)?(?:his|her|their)\\s+(?:own\\s+)?patients\\b`,
+    'i',
+  ),
   /\b(?:combat\w*|treat(?:s|ing)?|alleviat\w*|reliev\w*)\s+(?:the\s+)?symptoms\b/i,
 ];
 

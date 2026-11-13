@@ -131,14 +131,15 @@ describe('roster biography research evidence', () => {
       'They have a special interest in synthetic glimmer fever and the care of children with it.',
       'Their clinical interests include synthetic quill rash and related skin conditions.',
       'Their work focuses on supporting patients after synthetic hip repair.',
-      'They provide synthetic sleep clinic care to adults across the state.',
+      'Their work focuses on providing synthetic sleep clinic care to adults across the state.',
       'Their interests focus on ways to provide gentle care to adults with synthetic heart fatigue.',
       'Their work focuses on ways to help patients with synthetic marsh fever rest at home.',
       'They focus on caring for women with synthetic high-risk pregnancies.',
       'Their interests include advancing synthetic eye care across rural towns.',
-      'They serve their patients at three synthetic county clinics.',
-      'They treat the symptoms of synthetic winter cough in adults.',
+      'Their work focuses on serving their patients at three synthetic county clinics.',
+      'Their work focuses on treating the symptoms of synthetic winter cough in adults.',
       'Their work focuses on care for patients with synthetic marsh fever.',
+      'Their work focuses on developing new sensors that help their patients walk.',
     ]) {
       expect(keptBesideAnchor(sentence)).toBe(false);
     }
@@ -165,6 +166,7 @@ describe('roster biography research evidence', () => {
       'Their work focuses on tracking synthetic blood pressure trajectories in their patients.',
       'They develop machine learning methods that read the scans of their patients for synthetic stroke signs.',
       'They explore why treating the symptoms of synthetic winter cough often fails in teenagers.',
+      'Their work focuses on tools that help clinicians help their patients quit synthetic smoking.',
     ]) {
       expect(keptBesideAnchor(sentence)).toBe(true);
     }
