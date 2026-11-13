@@ -24,7 +24,6 @@ export interface LabSiteLeadStatementFixture {
 
 const QUILL = '000000000000000000000001';
 const BROOK = '000000000000000000000002';
-const FENWICK = '000000000000000000000003';
 
 const person = (
   personId: string,
@@ -427,5 +426,3 @@ export const LAB_SITE_LEAD_STATEMENT_FIXTURES: LabSiteLeadStatementFixture[] = [
     },
   },
 ];
-
-export const FIXTURE_PERSON_IDS = { QUILL, BROOK, FENWICK };
