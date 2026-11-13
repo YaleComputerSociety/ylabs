@@ -41,6 +41,7 @@ import {
 export { CENTER_DIRECTOR_SOURCE_NAME };
 
 const ORG_ENTITY_TYPES = ['CENTER', 'INSTITUTE', 'INITIATIVE', 'CORE_FACILITY'];
+const LEADERLESS_ENTITY_TYPES = ['LAB'];
 const OBJECT_ID_RE = /^[a-f0-9]{24}$/i;
 const DIRECTOR_ROLE_CONFIDENCE = 0.85;
 const MAX_CITED_PAGES = 3;
@@ -84,9 +85,11 @@ async function defaultFetchPage(url: string): Promise<{ url: string; html: strin
 /**
  * Every organizational home with an official website whose current lead, if any, came
  * from a director lane. A home another lane already leads is left to that lane, so this
- * lane never adds a second lead beside a roster's own.
+ * lane never adds a second lead beside a roster's own. A lab is read on the same terms, so
+ * only a lab with no current lead from another lane, such as one whose lead an operator
+ * ended, is read, under the same rank rule (#6025).
  */
-async function defaultFindTargets(only: string[]): Promise<CenterDirectorTarget[]> {
+export async function findCenterDirectorTargets(only: string[]): Promise<CenterDirectorTarget[]> {
   const onlyIds = only
     .filter((value) => OBJECT_ID_RE.test(value))
     .map((value) => new mongoose.Types.ObjectId(value));
@@ -102,7 +105,7 @@ async function defaultFindTargets(only: string[]): Promise<CenterDirectorTarget[
   const docs = (await ResearchEntity.find(
     {
       $and: [
-        { entityType: { $in: ORG_ENTITY_TYPES } },
+        { entityType: { $in: [...ORG_ENTITY_TYPES, ...LEADERLESS_ENTITY_TYPES] } },
         { archived: { $ne: true } },
         { websiteUrl: /^https?:\/\//i },
         identity,
@@ -227,7 +230,7 @@ export class CenterDirectorScraper implements IScraper {
 
   constructor(deps: CenterDirectorScraperDeps = {}) {
     this.fetchPage = deps.fetchPage ?? defaultFetchPage;
-    this.findTargets = deps.findTargets ?? defaultFindTargets;
+    this.findTargets = deps.findTargets ?? findCenterDirectorTargets;
   }
 
   async readCenter(

@@ -4413,7 +4413,13 @@ interface DryRunLeadEdgeOverlay {
 }
 
 export interface LeadEdgeResolution {
-  asserted: Array<{ personId: string; sourceName: string; sourceUrl: string; isNewEdge: boolean }>;
+  asserted: Array<{
+    personId: string;
+    sourceName: string;
+    sourceUrl: string;
+    isNewEdge: boolean;
+    role?: RoleAssignmentRole;
+  }>;
   ended: LeadEdgeToEnd[];
 }
 
@@ -5627,7 +5633,12 @@ export interface InferredDirectorMaterializationResult {
   removedDuplicates: number;
   userId?: string;
   role?: string;
-  skipped?: 'no-observation' | 'unresolved-user' | 'name-mismatch' | typeof REMOVED_BY_REQUEST;
+  skipped?:
+    | 'no-observation'
+    | 'unresolved-user'
+    | 'name-mismatch'
+    | 'operator-ended'
+    | typeof REMOVED_BY_REQUEST;
 }
 
 /**
@@ -5733,6 +5744,51 @@ async function resolveInferredDirector(
   };
 }
 
+/**
+ * The director edge the row's director-lane evidence decides, planned the way the director
+ * writer would make it, so a `leadEdges` dry run previews it and an apply writes it. A
+ * director an operator ended on this row is not planned, because the writer refuses it.
+ */
+export async function resolveDirectorLeadEdge(
+  researchEntityId: string,
+  observations: MaterializerObservationLike[],
+  options: { apply: boolean },
+): Promise<LeadEdgeResolution['asserted']> {
+  const entityObjectId = toMaterializerObjectId(researchEntityId);
+  if (!entityObjectId) return [];
+  const resolution = await resolveInferredDirector(observations);
+  if ('skipped' in resolution) return [];
+  const { researcherId, role: legacyRole, profileUrl, roleSource } = resolution.director;
+  const personId = toMaterializerObjectId(researcherId);
+  const role = canonicalRoleForLegacy(legacyRole);
+  if (!personId || !role) return [];
+  const triple = {
+    personId,
+    'target.kind': 'RESEARCH_ENTITY',
+    'target.id': entityObjectId,
+    role,
+  };
+  if (await operatorEndedEdgeBlocksWrite(triple)) return [];
+  const isNewEdge = !(await RoleAssignment.exists({
+    ...triple,
+    state: { $ne: 'HISTORICAL' },
+    archived: { $ne: true },
+  }));
+  if (options.apply) {
+    const written = await materializeInferredDirectorMembership(researchEntityId, observations);
+    if (!written.written) return [];
+  }
+  return [
+    {
+      personId: String(personId),
+      sourceName: textValue(roleSource.sourceName),
+      sourceUrl: profileUrl || textValue(roleSource.sourceUrl),
+      isNewEdge,
+      role,
+    },
+  ];
+}
+
 export async function materializeInferredDirectorMembership(
   researchEntityId: string,
   observations: MaterializerObservationLike[],
@@ -5795,6 +5851,7 @@ export async function materializeInferredDirectorMembership(
     directorIdentity,
   );
   if (directorOutcome === REMOVED_BY_REQUEST) return { ...empty, skipped: REMOVED_BY_REQUEST };
+  if (directorOutcome === 'refused-operator-ended') return { ...empty, skipped: 'operator-ended' };
 
   const supersededPersonId =
     directorPersonId ?? (await resolveCanonicalResearcherId(directorIdentity));
@@ -14251,9 +14308,18 @@ async function materializeEntityUnderRemovalGuard(
         skipped: 'no-row-keyed-evidence',
       };
     }
-    const leadEdgeResolution = await resolveLeadEdges(entityIdString, materializationObs, {
+    const piResolution = await resolveLeadEdges(entityIdString, materializationObs, {
       apply: !options.dryRun,
     });
+    const leadEdgeResolution: LeadEdgeResolution = {
+      ...piResolution,
+      asserted: [
+        ...piResolution.asserted,
+        ...(await resolveDirectorLeadEdge(entityIdString, materializationObs, {
+          apply: !options.dryRun,
+        })),
+      ],
+    };
     let leadEdgeIndexStale = false;
     if (!options.dryRun) {
       try {
