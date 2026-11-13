@@ -66,6 +66,7 @@ export const UNDERGRAD_LIST_SOURCE_KIND: Record<UndergradListSource, UndergradLi
   'yibs-summer-research-fellows': 'advised',
   'cognitive-science-senior-essays': 'advised',
   'eps-senior-theses': 'advised',
+  'theater-performance-studies-senior-projects': 'advised',
 };
 
 const HONORIFIC = /^(?:prof(?:essor)?\.?|dr\.?|mr\.?|ms\.?|mrs\.?)\s+/i;
@@ -578,6 +579,69 @@ export function yibsSuresFellowListings(html: string, url: string): MentorListin
         }
       }
     });
+  });
+  return listings;
+}
+
+const THEATER_SEASON_HEADING = /\b(?:19|20)\d\d\s*[-\u2013]\s*(?:19|20)?\d\d\b/;
+const ADVISER_CREDIT_AT_LINE_START = /^(?:advised\s+by|advis(?:e|o)rs?\s*:)\s*(.+)$/i;
+const ADVISER_CREDIT_AFTER_STUDENT_CREDIT = /(?:Advised\s+by|Advis(?:e|o)rs?\s*:)\s*(.+)$/;
+const COURSE_CLAUSE = /,\s*as\s+(?:a\s+)?part\s+of\b.*$/i;
+const SENIOR_PROJECT_CREDIT = /^(?:an?\s+)?senior\s+projects?\b/i;
+
+function adviserCreditIn(line: string): string | undefined {
+  return (
+    ADVISER_CREDIT_AT_LINE_START.exec(line)?.[1] ??
+    ADVISER_CREDIT_AFTER_STUDENT_CREDIT.exec(line)?.[1]
+  );
+}
+
+/**
+ * The Theater, Dance, and Performance Studies productions archive, read from the index alone: a
+ * heading per season, then a card per production whose snippet prints its credit lines. Only
+ * the adviser credit is kept; a card can print it after the student credit in the same line, so
+ * the student credit before it is discarded, even where the page runs the student's surname
+ * into the credit with no space; no production page is ever fetched. A card
+ * with no line opening "senior project" is a production rather than an advised project, so its
+ * advisers are not read; that line is tested only for its presence.
+ */
+export function theaterSeniorProjectIndexListings(
+  indexHtml: string,
+  indexUrl: string,
+): MentorListing[] {
+  const $ = cheerio.load(indexHtml);
+  const listings: MentorListing[] = [];
+  let year: number | undefined;
+  let card = 0;
+  $('h2, li.reference-card').each((_index, element) => {
+    const node = $(element);
+    if (node.is('h2')) {
+      const text = node.text().replace(/\s+/g, ' ').trim();
+      year = THEATER_SEASON_HEADING.test(text) ? academicYearEndIn(text) : undefined;
+      return;
+    }
+    if (year === undefined) return;
+    card += 1;
+    const lines = node
+      .find('.reference-card__snippet p')
+      .map((_line, paragraph) => $(paragraph).text().replace(/\s+/g, ' ').trim())
+      .get();
+    if (!lines.some((line) => SENIOR_PROJECT_CREDIT.test(line))) return;
+    const names = new Set<string>();
+    lines.forEach((line) => {
+      const credit = adviserCreditIn(line);
+      if (!credit) return;
+      splitAdviserNames(credit.replace(COURSE_CLAUSE, '')).forEach((name) => names.add(name));
+    });
+    for (const adviserName of names) {
+      listings.push({
+        source: 'theater-performance-studies-senior-projects',
+        adviserName,
+        year,
+        itemKey: `card:${card}`,
+        sourceUrl: indexUrl,
+      });
+    }
   });
   return listings;
 }
