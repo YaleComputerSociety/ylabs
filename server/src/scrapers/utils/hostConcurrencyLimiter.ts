@@ -8,6 +8,7 @@ import {
 import { recordHostSuccess } from './hostPauseState';
 import axios, { AxiosError } from 'axios';
 import { isSweepPageReuseHit } from './sweepPageReuseHit';
+import { isHostBudgetExempt } from './hostBudgetExempt';
 
 export const DEFAULT_PER_HOST_CONCURRENCY = 4;
 
@@ -325,7 +326,7 @@ function recordHostOutcomeFromResponse(response: unknown): void {
       }
     | undefined;
   if (typeof typed?.status !== 'number' || typed.config?.[HOST_PAUSE_POLICY_FETCH]) return;
-  if (isSweepPageReuseHit(typed.config)) return;
+  if (isSweepPageReuseHit(typed.config) || isHostBudgetExempt(typed.config)) return;
   const host =
     hostnameForLimiter(typed.request?.res?.responseUrl) ??
     hostnameForLimiter(typed.config?.url, typed.config?.baseURL);
@@ -352,6 +353,7 @@ export function installScraperHostConcurrencyInterceptor(
   installed = true;
   const acquireTimeoutMs = options.acquireTimeoutMs ?? HOST_SLOT_WAIT_TIMEOUT_MS;
   axios.interceptors.request.use(async (config) => {
+    if (isHostBudgetExempt(config)) return config;
     const host = hostnameForLimiter(config.url, config.baseURL);
     const knownPause = activeHostPause(host);
     if (knownPause && !isSweepPageReuseHit(config)) throw new HostPausedError(knownPause);

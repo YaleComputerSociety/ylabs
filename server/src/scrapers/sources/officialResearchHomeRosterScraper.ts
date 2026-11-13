@@ -37,6 +37,7 @@ import {
 } from '../rosterStrikeDigests';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { derivedUndergradRostersServe } from '../../services/hostedUndergraduates';
+import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 export const OFFICIAL_RESEARCH_HOME_ROSTER_SOURCE = 'official-research-home-roster';
 export const OFFICIAL_ROSTER_REFRESH_OWNER = 'Yale Research data operations';
@@ -2569,7 +2570,7 @@ async function fetchRosterPage(url: string, useCache: boolean): Promise<string> 
     axios.get(safeUrl.toString(), {
       timeout: 30_000,
       maxRedirects: 5,
-      headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
+      headers: { 'User-Agent': SCRAPER_USER_AGENT },
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,
     }),

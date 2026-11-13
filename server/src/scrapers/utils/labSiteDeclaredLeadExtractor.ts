@@ -25,6 +25,7 @@ import { redactDirectContactInfo } from '../../utils/contactRedaction';
 import { LAB_SITE_DECLARED_LEAD_PROMPT, LAB_SITE_DECLARED_LEAD_PROMPT_HASH } from '../prompts';
 import { htmlToText } from '../sources/labMicrositeDescriptionLLMExtractor';
 import { postChatCompletion } from '../../utils/modelClient';
+import { SCRAPER_USER_AGENT } from './scraperUserAgent';
 
 export { LAB_SITE_DECLARED_LEAD_PROMPT_HASH };
 
@@ -174,7 +175,7 @@ export function declaredLeadCandidateUrls(rootUrl: string, rootHtml: string): st
 const defaultFetchPage: LabSitePageFetcher = async (url) => {
   try {
     const page = await fetchPageWithPolicy(url, {
-      headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
+      headers: { 'User-Agent': SCRAPER_USER_AGENT },
       timeoutMs: 10_000,
     });
     return { url: page.url, html: page.html };

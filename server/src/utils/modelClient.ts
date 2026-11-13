@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import axios, { type AxiosResponse } from 'axios';
+import { HOST_BUDGET_EXEMPT } from '../scrapers/utils/hostBudgetExempt';
 import mongoose from 'mongoose';
 import { ModelCallUsage } from '../models/modelCallUsage';
 
@@ -154,6 +155,7 @@ async function postModelRequest(
     response = await axios.post(`https://api.openai.com/v1/${endpoint}`, request.body, {
       headers: { Authorization: `Bearer ${request.apiKey}`, 'Content-Type': 'application/json' },
       timeout: request.timeoutMs,
+      ...HOST_BUDGET_EXEMPT,
     });
   } catch (error) {
     if (!neverLeftTheProcess(error)) {

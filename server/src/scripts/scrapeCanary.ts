@@ -57,21 +57,17 @@ async function main(): Promise<number> {
     { getSourceByName },
     { readPriorRunYieldFacts },
     output,
-    hosts,
-    { scraperHostSlotLimiter },
-    { installScraperFetchDeadlines },
+    { installScraperFetchHooks },
   ] = await Promise.all([
     import('../scrapers/registry'),
     import('../scrapers/scraperCanary'),
     import('../scrapers/observationStore'),
     import('../scrapers/sourceYieldGuard'),
     import('../scrapers/scraperCliOutput'),
-    import('../scrapers/utils/hostConcurrencyLimiter'),
-    import('../scrapers/utils/scraperHostSlotLimiter'),
-    import('../scrapers/utils/scraperFetchDeadlines'),
+    import('../scrapers/utils/scraperFetchHooks'),
   ]);
-  installScraperFetchDeadlines();
-  hosts.installScraperHostConcurrencyInterceptor(scraperHostSlotLimiter());
+  // A canary asks whether a lane still works against the live site, so it never reads a reused body.
+  installScraperFetchHooks({ validatorCache: false });
 
   const mongoUrl = process.env.MONGODBURL;
   if (!mongoUrl) throw new Error('MONGODBURL is required for a scrape canary');

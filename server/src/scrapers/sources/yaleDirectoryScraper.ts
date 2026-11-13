@@ -56,7 +56,6 @@ dotenv.config({ quiet: true });
 
 const SOURCE_NAME = YALE_DIRECTORY_SOURCE;
 const SOURCE_URL = 'https://api.yalies.io/v2/people';
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const PAGE_SIZE = 100;
 const FACULTY_KEYWORDS = [
   'professor',
@@ -549,7 +548,6 @@ async function fetchYaliesPage(
     page,
     pageSize: PAGE_SIZE,
     filters,
-    userAgent: USER_AGENT,
   });
   if (useCache) {
     await setCached(SOURCE_NAME, cacheKey, records);

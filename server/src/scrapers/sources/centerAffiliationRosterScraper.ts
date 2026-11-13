@@ -22,6 +22,7 @@ import {
   mapWithConcurrency,
   resolveSourceConcurrency,
 } from '../utils/mapWithConcurrency';
+import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 export { CENTER_AFFILIATION_ROSTER_SOURCE_NAME };
 
@@ -53,7 +54,7 @@ const textValue = (value: unknown): string =>
 async function defaultFetchPage(url: string): Promise<{ url: string; html: string }> {
   const page = await fetchPageWithPolicy(url, {
     timeoutMs: 15_000,
-    headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
+    headers: { 'User-Agent': SCRAPER_USER_AGENT },
     maxRedirects: 5,
   });
   return { url: page.url, html: page.html };

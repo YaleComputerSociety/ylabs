@@ -27,6 +27,7 @@ import {
   type WebsiteUrlRepairEntity,
   type WebsiteUrlRepairPlan,
 } from './repairPromotionRegressedWebsiteUrlsCore';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -164,6 +165,7 @@ export async function runRepairPromotionRegressedWebsiteUrls(
 }
 
 async function main(): Promise<void> {
+  installScraperFetchHooks({ validatorCache: false });
   const options = parseRepairPromotionRegressedWebsiteUrlsArgs(process.argv.slice(2));
   assertScriptApplyAllowed({
     apply: options.apply,

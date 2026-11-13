@@ -13,6 +13,7 @@ import {
   withHostSlot,
 } from '../scrapers/utils/hostConcurrencyLimiter';
 import { machineHostSlotsForDirectRequest } from '../scrapers/utils/scraperHostSlotLimiter';
+import { SCRAPER_USER_AGENT } from '../scrapers/utils/scraperUserAgent';
 import {
   activeHostPause,
   recordHostRefusal,

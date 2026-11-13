@@ -47,13 +47,13 @@ import {
   type LabSiteNamedLeadRefusal,
   type OfficialProfileOwner,
 } from './attachLabSiteNamedLeadsCore';
+import { SCRAPER_USER_AGENT } from '../scrapers/utils/scraperUserAgent';
 
 dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'research-entity:attach-lab-site-named-leads';
-const UA = 'Mozilla/5.0 (compatible; ylabs-linkcheck)';
 const FETCH_SPACING_MS = 1100;
 const FETCH_TIMEOUT_MS = 25000;
 const LEAD_ROLES = LEAD_ROLE_CANONICAL_VALUES;
@@ -100,7 +100,7 @@ const researchHomeLimiter = new HostRateLimiter({
 async function readPage(url: string): Promise<LabSitePage | null> {
   try {
     const page = await fetchPageWithPolicy(url, {
-      headers: { 'User-Agent': UA, Accept: 'text/html,application/xhtml+xml' },
+      headers: { 'User-Agent': SCRAPER_USER_AGENT, Accept: 'text/html,application/xhtml+xml' },
       timeoutMs: FETCH_TIMEOUT_MS,
       limiter: researchHomeLimiter,
     });

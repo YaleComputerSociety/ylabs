@@ -49,10 +49,10 @@ import {
 } from '../lanePageHealth';
 import { statedAdministeringOffice } from '../utils/administeringOffice';
 import { pageTitleNamesSeniorEssayGuidance } from '../../services/departmentResearchGuidance';
+import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 export const DEPARTMENT_UNDERGRAD_RESEARCH_SOURCE = 'department-undergrad-research';
 
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 
 export type DepartmentUndergradResearchParser =
@@ -903,7 +903,7 @@ async function defaultFetchHtml(
   const response = await retryOnRetryableStatus(() =>
     axios.get(safeUrlText, {
       timeout: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': USER_AGENT },
+      headers: { 'User-Agent': SCRAPER_USER_AGENT },
       maxRedirects: 5,
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,

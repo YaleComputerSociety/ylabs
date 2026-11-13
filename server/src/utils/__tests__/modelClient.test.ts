@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { BenchmarkReplayNetworkError } from '../../scrapers/snapshotBenchmarkMode';
+import { HOST_BUDGET_EXEMPT } from '../../scrapers/utils/hostBudgetExempt';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   FROZEN_MODEL_RESPONSE_HEADER,
@@ -58,6 +59,7 @@ describe('postChatCompletion', () => {
     expect(post).toHaveBeenCalledWith('https://api.openai.com/v1/chat/completions', body, {
       headers: { Authorization: 'Bearer sk-test', 'Content-Type': 'application/json' },
       timeout: 30_000,
+      ...HOST_BUDGET_EXEMPT,
     });
   });
 

@@ -33,6 +33,7 @@ import {
   summarizeRosterConfigs,
   type RosterUrlProbe,
 } from './auditDepartmentCatalogDriftCore';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 
 export interface DepartmentCatalogDriftOptions {
   output?: string;
@@ -83,6 +84,7 @@ async function probeRosterUrls(
 }
 
 async function main() {
+  installScraperFetchHooks({ validatorCache: false });
   const options = parseDepartmentCatalogDriftArgs(process.argv.slice(2));
   const page = await fetchPageWithPolicy(DEPARTMENT_CATALOG_URL);
   const catalog = parseDepartmentCatalog(page.html);

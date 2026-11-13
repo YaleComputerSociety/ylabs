@@ -46,6 +46,7 @@ import {
 } from './centersInstitutesScraper';
 import { fetchPageWithPolicy } from '../utils/httpFetch';
 import { postChatCompletion } from '../../utils/modelClient';
+import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 const SOURCE_KEY = CENTER_AFFILIATION_LLM_SOURCE_NAME;
 const AFFILIATION_READ_ROLE = 'affiliated';
@@ -236,7 +237,7 @@ export function affiliationExtractionToObservations(
 async function defaultFetchPage(url: string): Promise<{ url: string; html: string } | null> {
   const page = await fetchPageWithPolicy(url, {
     timeoutMs: 15_000,
-    headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
+    headers: { 'User-Agent': SCRAPER_USER_AGENT },
     maxRedirects: 5,
   });
   return { url: page.url, html: page.html };

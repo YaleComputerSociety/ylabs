@@ -56,6 +56,7 @@ import {
   plannedHosts,
   type ReleaseFinishedHost,
 } from '../utils/hostCompletion';
+import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 const MAX_PAGES_PER_ROW = 6;
 const MAX_RESEARCH_SUBPAGES = 2;
@@ -283,7 +284,7 @@ function hostReadOutcomeOfError(error: unknown): keyof HostReadOutcome {
 
 async function fetchPageOnce(url: string): Promise<FetchedDescriptionPage | null> {
   const page = await fetchPageWithPolicy(url, {
-    headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
+    headers: { 'User-Agent': SCRAPER_USER_AGENT },
     timeoutMs: 10_000,
   });
   return {

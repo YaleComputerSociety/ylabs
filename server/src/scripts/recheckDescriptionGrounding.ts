@@ -57,16 +57,16 @@ import {
   isDecisiveGroundingVerdict,
   type DescriptionGroundingTarget,
 } from './recheckDescriptionGroundingCore';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
-// A browser user agent, because a WAF answering our scraper string with 403 is the
-// mechanism that produced this issue's retracted measurement.
-const RECHECK_USER_AGENT =
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 const RECHECK_FETCH_TIMEOUT_MS = 15_000;
+
+export const fetchRecheckPage = (target: string) =>
+  fetchPageWithPolicy(target, { timeoutMs: RECHECK_FETCH_TIMEOUT_MS });
 
 export interface RecheckDescriptionGroundingOptions {
   dryRun: boolean;
@@ -217,6 +217,7 @@ const hostOf = (url: string): string => {
 };
 
 async function main(): Promise<void> {
+  installScraperFetchHooks({ validatorCache: false });
   const options = parseRecheckDescriptionGroundingArgs(process.argv.slice(2));
   assertRecheckDescriptionGroundingApplyAllowed(options);
   assertScriptApplyAllowed({
@@ -285,11 +286,7 @@ async function main(): Promise<void> {
       checkLink: (url) =>
         probeDescriptionPage(url, pages, {
           checkLink: checkSourceLinkHealth,
-          fetchPage: (target) =>
-            fetchPageWithPolicy(target, {
-              headers: { 'User-Agent': RECHECK_USER_AGENT },
-              timeoutMs: RECHECK_FETCH_TIMEOUT_MS,
-            }),
+          fetchPage: fetchRecheckPage,
         }),
       hostConcurrency: DEFAULT_SOURCE_LINK_HEALTH_HOST_CONCURRENCY,
       paceDelayMs: DEFAULT_SOURCE_LINK_HEALTH_PACE_DELAY_MS,

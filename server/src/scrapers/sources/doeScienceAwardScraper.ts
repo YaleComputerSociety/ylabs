@@ -27,10 +27,10 @@ import {
 import { readFirstSheetRows } from '../utils/xlsxSheetRows';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
+import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 export const DOE_PAMS_AWARD_SEARCH_URL =
   'https://pamspublic.science.energy.gov/WebPAMSExternal/Interface/Awards/AwardSearchExternal.aspx';
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 120_000;
 const DEFAULT_LOOKBACK_YEARS = 6;
 const MAX_GRANTS_PER_ROW = 10;
@@ -335,7 +335,7 @@ async function pamsRequest(
       maxRedirects: 0,
       data: form ? new URLSearchParams(form).toString() : undefined,
       headers: {
-        'User-Agent': USER_AGENT,
+        'User-Agent': SCRAPER_USER_AGENT,
         Accept: responseType === 'text' ? 'text/html,*/*' : '*/*',
         ...(form ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {}),
         ...(jar.size > 0 ? { Cookie: cookieHeaderFrom(undefined, jar) } : {}),

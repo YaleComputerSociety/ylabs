@@ -51,6 +51,7 @@ import {
   writeSourceLinkProbeCache,
   type CachedSourceLinkProbe,
 } from './sourceLinkProbeCache';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1150,6 +1151,7 @@ export async function runSourceLinkHealthBackfill(options: {
 }
 
 async function main(): Promise<void> {
+  installScraperFetchHooks({ validatorCache: false });
   const options = parseSourceLinkHealthBackfillArgs(process.argv.slice(2));
   assertSourceLinkHealthApplyAllowed(options);
   const apply = !options.dryRun;

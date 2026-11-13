@@ -95,8 +95,8 @@ import {
 } from '../orgUnitCanonicalization';
 import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
+import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 const MIN_FELLOWSHIP_RECIPIENT_YEAR = 1980;
 const MAX_FELLOWSHIP_RECIPIENT_FUTURE_YEARS = 1;
@@ -1060,7 +1060,7 @@ async function fetchHtml(url: string, useCache: boolean, sourceName: string): Pr
   const res = await retryOnRetryableStatus(() =>
     axios.get(safeUrlText, {
       timeout: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': USER_AGENT },
+      headers: { 'User-Agent': SCRAPER_USER_AGENT },
       maxRedirects: 5,
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,

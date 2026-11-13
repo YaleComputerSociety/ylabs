@@ -6,8 +6,7 @@ import { buildOrchestrator } from '../scrapers/registry';
 import { isRenderedFetchMetadataKey } from '../scrapers/renderedFetch';
 import { SSRF_HOST_REFUSAL_NAMESPACE } from '../scrapers/snapshotBenchmarkMode';
 import type { ScraperOptions } from '../scrapers/types';
-import { installScraperHostConcurrencyInterceptor } from '../scrapers/utils/hostConcurrencyLimiter';
-import { scraperHostSlotLimiter } from '../scrapers/utils/scraperHostSlotLimiter';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 import type { PlannedObservation } from './laneScorecardCore';
 import {
   WRITER_BENCHMARK_LANE,
@@ -111,7 +110,7 @@ export async function runLaneDry(spec: LaneBenchmarkSpec): Promise<{
   if (spec.sourceName === WRITER_BENCHMARK_LANE) {
     return runWriterBenchmarkDry({ only: spec.only, referenceDate: spec.referenceDate });
   }
-  installScraperHostConcurrencyInterceptor(scraperHostSlotLimiter());
+  installScraperFetchHooks({ validatorCache: false });
   const options: ScraperOptions = {
     dryRun: true,
     useCache: true,

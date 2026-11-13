@@ -71,8 +71,10 @@ import {
 import { openAiChatSampling } from '../utils/openAiChatSampling';
 import { resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
 import { fetchPublicHttpUrl } from '../scrapers/utils/httpFetch';
+import { SCRAPER_USER_AGENT } from '../scrapers/utils/scraperUserAgent';
 import { connectScriptMongo } from '../db/connections';
 import { postChatCompletion } from '../utils/modelClient';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 
 dotenv.config({ quiet: true });
 
@@ -474,6 +476,7 @@ function emptyTally(): ArmTally {
 }
 
 async function main(): Promise<void> {
+  installScraperFetchHooks();
   const apiKey = process.env.OPENAI_API_KEY;
   const mongoUrl = process.env.MONGODBURL;
   if (!apiKey || !mongoUrl) throw new Error('OPENAI_API_KEY and MONGODBURL must be set.');
@@ -495,7 +498,7 @@ async function main(): Promise<void> {
     try {
       const response = await fetchPublicHttpUrl(entity.pageUrl, {
         timeoutMs: 20_000,
-        headers: { 'User-Agent': 'ylabs-description-ab/1.0' },
+        headers: { 'User-Agent': SCRAPER_USER_AGENT },
       });
       if (response.status < 200 || response.status >= 300) {
         throw new Error(`page answered ${response.status}`);

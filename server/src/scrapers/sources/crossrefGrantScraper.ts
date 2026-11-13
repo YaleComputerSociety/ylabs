@@ -47,12 +47,12 @@ import {
 } from '../utils/grantInvestigators';
 import type { IScraper, ObservationInput, ScraperContext, ScraperResult } from '../types';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
+import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 export const CROSSREF_GRANT_WORKS_URL = 'https://api.crossref.org/types/grant/works';
 const DOI_RESOLVER = 'https://doi.org/';
 const YALE_ROR = 'https://ror.org/03v76x132';
 const AFFILIATION_QUERY = 'yale';
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 60_000;
 const PAGE_ROWS = 1000;
 const MAX_PAGES = 20;
@@ -370,7 +370,7 @@ async function fetchCrossrefGrantPage(
       responseType: 'text',
       transformResponse: [(data) => data],
       maxRedirects: 0,
-      headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
+      headers: { 'User-Agent': SCRAPER_USER_AGENT, Accept: 'application/json' },
     }),
   );
   const text = typeof res.data === 'string' ? res.data : String(res.data ?? '');

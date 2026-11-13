@@ -43,6 +43,7 @@ import {
   mapWithConcurrency,
   resolveSourceConcurrency,
 } from '../utils/mapWithConcurrency';
+import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 const SOURCE_KEY = 'research-area-source-extractor';
 const MAX_SCAN_CHARS = 40_000;
@@ -489,7 +490,7 @@ export function researchAreaObservationsFromExtraction(
 async function defaultFetchPage(url: string): Promise<FetchedAreaPage | null> {
   const page = await fetchPageWithPolicy(url, {
     timeoutMs: 10_000,
-    headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
+    headers: { 'User-Agent': SCRAPER_USER_AGENT },
     maxRedirects: 5,
   });
   return { url: page.url, html: page.html };

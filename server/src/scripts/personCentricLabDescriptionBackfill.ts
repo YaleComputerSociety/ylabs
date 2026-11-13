@@ -34,6 +34,7 @@ import {
   filterPersonCentricLabDescriptionPlanByManualLocks,
   type PersonCentricLabDescriptionAction,
 } from './personCentricLabDescriptionBackfillCore';
+import { SCRAPER_USER_AGENT } from '../scrapers/utils/scraperUserAgent';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -68,7 +69,7 @@ async function defaultFetchPage(url: string): Promise<FetchedPage | null> {
   const agents = ssrfSafeAgents();
   const res = await axios.get(safeUrlText, {
     timeout: 10_000,
-    headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
+    headers: { 'User-Agent': SCRAPER_USER_AGENT },
     maxRedirects: 5,
     httpAgent: agents.httpAgent,
     httpsAgent: agents.httpsAgent,

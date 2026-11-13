@@ -61,8 +61,6 @@ import {
 
 const SCRIPT_NAME = 'research-entity:retype-from-declared-page-type';
 const CONFIRM_FLAG = '--confirm-declared-page-type-retype';
-const BROWSER_USER_AGENT =
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36';
 const RETYPE_MATERIALIZE_SCOPE = { writeOnlyFields: withDerivedMaterializerFields(['entityType']) };
 const READ_SPACING_MS = 1500;
 const READ_TIMEOUT_MS = 25_000;
@@ -84,11 +82,11 @@ const firstMatch = (html: string, pattern: RegExp): string => {
     .slice(0, 200);
 };
 
-async function readPageOverHttp(url: string): Promise<PageRead> {
+export async function readPageOverHttp(url: string): Promise<PageRead> {
   try {
     const page = await fetchPageWithPolicy(url, {
       timeoutMs: READ_TIMEOUT_MS,
-      headers: { 'User-Agent': BROWSER_USER_AGENT, Accept: 'text/html' },
+      headers: { Accept: 'text/html' },
     });
     const html = page.html;
     return {

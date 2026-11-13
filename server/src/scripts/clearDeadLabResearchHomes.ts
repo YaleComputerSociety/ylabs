@@ -23,6 +23,8 @@ import {
 } from './clearDeadLabResearchHomesCore';
 import { fetchPublicHttpUrl } from '../scrapers/utils/httpFetch';
 import { isSsrfGuardRefusal } from '../utils/ssrfGuard';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
+import { SCRAPER_USER_AGENT } from '../scrapers/utils/scraperUserAgent';
 
 dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -30,7 +32,6 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 
 const SCRIPT_NAME = 'research-entity:clear-dead-lab-homes';
 const INDEX_URL = 'https://medicine.yale.edu/about/a-to-z-index/lab-websites/';
-const UA = 'Mozilla/5.0 (compatible; ylabs-linkcheck)';
 
 interface Args {
   apply: boolean;
@@ -61,7 +62,9 @@ export function parseArgs(argv: string[]): Args {
 
 export async function httpStatus(url: string): Promise<LabHomeProbeStatus> {
   try {
-    const response = await fetchPublicHttpUrl(url, { headers: { 'user-agent': UA } });
+    const response = await fetchPublicHttpUrl(url, {
+      headers: { 'user-agent': SCRAPER_USER_AGENT },
+    });
     return response.status;
   } catch (error) {
     return isSsrfGuardRefusal(error) ? SSRF_REFUSED_PROBE : undefined;
@@ -70,7 +73,7 @@ export async function httpStatus(url: string): Promise<LabHomeProbeStatus> {
 
 async function loadIndexSegments(): Promise<Set<string>> {
   const response = await fetchPublicHttpUrl(INDEX_URL, {
-    headers: { 'user-agent': UA },
+    headers: { 'user-agent': SCRAPER_USER_AGENT },
     timeoutMs: 30_000,
   });
   if (response.status !== 200) {
@@ -86,6 +89,7 @@ async function loadIndexSegments(): Promise<Set<string>> {
 }
 
 async function main() {
+  installScraperFetchHooks({ validatorCache: false });
   const args = parseArgs(process.argv.slice(2));
   const guard = assertScriptApplyAllowed({
     apply: args.apply,

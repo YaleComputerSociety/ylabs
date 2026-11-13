@@ -25,6 +25,7 @@ import {
   type YaleProfileDepartureEvidence,
   type YaleProfilePage,
 } from './yaleProfileDepartureEvidence';
+import { SCRAPER_USER_AGENT } from './utils/scraperUserAgent';
 
 export const DEPARTMENT_ROSTER_HEALTH_FIELD = 'departmentRosterHealth';
 export const FACULTY_DEPARTURE_ENTITY_TYPES = ['FACULTY_RESEARCH_AREA', 'LAB'];
@@ -457,7 +458,7 @@ export async function yaleProfileUrlsForDepartureEvidence(
 const fetchYaleProfilePage = async (url: string): Promise<YaleProfilePage | null> => {
   const page = await fetchPageWithPolicy(url, {
     headers: {
-      'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)',
+      'User-Agent': SCRAPER_USER_AGENT,
       Accept: 'text/html,application/xhtml+xml',
     },
   });

@@ -40,6 +40,7 @@ import {
 import { eligibilitySentences, eligibilityStatement } from '../utils/programEligibilityStatement';
 import { resolveFundYearOfStudy } from '../utils/fundYearOfStudy';
 import { externalAwardRecord, withoutRecordWindow } from '../utils/externalAwardRecord';
+import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 export const YALE_COLLEGE_FELLOWSHIPS_OFFICE_SOURCE = 'yale-college-fellowships-office';
 
@@ -2086,7 +2087,7 @@ async function fetchHtml(url: string, useCache: boolean): Promise<string> {
   const { html } = await fetchPageWithPolicy(safeUrlText, {
     timeoutMs: 30000,
     headers: {
-      'User-Agent': 'YLabsBot/1.0 (+https://ylabs.yale.edu)',
+      'User-Agent': SCRAPER_USER_AGENT,
       Accept: 'text/html,application/xhtml+xml',
     },
     maxRedirects: 5,

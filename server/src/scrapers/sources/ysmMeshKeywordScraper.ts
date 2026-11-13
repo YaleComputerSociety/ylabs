@@ -29,6 +29,7 @@ import {
   type EntityWorkPlan,
   type WorkPlannerSourcePolicy,
 } from '../workPlanner';
+import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 const SOURCE_KEY = 'ysm-mesh-keyword';
 const YSM_ORG_ID = '113592';
@@ -359,7 +360,7 @@ async function defaultFetchPage(url: string): Promise<FetchedYsmPage | null> {
   const res = await retryOnRetryableStatus(() =>
     axios.get(safeUrlText, {
       timeout: 20_000,
-      headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
+      headers: { 'User-Agent': SCRAPER_USER_AGENT },
       maxRedirects: 5,
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,

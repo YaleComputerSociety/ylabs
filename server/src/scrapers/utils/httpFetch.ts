@@ -28,6 +28,7 @@ import {
 } from '../snapshotBenchmarkMode';
 import { isTlsVerificationError } from '../../utils/tlsVerificationErrors';
 import { recordThrottleRetryOutcome } from './throttleRetryStats';
+import { withScraperUserAgent } from './scraperUserAgent';
 import {
   HOST_PAUSE_POLICY_FETCH,
   HostPausedError,
@@ -41,7 +42,7 @@ import { recordHostSuccess } from './hostPauseState';
 import { withScrapeRunProgress } from '../scrapeRunProgress';
 import { recordKnownDeadUrlSkip, rememberGoneUrl } from './knownDeadUrls';
 
-export const SCRAPER_USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
+export { SCRAPER_USER_AGENT } from './scraperUserAgent';
 
 export interface FetchedHttpPage {
   url: string;
@@ -397,7 +398,7 @@ async function fetchPageLive(
     withScrapeRunProgress(() => send(target, requestConfig));
   const policy = resolveRetryPolicy(options, host);
 
-  const headers = options.headers ?? { 'User-Agent': SCRAPER_USER_AGENT };
+  const headers = withScraperUserAgent(options.headers);
   const config: HttpRequestConfig = {
     timeoutMs: options.timeoutMs ?? 10_000,
     headers: submission
@@ -681,7 +682,7 @@ export async function fetchPublicHttpUrl(
   const maxRedirects = options.maxRedirects ?? 5;
   const config = {
     timeoutMs: options.timeoutMs ?? 25_000,
-    headers: options.headers ?? { 'User-Agent': SCRAPER_USER_AGENT },
+    headers: withScraperUserAgent(options.headers),
   };
 
   let current = url;

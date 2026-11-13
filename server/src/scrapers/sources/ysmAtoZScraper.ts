@@ -57,6 +57,7 @@ import {
 } from '../utils/scraperHelpers';
 import { asYaleNetid } from '../../utils/yaleNetid';
 import type { IScraper, ScraperContext, ScraperResult, ObservationInput } from '../types';
+import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 const PAGE_URL = 'https://medicine.yale.edu/about/a-to-z-index/lab-websites/';
 
@@ -151,7 +152,7 @@ async function fetchPage(useCache: boolean, pageReads: LanePageReads): Promise<s
   const res = await retryOnRetryableStatus(() =>
     axios.get(safeUrl.toString(), {
       timeout: 30000,
-      headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
+      headers: { 'User-Agent': SCRAPER_USER_AGENT },
       maxRedirects: 5,
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,
@@ -182,7 +183,7 @@ async function fetchLabHomepage(
     const res = await retryOnRetryableStatus(() =>
       axios.get(safeUrlText, {
         timeout: 30000,
-        headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
+        headers: { 'User-Agent': SCRAPER_USER_AGENT },
         maxRedirects: 5,
         httpAgent: agents.httpAgent,
         httpsAgent: agents.httpsAgent,

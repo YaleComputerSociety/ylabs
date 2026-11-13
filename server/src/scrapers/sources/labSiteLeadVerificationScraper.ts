@@ -34,12 +34,12 @@ import {
   type LabSiteLeadCandidate,
   type LabSiteLeadVerification,
 } from '../utils/labSiteLeadVerification';
+import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 export { LAB_SITE_LEAD_VERIFICATION_SOURCE };
 
 const VERIFIED_LEAD_ROLES = LEAD_ROLE_CANONICAL_VALUES;
 const FETCH_TIMEOUT_MS = 30_000;
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 
 export interface LabSiteVerificationCandidate {
   entityId: string;
@@ -178,7 +178,7 @@ async function fetchPage(url: string, useCache: boolean): Promise<FetchedPage> {
       timeout: FETCH_TIMEOUT_MS,
       maxRedirects: 5,
       responseType: 'text',
-      headers: { 'User-Agent': USER_AGENT, Accept: 'text/html,application/xhtml+xml' },
+      headers: { 'User-Agent': SCRAPER_USER_AGENT, Accept: 'text/html,application/xhtml+xml' },
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,
     }),

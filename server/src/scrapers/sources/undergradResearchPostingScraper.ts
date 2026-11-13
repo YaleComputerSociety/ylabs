@@ -38,10 +38,10 @@ import {
 import { assertPublicHttpUrl, ssrfSafeAgents } from '../../utils/ssrfGuard';
 import { fetchFailureMessage, fetchFailureStatusCode } from '../utils/fetchFailure';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
+import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 export const UNDERGRAD_RESEARCH_POSTING_SOURCE = 'undergrad-research-posting';
 
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 
 export interface UndergradResearchPostingPageConfig {
@@ -283,7 +283,7 @@ async function defaultFetchHtml(url: string, useCache: boolean): Promise<string>
   const response = await retryOnRetryableStatus(() =>
     axios.get(safeUrlText, {
       timeout: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': USER_AGENT },
+      headers: { 'User-Agent': SCRAPER_USER_AGENT },
       maxRedirects: 5,
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,

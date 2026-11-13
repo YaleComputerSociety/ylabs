@@ -165,6 +165,7 @@ import {
   rowIsScopedToLead,
   urlHostAndPath,
 } from '../utils/nonYaleMicrositeOwnership';
+import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 const SOURCE_KEY = 'lab-microsite-description-llm';
 export const DEFAULT_MODEL = 'gpt-5-mini';
@@ -2031,7 +2032,7 @@ async function fetchPageOnce(url: string): Promise<FetchedDescriptionPage | null
   // SSRF guard, per-host rate limiting, and retry-on-403 live in fetchPageWithPolicy.
   // It throws after retries are exhausted so the caller advances to the next candidate URL.
   const page = await fetchPageWithPolicy(url, {
-    headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
+    headers: { 'User-Agent': SCRAPER_USER_AGENT },
     timeoutMs: 10_000,
   });
   return { url: page.url, html: page.html };

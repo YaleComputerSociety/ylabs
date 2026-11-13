@@ -33,6 +33,8 @@ import {
   type LabSiteSubject,
   type LabSiteVerdict,
 } from './findLabWebsitesCore';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
+import { SCRAPER_USER_AGENT } from '../scrapers/utils/scraperUserAgent';
 
 dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -215,7 +217,7 @@ export async function fetchPage(
   try {
     const response = await fetchPublicHttpUrl(url, {
       timeoutMs: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': 'ylabs-lab-site-discovery/1.0 (+research home discovery)' },
+      headers: { 'User-Agent': SCRAPER_USER_AGENT },
     });
     const ok = response.status >= 200 && response.status < 300;
     const html = ok ? response.body.slice(0, MAX_HTML_BYTES) : '';
@@ -401,6 +403,7 @@ async function run(
 }
 
 async function main() {
+  installScraperFetchHooks({ validatorCache: false });
   const args = parseArgs(process.argv.slice(2));
   const guard = assertScriptApplyAllowed({
     apply: args.apply,

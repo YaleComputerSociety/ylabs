@@ -68,6 +68,7 @@ import {
   researcherToUserMatch,
   type UserMatch,
 } from './undergradFellowshipRecipientScraper';
+import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 export const OFFICIAL_UNDERGRAD_LISTS_SOURCE = 'official-undergrad-lists';
 export const UNDERGRAD_LIST_EVIDENCE_FIELD = 'undergradListEvidence';
@@ -98,7 +99,7 @@ const GONE_STATUSES = new Set([404, 410]);
 export const defaultMentorFetchText: MentorFetchText = async (url) => {
   try {
     const page = await fetchPageWithPolicy(url, {
-      headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)', Accept: '*/*' },
+      headers: { 'User-Agent': SCRAPER_USER_AGENT, Accept: '*/*' },
       timeoutMs: 30_000,
     });
     return page.html;

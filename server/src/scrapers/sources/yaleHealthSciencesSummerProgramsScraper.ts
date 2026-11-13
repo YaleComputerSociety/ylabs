@@ -37,6 +37,7 @@ import {
 } from '../utils/programPageEvidence';
 import { parseProgramDate } from '../utils/programDeadline';
 import { boundedObservedFellowshipProse } from '../fellowshipProse';
+import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 export const YALE_HEALTH_SCIENCES_SUMMER_PROGRAMS_SOURCE = 'yale-health-sciences-summer-programs';
 
@@ -447,7 +448,7 @@ async function fetchHtml(url: string, useCache: boolean): Promise<string> {
     axios.get(safeUrlText, {
       timeout: 30000,
       headers: {
-        'User-Agent': 'YLabsBot/1.0 (+https://ylabs.yale.edu)',
+        'User-Agent': SCRAPER_USER_AGENT,
         Accept: 'text/html,application/xhtml+xml',
       },
       maxRedirects: 5,

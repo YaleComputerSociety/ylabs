@@ -98,11 +98,11 @@ import {
   type CoLedSiteIndexLoader,
   type LabUrlIsCoLedGroupSite,
 } from '../utils/coLedGroupSites';
+import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 const DIRECTORY_URL = 'https://medicine.yale.edu/faculty/faculty-directory/facultylist/';
 const SOURCE_KEY = 'ysm-faculty-directory';
 const SCHOOL_NAME = 'Yale School of Medicine';
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 const PROFILE_FETCH_LOOKAHEAD = 4;
 export const REFUSED_PROFILE_RETRY_PAUSE_MS = 60_000;
@@ -737,7 +737,7 @@ async function fetchHtml(
   const res = await retryOnRetryableStatus(() =>
     axios.get(safeUrlText, {
       timeout: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': USER_AGENT },
+      headers: { 'User-Agent': SCRAPER_USER_AGENT },
       maxRedirects: 5,
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,

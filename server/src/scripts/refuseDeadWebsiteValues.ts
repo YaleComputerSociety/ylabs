@@ -49,6 +49,7 @@ import {
 } from './deadWebsiteValueRefusalCore';
 import { resolveFieldLockReleases } from './releaseRevisitableFieldLocksCore';
 import { assertScriptApplyAllowed, resolveSafeJsonReportOutputPath } from './scriptWriteGuards';
+import { installScraperFetchHooks } from '../scrapers/utils/scraperFetchHooks';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(here, '../../.env'), quiet: true });
@@ -305,6 +306,7 @@ export async function runRefuseDeadWebsiteValues(args: RefuseDeadWebsiteValuesAr
 }
 
 async function main(): Promise<void> {
+  installScraperFetchHooks({ validatorCache: false });
   const args = parseRefuseDeadWebsiteValuesArgs(process.argv.slice(2));
   assertScriptApplyAllowed({
     apply: args.apply,

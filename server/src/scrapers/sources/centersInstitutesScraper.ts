@@ -103,8 +103,8 @@ import { sanitizePersonTitle } from '../../utils/titleHygiene';
 import { statesAnyFacultyAppointment } from './yaleDirectoryScraper';
 import { titleHoldsOnlyEmeritusAppointments } from '../../services/emeritusLeadWayIn';
 import { screenedRosterRole } from '../rosterStaffTitleScreen';
+import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
-const USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 const FETCH_TIMEOUT_MS = 30_000;
 const MAX_PAGES_PER_CENTER = 100;
 const CONSECUTIVE_REPEATED_PAGES_TO_STOP = 2;
@@ -1856,7 +1856,7 @@ async function fetchHtml(url: string, useCache: boolean, sourceName: string): Pr
   const res = await retryOnRetryableStatus(() =>
     axios.get(safeUrlText, {
       timeout: FETCH_TIMEOUT_MS,
-      headers: { 'User-Agent': USER_AGENT },
+      headers: { 'User-Agent': SCRAPER_USER_AGENT },
       maxRedirects: 5,
       httpAgent: agents.httpAgent,
       httpsAgent: agents.httpsAgent,

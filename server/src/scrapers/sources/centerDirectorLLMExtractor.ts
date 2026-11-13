@@ -56,6 +56,7 @@ import {
 } from '../utils/mapWithConcurrency';
 import { fetchPageWithPolicy } from '../utils/httpFetch';
 import { postChatCompletion } from '../../utils/modelClient';
+import { SCRAPER_USER_AGENT } from '../utils/scraperUserAgent';
 
 export const CENTER_DIRECTOR_LLM_SOURCE_NAME = 'center-director-llm';
 const SOURCE_KEY = CENTER_DIRECTOR_LLM_SOURCE_NAME;
@@ -329,7 +330,7 @@ async function defaultPriorReadFinder(
 async function defaultFetchPage(url: string): Promise<{ url: string; html: string } | null> {
   const page = await fetchPageWithPolicy(url, {
     timeoutMs: 15_000,
-    headers: { 'User-Agent': 'ylabs-scraper/1.0 (+https://yalelabs.io)' },
+    headers: { 'User-Agent': SCRAPER_USER_AGENT },
     maxRedirects: 5,
   });
   return { url: page.url, html: page.html };
