@@ -19,11 +19,15 @@ export interface StoredLinkVerdict {
 
 export interface KnownDeadUrlStats {
   known: number;
+  learned: number;
   skipped: number;
+  skippedByStoredVerdict: number;
+  skippedAsRepeatInRun: number;
 }
 
 interface KnownDeadUrlScope {
-  goneStatusByKey: ReadonlyMap<string, number>;
+  goneStatusByKey: Map<string, number>;
+  learnedKeys: Set<string>;
   stats: KnownDeadUrlStats;
 }
 
@@ -104,8 +108,14 @@ export async function withKnownDeadUrlScope<T>(
   loadVerdicts: () => Promise<Iterable<StoredLinkVerdict>> = loadStoredLinkVerdicts,
 ): Promise<{ value: T; stats: KnownDeadUrlStats }> {
   const goneStatusByKey = goneStatusByUrlKey(await loadVerdicts());
-  const stats: KnownDeadUrlStats = { known: goneStatusByKey.size, skipped: 0 };
-  const value = await scopeStorage.run({ goneStatusByKey, stats }, run);
+  const stats: KnownDeadUrlStats = {
+    known: goneStatusByKey.size,
+    learned: 0,
+    skipped: 0,
+    skippedByStoredVerdict: 0,
+    skippedAsRepeatInRun: 0,
+  };
+  const value = await scopeStorage.run({ goneStatusByKey, learnedKeys: new Set(), stats }, run);
   return { value, stats };
 }
 
@@ -122,8 +132,25 @@ export function isKnownDeadUrl(url: string): boolean {
 export function recordKnownDeadUrlSkip(url: string): number | undefined {
   const status = knownDeadUrlStatus(url);
   const scope = scopeStorage.getStore();
-  if (status !== undefined && scope) scope.stats.skipped += 1;
+  if (status === undefined || !scope) return status;
+  scope.stats.skipped += 1;
+  const key = sourceLinkHealthKey(url);
+  if (key && scope.learnedKeys.has(key)) scope.stats.skippedAsRepeatInRun += 1;
+  else scope.stats.skippedByStoredVerdict += 1;
   return status;
+}
+
+/**
+ * A URL this run already found gone is not asked again in the same run: the first 404 or 410
+ * is the answer, and every later lane or row that cites it would only repeat the request.
+ */
+export function rememberGoneUrl(url: string, status: number): void {
+  const scope = scopeStorage.getStore();
+  const key = scope && RESOURCE_GONE_STATUSES.has(status) ? sourceLinkHealthKey(url) : null;
+  if (!scope || !key || scope.goneStatusByKey.has(key)) return;
+  scope.goneStatusByKey.set(key, status);
+  scope.learnedKeys.add(key);
+  scope.stats.learned += 1;
 }
 
 export function withKnownDeadUrlFetchMetrics(

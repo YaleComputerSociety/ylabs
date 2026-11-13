@@ -86,7 +86,13 @@ describe('fetchPageWithPolicy inside a known-dead scope (#6210)', () => {
     expect(error).toBeInstanceOf(KnownDeadUrlError);
     expect(error).toBeInstanceOf(HttpStatusError);
     expect((error as HttpStatusError).status).toBe(404);
-    expect(stats).toEqual({ known: 1, skipped: 1 });
+    expect(stats).toEqual({
+      known: 1,
+      learned: 0,
+      skipped: 1,
+      skippedByStoredVerdict: 1,
+      skippedAsRepeatInRun: 0,
+    });
   });
 
   it('still fetches a URL with no gone verdict', async () => {
@@ -94,6 +100,24 @@ describe('fetchPageWithPolicy inside a known-dead scope (#6210)', () => {
     const { stats } = await scope(() => fetchPageWithPolicy(LIVE, { ...base, request }));
     expect(request).toHaveBeenCalledTimes(1);
     expect(stats.skipped).toBe(0);
+  });
+
+  it('asks a URL that answered 404 in this run only once', async () => {
+    const request = vi.fn<HttpRequestFn>(() =>
+      Promise.resolve({ status: 404, data: '', finalUrl: LIVE }),
+    );
+    const { stats } = await scope(async () => {
+      for (let i = 0; i < 3; i += 1) {
+        await fetchPageWithPolicy(LIVE, { ...base, request }).catch(() => undefined);
+      }
+    });
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(stats).toMatchObject({
+      learned: 1,
+      skipped: 2,
+      skippedByStoredVerdict: 0,
+      skippedAsRepeatInRun: 2,
+    });
   });
 
   it('skips nothing outside a scrape-run scope', async () => {

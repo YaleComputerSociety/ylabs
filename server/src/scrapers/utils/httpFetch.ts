@@ -38,7 +38,7 @@ import {
 } from './hostPause';
 import { recordHostSuccess } from './hostPauseState';
 import { withScrapeRunProgress } from '../scrapeRunProgress';
-import { recordKnownDeadUrlSkip } from './knownDeadUrls';
+import { recordKnownDeadUrlSkip, rememberGoneUrl } from './knownDeadUrls';
 
 export const SCRAPER_USER_AGENT = 'ylabs-scraper/1.0 (+https://yalelabs.io)';
 
@@ -340,6 +340,7 @@ export async function fetchPageWithPolicy(
     page = await fetchPageLive(url, options);
   } catch (error) {
     if (error instanceof HttpStatusError) {
+      rememberGoneUrl(url, error.status);
       benchmarkCacheWrite(POLICY_FETCH_BENCHMARK_NAMESPACE, benchmarkKey, {
         failedStatus: error.status,
       } satisfies FrozenFailedPage);
