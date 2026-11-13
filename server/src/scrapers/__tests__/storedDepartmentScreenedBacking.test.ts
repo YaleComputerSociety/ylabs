@@ -5,7 +5,9 @@ import {
 } from '../storedDepartmentScreenedBacking';
 import type { UserDepartmentObservationScreen } from '../userDepartmentObservationScreens';
 
-const catalog = { canonicalDepartment: (name: string) => (name === 'Fixture Studies' ? name : undefined) };
+const catalog = {
+  canonicalDepartment: (name: string) => (name === 'Fixture Studies' ? name : undefined),
+};
 const noCatalog = { canonicalDepartment: null };
 const screenFixtureLane: UserDepartmentObservationScreen = (observations) =>
   observations.filter((observation) => observation.sourceName !== 'fixture-screened-lane');
@@ -48,9 +50,9 @@ describe('storedDepartmentRestsOnlyOnScreenedReadings', () => {
         screens,
       ),
     ).toBe(false);
-    expect(storedDepartmentRestsOnlyOnScreenedReadings('Fixture Center', [], catalog, screens)).toBe(
-      false,
-    );
+    expect(
+      storedDepartmentRestsOnlyOnScreenedReadings('Fixture Center', [], catalog, screens),
+    ).toBe(false);
   });
 
   it('clears nothing while the catalog is unavailable', () => {
@@ -98,10 +100,14 @@ describe('storedDepartmentRestsOnlyOnScreenedReadings', () => {
 describe('storedDepartmentHasUnscreenedReading', () => {
   it('finds an unscreened reading of the stored value and ignores screened ones', () => {
     expect(
-      storedDepartmentHasUnscreenedReading('Fixture Studies', [reading('Fixture Studies', 'fixture-open-lane')], catalog),
+      storedDepartmentHasUnscreenedReading(
+        'Fixture Studies',
+        [reading('Fixture Studies', 'fixture-open-lane')],
+        catalog,
+      ),
     ).toBe(true);
-    expect(storedDepartmentHasUnscreenedReading('Fixture Studies', [reading('Fixture Center')], catalog)).toBe(
-      false,
-    );
+    expect(
+      storedDepartmentHasUnscreenedReading('Fixture Studies', [reading('Fixture Center')], catalog),
+    ).toBe(false);
   });
 });
