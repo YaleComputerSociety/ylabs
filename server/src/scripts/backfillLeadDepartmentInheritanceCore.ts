@@ -9,6 +9,7 @@ export interface LeadDepartmentInheritanceOutcome {
 export interface LeadDepartmentInheritanceSummary {
   scanned: number;
   inherited: number;
+  refreshed: number;
   indexSyncFailures: number;
   skipped: Record<string, number>;
   departmentsWritten: Array<[string, number]>;
@@ -30,11 +31,13 @@ export function summarizeLeadDepartmentInheritance(
   const departments = new Map<string, number>();
   const schools = new Map<string, number>();
   let inherited = 0;
+  let refreshed = 0;
   let indexSyncFailures = 0;
 
   for (const outcome of outcomes) {
     if (outcome.result.inherited) {
       inherited += 1;
+      if (outcome.result.refreshed?.length) refreshed += 1;
       if (outcome.result.indexSyncFailed) indexSyncFailures += 1;
       for (const department of outcome.result.departments ?? []) {
         departments.set(department, (departments.get(department) || 0) + 1);
@@ -54,6 +57,7 @@ export function summarizeLeadDepartmentInheritance(
   return {
     scanned: outcomes.length,
     inherited,
+    refreshed,
     indexSyncFailures,
     skipped,
     departmentsWritten: [...departments.entries()].sort(byCountDescending),
