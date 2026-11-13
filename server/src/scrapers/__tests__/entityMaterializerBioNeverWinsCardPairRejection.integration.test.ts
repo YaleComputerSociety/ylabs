@@ -116,8 +116,25 @@ describe('a career biography never wins a full/card pair rejection (#2901)', () 
     });
   };
 
+  const seedStoredLabSitePage = (slug: string) =>
+    Observation.create({
+      entityType: 'researchEntity',
+      entityKey: slug,
+      field: 'researchPageText',
+      value: [
+        { url: 'https://filmstudies.example.edu/people/robin-quill', text: CAREER_BIOGRAPHY },
+      ],
+      sourceId: new mongoose.Types.ObjectId(),
+      sourceName: 'research-page-text',
+      sourceUrl: 'https://filmstudies.example.edu/people/robin-quill',
+      confidence: 0.6,
+      observedAt: new Date('2026-09-14T00:00:00Z'),
+      superseded: false,
+    });
+
   const seedPair = async (slug: string, synthesisValue: string, card: string = RESEARCH_CARD) => {
     await seedRow(slug, card);
+    await seedStoredLabSitePage(slug);
     await seedObservation({
       entityKey: slug,
       value: CAREER_BIOGRAPHY,
