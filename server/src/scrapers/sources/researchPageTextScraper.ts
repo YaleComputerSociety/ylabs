@@ -1,5 +1,6 @@
 import * as cheerio from 'cheerio';
 import mongoose from 'mongoose';
+import { Observation } from '../../models/observation';
 import { ResearchEntity } from '../../models/researchEntity';
 import { serializedDocumentId } from '../../utils/idSerialization';
 import { sanitizeLogValue } from '../../utils/logSanitizer';
@@ -133,6 +134,42 @@ export interface ResearchPageTextScraperDeps {
   rowFinder?: ResearchPageTextRowFinderFn;
   storedHashLoader?: StoredContentHashLoaderFn;
   citerCountsLoader?: () => Promise<ReadonlyMap<string, number>>;
+  storedReadingHostsLoader?: StoredReadingHostsLoaderFn;
+}
+
+export type StoredReadingHostsLoaderFn = (
+  entity: ContentHashEntityRef,
+) => Promise<ReadonlySet<string>>;
+
+const pageHost = (url: string): string => {
+  try {
+    return new URL(url).hostname.toLowerCase().replace(/^www\./, '');
+  } catch {
+    return '';
+  }
+};
+
+/**
+ * The hosts of the pages the row's current stored reading was built from. Fails open like the
+ * content-hash gate: with no connection, or no stored reading, there is nothing to keep.
+ */
+async function loadStoredReadingHosts(entity: ContentHashEntityRef): Promise<ReadonlySet<string>> {
+  if (!entity.entityId && !entity.entityKey) return new Set();
+  if (!mongooseConnectionWasOpened()) return new Set();
+  const filter: Record<string, unknown> = {
+    entityType: entity.entityType,
+    sourceName: RESEARCH_PAGE_TEXT_SOURCE,
+    field: RESEARCH_PAGE_TEXT_FIELD,
+    superseded: false,
+  };
+  if (entity.entityId) filter.entityId = entity.entityId;
+  else filter.entityKey = entity.entityKey;
+  const stored = await Observation.findOne(filter).sort({ observedAt: -1 }).select('value').lean();
+  const value = (stored as { value?: unknown } | null)?.value;
+  if (!Array.isArray(value)) return new Set();
+  return new Set(
+    value.map((entry) => pageHost(String((entry as { url?: unknown })?.url ?? ''))).filter(Boolean),
+  );
 }
 
 async function fetchPageOnce(url: string): Promise<FetchedDescriptionPage | null> {
@@ -315,12 +352,14 @@ export class ResearchPageTextScraper implements IScraper {
   private readonly rowFinder: ResearchPageTextRowFinderFn;
   private readonly storedHashLoader: StoredContentHashLoaderFn;
   private readonly citerCountsLoader: () => Promise<ReadonlyMap<string, number>>;
+  private readonly storedReadingHostsLoader: StoredReadingHostsLoaderFn;
 
   constructor(deps: ResearchPageTextScraperDeps = {}) {
     this.fetchPage = deps.fetchPage || defaultFetchPage;
     this.rowFinder = deps.rowFinder || defaultRowFinder;
     this.storedHashLoader = deps.storedHashLoader || loadStoredContentHash;
     this.citerCountsLoader = deps.citerCountsLoader || loadConnectedEvidenceUrlCiterCounts;
+    this.storedReadingHostsLoader = deps.storedReadingHostsLoader || loadStoredReadingHosts;
   }
 
   private async tryFetch(
@@ -411,11 +450,11 @@ export class ResearchPageTextScraper implements IScraper {
       entityKey: row.slug,
     };
     if (transientFailures.length > 0) {
-      const storedHash = await this.storedHashLoader(this.name, entityRef);
-      if (storedHash !== undefined) {
+      const storedHosts = await this.storedReadingHostsLoader(entityRef);
+      if (transientFailures.some((url) => storedHosts.has(pageHost(url)))) {
         counts.keptAfterTransientFailure += 1;
         ctx.log(
-          `[${row.slug || 'candidate'}] research page text kept: ${transientFailures.length} cited page(s) failed transiently, so this run leaves the stored reading for the next one`,
+          `[${row.slug || 'candidate'}] research page text kept: a cited page its stored reading drew on failed transiently, so this run leaves that reading for the next one`,
         );
         return [];
       }

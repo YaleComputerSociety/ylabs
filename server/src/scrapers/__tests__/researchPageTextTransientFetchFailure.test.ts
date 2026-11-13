@@ -27,7 +27,7 @@ const row: CandidateDescriptionLab = {
   entityType: 'LAB',
 };
 
-function run(partnerFailure: unknown, storedHash: string | undefined) {
+function run(partnerFailure: unknown, storedReadingHosts: string[]) {
   const emitted: ObservationInput[] = [];
   const ctx: ScraperContext = {
     scrapeRunId: 'test-run',
@@ -46,11 +46,14 @@ function run(partnerFailure: unknown, storedHash: string | undefined) {
       return pages[url] ? { url, html: pages[url] } : null;
     }),
     rowFinder: async () => [row],
-    storedHashLoader: async () => storedHash,
+    storedHashLoader: async () => (storedReadingHosts.length ? 'stored-hash' : undefined),
+    storedReadingHostsLoader: async () => new Set(storedReadingHosts),
     citerCountsLoader: async () => new Map(),
   });
   return lane.run(ctx).then((result) => ({ result, emitted }));
 }
+
+const BOTH_HOSTS = ['tidepool-lab.example.org', 'partner-site.example.org'];
 
 const pageText = (emitted: ObservationInput[]) =>
   emitted.find((observation) => observation.field === RESEARCH_PAGE_TEXT_FIELD)?.value as
@@ -66,6 +69,7 @@ const leaseHeld = () =>
 describe('research-page-text when a cited page fails transiently', () => {
   it.each([
     ['a throttle that outlasted its retries', new HttpStatusError(429)],
+    ['a rate-based WAF refusal that outlasted its retries', new HttpStatusError(403)],
     ['a server error that outlasted its retries', new HttpStatusError(503)],
     [
       'a timeout',
@@ -73,22 +77,29 @@ describe('research-page-text when a cited page fails transiently', () => {
     ],
     ['a host lease another run holds', leaseHeld()],
   ])('keeps the stored reading after %s and counts the row', async (_label, failure) => {
-    const { result, emitted } = await run(failure, 'stored-hash');
+    const { result, emitted } = await run(failure, BOTH_HOSTS);
 
     expect(emitted).toEqual([]);
     expect(result.notes).toContain('1 kept after a transient fetch failure');
   });
 
   it('still stores the shorter reading when the page is gone', async () => {
-    const { result, emitted } = await run(new HttpStatusError(404), 'stored-hash');
+    const { result, emitted } = await run(new HttpStatusError(404), BOTH_HOSTS);
 
     expect(pageText(emitted)?.map((entry) => entry.url)).toEqual([HOME]);
     expect(result.notes).toContain('0 kept after a transient fetch failure');
   });
 
   it('stores what it read for a row with no earlier reading to keep', async () => {
-    const { emitted } = await run(new HttpStatusError(429), undefined);
+    const { emitted } = await run(new HttpStatusError(429), []);
 
     expect(pageText(emitted)?.map((entry) => entry.url)).toEqual([HOME]);
+  });
+
+  it('stores the new reading when the failing page never fed the stored one, so a row cannot freeze', async () => {
+    const { result, emitted } = await run(new HttpStatusError(403), ['tidepool-lab.example.org']);
+
+    expect(pageText(emitted)?.map((entry) => entry.url)).toEqual([HOME]);
+    expect(result.notes).toContain('0 kept after a transient fetch failure');
   });
 });
