@@ -320,4 +320,41 @@ describe('getResearchEntityRoster display profile projection', () => {
     expect(roster[0].state).toBe('UNKNOWN');
     expect(roster[0].role).toBe('pi');
   });
+
+  it('never serves a folded researcher as a lead or member, even when it is not archived', async () => {
+    const entityId = new mongoose.Types.ObjectId();
+    const liveLeadId = await seedMember(entityId, undefined, 'live01');
+    const survivor = await Researcher.create({
+      displayName: 'Fold Survivor',
+      profileLinks: [],
+      status: 'ACTIVE',
+      archived: false,
+    });
+    for (const [netid, role] of [
+      ['fold01', 'PI'],
+      ['fold02', 'POSTDOC'],
+    ] as const) {
+      const folded = await Researcher.create({
+        displayName: `Folded ${netid}`,
+        identifiers: { netid, email: `${netid}@example.test` },
+        profileLinks: [],
+        status: 'ACTIVE',
+        archived: false,
+        dedupedIntoResearcherId: survivor._id,
+        dedupedAt: new Date('2026-11-01T00:00:00.000Z'),
+      });
+      await RoleAssignment.create({
+        personId: folded._id,
+        target: { kind: 'RESEARCH_ENTITY', id: entityId },
+        role,
+        state: 'CURRENT',
+        confidence: 0.9,
+      });
+    }
+
+    const roster = await getResearchEntityRoster(entityId);
+
+    expect(roster.map((entry) => entry.personId.toString())).toEqual([liveLeadId.toString()]);
+    expect(roster[0].role).toBe('pi');
+  });
 });
