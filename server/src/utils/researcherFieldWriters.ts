@@ -175,9 +175,11 @@ export type ResearcherFieldWriteDecision =
  * releases it, so a sibling can take the field over; the stored value itself is left alone.
  * A value that outranks the stored one, such as a person's own website over the profile page
  * a better-joined key wrote (#5845), writes whatever the writer rank.
- * A fill-only candidate that does not hold the field writes only into an empty field: a stored
- * value with no writer was set by some other source before writers were recorded, and a stored
- * value another key holds is one it may not replace, even when that holder is fill-only too.
+ * A fill-only candidate never replaces a stored value with no writer, which some other source
+ * set before writers were recorded, nor one a key that is not fill-only holds. Against a holder
+ * that is fill-only too it ranks as usual, so fill-only keys settle among themselves in any order.
+ * A holder recorded before the fill-only flag existed counts as fill-only when its join would
+ * make it one now.
  * Callers pass `storedValuePresent` from `storedValueCountsAsPresent`, which reads a
  * never-backed stored department as absent (#6049).
  */
@@ -189,20 +191,24 @@ export function decideResearcherFieldWrite(
   storedValuePresent = false,
   valueOutranksStored = false,
 ): ResearcherFieldWriteDecision {
-  const current = storedWriter(writers, field);
+  const recorded = storedWriter(writers, field);
+  const current =
+    recorded && writerHeldOnFillOnlyEvidence(field, recorded)
+      ? { ...recorded, fillOnly: true }
+      : recorded;
   const holdsField = current?.userKey === candidate.userKey;
   if (!hasValue) return { write: false, releaseWriter: holdsField };
-  if (candidate.fillOnly && !holdsField && storedValuePresent) {
+  if (candidate.fillOnly && !holdsField && storedValuePresent && !current?.fillOnly) {
     return { write: false, releaseWriter: false };
   }
   if (current && !holdsField && !valueOutranksStored && !writerOutranks(candidate, current)) {
     return { write: false, releaseWriter: false };
   }
   const writerChanged =
-    !current ||
-    current.userKey !== candidate.userKey ||
-    current.joinRank !== candidate.joinRank ||
-    current.confidence !== candidate.confidence ||
-    Boolean(current.fillOnly) !== Boolean(candidate.fillOnly);
+    !recorded ||
+    recorded.userKey !== candidate.userKey ||
+    recorded.joinRank !== candidate.joinRank ||
+    recorded.confidence !== candidate.confidence ||
+    Boolean(recorded.fillOnly) !== Boolean(candidate.fillOnly);
   return { write: true, writer: candidate, writerChanged };
 }

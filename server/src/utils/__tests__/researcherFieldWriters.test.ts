@@ -221,28 +221,68 @@ describe('researcher field writer precedence (#5706)', () => {
     ).toEqual({ write: false, releaseWriter: false });
   });
 
-  it('never lets a fill-only key take a stored name from a fill-only holder (#6035)', () => {
+  it('ranks a fill-only key against a fill-only holder, in either direction (#6035)', () => {
     const rosterByName = researcherFieldWriter('dept:a:fx', 'person-name', 0.6, true);
-    const held = new Map([['displayName', rosterByName]]);
-    const directoryByNetid = researcherFieldWriter('fx1', 'account-netid', 1, true);
     const grantByName = researcherFieldWriter('nih:a:fx', 'person-name', 0.9, true);
+    expect(
+      decideResearcherFieldWrite(
+        new Map([['imageUrl', rosterByName]]),
+        'imageUrl',
+        grantByName,
+        true,
+        true,
+      ),
+    ).toMatchObject({ write: true, writer: grantByName });
+    expect(
+      decideResearcherFieldWrite(
+        new Map([['imageUrl', grantByName]]),
+        'imageUrl',
+        rosterByName,
+        true,
+        true,
+      ),
+    ).toEqual({ write: false, releaseWriter: false });
+  });
+
+  it('ranks against a holder recorded before the flag as fill-only when its join makes it one', () => {
+    const legacyByName = { userKey: 'dept:a:fx', joinRank: 1, confidence: 0.6 };
+    const grantByName = researcherFieldWriter('nih:a:fx', 'person-name', 0.9, true);
+    expect(
+      decideResearcherFieldWrite(
+        new Map([['imageUrl', legacyByName]]),
+        'imageUrl',
+        grantByName,
+        true,
+        true,
+      ),
+    ).toMatchObject({ write: true, writer: grantByName });
+  });
+
+  it('never lets a fill-only key replace a value a key that is not fill-only holds (#6035)', () => {
+    const officialByNetid = researcherFieldWriter('fx2', 'account-netid', 0.5);
+    const directoryByNetid = researcherFieldWriter('fx1', 'account-netid', 1, true);
+    const grantByName = researcherFieldWriter('nih:a:fx', 'person-name', 1, true);
     for (const candidate of [directoryByNetid, grantByName]) {
-      expect(decideResearcherFieldWrite(held, 'displayName', candidate, true, true)).toEqual({
+      expect(
+        decideResearcherFieldWrite(
+          new Map([['displayName', officialByNetid]]),
+          'displayName',
+          candidate,
+          true,
+          true,
+          true,
+        ),
+      ).toEqual({ write: false, releaseWriter: false });
+    }
+  });
+
+  it('never lets a fill-only key replace a stored value no writer is recorded for (#6035)', () => {
+    const grantByName = researcherFieldWriter('nih:a:fx', 'person-name', 1, true);
+    for (const field of ['displayName', 'imageUrl', 'websiteUrl'] as const) {
+      expect(decideResearcherFieldWrite(undefined, field, grantByName, true, true, true)).toEqual({
         write: false,
         releaseWriter: false,
       });
     }
-    expect(decideResearcherFieldWrite(held, 'displayName', rosterByName, true, true)).toEqual({
-      write: true,
-      writer: rosterByName,
-      writerChanged: false,
-    });
-    expect(
-      decideResearcherFieldWrite(held, 'displayName', directoryByNetid, true, false),
-    ).toMatchObject({ write: true, writer: directoryByNetid });
-    const officialByNetid = researcherFieldWriter('fx2', 'account-netid', 0.5);
-    expect(
-      decideResearcherFieldWrite(held, 'displayName', officialByNetid, true, true),
-    ).toMatchObject({ write: true, writer: officialByNetid });
   });
 });

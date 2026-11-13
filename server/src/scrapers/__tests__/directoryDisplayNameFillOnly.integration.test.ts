@@ -284,4 +284,55 @@ describe('a directory name never replaces a page name (#6035)', () => {
       STORED_WEBSITE,
     ]);
   });
+
+  it('settles two fill-only images by rank, the same in either order (#6035)', async () => {
+    const firstNameKey = 'dept:applied-fixtures:fixture-quillsby';
+    const secondNameKey = 'dept:fixture-studies:fixture-quillsby';
+    const settled = await settledInEitherOrder(
+      async () => {
+        await seedKey(firstNameKey, 'dept-faculty-roster', {
+          fname: 'Fixture',
+          lname: 'Quillsby',
+          imageUrl: 'https://applied-fixtures.example.edu/images/headshot.jpg',
+        });
+        await seedKey(secondNameKey, 'dept-faculty-roster', {
+          fname: 'Fixture',
+          lname: 'Quillsby',
+          imageUrl: 'https://fixture-studies.example.edu/images/headshot.jpg',
+        });
+      },
+      DIRECTORY_NAME,
+      [firstNameKey, secondNameKey],
+    );
+    expect(settled.map((person) => person.profile?.imageUrl)).toEqual([
+      'https://applied-fixtures.example.edu/images/headshot.jpg',
+      'https://applied-fixtures.example.edu/images/headshot.jpg',
+    ]);
+  });
+
+  it('settles two directory departments by rank, the same in either order (#6035)', async () => {
+    const secondDirectoryKey = `netid:${NETID}`;
+    const settled = await settledInEitherOrder(
+      async () => {
+        await seedKey(DIRECTORY_KEY, 'yale-directory', {
+          netid: NETID,
+          fname: 'Fixture',
+          lname: 'Quillsby',
+          primaryDepartment: 'Applied Fixtures',
+        });
+        await seedKey(secondDirectoryKey, 'yale-directory', {
+          netid: NETID,
+          fname: 'Fixture',
+          lname: 'Quillsby',
+          primaryDepartment: 'Fixture Studies',
+        });
+      },
+      DIRECTORY_NAME,
+      [DIRECTORY_KEY, secondDirectoryKey],
+    );
+    expect(settled.map((person) => person.profile?.primaryDepartment)).toEqual([
+      'Applied Fixtures',
+      'Applied Fixtures',
+    ]);
+  });
 });
