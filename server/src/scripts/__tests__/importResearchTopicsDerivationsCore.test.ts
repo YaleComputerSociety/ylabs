@@ -256,7 +256,7 @@ describe('importResearchTopicReadings', () => {
     expect(records.size).toBe(0);
   });
 
-  it('validates a reading as accepted exactly when an import would store it, without touching the cache', async () => {
+  it('validates a reading as accepted exactly when an import would store it, without writing the cache', async () => {
     const accepted = await importOnce(readingsFile(), null, {
       mode: 'validate-only',
       apply: false,
@@ -272,6 +272,17 @@ describe('importResearchTopicReadings', () => {
     );
     expect(empty.rows[0].outcome).toBe('accepted');
     expect(empty.rowsWithTopicsAfterFilters).toBe(0);
+
+    const { store, records } = memoryStore();
+    await importOnce(readingsFile(), store);
+    const cached = await importOnce(readingsFile(), store, {
+      mode: 'validate-only',
+      apply: false,
+    });
+    expect(cached.rows[0].outcome).toBe('already-cached');
+    expect(cached.alreadyCached).toBe(1);
+    expect(store.insertIfAbsent).toHaveBeenCalledTimes(1);
+    expect(records.size).toBe(1);
   });
 
   it('stores a reading raw, so the filters judge it at resolve and a filter change re-judges it at no model cost', async () => {

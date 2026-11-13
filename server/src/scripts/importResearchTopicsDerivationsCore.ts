@@ -234,7 +234,7 @@ const QUOTED_TOPIC_OUTPUT_SCHEMA = {
   type: 'object',
   required: ['topic', 'quote', 'url'],
   properties: {
-    topic: { type: 'string' },
+    topic: { type: 'string', pattern: '\\S' },
     quote: { type: 'string' },
     url: { type: 'string' },
   },
@@ -563,17 +563,17 @@ export async function importResearchTopicReadings(input: {
     row.refusals = refusalCounts(preview.refusals);
     if (preview.topics.length > 0) report.rowsWithTopicsAfterFilters += 1;
 
-    if (input.mode === 'validate-only') {
-      row.outcome = 'accepted';
-      continue;
-    }
-    const store = input.store as ImportedTopicsStore;
-    if (claimedThisRun.has(inputHash) || (await store.has(inputHash))) {
+    if (claimedThisRun.has(inputHash) || (await input.store?.has(inputHash))) {
       row.outcome = 'already-cached';
       report.alreadyCached += 1;
       continue;
     }
     claimedThisRun.add(inputHash);
+    if (input.mode === 'validate-only') {
+      row.outcome = 'accepted';
+      continue;
+    }
+    const store = input.store as ImportedTopicsStore;
     if (!input.apply) {
       row.outcome = 'planned';
       report.plannedStores += 1;

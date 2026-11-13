@@ -225,11 +225,14 @@ async function main() {
     readings,
     rows,
     knownSlugs: await existingSlugs(slugs),
-    store: args.mode === 'import' ? mongoImportStore : null,
+    store: mongoImportStore,
   });
   if (args.mode === 'validate-only') {
     for (const row of report.rows) {
-      const verdict = row.outcome === 'accepted' ? 'accepted' : `refused:${row.outcome}`;
+      const verdict =
+        row.outcome === 'accepted' || row.outcome === 'already-cached'
+          ? row.outcome
+          : `refused:${row.outcome}`;
       const filtered = (row.refusals ?? []).map((item) => `${item.reason}x${item.count}`).join(' ');
       console.log(
         [
