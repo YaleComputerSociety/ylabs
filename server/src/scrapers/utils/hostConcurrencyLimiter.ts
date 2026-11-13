@@ -310,6 +310,10 @@ export interface ScraperHostConcurrencyInterceptorOptions {
   acquireTimeoutMs?: number;
 }
 
+/**
+ * Records a response's refusal or success against its host. A page reused from the sweep cache was
+ * not answered by the host, so it says nothing about the host's limits and is skipped.
+ */
 function recordHostOutcomeFromResponse(response: unknown): void {
   const typed = response as
     | {
@@ -321,6 +325,7 @@ function recordHostOutcomeFromResponse(response: unknown): void {
       }
     | undefined;
   if (typeof typed?.status !== 'number' || typed.config?.[HOST_PAUSE_POLICY_FETCH]) return;
+  if (isSweepPageReuseHit(typed.config)) return;
   const host =
     hostnameForLimiter(typed.request?.res?.responseUrl) ??
     hostnameForLimiter(typed.config?.url, typed.config?.baseURL);

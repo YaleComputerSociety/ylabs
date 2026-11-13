@@ -8,6 +8,7 @@ import {
   installScraperHostConcurrencyInterceptor,
 } from '../hostConcurrencyLimiter';
 import { HOST_PAUSE_POLICY_FETCH, hostPauseInErrorChain } from '../hostPause';
+import { SWEEP_PAGE_REUSE_HIT_KEY } from '../sweepPageReuseHit';
 import {
   hostBackoffState,
   hostPausedUntil,
@@ -101,6 +102,25 @@ describe('the scraper axios interceptor and a host that refuses', () => {
     await axios
       .get(`http://127.0.0.1:${port}/busy`, { [HOST_PAUSE_POLICY_FETCH]: true } as object)
       .catch(() => undefined);
+
+    expect(hostBackoffState('127.0.0.1')).toBeUndefined();
+  });
+
+  it('never counts a page reused from the sweep cache as the host answering', async () => {
+    const handlers = (
+      axios.interceptors.response as unknown as {
+        handlers: Array<{ fulfilled?: (response: unknown) => unknown } | null>;
+      }
+    ).handlers;
+
+    for (const handler of handlers) {
+      handler?.fulfilled?.({
+        status: 429,
+        data: '',
+        headers: {},
+        config: { url: `http://127.0.0.1:${port}/people/a`, [SWEEP_PAGE_REUSE_HIT_KEY]: true },
+      });
+    }
 
     expect(hostBackoffState('127.0.0.1')).toBeUndefined();
   });
