@@ -274,3 +274,45 @@ describe('researchPlanViewFromDoc', () => {
     expect(view.deadlines).toEqual([{ label: 'keep', dueAt: '2026-09-01T00:00:00.000Z' }]);
   });
 });
+
+describe('savedResearchEntitySummary undergraduate signals match the served row (#6088)', () => {
+  const invitingRow = {
+    _id: '67d8928150621bcef434a1f1',
+    slug: 'synthetic-recruiting-lab',
+    name: 'Synthetic Recruiting Lab',
+    kind: 'lab',
+    entityType: 'LAB',
+    websiteUrl: 'https://synthetic-recruiting-lab.example.edu/',
+    shortDescription: 'The lab studies axon regeneration in a model nematode.',
+    undergradInvitation: {
+      level: 'actively_hiring',
+      quote: 'We are recruiting undergraduate researchers for the spring term.',
+      sourceUrl: 'https://synthetic-recruiting-lab.example.edu/join',
+    },
+  };
+
+  const servedRow = (row: Record<string, any>) =>
+    toPublicResearchEntityDto(detailServedSource(row, []), { leadMemberNames: [] });
+
+  it('serves the invitation level and welcome flag the public row serves', () => {
+    const summary = savedResearchEntitySummary(invitingRow, []);
+    expect(servedRow(invitingRow).welcomesUndergrads).toBe(true);
+    expect(summary.welcomesUndergrads).toBe(true);
+    expect(summary.undergradInvitationLevel).toBe('actively_hiring');
+  });
+
+  it('serves no invitation when the way in is withheld', () => {
+    const withheld = { ...invitingRow, wayInWithheld: true };
+    const summary = savedResearchEntitySummary(withheld, []);
+    expect(servedRow(withheld).welcomesUndergrads).toBeUndefined();
+    expect(summary.welcomesUndergrads).toBeUndefined();
+    expect(summary.undergradInvitationLevel).toBeUndefined();
+  });
+
+  it('serves no invitation fields for a row without one', () => {
+    const { undergradInvitation: _omitted, ...plain } = invitingRow;
+    const summary = savedResearchEntitySummary(plain, []);
+    expect(summary).not.toHaveProperty('welcomesUndergrads');
+    expect(summary).not.toHaveProperty('undergradInvitationLevel');
+  });
+});
