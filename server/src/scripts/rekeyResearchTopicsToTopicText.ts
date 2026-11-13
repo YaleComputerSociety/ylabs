@@ -37,7 +37,7 @@ dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
 const mongoRekeyStore: RekeyResearchTopicsStore = {
   async find(inputHash) {
     return (await ResearchTopicsDerivation.findOne({ inputHash })
-      .select('-_id inputHash promptHash model extractedTopics extractedField derivedAt')
+      .select('-_id inputHash promptHash model writer extractedTopics extractedField derivedAt')
       .lean()) as ResearchTopicsDerivationRecord | null;
   },
   async insert(record) {

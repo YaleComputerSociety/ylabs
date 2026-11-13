@@ -4273,3 +4273,149 @@ describe('Research acronym rewrite notice (#5169)', () => {
     await expectNoAxeViolations(results);
   });
 });
+
+describe('Research few close matches notice (#6094)', () => {
+  const FEW_CLOSE_MATCHES_COPY = 'Only a few close matches. Related results below.';
+  const closeEntity = {
+    ...researchEntity,
+    _id: 'close-1',
+    slug: 'synthetic-close-lab',
+    name: 'Synthetic Close Lab',
+    displayName: 'Synthetic Close Lab',
+  };
+  const relatedEntity = {
+    ...researchEntity,
+    _id: 'related-1',
+    slug: 'synthetic-related-lab',
+    name: 'Synthetic Related Lab',
+    displayName: 'Synthetic Related Lab',
+  };
+  const servedEntities = [closeEntity, relatedEntity];
+
+  const serveSearch = (fewCloseMatchesFor: (query: unknown) => boolean) =>
+    mockSearchResponses((url, body) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      return researchSearchResponse(servedEntities, {
+        estimatedTotalHits: servedEntities.length,
+        ...(fewCloseMatchesFor(body.q) ? { fewCloseMatches: { closeMatchCount: 1 } } : {}),
+      });
+    });
+
+  const servedHeadings = () =>
+    within(screen.getByRole('region', { name: 'Search results' }))
+      .getAllByRole('heading', { level: 3 })
+      .map((heading) => heading.textContent);
+
+  it('says so above the results and leaves every result in place', async () => {
+    serveSearch((query) => query === 'tidal marsh');
+
+    renderResearch(departments, ['/research?q=tidal%20marsh']);
+
+    expect(await screen.findByRole('heading', { name: 'Synthetic Close Lab' })).toBeTruthy();
+    const results = screen.getByRole('region', { name: 'Search results' });
+    const notice = within(results).getByText(FEW_CLOSE_MATCHES_COPY);
+    const firstCard = within(results).getByRole('heading', { name: 'Synthetic Close Lab' });
+    expect(
+      notice.compareDocumentPosition(firstCard) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(servedHeadings()).toEqual(['Synthetic Close Lab', 'Synthetic Related Lab']);
+    expect(notice.getAttribute('role')).toBe('status');
+    expect(
+      screen
+        .getAllByRole('status')
+        .some((status) => status.textContent?.includes("2 results for 'tidal marsh'")),
+    ).toBe(true);
+    expect(document.body.textContent).not.toMatch(/no labs|no results/i);
+    await expectNoAxeViolations(results);
+  });
+
+  it('shows no notice when the response does not carry one', async () => {
+    serveSearch(() => false);
+
+    renderResearch(departments, ['/research?q=tidal%20marsh']);
+
+    expect(await screen.findByRole('heading', { name: 'Synthetic Close Lab' })).toBeTruthy();
+    expect(servedHeadings()).toEqual(['Synthetic Close Lab', 'Synthetic Related Lab']);
+    expect(document.body.textContent).not.toContain(FEW_CLOSE_MATCHES_COPY);
+  });
+
+  it('clears the notice when a new search does not carry one', async () => {
+    serveSearch((query) => query === 'tidal marsh');
+
+    renderResearch(departments, ['/research?q=tidal%20marsh']);
+
+    expect(await screen.findByText(FEW_CLOSE_MATCHES_COPY)).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText('Search y/labs'), {
+      target: { value: 'coastal ecology' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+
+    await screen.findByText(/results for 'coastal ecology'/);
+    expect(document.body.textContent).not.toContain(FEW_CLOSE_MATCHES_COPY);
+    expect(servedHeadings()).toEqual(['Synthetic Close Lab', 'Synthetic Related Lab']);
+  });
+
+  it('keeps the notice in place while a filter applies to the same search', async () => {
+    let releaseFiltered: (value: unknown) => void = () => {};
+    mockSearchResponses((url, body) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      const response = researchSearchResponse(servedEntities, {
+        estimatedTotalHits: servedEntities.length,
+        facetDistribution: { hostsUndergrads: { true: 2 } },
+        fewCloseMatches: { closeMatchCount: 1 },
+      });
+      if (body.filters && Object.keys(body.filters).length > 0) {
+        return new Promise((resolve) => {
+          releaseFiltered = () => resolve(response);
+        });
+      }
+      return response;
+    });
+
+    renderResearch(departments, ['/research?q=tidal%20marsh']);
+
+    const notice = await screen.findByText(FEW_CLOSE_MATCHES_COPY);
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Has had undergrads before (2)' }));
+    await waitFor(() =>
+      expect(
+        mockedAxios.post.mock.calls.some(
+          ([url, body]) =>
+            url === '/research/search' &&
+            (body as { filters?: Record<string, unknown> })?.filters?.hostsUndergrads === true,
+        ),
+      ).toBe(true),
+    );
+
+    expect(notice.isConnected).toBe(true);
+    expect(screen.getByText(FEW_CLOSE_MATCHES_COPY)).toBe(notice);
+
+    releaseFiltered(undefined);
+    expect(await screen.findByText(FEW_CLOSE_MATCHES_COPY)).toBeTruthy();
+  });
+
+  it('keeps the notice when returning from a research profile', async () => {
+    serveSearch((query) => query === 'tidal marsh');
+
+    renderResearchWithDetailRoute();
+
+    fireEvent.change(await screen.findByLabelText('Search y/labs'), {
+      target: { value: 'tidal marsh' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Search' }));
+    expect(await screen.findByText(FEW_CLOSE_MATCHES_COPY)).toBeTruthy();
+    const searchCalls = mockedAxios.post.mock.calls.filter(
+      ([url]) => url === '/research/search',
+    ).length;
+
+    fireEvent.click(screen.getByRole('link', { name: 'Synthetic Close Lab' }));
+    expect(await screen.findByRole('heading', { name: 'Research profile' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Back to research' }));
+
+    expect(await screen.findByText(FEW_CLOSE_MATCHES_COPY)).toBeTruthy();
+    expect(mockedAxios.post.mock.calls.filter(([url]) => url === '/research/search')).toHaveLength(
+      searchCalls,
+    );
+  });
+});

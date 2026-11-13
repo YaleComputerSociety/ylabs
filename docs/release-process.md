@@ -335,6 +335,12 @@ No rebuild is needed, because the server reads the variable at run time and it i
 Leave `SEARCH_RERANK_LIVE_MISS_ENABLED`, `SEARCH_RERANK_LIVE_MISS_MODE` and `SEARCH_RERANK_CACHE_COLLECTION` unset, so the service serves seeded entries only, from `search_rerank_cache`.
 Set nothing on the operator services, which never answer a search.
 
+#### After a description batch
+
+A laptop seed carries no text hashes, so on Beta and Production the rerank cache cannot tell that a description batch changed the text its scores were measured on, and the "few close matches" notice keeps firing from those scores (`docs/search-rerank-cache.md`, "Few close matches notice").
+After a description batch reaches a target, re-score the affected seeded queries offline or re-seed that target from a revised file before the notice is relied on there.
+Development needs no extra step for correctness, because its seed stores hashes and the notice goes quiet on stale entries, but it serves the notice again only after its own re-seed.
+
 #### Verification
 
 Pick five verification queries from the revised seed file by predicate: no filters, two or more words, a research topic rather than a person's name, and a first result the cache moves on Development.

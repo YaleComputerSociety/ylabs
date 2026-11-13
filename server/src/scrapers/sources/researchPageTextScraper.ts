@@ -48,6 +48,12 @@ import {
 } from './labMicrositeDescriptionLLMExtractor';
 import { mongooseConnectionWasOpened } from '../../utils/mongooseConnectionWasOpened';
 import { isTransientFetchFailure } from '../utils/transientFetchFailure';
+import {
+  HostCompletionTracker,
+  orderRowsBySmallestSharedHost,
+  plannedHosts,
+  type ReleaseFinishedHost,
+} from '../utils/hostCompletion';
 
 const MAX_PAGES_PER_ROW = 6;
 const MAX_RESEARCH_SUBPAGES = 2;
@@ -135,6 +141,7 @@ export interface ResearchPageTextScraperDeps {
   storedHashLoader?: StoredContentHashLoaderFn;
   citerCountsLoader?: () => Promise<ReadonlyMap<string, number>>;
   storedReadingHostsLoader?: StoredReadingHostsLoaderFn;
+  releaseFinishedHost?: ReleaseFinishedHost;
 }
 
 export type StoredReadingHostsLoaderFn = (
@@ -319,6 +326,20 @@ export function capturedPageLeftTheRequestedPersonProfile(
 const uniqueStrings = (values: readonly (string | undefined)[]): string[] =>
   Array.from(new Set(values.map((value) => (value ?? '').trim()).filter(Boolean)));
 
+export function citedResearchPageUrls(
+  row: CandidateDescriptionLab,
+  citerCounts: ReadonlyMap<string, number>,
+): string[] {
+  return uniqueStrings([
+    row.websiteUrl,
+    ...(row.sourceUrls ?? []),
+    row.fullDescriptionSourceUrl,
+  ]).filter(
+    (url) =>
+      !isRefusedDescriptionLaneSourceUrl(url) && !isSharedListingCitation(url, row, citerCounts),
+  );
+}
+
 export function researchPageTextContentHash(value: readonly ResearchPageTextEntry[]): string {
   return computeVersionedContentHash(JSON.stringify(value), RESEARCH_PAGE_TEXT_CONTRACT, NO_MODEL);
 }
@@ -353,6 +374,7 @@ export class ResearchPageTextScraper implements IScraper {
   private readonly storedHashLoader: StoredContentHashLoaderFn;
   private readonly citerCountsLoader: () => Promise<ReadonlyMap<string, number>>;
   private readonly storedReadingHostsLoader: StoredReadingHostsLoaderFn;
+  private readonly releaseFinishedHost?: ReleaseFinishedHost;
 
   constructor(deps: ResearchPageTextScraperDeps = {}) {
     this.fetchPage = deps.fetchPage || defaultFetchPage;
@@ -360,6 +382,7 @@ export class ResearchPageTextScraper implements IScraper {
     this.storedHashLoader = deps.storedHashLoader || loadStoredContentHash;
     this.citerCountsLoader = deps.citerCountsLoader || loadConnectedEvidenceUrlCiterCounts;
     this.storedReadingHostsLoader = deps.storedReadingHostsLoader || loadStoredReadingHosts;
+    this.releaseFinishedHost = deps.releaseFinishedHost;
   }
 
   private async tryFetch(
@@ -403,14 +426,7 @@ export class ResearchPageTextScraper implements IScraper {
     citerCounts: ReadonlyMap<string, number> = new Map(),
     transientFailures: string[] = [],
   ): Promise<FetchedDescriptionPage[]> {
-    const cited = uniqueStrings([
-      row.websiteUrl,
-      ...(row.sourceUrls ?? []),
-      row.fullDescriptionSourceUrl,
-    ]).filter(
-      (url) =>
-        !isRefusedDescriptionLaneSourceUrl(url) && !isSharedListingCitation(url, row, citerCounts),
-    );
+    const cited = citedResearchPageUrls(row, citerCounts);
     const labSiteUrl = cited.find((url) => !isPersonProfileUrl(url));
     const pages: FetchedDescriptionPage[] = [];
     const read = async (url: string): Promise<FetchedDescriptionPage | null> => {
@@ -517,12 +533,21 @@ export class ResearchPageTextScraper implements IScraper {
       DEFAULT_SOURCE_CONCURRENCY,
     );
     const citerCounts = await this.citerCountsLoader();
-    await mapWithConcurrency(rows, concurrency, async (row) => {
-      const observations = await this.readRow(row, ctx, counts, citerCounts);
-      if (observations.length === 0) return;
-      await ctx.emit(observations);
-      observationCount += observations.length;
+    const planned = orderRowsBySmallestSharedHost(
+      rows.map((row) => ({ row, hosts: plannedHosts(citedResearchPageUrls(row, citerCounts)) })),
+    );
+    const hostCompletion = new HostCompletionTracker(planned, this.releaseFinishedHost);
+    await mapWithConcurrency(planned, concurrency, async ({ row, hosts }) => {
+      try {
+        const observations = await this.readRow(row, ctx, counts, citerCounts);
+        if (observations.length === 0) return;
+        await ctx.emit(observations);
+        observationCount += observations.length;
+      } finally {
+        hostCompletion.rowFinished(hosts);
+      }
     });
+    await hostCompletion.settled();
 
     return {
       observationCount,

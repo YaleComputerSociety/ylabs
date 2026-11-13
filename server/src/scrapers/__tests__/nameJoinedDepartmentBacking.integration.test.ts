@@ -130,7 +130,7 @@ describe('a person-name-joined roster key backs a stored department (#5741, #604
     expect((await resolve()).fieldsWritten).toBe(0);
   });
 
-  it('still lets the directory fill a never-backed department many other people state', async () => {
+  it('keeps a never-backed department many other people state against a directory fill', async () => {
     const person = await seedPerson();
     await seedDirectoryKey();
     await Observation.insertMany(
@@ -140,7 +140,7 @@ describe('a person-name-joined roster key backs a stored department (#5741, #604
     );
 
     await resolve();
-    expect(await departmentOf(person._id)).toBe(DIRECTORY);
+    expect(await departmentOf(person._id)).toBe(LEGACY);
   });
 
   it('reads the value-to-keys map once per batch and afresh after a reset', async () => {
