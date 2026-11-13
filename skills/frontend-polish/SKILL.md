@@ -215,16 +215,19 @@ The `/programs` board meets four lines, measured at p90 over 5 runs per conditio
 - The first program card waits on at most 1 API round trip.
 - Once the search response lands, the first card paints within 400ms at 375px wide with 4x CPU slowdown.
 - With 2.5s added to every API call, the first card paints within 4.5s, which is one delay plus 2.0s.
-- The search response is at most 100KB compressed as served.
+- The search response is at most 100KB compressed, measured as the brotli body served to current browsers.
+  A gzip-only client is outside this line.
 
 On 2026-11-13, at the merge that followed #5135, the board measured 1 round trip, 282ms, at most 4.38s, and 69KB brotli (105KB for a gzip-only client), so the card projection #5160 proposed was not built.
 
 Measure the board the same way so the numbers stay comparable:
 
 - Use the production client build (`vite build` and `vite preview`), headless Chromium through the repo's Playwright, and a fresh browser per run.
-- Time to the first card is navigation until the first program card is visible in the DOM. The page's LCP element is its intro paragraph, so read the first card, not LCP.
+- Time to the first card is navigation until the first program card is visible in the DOM.
+  The page's LCP element is its intro paragraph, so read the first card, not LCP.
 - `/programs` is sign-in only, so a guest never sees a card.
-  Mount the real programs router against Development with a synthetic student principal and no session. `dev-login` writes an account and a login event.
+  Mount the real programs router against Development with a synthetic student principal and no session.
+  `dev-login` writes an account and a login event.
 - Apply the 2.5s condition as a Playwright route that delays every API response.
   Playwright's own interception adds a local cost that grows with body size, so treat a smaller-body gain under that condition as an upper bound.
 
