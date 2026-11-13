@@ -131,4 +131,15 @@ describe('a directory department fills only when the catalog names it (#6129)', 
     expect(await departmentOf(person._id)).toBe('Biostatistics');
     expect((await resolve()).fieldsWritten).toBe(0);
   });
+
+  it('leaves a directory-backed stored value untouched while the catalog is unavailable', async () => {
+    await OrgUnit.deleteMany({ kind: 'DEPARTMENT' });
+    resetOrgUnitCanonicalizerCache();
+    const person = await seedPerson('Council on Fixture Studies');
+    await seed('Council on Fixture Studies');
+
+    await resolve();
+    expect(await departmentOf(person._id)).toBe('Council on Fixture Studies');
+    expect((await resolve()).fieldsWritten).toBe(0);
+  });
 });

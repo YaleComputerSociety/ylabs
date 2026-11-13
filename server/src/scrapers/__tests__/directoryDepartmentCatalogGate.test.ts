@@ -51,8 +51,9 @@ describe('directoryHomeDepartment (#6129)', () => {
     expect(directoryHomeDepartment({ unit: 'Cardiology' }, canonicalDepartment)).toBeUndefined();
   });
 
-  it('keeps the unit as before when no catalog is available', () => {
-    expect(directoryHomeDepartment({ unit: 'Fixture Center' }, null)).toBe('Fixture Center');
+  it('states no department when no catalog is available', () => {
+    expect(directoryHomeDepartment({ unit: 'Fixture Center' }, null)).toBeUndefined();
+    expect(directoryHomeDepartment({ unit: 'Fixture Studies' }, null)).toBeUndefined();
   });
 });
 

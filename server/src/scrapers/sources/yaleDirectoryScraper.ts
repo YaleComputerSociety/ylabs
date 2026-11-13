@@ -409,14 +409,15 @@ export function classifyUserType(title: string | undefined | null): 'professor' 
  * catalog names stands as the directory spells it; an acronym-suffixed spelling ("Biostatistics
  * (BIS)") or a section the catalog knows only by its coded HR form ("MEDINT Cardiology") is read
  * as its catalog name; anything else (a center, a council, a bare section name two departments
- * share) states no department. With no catalog the unit stands as before.
+ * share) states no department. With no catalog the lane states no department either, failing
+ * closed like the profile lanes; under fill-empty-only that only defers a fill.
  */
 export function directoryHomeDepartment(
   person: Pick<YaliesPerson, 'unit' | 'unit_class'>,
   canonicalDepartment: CanonicalDepartment | null,
 ): string | undefined {
+  if (!canonicalDepartment) return undefined;
   const named = directoryUnitDepartment(person.unit, person.unit_class);
-  if (!canonicalDepartment) return named;
   if (named && canonicalDepartment(named)) return named;
   const unit = typeof person.unit === 'string' ? person.unit.replace(/\s+/g, ' ').trim() : '';
   const unitClass =
