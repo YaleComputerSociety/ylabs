@@ -139,6 +139,17 @@ describe('subjectStatements', () => {
     }
   });
 
+  it('reads a lead clause that follows the row after a preposition', () => {
+    for (const line of [
+      'Welcome to the lab, led by Robin Quill.',
+      'Welcome to the Tidal Imaging Lab, led by Robin Quill.',
+      'Welcome to the TIL, directed by Robin Quill.',
+      'This is the website of the Tidal Imaging Lab, led by Robin Quill.',
+    ]) {
+      expect(names(line), line).toEqual(['Robin Quill']);
+    }
+  });
+
   it('ignores an active statement whose object is another named unit', () => {
     for (const line of [
       'Our collaborator Ada Brook is the director of the Center for Molecular Imaging.',
@@ -147,6 +158,7 @@ describe('subjectStatements', () => {
       expect(names(line), line).toEqual([]);
     }
     expect(names('Robin Quill directs the lab at the school.')).toEqual(['Robin Quill']);
+    expect(names('Robin Quill is the director of the Lab in New Haven.')).toEqual(['Robin Quill']);
   });
 
   it('ignores a fronted subject that is only a possession of the row', () => {

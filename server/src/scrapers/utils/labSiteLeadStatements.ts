@@ -302,27 +302,29 @@ const MODIFIER_PREPOSITION =
   '(?:in|of|at|within|from|for|with|across|on|by|to|into|throughout|beyond|outside|inside)';
 
 const PROPER_UNIT_NAME = new RegExp(
-  `^(?:the\\s+)?(?:Lab|Laboratory|Group|Center|Centre)\\s+(?:of|for|in|on)\\s+(?:the\\s+)?[A-Z]`,
+  `^(?:the\\s+)?(?:Lab|Laboratory|Group|Center|Centre)\\s+(?:of|for)\\s+(?:the\\s+)?[A-Z]`,
   'u',
 );
 
 const subjectBeforeNamesRow = (text: string, aliases: readonly string[], ownPage: boolean) => {
-  const tail = text
-    .replace(/[\s,]+$/, '')
+  const trimmed = text.replace(/[\s,]+$/, '');
+  const finitePassive = /\s(?:is|are|was|were|has been|have been|will be)$/i.test(trimmed);
+  const tail = trimmed
     .replace(/\s+(?:is|are|was|were|has been|have been|will be|currently|also)$/i, '')
     .replace(/[\s,]+$/, '');
   if (!tail) return false;
   const lastWords = tail.split(/\s+/).slice(-8).join(' ');
-  if (new RegExp(`\\b${MODIFIER_PREPOSITION}\\s+${SELF_REFERENCE}$`, 'i').test(lastWords)) {
-    return false;
-  }
+  const rowInModifier =
+    finitePassive &&
+    new RegExp(`\\b${MODIFIER_PREPOSITION}\\s+${SELF_REFERENCE}$`, 'i').test(lastWords);
+  if (rowInModifier) return false;
   if (ownPage && new RegExp(`${SELF_REFERENCE}$`, 'i').test(lastWords)) return true;
   const folded = ` ${fold(lastWords)}`;
   const modifierTail = new RegExp(` ${MODIFIER_PREPOSITION}(?: the)?$`);
   return aliases.some(
     (alias) =>
       folded.endsWith(` ${alias}`) &&
-      !modifierTail.test(folded.slice(0, folded.length - alias.length - 1)),
+      !(finitePassive && modifierTail.test(folded.slice(0, folded.length - alias.length - 1))),
   );
 };
 
