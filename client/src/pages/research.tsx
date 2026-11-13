@@ -911,8 +911,8 @@ const Research = () => {
     setSearchDegraded(false);
     setQueryCorrection(null);
     setAcronymRewrite(null);
-    setFewCloseMatches(null);
     if (!options.preserveResults) {
+      setFewCloseMatches(null);
       setGroupedResults(emptyGroupedResults(resultQueryLabel));
     }
     if (options.syncUrl !== false) {
@@ -2502,8 +2502,8 @@ const Research = () => {
                     </div>
                   ) : activeClusters.length > 0 ? (
                     <>
-                      {fewCloseMatches && !searchLoading && (
-                        <p className="mb-3 text-sm leading-relaxed text-muted">
+                      {fewCloseMatches && (!searchLoading || isApplyingFilters) && (
+                        <p role="status" className="mb-3 text-sm leading-relaxed text-muted">
                           {FEW_CLOSE_MATCHES_NOTICE}
                         </p>
                       )}

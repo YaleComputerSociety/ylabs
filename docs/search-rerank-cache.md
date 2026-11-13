@@ -41,6 +41,11 @@ At 3 or fewer (`SEARCH_FEW_CLOSE_MATCHES_MAX_COUNT`), the result carries `fewClo
 The threshold is measured: on 36 seeded Production queries it fired on 10, every one with 0 to 2 relevant rows in its top 10, and raised no false alarm.
 
 A seeded entry the staleness check (`searchRerankEntryIsStale`) finds stale for the served pool never fires it, because a row it never scored or scored on older text was not measured.
+That text comparison needs the text hashes a seed stores, and only a seed run against the environment's own index stores them.
+On Development, whose cache is seeded against its own index, a description batch therefore makes the affected entries stale and the notice goes quiet on them until the next re-seed, which fails closed.
+On Beta and Production a laptop seed stores no hashes (`scoresWithTextHash: 0`), so only the unscored-rows half of the check runs there: after a description batch the notice keeps firing from scores measured against the earlier text.
+The #5537 pilot measured that a rewritten row's rerank score agrees with its earlier score no less often than an unchanged row's does (77.4% against 76.9%), so a pre-batch score is not known to be wrong, but it is no longer a measurement of the served text.
+So after a description batch, re-score or re-seed before the notice is relied on in those environments (`docs/release-process.md`).
 
 The field is absent for a served, shadow or live-miss entry, for a stale seeded entry, with the flag off, when no entry was applied (no entry, a failed read, a name query that skips the rerank, a Meilisearch-paged search) and for a browse with no query.
 It never changes which rows are returned or their order, and the client never hides, collapses, filters or reorders a result because of it.

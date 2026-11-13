@@ -4319,7 +4319,12 @@ describe('Research few close matches notice (#6094)', () => {
       notice.compareDocumentPosition(firstCard) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
     expect(servedHeadings()).toEqual(['Synthetic Close Lab', 'Synthetic Related Lab']);
-    expect(screen.getByRole('status').textContent).toContain("2 results for 'tidal marsh'");
+    expect(notice.getAttribute('role')).toBe('status');
+    expect(
+      screen
+        .getAllByRole('status')
+        .some((status) => status.textContent?.includes("2 results for 'tidal marsh'")),
+    ).toBe(true);
     expect(document.body.textContent).not.toMatch(/no labs|no results/i);
     await expectNoAxeViolations(results);
   });
@@ -4349,6 +4354,45 @@ describe('Research few close matches notice (#6094)', () => {
     await screen.findByText(/results for 'coastal ecology'/);
     expect(document.body.textContent).not.toContain(FEW_CLOSE_MATCHES_COPY);
     expect(servedHeadings()).toEqual(['Synthetic Close Lab', 'Synthetic Related Lab']);
+  });
+
+  it('keeps the notice in place while a filter applies to the same search', async () => {
+    let releaseFiltered: (value: unknown) => void = () => {};
+    mockSearchResponses((url, body) => {
+      if (url !== '/research/search') return unexpectedSearchEndpoint(url);
+      const response = researchSearchResponse(servedEntities, {
+        estimatedTotalHits: servedEntities.length,
+        facetDistribution: { hostsUndergrads: { true: 2 } },
+        fewCloseMatches: { closeMatchCount: 1 },
+      });
+      if (body.filters && Object.keys(body.filters).length > 0) {
+        return new Promise((resolve) => {
+          releaseFiltered = () => resolve(response);
+        });
+      }
+      return response;
+    });
+
+    renderResearch(departments, ['/research?q=tidal%20marsh']);
+
+    const notice = await screen.findByText(FEW_CLOSE_MATCHES_COPY);
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Has had undergrads before (2)' }));
+    await waitFor(() =>
+      expect(
+        mockedAxios.post.mock.calls.some(
+          ([url, body]) =>
+            url === '/research/search' &&
+            (body as { filters?: Record<string, unknown> })?.filters?.hostsUndergrads === true,
+        ),
+      ).toBe(true),
+    );
+
+    expect(notice.isConnected).toBe(true);
+    expect(screen.getByText(FEW_CLOSE_MATCHES_COPY)).toBe(notice);
+
+    releaseFiltered(undefined);
+    expect(await screen.findByText(FEW_CLOSE_MATCHES_COPY)).toBeTruthy();
   });
 
   it('keeps the notice when returning from a research profile', async () => {
