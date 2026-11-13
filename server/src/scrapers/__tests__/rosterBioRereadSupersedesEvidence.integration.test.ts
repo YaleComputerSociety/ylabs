@@ -2,11 +2,17 @@ import mongoose from 'mongoose';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { Observation } from '../../models/observation';
+import { ResearchEntity } from '../../models/researchEntity';
 import { ScrapeRun } from '../../models/scrapeRun';
 import { appendObservations } from '../observationStore';
-import { ROSTER_BIO_RESEARCH_EVIDENCE_SOURCE } from '../sources/rosterBioResearchEvidenceScraper';
+import {
+  ROSTER_BIO_RESEARCH_EVIDENCE_SOURCE,
+  loadRosterBioCoveredIdentities,
+  loadRosterBioPeople,
+} from '../sources/rosterBioResearchEvidenceScraper';
 import {
   ROSTER_BIO_EVIDENCE_FIELD,
+  planRosterBioResearchRows,
   rosterBioRereadObservation,
 } from '../utils/rosterBioResearchEvidence';
 
@@ -33,6 +39,7 @@ afterAll(async () => {
 beforeEach(async () => {
   await Observation.deleteMany({});
   await ScrapeRun.deleteMany({});
+  await ResearchEntity.deleteMany({});
 });
 
 async function storeRead(evidenceSentences: string[]): Promise<void> {
@@ -96,5 +103,65 @@ describe('a roster-bio re-read replaces the lane evidence it stated before (#610
     const live = await liveEvidence();
     expect(live).toHaveLength(1);
     expect(live[0].value).toBe(RESEARCH);
+  });
+});
+
+describe('a roster-bio re-read reaches an own row whose biography was removed (#6107)', () => {
+  const PERSON_KEY = 'dept:synthetic:reread-fixture';
+
+  const storeObservation = (fields: Record<string, unknown>) =>
+    mongoose.connection.collection('observations').insertOne({
+      superseded: false,
+      observedAt: new Date(),
+      sourceUrl: PROFILE_URL,
+      ...fields,
+    });
+
+  it('plans a no-value assertion for the own row when the latest bio is empty', async () => {
+    await ResearchEntity.create({
+      slug: SLUG,
+      name: 'Synthetic reread fixture',
+      kind: 'individual',
+      entityType: 'FACULTY_RESEARCH_AREA',
+      archived: false,
+    });
+    await storeObservation({
+      sourceName: ROSTER_BIO_RESEARCH_EVIDENCE_SOURCE,
+      entityType: 'researchEntity',
+      entityKey: SLUG,
+      field: 'inferredPiUserKey',
+      value: PERSON_KEY,
+    });
+    for (const [field, value] of Object.entries({
+      bio: '',
+      fname: 'Reread',
+      lname: 'Fixture',
+      title: 'Professor of Synthetic Studies',
+      profileUrls: [PROFILE_URL],
+    })) {
+      await storeObservation({
+        sourceName: 'dept-faculty-roster',
+        entityType: 'user',
+        entityKey: PERSON_KEY,
+        field,
+        value,
+      });
+    }
+
+    const [people, covered] = await Promise.all([
+      loadRosterBioPeople(),
+      loadRosterBioCoveredIdentities(),
+    ]);
+    const { planned, reread } = planRosterBioResearchRows(people, covered, () => null);
+
+    expect(planned).toEqual([]);
+    expect(reread.map(rosterBioRereadObservation)).toEqual([
+      expect.objectContaining({
+        entityKey: SLUG,
+        field: ROSTER_BIO_EVIDENCE_FIELD,
+        value: '',
+        assertsNoValueFor: [ROSTER_BIO_EVIDENCE_FIELD],
+      }),
+    ]);
   });
 });

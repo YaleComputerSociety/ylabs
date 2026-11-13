@@ -63,11 +63,9 @@ export async function loadRosterBioPeople(): Promise<RosterBioPerson[]> {
   }
   const people: RosterBioPerson[] = [];
   for (const [key, fields] of latest) {
-    const bio = fields.get('bio')?.value;
-    if (typeof bio !== 'string' || !bio.trim()) continue;
     people.push({
       key,
-      bio,
+      bio: fields.get('bio')?.value,
       title: fields.get('title')?.value,
       fname: fields.get('fname')?.value,
       lname: fields.get('lname')?.value,
@@ -220,7 +218,7 @@ export class RosterBioResearchEvidenceScraper implements IScraper {
     const rereadScoped = reread.filter((row) => !only || only.has(row.slug));
     const withdrawn = rereadScoped.filter((row) => row.evidenceSentences.length === 0).length;
     ctx.log(
-      `roster bios ${people.length}; planned ${planned.length}; emitting ${scoped.length}; re-read ${rereadScoped.length} own rows (${withdrawn} with no research statement)`,
+      `roster people ${people.length}; planned ${planned.length}; emitting ${scoped.length}; re-read ${rereadScoped.length} own rows (${withdrawn} with no research statement)`,
       { skipped },
     );
     const observations: ObservationInput[] = [
@@ -231,7 +229,7 @@ export class RosterBioResearchEvidenceScraper implements IScraper {
     return {
       observationCount: observations.length,
       entitiesObserved: scoped.length + rereadScoped.length,
-      notes: `planned ${planned.length} of ${people.length} roster bios; re-read ${rereadScoped.length} own rows, ${withdrawn} with no research statement; skipped ${JSON.stringify(skipped)}`,
+      notes: `planned ${planned.length} of ${people.length} roster people; re-read ${rereadScoped.length} own rows, ${withdrawn} with no research statement; skipped ${JSON.stringify(skipped)}`,
     };
   }
 }
