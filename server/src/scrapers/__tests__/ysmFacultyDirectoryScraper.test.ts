@@ -1313,6 +1313,13 @@ describe('the school a profile states through its Primary appointment (#6160)', 
       ],
     ],
     [
+      'a Primary unit off the catalog beside one in another school',
+      [
+        { type: 'Primary', organizationName: 'Fixture Epidemiology' },
+        { type: 'Primary', organizationName: 'Fixture Unknown Unit' },
+      ],
+    ],
+    [
       'a Primary unit off the catalog',
       [{ type: 'Primary', organizationName: 'Fixture Unknown Unit' }],
     ],
