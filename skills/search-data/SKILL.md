@@ -327,7 +327,7 @@ Access-plausibility signals earn nothing (2026-08-25 "Simple Directory First"), 
 The score never falls below the lowest value the scorer produced before the service-core demotion (`BROWSE_RANK_SCORE_FLOOR`, -39: the duplicate-risk penalty plus the largest type demotion).
 Completeness is read from the copy a row serves, so the stored-only `profileSynthesisDescription` earns no rank: before #4120 it lifted a row with no served description from 0 or 2 description points to 8.
 The gate requires every completeness term of a served row, so completeness alone tied 3,379 of 3,464 `student_ready` Development rows at the maximum score on 2026-10-03.
-Enrichment separates them, each term read from the public DTO (`toPublicResearchEntityDto`) so a value the serve guards withhold earns nothing: a served research website that stored link health does not call gone (+8, `isKnownDeadSourceUrl`), served methods (+5), a served description of at least 200 characters (+3), and a current grant from the served current-funding view, weighted 0 for now (#4622).
+Enrichment separates them, each term read from the public DTO (`toPublicResearchEntityDto`) so a value the serve guards withhold earns nothing: a served research website that stored link health does not call gone (+8, `isKnownDeadSourceUrl`), served methods (+5), a served description of at least 200 characters (+3), and a current grant from the served current-funding view, weighted 0 permanently (#4622).
 Because the website term reads stored link health, `research-homes:backfill-source-link-health --apply` recomputes the browse rank of every row it rewrites, so a website found gone or recovered moves the row without waiting for the next materialize.
 The description term is a floor, not a length reward: text past 200 characters earns nothing more, so padding cannot buy rank.
 #4772 measured the candidate tiebreak signals on the 1,045 rows tied at the top score on 2026-10-04 and kept only these two.
@@ -335,9 +335,10 @@ It dropped a served-topics floor (met by 0.90 of served labs but 0.76 of faculty
 The remaining top tie (923 of 3,505 served rows in simulation) is real: served rows are uniformly complete, so ordering inside it needs relevance to the student rather than another quality term.
 The grant term is computed but weighted 0, because the grant lanes are uneven: NIH RePORTER supplies most served grant evidence and no private-foundation, other-agency, or internal-award source exists, so any positive weight ordered the first page by coverage gaps rather than by the row (#4622).
 Grants stay visible on cards and profiles; only their rank weight is zero.
-Restore the weight only when, for every school, its share of served rows with a current grant is within 10 percentage points of its share of all served rows; #4546 tracks the funder lanes that move that split.
-Because a binary term in a strict sort forms its own top tier, a smaller positive weight does not reduce the skew, so the re-entry test is the per-school split, not a tuned weight.
-When the weight is non-zero, a grant that ends after the last recompute keeps its points until the next materialize or browse-rank backfill, because the score is stored rather than computed at serve time.
+Decided 2026-11-13: grants stay at weight 0 in default browse permanently, and the earlier re-entry condition is retired (#4622).
+That condition restored the weight once every school's share of served rows with a current grant came within 10 percentage points of its share of all served rows, and it can never be met: the funder-lane work is finished (#4546, closed) and about 80% of served grant evidence is still NIH.
+Because a binary term in a strict sort forms its own top tier, a smaller positive weight would not reduce the skew either, so no tuned weight is a substitute.
+The term and its test stay in the code at weight 0, so the stored score carries no grant points and a grant ending between recomputes changes nothing in browse order.
 The `duplicate_risk` penalty never reaches a served row today: on 2026-10-03 all 224 live rows carrying the reason were `suppressed` or `operator_review`.
 
 `entityMaterializer` recomputes ranking live after access signals are derived.
