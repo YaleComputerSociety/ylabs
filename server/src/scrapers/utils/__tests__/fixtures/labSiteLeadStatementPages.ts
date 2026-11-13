@@ -41,7 +41,7 @@ const page = (title: string, body: string, h1 = title) =>
   `<html><head><title>${title}</title></head><body><h1>${h1}</h1><main>${body}</main></body></html>`;
 
 const card = (name: string, title: string, href = '') =>
-  `<div class="person-card"><h3>${href ? `<a href="${href}">${name}</a>` : name}</h3><p>${title}</p></div>`;
+  `<div class="person"><h3>${href ? `<a href="${href}">${name}</a>` : name}</h3><p>${title}</p></div>`;
 
 /**
  * Synthetic lab-site pages for the row-anchored lead statement rules (#5962). Every name,
@@ -423,6 +423,198 @@ export const LAB_SITE_LEAD_STATEMENT_FIXTURES: LabSiteLeadStatementFixture[] = [
     expected: {
       [QUILL]: { verdict: 'CONFIRMED' },
       [BROOK]: { verdict: 'CONFIRMED' },
+    },
+  },
+  {
+    name: 'a page heading that parses like a name is never an outsider stated as lead',
+    rowName: 'Center for Tidal Studies',
+    entityType: 'CENTER',
+    website: 'https://tidal.yale.edu/',
+    pages: [
+      {
+        url: 'https://tidal.yale.edu/',
+        html: page(
+          'Center for Tidal Studies',
+          '<div class="person"><h3>Senior Lecturer</h3><p>Director</p></div>' +
+            '<div class="person"><h3>Chief Strategy Officer</h3><p>Principal Investigator</p></div>',
+        ),
+      },
+    ],
+    leads: [person(QUILL, 'Robin Quill', 'robin-quill', 'DIRECTOR')],
+    expected: {
+      [QUILL]: { verdict: 'UNSTATED' },
+    },
+  },
+  {
+    name: 'a director card naming nobody shown to be a person never contradicts',
+    rowName: 'Tidal Imaging Lab',
+    entityType: 'LAB',
+    website: 'https://medicine.yale.edu/lab/tidal/',
+    pages: [
+      {
+        url: 'https://medicine.yale.edu/lab/tidal/',
+        html: page('Tidal Imaging Lab', card('Dale Fenwick', 'Principal Investigator')),
+      },
+    ],
+    leads: [person(QUILL, 'Robin Quill', 'robin-quill')],
+    expected: {
+      [QUILL]: { verdict: 'UNSTATED' },
+    },
+  },
+  {
+    name: 'a bare principal investigator card never overturns a lead the site already names',
+    rowName: 'Tidal Imaging Lab',
+    entityType: 'LAB',
+    website: 'https://medicine.yale.edu/lab/tidal/',
+    pages: [
+      {
+        url: 'https://medicine.yale.edu/lab/tidal/people/',
+        html: page(
+          'Tidal Imaging Lab',
+          card('Dale Fenwick, PhD', 'Principal Investigator') +
+            card('Robin Quill', 'Research Scientist', '/profile/robin-quill/'),
+        ),
+      },
+    ],
+    leads: [person(QUILL, 'Robin Quill', 'robin-quill')],
+    expected: {
+      [QUILL]: { verdict: 'CONFIRMED' },
+    },
+  },
+  {
+    name: 'a lead the site lists under an unlisted director title is never contradicted',
+    rowName: 'Tidal Imaging Core',
+    entityType: 'CORE',
+    website: 'https://research.yale.edu/cores/tidal-imaging',
+    pages: [
+      {
+        url: 'https://research.yale.edu/cores/tidal-imaging',
+        html: page(
+          'Tidal Imaging Core',
+          card('Robin Quill, PhD', 'Scientific Director') +
+            card('Dale Fenwick, PhD', 'Faculty Director', '/profile/dale-fenwick/'),
+        ),
+      },
+    ],
+    leads: [person(QUILL, 'Robin', 'robin-quill', 'DIRECTOR')],
+    expected: {
+      [QUILL]: { verdict: 'UNSTATED' },
+    },
+  },
+  {
+    name: 'a lead whose compound surname the page writes in part is still named',
+    rowName: 'Tidal Imaging Lab',
+    entityType: 'LAB',
+    website: 'https://medicine.yale.edu/lab/tidal/',
+    pages: [
+      {
+        url: 'https://medicine.yale.edu/lab/tidal/',
+        html: page('Tidal Imaging Lab', '<p>The lab is led by Robin Quill and studies tides.</p>'),
+      },
+    ],
+    leads: [person(QUILL, 'Robin Quill Brook', '')],
+    expected: {
+      [QUILL]: { verdict: 'CONFIRMED', matchedBy: 'NAMED_AS_ROW_LEAD' },
+    },
+  },
+  {
+    name: 'a former member listed as a principal investigator elsewhere on an alumni page is ignored',
+    rowName: 'Tidal Imaging Lab',
+    entityType: 'LAB',
+    website: 'https://medicine.yale.edu/lab/tidal/',
+    pages: [
+      {
+        url: 'https://medicine.yale.edu/lab/tidal/members/alumni/',
+        html: page(
+          'Lab Alumni | Tidal Imaging Lab',
+          card('Dale Fenwick, PhD', 'Principal Investigator', '/profile/dale-fenwick/') +
+            card('Ada Brook, PhD', 'Principal Investigator', '/profile/ada-brook/'),
+          'Lab Alumni',
+        ),
+      },
+    ],
+    leads: [person(QUILL, 'Robin Quill', 'robin-quill')],
+    expected: {
+      [QUILL]: { verdict: 'UNSTATED' },
+    },
+  },
+  {
+    name: 'an address in a lead card never reads as a staff role',
+    rowName: 'Tidal Imaging Lab',
+    entityType: 'LAB',
+    website: 'https://medicine.yale.edu/lab/tidal/',
+    pages: [
+      {
+        url: 'https://medicine.yale.edu/lab/tidal/contact/',
+        html: page(
+          'Tidal Imaging Lab',
+          card('Robin Quill', 'Coastal Research Building, Room 112') +
+            card('Ada Brook', 'Graduate Student'),
+        ),
+      },
+    ],
+    leads: [person(QUILL, 'Robin Quill', 'robin-quill')],
+    expected: {
+      [QUILL]: { verdict: 'CONFIRMED' },
+    },
+  },
+  {
+    name: 'a professor whose card mentions a past postdoc is not listed as a postdoc',
+    rowName: 'Tidal Imaging Lab',
+    entityType: 'LAB',
+    website: 'https://medicine.yale.edu/lab/tidal/',
+    pages: [
+      {
+        url: 'https://medicine.yale.edu/lab/tidal/people/',
+        html: page(
+          'Tidal Imaging Lab',
+          card('Robin Quill', 'Assistant Professor of Chemistry; Postdoc, Reef University') +
+            card('Ada Brook', 'Graduate Student'),
+        ),
+      },
+    ],
+    leads: [person(QUILL, 'Robin Quill', 'robin-quill')],
+    expected: {
+      [QUILL]: { verdict: 'CONFIRMED' },
+    },
+  },
+  {
+    name: 'a lone byline above a job advert never lists the lead in the advertised role',
+    rowName: 'Tidal Imaging Lab',
+    entityType: 'LAB',
+    website: 'https://medicine.yale.edu/lab/tidal/',
+    pages: [
+      {
+        url: 'https://medicine.yale.edu/lab/tidal/positions/',
+        html: page(
+          'Tidal Imaging Lab',
+          '<article><span>Robin Quill</span><h2>Postdoctoral Associate</h2><p>We are looking for creative postdocs.</p></article>',
+        ),
+      },
+    ],
+    leads: [person(QUILL, 'Robin Quill', 'robin-quill')],
+    expected: {
+      [QUILL]: { verdict: 'CONFIRMED' },
+    },
+  },
+  {
+    name: 'a news item saying who led an initiative is not a statement about the row lead',
+    rowName: 'Tidal Imaging Lab',
+    entityType: 'LAB',
+    website: 'https://medicine.yale.edu/lab/tidal/',
+    pages: [
+      {
+        url: 'https://medicine.yale.edu/lab/tidal/news-article/tidal-symposium/',
+        html: page(
+          'Tidal Symposium | Tidal Imaging Lab',
+          '<p>The initiative was led by Dale Fenwick, PhD, and Robin Quill, PhD.</p>',
+          'Tidal Imaging Lab',
+        ),
+      },
+    ],
+    leads: [person(QUILL, 'Robin Quill', 'robin-quill')],
+    expected: {
+      [QUILL]: { verdict: 'CONFIRMED' },
     },
   },
 ];

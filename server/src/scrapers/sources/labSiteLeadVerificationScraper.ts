@@ -46,6 +46,7 @@ export interface LabSiteVerificationCandidate {
   slug: string;
   website: string;
   entityType?: string;
+  name?: string;
   leads: LabSiteLeadCandidate[];
 }
 
@@ -70,13 +71,15 @@ export async function readLabSiteVerificationCandidates(options: {
       $or: [{ website: /^https?:\/\//i }, { websiteUrl: /^https?:\/\//i }],
       ...(only.length ? { slug: { $in: only } } : {}),
     },
-    { _id: 1, slug: 1, website: 1, websiteUrl: 1, entityType: 1 },
+    { _id: 1, slug: 1, website: 1, websiteUrl: 1, entityType: 1, name: 1, displayName: 1 },
   ).lean()) as Array<{
     _id: unknown;
     slug?: string;
     website?: string;
     websiteUrl?: string;
     entityType?: string;
+    name?: string;
+    displayName?: string;
   }>;
   if (!entities.length) return [];
 
@@ -134,7 +137,15 @@ export async function readLabSiteVerificationCandidates(options: {
     const website = firstHttpUrl(entity.websiteUrl, entity.website);
     if (!leads?.length || !slug || !website) continue;
     const entityType = textValue(entity.entityType);
-    candidates.push({ entityId, slug, website, ...(entityType ? { entityType } : {}), leads });
+    const name = textValue(entity.displayName) || textValue(entity.name);
+    candidates.push({
+      entityId,
+      slug,
+      website,
+      ...(entityType ? { entityType } : {}),
+      ...(name ? { name } : {}),
+      leads,
+    });
   }
   candidates.sort((a, b) => a.slug.localeCompare(b.slug));
   return typeof options.limit === 'number' && options.limit > 0
@@ -186,6 +197,7 @@ interface LabSiteReading {
   visitedUrls: string[];
   httpStatusCode?: number;
   fromCache?: boolean;
+  pages?: Array<{ url: string; html: string }>;
 }
 
 /**
@@ -219,6 +231,7 @@ export async function readLabSite(
   return {
     html: pages.map((page) => page.html).join('\n'),
     visitedUrls: pages.map((page) => page.finalUrl),
+    pages: pages.map((page) => ({ url: page.finalUrl, html: page.html })),
     httpStatusCode: landing.httpStatusCode,
     ...(landing.fromCache ? { fromCache: true } : {}),
   };
@@ -281,9 +294,11 @@ export class LabSiteLeadVerificationScraper implements IScraper {
                 visitedUrls: reading.visitedUrls,
                 html: reading.html,
                 httpStatusCode: reading.httpStatusCode,
+                ...(reading.pages ? { pages: reading.pages } : {}),
               },
               observedAt,
               candidate.entityType,
+              candidate.name,
             )
           : unreachableLabSiteVerification(candidate.website, observedAt, reading?.httpStatusCode);
       tally[verification.state] += 1;
