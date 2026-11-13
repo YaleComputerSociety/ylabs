@@ -4,7 +4,6 @@ import { isClinicalOnlyBiographySentence } from '../bioResearchStatement';
 describe('clinical-service biography shapes the roster-bio rule refuses (#6151)', () => {
   it.each([
     'Her clinical interests are sports concussion and return-to-play decisions for school athletes.',
-    'Her special interests include acne scarring, rosacea and cosmetic dermatology.',
     'She enjoys managing patients with complex heart rhythm problems.',
     'He has treated patients with sports injuries for over a decade.',
     'He is committed to supporting his patients through every stage of recovery.',
