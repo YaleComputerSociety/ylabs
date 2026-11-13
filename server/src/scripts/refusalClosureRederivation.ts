@@ -8,8 +8,9 @@
  * asserts the closure and the scope skips with `no-scoped-fields`, so the refusal has to
  * re-derive the closure in the same operation that clears it.
  *
- * The derivation is the engine's own, run over the row as it stands after the clear, so a
- * sibling keeps a value only when the row's remaining evidence derives it again. Only the
+ * The derivation is the engine's own, run over the row as it stands after the clear and with
+ * the refusal being recorded already counted, so the refused school leaves every member of the
+ * closure whichever route would derive it (`withoutRefusedSchools`). Only the
  * org-unit closure derives from stored fields alone; the grant and Yale-status closures
  * derive from observations and researcher rows, and `kind` maps `entityType` into another
  * vocabulary, so those closures are reported rather than re-derived here.
@@ -63,8 +64,9 @@ function siblingsCarryingValue(
 
 async function rederiveOrgUnitClosure(
   rowAfterClear: Record<string, unknown>,
+  fieldValueRefusals: unknown,
 ): Promise<Record<string, unknown>> {
-  const entity: OrgUnitBackfillEntity = { id: String(rowAfterClear._id ?? '') };
+  const entity: OrgUnitBackfillEntity = { id: String(rowAfterClear._id ?? ''), fieldValueRefusals };
   for (const field of ORG_UNIT_CLOSURE) {
     if (Object.prototype.hasOwnProperty.call(rowAfterClear, field)) {
       (entity as unknown as Record<string, unknown>)[field] = rowAfterClear[field];
@@ -89,6 +91,7 @@ export async function planRefusalClosureRederivation(input: {
   field: string;
   value: unknown;
   clearsStoredValue: boolean;
+  fieldValueRefusalsAfterRecord: unknown;
 }): Promise<RefusalClosureRederivation> {
   const closure = derivedClosureOf(input.field);
   if (!closure) return { outcome: 'not-a-closure-member' };
@@ -112,9 +115,9 @@ export async function planRefusalClosureRederivation(input: {
       : [],
   );
   const derived = Object.fromEntries(
-    Object.entries(await rederiveOrgUnitClosure(rowAfterClear)).filter(
-      ([field]) => field !== input.field,
-    ),
+    Object.entries(
+      await rederiveOrgUnitClosure(rowAfterClear, input.fieldValueRefusalsAfterRecord),
+    ).filter(([field]) => field !== input.field),
   );
   const set = Object.fromEntries(Object.entries(derived).filter(([field]) => !locked.has(field)));
   return {

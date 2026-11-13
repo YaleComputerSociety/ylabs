@@ -5,7 +5,13 @@ import {
   resetOrgUnitCanonicalizerCache,
   setOrgUnitCanonicalizerForTesting,
 } from '../../scrapers/orgUnitCanonicalization';
+import {
+  NO_RESEARCH_ENTITY_NAME_IDENTITY_AUTHORITY,
+  projectFromLog,
+  type ProjectFromLogInput,
+} from '../../scrapers/entityMaterializer';
 import { disambiguatorLabels } from '../../utils/researchEntityDisplayNameDisambiguation';
+import { planOrgUnitBackfillRow } from '../backfillResearchEntityOrgUnitsCore';
 import { planRefuseFieldValueWrite } from '../refuseResearchEntityFieldValue';
 
 const REFUSED_SCHOOL = 'Fixture School of Alpha';
@@ -52,9 +58,13 @@ function rowAfterWrite(
 ): Record<string, unknown> {
   const after: Record<string, unknown> = { ...row };
   for (const field of Object.keys(write.$unset ?? {})) delete after[field];
+  const refusals: Record<string, unknown> = {};
   for (const [path, value] of Object.entries(write.$set)) {
-    if (!path.includes('.')) after[path] = value;
+    if (path.startsWith('fieldValueRefusals.'))
+      refusals[path.slice('fieldValueRefusals.'.length)] = value;
+    else if (!path.includes('.')) after[path] = value;
   }
+  if (Object.keys(refusals).length > 0) after.fieldValueRefusals = refusals;
   return after;
 }
 
@@ -143,20 +153,21 @@ describe('refusing a member of the org-unit closure (#6155)', () => {
     expect(plan.closureRederivation).toMatchObject({ lockedFieldsLeftAsStored: ['schools'] });
   });
 
-  it('still derives the refused school from a department the row is appointed in', async () => {
+  it('drops a refused school that a department derives, so the card serves the next school', async () => {
     const row = {
       _id: 'synthetic-row',
       school: REFUSED_SCHOOL,
-      schools: [REFUSED_SCHOOL],
-      departments: [ALPHA_DEPARTMENT],
+      schools: [REFUSED_SCHOOL, OTHER_SCHOOL],
+      departments: [ALPHA_DEPARTMENT, BETA_DEPARTMENT],
     };
 
     const plan = await planRefuseFieldValueWrite(row, refuse('school', REFUSED_SCHOOL));
     const after = rowAfterWrite(row, plan.write);
 
     expect(after.school).toBeUndefined();
-    expect(after.schools).toEqual([REFUSED_SCHOOL]);
-    expect(plan.closureRederivation).toMatchObject({ siblingsCarryingAfter: ['schools'] });
+    expect(after.schools).toEqual([OTHER_SCHOOL]);
+    expect(cardSchool(after)).toBe(OTHER_SCHOOL);
+    expect(plan.closureRederivation).toMatchObject({ siblingsCarryingAfter: [] });
   });
 
   it('does not re-fill a refused schools value from the school the row still stores', async () => {
@@ -206,6 +217,69 @@ describe('refusing a member of the org-unit closure (#6155)', () => {
     expect(plan.write.$unset).toBeUndefined();
     expect(Object.keys(plan.write.$set)).toEqual(['fieldValueRefusals.school']);
     expect(plan.regates).toBe(false);
+  });
+});
+
+describe('a refused school stays out on the next derivation pass (#6155)', () => {
+  const refusedRow = async () => {
+    const row = {
+      _id: 'a'.repeat(24),
+      entityType: 'LAB',
+      kind: 'lab',
+      school: REFUSED_SCHOOL,
+      schools: [REFUSED_SCHOOL, OTHER_SCHOOL],
+      departments: [ALPHA_DEPARTMENT, BETA_DEPARTMENT],
+    };
+    const plan = await planRefuseFieldValueWrite(row, refuse('school', REFUSED_SCHOOL));
+    return rowAfterWrite(row, plan.write);
+  };
+
+  it('the org-unit backfill does not re-add it from the department', async () => {
+    const after = await refusedRow();
+
+    const second = await planOrgUnitBackfillRow({
+      id: String(after._id),
+      departments: after.departments,
+      schools: after.schools,
+      fieldValueRefusals: after.fieldValueRefusals,
+    });
+
+    expect(second.afterSchools).toEqual([OTHER_SCHOOL]);
+    expect(second.update.schools).toBeUndefined();
+  });
+
+  it('a materialize resolving the same departments does not re-add it', async () => {
+    const after = await refusedRow();
+    const departments = [ALPHA_DEPARTMENT, BETA_DEPARTMENT];
+    const noop = (async () => undefined) as unknown;
+
+    const result = await projectFromLog('researchEntity', {
+      resolved: {
+        departments: {
+          value: departments,
+          confidence: 0.9,
+          contributingSources: ['synthetic-roster-source'],
+          hasConflict: false,
+        },
+      },
+      nameIdentityAuthority: NO_RESEARCH_ENTITY_NAME_IDENTITY_AUTHORITY,
+      manuallyLockedFields: [],
+      manualValues: {},
+      entityDoc: after,
+      materializationObs: [],
+      resolverObs: [],
+      fullDescriptionShellGated: false,
+      now: new Date('2020-01-01T00:00:00.000Z'),
+      synthesizeCardDescription: async () => '',
+      applyDescriptionResearchAreaDerivation:
+        noop as ProjectFromLogInput['applyDescriptionResearchAreaDerivation'],
+      applyResearchEntityResearchAreaCanonicalization:
+        noop as ProjectFromLogInput['applyResearchEntityResearchAreaCanonicalization'],
+    });
+
+    expect(result.set.schools).toEqual([OTHER_SCHOOL]);
+    expect(result.set.school ?? '').not.toBe(REFUSED_SCHOOL);
+    expect(cardSchool({ ...after, ...result.set })).toBe(OTHER_SCHOOL);
   });
 });
 

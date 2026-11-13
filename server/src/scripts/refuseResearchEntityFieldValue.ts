@@ -48,6 +48,7 @@ import { ResearchEntity } from '../models/researchEntity';
 import { sanitizeLogValue } from '../utils/logSanitizer';
 import {
   fieldValueRefusalKey,
+  fieldValueRefusalsPath,
   liveFieldValueRefusals,
   planFieldValueRefusal,
   planFieldValueRefusalWithdrawal,
@@ -189,14 +190,6 @@ export async function planRefuseFieldValueWrite(
   const refusedKey = fieldValueRefusalKey(args.field, args.value);
   const storedKey = fieldValueRefusalKey(args.field, row[args.field]);
   const clearsStoredValue = !args.withdraw && storedKey !== '' && storedKey === refusedKey;
-  const closureRederivation: RefusalClosureRederivation = args.withdraw
-    ? { outcome: 'not-a-closure-member' }
-    : await planRefusalClosureRederivation({
-        row,
-        field: args.field,
-        value: args.value,
-        clearsStoredValue,
-      });
   const record = args.withdraw
     ? planFieldValueRefusalWithdrawal(row.fieldValueRefusals, args.field, args.value, args.note)
     : planFieldValueRefusal(row.fieldValueRefusals, {
@@ -207,6 +200,18 @@ export async function planRefuseFieldValueWrite(
         refusedBy: args.decidedBy ? `${SCRIPT_NAME} (${args.decidedBy})` : SCRIPT_NAME,
         note: args.note,
         evidenceUrl: args.evidenceUrl,
+      });
+  const closureRederivation: RefusalClosureRederivation = args.withdraw
+    ? { outcome: 'not-a-closure-member' }
+    : await planRefusalClosureRederivation({
+        row,
+        field: args.field,
+        value: args.value,
+        clearsStoredValue,
+        fieldValueRefusalsAfterRecord: {
+          ...(row.fieldValueRefusals as Record<string, unknown> | undefined),
+          [args.field]: record[fieldValueRefusalsPath(args.field)],
+        },
       });
   const rederivedClosure =
     closureRederivation.outcome === 'rederived' ? closureRederivation.set : {};

@@ -4,6 +4,7 @@ import {
   setOrgUnitCanonicalizerForTesting,
   withAffiliationLabel,
 } from '../scrapers/orgUnitCanonicalization';
+import { withoutRefusedSchools } from '../scrapers/refusedSchools';
 
 export interface OrgUnitBackfillEntity {
   id: string;
@@ -13,6 +14,7 @@ export interface OrgUnitBackfillEntity {
   departments?: unknown;
   schools?: unknown;
   orgAffiliationLabels?: unknown;
+  fieldValueRefusals?: unknown;
 }
 
 export interface OrgUnitBackfillPlanRow {
@@ -62,6 +64,7 @@ export async function planOrgUnitBackfillRow(
     { school: entity.school, departments: entity.departments },
     profileUrls,
   );
+  withoutRefusedSchools(set, entity.fieldValueRefusals);
 
   const beforeDepartments = asStringArray(entity.departments);
   const afterDepartments = asStringArray(set.departments);
@@ -98,7 +101,7 @@ export async function planOrgUnitBackfillRow(
   );
 
   const update: Record<string, unknown> = {};
-  if (hasSchool && set.school !== entity.school) update.school = set.school;
+  if (hasSchool && 'school' in set && set.school !== entity.school) update.school = set.school;
   if (hasDepartments && !sameStringArray(beforeDepartments, afterDepartments)) {
     update.departments = afterDepartments;
   }
