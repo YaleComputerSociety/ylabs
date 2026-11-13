@@ -3,11 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { statedPauseUntil } from '../scrapers/utils/hostPause';
 import { normalizeExcludedHost } from '../utils/excludedHosts';
-import {
-  hostPausedUntil,
-  machineHostBudgetDirectory,
-  recordHostBackoff,
-} from '../scrapers/utils/machineHostBudget';
+import { recordHostBackoff } from '../scrapers/utils/machineHostBudget';
 
 /**
  * Seeds one host's shared pause from a refusal notice already on disk (#6168).
@@ -92,10 +88,6 @@ async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   const result = await seedHostPauseFromNotice(options);
   console.log(describeSeedResult(result));
-  if (result.applied) {
-    console.log(`state directory: ${machineHostBudgetDirectory()}`);
-    console.log(`read back: ${hostPausedUntil(result.host)?.toISOString() ?? 'not paused'}`);
-  }
   if (!result.statedUntil) process.exitCode = 1;
 }
 

@@ -15,6 +15,7 @@ import {
 import { machineHostSlotsForDirectRequest } from '../scrapers/utils/scraperHostSlotLimiter';
 import { SCRAPER_USER_AGENT } from '../scrapers/utils/scraperUserAgent';
 import {
+  HOST_PAUSE_POLICY_FETCH,
   activeHostPause,
   hostPauseInErrorChain,
   recordHostRefusal,
@@ -685,6 +686,7 @@ export async function probeSourceLink(
           }
           redirectStatuses.push(Number(responseDetails?.statusCode));
         },
+        ...{ [HOST_PAUSE_POLICY_FETCH]: true },
         timeout: PROBE_TIMEOUT_MS,
         httpAgent: agents.httpAgent,
         httpsAgent: agents.httpsAgent,

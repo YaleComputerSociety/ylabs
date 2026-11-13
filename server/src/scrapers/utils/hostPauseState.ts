@@ -12,13 +12,10 @@ export {
   HOST_BACKOFF_CAP_MS,
   HOST_BACKOFF_JITTER_RATIO,
   HOST_BACKOFF_QUIET_RESET_MS,
-  HOST_CRAWL_DELAY_MAX_MS,
-  HOST_CRAWL_DELAY_TTL_MS,
   hostBackoffState,
   hostPausedUntil,
   recordHostBackoff,
   recordHostSuccess,
-  setHostMinInterval,
   type HostBackoffState,
   type HostBackoffVerdict as HostBackoffSignal,
 } from './machineHostBudget';
