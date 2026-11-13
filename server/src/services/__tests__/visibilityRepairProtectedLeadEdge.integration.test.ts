@@ -5,6 +5,7 @@ import { ResearchEntity } from '../../models/researchEntity';
 import { Researcher } from '../../models/researcher';
 import { RoleAssignment } from '../../models/roleAssignment';
 import { writeCanonicalMembership } from '../../scrapers/canonicalMembershipMaterializer';
+import { findOrCreateForOwner } from '../researchGroupService';
 import {
   attemptVisibilityRepair,
   buildVisibilityRepairPlan,
@@ -166,7 +167,9 @@ describe('the repair queue never touches a refusal edge (#5979)', () => {
 
   it('still refreshes a live edge when a disputed twin sits beside it', async () => {
     const { personId, rowId } = await seed(DISPUTED);
+    const liveEdgeId = new mongoose.Types.ObjectId();
     await RoleAssignment.collection.insertOne({
+      _id: liveEdgeId,
       personId,
       target: { kind: 'RESEARCH_ENTITY', id: rowId },
       role: 'PI',
@@ -187,8 +190,44 @@ describe('the repair queue never touches a refusal edge (#5979)', () => {
       { displayName: 'Ada Quill', hasCanonicalSourceReference: true, resolvedPersonId: personId },
     );
 
-    expect(write.outcome).not.toBe('refused-disputed-edge');
+    expect(write.outcome).toBe('updated');
     const edges = await rawEdges(rowId);
     expect(edges.find((edge) => edge.reviewStatus === 'DISPUTED')).toMatchObject(DISPUTED);
+    const live = edges.find((edge) => String(edge._id) === String(liveEdgeId));
+    expect(live).toMatchObject({ archived: false, confidence: 0.7 });
+    expect(live?.rosterProvenance?.sourceName).toBe('dept-faculty-roster');
+  });
+
+  it('keeps the owner PI write off a disputed edge on the owner slug row', async () => {
+    const owner = { netid: 'aq9001', fname: 'Ada', lname: 'Quill' };
+    const first = await findOrCreateForOwner(owner);
+    const ownerRowId = first.group._id as mongoose.Types.ObjectId;
+    const ownerEdge = await RoleAssignment.findOne({ 'target.id': ownerRowId, role: 'PI' }).lean();
+    const ownerPersonId = ownerEdge!.personId;
+    await RoleAssignment.collection.deleteMany({});
+    await RoleAssignment.collection.insertOne({
+      personId: ownerPersonId,
+      target: { kind: 'RESEARCH_ENTITY', id: new mongoose.Types.ObjectId() },
+      role: 'PI',
+      state: 'CURRENT',
+      archived: false,
+      reviewStatus: 'UNREVIEWED',
+      confidence: 1,
+    });
+    await RoleAssignment.collection.insertOne({
+      personId: ownerPersonId,
+      target: { kind: 'RESEARCH_ENTITY', id: ownerRowId },
+      role: 'PI',
+      confidence: 0.4,
+      endedAt: new Date('2026-02-01T00:00:00.000Z'),
+      ...DISPUTED,
+    });
+    const before = await rawEdges(ownerRowId);
+
+    const second = await findOrCreateForOwner(owner);
+
+    expect(String(second.group._id)).toBe(String(ownerRowId));
+    expect(second.created).toBe(false);
+    expect(await rawEdges(ownerRowId)).toEqual(before);
   });
 });
