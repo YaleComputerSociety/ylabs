@@ -14,6 +14,10 @@ import {
 } from '../../db/devWriteLease';
 import { runSupersedeObservationsCommand, supersedeObservations } from '../supersedeObservations';
 import { runUnfoldResearcherShellCommand, unfoldResearcherShell } from '../unfoldResearcherShell';
+import { retireObservationIds, runRetireObservationIdsCommand } from '../retireObservationIds';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 
 const SESSION = 'agent:ylabs-fixture-session';
 const ENV_KEYS = [
@@ -180,6 +184,61 @@ describe('unfold-shell and observations:supersede under the Development write le
     const stored = await development()
       .collection('observations')
       .findOne({ _id: new ObjectId(id) });
+    expect(stored?.superseded).toBe(false);
+  });
+  const seedRunObservation = async () => {
+    const runId = new ObjectId();
+    await development()
+      .collection('scrape_runs')
+      .insertOne({ _id: runId, sourceName: 'dept-faculty-roster', status: 'completed' });
+    const id = new ObjectId();
+    await development().collection('observations').insertOne({
+      _id: id,
+      scrapeRunId: runId,
+      entityType: 'user',
+      entityKey: 'netid:zz9993',
+      field: 'email',
+      value: 'fixture@example.invalid',
+      sourceId: new ObjectId(),
+      sourceName: 'dept-faculty-roster',
+      confidence: 0.8,
+      observedAt: new Date(),
+      superseded: false,
+    });
+    const idsFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'retire-ids-')), 'ids.json');
+    fs.writeFileSync(idsFile, JSON.stringify([String(id)]));
+    return { runId: String(runId), id, idsFile };
+  };
+
+  it('observations:retire-ids applies through its apply guard, which takes the lease (#6029)', async () => {
+    const seeded = await seedRunObservation();
+    const result = await runRetireObservationIdsCommand(
+      [
+        `--run=${seeded.runId}`,
+        `--ids-file=${seeded.idsFile}`,
+        '--reason=pre-floor run',
+        '--apply',
+        '--confirm-retire-observation-ids',
+      ],
+      { log: () => undefined },
+    );
+    expect(result).toMatchObject({ retired: 1, refused: false });
+    expect(String((await lease())?.command)).toContain('observations:retire-ids');
+  });
+
+  it('observations:retire-ids is refused by the model guard when it skips the apply guard (#6029)', async () => {
+    const seeded = await seedRunObservation();
+    await connectScriptMongo(developmentUri());
+    const refusal = await retireObservationIds({
+      runId: seeded.runId,
+      ids: [String(seeded.id)],
+      reason: 'pre-floor run',
+      actor: SESSION,
+      apply: true,
+      restoreSuperseded: false,
+    }).catch((error: unknown) => error);
+    expect(refusal).toBeInstanceOf(DevWriteRefusedError);
+    const stored = await development().collection('observations').findOne({ _id: seeded.id });
     expect(stored?.superseded).toBe(false);
   });
 });

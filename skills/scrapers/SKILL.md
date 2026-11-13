@@ -511,6 +511,9 @@ It invalidates the run, retires the run's live observations with a `rollback` re
 It refuses a run that was materialized, a run any of whose observations was superseded from outside it, and a run whose source has written observations from another run since it started, because in each case the pre-run state is no longer the right state to restore.
 
 To supersede a few observations an operator read and judged to be about the wrong person or row, use `yarn --cwd server observations:supersede --ids=<id>,<id> --reason='<why>'` (dry-run by default; `--apply --confirm-supersede-observations` with `ALLOW_NON_PROD_SCRAPER_WRITES=true` to write).
+To retire a named set of live observations from ONE scrape run, such as a pre-floor run's writes, use `yarn --cwd server observations:retire-ids --run=<scrapeRunId> --ids-file=<path> --reason='<why>'` (#6029).
+It is dry-run by default and refuses the whole batch when an id is missing, from another run, not live, or backs an owner-decided value; `--apply --confirm-retire-observation-ids` with `ALLOW_NON_PROD_SCRAPER_WRITES=true` writes against Development only, under the lease, with one audit record per batch of 500, and a second run is a no-op.
+It reports how many retired observations had superseded a predecessor and restores none unless `--restore-superseded --floor-sha=<commit>` is given, which restores only predecessors whose own run was launched from a commit at or after the floor.
 It is an operator tool for one-row judgements, not a bulk repair path: it takes at most 25 ids, refuses any id that backs an owner-decided value, and audits each observation (#6018).
 A wrongness a predicate can express belongs in the lane or a class retirement script instead.
 To reverse one wrong researcher fold, use `researchers:unfold-shell`; the procedure is in `docs/research-entity-pi-dedupe-runbook.md` under "Reversing a wrong researcher fold".
