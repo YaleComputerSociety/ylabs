@@ -27,6 +27,7 @@ import {
   decideResearcherFieldWrite,
   isFillOnlyFieldValue,
   isFillOnlyIdentityJoin,
+  writerHeldOnFillOnlyEvidence,
   researcherFieldWriter,
   OWN_KEY_FALLBACK_TITLE_FIELD,
   storedValueCountsAsPresent,
@@ -10028,7 +10029,11 @@ async function materializeUserIdentityToResearcher(
     ) || isFillOnlyIdentityJoin(field, identityJoin);
   const storedValueHeldOnlyOnFillOnlyEvidence = (field: ResearcherGatedField): boolean => {
     const holder = researcher.profileFieldWriters?.get?.(field);
-    return Boolean(holder?.fillOnly) && holder?.userKey !== writerKey && !writesFillOnly(field);
+    return (
+      writerHeldOnFillOnlyEvidence(field, holder) &&
+      holder?.userKey !== writerKey &&
+      !writesFillOnly(field)
+    );
   };
   const settleFieldWriter = (
     field: ResearcherGatedField,

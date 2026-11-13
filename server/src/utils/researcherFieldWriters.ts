@@ -87,6 +87,16 @@ export interface ResearcherFieldWriter {
   fillOnly?: boolean;
 }
 
+export function writerHeldOnFillOnlyEvidence(
+  field: ResearcherGatedField,
+  writer: Partial<ResearcherFieldWriter> | undefined,
+): boolean {
+  if (!writer?.userKey) return false;
+  if (writer.fillOnly === true) return true;
+  const ceiling = FILL_ONLY_JOIN_RANK_CEILING_BY_FIELD[field];
+  return ceiling !== undefined && (writer.joinRank ?? 0) <= ceiling;
+}
+
 export function researcherFieldWriter(
   userKey: string,
   identityJoin: string | undefined,

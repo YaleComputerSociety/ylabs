@@ -5,6 +5,7 @@ import {
   isFillOnlyIdentityJoin,
   researcherFieldWriter,
   storedValueCountsAsPresent,
+  writerHeldOnFillOnlyEvidence,
   writerOutranks,
 } from '../researcherFieldWriters';
 
@@ -158,6 +159,20 @@ describe('researcher field writer precedence (#5706)', () => {
     }
     expect(isFillOnlyIdentityJoin('title', 'person-name')).toBe(false);
     expect(isFillOnlyIdentityJoin('primaryDepartment', 'person-name')).toBe(false);
+  });
+
+  it('counts a name-joined holder recorded before the fill-only flag as fill-only evidence (#6035)', () => {
+    const staleNameJoined = { userKey: 'dept:a', joinRank: 1, confidence: 0.7 };
+    const unrecognisedJoin = { userKey: 'dept:a', joinRank: 0, confidence: 0.7 };
+    const netidJoined = { userKey: 'netid:a', joinRank: 4, confidence: 0.9 };
+    expect(writerHeldOnFillOnlyEvidence('websiteUrl', staleNameJoined)).toBe(true);
+    expect(writerHeldOnFillOnlyEvidence('websiteUrl', unrecognisedJoin)).toBe(true);
+    expect(writerHeldOnFillOnlyEvidence('websiteUrl', netidJoined)).toBe(false);
+    expect(writerHeldOnFillOnlyEvidence('websiteUrl', { ...netidJoined, fillOnly: true })).toBe(
+      true,
+    );
+    expect(writerHeldOnFillOnlyEvidence('primaryDepartment', staleNameJoined)).toBe(false);
+    expect(writerHeldOnFillOnlyEvidence('websiteUrl', undefined)).toBe(false);
   });
 
   it('lets a name-joined key fill an empty image or website but never replace a stored one (#6035)', () => {

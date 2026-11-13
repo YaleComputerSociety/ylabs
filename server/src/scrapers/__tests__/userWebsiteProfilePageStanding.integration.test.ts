@@ -147,6 +147,27 @@ describe("a person's profile or directory page never displaces their own website
     ]);
   });
 
+  it('replaces a lab site a name-joined key holds from before fill-only writers were recorded, in the first pass (#6035)', async () => {
+    const researcher = await createResearcher(LAB_SITE);
+    await Researcher.updateOne(
+      { _id: researcher._id },
+      {
+        $set: {
+          'profileFieldWriters.websiteUrl': { userKey: NAME_KEY, joinRank: 1, confidence: 0.7 },
+        },
+      },
+    );
+    await seedName(NETID_KEY);
+    await seedName(NAME_KEY);
+    await seedWebsite({ entityKey: NETID_KEY, value: PROFILE_PAGE, observedAt: '2026-11-10' });
+    await seedWebsite({ entityKey: NAME_KEY, value: LAB_SITE, observedAt: '2026-08-24' });
+
+    await materialize(NETID_KEY);
+    await materialize(NAME_KEY);
+
+    expect(await storedWebsite()).toBe(PROFILE_PAGE);
+  });
+
   it('prefers the lab site within one key even when its profile page is newer and surer', async () => {
     await createResearcher();
     await seedName(NAME_KEY);
