@@ -507,9 +507,10 @@ describe('parseImportResearchTopicsArgs and the apply guard', () => {
         env,
       ),
     ).toThrow(/--dry-run and --apply/);
-    expect(
-      parseImportResearchTopicsArgs(['--input=/tmp/r.json', '--dry-run'], env),
-    ).toMatchObject({ mode: 'import', apply: false });
+    expect(parseImportResearchTopicsArgs(['--input=/tmp/r.json', '--dry-run'], env)).toMatchObject({
+      mode: 'import',
+      apply: false,
+    });
   });
 
   it('never reads a model API key in either import file', () => {
