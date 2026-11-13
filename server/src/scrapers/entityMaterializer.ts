@@ -1452,7 +1452,18 @@ function createdDocumentChangedPaths(
   schemaPaths: Iterable<string>,
 ): string[] {
   const projected = materializerProjectionChangedPaths(null, insert, {}, schemaPaths);
-  const created = new Model(insert).toObject() as Record<string, unknown>;
+  return withStoredDefaultPaths(new Model(insert), projected);
+}
+
+function newDocumentChangedPaths(document: mongoose.Document): string[] {
+  return withStoredDefaultPaths(
+    document,
+    withoutRepeatedParentPaths(document.modifiedPaths?.() ?? []),
+  );
+}
+
+function withStoredDefaultPaths(document: mongoose.Document, projected: string[]): string[] {
+  const created = document.toObject() as Record<string, unknown>;
   const schemaDefaults = Object.entries(created)
     .filter(
       ([path, value]) =>
@@ -9709,18 +9720,22 @@ interface ScreenedPageWithdrawalOutcome {
   written: number;
   plannedPaths: string[];
   droppedPaths: string[];
+  changedPaths: string[];
+}
+
+function screenedPageWithdrawalPaths(plan: ScreenedPageWithdrawal): string[] {
+  return [
+    ...(plan.officialLinkUrls.length > 0 ? ['profileLinks'] : []),
+    ...(plan.orcid ? [ORCID_PROFILE_LINK_PATH, 'identifiers.orcid'] : []),
+    ...(plan.imageUrl ? ['profile.imageUrl'] : []),
+  ];
 }
 
 function scopeScreenedPageWithdrawal(
   plan: ScreenedPageWithdrawal,
   scope: readonly string[],
 ): { plan: ScreenedPageWithdrawal; plannedPaths: string[]; droppedPaths: string[] } {
-  const planned = [
-    ...(plan.officialLinkUrls.length > 0 ? ['profileLinks'] : []),
-    ...(plan.orcid ? [ORCID_PROFILE_LINK_PATH, 'identifiers.orcid'] : []),
-    ...(plan.imageUrl ? ['profile.imageUrl'] : []),
-  ];
-  const { kept, dropped } = partitionPlannedPaths(planned, scope);
+  const { kept, dropped } = partitionPlannedPaths(screenedPageWithdrawalPaths(plan), scope);
   return {
     plan: {
       researcherId: plan.researcherId,
@@ -9741,7 +9756,12 @@ async function withdrawScreenedOfficialProfileLinks(
   screenedPageUrls: string[],
   options: MaterializeOptions,
 ): Promise<ScreenedPageWithdrawalOutcome> {
-  const none: ScreenedPageWithdrawalOutcome = { written: 0, plannedPaths: [], droppedPaths: [] };
+  const none: ScreenedPageWithdrawalOutcome = {
+    written: 0,
+    plannedPaths: [],
+    droppedPaths: [],
+    changedPaths: [],
+  };
   const plannedPlan = await planScreenedPageWithdrawal(entityKey, screenedPageUrls);
   if (!plannedPlan) return none;
   const scope = userWriteScope(options);
@@ -9752,7 +9772,12 @@ async function withdrawScreenedOfficialProfileLinks(
     droppedPaths: scoped?.droppedPaths ?? [],
   };
   if (scoped && scoped.plannedPaths.length === 0) return { ...none, ...paths };
-  if (options.dryRun) return { written: 1, ...paths };
+  const changedPaths = unionSorted(
+    (scoped?.plannedPaths ?? screenedPageWithdrawalPaths(plan)).map((path) =>
+      path === ORCID_PROFILE_LINK_PATH ? 'profileLinks' : path,
+    ),
+  );
+  if (options.dryRun) return { written: 1, ...paths, changedPaths };
   const pulls: Array<Record<string, unknown>> = [];
   if (plan.officialLinkUrls.length > 0) {
     pulls.push({ kind: 'YALE_OFFICIAL', url: { $in: plan.officialLinkUrls } });
@@ -9775,7 +9800,8 @@ async function withdrawScreenedOfficialProfileLinks(
         : {}),
     },
   );
-  return { written: result.modifiedCount > 0 ? 1 : 0, ...paths };
+  const written = result.modifiedCount > 0 ? 1 : 0;
+  return { written, ...paths, changedPaths: written ? changedPaths : [] };
 }
 
 async function releaseFieldWritersThatNoLongerReach(
@@ -10003,9 +10029,6 @@ async function materializeUserIdentityToResearcher(
     ) {
       mintGuard.recordRefusal();
       return skipped(REMOVED_BY_REQUEST);
-    }
-    if (options.dryRun) {
-      return skipped(DRY_RUN_WOULD_MINT_RESEARCHER);
     }
     researcher = new Researcher({
       displayName,
@@ -10446,8 +10469,17 @@ async function materializeUserIdentityToResearcher(
   // defeated `observations:materialize-pi-attributed-users`, whose default IS dry run
   // and whose `assertScriptApplyAllowed` guard is skipped unless `--apply` is passed,
   // so its "enriched" rows had already been written before an operator saw them.
-  const researcherChangedPaths = withoutRepeatedParentPaths(researcher.modifiedPaths?.() ?? []);
+  const researcherChangedPaths = created
+    ? newDocumentChangedPaths(researcher)
+    : withoutRepeatedParentPaths(researcher.modifiedPaths?.() ?? []);
   const researcherUnchanged = !created && researcherChangedPaths.length === 0;
+  if (options.dryRun && created) {
+    return {
+      ...skipped(DRY_RUN_WOULD_MINT_RESEARCHER),
+      plannedPaths: researcherChangedPaths,
+      changedPaths: researcherChangedPaths,
+    };
+  }
   if (options.dryRun) {
     return {
       entityType: 'user',
@@ -14051,6 +14083,7 @@ async function materializeEntityUnderRemovalGuard(
         created: false,
         resolved: {},
         skipped: 'directory-contradicts-profile-netid',
+        ...(withdrawal.changedPaths.length > 0 ? { changedPaths: withdrawal.changedPaths } : {}),
         ...(scoped
           ? { plannedPaths: withdrawal.plannedPaths, droppedPaths: withdrawal.droppedPaths }
           : {}),
@@ -14060,7 +14093,11 @@ async function materializeEntityUnderRemovalGuard(
     const merged = scoped ? withScreenedWithdrawalPaths(result, withdrawal) : result;
     if (!withdrawnLinks) return merged;
     const { plannedWriteSkip: _changesNothingBeforeWithdrawal, ...written } = merged;
-    return { ...written, fieldsWritten: merged.fieldsWritten + withdrawnLinks };
+    return {
+      ...written,
+      fieldsWritten: merged.fieldsWritten + withdrawnLinks,
+      changedPaths: unionSorted(merged.changedPaths, withdrawal.changedPaths),
+    };
   }
 
   if (entityType === 'orgUnit') {
@@ -14974,6 +15011,9 @@ async function materializeEntityUnderRemovalGuard(
         ? 'no-scoped-fields'
         : undefined;
     const plannedMint = plannedWriteSkip ? undefined : projectedMint;
+    if (plannedMint && 'unmintable' in plannedMint) {
+      throw new Error(`Cannot create new ${entityType}: ${plannedMint.unmintable}`);
+    }
     const plannedMintRefusal =
       plannedMint && !('unmintable' in plannedMint)
         ? await projectionMintRefusal(entityType, plannedMint, materializationObs)
@@ -15138,7 +15178,7 @@ async function materializeEntityUnderRemovalGuard(
       created,
       resolved,
       ...(indexStale ? { indexSyncFailed: true as const } : {}),
-      ...(entityScalarUnchanged ? { skipped: 'unchanged' as const } : {}),
+      ...(entityScalarUnchanged ? { skipped: 'unchanged' as const } : { changedPaths }),
     };
   }
 
@@ -15927,8 +15967,10 @@ export function materializeRowOutcome(result: {
   created: boolean;
   skipped?: string;
   plannedWriteSkip?: string;
+  changedPaths?: readonly string[];
 }): MaterializeRowOutcome {
   if (result.created || result.skipped === DRY_RUN_WOULD_MINT_RESEARCHER) return 'created';
+  if (result.changedPaths?.length) return 'updated';
   if (result.skipped || result.plannedWriteSkip) return 'skipped';
   return 'updated';
 }

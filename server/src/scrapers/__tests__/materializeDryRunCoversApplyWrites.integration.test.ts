@@ -51,6 +51,13 @@ const USER_SETTLED = `netid:${USER_SETTLED_NETID}`;
 const ENTITY_STALE = 'dry-run-coverage-entity-stale';
 const ENTITY_SETTLED = 'dry-run-coverage-entity-settled';
 const ENTITY_NEW = 'dry-run-coverage-entity-new';
+const USER_MINT = 'dept:fixture6075:casey-mintfixture';
+const MINT_NAMING_SLUG = 'dry-run-coverage-naming-entity';
+const WITHDRAWN_PAGE = 'https://engineering.yale.edu/faculty-directory/quill-fixture6075/';
+const WITHDRAWN_PAGE_ADDRESS = 'quill.fixture6075@yale.edu';
+const WITHDRAWN_PAGE_OWNER_NETID = 'zz6075c';
+const USER_WITHDRAWN_NETID = 'zz6075d';
+const USER_WITHDRAWN = `netid:${USER_WITHDRAWN_NETID}`;
 
 const METADATA_PATHS = new Set([
   '_id',
@@ -65,6 +72,8 @@ type RowKey = { entityType: 'user' | 'researchEntity'; entityKey: string };
 const ROWS: RowKey[] = [
   { entityType: 'user', entityKey: USER_STALE },
   { entityType: 'user', entityKey: USER_SETTLED },
+  { entityType: 'user', entityKey: USER_MINT },
+  { entityType: 'user', entityKey: USER_WITHDRAWN },
   { entityType: 'researchEntity', entityKey: ENTITY_STALE },
   { entityType: 'researchEntity', entityKey: ENTITY_SETTLED },
   { entityType: 'researchEntity', entityKey: ENTITY_NEW },
@@ -76,6 +85,7 @@ const observation = (
   entityKey: string,
   field: string,
   value: unknown,
+  overrides: Record<string, unknown> = {},
 ) => ({
   entityType,
   entityKey,
@@ -85,6 +95,7 @@ const observation = (
   sourceName: SOURCE_NAME,
   sourceUrl: SOURCE_URL,
   scrapeRunId: RUN_ID,
+  ...overrides,
   observedAt: OBSERVED_AT,
   confidence: 0.9,
   superseded: false,
@@ -136,11 +147,11 @@ function writtenPaths(before: unknown, after: unknown): string[] {
 }
 
 const covers = (reported: readonly string[], written: string) =>
-  reported.some(
-    (path) => path === written || written.startsWith(`${path}.`) || path.startsWith(`${written}.`),
-  );
+  reported.some((path) => path === written || written.startsWith(`${path}.`));
 
 async function storedRow(row: RowKey): Promise<unknown> {
+  if (row.entityKey === USER_MINT)
+    return Researcher.findOne({ displayName: 'Casey Mintfixture' }).lean();
   if (row.entityType === 'user') {
     const netid = row.entityKey.replace(/^netid:/, '');
     return Researcher.findOne({ 'identifiers.netid': netid }).lean();
@@ -150,6 +161,64 @@ async function storedRow(row: RowKey): Promise<unknown> {
 
 const storedRows = async () =>
   Promise.all(ROWS.map(async (row) => ({ row, doc: await storedRow(row) })));
+
+async function seedWithdrawalAndMintEvidence() {
+  await ResearchEntity.create({
+    slug: MINT_NAMING_SLUG,
+    name: 'Coverage Naming Laboratory',
+    entityType: 'LAB',
+    kind: 'lab',
+    archived: false,
+  });
+  await Researcher.create({
+    displayName: 'Robin Fixture',
+    identifiers: {
+      netid: USER_WITHDRAWN_NETID,
+      email: `${USER_WITHDRAWN_NETID}@yale.edu`,
+    },
+    profileLinks: [
+      {
+        kind: 'YALE_OFFICIAL',
+        purpose: 'PRIMARY_IDENTITY',
+        url: WITHDRAWN_PAGE,
+        verifiedAt: new Date('2026-08-01T00:00:00Z'),
+      },
+    ],
+    status: 'ACTIVE',
+    archived: false,
+  });
+  const directory = { sourceName: 'yale-directory', sourceUrl: 'https://directory.example.test/' };
+  const pageLane = { sourceName: 'official-profile-pi-backfill', sourceUrl: WITHDRAWN_PAGE };
+  const roster = { sourceName: 'dept-faculty-roster', sourceUrl: 'https://example.invalid/roster' };
+  await Observation.create([
+    observation('researchEntity', MINT_NAMING_SLUG, 'inferredPiUserKey', USER_MINT, {
+      ...roster,
+      scrapeRunId: undefined,
+    }),
+    observation('user', USER_MINT, 'fname', 'Casey', roster),
+    observation('user', USER_MINT, 'lname', 'Mintfixture', roster),
+    observation('user', USER_MINT, 'title', 'Professor of Fixture Studies', roster),
+    ...Object.entries({
+      netid: WITHDRAWN_PAGE_OWNER_NETID,
+      email: WITHDRAWN_PAGE_ADDRESS,
+      fname: 'Quill',
+      lname: 'Fixture',
+    }).map(([field, value]) =>
+      observation('user', WITHDRAWN_PAGE_OWNER_NETID, field, value, {
+        ...directory,
+        scrapeRunId: undefined,
+      }),
+    ),
+    ...Object.entries({
+      netid: USER_WITHDRAWN_NETID,
+      fname: 'Quill',
+      lname: 'Fixture',
+      email: WITHDRAWN_PAGE_ADDRESS,
+      title: 'Professor',
+      profileUrls: { official: WITHDRAWN_PAGE },
+    }).map(([field, value]) => observation('user', USER_WITHDRAWN, field, value, pageLane)),
+  ]);
+}
 
 describe('a materialize dry run reports every path its apply writes (#6075)', () => {
   let replSet: MongoMemoryReplSet;
@@ -189,6 +258,7 @@ describe('a materialize dry run reports every path its apply writes (#6075)', ()
       sourceName: SOURCE_NAME,
       status: 'success',
     });
+    await seedWithdrawalAndMintEvidence();
     for (const netid of [USER_STALE_NETID, USER_SETTLED_NETID]) {
       await Researcher.create({
         displayName: 'Fixture Person',
@@ -206,7 +276,9 @@ describe('a materialize dry run reports every path its apply writes (#6075)', ()
       ...researchEntityObservations(ENTITY_SETTLED, 'Coverage Settled Laboratory'),
       ...researchEntityObservations(ENTITY_NEW, 'Coverage New Laboratory'),
     ]);
-    for (const row of ROWS.filter((candidate) => candidate.entityKey !== ENTITY_NEW)) {
+    for (const row of ROWS.filter(
+      (candidate) => ![ENTITY_NEW, USER_MINT, USER_WITHDRAWN].includes(candidate.entityKey),
+    )) {
       await materializeEntity(row.entityType, { entityKey: row.entityKey });
     }
     await Researcher.updateOne(
@@ -219,23 +291,26 @@ describe('a materialize dry run reports every path its apply writes (#6075)', ()
     );
   });
 
-  it('covers every row and path the apply writes, measured from the stored documents', async () => {
+  async function expectDryRunCoversApply(
+    options: { userWriteOnlyFields?: string[] },
+    expectedWrittenRows: string[],
+  ) {
     const dryRows = new Map<string, { outcome: string; changedPaths: string[] }>();
     for (const row of ROWS) {
       const planned = await materializeEntity(
         row.entityType,
         { entityKey: row.entityKey },
-        { dryRun: true },
+        { dryRun: true, ...options },
       );
       dryRows.set(row.entityKey, {
         outcome: materializeRowOutcome(planned),
         changedPaths: planned.changedPaths ?? [],
       });
     }
-    const dryRun = await materializeFromRun(String(RUN_ID), { dryRun: true });
+    const dryRun = await materializeFromRun(String(RUN_ID), { dryRun: true, ...options });
 
     const before = await storedRows();
-    await materializeFromRun(String(RUN_ID), { dryRun: false });
+    await materializeFromRun(String(RUN_ID), { dryRun: false, ...options });
     const after = await storedRows();
 
     const writtenByType = new Map<string, Set<string>>();
@@ -254,12 +329,29 @@ describe('a materialize dry run reports every path its apply writes (#6075)', ()
       }
     }
 
-    expect(writtenRows.sort()).toEqual([ENTITY_NEW, ENTITY_STALE, USER_STALE].sort());
+    expect(writtenRows.sort()).toEqual([...expectedWrittenRows].sort());
     for (const [entityType, paths] of writtenByType) {
       const reported = dryRun.changedPathsByEntityType?.[entityType] ?? [];
       for (const path of paths) {
         expect(covers(reported, path), `${entityType} ${path}`).toBe(true);
       }
     }
+  }
+
+  it('covers every row and path an unscoped apply writes, measured from the stored documents', async () => {
+    await expectDryRunCoversApply({}, [
+      ENTITY_NEW,
+      ENTITY_STALE,
+      USER_STALE,
+      USER_MINT,
+      USER_WITHDRAWN,
+    ]);
+  });
+
+  it('covers every row and path a field-scoped user apply writes', async () => {
+    await expectDryRunCoversApply(
+      { userWriteOnlyFields: ['displayName', 'title', 'profileLinks'] },
+      [USER_STALE, USER_WITHDRAWN],
+    );
   });
 });
