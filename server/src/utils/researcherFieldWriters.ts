@@ -102,6 +102,34 @@ const storedWriter = (writers: unknown, field: string): ResearcherFieldWriter | 
   };
 };
 
+/**
+ * Fields whose stored value is not present for writer precedence when no observation ever
+ * stated it and no writer is recorded (#6049). Only `primaryDepartment`: a never-backed
+ * stored name, image or website stays present, since a fill-only directory name replacing a
+ * legacy fuller name measured worse (#6038).
+ */
+const UNBACKED_STORED_VALUE_IS_ABSENT_FIELDS: ReadonlySet<ResearcherGatedField> = new Set([
+  'primaryDepartment',
+]);
+
+/**
+ * Whether a stored value counts as present for writer precedence. A stored `primaryDepartment`
+ * with no recorded writer that no observation, live or superseded, ever stated was set by no
+ * source, so it is not present and a fill-only candidate lands on it (#6049). It only stops
+ * blocking a fill: with no candidate the value stays, because a blind sample graded half of
+ * such values right against the person's own page.
+ */
+export function storedValueCountsAsPresent(
+  writers: unknown,
+  field: ResearcherGatedField,
+  storedValuePresent: boolean,
+  storedValueBacked: boolean,
+): boolean {
+  if (!storedValuePresent) return false;
+  if (storedValueBacked || !UNBACKED_STORED_VALUE_IS_ABSENT_FIELDS.has(field)) return true;
+  return Boolean(storedWriter(writers, field));
+}
+
 export type ResearcherFieldWriteDecision =
   | { write: true; writer: ResearcherFieldWriter; writerChanged: boolean }
   | { write: false; releaseWriter: boolean };

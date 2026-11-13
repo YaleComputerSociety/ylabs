@@ -51,7 +51,12 @@ const REVIEWED_UNROUTED_READS: ReadonlyArray<{ fn: string; reason: string }> = [
   {
     fn: 'userKeysNamingResearcherIdentity',
     reason:
-      "Called only from `researcherTitleOverEveryJoiningKey` on the `user` materializer, so the benchmark never makes this read: it replays `researchEntity` rows only. It searches by the researcher's netid, address and official pages for every person key that names them, whose purpose is to find keys other than the one being materialized, so an entity-keyed source cannot answer it; the chunk caches its answer per researcher instead (#5578).",
+      "Called from `researcherTitleOverEveryJoiningKey` and `storedDepartmentBackedByAnyReading` on the `user` materializer, so the benchmark never makes this read: it replays `researchEntity` rows only. It searches by the researcher's netid, address and official pages for every person key that names them, whose purpose is to find keys other than the one being materialized, so an entity-keyed source cannot answer it; the chunk caches its answer per researcher instead (#5578).",
+  },
+  {
+    fn: 'storedDepartmentBackedByAnyReading',
+    reason:
+      'Called only from `materializeUserIdentityToResearcher`, the `user` materializer, so the benchmark never makes this read: it replays `researchEntity` rows only. It reads superseded `primaryDepartment` readings on every key that names the researcher, keys other than the one being resolved and readings a live-only read source does not hold, so an entity-keyed source cannot answer it (#6049).',
   },
   {
     fn: 'otherPersonPrintsAddress',

@@ -28,6 +28,7 @@ import {
   isFillOnlyFieldValue,
   researcherFieldWriter,
   OWN_KEY_FALLBACK_TITLE_FIELD,
+  storedValueCountsAsPresent,
   type ResearcherGatedField,
 } from '../utils/researcherFieldWriters';
 import { isDepartmentHeadingChrome } from './utils/departmentHeadingChrome';
@@ -37,6 +38,7 @@ import {
   storedDepartmentAfterExportDecode,
   withDirectoryExportDepartmentsDecoded,
 } from './directoryExportDepartmentEvidence';
+import { storedDepartmentIsBacked } from './storedDepartmentBacking';
 import {
   changedResearcherPaths,
   expandUserMaterializerScope,
@@ -9072,7 +9074,10 @@ function sameUserKeyReference(a: UserKeyReference, b: UserKeyReference): boolean
  * its address on a live `email` observation, and its official profile pages as a cited
  * `sourceUrl`. Read from the researcher alone, so every key of one person sees one set.
  */
-async function userKeysNamingResearcherIdentity(researcher: any): Promise<UserKeyReference[]> {
+async function userKeysNamingResearcherIdentity(
+  researcher: any,
+  readScope: Record<string, unknown> = materializationReadScopeFilter(),
+): Promise<UserKeyReference[]> {
   const netid = normalizedAccountNetid(researcher.identifiers?.netid);
   const account: any = netid ? await Account.findOne({ netid }).select('email').lean() : null;
   const emails = uniqueStrings(
@@ -9093,7 +9098,7 @@ async function userKeysNamingResearcherIdentity(researcher: any): Promise<UserKe
   if (emails.length > 0) clauses.push({ field: 'email', value: { $in: emails } });
   if (officialPages.length > 0) clauses.push({ sourceUrl: { $in: officialPages } });
   const found = (await Observation.find(
-    { entityType: 'user', ...materializationReadScopeFilter(), $or: clauses },
+    { entityType: 'user', ...readScope, $or: clauses },
     { entityKey: 1, entityId: 1 },
   ).lean()) as Array<{ entityKey?: unknown; entityId?: unknown }>;
   const references = new Map<string, UserKeyReference>();
@@ -9102,6 +9107,39 @@ async function userKeysNamingResearcherIdentity(researcher: any): Promise<UserKe
     if (reference) references.set(userKeyReferenceId(reference), reference);
   }
   return [...references.values()];
+}
+
+const NOT_ROLLED_BACK = { 'rollback.rolledBackAt': { $exists: false } };
+
+/**
+ * Whether some `primaryDepartment` observation, live or superseded, on any key that names the
+ * researcher states its stored department (#6049). Keys are found over superseded readings
+ * too, so a key whose every reading was retired still backs what it once stated. An unavailable
+ * catalog reads as backed, so a spelling the decode cannot check is never cleared.
+ */
+async function storedDepartmentBackedByAnyReading(
+  researcher: any,
+  ownKey: UserKeyReference | undefined,
+): Promise<boolean> {
+  const stored = textValue(researcher.profile?.primaryDepartment);
+  if (!stored) return true;
+  const canonicalDepartment = await catalogDepartment();
+  if (!canonicalDepartment) return true;
+  const references = await userKeysNamingResearcherIdentity(researcher, NOT_ROLLED_BACK);
+  if (ownKey) references.push(ownKey);
+  const entityKeys = uniqueStrings(references.map((reference) => textValue(reference.entityKey)));
+  const entityIds = references
+    .map((reference) => toMaterializerObjectId(reference.entityId))
+    .filter(Boolean);
+  const identity: Record<string, unknown>[] = [];
+  if (entityKeys.length > 0) identity.push({ entityKey: { $in: entityKeys } });
+  if (entityIds.length > 0) identity.push({ entityId: { $in: entityIds } });
+  if (identity.length === 0) return false;
+  const readings = (await Observation.find(
+    { entityType: 'user', field: 'primaryDepartment', ...NOT_ROLLED_BACK, $or: identity },
+    { value: 1 },
+  ).lean()) as Array<{ value?: unknown }>;
+  return storedDepartmentIsBacked(stored, readings, canonicalDepartment);
 }
 
 async function liveObservationsOfUserKeys(
@@ -9931,6 +9969,7 @@ async function materializeUserIdentityToResearcher(
     value: string | undefined,
     confidence: unknown,
     valueOutranksStored = false,
+    storedValuePresent: boolean = Boolean(textValue(storedFieldValue(field))),
   ): boolean => {
     const decision = decideResearcherFieldWrite(
       researcher.profileFieldWriters,
@@ -9942,7 +9981,7 @@ async function materializeUserIdentityToResearcher(
         isFillOnlyFieldValue(field, resolved[field]?.contributingSources),
       ),
       Boolean(value),
-      Boolean(textValue(storedFieldValue(field))),
+      storedValuePresent,
       valueOutranksStored,
     );
     if (!decision.write) {
@@ -10028,6 +10067,20 @@ async function materializeUserIdentityToResearcher(
     researcher.profileFieldWriters?.delete('imageUrl');
     fieldsWritten += 1;
   }
+  const storedDepartmentBacked =
+    !writerKey ||
+    !primaryDepartment ||
+    !isFillOnlyFieldValue('primaryDepartment', resolved.primaryDepartment?.contributingSources) ||
+    researcher.profileFieldWriters?.get?.('primaryDepartment')
+      ? true
+      : await storedDepartmentBackedByAnyReading(
+          researcher,
+          identifier.entityKey
+            ? { entityKey: identifier.entityKey }
+            : prefetchObjectIdString(identifier.entityId)
+              ? { entityId: prefetchObjectIdString(identifier.entityId) }
+              : undefined,
+        );
   for (const [key, value, confidence] of [
     ['primaryDepartment', primaryDepartment, resolvedConfidence('primaryDepartment')],
     ['imageUrl', imageUrl, resolvedConfidence('imageUrl')],
@@ -10040,7 +10093,18 @@ async function materializeUserIdentityToResearcher(
     }
     const outranksStoredWebsite =
       key === 'websiteUrl' && websiteStandsAboveStored(bounded, storedWebsiteSurvivingScreens);
-    if (writerKey && !settleFieldWriter(key, bounded, confidence, outranksStoredWebsite)) continue;
+    const storedValuePresent = storedValueCountsAsPresent(
+      researcher.profileFieldWriters,
+      key,
+      Boolean(textValue(storedValue)),
+      key === 'primaryDepartment' ? storedDepartmentBacked : true,
+    );
+    if (
+      writerKey &&
+      !settleFieldWriter(key, bounded, confidence, outranksStoredWebsite, storedValuePresent)
+    ) {
+      continue;
+    }
     if (key === 'websiteUrl' && isSamePersonWebsite(storedWebsiteSurvivingScreens, bounded)) {
       continue;
     }
