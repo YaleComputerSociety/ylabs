@@ -1128,6 +1128,15 @@ A fix to any lane's absence-claim path replaces that field's cutoff in a follow-
 The fix PR cannot declare it, because every merge is a squash, so its commit does not exist until it merges and its branch head is not an ancestor of any post-merge run.
 No retraction apply for that field runs until the follow-up lands.
 
+A lane may also retract a value it now refuses on the same page (#5803).
+A refusal is not an absence claim: the page still carries the value, so it can only withdraw the lane's own earlier assertion of that identical value, and only when the refusing rule post-dates the rule that admitted it.
+The lane records it as a `refusedValues` entry (`field`, `value`, `reason`, `classifier`, `classifierVersion`) on a witness row of the read, and stamps each value it admits with `admittedUnder` (`classifier`, `version`); both are outside the observation fingerprint.
+A complete read supports retracting an observation through a refusal only when every one of these holds: the contract lists the `(field, classifier)` pair in `refusalClassifiers`, the refused value is identical to the asserted one, the witness row's `sourceUrl` is the asserted observation's `sourceUrl`, the refusing version is strictly greater than the observation's `admittedUnder` version for that classifier (absent counts as 0), and the read is later than the newest observation from this source asserting that value.
+That last condition is what makes a wrong refusal reversible: a later read that admits the value again files a newer assertion, and every earlier refusal stops counting.
+A refusal counts toward the same two-read quorum and drop guard as an absence claim, so one anomalous read cannot retract.
+The retired rows carry their own rollback reason, and the dry-run report's `refusalSupportedObservations` counts the observations whose quorum needed a refusal.
+No production contract declares `refusalClassifiers` yet, so this path is inert until a lane emits refusals and its contract opts in; `dept-faculty-roster` is the first planned lane.
+
 The stored value is cleared only when the retraction removed the last live observation for that field **and** the stored value is still the retracted one, folded through `normalizeWebsiteUrlIdentityKey`.
 A retraction on a merged-in loser's key decides and clears on the live survivor that key's tombstone chain reaches, with the survivor's locks, and counts rival evidence across every key and id merged into the survivor; keys of one survivor retracting the same field in one pass are decided together, and the sole-holder probe withholding any of them cancels the survivor's clear (#3609).
 With rival evidence surviving, the resolver decides on the next materialization and clearing here would blank a field the corpus can still support.

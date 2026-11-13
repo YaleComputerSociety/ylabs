@@ -128,6 +128,12 @@ import {
 } from '../services/sourceLinkHealth';
 import { gitCommitIsAncestor, isFullCommitSha } from './scrapeRunCodeIdentity';
 import {
+  admittedClassifierVersion,
+  sanitizeClassifierAdmissions,
+  sanitizeRefusedValues,
+  type ObservationClassifierAdmission,
+} from './observationRefusals';
+import {
   INGEST_REJECTABLE_PERSON_NAME_FIELDS,
   INGEST_REJECTABLE_RESEARCH_ENTITY_FIELDS,
 } from './observationFieldSanitizer';
@@ -145,6 +151,9 @@ export const FIELD_RETRACTION_DROP_GUARD_MIN_POPULATION = 20;
 export const FIELD_RETRACTION_ROLLBACK_REASON =
   'field retraction: the source completely re-read this entity and stated this field has no value (#2542, #2647)';
 
+export const FIELD_RETRACTION_REFUSAL_ROLLBACK_REASON =
+  'field retraction: the source re-read the same page, saw this identical value, and refused it under a newer classifier version (#5803)';
+
 export interface SourceFieldRetractionContract {
   /**
    * Fields the source emits on EVERY successful read of an entity. Their joint
@@ -154,7 +163,18 @@ export interface SourceFieldRetractionContract {
   witnessFields: readonly string[];
   retractableFields: readonly string[];
   absenceClaimCutoffs?: readonly AbsenceClaimCutoff[];
+  /**
+   * The (field, classifier) pairs whose stamped refusals may retract this source's own
+   * earlier assertion of the identical value from the same page (#5803). A refusal by
+   * any undeclared classifier states nothing.
+   */
+  refusalClassifiers?: readonly RefusalClassifierDeclaration[];
   notes: string;
+}
+
+export interface RefusalClassifierDeclaration {
+  field: string;
+  classifier: string;
 }
 
 export interface AbsenceClaimCutoff {
@@ -345,6 +365,24 @@ export function assertFieldRetractionContractsAreDeclarable(
         throw new Error(`${sourceName} cutoff for ${cutoff.field} must carry a valid merge time.`);
       }
     }
+    const declaredRefusals = new Set<string>();
+    for (const declaration of contract.refusalClassifiers ?? []) {
+      if (!contract.retractableFields.includes(declaration.field)) {
+        throw new Error(
+          `${sourceName} declares a refusal classifier for ${JSON.stringify(declaration.field)}, which is not a retractable field.`,
+        );
+      }
+      if (!declaration.classifier.trim()) {
+        throw new Error(`${sourceName} declares a refusal classifier with a blank name.`);
+      }
+      const identity = `${declaration.field}\u0000${declaration.classifier}`;
+      if (declaredRefusals.has(identity)) {
+        throw new Error(
+          `${sourceName} declares refusal classifier ${JSON.stringify(declaration.classifier)} for ${declaration.field} more than once.`,
+        );
+      }
+      declaredRefusals.add(identity);
+    }
   }
 }
 
@@ -374,6 +412,16 @@ export interface FieldRetractionCompleteRead {
   assertsNoValueFor: readonly string[];
   /** Claims in `assertsNoValueFor` made by lane code that predates the field's fix. */
   preFixAbsenceClaims?: readonly string[];
+  refusals?: readonly FieldRetractionRefusal[];
+}
+
+export interface FieldRetractionRefusal {
+  field: string;
+  value: string;
+  reason: string;
+  classifier: string;
+  classifierVersion: number;
+  sourceUrl: string;
 }
 
 export interface FieldRetractionRunProvenance {
@@ -424,6 +472,44 @@ export interface FieldRetractionCandidateObservation {
   value: unknown;
   scrapeRunId: string;
   observedAt: Date;
+  sourceUrl?: string;
+  admittedUnder?: readonly ObservationClassifierAdmission[];
+}
+
+export interface RefusalRetractionContext {
+  refusalClassifiers: readonly RefusalClassifierDeclaration[];
+  /** The newest time this source asserted the identical value; a refusal must post-date it. */
+  latestAdmissionAt: Date;
+}
+
+type RefusableObservation = {
+  field: string;
+  value?: unknown;
+  sourceUrl?: string;
+  admittedUnder?: readonly ObservationClassifierAdmission[];
+};
+
+export function readRefusesObservation(
+  read: Pick<FieldRetractionCompleteRead, 'observedAt' | 'refusals'>,
+  observation: RefusableObservation,
+  context: RefusalRetractionContext,
+): boolean {
+  if (!(read.observedAt.getTime() > context.latestAdmissionAt.getTime())) return false;
+  const value = normalizedComparableValue(observation.value);
+  const page = normalizedComparableValue(observation.sourceUrl);
+  if (!value || !page) return false;
+  return (read.refusals ?? []).some(
+    (refusal) =>
+      refusal.field === observation.field &&
+      context.refusalClassifiers.some(
+        (declared) =>
+          declared.field === refusal.field && declared.classifier === refusal.classifier,
+      ) &&
+      normalizedComparableValue(refusal.value) === value &&
+      normalizedComparableValue(refusal.sourceUrl) === page &&
+      refusal.classifierVersion >
+        admittedClassifierVersion(observation.admittedUnder, refusal.classifier),
+  );
 }
 
 export interface FieldRetractionEntityState {
@@ -449,16 +535,20 @@ export type FieldRetractionVerdict =
  * states" - the second being the ordinary outcome of a classifier doing its job.
  */
 export function completeReadsSupportingRetraction(
-  observation: { scrapeRunId: string; observedAt: Date },
+  observation: { scrapeRunId: string; observedAt: Date } & Omit<RefusableObservation, 'field'>,
   completeReads: readonly FieldRetractionCompleteRead[],
   field: string,
+  refusal?: RefusalRetractionContext,
 ): string[] {
   const runIds = new Set<string>();
   for (const read of completeReads) {
     if (read.scrapeRunId === observation.scrapeRunId) continue;
     if (!(read.observedAt.getTime() > observation.observedAt.getTime())) continue;
-    if (!read.assertsNoValueFor.includes(field)) continue;
-    if (read.preFixAbsenceClaims?.includes(field)) continue;
+    const claimsAbsence =
+      read.assertsNoValueFor.includes(field) && !read.preFixAbsenceClaims?.includes(field);
+    const refusesValue =
+      refusal !== undefined && readRefusesObservation(read, { ...observation, field }, refusal);
+    if (!claimsAbsence && !refusesValue) continue;
     runIds.add(read.scrapeRunId);
   }
   return Array.from(runIds);
@@ -496,6 +586,7 @@ export function completeReadsAcrossMergedEvidence(
           ? read.observedAt
           : existing.observedAt,
       assertsNoValueFor: [...new Set([...existing.assertsNoValueFor, ...read.assertsNoValueFor])],
+      refusals: unionRefusals(existing.refusals, read.refusals),
     });
   };
   for (const read of reads) add(read.entityKey, read);
@@ -506,6 +597,17 @@ export function completeReadsAcrossMergedEvidence(
   return [...merged.values()];
 }
 
+function unionRefusals(
+  left: readonly FieldRetractionRefusal[] | undefined,
+  right: readonly FieldRetractionRefusal[] | undefined,
+): FieldRetractionRefusal[] {
+  const byIdentity = new Map<string, FieldRetractionRefusal>();
+  for (const refusal of [...(left ?? []), ...(right ?? [])]) {
+    byIdentity.set(JSON.stringify(refusal), refusal);
+  }
+  return [...byIdentity.values()];
+}
+
 /**
  * `absence-not-witnessed` is reported separately from `source-has-not-reread`
  * because they call for opposite responses: the first means the source looked and
@@ -514,9 +616,10 @@ export function completeReadsAcrossMergedEvidence(
  * which is what a source with no absence-assertion path looks like.
  */
 export function classifyFieldRetraction(params: {
-  observation: { scrapeRunId: string; observedAt: Date; field: string };
+  observation: { scrapeRunId: string; observedAt: Date } & RefusableObservation;
   completeReads: readonly FieldRetractionCompleteRead[];
   minCompleteReads?: number;
+  refusal?: RefusalRetractionContext;
 }): FieldRetractionVerdict {
   const laterReads = params.completeReads.filter(
     (read) =>
@@ -528,6 +631,7 @@ export function classifyFieldRetraction(params: {
     params.observation,
     params.completeReads,
     params.observation.field,
+    params.refusal,
   );
   if (supporting.length === 0) return 'absence-not-witnessed';
   const min = params.minCompleteReads ?? FIELD_RETRACTION_MIN_COMPLETE_READS;
@@ -587,6 +691,8 @@ export interface PlannedFieldRetraction {
    */
   retractedValues: string[];
   maxEntitiesSharingAValue: number;
+  /** True when a stamped refusal, not an absence claim, carried the quorum (#5803). */
+  retractedByRefusal?: boolean;
 }
 
 export interface FrozenFieldRetraction {
@@ -627,6 +733,8 @@ export interface FieldRetractionCounts {
   soleHolderValueProbedDead: number;
   /** Per field with a declared cutoff: what disregarding pre-fix claims changed. */
   preFixAbsenceClaims: Record<string, PreFixAbsenceClaimCounts>;
+  /** Observations whose retraction quorum needed a newer-version refusal of the same value (#5803). */
+  refusalSupportedObservations: number;
 }
 
 export interface PreFixAbsenceClaimCounts {
@@ -679,6 +787,7 @@ export function planFieldRetractions(input: {
     soleHolderValueWithheld: 0,
     soleHolderValueProbedDead: 0,
     preFixAbsenceClaims: {},
+    refusalSupportedObservations: 0,
   };
   const heldEntitiesByField = new Map<string, Set<string>>();
   for (const cutoff of input.contract.absenceClaimCutoffs ?? []) {
@@ -706,9 +815,17 @@ export function planFieldRetractions(input: {
     entitiesByValue.set(value, holders);
   }
 
+  const latestAdmissionAt = latestAdmissionByEntityFieldValue(input.activeObservations);
+  const refusalClassifiers = input.contract.refusalClassifiers ?? [];
   const retractedByKey = new Map<
     string,
-    { entityKey: string; field: string; observationIds: string[]; values: unknown[] }
+    {
+      entityKey: string;
+      field: string;
+      observationIds: string[];
+      values: unknown[];
+      retractedByRefusal: boolean;
+    }
   >();
   for (const observation of input.activeObservations) {
     if (!retractableFields.has(observation.field)) continue;
@@ -718,11 +835,29 @@ export function planFieldRetractions(input: {
     const asserting = assertingEntitiesByField.get(observation.field) ?? new Set<string>();
     asserting.add(observation.entityKey);
     assertingEntitiesByField.set(observation.field, asserting);
+    const refusal: RefusalRetractionContext | undefined =
+      refusalClassifiers.length > 0
+        ? {
+            refusalClassifiers,
+            latestAdmissionAt:
+              latestAdmissionAt.get(admissionKey(observation)) ?? observation.observedAt,
+          }
+        : undefined;
     const verdict = classifyFieldRetraction({
       observation,
       completeReads,
       minCompleteReads: input.minCompleteReads,
+      refusal,
     });
+    const retractedByRefusal =
+      verdict === 'retract' &&
+      refusal !== undefined &&
+      classifyFieldRetraction({
+        observation,
+        completeReads,
+        minCompleteReads: input.minCompleteReads,
+      }) !== 'retract';
+    if (retractedByRefusal) counts.refusalSupportedObservations += 1;
     const tally = counts.preFixAbsenceClaims[observation.field];
     if (
       tally &&
@@ -731,6 +866,7 @@ export function planFieldRetractions(input: {
         observation,
         completeReads: completeReads.map((read) => ({ ...read, preFixAbsenceClaims: [] })),
         minCompleteReads: input.minCompleteReads,
+        refusal,
       }) === 'retract'
     ) {
       tally.heldObservations += 1;
@@ -753,12 +889,14 @@ export function planFieldRetractions(input: {
     if (group) {
       group.observationIds.push(observation.observationId);
       group.values.push(observation.value);
+      group.retractedByRefusal ||= retractedByRefusal;
     } else {
       retractedByKey.set(key, {
         entityKey: observation.entityKey,
         field: observation.field,
         observationIds: [observation.observationId],
         values: [observation.value],
+        retractedByRefusal,
       });
     }
   }
@@ -869,10 +1007,31 @@ export function planFieldRetractions(input: {
       clearsStoredValue,
       retractedValues,
       maxEntitiesSharingAValue,
+      ...(group.retractedByRefusal ? { retractedByRefusal: true } : {}),
     });
   }
 
   return { retractions, frozenFields, counts };
+}
+
+function admissionKey(
+  observation: Pick<FieldRetractionCandidateObservation, 'entityKey' | 'field' | 'value'>,
+) {
+  return `${observation.entityKey}\u0000${observation.field}\u0000${normalizedComparableValue(observation.value)}`;
+}
+
+function latestAdmissionByEntityFieldValue(
+  observations: readonly FieldRetractionCandidateObservation[],
+): Map<string, Date> {
+  const latest = new Map<string, Date>();
+  for (const observation of observations) {
+    const key = admissionKey(observation);
+    const current = latest.get(key);
+    if (!current || observation.observedAt.getTime() > current.getTime()) {
+      latest.set(key, observation.observedAt);
+    }
+  }
+  return latest;
 }
 
 export type RetractionValueOwnership = 'shared-boilerplate' | 'sole-holder';
@@ -1010,6 +1169,7 @@ const emptyCounts = (): FieldRetractionCounts => ({
   soleHolderValueWithheld: 0,
   soleHolderValueProbedDead: 0,
   preFixAbsenceClaims: {},
+  refusalSupportedObservations: 0,
 });
 
 const emptyResult = (outcome: FieldRetractionOutcome, dryRun: boolean): FieldRetractionResult => ({
@@ -1063,6 +1223,7 @@ export async function loadCompleteReads(
         fields: { $addToSet: '$field' },
         observedAt: { $max: '$observedAt' },
         assertsNoValueFor: { $push: '$assertsNoValueFor' },
+        refusalRows: { $push: { refusedValues: '$refusedValues', sourceUrl: '$sourceUrl' } },
       },
     },
   ])) as Array<{
@@ -1070,6 +1231,7 @@ export async function loadCompleteReads(
     fields: string[];
     observedAt: Date;
     assertsNoValueFor?: unknown[];
+    refusalRows?: Array<{ refusedValues?: unknown; sourceUrl?: unknown }>;
   }>;
 
   const reads: FieldRetractionCompleteRead[] = [];
@@ -1087,14 +1249,30 @@ export async function loadCompleteReads(
       if (!Array.isArray(entry)) continue;
       for (const field of entry) if (typeof field === 'string' && field) asserted.add(field);
     }
+    const refusals = refusalsFromWitnessRows(group.refusalRows);
     reads.push({
       entityKey,
       scrapeRunId,
       observedAt: group.observedAt,
       assertsNoValueFor: [...asserted],
+      ...(refusals.length > 0 ? { refusals } : {}),
     });
   }
   return reads;
+}
+
+export function refusalsFromWitnessRows(
+  rows: ReadonlyArray<{ refusedValues?: unknown; sourceUrl?: unknown }> | undefined,
+): FieldRetractionRefusal[] {
+  const refusals: FieldRetractionRefusal[] = [];
+  for (const row of rows ?? []) {
+    const sourceUrl = typeof row.sourceUrl === 'string' ? row.sourceUrl.trim() : '';
+    if (!sourceUrl) continue;
+    for (const refusal of sanitizeRefusedValues(row.refusedValues)) {
+      refusals.push({ ...refusal, sourceUrl });
+    }
+  }
+  return unionRefusals(refusals, undefined);
 }
 
 async function loadRunProvenance(
@@ -1130,7 +1308,7 @@ async function loadActiveRetractableObservations(
     superseded: { $ne: true },
     scrapeRunId: { $exists: true, $ne: null },
   })
-    .select('_id entityKey entityId field value scrapeRunId observedAt')
+    .select('_id entityKey entityId field value scrapeRunId observedAt sourceUrl admittedUnder')
     .lean()) as any[];
 
   const observations: FieldRetractionCandidateObservation[] = [];
@@ -1146,6 +1324,10 @@ async function loadActiveRetractableObservations(
       value: row.value,
       scrapeRunId,
       observedAt: row.observedAt,
+      ...(typeof row.sourceUrl === 'string' && row.sourceUrl ? { sourceUrl: row.sourceUrl } : {}),
+      ...(Array.isArray(row.admittedUnder)
+        ? { admittedUnder: sanitizeClassifierAdmissions(row.admittedUnder) }
+        : {}),
     });
   }
   return observations;
@@ -1340,9 +1522,13 @@ export async function reconcileFieldRetractions(options: {
   dryRun?: boolean;
   probeValue?: (value: string) => Promise<RetractionProbeVerdict>;
   commitIsAncestor?: CommitIsAncestor;
+  contract?: SourceFieldRetractionContract;
 }): Promise<FieldRetractionResult> {
   const dryRun = options.dryRun === true;
-  const contract = fieldRetractionContractFor(options.sourceName);
+  if (options.contract) {
+    assertFieldRetractionContractsAreDeclarable({ [options.sourceName]: options.contract });
+  }
+  const contract = options.contract ?? fieldRetractionContractFor(options.sourceName);
   if (!contract) return emptyResult('source-not-retraction-capable', dryRun);
 
   const activeObservations = await loadActiveRetractableObservations(
@@ -1420,11 +1606,17 @@ export async function reconcileFieldRetractions(options: {
     };
   }
 
-  const observationIds = screened.retained.flatMap((retraction) => retraction.observationIds);
-  if (observationIds.length > 0) {
+  for (const [byRefusal, reason] of [
+    [false, FIELD_RETRACTION_ROLLBACK_REASON],
+    [true, FIELD_RETRACTION_REFUSAL_ROLLBACK_REASON],
+  ] as const) {
+    const observationIds = screened.retained
+      .filter((retraction) => (retraction.retractedByRefusal === true) === byRefusal)
+      .flatMap((retraction) => retraction.observationIds);
+    if (observationIds.length === 0) continue;
     await retireObservations(
       { _id: { $in: observationIds.map((id) => new mongoose.Types.ObjectId(id)) } },
-      FIELD_RETRACTION_ROLLBACK_REASON,
+      reason,
     );
   }
 

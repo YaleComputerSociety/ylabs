@@ -57,6 +57,7 @@ import {
   type RunScopedEmailRow,
 } from './runScopedEmailSupersede';
 import { mongooseConnectionWasOpened } from '../utils/mongooseConnectionWasOpened';
+import { sanitizeClassifierAdmissions, sanitizeRefusedValues } from './observationRefusals';
 
 export const QUALITY_GUARDED_PROSE_FIELDS = new Set(['fullDescription', 'shortDescription']);
 
@@ -64,6 +65,15 @@ export const QUALITY_GUARDED_PROSE_FIELDS = new Set(['fullDescription', 'shortDe
 // value-less latest-wins supersession are skipped, and the materializer reads the full
 // retained log and decides late (collapseLatestWins + the resolver's ranked prose
 // preference). Off by default so behavior is byte-identical to today.
+function refusalFieldsForStorage(obs: ObservationInput) {
+  const refusedValues = sanitizeRefusedValues(obs.refusedValues);
+  const admittedUnder = sanitizeClassifierAdmissions(obs.admittedUnder);
+  return {
+    ...(refusedValues.length > 0 ? { refusedValues } : {}),
+    ...(admittedUnder.length > 0 ? { admittedUnder } : {}),
+  };
+}
+
 export function c4LosslessIngestEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.C4_LOSSLESS_INGEST === 'true';
 }
@@ -855,6 +865,7 @@ export async function appendObservations(
       ...(obs.assertsNoValueFor && obs.assertsNoValueFor.length > 0
         ? { assertsNoValueFor: [...new Set(obs.assertsNoValueFor)] }
         : {}),
+      ...refusalFieldsForStorage(obs),
       ...(obs.reslugAdoption ? { reslugAdoption: true } : {}),
       ...(obs.extraction ? { extraction: { source: obs.extraction.source } } : {}),
       observationFingerprint: buildObservationFingerprint({
