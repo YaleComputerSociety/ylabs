@@ -503,20 +503,21 @@ async function adoptNoisyNameOnlyResearcherId(
  * miss it and the listing would mint a fresh copy of the same person, which the next fold merges
  * again while the listing keeps ending the survivor's edge (#6019). The fold is identity evidence
  * the name lookup lacks, so the listing follows it to the survivor, when every folded record of
- * that name points at the same live survivor.
+ * that name points at the same live survivor. Every folded record is compared, never a capped
+ * read, because one disagreeing record past a cap would join the listing to a guess (#6052).
  */
 async function liveSurvivorOfFoldedNamesake(
   displayName: string,
 ): Promise<mongoose.Types.ObjectId | undefined> {
-  const folded = (await Researcher.find({
-    displayName,
-    archived: true,
-    dedupedIntoResearcherId: { $ne: null },
-  })
-    .select('dedupedIntoResearcherId')
-    .limit(NOISY_NAME_ADOPTION_CANDIDATE_LIMIT)
-    .lean()) as Array<{ dedupedIntoResearcherId?: unknown }>;
-  const survivorIds = new Set(folded.map((record) => String(record.dedupedIntoResearcherId)));
+  const survivorIds = new Set(
+    (
+      (await Researcher.distinct('dedupedIntoResearcherId', {
+        displayName,
+        archived: true,
+        dedupedIntoResearcherId: { $ne: null },
+      })) as unknown[]
+    ).map(String),
+  );
   if (survivorIds.size !== 1) return undefined;
   const survivor = await Researcher.findOne({
     _id: toObjectId([...survivorIds][0]),
