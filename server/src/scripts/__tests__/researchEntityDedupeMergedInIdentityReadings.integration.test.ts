@@ -166,9 +166,6 @@ describe('a PI-dedupe merge makes re-pointed identity readings the survivor own 
     return (result.plannedSet ?? {}) as Record<string, unknown>;
   };
 
-  const stored = async () =>
-    (await ResearchEntity.findById(survivorId).lean()) as Record<string, unknown> | null;
-
   it('re-points the merged-in readings onto the survivor through the real merge path', async () => {
     const twinReadings = await Observation.find({ entityKey: TWIN_SLUG }).lean();
     expect(twinReadings.length).toBeGreaterThan(0);
@@ -183,15 +180,13 @@ describe('a PI-dedupe merge makes re-pointed identity readings the survivor own 
     ['inferredPiUserKey', 'netid:fixture-002'],
   ])('resolves the survivor %s from the re-pointed merged-in reading', async (field, twin) => {
     const planned = await plan();
-    const survivor = await stored();
-    expect(field in planned ? planned[field] : survivor?.[field]).toBe(twin);
+    expect(planned[field]).toBe(twin);
   });
 
   it('keeps a twin reading still keyed to the twin id off the survivor', async () => {
     await observe(twinId, TWIN_SLUG, 'school', 'School of Nursing', TWIN_PAGE, 0.99);
     const planned = await plan();
-    const survivor = await stored();
-    expect('school' in planned ? planned.school : survivor?.school).not.toBe('School of Nursing');
+    expect(planned.school).toBe('School of Medicine');
   });
 
   it('still lets the re-pointed name and website readings compete as the survivor own, as today', async () => {

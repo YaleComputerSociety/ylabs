@@ -30,8 +30,8 @@ This is deliberate, and it is why `RELINK_ORIGIN_ATTRIBUTED_FIELDS` stays limite
 Attributing identity back was measured before it was refused.
 A blind check of the rows it would change found the current resolution right in 27 of 31, the attribution right in 3, and 1 unsure.
 The change would have touched 18 or 52 served rows, depending on the scope, and changed no row's visibility.
-"Identity is the survivor's own" still governs readings that stay keyed to the merged-in row's own id after the merge (#6096's 36): those never resolve onto the survivor.
-`researchEntityDedupeMergedInIdentityReadings.integration.test.ts` holds both halves through the real merge path.
+"Identity is the survivor's own" still governs readings that stay keyed to the merged-in row's own id after the merge (#6096's 36): `school` and `kind` never resolve onto the survivor through a merged-in-keyed reading, while `entityType` is admitted only when it corroborates an unbacked stored type and `inferredPiUserKey`/`inferredPiUserId` only when the merged-in row names the lead of a lead-less survivor.
+`researchEntityDedupeMergedInIdentityReadings.integration.test.ts` holds both halves through the real merge path, and its twin keeps the name `Fixture Twin Lab` on purpose: a type-neutral variant measurably lost the name control to the survivor's own name, so the name assertion holds independent of the leaked `entityType`.
 
 ## 2026-11-13: A Profile's Home Department Is Its First Appointment, Never A Promoted Later One (#6070)
 
