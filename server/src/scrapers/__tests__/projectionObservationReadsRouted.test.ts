@@ -51,12 +51,17 @@ const REVIEWED_UNROUTED_READS: ReadonlyArray<{ fn: string; reason: string }> = [
   {
     fn: 'userKeysNamingResearcherIdentity',
     reason:
-      "Called from `researcherTitleOverEveryJoiningKey` and `storedDepartmentBackedByAnyReading` on the `user` materializer, so the benchmark never makes this read: it replays `researchEntity` rows only. It searches by the researcher's netid, address and official pages for every person key that names them, whose purpose is to find keys other than the one being materialized, so an entity-keyed source cannot answer it; the chunk caches its answer per researcher instead (#5578).",
+      "Called from `researcherTitleOverEveryJoiningKey` and `storedDepartmentReadingsOverEveryKey` on the `user` materializer, so the benchmark never makes this read: it replays `researchEntity` rows only. It searches by the researcher's netid, address and official pages for every person key that names them, whose purpose is to find keys other than the one being materialized, so an entity-keyed source cannot answer it; the chunk caches its answer per researcher instead (#5578).",
   },
   {
-    fn: 'storedDepartmentBackedByAnyReading',
+    fn: 'storedDepartmentReadingsOverEveryKey',
     reason:
-      'Called only from `materializeUserIdentityToResearcher`, the `user` materializer, so the benchmark never makes this read: it replays `researchEntity` rows only. It reads superseded `primaryDepartment` readings on every key that names the researcher, keys other than the one being resolved and readings a live-only read source does not hold, so an entity-keyed source cannot answer it (#6049).',
+      'Called only from the `user` materializer, for the #6049 backing read, so the benchmark never makes this read: it replays `researchEntity` rows only. It reads superseded `primaryDepartment` readings on every key that names the researcher, keys other than the one being resolved and readings a live-only read source does not hold, so an entity-keyed source cannot answer it.',
+  },
+  {
+    fn: 'storedDepartmentReadingsOfEngineJoinedKeys',
+    reason:
+      'Called only from the `user` materializer, when the identity keys did not settle a stored department, so the benchmark never makes this read: it replays `researchEntity` rows only. It finds keys outside the researcher identity keys by the department value they state, so an entity-keyed source cannot answer it (#5741).',
   },
   {
     fn: 'otherPersonPrintsAddress',
