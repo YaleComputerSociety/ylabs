@@ -61,7 +61,8 @@ export interface RetireObservationIdsArgs {
 
 export function readIdsFile(text: string): string[] {
   const parsed: unknown = JSON.parse(text);
-  if (!Array.isArray(parsed)) throw new Error('--ids-file must hold a JSON array of observation ids');
+  if (!Array.isArray(parsed))
+    throw new Error('--ids-file must hold a JSON array of observation ids');
   return parsed.map((id) =>
     String(id ?? '')
       .trim()
