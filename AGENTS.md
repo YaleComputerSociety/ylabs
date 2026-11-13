@@ -231,11 +231,12 @@ It never prints the env values, and says so when the primary checkout has no `se
 It always writes `ALLOW_NON_PROD_SCRAPER_WRITES=` (off) into the copied `server/.env`, whatever the primary checkout holds, so a scraper command run in a worktree is a dry run unless that run sets the flag itself.
 - Do not symlink `node_modules` between worktrees when running dev servers concurrently.
 They share Vite's `node_modules/.vite` cache and clobber each other.
-A real per-worktree install is the isolation boundary.
+Per-worktree `node_modules` directories are the isolation boundary: caches such as `.vite` are per worktree, while package files are shared hardlinks that must never be written in place.
 - That install hardlinks package files from Yarn's shared store rather than copying them, because the helper writes `nmMode: hardlinks-global` into `<worktree root>/.yarnrc.yml`, which every install under that root inherits.
 Each worktree still gets its own `node_modules` directories, so `.vite` and other caches stay per-worktree, and a worktree costs about 0.3 MB of its own instead of about 0.7 GB.
 Never edit a file inside `node_modules` in place, because the same file is shared by every worktree.
-Run `scripts/verify-yarn-store.sh` after every install, which checks that every store file still matches its content hash and exits 1 on a mismatch.
+Never set `ESBUILD_BINARY_PATH` in a worktree: esbuild's install then rewrites `bin/esbuild` and `lib/main.js` in place, which changes them for every worktree.
+The helper runs `scripts/verify-yarn-store.sh` after its install and fails if any store file no longer matches its content hash; run it yourself after any later install.
 Re-run `yarn install:all` in a worktree only between tasks, never while its dev server or tests are running.
 Agent isolation worktrees under `.claude/worktrees/` sit below the primary checkout rather than the worktree root, so they do not inherit the setting and still take full copies.
 - Run each worktree's API with `yarn dev:server` and its client dev server on its own port (`yarn dev --port <port>`) so they coexist, and test each at its own `localhost:<port>`.

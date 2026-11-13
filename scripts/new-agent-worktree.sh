@@ -73,10 +73,21 @@ if git -C "$REPO_ROOT" show-ref --verify --quiet "refs/remotes/${BASE_REMOTE}/${
 fi
 
 mkdir -p "$WORKTREE_ROOT"
+WORKTREE_ROOT_REAL="$(cd "$WORKTREE_ROOT" && pwd -P)"
+PRIMARY_ROOT_REAL="$(cd "$PRIMARY_ROOT" && pwd -P)"
+
+case "${PRIMARY_ROOT_REAL}/" in
+  "${WORKTREE_ROOT_REAL}/"*)
+    echo "ERROR: YLABS_WORKTREE_ROOT (${WORKTREE_ROOT_REAL}) contains the primary checkout." >&2
+    echo "Its .yarnrc.yml would switch the primary checkout and every sibling project to hardlinked installs." >&2
+    echo "Choose a root outside ${PRIMARY_ROOT_REAL}'s ancestors; no worktree was created." >&2
+    exit 1
+    ;;
+esac
 
 # Kept outside the repository so CI, Render and the primary checkout keep classic copies;
 # Yarn reads .yarnrc.yml from parent directories, so every worktree here inherits it.
-WORKTREE_ROOT_YARNRC="${WORKTREE_ROOT}/.yarnrc.yml"
+WORKTREE_ROOT_YARNRC="${WORKTREE_ROOT_REAL}/.yarnrc.yml"
 if ! grep -qs '^nmMode:' "$WORKTREE_ROOT_YARNRC"; then
   printf 'nmMode: hardlinks-global\n' >> "$WORKTREE_ROOT_YARNRC"
 fi
@@ -85,6 +96,11 @@ git -C "$REPO_ROOT" worktree add -b "$BRANCH" "$WORKTREE_DIR" "$BASE_REF"
 
 if [ "${SKIP_INSTALL:-0}" != "1" ]; then
   bash "$WORKTREE_DIR/scripts/install-all.sh"
+  if ! bash "$WORKTREE_DIR/scripts/verify-yarn-store.sh"; then
+    echo "ERROR: a shared Yarn store file no longer matches its content hash, so some worktree wrote into a hardlinked package file." >&2
+    echo "Find the writer before using this worktree; the worktree was created at ${WORKTREE_DIR}." >&2
+    exit 1
+  fi
 fi
 
 claimed_api_ports() {
