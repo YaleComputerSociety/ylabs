@@ -176,11 +176,19 @@ export interface SearchFewCloseMatches {
 }
 
 export function searchFewCloseMatches(
-  kind: SearchRerankEntryKind,
+  entry: Pick<SearchRerankCacheLookup, 'kind' | 'scoredTextHashes'>,
   scoresById: SearchRerankScores,
-  servedPool: readonly RerankCandidate[],
+  servedPool: ReadonlyArray<RerankCandidate & Record<string, unknown>>,
 ): SearchFewCloseMatches | null {
-  if (kind !== 'seeded') return null;
+  if (entry.kind !== 'seeded') return null;
+  if (
+    searchRerankEntryIsStale(
+      entry.scoredTextHashes,
+      searchRerankCandidateFingerprints(servedPool, SEARCH_RERANK_STALE_WINDOW),
+    )
+  ) {
+    return null;
+  }
   const closeMatchIds = new Set(
     servedPool
       .map(rerankCandidateId)

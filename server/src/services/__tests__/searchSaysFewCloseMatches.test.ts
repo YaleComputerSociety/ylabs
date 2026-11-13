@@ -125,7 +125,9 @@ const entityFor = (id: string) => ({
     'This research studies coastal ecology, tidal marsh dynamics, and shoreline restoration across many field sites.',
 });
 
-const scoresFor = (closeRowIndexes: number[], weakRowIndexes: number[] = [0, 1, 2, 3, 4]) => [
+const HEAD_ROW_INDEXES = Array.from({ length: 10 }, (_value, index) => index);
+
+const scoresFor = (closeRowIndexes: number[], weakRowIndexes: number[] = HEAD_ROW_INDEXES) => [
   ...closeRowIndexes.map((index) => ({ entityId: rowId(index), score: 3 })),
   ...weakRowIndexes
     .filter((index) => !closeRowIndexes.includes(index))
@@ -214,6 +216,7 @@ describe('the few close matches notice', () => {
       { entityId: rowId(33), score: 2 },
       { entityId: rowId(0), score: 1.9 },
       { entityId: rowId(1), score: 0 },
+      ...[2, 3, 4, 5, 6, 8, 9].map((index) => ({ entityId: rowId(index), score: 1 })),
     ]);
     serveCacheEntry(entry);
 
@@ -251,6 +254,20 @@ describe('the few close matches notice', () => {
     );
 
     expect(result.fewCloseMatches).toEqual({ closeMatchCount: 3 });
+  });
+
+  it('omits the field when the seeded entry never scored the top of the served pool', async () => {
+    const laterRows = Array.from({ length: ROW_COUNT - 5 }, (_value, index) => index + 5);
+    const result = await searchWithEntry(seededEntry(scoresFor([12, 20], laterRows)));
+
+    expect(result.fewCloseMatches).toBeUndefined();
+  });
+
+  it('still reports the count when the seeded entry leaves only 2 head rows unscored', async () => {
+    const laterRows = Array.from({ length: ROW_COUNT - 2 }, (_value, index) => index + 2);
+    const result = await searchWithEntry(seededEntry(scoresFor([12, 20], laterRows)));
+
+    expect(result.fewCloseMatches).toEqual({ closeMatchCount: 2 });
   });
 
   it('omits the field for a served entry', async () => {

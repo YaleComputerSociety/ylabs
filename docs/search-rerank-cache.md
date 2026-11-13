@@ -40,7 +40,9 @@ The pool is every page of the search after the visibility scope and the student 
 At 3 or fewer (`SEARCH_FEW_CLOSE_MATCHES_MAX_COUNT`), the result carries `fewCloseMatches: { closeMatchCount }` on every page of that search, and `/research` shows "Only a few close matches. Related results below." directly above the result list.
 The threshold is measured: on 36 seeded Production queries it fired on 10, every one with 0 to 2 relevant rows in its top 10, and raised no false alarm.
 
-The field is absent for a served, shadow or live-miss entry, with the flag off, when no entry was applied (no entry, a failed read, a name query that skips the rerank, a Meilisearch-paged search) and for a browse with no query.
+A seeded entry the staleness check (`searchRerankEntryIsStale`) finds stale for the served pool never fires it, because a row it never scored or scored on older text was not measured.
+
+The field is absent for a served, shadow or live-miss entry, for a stale seeded entry, with the flag off, when no entry was applied (no entry, a failed read, a name query that skips the rerank, a Meilisearch-paged search) and for a browse with no query.
 It never changes which rows are returned or their order, and the client never hides, collapses, filters or reorders a result because of it.
 `searchFewCloseMatches` in `server/src/services/searchRerankCache.ts` holds the rule, and `docs/decisions.md` (2026-11-13) records why a notice was chosen over trimming and why no cheaper signal fires it.
 

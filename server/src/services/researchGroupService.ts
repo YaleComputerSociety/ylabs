@@ -3060,7 +3060,7 @@ async function searchResearchGroupsForQuery(
   const rerankedPool = rerankScores ? applyCachedRerank(servedPool, rerankScores) : servedPool;
   const fewCloseMatches =
     rerankScores && rerankEntry
-      ? searchFewCloseMatches(rerankEntry.kind, rerankScores, servedPool)
+      ? searchFewCloseMatches(rerankEntry, rerankScores, servedPool)
       : null;
   // Runs after the cached rerank, which scores relevance rather than kind, so a cached
   // score cannot lift a core back above research rows; the rerank-candidate read skips it

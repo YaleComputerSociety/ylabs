@@ -696,7 +696,7 @@ The eligibility gate reads the served result through the existing predicates (`k
 
 When the flag is on and a seeded `full-` entry's scores were applied, search counts the rows of the whole served pool (every page, after visibility and the student filters) that the entry scores 2 or more (`searchFewCloseMatches` in `services/searchRerankCache.ts`).
 At 3 or fewer (`SEARCH_FEW_CLOSE_MATCHES_MAX_COUNT`), every page of that search carries `fewCloseMatches: { closeMatchCount }`, and `/research` shows "Only a few close matches. Related results below." above the result list.
-The field is absent for a served, shadow or live-miss entry, with the flag off, when no entry was applied (no entry, a failed read, a name query) and for a browse with no query.
+The field is absent for a served, shadow or live-miss entry, for a seeded entry `searchRerankEntryIsStale` finds stale for the served pool, with the flag off, when no entry was applied (no entry, a failed read, a name query) and for a browse with no query.
 It never changes which rows are served or their order, and the client never hides, trims or reorders a result because of it.
 Fire it only from a measured relevance score: a fitted similarity rule was rejected on held-out data (`docs/decisions.md`, 2026-11-13), so do not add a guessed signal beside it.
 
