@@ -6,6 +6,7 @@ import axios from 'axios';
 import { retryOnRetryableStatus } from '../utils/httpFetch';
 import mongoose from 'mongoose';
 import * as cheerio from 'cheerio';
+import type { AnyNode } from 'domhandler';
 import { ResearchEntity } from '../../models/researchEntity';
 import { Observation } from '../../models/observation';
 import { Researcher } from '../../models/researcher';
@@ -1190,8 +1191,26 @@ const blockSeparatedText = (selection: cheerio.Cheerio<any>): string =>
     .map((el) => extractElementTextWithBlockSeparators(el))
     .join(' ');
 
+/**
+ * One school's Drupal profile template states the appointment only as a bold line of its
+ * contact-information field, not in any element classed as a title (#5874).
+ */
+const CONTACT_FIELD_APPOINTMENT_SELECTOR =
+  '[class~="field-name-field-person-contact-information"] strong';
+
+/**
+ * Drupal blocks without a visible heading carry `block-without-title`, which `[class*="title"]`
+ * matches, so a whole navigation menu was read as the person's title (#5874, #5594).
+ */
+function classNamesATitle($: cheerio.CheerioAPI, element: AnyNode): boolean {
+  return ($(element).attr('class') ?? '')
+    .split(/\s+/)
+    .some((name) => name.includes('title') && !name.endsWith('without-title'));
+}
+
 function admissibleProfileTitles($: cheerio.CheerioAPI): string[] {
   const selectors = [
+    CONTACT_FIELD_APPOINTMENT_SELECTOR,
     '[class*="title"]',
     '[class*="appointment"]',
     '[class*="position"]',
@@ -1201,6 +1220,7 @@ function admissibleProfileTitles($: cheerio.CheerioAPI): string[] {
   for (const selector of selectors) {
     const elements = $(selector).toArray();
     for (const el of elements) {
+      if (selector === '[class*="title"]' && !classNamesATitle($, el)) continue;
       const value = cleanOfficialProfileTitle(
         blockSeparatedText($(el)) || $(el).attr('content') || '',
       );

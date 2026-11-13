@@ -19,6 +19,7 @@ import {
   leadDirectResearchHomeUrlsForUser,
   normalizeOfficialProfileUrl,
   OfficialProfilePiBackfillScraper,
+  officialProfilePageStatedFields,
   officialProfileUrlsForEntity,
   preferredOfficialProfileUrl,
   profileAttestsItsLabWebsiteIsGone,
@@ -5994,5 +5995,77 @@ describe('a profile page that names its own netid or several ORCIDs (#4994)', ()
       entity,
     );
     expect(several?.orcid).toBeUndefined();
+  });
+});
+
+describe('the appointment on a Drupal contact-information profile template (#5874)', () => {
+  const navigationBlock = `
+    <nav class="block block-menu-block block-8 odd block-without-title">
+      <ul class="menu">
+        <li><a href="/faculty">Faculty Directory</a></li>
+        <li><a href="/emeritus">Emeritus Faculty</a></li>
+        <li><a href="/research">Faculty Research at the School</a></li>
+        <li><a href="/dean">Faculty Affairs for the Office of the Dean</a></li>
+      </ul>
+    </nav>`;
+  const profilePage = (contactField: string) => `<!doctype html><html><head>
+    <title>Robin Fixture | School Fixture</title></head><body>
+    ${navigationBlock}
+    <div class="block block-system block-without-title"><div class="content">
+      <h1 class="page-title">Robin Fixture</h1>
+      ${contactField}
+    </div></div>
+    </body></html>`;
+  const contactField = (paragraphs: string) => `
+    <div class="field field-name-field-person-contact-information field-type-text-long field-label-hidden">
+      <div class="field-items"><div class="field-item even">${paragraphs}</div></div>
+    </div>`;
+
+  it('reads the bold appointment line of the contact-information field as the title', () => {
+    const html = profilePage(
+      contactField(`
+        <p><strong>Associate Professor of Nursing</strong></p>
+        <p>School Fixture - Room 100</p>
+        <p><strong>email:</strong> <a href="mailto:robin.fixture@yale.edu">robin.fixture@yale.edu</a></p>`),
+    );
+    expect(officialProfilePageStatedFields(html).title).toBe('Associate Professor of Nursing');
+  });
+
+  it('reads an appointment the field states as a bold block line', () => {
+    const html = profilePage(
+      contactField(
+        '<div><strong>Assistant Professor, Director of the Fixture Program</strong></div><p>Room 100</p>',
+      ),
+    );
+    expect(officialProfilePageStatedFields(html).title).toBe(
+      'Assistant Professor, Director of the Fixture Program',
+    );
+  });
+
+  it('keeps a long genuine named-chair appointment whole (#5832)', () => {
+    const chair = 'Fixture Family and Fixture Foundation Professor of Nursing';
+    const html = profilePage(contactField(`<p><strong>${chair}</strong></p><p>Room 100</p>`));
+    expect(officialProfilePageStatedFields(html).title).toBe(chair);
+  });
+
+  it('never reads a navigation block classed block-without-title as the title (#5594)', () => {
+    const html = profilePage('<p>School Fixture - Room 100</p>');
+    expect(officialProfilePageStatedFields(html).title).toBeUndefined();
+  });
+
+  it('reads no title from a contact field whose bold lines are only labels', () => {
+    const html = profilePage(
+      contactField(
+        '<p>Room 100</p><p><strong>email:</strong> <a href="mailto:robin.fixture@yale.edu">robin.fixture@yale.edu</a></p>',
+      ),
+    );
+    expect(officialProfilePageStatedFields(html).title).toBeUndefined();
+  });
+
+  it('reads no appointment from bold text outside the contact-information field', () => {
+    const html = profilePage(
+      '<div class="field field-name-body"><p><strong>Director of the Fixture Simulation Center</strong></p></div>',
+    );
+    expect(officialProfilePageStatedFields(html).title).toBeUndefined();
   });
 });
