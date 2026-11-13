@@ -947,6 +947,10 @@ export function enforceStudentReadyDescriptionInvariant(
 // materializer - never a genuinely source-less entity.
 export const BIOGRAPHY_DESCRIPTION_FALLBACK_REASON = 'biography_description_fallback';
 
+export const TRANSPARENCY_ONLY_VISIBILITY_REASONS: ReadonlySet<string> = new Set([
+  'formalization_only',
+]);
+
 export const STUDENT_READY_SOFT_SIGNAL_REASONS: ReadonlySet<string> = new Set([
   'source_backed_description',
   BIOGRAPHY_DESCRIPTION_FALLBACK_REASON,
@@ -957,6 +961,7 @@ export const STUDENT_READY_SOFT_SIGNAL_REASONS: ReadonlySet<string> = new Set([
   'missing_source_route',
   'missing_source_url',
   'missing_official_source',
+  ...TRANSPARENCY_ONLY_VISIBILITY_REASONS,
 ]);
 
 export const isStudentReadySoftSignalReason = (reason: string): boolean =>

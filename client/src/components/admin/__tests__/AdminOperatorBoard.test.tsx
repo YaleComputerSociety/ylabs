@@ -140,17 +140,17 @@ describe('AdminOperatorBoard', () => {
           },
           {
             collection: 'programs',
-            reason: 'formalization_only',
+            reason: 'application_source_only',
             kind: 'review',
             count: 4,
             nextAction: 'Keep capped unless source evidence shows a real entry route.',
             samples: [
               {
-                id: 'sample-formalization',
-                label: 'Formalization Program',
+                id: 'sample-application-source',
+                label: 'Application Source Program',
                 tier: 'limited_but_safe',
-                reasons: ['formalization_only', 'official_source'],
-                blockerReasons: ['formalization_only'],
+                reasons: ['application_source_only', 'official_source'],
+                blockerReasons: ['application_source_only'],
                 signalReasons: ['official_source'],
               },
             ],
@@ -497,7 +497,7 @@ describe('AdminOperatorBoard', () => {
       screen.getByText('Is this ready to promote from evidence to student-facing copy?'),
     ).toBeTruthy();
     expect(screen.getAllByText('missing_card_description').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('formalization_only').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('application_source_only').length).toBeGreaterThan(0);
     expect(screen.getAllByText('source_backed_description').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Blockers').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Signals').length).toBeGreaterThan(0);
@@ -508,7 +508,7 @@ describe('AdminOperatorBoard', () => {
     expect(within(repairSignals).getByText('missing_facet_signal')).toBeTruthy();
     expect(within(repairSample).queryByText('Blockers')).toBeNull();
     expect(screen.getByText('Repair Candidate Lab')).toBeTruthy();
-    expect(screen.getByText('Formalization Program')).toBeTruthy();
+    expect(screen.getByText('Application Source Program')).toBeTruthy();
     expect(screen.getByText('Source Backed Lab')).toBeTruthy();
     expect(screen.getByText('Release Queue')).toBeTruthy();
     expect(screen.getByText('Automatic Repair Queue')).toBeTruthy();
@@ -771,7 +771,7 @@ describe('AdminOperatorBoard', () => {
           },
           {
             collection: 'programs',
-            reason: 'formalization_only',
+            reason: 'application_source_only',
             kind: 'review',
             count: 1,
             nextAction: 'Keep capped unless source evidence shows a real entry route.',
@@ -780,8 +780,8 @@ describe('AdminOperatorBoard', () => {
                 id: 'sample-program-linked',
                 label: 'Linked Program',
                 tier: 'limited_but_safe',
-                reasons: ['formalization_only'],
-                blockerReasons: ['formalization_only'],
+                reasons: ['application_source_only'],
+                blockerReasons: ['application_source_only'],
                 signalReasons: [],
                 sourceUrl: 'https://example.edu/program',
               },

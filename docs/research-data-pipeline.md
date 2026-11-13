@@ -1747,7 +1747,9 @@ The operator board serves the same split under `patchedCount` and `promotedByGat
 Two details are load-bearing:
 
 - The runner classifies the **queue item's** `blockerReasons`, not the entity's stored `studentVisibilityReasons`. A queue item outlives the gate run that wrote it, so classifying one blocker set while attempting another routed 64 items in as repairable that had already been classified unrepairable.
-- A `review_exception` plan is never attempted. `formalization_only` program rows are capped at `limited_but_safe` deliberately, and because that is not a public tier the gate never resolves their queue rows, so they stayed open forever and every sweep re-attempted them. `acceptFormalizationReviewExceptions` is the script that closes them out; it had never been run, and closing 99 of them removed the largest blocked reason without performing any repair.
+- A `review_exception` plan is never attempted, because no repair lane can clear it and every sweep would re-attempt it unchanged.
+- A plan drops a queue item's transparency-only reasons (`TRANSPARENCY_ONLY_VISIBILITY_REASONS`, today `formalization_only`, #6219), so an item written while that reason still capped a program is planned on its remaining blockers.
+Other soft signals stay, because the source-description lane reads `missing_source_url` and its kin to choose its action.
 
 Routing raised the patch rate from 3.5% to 11.5% on the same corpus, for the same 9 patches out of 78 attempts rather than 500.
 It releases no additional rows by itself: what it fixes is a queue that could not be worked and a board that misreported how much work it held.
@@ -2507,7 +2509,9 @@ For a row the gate re-decided and left unchanged, that stamp is deliberately car
 Those standalone stamp ops pass `timestamps: false`, because the row did not change and bumping `updatedAt` across the whole evaluated scope would desynchronize the indexed copy of that field from Mongo and collapse the materializer's duplicate-title tiebreak into a single instant.
 A materially changed row needs no separate op: its stamp rides along in the visibility update, which is already in the resync-keyed set and does mean to bump `updatedAt`.
 
-Formalization-only programs are deliberately capped. Fellowship funding, research travel grants, senior thesis funding, and secure-mentor-before-apply funding rows can be useful after a student has a research home, but they are not entry pathways by themselves. The visibility gate marks these records with `formalization_only`, keeps them out of `student_ready`, and routes them to exception review rather than source-description auto-repair unless evidence shows mentor matching, project placement, an internship, an RA program, or another real entry route.
+Formalization-only programs are labelled, not capped.
+Fellowship funding, research travel grants, senior thesis funding, and secure-mentor-before-apply funding rows are useful once a student has a research home, so the visibility gate records `formalization_only` for transparency and no longer caps their tier: such a row reaches `student_ready` on the same official-source, application-route and description evidence as any program.
+`formalization_only` is therefore a transparency-only soft signal (`TRANSPARENCY_ONLY_VISIBILITY_REASONS`, part of `STUDENT_READY_SOFT_SIGNAL_REASONS`): the `/analytics` board counts it as evidence rather than an operator decision, and the repair queue never treats it as a blocker (#6219).
 
 Program audience is an honest label, not a suppression trigger. A graduate-only research program (derived audience `GRADUATE`) is a legitimate record: the gate records `graduate_relevant`, lets it reach the same tiers as an undergraduate-relevant program when it has a real non-portal official source and an application route, and surfaces it with a Graduate label rather than hiding it.
 

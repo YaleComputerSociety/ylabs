@@ -48,6 +48,7 @@ describe('researchEntityMeetsStudentReadyDefinition (#1802 canonical definition)
     expect([...STUDENT_READY_SOFT_SIGNAL_REASONS].sort()).toEqual(
       [
         'biography_description_fallback',
+        'formalization_only',
         'missing_alternate_access_path',
         'missing_application_route',
         'missing_facet_signal',

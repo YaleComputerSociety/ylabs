@@ -79,9 +79,6 @@ function normalizeMaxPublicCollapseRatio(maxPublicCollapseRatio: number | undefi
 
 export function nextRepairActionForReasons(reasons: string[]): string {
   if (reasons.includes('inactive_at_yale')) return 'Suppress or repair active-at-Yale evidence.';
-  if (reasons.includes('formalization_only')) {
-    return 'Keep capped unless source evidence shows mentor matching, project placement, internship, RA program, or another real entry route.';
-  }
   if (reasons.includes('exact_url_duplicate_risk')) {
     return 'Suppress the duplicate shell; preserve the stronger canonical research profile.';
   }
