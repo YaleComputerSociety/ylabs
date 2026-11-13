@@ -1079,20 +1079,24 @@ function sameOfficialPersonPageForEntity(
 
 /**
  * "Education" is also a page section label, but it ends an appointment phrase such as
- * "Director of Clinical Education", which the label cut used to truncate (#6198).
+ * "Director of Clinical Education", which the label cut used to truncate (#6198). It counts as
+ * part of the appointment only when an appointment word sits right before it and nothing that
+ * reads as the education section (a degree, an institution, a year) follows it.
  */
 const EDUCATION_INSIDE_APPOINTMENT =
-  /\b(?:of|in|for|and|&|clinical|medical|graduate|continuing|nursing|health|dental|professional|interprofessional|undergraduate|residency|fellowship)\s+education\b/i;
+  /\b(?:of|in|for|and|&|clinical|medical|graduate|continuing|nursing|health|dental|professional|interprofessional|undergraduate|residency|fellowship)\s+education$/i;
+const EDUCATION_SECTION_START =
+  /^\s*[,:;-]?\s*(?:(?:Ph\.?\s?D|M\.?\s?D|M\.?\s?S\.?\s?N|B\.?\s?S\.?\s?N|D\.?\s?N\.?\s?P|M\.?\s?P\.?\s?H|Dr\.?\s?P\.?\s?H|M\.?\s?B\.?\s?A|J\.?\s?D|Ed\.?\s?D|Psy\.?\s?D|Sc\.?\s?D|M\.?\s?Phil|R\.?\s?N|APRN|[BM]\.?\s?[AS]c?)\b|\d{4}\b|(?:[A-Z][\w.&'-]*\s+){1,5}(?:University|College|Institute)\b|(?:University|College)\b)/;
 
 function cutAtProfileSectionLabel(value: string): string {
   const label = /\b(?:Bio|Biography|Education|Contact|Courses Taught|Curriculum Vitae)\b/gi;
   for (const match of value.matchAll(label)) {
     const index = match.index ?? 0;
+    const end = index + match[0].length;
     const isAppointmentEducation =
       /^education$/i.test(match[0]) &&
-      EDUCATION_INSIDE_APPOINTMENT.test(
-        value.slice(Math.max(0, index - 40), index + match[0].length),
-      );
+      EDUCATION_INSIDE_APPOINTMENT.test(value.slice(Math.max(0, index - 40), end)) &&
+      !EDUCATION_SECTION_START.test(value.slice(end));
     if (!isAppointmentEducation) return value.slice(0, index);
   }
   return value;
@@ -1257,18 +1261,30 @@ function classNamesATitle($: cheerio.CheerioAPI, element: AnyNode): boolean {
 /**
  * Content cards on a profile page (news posts, awards, publications, events) carry their own
  * title-classed headings. When the header appointment fails the title pattern, a card heading
- * containing an appointment word was read as the person's title (#5594).
+ * containing an appointment word was read as the person's title (#5594). A card is matched by
+ * a class name that starts with the component name, so a page-level class that merely
+ * contains it (`node-type-article-post`) does not hide the whole page.
  */
-const PROFILE_CONTENT_CARD_SELECTOR = [
-  '[class*="article-post"]',
-  '[class*="achievement-card"]',
-  '[class*="publication-card"]',
-  '[class*="event-list-item"]',
-  '[class*="pub--"]',
-].join(', ');
+const PROFILE_CONTENT_CARD_CLASS_PREFIXES = [
+  'article-post',
+  'achievement-card',
+  'publication-card',
+  'event-list-item',
+  'pub--',
+];
 
 function insideProfileContentCard($: cheerio.CheerioAPI, element: AnyNode): boolean {
-  return $(element).closest(PROFILE_CONTENT_CARD_SELECTOR).length > 0;
+  return $(element)
+    .parents()
+    .addBack()
+    .toArray()
+    .some((node) =>
+      ($(node).attr('class') ?? '')
+        .split(/\s+/)
+        .some((name) =>
+          PROFILE_CONTENT_CARD_CLASS_PREFIXES.some((prefix) => name.startsWith(prefix)),
+        ),
+    );
 }
 
 function admissibleProfileTitles($: cheerio.CheerioAPI): string[] {

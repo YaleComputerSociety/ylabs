@@ -6174,6 +6174,24 @@ describe('profile content cards and section labels in the title read (#5594, #61
     expect(officialProfilePageStatedFields(html).title).toBe('Director of Clinical Education');
   });
 
+  it.each([
+    ['Nursing', 'Associate Professor of Nursing Education MSN, Fixture University'],
+    ['Health', 'Professor of Public Health Education PhD, Fixture University'],
+    ['Medical', 'Professor of Medical Education MD 2004, Fixture School of Medicine'],
+  ])('cuts a %s appointment before an Education section that lists a degree', (_label, glued) => {
+    const html = page(`<div class="profile-title">${glued}</div>`);
+    expect(officialProfilePageStatedFields(html).title).toBe(glued.split(' Education ')[0]);
+  });
+
+  it('keeps reading titles on a page whose own class names an article post', () => {
+    const html = `<!doctype html><html><body class="node-type-article-post"><main>
+      <h1>Sam Fixture</h1><div class="profile-title">Associate Professor of Fixture Studies</div>
+      </main></body></html>`;
+    expect(officialProfilePageStatedFields(html).title).toBe(
+      'Associate Professor of Fixture Studies',
+    );
+  });
+
   it('still cuts a glued Education section label after the appointment', () => {
     const html = page(
       '<div class="profile-title">Professor of Fixture Studies Education PhD, Fixture University</div>',
