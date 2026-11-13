@@ -161,8 +161,9 @@ export type ResearcherFieldWriteDecision =
  * releases it, so a sibling can take the field over; the stored value itself is left alone.
  * A value that outranks the stored one, such as a person's own website over the profile page
  * a better-joined key wrote (#5845), writes whatever the writer rank.
- * A fill-only candidate with no recorded writer writes only into an empty field, because a
- * stored value with no writer was set by some other source before writers were recorded.
+ * A fill-only candidate that does not hold the field writes only into an empty field: a stored
+ * value with no writer was set by some other source before writers were recorded, and a stored
+ * value another key holds is one it may not replace, even when that holder is fill-only too.
  * Callers pass `storedValuePresent` from `storedValueCountsAsPresent`, which reads a
  * never-backed stored department as absent (#6049).
  */
@@ -177,7 +178,7 @@ export function decideResearcherFieldWrite(
   const current = storedWriter(writers, field);
   const holdsField = current?.userKey === candidate.userKey;
   if (!hasValue) return { write: false, releaseWriter: holdsField };
-  if (candidate.fillOnly && !current && storedValuePresent) {
+  if (candidate.fillOnly && !holdsField && storedValuePresent) {
     return { write: false, releaseWriter: false };
   }
   if (current && !holdsField && !valueOutranksStored && !writerOutranks(candidate, current)) {

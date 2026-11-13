@@ -181,4 +181,29 @@ describe('researcher field writer precedence (#5706)', () => {
       ),
     ).toEqual({ write: false, releaseWriter: false });
   });
+
+  it('never lets a fill-only key take a stored name from a fill-only holder (#6035)', () => {
+    const rosterByName = researcherFieldWriter('dept:a:fx', 'person-name', 0.6, true);
+    const held = new Map([['displayName', rosterByName]]);
+    const directoryByNetid = researcherFieldWriter('fx1', 'account-netid', 1, true);
+    const grantByName = researcherFieldWriter('nih:a:fx', 'person-name', 0.9, true);
+    for (const candidate of [directoryByNetid, grantByName]) {
+      expect(decideResearcherFieldWrite(held, 'displayName', candidate, true, true)).toEqual({
+        write: false,
+        releaseWriter: false,
+      });
+    }
+    expect(decideResearcherFieldWrite(held, 'displayName', rosterByName, true, true)).toEqual({
+      write: true,
+      writer: rosterByName,
+      writerChanged: false,
+    });
+    expect(
+      decideResearcherFieldWrite(held, 'displayName', directoryByNetid, true, false),
+    ).toMatchObject({ write: true, writer: directoryByNetid });
+    const officialByNetid = researcherFieldWriter('fx2', 'account-netid', 0.5);
+    expect(
+      decideResearcherFieldWrite(held, 'displayName', officialByNetid, true, true),
+    ).toMatchObject({ write: true, writer: officialByNetid });
+  });
 });
