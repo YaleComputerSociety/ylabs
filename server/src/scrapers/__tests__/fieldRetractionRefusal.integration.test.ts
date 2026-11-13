@@ -280,6 +280,54 @@ describe('a newer-version refusal retires the stale assertion end to end (#5803)
     );
   });
 
+  describe('a refusal that names the page its assertion was filed under (#5803)', () => {
+    const PROFILE_PAGE = 'https://example.yale.edu/people/synthetic-person';
+    const OTHER_ENTITY_KEY = 'synthetic-other-roster-entity';
+    const refusalFiledUnderProfile = (readsListing: boolean): ObservationInput[] => [
+      ...witness([{ ...refusedStoredLink[0], assertedUnder: LISTING_PAGE }]).map((row) => ({
+        ...row,
+        sourceUrl: PROFILE_PAGE,
+      })),
+      ...(readsListing
+        ? [
+            {
+              entityType: 'researchEntity' as const,
+              entityKey: OTHER_ENTITY_KEY,
+              field: 'slug',
+              value: OTHER_ENTITY_KEY,
+              sourceUrl: LISTING_PAGE,
+            },
+          ]
+        : []),
+    ];
+
+    it('retracts the assertion on the named page when the same run read that page', async () => {
+      await appendRun(refusalFiledUnderProfile(true), new Date('2026-11-10T00:00:00Z'));
+      await appendRun(refusalFiledUnderProfile(true), new Date('2026-11-12T00:00:00Z'));
+      const result = await reconcileFieldRetractions({
+        sourceName: SOURCE_NAME,
+        contract: CONTRACT,
+        dryRun: true,
+        probeValue: deadProbe,
+      });
+      expect(result.counts.refusalSupportedObservations).toBe(1);
+      expect(result.retractions).toHaveLength(1);
+    });
+
+    it('retracts nothing when the run never read the page the refusal names', async () => {
+      await appendRun(refusalFiledUnderProfile(false), new Date('2026-11-10T00:00:00Z'));
+      await appendRun(refusalFiledUnderProfile(false), new Date('2026-11-12T00:00:00Z'));
+      const result = await reconcileFieldRetractions({
+        sourceName: SOURCE_NAME,
+        contract: CONTRACT,
+        dryRun: true,
+        probeValue: deadProbe,
+      });
+      expect(result.counts.refusalSupportedObservations).toBe(0);
+      expect(result.retractions).toEqual([]);
+    });
+  });
+
   it('treats an unregistered source with no injected contract as not retraction-capable', async () => {
     await appendRun(witness(refusedStoredLink), new Date('2026-11-10T00:00:00Z'));
     await appendRun(witness(refusedStoredLink), new Date('2026-11-12T00:00:00Z'));

@@ -1274,6 +1274,17 @@ export async function loadCompleteReads(
     refusalRows?: Array<{ refusedValues?: unknown; sourceUrl?: unknown }>;
   }>;
 
+  const namedPagesByRun = new Map<string, Set<string>>();
+  for (const group of groups) {
+    const scrapeRunId = serializedDocumentId(group._id.scrapeRunId) || '';
+    const named = namedAssertedUnderPages(group.refusalRows);
+    if (!scrapeRunId || named.length === 0) continue;
+    const pages = namedPagesByRun.get(scrapeRunId) ?? new Set<string>();
+    for (const page of named) pages.add(page);
+    namedPagesByRun.set(scrapeRunId, pages);
+  }
+  const pagesReadByRun = await loadPagesReadByRuns(sourceName, namedPagesByRun);
+
   const reads: FieldRetractionCompleteRead[] = [];
   for (const group of groups) {
     const observed = new Set(group.fields);
@@ -1289,7 +1300,7 @@ export async function loadCompleteReads(
       if (!Array.isArray(entry)) continue;
       for (const field of entry) if (typeof field === 'string' && field) asserted.add(field);
     }
-    const refusals = refusalsFromWitnessRows(group.refusalRows);
+    const refusals = refusalsFromWitnessRows(group.refusalRows, pagesReadByRun.get(scrapeRunId));
     reads.push({
       entityKey,
       scrapeRunId,
@@ -1301,18 +1312,57 @@ export async function loadCompleteReads(
   return reads;
 }
 
+/**
+ * A refusal is filed under the page its witness row was read from, unless it names the page
+ * the lane would have filed the assertion under (`assertedUnder`) and that page was itself
+ * read by the same run (#5803). A named page the run never read is ignored, so a lane cannot
+ * reach an assertion on a page it did not look at.
+ */
 export function refusalsFromWitnessRows(
   rows: ReadonlyArray<{ refusedValues?: unknown; sourceUrl?: unknown }> | undefined,
+  pagesReadByRun: ReadonlySet<string> = new Set(),
 ): FieldRetractionRefusal[] {
   const refusals: FieldRetractionRefusal[] = [];
   for (const row of rows ?? []) {
-    const sourceUrl = typeof row.sourceUrl === 'string' ? row.sourceUrl.trim() : '';
-    if (!sourceUrl) continue;
-    for (const refusal of sanitizeRefusedValues(row.refusedValues)) {
+    const rowPage = typeof row.sourceUrl === 'string' ? row.sourceUrl.trim() : '';
+    if (!rowPage) continue;
+    for (const { assertedUnder, ...refusal } of sanitizeRefusedValues(row.refusedValues)) {
+      const sourceUrl =
+        assertedUnder && pagesReadByRun.has(assertedUnder) ? assertedUnder : rowPage;
       refusals.push({ ...refusal, sourceUrl });
     }
   }
   return unionRefusals(refusals, undefined);
+}
+
+function namedAssertedUnderPages(
+  rows: ReadonlyArray<{ refusedValues?: unknown }> | undefined,
+): string[] {
+  return (rows ?? []).flatMap((row) =>
+    sanitizeRefusedValues(row.refusedValues).flatMap((refusal) =>
+      refusal.assertedUnder ? [refusal.assertedUnder] : [],
+    ),
+  );
+}
+
+async function loadPagesReadByRuns(
+  sourceName: string,
+  pagesByRun: ReadonlyMap<string, ReadonlySet<string>>,
+): Promise<Map<string, Set<string>>> {
+  const read = new Map<string, Set<string>>();
+  for (const [scrapeRunId, pages] of pagesByRun) {
+    if (!mongoose.isValidObjectId(scrapeRunId) || pages.size === 0) continue;
+    const found = (await Observation.distinct('sourceUrl', {
+      sourceName,
+      scrapeRunId: new mongoose.Types.ObjectId(scrapeRunId),
+      sourceUrl: { $in: [...pages] },
+    })) as unknown[];
+    read.set(
+      scrapeRunId,
+      new Set(found.filter((page): page is string => typeof page === 'string')),
+    );
+  }
+  return read;
 }
 
 async function loadRunProvenance(
