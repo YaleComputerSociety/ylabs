@@ -1,3 +1,4 @@
+import { withoutUncataloguedBackfillHomeDepartments } from './backfillHomeDepartmentScreen';
 import { withoutDepartmentHeadingObservations } from './departmentHeadingObservationScreen';
 import { withDirectoryDepartmentsCatalogGated } from './directoryDepartmentCatalogGate';
 import { withDirectoryExportDepartmentsDecoded } from './directoryExportDepartmentEvidence';
@@ -32,6 +33,7 @@ export const USER_DEPARTMENT_OBSERVATION_SCREENS: ReadonlyArray<UserDepartmentOb
   (observations, { canonicalDepartment }) =>
     withDirectoryExportDepartmentsDecoded(observations, canonicalDepartment),
   withDirectoryDepartmentsCatalogGated,
+  withoutUncataloguedBackfillHomeDepartments,
   (observations) => withoutDepartmentHeadingObservations(observations),
   withoutUncataloguedYsmHomeDepartments,
 ];
