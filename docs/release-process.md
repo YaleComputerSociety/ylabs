@@ -278,6 +278,7 @@ It is still not the path.
 `search_rerank_cache` is in `NEVER_COPY_COLLECTIONS`, every copy refuses one, and no tool exports it.
 Development's collection also holds `shadow` entries and entries keyed before the acronym rewrite (#5643), which a re-seed from the file does not carry.
 What a re-seed loses is a score whose slug no longer resolves: on 2026-11-13 the v4 file left 16 of 10,974 scores unresolved, on 9 slugs (6 rows merged into a survivor and 3 renamed), and each of those rows takes the neutral 1.5.
+The 3 renamed slugs are the ones the next revision rewrites to their current slugs, by the step below; the 6 merged rows have no current slug of their own to rewrite to.
 
 #### Before the first run: the seed file must key cleanly under current code
 
@@ -294,7 +295,7 @@ Then re-seed Development's own `search_rerank_cache` from the revised file, so i
 #### Commands
 
 Run every command from the repository root of a laptop checkout at current `beta`, with `<seed.json>` the revised file and `<marker>` the index version.
-Name the marker `full-<seed version>-<YYYY-MM-DD>` with the seeding date, for example `full-v3-2026-11-20`.
+Name the marker `full-<seed version>-<YYYY-MM-DD>` with the seeding date, for example `full-v5-2026-11-20`.
 The `full-` prefix is what marks an entry as seeded: the live-miss job never replaces such an entry, and the dry run counts it in `seededEntries`.
 Write each variable as a prefix on the command line itself, as below; in zsh an unquoted variable holding two assignments does not split, so the second never reaches the command.
 Neither target takes the Development write lease, because the lease skips a database that receives data only by promotion, so `DEV_WRITE_OWNER` is not needed here.
