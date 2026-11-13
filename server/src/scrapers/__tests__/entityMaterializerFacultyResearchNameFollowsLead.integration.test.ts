@@ -250,8 +250,9 @@ describe('materializeEntity names a faculty research row after its lead on every
     expect(stored.displayName).toBe(PAGE_SPELLING_NAME);
   });
 
-  it("keeps the name when an operator refused the lead's name for it", async () => {
+  it("keeps both name fields when an operator refused the lead's name on one of them", async () => {
     const entity = await seedRosterRow({
+      displayName: PAGE_SPELLING_NAME,
       fieldValueRefusals: {
         name: [
           {
@@ -268,6 +269,8 @@ describe('materializeEntity names a faculty research row after its lead on every
 
     await materializeEntity('researchEntity', { entityKey: ENTITY_KEY });
 
-    expect((await persisted()).name).toBe(PAGE_SPELLING_NAME);
+    const stored = await persisted();
+    expect(stored.name).toBe(PAGE_SPELLING_NAME);
+    expect(stored.displayName).toBe(PAGE_SPELLING_NAME);
   });
 });

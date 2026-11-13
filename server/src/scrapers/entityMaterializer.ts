@@ -12096,7 +12096,10 @@ function rederiveFacultyResearchNameFromItsLead(input: {
   });
   if (!leadsName) return 0;
   const operatorOwnsTheHeading = RESEARCH_ENTITY_IDENTITY_NAME_FIELDS.some(
-    (field) => input.manuallyLockedFields.includes(field) || textValue(input.manualValues?.[field]),
+    (field) =>
+      input.manuallyLockedFields.includes(field) ||
+      textValue(input.manualValues?.[field]) ||
+      valueIsRefused(entityDoc?.fieldValueRefusals, field, leadsName),
   );
   if (operatorOwnsTheHeading) return 0;
   const siteDeclaredNames = new Set(input.siteDeclaredOwnNames.map(comparableName));
@@ -12108,7 +12111,6 @@ function rederiveFacultyResearchNameFromItsLead(input: {
     const head = served.replace(FACULTY_RESEARCH_NAME_SUFFIX, '');
     if (head === served || !isBarePersonNameEntityName(head)) continue;
     if (!listedPersonIsTheNamedLead(head, lead)) continue;
-    if (valueIsRefused(entityDoc?.fieldValueRefusals, field, leadsName)) continue;
     set[field] = leadsName;
     delete set[`fieldProvenance.${field}`];
     delete confidenceByField[field];
