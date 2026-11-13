@@ -552,6 +552,11 @@ import {
   getOrgUnitCanonicalizer,
 } from './orgUnitCanonicalization';
 import {
+  ownProfileSchoolPrecedenceAtResolve,
+  ownProfileSchoolProvenanceFor,
+  type OwnProfileSchoolCandidate,
+} from './ownProfileSchoolPrecedence';
+import {
   applyResearchEntityResearchAreaCanonicalization,
   getResearchAreaCanonicalizer,
 } from './researchAreaCanonicalization';
@@ -10925,6 +10930,7 @@ export interface ProjectFromLogInput {
   observedPersonPageUrls?: readonly string[];
   resolverObs: ResolverObservation[];
   derivedResearchAreas?: DerivedResearchAreaCandidate;
+  ownProfileSchool?: OwnProfileSchoolCandidate;
   storedDerivedResearchAreasStale?: boolean;
   fullDescriptionShellGated: boolean;
   undergradEvidenceQuoteWithdrawnBy?: ReadonlySet<string>;
@@ -12613,7 +12619,8 @@ export async function projectFromLog(
     if (isResearchEntityObservationType(entityType)) {
       const provenance =
         fieldProvenanceForResolvedObservation(field, r, materializationObs) ??
-        derivedResearchAreaProvenanceFor(field, r, input.derivedResearchAreas);
+        derivedResearchAreaProvenanceFor(field, r, input.derivedResearchAreas) ??
+        ownProfileSchoolProvenanceFor(field, r, input.ownProfileSchool);
       if (provenance) set[`fieldProvenance.${field}`] = provenance;
     }
     if (r.hasConflict) conflicts++;
@@ -15095,9 +15102,16 @@ async function materializeEntityUnderRemovalGuard(
     );
   }
 
+  const ownProfileSchool = isResearchEntityObservationType(entityType)
+    ? await ownProfileSchoolPrecedenceAtResolve(
+        micrositeOwnershipScreened,
+        officialLeadProfileSourceUrl(materializationObs, entityDoc?.sourceLinkHealth),
+      )
+    : { observations: micrositeOwnershipScreened, dropped: [], candidate: undefined };
+
   const resolverObs: ResolverObservation[] = [
     ...withoutObservedAdviseesMovedToMentors(
-      micrositeOwnershipScreened.map((o: any) => ({
+      ownProfileSchool.observations.map((o: any) => ({
         field: o.field,
         value: o.value,
         sourceName: o.sourceName,
@@ -15107,6 +15121,7 @@ async function materializeEntityUnderRemovalGuard(
       })),
     ),
     ...(derivedResearchAreas ? [resolverObservationOfDerivedCandidate(derivedResearchAreas)] : []),
+    ...(ownProfileSchool.candidate ? [ownProfileSchool.candidate] : []),
   ];
 
   // A refusal removes one VALUE from consideration, never the field, so whatever
@@ -15259,6 +15274,7 @@ async function materializeEntityUnderRemovalGuard(
     // row refuses, which the #3438 clear then blanks over an admissible rival (#3884).
     resolverObs: refusalScreen.kept,
     derivedResearchAreas,
+    ownProfileSchool: ownProfileSchool.candidate,
     storedDerivedResearchAreasStale,
     fullDescriptionShellGated,
     undergradEvidenceQuoteWithdrawnBy,
