@@ -46,7 +46,7 @@ const CLINICAL_SERVICE_SHAPES = [
   /\binterests?\s+include\s+(?:treating|managing|caring)\b/i,
   /\binterested\s+in\s+the\s+(?:management|treatment|care)\s+of\b/i,
   /\b(?:treats|treating)\s+patients\b/i,
-  /\bworks?\s+with\s+patients\s+to\b/i,
+  /\bworks?\s+with\s+patients\s+to\s+(?!(?:better\s+)?(?:understand|learn)\b)/i,
   /\beach\s+patient(?:['’]s)?\b/i,
   /\bhelp(?:s|ing)?\s+(?:each\s+)?(?:patients?|famil(?:y|ies))\b/i,
   /\bpartnering\s+with\s+patients\b/i,
@@ -54,7 +54,13 @@ const CLINICAL_SERVICE_SHAPES = [
 ];
 
 const NOT_AFTER_ANOTHER_CARE_GIVER =
-  '(?<!\\b(?:clinicians|physicians|providers|caregivers|doctors|nurses|surgeons|practitioners|teams|clinics|hospitals)\\s+(?:to\\s+)?)';
+  '(?<!\\b(?:clinicians|physicians|providers|caregivers|doctors|nurses|surgeons|practitioners|teams|clinics|hospitals)\\s+(?:(?:who|that)\\s+)?(?:(?:are|were|is|was|have|has|had|can|will)\\s+)?(?:to\\s+)?(?:(?:\\w+ly|better|more|also|still|best)\\s+){0,2})';
+
+// The service verbs #6151 added are accepted only after the bio's own person: a sentence
+// start, a pronoun, or a preposition or catenative verb directly before the verb. A noun
+// there (pharmacists, residents, a clinic that) is someone else's patients.
+const AFTER_THE_BIOS_OWN_PERSON =
+  '(?<=(?:^|[.;:!?]\\s+|\\b(?:he|she|they|i|we|to|for|in|on|at|by|with|while|after|before|enjoys?|loves?|likes?|committed|dedicated|devoted)\\s+)(?:(?:has|have|had|having|is|are|was|were|been|also|still|and|\\w+ly)\\s+){0,3})';
 
 const PATIENT_SERVICE_PURPOSE = new RegExp(
   `${NOT_AFTER_ANOTHER_CARE_GIVER}\\b(?:help|helps|helping|serve|serves|serving|benefit|benefits)\\s+(?:his|her|their)\\s+(?:own\\s+)?patients\\b`,
@@ -66,6 +72,18 @@ const PATIENT_SERVICE_SHAPES = [
     `${NOT_AFTER_ANOTHER_CARE_GIVER}\\b(?:treat(?:s|ing)?|cares?\\s+for|caring\\s+for|sees|seeing|provid(?:e|es|ed|ing)\\s+care\\s+(?:to|for)|help(?:s|ing)?|serv(?:e|es|ing))\\s+(?:all\\s+)?(?:his|her|their)\\s+(?:own\\s+)?patients\\b`,
     'i',
   ),
+  new RegExp(
+    `${NOT_AFTER_ANOTHER_CARE_GIVER}${AFTER_THE_BIOS_OWN_PERSON}(?:manag(?:es|ing)|(?:has|have|had|having)\\s+(?:\\w+ly\\s+)?(?:treated|managed))\\s+patients\\b`,
+    'i',
+  ),
+  new RegExp(
+    `${NOT_AFTER_ANOTHER_CARE_GIVER}${AFTER_THE_BIOS_OWN_PERSON}(?:manag(?:e|es|ing|ed)|support(?:s|ing|ed)?|giv(?:e|es|ing|en)|treated)\\s+(?:all\\s+)?(?:his|her|their)\\s+(?:own\\s+)?patients\\b`,
+    'i',
+  ),
+  new RegExp(
+    `${NOT_AFTER_ANOTHER_CARE_GIVER}${AFTER_THE_BIOS_OWN_PERSON}(?:working|worked)\\s+with\\s+patients\\s+to\\s+(?!(?:better\\s+)?(?:understand|learn)\\b|(?:build|develop|design|create|co-create|co-design|co-produce|test|pilot|evaluate|study|record|measure|identify|map|document|adapt|reshape)\\b)`,
+    'i',
+  ),
   /\b(?:combat\w*|treat(?:s|ing)?|alleviat\w*|reliev\w*)\s+(?:the\s+)?symptoms\b/i,
 ];
 
@@ -73,10 +91,10 @@ const CLINICAL_VOCABULARY =
   /\b(?:patients?|care|clinical(?:ly)?|clinicians?|medical|medicine|disorders?|diseases?|conditions?|syndromes?|symptoms?|treatment|therap(?:y|ies)|diagnos\w*|surg(?:ery|eries|ical)|nutrition|pain|injur(?:y|ies)|infections?|cancers?|tumou?rs?|neurological|psychiatric|mental\s+health|pregnanc(?:y|ies)|asthma|allerg(?:y|ies)|dermatolog\w*|cardiolog\w*|skin|nerves?|spin(?:e|al)|stimulation|anesthe\w*|procedures?|trauma)\b/i;
 
 const STATES_INQUIRY =
-  /\b(?:research\w*|lab(?:s|oratory|oratories)?|stud(?:y|ies|ying|ied)|investigat\w*|trials?|scien\w*|scholar\w*|examin\w*|explor\w*|analy[sz]\w*|evaluat\w*|measur\w*|experiment\w*|discover\w*|mechanisms?|data|cohorts?|outcomes|epidemiolog\w*|biomarkers?|interventions?|understand(?:ing)?\s+(?:the|how|why|what|whether)|how|technolog\w*|informatics|quality\s+of\s+care|health\s+services|disparit(?:y|ies)|\w*ethic(?:s|al)|model(?:ing|ling)|(?:computational|statistical|mathematical|animal|mouse|murine|predictive)\s+models?|biolog\w*|genes?|genetic\w*|genomic\w*|why|whether|engineer\w*|benchmark\w*|machine\s+learning|build(?:s|ing)?\s+(?:new\s+|novel\s+)?(?:[\w-]+\s+){0,2}(?:tools?|devices?|sensors?|software|robots?|systems?|platforms?)|software|robot\w*|sensors?|wearables?|survey\w*|assess\w*|pilot(?:s|ing|ed)?|prob(?:e|es|ing)|imaging|estimat\w*|registr(?:y|ies)|track(?:s|ing)|characteri[sz]\w*|quantif\w*|randomi[sz]\w*|predict\w*|catalog\w*|correlat\w*|compar(?:e|es|ing|ison|isons)|algorithms?|sequenc(?:e|es|ing)|(?:co-)?design(?:s|ing|ed)?|map(?:s|ping)?\s+(?:the|how|which|where)|improv(?:e|es|ing)\s+(?:the\s+)?(?:[\w-]+\s+){0,2}care|immunolog\w*|pharmacolog\w*|pathogenesis|microbiome|circuits?|prevention|screening|polic(?:y|ies)|decision[-\s]making|safety|implementation|develop\w*\s+(?:and\s+test\s+)?(?:new\s+|novel\s+)?(?:[\w-]+\s+){0,2}(?:tools?|devices?|sensors?|therap\w*|methods?|models?|algorithms?|interventions?|measures?|assays?|drugs?|vaccines?|gene)|test(?:s|ing)?\b)\b/i;
+  /\b(?:research\w*|lab(?:s|oratory|oratories)?|stud(?:y|ies|ying|ied)|investigat\w*|trials?|scien\w*|scholar\w*|examin\w*|explor\w*|analy[sz]\w*|evaluat\w*|measur\w*|experiment\w*|discover\w*|mechanisms?|data|cohorts?|outcomes|epidemiolog\w*|biomarkers?|interventions?|understand(?:ing)?\s+(?:the|how|why|what|whether)|how|technolog\w*|informatics|quality\s+of\s+care|health\s+services|disparit(?:y|ies)|\w*ethic(?:s|al)|model(?:ing|ling)|(?:computational|statistical|mathematical|animal|mouse|murine|predictive)\s+models?|biolog\w*|genes?|genetic\w*|genomic\w*|why|whether|engineer\w*|benchmark\w*|machine\s+learning|build(?:s|ing)?\s+(?:new\s+|novel\s+)?(?:[\w-]+\s+){0,2}(?:tools?|devices?|sensors?|software|robots?|systems?|platforms?)|software|robot\w*|sensors?|wearables?|survey\w*|assess\w*|pilot(?:s|ing|ed)?|prob(?:e|es|ing)|imaging|estimat\w*|registr(?:y|ies)|track(?:s|ing)|characteri[sz]\w*|quantif\w*|randomi[sz]\w*|predict\w*|catalog\w*|correlat\w*|compar(?:e|es|ing|ison|isons)|algorithms?|sequenc(?:e|es|ing)|(?:co-)?design(?:s|ing|ed)?|map(?:s|ping)?\s+(?:the|how|which|where)|improv(?:e|es|ing)\s+(?:the\s+)?(?:[\w-]+\s+){0,2}care|immunolog\w*|pharmacolog\w*|pathogenesis|microbiome|circuits?|prevention|screening|polic(?:y|ies)|decision[-\s]making|safety|implementation|develop\w*\s+(?:and\s+test\s+)?(?:new\s+|novel\s+)?(?:[\w-]+\s+){0,2}(?:tools?|devices?|sensors?|therap\w*|methods?|strateg(?:y|ies)|approach(?:es)?|models?|algorithms?|interventions?|measures?|assays?|drugs?|vaccines?|gene)|test(?:s|ing)?\b)\b/i;
 
 const CREATIVE_PRACTICE =
-  /\b(?:music\w*|compos(?:e|es|er|ers|ing|ition|itions)|choreograph\w*|danc(?:e|es|er|ers|ing)|plays?|playwright\w*|theat(?:er|re)\w*|performance\s+art|performers?|artists?|artwork|paint\w*|sculpt\w*|poe(?:t|ts|try|ms?)|fiction|novels?|writ(?:e|es|ing)\s+(?:plays|poems|fiction|novels|music)|film\w*|photograph\w*|portrait\w*|documentar\w*|opera|songs?|lullab\w*|murals?|memoirs?|essays?|textiles?|installations?|comed(?:y|ies|ian|ians)|stand-up)\b/i;
+  /\b(?:music\w*|compos(?:e|es|er|ers|ing|ition|itions)|choreograph\w*|danc(?:e|es|er|ers|ing)|(?<!to-)plays?|playwright\w*|theat(?:er|re)\w*|performance\s+art|performers?|artists?|artwork|paint\w*|sculpt\w*|poe(?:t|ts|try|ms?)|fiction|novels?|writ(?:e|es|ing)\s+(?:plays|poems|fiction|novels|music)|film\w*|photograph\w*|portrait\w*|documentar\w*|opera|songs?|lullab\w*|murals?|memoirs?|essays?|textiles?|installations?|comed(?:y|ies|ian|ians)|stand-up)\b/i;
 
 export function isClinicalOnlyBiographySentence(sentence: string): boolean {
   if (CREATIVE_PRACTICE.test(sentence)) return false;
