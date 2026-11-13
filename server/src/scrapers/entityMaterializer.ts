@@ -12025,8 +12025,7 @@ function rederiveFacultyResearchNameFromItsLead(input: {
   });
   if (!leadsName) return 0;
   const operatorOwnsTheHeading = RESEARCH_ENTITY_IDENTITY_NAME_FIELDS.some(
-    (field) =>
-      input.manuallyLockedFields.includes(field) || textValue(input.manualValues?.[field]),
+    (field) => input.manuallyLockedFields.includes(field) || textValue(input.manualValues?.[field]),
   );
   if (operatorOwnsTheHeading) return 0;
   const siteDeclaredNames = new Set(input.siteDeclaredOwnNames.map(comparableName));
