@@ -5,9 +5,9 @@ import {
   scopedUserRederiver,
   summarizePreFixAbsenceClaimExclusions,
   totalPlannedRetractions,
-  userRederiveOnlyFields,
   type ScopedUserRederiveRow,
 } from '../reconcileFieldRetractions';
+import { userRederiveOnlyFields } from '../../scrapers/userMaterializerFieldScope';
 import {
   fieldRetractionContracts,
   type UserFieldRetractionResult,

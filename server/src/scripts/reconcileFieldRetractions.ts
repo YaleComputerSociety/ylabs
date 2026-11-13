@@ -34,8 +34,6 @@ import {
   userRederiveOnlyFields,
 } from '../scrapers/userMaterializerFieldScope';
 
-export { userRederiveOnlyFields };
-
 dotenv.config({ quiet: true });
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../.env'), quiet: true });
