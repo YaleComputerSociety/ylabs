@@ -124,7 +124,7 @@ describe('a directory department fills only when the catalog names it (#6129)', 
   });
 
   it('fills the catalog name an acronym-suffixed unit decodes to, and a second resolve writes nothing', async () => {
-    const person = await seedPerson(LEGACY);
+    const person = await seedPerson();
     await seed('Biostatistics (BIS)');
 
     await resolve();
