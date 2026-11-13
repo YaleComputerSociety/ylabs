@@ -24,6 +24,9 @@ describe('clinical-service biography shapes the roster-bio rule refuses (#6151)'
     'She develops new strategies for managing patients with sepsis.',
     'She is working with patients to better understand their experience of living with chronic pain.',
     'He works with patients to learn which symptoms of their condition matter most to them.',
+    'Her particular interests include the history of medicine and public health in colonial ports.',
+    'His special interests include historical accounts of hospital care in early modern cities.',
+    'Her special interests include the medical humanities and narratives of chronic illness.',
   ])('keeps a research sentence that also names patients or care: %s', (sentence) => {
     expect(isClinicalOnlyBiographySentence(sentence)).toBe(false);
   });
