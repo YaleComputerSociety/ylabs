@@ -142,12 +142,7 @@ describe('materializeEntity prefers a fullDescription that is not thinner than t
 
   it('leaves a top-ranked full that already carries more than the card in place', async () => {
     await seedEntity();
-    await seedFull(
-      LONGER_THAN_CARD_WINNER,
-      'ysm-faculty-directory',
-      0.82,
-      '2026-08-01T00:00:00Z',
-    );
+    await seedFull(LONGER_THAN_CARD_WINNER, 'ysm-faculty-directory', 0.82, '2026-08-01T00:00:00Z');
     await seedFull(
       RICH_MICROSITE_FULL,
       'lab-microsite-undergrad-llm',
