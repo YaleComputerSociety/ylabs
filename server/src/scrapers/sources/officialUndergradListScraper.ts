@@ -120,13 +120,24 @@ interface MentorSourceConfig {
   read: (fetchText: MentorFetchText, now: Date) => Promise<SourceRead>;
 }
 
-const academicYearEnd = (termUrl: string): number | undefined => {
+const latestAcademicYearEnd = (now: Date) => now.getUTCFullYear() + 1;
+
+const isAfterLatestAcademicYearEnd = (year: number | undefined, now: Date) =>
+  year !== undefined && year > latestAcademicYearEnd(now);
+
+export const fullYearOfTwoDigitYear = (twoDigitYear: number, now: Date): number =>
+  isAfterLatestAcademicYearEnd(2000 + twoDigitYear, now)
+    ? 1900 + twoDigitYear
+    : 2000 + twoDigitYear;
+
+export const csArchiveTermAcademicYearEnd = (termUrl: string, now: Date): number | undefined => {
   const match = /\/(\d\d)-(\d\d)[ab]\/index\.html$/i.exec(termUrl);
-  return match ? 2000 + Number(match[2]) : undefined;
+  return match ? fullYearOfTwoDigitYear(Number(match[2]), now) : undefined;
 };
 
 const withinLookback = (year: number | undefined, now: Date) =>
-  year === undefined || year >= now.getUTCFullYear() - LIST_LOOKBACK_YEARS;
+  year === undefined ||
+  (year >= now.getUTCFullYear() - LIST_LOOKBACK_YEARS && !isAfterLatestAcademicYearEnd(year, now));
 
 const csArchive =
   (source: UndergradListSource, indexUrl: string): MentorSourceConfig['read'] =>
@@ -134,7 +145,7 @@ const csArchive =
     const index = await fetchText(indexUrl);
     if (index === null) return { listings: [], complete: false };
     const terms = csArchiveTermUrls(index, indexUrl).filter((url) =>
-      withinLookback(academicYearEnd(url), now),
+      withinLookback(csArchiveTermAcademicYearEnd(url, now), now),
     );
     const listings: MentorListing[] = [];
     let complete = terms.length > 0;
@@ -144,7 +155,11 @@ const csArchive =
         complete = false;
         continue;
       }
-      listings.push(...csArchiveTermListings(html, term, source));
+      listings.push(
+        ...csArchiveTermListings(html, term, source).filter(
+          (listing) => !isAfterLatestAcademicYearEnd(listing.year, now),
+        ),
+      );
     }
     return { listings, complete };
   };
