@@ -13,6 +13,9 @@ export interface BioResearchStatement {
   rejection?: BioResearchStatementRejection;
 }
 
+const FIRST_PERSON_PAST_RESEARCH =
+  /^\s*(?:I|We)\s+(?:\w+ly\s+)?(?:focused|studied|investigated|worked|examined|explored|researched)\b/i;
+
 const PAST_RESEARCH_SENTENCE =
   /\b(?:was|were|had\s+been|previously|formerly|directed|led|founded|established|for\s+(?:over|more\s+than|nearly|almost)\s+(?:\d+|[a-z]+(?:-[a-z]+)?)\s+years|earlier\s+in\s+(?:his|her|their)\s+career|doctoral|dissertation|thesis|post-?doctoral|as\s+an?\s+(?:graduate|doctoral|ph\.?\s?d\.?|undergraduate|medical)\s+student|during\s+(?:his|her|their)\s+(?:ph\.?\s?d|doctoral|graduate|postdoctoral|residency|fellowship))\b/i;
 
@@ -46,8 +49,16 @@ const CLINICAL_SERVICE_SHAPES = [
   /\beach\s+patient['’]s\b/i,
 ];
 
+const STRONG_CLINICAL_SERVICE_SHAPES = [
+  /\b(?:his|her|their)\s+patients\b/i,
+  /\b(?:combat\w*|treat(?:s|ing)?|alleviat\w*|reliev\w*)\s+(?:the\s+)?symptoms\b/i,
+];
+
+const STATES_RESEARCH_EXPLICITLY =
+  /\b(?:research\w*|lab(?:s|oratory|oratories)?|stud(?:y|ies|ying|ied)|investigat\w*|trials?)\b/i;
+
 const CLINICAL_VOCABULARY =
-  /\b(?:patients?|care|clinical(?:ly)?|clinicians?|medical|medicine|disorders?|diseases?|conditions?|syndromes?|symptoms?|treatment|therap(?:y|ies)|diagnos\w*|surg(?:ery|eries|ical)|nutrition|pain|injur(?:y|ies)|infections?|cancers?|tumou?rs?|neurological|psychiatric|mental\s+health|pregnanc(?:y|ies)|asthma|allerg(?:y|ies)|dermatolog\w*|cardiolog\w*|skin)\b/i;
+  /\b(?:patients?|care|clinical(?:ly)?|clinicians?|medical|medicine|disorders?|diseases?|conditions?|syndromes?|symptoms?|treatment|therap(?:y|ies)|diagnos\w*|surg(?:ery|eries|ical)|nutrition|pain|injur(?:y|ies)|infections?|cancers?|tumou?rs?|neurological|psychiatric|mental\s+health|pregnanc(?:y|ies)|asthma|allerg(?:y|ies)|dermatolog\w*|cardiolog\w*|skin|nerves?|spin(?:e|al)|stimulation|anesthe\w*|procedures?|trauma)\b/i;
 
 const STATES_INQUIRY =
   /\b(?:research\w*|lab(?:s|oratory|oratories)?|stud(?:y|ies|ying|ied)|investigat\w*|trials?|scien\w*|scholar\w*|examin\w*|explor\w*|analy[sz]\w*|evaluat\w*|measur\w*|experiment\w*|discover\w*|mechanisms?|data|cohorts?|outcomes|epidemiolog\w*|biomarkers?|interventions?|understand(?:ing)?\s+(?:the|how|why|what|whether)|how|technolog\w*|informatics|quality\s+of\s+care|health\s+services|disparit(?:y|ies)|equity|\w*ethic(?:s|al)|model(?:ing|ling)|(?:computational|statistical|mathematical|animal|mouse|murine|predictive)\s+models?|biolog\w*|genetic\w*|genomic\w*|immunolog\w*|pharmacolog\w*|pathogenesis|microbiome|circuits?|prevention|screening|polic(?:y|ies)|decision[-\s]making|safety|implementation|develop\w*\s+(?:and\s+test\s+)?(?:new\s+|novel\s+)?(?:tools?|devices?|sensors?|therap\w*|methods?|models?|algorithms?|interventions?|measures?|assays?|drugs?|vaccines?|gene)|test(?:s|ing)?\b)\b/i;
@@ -56,6 +67,13 @@ const CREATIVE_PRACTICE =
   /\b(?:music\w*|compos(?:e|es|er|ers|ing|ition|itions)|choreograph\w*|danc(?:e|es|er|ers|ing)|plays?|playwright\w*|theat(?:er|re)\w*|performance\s+art|performers?|artists?|artwork|paint\w*|sculpt\w*|poe(?:t|ts|try|ms?)|fiction|novels?|writ(?:e|es|ing)\s+(?:plays|poems|fiction|novels|music)|film\w*|photograph\w*|opera|songs?)\b/i;
 
 export function isClinicalOnlyBiographySentence(sentence: string): boolean {
+  if (CREATIVE_PRACTICE.test(sentence)) return false;
+  if (
+    STRONG_CLINICAL_SERVICE_SHAPES.some((shape) => shape.test(sentence)) &&
+    !STATES_RESEARCH_EXPLICITLY.test(sentence)
+  ) {
+    return true;
+  }
   return (
     CLINICAL_SERVICE_SHAPES.some((shape) => shape.test(sentence)) &&
     CLINICAL_VOCABULARY.test(sentence) &&
@@ -99,7 +117,7 @@ export function neutralResearchVoice(sentence: string): string {
 }
 
 function isPastResearchSentence(sentence: string): boolean {
-  return PAST_RESEARCH_SENTENCE.test(sentence);
+  return PAST_RESEARCH_SENTENCE.test(sentence) || FIRST_PERSON_PAST_RESEARCH.test(sentence);
 }
 
 function isNonResearchOnlySentence(sentence: string): boolean {

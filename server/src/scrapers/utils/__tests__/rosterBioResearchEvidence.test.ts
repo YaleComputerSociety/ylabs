@@ -133,6 +133,8 @@ describe('roster biography research evidence', () => {
       'Their work focuses on advancing synthetic heart care and supporting patients after discharge.',
       'They offer patients prompt access to synthetic sleep clinic care close to home.',
       'They focus on caring for women with synthetic high-risk pregnancies.',
+      'They are interested in exploring every synthetic therapy that can help their patients.',
+      'Their work centres on combatting the symptoms of synthetic grief and working towards equity.',
     ]) {
       expect(keptBesideAnchor(sentence)).toBe(false);
     }
@@ -155,9 +157,16 @@ describe('roster biography research evidence', () => {
       'Their work focuses on the immunology of synthetic sepsis in critically ill patients.',
       'Their interests include the pathogenesis of synthetic infections in transplant patients.',
       'They study how patients with synthetic joint pain choose among treatments.',
+      'Their research follows how their patients with synthetic tremor respond to new devices.',
     ]) {
       expect(keptBesideAnchor(sentence)).toBe(true);
     }
+  });
+
+  it('drops a first-person sentence about research done in the past (#6083)', () => {
+    expect(
+      keptBesideAnchor('I focused mainly on the role of synthetic proteins in cell division.'),
+    ).toBe(false);
   });
 
   it('keeps a creative-practice sentence about care or patients (#6083)', () => {
