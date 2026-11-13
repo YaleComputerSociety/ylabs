@@ -19,6 +19,7 @@ export interface ProgramResearchRelevanceInput {
   summary?: string;
   description?: string;
   eligibility?: string;
+  fullSourceDescription?: string;
 }
 
 export interface ProgramResearchRelevanceResult {
@@ -111,6 +112,15 @@ const RESEARCH_AS_ELIGIBLE_USE =
 
 const DISCLAIMS_RESEARCH = /\bnon-research\b/i;
 
+// A qualifier is required so "does not require research experience" never matches.
+const DISCLAIMS_PRIMARY_RESEARCH_FOCUS =
+  /\bnot\s+primarily\s+(?:focus(?:ed|es)?\s+on\s+)?(?:[\w-]+\s+){0,2}research\b/i;
+
+// The gap may hold neither research nor a negation: clauseBefore reads negation only before the
+// match, so a negation inside the gap would go unseen.
+const FUNDS_DEGREE_COURSE_OF_STUDY =
+  /\b(?:(?:support|supports|fund|funds|cover|covers|pay|pays)\s+(?:(?!research\b|(?:no|not|never|nor|without|cannot)\b|\w+n['’]t\b)[\w'-]+\s+){0,6}|tuition(?:\s+fees)?\s+for\s+(?:(?:a|an)\s+)?)(?:graduate|postgraduate|master['’]?s)\s+(?:degree\s+)?(?:courses?|programs?|programmes?|study)\b/i;
+
 const LANGUAGE_STUDY_PURPOSE = 'Language Study';
 
 // These lanes store `purpose` as inferPurpose output read from page prose rather than as a
@@ -161,6 +171,13 @@ export function classifyProgramResearchRelevance(
   const textResearch = RESEARCH_TEXT.test(blob);
   const researchUseStated =
     !DISCLAIMS_RESEARCH.test(sourceProse) && affirmedIn(bodyFields, RESEARCH_AS_ELIGIBLE_USE);
+  // The full source text is read only for these two disclaimers, never as a research signal,
+  // so a page's longer copy can withhold a row that disclaims research but never serve one.
+  const disclaimerFields = [...bodyFields, text(input.fullSourceDescription)].filter(Boolean);
+  const disclaimsPrimaryResearchFocus = disclaimerFields.some((field) =>
+    DISCLAIMS_PRIMARY_RESEARCH_FOCUS.test(field),
+  );
+  const fundsDegreeCourseOfStudy = affirmedIn(disclaimerFields, FUNDS_DEGREE_COURSE_OF_STUDY);
 
   if (purposeResearch) reasons.push('research_purpose');
   if (kindResearch) reasons.push('research_program_kind');
@@ -170,13 +187,22 @@ export function classifyProgramResearchRelevance(
   if (facetSaysLanguageStudy) reasons.push('language_study_purpose');
   if (purposeUnbackedByProse) reasons.push('inferred_research_purpose_unbacked');
   if (researchUseStated) reasons.push('research_use_stated');
+  if (disclaimsPrimaryResearchFocus) reasons.push('disclaims_primary_research_focus');
+  if (fundsDegreeCourseOfStudy) reasons.push('funds_degree_course_of_study');
 
   // A title that explicitly disclaims research (e.g. "...Non-Research Projects", journalism,
   // language study, study/tuition scholarship), or a facet naming only language study, is not
   // research-related even if a generic "Research" purpose tag is attached, unless the program
   // kind is research by construction or its own page text names research as an eligible use.
   // A kind derived from travel wording does not exempt it.
-  if ((titleSaysNonResearch || facetSaysLanguageStudy) && !inherentKind && !researchUseStated) {
+  if (
+    (titleSaysNonResearch ||
+      facetSaysLanguageStudy ||
+      disclaimsPrimaryResearchFocus ||
+      fundsDegreeCourseOfStudy) &&
+    !inherentKind &&
+    !researchUseStated
+  ) {
     return { researchRelated: false, reasons };
   }
 
